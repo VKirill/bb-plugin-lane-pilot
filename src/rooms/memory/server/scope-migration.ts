@@ -4,7 +4,7 @@
  * room because createMemoryStage applies it on start; the CLI in
  * scripts/memory-scope-dry-run.ts is a thin caller.
  */
-import { splitRuleScope } from "@lane-pilot/run-insights";
+import { listAcceptedRuleRows, splitRuleScope, updateRuleProposalScopeJson } from "@lane-pilot/run-insights";
 import { pathsNamed } from "@lane-pilot/memory-core";
 
 type ScopeDb = { prepare(sql: string): { all(...args: unknown[]): unknown[] } };
@@ -29,7 +29,7 @@ export function rootCoreProposal(content: string, concepts: readonly string[]): 
 }
 
 export function planScopeMigration(db: ScopeDb, dbPath: string): ScopeDryRun {
-  const rules = db.prepare("SELECT id, project_id, audience, scope_json, rule FROM lane_pilot_rule_proposal WHERE state='accepted'").all() as RuleRow[];
+  const rules = listAcceptedRuleRows(db as never);
   const incompatible = rules.flatMap((row) => {
     let scope: string[] = [];
     try { const value = JSON.parse(row.scope_json) as unknown; scope = Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; } catch { scope = []; }
@@ -64,9 +64,8 @@ type RuleJournalRow = { id: string; projectId: string; before: string[]; after: 
  * that section's chain. Every rewrite is journaled so `--revert` restores the stored scope verbatim.
  */
 export function applyRuleScopeRebind(db: ApplyDb, map: Readonly<Record<string, readonly string[]>>): { applied: number; journal: RuleJournalRow[] } {
-  const rules = db.prepare("SELECT id, project_id, scope_json FROM lane_pilot_rule_proposal WHERE state='accepted'").all() as Array<{ id: string; project_id: string; scope_json: string }>;
+  const rules = listAcceptedRuleRows(db as never);
   const journal: RuleJournalRow[] = [];
-  const update = db.prepare("UPDATE lane_pilot_rule_proposal SET scope_json=? WHERE project_id=? AND id=?");
   for (const row of rules) {
     let scope: string[] = [];
     try { const value = JSON.parse(row.scope_json) as unknown; scope = Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; } catch { scope = []; }
@@ -77,7 +76,7 @@ export function applyRuleScopeRebind(db: ApplyDb, map: Readonly<Record<string, r
     const chains = split.pathSelectors.map((label) => map[label]);
     const chain = chains[0];
     if (!chain.every((entry) => entry.startsWith("section:")) || !chains.every((other) => other.length === chain.length && other.every((entry, index) => entry === chain[index]))) continue;
-    update.run(JSON.stringify(chain), row.project_id, row.id);
+    updateRuleProposalScopeJson(db as never, JSON.stringify(chain), row.project_id, row.id);
     journal.push({ id: row.id, projectId: row.project_id, before: scope, after: [...chain] });
   }
   return { applied: journal.length, journal };
@@ -86,8 +85,7 @@ export function applyRuleScopeRebind(db: ApplyDb, map: Readonly<Record<string, r
 /** Restores the scopes a journal recorded. The caller owns the journal file (rooms never touch fs). */
 export function revertRuleScopeRebind(db: ApplyDb, journal: { reverted: boolean; rows: RuleJournalRow[] }): { reverted: number } {
   let reverted = 0;
-  const update = db.prepare("UPDATE lane_pilot_rule_proposal SET scope_json=? WHERE project_id=? AND id=?");
-  for (const row of journal.rows) { update.run(JSON.stringify(row.before), row.projectId, row.id); reverted++; }
+  for (const row of journal.rows) { updateRuleProposalScopeJson(db as never, JSON.stringify(row.before), row.projectId, row.id); reverted++; }
   return { reverted };
 }
 

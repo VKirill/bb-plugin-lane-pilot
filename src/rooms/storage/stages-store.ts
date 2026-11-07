@@ -250,6 +250,52 @@ export function stageReceiptAttemptState(db: LanePilotDatabase, runId: string, t
     .get(runId, taskId, stageId) as { state: string; attempt: number } | undefined;
 }
 
+/** A task's gate evaluations in order (the acceptance card). */
+export function listGateEventsForTask(db: LanePilotDatabase, runId: string, taskId: string): Array<{ gate: string; status: string; attempt: number; occurred_at: number }> {
+  return db.prepare("SELECT gate, status, attempt, occurred_at FROM lane_pilot_gate_event WHERE run_id=? AND task_id=? ORDER BY id").all(runId, taskId) as
+    Array<{ gate: string; status: string; attempt: number; occurred_at: number }>;
+}
+
+/** The newest touch of a stage receipt of a project, ignoring one state (the memory recurrence check). */
+export function lastStageReceiptAt(db: LanePilotDatabase, projectId: string, stageId: string, notState: string): number {
+  return ((db.prepare(`SELECT MAX(s.updated_at) AS at FROM lane_pilot_stage_receipt s JOIN lane_pilot_run r ON r.id=s.run_id
+    WHERE r.project_id=? AND s.stage_id=? AND s.state<>?`).get(projectId, stageId, notState) as { at: number | null }).at) ?? 0;
+}
+
+/** Count of stage receipts of a project in one state since a time (the memory recurrence check). */
+export function countStageReceiptsSince(db: LanePilotDatabase, projectId: string, stageId: string, state: string, sinceMs: number): number {
+  return (db.prepare(`SELECT count(*) AS n FROM lane_pilot_stage_receipt s JOIN lane_pilot_run r ON r.id=s.run_id
+    WHERE r.project_id=? AND s.stage_id=? AND s.state=? AND s.updated_at>?`).get(projectId, stageId, state, sinceMs) as { n: number }).n;
+}
+
+/** Stage events of a project since a time, optionally one task's, in insertion order (the metrics report). */
+export function listProjectStageEventsSince(db: LanePilotDatabase, input: { projectId: string; sinceMs: number; taskId?: string }): Array<{ run_id: string; task_id: string; stage_id: string; state: string; occurred_at: number }> {
+  return db.prepare(`SELECT run_id, task_id, stage_id, state, occurred_at FROM lane_pilot_stage_event
+    WHERE project_id = ? AND occurred_at >= ? ${input.taskId ? "AND task_id = ?" : ""} ORDER BY id`)
+    .all(input.projectId, input.sinceMs, ...(input.taskId ? [input.taskId] : [])) as
+    Array<{ run_id: string; task_id: string; stage_id: string; state: string; occurred_at: number }>;
+}
+
+/** Gate events of a project since a time, optionally one task's, in insertion order (the metrics report). */
+export function listProjectGateEventsSince(db: LanePilotDatabase, input: { projectId: string; sinceMs: number; taskId?: string }): Array<{ run_id: string; task_id: string; status: string; occurred_at: number }> {
+  return db.prepare(`SELECT run_id, task_id, status, occurred_at FROM lane_pilot_gate_event
+    WHERE project_id = ? AND occurred_at >= ? ${input.taskId ? "AND task_id = ?" : ""} ORDER BY id`)
+    .all(input.projectId, input.sinceMs, ...(input.taskId ? [input.taskId] : [])) as
+    Array<{ run_id: string; task_id: string; status: string; occurred_at: number }>;
+}
+
+/** provider/model of one stage receipt (the metrics report's writer card). */
+export function stageReceiptProviderModel(db: LanePilotDatabase, runId: string, taskId: string, stageId: string): { provider_id: string | null; model: string | null } | undefined {
+  return db.prepare("SELECT provider_id, model FROM lane_pilot_stage_receipt WHERE run_id = ? AND task_id = ? AND stage_id = ?")
+    .get(runId, taskId, stageId) as { provider_id: string | null; model: string | null } | undefined;
+}
+
+/** One stage receipt's state and raw result JSON (the jev CLI's plan-fact comparison). */
+export function stageReceiptStateResultJson(db: LanePilotDatabase, runId: string, taskId: string, stageId: string): { state: string; result_json: string | null } | undefined {
+  return db.prepare("SELECT state, result_json FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND stage_id=?")
+    .get(runId, taskId, stageId) as { state: string; result_json: string | null } | undefined;
+}
+
 export function latestStageResultJson(db: LanePilotDatabase, runId: string, taskId: string, stageId: string): string | null {
   return (db.prepare("SELECT result_json FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND stage_id=? ORDER BY updated_at DESC LIMIT 1")
     .get(runId, taskId, stageId) as { result_json: string | null } | undefined)?.result_json ?? null;

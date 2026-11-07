@@ -5,5 +5,5 @@ export {
   designGate, discussionGate, executionGate, issuable, lessonsNeeded, nextAction, partHash, phaseFolder, pieceProblems, planGate, planSignature, renderBook, staleAfterReturn, waveProblems,
 } from "./logic";
 export type { AcceptanceLine, BookPart, BookSection, ContextDoc, FrozenVerdict, GateResult, NextAction, Phase, PhaseRecord, PhaseStage, PhaseState, PlanItem, TaskFact } from "./logic";
-export { getPhase, listParts, listPhases } from "./store";
+export { getPhase, listParts, listPhases, listPhasePartsSince } from "./store";
 export { intakeJudgment, isMachineMessage, pathClassJudgment } from "./intake";

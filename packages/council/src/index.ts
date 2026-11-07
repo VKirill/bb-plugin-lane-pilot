@@ -25,6 +25,8 @@ export {
   getCouncilSession,
   listCouncilMessages,
   listCouncilSessions,
+  listActiveCouncilRefs,
+  listLiveCouncilIds,
   setCouncilAgenda,
   setCouncilRun,
   setCouncilState,

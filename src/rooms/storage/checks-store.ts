@@ -154,3 +154,13 @@ export function listSkillMetrics(db: LanePilotDatabase, sinceMs: number, untilMs
 export function countLanePilotTables(db: LanePilotDatabase): number {
   return (db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name LIKE 'lane_pilot_%'").get() as { n: number }).n;
 }
+
+/** One profile-check report row (the native agent's daily verdict). */
+export function saveProfileCheckReport(db: LanePilotDatabase, at: number, reportJson: string): void {
+  db.prepare("INSERT INTO lane_pilot_profile_check(at, report_json) VALUES (?, ?)").run(at, reportJson);
+}
+
+/** The last profile-check report JSON, or undefined before the first run. */
+export function latestProfileCheckReportJson(db: LanePilotDatabase): string | undefined {
+  return (db.prepare("SELECT report_json FROM lane_pilot_profile_check ORDER BY at DESC LIMIT 1").get() as { report_json: string } | undefined)?.report_json;
+}

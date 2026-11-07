@@ -120,3 +120,8 @@ export function updateClassLadder(db: WallDb, classKey: string, patch: { failedM
   if (patch.fixedIn !== undefined) { sets.push("fixed_in=?"); args.push(patch.fixedIn); }
   db.prepare(`UPDATE lane_pilot_wall_class SET ${sets.join(",")} WHERE class_key=?`).run(...args, classKey);
 }
+
+/** Whether a wall-repair row names the thread (the memory thread gate's wall half, handed over as a Services reader). */
+export function wallRepairMentionsThread(db: WallDb, threadId: string): boolean {
+  return db.prepare("SELECT 1 FROM lane_pilot_wall_repair WHERE thread_id=? LIMIT 1").get(threadId) !== undefined;
+}

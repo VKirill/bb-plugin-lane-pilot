@@ -1,5 +1,5 @@
 import { breakerKey } from "@lane-pilot/resilience";
-import { claimDailySchedule } from "../../storage";
+import { claimDailySchedule, listProviderSettingRows, listRunsWithPmThread, projectSettingValue } from "../../storage";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { SANDBOX_PROJECT_ID } from "../../contracts";
@@ -30,13 +30,13 @@ export function createCapabilities(ctx: ServerCore, services: Services) {
   const { db, bb } = ctx;
 
   async function snapshot() {
-    const rows = (db.prepare(`SELECT project_id, key, value FROM lane_pilot_project_settings WHERE binding_id='' AND (key LIKE '%.provider' OR key LIKE '%.model' OR key IN ('pmProviderId','pmModel','writerProviderId','writerModel'))`).all() as Array<{ project_id: string; key: string; value: string }>)
+    const rows = listProviderSettingRows(db)
       .map((row) => { try { return { project: row.project_id, key: row.key, value: JSON.parse(row.value) as unknown }; } catch { return { project: row.project_id, key: row.key, value: row.value as unknown }; } });
     // A provider and its model pair up within one project's settings, never across projects.
     const inUse = new Map<string, string>();
     for (const project of new Set(rows.map((row) => row.project))) for (const [provider, model] of providersInUse(rows.filter((row) => row.project === project))) if (!inUse.has(provider)) inUse.set(provider, model);
     for (const [provider, model] of Object.entries(BASE_PROVIDERS)) if (!inUse.has(provider)) inUse.set(provider, model);
-    const hostId = (db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND key='hostId'").get(SANDBOX_PROJECT_ID) as { value: string } | undefined)?.value;
+    const hostId = projectSettingValue(db, SANDBOX_PROJECT_ID, "hostId");
     const providers = rowsOf(await bb.sdk.providers.list({ hostId: hostId ? JSON.parse(hostId) as string : undefined } as never).catch(() => []), "providers");
     const plugins = rowsOf(await (bb.sdk.plugins.list() as Promise<unknown>).catch(() => []), "plugins");
     const versions = adapterVersions(providers.flatMap((row) => typeof row.id === "string" ? [{ id: row.id, pluginId: typeof row.pluginId === "string" ? row.pluginId : null }] : []),
@@ -46,7 +46,7 @@ export function createCapabilities(ctx: ServerCore, services: Services) {
 
   /** The latest sandbox run whose PM chat is still there (not archived or deleted): a helper needs a live parent. */
   async function probeRun(): Promise<string | null> {
-    const runs = db.prepare("SELECT id, pm_thread_id FROM lane_pilot_run WHERE project_id=? AND pm_thread_id IS NOT NULL ORDER BY created_at DESC LIMIT 20").all(SANDBOX_PROJECT_ID) as Array<{ id: string; pm_thread_id: string }>;
+    const runs = listRunsWithPmThread(db, SANDBOX_PROJECT_ID);
     for (const run of runs) {
       const thread = await orMiss(bb.sdk.threads.get({ threadId: run.pm_thread_id }), null, isNotFound) as { archivedAt?: unknown; deletedAt?: unknown } | null;
       if (thread && !thread.archivedAt && !thread.deletedAt) return run.id;

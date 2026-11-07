@@ -1,6 +1,8 @@
 import type Database from "better-sqlite3";
 import { taskV2Schema } from "../../contracts";
 import { attemptMetrics } from "../../usage";
+import { latestAcceptedAttemptRef, listForecastTaskRows } from "../../storage";
+import { attemptChangeJson } from "../../rollback/server";
 import { calibrate, scoreForecast, type Calibration, type ForecastFact, type ForecastScore } from "../logic";
 
 /**
@@ -16,18 +18,15 @@ const DAY_MS = 86_400_000;
 
 export function forecastReport(db: Database.Database, input: { projectId?: string | undefined; days?: number | undefined; now?: number | undefined } = {}): ForecastReport {
   const days = input.days ?? 30, now = input.now ?? Date.now(), since = now - days * DAY_MS;
-  const tasks = db.prepare(`SELECT t.id AS task_id, t.run_id, r.project_id, t.contract_json FROM lane_pilot_task t JOIN lane_pilot_run r ON r.id = t.run_id
-    WHERE t.created_at >= ? AND t.contract_json LIKE '%"forecast"%' ${input.projectId ? "AND r.project_id = ?" : ""} ORDER BY t.created_at`)
-    .all(since, ...(input.projectId ? [input.projectId] : [])) as Array<{ task_id: string; run_id: string; project_id: string; contract_json: string }>;
-  const accepted = db.prepare("SELECT id, attempt_no FROM lane_pilot_attempt WHERE run_id = ? AND task_id = ? AND state = 'accepted' ORDER BY updated_at DESC LIMIT 1");
-  const changes = db.prepare("SELECT changed_json FROM lane_pilot_attempt_change WHERE attempt_id = ?");
+  const tasks = listForecastTaskRows(db, { sinceMs: since, projectId: input.projectId });
   const scored: ForecastRow[] = [];
   let waiting = 0;
   for (const row of tasks) {
     const parsed = taskV2Schema.safeParse(JSON.parse(row.contract_json));
     if (!parsed.success || !parsed.data.forecast) continue;
-    const attempt = accepted.get(row.run_id, row.task_id) as { id: string; attempt_no: number } | undefined;
-    const changed = attempt ? changes.get(attempt.id) as { changed_json: string } | undefined : undefined;
+    const attempt = latestAcceptedAttemptRef(db, row.run_id, row.task_id);
+    const changedJson = attempt ? attemptChangeJson(db, attempt.id) : undefined;
+    const changed = changedJson === undefined ? undefined : { changed_json: changedJson };
     if (!attempt || !changed) { waiting += 1; continue; }
     const metrics = attemptMetrics(db, { projectId: row.project_id, days: days + 1, now, taskId: row.task_id }).attempts;
     const measured = metrics.filter((item) => item.tokens !== null);

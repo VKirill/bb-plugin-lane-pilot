@@ -71,3 +71,9 @@ export function appendPart(db: PhaseDb, phaseId: string, part: { section: BookSe
     return { seq, at: part.at, section: part.section, kind: part.kind, text, prevHash, hash };
   })();
 }
+
+/** A project's phase parts since a time, newest first (the cockpit feed). */
+export function listPhasePartsSince(db: PhaseDb, projectId: string, sinceMs: number): Array<{ phaseId: string; section: string; kind: string; text: string; at: number }> {
+  return db.prepare("SELECT p.phase_id AS phaseId, p.section, p.kind, p.text, p.at FROM lane_pilot_phase_part p JOIN lane_pilot_phase f ON f.id=p.phase_id WHERE f.project_id=? AND p.at>=? ORDER BY p.at DESC LIMIT 100")
+    .all(projectId, sinceMs) as Array<{ phaseId: string; section: string; kind: string; text: string; at: number }>;
+}

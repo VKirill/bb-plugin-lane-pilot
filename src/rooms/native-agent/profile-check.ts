@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { latestProfileCheckReportJson, saveProfileCheckReport } from "../storage";
 import {
   CORE_PROVIDER_GROUPS,
   ROLE_PROFILES,
@@ -149,14 +150,14 @@ export function buildProfileReport(input: { threads: readonly HelperThreadRow[];
 
 /** The verdict persisted: one row a day keeps the morning line and the history without touching the catalog. */
 export function saveProfileCheck(db: Db & { prepare: Database.Database["prepare"] }, report: ProfileReport): void {
-  db.prepare("INSERT INTO lane_pilot_profile_check(at, report_json) VALUES (?, ?)").run(report.at, JSON.stringify(report));
+  saveProfileCheckReport(db as never, report.at, JSON.stringify(report));
 }
 
 /** The last check's report, or null before the first run. */
 export function latestProfileCheck(db: Db): ProfileReport | null {
   try {
-    const row = db.prepare("SELECT report_json FROM lane_pilot_profile_check ORDER BY at DESC LIMIT 1").get() as { report_json: string } | undefined;
-    return row ? (JSON.parse(row.report_json) as ProfileReport) : null;
+    const json = latestProfileCheckReportJson(db as never);
+    return json ? (JSON.parse(json) as ProfileReport) : null;
   } catch {
     return null;
   }

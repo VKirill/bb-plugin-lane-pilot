@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { bareWorkspaceAttemptExists } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
 
 /** The environment provider Lane Pilot registers for writer attempts (H9); BB's provider ids are global. */
@@ -95,7 +96,7 @@ export function registerLaneWorktreeProvider(ctx: ServerCore): boolean {
         if (!path) return { status: "removed" };
         // A provider that failed to start its thread left an environment on the worktree that the attempt then used without
         // one (the fallback): removing the environment must not take that worktree with it.
-        if (db.prepare("SELECT 1 FROM lane_pilot_attempt WHERE workspace_path=? AND environment_id IS NULL LIMIT 1").get(path)) return { status: "removed" };
+        if (bareWorkspaceAttemptExists(db, path)) return { status: "removed" };
         if (!known.success) return { status: "failed", message: "The worktree's base folder is unknown" };
         try {
           // What the writer left is saved before the worktree goes (the sweeps do the same), also when BB retires it on its own.

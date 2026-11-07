@@ -82,7 +82,7 @@ export function score(retriever: Pick<Retriever, "id" | "production" | "group" |
   };
 }
 
-import { DEFAULT_RELEVANCE_FLOOR, type RelevanceFloor } from "@lane-pilot/memory-core";
+import { DEFAULT_RELEVANCE_FLOOR, listMemoryScopeRows, type RelevanceFloor } from "@lane-pilot/memory-core";
 export type RunOptions = { /** The floor of the query paths; `null` runs them as they were before it. */ floor?: RelevanceFloor | null; sizes?: readonly number[]; seed?: number; scope?: EvalScope; skipProjects: ReadonlySet<string>; skipTask: (taskId: string) => boolean; now?: number; migrations: readonly string[] };
 
 export async function runMemoryEval(data: EvalData, options: RunOptions): Promise<EvalReport> {
@@ -123,7 +123,7 @@ export async function runMemoryEval(data: EvalData, options: RunOptions): Promis
       };
       // M7: share of delivered notes that live in a section outside the question's chain and are not marked project-wide.
       const scopeOf = new Map<string, string[]>();
-      for (const row of db.prepare("SELECT id, scope_json FROM lane_pilot_memory").all() as Array<{ id: string; scope_json: string | null }>)
+      for (const row of listMemoryScopeRows(db))
         scopeOf.set(row.id, row.scope_json ? (JSON.parse(row.scope_json) as string[]) : []);
       const foreign = Object.fromEntries(retrievers.filter((retriever) => retriever.production).map((retriever) => [retriever.id, stat(rowsBy.get(retriever.id)!.flatMap((row) => {
         if (!row.ids.length) return [];

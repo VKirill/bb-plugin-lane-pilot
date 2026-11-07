@@ -598,3 +598,9 @@ export function projectTokenTotalsSince(db: { prepare(sql: string): { all(...arg
   return db.prepare("SELECT project_id AS projectId, SUM(total_tokens) AS tokens FROM lane_pilot_token_daily WHERE day >= ? GROUP BY project_id")
     .all(day) as Array<{ projectId: string; tokens: number }>;
 }
+
+/** Daily token rows since a day, provider/model aliased (the money spend book). */
+export function tokenDailyRowsSince(db: LanePilotDatabase, sinceDay: string): Array<{ day: string; providerId: string; model: string; inputTokens: number; outputTokens: number; cachedTokens: number }> {
+  return db.prepare("SELECT day, provider_id AS providerId, model, input_tokens AS inputTokens, output_tokens AS outputTokens, cached_tokens AS cachedTokens FROM lane_pilot_token_daily WHERE day >= ?")
+    .all(sinceDay) as Array<{ day: string; providerId: string; model: string; inputTokens: number; outputTokens: number; cachedTokens: number }>;
+}

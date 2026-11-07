@@ -421,6 +421,42 @@ export function wfStepExists(db: WfReadDb, runId: string, stepKey: string): bool
   return Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_step WHERE run_id=? AND step_key=?").get(runId, stepKey));
 }
 
+/** A run's status by its idempotency key, or null (the replay's once-a-day guard). */
+export function wfRunStatusByIdem(db: WfReadDb, idemKey: string): string | null {
+  return (db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(idemKey) as { status: string } | undefined)?.status ?? null;
+}
+
+/** A run's workflow definition JSON (the schedule executor's final-rule read). */
+export function wfRunDefinitionJson(db: WfReadDb, id: string): string | undefined {
+  return (db.prepare("SELECT definition_json FROM lane_pilot_wf_run WHERE id=?").get(id) as { definition_json?: string } | undefined)?.definition_json;
+}
+
+/** Live parentless graph runs linked to a run (the agent-switch guard). */
+export function wfLiveRunsForLink(db: WfReadDb, linkRunId: string): number {
+  return (db.prepare("SELECT count(*) AS n FROM lane_pilot_wf_run WHERE link_run_id=? AND parent_run_id IS NULL AND status IN ('running','waiting')").get(linkRunId) as { n: number }).n;
+}
+
+/** The thread an errand.spawn effect recorded for a workflow run. */
+export function wfErrandSpawnThreadId(db: WfReadDb, runId: string): string | null {
+  return (db.prepare("SELECT json_extract(result_json,'$.threadId') AS thread FROM lane_pilot_wf_effect WHERE run_id=? AND kind='errand.spawn' AND state='done'").get(runId) as { thread: string | null } | undefined)?.thread ?? null;
+}
+
+/** Whether any effect's result JSON mentions the thread (the memory thread gate). */
+export function wfEffectMentionsThread(db: WfReadDb, threadId: string): boolean {
+  return db.prepare("SELECT 1 FROM lane_pilot_wf_effect WHERE result_json LIKE '%' || ? || '%'").get(threadId) !== undefined;
+}
+
+/** Whether a night.spawn effect's result JSON mentions the thread (the silent-thread check). */
+export function wfNightSpawnMentionsThread(db: WfReadDb, threadId: string): boolean {
+  return db.prepare("SELECT 1 FROM lane_pilot_wf_effect WHERE kind='night.spawn' AND result_json LIKE '%' || ? || '%'").get(threadId) !== undefined;
+}
+
+/** Every thread the done errand.spawn effects of a workflow run recorded (the schedule cost join). */
+export function wfErrandSpawnThreadIds(db: WfReadDb, runId: string): string[] {
+  return (db.prepare("SELECT json_extract(result_json,'$.threadId') AS thread FROM lane_pilot_wf_effect WHERE run_id=? AND kind='errand.spawn' AND state='done'").all(runId) as Array<{ thread: string | null }>)
+    .map((row) => row.thread).filter((thread): thread is string => typeof thread === "string");
+}
+
 export const WF_RUN_TABLE = "lane_pilot_wf_run";
 
 export function wfRunStatusByIdemKey(db: WfReadDb, key: string): string | undefined {

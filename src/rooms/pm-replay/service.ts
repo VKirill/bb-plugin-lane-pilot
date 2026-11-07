@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
+import { wfRunStatusByIdem } from "@lane-pilot/workflow-engine";
 import { getRuleProposal, logRuleEvent, setRuleTrial } from "@lane-pilot/run-insights";
 import { adoptRuleProposal, lanePilotProjectOrNotice } from "../self-repair/server";
 import { isSandboxProjectName } from "../contracts";
@@ -269,7 +270,7 @@ export function mountPmReplay(ctx: ServerCore, services: Services): PmReplay {
     const workflow = services.workflowEngine.resolveWorkflow(PM_REPLAY_WORKFLOW);
     if (!workflow) return;
     const key = `pm-replay:${new Date().toISOString().slice(0, 10)}`;
-    if (ctx.db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(key)) return;
+    if (wfRunStatusByIdem(ctx.db, key) !== null) return;
     await engine.start({
       workflow, key, link: { projectId: "*" },
       runtime: { ctx, services, pmThreadId: null, projectId: "*", runId: null, origin: "schedule" } satisfies ChainRuntime,

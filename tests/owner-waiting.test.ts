@@ -5,6 +5,7 @@ import { openDatabase } from "../src/rooms/plugin-db";
 import { closeOwnerItem, collectOwnerWaiting, postOwnerItem } from "../src/rooms/owner-waiting";
 import { runWaitingCli } from "../src/rooms/owner-waiting/cli";
 import { ackDigest, inQuietHours, loadPushConfig, planDigest, savePushConfig } from "../src/rooms/owner-waiting/push";
+import { pendingOwnerLearningItems } from "../src/rooms/learning";
 
 const HOUR = 3_600_000;
 // 2026-10-22 09:00 in Madrid (CEST, UTC+2).
@@ -50,7 +51,7 @@ describe("the owner's waiting list", () => {
   });
 
   it("holds only what the owner's own words started: a waiting rule, a deferral and a memory conflict are the system's, not his", () => {
-    const waiting = collectOwnerWaiting(seeded(), NOW);
+    const waiting = collectOwnerWaiting(seeded(), NOW, [], undefined, pendingOwnerLearningItems);
     expect(waiting.counts).toEqual({ learning: 1 });
     expect(waiting.items.map((item) => item.key)).toEqual(["learning:i1"]);
     for (const item of waiting.items) {
@@ -99,7 +100,7 @@ describe("the Telegram digest", () => {
     expect(planDigest(db, NOW)).toMatchObject({ send: false, reason: "nothing_new" });
     postOwnerItem(db, { key: "night:a", source: "night", kind: "proposal", what: "First", why: "posted by a caller", evidence: [], actions: [] }, NOW);
     postOwnerItem(db, { key: "night:b", source: "night", kind: "proposal", what: "Second", why: "posted by a caller", evidence: [], actions: [] }, NOW);
-    const first = planDigest(db, NOW);
+    const first = planDigest(db, NOW, [], pendingOwnerLearningItems);
     expect(first).toMatchObject({ send: true, reason: null, keys: ["night:a", "night:b"] });
     expect(first.text).toContain("новых — 2");
     expect(first.text).not.toContain("Prefer short answers");
@@ -157,7 +158,7 @@ describe("the Telegram digest", () => {
 describe("bb lane-pilot waiting", () => {
   it("prints the list with action lines, and digest / ack / config / post / close work from the command line", () => {
     const db = seeded();
-    const list = runWaitingCli(db, [], NOW);
+    const list = runWaitingCli(db, [], NOW, [], pendingOwnerLearningItems);
     expect(list.exitCode).toBe(0);
     expect(list.stdout).toContain("Ждут владельца: 1. Сейчас: 1, остальное подождёт (помечено «потом»). Ничего не блокируется.");
     expect(list.stdout).toContain("Prefer short answers");

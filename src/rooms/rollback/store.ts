@@ -144,3 +144,8 @@ export function medianTaskSize(db: RollbackDb, projectId: string): TaskSizeMedia
   };
   return { files: median(files), lines: 0, minutes: minutes.length ? median(minutes) : 0, attempts: median(attempts), n: rows.length };
 }
+
+/** An attempt change's raw changed_json (the forecast report counts the files itself). */
+export function attemptChangeJson(db: RollbackDb, attemptId: string): string | undefined {
+  return (db.prepare("SELECT changed_json FROM lane_pilot_attempt_change WHERE attempt_id=?").get(attemptId) as { changed_json: string } | undefined)?.changed_json;
+}

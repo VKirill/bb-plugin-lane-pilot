@@ -218,7 +218,7 @@ type DarkDb = { prepare(sql: string): { all(...args: unknown[]): unknown[]; get(
  * migration table is watched the day it lands and a dropped one is not. */
 function schemaOf(db: DarkDb): Map<string, Set<string>> {
   const tables = new Map<string, Set<string>>();
-  const names = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'lane_pilot_%' AND name NOT LIKE 'lane_pilot_memory_fts%'").all() as Array<{ name: string }>).map((row) => row.name).sort();
+  const names = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'lane_pilot_%' AND name NOT LIKE ?").all("lane_pilot_memory_fts%") as Array<{ name: string }>).map((row) => row.name).sort();
   for (const name of names) {
     if (TABLE_SKIP_RE.test(name)) continue;
     tables.set(name, new Set((db.prepare("SELECT name FROM pragma_table_info(?)").all(name) as Array<{ name: string }>).map((row) => row.name)));

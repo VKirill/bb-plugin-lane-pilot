@@ -4,3 +4,4 @@ export { createRollback } from "./rollback";
 export type { RollbackApi, RollbackItem, RollbackResult, RollbackTarget } from "./rollback";
 export { rollbackRpc } from "./rpc";
 export { mergedAttemptChanges, acceptedChangeProofRows, medianTaskSize } from "../store";
+export { attemptChangeJson } from "../store";

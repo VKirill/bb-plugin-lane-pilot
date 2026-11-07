@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { DRILL_SANDBOX_PROJECT_IDS } from "../contracts";
 import { countTermedDeferrals } from "../deferral/server";
+import { listFailedAttemptsSince } from "../storage";
 
 /**
  * «Waiting for the owner» (SMA D0-3). Since 2026-10-22 the owner takes no part in the loop: rules go on trial by themselves, a deferral
@@ -92,10 +93,14 @@ export const tableExists = (db: Db, name: string): boolean => Boolean(db.prepare
 const parse = <T>(text: string | null | undefined, fallback: T): T => { try { return text ? JSON.parse(text) as T : fallback; } catch { return fallback; } };
 export const rpcLine = (method: string, input: Record<string, unknown>) => `echo '${JSON.stringify(input)}' > /tmp/owner-action.json && bb plugin rpc call lane-pilot ${method} --input-file /tmp/owner-action.json --json`;
 
-function learningItems(db: Db): OwnerItem[] {
+/** One pending_owner learning item row, as the learning room's reader returns it. */
+export type PendingLearningItem = { id: string; project_id: string; kind: string; text: string; evidence: string; created_at: number };
+/** The learning room's half of the morning list, handed over through Services: learning already imports this room. */
+export type LearningItemsReader = (db: Db) => PendingLearningItem[];
+
+function learningItems(db: Db, reader?: LearningItemsReader): OwnerItem[] {
   if (!tableExists(db, "lane_pilot_learning_item")) return [];
-  const rows = db.prepare("SELECT id, project_id, kind, text, evidence, created_at FROM lane_pilot_learning_item WHERE state='pending_owner' ORDER BY created_at DESC").all() as
-    Array<{ id: string; project_id: string; kind: string; text: string; evidence: string; created_at: number }>;
+  const rows = reader?.(db) ?? [];
   return rows.map((row) => ({
     key: `learning:${row.id}`, source: "learning", kind: `learning_${row.kind}`, projectId: row.project_id,
     what: clip(row.text, 300), why: "Вы сказали это в чате. Если принять, все проекты будут так делать; если отклонить, это забудется. Решить можете только вы.",
@@ -227,7 +232,7 @@ export function sweepOwnerItems(db: Db, now: number = Date.now(), sweeps: readon
 export function overnight(db: Db, now: number = Date.now(), windowMs: number = OVERNIGHT_WINDOW_MS): Overnight {
   const since = now - windowMs;
   const count = (sql: string, ...params: unknown[]) => (db.prepare(sql).get(...params) as { n: number }).n;
-  const red = (db.prepare("SELECT state, id FROM lane_pilot_attempt WHERE updated_at>=? AND (state LIKE '%failed%' OR state IN ('blocked','provider_error')) ORDER BY state, updated_at DESC").all(since) as Array<{ state: string; id: string }>)
+  const red = listFailedAttemptsSince(db as Database.Database, since)
     .reduce<Overnight["red"]>((groups, row) => {
       const group = groups.find((item) => item.state === row.state) ?? groups[groups.push({ state: row.state, count: 0, attempts: [] }) - 1]!;
       group.count += 1;
@@ -242,9 +247,9 @@ export function overnight(db: Db, now: number = Date.now(), windowMs: number = O
   };
 }
 
-export function collectOwnerWaiting(db: Db, now: number = Date.now(), sweeps: readonly OwnerItemSweep[] = [], windowMs: number = OVERNIGHT_WINDOW_MS): OwnerWaiting {
+export function collectOwnerWaiting(db: Db, now: number = Date.now(), sweeps: readonly OwnerItemSweep[] = [], windowMs: number = OVERNIGHT_WINDOW_MS, learningReader?: LearningItemsReader): OwnerWaiting {
   sweepOwnerItems(db, now, sweeps);
-  const items = [...learningItems(db), ...inbox(db)];
+  const items = [...learningItems(db, learningReader), ...inbox(db)];
   const rank = (item: OwnerItem) => { const at = SOURCE_ORDER.indexOf(item.source); return at < 0 ? SOURCE_ORDER.indexOf("night") : at; };
   // The cost of putting a row off first, a row that would push before one that would not, then the sources' order and age; the first NOW_CAP are «now».
   items.sort((a, b) => REASON_RANK[callReason(a.kind)] - REASON_RANK[callReason(b.kind)] || Number(b.wake) - Number(a.wake) || rank(a) - rank(b) || a.since - b.since || a.key.localeCompare(b.key));

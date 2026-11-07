@@ -1,9 +1,9 @@
-import { getRun } from "../../storage";
+import { getRun, listRunCloseRows, listTaskLatestAttemptStates } from "../../storage";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { closeOwnerItem, postOwnerItem, tableExists, type OwnerItemSweep } from "../../owner-waiting";
-import { goalFailedText, goalVerdict, runReady, type TaskState } from "../logic";
-import { getRunGoal, saveRunGoal, type RunGoalRecord } from "../store";
+import { goalFailedText, goalVerdict, runReady, type GoalVerdict, type TaskState } from "../logic";
+import { getRunGoal, listRunGoalRows, saveRunGoal, type RunGoalRecord } from "../store";
 
 import type { RegressionApi } from "../../baseline/server/regress";
 
@@ -29,7 +29,7 @@ export const runGoalItemKey = (runId: string) => `${RUN_GOAL_ITEM_PREFIX}${runId
 /** The run is closed (a later green verdict closes it in check()): the goal's row goes. */
 export const runGoalSweep: OwnerItemSweep = (db, item) => {
   if (!item.key.startsWith(RUN_GOAL_ITEM_PREFIX) || !tableExists(db, "lane_pilot_run")) return null;
-  const run = db.prepare("SELECT closed_at FROM lane_pilot_run WHERE id=?").get(item.key.slice(RUN_GOAL_ITEM_PREFIX.length)) as { closed_at: number | null } | undefined;
+  const run = getRun(db as never, item.key.slice(RUN_GOAL_ITEM_PREFIX.length));
   return !run || run.closed_at !== null ? "janitor:run closed" : null;
 };
 
@@ -37,8 +37,7 @@ export function createRunGoal(ctx: ServerCore, services: Services) {
   const { db, bb } = ctx;
 
   function taskStates(runId: string): TaskState[] {
-    return (db.prepare(`SELECT t.id AS task_id, (SELECT a.state FROM lane_pilot_attempt a WHERE a.run_id=t.run_id AND a.task_id=t.id ORDER BY a.attempt_no DESC, a.updated_at DESC LIMIT 1) AS state
-      FROM lane_pilot_task t WHERE t.run_id=?`).all(runId) as Array<{ task_id: string; state: string | null }>).map((row) => ({ taskId: row.task_id, state: row.state ?? "queued" }));
+    return listTaskLatestAttemptStates(db, runId).map((row) => ({ taskId: row.task_id, state: row.state ?? "queued" }));
   }
 
   async function check(runId: string): Promise<RunGoalRecord> {
@@ -67,11 +66,16 @@ export function createRunGoal(ctx: ServerCore, services: Services) {
     // A run without a record is checked once. A `skipped` record whose failure_code is our own failure note means the check
     // itself could not run (a crashed regression call): it is retried on the next sweep. A `skipped` verdict of the goal logic
     // ("nothing to check") is final and is not retried.
-    const runs = db.prepare(`SELECT r.id FROM lane_pilot_run r WHERE r.updated_at >= ?
-      AND NOT EXISTS (SELECT 1 FROM lane_pilot_run_goal g WHERE g.run_id = r.id AND NOT (g.state = 'skipped' AND COALESCE(g.failure_code, '') = ?)
-        AND NOT (g.state = 'failed' AND r.closed_at IS NULL AND EXISTS (SELECT 1 FROM lane_pilot_run r2 WHERE r2.project_id = r.project_id AND r2.id <> r.id AND r2.closed_at IS NOT NULL AND r2.closed_at > g.at)))
-      ORDER BY r.updated_at`)
-      .all(now - WEEK, "check_failed") as Array<{ id: string }>;
+    const runRows = listRunCloseRows(db);
+    const goalsByRun = new Map<string, ReturnType<typeof listRunGoalRows>>();
+    for (const goal of listRunGoalRows(db)) goalsByRun.set(goal.run_id, [...(goalsByRun.get(goal.run_id) ?? []), goal]);
+    const settled = (goal: { state: GoalVerdict["state"]; failure_code: string | null; at: number }, run: { project_id: string; closed_at: number | null; id: string }) =>
+      (goal.state === "skipped" && (goal.failure_code ?? "") === "check_failed")
+      || (goal.state === "failed" && run.closed_at === null
+        && runRows.some((other) => other.project_id === run.project_id && other.id !== run.id && other.closed_at !== null && other.closed_at > goal.at));
+    const runs = runRows
+      .filter((run) => run.updated_at >= now - WEEK && !(goalsByRun.get(run.id) ?? []).some((goal) => !settled(goal, run)))
+      .map((run) => ({ id: run.id }));
     const out: RunGoalRecord[] = [];
     for (const { id } of runs) {
       if (signal?.aborted || ctx.isDisposed()) break;

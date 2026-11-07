@@ -1,4 +1,4 @@
-import { estimateTokens, memoryContext, searchMemoryRecords, storeMemoryRecords, type MemoryAudience, type MemoryCandidate, type MemoryKind, type MemoryTrust } from "@lane-pilot/memory-core";
+import { countActiveMemoryByContent, estimateTokens, memoryContext, memoryTrustOf, searchMemoryRecords, storeMemoryRecords, type MemoryAudience, type MemoryCandidate, type MemoryKind, type MemoryTrust } from "@lane-pilot/memory-core";
 import type { LanePilotDatabase } from "../../storage";
 import { mixWriterMemory } from "../../memory/server";
 
@@ -56,12 +56,12 @@ export function runMemoryGate(db: LanePilotDatabase, fixture: MemoryGate): GateR
     catch (cause) { report.errors.push(`${item.id} ${cause instanceof Error ? cause.message : String(cause)}`); continue; }
     if (item.activeCount) {
       const row = ids.get(item.activeCount.key);
-      const count = row ? (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_memory WHERE project_id=? AND status='active' AND content=?").get(item.projectId ?? "P", row.content) as { n: number }).n : -1;
+      const count = row ? countActiveMemoryByContent(db, item.projectId ?? "P", row.content) : -1;
       if (count !== item.activeCount.count) report.errors.push(`${item.id} active ${count}`);
     }
     if (item.trustStays) {
       const row = ids.get(item.trustStays.key);
-      const trust = row ? (db.prepare("SELECT trust FROM lane_pilot_memory WHERE id=?").get(row.id) as { trust: string } | undefined)?.trust : "";
+      const trust = row ? memoryTrustOf(db, row.id) ?? "" : "";
       if (trust !== item.trustStays.trust) report.errors.push(`${item.id} trust ${trust}`);
     }
     const projectId = item.projectId ?? "P";

@@ -3,3 +3,4 @@ export { WALL_USAGE, runWallCli } from "./cli";
 export { createPluginWall } from "./wall";
 export { wallRpc } from "./rpc";
 export type { WallApi } from "../service";
+export { wallRepairMentionsThread } from "../store";

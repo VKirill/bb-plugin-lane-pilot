@@ -221,6 +221,41 @@ export function openIntakeAttemptRows(db: LanePilotDatabase, runId: string, open
     .all(runId, ...openStates) as Array<{ attempt_id: string; contract_json: string }>;
 }
 
+/** A run's tasks with their newest attempt's state (the run-goal board). */
+export function listTaskLatestAttemptStates(db: LanePilotDatabase, runId: string): Array<{ task_id: string; state: string | null }> {
+  return db.prepare(`SELECT t.id AS task_id, (SELECT a.state FROM lane_pilot_attempt a WHERE a.run_id=t.run_id AND a.task_id=t.id ORDER BY a.attempt_no DESC, a.updated_at DESC LIMIT 1) AS state
+    FROM lane_pilot_task t WHERE t.run_id=?`).all(runId) as Array<{ task_id: string; state: string | null }>;
+}
+
+/** A project's task rows joined to their run for the tier episode shortlist; `scopeFilter` is the caller's scope clause on `r.settings_scopes_json`. */
+export function listProjectEpisodeTaskRows(db: LanePilotDatabase, projectId: string, scopeFilter: string): Array<{ task_id: string; contract_json: string; created_at: number; state: string | null; reason: string | null }> {
+  return db.prepare(`SELECT t.id AS task_id, t.contract_json, t.created_at,
+      (SELECT a.state FROM lane_pilot_attempt a WHERE a.run_id=t.run_id AND a.task_id=t.id ORDER BY a.attempt_no DESC, a.updated_at DESC LIMIT 1) AS state,
+      (SELECT a.reason FROM lane_pilot_attempt a WHERE a.run_id=t.run_id AND a.task_id=t.id ORDER BY a.attempt_no DESC, a.updated_at DESC LIMIT 1) AS reason
+    FROM lane_pilot_task t JOIN lane_pilot_run r ON r.id=t.run_id
+    WHERE r.project_id=? AND (r.settings_scopes_json IS NULL OR r.settings_scopes_json='' OR ${scopeFilter})
+    ORDER BY t.created_at DESC LIMIT 400`).all(projectId) as
+    Array<{ task_id: string; contract_json: string; created_at: number; state: string | null; reason: string | null }>;
+}
+
+/** Tasks with forecast contracts created since a time, optionally one project's (the forecast report). */
+export function listForecastTaskRows(db: LanePilotDatabase, input: { sinceMs: number; projectId?: string }): Array<{ task_id: string; run_id: string; project_id: string; contract_json: string }> {
+  return db.prepare(`SELECT t.id AS task_id, t.run_id, r.project_id, t.contract_json FROM lane_pilot_task t JOIN lane_pilot_run r ON r.id = t.run_id
+    WHERE t.created_at >= ? AND t.contract_json LIKE '%"forecast"%' ${input.projectId ? "AND r.project_id = ?" : ""} ORDER BY t.created_at`)
+    .all(input.sinceMs, ...(input.projectId ? [input.projectId] : [])) as
+    Array<{ task_id: string; run_id: string; project_id: string; contract_json: string }>;
+}
+
+/** The latest task creation that touched docs/ in its contract or an execution packet, inside a writer workspace (docs nightly). */
+export function latestDocsTaskAt(db: LanePilotDatabase, input: { root: string; hostId: string }): number | null {
+  const row = db.prepare(`SELECT max(t.created_at) AS at FROM lane_pilot_task t JOIN lane_pilot_run r ON r.id=t.run_id
+    LEFT JOIN lane_pilot_attempt a ON a.task_id=t.id LEFT JOIN lane_pilot_attempt_reasoning x ON x.attempt_id=a.id
+    WHERE (r.writer_workspace_path=? OR r.writer_workspace_path LIKE ?) AND (r.writer_host_id IS NULL OR r.writer_host_id=?)
+      AND (json_extract(t.contract_json,'$.read_first') LIKE '%docs/%' OR json_extract(x.trace_json,'$.dispatchContext.executionPacket') LIKE '%docs/%')`)
+    .get(input.root, `${input.root}/%`, input.hostId) as { at: number | null } | undefined;
+  return row?.at ?? null;
+}
+
 export function hasTask(db: LanePilotDatabase, id: string): boolean {
   return Boolean(db.prepare("SELECT 1 FROM lane_pilot_task WHERE id = ? LIMIT 1").get(id));
 }

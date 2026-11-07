@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import {
+  claimRunPlacement,
   createRun,
   findOpenNativeRun,
   getRun,
@@ -147,12 +148,7 @@ export function finalizeNativeLaneBinding(input: {
     }
     return true;
   }
-  const result = input.db.prepare(`UPDATE lane_pilot_run
-    SET writer_host_id=?, writer_workspace_path=?, writer_environment_id=?, updated_at=?
-    WHERE id=? AND writer_host_id IS NULL AND writer_workspace_path IS NULL AND writer_environment_id IS NULL
-      AND state IN ('pending','running')`)
-    .run(input.hostId, input.workspacePath, input.environmentId, Date.now(), input.runId);
-  return result.changes === 1;
+  return claimRunPlacement(input.db, { hostId: input.hostId, workspacePath: input.workspacePath, environmentId: input.environmentId, runId: input.runId });
 }
 
 export function nativeRunReady(db: LanePilotDatabase, runId: string): boolean {

@@ -7,6 +7,8 @@ import { tokenDailySeries, tokenDailyTotal } from "../usage/server";
 import { readTaskApproach } from "../tasks";
 import { designJournalLines, readinessWords, trainedConditions, trainingRatios } from "../design-eval";
 import { runOnHost } from "@lane-pilot/host-calls";
+import { listPhasePartsSince } from "../phase";
+import { activeMemoryDigestRows } from "@lane-pilot/memory-core";
 
 import type { FrontApi } from "../front/server/index";
 
@@ -36,7 +38,7 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
       const since = Date.now() - DAY_MS;
       const rows = listAttemptRowsForProject(db, { projectId, updatedSince: since, limit: 300 });
       const tokens = tokenDailyTotal(db, projectId, new Date().toISOString().slice(0, 10));
-      const parts = db.prepare("SELECT p.phase_id AS phaseId, p.section, p.kind, p.text, p.at FROM lane_pilot_phase_part p JOIN lane_pilot_phase f ON f.id=p.phase_id WHERE f.project_id=? AND p.at>=? ORDER BY p.at DESC LIMIT 100").all(projectId, since) as Array<Record<string, unknown>>;
+      const parts = listPhasePartsSince(db, projectId, since);
       const actions = (await services.front.actions(200)).filter((row) => (row as { at: number }).at >= since);
       return {
         kpi: { accepted: rows.filter((row) => row.state === "accepted").length, blocked: rows.filter((row) => row.state === "blocked").length, running: rows.filter((row) => row.state === "running").length, tokens, actions: actions.length },
@@ -61,7 +63,7 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
     cockpit_memory: async ({ runId, action }: { runId: string; action: "lint" | "index" | "tags" | "consolidate" }) => {
       const run = getRun(db, runId);
       if (!run) throw new Error(`run ${runId} has no checkout`);
-      const rows = db.prepare("SELECT kind, content, concepts_json FROM lane_pilot_memory WHERE project_id=? AND status='active' ORDER BY accepted_count DESC, created_at DESC LIMIT 80").all(run.project_id) as Array<{ kind: string; content: string; concepts_json: string }>;
+      const rows = activeMemoryDigestRows(db, run.project_id);
       if (action === "tags") {
         const counts = new Map<string, number>();
         for (const row of rows) for (const tag of JSON.parse(row.concepts_json || "[]") as string[]) counts.set(tag, (counts.get(tag) ?? 0) + 1);

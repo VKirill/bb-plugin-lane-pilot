@@ -53,7 +53,7 @@ import { createBacklog, mountBacklog } from "./src/rooms/backlog/server";
 import { createHypotheses } from "./src/rooms/hypotheses/server";
 import { createOwnerPresence, mountOwnerPresence } from "./src/rooms/owner-presence/server";
 import { mountOutage } from "./src/rooms/outage/server";
-import { createPluginWall } from "./src/rooms/wall/server";
+import { createPluginWall, wallRepairMentionsThread } from "./src/rooms/wall/server";
 import { buildCliInvocation, skillSwitchMorningLine } from "./src/rooms/writer";
 import { argvValidationMap } from "./src/rooms/settings";
 import { createPluginCheckers } from "./src/rooms/checkers/server";
@@ -72,7 +72,7 @@ import { onAttemptFinished, createWriterQuestionTimeout, DEFAULT_SILENCE_NUDGE_M
 import { threadPendingInteractions } from "./src/rooms/relay/server";
 import { createStageChildren, mountErrands } from "./src/rooms/qa/server";
 import { createDocsStage } from "./src/rooms/docs/server";
-import { createMemoryStage, mountMemoryEmbeddings, mountThreadBlock } from "./src/rooms/memory/server";
+import { createMemoryStage, mountMemoryEmbeddings, mountThreadBlock, type WallThreadReader } from "./src/rooms/memory/server";
 import { createNightStages } from "./src/rooms/night/server";
 import { createProjectLifeStage } from "./src/rooms/project-life/server";
 import { createQaStages } from "./src/rooms/qa/server";
@@ -93,7 +93,8 @@ import { createWorkflowTriggersService } from "./src/rooms/workflow/server";
 import { createScheduleService, registerAgentRoutineActions, scheduleAgentApi } from "./src/rooms/schedule/server";
 import { registerSpecialistActions } from "./src/rooms/critique/server";
 import { knownOwnerLocale, relayFor } from "./src/rooms/relay/server";
-import { mountLearning } from "./src/rooms/learning";
+import { mountLearning, pendingOwnerLearningItems } from "./src/rooms/learning";
+import type { LearningItemsReader } from "./src/rooms/owner-waiting";
 import { memorySettingsFor } from "./src/rooms/memory/server";
 import type { MemorySettings } from "@lane-pilot/memory-core";
 import { installThreadSignals } from "@lane-pilot/thread-observe";
@@ -259,6 +260,10 @@ export interface Services {
   memoryProbe: MemoryProbeApi;
   /** Memory notes that disagree: held out of every brief until a person settles them (src/rooms/memory/server/memory-conflicts.ts). */
   memoryConflicts: MemoryConflictsApi;
+  /** The wall room's repair-mention read for the memory thread block; memory cannot import wall (src/rooms/wall). */
+  wallThreadReader: WallThreadReader;
+  /** The learning room's pending_owner read for the owner's waiting list; learning already imports owner-waiting (src/rooms/learning). */
+  ownerLearningItems: LearningItemsReader;
   startWriterTask: WriterStartApi["startWriterTask"];
   stability: StabilityApi;
   validateWriterResult: WriterVerifyApi["validateWriterResult"];
@@ -333,8 +338,10 @@ export default async function plugin(bb: BbPluginApi) {
     errandEpisodes: { recordErrandEpisode, errandSpawnOf },
     scheduleAgents: scheduleAgentApi(),
     memoryEval: { load: loadEvalData, run: runMemoryEval },
+    wallThreadReader: wallRepairMentionsThread,
+    ownerLearningItems: pendingOwnerLearningItems,
     onAttemptFinished,
-  } satisfies Pick<Services, "skillSwitchMorningLine" | "buildCliInvocation" | "taskWords" | "laneProject" | "leadRoad" | "insights" | "memorySettings" | "errandEpisodes" | "scheduleAgents" | "memoryEval" | "onAttemptFinished">);
+  } satisfies Pick<Services, "skillSwitchMorningLine" | "buildCliInvocation" | "taskWords" | "laneProject" | "leadRoad" | "insights" | "memorySettings" | "errandEpisodes" | "scheduleAgents" | "memoryEval" | "wallThreadReader" | "ownerLearningItems" | "onAttemptFinished">);
   mountNativeWiring(ctx);
   services.tokenCursorRow = tokenCursorRow;
   Object.assign(
@@ -453,7 +460,7 @@ export default async function plugin(bb: BbPluginApi) {
   // A gap in the heartbeat longer than 5 minutes is an outage on record; then one beat a minute.
   await mountOutage(ctx).catch((cause: unknown) => bb.log.warn(`Lane Pilot: outage record skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
   // Every ordinary thread of a project gets the L1 memory showcase (M2); PM and plugin threads are left out inside.
-  mountThreadBlock(ctx);
+  mountThreadBlock(ctx, services.wallThreadReader);
   mountMemoryEmbeddings(ctx);
   registerPhaseTool(ctx, services);
   registerQueueTool(ctx, services.taskWords);

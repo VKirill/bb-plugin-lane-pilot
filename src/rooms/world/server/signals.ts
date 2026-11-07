@@ -1,5 +1,6 @@
 import { targetForPercent, type LanePilotSignal } from "@lane-pilot/world-sim";
 import { getTask, listOpenAttempts, listStageReceipts, type LanePilotDatabase } from "../../storage";
+import { listActiveCouncilRefs } from "@lane-pilot/council";
 
 /**
  * Lane Pilot's own run data turned into world signals. Nothing here talks to the world: `poll` reads the plugin database
@@ -54,7 +55,7 @@ export function deriveAttemptSignals(row: Row, receipts: readonly Receipt[], now
 
 /** Councils in progress across projects that changed since `since` (the table belongs to @lane-pilot/council). */
 function activeCouncils(db: LanePilotDatabase, since: number): Array<{ id: string; projectId: string; seats: number }> {
-  const rows = db.prepare("SELECT id, project_id, seats_json FROM lane_pilot_council WHERE state IN ('agenda','discussion','synthesis') AND updated_at>? ORDER BY created_at").all(since) as Array<{ id: string; project_id: string; seats_json: string }>;
+  const rows = listActiveCouncilRefs(db, since);
   return rows.map((row) => ({ id: row.id, projectId: row.project_id, seats: (JSON.parse(row.seats_json) as unknown[]).length }));
 }
 

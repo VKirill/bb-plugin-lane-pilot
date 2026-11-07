@@ -20,3 +20,9 @@ export function getRunGoal(db: Db, runId: string): RunGoalRecord | null {
     { run_id: string; project_id: string; state: GoalVerdict["state"]; tasks: number; head_sha: string | null; red_json: string; detail: string | null; failure_code: string | null; at: number; planned: number; ran: number; skipped_checks: number } | undefined;
   return row ? { runId: row.run_id, projectId: row.project_id, state: row.state, tasks: row.tasks, headSha: row.head_sha, red: JSON.parse(row.red_json) as RedCheck[], detail: row.detail, failureCode: row.failure_code as FailureCode | null, at: row.at, coverage: { planned: row.planned, ran: row.ran, skipped: row.skipped_checks } } : null;
 }
+
+/** The scan columns of every run-goal row (the sweep's anti-join, read in JS). */
+export function listRunGoalRows(db: Db): Array<{ run_id: string; state: GoalVerdict["state"]; failure_code: string | null; at: number }> {
+  return db.prepare("SELECT run_id, state, failure_code, at FROM lane_pilot_run_goal").all() as
+    Array<{ run_id: string; state: GoalVerdict["state"]; failure_code: string | null; at: number }>;
+}

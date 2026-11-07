@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import {
-  memoryUsefulness, recordMemoryAccepted, recordMemoryMixed, searchMemoryRecords, storeMemoryRecords, trigramReady,
+  countActiveNotes, listActiveNoteIds, memoryUsefulness, recordMemoryAccepted, recordMemoryMixed, searchMemoryRecords, storeMemoryRecords, trigramReady,
   type MemoryCandidate, type MemoryRecord,
 } from "@lane-pilot/memory-core";
 import { pathAnchors } from "../../memory/server";
@@ -79,16 +79,16 @@ export async function replayShelf(data: EvalData, config: ShelfConfig, skip: { p
       }
       const { question, gold } = event.asked!;
       const goldIds = new Set(gold.map((note) => note.id));
-      const live = db.prepare("SELECT id FROM lane_pilot_memory WHERE project_id=? AND status='active' AND kind='note'").all(question.projectId) as Array<{ id: string }>;
+      const live = listActiveNoteIds(db, question.projectId);
       const found = searchMemoryRecords(db, question.projectId, queryOf(question.task), 100, "auto", "subagent", "");
       const picked = pickThree(found, pathAnchors(question.task), config.order).map((note) => note.id);
       questions += 1;
-      if (live.some((row) => goldIds.has(row.id))) onShelf += 1;
+      if (live.some((id) => goldIds.has(id))) onShelf += 1;
       if (picked.some((id) => goldIds.has(id))) hits += 1;
       recordMemoryMixed(db, question.projectId, picked, question.startedAt);
       recordMemoryAccepted(db, question.projectId, picked);
     }
-    const active = (db.prepare("SELECT count(*) n FROM lane_pilot_memory WHERE status='active' AND kind='note'").get() as { n: number }).n;
+    const active = countActiveNotes(db);
     return { name: config.name, questions, goldOnShelf: questions ? onShelf / questions : 0, hit3: questions ? hits / questions : 0, written, evicted, activeNotes: active };
   } finally { db.close(); }
 }

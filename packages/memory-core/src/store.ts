@@ -296,9 +296,9 @@ export function scopeValuesFor(chain: readonly string[]): string[] {
 }
 
 /** M7: a project whose runs or records already use section chains is an umbrella; `memory.project_kind` overrides. */
-export function projectUsesSections(db: MemoryDatabase, projectId: string): boolean {
+export function projectUsesSections(db: MemoryDatabase, projectId: string, hasScopedRun: (db: MemoryDatabase, projectId: string) => boolean): boolean {
   // Runs are the signal, not stored rows: one scoped note must not flip the project's kind.
-  try { return Boolean(db.prepare("SELECT 1 FROM lane_pilot_run WHERE project_id=? AND settings_scopes_json LIKE '%section:%' LIMIT 1").get(projectId)); } catch { return false; }
+  try { return hasScopedRun(db, projectId); } catch { return false; }
 }
 const sqlString = (value: string) => `'${value.replace(/'/g, "''")}'`;
 
@@ -441,4 +441,134 @@ export function listActiveMemoryRows(db: Database.Database, projectId: string, l
 /** A record's concepts_json (the delete guard reads it for the rule tag). */
 export function memoryConceptsJson(db: Database.Database, projectId: string, id: string): string | null {
   return (db.prepare("SELECT concepts_json FROM lane_pilot_memory WHERE project_id=? AND id=?").get(projectId, id) as { concepts_json: string } | undefined)?.concepts_json ?? null;
+}
+
+/* --- tier / eval / probe readers -------------------------------------------------
+ * Rooms that rank, seed and probe memory cannot all import each other; the table's
+ * engine lives in this package, so the SQL they share sits here. */
+
+/** Idle-expired note rows for one project's cold-tier read (memory-tiers). */
+const COLD_TIER = "status='expired' AND kind='note' AND valid_until IS NULL AND superseded_by IS NULL AND (expired_reason='idle' OR expired_reason IS NULL)";
+
+export function coldMemoryRows(db: MemoryDatabase, input: { projectId: string; audience: MemoryAudience; personalBot: string; chain: readonly string[]; includeObserved: boolean; now: number }): Array<{ id: string; content: string; concepts_json: string }> {
+  const trust = input.includeObserved ? "" : ` AND (trust='confirmed' OR created_at<=${Math.floor(input.now) - OBSERVED_QUARANTINE_MS})`;
+  return db.prepare(`SELECT id, content, concepts_json FROM lane_pilot_memory WHERE project_id=? AND audience=? AND personal_bot=? AND ${COLD_TIER} AND scope_json IN (${scopeValuesFor(input.chain).map(sqlString).join(",")})${trust}${heldClause(db, "lane_pilot_memory")}`)
+    .all(input.projectId, input.audience, input.personalBot) as Array<{ id: string; content: string; concepts_json: string }>;
+}
+
+/** Re-activates one cold-tier note; true when the row was still cold. */
+export function reactivateColdMemory(db: MemoryDatabase, projectId: string, id: string, now: number): boolean {
+  return db.prepare(`UPDATE lane_pilot_memory SET status='active', last_used_at=? WHERE project_id=? AND id=? AND ${COLD_TIER}`).run(now, projectId, id).changes === 1;
+}
+
+/** The promotion row a re-activation leaves (memory-tiers). */
+export function recordMemoryPromotion(db: MemoryDatabase, projectId: string, memoryId: string, query: string, now: number): void {
+  db.prepare("INSERT OR IGNORE INTO lane_pilot_memory_promotion(project_id,memory_id,query,at) VALUES (?,?,?,?)").run(projectId, memoryId, query.slice(0, 500), now);
+}
+
+/** Notes a promotion re-activated that stayed idle past the window (the demote sweep). */
+export function listIdlePromotions(db: MemoryDatabase, beforeMs: number): string[] {
+  return (db.prepare(`SELECT m.id FROM lane_pilot_memory m JOIN lane_pilot_memory_promotion p ON p.memory_id=m.id AND p.project_id=m.project_id
+    WHERE m.status='active' AND m.last_used_at=p.at AND p.at<?`).all(beforeMs) as Array<{ id: string }>).map((row) => row.id);
+}
+
+/** Expires a still-active note as idle (the demote sweep's write). */
+export function expireIdleMemory(db: MemoryDatabase, id: string): void {
+  db.prepare("UPDATE lane_pilot_memory SET status='expired', expired_reason='idle' WHERE id=? AND status='active'").run(id);
+}
+
+/** One recorded miss (a query that found nothing). */
+export function recordMemoryMiss(db: MemoryDatabase, projectId: string, query: string, now: number): void {
+  db.prepare("INSERT INTO lane_pilot_memory_miss(project_id,query,at) VALUES (?,?,?)").run(projectId, query.slice(0, 1000), now);
+}
+
+/** Cold-tier size, optionally one project (the tier report). */
+export function countColdMemories(db: MemoryDatabase, projectId?: string): number {
+  return (db.prepare(`SELECT count(*) AS n FROM lane_pilot_memory WHERE ${COLD_TIER} ${projectId ? "AND project_id=?" : ""}`).get(...(projectId ? [projectId] : [])) as { n: number }).n;
+}
+
+/** Distinct promoted notes, optionally one project (the tier report). */
+export function countMemoryPromotions(db: MemoryDatabase, projectId?: string): number {
+  return (db.prepare(`SELECT count(DISTINCT project_id||memory_id) AS n FROM lane_pilot_memory_promotion WHERE 1=1 ${projectId ? "AND project_id=?" : ""}`).get(...(projectId ? [projectId] : [])) as { n: number }).n;
+}
+
+/** Latest misses since a time, newest first (the tier report pages at 50; the self-improve curriculum reads the whole window). */
+export function listMemoryMisses(db: Pick<Database.Database, "prepare">, sinceMs: number, projectId?: string, limit = 50): Array<{ projectId: string; query: string; at: number }> {
+  const args: unknown[] = [sinceMs];
+  let sql = "SELECT project_id AS projectId, query, at FROM lane_pilot_memory_miss WHERE at>=?";
+  if (projectId) { sql += " AND project_id=?"; args.push(projectId); }
+  sql += " ORDER BY at DESC LIMIT ?";
+  args.push(limit);
+  return db.prepare(sql).all(...args) as Array<{ projectId: string; query: string; at: number }>;
+}
+
+/** One memory row written the way the eval corpus seeds it (direct INSERT, no write-door side effects). */
+export function insertMemoryRecord(db: MemoryDatabase, input: { id: string; projectId: string; kind: string; content: string; conceptsJson: string; sourceSha256: string; createdAt: number; origin: string }): void {
+  db.prepare(`INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at,trust,origin)
+    VALUES(?,?,'',?,'subagent',?,?,?,?,'confirmed',?)`)
+    .run(input.id, input.projectId, input.kind, input.content, input.conceptsJson, input.sourceSha256, input.createdAt, input.origin);
+}
+
+/** Active notes with exactly this content in a project (the eval gate's duplicate check). */
+export function countActiveMemoryByContent(db: MemoryDatabase, projectId: string, content: string): number {
+  return (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_memory WHERE project_id=? AND status='active' AND content=?").get(projectId, content) as { n: number }).n;
+}
+
+/** A record's trust (the eval gate). */
+export function memoryTrustOf(db: MemoryDatabase, id: string): string | undefined {
+  return (db.prepare("SELECT trust FROM lane_pilot_memory WHERE id=?").get(id) as { trust: string } | undefined)?.trust;
+}
+
+/** id/scope_json of every record (the eval's scope audit). */
+export function listMemoryScopeRows(db: MemoryDatabase): Array<{ id: string; scope_json: string | null }> {
+  return db.prepare("SELECT id, scope_json FROM lane_pilot_memory").all() as Array<{ id: string; scope_json: string | null }>;
+}
+
+/** Active note ids of a project (the eval shelf). */
+export function listActiveNoteIds(db: MemoryDatabase, projectId: string): string[] {
+  return (db.prepare("SELECT id FROM lane_pilot_memory WHERE project_id=? AND status='active' AND kind='note'").all(projectId) as Array<{ id: string }>).map((row) => row.id);
+}
+
+/** Active note count overall (the eval shelf). */
+export function countActiveNotes(db: MemoryDatabase): number {
+  return (db.prepare("SELECT count(*) n FROM lane_pilot_memory WHERE status='active' AND kind='note'").get() as { n: number }).n;
+}
+
+/** Any project's id besides the given one (the probe's cross-project check). */
+export function otherMemoryProjectId(db: MemoryDatabase, projectId: string): string | undefined {
+  return (db.prepare("SELECT project_id FROM lane_pilot_memory WHERE project_id != ? LIMIT 1").get(projectId) as { project_id: string } | undefined)?.project_id;
+}
+
+/** Record ids a project wrote with a given origin (the probe's cleanup). */
+export function listMemoryIdsByOrigin(db: MemoryDatabase, projectId: string, origin: string): string[] {
+  return (db.prepare("SELECT id FROM lane_pilot_memory WHERE project_id=? AND origin=?").all(projectId, origin) as Array<{ id: string }>).map((row) => row.id);
+}
+
+/** One memory-probe result row. */
+export function recordMemoryProbe(db: MemoryDatabase, row: { at: number; projectId: string; token: string; path: string; found: boolean; negativeOk: boolean | null; latencyMs: number; lpVersion: string; detail: string }): void {
+  db.prepare("INSERT INTO lane_pilot_memory_probe(at,project_id,token,path,found,negative_ok,latency_ms,lp_version,detail) VALUES(?,?,?,?,?,?,?,?,?)")
+    .run(row.at, row.projectId, row.token, row.path, row.found ? 1 : 0, row.negativeOk === null ? null : row.negativeOk ? 1 : 0, row.latencyMs, row.lpVersion, row.detail);
+}
+
+/** The last probe run's rows per path (the probe report). */
+export function latestMemoryProbeRows(db: MemoryDatabase, projectId: string): Array<{ path: string; found: number; negativeOk: number | null; latencyMs: number; lpVersion: string; at: number; detail: string }> {
+  return db.prepare(`SELECT path, found, negative_ok AS negativeOk, latency_ms AS latencyMs, lp_version AS lpVersion, at, detail FROM lane_pilot_memory_probe
+    WHERE project_id=? AND at=(SELECT max(at) FROM lane_pilot_memory_probe WHERE project_id=?) ORDER BY path`).all(projectId, projectId) as
+    Array<{ path: string; found: number; negativeOk: number | null; latencyMs: number; lpVersion: string; at: number; detail: string }>;
+}
+
+/** Probe rows older than a time leave at boot (the outage prune). */
+export function pruneMemoryProbeBefore(db: MemoryDatabase, beforeMs: number): void {
+  db.prepare("DELETE FROM lane_pilot_memory_probe WHERE at < ?").run(beforeMs);
+}
+
+/** kind/content/concepts of a project's active notes, most-accepted first (the cockpit memory card). */
+export function activeMemoryDigestRows(db: MemoryDatabase, projectId: string): Array<{ kind: string; content: string; concepts_json: string }> {
+  return db.prepare("SELECT kind, content, concepts_json FROM lane_pilot_memory WHERE project_id=? AND status='active' ORDER BY accepted_count DESC, created_at DESC LIMIT 80").all(projectId) as
+    Array<{ kind: string; content: string; concepts_json: string }>;
+}
+
+/** Whether a memory record exists in a project (the rule proposal's join guard). */
+export function memoryRecordExists(db: MemoryDatabase, projectId: string, memoryId: string): boolean {
+  return db.prepare("SELECT 1 FROM lane_pilot_memory WHERE project_id=? AND id=? LIMIT 1").get(projectId, memoryId) !== undefined;
 }

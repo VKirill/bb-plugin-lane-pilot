@@ -723,3 +723,19 @@ export function countProposedRules(db: RulesDatabase): number {
 export function countRuleEvents(db: RulesDatabase, action: RuleEventAction, since: number): number {
   return (db.prepare("SELECT count(*) AS n FROM lane_pilot_rule_event WHERE action=? AND at>=?").get(action, since) as { n: number }).n;
 }
+
+/** Accepted rule proposals' scope columns (the memory scope migration's plan and rebind). */
+export function listAcceptedRuleRows(db: RulesDatabase): Array<{ id: string; project_id: string; audience: string; scope_json: string; rule: string }> {
+  return db.prepare("SELECT id, project_id, audience, scope_json, rule FROM lane_pilot_rule_proposal WHERE state='accepted'").all() as
+    Array<{ id: string; project_id: string; audience: string; scope_json: string; rule: string }>;
+}
+
+/** One accepted rule proposal's scope rewrite (the scope migration's apply/revert). */
+export function updateRuleProposalScopeJson(db: RulesDatabase, scopeJson: string, projectId: string, id: string): void {
+  db.prepare("UPDATE lane_pilot_rule_proposal SET scope_json=? WHERE project_id=? AND id=?").run(scopeJson, projectId, id);
+}
+
+/** Ids of a project's accepted rules whose text matches a LIKE pattern (the memory probe's cleanup). */
+export function acceptedRuleIdsLike(db: RulesDatabase, projectId: string, ruleLike: string): string[] {
+  return (db.prepare("SELECT id FROM lane_pilot_rule_proposal WHERE project_id=? AND state='accepted' AND rule LIKE ?").all(projectId, ruleLike) as Array<{ id: string }>).map((row) => row.id);
+}

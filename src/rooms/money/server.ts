@@ -1,14 +1,14 @@
 import { hostContract } from "../contracts";
 import { PROVIDER_CAPABILITIES } from "@lane-pilot/models";
 import { loadProjectSettings } from "../storage";
+import { tokenDailyRowsSince } from "../usage/server";
 import type { ServerCore } from "../contracts/server";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { capOf, moneyHold, spendBook, windowHold, type DailyRow, type Price, type UsageWindow } from "./logic";
 
 /** The spend book on the hub's token rows, the money cap, and the subscription windows the writer's machine last saw (its statusline cache). */
 export function createMoney(ctx: Pick<ServerCore, "db" | "bb">) {
-  const rows = (): DailyRow[] => (ctx.db.prepare("SELECT day, provider_id AS providerId, model, input_tokens AS inputTokens, output_tokens AS outputTokens, cached_tokens AS cachedTokens FROM lane_pilot_token_daily WHERE day >= ?")
-    .all(new Date(Date.now() - 40 * 86_400_000).toISOString().slice(0, 10)) as DailyRow[]);
+  const rows = (): DailyRow[] => tokenDailyRowsSince(ctx.db, new Date(Date.now() - 40 * 86_400_000).toISOString().slice(0, 10));
   const settings = () => loadProjectSettings(ctx.db as never, GLOBAL_SETTINGS_PROJECT_ID);
   const overrides = (): Record<string, Record<string, Price>> => { try { const raw = settings()["money.prices"]; return raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) as Record<string, Record<string, Price>> : {}; } catch { return {}; } };
   function status(now = Date.now()) {

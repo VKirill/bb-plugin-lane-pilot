@@ -142,6 +142,12 @@ export function countJudgmentReceipts(db: Database.Database, judgment: string): 
   return (db.prepare(`SELECT COUNT(*) AS n FROM lane_pilot_jev_receipt WHERE judgment=?`).get(judgment) as { n: number }).n;
 }
 
+/** plan.fact receipts Jev decided itself (the CLI's blind-read comparison reads the stage side itself). */
+export function listPlanFactJevReceipts(db: Database.Database): Array<{ id: number; run_id: string; subject: string; decision: string | null }> {
+  return db.prepare(`SELECT id, run_id, subject, decision FROM lane_pilot_jev_receipt
+    WHERE judgment = 'plan.fact' AND status = 'ok' AND decided_by = 'jev'`).all() as Array<{ id: number; run_id: string; subject: string; decision: string | null }>;
+}
+
 export function jevDecisionCounts(db: Database.Database, judgment: string, since: number): Array<{ decision: string; n: number }> {
   return db.prepare("SELECT decision, count(*) AS n FROM lane_pilot_jev_receipt WHERE judgment=? AND at>=? AND decision IS NOT NULL GROUP BY decision")
     .all(judgment, since) as Array<{ decision: string; n: number }>;

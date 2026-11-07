@@ -23,7 +23,7 @@ import { PM_REPLAY_USAGE, runPmReplayCli, listScenarios } from "../../pm-replay"
 import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
 import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
 import { MEMORY_EVAL_USAGE, runMemoryEvalCommand } from "../../memory-eval/server";
-import { MEMORY_CONFLICT_USAGE, runMemoryConflictCli, sessionMemoryRpc } from "../../memory/server";
+import { MEMORY_CONFLICT_USAGE, runMemoryConflictCli, sessionMemoryRpc, type WallThreadReader } from "../../memory/server";
 import { BENCH_USAGE, runBenchCli } from "../../bench/server";
 import { BASELINE_USAGE, runBaselineCli } from "../../baseline/server";
 import { RETURN_USAGE, runReturnCli } from "../../stage-return/server";
@@ -38,6 +38,7 @@ import { WALL_USAGE, runWallCli } from "../../wall/server";
 import { CHECKERS_USAGE, runCheckersCli } from "../../checkers/server";
 import { POLICY_USAGE, loadLiveExam, runPolicyCli } from "../../policy";
 import { WAITING_USAGE, runWaitingCli } from "../../owner-waiting/server";
+import type { LearningItemsReader } from "../../owner-waiting";
 import { LEAD_USAGE, runLeadCli } from "../../lead/server";
 import { COVERAGE_USAGE, runCoverageCli } from "../../coverage";
 import { SMA_MAP_USAGE, runSmaLiveCli, runSmaMapCli, smaCheckedPercent, smaCounts, smaDonePercent, smaRows } from "../../sma-map";
@@ -114,6 +115,8 @@ interface Services {
   memoryConflicts: MemoryConflictsApi;
   memoryProbe: MemoryProbeApi;
   money: MoneyApi;
+  wallThreadReader: WallThreadReader;
+  ownerLearningItems: LearningItemsReader;
   ownerPresence: OwnerPresenceApi;
   persistWriterAcceptance: WriterVerifyApi["persistWriterAcceptance"];
   phaseIntake: PhaseIntake;
@@ -434,7 +437,7 @@ ${ERRANDS_USAGE}` },
           return args.includes("--live") ? runSmaLiveCli(db as never, args) : runSmaMapCli(args);
         }
         if (command === "waiting") {
-          return runWaitingCli(db, args, Date.now(), OWNER_ITEM_SWEEPS);
+          return runWaitingCli(db, args, Date.now(), OWNER_ITEM_SWEEPS, services.ownerLearningItems);
         }
         if (command === "lead") return await runLeadCli({ db, kv: bb.storage.kv as never, lead: services.lead }, args);
         if (command === "jev") return runJevCli({ db, saveProjectSetting: (p, k, v) => saveProjectSetting(db, p, k, v), settings: async (p) => (await effectiveProjectSettings(p)).values as Record<string, unknown> }, args);

@@ -9,7 +9,7 @@ export { memoryUnanswered } from "./unanswered";
 export type { MemoryUnanswered } from "./unanswered";
 export { pmResumeInstructions, pmRulesBlock, pmRulesOf, pmRulesPromptBlock } from "./pm-rules";
 export type { PmRule } from "./pm-rules";
-export { startOfDay, listReviewedObservations } from "./store";
+export { judgedCorrectionRows, learningThreadRecorded, listReviewedObservations, pendingOwnerLearningItems, startOfDay } from "./store";
 export type { Db } from "./store";
 export { judgeRulesOnDiff, ruleViolationRemark } from "./rule-diff";
 export { ownerMessageJudgment, sameAsJudgment } from "./judgment";

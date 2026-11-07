@@ -1,6 +1,8 @@
 import { coreShelf, isSharedScope } from "@lane-pilot/memory-core";
+import { wfEffectMentionsThread, wfNightSpawnMentionsThread } from "@lane-pilot/workflow-engine";
 import { memorySettingsFor } from "./memory-settings";
-import { loadProjectSettings, type LanePilotDatabase } from "../../storage";
+import { loadProjectSettings, pluginThreadInStoreTables, silentThreadInStoreTables, type LanePilotDatabase } from "../../storage";
+import { learningThreadRecorded } from "../../learning";
 import type { ServerCore } from "../../contracts/server";
 
 /**
@@ -25,22 +27,15 @@ const FACT_CHARS = 160;
  * points at lane-memory, it carries no facts of its own); the upgrade path is a thread registry at spawn time or a
  * pluginMetadata check once contributeInstructions can see it.
  */
-export function pluginThread(db: LanePilotDatabase, threadId: string): boolean {
-  const row = db.prepare(`SELECT (
-    EXISTS(SELECT 1 FROM lane_pilot_run WHERE pm_thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_activation WHERE pm_thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_attempt WHERE thread_id=? OR holder_thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_stage_receipt WHERE thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_pm_notice WHERE pm_thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_pm_skill_use WHERE thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_secret_issuance WHERE thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_errand_episode WHERE thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_wall_repair WHERE thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_learning_obs WHERE thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_learning_item WHERE thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_wf_effect WHERE result_json LIKE '%' || ? || '%')
-  ) AS plugin`).get(threadId, threadId, threadId, threadId, threadId, threadId, threadId, threadId, threadId, threadId, threadId, threadId, threadId) as { plugin: number };
-  return row.plugin === 1;
+/** The wall room's half of the thread gate, handed over through Services: memory cannot import wall (wall reaches memory). */
+export type WallThreadReader = (db: LanePilotDatabase, threadId: string) => boolean;
+const NO_WALL_THREAD: WallThreadReader = () => false;
+
+export function pluginThread(db: LanePilotDatabase, threadId: string, wallReader: WallThreadReader = NO_WALL_THREAD): boolean {
+  return pluginThreadInStoreTables(db, threadId)
+    || wallReader(db, threadId)
+    || learningThreadRecorded(db, threadId)
+    || wfEffectMentionsThread(db, threadId);
 }
 
 const parseScope = (json: string | null): string[] => {
@@ -91,13 +86,7 @@ function renderBlock(facts: readonly string[]): string {
 
 /** A PM thread (its own memory block and tool) or a hidden analyzer (no tools): both get no block. */
 function silentThread(db: LanePilotDatabase, threadId: string): boolean {
-  const row = db.prepare(`SELECT (
-    EXISTS(SELECT 1 FROM lane_pilot_run WHERE pm_thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_activation WHERE pm_thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_pm_notice WHERE pm_thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_wf_effect WHERE kind='night.spawn' AND result_json LIKE '%' || ? || '%')
-  ) AS silent`).get(threadId, threadId, threadId, threadId) as { silent: number };
-  return row.silent === 1;
+  return silentThreadInStoreTables(db, threadId) || wfNightSpawnMentionsThread(db, threadId);
 }
 
 /**
@@ -106,18 +95,18 @@ function silentThread(db: LanePilotDatabase, threadId: string): boolean {
  * that record it, and a spawn records its id after the thread starts, so a just-spawned analyzer can still get the rule;
  * its own prompt forbids tools. Upgrade: pluginMetadata in contributeInstructions.
  */
-export function threadMemoryBlock(db: LanePilotDatabase, input: { projectId: string; threadId: string }): string | null {
+export function threadMemoryBlock(db: LanePilotDatabase, input: { projectId: string; threadId: string }, wallReader: WallThreadReader = NO_WALL_THREAD): string | null {
   if (silentThread(db, input.threadId)) return null;
   const settings = memorySettingsFor(loadProjectSettings(db, input.projectId));
   if (!settings.enabled) return null;
-  if (pluginThread(db, input.threadId)) return THREAD_MEMORY_RULE.join("\n");
+  if (pluginThread(db, input.threadId, wallReader)) return THREAD_MEMORY_RULE.join("\n");
   return renderBlock(l1Facts(db, input.projectId, settings.personalBot));
 }
 
 /** The second contributeInstructions contributor: the memory rule (and for an ordinary thread the facts) on every machine. */
-export function mountThreadBlock(ctx: ServerCore): void {
+export function mountThreadBlock(ctx: ServerCore, wallReader: WallThreadReader): void {
   const { bb, db } = ctx;
   try {
-    bb.agents.contributeInstructions(({ threadId, projectId }) => threadMemoryBlock(db, { projectId, threadId }));
+    bb.agents.contributeInstructions(({ threadId, projectId }) => threadMemoryBlock(db, { projectId, threadId }, wallReader));
   } catch (cause) { bb.log.info(`Lane Pilot memory cannot contribute instructions: ${cause instanceof Error ? cause.message : String(cause)}`); }
 }

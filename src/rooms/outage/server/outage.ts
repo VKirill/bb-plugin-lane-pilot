@@ -3,6 +3,7 @@ import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { BEAT_KEY, gapOutage } from "../logic";
 import { insertOutage, listOutages } from "../store";
+import { pruneMemoryProbeBefore } from "@lane-pilot/memory-core";
 
 /** Why the last run of the plugin ended, written at dispose (a reload, a deploy); none means it died without saying (A death gets its name). */
 export const STOP_KEY = "lp.stop";
@@ -27,7 +28,7 @@ export async function recordStartGap(ctx: Pick<ServerCore, "bb" | "db" | "log">,
   await bestEffort(ctx.log, "outage stop-marker clear", kv.set(STOP_KEY, null as never), undefined);
   await bestEffort(ctx.log, "outage process record", kv.set(PROCESS_KEY, { startedAt: now, pid: process.pid, node: process.version } as never), undefined);
   // Prune foreign memory previews: probe rows older than 30 days (planted tokens and their answers) leave at boot.
-  try { ctx.db.prepare("DELETE FROM lane_pilot_memory_probe WHERE at < ?").run(now - 30 * 86_400_000); } catch { /* no probe table in a test database */ }
+  try { pruneMemoryProbeBefore(ctx.db, now - 30 * 86_400_000); } catch { /* no probe table in a test database */ }
   return outage;
 }
 

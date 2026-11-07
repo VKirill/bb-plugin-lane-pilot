@@ -10,9 +10,9 @@ import type { InsightsApi } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 
 import {sha256Hex, bestEffort} from "@lane-pilot/kit";
-import { threadMemoryBlock } from "./thread-block";
+import { threadMemoryBlock, type WallThreadReader } from "./thread-block";
 import { rerankRecords } from "./rerank";
-import { loadProjectSettings } from "../../storage";
+import { loadProjectSettings, projectHasScopedRun } from "../../storage";
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 import type { MemoryConflictsApi } from "./memory-conflicts";
@@ -22,6 +22,7 @@ interface Services {
   insights: InsightsApi;
   docsPlaces: DocsNightlyApi["docsPlaces"];
   memoryConflicts: MemoryConflictsApi;
+  wallThreadReader: WallThreadReader;
 }
 
 /**
@@ -63,7 +64,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       try {
         const result = storeMemoryRecordsKeepingOverflow(db, { projectId, personalBot: settings.personalBot, audience: "subagent",
           sourceSha256: sha256Hex(`session:${source ?? ""}`), entries, scope: chain?.length ? chain
-            : resolveProjectKind(settings.projectKind, projectUsesSections(db, projectId)) === "umbrella"
+            : resolveProjectKind(settings.projectKind, projectUsesSections(db, projectId, projectHasScopedRun)) === "umbrella"
               // Root work of an umbrella is project work: shared as project:root; only an undefined source is unassigned.
               ? concepts?.some((concept) => /^shared/.test(concept)) ? sharedScope(concepts.find((concept) => /^shared:/.test(concept))?.split(":")[1])
                 : source ? sharedScope("root") : [...UNASSIGNED_SCOPE]
@@ -84,7 +85,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       const wanted = limit ?? 8;
       // The floor drops records, so the search looks further than the limit to fill it; a query nothing clears gets the explicit «nothing» next to the empty list.
       await embedQuery(query);
-      const found = searchMemoryRecords(db, projectId, query, Math.min(100, Math.max(40, wanted * 4)), settings.searchEngine, "subagent", settings.personalBot, { includeObserved: true, chain: chain ?? [], umbrella: resolveProjectKind(settings.projectKind, projectUsesSections(db, projectId)) === "umbrella" });
+      const found = searchMemoryRecords(db, projectId, query, Math.min(100, Math.max(40, wanted * 4)), settings.searchEngine, "subagent", settings.personalBot, { includeObserved: true, chain: chain ?? [], umbrella: resolveProjectKind(settings.projectKind, projectUsesSections(db, projectId, projectHasScopedRun)) === "umbrella" });
       const floored = relevantRecords(db, projectId, query, found, { audience: "subagent", personalBot: settings.personalBot, floor: settings.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR });
       const records = (await rerankRecords(floored, query, { projectId, settings: loadProjectSettings(db, projectId, chain ?? []) })).slice(0, wanted)
         .map((record) => ({ id: record.id, kind: record.kind, content: record.content, concepts: record.concepts }));
@@ -98,7 +99,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       return { records: rows };
     },
     // The same block contributeInstructions gives an ordinary thread (M2); the drill reads it for a thread id.
-    memory_thread_block: async ({ projectId, threadId }) => ({ block: threadMemoryBlock(db, { projectId, threadId }) }),
+    memory_thread_block: async ({ projectId, threadId }) => ({ block: threadMemoryBlock(db, { projectId, threadId }, services.wallThreadReader) }),
     // A lesson is a rule proposal: a repeat of a live rule counts towards it, a new one goes on trial within the cap.
     session_lesson: async ({ projectId, rule, evidence, scope, audience, always }) => {
       // audience may be `specialist:<id>` (wider than RuleAudience — the column is TEXT); the employee's slice reads it back.
