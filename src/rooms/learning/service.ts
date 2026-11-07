@@ -33,7 +33,7 @@ import { DAY_MS, projectsWithCandidates, purgeStaleBodies, startOfDay, type Item
 import { isNotFound, orMiss } from "@lane-pilot/kit";
 
 import type { PromotionServiceApi } from "../rule-forms/promotion-service";
-import type { WriterHostApi } from "../writer/server/writer-host";
+import type { WriterHostApi } from "../platform/server";
 import { bestEffort } from "@lane-pilot/kit";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */

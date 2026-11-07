@@ -17,6 +17,7 @@ import { wallLogLines } from "../src/rooms/wall/logs";
 import { createWall, type WallPorts } from "../src/rooms/wall/service";
 import { classVersions, collectEntries, nightOf, refreshClasses, writeEntries } from "../src/rooms/wall/journal";
 import { wallMigrations } from "../src/rooms/wall/migrations";
+import { skillSwitchMorningLine } from "../src/rooms/writer";
 import { selectClasses } from "../src/rooms/wall/select";
 import { WALL_DEFAULTS } from "../src/rooms/wall/config";
 
@@ -90,7 +91,7 @@ if (process.argv.includes("--dry-run-now")) {
     bench: { available: async () => false, ensureArm: never as never, compare: never as never, score: never as never },
     exam: async () => ({ exam: { items: [] } }), restart: never as never, deferrals: { open: never as never, close: never as never },
   };
-  const wall = createWall({ db: db as never, kv: { get: async () => null, set: async () => undefined }, ports, log: console.log, hubDb: "/home/ubuntu/.bb/plugins/lane-pilot/data.db" });
+  const wall = createWall({ db: db as never, kv: { get: async () => null, set: async () => undefined }, ports, log: console.log, hubDb: "/home/ubuntu/.bb/plugins/lane-pilot/data.db", skillSwitchMorningLine });
   const summary = await wall.runNight({ dryRun: true, now });
   console.log(`\n=== dry-run night ${summary.night} (now = ${new Date(now).toISOString()}), nothing kept, no model called`);
   console.log(JSON.stringify({ classesSeen: summary.classesSeen, picked: summary.picked, hunts: summary.hunts, backlog: summary.backlog, stoppedBy: summary.stoppedBy, capTokens: summary.capTokens, benchRunnable: (summary as { plan?: { benchRunnable?: boolean } }).plan?.benchRunnable }, null, 2));

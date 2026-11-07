@@ -205,6 +205,7 @@ describe("Wall service hunt with Jev filter", () => {
       kv: { get: async () => ({}), set: async () => {} },
       ports,
       log: () => {},
+      skillSwitchMorningLine: () => null,
       jev: () => mockJev,
       settings: async () => ({}), // shadow mode by default
     });
@@ -284,6 +285,7 @@ describe("Wall service hunt with Jev filter", () => {
       kv: { get: async () => ({}), set: async () => {} },
       ports,
       log: () => {},
+      skillSwitchMorningLine: () => null,
       jev: () => mockJev,
       settings: async () => ({ "jev.modes": `${WALL_FILTER_ID}=active` }),
     });

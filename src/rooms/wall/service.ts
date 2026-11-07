@@ -16,7 +16,6 @@ import { cancelParetoLine, composeWallMorning } from "./morning";
 import { promotionMorningLine } from "../rule-forms";
 import { diffHiddenMorningLine } from "../checkers/server";
 import { modelRebenchMorningLine } from "../night-graphs";
-import { skillSwitchMorningLine } from "../writer";
 import { errandsDiagnosisMorningLine } from "../errands";
 import { profileCheckMorningLine } from "../native-agent";
 import { watchMorningLine } from "@lane-pilot/jev";
@@ -111,6 +110,8 @@ export type WallDeps = {
   jev?: () => Jev | null;
   settings?: () => Promise<JevSettings>;
   diffHiddenAudit?: (limit: number) => Promise<unknown>;
+  /** The writer's skill-switch morning line (src/rooms/writer/skill-switch.ts), injected so the wall does not import the writer room. */
+  skillSwitchMorningLine: (db: WallDb, now: number) => string | null;
 };
 
 /** The hash of what a task asks, without its id (a redispatch under «P1.2» is the same ask) and of its plan. */
@@ -972,7 +973,7 @@ export function createWall(deps: WallDeps) {
         ...(promotionMorningLine(db) ? [promotionMorningLine(db)!] : []),
         ...(diffHiddenMorningLine(db as never, ports.now()) ? [diffHiddenMorningLine(db as never, ports.now())!] : []),
         ...(modelRebenchMorningLine(db as never, ports.now()) ? [modelRebenchMorningLine(db as never, ports.now())!] : []),
-        ...(skillSwitchMorningLine(db as never, ports.now()) ? [skillSwitchMorningLine(db as never, ports.now())!] : []),
+        ...(deps.skillSwitchMorningLine(db, ports.now()) ? [deps.skillSwitchMorningLine(db, ports.now())!] : []),
         ...(errandsDiagnosisMorningLine(db as never) ? [errandsDiagnosisMorningLine(db as never)!] : []),
         ...(profileCheckMorningLine(db as never) ? [profileCheckMorningLine(db as never)!] : []),
       ],
@@ -1003,7 +1004,7 @@ export function createWall(deps: WallDeps) {
       ...(promotionMorningLine(db) ? [promotionMorningLine(db)!] : []),
       ...(diffHiddenMorningLine(db as never, now ?? ports.now()) ? [diffHiddenMorningLine(db as never, now ?? ports.now())!] : []),
       ...(modelRebenchMorningLine(db as never, now ?? ports.now()) ? [modelRebenchMorningLine(db as never, now ?? ports.now())!] : []),
-      ...(skillSwitchMorningLine(db as never, now ?? ports.now()) ? [skillSwitchMorningLine(db as never, now ?? ports.now())!] : []),
+      ...(deps.skillSwitchMorningLine(db, now ?? ports.now()) ? [deps.skillSwitchMorningLine(db, now ?? ports.now())!] : []),
       ...(errandsDiagnosisMorningLine(db as never) ? [errandsDiagnosisMorningLine(db as never)!] : []),
       ...(profileCheckMorningLine(db as never) ? [profileCheckMorningLine(db as never)!] : []),
     ], classes: () => listClasses(db), huntClass };

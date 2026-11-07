@@ -25,7 +25,7 @@ function fresh() {
   dispose = () => harness.lifecycle.dispose();
   const store = new Map<string, unknown>();
   const kv = { get: async (key: string) => store.get(key) ?? null, set: async (key: string, value: unknown) => { store.set(key, value); } };
-  return { bb, db, store, kv, wall: createWall({ db, kv: kv as never, ports: {} as never, log: () => undefined }) };
+  return { bb, db, store, kv, wall: createWall({ db, kv: kv as never, ports: {} as never, log: () => undefined, skillSwitchMorningLine: () => null }) };
 }
 
 describe("the self-improvement settings: one catalog row for each control", () => {

@@ -4,12 +4,11 @@ import type { ChainRuntime } from "../../contracts/server";
 
 import type { ServerCore } from "../../contracts/server";
 
-import type { WallApi } from "../../wall/service";
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WallGraphApi, WorkflowEngineApi } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
-  wall: WallApi;
+  wall: WallGraphApi;
   workflowEngine: WorkflowEngineApi["workflowEngine"];
 }
 

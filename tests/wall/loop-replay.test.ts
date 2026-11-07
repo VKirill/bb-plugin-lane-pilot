@@ -25,7 +25,7 @@ function replay() {
     tellPm: async () => { state.told += 1; return true; },
     deferrals: { open: (input: { id: string; what: string }) => { state.deferrals.set(input.id, input.what); }, close: () => undefined },
   } as unknown as WallPorts;
-  const wall = createWall({ db: h.db, kv: { get: async () => null, set: async () => undefined } as never, ports, log: () => undefined });
+  const wall = createWall({ db: h.db, kv: { get: async () => null, set: async () => undefined } as never, ports, log: () => undefined, skillSwitchMorningLine: () => null });
   return { h, wall, clock, state };
 }
 

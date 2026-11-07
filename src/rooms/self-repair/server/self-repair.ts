@@ -1,7 +1,8 @@
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { checkBrief, renderBrief } from "../../brief";
-import { writerReuseStats, writerBriefStats } from "../../writer";
+import { writerReuseStats } from "../writer-reuse-stats";
+import { writerBriefStats } from "../writer-brief-stats";
 import { checksInFlight, failureClass, taskFamily } from "../../runs";
 import { projectRoleField } from "../../runs/server";
 import { OWNER_WORD_WAIT_MS } from "../../tasks";

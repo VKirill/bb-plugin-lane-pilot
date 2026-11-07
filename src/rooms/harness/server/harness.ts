@@ -6,8 +6,7 @@ import {
   parseEdits, parseExperience, parseNotes, proposePrompt, renderExperienceMarkdown, renderThreadEvents, screenRejected, skillNames, validate,
   type ProbeBudget, type RejectedEdit, type ThreadEventLike, type Tree,
 } from "@lane-pilot/harness-core";
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
-import type { WriterHostApi } from "../../writer/server/writer-host";
+import type { WorkflowEngineApi, WriterHostApi } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -34,9 +33,9 @@ import type { HostPort } from "../../bench/server";
 import { graphEditProblems } from "./graph-edit";
 import { formatProbeReplays, runHarnessProbe } from "./probe-run";
 
-import type { StepContext } from "../../workflow";
+import type { StepContext } from "@lane-pilot/workflow-engine";
 import type { ChainRuntime } from "../../contracts/server";
-import type { GraphHelperRun } from "../../workflow/server";
+import type { GraphHelperRun } from "../../platform/server";
 import { checkBrief, renderBrief } from "../../brief";
 
 /** Every helper mission of the harness graphs renders through the shared brief (evidence lives on disk under context/, so the brief is instructions only). */

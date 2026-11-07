@@ -17,12 +17,12 @@ import { flakyEvidence, outputTail, readingFrom } from "../machine-pressure";
 import type { GateAttributeResult } from "../integration-gate-host";
 import { join } from "node:path";
 
-import type { WriterDispatchApi } from "../../writer/server/dispatch";
+import type { DispatchWriter } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
   leadRoad: LeadRoadApi;
-  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+  dispatchWriter: DispatchWriter;
 }
 
 export type GateWhen = "queue_drained" | "every_n";

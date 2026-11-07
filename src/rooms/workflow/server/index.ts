@@ -14,6 +14,5 @@ export { createWorkflowTriggersService } from "./workflow-triggers-live";
 export { createWorkflowEngine } from "./workflow";
 export { runGraphHelper, sumUsage } from "./graph-helper";
 export type { GraphHelperRun } from "./graph-helper";
-export { requireGreen } from "./require-green";
 export { registerQualityLoopClassifyExecutor, buildFailureInput } from "./workflow-classify";
 export { provideLpTaskPipeline } from "./workflow-executors";

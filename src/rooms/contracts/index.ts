@@ -50,3 +50,4 @@ export type { AgentScheduleRef, ScheduleAgentApi } from "./schedule-agents";
 export type { ErrandRunStart, ErrandsApi } from "./errands-api";
 export type { LeadRoadApi, RoadDb, RoadEvidence, RoadKind, RoadRow, RoadSource, RoadState } from "./lead-road";
 export type { SqlDb } from "./sql-db";
+export { asJsonText } from "./as-json-text";

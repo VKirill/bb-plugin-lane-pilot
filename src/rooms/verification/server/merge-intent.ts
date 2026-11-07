@@ -5,8 +5,7 @@ import { bestEffort } from "@lane-pilot/kit";
 
 import { runOnHost } from "@lane-pilot/host-calls";
 
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
-import type { WriterStateApi } from "../../writer/server/state";
+import type { WorkflowEngineApi, WriterStateApi } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {

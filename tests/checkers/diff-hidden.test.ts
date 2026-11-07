@@ -221,6 +221,7 @@ describe("diff-hidden audit", () => {
       kv: { get: async () => null, set: async () => {} } as never,
       ports: ports as never,
       log: () => {},
+      skillSwitchMorningLine: () => null,
       diffHiddenAudit: async (limit: number) => {
         auditCalls.push(limit);
         return null;

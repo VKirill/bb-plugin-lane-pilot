@@ -49,6 +49,7 @@ import { createHypotheses } from "./src/rooms/hypotheses/server";
 import { createOwnerPresence, mountOwnerPresence } from "./src/rooms/owner-presence/server";
 import { mountOutage } from "./src/rooms/outage/server";
 import { createPluginWall } from "./src/rooms/wall/server";
+import { buildCliInvocation, skillSwitchMorningLine } from "./src/rooms/writer";
 import { createPluginCheckers } from "./src/rooms/checkers/server";
 import { createStageReturn } from "./src/rooms/stage-return/server";
 import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, closeStaleRuns, pluginStopped } from "./src/rooms/runs/server";
@@ -110,7 +111,7 @@ import type { WriterVerifyApi } from "./src/rooms/writer/server/verify";
 import type { WriterFinishApi } from "./src/rooms/writer/server/finish";
 import type { WriterStartApi } from "./src/rooms/writer/server/start";
 import type { WriterDispatchApi } from "./src/rooms/writer/server/dispatch";
-import type { ArchitectApi, AttemptReopenApi, RecheckPlanFact, StageHelperSettings, TaskUsage, WorkflowEngineApi, WorkflowLibraryApi, WriterReassignApi } from "./src/rooms/platform/server";
+import type { ArchitectApi, AttemptReopenApi, BuildCliInvocation, RecheckPlanFact, RunVerification, SkillSwitchMorningLine, StageHelperSettings, TaskUsage, WallGraphApi, WorkflowEngineApi, WorkflowLibraryApi, WriterHostApi as WriterHostPort, WriterReassignApi, WriterStateApi as WriterStatePort } from "./src/rooms/platform/server";
 import type { WorkflowTriggersApi } from "./src/rooms/workflow/server/workflow-triggers-live";
 import type { MemoryProbeApi } from "./src/rooms/memory-probe/server/memory-probe";
 import type { CouncilApi } from "./src/rooms/council/server";
@@ -164,6 +165,10 @@ export interface Services {
   regression: RegressionApi;
   /** The wall journal and the night loop: classes of failures, the night's repairs, the wall ladder (src/rooms/wall). */
   wall: WallApi;
+  /** The writer's skill-switch morning line, handed to the wall so the wall does not import writer (src/rooms/writer/skill-switch.ts). */
+  skillSwitchMorningLine: SkillSwitchMorningLine;
+  /** The writer's settings→argv builder, handed to the settings screen's preview (src/rooms/writer/argv-builder.ts). */
+  buildCliInvocation: BuildCliInvocation;
   /** Every accepted task's checks together on the final main once a run is done (src/rooms/run-goal). */
   runGoal: RunGoalApi;
   /** Phases on rails: the driver that moves a phase through its stages by gates in code and wakes the PM at each turn (src/rooms/phase). */
@@ -298,6 +303,8 @@ export default async function plugin(bb: BbPluginApi) {
   try { deferrals.seed(); } catch (cause) { bb.log.warn(`Lane Pilot: deferral seed skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
   const services = {} as Services;
   Object.assign(services, {
+    skillSwitchMorningLine: skillSwitchMorningLine satisfies SkillSwitchMorningLine,
+    buildCliInvocation: buildCliInvocation satisfies BuildCliInvocation,
     taskWords: taskWordPort,
     laneProject: lanePilotProjectOrNotice,
     leadRoad: { addRoad, doneRoad, getRoad, listRoad, reopenRoad },
@@ -313,11 +320,11 @@ export default async function plugin(bb: BbPluginApi) {
     services,
     createReconcile(ctx, services),
     createActivation(ctx, services),
-    createWriterState(ctx),
+    createWriterState(ctx) satisfies WriterStatePort,
     createWorkflowEngine(ctx, services),
     createWorkflowTriggersService(ctx, services),
     createWriterSpawn(ctx, services),
-    createWriterVerify(ctx, services),
+    createWriterVerify(ctx, services) satisfies { runVerification: RunVerification },
     createWriterFinish(ctx, services),
     createWriterStart(ctx, services),
     createWriterDispatch(ctx, services),
@@ -329,7 +336,7 @@ export default async function plugin(bb: BbPluginApi) {
     createNightStages(ctx),
     createDocsNightly(ctx, services),
     createProbes(ctx, services),
-    createWriterHost(ctx),
+    createWriterHost(ctx) satisfies WriterHostPort,
     { council: createCouncil(ctx) },
     { world: createWorldService(ctx, { projectName: (projectId) => bb.sdk.projects.get({ projectId }).then((p) => (typeof p?.name === "string" ? p.name : null), () => null) }) },
     // providerBreaker is another field of this bag: the canary reads it at call time through the thunk.
@@ -361,7 +368,7 @@ export default async function plugin(bb: BbPluginApi) {
     createHypotheses(ctx, services),
     createOwnerPresence(ctx),
     { bench: createPluginBench(ctx, services) },
-    { wall: createPluginWall(ctx, services) },
+    { wall: createPluginWall(ctx, services) satisfies WallGraphApi },
     { checkers: createPluginCheckers(ctx) },
     createStability(ctx, services),
     createScheduleService(ctx, services),

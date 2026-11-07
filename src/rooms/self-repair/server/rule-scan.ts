@@ -7,8 +7,7 @@ import {
   type FailedAttempt, type RuleEvidence, type TriageSummary, type WriterGroup,
 } from "@lane-pilot/run-insights";
 
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
-import type { WriterHostApi } from "../../writer/server/writer-host";
+import type { WorkflowEngineApi, WriterHostApi } from "../../platform/server";
 
 import { getRun, getRunSettingsScopes } from "../../storage";
 import {fileAllowedByOwns, fileBlockedByNeverTouch, isNotFound, orMiss, outputText, bestEffort} from "@lane-pilot/kit";
