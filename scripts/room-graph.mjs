@@ -42,14 +42,32 @@ export function roomGraph(root) {
 
   const edges = new Map(rooms.map((r) => [r, new Set()]));
   const importRe = /(?:import|export)\s[^'";]*?from\s*["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)|^\s*import\s*["']([^"']+)["']/gm;
-  for (const room of rooms) {
-    const scanned = room.startsWith("@") ? [join(roomsDir, room.slice(1))] : [...files(join(roomsDir, room))];
-    for (const f of scanned) {
+  // A code file outside src/rooms that a room imports (server.ts, plugin-contracts.ts, scripts/*) is a node
+  // of its own, named ^<path>, scanned like a room: a room reaching up into the composition root through it
+  // (even type-only) must show up, not vanish.
+  const codeFile = (abs) => {
+    for (const cand of [abs, `${abs}.ts`, `${abs}.tsx`, join(abs, "index.ts")]) {
+      try { if (statSync(cand).isFile() && isTs(cand)) return cand; } catch {}
+    }
+    return null;
+  };
+  const scannedOf = new Map(rooms.map((r) => [r, r.startsWith("@") ? [join(roomsDir, r.slice(1))] : [...files(join(roomsDir, r))]]));
+  const queue = [...rooms];
+  while (queue.length) {
+    const node = queue.shift();
+    for (const f of scannedOf.get(node)) {
       for (const m of readFileSync(f, "utf8").matchAll(importRe)) {
         const spec = m[1] ?? m[2] ?? m[3];
         if (!spec.startsWith(".")) continue;
-        const to = roomOf(resolve(dirname(f), spec));
-        if (to && to !== room && nodeNames.has(to)) edges.get(room).add(to);
+        const abs = resolve(dirname(f), spec);
+        let to = roomOf(abs);
+        if (!to) {
+          const file = codeFile(abs);
+          if (!file || relative(root, file).startsWith("..") || file.includes(`${sep}node_modules${sep}`)) continue;
+          to = `^${relative(root, file).split(sep).join("/")}`;
+          if (!nodeNames.has(to)) { nodeNames.add(to); rooms.push(to); edges.set(to, new Set()); scannedOf.set(to, [file]); queue.push(to); }
+        }
+        if (to !== node && nodeNames.has(to)) edges.get(node).add(to);
       }
     }
   }
