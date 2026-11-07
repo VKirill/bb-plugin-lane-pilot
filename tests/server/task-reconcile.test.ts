@@ -38,7 +38,9 @@ describe("ordered task reconcile", () => {
   it("ends, parks and restarts a retry lost in a reload in the SAME start-up pass", async () => {
     const { db, services, reconcileTasks, resumed, order, lostRetry } = setup();
     lostRetry(Date.now() - 60_000);
-    await reconcileTasks({ phase:"startup", afterResume:() => { order.push("sweeps"); } });
+    // `now` must sit ahead of the stamps the pass itself writes: closeOrphanWriterStages reads its clock once, then
+    // transitionAttempt stamps the stray attempt a few ms later, and the freshness guard would skip the row on a tick.
+    await reconcileTasks({ phase:"startup", now:Date.now() + 60_000, afterResume:() => { order.push("sweeps"); } });
     // The stage cleanup ended the attempt, parking took it over, and the sweep restarted it without waiting for a next start.
     expect(order).toEqual(["resume", "sweeps"]);
     expect(resumed).toEqual(["T1"]);

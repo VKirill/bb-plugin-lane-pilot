@@ -66,23 +66,13 @@ describe("worker roles that live in Lane Pilot", () => {
     expect(args[tmp + 1]).toBe("/tmp/job-1");
   });
 
-  it.todo("[sma:wb_human_only] push, merge, tag and release are denied on the writer's launch arguments"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:wb_danger] a worker has its own danger threshold, separate from the founder's, and it only names"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:wc_documentary] a documentary cell checks a nested call, a role definition, checker hooks and checker session end"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:wc_drill] the pause cell stays unverified until a stand drill proves it"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:wi_clone] the worker gets a standalone clone in its own root, not a linked worktree"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:wi_receipts] pipeline receipts from the clone are carried into the project journal"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:wr_models] each Claude role defaults to the top model and the highest effort"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:wr_orchestrator] the conversation orchestrator runs the conversation and takes no queue task"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:wr_vendors] an api vendor exists and claude is the default"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:wc_applicable] a change of model, config or hooks voids the receipt"); // deferral:dfr_seed_skip_sma_gaps
 });

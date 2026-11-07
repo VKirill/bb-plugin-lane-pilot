@@ -163,11 +163,3 @@ describe("birth rails, sandbox and a crash that spends the attempt", () => {
     expect(verdictSchema.safeParse({ status: "shrug", findings: [], evidence: "read the diff" }).success).toBe(false);
   });
 });
-
-describe("gaps the code does not keep", () => {
-  it.todo("[sma:tb_birth_kinds] the birth kind chooses the gates (the list is six origin labels and does not)"); // deferral:dfr_seed_skip_sma_gaps
-  it.todo("[sma:ae_reasons] thirty-seven reasons, each pointing at the fault"); // deferral:dfr_seed_skip_sma_gaps
-  it.todo("[sma:av_verdict_form] the verdict form requires promise, correctness, regression, tests, out of scope, floor and class"); // deferral:dfr_seed_skip_sma_gaps
-  it.todo("[sma:ac_permit] a permit checks that the contract is current, nothing is held, the price is known and the reserve fits"); // deferral:dfr_seed_skip_sma_gaps
-  it.todo("[sma:cg_claim_refusal] a row whose last word is said is closed before anything is paid"); // deferral:dfr_seed_skip_sma_gaps
-});

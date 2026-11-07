@@ -28,7 +28,7 @@ const BINDING = /export\s+(?:declare\s+)?(?:const|let|var)\s*\{([^}]*)\}/g;
 const lastName = (part: string) => /([A-Za-z_$][\w$]*)\s*$/.exec(part.replace(/=[^=]*$/, "").trim())?.[1];
 
 /** Names a module exports: declared exports, `export { a as b }` lists (the exported alias), `default`. */
-function exportedOf(text: string): string[] {
+export function exportedOf(text: string): string[] {
   const names: string[] = [];
   for (const m of text.matchAll(DECL)) names.push(m[1]!);
   for (const m of text.matchAll(LIST)) for (const part of m[1]!.split(",")) { const name = lastName(part); if (name) names.push(name); }
@@ -59,13 +59,24 @@ function repoIndex(root: string): Index {
 }
 
 export const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+const DECL_ANCHOR = /^export\s+(?:declare\s+)?(?:default\s+)?(?:abstract\s+)?(?:async\s+)?(?:function\*?|class|const|let|var|interface|type|enum)\s+([A-Za-z_$][\w$]*)/;
 
-/** The file an anchor moved to: exactly one candidate (an exporting module for identifier anchors, else a text carrier) or null. */
+/** The proof an anchor moved to: `path#export` where the export surface proves it, a bare `path` when the file exists
+ * but no export can be named for the anchor, or null (deleted, or ambiguous). `--fix-proofs` rewrites the entry then. */
 export function relocateAnchor(root: string, anchor: string): string | null {
   const { exported, corpus } = repoIndex(root);
-  let at = IDENTIFIER.test(anchor) ? [...(exported.get(anchor) ?? [])] : [];
-  if (!at.length) at = [...corpus].filter(([, text]) => text.includes(anchor)).map(([file]) => file);
-  return at.length === 1 ? at[0]! : null;
+  const name = IDENTIFIER.test(anchor) ? anchor : DECL_ANCHOR.exec(anchor)?.[1] ?? null;
+  if (name) {
+    const at = [...(exported.get(name) ?? [])];
+    if (at.length === 1) return `${at[0]}#${name}`;
+    if (at.length > 1) return null;
+  }
+  const carriers = [...corpus].filter(([, text]) => text.includes(anchor)).map(([file]) => file);
+  if (carriers.length !== 1) return null;
+  const file = carriers[0]!;
+  const head = /[A-Za-z_$][\w$]*/.exec(anchor)?.[0];
+  if (head && exportedOf(corpus.get(file)!).includes(head)) return `${file}#${head}`;
+  return file;
 }
 
 /** Files exporting `symbol` (diagnostics). */

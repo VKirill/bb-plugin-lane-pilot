@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { relocateAnchor } from "./exports";
+import { exportedOf, relocateAnchor } from "./exports";
 import { SMA_CONTRACT_GAPS, SMA_CONTRACT_TESTS } from "./contracts";
 import { SMA_ENTRIES, type SmaStatus } from "./entries";
 import { SMA_CARDS, SMA_NODES, SMA_REGIONS, type SmaKind } from "./graph";
@@ -102,8 +102,22 @@ export function unjudgedProof(proof: string, roots: ProofRoots): boolean {
   return !!prefix && !(prefix[1] === "lane-stack" ? roots.laneStack : prefix[1] === "telegram" ? roots.telegram : roots.core);
 }
 
-/** A proof that does not resolve: the file is missing, or the anchor is not in it. Strict — a moved anchor is a
- * broken proof (see proofDrift for where it went and `sma-map --fix-proofs` to repair the path). Proofs into an
+/** Extensions whose file is a module: a `#anchor` must name a symbol the module exports, never body text. */
+const MODULE_FILE = /\.(?:[cm]?[jt]sx?)$/;
+/** `export function foo(`, `export const FOO`, `export type T`, `export async function f(` → the exported name. */
+const DECLARED = /^export\s+(?:declare\s+)?(?:default\s+)?(?:abstract\s+)?(?:async\s+)?(?:function\*?|class|const|let|var|interface|type|enum)\s+([A-Za-z_$][\w$]*)/;
+
+/** The exported symbol an anchor names, or null when the anchor is not an export of the module. */
+function exportedAnchor(text: string, symbol: string): string | null {
+  const name = DECLARED.exec(symbol)?.[1] ?? (IDENTIFIERISH.test(symbol) ? symbol : null);
+  return name && exportedOf(text).includes(name) ? name : null;
+}
+const IDENTIFIERISH = /^[A-Za-z_$][\w$]*$/;
+
+/** A proof that does not resolve: the file is missing, or the anchor is not what it claims. Strict — a moved anchor
+ * is a broken proof (see proofDrift for where it went and `sma-map --fix-proofs` to repair the path). In a module the
+ * anchor must be a public export — checked against the module's export surface, so body text cannot pose as proof.
+ * Data files (json, sh, py, md, …) have no exports; there the anchor is a literal the file must carry. Proofs into an
  * absent sibling repository are not judged. */
 export function brokenProof(proof: string, roots: ProofRoots): string | null {
   const [where, symbol] = proof.split("#", 2) as [string, string | undefined];
@@ -113,7 +127,13 @@ export function brokenProof(proof: string, roots: ProofRoots): string | null {
   if (!root) return null;
   const file = resolve(join(root, path));
   if (!existsSync(file)) return `${proof}: no such file`;
-  if (symbol && !readFileSync(file, "utf8").includes(symbol)) return `${proof}: ${symbol} is not in the file`;
+  if (!symbol) return null;
+  const text = readFileSync(file, "utf8");
+  if (MODULE_FILE.test(path)) {
+    if (!exportedAnchor(text, symbol)) return `${proof}: ${symbol} is not an export of the module`;
+    return null;
+  }
+  if (!text.includes(symbol)) return `${proof}: ${symbol} is not in the file`;
   return null;
 }
 
