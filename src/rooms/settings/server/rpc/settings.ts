@@ -12,9 +12,10 @@ import { writerServiceTier, findModelIn } from "@lane-pilot/models";
 import { LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { mapListedQaHosts } from "../../../qa";
 import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
-import { NATIVE_CODE_CRITIQUE_KEYS, NATIVE_DOCS_KEYS, NATIVE_MEMORY_KEYS, NATIVE_NIGHT_REVIEW_KEYS, NATIVE_ONBOARDING_KEYS, NATIVE_PLAN_CRITIQUE_KEYS, NATIVE_PM_READ_KEYS, NATIVE_PROJECT_LIFE_KEYS, NATIVE_SPECIALIST_KEYS, NATIVE_WRITER_KEYS } from "../../../runs/server";
+import { NATIVE_WRITER_KEYS } from "../../../runs/server";
 import { asJsonText } from "../../../writer/server";
 import { stringAt } from "../../../core/server";
+import { PAIR_ROLE_SPECS, PROVIDER_CAPABILITIES, roleAtomicMessage } from "@lane-pilot/models";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../core/server";
@@ -119,8 +120,7 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
           skills: [...new Map(skillRows.filter((k) => typeof k.name === "string").map((k) => [k.name!, { name: k.name!, description: (k.description ?? "").slice(0, 200) }])).values()].sort((a, b) => a.name.localeCompare(b.name)),
         },
         mandatory: { bbPlugins: [...MANDATORY_BB_PLUGINS], mcpServers: [...MANDATORY_MCP_SERVERS] },
-        // OpenCode v1 is only in the matrix to match the core; Lane Pilot starts no thread on it.
-        providers: Object.fromEntries(Object.entries(CORE_PROVIDER_GROUPS).filter(([id]) => id !== "acp-opencode").map(([id, groups]) => [id, [...groups]])),
+        providers: Object.fromEntries(Object.entries(CORE_PROVIDER_GROUPS).filter(([id]) => !PROVIDER_CAPABILITIES[id]?.notStarted).map(([id, groups]) => [id, [...groups]])),
       };
     },
     get_screen: async ({ projectId, sectionId, runsLimit }) => {
@@ -268,15 +268,11 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
     get_stage_result: ({ runId, taskId, stageId }) => getStageReceiptResult(db, runId, taskId, stageId),
     save_setting: ({ projectId, sectionId, key, value, expectedVersion }) => {
       const bindingId = sectionId ? sectionBindingId(sectionId) : "";
-      if (NATIVE_MEMORY_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic memory provider/model selection"]}};
-      if (NATIVE_NIGHT_REVIEW_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic night-review provider/model selection"]}};
-      if (NATIVE_DOCS_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic docs provider/model selection"]}};
-      if (NATIVE_PROJECT_LIFE_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic project-life provider/model selection"]}};
-      if (NATIVE_ONBOARDING_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic onboarding provider/model selection"]}};
-      if (NATIVE_PM_READ_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic PM-read provider/model selection"]}};
-      if (NATIVE_PLAN_CRITIQUE_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic plan-critique provider/model selection"]}};
-      if (NATIVE_CODE_CRITIQUE_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic code-critique provider/model selection"]}};
-      if (NATIVE_SPECIALIST_KEYS.has(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,"use atomic specialist provider/model selection"]}};
+      // A role's provider/model/effort/tier group is saved by its own RPC, never key by key (packages/models/role-specs.ts).
+      for (const spec of PAIR_ROLE_SPECS) {
+        const message = roleAtomicMessage(spec.id);
+        if (message && spec.keys.includes(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,message]}};
+      }
       if (!NATIVE_WRITER_KEYS.has(key)) {
         const result = casUpsertSettings(db, { projectId, bindingId, changes:[{ key, value, expectedVersion }] }, { nativeWriterSelection:true });
         const current = { version:result.versions[key] ?? 0, value:result.values[key] ?? null };
@@ -301,7 +297,7 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
       const roleAccessKeys = new Set(HELPER_ROLES.map(roleAccessKey));
       const invalid = keys.find((key) => !(editable.has(key) || roleAccessKeys.has(key) || key === SCHEDULE_ERRAND_DEFAULT_KEY || isModelSettingKey(key)) || expectedVersions[key] === undefined);
       if (invalid) return reject(invalid, "unknown or noneditable setting / missing CAS version");
-      const groups = ["writer", "memory", "night_review", "docs", "project_life", "onboarding", "pm_read", "plan_critique", "code_critique", "specialist"].map((prefix) => ["provider", "model", "reasoning_effort", "service_tier"].map((suffix) => `${prefix}.${suffix}`));
+      const groups = PAIR_ROLE_SPECS.map((spec) => spec.keys);
       const affected = groups.filter((group) => group.some((key) => keys.includes(key)));
       if (affected.some((group) => group.some((key) => !keys.includes(key)))) return reject(keys[0]!, "reset the complete provider/model/effort/tier group");
       const rows = listSettingRows(db, projectId, bindingId);
@@ -351,24 +347,12 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
     },
     save_settings: ({ projectId, sectionId, changes }) => {
       const bindingId = sectionId ? sectionBindingId(sectionId) : "";
-      const memoryKey=changes.find(({key})=>NATIVE_MEMORY_KEYS.has(key))?.key;
-      if(memoryKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:memoryKey,params:[memoryKey,"use atomic memory provider/model selection"]}};
-      const nightKey=changes.find(({key})=>NATIVE_NIGHT_REVIEW_KEYS.has(key))?.key;
-      if(nightKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:nightKey,params:[nightKey,"use atomic night-review provider/model selection"]}};
-      const docsKey=changes.find(({key})=>NATIVE_DOCS_KEYS.has(key))?.key;
-      if(docsKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:docsKey,params:[docsKey,"use atomic docs provider/model selection"]}};
-      const projectLifeKey=changes.find(({key})=>NATIVE_PROJECT_LIFE_KEYS.has(key))?.key;
-      if(projectLifeKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:projectLifeKey,params:[projectLifeKey,"use atomic project-life provider/model selection"]}};
-      const onboardingKey=changes.find(({key})=>NATIVE_ONBOARDING_KEYS.has(key))?.key;
-      if(onboardingKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:onboardingKey,params:[onboardingKey,"use atomic onboarding provider/model selection"]}};
-      const pmReadKey=changes.find(({key})=>NATIVE_PM_READ_KEYS.has(key))?.key;
-      if(pmReadKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:pmReadKey,params:[pmReadKey,"use atomic PM-read provider/model selection"]}};
-      const planKey=changes.find(({key})=>NATIVE_PLAN_CRITIQUE_KEYS.has(key))?.key;
-      if(planKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:planKey,params:[planKey,"use atomic plan-critique provider/model selection"]}};
-      const codeKey=changes.find(({key})=>NATIVE_CODE_CRITIQUE_KEYS.has(key))?.key;
-      if(codeKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:codeKey,params:[codeKey,"use atomic code-critique provider/model selection"]}};
-      const specialistKey=changes.find(({key})=>NATIVE_SPECIALIST_KEYS.has(key))?.key;
-      if(specialistKey) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:specialistKey,params:[specialistKey,"use atomic specialist provider/model selection"]}};
+      for (const spec of PAIR_ROLE_SPECS) {
+        const message = roleAtomicMessage(spec.id);
+        if (!message) continue;
+        const found = changes.find(({ key }) => spec.keys.includes(key))?.key;
+        if (found) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:found,params:[found,message]}};
+      }
       return casUpsertSettings(db,{projectId,bindingId,changes},{nativeWriterSelection:changes.every(({key})=>!NATIVE_WRITER_KEYS.has(key))});
     },
     save_writer_binding: async ({ projectId, hostId, path }) => {

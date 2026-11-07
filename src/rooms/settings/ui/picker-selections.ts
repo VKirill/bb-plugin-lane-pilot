@@ -1,27 +1,27 @@
 import type { ExperimentalProviderModelPickerValue } from "@get-bb/plugin-sdk/app";
 import { DOCS_DEFAULT_SELECTION } from "../../docs/docs-defaults";
 import { WRITER_EFFORT, WRITER_MODEL, WRITER_PROVIDER } from "../../ui-shell/ui/page-model";
+import { ROLE_SPECS, type RoleSelectionId } from "@lane-pilot/models";
 
 /** The roles whose model is one native picker saved by one RPC (the writer and the council seats have their own flow). */
-export type SelectionId = "memory" | "night" | "docs" | "projectLife" | "pmRead" | "onboarding" | "planCritique" | "codeCritique" | "specialist";
+export type SelectionId = RoleSelectionId;
 
-export const SELECTION_SPECS: Record<SelectionId, {
+type SelectionSpec = {
   prefix: string;
   rpc: "save_memory_selection" | "save_night_review_selection" | "save_docs_selection" | "save_project_life_selection" | "save_pm_read_selection" | "save_onboarding_selection" | "save_plan_critique_selection" | "save_code_critique_selection" | "save_specialist_selection";
   /** The effort when the role has none (and the writer's does not apply). */
   effort: string;
   effortFromWriter?: boolean;
-}> = {
-  memory: { prefix: "memory", rpc: "save_memory_selection", effort: "none", effortFromWriter: true },
-  night: { prefix: "night_review", rpc: "save_night_review_selection", effort: "high" },
-  docs: { prefix: "docs", rpc: "save_docs_selection", effort: DOCS_DEFAULT_SELECTION.reasoningLevel },
-  projectLife: { prefix: "project_life", rpc: "save_project_life_selection", effort: "high" },
-  pmRead: { prefix: "pm_read", rpc: "save_pm_read_selection", effort: "low" },
-  onboarding: { prefix: "onboarding", rpc: "save_onboarding_selection", effort: "medium" },
-  planCritique: { prefix: "plan_critique", rpc: "save_plan_critique_selection", effort: "medium", effortFromWriter: true },
-  codeCritique: { prefix: "code_critique", rpc: "save_code_critique_selection", effort: "medium", effortFromWriter: true },
-  specialist: { prefix: "specialist", rpc: "save_specialist_selection", effort: "high" },
 };
+
+export const SELECTION_SPECS = Object.fromEntries(ROLE_SPECS.flatMap((spec) => spec.selectionId && spec.prefix
+  ? [[spec.selectionId, {
+    prefix: spec.prefix,
+    rpc: spec.rpc as SelectionSpec["rpc"],
+    effort: spec.defaultEffort ?? "medium",
+    ...(spec.effortFromWriter ? { effortFromWriter: true } : {}),
+  }]]
+  : [])) as Record<SelectionId, SelectionSpec>;
 
 export function selectionKeys(id: SelectionId) {
   const { prefix } = SELECTION_SPECS[id];

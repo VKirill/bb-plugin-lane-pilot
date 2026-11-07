@@ -10,7 +10,6 @@
  "native-agent > qa": 1,
  "native-agent > runs": 1,
  "native-agent > settings": 1,
- "native-agent > ui-shell": 1,
  "native-agent > writer": 3,
  "relay > native-agent": 2,
  "runs > native-agent": 3,

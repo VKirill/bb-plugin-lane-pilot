@@ -2,15 +2,25 @@ import { PROVIDER_POOL_KEY, providerPoolProblem } from "@lane-pilot/settings-cat
 import { leadSettingProblem } from "../lead";
 import { ROLE_MODEL_KEY_PREFIX, ZCODE_BACKGROUND_KEY, ZCODE_WINDOW_KEY, roleModelProblem, zcodeWindowProblem } from "@lane-pilot/models";
 import { SCHEDULE_ERRAND_DEFAULT_KEY, errandDefaultProblem } from "../schedule";
-import "../workflow/route-workflow";
-import "@lane-pilot/jev/judgments/repair-group";
-import "../runs/failure-class-judgment";
-import "@lane-pilot/jev/judgments/output-guard";
-import "../wall";
-import { listJudgments } from "@lane-pilot/jev";
+import { routeWorkflow, routeRecheck } from "../workflow/route-workflow";
+import { repairGroup } from "@lane-pilot/jev/judgments/repair-group";
+import { failureClassJudgment } from "../runs/failure-class-judgment";
+import { outputGuard } from "@lane-pilot/jev/judgments/output-guard";
+import { wallFilterJudgment } from "../wall";
+import { listJudgments, type Judgment } from "@lane-pilot/jev";
 import { jevSettingProblem } from "@lane-pilot/jev";
 import { HUB_KEYS, PROJECT_DEFAULT_KEYS, hubSettingProblem } from "../improvement";
 import { UI_CATALOG, WRITER_EFFORT_CHOICES_BY_PROVIDER } from "@lane-pilot/settings-catalog";
+
+/**
+ * The judgments the settings validation names explicitly, so their modules are loaded whatever else the entry point imports: the
+ * registry (`listJudgments`) holds only what some module has already registered, and the list must not depend on import order.
+ */
+const SETTING_JUDGMENTS = [routeWorkflow, routeRecheck, repairGroup, failureClassJudgment, outputGuard, wallFilterJudgment];
+
+function settingJudgments(): ReadonlyArray<Pick<Judgment<unknown, unknown>, "id" | "defaultMode" | "thresholds">> {
+  return [...new Map([...listJudgments(), ...SETTING_JUDGMENTS].map((judgment) => [judgment.id, judgment])).values()];
+}
 
 export type SettingValidationError = {
   code: "invalid_choice" | "incompatible_setting";
@@ -78,7 +88,7 @@ export function validateSettingValue(key: string, value: unknown): SettingValida
     return problem ? { code:"invalid_choice", key, params:[key, problem] } : null;
   }
   if (key === "jev.thresholds" || key === "jev.modes") {
-    const problem = jevSettingProblem(key, value, listJudgments());
+    const problem = jevSettingProblem(key, value, settingJudgments());
     return problem ? { code:"invalid_choice", key, params:[key, problem] } : null;
   }
   // When the ZCode app may be used: only in its free hours (promo, the default) or at any hour (always).

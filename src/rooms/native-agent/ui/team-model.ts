@@ -1,6 +1,6 @@
 import type { I18nKey } from "@lane-pilot/i18n";
-import { selectionKeys, type SelectionId } from "../../settings/ui/picker-selections";
-import { COUNCIL_SEATS } from "../../ui-shell/ui/page-model";
+import type { SelectionId } from "../../settings/ui/picker-selections";
+import { COUNCIL_KEYS, ROLE_SPECS, type RoleSelectionId, type RoleSpec as RoleSelectionSpec } from "@lane-pilot/models";
 import { WRITER_FALLBACK_SLOTS, writerFallbackKeys } from "../../writer/writer-fallbacks";
 
 /** Which roles the table lists, in the order of the access roles (the same groups as the agent profile). */
@@ -21,32 +21,36 @@ export type RoleSpec = {
   keys: string[];
 };
 
-const picked = (id: SelectionId) => Object.values(selectionKeys(id));
+/** The selection a row's access role owns, when it has one (packages/models/role-specs.ts). */
+const selectionOf = (accessRole: string): RoleSelectionSpec | undefined => ROLE_SPECS.find((spec) => spec.accessRole === accessRole);
+const selectionKeysOf = (accessRole: string): readonly string[] => selectionOf(accessRole)?.keys ?? [];
+const selectionIdOf = (accessRole: string): RoleSelectionId | undefined => selectionOf(accessRole)?.selectionId as RoleSelectionId | undefined;
 
 export const ROLE_GROUPS: Array<{ id: RoleGroupId; roles: RoleSpec[] }> = [
   { id: "code", roles: [
-    { id: "writer", testId: "writer-picker", model: "writer", detail: "writer", keys: ["writer.provider", "writer.model", "writer.reasoning_effort", "writer.service_tier", "writer.agent", "jev.LANE_JEV_EFFORT", "jev.LANE_OPENCODE_JEV", ...WRITER_FALLBACK_SLOTS.flatMap((slot) => Object.values(writerFallbackKeys(slot)))] },
+    { id: "writer", testId: "writer-picker", model: "writer", detail: "writer",
+      keys: [...selectionKeysOf("writer"), "writer.agent", "jev.LANE_JEV_EFFORT", "jev.LANE_OPENCODE_JEV", ...WRITER_FALLBACK_SLOTS.flatMap((slot) => Object.values(writerFallbackKeys(slot)))] },
     { id: "code-repair", keys: [] },
     { id: "night-fixer", keys: [] },
   ] },
   { id: "check", roles: [
-    { id: "plan-critic", testId: "plan-critique-settings", model: "planCritique", enabled: { key: "plan_critique.enabled", fallback: true, label: "stagePlanCritique" }, keys: ["plan_critique.enabled", ...picked("planCritique")] },
-    { id: "code-critic", testId: "code-critique-settings", model: "codeCritique", enabled: { key: "code_critique.enabled", fallback: false, label: "stageCodeCritique" }, keys: ["code_critique.enabled", ...picked("codeCritique")] },
+    { id: "plan-critic", testId: "plan-critique-settings", model: selectionIdOf("plan-critic"), enabled: { key: "plan_critique.enabled", fallback: true, label: "stagePlanCritique" }, keys: ["plan_critique.enabled", ...selectionKeysOf("plan-critic")] },
+    { id: "code-critic", testId: "code-critique-settings", model: selectionIdOf("code-critic"), enabled: { key: "code_critique.enabled", fallback: false, label: "stageCodeCritique" }, keys: ["code_critique.enabled", ...selectionKeysOf("code-critic")] },
     { id: "critic-tiebreak", keys: [] },
-    { id: "specialist-reviewer", testId: "specialist-settings", model: "specialist", enabled: { key: "specialist.enabled", fallback: false, label: "specialistReview" }, keys: ["specialist.enabled", ...picked("specialist")] },
+    { id: "specialist-reviewer", testId: "specialist-settings", model: selectionIdOf("specialist-reviewer"), enabled: { key: "specialist.enabled", fallback: false, label: "specialistReview" }, keys: ["specialist.enabled", ...selectionKeysOf("specialist-reviewer")] },
     { id: "gate-triage", keys: [] },
-    { id: "pm-reader", testId: "pm-read-settings", model: "pmRead", enabled: { key: "pm_read.enabled", fallback: false, label: "largeFileRead" }, keys: ["pm_read.enabled", ...picked("pmRead")] },
+    { id: "pm-reader", testId: "pm-read-settings", model: selectionIdOf("pm-reader"), enabled: { key: "pm_read.enabled", fallback: false, label: "largeFileRead" }, keys: ["pm_read.enabled", ...selectionKeysOf("pm-reader")] },
     { id: "council-seat", testId: "council-settings", detail: "council", enabled: { key: "council.judge", fallback: true, label: "settingCouncilJudge" },
-      keys: ["council.judge", ...COUNCIL_SEATS.flatMap((seat) => [`council.${seat}.provider`, `council.${seat}.model`, `council.${seat}.reasoning_effort`])] },
+      keys: ["council.judge", ...COUNCIL_KEYS] },
     { id: "rules-analyzer", testId: "rules-analyzer", model: "rules", keys: [] },
     { id: "episode-analyst", keys: [] },
     { id: "wall-hunter", keys: [] },
   ] },
   { id: "project", roles: [
-    { id: "docs-maintainer", testId: "docs-picker", model: "docs", enabled: { key: "docs.enabled", mode: true, label: "groupDocs" }, keys: ["docs.enabled", ...picked("docs")] },
-    { id: "onboarder", testId: "onboarding-picker", model: "onboarding", keys: picked("onboarding") },
-    { id: "memory-maintainer", testId: "memory-picker", model: "memory", enabled: { key: "memory.enabled", fallback: false, label: "settingMemoryEnabled" }, keys: ["memory.enabled", ...picked("memory")] },
-    { id: "project-life", testId: "project-life-picker", model: "projectLife", enabled: { key: "project_life.enabled", fallback: true, label: "groupProjectLife" }, keys: ["project_life.enabled", ...picked("projectLife")] },
+    { id: "docs-maintainer", testId: "docs-picker", model: selectionIdOf("docs-maintainer"), enabled: { key: "docs.enabled", mode: true, label: "groupDocs" }, keys: ["docs.enabled", ...selectionKeysOf("docs-maintainer")] },
+    { id: "onboarder", testId: "onboarding-picker", model: selectionIdOf("onboarder"), keys: [...selectionKeysOf("onboarder")] },
+    { id: "memory-maintainer", testId: "memory-picker", model: selectionIdOf("memory-maintainer"), enabled: { key: "memory.enabled", fallback: false, label: "settingMemoryEnabled" }, keys: ["memory.enabled", ...selectionKeysOf("memory-maintainer")] },
+    { id: "project-life", testId: "project-life-picker", model: selectionIdOf("project-life"), enabled: { key: "project_life.enabled", fallback: true, label: "groupProjectLife" }, keys: ["project_life.enabled", ...selectionKeysOf("project-life")] },
   ] },
   { id: "browser", roles: [
     { id: "browser-qa", testId: "browser-qa-host", detail: "browser", enabled: { key: "browser_qa.enabled", fallback: false, label: "globalQaHost" }, keys: ["browser_qa.enabled", "browser_qa.provider", "browser_qa.model", "browser_qa.backend", "browser_qa.approve", "browser_qa.reasoning_effort"] },

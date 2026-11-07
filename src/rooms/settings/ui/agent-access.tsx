@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import type { rpcContract } from "../../contracts";
 import { detectLocale, t, type I18nKey } from "@lane-pilot/i18n";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
+import { PROVIDER_CAPABILITIES } from "@lane-pilot/models";
 import {
   ACCESS_GROUPS,
   ACCESS_SWITCHES,
@@ -37,14 +38,6 @@ export type AccessView = {
   providers: Record<string, string[]>;
 };
 
-const SECTIONS: Array<{ id: "code" | "check" | "project" | "browser" | "specialists" | "workflow"; roles: string[] }> = [
-  { id: "code", roles: ["writer", "code-repair", "night-fixer"] },
-  { id: "check", roles: ["plan-critic", "code-critic", "specialist-reviewer", "gate-triage", "pm-reader", "council-seat", "rules-analyzer", "episode-analyst", "wall-hunter"] },
-  { id: "project", roles: ["docs-maintainer", "onboarder", "memory-maintainer", "project-life"] },
-  { id: "browser", roles: ["browser-qa", "errand", "api-recon"] },
-  { id: "specialists", roles: ["specialist:design-lead", "specialist:copy-lead", "specialist:seo-specialist", "specialist:tavily", "specialist:video-lead", "specialist:3d-artist", "specialist:game-dev", "specialist:social-manager", "specialist:billing-assistant", "specialist:visual-artist", "specialist:macos-operator"] },
-  { id: "workflow", roles: ["analyst", "planner", "auditor", "debugger"] },
-];
 export const roleKey = (role: string) => role.replace(/[:-]/g, "_");
 const GROUP_LABEL: Record<AccessGroup, I18nKey> = {
   bbPlugins: "accessBbPlugins", skills: "accessSkills", mcpServers: "accessMcpServers", nativePlugins: "accessNativePlugins",
@@ -53,9 +46,9 @@ const SWITCH_LABEL: Record<AccessSwitch, { label: I18nKey; hint: I18nKey }> = {
   userInstructions: { label: "accessUserInstructions", hint: "accessUserInstructionsHint" },
   projectInstructions: { label: "accessProjectInstructions", hint: "accessProjectInstructionsHint" },
 };
-const PROVIDER_LABEL: Record<string, I18nKey> = {
-  "claude-code": "accessProviderClaudeCode", codex: "accessProviderCodex", opencode2: "accessProviderOpencode", "acp-cursor": "accessProviderCursor",
-};
+const PROVIDER_LABEL: Record<string, I18nKey> = Object.fromEntries(
+  Object.entries(PROVIDER_CAPABILITIES).flatMap(([id, caps]) => (caps.labelKey ? [[id, caps.labelKey as I18nKey]] : [])),
+);
 export const ORIGIN_LABEL: Record<"role" | Origin, I18nKey> = {
   role: "accessOrigin_role", global: "accessOrigin_global", project: "accessOrigin_project", section: "accessOrigin_section",
 };
