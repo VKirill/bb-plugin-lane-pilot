@@ -8,7 +8,7 @@ import type { IdempotencyTriple } from "../reconcile";
 import { shouldReconcileAttemptThread, shouldResumeWorktreeHolder, shouldScanLostWorktreeHolder } from "../../tasks";
 import { WriterSelectionError } from "../../runs/server/run-routing";
 import { holderSpawnKey } from "../../platform/server";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { findThreadsByMetadata } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 import type { ReconcilePort } from "../reconcile";
@@ -131,7 +131,7 @@ export function createReconcile(ctx: ServerCore, services: Services) {
     projectId:string; attempt:NonNullable<ReturnType<typeof getAttempt>>; writerThreadId:string;
   }): Promise<boolean> {
     if (!input.writerThreadId) return false;
-    const thread = await bb.sdk.threads.get({ threadId:input.writerThreadId }).catch(() => null);
+    const thread = await orMiss(bb.sdk.threads.get({ threadId:input.writerThreadId }), null, isNotFound);
     const status = stringAt(thread, "status");
     if (status !== "idle" && status !== "error") return false;
     if (input.attempt.state === "cancel_requested") {

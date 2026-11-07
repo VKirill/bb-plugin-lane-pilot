@@ -10,7 +10,7 @@ import type { WorkflowEngineApi } from "../../workflow/server/workflow";
 import type { WriterHostApi } from "../../writer/server/writer-host";
 
 import { getRun, getRunSettingsScopes } from "../../storage";
-import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
+import { fileAllowedByOwns, fileBlockedByNeverTouch, orMiss, isNotFound } from "@lane-pilot/kit";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { outputText } from "../../writer/server/writer-task";
 import { adoptRuleProposal, nightMayAdopt, refreshRuleProposals, retireAdoptedRule, rewordAdoptedRule } from "./insights";
@@ -212,7 +212,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
     const kept: string[] = [];
     for (const projectId of projectIds) {
       if (projectId === SANDBOX_PROJECT_ID) continue;
-      const project = await bb.sdk.projects.get({ projectId }).catch(() => null) as { name?: string } | null;
+      const project = await orMiss(bb.sdk.projects.get({ projectId }), null, isNotFound) as { name?: string } | null;
       if (isSandboxProjectName(project?.name)) continue;
       kept.push(projectId);
     }
@@ -230,7 +230,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
   async function placeLabel(projectId: string, scope: readonly string[]): Promise<string> {
     const label = await scopeLabel(projectId, scope);
     if (label) return label;
-    const project = await bb.sdk.projects.get({ projectId }).catch(() => null) as { name?: string } | null;
+    const project = await orMiss(bb.sdk.projects.get({ projectId }), null, isNotFound) as { name?: string } | null;
     return project?.name ?? projectId;
   }
 

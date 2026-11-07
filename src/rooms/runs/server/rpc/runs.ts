@@ -20,7 +20,7 @@ import { cancelAttemptById } from "../cancel";
 import { queueWaitPercentiles, runQueueWaits } from "../../../usage/server/attempt-metrics";
 import { pauseRun } from "../runs-pause";
 import { folderEnvironment, projectSources } from "../../../platform/server";
-import { id, stringAt, valueAt } from "@lane-pilot/kit";
+import { id, stringAt, valueAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
@@ -214,7 +214,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       const now = Date.now();
       const ids = [...new Set(items.flatMap((item) => (item.pmThreadId ? [item.pmThreadId] : [])))];
       await Promise.all(ids.filter((id) => (pmTitles.get(id)?.at ?? 0) < now - 300_000).slice(0, 40).map(async (id) => {
-        const row = await bb.sdk.threads.get({ threadId: id }).catch(() => null) as Record<string, unknown> | null;
+        const row = await orMiss(bb.sdk.threads.get({ threadId: id }), null, isNotFound) as Record<string, unknown> | null;
         pmTitles.set(id, { title: stringAt(row, "title") ?? null, at: now });
       }));
       return { items: items.map((item) => ({ ...item, pmThreadTitle: item.pmThreadId ? pmTitles.get(item.pmThreadId)?.title ?? null : null })) };
@@ -228,7 +228,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       // The threads that worked on it (writer per attempt, a helper per stage) under the PM chat, each with the BB child
       // threads it started (sub-agents); archived ones too, since a finished task's helpers are archived.
       const describe = async (id: string, role: string): Promise<CardThread> => {
-        const row = await bb.sdk.threads.get({ threadId: id }).catch(() => null) as Record<string, unknown> | null;
+        const row = await orMiss(bb.sdk.threads.get({ threadId: id }), null, isNotFound) as Record<string, unknown> | null;
         return { id, role, title: stringAt(row, "title") ?? null, status: stringAt(row, "status") ?? null, children: [] };
       };
       const childrenOf = async (id: string): Promise<CardThread[]> => {
@@ -334,7 +334,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         const metadata = await bb.sdk.threads.getPluginMetadata({ threadId }).catch(() => null);
         const role = valueAt(metadata, "role");
         pluginRole = typeof role === "string" ? role : null;
-        const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
+        const thread = await orMiss(bb.sdk.threads.get({ threadId }), null, isNotFound);
         threadStatus = stringAt(thread, "status");
       }
       const mainAgents = (await services.listedAgentProfiles({ pickable: true })).map(pickableAgent);

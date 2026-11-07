@@ -2,6 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { LanePilotDatabase } from "../../storage";
 import { resolve } from "node:path";
 import { sendServiceMessage } from "../../relay/server";
+import { isNotFound, orMiss } from "@lane-pilot/kit";
 
 /**
  * Threads that are not Lane Pilot's but work in a folder where a Lane Pilot run merges writers' work. Agents on the
@@ -58,7 +59,7 @@ export async function askGuestsToCommit(bb: BbPluginApi, path: string, files: st
   const asked: string[] = [];
   const now = Date.now();
   for (const guest of await listGuests(bb.storage.kv, path, now)) {
-    const thread = await bb.sdk.threads.get({ threadId:guest.threadId }).catch(() => null) as { archivedAt?: unknown } | null;
+    const thread = await orMiss(bb.sdk.threads.get({ threadId:guest.threadId }), null, isNotFound) as { archivedAt?: unknown } | null;
     if (!thread || thread.archivedAt) continue;
     const last = await bb.storage.kv.get(ASKED(guest.threadId, path));
     if (typeof last === "number" && now - last < ASK_EVERY_MS) { asked.push(guest.threadId); continue; }

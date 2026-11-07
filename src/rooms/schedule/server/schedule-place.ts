@@ -2,8 +2,7 @@ import { resolve } from "node:path";
 import type { ScheduleTask } from "../model";
 import type { WhereView } from "../views";
 import type { ServerCore } from "../../contracts/server";
-
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 
 import type { WorkflowTriggersApi } from "../../workflow/server/workflow-triggers-live";
 
@@ -28,11 +27,11 @@ const within = (path: string, folder: string) => { const target = resolve(path),
 
 async function placeOf(ctx: ServerCore, services: Services, projectId: string): Promise<ProjectPlace> {
   const { bb } = ctx;
-  const project = await bb.sdk.projects.get({ projectId }).catch(() => null) as { name?: unknown; sources?: Array<{ hostId?: string; path?: string }> } | null;
+  const project = await orMiss(bb.sdk.projects.get({ projectId }), null, isNotFound) as { name?: unknown; sources?: Array<{ hostId?: string; path?: string }> } | null;
   const pm = await services.workflowTriggers.pmOf(projectId);
-  const thread = pm ? await bb.sdk.threads.get({ threadId: pm.pmThreadId }).catch(() => null) : null;
+  const thread = pm ? await orMiss(bb.sdk.threads.get({ threadId: pm.pmThreadId }), null, isNotFound) : null;
   const environmentId = stringAt(thread, "environmentId");
-  const environment = environmentId ? await bb.sdk.environments.get({ environmentId }).catch(() => null) : null;
+  const environment = environmentId ? await orMiss(bb.sdk.environments.get({ environmentId }), null, isNotFound) : null;
   const folderPath = stringAt(environment, "path") ?? project?.sources?.[0]?.path ?? null;
   const hostId = stringAt(environment, "hostId") ?? project?.sources?.[0]?.hostId ?? null;
   const sections = await ctx.listProjectSections(projectId).catch(() => []);
@@ -70,9 +69,9 @@ export function createThreadHosts(ctx: ServerCore) {
   return async (threadId: string): Promise<string | null> => {
     const cached = known.get(threadId);
     if (cached) return cached;
-    const thread = await ctx.bb.sdk.threads.get({ threadId }).catch(() => null);
+    const thread = await orMiss(ctx.bb.sdk.threads.get({ threadId }), null, isNotFound);
     const environmentId = stringAt(thread, "environmentId");
-    const environment = environmentId ? await ctx.bb.sdk.environments.get({ environmentId }).catch(() => null) : null;
+    const environment = environmentId ? await orMiss(ctx.bb.sdk.environments.get({ environmentId }), null, isNotFound) : null;
     const hostId = stringAt(environment, "hostId");
     if (hostId) known.set(threadId, hostId);
     return hostId;

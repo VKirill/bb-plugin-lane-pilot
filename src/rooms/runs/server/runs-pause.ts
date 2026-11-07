@@ -22,15 +22,24 @@ export async function isHeld(kv: Kv, runId: string): Promise<boolean> {
  * Holds the caller while the run is paused. Returns once it is resumed (true) or the plugin is being reloaded (false: the
  * new instance asks again). `onFirstWait` is called once, when the wait begins.
  */
-export async function waitWhileRunPaused(kv: Kv, runId: string, options: { isDisposed: () => boolean; pollMs?: number; onFirstWait?: () => void }): Promise<boolean> {
-  let waited = false;
+export async function waitWhileRunPaused(kv: Kv, runId: string, options: { isDisposed: () => boolean; pollMs?: number; onFirstWait?: () => void; onError?: (message: string) => void }): Promise<boolean> {
+  let waited = false, readErrorLogged = false;
   // The conveyor switch (conveyor.ts) holds every run the same way.
-  while (await isHeld(kv, runId)) {
+  for (;;) {
+    let held: boolean;
+    try { held = await isHeld(kv, runId); }
+    catch (cause) {
+      // A failed flag read is "state unknown", not "resumed": stay held and keep polling until a clean read.
+      if (!readErrorLogged) { readErrorLogged = true; options.onError?.(`run ${runId} pause/conveyor state unreadable, staying held: ${cause instanceof Error ? cause.message : String(cause)}`); }
+      if (options.isDisposed()) return false;
+      await sleep(options.pollMs ?? pollPause(5_000));
+      continue;
+    }
+    if (!held) return true;
     if (options.isDisposed()) return false;
     if (!waited) { waited = true; options.onFirstWait?.(); }
     await sleep(options.pollMs ?? pollPause(5_000));
   }
-  return true;
 }
 
 export type RunPauseView = {

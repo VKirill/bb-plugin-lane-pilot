@@ -6,12 +6,14 @@ import { resolveHome } from "@lane-pilot/kit";
 
 export type S8Hashes = Record<string, string | null>;
 
-export async function s8Hashes(homeDir?: string): Promise<S8Hashes> {
+export async function s8Hashes(homeDir?: string, log?: (message: string) => void): Promise<S8Hashes> {
   const home = resolveHome(homeDir);
   const result: S8Hashes = {};
   for (const rel of S8_RELATIVE_PATHS) {
     const path = join(home, rel);
-    result[path] = await sha256FileOrNull(path);
+    // One unreadable profile must not reject the hashes of the rest; the miss reads as absent.
+    try { result[path] = await sha256FileOrNull(path); }
+    catch (cause) { log?.(`s8 hash ${rel} unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); result[path] = null; }
   }
   return result;
 }

@@ -1,6 +1,6 @@
 import type { TaskV2 } from "../../contracts";
 import { getAttempt, getRun, getRunWriterHost, listAttemptsForTask, listOpenAttempts } from "../../storage";
-import { redactKnown, sha256Hex } from "@lane-pilot/kit";
+import { redactKnown, sha256Hex, orMiss, isNotFound } from "@lane-pilot/kit";
 import { validateTaskV2 } from "../../tasks/task-v2";
 import { agentPrompt, outputContract, parseAgentOutput, resolveTaskQualityMode } from "@lane-pilot/workflow-engine";
 import type { NodeExecutor, PollResult, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
@@ -88,7 +88,7 @@ async function pmCheckout(rt: ChainRuntime): Promise<{ hostId: string; path: str
   }
   const pm = await bb.sdk.threads.get({ threadId: rt.pmThreadId });
   const environmentId = stringAt(pm, "environmentId");
-  const env = environmentId ? await bb.sdk.environments.get({ environmentId }).catch(() => null) : null;
+  const env = environmentId ? await orMiss(bb.sdk.environments.get({ environmentId }), null, isNotFound) : null;
   const path = stringAt(env, "path"), hostId = stringAt(env, "hostId");
   if (!path || !hostId) throw new Error("the PM chat has no checkout to work in");
   return { hostId, path };

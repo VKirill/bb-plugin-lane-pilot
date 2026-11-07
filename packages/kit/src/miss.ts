@@ -73,7 +73,7 @@ export function parseJsonOr<T>(text: string, fallback: T): T {
  * Typed miss for a read whose subject may be absent: `fallback` only when `expected`
  * names the anticipated failure (isFsAbsent, isNotFound); anything else propagates.
  */
-export async function orMiss<T>(work: Promise<T>, fallback: T, expected: (cause: unknown) => boolean): Promise<T> {
+export async function orMiss<T, F>(work: Promise<T>, fallback: F, expected: (cause: unknown) => boolean): Promise<T | F> {
   try {
     return await work;
   } catch (cause) {

@@ -15,7 +15,7 @@ import { withUsage } from "../../usage/server";
 import { DOCS_MAINTENANCE, DOCS_NIGHT, builtinWorkflow } from "../../workflow";
 import type { StepContext, WorkflowEngine } from "../../workflow";
 import { requireGreen } from "../../workflow/server";
-import { stringAt, valueAt } from "@lane-pilot/kit";
+import { stringAt, valueAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { recordStage } from "../../runs/server";
 import { sleepUntilThreadSignal, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { basename, resolve } from "node:path";
@@ -122,7 +122,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
   /** Every folder of a project on every machine: its sources and its section folders, as the nightly pass sees them. */
   async function docsPlaces(projectId:string):Promise<Array<DocsPlace & {scopes:string[];name:string}>> {
     const places:Array<DocsPlace & {scopes:string[];name:string}>=[];
-    const described=await bb.sdk.projects.get({projectId}).catch(()=>null) as {name?:string;sources?:Array<{hostId?:string;path?:string}>}|null;
+    const described=await orMiss(bb.sdk.projects.get({projectId}), null, isNotFound) as {name?:string;sources?:Array<{hostId?:string;path?:string}>}|null;
     for(const source of described?.sources??[]){
       if(source.hostId&&source.path&&!places.some((place)=>place.hostId===source.hostId&&place.path===source.path)) places.push({scopes:[],hostId:source.hostId,path:source.path,name:described?.name??basename(source.path)});
     }
@@ -161,7 +161,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       const threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("docs thread id missing");
       for(;;){
         const mark=threadWatchMark(bb);
-        if(stringAt(await bb.sdk.threads.get({threadId}).catch(()=>null),"status")!=="starting") break;
+        if(stringAt(await orMiss(bb.sdk.threads.get({threadId}), null, isNotFound),"status")!=="starting") break;
         await sleepUntilThreadSignal(bb,threadId,mark,2_000);
       }
       return threadId;
@@ -271,7 +271,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       const root=await services.resolveProjectWriterHost({projectId:project.id}).catch(()=>null);
       if(root?.status==="resolved"&&root.path) places.push({scopes:[],hostId:root.hostId,path:root.path});
       // Every source of the project is a place too: a project may keep its code repository on another machine.
-      const described=await bb.sdk.projects.get({projectId:project.id}).catch(()=>null) as {sources?:Array<{hostId?:string;path?:string}>}|null;
+      const described=await orMiss(bb.sdk.projects.get({projectId:project.id}), null, isNotFound) as {sources?:Array<{hostId?:string;path?:string}>}|null;
       for(const source of described?.sources??[]){
         if(source.hostId&&source.path&&!places.some((place)=>place.hostId===source.hostId&&place.path===source.path)) places.push({scopes:[],hostId:source.hostId,path:source.path});
       }
@@ -1035,7 +1035,9 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     for(const unitKey of Object.keys(units)){
       signal?.throwIfAborted();
       if(docsUnitsFinishing.has(unitKey)) continue;
-      const record=await bb.storage.kv.get(unitKey) as DocsUnitRecord|null;
+      let record:DocsUnitRecord|null;
+      try { record=await bb.storage.kv.get(unitKey) as DocsUnitRecord|null; }
+      catch(cause){ bb.log.warn(`Lane Pilot docs unit ${unitKey} unreadable, skipped: ${cause instanceof Error?cause.message:String(cause)}`); continue; }
       if(!record){ await updateDocsUnitsIndex((index)=>{ delete index[unitKey]; }); continue; }
       void finishDocsUnit(record,(path,self)=>[...docsUnitsFinishing.values()].some((unit)=>unit!==self&&unitWritable(unit)(path)))
         // A reload stopping this instance is not a failure: the next instance resumes the unit.
@@ -1045,7 +1047,9 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     const keep:DocsOpenPasses={};
     for(const [key,entry] of Object.entries(open)){
       signal?.throwIfAborted();
-      const night=await bb.storage.kv.get(key) as {date?:string;attempts?:number;finished?:boolean;failed?:number}|null;
+      let night:{date?:string;attempts?:number;finished?:boolean;failed?:number}|null;
+      try { night=await bb.storage.kv.get(key) as typeof night; }
+      catch(cause){ bb.log.warn(`Lane Pilot docs night ${key} unreadable, kept for the next pass: ${cause instanceof Error?cause.message:String(cause)}`); keep[key]=entry; continue; }
       const unsettled=night?.date===entry.date&&(!night.finished||(night.failed??0)>0)&&(night.attempts??0)<DOCS_NIGHT_ATTEMPTS;
       if(!unsettled) continue;
       keep[key]=entry;

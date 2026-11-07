@@ -6,7 +6,6 @@ import {
   parseEdits, parseExperience, parseNotes, proposePrompt, renderExperienceMarkdown, renderThreadEvents, screenRejected, skillNames, validate,
   type ProbeBudget, type RejectedEdit, type ThreadEventLike, type Tree,
 } from "@lane-pilot/harness-core";
-
 import type { WorkflowEngineApi } from "../../workflow/server/workflow";
 import type { WriterHostApi } from "../../writer/server/writer-host";
 
@@ -16,7 +15,7 @@ interface Services {
   workflowEngine: WorkflowEngineApi["workflowEngine"];
 }
 import { fullAccessSpawn, scheduleIsolated } from "../../platform/server";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { type ServerCore } from "../../contracts/server";
 import { projectRoleField } from "../../runs/server";
 import { HELPER_ROLES, type HelperRole } from "../../native-agent";
@@ -781,7 +780,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
     const kept: string[] = [];
     for (const projectId of ids) {
       if (projectId === SANDBOX_PROJECT_ID) continue;
-      const project = await bb.sdk.projects.get({ projectId }).catch(() => null) as { name?: string } | null;
+      const project = await orMiss(bb.sdk.projects.get({ projectId }), null, isNotFound) as { name?: string } | null;
       if (isSandboxProjectName(project?.name)) continue;
       kept.push(projectId);
     }

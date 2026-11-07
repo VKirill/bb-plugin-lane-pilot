@@ -29,6 +29,7 @@ import { setRuleBudgets } from "./rule-budget";
 import { lpNotesPort, lpRulesPort } from "./rules-port";
 import { complexityReport, noteOwnerQuestion, scanComplexity, scanPromises } from "./signals";
 import { DAY_MS, projectsWithCandidates, purgeStaleBodies, startOfDay, type ItemKind, type ItemState } from "./store";
+import { isNotFound, orMiss } from "@lane-pilot/kit";
 
 import type { PromotionServiceApi } from "../rule-forms/promotion-service";
 import type { RuleScanApi } from "../self-repair/server/rule-scan";
@@ -115,9 +116,9 @@ export function createLearning(ctx: ServerCore, services: Services) {
     const run = db.prepare("SELECT id FROM lane_pilot_run WHERE pm_thread_id=? ORDER BY created_at DESC LIMIT 1").get(threadId) as { id: string } | undefined;
     const scopes = run ? getRunSettingsScopes(db, run.id) : [];
     if (scopes.length) return scopes;
-    const thread = await bb.sdk.threads.get({ threadId }).catch(() => null) as { environmentId?: unknown } | null;
+    const thread = await orMiss(bb.sdk.threads.get({ threadId }), null, isNotFound) as { environmentId?: unknown } | null;
     const environmentId = typeof thread?.environmentId === "string" ? thread.environmentId : null;
-    const environment = environmentId ? await bb.sdk.environments.get({ environmentId }).catch(() => null) as { path?: unknown } | null : null;
+    const environment = environmentId ? await orMiss(bb.sdk.environments.get({ environmentId }), null, isNotFound) as { path?: unknown } | null : null;
     return typeof environment?.path === "string" && environment.path ? await ctx.scopesForWorkspace(projectId, environment.path) : [];
   }
 

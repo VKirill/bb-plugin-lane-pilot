@@ -3,7 +3,7 @@ import { getActivation, getAttempt, getRun, getTask, importSettingsOnce, inspect
 import { cancelRejection, confirmWriterStopped, finishRunSafely, pauseRun } from "../../runs/server";
 import { markCancelCode } from "../../storage";
 import { renderTimeline, taskTimeline } from "../../runs";
-import { stringAt, valueAt } from "@lane-pilot/kit";
+import { stringAt, valueAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { outputText, runSkillsCli, SKILLS_USAGE } from "../../writer/server";
 import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
 import type { ServerCore } from "../../contracts/server";
@@ -520,7 +520,7 @@ ${ERRANDS_USAGE}` },
           const flag = rest.indexOf("--project");
           const explicit = flag >= 0 ? rest[flag + 1] : undefined;
           const text = rest.filter((_, index) => flag < 0 || (index !== flag && index !== flag + 1)).join(" ").trim();
-          const thread = !explicit && invocation?.threadId ? await bb.sdk.threads.get({ threadId: invocation.threadId }).catch(() => null) : null;
+          const thread = !explicit && invocation?.threadId ? await orMiss(bb.sdk.threads.get({ threadId: invocation.threadId }), null, isNotFound) : null;
           const projectId = explicit ?? ((thread as { projectId?: unknown } | null)?.projectId as string | undefined);
           if (!text || !projectId) return { exitCode:1, stderr:`${MEMORY_CLI_USAGE}\n${projectId ? "" : "no project: pass --project <id> outside a BB thread"}` };
           const rpc = sessionMemoryRpc(ctx, services);
@@ -798,7 +798,7 @@ ${ERRANDS_USAGE}` },
           const startedAt = Date.now();
           try {
             await waitThreadIdle(bb,threadId,"wait_thread_probe_timeout", 15_000);
-            const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
+            const thread = await orMiss(bb.sdk.threads.get({ threadId }), null, isNotFound);
             const listed = await listThreadEventsRaw(bb, {
               threadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"50",
             });

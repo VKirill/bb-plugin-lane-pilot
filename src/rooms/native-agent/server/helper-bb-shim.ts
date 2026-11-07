@@ -1,6 +1,6 @@
 import { loadProjectSettings } from "../../storage";
 import type { ExperimentalPluginProviderEnvEntry } from "@get-bb/plugin-sdk";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 
 /**
@@ -129,7 +129,7 @@ export function createPmSkillTraceEnv(ctx: Pick<ServerCore, "bb">) {
     if (stringAt(metadata, "role") !== "pm") return [];
     const reason = "Lane Pilot: PM skill-use trace; the session hook reports which skills the PM opens";
     const env: ExperimentalPluginProviderEnvEntry[] = [{ name: "LANE_PILOT_PM_THREAD_ID", value: context.threadId, reason }];
-    const thread = await bb.sdk.threads.get({ threadId: context.threadId }).catch(() => null);
+    const thread = await orMiss(bb.sdk.threads.get({ threadId: context.threadId }), null, isNotFound);
     const projectId = stringAt(thread, "projectId");
     if (projectId) env.push({ name: "LANE_PILOT_PM_PROJECT_ID", value: projectId, reason });
     return env;

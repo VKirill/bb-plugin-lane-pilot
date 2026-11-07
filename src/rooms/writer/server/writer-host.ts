@@ -6,7 +6,7 @@ import { resolveWriterBinding } from "../../native-agent";
 import type { ProjectSourceBinding } from "../../native-agent";
 import { mapListedQaHosts } from "../../platform/server";
 import { CATALOG_WAIT_MS, modelCatalogOf, within } from "../../platform/server";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 
 export function createWriterHost(ctx: ServerCore) {
@@ -54,12 +54,12 @@ export function createWriterHost(ctx: ServerCore) {
     let session: { environmentId?: string | null; projectId?: string | null } | undefined;
     let environment: { id: string; hostId: string; path: string | null; status: string; projectId?: string | null } | null = null;
     if (args.threadId) {
-      const thread = await bb.sdk.threads.get({ threadId: args.threadId }).catch(() => null);
+      const thread = await orMiss(bb.sdk.threads.get({ threadId: args.threadId }), null, isNotFound);
       if (thread && stringAt(thread, "projectId") === args.projectId) {
         const environmentId = stringAt(thread, "environmentId");
         session = { environmentId, projectId: stringAt(thread, "projectId") };
         if (environmentId) {
-          const env = await bb.sdk.environments.get({ environmentId }).catch(() => null);
+          const env = await orMiss(bb.sdk.environments.get({ environmentId }), null, isNotFound);
           if (env) {
             environment = {
               id: stringAt(env, "id") ?? environmentId,

@@ -97,8 +97,11 @@ export function createOwnerAsk(bb: BbPluginApi, log: (message: string) => void) 
   async function recoverLost(): Promise<string[]> {
     const told: string[] = [];
     for (const key of await bb.storage.kv.list(PENDING_PREFIX)) {
-      const record = await bb.storage.kv.get<PendingRecord>(key);
-      await bb.storage.kv.delete(key).catch(() => undefined);
+      let record: PendingRecord | undefined;
+      try {
+        record = await bb.storage.kv.get<PendingRecord>(key);
+        await bb.storage.kv.delete(key).catch(() => undefined);
+      } catch (cause) { log(`owner question record ${key} unreadable, skipped: ${cause instanceof Error ? cause.message : String(cause)}`); continue; }
       if (!record?.threadId || open.has(record.threadId)) continue;
       try {
         await sendToThread(record.threadId, `Lane Pilot: the owner's question «${clip(record.question.split("\n", 1)[0]!, 120)}» was lost when Lane Pilot reloaded before the owner answered, so no answer will come. If it still matters, ask it again.`);

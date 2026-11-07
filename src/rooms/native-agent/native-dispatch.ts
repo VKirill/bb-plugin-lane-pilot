@@ -25,6 +25,7 @@ import {
   resolveNativeDispatchWorkspace,
   NATIVE_WORKSPACE_REFUSAL,
 } from "./native-run";
+import { bestEffort } from "@lane-pilot/kit";
 
 type HostClient = {
   call: (method: string, input: unknown, opts: { hostId: string }) => Promise<unknown>;
@@ -375,10 +376,10 @@ export async function nativeContributedEnv(
     const selected = await bb.storage.kv.get<NativeSelection>(nativeThreadKey(threadId));
     if (!selected) return [];
     const cached = await bb.storage.kv.get<ExperimentalPluginProviderEnvEntry[]>(nativeEnvKey(threadId));
-    const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
+    const thread = await bestEffort(bb.log, "native dispatch thread read", bb.sdk.threads.get({ threadId }), null);
     const environmentId = thread && typeof thread.environmentId === "string" ? thread.environmentId.trim() : "";
     const environment = environmentId
-      ? await bb.sdk.environments.get({ environmentId }).catch(() => null)
+      ? await bestEffort(bb.log, "native dispatch environment read", bb.sdk.environments.get({ environmentId }), null)
       : null;
     const path = environment && typeof environment.path === "string" ? environment.path.trim() : "";
     const envHost = environment && typeof environment.hostId === "string" && environment.hostId.trim()

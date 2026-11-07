@@ -4,7 +4,7 @@ import { writerExecutionSelection } from "@lane-pilot/models";
 
 import type { ServerCore } from "../../contracts/server";
 import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, scheduleIsolated, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { closeOwnerItem, closeOwnerItemsByPrefix, loadPushConfig, postOwnerItem } from "../../owner-waiting";
 import { loadProjectSettings, saveProjectSetting } from "../../storage";
 import { mentionContext } from "../../native-agent";
@@ -336,7 +336,7 @@ export function createLeadService(ctx: ServerCore, services: Services, migration
   async function liveThread(projectId: string): Promise<string | null> {
     const threadId = await bb.storage.kv.get<string>(chatKey(projectId));
     if (typeof threadId !== "string" || !threadId) return null;
-    const thread = await bb.sdk.threads.get({ threadId }).catch(() => null) as { archivedAt?: unknown } | null;
+    const thread = await orMiss(bb.sdk.threads.get({ threadId }), null, isNotFound) as { archivedAt?: unknown } | null;
     if (!thread || thread.archivedAt || stringAt(thread, "projectId") !== projectId || DEAD_STATUSES.has(stringAt(thread, "status") ?? "")) return null;
     return threadId;
   }

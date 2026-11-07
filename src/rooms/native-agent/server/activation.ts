@@ -13,7 +13,7 @@ import { parseWorkspaceMode, resolveManagedWorkspace, usesManagedWorktree } from
 import { excludeBookkeeping } from "../../verification/server";
 import { fullAccessSpawn, pmHasGuard, pmPrompt } from "../../platform/server";
 import { requireHelperSpawn, requiredPolicyField } from "../../runs/server";
-import { id, stringAt, valueAt } from "@lane-pilot/kit";
+import { id, stringAt, valueAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 
 import type { ReconcileApi } from "../../stability/server/reconcile";
@@ -44,7 +44,7 @@ export function createActivation(ctx: ServerCore, services: Services) {
       return;
     }
     const project = typeof bb.sdk.projects?.get === "function"
-      ? await bb.sdk.projects.get({ projectId }).catch(() => null) as { sources?: Array<{ hostId?: string; path?: string }> } | null
+      ? await orMiss(bb.sdk.projects.get({ projectId }), null, isNotFound) as { sources?: Array<{ hostId?: string; path?: string }> } | null
       : null;
     const sources = Array.isArray(project?.sources) ? project.sources : [];
     if (env.kind === "existing" && env.type === "host") {

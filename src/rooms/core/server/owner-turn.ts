@@ -1,3 +1,4 @@
+import { isNotFound, orMiss } from "@lane-pilot/kit";
 /**
  * Work in a PM chat starts from the owner's words in that chat. On 2026-11-01 a PM opened in a subfolder told the repository root's
  * PM, with `bb thread tell`, to dispatch the owner's tasks, and that PM did, as if the owner had asked there. BB stamps a turn that
@@ -32,7 +33,7 @@ export function ownerTurnGate(bb: ThreadsSdk) {
       const rows = (Array.isArray(listed) ? listed : (listed as { events?: unknown[] } | null)?.events ?? []) as TurnEvent[];
       const event = rows[0] ?? null;
       const from = senderOf(event);
-      const sender = from ? (await bb.sdk.threads.get({ threadId: from } as never).catch(() => null)) as SenderThread : null;
+      const sender = from ? (await orMiss(bb.sdk.threads.get({ threadId: from } as never), null, isNotFound)) as SenderThread : null;
       return foreignTurnReason(event, sender, toolName);
     } catch {
       return null; // ponytail: fail open; a hub that cannot show the turn must not stop the owner's own work

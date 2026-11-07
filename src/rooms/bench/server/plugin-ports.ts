@@ -2,7 +2,7 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { taskV2Schema } from "../../contracts";
 import { fullAccessSpawn } from "../../platform/server";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { type ServerCore } from "../../contracts/server";
 import { cancelAttemptById, finishRunSafely } from "../../runs/server";
 import { createRun, createTask, getActivation, getRun, getTask, listOpenAttempts, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, savePrototypeConfig } from "../../storage";
@@ -54,7 +54,7 @@ export function benchPipeline(ctx: Pick<ServerCore, "bb" | "db" | "host" | "canc
     async findProject(name) {
       const found = (await listProjects(bb)).find((row) => row.name === name);
       if (!found) return null;
-      const project = await bb.sdk.projects.get({ projectId: found.id }).catch(() => null) as { sources?: Array<{ hostId?: string; path?: string }> } | null;
+      const project = await orMiss(bb.sdk.projects.get({ projectId: found.id }), null, isNotFound) as { sources?: Array<{ hostId?: string; path?: string }> } | null;
       const source = project?.sources?.[0];
       return source?.hostId && source.path ? { projectId: found.id, name, hostId: source.hostId, path: source.path } : null;
     },

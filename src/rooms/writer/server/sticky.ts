@@ -3,7 +3,7 @@ import { isLiveDecision } from "../live-folder";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, loadProjectSettings, saveReasoningTrace, setAttemptDirtBefore, setAttemptWorkspace, transitionAttempt, taskBasePath } from "../../storage";
 import { SESSION_MAX_TURNS, failureClass } from "../../runs";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { sleepUntilThreadSignal, threadWatchMark } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";
 import type { ServerCore } from "../../contracts/server";
@@ -148,10 +148,10 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
     // A thread a turn could not be sent to (its chat section archived or moving: HTTP 409) takes no more turns; the retry spawns.
     if (await bb.storage.kv.get(deadKey(attempt.thread_id))) return false;
     if (!inSession && threadTurns(attempt.thread_id) >= STICKY_MAX_TURNS) return false;
-    const thread = await bb.sdk.threads.get({ threadId:attempt.thread_id }).catch(() => null);
+    const thread = await orMiss(bb.sdk.threads.get({ threadId:attempt.thread_id }), null, isNotFound);
     if (stringAt(thread, "status") !== "idle" || (thread as { archivedAt?: unknown } | null)?.archivedAt) return false;
     if (attempt.environment_id) {
-      const environment = await bb.sdk.environments.get({ environmentId:attempt.environment_id }).catch(() => null);
+      const environment = await orMiss(bb.sdk.environments.get({ environmentId:attempt.environment_id }), null, isNotFound);
       if (!environment || (environment as { archivedAt?: unknown }).archivedAt) return false;
     }
     // A writer that moved its thread out of the worktree takes no more turns there: the next one would write in that folder.
@@ -229,7 +229,7 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
       // The first look comes after a plain pause: the compaction has not started the moment the call returns.
       if (first) { first = false; await new Promise((wake) => setTimeout(wake, 2_000)); }
       const mark = threadWatchMark(bb);
-      if (stringAt(await bb.sdk.threads.get({ threadId }).catch(() => null), "status") === "idle") return true;
+      if (stringAt(await orMiss(bb.sdk.threads.get({ threadId }), null, isNotFound), "status") === "idle") return true;
       await sleepUntilThreadSignal(bb, threadId, mark, 2_000, undefined, { deadlineAt: deadline });
     }
     return true;

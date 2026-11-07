@@ -54,9 +54,13 @@ interface Services {
   ruleScan: RuleScanApi;
 }
 
+/** A projects.get probe: any lookup failure answers null — callers take their old path (hasOtherRootSource keeps BB's managed worktree). */
+const projectOrNull = (bb: { sdk: { projects: { get(args: { projectId: string }): Promise<unknown> } } }, projectId: string) =>
+  Promise.resolve().then(() => bb.sdk.projects.get({ projectId })).catch(() => null) as Promise<{ sources?: Array<{ hostId?: string; path?: string }> } | null>;
+
 /** True when the run works in the project's own checkout on that machine, which BB's managed worktree can fork. */
 export async function isProjectRootCheckout(bb: { sdk: { projects: { get(args: { projectId: string }): Promise<unknown> } } }, projectId: string, hostId: string, path: string): Promise<boolean> {
-  const project = await bb.sdk.projects.get({ projectId }).catch(() => null) as { sources?: Array<{ hostId?: string; path?: string }> } | null;
+  const project = await projectOrNull(bb, projectId);
   return (project?.sources ?? []).some((source) => source.hostId === hostId && typeof source.path === "string" && resolve(source.path) === resolve(path));
 }
 
@@ -66,8 +70,7 @@ export function worktreeCreateError(reason: string | null): string {
 
 /** The project has a root source on this host and the run folder is not it: BB's managed worktree would fork that root. */
 async function hasOtherRootSource(bb:ServerCore["bb"], projectId:string, hostId:string, path:string):Promise<boolean> {
-  // A lookup that cannot run (it may throw before returning a promise) keeps the old path: BB's managed worktree.
-  const project = await Promise.resolve().then(() => bb.sdk.projects.get({ projectId })).catch(() => null) as { sources?: Array<{ hostId?: string; path?: string }> } | null;
+  const project = await projectOrNull(bb, projectId);
   const roots = (project?.sources ?? []).filter((source) => source.hostId === hostId && typeof source.path === "string");
   return roots.length > 0 && !roots.some((source) => resolve(source.path!) === resolve(path));
 }

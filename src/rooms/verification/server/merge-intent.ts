@@ -121,7 +121,9 @@ export function createMergeIntentRecovery(ctx:ServerCore, services:Services) {
     const accepted:string[] = [];
     const now = options.now ?? Date.now();
     for (const key of await kv.list(MERGE_INTENT_PREFIX)) {
-      const intent = await kv.get(key) as MergeIntent | null;
+      let intent: MergeIntent | null;
+      try { intent = await kv.get(key) as MergeIntent | null; }
+      catch (cause) { bb.log.warn(`merge intent ${key} unreadable, skipped this pass: ${cause instanceof Error ? cause.message : String(cause)}`); continue; }
       if (!intent || typeof intent !== "object" || !intent.attemptId) { await kv.delete(key).catch(() => undefined); continue; }
       try {
         const attempt = getAttempt(db, intent.attemptId);

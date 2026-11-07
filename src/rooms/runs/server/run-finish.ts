@@ -1,5 +1,5 @@
 import { closeRun, getAttempt, getRun, listOpenAttempts, openDatabase, releaseActivation } from "../../storage";
-import { stringAt, valueAt } from "@lane-pilot/kit";
+import { stringAt, valueAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { RETRY_ELIGIBLE } from "../state-machine";
 import { STICKY_WINDOW_MS } from "../../writer/server/sticky";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
@@ -133,7 +133,7 @@ export async function cleanupFinishedAttemptEnvironments(bb: BbPluginApi, db: Re
     let environmentId = row.environmentId;
     // A holder whose worktree was never bound: its attempt ended before setAttemptWorkspace. Asked only once that attempt is over.
     if (!environmentId && row.holderThreadId && done(row) && row.updatedAt < now - ENVIRONMENT_GRACE_MS) {
-      environmentId = stringAt(await bb.sdk.threads.get({ threadId: row.holderThreadId }).catch(() => null), "environmentId");
+      environmentId = stringAt(await orMiss(bb.sdk.threads.get({ threadId: row.holderThreadId }), null, isNotFound), "environmentId");
     }
     if (!environmentId || environmentId === row.runEnvironmentId) continue;
     groups.set(environmentId, [...(groups.get(environmentId) ?? []), row]);

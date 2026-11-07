@@ -1,7 +1,7 @@
 import type { ModelCatalog, CatalogProvider } from "@lane-pilot/models";
 import { mapListedQaHosts } from "./qa-hosts";
 import type { ServerCore } from "../../contracts/server";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 
 const CATALOG_TTL_MS = 60_000;
 const CALL_TIMEOUT_MS = 8_000;
@@ -80,8 +80,8 @@ export function modelCatalogOf(ctx: Pick<ServerCore, "bb" | "log">): ModelCatalo
 
 /** The machine a PM chat's helpers run on: the host of its environment. Null when BB cannot say. */
 export async function pmHostOf(bb: ServerCore["bb"], pmThreadId: string): Promise<string | null> {
-  const thread = await bb.sdk.threads.get({ threadId: pmThreadId }).catch(() => null);
+  const thread = await orMiss(bb.sdk.threads.get({ threadId: pmThreadId }), null, isNotFound);
   const environmentId = stringAt(thread, "environmentId");
-  const environment = environmentId ? await bb.sdk.environments.get({ environmentId }).catch(() => null) : null;
+  const environment = environmentId ? await orMiss(bb.sdk.environments.get({ environmentId }), null, isNotFound) : null;
   return stringAt(environment, "hostId");
 }

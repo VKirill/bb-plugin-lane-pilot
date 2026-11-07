@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, scheduleIsolated } from "../../platform/server";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { pickHunter, type WallConfig } from "../config";
 import { conveyorState } from "../../conveyor";
 
@@ -138,7 +138,7 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
   };
 
   const busy = async (threadId: string): Promise<boolean> => {
-    const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
+    const thread = await orMiss(bb.sdk.threads.get({ threadId }), null, isNotFound);
     const status = stringAt(thread, "status");
     return status !== null && status !== "idle" && status !== "error" && status !== "stopped";
   };

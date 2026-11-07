@@ -6,7 +6,7 @@ import { checksInFlight, failureClass, taskFamily } from "../../runs";
 import { projectRoleField } from "../../runs/server";
 import { OWNER_WORD_WAIT_MS } from "../../tasks";
 import { taskWordItemPrefix } from "../../lead";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 import type { RepairDeps } from "./deps";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -301,7 +301,7 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
     const now = Date.now();
     for (const row of running) {
       if (ignored.has(row.project_id) || !row.thread_id) continue;
-      const thread = await bb.sdk.threads.get({ threadId: row.thread_id }).catch(() => null);
+      const thread = await orMiss(bb.sdk.threads.get({ threadId: row.thread_id }), null, isNotFound);
       const status = thread ? stringAt(thread, "status") : "missing";
       if (status !== "idle" && status !== "error" && status !== "stopped" && status !== "missing") continue;
       // finish.ts deliberately keeps a verified attempt running while its landing decision is open (hub 2026-10-31/11-03).

@@ -8,6 +8,7 @@ import { createCandidates } from "./candidate";
 import { PhaseRefusal, type DriverBase } from "./driver-tools";
 import type { Phase, PhaseRecord, PhaseStage, TaskFact } from "../logic";
 import { phaseFolder, renderBook, sha256 } from "../logic";
+import { isNotFound, orMiss } from "@lane-pilot/kit";
 
 /**
  * The phase's own reads and its book: the files of the PM's run (their hashes, their text), the documents written back, the
@@ -133,8 +134,8 @@ export function installDocs(base: DriverBase) {
 
   /** The PM chat's checkout: the folder a piece runs in when the planner left its task's project_cwd out. */
   async function pmCheckoutPath(phase: Phase): Promise<string | null> {
-    const pm = await bb.sdk.threads.get({ threadId: phase.pmThreadId }).catch(() => null) as { environmentId?: string } | null;
-    const env = pm?.environmentId ? await bb.sdk.environments.get({ environmentId: pm.environmentId }).catch(() => null) as { path?: string } | null : null;
+    const pm = await orMiss(bb.sdk.threads.get({ threadId: phase.pmThreadId }), null, isNotFound) as { environmentId?: string } | null;
+    const env = pm?.environmentId ? await orMiss(bb.sdk.environments.get({ environmentId: pm.environmentId }), null, isNotFound) as { path?: string } | null : null;
     return typeof env?.path === "string" && env.path ? env.path : null;
   }
 
