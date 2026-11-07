@@ -7,6 +7,7 @@ import type { ServerCore } from "../../contracts/server";
 import { armsOf, SEEDED, type HypothesisState } from "../logic";
 
 import type { BenchApi } from "../../bench/service";
+import { boundSettingValue, deleteBoundSetting } from "../../storage";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -60,7 +61,7 @@ export function createHypotheses(ctx: ServerCore, services: Services) {
     if (comparison.verdict !== "pass") { setState(id, "rejected", { verdict: comparison }); return { id, state: "rejected" as const, text }; }
     const decision = authorize({ kind: "setting_change", settings: Object.keys(hypothesis.settings), attrs: { bench_passed: true, auto_revertible: true } });
     if (decision.tier !== "night_decides") { setState(id, "held", { verdict: { comparison, policy: decision } }); return { id, state: "held" as const, text, policy: decision.reason }; }
-    const previous = Object.fromEntries(Object.keys(hypothesis.settings).map((key) => [key, (db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND binding_id='' AND key=?").get(GLOBAL_SETTINGS_PROJECT_ID, key) as { value: string } | undefined)?.value ?? null]));
+    const previous = Object.fromEntries(Object.keys(hypothesis.settings).map((key) => [key, boundSettingValue(db, GLOBAL_SETTINGS_PROJECT_ID, key)]));
     for (const [key, value] of Object.entries(hypothesis.settings)) saveProjectSetting(db, GLOBAL_SETTINGS_PROJECT_ID, key, value);
     setState(id, "adopted", { verdict: { comparison, policy: decision }, previous });
     ctx.log(`hypothesis ${id} adopted: ${JSON.stringify(hypothesis.settings)}`);
@@ -72,7 +73,7 @@ export function createHypotheses(ctx: ServerCore, services: Services) {
     const row = db.prepare("SELECT * FROM lane_pilot_hypothesis WHERE id=?").get(id) as Row | undefined;
     if (!row || row.state !== "adopted") throw new Error(`hypothesis ${id} is not adopted`);
     for (const [key, value] of Object.entries(JSON.parse(row.previous_json ?? "{}") as Record<string, string | null>)) {
-      if (value === null) db.prepare("DELETE FROM lane_pilot_project_settings WHERE project_id=? AND binding_id='' AND key=?").run(GLOBAL_SETTINGS_PROJECT_ID, key);
+      if (value === null) deleteBoundSetting(db, GLOBAL_SETTINGS_PROJECT_ID, key);
       else saveProjectSetting(db, GLOBAL_SETTINGS_PROJECT_ID, key, JSON.parse(value) as unknown);
     }
     setState(id, "rejected");

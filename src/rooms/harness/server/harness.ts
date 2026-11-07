@@ -37,6 +37,8 @@ import type { StepContext } from "@lane-pilot/workflow-engine";
 import type { ChainRuntime } from "../../contracts/server";
 import type { GraphHelperRun } from "../../platform/server";
 import { checkBrief, renderBrief } from "../../brief";
+import { countHarnessArmAttempts, attemptHarnessTreeId, latestAttemptIdForThread, listAttemptEvidenceRows, latestStageResultJson, latestAreaWriterBinding, listActiveProjectIds } from "../../storage";
+import { wfTerminalByIdemKey } from "@lane-pilot/workflow-engine";
 
 /** Every helper mission of the harness graphs renders through the shared brief (evidence lives on disk under context/, so the brief is instructions only). */
 function harnessMission(job: string, layout: string): string {
@@ -259,9 +261,8 @@ export function createHarness(ctx: ServerCore, services: Services) {
       const trial = trialHarness(db, input.projectId, area, writerKey);
       if (trial) {
         const active = activeHarness(db, input.projectId, area, writerKey);
-        const assigned = db.prepare("SELECT count(*) AS n FROM lane_pilot_attempt WHERE harness_arm IN ('new','old') AND created_at>=? AND harness_tree_id IN (?,?)")
-          .get(trial.trialStartedAt ?? 0, trial.id, active.id) as { n: number };
-        const arm: "new" | "old" = assigned.n % 2 === 0 ? "new" : "old";
+        const assigned = countHarnessArmAttempts(db, trial.trialStartedAt ?? 0, [trial.id, active.id]);
+        const arm: "new" | "old" = assigned % 2 === 0 ? "new" : "old";
         const chosen = arm === "new" ? trial : active;
         assignAttemptHarness(db, input.attemptId, chosen.id, arm);
         return briefParts(chosen, arm);
@@ -323,15 +324,15 @@ export function createHarness(ctx: ServerCore, services: Services) {
 
   /** The checks the attempt's tree adds to its verification; empty for an attempt without a tree or with a live folder. */
   function checksForAttempt(attemptId: string): Array<{ command: string; timeout_sec: number }> {
-    const attempt = db.prepare("SELECT harness_tree_id AS id FROM lane_pilot_attempt WHERE id=?").get(attemptId) as { id: string | null } | undefined;
-    if (!attempt?.id) return [];
-    const row = getHarness(db, attempt.id);
+    const treeId = attemptHarnessTreeId(db, attemptId);
+    if (!treeId) return [];
+    const row = getHarness(db, treeId);
     return row ? checkCommands(row.tree) : [];
   }
 
   function checksForWriterThread(runId: string, taskId: string, writerThreadId: string): Array<{ command: string; timeout_sec: number }> {
-    const attempt = db.prepare("SELECT id FROM lane_pilot_attempt WHERE run_id=? AND task_id=? AND thread_id=? ORDER BY created_at DESC LIMIT 1").get(runId, taskId, writerThreadId) as { id: string } | undefined;
-    return attempt ? checksForAttempt(attempt.id) : [];
+    const attemptId = latestAttemptIdForThread(db, runId, taskId, writerThreadId);
+    return attemptId ? checksForAttempt(attemptId) : [];
   }
 
   /** Every event of a thread, oldest first, at most `maxEvents`; a failure is logged once and gives what was read so far. */
@@ -366,16 +367,8 @@ export function createHarness(ctx: ServerCore, services: Services) {
 
   /** The area's recent finished attempts with everything the editor may cite. */
   async function collectEvidence(projectId: string, area: string, writerKey: string, limit: number, sinceMs: number, filter?: { attemptIds?: string[] }): Promise<AttemptEvidence[]> {
-    const rows = db.prepare(`SELECT a.id, a.task_id AS taskId, a.attempt_no AS attemptNo, a.state, a.reason, a.created_at AS createdAt, a.thread_id AS threadId, a.run_id AS runId,
-        t.contract_json AS contract, x.trace_json AS trace
-      FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id JOIN lane_pilot_task t ON t.id=a.task_id LEFT JOIN lane_pilot_attempt_reasoning x ON x.attempt_id=a.id
-      WHERE r.project_id=? AND a.created_at>=? AND a.task_id NOT LIKE 'drill-%' AND a.state IN ('accepted','blocked','validation_failed','empty_output')
-        AND COALESCE(json_extract(t.contract_json,'$.area'),'')=?
-        AND (?='*' OR COALESCE(json_extract(x.trace_json,'$.dispatchContext.writerKey'),'*') IN (?, '*'))
-        ${filter?.attemptIds?.length ? `AND a.id IN (${filter.attemptIds.map(() => "?").join(",")})` : ""}
-      ORDER BY a.created_at DESC LIMIT ?`)
-      .all(projectId, sinceMs, area, writerKey, writerKey, ...(filter?.attemptIds ?? []), limit) as Array<{ id: string; taskId: string; attemptNo: number; state: string; reason: string | null; createdAt: number; threadId: string | null; runId: string; contract: string; trace: string | null }>;
-    const receipt = db.prepare("SELECT result_json FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND stage_id=? ORDER BY updated_at DESC LIMIT 1");
+    const rows = listAttemptEvidenceRows(db, { projectId, sinceMs, area, writerKey, attemptIds: filter?.attemptIds, limit });
+    const receipt = { get: (runId: string, taskId: string, stageId: string) => ({ result_json: latestStageResultJson(db, runId, taskId, stageId) }) };
     const out: AttemptEvidence[] = [];
     for (const row of rows) {
       const parse = (json: string | null | undefined): Record<string, unknown> | null => { try { return json ? JSON.parse(json) as Record<string, unknown> : null; } catch { return null; } };
@@ -413,9 +406,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
    */
   async function place(projectId: string, area = ""): Promise<{ hostId: string; path: string } | null> {
     const candidates: Array<{ hostId: string | null; path: string | null }> = [
-      db.prepare(`SELECT r.writer_host_id AS hostId, r.writer_workspace_path AS path FROM lane_pilot_run r JOIN lane_pilot_task t ON t.run_id=r.id
-        WHERE r.project_id=? AND r.writer_workspace_path IS NOT NULL AND r.writer_host_id IS NOT NULL AND COALESCE(json_extract(t.contract_json,'$.area'),'')=?
-        ORDER BY r.updated_at DESC LIMIT 1`).get(projectId, area) as { hostId: string | null; path: string | null } | undefined ?? { hostId: null, path: null },
+      latestAreaWriterBinding(db, projectId, area) ?? { hostId: null, path: null },
       // No «the project's newest run of any area»: it put the night editor of office-studio-prototype into the magicseo replay's live
       // checkout (2026-10-31: `.lane-pilot/harness-edit/feature_office-studio-prototype__project/…` failed the replay's designer). Work of
       // one key stays in that key's folder; the project binding is the only fallback.
@@ -646,7 +637,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
     if (!cfg.enabled) return { status: "skipped", detail: "harness editing is off for this project", threadIds: [] };
     if (trialHarness(db, input.projectId, area, writerKey)) return { status: "skipped", detail: "a candidate is already on trial for this key", threadIds: [] };
     const runKey = `harness-edit:${key}:${input.night ?? Date.now()}`;
-    const prior = db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(runKey) as { status: string } | undefined;
+    const prior = wfTerminalByIdemKey(db as never, runKey);
     if (prior && TERMINAL_RUN.includes(prior.status)) return { status: "skipped", detail: "the round of this night already ran", threadIds: [] };
     const workflow = services.workflowEngine.resolveWorkflow(HARNESS_EDIT_WORKFLOW);
     if (!workflow) return { status: "failed", detail: `built-in workflow ${HARNESS_EDIT_WORKFLOW} is not loaded`, threadIds: [] };
@@ -776,7 +767,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
   }
 
   async function teachingProjects(since: number): Promise<string[]> {
-    const ids = (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_run WHERE updated_at>=?").all(since) as Array<{ project_id: string }>).map((row) => row.project_id);
+    const ids = listActiveProjectIds(db, since);
     const kept: string[] = [];
     for (const projectId of ids) {
       if (projectId === SANDBOX_PROJECT_ID) continue;

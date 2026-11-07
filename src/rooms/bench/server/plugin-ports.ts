@@ -6,7 +6,7 @@ import { fullAccessSpawn } from "../../platform/server";
 import { bestEffort, stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { type ServerCore } from "../../contracts/server";
 import { cancelAttemptById, finishRunSafely } from "../../runs/server";
-import { createRun, createTask, getActivation, getRun, getTask, listOpenAttempts, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, savePrototypeConfig } from "../../storage";
+import { createRun, createTask, deleteBoundSetting, getActivation, getRun, getTask, latestAttemptRow, countAttempts, listAttemptIdsInStates, listOpenAttempts, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, savePrototypeConfig } from "../../storage";
 import { isSandboxProjectName } from "../../contracts";
 import { attemptMetrics, syncTokenUsage } from "../../usage/server";
 import { DEFAULT_BENCH_WRITER } from "../runner";
@@ -73,7 +73,7 @@ export function benchPipeline(ctx: Pick<ServerCore, "bb" | "db" | "host" | "canc
         pmProviderId: writerProviderId, pmModel: writerModel, writerProviderId: stored?.writerProviderId ?? writerProviderId, writerModel: stored?.writerModel ?? writerModel });
       // A key an earlier arm set and this one does not is dropped: an arm is what it names, not what the last arm left behind.
       const before = await bb.storage.kv.get(keysKey(project.projectId)) as string[] | null;
-      for (const key of before ?? []) if (!(key in input.settings)) db.prepare("DELETE FROM lane_pilot_project_settings WHERE project_id=? AND binding_id='' AND key=?").run(project.projectId, key);
+      for (const key of before ?? []) if (!(key in input.settings)) deleteBoundSetting(db, project.projectId, key);
       for (const [key, value] of Object.entries(input.settings)) saveProjectSetting(db, project.projectId, key, value);
       await bb.storage.kv.set(keysKey(project.projectId), Object.keys(input.settings) as never);
       setBenchProject(db, { projectId: project.projectId, harness: input.harness, sourceProjectId: input.sourceProjectId });
@@ -122,9 +122,7 @@ export function benchPipeline(ctx: Pick<ServerCore, "bb" | "db" | "host" | "canc
     },
 
     async outcome(runId, taskId) {
-      const latest = db.prepare("SELECT state FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC, attempt_no DESC LIMIT 1").get(runId, taskId) as { state: string } | undefined;
-      const count = db.prepare("SELECT count(*) AS n FROM lane_pilot_attempt WHERE run_id=? AND task_id=?").get(runId, taskId) as { n: number };
-      return { latestState: latest?.state ?? null, attempts: count.n };
+      return { latestState: latestAttemptRow(db, runId, taskId)?.state ?? null, attempts: countAttempts(db, runId, taskId) };
     },
 
     async metrics(project, _runId, taskId) {
@@ -135,7 +133,7 @@ export function benchPipeline(ctx: Pick<ServerCore, "bb" | "db" | "host" | "canc
     },
 
     async cancel(runId, taskId) {
-      const open = db.prepare("SELECT id FROM lane_pilot_attempt WHERE run_id=? AND task_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running')").all(runId, taskId) as Array<{ id: string }>;
+      const open = listAttemptIdsInStates(db, runId, taskId, ["queued", "spawn_requested", "spawn_unknown", "running"]);
       for (const row of open) await bestEffort(ctx.log, "bench attempt cancel", cancelAttemptById(ctx, row.id, undefined, "canceled: the bench canceled the task", "superseded").then(() => undefined), undefined);
     },
 

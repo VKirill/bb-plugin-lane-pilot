@@ -220,3 +220,17 @@ export function openIntakeAttemptRows(db: LanePilotDatabase, runId: string, open
   return db.prepare(`SELECT a.id AS attempt_id, t.contract_json FROM lane_pilot_task t JOIN lane_pilot_attempt a ON a.task_id=t.id AND a.run_id=t.run_id WHERE t.run_id=? AND a.state IN (${openStates.map(() => "?").join(",")})`)
     .all(runId, ...openStates) as Array<{ attempt_id: string; contract_json: string }>;
 }
+
+export function hasTask(db: LanePilotDatabase, id: string): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM lane_pilot_task WHERE id = ? LIMIT 1").get(id));
+}
+
+export function listProjectTasks(db: LanePilotDatabase, projectId: string): Array<{ id: string; created_at: number }> {
+  return db.prepare(`SELECT t.id, t.created_at FROM lane_pilot_task t JOIN lane_pilot_run r ON r.id=t.run_id WHERE r.project_id=?`)
+    .all(projectId) as Array<{ id: string; created_at: number }>;
+}
+
+export function countProjectTasksSince(db: LanePilotDatabase, projectId: string, since: number): number {
+  return (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_task t JOIN lane_pilot_run r ON r.id=t.run_id WHERE r.project_id=? AND t.created_at>=?")
+    .get(projectId, since) as { n: number }).n;
+}

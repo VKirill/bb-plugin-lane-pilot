@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { parseJsonOr } from "@lane-pilot/kit";
 import { TASK_SIZE_MIN_SAMPLE, type TaskSizeMedian } from "../tasks";
+import { ATTEMPT_TABLE, RUN_TABLE } from "../storage";
 
 export type RollbackDb = Pick<Database.Database, "prepare">;
 
@@ -107,7 +108,7 @@ export function mergedAttemptChanges(db: RollbackDb, runId: string): Array<{ tas
 /** Merge commits of a run's accepted attempts (the phase's proof-of-work records). */
 export function acceptedChangeProofRows(db: RollbackDb, runId: string): Array<{ task_id: string; merge_commit: string; changed_json: string }> {
   return db.prepare(`SELECT c.task_id AS task_id, c.merge_commit AS merge_commit, c.changed_json AS changed_json FROM lane_pilot_attempt_change c
-    JOIN lane_pilot_attempt a ON a.id=c.attempt_id WHERE c.run_id=? AND a.state='accepted' AND c.merge_commit IS NOT NULL ORDER BY a.updated_at, a.rowid`)
+    JOIN ${ATTEMPT_TABLE} a ON a.id=c.attempt_id WHERE c.run_id=? AND a.state='accepted' AND c.merge_commit IS NOT NULL ORDER BY a.updated_at, a.rowid`)
     .all(runId) as Array<{ task_id: string; merge_commit: string; changed_json: string }>;
 }
 
@@ -115,9 +116,9 @@ export function acceptedChangeProofRows(db: RollbackDb, runId: string): Array<{ 
 export function acceptedAttemptSizeRows(db: RollbackDb, projectId: string): Array<{ created: number | null; finished: number; changed: string; attempts: number }> {
   return db.prepare(
     `SELECT a.created_at AS created, a.updated_at AS finished, c.changed_json AS changed,
-       (SELECT count(*) FROM lane_pilot_attempt x WHERE x.task_id=a.task_id) AS attempts
-     FROM lane_pilot_attempt a JOIN lane_pilot_attempt_change c ON c.attempt_id=a.id
-     JOIN lane_pilot_run r ON r.id=a.run_id
+       (SELECT count(*) FROM ${ATTEMPT_TABLE} x WHERE x.task_id=a.task_id) AS attempts
+     FROM ${ATTEMPT_TABLE} a JOIN lane_pilot_attempt_change c ON c.attempt_id=a.id
+     JOIN ${RUN_TABLE} r ON r.id=a.run_id
      WHERE a.state='accepted' AND r.project_id=? ORDER BY a.updated_at DESC LIMIT 200`,
   ).all(projectId) as Array<{ created: number | null; finished: number; changed: string; attempts: number }>;
 }

@@ -4,7 +4,7 @@ import { buildSet, type BuildReport } from "./build";
 import { compareArms, computeNoise, noiseOfRepeats, passReport, renderComparison, stabilityMarks, summarizeArm, type ArmSummary, type Comparison } from "./compare";
 import { cohortCounts, cohortOf } from "./stratify";
 import { renderStratumMetrics, stratumMetrics, type StratumRow } from "./stratum-metrics";
-import { statsEpochMs, STATS_EPOCH_SETTING, listStageReceipts } from "../storage";
+import { statsEpochMs, STATS_EPOCH_SETTING, listStageReceipts, boundSettingValue, settingValue } from "../storage";
 import { critiqueFromStageResult } from "../critique";
 import { advisoryCritiqueLine, critiqueRecallLine } from "./critique-set";
 import type { HostPort, PipelinePort } from "./ports";
@@ -111,7 +111,7 @@ export function createBench(deps: BenchDeps) {
   async function build(input: { version: string; seed?: string; only?: string[]; triesFactor?: number; dryRun?: boolean; planOnly?: boolean; wait?: boolean; minFreeGb?: number; checkTimeoutSec?: number }) {
     return await job(`build:${input.version}`, input.wait ?? false, async () => {
       const place = await placement();
-      const epoch = statsEpochMs((deps.db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND key=?").get("*", STATS_EPOCH_SETTING) as { value:string } | undefined)?.value);
+      const epoch = statsEpochMs(settingValue(deps.db as never, "*", STATS_EPOCH_SETTING) ?? undefined);
       const { report } = await buildSet({
         db: deps.db, host: deps.host, version: input.version, projectNames: await deps.projectNames(), isSandboxName: deps.isSandboxName, log: deps.log,
         ...(input.seed ? { seed: input.seed } : {}), ...(input.only ? { only: input.only } : {}), ...(input.triesFactor ? { triesFactor: input.triesFactor } : {}),
@@ -148,7 +148,7 @@ export function createBench(deps: BenchDeps) {
       }
       // A repeated series calibrates comparisons whether or not it was started as `bench noise` (hive W28-4):
       // the nightly arm repeats since 07fc5914; bench.noise_auto=off restores the explicit flag.
-      const noiseAuto = String((deps.db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id='*' AND binding_id='' AND key='bench.noise_auto'").get() as { value: string } | undefined)?.value ?? '"on"') !== '"off"';
+      const noiseAuto = String(boundSettingValue(deps.db as never, "*", "bench.noise_auto") ?? '"on"') !== '"off"';
       if (noiseAuto && reports.length >= 2 && reports.every((row) => row.state === "done")) {
         const set = getSet(deps.db, input.version);
         const rows = set ? listRuns(deps.db, set.id).filter((row) => row.arm === input.arm).sort((a, b) => a.repeat - b.repeat) : [];

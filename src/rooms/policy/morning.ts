@@ -1,5 +1,7 @@
 import type Database from "better-sqlite3";
 import { ownerWaitingCounts, type OwnerItemSweep } from "../owner-waiting";
+import { failedAttemptStateCounts, janitorSums, janitorKeptSample } from "../storage";
+import { countOpenRegressions, listOpenRegressionRows } from "../baseline";
 
 /**
  * The morning list: four lines of a report the owner may read; nothing in it asks him for anything (since 2026-10-22 the loop runs
@@ -19,16 +21,16 @@ const count = (db: Db, sql: string, ...params: unknown[]): number => (db.prepare
 export function composeMorningList(db: Db, now: number = Date.now(), windowMs: number = MORNING_WINDOW_MS, sweeps: readonly OwnerItemSweep[] = []): [string, string, string, string] {
   const since = now - windowMs;
   const waitingRules = count(db, "SELECT count(*) AS n FROM lane_pilot_rule_proposal WHERE state='proposed'");
-  const red = db.prepare("SELECT state, count(*) AS n FROM lane_pilot_attempt WHERE updated_at>=? AND (state LIKE '%failed%' OR state IN ('blocked','provider_error')) GROUP BY state ORDER BY state").all(since) as Array<{ state: string; n: number }>;
+  const red = failedAttemptStateCounts(db as never, since);
   const accepted = count(db, "SELECT count(*) AS n FROM lane_pilot_attempt WHERE state='accepted' AND updated_at>=?", since);
   const adopted = count(db, "SELECT count(*) AS n FROM lane_pilot_rule_event WHERE action='adopted' AND at>=?", since);
   const confirmed = count(db, "SELECT count(*) AS n FROM lane_pilot_rule_event WHERE action='confirmed' AND at>=?", since);
   const waiting = ownerWaitingCounts(db, now, sweeps);
-  const broken = db.prepare("SELECT task_id, culprit_commit, culprit_task FROM lane_pilot_regression WHERE state='open' AND kind='regression' ORDER BY id LIMIT 3").all() as Array<{ task_id: string; culprit_commit: string | null; culprit_task: string | null }>;
-  const brokenTotal = count(db, "SELECT count(*) AS n FROM lane_pilot_regression WHERE state='open' AND kind='regression'");
+  const broken = listOpenRegressionRows(db, 3);
+  const brokenTotal = countOpenRegressions(db);
   const regressed = brokenTotal ? ` Сломано после приёмки: ${brokenTotal} (${broken.map((row) => `${row.task_id} ← ${row.culprit_commit ? row.culprit_commit.slice(0, 8) : "?"}${row.culprit_task && row.culprit_task !== row.task_id ? ` (виновник ${row.culprit_task})` : ""}`).join(", ")}).` : "";
-  const janitor = db.prepare("SELECT sum(freed_bytes + tmp_freed_bytes) AS bytes, sum(removed + tmp_removed) AS removed FROM lane_pilot_janitor WHERE at>=?").get(since) as { bytes: number | null; removed: number | null };
-  const kept = db.prepare("SELECT value AS v, (SELECT count(*) FROM lane_pilot_janitor j2, json_each(j2.kept_json) WHERE j2.at>=?) AS total FROM lane_pilot_janitor, json_each(lane_pilot_janitor.kept_json) WHERE at>=? LIMIT 3").all(since, since) as Array<{ v: string; total: number }>;
+  const janitor = janitorSums(db as never, since);
+  const kept = janitorKeptSample(db as never, since);
   const janitorLine = janitor.bytes || kept.length
     ? ` Уборка копий: освобождено ${Math.round((janitor.bytes ?? 0) / 1e6)} МБ${kept[0]?.total ? `, держатся ${kept[0].total} (${kept.map((row) => row.v).join(", ")}${kept[0].total > kept.length ? ", …" : ""})` : ""}.`
     : "";

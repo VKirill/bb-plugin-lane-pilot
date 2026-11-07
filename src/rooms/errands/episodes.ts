@@ -20,6 +20,8 @@ import { ERRAND_EPISODE_EXTRACTOR_VERSION } from "../contracts/server";
 export const ERRAND_EPISODE_ENRICH_COLUMNS = ["process_key", "enriched_model", "enriched_at", "summary_json", "failure_class", "process_key_proposed", "enrichment_reason"] as const;
 /** Events of the helper thread the trace reads at most (the harness reader pages 100 at a time). */
 import { ERRAND_EPISODE_TRACE_EVENTS } from "../contracts/server";
+import { wfEffectResultJson, wfRunRow } from "@lane-pilot/workflow-engine";
+import { listErrandEpisodeRows } from "../storage";
 const DAY_MS = 86_400_000;
 
 type Db = { prepare(sql: string): { all(...params: unknown[]): unknown[]; get(...params: unknown[]): unknown; run(...params: unknown[]): unknown } };
@@ -33,8 +35,8 @@ function collectEnabledFor(db: LanePilotDatabase, projectId: string | null): boo
 
 /** What the `spawn` effect of a run's helper step recorded: the thread and the browser machine, once the thread exists. */
 export function errandSpawnOf(db: Db, runId: string): { threadId: string; browserMachine: string | null } | null {
-  const row = db.prepare("SELECT result_json FROM lane_pilot_wf_effect WHERE run_id=? AND kind='errand.spawn' AND state='done'").get(runId) as { result_json: string | null } | undefined;
-  try { const value = JSON.parse(row?.result_json ?? "null") as { threadId?: unknown; browserMachine?: unknown } | null; return value && typeof value.threadId === "string" ? { threadId: value.threadId, browserMachine: typeof value.browserMachine === "string" ? value.browserMachine : null } : null; } catch { return null; }
+  const resultJson = wfEffectResultJson(db as never, runId, "errand.spawn");
+  try { const value = JSON.parse(resultJson ?? "null") as { threadId?: unknown; browserMachine?: unknown } | null; return value && typeof value.threadId === "string" ? { threadId: value.threadId, browserMachine: typeof value.browserMachine === "string" ? value.browserMachine : null } : null; } catch { return null; }
 }
 
 /**
@@ -72,7 +74,7 @@ export async function recordErrandEpisode(deps: EpisodeDeps): Promise<void> {
   const { db, runId } = deps;
   const warn = deps.warn ?? ((message: string) => deps.log?.(message));
   try {
-    const run = db.prepare("SELECT * FROM lane_pilot_wf_run WHERE id=?").get(runId) as RunRow | undefined;
+    const run = wfRunRow(db as never, runId);
     if (!run || !(TERMINAL_RUN as readonly string[]).includes(run.status)) return;
     if (!collectEnabledFor(db, run.project_id)) return;
     const existing = db.prepare(`SELECT status FROM ${ERRAND_EPISODE_TABLE} WHERE run_id=? AND extractor_version=?`)
@@ -136,11 +138,7 @@ type EpisodeDbRow = {
 /** The episodes of a period, newest first; cost and run times come from the join on the workflow run. */
 export function listEpisodes(db: Db, input: { days: number; projectId?: string | undefined }): EpisodeRow[] {
   const since = Date.now() - input.days * DAY_MS;
-  const rows = db.prepare(`
-    SELECT e.*, r.tokens_used, r.cost_micro_usd, r.wait_ms, r.created_at AS run_created_at, r.updated_at AS run_updated_at
-    FROM ${ERRAND_EPISODE_TABLE} e JOIN lane_pilot_wf_run r ON r.id=e.run_id
-    WHERE e.updated_at>=? ${input.projectId ? "AND e.project_id=?" : ""}
-    ORDER BY e.updated_at DESC LIMIT 500`).all(since, ...(input.projectId ? [input.projectId] : [])) as EpisodeDbRow[];
+  const rows = listErrandEpisodeRows(db as never, since, input.projectId ?? null, 500) as EpisodeDbRow[];
   return rows.map((row) => ({
     runId: row.run_id, extractorVersion: row.extractor_version, projectId: row.project_id, workflowId: row.workflow_id,
     status: row.status, outcome: row.outcome,

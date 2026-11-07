@@ -27,6 +27,9 @@ import { stringAt } from "@lane-pilot/kit";
 import { SANDBOX_PROJECT_ID, isSandboxProjectName } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
 import type { RuleScanDeps } from "./deps";
+import { getTaskContractJson, listCheckFailureRows, listReviewStageRows, attemptRunAndThread, listRunIdsForProject, listActiveProjectIds } from "../../storage";
+import { deleteSweepProposals, markTriageDetail } from "@lane-pilot/run-insights";
+import { wfLiveRun, wfTerminalByIdemKey } from "@lane-pilot/workflow-engine";
 
 /** How far back a rescan looks. */
 export const RULE_SCAN_WINDOW_MS = 30 * 24 * 3_600_000;
@@ -178,7 +181,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
     const stored: RuleScanState = { ...IDLE, ...(await bb.storage.kv.get(SCAN_KEY(projectId)) as Partial<RuleScanState> | undefined) };
     // A graph run that a reload resumed drives the scan though this process did not start it.
     const resumed = stored.state === "running" && !running.has(projectId)
-      && Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_run WHERE workflow_id=? AND project_id=? AND status IN ('running','waiting') LIMIT 1").get(RULES_SCAN_WORKFLOW, projectId));
+      && wfLiveRun(db as never, RULES_SCAN_WORKFLOW, projectId);
     return stored.state === "running" && !running.has(projectId) && !resumed ? { ...stored, state: "failed", reason: "interrupted_by_restart" } : stored;
   }
 
@@ -222,7 +225,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
   async function projectChains(projectId: string): Promise<Map<string, string[]>> {
     const cache = new Map<string, string[]>();
     const chains = new Map<string, string[]>();
-    for (const row of db.prepare("SELECT id FROM lane_pilot_run WHERE project_id=?").all(projectId) as Array<{ id: string }>) chains.set(row.id, await chainForRun(row.id, cache));
+    for (const id of listRunIdsForProject(db, projectId)) chains.set(id, await chainForRun(id, cache));
     return chains;
   }
 
@@ -314,11 +317,10 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
 
   /** The pack the analyzer reads for one failure: task contract, reason, critiques, and the tail of the writer's own answer. */
   async function evidenceFor(failure: WriterGroup["failures"][number]): Promise<Record<string, unknown>> {
-    const task = db.prepare("SELECT contract_json FROM lane_pilot_task WHERE id=?").get(failure.taskId) as { contract_json: string } | undefined;
+    const task = { contract_json: getTaskContractJson(db, failure.taskId) };
     let contract: Record<string, unknown> = {};
     try { contract = JSON.parse(task?.contract_json ?? "{}") as Record<string, unknown>; } catch { /* reason only */ }
-    const critiques = (db.prepare(`SELECT stage_id, state, reason, result_json FROM lane_pilot_stage_receipt
-      WHERE run_id=? AND task_id=? AND stage_id IN ('plan-critique','code-critique','night-review','verification')`).all(failure.runId, failure.taskId) as Array<{ stage_id: string; state: string; reason: string | null; result_json: string | null }>)
+    const critiques = listReviewStageRows(db, failure.runId, failure.taskId)
       .map((row) => ({ stage: row.stage_id, state: row.state, reason: row.reason, result: row.result_json?.slice(0, 1500) ?? null }));
     let writerTail: string | null = null;
     if (failure.threadId) {
@@ -380,8 +382,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
       if (jobs.length >= MAX_REVISIONS_PER_SCAN) break;
       const stats = ruleTrialStats(db, projectId, rule.id, rule.revisionStartedAt ?? rule.decidedAt ?? now);
       if (decideRuleTrial(rule, stats, now).action !== "revise") continue;
-      const failures = stats.recurrences.map((row) => ({ ...row, runId: (db.prepare("SELECT run_id FROM lane_pilot_attempt WHERE id=?").get(row.attemptId) as { run_id?: string } | undefined)?.run_id ?? "",
-        threadId: (db.prepare("SELECT thread_id FROM lane_pilot_attempt WHERE id=?").get(row.attemptId) as { thread_id?: string | null } | undefined)?.thread_id ?? null, failedAt: now }));
+      const failures = stats.recurrences.map((row) => { const ref = attemptRunAndThread(db, row.attemptId); return { ...row, runId: ref?.run_id ?? "", threadId: ref?.thread_id ?? null, failedAt: now }; });
       const evidence = await Promise.all(failures.slice(0, 6).map(evidenceFor));
       const title = analyzerThreadTitle({ kind: "rewrite", locale, place: await placeLabel(projectId, rule.scope), taskIds: stats.recurrences.map((row) => row.taskId) });
       jobs.push({ id: `rewrite:${rule.id}`, kind: "rewrite", title, prompt: rewritePrompt({ rule: rule.rule, locale, evidence }), ruleId: rule.id });
@@ -434,8 +435,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
    * command failing in several tasks is evidence the analyzer reads with the group, at no extra model call.
    */
   function minedCheckFailures(projectId: string, since: number, limit = 10): Array<{ command: string; failures: number; tasks: number }> {
-    const rows = db.prepare(`SELECT a.task_id AS taskId, a.check_name AS checkName FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-      WHERE r.project_id=? AND a.created_at>=? AND a.failure_code IN ('verification_failed','verification_timeout') AND a.check_name IS NOT NULL`).all(projectId, since) as Array<{ taskId: string; checkName: string }>;
+    const rows = listCheckFailureRows(db, projectId, since);
     const counts = new Map<string, { failures: number; tasks: Set<string> }>();
     for (const row of rows) {
       const command = row.checkName.slice(0, 200);
@@ -460,7 +460,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
       }
       if (triage.state !== "ok") throw new Error(triage.reason ?? triage.state);
       // With System One answering, the text-grouping drafts of the fallback are noise; decided ones stay.
-      db.prepare("DELETE FROM lane_pilot_rule_proposal WHERE project_id=? AND author='sweep' AND state='proposed'").run(projectId);
+      deleteSweepProposals(db, projectId);
       await setScan(projectId, { triaged: triage.triaged });
       const since = Date.now() - RULE_SCAN_WINDOW_MS;
       const chains = await projectChains(projectId);
@@ -506,7 +506,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
       const known = new Map(job.known.map((row) => [row.taskId, row]));
       for (const taskId of parsed.notWriter) {
         const row = known.get(taskId);
-        if (row) db.prepare("UPDATE lane_pilot_failure_triage SET detail='model:not_writer' WHERE project_id=? AND attempt_id=?").run(projectId, row.attemptId);
+        if (row) markTriageDetail(db as never, projectId, row.attemptId, "model:not_writer");
       }
       const written: string[] = [];
       for (const rule of parsed.rules) {
@@ -548,7 +548,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
   async function startScan(projectId: string, locale: Locale, options: { night?: string } = {}): Promise<{ started: boolean; scan: RuleScanState }> {
     if (running.has(projectId)) return { started: false, scan: await scanState(projectId) };
     const key = `rules-scan:${projectId}:${options.night ?? Date.now()}`;
-    const prior = db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(key) as { status: string } | undefined;
+    const prior = wfTerminalByIdemKey(db as never, key);
     if (prior && ["succeeded", "failed", "blocked", "interrupted", "canceled", "not_verified"].includes(prior.status)) return { started: false, scan: await scanState(projectId) };
     const workflow = services.workflowEngine.resolveWorkflow(RULES_SCAN_WORKFLOW);
     if (!workflow) throw new Error(`built-in workflow ${RULES_SCAN_WORKFLOW} is not loaded`);
@@ -584,7 +584,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
     const base = `rules-ask:${projectId}:${new Date().toISOString().slice(0, 10)}:${spawnTextId(`${title}\n${prompt}`)}`;
     let key = base;
     for (let attempt = 1; attempt < 20; attempt += 1) {
-      const prior = db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(key) as { status: string } | undefined;
+      const prior = wfTerminalByIdemKey(db as never, key);
       if (!prior || !["failed", "blocked", "interrupted", "canceled"].includes(prior.status)) break;
       key = `${base}:${attempt}`;
     }
@@ -606,7 +606,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
   scheduleIsolated(bb, "rules-nightly", "30 3 * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
     const since = Date.now() - RULE_SCAN_WINDOW_MS;
-    const projects = await teachingProjects((db.prepare("SELECT DISTINCT project_id FROM lane_pilot_run WHERE updated_at>=?").all(since) as Array<{ project_id: string }>).map((row) => row.project_id));
+    const projects = await teachingProjects(listActiveProjectIds(db, since));
     for (const projectId of projects) {
       if (ctx.isDisposed() || signal?.aborted) return;
       // A project with no machine to scan from (three sandbox and bench projects on 2026-10-30) is skipped, not a failed run the wall sees.
@@ -624,7 +624,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
   scheduleIsolated(bb, "rules-triage", "6,21,36,51 * * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
     const since = Date.now() - 86_400_000;
-    const projects = await teachingProjects((db.prepare("SELECT DISTINCT project_id FROM lane_pilot_run WHERE updated_at>=?").all(since) as Array<{ project_id: string }>).map((row) => row.project_id));
+    const projects = await teachingProjects(listActiveProjectIds(db, since));
     for (const projectId of projects) {
       if (ctx.isDisposed() || signal?.aborted) return;
       if (running.has(projectId)) continue;

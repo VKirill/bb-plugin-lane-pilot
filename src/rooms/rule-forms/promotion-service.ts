@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { markMechanized, ruleProposalId, LESSON_SAME_RULE } from "@lane-pilot/run-insights";
-import { getActivation } from "../storage";
+import { markMechanized, ruleProposalId, LESSON_SAME_RULE , insertSweepProposal, listLiveRuleTexts, listPromotionProjectIds, listProvenRules, promotionForTaskId, setPromotionRowState} from "@lane-pilot/run-insights";
+import { getActivation , listProjectsWithGlobalSettings } from "../storage";
 import { scheduleIsolated } from "../platform/server";
 
 import type { ServerCore } from "../contracts/server";
@@ -33,8 +33,7 @@ const sameRule = (a: string, b: string): boolean => {
  * No messages: the weekly log line counts what was proposed.
  */
 export function crossProjectRuleCandidates(db: LanePilotDatabase, now = Date.now()): number {
-  const proven = db.prepare(`SELECT project_id, rule, audience FROM lane_pilot_rule_proposal
-    WHERE state='accepted' AND (trial_state='confirmed' OR decided_by='owner')`).all() as Array<{ project_id: string; rule: string; audience: string }>;
+  const proven = listProvenRules(db);
   const byRule = new Map<string, { rule: string; audience: string; projects: Set<string> }>();
   for (const row of proven) {
     const key = row.rule.toLowerCase().trim();
@@ -42,7 +41,7 @@ export function crossProjectRuleCandidates(db: LanePilotDatabase, now = Date.now
     entry.projects.add(row.project_id);
     byRule.set(key, entry);
   }
-  const projects = (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_project_settings WHERE binding_id=''").all() as Array<{ project_id: string }>).map((row) => row.project_id);
+  const projects = (listProjectsWithGlobalSettings(db as never).map((project_id) => ({ project_id })) as Array<{ project_id: string }>).map((row) => row.project_id);
   let created = 0;
   for (const entry of byRule.values()) {
     if (entry.projects.size < 2) continue;
@@ -51,14 +50,10 @@ export function crossProjectRuleCandidates(db: LanePilotDatabase, now = Date.now
     const evidence = `proven in ${entry.projects.size} projects: ${[...entry.projects].slice(0, 5).join(", ")}`;
     for (const projectId of projects) {
       if (entry.projects.has(projectId)) continue;
-      const live = db.prepare("SELECT rule FROM lane_pilot_rule_proposal WHERE project_id=? AND state IN ('proposed','accepted')").all(projectId) as Array<{ rule: string }>;
-      if (live.some((row) => sameRule(row.rule, entry.rule))) continue;
-      created += db.prepare(`INSERT INTO lane_pilot_rule_proposal
-        (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,evidence_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at,scope_json,audience)
-        VALUES (?,?,?,?,'sweep','proposed',?,?,?, '[]', NULL,?,?,?,NULL,'[]',?)
-        ON CONFLICT(project_id,id) DO NOTHING`)
-        .run(id, projectId, signature, entry.rule.slice(0, 600), entry.projects.size, entry.projects.size,
-          JSON.stringify([evidence]), now, now, now, entry.audience === "pm" || entry.audience === "writer" || entry.audience === "both" ? entry.audience : "both").changes;
+      const live = listLiveRuleTexts(db, projectId);
+      if (live.some((rule) => sameRule(rule, entry.rule))) continue;
+      created += insertSweepProposal(db, { id, projectId, signature, rule: entry.rule.slice(0, 600), occurrences: entry.projects.size, taskCount: entry.projects.size,
+        examplesJson: JSON.stringify([evidence]), evidenceJson: "", audience: entry.audience === "pm" || entry.audience === "writer" || entry.audience === "both" ? entry.audience : "both", now });
     }
   }
   return created;
@@ -101,13 +96,7 @@ export function dismissPromotionCandidate(db: LanePilotDatabase, projectId: stri
 }
 
 function settlePromotionRow(db: LanePilotDatabase, input: { projectId: string; ruleId: string; state: "proposed" | "dispatched" | "done" | "dismissed"; reason?: string; now?: number }): void {
-  const now = input.now ?? Date.now();
-  if (input.reason) {
-    db.prepare("UPDATE lane_pilot_rule_promotion SET state=?, task_json=json_set(task_json,'$.fail_reason',?), updated_at=? WHERE rule_id=? AND project_id=?")
-      .run(input.state, input.reason, now, input.ruleId, input.projectId);
-  } else {
-    db.prepare("UPDATE lane_pilot_rule_promotion SET state=?, updated_at=? WHERE rule_id=? AND project_id=?").run(input.state, now, input.ruleId, input.projectId);
-  }
+  setPromotionRowState(db, { projectId: input.projectId, ruleId: input.ruleId, state: input.state, ...(input.reason ? { reason: input.reason } : {}), now: input.now ?? Date.now() });
 }
 
 /**
@@ -116,7 +105,7 @@ function settlePromotionRow(db: LanePilotDatabase, input: { projectId: string; r
  * Called from the writer's acceptance and failure paths, so any task whose contract came from a promotion settles it.
  */
 export function settlePromotionTask(db: LanePilotDatabase, input: { taskId: string; outcome: "accepted" | "failed"; reason?: string; now?: number }): PromotionRow | null {
-  const row = (db.prepare("SELECT rule_id, project_id FROM lane_pilot_rule_promotion WHERE json_extract(task_json,'$.id')=?").get(input.taskId) as { rule_id: string; project_id: string } | undefined);
+  const row = promotionForTaskId(db, input.taskId);
   if (!row) return null;
   const promotion = listPromotions(db, row.project_id).find((item) => item.ruleId === row.rule_id);
   if (!promotion) return null;

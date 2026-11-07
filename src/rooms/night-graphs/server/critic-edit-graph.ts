@@ -10,6 +10,8 @@ import type { BenchApi } from "../../bench/service";
 import { bestEffort } from "@lane-pilot/kit";
 
 import type { WorkflowEngineApi } from "../../platform/server";
+import { listProjectsWithCriticReceipts } from "../../storage";
+import { wfTerminalByIdemKey } from "@lane-pilot/workflow-engine";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -67,12 +69,11 @@ export function mountCriticEditGraph(ctx: ServerCore, services: Services): void 
     const workflow = services.workflowEngine.resolveWorkflow("lp.critic-edit");
     if (!workflow) return;
     const month = new Date().toISOString().slice(0, 7);
-    const projects = ctx.db.prepare(`SELECT DISTINCT r.project_id AS id FROM lane_pilot_stage_receipt s JOIN lane_pilot_run r ON r.id=s.run_id
-      WHERE s.updated_at>=? AND s.stage_id IN ('plan-critique','code-critique','specialist-review')`).all(Date.now() - 30 * 86_400_000) as Array<{ id: string }>;
+    const projects = listProjectsWithCriticReceipts(ctx.db as never, Date.now() - 30 * 86_400_000).map((id) => ({ id }));
     for (const project of projects) {
       if (ctx.isDisposed() || signal?.aborted) return;
       const key = `critic-edit:${project.id}:${month}`;
-      const prior = ctx.db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(key) as { status: string } | undefined;
+      const prior = wfTerminalByIdemKey(ctx.db as never, key);
       if (prior) continue;
       await engine.start({
         workflow, key, link: { projectId: project.id },

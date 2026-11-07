@@ -3,6 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/rooms/plugin-db";
 import { EXAM_LIVE, authorize, runLiveExam } from "../../src/rooms/policy/exam";
 import { LIVE_EXAM_KEY, LIVE_STORE_LIMIT_BYTES, STANDING_DAYS, appendLiveItems, collectAndAppend, collectOwnerDecisions, loadLiveExam, recordOwnerDecision } from "../../src/rooms/policy/live-exam";
+import { listReviewedObservations } from "../../src/rooms/learning";
 import { POLICY } from "../../src/rooms/policy/policy";
 
 const FREEZE = Date.parse(POLICY.frozen_at);
@@ -31,7 +32,7 @@ describe("collectOwnerDecisions", () => {
     event("r_old", "owner_rejected", FREEZE - HOUR); // seen: before the freeze
     obs("o_ok", "ok", FREEZE + 4 * HOUR); obs("o_wrong", "wrong", FREEZE + 5 * HOUR); obs("o_old", "ok", FREEZE - DAY); obs("o_secret", "ok", FREEZE + HOUR, 1); obs("o_none", null, FREEZE + HOUR);
 
-    const items = collectOwnerDecisions(db, FREEZE, FREEZE + 6 * HOUR);
+    const items = collectOwnerDecisions(db, FREEZE, FREEZE + 6 * HOUR, listReviewedObservations);
     expect(items.map((item) => item.source.ref)).toEqual(["proj_1/r_rej#owner_rejected", "proj_1/r_acc#owner_accepted", "proj_1/r_rev#owner_revoked", "o_ok", "o_wrong"]);
     const by = Object.fromEntries(items.map((item) => [item.source.ref, item]));
     expect(by["proj_1/r_rej#owner_rejected"]).toMatchObject({ expected: "night_proposes", strength: "medium", descriptor: { kind: "rule_adopt", attrs: { trial: true, always_on: false } } });

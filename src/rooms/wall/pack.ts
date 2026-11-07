@@ -2,6 +2,7 @@ import { wfFailedStepOfRun, wfRunRow } from "@lane-pilot/workflow-engine";
 import { z } from "zod";
 import type { LoopEvidence } from "../contracts";
 import type { WallDb } from "./journal";
+import { attemptRowWithProject, getTaskContractJson, getTaskPlan, listAttemptReasonsLike, listFailedStageReceipts, listFamilyAttemptRows } from "../storage";
 
 /**
  * The evidence of a wall, and the code check on what the hunters say about it (atlas delta 3.1, after critique/citations.ts: a reviewer's
@@ -107,7 +108,7 @@ export type AttemptRow = { id: string; run_id: string; task_id: string; state: s
 export const attemptView = (row: AttemptRow): PackAttempt => ({ id: row.id, state: row.state, reason: (row.reason ?? "").slice(0, 1200), project: row.project_id, version: row.harness_version ?? "", at: row.updated_at });
 
 export function receiptsOf(db: WallDb, attempts: readonly AttemptRow[]): PackReceipt[] {
-  const stmt = db.prepare("SELECT stage_id, state, reason FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND state IN ('failed','blocked')");
+  const stmt = { all: (runId: string, taskId: string) => listFailedStageReceipts(db as never, runId, taskId) };
   const out: PackReceipt[] = [];
   const seen = new Set<string>();
   for (const row of attempts) {
@@ -139,7 +140,7 @@ export function buildClassPack(db: WallDb, classKey: string, extra: { files?: Pa
       wfFacts.push(`graph run ${id.slice(3)}: ${run.workflow_id} ${run.status}, reason ${(run.reason ?? "-").slice(0, 300)}${step ? `, step ${step.node_id}: ${(step.error ?? "").slice(0, 300)}` : ""} (project ${run.project_id ?? "-"}, version ${run.harness_version ?? "-"}, at ${run.updated_at})`);
     } catch { /* a database without the engine's tables has no graph runs */ }
   }
-  const stmt = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.updated_at, a.harness_version, r.project_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.id=?`);
+  const stmt = { get: (id: string) => attemptRowWithProject(db as never, id) };
   const attempts = [...ids].slice(0, 8).map((id) => stmt.get(id) as AttemptRow | undefined).filter((row): row is AttemptRow => Boolean(row));
   const queries: PackQuery[] = [
     { id: "by_night", sql: "SELECT night, sum(n) AS n FROM lane_pilot_wall_entry WHERE class_key=? GROUP BY night ORDER BY night DESC LIMIT 14", rows: db.prepare("SELECT night, sum(n) AS n FROM lane_pilot_wall_entry WHERE class_key=? GROUP BY night ORDER BY night DESC LIMIT 14").all(classKey) },
@@ -155,17 +156,16 @@ export function buildClassPack(db: WallDb, classKey: string, extra: { files?: Pa
 
 /** The pack of a task wall: the contract and plan, every attempt of the family, its failed receipts, the same fingerprint elsewhere in 14 days. */
 export function buildTaskPack(db: WallDb, input: { runId: string; taskId: string; family: string; fingerprintLike?: string; now: number }): EvidencePack {
-  const attempts = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.updated_at, a.harness_version, r.project_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-    WHERE a.run_id=? AND (a.task_id=? OR a.task_id LIKE ?) ORDER BY a.created_at`).all(input.runId, input.family, `${input.family}.%`) as AttemptRow[];
-  const task = db.prepare("SELECT contract_json FROM lane_pilot_task WHERE id=? AND run_id=?").get(input.taskId, input.runId) as { contract_json: string } | undefined;
-  const plan = db.prepare("SELECT plan FROM lane_pilot_task_plan WHERE task_id=?").get(input.taskId) as { plan: string } | undefined;
+  const attempts = listFamilyAttemptRows(db as never, input.runId, input.family) as AttemptRow[];
+  const task = { contract_json: getTaskContractJson(db as never, input.taskId) ?? undefined };
+  const plan = { plan: getTaskPlan(db as never, input.taskId) };
   const files: PackFile[] = [];
-  if (task) files.push({ path: "TASK", lines: task.contract_json.split("\n").length, text: task.contract_json.slice(0, 20_000) });
-  if (plan) files.push({ path: "PLAN", lines: plan.plan.split("\n").length, text: plan.plan.slice(0, 20_000) });
+  if (task.contract_json) files.push({ path: "TASK", lines: task.contract_json.split("\n").length, text: task.contract_json.slice(0, 20_000) });
+  if (plan.plan) files.push({ path: "PLAN", lines: plan.plan.split("\n").length, text: plan.plan.slice(0, 20_000) });
   const queries: PackQuery[] = [];
   if (input.fingerprintLike) {
     const sql = "SELECT task_id, state, substr(reason,1,160) AS reason FROM lane_pilot_attempt WHERE updated_at>? AND reason LIKE ? ORDER BY updated_at DESC LIMIT 20";
-    queries.push({ id: "same_fingerprint_14d", sql, rows: db.prepare(sql).all(input.now - 14 * 86_400_000, `%${input.fingerprintLike}%`) });
+    queries.push({ id: "same_fingerprint_14d", sql, rows: listAttemptReasonsLike(db as never, input.now - 14 * 86_400_000, `%${input.fingerprintLike}%`, 20) });
   }
   return {
     kind: "task", subject: `${input.runId}/${input.family}`, facts: [`task family ${input.family} in run ${input.runId}: ${attempts.length} attempts, the last ones failed the same way`],
@@ -178,15 +178,14 @@ export function buildLoopPack(db: WallDb, input: LoopEvidence): EvidencePack {
   const attempts: AttemptRow[] = [];
   const files: PackFile[] = [];
   if (input.runId) {
-    const byFamily = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.updated_at, a.harness_version, r.project_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-      WHERE a.run_id=? AND (a.task_id=? OR a.task_id LIKE ?) ORDER BY a.created_at`);
-    const contract = db.prepare("SELECT contract_json FROM lane_pilot_task WHERE id=? AND run_id=?");
+    const byFamily = { all: (runId: string, family: string, like: string) => listFamilyAttemptRows(db as never, runId, family) };
+    const contract = { get: (latest: string, runId: string) => ({ contract_json: getTaskContractJson(db as never, latest) }) };
     for (const id of [...new Set(input.taskIds ?? [])].slice(0, 12)) {
       const rows = byFamily.all(input.runId, id, `${id}.%`) as AttemptRow[];
       attempts.push(...rows.slice(-6));
       const latest = rows.at(-1)?.task_id ?? id;
-      const task = contract.get(latest, input.runId) as { contract_json: string } | undefined;
-      if (task) files.push({ path: `TASK:${latest}`, lines: task.contract_json.split("\n").length, text: task.contract_json.slice(0, 8_000) });
+      const task = contract.get(latest, input.runId) as { contract_json: string | null } | undefined;
+      if (task?.contract_json) files.push({ path: `TASK:${latest}`, lines: task.contract_json.split("\n").length, text: task.contract_json.slice(0, 8_000) });
     }
   }
   for (const text of input.texts ?? []) files.push({ path: text.path, lines: text.text.split("\n").length, text: text.text.slice(0, 20_000) });

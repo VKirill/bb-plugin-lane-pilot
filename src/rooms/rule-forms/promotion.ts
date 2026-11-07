@@ -1,4 +1,4 @@
-import { classifyRuleForm, listRuleProposals, type MechanismKind, type RuleProposal, type RulesDatabase } from "@lane-pilot/run-insights";
+import { classifyRuleForm, listRuleProposals, type MechanismKind, type RuleProposal, type RulesDatabase , insertRulePromotion, listPromotionRows, listPromotionRuleIds, setPromotionRowState} from "@lane-pilot/run-insights";
 import { taskV2Schema, type TaskV2 } from "@lane-pilot/contracts";
 import { explainChange, type Tier } from "../policy";
 import { mechanismFor } from "./mechanisms";
@@ -162,7 +162,7 @@ type PromotionDb = RulesDatabase;
  */
 export function proposePromotions(db: PromotionDb, projectId: string, input: { repoPath: string; now?: number }): { created: PromotionRow[]; kept: number; candidates: number } {
   const now = input.now ?? Date.now();
-  const known = new Set((db.prepare("SELECT rule_id FROM lane_pilot_rule_promotion WHERE project_id=?").all(projectId) as Array<{ rule_id: string }>).map((row) => row.rule_id));
+  const known = new Set(listPromotionRuleIds(db, projectId));
   const created: PromotionRow[] = [];
   let candidates = 0;
   for (const rule of listRuleProposals(db, projectId, { state: "accepted", limit: 500 })) {
@@ -172,16 +172,14 @@ export function proposePromotions(db: PromotionDb, projectId: string, input: { r
     if (known.has(rule.id)) continue;
     const built = buildMechanismTask(rule, { repoPath: input.repoPath, why });
     const state: PromotionState = built.tier === "owner_only" ? "owner_only" : "proposed";
-    db.prepare(`INSERT OR IGNORE INTO lane_pilot_rule_promotion(rule_id,project_id,mechanism,state,task_json,tier,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)`)
-      .run(rule.id, projectId, built.kind, state, JSON.stringify(built.task), built.tier, now, now);
+    insertRulePromotion(db, { ruleId: rule.id, projectId, mechanism: built.kind, state, taskJson: JSON.stringify(built.task), tier: built.tier, now });
     created.push({ ruleId: rule.id, projectId, mechanism: built.kind, state, task: built.task, tier: built.tier, createdAt: now, updatedAt: now });
   }
   return { created, kept: known.size, candidates };
 }
 
 export function listPromotions(db: PromotionDb, projectId: string): PromotionRow[] {
-  return (db.prepare("SELECT rule_id, project_id, mechanism, state, task_json, tier, created_at, updated_at FROM lane_pilot_rule_promotion WHERE project_id=? ORDER BY created_at DESC, rule_id")
-    .all(projectId) as Array<{ rule_id: string; project_id: string; mechanism: MechanismKind; state: PromotionState; task_json: string; tier: Tier; created_at: number; updated_at: number }>)
+  return (listPromotionRows(db, projectId) as Array<{ rule_id: string; project_id: string; mechanism: MechanismKind; state: PromotionState; task_json: string; tier: Tier; created_at: number; updated_at: number }>)
     .map((row) => ({ ruleId: row.rule_id, projectId: row.project_id, mechanism: row.mechanism, state: row.state, task: JSON.parse(row.task_json) as TaskV2, tier: row.tier, createdAt: row.created_at, updatedAt: row.updated_at }));
 }
 
@@ -189,13 +187,13 @@ export function listPromotions(db: PromotionDb, projectId: string): PromotionRow
 export function acceptPromotion(db: PromotionDb, projectId: string, ruleId: string, now: number = Date.now()): PromotionRow | null {
   const row = listPromotions(db, projectId).find((row) => row.ruleId === ruleId || row.ruleId.startsWith(ruleId));
   if (!row || row.state === "dispatched" || row.state === "done") return null;
-  db.prepare("UPDATE lane_pilot_rule_promotion SET state='dispatched', updated_at=? WHERE rule_id=? AND project_id=?").run(now, row.ruleId, projectId);
+  setPromotionRowState(db, { projectId, ruleId: row.ruleId, state: "dispatched", now });
   return { ...row, state: "dispatched", updatedAt: now };
 }
 
 export function dismissPromotion(db: PromotionDb, projectId: string, ruleId: string, now: number = Date.now()): PromotionRow | null {
   const row = listPromotions(db, projectId).find((row) => row.ruleId === ruleId || row.ruleId.startsWith(ruleId));
   if (!row || row.state === "dismissed") return null;
-  db.prepare("UPDATE lane_pilot_rule_promotion SET state='dismissed', updated_at=? WHERE rule_id=? AND project_id=?").run(now, row.ruleId, projectId);
+  setPromotionRowState(db, { projectId, ruleId: row.ruleId, state: "dismissed", now });
   return { ...row, state: "dismissed", updatedAt: now };
 }

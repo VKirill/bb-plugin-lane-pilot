@@ -399,3 +399,26 @@ export function putGlobalSettingValue(db: LanePilotDatabase, projectId: string, 
     ON CONFLICT(project_id,binding_id,key) DO UPDATE SET version=excluded.version`).run(projectId, "", key, next);
   return true;
 }
+
+export function boundSettingValue(db: LanePilotDatabase, projectId: string, key: string): string | null {
+  return (db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND binding_id='' AND key=?")
+    .get(projectId, key) as { value: string } | undefined)?.value ?? null;
+}
+
+export function settingValue(db: LanePilotDatabase, projectId: string, key: string): string | null {
+  return (db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND key=?")
+    .get(projectId, key) as { value: string } | undefined)?.value ?? null;
+}
+
+export function settingValues(db: LanePilotDatabase, projectId: string, key: string): string[] {
+  return (db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND key=?")
+    .all(projectId, key) as Array<{ value: string }>).map((row) => row.value);
+}
+
+export function deleteBoundSetting(db: LanePilotDatabase, projectId: string, key: string): void {
+  db.prepare("DELETE FROM lane_pilot_project_settings WHERE project_id=? AND binding_id='' AND key=?").run(projectId, key);
+}
+
+export function listProjectsWithGlobalSettings(db: LanePilotDatabase): string[] {
+  return (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_project_settings WHERE binding_id=''").all() as Array<{ project_id: string }>).map((row) => row.project_id);
+}

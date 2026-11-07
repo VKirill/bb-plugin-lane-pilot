@@ -16,7 +16,7 @@ export const POLICY_USAGE = [
 ].join("\n");
 
 type Kv = { get<T>(key: string): Promise<T | null | undefined>; set(key: string, value: never): Promise<unknown> };
-export type PolicyCliDeps = { db: Pick<Database.Database, "prepare">; kv: Kv; now?(): number; ownerSweeps?: readonly OwnerItemSweep[] };
+export type PolicyCliDeps = { db: Pick<Database.Database, "prepare">; kv: Kv; now?(): number; ownerSweeps?: readonly OwnerItemSweep[]; reviewedObs?: Parameters<typeof collectAndAppend>[4] };
 
 const json = (value: unknown) => JSON.stringify(value, null, 2);
 
@@ -48,7 +48,7 @@ export async function runPolicyCli(deps: PolicyCliDeps, command: "policy-exam" |
       const change = JSON.parse(rest.join(" ")) as ChangeDescriptor;
       return { exitCode: 0, stdout: json({ ...explainChange(change), authorized: authorize(change) }) };
     }
-    if (op === "exam-collect") return { exitCode: 0, stdout: json(await collectAndAppend(deps.db, deps.kv, now())) };
+    if (op === "exam-collect") return { exitCode: 0, stdout: json(await collectAndAppend(deps.db, deps.kv, now(), undefined, deps.reviewedObs)) };
     if (op === "exam-add") {
       if (!rest[0]) return { exitCode: 1, stderr: `exam-add needs a JSON object\n${POLICY_USAGE}` };
       const input = JSON.parse(rest.join(" ")) as Omit<OwnerDecisionInput, "at"> & { at?: number };

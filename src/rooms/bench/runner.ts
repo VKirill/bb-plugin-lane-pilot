@@ -12,6 +12,7 @@ import { jevalsLine, type JevalsResult } from "./jevals";
 import { BENCH_PROJECT_PREFIX, BENCH_PROJECTS, benchProjectName, type ManifestTask, type VerificationItem } from "./types";
 import { MIN_FREE_GB, STOP_FREE_GB, cleanBenchCaches, freeGb, linkDependenciesCommand } from "./warmup";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
+import { boundSettingValue } from "../storage";
 import { bestEffort } from "@lane-pilot/kit";
 
 /**
@@ -176,8 +177,8 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
   const writer = input.writer ?? DEFAULT_BENCH_WRITER;
   const config = { writer, harness: input.harness ?? "none", settings: input.settings ?? {}, fault: input.fault ?? null };
   const setting = (key: string): unknown => {
-    const row = (deps.db as { prepare: (s: string) => { get: (...a: unknown[]) => { value: string } | undefined } }).prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND binding_id='' AND key=?").get(GLOBAL_SETTINGS_PROJECT_ID, key);
-    return row ? JSON.parse(row.value) : undefined;
+    const value = boundSettingValue(deps.db as never, GLOBAL_SETTINGS_PROJECT_ID, key);
+    return value === null ? undefined : JSON.parse(value);
   };
   const gbSetting = (key: string, fallback: number): number => {
     const value = Number(setting(key));

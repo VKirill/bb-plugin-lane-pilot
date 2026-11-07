@@ -1,3 +1,4 @@
+import { listReviewedObservations } from "../../learning";
 import { join } from "node:path";
 import { providerForwardsAgentOnly, writerExecutionSelection } from "@lane-pilot/models";
 import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, scheduleIsolated } from "../../platform/server";
@@ -22,6 +23,7 @@ import { wallLogLines } from "../logs";
 import { revertMerge, type RevertHost } from "../revert";
 
 import { collectAndAppend } from "../../policy";
+import { getRun } from "../../storage";
 import type { ChainRuntime } from "../../contracts/server";
 import type { CheckersApi } from "../../checkers/server";
 import type { HuntOutcome } from "../pack";
@@ -296,7 +298,7 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
       },
     },
     restart: async (plan) => {
-      const run = db.prepare("SELECT closed_at FROM lane_pilot_run WHERE id=?").get(plan.runId) as { closed_at: number | null } | undefined;
+      const run = getRun(db, plan.runId);
       if (!run || run.closed_at) return { ok: false, note: "the run is closed" };
       if (services.activeWriterTasks.has(`${plan.runId}:${plan.taskId}`)) return { ok: false, note: "the task has a writer at work" };
       reopenWriterStages(db, plan.runId, plan.taskId, `re-run from ${plan.affected.from} on the new head (${plan.head.join(", ") || "the repaired class"})`);
@@ -341,7 +343,7 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
   // idempotent (live-exam.ts collectAndAppend); until 0.1.459 only the CLI `policy exam-collect` called it (Gemini F-009).
   scheduleIsolated(bb, "policy-exam-collect", "50 2 * * *", async () => {
     if (ctx.isDisposed()) return;
-    await collectAndAppend(ctx.db as never, bb.storage.kv as never).catch((cause: unknown) => ctx.log(`policy exam collect failed: ${cause instanceof Error ? cause.message : String(cause)}`));
+    await collectAndAppend(ctx.db as never, bb.storage.kv as never, Date.now(), undefined, listReviewedObservations as never).catch((cause: unknown) => ctx.log(`policy exam collect failed: ${cause instanceof Error ? cause.message : String(cause)}`));
   }, { timeoutMs: 60_000 });
   scheduleIsolated(bb, "wall-night", "0 3 * * *", async () => {
     if (ctx.isDisposed()) return;

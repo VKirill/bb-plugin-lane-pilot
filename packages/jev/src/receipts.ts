@@ -141,3 +141,35 @@ export function labeledOutcomes(db: Database.Database, judgment: string): string
 export function countJudgmentReceipts(db: Database.Database, judgment: string): number {
   return (db.prepare(`SELECT COUNT(*) AS n FROM lane_pilot_jev_receipt WHERE judgment=?`).get(judgment) as { n: number }).n;
 }
+
+export function jevDecisionCounts(db: Database.Database, judgment: string, since: number): Array<{ decision: string; n: number }> {
+  return db.prepare("SELECT decision, count(*) AS n FROM lane_pilot_jev_receipt WHERE judgment=? AND at>=? AND decision IS NOT NULL GROUP BY decision")
+    .all(judgment, since) as Array<{ decision: string; n: number }>;
+}
+
+export function jevCostStats(db: Database.Database, judgment: string, since: number): { n: number; tin: number | null; ms: number | null } {
+  return db.prepare(`SELECT count(*) AS n, sum(tokens_in) AS tin, avg(latency_ms) AS ms FROM lane_pilot_jev_receipt WHERE judgment=? AND at>=?`)
+    .get(judgment, since) as { n: number; tin: number | null; ms: number | null };
+}
+
+export function jevReceiptDecision(db: Database.Database, id: number): string | null {
+  return (db.prepare("SELECT decision FROM lane_pilot_jev_receipt WHERE id=?").get(id) as { decision: string | null } | undefined)?.decision ?? null;
+}
+
+export function jevMaturedJudgmentCount(db: Database.Database): number {
+  return (db.prepare(`SELECT judgment, COUNT(*) AS n FROM lane_pilot_jev_receipt WHERE outcome IS NOT NULL AND (outcome LIKE 'agree%' OR outcome LIKE 'disagree%') GROUP BY judgment HAVING n >= 50`)
+    .all() as Array<{ judgment: string }>).length;
+}
+
+export function listJevRebenchReceipts(db: Database.Database, judgments: readonly string[], since: number, projectId?: string | null): Array<{
+  id: number; judgment: string; decision: string | null; decided_by: string; model: string | null; subject: string | null; project_id: string | null; outcome: string | null; run_id: string | null;
+}> {
+  return db.prepare(`
+    SELECT r.id, r.judgment, r.decision, r.decided_by, r.model, r.subject, r.project_id, r.outcome, r.run_id
+    FROM lane_pilot_jev_receipt r
+    WHERE r.judgment IN (${judgments.map(() => "?").join(",")}) AND r.at >= ? ${projectId ? "AND r.project_id = ?" : ""}
+    ORDER BY r.at DESC
+  `).all(...judgments, since, ...(projectId ? [projectId] : [])) as Array<{
+    id: number; judgment: string; decision: string | null; decided_by: string; model: string | null; subject: string | null; project_id: string | null; outcome: string | null; run_id: string | null;
+  }>;
+}

@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import { emptyCheckReason } from "../tasks/server";
-import { getRunWriterHost } from "../storage";
+import { getRunWriterHost, listCandidateTaskRows } from "../storage";
 import { BENCH_PROJECTS, type BenchProject, type Candidate, type Rejection, type Risk, type VerificationItem } from "./types";
 
 type Db = Pick<Database.Database, "prepare">;
@@ -44,14 +44,7 @@ export type CandidateInput = {
  * `rejected` counts the reasons so the report can say where the 843 went.
  */
 export function loadCandidates(db: Db, input: CandidateInput): { candidates: Candidate[]; rejected: Rejection[]; counts: Record<string, number> } {
-  const rows = db.prepare(`SELECT t.id AS task_id, t.run_id, r.project_id, t.contract_json, g.initial_head_sha, g.base_sha, a.id AS attempt_id, a.attempt_no, a.updated_at AS accepted_at
-    FROM lane_pilot_task t
-    JOIN lane_pilot_run r ON r.id = t.run_id
-    JOIN lane_pilot_task_git_base g ON g.task_id = t.id
-    JOIN lane_pilot_attempt a ON a.task_id = t.id AND a.state = 'accepted'
-      AND a.attempt_no = (SELECT MIN(b.attempt_no) FROM lane_pilot_attempt b WHERE b.task_id = t.id AND b.state = 'accepted')
-    WHERE t.id NOT LIKE 'drill-%' AND g.initial_head_sha <> ''
-    GROUP BY t.id ORDER BY t.id`).all() as Row[];
+  const rows = listCandidateTaskRows(db as never) as unknown as Row[];
   const candidates: Candidate[] = [], rejected: Rejection[] = [];
   const counts: Record<string, number> = {};
   const reject = (taskId: string, reason: string) => { counts[reason] = (counts[reason] ?? 0) + 1; rejected.push({ taskId, stratum: "", reason }); };

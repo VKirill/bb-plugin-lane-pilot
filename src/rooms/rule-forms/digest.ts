@@ -1,4 +1,4 @@
-import { listRuleForms, type RulesDatabase } from "@lane-pilot/run-insights";
+import { listPromotionProjectIds, listRuleForms, type RulesDatabase } from "@lane-pilot/run-insights";
 import { listPromotions, type PromotionRow } from "./promotion";
 
 /** The «rules as text vs as mechanism» counter plus the week's open promotion candidates for the wall morning. */
@@ -13,7 +13,7 @@ export const PROMOTION_DIGEST_TOP = 10;
 
 function projectsWithPromotions(db: RulesDatabase): string[] {
   try {
-    return (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_rule_promotion").all() as Array<{ project_id: string }>).map((row) => row.project_id);
+    return listPromotionProjectIds(db);
   } catch { return []; }
 }
 

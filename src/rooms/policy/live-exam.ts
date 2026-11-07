@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { sha256Hex } from "@lane-pilot/kit";
 import { EXAM_LIVE, liveItemSchema, type LiveExam, type LiveItem } from "./exam";
 import { POLICY, type ChangeDescriptor, type Policy, type Tier } from "./policy";
+import { listRuleDecisionEvents, listStandingRuleTrials } from "@lane-pilot/run-insights";
 
 /**
  * The growing exam (exam v2). At night `collectOwnerDecisions` turns the owner's new decisions into items and `appendLiveItems` adds them to
@@ -58,12 +59,10 @@ export async function appendLiveItems(kv: Kv, items: readonly LiveItem[]): Promi
 type RuleRow = { event_id: number; project_id: string; rule_id: string; action: string; detail: string | null; at: number; rule: string; always_on: number };
 
 /** Owner decisions made after `since` (ms), as exam items. Reads the hub tables only; writes nothing. */
-export function collectOwnerDecisions(db: Db, since: number, now: number = Date.now()): LiveItem[] {
+export function collectOwnerDecisions(db: Db, since: number, now: number = Date.now(), readObservations?: (db: Db, since: number) => Array<{ id: string; review: "ok" | "wrong"; reviewed_at: number; kind: string | null; final_route: string | null; excerpt: string | null }>): LiveItem[] {
   const items: LiveItem[] = [];
 
-  const decisions = db.prepare(`SELECT e.id AS event_id, e.project_id, e.rule_id, e.action, e.detail, e.at, p.rule, p.always_on
-      FROM lane_pilot_rule_event e JOIN lane_pilot_rule_proposal p ON p.project_id=e.project_id AND p.id=e.rule_id
-      WHERE e.action IN ('owner_rejected','owner_accepted','owner_revoked') AND e.at>? ORDER BY e.at`).all(since) as RuleRow[];
+  const decisions = listRuleDecisionEvents(db, ["owner_rejected", "owner_accepted", "owner_revoked"], since) as RuleRow[];
   for (const row of decisions) {
     const ref = `${row.project_id}/${row.rule_id}#${row.action}`;
     items.push({
@@ -74,11 +73,7 @@ export function collectOwnerDecisions(db: Db, since: number, now: number = Date.
     });
   }
 
-  const standing = db.prepare(`SELECT e.project_id, e.rule_id, e.at, p.rule, p.always_on FROM lane_pilot_rule_event e
-      JOIN lane_pilot_rule_proposal p ON p.project_id=e.project_id AND p.id=e.rule_id
-      WHERE e.action='adopted' AND p.state='accepted' AND e.at+?>? AND e.at+?<=?
-        AND NOT EXISTS (SELECT 1 FROM lane_pilot_rule_event o WHERE o.project_id=e.project_id AND o.rule_id=e.rule_id AND o.action IN ('owner_rejected','owner_revoked'))
-      ORDER BY e.at`).all(STANDING_DAYS * DAY_MS, since, STANDING_DAYS * DAY_MS, now) as Array<{ project_id: string; rule_id: string; at: number; rule: string; always_on: number }>;
+  const standing = listStandingRuleTrials(db, STANDING_DAYS * DAY_MS, since, now);
   for (const row of standing) {
     const ref = `${row.project_id}/${row.rule_id}#left_standing`;
     const decidedAt = row.at + STANDING_DAYS * DAY_MS;
@@ -90,7 +85,7 @@ export function collectOwnerDecisions(db: Db, since: number, now: number = Date.
     });
   }
 
-  const labelled = db.prepare("SELECT id, review, reviewed_at, kind, final_route, excerpt FROM lane_pilot_learning_obs WHERE review IN ('ok','wrong') AND sensitive=0 AND reviewed_at>? ORDER BY reviewed_at").all(since) as
+  const labelled = (readObservations?.(db, since) ?? []) as
     Array<{ id: string; review: "ok" | "wrong"; reviewed_at: number; kind: string | null; final_route: string | null; excerpt: string | null }>;
   for (const row of labelled) {
     items.push({
@@ -126,6 +121,6 @@ export function recordOwnerDecision(input: OwnerDecisionInput): LiveItem {
 }
 
 /** The night step: collect what the owner decided since the policy was frozen and append it. Returns what changed. */
-export async function collectAndAppend(db: Db, kv: Kv, now: number = Date.now(), policy: Policy = POLICY): Promise<{ added: number; skipped: number; total: number }> {
-  return appendLiveItems(kv, collectOwnerDecisions(db, Date.parse(policy.frozen_at), now));
+export async function collectAndAppend(db: Db, kv: Kv, now: number = Date.now(), policy: Policy = POLICY, readObservations?: Parameters<typeof collectOwnerDecisions>[3]): Promise<{ added: number; skipped: number; total: number }> {
+  return appendLiveItems(kv, collectOwnerDecisions(db, Date.parse(policy.frozen_at), now, readObservations));
 }

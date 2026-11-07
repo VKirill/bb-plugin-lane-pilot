@@ -243,3 +243,27 @@ export function writerGroups(db: TriageDatabase, projectId: string, since: numbe
   }
   return groups.sort((a, b) => b.taskCount - a.taskCount);
 }
+
+// ---- foreign-SQL reads moved home from the rooms (same SQL text, named) ----
+
+/** Orchestrator triages of a window, newest context included (the watcher's triage source; the thread join is storage's). */
+export function listOrchestratorTriages(db: TriageDatabase, since: number): Array<{ project_id: string; run_id: string; task_id: string; attempt_id: string; reason: string; triaged_at: number; failed_at: number }> {
+  return db.prepare(`SELECT t.project_id, t.run_id, t.task_id, t.attempt_id, t.reason, t.triaged_at, t.failed_at FROM lane_pilot_failure_triage t
+    WHERE t.origin='orchestrator' AND t.status='ok' AND t.triaged_at > ?`).all(since) as
+    Array<{ project_id: string; run_id: string; task_id: string; attempt_id: string; reason: string; triaged_at: number; failed_at: number }>;
+}
+
+/** Origin counts of a window (the self-repair report's fault lines). */
+export function triageOriginCounts(db: TriageDatabase, since: number): Array<{ origin: string; n: number }> {
+  return db.prepare("SELECT origin, count(*) AS n FROM lane_pilot_failure_triage WHERE triaged_at > ? GROUP BY origin").all(since) as Array<{ origin: string; n: number }>;
+}
+
+/** Marks a triage row model-not-writer (the scan's post-answer correction). */
+export function markTriageDetail(db: TriageDatabase, projectId: string, attemptId: string, detail: string): void {
+  db.prepare("UPDATE lane_pilot_failure_triage SET detail=? WHERE project_id=? AND attempt_id=?").run(detail, projectId, attemptId);
+}
+
+/** Ok triages by attempt id + project (the wall and watcher join their rows against this). */
+export function listOkTriageOrigins(db: TriageDatabase): Array<{ attempt_id: string; project_id: string; origin: string }> {
+  return db.prepare("SELECT attempt_id, project_id, origin FROM lane_pilot_failure_triage WHERE status='ok'").all() as Array<{ attempt_id: string; project_id: string; origin: string }>;
+}

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 import { fingerprint as treeFingerprint, inventory as treeInventory, type Tree } from "@lane-pilot/harness-core";
+import { assignAttemptHarness as assignAttemptHarnessRow, listHarnessTrialAttempts, latestStageResultJson, listTeachingKeys } from "../../storage";
 
 export type HarnessDb = Pick<Database.Database, "prepare">;
 
@@ -96,7 +97,7 @@ export function setHarnessState(db: HarnessDb, id: string, state: HarnessState, 
 
 /** Which tree and arm an attempt ran under. */
 export function assignAttemptHarness(db: HarnessDb, attemptId: string, harnessId: string, arm: "new" | "old" | null): void {
-  db.prepare("UPDATE lane_pilot_attempt SET harness_tree_id=?, harness_arm=? WHERE id=?").run(harnessId, arm, attemptId);
+  assignAttemptHarnessRow(db as never, attemptId, harnessId, arm);
 }
 
 /** Attempts of a trial since it started: the candidate's own (arm `new`) and the replaced tree's in the same period (arm `old`). */
@@ -104,10 +105,8 @@ export type ArmAttempt = { attemptId: string; taskId: string; state: string; att
 
 export function trialAttempts(db: HarnessDb, trial: Pick<HarnessRow, "id" | "parentId" | "trialStartedAt">): ArmAttempt[] {
   const since = trial.trialStartedAt ?? 0;
-  const rows = db.prepare(`SELECT a.id AS attemptId, a.task_id AS taskId, a.state, a.attempt_no AS attemptNo, a.harness_arm AS arm, a.created_at AS createdAt, a.run_id AS runId
-    FROM lane_pilot_attempt a WHERE a.created_at>=? AND ((a.harness_tree_id=? AND a.harness_arm='new') OR (a.harness_tree_id=? AND a.harness_arm='old'))
-    ORDER BY a.created_at`).all(since, trial.id, trial.parentId ?? "") as Array<{ attemptId: string; taskId: string; state: string; attemptNo: number; arm: "new" | "old"; createdAt: number; runId: string }>;
-  const findings = db.prepare("SELECT result_json FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND stage_id='code-critique' ORDER BY updated_at DESC LIMIT 1");
+  const rows = listHarnessTrialAttempts(db as never, { since, trialId: trial.id, parentId: trial.parentId });
+  const findings = { get: (runId: string, taskId: string) => ({ result_json: latestStageResultJson(db as never, runId, taskId, "code-critique") }) };
   return rows.map((row) => {
     let blocking = 0;
     const receipt = findings.get(row.runId, row.taskId) as { result_json: string | null } | undefined;
@@ -138,11 +137,5 @@ export function listExperiences(db: HarnessDb, projectId: string, area: string):
 
 /** Keys (area, writer) with enough recent attempts, spread over at least `minSpanMs`, to teach an editor something (an area that lived an afternoon repeats nothing), newest activity first. */
 export function teachingKeys(db: HarnessDb, projectId: string, since: number, minAttempts: number, minSpanMs = 0): Array<{ area: string; writerKey: string; attempts: number }> {
-  const rows = db.prepare(`SELECT COALESCE(json_extract(t.contract_json,'$.area'),'') AS area,
-      COALESCE(json_extract(x.trace_json,'$.dispatchContext.writerKey'), '*') AS writerKey, count(*) AS attempts, max(a.created_at) AS last
-    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id JOIN lane_pilot_task t ON t.id=a.task_id
-    LEFT JOIN lane_pilot_attempt_reasoning x ON x.attempt_id=a.id
-    WHERE r.project_id=? AND a.created_at>=? AND a.task_id NOT LIKE 'drill-%' AND a.state IN ('accepted','blocked','validation_failed','empty_output')
-    GROUP BY 1,2 HAVING count(*)>=? AND max(a.created_at)-min(a.created_at)>=? ORDER BY last DESC`).all(projectId, since, minAttempts, minSpanMs) as Array<{ area: string; writerKey: string; attempts: number }>;
-  return rows.map((row) => ({ area: row.area ?? "", writerKey: row.writerKey ?? "*", attempts: row.attempts }));
+  return listTeachingKeys(db as never, projectId, since, minAttempts, minSpanMs);
 }

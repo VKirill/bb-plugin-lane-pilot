@@ -172,3 +172,42 @@ export function classifyUnformed(db: RulesDatabase, projectId: string | null, op
     return { row, verdict, written };
   });
 }
+
+// ---- foreign-SQL reads moved home from the rooms (same SQL text, named) ----
+
+/** Projects that hold a promotion row (the digest's scope). */
+export function listPromotionProjectIds(db: RulesDatabase): string[] {
+  return (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_rule_promotion").all() as Array<{ project_id: string }>).map((row) => row.project_id);
+}
+
+/** Rule ids with a promotion row of a project (the sweep's known set). */
+export function listPromotionRuleIds(db: RulesDatabase, projectId: string): string[] {
+  return (db.prepare("SELECT rule_id FROM lane_pilot_rule_promotion WHERE project_id=?").all(projectId) as Array<{ rule_id: string }>).map((row) => row.rule_id);
+}
+
+/** A promotion candidate, ignored when the rule already has one. */
+export function insertRulePromotion(db: RulesDatabase, input: { ruleId: string; projectId: string; mechanism: string; state: string; taskJson: string; tier: string; now: number }): void {
+  db.prepare(`INSERT OR IGNORE INTO lane_pilot_rule_promotion(rule_id,project_id,mechanism,state,task_json,tier,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)`)
+    .run(input.ruleId, input.projectId, input.mechanism, input.state, input.taskJson, input.tier, input.now, input.now);
+}
+
+/** Promotion rows of a project, newest first (the room's list and single-row lookups). */
+export function listPromotionRows(db: RulesDatabase, projectId: string): Array<{ rule_id: string; project_id: string; mechanism: string; state: string; task_json: string; tier: string; created_at: number; updated_at: number }> {
+  return db.prepare("SELECT rule_id, project_id, mechanism, state, task_json, tier, created_at, updated_at FROM lane_pilot_rule_promotion WHERE project_id=? ORDER BY created_at DESC, rule_id")
+    .all(projectId) as Array<{ rule_id: string; project_id: string; mechanism: string; state: string; task_json: string; tier: string; created_at: number; updated_at: number }>;
+}
+
+/** A promotion's state, with the task's fail reason when given (the settle and dismiss paths). */
+export function setPromotionRowState(db: RulesDatabase, input: { projectId: string; ruleId: string; state: string; reason?: string; now: number }): void {
+  if (input.reason) {
+    db.prepare("UPDATE lane_pilot_rule_promotion SET state=?, task_json=json_set(task_json,'$.fail_reason',?), updated_at=? WHERE rule_id=? AND project_id=?")
+      .run(input.state, input.reason, input.now, input.ruleId, input.projectId);
+  } else {
+    db.prepare("UPDATE lane_pilot_rule_promotion SET state=?, updated_at=? WHERE rule_id=? AND project_id=?").run(input.state, input.now, input.ruleId, input.projectId);
+  }
+}
+
+/** The promotion a finished task belongs to, by the id inside its contract (the settle lookup). */
+export function promotionForTaskId(db: RulesDatabase, taskId: string): { rule_id: string; project_id: string } | undefined {
+  return db.prepare("SELECT rule_id, project_id FROM lane_pilot_rule_promotion WHERE json_extract(task_json,'$.id')=?").get(taskId) as { rule_id: string; project_id: string } | undefined;
+}

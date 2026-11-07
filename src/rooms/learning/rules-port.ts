@@ -1,5 +1,5 @@
 import { memoryRecordId, storeMemoryRecords } from "@lane-pilot/memory-core";
-import { listRuleProposals, upsertLessonProposal } from "@lane-pilot/run-insights";
+import { listRuleProposals, upsertLessonProposal , bumpRuleProposal} from "@lane-pilot/run-insights";
 import type { LanePilotDatabase } from "../storage";
 import type { MemorySettings } from "@lane-pilot/memory-core";
 import type { InsightsApi } from "../contracts/server";
@@ -16,7 +16,7 @@ export function lpRulesPort(db: LanePilotDatabase, insights: InsightsApi, memory
     ].map((row) => ({ id: row.id, rule: row.rule, state: row.state as "proposed" | "accepted", audience: row.audience })),
     propose: (projectId, input) => upsertLessonProposal(db, projectId, { rule: input.rule, evidence: input.evidence, audience: input.audience, ...(input.scope?.length ? { scope: input.scope } : {}) }),
     adopt: (projectId, id) => insights.adoptRuleProposal(db, projectId, id) !== null,
-    confirm: (projectId, id) => { db.prepare("UPDATE lane_pilot_rule_proposal SET occurrences=occurrences+1, last_seen_at=?, updated_at=? WHERE project_id=? AND id=?").run(Date.now(), Date.now(), projectId, id); },
+    confirm: (projectId, id) => { bumpRuleProposal(db, projectId, id); },
     retire: (projectId, id, reason) => insights.retireAdoptedRule(db, projectId, id, reason),
     reject: (projectId, id) => { insights.rejectRuleProposal(db, projectId, id); },
   };

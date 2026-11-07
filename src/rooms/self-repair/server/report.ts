@@ -5,6 +5,8 @@ import { isDue, repairPriority, VERSION } from "./episodes";
 import { repairStatus } from "./verdict";
 
 import { SELF_REPAIR_STATE_KEY as STATE_KEY } from "../../contracts";
+import { attemptStateCounts } from "../../storage";
+import { triageOriginCounts } from "@lane-pilot/run-insights";
 export { SELF_REPAIR_STATE_KEY as STATE_KEY } from "../../contracts";
 
 /** What the watcher's state holds about one repair signature (read-only; the night loop follows its repairs with it). */
@@ -23,8 +25,8 @@ export type StatusSource = {
 
 export async function selfRepairStatus(source: StatusSource) {
   const since = Date.now() - 86_400_000;
-  const attempts = source.db.prepare("SELECT state, count(*) AS n FROM lane_pilot_attempt WHERE updated_at > ? GROUP BY state").all(since) as Array<{ state: string; n: number }>;
-  const faults = source.db.prepare("SELECT origin, count(*) AS n FROM lane_pilot_failure_triage WHERE triaged_at > ? GROUP BY origin").all(since) as Array<{ origin: string; n: number }>;
+  const attempts = attemptStateCounts(source.db, since);
+  const faults = triageOriginCounts(source.db as never, since);
   const cfg = await source.config();
   const current = await source.state();
   const open = await source.collect(since, cfg);

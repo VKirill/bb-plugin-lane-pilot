@@ -35,6 +35,7 @@ import { isNotFound, orMiss } from "@lane-pilot/kit";
 import type { PromotionServiceApi } from "../rule-forms/promotion-service";
 import type { WriterHostApi } from "../platform/server";
 import { bestEffort } from "@lane-pilot/kit";
+import { latestOpenPmThreadForProject, runIdForPmThread, latestRunIdForPmThread, openRunIdForPmThread, projectIdForPmThread } from "../storage";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -69,8 +70,7 @@ export function createLearning(ctx: ServerCore, services: Services) {
   const rules = lpRulesPort(db, services.insights, services.memorySettings), notes = lpNotesPort(db, services.insights, services.memorySettings);
   const log = (line: string) => ctx.log(line);
 
-  const pmThread = (projectId: string): string | null =>
-    (db.prepare("SELECT pm_thread_id FROM lane_pilot_run WHERE project_id=? AND closed_at IS NULL AND pm_thread_id IS NOT NULL ORDER BY updated_at DESC LIMIT 1").get(projectId) as { pm_thread_id: string } | undefined)?.pm_thread_id ?? null;
+  const pmThread = (projectId: string): string | null => latestOpenPmThreadForProject(db, projectId);
 
   /** The agent's last reply before an owner message: the nearest finished agent message under its sequence. */
   async function prevReply(message: OwnerMessage): Promise<string> {
@@ -87,8 +87,8 @@ export function createLearning(ctx: ServerCore, services: Services) {
   const observer = createObserver({
     db, config: async () => config, jev, decisions: decisionsClient, prevReply, log,
     onFrustration: async ({ observation, message, quote, agentSaid }) => {
-      const run = db.prepare("SELECT id FROM lane_pilot_run WHERE pm_thread_id=? LIMIT 1").get(message.threadId) as { id: string } | undefined;
-      await recordFrustration(kv, { at: Date.now(), projectId: message.projectId, threadId: message.threadId, messageId: message.id, p: observation.frustration ?? 0, quote, agentSaid, pmThreadId: run ? message.threadId : null, runId: run?.id ?? null });
+      const run = { id: runIdForPmThread(db, message.threadId) };
+      await recordFrustration(kv, { at: Date.now(), projectId: message.projectId, threadId: message.threadId, messageId: message.id, p: observation.frustration ?? 0, quote, agentSaid, pmThreadId: run.id ? message.threadId : null, runId: run.id });
     },
   });
 
@@ -116,8 +116,8 @@ export function createLearning(ctx: ServerCore, services: Services) {
 
   /** The sections of the chat a message was said in: a PM chat's run scopes, else the folder its workspace sits in. */
   async function scopeOf(threadId: string, projectId: string): Promise<string[]> {
-    const run = db.prepare("SELECT id FROM lane_pilot_run WHERE pm_thread_id=? ORDER BY created_at DESC LIMIT 1").get(threadId) as { id: string } | undefined;
-    const scopes = run ? getRunSettingsScopes(db, run.id) : [];
+    const runId = latestRunIdForPmThread(db, threadId);
+    const scopes = runId ? getRunSettingsScopes(db, runId) : [];
     if (scopes.length) return scopes;
     const thread = await orMiss(bb.sdk.threads.get({ threadId }), null, isNotFound) as { environmentId?: unknown } | null;
     const environmentId = typeof thread?.environmentId === "string" ? thread.environmentId : null;
@@ -285,9 +285,9 @@ export function mountLearning(ctx: ServerCore, services: Services): Learning | n
     // A PM session that starts or resumes gets the project's current PM rules (the first prompt carries them too, see activation.ts).
     try {
       bb.agents.contributeInstructions(({ threadId, projectId }) => {
-        const run = db.prepare("SELECT id FROM lane_pilot_run WHERE pm_thread_id=? AND closed_at IS NULL LIMIT 1").get(threadId) as { id: string } | undefined;
-        if (!run) return null;
-        return pmResumeInstructions(db, projectId, getRunSettingsScopes(db, run.id), `pm:${run.id}`);
+        const runId = openRunIdForPmThread(db, threadId);
+        if (!runId) return null;
+        return pmResumeInstructions(db, projectId, getRunSettingsScopes(db, runId), `pm:${runId}`);
       });
     } catch (cause) { bb.log.info(`Lane Pilot learning cannot contribute instructions: ${cause instanceof Error ? cause.message : String(cause)}`); }
 
@@ -296,8 +296,8 @@ export function mountLearning(ctx: ServerCore, services: Services): Learning | n
     const originalAsk = asking.ask.bind(ctx.ownerAsk);
     asking.ask = (threadId, request, options) => {
       if (request.source === "pm" && room.config().enabled) {
-        const row = db.prepare("SELECT project_id FROM lane_pilot_run WHERE pm_thread_id=? LIMIT 1").get(threadId) as { project_id: string } | undefined;
-        if (row) void bestEffort(ctx.log, "learning question note", room.noteQuestion({ projectId: row.project_id, threadId, question: request.question, detail: request.detail }), undefined);
+        const project = projectIdForPmThread(db, threadId);
+        if (project) void bestEffort(ctx.log, "learning question note", room.noteQuestion({ projectId: project, threadId, question: request.question, detail: request.detail }), undefined);
       }
       return originalAsk(threadId, request, options);
     };

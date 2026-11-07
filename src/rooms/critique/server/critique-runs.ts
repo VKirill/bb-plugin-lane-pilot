@@ -41,6 +41,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { StageHelperSettings } from "../../platform/server";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";
+import { latestAttemptEnvironmentId } from "../../storage";
 /** Whether a provider's usage window is nearly spent, read from the cache the writers share (a bounded warm-up first); undefined without a usage source. */
 async function limitProbe(bb: BbPluginApi, hostId: string, settings: Record<string, unknown>): Promise<SpentProbe | undefined> {
   const usage = spawnUsageOf({ bb });
@@ -448,9 +449,8 @@ export async function readCodeCritique(bb:BbPluginApi, threadId:string|null|unde
 }
 
 export function attemptEnvironment(db:ReturnType<typeof openDatabase>, runId:string, taskId:string, path:string):{ type:"reuse"; environmentId:string } | null {
-  const row = db.prepare(`SELECT environment_id AS environmentId FROM lane_pilot_attempt
-    WHERE run_id=? AND task_id=? AND workspace_path=? AND environment_id IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(runId, taskId, path) as { environmentId:string } | undefined;
-  return row ? { type:"reuse", environmentId:row.environmentId } : null;
+  const environmentId = latestAttemptEnvironmentId(db as never, runId, taskId, path);
+  return environmentId ? { type:"reuse", environmentId } : null;
 }
 
 export async function runCodeCritique(input:{

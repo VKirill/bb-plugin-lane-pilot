@@ -1,3 +1,4 @@
+import { listAttemptTracesForRun } from "../storage";
 /**
  * arXiv #18 («Are memory modules worth their tokens»): the token-matched injection audit. Two arms over the same
  * manifest — one injects project memory, the other spends nothing on it — and the acceptance delta is priced per
@@ -13,8 +14,7 @@ type Db = { prepare(sql: string): { all(...args: unknown[]): unknown[] } };
 
 /** Estimated tokens of `dispatchContext.memoryText` a run's attempts were given (bytes / 4, the store's own unit). */
 export function injectedTokensOf(db: Db, lpRunId: string): number {
-  const rows = db.prepare(`SELECT t.trace_json AS trace FROM lane_pilot_attempt a
-    LEFT JOIN lane_pilot_attempt_reasoning t ON t.attempt_id=a.id WHERE a.run_id=?`).all(lpRunId) as Array<{ trace: string | null }>;
+  const rows = listAttemptTracesForRun(db as never, lpRunId);
   let tokens = 0;
   for (const row of rows) {
     try {

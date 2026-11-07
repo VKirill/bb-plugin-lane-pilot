@@ -14,6 +14,7 @@ import { ERRAND_EPISODE_TABLE, ERRAND_EPISODE_TRACE_EVENTS } from "../../contrac
 import type { HarnessApi } from "../../harness/server/harness";
 import type { RuleScanApi } from "../../self-repair/server/rule-scan";
 import type { WorkflowEngineApi, WriterHostApi } from "../../platform/server";
+import { wfTerminalByIdemKey } from "@lane-pilot/workflow-engine";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -127,7 +128,7 @@ export function mountEpisodesGraph(ctx: ServerCore, services: Services): void {
     const workflow = services.workflowEngine.resolveWorkflow(EPISODES_WORKFLOW);
     if (!workflow) return;
     const key = `episodes:${new Date().toISOString().slice(0, 13)}`;
-    const prior = ctx.db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(key) as { status: string } | undefined;
+    const prior = wfTerminalByIdemKey(ctx.db as never, key);
     if (prior) return;
     await engine.start({
       workflow, key, link: { projectId: "*" },

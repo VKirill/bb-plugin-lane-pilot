@@ -3,6 +3,7 @@ import { globMatch, type ChangeDescriptor } from "../policy";
 import type { WallDb } from "./journal";
 import { FAILED_ATTEMPT_STATES } from "../contracts";
 import { wallSignature } from "./signature";
+import { latestAttemptStateCreated, listFailedAttemptsSinceDesc, listStageReceiptStates } from "../storage";
 
 /**
  * «Change the head and re-run from the earliest affected stage» (Maslov, 2026-10-22: «гонит поезд на голове A, дальше возникает проблема
@@ -78,11 +79,9 @@ type FailedAttempt = { id: string; run_id: string; task_id: string; state: strin
  * bench / real for a project.
  */
 export function planClassRerun(db: WallDb, input: { classKey: string; since: number; head: readonly HeadPart[]; scopeOf: (projectId: string) => RerunScope; limit?: number }): RerunPlan[] {
-  const rows = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.failure_code, a.updated_at, r.project_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-    WHERE a.updated_at>=? AND a.state IN (${FAILED_ATTEMPT_STATES.map((state) => `'${state}'`).join(",")})
-    ORDER BY a.updated_at DESC LIMIT 3000`).all(input.since) as FailedAttempt[];
-  const newest = db.prepare("SELECT state FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC LIMIT 1");
-  const receiptsOf = db.prepare("SELECT stage_id, state, input_sha256 FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=?");
+  const rows = listFailedAttemptsSinceDesc(db as never, FAILED_ATTEMPT_STATES, input.since, 3000) as FailedAttempt[];
+  const newest = { get: (runId: string, taskId: string) => ({ state: latestAttemptStateCreated(db as never, runId, taskId) ?? "" }) };
+  const receiptsOf = { all: (runId: string, taskId: string) => listStageReceiptStates(db as never, runId, taskId) };
   const done = new Set(["accepted", "canceled", "queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"]);
   const seen = new Set<string>();
   const plans: RerunPlan[] = [];

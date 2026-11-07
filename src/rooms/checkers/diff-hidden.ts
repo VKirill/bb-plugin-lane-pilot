@@ -13,6 +13,7 @@ import {
 } from "./checkers";
 import { testFitFindings } from "../tasks";
 import { CHECKERS, type CheckerId, type FileChange } from "./types";
+import { saveDiffHiddenRows as saveDiffHiddenRowsInStorage, diffHiddenAuditSummary } from "../storage";
 
 /**
  * Audit with diff hidden (Mirage / ToCS pattern, arXiv 2603.21687):
@@ -300,27 +301,7 @@ export async function runDiffHiddenAudit(
 }
 
 export function saveDiffHiddenRows(db: CheckerDb, rows: readonly DiffHiddenRow[]): void {
-  const insert = db.prepare(`
-    INSERT OR REPLACE INTO lane_pilot_diff_hidden_audit
-      (id, run_id, task_id, checker, with_diff_json, diff_hidden_json, phantom, blind_pass, diff_sensitive, recorded_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  db.transaction(() => {
-    for (const row of rows) {
-      insert.run(
-        row.id,
-        row.runId,
-        row.taskId,
-        row.checker,
-        JSON.stringify(row.withDiffFindings),
-        JSON.stringify(row.diffHiddenFindings),
-        row.phantom ? 1 : 0,
-        row.blindPass ? 1 : 0,
-        row.diffSensitive ? 1 : 0,
-        row.recordedAt,
-      );
-    }
-  })();
+  saveDiffHiddenRowsInStorage(db as never, rows as never);
 }
 
 export type DiffHiddenSummary = {
@@ -338,16 +319,7 @@ export function getDiffHiddenSummary(
   now: number = Date.now(),
 ): DiffHiddenSummary | null {
   try {
-    const row = db.prepare(`
-      SELECT
-        COUNT(DISTINCT task_id) as candidates,
-        COUNT(*) as total,
-        COALESCE(SUM(blind_pass), 0) as blind_passes,
-        COALESCE(SUM(phantom), 0) as phantoms,
-        COALESCE(SUM(diff_sensitive), 0) as sensitive
-      FROM lane_pilot_diff_hidden_audit
-      WHERE recorded_at >= ? AND recorded_at <= ?
-    `).get(sinceMs, now) as {
+    const row = diffHiddenAuditSummary(db as never, sinceMs, now) as {
       candidates: number;
       total: number;
       blind_passes: number;
