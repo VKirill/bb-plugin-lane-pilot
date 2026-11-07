@@ -1,66 +1,41 @@
+import { closeSync, fstatSync, openSync, readSync } from "node:fs";
+import { join } from "node:path";
 import { checkBrief, renderBrief } from "../../brief";
-import { writerReuseStats } from "../../writer";
+import { writerReuseStats, writerBriefStats } from "../../writer";
 import { checksInFlight, failureClass, taskFamily } from "../../runs";
 import { projectRoleField } from "../../runs/server";
 import { OWNER_WORD_WAIT_MS } from "../../tasks";
 import { taskWordItemPrefix } from "../../lead";
-import { closeSync, fstatSync, openSync, readSync } from "node:fs";
-import { join } from "node:path";
-import { z } from "zod";
-import packageJson from "../../../../package.json";
-import { fullAccessSpawn, graphStepMetadata, modelCatalogOf, resolveSpawnModel } from "../../core/server";
-import { clearSpawnMarker, keyedSpawnSupported } from "../../core/server";
+import { clearSpawnMarker, fullAccessSpawn, graphStepMetadata, keyedSpawnSupported, modelCatalogOf, resolveSpawnModel, scheduleIsolated, stringAt } from "../../core/server";
+import type { ServerCore, Services } from "../../core/server";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { withUsage } from "../../usage/server";
 import { SELF_REPAIR, builtinWorkflow } from "../../workflow";
 import type { StepContext, WorkflowEngine } from "../../workflow";
-import { scheduleIsolated } from "../../core/server";
-import { HOOK_TIMEOUTS_KEY, type HookTimeoutRecord } from "../../stability/server";
+import { BREAKERS_KEY, DRILL_KEY, DRILL_SANDBOX_PROJECT_IDS, HOOK_TIMEOUTS_KEY, PARKED_KEY, type DrillOutcome, type HookTimeoutRecord, type ParkedTask } from "../../stability/server";
 import { tableRowAt, writerExecutionSelection } from "@lane-pilot/models";
-import { stringAt } from "../../core/server";
-import { writerBriefStats } from "../../writer";
-import { BREAKERS_KEY, DRILL_KEY, DRILL_SANDBOX_PROJECT_IDS, PARKED_KEY, type DrillOutcome, type ParkedTask } from "../../stability/server";
-import { criticStats } from "../../critique";
-import { FAILURE_TRIAGE_METHOD, SCIENTIFIC_DEBUG_METHOD } from "../../critique";
-import type { VerdictStatus } from "../../critique";
+import { criticStats, FAILURE_TRIAGE_METHOD, SCIENTIFIC_DEBUG_METHOD } from "../../critique";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../../contracts";
-import type { ServerCore, Services } from "../../core/server";
-import { englishSelfRepairChoice, ownerLocale, selfRepairOwnerForm, type OwnerAnswer } from "../../relay/server";
-import { jev } from "@lane-pilot/jev";
-import { GUARD_BLOCKED_KEY, type GuardBlock } from "@lane-pilot/jev";
 import { FRUSTRATION_KEY, frustrationReason, type FrustrationRecord } from "../../learning";
+import { jev } from "@lane-pilot/jev";
 import { MAX_CANDIDATES, repairGroup } from "@lane-pilot/jev/judgments/repair-group";
-import { fileAllowedByOwns, fileBlockedByNeverTouch, pluginRootFromModule, sha256Hex } from "@lane-pilot/kit";
-import { codeVerdict, splitRejectedPaths } from "@lane-pilot/run-insights";
+import { GUARD_BLOCKED_KEY, type GuardBlock } from "@lane-pilot/jev";
 import { DEPENDENCY_REDO_WAIT_MS, HOLDING_ATTEMPT_STATES, latestTaskAttempt } from "../../storage";
 import { getRepairHooks, type NightAssignment } from "./hooks";
-import { closeOwnerItem, postOwnerItem } from "../../owner-waiting";
+import { CONFIG_KEY, lanePilotProjectOrNotice, resolveLanePilotProject } from "./project";
+import { LOADED_AT, LOG_TAIL_BYTES, VERSION, isDue, lastPmOwnerMessageAt, logIncidents, pointsAtEngine, reasonSignature, repairPriority, writerRedCheck, writerStrayFiles } from "./episodes";
+import { readVerdict, type VerdictEnv } from "./verdict";
+import { MERGE_TRIES, createRepairWorktree, placeThread, releaseWorktree, settleWorktree, threadBusy, waitForSpawn } from "./spawn";
+import { readRepairRecord, selfRepairStatus, STATE_KEY } from "./report";
+import type { Incident, PmLastOwnerAt, RepairWorktree, SelfRepairConfig, SelfRepairState, SignatureRecord, Verdict } from "./types";
 
 /**
  * Self-repair: every 15 minutes Lane Pilot looks for failures that are its own fault (triage origin
  * «orchestrator», system-looking block reasons, attempts stuck while their writer idles). Each new kind of
- * problem gets one repair thread — Claude Code, Opus 5.5, high reasoning — in the Lane Pilot repository,
+ * problem gets one repair thread — the configured high-reasoning model — in the Lane Pilot repository,
  * which finds the cause, fixes, verifies live, ships and tells the affected PM. The owner is not involved.
  */
-
-export type SelfRepairConfig = {
-  enabled: boolean;
-  projectId: string;
-  environmentId: string;
-  /** Project Folders section the repair threads are filed in («Исправления» under lane-pilot); null — the project root. */
-  sectionId: string | null;
-  providerId: string;
-  model: string;
-  reasoningLevel: string;
-  maxPerDay: number;
-  /** Projects whose failures are deliberate (the sandbox). */
-  ignoreProjects: string[];
-  /** Where the run data lives, as the repair thread is told to reach it: the hub's ssh command, its SQLite file and the plugin log. */
-  hubSsh: string;
-  hubDb: string;
-  hubLog: string;
-};
 
 export const SELF_REPAIR_DEFAULTS: SelfRepairConfig = {
   enabled: true,
@@ -83,177 +58,35 @@ export const SELF_REPAIR_DEFAULTS: SelfRepairConfig = {
   hubLog: "~/.bb/plugins/lane-pilot/logs/plugin.log",
 };
 
-export type Incident = {
-  signature: string;
-  kind: "triage" | "blocked" | "stuck" | "log" | "repeat" | "queued" | "stage" | "parked" | "breaker" | "drill" | "hook" | "guard" | "owner" | "night";
-  projectId: string;
-  runId: string;
-  taskId: string;
-  attemptId: string;
-  pmThreadId: string | null;
-  writerThreadId: string | null;
-  reason: string;
-  at: number;
-  /** The Lane Pilot version that was running when it happened; null — before this load, maybe already fixed. */
-  version?: string | null;
-};
-
-export const VERDICTS = ["fixed", "already-fixed", "not-lane-pilot", "needs-owner"] as const;
-export type Verdict = (typeof VERDICTS)[number];
-
-/** Maps the owner's form choice onto the English option the repair thread reads. */
-export function repairAnswerForThread(answer: OwnerAnswer): OwnerAnswer {
-  if (answer.outcome !== "answered" || !answer.choice) return answer;
-  const label = englishSelfRepairChoice(answer.choice.id);
-  if (!label) return answer;
-  const choice = { id: answer.choice.id, label };
-  return { ...answer, choice, line: [label, answer.text].filter(Boolean).join(" — ") };
-}
-/** The repair thread's own git worktree on lane/self-repair-…, forked from the shared checkout's HEAD (E2). */
-export type RepairWorktree = { hostId: string; basePath: string; path: string; branch: string; mergeTries?: number };
-type SignatureRecord = {
-  firstAt: number; lastAt: number; count: number; threadId: string | null; spawnedAt: number | null; samples: Incident[];
-  spawnVersion?: string; verdict?: Verdict | null;
-  /** Set while the repair's worktree exists; null/absent once it was merged or released. */
-  worktree?: RepairWorktree | null;
-  /** What became of the repair's branch: «merged <sha>», «up-to-date», «released», or why it was left. */
-  outcome?: string | null;
-  /**
-   * The full SHA of the merge `outcome` names («merged <12 chars>» is for people). The night loop reverts by this value; a revert needs 40-64
-   * hex, so the short text can never be its input (wall repairs wr_8462ad860c03, wr_16de9a4704de, wr_662642de0aa6: every revert refused).
-   */
-  mergedCommit?: string | null;
-  /** A needs-owner repair keeps its worktree until the owner answers or this time passes: «go ahead» continues in that worktree. */
-  ownerWaitUntil?: number | null;
-  /** When the owner's «go ahead» went into the thread: its old needs-owner report is not read again before the new turn starts. */
-  continuedAt?: number | null;
-  /**
-   * A spawn that threw, so whether the thread exists is unknown. Its worktree is kept and the next pass repeats the spawn
-   * under the same key (the same thread comes back when it was made); only a spawn that cannot be settled releases it.
-   */
-  pending?: { worktree: RepairWorktree; at: number } | null;
-  /** The graph run (`lp.self-repair`) that works on this repair, and how many runs the watcher has started for it; absent for a direct repair. */
-  runId?: string | null;
-  runTries?: number;
-  /** Bumped by every write a graph step makes, so the watcher's own write at the end of a pass does not undo it. */
-  rev?: number;
-};
-type SelfRepairState = {
-  cursor: number; lastTickAt: number | null; signatures: Record<string, SignatureRecord>; spawned: Array<{ at: number; threadId: string; signature: string }>;
-  /** A signature Jev filed under a known group (J-10): the next sighting goes there without asking again. */
-  aliases: Record<string, string>;
-  /** A merge Jev proposed (active: applied, shadow: only recorded) whose receipt waits for a label: the target group's
-   * verdict says whether the shared cause was real (agree), and the signature's own repair says it was not (disagree). */
-  mergeSuggestions: Record<string, { group: string; receiptId: number; at: number }>;
-};
-
-export const CONFIG_KEY = "self-repair:config";
-const STATE_KEY = "self-repair:state";
 const SYSTEM_REASON = /internal_error|merge_failed|merge_queue_timeout|ownership run scope invalid|spawn failed|thread_provisioning_failed|EROFS|execution_packet_failed|snapshot_failed|helper_context|workspace path is inside|stale API handle|ownership git base|cannot compare pre-existing/i;
 const STUCK_MS = 45 * 60_000;
 const QUEUED_MS = 2 * 3_600_000;
 const PM_IDLE_MS = 86_400_000;
-const OWNER_TURN = "client/turn/requested" as const;
 const PM_TELL_RULE = "Tell a PM thread only when that PM has to do something now (dispatch again, accept leftover work, change a contract). Never send an informational note: already-fixed, false alarm, «was not stuck», «for the record», or a fix that restarts the task by itself go only into the report.";
 const STAGE_MS = 3_600_000;
 const REPEAT_TASKS = 3;
 /** An attempt at work for the queued-attempt check: every holding state but a queued one. */
 const WORKING_ATTEMPT_STATES = HOLDING_ATTEMPT_STATES.filter((state) => state !== "queued").map((state) => `'${state}'`).join(",");
 const FAILED_STATES = "'blocked','validation_failed','spawn_rejected','provider_error','empty_output'";
-const MUTE_MS = 7 * 86_400_000;
-/** How long a worktree waits for a spawn of unknown outcome to settle before it is released. */
-const PENDING_MS = 30 * 60_000;
-/** How long a pass waits for the graph run of a repair to start its thread (the worktree is made and prepared first); the run goes on after it. */
-const SPAWN_WAIT_MS = 12 * 60_000;
 /** Stops by design: a question for the PM, a dependency that ended blocked, or a turn the provider cut off (writer_stream_error). */
 const NOT_A_FAULT = /needs_human|depends_on|workspace_not_repo_root|writer_stream_error/i;
-
-/**
- * An ownership rejection of files the writer put outside its task: every named file is neither owned by the contract nor
- * bookkeeping, so the gate was right, the writer is told in its thread and redoes the task there. Several such tasks in a
- * day are writers' mistakes, not a pattern of Lane Pilot's; a gate that rejected an owned or a bookkeeping file is still one
- * (codeVerdict, as in triage). The reason's path count is part of the repeat signature, so each count used to open a repair
- * of its own (proj_acpiaqf4wq 2026-10-19/20: «<path>» answered not-lane-pilot, then «<path>, <path>» was raised again).
- * The run-scope gate (writer/server/verify.ts) words the same rejection «writer changed paths outside owns_paths or inside
- * never_touch: …»; read only as «owns_paths rejected», its writers' strays raised repairs in three projects (2026-10-24/25).
- */
-const STRAY_REASON = /^(?:owns_paths rejected|writer changed paths outside owns_paths or inside never_touch:) [^;]+$/;
-export function writerStrayFiles(reason: string, contractJson: string | null | undefined): boolean {
-  const text = reason.replace(/^retry limit \d+ exhausted:\s*/i, "").trim();
-  if (!STRAY_REASON.test(text) || !contractJson) return false;
-  let contract: { owns_paths?: unknown; never_touch?: unknown };
-  try { contract = JSON.parse(contractJson) as typeof contract; } catch { return false; }
-  if (!Array.isArray(contract.owns_paths)) return false;
-  const strings = (value: unknown) => (Array.isArray(value) ? value : []).filter((item): item is string => typeof item === "string");
-  const owns = strings(contract.owns_paths);
-  const never = strings(contract.never_touch);
-  const split = splitRejectedPaths(text, (path) => fileAllowedByOwns(path, owns) && !fileBlockedByNeverTouch(path, never));
-  return split.outside.length > 0 && split.bookkeeping.length === 0 && codeVerdict(split) === null;
-}
-/**
- * A writer's own red check: the task's road (red, the retry, green), told to the writer with the check's output. The repeat signature
- * blanks numbers, so different tasks' own tests read as one reason: Vampirism Fire 2026-10-25, «studio_test.py --filter Par031/37/38/70»
- * in four tasks, each triaged writer, opened a repair. The night wall skips these too (wall/select.ts). A red check triaged to Lane
- * Pilot's side (orchestrator, environment) or marked environment by the check gate keeps counting; no triage yet reads as the writer's.
- */
-const RED_CHECK = /^verification failed \(/;
-export function writerRedCheck(reason: string, triageOrigin: string | null | undefined): boolean {
-  const text = reason.replace(/^retry limit \d+ exhausted:\s*/i, "").trim();
-  return RED_CHECK.test(text) && failureClass("validation_failed", text) === "task" && triageOrigin !== "orchestrator" && triageOrigin !== "environment";
-}
-export const VERSION: string = packageJson.version;
-/** When this code was loaded: a failure before it may be what this release fixed. */
-const LOADED_AT = Date.now();
-/**
- * Plugin log lines that report Lane Pilot's own failure; a disconnected or slow machine is not one, and neither is a
- * browser check's verdict on the project («adopted after a reload: failed» is the product failing its check).
- */
-const LOG_FAILURE = /\bfailed\b|stale API handle|is retired|unhandled|uncaught/i;
-const LOG_NOT_OURS = /^self-repair|writer attempt \S+ failed|writer spawn for \S+ failed|Host is not connected|Timed out waiting for command result|native-trace|reasoning trace|waits for|browser check \S+ adopted after a reload|ended early, starting one more session/i;
-const LOG_TAIL_BYTES = 1_000_000;
-const REPEAT_AFTER_MS = 86_400_000;
-const FORGET_MS = 30 * 86_400_000;
 /**
  * A stored sample keeps this much of its reason (the repair prompt shows 600). The state is one KV value (256 KB limit);
  * a reason that listed every stray file of a 48k-file folder was 4.7 MB, the write failed and the watcher made no pass,
  * and with 4000 the ~165 known kinds alone took 252 KB (2026-10-10).
  */
 const SAMPLE_REASON_CHARS = 1000;
+const FORGET_MS = 30 * 86_400_000;
 /** The stored state stays under this many bytes: past it the kinds seen longest ago are forgotten first (a kind with a repair's
  * worktree is kept), so a busy month cannot grow it into the 256 KB KV limit. */
 const STATE_BUDGET_BYTES = 200 * 1024;
-/** A fixed repair whose branch will not merge is retried on this many passes, then left on its branch for the owner. */
-const MERGE_TRIES = 4;
-/** A repair thread that ended without a verdict for this long is abandoned: its worktree is saved as a patch and released. */
-const ABANDON_MS = 86_400_000;
+/** How long a worktree waits for a spawn of unknown outcome to settle before it is released. */
+const PENDING_MS = 30 * 60_000;
 /** Time the repair thread gets to start the turn the owner's «go ahead» queued before its closing line is read again. */
 const CONTINUE_GRACE_MS = 5 * 60_000;
-
-/**
- * Whether a kind of failure is the workflow engine itself failing: its signature, its samples or the night loop's brief show a fault in the engine's code, on its
- * tables or in its availability. Such a repair is not a graph run: a broken engine cannot run its own repair, so the watcher spawns that thread directly.
- * Only a fault counts, never a mention: a task that edits the engine's files, a check that reads its tables, a test of its folder and the words «workflow engine»
- * or the log prefix of a healthy run name the engine without the engine being broken (Astra's recheck of .341, F6: the first version matched the names alone).
- */
-const ENGINE_PATH = String.raw`(?:packages/workflow-engine/src|src/rooms/workflow)/[\w./-]*?(?<!\.test)\.tsx?`;
-const FAULT_WORD = String.raw`(?:\bSITE:|\binternal_error\b|\b[A-Za-z]+Error\b|\bunhandled\b|\buncaught\b)`;
-const DB_FAULT = String.raw`(?:no such (?:table|column)|SQLITE_\w+|constraint failed|database is locked|malformed)`;
-const ENGINE_FAULT = new RegExp([
-  // a stack frame in the engine's code
-  String.raw`\bat\s[^\n]*?${ENGINE_PATH}:\d+`,
-  // an error, a site or an internal error on the same line as the engine's code
-  String.raw`${FAULT_WORD}[^\n]*?${ENGINE_PATH}`,
-  String.raw`${ENGINE_PATH}[^\n]*?${FAULT_WORD}`,
-  // a database error on one of the engine's tables
-  String.raw`${DB_FAULT}[^\n]*\blane_pilot_wf_\w+`,
-  String.raw`\blane_pilot_wf_\w+[^\n]*${DB_FAULT}`,
-  // the engine is down, or the drive of a run crashed (a step that fails ends the run, it does not reject the drive)
-  String.raw`\bthe workflow engine (?:is not running|is not up yet|is off)\b`,
-  String.raw`\bLane Pilot workflow run \S+ \([^)]*\) stopped with an error`,
-].join("|"), "i");
-export function pointsAtEngine(signature: string, samples: ReadonlyArray<Pick<Incident, "reason">>, brief = ""): boolean {
-  return ENGINE_FAULT.test(`${signature}\n${brief}\n${samples.map((sample) => sample.reason).join("\n")}`);
-}
+/** Signatures filed under a known group per pass: each is one Jev request, and the rest wait for the next pass. */
+const REGROUP_PER_TICK = 8;
+const MAX_ALIASES = 500;
 
 /** Writes to the watcher's state that a graph step makes go one at a time (a tick holds its own copy and merges at the end, see writeState). */
 let stateWrites: Promise<unknown> = Promise.resolve();
@@ -261,92 +94,6 @@ function exclusive<T>(work: () => Promise<T>): Promise<T> {
   const next = stateWrites.then(work, work);
   stateWrites = next.then(() => undefined, () => undefined);
   return next;
-}
-
-/** A reason with its ids, paths, hashes and numbers blanked, so one problem in many tasks is one signature. */
-export function reasonSignature(kind: Incident["kind"], reason: string): string {
-  const core = reason
-    .replace(/retry limit \d+ exhausted:\s*/i, "")
-    .replace(/\b(?:lpattempt|lprun|thr|env|proj|host|term|ask|rem)_[a-z0-9]+\b/gi, "<id>")
-    .replace(/(?:[\w.@-]+)?\/[^\s'",;)]+/g, "<path>")
-    .replace(/\b[0-9a-f]{12,}\b/gi, "<hash>")
-    .replace(/\d+/g, "<n>")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 160);
-  return `${kind}:${sha256Hex(core).slice(0, 16)}:${core}`;
-}
-
-/** The repair thread's verdict as the unified status: fixed or already-fixed is a pass, not-lane-pilot a rework (the PM changes something), needs-owner a block. */
-export function repairStatus(verdict: Verdict | null | undefined): VerdictStatus | null {
-  return verdict === "fixed" || verdict === "already-fixed" ? "pass" : verdict === "not-lane-pilot" ? "rework" : verdict === "needs-owner" ? "block" : null;
-}
-
-export function parseVerdict(text: string): Verdict | null {
-  const match = /SELF-REPAIR-VERDICT:\s*([a-z-]+)/i.exec(text);
-  const value = match?.[1]?.toLowerCase();
-  return VERDICTS.find((item) => item === value) ?? null;
-}
-
-/**
- * Whether a kind of problem needs a repair now. Only occurrences under the running version count: a failure from
- * before this release may be exactly what the release fixed, so it waits to happen again. After a repair the kind
- * comes back only if it happens again under a newer version (the fix did not hold), a day later without a verdict,
- * or a week later when the repair said it is not Lane Pilot's or needs the owner.
- */
-/**
- * Whether a kind of problem began under the version that is running now: it was first recorded after this load and every sample
- * kept happened after it. The deploy script lifts the one-a-day and error-budget rules for an incident deploy only for such a kind
- * (audit 2026-10-08 round 4, P0-8): a problem that was already there when this version started is not what this version broke.
- */
-export function firstSeenOnRunningVersion(record: SignatureRecord, loadedAt = LOADED_AT, version = VERSION): boolean {
-  return record.firstAt >= loadedAt && record.samples.length > 0 && record.samples.every((sample) => sample.version === version);
-}
-
-export function isDue(record: SignatureRecord, now: number, version = VERSION): boolean {
-  const live = record.samples.some((sample) => sample.version === version && sample.at > (record.spawnedAt ?? 0));
-  if (!live) return false;
-  if (!record.spawnedAt) return true;
-  if (record.verdict === "not-lane-pilot" || record.verdict === "needs-owner") return now - record.spawnedAt > MUTE_MS;
-  if (record.verdict === "fixed" || record.verdict === "already-fixed") return version !== record.spawnVersion || now - record.spawnedAt > REPEAT_AFTER_MS;
-  return now - record.spawnedAt > REPEAT_AFTER_MS;
-}
-
-/** How much a kind of incident matters when it is real: a closed project (breaker) or a parked task outranks a log line or a drill. */
-const KIND_SEVERITY: Record<Incident["kind"], number> = { night: 0, breaker: 5, guard: 5, parked: 4, owner: 3, blocked: 3, stuck: 3, triage: 3, repeat: 3, hook: 2, queued: 2, stage: 2, log: 1, drill: 0.4 };
-const IMPACT_FLOOR = 0.3;
-
-/**
- * Which due problem gets the next repair (audit 2026-10-08 round 2, #20: the oldest first meant a drill artifact from days ago
- * outranked a fresh failure in a real project; 148 signatures, 0 repairs). Severity of its kind, times how often it happened
- * (log scale), times how recently (halves every day), times how many real projects it hit (a drill, the sandbox and a log line
- * with no project count as none and weigh 0.3). Higher goes first; equal scores go to the older.
- */
-export function repairPriority(signature: string, record: Pick<SignatureRecord, "count" | "lastAt" | "samples">, now: number, ignoredProjects: ReadonlySet<string> = new Set()): number {
-  const kind = signature.slice(0, signature.indexOf(":")) as Incident["kind"];
-  const severity = KIND_SEVERITY[kind] ?? 1;
-  const frequency = 1 + Math.min(5, Math.log2(Math.max(1, record.count)));
-  const days = Math.max(0, now - record.lastAt) / 86_400_000;
-  const freshness = 0.5 ** days;
-  const projects = new Set(record.samples.map((sample) => sample.projectId).filter((id) => id && id !== "-" && !ignoredProjects.has(id)));
-  const impact = projects.size === 0 ? IMPACT_FLOOR : Math.min(3, 1 + 0.5 * (projects.size - 1));
-  return Math.round(severity * frequency * freshness * impact * 1000) / 1000;
-}
-
-/** Failure lines of the plugin log newer than `since`, as incidents. */
-export function logIncidents(text: string, since: number): Incident[] {
-  const out: Incident[] = [];
-  for (const line of text.split("\n")) {
-    let row: { ts?: unknown; message?: unknown };
-    try { row = JSON.parse(line) as typeof row; } catch { continue; }
-    if (typeof row.ts !== "number" || row.ts <= since || typeof row.message !== "string") continue;
-    // A successful episode summary is status; other failure text in the same line still counts.
-    if (!LOG_FAILURE.test(row.message.replace(/^episodes: \d+ enriched, \d+ skipped, 0 failed, 0 held of \d+ picked\b/i, "")) || LOG_NOT_OURS.test(row.message)) continue;
-    const projectId = /\bproj_[a-z0-9]+/i.exec(row.message)?.[0] ?? "-";
-    out.push({ signature: reasonSignature("log", row.message), kind: "log", projectId, runId: "-", taskId: "-",
-      attemptId: `log:${row.ts}`, pmThreadId: null, writerThreadId: null, reason: row.message, at: row.ts });
-  }
-  return out;
 }
 
 /** The last `bytes` of a file (the plugin log); also the wall journal's reader, since only this file may read the hub's disk. */
@@ -359,45 +106,6 @@ export function readTail(path: string, bytes: number): string {
     readSync(fd, buffer, 0, length, size - length);
     return buffer.toString("utf8");
   } finally { closeSync(fd); }
-}
-
-/** Last owner (user-initiated) message time per PM thread; missing or null is unread and treated as live. */
-export type PmLastOwnerAt = Record<string, number | null>;
-
-function isOwnerInitiated(data: Record<string, unknown>): boolean {
-  const systemNotice = data.systemMessageKind != null && data.systemMessageKind !== "unlabeled";
-  return data.initiator === "user" && !data.senderThreadId && !systemNotice && !data.retryOfRequestId;
-}
-
-/** Newest owner turn on a PM thread, or null when the time cannot be read. */
-export async function lastPmOwnerMessageAt(
-  listEvents: (query: { threadId: string; types: [typeof OWNER_TURN]; order: "desc"; limit: string; beforeSeq?: string }) => Promise<unknown>,
-  threadId: string,
-): Promise<number | null> {
-  try {
-    let beforeSeq: string | undefined;
-    for (let page = 0; page < 10; page++) {
-      const listed = await listEvents({
-        threadId, types: [OWNER_TURN], order: "desc", limit: "50", ...(beforeSeq ? { beforeSeq } : {}),
-      });
-      if (!Array.isArray(listed) || listed.length === 0) return null;
-      for (const row of listed) {
-        if (!row || typeof row !== "object") continue;
-        const event = row as { createdAt?: unknown; data?: unknown; seq?: unknown };
-        const data = event.data && typeof event.data === "object" ? event.data as Record<string, unknown> : {};
-        if (!isOwnerInitiated(data) || typeof event.createdAt !== "number") continue;
-        return event.createdAt;
-      }
-      const seqs = listed.map((row) => Number((row as { seq?: unknown }).seq)).filter((seq) => Number.isFinite(seq));
-      const next = Math.min(...seqs);
-      if (!Number.isFinite(next) || listed.length < 50) return null;
-      if (beforeSeq !== undefined && next >= Number(beforeSeq)) return null;
-      beforeSeq = String(next);
-    }
-    return null;
-  } catch {
-    return null;
-  }
 }
 
 export function repairPrompt(
@@ -461,77 +169,6 @@ export function repairPrompt(
   });
   checkBrief("self-repair", brief.text, { instructionsLength: brief.instructionsLength });
   return brief.text;
-}
-
-type LpProjectBb = { sdk?: { projects?: { list?: (query: unknown) => Promise<unknown>; get?: (input: unknown) => Promise<unknown> }; environments?: { list?: (query: unknown) => Promise<unknown> } } };
-type LpProjectHost = { call?: (method: string, input: Record<string, unknown>, options?: Record<string, unknown>) => Promise<unknown> } | null;
-
-const lpProjectByBb = new WeakMap<object, { projectId: string; environmentId: string }>();
-
-/** The origin remote of the checkout a path sits in on the given host (git runs on that host, never in the plugin
- *  server), or null when it is not a git checkout — a deployed copy has none. */
-async function repoRemote(host: LpProjectHost, hostId: string | undefined, path: string): Promise<string | null> {
-  if (!host?.call) return null;
-  return await Promise.resolve(host.call("runCommand", { requestedHostId: hostId, cwd: path, timeoutSec: 15, command: "git remote get-url origin" }, { hostId, timeoutMs: 20_000 }))
-    .then((out) => stringAt(out, "stdout")?.trim() || null).catch(() => null);
-}
-
-const NO_LP_PROJECT_KEY = "lane-pilot:no-project";
-
-/**
- * «The Lane Pilot project» on this install, in one order for every caller: the stored `self-repair:config` ids first
- * (self_repair_configure; on a deployed copy without .git they are the only source), then git identity — a project
- * source whose origin remote, asked on the source's own host, equals the remote of this plugin's checkout (dev
- * checkouts, worktrees, second clones). Null when neither knows it; only a hit is cached.
- */
-export async function resolveLanePilotProject(bb: unknown, host: unknown): Promise<{ projectId: string; environmentId: string } | null> {
-  const cached = lpProjectByBb.get(bb as object);
-  if (cached !== undefined) return cached;
-  const stored = await Promise.resolve((bb as { storage?: { kv?: { get?: (key: string) => Promise<unknown> } } }).storage?.kv?.get?.(CONFIG_KEY) ?? null)
-    .catch(() => null) as { projectId?: unknown; environmentId?: unknown } | null;
-  const storedProject = typeof stored?.projectId === "string" && stored.projectId ? stored.projectId : "";
-  const storedEnvironment = typeof stored?.environmentId === "string" ? stored.environmentId : "";
-  if (storedProject) {
-    const discovered = storedEnvironment ? null : await discoverLanePilotProject(bb as LpProjectBb, host as LpProjectHost).catch(() => null);
-    const found = { projectId: storedProject, environmentId: storedEnvironment || (discovered?.projectId === storedProject ? discovered.environmentId : "") };
-    lpProjectByBb.set(bb as object, found);
-    return found;
-  }
-  const discovered = await discoverLanePilotProject(bb as LpProjectBb, host as LpProjectHost).catch(() => null);
-  if (!discovered) return null;
-  lpProjectByBb.set(bb as object, discovered);
-  return discovered;
-}
-
-async function discoverLanePilotProject(bb: LpProjectBb, host: LpProjectHost): Promise<{ projectId: string; environmentId: string } | null> {
-  const remote = await repoRemote(host, process.env.BB_HOST_ID, pluginRootFromModule(import.meta.url));
-  if (!remote) return null;
-  const rows = await Promise.resolve(bb.sdk?.projects?.list?.({ includePersonal: true }) ?? []).catch(() => []) as Array<{ id?: unknown }>;
-  for (const row of rows) {
-    if (typeof row?.id !== "string") continue;
-    const project = await Promise.resolve(bb.sdk?.projects?.get?.({ projectId: row.id }) ?? null).catch(() => null) as { sources?: Array<{ hostId?: unknown; path?: unknown }> } | null;
-    for (const source of project?.sources ?? []) {
-      if (typeof source?.hostId !== "string" || typeof source?.path !== "string") continue;
-      const theirs = await repoRemote(host, source.hostId, source.path);
-      if (theirs !== remote) continue;
-      const envs = await Promise.resolve(bb.sdk?.environments?.list?.({ hostId: source.hostId, path: source.path }) ?? []).catch(() => []) as Array<{ id?: unknown }>;
-      return { projectId: row.id, environmentId: typeof envs?.[0]?.id === "string" ? envs[0].id : "" };
-    }
-  }
-  return null;
-}
-
-/**
- * resolveLanePilotProject plus the owner's notice: `lane-pilot:no-project` stays open while neither the stored
- * config nor a matching source names the project, and closes itself when one does. All five callers share it.
- */
-export async function lanePilotProjectOrNotice(db: unknown, bb: unknown, host: unknown): Promise<{ projectId: string; environmentId: string } | null> {
-  const found = await resolveLanePilotProject(bb, host);
-  if (found) closeOwnerItem(db as never, NO_LP_PROJECT_KEY, "self-repair: resolved");
-  else postOwnerItem(db as never, { key: NO_LP_PROJECT_KEY, source: "self-repair", kind: "self-repair",
-    what: "Lane Pilot cannot find its own project",
-    why: "self-repair:config names no projectId and no project source shares this plugin's repository remote; set it with self_repair_configure." });
-  return found;
 }
 
 export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngine | undefined) {
@@ -638,7 +275,6 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
     });
   }
 
-  /** Failures since the cursor that look like Lane Pilot's fault, plus attempts stuck now. */
   async function collect(since: number, cfg: SelfRepairConfig): Promise<Incident[]> {
     const ignored = new Set([...cfg.ignoreProjects, ...DRILL_SANDBOX_PROJECT_IDS]);
     const out: Incident[] = [];
@@ -790,150 +426,12 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
     return out;
   }
 
-  async function placeThread(threadId: string, projectId: string, folderId: string): Promise<void> {
-    try {
-      await bb.sdk.plugins.callRpc({ pluginId: "project-folders", method: "thread_place", input: { threadId, projectId, folderId },
-        outputSchema: z.object({ ok: z.literal(true) }) });
-    } catch (cause) {
-      ctx.log(`self-repair: could not file @thread:${threadId} in section ${folderId}: ${cause instanceof Error ? cause.message : String(cause)}`);
-    }
-  }
-
-  async function threadBusy(threadId: string): Promise<boolean> {
-    const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
-    const status = stringAt(thread, "status");
-    return status !== null && status !== "idle" && status !== "error" && status !== "stopped";
-  }
-
-  /**
-   * The repair thread's own worktree (E2). Repair threads used to work in the checkout the owner and other sessions
-   * share and deployed from it, so a repair's half-done edits could ride along in someone else's deploy. Now each repair
-   * gets a Lane Pilot worktree under ~/.lane-pilot/worktrees on a lane/self-repair-… branch from that checkout's HEAD;
-   * its host and path are the configured environment's.
-   */
-  async function createRepairWorktree(cfg: SelfRepairConfig, signature: string, now: number): Promise<RepairWorktree> {
-    const environment = await bb.sdk.environments.get({ environmentId: cfg.environmentId });
-    const hostId = stringAt(environment, "hostId"), basePath = stringAt(environment, "path");
-    if (!hostId || !basePath) throw new Error(`environment ${cfg.environmentId} has no host path`);
-    const name = `self-repair-${sha256Hex(signature).slice(0, 8)}-${now.toString(36)}`;
-    const created = await host.call("gitCreateWorktree", { requestedHostId: hostId, basePath, name }, { hostId, timeoutMs: 120_000 });
-    if (created.status !== "ready" || !created.path || !created.branch) throw new Error(`worktree not created: ${created.reason ?? "unknown"}`);
-    // node_modules and built output are linked in so the suite runs there at once; without them the repair reinstalls.
-    await host.call("gitPrepareWorktree", { requestedHostId: hostId, basePath, worktreePath: created.path }, { hostId, timeoutMs: 600_000 }).catch(() => undefined);
-    return { hostId, basePath, path: created.path, branch: created.branch };
-  }
-
-  /** The worktree goes away; whatever it still holds is first saved as a patch under ~/.lane-pilot/released. */
-  async function releaseWorktree(worktree: RepairWorktree): Promise<void> {
-    const name = worktree.branch.replace(/^lane\//, "");
-    await host.call("gitWorktreeSnapshot", { requestedHostId: worktree.hostId, worktreePath: worktree.path, name }, { hostId: worktree.hostId, timeoutMs: 120_000 }).catch(() => null);
-    await host.call("gitRemoveWorktree", { requestedHostId: worktree.hostId, basePath: worktree.basePath, worktreePath: worktree.path }, { hostId: worktree.hostId, timeoutMs: 120_000 }).catch(() => null);
-  }
-
-  /**
-   * A repair thread that stopped: verdict fixed — its branch is merged into the shared checkout the way a writer's work
-   * is (under the base lock, rebased on the current HEAD, the worktree removed). A conflict or failure is retried on
-   * later passes, then the branch is left for the owner. Any other verdict — nothing of it is merged, the worktree is
-   * saved as a patch and released. Nothing here deploys: the release train does.
-   */
-  async function settleWorktree(record: SignatureRecord, signature: string, now: number): Promise<void> {
-    const worktree = record.worktree!;
-    if (record.verdict === "fixed") {
-      const title = signature.split(":").slice(2).join(":").slice(0, 100);
-      const result = await host.call("gitIntegrate", { requestedHostId: worktree.hostId, basePath: worktree.basePath, worktreePath: worktree.path,
-        message: `self-repair: ${title}`, removeWorktree: true }, { hostId: worktree.hostId, timeoutMs: 300_000 })
-        .catch((cause) => ({ status: "failed" as const, commit: null, reason: cause instanceof Error ? cause.message : String(cause) }));
-      if (result.status === "merged" || result.status === "up-to-date") {
-        record.worktree = null;
-        record.outcome = result.status === "merged" ? `merged ${String(result.commit ?? "").slice(0, 12)}` : "up-to-date";
-        record.mergedCommit = result.status === "merged" && result.commit ? String(result.commit) : null;
-        ctx.log(`self-repair: ${record.outcome} from ${worktree.branch}; it ships with the next release`);
-        return;
-      }
-      if (result.status !== "busy") worktree.mergeTries = (worktree.mergeTries ?? 0) + 1;
-      record.outcome = `${result.status}: ${String(result.reason ?? "").slice(0, 200)}`;
-      if ((worktree.mergeTries ?? 0) >= MERGE_TRIES) ctx.log(`self-repair: ${worktree.branch} failed to merge ${MERGE_TRIES} times; the next pass releases it: ${record.outcome}`);
-      return;
-    }
-    if (!record.verdict && now - (record.spawnedAt ?? now) < ABANDON_MS) return;
-    // The owner's «go ahead» continues the repair thread in this worktree: it stays until he answers or the question times out.
-    if (record.verdict === "needs-owner" && (record.ownerWaitUntil ?? 0) > now) return;
-    await releaseWorktree(worktree);
-    record.worktree = null;
-    record.outcome = `released: ${record.verdict ?? "no verdict"}`;
-  }
-
-  /**
-   * A repair that ended «needs-owner» put its question in its report, where nobody looks. The owner is asked in the repair
-   * thread as a form (a push on the phone) with the report's closing lines; the answer goes back into that thread as a
-   * message. The repair's worktree is released as for any verdict but «fixed», so the answer is a decision to act on in a
-   * new repair, not a continuation of the old edits. An older BB without question forms leaves the report as it was.
-   */
-  async function askOwnerAboutRepair(threadId: string, signature: string, report: string): Promise<boolean> {
-    const title = signature.split(":").slice(2).join(":").slice(0, 100);
-    const body = report.replace(/SELF-REPAIR-VERDICT:.*$/im, "").trim();
-    const form = selfRepairOwnerForm(await ownerLocale(ctx.bb), title);
-    const englishQuestion = selfRepairOwnerForm("en", title).question;
-    const TIMEOUT_MS = 60 * 60_000;
-    const settled = async (answer: OwnerAnswer) => {
-      // Silence, a dismissal or «leave as is» sends nothing: the thread has no work to do, and the next pass releases its worktree.
-      // (A message into it once its worktree was gone failed: «Provider codex failed to start: spawn /usr/bin/node ENOENT».)
-      const goAhead = answer.outcome === "answered" && answer.choice?.id !== "2";
-      if (goAhead) await ctx.ownerAsk.sendToThread(threadId, ctx.ownerAsk.answerMessage(englishQuestion, repairAnswerForThread(answer), TIMEOUT_MS));
-      await patchRecord(signature, (stored) => {
-        stored.ownerWaitUntil = null;
-        // The thread works again: its next closing line is the verdict, read once it is idle.
-        if (goAhead) { stored.verdict = null; stored.spawnedAt = Date.now(); stored.continuedAt = Date.now(); }
-      });
-      ctx.log(`self-repair: the owner's answer on @thread:${threadId}: ${goAhead ? "go ahead, the repair continues" : "no go-ahead, its worktree is released"}`);
-    };
-    const opened = await ctx.ownerAsk?.askInBackground(threadId, { source: "repair", question: form.question, detail: body.slice(-3000), options: form.options },
-      settled, { timeoutMs: TIMEOUT_MS }).catch(() => false) ?? false;
-    if (opened) ctx.log(`self-repair: asked the owner about @thread:${threadId} (needs-owner)`);
-    return opened;
-  }
-
-  /**
-   * The repair verdict is the stronger judge the Jev receipts waited for: a `guard:` incident confirms or denies the output
-   * guard's block (fixed/already-fixed → agree, not-lane-pilot → a false positive), a merge suggestion's target says the
-   * shared cause was real (agree), and a signature that needed its own repair proves its merge suggestion wrong (disagree).
-   */
-  async function labelJevReceipts(signature: string, verdict: Verdict, current: SelfRepairState): Promise<void> {
-    const instance = jev();
-    if (!instance) return;
-    const positive = verdict === "fixed" || verdict === "already-fixed";
-    const own = current.mergeSuggestions[signature];
-    if (own) { instance.outcome(own.receiptId, "disagree"); delete current.mergeSuggestions[signature]; }
-    for (const [sig, s] of Object.entries(current.mergeSuggestions)) {
-      if (s.group !== signature) continue;
-      if (positive) instance.outcome(s.receiptId, "agree");
-      delete current.mergeSuggestions[sig];
-    }
-    if (!signature.startsWith("guard:")) return;
-    const blocks = await ctx.bb.storage.kv.get(GUARD_BLOCKED_KEY).catch(() => null);
-    for (const row of (Array.isArray(blocks) ? blocks : []) as GuardBlock[]) {
-      if (row.receiptId == null || reasonSignature("guard", `${row.kind} output withheld by the output guard: ${row.reason}`) !== signature) continue;
-      const label = positive ? "agree" : verdict === "not-lane-pilot" ? "disagree" : null;
-      if (label) instance.outcome(row.receiptId, label);
-    }
-  }
-
-  /** Reads the repair thread's closing line into the record's verdict; a needs-owner report becomes a question on the owner's list. */
-  async function readVerdict(signature: string, record: SignatureRecord, dryRun: boolean, current?: SelfRepairState): Promise<void> {
-    const threadId = record.threadId!;
-    const report = await Promise.resolve().then(() => bb.sdk.threads.output({ threadId }))
-      .then((result) => { const value = (result as { output?: unknown; text?: unknown }).output ?? (result as { text?: unknown }).text; return typeof value === "string" ? value.slice(-4000) : ""; })
-      .catch(() => "");
-    record.verdict = parseVerdict(report);
-    if (record.verdict && !dryRun && current) await labelJevReceipts(signature, record.verdict, current).catch(() => undefined);
-    if (record.verdict === "needs-owner" && !dryRun) {
-      // A graph step stores the verdict first: a step run again after a reload must not ask the owner twice.
-      if (record.runId) await patchRecord(signature, (stored) => { stored.verdict = record.verdict; });
-      // The worktree waits for the answer (60 min form + a margin); unopened, it is released as before.
-      record.ownerWaitUntil = await askOwnerAboutRepair(threadId, signature, report) ? Date.now() + 65 * 60_000 : null;
-      if (record.runId) await patchRecord(signature, (stored) => { stored.ownerWaitUntil = record.ownerWaitUntil; });
-    }
-  }
+  const verdictEnv: VerdictEnv = {
+    bb,
+    log: ctx.log,
+    patchRecord,
+    get ownerAsk() { return ctx.ownerAsk; },
+  };
 
   /** One pass over a finished repair's worktree: a failed-merges limit releases it, a night repair asks the night policy, a fixed branch is merged. */
   async function settleRecord(signature: string, record: SignatureRecord, now: number): Promise<void> {
@@ -942,7 +440,7 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
     // saved as a patch, the worktree goes, and a night repair's round counts as failed so its class is taken again on a fresh main.
     if ((record.worktree!.mergeTries ?? 0) >= MERGE_TRIES) {
       const last = record.outcome ?? "";
-      await releaseWorktree(record.worktree!);
+      await releaseWorktree(host, record.worktree!);
       record.worktree = null;
       record.outcome = `released after ${MERGE_TRIES} failed merges: ${last}`.slice(0, 400);
       ctx.log(`self-repair: ${signature} ${record.outcome}`);
@@ -954,14 +452,14 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
       const decision = await night.mergeGate(signature, { threadId: record.threadId!, worktree: record.worktree! }).catch(() => "hold" as const);
       if (decision === "hold") return;
       if (decision === "release") {
-        await releaseWorktree(record.worktree!);
+        await releaseWorktree(host, record.worktree!);
         record.worktree = null;
         record.outcome = "released: held by the night policy";
         night.settled(signature, { outcome: record.outcome, verdict: record.verdict ?? null, commit: null });
         return;
       }
     }
-    await settleWorktree(record, signature, now);
+    await settleWorktree(host, ctx.log, (worktree) => releaseWorktree(host, worktree), record, signature, now);
     if (night && !record.worktree) {
       // The full SHA kept beside the outcome; the text is only the fallback for a merge recorded before it existed (the wall resolves a short one before it reverts).
       const merged = /^merged (\S+)/.exec(record.outcome ?? "")?.[1] ?? null;
@@ -970,9 +468,31 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
     }
   }
 
-  /** Signatures filed under a known group per pass: each is one Jev request, and the rest wait for the next pass. */
-  const REGROUP_PER_TICK = 8;
-  const MAX_ALIASES = 500;
+  /** The repair thread itself, started in the repair's worktree; the same call serves the direct spawn and the `repair` step of the graph. */
+  async function spawnRepairThread(args: { signature: string; samples: Incident[]; worktree: RepairWorktree; cfg: SelfRepairConfig; spawnId: string; now: number;
+    night?: Pick<NightAssignment, "brief" | "selection"> | null; step?: { runId: string; stepKey: string; nodeId: string } }): Promise<string | null> {
+    const { signature, samples, worktree, cfg, spawnId, now, night } = args;
+    const pmIds = [...new Set(samples.map((sample) => sample.pmThreadId).filter((id): id is string => Boolean(id)))];
+    const lastOwnerAt: PmLastOwnerAt = {};
+    for (const id of pmIds) {
+      lastOwnerAt[id] = await lastPmOwnerMessageAt((query) => bb.sdk.threads.events.list(query), id);
+    }
+    // The repair engineer's model (the night plan's pick, else the watcher's config, which already holds the `repairer` row of the table) goes
+    // through the one resolver as a pin, so provider and model are a pair that can exist; the owner's pick is kept as it is.
+    const picked = { providerId: night?.selection?.providerId ?? cfg.providerId, model: night?.selection?.model ?? cfg.model, reasoningLevel: night?.selection?.reasoningLevel ?? cfg.reasoningLevel };
+    const repairer = resolveSpawnModel({ role: "repairer", settings: {}, catalog: modelCatalogOf(ctx).peek(), hostId: worktree.hostId, pinned: { provider: picked.providerId, model: picked.model, reasoning: picked.reasoningLevel } });
+    const result = await fullAccessSpawn(bb, {
+      projectId: cfg.projectId,
+      environment: { type: "host", hostId: worktree.hostId, workspace: { type: "unmanaged", path: worktree.path } },
+      title: `Lane Pilot self-repair: ${signature.split(":").slice(2).join(":").slice(0, 70)}`,
+      prompt: repairPrompt(samples, signature, worktree, cfg, { now, lastOwnerAt, ...(night ? { brief: night.brief } : {}) }),
+      ...writerExecutionSelection(repairer.providerId, repairer.model, repairer.reasoningEffort, "default"),
+      // The code-repair profile (writer skills, gitnexus): without it the repair carried every plugin's instructions and the whole skill list.
+      ...projectRoleField(bb, db, cfg.projectId, repairer.providerId, "code-repair"),
+      pluginMetadata: { role: "self-repair", signature, spawnId, repairBranch: worktree.branch, ...graphStepMetadata(args.step) },
+    } as Parameters<typeof fullAccessSpawn>[1]);
+    return stringAt(result, "id");
+  }
 
   /**
    * J-10: a signature seen for the first time may be another wording of a problem already known. Jev picks the known group of
@@ -1045,20 +565,20 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
       current.signatures[signature] = record;
     }
     for (const [signature, record] of Object.entries(current.signatures)) if (now - record.lastAt > FORGET_MS) {
-      if (record.pending && !options.dryRun) await releaseWorktree(record.pending.worktree);
+      if (record.pending && !options.dryRun) await releaseWorktree(host, record.pending.worktree);
       delete current.signatures[signature];
     }
     for (const [signature, record] of Object.entries(current.signatures)) {
       signal?.throwIfAborted();
       // A repair whose graph run is going reads its own verdict (the `verdict` step of the run).
-      if (!record.threadId || record.verdict || runIsLive(record.runId) || await threadBusy(record.threadId)) continue;
+      if (!record.threadId || record.verdict || runIsLive(record.runId) || await threadBusy(bb, stringAt, record.threadId)) continue;
       if (record.continuedAt && now - record.continuedAt < CONTINUE_GRACE_MS) continue;
-      await readVerdict(signature, record, options.dryRun === true, current);
+      await readVerdict(verdictEnv, signature, record, options.dryRun === true, current);
     }
     if (!options.dryRun) {
       for (const [signature, record] of Object.entries(current.signatures)) {
         signal?.throwIfAborted();
-        if (!record.worktree || !record.threadId || runIsLive(record.runId) || await threadBusy(record.threadId)) continue;
+        if (!record.worktree || !record.threadId || runIsLive(record.runId) || await threadBusy(bb, stringAt, record.threadId)) continue;
         await settleRecord(signature, record, now);
       }
     }
@@ -1070,7 +590,7 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
     let spawned: string | null = null;
     let reason = due.length ? "" : "nothing new";
     const today = current.spawned.filter((row) => now - row.at < 86_400_000);
-    const active = await Promise.all(today.map((row) => threadBusy(row.threadId)));
+    const active = await Promise.all(today.map((row) => threadBusy(bb, stringAt, row.threadId)));
     // The night loop's queued repair goes first and is not counted against the daily limit (the loop has its own: classes and tokens a night).
     const hooks = getRepairHooks(ctx);
     let night: NightAssignment | null = null;
@@ -1115,7 +635,7 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
           const started = graphEngine.start({ workflow, key: `self-repair:${spawnId}:${record.runTries}`, link: { projectId: cfg.projectId },
             inputs: { signature, spawn_id: spawnId, at: now, night_id: night?.id ?? "", brief: night?.brief ?? "", selection: night?.selection ?? null } });
           started.done.catch((cause: unknown) => ctx.log(`self-repair: run ${started.runId} stopped: ${cause instanceof Error ? cause.message : String(cause)}`));
-          const outcome = await waitForSpawn(signature, started.runId, now, signal);
+          const outcome = await waitForSpawn(db, state, ctx.isDisposed, signature, started.runId, now, signal);
           const fresh = await state();
           current.signatures[signature] = fresh.signatures[signature] ?? record;
           const mine = fresh.signatures[signature];
@@ -1138,11 +658,11 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
         // An aborted tick starts nothing: a repair thread begun after the abort has nobody watching it.
         signal?.throwIfAborted();
         // No worktree, no repair: the shared checkout is not a fallback (that is the fault E2 removes); the kind stays due.
-        worktree = record.pending?.worktree ?? await createRepairWorktree(cfg, signature, now);
+        worktree = record.pending?.worktree ?? await createRepairWorktree(bb, host, stringAt, cfg, signature, now);
         spawnCalled = true;
         spawned = await spawnRepairThread({ signature, samples: record.samples, worktree, cfg, spawnId, now, night });
         record.pending = null;
-        if (!spawned) await releaseWorktree(worktree);
+        if (!spawned) await releaseWorktree(host, worktree);
         if (spawned) {
           record.threadId = spawned;
           record.spawnedAt = now;
@@ -1152,7 +672,7 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
           record.outcome = null;
           current.spawned = [...today, { at: now, threadId: spawned, signature }];
           ctx.log(`self-repair: started @thread:${spawned} for ${signature}`);
-          if (cfg.sectionId) await placeThread(spawned, cfg.projectId, cfg.sectionId);
+          if (cfg.sectionId) await placeThread(bb, ctx.log, spawned, cfg.projectId, cfg.sectionId);
           if (night) hooks?.started(night.id, { threadId: spawned, branch: worktree.branch, at: now });
           reason = "started";
         }
@@ -1164,7 +684,7 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
           if (spawnCalled && keyedSpawnSupported(bb) && now - (record.pending?.at ?? now) < PENDING_MS) {
             record.pending = { worktree, at: record.pending?.at ?? now };
           } else {
-            await releaseWorktree(worktree);
+            await releaseWorktree(host, worktree);
             record.pending = null;
             if (spawnCalled) await clearSpawnMarker(bb, { role: "self-repair", spawnId });
           }
@@ -1183,49 +703,6 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
       await writeState(current);
     }
     return { incidents: incidents.length, signatures: [...groups.keys()], spawned, reason };
-  }
-
-  /** The repair thread itself, started in the repair's worktree; the same call serves the direct spawn and the `repair` step of the graph. */
-  async function spawnRepairThread(args: { signature: string; samples: Incident[]; worktree: RepairWorktree; cfg: SelfRepairConfig; spawnId: string; now: number;
-    night?: Pick<NightAssignment, "brief" | "selection"> | null; step?: { runId: string; stepKey: string; nodeId: string } }): Promise<string | null> {
-    const { signature, samples, worktree, cfg, spawnId, now, night } = args;
-    const pmIds = [...new Set(samples.map((sample) => sample.pmThreadId).filter((id): id is string => Boolean(id)))];
-    const lastOwnerAt: PmLastOwnerAt = {};
-    for (const id of pmIds) {
-      lastOwnerAt[id] = await lastPmOwnerMessageAt((query) => bb.sdk.threads.events.list(query), id);
-    }
-    // The repair engineer's model (the night plan's pick, else the watcher's config, which already holds the `repairer` row of the table) goes
-    // through the one resolver as a pin, so provider and model are a pair that can exist; the owner's pick is kept as it is.
-    const picked = { providerId: night?.selection?.providerId ?? cfg.providerId, model: night?.selection?.model ?? cfg.model, reasoningLevel: night?.selection?.reasoningLevel ?? cfg.reasoningLevel };
-    const repairer = resolveSpawnModel({ role: "repairer", settings: {}, catalog: modelCatalogOf(ctx).peek(), hostId: worktree.hostId, pinned: { provider: picked.providerId, model: picked.model, reasoning: picked.reasoningLevel } });
-    const result = await fullAccessSpawn(bb, {
-      projectId: cfg.projectId,
-      environment: { type: "host", hostId: worktree.hostId, workspace: { type: "unmanaged", path: worktree.path } },
-      title: `Lane Pilot self-repair: ${signature.split(":").slice(2).join(":").slice(0, 70)}`,
-      prompt: repairPrompt(samples, signature, worktree, cfg, { now, lastOwnerAt, ...(night ? { brief: night.brief } : {}) }),
-      ...writerExecutionSelection(repairer.providerId, repairer.model, repairer.reasoningEffort, "default"),
-      // The code-repair profile (writer skills, gitnexus): without it the repair carried every plugin's instructions and the whole skill list.
-      ...projectRoleField(bb, db, cfg.projectId, repairer.providerId, "code-repair"),
-      pluginMetadata: { role: "self-repair", signature, spawnId, repairBranch: worktree.branch, ...graphStepMetadata(args.step) },
-    } as Parameters<typeof fullAccessSpawn>[1]);
-    return stringAt(result, "id");
-  }
-
-  /**
-   * Waits until the graph run of a repair has started its thread (the record names it, with this pass's time), has ended without one, or a limit
-   * passes: the worktree is made, linked and prepared first, which takes minutes on a large checkout.
-   */
-  async function waitForSpawn(signature: string, runId: string, at: number, signal?: AbortSignal): Promise<"spawned" | "failed" | "pending"> {
-    const deadline = Date.now() + SPAWN_WAIT_MS;
-    for (;;) {
-      signal?.throwIfAborted();
-      const record = (await state()).signatures[signature];
-      if (record?.threadId && record.spawnedAt === at) return "spawned";
-      const row = db.prepare("SELECT status FROM lane_pilot_wf_run WHERE id=?").get(runId) as { status: string } | undefined;
-      if (row && row.status !== "running" && row.status !== "waiting") return row.status === "succeeded" ? "pending" : "failed";
-      if (Date.now() >= deadline || ctx.isDisposed()) return "pending";
-      await new Promise((done) => setTimeout(done, 200));
-    }
   }
 
   /**
@@ -1251,7 +728,7 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
       const signature = text(input(c, "signature")), at = Number(input(c, "at"));
       const record = await recordOf(signature);
       // A worktree an earlier try of this repair kept is reused; no worktree, no repair (the shared checkout is not a fallback).
-      const worktree = record.pending?.worktree ?? await createRepairWorktree(await config(), signature, at);
+      const worktree = record.pending?.worktree ?? await createRepairWorktree(bb, host, stringAt, await config(), signature, at);
       await patchRecord(signature, (stored) => { stored.runId = c.runId; stored.pending = { worktree, at: stored.pending?.at ?? Date.now() }; });
       return { output: { path: worktree.path, branch: worktree.branch } };
     }) });
@@ -1272,14 +749,15 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
           if (nightId && !kept) getRepairHooks(ctx)?.startFailed(nightId, `spawn failed: ${reason}`);
         };
         try {
-          spawned = await spawnRepairThread({ signature, samples: record.samples, worktree, cfg, spawnId, now: at, night: nightId ? { brief, ...(selection ? { selection } : {}) } : null,
+          spawned = await spawnRepairThread({ signature, samples: record.samples, worktree, cfg, spawnId, now: at,
+            night: nightId ? { brief, ...(selection ? { selection } : {}) } : null,
             step: { runId: c.runId, stepKey: c.stepKey, nodeId: c.nodeId } });
         } catch (cause) {
           // The spawn threw: the thread may exist although its answer was lost, and a live repair thread must not lose its worktree. With thread keys
           // the next try repeats the spawn and gets that thread back; without them, or after PENDING_MS, the spawn is taken as not made.
           const kept = keyedSpawnSupported(bb) && Date.now() - (record.pending?.at ?? Date.now()) < PENDING_MS;
           if (!kept) {
-            await releaseWorktree(worktree);
+            await releaseWorktree(host, worktree);
             await patchRecord(signature, (stored) => { stored.pending = null; });
             await clearSpawnMarker(bb, { role: "self-repair", spawnId });
           }
@@ -1287,7 +765,7 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
           throw cause;
         }
         if (!spawned) {
-          await releaseWorktree(worktree);
+          await releaseWorktree(host, worktree);
           await patchRecord(signature, (stored) => { stored.pending = null; });
           await failed("threads.spawn returned no repair thread id", false);
           throw new Error("threads.spawn returned no repair thread id");
@@ -1298,7 +776,7 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
           current.spawned = [...current.spawned.filter((row) => at - row.at < 86_400_000), { at, threadId: threadId!, signature }];
         });
         ctx.log(`self-repair: started @thread:${threadId} for ${signature}`);
-        if (cfg.sectionId) await placeThread(threadId, cfg.projectId, cfg.sectionId);
+        if (cfg.sectionId) await placeThread(bb, ctx.log, threadId, cfg.projectId, cfg.sectionId);
         if (nightId) getRepairHooks(ctx)?.started(nightId, { threadId, branch: worktree.branch, at });
       }
       // The thread's turn ends with its closing verdict line; a thread that failed has no verdict, which the verdict step records as none.
@@ -1320,42 +798,18 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
       if (!work.verdict) {
         // The verdict also labels the merge suggestions pointing at this signature: the labels ride the same state write.
         const current = await state();
-        await readVerdict(signature, work, false, current);
+        await readVerdict(verdictEnv, signature, work, false, current);
         await writeState(current);
       }
       // A branch that cannot be merged yet (a busy base, a conflict) stays: the watcher's next passes retry it, then release it.
-      if (work.worktree && !(await threadBusy(record.threadId))) await settleRecord(signature, work, Date.now());
+      if (work.worktree && !(await threadBusy(bb, stringAt, record.threadId))) await settleRecord(signature, work, Date.now());
       await patchRecord(signature, (stored) => { stored.verdict = work.verdict; stored.ownerWaitUntil = work.ownerWaitUntil; stored.worktree = work.worktree; stored.outcome = work.outcome; stored.mergedCommit = work.mergedCommit; });
       return { output: { verdict: work.verdict ?? "none", outcome: work.outcome ?? "" } };
     }) });
   }
 
-  /** The daily health picture: last 24 hours of attempts, failures by fault, stuck attempts and repairs. */
   async function status() {
-    const since = Date.now() - 86_400_000;
-    const attempts = db.prepare("SELECT state, count(*) AS n FROM lane_pilot_attempt WHERE updated_at > ? GROUP BY state").all(since) as Array<{ state: string; n: number }>;
-    const faults = db.prepare("SELECT origin, count(*) AS n FROM lane_pilot_failure_triage WHERE triaged_at > ? GROUP BY origin").all(since) as Array<{ origin: string; n: number }>;
-    const cfg = await config();
-    const current = await state();
-    const open = await collect(since, cfg);
-    return {
-      config: cfg,
-      last24h: {
-        attempts: Object.fromEntries(attempts.map((row) => [row.state, row.n])),
-        failuresByFault: Object.fromEntries(faults.map((row) => [row.origin, row.n])),
-        lanePilotIncidents: open.map(({ kind, projectId, taskId, attemptId, reason }) => ({ kind, projectId, taskId, attemptId, reason: reason.slice(0, 200) })),
-        repairs: current.spawned.filter((row) => row.at > since).map((row) => ({ ...row, firstSeenOnRunningVersion: current.signatures[row.signature] ? firstSeenOnRunningVersion(current.signatures[row.signature]!) : false })),
-      },
-      version: VERSION,
-      cursor: current.cursor,
-      lastTickAt: current.lastTickAt,
-      knownSignatures: Object.keys(current.signatures).length,
-      waiting: Object.entries(current.signatures).map(([signature, record]) => ({
-        signature: signature.slice(0, 140), count: record.count, due: isDue(record, Date.now()), priority: repairPriority(signature, record, Date.now(), new Set(cfg.ignoreProjects)), verdict: record.verdict ?? null, status: repairStatus(record.verdict), threadId: record.threadId,
-        branch: record.worktree?.branch ?? null, outcome: record.outcome ?? null,
-        firstSeenOnRunningVersion: firstSeenOnRunningVersion(record),
-      })),
-    };
+    return selfRepairStatus({ db, config, state, collect });
   }
 
   return { config, setConfig, state, collect, tick, status, registerGraph };
@@ -1377,13 +831,6 @@ export function selfRepairRpc(ctx: ServerCore, services?: Pick<Services, "workfl
 
 export type SelfRepair = ReturnType<typeof createSelfRepair>;
 
-/** What the watcher's state holds about one repair signature (read-only; the night loop follows its repairs with it). */
-export async function readRepairRecord(bb: ServerCore["bb"], signature: string): Promise<{ threadId: string | null; verdict: Verdict | null; outcome: string | null; branch: string | null; worktreePath: string | null; spawnedAt: number | null } | null> {
-  const raw = await bb.storage.kv.get(STATE_KEY).catch(() => null);
-  const record = (raw && typeof raw === "object" ? (raw as Partial<SelfRepairState>).signatures?.[signature] : undefined) as SignatureRecord | undefined;
-  return record ? { threadId: record.threadId, verdict: record.verdict ?? null, outcome: record.outcome ?? null, branch: record.worktree?.branch ?? null, worktreePath: record.worktree?.path ?? null, spawnedAt: record.spawnedAt } : null;
-}
-
 export function mountSelfRepair(ctx: ServerCore, services?: Pick<Services, "workflowEngine">): SelfRepair {
   const repair = createSelfRepair(ctx, () => services?.workflowEngine);
   // The steps of the graph `lp.self-repair` (worktree, repair thread, verdict) run on the workflow engine.
@@ -1399,3 +846,11 @@ export function mountSelfRepair(ctx: ServerCore, services?: Pick<Services, "work
   }, { timeoutMs: 20 * 60_000 });
   return repair;
 }
+
+export { VERDICTS, type Verdict, type Incident, type RepairWorktree, type SignatureRecord, type SelfRepairState, type PmLastOwnerAt } from "./types";
+export type { SelfRepairConfig };
+export { VERSION, LOADED_AT, reasonSignature, repairPriority, logIncidents, writerStrayFiles, writerRedCheck, pointsAtEngine, firstSeenOnRunningVersion, isDue, lastPmOwnerMessageAt } from "./episodes";
+export { parseVerdict, repairStatus, repairAnswerForThread, readVerdict, labelJevReceipts, askOwnerAboutRepair } from "./verdict";
+export { createRepairWorktree, releaseWorktree, placeThread, threadBusy, waitForSpawn, settleWorktree } from "./spawn";
+export { readRepairRecord, selfRepairStatus, STATE_KEY } from "./report";
+export { CONFIG_KEY, lanePilotProjectOrNotice, resolveLanePilotProject };
