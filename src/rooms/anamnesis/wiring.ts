@@ -1,9 +1,8 @@
-import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
+import type { ExperimentalHostClient, PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import type { rpcContract } from "../contracts";
 import { mapListedQaHosts } from "../platform/server";
 import type { ServerCore } from "../contracts/server";
-import type { AnamnesisRpcRequest } from "./contract";
+import type { AnamnesisRpcRequest, anamnesisHostMethods, anamnesisRpcMethods } from "./contract";
 import { runAnamnesisCli, type CliResult } from "./cli";
 import { createHub, type Hub } from "./hub";
 import { OWNER_KEY_NAME, parseOwnerKey } from "./crypto";
@@ -36,7 +35,7 @@ function build(ctx: ServerCore) {
     },
   });
   const innerHub: Hub = createHub({
-    hostCall: async (hostId, request, timeoutMs) => (await host.call("anamnesis", { requestedHostId: hostId, request }, { hostId, timeoutMs })).response,
+    hostCall: async (hostId, request, timeoutMs) => (await (host as unknown as ExperimentalHostClient<typeof anamnesisHostMethods>).call("anamnesis", { requestedHostId: hostId, request }, { hostId, timeoutMs })).response,
     listHosts: async () => mapListedQaHosts(await (bb.sdk as unknown as { hosts: { list: () => Promise<unknown> } }).hosts.list().catch(() => [])),
     kv: bb.storage.kv as never,
     store,
@@ -134,7 +133,7 @@ function build(ctx: ServerCore) {
       if (!(await dailyDue(hub, Date.now())) || (await hub.config()).extract !== true) return;
       await runPass(signal);
     },
-    rpc: { anamnesis: async ({ request }: { request: AnamnesisRpcRequest }) => ({ result: request.op === "pass" ? await runPass() : await hub.dispatch(request) }) } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "anamnesis">,
+    rpc: { anamnesis: async ({ request }: { request: AnamnesisRpcRequest }) => ({ result: request.op === "pass" ? await runPass() : await hub.dispatch(request) }) } satisfies Pick<PluginRpcHandlers<typeof anamnesisRpcMethods>, "anamnesis">,
     cli: (argv: string[]): Promise<CliResult> => runAnamnesisCli(argv, {
       hub, load: (options: LoadOptions) => loadAnamnesis(loadDeps(), options),
       /** The one-off migration (M1b): the legacy file's rows over the host's read-only `export`, then `importRows` — idempotent. */

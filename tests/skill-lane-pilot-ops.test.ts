@@ -2,7 +2,7 @@ import { it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase } from "../src/rooms/plugin-db";
+import { migrations, openDatabase } from "../src/rooms/plugin-db";
 import { createCore } from "../src/rooms/core/server/core";
 import { registerCli } from "../src/rooms/tools/server/cli";
 import type { Services } from "../src/rooms/platform/server";
@@ -27,7 +27,7 @@ it("names only lane_pilot tools that are registered", () => {
 
 it("names only bb lane-pilot commands the CLI has", async () => {
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
-  registerCli(createCore(bb, openDatabase(bb)), {} as Services);
+  registerCli(createCore(bb, openDatabase(bb)), {} as Services, migrations);
   const help = (await harness.behavior.runCli(["--help"])).stderr ?? "";
   const named = [...new Set([...SKILL.matchAll(/bb lane-pilot ([a-z][a-z-]*)/g)].map((m) => m[1]!))];
   expect(named.length).toBeGreaterThan(5);

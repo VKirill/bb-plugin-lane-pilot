@@ -1,6 +1,5 @@
 import Database from "better-sqlite3";
 import { addToIndexes, memoryRecordId, trigramReady } from "@lane-pilot/memory-core";
-import { migrations } from "../../migrations";
 import { OFFTOPIC, candidateQuestions, classify, folderKey, fileKey, notesNaming, queryOf, type EvalQuestion } from "./questions";
 import type { EvalData, RawNote } from "./source";
 
@@ -143,7 +142,7 @@ export function planCorpus(input: PlanInput): SizePlan {
 }
 
 /** A database with the production schema and the corpus in it, written and indexed the way the write door does. */
-export function buildEvalDb(plan: SizePlan): Database.Database {
+export function buildEvalDb(plan: SizePlan, migrations: readonly string[]): Database.Database {
   const db = new Database(":memory:");
   for (const statement of migrations) db.exec(statement);
   trigramReady(db);

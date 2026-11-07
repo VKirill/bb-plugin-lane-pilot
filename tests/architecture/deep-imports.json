@@ -1,7 +1,9 @@
 {
+ "core > anamnesis": 1,
+ "core > schedule": 1,
  "critique > tasks": 1,
  "critique > writer": 2,
- "entry > core": 4,
+ "entry > core": 6,
  "entry > native-install": 1,
  "entry > tools": 2,
  "entry > ui-shell": 1,

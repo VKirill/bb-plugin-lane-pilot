@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
-import type { rpcContract } from "../../contracts";
+import type { ScheduleBoardContract } from "../contract";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import type { RunView, ScheduleView } from "../views";
@@ -68,7 +68,7 @@ export function RunRow({ run, name, onCancel }: { run: RunView; name: string; on
 
 /** The runs of one schedule, newest first, a page at a time; a live run can be stopped from here. */
 export function ScheduleHistory({ schedule, refreshKey, onBack, onChanged }: { schedule: ScheduleView; refreshKey: number; onBack: () => void; onChanged: () => void }) {
-  const rpc = useRpc<typeof rpcContract>();
+  const rpc = useRpc<ScheduleBoardContract>();
   const [runs, setRuns] = useState<RunView[] | null>(null);
   const [total, setTotal] = useState(0);
   const [failure, setFailure] = useState<string | null>(null);

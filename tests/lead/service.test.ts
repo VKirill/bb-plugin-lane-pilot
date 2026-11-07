@@ -14,7 +14,7 @@ import { MEMORY_EXAM_KEY } from "../../src/rooms/lead/server/memory-exam";
 import { getTick, openTick, patchTick } from "../../src/rooms/lead/server/tick-store";
 import { proposalDecisionId, proposalItemKey } from "../../src/rooms/lead/server/tick";
 import { postOwnerItem } from "../../src/rooms/owner-waiting";
-import { loadProjectSettings, openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
+import { loadProjectSettings, migrations, openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 
 let dir = "";
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "lead-svc-")); process.env.LANE_PILOT_LEAD_DIR = dir; });
@@ -30,7 +30,7 @@ function world(start: () => Promise<unknown> = async () => ({ ok: true, runId: "
     docsPlaces: async () => [],
     workflowEngine: { register: () => undefined, get: (runId: string) => runs[runId] ? { runId, output: null, reason: null, error: null, failedNode: null, waiting: [], stopped: false, ...runs[runId] } : null },
   } as unknown as Services;
-  const lead = createLeadService(createCore(bb, db), services);
+  const lead = createLeadService(createCore(bb, db), services, migrations);
   return { bb, db, lead, starts, services };
 }
 const ownerItem = (db: ReturnType<typeof openDatabase>, key: string) => db.prepare("SELECT key, kind, state FROM lane_pilot_owner_item WHERE key=?").get(key) as { key: string; kind: string; state: string } | undefined;

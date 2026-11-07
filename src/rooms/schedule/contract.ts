@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { rpcContract as baseRpcContract } from "../contracts";
 import { conflictSchema, errandDefaultSchema, hostOptionSchema, runViewSchema, scheduleViewSchema } from "./views";
 
 /**
@@ -71,3 +72,6 @@ export const scheduleRpcContract = {
     output: z.object({ planned: z.array(z.object({ scheduleId: z.string(), at: z.number() }).strict()), past: z.array(runViewSchema), truncated: z.array(z.string()) }).strict(),
   },
 };
+
+/** The contract the schedule screens call: the board's own methods plus the base contract's (settings, workflows). */
+export type ScheduleBoardContract = typeof baseRpcContract & typeof scheduleRpcContract;

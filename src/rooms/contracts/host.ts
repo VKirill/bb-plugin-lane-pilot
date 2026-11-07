@@ -1,5 +1,4 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
-import { anamnesisHostMethods } from "../anamnesis";
 import { desktopHostMethods } from "./host/desktop";
 import { docsHostMethods } from "./host/docs";
 import { execHostMethods } from "./host/exec";
@@ -12,7 +11,7 @@ import { stackHostMethods } from "./host/stack";
 
 // The wire names are the protocol with hosts running older builds: every method lives in the domain file
 // under contracts/host/ that changes with it, and tests/host-contract-methods.test.ts pins the full list.
-export const hostContract = defineRpcContract({
+export const hostMethods = {
   ...stackHostMethods,
   ...gitHostMethods,
   ...docsHostMethods,
@@ -22,5 +21,6 @@ export const hostContract = defineRpcContract({
   ...judgeHostMethods,
   ...execHostMethods,
   ...desktopHostMethods,
-  ...anamnesisHostMethods,
-});
+};
+
+export const hostContract = defineRpcContract(hostMethods);

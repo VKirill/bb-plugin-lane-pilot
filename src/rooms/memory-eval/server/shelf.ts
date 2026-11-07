@@ -3,7 +3,6 @@ import {
   memoryUsefulness, recordMemoryAccepted, recordMemoryMixed, searchMemoryRecords, storeMemoryRecords, trigramReady,
   type MemoryCandidate, type MemoryRecord,
 } from "@lane-pilot/memory-core";
-import { migrations } from "../../migrations";
 import { pathAnchors } from "../../writer";
 import { candidateQuestions, classify, queryOf, type Classified } from "./questions";
 import type { EvalData, RawNote } from "./source";
@@ -50,7 +49,7 @@ export function pickThree(found: readonly MemoryRecord[], anchors: readonly stri
 
 type Event = { at: number; batch?: RawNote[]; projectId?: string; asked?: Classified };
 
-export async function replayShelf(data: EvalData, config: ShelfConfig, skip: { projects: ReadonlySet<string>; task: (taskId: string) => boolean }): Promise<ShelfResult> {
+export async function replayShelf(data: EvalData, config: ShelfConfig, skip: { projects: ReadonlySet<string>; task: (taskId: string) => boolean }, migrations: readonly string[]): Promise<ShelfResult> {
   const universe = data.notes.filter((note) => !skip.projects.has(note.projectId));
   const asked = candidateQuestions(data.questions, skip).map((question) => classify(question, universe.filter((note) => note.kind === "note")))
     .filter((item): item is Classified => item !== null && item.kind === "positive");
@@ -94,9 +93,9 @@ export async function replayShelf(data: EvalData, config: ShelfConfig, skip: { p
   } finally { db.close(); }
 }
 
-export async function runShelfReplay(data: EvalData, skip: { projects: ReadonlySet<string>; task: (taskId: string) => boolean }, configs: readonly ShelfConfig[] = SHELF_CONFIGS): Promise<ShelfResult[]> {
+export async function runShelfReplay(data: EvalData, migrations: readonly string[], skip: { projects: ReadonlySet<string>; task: (taskId: string) => boolean }, configs: readonly ShelfConfig[] = SHELF_CONFIGS): Promise<ShelfResult[]> {
   const out: ShelfResult[] = [];
-  for (const config of configs) out.push(await replayShelf(data, config, skip));
+  for (const config of configs) out.push(await replayShelf(data, config, skip, migrations));
   return out;
 }
 

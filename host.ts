@@ -1,5 +1,5 @@
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
-import { hostContract } from "./src/rooms/contracts";
+import { hostContract } from "./src/rooms/core/server/plugin-contracts";
 import {
   connectOpencode,
   classifyPlan,

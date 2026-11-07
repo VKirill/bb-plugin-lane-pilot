@@ -86,12 +86,12 @@ export const pooled = (result: CandidateResult, half: Half, path: Path = "pm", v
   return out;
 };
 
-export async function tuneFloor(data: EvalData, options: { sizes?: readonly number[]; seed?: number; scope?: EvalScope; skipProjects: ReadonlySet<string>; skipTask: (taskId: string) => boolean; now?: number }): Promise<FloorTuning> {
+export async function tuneFloor(data: EvalData, options: { sizes?: readonly number[]; seed?: number; scope?: EvalScope; skipProjects: ReadonlySet<string>; skipTask: (taskId: string) => boolean; now?: number; migrations: readonly string[] }): Promise<FloorTuning> {
   const seed = options.seed ?? 1;
   const sizes: Size[] = [];
   for (const size of options.sizes ?? [30, 300, 3000]) {
     const plan = planCorpus({ data, size, seed, scope: options.scope ?? "project", skipProjects: options.skipProjects, skipTask: options.skipTask, ...(options.now !== undefined ? { now: options.now } : {}) });
-    const db = buildEvalDb(plan);
+    const db = buildEvalDb(plan, options.migrations);
     try {
       const times = plan.notes.map((note) => [note.id, note.createdAt] as const);
       const observations: Observation[] = [];

@@ -14,10 +14,10 @@ import { rpcWorld } from "./rpc-world";
 // screens in the rpc-*.ts parts; this file assembles them and is the only public file of the room.
 export { HOST_JOB_KINDS, WORKFLOW_NODE_TONES, installReceiptSchema, modelCatalogSchema, prototypeConfigSchema, secretNameSchema, settingValidationSchema, stepExecutorSchema, TASK_KINDS, TASK_V2_OPTIONAL, taskV2Schema, workflowDraftCheckSchema, workflowDraftPatchResultSchema, workflowDraftPublishResultSchema, workflowDraftSummarySchema, workflowDraftTestResultSchema, workflowStatsSchema, workflowTrialCaseSchema, workflowViewEdgeSchema, workflowViewNodeSchema, workflowViewSchema } from "@lane-pilot/contracts";
 export type { HostJobKind, PrototypeConfig, TaskV2 } from "@lane-pilot/contracts";
-export { hostContract } from "./host";
+export { hostContract, hostMethods } from "./host";
 export type { AcceptanceCard } from "./rpc-runs";
 
-export const rpcContract = defineRpcContract({
+export const rpcMethods = {
   ...rpcShell,
   ...rpcNative,
   ...rpcRuns,
@@ -28,4 +28,6 @@ export const rpcContract = defineRpcContract({
   ...rpcWorkflowExport,
   ...rpcWorkflowMap,
   ...rpcWorld,
-});
+};
+
+export const rpcContract = defineRpcContract(rpcMethods);

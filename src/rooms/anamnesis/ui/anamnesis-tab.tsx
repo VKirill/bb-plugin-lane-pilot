@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
-import type { rpcContract } from "../../contracts";
+import type { anamnesisRpcMethods } from "../contract";
 import type { AnamnesisConfig } from "../hub";
 import type { AnamnesisRecord, AnamnesisRecordFull, HistoryEntry, Kind, Sensitivity, Source, Status } from "../model";
 import type { AnamnesisRequest, OpName, ResponseOf } from "../ops";
@@ -36,7 +36,7 @@ const label = (key: string): string => t(key as I18nKey);
 type Ask = <O extends OpName>(request: Extract<AnamnesisRequest, { op: O }>) => Promise<ResponseOf<O>>;
 
 function useAsk(): Ask {
-  const rpc = useRpc<typeof rpcContract>();
+  const rpc = useRpc<typeof anamnesisRpcMethods>();
   return useCallback((async (request: AnamnesisRequest) => (await rpc.call("anamnesis", { request })).result) as Ask, [rpc]);
 }
 
@@ -175,7 +175,7 @@ export function LevelChart({ steps, from, to }: { steps: readonly SkillStep[]; f
 
 export function AnamnesisTab() {
   const ask = useAsk();
-  const rpc = useRpc<typeof rpcContract>();
+  const rpc = useRpc<typeof anamnesisRpcMethods>();
   const [view, setView] = useState<View>("me");
   const [status, setStatus] = useState<ResponseOf<"status"> | null>(null);
   const [config, setConfig] = useState<AnamnesisConfig>({});
@@ -377,7 +377,7 @@ export function WhoamiSections({ text }: { text: string | null }) {
 
 /** Where the Markdown files of the portrait are (on the Mac mini), with a button to open each in BB's file preview, and a pass that reads the owner's edits back. */
 function NotesBlock({ ask }: { ask: Ask }) {
-  const rpc = useRpc<typeof rpcContract>();
+  const rpc = useRpc<typeof anamnesisRpcMethods>();
   const navigate = useBbNavigate();
   const [notes, setNotes] = useState<ResponseOf<"notes"> | null>(null);
   const [hostId, setHostId] = useState<string | null>(null);
