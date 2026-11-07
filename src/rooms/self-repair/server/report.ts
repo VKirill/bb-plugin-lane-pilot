@@ -1,7 +1,7 @@
 import type { LanePilotDatabase } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
 import type { Incident, SelfRepairConfig, SelfRepairState, SignatureRecord, Verdict } from "./types";
-import { firstSeenOnRunningVersion, isDue, repairPriority, VERSION } from "./episodes";
+import { isDue, repairPriority, VERSION } from "./episodes";
 import { repairStatus } from "./verdict";
 
 import { SELF_REPAIR_STATE_KEY as STATE_KEY } from "../../contracts";
@@ -33,8 +33,7 @@ export async function selfRepairStatus(source: StatusSource) {
     last24h: {
       attempts: Object.fromEntries(attempts.map((row) => [row.state, row.n])),
       failuresByFault: Object.fromEntries(faults.map((row) => [row.origin, row.n])),
-      lanePilotIncidents: open.map(({ kind, projectId, taskId, attemptId, reason }) => ({ kind, projectId, taskId, attemptId, reason: reason.slice(0, 200) })),
-      repairs: current.spawned.filter((row) => row.at > since).map((row) => ({ ...row, firstSeenOnRunningVersion: current.signatures[row.signature] ? firstSeenOnRunningVersion(current.signatures[row.signature]!) : false })),
+      repairs: current.spawned.filter((row) => row.at > since),
     },
     version: VERSION,
     cursor: current.cursor,
@@ -43,7 +42,6 @@ export async function selfRepairStatus(source: StatusSource) {
     waiting: Object.entries(current.signatures).map(([signature, record]) => ({
       signature: signature.slice(0, 140), count: record.count, due: isDue(record, Date.now()), priority: repairPriority(signature, record, Date.now(), new Set(cfg.ignoreProjects)), verdict: record.verdict ?? null, status: repairStatus(record.verdict), threadId: record.threadId,
       branch: record.worktree?.branch ?? null, outcome: record.outcome ?? null,
-      firstSeenOnRunningVersion: firstSeenOnRunningVersion(record),
     })),
   };
 }

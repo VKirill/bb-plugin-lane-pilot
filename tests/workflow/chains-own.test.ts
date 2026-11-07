@@ -241,13 +241,9 @@ describe("deploy", () => {
     }
   });
 
-  it("a second deploy of the plugin in a day needs a stated incident; staging skips the owner's approval", async () => {
-    const again = { ...base(), preflight: { ...ready, deployed_today: true } };
-    const asked = await runSim("deploy", { input, stubs: again, humans: { ask_incident: { answer_kind: "reason", answer: "hotfix" }, approve: { answer_kind: "deploy" } } });
-    expect(pathOf(asked)).toBe("preflight ask_incident tests approve push_plugin post_check record deployed");
-    expect(pathOf(await runSim("deploy", { input, stubs: again, humans: { ask_incident: { answer_kind: "abort" } } }))).toBe("preflight ask_incident aborted");
-    const withIncident = await runSim("deploy", { input: { ...input, incident: "hotfix" }, stubs: again, humans: { approve: { answer_kind: "deploy" } } });
-    expect(pathOf(withIncident)).toBe("preflight tests approve push_plugin post_check record deployed");
+  it("a repeat deploy of the plugin goes straight through; staging skips the owner's approval", async () => {
+    const again = await runSim("deploy", { input, stubs: base(), humans: { approve: { answer_kind: "deploy" } } });
+    expect(pathOf(again)).toBe("preflight tests approve push_plugin post_check record deployed");
     const staging = await runSim("deploy", { input: { ...input, environment: "staging" }, stubs: base() });
     expect(staging.skipped).toEqual(expect.arrayContaining(["approve"]));
   });

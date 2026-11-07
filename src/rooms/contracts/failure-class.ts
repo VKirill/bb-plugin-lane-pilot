@@ -4,8 +4,7 @@
  * - merge: main moved while the task ran; redone on the new main for free.
  * - dirty_base: git refused the merge over uncommitted edits in the base checkout (the owner's, or bookkeeping Lane Pilot left
  *   there). Another writer run cannot clear them, so the task is parked like an infra fault, backed off and restarted after the
- *   edits are committed; it is uncharged, and it counts in the 7-day error budget (the work did not land) without tripping
- *   the version's canary (a release did not cause it).
+ *   edits are committed; it is uncharged, and it does not trip the version's canary (a release did not cause it).
  * - harness: Lane Pilot's own fault; the task is parked and restarts by itself once a fix ships.
  * - infra: the machine (disk, git lock, host offline); parked and retried with a backoff.
  * - contract, judgment: the PM's to fix or answer; never retried as is.
@@ -40,7 +39,7 @@ const MERGE = /(^|: )merge_conflict/i;
 // Before 0.1.117 a merge that git refused for another reason (a stale index.lock) was called a conflict with no files. Those rows
 // are still in the database, but no code path writes that reason any more (git-integrate.ts answers `failed`, i.e. merge_failed,
 // when git names no file), so one that is read now is a conflict like any other: a free redo, not a fault of Lane Pilot (hub
-// 2026-10-08: 35 of the 106 «harness» faults of the 7-day budget were these).
+// 2026-10-08: 35 of the 106 «harness» faults of that week were these).
 /** «retry limit 2 exhausted: X» (reconcile.ts, writer/start.ts, rpc/runs.ts) is X tried too often: it is classified by X. */
 const RETRY_LIMIT_WRAPPER = /^retry limit \d+ exhausted:\s*/i;
 /** A red check: the task's, unless the reason carries the environment marker. Its output is a log, not a statement about Lane Pilot. */

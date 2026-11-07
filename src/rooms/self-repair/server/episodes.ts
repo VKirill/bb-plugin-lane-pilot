@@ -168,15 +168,6 @@ export async function lastPmOwnerMessageAt(
 }
 
 /**
- * Whether a kind of problem began under the version that is running now: it was first recorded after this load and every sample
- * kept happened after it. The deploy script lifts the one-a-day and error-budget rules for an incident deploy only for such a kind
- * (audit 2026-10-08 round 4, P0-8): a problem that was already there when this version started is not what this version broke.
- */
-export function firstSeenOnRunningVersion(record: SignatureRecord, loadedAt = LOADED_AT, version = VERSION): boolean {
-  return record.firstAt >= loadedAt && record.samples.length > 0 && record.samples.every((sample) => sample.version === version);
-}
-
-/**
  * Whether a kind of problem needs a repair now. Only occurrences under the running version count: a failure from
  * before this release may be exactly what the release fixed, so it waits to happen again. After a repair the kind
  * comes back only if it happens again under a newer version (the fix did not hold), a day later without a verdict,

@@ -1,8 +1,8 @@
 import { authorize, type ChangeDescriptor, type Tier } from "../policy";
 
 /**
- * Acceptance of a night repair (SMA P1-1, item 4). The merge is decided by the night policy (`gateRepair`); once the release train has
- * shipped the merge, the night reads what the train recorded and decides whether the repair stays. The train itself runs the whole suite
+ * Acceptance of a night repair (SMA P1-1, item 4). The merge is decided by the night policy (`gateRepair`); once a deploy has
+ * shipped the merge, the night reads what the deploy recorded and decides whether the repair stays. The deploy itself runs the whole suite
  * before it ships, runs the drill after the reload and rolls back to the previous dist when the drill is red; the night adds the canary, the
  * bench subset against the previous version, and the class's own recurrence on the new version. Red means a revert in code and the class
  * stays open: the round counts as failed. Nothing here asks the owner.
@@ -27,8 +27,8 @@ export type AcceptanceEvidence = {
    * class was journaled in); false when that is unknown, and then a quiet run of attempts says nothing about the class.
    */
   recurrence: { failures: number; attempts: number; exposed: boolean } | null;
-  /** The plugin runs `versionBefore` again after a deploy: the train rolled back. */
-  trainRolledBack: boolean;
+  /** The plugin runs `versionBefore` again after a deploy: it was rolled back. */
+  deployRolledBack: boolean;
   /**
    * The repair changes the judge or the graph (merged on the strict path): the recurrence of its class cannot vouch for it, only the bench
    * subset of the shipped version can.
@@ -49,7 +49,7 @@ export type Acceptance = {
   reason: string;
   /** The class kept failing on the new version although the repair stays: the round counts as failed. */
   recurred: boolean;
-  /** `revert`: the night reverts the merge in code (canary or bench red); the train's own rollback needs nothing. */
+  /** `revert`: the night reverts the merge in code (canary or bench red); the deploy's own rollback needs nothing. */
   action: "none" | "revert";
 };
 
@@ -84,23 +84,23 @@ export function decideAcceptance(e: AcceptanceEvidence): Acceptance {
   const checks: AcceptanceCheck[] = [];
   const out = (state: Acceptance["state"], reason: string, extra: Partial<Acceptance> = {}): Acceptance => ({ state, checks, reason, recurred: false, action: "none", ...extra });
   if (!e.merged) return out("pending", "the branch is not merged");
-  if (e.trainRolledBack) {
-    checks.push({ name: "release train", ok: false, detail: `the plugin runs ${e.versionBefore} again: the train rolled the deploy back` });
-    return out("rolled_back", "the release train rolled the deploy back (red drill, red canary at the reload or a failed push)");
+  if (e.deployRolledBack) {
+    checks.push({ name: "deploy", ok: false, detail: `the plugin runs ${e.versionBefore} again: the deploy was rolled back` });
+    return out("rolled_back", "the deploy was rolled back (red drill, red canary at the reload or a failed push)");
   }
-  if (!e.deployedVersion) return out("pending", "merged; waits for the release train");
+  if (!e.deployedVersion) return out("pending", "merged; waits for a deploy");
   // Waiting for evidence ends: a later release makes what is measured since not the candidate's alone, and a wait past the limit will not be answered by more waiting.
   const waited = e.now !== undefined && e.deployedAt !== null && e.now - e.deployedAt >= EVIDENCE_WAIT_MS;
   const wait = (reason: string): Acceptance => e.supersededBy
     ? out("inconclusive", `${reason}; ${e.supersededBy} was released after ${e.deployedVersion}, so nothing measured since is this repair's alone`)
     : waited ? out("inconclusive", `${reason}; the evidence did not come within ${EVIDENCE_WAIT_MS / 3_600_000} hours`) : out("pending", reason);
-  checks.push({ name: "release train", ok: true, detail: `${e.versionBefore} -> ${e.deployedVersion}; the train refuses a red suite, so a shipped version had a green one` });
+  checks.push({ name: "deploy", ok: true, detail: `${e.versionBefore} -> ${e.deployedVersion}; a deploy refuses a red suite, so a shipped version had a green one` });
   const fireDrill = e.drill && e.drill.version === e.deployedVersion && !(e.deployedAt !== null && e.drill.at < e.deployedAt) ? e.drill : null;
   if (fireDrill && !fireDrill.ok) {
     checks.push({ name: "deploy drill", ok: false, detail: "red" });
-    return out("rolled_back", "the drill is red: the train restores the previous dist", { action: "none" });
+    return out("rolled_back", "the drill is red: the deploy restores the previous dist", { action: "none" });
   }
-  // A drill receipt of this exact version is the evidence; the train's rollback on a red one is an inference («the plugin runs it, so its drill was green»), not a
+  // A drill receipt of this exact version is the evidence; the deploy's rollback on a red one is an inference («the plugin runs it, so its drill was green»), not a
   // receipt. Without a receipt the drill is unmeasured and the repair is not accepted on it (Astra, 2026-10-27); the wait ends in `inconclusive`, never in `accepted`.
   checks.push({ name: "deploy drill", ok: fireDrill ? true : null, detail: fireDrill ? "green (drill receipt of this version)" : "no drill receipt for the deployed version: not evidence" });
   if (!e.canary || e.canary.version !== e.deployedVersion) {
@@ -171,7 +171,7 @@ export type GateDecision = { decision: "merge" | "reject"; requested: Tier; tier
 /**
  * No repair waits for the owner (owner 2026-10-22: «я вообще не должен участвовать»): a held branch was released unread after a week.
  * night_decides merges; a change of the judge or the graph merges only provisionally: the bench subset can be runnable and the revert in working
- * order before the merge, but neither is a result of THIS candidate, which exists only once the train ships it. Such a merge is therefore pending
+ * order before the merge, but neither is a result of THIS candidate, which exists only once a deploy ships it. Such a merge is therefore pending
  * (`provisional`), and its acceptance needs the passed bench subset of the shipped version (`AcceptanceEvidence.requireBench`); an existing test
  * changed or deleted still rejects it. Anything else, or a change without those conditions, is rejected with its reason and the class's
  * round counts as failed, so the ladder moves on.

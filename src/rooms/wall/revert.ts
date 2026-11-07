@@ -22,7 +22,7 @@ export async function fullCommit(host: RevertHost, env: RevertEnvironment, commi
   return out.exitCode === 0 && FULL_COMMIT.test(full) ? full : null;
 }
 
-/** Reverts `commit` in a fresh worktree and integrates the revert into the base checkout; the release train ships it. */
+/** Reverts `commit` in a fresh worktree and integrates the revert into the base checkout; a deploy ships it. */
 export async function revertMerge(host: RevertHost, env: RevertEnvironment, commit: string): Promise<{ ok: boolean; detail: string }> {
   const { hostId, basePath } = env;
   const full = await fullCommit(host, env, commit);

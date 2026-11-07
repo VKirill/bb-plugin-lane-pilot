@@ -52,7 +52,7 @@ function world(patch: { changed?: unknown; seed?: boolean; releaseFiles?: string
 
 const fixedIn = (w: Fakes) => (w.h.db.prepare("SELECT fixed_in FROM lane_pilot_wall_class WHERE class_key=?").get(KEY) as { fixed_in: string | null }).fixed_in;
 
-/** Night, merge, and the release train shipping `shipped`; the repair is `deployed` and waits for its evidence. */
+/** Night, merge, and a deploy shipping `shipped`; the repair is `deployed` and waits for its evidence. */
 async function deployed(w: Fakes, shipped = "0.1.269") {
   await w.wall.runNight({ now: NOW });
   const assignment = w.wall.nextAssignment()!;
@@ -105,7 +105,7 @@ describe("a repair is judged by the release that carried it (review section 4)",
   it("a later release makes the experiment inconclusive: the bench of the newer version is not compared, nothing is accepted or reverted", async () => {
     const w = world();
     await deployed(w, "0.1.307");
-    w.state.version = "0.1.328";                                    // the train shipped twenty more releases
+    w.state.version = "0.1.328";                                    // the deploy shipped twenty more releases
     w.state.canary = { version: "0.1.328", tripped: false, windowOpen: false };
     const notes = await w.wall.advance(NOW + 3 * HOUR);
     expect(w.state.compared).toEqual([]);

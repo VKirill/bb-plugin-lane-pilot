@@ -52,20 +52,20 @@ describe("what the hunters say is checked by code against the pack", () => {
 
 const evidence = (patch: Partial<AcceptanceEvidence> = {}): AcceptanceEvidence => ({
   merged: true, versionBefore: "0.1.268", deployedVersion: "0.1.269", drill: { version: "0.1.269", at: 20, ok: true }, deployedAt: 10,
-  canary: { version: "0.1.269", tripped: false, windowOpen: false }, bench: "pass", recurrence: { failures: 0, attempts: 25, exposed: true }, trainRolledBack: false, ...patch,
+  canary: { version: "0.1.269", tripped: false, windowOpen: false }, bench: "pass", recurrence: { failures: 0, attempts: 25, exposed: true }, deployRolledBack: false, ...patch,
 });
 
 describe("acceptance of a night repair", () => {
-  it("accepts when the train shipped it, the drill and canary are green, the bench subset is not worse and the class stopped", () => {
+  it("accepts when a deploy shipped it, the drill and canary are green, the bench subset is not worse and the class stopped", () => {
     const result = decideAcceptance(evidence());
     expect(result.state).toBe("accepted");
-    expect(result.checks.map((row) => row.name)).toEqual(["release train", "deploy drill", "canary", "bench subset", "class recurrence on the new version"]);
+    expect(result.checks.map((row) => row.name)).toEqual(["deploy", "deploy drill", "canary", "bench subset", "class recurrence on the new version"]);
   });
 
   it("waits for each fact in turn", () => {
     expect(decideAcceptance(evidence({ merged: false })).state).toBe("pending");
-    expect(decideAcceptance(evidence({ deployedVersion: null })).reason).toMatch(/waits for the release train/);
-    // No drill receipt of this version is no evidence: the train's rollback on a red drill is an inference, not a receipt (Astra, 2026-10-27).
+    expect(decideAcceptance(evidence({ deployedVersion: null })).reason).toMatch(/waits for a deploy/);
+    // No drill receipt of this version is no evidence: the deploy's rollback on a red drill is an inference, not a receipt (Astra, 2026-10-27).
     const held = decideAcceptance(evidence({ sealedGap: true }));
     expect(held).toMatchObject({ state: "pending", action: "none", reason: expect.stringMatching(/possible overfit/) });
     expect(held.checks.find((row) => row.name === "sealed set gap")).toMatchObject({ ok: false });
@@ -79,11 +79,11 @@ describe("acceptance of a night repair", () => {
     expect(decideAcceptance(evidence({ bench: "pending" })).state).toBe("pending");
   });
 
-  it("red drill: rolled back (the train restores the dist); tripped canary and a worse bench: red with a revert in code", () => {
+  it("red drill: rolled back (the deploy restores the dist); tripped canary and a worse bench: red with a revert in code", () => {
     expect(decideAcceptance(evidence({ drill: { version: "0.1.269", at: 20, ok: false } }))).toMatchObject({ state: "rolled_back", action: "none" });
     expect(decideAcceptance(evidence({ canary: { version: "0.1.269", tripped: true, windowOpen: false } }))).toMatchObject({ state: "red", action: "revert" });
     expect(decideAcceptance(evidence({ bench: "fail" }))).toMatchObject({ state: "red", action: "revert" });
-    expect(decideAcceptance(evidence({ trainRolledBack: true })).state).toBe("rolled_back");
+    expect(decideAcceptance(evidence({ deployRolledBack: true })).state).toBe("rolled_back");
   });
 
   it("a repair whose class recurred is not accepted: a failed round that the night reverts; too few attempts prove nothing", () => {
@@ -97,7 +97,7 @@ describe("acceptance asks for evidence, absence is not proof (review of 2026-10-
   it("a quiet canary with no bench and no attempts is not an acceptance: the review's input stays pending", () => {
     // The review's call: merged, shipped, no drill, quiet closed canary, bench unavailable, recurrence null. It was `accepted, all checks green`.
     const result = decideAcceptance({ merged: true, versionBefore: "a", deployedVersion: "b", deployedAt: 1, drill: null, canary: { version: "b", tripped: false, windowOpen: false },
-      bench: "unavailable", recurrence: null, trainRolledBack: false });
+      bench: "unavailable", recurrence: null, deployRolledBack: false });
     expect(result.state).toBe("pending");
     expect(result.reason).toMatch(/no proof yet/);
   });

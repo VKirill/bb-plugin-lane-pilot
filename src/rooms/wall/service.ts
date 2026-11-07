@@ -657,7 +657,7 @@ export function createWall(deps: WallDeps) {
     };
   }
 
-  /** Reads the verdicts of running repairs, the release train's trace for merged ones, and moves each along. Cheap; runs every few minutes. */
+  /** Reads the verdicts of running repairs, the deploy's trace for merged ones, and moves each along. Cheap; runs every few minutes. */
   async function advance(now: number = ports.now()): Promise<string[]> {
     const notes: string[] = [];
     const cfg = await config();
@@ -749,9 +749,9 @@ export function createWall(deps: WallDeps) {
     const mergedAt = acceptance.mergedAtVersion ?? row.versionBefore;
     const deployed = ports.version !== mergedAt;
     if (!deployed && row.state === "deployed") {
-      updateRepair(db, row.id, { state: "rolled_back", outcome: "the plugin runs the version before the repair again: the release train rolled back", acceptance: { ...acceptance, rolledBack: true } }, now);
-      failMove(row, "the train rolled back", now);
-      return [`${row.id}: rolled back by the train`];
+      updateRepair(db, row.id, { state: "rolled_back", outcome: "the plugin runs the version before the repair again: the deploy rolled back", acceptance: { ...acceptance, rolledBack: true } }, now);
+      failMove(row, "the deploy rolled back", now);
+      return [`${row.id}: rolled back by the deploy`];
     }
     if (!deployed) return [];
     if (row.state === "merged") {
@@ -792,7 +792,7 @@ export function createWall(deps: WallDeps) {
     const sealedGap = Boolean(sealedFlag && typeof sealedFlag.gapPp === "number" && typeof sealedFlag.thresholdPp === "number" && sealedFlag.gapPp > sealedFlag.thresholdPp
       // The flag speaks for the week it was measured in; a stale flag (older than 9 days) no longer holds new fixes.
       && sealedFlag.at !== undefined && now - sealedFlag.at < 9 * 86_400_000);
-    const result = decideAcceptance({ merged: true, versionBefore: mergedAt, deployedVersion: evidence, drill, deployedAt, canary, bench, recurrence, trainRolledBack: false, requireBench, supersededBy: superseded, sealedGap, now });
+    const result = decideAcceptance({ merged: true, versionBefore: mergedAt, deployedVersion: evidence, drill, deployedAt, canary, bench, recurrence, deployRolledBack: false, requireBench, supersededBy: superseded, sealedGap, now });
     // C3: the declared prediction is checked against the evidence the same acceptance weighed — a broken one is recorded, never a pass.
     const prediction = (acceptance as { prediction?: { fixes_class: string | null; must_not_move: string[] } }).prediction;
     const predicted = prediction && result.state !== "pending" ? predictionHeld(prediction, { recurred: recurrence ? recurrence.failures > 0 : null, benchScore, baselineScore }) : null;

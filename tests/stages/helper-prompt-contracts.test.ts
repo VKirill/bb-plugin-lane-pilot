@@ -342,7 +342,7 @@ describe("other helper prompts", () => {
   it("self-repair and its watchdog agree: the deploy script runs the tests; the repair thread itself never deploys", () => {
     const text = repairPrompt([], "blocked:abc:x", { path: "/wt/r/lane-pilot", branch: "lane/r", basePath: "/repo/lane-pilot" });
     expect(text).not.toContain("does not run tests");
-    expect(text).toContain("bb-plugin-push is the release train");
+    expect(text).toContain("bb-plugin-push deploys it");
     expect(text).toContain("Do NOT deploy");
     // One role, one place for code: the guard of this repository is Lane Pilot's, the claude-lane-stack copy and the VK core are the owner's.
     expect(text).toContain("including the guard in lane-stack/hooks/");
