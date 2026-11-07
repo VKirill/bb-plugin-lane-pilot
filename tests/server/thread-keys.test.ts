@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { reconcile, reconcileHolder } from "../../src/rooms/stability/reconcile";
-import { fullAccessSpawn } from "../../src/rooms/core/server/pm-spawn";
-import { clearSpawnMarker, findThreadsByMetadata, spawnIdentity, spawnKey, spawnTextId } from "../../src/rooms/core/server/thread-keys";
+import { fullAccessSpawn } from "../../src/rooms/platform/server/pm-spawn";
+import { clearSpawnMarker, findThreadsByMetadata, spawnIdentity, spawnKey, spawnTextId } from "../../src/rooms/platform/server/thread-keys";
 
 type Row = { id: string; key: string | null; metadata: Record<string, unknown>; archived: boolean };
 

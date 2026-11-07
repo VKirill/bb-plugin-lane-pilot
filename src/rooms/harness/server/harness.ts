@@ -6,7 +6,7 @@ import {
   parseEdits, parseExperience, parseNotes, proposePrompt, renderExperienceMarkdown, renderThreadEvents, screenRejected, skillNames, validate,
   type ProbeBudget, type RejectedEdit, type ThreadEventLike, type Tree,
 } from "@lane-pilot/harness-core";
-import { fullAccessSpawn, scheduleIsolated, type Services } from "../../core/server";
+import { fullAccessSpawn, scheduleIsolated, type Services } from "../../platform/server";
 import { stringAt } from "@lane-pilot/kit";
 import { type ServerCore } from "../../contracts/server";
 import { projectRoleField } from "../../runs/server";

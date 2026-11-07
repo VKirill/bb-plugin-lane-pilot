@@ -5,7 +5,7 @@ import type { GoalAudit } from "@lane-pilot/workflow-engine";
 import type { Field } from "@lane-pilot/workflow-engine";
 import { redactKnown } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import type { WorkflowAgents } from "./workflow-agent";
 import { chainRuntimeFor } from "./workflow-executors";
 

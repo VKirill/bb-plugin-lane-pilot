@@ -8,7 +8,7 @@ import type { ScheduleKind, ScheduleTask } from "../model";
 import type { ServerCore } from "../../contracts/server";
 import { errandModelForRun } from "./schedule-default";
 import { allowedSecretNames, secretFixLines, secretProblem } from "../../secrets/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 
 /**
  * The three kinds of scheduled work, each behind the scheduler's `start / poll / cancel`. `start` is idempotent on the run key, so

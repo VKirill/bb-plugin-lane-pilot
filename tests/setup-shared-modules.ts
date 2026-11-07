@@ -8,5 +8,5 @@ setJevForTests(null);
 
 // A provider limit one test's helper answered with would take that provider off the next test's picks (spawn-model.ts, seen limits).
 import { beforeEach } from "vitest";
-import { resetSeenLimits } from "../src/rooms/core/server/spawn-model";
+import { resetSeenLimits } from "../src/rooms/platform/server/spawn-model";
 beforeEach(() => resetSeenLimits());

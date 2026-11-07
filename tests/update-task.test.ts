@@ -9,7 +9,7 @@ import { builtinWorkflow } from "../src/rooms/workflow";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { TaskV2 } from "../src/rooms/contracts";
 import type { ServerCore } from "../src/rooms/contracts/server";
-import type { Services } from "../src/rooms/core/server/services";
+import type { Services } from "../src/rooms/platform/server";
 
 describe("lane_pilot_update_task", () => {
   let db: ReturnType<typeof openDatabase>;

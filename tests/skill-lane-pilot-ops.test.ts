@@ -5,7 +5,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../src/rooms/plugin-db";
 import { createCore } from "../src/rooms/core/server/core";
 import { registerCli } from "../src/rooms/tools/server/cli";
-import type { Services } from "../src/rooms/core/server/services";
+import type { Services } from "../src/rooms/platform/server";
 
 // The runbook a stuck PM loads (skills/lane-pilot-ops): every command and tool it names must exist, or it sends a PM nowhere.
 const SKILL = readFileSync("skills/lane-pilot-ops/SKILL.md", "utf8");

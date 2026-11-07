@@ -1,4 +1,4 @@
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 
 /**
  * Acting through schedules (roadmap §2.5, class `schedule`, `acts_via: schedule` in policy/lead-policy.json). A proposal of that class

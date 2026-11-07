@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { ROLE_IDS, ROLE_TABLE, consistentProvider, modelFamily, roleModelKey, type ModelCatalog } from "@lane-pilot/models";
-import { resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../src/rooms/core/server/spawn-model";
+import { resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../src/rooms/platform/server/spawn-model";
 import { createWriterState } from "../src/rooms/writer/server/state";
 import { USAGE_FETCH_METHOD, USAGE_LIST_METHOD } from "../src/rooms/usage/server/provider-usage";
 
@@ -49,7 +49,7 @@ const read = (file: string) => readFileSync(join(ROOT, file), "utf8");
 
 describe("every place that spawns a model thread is accounted for", () => {
   it("lists exactly the files that call fullAccessSpawn", () => {
-    const spawning = walk(join(ROOT, "src")).map((file) => relative(ROOT, file)).filter((file) => file !== "src/rooms/core/server/pm-spawn.ts" && /\bfullAccessSpawn\(/.test(read(file))).sort();
+    const spawning = walk(join(ROOT, "src")).map((file) => relative(ROOT, file)).filter((file) => file !== "src/rooms/platform/server/pm-spawn.ts" && /\bfullAccessSpawn\(/.test(read(file))).sort();
     expect(spawning).toEqual(Object.keys(WRAPPERS).sort());
   });
 
@@ -361,8 +361,8 @@ describe("a provider's nearly spent limit moves the helpers to the other family"
 
 // ---------------------------------------------------------------- the generic helper, driven to its real spawn
 
-vi.mock("../src/rooms/core/server", async (original) => ({
-  ...(await original<typeof import("../src/rooms/core/server")>()),
+vi.mock("../src/rooms/platform/server", async (original) => ({
+  ...(await original<typeof import("../src/rooms/platform/server")>()),
   fullAccessSpawn: vi.fn(async (_bb: unknown, args: unknown) => { throw Object.assign(new Error("SPAWNED"), { args }); }),
   findThreadsByMetadata: vi.fn(async () => null),
 }));

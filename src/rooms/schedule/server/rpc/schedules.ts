@@ -2,7 +2,7 @@ import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../../../contracts";
 import { runView } from "../../board";
 import type { ServerCore } from "../../../contracts/server";
-import type { Services } from "../../../core/server";
+import type { Services } from "../../../platform/server";
 
 /** The board's reads and writes over the schedule service (src/schedule/contract.ts says what each does). */
 export function schedulesRpc(_ctx: ServerCore, services: Services) {

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createCore } from "../src/rooms/core/server/core";
-import type { Services } from "../src/rooms/core/server/services";
+import type { Services } from "../src/rooms/platform/server";
 import { runCommand } from "../src/rooms/host-worker/host-handlers";
 import { createPhaseDriver } from "./phase-driver";
 import { binaryFileCommand, binaryFileFingerprint } from "../src/rooms/phase/stages";

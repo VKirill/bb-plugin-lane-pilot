@@ -5,7 +5,7 @@ import { createAttempt, getAttempt, getRun, getTask, getTaskPlan, listAttemptsFo
 import { cancelAttemptById, recordStage, reopenWriterStages } from "../../runs/server";
 import { createAttemptReopen, createWriterReassign } from "../../writer/server";
 import { id } from "@lane-pilot/kit";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 import { checkNote, pmReturnMessage, pmWriterLine, returnTurnPrompt } from "../logic";
 import { finishReturn, getReturn, insertReturn, listReturns, type StageReturnRecord } from "../store";

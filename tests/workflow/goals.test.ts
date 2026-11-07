@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
 import type { ServerCore } from "../../src/rooms/contracts/server";
-import type { Services } from "../../src/rooms/core/server/services";
+import type { Services } from "../../src/rooms/platform/server";
 import { createGoalAuditor } from "../../src/rooms/workflow/server/workflow-goal-audit";
 import { amendGoalsTool, runWorkflowTool, workflowStatusTool } from "../../src/rooms/workflow/server/workflow-tools";
 import type { WorkflowToolDeps } from "../../src/rooms/workflow/server/workflow-tools";

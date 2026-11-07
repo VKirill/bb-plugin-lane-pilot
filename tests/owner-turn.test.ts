@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { afterEach, describe, expect, it } from "vitest";
 import { foreignTurnReason, ownerTurnGate } from "../src/rooms/core/server/owner-turn";
-import { registerObservedTool, registeredTools, setWorkStartGate, type ObservedToolContext } from "../src/rooms/core/server/tool-result";
+import { registerObservedTool, registeredTools, setWorkStartGate, type ObservedToolContext } from "../src/rooms/platform/server/tool-result";
 
 // 2026-11-01: a PM chat in a subfolder told the repository root's PM to dispatch the owner's tasks with `bb thread tell`, and it did.
 const context: ObservedToolContext = { threadId: "thr_pm", projectId: "proj_1", signal: new AbortController().signal };

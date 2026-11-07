@@ -1,4 +1,4 @@
-import { rewriteFoldedToolNames } from "../src/rooms/tools/pm-tool-families";
+import { rewriteFoldedToolNames } from "../src/rooms/platform/server/pm-tool-families";
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost, makePluginAgentConfigurationContext } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
@@ -8,7 +8,7 @@ import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../s
 import { BB_AGENT_SUMMARIES, LANE_PILOT_PM_SESSION, laneSessionOverlayPrompt, overlaySessionTools } from "../src/rooms/native-agent/native-agent-overlay";
 import { finalizeNativeLaneBinding } from "../src/rooms/native-agent/native-run";
 import { NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_TOOLS } from "../src/rooms/native-agent/native-session-hooks";
-import { foldedToolHome } from "../src/rooms/tools/pm-tool-families";
+import { foldedToolHome } from "../src/rooms/platform/server/pm-tool-families";
 import { ARCHITECT_LAUNCH, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_SESSION } from "../src/rooms/workflow/workflow-architect";
 import { setLocaleOverride, t } from "@lane-pilot/i18n";
 

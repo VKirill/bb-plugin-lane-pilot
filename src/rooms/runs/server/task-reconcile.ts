@@ -1,7 +1,7 @@
 import { createMergeIntentRecovery } from "../../verification/server";
 import { closeOrphanWriterStages } from "./stage-records";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 
 /** A periodic pass leaves an attempt that moved this recently alone: a loop between two attempts is not an orphan. */
 const PERIODIC_IDLE_MS = 3 * 60_000;

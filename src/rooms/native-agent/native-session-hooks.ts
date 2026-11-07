@@ -121,7 +121,7 @@ export const NATIVE_LP_BRIDGE_LEAD_TOOLS = ["lane_pilot_read", "lane_pilot_lead"
 export const NATIVE_LP_BRIDGE_ARCHITECT_TOOLS = [
   "lane_pilot_read",
   "lane_pilot_ask_owner",
-  // The families the old per-action names were folded into (src/rooms/tools/pm-tool-families.ts): with the old names the architect had
+  // The families the old per-action names were folded into (src/rooms/platform/server/pm-tool-families.ts): with the old names the architect had
   // only read and ask_owner and could build nothing (live architect order thr_ucanjpsgn5, 2026-10-25). Its session text is rewritten
   // to the family calls the same way as the PM's.
   "lane_pilot_workflow_draft",

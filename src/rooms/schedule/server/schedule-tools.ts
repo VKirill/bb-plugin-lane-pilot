@@ -4,8 +4,8 @@ import { normalizeSchedule, scheduleInputSchema } from "../model";
 import { loadPushConfig } from "../../owner-waiting";
 import type { ScheduleView } from "../views";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
-import { registerObservedTool } from "../../core/server";
+import type { Services } from "../../platform/server";
+import { registerObservedTool } from "../../platform/server";
 import { ToolError } from "../../contracts/server";
 
 /**

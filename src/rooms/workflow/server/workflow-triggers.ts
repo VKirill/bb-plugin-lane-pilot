@@ -11,7 +11,7 @@ import type { Workflow } from "@lane-pilot/workflow-engine";
 import type { StoredWorkflow, WorkflowStore } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
 import { isPmChat } from "../../native-agent/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import { SCHEDULE_RUN_KEY_PREFIX, type ChainRuntime } from "./workflow-runtime";
 
 /**

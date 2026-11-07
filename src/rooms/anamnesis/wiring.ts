@@ -1,7 +1,7 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import type { rpcContract } from "../contracts";
-import { mapListedQaHosts } from "../qa";
+import { mapListedQaHosts } from "../platform/server";
 import type { ServerCore } from "../contracts/server";
 import type { AnamnesisRpcRequest } from "./contract";
 import { runAnamnesisCli, type CliResult } from "./cli";
@@ -14,7 +14,7 @@ import { loadAnamnesis, type LoadDeps, type LoadOptions } from "./load";
 import { createOwnerMessageHub, isOwnerThread, sdkThreadsPort, type ThreadLike } from "./owner-messages";
 import { createExtractConsumer, type ExtractDeps } from "./extract";
 import { dailyDue, dailyPass, markDailyDone, type DailyDeps } from "./daily";
-import { scheduleIsolated } from "../core/server";
+import { scheduleIsolated } from "../platform/server";
 
 const cache = new WeakMap<object, ReturnType<typeof build>>();
 

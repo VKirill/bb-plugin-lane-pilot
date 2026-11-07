@@ -1,7 +1,7 @@
 import { countAttempts, getAttempt, getRun, getTask, getTaskPlan, transitionAttempt } from "../../storage";
 import { closeWriterStages, recordGateEvaluation } from "../../runs/server/stage-records";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 
 /**

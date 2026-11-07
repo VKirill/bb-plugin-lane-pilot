@@ -10,7 +10,7 @@ import { globalWorkflowDir, loadWorkflowStore, nodeFileSource, projectWorkflowDi
 import { legacyDefinitionSha256, tallyOutcomes, workDoneRate, workflowView, type WorkflowView } from "@lane-pilot/workflow-engine";
 import { buildWorkflowMap } from "./workflow-map";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 
 type Output<K extends keyof typeof rpcContract> = z.infer<(typeof rpcContract)[K]["output"]>;
 export type WorkflowSummary = Output<"workflow_list">["workflows"][number];

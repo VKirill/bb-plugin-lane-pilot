@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setJevForTests } from "@lane-pilot/jev";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { createCore } from "../src/rooms/core/server/core";
-import type { Services } from "../src/rooms/core/server";
+import type { Services } from "../src/rooms/platform/server";
 import { LEAD_DEFAULTS } from "../src/rooms/lead/settings";
 import { openDecision } from "../src/rooms/lead/server/journal";
 import { addRoad, getRoad, listRoad, proposeRoad, roadPayload } from "../src/rooms/lead/server/road";

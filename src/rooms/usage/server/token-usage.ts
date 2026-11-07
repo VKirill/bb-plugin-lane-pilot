@@ -4,7 +4,7 @@ import { pluginStopped } from "../../runs/server";
 import { stringAt, valueAt } from "@lane-pilot/kit";
 import { MODEL_PRICES, costUsd } from "@lane-pilot/models";
 import type { ServerCore } from "../../contracts/server";
-import { scheduleIsolated } from "../../core/server";
+import { scheduleIsolated } from "../../platform/server";
 import { ZERO, asBreakdown, billedFrom, hasTokens, isCumulativeProvider, parseBreakdown, sameTokens, subTokens, tokenBreakdown, tokenDelta, type TokenBreakdown } from "../token-math";
 export { billedFrom, isCumulativeProvider, parseBreakdown, tokenBreakdown, tokenDelta, type TokenBreakdown } from "../token-math";
 

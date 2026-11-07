@@ -3,7 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createCore } from "../src/rooms/core/server/core";
 import { createAttempt, createRun, createTask, openDatabase, saveStageReceipt, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 import { runsRpc } from "../src/rooms/runs/server/rpc/runs";
-import type { Services } from "../src/rooms/core/server/services";
+import type { Services } from "../src/rooms/platform/server";
 
 function setupHost() {
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });

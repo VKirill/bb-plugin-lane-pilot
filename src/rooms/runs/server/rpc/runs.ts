@@ -19,12 +19,12 @@ import { readThreadLive } from "../thread-live";
 import { cancelAttemptById } from "../cancel";
 import { queueWaitPercentiles, runQueueWaits } from "../../../usage/server/attempt-metrics";
 import { pauseRun } from "../runs-pause";
-import { folderEnvironment, projectSources } from "../../../core/server";
+import { folderEnvironment, projectSources } from "../../../platform/server";
 import { id, stringAt, valueAt } from "@lane-pilot/kit";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
-import type { Services } from "../../../core/server";
+import type { Services } from "../../../platform/server";
 
 export function runsRpc(ctx: ServerCore, services: Services) {
   const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, nativeInstaller, ownedAgents } = ctx;

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { fullAccessSpawn, providerSupportsServiceTier } from "../src/rooms/core/server/pm-spawn";
+import { fullAccessSpawn, providerSupportsServiceTier } from "../src/rooms/platform/server/pm-spawn";
 import { mountErrands } from "../src/rooms/qa/server/errands";
 import { runQaThread } from "../src/rooms/qa/server/qa-thread";
 import { createRun, openDatabase } from "../src/rooms/plugin-db";

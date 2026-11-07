@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { callerPluginMetadata, registerObservedTool, type Services } from "../../core/server";
+import { callerPluginMetadata, registerObservedTool, type Services } from "../../platform/server";
 import { ToolError, type ServerCore } from "../../contracts/server";
 import { getTask, listOpenAttempts, taskBasePath } from "../../storage";
 import { ownsPathsOverlap } from "@lane-pilot/kit";

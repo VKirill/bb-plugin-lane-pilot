@@ -3,7 +3,7 @@ import { applyOutcomeLabels } from "@lane-pilot/jev";
 import { planModelLabels, modelLabelPrompt, compareModelDecision, modelLabelable } from "@lane-pilot/jev";
 import { recordOutcome } from "@lane-pilot/jev";
 import { listJudgments } from "@lane-pilot/jev";
-import { scheduleIsolated, type Services } from "../../core/server";
+import { scheduleIsolated, type Services } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { builtinWorkflow } from "../../workflow";
 import type { ChainRuntime } from "../../workflow/server";

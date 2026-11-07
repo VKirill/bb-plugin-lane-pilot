@@ -5,7 +5,7 @@ import { mountRegressionTools } from "../../src/rooms/baseline/server/regression
 import { commandPathLiterals, quarantineFileSet } from "../../src/rooms/baseline/regress-files";
 import { insertRegression, type RegressionRecord } from "../../src/rooms/baseline/store";
 import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
-import type { Services } from "../../src/rooms/core/server";
+import type { Services } from "../../src/rooms/platform/server";
 import { world } from "./world";
 import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";

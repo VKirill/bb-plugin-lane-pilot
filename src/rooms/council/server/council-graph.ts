@@ -15,10 +15,10 @@ import { getRun, getRunSettingsScopes } from "../../storage";
 import { builtinWorkflow } from "../../workflow";
 import type { ChainRuntime } from "../../workflow/server";
 import { withUsage } from "../../usage/server";
-import { fullAccessSpawn, graphStepMetadata, findThreadsByMetadata, keyedSpawnSupported, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../core/server";
+import { fullAccessSpawn, graphStepMetadata, findThreadsByMetadata, keyedSpawnSupported, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { stringAt } from "@lane-pilot/kit";
 import { configuredSetting } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 import { councilOwnerForm, ownerLocale } from "../../relay/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
@@ -103,7 +103,7 @@ export function mountCouncilGraph(ctx: ServerCore, services: Services, council: 
     const seatModels = seats.map((seat) => (seat.providerId && seat.model ? { providerId: seat.providerId, model: seat.model } : null));
     const seatFamilies = new Set(seatModels.map((seat) => (seat ? modelFamily(seat.model) : null)));
     const seatAuthor = seatModels.length && seatFamilies.size === 1 && !seatFamilies.has(null) ? seatModels[0]! : null;
-    // The one resolver (core/server/spawn-model.ts): the table's chair, passed over for what the machine offers, then judged against the seats.
+    // The one resolver (platform/server/spawn-model.ts): the table's chair, passed over for what the machine offers, then judged against the seats.
     const spawnUsage=spawnUsageOf(ctx);
     await warmSpawnUsage(spawnUsage,config.hostId);
     const chairRole = resolveSpawnModel({ role: "council", settings, author: seatAuthor, catalog: modelCatalogOf(ctx).peek(), usage: spawnUsage, hostId: config.hostId,

@@ -1,7 +1,7 @@
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
 import { runGraphHelper } from "../../workflow/server";
 import type { ChainRuntime } from "../../workflow/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 
 /**

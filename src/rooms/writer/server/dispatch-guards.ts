@@ -5,7 +5,7 @@ import type { LoopTask, OpenShape } from "../../tasks";
 import { taskFamily } from "../../runs";
 import { checkoutBase, getRun, getTask, listOpenAttempts, taskBasePath } from "../../storage";
 import type { LanePilotDatabase } from "../../storage";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 
 /** The shape the loop stopper reads of a task contract; null for a contract that does not parse. */
 export function loopTaskOf(id: string, createdAt: number, contract: unknown, attempts: LoopTask["attempts"]): LoopTask | null {

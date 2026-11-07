@@ -6,7 +6,7 @@ import { closeWriterStages, reopenWriterStages } from "../../runs/server";
 import { stringAt } from "@lane-pilot/kit";
 import { NEEDS_HUMAN_MARKER } from "./writer-task";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import { saveFollowUp } from "./sticky";
 import { writerLeftWorktree } from "./left-worktree";
 import { runOnHost } from "@lane-pilot/host-calls";

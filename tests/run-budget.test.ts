@@ -19,7 +19,7 @@ import {
   transitionAttempt,
 } from "../src/rooms/plugin-db";
 import { runHealth } from "../src/rooms/stability/server/health";
-import { bindRunChildBudget, fullAccessSpawn } from "../src/rooms/core/server/pm-spawn";
+import { bindRunChildBudget, fullAccessSpawn } from "../src/rooms/platform/server/pm-spawn";
 import { createStability } from "../src/rooms/stability/server/stability";
 import { createWriterFinish } from "../src/rooms/writer/server/finish";
 import { createWriterSpawn } from "../src/rooms/writer/server/spawn";

@@ -1,4 +1,4 @@
-import { scheduleIsolated, SCHEDULE_TIMEOUT_CAP_MS } from "../../core/server";
+import { scheduleIsolated, SCHEDULE_TIMEOUT_CAP_MS } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { loadProjectSettings, saveProjectSetting } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";

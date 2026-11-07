@@ -21,7 +21,7 @@ import { registerTelegramActions } from "./workflow-telegram";
 import { registerAnamnesisActions } from "../../anamnesis";
 import { anamnesisFor } from "../../anamnesis";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 
 /**
  * The one workflow engine of this plugin instance, with the executors of the built-in workflows. It stops at a step

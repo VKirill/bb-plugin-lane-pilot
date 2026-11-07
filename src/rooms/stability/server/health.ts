@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { requirePmRun, type ServerContext } from "../../core/server";
-import { registerObservedTool } from "../../core/server";
-import type { Services } from "../../core/server";
-import { bindRunChildBudget } from "../../core/server";
+import { requirePmRun, type ServerContext } from "../../platform/server";
+import { registerObservedTool } from "../../platform/server";
+import type { Services } from "../../platform/server";
+import { bindRunChildBudget } from "../../platform/server";
 import { getRun, getRunSettingsScopes, loadProjectSettings } from "../../storage";
 import { wayOut } from "../../runs";
 

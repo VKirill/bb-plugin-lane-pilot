@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { roleModelKey, writerCandidates, zcodeEnvironmentError, type ModelCatalog } from "@lane-pilot/models";
-import { resolveSpawnModel, spawnUsageOf } from "../src/rooms/core/server/spawn-model";
-import { fullAccessSpawn } from "../src/rooms/core/server/pm-spawn";
-import { noteZcodeThread, zcodeBusy, zcodeBusyPeek } from "../src/rooms/core/server/zcode-slot";
+import { resolveSpawnModel, spawnUsageOf } from "../src/rooms/platform/server/spawn-model";
+import { fullAccessSpawn } from "../src/rooms/platform/server/pm-spawn";
+import { noteZcodeThread, zcodeBusy, zcodeBusyPeek } from "../src/rooms/platform/server/zcode-slot";
 import { createWriterState } from "../src/rooms/writer/server/state";
 import { createProviderUsage, usageHoldReason } from "../src/rooms/usage/server/provider-usage";
 import { writerPickOverlay } from "../src/rooms/writer/writer-model-pick";

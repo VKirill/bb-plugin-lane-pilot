@@ -10,7 +10,7 @@ import { isSandboxProjectName } from "../../../stability/server";
 import type { RunHistoryRow } from "../../../storage";
 import { writerServiceTier, findModelIn } from "@lane-pilot/models";
 import { LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
-import { mapListedQaHosts } from "../../../qa";
+import { mapListedQaHosts } from "../../../platform/server";
 import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import { NATIVE_WRITER_KEYS } from "../../../runs/server";
 import { asJsonText } from "../../../writer/server";
@@ -19,7 +19,7 @@ import { PAIR_ROLE_SPECS, PROVIDER_CAPABILITIES, roleAtomicMessage } from "@lane
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
-import type { Services } from "../../../core/server";
+import type { Services } from "../../../platform/server";
 
 /** Runs the screen carries up front (plus every open one); older history comes page by page from `list_runs`. */
 const SCREEN_RUNS_LIMIT = 10;

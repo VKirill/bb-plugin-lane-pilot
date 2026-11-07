@@ -14,7 +14,7 @@ import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefau
 import { loadCriticCodeDefault } from "./critic-override";
 import { runPlanFactStage } from "./plan-fact";
 import { candidatePatches, runCodeCritique } from "../../critique/server";
-import { fullAccessSpawn } from "../../core/server";
+import { fullAccessSpawn } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { closeWriterStages, recordGateEvaluation, recordStage } from "../../runs/server";
 import { stringAt } from "@lane-pilot/kit";
@@ -27,7 +27,7 @@ import type { StageId } from "../../tasks";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, sleepUntilThreadSignal, startLimitWaiting, threadFailure, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import { clearFollowUpCancelled, followUpCancelled, loadFollowUp } from "./sticky";
 import { askGuestsToCommit } from "./checkout-guests";
 import { shouldMergeAttemptWorktree } from "./spawn";

@@ -1,7 +1,7 @@
 import type { LanePilotDatabase } from "../../storage";
 import type { RunRow } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 
 /**
  * What the node executors of a chain run (agent, action, human, lp-task) need from the PM chat that started it. It is the

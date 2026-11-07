@@ -4,6 +4,7 @@ export { adoptRuleProposal, adoptWaitingRules, deleteMemoryRecord, memorySetting
 export { insightsRpc } from "./rpc/insights";
 export { createRuleScan } from "./rule-scan";
 export type { RuleScanApi, RuleScanServices } from "./rule-scan";
+export { selfRepairDeps } from "./deps";
 export type { InsightsDeps, RepairDeps, RuleScanDeps, SelfRepairDeps } from "./deps";
 export { CONFIG_KEY, SELF_REPAIR_DEFAULTS, VERSION, lanePilotProjectOrNotice, logIncidents, mountSelfRepair, readRepairRecord, readTail, resolveLanePilotProject, selfRepairRpc } from "./self-repair";
 export type { Incident, RepairWorktree, SelfRepairConfig, Verdict } from "./self-repair";

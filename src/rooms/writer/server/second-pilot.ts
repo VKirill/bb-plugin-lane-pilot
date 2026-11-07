@@ -1,9 +1,9 @@
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
 import { getRun, getTask, getTaskPlan } from "../../storage";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
-import { fullAccessSpawn, sendPmNotice, stageHelperSettings } from "../../core/server";
+import { fullAccessSpawn, sendPmNotice, stageHelperSettings } from "../../platform/server";
 import { id, stringAt } from "@lane-pilot/kit";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { roleSelection, sdkCriticCatalog } from "../../critique/critic-pair";

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ServerCore } from "../../src/rooms/contracts/server";
-import type { Services } from "../../src/rooms/core/server/services";
+import type { Services } from "../../src/rooms/platform/server";
 import { createWorkflowLibrary } from "../../src/rooms/workflow/server/workflow-library";
 import { createWorkflowOps } from "../../src/rooms/workflow/server/workflow-ops";
 import { createStatusResolver } from "@lane-pilot/workflow-engine";

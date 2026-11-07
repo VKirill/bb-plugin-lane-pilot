@@ -3,7 +3,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import type Database from "better-sqlite3";
 import type { PrototypeConfig, StageId, StageState } from "@lane-pilot/contracts";
 import { parseDirtSnapshots, type DirtSnapshot } from "../dirt-snapshot";
-import { FREE_CLASSES, failureClass, isOwnerDecision, isPreStartStop, isWaitingSecret, isWriterSilent, taskFamily } from "../failure-class";
+import { FREE_CLASSES, failureClass, isOwnerDecision, isPreStartStop, isWaitingSecret, isWriterSilent, taskFamily } from "../platform";
 import { IllegalTransitionError, isLegalMove } from "../state-machine";
 import type { SettingValidationError, SettingsValidator } from "../setting-validation";
 import { sha256Buffer } from "@lane-pilot/kit";

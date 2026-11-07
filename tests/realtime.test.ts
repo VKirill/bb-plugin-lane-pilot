@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import { createAttempt, createRun, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
-import { createRealtime, mountHelperSignals, REALTIME_WINDOW_MS } from "../src/rooms/core/server/realtime";
+import { createRealtime, mountHelperSignals, REALTIME_WINDOW_MS } from "../src/rooms/platform/server/realtime";
 import { lpChannel, parseLpSignal } from "@lane-pilot/ui-kit/realtime-channel";
 
 beforeEach(() => { vi.useFakeTimers(); });

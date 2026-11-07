@@ -9,7 +9,7 @@ import { createMemoryConflicts } from "../src/rooms/memory/server/memory-conflic
 import { sessionMemoryRpc } from "../src/rooms/memory/server/session-memory";
 import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
 import type { ServerCore } from "../src/rooms/contracts/server";
-import type { Services } from "../src/rooms/core/server/services";
+import type { Services } from "../src/rooms/platform/server";
 
 const limits = { sourceSha256: "a".repeat(64), audience: "subagent" as const, coreBudget: 99_999, noteBudget: 99_999, indexBudget: 999_999 };
 const PORT_A = "Service deployment uses port 3000 for the API gateway.";

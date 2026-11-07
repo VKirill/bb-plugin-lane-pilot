@@ -4,7 +4,7 @@ import { openDatabase } from "../../src/rooms/plugin-db";
 import { LESSON_PROPOSALS_MAX, listRuleProposals, upsertLessonProposal } from "@lane-pilot/run-insights";
 import { sessionMemoryRpc } from "../../src/rooms/memory/server/session-memory";
 import type { ServerCore } from "../../src/rooms/contracts/server";
-import type { Services } from "../../src/rooms/core/server/services";
+import type { Services } from "../../src/rooms/platform/server";
 
 function setup() {
   const { bb } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{ projects:{ list:async () => [{ id:"P" }, { id:"Q" }] } } as never });

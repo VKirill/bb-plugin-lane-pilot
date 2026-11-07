@@ -7,7 +7,7 @@ import { DEFAULT_RELEVANCE_FLOOR, NOTHING_RELEVANT, projectUsesSections, resolve
 import type { rpcContract } from "../../contracts";
 import { adoptRuleProposal, memorySettingsFor } from "../../self-repair/server";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import { sha256Hex } from "@lane-pilot/kit";
 import { threadMemoryBlock } from "./thread-block";
 import { rerankRecords } from "./rerank";

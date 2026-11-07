@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { projectFolder } from "../src/rooms/core/server/standalone-place";
+import { projectFolder } from "../src/rooms/platform/server/standalone-place";
 import type { ServerCore } from "../src/rooms/contracts/server";
 
 const sources = [{ hostId: "host_macbook", path: "/Users/me/app" }, { hostId: "host_ovh", path: "/home/me/app" }];

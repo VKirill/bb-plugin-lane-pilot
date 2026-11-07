@@ -4,7 +4,7 @@ import bundledAgents from "./bundled-agents.json";
 import { BB_BRIDGE_MCP_SERVER, NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_LEAD_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_SPECIALIST_TOOLS, unionLpBridgeTools, withoutLpBridgeTools } from "./native-session-hooks";
 import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY } from "../workflow";
 import { LEAD_ID, LEAD_SESSION, LEAD_SUMMARY } from "../lead";
-import { rewriteFoldedToolNames } from "../tools";
+import { rewriteFoldedToolNames } from "../platform/server";
 import { SESSION_MAX_MS, SESSION_MAX_TURNS } from "../runs";
 import { DEPENDENCY_REDO_WAIT_MS } from "../storage";
 import { LIVE_FOLDER_FILE_CAP, STICKY_WINDOW_MS } from "../writer";

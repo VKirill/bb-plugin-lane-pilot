@@ -6,7 +6,7 @@ import { cleanupFinishedAttemptEnvironments, closeAbandonedRuns } from "../../sr
 import { createCore } from "../../src/rooms/core/server/core";
 import { createDeployDrain } from "../../src/rooms/stability/server/deploy-drain";
 import { createHostJobs } from "@lane-pilot/host-calls";
-import { currentScheduleSignal, scheduleIsolated } from "../../src/rooms/core/server/schedules";
+import { currentScheduleSignal, scheduleIsolated } from "../../src/rooms/platform/server/schedules";
 import { sweepWriterSilence } from "../../src/rooms/writer/server/writer-silence";
 
 type Fn = (context: { signal: AbortSignal }) => unknown;

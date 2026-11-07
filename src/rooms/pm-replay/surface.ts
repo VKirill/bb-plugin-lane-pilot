@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
 import { LANE_PILOT_PM_SESSION, NATIVE_LP_BRIDGE_PM_TOOLS } from "../native-agent";
-import { flatParameters, unionMembers, withSignatures } from "../core/server";
+import { flatParameters, unionMembers, withSignatures } from "../platform/server";
 import { pmRulesBlock, pmRulesOf, ruleBudget, type Db, type PmRule } from "../learning";
 
 /**

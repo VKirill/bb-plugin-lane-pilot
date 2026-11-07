@@ -5,9 +5,9 @@ import { afterEach, expect, it } from "vitest";
 import { z } from "zod";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { registeredTools, unionMembers } from "../src/rooms/core/server";
+import { registeredTools, unionMembers } from "../src/rooms/platform/server";
 import { BB_AGENT_SESSIONS, LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/native-agent-overlay";
-import { PM_TOOL_FAMILIES } from "../src/rooms/tools/pm-tool-families";
+import { PM_TOOL_FAMILIES } from "../src/rooms/platform/server/pm-tool-families";
 
 // Agents copy the call shapes their instructions show. A shape that names a tool, an action or a field that does not exist sends them to a
 // refusal (live phase ph_86fd9d3fab, 2026-10-27: `revise` without goal and note). This reads every call shape the agents are shown (the PM

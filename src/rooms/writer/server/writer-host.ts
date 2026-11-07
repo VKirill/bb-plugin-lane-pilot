@@ -4,8 +4,8 @@ import { loadPrototypeConfig } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID, LP_DEFAULTS_KEY, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { resolveWriterBinding } from "../../native-agent";
 import type { ProjectSourceBinding } from "../../native-agent";
-import { mapListedQaHosts } from "../../qa";
-import { CATALOG_WAIT_MS, modelCatalogOf, within } from "../../core/server";
+import { mapListedQaHosts } from "../../platform/server";
+import { CATALOG_WAIT_MS, modelCatalogOf, within } from "../../platform/server";
 import { stringAt } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 

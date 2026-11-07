@@ -4,7 +4,7 @@ import { QA_HOST_KEY, QA_WORKSPACE_KEY, qaCodexPreflight, qaHostUnreachableReaso
 import { sha256 } from "../../tasks";
 import { parseOpenCodeToolTelemetry } from "../../stability";
 import { MAIN_ATTEMPT_LIMIT } from "../../runs";
-import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../core/server";
+import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
 import { freezeRunRouting, inheritedProjectSettings } from "../../runs/server";
 import { recordStage } from "../../runs/server";

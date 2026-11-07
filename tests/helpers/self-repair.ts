@@ -1,5 +1,5 @@
 import { createSelfRepair as createRepair } from "../../src/rooms/self-repair/server/self-repair";
-import { selfRepairDeps } from "../../src/rooms/core/server";
+import { selfRepairDeps } from "../../src/rooms/self-repair/server";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 import type { WorkflowEngine } from "../../src/rooms/workflow";
 

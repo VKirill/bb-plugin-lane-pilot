@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { internalIds, leaks, parityGaps } from "../src/rooms/guard-tools";
 import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../src/rooms/native-agent/native-session-hooks";
-import { PM_CORE_TOOLS, PM_FAMILY_TOOLS } from "../src/rooms/tools/pm-tool-families";
+import { PM_CORE_TOOLS, PM_FAMILY_TOOLS } from "../src/rooms/platform/server/pm-tool-families";
 
 const walk = (dir: string): string[] => readdirSync(dir).flatMap((name) => { const path = join(dir, name); return statSync(path).isDirectory() ? (name === "node_modules" ? [] : walk(path)) : [path]; });
 

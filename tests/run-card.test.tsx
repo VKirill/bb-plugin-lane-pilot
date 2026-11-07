@@ -6,7 +6,7 @@ import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { createAttempt, createRun, createTask, openDatabase, saveStageReceipt, setAttemptWorkspace, transitionAttempt } from "../src/rooms/plugin-db";
 import { createCore } from "../src/rooms/core/server/core";
 import { runsRpc } from "../src/rooms/runs/server/rpc/runs";
-import type { Services } from "../src/rooms/core/server/services";
+import type { Services } from "../src/rooms/platform/server";
 
 // The first test imports the whole app; a cold import alone can pass 5 s.
 vi.setConfig({ testTimeout: 30_000 });

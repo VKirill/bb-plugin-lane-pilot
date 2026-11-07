@@ -1,5 +1,5 @@
 import packageJson from "../../../../package.json";
-import { scheduleIsolated, SCHEDULE_TIMEOUT_CAP_MS } from "../../core/server";
+import { scheduleIsolated, SCHEDULE_TIMEOUT_CAP_MS } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { loadProjectSettings } from "../../storage";
 import { isSealedVersion } from "../store";

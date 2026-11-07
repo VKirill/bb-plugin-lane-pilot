@@ -1,5 +1,5 @@
 import { EMBED_DIM, EMBED_MODEL, documentText, pendingVectors, queryText, queryVectorFor, rememberQueryVector, storeVectors, type MemoryDatabase } from "@lane-pilot/memory-core";
-import { scheduleIsolated } from "../../core/server";
+import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { envCatalogKey } from "../../learning";
 

@@ -1,4 +1,4 @@
-import { scheduleIsolated, type Services } from "../../core/server";
+import { scheduleIsolated, type Services } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { listPhases, listParts } from "../store";
 import { acceptanceKey, designGate, discussionGate, nextAction, openQuestions, planGate, planSignature, renderBook, wordOf, type Phase } from "../logic";

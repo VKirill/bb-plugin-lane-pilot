@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { LANE_PILOT_TOOL_SEARCH_NAME, PM_CORE_TOOLS, PM_TOOL_FAMILIES, rewriteFoldedToolNames, type ToolFamily } from "../pm-tool-families";
+import { LANE_PILOT_TOOL_SEARCH_NAME, PM_CORE_TOOLS, PM_TOOL_FAMILIES, rewriteFoldedToolNames, type ToolFamily } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
-import { checkArguments, flatParameters, memberOf as actionMemberOf, registerObservedTool, registeredTools, signature, type ActionMember, type ObservedTool } from "../../core/server";
+import { checkArguments, flatParameters, memberOf as actionMemberOf, registerObservedTool, registeredTools, signature, type ActionMember, type ObservedTool } from "../../platform/server";
 
 /** The shared lead of every "Use from the active Lane Pilot PM thread." that the family says once. */
 const PM_ONLY_LEAD = /Use (?:only )?from the (?:active|matching) Lane Pilot PM thread\.\s*/g;
@@ -47,7 +47,7 @@ function mountFamily(ctx: ServerCore, name: string, family: ToolFamily): void {
     name,
     description: `${family.summary} Pick one action (${actionList}) and give its arguments next to it.`,
     instructions: familyInstructions(members),
-    // BB keeps only `type: object` of a top-level union, so the family publishes one flat object (core/server/action-schema.ts).
+    // BB keeps only `type: object` of a top-level union, so the family publishes one flat object (platform/server/action-schema.ts).
     parameters: flatParameters(name, members, name === "lane_pilot_relay" ? { actions: ["remind"], refuse: (action) => (action === "remind" ? RELAY_REMIND_GONE : undefined) } : undefined),
     execute: async (input, context) => {
       const { action, ...args } = input as { action: string } & Record<string, unknown>;

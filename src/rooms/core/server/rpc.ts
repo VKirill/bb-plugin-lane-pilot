@@ -1,6 +1,6 @@
 import { rpcContract } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "./services";
+import type { Services } from "../../platform/server";
 import { preferencesRpc } from "../../settings/server";
 import { runsRpc } from "../../runs/server";
 import { settingsRpc } from "../../settings/server";
@@ -45,7 +45,7 @@ import { improvementRpc } from "../../improvement/server";
 import { sessionMemoryRpc } from "../../memory/server";
 import { createWorkflowArchitect } from "../../workflow/server";
 import { architectStartRpc } from "../../workflow/server";
-import { selfRepairDeps } from "./self-repair-deps";
+import { selfRepairDeps } from "../../self-repair/server";
 import { journalRpcHandlers, timeRpcHandlers } from "./rpc-timing";
 import { anamnesisFor } from "../../anamnesis";
 import { learningFor } from "../../learning";

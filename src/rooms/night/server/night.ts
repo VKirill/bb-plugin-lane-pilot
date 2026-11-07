@@ -2,7 +2,7 @@ import { taskV2Schema } from "../../contracts";
 import { getRun, getTask, listAttemptsForTask, listStageReceipts } from "../../storage";
 import { resolveManagedWorkspace } from "../../verification";
 import { recordStage } from "../../runs/server";
-import { GIT_PLUGIN_ID, gitCallRpc } from "../../core/server";
+import { GIT_PLUGIN_ID, gitCallRpc } from "../../platform/server";
 import { stringAt, valueAt } from "@lane-pilot/kit";
 
 /** The retired environments.status/diff calls, kept as the fallback where bb--git RPC fails (older BB served them directly). */

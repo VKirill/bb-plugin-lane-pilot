@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { graphStepMetadata } from "../../src/rooms/core/server";
+import { graphStepMetadata } from "../../src/rooms/platform/server";
 import { withUsage } from "../../src/rooms/usage/server";
 import { lpTaskPipelineExecutor } from "../../src/rooms/writer/server/dispatch-workflow";
 import { pipelineWriterTag } from "../../src/rooms/writer/server/pipeline-tag";
