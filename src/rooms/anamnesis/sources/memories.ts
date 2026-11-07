@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { isFsAbsent } from "@lane-pilot/kit";
 import type { Kind } from "../model";
 import type { SourceRecord, SourceScan } from "./common";
 
@@ -27,12 +28,15 @@ export async function scanClaudeMemory(home: string): Promise<SourceScan> {
   const base = join(home, ".claude", "projects");
   const records: SourceRecord[] = [];
   let files = 0, skipped = 0;
-  let folders: string[] = [];
-  try { folders = await readdir(base); } catch { return { source: "claude-memory", items: 0, records, note: "no ~/.claude/projects" }; }
+  let folders: string[];
+  try { folders = await readdir(base); } catch (cause) {
+    if (isFsAbsent(cause)) return { source: "claude-memory", items: 0, records, note: "no ~/.claude/projects" };
+    throw cause;
+  }
   for (const folder of folders.sort()) {
     const dir = join(base, folder, "memory");
     let names: string[];
-    try { names = await readdir(dir); } catch { continue; }
+    try { names = await readdir(dir); } catch (cause) { if (isFsAbsent(cause)) continue; throw cause; }
     for (const name of names.sort()) {
       if (!name.endsWith(".md") || name === "MEMORY.md") continue;
       files += 1;

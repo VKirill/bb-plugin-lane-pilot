@@ -445,19 +445,19 @@ export function createRelay(deps:RelayDeps) {
       const reminders = items.filter((row):row is RelayReminder => row.kind === "remind" && !row.firedAt && row.threadId === threadId && !!row.taskIds?.length);
       const satisfied:RelayReminder[] = [];
       for (const item of reminders) {
-        const states = await deps.taskStates(item.projectId, item.taskIds ?? []).catch(() => null);
+        const states = await deps.taskStates(item.projectId, item.taskIds ?? []).catch((cause: unknown) => { deps.log(`relay: task states unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
         if (states && (item.taskIds ?? []).every((task) => TASK_DONE.has(states[task] ?? ""))) satisfied.push(item);
       }
       const newest = Math.max(...rows.map((row) => row.at)), oldest = Math.min(...rows.map((row) => row.at));
       const urgent = rows.some((row) => row.state === "blocked");
-      const atWork = await deps.tasksAtWork?.(threadId).catch(() => [] as string[]) ?? [];
+      const atWork = await deps.tasksAtWork?.(threadId).catch((cause: unknown) => { deps.log(`relay: tasks-at-work unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return [] as string[]; }) ?? [];
       const due = satisfied.length > 0
         || (urgent && (now - newest >= TASK_NOTICE.settleMs || now - oldest >= TASK_NOTICE.urgentMaxMs))
         || (!atWork.length && now - newest >= TASK_NOTICE.quietMs)
         || now - oldest >= TASK_NOTICE.maxWaitMs;
-      if (!due || await deps.busy?.(threadId).catch(() => true)) continue;
+      if (!due || await deps.busy?.(threadId).catch((cause: unknown) => { deps.log(`relay: busy check unreadable, thread skipped: ${cause instanceof Error ? cause.message : String(cause)}`); return true; })) continue;
       // Results wait for the project-life commit (FeedGen 2026-10-23: the PM pushed, then PROGRESS landed on main unpushed), a blocked task does not.
-      if (!urgent && now - oldest < TASK_NOTICE.bookkeepingMaxMs && await deps.bookkeeping?.(rows).catch(() => false)) continue;
+      if (!urgent && now - oldest < TASK_NOTICE.bookkeepingMaxMs && await deps.bookkeeping?.(rows).catch((cause: unknown) => { deps.log(`relay: bookkeeping check unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return false; })) continue;
       try {
         await deps.send(threadId, await noticeText(rows, atWork, satisfied));
       } catch (cause) {

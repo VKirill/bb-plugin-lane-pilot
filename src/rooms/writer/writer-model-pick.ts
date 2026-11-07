@@ -1,6 +1,9 @@
 import { choice, choiceOf, defineJudgment, score, type Answers, type Jev } from "@lane-pilot/jev";
 import { isZcodeProvider, writerCandidates, type WriterProfile } from "@lane-pilot/models";
 import { writerFallbackKeys, writerFallbackSlots, WRITER_FALLBACK_SLOTS } from "./writer-fallbacks";
+// Last import on purpose: judgment fingerprints hash `questions`/`decide` source, and the SSR transform
+// numbers imports — a new import ahead of these would silently re-fingerprint writer.model.
+import { bestEffort } from "@lane-pilot/kit";
 
 /**
  * Which model writes a task (the owner's ask of 2026-10-25: the system picks the model for the task, not only the effort). Jev reads
@@ -136,16 +139,16 @@ export async function writerPickOverlay(deps: { kv: { get(key: string): Promise<
   const candidates = writerCandidates(settings);
   const heldReasons = new Map<string, string>();
   const offered = deps.held ? (await Promise.all(candidates.map(async (profile) => {
-    const held = await deps.held!(profile).catch(() => true);
+    const held = await bestEffort(deps.log, "writer held check", deps.held!(profile), true);
     if (held) heldReasons.set(profile.key, isZcodeProvider(profile.providerId) ? "zcode_held" : "provider_window_spent");
     return held ? null : profile;
   }))).flatMap((profile) => (profile ? [profile] : [])) : candidates;
   // A key never written reads back undefined, not null: with a null check only, the pick was never asked (live 2026-10-25).
-  let picked = ((await deps.kv.get(key).catch(() => null)) ?? null) as string | null;
+  let picked = ((await deps.kv.get(key)) ?? null) as string | null;
   let by: WriterRouteDecision["by"] = picked === null ? "pick_off" : "kept";
   if (picked === null && offered.length > 1 && deps.jev?.enabled(settings as never)) {
     const task = input.task;
-    const load = deps.load ? await deps.load(offered).catch(() => undefined) : undefined;
+    const load = deps.load ? await bestEffort(deps.log, "writer provider load", deps.load(offered), undefined) : undefined;
     const verdict = await deps.jev.judge(writerModelJudgment, { task: { title: task.display_title ?? task.title, objective: task.objective ?? "", kind: task.kind ?? null, area: task.area ?? null,
       risk: task.risk ?? null, owns_paths: task.owns_paths, expected_outputs: task.expected_outputs, acceptance: task.acceptance ?? [] }, candidates: offered, ...(load ? { load } : {}) },
       { projectId: input.projectId, runId: input.runId, subject: input.taskId, settings: settings as never }).catch(() => null);

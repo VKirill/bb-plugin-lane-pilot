@@ -21,7 +21,7 @@ const REASON_TEXT: Record<ChatAgentReason, string> = {
 };
 
 async function readSelection(ctx: Pick<ServerCore, "bb">, key: string): Promise<NativeSelection | null> {
-  const raw = await ctx.bb.storage.kv.get(key).catch(() => null);
+  const raw = await ctx.bb.storage.kv.get(key);
   const parsed = raw ? nativeSelectionSchema.safeParse(raw) : null;
   return parsed?.success ? parsed.data : null;
 }

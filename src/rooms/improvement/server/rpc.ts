@@ -96,7 +96,7 @@ export function improvementRpc(deps: ImprovementDeps) {
       const set = sets[0] ?? null;
 
       const exam = runLiveExam(POLICY, await loadLiveExam(kv as never));
-      const stored = (await kv.get(EXAM_RESULT_KEY).catch(() => null)) as StoredExam | null;
+      const stored = (await kv.get(EXAM_RESULT_KEY)) as StoredExam | null;
       const waiting = collectOwnerWaiting(db, now);
       const deferrals = deps.deferrals.list({});
 

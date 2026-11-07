@@ -9,7 +9,9 @@ type Kv = { get(key: string): Promise<unknown>; set(key: string, value: unknown)
 export type ConveyorState = { on: boolean; since: string | null; reason: string | null };
 
 export async function conveyorState(kv: Kv): Promise<ConveyorState> {
-  const stored = await kv.get(CONVEYOR_KEY).catch(() => null) as { at?: number; reason?: string | null } | null;
+  // A failed read must not report the conveyor on: propagating stops the caller instead of
+  // silently restarting work the owner switched off.
+  const stored = await kv.get(CONVEYOR_KEY) as { at?: number; reason?: string | null } | undefined;
   return stored?.at ? { on: false, since: new Date(stored.at).toISOString(), reason: stored.reason ?? null } : { on: true, since: null, reason: null };
 }
 

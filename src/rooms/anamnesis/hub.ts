@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { bestEffort } from "@lane-pilot/kit";
 import {
   collectScanResponseSchema, notesReadResponseSchema, notesWriteResponseSchema, responseSchemas,
   type AnamnesisRequest, type HostRequest, type HostSource, type NotesReadResponse, type OpName, type ResponseOf,
@@ -25,6 +26,8 @@ export type HubDeps = {
   kv: { get<T>(key: string): Promise<T | null | undefined>; set(key: string, value: never): Promise<unknown> };
   /** The owner tables of the plugin base (`openOwnerStore` over `data.db`). */
   store: Store;
+  /** Where a swallowed best-effort failure lands (the notes sync that must never fail its operation). */
+  log?: (message: string) => void;
 };
 
 export const CONFIG_KEY = "anamnesis:config";
@@ -48,6 +51,7 @@ const CALL_TIMEOUT_MS = 60_000;
 
 export function createHub(deps: HubDeps) {
   const store = deps.store;
+  const log = deps.log ?? (() => {});
 
   async function config(): Promise<AnamnesisConfig> {
     const stored = configSchema.safeParse(await deps.kv.get(CONFIG_KEY));
@@ -88,7 +92,7 @@ export function createHub(deps: HubDeps) {
     const scans = await askHost(hostRequest, (raw) => collectScanResponseSchema.parse(raw).sources, timeoutMs);
     // ponytail: a scan's raw records go over one RPC (hundreds at most); if a source ever outgrows that, page it.
     const sources = storeCollectResults(store, request as CollectRequest, scans as SourceScanResult[]);
-    if (request.mode === "run") await notes({ op: "notes", sync: true }, timeoutMs).catch(() => undefined);
+    if (request.mode === "run") await bestEffort(log, "anamnesis notes sync after collect", notes({ op: "notes", sync: true }, timeoutMs), undefined);
     return { mode: request.mode, sources } satisfies ResponseOf<"collect">;
   }
 
@@ -143,8 +147,8 @@ export function createHub(deps: HubDeps) {
     if (op.op === "notes") return notes(op, timeoutMs) as Promise<ResponseOf<O>>;
     const raw = await executeRequest(op, store);
     // The portrait files live on the host: a write is followed by a notes sync there, like the file store's syncNotes was.
-    // It never fails the operation — a problem lands in the `notes` answer and is retried at the next change.
-    if (writesNotes(op)) await notes({ op: "notes", sync: true }, timeoutMs).catch(() => undefined);
+    // It never fails the operation — a problem is logged, lands in the `notes` answer and is retried at the next change.
+    if (writesNotes(op)) await bestEffort(log, "anamnesis notes sync after write", notes({ op: "notes", sync: true }, timeoutMs), undefined);
     return responseSchemas[op.op as OpName].parse(raw) as ResponseOf<O>;
   }
 

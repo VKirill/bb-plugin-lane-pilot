@@ -15,9 +15,9 @@ function isOwnerLocale(value: unknown): value is OwnerLocale {
 
 /** The owner's explicit ru/en choice, else the locale the UI last resolved (Auto); null when neither is known yet. */
 export async function knownOwnerLocale(bb: { storage: { kv: { get: (key: string) => Promise<unknown> } } }): Promise<OwnerLocale | null> {
-  const stored = await bb.storage.kv.get(OWNER_LOCALE_PREFERENCE_KEY).catch(() => null);
+  const stored = await bb.storage.kv.get(OWNER_LOCALE_PREFERENCE_KEY);
   if (isOwnerLocale(stored)) return stored;
-  const resolved = await bb.storage.kv.get(OWNER_RESOLVED_LOCALE_KEY).catch(() => null);
+  const resolved = await bb.storage.kv.get(OWNER_RESOLVED_LOCALE_KEY);
   return isOwnerLocale(resolved) ? resolved : null;
 }
 

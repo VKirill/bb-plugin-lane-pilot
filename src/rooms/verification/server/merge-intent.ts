@@ -120,8 +120,8 @@ export function createMergeIntentRecovery(ctx:ServerCore, services:Services) {
   async function recoverMergeIntents(options:{ now?:number; graceMs?:number } = {}):Promise<string[]> {
     const accepted:string[] = [];
     const now = options.now ?? Date.now();
-    for (const key of await kv.list(MERGE_INTENT_PREFIX).catch(() => [] as string[])) {
-      const intent = await kv.get(key).catch(() => null) as MergeIntent | null;
+    for (const key of await kv.list(MERGE_INTENT_PREFIX)) {
+      const intent = await kv.get(key) as MergeIntent | null;
       if (!intent || typeof intent !== "object" || !intent.attemptId) { await kv.delete(key).catch(() => undefined); continue; }
       try {
         const attempt = getAttempt(db, intent.attemptId);

@@ -60,7 +60,8 @@ export async function hashPath(path: string): Promise<{
 export async function sha256FileOrNull(path: string): Promise<string | null> {
   try {
     return sha256Buffer(await readFile(path));
-  } catch {
-    return null;
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException | null)?.code === "ENOENT") return null;
+    throw cause;
   }
 }

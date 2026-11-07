@@ -10,7 +10,7 @@ export type WriterPairPin = { providerId: string; model: string; reason: string;
 export const writerPinKey = (runId: string, taskId: string) => `writer-pair:${runId}:${taskId}`;
 
 export async function loadWriterPin(kv: Kv, runId: string, taskId: string): Promise<WriterPairPin | null> {
-  const row = await kv.get(writerPinKey(runId, taskId)).catch(() => null) as Partial<WriterPairPin> | null;
+  const row = await kv.get(writerPinKey(runId, taskId)) as Partial<WriterPairPin> | null;
   return row && typeof row.providerId === "string" && row.providerId && typeof row.model === "string" && row.model
     ? { providerId: row.providerId, model: row.model, reason: typeof row.reason === "string" ? row.reason : "", at: typeof row.at === "number" ? row.at : 0 }
     : null;

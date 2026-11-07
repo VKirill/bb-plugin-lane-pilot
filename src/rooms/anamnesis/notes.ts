@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { readTextOrNullSync } from "@lane-pilot/kit";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { NotesResponse } from "./ops";
@@ -95,7 +96,7 @@ function order(file: NoteFile, records: AnamnesisRecord[]): AnamnesisRecord[] {
 }
 
 const fileOfKind = (kind: Kind): NoteFile | undefined => NOTE_FILES.find((file) => file.kinds.includes(kind));
-const read = (path: string): string | null => { try { return readFileSync(path, "utf8"); } catch { return null; } };
+const read = (path: string): string | null => readTextOrNullSync(path);
 const withoutUpdated = (text: string): string => text.replace(/^updated: .*$/m, "");
 
 function allRecords(store: Store): AnamnesisRecord[] {

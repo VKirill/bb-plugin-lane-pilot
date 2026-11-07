@@ -11,8 +11,8 @@ export const PROCESS_KEY = "lp.process";
 /** At start: an old beat is an outage on record, named by how the last run ended, and the risen plugin says so on «Ждут владельца». */
 export async function recordStartGap(ctx: Pick<ServerCore, "bb" | "db" | "log">, now = Date.now()) {
   const kv = ctx.bb.storage.kv;
-  const last = await kv.get(BEAT_KEY).catch(() => null) as number | null;
-  const stop = await kv.get(STOP_KEY).catch(() => null) as { reason?: string; at?: number } | null;
+  const last = await kv.get(BEAT_KEY) as number | null;
+  const stop = await kv.get(STOP_KEY) as { reason?: string; at?: number } | null;
   const outage = gapOutage(typeof last === "number" ? last : null, now);
   if (outage) {
     const cause = stop?.reason && typeof stop.at === "number" && Math.abs(stop.at - outage.fromAt) < 10 * 60_000 ? stop.reason : "остановился без предупреждения: сбой, зависание или машина выключилась";

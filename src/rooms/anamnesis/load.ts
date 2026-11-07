@@ -8,6 +8,7 @@ import { HOST_SOURCES } from "./ops";
 import { maskPii } from "./pii";
 import { scanOwnerMessages, type OwnerMessage, type ThreadsPort } from "./owner-messages";
 import { monthOf, spread } from "./sources/common";
+import { bestEffort } from "@lane-pilot/kit";
 
 /**
  * The first load (A3). It reads everything the owner's machines and BB already hold, makes a draft anamnesis and shows the owner
@@ -38,6 +39,8 @@ export type LoadDeps = {
   /** Asks Jev about masked fragments; null for one it could not judge. Absent: no classification possible. */
   judge?(texts: string[], signal?: AbortSignal): Promise<Array<FragmentDecision | null>>;
   now(): number;
+  /** Where a swallowed best-effort failure lands; absent in tests. */
+  log?: (message: string) => void;
 };
 
 export type LoadOptions = {
@@ -62,6 +65,7 @@ export type LoadReport = {
 
 export async function loadAnamnesis(deps: LoadDeps, options: LoadOptions): Promise<LoadReport> {
   const until = deps.now();
+  const log = deps.log ?? (() => {});
   const from = options.since ?? until - DEFAULT_LOOKBACK_DAYS * DAY;
   const status = await deps.hub.ask({ op: "status" });
   const enabled = new Map(status.sources.map((s) => [s.source as Source, s.enabled]));
@@ -77,7 +81,7 @@ export async function loadAnamnesis(deps: LoadDeps, options: LoadOptions): Promi
     cost: { jevMessages: 0, estimatedTokens: 0, perMessage: JEV_TOKENS_PER_MESSAGE, note: "" }, review: "" };
 
   const hubRecords: Array<Record<string, unknown>> = [];
-  const names = await deps.projectNames().catch(() => new Map<string, string>());
+  const names = await bestEffort(log, "anamnesis project names", deps.projectNames(), new Map<string, string>());
   const nameOf = (projectId: string): string => names.get(projectId) ?? projectId;
 
   /* ---- BB messages ---- */
@@ -163,7 +167,7 @@ export async function loadAnamnesis(deps: LoadDeps, options: LoadOptions): Promi
     ? "Plan only: nothing was stored. Run with --run to store drafts, then review with: bb lane-pilot anamnesis review"
     : "Drafts stored. Nothing reaches any agent until you confirm records; review with: bb lane-pilot anamnesis review";
   // A plan leaves no trace on the machine; only a run keeps its report.
-  if (options.mode === "run") await deps.hub.ask({ op: "load_report", mode: "run", report: report as unknown as Record<string, unknown> }).catch(() => undefined);
+  if (options.mode === "run") await bestEffort(log, "anamnesis load report upload", deps.hub.ask({ op: "load_report", mode: "run", report: report as unknown as Record<string, unknown> }), undefined);
   return report;
 }
 

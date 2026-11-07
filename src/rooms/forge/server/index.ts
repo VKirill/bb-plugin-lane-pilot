@@ -24,7 +24,7 @@ const RECEIPTS = "lp.forge.receipts";
 export function mountForge(ctx: ServerCore, services: Services): void {
   const { db, bb } = ctx;
   const host = () => bb.hosts.experimental_client({ contract: hostContract });
-  const receipts = async () => ((await bb.storage.kv.get(RECEIPTS).catch(() => null)) as Record<string, ForgeReceipt> | null) ?? {};
+  const receipts = async () => ((await bb.storage.kv.get(RECEIPTS)) as Record<string, ForgeReceipt> | null) ?? {};
   const keyOf = (projectId: string, kind: ForgeKind, name: string) => `${projectId}:${kind}:${name}`;
   const runOf = async (threadId: string, ctxMetadata?: unknown) => {
     // ctx.experimental_vkPluginMetadata carries the same row on VK cores; the SDK read is the upstream fallback.

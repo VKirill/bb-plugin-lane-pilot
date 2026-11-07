@@ -25,7 +25,7 @@ export async function saveReassignRequest(kv: Kv, attemptId: string, request: Re
 
 /** The request left for a stopped writer, taken once: the writer loop reads it when that attempt ends. */
 export async function takeReassignRequest(kv: Kv, attemptId: string): Promise<ReassignRequest | null> {
-  const value = await kv.get(requestKey(attemptId)).catch(() => null);
+  const value = await kv.get(requestKey(attemptId));
   if (!value || typeof value !== "object") return null;
   await kv.set(requestKey(attemptId), null as never);
   return value as ReassignRequest;

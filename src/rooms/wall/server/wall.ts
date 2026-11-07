@@ -52,7 +52,7 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
   const { bb, db, host } = ctx;
 
   const repairConfig = async (): Promise<SelfRepairConfig> => {
-    const raw = await bb.storage.kv.get(SELF_REPAIR_CONFIG_KEY).catch(() => null);
+    const raw = await bb.storage.kv.get(SELF_REPAIR_CONFIG_KEY);
     const merged = { ...SELF_REPAIR_DEFAULTS, ...(raw && typeof raw === "object" ? raw as Partial<SelfRepairConfig> : {}) };
     if (!merged.projectId || !merged.environmentId) {
       const discovered = await lanePilotProjectOrNotice(db, bb, host);
@@ -231,7 +231,7 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
     },
     release: {
       drill: async () => {
-        const raw = await bb.storage.kv.get(DRILL_KEY).catch(() => null) as Record<string, DrillOutcome> | null;
+        const raw = await bb.storage.kv.get(DRILL_KEY) as Record<string, DrillOutcome> | null;
         const outcomes = Object.values(raw ?? {});
         if (!outcomes.length) return null;
         const newest = outcomes.reduce((a, b) => (b.at > a.at ? b : a));

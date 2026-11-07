@@ -38,7 +38,7 @@ export const DEFAULT_CONFIG: LearningConfig = configSchema.parse({});
 type Kv = { get<T>(key: string): Promise<T | null | undefined>; set(key: string, value: never): Promise<unknown> };
 
 export async function loadConfig(kv: Pick<Kv, "get">): Promise<LearningConfig> {
-  const stored = configSchema.safeParse((await kv.get(CONFIG_KEY).catch(() => null)) ?? {});
+  const stored = configSchema.safeParse((await kv.get(CONFIG_KEY)) ?? {});
   return stored.success ? stored.data : DEFAULT_CONFIG;
 }
 

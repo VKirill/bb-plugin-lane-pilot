@@ -205,7 +205,7 @@ function parseDiagnostics(raw: unknown): TokenUsageDiagnostics {
 }
 
 async function resetCursorsOnce(ctx: { bb: BbPluginApi; db: LanePilotDatabase }, key: string): Promise<void> {
-  const done = await ctx.bb.storage.kv.get(key).catch(() => null);
+  const done = await ctx.bb.storage.kv.get(key);
   if (done) return;
   ctx.db.transaction(() => {
     ctx.db.prepare(`DELETE FROM lane_pilot_token_cursor`).run();
@@ -473,9 +473,9 @@ export async function queryTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatab
     ? ctx.db.prepare(`SELECT DISTINCT substr(day,1,7) AS month FROM lane_pilot_token_daily WHERE project_id=? ORDER BY month DESC`).all(projectId)
     : ctx.db.prepare(`SELECT DISTINCT substr(day,1,7) AS month FROM lane_pilot_token_daily ORDER BY month DESC`).all()
   ) as Array<{ month: string }>;
-  const lastSync = await ctx.bb.storage.kv.get(TOKEN_USAGE_LAST_SYNC_KEY).catch(() => null);
+  const lastSync = await ctx.bb.storage.kv.get(TOKEN_USAGE_LAST_SYNC_KEY);
   const lastSyncAt = typeof lastSync === "number" && Number.isFinite(lastSync) ? lastSync : null;
-  const diagnostics = parseDiagnostics(await ctx.bb.storage.kv.get(TOKEN_USAGE_DIAGNOSTICS_KEY).catch(() => null));
+  const diagnostics = parseDiagnostics(await ctx.bb.storage.kv.get(TOKEN_USAGE_DIAGNOSTICS_KEY));
   const seen = (projectId
     ? ctx.db.prepare(`SELECT DISTINCT provider_id FROM lane_pilot_token_cursor WHERE provider_id!='' AND project_id=?`).all(projectId)
     : ctx.db.prepare(`SELECT DISTINCT provider_id FROM lane_pilot_token_cursor WHERE provider_id!=''`).all()) as Array<{ provider_id: string }>;

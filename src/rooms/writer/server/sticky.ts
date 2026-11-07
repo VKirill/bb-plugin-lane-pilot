@@ -55,7 +55,7 @@ export async function saveFollowUp(kv: Kv, attemptId: string, since: number): Pr
 }
 
 export async function loadFollowUp(kv: Kv, attemptId: string): Promise<number | null> {
-  const value = await kv.get(followUpKey(attemptId)).catch(() => null);
+  const value = await kv.get(followUpKey(attemptId));
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
@@ -83,7 +83,7 @@ export type AreaRecord = {
 };
 
 export async function loadArea(kv: Kv, projectId: string, area: string): Promise<AreaRecord | null> {
-  const value = await kv.get(areaKey(projectId, area)).catch(() => null);
+  const value = await kv.get(areaKey(projectId, area));
   return value && typeof value === "object" && Array.isArray((value as AreaRecord).tasks) ? value as AreaRecord : null;
 }
 
@@ -146,7 +146,7 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
   async function threadUsable(attempt: { thread_id: string | null; workspace_path: string | null; environment_id: string | null }, inSession = false): Promise<boolean> {
     if (!attempt.thread_id || !attempt.workspace_path) return false;
     // A thread a turn could not be sent to (its chat section archived or moving: HTTP 409) takes no more turns; the retry spawns.
-    if (await bb.storage.kv.get(deadKey(attempt.thread_id)).catch(() => null)) return false;
+    if (await bb.storage.kv.get(deadKey(attempt.thread_id))) return false;
     if (!inSession && threadTurns(attempt.thread_id) >= STICKY_MAX_TURNS) return false;
     const thread = await bb.sdk.threads.get({ threadId:attempt.thread_id }).catch(() => null);
     if (stringAt(thread, "status") !== "idle" || (thread as { archivedAt?: unknown } | null)?.archivedAt) return false;

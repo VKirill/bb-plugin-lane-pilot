@@ -85,7 +85,7 @@ export function createStability(ctx:ServerCore, services:Services) {
    * into the same fault until three of them failed again. A breaker of another version is not restored (a fix shipped).
    */
   async function restoreBreakers():Promise<string[]> {
-    const stored = await bb.storage.kv.get(BREAKERS_KEY).catch(() => null);
+    const stored = await bb.storage.kv.get(BREAKERS_KEY);
     if (!stored || typeof stored !== "object" || Array.isArray(stored)) return [];
     const restored:string[] = [];
     for (const [projectId, row] of Object.entries(stored as Record<string, Partial<Breaker>>)) {
@@ -99,7 +99,7 @@ export function createStability(ctx:ServerCore, services:Services) {
   }
 
   async function loadParked():Promise<ParkedTask[]> {
-    const stored = await bb.storage.kv.get(PARKED_KEY).catch(() => null);
+    const stored = await bb.storage.kv.get(PARKED_KEY);
     return Array.isArray(stored) ? stored as ParkedTask[] : [];
   }
   async function saveParked(list:ParkedTask[]) { await bb.storage.kv.set(PARKED_KEY, list); }
@@ -117,7 +117,7 @@ export function createStability(ctx:ServerCore, services:Services) {
    * budget instead of three (audit round 3, B5). The memo outlives the row for a day.
    */
   async function loadRedrives():Promise<Record<string, { redrives:number; since?:number; at:number }>> {
-    const stored = await bb.storage.kv.get(REDRIVES_KEY).catch(() => null);
+    const stored = await bb.storage.kv.get(REDRIVES_KEY);
     return stored && typeof stored === "object" && !Array.isArray(stored) ? stored as Record<string, { redrives:number; since?:number; at:number }> : {};
   }
   async function rememberRedrive(row:ParkedTask, redrives:number, now:number) {

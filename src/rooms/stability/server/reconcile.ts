@@ -50,7 +50,7 @@ export function createReconcile(ctx: ServerCore, services: Services) {
     // Only an attempt that began spawning a holder can have lost one. Scanning for every fresh attempt read the
     // metadata of every thread of the project: a minute per dispatch on SelfyStudio (1000+ threads), then
     // attempt_worktree_holder_ambiguous:page_cap for every task once the project passed 1000 (live 2026-10-04).
-    if (!await bb.storage.kv.get(holderSpawnKey(attempt.id)).catch(() => null)) return null;
+    if (!await bb.storage.kv.get(holderSpawnKey(attempt.id))) return null;
     const cursor = reconcileCursor(db, attempt.id, "holder");
     const result = await reconcileHolder(threadReconcilePort(projectId), {
       lanePilotRunId:attempt.run_id,

@@ -105,8 +105,8 @@ export function createRegression(ctx: ServerCore, services: Services) {
   }
   /** Removes the worktrees a stopped pass left; a pass is bounded by four hours, so one older than six is nobody's. */
   async function sweepLeftovers(now: number): Promise<void> {
-    for (const key of await ctx.bb.storage.kv.list(WORKTREE_KEY).catch(() => [] as string[])) {
-      const entry = await ctx.bb.storage.kv.get(key).catch(() => null) as { hostId?: string; basePath?: string; at?: number } | null;
+    for (const key of await ctx.bb.storage.kv.list(WORKTREE_KEY)) {
+      const entry = await ctx.bb.storage.kv.get(key) as { hostId?: string; basePath?: string; at?: number } | null;
       if (!entry?.hostId || !entry.basePath || now - (entry.at ?? 0) < LEFTOVER_AFTER_MS) continue;
       const path = key.slice(WORKTREE_KEY.length);
       await dropped({ hostId: entry.hostId, basePath: entry.basePath } as RollbackTarget, path);

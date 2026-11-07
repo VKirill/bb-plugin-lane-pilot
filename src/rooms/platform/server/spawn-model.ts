@@ -88,7 +88,7 @@ const providerFolderBlockKey = (hostId: string | null, providerId: string) => `p
 
 /** The live block for this machine+provider, or null when none was recorded or it expired. */
 export async function readProviderFolderBlock(kv: { get(key: string): Promise<unknown> }, hostId: string | null, providerId: string, ttlMs = PROVIDER_FOLDER_BLOCK_TTL_MS): Promise<ProviderFolderBlock | null> {
-  const block = await kv.get(providerFolderBlockKey(hostId, providerId)).catch(() => null) as ProviderFolderBlock | null;
+  const block = await kv.get(providerFolderBlockKey(hostId, providerId)) as ProviderFolderBlock | null;
   return block && Date.now() - block.at < ttlMs ? block : null;
 }
 

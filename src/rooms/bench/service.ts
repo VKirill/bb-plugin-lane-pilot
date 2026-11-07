@@ -58,13 +58,13 @@ export function createBench(deps: BenchDeps) {
 
   /** `bench.budget_tokens` / `bench.budget_hours`: the cap of a series, in tokens and hours (owner decision 2026-10-22: a fixed cap, a cheap writer first). */
   async function settings(): Promise<BenchSettings> {
-    const stored = await deps.kv.get(CONFIG_KEY).catch(() => null) as Partial<BenchSettings> | null;
+    const stored = await deps.kv.get(CONFIG_KEY) as Partial<BenchSettings> | null;
     // A global row (`bench.*`, written by the screen and by `bench config`) wins over the old key-value record.
     const own = hubFields(deps.db, "bench") as Partial<BenchSettings>;
     return { budgetTokens: own.budgetTokens ?? stored?.budgetTokens ?? DEFAULT_BUDGET_TOKENS, budgetHours: own.budgetHours ?? stored?.budgetHours ?? DEFAULT_BUDGET_HOURS };
   }
   async function placement(): Promise<BenchPlacement> {
-    const stored = await deps.kv.get(CONFIG_KEY).catch(() => null) as Partial<BenchPlacement> | null;
+    const stored = await deps.kv.get(CONFIG_KEY) as Partial<BenchPlacement> | null;
     const hostId = typeof stored?.hostId === "string" && stored.hostId.trim() ? stored.hostId.trim() : null;
     const noise = stored?.noiseRepeats;
     const noiseRepeats = Number.isInteger(noise) && (noise as number) >= 0 && (noise as number) <= 10 ? noise as number : 0;
@@ -74,7 +74,7 @@ export function createBench(deps: BenchDeps) {
     return { hostId, noiseRepeats, reposRoot };
   }
   async function writePlacement(patch: Partial<BenchPlacement>): Promise<void> {
-    const prev = await deps.kv.get(CONFIG_KEY).catch(() => null) as Record<string, unknown> | null;
+    const prev = await deps.kv.get(CONFIG_KEY) as Record<string, unknown> | null;
     await deps.kv.set(CONFIG_KEY, { ...(prev ?? {}), ...patch } as never);
   }
   async function configure(patch: Partial<BenchSettings> & Partial<BenchPlacement>): Promise<BenchSettings> {
@@ -122,7 +122,7 @@ export function createBench(deps: BenchDeps) {
   }
 
   async function lastBuild(version: string): Promise<BuildReport | null> {
-    return await deps.kv.get(BUILD_KEY(version)).catch(() => null) as BuildReport | null;
+    return await deps.kv.get(BUILD_KEY(version)) as BuildReport | null;
   }
 
   function sweep() {

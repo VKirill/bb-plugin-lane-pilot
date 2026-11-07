@@ -1,4 +1,4 @@
-import { retryBudgetReason, spendRetryBudget } from "../retry-budget";
+import { TASK_ATTEMPT_BUDGET, retryBudgetReason, spendRetryBudget } from "../retry-budget";
 import { retrySafetyStop, taskLimitStop, TASK_WALL_CLOCK_MIN, VERIFY_MAX_PASSES } from "./retry-safety";
 import { pilotOf, pilotUnderWall, runTasks } from "../../pilot";
 import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop, tokenUsageFromEvent, type RunBudget } from "@lane-pilot/resilience";
@@ -250,7 +250,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
   async function writerLoad(profiles:readonly WriterProfile[], hostId:string, settings:Record<string, unknown>, projectId:string):Promise<Record<string, WriterLoad>> {
     // ponytail: counts only tasks whose writer Jev picked (a task on the project's own writer has no kept pick); count attempts by writer pair if that skews the spread.
     const running = new Map<string, number>();
-    const picks = await Promise.all([...services.activeWriterTasks].map((key) => bb.storage.kv.get(`writer-pick:${key}`).catch(() => null)));
+    const picks = await Promise.all([...services.activeWriterTasks].map((key) => bb.storage.kv.get(`writer-pick:${key}`)));
     for (const picked of picks) {
       const provider = typeof picked === "string" && picked ? WRITER_PROFILES.find((row) => row.key === picked)?.providerId : undefined;
       if (provider) running.set(provider, (running.get(provider) ?? 0) + 1);
@@ -619,7 +619,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       liveFolder = await services.isLiveFolder(input.runId, input.config.hostId, runFolder);
       // An attempt resumed on its writer's thread (the PM's answer, a reload) goes on under the backup it began with.
       if (liveFolder && writerThreadId) {
-        const saved = await bb.storage.kv.get(liveBackupKey(attemptId)).catch(() => null);
+        const saved = await bb.storage.kv.get(liveBackupKey(attemptId));
         if (typeof saved === "string") liveBackupId = saved;
       }
     };
@@ -920,7 +920,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           if (classCooldown > 0) await new Promise((resolve) => setTimeout(resolve, classCooldown));
           // The task's overall budget of writers, kept across reloads and restarts (retry-budget.ts).
           // A reassigned task's new writer spends no attempt of the task's budget (the PM asked for it).
-          const spent = reassigned ? null : await spendRetryBudget(bb.storage.kv as never, input.runId, input.taskId, "attempt");
+          const spent = reassigned ? null : await spendRetryBudget(bb.storage.kv as never, input.runId, input.taskId, "attempt", Date.now(), TASK_ATTEMPT_BUDGET, ctx.log);
           if (spent && !spent.ok) {
             const reason = retryBudgetReason(input.taskId, spent.record);
             transitionAttempt(db, attemptId, "blocked", { reason });
@@ -1336,7 +1336,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           // A file the contract expects and the writer did not make is the task's problem, not the model's limit:
           // another model meets the same contract (GLM spent 138 min per such task on 2026-10-03).
           if (typeof failure.reason === "string" && failure.reason.startsWith("missing expected_outputs")) break;
-          const fallbackSpent = await spendRetryBudget(bb.storage.kv as never, input.runId, input.taskId, "fallback");
+          const fallbackSpent = await spendRetryBudget(bb.storage.kv as never, input.runId, input.taskId, "fallback", Date.now(), TASK_ATTEMPT_BUDGET, ctx.log);
           if (!fallbackSpent.ok) {
             // The attempt that started the chain keeps the failure it ended with; the budget's reason goes to the log.
             ctx.log(`writer ${input.taskId}: ${retryBudgetReason(input.taskId, fallbackSpent.record)}`);

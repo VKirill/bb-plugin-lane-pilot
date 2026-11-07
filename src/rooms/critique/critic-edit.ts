@@ -69,13 +69,13 @@ const STORE_KEY = "lp.critic.edit.store";
 
 /** The stored prompt of a stage, or null. */
 export async function criticPromptOf(kv: KvLike, stage: string): Promise<string | null> {
-  const store = readStore(await kv.get(STORE_KEY).catch(() => null));
+  const store = readStore(await kv.get(STORE_KEY));
   return store.prompts[stage]?.current?.text ?? null;
 }
 
 /** Roll a stage's prompt back one version; returns the prompt now current, or null when nothing is stored. */
 export async function criticPromptRollback(kv: KvLike, stage: string, now = Date.now()): Promise<string | null> {
-  const store = readStore(await kv.get(STORE_KEY).catch(() => null));
+  const store = readStore(await kv.get(STORE_KEY));
   const entry = store.prompts[stage];
   if (!entry?.current) return null;
   const prev = entry.history.filter((row) => row.replacedBy === entry.current!.version).at(-1) ?? null;
@@ -103,7 +103,7 @@ export async function criticEditTrialSettle(input: {
   now?: number;
 }): Promise<CriticEditTrialOutcome> {
   const now = input.now ?? Date.now();
-  const store = readStore(await input.kv.get(STORE_KEY).catch(() => null));
+  const store = readStore(await input.kv.get(STORE_KEY));
   if (!input.verdict) return { action: "wait", reason: "no bench comparison yet" };
   if (input.verdict.passed) {
     const entry = store.prompts[input.stage] ?? { current: null, history: [] };
@@ -121,6 +121,6 @@ export async function criticEditTrialSettle(input: {
 
 /** Whether this proposal was already retired for the stage (a candidate once rejected is not tried again). */
 export async function criticEditWasRejected(kv: KvLike, stage: string, proposal: string): Promise<boolean> {
-  const store = readStore(await kv.get(STORE_KEY).catch(() => null));
+  const store = readStore(await kv.get(STORE_KEY));
   return store.rejected.some((row) => row.stage === stage && row.proposal === proposal);
 }

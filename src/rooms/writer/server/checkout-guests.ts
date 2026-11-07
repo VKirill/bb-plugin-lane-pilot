@@ -30,7 +30,7 @@ export function activeRunFor(db: LanePilotDatabase, path: string): { id: string;
 }
 
 export async function listGuests(kv: Kv, path: string, now = Date.now()): Promise<Guest[]> {
-  const value = await kv.get(GUESTS(path)).catch(() => null);
+  const value = await kv.get(GUESTS(path));
   return (Array.isArray(value) ? value as Guest[] : []).filter((row) => row && typeof row.threadId === "string" && now - row.at < GUEST_TTL_MS);
 }
 
@@ -60,7 +60,7 @@ export async function askGuestsToCommit(bb: BbPluginApi, path: string, files: st
   for (const guest of await listGuests(bb.storage.kv, path, now)) {
     const thread = await bb.sdk.threads.get({ threadId:guest.threadId }).catch(() => null) as { archivedAt?: unknown } | null;
     if (!thread || thread.archivedAt) continue;
-    const last = await bb.storage.kv.get(ASKED(guest.threadId, path)).catch(() => null);
+    const last = await bb.storage.kv.get(ASKED(guest.threadId, path));
     if (typeof last === "number" && now - last < ASK_EVERY_MS) { asked.push(guest.threadId); continue; }
     await bb.storage.kv.set(ASKED(guest.threadId, path), now as never);
     const sent = await sendServiceMessage(bb, { threadId:guest.threadId, senderThreadId:pmThreadId,

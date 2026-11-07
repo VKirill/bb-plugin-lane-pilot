@@ -26,7 +26,7 @@ export async function backtest(db: LanePilotDatabase, kv: Kv, now: number = Date
     await predictDecision(db, id, undefined, now); // ponytail: one Jev call per row; judgeMany when the history is thousands, not dozens
     answerDecision(db, id, { option: decision, text }, "backtest", at);
   };
-  const words = ((await kv.get(TASK_WORDS_KEY).catch(() => null)) as Record<string, TaskWord[]> | null) ?? {};
+  const words = ((await kv.get(TASK_WORDS_KEY)) as Record<string, TaskWord[]> | null) ?? {};
   for (const [key, list] of Object.entries(words)) {
     const word = [...list].reverse().find((row) => row.turn === "land");
     const cut = key.indexOf(":");

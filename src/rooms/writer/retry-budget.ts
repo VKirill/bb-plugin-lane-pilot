@@ -24,20 +24,23 @@ export const retryBudgetReason = (taskId:string, record:RetryBudgetRecord, limit
   `retry_budget_exhausted: ${taskId} spent ${record.spent} of ${limit} writer attempts (${record.attempts} on the primary writer, ${record.fallbacks} on the fallback chain) across reloads and restarts; `
   + "read the failures, fix the plan or the contract, and dispatch it again as a new task";
 
-export async function loadRetryBudget(kv:Pick<Kv, "get">, runId:string, taskId:string):Promise<RetryBudgetRecord> {
-  return clean(await kv.get(retryBudgetKey(runId, taskId)).catch(() => null));
+export async function loadRetryBudget(kv:Pick<Kv, "get">, runId:string, taskId:string, log?: (message:string) => void):Promise<RetryBudgetRecord> {
+  // A store that cannot be read counts as an unspent budget — the budget stops runaway retries, a broken
+  // store must never stop the task itself (tests/retry-budget.test.ts). The miss is named and logged.
+  try { return clean(await kv.get(retryBudgetKey(runId, taskId))); }
+  catch (cause) { log?.(`retry budget ${runId}/${taskId} unreadable, counted as unspent: ${cause instanceof Error ? cause.message : String(cause)}`); return clean(null); }
 }
 
 /**
  * Spends one unit before a fresh writer starts. `ok` is false when the budget was already spent: nothing is written then,
  * and the caller ends the task with `retryBudgetReason`. A store that cannot be read or written never stops a task.
  */
-export async function spendRetryBudget(kv:Kv, runId:string, taskId:string, kind:RetryBudgetKind, now = Date.now(), limit = TASK_ATTEMPT_BUDGET):
+export async function spendRetryBudget(kv:Kv, runId:string, taskId:string, kind:RetryBudgetKind, now = Date.now(), limit = TASK_ATTEMPT_BUDGET, log?: (message:string) => void):
   Promise<{ ok:boolean; record:RetryBudgetRecord }> {
-  const record = await loadRetryBudget(kv, runId, taskId);
+  const record = await loadRetryBudget(kv, runId, taskId, log);
   if (record.spent >= limit) return { ok:false, record };
   const next:RetryBudgetRecord = { spent:record.spent + 1, attempts:record.attempts + (kind === "attempt" ? 1 : 0),
     fallbacks:record.fallbacks + (kind === "fallback" ? 1 : 0), firstAt:record.firstAt || now, lastAt:now };
-  await kv.set(retryBudgetKey(runId, taskId), next as never).catch(() => undefined);
+  await kv.set(retryBudgetKey(runId, taskId), next as never).catch((cause: unknown) => { log?.(`retry budget ${runId}/${taskId} not written: ${cause instanceof Error ? cause.message : String(cause)}`); });
   return { ok:true, record:next };
 }

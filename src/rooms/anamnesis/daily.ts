@@ -1,5 +1,6 @@
 import { madridDay, madridHour, type ExtractReport, type createExtractConsumer } from "./extract";
 import { lpRunRecords, DEFAULT_LOOKBACK_DAYS } from "./load";
+import { bestEffort } from "@lane-pilot/kit";
 import type { Hub } from "./hub";
 import type { Source } from "./model";
 import { HOST_SOURCES, type CollectResponse, type HostSource, type UpsertSummary } from "./ops";
@@ -28,6 +29,8 @@ export type DailyDeps = {
   projectNames(): Promise<Map<string, string>>;
   lpRuns(): Array<{ id: string; projectId: string; createdAt: number }>;
   now(): number;
+  /** Where a swallowed best-effort failure lands; absent in tests. */
+  log?: (message: string) => void;
 };
 
 export type DailyReport = {
@@ -40,6 +43,7 @@ export type DailyReport = {
 
 export async function dailyPass(deps: DailyDeps, options: { signal?: AbortSignal | undefined } = {}): Promise<DailyReport> {
   const at = deps.now();
+  const log = deps.log ?? (() => {});
   const report: DailyReport = { at, ran: false, hostSources: [], lpRuns: null, messages: null, checkpointAdvanced: false };
   const config = await deps.hub.config();
   if (config.extract !== true) { report.note = "automatic learning is switched off"; return report; }
@@ -56,7 +60,7 @@ export async function dailyPass(deps: DailyDeps, options: { signal?: AbortSignal
 
   /* ---- Lane Pilot's runs ---- */
   if (enabled.get("lp-runs") !== false) {
-    const names = await deps.projectNames().catch(() => new Map<string, string>());
+    const names = await bestEffort(log, "anamnesis project names", deps.projectNames(), new Map<string, string>());
     const { records, runs, projects } = lpRunRecords(deps.lpRuns(), at - DEFAULT_LOOKBACK_DAYS * DAY, at, (id) => names.get(id) ?? id);
     const stored = records.length ? await deps.hub.ask({ op: "upsert", actor: "auto:lp-runs", reason: "daily pass: Lane Pilot runs", records, checkpoint: { source: "lp-runs", at } }) : null;
     report.lpRuns = { runs, projects, stored };
@@ -79,7 +83,7 @@ export async function dailyPass(deps: DailyDeps, options: { signal?: AbortSignal
     }
   }
 
-  await deps.hub.ask({ op: "load_report", mode: "daily", report: report as unknown as Record<string, unknown> }).catch(() => undefined);
+  await bestEffort(log, "anamnesis daily report upload", deps.hub.ask({ op: "load_report", mode: "daily", report: report as unknown as Record<string, unknown> }), undefined);
   return report;
 }
 

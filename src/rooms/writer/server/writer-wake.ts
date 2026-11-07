@@ -54,7 +54,7 @@ export async function noteUnsupportedProvider(ctx: ServerCore, input: {
   providerId: string; pmThreadId: string | null | undefined; taskId: string;
 }): Promise<boolean> {
   const key = unsupportedKey(input.providerId);
-  const told = await ctx.bb.storage.kv.get(key).catch(() => null);
+  const told = await ctx.bb.storage.kv.get(key);
   if (told) return false;
   await ctx.bb.storage.kv.set(key, String(Date.now())).catch(() => undefined);
   ctx.log(`writer ${input.taskId}: provider ${input.providerId} is not supported by this core; the task is blocked`);
@@ -75,7 +75,7 @@ const waitToldKey = (attemptId: string) => `writer-wait-told:${attemptId}`;
  */
 export async function noteWriterWait(ctx: ServerCore, input: { attemptId: string; pmThreadId: string | null | undefined; taskId: string; text: string }): Promise<boolean> {
   const key = waitToldKey(input.attemptId);
-  const told = await ctx.bb.storage.kv.get(key).catch(() => null);
+  const told = await ctx.bb.storage.kv.get(key);
   if (told) return false;
   await ctx.bb.storage.kv.set(key, "1").catch(() => undefined);
   if (!input.pmThreadId) return true;

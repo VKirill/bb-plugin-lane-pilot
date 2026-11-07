@@ -46,7 +46,7 @@ export async function sendCouncilNotice(input: {
   log: (message: string) => void;
 }): Promise<boolean> {
   const key = councilNoticeKey(input.councilId, input.state);
-  if (await input.bb.storage.kv.get(key).catch(() => null)) return false;
+  if (await input.bb.storage.kv.get(key)) return false;
   await input.bb.storage.kv.set(key, Date.now() as never).catch(() => undefined);
   try {
     await input.bb.sdk.threads.send({

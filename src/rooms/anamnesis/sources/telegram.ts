@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { parseJsonOr } from "@lane-pilot/kit";
 import { monthOf, spread, type SourceRecord, type SourceScan } from "./common";
 
 /**
@@ -29,8 +30,7 @@ export function parseHistory(output: string): TgPost[] {
   const posts: TgPost[] = [];
   for (const line of output.split("\n")) {
     if (!line.trim()) continue;
-    let row: Record<string, unknown>;
-    try { row = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
+    const row = parseJsonOr<Record<string, unknown>>(line, {});
     if (typeof row.error === "string") throw new Error(`tg: ${row.error}${typeof row.detail === "string" ? ` (${row.detail.slice(0, 120)})` : ""}`);
     const id = Number(row.id), at = Date.parse(String(row.date ?? "").replace(" ", "T"));
     if (!Number.isInteger(id) || !Number.isFinite(at)) continue;

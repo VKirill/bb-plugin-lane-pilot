@@ -422,7 +422,7 @@ ${ERRANDS_USAGE}` },
           return await runPhaseCli(services.phases, args);
         }
         if (command === "design-metrics") {
-          const all = ((await ctx.bb.storage.kv.get("lp.design.journal").catch(() => null)) as DesignJournalLine[] | null) ?? [];
+          const all = ((await ctx.bb.storage.kv.get("lp.design.journal")) as DesignJournalLine[] | null) ?? [];
           const project = args.includes("--project") ? args[args.indexOf("--project") + 1] : null;
           const lines = project ? all.filter((line) => line.projectId === project) : all;
           const report = { ratios:trainingRatios(lines), conditions:trainedConditions(lines), readiness:readinessWords(lines) };

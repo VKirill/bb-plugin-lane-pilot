@@ -365,7 +365,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         const result = await handlers.cancel_attempt({ attemptId:id, code:"run_closed" }).catch(() => ({ ok:false }));
         (result.ok ? canceled : left).push(id);
       }
-      const parked = await bb.storage.kv.get(PARKED_KEY).catch(() => null);
+      const parked = await bb.storage.kv.get(PARKED_KEY);
       if (Array.isArray(parked)) await bb.storage.kv.set(PARKED_KEY, parked.filter((row) => (row as { runId?:string }).runId !== runId));
       return { ok:left.length === 0, canceled, left };
     },

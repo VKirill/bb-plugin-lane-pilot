@@ -50,7 +50,7 @@ export async function labelJevReceipts(env: VerdictEnv, signature: string, verdi
     delete current.mergeSuggestions[sig];
   }
   if (!signature.startsWith("guard:")) return;
-  const blocks = await env.bb.storage.kv.get(GUARD_BLOCKED_KEY).catch(() => null);
+  const blocks = await env.bb.storage.kv.get(GUARD_BLOCKED_KEY);
   for (const row of (Array.isArray(blocks) ? blocks : []) as GuardBlock[]) {
     if (row.receiptId == null || reasonSignature("guard", `${row.kind} output withheld by the output guard: ${row.reason}`) !== signature) continue;
     const label = positive ? "agree" : verdict === "not-lane-pilot" ? "disagree" : null;

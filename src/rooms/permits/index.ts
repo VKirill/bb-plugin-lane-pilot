@@ -41,8 +41,8 @@ function attemptForCwd(db: ServerCore["db"], hostId: string, cwd: string, open: 
 export function mountPermits(ctx: ServerCore): void {
   const { db, bb } = ctx;
   const host = () => bb.hosts.experimental_client({ contract: hostContract });
-  const sent = async () => new Set(((await bb.storage.kv.get(SENT).catch(() => null)) as string[] | null) ?? []);
-  const routes = async () => ((await bb.storage.kv.get(ROUTES).catch(() => null)) as Record<string, string> | null) ?? {};
+  const sent = async () => new Set(((await bb.storage.kv.get(SENT)) as string[] | null) ?? []);
+  const routes = async () => ((await bb.storage.kv.get(ROUTES)) as Record<string, string> | null) ?? {};
 
   scheduleIsolated(bb, "permit-sweep", "* * * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;

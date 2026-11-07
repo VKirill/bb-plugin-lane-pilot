@@ -33,7 +33,9 @@ export function safeRemote(url: string): string | null {
   if (!text) return null;
   const ssh = /^[\w.-]+@([\w.-]+):(.+?)(?:\.git)?$/.exec(text);
   if (ssh) return `${ssh[1]}/${ssh[2]}`;
-  try { const parsed = new URL(text); return `${parsed.host}${parsed.pathname.replace(/\.git$/, "")}`; } catch { return null; }
+  if (!URL.canParse(text)) return null;
+  const parsed = new URL(text);
+  return `${parsed.host}${parsed.pathname.replace(/\.git$/, "")}`;
 }
 
 export type GitOptions = {
@@ -47,7 +49,7 @@ export async function scanGit(options: GitOptions): Promise<SourceScan & { stats
   const repos = await discoverRepos(options.roots);
   const records: SourceRecord[] = [];
   const skills = new Map<string, { commits: Array<{ at: number; ref: string }>; files: number; repos: Set<string> }>();
-  let reposWithCommits = 0, commitTotal = 0, fileTotal = 0;
+  let reposWithCommits = 0, commitTotal = 0, fileTotal = 0, unreadable = 0;
   if (!options.authors.length) return { source: "git", items: 0, records, note: "no author configured: set one with `bb lane-pilot anamnesis config --authors a,b`", stats: { repos: repos.length, reposWithCommits, commits: 0, filesTouched: 0 } };
 
   for (const repo of repos) {
@@ -56,7 +58,7 @@ export async function scanGit(options: GitOptions): Promise<SourceScan & { stats
       const args = ["log", "--no-merges", `--since=${new Date(options.since).toISOString()}`, `--until=${new Date(options.until).toISOString()}`,
         ...options.authors.map((author) => `--author=${author}`), "--regexp-ignore-case", "--format=%x01%H%x1f%ct%x1f%ae", "--name-only"];
       commits = parseLog(await git(args, repo));
-    } catch { continue; }
+    } catch { unreadable += 1; continue; }
     if (!commits.length) continue;
     reposWithCommits += 1; commitTotal += commits.length;
     const name = basename(repo);
@@ -110,5 +112,5 @@ export async function scanGit(options: GitOptions): Promise<SourceScan & { stats
       evidence: spread(entry.commits.map((c) => ({ source: "git" as const, ref: c.ref, at: c.at })), 20),
     });
   }
-  return { source: "git", items: commitTotal, records, stats: { repos: repos.length, reposWithCommits, commits: commitTotal, filesTouched: fileTotal } };
+  return { source: "git", items: commitTotal, records, ...(unreadable ? { note: `${unreadable} repositories could not be read` } : {}), stats: { repos: repos.length, reposWithCommits, commits: commitTotal, filesTouched: fileTotal } };
 }

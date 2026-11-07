@@ -221,7 +221,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
   }
 
   async function config(projectId: string): Promise<HarnessConfig> {
-    const raw = await bb.storage.kv.get(CONFIG_KEY(projectId)).catch(() => null) as Partial<HarnessConfig> | null;
+    const raw = await bb.storage.kv.get(CONFIG_KEY(projectId)) as Partial<HarnessConfig> | null;
     // `harness.adopt_by` of the global level is the default of every project; a project's own record still wins.
     const hub = hubFields(db, "harness") as { adoptBy?: AdoptBy };
     return { ...HARNESS_DEFAULTS, ...(hub.adoptBy ? { adoptBy: hub.adoptBy } : {}), ...(raw ?? {}), editor: { ...HARNESS_DEFAULTS.editor, ...(raw?.editor ?? {}) }, roles: { ...(raw?.roles ?? {}) }, trial: { ...TRIAL_DEFAULTS, ...(raw?.trial ?? {}) }, probe: { ...PROBE_DEFAULTS, ...(raw?.probe ?? {}) } };
@@ -237,7 +237,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
     }
     const next: HarnessConfig = { ...current, ...patch, editor: { ...current.editor, ...(patch.editor ?? {}) }, roles, trial: { ...current.trial, ...(patch.trial ?? {}) }, probe: { ...current.probe, ...(patch.probe ?? {}) } };
     // The resolved default stays out of the project's record unless the project set it, so a later change of the global default reaches it.
-    const stored = await bb.storage.kv.get(CONFIG_KEY(projectId)).catch(() => null) as Partial<HarnessConfig> | null;
+    const stored = await bb.storage.kv.get(CONFIG_KEY(projectId)) as Partial<HarnessConfig> | null;
     const keepAdopt = patch.adoptBy !== undefined || stored?.adoptBy !== undefined;
     const { adoptBy: _resolved, ...withoutAdopt } = next;
     await bb.storage.kv.set(CONFIG_KEY(projectId), (keepAdopt ? next : withoutAdopt) as never);
@@ -799,7 +799,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
     for (const key of teachingKeys(db, projectId, since, cfg.minAttempts, cfg.minSpanDays * 86_400_000)) {
       if (started >= cfg.maxKeysPerNight || ctx.isDisposed()) break;
       if (trialHarness(db, projectId, key.area, key.writerKey)) { editors.push({ ...key, result: "trial running" }); continue; }
-      const last = await bb.storage.kv.get(LAST_EDIT_KEY(projectId, key.area, key.writerKey)).catch(() => null) as { at?: number } | null;
+      const last = await bb.storage.kv.get(LAST_EDIT_KEY(projectId, key.area, key.writerKey)) as { at?: number } | null;
       if (last?.at && Date.now() - last.at < cfg.windowDays * 86_400_000) { editors.push({ ...key, result: "edited recently" }); continue; }
       if (options.dryRun) { editors.push({ ...key, result: "would start an editor" }); started++; continue; }
       const result = await runEditor({ projectId, area: key.area, writerKey: key.writerKey, ...(options.night ? { night: options.night } : {}), reason: `nightly:${key.attempts} attempts in ${cfg.windowDays} days` });

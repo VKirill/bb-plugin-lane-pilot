@@ -55,7 +55,7 @@ type Kv = { get(key:string):Promise<unknown>; set(key:string, value:never):Promi
 const key = (attemptId:string) => `writer-nudge:${attemptId}`;
 
 export async function loadWriterNudge(kv:Kv, attemptId:string):Promise<WriterNudge | null> {
-  const value = await kv.get(key(attemptId)).catch(() => null);
+  const value = await kv.get(key(attemptId));
   return value && typeof value === "object" && typeof (value as WriterNudge).count === "number" ? value as WriterNudge : null;
 }
 

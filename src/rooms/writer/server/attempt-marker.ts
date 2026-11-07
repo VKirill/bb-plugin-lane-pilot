@@ -5,12 +5,12 @@ export const startKey = (attemptId: string) => `attempt-usage-start:${attemptId}
 
 /** Remembers when the attempt's own turns begin in a thread that already has a history; the first mark stands. */
 export async function markAttemptStart(kv: Kv, attemptId: string, at: number): Promise<void> {
-  const earlier = await kv.get(startKey(attemptId)).catch(() => null);
+  const earlier = await kv.get(startKey(attemptId));
   if (typeof earlier === "number") return;
   await kv.set(startKey(attemptId), at as never).catch(() => undefined);
 }
 
 export async function markerOf(kv: Kv, attemptId: string): Promise<number> {
-  const value = await kv.get(startKey(attemptId)).catch(() => null);
+  const value = await kv.get(startKey(attemptId));
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }

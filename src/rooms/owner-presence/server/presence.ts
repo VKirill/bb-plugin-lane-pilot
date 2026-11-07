@@ -68,7 +68,7 @@ export function createOwnerPresence(ctx: Pick<ServerCore, "bb" | "log">) {
   bindOwnerPresence(note);
 
   async function sweep(): Promise<Presence[]> {
-    const saved = await kv.get(PRESENCE_KV).catch(() => null);
+    const saved = await kv.get(PRESENCE_KV);
     if (typeof saved === "string" && saved) {
       replace(readPresence([
         { hostId: "memory", text: marksText(presence) },

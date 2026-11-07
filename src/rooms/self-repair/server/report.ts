@@ -8,7 +8,7 @@ export const STATE_KEY = "self-repair:state";
 
 /** What the watcher's state holds about one repair signature (read-only; the night loop follows its repairs with it). */
 export async function readRepairRecord(bb: ServerCore["bb"], signature: string): Promise<{ threadId: string | null; verdict: Verdict | null; outcome: string | null; branch: string | null; worktreePath: string | null; spawnedAt: number | null } | null> {
-  const raw = await bb.storage.kv.get(STATE_KEY).catch(() => null);
+  const raw = await bb.storage.kv.get(STATE_KEY);
   const record = (raw && typeof raw === "object" ? (raw as Partial<SelfRepairState>).signatures?.[signature] : undefined) as SignatureRecord | undefined;
   return record ? { threadId: record.threadId, verdict: record.verdict ?? null, outcome: record.outcome ?? null, branch: record.worktree?.branch ?? null, worktreePath: record.worktree?.path ?? null, spawnedAt: record.spawnedAt } : null;
 }

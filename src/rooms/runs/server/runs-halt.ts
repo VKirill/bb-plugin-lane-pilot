@@ -8,7 +8,8 @@ export const haltedRunKey = (runId:string) => `run-halted:${runId}`;
 type Kv = { get(key:string):Promise<unknown>; set(key:string, value:unknown):Promise<void> };
 
 export async function isRunHalted(kv:Kv, runId:string):Promise<boolean> {
-  return Boolean(await kv.get(haltedRunKey(runId)).catch(() => null));
+  // No catch: a failed read must not report «not halted» — that would restart work the owner stopped.
+  return Boolean(await kv.get(haltedRunKey(runId)));
 }
 export async function setRunHalted(kv:Kv, runId:string, halted:boolean):Promise<void> {
   if (halted) await kv.set(haltedRunKey(runId), { at:Date.now() });
@@ -22,7 +23,7 @@ export async function setRunHalted(kv:Kv, runId:string, halted:boolean):Promise<
 export const pausedRunKey = (runId: string) => `run-paused:${runId}`;
 
 export async function runPausedSince(kv: Kv, runId: string): Promise<number | null> {
-  const stored = await kv.get(pausedRunKey(runId)).catch(() => null) as { at?: unknown } | null;
+  const stored = await kv.get(pausedRunKey(runId)) as { at?: unknown } | undefined;
   return stored && typeof stored.at === "number" ? stored.at : null;
 }
 

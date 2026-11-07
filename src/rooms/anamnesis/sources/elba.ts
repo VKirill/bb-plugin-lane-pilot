@@ -1,5 +1,6 @@
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { isFsAbsent, parseJsonOr, readTextOrNull, statOrNull } from "@lane-pilot/kit";
 import { slug as slugOf } from "../model";
 import { SKIP_DIRS, type SourceRecord, type SourceScan } from "./common";
 
@@ -20,7 +21,7 @@ export async function clientsFolders(roots: readonly string[]): Promise<string[]
   const found = new Set<string>();
   async function walk(dir: string, depth: number): Promise<void> {
     let entries;
-    try { entries = await readdir(dir, { withFileTypes: true }); } catch { return; }
+    try { entries = await readdir(dir, { withFileTypes: true }); } catch (cause) { if (isFsAbsent(cause)) return; throw cause; }
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.isSymbolicLink() || SKIP_DIRS.has(entry.name) || entry.name.startsWith(".")) continue;
       const path = join(dir, entry.name);
@@ -42,15 +43,16 @@ export async function scanElba(roots: readonly string[]): Promise<SourceScan> {
   let items = 0;
   for (const folder of await clientsFolders(roots)) {
     let names: string[];
-    try { names = (await readdir(folder, { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort(); } catch { continue; }
+    try { names = (await readdir(folder, { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort(); } catch (cause) { if (isFsAbsent(cause)) continue; throw cause; }
     for (const name of names) {
       const file = join(folder, name, "terms.json");
-      let terms: Record<string, unknown>, mtime: number;
-      try {
-        terms = JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>;
-        mtime = Math.floor((await stat(file)).mtimeMs);
-      } catch { continue; }
+      const raw = await readTextOrNull(file);
+      if (raw === null) continue;
+      const terms = parseJsonOr<Record<string, unknown> | null>(raw, null);
       if (!terms || typeof terms !== "object" || Array.isArray(terms)) continue;
+      const info = await statOrNull(file);
+      if (!info) continue;
+      const mtime = Math.floor(info.mtimeMs);
       // A deal that was never made in Elba is not Elba's evidence.
       if (terms.elba_created !== true) continue;
       const invoiceNumber = terms.invoice_number;

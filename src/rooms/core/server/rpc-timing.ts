@@ -41,12 +41,15 @@ export function timeRpcHandlers<T extends Record<string, Handler>>(handlers: T, 
 }
 
 /** One action — one line (SMA): every call passes to `note` after it answered (the front's journal keeps only those that change something). */
-export function journalRpcHandlers<T extends Record<string, Handler>>(handlers: T, note: (name: string, input: unknown) => Promise<void> | void): T {
+export function journalRpcHandlers<T extends Record<string, Handler>>(handlers: T, note: (name: string, input: unknown) => Promise<void> | void, log?: (message: string) => void): T {
   const journaled: Record<string, Handler> = {};
   for (const [name, handler] of Object.entries(handlers)) {
     journaled[name] = (async (input: never, ...rest: never[]) => {
       const answer = await handler(input, ...rest);
-      try { await note(name, input); } catch { /* the journal never changes an answer */ }
+      try { await note(name, input); } catch (cause) {
+        // The journal never changes an answer — but a failing journal is still a fault worth one line.
+        try { log?.(`action journal failed for ${name}: ${cause instanceof Error ? cause.message : String(cause)}`); } catch { /* logging never changes an answer */ }
+      }
       return answer;
     }) as Handler;
   }
