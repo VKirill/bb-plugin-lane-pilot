@@ -15,7 +15,7 @@ export { dropSatellites, findUnownedChanges, findUnownedRunChanges, resolveRunOw
 export type { OwnershipTask } from "./ownership";
 export { createProviderGate, providerListed, providerSwitchOn, waitProviderEnvironment } from "./provider-gate";
 export { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "./routing";
-export { SANDBOX_OWN_ENV, prepareSandboxedCommandLine, releaseSandboxedCommandLine, runSandboxedCommandOnHost, userToolBins } from "./sandbox";
+export { prepareSandboxedCommandLine, releaseSandboxedCommandLine, runSandboxedCommandOnHost, userToolBins } from "./sandbox";
 export { WORKSPACE_DIRT_COMMAND } from "./workspace-dirt";
 export { mergeInfo, revertCommitsInWorktree, worktreeState } from "./git-rollback";
 export type { MergeInfo, RevertResult, WorktreeState } from "./git-rollback";

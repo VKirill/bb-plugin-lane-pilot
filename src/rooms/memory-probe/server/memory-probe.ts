@@ -10,14 +10,17 @@ import { memoryUnanswered, pmResumeInstructions, pmRulesOf, pmRulesPromptBlock, 
 import { codeCritiquePrompt, codeRepairPrompt } from "../../critique";
 import { nightReviewPrompt } from "../../night";
 import { councilMemoryBlock } from "../../council/server";
-import { adoptRuleProposal, deleteMemoryRecord, memorySettingsFor, retireAdoptedRule } from "../../self-repair/server";
+import { memorySettingsFor } from "../../memory/server";
+import type { InsightsApi } from "../../contracts/server";
 import { HARNESS_VERSION, loadPrototypeConfig } from "../../storage";
+import { loadProjectSettings } from "../../storage";
 import { DRILL_SANDBOX_PROJECT_IDS } from "../../stability/server";
 import type { ServerCore } from "../../contracts/server";
 
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  insights: InsightsApi;
 
 }
 
@@ -141,8 +144,8 @@ export function createMemoryProbe(ctx: ServerCore, services: Services) {
   /** Removes what an earlier probe left (a crashed run, a `--keep`): the records of origin `probe` and the probe's rules. */
   function clean(projectId: string): number {
     let removed = 0;
-    for (const row of db.prepare("SELECT id FROM lane_pilot_memory WHERE project_id=? AND origin='probe'").all(projectId) as Array<{ id: string }>) { deleteMemoryRecord(db, projectId, row.id); removed++; }
-    for (const row of db.prepare("SELECT id FROM lane_pilot_rule_proposal WHERE project_id=? AND state='accepted' AND rule LIKE 'Probe rule lpprobe%'").all(projectId) as Array<{ id: string }>) { retireAdoptedRule(db, projectId, row.id, "memory probe finished"); removed++; }
+    for (const row of db.prepare("SELECT id FROM lane_pilot_memory WHERE project_id=? AND origin='probe'").all(projectId) as Array<{ id: string }>) { services.insights.deleteMemoryRecord(db, projectId, row.id); removed++; }
+    for (const row of db.prepare("SELECT id FROM lane_pilot_rule_proposal WHERE project_id=? AND state='accepted' AND rule LIKE 'Probe rule lpprobe%'").all(projectId) as Array<{ id: string }>) { services.insights.retireAdoptedRule(db, projectId, row.id, "memory probe finished"); removed++; }
     return removed;
   }
 
@@ -157,7 +160,7 @@ export function createMemoryProbe(ctx: ServerCore, services: Services) {
     const tokens: Record<ProbeKind, string> = { note: `lpprobe${hex}n`, core: `lpprobe${hex}c`, rule: `lpprobe${hex}r` };
     const planted: Record<ProbeKind, boolean> = { note: false, core: false, rule: false };
     const problems: string[] = [];
-    const settings = memorySettingsFor(db, projectId);
+    const settings = memorySettingsFor(loadProjectSettings(db, projectId));
     const config = loadPrototypeConfig(db, projectId);
     const cwd = config?.writerWorkspacePath?.startsWith("/") ? config.writerWorkspacePath : "/tmp/memory-probe";
     clean(projectId);
@@ -176,7 +179,7 @@ export function createMemoryProbe(ctx: ServerCore, services: Services) {
       const lesson = upsertLessonProposal(db, projectId, { rule: `Probe rule ${tokens.rule}: lp-probe memory delivery check, nothing to do.`, evidence: "memory probe", audience: "both", always: true });
       // An always-on rule needs a repeat before trial (arXiv #14): the probe's second sighting is the repeat.
       upsertLessonProposal(db, projectId, { rule: `Probe rule ${tokens.rule}: lp-probe memory delivery check, nothing to do.`, evidence: "memory probe, second sighting", audience: "both", always: true });
-      adoptRuleProposal(db, projectId, lesson.id);
+      services.insights.adoptRuleProposal(db, projectId, lesson.id);
       planted.rule = getRuleProposal(db, projectId, lesson.id)?.state === "accepted";
       if (!planted.rule) problems.push("rule not adopted (its pool has no room); see the rule journal");
     } catch (cause) { problems.push(`rule not written: ${cause instanceof Error ? cause.message : String(cause)}`); }

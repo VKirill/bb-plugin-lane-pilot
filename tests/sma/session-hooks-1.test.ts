@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { materializeNativeHookSession } from "../../src/rooms/native-agent/native-session-hooks";
-import { SESSION_HOOK_SOURCE } from "../../src/rooms/native-install/session-hook-source";
+import { SESSION_HOOK_SOURCE } from "../../src/rooms/contracts/session-hook-source";
 import {
   STREAMS,
   buildCapsule,

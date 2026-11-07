@@ -1,4 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+const evalRunner = { load: () => ({ notes: [], questions: [], origin: "live" as const }), run: async () => ({ sizes: [], caveats: [] }) };
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +11,7 @@ import type { Services } from "../server";
 import { LEAD_DEFAULTS } from "../src/rooms/lead/settings";
 import { openDecision } from "../src/rooms/lead/server/journal";
 import { addRoad, getRoad, listRoad, proposeRoad, roadPayload } from "../src/rooms/lead/server/road";
+import { lanePilotProjectOrNotice } from "../src/rooms/self-repair/server";
 import { createLeadService } from "../src/rooms/lead/server/service";
 import { architectPrompt, graphlessErrands, hubSnapshot, processPartsOf, processStemOf, proposalDecisionId, proposalItemKey, registerLeadTickActions, seedForm, tickBrief } from "../src/rooms/lead/server/tick";
 import { errandStem } from "../src/rooms/errands";
@@ -132,10 +134,11 @@ describe("«да» on a seeded process proposal", () => {
     const services = {
       workflowTriggers: { start: async () => ({ ok: true, runId: "wf_1" }), pmOf: async () => ({ pmThreadId: "thr_pm", runId: "lprun_pm" }) },
       docsPlaces: async () => [],
+    laneProject: lanePilotProjectOrNotice,
       workflowEngine: { register: () => undefined, get: () => null },
       phaseIntake: { handOver: async () => { throw new Error("must not be called: a seeded process goes to the architect"); } },
     } as unknown as Services;
-    const lead = createLeadService(createCore(bb, db), services, migrations);
+    const lead = createLeadService(createCore(bb, db), services, { load: () => ({ notes: [], questions: [], origin: "live" }), run: async () => ({ sizes: [], caveats: [] }) }, migrations);
     const seed = { form: "graph", kind: "computer", stem: "партия моделей арендованной gpu", threadIds: ["thr_1", "thr_2"], samples: ["Тест: партия моделей"] };
     addRoad(db, { id: "d1", title: "Grow", kind: "direction", source: "lead", why: "growth" }, 1);
     addRoad(db, { id: "o1", parentId: "d1", projectId: "p_a", title: "Граф для: партия моделей арендованной gpu", kind: "option", source: "lead", why: "три поручения за месяц", class: "process", payload: { architectSeed: seed } }, 2);

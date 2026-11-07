@@ -1,42 +1,16 @@
 import { z } from "zod";
-import bundledAgents from "./bundled-agents.json";
+import bundledAgents from "../contracts/bundled-agents.json";
 import { machineAffinitySchema } from "@lane-pilot/contracts";
-import { EMPLOYEES, stockEmployee } from "./employee-manifest";
-import { isCliLaneAgentPrompt, isInternalAgent, isLanePmAgent, laneSessionOverlayPrompt, overlayDisallowedTools, overlaySessionTools } from "./native-agent-overlay";
-import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_TOOLS } from "./workflow-architect";
-import { LEAD_ID, LEAD_NAME, LEAD_TOOLS } from "../lead";
+import { stockEmployee } from "./employee-manifest";
+import { EMPLOYEES } from "../contracts/server";
+import { isLanePmAgent } from "../contracts/server";
+import { isCliLaneAgentPrompt, isInternalAgent, laneSessionOverlayPrompt, overlayDisallowedTools, overlaySessionTools } from "./native-agent-overlay";
+import { WORKFLOW_ARCHITECT_ID } from "../contracts/server";
+import { WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_TOOLS } from "./workflow-architect";
+import { LEAD_ID, LEAD_NAME, LEAD_TOOLS } from "../contracts";
 import { sha256Hex } from "@lane-pilot/kit";
 
-export const MAIN_AGENT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
-export const MAIN_AGENT_PROFILE_IDS = [
-  "dev-orchestrator",
-  "copy-lead",
-  "seo-specialist",
-  "design-lead",
-  "project-onboarder",
-  "tavily",
-  "video-lead",
-  "3d-artist",
-  "game-dev",
-  "social-manager",
-  "billing-assistant",
-  "visual-artist",
-  "macos-operator",
-  WORKFLOW_ARCHITECT_ID,
-  LEAD_ID,
-  // (2026-10-29 lane-stack port) standalone roles. browser-qa stays reserved for the lp.browser-qa graph.
-  "advisor-researcher",
-  "ai-researcher",
-  "animator",
-  "doc-classifier",
-  "domain-researcher",
-  "eval-auditor",
-  "eval-planner",
-  "framework-selector",
-  "mempalace-curator",
-  "nyquist-auditor",
-  "ui-researcher",
-] as const;
+import { MAIN_AGENT_ID, MAIN_AGENT_PROFILE_IDS, isStockProfileId } from "../contracts/server";
 
 /**
  * Developer sub-roles of the Claude Lane port that no graph, PM or schedule calls. They stay compiled and reachable by id (`list_agents`,
@@ -242,9 +216,6 @@ function bundledTemplate(id: string): { description: string; prompt: string } & 
   };
 }
 
-export function isStockProfileId(id: string): boolean {
-  return (MAIN_AGENT_PROFILE_IDS as readonly string[]).includes(id);
-}
 
 /** coordinator: the Lane Pilot PM; internal: a session Lane Pilot runs itself (the owner does not pick it); specialist: every other agent, the owner's own included. */
 export type AgentKind = "coordinator" | "specialist" | "internal";

@@ -6,6 +6,7 @@ import { renderTimeline, taskTimeline } from "../../runs";
 import {isNotFound, orMiss, outputText, stringAt, valueAt} from "@lane-pilot/kit";
 import {runSkillsCli, SKILLS_USAGE} from "../../platform/server";
 import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
+import type { InsightsApi, ScheduleAgentApi } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
 import { RUN_BUDGET_SETTINGS, runHealth } from "../../stability/server";
 import { configuredSetting } from "../../contracts/server";
@@ -55,7 +56,7 @@ import { retireAdoptedRule } from "../../self-repair/server";
 import { ROLLBACK_USAGE, runRollbackCli } from "../../rollback/server";
 import { CODE_CRITIC_DEFAULTS, isCodeCriticDefault } from "../../critique";
 import { runSkillLintCli } from "../../forge";
-import { ERRAND_EPISODE_TRACE_EVENTS } from "../../errands";
+import { ERRAND_EPISODE_TRACE_EVENTS } from "../../contracts/server";
 import { EPISODES_USAGE, runEpisodesCli } from "../../errands/server";
 import { episodeSweepDeps } from "../../night-graphs/server";
 
@@ -131,6 +132,8 @@ interface Services {
   resumeOrphans: ReconcileApi["resumeOrphans"];
   rollback: RollbackApi;
   ruleScan: RuleScanApi;
+  insights: InsightsApi;
+  scheduleAgents: ScheduleAgentApi;
   runBudgetFor: WriterStateApi["runBudgetFor"];
   runBudgets: WriterStateApi["runBudgets"];
   runGoal: RunGoalApi;
@@ -513,7 +516,7 @@ ${ERRANDS_USAGE}` },
           return await runScheduleCli(services, args);
         }
         if (command === "agents") {
-          return await runAgentsCli({ list: () => services.listedAgentProfiles(), registry: agentRegistry(ctx) }, args);
+          return await runAgentsCli({ list: () => services.listedAgentProfiles(), registry: agentRegistry(ctx, services.scheduleAgents) }, args);
         }
         if (command === "memory" && (args[0] === "search" || args[0] === "write")) {
           // M2's door for any thread or shell: the project is --project or the calling thread's own.

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 import { guardTool } from "../lane-stack/opencode/opencode-lane/guard";
 import { recordTool, recentAttempts } from "../lane-stack/opencode/opencode-lane/budget";
-import { NATIVE_OPENCODE_SOURCES } from "../src/rooms/native-install/native-opencode-sources";
+import { NATIVE_OPENCODE_SOURCES } from "../src/rooms/contracts/native-opencode-sources";
 
 it("embeds the slim OpenCode plugin that reconcile writes", () => {
   const guard = readFileSync(new URL("../lane-stack/opencode/opencode-lane/guard.ts", import.meta.url), "utf8");

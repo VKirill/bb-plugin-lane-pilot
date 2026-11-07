@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { pickWriterSkills, type SkillAsk } from "@lane-pilot/jev/judgments/skill-pick";
 import { BB_AGENT_SESSIONS, LANE_PILOT_PM_SESSION, lanePmOverlayPrompt, laneSessionOverlayPrompt } from "../src/rooms/native-agent/native-agent-overlay";
-import { EMPLOYEES, coreSkillsOf, isEmployeeSpecialist } from "../src/rooms/native-agent/employee-manifest";
+import { EMPLOYEES } from "../src/rooms/contracts/server";
+import { coreSkillsOf, isEmployeeSpecialist } from "../src/rooms/native-agent/employee-manifest";
 import { SKILL_CATALOG_BLOCK, SKILL_CATALOG_LIMIT, SKILL_CATALOG_LINE } from "../src/rooms/native-agent/skill-catalog";
 import { chooseEmployeePlace } from "../src/rooms/native-agent/employee-place";
 import { parseAgentFile } from "../src/rooms/native-agent/custom-agent";

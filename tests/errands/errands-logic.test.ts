@@ -1,7 +1,8 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
-import { errandOutcome, errandTitle, kindsOverview, listErrands } from "../../src/rooms/errands/logic";
+import { errandOutcome } from "../../src/rooms/contracts/server";
+import { errandTitle, kindsOverview, listErrands } from "../../src/rooms/errands/logic";
 
 const NOW = Date.now();
 type Seed = { id: string; status: string; reason?: string | null; inputs: Record<string, unknown>; output?: Record<string, unknown> | null; cost?: number; linkRunId?: string | null; ago?: number; thread?: string };

@@ -1,7 +1,7 @@
 import type { ExperimentalProviderModelPickerValue } from "@get-bb/plugin-sdk/app";
 import { t, validationMessage, type I18nKey } from "@lane-pilot/i18n";
 ;
-import { QA_HOST_KEY, QA_WORKSPACE_KEY } from "../qa/qa-host";
+import { QA_HOST_KEY, QA_WORKSPACE_KEY } from "@lane-pilot/settings-catalog";
 import { Button } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";
 import { Label } from "@lane-pilot/ui-kit";

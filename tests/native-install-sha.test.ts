@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { lanePilotEnv } from "../src/rooms/native-install/native-install-bootstrap";
 import { nativeInstallOperation } from "../src/rooms/native-install/native-install-host";
-import { NATIVE_OPENCODE_SOURCES } from "../src/rooms/native-install/native-opencode-sources";
+import { NATIVE_OPENCODE_SOURCES } from "../src/rooms/contracts/native-opencode-sources";
 import { reconcileClaudeLane } from "../src/rooms/native-agent/native-lane-reconcile";
 
 const roots: string[] = [];

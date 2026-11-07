@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { addToIndexes, memoryRecordId, trigramReady } from "@lane-pilot/memory-core";
 import { OFFTOPIC, candidateQuestions, classify, folderKey, fileKey, notesNaming, queryOf, type EvalQuestion } from "./questions";
-import type { EvalData, RawNote } from "./source";
+import type { EvalData, RawNote } from "../../contracts/memory-eval";
 
 /** The one scope the corpus lives in: a person's memory is one pile, whichever project a note came from. */
 export const EVAL_PROJECT = "memory-eval";

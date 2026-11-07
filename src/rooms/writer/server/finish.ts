@@ -40,7 +40,7 @@ import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../../
 import { sendServiceMessage } from "../../relay/server";
 import { judgeRulesOnDiff, ruleViolationRemark } from "../../learning";
 import { jev, type JevSettings } from "@lane-pilot/jev";
-import { askTaskWord, taskWordItemPrefix } from "../../lead";
+import { taskWordItemPrefix, type LeadRoadApi, type TaskWordPort } from "../../contracts";
 import { closeOwnerItemsByPrefix, postOwnerItem, rpcLine } from "../../owner-waiting";
 import { writerFinishScanJudgment } from "../finish-scan";
 import { runOnHost } from "@lane-pilot/host-calls";
@@ -72,6 +72,8 @@ interface Services {
   runVerification: WriterVerifyApi["runVerification"];
   validateWriterResult: WriterVerifyApi["validateWriterResult"];
   workspaceDirt: WriterSpawnApi["workspaceDirt"];
+  taskWords: TaskWordPort;
+  leadRoad: LeadRoadApi;
 }
 
 export { postMergeRepair } from "./verification";
@@ -832,7 +834,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       let wordGap = landingWordGap(ownerWords, await wordsOf());
       if (wordGap && !wordGap.includes("said no")) {
         // The lead's journal: the question opens here and the prediction is written before the owner answers (src/rooms/lead).
-        void askTaskWord(db, { runId:input.runId, projectId:input.projectId, family:taskFamily(input.taskId), task:input.task }, loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)) as JevSettings);
+        void services.taskWords.ask(db, { runId:input.runId, projectId:input.projectId, family:taskFamily(input.taskId), task:input.task }, loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)) as JevSettings);
         // The wait is a row on «Ждут владельца» with да / нет (Astra F-004, Gemini F-008: the screen that promises to show what waits did not
         // show this); the word closes it (answerTaskWord), the end of the wait below closes it too.
         try {

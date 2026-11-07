@@ -1,26 +1,11 @@
 import Database from "better-sqlite3";
+import type { EvalData, RawNote, RawQuestion, RawTask } from "../../contracts/memory-eval";
 
 /**
  * Where the evaluation takes real data from: the notes the hub holds and the accepted tasks with the files their accepted attempt
  * actually produced. Read only. Two shapes, one reading: the live plugin database (`lane_pilot_*` tables), or an extract file made
  * by `exportEvalExtract` (two tables, `memory` and `question`) so the run can happen on any machine without the hub's 500 MB database.
  */
-export type RawNote = {
-  id: string; projectId: string; kind: "core" | "note"; content: string; concepts: string[]; createdAt: number;
-  status: string; trust: string; origin: string; useCount: number; acceptedCount: number;
-  /** Section chain stored on the row. Empty is the project root. Named sections so it does not collide with the eval's project scope. */
-  sections: string[]; audience: string; personalBot: string;
-};
-export type RawTask = { title: string; objective: string; acceptance: string[]; owns_paths: string[]; read_first: string[] };
-export type RawQuestion = {
-  attemptId: string; taskId: string; projectId: string; startedAt: number; attemptNo: number;
-  /** The files the accepted attempt changed (the acceptance receipt's `produced`). */
-  produced: string[];
-  /** The ids of the notes the brief of that attempt carried (what the writer actually read). */
-  picked: string[];
-  task: RawTask;
-};
-export type EvalData = { notes: RawNote[]; questions: RawQuestion[]; origin: "live" | "extract" };
 
 type Reader = Pick<Database.Database, "prepare">;
 

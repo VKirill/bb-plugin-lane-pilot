@@ -4,7 +4,7 @@ import type { LanePilotDatabase } from "../../storage";
 import type { RunRow } from "../../storage";
 ;
 import { startedBySchedule } from "./workflow-runtime";
-import { doneRoad, reopenRoad } from "../../lead";
+import type { LeadRoadApi } from "../../contracts";
 import {AFTER_ACCEPT, DOCS_MAINTENANCE, DOCS_NIGHT, LP_TASK_PIPELINE, ROUTE_WORKFLOW, SELF_REPAIR} from "../../contracts";
 
 /** The machine's own upkeep graphs: they tell no PM chat and post nothing to the owner's list (a failed one is the wall's and the next run's to settle). */
@@ -137,6 +137,7 @@ export function reportEndToOwner(db: LanePilotDatabase, run: RunRow, scheduled: 
 }
 
 export async function notifyWorkflowIfEnded(input: {
+  leadRoad?: LeadRoadApi;
   bb: WorkflowNoticeSend;
   db: LanePilotDatabase;
   log: (message: string) => void;
@@ -146,7 +147,7 @@ export async function notifyWorkflowIfEnded(input: {
   // Work the lead («Штурман») handed over runs under the project's latest PM chat, which may be about something else entirely: its end
   // goes back to the lead's road, never into that chat (live 2026-11-03: an issue-quick block landed in an unrelated app-design chat).
   const leadRoad = leadRoadOf(input.run.idem_key);
-  if (leadRoad) { settleLeadRun(input.db, input.run, leadRoad, input.unmetGoalIds); return false; }
+  if (leadRoad && input.leadRoad) { settleLeadRun(input.db, input.leadRoad, input.run, leadRoad, input.unmetGoalIds); return false; }
   const linked = input.run.link_run_id ? getRun(input.db, input.run.link_run_id) : undefined;
   if (!input.run.link_run_id) return reportEndToOwner(input.db, input.run, startedBySchedule(input.db, input.run), input.unmetGoalIds);
   return maybeNotifyWorkflowRun({
@@ -162,9 +163,9 @@ export function leadRoadOf(idemKey: string | null | undefined): string | null {
   return /^intake:[^:]+:lead:(road_[\w-]+)/.exec(idemKey ?? "")?.[1] ?? null;
 }
 
-function settleLeadRun(db: LanePilotDatabase, run: RunRow, roadId: string, unmetGoalIds?: string[]): void {
+function settleLeadRun(db: LanePilotDatabase, road: LeadRoadApi, run: RunRow, roadId: string, unmetGoalIds?: string[]): void {
   if (!isNoticeStatus(run.status)) return;
-  if (run.status === "succeeded") { doneRoad(db, roadId, `run ${run.id} of ${run.workflow_id} succeeded`); return; }
+  if (run.status === "succeeded") { road.doneRoad(db, roadId, `run ${run.id} of ${run.workflow_id} succeeded`); return; }
   const unmet = unmetGoalIds?.length ? `; unmet goals: ${unmetGoalIds.join(", ")}` : "";
-  reopenRoad(db, roadId, `handed run ${run.id} of ${run.workflow_id} ended ${run.status}: ${run.reason ?? "no reason"}${unmet}`);
+  road.reopenRoad(db, roadId, `handed run ${run.id} of ${run.workflow_id} ended ${run.status}: ${run.reason ?? "no reason"}${unmet}`);
 }

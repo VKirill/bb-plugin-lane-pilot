@@ -3,8 +3,8 @@
 export { leadMigrations } from "./migrations";
 export { EXAM_RULES, cohenKappa, examAll, examClass, examEligible, wilsonLower, type ClassExam, type ExamRow, type Verdict } from "./logic";
 export { LEAD_PREDICT_ID, leadPredictJudgment, type PredictDecision, type PredictInput } from "./predict";
-export { answerPhaseWord, answerTaskWord, askPhaseWord, askTaskWord, phaseDecisionId, taskWordItemPrefix, wordDecisionId } from "./server/surfaces";
+export { answerPhaseWord, answerTaskWord, askPhaseWord, askTaskWord, phaseDecisionId, wordDecisionId } from "./server/surfaces";
+export { taskWordItemPrefix } from "../contracts/task-word";
 export { LEAD_DEFAULTS, LEAD_SETTING_KEYS, leadSettingProblem, parseLeadSettings, type LeadSettingKey, type LeadSettings } from "./settings";
-export { LEAD_ID, LEAD_LAUNCH, LEAD_NAME, LEAD_SESSION, LEAD_SUMMARY, LEAD_TICK, LEAD_TOOLS } from "./lead-agent";
 export { addRoad, doneRoad, getRoad, listRoad, reopenRoad } from "./server/road";
-export type { RoadEvidence, RoadRow } from "./server/road";
+export type { RoadEvidence, RoadRow } from "../contracts/lead-road";

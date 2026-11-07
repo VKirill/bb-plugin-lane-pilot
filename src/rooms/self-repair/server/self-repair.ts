@@ -5,7 +5,7 @@ import { writerReuseStats, writerBriefStats } from "../../writer";
 import { checksInFlight, failureClass, taskFamily } from "../../runs";
 import { projectRoleField } from "../../runs/server";
 import { OWNER_WORD_WAIT_MS } from "../../tasks";
-import { taskWordItemPrefix } from "../../lead";
+import { taskWordItemPrefix } from "../../contracts";
 import { bestEffort, stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 import type { RepairDeps } from "./deps";

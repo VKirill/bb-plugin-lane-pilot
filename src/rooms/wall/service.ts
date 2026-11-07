@@ -7,7 +7,7 @@ import { analysisPrompt, hunterPrompt, parseNightReport, parsePrediction, predic
 import { nightArm } from "../bench/server";
 import { statsEpochMs, statsEpochLine, STATS_EPOCH_SETTING } from "../storage";
 import { loadProjectSettings } from "../storage";
-import { hubFields, writeHubFields } from "../improvement";
+import { hubFields, writeHubFields } from "../platform";
 import { postOwnerItem } from "../owner-waiting";
 import { WALL_CONFIG_KEY, parseWallConfig, type WallConfig } from "./config";
 import { classVersions, collectEntries, getClass, graphRecurrence, listClasses, nightOf, refreshClasses, writeEntries, type WallDb } from "./journal";

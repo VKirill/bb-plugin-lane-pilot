@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { EMPLOYEES, employeeView } from "../src/rooms/native-agent/employee-manifest";
+import { EMPLOYEES } from "../src/rooms/contracts/server";
+import { employeeView } from "../src/rooms/native-agent/employee-manifest";
 import { placeEmployeeOn, affinityHostId } from "../src/rooms/native-agent/employee-place";
 import { roleRowOf, roleRow } from "@lane-pilot/models";
 import { laneSessionOverlayPrompt } from "../src/rooms/native-agent/native-agent-overlay";

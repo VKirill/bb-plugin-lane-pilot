@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { EMPLOYEES } from "../src/rooms/native-agent/employee-manifest";
+import { EMPLOYEES } from "../src/rooms/contracts/server";
 import {
   compileEffectiveMainAgent,
   compileMainAgentProfile,
   LEGACY_STOCK_TEMPLATES,
-  MAIN_AGENT_PROFILE_IDS,
   PROFILE_SOURCE_VERSION,
 } from "../src/rooms/native-agent/agent-profile";
-import bundledAgents from "../src/rooms/native-agent/bundled-agents.json";
+import { MAIN_AGENT_PROFILE_IDS } from "../src/rooms/contracts/server";
+import bundledAgents from "../src/rooms/contracts/bundled-agents.json";
 
 describe("bundled BB session profiles", () => {
   it("pins the composer agents, including the lane-stack roles ported on 2026-10-29", () => {

@@ -1,6 +1,6 @@
 import { VISIBLE_CATALOG, type CatalogRow } from "@lane-pilot/settings-catalog";
 import type { I18nKey } from "@lane-pilot/i18n";
-import { HUB_KEYS, PROJECT_DEFAULT_KEYS } from "../improvement";
+import { HUB_KEYS, PROJECT_DEFAULT_KEYS } from "@lane-pilot/settings-catalog";
 import { COUNCIL_KEYS, PAIR_ROLE_SPECS, roleSpecKey } from "@lane-pilot/models";
 import { JEV_KEYS, isCompatibilityAlias, uniqueByStorage } from "../ui-shell/ui";
 

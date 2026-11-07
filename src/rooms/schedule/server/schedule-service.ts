@@ -1,5 +1,5 @@
 import { loadProjectSettings } from "../../storage";
-import { QA_HOST_KEY } from "../../qa";
+import { QA_HOST_KEY } from "@lane-pilot/settings-catalog";
 import { listQaHosts } from "../../platform/server";
 import { fireList, findConflicts, runView, scheduleView } from "../board";
 import { PRESET_SLUGS, presetSlug } from "@lane-pilot/models";
@@ -25,7 +25,7 @@ import type { WorkflowTriggersApi } from "../../workflow/server/workflow-trigger
 import type { WriterHostApi } from "../../writer/server/writer-host";
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
-import type { ErrandsApi } from "../../qa/server/errands";
+import type { ErrandsApi } from "../../contracts";
 import type { WorkflowEngineApi } from "../../workflow/server/workflow";
 import type { WriterStartApi } from "../../writer/server/start";
 

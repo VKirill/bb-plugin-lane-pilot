@@ -4,9 +4,12 @@ import { redactKnown } from "@lane-pilot/kit";
 import { maskPii, scrubQuote } from "../anamnesis";
 import { pmSkillName } from "../native-agent";
 import { extractSkillSequence } from "../writer";
-import type { LanePilotDatabase } from "../storage";
-import { collectEnabled, ERRAND_EPISODE_EXTRACTOR_VERSION, ERRAND_EPISODE_TABLE, recordErrandEpisode } from "./episodes";
-import { errandOutcome, errandStem, errandTitle } from "./logic";
+import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
+import { loadProjectSettings, type LanePilotDatabase } from "../storage";
+import { recordErrandEpisode } from "./episodes";
+import { collectEnabled, ERRAND_EPISODE_EXTRACTOR_VERSION, ERRAND_EPISODE_TABLE } from "../contracts/server";
+import { errandOutcome } from "../contracts/server";
+import { errandStem, errandTitle } from "./logic";
 import type { KnownProcessKey } from "./process-key";
 import { ERRAND_FAILURE_CLASSES, ERRAND_FAILURE_ID, type ErrandFailureClass, type ErrandFailureInput } from "./failure-judgment";
 
@@ -244,7 +247,7 @@ export async function enrichEpisode(row: PendingEpisode, deps: EpisodeEnrichDeps
   const { db } = deps;
   const now = deps.now?.() ?? Date.now();
   const warn = deps.warn ?? deps.log;
-  if (!collectEnabled(db as LanePilotDatabase, row.projectId)) return "skipped";
+  if (!collectEnabled(loadProjectSettings(db as LanePilotDatabase, row.projectId ?? GLOBAL_SETTINGS_PROJECT_ID))) return "skipped";
   if (!row.threadId) {
     mark(db, row.runId, "enrichment_state='skipped', enrichment_reason='no_thread'", [], now);
     deps.log?.(`episode_skipped:${row.runId}:no_thread`);

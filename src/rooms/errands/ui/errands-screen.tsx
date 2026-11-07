@@ -8,7 +8,8 @@ import type { rpcContract } from "../../contracts";
 import { HELPER_PANEL_ACTION } from "../../native-agent/ui";
 import { Pill, useOpenThreadPanel } from "../../ui-shell/ui";
 import { NativeModelPicker, useModelCatalog, type ModelChoice } from "../../workflow/ui";
-import type { ErrandKindOrNone, ErrandOutcome, ErrandRow, KindSummary } from "../logic";
+import type { ErrandKindOrNone, ErrandRow, KindSummary } from "../logic";
+import type { ErrandOutcome } from "../../contracts/server";
 import type { ErrandsDiagnosis } from "../diagnosis";
 
 type Payload = { days: number; kinds: KindSummary[]; errands: ErrandRow[] };

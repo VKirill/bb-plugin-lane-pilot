@@ -10,7 +10,7 @@ import { fileContaining, filesContaining } from "./support/source-text";
 
 describe("layout geometry harness", () => {
   it("loads the full bundled prompt, not a stub", () => {
-    const bundled = JSON.parse(readFileSync(join(import.meta.dirname, "../src/rooms/native-agent/bundled-agents.json"), "utf8"));
+    const bundled = JSON.parse(readFileSync(join(import.meta.dirname, "../src/rooms/contracts/bundled-agents.json"), "utf8"));
     expect(bundled["dev-orchestrator"].prompt).toContain("Lane Pilot PM");
     expect(bundled["dev-orchestrator"].prompt).not.toContain("Boot solo");
     expect(bundled["dev-orchestrator"].prompt.length).toBeGreaterThan(400);

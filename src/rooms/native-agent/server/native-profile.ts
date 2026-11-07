@@ -1,4 +1,5 @@
-import { MAIN_AGENT_PROFILE_IDS, compileEffectiveMainAgent, compileMainAgentProfile, type CustomAgentMeta } from "../agent-profile";
+import { MAIN_AGENT_PROFILE_IDS } from "../../contracts/server";
+import { compileEffectiveMainAgent, compileMainAgentProfile, type CustomAgentMeta } from "../agent-profile";
 import { sessionOverrideAgentsJson } from "../native-agent-definition";
 import { employeeRoleLines, withRoleLines } from "../employee-lessons";
 import { prepareNativeSessionRecord } from "../native-dispatch";

@@ -3,7 +3,7 @@ import { createFakeWorktreeHost } from "../own-worktree-host";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import plugin from "../../server";
-import { QA_HOST_KEY } from "../../src/rooms/qa/qa-host";
+import { QA_HOST_KEY } from "@lane-pilot/settings-catalog";
 import type { TaskV2 } from "../../src/rooms/contracts";
 import { createRun, getAttempt, getRun, listStageReceipts, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../../src/rooms/plugin-db";
 

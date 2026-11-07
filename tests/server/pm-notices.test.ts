@@ -223,7 +223,8 @@ describe("council start reports the decision to the PM chat", () => {
 
 describe("lead hand-over runs", () => {
   it("send nothing to the borrowed PM chat: the end goes back to the lead's road", async () => {
-    const { addRoad, decideRoad, getRoad, proposeRoad } = await import("../../src/rooms/lead/server/road");
+    const { addRoad, decideRoad, getRoad, listRoad, proposeRoad, reopenRoad } = await import("../../src/rooms/lead/server/road");
+    const roadApi = { addRoad, getRoad, listRoad, doneRoad: (await import("../../src/rooms/lead/server/road")).doneRoad, reopenRoad };
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
     createRun(db, runId, projectId);
@@ -238,11 +239,11 @@ describe("lead hand-over runs", () => {
     };
     const blockedId = accepted();
     const blocked = runRow({ idem_key: `intake:${pmThreadId}:lead:${blockedId}`, workflow_id: "issue-quick", status: "blocked", reason: "goal_audit: not met: request" });
-    expect(await notifyWorkflowIfEnded({ bb, db, log: () => undefined, run: blocked, unmetGoalIds: ["request"] })).toBe(false);
+    expect(await notifyWorkflowIfEnded({ bb, db, leadRoad: roadApi, log: () => undefined, run: blocked, unmetGoalIds: ["request"] })).toBe(false);
     expect(getRoad(db, blockedId)!.state).toBe("open");
     expect(getRoad(db, blockedId)!.why).toContain("goal_audit: not met: request");
     const doneId = accepted();
-    expect(await notifyWorkflowIfEnded({ bb, db, log: () => undefined, run: runRow({ idem_key: `intake:${pmThreadId}:lead:${doneId}`, workflow_id: "issue-quick" }) })).toBe(false);
+    expect(await notifyWorkflowIfEnded({ bb, db, leadRoad: roadApi, log: () => undefined, run: runRow({ idem_key: `intake:${pmThreadId}:lead:${doneId}`, workflow_id: "issue-quick" }) })).toBe(false);
     expect(getRoad(db, doneId)!.state).toBe("done");
     expect(sends).toHaveLength(0);
     expect(db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_owner_item").get()).toMatchObject({ n: 0 });

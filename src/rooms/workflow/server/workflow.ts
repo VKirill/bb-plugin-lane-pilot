@@ -13,7 +13,8 @@ import { isEmployeeSpecialist } from "../../native-agent";
 import { createGoalAuditor } from "./workflow-goal-audit";
 import { chainRuntimeFor, registerChainExecutors } from "./workflow-executors";
 import { notifyWorkflowIfEnded } from "./pm-notice";
-import { ERRAND_EPISODE_TRACE_EVENTS, recordErrandEpisode } from "../../errands";
+import { ERRAND_EPISODE_TRACE_EVENTS, type ErrandEpisodesApi } from "../../contracts/server";
+import type { LeadRoadApi } from "../../contracts";
 import { createAfterAcceptStarter, registerAfterAcceptExecutors } from "./after-accept";
 import { registerInvoiceActions } from "./workflow-invoice";
 import { registerTelegramActions } from "./workflow-telegram";
@@ -50,6 +51,8 @@ interface Services {
   startWriterTask: StartWriterTask;
   workflowEngine: WorkflowEngineApi["workflowEngine"];
   workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+  leadRoad: LeadRoadApi;
+  errandEpisodes: ErrandEpisodesApi;
 }
 
 /**
@@ -71,12 +74,12 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
     const run = db.prepare("SELECT * FROM lane_pilot_wf_run WHERE id=?").get(runId) as RunRow | undefined;
     if (!run) return;
     const unmet = engineRef.current?.lastAudit(runId)?.unmet.map((entry) => entry.id);
-    void notifyWorkflowIfEnded({ bb: ctx.bb, db, log: (message) => ctx.log(message), run, unmetGoalIds: unmet }).catch((cause: unknown) => {
+    void notifyWorkflowIfEnded({ bb: ctx.bb, db, leadRoad: services.leadRoad, log: (message) => ctx.log(message), run, unmetGoalIds: unmet }).catch((cause: unknown) => {
       ctx.log(`Lane Pilot workflow ${runId}: PM notice failed: ${cause instanceof Error ? cause.message : String(cause)}`);
     });
     // The errand episode facts (R3): written when an errand run ends — the `errand` graph by workflow_id, a routed run by its pending row.
     if ((TERMINAL_RUN as readonly string[]).includes(run.status)) {
-      void recordErrandEpisode({
+      void services.errandEpisodes.recordErrandEpisode({
         db, runId,
         readEvents: (threadId) => services.harness.threadEvents(threadId, ERRAND_EPISODE_TRACE_EVENTS),
         log: (message) => ctx.log(message),

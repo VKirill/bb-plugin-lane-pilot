@@ -1,8 +1,9 @@
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { renderThreadEvents, threadToolTrace, trajectoryStats, type ThreadEventLike, type ThreadToolTraceEntry } from "@lane-pilot/harness-core";
 import { TERMINAL_RUN, type RunRow } from "@lane-pilot/workflow-engine";
+import { collectEnabled } from "../contracts/server";
 import { loadProjectSettings, type LanePilotDatabase } from "../storage";
-import { errandOutcome } from "./logic";
+import { errandOutcome } from "../contracts/server";
 
 /**
  * Errand episodes, phase A (the crystallization foundation, stream R3): the facts of an errand run written by code when
@@ -13,12 +14,12 @@ import { errandOutcome } from "./logic";
  * pending row `pendingErrandEpisode` writes at start, which `recordErrandEpisode` fills when the run ends. Both go by
  * the composite key (run_id, extractor_version), so a repeated completion event writes nothing twice.
  */
-export const ERRAND_EPISODE_TABLE = "lane_pilot_errand_episode";
-export const ERRAND_EPISODE_EXTRACTOR_VERSION = 1;
+import { ERRAND_EPISODE_TABLE } from "../contracts/server";
+import { ERRAND_EPISODE_EXTRACTOR_VERSION } from "../contracts/server";
 /** The phase-B columns the hourly sweep writes (src/rooms/errands/episode-enrich.ts); `process_key` stays NULL — stream E owns it. */
 export const ERRAND_EPISODE_ENRICH_COLUMNS = ["process_key", "enriched_model", "enriched_at", "summary_json", "failure_class", "process_key_proposed", "enrichment_reason"] as const;
 /** Events of the helper thread the trace reads at most (the harness reader pages 100 at a time). */
-export const ERRAND_EPISODE_TRACE_EVENTS = 1500;
+import { ERRAND_EPISODE_TRACE_EVENTS } from "../contracts/server";
 const DAY_MS = 86_400_000;
 
 type Db = { prepare(sql: string): { all(...params: unknown[]): unknown[]; get(...params: unknown[]): unknown; run(...params: unknown[]): unknown } };
@@ -26,12 +27,8 @@ type Db = { prepare(sql: string): { all(...params: unknown[]): unknown[]; get(..
 const parse = <T,>(text: string | null | undefined, fallback: T): T => { try { return text ? (JSON.parse(text) as T) : fallback; } catch { return fallback; } };
 
 /** episodes.collect (default on): a project or the global layer may switch the recorder off; nothing is written then. */
-export function collectEnabled(db: LanePilotDatabase, projectId: string | null): boolean {
-  const value = loadProjectSettings(db, projectId ?? GLOBAL_SETTINGS_PROJECT_ID)["episodes.collect"];
-  if (typeof value === "boolean") return value;
-  if (typeof value === "number") return value !== 0;
-  if (typeof value === "string") return !["false", "0", "off", "no"].includes(value.trim().toLowerCase());
-  return true;
+function collectEnabledFor(db: LanePilotDatabase, projectId: string | null): boolean {
+  return collectEnabled(loadProjectSettings(db, projectId ?? GLOBAL_SETTINGS_PROJECT_ID));
 }
 
 /** What the `spawn` effect of a run's helper step recorded: the thread and the browser machine, once the thread exists. */
@@ -46,7 +43,7 @@ export function errandSpawnOf(db: Db, runId: string): { threadId: string; browse
  */
 export function pendingErrandEpisode(db: LanePilotDatabase, input: { runId: string; projectId: string | null; workflowId: string }, log?: (message: string) => void): void {
   try {
-    if (!collectEnabled(db, input.projectId)) return;
+    if (!collectEnabledFor(db, input.projectId)) return;
     const now = Date.now();
     db.prepare(`INSERT OR IGNORE INTO ${ERRAND_EPISODE_TABLE}
       (run_id, extractor_version, project_id, workflow_id, status, outcome, enrichment_state, created_at, updated_at)
@@ -77,7 +74,7 @@ export async function recordErrandEpisode(deps: EpisodeDeps): Promise<void> {
   try {
     const run = db.prepare("SELECT * FROM lane_pilot_wf_run WHERE id=?").get(runId) as RunRow | undefined;
     if (!run || !(TERMINAL_RUN as readonly string[]).includes(run.status)) return;
-    if (!collectEnabled(db, run.project_id)) return;
+    if (!collectEnabledFor(db, run.project_id)) return;
     const existing = db.prepare(`SELECT status FROM ${ERRAND_EPISODE_TABLE} WHERE run_id=? AND extractor_version=?`)
       .get(runId, ERRAND_EPISODE_EXTRACTOR_VERSION) as { status: string } | undefined;
     if (existing ? existing.status !== "running" : run.workflow_id !== "errand") return;

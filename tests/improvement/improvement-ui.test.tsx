@@ -3,7 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "@lane-pilot/i18n";
-import { HUB_SPECS, PROJECT_DEFAULT_KEYS } from "../../src/rooms/improvement";
+import { HUB_SPECS, PROJECT_DEFAULT_KEYS } from "@lane-pilot/settings-catalog";
 
 configure({ asyncUtilTimeout: 5_000 });
 vi.setConfig({ testTimeout: 30_000 });

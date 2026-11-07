@@ -10,9 +10,9 @@ import { loadProjectSettings, saveProjectSetting } from "../../storage";
 import { mentionContext } from "../../native-agent";
 import { projectRoleField } from "../../runs/server";
 import { storeNativeSelection } from "../../native-agent/server";
-import { lanePilotProjectOrNotice } from "../../self-repair/server";
+import type { LaneProjectNotice, MemoryEvalRunner } from "../../contracts";
 import { fireTimes } from "../../schedule";
-import { LEAD_ID, LEAD_NAME, LEAD_TICK } from "../lead-agent";
+import { LEAD_ID, LEAD_NAME, LEAD_TICK } from "../../contracts/lead-agent";
 import { examAll, type Verdict } from "../logic";
 import { parseLeadSettings, type LeadSettings } from "../settings";
 import { identityBlock, loadIdentity, writeRoadExport } from "./identity";
@@ -20,9 +20,10 @@ import { answerDecision, examRows, getDecision, labelDecision, listDecisions, op
 import { createLeadSchedule } from "./lead-schedule";
 import { formatMemoryExam, MEMORY_EXAM_KEY, runMemoryExam, type MemoryExam } from "./memory-exam";
 import { actsVia, applyExam, rightsView, type TierChange } from "./rights";
-import { decideRoad, doneRoad, getRoad, rejectRoad, roadCounts, roadMarkdown, roadPayload, type RoadRow } from "./road";
+import { decideRoad, doneRoad, getRoad, rejectRoad, roadCounts, roadMarkdown, roadPayload } from "./road";
+import type { RoadRow } from "../../contracts/lead-road";
 import { architectPrompt, architectSeedOf, postArchitectHand, registerLeadTickActions, proposalDecisionId, proposalItemKey, seedForm, type ProposalDecision } from "./tick";
-import { WORKFLOW_ARCHITECT_ID } from "../../native-agent";
+import { WORKFLOW_ARCHITECT_ID } from "../../contracts/server";
 import { closeTick, getTick, listTicks, openTick, patchTick, sweepStaleTicks, type TickRow } from "./tick-store";
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
@@ -32,14 +33,13 @@ import type { WorkflowTriggersApi } from "../../workflow/server/workflow-trigger
 
 import type { ScheduleService } from "../../schedule/server/schedule-service";
 
-import type { RuleScanApi } from "../../self-repair/server/rule-scan";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
   docsPlaces: DocsNightlyApi["docsPlaces"];
   lead: LeadApi;
   phaseIntake: PhaseIntake;
-  ruleScan: RuleScanApi;
+  laneProject: LaneProjectNotice;
   schedules: ScheduleService;
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
   workflowEngine: WorkflowEngineApi["workflowEngine"];
@@ -84,7 +84,7 @@ export type LeadState = {
   memoryExam: MemoryExam | null;
 };
 
-export function createLeadService(ctx: ServerCore, services: Services, migrations: readonly string[]) {
+export function createLeadService(ctx: ServerCore, services: Services, runEval: MemoryEvalRunner, migrations: readonly string[]) {
   const { db, bb } = ctx;
 
   const settings = (): LeadSettings => parseLeadSettings(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID));
@@ -93,7 +93,7 @@ export function createLeadService(ctx: ServerCore, services: Services, migration
   async function homeProjectId(): Promise<string> {
     const own = settings().project;
     if (own) return own;
-    const found = await lanePilotProjectOrNotice(db, bb, ctx.host);
+    const found = await services.laneProject(db, bb, ctx.host);
     if (!found) throw new Error("lane_pilot_project_unresolved: self-repair:config has no projectId and no project source shares this repository's remote");
     return found.projectId;
   }
@@ -203,7 +203,7 @@ export function createLeadService(ctx: ServerCore, services: Services, migration
 
   /** The memory exam on demand or on its Sunday cron: two measurements with a control, stored under one key; nothing of it moves a right. */
   async function memoryExam(options: { limit?: number; recall?: boolean } = {}, now: number = Date.now()): Promise<MemoryExam> {
-    const exam = await runMemoryExam(db, { ...options, settings: loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID) as never, now, migrations });
+    const exam = await runMemoryExam(db, { ...options, settings: loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID) as never, now, migrations }, runEval);
     await bb.storage.kv.set(MEMORY_EXAM_KEY, exam);
     bb.log.info(`lead memory exam: ${formatMemoryExam(exam).split("\n").slice(1, 3).join("; ")}`);
     return exam;

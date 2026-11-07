@@ -10,7 +10,8 @@ import { employeeRemarkJudgment } from "@lane-pilot/jev/judgments/employee-remar
  * line is appended to `lp.role.lines:<projectId>:<role>` — the section every specialist brief already renders.
  */
 import { recordRoleLine } from "../../native-agent";
-export { recordRoleLine, roleLinesKey } from "../../native-agent";
+export { recordRoleLine } from "../../native-agent";
+export { roleLinesKey } from "../../contracts/server";
 const ROLE_LINES_CAP = 30;
 
 export async function recordEmployeeLesson(kv: BbPluginApi["storage"]["kv"], db: LanePilotDatabase, input: { projectId: string; role: string; line: string; evidence?: string }): Promise<{ line: string; proposalId: string }> {

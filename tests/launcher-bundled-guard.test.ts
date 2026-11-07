@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { hookEnv } from "./hook-env";
-import { NATIVE_HOOK_SOURCES } from "../src/rooms/native-install/native-hook-sources";
+import { NATIVE_HOOK_SOURCES } from "../src/rooms/contracts/native-hook-sources";
 import { materializeNativeHookSession } from "../src/rooms/native-agent/native-session-hooks";
 
 // A native PM launcher writes its hooks into native-launchers/<id>/hooks on every prepare. The hooks must be Lane Pilot's bundle,

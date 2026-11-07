@@ -9,7 +9,7 @@ import type { ServerCore } from "../../contracts/server";
 import { errandModelForRun } from "./schedule-default";
 import { allowedSecretNames, secretFixLines, secretProblem } from "../../secrets/server";
 
-import type { ErrandsApi } from "../../qa/server/errands";
+import type { ErrandsApi } from "../../contracts";
 import type { WorkflowEngineApi } from "../../workflow/server/workflow";
 import type { WorkflowTriggersApi } from "../../workflow/server/workflow-triggers-live";
 

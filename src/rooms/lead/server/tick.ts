@@ -8,7 +8,8 @@ import type { ChainRuntime } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 import { closeOwnerItem, collectOwnerWaiting, isSandboxProject, loadPushConfig, postOwnerItem, rpcLine, type OwnerAction, type OwnerEvidence } from "../../owner-waiting";
 import { errandStem, errandTitle, routeConfidence } from "../../errands";
-import { ARCHITECT_LAUNCH, WORKFLOW_ARCHITECT_ID } from "../../native-agent";
+import { WORKFLOW_ARCHITECT_ID } from "../../contracts/server";
+import { ARCHITECT_LAUNCH } from "../../native-agent";
 import { listPhases } from "../../phase";
 import { loadProjectSettings, type LanePilotDatabase } from "../../storage";
 import { taskMemoryContext } from "../../memory/server";
@@ -18,7 +19,8 @@ import { identityBlock, loadIdentity } from "./identity";
 import { answerDecision, examRows, getDecision, openDecision, predictDecision } from "./journal";
 import { actsVia, LEAD_CLASSES, mayAct, rightsView } from "./rights";
 import { createLeadSchedule, schedulePayloadProblem } from "./lead-schedule";
-import { addRoad, decideRoad, getRoad, listRoad, proposeRoad, roadCounts, roadPayload, syncRoadProposal, type RoadEvidence, type RoadRow } from "./road";
+import { addRoad, decideRoad, getRoad, listRoad, proposeRoad, roadCounts, roadPayload, syncRoadProposal } from "./road";
+import type { RoadEvidence, RoadRow } from "../../contracts/lead-road";
 import { closeTick as closeTickRow, dayStart, listTicks, patchTick, spentSince } from "./tick-store";
 import { attachNearest, type FormHint, type GroupSignals, type NearestUnit } from "./nearest";
 
@@ -27,12 +29,10 @@ import type { WorkflowEngineApi } from "../../workflow/server/workflow";
 import type { WorkflowTriggersApi } from "../../workflow/server/workflow-triggers-live";
 
 import type { ScheduleService } from "../../schedule/server/schedule-service";
-import type { RuleScanApi } from "../../self-repair/server/rule-scan";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
   phaseIntake: PhaseIntake;
-  ruleScan: RuleScanApi;
   schedules: ScheduleService;
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
   workflowEngine: WorkflowEngineApi["workflowEngine"];

@@ -5,10 +5,11 @@ import {findModelIn, isZcodeProvider, providerLimitNotice, writerExecutionSelect
 import { jev } from "@lane-pilot/jev";
 import { stepTrivialJudgment } from "@lane-pilot/jev/judgments/step-trivial";
 ;
-import { MAIN_AGENT_ID, ROLE_PROFILES, compileEffectiveMainAgent, employeeView, isCustomAgentId, isEmployeeSpecialist, mentionContext, placeEmployeeOn } from "../../native-agent";
+import { MAIN_AGENT_ID, isCustomAgentId } from "../../contracts/server";
+import { ROLE_PROFILES, compileEffectiveMainAgent, employeeView, isEmployeeSpecialist, mentionContext, placeEmployeeOn } from "../../native-agent";
 import type { ExtraAccess, HelperRole } from "../../native-agent";
 import { storeNativeSelection } from "../../native-agent/server";
-import { LEAD_ID } from "../../lead";
+import { LEAD_ID } from "../../contracts";
 import {isNotFound, orMiss, outputText, redactKnown} from "@lane-pilot/kit";
 import { READ_ONLY_LINE, agentPrompt, outputContract, parseAgentOutput } from "@lane-pilot/workflow-engine";
 import { contractProblems, contractRepairPrompt, describeProblems, hasContractProblems } from "@lane-pilot/workflow-engine";

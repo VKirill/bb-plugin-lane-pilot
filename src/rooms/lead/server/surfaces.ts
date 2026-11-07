@@ -25,7 +25,7 @@ export const askTaskWord = (db: Db, input: { runId: string; projectId: string; f
     situation: wordSituation(input.task, input.family), options: WORD_OPTIONS }, settings, now);
 
 /** The list's row of a landing that waits for the word, one per attempt under the family's prefix (finish.ts posts, the word or the end of the wait closes). */
-export const taskWordItemPrefix = (runId: string, family: string) => `task-word:${runId}:${family}:`;
+import { taskWordItemPrefix } from "../../contracts";
 
 /** lane_pilot_queue word, the task_word RPC: the owner's word is recorded, and the question leaves his list. */
 export const answerTaskWord = (db: Db, runId: string, family: string, decision: "yes" | "no", text: string, by: string, now?: number) => {
@@ -47,3 +47,6 @@ export const askPhaseWord = (db: Db, phase: WordPhase, turn: string, wave: numbe
 export const answerPhaseWord = (db: Db, phaseId: string, turn: string, wave: number | undefined, decision: "yes" | "no", text: string, by: string, now?: number) => {
   try { answerDecision(db, phaseDecisionId(phaseId, turn, wave), { option: decision, text }, by, now); void refineVerdict(db, phaseDecisionId(phaseId, turn, wave), undefined, now); } catch { /* journal only */ }
 };
+
+/** The task-word surface as one object, for the services bag. */
+export const taskWordPort = { ask: askTaskWord, answer: answerTaskWord } as const;

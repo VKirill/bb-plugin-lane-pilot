@@ -1,7 +1,7 @@
 import { buildEvalDb, planCorpus, prng, type EvalScope, type SizePlan } from "./corpus";
 import { createRetrievers, type Retriever } from "./retrievers";
 import type { EvalQuestion } from "./questions";
-import type { EvalData } from "./source";
+import type { EvalData } from "../../contracts/memory-eval";
 
 /**
  * The memory evaluation (SMA block 4 «Next», P2-7): does retrieval find what a task needs, and does it say nothing when nothing is

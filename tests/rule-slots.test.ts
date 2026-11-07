@@ -4,7 +4,8 @@ import { getRuleProposal, listRuleProposals, upsertLessonProposal } from "@lane-
 import { storeMemoryRecords } from "@lane-pilot/memory-core";
 import { openDatabase, saveProjectSetting } from "../src/rooms/plugin-db";
 import { adoptRuleProposal, adoptWaitingRules } from "../src/rooms/self-repair/server/insights";
-import { DEFAULT_RULE_TOKENS, ruleTokens, setRuleBudgets } from "../src/rooms/learning/rule-budget";
+import { DEFAULT_RULE_TOKENS } from "../src/rooms/contracts/rule-budget";
+import { ruleTokens, setRuleBudgets } from "../src/rooms/learning";
 
 afterEach(() => setRuleBudgets({ ...DEFAULT_RULE_TOKENS }));
 // The pool is a token budget now (src/rooms/learning/rule-budget.ts); these tests size it to hold exactly the first twelve writer rules.

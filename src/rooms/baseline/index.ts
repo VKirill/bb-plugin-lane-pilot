@@ -3,4 +3,4 @@ export { baselineMigrations } from "./migrations";
 export { getBaseline, listBaselines, listRegressions } from "./store";
 export { commandPathLiterals, quarantineFilesOf, quarantineFileSet } from "./regress-files";
 export type { BaselineRecord, RegressionRecord } from "./store";
-export { EXISTENCE_ONLY_WORDS, NO_RED_KINDS, isExistenceOnly } from "./logic";
+export { isExistenceOnly } from "./logic";

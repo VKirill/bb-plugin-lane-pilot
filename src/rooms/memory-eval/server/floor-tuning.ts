@@ -1,7 +1,7 @@
 import { clearsFloor, memoryContext, questionWords, recordRelevance, searchMemoryRecords, wordFrequencies, type MemoryRecord, type RecordRelevance, type RelevanceFloor } from "@lane-pilot/memory-core";
 import { buildEvalDb, planCorpus, type EvalScope } from "./corpus";
 import type { EvalQuestion } from "./questions";
-import type { EvalData } from "./source";
+import type { EvalData } from "../../contracts/memory-eval";
 
 /**
  * Choosing the relevance floor of the query paths without grading it on the questions it was chosen on. The questions are split in two

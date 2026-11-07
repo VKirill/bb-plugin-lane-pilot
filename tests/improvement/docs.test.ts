@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { HUB_SPECS, PROJECT_DEFAULT_KEYS } from "../../src/rooms/improvement";
+import { HUB_SPECS, PROJECT_DEFAULT_KEYS } from "@lane-pilot/settings-catalog";
 
 const root = join(__dirname, "../..");
 const doc = readFileSync(join(root, "docs/self-improvement-settings.md"), "utf8");

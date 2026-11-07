@@ -1,6 +1,6 @@
 import { jev, type JevSettings } from "@lane-pilot/jev";
 import { SANDBOX_PROJECT_ID, isDrillTask } from "../../stability/server";
-import { loadEvalData, runMemoryEval } from "../../memory-eval/server";
+import type { MemoryEvalRunner } from "../../contracts";
 import { OWNER_ANSWERERS } from "../logic";
 import { leadPredictJudgment, type PredictDecision, type PredictHistory } from "../predict";
 import type { Db } from "./journal";
@@ -54,13 +54,13 @@ async function predictOnce(row: Row, history: PredictHistory[], settings: JevSet
   return { decision: { option: null, p: 0 }, by: "none" };
 }
 
-export async function runMemoryExam(db: Db, options: { limit?: number; settings?: JevSettings; now?: number; recall?: boolean; migrations: readonly string[] }): Promise<MemoryExam> {
+export async function runMemoryExam(db: Db, options: { limit?: number; settings?: JevSettings; now?: number; recall?: boolean; migrations: readonly string[] }, runEval: MemoryEvalRunner): Promise<MemoryExam> {
   const now = options.now ?? Date.now();
   const caveats: string[] = [];
   let recall: MemoryExam["recall"] = null;
   if (options.recall !== false) {
     try {
-      const report = await runMemoryEval(loadEvalData(db as never), { sizes: [300], seed: 1, scope: "project", skipProjects: new Set([SANDBOX_PROJECT_ID]), skipTask: isDrillTask, now, migrations: options.migrations });
+      const report = await runEval.run(runEval.load(db as never), { sizes: [300], seed: 1, scope: "project", skipProjects: new Set([SANDBOX_PROJECT_ID]), skipTask: isDrillTask, now, migrations: options.migrations });
       const size = report.sizes[0];
       const production = size?.scores.find((score) => score.production) ?? size?.scores[0];
       if (size && production) {

@@ -8,7 +8,8 @@ import { DEFAULT_BUDGET_HOURS, DEFAULT_BUDGET_TOKENS } from "../../src/rooms/ben
 import { createBench } from "../../src/rooms/bench/service";
 import { createCore } from "../../src/rooms/core/server/core";
 import { HARNESS_DEFAULTS, createHarness } from "../../src/rooms/harness/server/harness";
-import { HUB_SPECS, PROJECT_DEFAULT_KEYS, hubFields, readHubRows, writeHubFields, writeHubSettings } from "../../src/rooms/improvement";
+import { HUB_SPECS, PROJECT_DEFAULT_KEYS } from "@lane-pilot/settings-catalog";
+import { hubFields, readHubRows, writeHubFields, writeHubSettings } from "../../src/rooms/platform/server";
 import { nextNightRun } from "../../src/rooms/improvement/server";
 import { DEFAULT_PUSH_CONFIG, loadPushConfig, savePushConfig } from "../../src/rooms/owner-waiting/push";
 import { casUpsertSetting, openDatabase } from "../../src/rooms/plugin-db";

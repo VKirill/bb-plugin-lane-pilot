@@ -2,10 +2,12 @@ import { describe, expect, it, afterEach } from "vitest";
 import { roleSpec } from "../src/rooms/workflow/server/workflow-agent";
 import { setLocaleOverride, t } from "@lane-pilot/i18n";
 import { agentPickerLabel } from "../src/rooms/native-agent/agent-display";
-import { compileMainAgentProfile, MAIN_AGENT_PROFILE_IDS } from "../src/rooms/native-agent/agent-profile";
-import { BB_AGENT_SUMMARIES, laneSessionOverlayPrompt, overlaySessionTools } from "../src/rooms/native-agent/native-agent-overlay";
+import { MAIN_AGENT_PROFILE_IDS } from "../src/rooms/contracts/server";
+import { compileMainAgentProfile } from "../src/rooms/native-agent/agent-profile";
+import { BB_AGENT_SUMMARIES } from "../src/rooms/contracts/server";
+import { laneSessionOverlayPrompt, overlaySessionTools } from "../src/rooms/native-agent/native-agent-overlay";
 import { NATIVE_LP_BRIDGE_LEAD_TOOLS } from "../src/rooms/native-agent/native-session-hooks";
-import { LEAD_ID, LEAD_LAUNCH, LEAD_SESSION, LEAD_TICK } from "../src/rooms/lead/lead-agent";
+import { LEAD_ID, LEAD_LAUNCH, LEAD_SESSION, LEAD_TICK } from "../src/rooms/contracts/lead-agent";
 import {BUILTIN_SOURCES} from "../src/rooms/workflow/builtin";
 
 afterEach(() => setLocaleOverride(null));

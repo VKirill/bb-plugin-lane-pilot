@@ -1,8 +1,12 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { roleLinesKey } from "../contracts/server";
 import type { CompiledMainAgent } from "./agent-profile";
 
-/** The KV key of the role's lesson lines, shared by every reader (specialist brief, employee chat, PM tools). */
-export const roleLinesKey = (projectId: string, role: string) => `lp.role.lines:${projectId}:${role}`;
+/** The compiled profile with its role lessons appended, in the same dated-lines block a PM-spawned specialist gets. */
+export function withRoleLines(compiled: CompiledMainAgent, lines: readonly string[]): CompiledMainAgent {
+  if (!lines.length) return compiled;
+  return { ...compiled, prompt: `${compiled.prompt}\n\nLines added to your role in this project (one dated line per review lesson):\n${lines.map((line) => `- ${line}`).join("\n")}` };
+}
 
 /** A dated rule line on `lp.role.lines:<projectId>:<role>` — what the specialist's brief prepends. */
 export async function recordRoleLine(kv: BbPluginApi["storage"]["kv"], projectId: string, role: string, line: string): Promise<string> {
@@ -20,10 +24,4 @@ export async function recordRoleLine(kv: BbPluginApi["storage"]["kv"], projectId
  */
 export async function employeeRoleLines(bb: Pick<BbPluginApi, "storage">, projectId: string, agentId: string): Promise<string[]> {
   return ((await bb.storage.kv.get(roleLinesKey(projectId, agentId))) as string[] | null) ?? [];
-}
-
-/** The compiled profile with its role lessons appended, in the same dated-lines block a PM-spawned specialist gets. */
-export function withRoleLines(compiled: CompiledMainAgent, lines: readonly string[]): CompiledMainAgent {
-  if (!lines.length) return compiled;
-  return { ...compiled, prompt: `${compiled.prompt}\n\nLines added to your role in this project (one dated line per review lesson):\n${lines.map((line) => `- ${line}`).join("\n")}` };
 }

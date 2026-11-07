@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { errandCheck, errandVerdict } from "../src/rooms/qa/server/errands";
-import { errandOutcome } from "../src/rooms/errands";
+import { errandOutcome } from "../src/rooms/contracts/server";
 
 const report = (...lines: string[]) => lines.join("\n");
 const check = (text: string) => errandCheck(text, errandVerdict(text).state);

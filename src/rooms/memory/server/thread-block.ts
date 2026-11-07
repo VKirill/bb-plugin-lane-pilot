@@ -1,6 +1,6 @@
 import { coreShelf, isSharedScope } from "@lane-pilot/memory-core";
-import { memorySettingsFor } from "../../self-repair/server";
-import type { LanePilotDatabase } from "../../storage";
+import { memorySettingsFor } from "./memory-settings";
+import { loadProjectSettings, type LanePilotDatabase } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
 
 /**
@@ -108,7 +108,7 @@ function silentThread(db: LanePilotDatabase, threadId: string): boolean {
  */
 export function threadMemoryBlock(db: LanePilotDatabase, input: { projectId: string; threadId: string }): string | null {
   if (silentThread(db, input.threadId)) return null;
-  const settings = memorySettingsFor(db, input.projectId);
+  const settings = memorySettingsFor(loadProjectSettings(db, input.projectId));
   if (!settings.enabled) return null;
   if (pluginThread(db, input.threadId)) return THREAD_MEMORY_RULE.join("\n");
   return renderBlock(l1Facts(db, input.projectId, settings.personalBot));
