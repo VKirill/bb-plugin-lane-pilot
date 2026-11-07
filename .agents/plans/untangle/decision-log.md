@@ -112,3 +112,4 @@ Audit B: the 64-room SCC holds by three causes (core barrel imported by 43 rooms
 R1≈G1/G4 (done / in review), R2≈G5/G7c (after F3), R3≈G3+G6 (running), R5≈F3 (running).
 New streams: R6+R9 hardcodes + duplicates → thr_pv7gnv9vqy (LongCat 2.5); R8 swallowed errors → thr_kzf5nymycm (SWE-2 Flash high).
 Queued: R4 table ownership + database.ts split (after F3/G47 — same file), R7 micro-room merge (last: moves directories), R10 substring tests + 423 todos (last: tests are the safety net).
+- G4+G7a merged ad57129d (review Gemini: 225 RPC + 79 host methods, schemas identical; contracts out 0 honest incl. type edges). Kept: anamnesis casts host.call to its own slice — tsc still rejects a wrong method name; the typed alternative (generic ServerCore<THost>) would ripple through every ServerCore user for one call site. Graph 90/68/54/721.
