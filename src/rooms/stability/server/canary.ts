@@ -18,7 +18,7 @@ import { bestEffort } from "@lane-pilot/kit";
  * Nothing here changes how a task runs: a tripped canary does not stop the version, it makes a human decide. Run from the
  * Mac mini with `scripts/lp-canary.sh` (RPC `canary_status`), which exits 1 when the canary tripped or the budget is spent.
  */
-export const VERSION: string = packageJson.version;
+const VERSION: string = packageJson.version;
 export const CANARY_MAX_ATTEMPTS = 20;
 export const CANARY_MAX_MINUTES = 120;
 /** Own-fault share of finished attempts above which the canary trips and the budget is spent. */

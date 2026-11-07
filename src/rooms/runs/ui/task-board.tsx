@@ -332,7 +332,7 @@ function RailRow({ label, children }: { label: string; children: ReactNode }) {
   return <div className="py-1"><div className="text-[11px] font-semibold text-muted-foreground">{label}</div><div className="mt-0.5 min-w-0 break-words text-sm">{children}</div></div>;
 }
 
-export function TaskPage({ item, locale, projectName, onBack }: { item: Item; locale: string; projectName: string; onBack: () => void }) {
+function TaskPage({ item, locale, projectName, onBack }: { item: Item; locale: string; projectName: string; onBack: () => void }) {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
   const [card, setCard] = useState<Card | null | "gone">(null);

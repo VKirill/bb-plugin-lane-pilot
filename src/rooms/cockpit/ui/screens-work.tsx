@@ -34,7 +34,7 @@ export function PhasesScreen({ rpc, projectId }: { rpc: Rpc; projectId: string }
   );
 }
 
-export function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId: string; phaseId: string; onChanged: () => void }) {
+function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId: string; phaseId: string; onChanged: () => void }) {
   const status = useLoad(() => rpc.call("phase_get", { phaseId }) as Promise<PhaseStatus>, [phaseId]);
   const [words, setWords] = useState("");
   const [useful, setUseful] = useState(false);
@@ -186,7 +186,7 @@ export function TasksScreen({ rpc, projectId, runId }: { rpc: Rpc; projectId: st
   );
 }
 
-export function TaskDetail({ rpc, runId, taskId }: { rpc: Rpc; runId: string; taskId: string }) {
+function TaskDetail({ rpc, runId, taskId }: { rpc: Rpc; runId: string; taskId: string }) {
   const task = useLoad(() => rpc.call("cockpit_task", { runId, taskId }) as Promise<TaskView | null>, [runId, taskId]);
   const queue = (action: "hold" | "release" | "priority", priority?: "low" | "normal" | "high" | "urgent") => void rpc.call("cockpit_queue", { runId, taskIds: [taskId], action, ...(priority ? { priority } : {}) }).then(task.reload);
   return (

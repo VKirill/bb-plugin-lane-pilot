@@ -9,7 +9,7 @@ const PLUGIN_ID = "codex-lane@claude-lane-stack";
 const HOOKS_SUFFIX = ".agents/hooks/";
 const STATUSLINE_SUFFIX = ".agents/bin/lane-statusline";
 const NAMED_BINS = new Set(["lane-memory", "run-controller", "lane-ctl", "lane-statusline"]);
-export const UNTOUCHED = [".agents/skills", ".agents/state", ".agents/memory"];
+const UNTOUCHED = [".agents/skills", ".agents/state", ".agents/memory"];
 // A session keeps the hooks it read at its start (Claude Code, Cursor): one started before the cleanup still calls
 // ~/.agents/hooks/<file>. A missing file makes python exit 2, which Claude Code reads as «block», so every command of such a
 // session failed (live 2026-10-30: a Cursor writer of selfystudio stopped on sma_hooks.py three minutes after the cleanup).

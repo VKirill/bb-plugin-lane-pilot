@@ -154,7 +154,7 @@ export function getSettingVersions(db: LanePilotDatabase, projectId: string, key
   return result;
 }
 
-export function bumpSettingGeneration(db: LanePilotDatabase, projectId: string, key: string, version: number, bindingId = ""): void {
+function bumpSettingGeneration(db: LanePilotDatabase, projectId: string, key: string, version: number, bindingId = ""): void {
   db.prepare(`INSERT INTO lane_pilot_setting_generation(project_id,binding_id,key,version) VALUES (?,?,?,?)
     ON CONFLICT(project_id,binding_id,key) DO UPDATE SET version=excluded.version`).run(projectId,bindingId,key,version);
 }

@@ -41,7 +41,7 @@ function cliCommands(): Set<string> {
   return new Set([...text.matchAll(/\{ name:"([a-z0-9-]+)"/g)].map((m) => m[1]!));
 }
 
-export function docAudit(): number {
+function docAudit(): number {
   const findings: string[] = [];
   const commands = cliCommands();
   const map = smaRows();
@@ -57,7 +57,7 @@ export function docAudit(): number {
 
 function lastTag(): string | null { try { return git("describe", "--tags", "--abbrev=0"); } catch { return null; } }
 
-export function vendor(args: string[]): number {
+function vendor(args: string[]): number {
   const ledgerPath = join(ROOT, ".agents/ship/vendor.json");
   const ledger = (existsSync(ledgerPath) ? JSON.parse(readFileSync(ledgerPath, "utf8")) : {}) as Record<string, { from: string | null; to: string; note?: string }>;
   if (args[0] === "triage" && args[1] && args[2]) {
@@ -81,7 +81,7 @@ export function vendor(args: string[]): number {
   return out(untriaged.slice(0, 50).map(([name, row]) => `untriaged vendor update ${name} ${row.from ?? "new"} → ${row.to} (npx tsx scripts/lp-ship.ts vendor triage ${name} "<why it is fine>")`), `vendor ledger: every update since ${tag ?? "the start"} is triaged`);
 }
 
-export function licenses(): number {
+function licenses(): number {
   const notices = existsSync(join(ROOT, "THIRD_PARTY_NOTICES.md")) ? read("THIRD_PARTY_NOTICES.md") : "";
   const findings: string[] = [];
   const rows: string[] = [];
@@ -100,7 +100,7 @@ export function licenses(): number {
   return out(findings, `license ledger: ${rows.length} production dependencies, all named`);
 }
 
-export function badge(args: string[]): number {
+function badge(args: string[]): number {
   const path = args[0] ?? (() => { const dir = join(ROOT, ".agents/runs/drills"); const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".json")).sort() : []; return files.length ? join(dir, files.at(-1)!) : null; })();
   if (!path || !existsSync(path)) { console.log("no receipt to make a badge from"); return 2; }
   const data = JSON.parse(readFileSync(path, "utf8")) as { numPassedTests?: number; numFailedTests?: number; numTotalTests?: number; result?: string; scenarios?: Array<{ result: string }> };
@@ -114,7 +114,7 @@ export function badge(args: string[]): number {
 const vkey = (v: string) => v.replace(/^v/, "").split(".").map(Number);
 const newer = (a: string, b: string) => { const x = vkey(a), y = vkey(b); for (let i = 0; i < 3; i += 1) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0); return false; };
 
-export function publishable(): number {
+function publishable(): number {
   const findings: string[] = [];
   const tag = lastTag();
   if (tag && !newer(pkg.version, tag)) findings.push(`version ${pkg.version} is not above the last tag ${tag}`);
@@ -125,7 +125,7 @@ export function publishable(): number {
   return out(findings, `publishable: ${pkg.version}`);
 }
 
-export function predictLint(): number {
+function predictLint(): number {
   const text = read("CHANGELOG.md");
   const section = text.split(`## ${pkg.version}`)[1]?.split(/\n## /)[0] ?? "";
   const promise = /\b(faster|fewer|less|no longer|never again|быстрее|меньше|больше не|реже)\b/i;
@@ -134,7 +134,7 @@ export function predictLint(): number {
   return out(findings, `prediction lint: the ${pkg.version} notes measure what they promise`);
 }
 
-export function explain(): number {
+function explain(): number {
   const rows = new Map(smaRows().map((row) => [row.id, row]));
   const roots = defaultProofRoots(ROOT);
   const findings: string[] = [];
@@ -150,7 +150,7 @@ export function explain(): number {
   return out(findings, `explainers: every node they explain is proven (map ${smaDonePercent(smaRows())}%)`);
 }
 
-export function lane(args: string[]): number {
+function lane(args: string[]): number {
   const base = args[0] ?? lastTag() ?? "HEAD~1";
   const files = git("diff", "--name-only", `${base}...HEAD`).split("\n").filter(Boolean);
   const full = files.filter((file) => /^(src\/rooms\/(contracts|storage|core)\/|packages\/contracts\/|host\.ts|server\.ts|.*migrations?\.ts)/.test(file));
@@ -160,7 +160,7 @@ export function lane(args: string[]): number {
   return 0;
 }
 
-export function freshness(): number {
+function freshness(): number {
   let served: string | null = null;
   try { served = (JSON.parse(execFileSync("bb", ["plugin", "list", "--json"], { encoding: "utf8", env: { ...process.env, BB_CLI: "" } })) as Array<{ id: string; version?: string }>).find((p) => p.id === "lane-pilot")?.version ?? null; } catch { served = null; }
   const bundle = join(ROOT, "dist", "app.js");

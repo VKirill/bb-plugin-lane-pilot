@@ -1105,7 +1105,7 @@ async function linkWorktreeDependencies(input:{basePath:string;worktreePath:stri
  * Lane Pilot's worktrees sit in a folder of their own (`~/.lane-pilot/worktrees/lpattempt_…/feed-gen`); `git worktree remove` takes the
  * checkout and left that folder behind, empty (339 of 347 on OVH, 2026-10-23). Only an empty one directly under worktrees/ goes.
  */
-export async function removeEmptyWorktreeParent(top:string):Promise<void> {
+async function removeEmptyWorktreeParent(top:string):Promise<void> {
   const parent=dirname(top);
   if(basename(dirname(parent))!=="worktrees"||basename(dirname(dirname(parent)))!==".lane-pilot") return;
   await bestEffort(console.warn, `worktree parent rmdir ${parent}`, rmdir(parent), undefined);
