@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { clipped, extractModelJson, NO_TOOLS_LINE } from "@lane-pilot/workflow-engine";
+import { clipped, extractModelJson, REVIEW_READ_ONLY_LINE } from "@lane-pilot/workflow-engine";
 import { demoteUncited } from "./citations";
 import type { Citation } from "./citations";
 import { taskBrief } from "./task-brief";
@@ -23,8 +23,9 @@ export type SpecialistResult = z.infer<typeof specialistResultSchema> & { status
 export function specialistPrompt(input:{task:unknown; plan:string; agent?:string}):string {
   return [
     `You are ${input.agent?.trim() || "the specialist risk-review stage"} for a bounded software task.`,
-    `Review the task and plan for concrete security, data-loss, compatibility, and recovery risks. ${NO_TOOLS_LINE}`,
-    "Answer with one JSON object and nothing else: no text before or after it. Keys: status (\"pass\", \"rework\" or \"block\"), summary (string, at most 2000 characters), findings (at most 30 objects, each with file, severity \"critical\" or \"high\" (a lower risk is not reported), evidence (at most 2000 characters: what in the task or the plan shows the risk), finding (at most 1000: the concern), criterion (at most 500: the mitigation the plan lacks), and line when you can name it), evidence (string, what you examined and how, at most 4000 characters). Other keys are ignored. Use pass with an empty findings array when there is no high or critical risk.",
+    // It reads the code (2026-11-08): told to open nothing, it passed 389 of 389 reviews in 30 days, judging risks from the plan's words alone.
+    `Review the task and plan for concrete security, data-loss, compatibility, and recovery risks. You are running in the project checkout: open the files the plan changes and grep for what touches the same data, secrets, sign-in or migrations, so a risk you report is one the code shows. ${REVIEW_READ_ONLY_LINE}`,
+    "Answer with one JSON object and nothing else: no text before or after it. Keys: status (\"pass\", \"rework\" or \"block\"), summary (string, at most 2000 characters), findings (at most 30 objects, each with file, severity \"critical\" or \"high\" (a lower risk is not reported), evidence (at most 2000 characters: the quoted line of code, the task or the plan that shows the risk), finding (at most 1000: the concern), criterion (at most 500: the mitigation the plan lacks), and line when you can name it), evidence (string, what you examined and how, at most 4000 characters). Other keys are ignored. Use pass with an empty findings array when there is no high or critical risk.",
     rubricPromptLine("specialist"),
     "rework: a high or critical risk that the PM settles by changing the plan or the contract. block: a risk no edit of the plan removes (data loss, security, a compatibility break the owner must decide); the task stops. Block only when a concrete high or critical risk has no adequate mitigation in the supplied plan. Do not invent repository facts.",
     "TASK BRIEF:", taskBrief(input.task, { fields: ["title", "objective", "risk", "acceptance", "invariants", "out_of_scope", "expected_outputs", "owns_paths", "never_touch", "depends_on"] }),

@@ -108,7 +108,7 @@ describe("JSON-answering prompts state the exact contract", () => {
       expect(prompt).toContain("at most");
       // The code critic (aa79f14f) and the plan critic (2026-11-08) read project files and change nothing; every other reviewer opens nothing.
       if (prompt.startsWith("You are the independent code-critique")) expect(prompt).toContain("Create, edit or delete nothing");
-      else if (prompt.startsWith("You are the independent plan-critique")) expect(prompt).toContain("create, edit or delete nothing");
+      else if (prompt.startsWith("You are the independent plan-critique") || prompt.startsWith("You are the specialist risk-review")) expect(prompt).toContain("Read only: create, edit or delete nothing");
       else { expect(prompt).toContain(NO_TOOLS); expect(prompt).toContain("full access to the project checkout"); }
     }
     expect(prompts[0]).toContain('status ("pass", "rework" or "block")');

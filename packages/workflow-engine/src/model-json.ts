@@ -44,4 +44,6 @@ export const clipped = (max: number, min = 1) => z.preprocess(
 );
 
 /** For reviewers that get everything in the prompt: the reason for the ban, since the thread itself is not read-only. */
+/** For a reviewer that checks claims against the code (plan critic, specialist reviewer, 2026-11-08): it may read, never write. */
+export const REVIEW_READ_ONLY_LINE = "Read only: create, edit or delete nothing and run nothing that writes; anything you change here counts as part of the task's changes.";
 export const NO_TOOLS_LINE = "Everything you need is in this message, so open no files, run no commands and call no tools: this thread has full access to the project checkout, and anything you create or change there would be counted as part of the task's changes.";

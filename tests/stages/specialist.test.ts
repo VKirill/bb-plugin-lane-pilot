@@ -28,6 +28,9 @@ describe("specialist review stage contract", () => {
     expect(prompt).toContain("You are compatibility-reviewer");
     expect(prompt).toContain("risk: critical");
     expect(prompt).toContain("Keep rollback snapshot");
-    expect(prompt).toContain("open no files, run no commands and call no tools");
+    // It reads the code and writes nothing (2026-11-08): told to open nothing it passed 389 of 389 reviews.
+    expect(prompt).toContain("open the files the plan changes");
+    expect(prompt).toContain("Read only: create, edit or delete nothing");
+    expect(prompt).not.toContain("open no files");
   });
 });

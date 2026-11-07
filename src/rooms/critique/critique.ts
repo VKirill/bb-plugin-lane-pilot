@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { settingOff, settingOn } from "@lane-pilot/models";
 import type { CoverageFinding } from "./critique-coverage";
-import { clipped, extractModelJson } from "@lane-pilot/workflow-engine";
+import { clipped, extractModelJson, REVIEW_READ_ONLY_LINE } from "@lane-pilot/workflow-engine";
 import { PLAN_CRITIC_METHOD } from "./role-method";
 import { demoteUncited } from "./citations";
 import type { Citation } from "./citations";
@@ -80,7 +80,7 @@ function policyBoolean(value: unknown, fallback: boolean, key: string): boolean 
  * The plan critic reads the code itself (owner 2026-11-08): it runs in the project checkout, and a critic that saw only the PM's summary
  * of the code could not catch a plan that does not fit it. Reading only: the checkout is the owner's, and a change there counts as the task's.
  */
-export const PLAN_CRITIC_READ_LINE = "You are running in the project checkout. Before the verdict, open the files the plan changes and the files in read_first, and grep for the names the plan relies on (functions, types, settings, commands), so you judge the plan against the code as it is, not as the plan describes it. Read only: create, edit or delete nothing and run nothing that writes; anything you change here counts as part of the task's changes.";
+export const PLAN_CRITIC_READ_LINE = `You are running in the project checkout. Before the verdict, open the files the plan changes and the files in read_first, and grep for the names the plan relies on (functions, types, settings, commands), so you judge the plan against the code as it is, not as the plan describes it. ${REVIEW_READ_ONLY_LINE}`;
 
 /** The PM reader's open questions (its JSON `openQuestions`); its summary of the code is not sent, the critic reads the code. */
 function openQuestions(pmReadContext: string | undefined): string[] {

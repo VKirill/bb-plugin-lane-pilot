@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.488
+
+- **The specialist risk reviewer reads the code.** Told to open no files, it passed 389 of 389 reviews in 30 days, judging security, data-loss and migration risks from the plan's words. It now opens the files the plan changes and greps what touches the same data, secrets, sign-in or migrations, read-only (`REVIEW_READ_ONLY_LINE`, shared with the plan critic); its evidence is the quoted line. The cited path is no longer required to appear in its prompt. Global `plan_critique.min_score` is 7 since 2026-11-08 (high and critical risk, or 3+ write tasks).
+
 ## 0.1.487
 
 - **The plan critic reads the code.** It used to be told to open no files and judged the plan from the PM reader's summary, so a plan that did not fit the code passed. It now opens the files the plan changes and the read_first files and greps the names the plan relies on, read-only, in the project checkout (like the code critic). The PM reader's summary is no longer sent to it, only its open questions, which it answers from the code. Its serious findings need a file, a line and a quoted line, but the cited path is no longer required to appear in its prompt. Structural findings drop the `.gitnexus` index and «nobody owns X» for files the task puts in `never_touch` (7 of 10 findings in the 2026-11-08 audit were such noise).

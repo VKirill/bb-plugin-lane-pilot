@@ -19,7 +19,7 @@ import type { CoverageFinding } from "../critique-coverage";
 import { buildExecutionPacket, renderPacketExcerpts } from "../../tasks/execution-packet";
 import { parsePmReadResult, parsePmReadSettings, pmReadPrompt } from "../pm-read";
 import { boundedAgentName } from "../../contracts/review-vocabulary";
-import { candidateCitations, inputCitations } from "../citations";
+import { candidateCitations } from "../citations";
 import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt, unreadableAnswer } from "../specialist";
 import { reasonForStatus } from "@lane-pilot/workflow-engine";
 import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode, withReferenceTestCritic } from "../../contracts/quality-mode";
@@ -872,7 +872,8 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
         await waitThreadIdle(input.bb,threadId,"specialist_thread_timeout");
         const raw = (await input.bb.sdk.threads.output({threadId})).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("specialist_output_empty");
-        const review = parseSpecialistResult(raw, inputCitations(JSON.stringify(input.task), input.plan));
+        // Like the plan critic it may cite a file it opened, which the hub cannot see: file, line and quoted evidence are still required.
+        const review = parseSpecialistResult(raw);
         const blocked = review.decision === "block";
         const why = verdictReasons(review, "specialist-review");
         recordStage(input.db,{...base,state:blocked ? "blocked" : "passed",providerId,model:modelId,threadId,
