@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import { NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_TOOLS } from "../src/rooms/native-agent/native-session-hooks";
 import { PM_CORE_TOOLS, PM_TOOL_FAMILIES, foldedToolCall, foldedToolHome, rewriteFoldedToolNames } from "../src/rooms/tools/pm-tool-families";
+import { mountToolFamilies } from "../src/rooms/tools/server/tool-families";
+import { registerObservedTool } from "../src/rooms/core/server";
 
 // A compiled Claude Code profile holds at most 64 tools; the PM had 39 Lane Pilot tools next to 24 stock ones (audit round 4, P2-24).
 describe("the PM's folded tool list", () => {
@@ -149,5 +152,50 @@ describe("the PM's folded tool list", () => {
     expect(foldedToolCall("lane_pilot_ask")).toBe('lane_pilot_relay {action:"ask"}');
     expect(rewriteFoldedToolNames("set lane_pilot_ask, then lane_pilot_wait_writer, see lane_pilot_workflow_draft_* tools"))
       .toBe('set lane_pilot_relay {action:"ask"}, then lane_pilot_wait_writer, see lane_pilot_workflow_draft tools');
+  });
+});
+
+// The fold mounts the family members its `contributors` register, so a member mount's call order against
+// registerTools does not matter (server.ts passes mountLearning and mountRegressionTools this way).
+describe("tool families with contributors", () => {
+  const member = (name: string) => ({
+    name,
+    description: `${name} does its thing.`,
+    parameters: z.object({}).strict(),
+    execute: async () => "{}",
+  });
+  // One contributor per family: reversing the list reverses the order the members land in the tool book.
+  const contributors = (agents: Parameters<typeof registerObservedTool>[0]) =>
+    Object.values(PM_TOOL_FAMILIES).map((family) => () => {
+      for (const oldName of Object.values(family.actions)) registerObservedTool(agents, member(oldName));
+    });
+
+  it("folds the members the contributors register, in either contributor order", async () => {
+    for (const reverse of [false, true]) {
+      const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+      try {
+        const mounts = contributors(bb.agents);
+        if (reverse) mounts.reverse();
+        mountToolFamilies({ bb } as never, mounts);
+        const registered = harness.registrations.agentTools.map((tool) => tool.name);
+        for (const name of Object.keys(PM_TOOL_FAMILIES)) expect(registered, name).toContain(name);
+        expect(registered).toContain("lane_pilot_tool_search");
+        // The old tools stay registered under their names: the family wraps them, it does not replace them.
+        for (const old of Object.values(PM_TOOL_FAMILIES).flatMap((family) => Object.values(family.actions))) {
+          expect(registered, old).toContain(old);
+        }
+      } finally {
+        await harness.lifecycle.dispose();
+      }
+    }
+  });
+
+  it("still refuses a fold whose member nobody registered", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    try {
+      expect(() => mountToolFamilies({ bb } as never)).toThrow(/is not registered/);
+    } finally {
+      await harness.lifecycle.dispose();
+    }
   });
 });

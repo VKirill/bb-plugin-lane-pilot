@@ -267,5 +267,5 @@ export function createReconcile(ctx: ServerCore, services: Services) {
     return { resumed, skipped, finished };
   }
 
-  return { threadReconcilePort, recoverLostHolderThread, enqueueResumedWriter, reconcileAttemptThread, maybeFinishResumedAttempt, resumeOrphans };
+  return { recoverLostHolderThread, enqueueResumedWriter, reconcileAttemptThread, resumeOrphans };
 }

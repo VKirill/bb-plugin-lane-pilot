@@ -202,5 +202,5 @@ export function createActivation(ctx: ServerCore, services: Services) {
     return { threadId, runId, ...(excluded.length ? { bookkeepingExcluded:excluded } : {}) };
   }
 
-  return { assertComposerEnvironment, activate };
+  return { activate };
 }

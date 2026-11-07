@@ -1,5 +1,5 @@
 import { gateVocabularyLines, secretShaped } from "../../tasks";
-import { mountErrands, registerBrowserExecutors, runBrowserQaGraph } from "../../qa/server";
+import { registerBrowserExecutors, runBrowserQaGraph } from "../../qa/server";
 import { cancelAttemptById, cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees } from "../../runs/server";
 import { LANE_PILOT_READ_NAME } from "@lane-pilot/kit";
 import { taskV2Schema } from "../../contracts";
@@ -56,7 +56,7 @@ export function compactWaitResult(result: unknown): unknown {
   });
 }
 
-export function registerTools(ctx: ServerCore, services: Services) {
+export function registerTools(ctx: ServerCore, services: Services, familyContributors: readonly (() => void)[] = []) {
   const { bb, db } = ctx;
 
   registerObservedTool(bb.agents, {
@@ -322,7 +322,6 @@ export function registerTools(ctx: ServerCore, services: Services) {
   // ponytail: specialists.ts is owned by the critics branch. Push until that file lists the new ids.
   installEmployeeSpecialists(SPECIALIST_ROLES as unknown as string[]);
   mountSpecialists(ctx, services);
-  services.errands = mountErrands(ctx, services);
   // The browser step and the browser check of an accepted task (graphs browser-step and lp.browser-qa), next to the errand graph:
   // registered from the qa side so the workflow room does not import qa (an import cycle through the errand graph).
   registerBrowserExecutors(services.workflowEngine, ctx, services);
@@ -335,7 +334,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   mountWorkflowArchitect(ctx, services);
   mountLeadTool(ctx, services);
   mountScheduleTools(ctx, services);
-  mountToolFamilies(ctx);
+  mountToolFamilies(ctx, familyContributors);
 
   bb.agents.configure((context) => {
     const role = context.pluginMetadata.role;

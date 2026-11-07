@@ -122,8 +122,13 @@ function mountToolSearch(ctx: ServerCore): void {
   });
 }
 
-/** Run after every module registered its tools: the families wrap their handlers. */
-export function mountToolFamilies(ctx: ServerCore): void {
+/**
+ * Run after every module registered its tools: the families wrap their handlers. `contributors` are mounts that register
+ * family members from outside this function's caller (the learning and regression rooms in server.ts): they run here, at
+ * the fold, so the order the mounts were called in does not matter. A member nobody registered still fails the fold.
+ */
+export function mountToolFamilies(ctx: ServerCore, contributors: readonly (() => void)[] = []): void {
+  for (const contribute of contributors) contribute();
   for (const [name, family] of Object.entries(PM_TOOL_FAMILIES) as Array<[string, ToolFamily]>) mountFamily(ctx, name, family);
   mountToolSearch(ctx);
 }
