@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.492
+
+- **The owner card carries work only.** Everything about the owner is still collected, but interests, hobbies, people and events no longer reach a PM session, even when confirmed; health, money and family stay sensitive and never leave the Anamnesis tab (owner 2026-11-08).
+
 ## 0.1.491
 
 - **«Знания → Память» shows the real switch.** An unset project showed «Выкл» while the server ran memory on (default true); the screen now falls back to the server default. The anamnesis help no longer says the records live on the Mac mini: they are in the Lane Pilot database on the hub.

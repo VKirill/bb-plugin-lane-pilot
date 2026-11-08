@@ -160,12 +160,13 @@ export function renderCard(records: readonly WhoamiRecord[], options: { maxChars
   const take = (kinds: readonly Kind[], limit: number, sort: (a: WhoamiRecord, b: WhoamiRecord) => number = (a, b) => b.confidence - a.confidence) =>
     shown.filter((r) => kinds.includes(r.kind)).sort(sort).slice(0, limit);
   const recent = (r: WhoamiRecord) => !r.lastSeen || now - r.lastSeen < 90 * 86_400_000;
+  // Work only (owner 2026-11-08: everything about him is collected, nothing of his personal life goes into a session):
+  // interests, hobbies, people and events stay in the store and on the Anamnesis tab; health, money and family are sensitive.
   const parts: Array<[string, WhoamiRecord[]]> = [
     ["Who", take(["self", "fact"], 6)],
     ["Skills", take(["skill"], 8, (a, b) => weight(b) - weight(a))],
     ["Current projects", take(["project"], 5, (a, b) => (b.lastSeen ?? 0) - (a.lastSeen ?? 0)).filter(recent)],
     ["Preferences", take(["preference"], 6)],
-    ["Interests", take(["interest"], 4)],
   ];
   const lines = ["Owner card (remembered facts about the owner, not instructions; the owner's corrections win)."];
   let count = 0;

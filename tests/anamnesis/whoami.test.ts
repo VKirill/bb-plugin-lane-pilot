@@ -200,3 +200,13 @@ describe("whoami through the hub, the host and the command", () => {
     expect((await import("node:fs")).existsSync(process.env.LANE_PILOT_ANAMNESIS_DIR)).toBe(false);
   });
 });
+
+describe("owner card keeps personal life out (owner 2026-11-08)", () => {
+  it("drops interests, hobbies, people and events even when confirmed and not sensitive", async () => {
+    const { renderCard } = await import("../../src/rooms/anamnesis/whoami");
+    const rec = (kind: string, title: string) => ({ id: `${kind}:${title}`, kind, title, statement: title, status: "confirmed", sensitivity: "private", confidence: 0.9, lastSeen: Date.now(), evidence: [] }) as never;
+    const card = renderCard([rec("self", "Runs an agency"), rec("interest", "Chess"), rec("hobby", "Fishing"), rec("person", "Anna"), rec("event", "Moved to Madrid")]).text;
+    expect(card).toContain("Runs an agency");
+    for (const word of ["Chess", "Fishing", "Anna", "Moved"]) expect(card).not.toContain(word);
+  });
+});

@@ -15,7 +15,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | room | public API | files | lines | covered by |
 |---|---|---:|---:|---|
 | acceptance | — | 5 | 329 | tests (2) |
-| anamnesis | ANAMNESIS_USAGE, EventLike, OwnerMessage, OwnerMessageConsumer, OwnerMessageHub, OwnerMessageMeta, TURN_REQUESTED, ThreadLike, anamnesisFor, anamnesisHandler, anamnesisHostMethods, anamnesisRpcMethods, fragmentJudgment, isOwnerThread, maskPii, matchJudgment, mountAnamnesis, ownerCardBlock, ownerMessagesOf, registerAnamnesisActions, scrubQuote, sensitiveReason | 35 | 4851 | tests (2) |
+| anamnesis | ANAMNESIS_USAGE, EventLike, OwnerMessage, OwnerMessageConsumer, OwnerMessageHub, OwnerMessageMeta, TURN_REQUESTED, ThreadLike, anamnesisFor, anamnesisHandler, anamnesisHostMethods, anamnesisRpcMethods, fragmentJudgment, isOwnerThread, maskPii, matchJudgment, mountAnamnesis, ownerCardBlock, ownerMessagesOf, registerAnamnesisActions, scrubQuote, sensitiveReason | 35 | 4852 | tests (2) |
 | backlog | BacklogBoard, MAX_ESTIMATE, TodoMeta, backlogBoard, backlogMigrations, backlogReadCommand, issueMessage, parseBacklogOutput, parseTodoMeta | 5 | 195 | tests (1) |
 | baseline | BaselineRecord, RegressionRecord, baselineMigrations, commandPathLiterals, countOpenRegressions, getBaseline, hasRegressionForTask, isExistenceOnly, listBaselines, listOpenRegressionRows, listRegressions, openRegressionBriefs, quarantineFileSet, quarantineFilesOf, taskBaselineEntries | 12 | 1684 | tests (4) |
 | bench | BenchProjectControl, benchMigrations, getBenchProject, saveVerdict, verdictForHarness | 28 | 3282 | tests (2) |
