@@ -1,0 +1,126 @@
+{
+  "schema_version": 2,
+  "id": "T5",
+  "title": "Music and Volcano ambient from Roblox's free licensed library, played by game state (C3)",
+  "risk": "high",
+  "lane": "audio",
+  "objective": "Find 6 tracks (lobby, battle, finalTwo, dungeon, results, menu) and 1 Volcano ambient loop in the Creator Store with the Studio tool server search, accept only isFree=true from creator APMOfficial or Monstercat verified by MarketplaceService:GetProductInfo, put them as a music table in Sounds.luau, and play them through a new Music module in the LavaBonk_Music group by state: lobby place -> lobby (menu while a full-screen screen is open); match MatchPhase shop/heroSelect/initializing -> menu; battle/tiebreak/roundResults -> battle; from the final_two Fx to the end of the round -> finalTwo; matchResults -> results; dungeon place -> dungeon; volcano ambient while workspace Theme is volcano during battle. Studio is driven with the section tool ../scripts/studio/studio.py; read ../scripts/studio/README.md first (outside the project, read only).",
+  "read_first": [
+    "game/src/client/common/Sounds.luau",
+    "game/src/client/common/App.luau",
+    "game/src/client/common/Settings.luau",
+    "game/src/client/match/FinalTwo.client.luau",
+    "game/src/client/match/ArenaVisuals.client.luau",
+    "game/src/server/match/Match.luau",
+    "game/src/client/lobby/init.client.luau",
+    "game/src/client/match/init.client.luau",
+    "game/src/client/dungeon/init.client.luau",
+    "docs/decisions.md"
+  ],
+  "owns_paths": [
+    "game/src/client/common/Sounds.luau",
+    "game/src/client/common/Music.luau",
+    "game/src/shared/Rules/MusicState.luau",
+    "game/src/client/common/App.luau",
+    "game/tests/music_state_spec.luau",
+    "docs/decisions.md",
+    ".bb/chats/thr_i4gi4juuyc/artifacts/c3-*"
+  ],
+  "never_touch": [
+    "assets/upload.json",
+    "assets/manifest.json",
+    "game/src/shared/Assets.luau",
+    "game/src/shared/Config/AccessoryData.luau",
+    "image-studio/**",
+    "game/scripts/check.sh",
+    "docs/feature-status.md",
+    "assets/**",
+    "game/src/client/match/**",
+    "game/src/client/lobby/**",
+    "game/src/client/dungeon/**",
+    "game/src/server/**"
+  ],
+  "expected_outputs": [
+    "game/src/client/common/Sounds.luau",
+    "game/src/client/common/Music.luau",
+    "game/src/shared/Rules/MusicState.luau",
+    "game/tests/music_state_spec.luau",
+    "docs/decisions.md",
+    ".bb/chats/thr_i4gi4juuyc/artifacts/c3-play-log.txt"
+  ],
+  "interfaces": [
+    "Sounds.luau: music = { lobby = \"rbxassetid://<id>\", battle = ..., finalTwo = ..., dungeon = ..., results = ..., menu = ..., volcano = ... }",
+    "MusicState.track(state: { place: \"lobby\"|\"match\"|\"dungeon\", screenOpen: boolean, phase: string?, finalTwo: boolean, theme: string? }): (string, string?) -> music key, ambient key or nil",
+    "docs/decisions.md lines '- <key>: <id> (<creatorName>, isFree)'"
+  ],
+  "invariants": [
+    "Library ids are not added to assets/manifest.json or Assets.luau (decision D1)",
+    "No id is used that was not returned by GetProductInfo with IsForSale/free and creator APMOfficial or Monstercat; no invented ids",
+    "Volume follows the existing Music group and Settings music volume"
+  ],
+  "out_of_scope": [
+    "~33 missing SFX",
+    "announcer voice",
+    "uploading own audio"
+  ],
+  "depends_on": [],
+  "acceptance": [
+    "Sounds.luau holds the 7 keys lobby, battle, finalTwo, dungeon, results, menu, volcano, each = \"rbxassetid://<digits>\", with 7 different ids; the python check prints \"7 tracks\".",
+    "docs/decisions.md has, for each of the 7 keys, a line '- <key>: <id> (APMOfficial, isFree)' or '- <key>: <id> (Monstercat, isFree)' whose id equals the id in Sounds.luau; the python check prints \"7 verified\".",
+    "tests/music_state_spec.luau asserts the 9 state cases of the objective (lobby, lobby with screen, shop, heroSelect, battle, finalTwo, matchResults, dungeon, volcano battle with ambient \"volcano\" and pirate battle with ambient nil) and exits 0 under lune; stylua --check and selene exit 0 on the task's Luau files."
+  ],
+  "verify": "tests",
+  "verification": [
+    {
+      "command": "python3 -I -c 'import re,pathlib;t=pathlib.Path(\"game/src/client/common/Sounds.luau\").read_text();m=dict(re.findall(r\"(?m)^\\s*(lobby|battle|finalTwo|dungeon|results|menu|volcano)\\s*=\\s*\\\"rbxassetid://([0-9]+)\\\"\",t));assert len(m)==7 and len(set(m.values()))==7,m;print(\"7 tracks\")'",
+      "cwd": "."
+    },
+    {
+      "command": "python3 -I -c 'import re,pathlib;t=pathlib.Path(\"game/src/client/common/Sounds.luau\").read_text();m=dict(re.findall(r\"(?m)^\\s*(lobby|battle|finalTwo|dungeon|results|menu|volcano)\\s*=\\s*\\\"rbxassetid://([0-9]+)\\\"\",t));d=pathlib.Path(\"docs/decisions.md\").read_text();ok=[k for k,i in m.items() if re.search(r\"- \"+k+r\": \"+i+r\" \\((APMOfficial|Monstercat), isFree\\)\",d)];assert len(m)==7 and len(ok)==7,ok;print(\"7 verified\")'",
+      "cwd": "."
+    },
+    {
+      "command": "lune run tests/music_state_spec.luau",
+      "cwd": "game"
+    },
+    {
+      "command": "stylua --check src/client/common/Sounds.luau src/client/common/Music.luau src/shared/Rules/MusicState.luau tests/music_state_spec.luau && selene src/client/common/Sounds.luau src/client/common/Music.luau src/shared/Rules/MusicState.luau tests/music_state_spec.luau",
+      "cwd": "game"
+    }
+  ],
+  "qa_cases": [
+    "[UI-observable] Studio play log in .bb/chats/thr_i4gi4juuyc/artifacts/c3-play-log.txt: GetProductInfo of the 7 ids prints '7 ok'; in a Lobby play session the client LavaBonk_Music group has a Sound with IsPlaying=true and the lobby SoundId; in a Match round it has the battle SoundId"
+  ],
+  "files": [
+    {
+      "path": "game/src/client/common/Sounds.luau",
+      "action": "modify",
+      "target": "new music table",
+      "change": "7 library ids"
+    },
+    {
+      "path": "game/src/shared/Rules/MusicState.luau",
+      "action": "create",
+      "target": "pure mapping",
+      "change": "state -> music key, ambient key"
+    },
+    {
+      "path": "game/src/client/common/Music.luau",
+      "action": "create",
+      "target": "client player",
+      "change": "listen to workspace MatchPhase, Theme, final_two Fx, open screens; crossfade Sounds in LavaBonk_Music"
+    },
+    {
+      "path": "game/src/client/common/App.luau",
+      "action": "modify",
+      "target": "init",
+      "change": "Music.init() after Sounds.init()"
+    },
+    {
+      "path": "docs/decisions.md",
+      "action": "modify",
+      "target": "new entry",
+      "change": "music source rule and the 7 ids with creators"
+    }
+  ]
+}

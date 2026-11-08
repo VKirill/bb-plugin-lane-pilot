@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createRun, createTask, createAttempt, openDatabase, saveProjectSetting, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
+import { createRun, createTask, createAttempt, openDatabase, saveProjectSetting, saveTaskPlan, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
 import { runCommand } from "../../src/rooms/host-worker/host-handlers";
 import { createCore } from "../../src/rooms/core/server/core";
 import { modelCatalogOf } from "../../src/rooms/platform/server/model-catalog-reader";
@@ -726,6 +726,41 @@ describe("a code task of a chain", () => {
     expect(t.dispatched).toHaveLength(1);
   });
 
+  it("keeps the planner's file steps in the canonical plan (Roblox T5 plan_critique_blocked, 2026-11-08)", async () => {
+    const t = await setup({});
+    dispose = t.dispose;
+    const music = JSON.parse(readFileSync(new URL("../fixtures/plan-critique-music-2026-11-08.json", import.meta.url), "utf8"));
+    expect((await t.start(taskChain(music)).done).status).toBe("waiting");
+    expect(t.dispatched).toHaveLength(1);
+    const plan = String(t.dispatched[0]!.plan);
+    expect(plan).toContain(music.objective);
+    for (const file of music.files) {
+      expect(plan).toContain(file.path);
+      expect(plan).toContain(file.action);
+      expect(plan).toContain(file.target);
+      expect(plan).toContain(file.change);
+    }
+    expect((t.dispatched[0]!.task as Row).files).toEqual(music.files);
+  });
+
+  it("keeps a legacy task's persisted plan when a dispatch step reenters after a reload", async () => {
+    const t = await setup({});
+    dispose = t.dispose;
+    const contract = { ...task(t.checkout), files: [{ path: "note.txt", action: "create", change: "Write the note" }] };
+    const started = t.start(taskChain(contract));
+    expect((await started.done).status).toBe("waiting");
+    const dispatched = t.dispatched[0]!.task as Row;
+    createTask(t.db, { id: String(dispatched.id), runId: RUN, kind: "bb", contract: dispatched });
+    saveTaskPlan(t.db, String(dispatched.id), contract.objective);
+    // The old build created the task but reloaded before recording the step's wait.
+    t.db.prepare("UPDATE lane_pilot_wf_step SET state='running' WHERE run_id=? AND node_id='build'").run(started.runId);
+    await t.engine.resume();
+    await t.engine.idle();
+    expect(t.dispatched).toHaveLength(2);
+    expect(t.dispatched[1]!.task).toEqual(dispatched);
+    expect(t.dispatched[1]!.plan).toBe(contract.objective);
+  });
+
   it("dispatches the task through the writer pipeline with the run's workspace and waits for the attempt; an accepted attempt gives the merge commit by its trailer", async () => {
     const t = await setup({});
     dispose = t.dispose;
@@ -736,6 +771,7 @@ describe("a code task of a chain", () => {
     expect(first.status).toBe("waiting");
     expect(t.dispatched).toHaveLength(1);
     const dispatched = t.dispatched[0]!.task as Row;
+    expect(t.dispatched[0]!.plan).toBe(dispatched.objective);
     expect(dispatched).toMatchObject({ project_cwd: t.checkout, title: "Write a note", display_title: "Write a note", kind: "feature", area: "workflow:build" });
     expect(String(dispatched.id)).toMatch(/^w[0-9a-f]{8}-c1$/);
     // The attempt is accepted and its merge commit carries the attempt trailer.

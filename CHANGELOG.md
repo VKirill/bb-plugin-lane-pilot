@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Workflow tasks keep the planner's concrete steps in their canonical plan.** The chain executor dispatched only `task.objective`, while the plan critic's brief omitted `task.files[]`. In the Roblox T5 replay (2026-11-08), the critic requested steps for MusicState and the decisions log that the planner had already supplied. New dispatches append each file's action, path, target and change to the objective; reentrant dispatches keep the stored plan so legacy tasks still deduplicate after a reload. Contracts without file steps keep their existing plan. The real planner contract and a legacy replay are regression tests; substantive contract rework still blocks.
+
 ## 0.1.492
 
 - **The owner card carries work only.** Everything about the owner is still collected, but interests, hobbies, people and events no longer reach a PM session, even when confirmed; health, money and family stay sensitive and never leave the Anamnesis tab (owner 2026-11-08).
