@@ -206,10 +206,13 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
     }
     return merged;
   }
+  // Only what was stored plus the patch is saved: saving the merged defaults pinned «codex / gpt-6.1-sol» into the store on any
+  // configure call, and the `repairer` row of the role table was never read again (owner 2026-11-08 saw repairs on Codex).
   async function setConfig(patch: Partial<SelfRepairConfig>): Promise<SelfRepairConfig> {
-    const next = { ...(await config()), ...patch };
-    await bb.storage.kv.set(CONFIG_KEY, next as never);
-    return next;
+    const raw = await bb.storage.kv.get(CONFIG_KEY);
+    const stored = raw && typeof raw === "object" ? raw as Partial<SelfRepairConfig> : {};
+    await bb.storage.kv.set(CONFIG_KEY, { ...stored, ...patch } as never);
+    return config();
   }
   async function state(): Promise<SelfRepairState> {
     const raw = await bb.storage.kv.get(STATE_KEY);

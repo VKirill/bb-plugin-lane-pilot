@@ -118,6 +118,14 @@ describe("self-repair", () => {
     expect(env.spawns[0]?.projectId).toBe("proj_lp");
   });
 
+  it("saving one field does not pin the default model into the store (owner 2026-11-08: repairs stuck on Codex)", async () => {
+    const env = setup();
+    await env.ctx.bb.storage.kv.set("self-repair:config", { projectId: "proj_ejbam66722" } as never);
+    await createSelfRepair(env.ctx).setConfig({ maxPerDay: 2 });
+    const stored = await env.ctx.bb.storage.kv.get("self-repair:config") as Record<string, unknown>;
+    expect(stored).toEqual({ projectId: "proj_ejbam66722", maxPerDay: 2 });
+  });
+
   it("uses the stored self-repair:config ids even when a project source's remote matches (a deployed copy knows no git)", async () => {
     const remote = execFileSync("git", ["remote", "get-url", "origin"], { encoding: "utf8" }).trim();
     const env = setup({}, {}, { runCommand: { exitCode: 0, stdout: `${remote}\n` } }, {}, {
