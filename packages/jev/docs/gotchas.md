@@ -2,7 +2,7 @@
 title: Jev gotchas
 type: gotchas
 created: 2026-11-05
-updated: 2026-11-05
+updated: 2026-11-08
 status: active
 confidence: high
 tags: [jev, gotchas, integration]
@@ -14,6 +14,7 @@ sources:
   - packages/jev/src/output-guard.ts
   - packages/jev/package.json
   - packages/jev/src/labels-model.ts
+  - packages/jev/src/judgments/host-command.ts
 ---
 
 # Jev gotchas
@@ -22,7 +23,7 @@ TL;DR: Jev registrations depend on imports, shadow mode never changes the caller
 
 ## Importing judgments registers them
 
-`defineJudgment` mutates an in-process map, and only imported judgment modules register (`packages/jev/src/registry.ts:43-55`).
+`defineJudgment` mutates an in-process map (`packages/jev/src/registry.ts:47-52`), and imported judgment modules invoke it at module load time (`packages/jev/src/judgments/host-command.ts:16-17`).
 
 The package manifest describes the judgment-import registration side effect (`packages/jev/package.json:4`).
 
@@ -48,11 +49,11 @@ Image and box judgments are excluded from model relabeling (`packages/jev/src/la
 
 ## Output guard behavior depends on active kind
 
-Only kinds in `output-guard.kinds` use active blocking; defaults are `browser` and `errand`. Other kinds use shadow sampling even when the output judgment's mode is active (`packages/jev/src/output-guard.ts:28-33`, `packages/jev/src/output-guard.ts:103-114`).
+Only kinds in `output-guard.kinds` use active blocking; defaults are `browser` and `errand`. Other kinds use shadow sampling even when the output judgment's mode is active (`packages/jev/src/output-guard.ts:28-32`, `packages/jev/src/output-guard.ts:106-114`).
 
 ## Block merging assumes one guard instance per KV store
 
-The append path merges concurrent writes held by one guard instance, but the implementation comment records that two instances sharing one KV store can still lose a block during overlapping get/append/set operations (`packages/jev/src/output-guard.ts:69-71`, `packages/jev/src/output-guard.ts:72-96`).
+The append path merges concurrent writes held by one guard instance, but the implementation comment records that two instances sharing one KV store can still lose a block during overlapping get/append/set operations (`packages/jev/src/output-guard.ts:69-71`, `packages/jev/src/output-guard.ts:74-96`). Read errors during block append or daily count are caught so an unreadable KV store does not overwrite existing records with an empty base (`packages/jev/src/output-guard.ts:59-67`, `packages/jev/src/output-guard.ts:76-96`).
 
 ## Related pages
 
