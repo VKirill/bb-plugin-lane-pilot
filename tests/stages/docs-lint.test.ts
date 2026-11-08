@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { expect, it } from "vitest";
 import { BACKLINKS_MARK, blockingDocsFindings, parseFrontmatter, buildBacklinks, expandCitationLists, pageCitations, uncataloguedPages, unlinkedPages, buildDocsIndex, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "../../src/rooms/docs/docs-lint";
 import { commitDocs } from "../../src/rooms/docs/git-docs";
+import citationLineEvidence from "../fixtures/docs-citation-line-evidence.json";
 
 const page = (fields: Record<string, string>, body: string) => [
   "---",
@@ -331,4 +332,33 @@ it("fails a citation whose range does not contain the identifier its claim names
   // A missing file is left to the bounds check.
   const missing = page({}, "# Checks\n\n## How it works\n\n`runPmRead` reads (src/gone.ts:1).\n");
   expect(await lintCitationClaims([{ path: "docs/features/checks.md", content: missing }], read)).toEqual([]);
+});
+
+it("does not infer identifiers from bare product names but keeps explicit type names", async () => {
+  const { claimIdentifiers } = await import("../../src/rooms/docs/docs-lint");
+  expect(claimIdentifiers("OpenCode TypeScript camelCase TASK_LIMIT `ModelCatalog`"))
+    .toEqual(["ModelCatalog", "camelCase", "TASK_LIMIT"]);
+});
+
+it("checks a claim's cited ranges together, without borrowing support from another claim", async () => {
+  const { lintCitationClaims } = await import("../../src/rooms/docs/docs-lint");
+  // thr_4pzt6h8uu2, 2026-11-08: the final repair left 17 findings. These claims
+  // cite both a symbol and the code that implements its behaviour, often in separate ranges.
+  const ranges: Record<string, string> = citationLineEvidence.ranges;
+  const read = async (file: string, start: number, end: number) => ranges[`${file}:${start}-${end}`] ?? null;
+  expect(await lintCitationClaims(citationLineEvidence.pages, read)).toEqual([]);
+
+  // A supported line must not clear an unrelated claim, even one naming the same symbol.
+  const content = `${citationLineEvidence.pages[0]!.content}\n\n\`resolveAgentModel\` reads the inventory (packages/models/src/zcode.ts:10).`;
+  const findings = await lintCitationClaims([{ path:"docs/features/checks.md", content }], read);
+  expect(findings).toEqual([expect.objectContaining({ rule:"evidence", detail:expect.stringContaining("zcode.ts:10") })]);
+
+  const independent = "`resolveAgentModel` builds candidates (packages/models/src/agent-model.ts:104). `otherThing` runs (packages/models/src/zcode.ts:10).";
+  expect(await lintCitationClaims([{ path:"docs/features/checks.md", content:independent }], read))
+    .toEqual([expect.objectContaining({ rule:"evidence", detail:expect.stringContaining("otherThing") })]);
+
+  for (const abbreviation of ["e.g.", "i.e."]) {
+    const content = `\`resolveAgentModel\` builds candidates (${abbreviation} \`fallback\`) (packages/models/src/agent-model.ts:104).`;
+    expect(await lintCitationClaims([{ path:"docs/features/checks.md", content }], read)).toEqual([]);
+  }
 });
