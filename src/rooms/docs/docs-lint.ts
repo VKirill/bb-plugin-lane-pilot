@@ -132,31 +132,35 @@ export function claimIdentifiers(text:string):string[] {
     ids.add(token);
   };
   for (const match of text.matchAll(/`([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*(?:\(\))?)`/g)) keep(match[1]!);
+  // A bare PascalCase word can be a product name (OpenCode, TypeScript); explicit backticks still name types.
   for (const match of text.matchAll(/\b([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*(?:\(\))?)\b/g)) {
     const token = match[1]!;
-    if (/\(\)$|_|\.|[a-z][A-Z]|^[A-Z][A-Z0-9_]{3,}$/.test(token)) keep(token);
+    if (/\(\)$|_|\.|^[A-Z][A-Z0-9_]{3,}$/.test(token) || (/^[a-z_$]/.test(token) && /[a-z][A-Z]/.test(token))) keep(token);
   }
   return [...ids];
 }
 
-/** A citation and the identifiers the sentence that carries it names (the line the citation sits on). */
-export function citationClaims(body:string): Array<{ file:string; start:number; end:number; identifiers:string[] }> {
+/** A citation and the identifiers the sentence that carries it names. */
+export function citationClaims(body:string): Array<{ file:string; start:number; end:number; identifiers:string[]; claimIndex:number }> {
   const expanded = expandCitationLists(body);
-  const claims:Array<{ file:string; start:number; end:number; identifiers:string[] }> = [];
-  for (const match of expanded.matchAll(CITATION)) {
-    const lineStart = expanded.lastIndexOf("\n", match.index) + 1;
-    const lineEnd = expanded.indexOf("\n", match.index);
-    const line = expanded.slice(lineStart, lineEnd === -1 ? expanded.length : lineEnd);
-    const file = match[1]!.replace(/^\.\//, "");
-    const identifiers = claimIdentifiers(line).filter((id) => !file.includes(id) && !id.includes(file.split("/").pop()!.replace(/\.[^.]+$/, "")));
-    claims.push({ file, start:Number(match[2]), end:match[3] ? Number(match[3]) : Number(match[2]), identifiers });
+  const claims:Array<{ file:string; start:number; end:number; identifiers:string[]; claimIndex:number }> = [];
+  // Like pageClaims in docs-jev: independent sentences on one physical line must not borrow
+  // each other's evidence. Examples introduced by e.g./i.e. stay part of their sentence.
+  const blocks = expanded.split(/\n(?=\s*[-*|]|\s*\n)|(?<=[.!?])(?<!\be\.g\.)(?<!\bi\.e\.)\s+/);
+  for (const [claimIndex, block] of blocks.entries()) {
+    for (const match of block.matchAll(CITATION)) {
+      const file = match[1]!.replace(/^\.\//, "");
+      const identifiers = claimIdentifiers(block).filter((id) => !file.includes(id) && !id.includes(file.split("/").pop()!.replace(/\.[^.]+$/, "")));
+      claims.push({ file, start:Number(match[2]), end:match[3] ? Number(match[3]) : Number(match[2]), identifiers, claimIndex });
+    }
   }
   return claims;
 }
 
 /**
- * Semantic citation check: for each `file:NN-MM` citation on a writable page, at least one identifier its claim names
- * must appear inside the cited range — a citation that drifted hundreds of lines from its symbol still passes the
+ * Semantic citation check: at least one identifier a claim names must appear in its cited ranges. A claim is one
+ * sentence or list/table item, so its citations are checked together: a symbol's declaration and its implementation may be separate.
+ * A citation that drifted hundreds of lines from its symbol still passes the
  * line-count check. `readRange` returns the cited lines, or null when the file cannot be read (the bounds check already
  * reports a missing file; a claim naming no identifier is skipped). Checked range is capped at `maxSpan` lines.
  */
@@ -171,15 +175,18 @@ export async function lintCitationClaims(pages:DocPage[], readRange:(file:string
   };
   for (const page of pages) {
     if (!isDocsContent(page.path)) continue;
+    const supported = new Set<number>();
+    const pending:Array<{ claimIndex:number; finding:DocsFinding }> = [];
     for (const claim of citationClaims(withoutBacklinks(page.content))) {
       if (!claim.identifiers.length || claim.end - claim.start >= maxSpan) continue;
       const text = await read(claim.file, claim.start, claim.end);
       if (text === null) continue;
       if (!claim.identifiers.some((id) => text.includes(id) || text.includes(id.split(".").pop()!))) {
-        findings.push({ path:page.path, rule:"evidence",
-          detail:`cites ${claim.file}:${claim.start}${claim.end !== claim.start ? `-${claim.end}` : ""}, but none of the identifiers it names (${claim.identifiers.slice(0, 5).join(", ")}) appears in that range` });
-      }
+        pending.push({ claimIndex:claim.claimIndex, finding:{ path:page.path, rule:"evidence",
+          detail:`cites ${claim.file}:${claim.start}${claim.end !== claim.start ? `-${claim.end}` : ""}, but none of the identifiers it names (${claim.identifiers.slice(0, 5).join(", ")}) appears in that range` } });
+      } else supported.add(claim.claimIndex);
     }
+    findings.push(...pending.filter((row) => !supported.has(row.claimIndex)).map((row) => row.finding));
   }
   return findings;
 }

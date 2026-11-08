@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Nightly docs check a claim against its cited ranges together.** The identifier check extracted names from a whole line but required a match in every individual range, so a symbol's declaration and a separate implementation excerpt failed each other's checks. It now scopes names and support to one sentence or list/table item, preserving independent checks for separate sentences even on one line. Bare product names such as OpenCode and TypeScript are no longer mistaken for camelCase identifiers; explicitly backticked type names still count. Replaying the models workspace's two final repairs on 2026-11-08 changes 15 findings to none and 17 to four remaining findings; these are not waived. Missing files and invalid line ranges still block. Regression tests freeze four actual repaired claims and their source excerpts, and cover independent sentences and abbreviations.
+
 - **Workflow tasks keep the planner's concrete steps in their canonical plan.** The chain executor dispatched only `task.objective`, while the plan critic's brief omitted `task.files[]`. In the Roblox T5 replay (2026-11-08), the critic requested steps for MusicState and the decisions log that the planner had already supplied. New dispatches append each file's action, path, target and change to the objective; reentrant dispatches keep the stored plan so legacy tasks still deduplicate after a reload. Contracts without file steps keep their existing plan. The real planner contract and a legacy replay are regression tests; substantive contract rework still blocks.
 
 ## 0.1.492
