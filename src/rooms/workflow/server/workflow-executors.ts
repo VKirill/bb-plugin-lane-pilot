@@ -1,7 +1,7 @@
 import type { TaskV2 } from "../../contracts";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
 import type { IsTaskSatisfied } from "../../contracts";
-import { getAttempt, getRun, getRunWriterHost, listAttemptsForTask, listOpenAttempts, listTaskIdsForRun } from "../../storage";
+import { getAttempt, getRun, getRunWriterHost, getTaskPlan, listAttemptsForTask, listOpenAttempts, listTaskIdsForRun } from "../../storage";
 import { bestEffort, isNotFound, orMiss, redactKnown, sha256Hex, stringAt } from "@lane-pilot/kit";
 import { validateTaskV2 } from "../../tasks/task-v2";
 import { agentPrompt, outputContract, outputFields, parseAgentOutput, resolveTaskQualityMode } from "@lane-pilot/workflow-engine";
@@ -522,7 +522,11 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const hostId = getRunWriterHost(db, rt.runId) ?? "";
       const lint = await bestEffort(rt.ctx.log, "workflow task lint", lintTask(rt.projectId, rt.runId, valid.task, run.writer_workspace_path, hostId), null);
       if (lint?.errors.length) return { output: failedTask("failed", `contract lint: ${lint.errors.map((error) => error.message).join("; ").slice(0, 600)}`) };
-      const reply = await services.dispatchWriter({ threadId: rt.pmThreadId, projectId: rt.projectId, task: valid.task, plan: valid.task.objective, birth: "workflow", criticCodeDefault: shortPathCriticDefault(c.workflow.id, picked.mode) });
+      // The planner's files[] are its concrete steps; passing only the objective hid them from the plan critic (Roblox T5, 2026-11-08).
+      // A reentrant dispatch keeps its stored plan, including the legacy format: changing its hash would defeat duplicate detection.
+      const plan = getTaskPlan(db, valid.task.id) ?? (valid.task.files?.length ? [valid.task.objective, "Planned changes:", ...valid.task.files.map((file, index) =>
+        `${index + 1}. ${file.action} ${file.path}${file.target ? ` (${file.target})` : ""}: ${file.change}`)].join("\n\n") : valid.task.objective);
+      const reply = await services.dispatchWriter({ threadId: rt.pmThreadId, projectId: rt.projectId, task: valid.task, plan, birth: "workflow", criticCodeDefault: shortPathCriticDefault(c.workflow.id, picked.mode) });
       if (reply.state === "rejected" || reply.ok === false) return { output: failedTask("blocked", String(reply.reason ?? reply.hint ?? "the dispatch was rejected")) };
       const taskId = str(reply.taskId) || valid.task.id;
       // chains-end: an attempt whose row is lost (task deleted, base wiped) would wait forever; the wait gets a
