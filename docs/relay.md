@@ -10,6 +10,9 @@ sources:
   - src/rooms/relay/server/relay.ts
   - src/rooms/workflow/server/pm-notice.ts
   - src/rooms/storage/database.ts
+  - relay.ts
+  - src/rooms/verification/server/integration-gate.ts
+  - src/rooms/run-goal/server/run-goal.ts
 ---
 
 # Relay between threads
@@ -38,3 +41,8 @@ A run with no PM chat to tell reports its end to the owner's list instead, one l
 
 - An ask that is never answered stays open until the 7-day keep window evicts it (`relay.ts:48`).
 - A notice send is retried only while `maxWaitMs` (30 min) holds; after that the row is reported without a message (`relay.ts:102`, `:396-449`).
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [The task pipeline](flows/task-pipeline.md)

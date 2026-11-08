@@ -233,3 +233,8 @@ bb plugin rpc call lane-pilot schedule_delete --input '{"id":"<schedule id>"}'
 ```
 
 The same with `"task":{"kind":"errand","task":"Open https://example.com and report its title.","authorized":false}` (the history shows `refKind: "thread"`; open `@thread:<refId>`) and with `"task":{"kind":"workflow","workflowId":"<a published workflow with no required inputs>","inputs":{}}` (`refKind: "workflow_run"`). Run these from the owner's terminal, not from an agent's shell: the guard refuses the changing RPCs there.
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Orchestration and execution data](data-model/orchestration.md)

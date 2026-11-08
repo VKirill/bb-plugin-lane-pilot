@@ -120,4 +120,5 @@ The component is `AcceptanceCard` (`src/rooms/acceptance/ui/acceptance-card.tsx`
 <!-- lane-pilot:backlinks -->
 ## Referenced by
 
+- [The task pipeline](flows/task-pipeline.md)
 - [Tasks board and work graph](task-board.md)

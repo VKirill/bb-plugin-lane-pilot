@@ -21,6 +21,19 @@ sources:
   - tests/improvement/hub.test.ts
   - tests/improvement/improvement-ui.test.tsx
   - tests/improvement/tidy.test.ts
+  - src/rooms/pages/project-nav.tsx
+  - src/rooms/pages/page.tsx
+  - src/rooms/owner-waiting/items.ts
+  - src/rooms/baseline/logic.ts
+  - src/rooms/wall/config.ts
+  - src/rooms/bench/runner.ts
+  - src/rooms/writer/server/plan-fact.ts
+  - src/rooms/contracts/quality-mode.ts
+  - packages/memory-core/src/settings.ts
+  - src/rooms/pages/service-segment.tsx
+  - src/rooms/ui-shell/ui/setting-controls.tsx
+  - src/rooms/ui-shell/ui/setting-copy.ts
+  - src/rooms/core/server/core.ts
 ---
 
 # The Self-improvement page and its settings
@@ -110,3 +123,8 @@ Ranges are the readers' own: ``packages/settings-catalog/src/hub-keys.ts:61`` re
 - The baseline and re-check settings, which could be set only by a hand-written `save_setting`, are in the catalog, on the Self-improvement page and in the project's «Work» tab.
 
 Found, not changed: `ops.max_tasks` («Задач в сессии») is read only by the command-line flags of the old runner (`src/rooms/ui-shell/ui/setting-copy.ts:81`), so native writers never see it; its label now says so. `ui.language` is a stored row that the runtime excludes (`src/rooms/core/server/core.ts:315`) and the language switch of the Overview does the work: the row looks orphaned. The owner push has a second editor on the «Waiting for you» board; it writes through the same RPC, so the two cannot disagree.
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Settings and experimental features](guide/settings.md)

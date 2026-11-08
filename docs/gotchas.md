@@ -111,4 +111,5 @@ Vitest assigns one scratch directory per run to `TMPDIR`, `TEMP`, and `TMP`; tea
 ## Referenced by
 
 - [Orchestration and execution data](data-model/orchestration.md)
+- [Development](guide/development.md)
 - [Lane Pilot overview](overview.md)

@@ -192,3 +192,8 @@ Shipping is a PM duty, not a graph stage (`docs/ship.md`). When every task of th
 ## Sources
 
 Where this page's claims start in the code: `src/rooms/writer/server/start.ts:46-66`, `src/rooms/runs/state-machine.ts:1-21`, `src/rooms/critique/server/index.ts:1-7`. The deep pages linked above cite the rest.
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Settings and experimental features](settings.md)

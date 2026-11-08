@@ -80,4 +80,5 @@ The root package scripts define plugin build and verification commands but no de
 <!-- lane-pilot:backlinks -->
 ## Referenced by
 
+- [Development](guide/development.md)
 - [Lane Pilot overview](overview.md)

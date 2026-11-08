@@ -106,3 +106,8 @@ When the rules have no confident match for a reason (`confident` false), the wri
 ## Sources
 
 Where this page's claims start in the code: `src/rooms/writer/server/writer-hold.ts:27-47`, `src/rooms/stability/server/deploy-drain.ts:2-22`, `src/rooms/runs/state-machine.ts:1-21`. The deep pages linked above cite the rest.
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Settings and experimental features](settings.md)

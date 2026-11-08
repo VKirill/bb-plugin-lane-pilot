@@ -80,5 +80,6 @@ The helper graph derives waits from task contracts and the writer-stage reason s
 ## Referenced by
 
 - [Lane Pilot architecture](architecture.md)
+- [The task pipeline](flows/task-pipeline.md)
 - [Lane Pilot overview](overview.md)
 - [RPC and host-call contracts](rpc-callers.md)

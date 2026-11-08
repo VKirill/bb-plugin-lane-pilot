@@ -149,3 +149,8 @@ Judgments, with the default mode:
 ## Sources
 
 Where this page's claims start in the code: `packages/jev/src/client.ts:12-32`, `packages/jev/src/registry.ts:11-31`, `packages/models/src/role-models.ts:29-49`. The deep pages linked above cite the rest.
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Everything is a graph](graphs.md)
