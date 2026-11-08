@@ -2,7 +2,7 @@
 export const anamnesisEn = {
   tabAnamnesis: "Anamnesis",
   anmTitle: "Anamnesis",
-  anmHelp: "What Lane Pilot knows about you: short records with evidence and dates, kept on your Mac mini. Nothing reaches an agent until you confirm it; the PM gets only a short card of confirmed, non-sensitive facts. Writers and helpers never see any of it.",
+  anmHelp: "What Lane Pilot knows about you: short records with evidence and dates, kept in the Lane Pilot database on the hub. Nothing reaches an agent until you confirm it; the PM gets only a short card of confirmed, non-sensitive facts. Writers and helpers never see any of it.",
   anmUnreachable: "The anamnesis store could not be reached. It lives on your Mac mini; check that the machine is connected.",
   anmRetry: "Try again",
   anmLoading: "Loading…",
@@ -135,7 +135,7 @@ export const anamnesisEn = {
 export const anamnesisRu: Record<keyof typeof anamnesisEn, string> = {
   tabAnamnesis: "Анамнез",
   anmTitle: "Анамнез",
-  anmHelp: "Что Lane Pilot знает о вас: короткие записи с доказательствами и датами, хранятся на вашем Mac mini. Пока вы не подтвердите запись, ни один агент её не получает; PM видит только короткую карточку из подтверждённых нечувствительных фактов. Исполнители и помощники не видят ничего.",
+  anmHelp: "Что Lane Pilot знает о вас: короткие записи с доказательствами и датами, хранятся в базе Lane Pilot на хабе. Пока вы не подтвердите запись, ни один агент её не получает; PM видит только короткую карточку из подтверждённых нечувствительных фактов. Исполнители и помощники не видят ничего.",
   anmUnreachable: "Хранилище анамнеза недоступно. Оно лежит на вашем Mac mini; проверьте, что машина подключена.",
   anmRetry: "Повторить",
   anmLoading: "Загрузка…",

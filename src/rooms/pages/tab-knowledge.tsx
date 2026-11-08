@@ -29,7 +29,7 @@ export function KnowledgeTab({ page }: { page: LpPage }) {
       {segment === "memory" ? (
         <SettingsGroup testId="settings-memory" title={t("settingMemoryEnabled")} help={<HelpSup label={t("memoryPickerTechnical")}><p>{t("memoryPickerTechnical")}</p></HelpSup>}>
           <section className="space-y-2" data-testid="memory-knowledge">
-            <State page={page} enabledKey="memory.enabled" fallback={false} />
+            <State page={page} enabledKey="memory.enabled" fallback={true} />
             <p className="max-w-xl text-xs text-muted-foreground">{t("memoryPickerHelp")}</p>
             {!isGlobal && projectId ? <MemoryRecords projectId={projectId} /> : null}
             <AdvancedRows show={advanced} testId="memory-advanced">
