@@ -1,0 +1,108 @@
+---
+title: Writer Selection and Fallbacks
+type: component
+created: 2026-11-08
+updated: 2026-11-08
+status: active
+confidence: low
+tags: [models, writers, anamnesis, jev-reasoning, fallbacks, rotation]
+sources:
+  - packages/models/src/model-profiles.ts
+  - packages/models/src/jev-reasoning.ts
+  - packages/models/src/writer-fallbacks.ts
+  - packages/models/src/stage-writer-selection.ts
+  - packages/models/src/model-tiers.ts
+  - packages/models/src/providers.ts
+  - packages/models/src/role-models.ts
+  - packages/models/src/setting-value.ts
+  - packages/models/src/provider-limit.ts
+  - packages/models/tests/writer-fallbacks.test.ts
+  - packages/models/tests/jev-plan.test.ts
+  - packages/models/tests/writer-preset.test.ts
+---
+
+# Writer Selection and Fallbacks
+
+TL;DR: Evaluates coding models from the writers' anamnesis, resolves Jev reasoning efforts and service tiers, constructs fallback chains, and rotates task assignments.
+
+## Purpose
+
+The writer subsystem manages execution models for task writers (packages/models/src/model-profiles.ts:1-6).
+The task writer is not part of the static role table; it is chosen per task from benchmarked coding profiles, automated Jev effort judgments, and configurable fallback chains (packages/models/src/role-models.ts:10; packages/models/src/jev-reasoning.ts:9-30; packages/models/src/writer-fallbacks.ts:1-6).
+
+## How it works
+
+1. Filter active writer candidates using `writerCandidates`: exclude models flagged `available: false` and restrict to `writer.models` when the setting is configured (packages/models/src/model-profiles.ts:112-115).
+2. Determine writer service tier via `writerServiceTier`: inspect `writer.service_tier` ("standard" or "fast"), falling back to legacy `writer.fast_mode` ("1", "true", "on") (packages/models/src/jev-reasoning.ts:40-48). Map to BB service tier using `bbServiceTier` ("fast" -> "fast", otherwise "default") (packages/models/src/jev-reasoning.ts:50-52).
+3. Check `listedServiceTier`: strip tier when the provider lacks `supportsServiceTier` capability or when "default" tier is unlisted (packages/models/src/jev-reasoning.ts:58-62).
+4. Resolve Jev reasoning effort using `resolveJevReasoning`: when Jev status is "ok" and its decision is supported by the model, use `jevDecision`; otherwise revert to `manualLevel` with a diagnostic fallback reason (packages/models/src/jev-reasoning.ts:9-30).
+5. Build the final execution payload using `writerExecutionSelection`: ensure provider and model consistency via `consistentProvider` and mark input sources as explicit (packages/models/src/jev-reasoning.ts:64-84).
+6. Build writer fallback slots using `writerFallbackSlots` initialized from defaults `WRITER_FALLBACK_DEFAULTS`: slot 1 defaults to GLM-5.3-Flash, slot 2 defaults to Gemini 3.8 Flash high, and slot 3 defaults to null (off) (packages/models/src/writer-fallbacks.ts:12-36).
+7. Assemble the fallback sequence using `writerFallbackChain`: deduplicate against the primary writer and append the PM model as the emergency fallback (packages/models/src/writer-fallbacks.ts:44-54).
+8. Apply task rotation via `rotatedWriterSettings`: compute an FNV-1a hash bucket of `taskId` via `rotationBucket`; if below `writer.rotation_share` (default 25%), swap the primary writer with fallback 1 and set `writer.rotated = true` (packages/models/src/writer-fallbacks.ts:62-84).
+
+### Writer profiles in the anamnesis
+
+| Profile key | Provider ID | Model | Default effort | Tier | Status | Focus and suitability | Evidence |
+|---|---|---|---|---|---|---|---|
+| `composer` | `acp-cursor` | `composer-2.5` | `medium` | `standard` | Active | Everyday multi-file features and refactors in mainstream stacks | (packages/models/src/model-profiles.ts:25-29) |
+| `grok` | `acp-cursor` | `grok-4.6` | `medium` | `standard` | Active | Multi-file changes adhering to clear plans; long runs without degradation | (packages/models/src/model-profiles.ts:30-34) |
+| `gemini-flash` | `opencode2` | `router9/ag/gemini-3.8-flash-high` | `medium` | `standard` | Active | Fast prototyping, UI tweaks, and quick well-described tasks | (packages/models/src/model-profiles.ts:35-39) |
+| `gpt-astra` | `codex` | `gpt-6-astra` | `high` | `strong` | Active | Demanding research-heavy or scientific coding where other models fail | (packages/models/src/model-profiles.ts:40-44) |
+| `gpt-sol` | `codex` | `gpt-6.1-sol` | `high` | `strong` | Active | Algorithmic and backend logic, difficult bugs, terminal and build work | (packages/models/src/model-profiles.ts:45-49) |
+| `gpt-terra` | `codex` | `gpt-6.1-terra` | `medium` | `standard` | Active | Moderate features, data analysis, build work, UI changes | (packages/models/src/model-profiles.ts:50-54) |
+| `gpt-luna` | `codex` | `gpt-6-luna` | `high` | `light` | Active | Small mechanical edits, configs, tests, one-file fixes, documentation | (packages/models/src/model-profiles.ts:55-59) |
+| `sonnet` | `claude-code` | `claude-sonnet-5-5` | `medium` | `standard` | Active | Daily features, bug fixes, refactors, documentation, and UI copy | (packages/models/src/model-profiles.ts:60-64) |
+| `fable` | `claude-code` | `claude-fable-5-1` | `high` | `strong` | Active | Long-horizon multi-step features, deep debugging, architecture changes | (packages/models/src/model-profiles.ts:65-69) |
+| `opus` | `claude-code` | `claude-opus-5-5` | `high` | `strong` | Active | High-risk cross-cutting refactors, security-sensitive logic, migrations | (packages/models/src/model-profiles.ts:70-74) |
+| `swe2` | `devin` | `swe-2-high` | `high` | `strong` | Active | Autonomous repository-wide editing, iterations, deep debugging | (packages/models/src/model-profiles.ts:75-79) |
+| `glm-flash` | `opencode2` | `zai-coding-plan/glm-5.3-flash` | `high` | `light` | Active | Routine agentic coding, scripts, small failure debugging | (packages/models/src/model-profiles.ts:80-84) |
+| `zcode-flash` | `zcode` | `glm-5.3-flash-free` | `high` | `standard` | Active | Bulk mechanical edits, documentation, tests, patterned migrations | (packages/models/src/model-profiles.ts:85-90) |
+| `haiku` | `claude-code` | `claude-haiku-5-5` | `medium` | `light` | Active | Short well-scoped edits, single-file features, copy changes | (packages/models/src/model-profiles.ts:91-95) |
+| `minimax-flash` | `opencode2` | `openlux/MiniMax-M3.1-Flash` | `high` | `light` | Inactive | Pay-per-token via OpenLux; kept out of automatic picks | (packages/models/src/model-profiles.ts:97-100) |
+| `gemini-pro` | `opencode2` | `openrouter/~google/gemini-pro-latest` | `high` | `strong` | Inactive | Excluded due to benchmark and performance evaluation | (packages/models/src/model-profiles.ts:101-104) |
+| `gemini-argon` | `acp-antigravity` | `gemini-4-argon` | `high` | `strong` | Inactive | Antigravity subscription model; pending review-based profile | (packages/models/src/model-profiles.ts:105-108) |
+
+### Failures and compensation
+
+| Failure condition | Detected trigger | System response | Evidence |
+|---|---|---|---|
+| Jev execution failure | `input.status !== "ok"` (`disabled`, `timeout`, `error`) | Uses `manualLevel`; records `fallbackReason = jev_<status>` | (packages/models/src/jev-reasoning.ts:14-17, :25) |
+| Missing Jev effort | `input.status === "ok"` but `jevDecision` is null | Uses `manualLevel`; records `fallbackReason = jev_missing_effort_answer` | (packages/models/src/jev-reasoning.ts:18, :25) |
+| Model unsupported effort | `jevDecision` not in `input.supportedLevels` | Uses `manualLevel`; records `fallbackReason = jev_unsupported_by_selected_model:<effort>` | (packages/models/src/jev-reasoning.ts:19-20, :24) |
+| Catalog unavailable | `input.supportedLevels === null` | Uses `manualLevel`; records `selected_model_catalog_unavailable` | (packages/models/src/jev-reasoning.ts:23, :25) |
+| Primary writer failure | Quota exhaustion, network fault, or provider error | Dispatches attempt to next candidate in `writerFallbackChain` | (packages/models/src/writer-fallbacks.ts:44-54) |
+
+## Business rules
+
+- Stable rotation hash: Writer rotation computes an FNV-1a 32-bit hash on `taskId` modulo 100 via `rotationBucket`; every attempt of a task lands in the same bucket (packages/models/src/writer-fallbacks.ts:65-69).
+- Rotation share bounds: `writer.rotation_share` evaluated with `WRITER_ROTATION_SHARE_DEFAULT` is clamped between 0 and 100 with default 25; a share of 0 disables rotation (packages/models/src/writer-fallbacks.ts:62-74).
+- Fallback chain deduplication: A candidate matching the primary writer or an earlier fallback in `providerId/model` is discarded from the chain (packages/models/src/writer-fallbacks.ts:45-50).
+- Provider and model consistency: `writerExecutionSelection` passes provider and model through `consistentProvider`, preventing mismatch errors (packages/models/src/jev-reasoning.ts:71-73).
+- Stage writer override order: `resolveStageWriterSelection` checks stage provider/model first, then writer profile settings, then prototype config (packages/models/src/stage-writer-selection.ts:15-31).
+
+## Public API
+
+| Export | Purpose | Evidence |
+|---|---|---|
+| `WRITER_PROFILES` | Registry of coding models with benchmarks, summaries, and availability | (packages/models/src/model-profiles.ts:24-109) |
+| `writerCandidates` | Filters active profiles by availability and project `writer.models` | (packages/models/src/model-profiles.ts:112-115) |
+| `resolveJevReasoning` | Reconciles automated Jev reasoning decisions with model capabilities and manual fallbacks | (packages/models/src/jev-reasoning.ts:9-30) |
+| `writerExecutionSelection` | Prepares execution parameters and sources for writer spawns | (packages/models/src/jev-reasoning.ts:64-84) |
+| `writerServiceTier` | Reads `writer.service_tier` and legacy `writer.fast_mode` settings | (packages/models/src/jev-reasoning.ts:40-48) |
+| `bbServiceTier` | Normalizes writer tier to "fast" or "default" | (packages/models/src/jev-reasoning.ts:50-52) |
+| `listedServiceTier` | Filters service tiers according to provider capabilities | (packages/models/src/jev-reasoning.ts:58-62) |
+| `writerFallbackSlots` | Extracts the 3 fallback slots from settings with built-in defaults | (packages/models/src/writer-fallbacks.ts:26-36) |
+| `writerFallbackChain` | Builds an ordered, deduplicated fallback list including the PM model | (packages/models/src/writer-fallbacks.ts:44-54) |
+| `rotatedWriterSettings` | Swaps writer and fallback 1 for tasks falling within the rotation share | (packages/models/src/writer-fallbacks.ts:72-84) |
+| `rotationBucket` | Deterministic FNV-1a hash bucket (0-99) for a task ID | (packages/models/src/writer-fallbacks.ts:65-69) |
+| `resolveStageWriterSelection` | Resolves stage vs profile writer selections | (packages/models/src/stage-writer-selection.ts:15-39) |
+
+## Gotchas
+
+For implementation traps regarding rotation behavior, fallback slots, and service tier handling, see [Gotchas](../gotchas.md).
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Models Workspace — Overview](../overview.md)
