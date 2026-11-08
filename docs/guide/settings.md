@@ -137,3 +137,9 @@ These switches are off, in shadow, or at their neutral value by default. Each on
 ## Sources
 
 Where this page's claims start in the code: `packages/settings-catalog/src/channels.ts:1-21`, `packages/settings-catalog/src/ui-catalog.ts:1-21`, `packages/settings-catalog/src/lp-defaults.ts:1-21`. The deep pages linked above cite the rest.
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [CLI, agent tools, UI and RPC](interfaces.md)
+- [Self-improvement](self-improvement.md)

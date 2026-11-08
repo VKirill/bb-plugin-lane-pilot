@@ -85,8 +85,3 @@ The `zcode` provider serves one option, `glm-5.3-flash-free` («ZCode · GLM-5.3
 - The ten-percent band means two providers within a few percentage points of spent stay in the owner's order (`packages/models/src/agent-model.ts:74-78`).
 - A pool is read only when the row's source is the table: a legacy stage selection has no pool (`src/rooms/settings/server/rpc/role-models.ts:34`, `packages/models/src/agent-model.ts:130-134`).
 - Repairer's built-in default is GPT-6.1 Sol: the owner moved the repairs off Claude's window (`packages/models/src/role-models.ts:117-118`); Grok 4.6 (Cursor) is one of Jev's writer candidates (`packages/models/src/model-profiles.ts:31-33`).
-
-<!-- lane-pilot:backlinks -->
-## Referenced by
-
-- [Shared packages](packages.md)

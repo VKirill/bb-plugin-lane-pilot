@@ -136,4 +136,6 @@ The shared SQLite migration array includes stores exported by Jev, council, hand
 
 - [Lane Pilot overview](overview.md)
 - [i18n workspace overview](../packages/i18n/docs/overview.md)
+- [Jev workspace overview](../packages/jev/docs/overview.md)
+- [Kit workspace overview](../packages/kit/docs/overview.md)
 - [World simulation overview](../packages/world-sim/docs/overview.md)

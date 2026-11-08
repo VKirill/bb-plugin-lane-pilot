@@ -33,3 +33,8 @@ TL;DR: This page records implementation-facing ADRs and links to the existing de
 
 - [Lane Pilot database access](decisions/2026-10-08-lane-pilot-data-db-access.md)
 - [Council economy design record](decisions/2026-10-09-council-как-построить-экономику-живого-мира-lane-pilot-п.md)
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Development](guide/development.md)

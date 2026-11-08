@@ -23,6 +23,13 @@ sources:
   - tests/owner-waiting-ui.test.tsx
   - tests/owner-push-script.test.ts
   - tests/policy/morning.test.ts
+  - items.ts
+  - src/rooms/phase/server/driver.ts
+  - src/rooms/verification/server/integration-gate.ts
+  - src/rooms/run-goal/server/run-goal.ts
+  - src/rooms/wall/service.ts
+  - src/rooms/outage/server/outage.ts
+  - src/rooms/schedule/server/schedule-agent-actions.ts
 ---
 
 > [!important] Since 2026-10-29 the owner does take part in one wait
@@ -111,3 +118,10 @@ Before the owner left the loop the screen also held `deferral_overdue` (an open 
 ## «Now» and «later» (harness batch 2026-11-02)
 
 The list is ranked by the cost of putting a row off (`callReason`: red, then stopped work, then a term, then a decision; a row that would push before one that would not; then the sources' order and age) and only the first `NOW_CAP` = 5 rows are «now»: the screen shows them first, the rail badge counts them, and only a «now» row with `wake` may go to Telegram. The rest are «later», folded, and move up as rows close. `answered` counts who closed the week's rows (owner, agent, lead, janitor); the research behind it: an inbox of 28 rows a day is answered by reflex.
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Orchestration and execution data](data-model/orchestration.md)
+- [Observability](guide/observability.md)
+- [Phases](phases.md)

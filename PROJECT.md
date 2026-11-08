@@ -1,9 +1,10 @@
 ---
 title: Lane Pilot project facts
-updated: 2026-10-26
+updated: 2026-11-08
 sources:
   - package.json
   - server.ts
+  - src/rooms/workflow/server/workflow-executors.ts
   - src/rooms/core/server/core.ts
   - src/rooms/core/server/rpc.ts
   - src/rooms/contracts/rpc-ops.ts
@@ -61,6 +62,7 @@ sources:
 - Host checkout writes and acceptance checks participate in the reload drain ([deployment](docs/deployment.md#configuration-and-runtime)).
 - Self-repair and task-result notice behavior is summarized in [cross-cutting gotchas](docs/gotchas.md).
 - Verification output capture limits are documented in [cross-cutting gotchas](docs/gotchas.md).
+- Workflow tasks dispatched by the chain executor include planner file steps in their canonical plan for plan critique, and preserve persisted plans across reentrant reloads ([`src/rooms/workflow/server/workflow-executors.ts:526-530`](src/rooms/workflow/server/workflow-executors.ts); [`docs/workflow-executors.md`](docs/workflow-executors.md)).
 - Workflow, UI-kit, and world-simulation internals belong to their [workspace docs](docs/overview.md#workspaces).
 
 ## Conventions
@@ -77,10 +79,11 @@ sources:
 - OpenCode v2 is one shared service per host: writer settings travel as the `lane-pilot` agent and a worktree `.opencode/opencode.jsonc`, not as process environment ([gotchas](docs/gotchas.md#stability-and-local-provider-setup)).
 - Host-prepared BB guard wrappers differ for new helpers, owner threads, and older hosts ([native agent](docs/native-agent.md#public-api-or-commands)).
 - Live-folder mode has explicit caps and rollback limits ([gotchas](docs/gotchas.md#writer-workspace-modes)).
-- Verification worktrees copy `node_modules/.bin` and `.package-lock.json` into the worktree so `npm install` writes inside it (`src/rooms/verification/git-integrate.ts:601-632`).
-- Verification preparation refreshes missing or stale npm dependencies in the base checkout, then mirrors root, workspace, and supported nested package dependencies into the attempt worktree (`src/rooms/verification/git-integrate.ts:613-629`, `:827-857`).
+- Verification worktrees copy `node_modules/.bin` and `.package-lock.json` into the worktree so `npm install` writes inside it (`src/rooms/verification/git-integrate.ts:874-920`).
+- Verification preparation refreshes missing or stale npm dependencies in the base checkout, then mirrors root, workspace, and supported nested package dependencies into the attempt worktree (`src/rooms/verification/git-integrate.ts:752-793`, `src/rooms/verification/git-integrate.ts:1056-1088`).
 - Sandboxed checks can read linked user tool installations and Playwright browser binaries through a temporary HOME (`src/rooms/verification/sandbox.ts:103-144`).
 - A reload resumes a running attempt in its existing writer thread when that thread is idle or errored and the saved run, task, contract and workspace are usable; a pending cancellation closes as canceled (`src/rooms/stability/server/reconcile.ts:111-145`).
+- Workflow chain tasks append planned file steps (`task.files[]`) to `task.objective` in their canonical plan, while reentrant dispatches retain stored plan text from SQLite (`src/rooms/workflow/server/workflow-executors.ts:526-530`; [workflow executors](docs/workflow-executors.md)).
 
 ## Useful commands
 

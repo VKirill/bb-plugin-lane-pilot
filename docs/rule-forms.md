@@ -20,6 +20,7 @@ sources:
   - tests/contract-lint-exit-status.test.ts
   - tests/server/rules-cli.test.ts
   - tests/fixtures/hub-rules-2026-10-22.json
+  - src/rooms/self-repair/server/insights.ts
 ---
 
 # Rule forms and the path from a rule to a mechanism

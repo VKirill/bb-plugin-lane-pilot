@@ -11,6 +11,7 @@ sources:
   - workflows/lp-task-pipeline.json
   - packages/workflow-engine/src/engine.ts, journal.ts
   - src/rooms/writer/server/dispatch-workflow.ts
+  - stability/reconcile.ts
 ---
 
 # Видение Матвея (систематизировано)

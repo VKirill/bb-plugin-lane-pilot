@@ -29,3 +29,8 @@ The bar every skill meets, forged or published: `SKILL.md` plus the `references/
 ## How it works
 
 `lintSkillDir(files)` (`src/rooms/forge/skill-lint.ts:88`) returns `{ errors, warnings }`; errors block, warnings advise. Frontmatter is read by `parseFrontmatter` (`src/rooms/docs/docs-lint.ts:48`), which folds a multi-line `description: >`. The CLI walks the folder, keeps text files, and exits 1 when any error stands.
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Self-improvement](guide/self-improvement.md)

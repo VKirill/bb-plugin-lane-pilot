@@ -49,3 +49,8 @@ re-renders `stateBuilder` + `questions` and the prompt matches what Jev saw exac
 - `bb lane-pilot jev calibrate --by-source`: per judgment, agree+disagree counts by source.
 - Self-improvement page → «Судьи»: name in Russian, labeled count, accuracy, fit (gate / sort-only / dead).
 - `judgeAccuracy(db, judgmentId)` (`src/rooms/jev`): `{labeled, accuracy} | null` for the autonomy tiers.
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Roles, agents and models](guide/roles.md)

@@ -18,6 +18,7 @@ sources:
   - src/rooms/usage/server/token-usage.ts
   - server.ts
   - src/rooms/harness/server/harness.ts
+  - src/rooms/owner-waiting/items.ts
 ---
 
 # Orchestration and execution data
