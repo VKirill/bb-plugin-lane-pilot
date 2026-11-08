@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.494
+
+- **«HTTP 403 (reset after …)» is a provider limit.** The night of 2026-11-08 nine graph steps (docs-night, rules-ask, errand) failed on 9router Gemini Flash answering 403 with a reset time; it was read as a plain error, so the plan stayed in every pick. Now it is a limit with its reset time, and the role's pool takes over.
+
 ## 0.1.493
 
 - **The self-repair engineer follows its row of the role table again.** Saving any self-repair setting stored the whole merged config, the default «codex / gpt-6.1-sol» included, so the `repairer` row was never read; now only the stored fields and the patch are saved.

@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { providerLimitNotice } from "../packages/models/src/provider-limit";
 import { classifyOpenCodeLimit, limitOfError, openCodeServicePath, probeOpenCodeLimit, type OpenCodeAssistantMessage } from "../src/rooms/host-worker/opencode-limit";
 
 const SESSION = "ses_edf6b33f8ffeoOpCtpdDEdJn0G";
@@ -26,6 +27,12 @@ describe("limitOfError", () => {
 
   it("counts Unavailable (reset after …) from when the error happened", () => {
     expect(limitOfError(unavailable, T, MODEL)).toMatchObject({ model:"antigravity/gemini-3.8-flash-high", resetAt:T + (2 * 3600 + 7) * 1000 });
+  });
+
+  it("counts HTTP 403 (reset after …) as a limit too (night 2026-11-08: 9 graph steps failed on it with no fallback)", () => {
+    const forbidden = { type:"provider.error", message:"[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 1m 58s)" };
+    expect(limitOfError(forbidden, T, MODEL)).toMatchObject({ resetAt:T + 118_000 });
+    expect(providerLimitNotice("provider_error:[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 34s)")).not.toBeNull();
   });
 
   it("takes OpenCode's own type and retryAfterMs, and the session's model when the text names none", () => {
