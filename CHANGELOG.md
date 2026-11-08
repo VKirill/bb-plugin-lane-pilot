@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **A dispatch interrupted after ownership capture resumes on the same attempt.** On 2026-11-08, a reload blocked `armor-fit-1` because its git base already existed, although pm-read had passed, the reviews were skipped by policy and no writer had started. Ownership capture precedes baseline, so its saved base does not mean dispatch finished. Recovery now reruns the pipeline with the immutable base retained; baseline can still block before any writer starts. Regression tests replay the recorded contract and stage states, including a moved HEAD and a rejecting baseline.
+
 ## 0.1.494
 
 - **«HTTP 403 (reset after …)» is a provider limit.** The night of 2026-11-08 nine graph steps (docs-night, rules-ask, errand) failed on 9router Gemini Flash answering 403 with a reset time; it was read as a plain error, so the plan stayed in every pick. Now it is a limit with its reset time, and the role's pool takes over.

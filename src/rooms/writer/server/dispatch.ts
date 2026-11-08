@@ -11,7 +11,7 @@ import { reserveAppetite, resolveBestOf } from "../best-of";
 import type { CodeCriticDefault } from "../../contracts/task-enums";
 import { saveCriticCodeDefault } from "./critic-override";
 import { wfLivePipelineRun, wfRunInputsByKey } from "@lane-pilot/workflow-engine";
-import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskGitBase, getTaskPlan, latestTaskAttemptState, getTaskRow, hasFailedStageReceipt, listAttemptsForTask, listAttemptsUpdatedSince, listOpenAttempts, listRunsWithAttempts, listRunTaskRows, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, taskBasePath, transitionAttempt } from "../../storage";
+import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, getTaskRow, hasFailedStageReceipt, listAttemptsForTask, listAttemptsUpdatedSince, listOpenAttempts, listRunsWithAttempts, listRunTaskRows, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, taskBasePath, transitionAttempt } from "../../storage";
 import { commonTaskFolder, isMainfixTask, isTaskBase, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask, sha256 , spendReserve, type BirthKind } from "../../tasks";
 import { liveFolderLockNote, nextStep } from "../../contracts/failure-class"
 import { taskFamily } from "@lane-pilot/contracts";
@@ -580,8 +580,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     const pipelines = wfRunInputsByKey(db, key, `${key}:resume-%`).map((inputs_json) => ({ inputs_json }));
     if (!pipelines.length) return { resumed:false, why:"its dispatch left no pipeline record" };
     if (pipelines.length > MAX_DISPATCH_RESUMES) return { resumed:false, why:`reloads interrupted it ${pipelines.length} times` };
-    // The base is taken once per task; one already taken means the stages were past it, a moment before the writer.
-    if (getTaskGitBase(db, attempt.task_id)) return { resumed:false, why:"its ownership base was already taken" };
+    // Ownership capture precedes baseline: a reload can still interrupt dispatch after it. The pipeline keeps the immutable base.
     const run = getRun(db, attempt.run_id);
     const stored = getTask(db, attempt.task_id);
     const parsed = stored?.kind === "bb" ? taskV2Schema.safeParse(stored.contract) : null;
