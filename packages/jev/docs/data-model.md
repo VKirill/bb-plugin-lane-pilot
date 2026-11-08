@@ -2,7 +2,7 @@
 title: Jev data model
 type: data-model
 created: 2026-11-05
-updated: 2026-11-07
+updated: 2026-11-08
 status: active
 confidence: medium
 tags: [jev, data-model, receipts]
@@ -30,13 +30,13 @@ erDiagram
   }
 ```
 
-The table is created by `jevMigrations` (`packages/jev/src/receipts.ts:9-41`).
+The table is created by `jevMigrations` (`packages/jev/src/receipts.ts:9-40`).
 
 Plugin migrations add `fields_json` (`src/rooms/migrations.ts:429`) and `input_json` (`src/rooms/migrations.ts:465`).
 
 The runner inserts a receipt after a cache miss when a DB is attached and the mode is not off (`packages/jev/src/run.ts:79-119`).
 
-Output-guard state uses the `GUARD_BLOCKED_KEY` and `GUARD_STATS_KEY` storage keys (`packages/jev/src/output-guard.ts:17-20`, `packages/jev/src/output-guard.ts:33-34`).
+Output-guard state uses the `GUARD_BLOCKED_KEY` and `GUARD_STATS_KEY` storage keys (`packages/jev/src/output-guard.ts:17-18`, `packages/jev/src/output-guard.ts:33-34`).
 
 ## Domain areas
 

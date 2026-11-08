@@ -2,7 +2,7 @@
 title: Judgment receipts
 type: data-model
 created: 2026-11-05
-updated: 2026-11-07
+updated: 2026-11-08
 status: active
 confidence: medium
 tags: [jev, receipts, sqlite]
@@ -121,13 +121,15 @@ Task truth is `accepted` only when there is an accepted attempt with no regressi
 | Add an independent model label | `planModelLabels` selects sampled input rows (`packages/jev/src/labels-model.ts:22-37`); `recordOutcome` persists the label (`packages/jev/src/receipts.ts:86-88`) | `labelSource` classifies labels (`packages/jev/src/calibrate.ts:77-83`) |
 | Retain and prune | Insert path triggers `pruneReceipts` periodically (`packages/jev/src/receipts.ts:81-93`) | Cleanup deletes by age and row bound (`packages/jev/src/receipts.ts:90-93`) |
 
-Reader use cases: `summarizeReceipts` groups receipts for operational summaries (`packages/jev/src/receipts.ts:95-100`).
+Reader use cases: `summarizeReceipts` groups receipts for operational summaries (`packages/jev/src/receipts.ts:98-101`).
 
 `calibrateReceipts` reads labeled receipts for threshold calibration (`packages/jev/src/calibrate.ts:89-103`).
 
 `jevWatch` reads judgment and project slices for monitoring (`packages/jev/src/watch.ts:79-96`).
 
-Outcome labeling selects unlabeled rows (`packages/jev/src/labels-outcome.ts:27-30`).
+Outcome labeling sweeps select unlabeled receipts using `unlabeledJevReceipts`, `unlabeledSubjectReceipts`, `unlabeledJevSubjectReceipts`, or `unlabeledRunReceipts` (`packages/jev/src/receipts.ts:106-132`), and register sweep handlers via `registerOutcomeSweep` (`packages/jev/src/labels-outcome.ts:207-212`).
+
+Evaluation and reporting readers include `labeledOutcomes` and `countJudgmentReceipts` (`packages/jev/src/receipts.ts:135-143`), `jevDecisionCounts`, `jevCostStats`, and `jevReceiptDecision` (`packages/jev/src/receipts.ts:151-163`), `listPlanFactJevReceipts` and `listJevRebenchReceipts` (`packages/jev/src/receipts.ts:146-149`, `packages/jev/src/receipts.ts:170-181`), and `jevMaturedJudgmentCount` (`packages/jev/src/receipts.ts:165-168`).
 
 ## Related pages
 
