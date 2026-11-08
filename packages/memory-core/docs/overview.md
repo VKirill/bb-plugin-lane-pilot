@@ -2,9 +2,9 @@
 title: Memory core workspace overview
 type: overview
 created: 2026-11-07
-updated: 2026-11-07
+updated: 2026-11-08
 status: active
-confidence: high
+confidence: medium
 tags: [memory, knowledge, workspace, sqlite]
 sources:
   - packages/memory-core/package.json
@@ -23,7 +23,7 @@ sources:
   - packages/memory-core/src/fingerprint.ts
   - packages/memory-core/src/sections.ts
   - packages/memory-core/src/terms.ts
-  - src/rooms/storage/database.ts
+  - src/rooms/memory/server/attempt-effects.ts
   - src/rooms/memory/server/session-memory.ts
   - src/rooms/memory/server/memory.ts
   - src/rooms/writer/server/writer-knowledge.ts
@@ -46,7 +46,7 @@ The workspace encapsulates project memory logic for agent sessions (`packages/me
 - Hybrid search fusing word indexing, trigram substring matching, and 768-dimensional vector cosine similarity (`searchMemoryRecords` in `packages/memory-core/src/store.ts:323-359`, `EMBED_DIM` in `packages/memory-core/src/vectors.ts:13-14`).
 - Relevance filtering using word frequency log-scaling and dense vector cutoffs (`packages/memory-core/src/floor.ts:31-35`, `packages/memory-core/src/floor.ts:96-120`).
 - Context assembly for prompts and session packets under strict role budgets (`packages/memory-core/src/context.ts:48-64`, `packages/memory-core/src/context-pack.ts:26-67`).
-- Pairwise conflict detection and hold mechanisms (`packages/memory-core/src/conflicts.ts:95-105`, `packages/memory-core/src/conflict-store.ts:62-76`).
+- Pairwise conflict detection and hold mechanisms (`packages/memory-core/src/conflicts.ts:95-105`, `packages/memory-core/src/conflict-store.ts:62-67, 68-76`).
 - File synchronization with repository `.agents/memory/*.md` markdown files (`packages/memory-core/src/files.ts:46-107`, `packages/memory-core/src/files.ts:119-152`).
 
 ## How it is used
@@ -71,7 +71,12 @@ Primary exported functions include:
 - `parseMemoryCandidates`: parses and validates candidate objects from model output (`packages/memory-core/src/candidates.ts:78-115`).
 - `storeMemoryRecords`: inserts records, evicts low-utility notes on budget overflow, and indexes entries (`packages/memory-core/src/store.ts:121-240`).
 - `storeMemoryRecordsKeepingOverflow`: writes records, automatically demoting overflowing core entries to notes (`packages/memory-core/src/store.ts:262-274`).
+- `insertMemoryRecord`: direct row insertion for corpus evaluation without admission or indexing side effects (`packages/memory-core/src/store.ts:506-512`).
+- `deleteMemoryRecord`: removes record and purges search indexes (`packages/memory-core/src/store.ts:427-430`).
 - `searchMemoryRecords`: hybrid search combining FTS5 BM25, trigrams, and vector cosine ranking (`packages/memory-core/src/store.ts:323-353`).
+- `coldMemoryRows`: retrieves idle-expired notes for cold-tier search (`packages/memory-core/src/store.ts:453-457`).
+- `reactivateColdMemory`: re-activates an idle-expired note back to active status (`packages/memory-core/src/store.ts:460-462`).
+- `listMemoryMisses`: queries logged searches that returned zero results (`packages/memory-core/src/store.ts:496-503`).
 - `relevantRecords`: applies relevance thresholds based on query length and path anchors (`packages/memory-core/src/floor.ts:112-120`).
 - `buildContextPack`: builds deterministic session context packets adhering to role caps (`packages/memory-core/src/context-pack.ts:26-67`).
 - `findConflicts`: detects pairwise disagreements between notes (`packages/memory-core/src/conflicts.ts:95-105`).
@@ -102,7 +107,7 @@ Configuration values defined in `MEMORY_SETTING_KEYS` (`packages/memory-core/src
 
 The package is consumed across the workspace and plugin rooms:
 - `@lane-pilot/run-insights`: imports `MemoryCandidate` for lesson generation (`packages/run-insights/src/lessons.ts:1`).
-- `src/rooms/storage/database.ts`: re-exports `searchMemoryRecords` and `storeMemoryRecords`, calls `noteRefutedByCheck` and `recordMemoryAccepted` (`src/rooms/storage/database.ts:11-14`).
+- `src/rooms/memory/server/attempt-effects.ts`: handles attempt outcome transitions, expiring refuted notes via `noteRefutedByCheck` and crediting accepted notes via `recordMemoryAccepted` (`src/rooms/memory/server/attempt-effects.ts:12-24`).
 - `src/rooms/memory/server/session-memory.ts`: handles hub RPC methods for searching, reading core, and storing memory (`src/rooms/memory/server/session-memory.ts:6-10`).
 - `src/rooms/memory/server/memory.ts`: memory maintenance room managing overflows, curators, and migrations (`src/rooms/memory/server/memory.ts:10-17`).
 - `src/rooms/writer/server/writer-knowledge.ts`: constructs writer context packets using `buildContextPack` and relevance checks (`src/rooms/writer/server/writer-knowledge.ts:3-5`).

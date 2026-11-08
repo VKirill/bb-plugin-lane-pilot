@@ -2,9 +2,9 @@
 title: Memory lifecycle and file integration
 type: component
 created: 2026-11-07
-updated: 2026-11-07
+updated: 2026-11-08
 status: active
-confidence: medium
+confidence: high
 tags: [memory, lifecycle, files, import, export, fingerprint, drift]
 sources:
   - packages/memory-core/src/lifecycle.ts
@@ -12,7 +12,7 @@ sources:
   - packages/memory-core/src/fingerprint.ts
   - packages/memory-core/src/store.ts
   - packages/memory-core/src/settings.ts
-  - src/rooms/storage/database.ts
+  - src/rooms/memory/server/attempt-effects.ts
   - src/rooms/memory/server/session-memory.ts
   - src/rooms/memory/server/memory.ts
   - packages/memory-core/src/context-pack.ts
@@ -32,7 +32,7 @@ The lifecycle and file integration subsystem tracks facts over time, expires out
 2. Corroboration: when a second source with a different `sourceSha256` writes an identical fact, the row is added to `corroborate` (`packages/memory-core/src/store.ts:150`) and its `verification_json` updated (`packages/memory-core/src/store.ts:225-234`).
 3. Idle expiration: notes that are not mixed into any session brief for 90 days (`NOTE_IDLE_MS` in `packages/memory-core/src/lifecycle.ts:7`) are marked as expired with `expired_reason = 'idle'` (`packages/memory-core/src/lifecycle.ts:37-41`). Core records, rules, and file imports are protected by `idleSql` (`packages/memory-core/src/lifecycle.ts:44-46`).
 4. Dated expiration: any record with a `valid_until` timestamp that has passed is marked expired with `expired_reason = 'dated'` (`packages/memory-core/src/lifecycle.ts:38-41`).
-5. Check refutation: `noteRefutedByCheck` (`packages/memory-core/src/lifecycle.ts:12-17`) compares a failed test or check output against note content. If the failure text quotes 40 or more continuous characters of the note, the note is marked expired with `expired_reason = 'refuted'` (`src/rooms/storage/database.ts:11-14`).
+5. Check refutation: `noteRefutedByCheck` (`packages/memory-core/src/lifecycle.ts:12-17`) compares a failed test or check output against note content. If the failure text quotes 40 or more continuous characters of the note, the note is marked expired with `expired_reason = 'refuted'` (`src/rooms/memory/server/attempt-effects.ts:12-14`).
 6. Usefulness metrics: each time a record is mixed into a brief, `recordMemoryMixed` increments `use_count` and updates `last_used_at` (`packages/memory-core/src/lifecycle.ts:94-97`). When the attempt is accepted, `recordMemoryAccepted` increments `accepted_count` (`packages/memory-core/src/lifecycle.ts:114-117`). `memoryUsefulness` calculates the smoothed ratio $(\text{acceptedCount} + 1) / (\text{useCount} + 2)$, capped at 1.5 (`packages/memory-core/src/lifecycle.ts:87-91`).
 7. File fingerprinting and drift:
    - `pathsNamed` extracts repository file paths referenced in note content (`packages/memory-core/src/fingerprint.ts:6-8`).

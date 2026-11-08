@@ -2,9 +2,9 @@
 title: Memory admission and storage
 type: component
 created: 2026-11-07
-updated: 2026-11-07
+updated: 2026-11-08
 status: active
-confidence: medium
+confidence: high
 tags: [memory, admission, storage, budgets, eviction]
 sources:
   - packages/memory-core/src/candidates.ts
@@ -13,7 +13,7 @@ sources:
   - packages/memory-core/src/fingerprint.ts
   - packages/memory-core/src/lifecycle.ts
   - packages/memory-core/src/conflict-store.ts
-  - src/rooms/storage/database.ts
+  - packages/memory-core/src/index.ts
   - src/rooms/memory/server/memory.ts
   - src/rooms/memory/server/session-memory.ts
 ---
@@ -43,6 +43,7 @@ The admission and storage subsystem ensures that candidate facts are screened fo
 7. Budget enforcement and eviction: calculates total token usage via `estimateTokens` (`packages/memory-core/src/candidates.ts:49`). If notes exceed `noteBudget` or combined tokens exceed `indexBudget` (`packages/memory-core/src/store.ts:196-197`), least useful notes are hidden (sorted by `accepted_count`, `use_count`, `last_used_at`, `created_at`, `id` in `packages/memory-core/src/store.ts:200-206`) until the batch fits.
 8. Overflow demotion: when calling `storeMemoryRecordsKeepingOverflow`, `demoted` tracks core records converted to kind `"note"` (`packages/memory-core/src/store.ts:262-274`) when exceeding `coreBudget` (`packages/memory-core/src/store.ts:194`).
 9. Search index updates: newly inserted and revived records are inserted into `lane_pilot_memory_fts` and `lane_pilot_memory_trgm` via `addToIndexes` (`packages/memory-core/src/store.ts:84-87`, `packages/memory-core/src/store.ts:216`, `packages/memory-core/src/store.ts:222`).
+10. Direct corpus seeding: `insertMemoryRecord` (`packages/memory-core/src/store.ts:506-512`) writes a single memory record directly with `personal_bot = ''`, `audience = 'subagent'`, and `trust = 'confirmed'`, bypassing candidate validation, budgeting, indexing, and conflict checks for eval corpus seeding.
 
 ## Modes, variants and branches
 
@@ -50,6 +51,7 @@ The admission and storage subsystem ensures that candidate facts are screened fo
 |---|---|---|---|---|
 | Direct write (`storeMemoryRecords`) | Direct invocation by rules engine or tests | Fixed `coreBudget`, `noteBudget`, `indexBudget` | Inserts records; throws if core exceeds `coreBudget` | `packages/memory-core/src/store.ts:121-194` |
 | Overflow write (`storeMemoryRecordsKeepingOverflow`) | Maintainer write path | Same budgets | `demoted` tracks excess core records demoted to note kind (`packages/memory-core/src/store.ts:262-274`) | Demoted to note shelf |
+| Direct corpus seed (`insertMemoryRecord`) | Evaluation corpus input | Bypasses admission filters, budgets, and indexing | Directly inserts active row with `trust='confirmed'` and `audience='subagent'` | `packages/memory-core/src/store.ts:506-512` |
 | Hedged claim | Note containing words like "maybe", "perhaps", "кажется", "возможно" | `claimIsHedged(content)` matches regex | Forces `trust='observed'` even if input requested `confirmed` | `packages/memory-core/src/store.ts:114-119`, `packages/memory-core/src/store.ts:125` |
 | Candidate salience | Entry evaluated before admission | `memoryEntrySalience` score (`packages/memory-core/src/candidates.ts:41-47`) vs `memory.salience_min` (`packages/memory-core/src/settings.ts:63`) | Drops entries scoring below threshold before persistence | `packages/memory-core/src/candidates.ts:41-47`, `packages/memory-core/src/settings.ts:63` |
 | Rule origin | Input with `origin: "rule"` | Restricted to rules pipeline | Allowed to attach `"rule"` concept tag | `packages/memory-core/src/store.ts:131-132` |
@@ -87,6 +89,8 @@ The admission and storage subsystem ensures that candidate facts are screened fo
 - `parseMemoryCandidates(raw: unknown, settings: MemorySettings): MemoryCandidate[]`: parses and validates candidate entries (`packages/memory-core/src/candidates.ts:78-116`).
 - `storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput): StoreMemoryResult`: writes records within budgets in a transaction (`packages/memory-core/src/store.ts:121-240`).
 - `storeMemoryRecordsKeepingOverflow(db: MemoryDatabase, input: StoreMemoryInput): StoreMemoryResult & { entries: MemoryCandidate[]; demoted: number }`: writes records, demoting core overflows to notes (`packages/memory-core/src/store.ts:262-274`).
+- `insertMemoryRecord(db: MemoryDatabase, input: { id: string; projectId: string; kind: string; content: string; conceptsJson: string; sourceSha256: string; createdAt: number; origin: string }): void`: directly inserts a record for eval corpus seeding without admission or indexing side effects (`packages/memory-core/src/store.ts:506-512`).
+- `deleteMemoryRecord(db: Database.Database, projectId: string, id: string): void`: removes a record and purges its search indexes (`packages/memory-core/src/store.ts:427-430`).
 - `coreShelf(db: MemoryDatabase, projectId: string, personalBot: string, audience: MemoryAudience, scope?: readonly string[])`: returns active core token counts and replaceable records (`packages/memory-core/src/store.ts:246-252`).
 
 ## Gotchas
