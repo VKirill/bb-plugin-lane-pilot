@@ -2,7 +2,7 @@
 title: Memory records and receipts data model
 type: data-model
 created: 2026-11-07
-updated: 2026-11-07
+updated: 2026-11-08
 status: active
 confidence: medium
 tags: [memory, data-model, records, receipts, sqlite, lifecycle]
@@ -12,7 +12,7 @@ sources:
   - packages/memory-core/src/candidates.ts
   - packages/memory-core/src/settings.ts
   - packages/memory-core/src/fingerprint.ts
-  - src/rooms/storage/database.ts
+  - src/rooms/memory/server/attempt-effects.ts
   - packages/memory-core/src/files.ts
   - packages/memory-core/src/sections.ts
   - packages/memory-core/src/vectors.ts
@@ -107,12 +107,15 @@ Purpose: canonical storage for project conventions (`kind = 'core'`) and context
 | Initial state | Next state | Function | Trigger condition | Evidence |
 |---|---|---|---|---|
 | (new) | `"active"` | `storeMemoryRecords` (`packages/memory-core/src/store.ts:214`) | Candidate passes admission checks and budgets | `packages/memory-core/src/store.ts:212-218` |
+| (new) | `"active"` | `insertMemoryRecord` (`packages/memory-core/src/store.ts:506-512`) | Evaluation corpus seed row inserted directly | `packages/memory-core/src/store.ts:506-512` |
 | `"active"` | `"superseded"` | `hideRecord` (`packages/memory-core/src/lifecycle.ts:30-34`) | Replaced by newer record via `supersedes` (`packages/memory-core/src/store.ts:182-185`), `sourceFileId` (`packages/memory-core/src/store.ts:177`), or `sameSubject` (`packages/memory-core/src/store.ts:187`) | `packages/memory-core/src/store.ts:172` |
 | `"active"` | `"expired"` | `hideRecord` (`packages/memory-core/src/lifecycle.ts:30-34`) | Evicted for budget (`expired_reason = 'budget'`) | `packages/memory-core/src/store.ts:206` |
 | `"active"` | `"expired"` | `hideRecord` (`packages/memory-core/src/lifecycle.ts:30-34`) | Not used for 90 days (`expired_reason = 'idle'`) | `packages/memory-core/src/lifecycle.ts:38-41` |
 | `"active"` | `"expired"` | `hideRecord` (`packages/memory-core/src/lifecycle.ts:30-34`) | Valid date passed (`valid_until <= now`, `expired_reason = 'dated'`) | `packages/memory-core/src/lifecycle.ts:38-41` |
-| `"active"` | `"expired"` | `hideRecord` (`packages/memory-core/src/lifecycle.ts:30-34`) | Refuted by `noteRefutedByCheck` (`packages/memory-core/src/lifecycle.ts:12-17`, `src/rooms/storage/database.ts:11-14`) | Reason `"refuted"` |
+| `"active"` | `"expired"` | `hideRecord` (`packages/memory-core/src/lifecycle.ts:30-34`) | Refuted by `noteRefutedByCheck` (`packages/memory-core/src/lifecycle.ts:12-17`, `src/rooms/memory/server/attempt-effects.ts:12-14`) | Reason `"refuted"` |
+| `"active"` | `"expired"` | `expireIdleMemory` (`packages/memory-core/src/store.ts:476-478`) | Promoted note remaining idle past evaluation window (`listIdlePromotions`) | Reason `"idle"` |
 | `"expired"` | `"active"` | `storeMemoryRecords` (`packages/memory-core/src/store.ts:220`) | Record revived when fact is restated by new candidate or source file | `packages/memory-core/src/store.ts:152-154, 219-224` |
+| `"expired"` | `"active"` | `reactivateColdMemory` (`packages/memory-core/src/store.ts:460-462`) | Cold note re-activated during cold-tier retrieval | Resets `last_used_at` timestamp |
 
 ### Lifecycle of `trust`
 
@@ -132,14 +135,30 @@ Purpose: canonical storage for project conventions (`kind = 'core'`) and context
 
 - Writers:
   - `storeMemoryRecords` / `storeMemoryRecordsKeepingOverflow`: insert new candidates, demote core overflows, update indexes (`packages/memory-core/src/store.ts:121-240, 262-274`).
+  - `insertMemoryRecord`: direct row insertion for corpus evaluation without admission or indexing side effects (`packages/memory-core/src/store.ts:506-512`).
+  - `deleteMemoryRecord`: removes a record and drops search indexes (`packages/memory-core/src/store.ts:427-430`).
+  - `reactivateColdMemory`: re-activates an idle-expired note back to active (`packages/memory-core/src/store.ts:460-462`).
+  - `recordMemoryPromotion`: records a promotion row on reactivation (`packages/memory-core/src/store.ts:465-467`).
+  - `expireIdleMemory`: expires a still-active note as idle during demote sweep (`packages/memory-core/src/store.ts:476-478`).
+  - `recordMemoryMiss`: logs search query with zero hits (`packages/memory-core/src/store.ts:481-483`).
+  - `recordMemoryProbe` / `pruneMemoryProbeBefore`: logs and prunes probe evaluation results (`packages/memory-core/src/store.ts:548-551, 561-563`).
   - `expireMemory`: scans and expires idle/dated records (`packages/memory-core/src/lifecycle.ts:37-41`).
   - `hideRecordsOfFile`: marks records superseded/expired when their source file is deleted or modified (`packages/memory-core/src/store.ts:277-280`).
   - `recordMemoryMixed` / `recordMemoryAccepted` / `recordCriticUse`: update usage counters and timestamps (`packages/memory-core/src/lifecycle.ts:94-97, 108-117`).
 - Readers:
-  - `searchMemoryRecords` / `searchMemoryAllSections`: FTS5 and trigram searches (`packages/memory-core/src/store.ts:319-353`).
+  - `searchMemoryRecords` / `searchMemoryAllSections`: FTS5 and trigram searches (`packages/memory-core/src/store.ts:319-359`).
   - `listMemory`: tag and kind listing (`packages/memory-core/src/store.ts:398-405`).
+  - `listActiveMemoryRows`: queries active records of a project (`packages/memory-core/src/store.ts:433-439`).
+  - `coldMemoryRows`: idle-expired note rows for cold-tier read (`packages/memory-core/src/store.ts:453-457`).
+  - `listIdlePromotions`: lists promoted notes staying idle (`packages/memory-core/src/store.ts:470-473`).
+  - `countColdMemories` / `countMemoryPromotions`: cold-tier counts (`packages/memory-core/src/store.ts:486-493`).
+  - `listMemoryMisses`: queries recent search misses (`packages/memory-core/src/store.ts:496-503`).
   - `coreShelf`: queries active core conventions for prompts (`packages/memory-core/src/store.ts:246-252`).
-  - `pendingVectors`: queries active records missing vector embeddings (`packages/memory-core/src/vectors.ts:40-47`).
+  - `pendingVectors`: queries active records missing vector embeddings (`packages/memory-core/src/vectors.ts:41-48`).
+  - `activeMemoryDigestRows`: retrieves active notes sorted by acceptance for cards (`packages/memory-core/src/store.ts:566-569`).
+  - `memoryFillRows` / `memoryHiddenRows`: calculates shelf fill and hidden counts by status (`packages/memory-core/src/store.ts:410-418`).
+  - `firstUnusedCoreRecordId`: finds oldest unaccepted maintainer core record (`packages/memory-core/src/store.ts:421-424`).
+  - `memoryRecordExists`: verifies whether record exists in project (`packages/memory-core/src/store.ts:572-574`).
 
 ## Table: `lane_pilot_memory_receipt`
 
