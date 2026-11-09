@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.496
+
+- **A read-only helper is no longer blamed for a file another graph run saved.** On 2026-11-09 three «Штурм идеи» runs ran in parallel in one checkout; the first saved its `guidance.md`, and the other two failed `repo_edited` at their guidance step for that file. Files Lane Pilot's own `fs.write` puts into a checkout are now noted with their time, and the read-only guard leaves them out the same way it leaves out what the PM's chat named.
+- **The plan critic's setting says what it does.** `plan_critique.min_score` was shown as «Минимальный балл плана» (lowest acceptable plan score); the code reads it as the task risk from which the critic runs (low 2, medium 5, high 8, critical 10), so raising it made the critic run less, the opposite of what the text promised. Found by the shootdown's UX lens on its own repository.
 ## 0.1.495
 
 - **«Штурм идеи» (`idea-shootdown`): an idea is attacked before anything is built.** The owner writes «проверь идею: …»; the PM restates it as a 2–3 sentence hypothesis and starts the graph after his yes. Seven fresh-context reviewers attack it, one lens each: does it need to exist (with a search for what the code already has), cost and tokens, ergonomics, migration and rollback, diagnosing a failure at 3 AM, debt in two years, the false compromise. The role authors answer the objections; the result is a guidance spec with «objections» and «alternatives weighed» in `.agents/designs/idea-<run>/guidance.md`. No plan, no code. The same lenses now open the brainstorm of `brainstorm-driven` and `grill-driven`, and the guidance step finally sees the role digests. A lens that did not run is «not run», never «0 findings». Ported from google/elephant-goldfish-model (Apache-2.0).

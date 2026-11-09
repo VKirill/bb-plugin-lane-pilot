@@ -24,7 +24,7 @@ import { phaseFolder } from "../../phase";
 import type { LanePilotDatabase } from "../../storage";
 import { PROVIDER_FOLDER_BLOCK_TTL_MS, findThreadsByMetadata, folderEnvironment, fullAccessSpawn, hiddenPlacement, keyedSpawnSupported, modelCatalogOf, noteProviderLimit, noteProviderStartFailure, noteProviderStartSuccess, pmHostOf, projectFolder, projectSources, providerBlockedForFolder, readProviderFolderBlock, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
-import { detectRepoEdits, gitRepoStatus, namedByChat } from "../../verification/server";
+import { detectRepoEdits, gitRepoStatus, namedByChat, writtenByEngineSince } from "../../verification/server";
 import { SPECIALIST_GRAPH, SPECIALIST_ROLES, rememberSpecialistThread } from "../../critique/server";
 import { modelTier, ROLE_IDS, ROLE_MODEL_OPTIONS, roleRowOf } from "@lane-pilot/models";
 import { threadUsage } from "../../usage/server";
@@ -434,7 +434,9 @@ export function createWorkflowAgents() {
       // What the PM's chat named while the helper ran is the PM's own edit in the shared checkout, not the helper's.
       const pmOwn = changed.length && rt.pmThreadId ? namedByChat(await chatTextSince(bb, rt.pmThreadId, watchedFrom), changed) : new Set<string>();
       if (pmOwn.size) bb.log.warn(`workflow step ${request.stepKey}: ${[...pmOwn].join(", ")} changed during the ${request.role} helper's run, named by the PM chat: its own edit, not the helper's`);
-      const edited = changed.filter((file) => !pmOwn.has(file));
+      // What a graph action of Lane Pilot itself wrote meanwhile (another run's fs.write in the same checkout) is not the helper's either.
+      const engineOwn = changed.length ? writtenByEngineSince(checkoutPath, watchedFrom) : new Set<string>();
+      const edited = changed.filter((file) => !pmOwn.has(file) && !engineOwn.has(file));
       if (edited.length) throw new HelperFailure("repo_edited", `the ${request.role} helper edited repository files it may not touch: ${edited.slice(0, 8).join(", ")}`);
     }
     if (!output) throw new HelperFailure(broken ? "artifact_invalid" : "output_invalid", broken ? `the ${request.role} helper's answer breaks the step's contract: ${problem}` : `the ${request.role} helper's final message could not be read: ${problem}`);

@@ -43,3 +43,24 @@ export function namedByChat(texts: readonly string[], files: readonly string[]):
     return folder.includes("/") && all.includes(folder);
   }));
 }
+
+/**
+ * Files Lane Pilot's own graph actions wrote into a checkout (`fs.write`), by checkout and time. Another run's read-only helper in the
+ * same checkout must not be blamed for them (hub 2026-11-09: two parallel «Штурм идеи» runs failed `repo_edited` on the guidance file
+ * a third run had just saved). Kept in memory for an hour: a helper's window is shorter, and a reload loses only that hour.
+ */
+const ENGINE_WRITES_TTL_MS = 60 * 60_000;
+const engineWrites = new Map<string, Map<string, number>>();
+
+const checkoutKey = (path: string) => path.replace(/\/+$/, "");
+
+export function noteEngineWrite(checkoutPath: string, file: string, at = Date.now()): void {
+  const key = checkoutKey(checkoutPath), files = engineWrites.get(key) ?? new Map<string, number>();
+  for (const [name, when] of files) if (at - when > ENGINE_WRITES_TTL_MS) files.delete(name);
+  files.set(file.replace(/^\.?\/+/, ""), at);
+  engineWrites.set(key, files);
+}
+
+export function writtenByEngineSince(checkoutPath: string, since: number): Set<string> {
+  return new Set([...(engineWrites.get(checkoutKey(checkoutPath)) ?? new Map<string, number>())].filter(([, when]) => when >= since).map(([name]) => name));
+}

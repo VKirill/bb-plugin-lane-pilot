@@ -1,4 +1,5 @@
 import type { TaskV2 } from "../../contracts";
+import { noteEngineWrite } from "../../verification/server";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
 import type { IsTaskSatisfied } from "../../contracts";
 import { getAttempt, getRun, getRunWriterHost, getTaskPlan, listAttemptsForTask, listOpenAttempts, listTaskIdsForRun } from "../../storage";
@@ -604,6 +605,8 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     if (!rel || rel.includes("..") || rel.includes("\0")) throw new Error(`fs.write: the path "${rel}" is not inside the checkout`);
     const isFolder = rel.endsWith("/");
     const write = async (path: string, content: string) => {
+      // Noted before the write lands, so a helper's status read right after it already sees it as the engine's.
+      noteEngineWrite(checkout.path, path);
       await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: checkout.path, path: `${checkout.path}/${path}`, content, contentEncoding: "utf8", createParents: true, expectedSha256: null });
     };
     const asText = (value: unknown) => (typeof value === "string" ? value : JSON.stringify(value, null, 2));

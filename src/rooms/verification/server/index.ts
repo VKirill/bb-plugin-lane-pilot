@@ -3,7 +3,7 @@
 export { excludeBookkeeping } from "./bookkeeping-exclude";
 export { gateResolverFor } from "./gate-detect";
 export { attemptMergeMessage, clearMergeIntent, createMergeIntentRecovery, recordMergeIntent } from "./merge-intent";
-export { detectRepoEdits, gitRepoStatus, namedByChat } from "./repo-edits";
+export { detectRepoEdits, gitRepoStatus, namedByChat, noteEngineWrite, writtenByEngineSince } from "./repo-edits";
 export { glueReplayCommands } from "./replay-checks"
 export { activeRunFor, listGuests, noteCheckoutGuest } from "./checkout-guests";
 export { IntegrationGateRunner, gateRunVerdict } from "./integration-gate";
