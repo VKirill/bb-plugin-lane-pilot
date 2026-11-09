@@ -1,6 +1,6 @@
 ---
 title: Lane Pilot project facts
-updated: 2026-11-08
+updated: 2026-11-09
 sources:
   - package.json
   - server.ts
@@ -76,6 +76,7 @@ sources:
 
 - Thread events wake watchers; fresh reads decide completion, with a fallback poll. Error-status decisions retain a detected BB failure cause ([gotchas](docs/gotchas.md#event-and-polling-behavior)).
 - An admitted writer task holds overlapping ownership paths through redos and fallbacks until its writer loop ends ([gotchas](docs/gotchas.md#dispatch-and-retries)).
+- A reload during dispatch resumes the pipeline for the same attempt with its immutable base retained, through baseline before starting the writer ([gotchas](docs/gotchas.md#dispatch-and-retries)).
 - OpenCode v2 is one shared service per host: writer settings travel as the `lane-pilot` agent and a worktree `.opencode/opencode.jsonc`, not as process environment ([gotchas](docs/gotchas.md#stability-and-local-provider-setup)).
 - Host-prepared BB guard wrappers differ for new helpers, owner threads, and older hosts ([native agent](docs/native-agent.md#public-api-or-commands)).
 - Live-folder mode has explicit caps and rollback limits ([gotchas](docs/gotchas.md#writer-workspace-modes)).
