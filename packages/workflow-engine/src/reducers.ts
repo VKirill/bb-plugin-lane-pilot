@@ -48,6 +48,16 @@ export const REDUCERS: Record<string, Reducer> = {
     const failedRoles = [...lost(input).map((row) => str(row.item)), ...done(input).filter((row) => row.data.ok === false).map((row) => str(row.data.role) || str(row.item))];
     return { digests: ok.map((row) => row.data.digest), ok_count: ok.length, failed_roles: failedRoles.filter(Boolean) };
   },
+  // src: "egm:agents/*.md + skills/egm-brainstorm (Apache-2.0)" — a lens that never ran is "not run", never "0 findings".
+  "reduce.lp.brainstorm.shootdown": (input) => {
+    const ok = done(input).filter((row) => row.data.ok !== false);
+    const objections = ok.flatMap((row) => list(row.data.objections).map((objection) => {
+      const obj = rec(objection);
+      return { ...obj, lens: str(obj.lens) || str(row.data.lens) || str(row.item) };
+    }));
+    const failedLenses = [...lost(input).map((row) => str(row.item)), ...done(input).filter((row) => row.data.ok === false).map((row) => str(row.data.lens) || str(row.item))];
+    return { objections, blocker_count: sev(objections, "Blocker"), ok_count: ok.length, failed_lenses: unique(failedLenses.filter(Boolean)) };
+  },
   "reduce.lp.build.run_tasks": (input) => {
     const accepted: string[] = [], failedIds: string[] = [], blocked: string[] = [], findings: unknown[] = [], commits: string[] = [];
     for (const row of input.rows) {

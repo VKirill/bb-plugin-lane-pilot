@@ -183,7 +183,7 @@ describe("lp.brainstorm", () => {
 
   it("roles work in parallel, a cross-role review finds conflicts, the owner resolves them, the guidance is written", async () => {
     const r = await runSim("lp.brainstorm", { input: { topic: "t", roles }, stubs: { designs: role(), cross_review: { conflict_count: 2, conflicts: [{}, {}] } }, humans: { resolve: { answer_kind: "resolved", resolutions: [{ role: "ux-expert" }] } } });
-    expect(pathOf(r)).toBe("terms designs cross_review resolve guidance ok");
+    expect(pathOf(r)).toBe("terms shootdown designs cross_review resolve guidance ok");
     expect(out(r)).toMatchObject({ status: "ok" });
     expect(r.called("designs:child")).toHaveLength(3);
   });
@@ -195,10 +195,10 @@ describe("lp.brainstorm", () => {
 
   it("a failed role is a low-confidence result; all roles failed is a failure", async () => {
     const low = await runSim("lp.brainstorm", { input: { topic: "t", roles }, stubs: { designs: role(["ux-expert"]), cross_review: { conflict_count: 0 } } });
-    expect(pathOf(low)).toBe("terms designs cross_review resolve guidance low");
+    expect(pathOf(low)).toBe("terms shootdown designs cross_review resolve guidance low");
     expect(out(low)).toMatchObject({ status: "low_confidence" });
     const none = await runSim("lp.brainstorm", { input: { topic: "t", roles }, stubs: { designs: role(roles) } });
-    expect(pathOf(none)).toBe("terms designs failed");
+    expect(pathOf(none)).toBe("terms shootdown designs failed");
     expect(out(none)).toMatchObject({ status: "failed" });
   });
 
@@ -206,6 +206,13 @@ describe("lp.brainstorm", () => {
     const crash = ((ctx: { input: { item?: unknown } }) => { if (ctx.input.item === "ux-expert") throw new Error("thread died"); return { role: String(ctx.input.item), digest: {}, ok: true }; }) as never;
     const r = await runSim("lp.brainstorm", { input: { topic: "t", roles }, stubs: { designs: crash, cross_review: { conflict_count: 0 } } });
     expect(r.summary.status).toBe("succeeded");
+    expect(out(r)).toMatchObject({ status: "low_confidence" });
+  });
+
+  it("a lens that never ran is a failed lens and sends the brainstorm to low, never to zero findings", async () => {
+    const lenses = ((ctx: { input: { item?: unknown } }) => { if (ctx.input.item === "catalyst") throw new Error("thread died"); return { lens: String(ctx.input.item), objections: [], ok: true }; }) as never;
+    const r = await runSim("lp.brainstorm", { input: { topic: "t", roles }, stubs: { shootdown: lenses, designs: role(), cross_review: { conflict_count: 0 } } });
+    expect(pathOf(r)).toBe("terms shootdown designs cross_review resolve guidance low");
     expect(out(r)).toMatchObject({ status: "low_confidence" });
   });
 });

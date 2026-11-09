@@ -29,7 +29,8 @@
   "not_for": [
     "grill-driven",
     "blueprint-driven",
-    "analyze-plan-execute"
+    "analyze-plan-execute",
+    "idea-shootdown"
   ],
   "status": "published",
   "tags": [
