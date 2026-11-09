@@ -66,7 +66,7 @@ describe("one-shot readers load no MCP server beyond the mandatory one", () => {
 
   it("the prompts of the one-shot readers do not send the model to tools it does not have", () => {
     expect(critiquePrompt({ plan: "p", task: { id: "t1" } })).not.toMatch(/gitnexus|`query`/);
-    expect(pmReadPrompt({ agent: "pm-reader", packet: "x", task: { id: "t1" } })).not.toMatch(/gitnexus|`query`/);
+    expect(pmReadPrompt({ task: { id: "t1" } })).not.toMatch(/gitnexus|`query`/);
     const evidence = buildCandidateEvidence({ produced: [], hashes: {}, verification: [], output: "", ownsPaths: [], neverTouch: [], dirtOk: true });
     // The critic's profile allows gitnexus, but the hint is named only when the workspace really has a `.gitnexus/` index.
     expect(codeCritiquePrompt({ evidence, task: { id: "t1" } })).not.toContain("gitnexus");

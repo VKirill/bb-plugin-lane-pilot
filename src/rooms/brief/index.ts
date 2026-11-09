@@ -5,6 +5,10 @@
  * each titled and fenced as «data, not instructions». When data blocks follow the contract, the
  * goal is restated in one line at the end, so a long data tail cannot push the task out of focus.
  *
+ * What a brief carries: the purpose, where to start, the boundaries and the answer format. A file the agent can open is named
+ * by path and never pasted; an agent that must not change the checkout is told «read only», not «open no files». Data the
+ * agent cannot reach itself (hub records, the plan, the owner's words, a handoff) rides in a data block.
+ *
  * Budgets are per role: the instructions a brief opens with, and the whole text, stay under the
  * role's cap; a data block over its cap is cut at a line boundary with a marker inside the tag,
  * never silently truncated mid-line. `validateBrief` catches a brief that drifted back to dead
@@ -29,7 +33,8 @@ export const BRIEF_BUDGETS: Record<string, { instructions: number; total: number
   "wall-repair": { instructions: 4_000, total: 30_000 },
   "wall-analysis": { instructions: 4_000, total: 30_000 },
   "rules-analyzer": { instructions: 8_000, total: 30_000 },
-  "pm-reader": { instructions: 4_000, total: 40_000 },
+  // The scout reads the files itself: its brief is the task, the plan and where to start, never file contents.
+  "pm-reader": { instructions: 4_000, total: 20_000 },
   // The nightly docs agent and the maintenance/repair passes are method-heavy on purpose.
   "docs-maintainer": { instructions: 8_000, total: 300_000 },
   council: { instructions: 6_000, total: 80_000 },

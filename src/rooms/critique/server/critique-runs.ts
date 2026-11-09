@@ -17,7 +17,7 @@ import { critiquePrompt, parseCritique, shouldRunPlanCritique } from "../critiqu
 import { ownerWordsOfRun } from "./owner-words";
 import { binaryOutputs, dropIntendedGaps, findTaskPlaceholderPaths } from "../critique-coverage";
 import type { CoverageFinding } from "../critique-coverage";
-import { buildExecutionPacket, renderPacketExcerpts } from "../../tasks/execution-packet";
+import { buildExecutionPacket } from "../../tasks/execution-packet";
 import { parsePmReadResult, parsePmReadSettings, pmReadPrompt } from "../pm-read";
 import { boundedAgentName } from "../../contracts/review-vocabulary";
 import { candidateCitations } from "../citations";
@@ -57,7 +57,7 @@ const logLimitMove = (bb: BbPluginApi, what: string, issues: readonly string[] |
   for (const issue of issues ?? []) bb.log.info(`${what}: ${issue}`);
 };
 
-export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;stageHelperSettings:StageHelperSettings;taskId:string;pmThreadId:string;config:PrototypeConfig;task:TaskV2;workflow?:{runId:string;stepKey:string;nodeId:string}})
+export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;stageHelperSettings:StageHelperSettings;taskId:string;pmThreadId:string;config:PrototypeConfig;task:TaskV2;/** The PM's plan: the scout reports what it leaves open against the code. */plan?:string;workflow?:{runId:string;stepKey:string;nodeId:string}})
   :Promise<{state:"skipped"|"passed"|"failed";summary:string;reason?:string}> {
   const settings=await input.stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
   const parsedSettings=parsePmReadSettings(Object.fromEntries([
@@ -66,7 +66,8 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
   // The input is what was read and how, not which model read it: the model pick asks the provider catalog, and a summary of the
   // same read_first stays good. A receipt of other read_first (lane_pilot_update_task) is read again (2026-10-29 audit: it
   // returned the old summary without reading the new files).
-  const source=JSON.stringify({taskId:input.taskId,readFirst:input.task.read_first,settings:parsedSettings});
+  // The plan is part of the input since the scout reads it (2026-11-10): its open questions are about that plan, so an edited plan is read again.
+  const source=JSON.stringify({taskId:input.taskId,readFirst:input.task.read_first,settings:parsedSettings,...(input.plan?.trim()?{planSha256:sha256(input.plan.trim())}:{})});
   const base={runId:input.runId,taskId:input.taskId,stageId:"pm-read" as const,input:source,attempt:Math.min(countAttempts(input.db,input.runId,input.taskId),MAIN_ATTEMPT_LIMIT)};
   const existing=listStageReceipts(input.db,input.runId,input.taskId).find((row)=>row.stageId==="pm-read");
   if(existing&&existing.inputSha256===sha256(source)) {
@@ -97,8 +98,8 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
   parsedSettings.effort=picked.effort??parsedSettings.effort;
   recordStage(input.db,{...base,state:"pending",providerId,model:modelId,replaceOnNewInput:true,restart:true});
   let threadId:string|null=null;
-  // Pending until the excerpts clear the size threshold: a small read_first is skipped, and skipped
-  // is not reachable from running.
+  // Pending until read_first clears the size threshold: a small read_first is skipped, and skipped
+  // is not reachable from running. The host reads the files only to count their lines; the scout opens them itself.
   recordStage(input.db,{...base,state:"pending",providerId,model:modelId});
   let started=false;
   try {
@@ -132,7 +133,7 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
       ...placement,
       ...requiredPolicyField(input.bb, helperPolicy, providerId, "pm-reader"),
       ...writerExecutionSelection(providerId,modelId,parsedSettings.effort,serviceTier),
-      prompt:pmReadPrompt({agent:"pm-read",packet:renderPacketExcerpts(packet),task:input.task}),
+      prompt:pmReadPrompt({task:input.task,plan:input.plan}),
       environment:{type:"host",hostId:input.config.hostId,workspace:{type:"unmanaged",path:input.task.project_cwd}},
       pluginMetadata:{role:"pm-reader",lanePilotRunId:input.runId,lanePilotTaskId:input.taskId,stageId:"pm-read",parentPmThreadId:input.pmThreadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true,...graphStepMetadata(input.workflow)}});
     threadId=stringAt(spawned,"id");

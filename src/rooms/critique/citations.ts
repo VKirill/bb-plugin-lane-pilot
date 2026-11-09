@@ -15,7 +15,7 @@ const isContractRef = (file: string): boolean => file === "TASK" || file === "PL
 
 /**
  * For a reviewer that sees only what is in its prompt (plan critique, specialist review): a file counts when its path appears in
- * that input (the contract, the plan, the pm-read excerpts); a path the reviewer was never shown is invented.
+ * that input (the contract, the plan); a path the reviewer was never shown is invented.
  */
 export function inputCitations(...inputs: readonly string[]): Citation {
   const text = inputs.join("\n");

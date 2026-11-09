@@ -83,9 +83,9 @@ describe("every brief builder renders through renderBrief and keeps its facts", 
     expect(prompt).toContain(masked);
   });
 
-  it("pmReadPrompt keeps the packet, the task brief and the JSON answer spec", () => {
-    const prompt = pmReadPrompt({ agent: "pm-read", packet: "PACKET DATA", task: { title: "Fix login", objective: "make it work" } });
-    for (const marker of ["pm-read", "PACKET DATA", "TASK BRIEF", "HOST-READ EXECUTION PACKET", "Fix login", "keyFacts", "openQuestions", "no text before or after it"]) expect(prompt).toContain(marker);
+  it("pmReadPrompt keeps the plan, the task brief and the JSON answer spec", () => {
+    const prompt = pmReadPrompt({ plan: "PLAN TEXT", task: { title: "Fix login", objective: "make it work" } });
+    for (const marker of ["PLAN TEXT", "<task_brief>", "Fix login", "keyFacts", "openQuestions", "no text before or after it"]) expect(prompt).toContain(marker);
   });
 
   it("analyzerPrompt keeps the evidence tags and the JSON answer spec", () => {
@@ -198,9 +198,7 @@ describe("every brief builder renders through renderBrief and keeps its facts", 
     }
   });
 
-  it("pm-read and the memory maintainer pass their packets whole", () => {
-    const packet = "PACKET END:" + "p".repeat(40_000);
-    expect(pmReadPrompt({ agent: "pm-read", packet, task: {} })).toContain(packet);
+  it("the memory maintainer passes its packet whole", () => {
     const excerpts = "FILE src/x.css:\n" + "e".repeat(40_000);
     const prompt = renderBrief({ role: "memory-maintainer", ...memoryMaintenanceBrief({ task: {}, acceptedResult: {}, settings: { coreBudget: 400, noteBudget: 1200, indexBudget: 4000 } as never, excerpts }) }).text;
     expect(prompt).toContain(excerpts);

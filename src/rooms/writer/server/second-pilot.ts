@@ -5,19 +5,17 @@ import { getRun, getTask, getTaskPlan } from "../../storage";
 
 import type { ServerCore } from "../../contracts/server";
 import { fullAccessSpawn, sendPmNotice } from "../../platform/server";
-import { id, stringAt, bestEffort } from "@lane-pilot/kit";
+import { id, stringAt } from "@lane-pilot/kit";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { roleSelection, sdkCriticCatalog } from "../../critique/critic-pair";
 import { taskMemoryContext } from "../../memory/server";
-import { buildExecutionPacket, renderPacketExcerpts } from "../../tasks/execution-packet";
 import { postOwnerItem } from "../../owner-waiting";
 import { writerQuestionKey } from "./writer-question-item";
 import { finishReturn, insertReturn, listReturns } from "../../stage-return";
-import { NO_TOOLS_LINE, extractModelJson } from "@lane-pilot/workflow-engine";
+import { REVIEW_READ_ONLY_LINE, extractModelJson } from "@lane-pilot/workflow-engine";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { isProductDecision, markAnsweredByDefault, SAFE_DEFAULT_ANSWER } from "./question-default";
-import { resolve } from "node:path";
 
 import type { WriterDispatchApi } from "./dispatch";
 
@@ -29,7 +27,7 @@ interface Services {
 
 /**
  * The second pilot (W34, REL-03/REL-07): a writer's question to a human that nobody answered within `writer.question_wait_min` goes to a
- * read-only helper (the plan critic's role model) with the question, the contract, the plan, the read_first excerpts and the project's
+ * read-only helper (the plan critic's role model) with the question, the contract, the plan and the project's
  * memory. It decides one of three things, and the decision is a row of lane_pilot_stage_return (by `second-pilot`, to `writer`):
  *   answer — the contract, code or docs settle the question: the answer goes in through the PM's own door (answerWriter) and the same
  *            writer goes on in its thread, no attempt spent;
@@ -47,7 +45,7 @@ export type PilotDecision =
   | { outcome:"narrow"; objective:string; acceptance:string[]; out_of_scope:string[]; owns_paths?:string[]; keep_checks?:number[]; grounds:string }
   | { outcome:"owner"; question:string; grounds:string };
 
-export type PilotCase = { projectId:string; runId:string; taskId:string; attemptId:string; question:string; task:TaskV2; plan:string; excerpts:string; memory:string };
+export type PilotCase = { projectId:string; runId:string; taskId:string; attemptId:string; question:string; task:TaskV2; plan:string; memory:string };
 /** The model call: the case in, the decision out; null when no helper can be had (the heuristic then stands in). */
 export type Consult = (input: PilotCase) => Promise<PilotDecision | null>;
 
@@ -70,19 +68,18 @@ export function heuristicOutcome(question: string): PilotDecision["outcome"] {
 
 export function pilotPrompt(input: PilotCase): string {
   return [
-    "You are the second pilot of a Lane Pilot task: a writer stopped with a question to a human and nobody answered it in time. Decide, from what is in this message only, what the machine does now. Answer with one JSON object and nothing else.",
-    NO_TOOLS_LINE,
+    "You are the second pilot of a Lane Pilot task: a writer stopped with a question to a human and nobody answered it in time. Decide what the machine does now. Answer with one JSON object and nothing else.",
+    `You are running in the project checkout: open the task's read_first files and whatever else the question is about, so you decide from the code and not from the question's wording. ${REVIEW_READ_ONLY_LINE}`,
     "",
     `The writer asked:\n${input.question}`,
     "",
     `The task contract (TaskV2):\n${JSON.stringify(input.task, null, 1)}`,
     "",
     `The plan:\n${input.plan || "(none)"}`,
-    input.excerpts ? `\nread_first excerpts:\n${input.excerpts}` : "",
     input.memory ? `\nProject memory:\n${input.memory}` : "",
     "",
     "Choose exactly one outcome:",
-    "- \"answer\": the contract, the plan, the excerpts or the memory settle the question. Write the answer the writer needs to go on, concrete and short. You may not widen owns_paths, never_touch or the checks: an answer that needs a wider contract is not an answer.",
+    "- \"answer\": the contract, the plan, the code or the memory settle the question. Write the answer the writer needs to go on, concrete and short. You may not widen owns_paths, never_touch or the checks: an answer that needs a wider contract is not an answer.",
     "- \"narrow\": a human is needed for part of the task, but the rest is doable inside the contract as written. Give the narrowed objective, the acceptance items that remain, what moves to out_of_scope (the part that needs the human), optionally owns_paths to keep (a subset) and keep_checks (indexes into verification to keep; omit to keep all).",
     "- \"owner\": only the owner can say (what the product should do, wording, which behaviour is live, money, a contradiction in the ask). Give the question compressed to one or two sentences the owner can answer with one line.",
     "Always give grounds: one or two sentences naming what in the material decided it.",
@@ -128,7 +125,7 @@ export function narrowedTask(original: TaskV2, decision: Extract<PilotDecision, 
   };
 }
 
-/** The real consult: the plan critic's role model, one shot, no tools; null when no helper can be spawned here. */
+/** The real consult: the plan critic's role model, one shot, reading the checkout and writing nothing; null when no helper can be spawned here. */
 export function modelConsult(ctx: ServerCore, stageHelperSettings: StageHelperSettings): Consult {
   const { bb, db } = ctx;
   return async (input) => {
@@ -163,19 +160,6 @@ export type PilotResult = { outcome:PilotDecision["outcome"]; returnId:string; n
 export function createSecondPilot(ctx: ServerCore, services: Services, consult: Consult = modelConsult(ctx, services.stageHelperSettings)) {
   const { bb, db } = ctx;
 
-  async function excerptsFor(task: TaskV2, projectId: string, runId: string): Promise<string> {
-    const run = getRun(db, runId);
-    const config = run ? await bestEffort(ctx.log, "second pilot config", ctx.configForRun(projectId, run), null) : null;
-    if (!config || !task.read_first.length) return "";
-    try {
-      const packet = await buildExecutionPacket(task.read_first, async (path) => {
-        const file = await bb.sdk.files.read({ hostId:config.hostId, rootPath:task.project_cwd, path:resolve(task.project_cwd, path) });
-        return typeof file.content === "string" ? { content:file.content, contentEncoding:file.contentEncoding, sha256:file.sha256, sizeBytes:file.sizeBytes } : null;
-      });
-      return renderPacketExcerpts(packet);
-    } catch { return ""; }
-  }
-
   async function run(row: { id:string; run_id:string; task_id:string; project_id:string; thread_id:string|null }, question: string, now: number,
     doors: { answerWriter:(answer:string) => Promise<boolean>; end:(why:string) => Promise<void>; supersede:(by:string, why:string) => Promise<void> }): Promise<PilotResult | null> {
     if (listReturns(db, row.run_id, row.task_id).some((record) => record.by === SECOND_PILOT)) return null;
@@ -192,8 +176,7 @@ export function createSecondPilot(ctx: ServerCore, services: Services, consult: 
       ctx.log(`second pilot ${row.task_id}: ${outcome}${ok ? "" : " (failed)"}: ${detail.slice(0, 200)}`);
       return { outcome, returnId, ok, ...(newTaskId ? { newTaskId } : {}) };
     };
-    const pilotCase: PilotCase = { projectId:row.project_id, runId:row.run_id, taskId:row.task_id, attemptId:row.id, question, task, plan:getTaskPlan(db, row.task_id) ?? "",
-      excerpts:await excerptsFor(task, row.project_id, row.run_id), memory:taskMemoryContext(db, row.project_id, row.run_id, `${task.title}\n${question}`) };
+    const pilotCase: PilotCase = { projectId:row.project_id, runId:row.run_id, taskId:row.task_id, attemptId:row.id, question, task, plan:getTaskPlan(db, row.task_id) ?? "", memory:taskMemoryContext(db, row.project_id, row.run_id, `${task.title}\n${question}`) };
     let decision: PilotDecision | null = null;
     try { decision = await consult(pilotCase); } catch (cause) { ctx.log(`second pilot ${row.task_id}: the helper failed, the heuristic stands in: ${cause instanceof Error ? cause.message : String(cause)}`); }
     // The machine never decides the product: a product decision the model «answered» goes to the owner with the model's grounds.

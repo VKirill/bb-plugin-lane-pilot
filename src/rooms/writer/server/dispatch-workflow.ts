@@ -133,7 +133,7 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
     }, ...extra });
 
   exec("lp.pm-read", async (r, ctx) => {
-    const pmRead = await runPmRead({ stageHelperSettings: r.services.stageHelperSettings, bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId, pmThreadId: r.threadId, config: r.runConfig, task: r.task, workflow: stepRef(ctx) });
+    const pmRead = await runPmRead({ stageHelperSettings: r.services.stageHelperSettings, bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId, pmThreadId: r.threadId, config: r.runConfig, task: r.task, plan: r.plan, workflow: stepRef(ctx) });
     return { state: pmRead.state, summary: pmRead.summary, ...(pmRead.reason !== undefined ? { reason: pmRead.reason } : {}), handoff: handoffOf("pm-read", pmRead.state, pmRead.reason) };
   }, {}, "pm-read");
 

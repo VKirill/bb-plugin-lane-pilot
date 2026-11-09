@@ -136,7 +136,7 @@ describe("prompt hints for gitnexus and metamcp", () => {
 
   it("critiquePrompt and pmReadPrompt no longer point at tools the role does not load", () => {
     expect(critiquePrompt({ plan: "test-plan", task: { id: "t1" } })).not.toContain("gitnexus");
-    expect(pmReadPrompt({ agent: "pm-reader", packet: "packet", task: { id: "t1" } })).not.toContain("gitnexus");
+    expect(pmReadPrompt({ task: { id: "t1" } })).not.toContain("gitnexus");
   });
 
   it("codeCritiquePrompt carries the gitnexus line only for a workspace that has the index", () => {

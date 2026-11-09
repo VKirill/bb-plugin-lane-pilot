@@ -5,7 +5,7 @@ status: active
 created: 2026-11-06
 confidence: medium
 tags: [guide, flow]
-updated: 2026-11-06
+updated: 2026-11-10
 sources:
   - src/rooms/writer/server/start.ts
   - src/rooms/runs/state-machine.ts
@@ -89,7 +89,7 @@ Dispatch also does the following.
 The graph `lp-task-pipeline` runs these steps in order (`docs/flows/task-pipeline.md`):
 
 1. `worth-check`: the Jev judgment `critique.worth` (shadow by default) may skip critics. In shadow, or when unsure, every critic runs.
-2. `pm-read`: reads the `read_first` excerpts into a summary. Off by default (`pm_read.enabled` false, `pm_read.min_lines` 350). A failed summary stops nothing.
+2. `pm-read`: a scout reads the task's `read_first` files itself, in the project checkout and read-only, and reports how that code works today and what the plan leaves open. Its brief names the task, the plan and where to start; it carries no file contents. Off by default (`pm_read.enabled` false, `pm_read.min_lines` 350). A failed read stops nothing.
 3. `plan-critique`: by `quality_mode`. In `standard` it runs for risk high or critical, or when the run has 3 or more write tasks (`plan_critique.min_score` 7, `min_write_tasks` 3, `on_high_risk` true). In `plan_critique.mode` gate (default) a refusal stops the attempt before any writer starts.
 4. `specialist-review`: off by default (`specialist.enabled` false; `specialist.when` high_risk).
 5. `ownership-base`: records the ownership base commit; if it cannot be taken, the task is blocked with the reason.

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import type { ServerCore } from "../src/rooms/contracts/server";
 import { parsePmReadSettings } from "../src/rooms/critique/pm-read";
+import { sha256 } from "../src/rooms/tasks";
 import { createAttempt, createRun, createTask, getAttempt, getTaskGitBase, listAttemptsForTask, listStageReceipts, openDatabase,
   saveTaskGitBase, saveTaskPlan, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 import { DISPATCH_STAGES_PENDING } from "../src/rooms/runs/constants";
@@ -32,7 +33,8 @@ async function world(stop: string | null = null) {
   saveTaskGitBase(db, taskId, { baseRef:"main", baseSha:"a".repeat(40), initialHeadSha:"a".repeat(40), branch:"main", compareCommitted:true });
   const originalBase = getTaskGitBase(db, taskId);
   const settings = { "pm_read.enabled":true, "plan_critique.enabled":false };
-  const source = JSON.stringify({ taskId, readFirst:task.read_first, settings:parsePmReadSettings(settings) });
+  // The scout reads the plan since 0.1.497, so the plan is part of the receipt's input.
+  const source = JSON.stringify({ taskId, readFirst:task.read_first, settings:parsePmReadSettings(settings), planSha256:sha256(plan.trim()) });
   for (const state of ["pending", "running", "passed"] as const) {
     recordStage(db, { runId, taskId, stageId:"pm-read", state, input:source, attempt:1,
       ...(state === "passed" ? { result:incident.pmReadResult } : {}) });

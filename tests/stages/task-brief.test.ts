@@ -68,7 +68,7 @@ describe("each review stage hands the model a readable task, not the JSON contra
     expect(prompt).not.toContain('"schema_version"');
     expect(prompt).not.toContain('"owns_paths"');
     expect(prompt).not.toContain('"acceptance"');
-    expect(prompt).toContain("TASK BRIEF:");
+    expect(prompt).toContain("TASK BRIEF");
     expect(prompt).toContain("title: Add rate limit to /login");
     expect(prompt).toContain("objective: Throttle repeated login failures per IP.");
     expect(prompt).toContain("- 5 failures in a minute return 429");
@@ -96,7 +96,7 @@ describe("each review stage hands the model a readable task, not the JSON contra
   });
 
   it("pm-read: what the task wants and the files it reads, no check commands", () => {
-    const prompt = pmReadPrompt({ agent: "pm-read", packet: "excerpt", task: TASK });
+    const prompt = pmReadPrompt({ task: TASK });
     noContractJson(prompt);
     expect(prompt).toContain("read_first:\n- src/auth/login.ts");
     expect(prompt).toContain("expected_outputs:\n- src/auth/login.ts");

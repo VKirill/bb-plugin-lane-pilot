@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.497
+
+- **A helper is told what to find out and where to start, and reads the code itself.** The owner opened a `pm-read` thread and found 28,041 characters: 24 KB of pasted source under «open no files, run no commands and call no tools», in a thread that had the whole checkout. The paste is cut at 24 KB, so of that task's 16 `read_first` files 5 arrived, the fifth cut mid-line; the reader never saw the plan either. Of its 8 «open questions» to the plan critic, 3 asked what the files that did not fit contain and 2 asked what the plan already said. The stage was the last one built for a helper without file access: the plan critic and the specialist reviewer read the code since 0.1.487. Now `pm-read` is a scout: its brief (about 3 KB plus the plan) names the task, the plan and the `read_first` paths, and it opens them and what they lead to, read-only, in the project checkout. On the same task a live run (Claude Haiku 5.5, 68 s) read 12 files instead of 5, gave each of its 29 facts a file and line, and asked 5 questions the plan really leaves open (for one: what the buy screen shows when the card key is empty and the Stars button is gone). The plan is part of the stage's input, so an edited plan is read again. The second pilot (a writer's question nobody answered) had the same pasted excerpts and the same ban; it now reads the checkout too. `renderPacketExcerpts` is removed. The setting is shown as «Разведка кода перед задачей». The rule is written down in `docs/guide/roles.md` («How work is handed to a helper») and at the brief renderer.
+
 ## 0.1.496
 
 - **A read-only helper is no longer blamed for a file another graph run saved.** On 2026-11-09 three «Штурм идеи» runs ran in parallel in one checkout; the first saved its `guidance.md`, and the other two failed `repo_edited` at their guidance step for that file. Files Lane Pilot's own `fs.write` puts into a checkout are now noted with their time, and the read-only guard leaves them out the same way it leaves out what the PM's chat named.

@@ -5,7 +5,7 @@ status: active
 created: 2026-11-06
 confidence: medium
 tags: [guide, settings]
-updated: 2026-11-06
+updated: 2026-11-10
 sources:
   - packages/settings-catalog/src/channels.ts
   - packages/settings-catalog/src/ui-catalog.ts
@@ -61,7 +61,7 @@ The full generated list with defaults is [docs/enabled-settings.md](../enabled-s
 | `critic.code.default_for_risk` | `medium` | With `code_critique.enabled` unset, turns the code critic on for tasks of that risk or higher (`off`, `medium`, `high`). |
 | `specialist.enabled` / `.when` | `false` / `high_risk` | Specialist risk review. |
 | `night_review.enabled` / `.auto_merge` / `.max_fix_tasks` | `false` / `off` / `5` | The bounded post-acceptance night reviewer. |
-| `pm_read.enabled` / `.min_lines` | `false` / `350` | Pre-reads the task's `read_first` excerpts into a bounded packet. |
+| `pm_read.enabled` / `.min_lines` | `false` / `350` | A scout reads the task's `read_first` files itself and reports to the plan critic and the writer; below `min_lines` of `read_first` it does not run. |
 | `plan_fact.mode` | `record` | `gate` sends a task back when an acceptance item has no evidence. |
 | `owner.words` | `on` (no catalog row) | A verified task waits up to 6 hours for the owner's yes before it lands on main; the PM asks with `lane_pilot_ask_owner` and records the answer with `lane_pilot_queue` action `word`. `off` lands tasks without the wait. |
 | `baseline.already_built`, `baseline.time_cap_sec`, `checks.require_red_on_base` | `notify`, `300`, `medium` | The baseline before a writer starts. |

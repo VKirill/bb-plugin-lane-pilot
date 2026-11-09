@@ -91,8 +91,8 @@ export type HelperRole =
 type RoleProfile = { bbPlugins: string[]; skills: string[]; mcpServers: string[] };
 const CODER: RoleProfile = { bbPlugins: [], skills: ["writer-practices", "karpathy-guidelines"], mcpServers: ["gitnexus", "metamcp"] };
 const READER: RoleProfile = { bbPlugins: [], skills: [], mcpServers: ["gitnexus"] };
-// One answer from the message itself (the prompt says: open no files, call no tools). Measured on the hub: plan-critic and pm-reader made no
-// code-graph call in 419 of 419 runs (the only tool uses were two native reads/shell commands), yet the gitnexus schemas cost ~8k tokens a turn.
+// One answer, no MCP servers: the plan critic and the task scout (pm-reader) read the checkout with the provider's own file tools.
+// Measured on the hub: they made no code-graph call in 419 of 419 runs, yet the gitnexus schemas cost ~8k tokens a turn.
 // The router's model step runs as pm-reader. The owner can still give a role MCP servers (helper.access.<role>).
 const ONE_SHOT: RoleProfile = { bbPlugins: [], skills: [], mcpServers: [] };
 // Env Catalog (J1): the roles that need an account or key get its tools. A writer does not: its checks get the secrets the
