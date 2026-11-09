@@ -1,5 +1,6 @@
 import { TURN_REQUESTED, ownerMessagesOf } from "../../anamnesis";
 import type { EventLike, ThreadLike } from "../../anamnesis";
+import { getRun, taskCreatedAt } from "../../storage";
 import type { LanePilotDatabase } from "../../storage";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 
@@ -13,20 +14,17 @@ const MAX_PAGES = 10;
  * against the words that asked for an earlier one.
  * The plan critic sets its paraphrase of the plan beside them so a contract that misread the owner is itself a finding.
  * The filter is the shared one (`ownerMessagesOf`, anamnesis): a person's `client/turn/requested` in a visible top-level
- * thread. getRun keeps no created_at, so the row is read here. Anything unreadable means no owner words, never a failed
+ * thread.  Anything unreadable means no owner words, never a failed
  * critique — the PM thread can be gone, hidden or a CLI run without one.
  */
 export async function ownerWordsOfRun(input: { bb: BbPluginApi; db: LanePilotDatabase; runId: string; taskId?: string }): Promise<string[]> {
   try {
-    const run = input.db.prepare("SELECT pm_thread_id, created_at FROM lane_pilot_run WHERE id=?").get(input.runId) as
-      { pm_thread_id: string | null; created_at: number } | undefined;
+    const run = getRun(input.db, input.runId);
     const threadId = run?.pm_thread_id;
     if (!threadId) return [];
     const thread = await input.bb.sdk.threads.get({ threadId }) as ThreadLike | null;
     if (!thread?.id) return [];
-    const task = input.taskId ? input.db.prepare("SELECT created_at FROM lane_pilot_task WHERE id=? AND run_id=?").get(input.taskId, input.runId) as
-      { created_at: number } | undefined : undefined;
-    const before = task?.created_at ?? run!.created_at;
+    const before = (input.taskId ? taskCreatedAt(input.db, input.taskId) : null) ?? run!.created_at;
     const list = input.bb.sdk.threads.events.list;
     const picked: string[] = []; // events arrive newest first; reversed at the end so the newest is last
     let beforeSeq: string | undefined;

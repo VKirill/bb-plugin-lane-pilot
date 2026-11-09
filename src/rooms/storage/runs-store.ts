@@ -101,10 +101,10 @@ export function persistRunHelperPolicyJson(db: LanePilotDatabase, runId: string,
 }
 
 export function getRun(db: LanePilotDatabase, runId: string): {
-  id:string; project_id:string; pm_thread_id:string|null; state:string; kind:string; closed_at:number|null; writer_workspace_path:string|null; writer_environment_id:string|null; run_gate:"none"|"pre-merge";run_policy_json:string;
+  id:string; project_id:string; pm_thread_id:string|null; state:string; kind:string; closed_at:number|null; writer_workspace_path:string|null; writer_environment_id:string|null; run_gate:"none"|"pre-merge";run_policy_json:string; created_at:number;
 }|undefined {
-  return db.prepare("SELECT id,project_id,pm_thread_id,state,kind,closed_at,writer_workspace_path,writer_environment_id,run_gate,run_policy_json FROM lane_pilot_run WHERE id=?").get(runId) as
-    {id:string; project_id:string; pm_thread_id:string|null; state:string; kind:string; closed_at:number|null; writer_workspace_path:string|null; writer_environment_id:string|null; run_gate:"none"|"pre-merge";run_policy_json:string}|undefined;
+  return db.prepare("SELECT id,project_id,pm_thread_id,state,kind,closed_at,writer_workspace_path,writer_environment_id,run_gate,run_policy_json,created_at FROM lane_pilot_run WHERE id=?").get(runId) as
+    {id:string; project_id:string; pm_thread_id:string|null; state:string; kind:string; closed_at:number|null; writer_workspace_path:string|null; writer_environment_id:string|null; run_gate:"none"|"pre-merge";run_policy_json:string; created_at:number}|undefined;
 }
 
 export function claimActivation(

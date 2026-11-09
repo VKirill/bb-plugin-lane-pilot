@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.495
+
+- **«Штурм идеи» (`idea-shootdown`): an idea is attacked before anything is built.** The owner writes «проверь идею: …»; the PM restates it as a 2–3 sentence hypothesis and starts the graph after his yes. Seven fresh-context reviewers attack it, one lens each: does it need to exist (with a search for what the code already has), cost and tokens, ergonomics, migration and rollback, diagnosing a failure at 3 AM, debt in two years, the false compromise. The role authors answer the objections; the result is a guidance spec with «objections» and «alternatives weighed» in `.agents/designs/idea-<run>/guidance.md`. No plan, no code. The same lenses now open the brainstorm of `brainstorm-driven` and `grill-driven`, and the guidance step finally sees the role digests. A lens that did not run is «not run», never «0 findings». Ported from google/elephant-goldfish-model (Apache-2.0).
+- **The plan critic checks the plan against the owner's own words, not only the PM's contract.** Before the verdict it paraphrases the plan («Proposes: …») and sets it beside the owner's last 3 messages in the PM chat before the task. A plan that does what he did not ask, or leaves out what he asked, is an `owner intent` finding and goes back for rework. Before, the critic saw only the contract the PM wrote from those words: in the 30 days to 2026-11-08, 17 approved plans later failed on a contract mistake. Effect re-checked with `critic_stats` around 2026-11-22.
 - **A dispatch interrupted after ownership capture resumes on the same attempt.** On 2026-11-08, a reload blocked `armor-fit-1` because its git base already existed, although pm-read had passed, the reviews were skipped by policy and no writer had started. Ownership capture precedes baseline, so its saved base does not mean dispatch finished. Recovery now reruns the pipeline with the immutable base retained; baseline can still block before any writer starts. Regression tests replay the recorded contract and stage states, including a moved HEAD and a rejecting baseline.
 
 ## 0.1.494
