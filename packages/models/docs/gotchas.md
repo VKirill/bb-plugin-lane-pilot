@@ -2,7 +2,7 @@
 title: Models Workspace — Gotchas
 type: gotchas
 created: 2026-11-08
-updated: 2026-11-08
+updated: 2026-11-09
 status: active
 confidence: medium
 tags: [models, gotchas, edge-cases, validation, providers]
@@ -79,6 +79,7 @@ TL;DR: Critical edge cases, provider mismatches, profile restrictions, and valid
 ## Provider limit notice character count ceiling
 
 - The function `providerLimitNotice` inspects stdout/stderr for provider quota exhaustion keywords using `PROVIDER_LIMIT` (packages/models/src/provider-limit.ts:3-12).
+- Its reset-time forms include `unavailable (reset after …)` and `http 403 (reset after …)` (packages/models/src/provider-limit.ts:3).
 - Outputs exceeding 400 characters are discarded by `providerLimitNotice` and return `null` (packages/models/src/provider-limit.ts:9-12).
 - This length guard prevents false positives when a build log, test run, or diff report mentions rate-limiting logic or variables (packages/models/src/provider-limit.ts:9-12).
 

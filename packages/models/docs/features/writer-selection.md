@@ -2,7 +2,7 @@
 title: Writer Selection and Fallbacks
 type: component
 created: 2026-11-08
-updated: 2026-11-08
+updated: 2026-11-09
 status: active
 confidence: low
 tags: [models, writers, anamnesis, jev-reasoning, fallbacks, rotation]
@@ -71,6 +71,7 @@ The task writer is not part of the static role table; it is chosen per task from
 | Missing Jev effort | `input.status === "ok"` but `jevDecision` is null | Uses `manualLevel`; records `fallbackReason = jev_missing_effort_answer` | (packages/models/src/jev-reasoning.ts:18, :25) |
 | Model unsupported effort | `jevDecision` not in `input.supportedLevels` | Uses `manualLevel`; records `fallbackReason = jev_unsupported_by_selected_model:<effort>` | (packages/models/src/jev-reasoning.ts:19-20, :24) |
 | Catalog unavailable | `input.supportedLevels === null` | Uses `manualLevel`; records `selected_model_catalog_unavailable` | (packages/models/src/jev-reasoning.ts:23, :25) |
+| Provider limit refusal | A short provider response matches a limit form, including `HTTP 403 (reset after …)` | `providerLimitNotice` classifies the response as a provider limit; that provider refusal means the task did not run (packages/models/src/provider-limit.ts:1-3,9-13) |
 | Primary writer failure | Quota exhaustion, network fault, or provider error | Dispatches attempt to next candidate in `writerFallbackChain` | (packages/models/src/writer-fallbacks.ts:44-54) |
 
 ## Business rules

@@ -2,7 +2,7 @@
 title: Token Pricing and Compatibility
 type: component
 created: 2026-11-08
-updated: 2026-11-08
+updated: 2026-11-09
 status: active
 confidence: medium
 tags: [models, pricing, token-costs, provider-limits, picker-compatibility]
@@ -29,7 +29,7 @@ It standardizes per-token rates across providers, catches provider refusals from
 1. Normalize model identifiers via `priceFor`: strip trailing context tags `[..]` and date snapshot suffixes `-YYYYMMDD` (packages/models/src/model-prices.ts:25-28).
 2. Fetch per-million token rates from `MODEL_PRICES`: uncached input, cache read, 5-minute cache write, and output (packages/models/src/model-prices.ts:6-23).
 3. Compute total run cost via `costUsd`: multiply usage counters by rates, divide by 1,000,000, and clamp to non-negative with `Math.max(0, usd)` (packages/models/src/model-prices.ts:30-41).
-4. Parse raw process output with `providerLimitNotice`: trim whitespace, verify length <= 400 characters, match against `PROVIDER_LIMIT` regex, and return a normalized 200-character notice (packages/models/src/provider-limit.ts:9-13).
+4. Parse raw process output with `providerLimitNotice`: trim whitespace, verify length <= 400 characters, match against `PROVIDER_LIMIT` regex, and return a normalized 200-character notice (packages/models/src/provider-limit.ts:9-13). The regex recognizes provider responses such as `unavailable (reset after …)` and `http 403 (reset after …)` (packages/models/src/provider-limit.ts:3).
 5. Adjust reasoning levels via `compatibleReasoningLevel`: retain requested level when in `supported`, otherwise fall back to `defaultReasoningEffort` if supported, else return null (packages/models/src/picker-compat.ts:1-11).
 6. Adjust service tiers via `compatibleServiceTier`: map requested tier ("default", "fast", or null) against `supported` tiers, ensuring standard speed defaults on providers advertising only "fast" (packages/models/src/picker-compat.ts:13-21).
 7. Parse setting flags via `settingOn` and `settingOff`: handle booleans, numbers (1/0), and string values ("1"/"0", "true"/"false", "on"/"off", "yes"/"no") (packages/models/src/setting-value.ts:1-11).
@@ -61,6 +61,7 @@ It standardizes per-token rates across providers, catches provider refusals from
 | Unknown model | Model name not found in `MODEL_PRICES` after suffix stripping | `priceFor` and `costUsd` return `null` | (packages/models/src/model-prices.ts:27, :34) |
 | Long output text | Output length > 400 characters matching limit words | `providerLimitNotice` returns `null` (not a quota notice) | (packages/models/src/provider-limit.ts:11) |
 | Non-limit text | Output text does not match `PROVIDER_LIMIT` regex | `providerLimitNotice` returns `null` | (packages/models/src/provider-limit.ts:11) |
+| Reset-time refusal | Provider response contains `unavailable (reset after …)` or `http 403 (reset after …)` | `PROVIDER_LIMIT` recognizes these forms | (packages/models/src/provider-limit.ts:3) |
 | Unsupported reasoning | Requested level not in `supported` and default unsupported | `compatibleReasoningLevel` returns `null` | (packages/models/src/picker-compat.ts:10) |
 
 ## Business rules
