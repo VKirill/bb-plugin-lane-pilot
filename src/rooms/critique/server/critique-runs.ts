@@ -14,6 +14,7 @@ import { critiqueFromScreen, screenCodeCritique } from "../critic-screen";
 import type { CandidateEvidence, FrozenCritiquePolicy } from "../code-critique";
 import { sha256 } from "../../tasks";
 import { critiquePrompt, parseCritique, shouldRunPlanCritique } from "../critique";
+import { ownerWordsOfRun } from "./owner-words";
 import { binaryOutputs, dropIntendedGaps, findTaskPlaceholderPaths } from "../critique-coverage";
 import type { CoverageFinding } from "../critique-coverage";
 import { buildExecutionPacket, renderPacketExcerpts } from "../../tasks/execution-packet";
@@ -240,7 +241,9 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   }
   if(coverageStatus==="truncated"&&!structuralFindings.some((finding)=>finding.code==="coverage_scan_truncated")) structuralFindings.push({code:"coverage_scan_truncated",path:".",severity:"info",finding:"Workspace path listing reached its file bound; ownership coverage is partial"});
   if(coverageStatus==="unavailable") structuralFindings.push({code:"coverage_scan_truncated",path:".",severity:"warning",finding:"Workspace path listing is unavailable; only plan/TaskV2 data was reviewed"});
-  const source = `${input.plan}\n\n${JSON.stringify(input.task)}\n\nagent=${agent}\n\npm_read=${input.pmReadContext ?? ""}\n\nstructural_coverage=${coverageStatus}\n\nstructural_findings=${JSON.stringify(structuralFindings)}`;
+  // The owner's own words feed the prompt and the input hash: a critique of the same plan without them is not reused.
+  const ownerWords = await ownerWordsOfRun({ bb: input.bb, db: input.db, runId: input.runId });
+  const source = `${input.plan}\n\n${JSON.stringify(input.task)}\n\nagent=${agent}\n\npm_read=${input.pmReadContext ?? ""}\n\nstructural_coverage=${coverageStatus}\n\nstructural_findings=${JSON.stringify(structuralFindings)}\n\nowner_words=${JSON.stringify(ownerWords)}`;
   const base = { runId:input.runId, taskId:input.taskId, stageId:"plan-critique" as const, input:source };
   // A resumed dispatch keeps a critique that passed on this very input (resetHelperStages): it is not bought twice.
   const kept = listStageReceipts(input.db,input.runId,input.taskId).find((row) => row.stageId === "plan-critique");
@@ -332,7 +335,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
           ...placement,
           ...requiredPolicyField(input.bb, helperPolicy, providerId, "plan-critic"),
           ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
-          prompt:critiquePrompt({ plan:input.plan, task:input.task, agent, pmReadContext:input.pmReadContext, structuralFindings }),
+          prompt:critiquePrompt({ plan:input.plan, task:input.task, agent, pmReadContext:input.pmReadContext, structuralFindings, ownerWords }),
           environment:{ type:"host", hostId:input.config.hostId,
             workspace:{ type:"unmanaged", path:input.task.project_cwd } },
           pluginMetadata:{ role:"plan-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
