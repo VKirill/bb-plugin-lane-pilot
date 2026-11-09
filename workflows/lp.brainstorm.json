@@ -42,7 +42,7 @@
   },
   "entry": "terms",
   "budget": {
-    "max_minutes": 60,
+    "max_minutes": 90,
     "max_fan_out": 5
   },
   "nodes": [
@@ -71,7 +71,15 @@
     {
       "id": "shootdown",
       "type": "parallel",
-      "for_each": ["yagni", "cost", "ux", "migration", "ops", "debt", "catalyst"],
+      "for_each": [
+        "yagni",
+        "cost",
+        "ux",
+        "migration",
+        "ops",
+        "debt",
+        "catalyst"
+      ],
       "concurrency": 4,
       "max_fan_out": 7,
       "title": {
@@ -128,6 +136,12 @@
           "role": "string",
           "digest": "any",
           "ok": "bool"
+        },
+        "with": {
+          "objections": "{{shootdown.objections}}",
+          "failed_lenses": "{{shootdown.failed_lenses}}",
+          "terminology": "{{terms.terminology}}",
+          "non_goals": "{{terms.non_goals}}"
         }
       },
       "join": {
@@ -212,6 +226,13 @@
       "guards": {
         "maxVisits": 1,
         "timeoutMin": 20
+      },
+      "with": {
+        "objections": "{{shootdown.objections}}",
+        "digests": "{{designs.digests}}",
+        "conflicts": "{{cross_review.conflicts}}",
+        "gaps": "{{cross_review.gaps}}",
+        "non_goals": "{{terms.non_goals}}"
       }
     },
     {

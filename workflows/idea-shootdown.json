@@ -5,8 +5,8 @@
     "ru": "Штурм идеи"
   },
   "description": {
-    "en": "Attacks one confirmed hypothesis through fixed adversarial lenses (YAGNI, cost, UX, migration, ops, debt, inventive catalyst), then multi-role authors answer the objections and a guidance specification with alternatives weighed is saved under .agents/designs/. No plan, no build. For the PM: before starting, restate the idea to the owner as a 2-3 sentence hypothesis in one message and start after his yes; pass it as `hypothesis`; afterwards show the owner the 2-3 strongest objections and the guidance.",
-    "ru": "Атакует одну подтверждённую гипотезу фиксированными враждебными линзами (YAGNI, стоимость, UX, миграция, эксплуатация, долг, изобретательский катализатор), затем роли-авторы отвечают на возражения, а guidance-спецификация с взвешенными альтернативами сохраняется в .agents/designs/. Без плана и без реализации. Для PM: перед запуском переформулируй идею владельцу как гипотезу на 2-3 предложения одним сообщением и стартуй после его «да»; передай её как `hypothesis`; после — покажи владельцу 2-3 самых сильных возражения и guidance."
+    "en": "Attacks one confirmed hypothesis through fixed adversarial lenses (YAGNI, cost, UX, migration, ops, debt, inventive catalyst), then multi-role authors answer the objections and a guidance specification with alternatives weighed is saved under .agents/designs/idea-<run>/guidance.md. No plan, no build. For the PM: before starting, restate the idea to the owner as a 2-3 sentence hypothesis in one message and start after his yes; pass it as `hypothesis`; afterwards show the owner the 2-3 strongest objections and the guidance.",
+    "ru": "Атакует одну подтверждённую гипотезу фиксированными враждебными линзами (YAGNI, стоимость, UX, миграция, эксплуатация, долг, изобретательский катализатор), затем роли-авторы отвечают на возражения, а guidance-спецификация с взвешенными альтернативами сохраняется в .agents/designs/idea-<run>/guidance.md. Без плана и без реализации. Для PM: перед запуском переформулируй идею владельцу как гипотезу на 2-3 предложения одним сообщением и стартуй после его «да»; передай её как `hypothesis`; после — покажи владельцу 2-3 самых сильных возражения и guidance."
   },
   "examples": {
     "ru": [
@@ -64,19 +64,13 @@
     "plugins": [
       "lane-pilot"
     ],
-    "skills": [
-      "tavily"
-    ],
-    "secrets": [
-      "TAVILY_API_KEY (только при research=true)"
-    ],
     "machines": [
       "project writer host"
     ]
   },
   "budget": {
-    "max_minutes": 420,
-    "max_fan_out": 5
+    "max_minutes": 120,
+    "max_fan_out": 7
   },
   "entry": "brainstorm",
   "nodes": [
@@ -116,10 +110,12 @@
       "id": "save",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/designs/{{date}}-{{slug}}.md",
-      "template": "idea shootdown: the confirmed hypothesis, the lens objections (Blocker/Major/Nit), alternatives weighed, the guidance, open questions",
+      "path": ".agents/designs/idea-{{run_id}}/",
       "out": {
         "report_path": "string"
+      },
+      "contents": {
+        "guidance.md": "{{brainstorm.guidance}}"
       }
     },
     {
