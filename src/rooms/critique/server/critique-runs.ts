@@ -242,7 +242,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   if(coverageStatus==="truncated"&&!structuralFindings.some((finding)=>finding.code==="coverage_scan_truncated")) structuralFindings.push({code:"coverage_scan_truncated",path:".",severity:"info",finding:"Workspace path listing reached its file bound; ownership coverage is partial"});
   if(coverageStatus==="unavailable") structuralFindings.push({code:"coverage_scan_truncated",path:".",severity:"warning",finding:"Workspace path listing is unavailable; only plan/TaskV2 data was reviewed"});
   // The owner's own words feed the prompt and the input hash: a critique of the same plan without them is not reused.
-  const ownerWords = await ownerWordsOfRun({ bb: input.bb, db: input.db, runId: input.runId });
+  const ownerWords = await ownerWordsOfRun({ bb: input.bb, db: input.db, runId: input.runId, taskId: input.taskId });
   const source = `${input.plan}\n\n${JSON.stringify(input.task)}\n\nagent=${agent}\n\npm_read=${input.pmReadContext ?? ""}\n\nstructural_coverage=${coverageStatus}\n\nstructural_findings=${JSON.stringify(structuralFindings)}\n\nowner_words=${JSON.stringify(ownerWords)}`;
   const base = { runId:input.runId, taskId:input.taskId, stageId:"plan-critique" as const, input:source };
   // A resumed dispatch keeps a critique that passed on this very input (resetHelperStages): it is not bought twice.

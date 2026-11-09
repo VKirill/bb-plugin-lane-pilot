@@ -67,6 +67,12 @@ describe("ownerWordsOfRun", () => {
     expect(await ownerWordsOfRun({ ...w, runId: "run_1" })).toEqual(["second request", "third request", "fourth request"]);
   });
 
+  it("cuts at the task's creation when a run carries several dispatches", async () => {
+    const w = world([turn(1, T - 30_000, "asked for task one"), turn(2, T + 10_000, "asked for task two"), turn(3, T + 30_000, "after task two")]);
+    const db = { prepare: (sql: string) => ({ get: () => sql.includes("lane_pilot_task") ? { created_at: T + 20_000 } : { pm_thread_id: "thr_pm", created_at: T } }) };
+    expect(await ownerWordsOfRun({ bb: w.bb, db: db as never, runId: "run_1", taskId: "task_2" })).toEqual(["asked for task one", "asked for task two"]);
+  });
+
   it("returns [] when the SDK fails, the thread is not the owner's, or the run has no PM thread", async () => {
     expect(await ownerWordsOfRun({ ...world([turn(1, T - 1, "hi")], { throwEvents: true }), runId: "run_1" })).toEqual([]);
     expect(await ownerWordsOfRun({ ...world([turn(1, T - 1, "hi")], { thread: { ...pmThread, originPluginId: "lane-pilot" } }), runId: "run_1" })).toEqual([]);
