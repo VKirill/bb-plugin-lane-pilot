@@ -34,7 +34,7 @@ Built by Lane Pilot from page frontmatter.
 | [Errands: the page and the read model](errands.md) | component | active | 2026-11-01 |
 | [The task pipeline](flows/task-pipeline.md) | flow | active | 2026-10-30 |
 | [Plan forecast and calibration](forecast.md) | component | active | 2026-10-23 |
-| [Cross-cutting gotchas](gotchas.md) | gotchas | active | 2026-10-29 |
+| [Cross-cutting gotchas](gotchas.md) | gotchas | active | 2026-11-09 |
 | [Development](guide/development.md) | overview | active | 2026-11-06 |
 | [Failure handling and stability](guide/failures.md) | overview | active | 2026-11-06 |
 | [How a piece of work flows](guide/flow.md) | overview | active | 2026-11-06 |
