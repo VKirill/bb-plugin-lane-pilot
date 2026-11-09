@@ -1,0 +1,200 @@
+{
+  "id": "idea-shootdown",
+  "name": {
+    "en": "Idea shootdown",
+    "ru": "Штурм идеи"
+  },
+  "description": {
+    "en": "Attacks one confirmed hypothesis through fixed adversarial lenses (YAGNI, cost, UX, migration, ops, debt, inventive catalyst), then multi-role authors answer the objections and a guidance specification with alternatives weighed is saved under .agents/designs/idea-<run>/guidance.md. No plan, no build. For the PM: before starting, restate the idea to the owner as a 2-3 sentence hypothesis in one message and start after his yes; pass it as `hypothesis`; afterwards show the owner the 2-3 strongest objections and the guidance.",
+    "ru": "Атакует одну подтверждённую гипотезу фиксированными враждебными линзами (YAGNI, стоимость, UX, миграция, эксплуатация, долг, изобретательский катализатор), затем роли-авторы отвечают на возражения, а guidance-спецификация с взвешенными альтернативами сохраняется в .agents/designs/idea-<run>/guidance.md. Без плана и без реализации. Для PM: перед запуском переформулируй идею владельцу как гипотезу на 2-3 предложения одним сообщением и стартуй после его «да»; передай её как `hypothesis`; после — покажи владельцу 2-3 самых сильных возражения и guidance."
+  },
+  "examples": {
+    "ru": [
+      "Проверь идею: офлайн-режим для мобильного клиента",
+      "Разнеси эту идею, найди слабые места — миграция на event sourcing",
+      "Штурм без реализации: стоит ли делать единый API-шлюз",
+      "Стоит ли вообще делать встроенный планировщик задач?",
+      "Атакуй гипотезу, что нам нужен собственный биллинг, без кода"
+    ],
+    "en": [
+      "Stress-test this idea: offline mode for the mobile client",
+      "Shoot down the event-sourcing migration idea, find its weak spots",
+      "Idea shootdown only, no build: is a unified API gateway worth it",
+      "Should we even build an in-app task scheduler?",
+      "Attack the hypothesis that we need our own billing, no code"
+    ]
+  },
+  "not_for": [
+    "brainstorm-driven",
+    "grill-driven",
+    "council"
+  ],
+  "status": "published",
+  "tags": [
+    "code",
+    "ideation"
+  ],
+  "inputs": {
+    "topic": {
+      "type": "string",
+      "required": true
+    },
+    "hypothesis": {
+      "type": "string"
+    },
+    "quality_mode": {
+      "type": "quick|standard|full",
+      "default": "standard"
+    }
+  },
+  "outputs": {
+    "status": "ok|low_confidence|failed",
+    "guidance": "string",
+    "features": "Feature[]",
+    "decisions": "Decision[]",
+    "alternatives": "string[]",
+    "open_questions": "string[]",
+    "report_path": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "число ролей штурма: quick 2, standard 3, full 5; остальное §0.7"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "machines": [
+      "project writer host"
+    ]
+  },
+  "budget": {
+    "max_minutes": 120,
+    "max_fan_out": 7
+  },
+  "entry": "brainstorm",
+  "nodes": [
+    {
+      "id": "brainstorm",
+      "type": "subworkflow",
+      "workflow": "lp.brainstorm",
+      "with": {
+        "topic": "{{$inputs.topic}}",
+        "hypothesis": "{{$inputs.hypothesis}}",
+        "roles": {
+          "by_mode": {
+            "quick": [
+              "product-manager",
+              "system-architect"
+            ],
+            "standard": [
+              "product-manager",
+              "system-architect",
+              "ux-expert"
+            ],
+            "full": [
+              "product-manager",
+              "system-architect",
+              "ux-expert",
+              "test-strategist",
+              "subject-matter-expert"
+            ]
+          }
+        }
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "save",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/designs/idea-{{run_id}}/",
+      "out": {
+        "report_path": "string"
+      },
+      "contents": {
+        "guidance.md": "{{brainstorm.guidance}}"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "brainstorm.status",
+        "guidance": "brainstorm.guidance",
+        "features": "brainstorm.features",
+        "decisions": "brainstorm.decisions",
+        "alternatives": "brainstorm.alternatives",
+        "open_questions": "brainstorm.open_questions",
+        "report_path": "save.report_path"
+      }
+    },
+    {
+      "id": "failed",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "failed"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "brainstorm",
+      "to": "save",
+      "pass": "artifact",
+      "when": "brainstorm.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "brainstorm",
+      "to": "failed",
+      "pass": "artifact"
+    },
+    {
+      "from": "save",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "is-1",
+    "sim": {
+      "input": {
+        "topic": "Offline mode for the mobile client",
+        "hypothesis": "A local-first sync engine lets the mobile client work fully offline; conflicts resolve by field-level merge.",
+        "quality_mode": "standard"
+      },
+      "stubs": {
+        "lp.brainstorm": {
+          "status": "ok",
+          "guidance": "guidance spec",
+          "features": [
+            {
+              "id": "F-001"
+            }
+          ],
+          "decisions": [],
+          "alternatives": [
+            "server-wins merge"
+          ],
+          "open_questions": []
+        }
+      },
+      "expect_path": [
+        "brainstorm",
+        "save",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'ok'",
+        "alternatives.length >= 1",
+        "report_path != ''"
+      ]
+    },
+    "live": "песочница: идея без кода; ожидание - guidance с разбором возражений линз и файлом в .agents/designs/"
+  },
+  "goal_check": "artifact"
+}

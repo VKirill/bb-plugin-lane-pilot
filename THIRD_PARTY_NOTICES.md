@@ -327,3 +327,14 @@ The shipped license ledger (`npx tsx scripts/lp-ship.ts licenses`) checks that e
 | jsonc-parser | 3.3.1 | MIT |
 | three | 0.186.1 | MIT |
 | zod | 4.6.5 | MIT |
+
+## google/elephant-goldfish-model, Apache-2.0
+
+Some prompt texts of Lane Pilot's brainstorm and plan critic are adapted from
+[google/elephant-goldfish-model](https://github.com/google/elephant-goldfish-model) (Apache-2.0, Copyright Google LLC).
+They are rewritten for Lane Pilot's roles and tools; no EGM code, skill or agent runtime is included.
+
+| Idea | Source file of EGM | Where in Lane Pilot |
+|---|---|---|
+| Fresh-context reviewers attack one confirmed hypothesis through fixed lenses; a failed lens is «not run», never «0 findings»; alternatives weighed | `skills/egm-brainstorm/SKILL.md`, `agents/zoom_out.md`, `agents/design_critic.md`, `agents/comprehension.md`, `agents/implementation_readiness.md`, `agents/codebase_details.md`, `agents/structural.md`, `agents/inventive_catalyst.md`, `agents/synthesizer.md` | `workflows/lp.brainstorm.json` (`shootdown`), `workflows/idea-shootdown.json`, `reduce.lp.brainstorm.shootdown` |
+| Paraphrase first: a reviewer restates the proposal in its own words; a wrong paraphrase is a finding | `agents/comprehension.md` | `PLAN_CRITIC_METHOD`, `critiquePrompt` (owner's words) |

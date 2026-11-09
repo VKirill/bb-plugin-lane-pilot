@@ -183,7 +183,7 @@ describe("lp.brainstorm", () => {
 
   it("roles work in parallel, a cross-role review finds conflicts, the owner resolves them, the guidance is written", async () => {
     const r = await runSim("lp.brainstorm", { input: { topic: "t", roles }, stubs: { designs: role(), cross_review: { conflict_count: 2, conflicts: [{}, {}] } }, humans: { resolve: { answer_kind: "resolved", resolutions: [{ role: "ux-expert" }] } } });
-    expect(pathOf(r)).toBe("terms designs cross_review resolve guidance ok");
+    expect(pathOf(r)).toBe("terms shootdown designs cross_review resolve guidance ok");
     expect(out(r)).toMatchObject({ status: "ok" });
     expect(r.called("designs:child")).toHaveLength(3);
   });
@@ -195,10 +195,10 @@ describe("lp.brainstorm", () => {
 
   it("a failed role is a low-confidence result; all roles failed is a failure", async () => {
     const low = await runSim("lp.brainstorm", { input: { topic: "t", roles }, stubs: { designs: role(["ux-expert"]), cross_review: { conflict_count: 0 } } });
-    expect(pathOf(low)).toBe("terms designs cross_review resolve guidance low");
+    expect(pathOf(low)).toBe("terms shootdown designs cross_review resolve guidance low");
     expect(out(low)).toMatchObject({ status: "low_confidence" });
     const none = await runSim("lp.brainstorm", { input: { topic: "t", roles }, stubs: { designs: role(roles) } });
-    expect(pathOf(none)).toBe("terms designs failed");
+    expect(pathOf(none)).toBe("terms shootdown designs failed");
     expect(out(none)).toMatchObject({ status: "failed" });
   });
 
@@ -207,6 +207,34 @@ describe("lp.brainstorm", () => {
     const r = await runSim("lp.brainstorm", { input: { topic: "t", roles }, stubs: { designs: crash, cross_review: { conflict_count: 0 } } });
     expect(r.summary.status).toBe("succeeded");
     expect(out(r)).toMatchObject({ status: "low_confidence" });
+  });
+
+  it("a lens that never ran is a failed lens and sends the brainstorm to low, never to zero findings", async () => {
+    const lenses = ((ctx: { input: { item?: unknown } }) => { if (ctx.input.item === "catalyst") throw new Error("thread died"); return { lens: String(ctx.input.item), objections: [], ok: true }; }) as never;
+    const r = await runSim("lp.brainstorm", { input: { topic: "t", roles }, stubs: { shootdown: lenses, designs: role(), cross_review: { conflict_count: 0 } } });
+    expect(pathOf(r)).toBe("terms shootdown designs cross_review resolve guidance low");
+    expect(out(r)).toMatchObject({ status: "low_confidence" });
+  });
+
+  it("the lens objections reach every role and the guidance, beside the digests (the guidance is two steps away from them)", async () => {
+    const seen: Record<string, unknown[]> = { designs: [], guidance: [] };
+    const objection = { severity: "Blocker", objection: "already exists", evidence: "src/a.ts:1", fix: "reuse it" };
+    const lenses = ((ctx: { input: { item?: unknown } }) => ({ lens: String(ctx.input.item), objections: ctx.input.item === "yagni" ? [objection] : [], ok: true })) as never;
+    const designs = ((ctx: { input: { item?: unknown; with: Record<string, unknown> } }) => { seen.designs!.push(ctx.input.with.objections); return { role: String(ctx.input.item), digest: { d: ctx.input.item }, ok: true }; }) as never;
+    const guidance = ((ctx: { input: { with: Record<string, unknown> } }) => { seen.guidance!.push(ctx.input.with); return { guidance: "g", features: [], decisions: [], constraints: [], feature_count: 0, open_questions: [], alternatives: [], objections_open: 0 }; }) as never;
+    await runSim("lp.brainstorm", { input: { topic: "t", roles }, stubs: { shootdown: lenses, designs, guidance, cross_review: { conflict_count: 0 } } });
+    expect(seen.designs).toHaveLength(3);
+    for (const got of seen.designs!) expect(got).toEqual([expect.objectContaining({ objection: "already exists", lens: "yagni" })]);
+    expect(seen.guidance![0]).toMatchObject({ objections: [expect.objectContaining({ lens: "yagni" })], digests: [{ d: roles[0] }, { d: roles[1] }, { d: roles[2] }] });
+  });
+});
+
+describe("idea-shootdown", () => {
+  it("runs only the brainstorm and saves it: no plan, no build", async () => {
+    const r = await runSim("idea-shootdown", { input: { topic: "offline mode", hypothesis: "h" }, stubs: { brainstorm: { status: "ok", guidance: "g", features: [], decisions: [], alternatives: ["sync server"], open_questions: [] } } });
+    expect(r.path).not.toContain("plan");
+    expect(r.path).not.toContain("build");
+    expect(out(r)).toMatchObject({ status: "ok", alternatives: ["sync server"] });
   });
 });
 

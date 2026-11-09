@@ -14,6 +14,10 @@
       "type": "string",
       "required": true
     },
+    "hypothesis": {
+      "type": "string",
+      "note": "the 2-3 sentence hypothesis the PM confirmed with the owner; the shootdown lenses attack it, else the topic"
+    },
     "upstream": {
       "type": "any",
       "note": "grill-report: locked/open/deferred, risk_register, terminology"
@@ -32,11 +36,13 @@
     "decisions": "Decision[]",
     "constraints": "string[]",
     "non_goals": "string[]",
-    "open_questions": "string[]"
+    "open_questions": "string[]",
+    "alternatives": "string[]",
+    "objections_open": "int"
   },
   "entry": "terms",
   "budget": {
-    "max_minutes": 60,
+    "max_minutes": 90,
     "max_fan_out": 5
   },
   "nodes": [
@@ -63,6 +69,54 @@
       }
     },
     {
+      "id": "shootdown",
+      "type": "parallel",
+      "for_each": [
+        "yagni",
+        "cost",
+        "ux",
+        "migration",
+        "ops",
+        "debt",
+        "catalyst"
+      ],
+      "concurrency": 4,
+      "max_fan_out": 7,
+      "title": {
+        "en": "Attack the hypothesis through the lenses",
+        "ru": "Атака на гипотезу через линзы"
+      },
+      "src": "egm:agents/*.md + skills/egm-brainstorm (Apache-2.0)",
+      "child": {
+        "produces": [
+          {
+            "kind": "report",
+            "version": 1
+          }
+        ],
+        "type": "agent",
+        "role": "analyst",
+        "session": "new",
+        "src": "egm:agents/*.md + skills/egm-brainstorm (Apache-2.0)",
+        "prompt": "Attack the confirmed hypothesis through ONE lens — yours is {{item}}. The hypothesis: {{$inputs.hypothesis}}. When it is empty, attack the topic and the terms/non-goals this brainstorm already produced.\nThe lenses:\n- yagni (Contrarian / YAGNI): does this need to exist now? Search the code for an existing component, library or API that already covers it and cite file:line; report complexity risks and reuse opportunities.\n- cost (Cost, Quota & Token Economics): peak load, storage footprint, database query load, LLM token budget, quota ceilings at scale; single points of failure and unscalable state.\n- ux (UX & Developer Ergonomics): is the interface or workflow intuitive and matching ecosystem conventions; are error messages actionable; cognitive friction.\n- migration (Migration & Backward Compatibility): how existing clients and persistent data migrate; broken serialized schemas, data models or APIs; rollback mid-migration.\n- ops (Observability & SRE Debuggability): are key operations traceable and metrics actionable; how an oncall finds and diagnoses a failure at 3 AM.\n- debt (Long-Term Tech Debt & Maintenance): tightly coupled dependencies, brittle state machines, the maintenance burden in 2 years.\n- catalyst (Inventive Catalyst): the false compromise the concept accepts as inevitable; propose 2-3 patterns from the catalogue (segmentation, extraction, preliminary action, beforehand cushioning, inversion, dynamics, blessing in disguise, intermediary, self-service, cheap dispensables), each with its secondary trade-off; when there is none, answer \"No false compromise detected\" — do not invent one.\nStress-test, never agree by default, critique first, no flattery. A claim about this codebase needs file:line. Return objections only — each {severity: Blocker|Major|Nit, objection, evidence, fix} — and write nothing to the repository.",
+        "out": {
+          "lens": "string",
+          "objections": "Objection[]",
+          "ok": "bool"
+        }
+      },
+      "join": {
+        "policy": "all_or_low_confidence",
+        "uses": "reduce.lp.brainstorm.shootdown",
+        "out": {
+          "objections": "Objection[]",
+          "blocker_count": "int",
+          "ok_count": "int",
+          "failed_lenses": "string[]"
+        }
+      }
+    },
+    {
       "id": "designs",
       "type": "parallel",
       "for_each": "$inputs.roles",
@@ -77,11 +131,17 @@
         "type": "agent",
         "role": "analyst",
         "src": "maestro-flow:agents/role-design-author",
-        "prompt": "You are {{item}}. Write: 1 Role Mandate, 2 Decision Digest (four tables: decisions, assumptions, risks, open questions; each row with its reason), 3 Cross-Cutting concerns, 4 file index, 5 TODOs.\nStay inside your role; no files into the repository; every claim about the codebase has file:line.\n",
+        "prompt": "You are {{item}}. Write: 1 Role Mandate, 2 Decision Digest (four tables: decisions, assumptions, risks, open questions; each row with its reason), 3 Cross-Cutting concerns, 4 file index, 5 TODOs.\nThe shootdown step attacked the hypothesis through fixed lenses; its objections ({lens, severity, objection, evidence, fix}) reach you as `shootdown.objections`. In the Decision Digest answer every Blocker and Major objection inside your role: accepted (what changes) or rejected (the reason).\nStay inside your role; no files into the repository; every claim about the codebase has file:line.\n",
         "out": {
           "role": "string",
           "digest": "any",
           "ok": "bool"
+        },
+        "with": {
+          "objections": "{{shootdown.objections}}",
+          "failed_lenses": "{{shootdown.failed_lenses}}",
+          "terminology": "{{terms.terminology}}",
+          "non_goals": "{{terms.non_goals}}"
         }
       },
       "join": {
@@ -152,18 +212,27 @@
       "type": "agent",
       "role": "planner",
       "src": "maestro-flow:workflows/brainstorm.md (guidance-specification)",
-      "prompt": "Write the guidance specification with RFC 2119 keywords - decomposition into at most 8 features F-NNN (name, why, acceptance idea), decision tracking, cross-role resolutions applied (superseded text marked). Locked constraints C-NNN come from upstream locked decisions and resolved conflicts.",
+      "prompt": "Write the guidance specification with RFC 2119 keywords - decomposition into at most 8 features F-NNN (name, why, acceptance idea), decision tracking, cross-role resolutions applied (superseded text marked). Locked constraints C-NNN come from upstream locked decisions and resolved conflicts. Add an Objections section: every Blocker and Major objection of `shootdown.objections` is either accepted (what changed) or rejected (the reason); Blockers left open go to `objections_open`. Add «Alternatives weighed»: each option rejected during the brainstorm with the reason.",
       "out": {
         "guidance": "string",
         "features": "Feature[]",
         "decisions": "Decision[]",
         "constraints": "string[]",
         "feature_count": "int",
-        "open_questions": "string[]"
+        "open_questions": "string[]",
+        "alternatives": "string[]",
+        "objections_open": "int"
       },
       "guards": {
         "maxVisits": 1,
         "timeoutMin": 20
+      },
+      "with": {
+        "objections": "{{shootdown.objections}}",
+        "digests": "{{designs.digests}}",
+        "conflicts": "{{cross_review.conflicts}}",
+        "gaps": "{{cross_review.gaps}}",
+        "non_goals": "{{terms.non_goals}}"
       }
     },
     {
@@ -177,7 +246,9 @@
         "decisions": "guidance.decisions",
         "constraints": "guidance.constraints",
         "non_goals": "terms.non_goals",
-        "open_questions": "guidance.open_questions"
+        "open_questions": "guidance.open_questions",
+        "alternatives": "guidance.alternatives",
+        "objections_open": "guidance.objections_open"
       }
     },
     {
@@ -191,7 +262,9 @@
         "decisions": "guidance.decisions",
         "constraints": "guidance.constraints",
         "non_goals": "terms.non_goals",
-        "open_questions": "guidance.open_questions"
+        "open_questions": "guidance.open_questions",
+        "alternatives": "guidance.alternatives",
+        "objections_open": "guidance.objections_open"
       }
     },
     {
@@ -206,6 +279,11 @@
   "edges": [
     {
       "from": "terms",
+      "to": "shootdown",
+      "pass": "artifact"
+    },
+    {
+      "from": "shootdown",
       "to": "designs",
       "pass": "artifact"
     },
@@ -234,7 +312,7 @@
       "from": "guidance",
       "to": "low",
       "pass": "artifact",
-      "when": "designs.failed_roles.length > 0 || resolve.answer_kind == 'timeout'"
+      "when": "designs.failed_roles.length > 0 || resolve.answer_kind == 'timeout' || shootdown.failed_lenses.length > 0"
     },
     {
       "from": "guidance",

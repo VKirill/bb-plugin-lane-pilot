@@ -56,6 +56,8 @@ export default defineConfig({
       "@lane-pilot/i18n": fileURLToPath(new URL("./packages/i18n/src/index.ts", import.meta.url)),
       "@lane-pilot/council": fileURLToPath(new URL("./packages/council/src/index.ts", import.meta.url)),
       "@lane-pilot/memory-core": fileURLToPath(new URL("./packages/memory-core/src/index.ts", import.meta.url)),
+      "@lane-pilot/workflow-engine/ui": fileURLToPath(new URL("./packages/workflow-engine/src/ui.ts", import.meta.url)),
+      "@lane-pilot/workflow-engine": fileURLToPath(new URL("./packages/workflow-engine/src/index.ts", import.meta.url)),
     },
   },
 });

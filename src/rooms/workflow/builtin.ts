@@ -10,6 +10,7 @@ import apiRecon from "../../../workflows/api-recon.json";
 import browserStep from "../../../workflows/browser-step.json";
 import lpBrowserQa from "../../../workflows/lp.browser-qa.json";
 import brainstormDriven from "../../../workflows/brainstorm-driven.json";
+import ideaShootdown from "../../../workflows/idea-shootdown.json";
 import codeReview from "../../../workflows/code-review.json";
 import companion from "../../../workflows/companion.json";
 import council from "../../../workflows/council.json";
@@ -119,6 +120,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "billing-batch.json", value: billingBatch },
   { name: "blueprint-driven.json", value: blueprintDriven },
   { name: "brainstorm-driven.json", value: brainstormDriven },
+  { name: "idea-shootdown.json", value: ideaShootdown },
   { name: "api-recon.json", value: apiRecon },
   { name: "browser-step.json", value: browserStep },
   { name: "lp.browser-qa.json", value: lpBrowserQa },
