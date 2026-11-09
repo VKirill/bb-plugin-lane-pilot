@@ -540,8 +540,11 @@ export function otherMemoryProjectId(db: MemoryDatabase, projectId: string): str
 }
 
 /** Record ids a project wrote with a given origin (the probe's cleanup). */
-export function listMemoryIdsByOrigin(db: MemoryDatabase, projectId: string, origin: string): string[] {
-  return (db.prepare("SELECT id FROM lane_pilot_memory WHERE project_id=? AND origin=?").all(projectId, origin) as Array<{ id: string }>).map((row) => row.id);
+export function listMemoryIdsByOrigin(db: MemoryDatabase, projectId: string, origin: string, naming?: string): string[] {
+  const rows = naming === undefined
+    ? db.prepare("SELECT id FROM lane_pilot_memory WHERE project_id=? AND origin=?").all(projectId, origin)
+    : db.prepare("SELECT id FROM lane_pilot_memory WHERE project_id=? AND origin=? AND instr(content, ?) > 0").all(projectId, origin, naming);
+  return (rows as Array<{ id: string }>).map((row) => row.id);
 }
 
 /** One memory-probe result row. */

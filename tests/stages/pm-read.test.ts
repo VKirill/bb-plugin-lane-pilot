@@ -24,6 +24,14 @@ describe("PM read stage",()=>{
     expect(parsed.keyFacts).toHaveLength(1);
   });
 
+  // Hub, 2026-11-09: a reader answered with 31 facts and the stage failed on `too_big` (maximum 30).
+  it("cuts a list over its cap instead of failing the read",()=>{
+    const parsed=parsePmReadResult(JSON.stringify({summary:"s",keyFacts:Array.from({length:34},(_,i)=>`a.ts:${i} fact`),openQuestions:Array.from({length:23},(_,i)=>`q${i}`)}));
+    expect(parsed.keyFacts).toHaveLength(30);
+    expect(parsed.keyFacts[29]).toBe("a.ts:29 fact");
+    expect(parsed.openQuestions).toHaveLength(20);
+  });
+
   it("requires a bounded structured result",()=>{
     expect(parsePmReadResult('{"summary":"Context","keyFacts":["Fact"],"openQuestions":[]}')).toMatchObject({summary:"Context",keyFacts:["Fact"]});
     expect(()=>parsePmReadResult('{"summary":"Context","keyFacts":[],"openQuestions":"none"}')).toThrow();

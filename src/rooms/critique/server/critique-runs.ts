@@ -27,7 +27,7 @@ import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefau
 import type { CodeCriticDefault } from "../../contracts/task-enums";
 import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { MAIN_ATTEMPT_LIMIT } from "../../contracts/state-machine";
-import { GIT_PLUGIN_ID, gitCallRpc, gitFilesReplySchema, gitPatchKey, gitPatchesReplySchema, spawnUsageOf, warmSpawnUsage, zcodeBusyPeek } from "../../platform/server";
+import { GIT_PLUGIN_ID, gitCallRpc, gitFilesReplySchema, gitPatchKey, gitPatchesReplySchema, noteProviderLimit, seenProviderLimit, spawnUsageOf, warmSpawnUsage, zcodeBusyPeek } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
 import type { PluginCallRpc } from "../../platform/server";
 import { fullAccessSpawn, graphStepMetadata } from "../../platform/server";
@@ -46,11 +46,24 @@ import { latestAttemptEnvironmentId } from "../../storage";
 /** Whether a provider's usage window is nearly spent, read from the cache the writers share (a bounded warm-up first); undefined without a usage source. */
 async function limitProbe(bb: BbPluginApi, hostId: string, settings: Record<string, unknown>): Promise<SpentProbe | undefined> {
   const usage = spawnUsageOf({ bb });
-  if (!usage) return undefined;
+  // No usage reader on this instance: what this instance saw itself (a limit in an answer, a thread that would not start) still moves the pick.
+  if (!usage) return (providerId, model) => seenProviderLimit(bb, providerId, model);
   await warmSpawnUsage(usage, hostId);
   return (providerId, model) => usage.peek({ providerId, model, hostId, settings });
 }
 
+
+/**
+ * A helper thread its provider could not start: the core refused the session or the provider's CLI is down
+ * (acp-antigravity, 2026-11-09: «thread_command_failed … vk_required_session_policy_bridge_unsupported» failed 5 of 5 specialist
+ * reviews and blocked each task). The pair is set aside for an hour like a seen limit, so the next pick of any stage is its peer.
+ */
+export function setAsideOnStartFailure(bb: BbPluginApi, what: string, providerId: string, model: string, reason: string): boolean {
+  if (!/thread_command_failed|thread\.start failed/i.test(reason)) return false;
+  noteProviderLimit(bb, providerId, model, `thread did not start: ${reason}`);
+  bb.log.warn(`Lane Pilot: ${what}: ${providerId} could not start its thread (${reason.slice(0, 200)}); it is set aside for an hour`);
+  return true;
+}
 
 /** One log line per limit move of a stage's model. */
 const logLimitMove = (bb: BbPluginApi, what: string, issues: readonly string[] | undefined) => {
@@ -153,6 +166,7 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
       const thread=await orMiss(input.bb.sdk.threads.get({threadId}), null, isNotFound);
       if(["active","starting"].includes(stringAt(thread,"status")??"")) await bestEffort(input.bb.log, "critique thread stop", input.bb.sdk.threads.stop({ threadId }), undefined);
     }
+    setAsideOnStartFailure(input.bb,`pm read for ${input.taskId}`,providerId,modelId,reason);
     if(!started) recordStage(input.db,{...base,state:"running",providerId,model:modelId});
     recordStage(input.db,{...base,state:"failed",providerId,model:modelId,threadId,reason,result:{error:reason}});
     return {state:"failed",summary:"",reason};
@@ -385,6 +399,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
         await bestEffort(input.bb.log, "critique thread stop", input.bb.sdk.threads.stop({ threadId }), undefined);
       }
     }
+    setAsideOnStartFailure(input.bb, `plan critique for ${input.taskId}`, providerId, modelId, reason);
     recordStage(input.db, { ...base, state:"failed", providerId, model:modelId, threadId, reason,
       result:{ error:reason } });
     return { allowed:false, reason:`plan_critique_failed:${reason}` };
@@ -804,12 +819,13 @@ export async function runCodeCritique(input:{
         await bestEffort(input.bb.log, "critique thread stop", input.bb.sdk.threads.stop({ threadId }), undefined);
       }
     }
+    setAsideOnStartFailure(input.bb, `code critique for ${input.taskId}`, providerId, modelId, reason);
     recordStage(input.db, { ...base, state:"failed", providerId, model:modelId, threadId, reason, result:{ ...ledgerCarry, error:reason, policy } });
     return { allowed:false, reason:`code_critique_failed:${reason}`, review:"not_required", settings:parsed, policy };
   }
 }
 
-export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;stageHelperSettings:StageHelperSettings;taskId:string;config:PrototypeConfig;task:TaskV2;plan:string;workflow?:{runId:string;stepKey:string;nodeId:string}})
+export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;stageHelperSettings:StageHelperSettings;taskId:string;config:PrototypeConfig;task:TaskV2;plan:string;workflow?:{runId:string;stepKey:string;nodeId:string};/** Set on the one rerun after the first pick's thread would not start. */afterStartFailure?:boolean})
   : Promise<{allowed:boolean;reason?:string;review?:unknown}> {
   const settings = await input.stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
   const policy = shouldRunSpecialist({enabled:settings["specialist.enabled"],when:settings["specialist.when"],risk:input.task.risk});
@@ -819,7 +835,8 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
   const kept = listStageReceipts(input.db,input.runId,input.taskId).find((row) => row.stageId === "specialist-review");
   if (kept?.state === "passed" && kept.inputSha256 === sha256(source)) return {allowed:true,review:kept.result};
   // An updated task goes through its review again over the receipt of the earlier contract (lane_pilot_update_task).
-  recordStage(input.db,{...base,state:"pending",replaceOnNewInput:true,restart:true});
+  // The rerun after a thread that would not start opens the stage it just recorded failed.
+  recordStage(input.db,{...base,state:"pending",replaceOnNewInput:true,restart:true,reopen:input.afterStartFailure});
   if (!policy.run) {
     const failedPolicy = policy.reason?.startsWith("invalid_") || policy.reason?.startsWith("unsupported_");
     recordStage(input.db,{...base,state:failedPolicy ? "blocked" : "skipped",reason:policy.reason ?? undefined});
@@ -905,6 +922,8 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
       }
     }
     recordStage(input.db,{...base,state:"failed",providerId,model:modelId,threadId,reason,result:{error:reason}});
+    // The provider is broken, not the plan: one more run, which picks the peer now that this pair is set aside.
+    if (setAsideOnStartFailure(input.bb,`specialist review for ${input.taskId}`,providerId,modelId,reason) && !input.afterStartFailure) return runSpecialistReview({...input,afterStartFailure:true});
     return {allowed:false,reason:`specialist_review_failed:${reason}`};
   }
 }

@@ -141,10 +141,14 @@ const PROBES: Record<string, (c: Context) => Promise<Probe> | Probe> = {
 export function createMemoryProbe(ctx: ServerCore, services: Services) {
   const { db, host } = ctx;
 
-  /** Removes what an earlier probe left (a crashed run, a `--keep`): the records of origin `probe` and the probe's rules. */
+  /**
+   * Removes what an earlier probe left (a crashed run, a `--keep`): the records of origin `probe` and the probe's rules. Also the notes
+   * the writers of earlier drills saved about the probe folder (`bb lane-pilot memory write`, origin `session`): a writer gets three notes
+   * and the ones that name its paths come first, so by the fourth drill they pushed the probe's core out (the drill of 2026-11-10 went red on it).
+   */
   function clean(projectId: string): number {
     let removed = 0;
-    for (const id of listMemoryIdsByOrigin(db, projectId, "probe")) { services.insights.deleteMemoryRecord(db, projectId, id); removed++; }
+    for (const id of [...listMemoryIdsByOrigin(db, projectId, "probe"), ...listMemoryIdsByOrigin(db, projectId, "session", PROBE_ANCHOR)]) { services.insights.deleteMemoryRecord(db, projectId, id); removed++; }
     for (const id of acceptedRuleIdsLike(db, projectId, "Probe rule lpprobe%")) { services.insights.retireAdoptedRule(db, projectId, id, "memory probe finished"); removed++; }
     return removed;
   }

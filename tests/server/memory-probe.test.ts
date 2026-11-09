@@ -10,6 +10,7 @@ import { memoryUnanswered } from "../../src/rooms/learning/unanswered";
 import { stickyTurnPromptWithRules } from "../../src/rooms/writer/server/writer-knowledge";
 import { taskV2Schema } from "../../src/rooms/contracts";
 import { upsertLessonProposal } from "@lane-pilot/run-insights";
+import { storeMemoryRecords } from "@lane-pilot/memory-core";
 import { parseMemorySettings } from "../../src/rooms/memory";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 import type { Services } from "../../server";
@@ -48,6 +49,24 @@ describe("memory probe", () => {
     expect(count(db, "SELECT count(*) n FROM lane_pilot_memory WHERE origin='probe'")).toBe(0);
     expect(count(db, "SELECT count(*) n FROM lane_pilot_rule_proposal WHERE state='accepted' AND rule LIKE 'Probe rule%'")).toBe(0);
     expect(probe.report(SANDBOX_PROJECT_ID).results).toHaveLength(2);
+  });
+
+  // Hub, 2026-11-10 (drill after 0.1.497): the writers of three earlier drills had each saved a note about the probe folder; a writer
+  // gets three notes, those that name its paths first, so the probe's core convention no longer reached writer.brief and writer.repair.
+  it("notes that the writers of earlier drills saved about the probe folder do not push the probe's core out", async () => {
+    const { probe, db } = setup();
+    const residue = [
+      "Probe note 20261109-174530: lp-probe/memory/20261109-174530.md is a two-line drill memory delivery check.",
+      "Probe note drill-20261108-174608-memory: lp-probe/memory/20261108-174608.md is a two-line memory delivery check (# Drill / ok: Drill).",
+      "The port table of this sandbox lives in lp-probe/memory/ports.md and is rewritten by every drill.",
+    ];
+    storeMemoryRecords(db, { projectId: SANDBOX_PROJECT_ID, audience: "subagent", sourceSha256: "a".repeat(64), trust: "observed", origin: "session",
+      entries: [...residue.map((content) => ({ kind: "note" as const, content, concepts: ["drill"] })), { kind: "note" as const, content: "The sandbox runs its checks with npm test.", concepts: ["drill"] }],
+      coreBudget: 4000, noteBudget: 12000, indexBudget: 4000 });
+    const report = await probe.run({ projectId: SANDBOX_PROJECT_ID, paths: ["writer.brief", "writer.repair"] });
+    expect(report.results.map((row) => [row.path, row.found, row.detail.includes("MISSING")])).toEqual([["writer.brief", true, false], ["writer.repair", true, false]]);
+    // Only the residue went: a session note that does not name the probe folder stays.
+    expect((db.prepare("SELECT content FROM lane_pilot_memory WHERE origin='session'").all() as Array<{ content: string }>).map((row) => row.content)).toEqual(["The sandbox runs its checks with npm test."]);
   });
 
   it("a switched-off injection turns red exactly the paths that depend on it", async () => {

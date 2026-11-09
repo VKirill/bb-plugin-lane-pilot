@@ -57,6 +57,13 @@ export function pmReadPrompt(input:{task:unknown;plan?:string}):string {
   return brief.text;
 }
 
+/**
+ * A list over its cap is cut, not refused: on 2026-11-09 a reader's 31st fact failed the whole stage (`too_big`, maximum 30),
+ * and a scout that reads the files itself finds more than one that summarised a paste.
+ */
 export function parsePmReadResult(raw:string):PmReadResult {
-  return pmReadResultSchema.parse(extractModelJson(raw));
+  const answer=extractModelJson(raw) as Record<string,unknown>|null;
+  if(!answer||typeof answer!=="object") return pmReadResultSchema.parse(answer);
+  const cut=(value:unknown,max:number)=>Array.isArray(value)?value.slice(0,max):value;
+  return pmReadResultSchema.parse({...answer,keyFacts:cut(answer.keyFacts,30),openQuestions:cut(answer.openQuestions,20)});
 }
