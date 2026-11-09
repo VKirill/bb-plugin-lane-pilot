@@ -90,7 +90,24 @@ function openQuestions(pmReadContext: string | undefined): string[] {
   } catch { return []; }
 }
 
-export function critiquePrompt(input: { plan:string; task:unknown; agent?:string; pmReadContext?:string; structuralFindings?:readonly CoverageFinding[] }): string {
+const OWNER_WORDS_BUDGET = 3_000;
+
+/** The owner's messages as quoted blocks, clipped to 3000 characters keeping the newest (ownerWords arrives newest last). */
+function ownerWordsSection(words: readonly string[]): string {
+  const kept: string[] = [];
+  let size = 0;
+  for (let index = words.length - 1; index >= 0; index--) {
+    const text = words[index];
+    if (size + text.length > OWNER_WORDS_BUDGET) {
+      if (!kept.length) kept.unshift(text.slice(0, OWNER_WORDS_BUDGET));
+      break;
+    }
+    kept.unshift(text); size += text.length;
+  }
+  return kept.map((text) => `> ${text.replace(/\n/g, "\n> ")}`).join("\n");
+}
+
+export function critiquePrompt(input: { plan:string; task:unknown; agent?:string; pmReadContext?:string; structuralFindings?:readonly CoverageFinding[]; ownerWords?:readonly string[] }): string {
   return [
     `You are ${input.agent?.trim() || "the independent plan-critique stage"} for a bounded software task.`,
     `Review the plan against the task contract and the code. ${PLAN_CRITIC_READ_LINE}`,
@@ -103,6 +120,11 @@ export function critiquePrompt(input: { plan:string; task:unknown; agent?:string
     ...(input.structuralFindings?.length ? ["Deterministic structural findings (independently assess each; info findings are non-blocking):",JSON.stringify(input.structuralFindings)] : []),
     "TASK BRIEF:", taskBrief(input.task, { fields: ["title", "objective", "risk", "acceptance", "invariants", "out_of_scope", "read_first", "expected_outputs", "owns_paths", "never_touch", "depends_on", "test_removals", "verification"] }),
     ...(openQuestions(input.pmReadContext).length ? ["Questions the PM's reader of the code left open; answer each from the code before the verdict:", openQuestions(input.pmReadContext).map((q) => `- ${q}`).join("\n")] : []),
+    ...(input.ownerWords?.length ? [
+      "OWNER'S WORDS (what the owner wrote in the PM chat before this task; the contract is the PM's reading of them):",
+      ownerWordsSection(input.ownerWords),
+      "Compare your paraphrase with them. A plan that does something the owner did not ask for, or leaves out what he asked for in these messages, is a finding with criterion `owner intent`, file `TASK`, line 1, evidence = the owner's quoted words, severity high. Messages about something other than this task are ignored; an owner's message that this task does not fully cover is not a finding when the contract's `out_of_scope` names that part.",
+    ] : []),
     "CANONICAL PLAN:", input.plan,
   ].join("\n\n");
 }
