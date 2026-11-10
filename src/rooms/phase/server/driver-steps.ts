@@ -391,7 +391,7 @@ export function installSteps(tools: StepsTools) {
     const action = nextAction(phase, facts(phase));
     // Call about a waiting decision: a turn that needs the owner's word is also a row on «Ждут владельца» (and its Telegram digest).
     const wordTurn = action.key.match(/:word:([a-z]+)(?::(\d+))?(?::(?:v[\w-]+|[0-9a-f]+))?$/);
-    if (wordTurn) reactions.postOwnerItem({ key: phaseWordItemKey(phase.id, wordTurn[1]!, wordTurn[2]), source: "phase", kind: "checkpoint", projectId: phase.projectId,
+    if (wordTurn) reactions.postOwnerItem({ key: phaseWordItemKey(phase.id, wordTurn[1]!, wordTurn[2]), source: "phase", kind: "word", projectId: phase.projectId,
       what: `Этап «${phase.title}» ждёт вашего слова: ${STAGE_RU[wordTurn[1]!] ?? wordTurn[1]}${wordTurn[2] ? ` (заход ${wordTurn[2]})` : ""}`, why: action.text.slice(0, 600) });
     // The lead's journal: the same question, with the prediction written before the owner's word (src/rooms/lead).
     if (wordTurn) void reactions.askPhaseWord(phase, wordTurn[1]!, wordTurn[2] ? Number(wordTurn[2]) : undefined, action.text);

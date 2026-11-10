@@ -14,7 +14,7 @@ const TITLE_MAX = 160;
 export const ownerAskPayloadSchema = z.object({
   v: z.literal(1),
   source: z.enum(OWNER_ASK_SOURCES),
-  kind: z.enum(ASK_KINDS),
+  kind: z.enum(ASK_KINDS).default("decision"),
   question: z.string().min(1).max(2000),
   detail: z.string().max(4000).optional(),
   options: z.array(z.object({ id: z.string().min(1).max(40), label: z.string().min(1).max(120) })).max(OWNER_ASK_MAX_OPTIONS),

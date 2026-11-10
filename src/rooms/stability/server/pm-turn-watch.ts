@@ -1,11 +1,12 @@
 /**
- * The PM turn watch (SMA m_cf_timeout, m_cf_settings): a turn of a thread that has an open PM run cannot hang or end
- * silently — it is cut at pm.turn_limit_min (default 4), and its outcome is named in words: an empty answer, a vendor
- * refusal, the time limit or the turn cap (pm.max_turns, default 12 tool items, read at turn/started so a change counts
- * from the next turn). The last named outcome per thread is kept for the surface that shows it (n561's banner).
+ * The PM turn watch (SMA m_cf_timeout, m_cf_settings): a turn of a thread that has an open PM run does not end silently —
+ * its outcome is named in words (an empty answer, a vendor refusal, the time limit, the turn cap) and kept per thread for
+ * the surface that shows it. The two limits are the owner's to set: pm.turn_limit_min and pm.max_turns (tool items, read
+ * at turn/started so a change counts from the next turn). Unset means no limit: a PM here is a full agent whose planning
+ * turn runs for many minutes and dozens of tool calls, and a built-in cap would cut every one of them.
  */
-export const PM_TURN_LIMIT_MIN_DEFAULT = 4;
-export const PM_MAX_TURNS_DEFAULT = 12;
+export const PM_TURN_LIMIT_MIN_DEFAULT = 0;
+export const PM_MAX_TURNS_DEFAULT = 0;
 export const PM_TURN_OUTCOME_PREFIX = "pm-turn:outcome:";
 
 type OpenTurn = { startedAt: number; limitMs: number; maxTurns: number; items: number; assistantText: boolean; timer: ReturnType<typeof setTimeout> | null };
@@ -45,10 +46,11 @@ export function createPmTurnWatch(deps: PmTurnWatchDeps) {
   async function turnStarted(threadId: string): Promise<void> {
     if (!await deps.isPmThread(threadId).catch(() => false)) return;
     const limits = await deps.limits(threadId).catch(() => ({ turnLimitMin: PM_TURN_LIMIT_MIN_DEFAULT, maxTurns: PM_MAX_TURNS_DEFAULT }));
-    const turn: OpenTurn = { startedAt: deps.now(), limitMs: Math.max(1, limits.turnLimitMin) * 60_000, maxTurns: Math.max(1, limits.maxTurns), items: 0, assistantText: false, timer: null };
+    const turn: OpenTurn = { startedAt: deps.now(), limitMs: limits.turnLimitMin > 0 ? limits.turnLimitMin * 60_000 : 0, maxTurns: limits.maxTurns > 0 ? limits.maxTurns : 0, items: 0, assistantText: false, timer: null };
     const previous = open.get(threadId);
     if (previous?.timer) clearTimeout(previous.timer);
     open.set(threadId, turn);
+    if (!turn.limitMs) return;
     turn.timer = setTimeout(() => { void cut(threadId, `ход не уложился в ${limits.turnLimitMin} минут`); }, turn.limitMs);
     turn.timer.unref?.();
   }
@@ -59,7 +61,7 @@ export function createPmTurnWatch(deps: PmTurnWatchDeps) {
     if (!turn) return;
     if (/tool/i.test(itemType)) turn.items += 1;
     else if (/assistant|message|text/i.test(itemType)) turn.assistantText = true;
-    if (turn.items > turn.maxTurns) await cut(threadId, `предел ходов: ${turn.maxTurns}`);
+    if (turn.maxTurns && turn.items > turn.maxTurns) await cut(threadId, `предел ходов: ${turn.maxTurns}`);
   }
 
   /** The turn ended: name what it left — an empty answer, a vendor refusal; nothing when the answer spoke. */
@@ -85,7 +87,7 @@ export function createPmTurnWatch(deps: PmTurnWatchDeps) {
   async function sweep(now: number): Promise<string[]> {
     const cutIds: string[] = [];
     for (const [threadId, turn] of [...open]) {
-      if (now - turn.startedAt >= turn.limitMs) { await cut(threadId, `ход не уложился в ${Math.round(turn.limitMs / 60_000)} минут`); cutIds.push(threadId); }
+      if (turn.limitMs && now - turn.startedAt >= turn.limitMs) { await cut(threadId, `ход не уложился в ${Math.round(turn.limitMs / 60_000)} минут`); cutIds.push(threadId); }
     }
     return cutIds;
   }
@@ -101,7 +103,7 @@ import { sendServiceMessage } from "../../relay/server";
 
 /**
  * Wires the watch into bb.events: every thread event with a type is offered to it (the watch ignores chats that are
- * not a PM's). The limits are the project settings pm.turn_limit_min (default 4) and pm.max_turns (default 12).
+ * not a PM's). The limits are the project settings pm.turn_limit_min and pm.max_turns; unset is no limit.
  */
 export function mountPmTurnWatch(ctx: ServerCore): PmTurnWatch | null {
   const { bb, db } = ctx;
@@ -112,11 +114,13 @@ export function mountPmTurnWatch(ctx: ServerCore): PmTurnWatch | null {
       const runId = openRunIdForPmThread(db, threadId);
       const projectId = runId ? getRun(db, runId)?.project_id : null;
       const settings = projectId ? await ctx.effectiveProjectSettings(projectId).then((result) => result.values as Record<string, unknown>, () => ({} as Record<string, unknown>)) : {};
-      const num = (key: string, fallback: number) => { const value = Number(settings[key]); return Number.isFinite(value) && value >= 1 ? value : fallback; };
+      const num = (key: string, fallback: number) => { const value = Number(settings[key] ?? NaN); return Number.isFinite(value) && value >= 1 ? value : fallback; };
       return { turnLimitMin: num("pm.turn_limit_min", PM_TURN_LIMIT_MIN_DEFAULT), maxTurns: num("pm.max_turns", PM_MAX_TURNS_DEFAULT) };
     },
     stop: async (threadId) => bb.sdk.threads.stop({ threadId } as never),
-    tell: async (threadId, text) => { await sendServiceMessage(bb as never, { threadId, mode: "queue-if-active", text: `Lane Pilot: ${text}` }); },
+    // The outcome goes to the log and the kept record, not into the chat: a plugin fact in a PM chat wakes the PM
+    // (the owner's rule of 2026-10-31). Only a cut the owner's own limit made is said there, so the stop has a reason.
+    tell: async (threadId, text) => { if (/^(ход не уложился|предел ходов)/.test(text)) await sendServiceMessage(bb as never, { threadId, mode: "queue-if-active", text: `Lane Pilot: ${text}` }); },
     record: async (threadId, outcome) => { await bb.storage.kv.set(`${PM_TURN_OUTCOME_PREFIX}${threadId}`, { outcome, at: Date.now() } as never); },
     now: () => Date.now(),
     log: (line) => bb.log.info(line),

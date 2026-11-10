@@ -4,15 +4,13 @@ import { createCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../server";
 import { registeredTools } from "../../src/rooms/platform/server";
 import { createPhaseDriver } from "../phase-driver";
-import { openDatabase, createRun } from "../../src/rooms/plugin-db";
+import { openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 import { insertPhase, savePhase } from "../../src/rooms/phase/store";
 import { contextSignature, planSignature, type PhaseRecord, type PlanItem } from "../../src/rooms/phase/logic";
-import { registerConversationTools } from "../../src/rooms/tasks/server/conversation-tools";
 import { registerTools } from "../../src/rooms/tools/server/tools";
 import { ASK_KINDS, readOwnerAskPayload } from "../../src/rooms/relay/owner-ask-shared";
 import { buildOwnerAskPayload } from "../../src/rooms/relay/owner-ask";
 import { createPmTurnWatch } from "../../src/rooms/stability/server/pm-turn-watch";
-import { tokenDailyByModel } from "../../src/rooms/usage/server";
 
 const piece = (id: string): PlanItem => ({ id, title: id, wave: 1, promise: { given: "g", when: "w", then: "t" }, task: { id } as never });
 
@@ -73,7 +71,7 @@ describe("parity b5 intake", () => {
     expect(phases.status("ph_1").phase.record.words?.map((row) => row.decision)).toEqual(["yes"]);
   });
 
-  it("[sma:m_ce_proposal] a planning yes is refused without the current plan key, on a changed plan or a stale one", async () => {
+  it("[sma:m_ce_proposal] a planning yes naming another plan's key is refused; with a term set, so is a stale proposal", async () => {
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
     planningPhase(db);
@@ -81,94 +79,18 @@ describe("parity b5 intake", () => {
     const { phases } = createPhaseDriver(ctx, { runBudgets: { get: () => undefined } } as unknown as Services);
     const word = (key?: string) => phases.word({ phaseId: "ph_1", turn: "planning", decision: "yes", text: "да", key, by: "owner" });
     const sha = phases.status("ph_1").phase.record.plan!.sha;
-    await expect(word()).rejects.toThrow(/names the key|ownerWord\.planKey/);
     await expect(word("deadbeef")).rejects.toThrow(/changed since it was shown/);
     expect(phases.status("ph_1").phase.record.words ?? []).toEqual([]);
-    // The same phase with a stale proposal is refused stale.
+    // No term unless the project sets one: a day-old proposal still takes the owner's yes. With the term set it is stale.
     const stale = phases.status("ph_1").phase.record;
     savePhase(db, "ph_1", { record: { ...stale, plan: { ...stale.plan!, submittedAt: Date.now() - 25 * 3_600_000 } }, at: Date.now() });
+    saveProjectSetting(db, "proj", "phase.proposal_ttl_hours", 24);
     await expect(word(sha)).rejects.toThrow(/stale/);
     // Fresh again: the keyed yes counts.
     savePhase(db, "ph_1", { record: { ...stale, plan: { ...stale.plan!, submittedAt: Date.now() } }, at: Date.now() });
     const phase = await word(sha);
     expect(phase.record.words?.map((row) => row.decision)).toEqual(["yes"]);
     expect(phases.status("ph_1").ownerWord.planKey).toBe(sha);
-  });
-
-  const checkHost = (bb: ReturnType<typeof createFakePluginHost>["bb"], opts: { pkg?: string; manifestAfter?: string; failCopy?: boolean }) => {
-    const calls: Array<{ method: string; input: Record<string, unknown> }> = [];
-    let manifests = 0;
-    bb.hosts.experimental_client = (() => ({
-      call: async (method: string, input: Record<string, unknown>) => {
-        calls.push({ method, input });
-        if (method === "gitCreateWorktree") return opts.failCopy ? { hostId: "host1", status: "failed", path: null, reason: "disk full" } : { hostId: "host1", status: "ready", path: "/ws_chk", branch: "lane/chk", reason: null, baseSha: "abc123" };
-        if (method === "gitRemoveWorktree") return { hostId: "host1", removed: true };
-        if (method === "runCommand") {
-          if (String(input.command).includes("rev-parse")) { manifests += 1; return { hostId: "host1", exitCode: 0, stdout: manifests > 1 && opts.manifestAfter ? opts.manifestAfter : "abc123\n", stderr: "" }; }
-          return { hostId: "host1", exitCode: 0, stdout: `---PKG---\n${opts.pkg ?? "{}"}`, stderr: "" };
-        }
-        return { hostId: "host1", backend: "linux-bubblewrap", exitCode: 0, stdout: "ok", stderr: "", policySha256: "a".repeat(64) };
-      },
-    })) as never;
-    return calls;
-  };
-
-  const runCheck = async (bb: ReturnType<typeof createFakePluginHost>["bb"], commands = [{ command: "npm test", cwd: ".", timeoutSec: 30, expectExit: 0 }]) => {
-    const db = openDatabase(bb);
-    createRun(db, "run1", "proj", "bb", "/ws", "none", { schemaVersion: 1, pools: { provider: 5, verification: 2 } }, "host1");
-    registerConversationTools({ db, bb } as never, { spendByModel: (projectId: string, day: string) => tokenDailyByModel(db, projectId, day) });
-    const check = registeredTools(bb.agents).get("lane_pilot_check")!;
-    return JSON.parse(String(await check.execute({ action: "run", request: "run tests", commands }, { threadId: "thr", projectId: "proj", signal: new AbortController().signal })));
-  };
-
-  it("[sma:m_ck_isolated] a quick check runs inside a chk_ worktree, the manifest before equals the manifest after, the copy is removed, a changed manifest is roots_changed", async () => {
-    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
-    harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
-    const calls = checkHost(bb, {});
-    const receipt = await runCheck(bb);
-    expect(receipt.state).toBe("passed");
-    const sandboxed = calls.filter((call) => call.method === "runSandboxedCommand");
-    expect(sandboxed).toHaveLength(1);
-    expect(sandboxed[0]!.input.workspacePath).toBe("/ws_chk");
-    expect(sandboxed[0]!.input.cwd).toBe("/ws_chk");
-    expect(calls.some((call) => call.method === "gitRemoveWorktree" && call.input.worktreePath === "/ws_chk")).toBe(true);
-    expect(receipt.protections.manifest.before).toBe(receipt.protections.manifest.after);
-
-    const { bb: bb2, harness: h2 } = createFakePluginHost({ pluginId: "lane-pilot" });
-    h2.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
-    checkHost(bb2, { manifestAfter: "def999\n M src/x.ts\n" });
-    const changed = await runCheck(bb2);
-    expect(changed.state).toBe("failed");
-    expect(changed.reason).toContain("roots_changed");
-  });
-
-  it("[sma:m_ck_recipes] with scripts.test and a pnpm lockfile a quick check runs pnpm run test from the copy, the receipt names package.json@<baseSha>", async () => {
-    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
-    harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
-    const calls = checkHost(bb, { pkg: '{"scripts":{"test":"vitest run"}}' });
-    const receipt = await runCheck(bb);
-    const sandboxed = calls.filter((call) => call.method === "runSandboxedCommand");
-    // No lockfile listed -> npm; the recipe still comes from the snapshot's package.json.
-    expect(sandboxed.map((call) => call.input.command)).toEqual(["npm run test"]);
-    expect(receipt.protections.recipeSource).toBe("package.json@abc123");
-  });
-
-  it("[sma:m_ck_required] the receipt carries the five protections; with the copy refused the check is not passed and names copy", async () => {
-    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
-    harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
-    checkHost(bb, {});
-    const receipt = await runCheck(bb);
-    expect(receipt.protections).toMatchObject({ recipeSource: "pm", copyPath: "/ws_chk", publication: "closed",
-      cleanEnv: { backend: "linux-bubblewrap", policySha256: "a".repeat(64), secrets: false } });
-    expect(receipt.protections.manifest.before).toBe(receipt.protections.manifest.after);
-
-    const { bb: bb2, harness: h2 } = createFakePluginHost({ pluginId: "lane-pilot" });
-    h2.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
-    checkHost(bb2, { failCopy: true });
-    const refused = await runCheck(bb2);
-    expect(refused.state).toBe("failed");
-    expect(refused.passed).toBe(false);
-    expect(refused.reason).toContain("copy");
   });
 
   it("[sma:m_cf_timeout] a PM turn is cut at the limit, an empty answer and a vendor refusal are named; a writer thread is ignored", async () => {

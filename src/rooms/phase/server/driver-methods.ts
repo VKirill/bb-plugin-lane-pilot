@@ -221,7 +221,7 @@ export function installMethods(tools: MethodsTools) {
     if (phase.record.ownerWords) {
       // Lesson is a draft (SMA p7_staged): it waits for the person's word in drafts; the phase does not wait for it.
       book(phase, "lessons", "staged", "the lesson waits as a draft for the owner's word «lesson»");
-      reactions.postOwnerItem({ key: phaseWordItemKey(phase.id, "lesson"), source: "phase", kind: "checkpoint", projectId: phase.projectId,
+      reactions.postOwnerItem({ key: phaseWordItemKey(phase.id, "lesson"), source: "phase", kind: "word", projectId: phase.projectId,
         what: `Этап «${phase.title}» завершён: записать его урок в память проекта?`, why: text.slice(0, 600) });
       reactions.askPhaseWord(phase, "lesson", undefined, text);
     } else tools.writeLesson(phase, text);
@@ -260,18 +260,18 @@ export function installMethods(tools: MethodsTools) {
     const shownKey = acceptanceKey(phase.record);
     if (input.turn === "acceptance" && input.decision === "yes" && !input.key) throw new PhaseRefusal(`the acceptance yes names the key of the package the owner was shown (status ownerWord.acceptanceKey, now ${shownKey})`);
     if (input.turn === "acceptance" && input.decision === "yes" && input.key !== shownKey) throw new PhaseRefusal(`the package changed since it was shown (shown ${input.key}, now ${shownKey}): show the acceptance again and ask anew`);
-    // The planning yes is for the proposal shown (SMA m_ce_proposal): it names the plan's key and comes while the proposal
-    // is still fresh (phase.proposal_ttl_hours, default 24); a changed or stale plan is shown and asked anew.
+    // The planning yes is for the proposal shown (SMA m_ce_proposal): a yes that names a key counts only for the plan with
+    // that key (the PM takes it from status ownerWord.planKey); a yes without one is for the plan in the record now and is
+    // stored with its key, so the owner's button keeps working. A project that sets phase.proposal_ttl_hours also refuses
+    // a yes on a proposal older than that; unset there is no term — the owner often answers a day later.
     if (input.turn === "planning" && input.decision === "yes" && phase.record.ownerWords && phase.record.plan) {
       const plan = phase.record.plan;
-      if (plan.submittedAt) {
-        const settings = await ctx.effectiveProjectSettings(phase.projectId).then((result) => result.values as Record<string, unknown>, () => ({} as Record<string, unknown>));
-        const ttlSetting = Number(settings["phase.proposal_ttl_hours"] ?? 24);
-        const ttlMs = (Number.isFinite(ttlSetting) && ttlSetting > 0 ? ttlSetting : 24) * 3_600_000;
-        if (now() - plan.submittedAt > ttlMs) throw new PhaseRefusal(`the proposal is stale (submitted ${Math.round((now() - plan.submittedAt) / 3_600_000)} h ago, ttl ${Math.round(ttlMs / 3_600_000)} h): show the plan again and ask anew`);
+      const settings = await ctx.effectiveProjectSettings(phase.projectId).then((result) => result.values as Record<string, unknown>, () => ({} as Record<string, unknown>));
+      const ttlHours = Number(settings["phase.proposal_ttl_hours"] ?? NaN);
+      if (plan.submittedAt && Number.isFinite(ttlHours) && ttlHours > 0 && now() - plan.submittedAt > ttlHours * 3_600_000) {
+        throw new PhaseRefusal(`the proposal is stale (submitted ${Math.round((now() - plan.submittedAt) / 3_600_000)} h ago, phase.proposal_ttl_hours ${ttlHours}): show the plan again and ask anew`);
       }
-      if (!input.key) throw new PhaseRefusal(`the planning yes names the key of the plan the owner was shown (status ownerWord.planKey, now ${plan.sha})`);
-      if (input.key !== plan.sha) throw new PhaseRefusal(`the plan changed since it was shown (shown ${input.key}, now ${plan.sha}): show the plan again and ask anew`);
+      if (input.key && input.key !== plan.sha) throw new PhaseRefusal(`the plan changed since it was shown (shown ${input.key}, now ${plan.sha}): show the plan again and ask anew`);
     }
     // Consent is the whole message: «да» alone is consent; «да, но …» is a new word that goes back as words, not as yes.
     if (input.decision === "yes" && !isWholeConsent(input.text) && !/^owner via (screen|cli)$/.test(input.by ?? "")) throw new PhaseRefusal("the owner's message is not a whole consent: «да, но …» is a new word — record it as decision no with his words, or ask again");

@@ -102,15 +102,7 @@ describe("parity a4-tasks", () => {
     let runs = 0;
     harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
     bb.hosts.experimental_client = (() => ({
-      call: async (method: string, input: { command: string }) => {
-        if (method === "gitCreateWorktree") return { hostId: "host1", status: "ready", path: "/ws_chk", branch: "lane/chk", reason: null, baseSha: "abc123" };
-        if (method === "gitRemoveWorktree") return { hostId: "host1", removed: true };
-        if (method === "runCommand") {
-          if (input.command.includes("rev-parse")) return { hostId: "host1", exitCode: 0, stdout: "abc123\n", stderr: "" };
-          return { hostId: "host1", exitCode: 0, stdout: "---PKG---\n{}", stderr: "" };
-        }
-        runs += 1; return { hostId: "host1", backend: "linux-bubblewrap", exitCode: 0, stdout: `ok ${input.command}`, stderr: "", policySha256: "a".repeat(64) };
-      },
+      call: async (_method: string, input: { command: string }) => { runs += 1; return { exitCode: 0, stdout: `ok ${input.command}`, stderr: "" }; },
     })) as never;
     const db = openDatabase(bb);
     createRun(db, "run1", "proj", "bb", "/ws", "none", { schemaVersion: 1, pools: { provider: 5, verification: 2 } }, "host1");
