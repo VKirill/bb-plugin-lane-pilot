@@ -117,6 +117,7 @@ export type PhaseRecord = {
   plan?: { items: PlanItem[]; sha: string; contextSha: string; critique?: PlanCritique; admittedSha?: string; admittedAt?: number; /** When the plan was submitted. */ submittedAt?: number; /** The workflow run whose planner made this plan (the auto plan stage); its critic reviewed this very plan. */ fromRun?: string; /** Rounds of the independent check that asked for changes. */ rounds?: number;
     /** The planner checked that the repository already does what the goal asks: no pieces, no execution; the goal audit checks the claim. */ alreadyMet?: { evidence: string } };
   design?: { decision: "needed" | "not_needed"; why: string; drawing?: Drawing; confirmedAt?: number; mode?: "screens" | "system" | "mixed"; motion?: string[]; archived?: Drawing[];
+    /** The person's remarks on a returned drawing edition (SMA ts_feedback): kept against that edition's hash, fed to the redraw. */ feedback?: Array<{ drawingSha: string; text: string; by: string; at: number }>;
     /** The sections the drawing's UI-SPEC.md must cover, decided before anything is drawn (SMA p3_requirements). */ requirements?: string[] };
   /** The roadmap row this phase is (lane-plan ROADMAP.md), marked done when the phase closes. */
   roadmapRow?: string;
@@ -309,7 +310,11 @@ export function designGate(record: PhaseRecord, specText?: string | null): GateR
   const contract = uiContractGap(record, specText);
   if (contract) why.push(contract);
   why.push(...openQuestions(record, "design").map((question) => `open question ${question.id}: ${question.text}`));
-  if (record.ownerWords && wordOf(record, "design")?.decision !== "yes") why.push("the drawing awaits the owner's word (owner.words is on)");
+  // Drawing confirmed (SMA tb_design_gate_confirmed): the person's yes counts only for the drawing hash it names; a redraw asks again.
+  if (record.ownerWords) {
+    const said = wordOf(record, "design");
+    if (said?.decision !== "yes" || said.key !== drawing?.sha256) why.push("the drawing awaits the owner's word for this drawing (owner.words is on)");
+  }
   return gate(why);
 }
 
@@ -433,14 +438,14 @@ export function alreadyMetVerdict(alreadyMet: { evidence: string }, now: number)
   return { state: "passed", detail: `already met, nothing to build: ${alreadyMet.evidence}`.slice(0, 1000), mainSha: null, at: now, inputSha: sha256Hex(canonical({ alreadyMet })) };
 }
 
-export const ACCEPTANCE_LINES = ["contract_current", "promises_proved", "checks_passed", "independent_check", "landed", "composition_verified", "main_unmoved", "qa_read", "goal_met", "nothing_missing", "book_intact", "limits_acknowledged", "result_useful"] as const;
+export const ACCEPTANCE_LINES = ["contract_current", "promises_proved", "checks_passed", "independent_check", "landed", "composition_verified", "main_unmoved", "qa_read", "goal_met", "nothing_missing", "book_intact", "book_closed", "limits_acknowledged", "result_useful"] as const;
 
 /** The key of the package a person decides on (SMA p6_decide): the plan, the verdict's input and the tree it saw. A new verdict or tree is a new key. */
 export const acceptanceKey = (record: PhaseRecord) => sha256Hex(canonical({ plan: record.plan?.sha ?? null, verdict: record.verification?.verdict?.inputSha ?? null, tree: record.verification?.verdict?.mainSha ?? null })).slice(0, 16);
 export type AcceptanceLineId = (typeof ACCEPTANCE_LINES)[number];
 
 /** The phase acceptance calculation: each line decided by code; the phase is accepted only when every line holds. */
-export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFact>, now: { mainSha: string | null; openDeferrals: number; noTerm?: ReadonlyArray<{ id: string; what: string }>; bookBroken?: number | null }): AcceptanceLine[] {
+export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFact>, now: { mainSha: string | null; openDeferrals: number; noTerm?: ReadonlyArray<{ id: string; what: string }>; bookBroken?: number | null; book?: { lastSeq: number | null; readSha: string | null } }): AcceptanceLine[] {
   const items = phase.record.plan?.items ?? [];
   const verdict = phase.record.verification?.verdict;
   const line = (id: AcceptanceLineId, ok: boolean, detail: string): AcceptanceLine => ({ id, ok, detail });
@@ -483,6 +488,14 @@ export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFac
     // requirement without the plan gate seeing it, and a broken book chain is no closing record.
     line("nothing_missing", !!phase.record.plan?.alreadyMet || coverageGaps(phase.record).length === 0, coverageGaps(phase.record).length && !phase.record.plan?.alreadyMet ? `left uncovered at close: ${coverageGaps(phase.record).join("; ")}` : "every requirement and locked decision is covered"),
     line("book_intact", !now.bookBroken, now.bookBroken ? `the phase book's chain is broken at part ${now.bookBroken}` : "the phase book's chain is intact"),
+    // Book closed before «accepted» (SMA ta_book_close): BOOK.md is written up to the last book part and reads back what was written.
+    line("book_closed", now.book === undefined || !phase.runId || (!!phase.record.bookWritten && phase.record.bookWritten.seq === now.book.lastSeq && now.book.readSha === phase.record.bookWritten.sha256),
+      now.book === undefined ? "the book read-back was not part of this call"
+        : !phase.runId ? "the book lives on the hub only (the phase has no run binding)"
+        : !phase.record.bookWritten ? "BOOK.md was never written"
+        : phase.record.bookWritten.seq !== now.book?.lastSeq ? `BOOK.md is behind the book (written part ${phase.record.bookWritten.seq}, book now at ${now.book?.lastSeq ?? "none"})`
+        : now.book?.readSha !== phase.record.bookWritten.sha256 ? "BOOK.md did not read back what was written"
+        : `BOOK.md written through part ${phase.record.bookWritten.seq} and read back intact`),
     // A put-off check with no term from the owner is unproven work of this project: it holds the acceptance until an agent closes it with evidence.
     // Limits acknowledged (SMA p6_l_limits): a person's decision on what stays open and how to recover, after every put-off check has its term.
     line("limits_acknowledged", !now.noTerm?.length && decided("limits"), now.noTerm?.length ? `${now.noTerm.length} deferred check(s) of this project are open with no term from the owner, so they count as unproven: ${now.noTerm.slice(0, 5).map((row) => row.id).join(", ")} — close each with evidence (bb lane-pilot defer-close <id> --evidence …)`

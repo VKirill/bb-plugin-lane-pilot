@@ -17,7 +17,7 @@ export type ReconcileResult =
 
 /** The resume pass over orphaned attempts, implemented by src/rooms/stability (createReconcile). */
 export interface ResumeOrphansPort {
-  resumeOrphans(projectId?: string): Promise<{ resumed:string[]; skipped:string[]; finished:string[] }>;
+  resumeOrphans(projectId?: string, attemptIds?: readonly string[]): Promise<{ resumed:string[]; skipped:string[]; finished:string[] }>;
 }
 
 export type DrillOutcome = { at: number; version: string; checks: Array<{ name: string; ok: boolean; detail: string | null }> };

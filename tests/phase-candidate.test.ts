@@ -6,6 +6,7 @@ import { createPhaseDriver } from "./phase-driver";
 import { candidatePath } from "../src/rooms/phase/server/candidate";
 import { autoInputs } from "../src/rooms/phase/server/auto-stages";
 import { candidateOn, planSignature, type PlanItem } from "../src/rooms/phase/logic";
+import { sha256Hex } from "@lane-pilot/kit";
 import { recordStage } from "../src/rooms/runs/server";
 import { listParts, savePhase } from "../src/rooms/phase/store";
 import { createAttempt, createRun, createTask, openDatabase } from "../src/rooms/plugin-db";
@@ -31,8 +32,11 @@ function world(opts: { sync?: string; integrate?: string; ensureFail?: boolean }
     if (method === "runCommand") return { exitCode: 0, stdout: `${head}\n`, stderr: "" };
     if (method === "gitSyncWorktree") return { status: opts.sync ?? "up-to-date", head, reason: null, conflicts: opts.sync === "conflict" ? ["src/hud.ts"] : [] };
     if (method === "gitIntegrate") return { status: opts.integrate ?? "merged", commit: SHA(9), conflicts: [], reason: null, base: SHA(1) };
+    // The fake host's file store: what writePhaseBook applies is what the phase driver's read-back sees (ta_book_close/ta_closed).
+    if (method === "writePhaseBook") { for (const edit of (input.edits ?? []) as Array<{ path: string; content: string }>) writtenFiles.set(edit.path, edit.content); return { status: "applied", writes: ((input.edits ?? []) as Array<{ path: string; content: string }>).map((edit) => ({ path: edit.path, status: "applied", afterSha256: sha256Hex(edit.content) })) }; }
     return {};
   } })) as never;
+  const writtenFiles = new Map<string, string>();
   const db = openDatabase(bb);
   createRun(db, "run1", "projA", "bb", "/repo");
   db.prepare("UPDATE lane_pilot_run SET writer_host_id='h', pm_thread_id='thr_pm' WHERE id='run1'").run();
@@ -43,6 +47,7 @@ function world(opts: { sync?: string; integrate?: string; ensureFail?: boolean }
     dispatchWriter: async (input: { task: Record<string, unknown> }) => { sent.push(input.task); createTask(db, { id: String(input.task.id), runId: "run1", kind: "bb", contract: input.task }); return { taskId: input.task.id, runId: "run1" }; },
     regression: { run: async (input: Record<string, unknown>) => { regressions.push(input); return { projects: [{ projectId: "projA", head, tasks: [{ taskId: "hud", checks: [{ command: "npm test", state: "green" }] }], findings: [] }] }; } },
     runGoal: { check: async () => { throw new Error("the run's goal check reads main, not the candidate"); } },
+    readWriterWorkspaceFile: async ({ path }: { path: string }) => { const content = writtenFiles.get(path); return content === undefined ? null : { sha256: sha256Hex(content), sizeBytes: content.length, content }; },
   } as unknown as Services;
   const phases = createPhaseDriver(createCore(bb, db), services).phases;
   return { phases, db, calls, sent, regressions, setHead: (sha: string) => { head = sha; } };

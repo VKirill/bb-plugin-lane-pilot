@@ -3,7 +3,9 @@
  * an accepted task lands on main only after the owner said yes to it: the PM asks him (lane_pilot_ask_owner) and records his answer with
  * lane_pilot_queue {action:"word"}; the word holds for the whole task family, so a redo needs no second one. Off, nothing waits.
  */
-export type TaskWord = { turn: "land"; decision: "yes" | "no"; text: string; at: number };
+import { taskFamily } from "@lane-pilot/contracts";
+
+export type TaskWord = { turn: "land"; decision: "yes" | "no"; text: string; at: number; /** The attempt (the candidate tree) the word was given for: a yes is revoked when another candidate replaces it (SMA ta_replace). */ attemptId?: string | null };
 
 export const TASK_WORDS_KEY = "lp.task.words";
 /** A verified attempt waits for its landing decision for at most six hours. */
@@ -31,22 +33,38 @@ export const landingWordAsked = (settings: Readonly<Record<string, unknown>>, ri
 };
 export const taskWordKey = (runId: string, family: string) => `${runId}:${family}`;
 
+/** The attempt of the family that waits for the word right now (SMA ta_replace): the candidate the owner's next word is for. */
+export function waitingAttemptId(db: { prepare(sql: string): { all(...params: unknown[]): unknown[] } }, runId: string, family: string): string | undefined {
+  const rows = db.prepare("SELECT id, task_id FROM lane_pilot_attempt WHERE run_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested') ORDER BY updated_at DESC")
+    .all(runId) as Array<{ id: string; task_id: string }>;
+  return rows.find((row) => taskFamily(row.task_id) === family)?.id;
+}
+
 /** Why the landing waits, or null: the owner's latest word on the task family decides. */
-export function landingWordGap(ownerWords: boolean, words: readonly TaskWord[] | undefined): string | null {
+export function landingWordGap(ownerWords: boolean, words: readonly TaskWord[] | undefined, attemptId?: string): string | null {
   if (!ownerWords) return null;
   const latest = [...(words ?? [])].reverse().find((word) => word.turn === "land");
   if (!latest) return "owner_word: owner.words is on — the task is verified and waits for the owner's word to land on main; ask him with lane_pilot_ask_owner, record it with lane_pilot_queue {action:\"word\", taskId, decision, text}, then send the task again (its writer redoes nothing, the same thread merges)";
   if (latest.decision === "no") return `owner_word: the owner said no to this task — ${latest.text}`;
+  // The yes was given for another candidate (SMA ta_replace): a redo or a changed tree asks for the word again.
+  if (attemptId && latest.attemptId && latest.attemptId !== attemptId) return `owner_word: the owner's yes was given for another candidate of this task (attempt ${latest.attemptId}); ask him for the word on this one`;
   return null;
+}
+
+/** The owner's latest word on the family is «no»: the task is decided and nothing of it is paid for again (SMA cg_claim_refusal). */
+export async function ownerSaidNo(kv: { get(key: string): Promise<unknown> }, runId: string, family: string): Promise<string | null> {
+  const words = ((await kv.get(TASK_WORDS_KEY)) as Record<string, TaskWord[]> | null)?.[taskWordKey(runId, family)];
+  const latest = [...(words ?? [])].reverse().find((word) => word.turn === "land");
+  return latest?.decision === "no" ? latest.text : null;
 }
 
 type Kv = { get(key: string): Promise<unknown>; set(key: string, value: never): Promise<unknown> };
 
 /** Records the owner's word on a task family (the PM's lane_pilot_queue word and the task_word RPC of a screen or the CLI write the same). */
-export async function recordTaskWord(kv: Kv, runId: string, family: string, decision: "yes" | "no", text: string, now = Date.now()): Promise<void> {
+export async function recordTaskWord(kv: Kv, runId: string, family: string, decision: "yes" | "no", text: string, now = Date.now(), attemptId?: string | null): Promise<void> {
   const all = ((await kv.get(TASK_WORDS_KEY)) as Record<string, TaskWord[]> | null) ?? {};
   const key = taskWordKey(runId, family);
-  all[key] = [...(all[key] ?? []), { turn: "land" as const, decision, text, at: now }].slice(-10);
+  all[key] = [...(all[key] ?? []), { turn: "land" as const, decision, text, at: now, ...(attemptId ? { attemptId } : {}) }].slice(-10);
   await kv.set(TASK_WORDS_KEY, all as never);
 }
 

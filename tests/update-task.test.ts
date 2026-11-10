@@ -267,7 +267,8 @@ describe("lane_pilot_update_task", () => {
 
     const services = {
       resolveIntegrationGate: gateResolverFor(ctx), isTaskSatisfied,
-      activeWriterTasks: new Set<string>(),
+      activeWriterTasks: new Set<string>(), stageHelperSettings, baseline: {},
+      stability: { loadParked: async () => [] }, isLiveFolder: async () => false,
     } as unknown as Services;
 
     const { updateTask } = createWriterUpdateTask(ctx, services);
@@ -280,12 +281,19 @@ describe("lane_pilot_update_task", () => {
       plan: "Trying to edit running task",
     });
 
-    expect(res.ok).toBe(false);
-    expect(res.error).toMatchObject({
-      code: "task_started",
-      retryable: false,
-      sideEffects: "none",
-    });
+    // [sma:tb_words] words can change while the task runs: the plan is stored and the live writer thread is steered.
+    expect(res.ok).toBe(true);
+    expect(res).toMatchObject({ state: "running" });
+  });
+
+  it("refuses a running-task update outside the in-place fields, and finished work is never rewritten", async () => {
+    createTask(db, { id: taskId, runId, kind: "bb", contract: baseTask });
+    createAttempt(db, { id: "att-1", runId, taskId });
+    db.prepare("UPDATE lane_pilot_attempt SET state='accepted', thread_id='thr-w' WHERE id='att-1'").run();
+    const ctx = { bb: fakeBb as never, db, state: { disposed: false }, configForRun: async (id: string) => loadPrototypeConfig(db, id), log: () => {} } as unknown as ServerCore;
+    const services = { resolveIntegrationGate: gateResolverFor(ctx), isTaskSatisfied, activeWriterTasks: new Set<string>() } as unknown as Services;
+    const res = await createWriterUpdateTask(ctx, services).updateTask({ projectId, runId, pmThreadId, taskId, plan: "Trying to edit finished task" });
+    expect(res.error).toMatchObject({ code: "task_finished", retryable: false, sideEffects: "none" });
   });
 
   describe("contract lint (the same rules as dispatch)", () => {

@@ -1,5 +1,6 @@
 import { isAbsolute, relative, resolve } from "node:path";
 import { OPEN_ATTEMPT_STATES } from "../contracts/state-machine";
+import { sha256Hex } from "@lane-pilot/kit";
 import type { LanePilotDatabase } from "./database";
 import { getRun } from "./runs-store";
 
@@ -9,6 +10,22 @@ export function createTask(
 ): void {
   db.prepare("INSERT INTO lane_pilot_task(id,run_id,kind,contract_json,created_at,birth) VALUES (?,?,?,?,?,?)")
     .run(ids.id, ids.runId, ids.kind, JSON.stringify(ids.contract), Date.now(), ids.birth ?? "pm");
+  recordContractEdition(db, ids.id, ids.contract, null, "created");
+}
+
+/** Mints the next numbered, hashed contract edition (SMA tb_contract): the table is append-only, so every word change keeps its history. */
+export function recordContractEdition(db: LanePilotDatabase, taskId: string, contract: unknown, plan: string | null, reason: string | null): number {
+  const edition = (db.prepare("SELECT COALESCE(MAX(edition),0) AS n FROM lane_pilot_task_contract_edition WHERE task_id=?").get(taskId) as { n: number }).n + 1;
+  const contractJson = JSON.stringify(contract);
+  db.prepare("INSERT INTO lane_pilot_task_contract_edition(task_id,edition,sha256,contract_json,plan,reason,at) VALUES(?,?,?,?,?,?,?)")
+    .run(taskId, edition, sha256Hex(contractJson), contractJson, plan, reason, Date.now());
+  return edition;
+}
+
+/** The task's contract editions in order (the task timeline lists them). */
+export function contractEditions(db: LanePilotDatabase, taskId: string): Array<{ edition: number; sha256: string; reason: string | null; at: number }> {
+  return db.prepare("SELECT edition, sha256, reason, at FROM lane_pilot_task_contract_edition WHERE task_id=? ORDER BY edition").all(taskId) as
+    Array<{ edition: number; sha256: string; reason: string | null; at: number }>;
 }
 
 export function updateTaskContract(
@@ -18,6 +35,7 @@ export function updateTaskContract(
 ): boolean {
   const result = db.prepare("UPDATE lane_pilot_task SET contract_json=? WHERE id=?")
     .run(JSON.stringify(contract), taskId);
+  if (result.changes > 0) recordContractEdition(db, taskId, contract, getTaskPlan(db, taskId), null);
   return result.changes > 0;
 }
 

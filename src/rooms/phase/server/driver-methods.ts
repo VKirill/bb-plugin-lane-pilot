@@ -226,7 +226,7 @@ export function installMethods(tools: MethodsTools) {
       reactions.askPhaseWord(phase, "lesson", undefined, text);
     } else tools.writeLesson(phase, text);
     move(phase, "closed", record, "the lessons are written and reviewed");
-    savePhase(db, phase.id, { state: "closed", at: now() });
+    // State «closed» comes only after finishClosed writes the closing documents and reads them back intact (SMA ta_closed).
     return mustGet(phase.id);
   }
 
@@ -257,6 +257,11 @@ export function installMethods(tools: MethodsTools) {
       throw new PhaseRefusal("the acceptance is two decisions: the result is clear and useful (useful:true) and the remaining limits and recovery are acknowledged (limits:true); a «no» to either is decision no with the words why");
     // The yes is for the package that was shown (SMA p6_decide, p6_stale): the caller names its key, and a package that changed since
     // is not signed by it (SMA audit N-02: the key was taken at write time, so a click on package A signed package B).
+    // The design yes signs the drawing it was shown (SMA tb_design_gate_confirmed): without the drawing's hash, or over
+    // an older edition, it is refused — a redrawn drawing needs a new yes.
+    const drawingSha = phase.record.design?.drawing?.sha256 ?? null;
+    if (input.turn === "design" && input.decision === "yes" && phase.record.ownerWords && input.key !== drawingSha)
+      throw new PhaseRefusal(`the design yes names the hash of the drawing the owner was shown (status ownerWord.designKey, now ${drawingSha ?? "none"})`);
     const shownKey = acceptanceKey(phase.record);
     if (input.turn === "acceptance" && input.decision === "yes" && !input.key) throw new PhaseRefusal(`the acceptance yes names the key of the package the owner was shown (status ownerWord.acceptanceKey, now ${shownKey})`);
     if (input.turn === "acceptance" && input.decision === "yes" && input.key !== shownKey) throw new PhaseRefusal(`the package changed since it was shown (shown ${input.key}, now ${shownKey}): show the acceptance again and ask anew`);
@@ -270,7 +275,7 @@ export function installMethods(tools: MethodsTools) {
       if (!state || !state.lines || state.open.length || state.failed.length) throw new PhaseRefusal(`UAT is not complete: ${!state ? "no UAT.md" : `${state.open.length} open, ${state.failed.length} failed of ${state.lines}`} — the owner marks each line in ${path ?? "UAT.md"} first`);
     }
     const record: PhaseRecord = { ...phase.record, words: [...(phase.record.words ?? []), { turn: input.turn, decision: input.decision, by: input.by ?? "owner", text: input.text.slice(0, 2000), at: now(), ...(input.wave !== undefined ? { wave: input.wave } : {}),
-      ...(input.turn === "acceptance" ? { useful: input.useful === true, limits: input.limits === true, key: shownKey } : {}) }] };
+      ...(input.turn === "acceptance" ? { useful: input.useful === true, limits: input.limits === true, key: shownKey } : input.turn === "design" ? { key: drawingSha ?? undefined } : {}) }] };
     reactions.answerPhaseWord(phase.id, input.turn, input.wave, input.decision, input.text, input.by ?? "owner");
     reactions.closeOwnerItem(phaseWordItemKey(phase.id, input.turn, input.wave), input.by ?? "owner");
     book(phase, "decisions", `word_${input.turn}`, `${input.by ?? "owner"}: ${input.decision} — ${input.text}`);
@@ -282,6 +287,18 @@ export function installMethods(tools: MethodsTools) {
       // The owner signs the context, or says no: then it is unsigned and the discussion goes on with his words in the book.
       if (input.decision === "no") { savePhase(db, phase.id, { record: { ...record, context: undefined }, at: now() }); return mustGet(phase.id); }
       if (discussionGate(record).ok) move(phase, "planning", record, "the owner signed the context");
+      return mustGet(phase.id);
+    }
+    // Drawing feedback (SMA ts_feedback): the owner's «no» on a drawing keeps his remark against that exact edition, archives
+    // it and clears the drawing, so lp.draw redraws it with the remark — the phase stays at design.
+    if (input.turn === "design" && input.decision === "no" && phase.stage === "design" && phase.record.design?.drawing) {
+      const design = phase.record.design;
+      const drawing = design.drawing!;
+      const designRecord: NonNullable<PhaseRecord["design"]> = { ...design, drawing: undefined,
+        archived: [...(design.archived ?? []), drawing].slice(-10),
+        feedback: [...(design.feedback ?? []), { drawingSha: drawing.sha256, text: input.text.slice(0, 2000), by: input.by ?? "owner", at: now() }].slice(-20) };
+      savePhase(db, phase.id, { record: { ...record, design: designRecord }, at: now() });
+      book(phase, "design", "drawing_returned", `the owner returned drawing ${drawing.sha256.slice(0, 12)}: ${input.text.slice(0, 300)} — it is redrawn with the remark`);
       return mustGet(phase.id);
     }
     if (input.decision === "no") {

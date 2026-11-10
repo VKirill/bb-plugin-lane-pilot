@@ -158,10 +158,16 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number },
         criteria: [...(tree ? [`the code under review is on branch ${r.candidate!.branch}, checked out at ${tree.path}: read the files there, not in the main checkout`] : []),
           ...items.map((item) => `${item.id}: given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}`)] };
     }
-    case "draw": return { goal: phase.goal, folder: phaseFolder(phase.id),
-      // The drawing's requirements (SMA p3_requirements): one UI-SPEC.md heading per section it must cover.
-      requirements: (r.design?.requirements ?? []).join(", "),
-      pieces: (r.plan?.items ?? []).map((item) => `${item.id} — ${item.title}: given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}`).join("\n").slice(0, 8000) };
+    case "draw": {
+      // A returned drawing's remarks ride the redraw (SMA ts_feedback): only the entries of the archived current edition.
+      const lastArchived = r.design?.archived?.at(-1);
+      const feedback = lastArchived ? (r.design?.feedback ?? []).filter((row) => row.drawingSha === lastArchived.sha256) : [];
+      return { goal: phase.goal, folder: phaseFolder(phase.id),
+        // The drawing's requirements (SMA p3_requirements): one UI-SPEC.md heading per section it must cover.
+        requirements: (r.design?.requirements ?? []).join(", "),
+        ...(feedback.length ? { owner_feedback: feedback.map((row) => row.text) } : {}),
+        pieces: (r.plan?.items ?? []).map((item) => `${item.id} — ${item.title}: given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}`).join("\n").slice(0, 8000) };
+    }
     case "close": {
       // The goal audit reads the package that is to land: before the landing that is the candidate's tree.
       const tree = candidateOn(r) && !r.candidate!.landedAt ? Object.values(r.candidate!.trees)[0] : undefined;

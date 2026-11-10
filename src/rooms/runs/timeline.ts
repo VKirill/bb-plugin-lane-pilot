@@ -1,5 +1,5 @@
 import type { LanePilotDatabase } from "../storage";
-import { taskTimelineRow, attemptTimelineRows, attemptTransitionsForTask, stageEventsForTimeline, gateEventsForTask, stageReceiptsForTimeline } from "../storage";
+import { contractEditions, taskTimelineRow, attemptTimelineRows, attemptTransitionsForTask, stageEventsForTimeline, gateEventsForTask, stageReceiptsForTimeline } from "../storage";
 
 /**
  * One task's record in time order, from the tables that write it while it runs (the owner's post-mortem of the cab-unslop run,
@@ -12,7 +12,7 @@ import { taskTimelineRow, attemptTimelineRows, attemptTransitionsForTask, stageE
  * The current receipts (lane_pilot_stage_receipt) keep the last reason of each stage; the server log
  * (~/.bb/plugins/lane-pilot/logs/plugin.log) keeps what the server said meanwhile: waits, parks, writer picks.
  */
-export type TimelineEntry = { at:number; kind:"task"|"baseline"|"attempt"|"move"|"stage"|"gate"; attemptId:string|null; text:string };
+export type TimelineEntry = { at:number; kind:"task"|"baseline"|"attempt"|"move"|"stage"|"gate"|"edition"; attemptId:string|null; text:string };
 
 export type TaskTimeline = {
   taskId:string; runId:string|null; birth:string|null; closedWords:string|null;
@@ -20,7 +20,7 @@ export type TaskTimeline = {
   receipts:Array<{ stageId:string; state:string; attempt:number; reason:string|null; updatedAt:number }>;
 };
 
-const KIND_ORDER:Record<TimelineEntry["kind"], number> = { task:0, baseline:1, attempt:2, move:3, stage:4, gate:5 };
+const KIND_ORDER:Record<TimelineEntry["kind"], number> = { task:0, baseline:1, attempt:2, move:3, stage:4, gate:5, edition:6 };
 
 export function taskTimeline(db:LanePilotDatabase, taskId:string, runId?:string,
   readBaselines:(db:LanePilotDatabase, runId:string, taskId:string)=>Array<{ at:number; attempt_id:string|null; verdict:string; action:string; summary:string }> = () => []):TaskTimeline {
@@ -49,6 +49,7 @@ export function taskTimeline(db:LanePilotDatabase, taskId:string, runId?:string,
   for (const row of gates) entries.push({ at:row.occurred_at, kind:"gate", attemptId:null, text:`gate ${row.gate} ${row.status}${row.attempt ? ` (attempt ${row.attempt})` : ""}` });
   const baselines = readBaselines(db, run, taskId);
   for (const row of baselines) entries.push({ at:row.at, kind:"baseline", attemptId:row.attempt_id, text:`baseline ${row.verdict} → ${row.action}: ${row.summary}` });
+  for (const row of contractEditions(db, taskId)) entries.push({ at:row.at, kind:"edition", attemptId:null, text:`contract edition ${row.edition}${row.reason ? ` (${row.reason})` : ""} · sha ${row.sha256.slice(0, 12)}` });
   entries.sort((a, b) => a.at - b.at || KIND_ORDER[a.kind] - KIND_ORDER[b.kind]);
   const receipts = (stageReceiptsForTimeline(db, run, taskId) as
     Array<{ stage_id:string; state:string; attempt:number; reason:string|null; updated_at:number }>)

@@ -542,4 +542,18 @@ export const migrations = [
     WHERE instr(reason, 'verification failed (') > 0 AND instr(reason, '): verification timed out after ') = 0 AND instr(reason, '): ') > 0`,
   `ALTER TABLE lane_pilot_run_goal ADD COLUMN failure_code TEXT`,
   `UPDATE lane_pilot_run_goal SET failure_code='check_failed' WHERE state='skipped' AND detail LIKE 'the check failed:%'`,
+  // Contract editions (SMA tb_contract): every change of a task's words mints a new numbered, hashed edition; the earlier
+  // ones stay readable. Append-only by trigger: a fix writes a new edition, never rewrites history.
+  `CREATE TABLE lane_pilot_task_contract_edition (
+    task_id TEXT NOT NULL,
+    edition INTEGER NOT NULL,
+    sha256 TEXT NOT NULL,
+    contract_json TEXT NOT NULL,
+    plan TEXT,
+    reason TEXT,
+    at INTEGER NOT NULL,
+    PRIMARY KEY (task_id, edition)
+  )`,
+  `CREATE TRIGGER lane_pilot_task_contract_edition_no_update BEFORE UPDATE ON lane_pilot_task_contract_edition BEGIN SELECT RAISE(ABORT,'contract editions are append-only'); END`,
+  `CREATE TRIGGER lane_pilot_task_contract_edition_no_delete BEFORE DELETE ON lane_pilot_task_contract_edition BEGIN SELECT RAISE(ABORT,'contract editions are append-only'); END`,
 ];

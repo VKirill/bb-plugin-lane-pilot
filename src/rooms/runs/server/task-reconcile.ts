@@ -60,6 +60,22 @@ export function createTaskReconcile(ctx:ServerCore, services:Services) {
       const closed = closeOrphanWriterStages(db, services.activeWriterTasks, startup ? 0 : PERIODIC_IDLE_MS, options.now, services.stability.reconcileScanOpen);
       if (closed) bb.log.info(`Lane Pilot closed ${closed} writer stage(s) left open after their task ended`);
     });
+    if (!startup) {
+      // The lease is the live loop (SMA tr_claimed): an attempt whose run:task is not in activeWriterTasks and that has not
+      // moved for PERIODIC_IDLE_MS lost its hold — it goes through the same resume path start-up recovery uses, so a dead
+      // loop's work is taken back instead of standing at «running» until the next reload.
+      await step("lease take-back", async () => {
+        const cutoff = (options.now ?? Date.now()) - PERIODIC_IDLE_MS;
+        const lost = (db.prepare(`SELECT id, run_id, task_id FROM lane_pilot_attempt WHERE state IN ('spawn_requested','spawn_unknown','running','cancel_requested') AND updated_at < ?`)
+          .all(cutoff) as Array<{ id: string; run_id: string; task_id: string }>)
+          .filter((row) => !services.activeWriterTasks.has(`${row.run_id}:${row.task_id}`))
+          .map((row) => row.id);
+        if (lost.length) {
+          const took = await services.resumeOrphans(undefined, lost);
+          bb.log.info(`Lane Pilot took back ${took.resumed.length + took.finished.length} attempt(s) whose hold had lapsed${took.skipped.length ? ` (${took.skipped.length} skipped)` : ""}`);
+        }
+      });
+    }
     await step("parking of blocked tasks", () => services.stability.adoptBlockedByFaults(options.now));
     await step("parked-task sweep", () => services.stability.sweep(options.now));
     await step("workflow runs", async () => {

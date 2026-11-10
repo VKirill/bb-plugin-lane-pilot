@@ -1,5 +1,5 @@
 import type { JevSettings } from "@lane-pilot/jev";
-import { closeOwnerItemsByPrefix } from "../../owner-waiting";
+import { closeOwnerItemsByPrefix, decidedOwnerItem } from "../../owner-waiting";
 import { answerDecision, askDecision, refineVerdict, type Db } from "./journal";
 
 /**
@@ -30,7 +30,22 @@ import { taskWordItemPrefix } from "../../contracts";
 /** lane_pilot_queue word, the task_word RPC: the owner's word is recorded, and the question leaves his list. */
 export const answerTaskWord = (db: Db, runId: string, family: string, decision: "yes" | "no", text: string, by: string, now?: number) => {
   try { answerDecision(db, wordDecisionId(runId, family), { option: decision, text }, by, now); void refineVerdict(db, wordDecisionId(runId, family), undefined, now); } catch { /* journal only */ }
-  try { closeOwnerItemsByPrefix(db as never, taskWordItemPrefix(runId, family), by, now); } catch { /* the janitor takes it later */ }
+  try { closeOwnerItemsByPrefix(db as never, taskWordItemPrefix(runId, family), `${decision === "yes" ? "approved" : "returned"}:${by}`, now); } catch { /* the janitor takes it later */ }
+};
+
+/**
+ * Decision claim by compare-and-set (SMA tr_approving): the first press closes the waiting rows with the outcome and wins;
+ * a second press finds them already decided and is refused, naming who decided and when. A word given before any wait row
+ * exists is recorded as before (no row to claim).
+ */
+export const decideTaskWord = (db: Db, runId: string, family: string, decision: "yes" | "no", by: string, now: number = Date.now()): { ok: true } | { ok: false; reason: string } => {
+  try {
+    const changed = closeOwnerItemsByPrefix(db as never, taskWordItemPrefix(runId, family), `${decision === "yes" ? "approved" : "returned"}:${by}`, now);
+    if (changed) return { ok: true };
+    const decided = decidedOwnerItem(db as never, taskWordItemPrefix(runId, family));
+    if (decided) return { ok: false, reason: `already decided: ${decided.by} at ${new Date(decided.at).toISOString()}` };
+  } catch { /* an older database without the table records the word as before */ }
+  return { ok: true };
 };
 
 export type WordPhase = { id: string; projectId: string; runId: string | null; title: string; goal: string; stage: string };
@@ -49,4 +64,4 @@ export const answerPhaseWord = (db: Db, phaseId: string, turn: string, wave: num
 };
 
 /** The task-word surface as one object, for the services bag. */
-export const taskWordPort = { ask: askTaskWord, answer: answerTaskWord } as const;
+export const taskWordPort = { ask: askTaskWord, answer: answerTaskWord, decide: decideTaskWord } as const;
