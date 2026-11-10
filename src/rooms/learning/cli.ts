@@ -13,6 +13,7 @@ export const LEARNING_USAGE = [
   "bb lane-pilot learning signals [kind]",
   "bb lane-pilot learning config [key=value …]       mode=observe|active, sample, dailyJudgeCap, secondOpinion, …",
   "bb lane-pilot learning extract <projectId>",
+  "bb lane-pilot learning lessons [text…]           phase learnings of every project",
 ].join("\n");
 
 export async function runLearningCli(learning: Learning, argv: string[]): Promise<{ exitCode: number; stdout?: string; stderr?: string }> {
@@ -33,6 +34,7 @@ export async function runLearningCli(learning: Learning, argv: string[]): Promis
         case "signals": return { kind: words[0] };
         case "config": return { settings: words };
         case "extract": return { projectId: words[0] };
+        case "lessons": return { text: words.join(" ") || undefined };
         default: return {};
       }
     })());

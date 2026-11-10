@@ -244,6 +244,11 @@ export const rpcOps = {
     input: z.object({ phaseId: z.string().min(1).max(40) }).strict(),
     output: z.unknown(),
   },
+  /** The phase folder as a tree (no path) or one file as text (path, relative, under .agents/phases/<id>/). */
+  phase_files: {
+    input: z.object({ phaseId: z.string().min(1).max(40), path: z.string().min(1).max(1024).optional() }).strict(),
+    output: z.unknown(),
+  },
   /** Controls of a phase from the screen or the CLI: pause, resume, return to an earlier stage with a note, stop the wave, close in words. */
   /** The window's cockpit (src/rooms/cockpit): Today, workers, the memory corpus, the forge order, the designer, windows, views, faults. */
   cockpit_today: { input: z.object({ projectId: z.string().min(1).max(200) }).strict(), output: z.unknown() },

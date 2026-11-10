@@ -12,7 +12,7 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { sha256Hex, bestEffort } from "@lane-pilot/kit";
 import { acceptanceLines, alreadyMetVerdict, blindVerdict, brokenLink, candidateOn, canonical, executionGate, issuable, lessonsNeeded, nextAction, observationOutcome, piecesOfWave, phaseFolder, pieceSha, provenPieces, renderBook, waveCleared, waveLines, wavePackage, wavePieceLines, wavesOf, wordOf } from "../logic";
-import { buildsScreens, conclusionText, issuedContract, markRoadmap, nextRoadmapRow, stateText, waveTable, piecePlan, uatText } from "../stages";
+import { buildsScreens, conclusionText, issuedContract, markRoadmap, milestoneOf, nextRoadmapRow, stateText, waveTable, piecePlan, uatText } from "../stages";
 import { getPhase, listParts, notePoked, savePhase } from "../store";
 import { checkProofs, hostGit, phaseProofRecords, renderProofCurrency } from "./proof-currency";
 import { candidateBranch } from "./candidate";
@@ -31,7 +31,7 @@ export type StepsTools = DriverBase & Docs & Methods;
 export type Steps = ReturnType<typeof installSteps>;
 export function installSteps(tools: StepsTools) {
   const { ctx, services, db, bb, now, reactions } = tools;
-  const { mustGet, book, move, facts, readFile, readText, writeDocs, writeBook, pmCheckoutPath, candidates } = tools;
+  const { mustGet, book, move, facts, readFile, readText, writeDocs, commitFiles, pauseHandoff, writeBook, pmCheckoutPath, candidates } = tools;
 
   /** The candidate tree of a piece's base checkout, made on first need; null (and `off` with the reason, booked once) when it cannot be. */
   async function candidateTree(phase: Phase, candidate: PhaseCandidate, base: string): Promise<import("./candidate").CandidateTree | null | { wait: string }> {
@@ -264,7 +264,11 @@ export function installSteps(tools: StepsTools) {
     if (phase.record.stopping && phase.state !== "stopped" && phase.state !== "closed") return (await tools.stop({ phaseId: phase.id })).phase;
     // A force-interrupt whose writers' stops were not all observed: ask again; the phase turns paused only when none is open (SMA px_force).
     if (phase.record.interrupting && phase.state !== "stopped" && phase.state !== "closed") return (await tools.interrupt({ phaseId: phase.id })).phase;
-    if (phase.state === "pause_requested") { savePhase(db, phase.id, { state: "paused", at: now() }); return mustGet(phase.id); }
+    if (phase.state === "pause_requested") {
+      savePhase(db, phase.id, { state: "paused", at: now() });
+      await pauseHandoff(mustGet(phase.id)).catch((cause: unknown) => ctx.log(`phase ${phase.id}: pause handoff not written: ${cause instanceof Error ? cause.message : String(cause)}`));
+      return mustGet(phase.id);
+    }
     if (phase.state !== "active") return phase;
     let current = phase;
     if (current.stage === "execution") {
@@ -288,8 +292,8 @@ export function installSteps(tools: StepsTools) {
         if (!pieces.every((item) => current.record.execution?.issued[item.id] && f.get(item.id)?.state === "accepted")) continue;
         // A wave whose pieces got new facts (a redo) is weighed again; the same package is not (its review stays).
         if (waves[String(wave)]?.packageSha === wavePackage(pieces, f)) continue;
-        const lines = waveLines(pieces, f, current.record.execution?.issuedSha);
-        waves[String(wave)] = { packageSha: wavePackage(pieces, f), lines, pieces: wavePieceLines(pieces, f, current.record.execution?.issuedSha), at: now() };
+        const lines = waveLines(pieces, f, current.record.execution?.issuedSha, !current.record.browserQaOff);
+        waves[String(wave)] = { packageSha: wavePackage(pieces, f), lines, pieces: wavePieceLines(pieces, f, current.record.execution?.issuedSha, !current.record.browserQaOff), at: now() };
         book(current, "execution", "wave_in", `wave ${wave} in, package ${waves[String(wave)]!.packageSha.slice(0, 12)}: ${lines.map((line) => `${line.ok ? "✓" : "✗"} ${line.id}`).join(", ")}`);
         wrote = true;
       }
@@ -464,13 +468,19 @@ export function installSteps(tools: StepsTools) {
       }
     }
     book(phase, "lessons", "concluded", `SUMMARY.md written${out.written.length > 1 ? `, ${out.written.slice(1).join(", ")} marked` : ""}${out.commit ? ` (commit ${out.commit.slice(0, 12)})` : ""}`);
-    if (phase.record.branch === "phase" && phase.runId) {
+    if ((phase.record.branch === "phase" || phase.record.branch === "milestone") && phase.runId) {
       const run = getRun(db, phase.runId);
       const hostId = getRunWriterHost(db, phase.runId);
       if (run?.writer_workspace_path && hostId) {
+        // SMA k_we_branch: the marker branch is phase/<id>, or milestone/<slug> of the roadmap section the phase's row sits under.
+        const stateMilestone = /^milestone:\s*"?([^"\n]+)"?/m.exec(stateNow?.split("\n---\n")[0] ?? "")?.[1]?.trim();
+        const slug = phase.record.branch === "milestone"
+          ? (phase.record.roadmapRow && roadmap !== null ? milestoneOf(roadmap, phase.record.roadmapRow) : null) ?? (stateMilestone ? stateMilestone.toLowerCase().replace(/[^a-z0-9а-яё]+/gi, "-").replace(/^-+|-+$/g, "") : null) ?? phase.id
+          : null;
+        const name = phase.record.branch === "phase" ? `phase/${phase.id}` : `milestone/${slug}`;
         const host = bb.hosts.experimental_client({ contract: hostContract });
-        const made = await bestEffort(ctx.log, "phase marker branch", runOnHost(host, { hostId, cwd: run.writer_workspace_path, command: `git branch -f phase/${phase.id} HEAD`, timeoutSec: 30 }), null);
-        book(phase, "decisions", "branch", made && made.exitCode === 0 ? `marker branch phase/${phase.id} at the accepted main` : "the marker branch could not be made");
+        const made = await bestEffort(ctx.log, "phase marker branch", runOnHost(host, { hostId, cwd: run.writer_workspace_path, command: `git branch -f ${name} HEAD`, timeoutSec: 30 }), null);
+        book(phase, "decisions", "branch", made && made.exitCode === 0 ? `marker branch ${name} at the accepted main` : "the marker branch could not be made");
       }
     }
     savePhase(db, phase.id, { record: { ...phase.record, closedDocs: { at: now(), commit: out.commit } }, state: "closed", at: now() });

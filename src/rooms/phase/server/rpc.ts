@@ -7,6 +7,7 @@ export function phaseRpc(api: PhaseApi) {
   return {
     phase_list: async ({ projectId, pmThreadId, live }) => api.list({ projectId, pmThreadId, live }).map((phase) => ({ ...phase, next: api.status(phase.id).next })),
     phase_get: async ({ phaseId }) => { const id = api.resolve?.(null, phaseId)?.id ?? phaseId; return { ...api.status(id), acceptancePackage: (await api.acceptancePackage?.(id)) ?? null }; },
+    phase_files: async ({ phaseId, path }) => api.phaseFiles(phaseId, path),
     phase_act: async ({ action, projectId, pmThreadId, phaseId, payload }) => {
       const p = payload as Record<string, never>;
       const need = () => { if (!phaseId) throw new Error(`${action} names the phase`); return api.resolve?.(projectId, phaseId)?.id ?? phaseId; };
@@ -46,5 +47,5 @@ export function phaseRpc(api: PhaseApi) {
       if (action === "close" && !note?.trim()) throw new Error("closing in words carries the words");
       return api.status(api.setState({ phaseId, state: action, words: note, by: "owner" }).id);
     },
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "phase_list" | "phase_get" | "phase_act" | "phase_control">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "phase_list" | "phase_get" | "phase_files" | "phase_act" | "phase_control">;
 }

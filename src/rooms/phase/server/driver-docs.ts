@@ -5,10 +5,10 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import { binaryFileCommand, binaryFileFingerprint } from "../stages";
 import { appendPart, getPhase, listParts, savePhase as savePhaseRow } from "../store";
 import { createCandidates } from "./candidate";
-import { PhaseRefusal, type DriverBase } from "./driver-tools";
+import { PhaseRefusal, STAGE_RU, type DriverBase } from "./driver-tools";
 import type { Phase, PhaseRecord, PhaseStage, TaskFact } from "../logic";
 import { sha256Hex, isNotFound, orMiss, bestEffort } from "@lane-pilot/kit";
-import { phaseFolder, renderBook } from "../logic";
+import { nextAction, phaseFolder, renderBook } from "../logic";
 
 /**
  * The phase's own reads and its book: the files of the PM's run (their hashes, their text), the documents written back, the
@@ -89,6 +89,52 @@ export function installDocs(base: DriverBase) {
     return { written, commit: committed?.commit ?? null, shas };
   }
 
+  /** Commits files that already exist in the project (the designer's drawing and its contract), by their explicit paths (SMA k_wd_c1). */
+  async function commitFiles(phase: Phase, paths: readonly string[], message: string): Promise<{ commit: string | null }> {
+    if (!phase.runId || !paths.length) return { commit: null };
+    const run = getRun(db, phase.runId);
+    const hostId = getRunWriterHost(db, phase.runId);
+    if (!run?.writer_workspace_path || !hostId) return { commit: null };
+    const host = bb.hosts.experimental_client({ contract: hostContract });
+    const committed = await bestEffort(bb.log, "phase manifest commit", host.call("gitCommitDocs", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, paths: paths.slice(0, 40), message }, { hostId, timeoutMs: 60_000 }), null);
+    return { commit: committed?.commit ?? null };
+  }
+
+  /** The pause handoff (SMA k_c_pause): HANDOFF.json for the machine and PAUSE.md for the person, committed best-effort. */
+  async function pauseHandoff(phase: Phase): Promise<void> {
+    if (phase.state !== "paused" || !phase.runId) return;
+    const parts = listParts(db, phase.id);
+    const last = parts.at(-1);
+    const next = nextAction(phase, facts(phase));
+    const issued = phase.record.execution?.issued ?? {};
+    const f = facts(phase);
+    const pieces = (phase.record.plan?.items ?? []).map((item) => ({ id: item.id, taskId: issued[item.id] ?? f.get(item.id)?.taskId ?? null, state: f.get(item.id)?.state ?? "not issued" }));
+    const handoff = {
+      phaseId: phase.id, stage: phase.stage, state: phase.state, goal: phase.goal,
+      nextAction: { key: next.key, text: next.text },
+      pieces,
+      openQuestions: (phase.record.questions ?? []).filter((question) => !question.answer).map((question) => ({ id: question.id, stage: question.stage, text: question.text })),
+      awaitingOwnerWord: next.key.includes(":word:") ? next.key : null,
+      candidate: phase.record.candidate ? { branch: phase.record.candidate.branch, verified: phase.record.candidate.verified ?? null } : null,
+      book: last ? { seq: last.seq, hash: last.hash } : null,
+      pausedAt: now(),
+      resume: `lane_pilot_phase {action:"resume", phaseId:"${phase.id}"}`,
+    };
+    const pause = [
+      `# Пауза — фаза ${phase.id}: ${phase.title}`, "",
+      `Остановились на стадии «${STAGE_RU[phase.stage] ?? phase.stage}» (${phase.stage}).`, "",
+      `Что дальше: ${next.text.split("\n")[0]?.slice(0, 600) ?? "—"}`, "",
+      pieces.length ? `Кусочки плана: ${pieces.map((piece) => `${piece.id} — ${piece.state}`).join("; ")}.` : "Кусочков плана пока нет.", "",
+      `Как продолжить: lane_pilot_phase {action:"resume", phaseId:"${phase.id}"} — фаза пойдёт дальше сама.`,
+      `Машинная выгрузка лежит рядом, в HANDOFF.json.`, "",
+    ].join("\n");
+    const written = await writeDocs(phase, [
+      { path: `${phaseFolder(phase.id)}/HANDOFF.json`, content: JSON.stringify(handoff, null, 2) },
+      { path: `${phaseFolder(phase.id)}/PAUSE.md`, content: pause },
+    ], `phase ${phase.id}: pause handoff`).catch(() => null);
+    if (written?.written.length) book(phase, "decisions", "handoff", `the pause handoff is written and committed (${written.written.join(", ")})`);
+  }
+
   /** Writes the phase book to the project (.agents/phases/<id>/BOOK.md) when it grew; a phase without a run binding keeps it on the hub only. */
   async function writeBook(phase: Phase): Promise<void> {
     const parts = listParts(db, phase.id);
@@ -155,5 +201,5 @@ export function installDocs(base: DriverBase) {
     return hostId ? createCandidates(bb.hosts.experimental_client({ contract: hostContract }) as never, hostId, bb.log) : null;
   }
 
-  return { mustGet, savePhase, book, move, facts, readFile, readText, writeDocs, writeBook, redoId, pmCheckoutPath, candidates, drawingSha };
+  return { mustGet, savePhase, book, move, facts, readFile, readText, writeDocs, commitFiles, pauseHandoff, writeBook, redoId, pmCheckoutPath, candidates, drawingSha };
 }

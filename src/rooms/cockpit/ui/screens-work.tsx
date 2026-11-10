@@ -35,6 +35,31 @@ export function PhasesScreen({ rpc, projectId }: { rpc: Rpc; projectId: string }
   );
 }
 
+/** The phase folder's files (SMA d_phase_files): a click reads one file's text under it. */
+function PhaseFiles({ rpc, phaseId }: { rpc: Rpc; phaseId: string }) {
+  const list = useLoad(() => rpc.call("phase_files", { phaseId }) as Promise<{ files: Array<{ path: string; size: number }> }>, [phaseId]);
+  const [open, setOpen] = useState<string | null>(null);
+  const rows = list.data?.files ?? [];
+  if (!rows.length) return null;
+  return (
+    <ul className="space-y-1 font-mono text-xs" data-testid="ck-phase-files">
+      {rows.map((file) => (
+        <li key={file.path}>
+          <button type="button" className="text-left underline" onClick={() => setOpen(open === file.path ? null : file.path)}>{file.path.split("/").pop()}</button>
+          <span className="text-muted-foreground"> · {file.size} B</span>
+          {open === file.path ? <PhaseFileText rpc={rpc} phaseId={phaseId} path={file.path} /> : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function PhaseFileText({ rpc, phaseId, path }: { rpc: Rpc; phaseId: string; path: string }) {
+  const file = useLoad(() => rpc.call("phase_files", { phaseId, path }) as Promise<{ content: { text: string; truncated: boolean } | null }>, [phaseId, path]);
+  const text = file.data?.content?.text;
+  return <pre className="max-h-60 overflow-auto whitespace-pre-wrap text-xs">{text ?? "…"}</pre>;
+}
+
 function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId: string; phaseId: string; onChanged: () => void }) {
   const status = useLoad(() => rpc.call("phase_get", { phaseId }) as Promise<PhaseStatus>, [phaseId]);
   const [words, setWords] = useState("");
@@ -88,6 +113,7 @@ function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId
           ) : null}
           <Disclosure summary={t("ckPhaseFolder")}>
             <p className="text-xs text-muted-foreground">.agents/phases/{phaseId}/ — BOOK.md{r.uat ? `, ${r.uat.path.split("/").pop()}` : ""}</p>
+            <PhaseFiles rpc={rpc} phaseId={phaseId} />
             <div className="max-h-80 overflow-auto text-xs"><Markdown content={s.book.slice(0, 20_000)} /></div>
           </Disclosure>
           {r.ownerWords && turn ? (

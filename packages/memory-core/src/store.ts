@@ -412,6 +412,14 @@ export function memoryFillRows(db: Database.Database): Array<{ projectId: string
     FROM lane_pilot_memory WHERE status='active' GROUP BY project_id, kind`).all() as Array<{ projectId: string; kind: string; n: number; bytes: number | null; used: number | null }>;
 }
 
+/** Active memory records of one origin across every project (the hub-wide lessons query, SMA k_t_learnings). */
+export function listMemoryByOrigin(db: Database.Database, origin: string, text?: string, limit = 50): Array<{ id: string; projectId: string; content: string; createdAt: number }> {
+  const rows = db.prepare(`SELECT id, project_id, content, created_at FROM lane_pilot_memory WHERE origin=? AND status='active' ORDER BY created_at DESC LIMIT 500`).all(origin) as Array<{ id: string; project_id: string; content: string; created_at: number }>;
+  const needle = text?.trim().toLowerCase();
+  return rows.filter((row) => !needle || row.content.toLowerCase().includes(needle)).slice(0, limit)
+    .map((row) => ({ id: row.id, projectId: row.project_id, content: row.content, createdAt: row.created_at }));
+}
+
 /** Hidden memory rows of every project, by status (the same report's shadow count). */
 export function memoryHiddenRows(db: Database.Database): Array<{ projectId: string; status: string; n: number }> {
   return db.prepare("SELECT project_id AS projectId, status, count(*) AS n FROM lane_pilot_memory WHERE status<>'active' GROUP BY project_id, status").all() as Array<{ projectId: string; status: string; n: number }>;

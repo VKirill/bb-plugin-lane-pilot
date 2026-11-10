@@ -10,7 +10,9 @@ import { createAttempt, createRun, createTask, openDatabase } from "../../src/ro
 
 const piece = (id: string, owns: string[]): PlanItem => ({
   id, title: id, wave: 1, promise: { given: "g", when: "w", then: `then ${id}` },
-  task: { id, owns_paths: owns, verification: [{ command: "npm test" }], acceptance: ["works"] },
+  // A screen piece (.tsx) owes a live check since k_we_verify: qa_cases + qa_url are its way to get one.
+  task: { id, owns_paths: owns, verification: [{ command: "npm test" }], acceptance: ["works"],
+    ...(owns.some((path) => path.endsWith(".tsx")) ? { qa_cases: [{ name: "renders" }], qa_url: "http://localhost:3000" } : {}) },
 });
 
 async function host(ownerWords: "on" | "off" = "off") {

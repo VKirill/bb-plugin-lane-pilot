@@ -150,7 +150,7 @@ describe("phase graph", () => {
     }
     const draw = nodes("lp.draw").find((node) => node.id === "draw");
     expect(draw?.role).toBe("specialist:design-lead");
-    for (const name of seen) if (name !== "lp.draw") expect(nodes(name).some((node) => String(node.role).includes("design-lead")), name).toBe(false);
+    for (const name of seen) if (name !== "lp.draw" && name !== "ui-audit") expect(nodes(name).some((node) => String(node.role).includes("design-lead")), name).toBe(false);
   });
 });
 

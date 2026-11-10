@@ -81,11 +81,19 @@ export function threatGap(record: PhaseRecord): string | null {
 const EXISTENCE_ONLY = /^\s*(test\s+-[efsd]|ls\b|stat\b|\[\s+-[efsd])/;
 
 /** Validation strategy: a piece whose every check only tests that something exists proves nothing about its promise. */
-export function validationGaps(items: readonly PlanItem[]): string[] {
-  return items.filter((item) => {
+export function validationGaps(items: readonly PlanItem[], liveCheckOff = false): string[] {
+  const why = items.filter((item) => {
     const checks = Array.isArray(item.task.verification) ? (item.task.verification as Array<{ command?: unknown }>).map((check) => String(check.command ?? "")) : [];
     return checks.length > 0 && checks.every((command) => EXISTENCE_ONLY.test(command));
   }).map((item) => `${item.id}: every check only tests that a file exists — add one that would fail without the work (VALIDATION.md)`);
+  // SMA k_we_verify: visible work owes a live check — unless the project switched browser_qa off, where the acceptance line
+  // names «visible work, no live check possible» and the owner decides on it there.
+  if (!liveCheckOff) for (const item of items.filter(buildsScreens)) {
+    const cases = Array.isArray(item.task.qa_cases) ? item.task.qa_cases.length : 0;
+    const url = typeof item.task.qa_url === "string" && item.task.qa_url.trim();
+    if (!cases || !url) why.push(`${item.id}: visible work owes a live check — name qa_cases and a qa_url to run them on, or switch browser_qa.enabled off for work no browser can check`);
+  }
+  return why;
 }
 
 /** The most rounds of the independent plan check before the phase stops and goes back (SMA: Up to three revision rounds, plan review convergence). */
@@ -237,6 +245,22 @@ const ROW = /^- \[([ xX])\] (\d+(?:\.\d+)*) (.+?)(?: — (.*))?$/;
 /** Phase closed in the roadmap: the row of the phase gets its [x]; the text is returned unchanged when there is no such row. */
 export function markRoadmap(text: string, row: string): string {
   return text.split("\n").map((line) => { const found = line.trim().match(ROW); return found && found[2] === row ? line.replace("- [ ]", "- [x]") : line; }).join("\n");
+}
+
+/** The milestone a roadmap row sits under (SMA k_we_branch): the last heading before the row, as a branch slug. */
+export function milestoneOf(roadmapText: string, row: string): string | null {
+  let section: string | null = null;
+  for (const line of roadmapText.split("\n")) {
+    const head = /^#{1,6}\s+(.+)$/.exec(line.trim());
+    if (head) section = head[1]!.trim();
+    const found = line.trim().match(ROW);
+    if (found && found[2] === row) {
+      if (!section) return null;
+      const slug = section.replace(/milestone\s*/i, "").trim().toLowerCase().replace(/[^a-z0-9а-яё]+/gi, "-").replace(/^-+|-+$/g, "");
+      return slug || null;
+    }
+  }
+  return null;
 }
 
 /** Transition (SMA: advance to the next phase): the first open row of the roadmap. */

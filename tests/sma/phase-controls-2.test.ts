@@ -101,12 +101,15 @@ describe("phase controls", () => {
   it("[sma:px_close] [sma:px_continue] closes only with words, and resume is the word that moves a paused phase", async () => {
     const f = await host();
     expect(() => f.phases.setState({ phaseId: f.id, state: "close" })).toThrow(/carries the words/);
-    const closed = f.phases.setState({ phaseId: f.id, state: "close", words: "the owner stopped the goal", by: "owner" });
-    expect(closed.state).toBe("closed");
-    expect(closed.record.closing).toMatchObject({ words: "the owner stopped the goal", by: "owner" });
     const paused = f.phases.setState({ phaseId: f.id, state: "pause", by: "owner" });
     expect(paused.state).toBe("paused");
     expect(f.phases.setState({ phaseId: f.id, state: "resume", by: "owner" }).state).toBe("active");
+    const closed = f.phases.setState({ phaseId: f.id, state: "close", words: "the owner stopped the goal", by: "owner" });
+    expect(closed.state).toBe("closed");
+    expect(closed.record.closing).toMatchObject({ words: "the owner stopped the goal", by: "owner" });
+    // A closed phase is never paused or resumed: new work is a new phase (k_wp_closed).
+    expect(() => f.phases.setState({ phaseId: f.id, state: "pause", by: "owner" })).toThrow(/closed/);
+    expect(() => f.phases.setState({ phaseId: f.id, state: "resume", by: "owner" })).toThrow(/closed/);
   });
 
   it("[sma:px_answer] writes the answer onto the question and refuses an unknown one", async () => {
