@@ -90,18 +90,18 @@ describe("security-audit", () => {
   const rows = (...found: unknown[][]) => { let at = -1; return (() => { at += 1; return { phase: "p", findings: found[at] ?? [], warnings: [] }; }) as never; };
   it("the spec's case: a quick tier scans two phases, a high finding is reported and review-fix offered", async () => {
     const r = await runSim("security-audit", { input: { scope: ".", tier: "quick" }, stubs: { recon: { found_entry_points: true }, "scan:child": rows([finding("high", { file: "src/auth.ts", line: 9, evidence: "token compared with ==" })], []), report: { severity_distribution: { high: 1 } } } });
-    expect(pathOf(r)).toBe("recon scan report offer done_offer");
+    expect(pathOf(r)).toBe("recon scan threat_model report offer done_offer");
     expect(out(r)).toMatchObject({ status: "done", tier: "quick", proposed_workflow: "review-fix", severity_distribution: { high: 1 } });
     expect((out(r)!.findings as unknown[]).length).toBe(1);
-    expect(r.called("scan:child")).toHaveLength(3);
+    expect(r.called("scan:child")).toHaveLength(2);
   });
 
-  it("the tier decides the phases: standard 5, deep 7; no findings means no offer", async () => {
+  it("the tier decides the phases: standard 4, deep 6; no findings means no offer", async () => {
     const standard = await runSim("security-audit", { input: { tier: "standard" }, stubs: { recon: { found_entry_points: true } } });
-    expect(standard.called("scan:child")).toHaveLength(5);
-    expect(pathOf(standard)).toBe("recon scan report goal_check done");
+    expect(standard.called("scan:child")).toHaveLength(4);
+    expect(pathOf(standard)).toBe("recon scan threat_model report goal_check done");
     const deep = await runSim("security-audit", { input: { tier: "deep" }, stubs: { recon: { found_entry_points: true } } });
-    expect(deep.called("scan:child")).toHaveLength(7);
+    expect(deep.called("scan:child")).toHaveLength(6);
   });
 
   it("nothing to attack (no entry points found) is blocked before scanning", async () => {
@@ -140,7 +140,7 @@ describe("ui-audit", () => {
   const audit = { score_40: 30, score_20: 14, findings: [finding("medium", { file: "src/pricing.tsx", line: 55, evidence: "focus ring missing" })], report_path: "reports/ui.md" };
   it("the spec's case: the browser captures the states, the designer scores them", async () => {
     const r = await runSim("ui-audit", { input: { url: "http://localhost:4173/pricing" }, stubs: { capture: { status: "pass", screenshots: ["s375.png", "s1280.png"] }, audit } });
-    expect(pathOf(r)).toBe("capture audit goal_check done");
+    expect(pathOf(r)).toBe("capture audit review_doc goal_check done");
     expect(out(r)).toMatchObject({ status: "done", score_40: 30, score_20: 14, screenshots: ["s375.png", "s1280.png"], report_path: "reports/ui.md" });
   });
 

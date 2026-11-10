@@ -216,15 +216,6 @@
           "card": "card text"
         }
       },
-      "humans": {
-        "consent": {
-          "answer_kind": "questionnaire"
-        },
-        "interview": {
-          "answer_kind": "answered",
-          "answer": "{}"
-        }
-      },
       "expect_path": [
         "consent",
         "interview",
@@ -234,7 +225,11 @@
       ],
       "expect_outputs": [
         "status == 'done'"
-      ]
+      ],
+      "human_answers": {
+        "consent": "questionnaire",
+        "interview": "answered"
+      }
     }
   },
   "goal_audit": "exempt"

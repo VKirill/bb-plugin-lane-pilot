@@ -153,12 +153,30 @@
       ]
     },
     {
+      "id": "hooks",
+      "type": "action",
+      "action": "lp.post_ship_hooks",
+      "title": {
+        "en": "Post-ship hook files",
+        "ru": "Файлы хуков после отгрузки"
+      },
+      "out": {
+        "count": "int",
+        "files": "string[]"
+      }
+    },
+    {
       "id": "post_ship",
       "type": "agent",
       "role": "errand",
       "title": {
         "en": "Post-ship hooks",
         "ru": "Хуки после отгрузки"
+      },
+      "skip_when": "hooks.count == 0",
+      "skip_out": {
+        "hooks_run": [],
+        "hooks_failed": []
       },
       "prompt": "Run `lane-plan render-hooks post-ship` and execute each hook it lists, in order. A failed hook does not undo the ship: return hooks_run and hooks_failed, a failed hook is listed, never retried blindly.",
       "out": {
@@ -279,6 +297,11 @@
     },
     {
       "from": "open_pr",
+      "to": "hooks",
+      "pass": "artifact"
+    },
+    {
+      "from": "hooks",
       "to": "post_ship",
       "pass": "artifact"
     },
@@ -311,6 +334,12 @@
         "open_pr": {
           "pr_url": "https://example/pr/1"
         },
+        "lp.post_ship_hooks": {
+          "count": 1,
+          "files": [
+            ".agents/planning/hooks/post-ship.md"
+          ]
+        },
         "post_ship": {
           "hooks_run": [],
           "hooks_failed": []
@@ -321,6 +350,7 @@
         "preflight",
         "review",
         "open_pr",
+        "hooks",
         "post_ship",
         "goal_check",
         "shipped"

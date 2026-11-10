@@ -9,7 +9,7 @@ import { chainStore } from "./chain-harness";
  * need tools the test machine does not have, so they stay `tested` with a note about what is not live yet.
  */
 const dir = __dirname;
-const sources = readdirSync(dir).filter((name) => /^chains-.*\.test\.ts$/.test(name) && name !== "chains-status.test.ts").map((name) => readFileSync(join(dir, name), "utf8")).join("\n");
+const sources = readdirSync(dir).filter((name) => /^chains-.*\.test\.ts$/.test(name) && name !== "chains-status.test.ts").map((name) => readFileSync(join(dir, name), "utf8")).concat(readFileSync(join(dir, "../sma/parity-d4-workflows-b-2.test.ts"), "utf8")).join("\n");
 const withCase = new Set([...sources.matchAll(/runSim\("([a-z0-9][a-z0-9.-]*)"/g)].map((match) => match[1]!));
 const OWN = ["about-site", "deploy", "insights-post", "invoice-send", "reels", "resume", "seo-cocoon", "web-research", "x-to-telegram-digest", "year-review"];
 
@@ -56,6 +56,6 @@ describe("status of the built-in chains", () => {
     expect(ids).toEqual(expect.arrayContaining(["seo-template-scale", "seo-trust"]));
     // SEO wave 3b: the link program is a chain; outreach and mentions are subworkflows it calls.
     expect(ids).toEqual(expect.arrayContaining(["seo-linkbuilding", "seo-outreach", "seo-mentions"]));
-    expect(ids).toHaveLength(102); // +1 lp.clarify (clarifying questions before a plan, SMA m_sg_clarify), +1 idea-shootdown (EGM brainstorm-only), +1 lp.episodes (stage 1 R5), +5 seo wave-1, +4 wave-2, +5 wave-3 (template-scale, trust, linkbuilding, outreach, mentions)
+    expect(ids).toHaveLength(110); // +8 SMA command workflows (milestone-summary, mvp-phase, note-add, phase-assumptions, profile-user, secure-phase, spec-phase, todo-add; their cases are in tests/sma/parity-d4-workflows-b-2.test.ts), +1 lp.clarify (clarifying questions before a plan, SMA m_sg_clarify), +1 idea-shootdown (EGM brainstorm-only), +1 lp.episodes (stage 1 R5), +5 seo wave-1, +4 wave-2, +5 wave-3 (template-scale, trust, linkbuilding, outreach, mentions)
   });
 });

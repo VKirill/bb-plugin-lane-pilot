@@ -57,7 +57,7 @@
         "en": "Readable milestone summary",
         "ru": "Читаемый итог этапа"
       },
-      "prompt": "Read the milestone's artifacts: .agents/planning/ROADMAP.md, STATE.md, .agents/phases/*/SUMMARY.md, UAT.md and REVIEW.md. Write .agents/planning/MILESTONE-SUMMARY.md in plain words: what shipped per phase, the decisions that were taken, the lessons, the open items and how to try it.",
+      "prompt": "Read the milestone's artifacts: .agents/planning/ROADMAP.md, STATE.md, .agents/phases/*/SUMMARY.md, UAT.md and REVIEW.md. Add a section headed `## <milestone> — <date>` at the top of .agents/planning/MILESTONE-SUMMARY.md (create the file if missing) and keep every earlier section as it is; never overwrite an earlier milestone's summary. The section, in plain words: what shipped per phase, the decisions that were taken, the lessons, the open items and how to try it.",
       "out": {
         "summary_path": "string",
         "open_items": "string[]"

@@ -49,6 +49,7 @@
     },
     "phase_id": {
       "type": "string",
+      "default": "",
       "note": "a finished phase; its summaries and decisions derive the gaps when gaps are not given"
     }
   },
@@ -90,7 +91,7 @@
         "en": "Derive the gaps",
         "ru": "Вывести пробелы"
       },
-      "skip_when": "$inputs.gaps.length > 0",
+      "skip_when": "$inputs.gaps.length > 0 || !$inputs.phase_id",
       "skip_out": {
         "gaps": []
       },
@@ -117,7 +118,12 @@
         "en": "Write tests for these?",
         "ru": "Писать тесты на это?"
       },
-      "prompt": "Show the gaps (derived or given); the owner agrees or strikes lines. A timeout blocks the run.",
+      "skip_when": "$inputs.gaps.length > 0 || !$inputs.phase_id",
+      "skip_out": {
+        "answer": "",
+        "answer_kind": "agree"
+      },
+      "prompt": "Show the gaps derived from the phase; the owner agrees or strikes lines. A timeout blocks the run.",
       "out": {
         "answer": "string",
         "answer_kind": "agree|strike|timeout"

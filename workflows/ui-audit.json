@@ -38,6 +38,11 @@
     "quality_mode": {
       "type": "quick|standard|full",
       "default": "standard"
+    },
+    "review_file": {
+      "type": "bool",
+      "default": false,
+      "note": "also score the six pillars 0-4 and write the review to .agents/ui/<slug>/UI-REVIEW.md"
     }
   },
   "outputs": {
@@ -111,7 +116,7 @@
       "role": "specialist:design-lead",
       "session": "new",
       "src": "impeccable (Apache-2.0): critique, audit",
-      "prompt": "Score from the captured evidence only: each of the six dimensions this audit names (visual hierarchy, interaction states, accessibility, responsiveness, micro-interactions, edge cases) 0-4 with the evidence for the score; keep the totals (ten Nielsen heuristics /40 and five technical dimensions /20); P0-P3 per finding with a screenshot reference. Write the review to .agents/ui/<slug>/UI-REVIEW.md and return it as report_path. Do not edit anything.",
+      "prompt": "Score from the captured evidence only: ten Nielsen heuristics 0-4 (total /40) and five technical dimensions /20 (accessibility, performance, theming, responsiveness, implementation integrity); P0-P3 per finding with a screenshot reference. Do not edit anything.",
       "out": {
         "score_40": "int",
         "score_20": "int",
@@ -122,6 +127,34 @@
         "maxVisits": 1,
         "timeoutMin": 25
       }
+    },
+    {
+      "id": "review_doc",
+      "type": "agent",
+      "role": "specialist:design-lead",
+      "session": "new",
+      "title": {
+        "en": "Six pillars review file",
+        "ru": "Файл ревью по шести измерениям"
+      },
+      "skip_when": "!$inputs.review_file",
+      "skip_out": {
+        "review_path": ""
+      },
+      "prompt": "From the audit's evidence only, score each of the six dimensions (visual hierarchy, interaction states, accessibility, responsiveness, micro-interactions, edge cases) 0-4 with the evidence for the score, and write the review to .agents/ui/<slug>/UI-REVIEW.md; a file that already exists is never overwritten, the new text goes to UI-REVIEW.new.md next to it. Return the path as review_path. Do not edit anything else.",
+      "out": {
+        "review_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 15
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
     },
     {
       "id": "done",
@@ -175,6 +208,11 @@
     },
     {
       "from": "audit",
+      "to": "review_doc",
+      "pass": "artifact"
+    },
+    {
+      "from": "review_doc",
       "to": "goal_check",
       "pass": "artifact"
     },
@@ -218,6 +256,7 @@
       "expect_path": [
         "capture",
         "audit",
+        "review_doc",
         "goal_check",
         "done"
       ],

@@ -260,6 +260,13 @@ export function withContractDefaults(input: Row): Row {
 type HelperUsage = { tokens: number; costUsd: number; unknown?: true };
 type LpTaskNode = Extract<GraphNode, { type: "lp-task" }>;
 
+/** Key names of a profile that hold a secret: whole words only (api_key, apiKey, DB_PASSWORD), so `monkey` or `keyboard_layout` pass. */
+export function secretKeyName(key: string): boolean {
+  const words = key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  if (words.some((word) => /^(passwords?|passwd|secrets?|tokens?|credentials?|apikeys?|privatekeys?)$/.test(word))) return true;
+  return words.some((word, at) => word === "key" && (words[at - 1] === "api" || words[at - 1] === "private"));
+}
+
 export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, services: Services, agents: WorkflowAgents = createWorkflowAgents()): void {
   const { bb, db, host } = ctx;
   const lintTask = createTaskLinter(ctx, services);
@@ -669,7 +676,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     let hasPassport = false, hasUi = false, hasValueMap = false, hasRoadmap = false, hasProfile = false;
     if (checkout) {
       // The planning files of a started project (SMA k_wst_quick): an existing install asks only for what is still missing.
-      const ran = await bestEffort(ctx.log, "workflow state probe", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: "ls .agents/PASSPORT.md .agents/passport.md PROJECT.md 2>/dev/null | head -1; echo ---; ls package.json src/ui app components 2>/dev/null | head -3; echo ---; ls .agents/planning/VALUE-MAP.md .agents/planning/ROADMAP.md .agents/planning/PROFILE.md .agents/planning/profile.json 2>/dev/null", timeoutSec: 20, timeoutMs: 30_000 }), null);
+      const ran = await bestEffort(ctx.log, "workflow state probe", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: `ls .agents/PASSPORT.md .agents/passport.md PROJECT.md 2>/dev/null | head -1; echo ---; ls package.json src/ui app components 2>/dev/null | head -3${switchOf(rt, "project.start_research") === "on" ? "; echo ---; ls .agents/planning/VALUE-MAP.md .agents/planning/ROADMAP.md .agents/planning/PROFILE.md .agents/planning/profile.json 2>/dev/null" : ""}`, timeoutSec: 20, timeoutMs: 30_000 }), null);
       const [passport = "", ui = "", planning = ""] = (ran?.stdout ?? "").split("---");
       const present = new Set(planning.split("\n").map((line) => line.trim().split("/").pop()!.toLowerCase()).filter(Boolean));
       hasPassport = passport.trim().length > 0; hasUi = /app|components|ui/.test(ui);
@@ -680,11 +687,16 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   });
 
   // What the start of a project counts from the tree itself, before any question (SMA k_wst_map): five numbers the value map
-  // opens VALUE-MAP.md with. Counted on the host (git ls-files, else a find), never by a model.
-  action("lp.tree_counts", async (_c, rt) => {
-    const none = { sources: 0, tests: 0, docs: 0, planning: 0, commits: 0 };
+  // opens VALUE-MAP.md with. Counted on the host (git ls-files, else a find), never by a model. Only where the project set
+  // project.start_research to on: unset, nothing is read on the host, `enabled` is off and every note is empty, so the start
+  // runs the nodes it always ran with the prompts it always had. The notes (text of the node's params) are the only way the
+  // new instructions reach the prompts of the start.
+  action("lp.tree_counts", async (c, rt) => {
+    const params = rec(rec(c.node).params);
+    const none = { enabled: "off", sources: 0, tests: 0, docs: 0, planning: 0, commits: 0, counts_note: "", profile_note: "", recap_note: "" };
+    if (switchOf(rt, "project.start_research") !== "on") return none;
     const checkout = await bestEffort(ctx.log, "tree counts checkout", pmCheckout(rt), null);
-    if (!checkout) return none;
+    if (!checkout) return { ...none, enabled: "on", profile_note: str(params.profile_note), recap_note: str(params.recap_note) };
     const ran = await bestEffort(ctx.log, "tree counts", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path,
       command: "git ls-files 2>/dev/null || find . -type f -not -path './.git/*' -not -path './node_modules/*' -not -path './dist/*' -not -path './build/*' | sed 's|^\\./||'; echo ===PLAN===; ls .agents/planning 2>/dev/null; echo ===COM===; git rev-list --count HEAD 2>/dev/null || echo 0",
       timeoutSec: 30, timeoutMs: 45_000 }), null);
@@ -692,24 +704,38 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const [planningList = "", commitsRaw = ""] = rest.split("===COM===");
     const files = listing.split("\n").map((line) => line.trim()).filter(Boolean);
     const isTest = /(^|\/)(__tests__|tests?|spec)\/|\.(test|spec)\.[a-z0-9]+$/i, isCode = /\.(ts|tsx|js|jsx|mjs|cjs|py|go|rs|java|rb|php|cs|swift|kt|kts|lua|vue|svelte|c|cc|cpp|h|hpp)$/i;
-    return { sources: files.filter((file) => isCode.test(file) && !isTest.test(file)).length,
+    const counts = { sources: files.filter((file) => isCode.test(file) && !isTest.test(file)).length,
       tests: files.filter((file) => isTest.test(file)).length,
       docs: files.filter((file) => file.endsWith(".md")).length,
       planning: planningList.split("\n").filter((line) => line.trim()).length,
       commits: parseInt(commitsRaw, 10) || 0 };
+    return { enabled: "on", ...counts, counts_note: `${str(params.counts_note)} sources ${counts.sources}, tests ${counts.tests}, docs ${counts.docs}, planning artifacts ${counts.planning}, commits ${counts.commits}.`.trim(),
+      profile_note: str(params.profile_note), recap_note: str(params.recap_note) };
+  });
+
+  // The post-ship hook files of the project, counted on the host (SMA k_ws_post): the ship starts a session for the hooks only when
+  // there is at least one, so a repository without hook files costs no model session. The hooks themselves are listed by `lane-plan render-hooks post-ship`.
+  action("lp.post_ship_hooks", async (_c, rt) => {
+    const checkout = await bestEffort(ctx.log, "post-ship hooks checkout", pmCheckout(rt), null);
+    if (!checkout) return { count: 0, files: [] as string[] };
+    const ran = await bestEffort(ctx.log, "post-ship hooks", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: "ls .agents/planning/hooks/post-ship*.md 2>/dev/null || true", timeoutSec: 15, timeoutMs: 20_000 }), null);
+    const files = (ran?.stdout ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
+    return { count: files.length, files };
   });
 
   // The one profile writer (SMA k_lib_profilewriter): the start's preview hands the profile object over instead of running the
-  // CLI itself. Every value goes through the anamnesis unsafeReason first; a refused value is reported by key name only, never
-  // by content. Clean values go to `lane-plan profile --set` on the host, or merge into .agents/planning/profile.json where the
+  // CLI itself. Every key name (password, secret, token, api key, credential, private key) and every value goes through the
+  // anamnesis unsafeReason first; a refused pair is skipped and reported by key name only, never by content. Clean values go to `lane-plan profile --set` on the host, or merge into .agents/planning/profile.json where the
   // checkout has no lane-plan.
   action("lp.profile_write", async (c, rt) => {
     const params = rec(rec(c.node).params);
     let profile: unknown = params.profile === undefined ? undefined : c.template(params.profile);
     if (typeof profile === "string") { try { profile = JSON.parse(profile); } catch { profile = undefined; } }
     const entries = Object.entries(rec(profile)).filter(([, value]) => ["string", "number", "boolean"].includes(typeof value));
-    const refused = entries.filter(([key, value]) => unsafeReason(String(value)) !== null || unsafeReason(key) !== null).map(([key]) => key);
-    if (refused.length) return { refused, set: [] as string[], reason: `profile_write refused: ${refused.join(", ")} look like secrets or instructions; name the field, never the value` };
+    // A refused pair is skipped and named by key; the others are written and the start goes on.
+    const refused = entries.filter(([key, value]) => secretKeyName(key) || unsafeReason(String(value)) !== null || unsafeReason(key) !== null).map(([key]) => key);
+    entries.splice(0, entries.length, ...entries.filter(([key]) => !refused.includes(key)));
+    if (!entries.length) return { refused, set: [] as string[] };
     const checkout = await pmCheckout(rt);
     const set: string[] = [];
     const cli = await runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: "command -v lane-plan", timeoutSec: 15, timeoutMs: 20_000 });
@@ -763,7 +789,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const coverage = await bestEffort(ctx.log, "requirement coverage", requirementCoverage(rt), { uncovered: [] as string[], covered: [] as string[], total: 0 });
     return { open_tasks: tasks.length - latest.filter((attempt) => attempt.state === "accepted").length - failed, failed_tasks: failed, unmerged: 0, gate_ok: failed === 0, running_attempts: open.length, merged_commits: list(c.resolve("ctx.merged_commits")).map(String),
       gate_state: gateState, unmerged_seen: Math.max(unlanded, phaseTrees), uncovered_reqs: coverage.uncovered,
-      retro_living: switchOf(rt, "retro.living") === "on" ? "on" : "off", milestone_archive: switchOf(rt, "milestone.archive") === "on" ? "on" : "off" };
+      retro_living: switchOf(rt, "retro.living") === "on" ? "on" : "off", milestone_archive: switchOf(rt, "milestone.archive") === "on" ? "on" : "off", milestone_summary: switchOf(rt, "milestone.summary") === "on" ? "on" : "off" };
   });
 
   // The full-gate mark (SMA k_ws_fullgate), only where the project set ship.full_gate to on; unset the node answers ok as it always did.

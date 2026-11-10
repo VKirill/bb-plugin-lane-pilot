@@ -89,7 +89,8 @@
         "unmerged_seen": "int",
         "uncovered_reqs": "string[]",
         "retro_living": "string",
-        "milestone_archive": "string"
+        "milestone_archive": "string",
+        "milestone_summary": "string"
       }
     },
     {
@@ -135,7 +136,7 @@
         "metrics": "{}"
       },
       "src": "maestro-flow:workflows/retrospective.md",
-      "prompt": "Read the run metrics - tasks planned/accepted/failed, rework iterations per task, severity distribution of findings, failure classes, merge conflicts. Four lenses: technical (patterns, debt), process (stalls, retries), quality (defects that slipped), decision (choices to revisit).\nDistill insights with a stable id INS-{8hex} (hash of lens + title) so a repeat run is idempotent; each insight routes as a rule candidate, a note or a task, as a candidate only. Read-only on sources; never overwrite history.\n\nAppend this milestone's changed limits to .agents/planning/PROJECT.md (Vision, Value, Limits — refresh the Limits from what the run taught; create the file if missing).\n",
+      "prompt": "Read the run metrics - tasks planned/accepted/failed, rework iterations per task, severity distribution of findings, failure classes, merge conflicts. Four lenses: technical (patterns, debt), process (stalls, retries), quality (defects that slipped), decision (choices to revisit).\nDistill insights with a stable id INS-{8hex} (hash of lens + title) so a repeat run is idempotent; each insight routes as a rule candidate, a note or a task, as a candidate only. Read-only on sources; never overwrite history.\n\nIf .agents/planning/PROJECT.md already exists, append this milestone's changed limits to it (Vision, Value, Limits — refresh the Limits from what the run taught, only if the file already exists; never create it).\n",
       "out": {
         "insights": "Insight[]",
         "retro_path": "string",
@@ -354,6 +355,12 @@
       "from": "close",
       "to": "summary",
       "pass": "artifact",
+      "when": "close.status == 'closed' && status.milestone_summary == 'on'"
+    },
+    {
+      "from": "close",
+      "to": "approve_knowledge",
+      "pass": "artifact",
       "when": "close.status == 'closed'"
     },
     {
@@ -443,7 +450,6 @@
         "status",
         "retro",
         "close",
-        "summary",
         "approve_knowledge",
         "archive",
         "closed"

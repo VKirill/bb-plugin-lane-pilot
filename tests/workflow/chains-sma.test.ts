@@ -29,8 +29,9 @@ describe("SMA command workflows", () => {
   });
 
   it("ship: a ready phase is shipped, a held one says what holds it", async () => {
-    const shipped = await runSim("ship", { input: { phase_id: "ph_a" }, stubs: { preflight: { ready: true, held_by: [] }, open_pr: { pr_url: "https://x/pr/1" }, post_ship: { hooks_run: [], hooks_failed: [] } } });
-    expect(pathOf(shipped)).toBe("gate preflight review open_pr post_ship goal_check shipped");
+    const shipped = await runSim("ship", { input: { phase_id: "ph_a" }, stubs: { preflight: { ready: true, held_by: [] }, open_pr: { pr_url: "https://x/pr/1" }, "lp.post_ship_hooks": { count: 0, files: [] } } });
+    expect(pathOf(shipped)).toBe("gate preflight review open_pr hooks post_ship goal_check shipped");
+    expect(shipped.skipped).toEqual(["review", "post_ship"]);
     const held = await runSim("ship", { input: { phase_id: "ph_a" }, stubs: { preflight: { ready: false, held_by: ["no full gate marker"] } } });
     expect(pathOf(held)).toBe("gate preflight held");
     expect(out(held)).toMatchObject({ status: "held", held_by: ["no full gate marker"] });
@@ -57,9 +58,10 @@ describe("SMA command workflows", () => {
     expect(out(changes)).toMatchObject({ status: "changes_requested", rounds: 2 });
   });
 
-  it("project-start: probe, tree, value map, preview, the writer, the ask, research, requirements, recap", async () => {
-    const r = await runSim("project-start", { input: {}, stubs: { "lp.state_probe": { has_value_map: false, has_roadmap: false, has_profile: false }, "lp.profile_write": { refused: [], set: [] }, value_map: { value_map: "for shop owners" }, preview: { stack: {}, memory: {}, profile: {} }, requirements: { requirements: ["REQ-1"] }, recap: { next_steps: ["a", "b", "c"] } } });
-    expect(pathOf(r)).toBe("probe tree value_map preview profile_write ask research requirements recap done");
+  it("project-start: value map, preview, recap", async () => {
+    const r = await runSim("project-start", { input: {}, stubs: { "lp.tree_counts": { enabled: "off" }, value_map: { value_map: "for shop owners" }, preview: { stack: {}, memory: {} }, recap: { next_steps: ["a", "b", "c"] } } });
+    expect(pathOf(r)).toBe("tree probe value_map preview profile_write ask research requirements recap done");
+    expect(r.skipped).toEqual(["probe", "profile_write", "ask", "research", "requirements"]);
     expect(out(r)).toMatchObject({ status: "done", next_steps: ["a", "b", "c"] });
   });
 });

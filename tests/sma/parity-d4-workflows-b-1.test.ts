@@ -71,7 +71,7 @@ async function setup(script: Script = {}) {
   setRunThread(db, RUN, PM);
   const ctx = createCore(bb, db);
   const services = { dispatchWriter: async () => ({ runId: RUN, taskId: "t", state: "queued" }), stability: { loadParked: async () => [] }, taskUsage } as unknown as Services;
-  const engine = new WorkflowEngine({ db, harnessVersion: "test", runtimeFor: chainRuntimeFor(ctx, services), resolveWorkflow: (id) => (id === "lp.close" ? lpCloseStub() : null) });
+  const engine = new WorkflowEngine({ db, harnessVersion: "test", runtimeFor: chainRuntimeFor(ctx, services), resolveWorkflow: (id) => (id === "lp.close" ? lpCloseStub() : id === "milestone-summary" ? wf("milestone-summary.json") : null) });
   registerPureActions(engine); registerReducers(engine);
   registerChainExecutors(engine, ctx, services, createWorkflowAgents());
   registerDispatchExecutors(engine, ctx.bb);

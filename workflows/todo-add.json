@@ -23,11 +23,11 @@
   "examples": {
     "ru": [
       "запиши на потом: перенести метрики на ClickHouse",
-      "добавь туду: починить флаки тест платежей"
+      "запиши туду: починить флаки тест платежей"
     ],
     "en": [
       "note for later: move metrics to ClickHouse",
-      "add a todo: fix the flaky payments test"
+      "put a todo on the list: fix the flaky payments test"
     ]
   },
   "not_for": [
@@ -70,15 +70,13 @@
       },
       "skip_when": "$inputs.title != ''",
       "skip_out": {
-        "id": "{{slug}}",
         "title": "{{$inputs.title}}",
         "body": "{{$inputs.thought}}",
         "line": "'todo added'",
         "priority": "{{$inputs.priority}}"
       },
-      "prompt": "Turn the thought into a structured todo: a short title, a priority (low|normal|high), a one-paragraph body and a slug id. Keep the thought's meaning verbatim in body.",
+      "prompt": "Turn the thought into a structured todo: a short title, a priority (low|normal|high), a one-paragraph body. The id of the todo is made by the graph from the run, never by you. Keep the thought's meaning verbatim in body.",
       "out": {
-        "id": "string",
         "title": "string",
         "body": "string",
         "line": "string",
@@ -100,9 +98,9 @@
       "type": "action",
       "action": "fs.write",
       "params": {
-        "path": ".agents/todos/items/{{date}}-{{slug}}/",
+        "path": ".agents/todos/items/{{date}}-{{run_id}}/",
         "contents": {
-          "meta.yaml": "id: {{shape.id}}\ntitle: {{shape.title}}\nstatus: ready\npriority: {{shape.priority}}\nestimate: {{$inputs.estimate}}\ndepends_on: []\ncreated: {{date}}\n",
+          "meta.yaml": "id: {{run_id}}\ntitle: {{shape.title}}\nstatus: ready\npriority: {{shape.priority}}\nestimate: {{$inputs.estimate}}\ndepends_on: []\ncreated: {{date}}\n",
           "README.md": "{{shape.body}}"
         }
       },
@@ -116,7 +114,7 @@
       "action": "emit",
       "map": {
         "status": "done",
-        "todo_id": "shape.id",
+        "todo_id": "{{run_id}}",
         "line": "shape.line",
         "todo_path": "write.todo_path"
       }
@@ -140,10 +138,9 @@
       },
       "stubs": {
         "shape": {
-          "id": "flaky-payments",
           "title": "Fix the flaky payments test",
           "body": "fix the flaky payments test",
-          "line": "todo flaky-payments added"
+          "line": "todo added"
         }
       },
       "expect_path": [

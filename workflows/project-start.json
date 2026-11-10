@@ -5,8 +5,8 @@
     "ru": "Старт проекта (сначала карта ценности)"
   },
   "description": {
-    "en": "Starts work on a project: what the tree itself counts, a value map before any question (who it is for, what they get, how we know), a preview of the stack, the tests and the memory it already has, the infra profile written by the one writer that refuses secrets, a question round for what is still missing, research into stack, features, architecture and pitfalls, the requirements, then a recap with next steps, PROJECT.md and the roadmap skeleton. An install that already has the map, the roadmap and the profile only gets pointed at resume-project.",
-    "ru": "Начинает работу над проектом: что считает само дерево, карта ценности до любых вопросов (для кого, что получают, как узнаем), обзор стека, тестов и уже накопленной памяти, профиль инфраструктуры через единственного писателя, который отказывает секретам, круг вопросов о том, чего ещё нет, исследование стека, функций, архитектуры и подводных камней, требования, затем итог со следующими шагами, PROJECT.md и каркасом дорожной карты. Установка, где карта, дорожная карта и профиль уже есть, получает только указание на resume-project."
+    "en": "Starts work on a project: a value map before any question (who it is for, what they get, how we know), a preview of the stack, the tests and the memory it already has, the infra profile, the owner's working style and risk, then a recap with next steps and the roadmap skeleton.",
+    "ru": "Начинает работу над проектом: карта ценности до любых вопросов (для кого, что получают, как узнаем), обзор стека, тестов и уже накопленной памяти, профиль инфраструктуры, стиль работы владельца и риск, затем итог со следующими шагами и каркасом дорожной карты."
   },
   "examples": {
     "ru": [
@@ -33,14 +33,13 @@
     }
   },
   "outputs": {
-    "status": "done|resumed|refused",
+    "status": "done|resumed",
     "value_map": "string",
     "next_steps": "string[]",
     "refused": "string[]"
   },
   "quality_mode": {
-    "default": "standard",
-    "effect": "quick - без исследования"
+    "default": "standard"
   },
   "requires": {
     "plugins": [
@@ -50,8 +49,33 @@
   "budget": {
     "max_minutes": 90
   },
-  "entry": "probe",
+  "entry": "tree",
   "nodes": [
+    {
+      "id": "tree",
+      "type": "action",
+      "action": "lp.tree_counts",
+      "title": {
+        "en": "What the tree counts (only with project.start_research on)",
+        "ru": "Что считает дерево (только при project.start_research = on)"
+      },
+      "out": {
+        "enabled": "string",
+        "sources": "int",
+        "tests": "int",
+        "docs": "int",
+        "planning": "int",
+        "commits": "int",
+        "counts_note": "string",
+        "profile_note": "string",
+        "recap_note": "string"
+      },
+      "params": {
+        "counts_note": "Open VALUE-MAP.md with these five lines counted from the tree itself, verbatim:",
+        "profile_note": "Exception for this run: do not run the writer yourself. Return the infra profile as the JSON object `profile` (key: value); the next step writes it with the one profile writer, which refuses secrets.",
+        "recap_note": "Also write .agents/planning/PROJECT.md from VALUE-MAP.md: Vision, Value and Limits (the no-gos and the risks the anamnesis names). Read .agents/planning/research/STACK.md, FEATURES.md, ARCHITECTURE.md and PITFALLS.md and the requirements before the roadmap, and build the roadmap skeleton from the requirements. A file that already exists is never overwritten: merge the new text into it keeping what is there, or leave it and write the new text to <name>.new.md next to it (it already exists and was changed by hand, or was not written by the machine: the new text is in <name>.new.md next to it)."
+      }
+    },
     {
       "id": "probe",
       "type": "action",
@@ -68,22 +92,16 @@
         "has_value_map": "bool",
         "has_roadmap": "bool",
         "has_profile": "bool"
-      }
-    },
-    {
-      "id": "tree",
-      "type": "action",
-      "action": "lp.tree_counts",
-      "title": {
-        "en": "What the tree counts",
-        "ru": "Что считает дерево"
       },
-      "out": {
-        "sources": "int",
-        "tests": "int",
-        "docs": "int",
-        "planning": "int",
-        "commits": "int"
+      "skip_when": "tree.enabled != 'on'",
+      "skip_out": {
+        "has_passport": false,
+        "open_tasks": 0,
+        "plan_exists": false,
+        "has_ui": false,
+        "has_value_map": false,
+        "has_roadmap": false,
+        "has_profile": false
       }
     },
     {
@@ -94,11 +112,7 @@
         "en": "Value map",
         "ru": "Карта ценности"
       },
-      "skip_when": "probe.has_value_map",
-      "skip_out": {
-        "value_map": ""
-      },
-      "prompt": "Value map builder, before asking anything. Open .agents/planning/VALUE-MAP.md with these five lines counted from the tree itself, verbatim: sources {{tree.sources}}, tests {{tree.tests}}, docs {{tree.docs}}, planning artifacts {{tree.planning}}, commits {{tree.commits}}. Then from README, the passport (project-onboard), the site and the code — who the product is for, the job they hire it for, what they get, how we would know it works.",
+      "prompt": "Value map builder, before asking anything: from README, the passport (project-onboard), the site and the code — who the product is for, the job they hire it for, what they get, how we would know it works. Write .agents/planning/VALUE-MAP.md. {{tree.counts_note}}",
       "out": {
         "value_map": "string"
       },
@@ -111,7 +125,11 @@
           "kind": "report",
           "version": 1
         }
-      ]
+      ],
+      "skip_when": "probe.has_value_map",
+      "skip_out": {
+        "value_map": ""
+      }
     },
     {
       "id": "preview",
@@ -121,11 +139,11 @@
         "en": "Stack, tests, memory preview",
         "ru": "Стек, тесты, память"
       },
-      "prompt": "Stack and tests: languages, frameworks, the test command and whether it is green. Memory preview: lane_pilot_memory context (what the hub corpus already knows), the memory graph of notes by area. Infra profile: hosts, start, deploy, logs — return it as the JSON object `profile` (key: value); you never run the writer yourself, the next step is the one profile writer and it refuses secrets.",
+      "prompt": "Stack and tests: languages, frameworks, the test command and whether it is green. Memory preview: lane_pilot_memory context (what the hub corpus already knows), the memory graph of notes by area. Infra profile: hosts, start, deploy, logs into lane-plan profile --set (the one profile writer). {{tree.profile_note}}",
       "out": {
         "stack": "any",
         "memory": "any",
-        "profile": "any"
+        "profile": "any?"
       },
       "guards": {
         "maxVisits": 1,
@@ -159,6 +177,11 @@
       "out": {
         "refused": "string[]",
         "set": "string[]"
+      },
+      "skip_when": "tree.enabled != 'on'",
+      "skip_out": {
+        "refused": [],
+        "set": []
       }
     },
     {
@@ -169,7 +192,7 @@
         "en": "What is still missing",
         "ru": "Чего ещё не хватает"
       },
-      "skip_when": "probe.has_profile",
+      "skip_when": "tree.enabled != 'on' || probe.has_profile",
       "skip_out": {
         "answer": "",
         "answer_kind": "answered"
@@ -199,7 +222,7 @@
       "skip_out": {
         "research_notes": ""
       },
-      "prompt": "Research competitors and conventions for what the project is, from the value map and the owner's answers. Write .agents/planning/research/STACK.md, FEATURES.md, ARCHITECTURE.md and PITFALLS.md — each with its sources and what the roadmap should take from it.",
+      "prompt": "Research competitors and conventions for what the project is, from the value map and the owner's answers. Write .agents/planning/research/STACK.md, FEATURES.md, ARCHITECTURE.md and PITFALLS.md — each with its sources and what the roadmap should take from it. A file that already exists is never overwritten: merge the new text into it keeping what is there, or leave it and write the new text to <name>.new.md next to it (it already exists and was changed by hand, or was not written by the machine: the new text is in <name>.new.md next to it).",
       "out": {
         "research_notes": "string"
       },
@@ -212,7 +235,8 @@
           "kind": "report",
           "version": 1
         }
-      ]
+      ],
+      "skip_when": "tree.enabled != 'on'"
     },
     {
       "id": "requirements",
@@ -222,7 +246,7 @@
         "en": "Requirements",
         "ru": "Требования"
       },
-      "prompt": "From the goal, the value map, the answers and the research: 3-7 requirements with ids into .agents/planning/REQUIREMENTS.md, the way new-milestone writes them.",
+      "prompt": "From the goal, the value map, the answers and the research: 3-7 requirements with ids into .agents/planning/REQUIREMENTS.md, the way new-milestone writes them. A file that already exists is never overwritten: merge the new text into it keeping what is there, or leave it and write the new text to <name>.new.md next to it (it already exists and was changed by hand, or was not written by the machine: the new text is in <name>.new.md next to it).",
       "out": {
         "requirements": "string[]"
       },
@@ -235,7 +259,11 @@
           "kind": "report",
           "version": 1
         }
-      ]
+      ],
+      "skip_when": "tree.enabled != 'on' || $mode == 'quick'",
+      "skip_out": {
+        "requirements": []
+      }
     },
     {
       "id": "recap",
@@ -245,11 +273,7 @@
         "en": "Recap and next steps",
         "ru": "Итог и шаги"
       },
-      "skip_when": "probe.has_roadmap",
-      "skip_out": {
-        "next_steps": []
-      },
-      "prompt": "Working style and risk from the owner's anamnesis. Write .agents/planning/PROJECT.md from VALUE-MAP.md: Vision, Value and Limits — the no-gos and the risks the anamnesis names. Read .agents/planning/research/STACK.md, FEATURES.md, ARCHITECTURE.md and PITFALLS.md before the roadmap. Recap in five lines, three next steps, and the roadmap skeleton built from the requirements (lane-plan template fill ROADMAP, STATE; phases with lane-plan phase add).",
+      "prompt": "Working style and risk from the owner's anamnesis. Recap in five lines, three next steps, and the roadmap skeleton (lane-plan template fill ROADMAP, STATE; phases with lane-plan phase add). {{tree.recap_note}}",
       "out": {
         "next_steps": "string[]"
       },
@@ -277,9 +301,14 @@
         {
           "kind": "report",
           "version": 1,
+          "required": false,
           "from": "requirements"
         }
-      ]
+      ],
+      "skip_when": "probe.has_roadmap",
+      "skip_out": {
+        "next_steps": []
+      }
     },
     {
       "id": "done",
@@ -289,7 +318,7 @@
         "status": "done",
         "value_map": "value_map.value_map",
         "next_steps": "recap.next_steps",
-        "refused": "[]"
+        "refused": "profile_write.refused"
       }
     },
     {
@@ -302,20 +331,13 @@
         "next_steps": "['the project is already started — continue with resume-project']",
         "refused": "[]"
       }
-    },
-    {
-      "id": "refused",
-      "type": "action",
-      "action": "emit",
-      "map": {
-        "status": "refused",
-        "value_map": "''",
-        "next_steps": "[]",
-        "refused": "profile_write.refused"
-      }
     }
   ],
   "edges": [
+    {
+      "from": "tree",
+      "to": "probe"
+    },
     {
       "from": "probe",
       "to": "resumed",
@@ -323,10 +345,6 @@
     },
     {
       "from": "probe",
-      "to": "tree"
-    },
-    {
-      "from": "tree",
       "to": "value_map",
       "pass": "artifact"
     },
@@ -339,11 +357,6 @@
       "from": "preview",
       "to": "profile_write",
       "pass": "artifact"
-    },
-    {
-      "from": "profile_write",
-      "to": "refused",
-      "when": "profile_write.refused.length > 0"
     },
     {
       "from": "profile_write",
@@ -376,28 +389,15 @@
     "sim": {
       "input": {},
       "stubs": {
-        "lp.state_probe": {
-          "has_value_map": false,
-          "has_roadmap": false,
-          "has_profile": false
+        "lp.tree_counts": {
+          "enabled": "off"
         },
         "value_map": {
           "value_map": "v"
         },
         "preview": {
           "stack": {},
-          "memory": {},
-          "profile": {}
-        },
-        "lp.profile_write": {
-          "refused": [],
-          "set": []
-        },
-        "research": {
-          "research_notes": "n"
-        },
-        "requirements": {
-          "requirements": ["REQ-1"]
+          "memory": {}
         },
         "recap": {
           "next_steps": [
@@ -407,14 +407,9 @@
           ]
         }
       },
-      "humans": {
-        "ask": {
-          "answer_kind": "answered"
-        }
-      },
       "expect_path": [
-        "probe",
         "tree",
+        "probe",
         "value_map",
         "preview",
         "profile_write",
