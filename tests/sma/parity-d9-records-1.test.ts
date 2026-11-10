@@ -98,7 +98,7 @@ describe("the project's planning home", () => {
       mkdirSync(join(cwd, "src"), { recursive: true });
       const call = (edits: Array<{ path: string; content: string }>) => {
         const full = edits.map((e) => ({ ...e, expectedSha256: null }));
-        return writePhaseBook({ requestedHostId: "h1", projectCwd: cwd, previewSha256: sha256Hex(JSON.stringify(full)), planningDir: "docs/plan", edits: full } as never);
+        return writePhaseBook({ requestedHostId: "h1", projectCwd: cwd, previewSha256: sha256Hex(JSON.stringify(full)), planningDir: "docs/plan", edits: full } as never, {} as never);
       };
       const ok = await call([{ path: "docs/plan/ROADMAP.md", content: "- [ ] phase one" }]);
       expect(ok.writes[0]!.status).toBe("applied");
@@ -149,7 +149,7 @@ describe("the rule maturation ladder", () => {
     const { openDatabase } = await import("../../src/rooms/plugin-db");
     const { upsertLessonProposal } = await import("../../packages/run-insights/src/rules");
     const db = openDatabase(bb);
-    upsertLessonProposal(db, "projA", { rule: "run lint before commit", form: "hook" });
+    upsertLessonProposal(db, "projA", { rule: "run lint before commit", form: "hook" }, 1);
     db.prepare("UPDATE lane_pilot_rule_proposal SET state='accepted', decided_by='auto', trial_state='confirmed' WHERE project_id='projA'").run();
     const id = (db.prepare("SELECT id FROM lane_pilot_rule_proposal WHERE project_id='projA'").get() as { id: string }).id;
     logRuleEvent(db, "projA", id, "tier", "warning");

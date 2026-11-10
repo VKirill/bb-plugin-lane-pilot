@@ -134,7 +134,7 @@ export async function runRulesCli(deps: RulesCliDeps, args: string[]): Promise<O
     }
     if (op === "ladder" || op === "tune") {
       const rows = listRuleForms(deps.db, projectId, ["accepted"]);
-      const stats = ruleTrialStatsMany(deps.db, projectId ?? "", rows.filter((row) => row.projectId === projectId || !projectId).map((row) => ({ id: row.id, since: row.revisionStartedAt ?? row.decidedAt ?? 0 })));
+      const stats = ruleTrialStatsMany(deps.db, projectId ?? "", rows.filter((row) => row.projectId === projectId || !projectId).map((row) => ({ id: row.id, since: 0 })));
       const lines: string[] = [];
       for (const row of rows) {
         const tier = ruleTier(deps.db, row.projectId, row.id);
