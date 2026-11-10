@@ -182,6 +182,9 @@ export function installMethods(tools: MethodsTools) {
     if (input.critique) {
       const why = reactions.critiqueProblems(input.critique);
       if (why.length) throw new PhaseRefusal("the drawing critique form is not filled", why);
+      // A set_case continuation keeps the form and its verdict for later checks of the judge.
+      if (input.critique.continuation?.kind === "set_case")
+        await reactions.storeCritiqueCase({ drawingSha: drawn.sha256, form: input.critique, expectedVerdict: input.critique.verdict });
     }
     // The design measurement journal: one line per drawing; first pass = the first drawing of the phase, feasible, and passed by its critic.
     await reactions.journalDrawing({ at: now(), projectId: phase.projectId, phaseId: phase.id, designer: input.designer, reviewer: input.reviewer ?? null, drawingSha: drawn.sha256,

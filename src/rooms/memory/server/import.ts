@@ -1,4 +1,4 @@
-import { redactKnown, sha256Hex } from "@lane-pilot/kit";
+import { credentialIssue, sha256Hex } from "@lane-pilot/kit";
 import { maskPii, scrubQuote } from "../../anamnesis";
 import { memoryTokens, relevantRecords, sameSubject, searchMemoryRecords, storeMemoryRecords,
   type MemoryCandidate, type MemoryDatabase, type MemorySettings } from "@lane-pilot/memory-core";
@@ -32,9 +32,9 @@ const POINTER_ONLY = /^(?:(?:see|см\.?|see also|ref|reference)\s+)?(?:https?:\
 
 const isPointerOnly = (text: string) => !text.includes("\n") && text.length <= 300 && POINTER_ONLY.test(text.trim());
 
-/** The same mask chain an agent write passes: known secrets, quote scrub, PII. */
+/** The same mask chain an agent write passes: the shared credential mask inside scrubQuote (which includes the known-secrets mask), then PII. */
 export function maskImportContent(content: string): string {
-  return maskPii(scrubQuote(redactKnown(content), MASK_MAX_CHARS)).text;
+  return maskPii(scrubQuote(content, MASK_MAX_CHARS)).text;
 }
 
 const toEpochMs = (value: unknown): number | null => {
@@ -135,6 +135,8 @@ export function runMemoryImport(options: MemoryImportOptions): ImportReport {
     const base: Omit<ImportOutcome, "outcome"> = { line: index + 1, source_id: sourceId || `line-${index + 1}`, created_at: createdAt, ...(origin ? { origin } : {}) };
     if (!sourceId) return { ...base, outcome: "dropped" as const, reason: "invalid" };
     if (typeof line.content !== "string" || !line.content.trim()) return { ...base, outcome: "dropped" as const, reason: "empty" };
+    // Credential text is dropped whole, not stored masked: the store's own check refuses it too.
+    if (credentialIssue(line.content)) return { ...base, outcome: "dropped" as const, reason: "secret" };
 
     const masked = maskImportContent(line.content);
     if (!masked.trim()) return { ...base, outcome: "dropped" as const, reason: "empty" };

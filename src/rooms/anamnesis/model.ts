@@ -1,8 +1,9 @@
 import { z } from "zod";
+import { credentialIssue, maskCredentials } from "@lane-pilot/kit";
 
 /**
  * Anamnesis (A1): what Lane Pilot knows about its owner as a person. Short records with evidence and dates, never one block of
- * prose. Pure types and rules (no node imports) so that the contract, the hub and the host share them.
+ * prose. Pure types and rules so that the contract, the hub and the host share them; the UI takes only its types.
  */
 export const KINDS = ["self", "skill", "project", "event", "person", "interest", "preference", "fact", "tool", "knowledge", "hobby"] as const;
 export type Kind = (typeof KINDS)[number];
@@ -90,27 +91,22 @@ const UNSAFE: Array<[RegExp, string]> = [
   [/[\u0000-\u0008\u000b-\u001f\u007f​-‏‪-‮⁠﻿]/u, "control characters"],
   [/<\/?\s*(system|developer|assistant|tool)(?:\s|>)/iu, "role markup"],
   [/\b(ignore|disregard|override)\b.{0,50}\b(previous|prior|system|developer)\b/isu, "instructions to the reader"],
-  [/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/u, "a private key"],
-  [/\b(?:sk-[a-z0-9_-]{20,}|gh[pousr]_[a-z0-9]{20,})\b/iu, "an API key"],
-  [/\b[A-Z0-9_]*(?:PASSWORD|SECRET|TOKEN|API_KEY)\s*=\s*(?!\*\*\*)\S+/iu, "a credential assignment"],
 ];
 /** The reason a text may not be stored as a statement, or null. The record is skipped, never half-written. */
 export function unsafeReason(text: string): string | null {
   for (const [pattern, reason] of UNSAFE) if (pattern.test(text)) return reason;
+  const credential = credentialIssue(text);
+  if (credential) return credential;
   return null;
 }
 
 /**
- * A quote the owner can read in review, short and with credentials masked. A quote is a pointer aid, so masking
- * (instead of refusing) loses nothing the evidence ref does not still point to.
+ * A quote the owner can read in review, short and with credentials masked by the one shared table
+ * (SMA k_lib_secretsmask). A quote is a pointer aid, so masking (instead of refusing) loses nothing the evidence
+ * ref does not still point to.
  */
 export function scrubQuote(text: string, max: number = MAX_QUOTE): string {
-  const masked = text
-    .replace(/[\u0000-\u0008\u000b-\u001f\u007f​-‏‪-‮⁠﻿]/gu, " ")
-    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, "***")
-    .replace(/\b(?:sk-[a-z0-9_-]{20,}|gh[pousr]_[a-z0-9]{20,}|xox[abp]-[a-z0-9-]{10,}|AKIA[0-9A-Z]{16})\b/gi, "***")
-    .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]{16,}/g, "$1***")
-    .replace(/\b([A-Z0-9_]*(?:PASSWORD|SECRET|TOKEN|API_KEY)\s*[=:]\s*)\S+/gi, "$1***")
+  const masked = maskCredentials(text.replace(/[\u0000-\u0008\u000b-\u001f\u007f​-‏‪-‮⁠﻿]/gu, " ")).text
     .replace(/\s+/g, " ").trim();
   return masked.length > max ? `${masked.slice(0, max - 1)}…` : masked;
 }

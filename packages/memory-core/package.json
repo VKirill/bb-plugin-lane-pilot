@@ -12,5 +12,8 @@
   },
   "peerDependencies": {
     "better-sqlite3": ">=12.0.0"
+  },
+  "dependencies": {
+    "@lane-pilot/kit": "0.1.0"
   }
 }

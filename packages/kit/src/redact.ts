@@ -99,19 +99,56 @@ export function redactKnownDeep<T>(value:T):T {
 export const CREDENTIAL_MASK = "[password hidden: it is in the owner's message; the PM keeps it in Env Catalog]";
 // A value: no spaces, 4+ characters, at least one Latin letter or digit (so «пароль такой же» is left alone), not a link.
 const VALUE = String.raw`(?!https?:\/\/)(?=[^\s]*[A-Za-z0-9])[^\s]{4,}`;
-const KEYED = new RegExp(String.raw`((?:парол[ьяюе]|password|passwd|pwd|pass|токен|token|api[ _-]?key|secret|секрет)\s*(?:[:=—–-]\s*|\s+))(` + VALUE + ")", "giu");
-const AFTER_EMAIL = new RegExp(String.raw`([\w.+-]+@[\w-]+(?:\.[\w-]+)+)(\s*[:/|,;]?\s*)(?=[^\s]*[A-Za-z])(?=[^\s]*[\d\W_])(` + VALUE.replace("{4,}", "{6,}") + ")", "gu");
+// A word that only means a secret inside its value («secret plan», «pass this on») needs a separator or a credential-shaped token;
+// the unambiguous keywords («пароль», «token») take the loose space form as before.
+const CRED_TOKEN = String.raw`(?=[^\s]*(?:[\d_]|[^\s\w]))` + VALUE.replace("{4,}", "{4,}");
+const KEYED = new RegExp(String.raw`((?:парол[ьяюе]|password|passwd|токен|token|api[ _-]?key)\s*(?:[:=—–-]\s*|\s+)|(?:pwd|pass|secret|секрет)\s*[:=—–-]\s*|(?:pwd|pass|secret|секрет)\s+(?=` + CRED_TOKEN + `))(` + VALUE + ")", "giu");
+// The value after an email is separated by at least one space or punctuation mark (or the email's own tail becomes the
+// «value»), and the token itself carries a letter plus a digit or non-word mark — a plain word is not a credential.
+const AFTER_EMAIL = new RegExp(String.raw`([\w.+-]+@[\w-]+(?:\.[\w-]+)+)(\s*[:/|,;]+\s*|\s+)(?=[^\s]*[A-Za-z])(?=[^\s]*(?:[\d_]|[^\s\w]))(` + VALUE.replace("{4,}", "{6,}") + ")", "gu");
 
 /**
- * The owner's request without the credentials typed into it: a value after a keyword («пароль: …», «token …») and the word right after
- * an email address («Авторизация у меня там такая name@site.ru S3cr3t!»). A phase stored the magicseo ТЗ verbatim, so its password went
- * into BOOK.md, CONTEXT.md and SECURITY.md in the repository and into the first commit (replay 2026-10-31), and to every helper's prompt.
- * The email stays: it names the login.
+ * The one credential table every outward writer shares (SMA k_lib_secretsmask): private-key blocks, well-known token
+ * shapes, JWTs, Bearer tokens and keyed assignments — including Russian «пароль»/«токен» and UPPER_KEY forms.
+ * A rule's mask keeps the part that names what was hidden (the keyword, the email login, the Bearer scheme).
+ */
+type CredentialRule = { pattern: RegExp; reason: string; mask: (m: RegExpExecArray | string[], mask: string) => string };
+const CREDENTIAL_TABLE: CredentialRule[] = [
+  { pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, reason: "a private key", mask: (_m, mask) => mask },
+  { pattern: /\b(?:sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})\b/g, reason: "an API key", mask: (_m, mask) => mask },
+  { pattern: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, reason: "an API key", mask: (_m, mask) => mask },
+  { pattern: /(\bBearer\s+)[A-Za-z0-9._~+/=-]{16,}/g, reason: "a credential", mask: (m, mask) => `${m[1]}${mask}` },
+  { pattern: /\b([A-Z0-9_]*(?:PASSWORD|SECRET|TOKEN|API_KEY)\s*[=:]\s*)\S+/g, reason: "a credential assignment", mask: (m, mask) => `${m[1]}${mask}` },
+  { pattern: KEYED, reason: "a credential assignment", mask: (m, mask) => `${m[1]}${mask}` },
+  { pattern: AFTER_EMAIL, reason: "a credential", mask: (m, mask) => `${m[1]}${m[2] || " "}${mask}` },
+];
+
+/** Why a text may not be written outward: what the credential table saw, or null. */
+export function credentialIssue(text:string):string | null {
+  for (const rule of CREDENTIAL_TABLE) { rule.pattern.lastIndex = 0; if (rule.pattern.test(text)) return rule.reason; }
+  return null;
+}
+
+/** The one mask: every table hit becomes `mask`, plus every secret the server fetched (redactKnown). */
+export function maskCredentials(text:string, mask:string = MASK):{ text:string; masked:boolean } {
+  let out = text; let masked = false;
+  for (const rule of CREDENTIAL_TABLE) {
+    out = out.replace(rule.pattern, (...args) => { masked = true; return rule.mask(args as unknown as RegExpExecArray, mask); });
+  }
+  const known = redactKnown(out);
+  if (known !== out) { out = known; masked = true; }
+  return { text: out, masked };
+}
+
+/**
+ * The owner's request without the credentials typed into it: the shared credential table with the long mask that
+ * points at the owner's message. A phase stored the magicseo ТЗ verbatim, so its password went into BOOK.md,
+ * CONTEXT.md and SECURITY.md in the repository and into the first commit (replay 2026-10-31), and to every helper's
+ * prompt. The email stays: it names the login.
  */
 export function withoutCredentials(text:string):string {
   // Idempotent: a mask already in the text is kept as it is (a phase is cleaned when stored and again when read).
-  return text.split(CREDENTIAL_MASK).map((part) => part.replace(KEYED, (_match, lead:string) => `${lead}${CREDENTIAL_MASK}`)
-    .replace(AFTER_EMAIL, (_match, email:string, gap:string) => `${email}${gap || " "}${CREDENTIAL_MASK}`)).join(CREDENTIAL_MASK);
+  return text.split(CREDENTIAL_MASK).map((part) => maskCredentials(part, CREDENTIAL_MASK).text).join(CREDENTIAL_MASK);
 }
 
 /** Text without Lane Pilot's `[lane-pilot-selection:<uuid>]` markers: the token a session start carries is never part of a goal or a phase. */
