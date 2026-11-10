@@ -58,3 +58,17 @@ export function asWorker(user: string, program: string, args: readonly string[],
   if (!WORKER_USER.test(user)) throw new Error(`worker_user_invalid: ${user}`);
   return { program: SUDO, args: ["-n", "-u", user, ...(keep.length ? [`--preserve-env=${[...new Set(keep)].join(",")}`] : []), program, ...args] };
 }
+
+/** The owner's paths a worker must never read (SMA m_ac_identity_probe); each is probed with `test -r` as the worker. */
+export const WORKER_SECRET_PATHS = [".ssh", ".lane-pilot", ".codex/auth.json", ".claude/.credentials.json", ".aws", ".gnupg"] as const;
+
+/** Identity probe: the worker OS user cannot reach the owner's secrets. Any readable path is reported as exposed and the probe fails. */
+export async function workerSecretReach(user: string, ownerHome = homedir()): Promise<{ ok: boolean; reachable: string[] }> {
+  if (!WORKER_USER.test(user)) throw new Error(`worker_user_invalid: ${user}`);
+  const reachable: string[] = [];
+  for (const rel of WORKER_SECRET_PATHS) {
+    const probe = await spawnAsync(SUDO, ["-n", "-u", user, "/usr/bin/test", "-r", join(ownerHome, rel)], { timeout: 10_000 });
+    if (probe.status === 0) reachable.push(join(ownerHome, rel));
+  }
+  return { ok: reachable.length === 0, reachable };
+}

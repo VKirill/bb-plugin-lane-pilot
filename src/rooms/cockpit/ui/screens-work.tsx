@@ -3,8 +3,10 @@ import { Markdown } from "@get-bb/plugin-sdk/app";
 import { t } from "@lane-pilot/i18n";
 import { Badge, Button, Disclosure } from "@lane-pilot/ui-kit";
 import { Field, Loaded, Panel, RefreshButton, fill, useLoad, type Rpc } from "./kit";
+import { StageStrip } from "../../work-graph/ui";
+import type { StageCell } from "../../work-graph";
 
-type PhaseRow = { id: string; title: string; goal: string; stage: string; state: string; next?: { text: string; waitsForPm: boolean } };
+type PhaseRow = { id: string; title: string; goal: string; stage: string; state: string; next?: { text: string; waitsForPm: boolean }; cells?: StageCell[] };
 type PhaseStatus = {
   phase: PhaseRow & { record: { plan?: { items: Array<{ id: string; title: string; wave: number; promise: { then: string } }> }; questions?: Array<{ id: string; text: string; blocking: boolean; answer?: string }>; acceptance?: { lines: Array<{ id: string; ok: boolean; detail: string }> }; uat?: { path: string; lines?: Array<{ n: number; pieceId: string; state: string; note?: string }> }; ownerWords?: boolean; execution?: { issued: Record<string, string> };
     lessons?: { draft?: { text: string; state: string } } } };
@@ -24,7 +26,7 @@ export function PhasesScreen({ rpc, projectId }: { rpc: Rpc; projectId: string }
             <div key={row.id} className="rounded-md border border-border p-2" data-testid={`ck-phase-${row.id}`}>
               {/* One open task: opening a phase card closes the one that was open. */}
               <button type="button" className="flex w-full min-w-0 items-center gap-2 text-left" onClick={() => setOpen(open === row.id ? null : row.id)} aria-expanded={open === row.id}>
-                <Badge variant="outline">{row.stage}</Badge><span className="min-w-0 flex-1 truncate text-sm font-medium">{row.title}</span><span className="text-xs text-muted-foreground">{row.state}</span>
+                <Badge variant="outline">{row.stage}</Badge>{row.cells ? <StageStrip cells={row.cells} testId={`ck-phase-strip-${row.id}`} /> : null}<span className="min-w-0 flex-1 truncate text-sm font-medium">{row.title}</span><span className="text-xs text-muted-foreground">{row.state}</span>
               </button>
               {open === row.id ? <PhaseCard rpc={rpc} projectId={projectId} phaseId={row.id} onChanged={list.reload} /> : null}
             </div>

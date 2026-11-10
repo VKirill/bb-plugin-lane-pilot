@@ -1,12 +1,13 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../../contracts";
 import type { PhaseApi } from "./driver";
+import { phaseStageCells } from "../logic";
 
 /** Phases over RPC: the list, one phase with its book, and the controls a person has on the screen. */
 export function phaseRpc(api: PhaseApi) {
   return {
-    phase_list: async ({ projectId, pmThreadId, live }) => api.list({ projectId, pmThreadId, live }).map((phase) => ({ ...phase, next: api.status(phase.id).next })),
-    phase_get: async ({ phaseId }) => { const id = api.resolve?.(null, phaseId)?.id ?? phaseId; return { ...api.status(id), acceptancePackage: (await api.acceptancePackage?.(id)) ?? null }; },
+    phase_list: async ({ projectId, pmThreadId, live }) => api.list({ projectId, pmThreadId, live }).map((phase) => ({ ...phase, next: api.status(phase.id).next, cells: phaseStageCells(phase.stage, phase.state) })),
+    phase_get: async ({ phaseId }) => { const id = api.resolve?.(null, phaseId)?.id ?? phaseId; const status = api.status(id); return { ...status, cells: phaseStageCells(status.phase.stage, status.phase.state), acceptancePackage: (await api.acceptancePackage?.(id)) ?? null }; },
     phase_act: async ({ action, projectId, pmThreadId, phaseId, payload }) => {
       const p = payload as Record<string, never>;
       const need = () => { if (!phaseId) throw new Error(`${action} names the phase`); return api.resolve?.(projectId, phaseId)?.id ?? phaseId; };

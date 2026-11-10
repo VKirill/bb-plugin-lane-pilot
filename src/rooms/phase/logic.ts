@@ -759,3 +759,14 @@ export function renderBook(phase: Phase, parts: readonly BookPart[]): string {
   }
   return lines.join("\n");
 }
+
+/** One cell per PHASE_STAGES stage for the phase's picture (SMA m_ws_stage_graph): before the current passed,
+ *  it running (failed when the phase is stopped), the rest pending. */
+export type PhaseStageCell = { stageId: string; state: "passed" | "failed" | "running" | "pending"; rounds: number; failures: number; reason: string | null };
+export function phaseStageCells(stage: string, state: string): PhaseStageCell[] {
+  const current = (PHASE_STAGES as readonly string[]).indexOf(stage);
+  return PHASE_STAGES.map((stageId, index) => ({
+    stageId, rounds: index === current ? 1 : 0, failures: index === current && state === "stopped" ? 1 : 0, reason: null,
+    state: index < current || state === "closed" ? "passed" : index > current ? "pending" : state === "stopped" ? "failed" : state === "active" ? "running" : "pending",
+  }));
+}

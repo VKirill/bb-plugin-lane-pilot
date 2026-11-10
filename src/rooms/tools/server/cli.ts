@@ -32,6 +32,7 @@ import { FORECAST_USAGE, runForecastCli } from "../../forecast/server";
 import { calibrationPassport } from "../../forecast/server";
 import { RUN_GOAL_USAGE, runGoalSweep, runRunGoalCli } from "../../run-goal/server";
 import { CAPABILITY_USAGE, runCapabilityCli } from "../../capability/server";
+import { workerSecretReach } from "../../verification";
 import { OUTAGE_USAGE, runOutageCli } from "../../outage/server";
 import { BACKLOG_USAGE, runBacklogCli } from "../../backlog/server";
 import { runHypothesisCli } from "../../hypotheses/server";
@@ -574,7 +575,10 @@ ${ERRANDS_USAGE}` },
           return { exitCode:0, stdout:JSON.stringify(subagentReceipts(db, { projectId, days }), null, 2) };
         }
         if (command === "run-goal") return await runRunGoalCli(services.runGoal, args);
-        if (command === "capabilities") return await runCapabilityCli(services.capabilities, args);
+        if (command === "capabilities") return await runCapabilityCli(services.capabilities, args, async () => {
+          const user = args[1] ?? "lp-worker";
+          return await workerSecretReach(user);
+        });
         if (command === "outages") return runOutageCli(ctx, args);
         if (command === "failures") {
           const days = args[0] === "--since" ? Number(args[1]) : undefined;
