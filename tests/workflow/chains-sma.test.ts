@@ -29,10 +29,10 @@ describe("SMA command workflows", () => {
   });
 
   it("ship: a ready phase is shipped, a held one says what holds it", async () => {
-    const shipped = await runSim("ship", { input: { phase_id: "ph_a" }, stubs: { preflight: { ready: true, held_by: [] }, open_pr: { pr_url: "https://x/pr/1" } } });
-    expect(pathOf(shipped)).toBe("preflight open_pr goal_check shipped");
-    const held = await runSim("ship", { input: { phase_id: "ph_a" }, stubs: { preflight: { ready: false, held_by: ["no full gate marker"] } } });
-    expect(pathOf(held)).toBe("preflight held");
+    const shipped = await runSim("ship", { input: { phase_id: "ph_a" }, stubs: { gate: { ok: true, failing: [] }, preflight: { ready: true, held_by: [] }, open_pr: { pr_url: "https://x/pr/1" } } });
+    expect(pathOf(shipped)).toBe("gate preflight open_pr goal_check shipped");
+    const held = await runSim("ship", { input: { phase_id: "ph_a" }, stubs: { gate: { ok: true, failing: [] }, preflight: { ready: false, held_by: ["no full gate marker"] } } });
+    expect(pathOf(held)).toBe("gate preflight held");
     expect(out(held)).toMatchObject({ status: "held", held_by: ["no full gate marker"] });
   });
 

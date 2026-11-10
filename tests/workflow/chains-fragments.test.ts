@@ -40,13 +40,13 @@ describe("lp.plan", () => {
   const task = (id: string) => ({ id, objective: id });
   it("quick: one task, linted, no plan critique", async () => {
     const r = await runSim("lp.plan", { input: { goal: "g" }, mode: "quick", stubs: { plan: { tasks: [task("t1")], task_count: 1, waves: [["t1"]] } } });
-    expect(pathOf(r)).toBe("plan lint ok");
+    expect(pathOf(r)).toBe("research patterns strategy plan lint ok");
     expect(out(r)).toMatchObject({ status: "ok", task_count: 1, waves: [["t1"]] });
   });
 
   it("standard with 3 tasks: the whole plan is critiqued, a rework goes back to the planner in the same session", async () => {
     const r = await runSim("lp.plan", { input: { goal: "g" }, stubs: { plan: { tasks: [task("a"), task("b"), task("c")], task_count: 3 }, plan_critic: [{ status: "rework" }, { status: "pass" }] } });
-    expect(pathOf(r)).toBe("plan lint check plan_critic plan lint check plan_critic ok");
+    expect(pathOf(r)).toBe("research patterns strategy plan lint check plan_critic plan lint check plan_critic ok");
     expect(out(r)).toMatchObject({ status: "ok", plan_verdict: "pass" });
     const second = r.db.prepare("SELECT input_json FROM lane_pilot_wf_step WHERE run_id=? AND step_key='plan#2'").get(r.summary.runId) as { input_json: string };
     expect(JSON.parse(second.input_json).via.mode).toBe("same-session");
@@ -54,26 +54,26 @@ describe("lp.plan", () => {
 
   it("standard with fewer than 3 tasks skips the critique", async () => {
     const r = await runSim("lp.plan", { input: { goal: "g" }, stubs: { plan: { tasks: [task("a")], task_count: 1 } } });
-    expect(pathOf(r)).toBe("plan lint ok");
+    expect(pathOf(r)).toBe("research patterns strategy plan lint ok");
   });
 
   it("a contract that does not lint three times fails the plan without asking the owner (he takes no part in the loop)", async () => {
     const stubs = { plan: { tasks: [task("a")], task_count: 1 }, lint: { ok: false, errors: ["owns_paths overlap"] } };
     const r = await runSim("lp.plan", { input: { goal: "g" }, stubs });
-    expect(pathOf(r)).toBe("plan lint plan lint plan lint failed");
+    expect(pathOf(r)).toBe("research patterns strategy plan lint plan lint plan lint failed");
     expect(out(r)).toMatchObject({ status: "failed" });
   });
 
   it("lint rounds and critique rounds share the plan's four visits: a rework past them goes on as low confidence, not a guard failure (live 2026-10-25)", async () => {
     const lint = [{ ok: false, errors: ["e"] }, { ok: false, errors: ["e"] }, { ok: true, errors: [] }, { ok: true, errors: [] }];
     const r = await runSim("lp.plan", { input: { goal: "g" }, mode: "full", stubs: { plan: { tasks: [task("a")], task_count: 1 }, lint, plan_critic: { status: "rework" } } });
-    expect(pathOf(r)).toBe("plan lint plan lint plan lint check plan_critic plan lint check plan_critic low");
+    expect(pathOf(r)).toBe("research patterns strategy plan lint plan lint plan lint check plan_critic plan lint check plan_critic low");
     expect(out(r)).toMatchObject({ status: "low_confidence" });
   });
 
   it("the critique that keeps asking for rework goes on as a low-confidence plan after 3 rounds, without the owner", async () => {
     const r = await runSim("lp.plan", { input: { goal: "g" }, mode: "full", stubs: { plan: { tasks: [task("a")], task_count: 1 }, plan_critic: { status: "rework" } } });
-    expect(pathOf(r)).toBe("plan lint check plan_critic plan lint check plan_critic plan lint check plan_critic low");
+    expect(pathOf(r)).toBe("research patterns strategy plan lint check plan_critic plan lint check plan_critic plan lint check plan_critic low");
     expect(out(r)).toMatchObject({ status: "low_confidence" });
   });
 });
@@ -117,16 +117,16 @@ describe("lp.review", () => {
   const dims = (rows: Record<string, unknown[]>) => ((ctx: { input: { item?: unknown } }) => ({ dimension: String(ctx.input.item), findings: rows[String(ctx.input.item)] ?? [] })) as never;
 
   it("quick: two dimensions, no spec check, no majority check, a clean pass", async () => {
-    const r = await runSim("lp.review", { input: { range: "HEAD~1..HEAD", dimensions: ["correctness", "security"] }, mode: "quick" });
-    expect(pathOf(r)).toBe("scope dims screen confirm aggregate result");
+    const r = await runSim("lp.review", { input: { range: "HEAD~1..HEAD", dimensions: ["correctness", "security"] }, mode: "quick", stubs: { prepass: { findings: [], critical_count: 0, rework: false } } });
+    expect(pathOf(r)).toBe("scope prepass dims screen confirm aggregate result");
     expect(r.skipped).toContain("confirm");
     expect(out(r)).toMatchObject({ status: "pass", warn: false, critical_count: 0 });
     expect(r.called("dims:child")).toHaveLength(2);
   });
 
   it("standard: a critical finding is confirmed by 3 critics, 2 of 3 decide, and the work goes back", async () => {
-    const r = await runSim("lp.review", { input: { dimensions: ["correctness", "maintainability"] }, stubs: { "dims:child": dims({ correctness: [finding("critical", "correctness")] }), confirm: { finding_id: "x", confirmed: true } } });
-    expect(pathOf(r)).toBe("scope spec_check dims screen confirm aggregate result");
+    const r = await runSim("lp.review", { input: { dimensions: ["correctness", "maintainability"] }, stubs: { prepass: { findings: [], critical_count: 0, rework: false }, "dims:child": dims({ correctness: [finding("critical", "correctness")] }), confirm: { finding_id: "x", confirmed: true } } });
+    expect(pathOf(r)).toBe("scope prepass spec_check dims screen confirm aggregate result");
     expect(out(r)).toMatchObject({ status: "rework", critical_count: 1 });
     expect(r.called("confirm:child")).toHaveLength(3);
     const step = r.db.prepare("SELECT receipt_json FROM lane_pilot_wf_step WHERE run_id=? AND node_id='confirm:child'").get(r.summary.runId) as { receipt_json: string };
@@ -145,7 +145,7 @@ describe("lp.review", () => {
   });
 
   it("an unmet acceptance criterion sends the work back whatever the dimensions say", async () => {
-    const r = await runSim("lp.review", { input: { dimensions: ["correctness"], criteria: ["flag exists"] }, stubs: { spec_check: { unmet_count: 1 } } });
+    const r = await runSim("lp.review", { input: { dimensions: ["correctness"], criteria: ["flag exists"] }, stubs: { prepass: { findings: [], critical_count: 0, rework: false }, spec_check: { unmet_count: 1 } } });
     expect(out(r)).toMatchObject({ status: "rework" });
   });
 });

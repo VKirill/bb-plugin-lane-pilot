@@ -130,8 +130,8 @@ describe("issue-discover", () => {
 
 describe("retrospective", () => {
   it("the spec's case: lenses, insights, knowledge candidates staged", async () => {
-    const r = await runSim("retrospective", { input: { run_id: "r-sample" }, stubs: { retro: { insights: [{ id: "INS-1a2b3c4d" }, { id: "INS-5e6f7a8b" }], retro_path: "retro/r-sample.md" }, stage: { staged: 2 } } });
-    expect(pathOf(r)).toBe("retro stage done");
+    const r = await runSim("retrospective", { input: { run_id: "r-sample" }, stubs: { retro: { insights: [{ id: "INS-1a2b3c4d" }, { id: "INS-5e6f7a8b" }], retro_path: "retro/r-sample.md" }, "lp.retro_living": { updated: 2 }, stage: { staged: 2 } } });
+    expect(pathOf(r)).toBe("retro living stage done");
     expect(out(r)).toMatchObject({ status: "done", insights: [{ id: "INS-1a2b3c4d" }, { id: "INS-5e6f7a8b" }], candidates_staged: 2, retro_path: "retro/r-sample.md" });
   });
 });
