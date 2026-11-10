@@ -5,7 +5,7 @@ export { createMemoryStage } from "./memory";
 export { memorySettingsFor } from "./memory-settings";
 export { sessionMemoryRpc } from "./session-memory";
 export { mountThreadBlock, threadMemoryBlock, type WallThreadReader } from "./thread-block";
-export { embedPending, embedQuery, mountMemoryEmbeddings } from "./embeddings";
+export { embedPending, embedQuery, mountMemoryEmbeddings, currentEmbedder } from "./embeddings";
 export { MAX_SETTLED_PER_RUN, createMemoryConflicts } from "./memory-conflicts";
 export type { MemoryConflictsApi } from "./memory-conflicts";
 export { MEMORY_CONFLICT_USAGE, runMemoryConflictCli } from "./memory-conflict-cli";

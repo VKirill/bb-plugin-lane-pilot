@@ -9,7 +9,9 @@ import { readTaskApproach } from "../tasks";
 import { designJournalLines, readinessWords, trainedConditions, trainingRatios } from "../design-eval";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { listPhasePartsSince } from "../phase";
-import { activeMemoryDigestRows } from "@lane-pilot/memory-core";
+import { activeMemoryDigestRows, lintMemory, rebuildMemoryIndexes, reviewMemory } from "@lane-pilot/memory-core";
+import { currentEmbedder, embedPending, memorySettingsFor } from "../memory/server";
+import { loadProjectSettings } from "../storage";
 
 import type { FrontApi } from "../front/server/index";
 
@@ -65,6 +67,25 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
       const run = getRun(db, runId);
       if (!run) throw new Error(`run ${runId} has no checkout`);
       const rows = activeMemoryDigestRows(db, run.project_id);
+      if (action === "index") {
+        // The derived word indexes are rebuilt from the active records; vectors catch up through the shared embedder.
+        const done = rebuildMemoryIndexes(db, run.project_id);
+        const embedder = currentEmbedder();
+        const embedded = embedder ? await embedPending(db, embedder).catch(() => 0) : 0;
+        return { exitCode: 0, output: `Перестроено записей: ${done.active}${done.added || done.stale ? ` (добавлено ${done.added}, убрано ${done.stale})` : ""}${embedded ? `\nВекторов обновлено: ${embedded}` : ""}` };
+      }
+      if (action === "lint") {
+        const findings = lintMemory(db, run.project_id, { budgets: memorySettingsFor(loadProjectSettings(db, run.project_id)) });
+        if (!findings.length) return { exitCode: 0, output: "Все записи привязаны к задаче или файлу" };
+        const noTrace = findings.filter((item) => item.check === "no_trace");
+        const lines = [`Без следа в работе: ${noTrace.length} из ${rows.length}`];
+        for (const item of findings) lines.push(`[${item.tier}] ${item.check}${item.recordId ? ` ${item.recordId.slice(0, 12)}` : ""} ${item.detail}`);
+        return { exitCode: 0, output: lines.join("\n").slice(0, 20_000) };
+      }
+      if (action === "consolidate") {
+        const proposals = reviewMemory(db, run.project_id);
+        return { exitCode: 0, output: proposals.length ? proposals.map((item) => `${item.action} ${item.id.slice(0, 12)}${item.by ? ` ← ${item.by.slice(0, 12)}` : ""}${item.reason ? ` (${item.reason})` : ""}`).join("\n") : "Предложений нет: корпус в порядке" };
+      }
       if (action === "tags") {
         const counts = new Map<string, number>();
         for (const row of rows) for (const tag of JSON.parse(row.concepts_json || "[]") as string[]) counts.set(tag, (counts.get(tag) ?? 0) + 1);

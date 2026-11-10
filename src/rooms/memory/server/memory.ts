@@ -9,7 +9,7 @@ import { demoteUnusedPromotions, enrichMemoryContext, episodeCandidates } from "
 import { appendAcceptedFact, claimStageSpawn, countStageReceiptsSince, getRun, getRunSettingsScopes, getTask, lastStageReceiptAt, listAcceptedFacts, listOpenAttempts, listPendingAcceptedFacts, listStageReceipts, markAcceptedFactsSummarized, projectHasScopedRun } from "../../storage";
 import { wireMemoryAttemptEffects } from "./attempt-effects";
 import { shouldTriggerProjectLife } from "../../project-life";
-import { coreShelf, dropMemoryIndexes, memoryEntrySupported, pathsNamed, retireStaleCuratorClaims, searchMemoryRecords, storeMemoryRecordsKeepingOverflow, memoryEntrySalience } from "@lane-pilot/memory-core";
+import { coreShelf, dropMemoryIndexes, memoryClaimIssue, memoryEntrySupported, pathsNamed, retireStaleCuratorClaims, searchMemoryRecords, storeMemoryRecordsKeepingOverflow, memoryEntrySalience } from "@lane-pilot/memory-core";
 import { applyScopeMigration } from "./scope-migration";
 import { projectUsesSections, resolveProjectKind, sharedScope } from "@lane-pilot/memory-core";
 import { bbServiceTier, listedServiceTier, writerExecutionSelection } from "@lane-pilot/models";
@@ -180,12 +180,15 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       // never reaches eviction. The floor is a live project setting (memory.salience_min, soft 40).
       const entries=admitted.filter((entry)=>memoryEntrySalience(entry)>=(snapshot.settings.salienceMin??40));
       const salienceDropped=admitted.length-entries.length;
+      // memory.single_claim: a list packed into one record is dropped, the rest of the batch still stores.
+      const kept=memorySettings.singleClaim?entries.filter((entry)=>!memoryClaimIssue(entry.content)):entries;
+      const listDropped=entries.length-kept.length;
       // M7: in an umbrella a project-level write is not global; a batch fully marked shared keeps a project scope with the reason inside.
       if(!scope.length&&resolveProjectKind(snapshot.settings.projectKind,projectUsesSections(db,args.projectId,projectHasScopedRun))==="umbrella"&&entries.length&&entries.every((entry)=>entry.concepts.some((concept)=>/^shared/.test(concept))))
         scope=sharedScope(entries.flatMap((entry)=>entry.concepts).find((concept)=>/^shared:/.test(concept))?.split(":")[1]);
       else if(!scope.length&&entries.length&&resolveProjectKind(snapshot.settings.projectKind,projectUsesSections(db,args.projectId,projectHasScopedRun))==="umbrella") scope=sharedScope("root");
       const records=storeMemoryRecordsKeepingOverflow(db,{projectId:args.projectId,personalBot:snapshot.settings.personalBot,audience:snapshot.settings.audience,sourceSha256:snapshot.acceptanceSha256,
-        entries,coreBudget:snapshot.settings.coreBudget,noteBudget:snapshot.settings.noteBudget,indexBudget:snapshot.settings.indexBudget,scope,readFile,originTaskId:args.taskId});
+        entries:kept,coreBudget:snapshot.settings.coreBudget,noteBudget:snapshot.settings.noteBudget,indexBudget:snapshot.settings.indexBudget,scope,readFile,originTaskId:args.taskId});
       // Notes that now disagree with an active one are held, both, until a person settles it (memory-conflicts.ts); a failure here never loses the write.
       try { services.memoryConflicts.sweepMoot(args.projectId); services.memoryConflicts.detect(args.projectId,new Set(records.insertedIds)); } catch(cause) { bb.log.warn(`Lane Pilot memory conflicts after ${args.taskId} failed: ${cause instanceof Error?cause.message:String(cause)}`); }
       const byId=new Map(records.records.map((row)=>[row.id,row]));
@@ -198,7 +201,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       }
       // The batch these facts fed is now durable memory: stamp them so the next accepted task's stage does not re-summarize them.
       if(snapshot.factTaskIds?.length) markAcceptedFactsSummarized(db,args.runId,snapshot.factTaskIds);
-      const result={stored:recordIds.length,recordIds,unsupportedDropped,salienceDropped,...(records.demoted?{coreDemotedToNotes:records.demoted}:{}),evictedIds:records.evictedIds,supersededIds:records.supersededIds,sourceSha256:snapshot.acceptanceSha256,audience:snapshot.settings.audience,personalBot:snapshot.settings.personalBot,factsSummarized:snapshot.factTaskIds?.length??0,
+      const result={stored:recordIds.length,recordIds,unsupportedDropped,salienceDropped,listDropped,...(records.demoted?{coreDemotedToNotes:records.demoted}:{}),evictedIds:records.evictedIds,supersededIds:records.supersededIds,sourceSha256:snapshot.acceptanceSha256,audience:snapshot.settings.audience,personalBot:snapshot.settings.personalBot,factsSummarized:snapshot.factTaskIds?.length??0,
         reasoningEffort:memoryEffort,serviceTier:memoryTier,
         budgets:{core:snapshot.settings.coreBudget,note:snapshot.settings.noteBudget,index:snapshot.settings.indexBudget},
         retrievedForWriter:snapshot.settings.inject&&snapshot.settings.audience==="subagent",threadId:childId,snapshot};

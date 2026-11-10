@@ -13,7 +13,9 @@ export type RawQuestion = {
   picked: string[];
   task: RawTask;
 };
-export type EvalData = { notes: RawNote[]; questions: RawQuestion[]; origin: "live" | "extract" };
+export type EvalData = { notes: RawNote[]; questions: RawQuestion[]; origin: "live" | "extract";
+  /** Misses the owner flagged ("I had to remind you"), each tied to the record that held the answer: extra gold cases. */
+  misses?: Array<{ projectId: string; query: string; noteId: string }> };
 
 /** The fields of the eval report a consumer (the lead's exam) reads; src/rooms/memory-eval's full report covers them. */
 export type MemoryEvalReport = {

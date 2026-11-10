@@ -1,4 +1,4 @@
-import { listActiveMemoryRows, memoryConceptsJson } from "@lane-pilot/memory-core";
+import { eraseLeftovers, listActiveMemoryRows, memoryConceptsJson } from "@lane-pilot/memory-core";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, listRuleEvents, listRuleProposals, ruleTrialStatsMany, routingHint, setRuleAudience, writerAcceptanceStats, type RuleProposal } from "@lane-pilot/run-insights";
 import { acceptanceStats } from "../../../runs";
@@ -79,7 +79,7 @@ export function insightsRpc(ctx: ServerCore, services: InsightsServices) {
       return { records: rows.map((row) => {
         let concepts: string[] = [];
         try { concepts = JSON.parse(row.concepts_json) as string[]; } catch { concepts = []; }
-        return { id: row.id, kind: row.kind, audience: row.audience, content: row.content, concepts, createdAt: row.created_at, rule: concepts.includes("rule"), useCount: row.use_count, acceptedCount: row.accepted_count, originTaskId: row.origin_task_id, origin: row.origin, scope: (() => { try { const v = JSON.parse(row.scope_json ?? "[]") as unknown; return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []; } catch { return []; } })(), sources: row.sources };
+        return { id: row.id, kind: row.kind, audience: row.audience, content: row.content, concepts, createdAt: row.created_at, rule: concepts.includes("rule"), useCount: row.use_count, acceptedCount: row.accepted_count, originTaskId: row.origin_task_id, sourceFileId: row.source_file_id, origin: row.origin, scope: (() => { try { const v = JSON.parse(row.scope_json ?? "[]") as unknown; return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []; } catch { return []; } })(), sources: row.sources };
       }) };
     },
     // A rule's record is removed with the rule (the Rules tab), so the rule never stays «accepted» without reaching writers.
@@ -88,7 +88,8 @@ export function insightsRpc(ctx: ServerCore, services: InsightsServices) {
       if (conceptsJson === null) return { deleted: false, reason: "not_found" };
       if (conceptsJson.includes('"rule"')) return { deleted: false, reason: "rule" };
       deleteMemoryRecord(db, projectId, id);
-      return { deleted: true, reason: null };
+      const leftovers = eraseLeftovers(db as never, projectId, id);
+      return { deleted: leftovers.length === 0, reason: leftovers.length ? `leftovers: ${leftovers.join(",")}` : null };
     },
     docs_overview: async ({ projectId, recheck }) => {
       const places = await services.docsPlaces(projectId);

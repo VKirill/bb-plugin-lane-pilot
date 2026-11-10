@@ -24,7 +24,8 @@ import { PM_REPLAY_USAGE, runPmReplayCli, listScenarios } from "../../pm-replay"
 import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
 import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
 import { MEMORY_EVAL_USAGE, runMemoryEvalCommand } from "../../memory-eval/server";
-import { MEMORY_CONFLICT_USAGE, runMemoryConflictCli, sessionMemoryRpc, type WallThreadReader } from "../../memory/server";
+import { MEMORY_CONFLICT_USAGE, runMemoryConflictCli, sessionMemoryRpc, memorySettingsFor, type WallThreadReader } from "../../memory/server";
+import { deleteMemoryRecord, dropMemoryIndexes, eraseLeftovers, hideRecord, lintMemory, listMemory, memoryConceptsJson, memoryIndexStatus, memoryRecordExists, memoryTokenStats, rebuildMemoryIndexes, recordMemoryMiss, reviewMemory } from "@lane-pilot/memory-core";
 import { BENCH_USAGE, runBenchCli } from "../../bench/server";
 import { BASELINE_USAGE, runBaselineCli } from "../../baseline/server";
 import { RETURN_USAGE, runReturnCli } from "../../stage-return/server";
@@ -628,22 +629,97 @@ ${ERRANDS_USAGE}` },
         if (command === "agents") {
           return await runAgentsCli({ list: () => services.listedAgentProfiles(), registry: agentRegistry(ctx, services.scheduleAgents) }, args);
         }
-        if (command === "memory" && (args[0] === "search" || args[0] === "write")) {
-          // M2's door for any thread or shell: the project is --project or the calling thread's own.
-          const rest = args.slice(1);
-          const flag = rest.indexOf("--project");
-          const explicit = flag >= 0 ? rest[flag + 1] : undefined;
-          const text = rest.filter((_, index) => flag < 0 || (index !== flag && index !== flag + 1)).join(" ").trim();
+        if (command === "memory" || command === "memory-index" || command === "memory-lint") {
+          const sub = command === "memory" ? args[0] : command.slice("memory-".length);
+          const flag = args.indexOf("--project");
+          const explicit = flag >= 0 ? args[flag + 1] : undefined;
           const thread = !explicit && invocation?.threadId ? await orMiss(bb.sdk.threads.get({ threadId: invocation.threadId }), null, isNotFound) : null;
           const projectId = explicit ?? ((thread as { projectId?: unknown } | null)?.projectId as string | undefined);
+          const value = (name: string) => { const at = args.indexOf(name); return at >= 0 ? args[at + 1] : undefined; };
+          if (sub === "index") {
+            if (args.includes("--rebuild") || command === "memory-index" && !args.includes("--check")) {
+              if (!projectId && !args.includes("--all")) { const done = rebuildMemoryIndexes(db, undefined, { check: args.includes("--check") }); return { exitCode:0, stdout:JSON.stringify(done) }; }
+              const done = rebuildMemoryIndexes(db, projectId, { check: args.includes("--check") });
+              return { exitCode:0, stdout:`rebuilt memory indexes: ${done.active} active, ${done.added} added, ${done.stale} stale\n` };
+            }
+            const status = memoryIndexStatus(db, projectId);
+            return { exitCode:0, stdout:JSON.stringify(status, null, 2) };
+          }
+          if (sub === "lint") {
+            if (!projectId) return { exitCode:1, stderr:"no project: pass --project <id> outside a BB thread" };
+            const budgets = memorySettingsFor(loadProjectSettings(db, projectId));
+            const findings = lintMemory(db, projectId, { budgets });
+            if (args.includes("--json")) return { exitCode: findings.some((f) => f.tier === "error") ? 1 : 0, stdout:JSON.stringify(findings, null, 2) };
+            const lines = findings.map((f) => `[${f.tier}] ${f.check}${f.recordId ? ` ${f.recordId.slice(0, 12)}` : ""} ${f.detail}`);
+            return { exitCode: findings.some((f) => f.tier === "error") ? 1 : 0, stdout:`${lines.length ? lines.join("\n") : "memory lint: no findings"}\n` };
+          }
+          if (sub === "review") {
+            if (!projectId) return { exitCode:1, stderr:"no project: pass --project <id> outside a BB thread" };
+            const proposals = reviewMemory(db, projectId);
+            return { exitCode:0, stdout: proposals.length ? `${proposals.map((p) => `${p.action} ${p.id}${p.by ? ` <- ${p.by}` : ""}${p.reason ? ` (${p.reason})` : ""}`).join("\n")}\n` : "memory review: no proposals\n" };
+          }
+          if (sub === "stats") {
+            if (!projectId) return { exitCode:1, stderr:"no project: pass --project <id> outside a BB thread" };
+            const stats = memoryTokenStats(db, projectId, memorySettingsFor(loadProjectSettings(db, projectId)));
+            return { exitCode:0, stdout: args.includes("--json") ? JSON.stringify(stats, null, 2) : `core ${stats.coreTokens}/${stats.budgets.coreBudget} tokens, notes ${stats.noteTokens}/${stats.budgets.noteBudget}, index ${stats.indexTokens}/${stats.budgets.indexBudget}; ${stats.records.active} active, hidden ${JSON.stringify(stats.records.hidden)}\n` };
+          }
+          if (sub === "miss") {
+            const noteId = value("--note");
+            const question = args.slice(1).filter((arg, i) => !arg.startsWith("--") && (flag < 0 || (i + 1 !== flag && i + 1 !== flag + 1)) && args.indexOf(arg) !== args.indexOf("--note") + 1).join(" ").trim();
+            if (!projectId || !question || !noteId) return { exitCode:1, stderr:'usage: bb lane-pilot memory miss "<question>" --note <id> [--project P]' };
+            if (!memoryRecordExists(db, projectId, noteId)) return { exitCode:1, stderr:`no memory record ${noteId} in project ${projectId}` };
+            recordMemoryMiss(db, projectId, question, Date.now(), "reminded", noteId);
+            return { exitCode:0, stdout:`recorded a reminded miss for ${noteId}\n` };
+          }
+          if (sub === "forget") {
+            const id = args[1];
+            if (!projectId || !id || id.startsWith("--")) return { exitCode:1, stderr:"usage: bb lane-pilot memory forget <id> [--project P] (--revoke|--expire|--archive|--replace <newId>) [--erase --yes]" };
+            const conceptsJson = memoryConceptsJson(db as never, projectId, id);
+            if (conceptsJson === null) return { exitCode:1, stderr:`no memory record ${id} in project ${projectId}` };
+            if (conceptsJson.includes('"rule"')) return { exitCode:1, stderr:"a rule record is removed with its rule: revoke the rule, not the record" };
+            const unindex = (p: string, r: string) => dropMemoryIndexes(db as never, p, r);
+            if (args.includes("--erase")) {
+              if (!args.includes("--yes")) return { exitCode:1, stderr:"--erase deletes the record's bytes everywhere; pass --yes to confirm" };
+              deleteMemoryRecord(db as never, projectId, id);
+              const left = eraseLeftovers(db, projectId, id);
+              return { exitCode: left.length ? 1 : 0, stdout: left.length ? `leftovers: ${left.join(",")}\n` : `erased ${id}; nothing remains\n` };
+            }
+            const replaceAt = args.indexOf("--replace");
+            if (replaceAt >= 0) {
+              const by = args[replaceAt + 1];
+              if (!by || !memoryRecordExists(db, projectId, by)) return { exitCode:1, stderr:`--replace needs an existing record id` };
+              hideRecord(db, projectId, id, "superseded", by, unindex);
+              return { exitCode:0, stdout:`${id} superseded by ${by}\n` };
+            }
+            const reason = args.includes("--revoke") ? "revoked" : args.includes("--archive") ? "archived" : args.includes("--expire") ? "dated" : null;
+            if (!reason) return { exitCode:1, stderr:"pick one: --revoke, --expire, --archive, --replace <newId>, or --erase --yes" };
+            if (!hideRecord(db, projectId, id, "expired", null, unindex, reason)) return { exitCode:1, stderr:`record ${id} is not active` };
+            return { exitCode:0, stdout:`${id} ${reason === "dated" ? "expired" : reason}\n` };
+          }
+          if (sub === "load") {
+            const tags = (value("--tags") ?? "").split(",").map((tag) => tag.trim()).filter(Boolean);
+            if (!projectId || !tags.length) return { exitCode:1, stderr:"usage: bb lane-pilot memory load --tags a,b [--project P]" };
+            const scoped = { allSections: true as const };
+            const core = listMemory(db, projectId, { kind: "core" }, 20, "subagent", "", scoped);
+            const notes = listMemory(db, projectId, { concepts: tags }, 20, "subagent", "", scoped);
+            const lines = [...core.map((record) => `- [core ${record.id.slice(0, 12)}] ${record.content}`), ...notes.map((record) => `- [${record.id.slice(0, 12)}] ${record.content}`)];
+            return { exitCode:0, stdout:`${lines.join("\n") || "nothing found"}\n` };
+          }
+          if (sub === "search" || sub === "write") {
+          // M2's door for any thread or shell: the project is --project or the calling thread's own.
+          const rest = args.slice(1);
+          const at = rest.indexOf("--project");
+          const text = rest.filter((_, index) => at < 0 || (index !== at && index !== at + 1)).join(" ").trim();
           if (!text || !projectId) return { exitCode:1, stderr:`${MEMORY_CLI_USAGE}\n${projectId ? "" : "no project: pass --project <id> outside a BB thread"}` };
           const rpc = sessionMemoryRpc(ctx, services);
-          if (args[0] === "search") {
+          if (sub === "search") {
             const found = await rpc.session_memory_search({ projectId, query: text });
             return { exitCode:0, stdout: found.records.length ? `${found.records.map((record) => `- [${record.id}] ${record.content}`).join("\n")}\n` : `${found.message ?? "nothing relevant"}\n` };
           }
           const written = await rpc.session_memory_write({ projectId, kind: "note", content: text, concepts: [], source: `cli:${invocation?.threadId ?? "shell"}` });
           return { exitCode: written.id ? 0 : 1, stdout: `${JSON.stringify(written)}\n` };
+          }
+          return { exitCode:1, stderr:MEMORY_CLI_USAGE };
         }
         if (command === "skill-lint") {
           return runSkillLintCli(args);
@@ -828,7 +904,7 @@ ${ERRANDS_USAGE}` },
           return { exitCode:probe.ok ? 0 : 1, stdout:JSON.stringify(probe, null, 2) };
         }
         if (command === "memory-eval") {
-          return await runMemoryEvalCommand(db, args, migrations);
+          return await runMemoryEvalCommand(db, args, migrations, { northStar: () => costPerVerified(db) });
         }
         if (command === "memory-conflicts" || command === "memory-conflict-settle") {
           return runMemoryConflictCli(services.memoryConflicts, command, args);

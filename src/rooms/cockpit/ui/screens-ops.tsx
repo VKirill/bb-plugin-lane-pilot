@@ -49,14 +49,15 @@ export function ForgeScreen({ rpc, projectId, runId }: { rpc: Rpc; projectId: st
 /** Memory: the corpus on the machine — lint, rebuild the index, the tag cloud, the corpus review; the drafts live under Knowledge → Rules. */
 export function MemoryScreen({ rpc, runId }: { rpc: Rpc; runId: string | null }) {
   const [out, setOut] = useState<{ action: string; output: string; tags?: Array<{ tag: string; count: number }> } | null>(null);
-  // Two reads, two buttons: «rebuild the index» and «corpus review» printed the same list and rebuilt nothing (SMA audit, 2026-11-10).
-  const run = (action: "lint" | "tags") => runId && void rpc.call("cockpit_memory", { runId, action }).then((result) => setOut({ action, ...(result as { output: string; tags?: Array<{ tag: string; count: number }> }) }), (cause: unknown) => setOut({ action, output: String(cause) }));
+  const run = (action: "lint" | "index" | "tags" | "consolidate") => runId && void rpc.call("cockpit_memory", { runId, action }).then((result) => setOut({ action, ...(result as { output: string; tags?: Array<{ tag: string; count: number }> }) }), (cause: unknown) => setOut({ action, output: String(cause) }));
   return (
     <Panel title={t("ckScreen_memory")} testId="ck-memory">
       {!runId ? <p className="text-sm text-muted-foreground">{t("ckEmpty")}</p> : (
         <div className="space-y-2">
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={() => run("lint")}>{t("ckMemoryLint")}</Button>
+            <Button size="sm" variant="outline" onClick={() => run("index")}>{t("ckMemoryIndex")}</Button>
+            <Button size="sm" variant="outline" onClick={() => run("consolidate")}>{t("ckMemoryReview")}</Button>
             <Button size="sm" variant="outline" onClick={() => run("tags")}>{t("ckMemoryTags")}</Button>
           </div>
           {out?.tags?.length ? (

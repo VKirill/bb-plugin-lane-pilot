@@ -36,6 +36,8 @@ export function googleEmbedder(key: () => Promise<string | undefined>, fetchImpl
 let shared: Embedder | null = null;
 /** The embedder of this server, set by `mountMemoryEmbeddings`; tests and tools may set their own. */
 export const setEmbedder = (embedder: Embedder | null): void => { shared = embedder; };
+/** The embedder currently in use; null where embeddings are off (no key, tests). */
+export const currentEmbedder = (): Embedder | null => shared;
 
 /**
  * Makes the question's vector before a search, so the synchronous search paths rank by meaning (`rememberQueryVector`). Awaited by the

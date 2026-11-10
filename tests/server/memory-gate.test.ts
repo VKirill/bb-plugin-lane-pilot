@@ -6,7 +6,7 @@ import { runMemoryGate, type MemoryGate } from "../../src/rooms/memory-eval/serv
 
 describe("frozen memory gate", () => {
   it("passes the forty cases with no leak, no cut rule and no overflow", () => {
-    const fixture = JSON.parse(readFileSync(new URL("../fixtures/memory-gate.json", import.meta.url), "utf8")) as MemoryGate;
+    const fixture = JSON.parse(readFileSync(new URL("../../src/rooms/memory-eval/server/gate-fixture.json", import.meta.url), "utf8")) as MemoryGate;
     const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
     expect(runMemoryGate(db, fixture)).toEqual({ cases: 40, leaks: [], overflows: [], cutRules: [], misses: [], errors: [] });
   });
