@@ -2161,11 +2161,12 @@ def _deps_guard_error(name: str, p: dict) -> str | None:
     cwd = str(cwd)
     cwd_real = os.path.realpath(cwd)
 
-    def hits_foreign_store(target: str) -> str | None:
+    def hits_foreign_store(target: str, removes_link: bool = False) -> str | None:
         literal = target if os.path.isabs(target) else os.path.join(cwd, target)
         # Removing the link itself only drops the link — the shared store is untouched, and the install
         # refusal below prescribes exactly this. Only a path that reaches inside through it is foreign.
-        if os.path.islink(literal):
+        # An edit, or a shred, of a link writes through it, so the exemption is for rm/unlink alone.
+        if removes_link and os.path.islink(literal):
             return None
         resolved = os.path.realpath(literal)
         if f"{os.sep}node_modules{os.sep}" in resolved and _outside_checkout(resolved, cwd_real):
@@ -2188,11 +2189,12 @@ def _deps_guard_error(name: str, p: dict) -> str | None:
                     "(only the links go), then run the install again.")
     # _delete_commands yields the target lists of every rm/unlink/shred/find -delete, not the verbs:
     # each listed word is a path the command would remove.
+    removes_link = not re.search(r"\bshred\b", command)
     for segment in _delete_commands(command):
         for word in segment:
             if word.startswith("-"):
                 continue
-            hit = hits_foreign_store(word)
+            hit = hits_foreign_store(word, removes_link)
             if hit:
                 return f"[deps-guard] {word} resolves into another checkout's dependency store ({hit}): a worktree's packages are linked, not yours to change."
     return None

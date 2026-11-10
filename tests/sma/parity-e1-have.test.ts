@@ -315,6 +315,14 @@ describe("tool gate, airbag and the dependency store", () => {
     expect(unlink.stdout + unlink.stderr).not.toContain("deps-guard");
     const copy = guard(bashPayload("cp -r src docs", b), { LANE_PILOT_ROLE: "writer" });
     expect(copy.stdout + copy.stderr).not.toContain("deps-guard");
+    // A link to a file of the other store: removing the link is fine, writing or shredding through it is not.
+    symlinkSync(join(a, "node_modules", "pkg", "x.js"), join(b, "node_modules", "x.js"));
+    const edit = guard({ tool_name: "Edit", tool_input: { file_path: join(b, "node_modules", "x.js"), old_string: "x", new_string: "y" }, cwd: b, session_id: "sess-e1" }, { LANE_PILOT_ROLE: "writer" });
+    expect(edit.stdout + edit.stderr).toContain("dependency store");
+    const shred = guard(bashPayload("shred node_modules/x.js", b), { LANE_PILOT_ROLE: "writer" });
+    expect(shred.stdout + shred.stderr).toContain("dependency store");
+    const dropLink = guard(bashPayload("rm node_modules/x.js", b), { LANE_PILOT_ROLE: "writer" });
+    expect(dropLink.stdout + dropLink.stderr).not.toContain("deps-guard");
   });
 });
 
