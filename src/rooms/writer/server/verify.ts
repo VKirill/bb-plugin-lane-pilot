@@ -264,7 +264,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       .map((result,pos)=>({result,index:entries[pos]!.index}))
       .filter((row):row is {result:NonNullable<typeof row.result>;index:number}=>row.result!==undefined)
       .sort((a,b)=>a.index-b.index)
-      .map((row)=>({...row.result,...(revision.head!==null||revision.dirty!==null?{revision}:{})}));
+      .map((row)=>({...row.result,stdoutSha256:sha256(row.result.stdout??""),stderrSha256:sha256(row.result.stderr??""),...(revision.head!==null||revision.dirty!==null?{revision}:{})}));
     if(skipped){const first=orderedResults.find((row)=>row.exitCode!==0);
       if(first)first.stderr=`${first.stderr??""}\nchecks.fail_fast: ${skipped} check(s) not started after the first non-zero exit`.trim();}
     return orderedResults;

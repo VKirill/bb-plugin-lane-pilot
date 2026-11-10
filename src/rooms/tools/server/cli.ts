@@ -9,6 +9,7 @@ import {bestEffort, isNotFound, orMiss, outputText, spawnAsync, stringAt, valueA
 import { PAIR_ROLE_SPECS } from "@lane-pilot/models";
 import {runSkillsCli, parseSkillHub, SKILLS_USAGE} from "../../platform/server";
 import { attemptSessionLayers, terminalParity, terminalSessionLayers } from "../../native-agent";
+import { projectStats } from "../../usage/server";
 import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
 import type { InsightsApi, ScheduleAgentApi } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
@@ -286,6 +287,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"lead", summary:"Штурман, the lead over the runs: its state and ticks, the road tree, the owner's answers to its proposals, the rights per class, the decision journal with the prediction made before each answer, the exam and the backtest", usage:LEAD_USAGE },
       { name:"coverage", summary:"What proves each pipeline stage, attempt transition, failure class, gate, memory path, room and key mechanism: covered live by a deploy-drill scenario, covered by tests only (and why no drill), or not covered; --receipt checks the live claims against a drill receipt", usage:COVERAGE_USAGE },
       { name:"attempt", summary:"One attempt's whole record: writer thread, stage receipts and gate events of that attempt, dispatch context, verification results, critic input hash, the attempt-change row", usage:"bb lane-pilot attempt <attempt-id>" },
+      { name:"stats", summary:"Project report (sma-stats): phases, plans, requirements, git metrics, a timeline and the attempt metrics", usage:"bb lane-pilot stats [project-id] [--days N]" },
       { name:"parity", summary:"Session and terminal parity of one attempt: six lines (hooks, memory, rules, skills, permissions, model) saying whether the BB session and a terminal session got the same layer", usage:"bb lane-pilot parity <attempt-id> [--json]" },
       { name:"passport", summary:"An attempt's passport: provider, model, harness and Lane Pilot versions, the receipts of its stages; --calibration prints the current PM model's calibration badge", usage:"bb lane-pilot passport <attempt-id> | --calibration --project <id>" },
       { name:"manifest", summary:"This build: name, version, its tables", usage:"bb lane-pilot manifest" },
@@ -449,6 +451,11 @@ ${ERRANDS_USAGE}` },
           const lines = terminalParity(session, terminal);
           if (args.includes("--json")) return { exitCode:0, stdout:JSON.stringify({ attemptId, lines }, null, 2) };
           return { exitCode:0, stdout:lines.map((line) => `${line.same ? "same" : "DIFF"} ${line.layer}: ${line.detail}`).join("\n") };
+        }
+        if (command === "stats") {
+          const days = args.includes("--days") ? Number(args[args.indexOf("--days") + 1]) : 30;
+          const stats = projectStats(db as never, args[0] && !args[0].startsWith("--") ? args[0] : "", days);
+          return { exitCode:0, stdout:JSON.stringify(stats, null, 2) };
         }
         if (command === "passport") {
           // --calibration: the badge of the current PM model's forecasts (SMA k_v_passport); it resets when the model changes.

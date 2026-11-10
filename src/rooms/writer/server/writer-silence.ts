@@ -137,8 +137,6 @@ export type SilenceDeps = {
   waitingForOwner?:(threadId:string) => Promise<boolean>;
   /** Completed tool calls of one attempt after which it ends (writer.max_turns; WRITER_MAX_TURNS when the dep is absent). */
   maxTurns?:(projectId:string, runId:string) => number;
-  /** Completed tool calls of one attempt after which it ends (writer.max_turns; WRITER_MAX_TURNS when the dep is absent). */
-  maxTurns?:(projectId:string, runId:string) => number;
   /** The schedule run's signal: the sweep stops between attempts when the core aborts the run. */
   signal?:AbortSignal;
   log:(line:string) => void;
@@ -168,7 +166,7 @@ export async function sweepWriterSilence(deps:SilenceDeps, now = Date.now()):Pro
       if (record?.ended) continue;
       const thread = await deps.getThread(attempt.thread_id);
       if ((thread && typeof thread === "object" ? Reflect.get(thread, "status") : null) !== "active") continue;
-      const listed = await listThreadEventsRaw(bb as never, { threadId:attempt.thread_id, order:"desc", limit:"200" });
+      const listed = await listThreadEventsRaw(bb as never, { threadId:attempt.thread_id, order:"desc", limit:"200" as never });
       if (!listed.ok) continue;
       // The worker's turn ceiling (SMA m_cfg_max_turns): a session is a BB thread, so Lane Pilot counts the
       // writer's steps from its events itself. Past the ceiling the attempt ends like any timeout.

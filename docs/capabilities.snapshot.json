@@ -1,0 +1,24 @@
+{
+  "capabilities": [],
+  "streams": [
+    "dependency_store",
+    "git_airbag",
+    "hard_rules",
+    "knowledge",
+    "reflexes",
+    "rule_loops"
+  ],
+  "required": [
+    "execution_packet.line_windows",
+    "opencode.hook.event_subscribe",
+    "opencode.hook.permission_evaluate",
+    "opencode.hook.session_context",
+    "opencode.hook.session_prompt",
+    "opencode.hook.tool_execute_after",
+    "opencode.hook.tool_execute_before",
+    "opencode.plugin.default_export",
+    "opencode.sticky.contract_recovery",
+    "opencode.sticky.dumped_tool_recovery",
+    "opencode.telemetry.session_compacted"
+  ]
+}

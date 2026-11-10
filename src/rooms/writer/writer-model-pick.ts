@@ -140,7 +140,16 @@ export async function writerPickOverlay(deps: { kv: { get(key: string): Promise<
   settings: Record<string, unknown>, input: { projectId: string; runId: string; taskId: string; task: PickTaskContract }): Promise<Record<string, unknown> | null> {
   if (settings["writer.pick"] === false || settings["writer.pick"] === "off") return null;
   const key = writerPickKey(input.runId, input.taskId);
-  const candidates = writerCandidates(settings);
+  let candidates = writerCandidates(settings);
+  // Which role the task asks for (SMA m_md_role_wanted): writer.kind_models narrows the pool to the profiles the
+  // kind names; a kind with no entry keeps every candidate, an empty narrowed pool keeps the project's own writer.
+  const kindPool = (settings["writer.kind_models"] as Record<string, string[]> | undefined)?.[input.task.kind ?? ""];
+  const kindExcluded: string[] = [];
+  if (Array.isArray(kindPool)) {
+    const narrowed = candidates.filter((profile) => kindPool.includes(profile.key));
+    for (const profile of candidates) if (!narrowed.includes(profile)) kindExcluded.push(profile.key);
+    candidates = narrowed;
+  }
   const heldReasons = new Map<string, string>();
   const offered = deps.held ? (await Promise.all(candidates.map(async (profile) => {
     const held = await bestEffort(deps.log, "writer held check", deps.held!(profile), true);
@@ -165,7 +174,7 @@ export async function writerPickOverlay(deps: { kv: { get(key: string): Promise<
   const route: WriterRouteDecision = {
     at: Date.now(),
     considered: candidates.map((row) => row.key),
-    excluded: [...heldReasons.entries()].map(([key, reason]) => ({ key, reason })),
+    excluded: [...kindExcluded.map((key) => ({ key, reason:"kind_pool" })), ...[...heldReasons.entries()].map(([key, reason]) => ({ key, reason }))],
     picked: picked ?? "",
     by: heldReasons.size === candidates.length ? "no_room" : by,
   };

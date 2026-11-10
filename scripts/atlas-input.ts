@@ -40,8 +40,16 @@ export function collectAtlasInput(root: string): AtlasInput {
     return sum + (statSync(path).isDirectory() ? tests(path) : /\.test\.tsx?$/.test(name) ? 1 : 0);
   }, 0);
   const sourceFiles = [...all, ...["server.ts", "host.ts", "app.tsx"].map((name) => join(root, name))];
+  const capabilities = (() => {
+    try {
+      const source = readFileSync(join(root, "src/rooms/native-install/feature-registry.ts"), "utf8");
+      return [...source.matchAll(/id:\s*"([a-z0-9._-]+)"[\s\S]*?agents:\s*\[([^\]]*)\][\s\S]*?skills:\s*\[([^\]]*)\][\s\S]*?hooks:\s*\[([^\]]*)\]/g)]
+        .map((hit) => ({ id: hit[1]!, runtimes: (source.match(/provider:\s*"/g) ?? []).length, agents: hit[2]!.split(",").filter((item) => item.trim() && item.includes('"')).length, skills: hit[3]!.split(",").filter((item) => item.trim() && item.includes('"')).length, hooks: hit[4]!.split(",").filter((item) => item.trim() && item.includes('"')).length }));
+    } catch { return [] as Array<{ id: string; runtimes: number; agents: number; skills: number; hooks: number }>; }
+  })();
   return {
     rooms,
+    capabilities,
     stages: Object.entries(STAGE_PROOF).map(([id, proof]) => ({ id, kind: proof.kind, what: "check" in proof ? proof.check : proof.reason })),
     transitions: TRANSITION_TABLE.map((row) => ({ from: row.from, event: row.event, to: row.to })),
     memoryPaths: MEMORY_PATHS.map((path) => ({ id: path.id, consumer: path.consumer, carries: path.carries })),

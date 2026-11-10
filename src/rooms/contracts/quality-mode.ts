@@ -131,3 +131,17 @@ export function critiqueRepeatSkip(input: {
     && ownsPathsOverlap([...row.ownsPaths], [...input.ownsPaths]));
   return prior ? { reason: "repeat", priorTaskId: prior.taskId } : null;
 }
+
+/**
+ * QA defect routing (SMA k_wqa_route): the browser-qa receipts of one task family decide where a failed
+ * check goes — returnable case failures go back to the builder, blocked/infra ones ask for the
+ * environment to be repaired, and from the second failed receipt the family stops instead of a third try.
+ */
+export type QaRoute = "returnable" | "not_returnable" | "stop";
+
+export function qaRoute(receipts: readonly { state: string }[]): QaRoute {
+  const failed = receipts.filter((receipt) => receipt.state === "failed").length;
+  if (failed >= 2) return "stop";
+  if (receipts.some((receipt) => receipt.state === "blocked")) return "not_returnable";
+  return "returnable";
+}

@@ -120,6 +120,15 @@ async function markerAbsent(bb: BbPluginApi, hostId: string, workspace: string, 
  * pre-effect guard refused a write it must refuse. A `check` runs after the first answer matched: it judges what happened,
  * not what the model claims.
  */
+/** A provider whose usage event carries a breakdown owes all four numbers (SMA m_tl_codex_lane): the missing one is named. */
+export function accountingPartsProblem(parts: { input?: unknown; output?: unknown; cached?: unknown; total?: unknown } | undefined): string | null {
+  if (!parts) return null;
+  for (const key of ["input", "output", "cached", "total"] as const) {
+    if (typeof parts[key] !== "number" || !Number.isFinite(parts[key])) return `accounting: the usage event is missing a numeric ${key} count`;
+  }
+  return null;
+}
+
 export const PROBES = {
   answers: { prompt: PROMPT, expect: /\S/ },
   "documentary.nested": {
@@ -162,7 +171,9 @@ export const PROBES = {
     expect: /COUNTED/,
     check: async ({ bb, threadId }: ProbeCheckArgs) => {
       const usage = await threadUsage(bb, threadId);
-      return usage.known && usage.tokens > 0 ? { ok: true } : { ok: false, reason: `accounting: the turn's spend is not on the books (known=${usage.known}, tokens=${usage.tokens})` };
+      if (!usage.known || usage.tokens <= 0) return { ok: false, reason: `accounting: the turn's spend is not on the books (known=${usage.known}, tokens=${usage.tokens})` };
+      const parts = accountingPartsProblem(usage.parts);
+      return parts ? { ok: false, reason: parts } : { ok: true };
     },
   },
   progress: {

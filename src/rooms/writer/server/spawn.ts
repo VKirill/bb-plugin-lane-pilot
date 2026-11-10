@@ -1,12 +1,12 @@
 import { breakerKey, RunBudgetExceeded } from "@lane-pilot/resilience";
-import { openTokenCursor } from "../../usage/server";
+import { normalizeModel, openTokenCursor } from "../../usage/server";
 import { briefMode, briefParts } from "../../contracts";
 import { estimateTokens, recordMemoryMixed, recordMemoryReceipt } from "@lane-pilot/memory-core";
 import { writerKnowledge } from "./writer-knowledge";
 import { parseDirtSnapshots } from "../cli-outcome";
 import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { HARNESS_VERSION, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, saveReasoningTrace, setAttemptDirtBefore, setAttemptEnvironment, setAttemptHolderThread, setAttemptWorkspace, setReasoningThread, transitionAttempt, taskBasePath } from "../../storage";
+import { HARNESS_VERSION, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, loadProjectSettings, saveReasoningTrace, setAttemptDirtBefore, setAttemptEnvironment, setAttemptHolderThread, setAttemptWorkspace, setReasoningThread, transitionAttempt, taskBasePath } from "../../storage";
 import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier, findModelIn } from "@lane-pilot/models";
 import { spawnWithSeam } from "../spawn-seam";
 import { pipelineWriterTag } from "./pipeline-tag";
@@ -603,13 +603,22 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       setReasoningThread(db, input.attemptId, writerThreadId);
       const spawnedTrace = getReasoningTrace(db, input.attemptId);
       if (spawnedTrace) bb.log.info(`Lane Pilot writer execution ${JSON.stringify({ attemptId:input.attemptId, threadId:writerThreadId, providerId:spawnedTrace.providerId, model:spawnedTrace.model, reasoningLevel:spawnedTrace.effectiveReasoningLevel, serviceTier:spawnedTrace.serviceTier })}`);
-      // Launch profile parity (SMA): the thread BB made runs the provider and model Lane Pilot asked for; a different one is named.
-      void bb.sdk.threads.get({ threadId:writerThreadId }).then((thread) => {
-        const got = { providerId:stringAt(thread, "providerId"), model:stringAt(thread, "model") };
-        if ((got.providerId && got.providerId !== selectedProviderId) || (got.model && selectedModel && got.model !== selectedModel)) {
-          bb.log.warn(`Lane Pilot launch profile mismatch for ${input.attemptId}: asked ${selectedProviderId}/${selectedModel}, the thread runs ${got.providerId}/${got.model}`);
+      // Launch profile parity (SMA m_md_parity): the thread BB made is checked against the provider, model and
+      // effort asked for; a silent swap is refused so the writer chain takes the task (writer.launch_parity=warn keeps the old log line).
+      {
+        const parityMode = String(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId))["writer.launch_parity"] ?? "refuse");
+        const thread = await bb.sdk.threads.get({ threadId:writerThreadId }).catch(() => null);
+        const got = { providerId:stringAt(thread, "providerId"), model:stringAt(thread, "model"), reasoningLevel:stringAt(thread, "reasoningLevel") ?? stringAt(thread, "reasoningEffort") };
+        const mismatched = (got.providerId && got.providerId !== selectedProviderId) || (got.model && selectedModel && normalizeModel(got.model) !== normalizeModel(selectedModel))
+          || (got.reasoningLevel && lastExecution?.reasoningLevel && got.reasoningLevel !== lastExecution.reasoningLevel);
+        if (mismatched && parityMode === "warn") bb.log.warn(`Lane Pilot launch profile mismatch for ${input.attemptId}: asked ${selectedProviderId}/${selectedModel}/${lastExecution?.reasoningLevel ?? "?"}, the thread runs ${got.providerId}/${got.model}/${got.reasoningLevel ?? "?"}`);
+        else if (mismatched) {
+          await bestEffort(bb.log, "writer thread stop", bb.sdk.threads.stop({ threadId:writerThreadId }), undefined);
+          const reason = `writer_provider_unavailable:launch_profile_mismatch:${selectedProviderId}/${selectedModel} vs ${got.providerId}/${got.model}`;
+          transitionAttempt(db, input.attemptId, "spawn_rejected", { reason });
+          return { ok:false, status:"spawn_rejected", reason, attemptId:input.attemptId };
         }
-      }, () => undefined);
+      }
       writerHoldsTrial = true;
       return { ok:true, threadId:writerThreadId, providerId:selectedProviderId, model:selectedModel,
         reasoningLevel:lastExecution?.reasoningLevel, serviceTier:lastExecution?.serviceTier, selectionSource:lastExecution?.selectionSource,

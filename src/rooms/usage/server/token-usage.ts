@@ -522,7 +522,7 @@ export async function queryTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatab
 }
 
 /** What a thread spent. `unknown` is set when BB shows no usage for it at all: the 0 is then "not reported", not "free". */
-export type ThreadUsage = { tokens: number; costUsd: number; known: boolean; unknown?: true };
+export type ThreadUsage = { tokens: number; costUsd: number; known: boolean; unknown?: true; /** The last usage event's four numbers (input, output, cached, total), for providers that report a breakdown (SMA m_tl_codex_lane). */ parts?: { input: number; output: number; cached: number; total: number } };
 
 /**
  * What one thread spent from `since` (ms; 0 = from its start) up to `until` (ms, exclusive; none = to its end): total tokens and the price of them. The same events and the same per-turn
@@ -557,7 +557,8 @@ export async function threadUsage(bb: BbPluginApi, threadId: string, options: { 
     cost += (model ? costUsd(model, billed) : null) ?? costUsd(dearest, billed) ?? 0;
   }
   // The thread reports usage (else the early return above): no event in the step's window is a step that spent nothing.
-  return { tokens, costUsd: cost, known: true };
+  const last = prev.last;
+  return { tokens, costUsd: cost, known: true, parts: { input: last.input, output: last.output, cached: last.cached, total: last.total } };
 }
 
 export function attachTokenUsage(ctx: ServerCore): {

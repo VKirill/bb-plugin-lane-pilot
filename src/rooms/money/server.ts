@@ -45,8 +45,12 @@ export function createMoney(ctx: Pick<ServerCore, "db" | "bb">) {
     return { ...book, monthUsd, estimated, estimatedUsd: estimated, cap: limit, capSet: limit !== null, unlimited: cap === Infinity, left: limit === null ? null : Math.max(0, Math.round((limit - monthUsd) * 100) / 100) };
   }
   /** Why a writer of this provider and model must wait now: the money cap of a paid lane, or a closed subscription window on its machine. */
-  async function holds(providerId: string, model: string, hostId: string): Promise<string | null> {
-    const money = moneyHold(providerId, status().monthUsd, moneyCapFrom(settings()));
+  async function holds(providerId: string, model: string, hostId: string, input?: { appetiteTokens?: number }): Promise<string | null> {
+    // Per-task ceiling (SMA m_mo_task_ceiling): the task is priced at its appetite in output tokens (the cautious
+    // side of the split) before it starts; no appetite means only the spent-at-cap rule applies.
+    const price = input?.appetiteTokens ? priceOf(providerId, model, overrides()) : null;
+    const taskUsd = input?.appetiteTokens && price ? input.appetiteTokens * price.outputPerM / 1_000_000 : 0;
+    const money = moneyHold(providerId, status().monthUsd, moneyCapFrom(settings()), taskUsd);
     if (money) return money;
     if (!PROVIDER_CAPABILITIES[providerId]?.publishesUsageWindows) return null;
     try {

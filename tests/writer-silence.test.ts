@@ -77,7 +77,7 @@ describe("writer silence sweep", () => {
     expect(JSON.stringify(sent[0]!.input)).toContain("no activity for 25 min. Continue; if a command hangs, stop it and go on; finish with your summary.");
     expect(store.get("writer-nudge:a1")).toEqual({ count:1, at:T0 + 25 * MIN });
     expect(logs).toHaveLength(1);
-    expect(listed).toEqual([{ threadId:"thr_w", order:"desc", limit:"50" }]);
+    expect(listed).toEqual([{ threadId:"thr_w", order:"desc", limit:"200" }]);
   });
 
   it("waits a full limit after a nudge before the next step, then ends the attempt after two nudges", async () => {

@@ -6,7 +6,7 @@ import { isLiveDecision } from "../live-folder";
 import { DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING } from "../../runs";
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
-import { QUALITY_MODE_SETTING, browserQaRequired, resolveQualityMode, taskQaPlan } from "../../contracts/quality-mode";
+import { QUALITY_MODE_SETTING, browserQaRequired, resolveQualityMode, qaRoute, taskQaPlan } from "../../contracts/quality-mode";
 import { reserveAppetite, resolveBestOf } from "../best-of";
 import type { CodeCriticDefault } from "../../contracts/task-enums";
 import { saveCriticCodeDefault } from "./critic-override";
@@ -554,9 +554,18 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
           const verdict = listStageReceipts(db, args.runId, attempt.task_id).find((row) => row.stageId === "browser-qa");
           if (verdict?.state === "passed") continue;
           if (taskQaPlan(contract.data)) {
-            next.push({ taskId:attempt.task_id, state:"accepted", next: verdict && ["failed", "blocked", "skipped"].includes(verdict.state)
-              ? `quality_mode=full: the browser check of this task's graph ${verdict.state}${verdict.reason ? ` (${verdict.reason.slice(0, 400)})` : ""}; the task is not done until a check passes: fix what it found and dispatch a follow-up task with the same qa_url and qa_cases`
-              : `quality_mode=full: the task's graph ended without a browser verdict (see its lp.browser-qa workflow run); run lane_pilot_helpers {action:"browser_qa"} for this task with qa_url ${contract.data.qa_url}; the task is not done until the check passes` });
+            // QA defect routing (SMA k_wqa_route): returnable failures go back to the builder; blocked/infra asks
+            // for the environment; the family's second failed receipt stops, no third attempt is offered.
+            const family = listRunTaskRows(db, args.runId).filter((row) => taskFamily(row.id) === taskFamily(attempt.task_id));
+            const qaReceipts = family.flatMap((row) => listStageReceipts(db, args.runId, row.id).filter((row) => row.stageId === "browser-qa"));
+            const route = qaRoute(qaReceipts);
+            next.push({ taskId:attempt.task_id, state:"accepted", next: !verdict || !["failed", "blocked", "skipped"].includes(verdict.state)
+              ? `quality_mode=full: the task's graph ended without a browser verdict (see its lp.browser-qa workflow run); run lane_pilot_helpers {action:"browser_qa"} for this task with qa_url ${contract.data.qa_url}; the task is not done until the check passes`
+              : route === "stop"
+                ? `quality_mode=full: the browser check of this task's family failed ${qaReceipts.filter((row) => row.state === "failed").length} times${verdict.reason ? ` (${verdict.reason.slice(0, 400)})` : ""}; stop and report to the owner — no further follow-up is offered`
+                : route === "not_returnable"
+                  ? `quality_mode=full: the browser check of this task's graph is ${verdict.state}${verdict.reason ? ` (${verdict.reason.slice(0, 400)})` : ""}; the defect is not returnable: repair the environment and re-run the check, do not dispatch a builder task`
+                  : `quality_mode=full: the browser check of this task's graph ${verdict.state}${verdict.reason ? ` (${verdict.reason.slice(0, 400)})` : ""}; the defect is returnable: send it back to the builder — dispatch a follow-up task with the same qa_url and qa_cases` });
             continue;
           }
           next.push({ taskId:attempt.task_id, state:"accepted", next:`quality_mode=full: run lane_pilot_helpers {action:"browser_qa"} for this task with its qa_cases (${contract.data.qa_cases!.join("; ").slice(0, 600)}); the task is not done until the check passes` });
