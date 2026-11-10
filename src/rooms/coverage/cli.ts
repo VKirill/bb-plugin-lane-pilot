@@ -51,7 +51,9 @@ export function runCoverageCli(argv: string[], cwd: string = process.cwd()): Res
     const all = coverageRows();
     const rows = all.filter((row) => (!kind || row.kind === kind) && (!status || row.status === status));
     const problems = holes(all, codeNodes());
-    const gaps = [...problems.missing.map((node) => `${node}: in the code, no registry entry`), ...problems.stale.map((node) => `${node}: registry entry for a node the code no longer lists`), ...problems.duplicate.map((node) => `${node}: two entries`)];
+    const gaps = [...problems.missing.map((node) => `${node}: in the code, no registry entry`), ...problems.stale.map((node) => `${node}: registry entry for a node the code no longer lists`), ...problems.duplicate.map((node) => `${node}: two entries`),
+      // Term or founder's word (SMA rl_terms): an uncovered node without a deferral or the owner's word is a gap like a registry hole.
+      ...untermedGaps(all).map((row) => `${row.kind}:${row.id}: not covered with no term or owner word`)];
     const checked = receiptSpec ? loadReceipt(receiptSpec, cwd) : null;
     const verdict = checked ? { path: checked.path, ...checkReceipt(all, checked.receipt) } : null;
     if (argv.includes("--json")) return { exitCode: gaps.length ? 1 : 0, stdout: JSON.stringify({ summary: summarize(all), rows, gaps, receipt: verdict }, null, 2) };

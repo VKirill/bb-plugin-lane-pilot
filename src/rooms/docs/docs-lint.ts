@@ -93,6 +93,32 @@ function unquote(value:string):string {
   return value.replace(/^["']|["']$/g, "");
 }
 
+/** `key: value` for a scalar, `key: [a, b]` for a list: the same subset parseFrontmatter reads. */
+const renderFrontmatter = (data: Frontmatter): string =>
+  Object.entries(data).map(([key, value]) => Array.isArray(value) ? `${key}: [${value.join(", ")}]` : `${key}: ${value}`).join("\n");
+
+/**
+ * frontmatter: document header (SMA k_t_frontmatter): `set` puts the keys, `merge` adds list values without
+ * duplicates. The body is returned byte-identical; a file with no header gets one prepended.
+ */
+export function setFrontmatter(content: string, patch: Frontmatter): string {
+  const parsed = parseFrontmatter(content);
+  const data = { ...(parsed?.data ?? {}), ...patch };
+  return `---\n${renderFrontmatter(data)}\n---\n${parsed?.body ?? content}`;
+}
+
+export function mergeFrontmatter(content: string, patch: Frontmatter): string {
+  const parsed = parseFrontmatter(content);
+  const data: Frontmatter = { ...(parsed?.data ?? {}) };
+  for (const [key, value] of Object.entries(patch)) {
+    const previous = data[key];
+    if (!Array.isArray(value) && !Array.isArray(previous)) { data[key] = value; continue; }
+    const merged = [...(Array.isArray(previous) ? previous : previous === undefined ? [] : [previous]), ...(Array.isArray(value) ? value : [value])];
+    data[key] = [...new Set(merged)];
+  }
+  return `---\n${renderFrontmatter(data)}\n---\n${parsed?.body ?? content}`;
+}
+
 /**
  * The body with the lines of fenced code blocks emptied: a `# HELP` line of a Prometheus sample or a shell comment
  * inside ``` is code, not a heading (treba, 2026-10-20: «exactly one H1, found 2» on a page whose second H1 was a sample).

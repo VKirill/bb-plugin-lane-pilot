@@ -1638,11 +1638,17 @@ def scout() -> dict:
 
 
 def series_preparation() -> dict:
-    """Series preparation: what the series runs against — the plugin version and commit, the scout, a clean sandbox."""
+    """Series preparation: what the series runs against — the plugin version and commit, the scout, a clean sandbox,
+    and the coverage verdict (SMA rl_terms): an uncovered node without a term or the owner's word refuses the series."""
     commit = git(str(ROOT), "rev-parse", "HEAD")
     version = json.loads((ROOT / "package.json").read_text()).get("version")
     dirty = git(SANDBOX["cwd"], "status", "--porcelain")
-    return {"commit": commit, "version": version, "scout": scout(), "sandboxClean": not dirty.strip()}
+    rc, out, err = bb("lane-pilot", "coverage", "--json", timeout=120)
+    try:
+        coverage_gaps = list(json.loads(out).get("gaps") or [])
+    except ValueError:
+        coverage_gaps = [f"coverage --json did not answer: {(err or out).strip()[:200]}"]
+    return {"commit": commit, "version": version, "scout": scout(), "sandboxClean": not dirty.strip(), "coverageGaps": coverage_gaps}
 
 
 def write_receipt(path: Path, start: float, scenarios: list[dict], ctx: Context | None, problems: list[str], names: list[str],
@@ -1723,6 +1729,10 @@ def main() -> int:
         log(f"series: {json.dumps(prep)[:300]}")
         if prep["scout"]["unlisted"] or prep["scout"]["undefined"]:
             log(f"scout: {prep['scout']}")
+        # A deferral without an agreed term turns the badge red: the series does not run on a red coverage verdict.
+        if prep["coverageGaps"]:
+            log(f"coverage refuses the series ({len(prep['coverageGaps'])}): {prep['coverageGaps'][:10]}")
+            return 1
         receipts = []
         for name in names:
             rc, out, _ = run([sys.executable, "-I", __file__, "--scenario", name], timeout=TIMEOUT_MIN * 60 * 3)
