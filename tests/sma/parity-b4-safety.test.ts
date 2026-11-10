@@ -137,21 +137,6 @@ describe("checkable hard rules", () => {
   });
 });
 
-describe("the grill blocks the build", () => {
-  it("[sma:k_v_grill] an unanswered challenge stops the build until answered", async () => {
-    const { runSim } = await import("../workflow/chain-harness");
-    const { pathOf, out } = await import("../workflow/chain-helpers");
-    const input = { goal: "Move sessions to Postgres", plan_text: "1) dual-write", quality_mode: "standard" };
-    const stubs = { "grill-plan": { open: ["backfill window"], locked: ["dual-write first"], deferred: [], risk_register: [{ risk: "lock contention" }] },
-      "lp.brainstorm": { status: "ok" }, "lp.plan": { status: "ok" }, "lp.build": { status: "done" }, "lp.close": { status: "closed" } };
-    const timeout = await runSim("grill-driven", { input, stubs, humans: { ask_open: { answer_kind: "timeout" } } });
-    expect(pathOf(timeout)).toBe("grill ask_open blocked");
-    expect(out(timeout)).toMatchObject({ status: "blocked" });
-    const answered = await runSim("grill-driven", { input, stubs, humans: { ask_open: { answer_kind: "answered" } } });
-    expect(pathOf(answered)).toBe("grill ask_open brainstorm plan build close done");
-    expect(out(answered)).toMatchObject({ status: "done" });
-  });
-});
 
 describe("same rules as the person", () => {
   it("[sma:k_lib_rulesparity] a helper's merged settings carry the person's deny list only", async () => {

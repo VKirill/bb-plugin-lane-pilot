@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PreToolUse: block destructive shell across CLIs."""
 from __future__ import annotations
-import hashlib, ipaddress, json, os, re, shlex, socket, subprocess, sys, tempfile, threading, time
+import hashlib, ipaddress, json, os, re, shlex, shutil, socket, subprocess, sys, tempfile, threading, time
 from pathlib import Path
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -2020,6 +2020,11 @@ def _git_airbag(cwd: str) -> tuple[str, str] | None:
                     raise OSError(out.stderr.strip()[:200] or f"git {args[0]} failed")
                 return out.stdout.strip()
 
+            # Start from the real index: git then hashes only what changed. An empty index would hash every file of the
+            # checkout (a minute on a large repository) and the airbag would be skipped at its time limit.
+            real = subprocess.run(["git", "rev-parse", "--git-path", "index"], cwd=root, capture_output=True, text=True, timeout=10).stdout.strip()
+            if real and (root / real).is_file():
+                shutil.copyfile(root / real, index)
             run("add", "-A")
             tree = run("write-tree")
             head = subprocess.run(["git", "rev-parse", "--verify", "HEAD"], cwd=root, capture_output=True, text=True).stdout.strip()
@@ -2139,7 +2144,9 @@ def _deps_guard_error(name: str, p: dict) -> str | None:
     if _PACKAGE_INSTALL.search(command):
         link = _linked_store(cwd)
         if link:
-            return f"[deps-guard] installing here writes through {link} into another checkout's shared dependency store. Run the install in that checkout itself."
+            return (f"[deps-guard] installing here writes through {link} into another checkout's shared dependency store. "
+                    "To add or change a package, make the store your own first: remove node_modules in this checkout "
+                    "(only the links go), then run the install again.")
     for segment in _delete_commands(command):
         if not segment or Path(segment[0]).name not in _FILE_OPS:
             continue

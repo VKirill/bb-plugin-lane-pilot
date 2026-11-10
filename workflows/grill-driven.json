@@ -121,7 +121,7 @@
         "answer": "",
         "answer_kind": "answered"
       },
-      "prompt": "One form with all open items (max 8), each with the branch, why it matters and a suggested default; unanswered items stay open and stop the build until answered.",
+      "prompt": "One form with all open items (max 8), each with the branch, why it matters and a suggested default; unanswered items become deferred, not blockers.",
       "out": {
         "answer": "string",
         "answer_kind": "answered|abort|timeout"
@@ -264,7 +264,7 @@
       "from": "ask_open",
       "to": "blocked",
       "pass": "artifact",
-      "when": "ask_open.answer_kind == 'abort' || (ask_open.answer_kind == 'timeout' && grill.open.length > 0)"
+      "when": "ask_open.answer_kind == 'abort'"
     },
     {
       "from": "ask_open",

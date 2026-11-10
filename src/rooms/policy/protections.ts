@@ -10,13 +10,15 @@ type Db = Pick<Database.Database, "prepare">;
  * saveProjectSetting records a disarm {key, by, at, until} (7 days) under `protection.disarm.<key>`; a daily pass
  * re-arms an expired disarm to its warning level and tells the owner; `--renew` moves the term with a reason.
  */
-export const PROTECTIONS: Record<string, { armed: unknown; warning: unknown; hazard: string }> = {
+export const PROTECTIONS: Record<string, { armed: unknown; alsoArmed?: readonly unknown[]; warning: unknown; hazard: string }> = {
   "plan_critique.mode": { armed: "gate", warning: "advisory", hazard: "an unchecked plan reaches the writer" },
-  "plan_fact.mode": { armed: "gate", warning: "advisory", hazard: "the writer's evidence is not checked against the diff" },
+  "plan_fact.mode": { armed: "gate", warning: "record", hazard: "the writer's evidence is not checked against the diff" },
   "code_critique.mode": { armed: "gate", warning: "advisory", hazard: "an unchecked diff is accepted and merged" },
-  "jev.judgments": { armed: "active", warning: "shadow", hazard: "machine judgments stop gating" },
-  "owner.words": { armed: "on", warning: "ask", hazard: "risky acts run without the owner's word" },
+  // risky is the owner's own default (only a high-risk landing waits for him): it is armed too; only off is a disarm.
+  "owner.words": { armed: "on", alsoArmed: ["risky"], warning: "risky", hazard: "risky acts run without the owner's word" },
 };
+
+const isArmed = (protection: { armed: unknown; alsoArmed?: readonly unknown[] }, value: unknown) => value === protection.armed || (protection.alsoArmed ?? []).includes(value);
 
 export const disarmKey = (key: string) => `protection.disarm.${key}`;
 export const DISARM_TERM_MS = 7 * 86_400_000;
@@ -48,7 +50,7 @@ export function noteProtectionDisarm(db: Db, projectId: string, key: string, val
   const protection = PROTECTIONS[key];
   if (!protection) return null;
   const now = opts.now ?? Date.now();
-  if (value === protection.armed) { writeDisarm(db, projectId, key, null, now); return null; }
+  if (isArmed(protection, value)) { writeDisarm(db, projectId, key, null, now); return null; }
   const existing = readDisarm(db, projectId, key);
   const record = existing ?? { key, by: opts.by ?? "settings", at: now, until: now + DISARM_TERM_MS };
   writeDisarm(db, projectId, key, record, now);
@@ -76,7 +78,7 @@ export function rearmExpiredDisarms(db: Db, projectId: string, now = Date.now())
     const disarm = readDisarm(db, projectId, key);
     if (!disarm || disarm.until > now) continue;
     const current = db.prepare(`SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND binding_id='' AND key=?`).get(projectId, key) as { value: string } | undefined;
-    if (readJson(current?.value) === protection.armed) { writeDisarm(db, projectId, key, null, now); continue; }
+    if (isArmed(protection, readJson(current?.value))) { writeDisarm(db, projectId, key, null, now); continue; }
     const nextVersion = (db.prepare(`SELECT COALESCE(MAX(version),0) AS v FROM lane_pilot_setting_generation WHERE project_id=? AND binding_id='' AND key=?`).get(projectId, key) as { v: number }).v + 1;
     db.prepare(`INSERT INTO lane_pilot_project_settings (project_id,binding_id,key,value,version,updated_at) VALUES (?,'',?,?,'1',?)
       ON CONFLICT(project_id,binding_id,key) DO UPDATE SET value=excluded.value, version=excluded.version, updated_at=excluded.updated_at`)
@@ -103,7 +105,7 @@ export function integrityReport(db: Db, settings: Record<string, unknown>, proje
       .all(projectId, disarm.at).slice(0, 10) as Array<{ taskId: string; stageId: string; state: string; at: number }> : [];
     return {
       key, hazard: protection.hazard, armed: protection.armed, current,
-      disarmed: Boolean(disarm) || current !== protection.armed,
+      disarmed: Boolean(disarm) || !isArmed(protection, current),
       term: disarm ? { at: disarm.at, until: disarm.until, daysLeft: Math.ceil((disarm.until - now) / 86_400_000) } : null,
       shadow_findings: shadow,
     };

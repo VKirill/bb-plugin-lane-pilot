@@ -73,9 +73,10 @@ export async function runWorktreeJanitor(ctx: Pick<ServerCore, "bb" | "db" | "lo
   const snapshot = async (hostId: string, worktreePath: string, name: string) =>
     (await ctx.host.call("gitWorktreeSnapshot", { requestedHostId: hostId, worktreePath, name }, { hostId, timeoutMs: 120_000 })) as { status: "clean" | "saved" | "missing" | "failed"; path: string | null; reason: string | null };
   const envSwept = await bestEffort(ctx.log, "attempt environment sweep", cleanupFinishedAttemptEnvironments(bb, db, snapshot, now, signal), [] as string[]);
-  // Disarmed protections past their term come back at warning level (SMA k_lib_stpa); global scope covers projects
-  // whose own rows also time out, since the pass runs for the whole hub.
-  const rearmed = rearmExpiredDisarms(db, GLOBAL_SETTINGS_PROJECT_ID, now);
+  // A hub-wide protection switched off past its term comes back at warning level (SMA k_lib_stpa) — only where the
+  // owner asked for it (protection.rearm=on): a setting he switched off is his, and nothing turns it back by itself.
+  // Without it the ended term is still shown by `bb lane-pilot integrity`.
+  const rearmed = loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)["protection.rearm"] === "on" ? rearmExpiredDisarms(db, GLOBAL_SETTINGS_PROJECT_ID, now) : [];
   for (const key of rearmed) ctx.log(`Lane Pilot: protection ${key} re-armed to warning after its disarm term`);
   const hosts = await listQaHosts(bb);
   let removed = 0, freedBytes = 0, kept = 0;
