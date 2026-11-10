@@ -46,6 +46,14 @@ print(f"Lane Pilot {d['version']}: canary {d['faults']} own faults in {w['attemp
       f"{'TRIPPED' if d['tripped'] else 'ok'}")
 for s in d.get("samples", [])[:5]:
     print(f"  {s['taskId']}: {s['reason']}")
+pool = d.get("pool")
+if pool is not None:
+    blocked = pool.get("blocked") or []
+    print(f"Pool: {pool.get('enabled', 0)} enabled worker(s), {len(blocked)} blocked "
+          f"({'green' if d.get('green') else 'NOT GREEN'})")
+for b in blocked if pool is not None else []:
+    projects = ", ".join(b.get("projectIds") or [])
+    print(f"  {b['key']}: {b['reason']}" + (f" [{projects}]" if projects else ""))
 if d["tripped"] and d.get("rollback"):
     print(f"Roll back to {d['previousVersion']}: {d['rollback']}")
 sys.exit(1 if d["tripped"] else 0)

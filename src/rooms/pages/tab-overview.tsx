@@ -2,6 +2,7 @@ import { stateLabel, t } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
 import { HowItWorks } from "./how-it-works";
+import { BacklogBoardPanel } from "../backlog/ui";
 import { LocaleControls, OverviewLoading, StatusRow } from "../ui-shell/ui";
 import { runTone } from "../ui-shell/ui";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
@@ -78,6 +79,7 @@ export function OverviewTab({ page }: { page: LpPage }) {
           ))}
         </SurfaceBody>
       </Surface>
+      {page.projectId ? <BacklogBoardPanel projectId={page.projectId} /> : null}
       <Surface testId="setup-status">
         <SurfaceHeader><h2 className="text-sm font-medium">{t("overviewSetup")}</h2></SurfaceHeader>
         <SurfaceBody className="space-y-3">

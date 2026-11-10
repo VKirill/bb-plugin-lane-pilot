@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { listReviewedObservations } from "../../learning";
 import { prototypeConfigSchema, taskV2Schema } from "../../contracts";
@@ -22,7 +23,7 @@ import { SCHEDULE_USAGE, runScheduleCli, scheduleFailureSweep } from "../../sche
 import { answerWorkflowQuestion } from "../../workflow/server";
 import { AGENTS_USAGE, agentRegistry, PM_SKILLS_USAGE, runAgentsCli, runPmSkillsCli, runPmSkillUseCli } from "../../native-agent/server";
 
-import { ANAMNESIS_USAGE, anamnesisFor } from "../../anamnesis";
+import { ANAMNESIS_USAGE, anamnesisFor, collectOwnerMessages, sdkThreadsPort } from "../../anamnesis";
 import { LEARNING_USAGE, learningFor, runLearningCli } from "../../learning";
 import { PM_REPLAY_USAGE, runPmReplayCli, listScenarios } from "../../pm-replay";
 import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
@@ -48,6 +49,7 @@ import { WAITING_USAGE, runWaitingCli } from "../../owner-waiting/server";
 import type { LearningItemsReader } from "../../owner-waiting";
 import { LEAD_USAGE, runLeadCli } from "../../lead/server";
 import { COVERAGE_USAGE, runCoverageCli } from "../../coverage";
+import { mergeFrontmatter, parseFrontmatter, setFrontmatter } from "../../docs";
 import { SMA_MAP_USAGE, runSmaLiveCli, runSmaMapCli, smaCheckedPercent, smaCounts, smaDonePercent, smaRows } from "../../sma-map";
 import { designJournalLines, readinessWords, trainedConditions, trainingRatios } from "../../design-eval";
 import { DESIGN_PAIR_USAGE, runDesignPairCli } from "../../design-eval/server";
@@ -293,6 +295,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"waiting", summary:"Everything only the owner can decide, with why, evidence and the exact action; what went red overnight; the Telegram digest of new items (quiet hours 23:00-08:00 Europe/Madrid by default)", usage:WAITING_USAGE },
       { name:"lead", summary:"Штурман, the lead over the runs: its state and ticks, the road tree, the owner's answers to its proposals, the rights per class, the decision journal with the prediction made before each answer, the exam and the backtest", usage:LEAD_USAGE },
       { name:"coverage", summary:"What proves each pipeline stage, attempt transition, failure class, gate, memory path, room and key mechanism: covered live by a deploy-drill scenario, covered by tests only (and why no drill), or not covered; --receipt checks the live claims against a drill receipt", usage:COVERAGE_USAGE },
+      { name:"frontmatter", summary:"Read, set and merge a file's YAML header; the body is never touched and a file changed under the read is refused", usage:"bb lane-pilot frontmatter <project-id> <path> [--set k=v]... [--merge k=a,b]..." },
       { name:"attempt", summary:"One attempt's whole record: writer thread, stage receipts and gate events of that attempt, dispatch context, verification results, critic input hash, the attempt-change row", usage:"bb lane-pilot attempt <attempt-id>" },
       { name:"stats", summary:"Project report (sma-stats): phases, plans, requirements, git metrics, a timeline and the attempt metrics", usage:"bb lane-pilot stats [project-id] [--days N]" },
       { name:"parity", summary:"Session and terminal parity of one attempt: six lines (hooks, memory, rules, skills, permissions, model) saying whether the BB session and a terminal session got the same layer", usage:"bb lane-pilot parity <attempt-id> [--json]" },
@@ -425,10 +428,53 @@ ${ERRANDS_USAGE}` },
           return learning ? await runLearningCli(learning, args) : { exitCode:1, stderr:"learning is not mounted" };
         }
         if (command === "policy-exam" || command === "policy") {
-          return await runPolicyCli({ db, kv:bb.storage.kv as never, ownerSweeps: [...OWNER_ITEM_SWEEPS, budgetSpentSweep(services)], reviewedObs: listReviewedObservations as never }, command, args);
+          return await runPolicyCli({ db, kv:bb.storage.kv as never, ownerSweeps: [...OWNER_ITEM_SWEEPS, budgetSpentSweep(services)], reviewedObs: listReviewedObservations as never,
+            mineMessages: (from, to) => collectOwnerMessages(sdkThreadsPort(bb as never), from, to).then((rows) => rows.map((row) => ({ id: row.id, at: row.at, text: row.text }))),
+            // ponytail: a conservative judge — an explicit yes/no to a named change is a decision, anything else is
+            // chatter (ceiling: decisions in other wording are missed; upgrade path: a System One judgment per message).
+            mineJudge: async (message) => {
+              const text = message.text.toLowerCase();
+              const approve = /(^|\s)(да|давай|согласен|одобряю|делай|выкатывай|сливай|ok|yes|approved?)\b/u.test(text) && !/не |not |don't|нет/u.test(text);
+              const refuse = /(^|\s)(нет|не надо|не делай|отмена|отказываюсь|no|don'?t|refuse|отклоняю)\b/u.test(text);
+              if (!approve && !refuse) return null;
+              return { decision: approve ? "approve" : "refuse", descriptor: { kind: "other", attrs: {} }, expected: "owner_only", why: `the owner ${approve ? "approved" : "refused"} a change in a message` };
+            },
+          }, command, args);
         }
         if (command === "coverage") {
           return runCoverageCli(args);
+        }
+        if (command === "frontmatter") {
+          // frontmatter: document header (SMA k_t_frontmatter): read, set and merge a file's header without touching the
+          // body. The write goes through a hash guard: a file changed between the read and the write is refused.
+          const [projectId, rel, ...rest] = args;
+          const config = projectId ? loadPrototypeConfig(db, projectId) : null;
+          if (!config || !rel) return { exitCode:1, stderr:"usage: bb lane-pilot frontmatter <project-id> <path> [--set k=v]... [--merge k=a,b]..." };
+          const clean = rel.replace(/^\.\//, "");
+          if (rel.startsWith("/") || clean.split("/").includes("..")) return { exitCode:1, stderr:"frontmatter: a path outside the project checkout is refused" };
+          const quoted = `'${clean.replace(/'/g, `'\\''`)}'`;
+          const sets = rest.flatMap((value, index) => value === "--set" && rest[index + 1] ? [rest[index + 1]!] : []);
+          const merges = rest.flatMap((value, index) => value === "--merge" && rest[index + 1] ? [rest[index + 1]!] : []);
+          const read = await host.call("runCommand", { requestedHostId:config.hostId, command:`cat -- ${quoted}`, cwd:config.writerWorkspacePath, timeoutSec:30 }, { hostId:config.hostId, timeoutMs:35_000 });
+          if (read.exitCode !== 0) return { exitCode:1, stderr:`frontmatter: cannot read ${clean}` };
+          if (!sets.length && !merges.length) return { exitCode:0, stdout:JSON.stringify(parseFrontmatter(read.stdout)?.data ?? {}) };
+          const patch: Record<string, string> = {};
+          for (const pair of sets) { const at = pair.indexOf("="); if (at < 1) return { exitCode:1, stderr:`--set expects k=v, got '${pair}'` }; patch[pair.slice(0, at)] = pair.slice(at + 1); }
+          const merge: Record<string, string[]> = {};
+          for (const pair of merges) { const at = pair.indexOf("="); if (at < 1) return { exitCode:1, stderr:`--merge expects k=a,b, got '${pair}'` }; merge[pair.slice(0, at)] = pair.slice(at + 1).split(",").map((part) => part.trim()).filter(Boolean); }
+          const set = setFrontmatter(read.stdout, patch);
+          const edited = "refused" in set ? set : mergeFrontmatter(set.content, merge);
+          if ("refused" in edited) return { exitCode:1, stderr:edited.refused };
+          // the hash is of the text this edit was made from, so a change between the read and the write is caught
+          const sha = createHash("sha256").update(read.stdout, "utf8").digest("hex");
+          const hashOf = `(sha256sum -- ${quoted} 2>/dev/null || shasum -a 256 -- ${quoted}) | cut -d' ' -f1`;
+          const b64 = Buffer.from(edited.content, "utf8").toString("base64");
+          const write = await host.call("runCommand", { requestedHostId:config.hostId,
+            command:`test ! -L ${quoted} && test "$( ${hashOf} )" = "${sha}" && echo '${b64}' | base64 -d > ${quoted}`,
+            cwd:config.writerWorkspacePath, timeoutSec:30 }, { hostId:config.hostId, timeoutMs:35_000 });
+          return write.exitCode === 0
+            ? { exitCode:0, stdout:`frontmatter: ${clean} written` }
+            : { exitCode:1, stderr:`frontmatter: ${clean} changed under the read or the write failed` };
         }
         if (command === "skills") {
           return await runSkillsCli(args);

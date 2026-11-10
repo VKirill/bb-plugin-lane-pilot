@@ -35,6 +35,8 @@ export const acceptanceCardSchema = z.object({
   /** Stages with no receipt or a skipped one: «not run» is not «no findings». */
   notRun: z.array(z.object({ stageId: z.string(), why: z.string() }).strict()),
   cost: z.object({ state: z.enum(["measured", "partial", "not_measured"]), usd: z.number().nullable(), tokens: z.number().nullable(), note: z.string().nullable(), attempts: z.number().int(), measured: z.number().int() }).strict(),
+  /** An open task_word owner item waits on this task's family: the card carries the yes/no controls (SMA sc_acceptance). */
+  awaitsWord: z.boolean().optional(),
 }).strict();
 export type AcceptanceCard = z.infer<typeof acceptanceCardSchema>;
 

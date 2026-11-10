@@ -1,5 +1,6 @@
 import { SETTING_EVENTS_WEBHOOK_URL } from "@lane-pilot/settings-catalog";
 import { getAttempt, getRun, getTask, loadProjectSettings, onAttemptChanged } from "../../storage";
+import type { LanePilotDatabase } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
 
 /**
@@ -23,6 +24,19 @@ export function taskEventBody(input: Partial<Record<string, unknown>>): TaskEven
 let version = 0;
 /** The world version: grows with every change of an attempt since the plugin started. */
 export const worldVersion = () => version;
+
+/**
+ * The one sanctioned outbound path for events that are not a task's end (SMA k_lib_notify): the same webhook, the same
+ * https-only check, the same nine-field clip. An unset address means no post; the caller names `event` and `state`.
+ */
+export async function postEvent(db: LanePilotDatabase, projectId: string, input: Partial<Record<string, unknown>>, log: (message: string) => void = () => undefined): Promise<boolean> {
+  const url = String(loadProjectSettings(db, projectId)[SETTING_EVENTS_WEBHOOK_URL] ?? "").trim();
+  if (!/^https:\/\/[^\s]+$/.test(url)) return false;
+  const body = taskEventBody({ ...input, projectId, at: input.at ?? Date.now() });
+  await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(10_000) })
+    .catch((cause: unknown) => log(`outbound: ${url.slice(0, 60)}: ${cause instanceof Error ? cause.message : String(cause)}`));
+  return true;
+}
 
 export function mountOutbound(ctx: Pick<ServerCore, "db" | "bb" | "log" | "isDisposed">): void {
   const sent = new Set<string>();

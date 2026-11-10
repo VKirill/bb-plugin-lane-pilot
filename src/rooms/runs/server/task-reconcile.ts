@@ -15,6 +15,7 @@ interface Services {
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
   docsPlaces: DocsNightlyPort["docsPlaces"];
   resumeOrphans: ResumeOrphansPort["resumeOrphans"];
+  recheckCancels: ResumeOrphansPort["recheckCancels"];
   stability: StabilityPort;
   recoverMergeIntents: MergeIntentsApi["recoverMergeIntents"];
   startAfterAcceptance: WorkflowEngineApi["startAfterAcceptance"];
@@ -81,6 +82,11 @@ export function createTaskReconcile(ctx:ServerCore, services:Services) {
           bb.log.info(`Lane Pilot took back ${took.resumed.length + took.finished.length} attempt(s) whose hold had lapsed${took.skipped.length ? ` (${took.skipped.length} skipped)` : ""}`);
         }
       });
+    }
+    if (!startup) {
+      // A cancel whose stop was still unseen when its wait ended is asked again here (SMA m_confirm_later);
+      // start-up recovery runs the same step once more about two minutes in.
+      await step("cancel re-check", () => services.recheckCancels());
     }
     await step("parking of blocked tasks", () => services.stability.adoptBlockedByFaults(options.now));
     await step("parked-task sweep", () => services.stability.sweep(options.now));

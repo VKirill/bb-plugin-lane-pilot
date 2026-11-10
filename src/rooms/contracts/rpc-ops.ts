@@ -171,6 +171,11 @@ export const rpcOps = {
     input: z.object({ id: z.string().min(1).max(80), evidence: z.string().min(1).max(2000) }).strict(),
     output: z.unknown(),
   },
+  /** The project's backlog read live and sorted into lanes (issuable, to estimate, to split, blocked) for the board screen (src/rooms/backlog). */
+  backlog_board: {
+    input: z.object({ projectId: z.string().min(1).max(200) }).strict(),
+    output: z.unknown(),
+  },
   /** The owner's «выдать» on a backlog row of his list: the todo goes to the project's PM as a work order (src/rooms/backlog). */
   backlog_issue: {
     input: z.object({ projectId: z.string().min(1).max(200), todoId: z.string().min(1).max(120) }).strict(),
@@ -188,6 +193,11 @@ export const rpcOps = {
   },
   /** What is on record for a task or an attempt: bases, merges, changed files, receipts. */
   task_changes: {
+    input: z.object({ ref: z.string().min(1).max(200) }).strict(),
+    output: z.unknown(),
+  },
+  /** The changes of a work as a patch: git show of its merge commit, clipped with a mark (src/rooms/rollback). */
+  task_diff: {
     input: z.object({ ref: z.string().min(1).max(200) }).strict(),
     output: z.unknown(),
   },

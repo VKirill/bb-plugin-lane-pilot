@@ -1,6 +1,6 @@
 import { SETTING_WRITER_SILENCE_NUDGE_MIN } from "@lane-pilot/settings-catalog";
-import { getReasoningTrace, getRun, getRunSettingsScopes, listOpenAttempts, listUnfinishedStages, loadPrototypeConfig, loadProjectSettings, openDatabase } from "./src/rooms/storage";
-import { PROVIDER_CAPABILITIES } from "@lane-pilot/models";
+import { getReasoningTrace, getRun, getRunSettingsScopes, listOpenAttempts, listUnfinishedStages, loadPrototypeConfig, loadProjectSettings, openDatabase, listProjectsWithGlobalSettings } from "./src/rooms/storage";
+import { PROVIDER_CAPABILITIES, writerFallbackChain, writerFallbacks } from "@lane-pilot/models";
 import { migrations as lanePilotMigrations } from "./src/rooms/migrations";
 import { coupledSettingKeys, validateSettingChanges, validateSettingValue, validateSettingsObject } from "./src/rooms/settings";
 import { createTaskReconcile } from "./src/rooms/runs/server";
@@ -10,7 +10,7 @@ import { storeNativeSelection } from "./src/rooms/native-agent/server/native-pro
 import { createMergeIntentRecovery, gateResolverFor } from "./src/rooms/verification/server";
 import { registerCli } from "./src/rooms/tools/server/cli";
 import { createCore } from "./src/rooms/core/server/core";
-import { createCanary, mountCanary } from "./src/rooms/stability/server";
+import { createCanary, mountCanary, poolReadiness, type PoolChain } from "./src/rooms/stability/server";
 import { createCouncil, mountCouncilGraph } from "./src/rooms/council/server";
 import { createWorldService } from "./src/rooms/world/server";
 import { createDocsNightly } from "./src/rooms/docs/server";
@@ -58,7 +58,7 @@ import { buildCliInvocation, skillSwitchMorningLine } from "./src/rooms/writer";
 import { argvValidationMap } from "./src/rooms/settings";
 import { createPluginCheckers } from "./src/rooms/checkers/server";
 import { createStageReturn } from "./src/rooms/stage-return/server";
-import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, closeStaleRuns, isTaskSatisfied } from "./src/rooms/runs/server"
+import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, closeStaleRuns, coreHostsRequiredProvider, isTaskSatisfied } from "./src/rooms/runs/server"
 import { pluginStopped } from "./src/rooms/contracts/errors";
 import { registerRpc, ownerItemSweeps } from "./src/rooms/core/server/rpc";
 import { mountOwnerBell } from "./src/rooms/owner-waiting/server";
@@ -69,7 +69,7 @@ import { checkTickDeps, scheduleIsolated } from "./src/rooms/platform/server";
 import { clearDrainSnapshot, readDrainSnapshot, skipRedundantStartupScans } from "./src/rooms/stability/server";
 import { tokenCursorRow, tokenDailyByModel } from "./src/rooms/usage/server";
 import type { TokenCursorReader } from "./src/rooms/work-graph/server";
-import { onAttemptFinished, createWriterQuestionTimeout, DEFAULT_SILENCE_NUDGE_MIN, sweepWriterSilence, turnCeilingOfRun, sweepWriterWakes } from "./src/rooms/writer/server";
+import { onAttemptFinished, createWriterQuestionTimeout, DEFAULT_SILENCE_NUDGE_MIN, sweepWriterSilence, turnCeilingOfRun, sweepWriterWakes, walkWriterChain } from "./src/rooms/writer/server";
 import { threadPendingInteractions } from "./src/rooms/relay/server";
 import { createStageChildren, mountErrands } from "./src/rooms/qa/server";
 import { createDocsStage } from "./src/rooms/docs/server";
@@ -246,6 +246,7 @@ export interface Services {
   recoverLostHolderThread: ReconcileApi["recoverLostHolderThread"];
   resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
   resumeOrphans: ReconcileApi["resumeOrphans"];
+  recheckCancels: ReconcileApi["recheckCancels"];
   runBrowserQa: QaStagesApi["runBrowserQa"];
   resumeBrowserQaThreads: QaStagesApi["resumeBrowserQaThreads"];
   runDocsMaintenance: DocsStageApi["runDocsMaintenance"];
@@ -386,7 +387,23 @@ export default async function plugin(bb: BbPluginApi) {
     { council: createCouncil(ctx) },
     { world: createWorldService(ctx, { projectName: (projectId) => bb.sdk.projects.get({ projectId }).then((p) => (typeof p?.name === "string" ? p.name : null), () => null) }) },
     // providerBreaker is another field of this bag: the canary reads it at call time through the thunk.
-    { canary: createCanary(ctx, () => services.providerBreaker) },
+    // The readiness thunk does the same for the hold sources and the per-project writer chains, so the
+    // «not green» answer names every blocked worker with its reason (SMA m_ac_pool_ready, m_not_green).
+    { canary: createCanary(ctx, () => services.providerBreaker, async () => poolReadiness(
+      listProjectsWithGlobalSettings(db).flatMap((projectId): PoolChain[] => {
+        const config = loadPrototypeConfig(db, projectId);
+        if (!config) return [];
+        const settings = loadProjectSettings(db, projectId);
+        const primary = {
+          providerId: typeof settings["writer.provider"] === "string" ? settings["writer.provider"] as string : config.writerProviderId,
+          model: typeof settings["writer.model"] === "string" && settings["writer.model"] ? settings["writer.model"] as string : config.writerModel,
+        };
+        return [{ projectId, hostId: config.hostId, settings,
+          members: writerFallbackChain(primary, writerFallbacks(settings), { providerId: config.pmProviderId, model: config.pmModel }) }];
+      }),
+      (members, input) => walkWriterChain(members, input, {
+        breaker: services.providerBreaker, presence: services.ownerPresence, usage: services.providerUsage,
+        coreHosts: (providerId: string) => coreHostsRequiredProvider(bb, providerId), log: ctx.log }))) },
     { memoryProbe: createMemoryProbe(ctx, services) },
     { ruleScan: createRuleScan(ctx, services, selfRepairDeps()) },
     { promotions: createPromotionService(ctx, services) },
@@ -617,6 +634,10 @@ export default async function plugin(bb: BbPluginApi) {
           if (!skipScans) await step("run sweep", sweepRuns);
           if (!skipScans) await step("worktree sweep", sweepEnvironments);
         } });
+        // SMA m_confirm_later: a stop the start-up resume could not see is asked again about two minutes in,
+        // before the five-minute periodic pass picks it up.
+        const cancelRecheck = setTimeout(() => { void step("cancel re-check", () => services.recheckCancels()); }, 120_000);
+        signal.addEventListener("abort", () => clearTimeout(cancelRecheck), { once: true });
         await step("adoption of waiting rules", () => {
           const adopted = adoptWaitingRules(db);
           if (adopted) bb.log.info(`Lane Pilot put ${adopted} waiting rule(s) on trial`);

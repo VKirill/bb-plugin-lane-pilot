@@ -829,6 +829,16 @@ export function getReasoningTraceJson(db: LanePilotDatabase, attemptId: string):
   return (db.prepare("SELECT trace_json FROM lane_pilot_attempt_reasoning WHERE attempt_id=?").get(attemptId) as { trace_json: string } | undefined)?.trace_json ?? null;
 }
 
+/** The newest attempt that ran on a thread: a writer thread can carry several attempts (feedback turns), only the newest owns it. */
+export function newestAttemptIdForThread(db: LanePilotDatabase, threadId: string): string | null {
+  return (db.prepare("SELECT id FROM lane_pilot_attempt WHERE thread_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1").get(threadId) as { id: string } | undefined)?.id ?? null;
+}
+
+/** When an attempt row last changed (a state change stamps it): how long it has stood in its state. */
+export function attemptUpdatedAt(db: LanePilotDatabase, attemptId: string): number | null {
+  return (db.prepare("SELECT updated_at FROM lane_pilot_attempt WHERE id=?").get(attemptId) as { updated_at: number } | undefined)?.updated_at ?? null;
+}
+
 /** The work a thread last ran as an attempt, with its run's project and PM thread (the info panel's writer card). */
 export function latestAttemptWorkForThread(db: LanePilotDatabase, threadId: string): { run_id: string; task_id: string; project_id: string; pm_thread_id: string | null } | undefined {
   return db.prepare(`SELECT a.run_id, a.task_id, r.project_id, r.pm_thread_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id

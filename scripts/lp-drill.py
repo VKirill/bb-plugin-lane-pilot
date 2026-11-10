@@ -2192,7 +2192,15 @@ def series_preparation() -> dict:
         checks.append({"name": name, "ok": ok, "detail": detail})
         if not ok:
             problems.append(f"{name}: {detail}")
-    return {"commit": commit, "version": version, "scout": scout(), "sandboxClean": not dirty.strip(), "checks": checks, "problems": problems}
+    # The coverage verdict (SMA rl_terms): an uncovered node without a term or the owner's word refuses the series.
+    rc, out, err = bb("lane-pilot", "coverage", "--json", "--strict", timeout=120)
+    try:
+        answer = json.loads(out)
+    except ValueError:
+        answer = None
+    # Anything but the command's own object is no verdict: the series does not start on a guess.
+    coverage_gaps = list(answer.get("gaps") or []) if isinstance(answer, dict) else [f"coverage --json did not answer: {(err or out).strip()[:200]}"]
+    return {"commit": commit, "version": version, "scout": scout(), "sandboxClean": not dirty.strip(), "checks": checks, "problems": problems, "coverageGaps": coverage_gaps}
 
 
 def _parses(path: Path) -> bool:
@@ -2328,6 +2336,10 @@ def main() -> int:
                 log(f"series not ready: {problem}")
             print("series not ready: " + "; ".join(prep["problems"]), file=sys.stderr)
             return 2
+        # A deferral without an agreed term turns the badge red: the series does not run on a red coverage verdict.
+        if prep["coverageGaps"]:
+            log(f"coverage refuses the series ({len(prep['coverageGaps'])}): {prep['coverageGaps'][:10]}")
+            return 1
         # The series runs the named suites in SUITES order; a suite's scenes land in the manifest under its name, and the
         # metrics suite judges the archive last (SMA rl_suites, rl_metrics).
         wanted = set(names)
