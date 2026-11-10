@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { phaseStageCells, PHASE_STAGES } from "../../src/rooms/phase";
@@ -5,7 +6,7 @@ import { ceilingLine, tailWords } from "../../src/rooms/work-graph";
 import { workerSecretReach } from "../../src/rooms/verification";
 import { explainCatalog, explainWord, firstSection } from "../../src/rooms/tools/server/explain";
 import { CURRICULUM_KV_KEY, CURRICULUM_ROW_BOUND, curriculumClusters, runCurriculumWeekly, weakSpotsBrief, type CurriculumCluster } from "../../src/rooms/tools/server/self-improve";
-import { verdictInventory } from "../../src/rooms/tools/server/verdicts";
+import { VERDICT_LIST_COMMAND, verdictFiles, verdictInventory } from "../../src/rooms/tools/server/verdicts";
 import { DRAFT_KEEP_MS, MAX_DRAFT_CONTRACTS, createFromDraft, getDraft, proposeDraft } from "../../src/rooms/tasks/server";
 import { createAttempt, createRun, createTask, migrations, openDatabase, saveProjectSetting, savePrototypeConfig, setAttemptWorkspace, setRunThread, saveReasoningTrace } from "../../src/rooms/plugin-db";
 import { getAttemptChange, landingOf } from "../../src/rooms/rollback";
@@ -183,24 +184,38 @@ describe("parity d10-rest-2", () => {
     mkdirSync(join(root, ".agents/planning/sketches"), { recursive: true });
     writeFileSync(join(root, ".agents/planning/spikes/s1.md"), "---\nquestion: can the queue hold 1k tasks?\nverdict: yes\n---\n# spike\n");
     writeFileSync(join(root, ".agents/planning/sketches/home.html"), "---\ntitle: home sketch\n---\n<html/>\n");
-    const rows = verdictInventory(root);
+    // The plugin runs this command in the project's checkout on its own machine (a host call) and reads only what comes back.
+    const listed = (cwd: string) => verdictFiles(execFileSync("/bin/bash", ["-c", VERDICT_LIST_COMMAND], { cwd, encoding: "utf8" }));
+    const rows = verdictInventory(listed(root));
     expect(rows).toHaveLength(2);
-    expect(rows.find((r) => r.kind === "spike")).toMatchObject({ question: "can the queue hold 1k tasks?", verdict: "yes" });
-    expect(rows.find((r) => r.kind === "sketch")?.verdict).toBe("open");
-    expect(verdictInventory(mkdtempSync(join(tmpdir(), "verdicts-empty-")))).toEqual([]);
+    expect(rows.find((r) => r.kind === "spike")).toMatchObject({ file: ".agents/planning/spikes/s1.md", question: "can the queue hold 1k tasks?", verdict: "yes" });
+    expect(rows.find((r) => r.kind === "sketch")).toMatchObject({ file: ".agents/planning/sketches/home.html", question: "home sketch", verdict: "open" });
+    expect(verdictInventory(listed(mkdtempSync(join(tmpdir(), "verdicts-empty-"))))).toEqual([]);
   });
 
-  it("[sma:k_pl_spikes] bb lane-pilot planning verdicts --root <folder> prints the inventory of a temporary folder and exits 0; without the verb it exits 1", async () => {
+  it("[sma:k_pl_spikes] bb lane-pilot planning verdicts <project> asks the project's own machine, prints the inventory and exits 0; without a project it exits 1", async () => {
     const root = mkdtempSync(join(tmpdir(), "verdicts-cli-"));
     mkdirSync(join(root, ".agents/planning/spikes"), { recursive: true });
     writeFileSync(join(root, ".agents/planning/spikes/s1.md"), "---\nquestion: can the queue hold 1k tasks?\nverdict: yes\n---\n# spike\n");
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
-    registerCli(createCore(bb, openDatabase(bb)), {} as Services, migrations);
-    const ran = await harness.behavior.runCli(["planning", "verdicts", "--root", root]);
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, { projectId: "proj_v", hostId: "host-far", pmWorkspacePath: root, writerWorkspacePath: root, pmProviderId: "claude-code", pmModel: "m", writerProviderId: "codex", writerModel: "m" });
+    const core = createCore(bb, db);
+    // The machine that holds the checkout answers the call; the hub's own process opens no project file.
+    const asked: Array<{ hostId: string; cwd: string }> = [];
+    core.host = { call: async (_method: string, input: { requestedHostId: string; command: string; cwd: string }) => {
+      asked.push({ hostId: input.requestedHostId, cwd: input.cwd });
+      return { hostId: input.requestedHostId, exitCode: 0, stderr: "", stdout: execFileSync("/bin/bash", ["-c", input.command], { cwd: input.cwd, encoding: "utf8" }) };
+    } } as never;
+    registerCli(core, {} as Services, migrations);
+    const ran = await harness.behavior.runCli(["planning", "verdicts", "proj_v"]);
     expect(ran.exitCode).toBe(0);
     expect(ran.stdout).toContain("can the queue hold 1k tasks?");
     expect(ran.stdout).toContain("yes");
+    expect(asked).toEqual([{ hostId: "host-far", cwd: root }]);
     expect((await harness.behavior.runCli(["planning"])).exitCode).toBe(1);
+    expect((await harness.behavior.runCli(["planning", "verdicts"])).exitCode).toBe(1);
+    expect((await harness.behavior.runCli(["planning", "verdicts", "proj_unknown"])).exitCode).toBe(1);
   });
 
 

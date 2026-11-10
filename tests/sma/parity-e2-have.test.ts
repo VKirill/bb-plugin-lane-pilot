@@ -396,7 +396,10 @@ describe("references for agents", () => {
     const nodes = JSON.stringify(graph.nodes);
     expect(nodes).toContain("AI framework selector");
     const spec = graph.nodes.find((node) => node.id === "spec");
-    expect(JSON.stringify(spec)).toContain("evaluation");
+    // The evaluation plan is a step of its own now (eval_plan), and the spec must hold an «## Evaluation» section fed by it.
+    expect(JSON.stringify(spec)).toContain("## Evaluation");
+    expect(JSON.stringify(spec)).toContain('"from":"eval_plan"');
+    expect(graph.nodes.some((node) => node.id === "eval_plan")).toBe(true);
     const review = JSON.parse(readFileSync("workflows/eval-review.json", "utf8")) as { nodes?: unknown };
     expect(Array.isArray(review.nodes) && review.nodes.length > 0).toBe(true);
   });

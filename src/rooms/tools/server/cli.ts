@@ -1,4 +1,3 @@
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { listReviewedObservations } from "../../learning";
@@ -40,7 +39,7 @@ import { RUN_GOAL_USAGE, runGoalSweep, runRunGoalCli } from "../../run-goal/serv
 import { CAPABILITY_USAGE, runCapabilityCli } from "../../capability/server";
 import { workerSecretReach } from "../../verification";
 import { explainCatalog, explainWord, guideDocs } from "./explain";
-import { renderVerdicts, verdictInventory } from "./verdicts";
+import { VERDICT_LIST_COMMAND, renderVerdicts, verdictFiles, verdictInventory } from "./verdicts";
 import { OUTAGE_USAGE, runOutageCli } from "../../outage/server";
 import { BACKLOG_USAGE, runBacklogCli } from "../../backlog/server";
 import { runHypothesisCli } from "../../hypotheses/server";
@@ -321,7 +320,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"design-pair-answer", summary:"The owner's pick for a started design pair; closes its waiting item", usage:DESIGN_PAIR_USAGE.split("   |   ")[1]! },
       { name:"sma-map", summary:"The SMA product map node by node: what Lane Pilot has for each of its 1798 nodes, the card text, the proof link, the contract tests that check it, and the shares mapped and checked", usage:SMA_MAP_USAGE },
       { name:"explain", summary:"One word about a verb or a concept: the verb's summary and usage with the doc that names it, or the guide doc whose front matter declares the topic", usage:"bb lane-pilot explain <verb or topic>" },
-      { name:"planning", summary:"The planning verdicts inventory: every spike and sketch under .agents/planning with its question and verdict (open when none)", usage:"bb lane-pilot planning verdicts [--root path]" },
+      { name:"planning", summary:"The planning verdicts inventory: every spike and sketch under .agents/planning with its question and verdict (open when none)", usage:"bb lane-pilot planning verdicts <projectId>" },
       { name:"rules", summary:"The rules by form (always | skill | check | hook | memory) and the mechanism that enforces each; classify them, generate mechanism tasks for the recurring check rules, retire the text a mechanism now holds", usage:RULES_USAGE },
       { name:"workflow-trigger", summary:"Start a workflow in a project as its schedule trigger does (the automation of a schedule calls this); exit 1 with the reason when it cannot start", usage:"bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]" },
       { name:"workflow-answer", summary:"Answer the question a workflow run in a project without a PM chat put on the owner's list (the option, or words that name one, or a free answer)", usage:"bb lane-pilot workflow-answer <run-id> <step-key> <option or words>" },
@@ -548,14 +547,18 @@ ${ERRANDS_USAGE}` },
           return { exitCode:0, stdout:JSON.stringify(missCurriculum(db, args[0] === "--days" ? Number(args[1]) || 30 : 30), null, 2) };
         }
         if (command === "planning") {
-          if (args[0] !== "verdicts") return { exitCode:1, stderr:"usage: bb lane-pilot planning verdicts [--root path]" };
-          const root = args[1] === "--root" ? args[2] : process.cwd();
-          if (!root) return { exitCode:1, stderr:"usage: bb lane-pilot planning verdicts [--root path]" };
-          return { exitCode:0, stdout:renderVerdicts(verdictInventory(root)) };
+          // The planning folder lives in the project's checkout on its own machine: the hub asks that machine, it never opens the path itself.
+          const config = args[0] === "verdicts" && args[1] ? loadPrototypeConfig(db, args[1]) : null;
+          if (args[0] !== "verdicts" || !args[1]) return { exitCode:1, stderr:"usage: bb lane-pilot planning verdicts <projectId>" };
+          if (!config?.hostId || !config.pmWorkspacePath) return { exitCode:1, stderr:`project ${args[1]} has no checkout bound in Lane Pilot` };
+          const listed = await host.call("runCommand", { requestedHostId:config.hostId, command:VERDICT_LIST_COMMAND, cwd:config.pmWorkspacePath, timeoutSec:30 }, { hostId:config.hostId, timeoutMs:35_000 });
+          if (listed.exitCode !== 0) return { exitCode:1, stderr:`the project's machine did not list .agents/planning: ${(listed.stderr || `exit ${listed.exitCode}`).trim().slice(0, 300)}` };
+          return { exitCode:0, stdout:renderVerdicts(verdictInventory(verdictFiles(listed.stdout))) };
         }
         if (command === "explain") {
           const word = args[0];
-          const docs = guideDocs(process.cwd());
+          // The guide is the plugin's own docs folder, wherever the hub process happens to stand.
+          const docs = guideDocs(pluginRootFromModule(import.meta.url));
           if (!word) return { exitCode:1, stderr: `usage: bb lane-pilot explain <verb or topic>\n${explainCatalog(commands, docs).join("  ")}` };
           const hit = explainWord(word, commands, docs);
           if (!hit) return { exitCode:0, stdout:`no explainer for «${word}». Try:\n${explainCatalog(commands, docs).join("\n")}` };
@@ -633,10 +636,11 @@ ${ERRANDS_USAGE}` },
             jev: () => jev(),
             // The judge is a paid call on the API lane: the same money cap the writers wait on (no cap set = no hold).
             moneyHold: async () => services.money.holds("api", "", ""),
-            measure: (file, scriptArgs) => new Promise<string>((ok, fail) => {
-              execFile("npx", ["tsx", file, ...scriptArgs], { cwd: dirname(dirname(file)), timeout: 300_000, maxBuffer: 64 * 1024 * 1024 },
-                (error, stdout) => error ? fail(error) : ok(stdout));
-            }),
+            measure: async (file, scriptArgs) => {
+              const ran = await spawnAsync("npx", ["tsx", file, ...scriptArgs], { cwd: dirname(dirname(file)), timeout: 300_000, maxBuffer: 64 * 1024 * 1024 });
+              if (ran.error || ran.status !== 0) throw ran.error ?? new Error(`${file} ended with ${ran.status ?? ran.signal}: ${(ran.stderr ?? "").trim().slice(-400)}`);
+              return ran.stdout ?? "";
+            },
             ownerItem: {
               post: (item) => { postOwnerItem(db, { key: item.key, source: "design-eval", kind: "design-pair", wake: false, ...(item.projectId ? { projectId: item.projectId } : {}), what: item.what, why: item.why, evidence: [{ kind: "text", ref: item.basis }] }); },
               close: (key, by) => { closeOwnerItem(db, key, by); },

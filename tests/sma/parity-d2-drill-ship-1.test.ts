@@ -480,39 +480,60 @@ describe("[sma:k_lib_shiplane/job] the daily ship-watch acts only where ship.wat
   };
   const config = (projectId: string, path: string) => ({ projectId, hostId: "host-test", pmWorkspacePath: path, writerWorkspacePath: path, pmProviderId: "claude-code", pmModel: "m", writerProviderId: "codex", writerModel: "m" });
 
-  it("posts nothing without ship.watch; with it, only tagged checkouts over the cap, and proj_1 never closes proj_10", () => {
+  // The plugin asks the project's own machine (a host call); here the machine is this one.
+  const calls: Array<{ hostId: string; cwd: string }> = [];
+  const run = async (at: { hostId: string; cwd: string }, command: string) => {
+    calls.push(at);
+    try { return { exitCode: 0, stdout: execFileSync("/bin/bash", ["-c", command], { cwd: at.cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }) }; }
+    catch (cause) { return { exitCode: (cause as { status?: number }).status ?? 1, stdout: "" }; }
+  };
+
+  it("posts nothing without ship.watch; with it, only tagged checkouts over the cap, and proj_1 never closes proj_10", async () => {
     const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
     const repos = { proj_1: checkout(true), proj_10: checkout(true), proj_2: checkout(false), proj_3: checkout(true), proj_4: checkout(true) };
     for (const [id, path] of Object.entries(repos)) savePrototypeConfig(db, config(id, path));
     const open = () => (db.prepare("SELECT key FROM lane_pilot_owner_item WHERE state='open' ORDER BY key").all() as Array<{ key: string }>).map((row) => row.key);
 
-    // Nothing switched on: every checkout is over the cap and nothing is posted.
-    expect(shipWatchSweep(db as never)).toEqual({ checked: 0, flagged: [] });
+    // Nothing switched on: every checkout is over the cap, nothing is posted and no machine is asked.
+    expect(await shipWatchSweep(db as never, run)).toEqual({ checked: 0, flagged: [] });
     expect(open()).toEqual([]);
+    expect(calls).toEqual([]);
 
     // proj_3 carries an unreadable row (its sweep step is skipped, the others still run), proj_2 has no tag, proj_10 stays off.
     for (const id of ["proj_1", "proj_2", "proj_3", "proj_4"]) saveProjectSetting(db as never, id, "ship.watch", "on");
     db.prepare("INSERT INTO lane_pilot_project_settings(project_id,binding_id,key,value,version,updated_at) VALUES ('proj_3','','ship.max_batch_commits','{bad',1,0)").run();
-    const swept = shipWatchSweep(db as never);
+    const swept = await shipWatchSweep(db as never, run);
     expect(swept.flagged.sort()).toEqual(["proj_1", "proj_4"]);
     expect(open()).toEqual(["ship-watch:proj_1:", "ship-watch:proj_4:"]);
 
     // proj_10 on and over: two items; the pile of proj_1 falls and only its own item closes.
     saveProjectSetting(db as never, "proj_10", "ship.watch", "on");
-    shipWatchSweep(db as never);
+    await shipWatchSweep(db as never, run);
     expect(open()).toContain("ship-watch:proj_10:");
     execFileSync("git", ["-C", repos.proj_1, "tag", "v0.2.0"]);
-    shipWatchSweep(db as never);
+    await shipWatchSweep(db as never, run);
     expect(open()).toEqual(["ship-watch:proj_10:", "ship-watch:proj_4:"]);
   });
 
-  it("any other value of ship.watch is off", () => {
+  it("the pile is counted on the project's own machine, in its checkout", async () => {
+    const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
+    const repo = checkout(true);
+    savePrototypeConfig(db, config("proj_6", repo));
+    saveProjectSetting(db as never, "proj_6", "ship.watch", "on");
+    calls.length = 0;
+    expect((await shipWatchSweep(db as never, run)).flagged).toEqual(["proj_6"]);
+    expect(calls).toEqual([{ hostId: "host-test", cwd: repo }]);
+    // A machine that does not answer is no pile: nothing is posted for it and the sweep goes on.
+    expect(await shipWatchSweep(db as never, async () => { throw new Error("host offline"); })).toEqual({ checked: 0, flagged: [] });
+  });
+
+  it("any other value of ship.watch is off", async () => {
     const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
     const repo = checkout(true);
     savePrototypeConfig(db, config("proj_5", repo));
     for (const value of ["off", "true", 1]) {
       saveProjectSetting(db as never, "proj_5", "ship.watch", value);
-      expect(shipWatchSweep(db as never).flagged).toEqual([]);
+      expect((await shipWatchSweep(db as never, run)).flagged).toEqual([]);
     }
   });
 });

@@ -654,9 +654,10 @@ export default async function plugin(bb: BbPluginApi) {
   // Schedules of workflows follow their files: a workflow unpublished or edited outside the tab loses or changes its automation within the hour.
   scheduleIsolated(bb, "workflow-schedules", "23 * * * *", () => { for (const projectId of services.workflowTriggers.scheduledProjects()) services.workflowTriggers.syncSoon(projectId); }, { timeoutMs: 60_000 });
   scheduleIsolated(bb, "runs-sweep", "2,17,32,47 * * * *", sweepRuns, { timeoutMs: 10 * 60_000 });
-  // Ship lanes watch (SMA k_lib_shiplane): once a day counts the unshipped pile of every local project checkout and posts
+  // Ship lanes watch (SMA k_lib_shiplane): once a day counts the unshipped pile of every project checkout, on its own machine, and posts
   // the owner one item per project over the batch caps.
-  scheduleIsolated(bb, "ship-watch", "41 6 * * *", () => Promise.resolve(shipWatchSweep(db)).then(() => undefined), { timeoutMs: 5 * 60_000 });
+  scheduleIsolated(bb, "ship-watch", "41 6 * * *", () => shipWatchSweep(db, (at, command) =>
+    ctx.host.call("runCommand", { requestedHostId: at.hostId, command, cwd: at.cwd, timeoutSec: 30 }, { hostId: at.hostId, timeoutMs: 35_000 })).then(() => undefined), { timeoutMs: 5 * 60_000 });
   // The schedule board (src/schedule): every minute the due fire times become runs (keyed by schedule and time, so a repeated tick adds
   // nothing) and the runs are started and watched for up to 50 s. Runs live in the database: a reload loses no tick and no run.
   scheduleIsolated(bb, "schedule-board-tick", "* * * * *", (signal) => services.schedules.tick(signal).then(() => undefined,

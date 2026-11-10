@@ -96,7 +96,14 @@ const runGuard = (command: string, agentType: string, extra: Record<string, unkn
 describe("phase graph", () => {
   it("[sma:p2_cmd] plans without a research step and still needs the independent critic", () => {
     const plan = workflow("lp.plan");
-    expect(plan.entry).toBe("plan");
+    // The three steps before the plan (research, pattern map, validation strategy) are each skipped unless the phase asks: phase.research,
+    // phase.pattern_map and phase.validation are off unset, so the first step that runs is the plan.
+    const raw = JSON.parse(readFileSync("workflows/lp.plan.json", "utf8")) as { entry: string; inputs: Record<string, { default?: unknown }>; nodes: Array<{ id: string; skip_when?: string }>; edges: Array<{ from: string; to: string }> };
+    expect(plan.entry).toBe("research");
+    expect(["research", "patterns", "strategy"].map((id) => raw.nodes.find((node) => node.id === id)?.skip_when)).toEqual(
+      ["$inputs.skip_research == true || $mode == 'quick'", "!$inputs.patterns || $mode == 'quick'", "!$inputs.validation || $mode == 'quick'"]);
+    expect([raw.inputs.skip_research?.default, raw.inputs.patterns?.default, raw.inputs.validation?.default]).toEqual([true, false, false]);
+    expect(raw.edges.filter((edge) => ["research", "patterns", "strategy"].includes(edge.from)).map((edge) => `${edge.from}>${edge.to}`)).toEqual(["research>patterns", "patterns>strategy", "strategy>plan"]);
     expect(nodes("lp.plan").every((node) => node.role !== "researcher")).toBe(true);
     const signed = phase({ context: { docs: [{ path: "d", sha256: "s", bytes: 1 }], sha: "ctx", signedAt: 1 } });
     expect(autoDue(signed)).toEqual({ kind: "plan" });

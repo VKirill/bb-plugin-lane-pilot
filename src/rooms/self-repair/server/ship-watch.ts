@@ -1,6 +1,3 @@
-import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import type Database from "better-sqlite3";
 import { bindingSettingValue, listProjectsWithBindingSettings, loadPrototypeConfig } from "../../storage";
 import { closeOwnerItemsByPrefix, postOwnerItem } from "../../owner-waiting";
@@ -24,23 +21,25 @@ function watchIsOn(db: Database.Database, projectId: string): boolean {
   try { return JSON.parse(raw) === "on"; } catch { return false; }
 }
 
-/** Commits and days since the checkout's last tag; null when the path is not a git repository on this machine. */
-export function batchPile(cwd: string, now = Date.now()): { commits: number; days: number; tag: string | null } | null {
-  if (!existsSync(join(cwd, ".git"))) return null;
-  const git = (...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", timeout: 30_000 }).trim();
-  let tag: string | null = null;
-  try { tag = git("describe", "--tags", "--abbrev=0"); } catch { tag = null; }
-  const commits = Number(git("rev-list", "--count", tag ? `${tag}..HEAD` : "HEAD"));
-  const tagTime = tag ? Number(git("log", "-1", "--format=%ct", tag)) : Number(git("log", "--format=%ct", "--reverse").split("\n")[0] || "0");
-  return { commits, days: Math.floor((now / 1000 - tagTime) / 86400), tag };
+/** Runs one shell command in a project's checkout on the machine that holds it: the hub never opens a project path itself. */
+export type PileRun = (at: { hostId: string; cwd: string }, command: string) => Promise<{ exitCode: number; stdout: string }>;
+const PILE_COMMAND = `tag=$(git describe --tags --abbrev=0 2>/dev/null) || exit 3; printf '%s\\n' "$tag"; git rev-list --count "$tag..HEAD"; git log -1 --format=%ct "$tag"`;
+
+/** Commits and days since the checkout's last tag; null when it is no git repository, has no tag (nothing to measure) or its machine did not answer. */
+export async function batchPile(run: PileRun, at: { hostId: string; cwd: string }, now = Date.now()): Promise<{ commits: number; days: number; tag: string } | null> {
+  const out = await run(at, PILE_COMMAND);
+  if (out.exitCode !== 0) return null;
+  const [tag, commits, tagTime] = out.stdout.trim().split("\n");
+  if (!tag || !/^\d+$/.test(commits ?? "") || !/^\d+$/.test(tagTime ?? "")) return null;
+  return { commits: Number(commits), days: Math.floor((now / 1000 - Number(tagTime)) / 86400), tag };
 }
 
 /**
- * The daily background watch: for every project checkout on this machine it counts commits and days since the last tag
+ * The daily background watch: for every project checkout, on the machine that holds it, it counts commits and days since the last tag
  * and (only where ship.watch is "on") posts one owner item per project whose pile passed ship.max_batch_commits / ship.max_batch_days; the item is
  * closed when the count falls (SMA k_lib_shiplane).
  */
-export function shipWatchSweep(db: Database.Database, now = Date.now()): { checked: number; flagged: string[] } {
+export async function shipWatchSweep(db: Database.Database, run: PileRun, now = Date.now()): Promise<{ checked: number; flagged: string[] }> {
   const flagged: string[] = [];
   let checked = 0;
   for (const projectId of listProjectsWithBindingSettings(db)) {
@@ -49,11 +48,10 @@ export function shipWatchSweep(db: Database.Database, now = Date.now()): { check
       if (!watchIsOn(db, projectId)) continue;
       const config = loadPrototypeConfig(db, projectId);
       const cwd = config?.pmWorkspacePath;
-      if (!cwd) continue;
-      let pile: ReturnType<typeof batchPile> = null;
-      try { pile = batchPile(cwd, now); } catch { pile = null; }
+      if (!cwd || !config.hostId) continue;
       // An untagged checkout would count every commit since the first: no tag, nothing to measure.
-      if (!pile || !pile.tag) continue;
+      const pile = await batchPile(run, { hostId: config.hostId, cwd }, now).catch(() => null);
+      if (!pile) continue;
       checked += 1;
       const maxCommits = settingCap(db, projectId, "ship.max_batch_commits", SHIP_MAX_BATCH_COMMITS);
       const maxDays = settingCap(db, projectId, "ship.max_batch_days", SHIP_MAX_BATCH_DAYS);
@@ -64,7 +62,7 @@ export function shipWatchSweep(db: Database.Database, now = Date.now()): { check
       }
       flagged.push(projectId);
       postOwnerItem(db, { key: `${WATCH_KEY}${projectId}:`, source: "ship-watch", kind: "ship_batch", projectId, wake: false,
-        what: `В проекте накопилось невыложенное: ${over.join(", ")} с ${pile.tag ?? "начала"}. Выложите партию (sma batch или ship-lane).`,
+        what: `В проекте накопилось невыложенное: ${over.join(", ")} с ${pile.tag}. Выложите партию (sma batch или ship-lane).`,
         why: "Полоса отгрузки держит партии маленькими: сотня коммитов за раз — это риск, а не релиз.",
         evidence: [{ kind: "file", ref: cwd }] });
     } catch { continue; }

@@ -419,7 +419,9 @@ describe("threadUsage", () => {
 
   it("a thread with usage events but none in the window since the step began spent 0 (known)", async () => {
     const { bb } = host({ thr_a: [{ ...usage(1, { last, total: last }), createdAt: 1000 }] });
-    expect(await threadUsage(bb, "thr_a", { since: 5000 })).toEqual({ tokens: 0, costUsd: 0, known: true });
+    // The answer also carries `parts`: the thread's last usage event as the provider reported it (SMA m_tl_codex_lane), whenever it was — not a spend of the window.
+    const spent = await threadUsage(bb, "thr_a", { since: 5000 });
+    expect({ tokens: spent.tokens, costUsd: spent.costUsd, known: spent.known }).toEqual({ tokens: 0, costUsd: 0, known: true });
   });
 });
 

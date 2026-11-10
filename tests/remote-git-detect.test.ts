@@ -237,7 +237,9 @@ describe("the spy that proves it", () => {
 describe("the plugin server never touches a project path itself", () => {
   // world-assets.ts serves the plugin's own GLB files from assets/world (read-only, a fixed whitelist), not a project path.
   // lead/server/identity.ts reads and seeds the plugin's own identity folder (~/.lane-pilot/lead or LANE_PILOT_LEAD_DIR: LEAD.md, ROAD.md), never a project path.
-  const ALLOWED_FS = new Set(["self-repair.ts", "world-assets.ts", "identity.ts"]);
+  // tools/server/explain.ts reads the plugin's own docs/guide (the root is found from the module's own URL), never a project path.
+  // design-eval/server/pair-cli.ts only asks whether the plugin's own measuring script exists before it starts a browser.
+  const ALLOWED_FS = new Set(["self-repair.ts", "world-assets.ts", "identity.ts", "explain.ts", "pair-cli.ts"]);
   const strip = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
   it("has no child_process, spawn-async or node:fs import under the server folder of any room", () => {
