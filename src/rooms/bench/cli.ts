@@ -11,6 +11,8 @@ export const BENCH_USAGE = [
   "                       (--noise N: the same set N times, then pass@1 and pass^N; N is 2 to 10. The frozen set is not changed.)",
   "bb lane-pilot bench noise <armA> <armB> [--set vN]      (two identical arms: calibrates the threshold of compare)",
   "bb lane-pilot bench compare <armA> <armB> [--set vN] [--noise X,Y] [--harness-id <tree id>] [--json]   (A is the baseline; --harness-id records the verdict harness.adopt_by=bench waits for)",
+  "bb lane-pilot bench arena <armA>[=provider/model] <armB>[=..] <armC>[=..] <armD>[=..] [--set vN] [--repeat k (1 to 10)] [--json]",
+  "                       (four arms with different names over one set on neutral ground: a stored arm is reused, a new one runs; ranked by cost per verified result)",
   "bb lane-pilot bench sweep                                 (close a series still running past its hour cap)",
   "bb lane-pilot bench status [--set vN]                  (without --set: every set)",
   "bb lane-pilot bench config [budget_tokens=N] [budget_hours=H] [host=MACHINE] [noise_repeats=N] [repos_root=DIR]",
@@ -122,6 +124,21 @@ export async function runBenchCli(bench: BenchApi, argv: string[]): Promise<Resu
       const result = bench.compare({ version: flags.set ?? defaultVersion(bench, "newest"), armA: positional[0]!, armB: positional[1]!, ...(noiseArms ? { noiseArms } : {}), ...(flags["harness-id"] ? { harnessId: flags["harness-id"] } : {}) });
       // 0 pass, 1 fail, 2 inconclusive: a script must not read too little data as either answer.
       return { exitCode: result.comparison.verdict === "pass" ? 0 : result.comparison.verdict === "fail" ? 1 : 2, stdout: flags.json === "true" ? JSON.stringify(result.comparison, null, 2) : `${result.text}${result.verdictId ? `\nRecorded as ${result.verdictId} for harness ${flags["harness-id"]}.` : ""}` };
+    }
+    if (sub === "arena") {
+      const { positional, flags } = parseBenchArgs(rest, ["set", "repeat", "json"]);
+      if (positional.length !== 4) return { exitCode: 1, stderr: `bench arena takes four arms, got ${positional.length}\n${BENCH_USAGE}` };
+      const arms = positional.map((word) => {
+        const at = word.indexOf("=");
+        if (at < 0) return { arm: word };
+        const writer = word.slice(at + 1), slash = writer.indexOf("/");
+        if (slash <= 0 || slash === writer.length - 1) throw new Error(`arena arm wants name=provider/model, got ${word}`);
+        return { arm: word.slice(0, at), writer: { providerId: writer.slice(0, slash), model: writer.slice(slash + 1) } };
+      });
+      const result = await bench.arena({ version: flags.set ?? defaultVersion(bench, "newest"), arms, ...(flags.repeat ? { repeat: positive("repeat", flags.repeat)! } : {}) });
+      // A failed arm is named in the output and the exit code is 1; the arms that finished are still ranked.
+      const body = flags.json === "true" ? JSON.stringify({ table: result.table, failed: result.failed }, null, 2) : result.text;
+      return result.failed.length ? { exitCode: 1, stdout: body } : out(body);
     }
     if (sub === "status") {
       const { flags } = parseBenchArgs(rest, ["set"]);

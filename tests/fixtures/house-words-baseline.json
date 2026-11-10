@@ -1,0 +1,56 @@
+{
+  "docs/native-agent.md": {
+    "Claude Lane": 1
+  },
+  "src/rooms/memory/server/session-memory.ts": {
+    "Claude Lane": 1
+  },
+  "src/rooms/native-agent/agent-profile.ts": {
+    "Claude Lane": 2
+  },
+  "src/rooms/native-agent/native-agent-overlay.ts": {
+    "Claude Lane": 3
+  },
+  "src/rooms/native-agent/server/activation.ts": {
+    "Claude Lane": 1
+  },
+  "src/rooms/native-agent/ui/composer-enable.tsx": {
+    "Claude Lane": 1
+  },
+  "src/rooms/native-agent/workflow-architect.ts": {
+    "Claude Lane": 1
+  },
+  "src/rooms/native-install/claude-lane-leftovers.ts": {
+    "Claude Lane": 3
+  },
+  "src/rooms/native-install/native-install-bootstrap.ts": {
+    "Claude Lane": 1
+  },
+  "src/rooms/owner-presence/server/presence.ts": {
+    "Claude Lane": 1
+  },
+  "src/rooms/session-hooks/logic.ts": {
+    "Claude Lane": 1
+  },
+  "src/rooms/tools/server/cli.ts": {
+    "Claude Lane": 1
+  },
+  "src/rooms/writer/agent-trash.ts": {
+    "Claude Lane": 1
+  },
+  "tests/agent-bundle.test.ts": {
+    "Claude Lane": 1
+  },
+  "tests/agent-profile.test.ts": {
+    "Claude Lane": 1
+  },
+  "tests/claude-lane-leftovers.test.ts": {
+    "Claude Lane": 2
+  },
+  "tests/pm-activation-no-engine.test.ts": {
+    "Claude Lane": 4
+  },
+  "tests/upstream-fixture.ts": {
+    "Claude Lane": 1
+  }
+}

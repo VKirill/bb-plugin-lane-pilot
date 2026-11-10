@@ -1,7 +1,7 @@
 import { hubFields, writeHubFields } from "../platform";
 import { baselineMetrics } from "./baseline";
 import { buildSet, type BuildReport } from "./build";
-import { compareArms, computeNoise, noiseOfRepeats, passReport, renderComparison, stabilityMarks, summarizeArm, type ArmSummary, type Comparison } from "./compare";
+import { arenaTable, compareArms, computeNoise, noiseOfRepeats, passReport, renderArenaTable, renderComparison, stabilityMarks, summarizeArm, type ArenaTable, type ArmSummary, type Comparison } from "./compare";
 import { cohortCounts, cohortOf } from "./stratify";
 import { renderStratumMetrics, stratumMetrics, type StratumRow } from "./stratum-metrics";
 import { statsEpochMs, STATS_EPOCH_SETTING, listStageReceipts, boundSettingValue, settingValue } from "../storage";
@@ -39,7 +39,12 @@ export type BenchDeps = {
   pageReview?: (task: import("./types").ManifestTask, request: Parameters<import("../validators").PageReview>[0]) => ReturnType<import("../validators").PageReview>;
   /** The critic-eval stratum: one real code-critique call on the task's patch (plugin-ports wires runCodeCritique). */
   criticRun?: (task: import("./types").ManifestTask, runId: string) => Promise<{ ok: boolean; reason: string; model?: string; costUsd?: number | null; tokens?: number | null }>;
+  /** The runner the arena uses for an arm not yet stored (default: `run`, the real series). */
+  arenaRun?: (input: { version: string; arm: string; writer?: BenchWriter; repeat?: number }) => Promise<unknown>;
 };
+
+/** The most repeats one arena arm may ask for: four arms of repeats each are real model runs. */
+export const ARENA_MAX_REPEAT = 10;
 
 export type BenchSettings = { budgetTokens: number; budgetHours: number };
 /** Where a series runs, and the optional same-set repeats. Stored next to the old budget record; empty host means the project's own machine. `reposRoot` remaps stored checkout paths (see repos.ts). */
@@ -227,6 +232,50 @@ export function createBench(deps: BenchDeps) {
     return { comparison, text, verdictId: verdict?.id ?? null };
   }
 
+  /**
+   * The sma arena: four arms over one ticket set on neutral ground — the same set, host and repeats for each. An arm already stored is reused, not rerun.
+   * Every new arm is a real series through `run`, so it meets the same hour and token caps as `bench run` (the settings; none of its flags are given here).
+   * A failed arm stops the arena and is named; the arms that finished are still ranked.
+   */
+  async function arena(input: { version: string; arms: ReadonlyArray<{ arm: string; writer?: BenchWriter }>; repeat?: number }): Promise<{ table: ArenaTable | null; text: string; ran: string[]; reused: string[]; failed: Array<{ arm: string; reason: string }> }> {
+    if (input.arms.length !== 4) throw new Error(`bench arena takes four arms, got ${input.arms.length}`);
+    const names = input.arms.map((spec) => spec.arm);
+    const twice = names.find((name, index) => names.indexOf(name) !== index);
+    if (twice !== undefined) throw new Error(`bench arena arms must have four different names, ${twice} is given twice`);
+    if (input.repeat !== undefined && (!Number.isInteger(input.repeat) || input.repeat < 1 || input.repeat > ARENA_MAX_REPEAT)) throw new Error(`bench arena --repeat is a whole number from 1 to ${ARENA_MAX_REPEAT}, got ${input.repeat}`);
+    const set = getSet(deps.db, input.version);
+    if (!set) throw new Error(`no bench set ${input.version}`);
+    const toRun = input.arms.filter((spec) => !listRuns(deps.db, set.id).some((row) => row.arm === spec.arm));
+    const repeats = input.repeat ?? 1;
+    const plan = `bench arena: ${toRun.length} new series (${toRun.map((spec) => spec.arm).join(", ") || "none"}) x ${repeats} ${repeats === 1 ? "repeat" : "repeats"} = ${toRun.length * repeats} runs of ${set.taskCount} tasks each on set ${input.version}; ${input.arms.length - toRun.length} arm(s) reused`;
+    deps.log(plan);
+    const ran: string[] = [], reused: string[] = [], failed: Array<{ arm: string; reason: string }> = [];
+    for (const spec of input.arms) {
+      if (!toRun.includes(spec)) { reused.push(spec.arm); continue; }
+      const runner = deps.arenaRun ?? ((series: { version: string; arm: string; writer?: BenchWriter; repeat?: number }) => run({ ...series, wait: true }));
+      try { await runner({ version: input.version, arm: spec.arm, ...(spec.writer ? { writer: spec.writer } : {}), ...(input.repeat ? { repeat: input.repeat } : {}) }); }
+      catch (cause) { failed.push({ arm: spec.arm, reason: cause instanceof Error ? cause.message : String(cause) }); break; }
+      ran.push(spec.arm);
+      // A series that stopped or failed without throwing ends the arena too: the arms after it are not paid for.
+      const unfinished = armSummary(input.version, spec.arm).incomplete;
+      if (unfinished.length) { failed.push({ arm: spec.arm, reason: unfinished.join("; ") }); break; }
+    }
+    const notStarted = input.arms.filter((spec) => toRun.includes(spec) && !ran.includes(spec.arm) && !failed.some((row) => row.arm === spec.arm)).map((spec) => spec.arm);
+    // Only a finished measurement is ranked: an arm whose series stopped, failed or is still running is named, not ranked.
+    const finished: ArmSummary[] = [];
+    for (const spec of input.arms) {
+      if (failed.some((row) => row.arm === spec.arm)) continue;
+      if (!listRuns(deps.db, set.id).some((row) => row.arm === spec.arm)) continue;
+      const summary = armSummary(input.version, spec.arm);
+      if (summary.incomplete.length) failed.push({ arm: spec.arm, reason: summary.incomplete.join("; ") });
+      else finished.push(summary);
+    }
+    const table = finished.length >= 2 ? arenaTable(finished) : null;
+    const problems = [...failed.map((row) => `arm ${row.arm} did not finish: ${row.reason}`), ...(notStarted.length ? [`not started because of that: ${notStarted.join(", ")}`] : [])];
+    const text = [plan, table ? renderArenaTable(table) : `no ranking: ${finished.length} arm(s) finished, two are needed`, ...problems].join("\n");
+    return { table, text, ran, reused, failed };
+  }
+
   function status(version?: string) {
     const sets = listSets(deps.db).filter((row) => !version || row.version === version);
     return sets.map((set) => {
@@ -318,7 +367,7 @@ export function createBench(deps: BenchDeps) {
     return lines;
   }
 
-  return { settings, placement, configure, build, lastBuild, run, noise, compare, status, show, prepare, armSummary, baseline, sweep, gate, markSkipped, armStrata };
+  return { settings, placement, configure, build, lastBuild, run, arena, noise, compare, status, show, prepare, armSummary, baseline, sweep, gate, markSkipped, armStrata };
 }
 
 export type BenchApi = ReturnType<typeof createBench>;

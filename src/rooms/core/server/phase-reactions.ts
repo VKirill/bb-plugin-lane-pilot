@@ -1,4 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { createHash } from "node:crypto";
 import { bestEffort } from "@lane-pilot/kit";
 import type { DesignJournalLine } from "@lane-pilot/contracts";
 import type { LanePilotDatabase } from "../../storage";
@@ -14,6 +15,11 @@ export function createPhaseReactions(db: LanePilotDatabase, bb: BbPluginApi): Ph
   // The journal is a best-effort side effect: a KV failure is logged and the line is dropped,
   // never turned into a read of «empty» that the following set would write back over the history.
   const journalDrawing = async (line: DesignJournalLine): Promise<void> => {
+    // Which training state the drawing was made under: the designer's role lines at write time («base» before any).
+    if (!line.series) {
+      const roles = ((await bb.storage.kv.get(roleLinesKey(line.projectId, line.designer)).catch(() => null)) as string[] | null) ?? [];
+      line.series = roles.length ? createHash("sha256").update(roles.join("\n")).digest("hex").slice(0, 8) : "base";
+    }
     await bestEffort(bb.log, "design journal append", appendDesignJournalLine(bb.storage.kv, line), undefined);
   };
   const noteDesignWord = async (phaseId: string, decision: "yes" | "no"): Promise<void> => {

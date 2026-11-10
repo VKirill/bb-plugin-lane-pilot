@@ -10,6 +10,8 @@
     "./critique/critique-worth.ts",
     "./critique/index.ts",
     "./critique/review-screen.ts",
+    "./design-eval/index.ts",
+    "./design-eval/judge.ts",
     "./errands/failure-judgment.ts",
     "./errands/process-key.ts",
     "./jev/index.ts",
