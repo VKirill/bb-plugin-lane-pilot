@@ -15,6 +15,7 @@ export function ForgeScreen({ rpc, projectId, runId }: { rpc: Rpc; projectId: st
   const helpers = useLoad(() => (runId ? rpc.call("helpers_list", { runId }) as Promise<Helper[]> : Promise.resolve([])), [runId]);
   const [taken, setTaken] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<Array<{ name: string; status: string }> | null>(null);
+  const [enabling, setEnabling] = useState<string | null>(null);
   return (
     <div className="space-y-4">
       <Panel title={t("ckForgeOrder")} testId="ck-forge-order">
@@ -39,7 +40,12 @@ export function ForgeScreen({ rpc, projectId, runId }: { rpc: Rpc; projectId: st
           <p className="text-xs font-medium">2 · {t("ckStepTake")}</p>
           <Button size="sm" disabled={!taken.length} onClick={() => void rpc.call("helpers_import", { runId, names: taken }).then((result) => setDrafts(result as Array<{ name: string; status: string }>))}>{t("ckStepTake")}</Button>
           <p className="text-xs font-medium">3 · {t("ckStepDrafts")}</p>
-          {drafts ? <ul className="text-sm">{drafts.map((row) => <li key={row.name}>{row.name}: {row.status}</li>)}</ul> : <p className="text-xs text-muted-foreground">{t("ckEmpty")}</p>}
+          {/* A taken draft waits for the person's approval and is then switched on: the press hands the two-step enable to the PM. */}
+          {drafts ? <ul className="space-y-1 text-sm">{drafts.map((row) => (
+            <li key={row.name} className="flex items-center gap-2">{row.name}: {row.status}
+              {/written|kept/.test(row.status) ? <Button size="sm" variant="outline" disabled={enabling === row.name}
+                onClick={() => { setEnabling(row.name); void rpc.call("cockpit_forge_enable", { projectId, kind: "role", name: row.name }).then(() => setDrafts(drafts.map((item) => item.name === row.name ? { ...item, status: t("ckDraftWaitsYes") } : item)), () => setEnabling(null)); }}>{t("ckDraftEnable")}</Button> : null}
+            </li>))}</ul> : <p className="text-xs text-muted-foreground">{t("ckEmpty")}</p>}
         </Panel>
       ) : null}
     </div>
@@ -147,6 +153,7 @@ export function SystemScreen({ rpc, projectId }: { rpc: Rpc; projectId: string }
         <Loaded state={peers}>{(rows) => <ul className="space-y-1 text-sm">{rows.map((row) => <li key={row.hostId} className="flex items-center gap-2"><span className={`size-2 rounded-full ${row.online ? "bg-emerald-500" : "bg-muted-foreground"}`} />{row.line}</li>)}</ul>}</Loaded>
         <p className="text-xs text-muted-foreground">{t("ckPeerJoin")}</p>
         <p className="font-mono text-xs text-muted-foreground">{fill("ckTerminal", { p: projectId })}</p>
+        {/* The window the person's own terminal spends is on Money → Аккаунты; this is only the how-to footnote. */}
       </Panel>
       <Panel title={t("ckDoor")} testId="ck-door">
         <Loaded state={door}>{(d) => <div className="text-sm"><p>{d.door} · {d.reachedOver}</p><p className="text-xs text-muted-foreground">{t("ckRemote")}</p></div>}</Loaded>

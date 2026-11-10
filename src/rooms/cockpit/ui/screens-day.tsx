@@ -1,14 +1,36 @@
-import { useState } from "react";
-import { t } from "@lane-pilot/i18n";
+import { useEffect, useRef, useState } from "react";
+import { t, type I18nKey } from "@lane-pilot/i18n";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { Badge, Button, Disclosure } from "@lane-pilot/ui-kit";
 import { Loaded, Panel, RefreshButton, day, fill, useLoad, type Rpc } from "./kit";
 
-type Today = { kpi: { accepted: number; blocked: number; running: number; tokens: number; actions: number }; feed: Array<{ at: number; kind: string; text: string }> };
+type FeedRow = { at: number; kind: string; text: string; runId?: string; taskId?: string; title?: string | null };
+type Today = { kpi: { accepted: number; blocked: number; running: number; tokens: number; actions: number }; feed: FeedRow[] };
 
-/** Today: the day KPI strip, the day feed, and the work done today unfolded. */
+const FEED_POLL_MS = 8_000;
+const FRESH_MS = 5_000;
+const KIND_WORDS: Record<string, I18nKey> = { task_accepted: "ckKind_accepted", task_blocked: "ckKind_blocked", task_running: "ckKind_running" };
+/** The feed kind in the person's words: «принято», «стоит», «идёт» — not task_accepted. */
+const kindWord = (kind: string) => KIND_WORDS[kind] ? t(KIND_WORDS[kind]!) : kind.replace(/^(task|phase)_/, "");
+const rowKey = (row: FeedRow) => `${row.at}-${row.kind}-${row.text}`;
+
+/** Today: the day KPI strip, the live day feed, and the work done today unfolded — each accepted row opens its details on press. */
 export function TodayScreen({ rpc, projectId }: { rpc: Rpc; projectId: string }) {
-  const today = useLoad(() => rpc.call("cockpit_today", { projectId }) as Promise<Today>, [projectId]);
+  const today = useLoad(() => rpc.call("cockpit_today", { projectId }) as Promise<Today>, [projectId], FEED_POLL_MS);
+  // A row that arrived since the last read is marked for a few seconds (SMA live stream).
+  const known = useRef<Set<string>>(new Set());
+  const [fresh, setFresh] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!today.data) return;
+    const keys = today.data.feed.map(rowKey);
+    const next = new Set(known.current.size ? keys.filter((key) => !known.current.has(key)) : []);
+    known.current = new Set(keys);
+    if (next.size) {
+      setFresh(next);
+      const timer = setTimeout(() => setFresh(new Set()), FRESH_MS);
+      return () => clearTimeout(timer);
+    }
+  }, [today.data]);
   return (
     <Panel title={t("ckScreen_today")} testId="ck-today" actions={<RefreshButton onClick={today.reload} />}>
       <Loaded state={today}>{(data) => (
@@ -18,17 +40,44 @@ export function TodayScreen({ rpc, projectId }: { rpc: Rpc; projectId: string })
               <div key={key} className="rounded-md border border-border p-2"><div className="text-xs text-muted-foreground">{t(key)}</div><div className="text-lg font-semibold tabular-nums">{value}</div></div>
             ))}
           </div>
-          <Disclosure summary={t("ckUnfoldDone")} testId="ck-done">
-            <ul className="space-y-1 text-sm">{data.feed.filter((row) => row.kind === "task_accepted").map((row) => <li key={`${row.at}-${row.text}`}>✓ {day(row.at)} {row.text}</li>)}</ul>
-          </Disclosure>
+          <div><h4 className="mb-1 text-xs font-medium text-muted-foreground">{t("ckUnfoldDone")}</h4>
+            <ul className="space-y-1 text-sm">{data.feed.filter((row) => row.kind === "task_accepted").map((row) => <AcceptedRow key={rowKey(row)} rpc={rpc} row={row} />)}</ul>
+          </div>
           <div><h4 className="mb-1 text-xs font-medium text-muted-foreground">{t("ckDayFeed")}</h4>
             {!data.feed.length ? <p className="text-sm text-muted-foreground">{t("ckEmpty")}</p> : (
-              <ul className="space-y-1 text-sm" data-testid="ck-feed">{data.feed.slice(0, 80).map((row) => <li key={`${row.at}-${row.kind}-${row.text}`} className="flex min-w-0 gap-2"><span className="shrink-0 tabular-nums text-muted-foreground">{day(row.at)}</span><Badge variant="outline" className="shrink-0">{row.kind.replace(/^(task|phase)_/, "")}</Badge><span className="min-w-0 truncate">{row.text}</span></li>)}</ul>
+              <ul className="space-y-1 text-sm" data-testid="ck-feed">{data.feed.slice(0, 80).map((row) => <li key={rowKey(row)} className="flex min-w-0 gap-2"><span className="shrink-0 tabular-nums text-muted-foreground">{day(row.at)}</span><Badge variant="outline" className="shrink-0">{kindWord(row.kind)}</Badge>{fresh.has(rowKey(row)) ? <Badge variant="default" className="shrink-0">{t("ckNew")}</Badge> : null}<span className="min-w-0 truncate">{row.text}</span></li>)}</ul>
             )}
           </div>
         </div>
       )}</Loaded>
     </Panel>
+  );
+}
+
+type AcceptanceCard = { contract: { objective: string | null; acceptance: string[] }; planFact: { items: Array<{ item: number; acceptance: string; verdict: string; why: string | null }> } | null };
+
+/** One accepted row of «Сделано сегодня»: on press it loads the task's acceptance card — what was promised, what was checked, why accepted. */
+function AcceptedRow({ rpc, row }: { rpc: Rpc; row: FeedRow }) {
+  const [open, setOpen] = useState(false);
+  const card = useLoad(() => (open && row.runId && row.taskId ? rpc.call("task_acceptance_card", { runId: row.runId, taskId: row.taskId }) as Promise<AcceptanceCard | null> : Promise.resolve(undefined)), [open, row.runId, row.taskId]);
+  return (
+    <li className="rounded border border-border/60 px-2 py-1">
+      <button type="button" className="flex w-full items-center gap-2 text-left" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span>✓</span><span className="tabular-nums text-muted-foreground">{day(row.at)}</span><span className="min-w-0 flex-1 truncate">{row.title ?? row.text}</span>
+      </button>
+      {open ? (
+        <div className="mt-1 text-xs" data-testid="ck-accepted-card">
+          <Loaded state={{ data: card.data === undefined ? null : card.data, error: card.error, loading: card.loading }}>{(result) => !result ? <p className="text-muted-foreground">{t("ckEmpty")}</p> : (
+            <div className="space-y-1">
+              {result.contract.objective ? <p><span className="font-medium">{t("ckPromised")}:</span> {result.contract.objective}</p> : null}
+              <ul>{(result.planFact?.items.length ? result.planFact.items.map((item) => ({ key: item.item, text: item.acceptance, verdict: item.verdict, why: item.why }))
+                  : result.contract.acceptance.map((text, index) => ({ key: index, text, verdict: "no_row", why: null }))).map((item) => (
+                <li key={item.key}>{item.verdict === "proven" ? "✓" : "·"} {item.text}{item.why ? ` — ${item.why}` : ""}</li>))}</ul>
+            </div>
+          )}</Loaded>
+        </div>
+      ) : null}
+    </li>
   );
 }
 
@@ -75,8 +124,30 @@ export function MoneyScreen({ rpc, hostId }: { rpc: Rpc; hostId: string | null }
           ))}</div>
         )}</Loaded>
       </Panel>
-      <Panel title={t("ckAccounts")} testId="ck-accounts"><p className="text-sm text-muted-foreground">{t("ckAddAccount")}</p></Panel>
+      <Panel title={t("ckAccounts")} testId="ck-accounts">
+        <AccountList rpc={rpc} />
+        <p className="mt-2 text-xs text-muted-foreground">{t("ckAddAccount")}</p>
+      </Panel>
     </div>
+  );
+}
+
+type Account = { hostId: string; name: string | null; at: string | null; windows: Record<string, { utilization: number }> | null; reason: string | null };
+const WINDOW_WORDS: Record<string, string> = { five_hour: "5 часов", seven_day: "7 дней", seven_day_opus: "7 дней Opus" };
+
+/** The accounts panel (SMA accounts, terminal window): one line per online machine — the subscription its terminal's statusline spends. */
+function AccountList({ rpc }: { rpc: Rpc }) {
+  const accounts = useLoad(() => rpc.call("cockpit_accounts", {}) as Promise<Account[]>, []);
+  return (
+    <Loaded state={accounts}>{(rows) => !rows.length ? <p className="text-sm text-muted-foreground">{t("ckEmpty")}</p> : (
+      <ul className="space-y-1 text-sm" data-testid="ck-account-list">{rows.map((row) => (
+        <li key={row.hostId}>
+          {row.windows
+            ? fill("ckTerminalWindow", { m: row.name ?? row.hostId, w: Object.entries(row.windows).map(([name, window]) => `${WINDOW_WORDS[name] ?? name} ${Math.round(window.utilization)}%`).join(", ") })
+            : fill("ckTerminalNoData", { m: row.name ?? row.hostId })}
+        </li>
+      ))}</ul>
+    )}</Loaded>
   );
 }
 

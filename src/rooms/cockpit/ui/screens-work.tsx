@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Markdown } from "@get-bb/plugin-sdk/app";
+import { Markdown, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { t } from "@lane-pilot/i18n";
 import { Badge, Button, Disclosure } from "@lane-pilot/ui-kit";
 import { Field, Loaded, Panel, RefreshButton, fill, useLoad, type Rpc } from "./kit";
@@ -144,7 +144,9 @@ function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId
   );
 }
 
-type TaskView = { displayTitle: string | null; objective: string | null; area: string | null; clarify: { questions?: string[]; answers?: Array<{ question: string; answer: string; by: string }> } | null; drawing: string[]; priority: string; heldUntil: number | null; approach: { approach?: string | null; lesson?: string | null } | null };
+type TaskView = { displayTitle: string | null; objective: string | null; area: string | null; clarify: { questions?: string[]; answers?: Array<{ question: string; answer: string; by: string }> } | null;
+  promise: { given?: string; when?: string; then?: string } | null; ownsPaths: string[]; expectedOutputs: string[]; outOfScope: string[]; blockers: Array<{ taskId: string; state: string; reason: string | null }>;
+  drawing: Array<{ path: string; sha256: string | null }>; drawingOk: { at: number; stale: boolean } | null; priority: string; heldUntil: number | null; approach: { approach?: string | null; lesson?: string | null } | null };
 
 const TITLE_MAX = 60;
 /** Suggest task words: the task standard said before the PM refuses it — a person's words, no ids or paths, short (~60 characters). */
@@ -196,7 +198,7 @@ export function composition(lines: readonly string[]): Map<string, string[]> {
 }
 
 /** Tasks: one task by id (clarification, drawing, approach note, queue position), the new task and new batch forms, promoting a backlog item. */
-export function TasksScreen({ rpc, projectId, runId }: { rpc: Rpc; projectId: string; runId: string | null }) {
+export function TasksScreen({ rpc, projectId, runId, hostId }: { rpc: Rpc; projectId: string; runId: string | null; hostId?: string | null }) {
   const [taskId, setTaskId] = useState("");
   const [shown, setShown] = useState<string | null>(null);
   const [title, setTitle] = useState("");
@@ -215,7 +217,7 @@ export function TasksScreen({ rpc, projectId, runId }: { rpc: Rpc; projectId: st
         <Panel title={t("ckScreen_tasks")} testId="ck-task-lookup">
           <div className="flex gap-2"><input className="min-w-0 flex-1 rounded border border-border bg-background px-2 text-base sm:text-sm" placeholder={t("ckTaskLookup")} value={taskId} onChange={(e) => setTaskId(e.target.value)} />
             <Button size="sm" disabled={!taskId.trim()} onClick={() => setShown(taskId.trim())}>{t("ckTaskOpen")}</Button></div>
-          {shown ? <TaskDetail rpc={rpc} runId={runId} taskId={shown} /> : null}
+          {shown ? <TaskDetail rpc={rpc} runId={runId} taskId={shown} hostId={hostId ?? null} /> : null}
         </Panel>
       ) : null}
       <Panel title={t("ckNewTask")} testId="ck-new-task">
@@ -241,21 +243,64 @@ export function TasksScreen({ rpc, projectId, runId }: { rpc: Rpc; projectId: st
   );
 }
 
-function TaskDetail({ rpc, runId, taskId }: { rpc: Rpc; runId: string; taskId: string }) {
+function TaskDetail({ rpc, runId, taskId, hostId }: { rpc: Rpc; runId: string; taskId: string; hostId?: string | null }) {
+  const navigate = useBbNavigate();
   const task = useLoad(() => rpc.call("cockpit_task", { runId, taskId }) as Promise<TaskView | null>, [runId, taskId]);
+  const [correction, setCorrection] = useState("");
+  const [said, setSaid] = useState<string | null>(null);
   const queue = (action: "hold" | "release" | "priority", priority?: "low" | "normal" | "high" | "urgent") => void rpc.call("cockpit_queue", { runId, taskIds: [taskId], action, ...(priority ? { priority } : {}) }).then(task.reload);
+  const okDrawing = () => void rpc.call("cockpit_task_drawing_ok", { runId, taskId }).then(task.reload, (cause: unknown) => setSaid(String(cause)));
+  const correct = () => void rpc.call("cockpit_task_correct", { runId, taskId, text: correction }).then(() => { setSaid(t("ckSent")); setCorrection(""); }, (cause: unknown) => setSaid(String(cause)));
+  const confirm = () => (task.data?.heldUntil ? queue("release") : setSaid(t("ckPromiseConfirmed")));
   return (
     <Loaded state={task}>{(view) => !view ? <p className="text-sm text-muted-foreground">{t("ckEmpty")}</p> : (
       <div className="space-y-2 text-sm" data-testid="ck-task-detail">
         <p className="font-medium">{view.displayTitle ?? taskId}</p>
         {view.objective ? <p className="text-muted-foreground">{view.objective.slice(0, 600)}</p> : null}
+        {/* The task's promise and its «Верно»/«Поправить» (SMA contract summary): the correction goes through the PM, never around him. */}
+        {view.promise?.then ? (
+          <div className="rounded border border-border/60 p-2" data-testid="ck-promise">
+            <p><span className="font-medium">{t("ckPromise")}:</span> {view.promise.then}</p>
+            {view.promise.given || view.promise.when ? <p className="text-muted-foreground">{t("ckReproduce")}: {[view.promise.given, view.promise.when].filter(Boolean).join(" · ")}</p> : null}
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="outline" onClick={confirm}>{t("ckCorrect_yes")}</Button>
+              <input className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-base sm:text-sm" placeholder={t("ckCorrectFix")} value={correction} onChange={(e) => setCorrection(e.target.value)} data-testid="ck-correction" />
+              <Button size="sm" variant="outline" disabled={correction.trim().length < 3} onClick={correct}>{t("ckFix")}</Button>
+            </div>
+          </div>
+        ) : null}
+        {view.ownsPaths.length || view.expectedOutputs.length ? (
+          <Disclosure summary={t("ckFiles")}>
+            <ul>{[...view.ownsPaths, ...view.expectedOutputs.map((path) => `→ ${path}`)].map((path) => <li key={path} className="font-mono text-xs">{path}</li>)}</ul>
+          </Disclosure>
+        ) : null}
+        {view.outOfScope.length ? (
+          <Disclosure summary={t("ckOutOfScope")}>
+            <ul>{view.outOfScope.map((line) => <li key={line}>{line}</li>)}</ul>
+          </Disclosure>
+        ) : null}
+        {view.blockers.length ? (
+          <div data-testid="ck-blockers"><p className="font-medium">{t("ckBlockers")}:</p>
+            <ul>{view.blockers.map((row) => <li key={row.taskId}>{row.taskId} — {row.state}{row.reason ? ` (${row.reason})` : ""}</li>)}</ul>
+          </div>
+        ) : null}
         {view.clarify ? (
           <Disclosure summary={t("ckClarify")} open>
             {(view.clarify.questions ?? []).map((question) => <p key={question}>? {question}</p>)}
             {(view.clarify.answers ?? []).map((answer) => <p key={answer.question}>✓ {answer.question} → {answer.answer} <span className="text-xs text-muted-foreground">({answer.by})</span></p>)}
           </Disclosure>
         ) : null}
-        {view.drawing.length ? <Disclosure summary={t("ckDrawing")}><ul>{view.drawing.map((path) => <li key={path} className="font-mono text-xs">{path}</li>)}</ul></Disclosure> : null}
+        {view.drawing.length ? (
+          <Disclosure summary={t("ckDrawing")}>
+            <ul>{view.drawing.map((row) => <li key={row.path} className="font-mono text-xs">{hostId
+              ? <button type="button" className="underline-offset-2 hover:underline" onClick={() => navigate.experimental_openFilePreview({ target: { kind: "host", hostId, path: row.path }, location: null })}>{row.path}</button>
+              : row.path}</li>)}</ul>
+            <div className="mt-1 flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={okDrawing} data-testid="ck-drawing-ok">{t("ckDrawingOk")}</Button>
+              {view.drawingOk ? <span className="text-xs text-muted-foreground" data-testid="ck-drawing-state">{view.drawingOk.stale ? fill("ckDrawingStale", { d: new Date(view.drawingOk.at).toLocaleDateString() }) : t("ckDrawingOked")}</span> : null}
+            </div>
+          </Disclosure>
+        ) : null}
         {view.approach?.approach ? <p><span className="font-medium">{t("ckApproach")}:</span> {view.approach.approach}{view.approach.lesson ? ` · ${view.approach.lesson}` : ""}</p> : null}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted-foreground">{t("ckQueue")}:</span>
@@ -264,7 +309,10 @@ function TaskDetail({ rpc, runId, taskId }: { rpc: Rpc; runId: string; taskId: s
             {["low", "normal", "high", "urgent"].map((level) => <option key={level} value={level}>{level}</option>)}
           </select>
         </div>
+        {said ? <p className="text-xs text-muted-foreground" data-testid="ck-task-said">{said}</p> : null}
       </div>
     )}</Loaded>
   );
 }
+
+

@@ -628,15 +628,15 @@ export function listAttemptsUpdatedSince(db: LanePilotDatabase, runId: string, s
 }
 
 /** Attempt rows of a project for question answering: optionally only some states, only recent ones, newest first. */
-export function listAttemptRowsForProject(db: LanePilotDatabase, input: { projectId: string; states?: readonly string[]; updatedSince?: number; limit: number }): Array<{ taskId: string; state: string; reason: string | null; failureCode: string | null; at: number }> {
+export function listAttemptRowsForProject(db: LanePilotDatabase, input: { projectId: string; states?: readonly string[]; updatedSince?: number; limit: number }): Array<{ taskId: string; runId: string; state: string; reason: string | null; failureCode: string | null; at: number }> {
   const where = ["r.project_id=?"];
   const args: unknown[] = [input.projectId];
   if (input.states?.length) { where.push(`a.state IN (${input.states.map(() => "?").join(",")})`); args.push(...input.states); }
   if (input.updatedSince !== undefined) { where.push("a.updated_at>=?"); args.push(input.updatedSince); }
   args.push(input.limit);
-  return db.prepare(`SELECT a.task_id AS taskId, a.state, a.reason, a.failure_code AS failureCode, a.updated_at AS at FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+  return db.prepare(`SELECT a.task_id AS taskId, a.run_id AS runId, a.state, a.reason, a.failure_code AS failureCode, a.updated_at AS at FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     WHERE ${where.join(" AND ")} ORDER BY a.updated_at DESC LIMIT ?`).all(...args) as
-    Array<{ taskId: string; state: string; reason: string | null; failureCode: string | null; at: number }>;
+    Array<{ taskId: string; runId: string; state: string; reason: string | null; failureCode: string | null; at: number }>;
 }
 
 /** Each task's latest attempt in a project (the dead-letter scan reads it). */

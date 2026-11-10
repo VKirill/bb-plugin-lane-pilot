@@ -1,7 +1,7 @@
 import { hostContract, rpcContract } from "../contracts";
 
 import type { ServerCore } from "../contracts/server";
-import { activeRunForProject, getRun, getTaskContractJson, listAttemptRowsForProject, setTaskHeldUntil, taskHeldUntil, updateTaskContractJson } from "../storage";
+import { HARNESS_VERSION, activeRunForProject, getRun, getTaskContractJson, latestAttemptRow, listAttemptRowsForProject, setTaskHeldUntil, taskHeldUntil, updateTaskContractJson } from "../storage";
 import { attemptRecord } from "../tools/server";
 import { listReceipts } from "../capability";
 import { tokenDailySeries, tokenDailyTotal } from "../usage/server";
@@ -12,14 +12,17 @@ import { listPhasePartsSince } from "../phase";
 import { activeMemoryDigestRows } from "@lane-pilot/memory-core";
 
 import type { FrontApi } from "../front/server/index";
+import type { ReadWriterWorkspaceFile } from "../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
   front: FrontApi;
+  readWriterWorkspaceFile?: ReadWriterWorkspaceFile;
 }
 
 const SEEN = "lp.cockpit.seen";
 const FAULTS = "lp.cockpit.faults";
+const DRAWING_OK = "lp.cockpit.drawing-ok";
 const DAY_MS = 86_400_000;
 
 /**
@@ -43,7 +46,11 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
       const actions = (await services.front.actions(200)).filter((row) => (row as { at: number }).at >= since);
       return {
         kpi: { accepted: rows.filter((row) => row.state === "accepted").length, blocked: rows.filter((row) => row.state === "blocked").length, running: rows.filter((row) => row.state === "running").length, tokens, actions: actions.length },
-        feed: [...rows.map((row) => ({ at: row.at, kind: `task_${row.state}`, text: `${row.taskId}${row.reason ? ` — ${row.reason.slice(0, 160)}` : ""}` })),
+        feed: [...rows.map((row) => {
+          // An accepted row opens its acceptance card on press (SMA done_unfold): it carries its run and its title for that.
+          const title = row.state === "accepted" ? (JSON.parse(getTaskContractJson(db, row.taskId, row.runId) ?? "{}") as { display_title?: string }).display_title ?? null : null;
+          return { at: row.at, kind: `task_${row.state}`, runId: row.runId, taskId: row.taskId, title, text: `${row.taskId}${row.reason ? ` — ${row.reason.slice(0, 160)}` : ""}` };
+        }),
           ...parts.map((part) => ({ at: part.at as number, kind: `phase_${part.kind}`, text: `${part.phaseId}: ${String(part.text).slice(0, 200)}` }))].sort((a, b) => b.at - a.at).slice(0, 150),
       };
     },
@@ -128,20 +135,80 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
     },
     /** One attempt's whole record in one answer (SMA ap_run_dir): writer thread, stage receipts, gate events, dispatch context, verification, critic hash, attempt-change. */
     cockpit_attempt: async ({ attemptId }: { attemptId: string }) => attemptRecord(db, attemptId),
-    /** A task for the window: its clarification, drawing, priority and hold from the contract, and the writer's approach note. */
+    /** A task for the window: its promise, files, reproduction, questions, blockers, drawing, priority and hold from the contract, and the writer's approach note. */
     cockpit_task: async ({ runId, taskId }: { runId: string; taskId: string }) => {
       const stored = getTaskContractJson(db, taskId, runId);
       if (!stored) return null;
-      const contract = JSON.parse(stored) as { display_title?: string; clarify?: unknown; drawing?: string[]; priority?: string; area?: string; objective?: string };
-      return { displayTitle: contract.display_title ?? null, objective: contract.objective ?? null, area: contract.area ?? null, clarify: contract.clarify ?? null, drawing: contract.drawing ?? [],
+      const contract = JSON.parse(stored) as { display_title?: string; clarify?: unknown; drawing?: string[]; priority?: string; area?: string; objective?: string;
+        promise?: { given?: string; when?: string; then?: string }; owns_paths?: string[]; expected_outputs?: string[]; out_of_scope?: string[]; depends_on?: string[] };
+      // What still blocks the task: every task it depends on whose latest attempt is not accepted, with the attempt's reason.
+      const blockers = (contract.depends_on ?? []).map((depId) => ({ taskId: depId, attempt: latestAttemptRow(db, runId, depId) ?? null }))
+        .filter((row) => row.attempt?.state !== "accepted")
+        .map((row) => ({ taskId: row.taskId, state: row.attempt?.state ?? "none", reason: row.attempt?.reason ?? null }));
+      const run = getRun(db, runId);
+      // The drawing each file's current hash read live, next to the hash the owner's «чертёж ок» stored (SMA sc_design).
+      const oked = (((await kv.get(DRAWING_OK)) as Record<string, { at: number; shas: Record<string, string> }> | null) ?? {})[`${runId}:${taskId}`] ?? null;
+      const drawing = await Promise.all((contract.drawing ?? []).map(async (path) => {
+        const file = run?.pm_thread_id && services.readWriterWorkspaceFile
+          ? await services.readWriterWorkspaceFile({ threadId: run.pm_thread_id, projectId: run.project_id, path, offset: 0, maxLines: 2000 }).catch(() => null) as { sha256?: string } | null
+          : null;
+        return { path, sha256: file?.sha256 ?? null };
+      }));
+      return { displayTitle: contract.display_title ?? null, objective: contract.objective ?? null, area: contract.area ?? null, clarify: contract.clarify ?? null,
+        promise: contract.promise ?? null, ownsPaths: contract.owns_paths ?? [], expectedOutputs: contract.expected_outputs ?? [], outOfScope: contract.out_of_scope ?? [], blockers,
+        drawing, drawingOk: oked ? { at: oked.at, stale: drawing.some((row) => row.sha256 !== null && oked.shas[row.path] !== row.sha256) } : null,
         priority: contract.priority ?? "normal", heldUntil: taskHeldUntil(db, taskId), approach: await readTaskApproach(kv, runId, taskId) };
     },
-    /** Report a fault: what a person saw goes to the self-repair queue with the screen it was on. */
+    /** «Чертёж ок»: stores the drawing files' current hashes so a later edition is named stale (SMA sc_design). */
+    cockpit_task_drawing_ok: async ({ runId, taskId }: { runId: string; taskId: string }) => {
+      const stored = getTaskContractJson(db, taskId, runId);
+      if (!stored) throw new Error(`not a task of run ${runId}`);
+      const contract = JSON.parse(stored) as { drawing?: string[] };
+      const run = getRun(db, runId);
+      if (!run?.pm_thread_id || !services.readWriterWorkspaceFile) throw new Error("this run has no checkout to read the drawing from");
+      const shas: Record<string, string> = {};
+      for (const path of contract.drawing ?? []) {
+        const file = await services.readWriterWorkspaceFile({ threadId: run.pm_thread_id, projectId: run.project_id, path, offset: 0, maxLines: 2000 }).catch(() => null) as { sha256?: string } | null;
+        if (file?.sha256) shas[path] = file.sha256;
+      }
+      const all = ((await kv.get(DRAWING_OK)) as Record<string, { at: number; shas: Record<string, string> }> | null) ?? {};
+      all[`${runId}:${taskId}`] = { at: Date.now(), shas };
+      await kv.set(DRAWING_OK, all as never);
+      return { ok: true as const, at: all[`${runId}:${taskId}`]!.at };
+    },
+    /** «Поправить» on the promise block: the correction goes to the run's PM, who applies it with lane_pilot_update_task. */
+    cockpit_task_correct: async ({ runId, taskId, text }: { runId: string; taskId: string; text: string }) => {
+      if (!getTaskContractJson(db, taskId, runId)) throw new Error(`not a task of run ${runId}`);
+      const run = getRun(db, runId);
+      if (!run?.pm_thread_id) throw new Error("no Lane Pilot PM chat is open in this run");
+      await bb.sdk.threads.send({ threadId: run.pm_thread_id, mode: "queue-if-active", input: [{ type: "text", mentions: [], text: `[Lane Pilot window] The owner corrects the promise of task ${taskId}: ${text}; apply with lane_pilot_update_task` }] } as never);
+      return { sent: true as const };
+    },
+    /** Subscription windows per machine: one entry per online host — the subscription the person's own terminal spends there. */
+    cockpit_accounts: async () => {
+      const peers = (await services.front.peers()).filter((peer) => peer.online);
+      return Promise.all(peers.map(async (peer) => {
+        const answer = await host().call("readUsageWindows", { requestedHostId: peer.hostId }, { hostId: peer.hostId, timeoutMs: 5_000 }).catch((cause: unknown) => null);
+        return { hostId: peer.hostId, name: peer.name, at: answer?.at ?? null,
+          windows: answer ? answer.windows : null, reason: answer ? null : `the machine did not answer: open a terminal on it` };
+      }));
+    },
+    /** «Проверить и включить» of a taken draft: the two-step enable goes to the project's PM (lint, request, owner's word, confirm). */
+    cockpit_forge_enable: async ({ projectId, kind, name }: { projectId: string; kind: "skill" | "role" | "workflow"; name: string }) => {
+      if (!/^[a-z][a-z0-9-]{1,47}$/.test(name)) throw new Error(`not a kebab-case name: ${name}`);
+      const run = activeRun(projectId);
+      if (!run?.pm_thread_id) throw new Error("no Lane Pilot PM chat is open in this project: enable Lane Pilot in a chat first");
+      await bb.sdk.threads.send({ threadId: run.pm_thread_id, mode: "queue-if-active", input: [{ type: "text", mentions: [], text: `[Lane Pilot window] The owner asks to enable the forge ${kind} «${name}»: run lane_pilot_forge {action:"lint", kind:"${kind}", name:"${name}"}, then enable request, then ask the owner (lane_pilot_ask_owner) and enable confirm with his whole «да».` }] } as never);
+      return { sent: true as const, pmThreadId: run.pm_thread_id };
+    },
+    /** Report a fault: the text is stored and a tracker issue is prepared with version and platform; nothing is sent. */
     cockpit_fault: async ({ screen, text }: { screen: string; text: string }) => {
       const faults = ((await kv.get(FAULTS)) as Array<{ at: number; screen: string; text: string }> | null) ?? [];
       await kv.set(FAULTS, [...faults, { at: Date.now(), screen, text: text.slice(0, 2000) }].slice(-200) as never);
       ctx.log(`fault reported from the window (${screen}): ${text.slice(0, 300)}`);
-      return { ok: true as const };
+      return { ok: true as const,
+        title: `Lane Pilot: fault on «${screen}»`,
+        body: `${text.slice(0, 2000)}\n\nLane Pilot ${HARNESS_VERSION} · ${process.platform} · screen ${screen}` };
     },
   };
 }
