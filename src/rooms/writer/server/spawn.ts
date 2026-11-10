@@ -23,7 +23,7 @@ import { createSkillMaterializer } from "./skill-materialize";
 import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, waitManagedWorktreeReady } from "../../verification";
 import { createProviderGate, providerListed, providerSwitchOn, waitProviderEnvironment } from "../../verification";
 import { LANE_WORKTREE_PROVIDER_ID } from "../../native-agent/server";
-import { HELPER_DISALLOWED_TOOLS, WRITER_MAX_TURNS } from "../../native-agent/claude-guard-launch";
+import { HELPER_DISALLOWED_TOOLS, WRITER_MAX_TURNS } from "../../native-agent";
 import { fullAccessSpawn } from "../../platform/server";
 import { WriterSelectionError, coreHostsRequiredProvider, helperChildPlacement, projectRoleField, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { holderSpawnKey } from "../../platform/server";

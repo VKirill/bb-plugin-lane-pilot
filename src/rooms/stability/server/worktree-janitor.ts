@@ -6,7 +6,7 @@ import type { ServerCore } from "../../contracts/server";
 import { OPEN_ATTEMPT_STATES, RETRY_ELIGIBLE, isOpenAttemptState } from "../../contracts/state-machine";
 import { DOCS_WORKTREE_PREFIX, docsWorktreeKey, REGRESS_MARKER_TTL_MS, REGRESS_WORKTREE_PREFIX, regressWorktreeKey, regressWorktreePath, SELF_REPAIR_STATE_KEY, selfRepairWorktrees } from "../../contracts";
 import { bestEffort } from "@lane-pilot/kit";
-import { recordEvidence } from "../../runs/server/evidence";
+import { recordEvidence } from "../../storage";
 import { rearmExpiredDisarms } from "../../policy";
 
 /**

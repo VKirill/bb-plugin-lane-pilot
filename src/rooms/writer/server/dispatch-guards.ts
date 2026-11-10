@@ -2,7 +2,7 @@ import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
 import { batchShapeAdvice, checkoutOwnsOverlap, isMainfixTask, topicHold, topicLoop, topicLoopMessage } from "../../tasks";
 import { medianTaskSize } from "../../rollback/server";
-import { recoveryState } from "../../rollback/store";
+import { recoveryState } from "../../rollback";
 import { hasOpenOwnerItem } from "../../owner-waiting";
 import type { LoopTask, OpenShape } from "../../tasks";
 import { taskFamily } from "@lane-pilot/contracts";

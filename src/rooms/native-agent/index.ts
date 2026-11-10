@@ -29,3 +29,4 @@ export type { HelperThreadRow, ProfileReport, ProviderVerdict, RolePolicyCount }
 export { ARCHITECT_LAUNCH, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_TOOLS } from "./workflow-architect";
 export { requestArchitectLaunch, takeArchitectLaunch } from "./architect-launch";
 export { agentKind } from "./agent-profile";
+export { HELPER_DISALLOWED_TOOLS, WRITER_MAX_TURNS } from "./claude-guard-launch";

@@ -3,7 +3,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { taskV2Schema, type PrototypeConfig, type TaskV2 } from "../../contracts";
 import { getAttempt, getRun, getRunSettingsScopes, getRunWriterHost, getTask, loadProjectSettings, taskBasePath, type WorktreeOwnerKind } from "../../storage";
-import { recordEvidence } from "../../runs/server/evidence";
+import { recordEvidence } from "../../storage";
 import { retargetTask } from "../../tasks";
 import { parseIntegrationGateSettings, type VerificationGatePort } from "../../contracts/integration-gate";
 

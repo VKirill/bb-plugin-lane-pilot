@@ -46,3 +46,4 @@ export { latestAcceptedAttemptOfTask, listAttemptRefsSince } from "./attempts-st
 export { listNearMissReceipts } from "./stages-store";
 export { PROTECTIONS, DISARM_TERM_MS, disarmKey, isArmed, readDisarm, noteProtectionDisarm, renewDisarm, storedProtectionValue, endDisarm, failedStageReceiptsSince, type Disarm } from "./protections-store";
 export { setAttemptBarrier, listUnmovedLiveAttempts, liveAttemptsOfRun } from "./attempts-store";
+export { listEvidence, recordEvidence, type EvidenceCheck, type EvidenceRecord } from "./evidence-store";

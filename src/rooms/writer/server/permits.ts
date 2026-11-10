@@ -4,7 +4,7 @@ import { registerObservedTool, scheduleIsolated } from "../../platform/server";
 import { ToolError, type ServerCore } from "../../contracts/server";
 import { hostContract } from "../../contracts";
 import { getAttempt, getRun, getRunWriterHost, listOpenAttempts } from "../../storage";
-import { recordEvidence } from "../../runs/server/evidence";
+import { recordEvidence } from "../../storage";
 
 /**
  * Permits (SMA map: Permission before an act, Permit channel for the worker, Permit channel opened, Ticket awaits a decision, Approve or deny

@@ -49,7 +49,7 @@ import type { BaselineApi } from "../../baseline/server/baseline";
 import type { MoneyApi } from "../../money/server";
 import type { OwnerPresenceApi } from "../../owner-presence/server/presence";
 import type { RollbackApi } from "../../rollback/server/rollback";
-import { recoveryState } from "../../rollback/store";
+import { recoveryState } from "../../rollback";
 import type { RuleScanApi } from "../../self-repair/server/rule-scan";
 import type { ReconcileApi } from "../../stability/server/reconcile";
 import type { StabilityPort } from "../../contracts";

@@ -6,7 +6,7 @@ import { gateRunVerdict } from "../../verification/server"
 import { parseIntegrationGateSettings } from "../../contracts";
 import { getRun, getAttempt, getReasoningTraceJson, getTaskContractJson, listStageReceipts, loadProjectSettings, openAttemptBriefs, latestGateRun, countLanePilotTables, latestAcceptedAttemptRef, listAttemptRefsSince, listGateEventsForTask } from "../../storage";
 import { scoreForecast } from "../../forecast";
-import { calibrationPassport } from "../../forecast/server/report";
+import { calibrationPassport } from "../../forecast/server";
 import { getAttemptChange } from "../../rollback";
 import { attemptChangeJson } from "../../rollback/server";
 import { buildScorecard, checkerRows, latestCheckerRun } from "../../checkers";

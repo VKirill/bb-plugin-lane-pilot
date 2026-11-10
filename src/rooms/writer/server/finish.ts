@@ -23,7 +23,7 @@ import { wasAnsweredByDefault } from "./question-default";
 import { appendTaskQa } from "./reopen-attempt";
 import {needsHumanQuestion, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines} from "./writer-task";
 import { isLiveDecision } from "../live-folder";
-import { conventionGateHits, type ConventionGate } from "../../session-hooks/logic";
+import { conventionGateHits, type ConventionGate } from "../../session-hooks";
 import { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, TEST_PATH, acceptanceArtifactDir, acceptanceProofGap, taskSizeOf, landingWordGap, landingWordAsked, ownerWordsMode, questionsFromFile, checkScriptEdits, recordTaskApproach, recordTaskQuestions, referenceTestEdits, shapeFlags, taskWordKey, TEST_EDIT_HOLD_ITEM, testEditAllowance, testEditHoldKey, testFitFindings, testOwnedImports, writerMarkers } from "../../tasks";
 import type { TaskWord } from "../../tasks";
 import type { StageId } from "../../tasks";
@@ -41,7 +41,7 @@ import { REPLAY_CHECK_FAILED, THREAD_NOT_STARTED_REASON, WRITER_SILENT_REASON, f
 import { taskFamily } from "@lane-pilot/contracts";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../../verification/server";
-import { dependenciesAddedInDiff } from "../../forecast/logic";
+import { dependenciesAddedInDiff } from "../../forecast";
 import { sendServiceMessage } from "../../relay/server";
 import { judgeRulesOnDiff, ruleViolationRemark } from "../../learning";
 import { jev, type JevSettings } from "@lane-pilot/jev";

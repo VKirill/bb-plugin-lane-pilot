@@ -29,7 +29,7 @@ import { batchAdviceFor, baselineRedGuard, recoveryGuard, topicLoopGuard } from 
 import { ownerLastWroteAt } from "../../critique/server";
 import { reviveCanceledTask } from "./revive";
 import { countRunNudges } from "./writer-silence";
-import { stampForecastModel } from "../../forecast/logic";
+import { stampForecastModel } from "../../forecast";
 import { isAbsolute, relative, resolve } from "node:path";
 import type { ServerCore } from "../../contracts/server";
 

@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 import { parseJsonOr } from "@lane-pilot/kit";
 import { TASK_SIZE_MIN_SAMPLE, type TaskSizeMedian } from "../tasks";
 import { ATTEMPT_TABLE, RUN_TABLE, hasReconcileCursor } from "../storage";
-import { failureClass } from "../contracts/failure-class";
+import { failureClass } from "../contracts";
 
 export type RollbackDb = Pick<Database.Database, "prepare">;
 

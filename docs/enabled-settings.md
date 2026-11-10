@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 4560993e2e9f13cd -->
+<!-- enabled-settings:structure a2c92a0bfaba4acf -->
 
 # Enabled settings (generated)
 
@@ -34,6 +34,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `adoc.040` | `auto` | — | stage setting: workspace routing and managed-worktree lifecycle |
 | `adoc.041` | `4` | — | task workspace router risk threshold |
 | `adoc.042` | `true` | — | task workspace router multi-output isolation switch |
+| `backlog.scan_minutes` | `60` | — | backlog scanner: project scan interval in minutes, read in src/rooms/backlog/server/scanner.ts |
 | `baseline.already_built` | `notify` | — | baseline: notify or stop when a task's checks already pass on its base |
 | `baseline.time_cap_sec` | `300` | — | baseline: seconds the baseline may spend on a start, 0 turns it off |
 | `bench.budget_hours` | `6` | — | bench: hour cap of a series |

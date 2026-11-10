@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { recordEvidence, listEvidence } from "../../src/rooms/runs/server/evidence";
+import { recordEvidence, listEvidence } from "../../src/rooms/storage";
 import { conventionGateHits } from "../../src/rooms/session-hooks/logic";
 import { noteProtectionDisarm, rearmExpiredDisarms, renewDisarm, integrityReport } from "../../src/rooms/policy/protections";
 import { createRun, openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";

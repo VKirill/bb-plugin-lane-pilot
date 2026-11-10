@@ -1,6 +1,6 @@
 import { taskV2Schema } from "../../contracts";
 import { getAttempt, getRun, getTask, listAttemptsForTask } from "../../storage";
-import { recoveryState } from "../../rollback/store";
+import { recoveryState } from "../../rollback";
 import type { ServerCore } from "../../contracts/server";
 
 import { answerTurnPrompt } from "./writer-task";
