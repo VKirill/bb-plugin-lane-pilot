@@ -12,17 +12,21 @@ import type { LearningItemsReader, OwnerItemSweep } from "../items";
 
 /** The bell «awaits a decision» (SMA m_ws_notify): every five minutes the new wake items become one browser notification
  * through the push-notifications plugin — a title and a count line, no item text; the announced keys are marked so a repeat
- * never goes out, quiet hours and owner_push.enabled apply, and a missing plugin or a failed send is quiet (the next tick asks again). */
+ * never goes out, quiet hours and owner_push.enabled apply, and a missing plugin or a failed send is logged (the next tick asks again).
+ * Off unless the owner set owner_push.bell on (`bb lane-pilot waiting push-config bell=on`): nothing new is pushed to an install that asked for nothing. */
 export function mountOwnerBell(ctx: ServerCore, sweeps: readonly OwnerItemSweep[] = [], learningReader?: LearningItemsReader): void {
   scheduleIsolated(ctx.bb, "owner-bell", "*/5 * * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
-    const notice = planBellNotice(ctx.db, Date.now(), sweeps, learningReader);
+    let notice: ReturnType<typeof planBellNotice>;
+    try { notice = planBellNotice(ctx.db, Date.now(), sweeps, learningReader); }
+    catch (cause) { ctx.log(`owner bell: planning failed: ${cause instanceof Error ? cause.message : String(cause)}`); return; }
     if (!notice.send) return;
     const callRpc = (ctx.bb.sdk as { plugins?: { callRpc?: (args: { pluginId: string; method: string; input?: unknown; outputSchema: z.ZodType<unknown> }) => Promise<unknown> } }).plugins?.callRpc;
     if (!callRpc) return;
-    try {
-      await callRpc({ pluginId: "push-notifications", method: "notifications.send", input: { title: notice.title, text: notice.text }, outputSchema: z.unknown() });
-      ackDigest(ctx.db, notice.keys);
-    } catch { /* no push plugin or a failed send: stay quiet, the next tick tries again */ }
+    try { await callRpc({ pluginId: "push-notifications", method: "notifications.send", input: { title: notice.title, text: notice.text }, outputSchema: z.unknown() }); }
+    catch (cause) { ctx.log(`owner bell: not sent (${cause instanceof Error ? cause.message : String(cause)}); the next tick tries again`); return; }
+    // The notice went out: a mark that cannot be written is said, never a reason to send the same notice every five minutes in silence.
+    try { ackDigest(ctx.db, notice.keys); }
+    catch (cause) { ctx.log(`owner bell: sent, but the marks were not written: ${cause instanceof Error ? cause.message : String(cause)}`); }
   }, { timeoutMs: 30_000 });
 }

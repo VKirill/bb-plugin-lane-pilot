@@ -205,15 +205,26 @@ describe("window parity d6 wave 2", () => {
   it("[sma:m_ws_notify] planBellNotice with two new wake items returns one notice with count 2 and no item text; after ackDigest a second call returns nothing; quiet hours or disabled return nothing", () => {
     const { db } = open();
     savePushConfig(db, { quiet: "00:00-00:00" });
-    postOwnerItem(db, { key: "k1", source: "inbox", kind: "decision", what: "w", why: "y", actions: [{ id: "a", label: "a" }] });
-    postOwnerItem(db, { key: "k2", source: "inbox", kind: "decision", what: "w", why: "y", actions: [{ id: "a", label: "a" }] });
+    // Nothing set: the bell is off — an install that asked for nothing gets no new push (the Telegram digest stays its only one).
+    expect(planBellNotice(db, Date.now(), []).reason).toBe("disabled");
+    savePushConfig(db, { bell: "on" });
+    postOwnerItem(db, { key: "k1", source: "inbox", kind: "decision", what: "w", why: "y", actions: [{ id: "a", label: "a", cli: "bb lane-pilot waiting" }] });
+    postOwnerItem(db, { key: "k2", source: "inbox", kind: "decision", what: "w", why: "y", actions: [{ id: "a", label: "a", cli: "bb lane-pilot waiting" }] });
     const sweep: never[] = [];
+    savePushConfig(db, { bell: "off" });
+    expect(planBellNotice(db, Date.now(), sweep).reason).toBe("disabled");
+    savePushConfig(db, { bell: "on" });
     const one = planBellNotice(db, Date.now(), sweep);
     expect(one.send).toBe(true);
     expect(one.title).toContain("2");
     expect(one.text).not.toContain("k1");
     ackDigest(db, one.keys);
     expect(planBellNotice(db, Date.now(), sweep).send).toBe(false);
+    // A mark older than a month is removed, so the table does not grow without end.
+    db.prepare("UPDATE lane_pilot_owner_push SET pushed_at=? WHERE key LIKE 'bell:%'").run(Date.now() - 31 * 86_400_000);
+    planBellNotice(db, Date.now(), sweep);
+    expect((db.prepare("SELECT count(*) AS n FROM lane_pilot_owner_push WHERE pushed_at < ?").get(Date.now() - 30 * 86_400_000) as { n: number }).n).toBe(0);
+    ackDigest(db, one.keys);
     savePushConfig(db, { quiet: "00:00-23:59", timezone: "UTC" });
     expect(planBellNotice(db, Date.now(), sweep).reason).toBe("quiet_hours");
     savePushConfig(db, { enabled: "off" });
@@ -231,7 +242,7 @@ describe("window parity d6 wave 2", () => {
     setLocaleOverride("ru");
     render(createElement(MemoryScreen, { rpc, runId: null, projectId: "p1" }));
     fireEvent.change(document.querySelector("[data-testid='ck-memory'] input")!, { target: { value: "postgres" } });
-    fireEvent.click([...document.querySelectorAll("[data-testid='ck-memory'] button")].find((b) => b.textContent === "Найти")!);
+    fireEvent.click(Array.from(document.querySelectorAll("[data-testid='ck-memory'] button")).find((b) => b.textContent === "Найти")!);
     await waitFor(() => expect(document.querySelector("[data-testid='ck-memory-found']")).toBeTruthy());
     expect(asked).toEqual({ projectId: "p1", query: "postgres", limit: 8 });
     expect(document.querySelector("[data-testid='ck-memory-found']")!.textContent).toContain("the db is postgres");
@@ -240,7 +251,7 @@ describe("window parity d6 wave 2", () => {
     const empty = { call: async () => ({ records: [], nothingRelevant: true, message: "Ничего подходящего в памяти." }) } as never;
     render(createElement(MemoryScreen, { rpc: empty, runId: null, projectId: "p1" }));
     fireEvent.change(document.querySelector("[data-testid='ck-memory'] input")!, { target: { value: "x" } });
-    fireEvent.click([...document.querySelectorAll("[data-testid='ck-memory'] button")].find((b) => b.textContent === "Найти")!);
+    fireEvent.click(Array.from(document.querySelectorAll("[data-testid='ck-memory'] button")).find((b) => b.textContent === "Найти")!);
     await waitFor(() => expect(document.querySelector("[data-testid='ck-memory-nothing']")!.textContent).toContain("Ничего подходящего в памяти"));
   });
 

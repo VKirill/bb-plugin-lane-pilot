@@ -15,9 +15,10 @@ export { CALL_REASONS, callReason, type CallReason } from "./items";
  */
 type Db = Pick<Database.Database, "prepare" | "transaction">;
 
-export type PushConfig = { enabled: boolean; quiet: string; timezone: string };
+/** `bell` is the browser bell (SMA m_ws_notify): off unless the owner turns it on — the Telegram digest was the only push before it. */
+export type PushConfig = { enabled: boolean; quiet: string; timezone: string; bell?: boolean };
 export const DEFAULT_PUSH_CONFIG: PushConfig = { enabled: true, quiet: "23:00-08:00", timezone: "Europe/Madrid" };
-export const PUSH_CONFIG_KEYS = ["enabled", "quiet", "timezone"] as const;
+export const PUSH_CONFIG_KEYS = ["enabled", "quiet", "timezone", "bell"] as const;
 /** At most this many items are named in one message; the rest are counted. */
 export const DIGEST_LINES = 6;
 
@@ -37,7 +38,8 @@ export function loadPushConfig(db: Db): PushConfig {
   };
   // A global row (`owner_push.*`, written by the screen and by this command) wins over the old table, which stays as the fallback.
   const own = hubFields(db, "owner_push") as Partial<PushConfig>;
-  return { enabled: own.enabled ?? old.enabled, quiet: own.quiet ?? old.quiet, timezone: own.timezone ?? old.timezone };
+  // The bell has no global row: it lives in this room's own table, and only an explicit «on» turns it on.
+  return { enabled: own.enabled ?? old.enabled, quiet: own.quiet ?? old.quiet, timezone: own.timezone ?? old.timezone, ...(stored.bell === "on" ? { bell: true } : {}) };
 }
 
 /** `enabled` on|off, `quiet` HH:MM-HH:MM ("" turns quiet hours off as 00:00-00:00), `timezone` an IANA name. A wrong value is refused with what is accepted. */
@@ -45,10 +47,11 @@ export function savePushConfig(db: Db, patch: Record<string, string | undefined>
   const fields: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue;
-    if (key === "enabled" && value !== "on" && value !== "off") throw new Error("enabled is on or off");
+    if ((key === "enabled" || key === "bell") && value !== "on" && value !== "off") throw new Error(`${key} is on or off`);
     if (key === "quiet" && !QUIET.test(value)) throw new Error("quiet is HH:MM-HH:MM in the time zone (23:00-08:00; 00:00-00:00 means no quiet hours)");
     if (key === "timezone" && !validTimezone(value)) throw new Error(`unknown time zone «${value}» (an IANA name such as Europe/Madrid)`);
     if (!(PUSH_CONFIG_KEYS as readonly string[]).includes(key)) throw new Error(`unknown setting «${key}» (${PUSH_CONFIG_KEYS.join(", ")})`);
+    if (key === "bell") { db.prepare("INSERT INTO lane_pilot_owner_config(key,value,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at").run("bell", value, now); continue; }
     fields[key] = key === "enabled" ? value === "on" : value;
   }
   writeHubFields(db, "owner_push", fields, now);
@@ -122,8 +125,10 @@ export type BellNotice = { send: boolean; reason: "disabled" | "quiet_hours" | "
 export function planBellNotice(db: Db, now: number = Date.now(), sweeps: readonly OwnerItemSweep[] = [], learningReader?: LearningItemsReader): BellNotice {
   const config = loadPushConfig(db);
   const none = (reason: BellNotice["reason"]): BellNotice => ({ send: false, reason, title: "", text: "", keys: [] });
-  if (!config.enabled) return none("disabled");
+  if (!config.enabled || config.bell !== true) return none("disabled");
   if (inQuietHours(now, config.quiet, config.timezone)) return none("quiet_hours");
+  // The marks of the bell are kept a month: an item that old is no longer «new» to anyone, and the table stays small.
+  db.prepare("DELETE FROM lane_pilot_owner_push WHERE key LIKE 'bell:%' AND pushed_at < ?").run(now - 30 * 86_400_000);
   const announced = new Set((db.prepare("SELECT key FROM lane_pilot_owner_push WHERE key LIKE 'bell:%'").all() as Array<{ key: string }>).map((row) => row.key));
   const fresh = collectOwnerWaiting(db, now, sweeps, undefined, learningReader).items
     .filter((item) => item.wake && item.tier === "now" && !announced.has(`${BELL_PREFIX}${item.key}`));

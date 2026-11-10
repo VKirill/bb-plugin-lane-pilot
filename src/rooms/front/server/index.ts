@@ -50,7 +50,7 @@ export function createFront(ctx: ServerCore) {
   /** Find the project's helpers and parse them: agent and skill definitions of the other tools (SMA m_im_scan). */
   async function helpers(runId: string) {
     const place = runPlace(runId);
-    const listed = await host().call("listDocsPages", { requestedHostId: place.hostId, projectCwd: place.cwd, roots: [...HELPER_ROOTS] }, { hostId: place.hostId, timeoutMs: 30_000 });
+    const listed = await host().call("listDocsPages", { requestedHostId: place.hostId, projectCwd: place.cwd, roots: [...HELPER_ROOTS], skipOversized: true }, { hostId: place.hostId, timeoutMs: 30_000 });
     return listed.pages.map((page) => parseHelper(page.path, page.content)).filter((row): row is NonNullable<typeof row> => !!row);
   }
   /** Take the chosen as drafts: each into its kind's forge folder; a draft that exists is never overwritten (the write is CAS on «absent»). */
@@ -75,19 +75,19 @@ export function createFront(ctx: ServerCore) {
   async function pollPeers(now = Date.now()) {
     const listed = await listQaHosts(bb);
     if (listed.length) for (const id of [...snapshots.keys()]) if (!listed.some((row) => row.id === id)) snapshots.delete(id);
-    for (const row of listed) {
+    // All peers at once, each in its own try/catch: a machine that does not answer changes only its own line and delays nobody.
+    await Promise.all(listed.map(async (row) => {
       const online = row.connected === true;
       const before = snapshots.get(row.id);
       const next: PeerSnapshot = { hostId: row.id, name: row.name ?? null, online, at: now, lastOnlineAt: online ? now : before?.lastOnlineAt ?? null };
       if (online) {
-        // Each peer in its own try/catch: a machine that does not answer changes only its own line.
         try {
           next.windows = await host().call("readUsageWindows", { requestedHostId: row.id }, { hostId: row.id, timeoutMs: 5_000 });
           next.answered = true;
         } catch { next.answered = false; }
       }
       snapshots.set(row.id, next);
-    }
+    }));
     return [...snapshots.values()];
   }
   async function peers() {
@@ -122,6 +122,8 @@ export function createFront(ctx: ServerCore) {
 export type FrontApi = ReturnType<typeof createFront>["front"];
 
 export function mountFront(ctx: ServerCore, api: FrontApi): void {
+  // The snapshots live in memory only, so a fresh process asks once at once: the machines list is not empty until the first tick.
+  void api.pollPeers().catch((cause: unknown) => ctx.log(`peers poll failed: ${cause instanceof Error ? cause.message : String(cause)}`));
   scheduleIsolated(ctx.bb, "front-peers", "*/5 * * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
     await api.pollPeers().catch((cause: unknown) => ctx.log(`peers poll failed: ${cause instanceof Error ? cause.message : String(cause)}`));
