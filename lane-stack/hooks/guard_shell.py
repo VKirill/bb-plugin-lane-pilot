@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PreToolUse: block destructive shell across CLIs."""
 from __future__ import annotations
-import hashlib, ipaddress, json, os, re, shlex, socket, subprocess, sys, threading, time
+import hashlib, ipaddress, json, os, re, shlex, socket, subprocess, sys, tempfile, threading, time
 from pathlib import Path
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -1995,6 +1995,163 @@ def _permit_or_ticket(p: dict, command: str, category: str, refusal: str) -> str
     return f"{refusal} Permit ticket {digest} is filed: Lane Pilot hands it to the PM; when it is granted, run the same command again (once). Meanwhile do the rest of the task."
 
 
+# Git steps that can wipe uncommitted work (same list as session-hooks logic.ts DESTRUCTIVE_GIT).
+_DESTRUCTIVE_GIT = re.compile(r"\bgit\s+(checkout\s+--|restore\b|reset\b|clean\b|stash\s+(drop|clear)|rebase\b|branch\s+-D)")
+
+
+def _git_airbag(cwd: str) -> tuple[str, str] | None:
+    """A return point in milliseconds (SMA k_lib_airbag): the whole working tree (untracked included) as a commit under
+    refs/lane-airbag/<epoch>, made with a temporary index so the real one is untouched. Any failure returns None:
+    the airbag may be skipped, the command is never refused because of it."""
+    try:
+        root = Path(cwd).resolve()
+        if not (root / ".git").exists():
+            return None
+        fd, index = tempfile.mkstemp(prefix="lane-airbag-index-")
+        os.close(fd)
+        os.unlink(index)  # git rejects an existing empty index file; it must create the temp index itself
+        env = {**os.environ, "GIT_INDEX_FILE": index,
+               "GIT_AUTHOR_NAME": "lane-pilot", "GIT_AUTHOR_EMAIL": "lane-pilot@local",
+               "GIT_COMMITTER_NAME": "lane-pilot", "GIT_COMMITTER_EMAIL": "lane-pilot@local"}
+        try:
+            def run(*args: str) -> str:
+                out = subprocess.run(["git", *args], cwd=root, env=env, capture_output=True, text=True, timeout=10)
+                if out.returncode != 0:
+                    raise OSError(out.stderr.strip()[:200] or f"git {args[0]} failed")
+                return out.stdout.strip()
+
+            run("add", "-A")
+            tree = run("write-tree")
+            head = subprocess.run(["git", "rev-parse", "--verify", "HEAD"], cwd=root, capture_output=True, text=True).stdout.strip()
+            parents = ["-p", head] if head else []
+            epoch = int(time.time())
+            sha = subprocess.run(["git", "commit-tree", tree, *parents, "-m", f"lane airbag {epoch}"],
+                                 cwd=root, env=env, input="", capture_output=True, text=True, timeout=10).stdout.strip()
+            if not sha:
+                return None
+            ref = f"refs/lane-airbag/{epoch}"
+            run("update-ref", ref, sha)
+            return ref, sha
+        finally:
+            try:
+                os.unlink(index)
+            except OSError:
+                pass
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def _reflex_lines(cwd: str) -> tuple[Path, list[str]] | None:
+    """The task folder's REFLEXES.md (walked up a few parents) split into its WHEN trigger → act lines."""
+    try:
+        root = Path(cwd).resolve()
+        for folder in (root, *root.parents):
+            candidate = folder / "REFLEXES.md"
+            if candidate.is_file():
+                return candidate, candidate.read_text(errors="replace").splitlines()
+            # The task folder REFLEXES.md Lane Pilot writes at spawn.
+            for candidate in sorted((folder / ".agents" / "plans" / "items").glob("*/REFLEXES.md")):
+                return candidate, candidate.read_text(errors="replace").splitlines()
+            if len(folder.parts) <= 2:
+                break
+        return None
+    except OSError:
+        return None
+
+
+def _reflex_advice(p: dict, command: str, path: str) -> str | None:
+    """A burn lesson's trigger seen in the coming act fires as advice, twice at most per session (SMA k_lib_reflex)."""
+    cwd = p.get("cwd") or p.get("workspaceRoot") or "."
+    found = _reflex_lines(str(cwd))
+    if not found:
+        return None
+    subject = f"{command} {path}".lower()
+    for index, line in enumerate(found[1]):
+        match = re.match(r"^\s*[-*]?\s*WHEN\s+(.+?)\s*(?:→|->)\s*(.+)$", line)
+        if not match or match.group(1).strip().lower() not in subject:
+            continue
+        sid = re.sub(r"[^A-Za-z0-9_-]", "_", str(p.get("session_id") or ""))[:80] or "unknown"
+        counter = Path.home() / ".lane-pilot" / "session-hooks" / sid / "reflex.json"
+        try:
+            counts = json.loads(counter.read_text()) if counter.is_file() else {}
+        except (OSError, ValueError):
+            counts = {}
+        seen = int(counts.get(str(index), 0))
+        if seen >= 2:
+            return None
+        try:
+            counter.parent.mkdir(parents=True, exist_ok=True)
+            counts[str(index)] = seen + 1
+            counter.write_text(json.dumps(counts))
+        except OSError:
+            pass
+        return f"[reflex] {match.group(2).strip()}"
+    return None
+
+
+_PACKAGE_INSTALL = re.compile(r"(?:^|[;&|(]\s*)(npm|pnpm|yarn|bun)\s+(install|i|add|ci|update|uninstall)\b")
+_FILE_OPS = {"rm", "mv", "cp", "ln", "unlink"}
+
+
+def _outside_checkout(resolved: str, cwd_real: str) -> bool:
+    return resolved != cwd_real and not resolved.startswith(cwd_real + os.sep)
+
+
+def _linked_store(cwd: str) -> str | None:
+    """The link in <cwd>/node_modules that reaches outside the checkout: node_modules itself, or one of its entries."""
+    try:
+        store = Path(cwd) / "node_modules"
+        cwd_real = os.path.realpath(cwd)
+        if store.is_symlink():
+            if _outside_checkout(os.path.realpath(store), cwd_real):
+                return str(store)
+        elif store.is_dir():
+            for entry in store.iterdir():
+                if entry.is_symlink() and _outside_checkout(os.path.realpath(entry), cwd_real):
+                    return str(entry)
+        return None
+    except OSError:
+        return None
+
+
+def _deps_guard_error(name: str, p: dict) -> str | None:
+    """The shared dependency store reached through a link (SMA k_lib_depsguard): an install whose node_modules is a link
+    or holds linked entries, and a write whose target resolves inside another checkout's node_modules — by lstat and
+    realpath, not by the command's words."""
+    cwd = p.get("cwd") or p.get("workspaceRoot") or "."
+    cwd = str(cwd)
+    cwd_real = os.path.realpath(cwd)
+
+    def hits_foreign_store(target: str) -> str | None:
+        resolved = os.path.realpath(target if os.path.isabs(target) else os.path.join(cwd, target))
+        if f"{os.sep}node_modules{os.sep}" in resolved and _outside_checkout(resolved, cwd_real):
+            return resolved
+        return None
+
+    if is_edit_tool(name):
+        hit = hits_foreign_store(file_path(p) or "")
+        if hit:
+            return f"[deps-guard] {file_path(p)} resolves into another checkout's dependency store ({hit}): a worktree's packages are linked, not copied. Change the manifest in your own checkout instead."
+        return None
+    if not is_shell_tool(name):
+        return None
+    command = shell_command(p)
+    if _PACKAGE_INSTALL.search(command):
+        link = _linked_store(cwd)
+        if link:
+            return f"[deps-guard] installing here writes through {link} into another checkout's shared dependency store. Run the install in that checkout itself."
+    for segment in _delete_commands(command):
+        if not segment or Path(segment[0]).name not in _FILE_OPS:
+            continue
+        for word in segment[1:]:
+            if word.startswith("-"):
+                continue
+            hit = hits_foreign_store(word)
+            if hit:
+                return f"[deps-guard] {word} resolves into another checkout's dependency store ({hit}): a worktree's packages are linked, not yours to change."
+    return None
+
+
 def _bash_accepts(command: str) -> bool:
     """Whether bash itself parses the command (`bash -n`: syntax only, nothing runs)."""
     try:
@@ -2040,6 +2197,11 @@ def main() -> None:
         if secret_cli:
             emit_deny(client, f"[hub-guard] {secret_cli} is not available to Lane Pilot agents: it can break the hub or BB's plugin runtime by mistake. "
                       "Ask the owner to run it in their own terminal.")
+    # The linked dependency store is refused on file-system facts, for every lane session.
+    if _lane_pilot_agent_session(key) or _lane_marked():
+        deps = _deps_guard_error(name, p)
+        if deps:
+            emit_deny(client, deps)
     if is_helper_role(key):
         if is_edit_tool(name):
             path = file_path(p)
@@ -2182,7 +2344,17 @@ def main() -> None:
         if refusal:
             emit_deny(client, refusal)
 
-    emit_allow(client)
+    # Advice that rides on an allow in a lane session: the airbag note and a burn lesson's reflex.
+    advice: list[str] = []
+    if _lane_marked() or _lane_pilot_agent_session(key):
+        if is_shell_tool(name) and _DESTRUCTIVE_GIT.search(cmd):
+            saved = _git_airbag(str(p.get("cwd") or p.get("workspaceRoot") or "."))
+            if saved:
+                advice.append(f"[git-airbag] saved as {saved[0]}: git checkout {saved[1][:10]} -- . brings it back")
+        reflex = _reflex_advice(p, cmd, file_path(p) or "")
+        if reflex:
+            advice.append(reflex)
+    emit_allow(client, "\n".join(advice) or None)
 
 if __name__ == "__main__":
     try:

@@ -23,6 +23,7 @@ import { wasAnsweredByDefault } from "./question-default";
 import { appendTaskQa } from "./reopen-attempt";
 import {needsHumanQuestion, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines} from "./writer-task";
 import { isLiveDecision } from "../live-folder";
+import { conventionGateHits, type ConventionGate } from "../../session-hooks/logic";
 import { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, acceptanceArtifactDir, acceptanceProofGap, taskSizeOf, landingWordGap, landingWordAsked, questionsFromFile, checkScriptEdits, recordTaskApproach, recordTaskQuestions, referenceTestEdits, taskWordKey, testFitFindings, writerMarkers } from "../../tasks";
 import type { TaskWord } from "../../tasks";
 import type { StageId } from "../../tasks";
@@ -817,6 +818,20 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         if (stopped) return stopped;
         transitionAttempt(db, input.attemptId, "validation_failed", { reason:planFact.refusal });
         return { status:"validation_failed", reason:planFact.refusal, output:candidate.output, produced:candidate.produced, verification:candidate.verification, attemptId:input.attemptId, writerThreadId };
+      }
+      // Checkable conventions (SMA k_lib_gates): rules.gates on the project, a warning on the card by default and a
+      // refusal only where a rule says block. Hits land on lines the diff added in matching paths.
+      const conventionGates = (projectSettings["rules.gates"] ?? []) as ConventionGate[];
+      if (Array.isArray(conventionGates) && conventionGates.length) {
+        const gateHits = conventionGateHits(conventionGates, lastPatches ?? {});
+        if (gateHits.blocks.length) {
+          const reason = `convention_gate: ${gateHits.blocks.join("; ")}`.slice(0, 500);
+          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+            attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"convention_gate",reason}});
+          transitionAttempt(db, input.attemptId, "validation_failed", { reason });
+          return { status:"validation_failed", reason, output:candidate.output, produced:candidate.produced, verification:candidate.verification, attemptId:input.attemptId, writerThreadId };
+        }
+        if (gateHits.warnings.length) candidate.warnings = [...(candidate.warnings ?? []), ...gateHits.warnings.map((hit) => `convention_gate: ${hit}`)];
       }
       // Approach and lesson markers warn. A weakened test (test_fit) blocks acceptance; any other edit of a test that already existed stays a warning.
       const markers = writerMarkers(`${candidate.output ?? ""}\n${answer}`);

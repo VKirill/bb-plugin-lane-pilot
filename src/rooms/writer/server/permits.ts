@@ -4,6 +4,7 @@ import { registerObservedTool, scheduleIsolated } from "../../platform/server";
 import { ToolError, type ServerCore } from "../../contracts/server";
 import { hostContract } from "../../contracts";
 import { getAttempt, getRun, getRunWriterHost, listOpenAttempts } from "../../storage";
+import { recordEvidence } from "../../runs/server/evidence";
 
 /**
  * Permits (SMA map: Permission before an act, Permit channel for the worker, Permit channel opened, Ticket awaits a decision, Approve or deny
@@ -110,6 +111,15 @@ export function mountPermits(ctx: ServerCore): void {
       }
       const written = await host().call("answerPermit", { requestedHostId: input.hostId, session: input.session, ticket: input.ticket, decision: input.decision, why: input.why }, { hostId: input.hostId, timeoutMs: 10_000 });
       if (!written.written) throw new ToolError(`no ticket ${input.ticket} on ${input.hostId}`, { code: "no_ticket", retryable: false, sideEffects: "none" });
+      // A grant is a risky act: why and what was checked goes on record before the writer runs it (SMA k_lib_evidence).
+      const projectId = attempt ? getRun(db, attempt.run_id)?.project_id : undefined;
+      const ticketRow = ((await ticketsOn(input.hostId).catch(() => null))?.tickets ?? []) as Ticket[];
+      const ticket = ticketRow.find((item) => item.session === input.session && item.ticket === input.ticket);
+      await recordEvidence(bb.storage.kv as never, {
+        op: "permit", projectId: projectId ?? "unknown", target: `${input.hostId}/${input.ticket}`, why: input.why,
+        checks: [{ name: "ticket", ok: true, detail: ticket ? `${ticket.category}: ${ticket.command.slice(0, 200)} @ ${ticket.cwd}` : `ticket ${input.ticket} on ${input.hostId}` }],
+        by: "lane_pilot_permit", at: Date.now(),
+      });
       if (attempt?.thread_id) await bestEffort(bb.log, "permit decision notice", bb.sdk.threads.send({ threadId: attempt.thread_id, mode: "queue-if-active", input: [{ type: "text", mentions: [], text: `[Lane Pilot] Permit ${input.ticket}: ${input.decision === "allow" ? "granted — run the same command again, once" : `refused — ${input.why}`}.` }] } as never), undefined);
       return JSON.stringify({ ticket: input.ticket, decision: input.decision, written: true });
     },

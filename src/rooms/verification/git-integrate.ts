@@ -108,6 +108,8 @@ done`;
 
 export async function persistTaskFolder(input:{
   taskId:string; plan:string;
+  /** Project lessons with a «WHEN <trigger> → <act>» line; written to REFLEXES.md (SMA k_lib_reflex). */
+  reflexes?:string[];
   /** Appends the exclude line to the repo's real info/exclude on the workspace's host; a failure skips only the line. */
   exclude?:(line:string)=>Promise<void>;
   writeFile:(relativePath:string, content:string)=>Promise<void>;
@@ -122,6 +124,9 @@ export async function persistTaskFolder(input:{
   }
   const plan = input.plan.endsWith("\n") ? input.plan : `${input.plan}\n`;
   await input.writeFile(`${folder}/PLAN.md`, plan);
+  // Burn lessons with a WHEN <trigger> → <act> line go here so the guard can fire them at the act (SMA k_lib_reflex).
+  const reflexes = (input.reflexes ?? []).filter((line) => /WHEN\s+.+?\s*(?:→|->)\s*.+/.test(line));
+  if (reflexes.length) await input.writeFile(`${folder}/REFLEXES.md`, `# Reflexes\n\n${reflexes.join("\n")}\n`);
   return { folder };
 }
 
