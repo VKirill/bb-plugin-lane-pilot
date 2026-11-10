@@ -11,6 +11,7 @@ import {
   getAttempt,
   getRun,
   getReasoningTrace,
+  countChargedAttempts,
   listAttemptsForTask,
   listStageReceipts,
   openDatabase,
@@ -528,6 +529,8 @@ describe("BB writer validation on the server path", () => {
     });
     const db=openDatabase(bb);
     saveLegacyWriterConfig(db);
+    // The effort ladder belongs to a retry of the same model: the classic order, not the default handoff to the next model.
+    saveProjectSetting(db,projectId,"writer.fallback_on_provider_failure","after_retry");
     createRun(db,"run-effort-retry",projectId,"bb",config.writerWorkspacePath);
     setRunThread(db,"run-effort-retry",pmThreadId);
     await plugin(bb);
@@ -942,9 +945,12 @@ describe("BB writer validation on the server path", () => {
       "lane_pilot_wait_writer", { runId:dispatched.runId, timeoutSec:3 }, { threadId:pmThreadId, projectId },
     )));
     expect(result.state).toBe("blocked");
-    expect(spawnCount).toBe(2);
-    expect(statusPollCount).toBeGreaterThanOrEqual(2);
-    expect(listAttemptsForTask(db, dispatched.runId, "error-retry").map((attempt) => attempt.state)).toEqual(["provider_error", "blocked", "blocked"]);
+    // One start of the refused model, then the chain at once: a change of model is not an attempt (owner, 2026-11-10).
+    expect(spawnCount).toBe(1);
+    expect(statusPollCount).toBeGreaterThanOrEqual(1);
+    expect(listAttemptsForTask(db, dispatched.runId, "error-retry").map((attempt) => attempt.state)).toEqual(["blocked", "blocked"]);
+    // Neither is charged to the task: the refused start and the fallback that could not start are the provider's.
+    expect(countChargedAttempts(db, dispatched.runId, "error-retry")).toBe(0);
     expect(listStageReceipts(db,dispatched.runId,"error-retry").find((row)=>row.stageId==="writer-agent")?.result).toMatchObject({
       emergencyFallback:{state:"failed",reason:"writer_provider_unavailable:claude-code"},
     });

@@ -5,7 +5,7 @@ export const SMA_CONTRACT_TESTS: Readonly<Record<string, readonly string[]>> = {
   ac_next_budget: ["tests/sma/task-graph-1.test.ts › the next check is refused once the run is past its token limit, and that stop is not a charged retry"],
   ac_reserve: ["tests/sma/task-graph-1.test.ts › an unknown budget is not a zero reserve, and an appetite past the free tokens is refused"],
   ae_awaits: ["tests/sma/task-graph-1.test.ts › a NEEDS_HUMAN answer is the writer's question, and it is not sent around again"],
-  ae_crash: ["tests/sma/task-graph-2.test.ts › a provider crash is a real failure and the attempt is spent; an empty answer is the provider's, an answer with no files is the task's"],
+  ae_crash: ["tests/sma/task-graph-2.test.ts › a provider crash is an honest failure of its own class and costs the task no attempt; an empty answer is the provider's, an answer with no files is the task's"],
   ae_reasons: ["tests/sma/task-graph-2.test.ts › a merge, a question, a budget stop and a crash each send the person to a different next step"],
   ae_retryable: ["tests/sma/task-graph-1.test.ts › the same task failure twice stops; a different fault, a question and a budget stop do not"],
   ag_answer_gate: ["tests/sma/task-graph-1.test.ts › a research or check task with no code table is skipped; a feature with none fails"],

@@ -1,6 +1,9 @@
 /**
  * Which side a failed writer attempt is on, so the reaction fits the cause (Kubernetes podFailurePolicy, Buildkite
- * automatic retry, Temporal non-retryable errors): only `task` and `provider` failures spend the task's two attempts.
+ * automatic retry, Temporal non-retryable errors): only `task` failures spend the task's two attempts.
+ * - provider: the writer's provider or model did not do the work (its thread ended in an error, the model or tier is not served, it stayed
+ *   silent). A change of model is not an attempt (owner, 2026-11-10: 77 tasks in 14 days ended «retry limit 2 exhausted» on such reasons):
+ *   uncharged, and the next model of the writer chain takes the task at once.
  * - merge: main moved while the task ran; redone on the new main for free.
  * - dirty_base: git refused the merge over uncommitted edits in the base checkout (the owner's, or bookkeeping Lane Pilot left
  *   there). Another writer run cannot clear them, so the task is parked like an infra fault, backed off and restarted after the
@@ -41,7 +44,8 @@ const MERGE = /(^|: )merge_conflict/i;
 // when git names no file), so one that is read now is a conflict like any other: a free redo, not a fault of Lane Pilot (hub
 // 2026-10-08: 35 of the 106 «harness» faults of that week were these).
 /** «retry limit 2 exhausted: X» (reconcile.ts, writer/start.ts, rpc/runs.ts) is X tried too often: it is classified by X. */
-const RETRY_LIMIT_WRAPPER = /^retry limit \d+ exhausted:\s*/i;
+// `emergency_fallback_failed:` wraps the reason a fallback writer could not start with: the class is that reason's.
+const RETRY_LIMIT_WRAPPER = /^(?:retry limit \d+ exhausted:\s*|emergency_fallback_failed:\s*)+/i;
 /** A red check: the task's, unless the reason carries the environment marker. Its output is a log, not a statement about Lane Pilot. */
 const CHECK_FAILED = /^verification failed\b/;
 /** A check the host killed for time (`verification timed out after Ns`). Not the task's red code: it has its own retry. */
@@ -138,7 +142,9 @@ export function classifyFailure(state:string, reason:string | null | undefined):
   // The words of HARNESS (EROFS, spawn failed, …) in a check's output belong to the check (hub: a red vitest printing EROFS counted as a fault).
   if (!CHECK_FAILED.test(text) && HARNESS.test(text)) return sure("harness");
   if (CONTRACT.test(text)) return sure("contract");
-  if (PROVIDER_STATES.has(state) || /^(writer_provider_unavailable|writer_model_unavailable|writer_service_tier_unavailable)/.test(text)) return sure("provider");
+  // «writer thread status error» is written where the writer's thread itself ended in an error (finish.ts, dispatch.ts): the provider's, whatever
+  // state the attempt was moved to afterwards (a handed-over attempt ends `blocked` with the same reason).
+  if (PROVIDER_STATES.has(state) || /^(writer_provider_unavailable|writer_model_unavailable|writer_service_tier_unavailable|writer thread status error)/.test(text)) return sure("provider");
   if (state === "empty_output") return sure(text.includes(NO_ANSWER_REASON) ? "provider" : "task");
   // A red check is the task's by rule; any other reason nothing matched is not known to be.
   return { cls:"task", confident:CHECK_FAILED.test(text) || TASK_REASON.test(text) || !text.trim() };
@@ -158,7 +164,7 @@ export function failureSide(cls:FailureClass):FailureSide {
 /**
  * Two consecutive attempts of a task family failing the same way will not get better on a third: the task is blocked
  * for the PM instead of spending another writer (and no fallback writer is started). Only the task's and the
- * provider's classes stop here — free classes have their own parks and caps.
+ * contract's classes stop here — free classes, the provider's among them, have their own handoffs, parks and caps.
  */
 export function repeatedFailureReason(
   previous:{ state:string; reason:string | null | undefined } | null | undefined,
@@ -168,7 +174,7 @@ export function repeatedFailureReason(
   const cls = failureClass(previous.state, previous.reason);
   // A contract failure repeats too (a contract naming outputs or paths no attempt can meet failed the same way
   // twice); free classes keep their own parks and caps, and judgment stops on its own.
-  if (cls !== "task" && cls !== "provider" && cls !== "contract") return null;
+  if (cls !== "task" && cls !== "contract") return null;
   if (failureClass(current.state, current.reason) !== cls) return null;
   if (failureFingerprint(previous.reason) !== failureFingerprint(current.reason)) return null;
   return `repeated_failure: ${String(current.reason ?? current.state).slice(0, 600)}`;
@@ -207,7 +213,7 @@ export const isEnvironmentCheckFailure = (check:{ stdout?:string; stderr?:string
 };
 
 /** Failures that do not spend one of the task's attempts. */
-export const FREE_CLASSES:ReadonlySet<FailureClass> = new Set(["merge", "dirty_base", "harness", "infra", "budget", "limit", "reassign", "verification_timeout"]);
+export const FREE_CLASSES:ReadonlySet<FailureClass> = new Set(["merge", "dirty_base", "harness", "infra", "budget", "limit", "provider", "reassign", "verification_timeout"]);
 /** What the PM does next about a task that did not end accepted, by its failure class; shown in wait receipts. */
 export function nextStep(state:string, reason:string | null | undefined):string {
   if (isOpenAttemptState(state)) return "wait: the writer is still on it";

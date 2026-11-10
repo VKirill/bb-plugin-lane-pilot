@@ -33,7 +33,7 @@ const memoryKv = () => {
   return { async get(key: string) { return store.has(key) ? store.get(key) : null; }, async set(key: string, value: unknown) { store.set(key, value); } };
 };
 
-describe("birth rails, sandbox and a crash that spends the attempt", () => {
+describe("birth rails, sandbox and a crash that is an honest failure", () => {
   it("[sma:tb_blockers] only a missing fact, a dependency or a conflict holds the work; any other code does not", () => {
     expect(blockingClass("clarify_open")).toBe("missing_info");
     expect(blockingClass("check_not_runnable")).toBe("missing_info");
@@ -86,10 +86,12 @@ describe("birth rails, sandbox and a crash that spends the attempt", () => {
     })).resolves.toEqual({ environmentId: "env-1" });
   });
 
-  it("[sma:ae_crash] a provider crash is a real failure and the attempt is spent; an empty answer is the provider's, an answer with no files is the task's", () => {
+  // The card: «An exception becomes an honest "runtime offline" failure, spend paid.» The failure keeps its own state and class; «spend» is the
+  // money booked, not one of the task's two attempts — a change of model is not an attempt (owner, 2026-11-10).
+  it("[sma:ae_crash] a provider crash is an honest failure of its own class and costs the task no attempt; an empty answer is the provider's, an answer with no files is the task's", () => {
     expect(isLegalMove("running", "provider_error")).toBe(true);
     expect(failureClass("provider_error", "connection reset")).toBe("provider");
-    expect(FREE_CLASSES.has("provider")).toBe(false);
+    expect(FREE_CLASSES.has("provider")).toBe(true);
     expect(failureClass("empty_output", NO_ANSWER_REASON)).toBe("provider");
     expect(failureClass("empty_output", "the writer changed no files")).toBe("task");
     expect(nextStep("provider_error", "connection reset")).toContain("session ended");

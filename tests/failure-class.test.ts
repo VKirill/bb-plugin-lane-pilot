@@ -279,7 +279,9 @@ describe("reasons from the hub that were counted as Lane Pilot's own faults", ()
     ["blocked", "retry limit 2 exhausted: writer_model_unavailable:codex/lp-drill-model-that-does-not-exist", "provider"],
     ["blocked", "retry limit 2 exhausted: missing expected_outputs: CardMockCard.vue", "contract"],
     ["blocked", "retry limit 2 exhausted: writer changed no files", "task"],
-    ["blocked", "retry limit 2 exhausted: writer thread status error", "task"],
+    // The writer's thread ended in an error: the provider's, also after the attempt was moved to `blocked` for the handoff (hub: 47 such rows in 14 days).
+    ["blocked", "retry limit 2 exhausted: writer thread status error", "provider"],
+    ["blocked", "emergency_fallback_failed:writer_model_unavailable:devin/swe-2-high", "provider"],
     // A session the core could not start never ran the task: free, the chain's next writer takes it.
     ["provider_error", "writer_provider_unavailable:thread_not_started: system_error:thread_command_failed:Command thread.start failed:vk_required_session_policy_bridge_unsupported", "limit"],
     ["blocked", "retry limit 2 exhausted: system_error:thread_provisioning_failed:Provisioning thread failed", "harness"],

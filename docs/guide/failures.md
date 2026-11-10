@@ -23,7 +23,7 @@ Every ended attempt gets a class from `failureClass` (rules on the reason). Each
 | Class | Meaning | Charged | MAST bucket |
 |---|---|---|---|
 | `task` | The task's own work is red, incomplete or missing a file | yes | verification:incomplete_work |
-| `provider` | Model provider fault, empty answer, silent writer | yes (hands over) | external:provider |
+| `provider` | Model provider fault (the writer's thread ended in an error, the model or tier is not served), empty answer, silent writer | free, next writer | external:provider |
 | `merge` | Main moved or conflict; redone on the new main | free | misalignment:base_moved |
 | `dirty_base` | Uncommitted edits block the merge; parked | free | external:dirty_base |
 | `harness` | Lane Pilot's own fault (`internal_error`, `merge_failed`, `spawn failed`, `reconcile_*`, `attempt_worktree_*`); parked | free | specification:system_failure |
@@ -52,7 +52,7 @@ Before an attempt exists, `writerHold` asks whether the writer's provider can wo
 | Repeated failure | Two consecutive attempts of a family failing the same way (same fingerprint) block the task as `repeated_failure:` and open the wall ladder. | fixed |
 | Retry safety gate | An automatic retry stops when commits or files in the failed attempt's worktree changed after it ended, `.agents/` evidence was rewritten, or a catalog secret sits in the diff. | `writer.retry_safety` on |
 | Escalate on red | Send the first red check to the next writer. | `writer.retry_escalate` false |
-| Provider handoff | A provider refusal moves to the next writer at once or after one retry. A stream cut is retried once in the same thread. | `writer.fallback_on_provider_failure` after_retry |
+| Provider handoff | A provider refusal moves to the next writer at once (with no other writer, the same model is tried again); `after_retry` keeps one more attempt of the same model first. A change of model is not an attempt: a provider failure is not charged to the task's two attempts or its retry budget. A stream cut is retried once in the same thread. | `writer.fallback_on_provider_failure` immediate |
 | Class cooldowns | Pause after an attempt ends, per class, before the next one: a JSON map class to seconds. | `writer.class_cooldowns` unset; `writer.cooldown_max_ms` 0 (no cap) |
 | Task wall-clock cap | A task older than this across attempts and restarts ends as `task_wall_clock`. | `writer.task_wall_clock_min` 720 |
 | Verify-pass cap | Failed or rejected verification passes; ends as `verify_passes_exhausted`. | `writer.verify_max_passes` 10 |

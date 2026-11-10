@@ -31,7 +31,7 @@ export function runTasks(rows: PilotTaskRow[], canceledIds: readonly string[]): 
  */
 export function pilotBlockedByOthers(state: string, reason: string | null): boolean {
   const cls = failureClass(state, reason);
-  return cls === "provider" || FREE_CLASSES.has(cls);
+  return FREE_CLASSES.has(cls);
 }
 
 /**

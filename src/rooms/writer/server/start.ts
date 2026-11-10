@@ -609,6 +609,15 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     let budget:RunBudget;
     let runFolder:string;
     let attemptsHere = 0;
+    /** The writers that may take the task after the primary one: its fallbacks in turn, then the PM's model. Read fresh: the owner may change them mid-task. */
+    const otherWriters = () => {
+      const loadedSettings=loadProjectSettings(db,input.projectId,getRunSettingsScopes(db,input.runId));
+      const settings=writerOverlay ? { ...loadedSettings, ...writerOverlay } : rotatedWriterSettings(loadedSettings, input.taskId);
+      const primaryProvider=typeof settings["writer.provider"] === "string" ? settings["writer.provider"] as string : input.config.writerProviderId;
+      const primaryModel=typeof settings["writer.model"] === "string" && settings["writer.model"] ? settings["writer.model"] as string : input.config.writerModel;
+      const pmSelection={providerId:input.config.pmProviderId,model:input.config.pmModel};
+      return { settings, pmSelection, fallbackList:writerFallbackChain({providerId:primaryProvider,model:primaryModel},writerFallbacks(settings),pmSelection) };
+    };
     let halfBound = false;
     let inSession = false;
     let sessionStartedAt = Date.now();
@@ -1189,11 +1198,13 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // A writer that stayed silent through its nudges is handed on the same way: its session hung, not the task.
         // A provider refusal (a limit, an unavailable provider, a 5xx) hands over at once by default — one more attempt
         // of the same model only repeats the refusal (owner_present held writers 20 h, graphs-optimisation G10); the
-        // `writer.fallback_on_provider_failure` (off by default: the first refusal keeps the classic retry order).
+        // `writer.fallback_on_provider_failure=after_retry` keeps the classic retry order (one more attempt of the same model first).
         // A stream cut is not a refusal: the provider cut a turn mid-work, its edits are in the worktree, and the same
         // thread continues them once as before — only a second cut in a row is the provider's (streamHandOff above).
         const providerHandsOff = failedClass === "provider" && !turn.streamError
-          && runSettings["writer.fallback_on_provider_failure"] === "immediate";
+          && runSettings["writer.fallback_on_provider_failure"] !== "after_retry"
+          // No other writer to hand over to: the same model is tried again (free), instead of a block nobody else could lift.
+          && otherWriters().fallbackList.length > 0;
         if (failedClass === "limit" || providerHandsOff || isWriterSilent(typeof last.reason === "string" ? last.reason : null) || streamHandOff) {
           const latest = getAttempt(db, attemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status), ...failureFieldsOf(last) });
@@ -1333,17 +1344,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       /** The primary writer exhausted its session: the fallback chain takes the task over, writer by writer. */
       const fallbackChain = async ():Promise<"done"|"stop"> => {
       if (last.status !== "accepted" && primaryFailure) {
-        const loadedSettings=loadProjectSettings(db,input.projectId,getRunSettingsScopes(db,input.runId));
-        const settings=writerOverlay ? { ...loadedSettings, ...writerOverlay } : rotatedWriterSettings(loadedSettings, input.taskId);
-        const primaryProvider=typeof settings["writer.provider"] === "string" ? settings["writer.provider"] as string : input.config.writerProviderId;
-        const primaryModel=typeof settings["writer.model"] === "string" && settings["writer.model"] ? settings["writer.model"] as string : input.config.writerModel;
-        const pmSelection={providerId:input.config.pmProviderId,model:input.config.pmModel};
+        const { settings, fallbackList } = otherWriters();
         // The writer's fallbacks in turn, then the PM's model; each takes over only while the failure is the model's, not the task's.
         // A provider, limit or catalog fault walks the chain. A repeated red check takes only the next writer (the same
         // pair is already excluded): another pass of this writer would only repeat the check.
         const primaryClass = failureClass(String(primaryFailure.status), typeof primaryFailure.reason === "string" ? primaryFailure.reason : null);
         const escalate = checkEscalation !== null && primaryClass === "task";
-        const fallbackList = writerFallbackChain({providerId:primaryProvider,model:primaryModel},writerFallbacks(settings),pmSelection);
         const routed = primaryClass === "provider" || primaryClass === "limit" || escalate
           ? await chainWithRoom(fallbackList,input.config.hostId,settings,input.taskId)
           : { chain:[] as typeof fallbackList, room:false, nextReset:null };
@@ -1402,8 +1408,10 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           // A file the contract expects and the writer did not make is the task's problem, not the model's limit:
           // another model meets the same contract (GLM spent 138 min per such task on 2026-10-03).
           if (typeof failure.reason === "string" && failure.reason.startsWith("missing expected_outputs")) break;
-          const fallbackSpent = await spendRetryBudget(bb.storage.kv as never, input.runId, input.taskId, "fallback", Date.now(), TASK_ATTEMPT_BUDGET, ctx.log);
-          if (!fallbackSpent.ok) {
+          // A change of model after the provider's own failure is not an attempt and spends nothing; a next writer after a red check is one.
+          const fallbackSpent = primaryClass === "provider" || primaryClass === "limit" ? null
+            : await spendRetryBudget(bb.storage.kv as never, input.runId, input.taskId, "fallback", Date.now(), TASK_ATTEMPT_BUDGET, ctx.log);
+          if (fallbackSpent && !fallbackSpent.ok) {
             // The attempt that started the chain keeps the failure it ended with; the budget's reason goes to the log.
             ctx.log(`writer ${input.taskId}: ${retryBudgetReason(input.taskId, fallbackSpent.record)}`);
             break;

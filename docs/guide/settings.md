@@ -68,7 +68,7 @@ The full generated list with defaults is [docs/enabled-settings.md](../enabled-s
 | `regress.nightly`, `.last_n`, `.last_days` | `true`, `30`, `14` | The night re-check of accepted tasks. |
 | `integration.gate_command`, `.gate_when`, `.gate_every` | auto-detected, `queue_drained`, `5` | The whole-suite check after a batch merged. |
 | `run.max_attempts`, `run.max_children`, `run.max_tokens`, `run.max_wall_minutes`, `run.gate` | unset, `none` | Run budgets and the operator-review gate. |
-| `writer.fallback_on_provider_failure`, `writer.pair_pin`, `writer.capacity_wait`, `writer.route_record`, `writer.skill_pick` | `after_retry`, `on`, `on`, `on`, `on` | Writer routing, see [How a piece of work flows](flow.md). |
+| `writer.fallback_on_provider_failure`, `writer.pair_pin`, `writer.capacity_wait`, `writer.route_record`, `writer.skill_pick` | `immediate`, `on`, `on`, `on`, `on` | Writer routing, see [How a piece of work flows](flow.md). |
 | `writer.task_wall_clock_min`, `writer.verify_max_passes`, `writer.retry_safety`, `failure.interventions` | `720`, `10`, `on`, `on` | Retry caps and gates, see [Failure handling and stability](failures.md). |
 | `usage.skip_percent` | `90` | Share of a provider's usage window from which its writer models are skipped until reset. |
 | `jev.enabled`, `jev.provider`, `jev.modes`, `jev.thresholds` | `true`, `typesafe`, per judgment, defaults | The Jev judgments. |

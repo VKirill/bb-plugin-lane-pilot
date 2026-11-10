@@ -12,13 +12,9 @@ sources:
   - src/rooms/critique/quality-mode.ts
   - src/rooms/writer/retry-budget.ts
   - docs/enabled-settings.snapshot.json
-  - weekly.ts
-  - wall/acceptance.ts
-  - src/rooms/state-machine.ts
-  - packages/memory-core/src/settings.ts
 ---
 
-<!-- enabled-settings:structure 4b1a8f8955cfb7c5 -->
+<!-- enabled-settings:structure 4560993e2e9f13cd -->
 
 # Enabled settings (generated)
 
@@ -261,7 +257,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `writer.capacity_wait` | `on` | — | capacity: all writer providers spent, the task waits for the nearest window reset as capacity_saturated instead of ending blocked |
 | `writer.class_cooldowns` | `{"merge":30,"infra":60,"dirty_base":60}` | — | failure classes: JSON map of class to seconds of pause after an attempt ends, before the next attempt |
 | `writer.cooldown_max_ms` | `0` | — | failure classes: cap for any class cooldown pause in milliseconds |
-| `writer.fallback_on_provider_failure` | `after_retry` | — | writer fallback chain: a provider refusal hands the task to the next model at once or after one retry of the same model |
+| `writer.fallback_on_provider_failure` | `immediate` | — | writer fallback chain: a provider refusal hands the task to the next model at once or after one retry of the same model |
 | `writer.model` | `per-provider default` | — | writer stage reads this setting |
 | `writer.owns_barrier` | `on` | — | contract barrier: after an attempt's worktree is bound, tracked files outside owns_paths are read-only for it, so an outside write is refused by the OS instead of failing acceptance after the fact |
 | `writer.pair_pin` | `on` | — | writer pin: the task's provider+model for its whole life |
@@ -286,11 +282,3 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `TASK_ATTEMPT_BUDGET` | `12` | src/rooms/writer/retry-budget.ts:8 |
 | `MAIN_ATTEMPT_LIMIT` | `2` | src/rooms/state-machine.ts:77 |
 | `memory.note_budget` | `24000` | packages/memory-core/src/settings.ts:53 |
-
-<!-- lane-pilot:backlinks -->
-## Referenced by
-
-- [The task pipeline](flows/task-pipeline.md)
-- [Settings and experimental features](guide/settings.md)
-- [Lane Pilot overview](overview.md)
-- [Plan against fact and the acceptance card](plan-fact.md)

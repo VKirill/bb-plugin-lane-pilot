@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.511
+
+- **A change of model is not an attempt.** The owner, November 10: «if the model is unavailable the spare one must work, and a change of model is not an attempt». On the hub it was one: in 14 days 77 tasks ended «retry limit 2 exhausted» on a reason that was the provider's — 47 «writer thread status error», 27 «writer_model_unavailable:devin/…», 3 «writer_service_tier_unavailable». Three rules changed.
+  - The `provider` class is free, like `limit`: a writer whose thread ended in an error, whose model or tier is not served, or who stayed silent costs the task none of its two attempts. «writer thread status error» reads as the provider's also after the attempt was moved to `blocked` for the handoff, and `emergency_fallback_failed:<reason>` takes the class of its reason.
+  - `writer.fallback_on_provider_failure` defaults to `immediate`: the next model of the writer chain takes the task at the first refusal. With no other writer in the chain the same model is tried again instead of a block nobody else could lift. `after_retry` keeps the old order.
+  - A fallback started after a provider's failure spends nothing of the task's retry budget of 12; a next writer after a red check still does. Two provider failures in a row no longer end the task as `repeated_failure`.
+  The card `ae_crash` («an honest "runtime offline" failure, spend paid») holds: the failure keeps its own state and class, and «spend» is the money booked, not an attempt.
+
 ## 0.1.510
 
 - **The SMA map says «have» only where a reader found the card's behaviour in the code.** The owner asked, category by category, whether each function of the SMA graph is here and works as correctly. 925 claims «have» were held by no contract test; one reader per claim opened the proof and compared the code with the card, and a second reader re-searched the 64 judged «does something else». 415 match; 132 exist, but the proof pointed at the wrong place; 294 deliver part of the card; of the 64, 6 were found elsewhere, 26 deliver part and 32 are absent; 20 point into the Telegram repository this machine does not have. The registry now says so: 163 proofs moved to the code that holds the behaviour, 320 claims are «partial» with the missing part named (`SMA_AUDIT_GAPS` in `src/rooms/sma-map/gaps.ts`), 32 are «missing». The map reads have 1 036, partial 503, missing 232 (was 1 388 / 183 / 200); the share held by a contract test is unchanged, 343 of 1 798. A line of the audit register is one reader's doubt, not a test: it leaves the same way a contract gap does.
