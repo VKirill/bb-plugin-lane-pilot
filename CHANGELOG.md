@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.514
+
+- **`bb lane-pilot cancel` goes through the shared cancel.** 0.1.513 put the close of an ended task into `cancelAttemptById`, but the command kept its own copy of the cancel code and never reached it: on the hub `bb lane-pilot cancel` still answered «cancel is not legal from blocked». The command calls `cancelAttemptById` now, so the PM's tool, the board and the command line take one road (queued at once, running once the writer's stop is observed, ended by closing it).
+
 ## 0.1.513
 
 - **`bb lane-pilot cancel` and the board close a task that ended blocked, as the PM's tool does.** 0.1.507 taught only `lane_pilot_cancel_task` to close an ended task; the command line and the RPC still answered «cancel is not legal from blocked», so four dead tasks of feed-gen stayed on the board. The close lives in `cancelAttemptById` now (`closeEndedAttempt`): the newest attempt of a task that ended without acceptance, in an open run, becomes `canceled`. A batch of canceled tasks alone does not wake its PM chat.

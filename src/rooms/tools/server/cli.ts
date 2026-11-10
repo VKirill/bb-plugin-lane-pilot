@@ -2,7 +2,7 @@ import { listReviewedObservations } from "../../learning";
 import { prototypeConfigSchema, taskV2Schema } from "../../contracts";
 import { taskBaselineEntries } from "../../baseline";
 import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, markCancelCode, saveProjectSetting, savePrototypeConfig, transitionAttempt } from "../../storage";
-import { cancelRejection, confirmWriterStopped, finishRunSafely, pauseRun } from "../../runs/server";
+import { cancelAttemptById, finishRunSafely, pauseRun } from "../../runs/server";
 import { conveyorState, renderTimeline, setConveyor, taskTimeline, unknownReasons } from "../../runs";
 import { TASK_RECORD_USAGE, blindRecord, readsBlind, renderTaskRecord, taskRecord } from "./task-record";
 import {bestEffort, isNotFound, orMiss, outputText, stringAt, valueAt} from "@lane-pilot/kit";
@@ -169,7 +169,7 @@ export function timelineArgs(args: string[]): { taskId: string | undefined; runI
 }
 
 export function registerCli(ctx: ServerCore, services: Services, migrations: readonly string[]) {
-  const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, host } = ctx;
+  const { bb, db, effectiveProjectSettings, host } = ctx;
 
   const usage = [
     "bb lane-pilot configure <json>",
@@ -666,26 +666,10 @@ ${ERRANDS_USAGE}` },
           return { exitCode:0, stdout:JSON.stringify({ projectId, finishedRunIds:[runId], closed:true }) };
         }
         if (command === "cancel" && args.length === 1) {
-          const attempt = getAttempt(db, args[0]!);
-          if (!attempt) return { exitCode:1, stdout:JSON.stringify({ok:false,attemptId:args[0],state:"missing",reason:"attempt does not exist"}) };
-          if (!attempt.thread_id) {
-            const canceled=cancelQueuedAttempt(attempt, "canceled from the CLI");
-            return {exitCode:canceled.ok?0:1,stdout:JSON.stringify({attemptId:attempt.id,...canceled})};
-          }
-          const rejection = cancelRejection(db, attempt);
-          if (rejection) return { exitCode:1, stdout:JSON.stringify({ ok:false, attemptId:attempt.id, state:attempt.state, reason:rejection }) };
-          transitionAttempt(db, attempt.id, "cancel_requested", { threadId:attempt.thread_id });
-          await bb.sdk.threads.stop({ threadId:attempt.thread_id });
-          // A stop is two things (SMA rule 9): the writer is confirmed gone, waiting a bounded time for it, and its work is on record.
-          const confirmed = await confirmWriterStopped(bb, attempt.thread_id);
-          const status = confirmed.status;
-          if (!confirmed.stopped) throw new Error(`writer stop was not independently observed (status=${status ?? "unknown"}, waited ${Math.round(confirmed.waitedMs / 1000)}s)`);
-          await bestEffort(bb.log, "rollback note stopped", services.rollback.noteStopped(attempt.id), undefined);
-          transitionAttempt(db, attempt.id, "canceled", { threadId:attempt.thread_id, reason:"canceled from the CLI" });
-          markCancelCode(db, attempt.id, "owner_cancel");
-          return { exitCode:0, stdout:JSON.stringify({
-            ok:true, attemptId:attempt.id, threadId:attempt.thread_id, state:"canceled", observedStatus:status,
-          }) };
+          // One road for every cancel (the PM's tool, the board's RPC, this command): a queued attempt at once, a running one once its
+          // writer's stop is observed, a task that ended blocked by closing it.
+          const result = await cancelAttemptById(ctx, args[0]!, services.rollback, "canceled from the CLI", "owner_cancel");
+          return { exitCode:result.ok ? 0 : 1, stdout:JSON.stringify({ attemptId:args[0], ...result }) };
         }
         if (command === "recover" && args.length === 1) {
           const attempt = getAttempt(db, args[0]!);
