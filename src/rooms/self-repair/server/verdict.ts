@@ -83,7 +83,7 @@ export async function askOwnerAboutRepair(env: VerdictEnv, threadId: string, sig
     });
     env.log(`self-repair: the owner's answer on @thread:${threadId}: ${goAhead ? "go ahead, the repair continues" : "no go-ahead, its worktree is released"}`);
   };
-  const opened = await bestEffort(env.log, "repair owner ask", env.ownerAsk?.askInBackground(threadId, { source: "repair", question: form.question, detail: body.slice(-3000), options: form.options },
+  const opened = await bestEffort(env.log, "repair owner ask", env.ownerAsk?.askInBackground(threadId, { source: "repair", kind: "checkpoint", question: form.question, detail: body.slice(-3000), options: form.options },
     settled, { timeoutMs: TIMEOUT_MS }) ?? Promise.resolve(false), false);
   if (opened) env.log(`self-repair: asked the owner about @thread:${threadId} (needs-owner)`);
   return opened;

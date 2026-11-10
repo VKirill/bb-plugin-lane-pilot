@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { OWNER_ASK_MAX_OPTIONS, OWNER_ASK_RENDERER_ID, OWNER_ASK_SOURCES, type OwnerAskPayload, type OwnerAskResponse, type OwnerAskSource } from "./owner-ask-shared";
+import { ASK_KINDS, OPTIONS_ONLY_ASK_KINDS, OWNER_ASK_MAX_OPTIONS, OWNER_ASK_RENDERER_ID, OWNER_ASK_SOURCES, type AskKind, type OwnerAskPayload, type OwnerAskResponse, type OwnerAskSource } from "./owner-ask-shared";
 
-export { OWNER_ASK_MAX_OPTIONS, OWNER_ASK_RENDERER_ID, OWNER_ASK_SOURCES };
-export type { OwnerAskPayload, OwnerAskResponse, OwnerAskSource };
+export { ASK_KINDS, OWNER_ASK_MAX_OPTIONS, OWNER_ASK_RENDERER_ID, OWNER_ASK_SOURCES };
+export type { AskKind, OwnerAskPayload, OwnerAskResponse, OwnerAskSource };
 
 /**
  * A question to the owner as a BB pending interaction (`bb.ui.requestInput`) instead of text in a chat. Server and
@@ -14,6 +14,7 @@ const TITLE_MAX = 160;
 export const ownerAskPayloadSchema = z.object({
   v: z.literal(1),
   source: z.enum(OWNER_ASK_SOURCES),
+  kind: z.enum(ASK_KINDS).default("decision"),
   question: z.string().min(1).max(2000),
   detail: z.string().max(4000).optional(),
   options: z.array(z.object({ id: z.string().min(1).max(40), label: z.string().min(1).max(120) })).max(OWNER_ASK_MAX_OPTIONS),
@@ -28,12 +29,12 @@ export const ownerAskResponseSchema = z.object({
 
 export type OwnerAskRequest = {
   source: OwnerAskSource;
+  /** Which of the five kinds of person-facing stop this is (SMA: Five question kinds); it decides whether free text is allowed. */
+  kind: AskKind;
   question: string;
   detail?: string;
   /** Short answers the owner can tap; ids are `1..n`, in this order. */
   options?: readonly string[];
-  /** Free text beside (or instead of) the options; always on when there are no options. */
-  allowText?: boolean;
 };
 
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
@@ -45,10 +46,13 @@ export function buildOwnerAskPayload(request: OwnerAskRequest): OwnerAskPayload 
   return {
     v: 1,
     source: request.source,
+    kind: request.kind,
     question: clip(request.question.trim(), 2000),
     ...(request.detail?.trim() ? { detail: clip(request.detail.trim(), 4000) } : {}),
     options,
-    allowText: request.allowText === false && options.length > 0 ? false : true,
+    // The kind decides free text (SMA m_q_free_text): a budget or pause stop is a pick between options; with no options
+    // every kind takes words — there is nothing to pick.
+    allowText: options.length ? !OPTIONS_ONLY_ASK_KINDS.has(request.kind) : true,
   };
 }
 

@@ -23,7 +23,7 @@ import { mountRelay, ownerLocale } from "../../relay/server";
 import { ownerAnswerText } from "../owner-answer-text";
 import { mountWorkflowTools } from "../../workflow/server";
 import { mountSelfRepair } from "../../self-repair/server";
-import { mountHookTimeoutWatch, mountServiceProjects, mountWorktreeJanitor } from "../../stability/server";
+import { mountHookTimeoutWatch, mountPmTurnWatch, mountServiceProjects, mountWorktreeJanitor } from "../../stability/server";
 import { mountWorkflowArchitect } from "../../workflow/server";
 import { mountLeadTool } from "../../lead/server";
 import { mountScheduleTools } from "../../schedule/server";
@@ -302,12 +302,13 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
       question:z.string().trim().min(1).max(2000),
       detail:z.string().trim().max(4000).optional(),
       options:z.array(z.string().trim().min(1).max(120)).max(6).optional(),
-      allowText:z.boolean().default(true),
+      /** Which of the five kinds of stop this is (SMA: Five question kinds): decision by default, worker when it relays a writer's needs_human. The kind decides whether free text is allowed. */
+      kind:z.enum(["checkpoint", "budget", "pause", "decision", "worker"]).default("decision"),
       timeoutMin:z.number().int().min(1).max(60).default(30),
     }).strict(),
     execute: async (params, context) => {
       await requirePmThread(bb, context);
-      const answer = await ctx.ownerAsk.ask(context.threadId, { source:"pm", question:params.question, detail:params.detail, options:params.options, allowText:params.allowText },
+      const answer = await ctx.ownerAsk.ask(context.threadId, { source:"pm", kind:params.kind, question:params.question, detail:params.detail, options:params.options },
         { timeoutMs:params.timeoutMin * 60_000, signal:context.signal });
       if (answer.outcome === "unavailable") {
         throw new ToolError(`owner_question_unavailable: ${answer.reason}`, { code:"owner_question_unavailable", retryable:false, sideEffects:"none", next:"ask the owner in your reply text" });
@@ -389,6 +390,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
   mountWorkflowTools(ctx, services);
   mountSelfRepair(ctx, services, selfRepairDeps());
   mountHookTimeoutWatch(ctx);
+  mountPmTurnWatch(ctx);
   mountServiceProjects(ctx);
   mountWorktreeJanitor(ctx, { cleanupStickyLaneWorktrees, cleanupFinishedAttemptEnvironments });
   mountWorkflowArchitect(ctx, services);

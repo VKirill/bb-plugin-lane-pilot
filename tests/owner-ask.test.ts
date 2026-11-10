@@ -17,23 +17,23 @@ function host() {
 
 describe("the form's contract (H8)", () => {
   it("numbers the options, keeps the question as the push title and reads the answer back", () => {
-    const payload = buildOwnerAskPayload({ source: "gate", question: "Gate is red.\nSecond line", options: ["Fix it", "  ", "Leave it"], detail: "log" });
+    const payload = buildOwnerAskPayload({ source: "gate", kind: "decision", question: "Gate is red.\nSecond line", options: ["Fix it", "  ", "Leave it"], detail: "log" });
     expect(ownerAskPayloadSchema.safeParse(payload).success).toBe(true);
     expect(payload.options).toEqual([{ id: "1", label: "Fix it" }, { id: "2", label: "Leave it" }]);
     expect(payload.allowText).toBe(true);
     expect(ownerAskTitle(payload)).toBe("Gate is red.");
     expect(ownerAnswerText(resolveOwnerResponse(payload, { choice: "2", text: " but wait " }))).toBe("Leave it — but wait");
     expect(resolveOwnerResponse(payload, { choice: "9" }).choice).toBeNull();
-    expect(buildOwnerAskPayload({ source: "pm", question: "q", options: ["a"], allowText: false }).allowText).toBe(false);
-    expect(buildOwnerAskPayload({ source: "pm", question: "q", allowText: false }).allowText).toBe(true);
-    expect(ownerAskTitle(buildOwnerAskPayload({ source: "pm", question: "x".repeat(500) })).length).toBeLessThanOrEqual(160);
+    expect(buildOwnerAskPayload({ source: "pm", kind: "budget", question: "q", options: ["a"] }).allowText).toBe(false);
+    expect(buildOwnerAskPayload({ source: "pm", kind: "budget", question: "q" }).allowText).toBe(true);
+    expect(ownerAskTitle(buildOwnerAskPayload({ source: "pm", kind: "decision", question: "x".repeat(500) })).length).toBeLessThanOrEqual(160);
   });
 });
 
 describe("questions to the owner as BB pending interactions (H8)", () => {
   it("opens a form in the thread and returns what the owner chose and wrote", async () => {
     const { harness, ownerAsk } = host();
-    const asked = ownerAsk.ask("thr_pm", { source: "pm", question: "Ship the migration?", options: ["Yes", "No"] });
+    const asked = ownerAsk.ask("thr_pm", { source: "pm", kind: "decision", question: "Ship the migration?", options: ["Yes", "No"] });
     expect(harness.pendingInteractions).toHaveLength(1);
     const form = harness.pendingInteractions[0]!;
     expect(form).toMatchObject({ threadId: "thr_pm", rendererId: "lane-pilot-ask", title: "Ship the migration?" });
@@ -44,29 +44,29 @@ describe("questions to the owner as BB pending interactions (H8)", () => {
 
   it("reports a dismissed form, an empty answer and a timeout as cancelled", async () => {
     const { harness, ownerAsk } = host();
-    const dismissed = ownerAsk.ask("thr_a", { source: "pm", question: "q" });
+    const dismissed = ownerAsk.ask("thr_a", { source: "pm", kind: "decision", question: "q" });
     harness.behavior.cancelInteraction(harness.pendingInteractions[0]!.id);
     expect(await dismissed).toEqual({ outcome: "cancelled", reason: "user" });
-    const empty = ownerAsk.ask("thr_a", { source: "pm", question: "q" });
+    const empty = ownerAsk.ask("thr_a", { source: "pm", kind: "decision", question: "q" });
     harness.behavior.submitInteraction(harness.pendingInteractions[0]!.id, { text: "  " });
     expect(await empty).toEqual({ outcome: "cancelled", reason: "empty_answer" });
     vi.useFakeTimers();
-    const slow = ownerAsk.ask("thr_a", { source: "pm", question: "q" }, { timeoutMs: 5_000 });
+    const slow = ownerAsk.ask("thr_a", { source: "pm", kind: "decision", question: "q" }, { timeoutMs: 5_000 });
     await vi.advanceTimersByTimeAsync(5_001);
     expect(await slow).toEqual({ outcome: "cancelled", reason: "timeout" });
   });
 
   it("opens one form per thread; a second question is «unavailable» so the caller can say it in text", async () => {
     const { harness, ownerAsk } = host();
-    const first = ownerAsk.ask("thr_pm", { source: "pm", question: "one" });
-    const second = await ownerAsk.ask("thr_pm", { source: "gate", question: "two" });
+    const first = ownerAsk.ask("thr_pm", { source: "pm", kind: "decision", question: "one" });
+    const second = await ownerAsk.ask("thr_pm", { source: "gate", kind: "decision", question: "two" });
     expect(second).toMatchObject({ outcome: "unavailable" });
-    const other = ownerAsk.ask("thr_other", { source: "pm", question: "three" });
+    const other = ownerAsk.ask("thr_other", { source: "pm", kind: "decision", question: "three" });
     expect(harness.pendingInteractions).toHaveLength(2);
     harness.behavior.cancelInteraction(harness.pendingInteractions[0]!.id);
     await first;
     // The thread is free again.
-    const again = ownerAsk.ask("thr_pm", { source: "pm", question: "four" });
+    const again = ownerAsk.ask("thr_pm", { source: "pm", kind: "decision", question: "four" });
     expect(harness.pendingInteractions.some((row) => row.title === "four")).toBe(true);
     for (const row of harness.pendingInteractions) harness.behavior.cancelInteraction(row.id);
     await Promise.all([other, again]);
@@ -76,14 +76,14 @@ describe("questions to the owner as BB pending interactions (H8)", () => {
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const ownerAsk = createOwnerAsk({ ...bb, ui: undefined } as unknown as typeof bb, () => undefined);
     expect(ownerAsk.available()).toBe(false);
-    expect(await ownerAsk.ask("thr", { source: "pm", question: "q" })).toMatchObject({ outcome: "unavailable" });
-    expect(await ownerAsk.askInBackground("thr", { source: "pm", question: "q" }, () => { throw new Error("never"); })).toBe(false);
+    expect(await ownerAsk.ask("thr", { source: "pm", kind: "decision", question: "q" })).toMatchObject({ outcome: "unavailable" });
+    expect(await ownerAsk.askInBackground("thr", { source: "pm", kind: "decision", question: "q" }, () => { throw new Error("never"); })).toBe(false);
   });
 
   it("askInBackground says the form is open, then hands the answer to the callback", async () => {
     const { harness, ownerAsk } = host();
     const settled: unknown[] = [];
-    const opened = await ownerAsk.askInBackground("thr_pm", { source: "council", question: "Add a point?", options: ["Decide"] }, (answer) => { settled.push(answer); });
+    const opened = await ownerAsk.askInBackground("thr_pm", { source: "council", kind: "decision", question: "Add a point?", options: ["Decide"] }, (answer) => { settled.push(answer); });
     expect(opened).toBe(true);
     expect(settled).toEqual([]);
     harness.behavior.submitInteraction(harness.pendingInteractions[0]!.id, { choice: "1" });
@@ -95,15 +95,15 @@ describe("questions to the owner as BB pending interactions (H8)", () => {
     const { harness, ownerAsk } = host();
     const settled: unknown[] = [];
     const withdrawn = new AbortController();
-    await ownerAsk.askInBackground("thr_a", { source: "council", question: "q" }, (answer) => { settled.push(answer); }, { signal: withdrawn.signal });
+    await ownerAsk.askInBackground("thr_a", { source: "council", kind: "decision", question: "q" }, (answer) => { settled.push(answer); }, { signal: withdrawn.signal });
     withdrawn.abort();
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(settled).toEqual([]);
     expect(harness.pendingInteractions).toHaveLength(0);
     // A refused form (here: a thread that already has one) is reported at once.
-    const blocker = ownerAsk.ask("thr_b", { source: "pm", question: "first" });
+    const blocker = ownerAsk.ask("thr_b", { source: "pm", kind: "decision", question: "first" });
     const started = Date.now();
-    expect(await ownerAsk.askInBackground("thr_b", { source: "gate", question: "second" }, (answer) => { settled.push(answer); })).toBe(false);
+    expect(await ownerAsk.askInBackground("thr_b", { source: "gate", kind: "decision", question: "second" }, (answer) => { settled.push(answer); })).toBe(false);
     expect(Date.now() - started).toBeLessThan(OWNER_ASK_OPEN_GRACE_MS);
     harness.behavior.cancelInteraction(harness.pendingInteractions[0]!.id);
     await blocker;
@@ -237,7 +237,7 @@ describe("self-repair maps the localized go-ahead option to English for the repa
 describe("thread lifecycle events do not disturb an open form (H8)", () => {
   it("a thread event for the asked thread leaves the form open", async () => {
     const { harness, ownerAsk } = host();
-    const asked = ownerAsk.ask("thr_pm", { source: "pm", question: "q" });
+    const asked = ownerAsk.ask("thr_pm", { source: "pm", kind: "decision", question: "q" });
     await harness.emitThreadEvent("thread.idle", { thread: makeThreadResponse({ id: "thr_pm" }), lastAssistantText: null });
     expect(harness.pendingInteractions).toHaveLength(1);
     harness.behavior.cancelInteraction(harness.pendingInteractions[0]!.id);
@@ -258,7 +258,7 @@ describe("a question lost to a reload (H8, audit B3)", () => {
 
   it("keeps the question when the reload took the form, and the next instance tells the chat", async () => {
     const { bb, ownerAsk, sent } = reloadHost("plugin-disposed");
-    expect(await ownerAsk.ask("thr_pm", { source: "pm", question: "Ship the migration?\nsecond line" })).toEqual({ outcome: "cancelled", reason: "plugin-disposed" });
+    expect(await ownerAsk.ask("thr_pm", { source: "pm", kind: "decision", question: "Ship the migration?\nsecond line" })).toEqual({ outcome: "cancelled", reason: "plugin-disposed" });
     // The new instance: no form of its own is open in that chat, the old one's record is.
     const next = createOwnerAsk(bb, () => undefined);
     expect(await next.pending("thr_pm")).toBe(true);
@@ -273,18 +273,18 @@ describe("a question lost to a reload (H8, audit B3)", () => {
 
   it("keeps a PM's question whose tool signal the reload aborted (request-aborted), not one Lane Pilot withdrew itself (magicseo replay, 2026-10-31)", async () => {
     const pm = reloadHost("request-aborted");
-    await pm.ownerAsk.ask("thr_pm", { source: "pm", question: "Start and stop the promotion once?" });
+    await pm.ownerAsk.ask("thr_pm", { source: "pm", kind: "decision", question: "Start and stop the promotion once?" });
     expect(await createOwnerAsk(pm.bb, () => undefined).recoverLost()).toEqual(["thr_pm"]);
     expect(pm.sent[0]!.text).toContain("«Start and stop the promotion once?»");
     const council = reloadHost("request-aborted");
-    await council.ownerAsk.ask("thr_c", { source: "council", question: "q" });
+    await council.ownerAsk.ask("thr_c", { source: "council", kind: "decision", question: "q" });
     expect(await council.ownerAsk.recoverLost()).toEqual([]);
   });
 
   it("forgets a question the owner dismissed, and one the chat itself ended", async () => {
     for (const reason of ["user", "timeout", "thread-stopped", "thread-deleted"]) {
       const { ownerAsk, sent } = reloadHost(reason);
-      await ownerAsk.ask("thr_pm", { source: "pm", question: "q" });
+      await ownerAsk.ask("thr_pm", { source: "pm", kind: "decision", question: "q" });
       expect(await ownerAsk.pending("thr_pm"), reason).toBe(false);
       expect(await ownerAsk.recoverLost(), reason).toEqual([]);
       expect(sent, reason).toEqual([]);
@@ -293,7 +293,7 @@ describe("a question lost to a reload (H8, audit B3)", () => {
 
   it("an open form is pending while it waits", async () => {
     const { harness, ownerAsk } = host();
-    const asked = ownerAsk.ask("thr_pm", { source: "pm", question: "q" });
+    const asked = ownerAsk.ask("thr_pm", { source: "pm", kind: "decision", question: "q" });
     expect(await ownerAsk.pending("thr_pm")).toBe(true);
     expect(await ownerAsk.pending("thr_other")).toBe(false);
     harness.behavior.submitInteraction(harness.pendingInteractions[0]!.id, { text: "yes" });
@@ -308,8 +308,8 @@ it("recoverLost skips an unreadable record and still tells the chat of the next 
   const made = createFakePluginHost({ pluginId: "lane-pilot", sdk: { threads: { send } } as never });
   (made.bb as unknown as { ui: unknown }).ui = { requestInput: async () => ({ outcome: "cancelled", reason: "plugin-disposed" }) };
   const ownerAsk = createOwnerAsk(made.bb, () => undefined);
-  await ownerAsk.ask("thr_a", { source: "pm", question: "first?" });
-  await ownerAsk.ask("thr_b", { source: "pm", question: "second?" });
+  await ownerAsk.ask("thr_a", { source: "pm", kind: "decision", question: "first?" });
+  await ownerAsk.ask("thr_b", { source: "pm", kind: "decision", question: "second?" });
   const kv = made.bb.storage.kv as never as { get: (key: string) => Promise<unknown> };
   const realGet = kv.get.bind(kv);
   kv.get = async (key: string) => { if (key === "owner-ask:pending:thr_a") throw new Error("corrupt record"); return realGet(key); };

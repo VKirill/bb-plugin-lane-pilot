@@ -552,7 +552,7 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
   // one key per turn the PM was never told (magicseo replay 2026-10-31: re-signed at 08:08, both sides waited on each other).
   const version = turn === "context" ? r.context?.sha : turn === "planning" ? r.plan?.sha : undefined;
   if (turn) return { key: key(`word:${turn}${version ? `:v${version.slice(0, 12)}` : ""}`), stage: phase.stage, waitsForPm: true,
-    text: `${head} awaits the owner's word at ${turn} (owner.words is on). He gives it in the phase card, or ask him with lane_pilot_ask_owner and record it with ${tool("word", `, phaseId:"${id}", turn:"${turn}", decision:"yes"|"no", text`)}.` };
+    text: `${head} awaits the owner's word at ${turn} (owner.words is on). He gives it in the phase card, or ask him with lane_pilot_ask_owner and record it with ${tool("word", `, phaseId:"${id}", turn:"${turn}", decision:"yes"|"no", text${turn === "planning" && r.plan ? `, key:"${r.plan.sha}"` : ""}`)}.` };
   if (phase.state === "paused" || phase.state === "pause_requested") return { key: key("paused"), stage: phase.stage, text: `${head} is paused; ${tool("resume", `, phaseId:"${id}"`)} moves it on.`, waitsForPm: false };
   switch (phase.stage) {
     case "discussion": {

@@ -461,7 +461,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const options = humanOptions(node);
     // An answer can come before the form is reported shown: the form is then not marked open, or the re-ask would think it still is.
     let answered = false;
-    const shown = await rt.ctx.ownerAsk.askInBackground(rt.pmThreadId, { source: "pm", question: question === base ? worded : `${question.slice(0, question.length - base.length)}${worded}`, detail: workflowHumanDetail(await ownerLocale(rt.ctx.bb), runId, node.id), options: options.map((value) => value.replace(/_/g, " ")), allowText: true },
+    const shown = await rt.ctx.ownerAsk.askInBackground(rt.pmThreadId, { source: "pm", kind: "decision", question: question === base ? worded : `${question.slice(0, question.length - base.length)}${worded}`, detail: workflowHumanDetail(await ownerLocale(rt.ctx.bb), runId, node.id), options: options.map((value) => value.replace(/_/g, " ")) },
       async (answer) => {
         answered = true;
         openForms.delete(key);

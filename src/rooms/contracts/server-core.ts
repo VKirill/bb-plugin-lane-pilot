@@ -85,10 +85,11 @@ type OwnerAnswer =
   | { outcome: "unavailable"; reason: string };
 type OwnerAskRequest = {
   source: "pm" | "gate" | "repair" | "council" | "secret";
+  /** The kind of person-facing stop (SMA: Five question kinds); it decides whether free text is allowed. */
+  kind: "checkpoint" | "budget" | "pause" | "decision" | "worker";
   question: string;
   detail?: string;
   options?: readonly string[];
-  allowText?: boolean;
 };
 type OwnerAsk = {
   ask(threadId: string, request: OwnerAskRequest, options?: { timeoutMs?: number; signal?: AbortSignal }): Promise<OwnerAnswer>;

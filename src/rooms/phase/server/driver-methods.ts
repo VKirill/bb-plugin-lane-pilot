@@ -260,6 +260,19 @@ export function installMethods(tools: MethodsTools) {
     const shownKey = acceptanceKey(phase.record);
     if (input.turn === "acceptance" && input.decision === "yes" && !input.key) throw new PhaseRefusal(`the acceptance yes names the key of the package the owner was shown (status ownerWord.acceptanceKey, now ${shownKey})`);
     if (input.turn === "acceptance" && input.decision === "yes" && input.key !== shownKey) throw new PhaseRefusal(`the package changed since it was shown (shown ${input.key}, now ${shownKey}): show the acceptance again and ask anew`);
+    // The planning yes is for the proposal shown (SMA m_ce_proposal): a yes that names a key counts only for the plan with
+    // that key (the PM takes it from status ownerWord.planKey); a yes without one is for the plan in the record now and is
+    // stored with its key, so the owner's button keeps working. A project that sets phase.proposal_ttl_hours also refuses
+    // a yes on a proposal older than that; unset there is no term — the owner often answers a day later.
+    if (input.turn === "planning" && input.decision === "yes" && phase.record.ownerWords && phase.record.plan) {
+      const plan = phase.record.plan;
+      const settings = await ctx.effectiveProjectSettings(phase.projectId).then((result) => result.values as Record<string, unknown>, () => ({} as Record<string, unknown>));
+      const ttlHours = Number(settings["phase.proposal_ttl_hours"] ?? NaN);
+      if (plan.submittedAt && Number.isFinite(ttlHours) && ttlHours > 0 && now() - plan.submittedAt > ttlHours * 3_600_000) {
+        throw new PhaseRefusal(`the proposal is stale (submitted ${Math.round((now() - plan.submittedAt) / 3_600_000)} h ago, phase.proposal_ttl_hours ${ttlHours}): show the plan again and ask anew`);
+      }
+      if (input.key && input.key !== plan.sha) throw new PhaseRefusal(`the plan changed since it was shown (shown ${input.key}, now ${plan.sha}): show the plan again and ask anew`);
+    }
     // Consent is the whole message: «да» alone is consent; «да, но …» is a new word that goes back as words, not as yes.
     if (input.decision === "yes" && !isWholeConsent(input.text) && !/^owner via (screen|cli)$/.test(input.by ?? "")) throw new PhaseRefusal("the owner's message is not a whole consent: «да, но …» is a new word — record it as decision no with his words, or ask again");
     if (input.turn === "uat" && input.decision === "yes") {
@@ -270,7 +283,8 @@ export function installMethods(tools: MethodsTools) {
       if (!state || !state.lines || state.open.length || state.failed.length) throw new PhaseRefusal(`UAT is not complete: ${!state ? "no UAT.md" : `${state.open.length} open, ${state.failed.length} failed of ${state.lines}`} — the owner marks each line in ${path ?? "UAT.md"} first`);
     }
     const record: PhaseRecord = { ...phase.record, words: [...(phase.record.words ?? []), { turn: input.turn, decision: input.decision, by: input.by ?? "owner", text: input.text.slice(0, 2000), at: now(), ...(input.wave !== undefined ? { wave: input.wave } : {}),
-      ...(input.turn === "acceptance" ? { useful: input.useful === true, limits: input.limits === true, key: shownKey } : {}) }] };
+      ...(input.turn === "acceptance" ? { useful: input.useful === true, limits: input.limits === true, key: shownKey } : {}),
+      ...(input.turn === "planning" && phase.record.plan ? { key: phase.record.plan.sha } : {}) }] };
     reactions.answerPhaseWord(phase.id, input.turn, input.wave, input.decision, input.text, input.by ?? "owner");
     reactions.closeOwnerItem(phaseWordItemKey(phase.id, input.turn, input.wave), input.by ?? "owner");
     book(phase, "decisions", `word_${input.turn}`, `${input.by ?? "owner"}: ${input.decision} — ${input.text}`);
