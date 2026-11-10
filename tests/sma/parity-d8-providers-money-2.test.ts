@@ -6,6 +6,8 @@ import { featureRegistry, featureRegistryGaps } from "../../src/rooms/native-ins
 import { checkTickDeps, TICK_DEPS } from "../../src/rooms/platform/server";
 import { GUARD_INVENTORY, guardInventoryGaps, STREAMS } from "../../src/rooms/session-hooks";
 import { createAttempt, createRun, createTask, openDatabase, recordSkillMetric, saveReasoningTrace } from "../../src/rooms/plugin-db";
+import { buildRunPolicy, parseRunPolicy } from "../../src/rooms/tasks";
+import { loadWriterNudge, sweepWriterSilence, type SilenceDeps } from "../../src/rooms/writer/server/writer-silence";
 
 function world() {
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
@@ -69,5 +71,33 @@ describe("parity d8-2: providers and money", () => {
     }
     expect(guardInventoryGaps(["no-such-deny"]).unknown).toEqual(["no-such-deny"]);
     expect(guardInventoryGaps().empty).toEqual([]);
+  });
+
+  it("[sma:m_cfg_max_turns] without a setting the sweep ends an attempt past 81 completed tool calls with the ceiling reason, leaves 80 alone, and writer.max_turns=10 lowers it to 10", async () => {
+    const calls = (n: number) => Array.from({ length: n }, (_, index) => ({ type: "item/completed", createdAt: index + 1, data: { item: { type: "toolCall", name: "Read" } } }));
+    const store = new Map<string, unknown>();
+    const kv = { get: async (key: string) => store.get(key) ?? null, set: async (key: string, value: unknown) => { store.set(key, value); } };
+    const attempt = { id: "a1", run_id: "run", task_id: "T1", thread_id: "thr_w", state: "running", project_id: "proj" };
+    const deps = (events: unknown[], maxTurns?: number): SilenceDeps => ({
+      bb: { sdk: { threads: { send: async () => ({}), events: { list: async () => events } } }, storage: { kv } } as never,
+      openAttempts: () => [attempt as never], getThread: async () => ({ status: "active" }),
+      silenceMinutes: () => 999_999, maxTurns: maxTurns === undefined ? undefined : () => maxTurns,
+      isDisposed: () => false, log: () => undefined,
+    });
+    expect(await sweepWriterSilence(deps(calls(81)), 90)).toEqual([{ attemptId: "a1", action: "ended", count: 0 }]);
+    expect((await loadWriterNudge(kv as never, "a1"))?.reason).toMatch(/turn ceiling 80 reached/);
+    store.clear();
+    expect(await sweepWriterSilence(deps(calls(80)), 90)).toEqual([]);
+    expect(await sweepWriterSilence(deps(calls(11), 10), 90)).toEqual([{ attemptId: "a1", action: "ended", count: 0 }]);
+    expect((await loadWriterNudge(kv as never, "a1"))?.reason).toMatch(/turn ceiling 10 reached/);
+  });
+
+  it("[sma:m_restart_scoped] writer.max_turns freezes into the run's policy, an old policy without it still parses, and a setting change after creation does not move the stored number", () => {
+    const policy = buildRunPolicy({ "writer.max_turns": 20 });
+    expect(policy.maxTurns).toBe(20);
+    expect(parseRunPolicy({ schemaVersion: 1, pools: { provider: 5, verification: 2 } }).maxTurns).toBeUndefined();
+    expect(buildRunPolicy({ "writer.max_turns": 90 }).maxTurns).toBe(90);
+    expect(parseRunPolicy(policy).maxTurns).toBe(20);
+    expect(policy.maxTurns).toBe(20);
   });
 });

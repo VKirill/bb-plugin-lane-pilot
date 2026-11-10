@@ -1,5 +1,6 @@
-import { SETTING_WRITER_SILENCE_NUDGE_MIN } from "@lane-pilot/settings-catalog";
-import { getReasoningTrace, getRunSettingsScopes, listOpenAttempts, listUnfinishedStages, loadPrototypeConfig, loadProjectSettings, openDatabase } from "./src/rooms/storage";
+import { SETTING_WRITER_MAX_TURNS, SETTING_WRITER_SILENCE_NUDGE_MIN } from "@lane-pilot/settings-catalog";
+import { getReasoningTrace, getRun, getRunSettingsScopes, listOpenAttempts, listUnfinishedStages, loadPrototypeConfig, loadProjectSettings, openDatabase } from "./src/rooms/storage";
+import { parseRunPolicy } from "./src/rooms/tasks";
 import { PROVIDER_CAPABILITIES } from "@lane-pilot/models";
 import { migrations as lanePilotMigrations } from "./src/rooms/migrations";
 import { coupledSettingKeys, validateSettingChanges, validateSettingValue, validateSettingsObject } from "./src/rooms/settings";
@@ -68,7 +69,7 @@ import { checkTickDeps, scheduleIsolated } from "./src/rooms/platform/server";
 import { clearDrainSnapshot, readDrainSnapshot, skipRedundantStartupScans } from "./src/rooms/stability/server";
 import { tokenCursorRow, tokenDailyByModel } from "./src/rooms/usage/server";
 import type { TokenCursorReader } from "./src/rooms/work-graph/server";
-import { onAttemptFinished, createWriterQuestionTimeout, DEFAULT_SILENCE_NUDGE_MIN, sweepWriterSilence, sweepWriterWakes } from "./src/rooms/writer/server";
+import { onAttemptFinished, createWriterQuestionTimeout, DEFAULT_SILENCE_NUDGE_MIN, WRITER_MAX_TURNS, sweepWriterSilence, sweepWriterWakes } from "./src/rooms/writer/server";
 import { threadPendingInteractions } from "./src/rooms/relay/server";
 import { createStageChildren, mountErrands } from "./src/rooms/qa/server";
 import { createDocsStage } from "./src/rooms/docs/server";
@@ -543,6 +544,13 @@ export default async function plugin(bb: BbPluginApi) {
     silenceMinutes:(projectId, runId) => {
       const minutes = Number(loadProjectSettings(db, projectId, getRunSettingsScopes(db, runId))[SETTING_WRITER_SILENCE_NUDGE_MIN]);
       return Number.isFinite(minutes) && minutes >= 1 ? minutes : DEFAULT_SILENCE_NUDGE_MIN;
+    },
+    maxTurns:(projectId, runId) => {
+      // The turn ceiling is restart-scoped (SMA m_restart_scoped): frozen in the run's policy at creation,
+      // so a change under work in flight applies only to the next run.
+      try { const stored = parseRunPolicy(JSON.parse(getRun(db, runId)?.run_policy_json ?? "null")); if (stored.maxTurns) return stored.maxTurns; } catch { /* an old or foreign policy falls back to the live setting */ }
+      const turns = Number(loadProjectSettings(db, projectId, getRunSettingsScopes(db, runId))[SETTING_WRITER_MAX_TURNS]);
+      return Number.isFinite(turns) && turns >= 1 ? turns : WRITER_MAX_TURNS;
     },
   }).then(() => undefined, (cause) => pluginStopped(cause) ? undefined : bb.log.warn(`Lane Pilot writer silence sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
   scheduleIsolated(bb, "writer-silence-sweep", "*/5 * * * *", sweepSilentWriters, { timeoutMs: 10 * 60_000 });

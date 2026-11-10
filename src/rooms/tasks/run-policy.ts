@@ -3,6 +3,8 @@ import { z } from "zod";
 const runPolicySchema=z.object({
   schemaVersion:z.literal(1),
   pools:z.object({provider:z.number().int().min(1).max(15),verification:z.number().int().min(1).max(10)}).strict(),
+  /** The writer turn ceiling frozen at run creation (SMA m_restart_scoped): absent in policies written before 0.1.518. */
+  maxTurns:z.number().int().min(1).max(500).optional(),
 }).strict();
 
 export type RunPolicy=z.infer<typeof runPolicySchema>;
@@ -22,7 +24,7 @@ export function buildRunPolicy(settings:Record<string,unknown>):RunPolicy {
   return runPolicySchema.parse({schemaVersion:1,pools:{
     provider:configuredPool(settings["ops.pool_size"],"ops.pool_size",15),
     verification:configuredPool(settings["ops.verify_pool_size"],"ops.verify_pool_size",2),
-  }});
+  },maxTurns:(()=>{const value=settings["writer.max_turns"];if(value===undefined||value===null||value==="")return 80;const parsed=typeof value==="string"&&/^\d+$/.test(value)?Number(value):value;if(typeof parsed!=="number"||!Number.isInteger(parsed)||parsed<1||parsed>500)throw new Error("writer.max_turns must be an integer from 1 to 500");return parsed})()});
 }
 
 export function parseRunPolicy(value:unknown):RunPolicy {

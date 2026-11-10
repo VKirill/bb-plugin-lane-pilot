@@ -12,6 +12,8 @@ export const LIMIT_PROBE_MIN = 3;
 export const NO_ANSWER_MIN = 5;
 /** How long a provider that answered nothing is skipped before one trial task tries it again. */
 export const NO_ANSWER_HOLD_MS = 20 * 60_000;
+/** A writer's turn ceiling without a setting (SMA m_cfg_max_turns): completed tool calls of one attempt after which it ends (setting writer.max_turns, 1-500). */
+export const WRITER_MAX_TURNS = 80;
 
 function eventType(event:unknown):string {
   const value = event && typeof event === "object" ? Reflect.get(event, "type") : undefined;
@@ -133,6 +135,10 @@ export type SilenceDeps = {
   limitProbe?:(attempt:SilenceAttempt, sessionId:string, sinceMs:number) => Promise<OpenCodeLimit | null>;
   /** True while this thread (the writer's, or its PM chat) waits for the owner's answer: a silent writer is not a stuck one then. */
   waitingForOwner?:(threadId:string) => Promise<boolean>;
+  /** Completed tool calls of one attempt after which it ends (writer.max_turns; WRITER_MAX_TURNS when the dep is absent). */
+  maxTurns?:(projectId:string, runId:string) => number;
+  /** Completed tool calls of one attempt after which it ends (writer.max_turns; WRITER_MAX_TURNS when the dep is absent). */
+  maxTurns?:(projectId:string, runId:string) => number;
   /** The schedule run's signal: the sweep stops between attempts when the core aborts the run. */
   signal?:AbortSignal;
   log:(line:string) => void;
@@ -162,8 +168,19 @@ export async function sweepWriterSilence(deps:SilenceDeps, now = Date.now()):Pro
       if (record?.ended) continue;
       const thread = await deps.getThread(attempt.thread_id);
       if ((thread && typeof thread === "object" ? Reflect.get(thread, "status") : null) !== "active") continue;
-      const listed = await listThreadEventsRaw(bb as never, { threadId:attempt.thread_id, order:"desc", limit:"50" });
+      const listed = await listThreadEventsRaw(bb as never, { threadId:attempt.thread_id, order:"desc", limit:"200" });
       if (!listed.ok) continue;
+      // The worker's turn ceiling (SMA m_cfg_max_turns): a session is a BB thread, so Lane Pilot counts the
+      // writer's steps from its events itself. Past the ceiling the attempt ends like any timeout.
+      const ceiling = Math.max(1, Math.min(500, Math.trunc(deps.maxTurns?.(attempt.project_id, attempt.run_id) ?? WRITER_MAX_TURNS)));
+      const turns = listed.events.filter((event) => { const signature = callSignatureOf(event); return signature !== null && signature !== ""; }).length;
+      if (turns > ceiling) {
+        const reason = `turn ceiling ${ceiling} reached`;
+        await bb.storage.kv.set(key(attempt.id), { count:record?.count ?? 0, at:now, ended:true, reason } as never);
+        deps.log(`Lane Pilot ended ${attempt.task_id} (${attempt.id}): ${reason} (${turns} completed calls)`);
+        done.push({ attemptId:attempt.id, action:"ended", count:record?.count ?? 0 });
+        continue;
+      }
       const last = Math.max(0, ...listed.events.map(eventTime).filter((time):time is number => time !== null));
       if (!last) continue;
       // A nudge is an event of its own, and a writer that ignores it is silent from the nudge on.

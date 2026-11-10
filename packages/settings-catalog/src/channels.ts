@@ -308,6 +308,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"checkers.diff_hidden_limit", channel:"OWN", reason:"Native Lane Pilot checkers: task limit for nightly diff-hidden audit, default 0" },
   { key:"bench.model_rebench", channel:"OWN", reason:"Native Lane Pilot monthly model routing rebench switch" },
   { key:"backlog.scan_minutes", channel:"OWN", reason:"Native Lane Pilot backlog scanner: project scan interval in minutes, read in src/rooms/backlog/server/scanner.ts" },
+  { key:"writer.max_turns", channel:"OWN", reason:"Native Lane Pilot writer watchdog: completed tool calls of one attempt after which it ends (empty means 80)" },
 ];
 
 export const CONSUMER_KEYS = new Set(
