@@ -69,11 +69,11 @@ export function installDocs(base: DriverBase) {
   }
 
   /** Writes phase documents and planning marks into the project, then commits exactly those files (SMA: Commit the plans / drawing / REVIEW / STATE). */
-  async function writeDocs(phase: Phase, files: Array<{ path: string; content: string }>, message: string): Promise<{ written: string[]; commit: string | null }> {
-    if (!phase.runId || !files.length) return { written: [], commit: null };
+  async function writeDocs(phase: Phase, files: Array<{ path: string; content: string }>, message: string): Promise<{ written: string[]; commit: string | null; shas: Record<string, string> }> {
+    if (!phase.runId || !files.length) return { written: [], commit: null, shas: {} };
     const run = getRun(db, phase.runId);
     const hostId = getRunWriterHost(db, phase.runId);
-    if (!run?.writer_workspace_path || !hostId) return { written: [], commit: null };
+    if (!run?.writer_workspace_path || !hostId) return { written: [], commit: null, shas: {} };
     const edits = [];
     for (const file of files) {
       const current = await readText(phase, file.path);
@@ -81,10 +81,12 @@ export function installDocs(base: DriverBase) {
     }
     const host = bb.hosts.experimental_client({ contract: hostContract });
     const result = await host.call("writePhaseBook", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId, timeoutMs: 30_000 });
-    const written = result.writes.filter((row) => row.status === "applied").map((row) => row.path);
-    if (!written.length) return { written, commit: null };
+    const applied = result.writes.filter((row) => row.status === "applied");
+    const written = applied.map((row) => row.path);
+    const shas = Object.fromEntries(applied.filter((row) => typeof row.afterSha256 === "string").map((row) => [row.path, row.afterSha256 as string]));
+    if (!written.length) return { written, commit: null, shas };
     const committed = await bestEffort(bb.log, "phase docs commit", host.call("gitCommitDocs", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, paths: written, message }, { hostId, timeoutMs: 60_000 }), null);
-    return { written, commit: committed?.commit ?? null };
+    return { written, commit: committed?.commit ?? null, shas };
   }
 
   /** Writes the phase book to the project (.agents/phases/<id>/BOOK.md) when it grew; a phase without a run binding keeps it on the hub only. */
@@ -100,7 +102,7 @@ export function installDocs(base: DriverBase) {
     const edits = [{ path, expectedSha256: phase.record.bookWritten?.sha256 ?? null, content }];
     const host = bb.hosts.experimental_client({ contract: hostContract });
     const result = await host.call("writePhaseBook", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId, timeoutMs: 30_000 });
-    const written = result.writes.find((row) => row.path === path);
+    const written = result?.writes?.find((row) => row.path === path);
     if (result.status === "applied" && written?.afterSha256) savePhaseRow(db, phase.id, { record: { ...phase.record, bookWritten: { seq: last.seq, sha256: written.afterSha256, at: now() } }, at: now() });
     else if (result.status === "conflict") savePhaseRow(db, phase.id, { record: { ...phase.record, bookWritten: { seq: last.seq, sha256: written?.beforeSha256 ?? "", at: now() } }, at: now() });
   }

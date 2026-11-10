@@ -15,7 +15,7 @@ describe("lane_pilot_queue word", () => {
     createRun(db, "run1", "P", "bb", "/repo");
     setRunThread(db, "run1", "pm-thread");
     createTask(db, { id: "t1", runId: "run1", kind: "bb", contract: {} as never });
-    registerQueueTool({ db, bb, log: () => undefined, isDisposed: () => false } as never, { ask: async () => undefined, answer: () => undefined });
+    registerQueueTool({ db, bb, log: () => undefined, isDisposed: () => false } as never, { ask: async () => undefined, answer: () => undefined, decide: () => ({ ok: true as const }) });
     const word = async () => JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_queue", { action: "word", taskId: "t1", decision: "yes", text: "да" }, { threadId: "pm-thread", projectId: "P" },
     ))) as { next: string };

@@ -21,7 +21,7 @@ import { memoryProbeRpc } from "./rpc-memory-probe";
 import { harnessRpc } from "../../harness/server";
 import { deferralRpc } from "../../deferral/server";
 import { cockpitRpc } from "../../cockpit";
-import { recordTaskWord } from "../../tasks";
+import { recordTaskWord, waitingAttemptId } from "../../tasks";
 import type { TaskWordPort } from "../../contracts";
 import { taskFamily } from "@lane-pilot/contracts";
 import { rollbackRpc } from "../../rollback/server";
@@ -196,8 +196,13 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
     door_audience: async () => services.front.doorAudience(),
     actions_recent: async ({ limit }: { limit?: number }) => services.front.actions(limit),
     task_word: async ({ runId, taskId, decision, text }: { runId: string; taskId: string; decision: "yes" | "no"; text: string }) => {
-      await recordTaskWord(ctx.bb.storage.kv as never, runId, taskFamily(taskId), decision, text);
-      services.taskWords.answer(ctx.db, runId, taskFamily(taskId), decision, text, "screen");
+      const family = taskFamily(taskId);
+      // The first press claims the decision (SMA tr_approving): the second presser loses.
+      const waiting = waitingAttemptId(ctx.db, runId, family) ?? null;
+      const claim = services.taskWords.decide(ctx.db, runId, family, decision, "screen", Date.now(), waiting);
+      if (!claim.ok) return { ok: false as const, reason: claim.reason };
+      await recordTaskWord(ctx.bb.storage.kv as never, runId, family, decision, text, Date.now(), waiting);
+      services.taskWords.answer(ctx.db, runId, family, decision, text, "screen");
       return { ok: true as const };
     },
     learning_decide: async ({ id, action }: { id: string; action: "accept" | "reject" | "drop" }) => {

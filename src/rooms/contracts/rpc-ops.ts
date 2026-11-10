@@ -276,7 +276,7 @@ export const rpcOps = {
   /** The owner's word on a task (owner.words on): a verified task waiting to land gets yes or no (src/rooms/tasks/words.ts). */
   task_word: {
     input: z.object({ runId: z.string().min(1).max(200), taskId: z.string().min(1).max(200), decision: z.enum(["yes", "no"]), text: z.string().trim().min(1).max(600) }).strict(),
-    output: z.object({ ok: z.literal(true) }).strict(),
+    output: z.union([z.object({ ok: z.literal(true) }).strict(), z.object({ ok: z.literal(false), reason: z.string() }).strict()]),
   },
   /** What the PM reports to a phase, from the owner's screen or a drill (the same driver checks as lane_pilot_phase). */
   phase_act: {

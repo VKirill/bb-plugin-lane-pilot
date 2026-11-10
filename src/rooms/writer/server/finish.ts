@@ -972,7 +972,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const ownerWords = landingWordAsked(wordSettings, input.task.risk) || shape.length > 0;
       const wordsOf = async () => ((await bb.storage.kv.get(TASK_WORDS_KEY)) as Record<string, TaskWord[]> | null)?.[taskWordKey(input.runId, taskFamily(input.taskId))];
       { const stopped = stoppedMeanwhile("the plan-fact check", writerThreadId); if (stopped) return stopped; }
-      let wordGap = landingWordGap(ownerWords, await wordsOf());
+      let wordGap = landingWordGap(ownerWords, await wordsOf(), input.attemptId);
       if (wordGap && !wordGap.includes("said no")) {
         // The lead's journal: the question opens here and the prediction is written before the owner answers (src/rooms/lead).
         void services.taskWords.ask(db, { runId:input.runId, projectId:input.projectId, family:taskFamily(input.taskId), task:input.task }, loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)) as JevSettings);
@@ -996,10 +996,10 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         while (wordGap && !wordGap.includes("said no") && Date.now() - since < OWNER_WORD_WAIT_MS && !ctx.isDisposed()) {
           await new Promise((wake) => setTimeout(wake, 60_000));
           const stopped = stoppedMeanwhile("the owner's word", writerThreadId);
-          if (stopped) { closeOwnerItemsByPrefix(db as never, taskWordItemPrefix(input.runId, taskFamily(input.taskId)), "stopped"); return stopped; }
-          wordGap = landingWordGap(ownerWords, await wordsOf());
+          if (stopped) { closeOwnerItemsByPrefix(db as never, taskWordItemPrefix(input.runId, taskFamily(input.taskId)), "stopped:attempt"); return stopped; }
+          wordGap = landingWordGap(ownerWords, await wordsOf(), input.attemptId);
         }
-        closeOwnerItemsByPrefix(db as never, taskWordItemPrefix(input.runId, taskFamily(input.taskId)), wordGap ? "wait over" : "answered");
+        closeOwnerItemsByPrefix(db as never, taskWordItemPrefix(input.runId, taskFamily(input.taskId)), wordGap ? "closed:wait over" : "closed:answered");
       }
       if (wordGap) {
         recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",

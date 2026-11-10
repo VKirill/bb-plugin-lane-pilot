@@ -170,6 +170,20 @@ export function closeOwnerItemsByPrefix(db: Db, prefix: string, by: string, now:
   return db.prepare("UPDATE lane_pilot_owner_item SET state='closed', closed_at=?, closed_by=? WHERE state='open' AND substr(key, 1, ?)=?").run(now, clip(by, 500), prefix.length, prefix).changes;
 }
 
+/** How a person-decision row ended (SMA tr_approval_row): open is «awaiting»; closed_by is '<outcome>:<by>' with outcome approved, returned, closed or stopped. */
+export function ownerItemOutcome(row: { state: string; closed_by: string | null }): "awaiting" | "approved" | "returned" | "closed" | "stopped" {
+  if (row.state !== "closed") return "awaiting";
+  const prefix = (row.closed_by ?? "").split(":")[0];
+  return prefix === "approved" || prefix === "returned" || prefix === "stopped" ? prefix : "closed";
+}
+
+/** A decided owner item under a key prefix (closed approved:* or returned:*): the answer that already stands, or null. */
+export function decidedOwnerItem(db: Db, prefix: string): { key: string; by: string; at: number } | null {
+  const row = db.prepare("SELECT key, closed_by AS by, closed_at AS at FROM lane_pilot_owner_item WHERE state='closed' AND substr(key, 1, ?)=? AND (closed_by LIKE 'approved:%' OR closed_by LIKE 'returned:%') ORDER BY closed_at DESC LIMIT 1")
+    .get(prefix.length, prefix) as { key: string; by: string | null; at: number | null } | undefined;
+  return row?.by ? { key: row.key, by: row.by, at: row.at ?? 0 } : null;
+}
+
 /** How many rows already exist under a key prefix — the next episode's sequence number, so a repost after a close is a fresh row. */
 export function ownerItemPrefixCount(db: Db, prefix: string): number {
   return (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_owner_item WHERE substr(key, 1, ?)=?").get(prefix.length, prefix) as { n: number }).n;

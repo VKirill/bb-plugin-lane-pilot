@@ -196,12 +196,13 @@ export function createReconcile(ctx: ServerCore, services: Services) {
     }
   }
 
-  async function resumeOrphans(projectId?: string): Promise<{ resumed:string[]; skipped:string[]; finished:string[] }> {
+  async function resumeOrphans(projectId?: string, attemptIds?: readonly string[]): Promise<{ resumed:string[]; skipped:string[]; finished:string[] }> {
     const resumed: string[] = [];
     const skipped: string[] = [];
     const finished: string[] = [];
     for (const row of listOpenAttempts(db)) {
       if (projectId && row.project_id !== projectId) continue;
+      if (attemptIds && !attemptIds.includes(row.id)) continue;
       const attempt = getAttempt(db, row.id);
       if (!attempt) continue;
       try {

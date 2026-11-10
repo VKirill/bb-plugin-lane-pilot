@@ -18,6 +18,7 @@ import {
   transitionAttempt,
   saveTaskPlan,
   updateTaskContract,
+  contractEditions,
 } from "../../storage";
 
 
@@ -41,6 +42,8 @@ interface Services {
 }
 import { lintReply } from "../../tasks/server";
 import { createTaskLinter } from "../../tasks/server";
+const FINISHED_ATTEMPT_STATES = ["accepted", "canceled", "merged"];
+import { sendServiceMessage } from "../../relay/server";
 import { markTaskSatisfied, reopenWriterStages } from "../../runs/server";
 import type { ServerCore } from "../../contracts/server";
 
@@ -161,7 +164,17 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
     // A pre-writer gate (plan critique, contract validation) blocked this attempt before it ever had a writer thread:
     // the task never started, so it is fixed in place like a queued one and pm-read and the critique run again.
     const gateBlocked = !blocked && attempt?.state === "blocked" && !attempt.thread_id && PRE_WRITER_GATE_REASON.test(attempt.reason ?? "");
-    if (!blocked && !gateBlocked && (attempt?.thread_id || attempt?.state !== "queued")) {
+    // Finished work is never rewritten (SMA tb_words).
+    if (attempt && FINISHED_ATTEMPT_STATES.includes(attempt.state)) {
+      return {
+        ok: false,
+        error: { code: "task_finished", retryable: false, sideEffects: "none", hint: `task ${input.taskId} ended ${attempt.state}: its words are final. For new work dispatch a new task.` },
+      };
+    }
+    // Words may change while the task runs (SMA tb_words): the contract and plan are stored, and the live writer is
+    // steered with the changes — no attempt is spent. Fields outside IN_PLACE_FIELDS still need a redispatch.
+    const running = !blocked && !gateBlocked && attempt?.state === "running" && attempt.thread_id ? attempt : null;
+    if (!blocked && !gateBlocked && !running && (attempt?.thread_id || attempt?.state !== "queued")) {
       return {
         ok: false,
         error: {
@@ -231,20 +244,20 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
     // A task stored before the trusted tooling joined never_touch (P2-4) is compared as it would be stored now, so no change is invented.
     const changes = changedFields(applyTrustedTooling(oldContract), valid.task);
     if (canonicalPlan !== oldPlan) changes.push({ field: "plan", from: oldPlan, to: canonicalPlan });
-    if (blocked) {
+    if (blocked || running) {
       const frozen = changes.map((change) => change.field).filter((field) => !IN_PLACE_FIELDS.includes(field));
       if (frozen.length) {
         return {
           ok: false,
           error: { code: "redispatch_required", retryable: false, sideEffects: "none",
-            hint: `the task is blocked on its writer's question, so only ${IN_PLACE_FIELDS.join(", ")} change in place; ${frozen.join(", ")} need a redispatch: cancel the task and dispatch it again` },
+            hint: `the task ${blocked ? "is blocked on its writer's question" : "is running"}, so only ${IN_PLACE_FIELDS.join(", ")} change in place; ${frozen.join(", ")} need a redispatch: cancel the task and dispatch it again` },
         };
       }
       if (!changes.length) {
         return {
           ok: false,
           error: { code: "validation_failed", retryable: false, sideEffects: "none",
-            hint: "the blocked task's contract and plan are unchanged: send the corrected fields, or answer the writer with lane_pilot_answer_writer" },
+            hint: `the task's contract and plan are unchanged: send the corrected fields${blocked ? ", or answer the writer with lane_pilot_answer_writer" : ""}` },
         };
       }
     }
@@ -257,6 +270,19 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
       const { runId: _runId, state: _state, reason: _reason, ...rest } = lintReply(input.runId, lint.errors);
       const hint = `contract lint: the task was not changed. Fix and send the update again:\n${lint.errors.map((error) => `- ${error.message}`).join("\n")}`;
       return { ok: false, error: { code: "validation_failed", retryable: false, sideEffects: "none", hint, ...rest } };
+    }
+
+    if (running) {
+      // Stored first, as for a queued task; then the live writer thread is steered with what changed.
+      updateTaskContract(db, input.taskId, valid.task);
+      saveTaskPlan(db, input.taskId, canonicalPlan);
+      await persistPlan(config.hostId, taskBase, input.taskId, canonicalPlan);
+      await sendServiceMessage(bb as never, { threadId: running.thread_id!, mode: "steer-if-active", senderThreadId: input.pmThreadId,
+        text: contractFixTurnPrompt({ question: "the PM changed the task's words while you work — apply the changed contract from now on", changes }) });
+      log(`writer ${input.taskId}: contract steered mid-run (${changes.map((change) => change.field).join(", ")}); attempt ${running.id} continues`);
+      return { ok: true, runId: input.runId, taskId: input.taskId, attemptId: running.id, writerThreadId: running.thread_id, state: "running",
+        changed: changes.map((change) => change.field), edition: contractEditions(db, input.taskId).at(-1)?.edition,
+        note: "The writer continues in its own thread and worktree under the changed contract; no attempt was spent. Poll lane_pilot_wait_writer with the same runId." };
     }
 
     if (blocked) {
@@ -283,7 +309,7 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
       }
       log(`writer ${input.taskId}: contract fixed in place (${changes.map((change) => change.field).join(", ")}); attempt ${blocked.id} continues`);
       return { ok: true, runId: input.runId, taskId: input.taskId, attemptId: blocked.id, writerThreadId: ready.threadId, state: "running",
-        changed: changes.map((change) => change.field),
+        changed: changes.map((change) => change.field), edition: contractEditions(db, input.taskId).at(-1)?.edition,
         note: "The writer continues in its own thread and worktree under the fixed contract; no attempt was spent. Poll lane_pilot_wait_writer with the same runId. The change is kept in the task folder's QA.md." };
     }
 
@@ -330,6 +356,7 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
       runId: input.runId,
       taskId: input.taskId,
       state,
+      edition: contractEditions(db, input.taskId).at(-1)?.edition,
       stages: listStageReceipts(db, input.runId, input.taskId),
       ...(critique ? { critiqueAllowed: critique.allowed } : {}),
       ...(critique?.reason ? { critiqueReason: critique.reason } : {}),

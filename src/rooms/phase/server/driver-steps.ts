@@ -31,7 +31,7 @@ export type StepsTools = DriverBase & Docs & Methods;
 export type Steps = ReturnType<typeof installSteps>;
 export function installSteps(tools: StepsTools) {
   const { ctx, services, db, bb, now, reactions } = tools;
-  const { mustGet, book, move, facts, readText, writeDocs, writeBook, pmCheckoutPath, candidates } = tools;
+  const { mustGet, book, move, facts, readFile, readText, writeDocs, writeBook, pmCheckoutPath, candidates } = tools;
 
   /** The candidate tree of a piece's base checkout, made on first need; null (and `off` with the reason, booked once) when it cannot be. */
   async function candidateTree(phase: Phase, candidate: PhaseCandidate, base: string): Promise<import("./candidate").CandidateTree | null | { wait: string }> {
@@ -324,7 +324,7 @@ export function installSteps(tools: StepsTools) {
     if (current.stage === "acceptance" && current.record.uat && !current.record.uat.sha256 && (!candidateOn(current.record) || !!current.record.candidate?.landedAt)) {
       const path = current.record.uat.path;
       const content = uatText(current);
-      const out = await bestEffort(ctx.log, "phase UAT doc", writeDocs(current, [{ path, content }], `phase ${current.id}: UAT.md for the owner`), { written: [] as string[], commit: null });
+      const out = await bestEffort(ctx.log, "phase UAT doc", writeDocs(current, [{ path, content }], `phase ${current.id}: UAT.md for the owner`), { written: [] as string[], commit: null, shas: {} as Record<string, string> });
       if (out.written.includes(path)) {
         book(current, "acceptance", "uat_written", `${path}: ${(current.record.uat.lines ?? []).length} line(s) for the owner`);
         savePhase(db, current.id, { record: { ...mustGet(current.id).record, uat: { ...mustGet(current.id).record.uat!, sha256: sha256Hex(content) } }, at: now() });
@@ -332,12 +332,17 @@ export function installSteps(tools: StepsTools) {
       }
     }
     if (current.stage === "acceptance") {
+      // Book closed before «accepted» (SMA ta_book_close): BOOK.md is written up to the last part and re-read before the lines.
+      await writeBook(current);
+      current = mustGet(current.id);
+      const partsNow = listParts(db, current.id);
+      const bookBack = current.runId ? await readFile(current, `${phaseFolder(current.id)}/BOOK.md`).then((file) => file.sha256, () => null) : null;
       const onCandidate = candidateOn(current.record);
       const lastGoal = current.runId ? getRunGoal(db, current.runId) : null;
       const firstTree = onCandidate ? Object.values(current.record.candidate!.trees)[0]! : null;
       const headNow = firstTree ? await candidates(current)?.head(firstTree.path) ?? null : lastGoal?.headSha ?? null;
       const openDeferrals = countOpenDeferrals(db, current.projectId);
-      const lines = acceptanceLines(current, facts(current), { mainSha: headNow, openDeferrals, noTerm: noTermDeferralsOf(db, current.projectId), bookBroken: brokenLink(listParts(db, current.id)) });
+      const lines = acceptanceLines(current, facts(current), { mainSha: headNow, openDeferrals, noTerm: noTermDeferralsOf(db, current.projectId), bookBroken: brokenLink(partsNow), book: { lastSeq: partsNow.at(-1)?.seq ?? null, readSha: bookBack } });
       // Main moved — a new word: the verdict saw another main; verify again on the main that is there now.
       if (lines.find((line) => line.id === "main_unmoved")?.ok === false) {
         // A candidate's goal check and heads belong to that verdict: the new one checks the trees again (SMA audit of C-03).
@@ -362,7 +367,8 @@ export function installSteps(tools: StepsTools) {
         const verdictFailures = listParts(db, current.id).filter((part) => part.kind === "blind_verdict" && part.text.startsWith("failed")).length;
         record.lessons = lessonsNeeded({ returns, failedAttempts, verdictFailures });
         move(current, record.lessons.needed ? "lessons" : "closed", record, "every acceptance line holds");
-        if (!record.lessons.needed) { book(current, "lessons", "none", record.lessons.why); savePhase(db, current.id, { state: "closed", at: now() }); }
+        // State «closed» comes only after finishClosed writes the closing documents and reads them back intact (SMA ta_closed).
+        if (!record.lessons.needed) book(current, "lessons", "none", record.lessons.why);
       } else savePhase(db, current.id, { record, at: now() });
       current = mustGet(current.id);
     }
@@ -376,7 +382,12 @@ export function installSteps(tools: StepsTools) {
    */
   async function finishClosed(phase: Phase): Promise<Phase> {
     if (phase.stage !== "closed" || phase.record.closedDocs) return phase;
-    const files: Array<{ path: string; content: string }> = [{ path: `${phaseFolder(phase.id)}/SUMMARY.md`, content: conclusionText(phase, listParts(db, phase.id), facts(phase)) }];
+    // Work file closed (SMA ta_closed): the book is written and read back — only then «closed». A failed write or a
+    // read-back mismatch keeps the phase unclosed and pokes the PM.
+    await writeBook(phase);
+    phase = mustGet(phase.id);
+    const summaryPath = `${phaseFolder(phase.id)}/SUMMARY.md`;
+    const files: Array<{ path: string; content: string }> = [{ path: summaryPath, content: conclusionText(phase, listParts(db, phase.id), facts(phase)) }];
     const roadmap = await readText(phase, ".agents/planning/ROADMAP.md");
     if (roadmap !== null && phase.record.roadmapRow) {
       const marked = markRoadmap(roadmap, phase.record.roadmapRow);
@@ -386,6 +397,26 @@ export function installSteps(tools: StepsTools) {
     if (stateNow !== null || roadmap !== null) files.push({ path: ".agents/planning/STATE.md", content: stateText(stateNow, { phase: phase.record.roadmapRow ?? phase.id, stage: "closed", last_phase: phase.id }) });
     const out = await writeDocs(phase, files, `phase ${phase.id}: closed — summary, roadmap and state`).catch((cause: unknown) => { ctx.log(`phase ${phase.id}: closing documents not written: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
     if (!out) return phase;
+    // A run that has no writer workspace or host has nowhere to write: its book lives on the hub only, like a phase without a run.
+    if (phase.runId && getRun(db, phase.runId)?.writer_workspace_path && getRunWriterHost(db, phase.runId)) {
+      const bookPath = `${phaseFolder(phase.id)}/BOOK.md`;
+      // SUMMARY.md is compared with the text sent: a pass that finds the file already as it should be writes nothing and returns no hash.
+      const expected: Array<[string, string | null]> = [[summaryPath, out.shas[summaryPath] ?? sha256Hex(files[0]!.content)], [bookPath, mustGet(phase.id).record.bookWritten?.sha256 ?? null]];
+      const missed: string[] = [];
+      for (const [path, sha] of expected) {
+        const back = sha ? await readFile(phase, path).then((file) => file.sha256 === sha, () => false) : false;
+        if (!back) missed.push(path);
+      }
+      if (missed.length) {
+        // Said once a day: the pass retries every tick, and a book part and a PM message per tick would bury both.
+        const lastSaid = [...listParts(db, phase.id)].reverse().find((part) => part.kind === "closing_docs_unconfirmed")?.at ?? 0;
+        if (now() - lastSaid < 24 * 3_600_000) return mustGet(phase.id);
+        book(phase, "lessons", "closing_docs_unconfirmed", `closing docs not confirmed: ${missed.join(", ")} did not read back as written`);
+        await bestEffort(ctx.log, "phase closing docs notice", bb.sdk.threads.send({ threadId: phase.pmThreadId, mode: "queue-if-active", input: [{ type: "text", mentions: [], text:
+          `[Lane Pilot phase] Phase ${phase.id} «${phase.title}» could not be closed: its closing documents did not read back intact (SUMMARY.md / BOOK.md). Check the writer workspace; the next pass tries again.` }] } as never), undefined);
+        return mustGet(phase.id);
+      }
+    }
     book(phase, "lessons", "concluded", `SUMMARY.md written${out.written.length > 1 ? `, ${out.written.slice(1).join(", ")} marked` : ""}${out.commit ? ` (commit ${out.commit.slice(0, 12)})` : ""}`);
     if (phase.record.branch === "phase" && phase.runId) {
       const run = getRun(db, phase.runId);
@@ -396,7 +427,7 @@ export function installSteps(tools: StepsTools) {
         book(phase, "decisions", "branch", made && made.exitCode === 0 ? `marker branch phase/${phase.id} at the accepted main` : "the marker branch could not be made");
       }
     }
-    savePhase(db, phase.id, { record: { ...phase.record, closedDocs: { at: now(), commit: out.commit } }, at: now() });
+    savePhase(db, phase.id, { record: { ...phase.record, closedDocs: { at: now(), commit: out.commit } }, state: "closed", at: now() });
     const next = roadmap !== null ? nextRoadmapRow(phase.record.roadmapRow ? markRoadmap(roadmap, phase.record.roadmapRow) : roadmap) : null;
     if (next && phase.record.autonomous) {
       // Autonomous mode: the next roadmap row becomes the next phase, and its discussion starts at once.
@@ -482,7 +513,8 @@ export function installSteps(tools: StepsTools) {
     const lastGoal = phase.runId ? getRunGoal(db, phase.runId) : null;
     const openDeferrals = countOpenDeferrals(db, phase.projectId);
     const noTerm = noTermDeferralsOf(db, phase.projectId);
-    const unmet = acceptanceLines(phase, f, { mainSha: lastGoal?.headSha ?? null, openDeferrals, noTerm, bookBroken: brokenLink(listParts(db, phase.id)) })
+    const partsExhaust = listParts(db, phase.id);
+    const unmet = acceptanceLines(phase, f, { mainSha: lastGoal?.headSha ?? null, openDeferrals, noTerm, bookBroken: brokenLink(partsExhaust), book: { lastSeq: partsExhaust.at(-1)?.seq ?? null, readSha: phase.record.bookWritten?.sha256 ?? null } })
       .filter((line) => !line.ok && line.id !== "result_useful" && (line.id !== "limits_acknowledged" || noTerm.length > 0)).map((line) => `${line.id}: ${line.detail}`.slice(0, 300));
     const cut = unproven.length ? `${unproven.map(({ item }) => item.id).join(", ")} withdrawn (${unproven.map(({ why }) => why).join(" | ").slice(0, 600)})` : "no piece to withdraw";
     const outcome = proven.length ? `the phase stops, partial: ${candidateOn(phase.record) && !phase.record.candidate!.landedAt ? `nothing lands on main (a stopped phase is not accepted); ` : ""}its ${proven.length} proved piece(s) stay accepted${candidateOn(phase.record) && !phase.record.candidate!.landedAt ? ` on branch ${phase.record.candidate!.branch}` : ""} (${proven.map((item) => item.id).join(", ")}), the goal is not met` : "no piece is proved, so the phase stops (empty scope)";
