@@ -1643,7 +1643,7 @@ def series_preparation() -> dict:
     commit = git(str(ROOT), "rev-parse", "HEAD")
     version = json.loads((ROOT / "package.json").read_text()).get("version")
     dirty = git(SANDBOX["cwd"], "status", "--porcelain")
-    rc, out, err = bb("lane-pilot", "coverage", "--json", timeout=120)
+    rc, out, err = bb("lane-pilot", "coverage", "--json", "--strict", timeout=120)
     try:
         coverage_gaps = list(json.loads(out).get("gaps") or [])
     except ValueError:

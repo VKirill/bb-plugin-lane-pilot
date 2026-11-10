@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { checkReceipt, coverageRows, codeNodes, holes, summarize, untermedGaps, type CoverageRow, type DrillReceipt } from "./model";
 import { NODE_KINDS } from "./registry";
 
-export const COVERAGE_USAGE = "bb lane-pilot coverage [--json] [--kind stage|transition|failure_class|gate|memory_path|room|mechanism] [--status live|tests|none] [--receipt <drill receipt.json|latest>]   what proves each stage and mechanism: covered live by a drill scenario / by tests only / not covered, with the reason";
+export const COVERAGE_USAGE = "bb lane-pilot coverage [--json] [--strict] [--kind stage|transition|failure_class|gate|memory_path|room|mechanism] [--status live|tests|none] [--receipt <drill receipt.json|latest>]   --strict: a not-covered node without a term or the owner's word fails the run. What proves each stage and mechanism: covered live by a drill scenario / by tests only / not covered, with the reason";
 
 type Result = { exitCode: number; stdout?: string; stderr?: string };
 const LABEL: Record<CoverageRow["status"], string> = { live: "live ", tests: "tests", none: "NONE " };
@@ -51,12 +51,13 @@ export function runCoverageCli(argv: string[], cwd: string = process.cwd()): Res
     const all = coverageRows();
     const rows = all.filter((row) => (!kind || row.kind === kind) && (!status || row.status === status));
     const problems = holes(all, codeNodes());
+    const strict = argv.includes("--strict"), untermed = untermedGaps(all);
     const gaps = [...problems.missing.map((node) => `${node}: in the code, no registry entry`), ...problems.stale.map((node) => `${node}: registry entry for a node the code no longer lists`), ...problems.duplicate.map((node) => `${node}: two entries`),
-      // Term or founder's word (SMA rl_terms): an uncovered node without a deferral or the owner's word is a gap like a registry hole.
-      ...untermedGaps(all).map((row) => `${row.kind}:${row.id}: not covered with no term or owner word`)];
+      // Term or founder's word (SMA rl_terms): printed always; a gap that fails the run only under --strict.
+      ...(strict ? untermed.map((row) => `${row.kind}:${row.id}: not covered with no term or owner word`) : [])];
     const checked = receiptSpec ? loadReceipt(receiptSpec, cwd) : null;
     const verdict = checked ? { path: checked.path, ...checkReceipt(all, checked.receipt) } : null;
-    if (argv.includes("--json")) return { exitCode: gaps.length ? 1 : 0, stdout: JSON.stringify({ summary: summarize(all), rows, gaps, receipt: verdict }, null, 2) };
+    if (argv.includes("--json")) return { exitCode: gaps.length ? 1 : 0, stdout: JSON.stringify({ summary: summarize(all), rows, gaps, untermed: untermed.map((row) => `${row.kind}:${row.id}`), receipt: verdict }, null, 2) };
     const out = [renderCoverage(rows)];
     if (gaps.length) out.push("", `Registry holes (${gaps.length}):`, ...gaps.map((gap) => `  ${gap}`));
     if (verdict) {

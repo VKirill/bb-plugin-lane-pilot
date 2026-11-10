@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { listReviewedObservations } from "../../learning";
 import { prototypeConfigSchema, taskV2Schema } from "../../contracts";
 import { taskBaselineEntries } from "../../baseline";
@@ -448,11 +449,15 @@ ${ERRANDS_USAGE}` },
           for (const pair of sets) { const at = pair.indexOf("="); if (at < 1) return { exitCode:1, stderr:`--set expects k=v, got '${pair}'` }; patch[pair.slice(0, at)] = pair.slice(at + 1); }
           const merge: Record<string, string[]> = {};
           for (const pair of merges) { const at = pair.indexOf("="); if (at < 1) return { exitCode:1, stderr:`--merge expects k=a,b, got '${pair}'` }; merge[pair.slice(0, at)] = pair.slice(at + 1).split(",").map((part) => part.trim()).filter(Boolean); }
-          const sha = await host.call("runCommand", { requestedHostId:config.hostId, command:`(sha256sum -- ${quoted} 2>/dev/null || shasum -a 256 -- ${quoted}) | cut -d' ' -f1`, cwd:config.writerWorkspacePath, timeoutSec:30 }, { hostId:config.hostId, timeoutMs:35_000 });
-          const next = mergeFrontmatter(setFrontmatter(read.stdout, patch), merge);
-          const b64 = Buffer.from(next, "utf8").toString("base64");
+          const set = setFrontmatter(read.stdout, patch);
+          const edited = "refused" in set ? set : mergeFrontmatter(set.content, merge);
+          if ("refused" in edited) return { exitCode:1, stderr:edited.refused };
+          // the hash is of the text this edit was made from, so a change between the read and the write is caught
+          const sha = createHash("sha256").update(read.stdout, "utf8").digest("hex");
+          const hashOf = `(sha256sum -- ${quoted} 2>/dev/null || shasum -a 256 -- ${quoted}) | cut -d' ' -f1`;
+          const b64 = Buffer.from(edited.content, "utf8").toString("base64");
           const write = await host.call("runCommand", { requestedHostId:config.hostId,
-            command:`test "$(sha256sum -- ${quoted} 2>/dev/null || shasum -a 256 -- ${quoted} | cut -d' ' -f1)" = "${sha.stdout.trim()}" && echo '${b64}' | base64 -d > ${quoted}`,
+            command:`test ! -L ${quoted} && test "$( ${hashOf} )" = "${sha}" && echo '${b64}' | base64 -d > ${quoted}`,
             cwd:config.writerWorkspacePath, timeoutSec:30 }, { hostId:config.hostId, timeoutMs:35_000 });
           return write.exitCode === 0
             ? { exitCode:0, stdout:`frontmatter: ${clean} written` }

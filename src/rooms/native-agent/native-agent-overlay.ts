@@ -370,7 +370,7 @@ You orient a human in this repository by reading it and answering. Generating do
 Point to \`PROJECT.md\` → \`docs/index.md\`. ${BB_DOCS_OWNED}
 
 ## Work
-Read the repo. Answer in Russian what the project is and where to start. You may write \`.agents/plans/\` and decision drafts in \`.agents/decisions/\`. \`CLAUDE.md\` / \`AGENTS.md\`, \`.github/copilot-instructions.md\` or a developer-preferences block only if the human explicitly asks — write them from \`instructionForms\` (src/rooms/project-life/instruction-forms.ts), which makes each a pointer to \`PROJECT.md\`.`,
+Read the repo. Answer in Russian what the project is and where to start. You may write \`.agents/plans/\` and decision drafts in \`.agents/decisions/\`. \`CLAUDE.md\` / \`AGENTS.md\` only if the human explicitly asks, as pointers to \`PROJECT.md\`.`,
 
   tavily: `This chat is a Lane Pilot tavily session in BB.
 

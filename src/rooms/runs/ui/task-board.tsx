@@ -470,7 +470,7 @@ function TaskPage({ item, locale, projectName, onBack, AcceptanceCard }: { item:
                 </Section>
               ) : null}
               {card.attempts.length ? (
-                <Section title={t("boardDiff")}><TaskDiff attemptId={card.attempts[0]!.id} /></Section>
+                <Section title={t("boardDiff")}><TaskDiff attemptId={([...card.attempts].reverse().find((attempt) => attempt.state === "accepted") ?? card.attempts[card.attempts.length - 1]!).id} /></Section>
               ) : null}
             </div>
             {rail("hidden w-56 shrink-0 border-l border-border py-8 pl-4 pr-5 @[45rem]:block")}

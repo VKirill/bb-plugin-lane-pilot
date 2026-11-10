@@ -175,7 +175,7 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
     ...rollbackRpc(services.rollback),
     ...acceptanceRpc(ctx.db),
     ...benchRpc(services.bench),
-    ...ownerWaitingRpc(ctx.db, ownerSweeps, services.ownerLearningItems, undefined, postEvent),
+    ...ownerWaitingRpc(ctx.db, ownerSweeps, services.ownerLearningItems, (message) => ctx.log(message), postEvent),
     ...backlogRpc(services.backlog),
     ...leadRpc(ctx.db, services.lead),
     ...errandsRpc(ctx, services),

@@ -1,7 +1,7 @@
 import { DISPATCH_STAGES_PENDING } from "../../runs";
 import { markCancelCode } from "../../storage";
 import { taskV2Schema } from "../../contracts";
-import { countAttempts, endSpawnFailure, getAttempt, getRun, getTask, getTaskPlan, listOpenAttempts, setAttemptHolderThread, transitionAttempt } from "../../storage";
+import { countAttempts, endSpawnFailure, getAttempt, getRun, getTask, getTaskPlan, attemptUpdatedAt, listOpenAttempts, newestAttemptIdForThread, setAttemptHolderThread, transitionAttempt } from "../../storage";
 import { closeHelperStages, closeWriterStages } from "../../runs/server/stage-records";
 import { reconcile, reconcileCursor, reconcileHolder } from "../reconcile";
 import type { IdempotencyTriple } from "../reconcile";
@@ -24,6 +24,9 @@ interface Services {
   startWriterTask: StartWriterTask;
 }
 
+
+/** recheckCancels: the inline cancel wait is 30 s (runs/writer-stop.ts), so a younger cancel is still being waited on. */
+const RECHECK_AFTER_MS = 35_000, RECHECK_WAIT_MS = 3_000, RECHECK_PER_TICK = 3;
 
 export function createReconcile(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, refreshRun } = ctx;
@@ -170,10 +173,10 @@ export function createReconcile(ctx: ServerCore, services: Services) {
    * A cancel a reload cut off while its writer still works: the stop is sent again and the cancel ends once the stop is seen, as
    * cancelAttemptById ends it (2026-10-29 audit A-006: recovery listed the attempt as resumed with no stop and no watcher).
    */
-  async function finishCancel(attemptId:string, runId:string, threadId:string): Promise<void> {
+  async function finishCancel(attemptId:string, runId:string, threadId:string, waitMs = 30_000): Promise<void> {
     try {
       await bb.sdk.threads.stop({ threadId });
-      if (!await stopSeen(threadId) || ctx.isDisposed()) return;
+      if (!await stopSeen(threadId, waitMs) || ctx.isDisposed()) return;
       await bestEffort(ctx.log, "reconcile stop note", Promise.resolve(services.rollback?.noteStopped(attemptId)), undefined);
       if (getAttempt(db, attemptId)?.state !== "cancel_requested") return;
       transitionAttempt(db, attemptId, "canceled", { threadId, reason:"writer stop observed during recovery" });
@@ -185,9 +188,9 @@ export function createReconcile(ctx: ServerCore, services: Services) {
   }
 
   /** The bounded wait of runs/server/writer-stop.ts: the runs room imports this one, so it is not imported back. */
-  async function stopSeen(threadId:string): Promise<boolean> {
+  async function stopSeen(threadId:string, waitMs = 30_000): Promise<boolean> {
     const listRunning = (bb.sdk.threads as { listRunning?: (query?: Record<string, unknown>) => Promise<Array<{ id: string }>> }).listRunning;
-    for (const deadline = Date.now() + 30_000;;) {
+    for (const deadline = Date.now() + waitMs;;) {
       const status = stringAt(await bb.sdk.threads.get({ threadId }), "status");
       const running = listRunning ? await listRunning({}) : [];
       if (status !== "active" && status !== "running" && !running.some((thread) => thread.id === threadId)) return true;
@@ -283,12 +286,20 @@ export function createReconcile(ctx: ServerCore, services: Services) {
   /**
    * Confirm again later (SMA m_confirm_later): the 30 s inline wait of finishCancel can lose to a slow stop — a cancel
    * left `cancel_requested` gets the stop re-sent and ends once the stop is seen, instead of standing open for good.
+   * Only a thread whose newest attempt is this one is stopped (a feedback turn can reuse a writer thread for a later
+   * attempt); a cancel younger than the inline wait is left to it; three per tick, a short wait each.
    */
   async function recheckCancels(): Promise<string[]> {
     const rechecked: string[] = [];
+    let tried = 0;
     for (const row of listOpenAttempts(db)) {
+      if (tried >= RECHECK_PER_TICK) break;
       if (row.state !== "cancel_requested" || !row.thread_id || ctx.isDisposed()) continue;
-      await finishCancel(row.id, row.run_id, row.thread_id);
+      const current = getAttempt(db, row.id);
+      if (!current || current.state !== "cancel_requested" || Date.now() - (attemptUpdatedAt(db, row.id) ?? 0) < RECHECK_AFTER_MS) continue;
+      if (newestAttemptIdForThread(db, row.thread_id) !== row.id) continue;
+      tried += 1;
+      await finishCancel(row.id, row.run_id, row.thread_id, RECHECK_WAIT_MS);
       if (getAttempt(db, row.id)?.state === "canceled") rechecked.push(row.id);
     }
     return rechecked;

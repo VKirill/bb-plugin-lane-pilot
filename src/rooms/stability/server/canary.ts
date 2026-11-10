@@ -127,8 +127,17 @@ export async function poolReadiness(chains: readonly PoolChain[], walk: PoolWalk
   return { enabled: enabled.size, blocked: [...blocked.values()] };
 }
 
+const POOL_READY_TTL_MS = 60_000;
+
 export function createCanary(ctx: ServerCore, breaker?: () => { snapshot(now?: number): Array<{ key: string; state: string }> } | undefined, readiness?: () => Promise<PoolReadiness>) {
   const { bb, db } = ctx;
+  // The walk visits every project's writer chain with its usage checks: one answer serves a minute of status calls.
+  let cached: { at: number; ready: Promise<PoolReadiness | null> } | null = null;
+  const readyPool = (now: number): Promise<PoolReadiness | null> => {
+    if (!readiness) return Promise.resolve(null);
+    if (!cached || now - cached.at >= POOL_READY_TTL_MS || now < cached.at) cached = { at: now, ready: bestEffort(bb.log, "canary pool readiness", readiness(), null) };
+    return cached.ready;
+  };
 
   async function since(version = VERSION, now = Date.now()): Promise<number> {
     const stored = await bb.storage.kv.get<number>(SINCE_KEY(version));
@@ -160,7 +169,7 @@ export function createCanary(ctx: ServerCore, breaker?: () => { snapshot(now?: n
   async function status(now = Date.now()): Promise<CanaryReport & { alerted: boolean; pool: { works: boolean; held: string[]; enabled: number; blocked: PoolBlockedWorker[] }; green: boolean }> {
     const report = canaryReport(db, { version: VERSION, since: await since(VERSION, now), now, sandboxProjects: await sandboxProjects(now) });
     const pool: { works: boolean; held: string[]; enabled: number; blocked: PoolBlockedWorker[] } = { ...poolHealth(breaker?.()?.snapshot(now) ?? []), enabled: 0, blocked: [] };
-    const ready = readiness ? await bestEffort(bb.log, "canary pool readiness", readiness(), null) : null;
+    const ready = await readyPool(now);
     if (ready) { pool.enabled = ready.enabled; pool.blocked = ready.blocked; }
     // Green only when no enabled worker is blocked (SMA m_green): a free fallback does not un-block the held ones.
     // Without a readiness answer the old breaker rule stands, so a failed walk never turns the pool red by itself.

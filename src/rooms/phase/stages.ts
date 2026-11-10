@@ -1,5 +1,4 @@
 import { TASK_KINDS } from "@lane-pilot/contracts";
-import { setFrontmatter } from "../docs";
 import type { BookPart, Drawing, Phase, PhaseRecord, PhaseStage, PlanItem, TaskFact } from "./logic";
 
 /**
@@ -252,11 +251,10 @@ export function nextRoadmapRow(text: string): { n: string; name: string; goal: s
 /** Marks in STATE: the header keys phase and stage set, the body kept (lane-plan reads the same header). */
 export function stateText(previous: string | null, marks: Record<string, string>): string {
   const today = new Date().toISOString().slice(0, 10);
-  const patch: Record<string, string> = {};
-  for (const [key, value] of Object.entries({ ...marks, updated: today })) patch[key] = JSON.stringify(value);
-  const body = previous ?? "\n# State\n";
-  const next = setFrontmatter(body.startsWith("---\n") ? body : body.startsWith("\n") ? body : `\n${body}`, patch);
-  return next;
+  const [head, body] = previous?.startsWith("---\n") ? [previous.slice(4).split("\n---\n")[0] ?? "", previous.slice(4).split("\n---\n").slice(1).join("\n---\n")] : ["", previous ?? "\n# State\n"];
+  const keys = new Map(head.split("\n").filter((line) => line.includes(":")).map((line) => [line.slice(0, line.indexOf(":")).trim(), line.slice(line.indexOf(":") + 1).trim()]));
+  for (const [key, value] of Object.entries({ ...marks, updated: today })) keys.set(key, JSON.stringify(value));
+  return `---\n${[...keys].map(([key, value]) => `${key}: ${value}`).join("\n")}\n---\n${body.startsWith("\n") ? body : `\n${body}`}`;
 }
 
 /**

@@ -463,10 +463,12 @@ export function createRollback(ctx: ServerCore, services: Services) {
     if (!found.attemptId) return { reason: `${ref} is a task, not an attempt; name the attempt to see its patch` };
     const change = await changeOf(found.target, found.attemptId);
     if ("refused" in change) return { reason: change.refused };
-    const out = await host.call("runCommand", { requestedHostId: found.target.hostId, command: `git show --patch --stat --format= ${change.mergeCommit}`, cwd: found.target.basePath, timeoutSec: 60 }, { hostId: found.target.hostId, timeoutMs: 65_000 });
-    if (out.exitCode !== 0) return { reason: `git show of ${change.mergeCommit.slice(0, 12)} failed: ${String(out.stderr ?? "").slice(0, 200)}` };
+    const out = await host.call("runCommand", { requestedHostId: found.target.hostId, command: `git show --patch --stat --format= ${change.mergeCommit} | head -c ${DIFF_LIMIT + 1}`, cwd: found.target.basePath, timeoutSec: 60 }, { hostId: found.target.hostId, timeoutMs: 65_000 });
+    // The read itself is bounded: `head -c` stops the host from collecting more than the limit (+1 byte to know it was cut).
+    // A pipe hides git's own exit code, so a failure is an empty answer with something on stderr.
+    if (out.exitCode !== 0 || (!String(out.stdout ?? "") && String(out.stderr ?? "").trim())) return { reason: `git show of ${change.mergeCommit.slice(0, 12)} failed: ${String(out.stderr ?? "").slice(0, 200)}` };
     const patch = String(out.stdout ?? "");
-    return patch.length > DIFF_LIMIT ? { patch: `${patch.slice(0, DIFF_LIMIT)}\n… показано начало (diff обрезан)`, truncated: true } : { patch, truncated: false };
+    return Buffer.byteLength(patch) > DIFF_LIMIT ? { patch: `${patch.slice(0, DIFF_LIMIT)}\n… показано начало (diff обрезан)`, truncated: true } : { patch, truncated: false };
   }
 
   return { rollback: { noteBase, ensureBase, noteMerge, noteWorktree, noteSaved, noteStopped, reverify, revert, status, diff, kit } };

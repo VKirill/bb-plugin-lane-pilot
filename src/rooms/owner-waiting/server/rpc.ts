@@ -2,11 +2,13 @@ import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../../contracts";
 import type { LanePilotDatabase } from "../../storage";
 import { listOpenAttempts } from "../../storage";
-import { closeOwnerItem, collectOwnerWaiting, type LearningItemsReader, type OwnerItemSweep } from "../items";
+import { callReason, closeOwnerItem, collectOwnerWaiting, type CallReason, type LearningItemsReader, type OwnerItemSweep } from "../items";
 import { ackDigest, loadPushConfig, planDigest, savePushConfig } from "../push";
 // The webhook poster is injected (relay/server/outbound.postEvent): importing relay here would close a
 // room cycle owner-waiting -> relay -> verification -> owner-waiting.
 type PostEvent = (db: LanePilotDatabase, projectId: string, input: Partial<Record<string, unknown>>, log: (message: string) => void) => Promise<boolean>;
+
+const WAITING_PHRASE: Record<CallReason, string> = { decision: "A decision is waiting for the owner", blocked: "Work is blocked and waits for the owner", red: "Something is red and waits for the owner", term: "A term is ending and waits for the owner" };
 
 /** What waits for the owner (screen, hub script): a read, the digest of new items for Telegram, its acknowledgement and the push settings. */
 export function ownerWaitingRpc(db: LanePilotDatabase, sweeps: readonly OwnerItemSweep[] = [], learningReader?: LearningItemsReader, log: (message: string) => void = () => undefined, postEvent: PostEvent = async () => false) {
@@ -23,10 +25,12 @@ export function ownerWaitingRpc(db: LanePilotDatabase, sweeps: readonly OwnerIte
       for (const item of items) {
         if (!item.projectId) continue;
         projects.add(item.projectId);
-        void postEvent(db, item.projectId, { event: "owner.waiting", title: item.what, kind: item.kind, state: "waiting" }, log);
+        // Only the item's kind, source and key and a fixed phrase leave the machine, never `what` or `why` (the nine
+        // fields have no place for them, so source rides in runId and key in taskId).
+        void postEvent(db, item.projectId, { event: "owner.waiting", title: WAITING_PHRASE[callReason(item.kind)], kind: item.kind, runId: item.source, taskId: item.key, state: "waiting" }, log).catch((cause: unknown) => log(`owner.waiting event: ${cause instanceof Error ? cause.message : String(cause)}`));
       }
       const state = items.length ? "waiting" : listOpenAttempts(db).length ? "working" : "idle";
-      for (const projectId of projects) void postEvent(db, projectId, { event: "pulse", state, kind: "pulse" }, log);
+      for (const projectId of projects) void postEvent(db, projectId, { event: "pulse", state, kind: "pulse" }, log).catch((cause: unknown) => log(`pulse event: ${cause instanceof Error ? cause.message : String(cause)}`));
       return digest;
     },
     owner_waiting_ack: async ({ keys }) => ({ acknowledged: ackDigest(db, keys) }),

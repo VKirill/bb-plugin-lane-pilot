@@ -9,6 +9,9 @@ import type { ChangeDescriptor, Tier } from "./policy";
  * same window never doubles a draft: the id is the item's own liveItemId.
  */
 export const EXAM_DRAFTS_KEY = "policy:exam-v2-drafts";
+/** Ids of drafts a person settled (accepted or dismissed): mining the same window again must not bring them back. */
+export const EXAM_SETTLED_KEY = "policy:exam-v2-settled";
+const MAX_DRAFTS = 200, MAX_SETTLED = 500;
 
 export type DecisionDraft = {
   id: string;
@@ -35,7 +38,8 @@ async function loadDrafts(kv: Kv): Promise<DecisionDraft[]> {
 
 export async function mineDecisions(kv: Kv, messages: readonly MinedMessage[], judge: DecisionJudge): Promise<{ mined: number; skipped: number; total: number }> {
   const drafts = await loadDrafts(kv);
-  const have = new Set(drafts.map((draft) => draft.id));
+  const settled = (await kv.get<string[]>(EXAM_SETTLED_KEY)) ?? [];
+  const have = new Set([...drafts.map((draft) => draft.id), ...settled]);
   let mined = 0;
   for (const message of messages) {
     const judged = await judge(message);
@@ -46,18 +50,20 @@ export async function mineDecisions(kv: Kv, messages: readonly MinedMessage[], j
     have.add(id);
     mined += 1;
   }
-  if (mined) await kv.set(EXAM_DRAFTS_KEY, drafts as never);
-  return { mined, skipped: messages.length - mined, total: drafts.length };
+  const kept = drafts.slice(-MAX_DRAFTS);
+  if (mined) await kv.set(EXAM_DRAFTS_KEY, kept as never);
+  return { mined, skipped: messages.length - mined, total: kept.length };
 }
 
 export type DraftAnswer = { ok: true; appended?: LiveItem } | { ok: false; reason: string };
 
-/** `accept` puts the draft into the exam as an owner decision; `dismiss` drops it. Either way the draft leaves the store once. */
+/** `accept` puts the draft into the exam as an owner decision; `dismiss` drops it. Either way the draft leaves the store once and its id is remembered (newest 500) so mining skips it. */
 export async function settleDraft(kv: Kv, id: string, word: "accept" | "dismiss"): Promise<DraftAnswer> {
   const drafts = await loadDrafts(kv);
   const draft = drafts.find((row) => row.id === id);
   if (!draft) return { ok: false, reason: `no draft «${id}»` };
   await kv.set(EXAM_DRAFTS_KEY, drafts.filter((row) => row.id !== id) as never);
+  await kv.set(EXAM_SETTLED_KEY, [...((await kv.get<string[]>(EXAM_SETTLED_KEY)) ?? []).filter((known) => known !== id), id].slice(-MAX_SETTLED) as never);
   if (word === "dismiss") return { ok: true };
   const item = recordOwnerDecision({ ref: draft.ref, at: draft.at, quote: draft.quote, descriptor: draft.descriptor, expected: draft.expected, why: draft.why });
   await appendLiveItems(kv, [item]);
