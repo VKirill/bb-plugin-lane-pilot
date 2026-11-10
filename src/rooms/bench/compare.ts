@@ -209,6 +209,50 @@ export function compareArms(a: ArmSummary, b: ArmSummary, noise?: NoiseRecord | 
   };
 }
 
+export type ArenaRow = {
+  arm: string; rank: number;
+  /** Passed / judged tasks of the arm on the set. */
+  passed: number; tasks: number;
+  /** Pass rate and its 95% Wilson interval. */
+  passRate: { rate: number; low: number; high: number };
+  /** Sum of the arm's measured task costs divided by the tasks passed: what one verified result cost. Null when a cost was not measured. */
+  costPerVerified: number | null;
+  /** The pairwise verdict of this arm against the first arm («baseline» on the first). */
+  verdict: Comparison["verdict"] | "baseline";
+};
+export type ArenaTable = { arms: number; rows: ArenaRow[] };
+
+/**
+ * The comparison arena (SMA map: Comparison arena): two to four arms over one ticket set, ranked by cost per verified result —
+ * the sum of an arm's measured task costs over the tasks it passed. An arm with any unmeasured cost or no pass shows null and ranks last.
+ */
+export function arenaTable(summaries: readonly ArmSummary[]): ArenaTable {
+  if (summaries.length < 2 || summaries.length > 4) throw new Error(`the arena takes two to four arms, got ${summaries.length}`);
+  const rows: ArenaRow[] = summaries.map((summary, index) => {
+    const stats = [...summary.tasks.values()];
+    const passed = stats.filter((stat) => stat.passed).length;
+    const measured = stats.every((stat) => stat.costUsd !== null);
+    const cost = measured ? stats.reduce((sum, stat) => sum + (stat.costUsd ?? 0), 0) : null;
+    const interval = wilsonInterval(passed, stats.length);
+    return {
+      arm: summary.arm, rank: 0, passed, tasks: stats.length,
+      passRate: { rate: stats.length ? passed / stats.length : 0, ...interval },
+      costPerVerified: cost !== null && passed > 0 ? cost / passed : null,
+      verdict: index === 0 ? "baseline" : compareArms(summaries[0]!, summary).verdict,
+    };
+  });
+  const ranked = [...rows].sort((a, b) => (a.costPerVerified ?? Infinity) - (b.costPerVerified ?? Infinity));
+  ranked.forEach((row, index) => { rows.find((item) => item.arm === row.arm)!.rank = index + 1; });
+  return { arms: rows.length, rows };
+}
+
+/** The arena as text: one line per arm, in rank order. */
+export function renderArenaTable(table: ArenaTable): string {
+  const line = (row: ArenaRow) =>
+    `#${row.rank} ${row.arm}: ${row.passed}/${row.tasks} passed (${pct(row.passRate.rate)} [${pct(row.passRate.low)}, ${pct(row.passRate.high)}]), cost per verified ${row.costPerVerified === null ? "not measured" : usd(row.costPerVerified)}${row.verdict === "baseline" ? " — baseline" : ` — vs baseline: ${row.verdict}`}`;
+  return [`Arena over ${table.arms} arms:`, ...[...table.rows].sort((a, b) => a.rank - b.rank).map(line)].join("\n");
+}
+
 export type PassReport = { tasks: number; repeats: number; passAt1: number; passPow: number };
 
 /**

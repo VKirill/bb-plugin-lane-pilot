@@ -10,34 +10,58 @@
  * judge, never decided here. The exit law: 0 every assert held, 1 an assert failed, 2 the scene could not run (no browser, the page did
  * not load). The report and the screenshots go to .agents/runs/ui/<scene>-<stamp>/.
  *
- *   node scripts/lp-ui-drive.mjs <scene.json>       ui-drive: the scene against a live window
- *   node scripts/lp-ui-drive.mjs --stage <scene>    ui-stage: the same scene, steps only, screenshots for the judge and no asserts
+ *   node scripts/lp-ui-drive.mjs <scene.json>            ui-drive: the scene against a live window
+ *   node scripts/lp-ui-drive.mjs --stage <scene>         ui-stage: the same scene, steps only, screenshots for the judge and no asserts
+ *   node scripts/lp-ui-drive.mjs --stage --tree <path> <scene>
+ *                                                      ui-stage: raise this tree's built window on its own port, run the scene,
+ *                                                      take the window down (also on SIGINT); a tree without a fresh dist/app.js
+ *                                                      is refused before a browser starts. --trees a,b stages several trees in turn,
+ *                                                      --trees kit the checkout plus its git worktrees, --port overrides the address.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SceneUsage, kitOfTrees, parseSceneArgs, serveTree, treeBuildError, waitForPage } from "./lib/ui-scene.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const args = process.argv.slice(2);
-const stageOnly = args[0] === "--stage";
-const scenePath = stageOnly ? args[1] : args[0];
-if (!scenePath) { console.error("usage: node scripts/lp-ui-drive.mjs [--stage] <scene.json>"); process.exit(2); }
+
+let args;
+try { args = parseSceneArgs(process.argv.slice(2)); }
+catch (cause) { console.error(cause instanceof SceneUsage ? cause.message : String(cause)); process.exit(2); }
 
 let scene;
-try { scene = JSON.parse(readFileSync(scenePath, "utf8")); } catch (cause) { console.error(`scene unreadable: ${cause.message}`); process.exit(2); }
+try { scene = JSON.parse(readFileSync(args.scene, "utf8")); } catch (cause) { console.error(`scene unreadable: ${cause.message}`); process.exit(2); }
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-const outDir = join(root, ".agents/runs/ui", `${basename(scenePath, ".json")}-${stamp}`);
+const outDir = join(root, ".agents/runs/ui", `${basename(args.scene, ".json")}-${stamp}`);
 mkdirSync(outDir, { recursive: true });
 
-let chromium;
-try { ({ chromium } = await import("playwright")); } catch { console.error("playwright is not installed"); process.exit(2); }
-let browser;
-try { browser = await chromium.launch(); } catch (cause) { console.error(`no browser: ${cause.message}`); process.exit(2); }
+// The kit word expands before anything is built; every tree is checked for a fresh build before a browser is launched.
+const trees = args.trees.flatMap((tree) => tree === "kit" ? kitOfTrees(root) : [tree]);
+for (const tree of trees) {
+  const error = treeBuildError(tree);
+  if (error) { console.error(error); process.exit(2); }
+}
 
-const report = { scene: scenePath, url: scene.url, stage: stageOnly, widths: [], judge: scene.judge ?? null };
+let staged = null;
+const takeDown = async () => { const held = staged; staged = null; if (held) await held.close().catch(() => {}); };
+process.on("SIGINT", () => { takeDown().finally(() => process.exit(2)); });
+
+const report = { scene: args.scene, url: scene.url, stage: args.stage, tree: trees[0] ?? null, widths: [], judge: scene.judge ?? null };
 let failed = false;
+let browser = null;
 try {
-  for (const width of scene.widths ?? [375, 1280]) {
+  if (trees.length) {
+    staged = await serveTree(trees[0], { port: args.port });
+    report.url = staged.url;
+    console.log(`STAGE_URL=${staged.url}`);
+    if (!(await waitForPage(staged.url))) { await takeDown(); console.error(`the staged window did not answer on ${staged.url}`); process.exit(2); }
+    scene = { ...scene, url: staged.url };
+  }
+  let chromium;
+  try { ({ chromium } = await import("playwright")); } catch { await takeDown(); console.error("playwright is not installed"); process.exit(2); }
+  try { browser = await chromium.launch(); } catch (cause) { await takeDown(); console.error(`no browser: ${cause.message}`); process.exit(2); }
+  const widths = args.width ? [args.width] : scene.widths ?? [375, 1280];
+  for (const width of widths) {
     const page = await browser.newPage({ viewport: { width, height: scene.height ?? 900 } });
     const row = { width, asserts: [], screenshot: null, error: null };
     try {
@@ -50,7 +74,7 @@ try {
       }
       row.screenshot = join(outDir, `w${width}.png`);
       await page.screenshot({ path: row.screenshot, fullPage: true });
-      if (!stageOnly) for (const check of scene.asserts ?? []) {
+      if (!args.stage) for (const check of scene.asserts ?? []) {
         let ok = true, detail = "";
         if (check.noOverflow) {
           const over = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -69,14 +93,16 @@ try {
       row.error = cause.message;
       writeFileSync(join(outDir, "report.json"), JSON.stringify({ ...report, widths: [...report.widths, row] }, null, 2));
       console.error(`width ${width}: ${cause.message}`);
-      await browser.close();
+      await takeDown();
+      await browser?.close();
       process.exit(2);
     }
     report.widths.push(row);
     await page.close();
   }
 } finally {
-  await browser.close().catch(() => {});
+  await takeDown();
+  await browser?.close().catch(() => {});
 }
 writeFileSync(join(outDir, "report.json"), JSON.stringify(report, null, 2));
 console.log(`UI_REPORT=${join(outDir, "report.json")}`);

@@ -1,7 +1,7 @@
 import { hubFields, writeHubFields } from "../platform";
 import { baselineMetrics } from "./baseline";
 import { buildSet, type BuildReport } from "./build";
-import { compareArms, computeNoise, noiseOfRepeats, passReport, renderComparison, stabilityMarks, summarizeArm, type ArmSummary, type Comparison } from "./compare";
+import { arenaTable, compareArms, computeNoise, noiseOfRepeats, passReport, renderArenaTable, renderComparison, stabilityMarks, summarizeArm, type ArenaTable, type ArmSummary, type Comparison } from "./compare";
 import { cohortCounts, cohortOf } from "./stratify";
 import { renderStratumMetrics, stratumMetrics, type StratumRow } from "./stratum-metrics";
 import { statsEpochMs, STATS_EPOCH_SETTING, listStageReceipts, boundSettingValue, settingValue } from "../storage";
@@ -39,6 +39,8 @@ export type BenchDeps = {
   pageReview?: (task: import("./types").ManifestTask, request: Parameters<import("../validators").PageReview>[0]) => ReturnType<import("../validators").PageReview>;
   /** The critic-eval stratum: one real code-critique call on the task's patch (plugin-ports wires runCodeCritique). */
   criticRun?: (task: import("./types").ManifestTask, runId: string) => Promise<{ ok: boolean; reason: string; model?: string; costUsd?: number | null; tokens?: number | null }>;
+  /** The runner the arena uses for an arm not yet stored (default: `run`, the real series). */
+  arenaRun?: (input: { version: string; arm: string; writer?: BenchWriter; repeat?: number }) => Promise<unknown>;
 };
 
 export type BenchSettings = { budgetTokens: number; budgetHours: number };
@@ -227,6 +229,22 @@ export function createBench(deps: BenchDeps) {
     return { comparison, text, verdictId: verdict?.id ?? null };
   }
 
+  /** The sma arena: four arms over one ticket set on neutral ground — the same set, host and repeats for each. An arm already stored is reused, not rerun. */
+  async function arena(input: { version: string; arms: ReadonlyArray<{ arm: string; writer?: BenchWriter }>; repeat?: number }): Promise<{ table: ArenaTable; text: string; ran: string[]; reused: string[] }> {
+    if (input.arms.length !== 4) throw new Error(`bench arena takes four arms, got ${input.arms.length}`);
+    const set = getSet(deps.db, input.version);
+    if (!set) throw new Error(`no bench set ${input.version}`);
+    const ran: string[] = [], reused: string[] = [];
+    for (const spec of input.arms) {
+      if (listRuns(deps.db, set.id).some((row) => row.arm === spec.arm)) { reused.push(spec.arm); continue; }
+      const runner = deps.arenaRun ?? ((series: { version: string; arm: string; writer?: BenchWriter; repeat?: number }) => run({ ...series, wait: true }));
+      await runner({ version: input.version, arm: spec.arm, ...(spec.writer ? { writer: spec.writer } : {}), ...(input.repeat ? { repeat: input.repeat } : {}) });
+      ran.push(spec.arm);
+    }
+    const table = arenaTable(input.arms.map((spec) => armSummary(input.version, spec.arm)));
+    return { table, text: renderArenaTable(table), ran, reused };
+  }
+
   function status(version?: string) {
     const sets = listSets(deps.db).filter((row) => !version || row.version === version);
     return sets.map((set) => {
@@ -318,7 +336,7 @@ export function createBench(deps: BenchDeps) {
     return lines;
   }
 
-  return { settings, placement, configure, build, lastBuild, run, noise, compare, status, show, prepare, armSummary, baseline, sweep, gate, markSkipped, armStrata };
+  return { settings, placement, configure, build, lastBuild, run, arena, noise, compare, status, show, prepare, armSummary, baseline, sweep, gate, markSkipped, armStrata };
 }
 
 export type BenchApi = ReturnType<typeof createBench>;
