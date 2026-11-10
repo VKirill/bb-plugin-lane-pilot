@@ -284,12 +284,15 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       const stored = (await ownedAgents())[shortId];
       let compiled = null;
       try { compiled = services.compileEffectiveMainAgent(shortId, stored); } catch { compiled = null; }
+      // The thread's Lane Pilot role (pm, writer, …) from its plugin metadata: the composer's boundary line shows for a PM chat only.
+      const metadata = await bb.sdk.threads.getPluginMetadata({ threadId }).catch(() => null) as { role?: unknown } | null;
       return {
         token: parsed.token,
         agentId: parsed.agentId,
         agentType,
         projectId: parsed.projectId,
         description: compiled?.description ?? shortId,
+        role: typeof metadata?.role === "string" ? metadata.role : null,
       };
     },
     activation_context: async ({ projectId, threadId }) => {

@@ -176,7 +176,13 @@ export const taskV2Schema = z.object({
     checks_pass_first_try: z.boolean(),
     tokens: z.number().int().positive().max(50_000_000).optional(),
     minutes: z.number().int().positive().max(24 * 60).optional(),
-  }).strict().describe("Before dispatch: how many files change, whether every check passes on the first attempt, and optionally tokens and minutes.").optional(),
+    /** The changed lines the PM expects (SMA «Declared plan footprint»: arithmetic against the merge's diff). */
+    lines: z.number().int().min(0).max(10_000_000).optional(),
+    /** Package names the PM expects the change to add (package.json, requirements*.txt, pyproject.toml). */
+    dependencies: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
+    /** Server-set at dispatch: the PM's own provider/model (`<providerId>/<model>`), so a later model never inherits this one's calibration. */
+    model: z.string().trim().min(1).max(300).optional(),
+  }).strict().describe("Before dispatch: how many files change, whether every check passes on the first attempt, and optionally tokens, minutes, lines and added dependencies.").optional(),
   /** SMA «Promise: Given, When, Then»: the sentence the checks prove; the writer's brief and plan→fact read it (src/rooms/tasks/rails.ts). */
   promise: z.object({ given: z.string().trim().min(1).max(600), when: z.string().trim().min(1).max(600), then: z.string().trim().min(1).max(600) }).strict()
     .describe("What the task promises: {given, when, then}, each one sentence; the checks prove it.").optional(),

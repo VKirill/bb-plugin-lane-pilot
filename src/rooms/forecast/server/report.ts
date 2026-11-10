@@ -3,8 +3,8 @@ import { taskV2Schema } from "../../contracts";
 import { attemptMetrics } from "../../usage";
 import { latestAcceptedAttemptRef, listForecastTaskRows } from "../../storage";
 import { attemptChangeJson } from "../../rollback/server";
-import { calibrate, scoreForecast, type Calibration, type ForecastFact, type ForecastScore } from "../logic";
-import { listStageReceipts } from "../../storage";
+import { calibrate, calibrationBadge, scoreForecast, type Calibration, type CalibrationBadge, type ForecastFact, type ForecastScore } from "../logic";
+import { listStageReceipts, loadPrototypeConfig } from "../../storage";
 
 /**
  * The estimate-versus-fact report (SMA D2-1) from what is already on record: the forecast in the task's contract, the accepted attempt
@@ -12,7 +12,7 @@ import { listStageReceipts } from "../../storage";
  * metrics, `not_measured` stays null). A task with a forecast that is not accepted yet, or whose changes were not recorded, is counted
  * as waiting, never scored.
  */
-export type ForecastRow = { runId: string; taskId: string; projectId: string; area: string | null; score: ForecastScore };
+export type ForecastRow = { runId: string; taskId: string; projectId: string; area: string | null; model: string | null; score: ForecastScore };
 export type ForecastReport = { days: number; since: number; scored: ForecastRow[]; waiting: number; calibration: { overall: Calibration | null; byArea: Calibration[] };
 /** The skeptic's countersigns scored beside the PM's (SMA k_v_skeptic): null when no plan critique carried one. */
 skeptic: { overall: Calibration | null; rightAgainstPm: string[] } | null };
@@ -35,14 +35,21 @@ export function forecastReport(db: Database.Database, input: { projectId?: strin
     if (!attempt || !changed) { waiting += 1; continue; }
     const metrics = attemptMetrics(db, { projectId: row.project_id, days: days + 1, now, taskId: row.task_id }).attempts;
     const measured = metrics.filter((item) => item.tokens !== null);
+    const changedFiles = JSON.parse(changed.changed_json) as Array<{ path?: unknown }>;
+    // The accepted writer receipt keeps the measured size and the dependencies the merge's diff added (SMA k_lib_footprint).
+    const writerReceipt = listStageReceipts(db, row.run_id, row.task_id).find((stage) => stage.stageId === "writer-agent")?.result as
+      { size?: { lines?: unknown }; dependencies?: unknown } | null;
     const fact: ForecastFact = {
-      files: (JSON.parse(changed.changed_json) as unknown[]).length,
+      files: changedFiles.length,
       firstTry: attempt.attempt_no === 1,
       tokens: measured.length === metrics.length && metrics.length ? measured.reduce((sum, item) => sum + item.tokens!.total, 0) : null,
       minutes: metrics.length && metrics.every((item) => item.seconds !== null) ? Math.round(metrics.reduce((sum, item) => sum + item.seconds!, 0) / 60) : null,
+      lines: typeof writerReceipt?.size?.lines === "number" ? writerReceipt.size.lines : null,
+      dependencies: Array.isArray(writerReceipt?.dependencies) ? writerReceipt.dependencies.filter((name): name is string => typeof name === "string") : [],
+      changedPaths: changedFiles.flatMap((file) => typeof file.path === "string" ? [file.path] : []),
     };
-    const score = scoreForecast(parsed.data.forecast, fact);
-    scored.push({ runId: row.run_id, taskId: row.task_id, projectId: row.project_id, area: parsed.data.area ?? null, score });
+    const score = scoreForecast(parsed.data.forecast, fact, (parsed.data.files ?? []).map((file) => file.path));
+    scored.push({ runId: row.run_id, taskId: row.task_id, projectId: row.project_id, area: parsed.data.area ?? null, model: parsed.data.forecast.model ?? null, score });
     // The plan critic's countersign, when the receipt kept one, is scored on the same fact — a second opinion, not the PM's.
     const countersign = listStageReceipts(db, row.run_id, row.task_id).find((stage) => stage.stageId === "plan-critique")?.result;
     const cs = countersign && typeof countersign === "object" ? (countersign as { forecast_countersign?: { agree?: boolean; files?: number; checks_pass_first_try?: boolean } }).forecast_countersign : undefined;
@@ -54,4 +61,16 @@ export function forecastReport(db: Database.Database, input: { projectId?: strin
   }
   const skeptic = skepticRows.length ? { overall: calibrate(skepticRows).overall, rightAgainstPm: rightAgainstPm } : null;
   return { days, since, scored, waiting, calibration: calibrate(scored), skeptic };
+}
+
+/**
+ * The calibration passport (SMA k_v_passport): how far the forecasts of one model — the project's current PM model unless
+ * `model` names another — can be trusted: its scored tasks, files MAE, first-try hit and the badge the owner reads.
+ */
+export type CalibrationPassport = { projectId: string; model: string | null; tasks: number; filesMae: number | null; firstTryHit: number | null; badge: CalibrationBadge };
+export function calibrationPassport(db: Database.Database, projectId: string, model?: string | null): CalibrationPassport {
+  const config = loadPrototypeConfig(db, projectId);
+  const current = model ?? (config?.pmProviderId && config?.pmModel ? `${config.pmProviderId}/${config.pmModel}` : null);
+  const overall = current ? calibrate(forecastReport(db, { projectId, days: 60 }).scored, current).overall : null;
+  return { projectId, model: current, tasks: overall?.tasks ?? 0, filesMae: overall?.filesMae ?? null, firstTryHit: overall?.firstTryHit ?? null, badge: calibrationBadge(overall) };
 }

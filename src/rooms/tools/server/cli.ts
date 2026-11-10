@@ -29,6 +29,7 @@ import { BENCH_USAGE, runBenchCli } from "../../bench/server";
 import { BASELINE_USAGE, runBaselineCli } from "../../baseline/server";
 import { RETURN_USAGE, runReturnCli } from "../../stage-return/server";
 import { FORECAST_USAGE, runForecastCli } from "../../forecast/server";
+import { calibrationPassport } from "../../forecast/server/report";
 import { RUN_GOAL_USAGE, runGoalSweep, runRunGoalCli } from "../../run-goal/server";
 import { CAPABILITY_USAGE, runCapabilityCli } from "../../capability/server";
 import { OUTAGE_USAGE, runOutageCli } from "../../outage/server";
@@ -279,7 +280,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"lead", summary:"Штурман, the lead over the runs: its state and ticks, the road tree, the owner's answers to its proposals, the rights per class, the decision journal with the prediction made before each answer, the exam and the backtest", usage:LEAD_USAGE },
       { name:"coverage", summary:"What proves each pipeline stage, attempt transition, failure class, gate, memory path, room and key mechanism: covered live by a deploy-drill scenario, covered by tests only (and why no drill), or not covered; --receipt checks the live claims against a drill receipt", usage:COVERAGE_USAGE },
       { name:"attempt", summary:"One attempt's whole record: writer thread, stage receipts and gate events of that attempt, dispatch context, verification results, critic input hash, the attempt-change row", usage:"bb lane-pilot attempt <attempt-id>" },
-      { name:"passport", summary:"An attempt's passport: provider, model, harness and Lane Pilot versions, the receipts of its stages", usage:"bb lane-pilot passport <attempt-id>" },
+      { name:"passport", summary:"An attempt's passport: provider, model, harness and Lane Pilot versions, the receipts of its stages; --calibration prints the current PM model's calibration badge", usage:"bb lane-pilot passport <attempt-id> | --calibration --project <id>" },
       { name:"manifest", summary:"This build: name, version, its tables", usage:"bb lane-pilot manifest" },
       { name:"receipt-chain", summary:"A task's stage receipts hashed in order (tip), or verify a tip recorded earlier", usage:"bb lane-pilot receipt-chain <run-id> <task-id> [--verify <tip>]" },
       { name:"preship", summary:"What is open before a release (unfinished tasks, open regressions, deferrals) and the disposition each needs; exit 1 when not clear", usage:"bb lane-pilot preship [--project <id>]" },
@@ -392,6 +393,12 @@ ${ERRANDS_USAGE}` },
           return result ? { exitCode:0, stdout:JSON.stringify(result, null, 2) } : { exitCode:1, stderr:"bb lane-pilot attempt <attempt-id>: no such attempt" };
         }
         if (command === "passport") {
+          // --calibration: the badge of the current PM model's forecasts (SMA k_v_passport); it resets when the model changes.
+          if (args[0] === "--calibration") {
+            const at = args.indexOf("--project");
+            if (at < 0 || !args[at + 1]) return { exitCode:1, stderr:"bb lane-pilot passport --calibration --project <id>" };
+            return { exitCode:0, stdout:JSON.stringify(calibrationPassport(db, args[at + 1]!), null, 2) };
+          }
           const result = args[0] ? passport(db, args[0]) : null;
           return result ? { exitCode:0, stdout:JSON.stringify(result, null, 2) } : { exitCode:1, stderr:"bb lane-pilot passport <attempt-id>: no such attempt" };
         }

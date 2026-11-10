@@ -102,22 +102,27 @@ describe("conversation gates", () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const ran: Array<{ command: string }> = [];
     harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
-    bb.hosts.experimental_client = (() => ({
-      call: async (_method: string, input: { command: string }) => { ran.push({ command: input.command }); return { exitCode: 1, stdout: "FAIL boom", stderr: "" }; },
-    })) as never;
+    const host = { call: async (_method: string, input: { command: string }) => { ran.push({ command: input.command }); return { exitCode: 1, stdout: "FAIL boom", stderr: "" }; } };
     const db = openDatabase(bb);
     createRun(db, "run1", "proj", "bb", "/ws", "none", { schemaVersion: 1, pools: { provider: 5, verification: 2 } }, "host1");
-    registerConversationTools({ db, bb } as never, { spendByModel: (projectId: string, day: string) => tokenDailyByModel(db, projectId, day) });
+    registerConversationTools({ db, bb, host } as never, { spendByModel: (projectId: string, day: string) => tokenDailyByModel(db, projectId, day) });
     const check = registeredTools(bb.agents).get("lane_pilot_check")!;
     const ctx = { threadId: "thr", projectId: "proj", signal: new AbortController().signal };
-    const receipt = JSON.parse(String(await check.execute({
+    const started = JSON.parse(String(await check.execute({
       action: "run", request: "run tests; rm -rf /", commands: [{ command: "npm test", cwd: ".", timeoutSec: 30, expectExit: 0 }],
     }, ctx)));
-    expect(receipt.recipe).toBe("quick");
-    expect(receipt.measures).toEqual([expect.objectContaining({
+    expect(started).toMatchObject({ recipe: "quick", state: "running" });
+    // The check runs in the background; status gives the receipt once it ends.
+    let receipt: { state?: string; measures?: Array<Record<string, unknown>> } = {};
+    for (let i = 0; i < 200; i++) {
+      receipt = JSON.parse(String(await check.execute({ action: "status", checkId: started.checkId }, ctx)));
+      if (receipt.state !== "running") break;
+      await new Promise((wake) => setTimeout(wake, 5));
+    }
+    expect(receipt.measures as unknown[]).toEqual([expect.objectContaining({
       command: "npm test", cwd: "/ws", expectExit: 0, timeoutSec: 30, exitCode: 1, passed: false,
     })]);
-    expect(receipt.measures[0].evidence).toContain("FAIL boom");
+    expect(receipt.measures![0]!.evidence).toContain("FAIL boom");
     expect(ran.map((row) => row.command)).toEqual(["npm test"]);
     const full = JSON.parse(String(await check.execute({ action: "run", request: "sma green", commands: [{ command: "rm -rf /", cwd: "." }] }, ctx)));
     expect(full).toMatchObject({ recipe: "full" });

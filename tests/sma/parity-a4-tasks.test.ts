@@ -101,16 +101,20 @@ describe("parity a4-tasks", () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     let runs = 0;
     harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
-    bb.hosts.experimental_client = (() => ({
-      call: async (_method: string, input: { command: string }) => { runs += 1; return { exitCode: 0, stdout: `ok ${input.command}`, stderr: "" }; },
-    })) as never;
+    const host = { call: async (_method: string, input: { command: string }) => { runs += 1; return { exitCode: 0, stdout: `ok ${input.command}`, stderr: "" }; } };
     const db = openDatabase(bb);
     createRun(db, "run1", "proj", "bb", "/ws", "none", { schemaVersion: 1, pools: { provider: 5, verification: 2 } }, "host1");
-    registerConversationTools({ db, bb } as never, { spendByModel: () => [] });
+    registerConversationTools({ db, bb, host } as never, { spendByModel: () => [] });
     const check = registeredTools(bb.agents).get("lane_pilot_check")!;
     const ctx = { threadId: "thr_pm", projectId: "proj", signal: new AbortController().signal };
     const commands = [{ command: "npm test", cwd: ".", timeoutSec: 30, expectExit: 0 }];
     const first = JSON.parse(String(await check.execute({ action: "run", request: "run tests", commands }, ctx)));
+    // The run returns the checkId at once; the receipt lands when the commands end.
+    for (let i = 0; i < 200; i++) {
+      const receipt = JSON.parse(String(await check.execute({ action: "status", checkId: first.checkId }, ctx)));
+      if (receipt.state !== "running") break;
+      await new Promise((wake) => setTimeout(wake, 5));
+    }
     const second = JSON.parse(String(await check.execute({ action: "run", request: "run tests", commands }, ctx)));
     expect(runs).toBe(1);
     expect(second.checkId).toBe(first.checkId);

@@ -1,6 +1,6 @@
 {
-  "rows": 529,
-  "editable": 268,
+  "rows": 530,
+  "editable": 269,
   "readonly": 111,
   "gap": 0,
   "excluded": 153,
@@ -25,6 +25,7 @@
     "adoc.279",
     "adoc.281",
     "adoc.282",
+    "backlog.scan_minutes",
     "bench.disk_cleanup",
     "bench.disk_start_gb",
     "bench.disk_stop_gb",

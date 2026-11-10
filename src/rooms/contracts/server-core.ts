@@ -68,6 +68,8 @@ type HostResult<Method extends keyof typeof hostContract & string> = PluginRpcRe
 type HostCallOptions = ExperimentalHostCallOptions & {
   readonly job?: boolean;
   readonly jobKey?: string;
+  /** With `job`: the caller's abort also cancels the host job (a check the owner stopped ends its process tree). */
+  readonly cancelOnAbort?: boolean;
   readonly worktreeOwner?: { readonly kind: string; readonly id: string | null };
 };
 type ServerHost = Omit<ExperimentalHostClient<typeof hostContract>, "call"> & {

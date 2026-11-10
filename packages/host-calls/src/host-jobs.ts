@@ -48,7 +48,7 @@ export function createHostJobs(deps: {
   const status = async (hostId: string, jobId: string) => await deps.call("jobStatus", { requestedHostId: hostId, jobId }, { hostId, timeoutMs: 20_000 }) as JobStatusReply;
 
   return {
-    async run(kind: HostJobKind, input: unknown, options: { hostId: string; timeoutMs?: number; signal?: AbortSignal }, directCall: () => Promise<unknown>, jobKey?: string): Promise<unknown> {
+    async run(kind: HostJobKind, input: unknown, options: { hostId: string; timeoutMs?: number; signal?: AbortSignal; cancelOnAbort?: boolean }, directCall: () => Promise<unknown>, jobKey?: string): Promise<unknown> {
       const { hostId } = options;
       const key = hostJobKey(kind, hostId, input, jobKey);
       // A check's verdict is of one moment: a finished one is taken again only by the call that named it (same jobKey, e.g. after
@@ -84,8 +84,12 @@ export function createHostJobs(deps: {
       let delay = POLL_FIRST_MS;
       for (;;) {
         if (deps.disposed()) throw new Error(`host ${kind} job ${entry.jobId} is still running; the plugin is reloading`);
-        // The caller's run was aborted: stop polling. The job goes on at the host, and the same call made again finds it by its key.
-        options.signal?.throwIfAborted();
+        // The caller's run was aborted: stop polling. The job goes on at the host, and the same call made again finds it by
+        // its key — unless the caller named cancelOnAbort (a check the owner stopped), where the process group ends first.
+        if (options.signal?.aborted) {
+          if (options.cancelOnAbort) await deps.call("jobCancel", { requestedHostId: hostId, jobId: entry.jobId }, { hostId, timeoutMs: 20_000 }).catch(() => undefined);
+          options.signal.throwIfAborted();
+        }
         const reply = last ?? await status(entry.hostId, entry.jobId);
         last = null;
         if (reply.state !== "running") {

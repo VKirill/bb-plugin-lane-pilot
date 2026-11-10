@@ -121,7 +121,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase): ServerCore {
       // `jobKey` names the one logical call a job answers (an attempt's post-merge check of one merge commit): a finished job
       // is taken again only under the same key, never by another call with the same input.
       // `worktreeOwner` is the creating pass's name for the registry; the host never sees either of these.
-      const { job, jobKey, worktreeOwner, ...hostOptions } = withSignal as typeof withSignal & { jobKey?: string; worktreeOwner?: WorktreeOwner };
+      const { job, jobKey, worktreeOwner, cancelOnAbort, ...hostOptions } = withSignal as typeof withSignal & { jobKey?: string; worktreeOwner?: WorktreeOwner; cancelOnAbort?: boolean };
       const direct = async () => {
         const endpoint = JEV_METHODS.has(method) ? await jevEndpoint() : undefined;
         const result = await rawCall(method, endpoint?.apiKey ? { ...(input as Record<string, unknown>), jevApiKey:endpoint.apiKey, jevProvider:endpoint.provider.id } : input, hostOptions);
@@ -129,7 +129,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase): ServerCore {
         return result;
       };
       // LANE_PILOT_HOST_JOBS=0 runs every call directly, as before jobs: a switch for a host where they misbehave.
-      if (process.env.LANE_PILOT_HOST_JOBS !== "0" && isHostJobKind(method) && (method !== "runSandboxedCommand" || job === true)) return await hostJobs.run(method, input, hostOptions, direct, jobKey);
+      if (process.env.LANE_PILOT_HOST_JOBS !== "0" && isHostJobKind(method) && (method !== "runSandboxedCommand" || job === true)) return await hostJobs.run(method, input, { ...hostOptions, cancelOnAbort }, direct, jobKey);
       return await direct();
       }, withSignal.signal);
     }) as typeof rawHost.call,

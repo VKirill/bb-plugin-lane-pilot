@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { callerPluginMetadata, registerObservedTool } from "../../platform/server";
 import { ToolError, type ServerCore } from "../../contracts/server";
-import { hostContract } from "../../contracts";
 import { wayOut } from "../../contracts"
 import { failureClass } from "../../contracts/failure-class";
 import { getRun, getRunWriterHost, listAttemptRowsForProject, listRunTaskSummaries } from "../../storage";
@@ -11,9 +10,11 @@ import { sha256Hex } from "@lane-pilot/kit";
 /** A check as an operation (SMA m_ck_answer): one receipt per request hash. A request repeated while the check runs, or within
  *  half a minute of its end (a retried tool call), gets that receipt; later the same commands are a new check — the code may
  *  have been fixed in between, and an old red answer would hide it. */
-type CheckReceipt = { checkId: string; requestHash: string; recipe: string; state: "running" | "passed" | "failed" | "stopped"; measures: CheckMeasure[]; startedAt: number; endedAt: number | null };
+type CheckReceipt = { checkId: string; requestHash: string; recipe: string; state: "running" | "passed" | "failed" | "stopped" | "stopped_by_turn_stop"; measures: CheckMeasure[]; startedAt: number; endedAt: number | null; stoppedCommand?: string | null };
 const RECEIPT_GRACE_MS = 30_000;
 const receiptKey = (runId: string, requestHash: string) => `chat-check:${runId}:${requestHash}`;
+/** The same receipt under the check's own id, so `status` and `stop` find it without the request hash. */
+const receiptIdKey = (checkId: string) => `chat-check-id:${checkId}`;
 
 /**
  * The turn engine and the checks from the conversation (SMA map: Conversation and intake — One-turn engine, What kind of question,
@@ -28,8 +29,36 @@ interface Services {
 }
 
 export function registerConversationTools(ctx: ServerCore, services: Services): void {
-  const { db, bb } = ctx;
-  const running = new Map<string, AbortController>();
+  const { db, bb, host } = ctx;
+  /** A live check under its id: who can stop it and which thread's turn started it (SMA m_ck_stop / m_cd_stop). */
+  const running = new Map<string, { controller: AbortController; threadId: string | null; stopReason: "stopped" | "stopped_by_turn_stop" }>();
+  const byThread = new Map<string, Set<string>>();
+  const forget = (checkId: string, threadId: string | null) => {
+    running.delete(checkId);
+    if (threadId) { const set = byThread.get(threadId); set?.delete(checkId); if (set && !set.size) byThread.delete(threadId); }
+  };
+  // A PM's turn stopped while its check ran (the reply was stopped, or the thread failed): the check's process tree ends
+  // with it and the receipt says why — a reply's check never outlives the reply (SMA m_cd_stop).
+  const threadOf = (payload: unknown) => {
+    const thread = payload && typeof payload === "object" ? Reflect.get(payload, "thread") : undefined;
+    const id = thread && typeof thread === "object" ? Reflect.get(thread, "id") : undefined;
+    return typeof id === "string" ? id : null;
+  };
+  const stopThreadChecks = (payload: unknown) => {
+    const threadId = threadOf(payload);
+    if (!threadId) return;
+    for (const checkId of byThread.get(threadId) ?? []) {
+      const entry = running.get(checkId);
+      if (entry) { entry.stopReason = "stopped_by_turn_stop"; entry.controller.abort(new Error("stopped_by_turn_stop")); }
+    }
+  };
+  const events = (bb as unknown as { events?: { on?: (name: string, handler: (payload: unknown) => unknown) => void } }).events;
+  if (events && typeof events.on === "function") {
+    try {
+      events.on("thread.idle", stopThreadChecks);
+      events.on("thread.failed", stopThreadChecks);
+    } catch (cause) { ctx.log(`chat check turn-stop listener failed: ${cause instanceof Error ? cause.message : String(cause)}`); }
+  }
 
   const runOf = async (context: { threadId: string | null; experimental_vkPluginMetadata?: unknown }) => {
     const metadata = await callerPluginMetadata(bb, context);
@@ -75,21 +104,27 @@ export function registerConversationTools(ctx: ServerCore, services: Services): 
   registerObservedTool(bb.agents, {
     name: "lane_pilot_check",
     description: "Run a check the owner asked for in the chat as an operation: the request selects the recipe (quick, full, browser) and every result carries its five measures.",
-    instructions: "`run` (request: the owner's words; commands: for quick, the commands to run in the run's checkout, each with cwd relative to it and timeoutSec): quick runs them in the sandbox and returns per command the five measures — command, folder, expected exit, time limit, evidence (the output tail) — and passed. A request for the whole suite selects full: send the run's accepted tasks to the run-goal check (bb lane-pilot run-goal) instead; a request about a page selects browser: use lane_pilot_helpers {action:\"browser_qa\"}. `stop` (checkId) stops a running quick check.",
+    instructions: "`run` (request: the owner's words; commands: for quick, the commands to run in the run's checkout, each with cwd relative to it and timeoutSec): quick starts them in the background and returns the checkId at once; poll `status` (checkId) for the receipt — per command the five measures (command, folder, expected exit, time limit, evidence) and passed. A request for the whole suite selects full: send the run's accepted tasks to the run-goal check (bb lane-pilot run-goal) instead; a request about a page selects browser: use lane_pilot_helpers {action:\"browser_qa\"}. `stop` (checkId) stops a running quick check; a check also ends when the turn that started it ends.",
     parameters: z.discriminatedUnion("action", [
       z.object({ action: z.literal("run"), request: z.string().trim().min(1).max(2000),
         commands: z.array(z.object({ command: z.string().trim().min(1).max(4000), cwd: z.string().max(400).default("."), timeoutSec: z.number().int().min(5).max(1800).default(300), expectExit: z.number().int().default(0) }).strict()).max(10).default([]) }).strict(),
+      z.object({ action: z.literal("status"), checkId: z.string().min(1) }).strict(),
       z.object({ action: z.literal("stop"), checkId: z.string().min(1) }).strict(),
     ]),
     execute: async (input, context) => {
-      if (input.action === "stop") {
-        const controller = running.get(input.checkId);
-        controller?.abort(new Error("stopped by the PM"));
-        return JSON.stringify({ checkId: input.checkId, stopped: Boolean(controller) });
+      if (input.action === "status" || input.action === "stop") {
+        if (input.action === "stop") {
+          const entry = running.get(input.checkId);
+          if (entry) { entry.stopReason = "stopped"; entry.controller.abort(new Error("stopped by the PM")); }
+        }
+        const receipt = await bb.storage.kv.get(receiptIdKey(input.checkId)).catch(() => null) as CheckReceipt | null;
+        if (!receipt && input.action === "stop") return JSON.stringify({ checkId: input.checkId, stopped: false });
+        if (!receipt) throw new ToolError("no check with this id", { code: "no_check", retryable: false, sideEffects: "none" });
+        return JSON.stringify({ ...receipt, stopped: receipt.state === "stopped" || receipt.state === "stopped_by_turn_stop", running: running.has(input.checkId) });
       }
       const recipe = checkRecipe(input.request);
       if (recipe !== "quick") return JSON.stringify({ recipe, next: recipe === "full" ? "run the run-goal check of this run: every accepted task's checks together on main" : "use lane_pilot_helpers {action:\"browser_qa\"} with the page and the cases" });
-      if (!input.commands.length) throw new ToolError("a quick check needs the commands to run", { code: "no_commands", retryable: false, sideEffects: "none" });
+      if (!input.commands?.length) throw new ToolError("a quick check needs the commands to run", { code: "no_commands", retryable: false, sideEffects: "none" });
       const runId = await runOf(context);
       const run = runId ? getRun(db, runId) : undefined;
       const hostId = runId ? getRunWriterHost(db, runId) : null;
@@ -105,27 +140,49 @@ export function registerConversationTools(ctx: ServerCore, services: Services): 
       if (stored && (live || (stored.endedAt !== null && Date.now() - stored.endedAt < RECEIPT_GRACE_MS))) {
         return JSON.stringify({ ...stored, deduplicated: true });
       }
+      const workspacePath = run.writer_workspace_path;
       const checkId = `chk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
       const receipt: CheckReceipt = { checkId, requestHash, recipe, state: "running", measures: [], startedAt: Date.now(), endedAt: null };
-      await kv.set(key, receipt as never).catch(() => undefined);
-      const controller = new AbortController();
-      running.set(checkId, controller);
-      const host = bb.hosts.experimental_client({ contract: hostContract });
-      try {
-        for (const item of input.commands) {
-          if (controller.signal.aborted) break;
-          const cwd = item.cwd === "." ? run.writer_workspace_path : `${run.writer_workspace_path}/${item.cwd.replace(/^\.?\//, "")}`;
-          const result = await host.call("runSandboxedCommand", { requestedHostId: hostId, workspacePath: run.writer_workspace_path, cwd, command: item.command, timeoutSec: item.timeoutSec }, { hostId, timeoutMs: (item.timeoutSec + 30) * 1000 });
-          const evidence = `${result.stdout}\n${result.stderr}`.trim().slice(-1500);
-          receipt.measures.push({ command: item.command, cwd, expectExit: item.expectExit, timeoutSec: item.timeoutSec, evidence, exitCode: result.exitCode, passed: result.exitCode === item.expectExit });
-        }
-      } finally {
-        running.delete(checkId);
-        receipt.endedAt = Date.now();
-        receipt.state = controller.signal.aborted ? "stopped" : receipt.measures.every((row) => row.passed) ? "passed" : "failed";
+      const writeReceipt = async () => {
         await kv.set(key, receipt as never).catch(() => undefined);
-      }
-      return JSON.stringify({ ...receipt, stopped: controller.signal.aborted, passed: receipt.measures.every((row) => row.passed) });
+        await kv.set(receiptIdKey(checkId), receipt as never).catch(() => undefined);
+      };
+      await writeReceipt();
+      const entry = { controller: new AbortController(), threadId: context.threadId ?? null, stopReason: "stopped" as "stopped" | "stopped_by_turn_stop" };
+      running.set(checkId, entry);
+      if (entry.threadId) byThread.set(entry.threadId, new Set([...(byThread.get(entry.threadId) ?? []), checkId]));
+      // The commands run in the background as host jobs so `stop` reaches them: the answer is the checkId, the
+      // receipt in kv carries the measures as they land (SMA m_ck_stop — the run's process tree ends on the owner's word).
+      const commands = input.commands;
+      void (async () => {
+        let current: string | null = null;
+        try {
+          for (const [index, item] of commands.entries()) {
+            if (entry.controller.signal.aborted) break;
+            const cwdIn = item.cwd ?? ".", timeoutSec = item.timeoutSec ?? 300, expectExit = item.expectExit ?? 0;
+            const cwd = cwdIn === "." ? workspacePath : `${workspacePath}/${cwdIn.replace(/^\.?\//, "")}`;
+            current = item.command;
+            try {
+              const result = await host.call("runSandboxedCommand", { requestedHostId: hostId, workspacePath, cwd, command: item.command, timeoutSec },
+                { hostId, timeoutMs: (timeoutSec + 30) * 1000, job: true, jobKey: `${checkId}:${index}`, signal: entry.controller.signal, cancelOnAbort: true });
+              const evidence = `${result.stdout}\n${result.stderr}`.trim().slice(-1500);
+              receipt.measures.push({ command: item.command, cwd, expectExit, timeoutSec, evidence, exitCode: result.exitCode, passed: result.exitCode === expectExit });
+            } catch (cause) {
+              if (entry.controller.signal.aborted) break;
+              receipt.measures.push({ command: item.command, cwd, expectExit, timeoutSec,
+                evidence: (cause instanceof Error ? cause.message : String(cause)).slice(0, 1500), exitCode: -1, passed: false });
+            }
+          }
+        } finally {
+          forget(checkId, entry.threadId);
+          receipt.endedAt = Date.now();
+          const stopped = entry.controller.signal.aborted;
+          receipt.stoppedCommand = stopped ? current : null;
+          receipt.state = stopped ? entry.stopReason : receipt.measures.every((row) => row.passed) ? "passed" : "failed";
+          await writeReceipt();
+        }
+      })().catch((cause: unknown) => ctx.log(`chat check ${checkId} failed to finish: ${cause instanceof Error ? cause.message : String(cause)}`));
+      return JSON.stringify({ checkId, state: "running", recipe });
     },
   });
 }

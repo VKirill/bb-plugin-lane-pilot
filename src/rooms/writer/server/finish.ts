@@ -40,6 +40,7 @@ import { REPLAY_CHECK_FAILED, THREAD_NOT_STARTED_REASON, WRITER_SILENT_REASON, f
 import { taskFamily } from "@lane-pilot/contracts";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../../verification/server";
+import { dependenciesAddedInDiff } from "../../forecast/logic";
 import { sendServiceMessage } from "../../relay/server";
 import { judgeRulesOnDiff, ruleViolationRemark } from "../../learning";
 import { jev, type JevSettings } from "@lane-pilot/jev";
@@ -1088,10 +1089,15 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       }
       // #29 task-size metric: what this accepted task cost (files, diff lines, minutes, attempts) rides the receipt;
       // the project's median over these rows is what plan warnings measure new slices against.
+      // SMA k_lib_footprint: the same merge diff names the dependency manifests it touched — the packages it added
+      // are scored against the forecast's declared ones.
       let sizeLines = 0;
+      let dependenciesAdded: string[] = [];
       if (integration?.commit) {
         const stat = await bestEffort(ctx.log, "writer task size probe", runOnHost(host, { hostId:input.config.hostId, cwd:basePath!, command:`git diff --shortstat ${integration.commit}^ ${integration.commit}`, timeoutSec:15, timeoutMs:15_000 }), null);
         if (stat && stat.exitCode === 0) for (const m of stat.stdout.matchAll(/(\d+) insertions?|(\d+) deletions?/g)) sizeLines += Number(m[1] ?? m[2] ?? 0);
+        const depDiff = await bestEffort(ctx.log, "writer task dependency probe", runOnHost(host, { hostId:input.config.hostId, cwd:basePath!, command:`git diff ${integration.commit}^ ${integration.commit} -- package.json requirements.txt requirements-dev.txt pyproject.toml`, timeoutSec:15, timeoutMs:15_000 }), null);
+        if (depDiff && depDiff.exitCode === 0) dependenciesAdded = dependenciesAddedInDiff(depDiff.stdout);
       }
       const firstAttempt = firstAttemptAt(db, input.taskId);
       const size = taskSizeOf({ files:(candidate.produced ?? []).length, lines:sizeLines, createdAt:firstAttempt, finishedAt:Date.now(), attempts:countAttempts(db,input.runId,input.taskId) });
@@ -1099,7 +1105,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{acceptanceReceiptPersisted:true,integration,size,execution_checklist:checklist}});
       transitionAttempt(db, input.attemptId, "accepted");
       if (integration) await clearMergeIntent(bb.storage.kv as never, input.attemptId);
-      return { ...receipt, verification:candidate.verification, produced:candidate.produced };
+      return { ...receipt, verification:candidate.verification, produced:candidate.produced, size, dependencies:dependenciesAdded };
     } catch (cause) {
       const thread = await getThreadBounded(input.writerThreadId);
       if (stringAt(thread, "status") === "error") {

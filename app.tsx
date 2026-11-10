@@ -7,7 +7,7 @@ import { LanePilotPage } from "./src/rooms/pages";
 import { useCockpitPageTitle, useOwnerWaitingBadge } from "./src/rooms/ui-shell/ui";
 import { CouncilPage } from "./src/rooms/council/ui";
 import { CockpitPage } from "./src/rooms/cockpit/ui";
-import { ComposerAgentBadge } from "./src/rooms/native-agent/ui";
+import { ComposerAgentBadge, ComposerBoundary } from "./src/rooms/native-agent/ui";
 import { EnableLanePilotAction } from "./src/rooms/native-agent/ui";
 import { HelperThreadPanel, useHelperThreadIndex } from "./src/rooms/native-agent/ui";
 import { HELPER_PANEL_ACTION } from "./src/rooms/contracts/agent-picker";
@@ -139,5 +139,11 @@ export default definePluginApp((app) => {
     id: "lane-pilot-agent-badge",
     scopes: ["thread", "new-thread"],
     banners: [{ id: "native-agent", chrome: "bare", component: ComposerAgentBadge }],
+  });
+  // The boundary line under a PM chat's input (SMA m_ce_boundary): only there.
+  app.composer.customize({
+    id: "lane-pilot-boundary",
+    scopes: ["thread"],
+    banners: [{ id: "pm-boundary", chrome: "bare", component: ComposerBoundary }],
   });
 });
