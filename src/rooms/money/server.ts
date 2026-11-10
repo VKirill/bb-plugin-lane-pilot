@@ -1,5 +1,5 @@
 import { hostContract } from "../contracts";
-import { PROVIDER_CAPABILITIES } from "@lane-pilot/models";
+import { PROVIDER_CAPABILITIES, settingOn } from "@lane-pilot/models";
 import { loadProjectSettings } from "../storage";
 import { tokenDailyRowsSince, unmeasuredAttempts } from "../usage/server";
 import type { ServerCore } from "../contracts/server";
@@ -45,22 +45,27 @@ export function createMoney(ctx: Pick<ServerCore, "db" | "bb">) {
     return { ...book, monthUsd, estimated, estimatedUsd: estimated, cap: limit, capSet: limit !== null, unlimited: cap === Infinity, left: limit === null ? null : Math.max(0, Math.round((limit - monthUsd) * 100) / 100) };
   }
   /**
+   * Per-task ceiling (SMA m_mo_task_ceiling), only where money.task_ceiling is on: the task is priced at its appetite in output
+   * tokens (the cautious side of the split) before it starts. Off or unset, a set cap holds as on main: only once it is spent.
+   */
+  function taskEstimateUsd(providerId: string, model: string, appetiteTokens?: number): number {
+    if (!appetiteTokens || !settingOn(settings()["money.task_ceiling"])) return 0;
+    const price = priceOf(providerId, model, overrides());
+    return price ? appetiteTokens * price.outputPerM / 1_000_000 : 0;
+  }
+  /**
    * The money cap alone, for a chain member the writer walk asks about: a paid lane over the cap, or whose task estimate would cross it.
    * No cap set (or the word unlimited) holds nothing and reads no window; a subscription lane never holds for money.
    */
   async function capHolds(providerId: string, model: string, _hostId: string, input?: { appetiteTokens?: number }): Promise<string | null> {
     const cap = moneyCapFrom(settings());
     if (!isPaid(providerId) || cap === null || cap === Infinity) return null;
-    const price = input?.appetiteTokens ? priceOf(providerId, model, overrides()) : null;
-    const taskUsd = input?.appetiteTokens && price ? input.appetiteTokens * price.outputPerM / 1_000_000 : 0;
+    const taskUsd = taskEstimateUsd(providerId, model, input?.appetiteTokens);
     return moneyHold(providerId, status().monthUsd, cap, taskUsd);
   }
   /** Why a writer of this provider and model must wait now: the money cap of a paid lane, or a closed subscription window on its machine. */
   async function holds(providerId: string, model: string, hostId: string, input?: { appetiteTokens?: number }): Promise<string | null> {
-    // Per-task ceiling (SMA m_mo_task_ceiling): the task is priced at its appetite in output tokens (the cautious
-    // side of the split) before it starts; no appetite means only the spent-at-cap rule applies.
-    const price = input?.appetiteTokens ? priceOf(providerId, model, overrides()) : null;
-    const taskUsd = input?.appetiteTokens && price ? input.appetiteTokens * price.outputPerM / 1_000_000 : 0;
+    const taskUsd = taskEstimateUsd(providerId, model, input?.appetiteTokens);
     const money = moneyHold(providerId, status().monthUsd, moneyCapFrom(settings()), taskUsd);
     if (money) return money;
     if (!PROVIDER_CAPABILITIES[providerId]?.publishesUsageWindows) return null;

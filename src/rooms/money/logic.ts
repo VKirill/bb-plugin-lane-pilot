@@ -1,3 +1,4 @@
+import { settingOn } from "@lane-pilot/models";
 /**
  * Money and spend (SMA map: Providers, models, accounts — Money and spend; Safety nets — The one price list, Spend book and budget window).
  * Subscription lanes (Claude Code, Codex, a coding plan) cost nothing per token on top of the plan; API lanes (OpenLux, an Anthropic or
@@ -72,7 +73,7 @@ export function capOf(value: unknown): number | null {
  */
 export function moneyCapFrom(settings: Record<string, unknown>): number | null {
   const cap = capOf(settings["money.monthly_cap_usd"]);
-  return cap === null && settings["money.cap_unset_zero"] ? 0 : cap;
+  return cap === null && settingOn(settings["money.cap_unset_zero"]) ? 0 : cap;
 }
 
 /** Money spent — stop: a paid lane holds once this month's spend reached the cap, or the task's own estimate would cross it; a subscription lane never holds for money. */

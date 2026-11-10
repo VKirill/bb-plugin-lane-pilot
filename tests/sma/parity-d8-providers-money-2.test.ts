@@ -363,11 +363,17 @@ describe("review fix 2 and 4: money holds", () => {
       return writerHold({ providerId: "openlux", model: "gpt-5-codex", hostId: "h1", settings: {}, ...(tokens === undefined ? {} : { appetite: { tokens } }) }, depsWith(w.money), T0);
     };
     // 1M output tokens of openlux = 1.5 USD.
-    expect((await hold({ "money.monthly_cap_usd": 10 }, 9, 1_000_000))?.reason).toMatch(/estimate of 1\.50 USD/);
-    expect(await hold({ "money.monthly_cap_usd": 10 }, 1, 1_000_000)).toBeNull();
-    expect(await hold({ "money.monthly_cap_usd": 10 }, 9)).toBeNull();
-    expect(await hold({}, 9, 50_000_000)).toBeNull();
-    expect(await hold({ "money.monthly_cap_usd": "unlimited" }, 9, 50_000_000)).toBeNull();
+    const on = { "money.task_ceiling": "on" };
+    expect((await hold({ ...on, "money.monthly_cap_usd": 10 }, 9, 1_000_000))?.reason).toMatch(/estimate of 1\.50 USD/);
+    expect(await hold({ ...on, "money.monthly_cap_usd": 10 }, 1, 1_000_000)).toBeNull();
+    expect(await hold({ ...on, "money.monthly_cap_usd": 10 }, 9)).toBeNull();
+    expect(await hold({ ...on }, 9, 50_000_000)).toBeNull();
+    expect(await hold({ ...on, "money.monthly_cap_usd": "unlimited" }, 9, 50_000_000)).toBeNull();
+    // Unset, a cap holds as on main: only once it is spent, whatever the task's estimate.
+    expect(await hold({ "money.monthly_cap_usd": 10 }, 9, 50_000_000)).toBeNull();
+    expect(await hold({ "money.task_ceiling": "off", "money.monthly_cap_usd": 10 }, 9, 50_000_000)).toBeNull();
+    // The string "false" does not turn the «unset cap is zero» switch on.
+    expect(await hold({ "money.cap_unset_zero": "false" }, 9, 1_000_000)).toBeNull();
   });
 
   it("a chain of subscription members with nothing set makes main's host calls and takes main's path: no window read from the money hold, a window hold keeps its reason and reset time", async () => {
