@@ -204,6 +204,8 @@ describe("cold tier demotion", () => {
     expect(demoteUnusedPromotions(db, now)).toBe(1);
     expect(db.prepare("SELECT status FROM lane_pilot_memory WHERE id=?").get(a)).toEqual({ status: "expired" });
     expect(db.prepare("SELECT status FROM lane_pilot_memory WHERE id=?").get(b)).toEqual({ status: "active" });
+    // The demoted note leaves the search index (its rows are keyed by its own project); the used one stays in it.
+    expect(db.prepare("SELECT id FROM lane_pilot_memory_fts WHERE project_id='P' ORDER BY id").all()).toEqual([{ id: b }]);
   });
 });
 

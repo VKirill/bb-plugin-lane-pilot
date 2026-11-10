@@ -63,12 +63,13 @@ export function promote(db: Db, projectId: string, notes: ReadonlyArray<{ id: st
  * back to the cold tier — promotion was a hypothesis, not a prize. The promotion row stays as its history.
  */
 export function demoteUnusedPromotions(db: Db, now = Date.now(), idleMs = 90 * 86_400_000): number {
-  const ids = listIdlePromotions(db, now - idleMs);
-  for (const id of ids) {
+  const idle = listIdlePromotions(db, now - idleMs);
+  for (const { id, projectId } of idle) {
     expireIdleMemory(db, id);
-    dropMemoryIndexes(db, "", id);
+    // The indexes are keyed by project: the note's own project, or its rows stay searchable after the demotion.
+    dropMemoryIndexes(db, projectId, id);
   }
-  return ids.length;
+  return idle.length;
 }
 
 export function episodes(db: Db, projectId: string, query: string, limit = 3, read: Omit<TierRead, "projectId"> = {}): Episode[] {

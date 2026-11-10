@@ -1588,7 +1588,9 @@ describe("stage → native writer → receipt", () => {
     expect(acceptedAttempt).toMatchObject({state:"accepted",thread_id:writerReceipt?.threadId,workspace_path:attemptWorktree,environment_id:"attempt-env"});
     expect((result.stages as typeof receipts).filter((row) => row.taskId === task.id && !backgroundStages.has(row.stageId))).toEqual(receipts.map((row) => ({ taskId:row.taskId, stageId:row.stageId, state:row.state, ...(row.reason ? { reason:row.reason.slice(0, 400) } : {}) })));
     expect(receipts.find((row) => row.stageId === "verification")?.result).toEqual({
+      // Each check row also carries the hashes of what it printed (here: of nothing), so a later re-run can say «the output changed».
       produced:["note.txt"], verification:[{ command:"test -f note.txt", exitCode:0, stdout:"", stderr:"",
+        stdoutSha256:createHash("sha256").update("").digest("hex"), stderrSha256:createHash("sha256").update("").digest("hex"),
         sandboxBackend:"macos-seatbelt",policySha256:"c".repeat(64),workspacePath:attemptWorktree,timeoutSec:30 }],
       runV2:{schemaVersion:1,pools:{provider:15,verification:2},score:2,risk:"low",sourceRisk:"low",scoreAdapter:"task-risk-v1"},
     });

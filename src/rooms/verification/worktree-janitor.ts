@@ -109,7 +109,8 @@ export async function sweepLaneWorktrees(input: {
         if (!info?.isDirectory() || info.isSymbolicLink()) continue;
         if (await holds(top)) continue;
         const bytes = await dirBytes(top);
-        const ageMs = now - (await lastTouched(top));
+        // A folder touched within the same millisecond reads as a fraction newer than `now`: its age is zero, not negative.
+        const ageMs = Math.max(0, now - (await lastTouched(top)));
         const retire = async (reason?: string): Promise<void> => {
           if (reason) receipt.kept.push({ path: top, reason, ageMs, bytes });
           else { receipt.removed.push(top); receipt.freedBytes += bytes; }

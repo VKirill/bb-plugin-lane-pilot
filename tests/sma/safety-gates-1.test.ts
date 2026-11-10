@@ -138,7 +138,8 @@ describe("guard tools", () => {
     const entries = Object.entries(UNSHOWN_FIELDS);
     expect(entries.length).toBeGreaterThan(0);
     for (const [field, reason] of entries) {
-      expect(field).toMatch(/^[a-z0-9_]+\.[a-z0-9_]+$/);
+      // <rpc_method>.<field>: the method is snake_case, the field is spelled as the answer spells it.
+      expect(field).toMatch(/^[a-z0-9_]+\.[A-Za-z0-9_]+$/);
       expect(reason.trim().split(/\s+/).length).toBeGreaterThanOrEqual(3);
     }
   });

@@ -513,9 +513,9 @@ export function recordMemoryPromotion(db: MemoryDatabase, projectId: string, mem
 }
 
 /** Notes a promotion re-activated that stayed idle past the window (the demote sweep). */
-export function listIdlePromotions(db: MemoryDatabase, beforeMs: number): string[] {
-  return (db.prepare(`SELECT m.id FROM lane_pilot_memory m JOIN lane_pilot_memory_promotion p ON p.memory_id=m.id AND p.project_id=m.project_id
-    WHERE m.status='active' AND m.last_used_at=p.at AND p.at<?`).all(beforeMs) as Array<{ id: string }>).map((row) => row.id);
+export function listIdlePromotions(db: MemoryDatabase, beforeMs: number): Array<{ id: string; projectId: string }> {
+  return db.prepare(`SELECT m.id, m.project_id AS projectId FROM lane_pilot_memory m JOIN lane_pilot_memory_promotion p ON p.memory_id=m.id AND p.project_id=m.project_id
+    WHERE m.status='active' AND m.last_used_at=p.at AND p.at<?`).all(beforeMs) as Array<{ id: string; projectId: string }>;
 }
 
 /** Expires a still-active note as idle (the demote sweep's write). */
