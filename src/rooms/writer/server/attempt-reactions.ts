@@ -2,6 +2,9 @@ import { getAttempt, getReasoningTrace } from "../../storage";
 import { recordSkillSwitchMetric } from "../skill-switch";
 import { createSkillMaterializer, recordedMaterializedSkills } from "./skill-materialize";
 import { recordedWriterSkills } from "./skill-pick";
+import { outputText } from "@lane-pilot/kit";
+import { upsertLessonProposal } from "@lane-pilot/run-insights";
+import { writerMarkers } from "../../tasks";
 
 import type { ServerCore } from "../../contracts/server";
 import { onAttemptFinished, type AttemptFinished } from "./attempt-finished";
@@ -23,9 +26,14 @@ interface Services {
  *      before its skills leave the worktree (the old finally's order).
  *   3. writer:finish-scan — observational; used to run just before the acceptance receipt, now fires
  *      after it on the same data (it never changed the finish path).
+ *   4. writer:failed-lesson — a failed attempt's own LESSON line reaches the reviewed proposals,
+ *      like a successful one's (sma ae_harvest).
  * Task scope, from createWriterStart (mountWriterTaskFinished):
- *   4. writer:area-accepted — the area's writer record, after the task's receipts and run refresh.
+ *   5. writer:area-accepted — the area's writer record, after the task's receipts and run refresh.
  */
+
+/** Terminal states that are a failed attempt; a canceled or blocked one has no work to learn from. */
+const FAILED_LESSON_STATES = new Set(["validation_failed", "empty_output", "provider_error", "timeout", "internal_error", "error"]);
 export function mountWriterAttemptFinished(ctx: ServerCore, services: Services): void {
   const { bb, db } = ctx;
   const skillMaterial = createSkillMaterializer(ctx, (message) => bb.log.info(message));
@@ -54,6 +62,25 @@ export function mountWriterAttemptFinished(ctx: ServerCore, services: Services):
       names: recordedMaterializedSkills(getReasoningTrace(db, event.attemptId)?.dispatchContext),
       providerId: getReasoningTrace(db, event.attemptId)?.providerId ?? null });
   }, "writer:skill-metric-and-materialize");
+
+  // A failed attempt's lesson is not lost with it: its own LESSON line (the markers the brief asks for) is
+  // filed as a proposal for review — raw failure output stays out of the corpus (sma ae_harvest).
+  onAttemptFinished(ctx, async (event) => {
+    if (event.scope !== "attempt" || ctx.state.disposed || !event.writerThreadId || !FAILED_LESSON_STATES.has(event.status)) return;
+    try {
+      // The read is best effort: a thread that is gone, or a host without the call, has no lesson to file.
+      const threadId = event.writerThreadId;
+      const answer = outputText(await Promise.resolve().then(() => bb.sdk.threads.output({ threadId })).catch(() => null));
+      const lesson = writerMarkers(answer).lesson;
+      if (!lesson) return;
+      upsertLessonProposal(db as never, event.projectId, {
+        rule: lesson, audience: "writer",
+        evidence: `failed attempt ${event.attemptId}${event.reason ? `: ${String(event.reason).slice(0, 200)}` : ""}`,
+      });
+    } catch (cause) {
+      ctx.log(`writer failed-lesson harvest failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+  }, "writer:failed-lesson");
 }
 
 /** Task-scope reactions the writer owns; mounted by createWriterStart with its sticky instance. */

@@ -11,6 +11,8 @@ import type { Workflow } from "@lane-pilot/workflow-engine";
 import type { WorkflowStore } from "../../storage";
 import { bindGraphStepLookup, fenceOutside, registerObservedTool } from "../../platform/server";
 import { isOpenAttemptState } from "../../contracts/state-machine";
+import { backlogMatches } from "../../backlog";
+import type { TodoMeta } from "../../backlog";
 import { ToolError } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 
@@ -24,6 +26,7 @@ import { createWorkflowPreflight } from "./workflow-preflight";
 import type { ChainRuntime } from "../../contracts/server";
 
 import type { PhaseIntake } from "../../phase/server/intake";
+import type { BacklogApi } from "../../backlog/server";
 import type { WorkflowEngineApi } from "./workflow";
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
@@ -33,6 +36,7 @@ import {builtinWorkflows} from "../builtin";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  backlog: BacklogApi;
   docsPlaces: DocsNightlyApi["docsPlaces"];
   phaseIntake: PhaseIntake;
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
@@ -58,6 +62,8 @@ export type WorkflowToolDeps = {
   preflight?(workflow: Workflow, input: { projectId: string; threadId: string }): Promise<PreflightResult>;
   /** The model step of the router for this PM chat (Jev, then a helper thread); without it the deterministic scorer decides. */
   model?(input: { pmThreadId: string; projectId: string; runId: string | null }): RouterModel | undefined;
+  /** The project's open backlog items (SMA m_sg_breakdown): a request matching one is asked about instead of duplicated. */
+  backlogItems?(projectId: string): Promise<TodoMeta[]>;
   warn(message: string): void;
 };
 
@@ -94,13 +100,18 @@ export async function routeTool(deps: WorkflowToolDeps, params: { intent: string
   const model = deps.model?.({ pmThreadId: context.threadId, projectId: context.projectId, runId });
   const decision: RouteDecision = await routeIntent({ intent: params.intent, ...(params.context ? { context: params.context } : {}), workflows: store.list().map((item) => item.workflow), ...(state ? { state } : {}), ...(model ? { model } : {}), ...(deps.stats ? { stats: deps.stats() } : {}) });
   const noWorkflow = decision.candidates.length === 0;
+  // The phrase is compared with the backlog before anything else: a request that repeats a written-down item is asked
+  // about («продвинь его, а не новую задачу»), never silently made into a duplicate task.
+  const matches = deps.backlogItems ? backlogMatches(params.intent, await deps.backlogItems(context.projectId).catch(() => [])) : [];
+  const matchQuestions = matches.map((item) => `это пункт бэклога «${item.title}» (${item.id})? тогда продвинь его, а не новую задачу`);
   return JSON.stringify({
     decision: decision.decision, workflowId: decision.workflowId, confidence: decision.confidence,
     ...(decision.suggested ? { suggested: decision.suggested } : {}),
     ...(decision.liveTrial ? { notYetRunLive: true } : {}),
     evidence: decision.evidence,
     ...(decision.boundary_contract ? { boundary_contract: decision.boundary_contract, goals: decision.goals, inputs: decision.inputs, missingInputs: decision.missingInputs, guessedInputs: decision.guessedInputs } : {}),
-    ...(decision.questions.length ? { questions: decision.questions } : {}),
+    ...(matches.length ? { backlogMatches: matches.map((item) => ({ id: item.id, title: item.title })) } : {}),
+    ...([...decision.questions, ...matchQuestions].length ? { questions: [...decision.questions, ...matchQuestions] } : {}),
     ...(decision.warnings.length ? { warnings: decision.warnings } : {}),
     candidates: decision.candidates.map((candidate) => ({ id: candidate.id, name: candidate.name, score: candidate.score, rules: candidate.rules, ...(candidate.liveTrial ? { notYetRunLive: true } : {}), ...(candidate.stat !== undefined ? { runRecord: candidate.stat } : {}) })),
     next: noWorkflow ? "No published workflow fits or exists here. A web search or research with sources: start `web-research` (inputs: question; depth quick, standard or deep) with lane_pilot_run_workflow, not a bare tavily specialist (pass liveTrial: true if it answers that it is still only tested and the owner agrees). Anything else is also a graph; start the one that fits with its tool: lane_pilot_dispatch_writer for a change to the code (graph lp-task-pipeline), lane_pilot_errand (graph errand) for a console, mail or an account, lane_pilot_helpers with action specialist (graph specialist) for design, copy or SEO."
@@ -255,6 +266,7 @@ export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
     }),
     preflight: (workflow, input) => preflight.check(workflow, input),
     stats: () => runRecords(db),
+    backlogItems: (projectId) => services.backlog.items(projectId),
     // Jev decides a clear case; the helper thread (needs a run) is the escalation. A chat without a run and without Jev has no model.
     model: ({ pmThreadId, projectId, runId }) => (runId || jev()
       ? createJevRouterModel({ jev, settings: async () => (await ctx.effectiveProjectSettings(projectId)).values, projectId, runId, log: ctx.log,

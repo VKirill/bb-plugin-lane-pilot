@@ -82,6 +82,11 @@ export class RunWriterPool {
   private readonly waiting=new Map<string,Array<{ wake:()=>void; rank:number; seq:number }>>();
   private seq=0;
 
+  /** Idle pass (SMA dt_idle): every seat of one pool taken, so an acquire would wait. */
+  busy(key:string,limit:number):boolean {
+    return (this.active.get(key)??0) >= limit;
+  }
+
   async acquire(runId:string,limit:number,rank=1):Promise<()=>void> {
     if(!Number.isInteger(limit)||limit<1||limit>MAX_POOL)throw new Error(`provider pool limit must be an integer from 1 to ${MAX_POOL}`);
     const count=this.active.get(runId)??0;

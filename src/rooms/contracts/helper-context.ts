@@ -606,3 +606,7 @@ export function decideHelperDispatch(input: {
 export function isHelperSpawnRole(role: unknown): role is HelperSpawnRole {
   return typeof role === "string" && (HELPER_SPAWN_ROLES as readonly string[]).includes(role);
 }
+
+/** Helper roles whose stage produces a document: they may not start on an adapter version with no documentary receipt (SMA ap_caps). */
+export const DOCUMENTARY_ROLES: ReadonlySet<string> = new Set(["docs-maintainer", "docs", "analyst", "planner", "memory-maintainer", "project-life", "onboarder"]);
+export const isDocumentaryRole = (role: string | null | undefined): boolean => typeof role === "string" && DOCUMENTARY_ROLES.has(role);

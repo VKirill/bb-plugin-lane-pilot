@@ -32,6 +32,7 @@ import issueBatch from "../../../workflows/issue-batch.json";
 import lpTaskPipeline from "../../../workflows/lp-task-pipeline.json";
 import lpAfterAccept from "../../../workflows/lp.after-accept.json";
 import lpDocsMaintenance from "../../../workflows/lp.docs-maintenance.json";
+import lpClarify from "../../../workflows/lp.clarify.json";
 import lpDocsNight from "../../../workflows/lp.docs-night.json";
 import lpAnalyze from "../../../workflows/lp.analyze.json";
 import lpBrainstorm from "../../../workflows/lp.brainstorm.json";
@@ -145,6 +146,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "lp-task-pipeline.json", value: lpTaskPipeline },
   { name: "lp.after-accept.json", value: lpAfterAccept },
   { name: "lp.docs-maintenance.json", value: lpDocsMaintenance },
+  { name: "lp.clarify.json", value: lpClarify },
   { name: "lp.docs-night.json", value: lpDocsNight },
   { name: "lp.analyze.json", value: lpAnalyze },
   { name: "lp.brainstorm.json", value: lpBrainstorm },

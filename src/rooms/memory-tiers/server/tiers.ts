@@ -24,6 +24,8 @@ export type TierRead = {
   role?: string;
   includeObserved?: boolean;
   now?: number;
+  /** Only episodes whose task's latest attempt ended in this state (e.g. "accepted" for the writer's similar works). */
+  state?: string;
 };
 
 function scopeIn(column: string, chain: readonly string[]): string {
@@ -83,7 +85,7 @@ export function episodeCandidates(db: Db, projectId: string, query: string, limi
     try { contract = JSON.parse(row.contract_json) as typeof contract; } catch { return []; }
     const title = String(contract.display_title || contract.title || row.task_id);
     const hits = wordHits(`${title} ${String(contract.objective ?? "")}`, words);
-    return hits >= minHits(words) && row.state ? [{ episode: { taskId: row.task_id, title, state: row.state, reason: row.reason, at: row.created_at }, hits }] : [];
+    return hits >= minHits(words) && row.state && (!read.state || row.state === read.state) ? [{ episode: { taskId: row.task_id, title, state: row.state, reason: row.reason, at: row.created_at }, hits }] : [];
   }).sort((a, b) => b.hits - a.hits || b.episode.at - a.episode.at).slice(0, limit).map((row) => row.episode);
 }
 

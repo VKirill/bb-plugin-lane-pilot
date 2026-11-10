@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { adapterVersions, capabilityTable, dueProbes, listReceipts, providersInUse } from "../../src/rooms/capability";
+import { adapterVersions, capabilityTable, CAPABILITIES, dueProbes, listReceipts, providersInUse } from "../../src/rooms/capability";
 import { BASE_PROVIDERS, createCapabilities, runCapabilityCli } from "../../src/rooms/capability/server";
 import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
 
@@ -18,13 +18,14 @@ describe("the capability table", () => {
   it("a version with no receipt is due and unproven; a receipt settles it until the version changes", () => {
     const inUse = new Map([["codex", "gpt-6-luna"], ["opencode2", "glm"]]);
     const versions = new Map<string, string | null>([["codex", "0.1.0"], ["opencode2", "1.2.0"]]);
-    // Every capability of the version has its receipt: answers, the documentary cell and the pause.
-    const receipts = (["answers", "documentary", "pause"] as const).map((capability) => ({ providerId: "codex", version: "0.1.0", capability, state: "supported" as const, model: "gpt-6-luna", detail: null, at: 1 }));
+    // Every capability of the version has its receipt: answers, the documentary cells, pause and the mandatory cells.
+    const receipts = CAPABILITIES.map((capability) => ({ providerId: "codex", version: "0.1.0", capability, state: "supported" as const, model: "gpt-6-luna", detail: null, at: 1 }));
     receipts.push({ providerId: "opencode2", version: "1.1.0", capability: "answers" as const, state: "supported" as const, model: "glm", detail: null, at: 1 });
     expect(dueProbes(inUse, versions, receipts)).toEqual([{ providerId: "opencode2", model: "glm", version: "1.2.0" }]);
+    const all = (state: string) => Object.fromEntries(CAPABILITIES.map((capability) => [capability, state]));
     expect(capabilityTable(inUse, versions, receipts)).toEqual([
-      { providerId: "codex", version: "0.1.0", capabilities: { answers: "supported", documentary: "supported", pause: "supported" } },
-      { providerId: "opencode2", version: "1.2.0", capabilities: { answers: "unproven", documentary: "unproven", pause: "unproven" } },
+      { providerId: "codex", version: "0.1.0", capabilities: all("supported") },
+      { providerId: "opencode2", version: "1.2.0", capabilities: all("unproven") },
     ]);
   });
 });
@@ -45,13 +46,17 @@ describe("the sweep", () => {
     };
     const api = createCapabilities({ db, bb, log: () => undefined, isDisposed: () => false } as never, services as never).capabilities;
     const first = await api.sweep();
-    // A provider that answers is probed for its documentary cell and its pause too; one that does not answer stops at answers.
-    expect(first.map((row) => [row.providerId, row.state])).toEqual([["claude-code", "answers:supported"], ["claude-code", "documentary:supported"], ["claude-code", "pause:supported"],
-      ["codex", "answers:supported"], ["codex", "documentary:supported"], ["codex", "pause:supported"], ["opencode2", "answers:not_supported"]]);
+    // A provider that answers is probed for every other cell; one that does not answer stops at answers.
+    const expected = [
+      ...CAPABILITIES.map((capability) => ["claude-code", `${capability}:supported`]),
+      ...CAPABILITIES.map((capability) => ["codex", `${capability}:supported`]),
+      ["opencode2", "answers:not_supported"],
+    ];
+    expect(first.map((row) => [row.providerId, row.state])).toEqual(expected);
     expect(tripped).toEqual([expect.stringContaining("opencode2")]);
     // A version that does not answer is not probed for the rest until a new version comes.
     expect(await api.sweep()).toEqual([]);
-    expect(listReceipts(db)).toHaveLength(7);
+    expect(listReceipts(db)).toHaveLength(CAPABILITIES.length * 2 + 1);
     const cli = await runCapabilityCli(api, []);
     expect(cli.exitCode).toBe(1);
     expect(JSON.parse(cli.stdout!).table.find((row: { providerId: string }) => row.providerId === "opencode2").capabilities.answers).toBe("not_supported");

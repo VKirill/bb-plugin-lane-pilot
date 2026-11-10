@@ -62,10 +62,14 @@ export function createWriterState(ctx: ServerCore) {
 
   /** The budget of a run, created from its effective settings the first time a writer starts there. */
   function runBudgetFor(runId: string, settings: Record<string, unknown>): RunBudget {
+    let limits = {};
+    try { limits = parseRunBudgetLimits(settings); } catch (cause) { ctx.log(`Lane Pilot run ${runId}: budget settings ignored: ${cause instanceof Error ? cause.message : String(cause)}`); }
     let budget = runBudgets.get(runId);
-    if (!budget) {
-      let limits = {};
-      try { limits = parseRunBudgetLimits(settings); } catch (cause) { ctx.log(`Lane Pilot run ${runId}: budget settings ignored: ${cause instanceof Error ? cause.message : String(cause)}`); }
+    if (budget) {
+      // A raised (or lowered) run.max_* applies to the live run, over the same recorded spend — without this the
+      // limit of a stopped run could never be lifted (sma ac_pocket).
+      if (JSON.stringify(budget.snapshot().limits) !== JSON.stringify(limits)) budget.setLimits(limits);
+    } else {
       budget = createRunBudget(limits);
       runBudgets.set(runId, budget);
     }

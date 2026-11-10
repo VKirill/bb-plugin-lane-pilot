@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, unlinkSync } from "node:fs";
 import { appendFile, chmod, cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, rmdir, stat, symlink, unlink, utimes, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { bestEffort, spawnAsync, isFsAbsent, lstatOrNull, orMiss, parseJsonOr, readTextOrNull, statOrNull } from "@lane-pilot/kit";
 import { isBookkeepingPath, isOwnershipNoise } from "@lane-pilot/settings-catalog";
@@ -744,18 +744,34 @@ async function withInstallLock(basePath:string,work:()=>Promise<void>):Promise<v
   try { await work(); } finally { if(held) await rm(lock,{recursive:true,force:true}); }
 }
 
+/** Who touched the shared dependency store, when and with what (SMA k_lib_storejournal): one JSON line per install into ~/.lane-pilot/store-journal.jsonl. */
+export const STORE_JOURNAL = join(homedir(), ".lane-pilot", "store-journal.jsonl");
+const STORE_JOURNAL_MAX = 2000;
+
+export async function journalStoreInstall(entry:{basePath:string;dir:string;command:string;trigger?:string|null;exitCode:number|null}):Promise<void> {
+  const lockSha256=createHash("sha256").update(await readTextOrNull(join(entry.dir,"package-lock.json")) ?? "").digest("hex");
+  const line=JSON.stringify({at:new Date().toISOString(),basePath:entry.basePath,dir:entry.dir,command:entry.command,lockSha256,trigger:entry.trigger??null,exitCode:entry.exitCode});
+  await bestEffort(console.warn,"store journal",(async()=>{
+    await mkdir(dirname(STORE_JOURNAL),{recursive:true});
+    const lines=(await readTextOrNull(STORE_JOURNAL) ?? "").split("\n").filter(Boolean);
+    lines.push(line);
+    await writeFile(STORE_JOURNAL,`${lines.slice(-STORE_JOURNAL_MAX).join("\n")}\n`);
+  })(),undefined);
+}
+
 /**
  * Installs a project's npm dependencies once, in the main checkout, from its lockfile. `npm ci` never
  * rewrites package-lock.json, so a writer no longer has to run `npm install` and trip the owns check,
  * and the offline verification sandbox finds the packages already in place.
  */
-async function installBaseDependencies(basePath:string):Promise<void> {
+export async function installBaseDependencies(basePath:string,trigger?:string):Promise<void> {
   const installed=async()=>(await statOrNull(join(basePath,"node_modules")))?.isDirectory()??false;
   if(!(await statOrNull(join(basePath,"package-lock.json")))?.isFile()) return;
   if(await installed()&&!await dependenciesStale(basePath)) return;
   const install=async()=>{
-    if(await installed()) { await refreshStaleDependencies(basePath); return; }
-    await spawnAsync("npm",["ci","--no-audit","--no-fund"],{cwd:basePath,timeout:540_000,maxBuffer:16<<20});
+    if(await installed()) { await refreshStaleDependencies(basePath,basePath,trigger); return; }
+    const run=await spawnAsync("npm",["ci","--no-audit","--no-fund"],{cwd:basePath,timeout:540_000,maxBuffer:16<<20});
+    await journalStoreInstall({basePath,dir:basePath,command:"npm ci --no-audit --no-fund",trigger,exitCode:run.status});
   };
   const running=installing.get(basePath)??withInstallLock(basePath,install).finally(()=>installing.delete(basePath));
   installing.set(basePath,running);
@@ -781,11 +797,12 @@ const failedInstalls=new Map<string,number>();
  * Installs what a newer lockfile adds to existing packages. `npm install --no-save` neither rewrites package-lock.json nor clears
  * node_modules the way `npm ci` does, so the worktrees whose packages are links into this one keep working while it runs.
  */
-async function refreshStaleDependencies(dir:string):Promise<void> {
+async function refreshStaleDependencies(dir:string,basePath?:string,trigger?:string):Promise<void> {
   if(!await dependenciesStale(dir)) return;
   const lock=(await stat(join(dir,"package-lock.json"))).mtimeMs;
   if(failedInstalls.get(dir)===lock) return;
   const run=await spawnAsync("npm",["install","--no-save","--no-audit","--no-fund"],{cwd:dir,timeout:540_000,maxBuffer:16<<20});
+  await journalStoreInstall({basePath:basePath??dir,dir,command:"npm install --no-save --no-audit --no-fund",trigger,exitCode:run.status});
   if(run.status!==0) { failedInstalls.set(dir,lock); return; }
   // npm leaves its record as it was when nothing had to change; touched, the checkout reads as installed until the next lockfile.
   const now=new Date();
@@ -1056,13 +1073,13 @@ export async function prepareWorktree(input:{basePath:string;worktreePath:string
 async function linkWorktreeDependencies(input:{basePath:string;worktreePath:string}):Promise<{linked:string[]}> {
   await ensureInfoExclude(input.worktreePath, [TASK_FOLDER_EXCLUDE]);
   await copyTaskItems(input.basePath, input.worktreePath);
-  await installBaseDependencies(input.basePath);
+  await installBaseDependencies(input.basePath,input.worktreePath);
   const baseReal=await orMiss(realpath(input.basePath),input.basePath,isFsAbsent);
   const workspaces=await workspaceDirs(baseReal);
   const nested=await nestedPackageDirs(baseReal,input.worktreePath,workspaces);
   for(const dir of nested) {
     const path=join(baseReal,dir);
-    if(await dependenciesStale(path)) await withInstallLock(path,()=>refreshStaleDependencies(path));
+    if(await dependenciesStale(path)) await withInstallLock(path,()=>refreshStaleDependencies(path,baseReal,input.worktreePath));
   }
   const rootModules=(await statOrNull(join(baseReal,"node_modules")))?.isDirectory()??false;
   const clone=protectedCheckout(baseReal);

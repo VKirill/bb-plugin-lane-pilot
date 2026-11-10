@@ -4,7 +4,7 @@ import { checkTimeoutSec } from "../check-timing";
 import { pipelineWriterStep, pipelineWriterTag } from "./pipeline-tag";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { writerLeftWorktree } from "./left-worktree";
-import { countAttempts, countOtherLiveAttemptsInArea, countThreadTurns, firstAttemptAt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt, taskBasePath, failureFieldsOf } from "../../storage";
+import { countAttempts, countOtherLiveAttemptsInArea, countThreadTurns, firstAttemptAt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, priorAttemptStates, transitionAttempt, taskBasePath, failureFieldsOf } from "../../storage";
 import { saveBlockedBy, type BlockedBy } from "../../runs/server";
 import { relayFor } from "../../relay/server";
 import type { HelperPolicySnapshot } from "../../contracts/helper-context";
@@ -18,11 +18,12 @@ import { candidatePatches, headSides, runCodeCritique } from "../../critique/ser
 import { fullAccessSpawn, setAsideOnStartFailure } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { closeWriterStages, recordGateEvaluation, recordStage } from "../../runs/server";
-import {bestEffort, isNotFound, orMiss, outputText, stringAt} from "@lane-pilot/kit";
+import {bestEffort, fileAllowedByOwns, isNotFound, orMiss, outputText, stringAt} from "@lane-pilot/kit";
 import { wasAnsweredByDefault } from "./question-default";
+import { appendTaskQa } from "./reopen-attempt";
 import {needsHumanQuestion, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines} from "./writer-task";
 import { isLiveDecision } from "../live-folder";
-import { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, acceptanceProofGap, taskSizeOf, landingWordGap, landingWordAsked, questionsFromFile, checkScriptEdits, recordTaskApproach, recordTaskQuestions, referenceTestEdits, taskWordKey, testFitFindings, writerMarkers } from "../../tasks";
+import { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, acceptanceArtifactDir, acceptanceProofGap, taskSizeOf, landingWordGap, landingWordAsked, questionsFromFile, checkScriptEdits, recordTaskApproach, recordTaskQuestions, referenceTestEdits, taskWordKey, testFitFindings, writerMarkers } from "../../tasks";
 import type { TaskWord } from "../../tasks";
 import type { StageId } from "../../tasks";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, sleepUntilThreadSignal, startLimitWaiting, threadFailure, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -35,7 +36,7 @@ import { shouldMergeAttemptWorktree } from "./spawn";
 import { loadWriterNudge } from "./writer-silence";
 import { recordedWriterSkills } from "./skill-pick";
 import { beginChecks, checksMoved } from "../../runs"
-import { REPLAY_CHECK_FAILED, THREAD_NOT_STARTED_REASON, WRITER_SILENT_REASON } from "../../contracts/failure-class"
+import { REPLAY_CHECK_FAILED, THREAD_NOT_STARTED_REASON, WRITER_SILENT_REASON, failureFingerprint } from "../../contracts/failure-class"
 import { taskFamily } from "@lane-pilot/contracts";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../../verification/server";
@@ -48,6 +49,7 @@ import { writerFinishScanJudgment } from "../finish-scan";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { pollPause } from "@lane-pilot/kit";
 import { emitAttemptFinished, type AttemptFinished } from "./attempt-finished";
+import { progressJournal } from "../session-digest";
 import { mountWriterAttemptFinished } from "./attempt-reactions";
 import { mountVerificationAttemptFinished } from "./verification";
 import { mountRuleFormsAttemptFinished } from "./rule-forms";
@@ -323,6 +325,16 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"skipped",
           attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{reason:"needs_human"}});
         transitionAttempt(db, input.attemptId, "blocked", { reason });
+        // The parked question is a file in the task folder, not only attempt.reason: a person, the next session or a
+        // reload sees what the writer waits for; a CHECKPOINT.md the writer left is kept with it (sma m_q_exec_ckpt).
+        const parkedWorkspace = getAttempt(db, input.attemptId)?.workspace_path ?? input.config.writerWorkspacePath;
+        if (parkedWorkspace) {
+          await appendTaskQa(bb, { hostId:input.config.hostId, workspacePath:parkedWorkspace, taskId:input.taskId, question });
+          const checkpoint = await host.call("readBoundedFile", { requestedHostId:input.config.hostId, projectCwd:parkedWorkspace,
+            relativePath:`.agents/plans/items/${input.taskId}/CHECKPOINT.md`, offset:0, maxLines:200 }, { hostId:input.config.hostId, timeoutMs:10_000 }).then((file) => file.content, () => null);
+          if (checkpoint) await bestEffort(ctx.log, "writer questions record", recordTaskQuestions(bb.storage.kv, input.runId, input.taskId,
+            { questions:[{ kind:"open", question }], checkpoint:checkpoint.slice(0, 2000), at:Date.now() }), undefined);
+        }
         return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
       }
       const checked = await services.validateWriterResult({
@@ -448,13 +460,29 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         if (text) criticNotes = text;
       };
       if (liveCritiquePolicy.enabled) {
+      // What the barrier judged, kept with the attempt: the patches, the promise, the contract and the previous
+      // verdict, plus the inputSha256 the stage receipt carries (sma av_inputs). Written in the attempt's
+      // workspace (the same writer as persistPlan); a failed write never fails the finish.
+      const archiveBarrierInput = async (state:"passed"|"blocked"|"skipped") => {
+        // Beside the task's other receipts, in the run's bookkeeping folder: the attempt's own checkout stays clean.
+        const workspace = input.task.project_cwd;
+        if (!workspace) return;
+        const receipt = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === "code-critique");
+        const body = barrierInputBody({ state, inputSha256:receipt?.inputSha256 ?? null,
+          diff:lastPatches ?? null, promise:input.task.promise ?? null, contract:input.task,
+          priorVerdict:existingCritique?.result ?? null });
+        await bestEffort(ctx.log, "barrier input archive", Promise.resolve().then(() => bb.sdk.files.write({ hostId:input.config.hostId, rootPath:workspace,
+          path:`${acceptanceArtifactDir(workspace, input.runId, input.taskId)}/attempts/${input.attemptId}/barrier-input.json`,
+          content:JSON.stringify(body, null, 2), contentEncoding:"utf8", createParents:true, expectedSha256:null })), undefined);
+      };
       for (;;) {
         const evidence = await captureEvidence();
         // abide-style: the accepted writer rules against this diff, before the critic. A break is a remark on the
         // writer's repair turn, never a block; shadow (the default) only records what it would have said.
         const ruleRemark = ruleViolationRemark(await bestEffort(ctx.log, "writer rules on diff", judgeRulesOnDiff(jev(), db, input.projectId,
           Object.values(lastPatches ?? {}).join("\n"),
-          { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:projectSettings }), []));
+          { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:projectSettings },
+          { kv: bb.storage.kv as never, target: input.taskId }), []));
         const ledger = repairLedgerFromResult(listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === "code-critique")?.result);
         if (ledger?.policy) frozenPolicy = ledger.policy;
         if (ledger?.repairRound) repairRound = Math.max(repairRound, ledger.repairRound);
@@ -508,6 +536,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             result:{ ...ledger, spawnAttempted:true, repairObserved:true, repairThreadId:ledger.repairThreadId, repairRound:ledger.repairRound },
             reason:"critique_changes_requested",
           });
+          await archiveBarrierInput("blocked");
           continue;
         }
         if (lastArtifact && evidence.artifactRevisionSha256 === lastArtifact && repairRound > 0
@@ -541,6 +570,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
               result:{ skipped:"repeat", priorTaskId:skip.priorTaskId, changedLines:patchChangedLines(patchMap) },
               reason:`repeat:${skip.priorTaskId}`,
             });
+            await archiveBarrierInput("skipped");
             approvedArtifact = evidence.artifactRevisionSha256;
             break;
           }
@@ -551,12 +581,13 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           workflow:pipelineWriterStep(db, input.runId, input.taskId) ?? undefined,
         });
         if (critique.policy) frozenPolicy = critique.policy;
-        if (critique.allowed) { keepAdvisory(critique); review = critique.review; approvedArtifact = evidence.artifactRevisionSha256; break; }
+        if (critique.allowed) { await archiveBarrierInput("passed"); keepAdvisory(critique); review = critique.review; approvedArtifact = evidence.artifactRevisionSha256; break; }
         const parsed = critique.parsed;
         const critiqueSettings = frozenPolicy ? settingsFromFrozenPolicy(frozenPolicy) : critique.settings;
         if (!parsed || !critiqueSettings || !shouldRequestRepair({ settings:critiqueSettings, result:parsed, round:repairRound })) {
           recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason:critique.reason}});
+          await archiveBarrierInput("blocked");
           transitionAttempt(db, input.attemptId, "blocked", { reason:critique.reason });
           return { status:"blocked", reason:critique.reason, attemptId:input.attemptId, writerThreadId };
         }
@@ -813,6 +844,24 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         markerWarnings.push(criticNotes);
         void bestEffort(ctx.log, "writer critic notes notice", sendServiceMessage(bb, { threadId: writerThreadId, senderThreadId: input.pmThreadId, text: criticNotes }), undefined);
       }
+      // The execution checklist, one row on the attempt (sma ag_checklist): the promise flags, the stagnation
+      // (prior turns that ended on the same failure key), the scope reads and the reference-test edits, together —
+      // they ride the attempt's one accept row (recorded at the acceptance below), so the gate list shows them in one place.
+      const checklist = executionChecklist({ markers, planFact,
+        priorReasons: priorAttemptStates(db, input.runId, input.taskId, input.attemptId).map((row) => row.reason).filter((r): r is string => typeof r === "string"),
+        produced: candidate.produced ?? [], ownsPaths: input.task.owns_paths ?? [], referenceTestEdits: testEdits });
+      // The diagnostic progress journal beside QA.md (sma k_lib_workerprog): files touched and commands run,
+      // every cut marked. Kept in the run's bookkeeping folder beside the task's receipts, never in the attempt's checkout.
+      {
+        const journalWorkspace = input.task.project_cwd;
+        if (journalWorkspace) {
+          const journalEvents = await bestEffort(ctx.log, "progress journal events", Promise.resolve().then(() => listThreadEventsRaw(bb, { threadId: input.writerThreadId, order: "asc", limit: "500" } as never)), null);
+          await bestEffort(ctx.log, "progress journal write", Promise.resolve().then(() => bb.sdk.files.write({ hostId:input.config.hostId, rootPath:journalWorkspace,
+            path:`${acceptanceArtifactDir(journalWorkspace, input.runId, input.taskId)}/PROGRESS.md`,
+            content:progressJournal({ attemptId: input.attemptId, taskId: input.taskId, produced: candidate.produced ?? [], events: (journalEvents as { events?: Array<Record<string, unknown>> } | null)?.events ?? [] }),
+            contentEncoding:"utf8", createParents:true, expectedSha256:null })), undefined);
+        }
+      }
       if (markerWarnings.length) candidate.warnings = [...(candidate.warnings ?? []), ...markerWarnings];
       // The approach note the window's task screen shows (the gate keeps only the hash of its summary).
       await bestEffort(ctx.log, "writer approach record", recordTaskApproach(bb.storage.kv, input.runId, input.taskId, { approach:markers.approach, lesson:markers.lesson, noLessonReason:markers.noLessonReason, referenceTestEdits:testEdits, at:Date.now() }), undefined);
@@ -1047,7 +1096,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const firstAttempt = firstAttemptAt(db, input.taskId);
       const size = taskSizeOf({ files:(candidate.produced ?? []).length, lines:sizeLines, createdAt:firstAttempt, finishedAt:Date.now(), attempts:countAttempts(db,input.runId,input.taskId) });
       recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"passed",
-        attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{acceptanceReceiptPersisted:true,integration,size}});
+        attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{acceptanceReceiptPersisted:true,integration,size,execution_checklist:checklist}});
       transitionAttempt(db, input.attemptId, "accepted");
       if (integration) await clearMergeIntent(bb.storage.kv as never, input.attemptId);
       return { ...receipt, verification:candidate.verification, produced:candidate.produced };
@@ -1064,3 +1113,31 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
 }
 
 export type WriterFinishApi = ReturnType<typeof createWriterFinish>;
+
+const BARRIER_DIFF_CAP = 200_000;
+/** What the barrier judged, archived per attempt (sma av_inputs): diff, promise, contract, the previous verdict and the receipt hash. */
+export function barrierInputBody(input: { state: "passed" | "blocked" | "skipped"; inputSha256: string | null; diff: unknown; promise: unknown; contract: unknown; priorVerdict: unknown }): Record<string, unknown> {
+  // A patch over the cap is cut and says so: the inputSha256 still names exactly what was judged.
+  const text = input.diff == null ? null : typeof input.diff === "string" ? input.diff : JSON.stringify(input.diff);
+  const diff = text !== null && text.length > BARRIER_DIFF_CAP ? `${text.slice(0, BARRIER_DIFF_CAP)} [cut: ${text.length - BARRIER_DIFF_CAP} chars]` : input.diff ?? null;
+  return { stage: "code-critique", state: input.state, inputSha256: input.inputSha256, diff,
+    promise: input.promise ?? null, contract: input.contract ?? null, priorVerdict: input.priorVerdict ?? null };
+}
+
+/** The attempt's execution checklist, all flags in one object (sma ag_checklist). */
+export function executionChecklist(input: {
+  markers: { approach: string | null; lesson: string | null; noLessonReason: string | null };
+  planFact: { check?: { items?: Array<{ item?: unknown; evidence?: unknown }> } | null } | null;
+  priorReasons: string[]; produced: string[]; ownsPaths: string[]; referenceTestEdits: string[];
+}): Record<string, unknown> {
+  const lastReason = input.priorReasons[input.priorReasons.length - 1] ?? null;
+  const stagnant = lastReason !== null && input.priorReasons.length > 1
+    && failureFingerprint(input.priorReasons[input.priorReasons.length - 2]) === failureFingerprint(lastReason);
+  return {
+    promise: { approach: input.markers.approach !== null, lesson: input.markers.lesson ?? null, noLessonReason: input.markers.noLessonReason ?? null,
+      planFactUnproven: (input.planFact?.check?.items ?? []).filter((item) => !item.evidence).map((item) => String(item.item)).slice(0, 20) },
+    stagnation: { sameKeyTurns: stagnant, lastFailureReason: lastReason?.slice(0, 300) ?? null },
+    scope: { outsideOwnsPaths: input.produced.filter((path) => !fileAllowedByOwns(path, input.ownsPaths)).slice(0, 50) },
+    referenceTestEdits: input.referenceTestEdits,
+  };
+}

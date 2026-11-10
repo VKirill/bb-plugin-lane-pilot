@@ -294,7 +294,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
   /** "taskid: title" is how every writer commit starts; the later commits that block a revert are named by their task. */
   const taskOfSubject = (subject: string) => /^([A-Za-z0-9][A-Za-z0-9._-]{0,127}): /.exec(subject)?.[1] ?? null;
 
-  async function revert(ref: string, options: { dryRun?: boolean; skipGate?: boolean } = {}): Promise<RollbackResult> {
+  async function revert(ref: string, options: { dryRun?: boolean; skipGate?: boolean; why?: string; by?: string } = {}): Promise<RollbackResult> {
     const found = await targetOf(ref);
     if ("error" in found) return { ok: false, state: "refused", taskId: ref, attemptId: null, base: null, change: null, summary: found.error, next: "check the id with `bb lane-pilot state <project-id>`" };
     const { target: t } = found;
@@ -377,7 +377,9 @@ export function createRollback(ctx: ServerCore, services: Services) {
         }
       }
       const gateBlocks = Boolean(gate && gate.exitCode !== 0 && !gate.baselineRed);
-      const detail = { files, checks: verification, gate };
+      // The rollback mark (SMA k_lib_rollbackmark): the cause a person or agent stated; a git signal never fills it in.
+      const rollbackMark = { cause: options.why ?? null, by: options.by ?? "cli", at: new Date().toISOString() };
+      const detail = { files, checks: verification, gate, rollbackMark };
 
       if (verification.blocking.length || gateBlocks) {
         const names = [...verification.blocking.map((row) => row.command), ...(gateBlocks ? [gate!.command] : [])];
@@ -413,7 +415,11 @@ export function createRollback(ctx: ServerCore, services: Services) {
     const taskId = attempt ? attempt.task_id : ref;
     const attempts = listAttemptStatesForTask(db, taskId)
       .map((row) => ({ ...row, change: getAttemptChange(db, row.id) ?? null }));
-    return { taskId, attempts, receipts: listTaskReceipts(db, taskId) };
+    const receipts = listTaskReceipts(db, taskId);
+    const reverted = [...receipts].reverse().find((row) => row.kind === "revert" && row.state === "merged");
+    const mark = (reverted?.detail as { rollbackMark?: { cause?: string | null } } | undefined)?.rollbackMark;
+    const rollback = reverted ? { commit: reverted.resultCommit, cause: mark?.cause ?? "rolled back, cause unknown" } : undefined;
+    return { taskId, attempts, receipts, ...(rollback ? { rollback } : {}) };
   }
 
   /**

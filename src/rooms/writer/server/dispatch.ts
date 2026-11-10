@@ -12,7 +12,7 @@ import type { CodeCriticDefault } from "../../contracts/task-enums";
 import { saveCriticCodeDefault } from "./critic-override";
 import { wfLivePipelineRun, wfRunInputsByKey } from "@lane-pilot/workflow-engine";
 import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, getTaskRow, hasFailedStageReceipt, listAttemptsForTask, listAttemptsUpdatedSince, listOpenAttempts, listRunsWithAttempts, listRunTaskRows, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, taskBasePath, transitionAttempt } from "../../storage";
-import { commonTaskFolder, isMainfixTask, isTaskBase, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask, sha256 , spendReserve, type BirthKind } from "../../tasks";
+import { birthGates, commonTaskFolder, isMainfixTask, isTaskBase, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask, sha256 , spendReserve, type BirthKind } from "../../tasks";
 import { liveFolderLockNote, nextStep } from "../../contracts/failure-class"
 import { taskFamily } from "@lane-pilot/contracts";
 import { validateTaskV2 } from "../../tasks/task-v2";
@@ -261,11 +261,13 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     // A fourth try on a topic the run's earlier tasks already worked on (the same file patched, the same test red again) is not sent:
     // the machine puts the whole picture to its hunters and the backlog first (Vampirism Fire 2026-10: nine runner patches, one flaky test through eight tasks).
     // The topic then stays closed to the PM's tasks, a workflow's tasks and the mainfixes alike: one budget per incident whoever sends the task.
-    const looped = args.task && ["pm", "workflow", "lead"].includes(args.birth ?? "pm") ? await topicLoopGuard(db, runId, task, { wall:services.wall, projectId:args.projectId, pmThreadId:args.threadId, ownerSpokeAt:await ownerLastWroteAt({ bb, threadId:args.threadId }) }) : null;
+    // The birth kind chooses the gates: the topic-loop guard protects against the PM's repeated tries, not the machine's own issues.
+    const redoneBirth = args.birth === "redo" ? (listRunTaskRows(db, runId).find((row) => row.id === taskFamily(task.id))?.birth ?? null) : null;
+    const looped = args.task && birthGates(args.birth ?? "pm", redoneBirth).topicLoop ? await topicLoopGuard(db, runId, task, { wall:services.wall, projectId:args.projectId, pmThreadId:args.threadId, ownerSpokeAt:await ownerLastWroteAt({ bb, threadId:args.threadId }) }) : null;
     if (looped) return { ok:false, error:{ code:"topic_loop", retryable:false, sideEffects:"none", hint:looped }, hint:looped };
     // Contract lint: every contract mistake a helper or writer would only trip over later goes back to the PM now,
     // in one message with the fix, before a task or an attempt exists.
-    const lint = await lintTask(args.projectId, runId, task, taskBase, config.hostId);
+    const lint = await lintTask(args.projectId, runId, task, taskBase, config.hostId, args.birth);
     // The queue the task joins, said once in the answer: which open tasks hold it and on what, and how to cut the batch if three own one path.
     const batchAdvice = batchAdviceFor(db, args.projectId, runId, task);
     const withAdvice = (reply:Record<string,unknown>): Record<string,unknown> => {

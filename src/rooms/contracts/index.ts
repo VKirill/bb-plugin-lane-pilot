@@ -18,7 +18,7 @@ export { HOST_JOB_KINDS, WORKFLOW_NODE_TONES, installReceiptSchema, modelCatalog
 export type { HostJobKind, PrototypeConfig, TaskV2 } from "@lane-pilot/contracts";
 export type StepExecutor = z.infer<typeof stepExecutorSchema>;
 export { hostContract, hostMethods } from "./host";
-export { BIRTH_KINDS, isCodeCriticDefault } from "./task-enums"
+export { BIRTH_KINDS, BIRTH_GATES, birthGates, isCodeCriticDefault } from "./task-enums"
 export { CODE_CRITIC_DEFAULTS } from "./task-enums";
 export type { BirthKind, CodeCriticDefault } from "./task-enums";
 export type { AcceptanceCard } from "./rpc-runs";
@@ -91,3 +91,4 @@ export { NO_WAY_OUT, WAY_OUT, wayOut } from "./way-out";
 export { spawnClaimed } from "./spawn-claim";
 export type { IsTaskSatisfied } from "./runs-api";
 export * from "./worktrees";
+export { NATIVE_HOOK_SOURCES } from "./native-hook-sources";

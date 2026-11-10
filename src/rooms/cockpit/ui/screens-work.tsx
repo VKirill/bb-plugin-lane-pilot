@@ -9,6 +9,7 @@ type PhaseStatus = {
   phase: PhaseRow & { record: { plan?: { items: Array<{ id: string; title: string; wave: number; promise: { then: string } }> }; questions?: Array<{ id: string; text: string; blocking: boolean; answer?: string }>; acceptance?: { lines: Array<{ id: string; ok: boolean; detail: string }> }; uat?: { path: string }; ownerWords?: boolean; execution?: { issued: Record<string, string> };
     lessons?: { draft?: { text: string; state: string } } } };
   next: { text: string; key?: string }; ownerWord?: { acceptanceKey?: string }; gates: Record<string, { ok: boolean; why?: string[] }>; book: string; facts: Record<string, { taskId: string; state: string | null }>;
+  acceptancePackage?: { key: string; verdict: { state: string; detail: string; mainSha: string | null } | null; diffStat: string | null } | null;
 };
 
 /** Phases: the list, and one phase as its card — next step, gates, plan lines, questions, acceptance lines, folder and book, the owner's word and the controls. */
@@ -53,7 +54,7 @@ function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId
       const turn = r.lessons?.draft?.state === "staged" ? "lesson" : asked?.[1] ?? null;
       const wave = turn === "wave" && asked?.[2] ? Number(asked[2]) : undefined;
       // The yes signs the package on the screen: its key goes with it, and a package that changed meanwhile is refused.
-      const decisions = turn === "acceptance" ? { useful, limits, key: s.ownerWord?.acceptanceKey } : {};
+      const decisions = turn === "acceptance" ? { useful, limits, key: s.acceptancePackage?.key ?? s.ownerWord?.acceptanceKey } : {};
       return (
         <div className="mt-2 space-y-3 text-sm" data-testid="ck-phase-card">
           <p><span className="font-medium">{t("ckPhaseNext")}:</span> {s.next.text}</p>
@@ -93,9 +94,16 @@ function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId
             <div className="space-y-1" data-testid="ck-word">
               {/* The owner's word at a stage gate (and the UAT line at acceptance): yes, or no with the words why. */}
               {turn === "lesson" ? <p className="text-xs text-muted-foreground" data-testid="ck-lesson-draft">{t("ckLessonDraft")}: {r.lessons?.draft?.text}</p> : null}
-              {/* Keyed decision on the phase (SMA p6_decide): two decisions, both said for a yes. */}
+              {/* Keyed decision on the phase (SMA p6_decide, ta_view): the package shown is the package signed — its key, the verdict and the diff. */}
               {turn === "acceptance" ? (
                 <div className="space-y-1">
+                  {s.acceptancePackage ? (
+                    <div className="rounded border border-border/60 p-2 text-xs" data-testid="ck-acceptance-package">
+                      <p data-testid="ck-package-key">package {s.acceptancePackage.key}</p>
+                      {s.acceptancePackage.verdict ? <p>{s.acceptancePackage.verdict.state}: {s.acceptancePackage.verdict.detail}{s.acceptancePackage.verdict.mainSha ? ` (${s.acceptancePackage.verdict.mainSha.slice(0, 12)})` : ""}</p> : null}
+                      {s.acceptancePackage.diffStat ? <pre className="max-h-40 overflow-auto whitespace-pre-wrap">{s.acceptancePackage.diffStat}</pre> : null}
+                    </div>
+                  ) : null}
                   <label className="flex items-center gap-2"><input type="checkbox" checked={useful} onChange={(e) => setUseful(e.target.checked)} data-testid="ck-useful" /> {t("ckUseful")}</label>
                   <label className="flex items-center gap-2"><input type="checkbox" checked={limits} onChange={(e) => setLimits(e.target.checked)} data-testid="ck-limits" /> {t("ckLimits")}</label>
                 </div>
@@ -135,6 +143,35 @@ export function taskWords(title: string): string | null {
   return null;
 }
 
+export type TaskProposal = { title: string; description: string; promise: string[] };
+
+/**
+ * A task's words proposed from one phrase by fixed rules, no model (SMA m_sg_words): the title is the first clause cut
+ * to TITLE_MAX with paths and ids stripped; the description is the rest; the promise holds the phrase's «чтобы /
+ * so that» and «когда / when … то / then» clauses and its further lines as Given/When/Then lines.
+ */
+export function proposeTaskWords(phrase: string): TaskProposal {
+  const clean = (text: string) => text
+    .replace(/\S*[/\\]\S*/g, " ").replace(/\b[A-Za-z]+-\d+\b/g, " ").replace(/[«»"]/g, "").replace(/\s+/g, " ").trim();
+  const promise: string[] = [];
+  const clauses: string[] = [];
+  for (const [index, line] of phrase.split(/\n+/).map((row) => row.trim()).filter(Boolean).entries()) {
+    if (index > 0) { promise.push(`Then ${clean(line)}`); continue; }
+    let text = line;
+    const whenThen = /(?:когда|when)\s+(.+?)\s*[,;]?\s*(?:то|then)\s+(.+)/i.exec(text);
+    const soThat = /[,;.]\s*(?:чтобы|so that)\s+(.+)$/i.exec(text);
+    if (whenThen) { promise.push(`When ${clean(whenThen[1]!)}, then ${clean(whenThen[2]!)}`); text = text.slice(0, whenThen.index); }
+    else if (soThat) { promise.push(`Then ${clean(soThat[1]!)}`); text = text.slice(0, soThat.index); }
+    clauses.push(...text.split(/[.;]/).map((clause) => clause.trim()).filter(Boolean));
+  }
+  const title = clean(clauses[0] ?? "");
+  return {
+    title: [...title].slice(0, TITLE_MAX).join(""),
+    description: clean(clauses.slice(1).join(". ")),
+    promise: promise.filter((line) => line.length > 6),
+  };
+}
+
 /** Suggest a composition: the lines of a batch grouped by the area word they start with («area: …»). */
 export function composition(lines: readonly string[]): Map<string, string[]> {
   const groups = new Map<string, string[]>();
@@ -151,6 +188,8 @@ export function TasksScreen({ rpc, projectId, runId }: { rpc: Rpc; projectId: st
   const [shown, setShown] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [what, setWhat] = useState("");
+  const [promise, setPromise] = useState("");
+  const [phrase, setPhrase] = useState("");
   const [batch, setBatch] = useState("");
   const [promote, setPromote] = useState("");
   const [sent, setSent] = useState<string | null>(null);
@@ -167,10 +206,13 @@ export function TasksScreen({ rpc, projectId, runId }: { rpc: Rpc; projectId: st
         </Panel>
       ) : null}
       <Panel title={t("ckNewTask")} testId="ck-new-task">
+        {/* One phrase fills title, description and promise by fixed rules; every field stays editable before Send. */}
+        <Field label="Фраза" value={phrase} onChange={(value) => { setPhrase(value); const proposal = proposeTaskWords(value); setTitle(proposal.title); setWhat(proposal.description); setPromise(proposal.promise.join("\n")); }} testId="ck-new-task-phrase" />
         <Field label={t("ckNewTaskTitle")} value={title} onChange={setTitle} testId="ck-new-task-title" />
         {hint ? <p className="text-xs text-muted-foreground" data-testid="ck-task-words">{fill("ckSuggestWords", { s: hint })}</p> : null}
         <Field label={t("ckNewTaskWhat")} value={what} onChange={setWhat} multiline />
-        <Button size="sm" disabled={!!hint || what.trim().length < 5} onClick={() => request("task", `${title}\n\n${what}`)}>{t("ckSend")}</Button>
+        <Field label="Обещание" value={promise} onChange={setPromise} multiline testId="ck-new-task-promise" />
+        <Button size="sm" disabled={!!hint || what.trim().length < 5} onClick={() => request("task", `${title}\n\n${what}${promise.trim() ? `\n\nОбещание:\n${promise}` : ""}`)}>{t("ckSend")}</Button>
       </Panel>
       <Panel title={t("ckNewBatch")} testId="ck-new-batch">
         <Field label={t("ckNewBatch")} value={batch} onChange={setBatch} multiline />

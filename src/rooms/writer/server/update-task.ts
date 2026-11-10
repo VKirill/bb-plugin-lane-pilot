@@ -13,6 +13,7 @@ import {
   getTask,
   getTaskPlan,
   listAttemptsForTask,
+  listRunTaskRows,
   listStageReceipts,
   transitionAttempt,
   saveTaskPlan,
@@ -249,7 +250,7 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
     }
 
     // The same contract lint as dispatch: every contract mistake goes back to the PM in one message, before the stored task changes.
-    const linted = await lintTask(input.projectId, input.runId, valid.task, taskBase, config.hostId);
+    const linted = await lintTask(input.projectId, input.runId, valid.task, taskBase, config.hostId, listRunTaskRows(db, input.runId).find((row) => row.id === valid.task.id)?.birth as never);
     // A blocked task keeps its area (a change needs a redispatch), so one dispatched before the task standard is not refused for lacking it.
     const lint = { ...linted, errors: blocked && !oldContract.area ? linted.errors.filter((error) => error.code !== "area_missing") : linted.errors };
     if (lint.errors.length) {

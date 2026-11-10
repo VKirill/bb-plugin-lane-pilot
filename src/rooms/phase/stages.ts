@@ -110,11 +110,22 @@ export const motionRows = (items: readonly PlanItem[]) =>
 /** The animator law, inline for a run without subagents (SMA: Headless: the animator law inline). */
 export const ANIMATOR_LAW = "motion rows: animate transform and opacity only, 150–300 ms for UI feedback, ease-out entering and ease-in leaving, respect prefers-reduced-motion, no motion that blocks input, every animation has its end state drawn";
 
-/** UI contract gate and «design contract is mandatory»: a drawing carries its checkable points (UI-SPEC.md or DESIGN.md in its paths). */
-export function uiContractGap(record: PhaseRecord): string | null {
+/** The heading a required drawing section is read under in UI-SPEC.md (SMA p3_requirements). */
+const SECTION_HEADING: Record<string, RegExp> = {
+  actions: /actions?/i, screens_states: /screens?/i, texts: /texts?|copy|microcopy/i, heuristics: /heuristics?/i,
+  accessibility: /accessibilit|a11y/i, c4: /\bc4\b|container|component diagram/i, event_chain: /event[ _-]?chain|events?/i,
+};
+
+/** UI contract gate and «design contract is mandatory»: a drawing carries its checkable points (UI-SPEC.md or DESIGN.md in its
+ *  paths). When the spec's text is read too (the drawing step does), every required section must have its heading in it. */
+export function uiContractGap(record: PhaseRecord, specText?: string | null): string | null {
   if (record.design?.decision !== "needed" || !record.design.drawing?.paths.length) return null;
-  return record.design.drawing.paths.some((path) => /(UI-SPEC|DESIGN)\.md$/i.test(path)) ? null
-    : "the drawing has no contract: add UI-SPEC.md with the checkable points (screens, states, breakpoints) to the drawing's paths";
+  if (!record.design.drawing.paths.some((path) => /(UI-SPEC|DESIGN)\.md$/i.test(path)))
+    return "the drawing has no contract: add UI-SPEC.md with the checkable points (screens, states, breakpoints) to the drawing's paths";
+  if (specText == null) return null;
+  const headings = new Set(specText.split("\n").filter((line) => /^#{1,6}\s/.test(line.trim())).map((line) => line.trim()));
+  const missing = (record.design.requirements ?? []).filter((section) => ![...headings].some((heading) => SECTION_HEADING[section]?.test(heading)));
+  return missing.length ? `the drawing's contract misses required section(s): ${missing.join(", ")} — UI-SPEC.md needs one heading per required section` : null;
 }
 
 /** The previous contract to the archive: a drawing replaced by a new one is kept, with its hash, in the record and the book. */
@@ -165,6 +176,8 @@ export function piecePlan(phase: Pick<Phase, "id" | "title" | "record">, item: P
  */
 export function issuedContract(phase: Pick<Phase, "id">, item: PlanItem): { task: Record<string, unknown>; dropped: string | null } {
   const task: Record<string, unknown> = { ...item.task };
+  // The plan wrote the promise on the piece: the issued contract carries it, so the birth gate «a stage's piece carries its promise» holds.
+  if (!task.promise) task.promise = item.promise;
   if (typeof task.display_title !== "string" || !task.display_title.trim()) task.display_title = item.title.replace(/\s+/g, " ").trim().slice(0, 120);
   if (!(TASK_KINDS as readonly unknown[]).includes(task.kind)) task.kind = "feature";
   if (typeof task.area !== "string" || !task.area.trim()) task.area = `phase:${phase.id}/${item.id}`;
@@ -180,10 +193,16 @@ export function waveTable(wave: number, pieces: readonly PlanItem[], issued: Rea
   return [`wave ${wave}:`, "| piece | task | promise |", "|---|---|---|", ...pieces.map((item) => `| ${item.id} | ${issued[item.id] ?? "—"} | ${item.promise.then.replace(/\|/g, "/")} |`)].join("\n");
 }
 
-/** UAT.md made from the plan's promises (SMA: Create UAT.md): one line per promise for the person to test and answer. */
+/** UAT.md made from the plan's promises (SMA: Create UAT.md): one line per promise for the person to test and answer. With a
+ *  candidate the test happens on the phase's tree — the package that will land — not on a main that does not have the work. */
 export function uatText(phase: Pick<Phase, "id" | "title" | "goal" | "record">): string {
   const items = phase.record.plan?.items ?? [];
-  return [`# UAT — phase ${phase.id}: ${phase.title}`, "", `Goal: ${phase.goal}`, "",
+  const candidate = phase.record.candidate;
+  const trees = candidate && !candidate.off ? Object.entries(candidate.trees) : [];
+  const where = trees.length
+    ? `Test the work on the phase candidate branch ${candidate!.branch}${candidate!.verified ? ` at the verified head ${Object.values(candidate!.verified).map((sha) => sha.slice(0, 12)).join(", ")}` : ""} — worktree(s): ${trees.map(([, tree]) => tree.path).join(", ")}. Do not test main: it does not have this phase's work yet.`
+    : "Test the work on main.";
+  return [`# UAT — phase ${phase.id}: ${phase.title}`, "", `Goal: ${phase.goal}`, "", where, "",
     "One line per test. Mark `[x]` passed, `[!]` failed (and say what you saw), `[ ]` open. The phase is accepted only when every line passed.", "",
     ...items.map((item) => `- [ ] ${item.id}: given ${item.promise.given}, when ${item.promise.when}, then ${item.promise.then}`), ""].join("\n");
 }

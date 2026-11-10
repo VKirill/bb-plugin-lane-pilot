@@ -532,7 +532,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const valid = validateTaskV2(task);
       if (!valid.ok) return { output: failedTask("failed", `task-v2 invalid: ${valid.errors.join("; ")}`) };
       const hostId = getRunWriterHost(db, rt.runId) ?? "";
-      const lint = await bestEffort(rt.ctx.log, "workflow task lint", lintTask(rt.projectId, rt.runId, valid.task, run.writer_workspace_path, hostId), null);
+      const lint = await bestEffort(rt.ctx.log, "workflow task lint", lintTask(rt.projectId, rt.runId, valid.task, run.writer_workspace_path, hostId, "workflow"), null);
       if (lint?.errors.length) return { output: failedTask("failed", `contract lint: ${lint.errors.map((error) => error.message).join("; ").slice(0, 600)}`) };
       // The planner's files[] are its concrete steps; passing only the objective hid them from the plan critic (Roblox T5, 2026-11-08).
       // A reentrant dispatch keeps its stored plan, including the legacy format: changing its hash would defeat duplicate detection.
@@ -727,7 +727,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       if (!valid.ok) { errors.push(`task #${at + 1} (${str(rec(raw).id) || "no id"}): ${valid.errors.join("; ")}`); continue; }
       parsed.push(valid.task);
       if (run?.writer_workspace_path) {
-        const lint = await bestEffort(rt.ctx.log, "workflow task lint", lintTask(rt.projectId, rt.runId, valid.task, run.writer_workspace_path, hostId), null);
+        const lint = await bestEffort(rt.ctx.log, "workflow task lint", lintTask(rt.projectId, rt.runId, valid.task, run.writer_workspace_path, hostId, "workflow"), null);
         for (const error of lint?.errors ?? []) errors.push(`${valid.task.id}: ${error.message}`);
       }
     }

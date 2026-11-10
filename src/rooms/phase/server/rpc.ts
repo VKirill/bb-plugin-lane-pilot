@@ -6,10 +6,10 @@ import type { PhaseApi } from "./driver";
 export function phaseRpc(api: PhaseApi) {
   return {
     phase_list: async ({ projectId, pmThreadId, live }) => api.list({ projectId, pmThreadId, live }).map((phase) => ({ ...phase, next: api.status(phase.id).next })),
-    phase_get: async ({ phaseId }) => api.status(phaseId),
+    phase_get: async ({ phaseId }) => { const id = api.resolve?.(null, phaseId)?.id ?? phaseId; return { ...api.status(id), acceptancePackage: (await api.acceptancePackage?.(id)) ?? null }; },
     phase_act: async ({ action, projectId, pmThreadId, phaseId, payload }) => {
       const p = payload as Record<string, never>;
-      const need = () => { if (!phaseId) throw new Error(`${action} names the phase`); return phaseId; };
+      const need = () => { if (!phaseId) throw new Error(`${action} names the phase`); return api.resolve?.(projectId, phaseId)?.id ?? phaseId; };
       const done = action === "open" ? await api.open({ projectId, pmThreadId, title: p.title, goal: p.goal, roadmapRow: p.roadmapRow })
         : action === "context" ? await api.context({ phaseId: need(), docs: p.docs, risks: p.risks, appetite: p.appetite, noGos: p.noGos, requirements: p.requirements, decisions: p.decisions, by: "screen" })
         : action === "plan" ? api.plan({ phaseId: need(), items: p.items, design: p.design })
@@ -22,7 +22,8 @@ export function phaseRpc(api: PhaseApi) {
         : api.lessons({ phaseId: need(), analysis: p.analysis, reviewRun: p.reviewRun, reviewerNode: p.reviewerNode });
       return api.status(done.id);
     },
-    phase_control: async ({ phaseId, action, to, note, turn, decision, wave, useful, limits, key }) => {
+    phase_control: async ({ phaseId: ref, action, to, note, turn, decision, wave, useful, limits, key }) => {
+      const phaseId = api.resolve?.(null, ref)?.id ?? ref;
       if (action === "word") {
         if (!turn || !decision) throw new Error("the owner's word names the turn and the decision");
         return api.status((await api.word({ phaseId, turn, decision, text: note?.trim() || decision, wave, useful, limits, key, by: "owner via screen" })).id);

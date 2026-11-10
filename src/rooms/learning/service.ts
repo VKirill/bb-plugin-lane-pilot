@@ -25,7 +25,7 @@ import { createLiveFeed } from "./live";
 import { createObserver } from "./observe";
 import { createOps, type Kv } from "./ops";
 import { KEY_NAME, createDecisionsClient } from "./opinion";
-import { pmResumeInstructions, pmRulesOf, relevantPmRules } from "./pm-rules";
+import { pmBoardBlock, pmResumeInstructions, pmRulesOf, relevantPmRules } from "./pm-rules";
 import { setRuleBudgets } from "./rule-budget";
 import { lpNotesPort, lpRulesPort } from "./rules-port";
 import { complexityReport, noteOwnerQuestion, scanComplexity, scanPromises } from "./signals";
@@ -287,7 +287,11 @@ export function mountLearning(ctx: ServerCore, services: Services): Learning | n
       bb.agents.contributeInstructions(({ threadId, projectId }) => {
         const runId = openRunIdForPmThread(db, threadId);
         if (!runId) return null;
-        return pmResumeInstructions(db, projectId, getRunSettingsScopes(db, runId), `pm:${runId}`);
+        const rules = pmResumeInstructions(db, projectId, getRunSettingsScopes(db, runId), `pm:${runId}`);
+        // The orchestrator answers knowing its live board and the open phase's rubric, not stale recollection (SMA m_cf_prompt):
+        // the run's task snapshot (id + state, capped, then a count) and the phase's stage and rubric join the rules.
+        const board = pmBoardBlock(db, runId);
+        return rules || board ? [rules, board].filter(Boolean).join("\n\n") : null;
       });
     } catch (cause) { bb.log.info(`Lane Pilot learning cannot contribute instructions: ${cause instanceof Error ? cause.message : String(cause)}`); }
 

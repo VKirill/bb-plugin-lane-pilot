@@ -464,7 +464,12 @@ export default async function plugin(bb: BbPluginApi) {
   mountMemoryEmbeddings(ctx);
   registerPhaseTool(ctx, services);
   registerQueueTool(ctx, services.taskWords);
-  registerConversationTools(ctx, { spendByModel: (projectId, day) => tokenDailyByModel(ctx.db, projectId, day) });
+  registerConversationTools(ctx, { spendByModel: (projectId, day) => tokenDailyByModel(ctx.db, projectId, day),
+    phasesOf: (pmThreadId) => services.phases.list({ pmThreadId, live: true }).map((phase) => {
+      let next: string | null = null;
+      try { next = services.phases.status(phase.id).next.text; } catch { /* a phase mid-move */ }
+      return { id: phase.id, title: phase.title, stage: phase.stage, state: phase.state, next };
+    }) });
   mountPermits(ctx);
   mountForge(ctx, services);
   mountFront(ctx, services.front);

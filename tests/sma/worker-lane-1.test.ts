@@ -50,7 +50,7 @@ describe("worker roles that live in Lane Pilot", () => {
     const old: CapabilityReceipt = { providerId: "claude", version: "1.0.0", capability: "pause", state: "supported", model: "opus", detail: null, at: 1 };
     const inUse = new Map([["claude", "opus"]]);
     expect(dueProbes(inUse, new Map([["claude", "2.0.0"]]), [old])).toEqual([{ providerId: "claude", model: "opus", version: "2.0.0" }]);
-    expect(dueProbes(inUse, new Map([["claude", "1.0.0"]]), [old, { ...old, capability: "answers" }, { ...old, capability: "documentary" }])).toEqual([]);
+    expect(dueProbes(inUse, new Map([["claude", "1.0.0"]]), [old, ...["answers","documentary.nested","documentary.role","documentary.hooks","documentary.session_end","accounting","progress","gate"].map((capability) => ({ ...old, capability: capability as typeof old.capability }))])).toEqual([]);
   });
 
   it("[sma:wi_spool] [sma:wi_check] the sandbox runs one command, and its home and temp are the job folder", () => {

@@ -17,3 +17,4 @@ export { pmRuleRelevance } from "./pm-rules";
 export { unkeptPromise, ownerQuestion, complexity } from "./signals";
 
 export { envCatalogKey } from "./keys";
+export { breakerRowId, listTripped, rearmBreaker } from "./breaker";

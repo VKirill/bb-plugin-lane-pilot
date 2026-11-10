@@ -87,7 +87,7 @@ type Designer = { ratios: Record<string, number | null>; conditions: Array<{ id:
 export function WorkersScreen({ rpc, projectId }: { rpc: Rpc; projectId: string }) {
   const workers = useLoad(() => rpc.call("cockpit_workers", { projectId }) as Promise<Worker[]>, [projectId]);
   const designer = useLoad(() => rpc.call("cockpit_designer", { projectId }) as Promise<Designer>, [projectId]);
-  const capabilities = ["answers", "documentary", "pause"];
+  const capabilities = ["answers", "documentary.nested", "documentary.role", "documentary.hooks", "documentary.session_end", "pause", "accounting", "progress", "gate"];
   return (
     <div className="space-y-4">
       <Panel title={t("ckScreen_workers")} testId="ck-workers" actions={<RefreshButton onClick={workers.reload} />}>

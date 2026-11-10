@@ -13,7 +13,7 @@ import { openDatabase } from "../../src/rooms/plugin-db";
 const fakeSession = (): VerificationSession => ({
   async run(subject: Subject): Promise<CommandRun[]> {
     const text = subject.changes.map((change) => change.after ?? "").join("\n");
-    const broken = text.includes("-planted") || text.includes("index > size") || text.includes("<= width");
+    const broken = text.includes("-impl") || text.includes("index > size") || text.includes("<= width");
     return subject.contract.verification.map((check) => ({ command: check.command, exitCode: broken && !check.command.endsWith("|| true") ? 1 : 0, stdout: "", stderr: broken ? "boom" : "" }));
   },
   async close() { /* nothing to remove */ },

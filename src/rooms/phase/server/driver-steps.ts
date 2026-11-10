@@ -2,6 +2,7 @@ import { phaseWordItemKey } from "./word-item";
 import { cancelAttemptById } from "../../runs/server";
 import { taskFamily } from "@lane-pilot/contracts";
 import { countOpenDeferrals, noTermDeferralsOf } from "../../deferral/server";
+import { listTaskReceipts } from "../../rollback";
 import { getRunGoal, goalVerdict } from "../../run-goal";
 import { countAttemptsInStates, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskGitBase, listOpenAttempts, loadProjectSettings } from "../../storage";
 import { spendReserve } from "../../tasks";
@@ -10,7 +11,7 @@ import { hostContract } from "../../contracts";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { sha256Hex, bestEffort } from "@lane-pilot/kit";
-import { acceptanceLines, alreadyMetVerdict, blindVerdict, candidateOn, canonical, executionGate, issuable, lessonsNeeded, nextAction, piecesOfWave, phaseFolder, pieceSha, provenPieces, renderBook, waveCleared, waveLines, wavePackage, wavesOf, wordOf } from "../logic";
+import { acceptanceLines, alreadyMetVerdict, blindVerdict, brokenLink, candidateOn, canonical, executionGate, issuable, lessonsNeeded, nextAction, observationOutcome, piecesOfWave, phaseFolder, pieceSha, provenPieces, renderBook, waveCleared, waveLines, wavePackage, wavesOf, wordOf } from "../logic";
 import { buildsScreens, conclusionText, issuedContract, markRoadmap, nextRoadmapRow, stateText, waveTable, piecePlan, uatText } from "../stages";
 import { getPhase, listParts, notePoked, savePhase } from "../store";
 import { checkProofs, hostGit, phaseProofRecords, renderProofCurrency } from "./proof-currency";
@@ -159,9 +160,10 @@ export function installSteps(tools: StepsTools) {
       const issuedTask = issuedContract(phase, item);
       const taskIdForIssue = redoOf ? tools.redoId(item.id, runId) : item.id;
       const reply: Record<string, unknown> = await services.dispatchWriter({ threadId: phase.pmThreadId, projectId: phase.projectId, birth: "phase",
-        // Stage above ordinary work: a phase's pieces start before the run's ordinary tasks when writers are scarce.
+        // Stage above ordinary work: a phase's piece with no priority of its own waits in the stage band, one above the
+        // loudest backlog word (SMA pc_priority); a priority the plan set is kept.
         // quality_mode full: the piece goes through every review stage, so its acceptance lines read verdicts, not their absence (SMA p6_l_verdict).
-        task: { ...issuedTask.task, id: taskIdForIssue, quality_mode: "full", priority: (item.task.priority as string | undefined) ?? "high", ...(phase.record.design?.drawing && buildsScreens(item) ? { drawing: phase.record.design.drawing.paths } : {}),
+        task: { ...issuedTask.task, id: taskIdForIssue, quality_mode: "full", ...(typeof item.task.priority === "string" && item.task.priority ? { priority: item.task.priority } : {}), ...(phase.record.design?.drawing && buildsScreens(item) ? { drawing: phase.record.design.drawing.paths } : {}),
           ...(tree ? { project_cwd: tree.path, ...(verification ? { verification } : {}) } : typeof item.task.project_cwd === "string" && item.task.project_cwd ? {} : { project_cwd: base ?? undefined }),
           ...(typeof item.task.objective === "string" && item.task.objective.trim() ? {} : { objective: `${item.title}: given ${item.promise.given}, when ${item.promise.when}, then ${item.promise.then}` }) } as never,
         plan: piecePlan(phase, item),
@@ -295,7 +297,8 @@ export function installSteps(tools: StepsTools) {
       }
       current = mustGet(current.id);
     }
-    if (current.stage === "acceptance" && current.record.ownerWords && !current.record.uat) {
+    // The UAT session opens only once the candidate's heads are frozen (SMA p5_uat_stage): the owner tests the verified package.
+    if (current.stage === "acceptance" && current.record.ownerWords && !current.record.uat && (!candidateOn(current.record) || !!current.record.candidate?.verified)) {
       // Create UAT.md: with owner.words on, the plan's promises become the lines the owner tests and answers.
       const path = `${phaseFolder(current.id)}/UAT.md`;
       const content = uatText(current);
@@ -312,7 +315,7 @@ export function installSteps(tools: StepsTools) {
       const firstTree = onCandidate ? Object.values(current.record.candidate!.trees)[0]! : null;
       const headNow = firstTree ? await candidates(current)?.head(firstTree.path) ?? null : lastGoal?.headSha ?? null;
       const openDeferrals = countOpenDeferrals(db, current.projectId);
-      const lines = acceptanceLines(current, facts(current), { mainSha: headNow, openDeferrals, noTerm: noTermDeferralsOf(db, current.projectId) });
+      const lines = acceptanceLines(current, facts(current), { mainSha: headNow, openDeferrals, noTerm: noTermDeferralsOf(db, current.projectId), bookBroken: brokenLink(listParts(db, current.id)) });
       // Main moved — a new word: the verdict saw another main; verify again on the main that is there now.
       if (lines.find((line) => line.id === "main_unmoved")?.ok === false) {
         // A candidate's goal check and heads belong to that verdict: the new one checks the trees again (SMA audit of C-03).
@@ -395,13 +398,16 @@ export function installSteps(tools: StepsTools) {
     // Aging said once a day; a stalled phase named in the book only: no part for three days (or twelve hours at execution with pieces at work). The PM is not
     // woken with it: it already got the step once (pokedKey), and a daily repeat to an idle chat rewrote its whole context for nothing
     // (live ph_26f65b142d, 2026-10-27..29: three wake-ups for a step the PM had declined).
-    const lastPart = listParts(db, phase.id).at(-1)?.at ?? phase.createdAt;
+    const parts = listParts(db, phase.id);
+    // SMA dt_aging: the age is derived fresh every pass from real movement — the driver's own aging note is not movement, and
+    // the once-a-day throttle is read from that note's time, so nothing stored on the record can skew the signal.
+    const lastPart = [...parts].reverse().find((part) => part.kind !== "aging")?.at ?? phase.createdAt;
     const quiet = now() - lastPart;
     const stalled = phase.stage === "execution" ? quiet > 12 * 3_600_000 : quiet > 72 * 3_600_000;
-    if (stalled && phase.state !== "closed" && now() - (phase.record.agingSaidAt ?? 0) > 86_400_000) {
+    const lastAging = [...parts].reverse().find((part) => part.kind === "aging")?.at ?? 0;
+    if (stalled && phase.state !== "closed" && now() - lastAging > 86_400_000) {
       const days = Math.round(quiet / 86_400_000 * 10) / 10;
       book(phase, "decisions", "aging", `no movement for ${days} day(s) at ${phase.stage}`);
-      savePhase(db, phase.id, { record: { ...mustGet(phase.id).record, agingSaidAt: now() }, at: now() });
     }
     const last = getPhase(db, phase.id)?.pokedKey ?? null;
     if (!action.waitsForPm || action.key === last) return;
@@ -454,7 +460,7 @@ export function installSteps(tools: StepsTools) {
     const lastGoal = phase.runId ? getRunGoal(db, phase.runId) : null;
     const openDeferrals = countOpenDeferrals(db, phase.projectId);
     const noTerm = noTermDeferralsOf(db, phase.projectId);
-    const unmet = acceptanceLines(phase, f, { mainSha: lastGoal?.headSha ?? null, openDeferrals, noTerm })
+    const unmet = acceptanceLines(phase, f, { mainSha: lastGoal?.headSha ?? null, openDeferrals, noTerm, bookBroken: brokenLink(listParts(db, phase.id)) })
       .filter((line) => !line.ok && line.id !== "result_useful" && (line.id !== "limits_acknowledged" || noTerm.length > 0)).map((line) => `${line.id}: ${line.detail}`.slice(0, 300));
     const cut = unproven.length ? `${unproven.map(({ item }) => item.id).join(", ")} withdrawn (${unproven.map(({ why }) => why).join(" | ").slice(0, 600)})` : "no piece to withdraw";
     const outcome = proven.length ? `the phase stops, partial: ${candidateOn(phase.record) && !phase.record.candidate!.landedAt ? `nothing lands on main (a stopped phase is not accepted); ` : ""}its ${proven.length} proved piece(s) stay accepted${candidateOn(phase.record) && !phase.record.candidate!.landedAt ? ` on branch ${phase.record.candidate!.branch}` : ""} (${proven.map((item) => item.id).join(", ")}), the goal is not met` : "no piece is proved, so the phase stops (empty scope)";
@@ -476,5 +482,38 @@ export function installSteps(tools: StepsTools) {
     });
   }
 
-  return { issue, candidateTree, candidateGoal, candidateHeads, landCandidate, recheckStale, drive, finishClosed, poke, proofCurrency, exhaust };
+  /**
+   * The seven-day rollback watch (SMA p6_observe): a phase closed within the window has its history read for rollbacks of its
+   * pieces — Lane Pilot revert receipts and «This reverts commit» on main — and the observation is recorded on the phase and
+   * in the book. The acceptance and the state are never touched.
+   */
+  async function observe(phase: Phase & { closedAt?: number | null }): Promise<void> {
+    const closedAt = phase.closedAt ?? phase.updatedAt;
+    const record = mustGet(phase.id).record;
+    const issued = record.execution?.issued ?? {};
+    const reverted: string[] = [];
+    const merges = new Set<string>();
+    for (const [pieceId, taskId] of Object.entries(issued)) {
+      for (const receipt of listTaskReceipts(db, taskId)) if (receipt.changeSha) merges.add(receipt.changeSha);
+      const receipt = listTaskReceipts(db, taskId, "revert").find((row) => row.state === "merged");
+      if (receipt) reverted.push(`${pieceId} (task ${taskId}, reverted in ${receipt.resultCommit?.slice(0, 12) ?? "main"})`);
+    }
+    let logText: string | null = null;
+    const run = phase.runId ? getRun(db, phase.runId) : null;
+    const hostId = phase.runId ? getRunWriterHost(db, phase.runId) : null;
+    if (run?.writer_workspace_path && hostId && merges.size) {
+      const host = bb.hosts.experimental_client({ contract: hostContract });
+      const out = await bestEffort(ctx.log, "phase rollback watch", runOnHost(host, { hostId, cwd: run.writer_workspace_path, command: `git log --format=%B --grep="This reverts commit" -n 400`, timeoutSec: 60 }), null);
+      if (out && out.exitCode === 0) logText = out.stdout;
+    }
+    if (logText) for (const sha of merges) if (logText.includes(`This reverts commit ${sha}`)) reverted.push(`${sha.slice(0, 12)} (revert commit on main)`);
+    // Nothing to read: no merge commits of the phase's work exist to look for in history.
+    const found = { reverted, readable: merges.size > 0 || logText !== null };
+    const outcome = observationOutcome(closedAt, now(), found);
+    if (JSON.stringify(record.observation) === JSON.stringify(outcome)) return;
+    savePhase(db, phase.id, { record: { ...record, observation: outcome }, at: now() });
+    book(phase, "acceptance", "observation", `rollback watch: ${outcome.outcome}${outcome.reverted.length ? ` — ${outcome.reverted.join(", ")}` : ""} (watched until ${new Date(outcome.until).toISOString().slice(0, 10)}); the acceptance is unchanged`);
+  }
+
+  return { issue, candidateTree, candidateGoal, candidateHeads, landCandidate, recheckStale, drive, finishClosed, poke, proofCurrency, exhaust, observe };
 }

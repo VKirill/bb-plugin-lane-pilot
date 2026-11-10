@@ -1,12 +1,14 @@
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
-import { checkoutBase, getRun, getRunSettingsScopes, getTask, taskBasePath, latestTaskAttemptState, listCheckDurations, listCheckTimeouts, listOpenAttempts, loadProjectSettings } from "../../storage";
+import { checkoutBase, getRun, getRunSettingsScopes, getTask, taskBasePath, latestTaskAttemptState, listCheckDurations, listCheckTimeouts, listOpenAttempts, listRunTaskRows, loadProjectSettings } from "../../storage";
 import { taskFamily } from "@lane-pilot/contracts";
 import { checkoutOwnsOverlap } from "../task-base";
 import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../contracts/quality-mode"
 import { parseSandboxUnsafePatterns } from "../../contracts/check-commands";
 import { lintContract, lintProbePaths, siblingTestFolders } from "./contract-lint";
-import { checkProgram } from "../rails";
+import { checkProgram, type BirthKind } from "../rails";
+import { sha256Hex } from "@lane-pilot/kit";
+import type { ReadWriterWorkspaceFile } from "../../platform/server";
 import { ownerWordsOn } from "../words";
 import { allowedSecretNames } from "../../secrets/server";
 import { parseIntegrationGateSettings } from "../../contracts/integration-gate";
@@ -17,11 +19,20 @@ import type { StabilityPort } from "../../contracts/stability-api";
 import type { IsTaskSatisfied } from "../../contracts";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
 
+/**
+ * The designs of a run's live phases, as the phase room keeps them. The phase room imports tasks, never the other way,
+ * so it hands its reader in here when its driver starts; before that no phase has drawn for any run.
+ */
+export type PhaseDesignRead = (projectId:string, runId:string) => Array<{ confirmedAt?:unknown; drawing?:{ paths?:string[]; sha256?:string } | null } | null | undefined>;
+const phaseDesigns = new WeakMap<object, PhaseDesignRead>();
+export function bindPhaseDesigns(db:object, read:PhaseDesignRead):void { phaseDesigns.set(db, read); }
+
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
   isTaskSatisfied: IsTaskSatisfied;
   stability: StabilityPort;
   resolveIntegrationGate: VerificationGatePort;
+  readWriterWorkspaceFile?: ReadWriterWorkspaceFile;
 }
 
 
@@ -30,7 +41,7 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
   const { bb, db, host } = ctx;
 
   /** The machine's view of the paths, the project's open tasks, and the tasks depends_on names that cannot finish. */
-  return async function lintTask(projectId:string, runId:string, task:TaskV2, workspacePath:string, hostId:string): Promise<ReturnType<typeof lintContract>> {
+  return async function lintTask(projectId:string, runId:string, task:TaskV2, workspacePath:string, hostId:string, birth?:BirthKind): Promise<ReturnType<typeof lintContract>> {
     let kinds:Map<string, PathKind> | null = null;
     const probes = lintProbePaths(task, workspacePath);
     if (probes.length) {
@@ -90,6 +101,31 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
     // What the project recorded of each check: its green durations (the store checkTimeoutSec reads) and the limits it timed out at.
     const checkHistory = (check:{ command:string; cwd:string }) => { const ref = { command:check.command, cwd:check.cwd, root:task.project_cwd }; return { greenMs:listCheckDurations(db, projectId, ref), timedOutSec:listCheckTimeouts(db, projectId, ref) }; };
     const qualityMode = resolveQualityMode(task, settings[QUALITY_MODE_SETTING]);
-    return lintContract({ task, workspacePath, hostId, kinds, listings, sandboxUnsafe, gate, openTasks, deadDependencies, programs, ownerWords, qualityMode, checkHistory,...(secrets ? { secrets } : {}) });
+    // A redo gets the gates of the birth it redoes: the family's first task tells it.
+    const redoneBirth = birth === "redo" ? (listRunTaskRows(db, runId).find((row) => row.id === taskFamily(task.id))?.birth ?? null) : null;
+    // Drawing kinship: the confirmed drawings of this run's open phases, each sha256 recomputed over the files as they are now
+    // (a file changed after the confirmation breaks the kinship, as the design gate's own signature does).
+    let confirmedDrawings:Array<{ paths:readonly string[]; sha256:string; changed?:boolean }> | undefined;
+    if (task.drawing?.length) {
+      confirmedDrawings = [];
+      const run = getRun(db, runId);
+      for (const design of phaseDesigns.get(db)?.(projectId, runId) ?? []) {
+        const drawing = design?.drawing;
+        if (!design?.confirmedAt || !drawing?.paths?.length || !drawing.sha256) continue;
+        // The same signature the design stage recorded (path:sha256 lines); a file that cannot be read now proves nothing either way.
+        let changed = false;
+        if (run?.pm_thread_id && services.readWriterWorkspaceFile && drawing.paths.length <= 30) {
+          const hashes:string[] = [];
+          for (const path of drawing.paths) {
+            const file = await services.readWriterWorkspaceFile({ threadId: run.pm_thread_id, projectId, path, offset: 0, maxLines: 2000 }).catch(() => null) as { sha256?: string } | null;
+            if (!file?.sha256) { hashes.length = 0; break; }
+            hashes.push(`${path}:${file.sha256}`);
+          }
+          changed = hashes.length > 0 && sha256Hex(hashes.join("\n")) !== drawing.sha256;
+        }
+        confirmedDrawings.push({ paths: drawing.paths, sha256: drawing.sha256, changed });
+      }
+    }
+    return lintContract({ task, workspacePath, hostId, kinds, listings, sandboxUnsafe, gate, openTasks, deadDependencies, programs, ownerWords, qualityMode, checkHistory, birth, redoneBirth, confirmedDrawings,...(secrets ? { secrets } : {}) });
   };
 }

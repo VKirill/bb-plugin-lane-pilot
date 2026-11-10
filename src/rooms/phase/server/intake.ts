@@ -13,7 +13,7 @@ import type { Phase } from "../logic";
 /** What the intake needs of the phase driver (its own type, so the driver can build the intake without a type cycle). */
 export type IntakePhases = {
   open(input: { projectId: string; pmThreadId: string; title: string; goal: string; rails?: boolean }): Promise<Phase>;
-  tick(): Promise<number>;
+  tick(): Promise<{ moved: number; idle: string | null }>;
   list(filter: { pmThreadId?: string; live?: boolean }): Phase[];
   status(phaseId: string): { next: { text: string } };
 };
@@ -161,7 +161,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
         phaseId = phase.id;
         ctx.log(`phase intake: ${threadId} — the owner's request is heavy (${by}); phase ${phase.id} opened`);
         // The phase is booked now; the PM gets the discussion's step once its turn ends (the driver pokes an idle PM only).
-        await bestEffort(ctx.log, "phase intake tick", phases.tick(), 0);
+        await bestEffort(ctx.log, "phase intake tick", phases.tick(), { moved: 0, idle: null });
       }
     }
     // A small job goes down the small-task graph (issue-quick), a batch of fixes down issue-batch, started by the machine:
@@ -281,7 +281,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
       }
       const phase = await phases.open({ projectId: run.project_id, pmThreadId: input.pmThreadId, title: intakeTitle(input.text), goal: text, rails: true });
       ctx.log(`phase intake: hand-over (${input.origin.slice(0, 80)}) is heavy (${by}); phase ${phase.id} opened`);
-      await bestEffort(ctx.log, "phase handover tick", phases.tick(), 0);
+      await bestEffort(ctx.log, "phase handover tick", phases.tick(), { moved: 0, idle: null });
       return { started: true, via: "phase", id: phase.id };
     }
     if ((kind === "small" || kind === "batch" || downFull) && train && trainOn) {

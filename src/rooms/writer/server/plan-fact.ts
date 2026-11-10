@@ -135,7 +135,7 @@ export async function runPlanFactStage(ctx: ServerCore, input: {
   recordStage(db, {
     runId: input.runId, taskId: input.taskId, stageId: "plan-fact", state: outcome.state, attempt: input.attempt,
     input: JSON.stringify({ answerSha256: sha256(input.answers[0] ?? ""), acceptance: input.task.acceptance, produced, base }),
-    result: { ...check, mode, base, rules: PLAN_FACT_RULES, ...(jevVerdict ? { jev: jevVerdict } : {}) }, reason: outcome.reason,
+    result: { ...check, ...(check.table === "ok" && "nearMisses" in check && check.nearMisses ? { near_misses: check.nearMisses } : {}), mode, base, rules: PLAN_FACT_RULES, ...(jevVerdict ? { jev: jevVerdict } : {}) }, reason: outcome.reason,
   });
   return { refusal: mode === "gate" && outcome.state === "failed" ? outcome.reason : null, check, state: outcome.state };
 }

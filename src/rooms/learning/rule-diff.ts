@@ -1,4 +1,5 @@
 import { listRuleProposals } from "@lane-pilot/run-insights";
+import { noteBreakerRound, ruleHash, trippedRules } from "./breaker";
 import type { Jev, JudgeContext } from "@lane-pilot/jev";
 import { defineJudgment, noul, noulOf } from "@lane-pilot/jev";
 import type { Db } from "./store";
@@ -47,13 +48,18 @@ export async function judgeRulesOnDiff(
   projectId: string,
   diff: string,
   ctx: JudgeContext = {},
+  breaker?: { kv: { get(key: string): Promise<unknown>; set(key: string, value: never): Promise<unknown> }; target: string },
 ): Promise<string[]> {
   if (!jev || !jev.enabled(ctx.settings) || !diff.trim()) return [];
-  const rules = writerDiffRules(db, projectId);
+  // The loop breaker (SMA k_lib_breaker): a rule tripped for this target is filtered out of its judgments until re-armed.
+  const tripped = breaker ? await trippedRules(breaker.kv, projectId, breaker.target) : new Set<string>();
+  const rules = writerDiffRules(db, projectId).filter((rule) => !tripped.has(ruleHash(rule)));
   if (!rules.length) return [];
   const verdict = await jev.judge(ruleDiffJudgment, { diff, rules }, { subject: "rule-diff", ...ctx });
   if (verdict.by !== "jev") return [];
-  return rules.filter((_, index) => verdict.decision[index]);
+  const fired = rules.filter((_, index) => verdict.decision[index]);
+  if (breaker) await noteBreakerRound(breaker.kv, { project: projectId, target: breaker.target, fired });
+  return fired;
 }
 
 /** The remark the writer reads about the rules its change broke (data, never a block). */

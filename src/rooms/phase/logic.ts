@@ -54,6 +54,9 @@ export function checkerIndependence(wfRunId: string, steps: readonly JournalStep
   return { ...base, ok: true, why: `checker ${critic.threadId} started after the planner (${plannerThreads.join(", ")}) and had the last word` };
 }
 export type Drawing = { paths: string[]; sha256: string; designer: string; reviewer?: string; feasible?: boolean; contradiction?: string };
+/** The sections the drawing's UI-SPEC.md must cover (SMA p3_requirements); system and mixed modes add c4 and the event chain. */
+export const DRAWING_SECTIONS = ["actions", "screens_states", "texts", "heuristics", "accessibility"] as const;
+export const DRAWING_SYSTEM_SECTIONS = ["c4", "event_chain"] as const;
 export type FrozenVerdict = { state: "passed" | "failed"; detail: string; mainSha: string | null; at: number; inputSha: string };
 /** What blindVerdict returns while the run's goal check is still running; it is never stored. */
 export type PendingVerdict = Omit<FrozenVerdict, "state"> & { state: "pending" };
@@ -113,7 +116,8 @@ export type PhaseRecord = {
   scope?: { revisions: number; withdrawn: string[] };
   plan?: { items: PlanItem[]; sha: string; contextSha: string; critique?: PlanCritique; admittedSha?: string; admittedAt?: number; /** When the plan was submitted. */ submittedAt?: number; /** The workflow run whose planner made this plan (the auto plan stage); its critic reviewed this very plan. */ fromRun?: string; /** Rounds of the independent check that asked for changes. */ rounds?: number;
     /** The planner checked that the repository already does what the goal asks: no pieces, no execution; the goal audit checks the claim. */ alreadyMet?: { evidence: string } };
-  design?: { decision: "needed" | "not_needed"; why: string; drawing?: Drawing; confirmedAt?: number; mode?: "screens" | "system" | "mixed"; motion?: string[]; archived?: Drawing[] };
+  design?: { decision: "needed" | "not_needed"; why: string; drawing?: Drawing; confirmedAt?: number; mode?: "screens" | "system" | "mixed"; motion?: string[]; archived?: Drawing[];
+    /** The sections the drawing's UI-SPEC.md must cover, decided before anything is drawn (SMA p3_requirements). */ requirements?: string[] };
   /** The roadmap row this phase is (lane-plan ROADMAP.md), marked done when the phase closes. */
   roadmapRow?: string;
   /** Autonomous mode (setting phase.autonomous): when the phase closes the driver opens the next open roadmap row itself. */
@@ -140,8 +144,8 @@ export type PhaseRecord = {
   stopping?: { by: string; words?: string; at: number; unconfirmed: string[] };
   /** The most pieces the driver issues in one pass (Batch issue capacity; setting phase.issue_cap, 8 by default). */
   issueCap?: number;
-  /** When the driver last said the phase is aging or stalled (once a day). */
-  agingSaidAt?: number;
+  /** The seven-day rollback watch after acceptance (SMA p6_observe): what the machine saw in history; the acceptance is never touched. */
+  observation?: PhaseObservation;
   verification?: { verdict?: FrozenVerdict; model?: ModelVerdict };
   acceptance?: { lines: AcceptanceLine[]; at: number; accepted: boolean };
   lessons?: { needed: boolean; why: string; analysis?: string; author?: string; reviewer?: string; reviewedHash?: string; /** The workflow run whose reviewer step read the analysis (its journal is the proof). */ reviewRun?: string; at?: number;
@@ -275,16 +279,21 @@ export const wordOf = (record: PhaseRecord, turn: WordTurn) => [...(record.words
 /** Where a phase keeps its own files in the project: the book, and the drawing in design/ (SMA: The phase has a home, Drawing in its own folder). */
 export const phaseFolder = (phaseId: string) => `.agents/phases/${phaseId}`;
 
+/** What the drawing must cover (SMA p3_requirements): the base sections always, c4 and the event chain for system or mixed work. */
+export function drawingRequirements(mode?: "screens" | "system" | "mixed"): string[] {
+  return [...DRAWING_SECTIONS, ...(mode === "system" || mode === "mixed" ? DRAWING_SYSTEM_SECTIONS : [])];
+}
+
 /** Is a drawing needed: a piece that changes a screen (UI files) needs one; the PM can ask for one on any plan. */
-export function designDecision(items: readonly PlanItem[], asked?: boolean): { decision: "needed" | "not_needed"; why: string; mode?: "screens" | "system" | "mixed"; motion?: string[] } {
+export function designDecision(items: readonly PlanItem[], asked?: boolean): { decision: "needed" | "not_needed"; why: string; mode?: "screens" | "system" | "mixed"; motion?: string[]; requirements?: string[] } {
   const extra = { mode: designMode(items), motion: motionRows(items) };
-  if (asked) return { decision: "needed", why: "the PM asked for a drawing", ...extra };
+  if (asked) return { decision: "needed", why: "the PM asked for a drawing", ...extra, requirements: drawingRequirements(extra.mode) };
   const ui = items.filter((item) => (Array.isArray(item.task.owns_paths) ? item.task.owns_paths as string[] : []).some((path) => UI_PATH.test(path)));
-  return ui.length ? { decision: "needed", why: `pieces that change screens: ${ui.map((item) => item.id).join(", ")}`, ...extra } : { decision: "not_needed", why: "no piece changes a screen" };
+  return ui.length ? { decision: "needed", why: `pieces that change screens: ${ui.map((item) => item.id).join(", ")}`, ...extra, requirements: drawingRequirements(extra.mode) } : { decision: "not_needed", why: "no piece changes a screen" };
 }
 
 /** Design → execution: the drawing exists, an answer on feasibility, and a reviewer other than the designer saw it. */
-export function designGate(record: PhaseRecord): GateResult {
+export function designGate(record: PhaseRecord, specText?: string | null): GateResult {
   const design = record.design;
   if (!design) return { ok: false, why: ["the design decision is not made"] };
   if (design.decision === "not_needed") return { ok: true };
@@ -297,8 +306,9 @@ export function designGate(record: PhaseRecord): GateResult {
     if (!drawing.reviewer) why.push("the drawing is not reviewed by a separate role");
     else if (drawing.reviewer === drawing.designer) why.push("the reviewer of the drawing is its designer: it must be a separate role");
   }
-  const contract = uiContractGap(record);
+  const contract = uiContractGap(record, specText);
   if (contract) why.push(contract);
+  why.push(...openQuestions(record, "design").map((question) => `open question ${question.id}: ${question.text}`));
   if (record.ownerWords && wordOf(record, "design")?.decision !== "yes") why.push("the drawing awaits the owner's word (owner.words is on)");
   return gate(why);
 }
@@ -423,14 +433,14 @@ export function alreadyMetVerdict(alreadyMet: { evidence: string }, now: number)
   return { state: "passed", detail: `already met, nothing to build: ${alreadyMet.evidence}`.slice(0, 1000), mainSha: null, at: now, inputSha: sha256Hex(canonical({ alreadyMet })) };
 }
 
-export const ACCEPTANCE_LINES = ["contract_current", "promises_proved", "checks_passed", "independent_check", "landed", "composition_verified", "main_unmoved", "qa_read", "goal_met", "limits_acknowledged", "result_useful"] as const;
+export const ACCEPTANCE_LINES = ["contract_current", "promises_proved", "checks_passed", "independent_check", "landed", "composition_verified", "main_unmoved", "qa_read", "goal_met", "nothing_missing", "book_intact", "limits_acknowledged", "result_useful"] as const;
 
 /** The key of the package a person decides on (SMA p6_decide): the plan, the verdict's input and the tree it saw. A new verdict or tree is a new key. */
 export const acceptanceKey = (record: PhaseRecord) => sha256Hex(canonical({ plan: record.plan?.sha ?? null, verdict: record.verification?.verdict?.inputSha ?? null, tree: record.verification?.verdict?.mainSha ?? null })).slice(0, 16);
 export type AcceptanceLineId = (typeof ACCEPTANCE_LINES)[number];
 
 /** The phase acceptance calculation: each line decided by code; the phase is accepted only when every line holds. */
-export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFact>, now: { mainSha: string | null; openDeferrals: number; noTerm?: ReadonlyArray<{ id: string; what: string }> }): AcceptanceLine[] {
+export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFact>, now: { mainSha: string | null; openDeferrals: number; noTerm?: ReadonlyArray<{ id: string; what: string }>; bookBroken?: number | null }): AcceptanceLine[] {
   const items = phase.record.plan?.items ?? [];
   const verdict = phase.record.verification?.verdict;
   const line = (id: AcceptanceLineId, ok: boolean, detail: string): AcceptanceLine => ({ id, ok, detail });
@@ -469,6 +479,10 @@ export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFac
       : qaOwed.length ? `the planned browser check has not passed: ${qaOwed.join(", ")}`
       : `${qaPassed} piece(s) passed their browser check${qaNone ? `; ${qaNone} piece(s) plan none (no qa_cases)` : ""}`),
     line("goal_met", model?.state === "met", model ? `${model.by}: ${model.summary}` : "no goal audit yet"),
+    // Batch closure (SMA bc_closure): the calculation is run fresh at close — a withdraw can drop the last piece covering a
+    // requirement without the plan gate seeing it, and a broken book chain is no closing record.
+    line("nothing_missing", !!phase.record.plan?.alreadyMet || coverageGaps(phase.record).length === 0, coverageGaps(phase.record).length && !phase.record.plan?.alreadyMet ? `left uncovered at close: ${coverageGaps(phase.record).join("; ")}` : "every requirement and locked decision is covered"),
+    line("book_intact", !now.bookBroken, now.bookBroken ? `the phase book's chain is broken at part ${now.bookBroken}` : "the phase book's chain is intact"),
     // A put-off check with no term from the owner is unproven work of this project: it holds the acceptance until an agent closes it with evidence.
     // Limits acknowledged (SMA p6_l_limits): a person's decision on what stays open and how to recover, after every put-off check has its term.
     line("limits_acknowledged", !now.noTerm?.length && decided("limits"), now.noTerm?.length ? `${now.noTerm.length} deferred check(s) of this project are open with no term from the owner, so they count as unproven: ${now.noTerm.slice(0, 5).map((row) => row.id).join(", ")} — close each with evidence (bb lane-pilot defer-close <id> --evidence …)`
@@ -477,6 +491,24 @@ export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFac
     line("result_useful", decided("useful"), wordDetail("the result is clear and useful")),
   ];
 }
+
+/**
+ * The seven-day rollback watch (SMA p6_observe): for a week after acceptance the machine reads history for rollbacks of the
+ * phase's work and records what it saw on the phase — never the acceptance itself. `failure`: a revert of the phase's work was
+ * found; `no_data`: nothing could be read (no merge commits, no history); `no_failure`: the window is over and nothing reverted;
+ * `incomplete`: still watching, nothing reverted so far. The first pass after the window records the final outcome.
+ */
+export type PhaseObservation = { outcome: "failure" | "no_failure" | "incomplete" | "no_data"; reverted: string[]; until: number };
+export const OBSERVE_WINDOW_MS = 7 * 86_400_000;
+export function observationOutcome(closedAt: number, now: number, found: { reverted: string[]; readable: boolean }): PhaseObservation {
+  const until = closedAt + OBSERVE_WINDOW_MS;
+  if (found.reverted.length) return { outcome: "failure", reverted: found.reverted, until };
+  if (!found.readable) return { outcome: "no_data", reverted: [], until };
+  return { outcome: now >= until ? "no_failure" : "incomplete", reverted: [], until };
+}
+/** Is the watch still owed a pass: inside the window, or over it with no final outcome on record yet. */
+export const observationDue = (closedAt: number, now: number, seen?: PhaseObservation) =>
+  now - closedAt <= OBSERVE_WINDOW_MS || seen?.outcome === "incomplete";
 
 /** Is a lessons analysis needed: a phase that went straight through has nothing to teach; returns, failed attempts or a failed verdict do. */
 export function lessonsNeeded(input: { returns: number; failedAttempts: number; verdictFailures: number }): { needed: boolean; why: string } {

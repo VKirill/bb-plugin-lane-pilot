@@ -28,6 +28,8 @@ export type AttemptMetrics = {
   gates: { passed: number; rejected: number };
   writer: { threadId: string | null; providerId: string | null; model: string | null; tier: ModelTier | null };
   tokens: { input: number; output: number; cached: number; total: number } | null;
+  /** Turns the writer thread made (distinct turn ids the sync counted); 0 while nothing landed. */
+  turns?: number;
   costUsd: number | null;
   costState: CostState;
   costNote: string | null;
@@ -143,6 +145,7 @@ export function attemptMetrics(db: Database.Database, input: { projectId: string
       const providerId = (cursor?.last_provider || cursor?.provider_id || receipt?.provider_id || null) ?? null;
       const model = (cursor?.last_model || receipt?.model || null) ?? null;
       const billed = cursor ? billedFrom(parseBreakdown(cursor.total_json)) : null;
+      const turns = cursor ? ((JSON.parse(cursor.total_json || "{}") as { turns?: number }).turns) ?? 0 : 0;
       const reported = billed !== null && (billed.total > 0 || billed.output > 0);
       let costState: CostState = "not_measured", costNote: string | null = null;
       let tokens: AttemptMetrics["tokens"] = null, cost: number | null = null;
@@ -167,7 +170,7 @@ export function attemptMetrics(db: Database.Database, input: { projectId: string
         stagesFailed: stages.filter((row) => row.state === "failed" || row.state === "blocked").length,
         gates: { passed: gates.filter((row) => row.status === "passed").length, rejected: gates.filter((row) => row.status === "rejected" || row.status === "failed").length },
         writer: { threadId: attempt.thread_id, providerId, model, tier: writerTier(providerId, model) },
-        tokens, costUsd: cost, costState, costNote,
+        tokens, turns, costUsd: cost, costState, costNote,
       });
     });
   }

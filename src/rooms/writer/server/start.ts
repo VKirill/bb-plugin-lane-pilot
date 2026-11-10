@@ -7,8 +7,8 @@ import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { providerPoolCap } from "@lane-pilot/settings-catalog";
 import {WRITER_PROFILES, isZcodeProvider, rotatedWriterSettings, type WriterProfile, writerFallbackChain, writerFallbacks} from "@lane-pilot/models";
-import { DEPENDENCY_REDO_WAIT_MS, blockedReasonCount, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, failureFieldsOf, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttempt, latestTaskAttemptState, attemptReasonsForTask, canceledLatestTaskIds, listAttemptsForTask, listAttemptsInStates, listOpenAttempts, listStageReceipts, listRunTaskRows, listTaskAttemptRows, listTracedAttemptsSince, listUnansweredWriterQuestions, loadProjectSettings, priorAttemptStates, taskHeldUntil, noteCleanAdmission, noteToldPmDirectly, onAttemptChanged, parkAttemptWake, trailingQueuedParks, transitionAttempt, taskBasePath } from "../../storage";
-import { closeOwnerItem, closeOwnerItemsByPrefix, ownerItemPrefixCount, postOwnerItem } from "../../owner-waiting";
+import { DEPENDENCY_REDO_WAIT_MS, blockedReasonCount, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, failureFieldsOf, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttempt, latestTaskAttemptState, attemptReasonsForTask, canceledLatestTaskIds, listAttemptsForTask, listAttemptsInStates, listOpenAttempts, listStageReceipts, listRunTaskRows, listTaskAttemptRows, listTracedAttemptsSince, listUnansweredWriterQuestions, loadProjectSettings, priorAttemptStates, taskHeldUntil, noteCleanAdmission, noteToldPmDirectly, onAttemptChanged, parkAttemptWake, trailingQueuedParks, transitionAttempt, taskBasePath, taskTimelineRow, listTaskLatestAttemptStates } from "../../storage";
+import { closeOwnerItem, closeOwnerItemsByPrefix, ownerItemPrefixCount, postOwnerItem, rpcLine } from "../../owner-waiting";
 import { taskV2Schema } from "../../contracts";
 import { bestEffort, ownsPathsOverlap, parseJsonOr, pollPause } from "@lane-pilot/kit";
 import { reconcile, reconcileCursor } from "../../stability";
@@ -24,7 +24,7 @@ import { loadWriterPin, noteWriterPair } from "../writer-model-pin";
 import { reassignedReason, takeReassignRequest, type ReassignRequest } from "./reassign";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../contracts/state-machine";
-import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, VERIFICATION_TIMEOUT_RETRIES, failureClassCooldownMs, isWaitingSecret, isWriterSilent, repeatedFailureReason, turnFailureKey, verificationTimeoutOverBudget } from "../../contracts/failure-class"
+import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, VERIFICATION_TIMEOUT_RETRIES, failureClassCooldownMs, failureFingerprint, isWaitingSecret, isWriterSilent, repeatedFailureReason, turnFailureKey, verificationTimeoutOverBudget } from "../../contracts/failure-class"
 import { taskFamily } from "@lane-pilot/contracts";
 import { coreHostsRequiredProvider, isTaskSatisfied } from "../../runs/server";
 import { walkWriterChain, waitingWriterReason, waitingWriterText, type ChainWalk } from "./writer-hold";
@@ -42,7 +42,7 @@ import { WRITER_QUESTION_WAIT_TEXT } from "./question-default";
 import { failureClass, failureIntervention, MAST_OF_FAILURE, type FailureClass } from "../../contracts/failure-class";
 import { jev } from "@lane-pilot/jev";
 import { judgedFailureClass } from "../../runs";
-import { isRunHalted, isRunPaused, waitWhileRunPaused } from "../../runs/server";
+import { isHeld, isRunHalted, isRunPaused, waitWhileRunPaused } from "../../runs/server";
 import { allowedSecretNames, secretProblem, waitingSecretNote, waitingSecretReason } from "../../secrets/server";
 
 import type { BaselineApi } from "../../baseline/server/baseline";
@@ -90,6 +90,9 @@ interface Services {
 /** How long a task waits for a blocked dependency to be sent again and accepted. */
 /** How long a task waits for an Env Catalog secret, and how often it asks the catalog (BB sends no server-side event when it changes). */
 const SECRET_WAIT_MS = 12 * 3600_000;
+/** The run.max_* setting behind each budget kind, for the owner item's «raise the limit» action (sma ac_pocket). */
+const RUN_LIMIT_WORD = { maxAttempts:"число попыток", maxWallMs:"время работы в минутах", maxTokens:"токены", maxChildren:"число помощников" } as const;
+const RUN_LIMIT_SETTING = { maxAttempts:"run.max_attempts", maxWallMs:"run.max_wall_minutes", maxTokens:"run.max_tokens", maxChildren:"run.max_children" } as const;
 const secretPollMs = () => Number(process.env.LANE_PILOT_SECRET_POLL_MS) || 20_000;
 import type { AttemptState } from "../../contracts/state-machine";
 import { closeWriterStages, recordStage } from "../../runs/server";
@@ -179,7 +182,10 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
   // accepted, canceled) the item closes; the next block posts under a fresh sequence key.
   bb.onDispose(onAttemptChanged(db, (changedId) => {
     const attempt = getAttempt(db, changedId);
-    if (attempt && attempt.state !== "blocked") closeOwnerItemsByPrefix(db, `store-read:${changedId}:`, "attempt left blocked");
+    if (attempt && attempt.state !== "blocked") {
+      closeOwnerItemsByPrefix(db, `store-read:${changedId}:`, "attempt left blocked");
+      closeOwnerItemsByPrefix(db, copyRefusedKeyPrefix(attempt.run_id, attempt.task_id), "attempt left blocked");
+    }
   }));
   const admitted = admittedByCore.get(ctx) ?? new Map<string, { runId:string; taskId:string; projectId:string }>();
   admittedByCore.set(ctx, admitted);
@@ -786,15 +792,24 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           }
           await new Promise((wake) => setTimeout(wake, pollPause(30_000)));
         }
+        // Idle pass (SMA dt_idle): a wait on a full pool is named — which pool, and that it frees by itself.
+        // Stage above ordinary work: a phase-born task without a priority of its own ranks one band above urgent.
+        const rank = priorityRank(input.task.priority, taskTimelineRow(db, input.taskId, input.runId)?.birth);
+        const noteBusy = (key:string, limit:number, seats:string) => {
+          if (services.runWriterPool.busy?.(key, limit)) recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
+            reason:`waiting: all ${limit} writer seats of the ${seats} are busy; starts by itself when one frees` });
+        };
         releaseWriterSlot=liveFolder
-          ? await services.runWriterPool.acquire(`live-folder:${input.config.hostId}:${resolve(runFolder)}`,1)
-          : await services.runWriterPool.acquire(input.runId,policy.pools.provider,priorityRank(input.task.priority));
+          ? (noteBusy(`live-folder:${input.config.hostId}:${resolve(runFolder)}`, 1, "host"), await services.runWriterPool.acquire(`live-folder:${input.config.hostId}:${resolve(runFolder)}`,1))
+          : (noteBusy(input.runId, policy.pools.provider, "run"), await services.runWriterPool.acquire(input.runId,policy.pools.provider,rank));
         // BB's concurrency-limit plugin caps the threads a host runs at once: writers beyond it would only wait in BB's queue,
         // so they wait here, before their attempt starts (no pool slot is held by a writer that cannot run). No plugin, no cap.
         const hostCap = await services.concurrencyLimit.hostCap(input.config.hostId);
         if (hostCap !== null && !liveFolder) {
           const releaseRunSlot = releaseWriterSlot;
-          const releaseHostSlot = await services.runWriterPool.acquire(`concurrency-limit:${input.config.hostId}`, Math.min(hostCap, 15));
+          const hostLimit = Math.min(hostCap, 15);
+          noteBusy(`concurrency-limit:${input.config.hostId}`, hostLimit, "host");
+          const releaseHostSlot = await services.runWriterPool.acquire(`concurrency-limit:${input.config.hostId}`, hostLimit);
           releaseWriterSlot = () => { releaseHostSlot(); releaseRunSlot?.(); };
         }
         // G9: a cap on simultaneous writers of one provider (ops.provider_pool); a task over it waits here, queued, not failed.
@@ -803,6 +818,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         const providerCap = providerPoolCap(runSettings, poolProvider);
         if (providerCap !== null && !liveFolder) {
           const releaseHeld = releaseWriterSlot;
+          noteBusy(`provider-pool:${poolProvider}`, providerCap, "provider");
           const releaseProviderSlot = await services.runWriterPool.acquire(`provider-pool:${poolProvider}`, providerCap);
           releaseWriterSlot = () => { releaseProviderSlot(); releaseHeld?.(); };
         }
@@ -811,8 +827,25 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         const capOfLane = laneCap(runSettings["queue.lane_caps"], lane);
         if (capOfLane !== null && !liveFolder) {
           const releaseHeld = releaseWriterSlot;
-          const releaseLaneSlot = await services.runWriterPool.acquire(`lane-queue:${input.projectId}:${lane}`, capOfLane, priorityRank(input.task.priority));
+          noteBusy(`lane-queue:${input.projectId}:${lane}`, capOfLane, "lane");
+          const releaseLaneSlot = await services.runWriterPool.acquire(`lane-queue:${input.projectId}:${lane}`, capOfLane, rank);
           releaseWriterSlot = () => { releaseLaneSlot(); releaseHeld?.(); };
+        }
+        // The claim is fetch-plus-holds in one step: a hold that arrived while the task waited for a seat (a task hold,
+        // a pause, the conveyor, a breaker) is re-checked now, not only before the pool wait — the slots go back and
+        // the task waits again, queued, instead of starting held work (sma dt_claim).
+        const lateHold = taskHeldUntil(db, input.taskId);
+        const lateBreaker = services.stability.breakerHolds(input.projectId);
+        // An unreadable pause/conveyor flag is not decided here: the stage-boundary wait below holds on it and tells
+        // the owner (pause-read item). Swallowing it here would queue the task again and again with nobody told.
+        const latePaused = await isHeld(bb.storage.kv as never, input.runId).catch(() => false);
+        if ((lateHold !== null && lateHold > Date.now()) || lateBreaker || latePaused) {
+          releaseWriterSlot?.(); releaseWriterSlot = undefined;
+          const reason = lateHold !== null && lateHold > Date.now()
+            ? `waiting: held until ${lateHold >= HOLD_FOREVER ? "released" : new Date(lateHold).toISOString()}`
+            : `waiting: ${lateBreaker ?? "the run is paused"}; starts by itself once it clears`;
+          recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan, reason });
+          return waitForAdmission();
         }
         return true;
       };
@@ -954,6 +987,20 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           const reason=budgetStopReason(budgetCheck.exceeded);
           transitionAttempt(db, attemptId, "blocked", { reason });
           last = { status:"blocked", reason, attemptId };
+          // The run's whole remainder ran out: the owner is asked once per run whether to raise the
+          // run.max_* limit or finish the run, instead of the work stopping quietly (sma ac_pocket).
+          const limitSetting = RUN_LIMIT_SETTING[budgetCheck.exceeded];
+          const limitNumber = (value:number) => budgetCheck.exceeded === "maxWallMs" ? Math.round(value / 60_000) : value;
+          const openTasks = listTaskLatestAttemptStates(db, input.runId)
+            .filter((row) => row.state !== "accepted" && row.state !== "canceled").map((row) => row.task_id);
+          postOwnerItem(db, { key:`run-budget:${input.runId}`, source:"writer", kind:"budget_spent", projectId:input.projectId, wake:false,
+            what:`Лимит прогона исчерпан: ${RUN_LIMIT_WORD[budgetCheck.exceeded]}, потрачено ${limitNumber(budgetCheck.used)} при лимите ${limitNumber(budgetCheck.limit)}`,
+            why:`В прогоне остались незаконченные задачи: ${openTasks.length}. Работа продолжится, если поднять лимит (настройка ${limitSetting}), или прогон можно завершить.`,
+            actions:[
+              { id:"raise", label:`Поднять ${limitSetting}`, cli:`bb lane-pilot budget ${input.projectId} ${limitSetting}=<новый лимит>` },
+              { id:"finish", label:"Завершить прогон", cli:rpcLine("finish_run", { projectId:input.projectId, runId:input.runId }), rpc:{ method:"finish_run", input:{ projectId:input.projectId, runId:input.runId } } },
+            ],
+            evidence:[{ kind:"run", ref:input.runId }, { kind:"task", ref:input.taskId }, { kind:"attempt", ref:attemptId }] });
           break;
         }
         // A mainfix runs only while main is still red: when its failing checks already pass on current main (another
@@ -990,8 +1037,16 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             : writerChoice;
           if (walked.free && walked.free.index > 0)
             ctx.log(`writer ${input.taskId}: ${primaryPair.providerId}/${primaryPair.model} is held (${walked.shortest?.hold.reason ?? "unknown"}); spawning ${walked.free.member.providerId}/${walked.free.member.model} in the same attempt`);
-          // A pause the last failure's class asks for before the next attempt (writer.class_cooldowns, hive H-14).
-          const classCooldown = failureClassCooldownMs(failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null), runSettings);
+          // A pause the last failure's class asks for before the next attempt (writer.class_cooldowns, hive H-14): it
+          // doubles with each consecutive attempt that ended in the same class (SMA ae_auto_retry).
+          const lastClass = failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null);
+          let sameClassStreak = 0;
+          for (const row of [...listAttemptsForTask(db, input.runId, input.taskId)].reverse()) {
+            if (row.id === attemptId || ["queued","spawn_requested","spawn_unknown","running","cancel_requested"].includes(row.state)) continue;
+            if (failureClass(row.state, getAttempt(db, row.id)?.reason) !== lastClass) break;
+            sameClassStreak += 1;
+          }
+          const classCooldown = failureClassCooldownMs(lastClass, runSettings, Math.max(1, sameClassStreak));
           if (classCooldown > 0) await new Promise((resolve) => setTimeout(resolve, classCooldown));
           // The task's overall budget of writers, kept across reloads and restarts (retry-budget.ts).
           // A reassigned task's new writer spends no attempt of the task's budget (the PM asked for it).
@@ -1140,6 +1195,16 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             || last.reason.startsWith("attempt_workspace_"))) {
           const rejected = getAttempt(db, attemptId);
           if (rejected?.state === "spawn_rejected") transitionAttempt(db, attemptId, "blocked", { reason:last.reason });
+          // The working copy could not be made for a cause only a person clears (a stale path, a permission,
+          // a full disk): parked as now, and the reason is put before the owner once per refusal fingerprint
+          // — a machine wait never reaches a human otherwise (sma ap_copy_refusal).
+          if (last.reason.startsWith("attempt_worktree_")) {
+            const detail = last.reason.replace(/^attempt_worktree_(failed|baseline_failed|not_clean|provision_[a-z_]+):?/, "") || last.reason;
+            postOwnerItem(db, { key:`${copyRefusedKeyPrefix(input.runId, input.taskId)}${failureFingerprint(last.reason)}`, source:"writer", kind:"copy_refused", projectId:input.projectId, wake:false,
+              what:"Рабочая копия для задачи не создалась",
+              why:`Причина: ${detail}. Задача припаркована: сама она не запустится, её нужно отправить снова после устранения причины.`,
+              evidence:[{ kind:"run", ref:input.runId }, { kind:"task", ref:input.taskId }, { kind:"attempt", ref:attemptId }] });
+          }
           last = { ...last, status:"blocked" };
           break;
         }
@@ -1653,5 +1718,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
 export function sameArea(a:string | undefined, b:string | undefined):boolean {
   return Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase());
 }
+
+/** The owner-item key prefix of a refused working copy, once per reason fingerprint (sma ap_copy_refusal). */
+export const copyRefusedKeyPrefix = (runId: string, taskId: string): string => `copy-refused:${runId}:${taskFamily(taskId)}:`;
 
 export type WriterStartApi = ReturnType<typeof createWriterStart>;

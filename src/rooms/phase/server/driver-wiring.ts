@@ -39,6 +39,7 @@ export function installWiring(tools: WiringTools) {
     medianTask: (phase) => { const m = medianTaskSize(db, phase.projectId); return m ? taskSizeText(m) : null; },
     runStopped: async (phase) => !!phase.runId && (await isRunHalted(bb.storage.kv as never, phase.runId) || await isRunPaused(bb.storage.kv as never, phase.runId)),
     proofCurrency: tools.proofCurrency,
+    journal: (line) => tools.reactions.journalDrawing(line),
   });
   const architect = services.architect;
   const library = services.workflowLibrary;

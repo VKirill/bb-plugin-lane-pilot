@@ -32,6 +32,10 @@
     "proof_currency": {
       "type": "string",
       "note": "git: какие записанные доказательства ещё покрывают код, а какие устарели (машина считает перед аудитом)"
+    },
+    "drawing": {
+      "type": "any",
+      "note": "the phase drawing (paths, sha256, ui_spec) when the phase drew screens: the goal audit checks screens against UI-SPEC.md"
     }
   },
   "outputs": {
@@ -58,6 +62,7 @@
         "goals": "{{$inputs.goals}}",
         "merged_commits": "{{$inputs.merged_commits}}",
         "summary": "{{$inputs.summary}}",
+        "drawing": "{{$inputs.drawing}}",
         "proof_currency": "{{$inputs.proof_currency}}"
       },
       "output": [
@@ -142,7 +147,7 @@
         "drift_items": "[]"
       },
       "src": "maestro-flow:prepare/ralph.md (post-goal-audit, post-reground)",
-      "prompt": "For each goal check `done_when` against evidence (command output, file:line, test result); met only with evidence you re-checked now.\n`proof_currency`, when given, is git's own verdict on whether each recorded proof still covers the code: use it, do not work currency out from git by hand. A proof marked STALE, NOT ON THIS HISTORY or UNKNOWN COMMIT is not current evidence: re-check that goal on the code as it is now and name the changed paths in the evidence.\nintent_aligned=false when the result drifts from the original goal: two or more in_scope items missing or one out_of_scope item violated (confident drift at 80%+).\nDifferent model from the writer. Never ask the owner for what the repository can answer.\n",
+      "prompt": "For each goal check `done_when` against evidence (command output, file:line, test result); met only with evidence you re-checked now.\nEach goal carries its piece's contract (acceptance, verification commands, owns_paths) and `depends_on`: check each goal against its own contract, and a goal whose dependency is unmet is unmet.\n`merged_commits` names the diff range of the phase's work: read the changes there. When `drawing` is given, check the screens against its UI-SPEC.md.\n`proof_currency`, when given, is git's own verdict on whether each recorded proof still covers the code: use it, do not work currency out from git by hand. A proof marked STALE, NOT ON THIS HISTORY or UNKNOWN COMMIT is not current evidence: re-check that goal on the code as it is now and name the changed paths in the evidence.\nintent_aligned=false when the result drifts from the original goal: two or more in_scope items missing or one out_of_scope item violated (confident drift at 80%+).\nDifferent model from the writer. Never ask the owner for what the repository can answer.\n",
       "out": {
         "goals": "GoalResult[]",
         "all_met": "bool",

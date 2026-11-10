@@ -56,7 +56,7 @@ export interface WriterStateApi {
   activeWriterTasks: Set<string>;
   providerBreaker: ReturnType<typeof createProviderBreaker>;
   /** The keyed writer pool (tasks/run-policy.ts RunWriterPool): one semaphore per run, mirrored structurally. */
-  runWriterPool: { acquire(runId: string, limit: number, rank?: number): Promise<() => void> };
+  runWriterPool: { acquire(runId: string, limit: number, rank?: number): Promise<() => void>; /** Optional: a pool that cannot say so just waits unnamed. */ busy?(key: string, limit: number): boolean };
   runBudgets: Map<string, RunBudget>;
   runBudgetFor(runId: string, settings: Record<string, unknown>): RunBudget;
 }

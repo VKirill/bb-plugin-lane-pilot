@@ -7,7 +7,7 @@ import type { ChainRuntime } from "../../contracts/server";
 
 import type { ServerCore } from "../../contracts/server";
 import { closeOwnerItem, collectOwnerWaiting, isSandboxProject, loadPushConfig, postOwnerItem, rpcLine, type LearningItemsReader, type OwnerAction, type OwnerEvidence } from "../../owner-waiting";
-import { writerQuestionSweep } from "../../writer/server";
+import { writerQuestionSweep, budgetSpentSweep } from "../../writer/server";
 import { runGoalSweep } from "../../run-goal/server";
 import { phaseWordSweep } from "../../phase/server";
 import { scheduleFailureSweep } from "../../schedule/server";
@@ -46,6 +46,7 @@ interface Services {
   workflowEngine: WorkflowEngineApi["workflowEngine"];
   workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
   ownerLearningItems?: LearningItemsReader;
+  runBudgetFor?: import("../../writer/server").WriterStateApi["runBudgetFor"];
 }
 
 /**
@@ -405,7 +406,7 @@ export async function hubSnapshot(ctx: Pick<ServerCore, "db" | "bb">, settings: 
     id: row.id, parent_id: row.parent_id, project_id: row.project_id, title: row.title, kind: row.kind, state: row.state, source: row.source, why: clip(row.why, 400), class: row.class, cost_estimate: row.cost_estimate,
     evidence: (JSON.parse(row.evidence_json) as RoadEvidence[]).slice(0, 4),
   }));
-  const waiting = collectOwnerWaiting(db, now, OWNER_ITEM_SWEEPS, undefined, services?.ownerLearningItems).items.filter((item) => item.projectId === null || zoneIds.has(item.projectId)).slice(0, 15).map((item) => ({ key: item.key, source: item.source, kind: item.kind, projectId: item.projectId, what: clip(item.what, 200) }));
+  const waiting = collectOwnerWaiting(db, now, [...OWNER_ITEM_SWEEPS, budgetSpentSweep(services)], undefined, services?.ownerLearningItems).items.filter((item) => item.projectId === null || zoneIds.has(item.projectId)).slice(0, 15).map((item) => ({ key: item.key, source: item.source, kind: item.kind, projectId: item.projectId, what: clip(item.what, 200) }));
   const lastTicks = listTicks(db, 5).filter((row) => row.id !== input.tickId).map((row) => ({
     id: row.id, startedAt: row.started_at, status: row.status, proposed: (JSON.parse(row.proposed_json ?? "[]") as unknown[]).length, acted: (JSON.parse(row.acted_json ?? "[]") as unknown[]).length, costUsd: (row.cost_micro_usd ?? 0) / USD,
   }));

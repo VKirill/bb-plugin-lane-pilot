@@ -1,4 +1,5 @@
 import { breakerKey, RunBudgetExceeded } from "@lane-pilot/resilience";
+import { openTokenCursor } from "../../usage/server";
 import { briefMode, briefParts } from "../../contracts";
 import { estimateTokens, recordMemoryMixed, recordMemoryReceipt } from "@lane-pilot/memory-core";
 import { writerKnowledge } from "./writer-knowledge";
@@ -198,11 +199,11 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         return typeof content==="string"?new TextEncoder().encode(content):null;
       };
       at("knowledge");
-      const { allRules, rules, rulesText, mixed, briefContext }=await writerKnowledge({db,host,chainForRun:(runId)=>services.ruleScan.chainForRun(runId),log:(line)=>bb.log.warn(line)},
+      const { allRules, rules, rulesText, mixed, briefContext, similar }=await writerKnowledge({db,host,chainForRun:(runId)=>services.ruleScan.chainForRun(runId),log:(line)=>bb.log.warn(line),kv:bb.storage.kv as never},
         {projectId:input.projectId,runId:input.runId,hostId:input.config.hostId,task:input.task,memorySettings,readBytes});
       // A fresh writer of an area hears what its earlier tasks decided, in place of the thread that remembered it.
       const areaHistory=input.task.area?areaHistoryText(await loadArea(bb.storage.kv,input.projectId,input.task.area)):"";
-      const relevantMemory={text:[areaHistory,mixed.text].filter(Boolean).join("\n\n")};
+      const relevantMemory={text:[areaHistory,mixed.text,similar].filter(Boolean).join("\n\n")};
       const writerProviderId = input.emergency?.providerId ?? (typeof settings["writer.provider"] === "string"
         ? settings["writer.provider"] as string : input.config.writerProviderId);
       const writerModel = input.emergency?.model ?? (typeof settings["writer.model"] === "string" && settings["writer.model"]
@@ -590,6 +591,9 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         return { ok:false, status:"spawn_rejected", reason:"the writer thread came after its start had ended", attemptId:input.attemptId };
       }
       transitionAttempt(db, input.attemptId, "running", { threadId:writerThreadId });
+      // The spend book lists the attempt from its first second (SMA as_usage): a cursor row exists before any sync,
+      // so an attempt that dies early still shows up with zero totals until events land.
+      openTokenCursor(db, { threadId:writerThreadId, projectId:input.projectId, providerId:input.config.writerProviderId ?? "" });
       // A BB environment, a folder in place: the base is asked of git (a worktree Lane Pilot made recorded its own already).
       // A folder without git has no commit to name, and Lane Pilot never touches git there.
       { const bound = getAttempt(db, input.attemptId); if (bound?.workspace_path && !isLiveDecision(bound.workspace_decision)) services.rollback?.ensureBase(input.attemptId, input.config.hostId, bound.workspace_path); }

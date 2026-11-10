@@ -5,6 +5,7 @@ import { PROVIDER_CAPABILITIES } from "@lane-pilot/models";
 import { isZcodeProvider } from "@lane-pilot/models";
 import { spawnKeyed } from "./thread-keys";
 import { stringAt } from "@lane-pilot/kit";
+import { isDocumentaryRole } from "../../contracts";
 import { rememberThreadModel } from "./spawn-model";
 import { noteZcodeThread, reserveZcodeSlot } from "./zcode-slot";
 
@@ -133,9 +134,46 @@ async function laneAgentOption(bb: BbPluginApi, args: { providerId?: string; mod
  * marked explicit; otherwise the project's remembered mode (often accept-edits) makes agents stop for approval.
  */
 
+/**
+ * A documentary stage (a helper role that produces documents, `isDocumentaryRole`) may not start on a provider whose
+ * adapter version has no documentary receipt (SMA ap_caps / ap_caps_held). The capability service binds the answer
+ * here; an unproved provider refuses the spawn with the reason `capability_unproven:<provider>:<cell>`, before a turn
+ * is spent, and the caller moves to the stage's next provider. The gate holds only in a project that set
+ * `capability.documentary_gate` to `hold`; by default the table is observed and nothing is refused, so a void receipt
+ * (a new adapter version, a changed hook) never stops a project's planning or docs.
+ */
+export class CapabilityUnproven extends Error {
+  constructor(readonly why: string) { super(why); this.name = "CapabilityUnproven"; }
+}
+export type DocumentaryGate = {
+  /** The reason a provider may not run a documentary stage now (`capability_unproven:<provider>:<cell>`), or null when proved. */
+  deny(providerId: string, model: string, projectId?: string): Promise<string | null>;
+  /** The providers whose installed adapter version proved every documentary cell: the offer a documentary pick is drawn from. Null where the gate is off. */
+  proved(projectId?: string): Promise<Set<string> | null>;
+};
+const documentaryGateByApi = new WeakMap<BbPluginApi, DocumentaryGate>();
+
+/** The capability service binds this: whether a provider's installed adapter version proved the documentary cells. */
+export function bindDocumentaryGate(bb: BbPluginApi, gate: DocumentaryGate): void {
+  documentaryGateByApi.set(bb, gate);
+}
+
+/** The bound gate, when the capability service is up; undefined before it binds (no gate then). */
+export function documentaryGateOf(bb: BbPluginApi): DocumentaryGate | undefined {
+  return documentaryGateByApi.get(bb);
+}
+
 export function fullAccessSpawn(bb: BbPluginApi, args: Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0]) {
   enforceRunChildBudget(bb, args);
   return (async () => {
+    const meta = args.pluginMetadata as { role?: unknown; helperProbe?: unknown } | undefined;
+    const role = typeof meta?.role === "string" ? meta.role : null;
+    // Capability probes of the documentary cells run on a role the gate does not cover; a probe of its own cell would
+    // refuse itself otherwise (the probe is what produces the receipt the gate reads).
+    if (isDocumentaryRole(role) && meta?.helperProbe !== true) {
+      const deny = await documentaryGateByApi.get(bb)?.deny(args.providerId ?? "", typeof args.model === "string" ? args.model : "", (args as { projectId?: string }).projectId);
+      if (deny) throw new CapabilityUnproven(deny);
+    }
     const hostId = args.environment?.type === "host" && typeof args.environment.hostId === "string" ? args.environment.hostId : undefined;
     const [supportsTier, laneAgent] = await Promise.all([
       providerSupportsTier(bb, args.providerId, hostId),

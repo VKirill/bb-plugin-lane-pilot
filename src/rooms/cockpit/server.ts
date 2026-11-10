@@ -2,6 +2,7 @@ import { hostContract, rpcContract } from "../contracts";
 
 import type { ServerCore } from "../contracts/server";
 import { activeRunForProject, getRun, getTaskContractJson, listAttemptRowsForProject, setTaskHeldUntil, taskHeldUntil, updateTaskContractJson } from "../storage";
+import { attemptRecord } from "../tools/server";
 import { listReceipts } from "../capability";
 import { tokenDailySeries, tokenDailyTotal } from "../usage/server";
 import { readTaskApproach } from "../tasks";
@@ -108,22 +109,25 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
     /** Move queue position: a task held, released, or given another priority (the order queued tasks start in). */
     cockpit_queue: async ({ runId, taskIds, action, priority }: { runId: string; taskIds: string[]; action: "hold" | "release" | "priority"; priority?: string }) => {
       const changed: string[] = [];
+      // A hold or a priority is reported only for a task of this run (SMA bi_pause): a task of another run is refused, not silently counted.
+      const refused: Array<{ taskId: string; why: string }> = [];
       for (const taskId of taskIds) {
-        if (action === "priority") {
-          const stored = getTaskContractJson(db, taskId, runId);
-          if (!stored) continue;
-          const contract = { ...(JSON.parse(stored) as Record<string, unknown>), priority: priority ?? "normal" };
-          updateTaskContractJson(db, taskId, runId, JSON.stringify(contract));
-        } else setTaskHeldUntil(db, taskId, runId, action === "hold" ? Date.UTC(2999, 0, 1) : null);
-        changed.push(taskId);
+        const matched = action === "priority"
+          ? (() => { const stored = getTaskContractJson(db, taskId, runId);
+              if (stored) updateTaskContractJson(db, taskId, runId, JSON.stringify({ ...(JSON.parse(stored) as Record<string, unknown>), priority: priority ?? "normal" }));
+              return Boolean(stored); })()
+          : setTaskHeldUntil(db, taskId, runId, action === "hold" ? Date.UTC(2999, 0, 1) : null);
+        if (matched) changed.push(taskId); else refused.push({ taskId, why: `not a task of run ${runId}` });
       }
-      return { changed };
+      return { changed, refused };
     },
     /** Run update: the Lane Stack update report on a machine, applied with apply. */
     cockpit_update: async ({ hostId, apply }: { hostId: string; apply: boolean }) => {
       const ran = await runOnHost(host(), { hostId, cwd: "/tmp", command: `lane-stack-update --json${apply ? " --yes" : ""}`, timeoutSec: apply ? 600 : 60 });
       return { exitCode: ran.exitCode, output: (ran.stdout || ran.stderr).slice(0, 20_000) };
     },
+    /** One attempt's whole record in one answer (SMA ap_run_dir): writer thread, stage receipts, gate events, dispatch context, verification, critic hash, attempt-change. */
+    cockpit_attempt: async ({ attemptId }: { attemptId: string }) => attemptRecord(db, attemptId),
     /** A task for the window: its clarification, drawing, priority and hold from the contract, and the writer's approach note. */
     cockpit_task: async ({ runId, taskId }: { runId: string; taskId: string }) => {
       const stored = getTaskContractJson(db, taskId, runId);

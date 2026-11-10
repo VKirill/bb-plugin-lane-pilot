@@ -29,7 +29,7 @@ function world(options: { settings?: Record<string, unknown>; role?: string; tra
       opened.push(phase);
       return phase;
     },
-    tick: async () => 0,
+    tick: async () => ({ moved: 0, idle: null }),
     list: (filter) => opened.filter((phase) => (!filter.pmThreadId || phase.pmThreadId === filter.pmThreadId) && (!filter.live || !["closed", "stopped"].includes(phase.state))),
     status: () => ({ next: { text: "write the discussion files and report them with context" } }),
   };
@@ -176,7 +176,7 @@ describe("a new process", () => {
     harness.sdk.stub("threads.events.list", async () => [{ type: "client/turn/requested", data: { requestId: "creq_p", initiator: "user", input: [{ type: "text", text: "x".repeat(300) }] } }]);
     const db = openDatabase(bb);
     createRun(db, "run1", "projA");
-    const phases = { open: async () => { throw new Error("no phase for a process"); }, tick: async () => 0, list: () => [], status: () => ({ next: { text: "" } }) };
+    const phases = { open: async () => { throw new Error("no phase for a process"); }, tick: async () => ({ moved: 0, idle: null }), list: () => [], status: () => ({ next: { text: "" } }) };
     const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never, phases as never);
     // The newest request was read earlier as a process (the record the reader keeps).
     await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_p", kind: "process", by: "jev", phaseId: null, at: 1 });
@@ -195,7 +195,7 @@ describe("the small-task graph", () => {
     const db = openDatabase(bb);
     createRun(db, "run1", "projA");
     const started: string[] = [];
-    const phases = { open: async () => { throw new Error("no phase"); }, tick: async () => 0, list: () => [], status: () => ({ next: { text: "" } }) };
+    const phases = { open: async () => { throw new Error("no phase"); }, tick: async () => ({ moved: 0, idle: null }), list: () => [], status: () => ({ next: { text: "" } }) };
     const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never, phases as never,
       { start: (input) => { started.push(input.text); return "wfrun_1"; }, status: () => "running" });
     (intake as { classify: unknown }).classify = undefined;
@@ -224,7 +224,7 @@ describe("a stopped or paused run", () => {
     const db = openDatabase(bb);
     createRun(db, "run1", "projA");
     const started: string[] = [];
-    const phases = { open: async () => { throw new Error("no phase"); }, tick: async () => 0, list: () => [], status: () => ({ next: { text: "" } }) };
+    const phases = { open: async () => { throw new Error("no phase"); }, tick: async () => ({ moved: 0, idle: null }), list: () => [], status: () => ({ next: { text: "" } }) };
     setJevForTests({ enabled: () => true, judge: async () => ({ by: "jev", decision: { kind: "small" } }) } as never);
     try {
       const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never, phases as never,
@@ -303,7 +303,7 @@ describe("a process the catalog already has", () => {
     const db = openDatabase(bb);
     createRun(db, "run1", "projA");
     setJevForTests({ enabled: () => true, judge: async () => ({ by: "jev", decision: { kind: "process" } }) } as never);
-    const phases = { open: async () => ({ id: "ph_1" }), tick: async () => 0, list: () => [], status: () => ({ next: { text: "" } }) };
+    const phases = { open: async () => ({ id: "ph_1" }), tick: async () => ({ moved: 0, idle: null }), list: () => [], status: () => ({ next: { text: "" } }) };
     try {
       const architects: string[] = [];
       const train = (found: { graphId: string; name: string; confidence: number } | null) => ({ start: () => null, status: () => null,
@@ -333,7 +333,7 @@ describe("the PM is the door: no other system for a request the machine took", (
     harness.sdk.stub("threads.get", async () => ({ id: "thr_arch", status: architect }));
     const db = openDatabase(bb);
     createRun(db, "run1", "projA");
-    const phases = { open: async () => { throw new Error("no phase"); }, tick: async () => 0, list: () => [], status: () => ({ next: { text: "" } }) };
+    const phases = { open: async () => { throw new Error("no phase"); }, tick: async () => ({ moved: 0, idle: null }), list: () => [], status: () => ({ next: { text: "" } }) };
     const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never, phases as never,
       { start: () => "wfrun_1", status: () => "running" });
     await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_p", kind: "small", by: "jev", phaseId: null, at: 1, wfRunId: "wfrun_1" });

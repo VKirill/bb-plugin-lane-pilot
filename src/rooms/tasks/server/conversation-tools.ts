@@ -6,6 +6,14 @@ import { wayOut } from "../../contracts"
 import { failureClass } from "../../contracts/failure-class";
 import { getRun, getRunWriterHost, listAttemptRowsForProject, listRunTaskSummaries } from "../../storage";
 import { checkRecipe, factKind, type CheckMeasure } from "../rails";
+import { sha256Hex } from "@lane-pilot/kit";
+
+/** A check as an operation (SMA m_ck_answer): one receipt per request hash. A request repeated while the check runs, or within
+ *  half a minute of its end (a retried tool call), gets that receipt; later the same commands are a new check — the code may
+ *  have been fixed in between, and an old red answer would hide it. */
+type CheckReceipt = { checkId: string; requestHash: string; recipe: string; state: "running" | "passed" | "failed" | "stopped"; measures: CheckMeasure[]; startedAt: number; endedAt: number | null };
+const RECEIPT_GRACE_MS = 30_000;
+const receiptKey = (runId: string, requestHash: string) => `chat-check:${runId}:${requestHash}`;
 
 /**
  * The turn engine and the checks from the conversation (SMA map: Conversation and intake — One-turn engine, What kind of question,
@@ -15,6 +23,8 @@ import { checkRecipe, factKind, type CheckMeasure } from "../rails";
  */
 interface Services {
   spendByModel: (projectId: string, day: string) => Array<{ provider: string; model: string; tokens: number }>;
+  /** The live phases of one PM thread with the stage's next action, for the «на каком этапе» question (SMA m_ce_classify). */
+  phasesOf?: (pmThreadId: string) => Array<{ id: string; title: string; stage: string; state: string; next: string | null }>;
 }
 
 export function registerConversationTools(ctx: ServerCore, services: Services): void {
@@ -50,6 +60,10 @@ export function registerConversationTools(ctx: ServerCore, services: Services): 
           .map((row) => ({ taskId: row.taskId, state: row.state, at: row.at }));
         return JSON.stringify({ kind, finished: rows.map((row) => ({ ...row, at: new Date(row.at).toISOString() })), sources: ["the finished attempts (lane_pilot_attempt)"] });
       }
+      if (kind === "stage") {
+        const phases = context.threadId && services.phasesOf ? services.phasesOf(context.threadId) : [];
+        return JSON.stringify({ kind, phases, sources: ["lane_pilot_phase (the live phases of this PM thread)"] });
+      }
       if (kind === "failure") {
         const rows = listAttemptRowsForProject(db, { projectId: context.projectId, states: ["validation_failed","blocked","provider_error","timeout","empty_output"], limit: 10 });
         return JSON.stringify({ kind, failures: rows.map((row) => ({ ...row, class: failureClass(row.state, row.reason), reason: (row.reason ?? "").slice(0, 300), next: wayOut(row.state, row.reason, row.failureCode) ?? undefined, at: new Date(row.at).toISOString() })), sources: ["the failed attempts and their failure class (lane_pilot_attempt)"] });
@@ -80,23 +94,38 @@ export function registerConversationTools(ctx: ServerCore, services: Services): 
       const run = runId ? getRun(db, runId) : undefined;
       const hostId = runId ? getRunWriterHost(db, runId) : null;
       if (!run?.writer_workspace_path || !hostId) throw new ToolError("this chat has no run with a checkout to check", { code: "no_checkout", retryable: false, sideEffects: "none" });
-      const checkId = `chk_${Date.now().toString(36)}`;
+      // The operation journal: the request hash is the key, the receipt the answer a repeated turn gets.
+      const requestHash = sha256Hex(JSON.stringify({ runId, recipe, commands: input.commands }));
+      const key = receiptKey(runId!, requestHash);
+      const kv = bb.storage.kv;
+      const stored = await kv.get(key).catch(() => null) as CheckReceipt | null;
+      // A receipt still «running» past its commands' own time limits was left by a restart, not by a live check.
+      const runLimitMs = (input.commands.reduce((sum, item) => sum + item.timeoutSec + 30, 0) + 60) * 1000;
+      const live = stored?.state === "running" && Date.now() - stored.startedAt < runLimitMs;
+      if (stored && (live || (stored.endedAt !== null && Date.now() - stored.endedAt < RECEIPT_GRACE_MS))) {
+        return JSON.stringify({ ...stored, deduplicated: true });
+      }
+      const checkId = `chk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      const receipt: CheckReceipt = { checkId, requestHash, recipe, state: "running", measures: [], startedAt: Date.now(), endedAt: null };
+      await kv.set(key, receipt as never).catch(() => undefined);
       const controller = new AbortController();
       running.set(checkId, controller);
       const host = bb.hosts.experimental_client({ contract: hostContract });
-      const measures: CheckMeasure[] = [];
       try {
         for (const item of input.commands) {
           if (controller.signal.aborted) break;
           const cwd = item.cwd === "." ? run.writer_workspace_path : `${run.writer_workspace_path}/${item.cwd.replace(/^\.?\//, "")}`;
           const result = await host.call("runSandboxedCommand", { requestedHostId: hostId, workspacePath: run.writer_workspace_path, cwd, command: item.command, timeoutSec: item.timeoutSec }, { hostId, timeoutMs: (item.timeoutSec + 30) * 1000 });
           const evidence = `${result.stdout}\n${result.stderr}`.trim().slice(-1500);
-          measures.push({ command: item.command, cwd, expectExit: item.expectExit, timeoutSec: item.timeoutSec, evidence, exitCode: result.exitCode, passed: result.exitCode === item.expectExit });
+          receipt.measures.push({ command: item.command, cwd, expectExit: item.expectExit, timeoutSec: item.timeoutSec, evidence, exitCode: result.exitCode, passed: result.exitCode === item.expectExit });
         }
       } finally {
         running.delete(checkId);
+        receipt.endedAt = Date.now();
+        receipt.state = controller.signal.aborted ? "stopped" : receipt.measures.every((row) => row.passed) ? "passed" : "failed";
+        await kv.set(key, receipt as never).catch(() => undefined);
       }
-      return JSON.stringify({ checkId, recipe, stopped: controller.signal.aborted, passed: measures.every((row) => row.passed), measures });
+      return JSON.stringify({ ...receipt, stopped: controller.signal.aborted, passed: receipt.measures.every((row) => row.passed) });
     },
   });
 }

@@ -1,0 +1,106 @@
+{
+  "id": "lp.clarify",
+  "startedBy": "pm",
+  "name": {
+    "en": "Clarification by a model",
+    "ru": "Уточнение моделью"
+  },
+  "description": {
+    "en": "Before work starts, one analyst reads the goal and the project's task tree (.agents/plans/items/*/PLAN.md, .agents/phases/*/BOOK.md) and proposes at most 10 clarification questions, each naming the task or piece it concerns. The graph writes nothing — no write action, no task node; the PM folds the answers into the contract's clarify field.",
+    "ru": "До начала работы один аналитик читает цель и дерево задач проекта (.agents/plans/items/*/PLAN.md, .agents/phases/*/BOOK.md) и предлагает до 10 уточняющих вопросов, каждый — про свою задачу или кусок. Граф ничего не пишет: ни записи, ни узла задачи; ответы PM вкладывает в поле clarify контракта."
+  },
+  "status": "published",
+  "tags": [
+    "clarify"
+  ],
+  "triggers": [
+    "manual"
+  ],
+  "inputs": {
+    "goal": {
+      "type": "string",
+      "required": true
+    }
+  },
+  "outputs": {
+    "questions": "string[]"
+  },
+  "budget": {
+    "max_minutes": 30
+  },
+  "nodes": [
+    {
+      "id": "analyst",
+      "type": "agent",
+      "role": "analyst",
+      "uses": "lp.clarify",
+      "title": {
+        "en": "Read the task tree and propose clarifications",
+        "ru": "Прочитать дерево задач и предложить уточнения"
+      },
+      "prompt": "Read the owner's goal below and the project's existing task tree in files: `.agents/plans/items/*/PLAN.md` and `.agents/phases/*/BOOK.md`. You only read; you write nothing. Propose at most 10 clarification questions the owner should answer before work starts; each question names the task or piece it concerns. Return JSON only: {\"questions\": [{\"task\": \"<id or piece>\", \"question\": \"<what to clarify>\"}]}.\n\nGoal: {{$inputs.goal}}",
+      "out": {
+        "questions": "Question[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "questions": "analyst.questions"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "analyst"
+    },
+    {
+      "from": "analyst",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "clarify-1",
+    "sim": {
+      "input": {
+        "goal": "сделать экспорт отчётов"
+      },
+      "stubs": {
+        "analyst": {
+          "questions": [
+            {
+              "task": "reports",
+              "question": "в каком формате?"
+            }
+          ]
+        }
+      },
+      "expect_path": [
+        "analyst",
+        "done"
+      ],
+      "expect_output": {
+        "questions": [
+          {
+            "task": "reports",
+            "question": "в каком формате?"
+          }
+        ]
+      }
+    }
+  },
+  "goal_audit": "exempt"
+}

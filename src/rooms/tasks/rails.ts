@@ -4,20 +4,24 @@
  */
 
 /** Where a task row was born (SMA: Five birth kinds of a row); recorded on the task, the board and the metrics read it. */
-export { BIRTH_KINDS } from "../contracts";
+export { BIRTH_KINDS, BIRTH_GATES, birthGates } from "../contracts";
+import { birthGates } from "../contracts";
 export type { BirthKind } from "../contracts";
 
 /** Queue priority (SMA: Queue priority, Urgency into queue position): a higher one starts first when the run waits for a free writer. */
 export const PRIORITIES = ["low", "normal", "high", "urgent"] as const;
 export type Priority = (typeof PRIORITIES)[number];
-export const priorityRank = (priority: string | undefined) => {
+/** Stage above ordinary work (SMA pc_priority): the band a phase stage's piece waits in by default — one above the loudest backlog word. */
+export const STAGE_PRIORITY_RANK = PRIORITIES.length;
+export const priorityRank = (priority: string | undefined, birth?: string | null) => {
+  if (!priority && birth === "phase") return STAGE_PRIORITY_RANK;
   const index = PRIORITIES.indexOf((priority ?? "normal") as Priority);
   return index < 0 ? 1 : index;
 };
 
 /** Orders queued tasks for a free writer: priority first (urgent before low), then the order they were queued in. */
-export function queueOrder<T extends { priority?: string; queuedAt: number }>(rows: readonly T[]): T[] {
-  return [...rows].sort((a, b) => priorityRank(b.priority) - priorityRank(a.priority) || a.queuedAt - b.queuedAt);
+export function queueOrder<T extends { priority?: string; birth?: string; queuedAt: number }>(rows: readonly T[]): T[] {
+  return [...rows].sort((a, b) => priorityRank(b.priority, b.birth) - priorityRank(a.priority, a.birth) || a.queuedAt - b.queuedAt);
 }
 
 /** The three classes a task that cannot start falls into (SMA: Three blocking classes): something is missing, something must come first, or something is in the way. */
@@ -47,21 +51,27 @@ export function ownerWordFindings(task: Contract, ownerWords: boolean): Array<{ 
   return byPm.length ? [{ code: "clarify_needs_owner", message: `owner.words is on: the clarification ${byPm.map((answer) => `«${answer.question}»`).join(", ")} was answered by the PM; ask the owner with lane_pilot_ask_owner, fold in his answer with by:"owner", then send the task again` }] : [];
 }
 
-/** Findings of the task-birth rails; errors stop the dispatch, warnings go back with it. */
-export function birthFindings(task: Contract): { errors: Array<{ code: string; message: string }>; warnings: Array<{ code: string; message: string }> } {
+/** Findings of the task-birth rails; errors stop the dispatch, warnings go back with it. The gates a birth passes come from BIRTH_GATES. */
+export function birthFindings(task: Contract, birth?: string | null, redoneBirth?: string | null): { errors: Array<{ code: string; message: string }>; warnings: Array<{ code: string; message: string }> } {
+  const gates = birthGates(birth, redoneBirth);
   const errors: Array<{ code: string; message: string }> = [];
   const warnings: Array<{ code: string; message: string }> = [];
   // Clarification awaits: open questions stop the task until they are answered (the PM removes them with the answer in the words).
   const questions = task.clarify?.questions?.filter((question) => question.trim()) ?? [];
   if (questions.length) errors.push({ code: "clarify_open", message: `the task has open clarification questions: ${questions.join("; ")} — answer them (ask the owner if only he knows), fold the answers into the contract and drop clarify, then send it again` });
-  // Promise: Given, When, Then — a feature or fix of medium risk or more says what it promises in those words.
+  // Promise: Given, When, Then — a feature or fix of medium risk or more says what it promises in those words; a phase stage's
+  // piece must carry it (the plan gave it), a bench arm is judged by the bench and needs none.
   const promise = task.promise;
   const writing = task.kind === undefined || task.kind === "feature" || task.kind === "fix";
-  if (promise && !(promise.given?.trim() && promise.when?.trim() && promise.then?.trim())) errors.push({ code: "promise_incomplete", message: "promise needs given, when and then, each a short sentence" });
-  else if (!promise && writing && atLeastMedium(task.risk)) warnings.push({ code: "promise_missing", message: "a feature or fix of medium risk or more states its promise: promise {given, when, then} — the checks then prove that sentence" });
+  const promiseOk = promise && promise.given?.trim() && promise.when?.trim() && promise.then?.trim();
+  if (promise && !promiseOk) errors.push({ code: "promise_incomplete", message: "promise needs given, when and then, each a short sentence" });
+  else if (!promise && writing && atLeastMedium(task.risk)) {
+    if (gates.promise === "require") errors.push({ code: "promise_missing", message: "a stage's piece carries its promise: promise {given, when, then} — the plan wrote it" });
+    else if (gates.promise === "warn") warnings.push({ code: "promise_missing", message: "a feature or fix of medium risk or more states its promise: promise {given, when, then} — the checks then prove that sentence" });
+  }
   // Is a drawing needed: a standalone task that changes screens at medium risk or more names its drawing (or goes through a phase, which draws).
   const ui = (task.owns_paths ?? []).some((path) => UI_PATH.test(path));
-  if (ui && atLeastMedium(task.risk) && !(task.drawing?.length)) warnings.push({ code: "drawing_needed", message: "the task changes screens at medium risk or more: name the drawing it follows (drawing: [paths]) or open a phase (lane_pilot_phase), whose design stage draws and reviews it" });
+  if (gates.drawing && ui && atLeastMedium(task.risk) && !(task.drawing?.length)) warnings.push({ code: "drawing_needed", message: "the task changes screens at medium risk or more: name the drawing it follows (drawing: [paths]) or open a phase (lane_pilot_phase), whose design stage draws and reviews it" });
   return { errors, warnings };
 }
 
@@ -224,13 +234,14 @@ export function isWholeConsent(message: string): boolean {
 }
 
 /** What kind of question the owner asked (SMA: What kind of question): the ones code answers from facts, and the rest for the model. */
-export const FACT_KINDS = ["board", "limit", "history", "failure", "free"] as const;
+export const FACT_KINDS = ["board", "limit", "history", "failure", "stage", "free"] as const;
 export type FactKind = (typeof FACT_KINDS)[number];
 export function factKind(question: string): FactKind {
   const text = question.toLowerCase();
   if (/почему.*(упал|не прош|красн|заблок)|why.*(fail|block|red)|причин/.test(text)) return "failure";
   if (/лимит|limit|токен|token|сколько.*(потрат|ушло)|расход|spend/.test(text)) return "limit";
   if (/вчера|на прошлой|что было|история|history|yesterday|last week/.test(text)) return "history";
+  if (/этап|стади|фаз|\bstage\b|\bphase\b|на каком шаге/.test(text)) return "stage";
   if (/что с задач|статус|доска|board|status|что идёт|в работе|сколько задач/.test(text)) return "board";
   return "free";
 }

@@ -3,7 +3,11 @@ import { embedQuery } from "../../memory/server";
 import { DEFAULT_RELEVANCE_FLOOR, buildContextPack, clearsFloor, filesDrifted, memoryCandidates, pathsNamed, questionWords, recordRelevance, shadowPackCompare, wordFrequencies, type MemorySettings } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
 import { mixWriterMemory, snapshotFileRead, writerCandidates, writerMemoryPaths } from "../../memory/server";
-import { getRunSettingsScopes, loadProjectSettings, taskBasePath, type LanePilotDatabase } from "../../storage";
+import { getRunSettingsScopes, loadProjectSettings, taskBasePath, type LanePilotDatabase, latestAcceptedAttemptOfTask } from "../../storage";
+import { getAttemptChange } from "../../rollback";
+import { episodes } from "../../memory-tiers/server";
+import { estimateTokens } from "@lane-pilot/memory-core";
+import { readTaskApproach } from "../../tasks";
 import type { WriterBriefContext } from "../../brief";
 import type { ServerCore } from "../../contracts/server";
 import { runOnHost } from "@lane-pilot/host-calls";
@@ -37,7 +41,9 @@ export async function relevantWriterRules<T extends { rule:string; audience:stri
  * core conventions. The ONE place the first brief (`spawnWriterAttempt`), the turn that continues a writer thread
  * (`stickyTurnPrompt`) and the memory probe (`memory-probe`) take it from: a path that builds its own copy can stop delivering unseen.
  */
-export type KnowledgeDeps={ db:LanePilotDatabase; host:ServerCore["host"]; chainForRun:(runId:string)=>Promise<readonly string[]>; log: (line:string)=>void };
+export type KnowledgeDeps={ db:LanePilotDatabase; host:ServerCore["host"]; chainForRun:(runId:string)=>Promise<readonly string[]>; log: (line:string)=>void;
+  /** The kv store the approach notes live in (bb.storage.kv); without it similar works come without approach notes. */
+  kv?:{ get(key:string):Promise<unknown> } };
 export type KnowledgeInput={ projectId:string; runId:string; hostId:string; task:TaskV2; memorySettings:MemorySettings;
   /** Current bytes of a repo-relative path. A note about a file that changed since the note was stored is left out of the brief. */
   readBytes?:(path:string)=>Promise<Uint8Array|null> };
@@ -49,6 +55,31 @@ export async function writerRules(deps:KnowledgeDeps, input:KnowledgeInput) {
   const allRules=memoryOn?acceptedRules(deps.db,input.projectId,await deps.chainForRun(input.runId),[...input.task.owns_paths,...input.task.read_first]):[];
   const rules=await relevantWriterRules(deps.host,allRules,input.task as unknown as Record<string,unknown>,input.hostId,deps.log);
   return { allRules, rules, rulesText:rules.map((rule)=>`- ${rule.rule}`).join("\n") };
+}
+
+/**
+ * Up to five accepted past tasks of the project that share the new task's words (SMA ap_similar): the writer reuses
+ * what worked. Each line names the task, its approach note and the files its accepted merge changed; the block stays
+ * inside a share of the brief's knowledge budget.
+ */
+export async function similarWorksLines(deps:KnowledgeDeps, input:KnowledgeInput, readApproach?:(runId:string,taskId:string)=>Promise<unknown>):Promise<string> {
+  const query=`${input.task.title} ${input.task.objective}`;
+  const past=episodes(deps.db,input.projectId,query,5,{state:"accepted",chain:await deps.chainForRun(input.runId)});
+  if(!past.length) return "";
+  const approach=readApproach??(deps.kv?(runId:string,taskId:string)=>readTaskApproach(deps.kv!,runId,taskId):undefined);
+  const lines:string[]=[];
+  for(const episode of past){
+    const accepted=latestAcceptedAttemptOfTask(deps.db,episode.taskId);
+    const files=(accepted?getAttemptChange(deps.db,accepted.id)?.changed:undefined)?.map((file)=>file.path).slice(0,20)??[];
+    const note=accepted&&approach?await approach(accepted.run_id,episode.taskId).catch(()=>null):null;
+    const noteText=note&&typeof note==="object"?(note as {approach?:unknown}).approach:null;
+    lines.push(`- ${episode.taskId} «${episode.title}»: ${typeof noteText==="string"&&noteText.trim()?noteText.replace(/\s+/g," ").slice(0,300):"no approach note"}${files.length?` — files: ${files.join(", ")}`:""}`);
+  }
+  // A fifth of the knowledge budget at most: similar works are help, not the contract.
+  const room=Math.max(200,Math.floor((input.memorySettings.contextBudget??1500)/5));
+  const kept:string[]=[]; let used=estimateTokens("Similar works already done in this project:");
+  for(const line of lines){ const cost=estimateTokens(line); if(used+cost>room) break; kept.push(line); used+=cost; }
+  return kept.length?["Similar works already done in this project:",...kept].join("\n"):"";
 }
 
 export async function writerKnowledge(deps:KnowledgeDeps, input:KnowledgeInput) {
@@ -89,7 +120,8 @@ export async function writerKnowledge(deps:KnowledgeDeps, input:KnowledgeInput) 
       deps.log(`context-pack shadow ${pack.packId}: kept=${diff.kept.length} added=${diff.added.length} dropped=${diff.dropped.length} bytes ${diff.oldBytes}->${diff.packedBytes}`);
     } catch(cause) { deps.log(`context-pack shadow failed: ${cause instanceof Error?cause.message:String(cause)}`); }
   }
-  return { allRules, rules, rulesText, mixed, briefContext };
+  const similar=memoryOn?await similarWorksLines(deps,input).catch(()=>""):"";
+  return { allRules, rules, rulesText, mixed, briefContext, similar };
 }
 
 /**

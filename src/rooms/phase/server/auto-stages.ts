@@ -2,8 +2,9 @@
 
 import type { ServerCore } from "../../contracts/server";
 import { threatGap } from "../stages";
-import { bestEffort, parseJsonOr } from "@lane-pilot/kit";
-import { PLAN_WORD_GAP, INDEPENDENCE_GAP, phaseFolder, planGate, type Phase, type PhaseRecord, type PlanItem, type RiskKey, candidateOn } from "../logic";
+import { bestEffort, parseJsonOr, sha256Hex } from "@lane-pilot/kit";
+import { CRITIQUE_AXES, type DesignJournalLine } from "@lane-pilot/contracts";
+import { PLAN_WORD_GAP, INDEPENDENCE_GAP, openQuestions, phaseFolder, planGate, type Phase, type PhaseRecord, type PlanItem, type RiskKey, candidateOn } from "../logic";
 import packageJson from "../../../../package.json";
 
 import type { WorkflowEngineApi } from "../../platform/server";
@@ -60,7 +61,8 @@ export function autoDue(phase: Phase): AutoDue | null {
   // A plan the PM handed in waits for its independent check: the machine runs lp.plan itself with the plan's sha — the PM cannot
   // start an internal workflow, and its verdict comes back through the same gates (PH1: the manual-plan dead end).
   if (phase.stage === "planning" && r.context && r.plan && !stale && !r.plan.critique && !r.plan.admittedSha && !tried("check")) return { kind: "check" };
-  if (phase.stage === "design" && !r.design?.drawing && !tried("draw")) return { kind: "draw" };
+  // No drawing over an open design question (SMA ts_needs_clarify): the words are agreed first, except the batch service drawing.
+  if (phase.stage === "design" && !r.design?.drawing && !tried("draw") && !openQuestions(r, "design").length) return { kind: "draw" };
   if (phase.stage === "execution" && r.waveReview) {
     const wave = Object.entries(r.execution?.waves ?? {}).find(([, done]) => done.lines.every((line) => line.ok) && !done.review);
     if (wave && !tried("review")) return { kind: "review", wave: Number(wave[0]) };
@@ -157,11 +159,22 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number },
           ...items.map((item) => `${item.id}: given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}`)] };
     }
     case "draw": return { goal: phase.goal, folder: phaseFolder(phase.id),
+      // The drawing's requirements (SMA p3_requirements): one UI-SPEC.md heading per section it must cover.
+      requirements: (r.design?.requirements ?? []).join(", "),
       pieces: (r.plan?.items ?? []).map((item) => `${item.id} — ${item.title}: given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}`).join("\n").slice(0, 8000) };
     case "close": {
       // The goal audit reads the package that is to land: before the landing that is the candidate's tree.
       const tree = candidateOn(r) && !r.candidate!.landedAt ? Object.values(r.candidate!.trees)[0] : undefined;
-      return { goal: phase.goal, summary: `${tree ? `The phase's work is on branch ${r.candidate!.branch}, checked out at ${tree.path}, and lands on main only after the acceptance: read and run the evidence there. ` : ""}${r.verification?.verdict?.detail ?? ""}` };
+      const items = r.plan?.items ?? [];
+      // SMA p5_inputs/p5_prompt: every piece's promise and contract, its dependencies, the phase's diff range and the drawing.
+      const goals = items.map((item) => ({ id: item.id,
+        done_when: `given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}${(Array.isArray(item.task.acceptance) ? (item.task.acceptance as unknown[]).map(String).filter(Boolean) : []).map((line) => `; accepts: ${line}`).join("")}`,
+        contract: { acceptance: item.task.acceptance ?? [], verification: item.task.verification ?? [], owns_paths: item.task.owns_paths ?? [] },
+        depends_on: Array.isArray(item.task.depends_on) ? item.task.depends_on : [] }));
+      const head = tree ? r.candidate!.branch : "HEAD";
+      const drawing = r.design?.drawing ? { paths: r.design.drawing.paths, sha256: r.design.drawing.sha256, ui_spec: r.design.drawing.paths.find((path) => /UI-SPEC\.md$/i.test(path)) ?? null } : undefined;
+      return { goal: phase.goal, goals, merged_commits: r.execution?.baseSha ? [`${r.execution.baseSha}..${head}`] : [], ...(drawing ? { drawing } : {}),
+        summary: `${tree ? `The phase's work is on branch ${r.candidate!.branch}, checked out at ${tree.path}, and lands on main only after the acceptance: read and run the evidence there. ` : ""}${r.verification?.verdict?.detail ?? ""}` };
     }
     case "lessons": return { run_id: phase.runId ?? "" };
   }
@@ -271,6 +284,8 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
   proofCurrency?(phase: Phase): Promise<string | null>;
   /** The project's median accepted-task size as one line (tasks/task-size.ts); the plan grain check reads it as `median_task`. */
   medianTask?(phase: Phase): string | null;
+  /** The design measurement journal (SMA p3_judge): a reworked drawing's scores and remarks are kept too. */
+  journal?(line: DesignJournalLine): Promise<void>;
 }) {
   const version = deps.version ?? packageJson.version;
   /** Counts a failed run of a stage's workflow. True when that spent the stage's tries: the loop is ended by the machine (scope cut, hunters, backlog), not handed to the PM. */
@@ -341,10 +356,20 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       await deps.api.planCheck({ phaseId: phase.id, decision: approved ? "approve" : "changes_requested", by: `${by}, plan critic`, summary: text(output.plan_verdict, 2000), wfRunId: auto.wfRunId });
     } else if (auto.kind === "draw") {
       if (phase.stage !== "design" || phase.record.design?.drawing) return;
-      if (output.verdict !== "pass") throw new Error(`the drawing's checker asks for rework: ${text(output.notes, 300)}`);
       const paths = Array.isArray(output.paths) ? (output.paths as unknown[]).map(String) : [];
+      // SMA p3_judge: the checker's rubric scores and remarks are kept in the design journal, pass or rework.
+      const scores = output.scores && typeof output.scores === "object"
+        ? Object.fromEntries(Object.entries(output.scores as Record<string, unknown>).filter(([axis, score]) => CRITIQUE_AXES.includes(axis as never) && Number.isInteger(score) && (score as number) >= 0 && (score as number) <= 3)) : {};
+      const critique = { scores, verdict: (output.verdict === "pass" ? "pass" : "rework") as "pass" | "rework", notes: text(output.notes, 2000) };
+      // The critique form is complete only with four axes scored: a sparser checker answer is still journaled, but not forced on the drawing.
+      const form = Object.keys(scores).length >= 4 ? critique : null;
+      if (output.verdict !== "pass") {
+        await deps.journal?.({ at: deps.now(), projectId: phase.projectId, phaseId: phase.id, designer: "lp.draw: specialist design-lead", reviewer: "lp.draw: plan-critic",
+          drawingSha: sha256Hex(paths.join("\n")), firstPass: false, critique, codeScore: null, ownerWord: null });
+        throw new Error(`the drawing's checker asks for rework: ${text(output.notes, 300)}`);
+      }
       await deps.api.drawing({ phaseId: phase.id, paths, designer: "lp.draw: specialist design-lead", feasible: output.feasible !== false,
-        ...(output.contradiction ? { contradiction: text(output.contradiction, 2000) } : {}), reviewer: "lp.draw: plan-critic", by });
+        ...(output.contradiction ? { contradiction: text(output.contradiction, 2000) } : {}), reviewer: "lp.draw: plan-critic", ...(form ? { critique: form } : {}), by });
     } else if (auto.kind === "review") {
       const passed = output.status === "pass";
       deps.api.waveReview({ phaseId: phase.id, wave: auto.wave ?? 1, state: passed ? "passed" : "failed", by,
@@ -502,5 +527,5 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
     }
   }
 
-  return { step };
+  return { step, apply };
 }

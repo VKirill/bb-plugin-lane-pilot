@@ -22,11 +22,12 @@ import type { Field, GraphNode } from "@lane-pilot/workflow-engine";
 import { roleMethod } from "../../critique";
 import { phaseFolder } from "../../phase";
 import type { LanePilotDatabase } from "../../storage";
-import { PROVIDER_FOLDER_BLOCK_TTL_MS, findThreadsByMetadata, folderEnvironment, fullAccessSpawn, hiddenPlacement, keyedSpawnSupported, modelCatalogOf, noteProviderLimit, noteProviderStartFailure, noteProviderStartSuccess, pmHostOf, projectFolder, projectSources, providerBlockedForFolder, readProviderFolderBlock, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
+import { PROVIDER_FOLDER_BLOCK_TTL_MS, findThreadsByMetadata, folderEnvironment, fullAccessSpawn, documentaryGateOf, hiddenPlacement, keyedSpawnSupported, modelCatalogOf, noteProviderLimit, noteProviderStartFailure, noteProviderStartSuccess, pmHostOf, projectFolder, projectSources, providerBlockedForFolder, readProviderFolderBlock, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { detectRepoEdits, gitRepoStatus, namedByChat, writtenByEngineSince } from "../../verification/server";
 import { SPECIALIST_GRAPH, SPECIALIST_ROLES, rememberSpecialistThread } from "../../critique/server";
 import { modelTier, ROLE_IDS, ROLE_MODEL_OPTIONS, roleRowOf } from "@lane-pilot/models";
+import { isDocumentaryRole } from "../../contracts";
 import { threadUsage } from "../../usage/server";
 import { stringAt } from "@lane-pilot/kit";
 import { AUTHOR_ROWS, AUTHOR_ROW_IDS, DEFAULT_MODEL, pmAuthorOf, DEFAULT_PROVIDER, DEFAULT_REASONING } from "./workflow-agent-model";
@@ -347,7 +348,7 @@ export function createWorkflowAgents() {
       } catch (cause) {
         // The provider cannot start in this environment (its own session policy unenforceable, or its server 500s the
         // MCP listing — opencode2 under ~/Documents on macOS): one retry on the role's next provider, no PM involved.
-        if (!/vk_required_session_policy_unenforceable|OpenCode[^\n]*\b500\b|\b500\b[^\n]*mcp/i.test(cause instanceof Error ? cause.message : String(cause))) throw cause;
+        if (!/capability_unproven|vk_required_session_policy_unenforceable|OpenCode[^\n]*\b500\b|\b500\b[^\n]*mcp/i.test(cause instanceof Error ? cause.message : String(cause))) throw cause;
         const failed = request.provider ?? DEFAULT_PROVIDER;
         // An observed refusal in a ~/Documents folder on this machine is remembered: the pick stops offering it there
         // until a success or the block's TTL (provider.folder_block_ttl_ms, 6 h).
@@ -590,7 +591,11 @@ export async function withResolvedModel(request: HelperRequest, options: { avoid
   const folderBlockTtl = Number(settings["provider.folder_block_ttl_ms"]) || PROVIDER_FOLDER_BLOCK_TTL_MS;
   const blockStore = rt.ctx.bb.storage?.kv ?? { get: async () => null };
   const folderBlock = await readProviderFolderBlock(blockStore, hostId, folderBlockTtl);
-  const chosen = resolveSpawnModel({ role: request.role, pinned, settings, pm, author, catalog: read, hostId, envPath, avoidProvider: avoid, usage, folderBlock });
+  // A documentary stage may only run on a provider whose adapter version proved the documentary cells (SMA ap_caps):
+  // the bound gate names the proved set; an unproved provider is out of the offer, so the pick is the role's next provider.
+  const docProved = isDocumentaryRole(request.role) ? await bestEffort(rt.ctx.log, "workflow documentary gate", Promise.resolve().then(() => documentaryGateOf(rt.ctx.bb)?.proved(rt.projectId)), undefined) : undefined;
+  const chosen = resolveSpawnModel({ role: request.role, pinned, settings, pm, author, catalog: read, hostId, envPath, avoidProvider: avoid, usage, folderBlock, ...(docProved ? { capability: { proved: (providerId) => docProved.has(providerId) } } : {}) });
+  if (docProved && !docProved.has(chosen.providerId)) throw new HelperFailure("capability_unproven", `capability_unproven:${chosen.providerId}:documentary: no provider in the stage's chain proved the documentary cells`);
   if (request.provider && providerBlockedForFolder(request.provider, envPath, folderBlock)) rt.ctx.log?.(`Lane Pilot: ${request.role} cannot run on ${request.provider} in ${envPath}: ${providerBlockedForFolder(request.provider, envPath, folderBlock)}; the role's next provider takes the step`);
   // №9: a trivial step may run one model tier cheaper — only unpinned picks of a downgradable table role (a code
   // writer is not in the table at all, judges stay their own family, high/critical risk never cheapens).

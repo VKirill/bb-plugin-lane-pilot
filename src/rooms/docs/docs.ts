@@ -362,3 +362,13 @@ export function docsRepairPrompt(findings:Array<{ path:string; rule:string; deta
 function relativeFrom(docsDir:string, target:string):string {
   return `${docsDir.split("/").map(() => "..").join("/")}/${target}`;
 }
+
+/**
+ * The reviewer's prompt for the document stage gate (SMA ag_doc_gate): a different role from the pass's author reads
+ * the selected pages and the proposed edits and answers pass or changes; it writes nothing itself.
+ */
+export function docsReviewPrompt(pages:DocsPage[], edits:DocsEdit[]):string {
+  const pageText=pages.map((page)=>`<page path="${page.path}" sha256="${page.sha256}">\n${page.content}\n</page>`).join("\n");
+  const editText=edits.map((edit)=>`<edit path="${edit.path}">\n${edit.content}\n</edit>`).join("\n");
+  return `You are the reviewer of a documentation maintenance pass, a role separate from its author. Read the pages as they are and the proposed edits (${edits.length} file(s): ${edits.map((edit)=>edit.path).join(", ")}). Answer JSON only: {"verdict":"pass"} when every edit is true to the pages and the docs style, or {"verdict":"changes","notes":"what is wrong"} when any is not. You write no files.\n\nPAGES\n${pageText}\n\nEDITS\n${editText}`;
+}

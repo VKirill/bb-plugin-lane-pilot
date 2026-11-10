@@ -18,7 +18,7 @@ describe("the backlog rules", () => {
     expect(parseTodoMeta("title: no id")).toBeNull();
   });
 
-  it("issues ready items with an estimate up to 13 and done dependencies, by priority then age; lists the rest with why", () => {
+  it("issues ready items with an estimate up to 13 and done dependencies, by priority, estimate, then age; lists the rest with why", () => {
     const items = [
       parseTodoMeta(meta("t-01", "status: ready\npriority: low\nestimate: 3"))!,
       parseTodoMeta(meta("t-02", "status: ready\npriority: high\nestimate: 8"))!,
@@ -30,7 +30,7 @@ describe("the backlog rules", () => {
       parseTodoMeta(meta("t-08", "status: done"))!,
     ];
     const board = backlogBoard(items);
-    expect(board.issuable.map((item) => item.id)).toEqual(["t-02", "t-07", "t-01"]);
+    expect(board.issuable.map((item) => item.id)).toEqual(["t-07", "t-02", "t-01"]);
     expect(board.decompose.map((item) => item.id)).toEqual(["t-03"]);
     expect(board.needsEstimate.map((item) => item.id)).toEqual(["t-04"]);
     expect(board.blocked.map((item) => item.id)).toEqual(["t-05"]);

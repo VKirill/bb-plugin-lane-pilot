@@ -19,5 +19,6 @@ export function runForecastCli(db: Database.Database, argv: readonly string[], n
   const { overall, byArea } = report.calibration;
   if (!overall) return { exitCode: 0, stdout: `No forecast scored in ${report.days} days (${report.waiting} waiting for acceptance).` };
   const line = (row: typeof overall) => `${row.area}: ${row.tasks} tasks, files off by ${row.filesMae} (bias ${row.filesBias}), first try right ${Math.round(row.firstTryHit * 100)}%, tokens ×${row.tokensRatio ?? "—"}, minutes ×${row.minutesRatio ?? "—"}`;
-  return { exitCode: 0, stdout: [line(overall), ...byArea.map((row) => `  ${line(row)}`), `${report.waiting} waiting for acceptance.`].join("\n") };
+  const skeptic = report.skeptic?.overall ? [`skeptic: ${report.skeptic.overall.tasks} tasks, files off by ${report.skeptic.overall.filesMae}${report.skeptic.rightAgainstPm.length ? ` — right against the PM on ${report.skeptic.rightAgainstPm.join(", ")}` : ""}`] : [];
+  return { exitCode: 0, stdout: [line(overall), ...byArea.map((row) => `  ${line(row)}`), ...skeptic, `${report.waiting} waiting for acceptance.`].join("\n") };
 }

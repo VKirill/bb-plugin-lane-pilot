@@ -200,13 +200,19 @@ export type SpawnModelInput = Omit<AgentModelInput, "offered" | "providerOf" | "
   usage?: SpawnUsageUse | undefined;
   /** An observed start failure of the pick's provider in this folder on this machine (`readProviderFolderBlock`), else none. */
   folderBlock?: ProviderFolderBlock | null;
+  /**
+   * The capability gate of a stage that needs receipts (SMA ap_caps): `proved` answers whether the provider's installed
+   * adapter version may run the stage; an unproved provider is not offered, so the pick is the next of the role's chain.
+   */
+  capability?: { proved(providerId: string, model: string): boolean };
 };
 
 export function resolveSpawnModel(input: SpawnModelInput): AgentModel {
-  const { catalog, hostId, avoidProvider, pm, usage, envPath, folderBlock, ...rest } = input;
+  const { catalog, hostId, avoidProvider, pm, usage, envPath, folderBlock, capability, ...rest } = input;
   const offeredAt = (avoided: boolean) => (providerId: string, model: string): boolean | null => {
     if (avoided && avoidProvider && providerId === avoidProvider) return false;
     if (providerBlockedForFolder(providerId, envPath, folderBlock)) return false;
+    if (capability && !capability.proved(providerId, model)) return false;
     // ZCode works only where packages/models/src/zcode.ts says: the Mac mini, its free hours (or zcode.window=always), no other ZCode task running.
     // An unknown catalog is a no for it: the role's next candidate (its built-in default) runs instead.
     if (isZcodeProvider(providerId)) return !zcodeBlock({ settings: rest.settings, catalog: catalog ?? null, hostId: hostId ?? null, now: Date.now(), busy: usage?.zcodeBusy?.() ?? false });

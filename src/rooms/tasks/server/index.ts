@@ -3,10 +3,10 @@
 export { compactAcceptedResult } from "./accepted-compact";
 export { emptyCheckReason, lintContract, lintReply } from "./contract-lint";
 export type { LintFinding, LintInput } from "./contract-lint";
-export { createTaskLinter } from "./lint-task";
+export { bindPhaseDesigns, createTaskLinter } from "./lint-task";
 export { SANDBOX_DENIAL, hollowRerun, namedRuns, noTestRanReason, testSummaries } from "./tests-ran";
 export { readCheckRun } from "./check-reading";
 export type { CheckReading, CheckRun, CheckVerdict } from "./check-reading";
 export type { TestSummary } from "./tests-ran";
-export { registerQueueTool } from "./queue-tool";
+export { bindBacklogIssued, registerQueueTool } from "./queue-tool";
 export { registerConversationTools } from "./conversation-tools";

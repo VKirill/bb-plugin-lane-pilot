@@ -299,7 +299,7 @@ describe("queue, docs, capabilities, conveyor, pilot", () => {
     const inUse = new Map([["codex", "gpt"]]);
     const versions = new Map([["codex", "1.2.3"]]);
     expect(dueProbes(inUse, versions, [])).toEqual([{ providerId: "codex", model: "gpt", version: "1.2.3" }]);
-    expect(capabilityTable(inUse, versions, [])[0]?.capabilities.documentary).toBe("unproven");
+    expect(capabilityTable(inUse, versions, [])[0]?.capabilities["documentary.nested"]).toBe("unproven");
     const receipts = CAPABILITIES.map((capability) => ({ providerId: "codex", version: "1.2.3", capability, state: "supported" as const, model: "gpt", detail: null, at: 1 }));
     expect(dueProbes(inUse, versions, receipts)).toEqual([]);
   });

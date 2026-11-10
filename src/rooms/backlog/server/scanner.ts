@@ -3,7 +3,9 @@ import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { isPmChat } from "../../native-agent/server";
 import { closeOwnerItem, listOpenOwnerItemKeys, postOwnerItem, rpcLine } from "../../owner-waiting";
-import { backlogBoard, backlogReadCommand, issueMessage, parseBacklogOutput, type BacklogBoard } from "../logic";
+import { backlogIssuedTo } from "../store";
+import { bindBacklogIssued } from "../../tasks/server";
+import { backlogBoard, backlogReadCommand, issueMessage, parseBacklogOutput, type BacklogBoard, type TodoMeta } from "../logic";
 
 /**
  * The backlog scanner (SMA D2-9). Every hour, for each project whose owner's PM chat (a run of kind `cli`) was active in the last two weeks,
@@ -18,6 +20,8 @@ const offerKey = (projectId: string, todoId: string) => `backlog:${projectId}:${
 
 export function createBacklog(ctx: ServerCore) {
   const { db, bb, host } = ctx;
+  // The queue tool asks who an item was issued to before it closes the item (SMA m_in_close_line): this room answers.
+  bindBacklogIssued(db, (projectId, todoId) => backlogIssuedTo(db, projectId, todoId));
 
   /** The project's newest owner PM chat active in the last two weeks, or null. */
   async function pmOf(projectId: string, now: number): Promise<string | null> {
@@ -30,14 +34,30 @@ export function createBacklog(ctx: ServerCore) {
     return null;
   }
 
-  async function board(projectId: string): Promise<BacklogBoard & { error?: string }> {
+  /** The project's meta.yaml items as they are on its host right now (no fetch; the board fetches first). */
+  async function items(projectId: string): Promise<TodoMeta[]> {
     const config = loadPrototypeConfig(db, projectId);
-    if (!config?.writerWorkspacePath) return { issuable: [], needsEstimate: [], decompose: [], blocked: [], error: "the project has no workspace configured" };
+    if (!config?.writerWorkspacePath) return [];
+    const ran = await host.call("gateRun", { requestedHostId: config.hostId, basePath: config.writerWorkspacePath, command: backlogReadCommand, timeoutSec: 30 }, { hostId: config.hostId, timeoutMs: 60_000 })
+      .catch(() => ({ exitCode: 1, stdout: "", stderr: "" }));
+    return parseBacklogOutput(ran.stdout);
+  }
+
+  async function board(projectId: string): Promise<BacklogBoard & { error?: string; readAt?: string; fetched?: boolean; behind?: number | null }> {
+    const config = loadPrototypeConfig(db, projectId);
+    const readAt = new Date().toISOString();
+    if (!config?.writerWorkspacePath) return { issuable: [], needsEstimate: [], decompose: [], blocked: [], readAt, fetched: false, behind: null, error: "the project has no workspace configured" };
+    // Fresh data first (SMA m_in_scan): fetch, then read; whoever sees the result gets its age and how far the branch is behind.
+    const freshened = await host.call("gateRun", { requestedHostId: config.hostId, basePath: config.writerWorkspacePath, command: "git fetch --quiet && git rev-list --count HEAD..@{u}", timeoutSec: 20 }, { hostId: config.hostId, timeoutMs: 30_000 })
+      .catch(() => ({ exitCode: 1, stdout: "", stderr: "" }));
+    const fetched = freshened.exitCode === 0;
+    const behindCount = Number((freshened.stdout ?? "").trim());
+    const behind = fetched && Number.isFinite(behindCount) ? behindCount : null;
     const ran = await host.call("gateRun", { requestedHostId: config.hostId, basePath: config.writerWorkspacePath, command: backlogReadCommand, timeoutSec: 30 }, { hostId: config.hostId, timeoutMs: 60_000 })
       .catch((cause: unknown) => ({ exitCode: 1, stdout: "", stderr: cause instanceof Error ? cause.message : String(cause) }));
     const issued = new Set((db.prepare("SELECT todo_id FROM lane_pilot_backlog_issue WHERE project_id=?").all(projectId) as Array<{ todo_id: string }>).map((row) => row.todo_id));
     const result = backlogBoard(parseBacklogOutput(ran.stdout));
-    return { ...result, issuable: result.issuable.filter((item) => !issued.has(item.id)) };
+    return { ...result, issuable: result.issuable.filter((item) => !issued.has(item.id)), readAt, fetched, behind };
   }
 
   async function scan(now = Date.now()) {
@@ -57,12 +77,16 @@ export function createBacklog(ctx: ServerCore) {
       }
       const next = current.issuable[0];
       if (!pm || !next || projectToday >= PER_PROJECT_PER_DAY || issuedToday() >= PER_DAY) { out.push({ projectId, offered: null, board: counts }); continue; }
+      // The offer says how fresh the backlog is, in the owner's words: read just now, behind the server, or not compared.
+      const ageLine = !current.fetched ? " Свежесть бэклога не проверена: сервер с кодом не ответил."
+        : current.behind ? ` Папка проекта отстаёт от сервера с кодом, новых правок там: ${current.behind}.`
+        : "";
       // Since 0.1.458 the scanner offers, the owner issues: a work order into a PM chat is his word, not the plugin's own event (0.1.443;
       // the hourly send into a two-week-old chat was one of the leaks the Gemini grill of 0.1.456 found). One open offer per project: the first
       // ready item; the same key again changes nothing.
       const offered = postOwnerItem(db, { key: offerKey(projectId, next.id), source: "backlog", kind: "backlog_ready", projectId, wake: false,
         what: `В бэклоге проекта готова к работе задача «${next.title}»`,
-        why: `Оценка ${next.estimate}, приоритет ${next.priority}. По вашему «выдать» она уйдёт в чат проекта как задание; сама система в чат проекта не пишет.`,
+        why: `Оценка ${next.estimate}, приоритет ${next.priority}. По вашему «выдать» она уйдёт в чат проекта как задание; сама система в чат проекта не пишет.${ageLine}`,
         evidence: [{ kind: "file", ref: `.agents/todos/items/${next.id}/AGENT.md`, label: "описание" }],
         actions: [{ id: "issue", label: "Выдать в работу", cli: rpcLine("backlog_issue", { projectId, todoId: next.id }), rpc: { method: "backlog_issue", input: { projectId, todoId: next.id } } }] }, now).created;
       if (offered) ctx.log(`backlog: ${projectId} offered ${next.id} on the owner's list`);
@@ -84,7 +108,7 @@ export function createBacklog(ctx: ServerCore) {
     return { ok: true, pmThreadId: pm };
   }
 
-  return { backlog: { board, scan, issue } };
+  return { backlog: { board, scan, issue, items } };
 }
 export type BacklogApi = ReturnType<typeof createBacklog>["backlog"];
 

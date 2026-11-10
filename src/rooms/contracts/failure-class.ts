@@ -100,7 +100,7 @@ const OWNER_DECISION = /^(?:verdict_block: question_unanswered: (?:product decis
 export const isOwnerDecision = (reason:string | null | undefined):boolean => OWNER_DECISION.test(reason ?? "");
 /** The task spent its overall writer-attempt budget (retry-budget.ts): ends for the PM, never parked or redriven. */
 const RETRY_BUDGET = /^retry_budget_exhausted:/;
-const LIMIT = /capacity_saturated:|writer_provider_limit:|^writer_provider_unavailable:(breaker_open|usage_window|owner_present|core_unsupported|thread_not_started)/;
+const LIMIT = /capacity_saturated:|writer_provider_limit:|capability_unproven:|^writer_provider_unavailable:(breaker_open|usage_window|owner_present|core_unsupported|thread_not_started)/;
 /** The core could not start the writer's session (writer/server/finish.ts): the task never ran, so the attempt is free and the chain moves on. */
 export const THREAD_NOT_STARTED_REASON = "writer_provider_unavailable:thread_not_started";
 /** Every writer provider is in a spent usage window (writer.capacity_wait): the task parks and is rechecked, it is not a failure. */
@@ -316,7 +316,7 @@ export function failureIntervention(cls: FailureClass, sameClassStreak: number):
  * path (one same-model retry, then the fallback chain, then the capacity wait), so it gets no pause. */
 export const DEFAULT_CLASS_COOLDOWNS = '{"merge":30,"infra":60,"dirty_base":60}';
 
-export function failureClassCooldownMs(cls: string, settings: Record<string, unknown>): number {
+export function failureClassCooldownMs(cls: string, settings: Record<string, unknown>, sameClassStreak = 1): number {
   const raw = settings["writer.class_cooldowns"] ?? DEFAULT_CLASS_COOLDOWNS;
   let table: Record<string, unknown> = {};
   if (typeof raw === "string" && raw.trim()) { try { const parsed = JSON.parse(raw); if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) table = parsed as Record<string, unknown>; } catch { return 0; } }
@@ -324,6 +324,8 @@ export function failureClassCooldownMs(cls: string, settings: Record<string, unk
   const seconds = Number(table[cls]);
   if (!Number.isFinite(seconds) || seconds <= 0) return 0;
   const cap = Number(settings["writer.cooldown_max_ms"]);
-  const ms = Math.floor(seconds * 1000);
+  // The pause doubles with each consecutive attempt ended in this class (SMA ae_auto_retry), so a fault that keeps
+  // repeating is not hammered at a flat rate.
+  const ms = Math.floor(seconds * 1000 * 2 ** Math.max(0, sameClassStreak - 1));
   return cap > 0 ? Math.min(ms, Math.floor(cap)) : ms;
 }

@@ -1,4 +1,5 @@
 import { secretShaped } from "../../tasks";
+import type { BacklogApi } from "../../backlog/server";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
 import type { IsTaskSatisfied } from "../../contracts";
 import type { StageHelperSettings, WorkflowEngineApi, WorkflowTriggersApi } from "../../platform/server";
@@ -58,6 +59,7 @@ import type { WriterStartApi } from "../../writer/server/start";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  backlog: BacklogApi;
   stageHelperSettings: StageHelperSettings;
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
   baseline: BaselineApi;
@@ -369,7 +371,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
     description:"Read a bounded project-local report of Lane Pilot gate evaluations or stage history.",
     instructions:"Use only from the matching Lane Pilot PM thread. Gate categories are owns-paths, validate, accept, and verification, recorded as separate append-only events; this reads Lane Pilot's own ledgers and never reads or modifies upstream ~/.agents gate logs. Choose a period from 1 to 365 days and optionally one gate category or one exact stage ID. Results contain counts and receipt hashes, not task content.",
     parameters:z.object({days:z.number().int().min(1).max(365).default(7),stageId:z.enum(["pm-read","plan-critique","specialist-review","writer-agent","verification","code-critique","acceptance-receipt","browser-qa","docs-maintenance","onboarding-preview","onboarding-apply","memory-maintenance","project-life","night-review","night-fix","workspace-status","opencode-telemetry","gate-triage"]).optional(),gate:z.enum(["owns-paths","validate","accept","verification"]).optional()}).strict(),
-    execute:async(params,context)=>JSON.stringify(readGateReport(db,{projectId:context.projectId,days:params.days,stageId:params.stageId,gate:params.gate}),null,2),
+    execute:async(params,context)=>JSON.stringify(await readGateReport(db,{projectId:context.projectId,days:params.days,stageId:params.stageId,gate:params.gate},bb.storage.kv as never),null,2),
   });
 
   // Modules register their tools after the core ones so the PM tool order follows NATIVE_LP_BRIDGE_TOOLS.

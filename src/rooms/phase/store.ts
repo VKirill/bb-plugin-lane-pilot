@@ -11,9 +11,9 @@ type Raw = {
 
 const parse = <T>(text: string, fallback: T): T => { try { return JSON.parse(text) as T; } catch { return fallback; } };
 
-const phaseOf = (row: Raw): Phase & { pokedKey: string | null } => ({
+const phaseOf = (row: Raw): Phase & { pokedKey: string | null; closedAt: number | null } => ({
   id: row.id, projectId: row.project_id, pmThreadId: row.pm_thread_id, runId: row.run_id, title: withoutCredentials(withoutSelectionMarkers(row.title)), goal: withoutCredentials(withoutSelectionMarkers(row.goal)), stage: row.stage, state: row.state,
-  record: parse<PhaseRecord>(row.record_json, {}), edition: row.edition, createdAt: row.created_at, updatedAt: row.updated_at, pokedKey: row.poked_key,
+  record: parse<PhaseRecord>(row.record_json, {}), edition: row.edition, createdAt: row.created_at, updatedAt: row.updated_at, pokedKey: row.poked_key, closedAt: row.closed_at,
 });
 
 export function insertPhase(db: PhaseDb, phase: Pick<Phase, "id" | "projectId" | "pmThreadId" | "title" | "goal"> & { runId?: string | null; at: number }): void {
@@ -21,12 +21,12 @@ export function insertPhase(db: PhaseDb, phase: Pick<Phase, "id" | "projectId" |
     VALUES(?,?,?,?,?,?,'discussion','active','{}',?,?)`).run(phase.id, phase.projectId, phase.pmThreadId, phase.runId ?? null, withoutCredentials(phase.title), withoutCredentials(phase.goal), phase.at, phase.at);
 }
 
-export function getPhase(db: PhaseDb, id: string): (Phase & { pokedKey: string | null }) | undefined {
+export function getPhase(db: PhaseDb, id: string): (Phase & { pokedKey: string | null; closedAt: number | null }) | undefined {
   const row = db.prepare("SELECT * FROM lane_pilot_phase WHERE id=?").get(id) as Raw | undefined;
   return row ? phaseOf(row) : undefined;
 }
 
-export function listPhases(db: PhaseDb, filter: { pmThreadId?: string; projectId?: string; live?: boolean; limit?: number } = {}): Array<Phase & { pokedKey: string | null }> {
+export function listPhases(db: PhaseDb, filter: { pmThreadId?: string; projectId?: string; live?: boolean; limit?: number } = {}): Array<Phase & { pokedKey: string | null; closedAt: number | null }> {
   const where: string[] = [];
   const args: unknown[] = [];
   if (filter.pmThreadId) { where.push("pm_thread_id=?"); args.push(filter.pmThreadId); }
@@ -42,9 +42,38 @@ export function savePhase(db: PhaseDb, id: string, patch: { stage?: PhaseStage; 
   if (!current) throw new Error(`no phase ${id}`);
   const record = patch.record ?? current.record;
   const changed = JSON.stringify(record) !== JSON.stringify(current.record);
-  db.prepare(`UPDATE lane_pilot_phase SET stage=?, state=?, record_json=?, run_id=?, edition=edition+?, updated_at=?, closed_at=CASE WHEN ? IN ('closed','stopped') THEN ? ELSE closed_at END WHERE id=?`)
-    .run(patch.stage ?? current.stage, patch.state ?? current.state, JSON.stringify(record), patch.runId === undefined ? current.runId : patch.runId, changed ? 1 : 0, patch.at,
-      patch.state ?? current.state, patch.at, id);
+  // closed_at is the moment the phase closed or stopped: a later bookkeeping write to an ended phase keeps it (it used to be
+  // stamped again by every save, which would move the seven-day rollback watch forward forever).
+  const state = patch.state ?? current.state;
+  const ended = (value: string) => value === "closed" || value === "stopped";
+  const closedAt = ended(state) ? (ended(current.state) && current.closedAt ? current.closedAt : patch.at) : current.closedAt;
+  db.prepare(`UPDATE lane_pilot_phase SET stage=?, state=?, record_json=?, run_id=?, edition=edition+?, updated_at=?, closed_at=? WHERE id=?`)
+    .run(patch.stage ?? current.stage, state, JSON.stringify(record), patch.runId === undefined ? current.runId : patch.runId, changed ? 1 : 0, patch.at, closedAt, id);
+}
+
+/**
+ * The phase folder gate (SMA pc_folder): a phase named by its exact id, its folder (.agents/phases/<id>) or its roadmap row
+ * number resolves to exactly one phase. A row number matches the live phases of the project; several or none is refused —
+ * never guessed.
+ */
+export function resolvePhaseRef(db: PhaseDb, projectId: string | null | undefined, ref: string): Phase & { pokedKey: string | null; closedAt: number | null } {
+  const name = ref.trim();
+  const folder = /^\.agents\/phases\/([\w-]+)\/?$/.exec(name)?.[1];
+  if (folder || name.startsWith("ph_")) {
+    const phase = getPhase(db, folder ?? name);
+    if (!phase) throw new Error(`no phase ${folder ?? name}`);
+    return phase;
+  }
+  if (/^\d+(\.\d+)*$/.test(name)) {
+    if (!projectId) throw new Error(`roadmap row ${name} names a phase only inside a project — name the phase id`);
+    const matches = listPhases(db, { projectId, live: true, limit: 100 }).filter((phase) => phase.record.roadmapRow === name);
+    if (!matches.length) throw new Error(`no live phase on roadmap row ${name}`);
+    if (matches.length > 1) throw new Error(`roadmap row ${name} names several live phases: ${matches.map((phase) => phase.id).join(", ")} — name the phase id`);
+    return matches[0]!;
+  }
+  const phase = getPhase(db, name);
+  if (!phase) throw new Error(`phase «${name}» is not an id, a folder .agents/phases/<id> or a roadmap row number`);
+  return phase;
 }
 
 /** Remembers the last instruction sent to the PM, so the same one is not sent twice. */

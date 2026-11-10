@@ -6,7 +6,7 @@ import type { RollbackApi } from "./rollback";
 export function rollbackRpc(rollback: RollbackApi) {
   return {
     task_reverify: async ({ ref }) => await rollback.reverify(ref),
-    task_revert: async ({ ref, dryRun, skipGate }) => await rollback.revert(ref, { dryRun, skipGate }),
+    task_revert: async ({ ref, dryRun, skipGate, why, by }) => await rollback.revert(ref, { dryRun, skipGate, why, by }),
     task_changes: async ({ ref }) => rollback.status(ref),
   } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "task_reverify" | "task_revert" | "task_changes">;
 }

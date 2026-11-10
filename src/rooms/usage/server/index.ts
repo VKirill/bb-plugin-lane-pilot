@@ -3,7 +3,7 @@
 export { createProviderUsage, usageHoldReason, usageSkipPercent } from "./provider-usage";
 export type { UsageHold } from "./provider-usage";
 export { tokenUsageRpc } from "./rpc/token-usage";
-export { billedFrom, parseBreakdown, syncTokenUsage, threadUsage } from "./token-usage";
+export { billedFrom, openTokenCursor, parseBreakdown, syncTokenUsage, threadUsage } from "./token-usage";
 export { withUsage } from "./step-usage";
 export type { StepUsage } from "./step-usage";
 export { attemptMetrics, renderAttemptMetrics } from "./attempt-metrics";

@@ -346,3 +346,9 @@ export function failedStageCounts(db: LanePilotDatabase, runId: string, taskId: 
   return db.prepare("SELECT stage_id, count(*) AS n FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND state IN ('failed','blocked') GROUP BY stage_id")
     .all(runId, taskId) as Array<{ stage_id: string; n: number }>;
 }
+
+/** Stage receipts touched since a moment whose result carries near misses (the «not scored» channel), of one project or all. */
+export function listNearMissReceipts(db: LanePilotDatabase, since: number, projectId?: string): Array<{ project_id: string; task_id: string; result_json: string; updated_at: number }> {
+  return db.prepare(`SELECT r.project_id, s.task_id, s.result_json, s.updated_at FROM lane_pilot_stage_receipt s JOIN lane_pilot_run r ON r.id=s.run_id
+    WHERE s.updated_at>=? AND s.result_json LIKE '%near_misses%'${projectId ? " AND r.project_id=?" : ""}`).all(since, ...(projectId ? [projectId] : [])) as Array<{ project_id: string; task_id: string; result_json: string; updated_at: number }>;
+}

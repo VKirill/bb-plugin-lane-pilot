@@ -1,7 +1,7 @@
 import { listReviewedObservations } from "../../learning";
 import { prototypeConfigSchema, taskV2Schema } from "../../contracts";
 import { taskBaselineEntries } from "../../baseline";
-import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, markCancelCode, saveProjectSetting, savePrototypeConfig, transitionAttempt } from "../../storage";
+import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, markCancelCode, saveProjectSetting, savePrototypeConfig, transitionAttempt, failedTasksAllProjects, listNearMissReceipts } from "../../storage";
 import { cancelAttemptById, finishRunSafely, pauseRun } from "../../runs/server";
 import { conveyorState, renderTimeline, setConveyor, taskTimeline, unknownReasons } from "../../runs";
 import { TASK_RECORD_USAGE, blindRecord, readsBlind, renderTaskRecord, taskRecord } from "./task-record";
@@ -45,7 +45,8 @@ import { COVERAGE_USAGE, runCoverageCli } from "../../coverage";
 import { SMA_MAP_USAGE, runSmaLiveCli, runSmaMapCli, smaCheckedPercent, smaCounts, smaDonePercent, smaRows } from "../../sma-map";
 import { designJournalLines, readinessWords, trainedConditions, trainingRatios } from "../../design-eval";
 import { PHASE_USAGE, phaseWordSweep, runPhaseCli } from "../../phase/server";
-import { manifest, passport, preship, prPassport, receiptChain, verifyChain } from "./receipts";
+import { attemptRecord, manifest, passport, preship, prPassport, receiptChain, subagentReceipts, verifyChain } from "./receipts";
+import { listTripped, rearmBreaker, breakerRowId } from "../../learning";
 import { EXCAVATE_LOG_ARGS, approvalSuggestions, costPerVerified, excavate, htmlReport, missCurriculum } from "./self-improve";
 import { RULES_USAGE, runRulesCli } from "../../rule-forms";
 import { JEV_USAGE, runJevCli } from "../../jev";
@@ -82,7 +83,7 @@ import type { ProbesApi } from "../../stability/server/probes";
 import type { ReconcileApi } from "../../stability/server/reconcile";
 import type { StageReturnApi } from "../../stage-return/server/stage-return";
 import type { WallApi } from "../../wall/service";
-import { writerQuestionSweep } from "../../writer/server";
+import { writerQuestionSweep, budgetSpentSweep } from "../../writer/server";
 import type { WriterDispatchApi } from "../../writer/server/dispatch";
 import type { WriterStateApi } from "../../writer/server/state";
 import type { WriterVerifyApi } from "../../writer/server/verify";
@@ -277,6 +278,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"waiting", summary:"Everything only the owner can decide, with why, evidence and the exact action; what went red overnight; the Telegram digest of new items (quiet hours 23:00-08:00 Europe/Madrid by default)", usage:WAITING_USAGE },
       { name:"lead", summary:"Штурман, the lead over the runs: its state and ticks, the road tree, the owner's answers to its proposals, the rights per class, the decision journal with the prediction made before each answer, the exam and the backtest", usage:LEAD_USAGE },
       { name:"coverage", summary:"What proves each pipeline stage, attempt transition, failure class, gate, memory path, room and key mechanism: covered live by a deploy-drill scenario, covered by tests only (and why no drill), or not covered; --receipt checks the live claims against a drill receipt", usage:COVERAGE_USAGE },
+      { name:"attempt", summary:"One attempt's whole record: writer thread, stage receipts and gate events of that attempt, dispatch context, verification results, critic input hash, the attempt-change row", usage:"bb lane-pilot attempt <attempt-id>" },
       { name:"passport", summary:"An attempt's passport: provider, model, harness and Lane Pilot versions, the receipts of its stages", usage:"bb lane-pilot passport <attempt-id>" },
       { name:"manifest", summary:"This build: name, version, its tables", usage:"bb lane-pilot manifest" },
       { name:"receipt-chain", summary:"A task's stage receipts hashed in order (tip), or verify a tip recorded earlier", usage:"bb lane-pilot receipt-chain <run-id> <task-id> [--verify <tip>]" },
@@ -290,6 +292,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"money", summary:"Money: spent month to date on paid lanes, the 14-day series, the monthly cap (money.monthly_cap_usd) and what is left", usage:"bb lane-pilot money" },
       { name:"unknown-codes", summary:"Failure reasons no class or rule names yet (the unknown code register), most frequent first, over the last 14 days", usage:"bb lane-pilot unknown-codes [--days 14]" },
       { name:"phase", summary:"Phases on rails: list, show (with the phase book), drive now, return to an earlier stage with a note, pause, resume, close in words", usage:PHASE_USAGE },
+      { name:"gates", summary:"Gate firings: mark one a false alarm so it stops counting against the gate", usage:"bb lane-pilot gates ack <event-id> --why \"<reason>\"" },
       { name:"design-metrics", summary:"The designer's training: the four ratios from the design measurement journal, the four conditions of «trained» and the readiness words", usage:"bb lane-pilot design-metrics [--project <id>] [--json]" },
       { name:"sma-map", summary:"The SMA product map node by node: what Lane Pilot has for each of its 1798 nodes, the card text, the proof link, the contract tests that check it, and the shares mapped and checked", usage:SMA_MAP_USAGE },
       { name:"rules", summary:"The rules by form (always | skill | check | hook | memory) and the mechanism that enforces each; classify them, generate mechanism tasks for the recurring check rules, retire the text a mechanism now holds", usage:RULES_USAGE },
@@ -303,11 +306,15 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"hypothesis", summary:"Ideas to make the system better (from outside or inside) as the settings that carry them, checked on the bench set: two arms, the verdict, adoption through the night policy", usage:"bb lane-pilot hypothesis list|add|test|verdict|revert" },
       { name:"memory-tiers", summary:"The memory's cold tier (notes unused for 90 days, kept out of briefs) and how many of it a PM needed again, plus the PM queries that found nothing (candidates for memory-eval's golden set)", usage:"bb lane-pilot memory-tiers [--project P]" },
       { name:"backlog", summary:"A project's ready todos sorted for issue: issuable in queue order (estimate at most 13, dependencies done), to estimate, to split, blocked; --scan hands the next ones to the PMs now", usage:BACKLOG_USAGE },
+      { name:"failures", summary:"Every failed task of every project, one line per task (the latest attempt in a failed state): the unified failure journal", usage:"bb lane-pilot failures [--since <days>]" },
       { name:"conveyor", summary:"The conveyor switch: off, no new work is issued anywhere (writers wait, parked tasks stay, the night queues nothing) while running stages finish and checks go on", usage:"bb lane-pilot conveyor on|off [reason]|status" },
       { name:"outages", summary:"The gaps of more than 5 minutes when Lane Pilot was not running", usage:OUTAGE_USAGE },
       { name:"capabilities", summary:"Per provider in use: the adapter (BB plugin) version installed and whether it is proven to answer; --probe tries the unproven ones now", usage:CAPABILITY_USAGE },
       { name:"run-goal", summary:"Every accepted task's checks of a run together on the final main (two tasks green alone can break each other): check one run, sweep the finished ones, or read a verdict", usage:RUN_GOAL_USAGE },
       { name:"forecast", summary:"The PM's forecasts (contract `forecast`) against the facts of accepted tasks: files, first try, tokens and minutes, per area", usage:FORECAST_USAGE },
+      { name:"breaker", summary:"Tripped rules of the loop breaker; rearm <id> --why <text> re-arms one after review", usage:"bb lane-pilot breaker [project-id] | bb lane-pilot breaker rearm <id> --why <text>" },
+      { name:"nearmiss", summary:"Near misses helpers reported — a channel outside scoring", usage:"bb lane-pilot nearmiss [--project P] [--days N]" },
+      { name:"subagent-receipts", summary:"Receipt coverage, phantoms and subagent pack size of writer attempts", usage:"bb lane-pilot subagent-receipts [--project P] [--days N]" },
       { name:"regress", summary:"Regression after acceptance: the last accepted tasks' cheap checks on current main, a bisect to the first bad commit for the ones gone red; --plan only picks, --dry-run writes nothing, nothing is reverted", usage:BASELINE_USAGE },
       { name:"regressions", summary:"The regression findings still open (--all for settled ones too)", usage:"bb lane-pilot regressions [project-id] [--all]" },
       { name:"regress-close", summary:"Settle a regression finding by hand", usage:"bb lane-pilot regress-close <id> <reason...>" },
@@ -366,7 +373,7 @@ ${ERRANDS_USAGE}` },
           return learning ? await runLearningCli(learning, args) : { exitCode:1, stderr:"learning is not mounted" };
         }
         if (command === "policy-exam" || command === "policy") {
-          return await runPolicyCli({ db, kv:bb.storage.kv as never, ownerSweeps: OWNER_ITEM_SWEEPS, reviewedObs: listReviewedObservations as never }, command, args);
+          return await runPolicyCli({ db, kv:bb.storage.kv as never, ownerSweeps: [...OWNER_ITEM_SWEEPS, budgetSpentSweep(services)], reviewedObs: listReviewedObservations as never }, command, args);
         }
         if (command === "coverage") {
           return runCoverageCli(args);
@@ -379,6 +386,10 @@ ${ERRANDS_USAGE}` },
         }
         if (command === "pm-skill-use") {
           return runPmSkillUseCli(db, args);
+        }
+        if (command === "attempt") {
+          const result = args[0] ? attemptRecord(db, args[0]) : null;
+          return result ? { exitCode:0, stdout:JSON.stringify(result, null, 2) } : { exitCode:1, stderr:"bb lane-pilot attempt <attempt-id>: no such attempt" };
         }
         if (command === "passport") {
           const result = args[0] ? passport(db, args[0]) : null;
@@ -428,6 +439,17 @@ ${ERRANDS_USAGE}` },
         if (command === "phase") {
           return await runPhaseCli(services.phases, args);
         }
+        if (command === "gates" && args[0] === "ack" && /^\d+$/.test(args[1] ?? "")) {
+          // A firing a person marks as a false alarm stops counting against the gate (SMA k_v_gates).
+          const whyAt = args.indexOf("--why");
+          const why = whyAt >= 0 ? args.slice(whyAt + 1).join(" ").trim() : "";
+          if (!why) return { exitCode:1, stderr:"bb lane-pilot gates ack <event-id> --why \"<reason>\"" };
+          const kv = bb.storage.kv as { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<unknown> };
+          const all = ((await kv.get("gates:acks").catch(() => null)) ?? {}) as Record<string, unknown>;
+          all[args[1]!] = { eventId: Number(args[1]), why: why.slice(0, 300), by: "owner", at: Date.now() };
+          await kv.set("gates:acks", all);
+          return { exitCode:0, stdout:JSON.stringify({ acked: Number(args[1]), why }) };
+        }
         if (command === "design-metrics") {
           const all = await designJournalLines(ctx.bb.storage.kv);
           const project = args.includes("--project") ? args[args.indexOf("--project") + 1] : null;
@@ -439,7 +461,7 @@ ${ERRANDS_USAGE}` },
           return args.includes("--live") ? runSmaLiveCli(db as never, args) : runSmaMapCli(args);
         }
         if (command === "waiting") {
-          return runWaitingCli(db, args, Date.now(), OWNER_ITEM_SWEEPS, services.ownerLearningItems);
+          return runWaitingCli(db, args, Date.now(), [...OWNER_ITEM_SWEEPS, budgetSpentSweep(services)], services.ownerLearningItems);
         }
         if (command === "lead") return await runLeadCli({ db, kv: bb.storage.kv as never, lead: services.lead }, args);
         if (command === "jev") return runJevCli({ db, saveProjectSetting: (p, k, v) => saveProjectSetting(db, p, k, v), settings: async (p) => (await effectiveProjectSettings(p)).values as Record<string, unknown> }, args);
@@ -478,9 +500,42 @@ ${ERRANDS_USAGE}` },
           return await runBaselineCli(services, command, args);
         }
         if (command === "forecast") return runForecastCli(db, args);
+        // sma breaker (SMA k_v_breaker): the tripped rules of the loop breaker, re-armed only by a person with a reason.
+        if (command === "breaker") {
+          const kv = bb.storage.kv as never;
+          if (args[0] === "rearm") {
+            const whyAt = args.indexOf("--why");
+            const why = whyAt >= 0 ? args[whyAt + 1] : undefined;
+            if (!args[1] || !why?.trim()) return { exitCode:1, stderr:"bb lane-pilot breaker rearm <id> --why <text>: a reason is required" };
+            const row = await rearmBreaker(kv, args[1], { why });
+            return row ? { exitCode:0, stdout:JSON.stringify({ rearmed:args[1], by:row.by, why:row.reason }, null, 2) }
+                       : { exitCode:1, stderr:`breaker: no tripped row ${args[1]}` };
+          }
+          const rows = await listTripped(kv, args[0] && !args[0].startsWith("--") ? args[0] : undefined);
+          return { exitCode:0, stdout:JSON.stringify(rows.map((row) => ({ id: breakerRowId(row.project, row.ruleHash, row.target), rule: row.ruleHash, target: row.target, count: row.count, firstAt: row.firstAt, lastAt: row.lastAt })), null, 2) };
+        }
+        // The near-miss channel (SMA k_v_skeptic): reports agents flagged, listed under «not scored» — never counted.
+        if (command === "nearmiss") {
+          const days = args.includes("--days") ? Number(args[args.indexOf("--days") + 1]) : 30;
+          const projectId = args.includes("--project") ? args[args.indexOf("--project") + 1] : undefined;
+          const since = Date.now() - (Number.isInteger(days) && days > 0 ? days : 30) * 86_400_000;
+          const rows = listNearMissReceipts(db, since, projectId);
+          const out = rows.flatMap((row) => { try { const misses = (JSON.parse(row.result_json) as { near_misses?: unknown }).near_misses; return (Array.isArray(misses) ? misses : []).filter((m): m is string => typeof m === "string").map((miss) => ({ taskId: row.task_id, miss, at: row.updated_at, scored: "not scored" })); } catch { return []; } });
+          return { exitCode:0, stdout:JSON.stringify({ notScored: true, nearMisses: out }, null, 2) };
+        }
+        if (command === "subagent-receipts") {
+          const days = args.includes("--days") ? Number(args[args.indexOf("--days") + 1]) : undefined;
+          const projectId = args.includes("--project") ? args[args.indexOf("--project") + 1] : undefined;
+          return { exitCode:0, stdout:JSON.stringify(subagentReceipts(db, { projectId, days }), null, 2) };
+        }
         if (command === "run-goal") return await runRunGoalCli(services.runGoal, args);
         if (command === "capabilities") return await runCapabilityCli(services.capabilities, args);
         if (command === "outages") return runOutageCli(ctx, args);
+        if (command === "failures") {
+          const days = args[0] === "--since" ? Number(args[1]) : undefined;
+          if (args.length && (args[0] !== "--since" || !Number.isFinite(days))) return { exitCode:1, stderr:"usage: bb lane-pilot failures [--since <days>]" };
+          return { exitCode:0, stdout:JSON.stringify(failedTasksAllProjects(db, days === undefined ? 0 : Date.now() - days * 86_400_000), null, 2) };
+        }
         if (command === "backlog") return await runBacklogCli(services.backlog, args);
         if (command === "hypothesis") return await runHypothesisCli(services.hypotheses, args);
         if (command === "owner-presence") {

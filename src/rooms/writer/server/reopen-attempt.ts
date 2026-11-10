@@ -62,6 +62,29 @@ export function contractFixRecord(changes: FieldChange[]): string {
  * Shared by lane_pilot_answer_writer and lane_pilot_update_task: a blocked attempt whose writer asked a question reopens
  * in its own writer thread and worktree, the turn goes in, the stages run again, and the Q&A is kept. No attempt is charged.
  */
+/**
+ * Appends the question and the answer to the task folder's QA.md; a failed write never fails its caller. `answer`
+ * absent marks the entry open — a writer parked on NEEDS_HUMAN leaves its question on disk for a person, the next
+ * session or a reload (sma m_q_exec_ckpt).
+ */
+export async function appendTaskQa(bb: ServerCore["bb"], input: { hostId: string; workspacePath: string; taskId: string; question: string; answer?: string }): Promise<void> {
+  const rel = taskFolderRel(input.taskId);
+  if (!rel) return;
+  const path = resolve(input.workspacePath, rel, "QA.md");
+  try {
+    const existing = await orMiss(Promise.resolve().then(() => bb.sdk.files.read({ hostId: input.hostId, rootPath: input.workspacePath, path })), null, isNotFound);
+    const prior = existing && typeof existing === "object" && typeof (existing as { content?: unknown }).content === "string"
+      ? (existing as { content: string }).content : null;
+    const answerLine = input.answer === undefined ? "A: open — the writer is parked here" : `A (PM): ${input.answer.trim().slice(0, 4000)}`;
+    const entry = `## ${new Date().toISOString()}\nQ (writer): ${input.question}\n${answerLine}\n`;
+    const content = prior ? `${prior.trimEnd()}\n\n${entry}\n` : `# Q&A — ${input.taskId}\n\n${entry}\n`;
+    await bb.sdk.files.write({ hostId: input.hostId, rootPath: input.workspacePath, path,
+      content, contentEncoding: "utf8", createParents: true, expectedSha256: null });
+  } catch (cause) {
+    bb.log.warn(`Lane Pilot could not record the Q&A of ${input.taskId}: ${cause instanceof Error ? cause.message : String(cause)}`);
+  }
+}
+
 export function createAttemptReopen(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, db, getThreadBounded, host, log } = ctx;
 
@@ -120,7 +143,7 @@ export function createAttemptReopen(ctx: ServerCore, services: Services) {
         terminal: "failed", attempt: countAttempts(db, runId, taskId), reason: attempt.reason, threadId });
       return { ok: false, hint: `the turn could not be delivered to the writer thread (${cause instanceof Error ? cause.message : String(cause)}); the task stays blocked — redispatch it instead` };
     }
-    await appendQa({ hostId: config.hostId, workspacePath: input.workspacePath, taskId, question: writerQuestion(attempt.reason), answer: input.qaAnswer });
+    await appendTaskQa(bb, { hostId: config.hostId, workspacePath: input.workspacePath, taskId, question: writerQuestion(attempt.reason), answer: input.qaAnswer });
     const workspace = acceptedTaskWorkspace(runId, taskId, input.workspacePath, input.contract, attempt.id);
     services.startWriterTask({
       projectId: input.projectId, runId, taskId, firstAttemptId: attempt.id,
@@ -130,24 +153,6 @@ export function createAttemptReopen(ctx: ServerCore, services: Services) {
     });
     log(`writer ${taskId}: attempt ${attempt.id} reopened in thread ${threadId} (${input.reason})`);
     return { ok: true };
-  }
-
-  /** Appends the question and the answer to the task folder's QA.md; a failed write never fails the reopen. */
-  async function appendQa(input: { hostId: string; workspacePath: string; taskId: string; question: string; answer: string }): Promise<void> {
-    const rel = taskFolderRel(input.taskId);
-    if (!rel) return;
-    const path = resolve(input.workspacePath, rel, "QA.md");
-    try {
-      const existing = await orMiss(Promise.resolve().then(() => bb.sdk.files.read({ hostId: input.hostId, rootPath: input.workspacePath, path })), null, isNotFound);
-      const prior = existing && typeof existing === "object" && typeof (existing as { content?: unknown }).content === "string"
-        ? (existing as { content: string }).content : null;
-      const entry = `## ${new Date().toISOString()}\nQ (writer): ${input.question}\nA (PM): ${input.answer.trim().slice(0, 4000)}\n`;
-      const content = prior ? `${prior.trimEnd()}\n\n${entry}\n` : `# Q&A — ${input.taskId}\n\n${entry}\n`;
-      await bb.sdk.files.write({ hostId: input.hostId, rootPath: input.workspacePath, path,
-        content, contentEncoding: "utf8", createParents: true, expectedSha256: null });
-    } catch (cause) {
-      bb.log.warn(`Lane Pilot could not record the Q&A of ${input.taskId}: ${cause instanceof Error ? cause.message : String(cause)}`);
-    }
   }
 
   return { checkReopenable, reopenAttempt };

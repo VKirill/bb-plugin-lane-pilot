@@ -181,7 +181,7 @@ export const rpcOps = {
   },
   /** Reverts an accepted task's merge commit(s) in a worktree, checked and merged through the merge queue; refused with the next step on a conflict. */
   task_revert: {
-    input: z.object({ ref: z.string().min(1).max(200), dryRun: z.boolean().optional(), skipGate: z.boolean().optional() }).strict(),
+    input: z.object({ ref: z.string().min(1).max(200), dryRun: z.boolean().optional(), skipGate: z.boolean().optional(), why: z.string().max(2000).optional(), by: z.string().max(60).optional() }).strict(),
     output: z.unknown(),
   },
   /** What is on record for a task or an attempt: bases, merges, changed files, receipts. */
@@ -258,6 +258,9 @@ export const rpcOps = {
   cockpit_queue: { input: z.object({ runId: z.string().min(1).max(200), taskIds: z.array(z.string().min(1).max(200)).min(1).max(50), action: z.enum(["hold", "release", "priority"]), priority: z.enum(["low", "normal", "high", "urgent"]).optional() }).strict(), output: z.unknown() },
   cockpit_update: { input: z.object({ hostId: z.string().min(1).max(200), apply: z.boolean().default(false) }).strict(), output: z.unknown() },
   cockpit_task: { input: z.object({ runId: z.string().min(1).max(200), taskId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
+  /** One attempt's whole record in one answer: writer thread, stage receipts and gate events of that attempt, the dispatch context, verification results, critic input hash, the attempt-change row (SMA ap_run_dir). */
+  cockpit_attempt: { input: z.object({ attemptId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
+
   cockpit_fault: { input: z.object({ screen: z.string().min(1).max(80), text: z.string().trim().min(3).max(2000) }).strict(), output: z.unknown() },
   /** The front (src/rooms/front): the first-run interview, the project's own helpers, peers, coordination, the door, the action journal. */
   first_run_get: { input: z.object({ projectId: z.string().min(1).max(200) }).strict(), output: z.unknown() },

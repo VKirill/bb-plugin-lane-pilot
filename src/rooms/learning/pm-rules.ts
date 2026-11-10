@@ -95,3 +95,21 @@ export async function relevantPmRules<T extends { rule: string }>(jev: Jev | nul
   const picked = verdict.by === "jev" ? verdict.decision : rules.map(() => true);
   return rules.filter((_, index) => picked[index] ?? true);
 }
+
+import { listRunTaskSummaries } from "../storage";
+import { listPhases, rubricLine } from "../phase";
+
+/**
+ * The «Board now» block a resuming PM reads beside its rules (SMA m_cf_prompt): the run's tasks with their state
+ * (at most 20, then a count of the rest), and the stage and rubric of the run's open phase. Null when there is no board.
+ */
+export function pmBoardBlock(db: Db, runId: string): string | null {
+  const tasks = listRunTaskSummaries(db as never, runId, 60);
+  const phase = listPhases(db as never, { live: true, limit: 200 }).find((row) => row.runId === runId);
+  const lines: string[] = [];
+  if (tasks.length) {
+    lines.push(`Tasks: ${tasks.slice(0, 20).map((task) => `${task.taskId} ${task.state ?? "?"}`).join("; ")}${tasks.length > 20 ? ` (+${tasks.length - 20} more)` : ""}`);
+  }
+  if (phase) lines.push(`Phase ${phase.id} — ${phase.stage}. ${rubricLine(phase.stage)}`);
+  return lines.length ? ["Board now:", ...lines].join("\n") : null;
+}

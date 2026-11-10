@@ -4,13 +4,15 @@ import { claimDocsSpawn, getRun, getTask, listStageReceipts } from "../../storag
 import { bbServiceTier, listedServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../tasks";
 import { extractModelJson } from "@lane-pilot/workflow-engine";
-import { docsInputHash, docsMaintenancePrompt, docsSelection, parseDocsSettings, selectDocsPages, validateDocsEdits } from "../docs";
+import { docsInputHash, docsMaintenancePrompt, docsReviewPrompt, docsSelection, parseDocsSettings, selectDocsPages, validateDocsEdits } from "../docs";
 import type { DocsPage } from "../../contracts/docs-page";
+import type { HelperRole } from "../../contracts";
 import { boundedAgentName } from "../../contracts/review-vocabulary";
 import { DocsChildSnapshot, docsChildSnapshot, docsResultObject, resolveDocsSnapshotPageCap } from "../../runs/server";
 import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
-import { fullAccessSpawn, graphStepMetadata } from "../../platform/server";
+import { documentaryGateOf, fullAccessSpawn, graphStepMetadata } from "../../platform/server";
+import { isDocumentaryRole } from "../../contracts";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { recordStage } from "../../runs/server";
 import { bestEffort, stringAt, valueAt } from "@lane-pilot/kit";
@@ -44,7 +46,10 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
     const docsAgent=boundedAgentName(settings["docs.agent"],"docs-maintainer");
     const spawnUsage=spawnUsageOf(ctx);
     await warmSpawnUsage(spawnUsage,config.hostId);
-    const docsRole=resolveSpawnModel({role:"docs-maintainer",settings,catalog:modelCatalogOf(ctx).peek(), usage: spawnUsage,hostId:config.hostId});
+    // The documentary gate (SMA ap_caps): an adapter version with no documentary receipt is out of the offer, so the
+      // pick is the stage's next provider; when none is proved the spawn below refuses and the stage stays held.
+      const docProved=await bestEffort(ctx.log,"docs capability gate",Promise.resolve().then(()=>documentaryGateOf(bb)?.proved(args.projectId)),undefined);
+      const docsRole=resolveSpawnModel({role:"docs-maintainer",settings,catalog:modelCatalogOf(ctx).peek(), usage: spawnUsage,hostId:config.hostId,...(docProved?{capability:{proved:(providerId:string)=>docProved.has(providerId)}}:{})});
     const docsChoice=docsSelection(settings,docsRole);
     const docsProviderId=docsChoice.providerId;
     const docsModelId=docsChoice.model;
@@ -82,6 +87,22 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
     let threadId:string|null=receipt?.threadId??null;
     const changed:Array<{path:string;sha256:string}> = [];
     const observeMs=Math.min(240, Math.max(1, args.timeoutSec ?? 60)) * 1000;
+    /** One helper child of the docs stage (the author and, for the stage gate, the reviewer — separate roles by id). */
+    const spawnDocsChild=async(role:HelperRole,prompt:string):Promise<string>=>{
+      const [providers,catalog] = await Promise.all([bb.sdk.providers.list({hostId:config.hostId}),bb.sdk.providers.models({providerId:docsProviderId,hostId:config.hostId})]);
+      const provider=providers.find((item)=>item.id===docsProviderId&&item.available);
+      const model=catalog.models.find((item)=>item.id===docsModelId||item.model===docsModelId);
+      if(!provider||!model) throw new Error("docs_writer_provider_or_model_unavailable");
+      const effort=configuredDocsEffort??(model.supportedReasoningEfforts.some((item)=>item.reasoningEffort==="medium")?"medium":model.supportedReasoningEfforts[0]?.reasoningEffort);
+      if(!effort) throw new Error("docs_writer_model_has_no_supported_reasoning_effort");
+      const tier=listedServiceTier(provider, bbServiceTier(docsServiceTier));
+      if(tier&&!(provider.serviceTiers??[]).some((item)=>item.id===tier)) throw new Error(`docs_writer_service_tier_unsupported:${tier}`);
+      const helperPolicy=requireHelperSpawn({bb,db,projectId:args.projectId,runId:args.runId});
+      const placement=await helperChildPlacement({bb,db,projectId:args.projectId,runId:args.runId,role});
+      const spawned=await fullAccessSpawn(bb,{...placement,...requiredPolicyField(bb,helperPolicy,docsProviderId,role),...writerExecutionSelection(docsProviderId,docsModelId,effort,tier),prompt,environment:workspaceExecutionEnvironment(config.hostId,workspace),pluginMetadata:{role,lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"docs-maintenance",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true,...graphStepMetadata(args.workflow)}});
+      const id=stringAt(spawned,"id"); if(!id) throw new Error(`${role}_thread_id_missing`);
+      return id;
+    };
     const persistRunning=(nextThreadId:string|null, result:unknown, reason?:string)=>{
       const current=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
       if (current && !["pending","running"].includes(current.state)) return current;
@@ -121,6 +142,43 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
       const raw=(await bb.sdk.threads.output({threadId:childId})).output; if(typeof raw!=="string"||!raw.trim()) throw new Error("docs_maintainer_output_empty");
       let decoded:unknown; try { decoded=extractModelJson(raw,"array"); } catch { throw new Error("docs_maintainer_output_must_be_json_array"); }
       const edits=validateDocsEdits(decoded,snapshot.pages,pageCap);
+      // The document stage gate (SMA ag_doc_gate): a second role reads the edits before a page is written. The author's
+      // own thread can never be the reviewer; the pages are written and committed only on the review's pass. It runs
+      // where the project set docs.review to gate and there is an edit to read; by default the pass writes as before,
+      // because a refusal has no rework round yet and would only fail the pass.
+      let reviewed:{threadId?:string;role?:string;verdict:string}|null=null;
+      if (String(settings["docs.review"]??"off")==="gate"&&edits.length) {
+        const priorReview=(docsResultObject(prior).review ?? null) as {threadId?:string;role?:string}|null;
+        if (priorReview?.threadId === childId) {
+          recordStage(db,{...base,state:"failed",providerId:docsProviderId,model:docsModelId,threadId:childId,
+            reason:"docs_review_same_role",result:{...prior,error:"docs review refused: the reviewer is the author's own thread"}});
+          return {runId:args.runId,taskId:args.taskId,state:"failed",reason:"docs_review_same_role"};
+        }
+        if (!priorReview?.threadId) {
+          const reviewRole="auditor";
+          const reviewThreadId=await spawnDocsChild(reviewRole,docsReviewPrompt(snapshot.pages,edits));
+          persistRunning(childId,{...prior,review:{threadId:reviewThreadId,role:reviewRole}});
+          return {runId:args.runId,taskId:args.taskId,state:"running",threadId:childId,reason:"observing",detail:"docs_review"};
+        }
+        const reviewObserved=await observeStageChild(bb,priorReview.threadId,observeMs);
+        if (reviewObserved.kind === "observing") {
+          persistRunning(childId,{...prior,observing:"docs_review"});
+          return {runId:args.runId,taskId:args.taskId,state:"running",threadId:childId,reason:"observing",detail:"docs_review"};
+        }
+        if (reviewObserved.kind === "product_failure") {
+          recordStage(db,{...base,state:"failed",providerId:docsProviderId,model:docsModelId,threadId:childId,reason:`${reviewObserved.via}:${reviewObserved.detail}`,result:{error:`${reviewObserved.via}:${reviewObserved.detail}`}});
+          return {runId:args.runId,taskId:args.taskId,state:"failed",reason:`${reviewObserved.via}:${reviewObserved.detail}`};
+        }
+        const reviewRaw=(await bb.sdk.threads.output({threadId:priorReview.threadId})).output;
+        let verdict:"pass"|"changes"="changes"; let notes="";
+        try { const parsed=extractModelJson(String(reviewRaw),"object") as {verdict?:unknown;notes?:unknown}; verdict=parsed.verdict==="pass"?"pass":"changes"; notes=String(parsed.notes??"").slice(0,1000); } catch { /* an unreadable verdict asks for changes */ }
+        if (verdict!=="pass") {
+          const reason=`docs_review_refused${notes?`:${notes}`:""}`;
+          recordStage(db,{...base,state:"failed",providerId:docsProviderId,model:docsModelId,threadId:childId,reason,result:{...prior,review:{...priorReview,verdict},error:"the docs review asked for changes"}});
+          return {runId:args.runId,taskId:args.taskId,state:"failed",reason};
+        }
+        reviewed={...priorReview,verdict};
+      }
       for (const edit of edits) {
         await bb.sdk.files.write({hostId:config.hostId,rootPath:task.project_cwd,path:`${task.project_cwd}/${edit.path}`,content:edit.content,contentEncoding:"utf8",createParents:false,expectedSha256:edit.expectedSha256});
         const readback=await bb.sdk.files.read({hostId:config.hostId,rootPath:task.project_cwd,path:`${task.project_cwd}/${edit.path}`});
@@ -128,7 +186,11 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
         if (afterContent !== edit.content) throw new Error(`docs_write_readback_mismatch:${edit.path}`);
         changed.push({path:edit.path,sha256:sha256(afterContent)});
       }
-      const result={selected:snapshot.pages.length,changed,inputSha256:snapshot.inputSha256,since:snapshot.since,truncated:snapshot.truncated,threadId:childId,snapshot};
+      // A reviewed pass is committed (SMA ag_doc_gate) and its receipt names both roles and the commit. A folder without
+      // git, or edits that changed nothing, have no commit to name: that is said in the receipt, it does not fail the pass.
+      const committed=reviewed?await bestEffort(ctx.log,"docs commit",host.call("gitCommitDocs",{requestedHostId:config.hostId,projectCwd:task.project_cwd,paths:edits.map((edit)=>edit.path),message:`docs: maintenance of ${args.taskId}`},{hostId:config.hostId,timeoutMs:60_000}),null):null;
+      const result={selected:snapshot.pages.length,changed,inputSha256:snapshot.inputSha256,since:snapshot.since,truncated:snapshot.truncated,threadId:childId,
+        ...(reviewed?{commit:stringAt(committed,"commit")??null,commitStatus:stringAt(committed,"status")??"failed",roles:{author:"docs-maintainer",reviewer:reviewed.role??"auditor"},review:reviewed}:{}),snapshot};
       recordStage(db,{...base,state:"passed",providerId:docsProviderId,model:docsModelId,threadId:childId,result});
       return {runId:args.runId,taskId:args.taskId,state:"passed",result};
     };
@@ -182,20 +244,7 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
         if (receipt?.threadId) return await finishObservation(receipt.threadId, snapshot);
         return {runId:args.runId,taskId:args.taskId,state:"running",threadId:receipt?.threadId??null,reason:"observing",detail:"docs_spawn_claimed"};
       }
-      const [providers,catalog] = await Promise.all([bb.sdk.providers.list({hostId:config.hostId}),bb.sdk.providers.models({providerId:docsProviderId,hostId:config.hostId})]);
-      const provider=providers.find((item)=>item.id===docsProviderId&&item.available);
-      const model=catalog.models.find((item)=>item.id===docsModelId||item.model===docsModelId);
-      if (!provider||!model) throw new Error("docs_writer_provider_or_model_unavailable");
-      const docsEffort=configuredDocsEffort??(model.supportedReasoningEfforts.some((item)=>item.reasoningEffort==="medium")?"medium":model.supportedReasoningEfforts[0]?.reasoningEffort);
-      if (!docsEffort) throw new Error("docs_writer_model_has_no_supported_reasoning_effort");
-      const tier=listedServiceTier(provider, bbServiceTier(docsServiceTier));
-      if(tier&&!(provider.serviceTiers??[]).some((item)=>item.id===tier)) throw new Error(`docs_writer_service_tier_unsupported:${tier}`);
-      const helperPolicy=requireHelperSpawn({bb,db,projectId:args.projectId,runId:args.runId});
-      const placement=await helperChildPlacement({
-        bb, db, projectId:args.projectId, runId:args.runId, role:"docs-maintainer",
-      });
-      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, docsProviderId, "docs-maintainer"),...writerExecutionSelection(docsProviderId,docsModelId,docsEffort,tier),prompt:docsMaintenancePrompt({since:docsSettings.since,pages:snapshot.pages,pageCap:resolvedPageCap,agent:docsAgent}),environment:workspaceExecutionEnvironment(config.hostId,workspace),pluginMetadata:{role:"docs-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"docs-maintenance",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true,...graphStepMetadata(args.workflow)}});
-      threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("docs_maintainer_thread_id_missing");
+      threadId=await spawnDocsChild("docs-maintainer",docsMaintenancePrompt({since:docsSettings.since,pages:snapshot.pages,pageCap:resolvedPageCap,agent:docsAgent}));
       persistRunning(threadId, { ...docsResultObject(receipt?.result), snapshot, spawnAttempted:true });
       receipt = listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
       return await finishObservation(threadId, snapshot);
@@ -205,6 +254,12 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
         return {runId:args.runId,taskId:args.taskId,state:current.state,reason:"docs maintenance already has a receipt; create a new task for another run",stage:current};
       }
       const reason=cause instanceof Error?cause.message:String(cause);
+      // Held, not failed: an adapter with no documentary receipt starts nothing (SMA ap_caps_held). The stage stays
+      // running with the reason named, uncharged, and the next hourly pass asks the table again.
+      if (reason.startsWith("capability_unproven:")) {
+        persistRunning(threadId, { ...docsResultObject(receipt?.result), observing:reason }, reason);
+        return {runId:args.runId,taskId:args.taskId,state:"running",threadId,reason:"observing",detail:reason};
+      }
       if (!threadId) {
         const recovered = await bestEffort(ctx.log, `docs child reconcile ${args.taskId}`, services.reconcileDocsChild(args.projectId, args.runId, args.taskId), { kind:"error" as const, message:reason });
         if (recovered.kind === "found") {

@@ -30,13 +30,18 @@ export type TokenUsageQuery = {
   projectId?: string;
   now?: number;
 };
+export type TokenUsageMismatch = { threadId: string; projectId: string; chosen: string; actual: string; tokens: number; at: number };
 export type TokenUsageDiagnostics = {
   threadsSeen: number;
   threadsWithUsage: number;
   threadsFailed: number;
   lastError: string | null;
+  /** Turns booked under another model than the chosen one (newest 50): «выбрана opus, ход шёл на sonnet». */
+  mismatches?: TokenUsageMismatch[];
 };
 export type TokenUsageResult = {
+  /** The model mismatches the last sync saw (SMA m_cf_book_usage): the person is told the turn ran elsewhere. */
+  mismatches: TokenUsageMismatch[];
   byModel: Array<{ providerId: string; model: string; input: number; output: number; cached: number; total: number; costUsd: number | null }>;
   series: Array<{ day: string; models: Array<{ providerId: string; model: string; total: number }> }>;
   byProject: Array<{ projectId: string; projectName: string; total: number; share: number; topModel: string; costUsd: number | null }>;
@@ -319,27 +324,44 @@ export async function syncTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDataba
       }
       let model = cursor.last_model;
       let providerId = cursor.last_provider || thread.providerId;
+      const cursorTotal = JSON.parse(cursor.total_json || "{}") as Record<string, unknown>;
+      let turns = typeof cursorTotal.turns === "number" ? cursorTotal.turns : 0;
       let prev = { last: parseBreakdown(cursor.last_json), total: parseBreakdown(cursor.total_json), turnId: cursor.last_turn_id };
       let lastSeq = cursor.last_seq;
+      let pendingMismatch: { chosen: string; actual: string } | null = null;
       const apply = (event: unknown) => {
         const type = eventType(event);
         const createdAt = eventCreatedAt(event);
         const tooOld = createdAt !== null && createdAt < since;
-        if (type === "client/turn/requested" || type === "client/thread/start" || type === "provider/modelFallback" || type === "client/turn/start") {
+        if (type === "provider/modelFallback") {
+          // The turn ran on another model than the chosen one: booked under the actual model, and the mismatch is
+          // named to the person (SMA m_cf_book_usage) — the chosen model is remembered until the turn's spend lands.
+          const chosen = stringAt(event as never, "originalModel") ?? stringAt((event as { data?: never }).data ?? {}, "originalModel");
+          pendingMismatch = chosen && chosen !== model ? { chosen, actual: "" } : null;
+          model = turnModel(event) ?? model;
+          providerId = turnProvider(event, providerId);
+          if (pendingMismatch) pendingMismatch.actual = model;
+        } else if (type === "client/turn/requested" || type === "client/thread/start" || type === "client/turn/start") {
           model = turnModel(event) ?? model;
           providerId = turnProvider(event, providerId);
         } else if (type === "thread/tokenUsage/updated") {
           const usage = usageFromEvent(event);
           if (usage) {
             const turnId = usageTurnId(event);
+            if (turnId && turnId !== prev.turnId) turns += 1;
             if (!tooOld) {
+              const delta = tokenDelta(usage, prev, turnId, isCumulativeProvider(providerId || thread.providerId));
               addDaily(ctx.db, {
                 day: utcDay(createdAt ?? now),
                 projectId: thread.projectId,
                 providerId: providerId || thread.providerId || "unknown",
                 model: model || "unknown",
-                delta: tokenDelta(usage, prev, turnId, isCumulativeProvider(providerId || thread.providerId)),
+                delta,
               });
+              if (pendingMismatch && pendingMismatch.actual) {
+                diagnostics.mismatches = [...(diagnostics.mismatches ?? []), { threadId: thread.id, projectId: thread.projectId, chosen: pendingMismatch.chosen, actual: pendingMismatch.actual, tokens: billedFrom(delta).total, at: createdAt ?? now }].slice(-50);
+                pendingMismatch = null;
+              }
             }
             prev = { last: usage.last, total: usage.total, turnId };
           }
@@ -355,7 +377,7 @@ export async function syncTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDataba
         saveCursor(ctx.db, thread, {
           last_seq: lastSeq,
           last_json: JSON.stringify(prev.last),
-          total_json: JSON.stringify(prev.total),
+          total_json: JSON.stringify({ ...prev.total, turns }),
           last_model: model,
           last_provider: providerId,
           last_turn_id: prev.turnId,
@@ -496,7 +518,7 @@ export async function queryTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatab
   }).sort((a, b) => b.total - a.total || a.projectId.localeCompare(b.projectId));
   const priced = byModel.map((row) => row.costUsd).filter((value): value is number => value !== null);
   const totalCost = priced.length > 0 ? priced.reduce((sum, value) => sum + value, 0) : null;
-  return { byModel, series, byProject, months: months.map((row) => row.month), lastSyncAt, noDataProviders, diagnostics, costUsd: totalCost };
+  return { byModel, series, byProject, months: months.map((row) => row.month), lastSyncAt, noDataProviders, diagnostics, mismatches: diagnostics.mismatches ?? [], costUsd: totalCost };
 }
 
 /** What a thread spent. `unknown` is set when BB shows no usage for it at all: the 0 is then "not reported", not "free". */
@@ -603,4 +625,10 @@ export function projectTokenTotalsSince(db: { prepare(sql: string): { all(...arg
 export function tokenDailyRowsSince(db: LanePilotDatabase, sinceDay: string): Array<{ day: string; providerId: string; model: string; inputTokens: number; outputTokens: number; cachedTokens: number }> {
   return db.prepare("SELECT day, provider_id AS providerId, model, input_tokens AS inputTokens, output_tokens AS outputTokens, cached_tokens AS cachedTokens FROM lane_pilot_token_daily WHERE day >= ?")
     .all(sinceDay) as Array<{ day: string; providerId: string; model: string; inputTokens: number; outputTokens: number; cachedTokens: number }>;
+}
+
+/** The spend book lists a thread from its first second: an empty cursor row, so a thread that dies before any sync still shows with zero totals. */
+export function openTokenCursor(db: LanePilotDatabase, input: { threadId: string; projectId: string; providerId: string; at?: number }): void {
+  db.prepare("INSERT OR IGNORE INTO lane_pilot_token_cursor (thread_id, project_id, provider_id, last_seq, last_json, total_json, last_model, last_provider, last_turn_id, updated_at) VALUES (?,?,?,0,'{}','{}','','','',?)")
+    .run(input.threadId, input.projectId, input.providerId, input.at ?? Date.now());
 }

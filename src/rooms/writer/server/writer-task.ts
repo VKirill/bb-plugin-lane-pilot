@@ -248,6 +248,15 @@ export function skillPickedLine(context: WriterBriefContext): string {
   return `Your skills for this task: ${names}.`;
 }
 
+/** The built-in browser rule (sma ap_skills): a task whose acceptance is checked on a page gets it beside the receipt, lesson and question rules. */
+export const BROWSER_BRIEF_LINE = "This task is checked on a page: open the task's qa_url in the BB browser with the browser-automation skill and check the acceptance there before answering.";
+
+/** A task verified in a browser: it names the page it is checked on (qa_url). UI files alone name no page to open — a writer
+ *  told to «check in the browser» with no address starts servers and hunts for one. */
+export function taskNeedsBrowser(task: { qa_url?: unknown }): boolean {
+  return typeof task.qa_url === "string" && !!task.qa_url.trim();
+}
+
 /** The NEEDS_HUMAN contract, stated once: the marker, when to stop, and the three named cases. */
 const OUTPUT_CONTRACT = [
   `Done when your change is complete and each verification command would exit 0; Lane Pilot runs them in a sandbox and returns a failure to you in this thread. Answer with the changed paths.`,
@@ -366,6 +375,7 @@ export function writerBriefSegments(task: TaskV2, memoryText="", executionPacket
       ...(task.acceptance?.length ? [PLAN_FACT_BRIEF_LINE] : []),
       gateVocabularyLines("writer").join("\n"),
       MARKER_BRIEF_LINE,
+      ...(taskNeedsBrowser(task) ? [BROWSER_BRIEF_LINE] : []),
       ...(emergencyContext ? ["Fallback writer: the first writer's model failed before it finished, for a reason outside the task (provider, limit or model catalog). Its work is not guaranteed to be here: check the files, then do the whole task from the contract."] : []),
     ],
     goal: s.goal,

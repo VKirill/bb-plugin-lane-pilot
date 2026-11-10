@@ -36,7 +36,7 @@ export const PLAN_FACT_BRIEF_LINE = [
 ].join(" ");
 
 export type PlanFactTable =
-  | { status: "ok"; rows: PlanFactRow[] }
+  | { status: "ok"; rows: PlanFactRow[]; nearMisses?: string[] }
   | { status: "missing" }
   | { status: "invalid"; reason: string };
 
@@ -47,14 +47,18 @@ export function parsePlanFact(answer: string): PlanFactTable {
   if (!block) return { status: "missing" };
   let json: unknown;
   try { json = JSON.parse(block[1]!); } catch (cause) { return { status: "invalid", reason: `the block is not JSON (${cause instanceof Error ? cause.message : "parse error"})`.slice(0, 200) }; }
-  const parsed = z.array(planFactRowSchema).min(1).max(200).safeParse(json);
+  // Near misses ride the same block (SMA k_lib_goodhart): {rows:[...], near_misses:[...]} or a bare array; never scored.
+  const nearMisses = (!Array.isArray(json) && json && typeof json === "object" && Array.isArray((json as { near_misses?: unknown }).near_misses)
+    ? (json as { near_misses: unknown[] }).near_misses : [])
+    .filter((entry): entry is string => typeof entry === "string").slice(0, 5).map((entry) => entry.slice(0, 300));
+  const parsed = z.array(planFactRowSchema).min(1).max(200).safeParse(Array.isArray(json) ? json : (json as { rows?: unknown }).rows);
   if (!parsed.success) return { status: "invalid", reason: parsed.error.issues.slice(0, 2).map((issue) => `${issue.path.join(".") || "table"}: ${issue.message}`).join("; ").slice(0, 300) };
   const seen = new Set<number>();
   for (const row of parsed.data) {
     if (seen.has(row.item)) return { status: "invalid", reason: `item ${row.item} appears twice` };
     seen.add(row.item);
   }
-  return { status: "ok", rows: parsed.data };
+  return { status: "ok", rows: parsed.data, ...(nearMisses.length ? { nearMisses } : {}) };
 }
 
 /** What the code knows of the candidate; nothing in it comes from the writer's text. */
@@ -199,7 +203,7 @@ export function blindPlanFact(acceptance: readonly string[], table: PlanFactTabl
       severity: proven ? (evidence.some((entry) => !entry.ok) || soft ? "warning" : "ok") : "blocking", evidence, why: row.why ?? null };
   });
   return {
-    table: "ok", tableReason: null, items,
+    table: "ok", tableReason: null, items, ...((table as { nearMisses?: string[] }).nearMisses ? { nearMisses: (table as { nearMisses?: string[] }).nearMisses } : {}),
     extraRows: table.rows.filter((row) => row.item > acceptance.length).map((row) => row.item),
     blocking: items.filter((item) => item.severity === "blocking").map((item) => item.item),
     notChecked,

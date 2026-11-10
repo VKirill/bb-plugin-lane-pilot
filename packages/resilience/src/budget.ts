@@ -83,8 +83,10 @@ export function createRunBudget(limits: RunBudgetLimits, startedAt = Date.now())
   function snapshot(now = Date.now()): RunBudgetSnapshot {
     return { attempts, children, tokens: tokens(), elapsedMs: now - startedAt, limits: { ...limits } };
   }
+  /** New limits for the same spend: a raised run.max_* reaches a live run without losing or doubling what was counted. */
+  function setLimits(next: RunBudgetLimits): void { limits = { ...next }; }
 
-  return { noteAttempt, noteChild, reserveChild, noteTokens, check, snapshot };
+  return { noteAttempt, noteChild, reserveChild, noteTokens, check, snapshot, setLimits };
 }
 
 export type RunBudget = ReturnType<typeof createRunBudget>;

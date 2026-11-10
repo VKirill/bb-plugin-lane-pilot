@@ -8,7 +8,8 @@ import type { DrawingCritique } from "@lane-pilot/contracts";
 import { sha256Hex } from "@lane-pilot/kit";
 import { PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceKey, checkerIndependence, contextSignature, designDecision, designGate, discussionGate, executionGate, phaseFolder, planGate, planGate as planGateOf, planSignature, staleAfterReturn } from "../logic";
 import { archiveDrawing, uatState } from "../stages";
-import { insertPhase, listParts, savePhase } from "../store";
+import { sendServiceMessage } from "../../relay/server";
+import { insertPhase, listParts, listPhases, savePhase } from "../store";
 import { PhaseRefusal, type DriverBase } from "./driver-tools";
 import type { Docs } from "./driver-docs";
 import type { Journal } from "./driver-journal";
@@ -47,6 +48,11 @@ export function installMethods(tools: MethodsTools) {
   const { mustGet, book, move, facts, readFile, readText, writeDocs } = tools;
 
   async function open(input: { projectId: string; pmThreadId: string; title: string; goal: string; legacy?: boolean; roadmapRow?: string; rails?: boolean }): Promise<Phase> {
+    // A roadmap row is one address (SMA pc_folder): a live phase already on it is named, never shadowed by a second.
+    if (input.roadmapRow) {
+      const held = listPhases(db, { projectId: input.projectId, live: true }).find((phase) => phase.record.roadmapRow === input.roadmapRow);
+      if (held) throw new PhaseRefusal(`roadmap row ${input.roadmapRow} already has a live phase: ${held.id} «${held.title}» — work with that one, or close it first`);
+    }
     const id = `ph_${randomUUID().replace(/-/g, "").slice(0, 10)}`;
     const runId = latestRunForPmThread(db, input.pmThreadId)?.id ?? null;
     insertPhase(db, { id, projectId: input.projectId, pmThreadId: input.pmThreadId, runId, title: input.title.slice(0, 200), goal: input.goal.slice(0, 4000), at: now() });
@@ -114,7 +120,7 @@ export function installMethods(tools: MethodsTools) {
     const contextSha = phase.record.context.sha;
     // `alreadyMet`: the planner found the repository already doing what the goal asks, a plan with no pieces that the plan gate admits as such.
     const record: PhaseRecord = { ...phase.record, plan: { items, contextSha, sha: planSignature(items, contextSha), rounds: phase.record.plan?.rounds ?? 0, submittedAt: now(), ...(input.fromRun ? { fromRun: input.fromRun } : {}), ...(input.alreadyMet ? { alreadyMet: { evidence: input.alreadyMet.slice(0, 1000) } } : {}) } };
-    if (input.design) record.design = { decision: "needed", why: "the PM asked for a drawing" };
+    if (input.design) record.design = designDecision(items, true);
     savePhase(db, phase.id, { record, at: now() });
     if (input.alreadyMet) book(phase, "plan", "already_met", `the planner found the goal already met, no pieces to build: ${input.alreadyMet.slice(0, 1000)}`);
     else book(phase, "plan", "submitted", `plan ${record.plan!.sha.slice(0, 12)}: ${items.length} piece(s) in ${new Set(items.map((item) => item.wave)).size} wave(s) — ${items.map((item) => `${item.id} (w${item.wave}): ${item.promise.then}`).join("; ")}`);
@@ -179,7 +185,10 @@ export function installMethods(tools: MethodsTools) {
       savePhase(db, phase.id, { record, at: now() });
       return returnTo({ phaseId: phase.id, to: "planning", note: `the drawing contradicts the plan: ${input.contradiction ?? "no reason given"}`, by: input.designer });
     }
-    const check = designGate(record);
+    // SMA p3_requirements: the contract is read, not only named — every required section has its heading in UI-SPEC.md.
+    const specPath = drawn.paths.find((path) => /(UI-SPEC|DESIGN)\.md$/i.test(path));
+    const specText = specPath ? await readText(phase, specPath) : null;
+    const check = designGate(record, specText);
     if (!check.ok) {
       savePhase(db, phase.id, { record, at: now() });
       if (record.ownerWords && check.why.length === 1 && check.why[0]!.includes("owner's word")) return mustGet(phase.id);
@@ -408,7 +417,10 @@ export function installMethods(tools: MethodsTools) {
     return { phase: setState({ ...input, by, ...(words ? { words } : {}), state: "stop" }), canceled, unconfirmed };
   }
 
-  /** Stops the current wave: the pieces issued but not started are canceled; running writers finish their current stage. */
+  /**
+   * Stops the current wave: the pieces issued but not started are canceled, and each running writer is told after its current
+   * turn (SMA dt_park_waves: queue-if-active, so it does not keep building a stopped wave).
+   */
   async function stopWave(input: StopWaveInput): Promise<{ phase: Phase; canceled: string[] }> {
     const phase = mustGet(input.phaseId);
     const issued = new Set(Object.values(phase.record.execution?.issued ?? {}).map(taskFamily));
@@ -418,6 +430,12 @@ export function installMethods(tools: MethodsTools) {
       if (result.ok) canceled.push(attempt.task_id);
     }
     book(phase, "execution", "wave_stopped", canceled.length ? `queued pieces canceled: ${canceled.join(", ")}` : "nothing queued to cancel");
+    const corrected: string[] = [];
+    for (const attempt of listOpenAttempts(db).filter((row) => row.run_id === phase.runId && issued.has(taskFamily(row.task_id)) && row.state === "running" && row.thread_id)) {
+      await sendServiceMessage(bb as never, { threadId: attempt.thread_id!, mode: "queue-if-active", senderThreadId: phase.pmThreadId, text: `[Lane Pilot phase ${phase.id}] The wave is stopped: finish the current step, leave the work ready for review, and start nothing new.` })
+        .then(() => corrected.push(attempt.task_id), () => undefined);
+    }
+    if (corrected.length) book(phase, "execution", "wave_live_corrected", `the wave's live writers are corrected after their current turn: ${corrected.join(", ")}`);
     savePhase(db, phase.id, { state: "paused", at: now() });
     return { phase: mustGet(phase.id), canceled };
   }

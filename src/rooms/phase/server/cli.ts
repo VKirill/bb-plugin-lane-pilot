@@ -15,7 +15,7 @@ export async function runPhaseCli(api: PhaseApi, argv: readonly string[]): Promi
       const status = api.status(id);
       return { exitCode: 0, stdout: argv.includes("--book") ? status.book : JSON.stringify({ phase: status.phase, next: status.next, gates: status.gates, facts: status.facts }, null, 2) };
     }
-    if (command === "drive") return { exitCode: 0, stdout: `moved ${await api.tick()} phase(s)` };
+    if (command === "drive") { const pass = await api.tick(); return { exitCode: 0, stdout: `moved ${pass.moved} phase(s)${pass.idle ? `; idle: ${pass.idle}` : ""}` }; }
     if (command === "return" && id && rest.length >= 2) return { exitCode: 0, stdout: api.status(api.returnTo({ phaseId: id, to: rest[0] as never, note: rest.slice(1).join(" "), by: "owner" }).id).next.text };
     if ((command === "pause" || command === "resume") && id) return { exitCode: 0, stdout: api.status(api.setState({ phaseId: id, state: command, by: "owner" }).id).next.text };
     if (command === "close" && id && rest.length) return { exitCode: 0, stdout: api.status(api.setState({ phaseId: id, state: "close", words: rest.join(" "), by: "owner" }).id).next.text };

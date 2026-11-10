@@ -32,3 +32,5 @@ export { mountPermits } from "./permits";
 export { stickyTurnPromptWithRules, writerKnowledge, writerRules } from "./writer-knowledge";
 export type { SkillHub, SkillHubEntry, SkillTree } from "../../platform/server";
 export { writerQuestionKey, writerQuestionSweep } from "./writer-question-item";
+export { budgetSpentSweep, runBudgetItemKey } from "./budget-item";
+export type { WriterStateApi } from "./state";

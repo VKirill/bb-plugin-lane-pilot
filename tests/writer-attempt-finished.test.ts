@@ -67,6 +67,7 @@ describe("attempt-finished bus", () => {
     expect(attemptFinishedSubscriberNames(finishCore as never)).toEqual([
       "rule-forms:settle-stopped-writer",
       "writer:skill-metric-and-materialize",
+      "writer:failed-lesson",
     ]);
     const startCore = { log: vi.fn(), state: { disposed: false } };
     mountStabilityAttemptFinished(startCore as never, { stability: {} } as never);

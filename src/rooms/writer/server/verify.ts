@@ -5,7 +5,7 @@ import { acceptanceArtifactDir, bbWriterReportMarkdown, buildAcceptanceV2, build
 import { attemptProduced } from "../cli-outcome";
 import { taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { recordCheckDuration, recordSecretIssuance, getAttempt, getReasoningTrace, getRunSettingsScopes, getTaskGitBase, listTasksForRun, loadProjectSettings, saveProjectSetting, taskBasePath, otherAttemptsOfRun, attemptedTaskIdsOfRun } from "../../storage";
+import { recordCheckDuration, recordSecretIssuance, getAttempt, getRun, getReasoningTrace, getRunSettingsScopes, getTaskGitBase, listTasksForRun, loadProjectSettings, saveProjectSetting, taskBasePath, otherAttemptsOfRun, attemptedTaskIdsOfRun } from "../../storage";
 import { checkTimeoutSec, orderChecksForFailFast } from "../check-timing";
 import { parseReadFirstHints } from "../../tasks/read-first";
 import {cleanCheckOutput, outputText, pollPause} from "@lane-pilot/kit";
@@ -311,6 +311,15 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
         hostId:input.config.hostId, rootPath:input.task.project_cwd,
         path:`${artifactDir}/${name}`, content, contentEncoding:"utf8", createParents:true, expectedSha256:null,
       });
+      // A worktree attempt's receipts would die with the copy: the same files also land under the run's base
+      // checkout, which is already git-excluded bookkeeping, so the merge is unchanged (sma wi_receipts).
+      const basePath = acceptanceReceiptBase(db, input.runId, input.taskId, input.task.project_cwd);
+      if (basePath) {
+        await bestEffort(ctx.log, "acceptance receipt copy to base", Promise.resolve().then(() => bb.sdk.files.write({
+          hostId:input.config.hostId, rootPath:basePath,
+          path:`${acceptanceArtifactDir(basePath, input.runId, input.taskId)}/${name}`, content, contentEncoding:"utf8", createParents:true, expectedSha256:null,
+        })), undefined);
+      }
     }
     const stored = {
       ...internalReceipt,
@@ -581,6 +590,16 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
   }
 
   return { runVerification, persistWriterAcceptance, validateWriterResult };
+}
+
+/**
+ * The folder that also keeps an accepted attempt's receipts: the run's own folder, or null when the attempt worked in it
+ * (sma wi_receipts). Never a repository nested in the run folder: only the run's folder has its bookkeeping paths
+ * excluded from git, and a receipt in a nested repository's checkout would read as dirt there.
+ */
+export function acceptanceReceiptBase(db: ReturnType<typeof import("../../storage").openDatabase>, runId: string, _taskId: string, projectCwd: string): string | null {
+  const base = getRun(db, runId)?.writer_workspace_path ?? null;
+  return base && base !== projectCwd ? base : null;
 }
 
 export type WriterVerifyApi = ReturnType<typeof createWriterVerify>;

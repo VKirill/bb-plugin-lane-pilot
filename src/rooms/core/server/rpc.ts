@@ -29,7 +29,7 @@ import { acceptanceRpc } from "../../acceptance/server";
 import { benchRpc } from "../../bench/server";
 import { ownerWaitingRpc } from "../../owner-waiting/server";
 import type { LearningItemsReader } from "../../owner-waiting";
-import { writerQuestionSweep } from "../../writer/server";
+import { writerQuestionSweep, budgetSpentSweep } from "../../writer/server";
 import { runGoalSweep } from "../../run-goal/server";
 import { phaseWordSweep } from "../../phase/server";
 import { scheduleFailureSweep } from "../../schedule/server";
@@ -86,6 +86,7 @@ import type { ScheduleService } from "../../schedule/server/schedule-service";
 import type { RuleScanApi } from "../../self-repair/server/rule-scan";
 import type { ReconcileApi } from "../../stability/server/reconcile";
 import type { BuildCliInvocation, WorkflowEngineApi, WorkflowTriggersApi, WriterHostApi } from "../../platform/server";
+import type { WriterStateApi } from "../../writer/server";
 
 import type { StabilityPort } from "../../contracts";
 
@@ -124,6 +125,7 @@ interface Services {
   resumeOrphans: ReconcileApi["resumeOrphans"];
   rollback: RollbackApi;
   ruleScan: RuleScanApi;
+  runBudgetFor?: WriterStateApi["runBudgetFor"];
   taskWords: TaskWordPort;
   insights: InsightsApi;
   laneProject: LaneProjectNotice;
@@ -145,6 +147,7 @@ interface Services {
 const OWNER_ITEM_SWEEPS = [writerQuestionSweep, runGoalSweep, phaseWordSweep, scheduleFailureSweep];
 
 export function registerRpc(ctx: ServerCore, services: Services, contract: typeof rpcContract) {
+  const ownerSweeps = [...OWNER_ITEM_SWEEPS, budgetSpentSweep(services)];
   // Every call is timed (rpc-timing.ts). No caller check: every machine and every caller is the owner's (owner decision 2026-10-08).
   ctx.bb.rpc.register(contract, journalRpcHandlers(timeRpcHandlers({
     ...preferencesRpc(ctx, services),
@@ -172,7 +175,7 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
     ...rollbackRpc(services.rollback),
     ...acceptanceRpc(ctx.db),
     ...benchRpc(services.bench),
-    ...ownerWaitingRpc(ctx.db, OWNER_ITEM_SWEEPS, services.ownerLearningItems),
+    ...ownerWaitingRpc(ctx.db, ownerSweeps, services.ownerLearningItems),
     ...backlogRpc(services.backlog),
     ...leadRpc(ctx.db, services.lead),
     ...errandsRpc(ctx, services),
@@ -213,7 +216,7 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
     ...capabilityRpc(services.capabilities),
     conveyor: async ({ set, reason }: { set?: "on" | "off"; reason?: string }) => set ? await setConveyor(ctx.bb.storage.kv as never, set === "on", reason) : await conveyorState(ctx.bb.storage.kv as never),
     ...wallRpc(services.wall),
-    ...improvementRpc({ db: ctx.db, kv: ctx.bb.storage.kv, wall: services.wall, bench: services.bench, deferrals: services.deferrals, ownerSweeps: OWNER_ITEM_SWEEPS, ownerLearningItems: services.ownerLearningItems }),
+    ...improvementRpc({ db: ctx.db, kv: ctx.bb.storage.kv, wall: services.wall, bench: services.bench, deferrals: services.deferrals, ownerSweeps, ownerLearningItems: services.ownerLearningItems }),
     ...sessionMemoryRpc(ctx, services),
     ...createWorkflowArchitect(ctx, services).rpc,
     ...architectStartRpc(ctx, services),

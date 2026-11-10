@@ -144,9 +144,12 @@ export function parseCritique(output: string, cites?: Citation): CritiqueResult 
         file: row.file, ...(row.line ? { line: row.line } : {}), evidence: row.evidence,
       })),
       status: verdict.status, verdict, ...(demoted ? { demoted } : {}),
+      // An independent skeptic countersign of the forecast (SMA k_lib_goodhart): kept beside the verdict, never scored into it.
+      ...((raw as { forecast_countersign?: unknown }).forecast_countersign ? { forecast_countersign: (raw as { forecast_countersign: unknown }).forecast_countersign } : {}),
     };
   }
   const legacy = critiqueResultSchema.parse(raw);
+  if ((raw as { forecast_countersign?: unknown }).forecast_countersign) (legacy as { forecast_countersign?: unknown }).forecast_countersign = (raw as { forecast_countersign: unknown }).forecast_countersign;
   const status = legacyDecisionToStatus(legacy.decision);
   return { ...legacy, status, verdict: legacyOutputToVerdict({ status, summary: legacy.summary, findings: legacy.findings }) };
 }

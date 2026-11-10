@@ -2,6 +2,7 @@ import { basename, dirname, join } from "node:path";
 import { pickWriterSkills, skillCatalog, type CatalogEntry, type KindCache, type ListedSkill, type SkillAsk, type SkillPick, type PickTaskInput } from "@lane-pilot/jev/judgments/skill-pick";
 import { isNotFound, orMiss } from "@lane-pilot/kit";
 import { candidateNames, readSkillTreeText, skillTreeCached } from "../../platform/server";
+import { taskNeedsBrowser } from "./writer-task";
 import type { TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
 
@@ -158,9 +159,11 @@ export function createWriterSkillPick(ctx: Pick<ServerCore, "bb" | "host">, opti
       return noPick(enabled, `pick_error:${reason}`);
     }
     const { result, folders } = outcome.done;
-    const sources = Object.fromEntries(result.skills.flatMap((name) => (folders.has(name) ? [[name, folders.get(name)!] as const] : [])));
+    // The browser skill is built-in, not picked: a task checked on a page gets it even when Jev names nothing (sma ap_skills).
+    const skills = taskNeedsBrowser(input.task) && !result.skills.includes("browser-automation") ? [...result.skills, "browser-automation"] : result.skills;
+    const sources = Object.fromEntries(skills.flatMap((name) => (folders.has(name) ? [[name, folders.get(name)!] as const] : [])));
     log(`Lane Pilot writer skill pick ${JSON.stringify({ attemptId: input.attemptId, enabled, catalog: result.catalog, kept: result.kept, craftKept: result.craftKept, unanswered: result.unanswered, picked: result.picked, craft: result.craft, projectFolder: result.projectFolder, hints: result.hints })}`);
-    return { enabled, skills: result.skills, picked: result.picked, craft: result.craft, projectFolder: result.projectFolder, hints: result.hints, sources, reason: null };
+    return { enabled, skills, picked: result.picked, craft: result.craft, projectFolder: result.projectFolder, hints: result.hints, sources, reason: null };
   }
 
   return { pick };

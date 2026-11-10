@@ -101,13 +101,14 @@ const offByOne: Mutator = ({ changes }) => {
   return { changes: replaced(changes, row.at, withLine(row.change.after!, row.line, text)), path: row.change.path, line: row.line, summary: `shifted a boundary: «${row.text.trim().slice(0, 60)}» became «${text.trim().slice(0, 60)}»` };
 };
 
-const OUTSIDE_NAMES = ["lp-planted-unowned.txt", "lp-planted/unowned.txt", "notes/lp-planted-unowned.md"];
+// The names read like ordinary files: the blind verifier must not tell a canary from real work by its path (SMA k_lib_canary).
+const OUTSIDE_NAMES = ["lp-notes/unowned-change.md", "notes/unowned-change.md", "docs/unowned-change.md"];
 
 const outsideOwns: Mutator = ({ contract, changes }) => {
   const task = { project_cwd: contract.project_cwd, owns_paths: contract.owns_paths, never_touch: contract.never_touch, verification: contract.verification.map((check) => ({ cwd: check.cwd })) };
   const name = OUTSIDE_NAMES.find((path) => !changes.some((change) => change.path === path) && filterOwnershipNoise([path]).length === 1 && findUnownedChanges([path], task).length === 1);
   if (!name) return null;
-  return { changes: [...changes, { path: name, before: null, after: "planted: a change outside owns_paths\n" }], path: name, line: 1, summary: `changed ${name}, which owns_paths does not cover` };
+  return { changes: [...changes, { path: name, before: null, after: "a change outside owns_paths\n" }], path: name, line: 1, summary: `changed ${name}, which owns_paths does not cover` };
 };
 
 const AWAIT_CALL = /^(\s*)(await\s+[\w.$]+\(.*\));(\s*)$/;
@@ -202,10 +203,10 @@ const brokenImport: Mutator = ({ changes }) => {
   const importTexts = (row: { text: string; change: FileChange }): string | null => {
     if (JS_PATH.test(row.change.path)) {
       const from = JS_IMPORT.exec(row.text);
-      if (from) return row.text.replace(JS_IMPORT, `$1$2$3-planted$2`);
-      return JS_REQUIRE.test(row.text) ? row.text.replace(JS_REQUIRE, "require($1$2-planted$1)") : null;
+      if (from) return row.text.replace(JS_IMPORT, `$1$2$3-impl$2`);
+      return JS_REQUIRE.test(row.text) ? row.text.replace(JS_REQUIRE, "require($1$2-impl$1)") : null;
     }
-    return PY_PATH.test(row.change.path) && PY_IMPORT.test(row.text) ? row.text.replace(PY_IMPORT, "$1$2_planted$3") : null;
+    return PY_PATH.test(row.change.path) && PY_IMPORT.test(row.text) ? row.text.replace(PY_IMPORT, "$1$2_impl$3") : null;
   };
   const pick = (rows: Located[]) => middle(rows.flatMap((row) => { const text = importTexts(row); return text ? [{ row, text }] : []; }));
   let found = pick(addedLines(changes, (change) => isCodeChange(change)));

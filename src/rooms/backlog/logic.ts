@@ -2,7 +2,7 @@
  * Backlog to tasks by readiness (SMA atlas D2-9: «Backlog scanner», «No estimate — not issued», «Above 13 — decompose», «Urgency into
  * queue position»). The backlog is the project's `.agents/todos/items/<slug>/meta.yaml` (skill project-life). An item is issued to the
  * project's PM when it is `ready`, has an estimate of at most 13 points and every item it depends on is done; a ready item without an
- * estimate or above 13 is listed for the PM to estimate or split, never issued. Priority, then age, gives the queue position.
+ * estimate or above 13 is listed for the PM to estimate or split, never issued. Priority, then size, then age, gives the queue position.
  */
 export type TodoMeta = { id: string; title: string; status: string; priority: string; estimate: number | null; dependsOn: string[]; created: string };
 export const MAX_ESTIMATE = 13;
@@ -32,7 +32,9 @@ export type BacklogBoard = { issuable: TodoMeta[]; needsEstimate: TodoMeta[]; de
 /** The ready items sorted into what can be issued (in queue order) and what cannot, and why. */
 export function backlogBoard(items: readonly TodoMeta[]): BacklogBoard {
   const done = new Set(items.filter((item) => item.status === "done").map((item) => item.id));
-  const order = (a: TodoMeta, b: TodoMeta) => (PRIORITY[a.priority] ?? 1) - (PRIORITY[b.priority] ?? 1) || a.created.localeCompare(b.created) || a.id.localeCompare(b.id);
+  // Priority band first, the smaller job inside a band (SMA m_in_priority: urgency, then size, then age).
+  const order = (a: TodoMeta, b: TodoMeta) => (PRIORITY[a.priority] ?? 1) - (PRIORITY[b.priority] ?? 1)
+    || (a.estimate ?? Number.MAX_SAFE_INTEGER) - (b.estimate ?? Number.MAX_SAFE_INTEGER) || a.created.localeCompare(b.created) || a.id.localeCompare(b.id);
   const ready = items.filter((item) => item.status === "ready").sort(order);
   return {
     needsEstimate: ready.filter((item) => item.estimate === null),
@@ -46,6 +48,19 @@ export function backlogBoard(items: readonly TodoMeta[]): BacklogBoard {
 export function issueMessage(item: TodoMeta): string {
   return [`Lane Pilot: из беклога проекта готова к работе задача «${item.title}» (${item.id}, оценка ${item.estimate}, приоритет ${item.priority}).`,
     `Описание и подход: .agents/todos/items/${item.id}/AGENT.md и README.md. Составь контракт и отправь писателю; в meta.yaml добавь run в related_runs.`].join("\n");
+}
+
+/** Significant word stems of a phrase (≥4 letters, first four characters as the stem). */
+const wordStems = (text: string): Set<string> => new Set((text.toLowerCase().match(/[\p{L}\p{N}_]{4,}/gu) ?? []).map((word) => word.slice(0, 4)));
+
+/**
+ * The open backlog items whose titles share at least two stems with the phrase (SMA m_sg_breakdown): a new request is
+ * compared with what is already written down before a duplicate task is made.
+ */
+export function backlogMatches(phrase: string, items: readonly TodoMeta[]): TodoMeta[] {
+  const stems = wordStems(phrase);
+  if (!stems.size) return [];
+  return items.filter((item) => item.status !== "done" && [...wordStems(item.title)].filter((stem) => stems.has(stem)).length >= 2);
 }
 
 export const BACKLOG_MARK = "__lp_todo__";

@@ -8,3 +8,5 @@ export type {
   DiffHiddenRow,
   DiffHiddenSummary,
 } from "./diff-hidden";
+export { latestRun as latestCheckerRun, listRows as checkerRows } from "./store";
+export { buildScorecard } from "./score";

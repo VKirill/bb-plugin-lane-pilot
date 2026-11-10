@@ -1272,3 +1272,30 @@ export function latestAttemptStateCreated(db: LanePilotDatabase, runId: string, 
   return (db.prepare("SELECT state FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC LIMIT 1")
     .get(runId, taskId) as { state: string } | undefined)?.state ?? null;
 }
+
+/**
+ * Every failed task of every project, one row per task (its latest attempt in a failed state, SMA dt_bugs):
+ * the single failure journal — project, run, task, state, reason, failure code and when it failed.
+ */
+export function failedTasksAllProjects(db: LanePilotDatabase, since = 0): Array<{
+  attemptId: string; projectId: string; runId: string; taskId: string; state: string; reason: string | null; failureCode: string | null; failedAt: number;
+}> {
+  return db.prepare(`SELECT a.id AS attemptId, r.project_id AS projectId, a.run_id AS runId, a.task_id AS taskId, a.state, a.reason, a.failure_code AS failureCode, a.updated_at AS failedAt
+    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+    WHERE a.attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.task_id=a.task_id)
+      AND a.state NOT IN ('accepted','canceled','queued','spawn_requested','spawn_unknown','running','cancel_requested')
+      AND a.updated_at>=? ORDER BY a.updated_at DESC LIMIT 1000`).all(since) as
+    Array<{ attemptId: string; projectId: string; runId: string; taskId: string; state: string; reason: string | null; failureCode: string | null; failedAt: number }>;
+}
+
+/** The newest accepted attempt of a task, whatever its run: where a similar past work's files are read from (SMA ap_similar). */
+export function latestAcceptedAttemptOfTask(db: LanePilotDatabase, taskId: string): { run_id: string; id: string } | undefined {
+  return db.prepare("SELECT run_id,id FROM lane_pilot_attempt WHERE task_id=? AND state='accepted' ORDER BY attempt_no DESC LIMIT 1").get(taskId) as { run_id: string; id: string } | undefined;
+}
+
+/** The attempts created since a moment, of one project or of all: the rows receipt coverage is counted over. */
+export function listAttemptRefsSince(db: LanePilotDatabase, since: number, projectId?: string): Array<{ id: string; run_id: string; task_id: string }> {
+  return (projectId
+    ? db.prepare("SELECT a.id, a.run_id, a.task_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.project_id=? AND a.created_at>=?").all(projectId, since)
+    : db.prepare("SELECT id, run_id, task_id FROM lane_pilot_attempt WHERE created_at>=?").all(since)) as Array<{ id: string; run_id: string; task_id: string }>;
+}

@@ -33,10 +33,11 @@ describe("worker gates", () => {
     const versions = new Map([["claude", "1.2.0"], ["codex", "9.0.0"]]);
     const receipt: CapabilityReceipt = { providerId: "claude", version: "1.2.0", capability: "pause", state: "supported", model: "opus", detail: "paused and resumed", at: 1 };
     const absent: CapabilityReceipt = { ...receipt, capability: "answers", state: "not_supported", detail: "no answer" };
-    const stale: CapabilityReceipt = { ...receipt, version: "0.9.0", capability: "documentary" };
+    const stale: CapabilityReceipt = { ...receipt, version: "0.9.0", capability: "documentary.nested" };
+    const unproven = Object.fromEntries(CAPABILITIES.map((name) => [name, "unproven"]));
     expect(capabilityTable(inUse, versions, [receipt, absent, stale])).toEqual([
-      { providerId: "claude", version: "1.2.0", capabilities: { answers: "not_supported", documentary: "unproven", pause: "supported" } },
-      { providerId: "codex", version: "9.0.0", capabilities: { answers: "unproven", documentary: "unproven", pause: "unproven" } },
+      { providerId: "claude", version: "1.2.0", capabilities: { ...unproven, answers: "not_supported", pause: "supported" } },
+      { providerId: "codex", version: "9.0.0", capabilities: unproven },
     ]);
     const due = dueProbes(inUse, versions, [receipt, absent, stale]);
     expect(due.map((row) => row.providerId).sort()).toEqual(["claude", "codex"]);

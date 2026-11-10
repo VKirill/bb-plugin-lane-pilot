@@ -61,8 +61,8 @@ describe("planted defects", () => {
 
   it("adds a change outside owns_paths", () => {
     const planted = plantDefect(clamp(), "outside_owns")!;
-    expect(planted.changes.map((change) => change.path)).toContain("lp-planted-unowned.txt");
-    expect(clamp().contract.owns_paths).not.toContain("lp-planted-unowned.txt");
+    expect(planted.changes.map((change) => change.path)).toContain("lp-notes/unowned-change.md");
+    expect(clamp().contract.owns_paths).not.toContain("lp-notes/unowned-change.md");
   });
 
   it("turns a thrown error into a log line", () => {
@@ -100,7 +100,7 @@ describe("planted defects", () => {
 
   it("points an import at a module that does not exist", () => {
     const planted = plantDefect(clamp(), "broken_import")!;
-    expect(planted.changes.find((change) => change.path === "src/clamp.mjs")!.after).toContain('"./limits.mjs-planted"');
+    expect(planted.changes.find((change) => change.path === "src/clamp.mjs")!.after).toContain('"./limits.mjs-impl"');
   });
 
   it("plants nothing in a candidate with nothing to mutate", () => {

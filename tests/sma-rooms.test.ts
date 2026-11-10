@@ -166,7 +166,8 @@ describe("the cockpit's reads on the real schema", () => {
     expect(await rpc.cockpit_today({ projectId: "proj_c" })).toMatchObject({ kpi: { accepted: 0, blocked: 0, running: 0, tokens: 0, actions: 0 }, feed: [] });
     expect(await rpc.cockpit_workers({ projectId: "proj_c" })).toEqual([]);
     expect(await rpc.cockpit_task({ runId: "run_c", taskId: "none" })).toBeNull();
-    expect(await rpc.cockpit_queue({ runId: "run_c", taskIds: ["none"], action: "hold" })).toEqual({ changed: ["none"] });
+    // A task the run does not own is refused by name, not reported as held (SMA bi_pause).
+    expect(await rpc.cockpit_queue({ runId: "run_c", taskIds: ["none"], action: "hold" })).toEqual({ changed: [], refused: [{ taskId: "none", why: "not a task of run run_c" }] });
     expect((await rpc.cockpit_designer({})).readiness).toContain("учится");
     expect(await rpc.cockpit_seen({ screen: "today", ms: 1000 })).toEqual({ ok: true });
     expect((await rpc.cockpit_seen_list()).seen).toHaveProperty("today");

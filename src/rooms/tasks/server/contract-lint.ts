@@ -1,4 +1,4 @@
-import { birthFindings, blockingClass, checkProgram, ownerWordFindings } from "../rails";
+import { birthFindings, birthGates, blockingClass, checkProgram, ownerWordFindings } from "../rails";
 import { dirname, resolve } from "node:path";
 import { TASK_KINDS, type TaskV2 } from "../../contracts";
 import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOverlap } from "@lane-pilot/kit";
@@ -40,6 +40,11 @@ export type LintInput = {
   ownerWords?:boolean;
   /** The quality mode the task runs in (its own, else the project setting); absent when it was not resolved, and the browser-check rule then stays silent. */
   qualityMode?:QualityMode;
+  /** How the task was born (SMA: the birth kind chooses the gates); absent reads as a PM's dispatch. `redoneBirth` is the birth a redo redoes. */
+  birth?:string;
+  redoneBirth?:string | null;
+  /** The confirmed phase drawings of the task's run (SMA: service drawing kinship), each with the sha256 recomputed over the files now. */
+  confirmedDrawings?:ReadonlyArray<{ paths:readonly string[]; sha256:string; /** A file of it no longer matches the hash the design stage confirmed. */ changed?:boolean }>;
   /** Other open tasks of the project. */
   openTasks:readonly LintOpenTask[];
   /** depends_on names whose latest task ended blocked or canceled and that nothing restarts or vouches for. */
@@ -321,9 +326,19 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
     errors.push({ code:"qa_url_missing", message:`quality_mode is full and the task has qa_cases, so its graph runs the browser check itself and needs the page to open: add qa_url (the address the cases run on, e.g. "http://127.0.0.1:5173/orders"), plus qa_env_class (local, staging, preview, production or unknown) and qa_dev_server (the command that starts the dev server, when it is not running); or drop qa_cases` });
   }
   // The task-birth rails (src/rooms/tasks/rails.ts): open clarification, the promise in Given/When/Then words, the drawing a screen task follows.
-  const birth = birthFindings(task);
+  const birth = birthFindings(task, input.birth, input.redoneBirth);
   errors.push(...birth.errors, ...ownerWordFindings(task, input.ownerWords === true));
   warnings.push(...birth.warnings);
+  // Service drawing kinship (SMA ap_design_kin): a task only follows a drawing confirmed for its own run, whose files still
+  // match the recorded hash. A phase's piece passes by construction — it is issued with the phase's own drawing.
+  if (birthGates(input.birth, input.redoneBirth).drawing && task.drawing?.length) {
+    const confirmed = input.confirmedDrawings ?? [];
+    const kin = confirmed.find((drawing) => task.drawing!.every((path) => drawing.paths.includes(path)));
+    if (kin?.changed) errors.push({ code:"drawing_kin", message:`the drawing ${task.drawing.join(", ")} changed after the phase's design stage confirmed it: confirm the new drawing in the phase (lane_pilot_phase), then send the task` });
+    else if (!kin && confirmed.length) errors.push({ code:"drawing_kin", message:`the drawing ${task.drawing.join(", ")} is not the drawing this run's phase confirmed (${confirmed.map((drawing) => drawing.paths.join(", ")).join(" | ").slice(0, 300)}): follow the confirmed one` });
+    // No phase drew for this run: the task follows its own mock-up, which no design stage reviewed. Said, not refused.
+    else if (!kin) warnings.push({ code:"drawing_unconfirmed", message:`the drawing ${task.drawing.join(", ")} was not confirmed by a phase's design stage: nobody but its author reviewed it` });
+  }
   for (const [index, check] of task.verification.entries()) {
     const program = checkProgram(check.command);
     if (program && !program.includes("/") && input.programs?.get(program) === false) {
