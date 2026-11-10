@@ -81,17 +81,17 @@ export function threatGap(record: PhaseRecord): string | null {
 const EXISTENCE_ONLY = /^\s*(test\s+-[efsd]|ls\b|stat\b|\[\s+-[efsd])/;
 
 /** Validation strategy: a piece whose every check only tests that something exists proves nothing about its promise. */
-export function validationGaps(items: readonly PlanItem[], liveCheckOff = false): string[] {
+export function validationGaps(items: readonly PlanItem[], liveCheckOff = true): string[] {
   const why = items.filter((item) => {
     const checks = Array.isArray(item.task.verification) ? (item.task.verification as Array<{ command?: unknown }>).map((check) => String(check.command ?? "")) : [];
     return checks.length > 0 && checks.every((command) => EXISTENCE_ONLY.test(command));
   }).map((item) => `${item.id}: every check only tests that a file exists — add one that would fail without the work (VALIDATION.md)`);
   // SMA k_we_verify: visible work owes a live check — unless the project switched browser_qa off, where the acceptance line
-  // names «visible work, no live check possible» and the owner decides on it there.
+  // names «visible work, no live check owed» and the owner decides on it there.
   if (!liveCheckOff) for (const item of items.filter(buildsScreens)) {
     const cases = Array.isArray(item.task.qa_cases) ? item.task.qa_cases.length : 0;
     const url = typeof item.task.qa_url === "string" && item.task.qa_url.trim();
-    if (!cases || !url) why.push(`${item.id}: visible work owes a live check — name qa_cases and a qa_url to run them on, or switch browser_qa.enabled off for work no browser can check`);
+    if (!cases || !url) why.push(`${item.id}: visible work owes a live check — name qa_cases and a qa_url to run them on (this project has browser_qa.enabled on; switch it off for work no browser can check)`);
   }
   return why;
 }

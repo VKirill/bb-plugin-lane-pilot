@@ -72,7 +72,7 @@ export function autoDue(phase: Phase): AutoDue | null {
     if (wave && !tried("review")) return { kind: "review", wave: Number(wave[0]) };
   }
   // The live interface check (SMA k_we_uiqa): after the verifier and before the goal audit, only when a piece built screens.
-  if (phase.stage === "verification" && r.verification?.verdict?.state === "passed" && !r.verification.live && !r.browserQaOff && (r.plan?.items ?? []).some(buildsScreens) && !tried("live")) return { kind: "live" };
+  if (phase.stage === "verification" && r.verification?.verdict?.state === "passed" && !r.verification.live && r.liveCheck === true && (r.plan?.items ?? []).some(buildsScreens) && !tried("live")) return { kind: "live" };
   if (phase.stage === "verification" && r.verification?.verdict?.state === "passed" && !r.verification.model && !tried("close")) return { kind: "close" };
   // A failed verdict (red checks or an unmet goal audit) is planned again by the machine, with the verdict as the gaps, twice at most.
   if (phase.stage === "verification" && r.verification?.verdict?.state === "failed" && (r.replan?.count ?? 0) < AUTO_REPLANS) return { kind: "replan" };
@@ -198,7 +198,7 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number },
       return { url: urls[0] ?? "", urls, flows: visible.map((item) => `${item.id}: given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}`),
         dev_server: [...new Set(visible.map((item) => String(item.task.qa_dev_server ?? "").trim()).filter(Boolean))][0] ?? "" };
     }
-    case "bounce": return { phase_id: phase.id };
+    case "bounce": return { phase_id: phase.id, machine: true };
   }
 }
 

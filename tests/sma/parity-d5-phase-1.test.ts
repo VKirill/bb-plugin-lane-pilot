@@ -90,9 +90,11 @@ describe("phase parity d5", () => {
 
   it("[sma:k_we_uiqa] the live check sits between the verdict and the goal audit", () => {
     const verdict = { state: "passed" as const, detail: "ok", mainSha: "h", at: 1, inputSha: "i" };
-    const withUi = phase({ plan: planRec([uiItem("p1")]), verification: { verdict } }, "verification");
+    const withUi = phase({ liveCheck: true, plan: planRec([uiItem("p1")]), verification: { verdict } }, "verification");
     expect(autoDue(withUi)).toMatchObject({ kind: "live" });
-    const stored = phase({ plan: planRec([uiItem("p1")]), verification: { verdict, live: { state: "passed" as const, head: "h", at: 2 } } }, "verification");
+    // A project that did not switch the browser check on goes straight to the close, as before.
+    expect(autoDue(phase({ plan: planRec([uiItem("p1")]), verification: { verdict } }, "verification"))).toMatchObject({ kind: "close" });
+    const stored = phase({ liveCheck: true, plan: planRec([uiItem("p1")]), verification: { verdict, live: { state: "passed" as const, head: "h", at: 2 } } }, "verification");
     expect(autoDue(stored)).toMatchObject({ kind: "close" });
     const noUi = phase({ plan: planRec([item("p1")]), verification: { verdict } }, "verification");
     expect(autoDue(noUi)).toMatchObject({ kind: "close" });
@@ -101,18 +103,18 @@ describe("phase parity d5", () => {
   });
 
   it("[sma:k_we_verify] visible work owes a live check on the same candidate", () => {
-    // Plan gate: a visible piece without qa_cases/qa_url is refused; with browser_qa off it is not.
-    expect(validationGaps([uiItem("p1")]).join(" ")).not.toContain("live check");
+    // Plan gate: where browser_qa is on, a visible piece without qa_cases/qa_url is refused; off (the default) it is not.
+    expect(validationGaps([uiItem("p1")], false).join(" ")).not.toContain("live check");
     const noQa = item("p1", { task: { ...item("p1").task, owns_paths: ["src/app.tsx"] } });
-    expect(validationGaps([noQa]).join(" ")).toContain("live check");
-    expect(validationGaps([noQa], true)).toHaveLength(0);
+    expect(validationGaps([noQa], false).join(" ")).toContain("live check");
+    expect(validationGaps([noQa])).toHaveLength(0);
     // Piece line: visible work with no passed browser check fails whether or not it planned qa_cases.
     const ui = uiItem("p1");
-    expect(pieceLines(ui, fact("t1", { browserQa: "skipped", qaPlanned: false })).find((l) => l.id === "qa_read")!.ok).toBe(false);
-    expect(pieceLines(ui, fact("t1", { browserQa: "skipped", qaPlanned: false }), undefined, false).find((l) => l.id === "qa_read")!.ok).toBe(true);
+    expect(pieceLines(ui, fact("t1", { browserQa: "skipped", qaPlanned: false }), undefined, true).find((l) => l.id === "qa_read")!.ok).toBe(false);
+    expect(pieceLines(ui, fact("t1", { browserQa: "skipped", qaPlanned: false })).find((l) => l.id === "qa_read")!.ok).toBe(true);
     // Acceptance: a live check taken on another head fails the line.
     const verdict = { state: "passed" as const, detail: "ok", mainSha: "h", at: 1, inputSha: "i" };
-    const ph = phase({ plan: planRec([ui], { admittedSha: planSignature([ui], "ctx") }), ownerWords: false,
+    const ph = phase({ liveCheck: true, plan: planRec([ui], { admittedSha: planSignature([ui], "ctx") }), ownerWords: false,
       candidate: { branch: "phase/x", trees: { "/r": { path: "/r/t", startSha: "s" } }, verified: { "/r": "v1" } },
       verification: { verdict, live: { state: "passed" as const, head: "v0", at: 2 } } }, "acceptance");
     const lines = acceptanceLines(ph, new Map([["p1", fact("t1")]]), { mainSha: "v1", openDeferrals: 0 });

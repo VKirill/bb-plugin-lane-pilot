@@ -292,8 +292,8 @@ export function installSteps(tools: StepsTools) {
         if (!pieces.every((item) => current.record.execution?.issued[item.id] && f.get(item.id)?.state === "accepted")) continue;
         // A wave whose pieces got new facts (a redo) is weighed again; the same package is not (its review stays).
         if (waves[String(wave)]?.packageSha === wavePackage(pieces, f)) continue;
-        const lines = waveLines(pieces, f, current.record.execution?.issuedSha, !current.record.browserQaOff);
-        waves[String(wave)] = { packageSha: wavePackage(pieces, f), lines, pieces: wavePieceLines(pieces, f, current.record.execution?.issuedSha, !current.record.browserQaOff), at: now() };
+        const lines = waveLines(pieces, f, current.record.execution?.issuedSha, current.record.liveCheck === true);
+        waves[String(wave)] = { packageSha: wavePackage(pieces, f), lines, pieces: wavePieceLines(pieces, f, current.record.execution?.issuedSha, current.record.liveCheck === true), at: now() };
         book(current, "execution", "wave_in", `wave ${wave} in, package ${waves[String(wave)]!.packageSha.slice(0, 12)}: ${lines.map((line) => `${line.ok ? "✓" : "✗"} ${line.id}`).join(", ")}`);
         wrote = true;
       }

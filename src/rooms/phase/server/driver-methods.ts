@@ -69,7 +69,8 @@ export function installMethods(tools: MethodsTools) {
     const record: PhaseRecord = { ownerWords, waveReview, issueCap, scope: { revisions: 0, withdrawn: [] },
       autonomous: String(settings["phase.autonomous"] ?? "off") === "on", subagents: String(settings["phase.subagents"] ?? "on") !== "off",
       planBounce: String(settings["phase.plan_bounce"] ?? "off") === "on",
-      browserQaOff: ["off", "false", "0"].includes(String(settings["browser_qa.enabled"] ?? "").toLowerCase()),
+      // Off unless the project switched the browser check on: an unset key keeps visible work as it was before the live check.
+      liveCheck: ["on", "true", "1"].includes(String(settings["browser_qa.enabled"] ?? "").toLowerCase()),
       branch: (() => { const mode = String(settings["phase.branch"] ?? "none"); return mode === "phase" || mode === "milestone" ? mode : "none"; })(), ...(input.roadmapRow ? { roadmapRow: input.roadmapRow } : {}), ...(input.rails ? { rails: true } : {}),
       ...(String(settings["phase.train"] ?? "on") === "off" ? { train: false } : {}) };
     if (input.legacy) {
@@ -216,10 +217,12 @@ export function installMethods(tools: MethodsTools) {
     const previous = phase.record.design?.drawing;
     if (previous) {
       const dropped = previous.paths.filter((path) => !drawn.paths.includes(path));
-      if (dropped.length) {
-        const note = `Superseded by ${drawn.paths.join(", ")}; previous bytes at commit ${previous.commit ?? "not recorded (archived before drawing commits)"}`;
+      // The old file is replaced by a link only when its bytes are in a commit: an uncommitted edition stays as it is.
+      if (dropped.length && !previous.commit) book(phase, "design", "drawing_kept", `${dropped.join(", ")} stay as they are: the previous drawing has no commit to keep their bytes`);
+      if (dropped.length && previous.commit) {
+        const note = `Superseded by ${drawn.paths.join(", ")}; previous bytes at commit ${previous.commit}`;
         await bestEffort(ctx.log, "phase drawing superseded", writeDocs(phase, dropped.map((path) => ({ path, content: `${note}\n` })), `phase ${phase.id}: old drawing addresses link to the new one`), null);
-        book(phase, "design", "drawing_superseded", `${dropped.join(", ")} now point to the new drawing; their bytes stay at commit ${previous.commit ?? "none recorded"}`);
+        book(phase, "design", "drawing_superseded", `${dropped.join(", ")} now point to the new drawing; their bytes stay at commit ${previous.commit}`);
       }
     }
     move(phase, "execution", { ...record, design: { ...record.design!, drawing: drawn } }, "the drawing is feasible and reviewed by a separate role");

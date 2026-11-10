@@ -137,8 +137,8 @@ export type PhaseRecord = {
   branch?: "none" | "phase" | "milestone";
   /** The external plan bounce (setting phase.plan_bounce, off default): an approved plan is refined once by a second tool before admission (SMA k_wp_bounce). */
   planBounce?: boolean;
-  /** browser_qa.enabled is off for the project: visible work owes no live check, and the acceptance line says so (SMA k_we_verify). */
-  browserQaOff?: boolean;
+  /** browser_qa.enabled is on for the project: visible work owes a live check (SMA k_we_verify). Unset on phases opened before it and wherever the browser check is off: nothing is owed there, and the acceptance line says so. */
+  liveCheck?: boolean;
   /** The phase candidate (SMA p6_prepared → p6_merge): the pieces merge into branch phase/<id>, one worktree per base checkout, and the
    *  branch lands on main only after the acceptance. `off` says why a phase merges its pieces into main as before. */
   candidate?: PhaseCandidate;
@@ -274,7 +274,7 @@ export function planGate(record: PhaseRecord): GateResult {
   if (!record.context || plan.contextSha !== record.context.sha) why.push("the plan was not built on the signed context (contextSha differs): read the context documents and plan again");
   if (plan.sha !== planSignature(plan.items, plan.contextSha)) why.push("the plan signature does not match its pieces");
   // A goal the repository already meets has no pieces to cover its requirements; the goal audit checks each of them.
-  why.push(...(plan.alreadyMet ? [] : coverageGaps(record)), ...validationGaps(plan.items, record.browserQaOff === true));
+  why.push(...(plan.alreadyMet ? [] : coverageGaps(record)), ...validationGaps(plan.items, record.liveCheck !== true));
   const threat = threatGap(record);
   if (threat) why.push(threat);
   // The plan's own shape (SMA p2_record): goals and three to five pre-mortem risks. A plan the goal already meets plans nothing.
@@ -387,13 +387,13 @@ export type PieceLineId = (typeof PIECE_LINE_IDS)[number];
 
 /** One piece's acceptance lines, judged by the same rules the phase acceptance uses. `issuedSha` is the contract print it was
  *  issued with; left out it is taken as current (a piece not issued yet is judged on the plan's contract). */
-export function pieceLines(item: PlanItem, fact: TaskFact | undefined, issuedSha?: string, liveCheckPossible = true): Array<{ id: PieceLineId; ok: boolean; detail: string }> {
+export function pieceLines(item: PlanItem, fact: TaskFact | undefined, issuedSha?: string, liveCheckPossible = false): Array<{ id: PieceLineId; ok: boolean; detail: string }> {
   const current = issuedSha === undefined || issuedSha === pieceSha(item);
   const proved = fact?.planFact === "passed" || (fact?.planFact === "skipped" && !needsPlanFact(item));
   const checks = fact?.verification !== "failed";
   const critiqued = fact?.codeCritique === "passed";
   // SMA k_we_verify: visible work needs a passed browser check whether or not it planned qa_cases — unless the project has
-  // no way to run one (browser_qa.enabled off), where the line holds by the owner's decision on «no live check possible».
+  // browser check switched on (browser_qa.enabled): elsewhere the line holds and says «no live check owed».
   const qa = fact?.browserQa !== "failed" && !(fact?.qaPlanned && fact.browserQa !== "passed") && !(buildsScreens(item) && liveCheckPossible && fact?.browserQa !== "passed");
   return [
     { id: "contract_current", ok: current, detail: current ? "the issued contract is the plan's" : "its contract changed after issue" },
@@ -401,14 +401,14 @@ export function pieceLines(item: PlanItem, fact: TaskFact | undefined, issuedSha
     { id: "promises_proved", ok: proved, detail: proved ? "plan-fact proved the promise" : `plan-fact ${fact?.planFact ?? "left no receipt"}` },
     { id: "checks_passed", ok: checks, detail: checks ? "its checks pass" : "its checks failed" },
     { id: "independent_check", ok: critiqued, detail: critiqued ? "the code critic passed it" : `the code critic ${fact?.codeCritique === "blocked" ? "blocks it" : "has not passed it (no critic receipt is no reading)"}` },
-    { id: "qa_read", ok: qa, detail: qa ? (fact?.browserQa === "passed" ? "the browser check passed" : buildsScreens(item) && !liveCheckPossible ? "visible work, no live check possible (browser_qa.enabled off)" : "no browser check planned (no qa_cases)")
+    { id: "qa_read", ok: qa, detail: qa ? (fact?.browserQa === "passed" ? "the browser check passed" : buildsScreens(item) && !liveCheckPossible ? "visible work, no live check owed (browser_qa.enabled is not on)" : "no browser check planned (no qa_cases)")
       : buildsScreens(item) && !fact?.qaPlanned ? `visible work, the browser check ${fact?.browserQa === "failed" ? "failed" : "has not passed"}` : `the browser check ${fact?.browserQa === "failed" ? "failed" : "has not passed"}` },
   ];
 }
 
 /** The wave's acceptance lines: one and the same set for the wave and for each of its pieces (SMA bw_lines) — a line holds only
  *  when every piece's line holds, and it names the pieces that fail it. */
-export function waveLines(pieces: readonly PlanItem[], facts: ReadonlyMap<string, TaskFact>, issuedSha: Readonly<Record<string, string>> = {}, liveCheckPossible = true): WaveRecord["lines"] {
+export function waveLines(pieces: readonly PlanItem[], facts: ReadonlyMap<string, TaskFact>, issuedSha: Readonly<Record<string, string>> = {}, liveCheckPossible = false): WaveRecord["lines"] {
   const per = pieces.map((item) => ({ item, lines: pieceLines(item, facts.get(item.id), issuedSha[item.id], liveCheckPossible) }));
   return PIECE_LINE_IDS.map((id) => {
     const failing = per.filter(({ lines }) => !lines.find((line) => line.id === id)!.ok).map(({ item }) => item.id);
@@ -417,7 +417,7 @@ export function waveLines(pieces: readonly PlanItem[], facts: ReadonlyMap<string
 }
 
 /** Each piece's own lines of a wave, kept in its record (SMA bw_lines). */
-export const wavePieceLines = (pieces: readonly PlanItem[], facts: ReadonlyMap<string, TaskFact>, issuedSha: Readonly<Record<string, string>> = {}, liveCheckPossible = true): Record<string, WaveRecord["lines"]> =>
+export const wavePieceLines = (pieces: readonly PlanItem[], facts: ReadonlyMap<string, TaskFact>, issuedSha: Readonly<Record<string, string>> = {}, liveCheckPossible = false): Record<string, WaveRecord["lines"]> =>
   Object.fromEntries(pieces.map((item) => [item.id, pieceLines(item, facts.get(item.id), issuedSha[item.id], liveCheckPossible)]));
 
 /** Is a finished wave cleared for the next one: its lines hold, another model verified it (when asked), the owner said yes (when asked). */
@@ -516,8 +516,8 @@ export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFac
   const failed = (pick: (fact: TaskFact | undefined) => boolean) => items.filter((item) => pick(facts.get(item.id))).map((item) => item.id);
   // The piece-level lines come from the one function the wave folds (SMA bw_lines): the phase acceptance holds a piece to
   // exactly the lines its wave was held to.
-  // SMA k_we_verify: a live check is possible unless the project switched browser_qa off.
-  const liveCheckPossible = !phase.record.browserQaOff;
+  // SMA k_we_verify: a live check is owed only where the project switched browser_qa on.
+  const liveCheckPossible = phase.record.liveCheck === true;
   const pieceLine = (item: PlanItem, id: PieceLineId) => pieceLines(item, facts.get(item.id), phase.record.execution?.issuedSha?.[item.id], liveCheckPossible).find((line) => line.id === id)!.ok;
   const notProved = items.filter((item) => !pieceLine(item, "promises_proved")).map((item) => item.id);
   const notChecked = items.filter((item) => !pieceLine(item, "checks_passed")).map((item) => item.id);
@@ -555,9 +555,9 @@ export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFac
     line("composition_verified", verdict?.state === "passed", verdict ? verdict.detail : "no blind verdict yet"),
     line("main_unmoved", !verdict?.mainSha || !now.mainSha || verdict.mainSha === now.mainSha, verdict?.mainSha && now.mainSha && verdict.mainSha !== now.mainSha ? `main moved from ${verdict.mainSha.slice(0, 12)} to ${now.mainSha.slice(0, 12)} since the verdict — verify again` : "main is where the verdict saw it"),
     line("qa_read", qaRed.length === 0 && qaOwed.length === 0 && !staleLive, qaRed.length ? `the browser check failed: ${qaRed.join(", ")}`
-      : qaOwed.length ? `the browser check has not passed: ${qaOwed.join(", ")}`
+      : qaOwed.length ? `the ${qaOwed.every((id) => facts.get(id)?.qaPlanned) ? "planned " : ""}browser check has not passed: ${qaOwed.join(", ")}`
       : staleLive ? `the live check was taken on head ${live!.head!.slice(0, 12)}, the package it decides on is at ${verifiedHead!.slice(0, 12)} — check the same candidate`
-      : `${qaPassed} piece(s) passed their browser check${qaNone ? `; ${qaNone} piece(s) plan none (no qa_cases)` : ""}${noLive ? "; visible work, no live check possible (browser_qa.enabled off)" : ""}`),
+      : `${qaPassed} piece(s) passed their browser check${qaNone ? `; ${qaNone} piece(s) plan none (no qa_cases)` : ""}${noLive ? "; visible work, no live check owed (browser_qa.enabled is not on)" : ""}`),
     line("goal_met", model?.state === "met", model ? `${model.by}: ${model.summary}` : "no goal audit yet"),
     // Batch closure (SMA bc_closure): the calculation is run fresh at close — a withdraw can drop the last piece covering a
     // requirement without the plan gate seeing it, and a broken book chain is no closing record.
@@ -697,7 +697,7 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
     case "verification": {
       const verdict = r.verification?.verdict;
       // The live interface check comes before the goal audit (SMA k_we_uiqa): the PM is not asked for the audit meanwhile.
-      if (verdict?.state === "passed" && !r.verification?.live && !r.browserQaOff && (r.plan?.items ?? []).some(buildsScreens))
+      if (verdict?.state === "passed" && !r.verification?.live && r.liveCheck === true && (r.plan?.items ?? []).some(buildsScreens))
         return { key: key("live"), stage: phase.stage, waitsForPm: false,
           text: `${head} — stage 5, verification: Lane Pilot runs the live interface check (ui-audit) before the goal audit.` };
       if (verdict?.state === "failed") return { key: key(`verdict-failed:${verdict.inputSha}`), stage: phase.stage, waitsForPm: true,
