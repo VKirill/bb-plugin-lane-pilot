@@ -6,6 +6,7 @@ import { rpcContract } from "../src/rooms/contracts";
 import { MEMORY_PATHS } from "../src/rooms/memory/memory-paths";
 import { TRANSITION_TABLE } from "../src/rooms/contracts/state-machine";
 import { SETTING_CATALOG } from "../packages/settings-catalog/src/channels";
+import { featureRegistry } from "../src/rooms/native-install";
 import type { AtlasInput } from "./atlas";
 
 /** The atlas's input read from the checkout: the rooms on disk and the registries in code. */
@@ -40,8 +41,15 @@ export function collectAtlasInput(root: string): AtlasInput {
     return sum + (statSync(path).isDirectory() ? tests(path) : /\.test\.tsx?$/.test(name) ? 1 : 0);
   }, 0);
   const sourceFiles = [...all, ...["server.ts", "host.ts", "app.tsx"].map((name) => join(root, name))];
+  // The registry is built at runtime from the bundled agents and the hook streams: ask the function, never the source text.
+  const capabilities = featureRegistry().map((row) => ({
+    id: row.id,
+    runtimes: (["claude", "opencode"] as const).filter((runtime) => [row.agents, row.skills, row.hooks].some((part) => (part[runtime] ?? []).length > 0)).length,
+    agents: Object.values(row.agents).flat().length, skills: Object.values(row.skills).flat().length, hooks: Object.values(row.hooks).flat().length,
+  }));
   return {
     rooms,
+    capabilities,
     stages: Object.entries(STAGE_PROOF).map(([id, proof]) => ({ id, kind: proof.kind, what: "check" in proof ? proof.check : proof.reason })),
     transitions: TRANSITION_TABLE.map((row) => ({ from: row.from, event: row.event, to: row.to })),
     memoryPaths: MEMORY_PATHS.map((path) => ({ id: path.id, consumer: path.consumer, carries: path.carries })),

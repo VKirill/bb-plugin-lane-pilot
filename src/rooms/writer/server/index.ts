@@ -25,7 +25,7 @@ export { createAttemptReopen } from "./reopen-attempt";
 export { createWriterUpdateTask } from "./update-task";
 export { createWriterVerify } from "./verify";
 export { createWriterHost } from "./writer-host";
-export { DEFAULT_SILENCE_NUDGE_MIN, sweepWriterSilence } from "./writer-silence";
+export { DEFAULT_SILENCE_NUDGE_MIN, sweepWriterSilence, turnCeilingOfRun } from "./writer-silence";
 export { writerBriefSegments, writerContextBlocks } from "./writer-task";
 export { mountPermits } from "./permits";
 ;

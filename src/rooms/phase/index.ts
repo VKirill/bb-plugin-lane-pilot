@@ -7,4 +7,4 @@ export {
 export type { AcceptanceLine, BookPart, BookSection, ContextDoc, FrozenVerdict, GateResult, NextAction, Phase, PhaseObservation, PhaseRecord, PhaseStage, PhaseState, PlanItem, TaskFact } from "./logic";
 export { getPhase, listParts, listPhases, listPhasePartsSince, resolvePhaseRef } from "./store";
 export { intakeJudgment, isMachineMessage, pathClassJudgment } from "./intake";
-export { oneLine, ownsPathProblems, parkRoadmapRow, rubricLine } from "./stages";
+export { coverageGaps, oneLine, ownsPathProblems, parkRoadmapRow, rubricLine } from "./stages";

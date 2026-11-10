@@ -1,7 +1,9 @@
 import { breakerKey } from "@lane-pilot/resilience";
+import { settingOn } from "@lane-pilot/models";
 import { bestEffort, BestEffortLog} from "@lane-pilot/kit";
 import { PRESENCE_WINDOW_MS } from "../../owner-presence";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
+import { isPaid } from "../../money";
 import type { UsageHold } from "../../usage/server";
 import type { createProviderBreaker } from "@lane-pilot/resilience";
 import type { Presence } from "../../owner-presence";
@@ -18,6 +20,8 @@ export type WriterHoldDeps = {
   breaker: ReturnType<typeof createProviderBreaker>;
   presence: { holds(providerId: string, now?: number): string | null; current(): Presence[] } | undefined;
   usage: { hold(input: { providerId: string; model: string; hostId: string; threshold: number; settings?: Record<string, unknown> }): Promise<UsageHold | null> };
+  /** The monthly money cap (SMA m_mo_fallback): a paid member of the chain holds at the cap like the primary writer. Cap only: no window read, no host call. */
+  money?: { capHolds(providerId: string, model: string, hostId: string, input?: { appetiteTokens?: number }): Promise<string | null> };
   /** The core's allowlist (coreHostsRequiredProvider): false when this core cannot run the provider at all. */
   coreHosts: (providerId: string) => boolean;
   log?: BestEffortLog;
@@ -35,7 +39,7 @@ const BREAKER_RECHECK_MS = 5 * 60_000;
  * nothing, as the spawn gate reads it.
  */
 export async function writerHold(
-  input: { providerId: string; model: string; hostId: string; settings: Record<string, unknown> },
+  input: { providerId: string; model: string; hostId: string; settings: Record<string, unknown>; appetite?: { tokens?: number } },
   deps: WriterHoldDeps,
   now = Date.now(),
 ): Promise<WriterHold | null> {
@@ -61,6 +65,14 @@ export async function writerHold(
   if (spent) {
     const reset = spent.resetsAt ? Date.parse(spent.resetsAt) : NaN;
     return { reason: usageHoldReason(input.providerId, input.model, spent), until: Number.isFinite(reset) ? reset : now + USAGE_UNKNOWN_RESET_MS };
+  }
+  // Only a paid member can hold for money (a subscription lane never does), and the subscription window stays the usage hold above:
+  // its own reason and reset time, and the «try the writer anyway» path when every member is at its window.
+  const money = !isPaid(input.providerId) ? null : await bestEffort(deps.log ?? ((message: string) => {}), "writer money hold", deps.money?.capHolds(input.providerId, input.model, input.hostId, { appetiteTokens: input.appetite?.tokens }) ?? Promise.resolve(null), null);
+  if (money) {
+    // A capped lane frees on the first of next month (UTC), so the parked task starts by itself then.
+    const next = new Date(now); next.setUTCDate(1); next.setUTCMonth(next.getUTCMonth() + 1); next.setUTCHours(0, 0, 0, 0);
+    return { reason: `writer_provider_unavailable:money_cap:${money}`, until: next.getTime() };
   }
   return null;
   } catch {
@@ -88,20 +100,26 @@ export type ChainWalk<T extends WriterCandidate = WriterCandidate> = {
  */
 export async function walkWriterChain<T extends WriterCandidate>(
   members: readonly T[],
-  input: { hostId: string; settings: Record<string, unknown> },
+  input: { hostId: string; settings: Record<string, unknown>; appetite?: { tokens?: number } },
   deps: WriterHoldDeps,
   now = Date.now(),
 ): Promise<ChainWalk<T>> {
   const holds: Array<{ member: T; hold: WriterHold }> = [];
   let free: { member: T; index: number } | undefined;
   for (const [index, member] of members.entries()) {
-    const hold = await writerHold({ providerId: member.providerId, model: member.model, hostId: input.hostId, settings: input.settings }, deps, now);
+    const hold = await writerHold({ providerId: member.providerId, model: member.model, hostId: input.hostId, settings: input.settings, appetite: input.appetite }, deps, now);
     if (hold) holds.push({ member, hold });
     else if (!free) free = { member, index };
   }
   // A usage window «nearly spent» on every member is a forecast, not a refusal (the old pre-block: «nothing is skipped when no other pair
   // has room»): the writer itself is tried rather than parked for hours on a soft signal. A hard hold anywhere (presence, breaker, core) parks.
   if (!free && holds.length > 0 && holds.every((row) => /usage_window/u.test(row.hold.reason))) free = { member: members[0]!, index: 0 };
+  // The money rule (SMA m_mo_rule), only with money.strict on: a paid lane runs only when every subscription member is held, so a free
+  // subscription member later in the chain wins over a free paid one before it. No cap is read here: an unset cap means no limit.
+  if (settingOn(input.settings["money.strict"]) && free && isPaid(free.member.providerId)) {
+    const subscription = members.findIndex((member) => !isPaid(member.providerId) && !holds.some((row) => row.member === member));
+    if (subscription >= 0) free = { member: members[subscription]!, index: subscription };
+  }
   const timed = holds.flatMap((row) => (row.hold.until !== null ? [row.hold.until] : []));
   const shortest = holds.slice().sort((a, b) => {
     if (a.hold.until === null) return 1;

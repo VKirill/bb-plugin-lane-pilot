@@ -709,7 +709,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       };
       // H2: the spawn gate's availability sources (breaker, owner presence, core allowlist, usage window) answer
       // before an attempt is spent on a writer that cannot start (writer-hold.ts).
-      const holdDeps = { breaker:services.providerBreaker, presence:services.ownerPresence, usage:services.providerUsage,
+      const holdDeps = { breaker:services.providerBreaker, presence:services.ownerPresence, usage:services.providerUsage, money:services.money,
         coreHosts:(providerId:string) => coreHostsRequiredProvider(bb, providerId), log:ctx.log };
       /**
        * Every writer of the chain is held: the attempt stays `queued` with `waiting_writer:` + wake_at, the board
@@ -1061,7 +1061,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           // A PM reassignment names its writer: it is tried as ordered (its own refusal is the old path).
           const walked = reassigned?.request.selection
             ? { free:{ member:chainMembers[0]!, index:0 }, allUnsupported:false, shortest:undefined, wakeAt:null, holds:[] } as ChainWalk
-            : await walkWriterChain(chainMembers, { hostId:freshConfig.hostId, settings:runSettings }, holdDeps);
+            : await walkWriterChain(chainMembers, { hostId:freshConfig.hostId, settings:runSettings, appetite:{ tokens:(input.task as { appetite?: { tokens?: number } }).appetite?.tokens } }, holdDeps);
           if (await parkForWriter(attemptId, walked)) return "stop";
           const spawnSettings = walked.free && walked.free.index > 0
             ? { ...writerChoice, "writer.provider":walked.free.member.providerId, "writer.model":walked.free.member.model,
@@ -1483,7 +1483,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // H2: a fallback that cannot start costs no attempt — the chain is walked first and held members are skipped.
         // Nobody free parks one queued attempt until the earliest hold ends (the waker restarts the task); every
         // member unsupported ends the task blocked as before, with one owner item per provider, not per task.
-        const fallbackWalk = chain.length ? await walkWriterChain(chain, { hostId:input.config.hostId, settings }, holdDeps) : null;
+        const fallbackWalk = chain.length ? await walkWriterChain(chain, { hostId:input.config.hostId, settings, appetite:{ tokens:(input.task as { appetite?: { tokens?: number } }).appetite?.tokens } }, holdDeps) : null;
         if (fallbackWalk && !fallbackWalk.free) {
           const parkedAttemptId = id("lpattempt");
           createAttempt(db, { id:parkedAttemptId, runId:input.runId, taskId:input.taskId });

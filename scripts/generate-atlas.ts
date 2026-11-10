@@ -6,7 +6,9 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { collectAtlasInput } from "./atlas-input";
 import { collectSystemMap, renderSystemMap } from "./system-map";
-import { atlasHash, renderAtlas, renderReadmeNumbers } from "./atlas";
+import { atlasHash, capabilitySnapshot, renderAtlas, renderReadmeNumbers } from "./atlas";
+import { STREAMS } from "../src/rooms/session-hooks";
+import { REQUIRED_CAPABILITIES } from "../src/rooms/native-install/capabilities";
 
 const root = join(import.meta.dirname, "..");
 const input = collectAtlasInput(root);
@@ -16,7 +18,8 @@ const NUMBERS = /<!-- numbers:start [0-9a-f]+ -->[\s\S]*?<!-- numbers:end -->/;
 if (process.argv.includes("--check")) {
   const hash = atlasHash(input);
   const ok = readFileSync(target, "utf8").includes(`<!-- atlas:structure ${hash} -->`) && readFileSync(readme, "utf8").includes(`<!-- numbers:start ${hash} -->`)
-    && readFileSync(join(root, "docs/map/index.html"), "utf8").includes(`structure ${hash}`);
+    && readFileSync(join(root, "docs/map/index.html"), "utf8").includes(`structure ${hash}`)
+    && readFileSync(join(root, "docs/capabilities.snapshot.json"), "utf8") === capabilitySnapshot(input, STREAMS, REQUIRED_CAPABILITIES);
   console.log(ok ? "docs/atlas.md, the README numbers and docs/map match the code" : "docs/atlas.md, the README numbers or docs/map are stale: run npx tsx scripts/generate-atlas.ts");
   process.exit(ok ? 0 : 1);
 }
@@ -28,4 +31,5 @@ console.log(`docs/map/index.html: ${map.nodes.length} nodes, ${map.edges.length}
 const current = readFileSync(readme, "utf8");
 if (!NUMBERS.test(current)) throw new Error("README.md has no <!-- numbers:start … --> … <!-- numbers:end --> block");
 writeFileSync(readme, current.replace(NUMBERS, renderReadmeNumbers(input)));
+writeFileSync(join(root, "docs/capabilities.snapshot.json"), capabilitySnapshot(input, STREAMS, REQUIRED_CAPABILITIES));
 console.log(`docs/atlas.md: ${input.rooms.length} rooms, ${input.stages.length} stages, ${input.transitions.length} transitions, ${input.rpc.length} RPC methods`);

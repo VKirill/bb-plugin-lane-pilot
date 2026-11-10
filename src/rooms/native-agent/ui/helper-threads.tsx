@@ -148,13 +148,19 @@ export function HelperThreadPanel({ threadId, params }: { threadId: string; para
     ? (params as { threadId: string }).threadId : null;
   const { threads: helpers, queued, graph } = useHelperThreads(target ? null : threadId);
   const open = useOpenHelper();
+  const rpc = useRpc<typeof rpcContract>();
   if (target) return <ThreadChat threadId={target} variant="compact" />;
   // With the run's task graph the queue reads as steps (what runs side by side, what waits for what); the flat list is the fallback.
   const showGraph = Boolean(graph?.nodes.length);
   return (
     <div className="space-y-1 p-3" data-bb-plugin="lane-pilot" data-testid="helper-panel-list">
       {showGraph ? (
-        <TaskGraphView graph={graph!} onOpen={(node) => node.threadId && open({ id: node.threadId, title: node.id, status: "active", role: "writer", detail: null })} />
+        <TaskGraphView
+          graph={graph!}
+          onOpen={(node) => node.threadId && open({ id: node.threadId, title: node.id, status: "active", role: "writer", detail: null })}
+          onRetry={(attemptId) => void rpc.call("retry_attempt", { attemptId }).catch(() => undefined)}
+          onCancel={(attemptId) => void rpc.call("cancel_attempt", { attemptId, code: "owner_cancel" }).catch(() => undefined)}
+        />
       ) : null}
       {!showGraph && queued.length > 0 ? (
         <div className="mb-2 rounded border border-[var(--lp-hairline)] bg-[var(--lp-well)] p-2 text-xs text-muted-foreground" data-testid="helper-panel-queue">

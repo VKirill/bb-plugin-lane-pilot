@@ -1,4 +1,5 @@
-import { getAttempt, getReasoningTrace } from "../../storage";
+import { getAttempt, getReasoningTrace, getRunSettingsScopes, loadProjectSettings } from "../../storage";
+import { settingOn } from "@lane-pilot/models";
 import { recordSkillSwitchMetric } from "../skill-switch";
 import { createSkillMaterializer, recordedMaterializedSkills } from "./skill-materialize";
 import { recordedWriterSkills } from "./skill-pick";
@@ -66,7 +67,12 @@ export function mountWriterAttemptFinished(ctx: ServerCore, services: Services):
   // A failed attempt's lesson is not lost with it: its own LESSON line (the markers the brief asks for) is
   // filed as a proposal for review — raw failure output stays out of the corpus (sma ae_harvest).
   onAttemptFinished(ctx, async (event) => {
-    if (event.scope !== "attempt" || ctx.state.disposed || !event.writerThreadId || !FAILED_LESSON_STATES.has(event.status)) return;
+    if (event.scope !== "attempt" || ctx.state.disposed || !event.writerThreadId) return;
+    // An accepted attempt's lesson is filed the same way (SMA m_lesson) only where writer.lesson_from_accepted is on; unset, an accepted
+    // attempt files nothing and its answer is not read, as before.
+    const accepted = event.status === "accepted";
+    if (!accepted && !FAILED_LESSON_STATES.has(event.status)) return;
+    if (accepted && !settingOn(loadProjectSettings(db, event.projectId, getRunSettingsScopes(db, event.runId))["writer.lesson_from_accepted"])) return;
     try {
       // The read is best effort: a thread that is gone, or a host without the call, has no lesson to file.
       const threadId = event.writerThreadId;
@@ -75,7 +81,7 @@ export function mountWriterAttemptFinished(ctx: ServerCore, services: Services):
       if (!lesson) return;
       upsertLessonProposal(db as never, event.projectId, {
         rule: lesson, audience: "writer",
-        evidence: `failed attempt ${event.attemptId}${event.reason ? `: ${String(event.reason).slice(0, 200)}` : ""}`,
+        evidence: accepted ? `accepted attempt ${event.attemptId}` : `failed attempt ${event.attemptId}${event.reason ? `: ${String(event.reason).slice(0, 200)}` : ""}`,
       });
     } catch (cause) {
       ctx.log(`writer failed-lesson harvest failed: ${cause instanceof Error ? cause.message : String(cause)}`);

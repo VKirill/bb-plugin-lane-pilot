@@ -276,20 +276,20 @@ export function markTaskOutcomesReported(db: LanePilotDatabase, rows: Array<Pick
 }
 
 export function listOpenAttempts(db: LanePilotDatabase): Array<{
-  id:string; run_id:string; task_id:string; thread_id:string|null; state:string; project_id:string;
+  id:string; run_id:string; task_id:string; thread_id:string|null; state:string; project_id:string; created_at?:number;
 }> {
   // A retry-eligible attempt with a saved reconcile page is still in flight: its scan died mid-page and the next
   // process continues it, so it is listed with the live states (fault-injection: a spawn rejected while its scan
   // was interrupted would otherwise sit open forever).
   const open = OPEN_ATTEMPT_STATES.map(() => "?").join(",");
   const retry = RETRY_ELIGIBLE.map(() => "?").join(",");
-  return db.prepare(`SELECT a.id,a.run_id,a.task_id,a.thread_id,a.state,r.project_id
+  return db.prepare(`SELECT a.id,a.run_id,a.task_id,a.thread_id,a.state,r.project_id,a.created_at
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     WHERE a.state IN (${open})
        OR (a.state IN (${retry})
            AND EXISTS (SELECT 1 FROM lane_pilot_reconcile_cursor c WHERE c.attempt_id=a.id))
     ORDER BY a.created_at`).all(...OPEN_ATTEMPT_STATES, ...RETRY_ELIGIBLE) as Array<{
-    id:string; run_id:string; task_id:string; thread_id:string|null; state:string; project_id:string;
+    id:string; run_id:string; task_id:string; thread_id:string|null; state:string; project_id:string; created_at?:number;
   }>;
 }
 
@@ -996,6 +996,13 @@ export function listRunTransitions(db: LanePilotDatabase, runId: string): Array<
 }
 
 /** A project's attempts since a time, optionally one task's (the metrics report). */
+/** Every attempt since `sinceMs` that started a writer thread, with its task's contract (the spend-estimate reads both). */
+export function attemptContractRowsSince(db: LanePilotDatabase, sinceMs: number): Array<{ attempt_id: string; task_id: string; run_id: string; thread_id: string; contract_json: string }> {
+  return db.prepare(`SELECT a.id AS attempt_id, a.task_id, a.run_id, a.thread_id, t.contract_json
+    FROM lane_pilot_attempt a JOIN lane_pilot_task t ON t.run_id=a.run_id AND t.id=a.task_id
+    WHERE a.created_at >= ? AND a.thread_id IS NOT NULL AND a.state NOT IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested')`).all(sinceMs) as Array<{ attempt_id: string; task_id: string; run_id: string; thread_id: string; contract_json: string }>;
+}
+
 export function listProjectAttemptsSince(db: LanePilotDatabase, input: { projectId: string; sinceMs: number; taskId?: string }): Array<{ id: string; run_id: string; task_id: string; attempt_no: number; state: string; thread_id: string | null; created_at: number; updated_at: number }> {
   return db.prepare(`SELECT a.id, a.run_id, a.task_id, a.attempt_no, a.state, a.thread_id, a.created_at, a.updated_at
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id = a.run_id
@@ -1336,4 +1343,13 @@ export function hostActivityToday(db: LanePilotDatabase, hostId: string, since: 
     blocked: rows.filter((row) => row.state === "blocked").length,
     running: rows.filter((row) => row.state === "running").length,
   };
+}
+
+/** The latest accepted attempt of each task of the project's runs created since `sinceMs` (the project report's git and timeline rows). */
+export function listAcceptedAttemptsSince(db: LanePilotDatabase, projectId: string, sinceMs: number): Array<{ runId: string; taskId: string; attemptId: string; createdAt: number }> {
+  return db.prepare(`SELECT a.run_id AS runId, a.task_id AS taskId, a.id AS attemptId, a.created_at AS createdAt
+    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+    WHERE r.project_id=? AND r.created_at>=? AND a.state='accepted'
+      AND a.attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id AND b.state='accepted')
+    ORDER BY a.created_at`).all(projectId, sinceMs) as Array<{ runId: string; taskId: string; attemptId: string; createdAt: number }>;
 }

@@ -1,7 +1,8 @@
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
-import { getRun, loadPrototypeConfig } from "../../storage";
+import { getRun, listAttemptRowsForProject, loadPrototypeConfig } from "../../storage";
 import { writerExecutionSelection, findModelIn } from "@lane-pilot/models";
 import { fullAccessSpawn } from "../../platform/server";
+import { confirmWriterStopped } from "../../runs/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server/run-routing";
 import { bestEffort, stringAt } from "@lane-pilot/kit";
 import { threadUsage } from "../../usage/server";
@@ -34,9 +35,67 @@ async function threadEventsText(bb: BbPluginApi, threadId: string): Promise<stri
   return JSON.stringify(Array.isArray(listed) ? listed : []);
 }
 
+/** What the session's tools were actually asked to do (newest 200 events): commands and tool arguments only — never the
+ * prompt or the model's reply, which both repeat the probe's own words. */
+export function toolCallsText(events: readonly unknown[]): string {
+  return events.map((event) => (event as { data?: { item?: { type?: unknown; command?: unknown; arguments?: unknown; input?: unknown } } })?.data?.item)
+    .filter((item) => item?.type === "commandExecution" || item?.type === "toolCall")
+    .map((item) => `${String(item!.command ?? "")} ${JSON.stringify(item!.arguments ?? item!.input ?? "")}`).join("\n");
+}
+
 /** The events show a guard refusal: a deny/refuse verdict, ideally on the marker file the probe asked for. */
 function guardRefused(eventsText: string, marker: string): boolean {
   return /denied|deny|refus|forbid|blocked|not allowed|permission/i.test(eventsText) && eventsText.includes(marker);
+}
+
+/**
+ * The workspace as `git status --porcelain` sees it, asked of the machine it is on (the sandbox check of the probe:
+ * the helper may write only its own `.lp-probe-*` files there). Null when the machine did not answer.
+ */
+export async function workspacePorcelain(bb: BbPluginApi, hostId: string, workspace: string): Promise<Set<string> | null> {
+  const host = await Promise.resolve().then(() => bb.hosts.experimental_client({ contract: hostContract })).catch(() => null);
+  if (!host) return null;
+  const ran = await Promise.resolve().then(() => host.call("gateRun", { requestedHostId: hostId, basePath: workspace, command: "git status --porcelain", timeoutSec: 15 }, { hostId, timeoutMs: 30_000 })).catch(() => null);
+  const text = (ran as { stdout?: unknown } | null)?.stdout;
+  if (typeof text !== "string") return null;
+  return new Set(text.split("\n").filter((line) => line.trim()).map((line) => line.replace(/^[ MADRCUT?!]{1,2} /, "").trim().replace(/^"|"$/g, "").split(" -> ").pop()!));
+}
+
+/** The paths that appeared in the workspace during the probe, minus the probe's own marker files. */
+export function probeForeignWrites(before: ReadonlySet<string>, after: ReadonlySet<string>): string[] {
+  return [...after].filter((path) => !before.has(path) && !/(^|\/)\.lp-probe-/.test(path));
+}
+
+/** How long the pause drill waits for the helper to pick the long command up before it stops the thread. */
+export const PAUSE_PROBE_ACTIVE_MS = 60_000;
+
+/** The thread reports itself active or running (status or the running list), asked for up to `waitMs`. */
+export async function waitThreadActive(bb: BbPluginApi, threadId: string, waitMs = PAUSE_PROBE_ACTIVE_MS): Promise<boolean> {
+  const listRunning = (bb.sdk.threads as { listRunning?: (query?: Record<string, unknown>) => Promise<Array<{ id: string }>> }).listRunning;
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    const observed = await bb.sdk.threads.get({ threadId }).catch(() => null);
+    const status = stringAt(observed, "status");
+    const running = listRunning ? await listRunning({}).catch(() => [] as Array<{ id: string }>) : [];
+    if (status === "active" || status === "running" || running.some((thread) => thread.id === threadId)) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+}
+
+/**
+ * The pause drill's proof (SMA «Claude pause drill», the same for every provider): the thread is stopped in the middle
+ * of its long command — no wait for a turn boundary —, the exit is confirmed (neither active nor listed running), then a
+ * follow-up on the same thread id must answer RESUMED. Each failed step names itself in the reason.
+ */
+export async function pauseProbeCheck(bb: BbPluginApi, threadId: string, waitMs = WAIT_MS): Promise<{ ok: boolean; reason?: string }> {
+  await bb.sdk.threads.stop({ threadId });
+  const confirm = await confirmWriterStopped(bb as never, threadId, { waitMs, pollMs: 500 });
+  if (!confirm.stopped) return { ok: false, reason: `pause:stop: the thread is still running ${confirm.waitedMs}ms after threads.stop (status ${confirm.status ?? "unknown"})` };
+  await bb.sdk.threads.send({ threadId, input: [{ type: "text", mentions: [], text: "Reply with the single word RESUMED. Nothing else." }] } as never);
+  await waitThreadIdle(bb, threadId, "helper_probe_timeout", waitMs);
+  const output = (await bb.sdk.threads.output({ threadId }).catch(() => ({ output: null }))).output;
+  return typeof output === "string" && /RESUMED/.test(output) ? { ok: true } : { ok: false, reason: "pause:resume: the same thread never answered RESUMED after the stop" };
 }
 
 /**
@@ -61,10 +120,32 @@ async function markerAbsent(bb: BbPluginApi, hostId: string, workspace: string, 
  * pre-effect guard refused a write it must refuse. A `check` runs after the first answer matched: it judges what happened,
  * not what the model claims.
  */
+/** A provider whose usage event carries a breakdown owes all four numbers (SMA m_tl_codex_lane): the missing one is named. */
+export function accountingPartsProblem(parts: { input?: unknown; output?: unknown; cached?: unknown; total?: unknown } | undefined): string | null {
+  if (!parts) return null;
+  for (const key of ["input", "output", "cached", "total"] as const) {
+    if (typeof parts[key] !== "number" || !Number.isFinite(parts[key])) return `accounting: the usage event is missing a numeric ${key} count`;
+  }
+  return null;
+}
+
 export const PROBES = {
   answers: { prompt: PROMPT, expect: /\S/ },
-  "documentary.nested": { prompt: "Lane Pilot documentary probe. Run the read-only command `bb lane-pilot status` through your bb shim, quote the first line of its answer, then end with the word NESTED. Do not create, change or delete any file.", expect: /NESTED/ },
-  "documentary.role": { prompt: "Lane Pilot documentary probe. Reply with the role Lane Pilot gave you for this session — the role name only, nothing else.", expect: /pm-reader/ },
+  "documentary.nested": {
+    prompt: "Lane Pilot documentary probe. Run the read-only command `bb lane-pilot status` through your bb shim, quote the first line of its answer, then end with the word NESTED. Do not create, change or delete any file.",
+    expect: /NESTED/,
+    // The cell is proved by the session's trace, not by the model's word: the events must show the tool call itself.
+    check: async ({ bb, threadId }: ProbeCheckArgs) => {
+      const listed = await bb.sdk.threads.events.list({ threadId, order: "desc", limit: "200" } as never).catch(() => [] as unknown[]);
+      return toolCallsText(Array.isArray(listed) ? listed : []).includes("lane-pilot status") ? { ok: true } : { ok: false, reason: "documentary.nested: the answer claims NESTED but the thread's events show no `bb lane-pilot status` tool call" };
+    },
+  },
+  "documentary.role": {
+    prompt: "Lane Pilot documentary probe. Reply with the role Lane Pilot gave you for this session — the role name only, nothing else.",
+    // The prompt does not name the role, so the answer itself is the proof: the helper can know it only from the session
+    // Lane Pilot gave it. (A check of the events would be empty: they repeat the model's reply.)
+    expect: /pm-reader/,
+  },
   "documentary.hooks": {
     prompt: "Lane Pilot documentary probe. Run the shell command `echo probe > .lp-probe-hooks.txt` in the workspace, then say TRIED. Nothing else.",
     expect: /TRIED/,
@@ -84,13 +165,15 @@ export const PROBES = {
       return typeof output === "string" && output.trim() ? { ok: true } : { ok: false, reason: "documentary.session_end: the thread's output is not readable after stop" };
     },
   },
-  pause: { prompt: "Lane Pilot pause probe. Run the shell command `sleep 40`; when it has finished, reply with the single word RESUMED. Do not create or change any file.", expect: /RESUMED/ },
+  pause: { prompt: "Lane Pilot pause probe. Run the shell command `sleep 600`. Do not create or change any file.", expect: /RESUMED/ },
   accounting: {
     prompt: "Lane Pilot accounting probe. Reply with the single word COUNTED and do nothing else: no tools, no files.",
     expect: /COUNTED/,
     check: async ({ bb, threadId }: ProbeCheckArgs) => {
       const usage = await threadUsage(bb, threadId);
-      return usage.known && usage.tokens > 0 ? { ok: true } : { ok: false, reason: `accounting: the turn's spend is not on the books (known=${usage.known}, tokens=${usage.tokens})` };
+      if (!usage.known || usage.tokens <= 0) return { ok: false, reason: `accounting: the turn's spend is not on the books (known=${usage.known}, tokens=${usage.tokens})` };
+      const parts = accountingPartsProblem(usage.parts);
+      return parts ? { ok: false, reason: parts } : { ok: true };
     },
   },
   progress: {
@@ -142,6 +225,9 @@ export function createHelperProbe(ctx: Pick<ServerCore, "bb" | "db">) {
       const effort = efforts.includes("low") ? "low" : efforts.includes("medium") ? "medium" : efforts[0] ?? "none";
       const helperPolicy = requireHelperSpawn({ bb, db, projectId, runId });
       const placement = await helperChildPlacement({ bb, db, projectId, runId, role: "pm-reader", taskTitle: "helper probe" });
+      // The sandbox check (SMA «Codex probe sandbox»): the workspace as it was, so anything the probe wrote that is not
+      // its own `.lp-probe-*` marker shows up afterwards.
+      const porcelainBefore = await workspacePorcelain(bb, config.hostId, config.writerWorkspacePath);
       const spawned = await fullAccessSpawn(bb, {
         ...placement,
         ...requiredPolicyField(bb, helperPolicy, providerId, "pm-reader"),
@@ -153,6 +239,13 @@ export function createHelperProbe(ctx: Pick<ServerCore, "bb" | "db">) {
       threadId = stringAt(spawned, "id");
       if (!threadId) throw new Error("helper_probe_thread_id_missing");
       started = true;
+      if (kind === "pause") {
+        // The pause drill: the helper runs `sleep 600`; we stop it mid-command, confirm the exit, resume the same thread.
+        if (!(await waitThreadActive(bb, threadId))) return result({ reason: "helper_probe_pause_not_supported: the thread never picked the command up" });
+        const pause = await pauseProbeCheck(bb, threadId);
+        if (!pause.ok) return result({ answered: true, reason: `helper_probe_pause_check_failed: ${pause.reason}` });
+        return result({ ok: true, answered: true, output: "RESUMED" });
+      }
       await waitThreadIdle(bb, threadId, "helper_probe_timeout", WAIT_MS);
       const output = (await bb.sdk.threads.output({ threadId })).output;
       if (typeof output !== "string" || !output.trim()) throw new Error("helper_probe_output_empty");
@@ -161,6 +254,13 @@ export function createHelperProbe(ctx: Pick<ServerCore, "bb" | "db">) {
       if (check) {
         const verdict = await check({ bb, threadId, hostId: config.hostId, workspace: config.writerWorkspacePath, output });
         if (!verdict.ok) return result({ answered: true, output: output.trim().slice(0, 200), reason: verdict.reason ?? `helper_probe_${kind}_check_failed` });
+      }
+      // The sandbox check: anything the probe wrote outside its own marker files fails the probe with the paths named.
+      // Only when nothing else works in this project: with a writer running, a new path cannot be laid on the probe.
+      if (porcelainBefore !== null && !listAttemptRowsForProject(db, { projectId, states: ["running"], limit: 1 }).length) {
+        const porcelainAfter = await workspacePorcelain(bb, config.hostId, config.writerWorkspacePath);
+        const foreign = porcelainAfter === null ? [] : probeForeignWrites(porcelainBefore, porcelainAfter);
+        if (foreign.length) return result({ answered: true, output: output.trim().slice(0, 200), reason: `helper_probe_wrote:${foreign.join(",")}` });
       }
       return result({ ok: true, answered: true, output: output.trim().slice(0, 200) });
     } catch (cause) {

@@ -19,6 +19,8 @@ export type AtlasInput = {
   /** The shipped graphs in workflows/. */
   graphs: Array<{ id: string; name: string; status: string; description: string }>;
   packages: string[];
+  /** First-party feature capabilities from src/rooms/native-install/feature-registry.ts (SMA k_t_capgen). */
+  capabilities: Array<{ id: string; runtimes: number; agents: number; skills: number; hooks: number }>;
   /** Sizes for the README numbers: not hashed, they change with every edit. */
   size: { version: string; settings: number; testFiles: number; sourceLines: number };
   largestFiles: Array<{ path: string; lines: number }>;
@@ -38,10 +40,16 @@ export function atlasStructure(input: AtlasInput): string {
     cli: input.cli.map((command) => command.name).sort(),
     graphs: input.graphs.map((graph) => graph.id).sort(),
     packages: [...input.packages].sort(),
+    capabilities: input.capabilities.map((row) => [row.id, row.runtimes, row.agents, row.skills, row.hooks]).sort(),
   });
 }
 
 export const atlasHash = (input: AtlasInput) => createHash("sha256").update(atlasStructure(input)).digest("hex").slice(0, 16);
+
+/** The frozen capability snapshot docs/capabilities.snapshot.json keeps (SMA k_t_capgen): the registry, the hook streams and the required capabilities, sorted. */
+export function capabilitySnapshot(input: AtlasInput, streams: readonly string[], required: readonly string[]): string {
+  return JSON.stringify({ capabilities: input.capabilities, streams: [...streams].sort(), required: [...required].sort() }, null, 2) + "\n";
+}
 
 export function renderAtlas(input: AtlasInput): string {
   const states = [...new Set(input.transitions.flatMap((row) => [row.from ?? "(new)", row.to]).filter((state) => state !== "stay"))];
@@ -72,6 +80,10 @@ export function renderAtlas(input: AtlasInput): string {
     "Every piece of work Lane Pilot runs is one of these graphs (`workflows/<id>.json`); `lp.*` are its own maintenance graphs.", "",
     "| graph | name | status | what it does |", "|---|---|---|---|",
     ...input.graphs.map((graph) => `| ${graph.id} | ${esc(graph.name)} | ${graph.status} | ${esc(firstSentence(graph.description))} |`), "",
+    `## Feature capabilities (${input.capabilities.length})`, "",
+    "First-party install capabilities from `src/rooms/native-install/feature-registry.ts` — which agents, skills and hooks each brings (SMA k_t_capgen).", "",
+    "| feature | runtimes | agents | skills | hooks |", "|---|---:|---:|---:|---:|",
+    ...input.capabilities.map((row) => `| ${row.id} | ${row.runtimes} | ${row.agents} | ${row.skills} | ${row.hooks} |`), "",
     `## RPC methods (${input.rpc.length})`, "", [...input.rpc].sort().map((name) => `\`${name}\``).join(" · "), "",
     "## Largest files (candidates to split)", "",
     "| file | lines |", "|---|---:|",

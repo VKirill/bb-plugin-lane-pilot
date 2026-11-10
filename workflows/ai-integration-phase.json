@@ -61,10 +61,11 @@
         "en": "Framework selection",
         "ru": "Выбор фреймворка"
       },
-      "prompt": "AI framework selector: from the goal, choose the kind of call (typed judgment, generation, retrieval, ranking), the framework and the model; 2–3 options with cost per call, latency and failure modes; recommend one.",
+      "prompt": "AI framework selector: from the goal, choose the kind of call (typed judgment, generation, retrieval, ranking), the framework and the model. Build a decision matrix of 2–3 options: rows are the options, columns the criteria (cost per call, latency, limits, failure modes, fit to the goal), each scored 0–5 with a one-line reason and a weight. Recommend the option with the highest weighted total; the table goes in the reply and in .agents/research/model-<slug>.md.",
       "out": {
         "framework": "string",
-        "options": "any"
+        "options": "any",
+        "scores": "json"
       },
       "guards": {
         "maxVisits": 1,

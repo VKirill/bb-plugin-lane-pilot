@@ -12,6 +12,23 @@ export const LIMIT_PROBE_MIN = 3;
 export const NO_ANSWER_MIN = 5;
 /** How long a provider that answered nothing is skipped before one trial task tries it again. */
 export const NO_ANSWER_HOLD_MS = 20 * 60_000;
+/** Events read per page when a turn ceiling is set (the sweep reads 50 when there is none, as it always did). */
+const CEILING_PAGE = "200";
+/** Pages at most read per attempt per sweep: 100 pages = 20000 events, far past the ceiling's 500 calls. */
+const CEILING_MAX_PAGES = 100;
+/** The reason prefix of an attempt ended at the turn ceiling: it reads as a budget stop (run_budget_exceeded:), like the task's appetite minutes. */
+export const TURN_CEILING_REASON = "run_budget_exceeded:turn ceiling";
+
+/**
+ * The turn ceiling a run froze at creation (writer.max_turns, 1-500), null for no ceiling: a policy without the field (a run
+ * created while the setting was unset, or before it existed), an unreadable one, or no run at all.
+ */
+export function turnCeilingOfRun(run:{ run_policy_json?:string | null } | null | undefined):number | null {
+  try {
+    const value = (JSON.parse(run?.run_policy_json ?? "null") as { maxTurns?: unknown } | null)?.maxTurns;
+    return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 500 ? value : null;
+  } catch { return null; }
+}
 
 function eventType(event:unknown):string {
   const value = event && typeof event === "object" ? Reflect.get(event, "type") : undefined;
@@ -35,12 +52,12 @@ export function unansweredSince(events:unknown[]):number | null {
  * Count and time of the nudges of one attempt; `ended` tells its watcher to fail the attempt. An attempt that ended for a
  * provider limit carries its `reason` (writer_provider_limit: …) and the reset time `until` when the error named one.
  */
-export type WriterNudge = { count:number; at:number; ended?:boolean; reason?:string; until?:number };
+export type WriterNudge = { count:number; at:number; ended?:boolean; reason?:string; until?:number; turnCeiling?:number };
 
 /** A provider limit the writer host's OpenCode service showed for the writer's session (host-worker/opencode-limit.ts). */
 export type OpenCodeLimit = { providerId:string | null; model:string | null; resetAt:number | null; reason:string | null };
 
-export type SilenceAttempt = { id:string; run_id:string; task_id:string; thread_id:string | null; state:string; project_id:string; pm_thread_id?:string | null };
+export type SilenceAttempt = { id:string; run_id:string; task_id:string; thread_id:string | null; state:string; project_id:string; pm_thread_id?:string | null; created_at?:number };
 
 /** The OpenCode session a writer thread's events name (`providerThreadId`), or null before its first turn. */
 export function openCodeSessionOf(events:unknown[]):string | null {
@@ -119,6 +136,27 @@ export function writerFrame(events: unknown[]): WriterFrame {
   return repeatedCallOf(events) ? "spinning" : "progressing";
 }
 
+/** Completed tool calls of one attempt: events newer than its start, read page by page (newest first) until past the start or past `stopAbove`. */
+async function countAttemptCalls(bb:never, attempt:SilenceAttempt, first:unknown[], stopAbove:number):Promise<number> {
+  const since = attempt.created_at ?? 0;
+  let page = first;
+  let turns = 0;
+  for (let pages = 1; ; pages += 1) {
+    for (const event of page) {
+      const at = eventTime(event);
+      if (at !== null && at < since) return turns;
+      const signature = callSignatureOf(event);
+      if (signature !== null && signature !== "") turns += 1;
+    }
+    if (turns > stopAbove || page.length < Number(CEILING_PAGE) || pages >= CEILING_MAX_PAGES) return turns;
+    const oldest = Math.min(...page.map((event) => Number((event as { seq?: unknown })?.seq)).filter(Number.isFinite));
+    if (!Number.isFinite(oldest)) return turns;
+    const next = await listThreadEventsRaw(bb, { threadId:attempt.thread_id!, order:"desc", limit:CEILING_PAGE, beforeSeq:String(oldest) });
+    if (!next.ok || next.events.length === 0) return turns;
+    page = next.events;
+  }
+}
+
 export type SilenceDeps = {
   bb:{ sdk:{ threads:{ send(args:never):Promise<unknown>; events:{ list(args:never):Promise<unknown> } } }; storage:{ kv:Kv } };
   openAttempts:() => SilenceAttempt[];
@@ -133,6 +171,8 @@ export type SilenceDeps = {
   limitProbe?:(attempt:SilenceAttempt, sessionId:string, sinceMs:number) => Promise<OpenCodeLimit | null>;
   /** True while this thread (the writer's, or its PM chat) waits for the owner's answer: a silent writer is not a stuck one then. */
   waitingForOwner?:(threadId:string) => Promise<boolean>;
+  /** Completed tool calls of one attempt after which it ends (the run's frozen writer.max_turns); null or absent dep = no ceiling. */
+  maxTurns?:(projectId:string, runId:string) => number | null;
   /** The schedule run's signal: the sweep stops between attempts when the core aborts the run. */
   signal?:AbortSignal;
   log:(line:string) => void;
@@ -162,8 +202,21 @@ export async function sweepWriterSilence(deps:SilenceDeps, now = Date.now()):Pro
       if (record?.ended) continue;
       const thread = await deps.getThread(attempt.thread_id);
       if ((thread && typeof thread === "object" ? Reflect.get(thread, "status") : null) !== "active") continue;
-      const listed = await listThreadEventsRaw(bb as never, { threadId:attempt.thread_id, order:"desc", limit:"50" });
+      const ceiling = deps.maxTurns?.(attempt.project_id, attempt.run_id) ?? null;
+      const listed = await listThreadEventsRaw(bb as never, { threadId:attempt.thread_id, order:"desc", limit:ceiling ? CEILING_PAGE : "50" });
       if (!listed.ok) continue;
+      // The turn ceiling (writer.max_turns, only when the run froze one): the completed tool calls of THIS attempt, counted from its
+      // start through as many pages as it takes. It ends the attempt as a budget stop — never a provider limit, so the breaker stays.
+      if (ceiling) {
+        const turns = await countAttemptCalls(bb as never, attempt, listed.events, ceiling);
+        if (turns > ceiling) {
+          const reason = `${TURN_CEILING_REASON} ${ceiling} reached (${turns} completed tool calls; writer.max_turns)`;
+          await bb.storage.kv.set(key(attempt.id), { count:record?.count ?? 0, at:now, ended:true, reason, turnCeiling:ceiling } as never);
+          deps.log(`Lane Pilot ended ${attempt.task_id} (${attempt.id}): ${reason}`);
+          done.push({ attemptId:attempt.id, action:"ended", count:record?.count ?? 0 });
+          continue;
+        }
+      }
       const last = Math.max(0, ...listed.events.map(eventTime).filter((time):time is number => time !== null));
       if (!last) continue;
       // A nudge is an event of its own, and a writer that ignores it is silent from the nudge on.

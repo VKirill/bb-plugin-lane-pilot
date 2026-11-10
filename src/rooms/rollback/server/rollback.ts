@@ -2,7 +2,8 @@ import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { taskV2Schema, type PrototypeConfig, type TaskV2 } from "../../contracts";
-import { getAttempt, getRun, getRunSettingsScopes, getRunWriterHost, getTask, loadProjectSettings, taskBasePath, type WorktreeOwnerKind } from "../../storage";
+import { getAttempt, getRun, getRunSettingsScopes, getRunWriterHost, getTask, listStageReceipts, loadProjectSettings, taskBasePath, type WorktreeOwnerKind } from "../../storage";
+import { markOutputChanges, sha256Hex } from "@lane-pilot/kit";
 import { recordEvidence } from "../../storage";
 import { retargetTask } from "../../tasks";
 import { parseIntegrationGateSettings, type VerificationGatePort } from "../../contracts/integration-gate";
@@ -38,7 +39,9 @@ const MERGE_QUEUE_MS = 15 * 60_000;
 const GATE_TIMEOUT_SEC = 30 * 60;
 const TAIL = 600;
 
-export type RollbackItem = { command: string; exitCode: number; ok: boolean; hostError?: true; tail: string };
+export type RollbackItem = { command: string; exitCode: number; ok: boolean; hostError?: true; tail: string;
+  /** Output hashes of this run (SMA ar_receipt); expectedStdoutSha256/outputChanged are filled against the recorded verification. */
+  stdoutSha256?: string; expectedStdoutSha256?: string; outputChanged?: boolean };
 
 export type RollbackResult = {
   ok: boolean;
@@ -222,6 +225,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
     return results.map((row) => ({
       command: row.command, exitCode: row.exitCode, ok: row.exitCode === 0 && !row.hostError,
       ...(row.hostError ? { hostError: true as const } : {}), tail: row.exitCode === 0 ? "" : tail(`${row.stderr}\n${row.stdout}`),
+      stdoutSha256: sha256Hex(typeof row.stdout === "string" ? row.stdout : ""),
     }));
   }
 
@@ -268,12 +272,16 @@ export function createRollback(ctx: ServerCore, services: Services) {
         const id = receipt(t, "reverify", "error", reason, { attemptId, baseSha: change.mergeParent, changeSha: change.mergeCommit });
         return { ok: false, state: "error", taskId: t.taskId, attemptId, base: change.mergeParent, change: change.mergeCommit, summary: reason, next: "fix what the message names (a secret, the host) and run it again", receiptId: id };
       }
+      // Verification receipt (SMA ar_receipt): each re-run item is compared to the output hash recorded when
+      // the command first passed; the summary counts changed outputs, the exit code still decides pass/fail.
+      const recorded = listStageReceipts(db, t.runId, t.taskId).find((row) => row.stageId === "verification" && row.result && typeof row.result === "object")?.result as { verification?: Array<{ command?: unknown; stdoutSha256?: unknown }> } | undefined;
+      const changed = markOutputChanges(items, recorded?.verification);
       const failed = items.filter((row) => !row.ok);
       const unknown = failed.some((row) => row.hostError);
       const state: TaskReceiptState = failed.length === 0 ? "passed" : unknown && failed.every((row) => row.hostError) ? "error" : "failed";
       // The change is checked as it was accepted, not as main stands now: a task already reverted says so.
       const revertedIn = listTaskReceipts(db, t.taskId, "revert").find((row) => row.state === "merged")?.resultCommit ?? null;
-      const summary = `${items.length - failed.length}/${items.length} checks of ${t.taskId} pass on ${change.mergeCommit.slice(0, 12)} (base ${change.mergeParent?.slice(0, 12) ?? "unknown"})${revertedIn ? `; the task was reverted in ${revertedIn.slice(0, 12)}, this is the change as it was accepted` : ""}`;
+      const summary = `${items.length - failed.length}/${items.length} checks of ${t.taskId} pass on ${change.mergeCommit.slice(0, 12)} (base ${change.mergeParent?.slice(0, 12) ?? "unknown"})${changed ? `; ${changed} output(s) differ from the recorded hash` : ""}${revertedIn ? `; the task was reverted in ${revertedIn.slice(0, 12)}, this is the change as it was accepted` : ""}`;
       const id = receipt(t, "reverify", state, summary, { attemptId, baseSha: change.mergeParent, changeSha: change.mergeCommit, detail: { items, revertedIn } });
       return { ok: state === "passed", state, taskId: t.taskId, attemptId, base: change.mergeParent, change: change.mergeCommit, summary, items, receiptId: id, revertedIn,
         ...(state === "passed" ? {} : { next: state === "error" ? "the host could not run the checks; run it again" : "the accepted change no longer passes its own checks: look at the failing items, or `bb lane-pilot revert " + t.taskId + "`" }) };

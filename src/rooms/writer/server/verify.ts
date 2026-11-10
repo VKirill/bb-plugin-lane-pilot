@@ -8,7 +8,7 @@ import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { recordCheckDuration, recordSecretIssuance, getAttempt, getRun, getReasoningTrace, getRunSettingsScopes, getTaskGitBase, listTasksForRun, loadProjectSettings, saveProjectSetting, taskBasePath, otherAttemptsOfRun, attemptedTaskIdsOfRun } from "../../storage";
 import { checkTimeoutSec, orderChecksForFailFast } from "../check-timing";
 import { parseReadFirstHints } from "../../tasks/read-first";
-import {cleanCheckOutput, outputText, pollPause} from "@lane-pilot/kit";
+import {cleanCheckOutput, outputHashes, outputText, pollPause} from "@lane-pilot/kit";
 import { bestEffort, fileAllowedByOwns, fileBlockedByNeverTouch, isNotFound, orMiss, redactKnown, redactSecrets, stringAt } from "@lane-pilot/kit";
 import { SecretsNotReadyError, allowedSecretNames, secretProblem } from "../../secrets/server";
 import type { VerifyResult } from "../../tasks";
@@ -264,7 +264,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       .map((result,pos)=>({result,index:entries[pos]!.index}))
       .filter((row):row is {result:NonNullable<typeof row.result>;index:number}=>row.result!==undefined)
       .sort((a,b)=>a.index-b.index)
-      .map((row)=>({...row.result,...(revision.head!==null||revision.dirty!==null?{revision}:{})}));
+      .map((row)=>({...row.result,...outputHashes(row.result),...(revision.head!==null||revision.dirty!==null?{revision}:{})}));
     if(skipped){const first=orderedResults.find((row)=>row.exitCode!==0);
       if(first)first.stderr=`${first.stderr??""}\nchecks.fail_fast: ${skipped} check(s) not started after the first non-zero exit`.trim();}
     return orderedResults;

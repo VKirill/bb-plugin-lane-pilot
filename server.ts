@@ -1,5 +1,5 @@
 import { SETTING_WRITER_SILENCE_NUDGE_MIN } from "@lane-pilot/settings-catalog";
-import { getReasoningTrace, getRunSettingsScopes, listOpenAttempts, listUnfinishedStages, loadPrototypeConfig, loadProjectSettings, openDatabase } from "./src/rooms/storage";
+import { getReasoningTrace, getRun, getRunSettingsScopes, listOpenAttempts, listUnfinishedStages, loadPrototypeConfig, loadProjectSettings, openDatabase } from "./src/rooms/storage";
 import { PROVIDER_CAPABILITIES } from "@lane-pilot/models";
 import { migrations as lanePilotMigrations } from "./src/rooms/migrations";
 import { coupledSettingKeys, validateSettingChanges, validateSettingValue, validateSettingsObject } from "./src/rooms/settings";
@@ -65,11 +65,11 @@ import { mountOwnerBell } from "./src/rooms/owner-waiting/server";
 import { mountAnamnesis } from "./src/rooms/anamnesis";
 import { mountWorldAssets } from "./src/rooms/world/server";
 import { registerLaneWorktreeProvider } from "./src/rooms/native-agent/server";
-import { scheduleIsolated } from "./src/rooms/platform/server";
+import { checkTickDeps, scheduleIsolated } from "./src/rooms/platform/server";
 import { clearDrainSnapshot, readDrainSnapshot, skipRedundantStartupScans } from "./src/rooms/stability/server";
 import { tokenCursorRow, tokenDailyByModel } from "./src/rooms/usage/server";
 import type { TokenCursorReader } from "./src/rooms/work-graph/server";
-import { onAttemptFinished, createWriterQuestionTimeout, DEFAULT_SILENCE_NUDGE_MIN, sweepWriterSilence, sweepWriterWakes } from "./src/rooms/writer/server";
+import { onAttemptFinished, createWriterQuestionTimeout, DEFAULT_SILENCE_NUDGE_MIN, sweepWriterSilence, turnCeilingOfRun, sweepWriterWakes } from "./src/rooms/writer/server";
 import { threadPendingInteractions } from "./src/rooms/relay/server";
 import { createStageChildren, mountErrands } from "./src/rooms/qa/server";
 import { createDocsStage } from "./src/rooms/docs/server";
@@ -413,6 +413,11 @@ export default async function plugin(bb: BbPluginApi) {
     createScheduleService(ctx, services),
     { lead: createLeadService(ctx, services, services.memoryEval, lanePilotMigrations) },
   );
+  // Tick wiring (SMA m_tick_deps): every service the schedules ask for by name exists before the first tick;
+  // the report stays on lp.tick-deps for inspection.
+  { const tickDeps = checkTickDeps(services as unknown as Record<string, unknown>);
+    if (tickDeps.missing.length) bb.log.error(`Lane Pilot tick deps missing: ${tickDeps.missing.join(", ")}`);
+    await bb.storage.kv.set("lp.tick-deps", tickDeps).catch(() => undefined); }
   // The writer's `lp.*` executors (the task pipeline and its steps): writer registers them on the shared engine; workflow only mounts the delegates.
   registerDispatchExecutors(services.workflowEngine, ctx.bb);
   // The two code steps of `agent-routine`, the graph a schedule of kind agent runs (registered here: the schedule room imports the workflow room, not the other way).
@@ -542,6 +547,8 @@ export default async function plugin(bb: BbPluginApi) {
       const minutes = Number(loadProjectSettings(db, projectId, getRunSettingsScopes(db, runId))[SETTING_WRITER_SILENCE_NUDGE_MIN]);
       return Number.isFinite(minutes) && minutes >= 1 ? minutes : DEFAULT_SILENCE_NUDGE_MIN;
     },
+    // Restart-scoped (SMA m_restart_scoped): only the ceiling frozen in the run's policy counts; no field = no ceiling.
+    maxTurns:(_projectId, runId) => turnCeilingOfRun(getRun(db, runId)),
   }).then(() => undefined, (cause) => pluginStopped(cause) ? undefined : bb.log.warn(`Lane Pilot writer silence sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
   scheduleIsolated(bb, "writer-silence-sweep", "*/5 * * * *", sweepSilentWriters, { timeoutMs: 10 * 60_000 });
   // A writer's question nobody answers within an hour is answered by the machine with the safest default, or the attempt ends (question-timeout.ts).

@@ -108,8 +108,13 @@ export const WRITER_PROFILES: readonly WriterProfile[] = [
   },
 ];
 
-/** The profiles the pick may choose from: available, and in the project's list when it names one (`writer.models`). */
+/**
+ * The profiles the pick may choose from: available, and in the project's list when it names one (`writer.models`).
+ * `writer.models_off` is the worker toggle (SMA «Worker toggle»): the profile keys it lists drop out of the pick while
+ * staying configured — switching a worker touches only that list, and it is read here, at launch.
+ */
 export function writerCandidates(settings: Record<string, unknown>): WriterProfile[] {
   const listed = Array.isArray(settings["writer.models"]) ? (settings["writer.models"] as unknown[]).map(String) : null;
-  return WRITER_PROFILES.filter((profile) => profile.available && (!listed || listed.includes(profile.key)));
+  const off = new Set(Array.isArray(settings["writer.models_off"]) ? (settings["writer.models_off"] as unknown[]).map(String) : []);
+  return WRITER_PROFILES.filter((profile) => profile.available && !off.has(profile.key) && (!listed || listed.includes(profile.key)));
 }

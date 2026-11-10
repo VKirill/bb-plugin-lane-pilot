@@ -150,6 +150,19 @@ export function listSkillMetrics(db: LanePilotDatabase, sinceMs: number, untilMs
   `).all(sinceMs, untilMs) as Array<{ switch_count: number; outcome: string }>;
 }
 
+/** The skills one attempt was offered across its skill-metric rows (the session's skills layer). */
+export function skillMetricSkillsForAttempt(db: LanePilotDatabase, attemptId: string): string[] {
+  const rows = db.prepare("SELECT skills_json FROM lane_pilot_skill_metric WHERE attempt_id=? ORDER BY recorded_at").all(attemptId) as Array<{ skills_json: string }>;
+  const skills = new Set<string>();
+  for (const row of rows) {
+    try {
+      const list = JSON.parse(row.skills_json) as unknown;
+      if (Array.isArray(list)) for (const name of list) if (typeof name === "string") skills.add(name);
+    } catch { /* a broken metric row loses its skills, not the read */ }
+  }
+  return [...skills];
+}
+
 /** How many lane_pilot_* tables the database carries (the manifest's table count). */
 export function countLanePilotTables(db: LanePilotDatabase): number {
   return (db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name LIKE 'lane_pilot_%'").get() as { n: number }).n;

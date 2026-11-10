@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
 
-export type TaskGraphNode = { id: string; title: string; state: "running" | "waiting" | "queued" | "blocked"; threadId: string | null };
+export type TaskGraphNode = { id: string; title: string; state: "running" | "waiting" | "queued" | "blocked"; threadId: string | null; area?: string | null; attemptId?: string | null; reason?: string | null };
 export type TaskGraphEdge = { from: string; to: string; kind: "depends" | "files" | "folder" | "question" };
-export type TaskGraphData = { nodes: TaskGraphNode[]; edges: TaskGraphEdge[] };
+export type TaskGraphData = { nodes: TaskGraphNode[]; edges: TaskGraphEdge[]; objective?: string | null };
 
 const EDGE_LOOK: Record<TaskGraphEdge["kind"], { color: string; dash?: string; label: string }> = {
   depends: { color: "var(--color-primary, #8b5cf6)", label: "после неё (depends_on)" },
@@ -34,7 +34,7 @@ export function taskSteps(graph: TaskGraphData): Map<string, number> {
 type Line = { key: string; d: string; kind: TaskGraphEdge["kind"] };
 
 /** The open run's tasks by step, top to bottom, with an arrow from each task to the ones that wait for it. */
-export function TaskGraphView({ graph, onOpen }: { graph: TaskGraphData; onOpen?: (node: TaskGraphNode) => void }) {
+export function TaskGraphView({ graph, onOpen, onRetry, onCancel }: { graph: TaskGraphData; onOpen?: (node: TaskGraphNode) => void; onRetry?: (attemptId: string) => void; onCancel?: (attemptId: string) => void }) {
   const box = useRef<HTMLDivElement>(null);
   const chips = useRef(new Map<string, HTMLElement>());
   const [lines, setLines] = useState<Line[]>([]);
@@ -71,9 +71,14 @@ export function TaskGraphView({ graph, onOpen }: { graph: TaskGraphData; onOpen?
   }, [shape]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!graph.nodes.length) return null;
+  // The batch's composition: how many of its tasks each contract area covers.
+  const areas = new Map<string, number>();
+  for (const node of graph.nodes) if (node.area) areas.set(node.area, (areas.get(node.area) ?? 0) + 1);
   return (
     <div className="mb-2 rounded border border-[var(--lp-hairline)] bg-[var(--lp-well)] p-2 text-xs" data-testid="task-graph">
       <div className="mb-2 font-semibold text-foreground">Задачи прогона: {graph.nodes.length}</div>
+      {graph.objective ? <div className="mb-1 text-[11px] text-muted-foreground" data-testid="task-graph-scope">Цель: {graph.objective}</div> : null}
+      {areas.size ? <div className="mb-1 text-[11px] text-muted-foreground" data-testid="task-graph-composition">{[...areas.entries()].map(([area, count]) => `${area}: ${count}`).join(" · ")}</div> : null}
       <div ref={box} className="relative">
         <svg className="pointer-events-none absolute left-0 top-0" width={size.width} height={size.height} aria-hidden>
           <defs>
@@ -111,6 +116,17 @@ export function TaskGraphView({ graph, onOpen }: { graph: TaskGraphData; onOpen?
                   </button>
                 ))}
               </div>
+              {row.filter((node) => node.state === "blocked").map((node) => (
+                <div key={`blocked-${node.id}`} className="mt-1 rounded border border-destructive/40 bg-background px-2 py-1" data-testid={`task-blocked-${node.id}`}>
+                  <div className="text-[11px] text-muted-foreground">{node.id}{node.reason ? `: ${node.reason}` : ""}</div>
+                  {node.attemptId && (onRetry || onCancel) ? (
+                    <div className="mt-1 flex gap-2">
+                      {onRetry ? <button type="button" data-testid={`task-retry-${node.id}`} onClick={() => onRetry(node.attemptId!)} className="rounded border border-[var(--lp-hairline)] px-1.5 py-0.5 text-[11px] text-foreground hover:bg-state-hover">Повторить</button> : null}
+                      {onCancel ? <button type="button" data-testid={`task-cancel-${node.id}`} onClick={() => onCancel(node.attemptId!)} className="rounded border border-[var(--lp-hairline)] px-1.5 py-0.5 text-[11px] text-destructive hover:bg-state-hover">Остановить</button> : null}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
             </div>
           ))}
         </div>

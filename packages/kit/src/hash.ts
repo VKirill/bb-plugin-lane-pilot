@@ -67,3 +67,27 @@ export async function sha256FileOrNull(path: string): Promise<string | null> {
     throw cause;
   }
 }
+
+/** The hashes a verification row records of one command's output (SMA ar_receipt). */
+export function outputHashes(result: { stdout?: string; stderr?: string }): { stdoutSha256: string; stderrSha256: string } {
+  return { stdoutSha256: sha256Hex(result.stdout ?? ""), stderrSha256: sha256Hex(result.stderr ?? "") };
+}
+
+/**
+ * Compares re-run items with the output hashes recorded when each command first passed: an item whose command was recorded gets
+ * `expectedStdoutSha256` and `outputChanged`; returns how many outputs differ. The exit code still decides pass or fail, not this.
+ */
+export function markOutputChanges(
+  items: Array<{ command: string; stdoutSha256?: string; expectedStdoutSha256?: string; outputChanged?: boolean }>,
+  recorded: ReadonlyArray<{ command?: unknown; stdoutSha256?: unknown }> | undefined,
+): number {
+  const expected = new Map<string, string>();
+  for (const row of recorded ?? []) if (typeof row.command === "string" && typeof row.stdoutSha256 === "string") expected.set(row.command, row.stdoutSha256);
+  for (const item of items) {
+    const want = expected.get(item.command);
+    if (!want || !item.stdoutSha256) continue;
+    item.expectedStdoutSha256 = want;
+    item.outputChanged = item.stdoutSha256 !== want;
+  }
+  return items.filter((row) => row.outputChanged === true).length;
+}

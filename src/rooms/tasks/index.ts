@@ -6,7 +6,7 @@ export { STAGE_IDS, STAGE_PROOF, acceptanceProofGap, isAdvisoryProof, stageRecei
 export { sha256Hex as sha256 } from "@lane-pilot/kit";
 export type { StageId, StageProof, StageReceipt, StageState } from "@lane-pilot/contracts";
 export type { GateReport } from "./gate-report";
-export { RunWriterPool, buildRunExecutionProfile, buildRunPolicy, mapBounded, parseRunPolicy, shouldReconcileAttemptThread, shouldResumeWorktreeHolder, shouldScanLostWorktreeHolder } from "./run-policy";
+export { RunWriterPool, buildRunExecutionProfile, buildRunPolicy, mapBounded, parseRunPolicy, turnCeilingOf, shouldReconcileAttemptThread, shouldResumeWorktreeHolder, shouldScanLostWorktreeHolder } from "./run-policy";
 export { taskStem } from "./task-stem";
 export { mapVerificationCwd, retargetTask } from "./verification-cwd";
 export { classifyWriterOutput, isMainfixTask, isOutputFolder, isOutputPath, unownedExpectedOutputs } from "./validate-output";

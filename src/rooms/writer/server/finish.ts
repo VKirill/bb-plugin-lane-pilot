@@ -263,6 +263,9 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const nudge = await loadWriterNudge(bb.storage.kv, input.attemptId);
         if (nudge?.ended) {
           // The silence sweep found a provider limit in the log (writer-silence.ts): that reason, else the silent one.
+          // The turn ceiling (writer.max_turns) ends the attempt as a budget stop, like the task's appetite minutes: the thread is
+          // stopped, the worktree stays, the task is blocked and no retry is spent. It says nothing about the provider: no breaker, no hold.
+          if (nudge.turnCeiling && nudge.reason) return await stopRunningWriter(nudge.reason);
           const reason = nudge.reason ?? `${WRITER_SILENT_REASON}: no activity after ${nudge.count} nudges`;
           if (nudge.reason) holdProviderLimit(nudge.until);
           const ended = providerFailed(reason);

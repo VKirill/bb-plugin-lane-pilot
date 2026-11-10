@@ -17,7 +17,7 @@ export function eventsListQueryLabel(query: Record<string, unknown>): string {
   return `threadId=${String(query.threadId ?? "")};types=${types || "all"};order=${String(query.order ?? "")};limit=${String(query.limit ?? "")}`;
 }
 
-export type ThreadEventsQuery = { threadId:string; types?: typeof THREAD_WATCH_EVENT_TYPES; order:"desc"; limit:"50" };
+export type ThreadEventsQuery = { threadId:string; types?: typeof THREAD_WATCH_EVENT_TYPES; order:"desc"; limit:"50" | "200"; beforeSeq?:string };
 
 export async function listThreadEventsRaw(
   bb: BbPluginApi,

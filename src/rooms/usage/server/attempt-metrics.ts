@@ -4,7 +4,7 @@ import type { ModelTier } from "@lane-pilot/models";
 import { STAGE_PROOF } from "@lane-pilot/contracts";
 import { billedFrom, parseBreakdown } from "../token-math";
 import { isOpenAttemptState } from "../../contracts/state-machine";
-import { listProjectAttemptsSince, listProjectGateEventsSince, listProjectStageEventsSince, listProjectTransitionsSince, listRunQueueAttempts, listRunTransitions, stageReceiptProviderModel } from "../../storage";
+import { attemptContractRowsSince, listProjectAttemptsSince, listProjectGateEventsSince, listProjectStageEventsSince, listProjectTransitionsSince, listRunQueueAttempts, listRunTransitions, stageReceiptProviderModel } from "../../storage";
 
 /**
  * What an attempt cost and how far it got, per attempt, with an honest «not measured» (P0-2 of the SMA plan).
@@ -202,6 +202,34 @@ export function attemptMetrics(db: Database.Database, input: { projectId: string
     },
     attempts: rows,
   };
+}
+
+/**
+ * Attempts since `sinceMs` whose writer thread reported no token usage (the vendor is silent): provider, model and the
+ * task's appetite in tokens, so the money book can price them as estimates (SMA «Estimate when the vendor is silent»).
+ */
+export function unmeasuredAttempts(db: Database.Database, input: { sinceMs: number }): Array<{ taskId: string; attemptId: string; threadId: string; providerId: string | null; model: string | null; appetiteTokens: number | null }> {
+  const attempts = attemptContractRowsSince(db, input.sinceMs);
+  const cursorQuery = db.prepare("SELECT provider_id, last_provider, last_model, total_json FROM lane_pilot_token_cursor WHERE thread_id = ?");
+  const out: Array<{ taskId: string; attemptId: string; threadId: string; providerId: string | null; model: string | null; appetiteTokens: number | null }> = [];
+  for (const row of attempts) {
+    const cursor = cursorQuery.get(row.thread_id) as CursorRow | undefined;
+    const billed = cursor ? billedFrom(parseBreakdown(cursor.total_json)) : null;
+    if (billed !== null && (billed.total > 0 || billed.output > 0)) continue;
+    const receipt = stageReceiptProviderModel(db, row.run_id, row.task_id, "writer-agent") as { provider_id?: string | null; model?: string | null } | undefined;
+    let appetiteTokens: number | null = null;
+    try {
+      const contract = JSON.parse(row.contract_json) as { appetite?: { tokens?: unknown } };
+      appetiteTokens = typeof contract.appetite?.tokens === "number" && contract.appetite.tokens > 0 ? contract.appetite.tokens : null;
+    } catch { /* a contract that does not parse has no appetite */ }
+    out.push({
+      taskId: row.task_id, attemptId: row.attempt_id, threadId: row.thread_id,
+      providerId: (cursor?.last_provider || cursor?.provider_id || receipt?.provider_id) ?? null,
+      model: (cursor?.last_model || receipt?.model) ?? null,
+      appetiteTokens,
+    });
+  }
+  return out;
 }
 
 /** Tier from the writer profile that picked this provider+model; a model outside the catalog falls back to name matching. */

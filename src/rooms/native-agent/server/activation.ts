@@ -123,7 +123,7 @@ export function createActivation(ctx: ServerCore, services: Services) {
     const runHostId = native ? null : config.hostId;
     const runWorkspacePath = native ? null : (managedWorkspace ? null : config.writerWorkspacePath);
     const runId = id("lprun");
-    createRun(db, runId, projectId, kind, runWorkspacePath, runGate, buildRunPolicy(settings), runHostId);
+    createRun(db, runId, projectId, kind, runWorkspacePath, runGate, buildRunPolicy(settings, (line) => bb.log.warn(line)), runHostId);
     claimActivation(db, { projectId, pmThreadId:`pending:${sourceThreadId ?? "new"}`, runId });
     let lifecycleOwnerThreadId = sourceThreadId ?? undefined;
     if (sourceThreadId) {

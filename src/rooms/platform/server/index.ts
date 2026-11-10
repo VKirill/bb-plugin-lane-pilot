@@ -20,5 +20,6 @@ export * from "./zcode-slot";
 export * from "./sticky-window";
 export * from "./live-folder";
 export * from "./skill-tree";
+export * from "./tick-deps";
 export type * from "./ports";
 export * from "./hub";

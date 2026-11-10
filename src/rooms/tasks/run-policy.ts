@@ -3,6 +3,8 @@ import { z } from "zod";
 const runPolicySchema=z.object({
   schemaVersion:z.literal(1),
   pools:z.object({provider:z.number().int().min(1).max(15),verification:z.number().int().min(1).max(10)}).strict(),
+  /** The writer turn ceiling frozen at run creation (SMA m_restart_scoped): absent when writer.max_turns was unset, and in older policies; absent means no ceiling. */
+  maxTurns:z.number().int().min(1).max(500).optional(),
 }).strict();
 
 export type RunPolicy=z.infer<typeof runPolicySchema>;
@@ -18,11 +20,27 @@ function configuredPool(value:unknown,key:string,fallback:number):number {
   return parsed;
 }
 
-export function buildRunPolicy(settings:Record<string,unknown>):RunPolicy {
+/** The turn ceiling a setting value gives: a whole number 1-500, else null (no ceiling). Unset, empty and 0 are no ceiling by design. */
+export function turnCeilingOf(value:unknown):{ceiling:number|null;invalid:boolean} {
+  if(value===undefined||value===null||value===""||value===0||value==="0")return {ceiling:null,invalid:false};
+  const parsed=typeof value==="string"&&/^\d+$/.test(value.trim())?Number(value.trim()):value;
+  if(typeof parsed!=="number"||!Number.isInteger(parsed)||parsed<1||parsed>500)return {ceiling:null,invalid:true};
+  return {ceiling:parsed,invalid:false};
+}
+
+const warnedCeilings=new Set<string>();
+
+/** The policy of a new run. writer.max_turns is frozen only when set to a valid number; a bad value never blocks run creation (no ceiling, said once). */
+export function buildRunPolicy(settings:Record<string,unknown>,warn?:(line:string)=>void):RunPolicy {
+  const turns=turnCeilingOf(settings["writer.max_turns"]);
+  if(turns.invalid){
+    const raw=String(settings["writer.max_turns"]);
+    if(!warnedCeilings.has(raw)){warnedCeilings.add(raw);warn?.(`Lane Pilot: writer.max_turns=${raw.slice(0,40)} is not a whole number from 1 to 500; the writer has no turn ceiling`)}
+  }
   return runPolicySchema.parse({schemaVersion:1,pools:{
     provider:configuredPool(settings["ops.pool_size"],"ops.pool_size",15),
     verification:configuredPool(settings["ops.verify_pool_size"],"ops.verify_pool_size",2),
-  }});
+  },...(turns.ceiling!==null?{maxTurns:turns.ceiling}:{})});
 }
 
 export function parseRunPolicy(value:unknown):RunPolicy {
