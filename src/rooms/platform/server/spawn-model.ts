@@ -51,6 +51,20 @@ export function seenProviderLimit(owner: object, providerId: string, model: stri
   const seen = instanceOf(owner).seenLimits.get(limitKey(providerId, model));
   return seen && seen.until > now ? { percent: 100, window: `limit seen: ${seen.notice}` } : null;
 }
+/** The core could not start the provider's session: the thread exists and never ran. */
+export const THREAD_NOT_STARTED = /thread_command_failed|thread\.start failed/i;
+/**
+ * A helper or writer thread its provider could not start: the core refused the session or the provider's CLI is down
+ * (acp-antigravity, 2026-11-09: «thread_command_failed … vk_required_session_policy_bridge_unsupported» failed 5 of 5 specialist
+ * reviews and blocked each task). The pair is set aside for an hour like a seen limit, so the next pick of any stage is its peer.
+ */
+export function setAsideOnStartFailure(bb: { log: { warn(message: string): void } }, what: string, providerId: string, model: string, reason: string): boolean {
+  if (!THREAD_NOT_STARTED.test(reason)) return false;
+  noteProviderLimit(bb, providerId, model, `thread did not start: ${reason}`);
+  bb.log.warn(`Lane Pilot: ${what}: ${providerId} could not start its thread (${reason.slice(0, 200)}); it is set aside for an hour`);
+  return true;
+}
+
 /** The provider and model each helper thread was spawned on, so a failure seen later is charged to the right pair. */
 export function rememberThreadModel(owner: object, threadId: string, providerId: string, model: string): void {
   const threadModels = instanceOf(owner).threadModels;

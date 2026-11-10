@@ -15,7 +15,7 @@ import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefau
 import { loadCriticCodeDefault } from "./critic-override";
 import { runPlanFactStage } from "./plan-fact";
 import { candidatePatches, runCodeCritique } from "../../critique/server";
-import { fullAccessSpawn } from "../../platform/server";
+import { fullAccessSpawn, setAsideOnStartFailure } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { closeWriterStages, recordGateEvaluation, recordStage } from "../../runs/server";
 import {bestEffort, isNotFound, orMiss, outputText, stringAt} from "@lane-pilot/kit";
@@ -35,7 +35,7 @@ import { shouldMergeAttemptWorktree } from "./spawn";
 import { loadWriterNudge } from "./writer-silence";
 import { recordedWriterSkills } from "./skill-pick";
 import { beginChecks, checksMoved } from "../../runs"
-import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON } from "../../contracts/failure-class"
+import { REPLAY_CHECK_FAILED, THREAD_NOT_STARTED_REASON, WRITER_SILENT_REASON } from "../../contracts/failure-class"
 import { taskFamily } from "@lane-pilot/contracts";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../../verification/server";
@@ -256,7 +256,18 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           return ended;
         }
         const listed = currentStatus === "idle" ? null : await listThreadEventsRaw(bb, { threadId:input.writerThreadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"50" });
-        const rawFailure = currentStatus === "error" ? "writer thread status error" : listed?.ok ? threadFailure(listed.events) : null;
+        const eventFailure = listed?.ok ? threadFailure(listed.events) : null;
+        // The core could not start the session («Command thread.start failed»): the task never ran. The pair is set aside for an hour and the
+        // attempt ends as an unavailable provider — free, and the chain's next writer takes it at once (feed-gen 2026-11-10: four dead
+        // Antigravity starts read «writer thread status error», spent the task's two attempts and parked it).
+        const notStarted = eventFailure && /thread\.start failed/i.test(eventFailure) ? eventFailure : null;
+        if (notStarted) {
+          const trace = getReasoningTrace(db, input.attemptId);
+          if (trace) setAsideOnStartFailure(bb, `writer for ${input.taskId}`, trace.providerId, trace.model, notStarted);
+          holdProviderLimit();
+        }
+        const rawFailure = notStarted ? `${THREAD_NOT_STARTED_REASON}: ${notStarted}`
+          : currentStatus === "error" ? `writer thread status error${eventFailure ? `: ${eventFailure}` : ""}` : eventFailure;
         // A turn held in the concurrency-limit queue is waiting its turn: the provider's start limit is not a failure then.
         const failure = await startLimitWaiting(bb, input.writerThreadId, rawFailure) ? null : rawFailure;
         if (failure) {

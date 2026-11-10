@@ -32,6 +32,7 @@ export const WAY_OUT: ReadonlyArray<readonly [key: string, pattern: RegExp, wayO
   ["owner_present", /owner_present/, "nothing: the owner is working in this writer provider; the task resumes by itself when they leave (the chain already moved to the next one)"],
   ["usage_window", /usage_window/, "nothing: this provider's usage window is nearly spent; the task resumes by itself when the window resets"],
   ["breaker_open", /breaker_open/, "nothing: this provider is paused after errors; the task resumes by itself when its breaker closes"],
+  ["thread_not_started", /thread_not_started/, "nothing while the chain has another writer: this provider could not start its session, it is set aside for an hour and the next writer takes the task, no attempt spent. If the task ended on it, the whole chain was down: tell the owner in one line which provider fails to start"],
   ["core_unsupported", /core_unsupported|^writer_provider_unavailable/, "every writer in the chain is unusable by this core — it does not pass by itself: move a running task to a supported model with lane_pilot_reassign_task (taskId, model), or tell the owner in one line which provider to enable for the project"],
   ["waiting_writer:", /^waiting_writer:/, "nothing: every writer is held; the task resumes by itself when one frees up"],
   ["waiting: the run is paused", /^waiting: the run is paused/, "nothing: the run is paused; the task starts by itself once the run is resumed (`bb lane-pilot resume <run-id>` when the cause is gone)"],

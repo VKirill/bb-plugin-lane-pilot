@@ -4,6 +4,7 @@ import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, getAttempt, openDatabase, saveProjectSetting, saveStageReceipt, transitionAttempt } from "../src/rooms/plugin-db";
 import { createWriterFinish } from "../src/rooms/writer/server/finish";
 import { checksInFlight } from "../src/rooms/runs";
+import { FREE_CLASSES, failureClass } from "../src/rooms/contracts/failure-class";
 
 const config: PrototypeConfig = {
   projectId:"P", hostId:"h", pmWorkspacePath:"/repo", writerWorkspacePath:"/repo",
@@ -102,6 +103,20 @@ describe("a stop requested while the writer's thread errors", () => {
     const result = await w.run();
     expect(result).toMatchObject({ status:"provider_error", reason:"writer thread status error" });
     expect(getAttempt(w.db, "a1")).toMatchObject({ state:"provider_error" });
+  });
+
+  // feed-gen 2026-11-10: four Antigravity writers died on thread.start, read «writer thread status error» and spent the task's two attempts.
+  it("ends a writer whose session the core could not start as an unavailable provider: free, the chain moves on", async () => {
+    const w = world({ threadStatus:"error", cancel:false });
+    w.threads.events.list = (async () => [
+      { type:"client/turn/requested", threadId:"writer-1", seq:1, createdAt:Date.now(), data:{} },
+      { type:"system/error", threadId:"writer-1", seq:3, createdAt:Date.now(), data:{ code:"thread_command_failed", message:"Command thread.start failed", detail:"vk_required_session_policy_bridge_unsupported" } },
+    ]) as never;
+    const result = await w.run() as { status:string; reason:string };
+    expect(result.status).toBe("provider_error");
+    expect(result.reason).toBe("writer_provider_unavailable:thread_not_started: system_error:thread_command_failed:Command thread.start failed:vk_required_session_policy_bridge_unsupported");
+    expect(failureClass(result.status, result.reason)).toBe("limit");
+    expect(FREE_CLASSES.has("limit")).toBe(true);
   });
 });
 

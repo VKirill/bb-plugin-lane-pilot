@@ -186,7 +186,10 @@ export function threadFailure(events: unknown[], now = Date.now(), options: { in
     if (row.type === "system/error") {
       const attempt = numberField(row.data, "reconnectAttempt"), total = numberField(row.data, "reconnectTotal");
       if (attempt !== null && total !== null && attempt < total) continue;
-      return `system_error:${stringField(row.data, "code") ?? "unknown"}:${clip(stringField(row.data, "message"))}`;
+      // A detail that is a code names the cause the message leaves out («Command thread.start failed» + «vk_required_session_policy_bridge_unsupported»);
+      // a sentence there is advice for a person («Please retry the thread to continue.») and stays out of the reason.
+      const detail = stringField(row.data, "detail");
+      return `system_error:${stringField(row.data, "code") ?? "unknown"}:${clip(stringField(row.data, "message"))}${detail && /^[\w.:-]+$/.test(detail) ? `:${detail}` : ""}`;
     }
     if (row.type === "system/thread/interrupted") {
       const cause = stringField(row.data, "cause");

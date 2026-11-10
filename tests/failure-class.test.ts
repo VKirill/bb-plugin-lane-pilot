@@ -280,6 +280,8 @@ describe("reasons from the hub that were counted as Lane Pilot's own faults", ()
     ["blocked", "retry limit 2 exhausted: missing expected_outputs: CardMockCard.vue", "contract"],
     ["blocked", "retry limit 2 exhausted: writer changed no files", "task"],
     ["blocked", "retry limit 2 exhausted: writer thread status error", "task"],
+    // A session the core could not start never ran the task: free, the chain's next writer takes it.
+    ["provider_error", "writer_provider_unavailable:thread_not_started: system_error:thread_command_failed:Command thread.start failed:vk_required_session_policy_bridge_unsupported", "limit"],
     ["blocked", "retry limit 2 exhausted: system_error:thread_provisioning_failed:Provisioning thread failed", "harness"],
     ["blocked", "retry limit 2 exhausted: ownership run scope invalid: run scope contains a non-BB or invalid task contract", "harness"],
   ] as const)("%s %s → %s", (state, reason, klass) => {

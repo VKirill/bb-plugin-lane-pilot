@@ -19,4 +19,22 @@ describe("stage restart", () => {
     expect(() => recordStage(db, { ...base, state:"pending", restart:true })).toThrow(/illegal stage transition/);
     await harness.lifecycle.dispose();
   });
+
+  // feed-gen 2026-11-10: the first writer's session died, every other writer was held, and the wait threw «running -> pending».
+  it("lets the writer's stage wait again after a session, and no other stage", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot" });
+    const db = openDatabase(bb);
+    createRun(db, "run", "P", "bb", "/p");
+    createTask(db, { id:"t", runId:"run", kind:"bb", contract:{} as never });
+    const writer = { runId:"run", taskId:"t", stageId:"writer-agent" as const, input:"plan" };
+    recordStage(db, { ...writer, state:"pending" });
+    recordStage(db, { ...writer, state:"running" });
+    recordStage(db, { ...writer, state:"pending", reason:"waiting_writer: every writer is held" });
+    expect(listStageReceipts(db, "run", "t").find((row) => row.stageId === "writer-agent")?.state).toBe("pending");
+    const other = { runId:"run", taskId:"t", stageId:"verification" as const, input:"{}" };
+    recordStage(db, { ...other, state:"pending" });
+    recordStage(db, { ...other, state:"running" });
+    expect(() => recordStage(db, { ...other, state:"pending" })).toThrow(/illegal stage transition/);
+    await harness.lifecycle.dispose();
+  });
 });

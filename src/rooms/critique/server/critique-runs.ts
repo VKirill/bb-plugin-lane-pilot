@@ -27,9 +27,10 @@ import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefau
 import type { CodeCriticDefault } from "../../contracts/task-enums";
 import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { MAIN_ATTEMPT_LIMIT } from "../../contracts/state-machine";
-import { GIT_PLUGIN_ID, gitCallRpc, gitFilesReplySchema, gitPatchKey, gitPatchesReplySchema, noteProviderLimit, seenProviderLimit, spawnUsageOf, warmSpawnUsage, zcodeBusyPeek } from "../../platform/server";
+import { GIT_PLUGIN_ID, gitCallRpc, gitFilesReplySchema, gitPatchKey, gitPatchesReplySchema, seenProviderLimit, setAsideOnStartFailure, spawnUsageOf, warmSpawnUsage, zcodeBusyPeek } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
 import type { PluginCallRpc } from "../../platform/server";
+export { setAsideOnStartFailure } from "../../platform/server";
 import { fullAccessSpawn, graphStepMetadata } from "../../platform/server";
 import { reviewerMemoryFor } from "../../memory/server";
 import { clearSpawnMarker } from "../../platform/server";
@@ -52,18 +53,6 @@ async function limitProbe(bb: BbPluginApi, hostId: string, settings: Record<stri
   return (providerId, model) => usage.peek({ providerId, model, hostId, settings });
 }
 
-
-/**
- * A helper thread its provider could not start: the core refused the session or the provider's CLI is down
- * (acp-antigravity, 2026-11-09: «thread_command_failed … vk_required_session_policy_bridge_unsupported» failed 5 of 5 specialist
- * reviews and blocked each task). The pair is set aside for an hour like a seen limit, so the next pick of any stage is its peer.
- */
-export function setAsideOnStartFailure(bb: BbPluginApi, what: string, providerId: string, model: string, reason: string): boolean {
-  if (!/thread_command_failed|thread\.start failed/i.test(reason)) return false;
-  noteProviderLimit(bb, providerId, model, `thread did not start: ${reason}`);
-  bb.log.warn(`Lane Pilot: ${what}: ${providerId} could not start its thread (${reason.slice(0, 200)}); it is set aside for an hour`);
-  return true;
-}
 
 /** One log line per limit move of a stage's model. */
 const logLimitMove = (bb: BbPluginApi, what: string, issues: readonly string[] | undefined) => {

@@ -11,6 +11,8 @@ it("fails at once on BB's terminal errors for the current request", () => {
   expect(threadFailure([request, ev(2, "client/turn/rejected", { reason:"busy", message:"thread busy" })], 2_000)).toBe("turn_rejected:busy:thread busy");
   expect(threadFailure([request, ev(2, "system/thread-provisioning", { status:"failed" })], 2_000)).toBe("provisioning_failed");
   expect(threadFailure([request, ev(2, "system/error", { code:"x", message:"boom" })], 2_000)).toBe("system_error:x:boom");
+  expect(threadFailure([request, ev(2, "system/error", { code:"thread_command_failed", message:"Command thread.start failed", detail:"vk_required_session_policy_bridge_unsupported" })], 2_000))
+    .toBe("system_error:thread_command_failed:Command thread.start failed:vk_required_session_policy_bridge_unsupported");
 });
 
 it("waits through retries, earlier requests and a working provider", () => {

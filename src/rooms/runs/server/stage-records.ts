@@ -23,7 +23,10 @@ export function recordStage(db:ReturnType<typeof openDatabase>, input:{runId:str
     && (["passed", "failed", "blocked", "skipped"].includes(previous.state) || (input.supersede && previous.state === "running")) && input.state === "pending");
   const restart = Boolean(previous && input.state === "pending" && ((input.restart && ["blocked", "skipped"].includes(previous.state))
     || (input.reopen && ["failed", "blocked", "skipped"].includes(previous.state))));
-  if (previous && !replace && !restart && !stageTransition(previous.state, input.state)) {
+  // The writer's stage stays running between its sessions; when the next one has to wait (every writer held, the run paused) it is pending
+  // again. It used to throw «illegal stage transition writer-agent: running -> pending» and park the task as Lane Pilot's fault (feed-gen 2026-11-10).
+  const waitsAgain = input.stageId === "writer-agent" && previous?.state === "running" && input.state === "pending";
+  if (previous && !replace && !restart && !waitsAgain && !stageTransition(previous.state, input.state)) {
     throw new Error(`illegal stage transition ${input.stageId}: ${previous.state} -> ${input.state}`);
   }
   const result = input.result ?? null;
