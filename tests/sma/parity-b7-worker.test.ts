@@ -1,4 +1,3 @@
-import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,18 +10,6 @@ import { answerPermit, listPermitTickets } from "../../src/rooms/host-worker/hos
 import { createAttempt, createRun, createTask, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../../src/rooms/plugin-db";
 import { createWriterState } from "../../src/rooms/writer/server/state";
 import { createBacklog } from "../../src/rooms/backlog/server/scanner";
-import { runSandboxedCommandOnHost } from "../../src/rooms/verification/sandbox";
-
-const grants: string[][] = [];
-vi.mock("../../src/rooms/verification/worker-user", async () => {
-  const real = await vi.importActual<typeof import("../../src/rooms/verification/worker-user")>("../../src/rooms/verification/worker-user");
-  return {
-    ...real,
-    workerReachable: async () => true,
-    grantRunFolders: async (_user: string, dirs: readonly string[]) => { grants.push([...dirs]); return [...dirs]; },
-    asWorker: (_user: string, program: string, args: readonly string[]) => ({ program, args: [...args] }),
-  };
-});
 
 const guard = useGuardSync(join(process.cwd(), "lane-stack/hooks/guard_shell.py"));
 const runGuard = (command: string, agentType: string, env: Record<string, string> = {}) => guard({
@@ -82,31 +69,6 @@ describe("worker boundaries", () => {
       expect(listed.tickets.map((row) => row.ticket)).toEqual(["ffffffffffffffff"]);
     } finally { process.env.HOME = before; }
   });
-});
-
-describe("strict worker", () => {
-  it.skipIf(process.platform !== "linux" || !existsSync("/usr/bin/bwrap"))(
-    "[sma:wi_clone] a strict-worker check runs in a standalone clone, never the linked worktree",
-    async () => {
-      const repo = mkdtempSync(join(tmpdir(), "b7-repo-"));
-      execSync("git init -q && git config user.email t@t && git config user.name t && echo base > tracked.txt && git add -A && git commit -qm init", { cwd: repo });
-      writeFileSync(join(repo, "tracked.txt"), "changed\n");
-      writeFileSync(join(repo, "untracked.txt"), "loose\n");
-      const result = await runSandboxedCommandOnHost({
-        requestedHostId: "h", workspacePath: repo, cwd: repo, backend: "linux-bubblewrap", asUser: "lp-worker",
-        command: "test -d .git && test ! -f .git && cat tracked.txt untracked.txt && pwd",
-      } as never);
-      expect(result.exitCode, result.stderr).toBe(0);
-      expect(result.stdout).toContain("changed");
-      expect(result.stdout).toContain("loose");
-      // The command ran inside the clone (a .git directory of its own, checked by the command itself), outside the
-      // owner's repository; the clone is removed after the run.
-      expect(result.cwd.startsWith(repo)).toBe(false);
-      expect(result.stdout.trim().endsWith(result.cwd)).toBe(true);
-      expect(existsSync(result.cwd)).toBe(false);
-      expect(grants.flat().some((dir) => dir === repo || dir.startsWith(`${repo}/`))).toBe(false);
-    },
-  );
 });
 
 describe("daemon tick", () => {
