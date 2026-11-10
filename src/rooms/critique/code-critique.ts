@@ -8,7 +8,7 @@ import type { Citation } from "./citations";
 import { CRITIC_RUBRIC, VERDICT_STATUSES, applyRubric, isVerdictShape, legacyOutputToVerdict, normalizeVerdictInput, rubricPromptLine, settleVerdict, verdictSchema, verdictSeverityToLegacy, verdictSummary, withoutDecision } from "@lane-pilot/workflow-engine";
 import type { Verdict, VerdictFinding, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { settingOff } from "@lane-pilot/models";
-import { sha256Hex, stripAnsi } from "@lane-pilot/kit";
+import { sha256Hex, stripAnsi, cleanCheckOutput } from "@lane-pilot/kit";
 import { taskBrief } from "./task-brief";
 
 export const CODE_CRITIQUE_STAGE = "code-critique" as const;
@@ -260,6 +260,10 @@ export function buildCandidateEvidence(input: {
     packetBytes += header;
     files.push({ path, sha256: current, baselineSha256: baseline, content, diff });
   }
+  // A file the attempt created is no reference test: in a folder without a worktree the «before» is read from the folder the writer just
+  // wrote into, and a new test was shown to the critic as one that «existed before this task» (photoalive 2026-11-10).
+  const created = new Set(files.filter((file) => file.diff === NEW_FILE_DIFF || /^(?:new file mode|--- \/dev\/null)/m.test(file.diff)).map((file) => file.path));
+  const reference = (input.referenceTestEdits ?? []).filter((path) => !created.has(path));
   const verification: CritiqueVerifyPacket[] = input.verification.map((row) => {
     // Lane Pilot ran these commands itself and holds their exit codes; a long output (a lint with 247 warnings) is cut to its head
     // and tail with the cut said, and is no longer unknown evidence (2026-10-29).
@@ -311,7 +315,7 @@ export function buildCandidateEvidence(input: {
   };
   const evidenceSha256 = sha256Hex(JSON.stringify(evidenceBody));
   return {
-    ...(input.referenceTestEdits?.length ? { referenceTestEdits: [...input.referenceTestEdits] } : {}),
+    ...(reference.length ? { referenceTestEdits: reference } : {}),
     artifactRevisionSha256,
     evidenceSha256,
     revisionSha256: artifactRevisionSha256,
@@ -467,9 +471,11 @@ export function codeCritiquePrompt(input: {
     return lines.length <= count ? text : `[… earlier output cut …]\n${lines.slice(-count).join("\n")}`;
   };
   const checks = (evidence.verification ?? []).map((row) => {
-    // A green check's log says it passed; only a failing one needs its output read.
-    const stdout = row.exitCode === 0 ? lastLines(row.stdout ?? "", 10) : (row.stdout ?? "");
-    const stderr = row.exitCode === 0 ? (row.stderr ? lastLines(row.stderr, 10) : "") : (row.stderr ?? "");
+    // A green check's log says it passed; only a failing one needs its output read. Cleaned first: escapes, npx's spinner and
+    // `npm notice` lines took 6 of the 10 lines a critic was shown (photoalive 2026-11-10), and the test names were cut for them.
+    const out = cleanCheckOutput(row.stdout ?? ""), err = cleanCheckOutput(row.stderr ?? "");
+    const stdout = row.exitCode === 0 ? lastLines(out, 10) : out;
+    const stderr = row.exitCode === 0 ? lastLines(err, 10) : err;
     return `<check command=${JSON.stringify(row.command)} exit="${row.exitCode}">\n<stdout>\n${stdout}\n</stdout>${stderr ? `\n<stderr>\n${stderr}\n</stderr>` : ""}\n</check>`;
   });
   return [
@@ -487,9 +493,9 @@ export function codeCritiquePrompt(input: {
     "Judge only in-scope owns_paths against the task contract, the change you read in the workspace or inlined above, and the check output. Exit codes alone are not sufficient.",
     ...CODE_CRITIC_METHOD,
     "Cosmetic preferences are severity info and must not be high. Ambiguous issues stay uncertain; do not invent rewrites.",
-    "status follows the thresholds above. block: the task stops, with no repair round and no redo (a critical finding that is a security hole, data loss or a break of a rule the task forbids, or more than 5 high). rework: the writer fixes the findings in its own thread (a critical unmet or stubbed requirement, or 1 to 5 high). pass: no critical and no high; medium, low and info findings go with pass. The host reads a critical or high finding without a file, a line and quoted evidence as medium, a rework with no critical or high finding as a pass, and a block below the threshold as a rework. For a security hole or data loss put \"security\" in the finding's dimension. Build each id from the file and the criterion in kebab case (for example src/a.ts:rate-limit-missing) so the same problem gets the same id when the code is reviewed again.",
+    "status follows the thresholds above. block: the task stops, with no repair round and no redo. rework: the writer fixes the findings in its own thread. pass: medium, low and info findings go with it. The host reads a critical or high finding without a file, a line and quoted evidence as medium, a rework with no critical or high finding as a pass, and a block below the threshold as a rework. For a security hole or data loss put \"security\" in the finding's dimension. Build each id from the file and the criterion in kebab case (for example src/a.ts:rate-limit-missing) so the same problem gets the same id when the code is reviewed again.",
     rubricPromptLine("code"),
-    ANSWER_FORM_LINE + " Keys: status (\"pass\", \"rework\" or \"block\"), summary (string, at most 2000 characters), findings (at most 30 objects), evidence (string, what you examined and how, at most 4000 characters). Finding keys: file, line (positive integer), severity (\"critical\", \"high\", \"medium\", \"low\" or \"info\"), evidence (at most 2000 characters: the quoted code or output line); optional id (at most 80 characters), finding (at most 1000: what is wrong), criterion (at most 500: the acceptance line or rule), dimension (at most 80), impact, trigger, verificationExpectation (each at most 500). Other keys are ignored.",
+    ANSWER_FORM_LINE + " Keys: status (\"pass\", \"rework\" or \"block\"), summary (string, at most 2000 characters), findings (at most 30 objects), evidence (string, what you examined and how, at most 4000 characters). Finding keys: file, line (positive integer), severity (\"critical\", \"high\", \"medium\", \"low\" or \"info\"), evidence (at most 2000 characters: the quoted code or output line); optional id (at most 80 characters), finding (at most 1000: what is wrong), criterion (at most 500: the acceptance line or rule), dimension (at most 80), impact, trigger, verificationExpectation (each at most 500). rubric is the one more key, as described above. Other keys are ignored.",
   ].join("\n\n");
 }
 

@@ -23,7 +23,8 @@ export function cleanCheckOutput(text: string): string {
     .replace(/\x1b\[[0-9;:?]*[ -/]*[@-~]/g, "")
     .replace(/\x1b[@-_]/g, "")
     .replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, "")
-    .split("\n").filter((line) => !/^\s*npm notice/.test(line)).join("\n")
+    // npx draws a spinner frame (\ | / -) and erases it with an escape: the frame is left in front of the line.
+    .split("\n").filter((line) => !/^[\s\\|/-]*npm notice/.test(line) && !/^[\\|/-]$/.test(line.trim())).join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }

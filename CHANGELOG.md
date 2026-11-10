@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.508
+
+- **The code critic's task text no longer misleads its reader.** photoalive, November 10: the owner pasted the critic's prompt for «Buy screen: card only» and asked whether the handoff standard was built right. Four defects, all in what Lane Pilot wrote around the standard:
+  - A green check showed the critic ten lines of which six were `npm notice` and npx's spinner frames, and the test names were cut for them. The output is cleaned before its last lines are taken, and a spinner frame left in front of `npm notice` no longer saves that line.
+  - `app/tests/restore-packages.test.ts`, listed four lines above as «new», was named among the reference tests that «existed before this task». A file whose own diff says the attempt created it is not a reference test.
+  - The BLOCK and REWORK thresholds were written out twice, in «Severity and thresholds» and again under «status»; the second copy is one line now.
+  - The method said «the host-read files» though the critic reads the change itself since the packet stopped carrying the bytes; it says «the changed files». The key list ended «Other keys are ignored» right after `rubric` was described; it names rubric.
+
 ## 0.1.507
 
 - **The loop stopper no longer refuses the owner's own next task.** feed-gen, November 10: «first OpenLux, then OpenRouter, then DeepSeek» was refused three times with `topic_loop`, «3 tasks in 4.1 h worked on `src/lib/ai-clients.ts`, and it is still being patched, not solved». Of those three tasks one had been accepted; the other two never changed a line: their writers died (a silent Devin, six Antigravity sessions the core could not start) and two attempts ended on Lane Pilot's own fault. The hunters read a test that had never failed. Measured over all 19 loop walls since October 30: 4 were closed by hand as «not a loop: separate requests of the owner, each accepted», 6 closed when the next try was simply accepted, 9 stayed in the backlog for good and kept their file or test closed for the rest of the run; the hunts took 6.5 million tokens. Three rules now:

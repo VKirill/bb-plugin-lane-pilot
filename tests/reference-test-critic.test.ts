@@ -29,6 +29,24 @@ describe("a writer that changed a test which existed before the task", () => {
     expect(untouched.evidenceSha256).toBe(edited.evidenceSha256);
   });
 
+  it("does not call a test the attempt created a reference test, and shows the critic the test names of a green check, not npx's noise (photoalive 2026-11-10)", () => {
+    const created = buildCandidateEvidence({
+      produced: ["tests/money.test.ts", "tests/new.test.ts"], hashes: { "tests/money.test.ts": "a", "tests/new.test.ts": "b" },
+      files: [{ path: "tests/money.test.ts", content: "y" }, { path: "tests/new.test.ts", content: "z" }],
+      patches: { "tests/money.test.ts": "--- a/tests/money.test.ts\n+++ b/tests/money.test.ts\n@@ -1 +1 @@\n-x\n+y", "tests/new.test.ts": "new file mode 100644\n--- /dev/null\n+++ b/tests/new.test.ts\n@@ -0,0 +1 @@\n+z" },
+      verification: [{ command: "npx vitest run", exitCode: 0, stderr: "",
+        stdout: [...Array.from({ length: 6 }, (_, i) => ` ✓ case ${i}`), "      Tests  6 passed (6)", "", "\\npm notice", "npm notice New major version of npm available! 11.12.1 -> 12.2.2", "npm notice Changelog: https://x", "npm notice To update run: npm install -g npm@12.2.2", "npm notice", "\\"].join("\n") }],
+      output: "done", ownsPaths: ["tests/**"], neverTouch: [], dirtOk: true, referenceTestEdits: ["tests/money.test.ts", "tests/new.test.ts"],
+    });
+    expect(created.referenceTestEdits).toEqual(["tests/money.test.ts"]);
+    const prompt = codeCritiquePrompt({ evidence: created, task: { id: "t" } });
+    expect(prompt).not.toContain("npm notice");
+    expect(prompt).toContain("✓ case 0");
+    expect(prompt).toMatch(/Tests  6 passed \(6\)\n<\/stdout>/);
+    expect(prompt.match(/a critical finding that is a security hole/g)).toHaveLength(1);
+    expect(prompt).not.toContain("host-read files");
+  });
+
   it("counts a check script the task's commands run as part of the yardstick: a script named in a command, a package.json behind npm; not a test, not other code", () => {
     const produced = ["scripts/check.sh", "./package.json", "src/a.ts", "tests/a.test.ts", "docs/x.md"];
     expect(checkScriptEdits(produced, ["bash scripts/check.sh", "npm test"])).toEqual(["scripts/check.sh", "./package.json"]);
