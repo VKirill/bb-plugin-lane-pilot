@@ -2,14 +2,15 @@ import type Database from "better-sqlite3";
 import { parseJsonOr } from "@lane-pilot/kit";
 import { TASK_SIZE_MIN_SAMPLE, type TaskSizeMedian } from "../tasks";
 import { ATTEMPT_TABLE, RUN_TABLE } from "../storage";
+import { failureClass } from "../contracts/failure-class";
 
 export type RollbackDb = Pick<Database.Database, "prepare">;
 
 /** One file an attempt changed: A added, M modified, D deleted, T type changed. */
 export type ChangedFile = { path: string; status: string };
 
-/** What an attempt's worktree held when a stop was confirmed or the worktree was returned. */
-export type WorktreeRecord = { head: string | null; dirty: number; ahead: number; savedAs: string | null; at: number };
+/** What an attempt's worktree held when a stop was confirmed or the worktree was returned. `read:"failed"` marks a read that could not happen: the effect is uncertain, not empty. */
+export type WorktreeRecord = { head: string | null; dirty: number; ahead: number; savedAs: string | null; at: number; read?: "failed"; readError?: string };
 
 export type AttemptChange = {
   attemptId: string; runId: string; taskId: string;
@@ -56,6 +57,43 @@ export function upsertAttemptChange(db: RollbackDb, attempt: { attemptId: string
     ...attempt, baseSha: patch.baseSha ?? null, mergeParent: patch.mergeParent ?? null, mergeCommit: patch.mergeCommit ?? null, outcome: patch.outcome ?? null,
     changed: patch.changed ? JSON.stringify(patch.changed.slice(0, 5000)) : null, worktree: patch.worktree ? JSON.stringify(patch.worktree) : null, now,
   });
+}
+
+/**
+ * The effect state of an attempt's change (SMA ac_effects): intended while only the base is on record, observed once git
+ * was read (a merge or the worktree state), uncertain when the read failed (the reason kept, `changed` unknown — never
+ * read as «no effect»), compensated when the work was reverted.
+ */
+export type EffectState = "intended" | "observed" | "uncertain" | "compensated";
+export function effectState(change: Pick<AttemptChange, "baseSha" | "mergeCommit" | "outcome" | "changed" | "worktree"> | null | undefined): EffectState {
+  if (!change) return "intended";
+  if (change.outcome === "reverted") return "compensated";
+  if (change.worktree?.read === "failed") return "uncertain";
+  if (change.mergeCommit || change.worktree || change.outcome === "merged") return "observed";
+  return "intended";
+}
+
+/**
+ * The recovery state of an attempt (SMA ac_recovery): reconciling while the world is still being read (a spawn whose
+ * fate is unknown, a reconcile scan in flight, an uncertain effect), rollback_failed while the last revert stands
+ * failed or errored, needs_decision while the attempt sits blocked on a judgment, a contract or the owner's word,
+ * clear otherwise. Dispatch, retry and answer_writer refuse anything not clear.
+ */
+export type RecoveryState = "clear" | "reconciling" | "rollback_failed" | "needs_decision";
+export function recoveryState(db: RollbackDb, attemptId: string): RecoveryState {
+  const attempt = db.prepare(`SELECT state, reason, task_id FROM ${ATTEMPT_TABLE} WHERE id=?`).get(attemptId) as { state: string; reason: string | null; task_id: string } | undefined;
+  if (!attempt) return "clear";
+  if (attempt.state === "spawn_unknown") return "reconciling";
+  if (db.prepare("SELECT 1 AS n FROM lane_pilot_reconcile_cursor WHERE attempt_id=? LIMIT 1").get(attemptId)) return "reconciling";
+  if (effectState(getAttemptChange(db, attemptId)) === "uncertain") return "reconciling";
+  const revert = listTaskReceipts(db, attempt.task_id, "revert").at(-1);
+  if (revert && (revert.state === "failed" || revert.state === "error")) return "rollback_failed";
+  if (attempt.state === "blocked") {
+    const reason = attempt.reason ?? "";
+    const cls = failureClass(attempt.state, reason);
+    if (cls === "judgment" || cls === "contract" || reason.startsWith("owner_word")) return "needs_decision";
+  }
+  return "clear";
 }
 
 export function getAttemptChange(db: RollbackDb, attemptId: string): AttemptChange | undefined {

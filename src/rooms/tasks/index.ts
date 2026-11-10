@@ -17,7 +17,7 @@ export { dependsOnTask } from "./depends";
 export { INVARIANT_ITEM, INVARIANT_WORDS } from "./plan-fact";
 export { NO_CODE_KINDS, PLAN_FACT_BRIEF_LINE, PLAN_FACT_RULES, blindPlanFact, diffHunksCommand, existsCommand, existsFromCommandOutput, hunksFromCommandOutput, parsePlanFact, planFactOutcome, untouchedCitations } from "./plan-fact";
 export type { EvidenceCheck, ItemVerdict, PlanFactCheck, PlanFactFacts, PlanFactTable } from "./plan-fact";
-export { BIRTH_GATES, BIRTH_KINDS, CHECK_RECIPES, FACT_KINDS, HOLD_FOREVER, LANE_QUEUES, QUESTION_KINDS, WORKER_ENVELOPE, birthGates, checkRecipe, factKind, isWholeConsent, questionKind, questionsFromFile, secretShaped, laneCap, laneQueueOf, MARKER_BRIEF_LINE, PRIORITIES, STAGE_PRIORITY_RANK, birthFindings, ownerWordFindings, blockingClass, checkProgram, checkScriptEdits, deadLetters, priorityRank, queueOrder, referenceTestEdits, spendReserve, writerMarkers } from "./rails";
+export { BIRTH_GATES, BIRTH_KINDS, CHECK_RECIPES, FACT_KINDS, HOLD_FOREVER, LANE_QUEUES, QUESTION_KINDS, WORKER_ENVELOPE, birthGates, checkRecipe, factKind, isWholeConsent, questionKind, questionsFromFile, secretShaped, laneCap, laneQueueOf, MARKER_BRIEF_LINE, PRIORITIES, STAGE_PRIORITY_RANK, birthFindings, ownerWordFindings, blockingClass, checkProgram, checkScriptEdits, deadLetters, priorityRank, queueOrder, referenceTestEdits, shapeFlags, spendReserve, testOwnedImports, TEST_PATH, writerMarkers } from "./rails";
 export { testFitFindings } from "./test-fit";
 export type { TestFitFile, TestFitHit } from "./test-fit";
 export type { BirthKind, BlockingClass, CheckMeasure, CheckRecipe, FactKind, Priority, QuestionKind, WriterMarkers } from "./rails";

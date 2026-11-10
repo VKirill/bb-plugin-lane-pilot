@@ -1,4 +1,7 @@
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
+import { taskFamily } from "@lane-pilot/contracts";
+import { ownerAnsweredItem, postOwnerItem, rpcLine } from "../../owner-waiting";
+import { ownerWordsMode } from "../../tasks";
 import { getRunSettingsScopes, listCheckDurations, noteToldPmDirectly, taskBasePath } from "../../storage";
 import type { RollbackApi, RollbackTarget } from "../../rollback/server";
 import { bestEffort } from "@lane-pilot/kit";
@@ -149,7 +152,12 @@ export function createBaseline(ctx: ServerCore, services: Services) {
       const unrunnable = checks.flatMap((check) => { const why = unrunnableReason(check, input.task); return why ? [{ check, why }] : []; });
       const outside = unrunnable.length || !RED_OUTSIDE_KINDS.includes(input.task.kind ?? "") ? []
         : checks.flatMap((check) => { const files = redOutsideTaskFiles(check, input.task); return files.length ? [{ check, files }] : []; });
-      if (unrunnable.length || outside.length) {
+      // Only a person lets a task start on a base red outside its files (SMA ac_baseline_red): his yes on the item below
+      // stands for the family, so the next dispatch passes this stop. A check that cannot run is never waved through.
+      const redItemKey = `baseline-red:${input.runId}:${taskFamily(input.taskId)}`;
+      const redAllowed = !unrunnable.length && outside.length > 0 && ownerAnsweredItem(db as never, redItemKey);
+      if (redAllowed) log(`baseline ${input.taskId}: red outside the task's files, the owner allowed the start (${redItemKey})`);
+      if ((unrunnable.length || outside.length) && !redAllowed) {
         const code = unrunnable.length ? "check_cannot_run" : "red_outside_task";
         const detail = unrunnable.length ? unrunnable.map((item) => `${item.check.command}: ${item.why}`).join("; ")
           : outside.map((item) => `${item.check.command}: red in ${item.files.join(", ")}`).join("; ");
@@ -161,6 +169,18 @@ export function createBaseline(ctx: ServerCore, services: Services) {
           noteToldPmDirectly(db, input.pmThreadId, input.taskId);
           await bestEffort(log, `baseline block notice ${input.taskId}`, bb.sdk.threads.send({ threadId: input.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text: `Lane Pilot: задача ${input.taskId} не запущена: ${text}`, mentions: [] }] } as never), undefined);
         }
+        // The owner is asked only where he signs every landing (owner.words=on). On the default the PM is told above and
+        // fixes the contract: an item here would add a question to the owner's list for a thing the PM settles alone.
+        const wordsOn = !unrunnable.length && ownerWordsMode((await ctx.effectiveProjectSettings(input.projectId, getRunSettingsScopes(db, input.runId))).values) === "on";
+        if (wordsOn) try {
+          postOwnerItem(db as never, {
+            key: redItemKey, source: "baseline", kind: "baseline_red", projectId: input.projectId, wake: false,
+            what: `Проверки красные ещё до начала задачи: ${input.task.title}`,
+            why: `Задачу ${input.taskId} не запустили: проверки не проходят${baseSha ? ` на версии ${baseSha.slice(0, 10)}` : ""} в файлах, которых она не касается (${detail.slice(0, 300)}). «Да» — запустить её всё равно; иначе менеджер сузит проверку или сначала починит основу.`,
+            evidence: [{ kind: "task", ref: input.taskId }, { kind: "attempt", ref: input.attemptId }],
+            actions: [{ id: "yes", label: "Да, запускать", cli: rpcLine("owner_waiting_close", { key: redItemKey }), rpc: { method: "owner_waiting_close", input: { key: redItemKey } } }],
+          });
+        } catch { /* the item mirrors the stop; the stop itself already happened */ }
         return { stop: `verdict_block: ${code}: ${detail.slice(0, 600)}. ${unrunnable.length ? "Fix the command or cwd, or drop the check" : "Narrow the check to the task's files or widen owns_paths"}; nothing was started and no attempt was spent`, record: getBaseline(db, input.runId, input.taskId) ?? null };
       }
       // Red before green. An all-green check task is done: close accepted. Any other kind (a fix too: magicseo F1)

@@ -1,10 +1,12 @@
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
-import { batchShapeAdvice, checkoutOwnsOverlap, topicHold, topicLoop, topicLoopMessage } from "../../tasks";
+import { batchShapeAdvice, checkoutOwnsOverlap, isMainfixTask, topicHold, topicLoop, topicLoopMessage } from "../../tasks";
 import { medianTaskSize } from "../../rollback/server";
+import { recoveryState } from "../../rollback/store";
+import { hasOpenOwnerItem } from "../../owner-waiting";
 import type { LoopTask, OpenShape } from "../../tasks";
 import { taskFamily } from "@lane-pilot/contracts";
-import { checkoutBase, getRun, getTask, listOpenAttempts, taskBasePath, runAttemptOutcomeRows, listRunTaskRows } from "../../storage";
+import { checkoutBase, getRun, getTask, listAttemptsForTask, listOpenAttempts, taskBasePath, runAttemptOutcomeRows, listRunTaskRows } from "../../storage";
 import type { LanePilotDatabase } from "../../storage";
 
 import type { WallApi } from "../../wall/service";
@@ -74,6 +76,37 @@ export async function topicLoopStop(wall: Services["wall"] | undefined, runId: s
     })).key;
   }
   return topicLoopMessage(found, hunt);
+}
+
+/**
+ * The refusal for a task family whose recovery is unfinished (SMA ac_recovery): a member's latest attempt is still
+ * reconciling or its rollback failed — nothing retries or redispatches it until that clears. Null when all is clear.
+ */
+export function recoveryGuard(db: LanePilotDatabase, runId: string, taskId: string): string | null {
+  const family = taskFamily(taskId);
+  for (const row of listRunTaskRows(db, runId)) {
+    if (isMainfixTask(row.id) || taskFamily(row.id) !== family) continue;
+    const latest = listAttemptsForTask(db, runId, row.id).at(-1);
+    if (!latest) continue;
+    const state = recoveryState(db, latest.id);
+    if (state === "reconciling" || state === "rollback_failed") {
+      return `attempt ${latest.id} of ${row.id} is ${state}: recovery is unfinished — settle it first (let the reconcile finish, run the revert again, or ask the owner) before this family is dispatched again`;
+    }
+  }
+  return null;
+}
+
+/**
+ * The refusal for a task family whose baseline stop the owner has not settled (SMA ac_baseline_red): the stop posted a
+ * baseline_red owner item; while it is open no writer starts on that base. Only with owner.words on — the person steps
+ * are off otherwise. Null when there is no open item (his «yes» closed it).
+ */
+export function baselineRedGuard(db: LanePilotDatabase, runId: string, taskId: string, ownerWordsOn: boolean): string | null {
+  if (!ownerWordsOn) return null;
+  const key = `baseline-red:${runId}:${taskFamily(taskId)}`;
+  return hasOpenOwnerItem(db as never, { key })
+    ? `the owner is still deciding whether ${taskFamily(taskId)} may start on its red base (owner item ${key}): ask him with lane_pilot_ask_owner and send the task again once the item is answered`
+    : null;
 }
 
 /** Advice on the queue the new task joins: the open tasks of its checkout it waits for, and the fix when three or more own one path. */

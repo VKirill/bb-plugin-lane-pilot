@@ -34,7 +34,7 @@ import { attemptFeedback, isWriterStreamError, previousAttemptBrief } from "./wr
 import { trimCheckLogsIn } from "../log-trim";
 import { stickyTurnPromptWithRules } from "./writer-knowledge";
 import { parseMemorySettings } from "../../memory";
-import { checkoutOwnsOverlap, isMainfixTask, retargetTask , priorityRank, HOLD_FOREVER, laneCap, laneQueueOf } from "../../tasks";
+import { checkoutOwnsOverlap, isMainfixTask, retargetTask , priorityRank, HOLD_FOREVER, laneCap, laneQueueOf, spendReserve } from "../../tasks";
 import { dependsOnTask } from "../../tasks";
 import { openDatabase } from "../../storage";
 import { createWriterSticky } from "./sticky";
@@ -49,6 +49,7 @@ import type { BaselineApi } from "../../baseline/server/baseline";
 import type { MoneyApi } from "../../money/server";
 import type { OwnerPresenceApi } from "../../owner-presence/server/presence";
 import type { RollbackApi } from "../../rollback/server/rollback";
+import { recoveryState } from "../../rollback/store";
 import type { RuleScanApi } from "../../self-repair/server/rule-scan";
 import type { ReconcileApi } from "../../stability/server/reconcile";
 import type { StabilityPort } from "../../contracts";
@@ -684,6 +685,21 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       return true;
     };
     const wallOrTokenStop = () => runningWriterBudgetStop(budget.check());
+    /**
+     * The permit's money half (SMA ac_permit): with run.max_tokens the task must carry its price (dispatch lints
+     * price_unknown; this start is the same refusal for a retry that never saw the lint) and the run's budget must
+     * still hold its appetite after the run's other open tasks'.
+     */
+    const writerPermit = (): string | null => {
+      const snap = budget.snapshot();
+      if (!snap.limits.maxTokens) return null;
+      const appetite = input.task.appetite?.tokens;
+      if (!appetite) return `permit_refused:price_unknown: the run has run.max_tokens but task ${input.taskId} names no appetite.tokens`;
+      const openAppetites = listOpenAttempts(db).filter((row) => row.run_id === input.runId && row.task_id !== input.taskId)
+        .map((row) => Number((getTask(db, row.task_id)?.contract as { appetite?: { tokens?: number } } | undefined)?.appetite?.tokens ?? 0));
+      const reserve = spendReserve({ budgetTokens:snap.limits.maxTokens, spentTokens:snap.tokens, openAppetites, appetite });
+      return reserve.ok ? null : `permit_refused:reserve: ${reserve.why}`;
+    };
       const blockBeforeWriter = (reason:string) => {
         transitionAttempt(db, attemptId, "blocked", { reason });
         last = { status:"blocked", reason, attemptId };
@@ -846,6 +862,22 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             : `waiting: ${lateBreaker ?? "the run is paused"}; starts by itself once it clears`;
           recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan, reason });
           return waitForAdmission();
+        }
+        // The permit (SMA ac_permit), re-read at the seat like the holds above: a retry dispatches no lint, so the price and
+        // the run's spend reserve are checked again here — a task that no longer fits ends blocked, uncharged.
+        const permit = writerPermit();
+        if (permit) {
+          releaseWriterSlot?.(); releaseWriterSlot = undefined;
+          blockBeforeWriter(permit);
+          return false;
+        }
+        // Recovery state (SMA ac_recovery): nothing retries an attempt whose recovery is unfinished — a reconcile in
+        // flight or a failed rollback settles first; the refusal names the state.
+        const recovery = recoveryState(db, attemptId);
+        if (recovery === "reconciling" || recovery === "rollback_failed") {
+          releaseWriterSlot?.(); releaseWriterSlot = undefined;
+          blockBeforeWriter(`recovery_unfinished:${recovery}: the attempt's recovery is unfinished; settle it before this work is retried`);
+          return false;
         }
         return true;
       };

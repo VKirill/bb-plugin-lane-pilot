@@ -110,6 +110,11 @@ export const isCapacitySaturated = (reason:string | null | undefined):boolean =>
 export const WRITER_SILENT_REASON = "writer_silent_after_nudge";
 const SILENT = /^writer_silent_after_nudge/;
 export const isWriterSilent = (reason:string | null | undefined):boolean => SILENT.test(reason ?? "");
+// A turn that ended outside the work itself (SMA ag_infra): the provider cut the prompt off (context overflow), the CLI hit
+// its own turn ceiling, or the turn ended while a background command still ran — none of it is the task's failure.
+const NON_WORK = /prompt is too long|context_length_exceeded|maximum context length|error_max_turns|maximum number of turns|^writer_background_tail\b/i;
+/** The admission permit refused the start (SMA ac_permit): the run's budget could not hold the task — free, not parked. */
+const PERMIT_REFUSED = /^permit_refused:/;
 // An empty_output is a provider fault only when the writer gave no answer; an answer with no files is the task's.
 const PROVIDER_STATES = new Set(["provider_error", "timeout"]);
 
@@ -127,12 +132,14 @@ export function classifyFailure(state:string, reason:string | null | undefined):
   if (REASSIGNED.test(text)) return sure("reassign");
   if (VERDICT_BLOCK.test(text)) return sure("contract");
   if (JUDGMENT.test(text)) return sure("judgment");
-  if (BUDGET.test(text) || RETRY_BUDGET.test(text)) return sure("budget");
+  if (BUDGET.test(text) || RETRY_BUDGET.test(text) || PERMIT_REFUSED.test(text)) return sure("budget");
   if (LIMIT.test(text)) return sure("limit");
   // The ZCode app cannot take the work now (another task holds it, its text is not visible, it needs the foreground, its sign-in expired): the
   // machine's state, not the model's work. Free, and the task moves down the writer chain at once. A red check that prints the word is the task's.
   if (!CHECK_FAILED.test(text) && zcodeEnvironmentError(text)) return sure("limit");
   if (SILENT.test(text)) return sure("provider");
+  // A red check that prints one of these phrases is the task's own failure.
+  if (!CHECK_FAILED.test(text) && NON_WORK.test(text)) return sure("provider");
   if (NO_GIT.test(text) || WAITING_SECRET.test(text)) return sure("contract");
   if (MERGE.test(text)) return sure("merge");
   if (DIRTY_BASE.test(text) && !/^merge_blocked:/.test(text)) return sure("dirty_base");
