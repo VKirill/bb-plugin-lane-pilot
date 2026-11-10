@@ -34,6 +34,11 @@
     "tier": {
       "type": "quick|standard|deep",
       "default": "standard"
+    },
+    "phase_id": {
+      "type": "string",
+      "default": "",
+      "note": "a phase whose .agents/phases/<id>/SECURITY.md threat register is verified against the code; without it the audit is the plain one"
     }
   },
   "outputs": {
@@ -142,6 +147,34 @@
       "concurrency": 5
     },
     {
+      "id": "threat_model",
+      "type": "agent",
+      "role": "code-critic",
+      "session": "new",
+      "title": {
+        "en": "Verify the phase threat register",
+        "ru": "Проверить реестр угроз этапа"
+      },
+      "skip_when": "!$inputs.phase_id",
+      "skip_out": {
+        "findings": []
+      },
+      "produces": [
+        {
+          "kind": "findings",
+          "version": 1
+        }
+      ],
+      "prompt": "Read .agents/phases/{{$inputs.phase_id}}/SECURITY.md. No threat register there means an empty findings list. Check each named threat against the code: verdict mitigated|partial|missing with file:line; a missing threat is a finding of severity high; every finding has file:line, severity (critical|high|medium|low|info) and remediation. Append the per-threat table under '## Verified against the code' of that SECURITY.md.",
+      "out": {
+        "findings": "Finding[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      }
+    },
+    {
       "id": "report",
       "produces": [
         {
@@ -233,6 +266,11 @@
     },
     {
       "from": "scan",
+      "to": "threat_model",
+      "pass": "artifact"
+    },
+    {
+      "from": "threat_model",
       "to": "report",
       "pass": "artifact"
     },
@@ -289,6 +327,7 @@
       "expect_path": [
         "recon",
         "scan",
+        "threat_model",
         "report",
         "offer",
         "done_offer"

@@ -147,17 +147,36 @@ export function CoordScreen({ rpc, runId }: { rpc: Rpc; runId: string | null }) 
 export function ShipScreen({ rpc, projectId, hostId }: { rpc: Rpc; projectId: string; hostId: string | null }) {
   const [phaseId, setPhaseId] = useState("");
   const [said, setSaid] = useState<string | null>(null);
-  const start = (id: "validate-phase" | "pr-branch" | "ship") => void rpc.call("workflow_run", { id, projectId, inputs: { phase_id: phaseId } }).then((result) => setSaid(fill("ckShipStarted", { s: JSON.stringify(result).slice(0, 160) })), (cause: unknown) => setSaid(String(cause)));
+  const [push, setPush] = useState<string[]>([]);
+  const start = (id: "validate-phase" | "pr-branch" | "ship") => void rpc.call("workflow_run", { id, projectId, inputs: { phase_id: phaseId } }).then((result) => {
+    setSaid(fill("ckShipStarted", { s: JSON.stringify(result).slice(0, 160) }));
+    // The push stays with a person (SMA m_sw_ship): the ship workflow hands the commands back in its outputs.
+    setPush(id === "ship" ? pushCommands(result) : []);
+  }, (cause: unknown) => setSaid(String(cause)));
   const update = (apply: boolean) => hostId && void rpc.call("cockpit_update", { hostId, apply }).then((result) => setSaid((result as { output: string }).output.slice(0, 600)));
   return (
     <Panel title={t("ckScreen_ship")} testId="ck-ship">
       <p className="text-sm text-muted-foreground">{t("ckShipLead")}</p>
       <Field label="phase_id" value={phaseId} onChange={setPhaseId} />
       <div className="flex flex-wrap gap-2">{(["validate-phase", "pr-branch", "ship"] as const).map((id) => <Button key={id} size="sm" variant="outline" disabled={!phaseId.trim()} onClick={() => start(id)}>{fill("ckShipRun", { w: id })}</Button>)}</div>
+      {push.length ? <pre data-testid="ck-ship-push" className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-muted p-2 text-xs">{push.join("\n")}</pre> : null}
       {hostId ? <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => update(false)}>{t("ckUpdateCheck")}</Button><Button size="sm" variant="outline" onClick={() => update(true)}>{t("ckUpdate")}</Button></div> : null}
       {said ? <pre className="max-h-60 overflow-auto whitespace-pre-wrap rounded bg-muted p-2 text-xs">{said}</pre> : null}
     </Panel>
   );
+}
+
+/** The push/PR command lines a ship run's output carries, wherever the workflow put them. */
+export function pushCommands(value: unknown): string[] {
+  const found = new Set<string>();
+  const walk = (item: unknown, depth: number) => {
+    if (depth > 8 || item === null || item === undefined) return;
+    if (typeof item === "string") { for (const line of item.split("\n")) if (/\b(git push|gh pr create)\b/.test(line)) found.add(line.trim()); return; }
+    if (Array.isArray(item)) { for (const child of item) walk(child, depth + 1); return; }
+    if (typeof item === "object") { for (const child of Object.values(item)) walk(child, depth + 1); }
+  };
+  walk(value, 0);
+  return [...found];
 }
 
 /** System: the console — the actions journal, the machines (rows and joining one), who sees the door, faults, screen views, reads nobody calls. */

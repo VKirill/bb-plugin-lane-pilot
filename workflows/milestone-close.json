@@ -52,7 +52,10 @@
     "candidates_approved": "int",
     "deferred": "bool",
     "report_path": "string",
-    "retro_path": "string"
+    "retro_path": "string",
+    "gate_state": "string",
+    "unmerged_seen": "int",
+    "uncovered_requirements": "string[]"
   },
   "quality_mode": {
     "default": "standard",
@@ -81,7 +84,13 @@
         "unmerged": "int",
         "gate_ok": "bool",
         "running_attempts": "int",
-        "merged_commits": "string[]"
+        "merged_commits": "string[]",
+        "gate_state": "string",
+        "unmerged_seen": "int",
+        "uncovered_reqs": "string[]",
+        "retro_living": "string",
+        "milestone_archive": "string",
+        "milestone_summary": "string"
       }
     },
     {
@@ -127,7 +136,7 @@
         "metrics": "{}"
       },
       "src": "maestro-flow:workflows/retrospective.md",
-      "prompt": "Read the run metrics - tasks planned/accepted/failed, rework iterations per task, severity distribution of findings, failure classes, merge conflicts. Four lenses: technical (patterns, debt), process (stalls, retries), quality (defects that slipped), decision (choices to revisit).\nDistill insights with a stable id INS-{8hex} (hash of lens + title) so a repeat run is idempotent; each insight routes as a rule candidate, a note or a task, as a candidate only. Read-only on sources; never overwrite history.\n",
+      "prompt": "Read the run metrics - tasks planned/accepted/failed, rework iterations per task, severity distribution of findings, failure classes, merge conflicts. Four lenses: technical (patterns, debt), process (stalls, retries), quality (defects that slipped), decision (choices to revisit).\nDistill insights with a stable id INS-{8hex} (hash of lens + title) so a repeat run is idempotent; each insight routes as a rule candidate, a note or a task, as a candidate only. Read-only on sources; never overwrite history.\n\nIf .agents/planning/PROJECT.md already exists, append this milestone's changed limits to it (Vision, Value, Limits — refresh the Limits from what the run taught, only if the file already exists; never create it).\n",
       "out": {
         "insights": "Insight[]",
         "retro_path": "string",
@@ -139,6 +148,20 @@
       }
     },
     {
+      "id": "living",
+      "type": "action",
+      "action": "lp.retro_living",
+      "title": {
+        "en": "Living retrospective",
+        "ru": "Живая ретроспектива"
+      },
+      "out": {
+        "updated": "int",
+        "total": "int",
+        "path": "string"
+      }
+    },
+    {
       "id": "close",
       "type": "subworkflow",
       "workflow": "lp.close",
@@ -147,6 +170,28 @@
         "goal": "{{$inputs.goal}}",
         "merged_commits": "{{status.merged_commits}}",
         "insights": "{{retro.insights}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "summary",
+      "type": "subworkflow",
+      "workflow": "milestone-summary",
+      "title": {
+        "en": "Milestone summary",
+        "ru": "Итог этапа"
+      },
+      "applicable_modes": [
+        "standard",
+        "full"
+      ],
+      "skip_out": {
+        "summary_path": ""
+      },
+      "with": {
+        "milestone": "{{$inputs.goal}}"
       },
       "guards": {
         "maxVisits": 1
@@ -177,6 +222,46 @@
       }
     },
     {
+      "id": "record",
+      "type": "action",
+      "action": "fs.write",
+      "title": {
+        "en": "Milestone record",
+        "ru": "Запись этапа"
+      },
+      "params": {
+        "path": ".agents/milestones/{{$inputs.run_id}}.md"
+      },
+      "reads": [
+        "status",
+        "retro.insights",
+        "close.staged",
+        "close.report_path",
+        "$inputs.goal",
+        "$inputs.goals"
+      ],
+      "out": {
+        "record_path": "string"
+      }
+    },
+    {
+      "id": "snapshot",
+      "type": "action",
+      "action": "lp.milestone_archive",
+      "title": {
+        "en": "Milestone archive",
+        "ru": "Архив этапа"
+      },
+      "params": {
+        "name": "{{$inputs.goal}}"
+      },
+      "out": {
+        "folder": "string",
+        "files": "string[]",
+        "kept": "bool"
+      }
+    },
+    {
       "id": "archive",
       "type": "action",
       "action": "lp.run_close",
@@ -195,7 +280,10 @@
         "candidates_approved": "approve_knowledge.approved_ids.length",
         "deferred": "approve_knowledge.answer_kind != 'approved'",
         "report_path": "close.report_path",
-        "retro_path": "retro.retro_path"
+        "retro_path": "retro.retro_path",
+        "gate_state": "status.gate_state",
+        "unmerged_seen": "status.unmerged_seen",
+        "uncovered_requirements": "status.uncovered_reqs"
       }
     },
     {
@@ -203,7 +291,10 @@
       "type": "action",
       "action": "emit",
       "map": {
-        "status": "not_ready"
+        "status": "not_ready",
+        "gate_state": "status.gate_state",
+        "unmerged_seen": "status.unmerged_seen",
+        "uncovered_requirements": "status.uncovered_reqs"
       }
     },
     {
@@ -217,11 +308,6 @@
     }
   ],
   "edges": [
-    {
-      "from": "approve_knowledge",
-      "to": "archive",
-      "when": "approve_knowledge.answer_kind == 'timeout'"
-    },
     {
       "from": "ask_finish",
       "to": "not_ready",
@@ -251,8 +337,25 @@
     },
     {
       "from": "retro",
+      "to": "living",
+      "pass": "artifact",
+      "when": "status.retro_living == 'on'"
+    },
+    {
+      "from": "retro",
       "to": "close",
       "pass": "artifact"
+    },
+    {
+      "from": "living",
+      "to": "close",
+      "pass": "artifact"
+    },
+    {
+      "from": "close",
+      "to": "summary",
+      "pass": "artifact",
+      "when": "close.status == 'closed' && status.milestone_summary == 'on'"
     },
     {
       "from": "close",
@@ -266,7 +369,40 @@
       "pass": "artifact"
     },
     {
+      "from": "summary",
+      "to": "approve_knowledge",
+      "pass": "artifact"
+    },
+    {
       "from": "approve_knowledge",
+      "to": "record",
+      "pass": "artifact",
+      "when": "status.retro_living == 'on'"
+    },
+    {
+      "from": "approve_knowledge",
+      "to": "snapshot",
+      "pass": "artifact",
+      "when": "status.milestone_archive == 'on'"
+    },
+    {
+      "from": "approve_knowledge",
+      "to": "archive",
+      "pass": "artifact"
+    },
+    {
+      "from": "record",
+      "to": "snapshot",
+      "pass": "artifact",
+      "when": "status.milestone_archive == 'on'"
+    },
+    {
+      "from": "record",
+      "to": "archive",
+      "pass": "artifact"
+    },
+    {
+      "from": "snapshot",
       "to": "archive",
       "pass": "artifact"
     },

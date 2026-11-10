@@ -80,6 +80,10 @@ export function installMethods(tools: MethodsTools) {
       // Off unless the project switched the browser check on: an unset key keeps visible work as it was before the live check.
       liveCheck: ["on", "true", "1"].includes(String(settings["browser_qa.enabled"] ?? "").toLowerCase()),
       branch: (() => { const mode = String(settings["phase.branch"] ?? "none"); return mode === "phase" || mode === "milestone" ? mode : "none"; })(), ...(input.roadmapRow ? { roadmapRow: input.roadmapRow } : {}), ...(input.rails ? { rails: true } : {}),
+      ...(String(settings["phase.research"] ?? "off") === "on" ? { research: "on" as const } : {}),
+      ...(String(settings["phase.pattern_map"] ?? "off") === "on" ? { patternMap: "on" as const } : {}),
+      ...(String(settings["phase.validation"] ?? "off") === "on" ? { validation: "on" as const } : {}),
+      ...(String(settings["phase.draw_material"] ?? "off") === "on" ? { drawMaterial: "on" as const } : {}),
       ...(String(settings["phase.train"] ?? "on") === "off" ? { train: false } : {}) };
     if (input.legacy) {
       // Legacy mode without signature: a plan written before the phase existed is admitted on its own; the book says so.

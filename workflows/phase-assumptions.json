@@ -1,0 +1,136 @@
+{
+  "id": "phase-assumptions",
+  "name": {
+    "en": "Phase assumptions",
+    "ru": "Предположения фазы"
+  },
+  "description": {
+    "en": "Lists the assumptions made about a phase before planning: each with its evidence file:line or none, what breaks if it is wrong and a confidence, split Verified and Unverified. Reads only, writes nothing.",
+    "ru": "Показывает предположения о фазе до планирования: каждое с доказательством file:line или без, что сломается, если оно неверно, и уверенность; разделены на Проверенные и Непроверенные. Только читает, ничего не пишет."
+  },
+  "status": "published",
+  "quality_mode": {
+    "default": "standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ]
+  },
+  "budget": {
+    "max_minutes": 60
+  },
+  "examples": {
+    "ru": [
+      "Какие предположения о фазе мы сделали?",
+      "Покажи, что предполагается о фазе до плана"
+    ],
+    "en": [
+      "What assumptions did we make about the phase?",
+      "Show the phase assumptions before planning"
+    ]
+  },
+  "not_for": [
+    "grill-plan",
+    "validate-phase"
+  ],
+  "inputs": {
+    "phase_id": {
+      "type": "string",
+      "required": true
+    }
+  },
+  "outputs": {
+    "status": "done",
+    "assumptions": "Assumption[]"
+  },
+  "entry": "assumptions",
+  "nodes": [
+    {
+      "id": "assumptions",
+      "type": "agent",
+      "role": "analyst",
+      "title": {
+        "en": "List the assumptions",
+        "ru": "Список предположений"
+      },
+      "prompt": "Read the phase (lane_pilot_phase status), CONTEXT.md and the code it touches. Return assumptions[] — each: statement, evidence file:line or none, what breaks if wrong, confidence. Split them Verified and Unverified. You read only; write nothing.",
+      "out": {
+        "assumptions": "Assumption[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "assumptions": "assumptions.assumptions"
+      }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "assumptions",
+      "to": "goal_check",
+      "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "pa-1",
+    "sim": {
+      "input": {
+        "phase_id": "ph_a"
+      },
+      "stubs": {
+        "assumptions": {
+          "assumptions": [
+            {
+              "statement": "users table exists",
+              "confidence": 80
+            }
+          ]
+        }
+      },
+      "expect_path": [
+        "assumptions",
+        "goal_check",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'"
+      ]
+    }
+  },
+  "goal_check": "validate"
+}

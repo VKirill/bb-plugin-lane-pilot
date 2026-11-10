@@ -35,12 +35,23 @@
     "base": {
       "type": "string",
       "default": "main"
+    },
+    "head": {
+      "type": "string",
+      "default": "",
+      "note": "the head being shipped; the full-gate check (setting ship.full_gate = on) compares the gate run with it, and without it skips that comparison"
+    },
+    "review": {
+      "type": "bool",
+      "default": false,
+      "note": "run the configured external code-review before the push when true"
     }
   },
   "outputs": {
     "status": "shipped|held",
     "pr_url": "string",
-    "held_by": "string[]"
+    "held_by": "string[]",
+    "hooks_failed": "string[]"
   },
   "quality_mode": {
     "default": "standard"
@@ -53,8 +64,21 @@
   "budget": {
     "max_minutes": 60
   },
-  "entry": "preflight",
+  "entry": "gate",
   "nodes": [
+    {
+      "id": "gate",
+      "type": "action",
+      "action": "lp.integration_gate_status",
+      "title": {
+        "en": "Full-gate marker",
+        "ru": "Метка полных ворот"
+      },
+      "out": {
+        "ok": "bool",
+        "failing": "string[]"
+      }
+    },
     {
       "id": "preflight",
       "type": "agent",
@@ -80,6 +104,25 @@
       ]
     },
     {
+      "id": "review",
+      "type": "subworkflow",
+      "workflow": "code-review",
+      "title": {
+        "en": "Optional external review",
+        "ru": "Необязательное ревью"
+      },
+      "skip_when": "!$inputs.review",
+      "skip_out": {
+        "status": "pass"
+      },
+      "with": {
+        "range": "{{$inputs.base}}..HEAD"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
       "id": "open_pr",
       "type": "agent",
       "role": "errand",
@@ -87,7 +130,7 @@
         "en": "Push and open the PR",
         "ru": "Пуш и PR"
       },
-      "prompt": "Push the phase branch (git push -u origin HEAD), write the PR body from the phase's SUMMARY.md and BOOK.md (what, why, how it was verified, receipts), open it with gh pr create, record the shipment in .agents/deploys.log, then run .agents/planning/hooks/post-ship*.md if any (lane-plan render-hooks post-ship).",
+      "prompt": "Push the phase branch (git push -u origin HEAD), write the PR body from the phase's SUMMARY.md and BOOK.md (what, why, how it was verified, receipts), open it with gh pr create and record the shipment in .agents/deploys.log.",
       "out": {
         "pr_url": "string"
       },
@@ -110,13 +153,63 @@
       ]
     },
     {
+      "id": "hooks",
+      "type": "action",
+      "action": "lp.post_ship_hooks",
+      "title": {
+        "en": "Post-ship hook files",
+        "ru": "Файлы хуков после отгрузки"
+      },
+      "out": {
+        "count": "int",
+        "files": "string[]"
+      }
+    },
+    {
+      "id": "post_ship",
+      "type": "agent",
+      "role": "errand",
+      "title": {
+        "en": "Post-ship hooks",
+        "ru": "Хуки после отгрузки"
+      },
+      "skip_when": "hooks.count == 0",
+      "skip_out": {
+        "hooks_run": [],
+        "hooks_failed": []
+      },
+      "prompt": "Run `lane-plan render-hooks post-ship` and execute each hook it lists, in order. A failed hook does not undo the ship: return hooks_run and hooks_failed, a failed hook is listed, never retried blindly.",
+      "out": {
+        "hooks_run": "string[]",
+        "hooks_failed": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "open_pr"
+        }
+      ]
+    },
+    {
       "id": "shipped",
       "type": "action",
       "action": "emit",
       "map": {
         "status": "shipped",
         "pr_url": "open_pr.pr_url",
-        "held_by": "[]"
+        "held_by": "[]",
+        "hooks_failed": "post_ship.hooks_failed"
       }
     },
     {
@@ -126,7 +219,19 @@
       "map": {
         "status": "held",
         "pr_url": "''",
-        "held_by": "preflight.held_by"
+        "held_by": "preflight.held_by",
+        "hooks_failed": "[]"
+      }
+    },
+    {
+      "id": "held_gate",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "held",
+        "pr_url": "''",
+        "held_by": "gate.failing",
+        "hooks_failed": "[]"
       }
     },
     {
@@ -144,9 +249,30 @@
         "reason": "string",
         "details": "object"
       }
+    },
+    {
+      "id": "held_review",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "held",
+        "pr_url": "''",
+        "held_by": "['external review asked for rework or blocked the ship']",
+        "hooks_failed": "[]"
+      }
     }
   ],
   "edges": [
+    {
+      "from": "gate",
+      "to": "preflight",
+      "pass": "artifact",
+      "when": "gate.ok"
+    },
+    {
+      "from": "gate",
+      "to": "held_gate"
+    },
     {
       "from": "preflight",
       "to": "held",
@@ -155,11 +281,32 @@
     },
     {
       "from": "preflight",
+      "to": "review",
+      "pass": "artifact"
+    },
+    {
+      "from": "review",
+      "to": "held_review",
+      "pass": "artifact",
+      "when": "review.status == 'rework' || review.status == 'block'"
+    },
+    {
+      "from": "review",
       "to": "open_pr",
       "pass": "artifact"
     },
     {
       "from": "open_pr",
+      "to": "hooks",
+      "pass": "artifact"
+    },
+    {
+      "from": "hooks",
+      "to": "post_ship",
+      "pass": "artifact"
+    },
+    {
+      "from": "post_ship",
       "to": "goal_check",
       "pass": "artifact"
     },
@@ -186,11 +333,25 @@
         },
         "open_pr": {
           "pr_url": "https://example/pr/1"
+        },
+        "lp.post_ship_hooks": {
+          "count": 1,
+          "files": [
+            ".agents/planning/hooks/post-ship.md"
+          ]
+        },
+        "post_ship": {
+          "hooks_run": [],
+          "hooks_failed": []
         }
       },
       "expect_path": [
+        "gate",
         "preflight",
+        "review",
         "open_pr",
+        "hooks",
+        "post_ship",
         "goal_check",
         "shipped"
       ],

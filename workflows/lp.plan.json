@@ -35,6 +35,21 @@
     "extra_rules": {
       "type": "string[]",
       "note": "дополнительные обязательные правила планирования от графа"
+    },
+    "skip_research": {
+      "type": "bool",
+      "default": true,
+      "note": "the daemon's answer to «research if needed»: on = skip (project setting phase.research switches it off)"
+    },
+    "patterns": {
+      "type": "bool",
+      "default": false,
+      "note": "pattern-mapper capability (project setting phase.pattern_map)"
+    },
+    "validation": {
+      "type": "bool",
+      "default": false,
+      "note": "validation strategy before the plan (project setting phase.validation = on); never on the check path"
     }
   },
   "outputs": {
@@ -46,13 +61,99 @@
     "task_count": "int",
     "plan_verdict": "string",
     "already_met": "bool",
-    "premortem": "string[]"
+    "premortem": "string[]",
+    "research_md": "string",
+    "patterns_md": "string",
+    "validation_md": "string"
   },
-  "entry": "plan",
+  "entry": "research",
   "budget": {
     "max_minutes": 45
   },
   "nodes": [
+    {
+      "id": "research",
+      "type": "agent",
+      "role": "analyst",
+      "title": {
+        "en": "Research the open hows",
+        "ru": "Исследовать открытые вопросы"
+      },
+      "prompt": "Answer each open 'how' the goal's context leaves unresolved, from the repository and public sources; write the findings as RESEARCH.md text in research_md and a short summary. Read-only.",
+      "out": {
+        "research_md": "string",
+        "summary": "string"
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "skip_when": "$inputs.skip_research == true || $mode == 'quick'",
+      "skip_out": {
+        "research_md": "",
+        "summary": ""
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "patterns",
+      "type": "agent",
+      "role": "analyst",
+      "title": {
+        "en": "Find code patterns",
+        "ru": "Найти образцы в коде"
+      },
+      "prompt": "For each area the goal touches name the closest existing file with file:line and the convention to copy (Grep/Glob, read-only); write them as PATTERNS.md text in patterns_md.",
+      "out": {
+        "patterns_md": "string"
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "skip_when": "!$inputs.patterns || $mode == 'quick'",
+      "skip_out": {
+        "patterns_md": ""
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "strategy",
+      "type": "agent",
+      "role": "auditor",
+      "title": {
+        "en": "Validation strategy",
+        "ru": "Стратегия проверки"
+      },
+      "prompt": "From the phase's CONTEXT.md/SPEC.md write, per requirement and locked decision, the kind of check (test, grep, run, browser) that would fail without the work; output VALIDATION.md text in validation_md.",
+      "out": {
+        "validation_md": "string"
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "skip_when": "!$inputs.validation || $mode == 'quick'",
+      "skip_out": {
+        "validation_md": ""
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 15
+      }
+    },
     {
       "id": "plan",
       "consumes": [
@@ -78,7 +179,7 @@
         "ru": "Составить план"
       },
       "src": "maestro-flow:workflows/plan.md",
-      "prompt": "Produce task-v2 contracts; planning is never done inline in the PM chat. One feature = one task of about 15-60 minutes even across several files; never split by file; a user-visible feature is one end-to-end task.\nread_first = files the task changes + source-of-truth files + files whose pattern, signature or convention the change must follow.\nacceptance and verification are commands, greps or file reads naming the exact string, value or exit code; no subjective words (properly, clean, robust, works well, корректно, удобно). In quick or standard quality_mode (the default) acceptance has at most 3 items: with 4 or more, plan-fact fails far more often (hub receipts: 3.5% at 1-3, about a third at 4+). Split the task.\nowns_paths must not overlap inside a wave; depends_on only for real output dependencies; at most 8 tasks (more than 3 modules: waves). UI work is a vertical slice with at least one [UI-observable] qa_case per wave.\nLocked decisions bind the plan, deferred ones are excluded. extra_rules from the calling workflow are binding. mode=gaps: cluster the gaps by root cause, one task per root cause, sources in order: open findings, verification gaps, review findings.\nA task may also carry convergence.criteria (the checks that decide it is done, each a command, a grep or a file read with the exact string, value or exit code; next to acceptance) and files[] ({path, action create|modify|delete, target, change}: the concrete change per file, only files the task owns).\n\nEach task is a task-v2 contract: schema_version 2, id, title, risk (low|medium|high|critical), lane, read_first, owns_paths, never_touch, expected_outputs, interfaces, invariants, out_of_scope, depends_on, acceptance (sentences), verify (none|smoke|tests) and verification as objects {\"command\": \"<one shell command line>\", \"cwd\": \".\"} - a command, never a sentence about it; every command an acceptance line names is one of them.\nWhen the repository already does what the goal asks (you checked it), return no tasks, already_met true and the evidence in your handoff: an empty plan is then the right answer, not a failure. A fix or a check whose verification already passes on the base is that case: do not dispatch it, the checks close it accepted without a writer. A feature, refactor, docs, chore or research whose checks are already green is not done: those checks prove nothing, so add a check that is red now.\nReturn also premortem: three to five likely causes this plan fails a week after merge, each one line.",
+      "prompt": "Produce task-v2 contracts; planning is never done inline in the PM chat. One feature = one task of about 15-60 minutes even across several files; never split by file; a user-visible feature is one end-to-end task.\nread_first = files the task changes + source-of-truth files + files whose pattern, signature or convention the change must follow.\nacceptance and verification are commands, greps or file reads naming the exact string, value or exit code; no subjective words (properly, clean, robust, works well, корректно, удобно). In quick or standard quality_mode (the default) acceptance has at most 3 items: with 4 or more, plan-fact fails far more often (hub receipts: 3.5% at 1-3, about a third at 4+). Split the task.\nowns_paths must not overlap inside a wave; depends_on only for real output dependencies; at most 8 tasks (more than 3 modules: waves). UI work is a vertical slice with at least one [UI-observable] qa_case per wave.\nLocked decisions bind the plan, deferred ones are excluded. extra_rules from the calling workflow are binding. mode=gaps: cluster the gaps by root cause, one task per root cause, sources in order: open findings, verification gaps, review findings.\nA task may also carry convergence.criteria (the checks that decide it is done, each a command, a grep or a file read with the exact string, value or exit code; next to acceptance) and files[] ({path, action create|modify|delete, target, change}: the concrete change per file, only files the task owns).\n\nEach task is a task-v2 contract: schema_version 2, id, title, risk (low|medium|high|critical), lane, read_first, owns_paths, never_touch, expected_outputs, interfaces, invariants, out_of_scope, depends_on, acceptance (sentences), verify (none|smoke|tests) and verification as objects {\"command\": \"<one shell command line>\", \"cwd\": \".\"} - a command, never a sentence about it; every command an acceptance line names is one of them.\nWhen the repository already does what the goal asks (you checked it), return no tasks, already_met true and the evidence in your handoff: an empty plan is then the right answer, not a failure. A fix or a check whose verification already passes on the base is that case: do not dispatch it, the checks close it accepted without a writer. A feature, refactor, docs, chore or research whose checks are already green is not done: those checks prove nothing, so add a check that is red now.\nReturn also premortem: three to five likely causes this plan fails a week after merge, each one line.\nWhen research_md, patterns_md or validation_md arrive they bind the plan: every task's verification follows the validation strategy, and the code copies the named patterns' conventions.\nFor every file a task creates, name the closest existing analog in read_first (found with Grep/Glob, read-only) with one line why; a file without an analog says 'no analog' explicitly.",
       "out": {
         "tasks": "Task[]",
         "waves": "string[][]",
@@ -183,7 +284,7 @@
         "evidence": "skipped"
       },
       "src": "maestro-flow:workflows/plan.md (plan-checker), grill.md",
-      "prompt": "PLAN_CRITIC_METHOD over all tasks together - goals coverage, dependency correctness (no cycle, depends_on names a real task), size, collisions across tasks, boundary violations. A finding without file:line (or PLAN/TASK + field) does not count. Approve the good, not the perfect. Severity is one of critical, high, medium, low, info.",
+      "prompt": "PLAN_CRITIC_METHOD over all tasks together - goals coverage, dependency correctness (no cycle, depends_on names a real task), size, collisions across tasks, boundary violations. A finding without file:line (or PLAN/TASK + field) does not count. Approve the good, not the perfect. Severity is one of critical, high, medium, low, info. A file a task creates with neither an analog in read_first nor an explicit 'no analog' is a finding of severity low: it never changes the verdict by itself, so do not answer rework or block for it alone. Skip this check when plan_sha is set (a plan the PM submitted is checked as it is, the planner cannot add analogs).",
       "out": {
         "status": "pass|rework|block",
         "summary": "string",
@@ -208,7 +309,10 @@
         "task_count": "plan.task_count",
         "plan_verdict": "plan_critic.status",
         "already_met": "plan.already_met",
-        "premortem": "plan.premortem"
+        "premortem": "plan.premortem",
+        "research_md": "research.research_md",
+        "patterns_md": "patterns.patterns_md",
+        "validation_md": "strategy.validation_md"
       }
     },
     {
@@ -236,6 +340,26 @@
     }
   ],
   "edges": [
+    {
+      "from": "research",
+      "to": "patterns",
+      "pass": "artifact"
+    },
+    {
+      "from": "patterns",
+      "to": "strategy",
+      "pass": "artifact"
+    },
+    {
+      "from": "strategy",
+      "to": "plan",
+      "pass": "artifact",
+      "with": {
+        "research_md": "research.research_md",
+        "patterns_md": "patterns.patterns_md",
+        "validation_md": "strategy.validation_md"
+      }
+    },
     {
       "from": "plan",
       "to": "lint",

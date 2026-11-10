@@ -159,6 +159,16 @@ export type PhaseRecord = {
   docShas?: Record<string, string>;
   /** browser_qa.enabled is on for the project: visible work owes a live check (SMA k_we_verify). Unset on phases opened before it and wherever the browser check is off: nothing is owed there, and the acceptance line says so. */
   liveCheck?: boolean;
+  /** Research before the plan (setting phase.research, off by default = the daemon's skip answer; SMA k_wp_research). */
+  research?: "on";
+  /** Pattern mapping before the plan (setting phase.pattern_map, off by default; SMA k_wp_patterns). */
+  patternMap?: "on";
+  /** The validation strategy before the plan (setting phase.validation, off by default; SMA k_wp_validation). */
+  validation?: "on";
+  /** MATERIAL.md before the drawing (setting phase.draw_material, off by default; SMA k_wd_i1). */
+  drawMaterial?: "on";
+  /** The sha of each pre-plan document (RESEARCH/VALIDATION/PATTERNS.md) as the machine last wrote it, by path: a hand-edited file is not overwritten. */
+  preDocShas?: Record<string, string>;
   /** The phase candidate (SMA p6_prepared → p6_merge): the pieces merge into branch phase/<id>, one worktree per base checkout, and the
    *  branch lands on main only after the acceptance. `off` says why a phase merges its pieces into main as before. */
   candidate?: PhaseCandidate;

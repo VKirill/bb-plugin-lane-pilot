@@ -29,10 +29,11 @@ describe("SMA command workflows", () => {
   });
 
   it("ship: a ready phase is shipped, a held one says what holds it", async () => {
-    const shipped = await runSim("ship", { input: { phase_id: "ph_a" }, stubs: { preflight: { ready: true, held_by: [] }, open_pr: { pr_url: "https://x/pr/1" } } });
-    expect(pathOf(shipped)).toBe("preflight open_pr goal_check shipped");
+    const shipped = await runSim("ship", { input: { phase_id: "ph_a" }, stubs: { preflight: { ready: true, held_by: [] }, open_pr: { pr_url: "https://x/pr/1" }, "lp.post_ship_hooks": { count: 0, files: [] } } });
+    expect(pathOf(shipped)).toBe("gate preflight review open_pr hooks post_ship goal_check shipped");
+    expect(shipped.skipped).toEqual(["review", "post_ship"]);
     const held = await runSim("ship", { input: { phase_id: "ph_a" }, stubs: { preflight: { ready: false, held_by: ["no full gate marker"] } } });
-    expect(pathOf(held)).toBe("preflight held");
+    expect(pathOf(held)).toBe("gate preflight held");
     expect(out(held)).toMatchObject({ status: "held", held_by: ["no full gate marker"] });
   });
 
@@ -58,8 +59,9 @@ describe("SMA command workflows", () => {
   });
 
   it("project-start: value map, preview, recap", async () => {
-    const r = await runSim("project-start", { input: {}, stubs: { value_map: { value_map: "for shop owners" }, preview: { stack: {}, memory: {} }, recap: { next_steps: ["a", "b", "c"] } } });
-    expect(pathOf(r)).toBe("value_map preview recap done");
+    const r = await runSim("project-start", { input: {}, stubs: { "lp.tree_counts": { enabled: "off" }, value_map: { value_map: "for shop owners" }, preview: { stack: {}, memory: {} }, recap: { next_steps: ["a", "b", "c"] } } });
+    expect(pathOf(r)).toBe("tree probe value_map preview profile_write ask research requirements recap done");
+    expect(r.skipped).toEqual(["probe", "profile_write", "ask", "research", "requirements"]);
     expect(out(r)).toMatchObject({ status: "done", next_steps: ["a", "b", "c"] });
   });
 });

@@ -1,0 +1,157 @@
+{
+  "id": "todo-add",
+  "name": {
+    "en": "A todo for later",
+    "ru": "Туду на потом"
+  },
+  "description": {
+    "en": "A thought that came up in a session becomes a structured todo under .agents/todos/items/ that the backlog scanner reads unchanged.",
+    "ru": "Мысль, пришедшая в сессии, становится структурированной туду в .agents/todos/items/ — сканер беклога читает её как есть."
+  },
+  "status": "published",
+  "quality_mode": {
+    "default": "standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ]
+  },
+  "budget": {
+    "max_minutes": 60
+  },
+  "examples": {
+    "ru": [
+      "запиши на потом: перенести метрики на ClickHouse",
+      "запиши туду: починить флаки тест платежей"
+    ],
+    "en": [
+      "note for later: move metrics to ClickHouse",
+      "put a todo on the list: fix the flaky payments test"
+    ]
+  },
+  "not_for": [
+    "note-add",
+    "project-life"
+  ],
+  "inputs": {
+    "thought": {
+      "type": "string",
+      "required": true
+    },
+    "title": {
+      "type": "string",
+      "default": ""
+    },
+    "priority": {
+      "type": "low|normal|high",
+      "default": "normal"
+    },
+    "estimate": {
+      "type": "int",
+      "default": 0
+    }
+  },
+  "outputs": {
+    "status": "done",
+    "todo_id": "string",
+    "line": "string",
+    "todo_path": "string"
+  },
+  "entry": "shape",
+  "nodes": [
+    {
+      "id": "shape",
+      "type": "agent",
+      "role": "triager",
+      "title": {
+        "en": "Shape the thought",
+        "ru": "Оформить мысль"
+      },
+      "skip_when": "$inputs.title != ''",
+      "skip_out": {
+        "title": "{{$inputs.title}}",
+        "body": "{{$inputs.thought}}",
+        "line": "'todo added'",
+        "priority": "{{$inputs.priority}}"
+      },
+      "prompt": "Turn the thought into a structured todo: a short title, a priority (low|normal|high), a one-paragraph body. The id of the todo is made by the graph from the run, never by you. Keep the thought's meaning verbatim in body.",
+      "out": {
+        "title": "string",
+        "body": "string",
+        "line": "string",
+        "priority": "low|normal|high"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 10
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "write",
+      "type": "action",
+      "action": "fs.write",
+      "params": {
+        "path": ".agents/todos/items/{{date}}-{{run_id}}/",
+        "contents": {
+          "meta.yaml": "id: {{run_id}}\ntitle: {{shape.title}}\nstatus: ready\npriority: {{shape.priority}}\nestimate: {{$inputs.estimate}}\ndepends_on: []\ncreated: {{date}}\n",
+          "README.md": "{{shape.body}}"
+        }
+      },
+      "out": {
+        "todo_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "todo_id": "{{run_id}}",
+        "line": "shape.line",
+        "todo_path": "write.todo_path"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "shape",
+      "to": "write"
+    },
+    {
+      "from": "write",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "todo-1",
+    "sim": {
+      "input": {
+        "thought": "fix the flaky payments test"
+      },
+      "stubs": {
+        "shape": {
+          "title": "Fix the flaky payments test",
+          "body": "fix the flaky payments test",
+          "line": "todo added"
+        }
+      },
+      "expect_path": [
+        "shape",
+        "write",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'"
+      ]
+    }
+  },
+  "goal_audit": "exempt"
+}

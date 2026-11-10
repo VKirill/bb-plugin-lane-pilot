@@ -1,0 +1,155 @@
+{
+  "id": "secure-phase",
+  "name": {
+    "en": "Close the phase threat register",
+    "ru": "Закрыть реестр угроз фазы"
+  },
+  "description": {
+    "en": "Checks that the plan's threat register is closed: for each threat of the phase's SECURITY.md a disposition mitigated (file:line or check), accepted (the owner's word) or open; the status table goes back into SECURITY.md and open threats end in gaps.",
+    "ru": "Проверяет, что реестр угроз плана закрыт: по каждой угрозе из SECURITY.md фазы — решение «закрыта» (file:line или проверка), «принята» (слово владельца) или «открыта»; таблица статусов возвращается в SECURITY.md, открытые угрозы — в пробелы."
+  },
+  "status": "published",
+  "quality_mode": {
+    "default": "standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ]
+  },
+  "budget": {
+    "max_minutes": 60
+  },
+  "examples": {
+    "ru": [
+      "Проверь, закрыт ли реестр угроз фазы",
+      "Обнови SECURITY.md статусами угроз"
+    ],
+    "en": [
+      "Check the phase threat register is closed",
+      "Update SECURITY.md with the threat status"
+    ]
+  },
+  "not_for": [
+    "security-audit"
+  ],
+  "inputs": {
+    "phase_id": {
+      "type": "string",
+      "required": true
+    }
+  },
+  "outputs": {
+    "status": "done|gaps",
+    "open": "string[]",
+    "security_path": "string"
+  },
+  "entry": "audit",
+  "nodes": [
+    {
+      "id": "audit",
+      "type": "agent",
+      "role": "auditor",
+      "title": {
+        "en": "Threat register check",
+        "ru": "Проверка реестра угроз"
+      },
+      "prompt": "Read the phase's .agents/phases/<id>/SECURITY.md threats and the diff/plan. Per threat a disposition: mitigated (the file:line or check that proves it), accepted (only on the owner's word) or open. Update SECURITY.md with a 'Threat register status' table and return the open threats.",
+      "out": {
+        "open": "string[]",
+        "security_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "open": "[]",
+        "security_path": "audit.security_path"
+      }
+    },
+    {
+      "id": "gaps",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "gaps",
+        "open": "audit.open",
+        "security_path": "audit.security_path"
+      }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "audit",
+      "to": "gaps",
+      "pass": "artifact",
+      "when": "audit.open.length > 0"
+    },
+    {
+      "from": "audit",
+      "to": "goal_check",
+      "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "done",
+      "when": "goal_check.ok != false"
+    },
+    {
+      "from": "goal_check",
+      "to": "gaps"
+    }
+  ],
+  "test": {
+    "id": "secp-1",
+    "sim": {
+      "input": {
+        "phase_id": "ph_a"
+      },
+      "stubs": {
+        "audit": {
+          "open": [],
+          "security_path": ".agents/phases/ph_a/SECURITY.md"
+        }
+      },
+      "expect_path": [
+        "audit",
+        "goal_check",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'"
+      ]
+    }
+  },
+  "goal_check": "validate"
+}

@@ -37,7 +37,8 @@
       "type": "string"
     },
     "gaps": {
-      "type": "Gap[]"
+      "type": "Gap[]",
+      "default": []
     },
     "goal": {
       "type": "string"
@@ -45,6 +46,11 @@
     "quality_mode": {
       "type": "quick|standard|full",
       "default": "standard"
+    },
+    "phase_id": {
+      "type": "string",
+      "default": "",
+      "note": "a finished phase; its summaries and decisions derive the gaps when gaps are not given"
     }
   },
   "outputs": {
@@ -75,17 +81,72 @@
     "max_minutes": 120,
     "max_fan_out": 3
   },
-  "entry": "write_tests",
+  "entry": "derive",
   "nodes": [
     {
+      "id": "derive",
+      "type": "agent",
+      "role": "analyst",
+      "title": {
+        "en": "Derive the gaps",
+        "ru": "Вывести пробелы"
+      },
+      "skip_when": "$inputs.gaps.length > 0 || !$inputs.phase_id",
+      "skip_out": {
+        "gaps": []
+      },
+      "prompt": "Read .agents/phases/<phase_id>/SUMMARY.md, BOOK.md decisions and the plan promises. List the promises and decisions that have no test as gaps[] (file, layer, priority).",
+      "out": {
+        "gaps": "Gap[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "confirm",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Write tests for these?",
+        "ru": "Писать тесты на это?"
+      },
+      "skip_when": "$inputs.gaps.length > 0 || !$inputs.phase_id",
+      "skip_out": {
+        "answer": "",
+        "answer_kind": "agree"
+      },
+      "prompt": "Show the gaps derived from the phase; the owner agrees or strikes lines. A timeout blocks the run.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "agree|strike|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
       "id": "write_tests",
-      "produces": [{"kind": "task-result", "version": 1}],
+      "produces": [
+        {
+          "kind": "task-result",
+          "version": 1
+        }
+      ],
       "type": "lp-task",
       "title": {
         "en": "Write tests",
         "ru": "Написать тесты"
       },
-      "contract_template": "add tests for the given gaps; owns_paths only test directories and fixtures; never_touch source files and existing tests; acceptance - new tests run; a test expected to fail because of a confirmed bug is marked expected_fail with the bug in its name",
+      "contract_template": "add tests for the confirmed gaps (inputs.gaps, else the derive list the owner agreed to); owns_paths only test directories and fixtures; never_touch source files and existing tests; acceptance - new tests run; a test expected to fail because of a confirmed bug is marked expected_fail with the bug in its name",
       "quality_mode": "standard",
       "out": {
         "state": "accepted|failed|blocked|needs_human|cancelled",
@@ -122,7 +183,12 @@
     },
     {
       "id": "classify",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "triager",
       "prompt": "FAILURE_TRIAGE_METHOD per failure: test_defect (fix the test), code_defect (confirmed bug - do not retry, do not edit sources), env_issue (blocked). A critical failure in a layer stops the next layer. In doubt - code_defect. Strategy: rounds 1-2 conservative; more than 80% pass with similar failures - broader; a regression - surgical rollback; stuck 3 rounds - reflect.",
@@ -140,8 +206,19 @@
     },
     {
       "id": "fix_tests",
-      "consumes": [{"kind": "report", "version": 1, "from": "classify"}],
-      "produces": [{"kind": "task-result", "version": 1}],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "classify"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "task-result",
+          "version": 1
+        }
+      ],
       "type": "lp-task",
       "title": {
         "en": "Fix the tests",
@@ -193,6 +270,21 @@
     }
   ],
   "edges": [
+    {
+      "from": "derive",
+      "to": "confirm",
+      "pass": "artifact"
+    },
+    {
+      "from": "confirm",
+      "to": "blocked",
+      "when": "confirm.answer_kind == 'timeout'"
+    },
+    {
+      "from": "confirm",
+      "to": "write_tests",
+      "pass": "artifact"
+    },
     {
       "from": "write_tests",
       "to": "run",
@@ -281,9 +373,14 @@
               "line": 14
             }
           ]
+        },
+        "derive": {
+          "gaps": []
         }
       },
       "expect_path": [
+        "derive",
+        "confirm",
         "write_tests",
         "run",
         "classify",

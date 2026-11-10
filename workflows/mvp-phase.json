@@ -1,0 +1,189 @@
+{
+  "id": "mvp-phase",
+  "name": {
+    "en": "MVP phase from a user story",
+    "ru": "MVP-фаза из пользовательской истории"
+  },
+  "description": {
+    "en": "Starts a phase from a user story: who, what, why, the MVP cut as one vertical slice and what stays out; a plan critic checks the splitting before the story is handed to planning.",
+    "ru": "Начинает фазу из пользовательской истории: кто, что, зачем, MVP-срез одним вертикальным куском и что остаётся за бортом; критик плана проверяет нарезку до передачи в планирование."
+  },
+  "status": "published",
+  "quality_mode": {
+    "default": "standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ]
+  },
+  "budget": {
+    "max_minutes": 60
+  },
+  "examples": {
+    "ru": [
+      "Собери MVP-фазу из истории пользователя",
+      "Сформулируй историю и проверь нарезку перед планом"
+    ],
+    "en": [
+      "Build the MVP phase from a user story",
+      "Write the story and check the split before planning"
+    ]
+  },
+  "not_for": [
+    "lp.plan",
+    "grill-plan"
+  ],
+  "inputs": {
+    "goal": {
+      "type": "string",
+      "required": true
+    }
+  },
+  "outputs": {
+    "status": "done",
+    "story": "any",
+    "goal": "string"
+  },
+  "entry": "story",
+  "nodes": [
+    {
+      "id": "story",
+      "type": "agent",
+      "role": "planner",
+      "title": {
+        "en": "User story",
+        "ru": "История"
+      },
+      "prompt": "Write the user story for the goal: who (the person), what (they do), why (they need it). Then the MVP cut as ONE vertical slice and the out-of-scope list. On a rework verdict, fix what the critic named.",
+      "out": {
+        "who": "string",
+        "what": "string",
+        "why": "string",
+        "slice": "string",
+        "out_of_scope": "string[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "split_check",
+      "type": "agent",
+      "role": "plan-critic",
+      "title": {
+        "en": "Splitting check",
+        "ru": "Проверка нарезки"
+      },
+      "prompt": "Judge the story's MVP cut: is it vertical (end to end), does it fit one wave of at most 8 pieces, is each piece shippable alone. verdict pass or rework with the reason.",
+      "out": {
+        "verdict": "pass|rework",
+        "notes": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 20
+      },
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "story"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "story": "{{story}}",
+        "goal": "$inputs.goal"
+      }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "story",
+      "to": "split_check",
+      "pass": "artifact"
+    },
+    {
+      "from": "split_check",
+      "to": "story",
+      "when": "split_check.verdict == 'rework' && visits('story') < 2"
+    },
+    {
+      "from": "split_check",
+      "to": "goal_check",
+      "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "mvp-1",
+    "sim": {
+      "input": {
+        "goal": "export stats"
+      },
+      "stubs": {
+        "story": {
+          "who": "owner",
+          "what": "sees stats",
+          "why": "to decide",
+          "slice": "report page",
+          "out_of_scope": [
+            "pdf"
+          ]
+        },
+        "split_check": {
+          "verdict": "pass",
+          "notes": "ok"
+        }
+      },
+      "expect_path": [
+        "story",
+        "split_check",
+        "goal_check",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'"
+      ]
+    }
+  },
+  "goal_check": "validate"
+}

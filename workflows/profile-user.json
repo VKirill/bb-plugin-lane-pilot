@@ -1,0 +1,236 @@
+{
+  "id": "profile-user",
+  "name": {
+    "en": "Profile the owner",
+    "ru": "Профиль владельца"
+  },
+  "description": {
+    "en": "With the owner's consent the profile is built from session analysis or from a questionnaire: consent first (sessions, questionnaire or cancel — no answer is cancel), then the branch, then the card and whoami artifacts.",
+    "ru": "С согласия владельца профиль строится из анализа сессий или из анкеты: сначала согласие (сессии, анкета или отмена — молчание это отмена), затем ветка, затем артефакты card и whoami."
+  },
+  "status": "published",
+  "quality_mode": {
+    "default": "standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ]
+  },
+  "budget": {
+    "max_minutes": 60
+  },
+  "examples": {
+    "ru": [
+      "Собери мой профиль",
+      "Обнови профиль владельца через анкету"
+    ],
+    "en": [
+      "Build my profile",
+      "Update the owner's profile with the questionnaire"
+    ]
+  },
+  "not_for": [
+    "about-site",
+    "anamnesis"
+  ],
+  "inputs": {},
+  "outputs": {
+    "status": "done|cancelled",
+    "card": "string"
+  },
+  "entry": "consent",
+  "nodes": [
+    {
+      "id": "consent",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Consent",
+        "ru": "Согласие"
+      },
+      "prompt": "The profile holds personal data. Choose: sessions (analyze recorded sessions), questionnaire (eight questions), cancel. No answer is cancel.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "sessions|questionnaire|cancel|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "sessions",
+      "type": "agent",
+      "role": "errand",
+      "title": {
+        "en": "Session analysis",
+        "ru": "Анализ сессий"
+      },
+      "prompt": "Run `bb lane-pilot anamnesis load --run` to collect the owner's records from the allowed sources; report what was loaded.",
+      "out": {
+        "loaded": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "interview",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Questionnaire",
+        "ru": "Анкета"
+      },
+      "prompt": "Ask the eight questions in order: identity, skills, projects, interests, hobbies, preferences, tools, what not to store. Return the answers as a JSON object keyed by question.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "answered|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 480
+      }
+    },
+    {
+      "id": "record",
+      "type": "agent",
+      "role": "errand",
+      "title": {
+        "en": "Record the answers",
+        "ru": "Записать ответы"
+      },
+      "prompt": "For each answer of the questionnaire run `anamnesis add --kind <kind> --key <key> --statement <answer> --reason questionnaire` (source manual; the store's sensitivity floor applies). A refused answer is skipped, never rewritten.",
+      "out": {
+        "recorded": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "card",
+      "type": "agent",
+      "role": "errand",
+      "title": {
+        "en": "Profile artifacts",
+        "ru": "Артефакты профиля"
+      },
+      "prompt": "Print `anamnesis card` and `anamnesis whoami`; return the card text.",
+      "out": {
+        "card": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 15
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "card": "card.card"
+      }
+    },
+    {
+      "id": "cancelled",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "cancelled",
+        "card": "''"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "consent",
+      "to": "sessions",
+      "when": "consent.answer_kind == 'sessions'"
+    },
+    {
+      "from": "consent",
+      "to": "interview",
+      "when": "consent.answer_kind == 'questionnaire'"
+    },
+    {
+      "from": "consent",
+      "to": "cancelled"
+    },
+    {
+      "from": "interview",
+      "to": "record",
+      "when": "interview.answer_kind == 'answered'"
+    },
+    {
+      "from": "interview",
+      "to": "cancelled"
+    },
+    {
+      "from": "sessions",
+      "to": "card",
+      "pass": "artifact"
+    },
+    {
+      "from": "record",
+      "to": "card",
+      "pass": "artifact"
+    },
+    {
+      "from": "card",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "pu-1",
+    "sim": {
+      "input": {},
+      "stubs": {
+        "record": {
+          "recorded": 8
+        },
+        "card": {
+          "card": "card text"
+        }
+      },
+      "expect_path": [
+        "consent",
+        "interview",
+        "record",
+        "card",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'"
+      ],
+      "human_answers": {
+        "consent": "questionnaire",
+        "interview": "answered"
+      }
+    }
+  },
+  "goal_audit": "exempt"
+}

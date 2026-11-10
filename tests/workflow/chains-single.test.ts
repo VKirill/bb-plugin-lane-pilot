@@ -66,22 +66,22 @@ describe("test-gen", () => {
   const input = { scope: "src/discount.ts", gaps: [{ file: "src/discount.ts", layer: "L1", priority: "high" }] };
   it("the spec's case: tests written, run, a code defect found by the triager, done", async () => {
     const r = await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted", tests_added: 5 }, run: { ok: false, failures: [{ id: "AF-1" }], pass_rate: 80 }, classify: { converged: true, test_defects: [], code_defects: [finding("high", { file: "src/discount.ts", line: 14 })] } } });
-    expect(pathOf(r)).toBe("write_tests run classify done");
+    expect(pathOf(r)).toBe("derive confirm write_tests run classify done");
     expect(out(r)).toMatchObject({ status: "done", tests_added: 5, pass_rate: 80, code_defects: [expect.objectContaining({ line: 14 })] });
   });
 
   it("green tests end at once; no test framework blocks", async () => {
-    expect(pathOf(await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, run: { ok: true } } }))).toBe("write_tests run done");
-    expect(pathOf(await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, run: { ok: false, no_framework: true } } }))).toBe("write_tests run blocked");
-    expect(pathOf(await runSim("test-gen", { input, stubs: { write_tests: { state: "failed" } } }))).toBe("write_tests blocked");
+    expect(pathOf(await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, run: { ok: true } } }))).toBe("derive confirm write_tests run done");
+    expect(pathOf(await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, run: { ok: false, no_framework: true } } }))).toBe("derive confirm write_tests run blocked");
+    expect(pathOf(await runSim("test-gen", { input, stubs: { write_tests: { state: "failed" } } }))).toBe("derive confirm write_tests blocked");
   });
 
   it("test defects are fixed and the tests run again, at most 3 classifications; then partial", async () => {
     const bad = { converged: false, test_defects: [{ id: "T1" }], test_defect_count: 1, code_defects: [] };
     const fixed = await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, run: [{ ok: false }, { ok: true }], classify: bad, fix_tests: { state: "accepted" } } });
-    expect(pathOf(fixed)).toBe("write_tests run classify fix_tests run done");
+    expect(pathOf(fixed)).toBe("derive confirm write_tests run classify fix_tests run done");
     const stuck = await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, run: { ok: false }, classify: bad, fix_tests: { state: "accepted" } } });
-    expect(pathOf(stuck)).toBe("write_tests run classify fix_tests run classify fix_tests run classify partial");
+    expect(pathOf(stuck)).toBe("derive confirm write_tests run classify fix_tests run classify fix_tests run classify partial");
     expect(out(stuck)).toMatchObject({ status: "partial" });
   });
 });
@@ -90,7 +90,7 @@ describe("security-audit", () => {
   const rows = (...found: unknown[][]) => { let at = -1; return (() => { at += 1; return { phase: "p", findings: found[at] ?? [], warnings: [] }; }) as never; };
   it("the spec's case: a quick tier scans two phases, a high finding is reported and review-fix offered", async () => {
     const r = await runSim("security-audit", { input: { scope: ".", tier: "quick" }, stubs: { recon: { found_entry_points: true }, "scan:child": rows([finding("high", { file: "src/auth.ts", line: 9, evidence: "token compared with ==" })], []), report: { severity_distribution: { high: 1 } } } });
-    expect(pathOf(r)).toBe("recon scan report offer done_offer");
+    expect(pathOf(r)).toBe("recon scan threat_model report offer done_offer");
     expect(out(r)).toMatchObject({ status: "done", tier: "quick", proposed_workflow: "review-fix", severity_distribution: { high: 1 } });
     expect((out(r)!.findings as unknown[]).length).toBe(1);
     expect(r.called("scan:child")).toHaveLength(2);
@@ -99,7 +99,7 @@ describe("security-audit", () => {
   it("the tier decides the phases: standard 4, deep 6; no findings means no offer", async () => {
     const standard = await runSim("security-audit", { input: { tier: "standard" }, stubs: { recon: { found_entry_points: true } } });
     expect(standard.called("scan:child")).toHaveLength(4);
-    expect(pathOf(standard)).toBe("recon scan report goal_check done");
+    expect(pathOf(standard)).toBe("recon scan threat_model report goal_check done");
     const deep = await runSim("security-audit", { input: { tier: "deep" }, stubs: { recon: { found_entry_points: true } } });
     expect(deep.called("scan:child")).toHaveLength(6);
   });
@@ -131,7 +131,7 @@ describe("issue-discover", () => {
 describe("retrospective", () => {
   it("the spec's case: lenses, insights, knowledge candidates staged", async () => {
     const r = await runSim("retrospective", { input: { run_id: "r-sample" }, stubs: { retro: { insights: [{ id: "INS-1a2b3c4d" }, { id: "INS-5e6f7a8b" }], retro_path: "retro/r-sample.md" }, stage: { staged: 2 } } });
-    expect(pathOf(r)).toBe("retro stage done");
+    expect(pathOf(r)).toBe("retro living stage done");
     expect(out(r)).toMatchObject({ status: "done", insights: [{ id: "INS-1a2b3c4d" }, { id: "INS-5e6f7a8b" }], candidates_staged: 2, retro_path: "retro/r-sample.md" });
   });
 });
@@ -140,7 +140,7 @@ describe("ui-audit", () => {
   const audit = { score_40: 30, score_20: 14, findings: [finding("medium", { file: "src/pricing.tsx", line: 55, evidence: "focus ring missing" })], report_path: "reports/ui.md" };
   it("the spec's case: the browser captures the states, the designer scores them", async () => {
     const r = await runSim("ui-audit", { input: { url: "http://localhost:4173/pricing" }, stubs: { capture: { status: "pass", screenshots: ["s375.png", "s1280.png"] }, audit } });
-    expect(pathOf(r)).toBe("capture audit goal_check done");
+    expect(pathOf(r)).toBe("capture audit review_doc goal_check done");
     expect(out(r)).toMatchObject({ status: "done", score_40: 30, score_20: 14, screenshots: ["s375.png", "s1280.png"], report_path: "reports/ui.md" });
   });
 
