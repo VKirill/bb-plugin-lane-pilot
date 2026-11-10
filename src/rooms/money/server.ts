@@ -23,7 +23,11 @@ export function createMoney(ctx: Pick<ServerCore, "db" | "bb">) {
     const priceOverrides = overrides();
     const sinceMs = Date.parse(`${new Date(now).toISOString().slice(0, 7)}-01T00:00:00Z`);
     let usd = 0;
+    // One thread is one session however many attempts reused it: it is priced once.
+    const seen = new Set<string>();
     for (const attempt of unmeasuredAttempts(ctx.db, { sinceMs })) {
+      if (seen.has(attempt.threadId)) continue;
+      seen.add(attempt.threadId);
       if (!attempt.providerId || !isPaid(attempt.providerId)) continue;
       const price = priceOf(attempt.providerId, attempt.model ?? "", priceOverrides);
       if (!price) continue;
@@ -36,7 +40,9 @@ export function createMoney(ctx: Pick<ServerCore, "db" | "bb">) {
     const estimated = estimatedUsd(now);
     const cap = moneyCapFrom(settings());
     const monthUsd = Math.round((book.monthUsd + estimated) * 100) / 100;
-    return { ...book, monthUsd, estimated, estimatedUsd: estimated, cap, capSet: cap !== null, left: cap === null ? null : Math.max(0, Math.round((cap - monthUsd) * 100) / 100) };
+    // `unlimited` is no cap on purpose: it reads as «no cap» to the window (Infinity does not survive JSON), and is named apart.
+    const limit = cap !== null && Number.isFinite(cap) ? cap : null;
+    return { ...book, monthUsd, estimated, estimatedUsd: estimated, cap: limit, capSet: limit !== null, unlimited: cap === Infinity, left: limit === null ? null : Math.max(0, Math.round((limit - monthUsd) * 100) / 100) };
   }
   /** Why a writer of this provider and model must wait now: the money cap of a paid lane, or a closed subscription window on its machine. */
   async function holds(providerId: string, model: string, hostId: string): Promise<string | null> {

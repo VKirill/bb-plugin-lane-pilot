@@ -296,7 +296,7 @@ describe("worker", () => {
     expect(at([{ providerId: "prov", version: "1.0", capability: "answers", state: "supported" }]).pause).toBe("unproven");
     expect(probeSetupFailed("helper_probe_run_unusable")).toBe(true);
     expect(probeSetupFailed("the adapter crashed")).toBe(false);
-    expect(PROBES.pause.prompt).toContain("sleep 40");
+    expect(PROBES.pause.prompt).toContain("sleep 600");
     expect(PROBES.pause.expect.test("RESUMED")).toBe(true);
     expect(at([{ providerId: "prov", version: "1.0", capability: "pause", state: "supported" }]).pause).toBe("supported");
     expect(CAPABILITIES).toContain("pause");

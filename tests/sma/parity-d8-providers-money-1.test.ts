@@ -89,6 +89,9 @@ describe("parity d8: providers and money", () => {
     w.db.prepare("UPDATE lane_pilot_attempt SET thread_id='thr_measured' WHERE id='a2'").run();
     w.db.prepare("INSERT INTO lane_pilot_token_cursor(thread_id,project_id,provider_id,last_model,last_provider,total_json,updated_at) VALUES('thr_measured','proj','openai','m','openai',?,1)").run(JSON.stringify({ input: 1_000_000, output: 0, total: 1_000_000 }));
 
+    // An attempt still at work has not had its chance to report usage: it is not «silent» yet.
+    expect(unmeasuredAttempts(w.db, { sinceMs: 0 })).toEqual([]);
+    w.db.prepare("UPDATE lane_pilot_attempt SET state='accepted'").run();
     const silent = unmeasuredAttempts(w.db, { sinceMs: 0 });
     expect(silent.map((attempt) => attempt.attemptId)).toEqual(["a1"]);
     expect(silent[0]!.appetiteTokens).toBe(1_000_000);
@@ -173,19 +176,21 @@ describe("parity d8: capability drills", () => {
     log: { warn: () => undefined, info: () => undefined, error: () => undefined },
   });
 
-  it("[sma:m_pr_doc_drill] the nested probe passes only when the events show the `bb lane-pilot status` call, and the role probe needs the spawn metadata", async () => {
+  it("[sma:m_pr_doc_drill] the nested probe passes only when a tool call ran `bb lane-pilot status` — the prompt and the model's own words do not count", async () => {
     const nested = (PROBES["documentary.nested"] as { check: (args: never) => Promise<{ ok: boolean; reason?: string }> }).check;
-    const role = (PROBES["documentary.role"] as { check: (args: never) => Promise<{ ok: boolean; reason?: string }> }).check;
     const args = (events: unknown[]) => ({ bb: fakeBb(events), threadId: "thr", hostId: "h", workspace: "/w", output: "NESTED" }) as never;
-    const bad = await nested(args([{ type: "message", text: "I ran it, NESTED" }]));
+    // What a real thread always holds: the prompt (which names the command) and the reply that claims it.
+    const words = [
+      { type: "item/completed", data: { item: { type: "userMessage", text: PROBES["documentary.nested"].prompt } } },
+      { type: "item/completed", data: { item: { type: "agentMessage", text: "I ran `bb lane-pilot status`. NESTED" } } },
+    ];
+    const bad = await nested(args(words));
     expect(bad.ok).toBe(false);
     expect(bad.reason).toContain("bb lane-pilot status");
-    const good = await nested(args([{ type: "tool_call", input: { command: "bb lane-pilot status" } }, { type: "tool_result", text: "lane-pilot 0.1.517" }]));
+    const good = await nested(args([...words, { type: "item/completed", data: { item: { type: "commandExecution", command: "bb lane-pilot status" } } }]));
     expect(good.ok).toBe(true);
-    const noRole = await role(args([{ type: "message", text: "my role is writer" }]));
-    expect(noRole.ok).toBe(false);
-    const withRole = await role(args([{ type: "spawn", metadata: { role: "pm-reader" } }]));
-    expect(withRole.ok).toBe(true);
+    // The role probe's prompt must not name the role: the answer is then the proof.
+    expect(PROBES["documentary.role"].prompt).not.toContain("pm-reader");
   });
 
   it("[sma:m_pr_claude_pause] a thread that stops, is confirmed stopped and answers RESUMED on the same id passes pause; one still running fails with the step named", async () => {

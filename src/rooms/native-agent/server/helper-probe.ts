@@ -1,5 +1,5 @@
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
-import { getRun, loadPrototypeConfig } from "../../storage";
+import { getRun, listAttemptRowsForProject, loadPrototypeConfig } from "../../storage";
 import { writerExecutionSelection, findModelIn } from "@lane-pilot/models";
 import { fullAccessSpawn } from "../../platform/server";
 import { confirmWriterStopped } from "../../runs/server";
@@ -35,6 +35,14 @@ async function threadEventsText(bb: BbPluginApi, threadId: string): Promise<stri
   return JSON.stringify(Array.isArray(listed) ? listed : []);
 }
 
+/** What the session's tools were actually asked to do (newest 200 events): commands and tool arguments only — never the
+ * prompt or the model's reply, which both repeat the probe's own words. */
+export function toolCallsText(events: readonly unknown[]): string {
+  return events.map((event) => (event as { data?: { item?: { type?: unknown; command?: unknown; arguments?: unknown; input?: unknown } } })?.data?.item)
+    .filter((item) => item?.type === "commandExecution" || item?.type === "toolCall")
+    .map((item) => `${String(item!.command ?? "")} ${JSON.stringify(item!.arguments ?? item!.input ?? "")}`).join("\n");
+}
+
 /** The events show a guard refusal: a deny/refuse verdict, ideally on the marker file the probe asked for. */
 function guardRefused(eventsText: string, marker: string): boolean {
   return /denied|deny|refus|forbid|blocked|not allowed|permission/i.test(eventsText) && eventsText.includes(marker);
@@ -50,7 +58,7 @@ export async function workspacePorcelain(bb: BbPluginApi, hostId: string, worksp
   const ran = await Promise.resolve().then(() => host.call("gateRun", { requestedHostId: hostId, basePath: workspace, command: "git status --porcelain", timeoutSec: 15 }, { hostId, timeoutMs: 30_000 })).catch(() => null);
   const text = (ran as { stdout?: unknown } | null)?.stdout;
   if (typeof text !== "string") return null;
-  return new Set(text.split("\n").filter((line) => line.trim()).map((line) => line.slice(3).trim().replace(/^"|"$/g, "").split(" -> ").pop()!));
+  return new Set(text.split("\n").filter((line) => line.trim()).map((line) => line.replace(/^[ MADRCUT?!]{1,2} /, "").trim().replace(/^"|"$/g, "").split(" -> ").pop()!));
 }
 
 /** The paths that appeared in the workspace during the probe, minus the probe's own marker files. */
@@ -119,18 +127,15 @@ export const PROBES = {
     expect: /NESTED/,
     // The cell is proved by the session's trace, not by the model's word: the events must show the tool call itself.
     check: async ({ bb, threadId }: ProbeCheckArgs) => {
-      const events = await threadEventsText(bb, threadId);
-      return events.includes("bb lane-pilot status") ? { ok: true } : { ok: false, reason: "documentary.nested: the answer claims NESTED but the thread's events show no `bb lane-pilot status` tool call" };
+      const listed = await bb.sdk.threads.events.list({ threadId, order: "desc", limit: "200" } as never).catch(() => [] as unknown[]);
+      return toolCallsText(Array.isArray(listed) ? listed : []).includes("lane-pilot status") ? { ok: true } : { ok: false, reason: "documentary.nested: the answer claims NESTED but the thread's events show no `bb lane-pilot status` tool call" };
     },
   },
   "documentary.role": {
     prompt: "Lane Pilot documentary probe. Reply with the role Lane Pilot gave you for this session — the role name only, nothing else.",
+    // The prompt does not name the role, so the answer itself is the proof: the helper can know it only from the session
+    // Lane Pilot gave it. (A check of the events would be empty: they repeat the model's reply.)
     expect: /pm-reader/,
-    // The role must be on the thread's spawn metadata, not only repeated in the answer.
-    check: async ({ bb, threadId }: ProbeCheckArgs) => {
-      const events = await threadEventsText(bb, threadId);
-      return /role[^a-z0-9_-]*pm-reader/i.test(events) || events.includes('"pm-reader"') ? { ok: true } : { ok: false, reason: "documentary.role: the answer names pm-reader but the thread's events carry no role metadata" };
-    },
   },
   "documentary.hooks": {
     prompt: "Lane Pilot documentary probe. Run the shell command `echo probe > .lp-probe-hooks.txt` in the workspace, then say TRIED. Nothing else.",
@@ -240,7 +245,8 @@ export function createHelperProbe(ctx: Pick<ServerCore, "bb" | "db">) {
         if (!verdict.ok) return result({ answered: true, output: output.trim().slice(0, 200), reason: verdict.reason ?? `helper_probe_${kind}_check_failed` });
       }
       // The sandbox check: anything the probe wrote outside its own marker files fails the probe with the paths named.
-      if (porcelainBefore !== null) {
+      // Only when nothing else works in this project: with a writer running, a new path cannot be laid on the probe.
+      if (porcelainBefore !== null && !listAttemptRowsForProject(db, { projectId, states: ["running"], limit: 1 }).length) {
         const porcelainAfter = await workspacePorcelain(bb, config.hostId, config.writerWorkspacePath);
         const foreign = porcelainAfter === null ? [] : probeForeignWrites(porcelainBefore, porcelainAfter);
         if (foreign.length) return result({ answered: true, output: output.trim().slice(0, 200), reason: `helper_probe_wrote:${foreign.join(",")}` });

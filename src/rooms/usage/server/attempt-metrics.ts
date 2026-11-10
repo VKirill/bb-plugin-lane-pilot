@@ -208,10 +208,10 @@ export function attemptMetrics(db: Database.Database, input: { projectId: string
  * Attempts since `sinceMs` whose writer thread reported no token usage (the vendor is silent): provider, model and the
  * task's appetite in tokens, so the money book can price them as estimates (SMA «Estimate when the vendor is silent»).
  */
-export function unmeasuredAttempts(db: Database.Database, input: { sinceMs: number }): Array<{ taskId: string; attemptId: string; providerId: string | null; model: string | null; appetiteTokens: number | null }> {
+export function unmeasuredAttempts(db: Database.Database, input: { sinceMs: number }): Array<{ taskId: string; attemptId: string; threadId: string; providerId: string | null; model: string | null; appetiteTokens: number | null }> {
   const attempts = attemptContractRowsSince(db, input.sinceMs);
   const cursorQuery = db.prepare("SELECT provider_id, last_provider, last_model, total_json FROM lane_pilot_token_cursor WHERE thread_id = ?");
-  const out: Array<{ taskId: string; attemptId: string; providerId: string | null; model: string | null; appetiteTokens: number | null }> = [];
+  const out: Array<{ taskId: string; attemptId: string; threadId: string; providerId: string | null; model: string | null; appetiteTokens: number | null }> = [];
   for (const row of attempts) {
     const cursor = cursorQuery.get(row.thread_id) as CursorRow | undefined;
     const billed = cursor ? billedFrom(parseBreakdown(cursor.total_json)) : null;
@@ -223,7 +223,7 @@ export function unmeasuredAttempts(db: Database.Database, input: { sinceMs: numb
       appetiteTokens = typeof contract.appetite?.tokens === "number" && contract.appetite.tokens > 0 ? contract.appetite.tokens : null;
     } catch { /* a contract that does not parse has no appetite */ }
     out.push({
-      taskId: row.task_id, attemptId: row.attempt_id,
+      taskId: row.task_id, attemptId: row.attempt_id, threadId: row.thread_id,
       providerId: (cursor?.last_provider || cursor?.provider_id || receipt?.provider_id) ?? null,
       model: (cursor?.last_model || receipt?.model) ?? null,
       appetiteTokens,
