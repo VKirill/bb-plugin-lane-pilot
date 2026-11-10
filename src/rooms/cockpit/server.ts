@@ -8,6 +8,7 @@ import { tokenDailySeries, tokenDailyTotal } from "../usage/server";
 import { readTaskApproach } from "../tasks";
 import { designJournalLines, readinessWords, trainedConditions, trainingRatios } from "../design-eval";
 import { runOnHost } from "@lane-pilot/host-calls";
+import { readForgeReceipts } from "../forge";
 import { listPhasePartsSince } from "../phase";
 import { activeMemoryDigestRows } from "@lane-pilot/memory-core";
 
@@ -81,12 +82,16 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
       return { exitCode: 0, output: rows.map((row) => `[${row.kind}] ${row.content}`).join("\n").slice(0, 20_000) };
     },
     /** Order from the forge: the person's order goes to the project's PM, who runs lane_pilot_forge draft with it. */
-    cockpit_forge_order: async ({ projectId, kind, name, brief }: { projectId: string; kind: "skill" | "role" | "workflow"; name: string; brief: string }) => {
+    cockpit_forge_order: async ({ projectId, kind, name, brief, body }: { projectId: string; kind: "skill" | "role" | "workflow"; name: string; brief: string; body?: string }) => {
       const run = activeRun(projectId);
       if (!run?.pm_thread_id) throw new Error("no Lane Pilot PM chat is open in this project: enable Lane Pilot in a chat first");
-      await bb.sdk.threads.send({ threadId: run.pm_thread_id, mode: "queue-if-active", input: [{ type: "text", mentions: [], text: `[Lane Pilot window] The owner orders from the forge: a ${kind} «${name}». Run lane_pilot_forge {action:"draft", kind:"${kind}", name:"${name}", brief} with this brief: ${brief}` }] } as never);
+      const own = body?.trim() ? ` The owner wrote the text himself: pass it as body, word for word:\n${body}` : "";
+      await bb.sdk.threads.send({ threadId: run.pm_thread_id, mode: "queue-if-active", input: [{ type: "text", mentions: [], text: `[Lane Pilot window] The owner orders from the forge: a ${kind} «${name}». Run lane_pilot_forge {action:"draft", kind:"${kind}", name:"${name}", brief} with this brief: ${brief}${own}` }] } as never);
       return { ordered: true, pmThreadId: run.pm_thread_id };
     },
+    /** The forge drafts of the project, for the «roster, drafts and the need-a-new-one box» (SMA m_sw_agents). */
+    cockpit_forge_list: async ({ projectId }: { projectId: string }) =>
+      (await readForgeReceipts(kv, projectId)).map((row) => ({ kind: row.kind, name: row.name, ok: row.ok, findings: row.findings.map((finding) => finding.message) })),
     /** The designer's statistics: ratios, the conditions of «trained», the readiness words. */
     cockpit_designer: async ({ projectId }: { projectId?: string }) => {
       const all = await designJournalLines(kv);

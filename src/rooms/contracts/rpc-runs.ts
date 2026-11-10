@@ -139,7 +139,9 @@ export const rpcRuns = {
       }).strict()),
       catalog: z.object({
         bbPlugins: z.array(z.object({ id: z.string(), name: z.string() }).strict()),
-        skills: z.array(z.object({ name: z.string(), description: z.string() }).strict()),
+        skills: z.array(z.object({ name: z.string(), description: z.string(), /** Which store the skill was found in (SMA m_sw_skills); absent on old records. */ store: z.string().optional() }).strict()),
+        /** Where the skills list looked, for the empty-list message (SMA m_sw_skills). */
+        skillsLooked: z.array(z.string()).optional(),
       }).strict(),
       mandatory: z.object({ bbPlugins: z.array(z.string()), mcpServers: z.array(z.string()) }).strict(),
       providers: z.record(z.string(), z.array(z.string())),

@@ -59,13 +59,14 @@ export function lintDraft(kind: ForgeKind, name: string, text: string): LintFind
 
 export type ForgeReceipt = { kind: ForgeKind; name: string; path: string; sha256: string; ok: boolean; findings: LintFinding[]; at: number; requestedAt?: number; enabledAt?: number; enabledBy?: string };
 
-/** The Creator prompt: the brief of the writer who forges the one draft. */
-export function creatorBrief(kind: ForgeKind, name: string, brief: string): string {
+/** The Creator prompt: the brief of the writer who forges the one draft. With `body`, the owner wrote the text himself: the Creator keeps it word for word and only adds the front matter (SMA m_sw_create_dialog). */
+export function creatorBrief(kind: ForgeKind, name: string, brief: string, body?: string): string {
   const file = draftFile(kind, name);
   return [`You are the Creator (forge). Write exactly one ${kind} draft, ${file}, and nothing else.`,
     kind === "skill" ? "A skill: front matter with name and a description that says what it does and «Use when …» triggers; then the steps, short; the files it reads; what it never does."
       : kind === "role" ? "A role (a Claude Code agent): front matter with name, description with «Use when …», model, tools (the fewest that do the job); then what the role does, its inputs and its report."
       : "A workflow: Lane Pilot workflow JSON (id, name, description, examples, inputs, outputs, entry, nodes, edges, test) with roles that exist.",
     "Never grant: permission bypass, every tool, an unrestricted or destructive shell, secrets, the guard or the hooks, a download piped into a shell.",
-    `What it is for: ${brief}`].join("\n");
+    `What it is for: ${brief}`,
+    ...(body?.trim() ? ["The owner wrote the text himself: keep it word for word as the body and add only the front matter (name, and a description with «Use when …»):", body] : [])].join("\n");
 }
