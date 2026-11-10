@@ -33,32 +33,54 @@ export function rowUsd(row: DailyRow, overrides: Record<string, Record<string, P
   return (row.inputTokens * price.inputPerM + row.outputTokens * price.outputPerM + row.cachedTokens * price.cachedPerM) / 1_000_000;
 }
 
+/** One day of the spend series: the day total and the split by provider lane (the account the spend rows carry). */
+export type SpendDay = { day: string; usd: number; byProvider: Record<string, number> };
+
 /** Spent month to date and the spend series over the last 14 days (the spend book), from the daily token rows. */
-export function spendBook(rows: readonly DailyRow[], now: number, overrides: Record<string, Record<string, Price>> = {}): { monthUsd: number; series: Array<{ day: string; usd: number }>; byProvider: Record<string, number> } {
+export function spendBook(rows: readonly DailyRow[], now: number, overrides: Record<string, Record<string, Price>> = {}): { monthUsd: number; series: SpendDay[]; table: SpendDay[]; byProvider: Record<string, number> } {
   const month = new Date(now).toISOString().slice(0, 7);
   const days = Array.from({ length: 14 }, (_, index) => new Date(now - (13 - index) * 86_400_000).toISOString().slice(0, 10));
-  const series = days.map((day) => ({ day, usd: 0 }));
+  const series: SpendDay[] = days.map((day) => ({ day, usd: 0, byProvider: {} }));
   const byProvider: Record<string, number> = {};
   let monthUsd = 0;
   for (const row of rows) {
     const usd = rowUsd(row, overrides);
     if (row.day.startsWith(month)) { monthUsd += usd; byProvider[row.providerId] = (byProvider[row.providerId] ?? 0) + usd; }
     const slot = series.find((entry) => entry.day === row.day);
-    if (slot) slot.usd += usd;
+    if (slot) {
+      slot.usd += usd;
+      if (usd) slot.byProvider[row.providerId] = Math.round(((slot.byProvider[row.providerId] ?? 0) + usd) * 100) / 100;
+    }
   }
-  return { monthUsd: Math.round(monthUsd * 100) / 100, series: series.map((entry) => ({ ...entry, usd: Math.round(entry.usd * 100) / 100 })), byProvider };
+  const table = series.map((entry) => ({ ...entry, usd: Math.round(entry.usd * 100) / 100 }));
+  return { monthUsd: Math.round(monthUsd * 100) / 100, series: table, table, byProvider };
 }
 
-/** Where the money cap is read: the global setting money.monthly_cap_usd; a non-number or ≤ 0 means no cap set. */
+/**
+ * Where the money cap is read: the global setting money.monthly_cap_usd; a non-number or ≤ 0 means no cap set, the
+ * explicit word `unlimited` means no cap on purpose (Infinity, so a paid lane never holds on it).
+ */
 export function capOf(value: unknown): number | null {
+  if (value === "unlimited") return Infinity;
   const cap = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
   return Number.isFinite(cap) && cap > 0 ? cap : null;
 }
 
-/** Money spent — stop: a paid lane holds once this month's spend reached the cap; a subscription lane never holds for money. */
-export function moneyHold(providerId: string, monthUsd: number, cap: number | null): string | null {
+/**
+ * The cap the settings give a paid lane. money.cap_unset_zero (off by default) switches the SMA «Paid lane has no money»
+ * behaviour on: with no monthly cap set the cap is 0 and a paid lane holds until the person sets one.
+ */
+export function moneyCapFrom(settings: Record<string, unknown>): number | null {
+  const cap = capOf(settings["money.monthly_cap_usd"]);
+  return cap === null && settings["money.cap_unset_zero"] ? 0 : cap;
+}
+
+/** Money spent — stop: a paid lane holds once this month's spend reached the cap, or the task's own estimate would cross it; a subscription lane never holds for money. */
+export function moneyHold(providerId: string, monthUsd: number, cap: number | null, taskUsd = 0): string | null {
   if (!isPaid(providerId) || cap === null) return null;
-  return monthUsd >= cap ? `money cap: ${monthUsd.toFixed(2)} of ${cap.toFixed(2)} USD spent this month on paid lanes; ${providerId} waits for the next month or a higher money.monthly_cap_usd, subscription lanes go on` : null;
+  if (monthUsd >= cap) return `money cap: ${monthUsd.toFixed(2)} of ${cap.toFixed(2)} USD spent this month on paid lanes; ${providerId} waits for the next month or a higher money.monthly_cap_usd, subscription lanes go on`;
+  if (taskUsd > 0 && monthUsd + taskUsd > cap) return `money cap: the task's estimate of ${taskUsd.toFixed(2)} USD would cross the ${cap.toFixed(2)} USD monthly cap (${monthUsd.toFixed(2)} spent on paid lanes); ${providerId} waits for the next month or a higher money.monthly_cap_usd`;
+  return null;
 }
 
 /** Subscription window open right now (SMA: Five hours and seven days, Open right now): closed at 98% until it resets. */

@@ -996,6 +996,13 @@ export function listRunTransitions(db: LanePilotDatabase, runId: string): Array<
 }
 
 /** A project's attempts since a time, optionally one task's (the metrics report). */
+/** Every attempt since `sinceMs` that started a writer thread, with its task's contract (the spend-estimate reads both). */
+export function attemptContractRowsSince(db: LanePilotDatabase, sinceMs: number): Array<{ attempt_id: string; task_id: string; run_id: string; thread_id: string; contract_json: string }> {
+  return db.prepare(`SELECT a.id AS attempt_id, a.task_id, a.run_id, a.thread_id, t.contract_json
+    FROM lane_pilot_attempt a JOIN lane_pilot_task t ON t.run_id=a.run_id AND t.id=a.task_id
+    WHERE a.created_at >= ? AND a.thread_id IS NOT NULL`).all(sinceMs) as Array<{ attempt_id: string; task_id: string; run_id: string; thread_id: string; contract_json: string }>;
+}
+
 export function listProjectAttemptsSince(db: LanePilotDatabase, input: { projectId: string; sinceMs: number; taskId?: string }): Array<{ id: string; run_id: string; task_id: string; attempt_no: number; state: string; thread_id: string | null; created_at: number; updated_at: number }> {
   return db.prepare(`SELECT a.id, a.run_id, a.task_id, a.attempt_no, a.state, a.thread_id, a.created_at, a.updated_at
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id = a.run_id

@@ -6,6 +6,6 @@ export { tokenUsageRpc } from "./rpc/token-usage";
 export { billedFrom, openTokenCursor, parseBreakdown, syncTokenUsage, threadUsage } from "./token-usage";
 export { withUsage } from "./step-usage";
 export type { StepUsage } from "./step-usage";
-export { attemptMetrics, renderAttemptMetrics } from "./attempt-metrics";
+export { attemptMetrics, renderAttemptMetrics, unmeasuredAttempts } from "./attempt-metrics";
 export type { AttemptMetrics, AttemptMetricsReport, CostState } from "./attempt-metrics";
 export { tokenCursorRow, tokenDailyByModel, tokenDailyRowsSince, tokenDailySeries, tokenDailyTotal } from "./token-usage";

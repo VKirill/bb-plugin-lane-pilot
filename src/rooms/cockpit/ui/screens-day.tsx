@@ -32,7 +32,7 @@ export function TodayScreen({ rpc, projectId }: { rpc: Rpc; projectId: string })
   );
 }
 
-type MoneyStatus = { monthUsd: number; cap: number | null; left: number | null; byProvider?: Record<string, number>; days?: Array<{ day: string; usd: number }> };
+type MoneyStatus = { monthUsd: number; estimatedUsd?: number; cap: number | null; left: number | null; byProvider?: Record<string, number>; table?: Array<{ day: string; usd: number; byProvider: Record<string, number> }> };
 type Windows = { at: string | null; windows: Record<string, { utilization: number; resetsAt: string | null }> };
 
 /** Money: what the month cost on paid lanes, the money cap dialog, the subscription window bars, the accounts. */
@@ -43,7 +43,8 @@ export function MoneyScreen({ rpc, hostId }: { rpc: Rpc; hostId: string | null }
   const [saved, setSaved] = useState<string | null>(null);
   const saveCap = async () => {
     // Compare-and-swap on the setting's version: a conflict answers with the version there is, and the save goes once more on it.
-    const save = (expectedVersion: number) => rpc.call("save_setting", { projectId: GLOBAL_SETTINGS_PROJECT_ID, key: "money.monthly_cap_usd", value: Number(cap), expectedVersion });
+    // «unlimited» is the explicit no-cap value (capOf reads it as Infinity); anything else is a dollar number.
+    const save = (expectedVersion: number) => rpc.call("save_setting", { projectId: GLOBAL_SETTINGS_PROJECT_ID, key: "money.monthly_cap_usd", value: cap.trim() === "unlimited" ? "unlimited" : Number(cap), expectedVersion });
     let answer: { ok?: boolean; conflict?: boolean; version?: number } | { ok: false; error: string } = await save(0).catch((cause: unknown) => ({ ok: false as const, error: String(cause) }));
     if ("conflict" in answer && answer.conflict && typeof answer.version === "number") answer = await save(answer.version).catch((cause: unknown) => ({ ok: false as const, error: String(cause) }));
     setSaved((answer as { ok?: boolean }).ok ? t("ckSent") : JSON.stringify(answer).slice(0, 200));
@@ -52,18 +53,31 @@ export function MoneyScreen({ rpc, hostId }: { rpc: Rpc; hostId: string | null }
   return (
     <div className="space-y-4">
       <Panel title={t("ckScreen_money")} testId="ck-money" actions={<RefreshButton onClick={money.reload} />}>
-        <Loaded state={money}>{(m) => (
+        <Loaded state={money}>{(m) => {
+          // The spend table: one row per day of the last 14, one column per provider lane (the account spend has).
+          const providers = [...new Set((m.table ?? []).flatMap((row) => Object.keys(row.byProvider)))].sort();
+          const days = (m.table ?? []).filter((row) => row.usd > 0 || Object.keys(row.byProvider).length);
+          return (
           <div className="space-y-2 text-sm">
             <p className="text-lg font-semibold">{fill("ckMoneyMonth", { v: m.monthUsd.toFixed(2) })}{m.cap !== null ? ` / $${m.cap}` : ""}</p>
+            {(m.estimatedUsd ?? 0) > 0 ? <p className="text-xs text-muted-foreground">{fill("ckMoneyEstimated", { v: (m.estimatedUsd ?? 0).toFixed(2) })}</p> : null}
             {m.byProvider ? <ul className="text-xs text-muted-foreground">{Object.entries(m.byProvider).map(([provider, usd]) => <li key={provider}>{provider}: ${Number(usd).toFixed(2)}</li>)}</ul> : null}
-            {/* The money cap dialog: the monthly cap of paid lanes, saved as the global setting money.monthly_cap_usd. */}
+            {days.length ? (
+              <div className="overflow-x-auto" data-testid="ck-money-table">
+                <table className="w-full text-xs"><thead><tr className="text-left text-muted-foreground"><th className="py-1 pr-2">{t("ckMoneyDay")}</th>{providers.map((provider) => <th key={provider} className="py-1 pr-2">{provider}</th>)}<th className="py-1 pr-2">{t("ckMoneyTotal")}</th></tr></thead>
+                  <tbody>{days.map((row) => <tr key={row.day} className="border-t border-border/60"><td className="py-1 pr-2">{row.day}</td>{providers.map((provider) => <td key={provider} className="py-1 pr-2">{row.byProvider[provider] ? `$${row.byProvider[provider].toFixed(2)}` : "·"}</td>)}<td className="py-1 pr-2">${row.usd.toFixed(2)}</td></tr>)}</tbody>
+                </table>
+              </div>
+            ) : null}
+            {/* The money cap dialog: the monthly cap of paid lanes, saved as the global setting money.monthly_cap_usd; «unlimited» means no cap on purpose. */}
             <div className="flex flex-wrap items-end gap-2" data-testid="ck-money-cap">
               <label className="text-xs text-muted-foreground">{t("ckMoneyCap")}<input className="mt-1 block w-28 rounded border border-border bg-background px-2 py-1 text-base sm:text-sm" inputMode="decimal" value={cap} onChange={(e) => setCap(e.target.value)} placeholder={m.cap !== null ? String(m.cap) : "50"} /></label>
-              <Button size="sm" disabled={!cap || Number.isNaN(Number(cap))} onClick={() => void saveCap()}>{t("ckMoneyCapSave")}</Button>
+              <Button size="sm" disabled={!cap || (cap.trim() !== "unlimited" && Number.isNaN(Number(cap)))} onClick={() => void saveCap()}>{t("ckMoneyCapSave")}</Button>
               {saved ? <span className="text-xs text-muted-foreground">{saved}</span> : null}
             </div>
           </div>
-        )}</Loaded>
+          );
+        }}</Loaded>
       </Panel>
       <Panel title={t("ckWindows")} testId="ck-windows">
         <Loaded state={windows}>{(w) => !Object.keys(w.windows).length ? <p className="text-sm text-muted-foreground">{t("ckEmpty")}</p> : (

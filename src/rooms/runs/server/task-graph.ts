@@ -1,11 +1,18 @@
 import { taskRedispatchBase } from "@lane-pilot/contracts";
-import { taskGraphRows } from "../../storage";
+import { getRunObjective, taskGraphRows } from "../../storage";
 import type { LanePilotDatabase } from "../../storage";
 
 /** Why a task waits for another: its depends_on, the same files (owns_paths or area), one writer per folder without git, an unanswered question. */
 export type TaskGraphEdgeKind = "depends" | "files" | "folder" | "question";
-export type TaskGraphNode = { id: string; title: string; state: "running" | "waiting" | "queued" | "blocked"; threadId: string | null };
-export type TaskGraph = { nodes: TaskGraphNode[]; edges: Array<{ from: string; to: string; kind: TaskGraphEdgeKind }> };
+export type TaskGraphNode = {
+  id: string; title: string; state: "running" | "waiting" | "queued" | "blocked"; threadId: string | null;
+  /** The contract's area (the batch view's composition), when the task names one. */
+  area?: string | null;
+  /** The latest attempt: its id (the retry/cancel decision acts on it) and, for a blocked task, why it stopped. */
+  attemptId?: string | null;
+  reason?: string | null;
+};
+export type TaskGraph = { nodes: TaskGraphNode[]; edges: Array<{ from: string; to: string; kind: TaskGraphEdgeKind }>; objective: string | null };
 
 const WORKING = new Set(["spawn_requested", "spawn_unknown", "running", "cancel_requested", "validation_failed"]);
 /** The writer-agent stage reason a waiting task records (src/rooms/writer/server/start.ts). */
@@ -21,9 +28,9 @@ const kindOfWait = (why: string): TaskGraphEdgeKind =>
  */
 export function buildTaskGraph(db: LanePilotDatabase, runId: string): TaskGraph {
   const rows = taskGraphRows(db, runId) as Array<{
-    id: string; contract_json: string; state: string; thread_id: string | null; stage_state: string | null; stage_reason: string | null;
+    id: string; contract_json: string; state: string; thread_id: string | null; attempt_id: string | null; attempt_reason: string | null; stage_state: string | null; stage_reason: string | null;
   }>;
-  const contract = (json: string): { title?: unknown; depends_on?: unknown } => { try { return JSON.parse(json) as never; } catch { return {}; } };
+  const contract = (json: string): { title?: unknown; depends_on?: unknown; area?: unknown } => { try { return JSON.parse(json) as never; } catch { return {}; } };
   const open = rows.filter((row) => row.state === "queued" || WORKING.has(row.state));
   const blocked = new Map(rows.filter((row) => row.state === "blocked").map((row) => [row.id, row]));
   // The same redispatch rule as the writer's wait (latestTaskAttemptState): `P1`, `P1.2`, `P1.2.2` are one task sent again.
@@ -35,8 +42,13 @@ export function buildTaskGraph(db: LanePilotDatabase, runId: string): TaskGraph 
   const nodes = new Map<string, TaskGraphNode>();
   const edges = new Map<string, TaskGraph["edges"][number]>();
   const node = (row: (typeof rows)[number], state: TaskGraphNode["state"]) => {
-    const title = contract(row.contract_json).title;
-    nodes.set(row.id, { id: row.id, title: typeof title === "string" && title ? title : row.id, state, threadId: row.thread_id });
+    const json = contract(row.contract_json);
+    nodes.set(row.id, {
+      id: row.id, title: typeof json.title === "string" && json.title ? json.title : row.id, state, threadId: row.thread_id,
+      area: typeof json.area === "string" && json.area ? json.area : null,
+      attemptId: row.attempt_id,
+      reason: row.attempt_reason ?? row.stage_reason,
+    });
   };
   for (const row of open) {
     const waiting = row.state === "queued" && row.stage_state === "pending" && /^waiting/.test(row.stage_reason ?? "");
@@ -54,5 +66,5 @@ export function buildTaskGraph(db: LanePilotDatabase, runId: string): TaskGraph 
     const wait = row.state === "queued" ? WAIT_FOR_TASK.exec(row.stage_reason ?? "") : null;
     if (wait && !edges.has(`${wait[1]}>${row.id}`)) edge(wait[1]!, row.id, kindOfWait(wait[2]!));
   }
-  return { nodes: [...nodes.values()], edges: [...edges.values()] };
+  return { nodes: [...nodes.values()], edges: [...edges.values()], objective: getRunObjective(db, runId) };
 }

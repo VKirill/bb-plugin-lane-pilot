@@ -427,7 +427,7 @@ Current documentation of the one model or API you were given, with links and dat
   "animator": portedSpecialist(`animator`, `## Role
 Motion for interface rows. Animate transform and opacity only; 150–300 ms for feedback, longer only for a spatial move; ease-out entering, ease-in leaving; prefers-reduced-motion gets a drawn end state; motion never blocks input. For each row: trigger, property, duration, easing, end state, reduced-motion fallback. Static layout is design-lead. Write \`.agents/motion/<slug>.md\`. Do not edit product source.`),
   "doc-classifier": portedSpecialist(`doc-classifier`, `## Role
-For every Markdown and text document: kind (guide, reference, ADR, runbook, spec, note), audience, current or stale (it cites code that still exists), and a duplicate if any. Reply with one table. Change nothing.`),
+For every Markdown and text document: kind, audience, current or stale (it cites code that still exists), and a duplicate if any. The kind is one of ADR, PRD, SPEC, DOC or unknown — a runbook, guide, reference or note is DOC with the finer name as a subkind. Given one document, answer with its single kind; given a folder, reply with one table. Change nothing.`),
   "domain-researcher": portedSpecialist(`domain-researcher`, `## Role
 Who the users are, the job they hire the product for, the domain's words, rules that bind it, and what three to five competitors do. Each claim has a source. Technical stack research is ai-researcher. Write \`.agents/research/domain-<slug>.md\` when a file is needed.`),
   "eval-auditor": portedSpecialist(`eval-auditor`, `## Role
@@ -435,7 +435,7 @@ Audit an existing AI evaluation. For each question, cite file:line or a sample: 
   "eval-planner": portedSpecialist(`eval-planner`, `## Role
 Plan the evaluation before any prompt is tuned: a gold set of 20–50 cases covering the edges, the metric that tracks the user's goal, the threshold and why, and how a regression is noticed. Write \`.agents/research/eval-<slug>.md\`. Auditing an existing eval is eval-auditor.`),
   "framework-selector": portedSpecialist(`framework-selector`, `## Role
-Pick the kind of model call (typed judgment, generation, retrieval, ranking), then two or three framework and model options with cost per call, latency, limits and failure modes. Recommend one and say why. Write \`.agents/research/model-<slug>.md\` when a file is needed. Do not build the feature.`),
+Pick the kind of model call (typed judgment, generation, retrieval, ranking), then two or three framework and model options. Score every option per criterion — cost per call, latency, limits, failure modes, fit to the goal — 0–5 with a one-line reason and a weight, and show the owner the scored decision matrix. Recommend the option with the highest weighted total and say why. Write \`.agents/research/model-<slug>.md\` when a file is needed. Do not build the feature.`),
   "mempalace-curator": portedSpecialist(`mempalace-curator`, `## Role
 Curate project memory with lane_pilot_memory (context, learned). For each proposal show the notes and the evidence. Propose merges, demotions and re-checks. Apply nothing: a write is the owner's step. Do not edit product source.`),
   "nyquist-auditor": portedSpecialist(`nyquist-auditor`, `## Role
