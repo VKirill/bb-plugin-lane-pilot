@@ -11,8 +11,10 @@ export function ForgeScreen({ rpc, projectId, runId }: { rpc: Rpc; projectId: st
   const [kind, setKind] = useState<"skill" | "role" | "workflow">("skill");
   const [name, setName] = useState("");
   const [brief, setBrief] = useState("");
+  const [body, setBody] = useState("");
   const [ordered, setOrdered] = useState<string | null>(null);
   const helpers = useLoad(() => (runId ? rpc.call("helpers_list", { runId }) as Promise<Helper[]> : Promise.resolve([])), [runId]);
+  const receipts = useLoad(() => rpc.call("cockpit_forge_list", { projectId }) as Promise<Array<{ kind: string; name: string; ok: boolean; findings: string[] }>>, [projectId]);
   const [taken, setTaken] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<Array<{ name: string; status: string }> | null>(null);
   const [enabling, setEnabling] = useState<string | null>(null);
@@ -22,9 +24,15 @@ export function ForgeScreen({ rpc, projectId, runId }: { rpc: Rpc; projectId: st
         <div className="flex flex-wrap gap-2">{(["skill", "role", "workflow"] as const).map((option) => <Button key={option} size="sm" variant={kind === option ? "default" : "outline"} onClick={() => setKind(option)}>{option}</Button>)}</div>
         <Field label={t("ckForgeName")} value={name} onChange={setName} />
         <Field label={t("ckForgeBrief")} value={brief} onChange={setBrief} multiline />
+        {kind === "skill" ? <Field label={t("ckForgeBody")} value={body} onChange={setBody} multiline /> : null}
         <Button size="sm" disabled={!/^[a-z][a-z0-9-]{1,47}$/.test(name) || brief.trim().length < 20}
-          onClick={() => void rpc.call("cockpit_forge_order", { projectId, kind, name, brief }).then(() => setOrdered(t("ckForgeOrdered")), (cause: unknown) => setOrdered(String(cause)))}>{t("ckSend")}</Button>
+          onClick={() => void rpc.call("cockpit_forge_order", { projectId, kind, name, brief, ...(body.trim() ? { body } : {}) }).then(() => setOrdered(t("ckForgeOrdered")), (cause: unknown) => setOrdered(String(cause)))}>{t("ckSend")}</Button>
         {ordered ? <p className="text-xs text-muted-foreground">{ordered}</p> : null}
+      </Panel>
+      <Panel title={t("ckForgeDrafts")} testId="ck-forge-drafts" actions={<RefreshButton onClick={receipts.reload} />}>
+        <Loaded state={receipts}>{(rows) => !rows.length ? <p className="text-sm text-muted-foreground">{t("ckEmpty")}</p> : (
+          <ul className="space-y-1 text-sm">{rows.map((row) => <li key={`${row.kind}-${row.name}`} data-testid={`ck-receipt-${row.name}`}>{row.name} — {row.ok ? t("ckDraftReady") : t("ckDraftFindings")}{!row.ok && row.findings.length ? <span className="block text-xs text-muted-foreground">{row.findings.join("; ")}</span> : null}</li>)}</ul>
+        )}</Loaded>
       </Panel>
       {runId ? (
         <Panel title={t("ckOwnHelpers")} testId="ck-own-helpers" actions={<RefreshButton onClick={helpers.reload} />}>
@@ -52,13 +60,24 @@ export function ForgeScreen({ rpc, projectId, runId }: { rpc: Rpc; projectId: st
   );
 }
 
-/** Memory: the corpus on the machine — lint, rebuild the index, the tag cloud, the corpus review; the drafts live under Knowledge → Rules. */
-export function MemoryScreen({ rpc, runId }: { rpc: Rpc; runId: string | null }) {
+/** Memory: the corpus on the machine — search across works and memory (SMA d_search), lint, the tag cloud; the drafts live under Knowledge → Rules. */
+export function MemoryScreen({ rpc, runId, projectId }: { rpc: Rpc; runId: string | null; projectId: string }) {
   const [out, setOut] = useState<{ action: string; output: string; tags?: Array<{ tag: string; count: number }> } | null>(null);
+  const [query, setQuery] = useState("");
+  const [found, setFound] = useState<{ records: Array<{ id: string; kind: string; content: string; concepts: string[] }>; nothingRelevant?: boolean; message?: string } | null>(null);
   // Two reads, two buttons: «rebuild the index» and «corpus review» printed the same list and rebuilt nothing (SMA audit, 2026-11-10).
   const run = (action: "lint" | "tags") => runId && void rpc.call("cockpit_memory", { runId, action }).then((result) => setOut({ action, ...(result as { output: string; tags?: Array<{ tag: string; count: number }> }) }), (cause: unknown) => setOut({ action, output: String(cause) }));
+  const search = () => void rpc.call("session_memory_search", { projectId, query: query.trim(), limit: 8 }).then((result) => setFound(result as typeof found), (cause: unknown) => setFound({ records: [], message: String(cause) }));
   return (
     <Panel title={t("ckScreen_memory")} testId="ck-memory">
+      <div className="space-y-2">
+        <div className="flex gap-2"><input className="min-w-0 flex-1 rounded border border-border bg-background px-2 text-base sm:text-sm" placeholder={t("ckMemorySearch")} value={query} onChange={(e) => setQuery(e.target.value)} />
+          <Button size="sm" disabled={!query.trim()} onClick={search}>{t("ckMemorySearchGo")}</Button></div>
+        {found ? (found.records.length ? (
+          <ul className="space-y-1 text-sm" data-testid="ck-memory-found">{found.records.map((row) => (
+            <li key={row.id}><Badge variant="outline">{row.kind}</Badge> {row.content}{row.concepts.length ? <span className="text-xs text-muted-foreground"> · {row.concepts.join(", ")}</span> : null}</li>))}</ul>
+        ) : <p className="text-sm text-muted-foreground" data-testid="ck-memory-nothing">{found.nothingRelevant ? (found.message ?? t("ckMemoryNothing")) : found.message ?? t("ckMemoryNothing")}</p>) : null}
+      </div>
       {!runId ? <p className="text-sm text-muted-foreground">{t("ckEmpty")}</p> : (
         <div className="space-y-2">
           <div className="flex flex-wrap gap-2">
@@ -152,6 +171,7 @@ export function SystemScreen({ rpc, projectId }: { rpc: Rpc; projectId: string }
       <Panel title={t("ckMachines")} testId="ck-machines" actions={<RefreshButton onClick={peers.reload} />}>
         <Loaded state={peers}>{(rows) => <ul className="space-y-1 text-sm">{rows.map((row) => <li key={row.hostId} className="flex items-center gap-2"><span className={`size-2 rounded-full ${row.online ? "bg-emerald-500" : "bg-muted-foreground"}`} />{row.line}</li>)}</ul>}</Loaded>
         <p className="text-xs text-muted-foreground">{t("ckPeerJoin")}</p>
+        <p className="text-xs text-muted-foreground">{t("ckPeerRemove")}</p>
         <p className="font-mono text-xs text-muted-foreground">{fill("ckTerminal", { p: projectId })}</p>
         {/* The window the person's own terminal spends is on Money → Аккаунты; this is only the how-to footnote. */}
       </Panel>
