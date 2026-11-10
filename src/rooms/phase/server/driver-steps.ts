@@ -31,7 +31,7 @@ export type StepsTools = DriverBase & Docs & Methods;
 export type Steps = ReturnType<typeof installSteps>;
 export function installSteps(tools: StepsTools) {
   const { ctx, services, db, bb, now, reactions } = tools;
-  const { mustGet, book, move, facts, readText, writeDocs, writeBook, pmCheckoutPath, candidates } = tools;
+  const { mustGet, book, move, facts, readFile, readText, writeDocs, writeBook, pmCheckoutPath, candidates } = tools;
 
   /** The candidate tree of a piece's base checkout, made on first need; null (and `off` with the reason, booked once) when it cannot be. */
   async function candidateTree(phase: Phase, candidate: PhaseCandidate, base: string): Promise<import("./candidate").CandidateTree | null | { wait: string }> {
@@ -130,7 +130,39 @@ export function installSteps(tools: StepsTools) {
     if (phase.record.plan?.sha !== phase.record.plan?.admittedSha) throw new PhaseRefusal("the plan changed since it was checked: return the phase to planning");
     let runId = phase.runId;
     // Awaits the word «issue»: with owner.words on nothing is issued before the owner says so.
-    if (phase.record.ownerWords && wordOf(phase.record, "issue")?.decision !== "yes") return phase;
+    if (phase.record.ownerWords) {
+      const issueYes = wordOf(phase.record, "issue");
+      if (issueYes?.decision !== "yes") return phase;
+      // The yes signs the plan and the drawing the owner saw (sma as_launchable): re-read now, a change asks anew.
+      const stale: string[] = [];
+      if (issueYes.key && issueYes.key !== phase.record.plan?.sha) stale.push("the plan changed since the owner's yes");
+      const designYes = wordOf(phase.record, "design");
+      const drawing = phase.record.design?.drawing;
+      if (designYes?.decision === "yes" && drawing?.paths.length) {
+        // The files are re-read: an edit outside drawing() makes the recorded drawing stale, and a yes on an older
+        // drawing signs nothing the owner sees now.
+        const hashes: string[] = [];
+        for (const path of drawing.paths.slice(0, 30)) {
+          const file = await readFile(phase, path).catch(() => null);
+          hashes.push(`${path}:${file?.sha256 ?? "missing"}`);
+        }
+        const currentSha = sha256Hex(hashes.join("\n"));
+        if (currentSha !== drawing.sha256) stale.push("the drawing's files changed since it was recorded");
+        else if (designYes.key && designYes.key !== drawing.sha256) stale.push("the drawing changed since the owner's yes");
+      }
+      if (stale.length) {
+        const why = stale.join("; ");
+        // The changed thing is asked again under its own turn (a new yes re-keys it); a plan alone asks «issue».
+        const turn = stale.some((line) => line.startsWith("the drawing")) && !stale.some((line) => line.startsWith("the drawing's files")) ? "design" : "issue";
+        if (!listParts(db, phase.id).some((part) => part.kind === "stale_consent" && part.text === why)) {
+          book(phase, "execution", "stale_consent", `${why} — the owner is asked again`);
+          reactions.postOwnerItem({ key: phaseWordItemKey(phase.id, turn), source: "phase", kind: "word", projectId: phase.projectId,
+            what: "После вашего «да» изменился план или чертёж — запуск ждёт нового слова", why: why.slice(0, 600) });
+          void reactions.askPhaseWord(phase, turn, undefined, `${why}: confirm again`);
+        }
+        return phase;
+      }
+    }
     const next = issuable(items, execution.issued, facts(phase), (wave) => waveCleared(phase.record, wave), execution.issuedSha);
     // Batch issue capacity and a free seat in the house: at most issueCap pieces a pass, none while the run already has that many at work.
     const atWork = phase.runId ? listOpenAttempts(db).filter((row) => row.run_id === phase.runId).length : 0;

@@ -25,6 +25,13 @@ export function claudeGuardAgentType(role: string): string {
  */
 export const HELPER_DISALLOWED_TOOLS = "Workflow,ScheduleWakeup,AskUserQuestion,Agent";
 
+/**
+ * Turn ceiling on a writer's claude launch (`--max-turns`): a writer that cannot finish inside it ends and the task
+ * retries instead of looping forever. ponytail: a constant, not a writer.max_turns setting — the settings catalog is a
+ * counted package surface; the upgrade path is one catalog key when a project ever needs another ceiling.
+ */
+export const WRITER_MAX_TURNS = 200;
+
 /** Same launcher shape as a native session: `--settings` with the bundled guard, and no machine-wide hook. No `--agent`. */
 export function claudeGuardLauncherScript(input: {
   destDir: string;
@@ -32,6 +39,8 @@ export function claudeGuardLauncherScript(input: {
   settingsPath: string;
   role: string;
   agentType: string;
+  /** Turns the launch may run (claude --max-turns); 0/undefined leaves the CLI's own default. */
+  maxTurns?: number;
 }): string {
   const inject = join(input.destDir, "hooks", "inject_agent_type.py");
   const guard = join(input.destDir, "hooks", "guard_shell.py");
@@ -51,7 +60,10 @@ export function claudeGuardLauncherScript(input: {
     `export LANE_PILOT_AGENT_TYPE=${shellQuote(input.agentType)}`,
     "export AGENT_HOOK_CLIENT=claude",
     `export LANE_PILOT_HOOK_TRACE=${shellQuote(join(input.destDir, "hook-trace.jsonl"))}`,
-    claudeExecLine(input.command, input.settingsPath, input.role === "pm" ? [] : [`--disallowedTools ${shellQuote(HELPER_DISALLOWED_TOOLS)}`]),
+    claudeExecLine(input.command, input.settingsPath, [
+      ...(input.role === "pm" ? [] : [`--disallowedTools ${shellQuote(HELPER_DISALLOWED_TOOLS)}`]),
+      ...(input.maxTurns && input.maxTurns > 0 ? [`--max-turns ${Math.floor(input.maxTurns)}`] : []),
+    ]),
     "",
   ].join("\n");
 }
@@ -77,7 +89,8 @@ export async function prepareClaudeGuard(input: {
   const agentType = claudeGuardAgentType(role);
   const command = await installedClaudeExecutable();
   const cwd = input.cwd?.trim() && input.cwd.startsWith("/") ? input.cwd : null;
-  const digest = sha256Hex(JSON.stringify({ role, agentType, command, cwd, version: 1 })).slice(0, 24);
+  const maxTurns = role === "writer" ? WRITER_MAX_TURNS : 0;
+  const digest = sha256Hex(JSON.stringify({ role, agentType, command, cwd, maxTurns, version: 2 })).slice(0, 24);
   const dir = join(input.dataDir, "claude-guard", digest);
   await mkdir(dir, { recursive: true, mode: 0o700 });
   const session = await materializeNativeHookSession({ cwd, destDir: dir });
@@ -88,6 +101,7 @@ export async function prepareClaudeGuard(input: {
     settingsPath: session.settingsPath,
     role,
     agentType,
+    maxTurns,
   }), 0o700);
   const reason = `Lane Pilot: ${role} claude thread runs the bundled guard`.slice(0, 500);
   return {

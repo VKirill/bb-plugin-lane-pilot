@@ -45,12 +45,14 @@ import { markTaskSatisfied, reopenWriterStages } from "../../runs/server";
 import type { ServerCore } from "../../contracts/server";
 
 import { validateTaskV2 } from "../../tasks/task-v2";
-import { applyTrustedTooling } from "../../tasks";
+import { allowTestEditsOf, applyTrustedTooling, testEditHoldOf } from "../../tasks";
 import { planWithOutsideReads, rerootTask } from "../../tasks";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { dispatchRunOf, rerunDispatchStages } from "./dispatch-workflow";
-import { awaitsWriterAnswer, contractFixRecord, contractFixTurnPrompt, createAttemptReopen, writerQuestion } from "./reopen-attempt";
+import { appendTaskQa, awaitsWriterAnswer, contractFixRecord, contractFixTurnPrompt, createAttemptReopen, writerQuestion } from "./reopen-attempt";
+import { pendingWordPush } from "./writer-task";
+import { sendServiceMessage } from "../../relay/server";
 import type { FieldChange } from "./reopen-attempt";
 
 /** How long an update waits for the stages that go again before it answers «queued». */
@@ -111,6 +113,11 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
     plan?: string;
     /** The task is blocked and the PM verified its work: tasks that depend on it go on without a follow-up task. */
     satisfied?: boolean;
+    /** A word for the task's running writer, with no contract change (sma as_wheel): now, at its next turn, or kept for the task. */
+    note?: string;
+    when?: "now" | "next_turn" | "task";
+    /** On a test_edit_hold-blocked task: the person allows exactly the edits the hold recorded (sma av_test_edit_hold). */
+    allowTestEdits?: boolean;
   }): Promise<Record<string, unknown>> {
     const run = getRun(db, input.runId);
     if (!run || run.project_id !== input.projectId || run.pm_thread_id !== input.pmThreadId) {
@@ -161,15 +168,45 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
     // A pre-writer gate (plan critique, contract validation) blocked this attempt before it ever had a writer thread:
     // the task never started, so it is fixed in place like a queued one and pm-read and the critique run again.
     const gateBlocked = !blocked && attempt?.state === "blocked" && !attempt.thread_id && PRE_WRITER_GATE_REASON.test(attempt.reason ?? "");
-    if (!blocked && !gateBlocked && (attempt?.thread_id || attempt?.state !== "queued")) {
+    // A bare note for a running writer is the wheel (sma as_wheel), not a contract change: it slips the started refusal.
+    const wheeled = !blocked && !gateBlocked && input.note !== undefined && attempt?.state === "running" && attempt.thread_id ? attempt : null;
+    // A hand-in held on weakened reference tests waits for the person's allow of that exact edit (sma av_test_edit_hold).
+    const testHeld = !blocked && !gateBlocked && input.allowTestEdits === true && attempt?.state === "blocked" && /^test_edit_hold:/.test(attempt.reason ?? "") ? attempt : null;
+    if (!blocked && !gateBlocked && !wheeled && !testHeld && (attempt?.thread_id || attempt?.state !== "queued")) {
       return {
         ok: false,
         error: {
           code: "task_started",
           retryable: false,
           sideEffects: "none",
-          hint: "The task has already started. Answer the writer with lane_pilot_answer_writer if it stopped with a question, or cancel and redispatch.",
+          hint: "The task has already started. Answer the writer with lane_pilot_answer_writer if it stopped with a question, send a note for a word into its live session, or cancel and redispatch.",
         },
+      };
+    }
+    if (input.note !== undefined && !wheeled) {
+      return {
+        ok: false,
+        error: { code: "task_not_running", retryable: false, sideEffects: "none",
+          hint: `a note goes to a running writer; ${input.taskId} is ${attempt?.state ?? "unknown"}. Update its contract or plan instead, or wait for the attempt.` },
+      };
+    }
+    if (input.note !== undefined && (input.task || input.plan)) {
+      return {
+        ok: false,
+        error: { code: "validation_failed", retryable: false, sideEffects: "none", hint: "a note goes alone: send no task or plan with it" },
+      };
+    }
+    if (input.allowTestEdits !== undefined && (!input.allowTestEdits || input.task || input.plan || input.note !== undefined)) {
+      return {
+        ok: false,
+        error: { code: "validation_failed", retryable: false, sideEffects: "none", hint: "allowTestEdits:true goes alone: send no task, plan or note with it" },
+      };
+    }
+    if (input.allowTestEdits === true && !testHeld) {
+      return {
+        ok: false,
+        error: { code: "not_test_edit_held", retryable: false, sideEffects: "none",
+          hint: `only a task whose hand-in waits on test_edit_hold can be allowed; ${input.taskId} is ${attempt?.state ?? "unknown"}${attempt?.reason ? ` (${attempt.reason.slice(0, 120)})` : ""}` },
       };
     }
 
@@ -191,6 +228,56 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
       };
     }
     const runConfig = { ...config, writerWorkspacePath: workspacePath };
+
+    if (testHeld) {
+      // The allowance binds the held edits' content hashes: the file changed again is a new edit and holds again.
+      const held = await testEditHoldOf(bb.storage.kv as never, testHeld.id);
+      if (!held.length) {
+        return { ok: false, error: { code: "not_test_edit_held", retryable: false, sideEffects: "none", hint: `no held edits recorded for attempt ${testHeld.id}; redispatch the task` } };
+      }
+      await allowTestEditsOf(bb.storage.kv as never, testHeld.id, held);
+      const paths = held.map((row) => row.path);
+      const ready = await reopen.checkReopenable({ runId: input.runId, taskId: input.taskId, run, attempt: testHeld });
+      if (!ready.ok) {
+        return { ok: false, error: { code: "not_reopenable", retryable: false, sideEffects: "none",
+          hint: `the edits are allowed but the attempt cannot reopen: ${ready.hint}` } };
+      }
+      const reopened = await reopen.reopenAttempt({
+        projectId: input.projectId, runId: input.runId, taskId: input.taskId, pmThreadId: input.pmThreadId,
+        attempt: testHeld, threadId: ready.threadId, workspacePath: ready.workspacePath, config, contract: taskV2Schema.parse(row.contract),
+        reason: "the person allowed the reference-test edits",
+        turn: `Lane Pilot: the person allowed your edit of ${paths.join(", ")} exactly as it is. Hand the task in again; any further change to a reference test holds the hand-in again.`,
+        qaAnswer: `allowed reference-test edits: ${paths.join(", ")}`,
+      });
+      if (!reopened.ok) return { ok: false, error: { code: "not_reopenable", retryable: false, sideEffects: "none", hint: reopened.hint } };
+      log(`writer ${input.taskId}: reference-test edits allowed by the person (${paths.join(", ")}); attempt ${testHeld.id} reopens`);
+      return { ok: true, runId: input.runId, taskId: input.taskId, attemptId: testHeld.id, writerThreadId: ready.threadId, state: "running",
+        allowed: paths,
+        note: "The hand-in finishes under the allowance: the same file changed again holds anew. The allowance is kept in the task folder's QA.md." };
+    }
+
+    if (wheeled) {
+      const text = input.note!.trim().slice(0, 2000);
+      if (!text) {
+        return { ok: false, error: { code: "validation_failed", retryable: false, sideEffects: "none", hint: "the note is empty" } };
+      }
+      const when = input.when ?? "now";
+      let delivered = false;
+      if (when !== "task") {
+        // A word thrown at a live thread that no longer takes it is not lost: it is kept for the next attempt
+        // (sma as_redirect_deferred).
+        delivered = await sendServiceMessage(bb, { threadId: wheeled.thread_id!, mode: when === "now" ? "steer-if-active" : "queue-if-active",
+          text: `Lane Pilot: the PM corrected the task while you work: ${text}`, senderThreadId: input.pmThreadId }).then(() => true, () => false);
+        if (delivered && getAttempt(db, wheeled.id)?.state !== "running") delivered = false;
+      }
+      if (!delivered) await pendingWordPush(bb.storage.kv as never, input.runId, input.taskId, text);
+      const qaPath = getAttempt(db, wheeled.id)?.workspace_path ?? workspacePath;
+      await appendTaskQa(bb, { hostId: config.hostId, workspacePath: qaPath, taskId: input.taskId, question: `the PM's word (${when})`, answer: text });
+      log(`writer ${input.taskId}: the PM's word ${delivered ? `reached the running writer (${when})` : "is kept for the next attempt"}`);
+      return { ok: true, runId: input.runId, taskId: input.taskId, attemptId: wheeled.id, state: "running", delivered, when,
+        note: delivered ? "The word reached the writer's thread and is recorded in the task folder's QA.md."
+          : "The writer's thread could not take it now; it is kept and rides the next attempt's brief, and is recorded in QA.md." };
+    }
 
     const oldContract = taskV2Schema.parse(row.contract);
     const updatedContract = input.task ? { ...input.task, id: input.taskId } : oldContract;

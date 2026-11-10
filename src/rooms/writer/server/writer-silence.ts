@@ -68,6 +68,48 @@ export async function countRunNudges(kv:Kv, attemptIds:string[]):Promise<number>
   return rows.reduce((sum, row) => sum + (row?.count ?? 0), 0);
 }
 
+/** How a running writer's recent frames read: its turn closed, it loops one call with nothing written, or it moves. */
+export type WriterFrame = "closed" | "spinning" | "progressing";
+
+/** Item events of one window whose repeat counts toward a loop verdict. */
+const SPIN_WINDOW = 40;
+
+/** Command/tool-call signature of one item event, or null for anything else (a file change, a message). */
+function callSignatureOf(event: unknown): string | null {
+  const item = event && typeof event === "object" ? (event as { data?: { item?: Record<string, unknown> } }).data?.item : undefined;
+  if (!item) return null;
+  const type = String(item.type ?? "");
+  if (type !== "toolCall" && type !== "commandExecution") return type === "fileChange" ? "" : null;
+  const call = String(item.command ?? item.name ?? "") || JSON.stringify(item.input ?? item.arguments ?? "");
+  return `${String(item.tool ?? item.name ?? type)}:${call.slice(0, 300)}`;
+}
+
+/** The call a spinning writer keeps repeating (for the nudge text and the end reason); null when none repeats. */
+export function repeatedCallOf(events: unknown[]): string | null {
+  const counts = new Map<string, number>();
+  let changed = false;
+  for (const event of events.slice(0, SPIN_WINDOW)) {
+    const signature = callSignatureOf(event);
+    if (signature === null) continue;
+    if (signature === "") { changed = true; continue; }
+    const n = (counts.get(signature) ?? 0) + 1;
+    counts.set(signature, n);
+    if (n >= 3 && !changed) return signature;
+  }
+  return null;
+}
+
+/**
+ * The stall frame of a writer's last events (newest first, as listThreadEventsRaw returns them): closed when the turn
+ * completed, spinning when one call repeats three times with no file change between, progressing otherwise.
+ */
+export function writerFrame(events: unknown[]): WriterFrame {
+  // Either edge may be the newest event (the sweep reads desc, tests may pass asc): a completed turn ends the frame.
+  const ends = [events[0], events[events.length - 1]];
+  if (ends.some((event) => eventType(event) === "turn/completed" || eventType(event) === "turn/failed")) return "closed";
+  return repeatedCallOf(events) ? "spinning" : "progressing";
+}
+
 export type SilenceDeps = {
   bb:{ sdk:{ threads:{ send(args:never):Promise<unknown>; events:{ list(args:never):Promise<unknown> } } }; storage:{ kv:Kv } };
   openAttempts:() => SilenceAttempt[];
@@ -117,7 +159,9 @@ export async function sweepWriterSilence(deps:SilenceDeps, now = Date.now()):Pro
       if (!last) continue;
       // A nudge is an event of its own, and a writer that ignores it is silent from the nudge on.
       const silentMs = now - Math.max(last, record?.at ?? 0);
-      if (silentMs < Math.min(limitMs, LIMIT_PROBE_MIN * 60_000)) continue;
+      // An active writer can still be stuck: one call looping with no file change is a stall, not silence (sma as_stagnation).
+      const spinCall = repeatedCallOf(listed.events);
+      if (!spinCall && silentMs < Math.min(limitMs, LIMIT_PROBE_MIN * 60_000)) continue;
       // A form open for the owner (on the writer's thread, or the PM's question that its answer may hang on) is a wait, not silence.
       // A probe that throws is unknown, not "no form": skip this writer this sweep, and log the failure once per streak.
       let ownerFormOpen = false;
@@ -134,6 +178,21 @@ export async function sweepWriterSilence(deps:SilenceDeps, now = Date.now()):Pro
       ownerProbeFailing.delete(attempt.id);
       if (ownerFormOpen) continue;
       const count = record?.count ?? 0;
+      if (spinCall) {
+        if (count >= MAX_WRITER_NUDGES) {
+          const reason = `no progress: spinning on ${spinCall.slice(0, 120)}`;
+          await bb.storage.kv.set(key(attempt.id), { count, at:now, ended:true, reason } as never);
+          deps.log(`Lane Pilot ended ${attempt.task_id} (${attempt.id}): ${reason}`);
+          done.push({ attemptId:attempt.id, action:"ended", count });
+          continue;
+        }
+        const text = `Lane Pilot: you are repeating ${spinCall.slice(0, 200)} with no file change. Stop the loop; try another way or say what blocks you.`;
+        await sendServiceMessage(bb, { threadId:attempt.thread_id, mode:"steer-if-active", text, senderThreadId:attempt.pm_thread_id });
+        await bb.storage.kv.set(key(attempt.id), { count:count + 1, at:now } as never);
+        deps.log(`Lane Pilot nudged the writer of ${attempt.task_id} (${attempt.id}): spinning on ${spinCall.slice(0, 120)}, nudge ${count + 1} of ${MAX_WRITER_NUDGES}`);
+        done.push({ attemptId:attempt.id, action:"nudged", count:count + 1 });
+        continue;
+      }
       const minutes = Math.round((now - last) / 60_000);
       // A silent writer whose session names a provider limit ends now, uncharged, and its breaker holds to the reset time: no nudge.
       // A probe that fails or finds none leaves the nudges as they were.

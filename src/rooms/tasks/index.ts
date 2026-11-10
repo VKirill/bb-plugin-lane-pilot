@@ -19,7 +19,8 @@ export { NO_CODE_KINDS, PLAN_FACT_BRIEF_LINE, PLAN_FACT_RULES, blindPlanFact, di
 export type { EvidenceCheck, ItemVerdict, PlanFactCheck, PlanFactFacts, PlanFactTable } from "./plan-fact";
 export { BIRTH_GATES, BIRTH_KINDS, CHECK_RECIPES, FACT_KINDS, HOLD_FOREVER, LANE_QUEUES, QUESTION_KINDS, WORKER_ENVELOPE, birthGates, checkRecipe, factKind, isWholeConsent, questionKind, questionsFromFile, secretShaped, laneCap, laneQueueOf, MARKER_BRIEF_LINE, PRIORITIES, STAGE_PRIORITY_RANK, birthFindings, ownerWordFindings, blockingClass, checkProgram, checkScriptEdits, deadLetters, priorityRank, queueOrder, referenceTestEdits, spendReserve, writerMarkers } from "./rails";
 export { testFitFindings } from "./test-fit";
-export type { TestFitFile, TestFitHit } from "./test-fit";
+export { allowTestEditsOf, testEditAllowance, testEditAllowKey, testEditHoldKey, testEditHoldOf } from "./test-fit";
+export type { TestEditHold, TestFitFile, TestFitHit } from "./test-fit";
 export type { BirthKind, BlockingClass, CheckMeasure, CheckRecipe, FactKind, Priority, QuestionKind, WriterMarkers } from "./rails";
 export { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, landingWordAsked, landingWordGap, ownerWordsMode, ownerWordsOn, readTaskApproach, recordTaskApproach, recordTaskQuestions, recordTaskWord, taskApproachKey, taskQuestionsKey, taskWordKey, type OwnerWordsMode } from "./words";
 export type { TaskWord } from "./words";

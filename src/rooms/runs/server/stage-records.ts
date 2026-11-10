@@ -40,10 +40,19 @@ export function recordStage(db:ReturnType<typeof openDatabase>, input:{runId:str
   }));
 }
 
-export function recordGateEvaluation(db:ReturnType<typeof openDatabase>,input:{projectId:string;runId:string;taskId:string;gate:"owns-paths"|"validate"|"accept"|"verification";status:"passed"|"rejected"|"failed"|"skipped";attempt:number;input:string;summary?:unknown}):void {
+export function recordGateEvaluation(db:ReturnType<typeof openDatabase>,input:{projectId:string;runId:string;taskId:string;gate:"owns-paths"|"validate"|"accept"|"verification";status:"passed"|"rejected"|"failed"|"skipped";attempt:number;input:string;summary?:unknown;
+  /** The attempt the outcome lands on (sma av_record): its row keeps gate, status, why, tree and the verdict's summary. */
+  attemptId?:string; tree?:string|null; verdict?:{status:string;summary:string}|null}):void {
   const output=input.summary===undefined?null:JSON.stringify(input.summary);
   appendGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:input.gate,status:input.status,
     inputSha256:sha256(input.input),outputSha256:output===null?null:sha256(output),attempt:Math.min(input.attempt,2),occurredAt:Date.now()});
+  if (input.attemptId) {
+    const summary=input.summary as Record<string, unknown>|undefined;
+    const reason=typeof summary?.reason==="string" ? summary.reason : typeof summary?.writerStatus==="string" ? String(summary.writerStatus) : null;
+    const barrier={gate:input.gate,status:input.status,reason,tree:input.tree??null,
+      verdict:input.verdict?{status:input.verdict.status,summary:input.verdict.summary.slice(0,600)}:null,at:Date.now()};
+    db.prepare("UPDATE lane_pilot_attempt SET barrier_json=? WHERE id=?").run(JSON.stringify(barrier),input.attemptId);
+  }
 }
 
 const WRITER_STAGES = ["writer-agent", "verification", "acceptance-receipt"] as const;

@@ -23,6 +23,7 @@ import { createSkillMaterializer } from "./skill-materialize";
 import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, waitManagedWorktreeReady } from "../../verification";
 import { createProviderGate, providerListed, providerSwitchOn, waitProviderEnvironment } from "../../verification";
 import { LANE_WORKTREE_PROVIDER_ID } from "../../native-agent/server";
+import { HELPER_DISALLOWED_TOOLS, WRITER_MAX_TURNS } from "../../native-agent/claude-guard-launch";
 import { fullAccessSpawn } from "../../platform/server";
 import { WriterSelectionError, coreHostsRequiredProvider, helperChildPlacement, projectRoleField, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { holderSpawnKey } from "../../platform/server";
@@ -304,6 +305,8 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         providerId:writerProviderId, model:writerModel, serviceTier:effectiveServiceTier,
         requestedServiceTier,
         runId:input.runId, attemptId:input.attemptId, threadId:null,
+        // The launch's fixed bounds, next to the chosen model and effort (sma as_build_args).
+        maxTurns:WRITER_MAX_TURNS, disallowedTools:HELPER_DISALLOWED_TOOLS,
         effortMode: enabled ? "automatic" as const : "manual" as const,
         selectionSource,
       } as const;

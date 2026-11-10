@@ -542,4 +542,6 @@ export const migrations = [
     WHERE instr(reason, 'verification failed (') > 0 AND instr(reason, '): verification timed out after ') = 0 AND instr(reason, '): ') > 0`,
   `ALTER TABLE lane_pilot_run_goal ADD COLUMN failure_code TEXT`,
   `UPDATE lane_pilot_run_goal SET failure_code='check_failed' WHERE state='skipped' AND detail LIKE 'the check failed:%'`,
+  // The barrier's outcome on the attempt row itself (sma av_record): gate, status, why, tree and the verdict's summary.
+  `ALTER TABLE lane_pilot_attempt ADD COLUMN barrier_json TEXT`,
 ];

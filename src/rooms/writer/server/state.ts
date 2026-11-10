@@ -1,7 +1,8 @@
 import { PROVIDER_CAPABILITIES, providerLimitNotice, usageProviderOf, zcodeBlock } from "@lane-pilot/models";
 import { createProviderBreaker, createRunBudget, parseRunBudgetLimits, type RunBudget } from "@lane-pilot/resilience";
 import { RunWriterPool } from "../../tasks";
-import { createProviderUsage, usageSkipPercent } from "../../usage/server";
+import { createProviderUsage, parseBreakdown, tokenCursorRow, usageSkipPercent } from "../../usage/server";
+import { attemptThreadsOfRun } from "../../storage";
 import { createProviderRetryGuard } from "../../stability/server";
 import { createConcurrencyLimit } from "./concurrency-limit";
 import { CATALOG_WAIT_MS, modelCatalogOf, noteProviderLimit, registerSpawnUsage, threadModelOf, within, zcodeBusy, zcodeBusyPeek } from "../../platform/server";
@@ -71,6 +72,13 @@ export function createWriterState(ctx: ServerCore) {
       if (JSON.stringify(budget.snapshot().limits) !== JSON.stringify(limits)) budget.setLimits(limits);
     } else {
       budget = createRunBudget(limits);
+      // After a plugin reload the in-memory budget starts at zero while BB already settled spend on the run's
+      // threads: re-seed each attempt thread's recorded total so the dispatch reserve counts real tokens
+      // (sma as_effect_observe).
+      for (const threadId of attemptThreadsOfRun(ctx.db, runId)) {
+        const cursor = tokenCursorRow(ctx.db, threadId);
+        if (cursor) budget.noteTokens(threadId, parseBreakdown(cursor.total_json).total);
+      }
       runBudgets.set(runId, budget);
     }
     return budget;

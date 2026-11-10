@@ -276,6 +276,14 @@ export const openQuestions = (record: PhaseRecord, stage: PhaseStage) => (record
 /** The owner's latest word at a turn. */
 export const wordOf = (record: PhaseRecord, turn: WordTurn) => [...(record.words ?? [])].reverse().find((word) => word.turn === turn);
 
+/**
+ * The key of what the owner is shown for a word turn (SMA as_launchable): the plan at planning and issue, the drawing at
+ * design. A yes records it; a later change to that very thing is not signed by the word and is asked again.
+ */
+export const wordKeyOf = (record: PhaseRecord, turn: WordTurn): string | null =>
+  turn === "planning" || turn === "issue" ? record.plan?.sha ?? null
+  : turn === "design" ? record.design?.drawing?.sha256 ?? null : null;
+
 /** Where a phase keeps its own files in the project: the book, and the drawing in design/ (SMA: The phase has a home, Drawing in its own folder). */
 export const phaseFolder = (phaseId: string) => `.agents/phases/${phaseId}`;
 
