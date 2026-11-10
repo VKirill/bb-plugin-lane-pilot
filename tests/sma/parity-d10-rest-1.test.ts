@@ -21,6 +21,8 @@ import { EVENT_FIELDS } from "../../src/rooms/relay/server/outbound";
 import { createRollback } from "../../src/rooms/rollback/server/rollback";
 import { upsertAttemptChange } from "../../src/rooms/rollback/store";
 import { createTask } from "../../src/rooms/plugin-db";
+import { EXAM_DRAFTS_KEY, mineDecisions, settleDraft } from "../../src/rooms/policy/mine";
+import { loadLiveExam } from "../../src/rooms/policy/live-exam";
 import { BB_AGENT_SESSIONS } from "../../src/rooms/native-agent/native-agent-overlay";
 
 const DAY = 86_400_000;
@@ -211,5 +213,25 @@ describe("pool readiness and the green word (parity d10-rest-1)", () => {
     createAttempt(db, { id: "att-2", runId: "run", taskId: "t1" });
     const none = await rollback.rollback.diff("att-2") as { reason: string };
     expect(none.reason).toContain("no merge commit");
+  });
+
+  it("[sma:k_v_decisions] mined decisions wait as drafts; mining twice never doubles, and only an accept joins the exam", async () => {
+    const kv = new Map<string, unknown>();
+    const store = { get: async <T>(key: string) => (kv.get(key) as T) ?? null, set: async (key: string, value: never) => { kv.set(key, value); } };
+    const judge = async (message: { text: string }) => /deploy/i.test(message.text)
+      ? { decision: "approve" as const, descriptor: { kind: "deploy" }, expected: "owner_only" as const, why: "approved a deploy" } : null;
+    const messages = [
+      { id: "m1", at: 1, text: "да, deploy it now" },
+      { id: "m2", at: 2, text: "how is the weather" },
+    ];
+    expect(await mineDecisions(store, messages, judge)).toMatchObject({ mined: 1, total: 1 });
+    expect(await mineDecisions(store, messages, judge)).toMatchObject({ mined: 0, total: 1 });
+    const exam = await loadLiveExam(store);
+    expect(exam.items).toHaveLength(0);
+    const draftId = (kv.get(EXAM_DRAFTS_KEY) as Array<{ id: string }>)[0]!.id;
+    const settled = await settleDraft(store, draftId, "accept");
+    expect(settled.ok).toBe(true);
+    expect((await loadLiveExam(store)).items).toHaveLength(1);
+    expect(await settleDraft(store, draftId, "accept")).toMatchObject({ ok: false });
   });
 });

@@ -18,7 +18,7 @@ import { SCHEDULE_USAGE, runScheduleCli, scheduleFailureSweep } from "../../sche
 import { answerWorkflowQuestion } from "../../workflow/server";
 import { AGENTS_USAGE, agentRegistry, PM_SKILLS_USAGE, runAgentsCli, runPmSkillsCli, runPmSkillUseCli } from "../../native-agent/server";
 
-import { ANAMNESIS_USAGE, anamnesisFor } from "../../anamnesis";
+import { ANAMNESIS_USAGE, anamnesisFor, collectOwnerMessages, sdkThreadsPort } from "../../anamnesis";
 import { LEARNING_USAGE, learningFor, runLearningCli } from "../../learning";
 import { PM_REPLAY_USAGE, runPmReplayCli, listScenarios } from "../../pm-replay";
 import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
@@ -414,7 +414,18 @@ ${ERRANDS_USAGE}` },
           return learning ? await runLearningCli(learning, args) : { exitCode:1, stderr:"learning is not mounted" };
         }
         if (command === "policy-exam" || command === "policy") {
-          return await runPolicyCli({ db, kv:bb.storage.kv as never, ownerSweeps: [...OWNER_ITEM_SWEEPS, budgetSpentSweep(services)], reviewedObs: listReviewedObservations as never }, command, args);
+          return await runPolicyCli({ db, kv:bb.storage.kv as never, ownerSweeps: [...OWNER_ITEM_SWEEPS, budgetSpentSweep(services)], reviewedObs: listReviewedObservations as never,
+            mineMessages: (from, to) => collectOwnerMessages(sdkThreadsPort(bb as never), from, to).then((rows) => rows.map((row) => ({ id: row.id, at: row.at, text: row.text }))),
+            // ponytail: a conservative judge — an explicit yes/no to a named change is a decision, anything else is
+            // chatter (ceiling: decisions in other wording are missed; upgrade path: a System One judgment per message).
+            mineJudge: async (message) => {
+              const text = message.text.toLowerCase();
+              const approve = /(^|\s)(да|давай|согласен|одобряю|делай|выкатывай|сливай|ok|yes|approved?)\b/u.test(text) && !/не |not |don't|нет/u.test(text);
+              const refuse = /(^|\s)(нет|не надо|не делай|отмена|отказываюсь|no|don'?t|refuse|отклоняю)\b/u.test(text);
+              if (!approve && !refuse) return null;
+              return { decision: approve ? "approve" : "refuse", descriptor: { kind: "other", attrs: {} }, expected: "owner_only", why: `the owner ${approve ? "approved" : "refused"} a change in a message` };
+            },
+          }, command, args);
         }
         if (command === "coverage") {
           return runCoverageCli(args);

@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { EXAM, EXAM_RESULT_KEY, authorize, runExam, runLiveExam, storedExam, type StoredExam } from "./exam";
 import { collectAndAppend, loadLiveExam, recordOwnerDecision, appendLiveItems, type OwnerDecisionInput } from "./live-exam";
+import { EXAM_DRAFTS_KEY, mineDecisions, settleDraft, type DecisionDraft, type DecisionJudge, type MinedMessage } from "./mine";
 import { composeMorningList, MORNING_WINDOW_MS } from "./morning";
 import type { OwnerItemSweep } from "../owner-waiting";
 import { POLICY, TIERS, explainChange, type ChangeDescriptor } from "./policy";
@@ -16,7 +17,10 @@ export const POLICY_USAGE = [
 ].join("\n");
 
 type Kv = { get<T>(key: string): Promise<T | null | undefined>; set(key: string, value: never): Promise<unknown> };
-export type PolicyCliDeps = { db: Pick<Database.Database, "prepare">; kv: Kv; now?(): number; ownerSweeps?: readonly OwnerItemSweep[]; reviewedObs?: Parameters<typeof collectAndAppend>[4] };
+export type PolicyCliDeps = { db: Pick<Database.Database, "prepare">; kv: Kv; now?(): number; ownerSweeps?: readonly OwnerItemSweep[]; reviewedObs?: Parameters<typeof collectAndAppend>[4];
+  /** decisions-mine: the owner messages of a window and the judgment that tells a decision from chatter. */
+  mineMessages?: (from: number, to: number) => Promise<MinedMessage[]>;
+  mineJudge?: DecisionJudge };
 
 const json = (value: unknown) => JSON.stringify(value, null, 2);
 
@@ -56,6 +60,21 @@ export async function runPolicyCli(deps: PolicyCliDeps, command: "policy-exam" |
     }
     if (op === "exam-export") return { exitCode: 0, stdout: json(await loadLiveExam(deps.kv)) };
     if (op === "morning") return { exitCode: 0, stdout: composeMorningList(deps.db, now(), MORNING_WINDOW_MS, deps.ownerSweeps ?? []).join("\n") };
+    // sma decisions mine (SMA k_v_decisions): owner messages -> drafts; only `accept` moves one into the exam.
+    if (op === "decisions-mine") {
+      if (!deps.mineMessages || !deps.mineJudge) return { exitCode: 1, stderr: "decisions-mine is not wired in this context (no message source or judge)" };
+      const hours = Number(rest[0] ?? 24 * 7);
+      if (!Number.isFinite(hours) || hours <= 0) return { exitCode: 1, stderr: "usage: bb lane-pilot policy decisions-mine [hours=168]" };
+      const messages = await deps.mineMessages(now() - hours * 3_600_000, now());
+      return { exitCode: 0, stdout: json(await mineDecisions(deps.kv, messages, deps.mineJudge)) };
+    }
+    if (op === "decisions-drafts") {
+      const [word, id] = rest as [string | undefined, string | undefined];
+      if (!word) return { exitCode: 0, stdout: json((await deps.kv.get<DecisionDraft[]>(EXAM_DRAFTS_KEY)) ?? []) };
+      if ((word !== "accept" && word !== "dismiss") || !id) return { exitCode: 1, stderr: "usage: bb lane-pilot policy decisions-drafts accept|dismiss <id>" };
+      const settled = await settleDraft(deps.kv, id, word);
+      return settled.ok ? { exitCode: 0, stdout: json(settled) } : { exitCode: 1, stderr: settled.reason };
+    }
     return { exitCode: 1, stderr: `unknown policy operation «${op}»\n${POLICY_USAGE}` };
   } catch (cause) {
     return { exitCode: 1, stderr: cause instanceof Error ? cause.message : String(cause) };
