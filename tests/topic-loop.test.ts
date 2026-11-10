@@ -79,6 +79,31 @@ describe("topicLoop", () => {
     expect(topicLoop(task("t4", 4 + TOPIC_LOOP.windowMs / HOUR), chain(3))).toBeNull();
   });
 
+  // feed-gen 2026-11-10: text-gen-provider-fallback, text-gen-openrouter and their redos died of the writers' providers (a silent Devin,
+  // six Antigravity sessions the core could not start) and of two faults of Lane Pilot; nobody changed src/lib/ai-clients.ts. With one
+  // accepted task they made «3 tasks in 4.1 h», and the owner's next three asks on that file were refused.
+  it("does not count a family whose every attempt died of the provider, the machine or Lane Pilot", () => {
+    const dead = (id: string, hours: number, attempts: LoopTask["attempts"]) => task(id, hours, { commands: ["npx vitest run src/lib/__tests__/gen-core-text.test.ts"], attempts });
+    const earlier = [
+      dead("fallback", 1, [{ state: "blocked", reason: "writer_provider_limit: the model sent no answer for 9 min after its prompt (a silent provider limit)" }, { state: "blocked", reason: "writer_provider_unavailable:thread_not_started: vk_required_session_policy_bridge_unsupported" }]),
+      dead("openrouter", 2, [{ state: "provider_error", reason: "writer thread status error" }, { state: "blocked", reason: "internal_error: illegal stage transition writer-agent: running -> pending" }]),
+      dead("openrouter-v3", 3, [{ state: "canceled", reason: "PM canceled: Stuck behind blocked area pilot" }]),
+    ];
+    const next = dead("chain", 4, []);
+    expect(topicLoop(next, earlier)).toBeNull();
+    // The same three, each with work the task's own check rejected, are a chase on the file and on the test.
+    const red = earlier.map((row) => ({ ...row, attempts: [...row.attempts, { state: "validation_failed", reason: "verification failed (npx vitest run src/lib/__tests__/gen-core-text.test.ts): exit 1", failureCode: "verification_failed" }] }));
+    expect(topicLoop(next, red)).toMatchObject({ families: ["fallback", "openrouter", "openrouter-v3"] });
+  });
+
+  it("counts only the tasks sent since the owner last wrote in the PM chat: his message is the change of perspective", () => {
+    expect(topicLoop(task("t4", 4), chain(3))).not.toBeNull();
+    expect(topicLoop(task("t4", 4), chain(3), { ownerSpokeAt: 3.5 * HOUR })).toBeNull();
+    expect(topicLoop(task("t4", 4), chain(3), { ownerSpokeAt: 2.5 * HOUR })).toBeNull();
+    expect(topicLoop(task("t4", 4), chain(3), { ownerSpokeAt: 0.5 * HOUR })).toMatchObject({ families: ["t1", "t2", "t3"] });
+    expect(topicLoop(task("t4", 4), chain(3), { ownerSpokeAt: null })).not.toBeNull();
+  });
+
   it("ignores wide tasks, folders, docs, feature work and the run's shared ground", () => {
     expect(topicLoop(task("t4", 4), chain(3, { files: ["src/runner.py", "a.py", "b.py", "c.py"] }))).toBeNull();
     expect(topicLoop(task("t4", 4, { files: ["src/"] }), chain(3, { files: ["src/"] }))).toBeNull();
@@ -154,6 +179,15 @@ describe("topicHold: a topic whose wall is open stays closed", () => {
     // Another topic, and the analysis kinds, are not held.
     expect(topicHold(task("o", 5, { files: ["src/other.py"] }), [wall()], earlier)).toBeNull();
     expect(topicHold(task("r", 5, { kind: "research" }), [wall()], earlier)).toBeNull();
+  });
+
+  // Nine of the first nineteen loop walls stayed in the backlog for good and kept their file or test closed for the rest of the run.
+  it("holds the topic for the window only, and not after the owner wrote in the PM chat", () => {
+    const same = task("t4", 5);
+    expect(topicHold(same, [wall({ createdAt: 4 * HOUR })], earlier)).toMatchObject({ allowed: false });
+    expect(topicHold(task("t9", 4 + TOPIC_LOOP.windowMs / HOUR + 1), [wall({ createdAt: 4 * HOUR })], earlier)).toBeNull();
+    expect(topicHold(same, [wall({ createdAt: 4 * HOUR })], earlier, { ownerSpokeAt: 4.5 * HOUR })).toBeNull();
+    expect(topicHold(same, [wall({ createdAt: 4 * HOUR })], earlier, { ownerSpokeAt: 3.5 * HOUR })).toMatchObject({ allowed: false });
   });
 
   it("holds a redo of an old family, a mainfix and a task that names the test, whatever the id", () => {

@@ -1,4 +1,5 @@
 import { ownsPathsOverlap } from "@lane-pilot/kit";
+import { FREE_CLASSES, failureClass } from "../../../contracts";
 
 /** The wall rows a pilot's hold check reads (typed structurally: pilot is under wall in the room graph). */
 export type TaskWallRow = { state: string; pack: unknown };
@@ -20,6 +21,17 @@ export function runTasks(rows: PilotTaskRow[], canceledIds: readonly string[]): 
       dependsOn: Array.isArray(contract.depends_on) ? contract.depends_on.filter((dep): dep is string => typeof dep === "string" && dep.length > 0) : [],
       ...(own.length ? { ownsPaths: own } : {}), ...(canceled.has(row.id) ? { canceled: true } : {}) };
   });
+}
+
+/**
+ * A pilot's block that says nothing about its siblings: the provider's, the machine's or Lane Pilot's own, not the task's content.
+ * The pilot exists because siblings fail the same way; a pilot nobody could run shows no way. feed-gen 2026-11-10: the pilot of area
+ * «generator» ended blocked on a silent Devin and an Antigravity session the core could not start, and the next task of the area stood
+ * 75 minutes behind it until the PM canceled it and sent it again under another area name.
+ */
+export function pilotBlockedByOthers(state: string, reason: string | null): boolean {
+  const cls = failureClass(state, reason);
+  return cls === "provider" || FREE_CLASSES.has(cls);
 }
 
 /**

@@ -17,7 +17,7 @@ const contract = (id: string, dependsOn: string[] = []): TaskV2 => ({
   objective: `Make ${id}`, acceptance: ["done"], verify: "tests", verification: [{ command: "npm test", cwd: WORKSPACE }],
 });
 
-function world(options: { pilotAttempts: number; wall?: boolean; dependsOn?: string[] }) {
+function world(options: { pilotAttempts: number; wall?: boolean; dependsOn?: string[]; pilotReason?: string }) {
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
   harness.sdk.stub("threads.get", async (args: { threadId: string }) => ({ id: args.threadId, status: "idle" }));
   harness.sdk.stub("threads.send", async () => undefined);
@@ -34,7 +34,7 @@ function world(options: { pilotAttempts: number; wall?: boolean; dependsOn?: str
   for (const id of ["P0", "T1", "T2"]) { createTask(db, { id, runId: "run1", kind: "bb", contract: contract(id, id === "T1" ? options.dependsOn ?? [] : []) }); saveTaskPlan(db, id, `Plan for ${id}`); }
   for (let n = 1; n <= options.pilotAttempts; n++) {
     createAttempt(db, { id: `P0-a${n}`, runId: "run1", taskId: "P0" });
-    db.prepare("UPDATE lane_pilot_attempt SET state='blocked', reason='validation_failed: boom' WHERE id=?").run(`P0-a${n}`);
+    db.prepare("UPDATE lane_pilot_attempt SET state='blocked', reason=? WHERE id=?").run(options.pilotReason ?? "validation_failed: boom", `P0-a${n}`);
   }
   if (options.wall) db.prepare(`INSERT INTO lane_pilot_wall(wall_key,kind,subject,project_id,state,pack_json,created_at,updated_at) VALUES ('task:x','task','P0: boom','proj1','stopped',?,1,1)`)
     .run(JSON.stringify({ meta: { runId: "run1", family: "P0" } }));
@@ -73,6 +73,13 @@ it("a sibling goes on at once when its blocked pilot spent its attempts", async 
 
 it("a sibling goes on at once when the wall ladder holds its blocked pilot's family", async () => {
   const w = world({ pilotAttempts: 1, wall: true });
+  w.startT1();
+  await vi.waitFor(() => expect(w.spawned).toEqual(["T1-a1"]));
+});
+
+// feed-gen 2026-11-10: the area's pilot died of its writers' providers, and the next task of the area waited 75 minutes behind it.
+it("a sibling goes on at once when its pilot's block is the provider's, not the task's", async () => {
+  const w = world({ pilotAttempts: 1, pilotReason: "writer_provider_unavailable:thread_not_started: vk_required_session_policy_bridge_unsupported" });
   w.startT1();
   await vi.waitFor(() => expect(w.spawned).toEqual(["T1-a1"]));
 });

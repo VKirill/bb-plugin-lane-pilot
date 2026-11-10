@@ -1,13 +1,13 @@
 import { TASK_ATTEMPT_BUDGET, retryBudgetReason, spendRetryBudget } from "../retry-budget";
 import { retrySafetyStop, taskLimitStop, TASK_WALL_CLOCK_MIN, VERIFY_MAX_PASSES } from "./retry-safety";
-import { pilotOf, pilotUnderWall, runTasks, type TaskWallRow } from "./pilot";
+import { pilotBlockedByOthers, pilotOf, pilotUnderWall, runTasks, type TaskWallRow } from "./pilot";
 import { listWalls } from "../../wall";
 import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop, tokenUsageFromEvent, type RunBudget } from "@lane-pilot/resilience";
 import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { providerPoolCap } from "@lane-pilot/settings-catalog";
 import {WRITER_PROFILES, isZcodeProvider, rotatedWriterSettings, type WriterProfile, writerFallbackChain, writerFallbacks} from "@lane-pilot/models";
-import { DEPENDENCY_REDO_WAIT_MS, blockedReasonCount, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, failureFieldsOf, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, attemptReasonsForTask, canceledLatestTaskIds, listAttemptsForTask, listAttemptsInStates, listOpenAttempts, listStageReceipts, listRunTaskRows, listTaskAttemptRows, listTracedAttemptsSince, listUnansweredWriterQuestions, loadProjectSettings, priorAttemptStates, taskHeldUntil, noteCleanAdmission, noteToldPmDirectly, onAttemptChanged, parkAttemptWake, trailingQueuedParks, transitionAttempt, taskBasePath } from "../../storage";
+import { DEPENDENCY_REDO_WAIT_MS, blockedReasonCount, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, failureFieldsOf, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttempt, latestTaskAttemptState, attemptReasonsForTask, canceledLatestTaskIds, listAttemptsForTask, listAttemptsInStates, listOpenAttempts, listStageReceipts, listRunTaskRows, listTaskAttemptRows, listTracedAttemptsSince, listUnansweredWriterQuestions, loadProjectSettings, priorAttemptStates, taskHeldUntil, noteCleanAdmission, noteToldPmDirectly, onAttemptChanged, parkAttemptWake, trailingQueuedParks, transitionAttempt, taskBasePath } from "../../storage";
 import { closeOwnerItem, closeOwnerItemsByPrefix, ownerItemPrefixCount, postOwnerItem } from "../../owner-waiting";
 import { taskV2Schema } from "../../contracts";
 import { bestEffort, ownsPathsOverlap, parseJsonOr, pollPause } from "@lane-pilot/kit";
@@ -374,9 +374,13 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       catch (cause) { ctx.log(`writer ${input.taskId}: the wall ladder is unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); }
       const pilot = pilotOf(input.taskId, waveTasks);
       // A blocked pilot that nothing will redo soon (its own attempts are spent, or the wall ladder holds its family or a hunt runs on its
-      // files) holds no one: the wave goes on in its own order, each task still serialised by owns_paths overlap. Only the PM's own depends_on keeps the 6-hour wait.
-      const pilotGivenUp = (dep:string) => countChargedAttempts(db, input.runId, dep) >= MAIN_ATTEMPT_LIMIT
-        || pilotUnderWall(taskWalls, input.runId, taskFamily(dep), waveTasks.find((task) => task.id === dep)?.ownsPaths ?? []);
+      // files), or one whose block is not about the task (the provider, the machine, Lane Pilot), holds no one: the wave goes on in its own
+      // order, each task still serialised by owns_paths overlap. Only the PM's own depends_on keeps the 6-hour wait.
+      const pilotGivenUp = (dep:string) => {
+        const latest = latestTaskAttempt(db, input.projectId, dep);
+        return countChargedAttempts(db, input.runId, dep) >= MAIN_ATTEMPT_LIMIT || (latest !== null && pilotBlockedByOthers(latest.state, latest.reason))
+          || pilotUnderWall(taskWalls, input.runId, taskFamily(dep), waveTasks.find((task) => task.id === dep)?.ownsPaths ?? []);
+      };
       const deps = [...new Set([...(input.task.depends_on ?? []), ...(pilot ? [pilot] : [])].filter((dep) => dep && dep !== input.taskId))];
       let noted = "";
       const since = Date.now();
@@ -397,7 +401,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             // The PM verified this task by hand (lane_pilot_update_task satisfied:true): its dependents go on.
             if (await isTaskSatisfied(bb.storage.kv as never, input.projectId, dep)) continue;
             if (state === "blocked" && dep === pilot && !(input.task.depends_on ?? []).includes(dep) && pilotGivenUp(dep)) {
-              if (!released.has(dep)) { released.add(dep); ctx.log(`writer ${input.taskId} goes on: its pilot ${dep} ended blocked and nothing will redo it soon`); }
+              if (!released.has(dep)) { released.add(dep); ctx.log(`writer ${input.taskId} goes on: its pilot ${dep} ended blocked and nothing will redo it soon, or its block is not about the task`); }
               continue;
             }
             // A PM cancels mostly to send the task again with a fixed contract: magicseo T6 (2026-10-30) blocked 32 s after

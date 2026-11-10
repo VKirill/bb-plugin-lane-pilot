@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
-import { pilotOf, pilotUnderWall, runTasks, type RunTask } from "../../src/rooms/writer/server/pilot";
+import { pilotBlockedByOthers, pilotOf, pilotUnderWall, runTasks, type RunTask } from "../../src/rooms/writer/server/pilot";
 import { canceledLatestTaskIds, listRunTaskRows } from "../../src/rooms/storage";
 
 describe("runTasks reads the owned paths of the PM's tasks and which of them ended canceled", () => {
@@ -52,5 +52,17 @@ describe("pilotUnderWall", () => {
     expect(pilotUnderWall(walls, "r", "p1", ["game/done.luau"])).toBe(false);
     expect(pilotUnderWall(walls, "r", "p9", [])).toBe(false);
     expect(pilotUnderWall([], "r", "p0", [])).toBe(false);
+  });
+});
+
+describe("pilotBlockedByOthers", () => {
+  it("lets the siblings go when the pilot's block is the provider's, the machine's or Lane Pilot's, and holds them for the task's own", () => {
+    expect(pilotBlockedByOthers("blocked", "writer_provider_limit: the model sent no answer for 9 min after its prompt (a silent provider limit)")).toBe(true);
+    expect(pilotBlockedByOthers("blocked", "writer_provider_unavailable:thread_not_started: vk_required_session_policy_bridge_unsupported")).toBe(true);
+    expect(pilotBlockedByOthers("blocked", "internal_error: illegal stage transition writer-agent: running -> pending")).toBe(true);
+    expect(pilotBlockedByOthers("provider_error", "writer thread status error")).toBe(true);
+    expect(pilotBlockedByOthers("blocked", "retry limit 2 exhausted: verification failed (npm test): exit 1")).toBe(false);
+    expect(pilotBlockedByOthers("blocked", "plan_critique_blocked")).toBe(false);
+    expect(pilotBlockedByOthers("validation_failed", "writer changed paths outside owns_paths")).toBe(false);
   });
 });

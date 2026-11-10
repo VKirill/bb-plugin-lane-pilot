@@ -1,4 +1,5 @@
 import { taskFamily } from "@lane-pilot/contracts";
+import { failureClass } from "../contracts";
 import { isMainfixTask } from "./validate-output";
 
 /**
@@ -10,7 +11,14 @@ import { isMainfixTask } from "./validate-output";
  * A topic comes from code facts only, never from words:
  *  - file: one specific file that small fix-like tasks of the run keep re-owning;
  *  - test: one test (a `--filter X`, a `for m in A B`, a test file) that failed the checks of other task families again and again.
- * Pure: the caller reads the run's tasks and attempts from the database (writer/server/topic-loop.ts).
+ * Pure: the caller reads the run's tasks and attempts from the database (writer/server/dispatch-guards.ts).
+ *
+ * What is a try, and whose loop it is (feed-gen 2026-11-10, and four of the first ten walls closed by hand as «not a loop»):
+ *  - a try is a writer's work that was judged: an accepted attempt, or one the task's own checks or gates rejected. A family whose
+ *    every attempt died of the provider, the machine or Lane Pilot itself changed nothing and proved nothing about the topic;
+ *  - the loop is the PM's own. A message of the owner in the PM chat is the change of perspective the rule asks for: only the tasks
+ *    sent since the owner last wrote count, and a wall built before that message holds nothing;
+ *  - a wall holds its topic for the window, like the tries that built it. After that it is history.
  */
 
 export interface LoopTask {
@@ -28,6 +36,11 @@ export interface LoopTask {
   /** What the task says (title, objective, files, commands): a research task counts as looking at a topic when this names it. */
   text: string;
   attempts: Array<{ state: string; reason: string | null; failureCode?: string | null }>;
+}
+
+/** What the stopper is told beside the tasks: when the owner last wrote in the PM chat (null: not known, nothing is reset). */
+export interface LoopContext {
+  ownerSpokeAt?: number | null;
 }
 
 export const TOPIC_LOOP = {
@@ -55,6 +68,11 @@ export interface TopicLoop {
 }
 
 const OPEN_STATES = new Set(["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"]);
+/** The writer's work was rejected by the task's own checks or gates (not by the provider, the machine, Lane Pilot or a cancel). */
+const rejected = (attempt: LoopTask["attempts"][number]) => attempt.state !== "accepted" && attempt.state !== "canceled" && !OPEN_STATES.has(attempt.state)
+  && (attempt.failureCode === "verification_failed" || attempt.failureCode === "verification_timeout" || failureClass(attempt.state, attempt.reason) === "task");
+/** The attempt is a try on the topic: its work was judged, or it is still at work. */
+const isTry = (attempt: LoopTask["attempts"][number]) => attempt.state === "accepted" || OPEN_STATES.has(attempt.state) || rejected(attempt);
 const ANALYSIS_KINDS = new Set(["research", "check"]);
 const FIX_WORDS = /\b(fix|fixes|fixed|hotfix|regress\w*|repair\w*|flak\w*|unflak\w*|stabili[sz]\w*|retry|workaround)\b/i;
 /** Docs, manifests and lock files are touched by every kind of task; sharing them says nothing about a chase. */
@@ -87,7 +105,7 @@ interface Family {
   members: LoopTask[];
   /** The newest member: its contract is the family's final ask. */
   latest: LoopTask;
-  /** Some attempt ran (a family every attempt of which was cancelled was never tried). */
+  /** Some attempt is a try (a family every attempt of which was cancelled, or died of the provider or the machine, was never tried). */
   tried: boolean;
 }
 
@@ -99,7 +117,7 @@ function familiesOf(tasks: readonly LoopTask[]): Family[] {
     family.members.push(task);
     family.lastAt = task.createdAt;
     family.latest = task;
-    if (task.attempts.some((attempt) => attempt.state !== "canceled")) family.tried = true;
+    if (task.attempts.some(isTry)) family.tried = true;
     byId.set(id, family);
   }
   return [...byId.values()];
@@ -113,24 +131,25 @@ function focusFiles(task: LoopTask, ignored: ReadonlySet<string>): string[] {
 }
 
 const RED = new Set(["validation_failed", "blocked", "empty_output"]);
-/** The tests a family could not get green: named in the reason of a red check (its failure_code), or in the checks of a family that ended an attempt red. */
+/** The tests a family could not get green: named in the reason of a red check (its failure_code), or in the checks of a family whose work ended an attempt red. */
 const failedNames = (family: Family) => new Set(family.members.flatMap((task) => [
   ...task.attempts.filter((attempt) => attempt.failureCode === "verification_failed" || attempt.failureCode === "verification_timeout").flatMap((attempt) => testNames(attempt.reason ?? "")),
-  ...(task.attempts.some((attempt) => RED.has(attempt.state)) ? task.commands.flatMap(testNames) : []),
+  ...(task.attempts.some((attempt) => RED.has(attempt.state) && rejected(attempt)) ? task.commands.flatMap(testNames) : []),
 ]));
 
 /**
  * Whether the task about to be dispatched is the fourth try on a topic of this run: `earlier` are the run's tasks so far (any
  * order, every member of every family). null for a task that may go: a research or check task, a mainfix, a redo of a family the
  * run already has, or a topic fewer than three other families worked on in the last 72 hours, or one a research/check task
- * on the topic has been accepted for since.
+ * on the topic has been accepted for since, or one the owner wrote in the PM chat about since its third task.
  */
-export function topicLoop(candidate: LoopTask, earlier: readonly LoopTask[]): TopicLoop | null {
+export function topicLoop(candidate: LoopTask, earlier: readonly LoopTask[], context: LoopContext = {}): TopicLoop | null {
   if (ANALYSIS_KINDS.has(candidate.kind ?? "") || isMainfixTask(candidate.id)) return null;
   const own = taskFamily(candidate.id);
   if (earlier.some((task) => taskFamily(task.id) === own)) return null;
   const all = familiesOf(earlier.filter((task) => !isMainfixTask(task.id)));
-  const recent = all.filter((family) => family.tried && family.lastAt >= candidate.createdAt - TOPIC_LOOP.windowMs && !ANALYSIS_KINDS.has(family.latest.kind ?? ""));
+  const spoke = context.ownerSpokeAt ?? 0;
+  const recent = all.filter((family) => family.tried && family.lastAt >= candidate.createdAt - TOPIC_LOOP.windowMs && family.firstAt > spoke && !ANALYSIS_KINDS.has(family.latest.kind ?? ""));
   const shared = new Set<string>();
   if (all.length >= TOPIC_LOOP.sharedMinFamilies) {
     const owners = new Map<string, number>();
@@ -174,7 +193,7 @@ export function topicLoop(candidate: LoopTask, earlier: readonly LoopTask[]): To
 }
 
 /** What a new try on a closed topic must carry, in the words the PM reads in the refusal. */
-const newTryRule = (incident: string) => `A single new try is allowed only as an explicit decision tied to the incident ${incident}: its objective carries a line \`incident: ${incident}\`, a line \`hypothesis: ...\` with a cause no earlier task on the topic assumed, and its verification holds a command no earlier task on the topic used.`;
+const newTryRule = (incident: string) => `A single new try is allowed only as an explicit decision tied to the incident ${incident}: its objective carries a line \`incident: ${incident}\`, a line \`hypothesis: ...\` with a cause no earlier task on the topic assumed, and its verification holds a command no earlier task on the topic used. The owner's next message in this chat reopens the topic: a task he asks for after it goes out as usual.`;
 
 /**
  * The refusal the PM reads: the topic, who already tried, and what the machine does about it. The machine ends the loop itself (the wall's
@@ -197,6 +216,8 @@ export interface TopicWall {
   state: "stopped" | "hunting" | "hunted" | "backlog" | "closed";
   /** How the hunt ended: `usable`, `unknown`, or `none` when no hunt ran (the day's hunt budget was spent). */
   hunt: string;
+  /** When the wall was built: it holds its topic for the window, and only while the owner has not written since. */
+  createdAt?: number;
 }
 
 /** Whether a task is work on the topic: a fix-like task about the file, or a task whose checks name the test. Research and check tasks look at a topic, they do not patch it. */
@@ -229,10 +250,12 @@ export interface TopicHold {
  * wall (the wall's `advance`). The one way through is a single new try, a machine decision tied to the incident: the objective names the
  * wall's key, states a hypothesis that differs from the earlier tasks' and carries a check none of them used. A hunt that ended unknown,
  * or never ran (the budget of the day), gives no permission. The try is one for the incident: a task that cites it ends the permission, and
- * only its own family (a redo, its mainfix) goes on. null for a task not on the topic of any open wall.
+ * only its own family (a redo, its mainfix) goes on. null for a task not on the topic of any open wall, and for a wall that is older
+ * than the window or was built before the owner last wrote in the PM chat (the owner's word reopens the topic).
  */
-export function topicHold(candidate: LoopTask, walls: readonly TopicWall[], earlier: readonly LoopTask[]): TopicHold | null {
-  const wall = walls.find((row) => row.state !== "closed" && touchesTopic(candidate, row.topic));
+export function topicHold(candidate: LoopTask, walls: readonly TopicWall[], earlier: readonly LoopTask[], context: LoopContext = {}): TopicHold | null {
+  const holds = (row: TopicWall) => row.createdAt === undefined || (row.createdAt >= candidate.createdAt - TOPIC_LOOP.windowMs && row.createdAt > (context.ownerSpokeAt ?? 0));
+  const wall = walls.find((row) => row.state !== "closed" && holds(row) && touchesTopic(candidate, row.topic));
   if (!wall) return null;
   const what = `${wall.topic} (incident ${wall.key})`;
   const refuse = (why: string): TopicHold => ({ wall, allowed: false, why });

@@ -29,7 +29,7 @@ export function loopTaskOf(id: string, createdAt: number, contract: unknown, att
  * The refusal for a task that would be another try on a topic of its run (see tasks/topic-loop.ts), or null. Reads the run's
  * tasks and their attempts from the database; see `topicLoopStop` for what the refusal does.
  */
-export async function topicLoopGuard(db: LanePilotDatabase, runId: string, task: TaskV2, opts: { wall?: Services["wall"]; projectId?: string; pmThreadId?: string; now?: number } = {}): Promise<string | null> {
+export async function topicLoopGuard(db: LanePilotDatabase, runId: string, task: TaskV2, opts: { wall?: Services["wall"]; projectId?: string; pmThreadId?: string; now?: number; ownerSpokeAt?: number | null } = {}): Promise<string | null> {
   const attempts = new Map<string, LoopTask["attempts"]>();
   for (const row of runAttemptOutcomeRows(db, runId)) {
     attempts.set(row.task_id, [...(attempts.get(row.task_id) ?? []), { state: row.state, reason: row.reason, failureCode: row.failure_code }]);
@@ -42,7 +42,7 @@ export async function topicLoopGuard(db: LanePilotDatabase, runId: string, task:
     if (loopTask) earlier.push(loopTask);
   }
   const candidate = loopTaskOf(task.id, opts.now ?? Date.now(), task, []);
-  return candidate ? topicLoopStop(opts.wall, runId, candidate, earlier, { projectId: opts.projectId, pmThreadId: opts.pmThreadId, contract: task }) : null;
+  return candidate ? topicLoopStop(opts.wall, runId, candidate, earlier, { projectId: opts.projectId, pmThreadId: opts.pmThreadId, contract: task, ownerSpokeAt: opts.ownerSpokeAt }) : null;
 }
 
 /**
@@ -51,12 +51,13 @@ export async function topicLoopGuard(db: LanePilotDatabase, runId: string, task:
  * the hunt ending does not reopen it, and the one new try the topic allows is a decision tied to the incident (see `topicHold`). A closed
  * wall counts as the accepted research that ends the chase before it. Without a wall the PM is told to send the research task itself.
  */
-export async function topicLoopStop(wall: Services["wall"] | undefined, runId: string, candidate: LoopTask, earlier: readonly LoopTask[], opts: { projectId?: string; pmThreadId?: string; contract?: unknown } = {}): Promise<string | null> {
+export async function topicLoopStop(wall: Services["wall"] | undefined, runId: string, candidate: LoopTask, earlier: readonly LoopTask[], opts: { projectId?: string; pmThreadId?: string; contract?: unknown; ownerSpokeAt?: number | null } = {}): Promise<string | null> {
   const hunts = wall?.loopTopics(runId) ?? [];
-  const hold = topicHold(candidate, hunts, earlier);
+  const context = { ownerSpokeAt: opts.ownerSpokeAt ?? null };
+  const hold = topicHold(candidate, hunts, earlier, context);
   if (hold) return hold.allowed ? null : hold.why;
   const research: LoopTask[] = hunts.filter((hunt) => hunt.state === "closed").map((hunt) => ({ id: hunt.key, createdAt: hunt.updatedAt, kind: "research", title: hunt.topic, files: [], commands: [], text: hunt.topic, attempts: [{ state: "accepted", reason: null }] }));
-  const found = topicLoop(candidate, [...earlier, ...research]);
+  const found = topicLoop(candidate, [...earlier, ...research], context);
   if (!found) return null;
   if (!wall || !opts.projectId) return topicLoopMessage(found);
   let hunt: string | undefined;

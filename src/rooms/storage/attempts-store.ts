@@ -169,15 +169,15 @@ export const ATTEMPT_TABLE = "lane_pilot_attempt";
 export const DEPENDENCY_REDO_WAIT_MS = 6 * 3_600_000;
 
 /** The latest attempt of a task or of its redispatches, with when it got its state. */
-export function latestTaskAttempt(db: LanePilotDatabase, projectId: string, taskId: string): { state:string; updated_at:number } | null {
+export function latestTaskAttempt(db: LanePilotDatabase, projectId: string, taskId: string): { state:string; updated_at:number; reason:string|null } | null {
   // Naming «P1.2» also follows its later redispatches («P1.3», «P1.2.2»): the base is the id without its numeric suffixes.
   const base = taskRedispatchBase(taskId);
-  const rows = db.prepare(`SELECT a.task_id, a.state, a.updated_at FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+  const rows = db.prepare(`SELECT a.task_id, a.state, a.updated_at, a.reason FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     WHERE r.project_id=? AND (a.task_id=? OR a.task_id LIKE ? ESCAPE '\\')
-    ORDER BY a.created_at DESC, a.attempt_no DESC`).all(projectId, taskId, `${base.replace(/[\\%_]/g, "\\$&")}.%`) as Array<{ task_id:string; state:string; updated_at:number }>;
+    ORDER BY a.created_at DESC, a.attempt_no DESC`).all(projectId, taskId, `${base.replace(/[\\%_]/g, "\\$&")}.%`) as Array<{ task_id:string; state:string; updated_at:number; reason:string|null }>;
   const member = (id:string) => id === taskId || (id.startsWith(`${base}.`) && /^(\.\d+)+$/.test(id.slice(base.length)));
   const row = rows.find((candidate) => member(candidate.task_id));
-  return row ? { state:row.state, updated_at:row.updated_at } : null;
+  return row ? { state:row.state, updated_at:row.updated_at, reason:row.reason } : null;
 }
 
 /** A task result the PM has not been told: the latest attempt of a task of a PM's run ended accepted, blocked or canceled. A closed run tells no one: its PM chat has handed the lead back or the run is over. */

@@ -22,6 +22,8 @@ export { BIRTH_KINDS, isCodeCriticDefault } from "./task-enums"
 export { CODE_CRITIC_DEFAULTS } from "./task-enums";
 export type { BirthKind, CodeCriticDefault } from "./task-enums";
 export type { AcceptanceCard } from "./rpc-runs";
+export { FREE_CLASSES, failureClass } from "./failure-class";
+export { FAILED_ATTEMPT_STATES } from "./state-machine";
 
 export const rpcMethods = {
   ...rpcShell,

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../server";
 import type { TaskV2 } from "../src/rooms/contracts";
 import {
-  createRun, getAttempt, listAttemptsForTask, listStageReceipts, openDatabase,
+  createAttempt, createRun, createTask, getAttempt, listAttemptsForTask, listStageReceipts, openDatabase,
   saveProjectSetting, savePrototypeConfig, setRunThread,
 } from "../src/rooms/plugin-db";
 
@@ -145,6 +145,22 @@ describe("a replan keeps the task and its attempt", () => {
     expect(sent.error).toBeUndefined();
     expect(await bb.storage.kv.get("stability:parked")).toEqual([]);
     expect(taskCount(db)).toBe(1);
+    releaseBase();
+    await harness.lifecycle.dispose();
+  });
+
+  // feed-gen 2026-11-10: four superseded tasks stayed «blocked» on the board, one of them the pilot of its area; «cancel is not legal from blocked».
+  it("closes a task that ended blocked: its attempt becomes canceled with the PM's words, and an accepted one is left alone", async () => {
+    const { db, harness, tool, releaseBase } = await setup();
+    for (const [id, state] of [["dead", "blocked"], ["done", "accepted"]] as const) {
+      createTask(db, { id, runId, kind:"bb", contract:{ ...task, id } });
+      createAttempt(db, { id:`${id}-a1`, runId, taskId:id });
+      db.prepare("UPDATE lane_pilot_attempt SET state=?, reason=? WHERE id=?").run(state, state === "blocked" ? "writer thread status error" : null, `${id}-a1`);
+    }
+    expect(await tool("lane_pilot_cancel_task", { taskIds:["dead", "done"], words:"superseded by text-gen-fallback-chain" })).toMatchObject({ results:[
+      { taskId:"dead", ok:true, state:"canceled" }, { taskId:"done", ok:false, state:"accepted" }] });
+    expect(getAttempt(db, "dead-a1")).toMatchObject({ state:"canceled", reason:"PM canceled: superseded by text-gen-fallback-chain" });
+    expect(getAttempt(db, "done-a1")).toMatchObject({ state:"accepted" });
     releaseBase();
     await harness.lifecycle.dispose();
   });

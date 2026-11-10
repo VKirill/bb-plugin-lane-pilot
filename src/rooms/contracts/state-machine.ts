@@ -142,6 +142,8 @@ export const OPERATIONAL_MOVES: ReadonlyArray<{ from:AttemptState; to:AttemptSta
   { from:"running", to:"spawn_rejected", why:"reconcile found no thread for an attempt that was running: the writer is gone and the attempt retries like a rejected spawn" },
   ...(["cancel_requested", "blocked", "provider_error", "timeout", "empty_output", "validation_failed"] as const).map((from) =>
     ({ from, to:"accepted" as const, why:"the merge landed in main before the attempt's state caught up (a stop requested meanwhile or a reply lost): the work is in main, so it is accepted" })),
+  ...(["blocked", "provider_error", "timeout", "empty_output", "validation_failed"] as const).map((from) =>
+    ({ from, to:"canceled" as const, why:"the PM closed a task that had ended without acceptance (lane_pilot_cancel_task): it leaves the board and holds no task behind it" })),
 ];
 
 export class IllegalTransitionError extends Error {

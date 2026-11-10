@@ -54,3 +54,28 @@ export async function ownerWordsOfRun(input: { bb: BbPluginApi; db: LanePilotDat
     return [];
   }
 }
+
+/**
+ * When the owner last wrote in a PM thread, or null (no message in the newest 200 turn requests, or the thread is unreadable).
+ * The topic loop stopper reads it: the owner's message is the change of perspective that ends the PM's own chase (tasks/topic-loop.ts).
+ */
+export async function ownerLastWroteAt(input: { bb: BbPluginApi; threadId: string | null | undefined }): Promise<number | null> {
+  try {
+    if (!input.threadId) return null;
+    const thread = await input.bb.sdk.threads.get({ threadId: input.threadId }) as ThreadLike | null;
+    if (!thread?.id) return null;
+    let beforeSeq: string | undefined;
+    for (let page = 0; page < 4; page++) {
+      const events = await input.bb.sdk.threads.events.list({ threadId: input.threadId, types: [TURN_REQUESTED], order: "desc", limit: String(EVENT_PAGE), ...(beforeSeq ? { beforeSeq } : {}) });
+      if (!Array.isArray(events) || !events.length) return null;
+      for (const event of events as EventLike[]) if (typeof event?.createdAt === "number" && ownerMessagesOf(event, thread).length) return event.createdAt;
+      const next = Math.min(...events.map((row) => Number((row as { seq?: unknown }).seq)).filter((seq) => Number.isFinite(seq)));
+      if (!Number.isFinite(next) || events.length < EVENT_PAGE || (beforeSeq !== undefined && next >= Number(beforeSeq))) return null;
+      beforeSeq = String(next);
+    }
+    return null;
+  } catch (cause) {
+    input.bb.log.warn(`topic loop: the owner's last message is unreadable: ${cause instanceof Error ? cause.message : String(cause)}`);
+    return null;
+  }
+}

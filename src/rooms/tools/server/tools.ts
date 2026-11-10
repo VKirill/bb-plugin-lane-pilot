@@ -7,7 +7,8 @@ import { registerBrowserExecutors, runBrowserQaGraph } from "../../qa/server";
 import { cancelAttemptById, cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees } from "../../runs/server";
 import { bestEffort, LANE_PILOT_READ_NAME } from "@lane-pilot/kit";
 import { taskV2Schema, TASK_KINDS } from "../../contracts";
-import { getRun, getRunSettingsScopes, listEndedTaskIds, listOpenAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig, noteToldPmDirectly, setTaskClosedWords } from "../../storage";
+import { getRun, getRunSettingsScopes, listAttemptsForTask, listEndedTaskIds, listOpenAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig, markCancelCode, noteToldPmDirectly, setTaskClosedWords, transitionAttempt } from "../../storage";
+import { FAILED_ATTEMPT_STATES } from "../../contracts";
 import { finalizeNativeLaneBinding, nativeRunReady, ownedNativePmRun, writerWorkspaceForPmInstructions } from "../../native-agent";
 import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../../native-agent";
 import { readGateReport } from "../../tasks/gate-report";
@@ -160,7 +161,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
 
   registerObservedTool(bb.agents, {
     name:"lane_pilot_cancel_task",
-    description:"Cancel tasks of this PM's run that are no longer wanted: a queued one at once, a running one once its writer stops.",
+    description:"Cancel tasks of this PM's run that are no longer wanted: a queued one at once, a running one once its writer stops, a blocked one is closed.",
     instructions:"Use only from a Lane Pilot PM thread, for tasks a newer task supersedes or the owner dropped. Name the task ids you sent; tasks that depend on a canceled one stop waiting for it, and a canceled task frees its area. Cancel does not undo work already merged into main. To replan queued tasks do not cancel and resend them: hold them (lane_pilot_queue hold), correct with lane_pilot_update_task, then release; a canceled queued task sent again unchanged gets its task and attempt back.",
     parameters:z.object({ taskIds:z.array(z.string().min(1)).min(1).max(50), words:z.string().trim().min(1).max(1000).describe("Closed in words: why these tasks end here; kept on the task.").optional() }).strict(),
     execute: async (params, context) => {
@@ -172,8 +173,19 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
         if (!attempts.length) {
           // Parked for a restart (no open attempt, a ticket in the stability room): the cancel drops the ticket, so the task does not come back.
           const unparked = await services.stability.dropParked((row) => row.runId === runId && row.taskId === taskId);
-          results.push(unparked.length ? { taskId, ok:true, state:"unparked", reason:"it was parked for a restart; the restart ticket is dropped and it does not restart" }
-            : { taskId, ok:false, state:"not_open", reason:"no open attempt of this task in this run" });
+          if (unparked.length) { results.push({ taskId, ok:true, state:"unparked", reason:"it was parked for a restart; the restart ticket is dropped and it does not restart" }); continue; }
+          // Ended without acceptance (blocked, failed): the PM closes it, so it leaves the board and holds no task behind it. feed-gen 2026-11-10:
+          // «cancel is not legal from blocked» left four superseded tasks on the board and one of them holding its area as the pilot.
+          const newest = listAttemptsForTask(db, runId, taskId).at(-1);
+          if (newest && (FAILED_ATTEMPT_STATES as readonly string[]).includes(newest.state) && newest.state !== "spawn_rejected") {
+            const was = newest.state;
+            transitionAttempt(db, newest.id, "canceled", { reason: params.words?.trim() ? `PM canceled: ${params.words.trim()}` : `PM canceled the task (it had ended ${was})` });
+            markCancelCode(db, newest.id, "owner_cancel");
+            if (params.words) setTaskClosedWords(db, taskId, params.words);
+            results.push({ taskId, attemptId:newest.id, ok:true, state:"canceled", reason:`it had ended ${was}; it is closed: it leaves the board and holds no task behind it` });
+            continue;
+          }
+          results.push({ taskId, ok:false, state:newest?.state ?? "not_open", reason:newest ? `its last attempt is ${newest.state}: nothing to cancel` : "no attempt of this task in this run" });
           continue;
         }
         const why = params.words?.trim() ? `PM canceled: ${params.words.trim()}` : "PM canceled the task";

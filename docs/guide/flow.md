@@ -80,7 +80,7 @@ Dispatch also does the following.
 - A repeat of the same task and plan within 30 minutes returns the existing task.
 - A second member of a task family (`x`, `x.2`) while one runs or is parked returns `task_in_progress`.
 - The wall can refuse a family (`wall_stop`).
-- The `topic_loop` guard refuses a fourth task on a topic: three earlier families in 72 hours on the same file (small fix-like tasks owning at most 3 entries) or the same test. The machine hunts that topic instead (see `docs/wall.md`).
+- The `topic_loop` guard refuses a fourth task on a topic: three earlier families in 72 hours on the same file (small fix-like tasks owning at most 3 entries) or the same test. The machine hunts that topic instead (see `docs/wall.md`). A family counts only when a writer's work was judged (accepted, or rejected by the task's own checks), not when its attempts died of the provider or the machine; only the tasks sent since the owner last wrote in the PM chat count, and his message reopens a closed topic; a loop wall holds its topic for 72 hours.
 - `batchAdvice` in the answer lists the open tasks that hold the new one and, when three or more own one path, the fix. A `grain` line warns when a task is far smaller than the project's median accepted task.
 - A spend reserve check runs when a run token budget and a task `appetite.tokens` exist.
 

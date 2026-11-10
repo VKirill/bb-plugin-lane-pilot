@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.507
+
+- **The loop stopper no longer refuses the owner's own next task.** feed-gen, November 10: «first OpenLux, then OpenRouter, then DeepSeek» was refused three times with `topic_loop`, «3 tasks in 4.1 h worked on `src/lib/ai-clients.ts`, and it is still being patched, not solved». Of those three tasks one had been accepted; the other two never changed a line: their writers died (a silent Devin, six Antigravity sessions the core could not start) and two attempts ended on Lane Pilot's own fault. The hunters read a test that had never failed. Measured over all 19 loop walls since October 30: 4 were closed by hand as «not a loop: separate requests of the owner, each accepted», 6 closed when the next try was simply accepted, 9 stayed in the backlog for good and kept their file or test closed for the rest of the run; the hunts took 6.5 million tokens. Three rules now:
+  - A try is a writer's work that was judged: an accepted attempt, or one the task's own checks or gates rejected. A family whose every attempt died of the provider, the machine or Lane Pilot is not a try, and its checks are not «red».
+  - The loop is the PM's own. Only the tasks sent since the owner last wrote in the PM chat count, and a wall built before his message holds nothing: the owner's word is the change of perspective the rule asks for.
+  - A loop wall holds its topic for 72 hours, the same window as the tries that built it, not for the rest of the run.
+- **A task no longer waits behind a pilot nobody could run.** The same run: the first task of area «generator» ended blocked on its writers' providers, and the next task of the area stood 75 minutes behind it as its pilot until the PM canceled it and sent it again under another area name. A pilot whose block is the provider's, the machine's or Lane Pilot's own holds no one; one blocked by its own checks, a critic or a question still does.
+- **The PM can close a task that ended blocked or failed.** `lane_pilot_cancel_task` answered «no open attempt», and four superseded tasks stayed «blocked» on the board for a day. It now closes such a task: the attempt becomes `canceled` with the PM's words, the task leaves the board, frees its area and holds no task behind it. An accepted task is left alone.
+
 ## 0.1.506
 
 - **A model whose limit comes back is tried less and less often: an hour, two, four, up to a day.** The free Gemini Flash through 9router
