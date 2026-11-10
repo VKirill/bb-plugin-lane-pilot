@@ -4,9 +4,40 @@
  * project's PM when it is `ready`, has an estimate of at most 13 points and every item it depends on is done; a ready item without an
  * estimate or above 13 is listed for the PM to estimate or split, never issued. Priority, then size, then age, gives the queue position.
  */
-export type TodoMeta = { id: string; title: string; status: string; priority: string; estimate: number | null; dependsOn: string[]; created: string };
+export type TodoMeta = { id: string; title: string; status: string; priority: string; estimate: number | null; dependsOn: string[]; created: string; ownsPaths?: string[] };
 export const MAX_ESTIMATE = 13;
 const PRIORITY: Record<string, number> = { high: 0, medium: 1, low: 2 };
+
+/** Paths of a diff that push a ship lane to «full» instead of the middle batch lane (SMA k_lib_batch risk filter). */
+export const FULL_LANE_PATHS = /^(src\/rooms\/(contracts|storage|core)\/|packages\/contracts\/|host\.ts|server\.ts|.*migrations?\.ts)/;
+/** An item bigger than a batch-sized estimate ships a fuller lane, never the middle one. */
+export const BATCH_MAX_ESTIMATE = 3;
+
+/** The middle lane (SMA k_v_batch): two to four issuable items, none resting on another chosen item. */
+export function pickBatch(items: readonly TodoMeta[], max = 4): TodoMeta[] {
+  const chosen: TodoMeta[] = [];
+  for (const item of backlogBoard(items).issuable) {
+    if (chosen.length >= max) break;
+    if ((item.estimate ?? 0) > BATCH_MAX_ESTIMATE) continue;
+    if (item.dependsOn.some((id) => chosen.some((other) => other.id === id))) continue;
+    chosen.push(item);
+  }
+  return chosen;
+}
+
+/** Paths that push a batch item to the full lane: its owns_paths, else the changed paths the task lists. */
+export function batchItemIsFullLane(item: Pick<TodoMeta, "ownsPaths">): boolean {
+  return (item.ownsPaths ?? []).some((path) => FULL_LANE_PATHS.test(path));
+}
+
+/** What a batch item still owes the middle lane (SMA k_lib_batch): the light plan challenge and an accepted attempt. */
+export function batchReceiptGaps(record: { state?: string | null; stages?: Array<{ id?: string; state?: string }> } | null): string[] {
+  const stages = record?.stages ?? [];
+  const gaps: string[] = [];
+  if (!stages.some((stage) => stage.id === "plan-critique" && stage.state === "passed")) gaps.push("plan-critique receipt");
+  if (record?.state !== "accepted" && !stages.some((stage) => stage.id === "acceptance-receipt" && stage.state === "passed")) gaps.push("accepted attempt receipt");
+  return gaps;
+}
 
 /** The flat fields of a meta.yaml (scalars and inline lists); anything else is ignored. Null without an id. */
 export function parseTodoMeta(text: string): TodoMeta | null {
@@ -24,7 +55,8 @@ export function parseTodoMeta(text: string): TodoMeta | null {
   if (!id) return null;
   const estimate = Number(field("estimate"));
   return { id, title: field("title") ?? id, status: field("status") ?? "open", priority: field("priority") ?? "medium",
-    estimate: Number.isFinite(estimate) && estimate > 0 ? estimate : null, dependsOn: list("depends_on"), created: field("created") ?? "" };
+    estimate: Number.isFinite(estimate) && estimate > 0 ? estimate : null, dependsOn: list("depends_on"), created: field("created") ?? "",
+    ...(list("owns_paths").length ? { ownsPaths: list("owns_paths") } : {}) };
 }
 
 export type BacklogBoard = { issuable: TodoMeta[]; needsEstimate: TodoMeta[]; decompose: TodoMeta[]; blocked: TodoMeta[] };

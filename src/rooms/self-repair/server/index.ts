@@ -9,5 +9,6 @@ export type { InsightsDeps, RepairDeps, RuleScanDeps, SelfRepairDeps } from "./d
 export { CONFIG_KEY, SELF_REPAIR_DEFAULTS, VERSION, lanePilotProjectOrNotice, logIncidents, mountSelfRepair, readRepairRecord, readTail, resolveLanePilotProject, selfRepairRpc } from "./self-repair";
 export type { Incident, RepairWorktree, SelfRepairConfig, Verdict } from "./self-repair";
 export { getRepairHooks, setRepairHooks } from "./hooks";
+export { batchPile, shipWatchSweep, SHIP_MAX_BATCH_COMMITS, SHIP_MAX_BATCH_DAYS } from "./ship-watch";
 export type { MergeDecision, NightAssignment, RepairHooks } from "./hooks";
 export type { AnalyzerSelection, JobResult, ScanJob } from "./rule-scan";

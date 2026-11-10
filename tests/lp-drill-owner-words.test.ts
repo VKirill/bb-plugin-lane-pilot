@@ -91,7 +91,9 @@ out = m.clear_stale_owner_words(ctx)`);
   it("the live word scenario leaves the key off and the verdict green", () => {
     const { rows, out } = withFakeHub(`
 m.thread_text = lambda thread: "waits for the owner's word before it lands"
-m.summarize = lambda rows_, task_id, cwd, output=None: {"state": "accepted", "states": ["accepted"], "reason": ""}
+m.time.sleep = lambda sec: None
+m.run = lambda args, **k: (0, "UI_REPORT=/tmp/ui/report.json", "")
+m.summarize = lambda rows_, task_id, cwd, output=None: {"state": "blocked" if "red" in task_id else "accepted", "states": ["blocked" if "red" in task_id else "accepted"], "reason": ""}
 out = m.scenario_live_word(ctx)`);
     expect((out as { result: string }).result).toBe("pass");
     expect((rows["owner.words"] as unknown[])[0]).toBe("off");
