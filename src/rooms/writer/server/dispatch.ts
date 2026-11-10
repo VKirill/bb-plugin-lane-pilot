@@ -29,6 +29,7 @@ import { batchAdviceFor, baselineRedGuard, recoveryGuard, topicLoopGuard } from 
 import { ownerLastWroteAt } from "../../critique/server";
 import { reviveCanceledTask } from "./revive";
 import { countRunNudges } from "./writer-silence";
+import { stampForecastModel } from "../../forecast/logic";
 import { isAbsolute, relative, resolve } from "node:path";
 import type { ServerCore } from "../../contracts/server";
 
@@ -232,7 +233,8 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     if (!valid.ok) throw new Error(`task-v2 invalid: ${valid.errors.join("; ")}`);
     const placed = await placeTask(runId, config.hostId, workspacePath, valid.task, canonicalPlan);
     if ("rejected" in placed) return { runId, state:"rejected", reason:placed.rejected, unapplied:[{ key:"task.project_cwd", reason:placed.rejected }] };
-    const task = placed.task;
+    // The forecast belongs to the PM that made it (SMA k_lib_modelver): the run's own pm model is stamped, whatever the PM sent.
+    const task = stampForecastModel(placed.task, config.pmProviderId && config.pmModel ? `${config.pmProviderId}/${config.pmModel}` : null);
     canonicalPlan = placed.plan;
     // The checkout this task works in: the run's folder, or the git repository inside it the task moved into.
     const taskBase = task.project_cwd;

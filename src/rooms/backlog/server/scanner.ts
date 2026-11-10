@@ -1,4 +1,5 @@
 import { listCliPmProjects, listCliPmThreads, loadProjectSettings, loadPrototypeConfig } from "../../storage";
+import { SETTING_BACKLOG_SCAN_MINUTES } from "@lane-pilot/settings-catalog";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { isPmChat } from "../../native-agent/server";
@@ -17,6 +18,15 @@ export const PER_PROJECT_PER_DAY = 1;
 export const PER_DAY = 3;
 
 const offerKey = (projectId: string, todoId: string) => `backlog:${projectId}:${todoId}`;
+/** The last time a project's todos were scanned (SMA m_in_cadence): the tick wakes every five minutes, the interval is the owner's setting. */
+const lastScanKey = (projectId: string) => `backlog:last-scan:${projectId}`;
+
+/** The project's scan interval in minutes — the person's setting (backlog.scan_minutes), 60 by default. */
+function scanMinutesOf(db: Parameters<typeof loadProjectSettings>[0], projectId: string): number {
+  const raw = loadProjectSettings(db, projectId)[SETTING_BACKLOG_SCAN_MINUTES];
+  const value = typeof raw === "number" ? raw : Number(raw);
+  return Number.isFinite(value) && value >= 1 ? Math.floor(value) : 60;
+}
 
 export function createBacklog(ctx: ServerCore) {
   const { db, bb, host } = ctx;
@@ -43,10 +53,16 @@ export function createBacklog(ctx: ServerCore) {
     return parseBacklogOutput(ran.stdout);
   }
 
-  async function board(projectId: string): Promise<BacklogBoard & { error?: string; readAt?: string; fetched?: boolean; behind?: number | null }> {
+  async function lastScanAt(projectId: string): Promise<number | null> {
+    const stored = await bb.storage.kv.get(lastScanKey(projectId)).catch(() => null) as number | null;
+    return typeof stored === "number" && Number.isFinite(stored) ? stored : null;
+  }
+
+  async function board(projectId: string): Promise<BacklogBoard & { error?: string; readAt?: string; fetched?: boolean; behind?: number | null; lastScanAt?: number | null }> {
     const config = loadPrototypeConfig(db, projectId);
     const readAt = new Date().toISOString();
-    if (!config?.writerWorkspacePath) return { issuable: [], needsEstimate: [], decompose: [], blocked: [], readAt, fetched: false, behind: null, error: "the project has no workspace configured" };
+    const scannedAt = await lastScanAt(projectId);
+    if (!config?.writerWorkspacePath) return { issuable: [], needsEstimate: [], decompose: [], blocked: [], readAt, fetched: false, behind: null, lastScanAt: scannedAt, error: "the project has no workspace configured" };
     // Fresh data first (SMA m_in_scan): fetch, then read; whoever sees the result gets its age and how far the branch is behind.
     const freshened = await host.call("gateRun", { requestedHostId: config.hostId, basePath: config.writerWorkspacePath, command: "git fetch --quiet && git rev-list --count HEAD..@{u}", timeoutSec: 20 }, { hostId: config.hostId, timeoutMs: 30_000 })
       .catch(() => ({ exitCode: 1, stdout: "", stderr: "" }));
@@ -57,15 +73,21 @@ export function createBacklog(ctx: ServerCore) {
       .catch((cause: unknown) => ({ exitCode: 1, stdout: "", stderr: cause instanceof Error ? cause.message : String(cause) }));
     const issued = new Set((db.prepare("SELECT todo_id FROM lane_pilot_backlog_issue WHERE project_id=?").all(projectId) as Array<{ todo_id: string }>).map((row) => row.todo_id));
     const result = backlogBoard(parseBacklogOutput(ran.stdout));
-    return { ...result, issuable: result.issuable.filter((item) => !issued.has(item.id)), readAt, fetched, behind };
+    return { ...result, issuable: result.issuable.filter((item) => !issued.has(item.id)), readAt, fetched, behind, lastScanAt: scannedAt };
   }
 
   async function scan(now = Date.now()) {
     const issuedToday = () => (db.prepare("SELECT count(*) AS n FROM lane_pilot_backlog_issue WHERE issued_at>=?").get(now - DAY) as { n: number }).n;
     const projects = listCliPmProjects(db, now - 14 * DAY);
-    const out: Array<{ projectId: string; offered: string | null; board: { issuable: number; needsEstimate: number; decompose: number; blocked: number } }> = [];
+    const out: Array<{ projectId: string; offered: string | null; scanned: boolean; lastScanAt: number | null; board: { issuable: number; needsEstimate: number; decompose: number; blocked: number } | null }> = [];
     for (const { project_id: projectId } of projects) {
       if (ctx.isDisposed()) break;
+      // The interval is the person's setting: a project whose last scan is younger than it is left alone this tick.
+      const scannedAt = await lastScanAt(projectId);
+      if (scannedAt !== null && now - scannedAt < scanMinutesOf(db, projectId) * 60_000) {
+        out.push({ projectId, offered: null, scanned: false, lastScanAt: scannedAt, board: null });
+        continue;
+      }
       const pm = await pmOf(projectId, now);
       const current = await board(projectId);
       const counts = { issuable: current.issuable.length, needsEstimate: current.needsEstimate.length, decompose: current.decompose.length, blocked: current.blocked.length };
@@ -76,13 +98,17 @@ export function createBacklog(ctx: ServerCore) {
         if (!issuable.has(key.slice(offerKey(projectId, "").length))) closeOwnerItem(db, key, "janitor:not issuable", now);
       }
       const next = current.issuable[0];
-      if (!pm || !next || projectToday >= PER_PROJECT_PER_DAY || issuedToday() >= PER_DAY) { out.push({ projectId, offered: null, board: counts }); continue; }
+      const done = async (offered: string | null) => {
+        await bb.storage.kv.set(lastScanKey(projectId), now as never).catch(() => undefined);
+        out.push({ projectId, offered, scanned: true, lastScanAt: now, board: counts });
+      };
+      if (!pm || !next || projectToday >= PER_PROJECT_PER_DAY || issuedToday() >= PER_DAY) { await done(null); continue; }
       // backlog.auto_issue on: the scan itself sends the ready item into the project's PM chat, the same caps
       // guarding it (SMA dt_intake). Off stays the default: the owner's «выдать» issues (0.1.458).
       const autoIssue = loadProjectSettings(db, projectId)["backlog.auto_issue"];
       if (autoIssue === "on" || autoIssue === true) {
-        const done = await issue(projectId, next.id, now);
-        out.push({ projectId, offered: done.ok ? next.id : null, board: counts });
+        const issued = await issue(projectId, next.id, now);
+        await done(issued.ok ? next.id : null);
         continue;
       }
       // The offer says how fresh the backlog is, in the owner's words: read just now, behind the server, or not compared.
@@ -98,7 +124,7 @@ export function createBacklog(ctx: ServerCore) {
         evidence: [{ kind: "file", ref: `.agents/todos/items/${next.id}/AGENT.md`, label: "описание" }],
         actions: [{ id: "issue", label: "Выдать в работу", cli: rpcLine("backlog_issue", { projectId, todoId: next.id }), rpc: { method: "backlog_issue", input: { projectId, todoId: next.id } } }] }, now).created;
       if (offered) ctx.log(`backlog: ${projectId} offered ${next.id} on the owner's list`);
-      out.push({ projectId, offered: offered ? next.id : null, board: counts });
+      await done(offered ? next.id : null);
     }
     return out;
   }
@@ -125,7 +151,8 @@ export function backlogRpc(api: BacklogApi) {
 }
 
 export function mountBacklog(ctx: ServerCore, api: BacklogApi): void {
-  scheduleIsolated(ctx.bb, "backlog-scan", "41 * * * *", async () => {
+  // The tick wakes every five minutes off the quarter-hours; each project's own interval (backlog.scan_minutes) decides whether it scans.
+  scheduleIsolated(ctx.bb, "backlog-scan", "3,8,13,18,23,28,33,38,43,48,53,58 * * * *", async () => {
     if (ctx.isDisposed()) return;
     await api.scan().catch((cause: unknown) => ctx.log(`backlog scan failed: ${cause instanceof Error ? cause.message : String(cause)}`));
   }, { timeoutMs: 20 * 60_000 });

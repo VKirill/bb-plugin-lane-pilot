@@ -178,6 +178,7 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "lead.project": { label: "field_s603", help: "reason_s603" },
   "lead.projects": { label: "field_s604", help: "reason_s604" },
   "lead.priority": { label: "field_s608", help: "reason_s608" },
+  "backlog.scan_minutes": { label: "field_s613", help: "reason_s613", unit: "fieldUnitMinutes" },
   "owner.words": { label: "field_s609", help: "reason_s609" },
   "phase.rails": { label: "field_s610", help: "reason_s610" },
   "lead.budget_daily_usd": { label: "field_s605", help: "reason_s605", unit: "fieldUnitUsd" },

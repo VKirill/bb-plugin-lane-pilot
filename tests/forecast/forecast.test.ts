@@ -10,7 +10,7 @@ const NOW = Date.parse("2026-10-23T10:00:00Z");
 describe("scoring a forecast", () => {
   it("measures files, first try, and fact/forecast ratios; a missing side is null", () => {
     expect(scoreForecast({ files: 2, checks_pass_first_try: true, tokens: 100_000, minutes: 20 }, { files: 4, firstTry: false, tokens: 150_000, minutes: null })).toEqual({
-      files: { forecast: 2, fact: 4, error: 2 }, firstTry: { forecast: true, fact: false, hit: false }, tokensRatio: 1.5, minutesRatio: null,
+      files: { forecast: 2, fact: 4, error: 2 }, firstTry: { forecast: true, fact: false, hit: false }, tokensRatio: 1.5, minutesRatio: null, lines: null, dependencies: null, paths: null,
     });
   });
 

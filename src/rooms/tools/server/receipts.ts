@@ -6,6 +6,7 @@ import { gateRunVerdict } from "../../verification/server"
 import { parseIntegrationGateSettings } from "../../contracts";
 import { getAttempt, getReasoningTraceJson, getTaskContractJson, listStageReceipts, loadProjectSettings, openAttemptBriefs, latestGateRun, countLanePilotTables, latestAcceptedAttemptRef, listAttemptRefsSince, listGateEventsForTask } from "../../storage";
 import { scoreForecast } from "../../forecast";
+import { calibrationPassport } from "../../forecast/server/report";
 import { getAttemptChange } from "../../rollback";
 import { attemptChangeJson } from "../../rollback/server";
 import { buildScorecard, checkerRows, latestCheckerRun } from "../../checkers";
@@ -32,7 +33,16 @@ export function passport(db: Db, attemptId: string) {
   try { const parsed = JSON.parse(trace ?? "{}") as Record<string, unknown>; model = { providerId: parsed.providerId ?? null, model: parsed.model ?? null, reasoning: parsed.reasoningLevel ?? null }; } catch { /* no trace */ }
   const stages = listStageReceipts(db, row.run_id, row.task_id)
     .map((stage) => ({ stage: stage.stageId, state: stage.state, input: stage.inputSha256, output: stage.outputSha256, provider: stage.providerId, model: stage.model }));
-  return { attempt, ...model, lanePilot: packageJson.version, stages };
+  // The badge of the model that wrote this attempt's forecast (SMA k_v_passport): old priors are about another model.
+  let calibration: { model: string; badge: string } | null = null;
+  try {
+    const contract = JSON.parse(getTaskContractJson(db, row.task_id) ?? "{}") as { forecast?: { model?: unknown } };
+    if (typeof contract.forecast?.model === "string") {
+      const projectId = (db.prepare("SELECT project_id FROM lane_pilot_run WHERE id=?").get(row.run_id) as { project_id: string } | undefined)?.project_id ?? "";
+      calibration = { model: contract.forecast.model, badge: calibrationPassport(db, projectId, contract.forecast.model).badge };
+    }
+  } catch { /* the badge is informational; provenance stands without it */ }
+  return { attempt, ...model, lanePilot: packageJson.version, ...(calibration ? { calibration } : {}), stages };
 }
 
 export function manifest(db: Db) {

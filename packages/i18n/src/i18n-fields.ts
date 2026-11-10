@@ -1059,6 +1059,8 @@ export const fieldEn = {
   reason_s611: "on: when an errand run ends a row of lane_pilot_errand_episode is written — outcome, verdict, helper thread, model, the skills it was offered and a privacy-safe tool trace (tool names, argument hashes, success flags); a run the router sent to another graph is marked pending at start. off: nothing is recorded. Default on.",
   field_s612: "Errand episodes: process key",
   reason_s612: "shadow: the process-key judgment asks which known kind of work the errand continues and keeps the answer in a receipt, but the proposed key stands. active: a confident answer sets the process key. Turn on only after the gold-set score reaches 0.8. Default shadow.",
+  field_s613: "Backlog: scan interval",
+  reason_s613: "How often the backlog scanner reads this project's todos and offers the first ready item. The sweep wakes every five minutes; a project is scanned only when this many minutes passed since its last scan. Default 60.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -2121,4 +2123,6 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s611: "on: когда запуск поручения завершается, пишется строка lane_pilot_errand_episode — итог, вердикт, поток помощника, модель, выданные навыки и приватный след инструментов (имена, хэши аргументов, признак успеха); запуск, который маршрутизатор отправил в другой граф, помечается ожидающим на старте. off: ничего не записывается. По умолчанию on.",
   field_s612: "Эпизоды поручений: ключ процесса",
   reason_s612: "shadow: проверка ключа процесса спрашивает, к какому известному виду работы относится поручение, и хранит ответ в квитанции, но предложенный ключ остаётся. active: уверенный ответ назначает ключ процесса. Включайте только после того, как оценка на размеченном наборе достигнет 0.8. По умолчанию shadow.",
+  field_s613: "Бэклог: интервал сканирования",
+  reason_s613: "Как часто сканер бэклога читает задачи этого проекта и предлагает первую готовую. Обход просыпается каждые пять минут; проект сканируется, только когда с прошлого сканирования прошло столько минут. По умолчанию 60.",
 };

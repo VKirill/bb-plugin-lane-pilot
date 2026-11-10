@@ -1,8 +1,8 @@
-import { getAttempt, getRunSettingsScopes, latestTaskAttemptState, listProjectAttemptStates, listUnreportedTaskOutcomes, loadProjectSettings, markTaskOutcomesReported, pmBookkeepingPending, pmHasTasksAtWork, pmTasksWaiting, toldPmDirectly, type TaskOutcome } from "../../storage";
+import { getAttempt, getRunSettingsScopes, latestTaskAttemptState, listProjectAttemptStates, listUnreportedTaskOutcomes, loadProjectSettings, loadPrototypeConfig, markTaskOutcomesReported, pmBookkeepingPending, pmHasTasksAtWork, pmTasksWaiting, toldPmDirectly, type TaskOutcome } from "../../storage";
 import { wayOut } from "../../contracts"
 import { taskFamily } from "@lane-pilot/contracts";
 import { pmDeferralLines } from "../../deferral/server";
-import { calibrationLine } from "../../forecast";
+import { calibrate, calibrationLine } from "../../forecast";
 import { forecastReport } from "../../forecast/server";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -655,7 +655,15 @@ export function relayFor(ctx:ServerContext):Relay {
     deferralLines:(projectId) => {
       const lines: string[] = [];
       try { lines.push(...pmDeferralLines(ctx.db, projectId, Date.now())); } catch { /* the register is informational here */ }
-      try { const line = calibrationLine(forecastReport(ctx.db, { projectId, days:60 }).calibration.overall ?? undefined); if (line) lines.push(line); } catch { /* idem */ }
+      try {
+        const report = forecastReport(ctx.db, { projectId, days:60 });
+        // SMA k_lib_modelver: the PM reads how the model it runs on now forecast, never another model's priors.
+        const config = loadPrototypeConfig(ctx.db, projectId);
+        const model = config?.pmProviderId && config?.pmModel ? `${config.pmProviderId}/${config.pmModel}` : null;
+        const overall = model ? calibrate(report.scored, model).overall : report.calibration.overall;
+        const line = calibrationLine(overall ?? undefined);
+        if (line) lines.push(line);
+      } catch { /* idem */ }
       return lines;
     },
     // «accepted» is the merge, not main's check: the results message carries the integration gate's verdict of the
