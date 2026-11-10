@@ -1,4 +1,5 @@
 import packageJson from "../../../../package.json";
+import { breakerKey } from "@lane-pilot/resilience";
 import { canaryAttemptRows, previousHarnessVersion } from "../../storage";
 import { setSandboxProjects } from "../../owner-waiting";
 import { failureClass } from "../../contracts/failure-class";
@@ -94,7 +95,39 @@ export function poolHealth(snapshot: ReadonlyArray<{ key: string; state: string 
   return { works: snapshot.length === 0 || held.length < snapshot.length, held };
 }
 
-export function createCanary(ctx: ServerCore, breaker?: () => { snapshot(now?: number): Array<{ key: string; state: string }> } | undefined) {
+/** One blocked writer of the pool, named by its provider/model breaker key, with the hold reason the walk gives. */
+export type PoolBlockedWorker = { key: string; projectIds: string[]; reason: string };
+export type PoolReadiness = { enabled: number; blocked: PoolBlockedWorker[] };
+/** One project's writer chain as the caller assembled it (primary, fallbacks, PM pair). */
+export type PoolChain = { projectId: string; hostId: string; settings: Record<string, unknown>; members: ReadonlyArray<{ providerId: string; model: string }> };
+/** The shape of walkWriterChain this needs; injected so the stability room does not import the writer room. */
+export type PoolWalk = (members: PoolChain["members"], input: { hostId: string; settings: Record<string, unknown> }) =>
+  Promise<{ holds: Array<{ member: { providerId: string; model: string }; hold: { reason: string } }> }>;
+
+/**
+ * Readiness of the whole pool (SMA m_ac_pool_ready): every writer pair every project could call, and which of them
+ * are blocked now with the reason. A member held in one project's chain is blocked even when another chain frees it:
+ * the reason names a real refusal the owner's tasks already met.
+ */
+export async function poolReadiness(chains: readonly PoolChain[], walk: PoolWalk): Promise<PoolReadiness> {
+  const enabled = new Set<string>();
+  const blocked = new Map<string, PoolBlockedWorker>();
+  for (const chain of chains) {
+    const seen = new Set<string>();
+    const members = chain.members.filter((member) => { const key = breakerKey(member.providerId, member.model); return !seen.has(key) && seen.add(key); });
+    for (const key of seen) enabled.add(key);
+    const walkResult = await walk(members, { hostId: chain.hostId, settings: chain.settings });
+    for (const held of walkResult.holds) {
+      const key = breakerKey(held.member.providerId, held.member.model);
+      const entry = blocked.get(key) ?? { key, projectIds: [], reason: held.hold.reason };
+      if (!entry.projectIds.includes(chain.projectId)) entry.projectIds.push(chain.projectId);
+      blocked.set(key, entry);
+    }
+  }
+  return { enabled: enabled.size, blocked: [...blocked.values()] };
+}
+
+export function createCanary(ctx: ServerCore, breaker?: () => { snapshot(now?: number): Array<{ key: string; state: string }> } | undefined, readiness?: () => Promise<PoolReadiness>) {
   const { bb, db } = ctx;
 
   async function since(version = VERSION, now = Date.now()): Promise<number> {
@@ -124,10 +157,15 @@ export function createCanary(ctx: ServerCore, breaker?: () => { snapshot(now?: n
     return ids;
   }
 
-  async function status(now = Date.now()): Promise<CanaryReport & { alerted: boolean; pool: { works: boolean; held: string[] }; green: boolean }> {
+  async function status(now = Date.now()): Promise<CanaryReport & { alerted: boolean; pool: { works: boolean; held: string[]; enabled: number; blocked: PoolBlockedWorker[] }; green: boolean }> {
     const report = canaryReport(db, { version: VERSION, since: await since(VERSION, now), now, sandboxProjects: await sandboxProjects(now) });
-    const pool = poolHealth(breaker?.()?.snapshot(now) ?? []);
-    return { ...report, pool, green: !report.tripped && pool.works, alerted: Boolean(await bb.storage.kv.get(ALERTED_KEY(VERSION))) };
+    const pool: { works: boolean; held: string[]; enabled: number; blocked: PoolBlockedWorker[] } = { ...poolHealth(breaker?.()?.snapshot(now) ?? []), enabled: 0, blocked: [] };
+    const ready = readiness ? await bestEffort(bb.log, "canary pool readiness", readiness(), null) : null;
+    if (ready) { pool.enabled = ready.enabled; pool.blocked = ready.blocked; }
+    // Green only when no enabled worker is blocked (SMA m_green): a free fallback does not un-block the held ones.
+    // Without a readiness answer the old breaker rule stands, so a failed walk never turns the pool red by itself.
+    const green = !report.tripped && (readiness && ready ? pool.blocked.length === 0 : pool.works);
+    return { ...report, pool, green, alerted: Boolean(await bb.storage.kv.get(ALERTED_KEY(VERSION))) };
   }
 
   /** Tells the PMs of the faulting tasks once per version when the canary has tripped. Returns whether it did. */

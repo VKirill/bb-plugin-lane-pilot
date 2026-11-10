@@ -18,6 +18,8 @@ export type ReconcileResult =
 /** The resume pass over orphaned attempts, implemented by src/rooms/stability (createReconcile). */
 export interface ResumeOrphansPort {
   resumeOrphans(projectId?: string, attemptIds?: readonly string[]): Promise<{ resumed:string[]; skipped:string[]; finished:string[] }>;
+  /** Re-sends the stop of attempts left `cancel_requested` and ends the ones whose stop is seen (SMA m_confirm_later). */
+  recheckCancels(): Promise<string[]>;
 }
 
 export type DrillOutcome = { at: number; version: string; checks: Array<{ name: string; ok: boolean; detail: string | null }> };

@@ -280,7 +280,21 @@ export function createReconcile(ctx: ServerCore, services: Services) {
     return { resumed, skipped, finished };
   }
 
-  return { recoverLostHolderThread, enqueueResumedWriter, reconcileAttemptThread, resumeOrphans };
+  /**
+   * Confirm again later (SMA m_confirm_later): the 30 s inline wait of finishCancel can lose to a slow stop — a cancel
+   * left `cancel_requested` gets the stop re-sent and ends once the stop is seen, instead of standing open for good.
+   */
+  async function recheckCancels(): Promise<string[]> {
+    const rechecked: string[] = [];
+    for (const row of listOpenAttempts(db)) {
+      if (row.state !== "cancel_requested" || !row.thread_id || ctx.isDisposed()) continue;
+      await finishCancel(row.id, row.run_id, row.thread_id);
+      if (getAttempt(db, row.id)?.state === "canceled") rechecked.push(row.id);
+    }
+    return rechecked;
+  }
+
+  return { recoverLostHolderThread, enqueueResumedWriter, reconcileAttemptThread, resumeOrphans, recheckCancels };
 }
 
 export type ReconcileApi = ReturnType<typeof createReconcile>;
