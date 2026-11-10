@@ -7,6 +7,9 @@ import { persistTaskFolder } from "../../src/rooms/verification";
 import { explainCatalog, explainWord, firstSection } from "../../src/rooms/tools/server/explain";
 import { weakSpotsBrief, type CurriculumCluster } from "../../src/rooms/tools/server/self-improve";
 import { verdictInventory } from "../../src/rooms/tools/server/verdicts";
+import { createFromDraft, proposeDraft } from "../../src/rooms/tasks/server";
+import { migrations } from "../../src/rooms/plugin-db";
+import Database from "better-sqlite3";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -107,6 +110,24 @@ describe("parity d10-rest-2", () => {
     expect(rows.find((r) => r.kind === "spike")).toMatchObject({ question: "can the queue hold 1k tasks?", verdict: "yes" });
     expect(rows.find((r) => r.kind === "sketch")?.verdict).toBe("open");
     expect(verdictInventory(mkdtempSync(join(tmpdir(), "verdicts-empty-")))).toEqual([]);
+  });
+
+  it("[sma:m_sw_chat_draft + m_sw_batch_draft] a draft stores proposed without enqueue, one create enqueues every contract, a second reads already_created and never enqueues twice", async () => {
+    const db = new Database(":memory:");
+    for (const statement of migrations) db.exec(statement);
+    const batch = proposeDraft(db, { runId: "lprun_1", projectId: "p", threadId: "thr_1", kind: "batch", contracts: [{ id: "t-1", area: "ui" }, { id: "t-2", area: "ui" }], objective: "two tasks" });
+    expect(batch.state).toBe("proposed");
+    expect(batch.taskIds).toEqual([]);
+    const enqueued: unknown[] = [];
+    const dispatch = async (contract: unknown) => { enqueued.push(contract); return String((contract as { id: string }).id); };
+    const first = await createFromDraft(db, batch.id, dispatch);
+    expect(first.state).toBe("created");
+    expect(first.taskIds).toEqual(["t-1", "t-2"]);
+    expect(enqueued).toHaveLength(2);
+    const again = await createFromDraft(db, batch.id, dispatch);
+    expect(again.state).toBe("already_created");
+    expect(enqueued).toHaveLength(2);
+    db.close();
   });
 
   it("[sma:k_pl_quick] persistTaskFolder writes OUTCOME.md with the terminal state, and no plan means no PLAN.md rewrite", async () => {

@@ -204,6 +204,16 @@ export const rpcOps = {
     input: z.object({ keys: z.array(z.object({ runId: z.string().min(1), taskId: z.string().min(1) }).strict()).max(300) }).strict(),
     output: z.unknown(),
   },
+  /** A proposed task draft's card: title, promise, kind, state (SMA m_sw_chat_draft, src/rooms/tasks/server/draft.ts). */
+  task_draft_card: {
+    input: z.object({ draftId: z.string().min(1).max(120) }).strict(),
+    output: z.unknown(),
+  },
+  /** The owner's «Создать» on a draft card: the same enqueue path as the PM's confirmed propose call. */
+  task_draft_create: {
+    input: z.object({ draftId: z.string().min(1).max(120) }).strict(),
+    output: z.unknown(),
+  },
   /** The tail of a task's latest attempt log in plain words (SMA m_ws_attempt_log, src/rooms/work-graph/log-tail.ts). */
   attempt_log_tail: {
     input: z.object({ runId: z.string().min(1), taskId: z.string().min(1) }).strict(),

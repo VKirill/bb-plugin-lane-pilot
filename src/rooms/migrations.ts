@@ -558,4 +558,20 @@ export const migrations = [
   `CREATE TRIGGER lane_pilot_task_contract_edition_no_delete BEFORE DELETE ON lane_pilot_task_contract_edition BEGIN SELECT RAISE(ABORT,'contract editions are append-only'); END`,
   // The barrier's outcome on the attempt row itself (sma av_record): gate, status, why, tree and the verdict's summary.
   `ALTER TABLE lane_pilot_attempt ADD COLUMN barrier_json TEXT`,
+  // Task drafts the PM proposes before the owner says «да» (SMA m_sw_chat_draft, m_sw_batch_draft): the contract(s)
+  // wait in `proposed`; the one enqueue path flips to `created`, and a second create reads `already_created`.
+  `CREATE TABLE lane_pilot_task_draft (
+    id TEXT PRIMARY KEY,
+    run_id TEXT,
+    project_id TEXT NOT NULL,
+    thread_id TEXT,
+    kind TEXT NOT NULL DEFAULT 'task',
+    contracts_json TEXT NOT NULL,
+    objective TEXT,
+    plan TEXT,
+    state TEXT NOT NULL DEFAULT 'proposed',
+    task_ids_json TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
 ];

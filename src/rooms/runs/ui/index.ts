@@ -7,3 +7,4 @@ export { readRunsWindow } from "./runs-window";
 export { TaskBoard } from "./task-board";
 export { ThreadLive } from "./thread-live";
 export { bindThreadRowStatus } from "./thread-row-status";
+export { LANE_DRAFT_DIRECTIVE, LaneDraftCardDirective } from "./lane-draft-card";

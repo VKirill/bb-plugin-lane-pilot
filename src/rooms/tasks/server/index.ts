@@ -10,3 +10,5 @@ export type { CheckReading, CheckRun, CheckVerdict } from "./check-reading";
 export type { TestSummary } from "./tests-ran";
 export { bindBacklogIssued, registerQueueTool } from "./queue-tool";
 export { registerConversationTools } from "./conversation-tools";
+export { proposeDraft, getDraft, createFromDraft } from "./draft";
+export type { TaskDraft } from "./draft";

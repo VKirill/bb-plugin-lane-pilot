@@ -29,6 +29,7 @@ import { mountLeadTool } from "../../lead/server";
 import { mountScheduleTools } from "../../schedule/server";
 import { mountToolFamilies } from "./tool-families";
 import { CURRICULUM_KV_KEY, curriculumClusters, weakSpotsBrief } from "./self-improve";
+import { createFromDraft, getDraft, proposeDraft } from "../../tasks/server";
 import { registerObservedTool, requirePmThread, requirePmThreadRun, scheduleIsolated } from "../../platform/server";
 import { selfRepairDeps } from "../../self-repair/server";
 import { ToolError } from "../../contracts/server";
@@ -169,6 +170,33 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
       return JSON.stringify(
         compactDispatchReply(await services.dispatchWriter({ threadId:context.threadId, projectId:context.projectId, task:params.task, plan:params.plan, baseRef:params.baseRef, objective:params.objective, requireObjective:true })),
       );
+    },
+  });
+
+  registerObservedTool(bb.agents, {
+    name:"lane_pilot_propose", startsWork: false,
+    description:"Propose a task-v2 (or a batch of them) to the owner without starting it: stores a draft, prints its card, and starts nothing until the owner says so.",
+    instructions:"Use only from a Lane Pilot PM thread when the owner asked what you would do, not to do it. Send task for one draft or tasks for a batch; nothing is enqueued. When the owner answers «да», call this tool again with draftId and create:true — that is the same enqueue path as the card's «Создать» button, so a task is never enqueued twice.",
+    parameters:z.object({
+      task:taskV2Schema.optional(), tasks:z.array(taskV2Schema).min(1).max(50).optional(), plan:z.string().optional(), objective:z.string().trim().min(1).max(2000).optional(),
+      draftId:z.string().optional(), create:z.literal(true).optional(),
+    }).strict(),
+    execute: async (params, context) => {
+      if (params.draftId) {
+        if (!params.create) return JSON.stringify({ error:"draftId without create:true does nothing" });
+        const draft = getDraft(db, params.draftId);
+        if (!draft) return JSON.stringify({ error:`draft ${params.draftId} does not exist` });
+        return JSON.stringify(await createFromDraft(db, draft.id, async (contract) => {
+          const reply = await services.dispatchWriter({ threadId: draft.threadId ?? context.threadId, projectId: draft.projectId, task: contract as never, plan: draft.plan ?? undefined, objective: draft.objective ?? undefined, requireObjective: false });
+          return String((reply as { taskId?: string }).taskId ?? "");
+        }));
+      }
+      const contracts = params.tasks ?? (params.task ? [params.task] : []);
+      if (!contracts.length) throw new ToolError("propose names task or tasks", { code:"bad_input", retryable:false, sideEffects:"none" });
+      const runId = await requirePmThreadRun(bb, context);
+      const draft = proposeDraft(db, { runId, projectId: context.projectId, threadId: context.threadId,
+        kind: params.tasks ? "batch" : "task", contracts, objective: params.objective ?? null, plan: params.plan ?? null });
+      return `Предлагаю ${draft.kind === "batch" ? `пачку из ${draft.contracts.length} задач` : "задачу"}. Создать?\n\n::lane-draft{id="${draft.id}"}`;
     },
   });
 

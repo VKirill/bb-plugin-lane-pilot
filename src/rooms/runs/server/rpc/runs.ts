@@ -1,6 +1,7 @@
 import { MACHINE_AFFINITY_ANY } from "@lane-pilot/contracts";
 import { loadProjectSettings, countAttempts, createAttempt, failedBackgroundStageRows, failureFieldsOf, getActivation, getAttempt, getRunCard, latestAttemptsPerTask, stageReceiptStates, openAttemptIdsOfRun, openRunOfPmThread, runTaskCardRows, taskCheckLogRows, transitionAttempt } from "../../../storage";
 import { ownerWordsMode } from "../../../tasks";
+import { createFromDraft, getDraft } from "../../../tasks/server";
 import { t } from "@lane-pilot/i18n";
 import { resolveRoleModel } from "@lane-pilot/models";
 import { setRunHalted } from "../runs-halt";
@@ -33,6 +34,7 @@ import type { ActivationApi, AgentOpsApi } from "../../../contracts";
 import type { RollbackApi } from "../../../rollback/server/rollback";
 import type { ResumeOrphansPort } from "../../../contracts/stability-api";
 import type { WriterHostApi } from "../../../platform/server";
+import type { DispatchWriter } from "../../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -47,6 +49,7 @@ interface Services {
   resumeOrphans: ResumeOrphansPort["resumeOrphans"];
   rollback: RollbackApi;
   tokenCursorRow: TokenCursorReader;
+  dispatchWriter: DispatchWriter;
 }
 
 
@@ -208,6 +211,23 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         queued: queuedTaskIds,
         ...(openRun ? { graph: buildTaskGraph(db, openRun.id) } : {}),
       };
+    },
+    task_draft_card: async ({ draftId }) => {
+      const draft = getDraft(db, draftId);
+      if (!draft) return null;
+      const titles = draft.contracts.map((contract) => String((contract as { display_title?: string }).display_title ?? (contract as { id?: string }).id ?? "task"));
+      const areas = [...new Set(draft.contracts.map((contract) => String((contract as { area?: string }).area ?? "")))].filter(Boolean);
+      return { id: draft.id, kind: draft.kind, state: draft.state, runId: draft.runId, taskIds: draft.taskIds,
+        title: draft.objective ?? titles[0] ?? "task", promise: draft.objective ?? `Создам ${titles.length === 1 ? "задачу" : `${titles.length} задачи`}: ${titles.join(", ")}`,
+        groups: areas.length ? areas.map((area) => ({ area, titles: draft.contracts.filter((c) => String((c as { area?: string }).area ?? "") === area).map((c) => String((c as { display_title?: string }).display_title ?? "")) })) : [{ area: "", titles }] };
+    },
+    task_draft_create: async ({ draftId }) => {
+      const draft = getDraft(db, draftId);
+      if (!draft) return { state: "already_created", taskIds: [] as string[], runId: null as string | null };
+      return await createFromDraft(db, draftId, async (contract) => {
+        const reply = await services.dispatchWriter({ threadId: draft.threadId ?? "", projectId: draft.projectId, task: contract as never, plan: draft.plan ?? undefined, objective: draft.objective ?? undefined, requireObjective: false, birth: "pm" });
+        return String((reply as { taskId?: string }).taskId ?? "");
+      });
     },
     task_board: async ({ projectId, doneHours }) => {
       const items = buildTaskBoard(db, { projectId: projectId ?? null, doneSince: Date.now() - doneHours * 3_600_000 });
@@ -382,6 +402,6 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       return { ok: true, state: "queued", attemptId: nextId, reason: null };
     },
     resume_runs: ({ projectId }) => services.resumeOrphans(projectId),
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "native_install_status" | "prepare_native_session" | "helper_thread_labels" | "list_helper_threads" | "task_board" | "thread_live" | "task_card" | "get_run_card" | "native_thread" | "activation_context" | "cancel_attempt" | "pause_run" | "resume_run" | "halt_run" | "retry_attempt" | "resume_runs">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "native_install_status" | "prepare_native_session" | "helper_thread_labels" | "list_helper_threads" | "task_board" | "task_draft_card" | "task_draft_create" | "thread_live" | "task_card" | "get_run_card" | "native_thread" | "activation_context" | "cancel_attempt" | "pause_run" | "resume_run" | "halt_run" | "retry_attempt" | "resume_runs">;
   return handlers;
 }
