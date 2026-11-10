@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.509
+
+- **A test's «before» is git's when the writer worked in the project folder itself.** 39 of 682 attempts in the week to November 10 ran without a worktree, photoalive's «Buy screen» among them. There the base and the workspace are one folder, so the «before» of an edited test was read from the folder the writer had just written into. Two things followed: a test the attempt created counted as one that «existed before the task» and switched the code critic to gate mode, and `test_fit` compared every edited test with itself, so a removed assertion passed. For such an attempt the earlier text now comes from git's HEAD through the `bb--git` plugin (`files` for what is new, `fileSide` for the old text); the same reading serves the edited check scripts and `package.json`. Where git cannot say (no repository, an old BB, the change already committed) the old reading stays.
+
 ## 0.1.508
 
 - **The code critic's task text no longer misleads its reader.** photoalive, November 10: the owner pasted the critic's prompt for «Buy screen: card only» and asked whether the handoff standard was built right. Four defects, all in what Lane Pilot wrote around the standard:

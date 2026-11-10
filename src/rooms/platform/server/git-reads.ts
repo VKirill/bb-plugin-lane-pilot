@@ -25,6 +25,11 @@ export const gitFilesReplySchema = z.union([
   }).passthrough(),
   gitUnavailable,
 ]);
+/** `fileSide`: one side of a changed file. A path the commit does not hold makes the plugin throw, so «new file» is read from `files`. */
+export const gitFileSideReplySchema = z.union([
+  z.object({ outcome: z.literal("available"), file: z.object({ content: z.string(), contentEncoding: z.string() }).passthrough() }).passthrough(),
+  gitUnavailable,
+]);
 export const gitPatchesReplySchema = z.record(
   z.string(),
   z.union([z.object({ outcome: z.literal("available"), patch: gitPatchEntrySchema }).passthrough(), gitUnavailable]),

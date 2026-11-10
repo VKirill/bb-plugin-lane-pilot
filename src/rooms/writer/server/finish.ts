@@ -14,7 +14,7 @@ import type { WriterIdentity } from "../../critique";
 import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, critiqueRepeatSkip, patchChangedLines, resolveCodeCriticDefault, resolveQualityMode, withReferenceTestCritic } from "../../contracts/quality-mode";
 import { loadCriticCodeDefault } from "./critic-override";
 import { runPlanFactStage } from "./plan-fact";
-import { candidatePatches, runCodeCritique } from "../../critique/server";
+import { candidatePatches, headSides, runCodeCritique } from "../../critique/server";
 import { fullAccessSpawn, setAsideOnStartFailure } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { closeWriterStages, recordGateEvaluation, recordStage } from "../../runs/server";
@@ -364,15 +364,29 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const readFit = (cwd:string | null | undefined, path:string) => cwd
         ? host.call("readBoundedFile", { requestedHostId:input.config.hostId, projectCwd:cwd, relativePath:path, offset:0, maxLines:400 }, { hostId:input.config.hostId, timeoutMs:10_000 }).then((file) => file.content, () => null)
         : Promise.resolve(null);
+      const editedTests = referenceTestEdits((candidate.produced ?? []).map((path) => ({ path, status:"M" }))).slice(0, 20);
+      const editedScripts = checkScriptEdits(candidate.produced ?? [], input.task.verification.map((row) => row.command)).slice(0, 10);
+      const fitConfigs = (candidate.produced ?? []).filter((path) => /(^|\/)package\.json$|\.(?:sh|ya?ml)$/.test(path)).slice(0, 10);
+      // An attempt that worked in the project folder itself has no base copy: the «before» is git's, see headSides.
+      const workedAt = fitAttempt?.workspace_path;
+      const inPlace = !!workedAt && [basePathForTests, getRun(db, input.runId)?.writer_workspace_path].some((path) => !!path && resolve(path) === resolve(workedAt));
+      const atHead = inPlace
+        ? await headSides(bb, db, { runId:input.runId, taskId:input.taskId, hostId:input.config.hostId, cwd:workedAt, paths:[...new Set([...editedTests, ...editedScripts, ...fitConfigs])] })
+        : new Map<string, string | null>();
+      const readBefore = (path:string) => {
+        const head = atHead.get(path);
+        // Cut like readFit cuts the «after», or every assertion past its line 400 would read as removed.
+        return head === undefined ? readFit(basePathForTests, path) : Promise.resolve(head === null ? null : head.split("\n").slice(0, 400).join("\n"));
+      };
       const referenceBefore = new Map<string, string>();
-      for (const path of referenceTestEdits((candidate.produced ?? []).map((path) => ({ path, status:"M" }))).slice(0, 20)) {
-        const before = await readFit(basePathForTests, path);
+      for (const path of editedTests) {
+        const before = await readBefore(path);
         if (before !== null) referenceBefore.set(path, before);
       }
       const referenceTests = [...referenceBefore.keys()];
       const checkScripts: string[] = [];
-      for (const path of checkScriptEdits(candidate.produced ?? [], input.task.verification.map((row) => row.command)).slice(0, 10)) {
-        if (await readFit(basePathForTests, path) !== null) checkScripts.push(path);
+      for (const path of editedScripts) {
+        if (await readBefore(path) !== null) checkScripts.push(path);
       }
       const yardstick = [...referenceTests, ...checkScripts];
       const liveCritiquePolicy = frozenPolicy ?? parseCodeCritiqueSettings(withReferenceTestCritic(applyCodeCriticDefault(applyQualityMode(projectSettings,qualityMode),qualityMode,input.task.risk,criticDefault), yardstick));
@@ -778,8 +792,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const testEdits = referenceTests;
       const fitFiles: Array<{ path:string; before:string | null; after:string | null }> = [];
       for (const [path, before] of referenceBefore) fitFiles.push({ path, before, after: await readFit(fitAttempt?.workspace_path, path) });
-      for (const path of (candidate.produced ?? []).filter((path) => /(^|\/)package\.json$|\.(?:sh|ya?ml)$/.test(path)).slice(0, 10)) {
-        fitFiles.push({ path, before: await readFit(basePathForTests, path), after: await readFit(fitAttempt?.workspace_path, path) });
+      for (const path of fitConfigs) {
+        fitFiles.push({ path, before: await readBefore(path), after: await readFit(fitAttempt?.workspace_path, path) });
       }
       const fitHits = testFitFindings(fitFiles, input.task.test_removals ?? []);
       if (fitHits.length) {

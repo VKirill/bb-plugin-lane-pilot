@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { sha256Hex } from "@lane-pilot/kit";
 import { buildCandidateEvidence, codeCritiquePrompt, MAX_FILE_EXCERPT_BYTES, NEW_FILE_DIFF } from "../../src/rooms/critique/code-critique";
 import { candidateCitations } from "../../src/rooms/critique/citations";
-import { candidatePatches } from "../../src/rooms/critique/server";
+import { candidatePatches, headSides } from "../../src/rooms/critique/server";
+import { testFitFindings } from "../../src/rooms/tasks/test-fit";
 import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 
@@ -106,6 +107,34 @@ describe("code critic packet", () => {
     const patches = await candidatePatches(fake, db, { runId:"run1", taskId:"t1", hostId:"h1", cwd:"/wt/t1", paths:["src/big.ts", "src/huge.ts", "src/gone.ts", "src/unchanged.ts"] });
     expect(patches).toEqual({ "src/big.ts": patch, "src/gone.ts": "gone-diff" });
     expect(calls.map((call) => call.method)).toEqual(["files", "patches"]);
+  });
+
+  it("reads a test's earlier text from git's HEAD for an attempt that worked in the project folder, where the base is the writer's own text (photoalive 2026-11-10)", async () => {
+    const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
+    const db = openDatabase(bb);
+    createRun(db, "run1", "projA");
+    createTask(db, { id:"t1", runId:"run1", kind:"bb", contract:{ id:"t1", project_cwd:"/site" } as never });
+    createAttempt(db, { id:"a1", runId:"run1", taskId:"t1" });
+    db.prepare("UPDATE lane_pilot_attempt SET workspace_path='/site', environment_id='env_site' WHERE id='a1'").run();
+    const before = "it('pays', () => {\n  expect(total).toBe(899);\n  expect(units).toBe(20);\n});\n";
+    const after = "it('pays', () => {\n  expect(total).toBe(899);\n});\n";
+    const asked: unknown[] = [];
+    const fake = { sdk:{ environments:{ list:async () => [] }, plugins:{ callRpc:async (args:{ method:string; input:unknown }) => {
+      if (args.method === "files") return { outcome:"available", initialPatches:[], files:[
+        { path:"tests/pay.test.ts", revision:"r1", changeKind:"modified" }, { path:"tests/new.test.ts", revision:"r2", changeKind:"added" }, { path:"tests/gone.test.ts", revision:"r3", changeKind:"modified" }] };
+      asked.push(args.input);
+      const path = (args.input as { query:{ path:string } }).query.path;
+      if (path === "tests/gone.test.ts") throw new Error("git cat-file failed");
+      return { outcome:"available", file:{ path, content:before, contentEncoding:"utf8", sizeBytes:before.length } };
+    } } } };
+    const sides = await headSides(fake, db, { runId:"run1", taskId:"t1", hostId:"h1", cwd:"/site", paths:["tests/pay.test.ts", "tests/new.test.ts", "tests/gone.test.ts", "tests/clean.test.ts"] });
+    // The created test is no reference test (null), the unreadable and the unchanged ones stay unknown (left out).
+    expect([...sides]).toEqual([["tests/pay.test.ts", before], ["tests/new.test.ts", null]]);
+    expect(asked[0]).toEqual({ environmentId:"env_site", query:{ target:"uncommitted", path:"tests/pay.test.ts", side:"old" } });
+    // Read from the folder, before and after were one text and the removed assertion passed; with HEAD's text it is a hit.
+    expect(testFitFindings([{ path:"tests/pay.test.ts", before:after, after }])).toEqual([]);
+    expect(testFitFindings([{ path:"tests/pay.test.ts", before:sides.get("tests/pay.test.ts")!, after }])).toMatchObject([{ kind:"assertion_removed" }]);
+    expect((await headSides({ sdk:{} }, db, { runId:"run1", taskId:"t1", hostId:"h1", cwd:"/site", paths:["tests/pay.test.ts"] })).size).toBe(0);
   });
 
   it("returns nothing when bb--git reports the environment cannot be diffed", async () => {

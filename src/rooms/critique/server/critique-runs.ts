@@ -27,7 +27,7 @@ import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefau
 import type { CodeCriticDefault } from "../../contracts/task-enums";
 import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { MAIN_ATTEMPT_LIMIT } from "../../contracts/state-machine";
-import { GIT_PLUGIN_ID, gitCallRpc, gitFilesReplySchema, gitPatchKey, gitPatchesReplySchema, seenProviderLimit, setAsideOnStartFailure, spawnUsageOf, warmSpawnUsage, zcodeBusyPeek } from "../../platform/server";
+import { GIT_PLUGIN_ID, gitCallRpc, gitFileSideReplySchema, gitFilesReplySchema, gitPatchKey, gitPatchesReplySchema, seenProviderLimit, setAsideOnStartFailure, spawnUsageOf, warmSpawnUsage, zcodeBusyPeek } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
 import type { PluginCallRpc } from "../../platform/server";
 export { setAsideOnStartFailure } from "../../platform/server";
@@ -435,6 +435,39 @@ export async function candidatePatches(bb:{ sdk:{ environments:{ list:(args:{ ho
   } catch {
     return {};
   }
+}
+
+/**
+ * Changed files as git's HEAD has them, for an attempt that worked in the project folder itself (39 of 682 attempts in the week to
+ * 2026-11-10; photoalive that day). There the base and the workspace are one folder: a file read from «the base» is the writer's own
+ * text, so a test the attempt created «existed before the task» and a weakened test equalled itself. A string is HEAD's text, null says
+ * the attempt created the file, and a path left out means git could not say (no git, an old BB, the change already committed, a
+ * project_cwd below the repository root): the caller keeps its own reading.
+ * ponytail: HEAD, not the folder as the attempt found it. Dirt left by an earlier attempt of the task is compared as this one's change.
+ */
+export async function headSides(bb:unknown, db:ReturnType<typeof openDatabase>,
+  input:{ runId:string; taskId:string; hostId:string; cwd:string; paths:string[] }):Promise<Map<string,string|null>> {
+  const sides = new Map<string,string|null>();
+  const callRpc = gitCallRpc(bb);
+  if (!callRpc || !input.paths.length) return sides;
+  try {
+    const list = (bb as { sdk?:{ environments?:{ list?:(args:{ hostId:string; path:string }) => Promise<Array<{ id:string }>> } } }).sdk?.environments?.list;
+    const environmentId = attemptEnvironment(db, input.runId, input.taskId, input.cwd)?.environmentId
+      ?? (await list?.({ hostId:input.hostId, path:input.cwd }))?.[0]?.id;
+    if (!environmentId) return sides;
+    const listing = gitFilesReplySchema.parse(await callRpc({ pluginId:GIT_PLUGIN_ID, method:"files", input:{ environmentId, target:{ type:"uncommitted" }, ignoreWhitespace:false }, outputSchema:gitFilesReplySchema }));
+    if (listing.outcome !== "available") return sides;
+    const kinds = new Map(listing.files.map((row) => [row.path, (row as { changeKind?:unknown }).changeKind]));
+    for (const path of input.paths) {
+      if (!kinds.has(path)) continue;
+      if (kinds.get(path) === "added") { sides.set(path, null); continue; }
+      try {
+        const side = gitFileSideReplySchema.parse(await callRpc({ pluginId:GIT_PLUGIN_ID, method:"fileSide", input:{ environmentId, query:{ target:"uncommitted", path, side:"old" } }, outputSchema:gitFileSideReplySchema }));
+        if (side.outcome === "available" && side.file.contentEncoding === "utf8") sides.set(path, side.file.content);
+      } catch { /* this path stays unknown */ }
+    }
+  } catch { /* git could not say */ }
+  return sides;
 }
 
 /**
