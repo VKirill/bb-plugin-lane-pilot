@@ -12,7 +12,7 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { sha256Hex, bestEffort } from "@lane-pilot/kit";
 import { acceptanceLines, alreadyMetVerdict, blindVerdict, brokenLink, candidateOn, canonical, executionGate, issuable, lessonsNeeded, nextAction, observationOutcome, piecesOfWave, phaseFolder, pieceSha, provenPieces, renderBook, waveCleared, waveLines, wavePackage, wavePieceLines, wavesOf, wordOf } from "../logic";
-import { buildsScreens, conclusionText, issuedContract, markRoadmap, milestoneOf, nextRoadmapRow, stateText, waveTable, piecePlan, uatText } from "../stages";
+import { buildsScreens, conclusionText, designPoints, issuedContract, markRoadmap, milestoneOf, nextRoadmapRow, stateText, templateFill, threatClosureGaps, waveTable, piecePlan, uatText } from "../stages";
 import { getPhase, listParts, notePoked, savePhase } from "../store";
 import { checkProofs, hostGit, phaseProofRecords, renderProofCurrency } from "./proof-currency";
 import { candidateBranch } from "./candidate";
@@ -232,6 +232,11 @@ export function installSteps(tools: StepsTools) {
       if (!next.some((item) => item.wave === wave && execution.issued[item.id])) continue;
       if (listParts(db, phase.id).some((part) => part.kind === "wave_table" && part.text.startsWith(`wave ${wave}:`))) continue;
       book(phase, "execution", "wave_table", waveTable(wave, piecesOfWave(items, wave), execution.issued));
+      // SMA k_wp_state: the wave's mark in STATE.md (planned at admission, the wave number at each issue) — only where
+      // planning files already live, like the close's marks.
+      const stateNow = await readText(phase, ".agents/planning/STATE.md");
+      if (stateNow !== null || (await readText(phase, ".agents/planning/ROADMAP.md")) !== null)
+        await bestEffort(ctx.log, "phase wave state mark", writeDocs(phase, [{ path: ".agents/planning/STATE.md", content: stateText(stateNow, { phase: phase.record.roadmapRow ?? phase.id, stage: "execution", planned: "true", wave: String(wave) }) }], `phase ${phase.id}: STATE.md, wave ${wave} issued`), null);
     }
     // Phase base at start: the commit the first piece was cut from.
     const firstTask = Object.values(execution.issued)[0];
@@ -324,6 +329,18 @@ export function installSteps(tools: StepsTools) {
       current = mustGet(current.id);
     }
     if (current.stage === "verification" && !current.record.verification?.verdict && current.runId) {
+      // SMA k_wv_design: at verification init the drawing contract's checkable points are read from UI-SPEC.md and
+      // stored; the goal audit judges each, and acceptanceLines holds a line per point.
+      const specPath = current.record.design?.drawing?.paths.find((path) => /UI-SPEC\.md$/i.test(path));
+      if (specPath && !current.record.verification?.points) {
+        const text = await readText(current, specPath);
+        const points = text ? designPoints(text) : [];
+        if (points.length) {
+          savePhase(db, current.id, { record: { ...current.record, verification: { ...current.record.verification, points } }, at: now() });
+          book(current, "verification", "design_points", `${points.length} contract point(s) of ${specPath} become acceptance lines`);
+          current = mustGet(current.id);
+        }
+      }
       // With a candidate the verdict reads its trees (p6_prepared): their goal check and their heads, the package the acceptance decides on.
       const onCandidate = candidateOn(current.record);
       if (onCandidate && !current.record.candidate!.goal) {
@@ -344,13 +361,31 @@ export function installSteps(tools: StepsTools) {
             ? { sha256: drawing.sha256, contract, changed: `its files cannot be read now (${actual.slice(0, 200)})` }
             : { sha256: actual, contract, changed: actual === drawing.sha256 ? null : `confirmed ${drawing.sha256.slice(0, 12)}, now ${actual.slice(0, 12)}` };
         }
-        const verdict = blindVerdict(current.record.plan?.items ?? [], facts(current), goal as never, now(), bound);
+        let verdict = blindVerdict(current.record.plan?.items ?? [], facts(current), goal as never, now(), bound);
         // The goal check is still running: nothing is frozen, the next pass asks again.
         if (verdict.state === "pending") return current;
+        // SMA k_pl_security: where the project switched threat closure on and a security risk was named, a pass is
+        // refused while a SECURITY.md threat row lacks a mitigation citing a real file:line in the code.
+        if (verdict.state === "passed" && current.record.threatClosure === true) {
+          const risk = current.record.context?.risks?.security?.trim();
+          const secPath = (current.record.context?.docs ?? []).find((doc) => /SECURITY\.md$/i.test(doc.path))?.path;
+          if (risk && !/^(none|нет|no)\b/i.test(risk) && secPath) {
+            const security = await readText(current, secPath);
+            if (security) {
+              // The files the mitigations cite are read once, then the check is the pure threatClosureGaps.
+              const texts: Record<string, string | null> = {};
+              for (const cite of security.matchAll(/([^\s`"'()]+\.[a-z0-9]+):(\d{1,6})\b/gi)) if (!(cite[1]! in texts)) texts[cite[1]!] = await readText(current, cite[1]!);
+              const gaps = threatClosureGaps(security, (path, line) => { const text = texts[path]; return typeof text === "string" && text.split("\n").length >= line; });
+              if (gaps.length) verdict = { ...verdict, state: "failed", detail: `threats not closed: ${gaps.join("; ")}`.slice(0, 1000) };
+            }
+          }
+        }
         book(current, "verification", "blind_verdict", `${verdict.state}: ${verdict.detail} (input ${verdict.inputSha.slice(0, 12)})`);
         const verified = onCandidate ? await candidateHeads(current) : undefined;
         savePhase(db, current.id, { record: { ...current.record, ...(verified ? { candidate: { ...current.record.candidate!, verified } } : {}), verification: { ...current.record.verification, verdict } }, at: now() });
         current = mustGet(current.id);
+        // SMA k_t_template: the verdict is stored as VERIFICATION.md — each piece's checks with its latest result.
+        await bestEffort(ctx.log, "phase verification doc", writeDocs(current, [{ path: `${phaseFolder(current.id)}/VERIFICATION.md`, content: templateFill("VERIFICATION", current, facts(current)) }], `phase ${current.id}: VERIFICATION.md`), null);
       }
     }
     if (current.stage === "verification" && current.record.verification?.verdict?.state === "passed" && current.record.verification.model) {

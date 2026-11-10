@@ -41,7 +41,7 @@ export function phaseRpc(api: PhaseApi) {
       }
       if (action === "uat_line") {
         if (!line || !result) throw new Error("a UAT answer names the line's number and pass or fail");
-        return api.status(api.uatLine({ phaseId, line, result, note, by: "owner via screen" }).id);
+        return api.status((await api.uatLine({ phaseId, line, result, note, by: "owner via screen" })).id);
       }
       if (action === "stop") return api.status((await api.stop({ phaseId, words: note, by: "owner" })).phase.id);
       if (action === "close" && !note?.trim()) throw new Error("closing in words carries the words");

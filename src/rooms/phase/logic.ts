@@ -1,6 +1,6 @@
 import { sha256Hex } from "@lane-pilot/kit";
 import { NO_CODE_KINDS } from "../tasks";
-import { ANIMATOR_LAW, PLAN_ROUNDS_MAX, buildsScreens, coverageGaps, designMode, motionRows, rubricLine, stageInit, threatGap, uiContractGap, validationGaps } from "./stages";
+import { ANIMATOR_LAW, PLAN_ROUNDS_MAX, ambiguityScore, buildsScreens, coverageGaps, designMode, motionRows, rubricLine, stageInit, threatGap, uiContractGap, validationGaps } from "./stages";
 
 /**
  * The phase on rails (SMA map: Phase graph, Phase control work, Phase controls). Matvey Maslov, 2026-10-22: «the driver is the model in the
@@ -60,7 +60,7 @@ export const DRAWING_SYSTEM_SECTIONS = ["c4", "event_chain"] as const;
 export type FrozenVerdict = { state: "passed" | "failed"; detail: string; mainSha: string | null; at: number; inputSha: string };
 /** What blindVerdict returns while the run's goal check is still running; it is never stored. */
 export type PendingVerdict = Omit<FrozenVerdict, "state"> & { state: "pending" };
-export type AcceptanceLine = { id: AcceptanceLineId; ok: boolean; detail: string };
+export type AcceptanceLine = { id: AcceptanceLineId | `design_${string}`; ok: boolean; detail: string };
 export type ModelVerdict = { state: "met" | "unmet"; by: string; summary: string; at: number };
 
 /** The four kinds of risk a discussion names before any solution (SMA p1_risks: value, usability, feasibility, viability); «none» is an answer, silence is not. */
@@ -137,6 +137,12 @@ export type PhaseRecord = {
   branch?: "none" | "phase" | "milestone";
   /** The external plan bounce (setting phase.plan_bounce, off default): an approved plan is refined once by a second tool before admission (SMA k_wp_bounce). */
   planBounce?: boolean;
+  /** Setting phase.commit_docs (on default): phase documents are committed after they are written; off writes the
+   *  files without the gitCommitDocs call (SMA k_wp_commit). */
+  commitDocs?: boolean;
+  /** Setting phase.threat_closure (off default): verification refuses a pass while a SECURITY.md threat row lacks a
+   *  mitigation citing a real file:line (SMA k_pl_security). */
+  threatClosure?: boolean;
   /** browser_qa.enabled is on for the project: visible work owes a live check (SMA k_we_verify). Unset on phases opened before it and wherever the browser check is off: nothing is owed there, and the acceptance line says so. */
   liveCheck?: boolean;
   /** The phase candidate (SMA p6_prepared → p6_merge): the pieces merge into branch phase/<id>, one worktree per base checkout, and the
@@ -164,7 +170,10 @@ export type PhaseRecord = {
   observation?: PhaseObservation;
   verification?: { verdict?: FrozenVerdict; model?: ModelVerdict;
     /** The live interface check between the blind verdict and the goal audit (SMA k_we_uiqa): run by the machine, tied to the candidate head. */
-    live?: { state: "passed" | "blocked"; score40?: number; findings?: unknown; reportPath?: string; head?: string | null; at: number } };
+    live?: { state: "passed" | "blocked"; score40?: number; findings?: unknown; reportPath?: string; head?: string | null; at: number };
+    /** The drawing contract's checkable points (SMA k_wv_design): read from UI-SPEC.md at verification, each an
+     *  acceptance line once the goal audit judges it (met only with evidence). */
+    points?: Array<{ id: string; text: string; met?: boolean; evidence?: string }> };
   acceptance?: { lines: AcceptanceLine[]; at: number; accepted: boolean };
   lessons?: { needed: boolean; why: string; analysis?: string; author?: string; reviewer?: string; reviewedHash?: string; /** The workflow run whose reviewer step read the analysis (its journal is the proof). */ reviewRun?: string; at?: number;
     /** The lesson as a draft (SMA p7_staged): it waits for the owner's word «lesson»; applied, it goes into memory (m_apply). A write that did not land is finished on a later pass from the same text (p7_recover). */
@@ -288,6 +297,9 @@ export function planGate(record: PhaseRecord): GateResult {
   else if (plan.critique.decision !== "approve") why.push(`the plan checker asked for changes${plan.critique.summary ? `: ${plan.critique.summary}` : ""}`);
   else if (!plan.critique.independence?.ok) why.push(`${INDEPENDENCE_GAP}: ${plan.critique.independence?.why ?? "it names no workflow run: report the wfRunId of the lp.plan run whose plan critic approved"}`);
   why.push(...openQuestions(record, "planning").map((question) => `open question ${question.id}: ${question.text}`));
+  // SMA k_pl_spec: a context whose ambiguity is above 0.5 plans nothing until the open questions are answered.
+  const ambiguity = ambiguityScore(record);
+  if (ambiguity > 0.5) why.push(`the context's ambiguity is ${ambiguity} (above 0.5): answer the open questions before planning`);
   if (record.ownerWords && wordOf(record, "planning")?.decision !== "yes") why.push(PLAN_WORD_GAP);
   return gate(why);
 }
@@ -577,6 +589,8 @@ export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFac
       : `${now.openDeferrals ? `${now.openDeferrals} deferred item(s) of this project stay open, named in the book` : "nothing deferred"}; ${wordDetail("the limits are acknowledged")}`),
     // Result clear and useful (SMA p6_l_useful): a person's decision.
     line("result_useful", decided("useful"), wordDetail("the result is clear and useful")),
+    // SMA k_wv_design: every point of the confirmed drawing contract is an acceptance line, judged by the goal audit.
+    ...(phase.record.verification?.points ?? []).map((point) => ({ id: point.id as `design_${string}`, ok: point.met === true, detail: point.met === true ? `${point.text} — met${point.evidence ? ` (${point.evidence.slice(0, 160)})` : ""}` : `${point.text} — the goal audit did not prove it` })),
   ];
 }
 
@@ -651,7 +665,7 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
     case "planning": {
       const check = planGate(r);
       return { key: key(`${r.plan?.sha ?? "none"}:${r.plan?.critique?.decision ?? "-"}`), stage: phase.stage, waitsForPm: true,
-        text: `${head} — stage 2, planning, on context ${r.context?.sha.slice(0, 12) ?? "?"}.\n${r.plan && !r.plan.critique ? `The plan is submitted; Lane Pilot runs the independent plan checker itself (workflow lp.plan with plan_sha:"${r.plan.sha.slice(0, 12)}…") and reports the verdict — you do not start it, wait for the result.` : `Submit the plan with ${tool("plan", `, phaseId:"${id}", items:[{id, title, wave, promise:{given, when, then}, task:<task-v2>}]`)}; Lane Pilot then runs the independent plan checker itself (workflow lp.plan, whose plan critic is a session of its own, handed this plan's sha) and reports the verdict`} (round ${(r.plan?.rounds ?? 0) + 1} of ${PLAN_ROUNDS_MAX}).\nRead first: ${stageInit(phase).join(", ")}. ${rubricLine("planning")}${check.ok ? "" : `\nOpen: ${check.why.slice(0, 8).join("; ")}`}` };
+        text: `${head} — stage 2, planning, on context ${r.context?.sha.slice(0, 12) ?? "?"} (ambiguity ${ambiguityScore(r)}).\n${r.plan && !r.plan.critique ? `The plan is submitted; Lane Pilot runs the independent plan checker itself (workflow lp.plan with plan_sha:"${r.plan.sha.slice(0, 12)}…") and reports the verdict — you do not start it, wait for the result.` : `Submit the plan with ${tool("plan", `, phaseId:"${id}", items:[{id, title, wave, promise:{given, when, then}, task:<task-v2>}]`)}; Lane Pilot then runs the independent plan checker itself (workflow lp.plan, whose plan critic is a session of its own, handed this plan's sha) and reports the verdict`} (round ${(r.plan?.rounds ?? 0) + 1} of ${PLAN_ROUNDS_MAX}).\nRead first: ${stageInit(phase).join(", ")}. ${rubricLine("planning")}${check.ok ? "" : `\nOpen: ${check.why.slice(0, 8).join("; ")}`}` };
     }
     case "design": {
       const check = designGate(r);

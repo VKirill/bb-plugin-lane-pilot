@@ -1,0 +1,75 @@
+{
+  "id": "backlog-add",
+  "name": {
+    "en": "Add to the roadmap backlog",
+    "ru": "В бэклог дорожной карты"
+  },
+  "description": {
+    "en": "An item into the roadmap's parking lot under the next 999.N number (SMA k_c_backlog). The machine never opens 999.* rows by itself.",
+    "ru": "Пункт в парковку дорожной карты под следующим номером 999.N. Машина сама строки 999.* не открывает."
+  },
+  "status": "published",
+  "inputs": {
+    "name": {
+      "type": "string",
+      "required": true
+    },
+    "goal": {
+      "type": "string"
+    }
+  },
+  "outputs": {
+    "status": "done",
+    "n": "string"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "project": {
+      "git": true
+    }
+  },
+  "entry": "park",
+  "nodes": [
+    {
+      "id": "park",
+      "type": "action",
+      "action": "lp.roadmap_park",
+      "title": {
+        "en": "Park under 999.N",
+        "ru": "Park under 999.N"
+      },
+      "out": {
+        "n": "string",
+        "path": "string"
+      },
+      "guards": {
+        "maxVisits": 1
+      },
+      "proof": {
+        "kind": "receipt",
+        "check": "the writePhaseBook receipt shows the parked ROADMAP.md row applied"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "n": "{{park.n}}"
+      },
+      "title": {
+        "ru": "x",
+        "en": "done"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "park",
+      "to": "done"
+    }
+  ]
+}

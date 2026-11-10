@@ -164,7 +164,7 @@ export function registerPhaseTool(ctx: ServerCore, services: Services): void {
           case "pause": case "resume": return json(summary(api.setState({ phaseId: input.phaseId, state: input.action, by: "pm" })));
           case "interrupt": { const out = await api.interrupt({ phaseId: input.phaseId, words: input.note, by: "pm" }); return json({ ...summary(out.phase), canceled: out.canceled, unconfirmed: out.unconfirmed }); }
           case "decide": return json(summary(await api.decide({ phaseId: input.phaseId, piece: input.piece, choice: input.choice, note: input.note, by: "pm" })));
-          case "uat_line": return json(summary(api.uatLine({ phaseId: input.phaseId, line: input.line, result: input.result, note: input.note, by: "owner via pm" })));
+          case "uat_line": return json(summary(await api.uatLine({ phaseId: input.phaseId, line: input.line, result: input.result, note: input.note, by: "owner via pm" })));
           case "close": return json(summary(api.setState({ phaseId: input.phaseId, state: "close", words: input.words, by: "pm" })));
           case "stop_wave": { const out = await api.stopWave({ phaseId: input.phaseId }); return json({ ...summary(out.phase), canceled: out.canceled }); }
           case "compensate": { const out = await api.compensate({ phaseId: input.phaseId, note: input.note }); return json({ ...summary(out.phase), reverted: out.results }); }

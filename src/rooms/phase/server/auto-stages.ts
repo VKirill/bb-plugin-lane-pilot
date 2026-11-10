@@ -186,7 +186,8 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number },
         contract: { acceptance: item.task.acceptance ?? [], verification: item.task.verification ?? [], owns_paths: item.task.owns_paths ?? [] },
         depends_on: Array.isArray(item.task.depends_on) ? item.task.depends_on : [] }));
       const head = tree ? r.candidate!.branch : "HEAD";
-      const drawing = r.design?.drawing ? { paths: r.design.drawing.paths, sha256: r.design.drawing.sha256, ui_spec: r.design.drawing.paths.find((path) => /UI-SPEC\.md$/i.test(path)) ?? null } : undefined;
+      // SMA k_wv_design: the contract's checkable points ride the audit — every one is judged against the screens.
+      const drawing = r.design?.drawing ? { paths: r.design.drawing.paths, sha256: r.design.drawing.sha256, ui_spec: r.design.drawing.paths.find((path) => /UI-SPEC\.md$/i.test(path)) ?? null, points: (r.verification?.points ?? []).map((point) => ({ id: point.id, text: point.text })) } : undefined;
       return { goal: phase.goal, goals, merged_commits: r.execution?.baseSha ? [`${r.execution.baseSha}..${head}`] : [], ...(drawing ? { drawing } : {}),
         summary: `${tree ? `The phase's work is on branch ${r.candidate!.branch}, checked out at ${tree.path}, and lands on main only after the acceptance: read and run the evidence there. ` : ""}${r.verification?.verdict?.detail ?? ""}` };
     }
@@ -280,7 +281,7 @@ export type AutoApi = {
   planCheck(input: { phaseId: string; decision: "approve" | "changes_requested"; by: string; summary?: string; wfRunId?: string }): Promise<Phase>;
   question(input: { phaseId: string; text: string; blocking: boolean; by: string }): Phase;
   waveReview(input: { phaseId: string; wave: number; state: "passed" | "failed"; by: string; summary: string }): Phase;
-  goalAudit(input: { phaseId: string; state: "met" | "unmet"; by: string; summary: string }): Phase;
+  goalAudit(input: { phaseId: string; state: "met" | "unmet"; by: string; summary: string; points?: Array<{ id: string; met: boolean; evidence?: string }> }): Phase;
   lessons(input: { phaseId: string; analysis: string; reviewRun: string; reviewerNode?: string; by: string }): Phase;
   drawing(input: { phaseId: string; paths: string[]; designer: string; feasible: boolean; contradiction?: string; reviewer?: string; by: string }): Promise<Phase>;
   returnTo(input: { phaseId: string; to: "planning" | "discussion"; note: string; by: string }): Phase;
@@ -463,7 +464,9 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       const lacking = goals.filter((goal) => String(goal?.status ?? "").toUpperCase() !== "MET").map((goal) => `- ${text(goal.id, 80)}: ${text(goal.missing, 400) || "not met"}`);
       const drift = (Array.isArray(output.drift_items) ? output.drift_items : []).map((item) => `- drift: ${text(item, 400)}`);
       const unmetSummary = [`unmet: ${JSON.stringify(output.unmet_ids ?? [])}; ${text(output.status, 30)}`, ...lacking, ...drift].join("\n");
-      deps.api.goalAudit({ phaseId: phase.id, state: met ? "met" : "unmet", by, summary: text(met ? `every goal met; report ${text(output.report_path, 200)}` : unmetSummary, 2000) || "goal audit" });
+      // SMA k_wv_design: the audit's per-point verdicts on the drawing contract ride into the acceptance lines.
+      const points = Array.isArray(output.points) ? (output.points as Array<{ id?: unknown; met?: unknown; evidence?: unknown }>).map((point) => ({ id: text(point.id, 80), met: point.met === true, ...(point.evidence ? { evidence: text(point.evidence, 300) } : {}) })).filter((point) => point.id) : undefined;
+      deps.api.goalAudit({ phaseId: phase.id, state: met ? "met" : "unmet", by, summary: text(met ? `every goal met; report ${text(output.report_path, 200)}` : unmetSummary, 2000) || "goal audit", ...(points?.length ? { points } : {}) });
     }
   }
 

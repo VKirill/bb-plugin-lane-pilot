@@ -674,6 +674,20 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     return { has_passport: hasPassport, open_tasks: open, plan_exists: open > 0, has_ui: hasUi };
   });
 
+  // SMA k_c_backlog: an item into the roadmap's parking lot under the next 999.N number, hash-guarded like the phase's own marks.
+  action("lp.roadmap_park", async (c, rt) => {
+    const checkout = await pmCheckout(rt);
+    const path = ".agents/planning/ROADMAP.md";
+    const ran = await runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: `cat ${path} 2>/dev/null`, timeoutSec: 20, timeoutMs: 30_000 });
+    const current = ran.exitCode === 0 ? ran.stdout : "";
+    const { parkRoadmapRow } = await import("../../phase/stages");
+    const parked = parkRoadmapRow(current, str(c.resolve("$inputs.name")), str(c.resolve("$inputs.goal")));
+    const edits = [{ path, expectedSha256: ran.exitCode === 0 ? sha256Hex(current) : null, content: parked.text }];
+    const result = await (ctx.host as never as { call(m: string, i: unknown, o?: unknown): Promise<{ status: string; reason?: string | null }> }).call("writePhaseBook", { requestedHostId: checkout.hostId, projectCwd: checkout.path, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId: checkout.hostId, timeoutMs: 30_000 });
+    if (result.status !== "applied") throw new Error(`lp.roadmap_park: ${result.reason ?? result.status}`);
+    return { ok: true, n: parked.n, path };
+  });
+
   action("lp.run_status", async (c, lane) => {
     const rt = needLanePilot(lane, "lp.run_status");
     const runId = str(c.resolve("$inputs.run_id")) || rt.runId;

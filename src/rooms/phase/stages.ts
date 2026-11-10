@@ -1,4 +1,5 @@
 import { TASK_KINDS } from "@lane-pilot/contracts";
+import { sha256Hex } from "@lane-pilot/kit";
 import type { BookPart, Drawing, Phase, PhaseRecord, PhaseStage, PlanItem, TaskFact } from "./logic";
 
 /**
@@ -116,7 +117,7 @@ export const motionRows = (items: readonly PlanItem[]) =>
   items.filter((item) => MOTION.test(`${item.title} ${item.promise.given} ${item.promise.when} ${item.promise.then}`)).map((item) => item.id);
 
 /** The animator law, inline for a run without subagents (SMA: Headless: the animator law inline). */
-export const ANIMATOR_LAW = "motion rows: animate transform and opacity only, 150–300 ms for UI feedback, ease-out entering and ease-in leaving, respect prefers-reduced-motion, no motion that blocks input, every animation has its end state drawn";
+export const ANIMATOR_LAW = "motion rows: animate transform and opacity only, 150–300 ms for UI feedback, ease-out entering and ease-in leaving, respect prefers-reduced-motion, no motion that blocks input, every animation has its end state drawn; an action the person performs many times in a session (typing, row hover, list moves) is not animated";
 
 /** The heading a required drawing section is read under in UI-SPEC.md (SMA p3_requirements). */
 const SECTION_HEADING: Record<string, RegExp> = {
@@ -162,6 +163,11 @@ export function piecePlan(phase: Pick<Phase, "id" | "title" | "record">, item: P
     typeof value === "string" ? value : value && typeof value === "object" && "command" in value ? String((value as { command: unknown }).command) : JSON.stringify(value)).filter(Boolean);
   const drawing = phase.record.design?.drawing && buildsScreens(item) ? phase.record.design.drawing.paths : [];
   const line = (label: string, values: string[]) => values.length ? `${label}: ${values.join("; ")}` : "";
+  // SMA k_d_tpl_predictions: the forecast and the risk are stated in the plan before the work; scoreForecast weighs them after.
+  const forecast = task.forecast && typeof task.forecast === "object" ? task.forecast as { files?: number; checks_pass_first_try?: boolean; tokens?: number; minutes?: number } : null;
+  const predictions = forecast ? `Predictions: ${[typeof forecast.files === "number" ? `files ${forecast.files}` : "", forecast.checks_pass_first_try === true ? "first try" : forecast.checks_pass_first_try === false ? "not first try" : "", typeof forecast.tokens === "number" ? `tokens ${forecast.tokens}` : "", typeof forecast.minutes === "number" ? `minutes ${forecast.minutes}` : ""].filter(Boolean).join(", ")}` : "";
+  const contextRisks = Object.entries(phase.record.context?.risks ?? {}).filter(([, text]) => text?.trim() && !/^(none|нет|no)\b/i.test(text.trim())).map(([kind, text]) => `${kind}: ${text}`);
+  const risk = [task.risk ? String(task.risk) : "", Array.isArray(task.never_touch) && task.never_touch.length ? `never_touch: ${(task.never_touch as unknown[]).map(String).join(", ")}` : "", ...contextRisks].filter(Boolean).join("; ");
   const steps = [
     line("1. Read first", list("read_first")),
     line("2. Run the checks, red before the work", list("verification")),
@@ -169,8 +175,12 @@ export function piecePlan(phase: Pick<Phase, "id" | "title" | "record">, item: P
     line("   with the interfaces", list("interfaces")),
     line("   keeping the invariants", list("invariants")),
     drawing.length ? `   the screens follow the phase drawing: ${drawing.join(", ")}` : "",
+    // SMA k_we_animator_inline: a motion piece carries the animator's law inline, no subagent needed.
+    motionRows([item]).length ? `Motion (the animator's law): ${ANIMATOR_LAW}` : "",
     line("4. Done when", list("acceptance")),
     line("Out of scope", list("out_of_scope")),
+    predictions,
+    risk ? `Risk: ${risk}` : "",
   ].filter(Boolean);
   return [`Phase ${phase.id} «${phase.title}», wave ${item.wave}, piece ${item.id}. Promise — given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}.`,
     "The phase's plan critic approved this contract; the steps follow it.", ...steps].join("\n").slice(0, 12000);
@@ -222,9 +232,101 @@ export function uatText(phase: Pick<Phase, "id" | "title" | "goal" | "record">):
 const UAT_LINE = /^- \[([ xX!])\] (.+)$/;
 
 /** Is a UAT session open, and is it complete: the lines of UAT.md by state. */
+/** One UAT line marked by its number (SMA d_phase_uat): [ ]→[x] or [!], a note appended; the other lines stay
+ *  byte-equal. Null when no line carries that number. */
+export function markUatLine(text: string, n: number, ok: boolean, note?: string): string | null {
+  let hit = false;
+  const out = text.split("\n").map((line) => {
+    const row = line.match(UAT_LINE);
+    if (!row || !row[2]!.trim().startsWith(`${n}.`)) return line;
+    hit = true;
+    return `- [${ok ? "x" : "!"}] ${row[2]}${note?.trim() ? ` — ${note.trim().slice(0, 600)}` : ""}`;
+  });
+  return hit ? out.join("\n") : null;
+}
+
 export function uatState(text: string): { lines: number; passed: number; failed: string[]; open: string[] } {
   const rows = text.split("\n").map((line) => line.trim().match(UAT_LINE)).filter((row): row is RegExpMatchArray => !!row);
   return { lines: rows.length, passed: rows.filter((row) => /[xX]/.test(row[1]!)).length, failed: rows.filter((row) => row[1] === "!").map((row) => row[2]!), open: rows.filter((row) => row[1] === " ").map((row) => row[2]!) };
+}
+
+/** The plan as a document (SMA k_wp_commit, k_t_template): title, goal, the waves table and every piece's promise,
+ *  contract and coverage — the same facts the admitted plan carries. */
+export function planText(phase: Pick<Phase, "id" | "title" | "goal" | "record">): string {
+  return templateFill("PLAN", phase, new Map());
+}
+
+/** A prefilled phase document (SMA k_t_template): PLAN from the plan, VERIFICATION from each piece's checks and
+ *  their latest result in `facts` — created from the phase's facts instead of by hand. */
+export function templateFill(kind: "PLAN" | "VERIFICATION", phase: Pick<Phase, "id" | "title" | "goal" | "record">, facts: ReadonlyMap<string, TaskFact>): string {
+  const items = phase.record.plan?.items ?? [];
+  const waves = wavesOfPublic(items);
+  if (kind === "PLAN") {
+    return [`# Plan — phase ${phase.id}: ${phase.title}`, "", `Goal: ${phase.goal}`, "",
+      phase.record.plan?.objective ? `Objective: ${phase.record.plan.objective}` : "", `## Waves`, "",
+      ...waves.flatMap((wave) => [`### Wave ${wave}`, "", ...items.filter((item) => item.wave === wave).map((item) => [
+        `- ${item.id}: given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}`,
+        `  owns: ${(Array.isArray(item.task.owns_paths) ? item.task.owns_paths : []).map(String).join(", ") || "—"}`,
+        `  checks: ${(Array.isArray(item.task.verification) ? item.task.verification as Array<{ command?: unknown }> : []).map((check) => String(check?.command ?? "")).filter(Boolean).join("; ") || "—"}`,
+        ...(item.covers?.length ? [`  covers: ${item.covers.join(", ")}`] : []),
+      ].join("\n"))]), "",
+    ].filter((line) => line !== "").join("\n");
+  }
+  return [`# Verification — phase ${phase.id}: ${phase.title}`, "", `Goal: ${phase.goal}`, "",
+    ...items.map((item) => {
+      const checks = (Array.isArray(item.task.verification) ? item.task.verification as Array<{ command?: unknown }> : []).map((check) => String(check?.command ?? "")).filter(Boolean);
+      const fact = facts.get(item.id);
+      const result = fact?.verification ?? fact?.state ?? "not issued";
+      return `- ${item.id} (${result}): ${checks.map((command) => `\`${command}\``).join(", ") || "no checks"} — then ${item.promise.then}`;
+    }), ""].join("\n");
+}
+
+const wavesOfPublic = (items: readonly PlanItem[]) => [...new Set(items.map((item) => item.wave))].sort((a, b) => a - b);
+
+/** SPEC.md (SMA k_pl_spec): what the phase delivers — goal, requirements, locked decisions, appetite, no-gos and the
+ *  ambiguity score the plan gate reads. */
+export function specText(phase: Pick<Phase, "id" | "title" | "goal" | "record">): string {
+  const context = phase.record.context;
+  return [`# Spec — phase ${phase.id}: ${phase.title}`, "", `Goal: ${phase.goal}`, "",
+    `Ambiguity: ${ambiguityScore(phase.record)}`, "",
+    `## Requirements`, ...(context?.requirements?.length ? context.requirements.map((id) => `- ${id}`) : ["- none named"]), "",
+    `## Locked decisions`, ...(context?.decisions?.length ? context.decisions.map((id) => `- ${id}`) : ["- none"]), "",
+    `## Appetite`, context?.appetite ?? "—", "",
+    `## No-gos`, ...(context?.noGos?.length ? context.noGos.map((line) => `- ${line}`) : ["- none"]), ""].join("\n");
+}
+
+/** The context's ambiguity (SMA k_pl_spec): open questions over all questions plus locked decisions, 0–1 to two decimals. */
+export function ambiguityScore(record: PhaseRecord): number {
+  const questions = record.questions ?? [];
+  const open = questions.filter((question) => !question.answer).length;
+  const total = questions.length + (record.context?.decisions?.length ?? 0);
+  return total ? Math.round((open / total) * 100) / 100 : 0;
+}
+
+/** Design contract points (SMA k_wv_design): the checkable items of UI-SPEC.md — every checkbox or bullet under a
+ *  heading, each with a stable id from its own text. */
+export function designPoints(specText: string): Array<{ id: string; text: string }> {
+  return specText.split("\n").map((line) => /^- \[[ xX!]?\]\s*(.+)$/.exec(line.trim())?.[1] ?? /^-\s+(.+)$/.exec(line.trim())?.[1] ?? null)
+    .filter((item): item is string => !!item)
+    .map((item) => item.trim()).filter(Boolean)
+    .map((item) => ({ id: `design_${sha256Hex(item).slice(0, 8)}`, text: item }));
+}
+
+/** Threat closure (SMA k_pl_security): every threat row of SECURITY.md needs a mitigation citing `file:line`, and the
+ *  cited file must exist and have that line. `has` answers file-exists-and-line-exists; the open rows are returned. */
+export function threatClosureGaps(securityText: string, has: (path: string, line: number) => boolean): string[] {
+  const gaps: string[] = [];
+  let inThreats = false;
+  for (const row of securityText.split("\n")) {
+    if (/^#{1,6}\s/.test(row.trim())) { inThreats = /threat|risk/i.test(row) && !/mitigation|must hold|what the plan/i.test(row); continue; }
+    const bullet = /^-\s+(.+)$/.exec(row.trim());
+    if (!bullet) continue;
+    if (!inThreats) continue;
+    const cite = /([^\s`"'()]+\.[a-z0-9]+):(\d{1,6})\b/i.exec(bullet[1]!);
+    if (!cite) { gaps.push(`threat without a mitigation citing file:line: ${bullet[1]!.slice(0, 120)}`); continue; }
+    if (!has(cite[1]!, Number(cite[2]))) gaps.push(`mitigation cites ${cite[1]}:${cite[2]}, which is not in the code: ${bullet[1]!.slice(0, 120)}`);
+  }
+  return gaps;
 }
 
 /** The daemon writes the conclusion (SMA): the phase's SUMMARY.md in the short form, from the record and the book. */
@@ -263,22 +365,107 @@ export function milestoneOf(roadmapText: string, row: string): string | null {
   return null;
 }
 
-/** Transition (SMA: advance to the next phase): the first open row of the roadmap. */
+/** Transition (SMA: advance to the next phase): the first open row of the roadmap. The parking lot (999.*) is never
+ *  opened by the machine (SMA k_c_backlog): it is promoted by a person, which renumbers it out of the 999s. */
 export function nextRoadmapRow(text: string): { n: string; name: string; goal: string } | null {
   for (const line of text.split("\n")) {
     const found = line.trim().match(ROW);
-    if (found && found[1] === " ") return { n: found[2]!, name: found[3]!.trim(), goal: (found[4] ?? "").trim() };
+    if (found && found[1] === " " && !found[2]!.startsWith("999.")) return { n: found[2]!, name: found[3]!.trim(), goal: (found[4] ?? "").trim() };
   }
   return null;
 }
 
-/** Marks in STATE: the header keys phase and stage set, the body kept (lane-plan reads the same header). */
-export function stateText(previous: string | null, marks: Record<string, string>): string {
+/** The roadmap's parking lot (SMA k_c_backlog): the next 999.N row is appended under `## Backlog` (created when absent). */
+export function parkRoadmapRow(text: string, name: string, goal: string): { text: string; n: string } {
+  let max = 0;
+  for (const line of text.split("\n")) {
+    const found = line.trim().match(ROW);
+    if (found && found[2]!.startsWith("999.")) max = Math.max(max, Number(found[2]!.slice(4)) || 0);
+  }
+  const n = `999.${max + 1}`;
+  const row = `- [ ] ${n} ${name.trim()}${goal.trim() ? ` — ${goal.trim()}` : ""}`;
+  const lines = text.split("\n");
+  const backlog = lines.findIndex((line) => /^#{1,6}\s+backlog\b/i.test(line.trim()));
+  if (backlog >= 0) {
+    let at = backlog + 1;
+    while (at < lines.length && !/^#{1,6}\s/.test(lines[at]!.trim())) at += 1;
+    while (at > backlog + 1 && !lines[at - 1]!.trim()) at -= 1;
+    lines.splice(at, 0, row);
+    return { text: lines.join("\n"), n };
+  }
+  return { text: `${text.replace(/\s+$/, "")}\n\n## Backlog\n\n${row}\n`, n };
+}
+
+/** A phase section of the roadmap (SMA k_t_roadmap): the row plus the indented lines under it. */
+export function roadmapSection(text: string, row: string): string | null {
+  const lines = text.split("\n");
+  const at = lines.findIndex((line) => line.trim().match(ROW)?.[2] === row);
+  if (at < 0) return null;
+  const out = [lines[at]!];
+  for (let i = at + 1; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (!line.trim()) break;
+    if (line.trim().match(ROW) || /^#{1,6}\s/.test(line.trim())) break;
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
+/** The roadmap read together with the disk (SMA k_t_roadmap): rows ticked whose phase folder has no SUMMARY.md,
+ *  phase folders no row names, and the next open row. `phases` pairs each folder with its roadmap row and SUMMARY. */
+export function roadmapAnalysis(text: string, phases: readonly { id: string; row?: string; hasSummary: boolean }[]): {
+  tickedWithoutSummary: string[]; foldersWithoutRow: string[]; next: { n: string; name: string; goal: string } | null } {
+  const ticked = new Map<string, string>();
+  for (const line of text.split("\n")) {
+    const found = line.trim().match(ROW);
+    if (found && found[1] !== " ") ticked.set(found[2]!, found[3]!.trim());
+  }
+  const inText = new Set<string>();
+  for (const line of text.split("\n")) { const found = line.trim().match(ROW); if (found) inText.add(found[2]!); }
+  return {
+    tickedWithoutSummary: phases.filter((phase) => phase.row !== undefined && ticked.has(phase.row) && !phase.hasSummary).map((phase) => `${phase.row} ${ticked.get(phase.row!)} (phase ${phase.id})`),
+    foldersWithoutRow: phases.filter((phase) => !phase.row || !inText.has(phase.row)).map((phase) => phase.id),
+    next: nextRoadmapRow(text),
+  };
+}
+
+/** Marks in STATE: the header keys phase and stage set, the body kept (lane-plan reads the same header). `sections`
+ *  replace the command-owned sections of the body (SMA k_pl_state): a `## <name>` block's lines are rewritten, the
+ *  rest of the body survives. */
+export function stateText(previous: string | null, marks: Record<string, string>, sections?: Record<string, string[]>): string {
   const today = new Date().toISOString().slice(0, 10);
-  const [head, body] = previous?.startsWith("---\n") ? [previous.slice(4).split("\n---\n")[0] ?? "", previous.slice(4).split("\n---\n").slice(1).join("\n---\n")] : ["", previous ?? "\n# State\n"];
+  const [head, before] = previous?.startsWith("---\n") ? [previous.slice(4).split("\n---\n")[0] ?? "", previous.slice(4).split("\n---\n").slice(1).join("\n---\n")] : ["", previous ?? "\n# State\n"];
   const keys = new Map(head.split("\n").filter((line) => line.includes(":")).map((line) => [line.slice(0, line.indexOf(":")).trim(), line.slice(line.indexOf(":") + 1).trim()]));
   for (const [key, value] of Object.entries({ ...marks, updated: today })) keys.set(key, JSON.stringify(value));
+  let body = before;
+  for (const [name, lines] of Object.entries(sections ?? {})) body = replaceStateSection(body, name, lines);
   return `---\n${[...keys].map(([key, value]) => `${key}: ${value}`).join("\n")}\n---\n${body.startsWith("\n") ? body : `\n${body}`}`;
+}
+
+const STATE_HEADING = /^##\s+(.+?)\s*$/;
+
+function replaceStateSection(body: string, name: string, lines: string[]): string {
+  const rows = body.split("\n");
+  const at = rows.findIndex((row) => STATE_HEADING.exec(row)?.[1]?.toLowerCase() === name.toLowerCase());
+  const block = [`## ${name}`, ...lines];
+  if (at < 0) return `${body.replace(/\s+$/, "")}\n\n${block.join("\n")}\n`;
+  let end = at + 1;
+  while (end < rows.length && !STATE_HEADING.test(rows[end]!)) end += 1;
+  return [...rows.slice(0, at), ...block, "", ...rows.slice(end)].join("\n");
+}
+
+/** STATE.md read back (SMA k_t_state): the header keys and the `## ` sections of the body. */
+export function parseState(text: string): { marks: Record<string, string>; sections: Record<string, string[]> } {
+  const [head, body] = text.startsWith("---\n") ? [text.slice(4).split("\n---\n")[0] ?? "", text.slice(4).split("\n---\n").slice(1).join("\n---\n")] : ["", text];
+  const marks = Object.fromEntries(head.split("\n").filter((line) => line.includes(":")).map((line) => [line.slice(0, line.indexOf(":")).trim(), line.slice(line.indexOf(":") + 1).trim().replace(/^"(.*)"$/, "$1")]));
+  const sections: Record<string, string[]> = {};
+  let name: string | null = null;
+  for (const row of body.split("\n")) {
+    const heading = STATE_HEADING.exec(row);
+    if (heading) { name = heading[1]!; sections[name] = []; continue; }
+    if (name && row.trim()) sections[name]!.push(row.trim());
+  }
+  return { marks, sections };
 }
 
 /**

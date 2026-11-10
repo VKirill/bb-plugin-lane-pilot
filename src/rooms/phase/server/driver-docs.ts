@@ -9,6 +9,7 @@ import { PhaseRefusal, STAGE_RU, type DriverBase } from "./driver-tools";
 import type { Phase, PhaseRecord, PhaseStage, TaskFact } from "../logic";
 import { sha256Hex, isNotFound, orMiss, bestEffort } from "@lane-pilot/kit";
 import { nextAction, phaseFolder, renderBook } from "../logic";
+import { stateText } from "../stages";
 
 /**
  * The phase's own reads and its book: the files of the PM's run (their hashes, their text), the documents written back, the
@@ -36,6 +37,34 @@ export function installDocs(base: DriverBase) {
   function move(phase: Phase, stage: PhaseStage, record: PhaseRecord, why: string) {
     savePhaseRow(db, phase.id, { stage, record, at: now() });
     book(phase, "decisions", "stage", `${phase.stage} → ${stage}: ${why}`);
+    // SMA k_pl_state: every stage move writes STATE.md — Position, Decisions, Blockers and Session are command-owned
+    // sections, regenerated each move (hand edits there are overwritten; the rest of the body survives).
+    stateQueue = stateQueue.then(() => bestEffort(bb.log, "phase STATE.md write", markState({ ...phase, stage, record }), null));
+  }
+
+  /** Serialized STATE.md writes: moves are sync, the write is not — callers in a test can drain `stateDone()`. */
+  let stateQueue: Promise<unknown> = Promise.resolve();
+  const stateDone = () => stateQueue;
+
+  /** The command-owned sections of STATE.md for a move (SMA k_pl_state). Only where planning files already live:
+   *  a project without STATE.md or ROADMAP.md gets none (the close's own rule). */
+  async function markState(phase: Phase): Promise<void> {
+    const stateNow = await readText(phase, ".agents/planning/STATE.md");
+    const roadmap = await readText(phase, ".agents/planning/ROADMAP.md");
+    if (stateNow === null && roadmap === null) return;
+    const items = phase.record.plan?.items ?? [];
+    const issuedWave = Math.max(0, ...items.filter((item) => phase.record.execution?.issued[item.id]).map((item) => item.wave));
+    const f = facts(phase);
+    const sections = {
+      Position: [`phase ${phase.record.roadmapRow ?? phase.id}`, `stage ${phase.stage}`, ...(issuedWave ? [`wave ${issuedWave}`] : [])],
+      Decisions: [...(phase.record.context?.decisions ?? []).map((id) => `locked ${id}`),
+        ...listParts(db, phase.id).filter((part) => part.section === "decisions").slice(-5).map((part) => part.text.slice(0, 160))],
+      Blockers: [...(phase.record.questions ?? []).filter((question) => question.blocking && !question.answer).map((question) => `question ${question.id}: ${question.text.slice(0, 160)}`),
+        ...items.filter((item) => ["blocked", "canceled"].includes(f.get(item.id)?.state ?? "")).map((item) => `piece ${item.id} ${f.get(item.id)!.state}`),
+        ...Object.entries(phase.record.execution?.issueErrors ?? {}).map(([piece, why]) => `piece ${piece}: ${why.slice(0, 160)}`)],
+      Session: [`pm ${phase.pmThreadId}`, `activity ${new Date(now()).toISOString()}`],
+    };
+    await writeDocs(phase, [{ path: ".agents/planning/STATE.md", content: stateText(stateNow, { phase: phase.record.roadmapRow ?? phase.id, stage: phase.stage }, sections) }], `phase ${phase.id}: STATE.md at ${phase.stage}`);
   }
 
   /** A file of the project as the PM's run sees it (its frozen writer workspace), for the signature of a stage's documents. */
@@ -85,6 +114,8 @@ export function installDocs(base: DriverBase) {
     const written = applied.map((row) => row.path);
     const shas = Object.fromEntries(applied.filter((row) => typeof row.afterSha256 === "string").map((row) => [row.path, row.afterSha256 as string]));
     if (!written.length) return { written, commit: null, shas };
+    // SMA k_wp_commit: the commit happens only where the project allows committing docs (phase.commit_docs, on by default).
+    if (phase.record.commitDocs === false) return { written, commit: null, shas };
     const committed = await bestEffort(bb.log, "phase docs commit", host.call("gitCommitDocs", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, paths: written, message }, { hostId, timeoutMs: 60_000 }), null);
     return { written, commit: committed?.commit ?? null, shas };
   }
@@ -201,5 +232,5 @@ export function installDocs(base: DriverBase) {
     return hostId ? createCandidates(bb.hosts.experimental_client({ contract: hostContract }) as never, hostId, bb.log) : null;
   }
 
-  return { mustGet, savePhase, book, move, facts, readFile, readText, writeDocs, commitFiles, pauseHandoff, writeBook, redoId, pmCheckoutPath, candidates, drawingSha };
+  return { mustGet, savePhase, book, move, facts, readFile, readText, writeDocs, commitFiles, pauseHandoff, writeBook, redoId, pmCheckoutPath, candidates, drawingSha, markState, stateDone };
 }

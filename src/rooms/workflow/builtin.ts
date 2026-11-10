@@ -9,6 +9,8 @@ import blueprintDriven from "../../../workflows/blueprint-driven.json";
 import apiRecon from "../../../workflows/api-recon.json";
 import browserStep from "../../../workflows/browser-step.json";
 import lpBrowserQa from "../../../workflows/lp.browser-qa.json";
+import backlogAdd from "../../../workflows/backlog-add.json";
+import planImport from "../../../workflows/plan-import.json";
 import brainstormDriven from "../../../workflows/brainstorm-driven.json";
 import ideaShootdown from "../../../workflows/idea-shootdown.json";
 import codeReview from "../../../workflows/code-review.json";
@@ -125,6 +127,8 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "api-recon.json", value: apiRecon },
   { name: "browser-step.json", value: browserStep },
   { name: "lp.browser-qa.json", value: lpBrowserQa },
+  { name: "backlog-add.json", value: backlogAdd },
+  { name: "plan-import.json", value: planImport },
   { name: "code-review.json", value: codeReview },
   { name: "companion.json", value: companion },
   { name: "council.json", value: council },
