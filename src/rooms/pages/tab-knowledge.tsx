@@ -33,7 +33,7 @@ export function KnowledgeTab({ page }: { page: LpPage }) {
             <p className="max-w-xl text-xs text-muted-foreground">{t("memoryPickerHelp")}</p>
             {!isGlobal && projectId ? <MemoryRecords projectId={projectId} /> : null}
             <AdvancedRows show={advanced} testId="memory-advanced">
-              <CatalogFields page={page} keys={["memory.maintain", "memory.maintain_every", "memory.maintain_mode", "memory.salience_min", "memory.pack_mode", "memory.query_floor", "memory.project_kind", "memory.inject", "memory.audience", "memory.search_engine", "memory.personal_bot", "memory.core_budget", "memory.note_budget", "memory.index_budget", "memory.context_budget"]} />
+              <CatalogFields page={page} keys={["memory.maintain", "memory.maintain_every", "memory.maintain_mode", "memory.salience_min", "memory.pack_mode", "memory.query_floor", "memory.project_kind", "memory.inject", "memory.audience", "memory.search_engine", "memory.personal_bot", "memory.core_budget", "memory.note_budget", "memory.index_budget", "memory.context_budget", "memory.single_claim", "memory.tag_notes"]} />
             </AdvancedRows>
           </section>
         </SettingsGroup>

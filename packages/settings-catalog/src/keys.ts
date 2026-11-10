@@ -12,3 +12,5 @@ export const SETTING_WORKER_USER = "worker.user";
 export const SETTING_INSTALL_LAST_RECEIPT = "install.lastReceipt";
 export const SETTING_EPISODES_PROCESS_KEY = "episodes.process_key";
 export const SETTING_BACKLOG_SCAN_MINUTES = "backlog.scan_minutes";
+export const SETTING_MEMORY_SINGLE_CLAIM = "memory.single_claim";
+export const SETTING_MEMORY_TAG_NOTES = "memory.tag_notes";

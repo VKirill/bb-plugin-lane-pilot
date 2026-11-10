@@ -149,8 +149,10 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
       if (!hit) { if (entry.validUntil == null || entry.validUntil > now) pending.push({ entry, id }); continue; }
       if (hit.status === "active") { if (hit.trust === "observed" && hit.source_sha256 !== input.sourceSha256) corroborate.push(hit.id); continue; }
       // A hidden record comes back when its fact is stated again, or when the file it came from says so; a replaced one stays replaced otherwise.
-      // A revoked one does not: the owner withdrew that fact, so no write brings it back on its own.
-      const wanted = (hit.status === "expired" && hit.expired_reason !== "revoked") || (entry.sourceFileId != null && entry.sourceFileId === hit.source_file_id);
+      // A revoked one never does, on any path (restated, re-imported from its file): the owner withdrew that fact. An archived one
+      // stays in the cold tier too: the owner moved it there, and only a PM query (reactivateColdMemory) or the owner brings it back.
+      if (hit.status === "expired" && (hit.expired_reason === "revoked" || hit.expired_reason === "archived")) continue;
+      const wanted = hit.status === "expired" || (entry.sourceFileId != null && entry.sourceFileId === hit.source_file_id);
       if (wanted && (entry.validUntil == null || entry.validUntil > now)) revive.push({ entry, id: hit.id });
     }
     const adds = [...pending, ...revive];
@@ -429,14 +431,24 @@ const hasTable = (db: MemoryDatabase, name: string) => Boolean(db.prepare("SELEC
 /**
  * Removes a record and its bytes everywhere: the row, both word indexes, its embedding, the promotion and
  * conflict rows that name it (SMA k_lib_erase). `eraseLeftovers` verifies nothing is left; callers report what it returns.
+ * A conflict row quotes both notes, so it goes with the record, and the surviving note is no longer held by it. A held pair may
+ * have opened a deferral entry: its ids are returned so the caller (the conflict service) closes them and none stays open.
  */
-export function deleteMemoryRecord(db: Database.Database, projectId: string, id: string): void {
+export function deleteMemoryRecord(db: Database.Database, projectId: string, id: string): string[] {
+  // secure_delete is a setting of the shared connection: put back what it was.
+  const before = (db.prepare("PRAGMA secure_delete").get() as { secure_delete: number } | undefined)?.secure_delete ?? 0;
   db.prepare("PRAGMA secure_delete=ON").get();
-  dropMemoryIndexes(db, projectId, id);
-  if (hasTable(db, "lane_pilot_memory_vec")) db.prepare("DELETE FROM lane_pilot_memory_vec WHERE project_id=? AND id=?").run(projectId, id);
-  if (hasTable(db, "lane_pilot_memory_promotion")) db.prepare("DELETE FROM lane_pilot_memory_promotion WHERE project_id=? AND memory_id=?").run(projectId, id);
-  if (hasTable(db, "lane_pilot_memory_conflict")) db.prepare("DELETE FROM lane_pilot_memory_conflict WHERE project_id=? AND (note_a=? OR note_b=?)").run(projectId, id, id);
-  db.prepare("DELETE FROM lane_pilot_memory WHERE project_id=? AND id=?").run(projectId, id);
+  try {
+    let orphaned: string[] = [];
+    if (hasTable(db, "lane_pilot_memory_conflict")) orphaned = (db.prepare("SELECT deferral_id FROM lane_pilot_memory_conflict WHERE project_id=? AND state='held' AND deferral_id IS NOT NULL AND (note_a=? OR note_b=?)")
+      .all(projectId, id, id) as Array<{ deferral_id: string }>).map((row) => row.deferral_id);
+    dropMemoryIndexes(db, projectId, id);
+    if (hasTable(db, "lane_pilot_memory_vec")) db.prepare("DELETE FROM lane_pilot_memory_vec WHERE project_id=? AND id=?").run(projectId, id);
+    if (hasTable(db, "lane_pilot_memory_promotion")) db.prepare("DELETE FROM lane_pilot_memory_promotion WHERE project_id=? AND memory_id=?").run(projectId, id);
+    if (hasTable(db, "lane_pilot_memory_conflict")) db.prepare("DELETE FROM lane_pilot_memory_conflict WHERE project_id=? AND (note_a=? OR note_b=?)").run(projectId, id, id);
+    db.prepare("DELETE FROM lane_pilot_memory WHERE project_id=? AND id=?").run(projectId, id);
+    return orphaned;
+  } finally { db.prepare(`PRAGMA secure_delete=${Math.trunc(before)}`).get(); }
 }
 
 /** The tables that still hold the id (or its embedding) after an erase; empty means the record is gone everywhere. */
@@ -650,14 +662,20 @@ export function rebuildMemoryIndexes(db: MemoryDatabase, projectId?: string, opt
 
 /**
  * Active records with no trace back to the pipeline (SMA d_mem_lint): no task they came from, no file, no voucher,
- * and not written by the owner or an import (those legitimately have none).
+ * and not written by the owner or an import (those legitimately have none). The one definition: lint, the cockpit and
+ * the records badge all use it. Without a project it covers every project.
  */
-export function memoryWithoutTrace(db: MemoryDatabase, projectId: string): Array<{ id: string; content: string }> {
-  return db.prepare(`SELECT id, content FROM lane_pilot_memory WHERE project_id=? AND status='active'
+export function memoryWithoutTrace(db: MemoryDatabase, projectId?: string): Array<{ id: string; content: string }> {
+  return db.prepare(`SELECT id, content FROM lane_pilot_memory WHERE status='active'${projectId ? " AND project_id=?" : ""}
     AND origin_task_id IS NULL AND source_file_id IS NULL
     AND (verification_json IS NULL OR verification_json='[]')
     AND COALESCE(origin,'') NOT IN ('owner','import')
-    ORDER BY created_at, id`).all(projectId) as Array<{ id: string; content: string }>;
+    ORDER BY created_at, id`).all(...(projectId ? [projectId] : [])) as Array<{ id: string; content: string }>;
+}
+
+/** All active records of a project: the real total behind «N of M» (the digest read is capped at 80). */
+export function countActiveMemory(db: MemoryDatabase, projectId: string): number {
+  return (db.prepare("SELECT count(*) AS n FROM lane_pilot_memory WHERE project_id=? AND status='active'").get(projectId) as { n: number }).n;
 }
 
 /** One recorded miss, optionally an owner-reminded one tied to the record that held the answer (SMA k_v_mem_miss). */

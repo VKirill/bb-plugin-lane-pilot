@@ -9,7 +9,8 @@ import { demoteUnusedPromotions, enrichMemoryContext, episodeCandidates } from "
 import { appendAcceptedFact, claimStageSpawn, countStageReceiptsSince, getRun, getRunSettingsScopes, getTask, lastStageReceiptAt, listAcceptedFacts, listOpenAttempts, listPendingAcceptedFacts, listStageReceipts, markAcceptedFactsSummarized, projectHasScopedRun } from "../../storage";
 import { wireMemoryAttemptEffects } from "./attempt-effects";
 import { shouldTriggerProjectLife } from "../../project-life";
-import { coreShelf, dropMemoryIndexes, memoryClaimIssue, memoryEntrySupported, pathsNamed, retireStaleCuratorClaims, searchMemoryRecords, storeMemoryRecordsKeepingOverflow, memoryEntrySalience } from "@lane-pilot/memory-core";
+import { coreShelf, dropMemoryIndexes, memoryEntrySupported, pathsNamed, retireStaleCuratorClaims, searchMemoryRecords, storeMemoryRecordsKeepingOverflow, memoryEntrySalience } from "@lane-pilot/memory-core";
+import { dropPackedLists, maintainerMemorySettings } from "./memory-settings";
 import { applyScopeMigration } from "./scope-migration";
 import { projectUsesSections, resolveProjectKind, sharedScope } from "@lane-pilot/memory-core";
 import { bbServiceTier, listedServiceTier, writerExecutionSelection } from "@lane-pilot/models";
@@ -63,10 +64,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     retireStaleCuratorClaims(db, args.projectId, (projectId, id) => dropMemoryIndexes(db, projectId, id));
     const settings=await services.stageHelperSettings(bb,db,args.projectId,args.runId);
     const memoryAgent=boundedAgentName(settings["memory.agent"],"memory-maintainer");
-    const memorySettings=parseMemorySettings(Object.fromEntries([
-      "memory.enabled","memory.maintain","memory.inject","memory.audience","memory.personal_bot","memory.search_engine",
-      "memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget","memory.maintain_every",
-    ].map((key)=>[key,configuredSetting(settings,key)])));
+    const memorySettings=maintainerMemorySettings(settings);
     // The memory row of the role table (the project's own memory.* settings still win), through the one resolver: never the project writer.
     const spawnUsage=spawnUsageOf(ctx);
     await warmSpawnUsage(spawnUsage,config.hostId);
@@ -181,8 +179,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       const entries=admitted.filter((entry)=>memoryEntrySalience(entry)>=(snapshot.settings.salienceMin??40));
       const salienceDropped=admitted.length-entries.length;
       // memory.single_claim: a list packed into one record is dropped, the rest of the batch still stores.
-      const kept=memorySettings.singleClaim?entries.filter((entry)=>!memoryClaimIssue(entry.content)):entries;
-      const listDropped=entries.length-kept.length;
+      const {kept,dropped:listDropped}=dropPackedLists(entries,memorySettings);
       // M7: in an umbrella a project-level write is not global; a batch fully marked shared keeps a project scope with the reason inside.
       if(!scope.length&&resolveProjectKind(snapshot.settings.projectKind,projectUsesSections(db,args.projectId,projectHasScopedRun))==="umbrella"&&entries.length&&entries.every((entry)=>entry.concepts.some((concept)=>/^shared/.test(concept))))
         scope=sharedScope(entries.flatMap((entry)=>entry.concepts).find((concept)=>/^shared:/.test(concept))?.split(":")[1]);

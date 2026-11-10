@@ -25,7 +25,7 @@ import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
 import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
 import { MEMORY_EVAL_USAGE, runMemoryEvalCommand } from "../../memory-eval/server";
 import { MEMORY_CONFLICT_USAGE, runMemoryConflictCli, sessionMemoryRpc, memorySettingsFor, type WallThreadReader } from "../../memory/server";
-import { deleteMemoryRecord, dropMemoryIndexes, eraseLeftovers, hideRecord, lintMemory, listMemory, memoryConceptsJson, memoryIndexStatus, memoryRecordExists, memoryTokenStats, rebuildMemoryIndexes, recordMemoryMiss, reviewMemory } from "@lane-pilot/memory-core";
+import { dropMemoryIndexes, hideRecord, lintMemory, listMemory, memoryConceptsJson, memoryIndexStatus, memoryRecordExists, memoryTokenStats, rebuildMemoryIndexes, recordMemoryMiss, reviewMemory } from "@lane-pilot/memory-core";
 import { BENCH_USAGE, runBenchCli } from "../../bench/server";
 import { BASELINE_USAGE, runBaselineCli } from "../../baseline/server";
 import { RETURN_USAGE, runReturnCli } from "../../stage-return/server";
@@ -674,14 +674,25 @@ ${ERRANDS_USAGE}` },
           if (sub === "forget") {
             const id = args[1];
             if (!projectId || !id || id.startsWith("--")) return { exitCode:1, stderr:"usage: bb lane-pilot memory forget <id> [--project P] (--revoke|--expire|--archive|--replace <newId>) [--erase --yes]" };
+            // The CLI is a door any agent thread can reach and `--yes` is a flag an agent can pass: who is calling decides what is allowed.
+            // No thread = the owner at a terminal (or an automation). A thread is an agent: it may only touch its own project, and
+            // `--erase` (irreversible) is for the owner or the owner's PM chat, never a writer or helper (any other Lane Pilot role, or a
+            // thread whose role cannot be read).
+            if (invocation?.threadId) {
+              const caller = await orMiss(bb.sdk.threads.get({ threadId: invocation.threadId }), null, isNotFound) as { projectId?: unknown } | null;
+              if (!caller || typeof caller.projectId !== "string" || caller.projectId !== projectId) return { exitCode:1, stderr:`refused: memory forget from a thread reaches only that thread's own project (${typeof caller?.projectId === "string" ? caller.projectId : "unknown"}), not ${projectId}` };
+              if (args.includes("--erase")) {
+                const metadata = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId: invocation.threadId }), null, isNotFound) as { role?: unknown } | null;
+                if (metadata?.role !== "pm") return { exitCode:1, stderr:`refused: --erase is irreversible and not for a ${typeof metadata?.role === "string" ? `${metadata.role} thread` : "thread whose role is unknown"}; the owner erases from the cockpit or a terminal` };
+              }
+            }
             const conceptsJson = memoryConceptsJson(db as never, projectId, id);
             if (conceptsJson === null) return { exitCode:1, stderr:`no memory record ${id} in project ${projectId}` };
             if (conceptsJson.includes('"rule"')) return { exitCode:1, stderr:"a rule record is removed with its rule: revoke the rule, not the record" };
             const unindex = (p: string, r: string) => dropMemoryIndexes(db as never, p, r);
             if (args.includes("--erase")) {
               if (!args.includes("--yes")) return { exitCode:1, stderr:"--erase deletes the record's bytes everywhere; pass --yes to confirm" };
-              deleteMemoryRecord(db as never, projectId, id);
-              const left = eraseLeftovers(db, projectId, id);
+              const left = services.memoryConflicts.eraseRecord(projectId, id);
               return { exitCode: left.length ? 1 : 0, stdout: left.length ? `leftovers: ${left.join(",")}\n` : `erased ${id}; nothing remains\n` };
             }
             const replaceAt = args.indexOf("--replace");

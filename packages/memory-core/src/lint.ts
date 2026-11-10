@@ -34,10 +34,10 @@ export const LINT_CHECKS: LintCheck[] = [
   check("injection", "error", (db, projectId) => activeRows(db, projectId)
     .filter((row) => { const issue = memoryContentIssue(row.content); return issue !== null && /instruction override/.test(issue); })
     .map((row) => ({ check: "injection", tier: "error" as const, recordId: row.id, detail: "stored content talks to the assistant as an instruction override" }))),
-  // No way back to where the fact came from (SMA m_lint): no origin at all, no source hash, or a maintainer record with no task.
-  check("no_trace", "error", (db, projectId) => activeRows(db, projectId)
-    .filter((row) => !row.origin || !row.source_sha256 || (row.origin === "maintainer" && row.origin_task_id === null))
-    .map((row) => ({ check: "no_trace", tier: "error" as const, recordId: row.id, detail: `${row.id.slice(0, 12)} ${row.content.slice(0, 80)}` }))),
+  // No way back to where the fact came from (SMA m_lint): memoryWithoutTrace is the one definition. A warning: older records
+  // predate the origin_task_id column and an owner or import record has none, so it must never make `memory lint` exit 1.
+  check("no_trace", "warn", (db, projectId) => memoryWithoutTrace(db, projectId)
+    .map((row) => ({ check: "no_trace", tier: "warn" as const, recordId: row.id, detail: `${row.id.slice(0, 12)} ${row.content.slice(0, 80)}` }))),
   check("dated", "warn", (db, projectId, ctx) => activeRows(db, projectId)
     .filter((row) => row.valid_until !== null && row.valid_until <= ctx.now)
     .map((row) => ({ check: "dated", tier: "warn" as const, recordId: row.id, detail: "active record past its valid_until" }))),

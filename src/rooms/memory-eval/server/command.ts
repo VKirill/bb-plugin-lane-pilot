@@ -1,11 +1,12 @@
 import Database from "better-sqlite3";
-import { readFileSync } from "node:fs";
 import { SANDBOX_PROJECT_ID, isDrillTask } from "../../contracts";
 import { formatFloorTuning, tuneFloor } from "./floor-tuning";
 import { formatEvalReport, runMemoryEval } from "./memory-eval";
 import { formatShelf, runShelfReplay } from "./shelf";
 import { exportEvalExtract, loadEvalData } from "./source";
 import { runMemoryGate, type MemoryGate } from "./gate";
+// Imported, not read from disk: the plugin ships as one bundle and the JSON would not sit next to it.
+import gateFixture from "./gate-fixture.json";
 
 export const MEMORY_EVAL_USAGE = "bb lane-pilot memory-eval [--sizes 30,300,3000] [--seed N] [--scope project|pile] [--shelf] [--floor] [--no-floor] [--north-star] [--gate] [--source <extract.db>] [--export <extract.db>] [--json]";
 
@@ -30,7 +31,7 @@ export async function runMemoryEvalCommand(live: Pick<Database.Database, "prepar
       const scratch = new Database(":memory:");
       try {
         for (const statement of migrations) scratch.exec(statement);
-        const fixture = JSON.parse(readFileSync(new URL("./gate-fixture.json", import.meta.url), "utf8")) as MemoryGate;
+        const fixture = gateFixture as unknown as MemoryGate;
         const report = runMemoryGate(scratch as never, fixture);
         const bad = report.leaks.length + report.overflows.length + report.cutRules.length + report.misses.length + report.errors.length;
         const stdout = `memory gate: ${report.cases} cases, ${report.leaks.length} leaks, ${report.overflows.length} overflows, ${report.cutRules.length} cut rules, ${report.misses.length} misses, ${report.errors.length} errors${bad ? `\n${JSON.stringify({ leaks: report.leaks, overflows: report.overflows, cutRules: report.cutRules, misses: report.misses, errors: report.errors }, null, 2)}` : ""}`;

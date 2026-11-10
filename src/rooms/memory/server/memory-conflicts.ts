@@ -1,5 +1,5 @@
 import {
-  dropMemoryIndexes, filesDrifted, findConflicts, getConflict, hideRecord, holdConflict, listConflicts, markSettled, pathsNamed,
+  deleteMemoryRecord, dropMemoryIndexes, eraseLeftovers, filesDrifted, findConflicts, getConflict, hideRecord, holdConflict, listConflicts, markSettled, pathsNamed,
   type ConflictNote, type ConflictResolution, type ConflictRow,
 } from "@lane-pilot/memory-core";
 import type { LanePilotDatabase } from "../../storage";
@@ -102,11 +102,24 @@ export function createMemoryConflicts(deps: ConflictDeps) {
     return getConflict(db, row.id)!;
   }
 
+  /**
+   * Erases a record for good (the CLI's and the records tab's door). A held pair that names it is deleted with it, so the other note is
+   * not held by a pair that no longer exists, and the deferral entry the pair opened is closed rather than left waiting on a gone note.
+   * Returns the tables that still hold the record afterwards (empty when clean).
+   */
+  function eraseRecord(projectId: string, id: string): string[] {
+    const deferrals = db.transaction(() => deleteMemoryRecord(db as never, projectId, id)).immediate();
+    for (const deferralId of deferrals) {
+      try { deps.deferrals().close({ id: deferralId, evidence: `moot: memory record ${id.slice(0, 10)} was erased` }); } catch { /* an entry closed by hand stays closed */ }
+    }
+    return eraseLeftovers(db as never, projectId, id);
+  }
+
   function list(filter: { projectId?: string | undefined; state?: "held" | "settled" | undefined } = {}): ConflictRow[] {
     sweepMoot(filter.projectId);
     return listConflicts(db, filter);
   }
 
-  return { detect, list, settle, sweepMoot };
+  return { detect, list, settle, sweepMoot, eraseRecord };
 }
 export type MemoryConflictsApi = ReturnType<typeof createMemoryConflicts>;

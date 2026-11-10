@@ -1,4 +1,4 @@
-import { eraseLeftovers, listActiveMemoryRows, memoryConceptsJson } from "@lane-pilot/memory-core";
+import { listActiveMemoryRows, memoryConceptsJson, memoryWithoutTrace } from "@lane-pilot/memory-core";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, listRuleEvents, listRuleProposals, ruleTrialStatsMany, routingHint, setRuleAudience, writerAcceptanceStats, type RuleProposal } from "@lane-pilot/run-insights";
 import { acceptanceStats } from "../../../runs";
@@ -6,8 +6,8 @@ import { rpcContract } from "../../../contracts";
 import { loadProjectSettings } from "../../../storage";
 import { parseDocsSettings } from "../../../docs";
 import { configuredSetting, type ServerCore } from "../../../contracts/server";
-import { acceptRuleProposal, deleteMemoryRecord, rejectRuleProposal, revokeRule } from "../insights";
-import { memorySettingsFor } from "../../../memory/server";
+import { acceptRuleProposal, rejectRuleProposal, revokeRule } from "../insights";
+import { memorySettingsFor, type MemoryConflictsApi } from "../../../memory/server";
 import type { RuleScanApi } from "../rule-scan";
 
 import type { DocsNightlyApi } from "../../../docs/server/docs-nightly";
@@ -21,7 +21,7 @@ interface Services {
 }
 
 /** The services-bag members the insights RPC reads, named structurally so the room imports no `Services` type from core. */
-type InsightsServices = { ruleScan: RuleScanApi } & Pick<DocsNightlyApi, "docsPlaces" | "docsPlaceStatus" | "docsLastRead">;
+type InsightsServices = { ruleScan: RuleScanApi; memoryConflicts: Pick<MemoryConflictsApi, "eraseRecord"> } & Pick<DocsNightlyApi, "docsPlaces" | "docsPlaceStatus" | "docsLastRead">;
 type DocsStatus = Awaited<ReturnType<InsightsServices["docsPlaceStatus"]>>;
 /** How long the verdict of a folder is reused by the tab, and how long one open waits for a slow machine. */
 const DOCS_STATUS_TTL_MS = 5 * 60_000;
@@ -76,20 +76,22 @@ export function insightsRpc(ctx: ServerCore, services: InsightsServices) {
     /** Each folder of the project on each machine: does it keep docs, why, how often, and when tasks last read them. */
     memory_records_list: async ({ projectId }) => {
       const rows = listActiveMemoryRows(db as never, projectId, 500);
+      const noTrace = new Set(memoryWithoutTrace(db as never, projectId).map((row) => row.id));
       return { records: rows.map((row) => {
         let concepts: string[] = [];
         try { concepts = JSON.parse(row.concepts_json) as string[]; } catch { concepts = []; }
-        return { id: row.id, kind: row.kind, audience: row.audience, content: row.content, concepts, createdAt: row.created_at, rule: concepts.includes("rule"), useCount: row.use_count, acceptedCount: row.accepted_count, originTaskId: row.origin_task_id, sourceFileId: row.source_file_id, origin: row.origin, scope: (() => { try { const v = JSON.parse(row.scope_json ?? "[]") as unknown; return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []; } catch { return []; } })(), sources: row.sources };
+        return { id: row.id, kind: row.kind, audience: row.audience, content: row.content, concepts, createdAt: row.created_at, rule: concepts.includes("rule"), useCount: row.use_count, acceptedCount: row.accepted_count, originTaskId: row.origin_task_id, sourceFileId: row.source_file_id, noTrace: noTrace.has(row.id), origin: row.origin, scope: (() => { try { const v = JSON.parse(row.scope_json ?? "[]") as unknown; return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []; } catch { return []; } })(), sources: row.sources };
       }) };
     },
     // A rule's record is removed with the rule (the Rules tab), so the rule never stays «accepted» without reaching writers.
     memory_record_delete: async ({ projectId, id }) => {
       const conceptsJson = memoryConceptsJson(db as never, projectId, id);
-      if (conceptsJson === null) return { deleted: false, reason: "not_found" };
-      if (conceptsJson.includes('"rule"')) return { deleted: false, reason: "rule" };
-      deleteMemoryRecord(db, projectId, id);
-      const leftovers = eraseLeftovers(db as never, projectId, id);
-      return { deleted: leftovers.length === 0, reason: leftovers.length ? `leftovers: ${leftovers.join(",")}` : null };
+      if (conceptsJson === null) return { deleted: false, reason: "not_found", leftovers: [] };
+      if (conceptsJson.includes('"rule"')) return { deleted: false, reason: "rule", leftovers: [] };
+      // The conflict service erases and closes the deferral entry of a held pair; the record is gone either way, so `deleted` is true
+      // and anything the erase could not clear is named separately in `leftovers`.
+      const leftovers = services.memoryConflicts.eraseRecord(projectId, id);
+      return { deleted: true, reason: leftovers.length ? `leftovers: ${leftovers.join(",")}` : null, leftovers };
     },
     docs_overview: async ({ projectId, recheck }) => {
       const places = await services.docsPlaces(projectId);

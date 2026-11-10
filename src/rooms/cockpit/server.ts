@@ -9,7 +9,7 @@ import { readTaskApproach } from "../tasks";
 import { designJournalLines, readinessWords, trainedConditions, trainingRatios } from "../design-eval";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { listPhasePartsSince } from "../phase";
-import { activeMemoryDigestRows, lintMemory, rebuildMemoryIndexes, reviewMemory } from "@lane-pilot/memory-core";
+import { activeMemoryDigestRows, countActiveMemory, lintMemory, memoryWithoutTrace, rebuildMemoryIndexes, reviewMemory } from "@lane-pilot/memory-core";
 import { currentEmbedder, embedPending, memorySettingsFor } from "../memory/server";
 import { loadProjectSettings } from "../storage";
 
@@ -76,11 +76,13 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
       }
       if (action === "lint") {
         const findings = lintMemory(db, run.project_id, { budgets: memorySettingsFor(loadProjectSettings(db, run.project_id)) });
-        if (!findings.length) return { exitCode: 0, output: "Все записи привязаны к задаче или файлу" };
-        const noTrace = findings.filter((item) => item.check === "no_trace");
-        const lines = [`Без следа в работе: ${noTrace.length} из ${rows.length}`];
+        // The corpus listing the lint button always showed stays under the findings.
+        const corpus = rows.map((row) => `[${row.kind}] ${row.content}`);
+        if (!findings.length) return { exitCode: 0, output: ["Все записи привязаны к задаче или файлу", ...corpus].join("\n").slice(0, 20_000) };
+        // N and M are counted on the whole project (the digest is capped at 80); N is the one definition the lint uses.
+        const lines = [`Без следа в работе: ${memoryWithoutTrace(db, run.project_id).length} из ${countActiveMemory(db, run.project_id)}`];
         for (const item of findings) lines.push(`[${item.tier}] ${item.check}${item.recordId ? ` ${item.recordId.slice(0, 12)}` : ""} ${item.detail}`);
-        return { exitCode: 0, output: lines.join("\n").slice(0, 20_000) };
+        return { exitCode: 0, output: [...lines, "", ...corpus].join("\n").slice(0, 20_000) };
       }
       if (action === "consolidate") {
         const proposals = reviewMemory(db, run.project_id);
