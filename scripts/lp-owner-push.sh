@@ -12,6 +12,13 @@ set -euo pipefail
 # launcher spawns BB_CLI as a child, so BB_CLI naming the launcher itself spawns it again and again (on 2026-10-22 ~2000 node processes
 # took the hub's memory and it rebooted). BB_CLI is dropped from every call below.
 BB="${LP_BB:-bb}"
+# After a failed send the next try waits at least five minutes (SMA m_sum_repeat): a tighter cron or a hand run must not hammer Telegram.
+FAILED_AT="${LP_PUSH_FAILED_AT:-$HOME/.lane-pilot/owner-push.failed-at}"
+RETRY_SEC="${LP_PUSH_RETRY_SEC:-300}"
+if [ -f "$FAILED_AT" ]; then
+  sent_at="$(cat "$FAILED_AT" 2>/dev/null)"; age=$(( $(date +%s) - ${sent_at:-0} ))
+  [ "$age" -lt "$RETRY_SEC" ] && { echo "waiting after a failed send (${age}s < ${RETRY_SEC}s)"; exit 0; }
+fi
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 call() { # method, input json -> the result object
@@ -23,6 +30,9 @@ digest="$(call owner_waiting_digest '{}')"
 [ "$(field "$digest" send)" = "True" ] || { echo "nothing to send ($(field "$digest" reason))"; exit 0; }
 text="$(field "$digest" text)"
 if [ -n "${DRY_RUN:-}" ]; then echo "$text"; exit 0; fi
-curl -fsS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" -d chat_id="$TG_CHAT" -d message_thread_id="$TG_TOPIC" --data-urlencode text="$text" >/dev/null
+if ! curl -fsS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" -d chat_id="$TG_CHAT" -d message_thread_id="$TG_TOPIC" --data-urlencode text="$text" >/dev/null; then
+  date +%s > "$FAILED_AT"; echo "send failed; the next try waits ${RETRY_SEC}s" >&2; exit 1
+fi
+rm -f "$FAILED_AT"
 call owner_waiting_ack "$(python3 -c 'import json,sys; print(json.dumps({"keys": json.loads(sys.argv[1])}))' "$(field "$digest" keys)")" >/dev/null
 echo "$text"
