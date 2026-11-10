@@ -102,7 +102,11 @@ export function decideThreadCompletion(input: {
       if (ended) {
         const status = stringField(ended.data, "status");
         if (status === "completed") return { ok:true, via:"turn_completed" };
-        if (status === "failed" || status === "interrupted" || status === "error") return { ok:false, via:"canceled", detail:`turn_${status}` };
+        if (status === "interrupted") return { ok:false, via:"canceled", detail:"turn_interrupted" };
+        if (status === "failed" || status === "error") {
+          const cause = threadFailure(input.events, input.now) ?? failedTurn(input.events);
+          return cause ? { ok:false, via:"error", detail:cause } : { ok:false, via:"canceled", detail:`turn_${status}` };
+        }
       }
       const failure = threadFailure(input.events, input.now);
       if (failure) return { ok:false, via:"error", detail:failure };
@@ -110,7 +114,11 @@ export function decideThreadCompletion(input: {
     }
   }
   const current = currentSpawnTurn(input.threadId, input.events);
-  if (current.kind === "canceled") return { ok:false, via:"canceled", detail:current.detail };
+  if (current.kind === "canceled") {
+    if (current.detail === "turn_interrupted") return { ok:false, via:"canceled", detail:current.detail };
+    const cause = threadFailure(input.events, input.now) ?? failedTurn(input.events);
+    return cause ? { ok:false, via:"error", detail:cause } : { ok:false, via:"canceled", detail:current.detail };
+  }
   if (current.kind === "completed") return { ok:true, via:"turn_completed" };
   const failure = threadFailure(input.events, input.now);
   if (failure) return { ok:false, via:"error", detail:failure };
@@ -161,14 +169,19 @@ function failedTurn(events: unknown[]): string | null {
  * Reads BB's own verdict on the latest request instead of a stopwatch: a terminal provider or system
  * error, an interrupted thread, a rejected turn or a failed provisioning ends the wait at once; a
  * provider that never opened a session is the one silence BB cannot report, so it gets a start limit.
+ * Only an expired caller includes retrying errors: they explain its deadline without cutting a retry short.
  */
-export function threadFailure(events: unknown[], now = Date.now()): string | null {
+export function threadFailure(events: unknown[], now = Date.now(), options: { includeRetrying?: boolean; requestedAfter?: number } = {}): string | null {
   const rows = events.map(readWatched).filter((row): row is WatchedEvent => row !== null).sort((a, b) => a.seq - b.seq);
   const request = [...rows].reverse().find((row) => row.type === "client/turn/requested");
+  if (options.requestedAfter !== undefined && (!request || request.createdAt === null || request.createdAt < options.requestedAfter)) return null;
   const current = rows.filter((row) => !request || row.seq > request.seq);
+  let retry: string | null = null;
   for (const row of current) {
-    if (row.type === "provider/error" && Reflect.get(row.data as object ?? {}, "willRetry") !== true) {
-      return `provider_error:${clip(stringField(row.data, "message"))}`;
+    if (row.type === "provider/error") {
+      const cause = `provider_error:${clip(stringField(row.data, "message"))}`;
+      if (Reflect.get(row.data as object ?? {}, "willRetry") !== true) return cause;
+      if (options.includeRetrying) retry = cause;
     }
     if (row.type === "system/error") {
       const attempt = numberField(row.data, "reconnectAttempt"), total = numberField(row.data, "reconnectTotal");
@@ -190,5 +203,5 @@ export function threadFailure(events: unknown[], now = Date.now()): string | nul
   if (request && request.createdAt !== null && !started && now - request.createdAt > PROVIDER_START_LIMIT_MS) {
     return `provider_not_started:no session ${Math.round((now - request.createdAt) / 1000)}s after the request`;
   }
-  return null;
+  return retry;
 }

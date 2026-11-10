@@ -1,0 +1,308 @@
+[
+  {
+    "mode": "deadline",
+    "threadId": "thr_z267u6jje4",
+    "events": [
+      {
+        "threadId": "thr_z267u6jje4",
+        "seq": 2,
+        "createdAt": 1794273792103,
+        "type": "client/turn/requested",
+        "data": {
+          "requestId": "creq_tyner5d52k"
+        }
+      },
+      {
+        "threadId": "thr_z267u6jje4",
+        "seq": 4,
+        "createdAt": 1794273795785,
+        "type": "thread/identity",
+        "data": {
+          "providerThreadId": "ses_e3cf2a6b4ffeSA22e5HQFPVVsG"
+        }
+      },
+      {
+        "threadId": "thr_z267u6jje4",
+        "seq": 6,
+        "createdAt": 1794273795785,
+        "type": "turn/started",
+        "data": {
+          "providerThreadId": "ses_e3cf2a6b4ffeSA22e5HQFPVVsG"
+        }
+      },
+      {
+        "threadId": "thr_z267u6jje4",
+        "seq": 10,
+        "createdAt": 1794273797873,
+        "type": "provider/error",
+        "data": {
+          "providerThreadId": "ses_e3cf2a6b4ffeSA22e5HQFPVVsG",
+          "message": "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m). Retrying (attempt 2).",
+          "willRetry": true
+        }
+      },
+      {
+        "threadId": "thr_z267u6jje4",
+        "seq": 11,
+        "createdAt": 1794273918882,
+        "type": "provider/error",
+        "data": {
+          "providerThreadId": "ses_e3cf2a6b4ffeSA22e5HQFPVVsG",
+          "message": "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m). Retrying (attempt 3).",
+          "willRetry": true
+        }
+      },
+      {
+        "threadId": "thr_z267u6jje4",
+        "seq": 12,
+        "createdAt": 1794274039940,
+        "type": "provider/error",
+        "data": {
+          "providerThreadId": "ses_e3cf2a6b4ffeSA22e5HQFPVVsG",
+          "message": "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m). Retrying (attempt 4).",
+          "willRetry": true
+        }
+      },
+      {
+        "threadId": "thr_z267u6jje4",
+        "seq": 13,
+        "createdAt": 1794274161019,
+        "type": "provider/error",
+        "data": {
+          "providerThreadId": "ses_e3cf2a6b4ffeSA22e5HQFPVVsG",
+          "message": "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m). Retrying (attempt 5).",
+          "willRetry": true
+        }
+      },
+      {
+        "threadId": "thr_z267u6jje4",
+        "seq": 14,
+        "createdAt": 1794274281866,
+        "type": "provider/error",
+        "data": {
+          "providerThreadId": "ses_e3cf2a6b4ffeSA22e5HQFPVVsG",
+          "message": "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m). Retrying (attempt 6).",
+          "willRetry": true
+        }
+      },
+      {
+        "threadId": "thr_z267u6jje4",
+        "seq": 15,
+        "createdAt": 1794274402761,
+        "type": "provider/error",
+        "data": {
+          "providerThreadId": "ses_e3cf2a6b4ffeSA22e5HQFPVVsG",
+          "message": "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m). Retrying (attempt 7).",
+          "willRetry": true
+        }
+      },
+      {
+        "threadId": "thr_z267u6jje4",
+        "seq": 16,
+        "createdAt": 1794274523726,
+        "type": "provider/error",
+        "data": {
+          "providerThreadId": "ses_e3cf2a6b4ffeSA22e5HQFPVVsG",
+          "message": "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m). Retrying (attempt 8).",
+          "willRetry": true
+        }
+      },
+      {
+        "threadId": "thr_z267u6jje4",
+        "seq": 17,
+        "createdAt": 1794274644690,
+        "type": "provider/error",
+        "data": {
+          "providerThreadId": "ses_e3cf2a6b4ffeSA22e5HQFPVVsG",
+          "message": "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m). Retrying (attempt 9).",
+          "willRetry": true
+        }
+      },
+      {
+        "threadId": "thr_z267u6jje4",
+        "seq": 18,
+        "createdAt": 1794274765601,
+        "type": "provider/error",
+        "data": {
+          "providerThreadId": "ses_e3cf2a6b4ffeSA22e5HQFPVVsG",
+          "message": "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m). Retrying (attempt 10).",
+          "willRetry": true
+        }
+      },
+      {
+        "threadId": "thr_z267u6jje4",
+        "seq": 19,
+        "createdAt": 1794274886593,
+        "type": "provider/error",
+        "data": {
+          "providerThreadId": "ses_e3cf2a6b4ffeSA22e5HQFPVVsG",
+          "message": "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m). Retrying (attempt 11).",
+          "willRetry": true
+        }
+      }
+    ]
+  },
+  {
+    "mode": "terminal",
+    "threadId": "thr_yhha3p7bt8",
+    "events": [
+      {
+        "threadId": "thr_yhha3p7bt8",
+        "seq": 2,
+        "createdAt": 1794266593314,
+        "type": "client/turn/requested",
+        "data": {
+          "requestId": "creq_pkzwyu7hqe"
+        }
+      },
+      {
+        "threadId": "thr_yhha3p7bt8",
+        "seq": 4,
+        "createdAt": 1794266617709,
+        "type": "thread/identity",
+        "data": {
+          "providerThreadId": "ses_e3d602dc3ffeg9jyDIfh1qtKAD"
+        }
+      },
+      {
+        "threadId": "thr_yhha3p7bt8",
+        "seq": 6,
+        "createdAt": 1794266617761,
+        "type": "turn/started",
+        "data": {
+          "providerThreadId": "ses_e3d602dc3ffeg9jyDIfh1qtKAD"
+        }
+      },
+      {
+        "threadId": "thr_yhha3p7bt8",
+        "seq": 10,
+        "createdAt": 1794266618914,
+        "type": "provider/error",
+        "data": {
+          "providerThreadId": "ses_e3d602dc3ffeg9jyDIfh1qtKAD",
+          "message": "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m). Retrying (attempt 2).",
+          "willRetry": true
+        }
+      },
+      {
+        "threadId": "thr_yhha3p7bt8",
+        "seq": 11,
+        "createdAt": 1794266739931,
+        "type": "provider/error",
+        "data": {
+          "providerThreadId": "ses_e3d602dc3ffeg9jyDIfh1qtKAD",
+          "message": "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m). Retrying (attempt 3).",
+          "willRetry": true
+        }
+      },
+      {
+        "threadId": "thr_yhha3p7bt8",
+        "seq": 12,
+        "createdAt": 1794266860975,
+        "type": "provider/error",
+        "data": {
+          "providerThreadId": "ses_e3d602dc3ffeg9jyDIfh1qtKAD",
+          "message": "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m). Retrying (attempt 4).",
+          "willRetry": true
+        }
+      },
+      {
+        "threadId": "thr_yhha3p7bt8",
+        "seq": 13,
+        "createdAt": 1794266982180,
+        "type": "provider/error",
+        "data": {
+          "providerThreadId": "ses_e3d602dc3ffeg9jyDIfh1qtKAD",
+          "message": "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m). Retrying (attempt 5).",
+          "willRetry": true
+        }
+      },
+      {
+        "threadId": "thr_yhha3p7bt8",
+        "seq": 14,
+        "createdAt": 1794267103039,
+        "type": "provider/error",
+        "data": {
+          "providerThreadId": "ses_e3d602dc3ffeg9jyDIfh1qtKAD",
+          "message": "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m). Retrying (attempt 6).",
+          "willRetry": true
+        }
+      },
+      {
+        "threadId": "thr_yhha3p7bt8",
+        "seq": 15,
+        "createdAt": 1794267223832,
+        "type": "provider/error",
+        "data": {
+          "providerThreadId": "ses_e3d602dc3ffeg9jyDIfh1qtKAD",
+          "message": "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m). Retrying (attempt 7).",
+          "willRetry": true
+        }
+      },
+      {
+        "threadId": "thr_yhha3p7bt8",
+        "seq": 16,
+        "createdAt": 1794267344656,
+        "type": "provider/error",
+        "data": {
+          "providerThreadId": "ses_e3d602dc3ffeg9jyDIfh1qtKAD",
+          "message": "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m). Retrying (attempt 8).",
+          "willRetry": true
+        }
+      },
+      {
+        "threadId": "thr_yhha3p7bt8",
+        "seq": 17,
+        "createdAt": 1794267465783,
+        "type": "provider/error",
+        "data": {
+          "providerThreadId": "ses_e3d602dc3ffeg9jyDIfh1qtKAD",
+          "message": "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m). Retrying (attempt 9).",
+          "willRetry": true
+        }
+      },
+      {
+        "threadId": "thr_yhha3p7bt8",
+        "seq": 18,
+        "createdAt": 1794267587407,
+        "type": "provider/error",
+        "data": {
+          "providerThreadId": "ses_e3d602dc3ffeg9jyDIfh1qtKAD",
+          "message": "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m). Retrying (attempt 10).",
+          "willRetry": true
+        }
+      },
+      {
+        "threadId": "thr_yhha3p7bt8",
+        "seq": 19,
+        "createdAt": 1794267707736,
+        "type": "provider/error",
+        "data": {
+          "providerThreadId": "ses_e3d602dc3ffeg9jyDIfh1qtKAD",
+          "message": "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m). Retrying (attempt 11).",
+          "willRetry": true
+        }
+      },
+      {
+        "threadId": "thr_yhha3p7bt8",
+        "seq": 20,
+        "createdAt": 1794267828668,
+        "type": "provider/error",
+        "data": {
+          "providerThreadId": "ses_e3d602dc3ffeg9jyDIfh1qtKAD",
+          "message": "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m)"
+        }
+      },
+      {
+        "threadId": "thr_yhha3p7bt8",
+        "seq": 21,
+        "createdAt": 1794267828668,
+        "type": "turn/completed",
+        "data": {
+          "providerThreadId": "ses_e3d602dc3ffeg9jyDIfh1qtKAD",
+          "status": "failed"
+        }
+      }
+    ]
+  }
+]

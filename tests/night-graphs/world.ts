@@ -15,13 +15,14 @@ export function nightWorld(options: { hostPath?: string; answers?: Array<string 
   const state = {
     spawned: [] as Array<Record<string, any>>, stopped: [] as string[], archived: [] as string[], outputs: new Map<string, string>(),
     answers: [...(options.answers ?? [])], failedThreads: new Set<string>(), commands: [] as string[], kv: new Map<string, unknown>(),
+    runningThreads: new Set<string>(), eventsFor: null as ((threadId: string) => unknown[]) | null,
   };
   const sdk = {
     providers: { list: async () => [], models: async () => ({ models: [] }) },
     projects: { get: async () => ({ name: "Real project", sources: [{ hostId: "host-1", path: options.hostPath ?? "/proj" }] }), list: async () => [] },
     environments: { get: async () => ({ id: "env-1", path: options.hostPath ?? "/proj", hostId: "host-1" }) },
     threads: {
-      get: async ({ threadId }: { threadId: string }) => ({ id: threadId, status: state.failedThreads.has(threadId) ? "error" : "idle", projectId: "proj-1" }),
+      get: async ({ threadId }: { threadId: string }) => ({ id: threadId, status: state.failedThreads.has(threadId) ? "error" : state.runningThreads.has(threadId) ? "active" : "idle", projectId: "proj-1" }),
       getPluginMetadata: async () => ({}),
       spawn: async (args: Record<string, any>) => {
         const next = options.answerFor?.(args) ?? state.answers.shift() ?? "";
@@ -34,7 +35,7 @@ export function nightWorld(options: { hostPath?: string; answers?: Array<string 
       stop: async ({ threadId }: { threadId: string }) => { state.stopped.push(threadId); },
       archive: async ({ threadId }: { threadId: string }) => { state.archived.push(threadId); },
       output: async ({ threadId }: { threadId: string }) => ({ output: state.outputs.get(threadId) ?? "" }),
-      events: { list: async ({ threadId }: { threadId: string }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }] },
+      events: { list: async ({ threadId }: { threadId: string }) => state.eventsFor?.(threadId) ?? [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }] },
     },
   } as never;
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot", sdk });
