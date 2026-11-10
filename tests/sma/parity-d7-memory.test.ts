@@ -295,36 +295,42 @@ describe("memory corpus care (parity wave d7)", () => {
     expect(row(h.db, revoke!)).toEqual({ status: "expired", reason: "revoked" });
   });
 
-  it("[sma:k_v_mem_forget] a thread is an agent: a writer or helper cannot --erase, no forget crosses to another project, the refusal names the reason; the PM chat of the owner may erase its own project", async () => {
+  it("[sma:k_v_mem_forget] a thread is an agent: no thread erases, only the PM chat hides and only in its own project, the refusal names the reason", async () => {
     const h = cliHarness({
       thr_writer: { projectId: "P", role: "writer" }, thr_helper: { projectId: "P", role: "pm-reader" }, thr_blank: { projectId: "P" },
-      thr_pm: { projectId: "P", role: "pm" }, thr_other: { projectId: "Q", role: "writer" },
+      thr_pm: { projectId: "P", role: "pm" }, thr_other: { projectId: "Q", role: "pm" },
     });
-    const [one, two, three] = put(h.db, ["Alpha", "Beta", "Gamma"].map((word) => note(`${word} is a distinct fact about the billing ledger rounding.`, [word.toLowerCase()])));
+    const [one, two] = put(h.db, ["Alpha", "Beta"].map((word) => note(`${word} is a distinct fact about the billing ledger rounding.`, [word.toLowerCase()])));
     const [foreign] = put(h.db, [note("Kappa is a fact of another project entirely.")], "Q");
-    // Erase: refused for a writer, a helper, and a thread whose role is unknown; the record is untouched.
-    for (const threadId of ["thr_writer", "thr_helper", "thr_blank"]) {
+    // Erase: refused for every thread, the PM chat included; the record is untouched.
+    for (const threadId of ["thr_writer", "thr_helper", "thr_blank", "thr_pm"]) {
       const out = await h.run(["forget", one!, "--erase", "--yes"], threadId);
       expect(out.exitCode, threadId).toBe(1);
       expect(out.stderr, threadId).toMatch(/refused: --erase is irreversible/);
       expect(row(h.db, one!)?.status).toBe("active");
     }
-    expect((await h.run(["forget", one!, "--erase", "--yes"], "thr_writer")).stderr).toMatch(/writer thread/);
-    // Another project: refused for every action, even one that is reversible.
+    // A writer, a helper and a thread of unknown role hide nothing either: a revoked fact would never come back by itself.
+    for (const threadId of ["thr_writer", "thr_helper", "thr_blank"]) {
+      for (const flag of ["--revoke", "--archive"]) {
+        const out = await h.run(["forget", one!, flag], threadId);
+        expect(out.exitCode, threadId).toBe(1);
+        expect(out.stderr, threadId).toMatch(/refused: memory forget is not for a/);
+      }
+    }
+    expect((await h.run(["forget", one!, "--revoke"], "thr_writer")).stderr).toMatch(/writer thread/);
+    expect(row(h.db, one!)?.status).toBe("active");
+    // Another project: refused for every action, the PM chat included.
     for (const flags of [["--revoke"], ["--archive"], ["--erase", "--yes"]]) {
-      const out = await h.run(["forget", foreign!, ...flags, "--project", "Q"], "thr_writer");
+      const out = await h.run(["forget", foreign!, ...flags, "--project", "Q"], "thr_pm");
       expect(out.exitCode).toBe(1);
       expect(out.stderr).toMatch(/only that thread's own project \(P\), not Q/);
     }
     expect(row(h.db, foreign!)?.status).toBe("active");
+    // The PM chat hides a record of its own project (the project comes from the thread).
     expect((await h.run(["forget", foreign!, "--revoke"], "thr_other")).exitCode).toBe(0);
     expect(row(h.db, foreign!)).toEqual({ status: "expired", reason: "revoked" });
-    // A reversible action on the thread's own project is allowed (the project comes from the thread).
-    expect((await h.run(["forget", two!, "--revoke"], "thr_writer")).exitCode).toBe(0);
-    expect(row(h.db, two!)).toEqual({ status: "expired", reason: "revoked" });
-    // The owner's PM chat may erase in its own project, not elsewhere.
-    expect((await h.run(["forget", three!, "--erase", "--yes"], "thr_pm")).exitCode).toBe(0);
-    expect(row(h.db, three!)).toBeUndefined();
+    expect((await h.run(["forget", two!, "--archive"], "thr_pm")).exitCode).toBe(0);
+    expect(row(h.db, two!)?.status).toBe("expired");
   });
 
   it("[sma:k_lib_erase] erasing a record removes its bytes everywhere, restores secure_delete, and verifies none remain", () => {

@@ -675,16 +675,15 @@ ${ERRANDS_USAGE}` },
             const id = args[1];
             if (!projectId || !id || id.startsWith("--")) return { exitCode:1, stderr:"usage: bb lane-pilot memory forget <id> [--project P] (--revoke|--expire|--archive|--replace <newId>) [--erase --yes]" };
             // The CLI is a door any agent thread can reach and `--yes` is a flag an agent can pass: who is calling decides what is allowed.
-            // No thread = the owner at a terminal (or an automation). A thread is an agent: it may only touch its own project, and
-            // `--erase` (irreversible) is for the owner or the owner's PM chat, never a writer or helper (any other Lane Pilot role, or a
-            // thread whose role cannot be read).
+            // No thread = the owner at a terminal (or an automation). A thread is an agent: only the owner's PM chat may hide a record,
+            // and only in its own project (a revoked fact never comes back by itself, so a writer or helper must not withdraw one);
+            // `--erase` is irreversible and is never an agent's: the owner erases from the cockpit or a terminal.
             if (invocation?.threadId) {
               const caller = await orMiss(bb.sdk.threads.get({ threadId: invocation.threadId }), null, isNotFound) as { projectId?: unknown } | null;
-              if (!caller || typeof caller.projectId !== "string" || caller.projectId !== projectId) return { exitCode:1, stderr:`refused: memory forget from a thread reaches only that thread's own project (${typeof caller?.projectId === "string" ? caller.projectId : "unknown"}), not ${projectId}` };
-              if (args.includes("--erase")) {
-                const metadata = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId: invocation.threadId }), null, isNotFound) as { role?: unknown } | null;
-                if (metadata?.role !== "pm") return { exitCode:1, stderr:`refused: --erase is irreversible and not for a ${typeof metadata?.role === "string" ? `${metadata.role} thread` : "thread whose role is unknown"}; the owner erases from the cockpit or a terminal` };
-              }
+              if (!caller || typeof caller.projectId !== "string" || caller.projectId !== projectId) return { exitCode:1, stderr:`refused: memory forget from a thread reaches only that thread's own project (${typeof caller?.projectId === "string" ? caller.projectId : "unknown"}), not ${projectId}` }
+              if (args.includes("--erase")) return { exitCode:1, stderr:"refused: --erase is irreversible and not for an agent thread; the owner erases from the cockpit or a terminal" };
+              const metadata = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId: invocation.threadId }), null, isNotFound) as { role?: unknown } | null;
+              if (metadata?.role !== "pm") return { exitCode:1, stderr:`refused: memory forget is not for a ${typeof metadata?.role === "string" ? `${metadata.role} thread` : "thread whose role is unknown"}; ask the PM or the owner` };
             }
             const conceptsJson = memoryConceptsJson(db as never, projectId, id);
             if (conceptsJson === null) return { exitCode:1, stderr:`no memory record ${id} in project ${projectId}` };
