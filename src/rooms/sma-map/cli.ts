@@ -6,7 +6,7 @@ import { relocateAnchor } from "./exports";
 import { brokenProof, isChecked, isDone, proofDrift, smaCheckedPercent, smaCounts, smaDonePercent, smaHoles, smaRows, smaStateCounts, unjudgedProof, type ProofRoots, type SmaRow } from "./model";
 import { SMA_LINKS, SMA_MAP_SHA, SMA_NODES, SMA_REGIONS } from "./graph";
 
-export const SMA_MAP_USAGE = "bb lane-pilot sma-map [--json] [--region <number|name>] [--status have|partial|missing|skip|upstream|unproven|unchecked] [--check-proofs] [--live [--days N]] [--states]   the SMA product map node by node: the card, what Lane Pilot has for it, the proof link and the contract tests; mapped is a link, checked is a test of the card's behaviour; --live says which groups left a trace in the window; --states splits the evidence (available / reachable / checked / observed / outcome-verified)";
+export const SMA_MAP_USAGE = "bb lane-pilot sma-map [--json] [--region <number|name>] [--status have|partial|missing|skip|upstream|void|unproven|unchecked] [--check-proofs] [--live [--days N]] [--states]   the SMA product map node by node: the card, what Lane Pilot has for it, the proof link and the contract tests; mapped is a link, checked is a test of the card's behaviour; --live says which groups left a trace in the window; --states splits the evidence (available / reachable / checked / observed / outcome-verified)";
 
 import { readSmaLive, renderSmaLive, smaGroups } from "./live";
 
@@ -25,7 +25,7 @@ export function defaultProofRoots(cwd: string): ProofRoots {
 
 export function renderSmaMap(all: readonly SmaRow[], listed: readonly SmaRow[] = []): string {
   const c = smaCounts(all);
-  const lines = [`SMA map (code ${SMA_MAP_SHA}): ${c.total} nodes, ${SMA_LINKS.length} links — checked by a contract test ${c.contract} (${smaCheckedPercent(all)}%); mapped ${smaDonePercent(all)}% (a proof link ${c.proven}, unwired in SMA itself ${c.upstream}); have without proof ${c.have - c.proven}, partial ${c.partial}, missing ${c.missing}.`,
+  const lines = [`SMA map (code ${SMA_MAP_SHA}): ${c.total} nodes, ${SMA_LINKS.length} links — checked by a contract test ${c.contract} (${smaCheckedPercent(all)}%); mapped ${smaDonePercent(all)}% (a proof link ${c.proven}, unwired in SMA itself ${c.upstream}, no subject here ${c.void}); have without proof ${c.have - c.proven}, partial ${c.partial}, missing ${c.missing}.`,
     "A proof link says where our counterpart is, not that it does what the card says: only a contract test checks that.", "", "region                                checked mapped   have partial missing upstream"];
   SMA_REGIONS.forEach((region, index) => {
     const part = all.filter((row) => row.region === region);

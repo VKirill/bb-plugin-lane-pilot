@@ -24,6 +24,11 @@ describe("the SMA map registry", () => {
     expect(smaRows().filter((row) => row.status === "upstream" && !row.unsure).map((row) => row.smaId)).toEqual([]);
   });
 
+  it("marks void only with the reason said: no proof link, no gap line, and the text names why there is nothing to guard", () => {
+    const voids = smaRows().filter((row) => row.status === "void");
+    expect(voids.filter((row) => row.proof || row.gaps.length || !row.ours.startsWith("нет предмета: ")).map((row) => row.id)).toEqual([]);
+  });
+
   it("knows the contract tests: contracts.ts is current and every [sma:<id>] names a card of the map", () => {
     execFileSync("node", ["scripts/sma-contracts.mjs", "--check"], { stdio: "pipe" });
     const cards = new Set(Object.values(SMA_CARDS).map(([smaId]) => smaId));

@@ -9,8 +9,8 @@ import { SMA_CARDS, SMA_NODES, SMA_REGIONS, type SmaKind } from "./graph";
 /** One node of the SMA map with what we have for it: the card's own words, our counterpart, its proof link and the contract tests. */
 export type SmaRow = { id: string; smaId: string; region: string; group: string; kind: SmaKind; label: string; detail: string; unsure: boolean;
   status: SmaStatus; ours: string; proof?: string; contracts: readonly string[]; gaps: readonly string[] };
-/** proven: a proof link (navigation); contract: a test checks the card's behaviour; upstream: SMA itself left the node unwired. */
-export type SmaCounts = { total: number; have: number; partial: number; missing: number; skip: number; upstream: number; proven: number; contract: number };
+/** proven: a proof link (navigation); contract: a test checks the card's behaviour; upstream: SMA itself left the node unwired; void: nothing here for the card to guard. */
+export type SmaCounts = { total: number; have: number; partial: number; missing: number; skip: number; upstream: number; void: number; proven: number; contract: number };
 
 /** Repositories a proof can point into: this one, Lane Stack and the BB core with its vk layer. */
 export type ProofRoots = { lanePilot: string; laneStack?: string; core?: string; telegram?: string };
@@ -31,12 +31,12 @@ export function smaRows(): SmaRow[] {
  * Mapped: we have it and a proof points at the code, or SMA itself left it unwired and we hold the same state. A proof link is not
  * a check of behaviour (2026-10-29 conformance audit: the «100%» counted links): conformance is `isChecked`, a contract test.
  */
-export const isDone = (row: SmaRow) => (row.status === "have" && !!row.proof) || row.status === "upstream";
+export const isDone = (row: SmaRow) => (row.status === "have" && !!row.proof) || row.status === "upstream" || row.status === "void";
 /** Checked: a contract test (`[sma:<id>]` in its title, contracts.ts) holds our code to the card's behaviour. */
 export const isChecked = (row: SmaRow) => row.contracts.length > 0;
 
 export function smaCounts(rows: readonly SmaRow[]): SmaCounts {
-  const counts: SmaCounts = { total: rows.length, have: 0, partial: 0, missing: 0, skip: 0, upstream: 0, proven: 0, contract: 0 };
+  const counts: SmaCounts = { total: rows.length, have: 0, partial: 0, missing: 0, skip: 0, upstream: 0, void: 0, proven: 0, contract: 0 };
   for (const row of rows) {
     counts[row.status] += 1;
     if (row.status === "have" && row.proof) counts.proven += 1;
