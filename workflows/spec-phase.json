@@ -1,0 +1,206 @@
+{
+  "id": "spec-phase",
+  "name": {
+    "en": "What the phase delivers (SPEC)",
+    "ru": "Что отдаёт фаза (SPEC)"
+  },
+  "description": {
+    "en": "Fixes what the phase delivers by a Socratic interview: an ambiguity score 0..1 on goal, boundaries, constraints and acceptance, questions on the weakest dimension until it clears, then SPEC.md with requirement ids and Given/When/Then promises.",
+    "ru": "Фиксирует, что отдаёт фаза, сократовским интервью: балл неоднозначности 0..1 по цели, границам, ограничениям и приёмке, вопросы по самому слабому измерению до прояснения, затем SPEC.md с id требований и обещаниями Given/When/Then."
+  },
+  "status": "published",
+  "quality_mode": {
+    "default": "standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ]
+  },
+  "budget": {
+    "max_minutes": 60
+  },
+  "examples": {
+    "ru": [
+      "Зафиксируй, что фаза отдаёт — SPEC.md",
+      "Сократовское интервью по фазе и балл неоднозначности"
+    ],
+    "en": [
+      "Fix what the phase delivers — SPEC.md",
+      "A Socratic interview on the phase with an ambiguity score"
+    ]
+  },
+  "not_for": [
+    "lp.clarify",
+    "grill-plan"
+  ],
+  "inputs": {
+    "phase_id": {
+      "type": "string",
+      "required": true
+    },
+    "goal": {
+      "type": "string",
+      "required": true
+    }
+  },
+  "outputs": {
+    "status": "done|low_confidence",
+    "spec_path": "string",
+    "ambiguity": "number"
+  },
+  "entry": "score",
+  "nodes": [
+    {
+      "id": "score",
+      "type": "agent",
+      "role": "analyst",
+      "title": {
+        "en": "Ambiguity score",
+        "ru": "Балл неоднозначности"
+      },
+      "prompt": "Rate the ambiguity of the phase 0..1 (it must stay inside 0 and 1) over goal, boundaries, constraints and acceptance; name the weakest dimension and the questions that would clear it.",
+      "out": {
+        "ambiguity": "number",
+        "weakest": "string",
+        "questions": "string[]"
+      },
+      "guards": {
+        "maxVisits": 3,
+        "timeoutMin": 20
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "ask",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Clear the weakest point",
+        "ru": "Прояснить слабое место"
+      },
+      "prompt": "Ask at most 4 questions on the weakest dimension score named.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "answered|timeout"
+      },
+      "guards": {
+        "maxVisits": 3,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "spec",
+      "type": "agent",
+      "role": "planner",
+      "title": {
+        "en": "SPEC.md",
+        "ru": "SPEC.md"
+      },
+      "prompt": "Write .agents/phases/<phase_id>/SPEC.md for the phase: the requirement ids and the Given/When/Then promises (the Promise3 shape) from the goal, the answers and the last ambiguity score.",
+      "out": {
+        "spec_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "spec_path": "spec.spec_path",
+        "ambiguity": "score.ambiguity"
+      }
+    },
+    {
+      "id": "low_confidence",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "low_confidence",
+        "spec_path": "spec.spec_path",
+        "ambiguity": "score.ambiguity"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "score",
+      "to": "ask",
+      "when": "score.ambiguity > 0.2 && visits('score') < 3"
+    },
+    {
+      "from": "score",
+      "to": "spec",
+      "pass": "artifact"
+    },
+    {
+      "from": "ask",
+      "to": "score",
+      "pass": "artifact"
+    },
+    {
+      "from": "spec",
+      "to": "done",
+      "when": "score.ambiguity <= 0.2"
+    },
+    {
+      "from": "spec",
+      "to": "low_confidence"
+    }
+  ],
+  "test": {
+    "id": "sp-1",
+    "sim": {
+      "input": {
+        "phase_id": "ph_a",
+        "goal": "export stats"
+      },
+      "stubs": {
+        "score": [
+          {
+            "ambiguity": 0.6,
+            "weakest": "goal",
+            "questions": [
+              "which stats?"
+            ]
+          },
+          {
+            "ambiguity": 0.15,
+            "weakest": "",
+            "questions": []
+          }
+        ],
+        "spec": {
+          "spec_path": ".agents/phases/ph_a/SPEC.md"
+        }
+      },
+      "expect_path": [
+        "score",
+        "ask",
+        "score",
+        "spec",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'"
+      ]
+    }
+  },
+  "goal_audit": "exempt"
+}

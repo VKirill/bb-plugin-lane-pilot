@@ -111,7 +111,7 @@
       "role": "specialist:design-lead",
       "session": "new",
       "src": "impeccable (Apache-2.0): critique, audit",
-      "prompt": "Score from the captured evidence only: ten Nielsen heuristics 0-4 (total /40) and five technical dimensions /20 (accessibility, performance, theming, responsiveness, implementation integrity); P0-P3 per finding with a screenshot reference. Do not edit anything.",
+      "prompt": "Score from the captured evidence only: each of the six dimensions this audit names (visual hierarchy, interaction states, accessibility, responsiveness, micro-interactions, edge cases) 0-4 with the evidence for the score; keep the totals (ten Nielsen heuristics /40 and five technical dimensions /20); P0-P3 per finding with a screenshot reference. Write the review to .agents/ui/<slug>/UI-REVIEW.md and return it as report_path. Do not edit anything.",
       "out": {
         "score_40": "int",
         "score_20": "int",

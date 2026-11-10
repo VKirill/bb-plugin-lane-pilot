@@ -1,0 +1,97 @@
+{
+  "id": "note-add",
+  "name": {
+    "en": "A note without questions",
+    "ru": "Заметка без вопросов"
+  },
+  "description": {
+    "en": "Saves a note with no questions: one write to .agents/todos/notes/ and one confirmation line.",
+    "ru": "Сохраняет заметку без вопросов: одна запись в .agents/todos/notes/ и одна строка подтверждения."
+  },
+  "status": "published",
+  "quality_mode": {
+    "default": "standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ]
+  },
+  "budget": {
+    "max_minutes": 5
+  },
+  "examples": {
+    "ru": [
+      "заметка: созвон с заказчиком в пятницу",
+      "запомни, что деплой только вручную"
+    ],
+    "en": [
+      "note: call with the client on Friday",
+      "remember that the deploy is manual only"
+    ]
+  },
+  "not_for": [
+    "todo-add",
+    "project-life"
+  ],
+  "inputs": {
+    "text": {
+      "type": "string",
+      "required": true
+    }
+  },
+  "outputs": {
+    "status": "done",
+    "confirmation": "string",
+    "note_path": "string"
+  },
+  "entry": "write",
+  "nodes": [
+    {
+      "id": "write",
+      "type": "action",
+      "action": "fs.write",
+      "params": {
+        "path": ".agents/todos/notes/{{date}}-{{run_id}}/",
+        "contents": {
+          "note.md": "---\ncreated: {{date}}\nsource: note-add\n---\n\n{{$inputs.text}}\n"
+        }
+      },
+      "out": {
+        "note_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "confirmation": "'note saved'",
+        "note_path": "write.note_path"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "write",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "note-1",
+    "sim": {
+      "input": {
+        "text": "deploy is manual"
+      },
+      "expect_path": [
+        "write",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'"
+      ]
+    }
+  },
+  "goal_audit": "exempt"
+}

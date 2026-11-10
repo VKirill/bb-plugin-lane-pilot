@@ -135,7 +135,7 @@
         "metrics": "{}"
       },
       "src": "maestro-flow:workflows/retrospective.md",
-      "prompt": "Read the run metrics - tasks planned/accepted/failed, rework iterations per task, severity distribution of findings, failure classes, merge conflicts. Four lenses: technical (patterns, debt), process (stalls, retries), quality (defects that slipped), decision (choices to revisit).\nDistill insights with a stable id INS-{8hex} (hash of lens + title) so a repeat run is idempotent; each insight routes as a rule candidate, a note or a task, as a candidate only. Read-only on sources; never overwrite history.\n",
+      "prompt": "Read the run metrics - tasks planned/accepted/failed, rework iterations per task, severity distribution of findings, failure classes, merge conflicts. Four lenses: technical (patterns, debt), process (stalls, retries), quality (defects that slipped), decision (choices to revisit).\nDistill insights with a stable id INS-{8hex} (hash of lens + title) so a repeat run is idempotent; each insight routes as a rule candidate, a note or a task, as a candidate only. Read-only on sources; never overwrite history.\n\nAppend this milestone's changed limits to .agents/planning/PROJECT.md (Vision, Value, Limits — refresh the Limits from what the run taught; create the file if missing).\n",
       "out": {
         "insights": "Insight[]",
         "retro_path": "string",
@@ -169,6 +169,28 @@
         "goal": "{{$inputs.goal}}",
         "merged_commits": "{{status.merged_commits}}",
         "insights": "{{retro.insights}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "summary",
+      "type": "subworkflow",
+      "workflow": "milestone-summary",
+      "title": {
+        "en": "Milestone summary",
+        "ru": "Итог этапа"
+      },
+      "applicable_modes": [
+        "standard",
+        "full"
+      ],
+      "skip_out": {
+        "summary_path": ""
+      },
+      "with": {
+        "milestone": "{{$inputs.goal}}"
       },
       "guards": {
         "maxVisits": 1
@@ -330,13 +352,18 @@
     },
     {
       "from": "close",
-      "to": "approve_knowledge",
+      "to": "summary",
       "pass": "artifact",
       "when": "close.status == 'closed'"
     },
     {
       "from": "close",
       "to": "halted",
+      "pass": "artifact"
+    },
+    {
+      "from": "summary",
+      "to": "approve_knowledge",
       "pass": "artifact"
     },
     {
@@ -416,6 +443,7 @@
         "status",
         "retro",
         "close",
+        "summary",
         "approve_knowledge",
         "archive",
         "closed"

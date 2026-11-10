@@ -34,6 +34,10 @@
     "tier": {
       "type": "quick|standard|deep",
       "default": "standard"
+    },
+    "phase_id": {
+      "type": "string",
+      "note": "a phase whose .agents/phases/<id>/SECURITY.md threat register is verified against the code"
     }
   },
   "outputs": {
@@ -75,12 +79,13 @@
       "type": "agent",
       "role": "analyst",
       "src": "maestro-flow:odyssey-security.md",
-      "prompt": "Read-only reconnaissance - stack, entry points, authentication, data flows, secrets locations. No entry points found means BLOCKED.",
+      "prompt": "Read-only reconnaissance - stack, entry points, authentication, data flows, secrets locations. No entry points found means BLOCKED. When `phase_id` is given, also read .agents/phases/<id>/SECURITY.md and return its threat register as threats[].",
       "out": {
         "entry_points": "string[]",
         "stack": "string[]",
         "auth": "string",
-        "found_entry_points": "bool"
+        "found_entry_points": "bool",
+        "threats": "string[]"
       },
       "guards": {
         "maxVisits": 1,
@@ -94,13 +99,15 @@
         "by": "$inputs.tier",
         "quick": [
           "owasp",
-          "secrets"
+          "secrets",
+          "threat_model"
         ],
         "standard": [
           "owasp",
           "secrets",
           "dependencies",
-          "ci_cd"
+          "ci_cd",
+          "threat_model"
         ],
         "deep": [
           "owasp",
@@ -108,7 +115,8 @@
           "dependencies",
           "ci_cd",
           "stride",
-          "git_history"
+          "git_history",
+          "threat_model"
         ]
       },
       "child": {
@@ -122,7 +130,7 @@
         "role": "code-critic",
         "session": "new",
         "src": "maestro-flow:odyssey-security.md",
-        "prompt": "Scan phase {{item}}. OWASP A01-A10 per entry point; dependencies by the package manager's audit (an unavailable audit is a warning, not a failure); secrets by LOCATION only, never print a value; STRIDE per trust boundary; git history for committed secrets. Do not lower an OWASP severity without a stated reason; a false positive is closed only with counter-evidence. Every finding: file:line, severity (critical|high|medium|low|info), remediation.",
+        "prompt": "Scan phase {{item}}. OWASP A01-A10 per entry point; dependencies by the package manager's audit (an unavailable audit is a warning, not a failure); secrets by LOCATION only, never print a value; STRIDE per trust boundary; git history for committed secrets. Do not lower an OWASP severity without a stated reason; a false positive is closed only with counter-evidence. Every finding: file:line, severity (critical|high|medium|low|info), remediation. For threat_model (only when `phase_id` names a phase whose .agents/phases/<id>/SECURITY.md holds a threat register): check each named threat against the code — verdict mitigated|partial|missing with file:line; a missing threat is a finding of severity high. No phase_id or no register means an empty findings list.",
         "out": {
           "phase": "string",
           "findings": "Finding[]",
@@ -151,7 +159,7 @@
       ],
       "type": "agent",
       "role": "analyst",
-      "prompt": "Severity matrix CRITICAL/HIGH/MEDIUM/LOW with file:line, impact and remediation per finding; group by root cause; list scan phases that could not run.",
+      "prompt": "Severity matrix CRITICAL/HIGH/MEDIUM/LOW with file:line, impact and remediation per finding; group by root cause; list scan phases that could not run. When `phase_id` is given, append the per-threat table under '## Verified against the code' of that phase's SECURITY.md.",
       "out": {
         "report_path": "string",
         "severity_distribution": "any"

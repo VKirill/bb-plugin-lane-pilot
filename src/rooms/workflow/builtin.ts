@@ -54,6 +54,14 @@ import lpRulesAsk from "../../../workflows/lp.rules-ask.json";
 import lpRulesScan from "../../../workflows/lp.rules-scan.json";
 import lpSelfRepair from "../../../workflows/lp.self-repair.json";
 import macosRoutine from "../../../workflows/macos-routine.json";
+import milestoneSummary from "../../../workflows/milestone-summary.json";
+import mvpPhase from "../../../workflows/mvp-phase.json";
+import noteAdd from "../../../workflows/note-add.json";
+import phaseAssumptions from "../../../workflows/phase-assumptions.json";
+import profileUser from "../../../workflows/profile-user.json";
+import securePhase from "../../../workflows/secure-phase.json";
+import specPhase from "../../../workflows/spec-phase.json";
+import todoAdd from "../../../workflows/todo-add.json";
 import milestoneClose from "../../../workflows/milestone-close.json";
 import planOnly from "../../../workflows/plan-only.json";
 import qualityLoop from "../../../workflows/quality-loop.json";
@@ -169,6 +177,14 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "lp.self-repair.json", value: lpSelfRepair },
   { name: "macos-routine.json", value: macosRoutine },
   { name: "milestone-close.json", value: milestoneClose },
+  { name: "milestone-summary.json", value: milestoneSummary },
+  { name: "mvp-phase.json", value: mvpPhase },
+  { name: "note-add.json", value: noteAdd },
+  { name: "phase-assumptions.json", value: phaseAssumptions },
+  { name: "profile-user.json", value: profileUser },
+  { name: "secure-phase.json", value: securePhase },
+  { name: "spec-phase.json", value: specPhase },
+  { name: "todo-add.json", value: todoAdd },
   { name: "plan-only.json", value: planOnly },
   { name: "quality-loop.json", value: qualityLoop },
   { name: "reels.json", value: reels },

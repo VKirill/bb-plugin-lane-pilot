@@ -666,14 +666,69 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
 
   action("lp.state_probe", async (_c, rt) => {
     const checkout = await bestEffort(ctx.log, "workflow PM checkout", pmCheckout(rt), null);
-    let hasPassport = false, hasUi = false;
+    let hasPassport = false, hasUi = false, hasValueMap = false, hasRoadmap = false, hasProfile = false;
     if (checkout) {
-      const ran = await bestEffort(ctx.log, "workflow state probe", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: "ls .agents/PASSPORT.md .agents/passport.md PROJECT.md 2>/dev/null | head -1; echo ---; ls package.json src/ui app components 2>/dev/null | head -3", timeoutSec: 20, timeoutMs: 30_000 }), null);
-      const [passport = "", ui = ""] = (ran?.stdout ?? "").split("---");
+      // The planning files of a started project (SMA k_wst_quick): an existing install asks only for what is still missing.
+      const ran = await bestEffort(ctx.log, "workflow state probe", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: "ls .agents/PASSPORT.md .agents/passport.md PROJECT.md 2>/dev/null | head -1; echo ---; ls package.json src/ui app components 2>/dev/null | head -3; echo ---; ls .agents/planning/VALUE-MAP.md .agents/planning/ROADMAP.md .agents/planning/PROFILE.md .agents/planning/profile.json 2>/dev/null", timeoutSec: 20, timeoutMs: 30_000 }), null);
+      const [passport = "", ui = "", planning = ""] = (ran?.stdout ?? "").split("---");
+      const present = new Set(planning.split("\n").map((line) => line.trim().split("/").pop()!.toLowerCase()).filter(Boolean));
       hasPassport = passport.trim().length > 0; hasUi = /app|components|ui/.test(ui);
+      hasValueMap = present.has("value-map.md"); hasRoadmap = present.has("roadmap.md"); hasProfile = present.has("profile.md") || present.has("profile.json");
     }
     const open = listOpenAttempts(db).filter((row) => row.project_id === rt.projectId).length;
-    return { has_passport: hasPassport, open_tasks: open, plan_exists: open > 0, has_ui: hasUi };
+    return { has_passport: hasPassport, open_tasks: open, plan_exists: open > 0, has_ui: hasUi, has_value_map: hasValueMap, has_roadmap: hasRoadmap, has_profile: hasProfile };
+  });
+
+  // What the start of a project counts from the tree itself, before any question (SMA k_wst_map): five numbers the value map
+  // opens VALUE-MAP.md with. Counted on the host (git ls-files, else a find), never by a model.
+  action("lp.tree_counts", async (_c, rt) => {
+    const none = { sources: 0, tests: 0, docs: 0, planning: 0, commits: 0 };
+    const checkout = await bestEffort(ctx.log, "tree counts checkout", pmCheckout(rt), null);
+    if (!checkout) return none;
+    const ran = await bestEffort(ctx.log, "tree counts", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path,
+      command: "git ls-files 2>/dev/null || find . -type f -not -path './.git/*' -not -path './node_modules/*' -not -path './dist/*' -not -path './build/*' | sed 's|^\\./||'; echo ===PLAN===; ls .agents/planning 2>/dev/null; echo ===COM===; git rev-list --count HEAD 2>/dev/null || echo 0",
+      timeoutSec: 30, timeoutMs: 45_000 }), null);
+    const [listing = "", rest = ""] = (ran?.stdout ?? "").split("===PLAN===");
+    const [planningList = "", commitsRaw = ""] = rest.split("===COM===");
+    const files = listing.split("\n").map((line) => line.trim()).filter(Boolean);
+    const isTest = /(^|\/)(__tests__|tests?|spec)\/|\.(test|spec)\.[a-z0-9]+$/i, isCode = /\.(ts|tsx|js|jsx|mjs|cjs|py|go|rs|java|rb|php|cs|swift|kt|kts|lua|vue|svelte|c|cc|cpp|h|hpp)$/i;
+    return { sources: files.filter((file) => isCode.test(file) && !isTest.test(file)).length,
+      tests: files.filter((file) => isTest.test(file)).length,
+      docs: files.filter((file) => file.endsWith(".md")).length,
+      planning: planningList.split("\n").filter((line) => line.trim()).length,
+      commits: parseInt(commitsRaw, 10) || 0 };
+  });
+
+  // The one profile writer (SMA k_lib_profilewriter): the start's preview hands the profile object over instead of running the
+  // CLI itself. Every value goes through the anamnesis unsafeReason first; a refused value is reported by key name only, never
+  // by content. Clean values go to `lane-plan profile --set` on the host, or merge into .agents/planning/profile.json where the
+  // checkout has no lane-plan.
+  action("lp.profile_write", async (c, rt) => {
+    const params = rec(rec(c.node).params);
+    let profile: unknown = params.profile === undefined ? undefined : c.template(params.profile);
+    if (typeof profile === "string") { try { profile = JSON.parse(profile); } catch { profile = undefined; } }
+    const entries = Object.entries(rec(profile)).filter(([, value]) => ["string", "number", "boolean"].includes(typeof value));
+    const refused = entries.filter(([key, value]) => unsafeReason(String(value)) !== null || unsafeReason(key) !== null).map(([key]) => key);
+    if (refused.length) return { refused, set: [] as string[], reason: `profile_write refused: ${refused.join(", ")} look like secrets or instructions; name the field, never the value` };
+    const checkout = await pmCheckout(rt);
+    const set: string[] = [];
+    const cli = await runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: "command -v lane-plan", timeoutSec: 15, timeoutMs: 20_000 });
+    if (cli.exitCode === 0 && cli.stdout.trim()) {
+      for (const [key, value] of entries) {
+        const ran = await runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: `lane-plan profile --set ${quote(`${key}=${String(value)}`)}`, timeoutSec: 20, timeoutMs: 30_000 });
+        if (ran.exitCode !== 0) throw new Error(`lp.profile_write: lane-plan profile --set ${key} failed: ${ran.stderr.trim().slice(0, 200) || `exit ${ran.exitCode}`}`);
+        set.push(key);
+      }
+    } else if (entries.length) {
+      const path = ".agents/planning/profile.json";
+      const before = (await bestEffort(ctx.log, "profile read", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: `cat ${quote(path)} 2>/dev/null || true`, timeoutSec: 15, timeoutMs: 20_000 }), null))?.stdout ?? "";
+      let merged: Row = {};
+      try { merged = rec(JSON.parse(before)); } catch { /* a broken profile is rebuilt from the values at hand */ }
+      for (const [key, value] of entries) { merged[key] = value; set.push(key); }
+      noteEngineWrite(checkout.path, path);
+      await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: checkout.path, path: `${checkout.path}/${path}`, content: `${JSON.stringify(merged, null, 2)}\n`, contentEncoding: "utf8", createParents: true, expectedSha256: null });
+    }
+    return { refused, set };
   });
 
   // A project's switch for a new behaviour (unset = off, as before the change): read when the node runs, so any graph can use it.

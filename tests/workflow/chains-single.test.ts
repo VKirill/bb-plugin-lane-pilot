@@ -66,22 +66,22 @@ describe("test-gen", () => {
   const input = { scope: "src/discount.ts", gaps: [{ file: "src/discount.ts", layer: "L1", priority: "high" }] };
   it("the spec's case: tests written, run, a code defect found by the triager, done", async () => {
     const r = await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted", tests_added: 5 }, run: { ok: false, failures: [{ id: "AF-1" }], pass_rate: 80 }, classify: { converged: true, test_defects: [], code_defects: [finding("high", { file: "src/discount.ts", line: 14 })] } } });
-    expect(pathOf(r)).toBe("write_tests run classify done");
+    expect(pathOf(r)).toBe("derive confirm write_tests run classify done");
     expect(out(r)).toMatchObject({ status: "done", tests_added: 5, pass_rate: 80, code_defects: [expect.objectContaining({ line: 14 })] });
   });
 
   it("green tests end at once; no test framework blocks", async () => {
-    expect(pathOf(await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, run: { ok: true } } }))).toBe("write_tests run done");
-    expect(pathOf(await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, run: { ok: false, no_framework: true } } }))).toBe("write_tests run blocked");
-    expect(pathOf(await runSim("test-gen", { input, stubs: { write_tests: { state: "failed" } } }))).toBe("write_tests blocked");
+    expect(pathOf(await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, run: { ok: true } } }))).toBe("derive confirm write_tests run done");
+    expect(pathOf(await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, run: { ok: false, no_framework: true } } }))).toBe("derive confirm write_tests run blocked");
+    expect(pathOf(await runSim("test-gen", { input, stubs: { write_tests: { state: "failed" } } }))).toBe("derive confirm write_tests blocked");
   });
 
   it("test defects are fixed and the tests run again, at most 3 classifications; then partial", async () => {
     const bad = { converged: false, test_defects: [{ id: "T1" }], test_defect_count: 1, code_defects: [] };
     const fixed = await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, run: [{ ok: false }, { ok: true }], classify: bad, fix_tests: { state: "accepted" } } });
-    expect(pathOf(fixed)).toBe("write_tests run classify fix_tests run done");
+    expect(pathOf(fixed)).toBe("derive confirm write_tests run classify fix_tests run done");
     const stuck = await runSim("test-gen", { input, stubs: { write_tests: { state: "accepted" }, run: { ok: false }, classify: bad, fix_tests: { state: "accepted" } } });
-    expect(pathOf(stuck)).toBe("write_tests run classify fix_tests run classify fix_tests run classify partial");
+    expect(pathOf(stuck)).toBe("derive confirm write_tests run classify fix_tests run classify fix_tests run classify partial");
     expect(out(stuck)).toMatchObject({ status: "partial" });
   });
 });
@@ -93,15 +93,15 @@ describe("security-audit", () => {
     expect(pathOf(r)).toBe("recon scan report offer done_offer");
     expect(out(r)).toMatchObject({ status: "done", tier: "quick", proposed_workflow: "review-fix", severity_distribution: { high: 1 } });
     expect((out(r)!.findings as unknown[]).length).toBe(1);
-    expect(r.called("scan:child")).toHaveLength(2);
+    expect(r.called("scan:child")).toHaveLength(3);
   });
 
-  it("the tier decides the phases: standard 4, deep 6; no findings means no offer", async () => {
+  it("the tier decides the phases: standard 5, deep 7; no findings means no offer", async () => {
     const standard = await runSim("security-audit", { input: { tier: "standard" }, stubs: { recon: { found_entry_points: true } } });
-    expect(standard.called("scan:child")).toHaveLength(4);
+    expect(standard.called("scan:child")).toHaveLength(5);
     expect(pathOf(standard)).toBe("recon scan report goal_check done");
     const deep = await runSim("security-audit", { input: { tier: "deep" }, stubs: { recon: { found_entry_points: true } } });
-    expect(deep.called("scan:child")).toHaveLength(6);
+    expect(deep.called("scan:child")).toHaveLength(7);
   });
 
   it("nothing to attack (no entry points found) is blocked before scanning", async () => {

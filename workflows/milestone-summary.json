@@ -1,0 +1,137 @@
+{
+  "id": "milestone-summary",
+  "name": {
+    "en": "Milestone summary",
+    "ru": "Итог этапа простыми словами"
+  },
+  "description": {
+    "en": "A readable project summary from the milestone's artifacts: what shipped per phase in plain words, the decisions, the lessons, the open items and how to try it. Writes .agents/planning/MILESTONE-SUMMARY.md.",
+    "ru": "Читаемый итог проекта по артефактам этапа: что вышло по каждой фазе простыми словами, решения, уроки, открытые пункты и как попробовать. Пишет .agents/planning/MILESTONE-SUMMARY.md."
+  },
+  "examples": {
+    "ru": [
+      "Сделай читаемый итог этапа",
+      "Собери summary этапа по артефактам",
+      "Напиши MILESTONE-SUMMARY.md"
+    ],
+    "en": [
+      "Write a readable milestone summary",
+      "Summarize the milestone from its artifacts"
+    ]
+  },
+  "not_for": [
+    "milestone-close",
+    "retrospective"
+  ],
+  "status": "published",
+  "inputs": {
+    "milestone": {
+      "type": "string",
+      "default": "",
+      "note": "the milestone's name or goal; empty = the current run"
+    }
+  },
+  "outputs": {
+    "status": "done",
+    "summary_path": "string",
+    "open_items": "string[]"
+  },
+  "quality_mode": {
+    "default": "standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ]
+  },
+  "budget": {
+    "max_minutes": 45
+  },
+  "entry": "summary",
+  "nodes": [
+    {
+      "id": "summary",
+      "type": "agent",
+      "role": "analyst",
+      "title": {
+        "en": "Readable milestone summary",
+        "ru": "Читаемый итог этапа"
+      },
+      "prompt": "Read the milestone's artifacts: .agents/planning/ROADMAP.md, STATE.md, .agents/phases/*/SUMMARY.md, UAT.md and REVIEW.md. Write .agents/planning/MILESTONE-SUMMARY.md in plain words: what shipped per phase, the decisions that were taken, the lessons, the open items and how to try it.",
+      "out": {
+        "summary_path": "string",
+        "open_items": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "summary_path": "summary.summary_path",
+        "open_items": "summary.open_items"
+      }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "summary",
+      "to": "goal_check",
+      "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "ms-1",
+    "sim": {
+      "input": {
+        "milestone": "Stats export"
+      },
+      "stubs": {
+        "summary": {
+          "summary_path": ".agents/planning/MILESTONE-SUMMARY.md",
+          "open_items": []
+        }
+      },
+      "expect_path": [
+        "summary",
+        "goal_check",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'"
+      ]
+    }
+  },
+  "goal_check": "validate"
+}

@@ -87,7 +87,7 @@ describe("milestone-close", () => {
 
   it("the spec's case: status, retro, close, the owner defers the knowledge candidates, archive", async () => {
     const r = await runSim("milestone-close", { input, stubs: { "lp.run_status": ready, "lp.close": { status: "closed", staged: 2, report_path: "reports/r1.md" } }, humans: { approve_knowledge: { answer_kind: "deferred", approved_ids: [] } } });
-    expect(pathOf(r)).toBe("status retro close approve_knowledge archive closed");
+    expect(pathOf(r)).toBe("status retro close summary approve_knowledge archive closed");
     expect(out(r)).toMatchObject({ status: "closed", candidates_staged: 2, candidates_approved: 0, deferred: true, report_path: "reports/r1.md" });
     expect(firstInput(r, "close")).toMatchObject({ merged_commits: ["m1", "m2"] });
   });
@@ -102,7 +102,7 @@ describe("milestone-close", () => {
   it("open work asks the owner: closing anyway goes on, anything else is not_ready; quick has no retrospective", async () => {
     const open = { ...ready, open_tasks: 2 };
     const anyway = await runSim("milestone-close", { input, mode: "quick", stubs: { "lp.run_status": open, "lp.close": { status: "closed", staged: 0 } }, humans: { ask_finish: { answer_kind: "close_anyway" } } });
-    expect(pathOf(anyway)).toBe("status ask_finish retro close approve_knowledge archive closed");
+    expect(pathOf(anyway)).toBe("status ask_finish retro close summary approve_knowledge archive closed");
     expect(anyway.skipped).toEqual(expect.arrayContaining(["retro"]));
     const stop = await runSim("milestone-close", { input, stubs: { "lp.run_status": { ...ready, gate_ok: false } }, humans: { ask_finish: { answer_kind: "finish_first" } } });
     expect(pathOf(stop)).toBe("status ask_finish not_ready");
