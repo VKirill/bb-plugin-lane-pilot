@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.504
+
+- **A standard for session hooks and an audit of a machine against it: `docs/guide/hooks.md`, `python3 scripts/hooks-audit.py`.** The owner asked what the failing «wiki» hook was and to bring every hook to the shape Maslov's SMA describes. His map gives six rules (a hook is fail-open, anchored to the project root, speaks only when it has something to say, fits 1.5 seconds per tool call, an installer touches only its own entries, a worker's hook layer is known). Lane Pilot's own session hooks were built to them already. The first audit of OVH found the rest: a start hook reading `wiki/index.md` exited 1 on every session start in six projects that have no wiki; a start hook read a skill file that no longer exists; the edit hooks of feed-gen and seo-cluster ran in the hard-coded main checkout, so a writer in a worktree typechecked and auto-fixed the owner's files, not its own. All are fixed in those projects' settings; the audit reports 0 findings. No code of the plugin changed.
+
 ## 0.1.503
 
 - **A finished task's free redo after a merge conflict is no longer refused as «a forged receipt».** feed-gen, November 10: the Devin writer of `text-gen-openrouter.2` passed its checks, main had moved under it (`merge_conflict`, a free redo), and the retry-safety gate stopped the redo: «check evidence …/lane-pilot-receipt.json was modified after the attempt ended». The receipt is Lane Pilot's own, written at 10:34:57.026; the attempt ended at 10:34:57.361; the gate's window was rounded down to the second and opened at :57.000. The window now opens after the attempt's last second with 2 seconds of grace (the worktree's host has its own clock). The same rounding stood behind the check-log exception of October 31.

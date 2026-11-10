@@ -41,7 +41,7 @@ The PM plans and talks; code does the rest. Each step leaves a receipt in the da
 <!-- numbers:start e1471ed838a0525c -->
 | What | Count |
 |---|---:|
-| Version | 0.1.503 |
+| Version | 0.1.504 |
 | Rooms (components in `src/rooms/`) | 73 |
 | Workspace packages (`packages/`) | 18 |
 | Shipped graphs (published / own maintenance `lp.*`) | 101 (91 / 23) |
@@ -99,6 +99,7 @@ How the system works, one page per part. Start with the first one.
 | [Everything is a graph](docs/guide/graphs.md) | Why every job is a graph, which graphs ship, how a graph is built, tested and started. |
 | [Roles, agents and models](docs/guide/roles.md) | Who does what (PM, writer, critics, lead, specialists, errands), which model each role gets, providers, Jev. |
 | [The hand-off standard](docs/guide/handoff.md) | What crosses the boundary when one agent gives work to another: the task message, the result, the honest exit, how an answer is read. |
+| [The hook standard](docs/guide/hooks.md) | The six rules for session hooks on a machine (fail-open, anchored to the project root, quiet, budgeted), the layers, the audit command. |
 | [Failure handling and stability](docs/guide/failures.md) | Failure classes, retries, held writers, self-repair, deploys, drills, budgets. |
 | [Memory](docs/guide/memory.md) | The one project memory: who writes it, how it reaches agents, search, import, proof that it works. |
 | [Self-improvement](docs/guide/self-improvement.md) | The night loop, LP-Bench, lessons to rules, episodes and crystallization of repeated work. |

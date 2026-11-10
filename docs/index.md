@@ -44,6 +44,7 @@ Built by Lane Pilot from page frontmatter.
 | [Observability](guide/observability.md) | overview | active | 2026-11-06 |
 | [Roles, agents and models](guide/roles.md) | overview | active | 2026-11-06 |
 | [The hand-off standard](guide/handoff.md) | reference | active | 2026-11-10 |
+| [The hook standard](guide/hooks.md) | reference | active | 2026-11-10 |
 | [Self-improvement](guide/self-improvement.md) | overview | active | 2026-11-06 |
 | [Settings and experimental features](guide/settings.md) | overview | active | 2026-11-06 |
 | [Writer harness](harness.md) | component | active | 2026-10-29 |
