@@ -90,8 +90,32 @@
   "budget": {
     "max_minutes": 90
   },
-  "entry": "session",
+  "entry": "ask_symptoms",
   "nodes": [
+    {
+      "id": "ask_symptoms",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Symptoms",
+        "ru": "Симптомы"
+      },
+      "skip_when": "$inputs.mode == 'from_failures' || $inputs.symptom.length >= 40 || $inputs.session",
+      "skip_out": {
+        "answer": "$inputs.symptom",
+        "answer_kind": "given"
+      },
+      "src": "maestro-flow:workflows/debug.md (symptoms)",
+      "prompt": "Five questions in one form - what was expected, what happened, the exact error text, since when (last good version if known), steps to reproduce. Anything not in the form the agent finds in git log -10 and git diff --stat HEAD~3.",
+      "out": {
+        "answer": "any",
+        "answer_kind": "given|answered|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 120
+      }
+    },
     {
       "id": "session",
       "type": "action",
@@ -100,12 +124,7 @@
         "en": "The debug session file",
         "ru": "Файл сессии отладки"
       },
-      "skip_when": "!$inputs.session",
-      "skip_out": {
-        "found": false,
-        "path": ""
-      },
-      "rule": "reads .agents/planning/debug/<session>.md on the PM checkout; a new run starts the file with the symptom and status open",
+      "rule": "runs only when input `session` is set: reads .agents/planning/debug/<session>.md on the PM checkout; a new run starts the file with the symptom and status open",
       "with": {
         "session": "{{$inputs.session}}"
       },
@@ -118,17 +137,12 @@
       }
     },
     {
-      "id": "ask_symptoms",
+      "id": "ask_symptoms_new",
       "type": "human",
       "role": "owner",
       "title": {
-        "en": "Symptoms",
-        "ru": "Симптомы"
-      },
-      "skip_when": "$inputs.mode == 'from_failures' || $inputs.symptom.length >= 40",
-      "skip_out": {
-        "answer": "$inputs.symptom",
-        "answer_kind": "given"
+        "en": "Symptoms (new session)",
+        "ru": "Симптомы (новая сессия)"
       },
       "src": "maestro-flow:workflows/debug.md (symptoms)",
       "prompt": "Five questions in one form - what was expected, what happened, the exact error text, since when (last good version if known), steps to reproduce. Anything not in the form the agent finds in git log -10 and git diff --stat HEAD~3.",
@@ -192,6 +206,7 @@
       "type": "parallel",
       "for_each": "$inputs.symptom",
       "max_fan_out": 6,
+      "onOverflow": "truncate",
       "title": {
         "en": "Debuggers per gap",
         "ru": "Отладчик на каждый пробел"
@@ -358,6 +373,23 @@
   ],
   "edges": [
     {
+      "from": "ask_symptoms",
+      "to": "session",
+      "pass": "artifact",
+      "when": "$inputs.session"
+    },
+    {
+      "from": "ask_symptoms",
+      "to": "diagnose",
+      "pass": "artifact",
+      "when": "$inputs.mode == 'from_failures' && $inputs.symptom.length > 1"
+    },
+    {
+      "from": "ask_symptoms",
+      "to": "investigate",
+      "pass": "artifact"
+    },
+    {
       "from": "session",
       "to": "diagnose",
       "pass": "artifact",
@@ -371,23 +403,29 @@
     },
     {
       "from": "session",
-      "to": "ask_symptoms",
-      "pass": "artifact"
+      "to": "ask_symptoms_new",
+      "pass": "artifact",
+      "when": "$inputs.mode != 'from_failures' && (!$inputs.symptom || $inputs.symptom.length < 40)"
     },
     {
-      "from": "ask_symptoms",
+      "from": "session",
       "to": "diagnose",
       "pass": "artifact",
       "when": "$inputs.mode == 'from_failures' && $inputs.symptom.length > 1"
     },
     {
-      "from": "diagnose",
-      "to": "diagnosed",
+      "from": "session",
+      "to": "investigate",
       "pass": "artifact"
     },
     {
-      "from": "ask_symptoms",
+      "from": "ask_symptoms_new",
       "to": "investigate",
+      "pass": "artifact"
+    },
+    {
+      "from": "diagnose",
+      "to": "diagnosed",
       "pass": "artifact"
     },
     {
@@ -466,7 +504,8 @@
     "sim": {
       "input": {
         "symptom": "CSV import crashes with 'Cannot read properties of undefined (reading split)' on files with an empty last line; started after v2.3",
-        "scope": "src/import"
+        "scope": "src/import",
+        "session": ""
       },
       "stubs": {
         "investigate": {
@@ -486,7 +525,7 @@
         }
       },
       "expect_path": [
-        "session",
+        "ask_symptoms",
         "investigate",
         "verify_cause",
         "confirmed"
@@ -503,7 +542,8 @@
           "symptom": [
             "check p1 red: lint fails",
             "check p2 red: test fails"
-          ]
+          ],
+          "session": ""
         },
         "stubs": {
           "diagnose": {
@@ -514,7 +554,7 @@
           }
         },
         "expect_path": [
-          "session",
+          "ask_symptoms",
           "diagnose",
           "diagnosed"
         ]

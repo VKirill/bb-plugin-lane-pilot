@@ -10,8 +10,8 @@ describe("debug", () => {
 
   it("the spec's case: a long symptom is not asked again, the cause is found and confirmed by a second debugger", async () => {
     const r = await runSim("debug", { input: { symptom, scope: "src/import" }, mode: "full", stubs: { investigate: found, verify_cause: { confirmed: true } } });
-    expect(pathOf(r)).toBe("session ask_symptoms investigate verify_cause confirmed");
-    expect(r.skipped).toEqual(["session", "ask_symptoms"]);
+    expect(pathOf(r)).toBe("ask_symptoms investigate verify_cause confirmed");
+    expect(r.skipped).toEqual(["ask_symptoms"]);
     expect(out(r)).toMatchObject({ status: "confirmed", root_cause: "last empty line yields undefined row", confidence: 82, affected_files: ["src/import/csv.ts:48"] });
     // The debugger works on the symptom without editing: no repository file is a deliverable of this chain.
     expect(r.workflow.nodes.find((node) => node.id === "investigate")).toMatchObject({ role: "debugger" });
@@ -19,18 +19,18 @@ describe("debug", () => {
 
   it("a short symptom is asked about first; the second opinion exists only in full mode", async () => {
     const r = await runSim("debug", { input: { symptom: "it crashes" }, stubs: { investigate: found }, humans: { ask_symptoms: { answer_kind: "answered", answer: symptom } } });
-    expect(pathOf(r)).toBe("session ask_symptoms investigate verify_cause confirmed");
-    expect(r.skipped).toEqual(["session", "verify_cause"]);
+    expect(pathOf(r)).toBe("ask_symptoms investigate verify_cause confirmed");
+    expect(r.skipped).toEqual(["verify_cause"]);
   });
 
   it("a second debugger that does not agree sends the first one back, in the same session", async () => {
     const r = await runSim("debug", { input: { symptom }, mode: "full", stubs: { investigate: found, verify_cause: [{ confirmed: false, objections: ["row 2 also fails"] }, { confirmed: true }] } });
-    expect(pathOf(r)).toBe("session ask_symptoms investigate verify_cause investigate verify_cause confirmed");
+    expect(pathOf(r)).toBe("ask_symptoms investigate verify_cause investigate verify_cause confirmed");
   });
 
   it("auto_fix proposes analyze-plan-execute with the diagnosis instead of confirming", async () => {
     const r = await runSim("debug", { input: { symptom, auto_fix: true }, stubs: { investigate: found, verify_cause: { confirmed: true } } });
-    expect(pathOf(r)).toBe("session ask_symptoms investigate verify_cause propose_fix proposed");
+    expect(pathOf(r)).toBe("ask_symptoms investigate verify_cause propose_fix proposed");
     expect(out(r)).toMatchObject({ status: "proposed" });
     const step = r.db.prepare("SELECT receipt_json FROM lane_pilot_wf_step WHERE run_id=? AND node_id='propose_fix'").get(r.summary.runId) as { receipt_json: string };
     expect(JSON.parse(step.receipt_json).detail).toMatchObject({ proposed: "analyze-plan-execute", inputs: { goal: "skip empty trailing rows in parseCsv" } });
@@ -38,20 +38,20 @@ describe("debug", () => {
 
   it("a weak finding is looked at once more; an inconclusive one with 3 refuted hypotheses asks the owner for more", async () => {
     const weak = await runSim("debug", { input: { symptom }, stubs: { investigate: [{ ...found, confidence: 20 }, found], verify_cause: { confirmed: true } } });
-    expect(pathOf(weak)).toBe("session ask_symptoms investigate investigate verify_cause confirmed");
+    expect(pathOf(weak)).toBe("ask_symptoms investigate investigate verify_cause confirmed");
     const stuck = { status: "inconclusive", refuted: 4, confidence: 10, affected_files: [] };
     const more = await runSim("debug", { input: { symptom }, stubs: { investigate: [stuck, { ...found }], verify_cause: { confirmed: true } }, humans: { ask_more: { answer_kind: "provide", answer: "happens with CRLF" } } });
-    expect(pathOf(more)).toBe("session ask_symptoms investigate ask_more investigate verify_cause confirmed");
+    expect(pathOf(more)).toBe("ask_symptoms investigate ask_more investigate verify_cause confirmed");
     const stop = await runSim("debug", { input: { symptom }, stubs: { investigate: stuck }, humans: { ask_more: { answer_kind: "stop" } } });
-    expect(pathOf(stop)).toBe("session ask_symptoms investigate ask_more inconclusive");
+    expect(pathOf(stop)).toBe("ask_symptoms investigate ask_more inconclusive");
     expect(out(stop)).toMatchObject({ status: "inconclusive" });
   });
 
   it("a partial result is returned as partial; from_failures takes the failures of another chain without asking", async () => {
     const partial = await runSim("debug", { input: { symptom }, stubs: { investigate: { status: "partial", root_cause: "maybe the parser", confidence: 50 } } });
-    expect(pathOf(partial)).toBe("session ask_symptoms investigate partial");
+    expect(pathOf(partial)).toBe("ask_symptoms investigate partial");
     const fromFailures = await runSim("debug", { input: { symptom: [{ file: "a.ts", severity: "high", evidence: "x" }], mode: "from_failures" }, stubs: { investigate: found, verify_cause: { confirmed: true } } });
-    expect(fromFailures.skipped).toEqual(["session", "ask_symptoms", "verify_cause"]);
+    expect(fromFailures.skipped).toEqual(["ask_symptoms", "verify_cause"]);
     expect(out(fromFailures)).toMatchObject({ status: "confirmed" });
   });
 });

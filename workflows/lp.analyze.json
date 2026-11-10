@@ -240,17 +240,28 @@
         "en": "Pick the gray areas",
         "ru": "Выбор серых зон"
       },
-      "skip_when": "!$inputs.ask_owner || assess.open_questions.length == 0",
+      "skip_when": "assess.open_questions.length == 0",
       "skip_out": {
-        "chosen": "all",
+        "answer": "",
         "answer_kind": "all",
+        "chosen": "all",
         "deferred": []
       },
-      "prompt": "List assess.open_questions and the free decisions as gray areas; the owner picks which ones are settled now (the rest are deferred). A timeout counts as all chosen.",
+      "prompt": "List assess.open_questions and the free decisions as gray areas; the owner says which ones are settled now (answer_kind chosen, the areas in his words) or all of them (all); the rest are deferred. A timeout counts as all chosen.",
       "out": {
-        "chosen": "any",
+        "answer": {
+          "type": "string",
+          "required": false
+        },
         "answer_kind": "chosen|all|timeout",
-        "deferred": "string[]"
+        "chosen": {
+          "type": "any",
+          "required": false
+        },
+        "deferred": {
+          "type": "array",
+          "required": false
+        }
       },
       "guards": {
         "maxVisits": 1,
@@ -260,8 +271,9 @@
     {
       "id": "advise",
       "type": "parallel",
-      "for_each": "assess.open_questions where choose.chosen == 'all' || item in choose.chosen",
+      "for_each": "assess.open_questions",
       "max_fan_out": 6,
+      "onOverflow": "truncate",
       "title": {
         "en": "Advisor per area",
         "ru": "Советчик на зону"
@@ -273,7 +285,7 @@
       "child": {
         "type": "agent",
         "role": "analyst",
-        "prompt": "Advisor for one gray area only ({{item}}), for a developer with the profile of `owner_card`: two or three options with cost, risk, fit, a recommended pick, and file:line evidence.",
+        "prompt": "Advisor for one gray area only ({{item}}), for a developer with the profile of `owner_card`: two or three options with cost, risk, fit, a recommended pick, and file:line evidence.\nThe owner's reply on which areas to settle: kind {{choose.answer_kind}}, words «{{choose.answer}}». When the kind is `chosen` and this area is not among the areas he named, do no research: return an empty advice list at once. For `all` and `timeout` every area counts.",
         "out": {
           "area": "string",
           "options": "any",
@@ -318,11 +330,23 @@
     {
       "from": "assess",
       "to": "choose",
+      "pass": "artifact",
+      "when": "$inputs.ask_owner"
+    },
+    {
+      "from": "assess",
+      "to": "done",
       "pass": "artifact"
     },
     {
       "from": "second_opinion",
       "to": "choose",
+      "pass": "artifact",
+      "when": "$inputs.ask_owner"
+    },
+    {
+      "from": "second_opinion",
+      "to": "done",
       "pass": "artifact"
     },
     {

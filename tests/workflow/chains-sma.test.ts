@@ -24,8 +24,8 @@ describe("SMA command workflows", () => {
   });
 
   it("audit-uat: open items across phases go to UAT-AUDIT.md", async () => {
-    const r = await runSim("audit-uat", { input: {}, stubs: { audit: { open_count: 2, audit_path: ".agents/planning/UAT-AUDIT.md" }, goal_check: { ok: true, verdict: "pass", reason: "", details: {} } } });
-    expect(pathOf(r)).toBe("audit goal_check done");
+    const r = await runSim("audit-uat", { input: {}, stubs: { audit: { open_count: 2, document: "# UAT audit" }, goal_check: { ok: true, verdict: "pass", reason: "", details: {} } } });
+    expect(pathOf(r)).toBe("audit write goal_check done");
     expect(out(r)).toMatchObject({ status: "done", open_count: 2 });
   });
 

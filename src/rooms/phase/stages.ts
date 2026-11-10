@@ -234,9 +234,13 @@ export function conclusionText(phase: Pick<Phase, "id" | "title" | "goal" | "rec
 
 const QUICK_TABLE = "## Quick Tasks Completed";
 
-/** The «Quick Tasks Completed» table of STATE.md (SMA k_wq_state): one row per finished quick task, header keys and body kept. */
-export function quickRow(previous: string, row: { date: string; task: string; commit: string }): string {
-  const line = `| ${row.date} | ${row.task} | ${row.commit} |`;
+/** One line, no table break and no heading: whitespace collapsed, «|» replaced, leading «#» dropped. */
+const tableCell = (text: string) => text.replace(/\s+/g, " ").replace(/\|/g, "/").trim().replace(/^#+\s*/, "");
+
+/** The «Quick Tasks Completed» table of STATE.md (SMA k_wq_state): one row per finished quick task, header keys and body kept. Null when the project has no STATE.md: the file is never created. */
+export function quickRow(previous: string | null, row: { date: string; task: string; commit: string }): string | null {
+  if (previous === null) return null;
+  const line = `| ${tableCell(row.date)} | ${tableCell(row.task) || "quick task"} | ${tableCell(row.commit)} |`;
   if (!previous.includes(QUICK_TABLE)) return `${previous.trimEnd()}\n\n${QUICK_TABLE}\n\n| date | task | commit |\n| --- | --- | --- |\n${line}\n`;
   const at = previous.indexOf(QUICK_TABLE);
   const rest = previous.slice(at + QUICK_TABLE.length);

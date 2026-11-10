@@ -69,7 +69,7 @@ export function installMethods(tools: MethodsTools) {
     const record: PhaseRecord = { ownerWords, waveReview, issueCap, scope: { revisions: 0, withdrawn: [] },
       autonomous: String(settings["phase.autonomous"] ?? "off") === "on", subagents: String(settings["phase.subagents"] ?? "on") !== "off",
       branch: String(settings["phase.branch"] ?? "none") === "phase" ? "phase" : "none", ...(input.roadmapRow ? { roadmapRow: input.roadmapRow } : {}), ...(input.rails ? { rails: true } : {}),
-      ...(String(settings["phase.train"] ?? "on") === "off" ? { train: false } : {}) };
+      ...(String(settings["phase.train"] ?? "on") === "off" ? { train: false } : {}), ...(String(settings["phase.diagnose"] ?? "off") === "on" ? { diagnose: true } : {}) };
     if (input.legacy) {
       // Legacy mode without signature: a plan written before the phase existed is admitted on its own; the book says so.
       record.context = { docs: [], sha: sha256Hex(`legacy:${id}`), signedAt: now(), legacy: true };

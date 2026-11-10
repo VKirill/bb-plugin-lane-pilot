@@ -249,7 +249,7 @@ describe("issue-quick", () => {
 
   it("a tiny low issue is class, one cheap plan, lint, the writer, closed, in at most three model calls", async () => {
     const r = await runSim("issue-quick", { input, stubs: stubs() });
-    expect(pathOf(r)).toBe("class plan lint write review state closed");
+    expect(pathOf(r)).toBe("class plan lint write closed");
     expect(modelSteps(pathOf(r), r.workflow).length).toBeLessThanOrEqual(3);
     expect(out(r)).toMatchObject({ status: "closed", resolution: "fixed", severity: "low", merged_commits: ["q1"] });
     expect(modeOf(r)).toBe("quick");
@@ -261,7 +261,7 @@ describe("issue-quick", () => {
 
   it("«покрась кнопку в синий» is class, plan, lint, write, then closed by the checks, in two model steps", async () => {
     const r = await runSim("issue-quick", { input: { title: "покрась кнопку в синий", text: "Кнопка отправки серая, должна быть синей." }, stubs: stubs() });
-    expect(pathOf(r)).toBe("class plan lint write review state closed");
+    expect(pathOf(r)).toBe("class plan lint write closed");
     expect(modelSteps(pathOf(r), r.workflow)).toEqual(["plan", "write"]);
     expect(r.summary.status).toBe("succeeded");
     const audit = r.db.prepare("SELECT detail FROM lane_pilot_wf_event WHERE run_id=? AND kind='goal_audit'").get(r.summary.runId) as { detail: string };
@@ -277,7 +277,7 @@ describe("issue-quick", () => {
 
   it("medium risk writes with the code critic; low does not", async () => {
     const r = await runSim("issue-quick", { input, stubs: { plan: { ...plan, risk: "medium" }, "write-medium": { state: "accepted", merged_commits: ["q1"] } } });
-    expect(pathOf(r)).toBe("class plan lint write-medium review state closed");
+    expect(pathOf(r)).toBe("class plan lint write-medium closed");
     expect(pathOf(r)).not.toContain(" write ");
     const node = r.workflow.nodes.find((item) => item.id === "write-medium");
     expect(node).toMatchObject({ type: "lp-task", quality_mode: "standard" });

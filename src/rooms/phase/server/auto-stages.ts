@@ -68,8 +68,8 @@ export function autoDue(phase: Phase): AutoDue | null {
     if (wave && !tried("review")) return { kind: "review", wave: Number(wave[0]) };
   }
   if (phase.stage === "verification" && r.verification?.verdict?.state === "passed" && !r.verification.model && !tried("close")) return { kind: "close" };
-  // A failed verdict (or a red acceptance line) first gets a parallel diagnosis over its gaps (SMA k_c_diagnose), once per verdict.
-  if (phase.stage === "verification" && (r.verification?.verdict?.state === "failed" || (r.acceptance?.lines ?? []).some((line) => !line.ok)) && r.verification?.verdict && r.verification.diagnosis?.inputSha !== r.verification.verdict.inputSha && !tried("diagnose")) return { kind: "diagnose" };
+  // Only where the project set phase.diagnose on (the flag is absent on older records = off): a failed verdict first gets a parallel diagnosis of its gaps (SMA k_c_diagnose), once per verdict.
+  if (phase.stage === "verification" && r.diagnose === true && r.verification?.verdict?.state === "failed" && r.verification.diagnosis?.inputSha !== r.verification.verdict.inputSha && !tried("diagnose")) return { kind: "diagnose" };
   // A failed verdict (red checks or an unmet goal audit) is planned again by the machine, with the verdict as the gaps, twice at most.
   if (phase.stage === "verification" && r.verification?.verdict?.state === "failed" && (r.replan?.count ?? 0) < AUTO_REPLANS) return { kind: "replan" };
   if (phase.stage === "lessons" && !r.lessons?.analysis && phase.runId && !tried("lessons")) return { kind: "lessons" };
@@ -128,7 +128,7 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number },
     case "analyze": {
       const said = (r.words ?? []).filter((word) => word.turn === "context" && word.decision === "no").map((word) => word.text).slice(-3);
       return { goal: said.length ? `${phase.goal}\n\nThe owner said no to the last context: ${said.join(" / ")}` : phase.goal, depth: "standard",
-        ask_owner: r.ownerWords === true, owner_card: ownerCard ?? "" };
+        ...(r.ownerWords === true ? { ask_owner: true, owner_card: ownerCard ?? "" } : {}) };
     }
     // The diagnosis of a failed verdict: parallel debuggers over the verdict's gaps (SMA k_c_diagnose), the session file names the verdict's input.
     case "diagnose": {
@@ -315,6 +315,13 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
     // version); it does not count toward the phase's life and never cuts its scope. Every one of the 15 live stage failures before 0.1.336 was
     // of this kind (repo_edited, a missing output field, guard:maxVisits, plugin_stopped, budget_exceeded, provider_error, a binary read),
     // and under 0.1.336 a pair of them would have stopped the owner's phase for good (Fable's recheck, 2026-10-27).
+    // A diagnosis is an extra, not a stage of the product: a failed one is booked and the replan goes on as without it. It never spends a try or calls exhausted.
+    if (kind === "diagnose") {
+      const verdict = phase.record.verification?.verdict;
+      deps.book(phase, "decisions", "auto_failed", `${AUTO_WORKFLOWS[kind]} did not finish (${why.slice(0, 300)}): the verdict is replanned without a diagnosis`);
+      deps.save(phase.id, { ...phase.record, auto: undefined, ...(verdict ? { verification: { ...phase.record.verification, diagnosis: { inputSha: verdict.inputSha, diagnoses: [], diagnosis: "", at: deps.now() } } } : {}) });
+      return false;
+    }
     if (MACHINE_STAGE_FAILURE.test(why)) {
       // Its own counter: a machine failure must not spend the product's tries (magicseo lp.plan, 2026-10-30: one budget stop and one
       // real refusal ended the plan loop and cut the scope).
@@ -544,7 +551,7 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       // The goal audit is told from git which recorded proofs are stale, so it does not work currency out by hand; a failed lookup only leaves the facts out.
       const currency = due.kind === "close" && deps.proofCurrency ? await bestEffort(ctx.log, "phase proof currency", deps.proofCurrency(phase), null) : null;
       // The plan runs in full mode: lp.plan's critic otherwise skips a plan below three tasks, and SMA checks every plan (p2_checker).
-      const ownerCard = due.kind === "analyze" && deps.ownerCard ? await bestEffort(ctx.log, "owner card for the analysis", deps.ownerCard(phase), "") : undefined;
+      const ownerCard = due.kind === "analyze" && phase.record.ownerWords === true && deps.ownerCard ? await bestEffort(ctx.log, "owner card for the analysis", deps.ownerCard(phase), "") : undefined;
       const started = services.workflowEngine.start({ workflow, inputs: { ...autoInputs(phase, due, deps.medianTask?.(phase) ?? undefined, ownerCard ?? undefined), ...(currency ? { proof_currency: currency } : {}) }, key: `phase:${phase.id}:${due.kind}:${phase.edition}:${deps.now()}`, runtime,
         ...(due.kind === "plan" ? { mode: "full" as const } : {}),
         link: { projectId: phase.projectId, ...(phase.runId ? { runId: phase.runId } : {}) } });

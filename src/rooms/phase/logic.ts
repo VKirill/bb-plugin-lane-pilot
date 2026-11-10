@@ -116,6 +116,8 @@ export type PhaseRecord = {
   questions?: StageQuestion[];
   /** The project asked for the owner's word at the turns (owner.words = on when the phase opened). */
   ownerWords?: boolean;
+  /** The project set phase.diagnose = on when the phase opened: a failed verdict gets a parallel diagnosis before the replan. Absent = off. */
+  diagnose?: boolean;
   words?: OwnerWord[];
   /** Goal revisions and withdrawn pieces, each one a decision in the book. */
   scope?: { revisions: number; withdrawn: string[] };

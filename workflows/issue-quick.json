@@ -98,7 +98,10 @@
     "comment": "string",
     "merged_commits": "string[]",
     "proposed_workflow": "string",
-    "review_findings": "Finding[]"
+    "review_findings": {
+      "type": "array",
+      "required": false
+    }
   },
   "quality_mode": {
     "default": "quick",
@@ -396,6 +399,22 @@
         "status": "closed",
         "severity": "class.severity",
         "resolution": "fixed",
+        "comment": "'quick path: built and verified'",
+        "merged_commits": "ctx.merged_commits"
+      }
+    },
+    {
+      "id": "closed_reviewed",
+      "type": "action",
+      "action": "emit",
+      "title": {
+        "en": "Closed after review",
+        "ru": "Закрыто после ревью"
+      },
+      "map": {
+        "status": "closed",
+        "severity": "class.severity",
+        "resolution": "fixed",
         "comment": "state.comment",
         "merged_commits": "ctx.merged_commits",
         "review_findings": "review.findings"
@@ -563,6 +582,12 @@
       "from": "write",
       "to": "review",
       "pass": "artifact",
+      "when": "write.state == 'accepted' && ($inputs.full || $inputs.validate)"
+    },
+    {
+      "from": "write",
+      "to": "closed",
+      "pass": "artifact",
       "when": "write.state == 'accepted'"
     },
     {
@@ -573,6 +598,12 @@
     {
       "from": "write-medium",
       "to": "review",
+      "pass": "artifact",
+      "when": "write-medium.state == 'accepted' && ($inputs.full || $inputs.validate)"
+    },
+    {
+      "from": "write-medium",
+      "to": "closed",
       "pass": "artifact",
       "when": "write-medium.state == 'accepted'"
     },
@@ -599,7 +630,7 @@
     },
     {
       "from": "state",
-      "to": "closed",
+      "to": "closed_reviewed",
       "pass": "artifact"
     },
     {
@@ -665,8 +696,6 @@
         "plan",
         "lint",
         "write",
-        "review",
-        "state",
         "closed"
       ],
       "expect_outputs": [
@@ -711,8 +740,6 @@
           "plan",
           "lint",
           "write-medium",
-          "review",
-          "state",
           "closed"
         ]
       },
@@ -839,7 +866,7 @@
           "write",
           "review",
           "state",
-          "closed"
+          "closed_reviewed"
         ]
       },
       "variant_full": {
@@ -867,7 +894,7 @@
           "write-full",
           "review",
           "state",
-          "closed"
+          "closed_reviewed"
         ]
       },
       "variant_research": {
@@ -896,8 +923,6 @@
           "plan",
           "lint",
           "write",
-          "review",
-          "state",
           "closed"
         ]
       }

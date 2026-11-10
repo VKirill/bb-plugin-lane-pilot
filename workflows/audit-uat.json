@@ -50,10 +50,10 @@
         "en": "Open acceptance items",
         "ru": "Открытые пункты приёмки"
       },
-      "prompt": "Run `lane-plan audit-uat` and also glob .agents/phases/*/UAT.md (phases outside the roadmap). Then write .agents/planning/UAT-AUDIT.md: the open and failed acceptance lines grouped by phase, and a manual test plan — the steps of each item and where to test it (the phase's candidate branch or main). Change no UAT.md. Return open_count and audit_path.",
+      "prompt": "Run `lane-plan audit-uat` and also glob .agents/phases/*/UAT.md (phases outside the roadmap). Write no file yourself (you are read-only): return in `document` the full Markdown text of the audit — the open and failed acceptance lines grouped by phase, and a manual test plan with the steps of each item and where to test it (the phase's candidate branch or main). Change no UAT.md. Return open_count and document.",
       "out": {
         "open_count": "int",
-        "audit_path": "string"
+        "document": "string"
       },
       "guards": {
         "maxVisits": 1,
@@ -65,6 +65,22 @@
           "version": 1
         }
       ]
+    },
+    {
+      "id": "write",
+      "type": "action",
+      "action": "fs.write",
+      "title": {
+        "en": "Write UAT-AUDIT.md",
+        "ru": "Записать UAT-AUDIT.md"
+      },
+      "path": ".agents/planning/",
+      "contents": {
+        "UAT-AUDIT.md": "{{audit.document}}"
+      },
+      "out": {
+        "audit_path": "string"
+      }
     },
     {
       "id": "goal_check",
@@ -89,13 +105,18 @@
       "map": {
         "status": "'done'",
         "open_count": "audit.open_count",
-        "audit_path": "audit.audit_path"
+        "audit_path": "write.audit_path"
       }
     }
   ],
   "edges": [
     {
       "from": "audit",
+      "to": "write",
+      "pass": "artifact"
+    },
+    {
+      "from": "write",
       "to": "goal_check",
       "pass": "artifact"
     },
@@ -112,11 +133,12 @@
       "stubs": {
         "audit": {
           "open_count": 2,
-          "audit_path": ".agents/planning/UAT-AUDIT.md"
+          "document": "# UAT audit\n- p1: open"
         }
       },
       "expect_path": [
         "audit",
+        "write",
         "goal_check",
         "done"
       ],
