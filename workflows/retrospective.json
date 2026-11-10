@@ -90,11 +90,6 @@
         "en": "Living retrospective",
         "ru": "Живая ретроспектива"
       },
-      "skip_when": "retro.insights.length == 0",
-      "skip_out": {
-        "updated": 0,
-        "total": 0
-      },
       "out": {
         "updated": "int",
         "total": "int",
@@ -140,11 +135,6 @@
   ],
   "edges": [
     {
-      "from": "stage",
-      "to": "done",
-      "pass": "artifact"
-    },
-    {
       "from": "retro",
       "to": "living",
       "pass": "artifact"
@@ -152,6 +142,11 @@
     {
       "from": "living",
       "to": "stage",
+      "pass": "artifact"
+    },
+    {
+      "from": "stage",
+      "to": "done",
       "pass": "artifact"
     }
   ],

@@ -17,7 +17,7 @@ async function promptsOf(workflowId: string, input: Record<string, unknown>, goa
     prompts.set(ctx.nodeId, prompt);
     return {};
   };
-  const result = await runSim(workflowId, { input, goals, stubs: { agent: capture, prepass: { findings: [], critical_count: 0, rework: false } } });
+  const result = await runSim(workflowId, { input, goals, stubs: { agent: capture } });
   return { prompts, result };
 }
 

@@ -138,6 +138,12 @@ export type PhaseRecord = {
   research?: "on";
   /** Pattern mapping before the plan (setting phase.pattern_map, off by default; SMA k_wp_patterns). */
   patternMap?: "on";
+  /** The validation strategy before the plan (setting phase.validation, off by default; SMA k_wp_validation). */
+  validation?: "on";
+  /** MATERIAL.md before the drawing (setting phase.draw_material, off by default; SMA k_wd_i1). */
+  drawMaterial?: "on";
+  /** The sha of each pre-plan document (RESEARCH/VALIDATION/PATTERNS.md) as the machine last wrote it, by path: a hand-edited file is not overwritten. */
+  preDocShas?: Record<string, string>;
   /** The phase candidate (SMA p6_prepared → p6_merge): the pieces merge into branch phase/<id>, one worktree per base checkout, and the
    *  branch lands on main only after the acceptance. `off` says why a phase merges its pieces into main as before. */
   candidate?: PhaseCandidate;

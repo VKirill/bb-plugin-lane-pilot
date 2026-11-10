@@ -71,6 +71,8 @@ export function installMethods(tools: MethodsTools) {
       branch: String(settings["phase.branch"] ?? "none") === "phase" ? "phase" : "none",
       ...(String(settings["phase.research"] ?? "off") === "on" ? { research: "on" as const } : {}),
       ...(String(settings["phase.pattern_map"] ?? "off") === "on" ? { patternMap: "on" as const } : {}),
+      ...(String(settings["phase.validation"] ?? "off") === "on" ? { validation: "on" as const } : {}),
+      ...(String(settings["phase.draw_material"] ?? "off") === "on" ? { drawMaterial: "on" as const } : {}),
       ...(input.roadmapRow ? { roadmapRow: input.roadmapRow } : {}), ...(input.rails ? { rails: true } : {}),
       ...(String(settings["phase.train"] ?? "on") === "off" ? { train: false } : {}) };
     if (input.legacy) {

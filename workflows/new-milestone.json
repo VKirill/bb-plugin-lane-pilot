@@ -72,7 +72,7 @@
         "en": "Milestone frame",
         "ru": "Рамка этапа"
       },
-      "prompt": "From the goal: 3–7 requirements with ids into REQUIREMENTS.md, then the phases in order (lane-plan phase add <name> --goal …), each a vertical slice (templates/planning/references/mvp-stories.md).",
+      "prompt": "Archive the finished phases (lane-plan milestone archive <name> when the roadmap has [x] rows). From the goal: 3–7 requirements with ids into REQUIREMENTS.md, then the phases in order (lane-plan phase add <name> --goal …), each a vertical slice (templates/planning/references/mvp-stories.md).",
       "out": {
         "phases": "string[]"
       },

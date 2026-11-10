@@ -73,12 +73,13 @@ export function preship(db: Db, projectId?: string) {
   // The ship gate (Astra F1): «all tasks accepted» says nothing about the post-merge check on main. Its latest run
   // still out, red or never run stops the ship; a project without a gate passes as before.
   const gate = latestGateRun(db, projectId);
+  const fullGateOn = !!projectId && String(loadProjectSettings(db as never, projectId)["ship.full_gate"] ?? "").trim().toLowerCase() === "on";
   if (gate) {
     const verdict = gateRunVerdict(gate);
     if (verdict.pending) {
       items.push({ what: `integration gate is still running (${gate.command})`, disposition: "wait for its verdict, then preship again" });
-    } else if (gate.state === "passed" && Date.now() - gate.updatedAt > FULL_GATE_VALID_MS) {
-      // The same six-hour validity the ship gate applies (SMA k_ws_fullgate): a green mark that old is no proof.
+    } else if (gate.state === "passed" && fullGateOn && Date.now() - gate.updatedAt > FULL_GATE_VALID_MS) {
+      // The same six-hour validity the ship gate applies (SMA k_ws_fullgate), only where the project set ship.full_gate to on.
       // Preship cannot name the shipped head without a host, so the head check stays with lp.integration_gate_status.
       items.push({ what: `integration gate's green mark on ${gate.head ? gate.head.slice(0, 12) : "main"} is older than six hours`, disposition: `rerun the gate: run \`${gate.command}\` on main (or merge a task to trigger it)` });
     } else if (verdict.failed) {

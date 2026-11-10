@@ -45,6 +45,11 @@
       "type": "bool",
       "default": false,
       "note": "pattern-mapper capability (project setting phase.pattern_map)"
+    },
+    "validation": {
+      "type": "bool",
+      "default": false,
+      "note": "validation strategy before the plan (project setting phase.validation = on); never on the check path"
     }
   },
   "outputs": {
@@ -140,7 +145,7 @@
           "version": 1
         }
       ],
-      "skip_when": "$mode == 'quick'",
+      "skip_when": "!$inputs.validation || $mode == 'quick'",
       "skip_out": {
         "validation_md": ""
       },
@@ -279,7 +284,7 @@
         "evidence": "skipped"
       },
       "src": "maestro-flow:workflows/plan.md (plan-checker), grill.md",
-      "prompt": "PLAN_CRITIC_METHOD over all tasks together - goals coverage, dependency correctness (no cycle, depends_on names a real task), size, collisions across tasks, boundary violations. A finding without file:line (or PLAN/TASK + field) does not count. Approve the good, not the perfect. Severity is one of critical, high, medium, low, info. A file a task creates with neither an analog in read_first nor an explicit 'no analog' is a finding.",
+      "prompt": "PLAN_CRITIC_METHOD over all tasks together - goals coverage, dependency correctness (no cycle, depends_on names a real task), size, collisions across tasks, boundary violations. A finding without file:line (or PLAN/TASK + field) does not count. Approve the good, not the perfect. Severity is one of critical, high, medium, low, info. A file a task creates with neither an analog in read_first nor an explicit 'no analog' is a finding of severity low: it never changes the verdict by itself, so do not answer rework or block for it alone. Skip this check when plan_sha is set (a plan the PM submitted is checked as it is, the planner cannot add analogs).",
       "out": {
         "status": "pass|rework|block",
         "summary": "string",

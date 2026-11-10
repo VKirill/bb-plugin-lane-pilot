@@ -117,7 +117,7 @@ describe("lp.review", () => {
   const dims = (rows: Record<string, unknown[]>) => ((ctx: { input: { item?: unknown } }) => ({ dimension: String(ctx.input.item), findings: rows[String(ctx.input.item)] ?? [] })) as never;
 
   it("quick: two dimensions, no spec check, no majority check, a clean pass", async () => {
-    const r = await runSim("lp.review", { input: { range: "HEAD~1..HEAD", dimensions: ["correctness", "security"] }, mode: "quick", stubs: { prepass: { findings: [], critical_count: 0, rework: false } } });
+    const r = await runSim("lp.review", { input: { range: "HEAD~1..HEAD", dimensions: ["correctness", "security"] }, mode: "quick" });
     expect(pathOf(r)).toBe("scope prepass dims screen confirm aggregate result");
     expect(r.skipped).toContain("confirm");
     expect(out(r)).toMatchObject({ status: "pass", warn: false, critical_count: 0 });
@@ -125,7 +125,7 @@ describe("lp.review", () => {
   });
 
   it("standard: a critical finding is confirmed by 3 critics, 2 of 3 decide, and the work goes back", async () => {
-    const r = await runSim("lp.review", { input: { dimensions: ["correctness", "maintainability"] }, stubs: { prepass: { findings: [], critical_count: 0, rework: false }, "dims:child": dims({ correctness: [finding("critical", "correctness")] }), confirm: { finding_id: "x", confirmed: true } } });
+    const r = await runSim("lp.review", { input: { dimensions: ["correctness", "maintainability"] }, stubs: { "dims:child": dims({ correctness: [finding("critical", "correctness")] }), confirm: { finding_id: "x", confirmed: true } } });
     expect(pathOf(r)).toBe("scope prepass spec_check dims screen confirm aggregate result");
     expect(out(r)).toMatchObject({ status: "rework", critical_count: 1 });
     expect(r.called("confirm:child")).toHaveLength(3);
@@ -145,7 +145,7 @@ describe("lp.review", () => {
   });
 
   it("an unmet acceptance criterion sends the work back whatever the dimensions say", async () => {
-    const r = await runSim("lp.review", { input: { dimensions: ["correctness"], criteria: ["flag exists"] }, stubs: { prepass: { findings: [], critical_count: 0, rework: false }, spec_check: { unmet_count: 1 } } });
+    const r = await runSim("lp.review", { input: { dimensions: ["correctness"], criteria: ["flag exists"] }, stubs: { spec_check: { unmet_count: 1 } } });
     expect(out(r)).toMatchObject({ status: "rework" });
   });
 });

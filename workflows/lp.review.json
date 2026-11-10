@@ -64,8 +64,12 @@
       },
       "out": {
         "findings": "Finding[]",
+        "notes": "string",
         "critical_count": "int",
-        "rework": "bool"
+        "rework": {
+          "type": "bool",
+          "default": false
+        }
       }
     },
     {
@@ -117,7 +121,7 @@
         "role": "code-critic",
         "session": "new",
         "src": "maestro-flow:workflows/review.md, odyssey-security.md, odyssey-defensive.md",
-        "prompt": "CODE_CRITIC_METHOD for exactly one dimension ({{item}}). Every finding has file:line, severity (critical|high|medium|low|info), evidence (quoted code), impact, suggestion; severity is not softened without new evidence.\nsecurity: OWASP A01-A10, dependencies, secrets (report by location, never the value), a false positive is closed only with counter-evidence.\nsilent_failures: swallowed exceptions, defaults that hide an error, log-only handlers - does the caller learn about the failure?\nDo not report what a prior review already closed.\n",
+        "prompt": "CODE_CRITIC_METHOD for exactly one dimension ({{item}}). Every finding has file:line, severity (critical|high|medium|low|info), evidence (quoted code), impact, suggestion; severity is not softened without new evidence.\nsecurity: OWASP A01-A10, dependencies, secrets (report by location, never the value), a false positive is closed only with counter-evidence.\nsilent_failures: swallowed exceptions, defaults that hide an error, log-only handlers - does the caller learn about the failure?\nDo not report what a prior review already closed.\nStructural notes from the pre-pass on the lines this change added (advisory, found without a model; check each against the code, report only what is real): {{prepass.notes}}\n",
         "out": {
           "dimension": "string",
           "findings": "Finding[]"
@@ -282,11 +286,6 @@
     },
     {
       "from": "prepass",
-      "to": "aggregate",
-      "when": "prepass.rework"
-    },
-    {
-      "from": "prepass",
       "to": "spec_check",
       "pass": "artifact",
       "when": "$mode != 'quick' && !prepass.rework"
@@ -294,7 +293,12 @@
     {
       "from": "prepass",
       "to": "dims",
-      "pass": "artifact"
+      "pass": "artifact",
+      "when": "!prepass.rework"
+    },
+    {
+      "from": "prepass",
+      "to": "aggregate"
     },
     {
       "from": "spec_check",

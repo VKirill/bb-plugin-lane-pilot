@@ -35,6 +35,11 @@
     "base": {
       "type": "string",
       "default": "main"
+    },
+    "head": {
+      "type": "string",
+      "default": "",
+      "note": "the head being shipped; the full-gate check (setting ship.full_gate = on) compares the gate run with it, and without it skips that comparison"
     }
   },
   "outputs": {
@@ -65,8 +70,7 @@
       },
       "out": {
         "ok": "bool",
-        "failing": "string[]",
-        "reason": "string"
+        "failing": "string[]"
       }
     },
     {
@@ -220,11 +224,6 @@
         },
         "open_pr": {
           "pr_url": "https://example/pr/1"
-        },
-        "gate": {
-          "ok": true,
-          "failing": [],
-          "reason": ""
         }
       },
       "expect_path": [

@@ -52,7 +52,10 @@
     "candidates_approved": "int",
     "deferred": "bool",
     "report_path": "string",
-    "retro_path": "string"
+    "retro_path": "string",
+    "gate_state": "string",
+    "unmerged_seen": "int",
+    "uncovered_requirements": "string[]"
   },
   "quality_mode": {
     "default": "standard",
@@ -81,21 +84,12 @@
         "unmerged": "int",
         "gate_ok": "bool",
         "running_attempts": "int",
-        "merged_commits": "string[]"
-      }
-    },
-    {
-      "id": "coverage",
-      "type": "action",
-      "action": "lp.requirement_coverage",
-      "title": {
-        "en": "Requirement coverage",
-        "ru": "Покрытие требований"
-      },
-      "out": {
-        "uncovered": "string[]",
-        "covered": "string[]",
-        "total": "int"
+        "merged_commits": "string[]",
+        "gate_state": "string",
+        "unmerged_seen": "int",
+        "uncovered_reqs": "string[]",
+        "retro_living": "string",
+        "milestone_archive": "string"
       }
     },
     {
@@ -160,11 +154,6 @@
         "en": "Living retrospective",
         "ru": "Живая ретроспектива"
       },
-      "skip_when": "retro.insights.length == 0",
-      "skip_out": {
-        "updated": 0,
-        "total": 0
-      },
       "out": {
         "updated": "int",
         "total": "int",
@@ -210,23 +199,6 @@
       }
     },
     {
-      "id": "snapshot",
-      "type": "action",
-      "action": "lp.milestone_archive",
-      "title": {
-        "en": "Milestone archive",
-        "ru": "Архив этапа"
-      },
-      "params": {
-        "name": "{{$inputs.goal}}"
-      },
-      "out": {
-        "folder": "string",
-        "files": "string[]",
-        "kept": "bool"
-      }
-    },
-    {
       "id": "record",
       "type": "action",
       "action": "fs.write",
@@ -250,6 +222,23 @@
       }
     },
     {
+      "id": "snapshot",
+      "type": "action",
+      "action": "lp.milestone_archive",
+      "title": {
+        "en": "Milestone archive",
+        "ru": "Архив этапа"
+      },
+      "params": {
+        "name": "{{$inputs.goal}}"
+      },
+      "out": {
+        "folder": "string",
+        "files": "string[]",
+        "kept": "bool"
+      }
+    },
+    {
       "id": "archive",
       "type": "action",
       "action": "lp.run_close",
@@ -268,7 +257,10 @@
         "candidates_approved": "approve_knowledge.approved_ids.length",
         "deferred": "approve_knowledge.answer_kind != 'approved'",
         "report_path": "close.report_path",
-        "retro_path": "retro.retro_path"
+        "retro_path": "retro.retro_path",
+        "gate_state": "status.gate_state",
+        "unmerged_seen": "status.unmerged_seen",
+        "uncovered_requirements": "status.uncovered_reqs"
       }
     },
     {
@@ -276,7 +268,10 @@
       "type": "action",
       "action": "emit",
       "map": {
-        "status": "not_ready"
+        "status": "not_ready",
+        "gate_state": "status.gate_state",
+        "unmerged_seen": "status.unmerged_seen",
+        "uncovered_requirements": "status.uncovered_reqs"
       }
     },
     {
@@ -296,6 +291,17 @@
       "when": "ask_finish.answer_kind == 'timeout'"
     },
     {
+      "from": "status",
+      "to": "ask_finish",
+      "pass": "artifact",
+      "when": "status.open_tasks > 0 || status.unmerged > 0 || !status.gate_ok || status.running_attempts > 0"
+    },
+    {
+      "from": "status",
+      "to": "retro",
+      "pass": "artifact"
+    },
+    {
       "from": "ask_finish",
       "to": "retro",
       "pass": "artifact",
@@ -304,6 +310,22 @@
     {
       "from": "ask_finish",
       "to": "not_ready",
+      "pass": "artifact"
+    },
+    {
+      "from": "retro",
+      "to": "living",
+      "pass": "artifact",
+      "when": "status.retro_living == 'on'"
+    },
+    {
+      "from": "retro",
+      "to": "close",
+      "pass": "artifact"
+    },
+    {
+      "from": "living",
+      "to": "close",
       "pass": "artifact"
     },
     {
@@ -318,39 +340,31 @@
       "pass": "artifact"
     },
     {
-      "from": "status",
-      "to": "coverage",
-      "pass": "artifact"
-    },
-    {
-      "from": "coverage",
-      "to": "ask_finish",
+      "from": "approve_knowledge",
+      "to": "record",
       "pass": "artifact",
-      "when": "status.open_tasks > 0 || status.unmerged > 0 || !status.gate_ok || status.running_attempts > 0 || coverage.uncovered.length > 0"
-    },
-    {
-      "from": "coverage",
-      "to": "retro",
-      "pass": "artifact"
-    },
-    {
-      "from": "retro",
-      "to": "living",
-      "pass": "artifact"
-    },
-    {
-      "from": "living",
-      "to": "close",
-      "pass": "artifact"
+      "when": "status.retro_living == 'on'"
     },
     {
       "from": "approve_knowledge",
-      "to": "record",
+      "to": "snapshot",
+      "pass": "artifact",
+      "when": "status.milestone_archive == 'on'"
+    },
+    {
+      "from": "approve_knowledge",
+      "to": "archive",
       "pass": "artifact"
     },
     {
       "from": "record",
       "to": "snapshot",
+      "pass": "artifact",
+      "when": "status.milestone_archive == 'on'"
+    },
+    {
+      "from": "record",
+      "to": "archive",
       "pass": "artifact"
     },
     {
@@ -396,24 +410,13 @@
         "approve_knowledge": {
           "answer_kind": "deferred",
           "approved_ids": []
-        },
-        "coverage": {
-          "uncovered": [],
-          "covered": [
-            "REQ-1"
-          ],
-          "total": 1
         }
       },
       "expect_path": [
         "status",
-        "coverage",
         "retro",
-        "living",
         "close",
         "approve_knowledge",
-        "record",
-        "snapshot",
         "archive",
         "closed"
       ],
