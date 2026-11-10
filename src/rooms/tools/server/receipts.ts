@@ -4,7 +4,7 @@ import type Database from "better-sqlite3";
 import packageJson from "../../../../package.json";
 import { gateRunVerdict } from "../../verification/server"
 import { parseIntegrationGateSettings } from "../../contracts";
-import { getAttempt, getReasoningTraceJson, getTaskContractJson, listStageReceipts, loadProjectSettings, openAttemptBriefs, latestGateRun, countLanePilotTables, latestAcceptedAttemptRef, listAttemptRefsSince, listGateEventsForTask } from "../../storage";
+import { getRun, getAttempt, getReasoningTraceJson, getTaskContractJson, listStageReceipts, loadProjectSettings, openAttemptBriefs, latestGateRun, countLanePilotTables, latestAcceptedAttemptRef, listAttemptRefsSince, listGateEventsForTask } from "../../storage";
 import { scoreForecast } from "../../forecast";
 import { calibrationPassport } from "../../forecast/server/report";
 import { getAttemptChange } from "../../rollback";
@@ -38,7 +38,7 @@ export function passport(db: Db, attemptId: string) {
   try {
     const contract = JSON.parse(getTaskContractJson(db, row.task_id) ?? "{}") as { forecast?: { model?: unknown } };
     if (typeof contract.forecast?.model === "string") {
-      const projectId = (db.prepare("SELECT project_id FROM lane_pilot_run WHERE id=?").get(row.run_id) as { project_id: string } | undefined)?.project_id ?? "";
+      const projectId = getRun(db, row.run_id)?.project_id ?? "";
       calibration = { model: contract.forecast.model, badge: calibrationPassport(db, projectId, contract.forecast.model).badge };
     }
   } catch { /* the badge is informational; provenance stands without it */ }

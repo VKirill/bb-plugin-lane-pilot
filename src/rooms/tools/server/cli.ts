@@ -55,7 +55,7 @@ import { ERRANDS_USAGE, runErrandsCli } from "../../errands";
 import { retireAdoptedRule } from "../../self-repair/server";
 import { ROLLBACK_USAGE, runRollbackCli } from "../../rollback/server";
 import { listEvidence } from "../../runs/server/evidence";
-import { integrityReport, renewDisarm } from "../../policy/protections";
+import { integrityReport, renewDisarm } from "../../policy";
 import { isCodeCriticDefault } from "../../contracts/task-enums"
 import { CODE_CRITIC_DEFAULTS } from "../../contracts/task-enums";
 import { runSkillLintCli } from "../../forge";

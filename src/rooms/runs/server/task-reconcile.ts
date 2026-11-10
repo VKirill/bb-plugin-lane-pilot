@@ -1,4 +1,5 @@
 import { closeOrphanWriterStages } from "./stage-records";
+import { listUnmovedLiveAttempts } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
 
 import type { ResumeOrphansPort } from "../../contracts/stability-api";
@@ -69,8 +70,7 @@ export function createTaskReconcile(ctx:ServerCore, services:Services) {
       // loop's work is taken back instead of standing at «running» until the next reload.
       await step("lease take-back", async () => {
         const cutoff = (options.now ?? Date.now()) - PERIODIC_IDLE_MS;
-        const lost = (db.prepare(`SELECT id, run_id, task_id FROM lane_pilot_attempt WHERE state IN ('spawn_requested','spawn_unknown','running','cancel_requested') AND updated_at < ?`)
-          .all(cutoff) as Array<{ id: string; run_id: string; task_id: string }>)
+        const lost = listUnmovedLiveAttempts(db, cutoff)
           .filter((row) => !services.activeWriterTasks.has(`${row.run_id}:${row.task_id}`))
           .map((row) => row.id)
           // An attempt the resume could not start again (its run or contract is gone) is not asked about every minute.

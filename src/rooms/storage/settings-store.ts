@@ -2,7 +2,7 @@ import type { PrototypeConfig } from "@lane-pilot/contracts";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { SettingValidationError } from "../setting-validation";
 import { requireSettingValidator, type LanePilotDatabase } from "./database";
-import { noteProtectionDisarm } from "../policy/protections";
+import { noteProtectionDisarm } from "./protections-store";
 
 const CONFIG_KEYS = [
   "hostId", "pmWorkspacePath", "writerWorkspacePath", "pmProviderId",

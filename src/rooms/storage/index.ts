@@ -44,3 +44,5 @@ export { saveDiffHiddenRows, diffHiddenAuditSummary, saveModelRebench, modelRebe
 export type { DiffHiddenAuditRow } from "./analytics-store";
 export { latestAcceptedAttemptOfTask, listAttemptRefsSince } from "./attempts-store";
 export { listNearMissReceipts } from "./stages-store";
+export { PROTECTIONS, DISARM_TERM_MS, disarmKey, isArmed, readDisarm, noteProtectionDisarm, renewDisarm, storedProtectionValue, endDisarm, failedStageReceiptsSince, type Disarm } from "./protections-store";
+export { setAttemptBarrier, listUnmovedLiveAttempts, liveAttemptsOfRun } from "./attempts-store";

@@ -160,7 +160,7 @@ export function installSteps(tools: StepsTools) {
         if (!listParts(db, phase.id).some((part) => part.kind === "stale_consent" && part.text.startsWith(why))) {
           book(phase, "execution", "stale_consent", `${why} — nothing issues until the drawing is recorded again`);
           await bestEffort(ctx.log, "phase stale drawing notice", bb.sdk.threads.send({ threadId: phase.pmThreadId, mode: "queue-if-active", input: [{ type: "text", mentions: [], text:
-            `[Lane Pilot phase] Phase ${phase.id} «${phase.title}» issues nothing: its drawing files were edited after the drawing was recorded. Return the phase to design (lane_pilot_phase {action:"return", to:"design", note}), record the drawing again and get the design word for it.` }] } as never), undefined);
+            `[Lane Pilot phase] Phase ${phase.id} «${phase.title}» issues nothing: its drawing files were edited after the drawing was recorded. Return the phase to design (lane_pilot_phase {action:"return", phaseId:"${phase.id}", to:"design", note}), record the drawing again and get the design word for it.` }] } as never), undefined);
         }
         return phase;
       }

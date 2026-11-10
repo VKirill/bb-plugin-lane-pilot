@@ -1309,3 +1309,20 @@ export function listAttemptRefsSince(db: LanePilotDatabase, since: number, proje
 export function listRunWriterThreadIds(db: LanePilotDatabase, runId: string): string[] {
   return (db.prepare("SELECT DISTINCT thread_id FROM lane_pilot_attempt WHERE run_id=? AND thread_id IS NOT NULL").all(runId) as Array<{ thread_id: string }>).map((row) => row.thread_id);
 }
+
+/** The barrier's outcome on the attempt row (sma av_record): the last gate that weighed this attempt, as JSON. */
+export function setAttemptBarrier(db: LanePilotDatabase, attemptId: string, barrier: unknown): void {
+  db.prepare("UPDATE lane_pilot_attempt SET barrier_json=? WHERE id=?").run(JSON.stringify(barrier), attemptId);
+}
+
+/** Attempts in a live state that have not moved since the cutoff: candidates for the lease take-back (SMA tr_claimed). */
+export function listUnmovedLiveAttempts(db: LanePilotDatabase, cutoff: number): Array<{ id: string; run_id: string; task_id: string }> {
+  return db.prepare(`SELECT id, run_id, task_id FROM lane_pilot_attempt WHERE state IN ('spawn_requested','spawn_unknown','running','cancel_requested') AND updated_at < ?`)
+    .all(cutoff) as Array<{ id: string; run_id: string; task_id: string }>;
+}
+
+/** The run's attempts still in flight, the one that moved last first. */
+export function liveAttemptsOfRun(db: Pick<LanePilotDatabase, "prepare">, runId: string): Array<{ id: string; task_id: string }> {
+  return db.prepare("SELECT id, task_id FROM lane_pilot_attempt WHERE run_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested') ORDER BY updated_at DESC")
+    .all(runId) as Array<{ id: string; task_id: string }>;
+}

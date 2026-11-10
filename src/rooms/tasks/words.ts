@@ -4,6 +4,7 @@
  * lane_pilot_queue {action:"word"}; the word holds for the whole task family, so a redo needs no second one. Off, nothing waits.
  */
 import { taskFamily } from "@lane-pilot/contracts";
+import { liveAttemptsOfRun } from "../storage";
 
 export type TaskWord = { turn: "land"; decision: "yes" | "no"; text: string; at: number; /** The attempt (the candidate tree) the word was given for: a yes is revoked when another candidate replaces it (SMA ta_replace). */ attemptId?: string | null };
 
@@ -35,9 +36,7 @@ export const taskWordKey = (runId: string, family: string) => `${runId}:${family
 
 /** The attempt of the family that waits for the word right now (SMA ta_replace): the candidate the owner's next word is for. */
 export function waitingAttemptId(db: { prepare(sql: string): { all(...params: unknown[]): unknown[] } }, runId: string, family: string): string | undefined {
-  const rows = db.prepare("SELECT id, task_id FROM lane_pilot_attempt WHERE run_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested') ORDER BY updated_at DESC")
-    .all(runId) as Array<{ id: string; task_id: string }>;
-  return rows.find((row) => taskFamily(row.task_id) === family)?.id;
+  return liveAttemptsOfRun(db as never, runId).find((row) => taskFamily(row.task_id) === family)?.id;
 }
 
 /** Why the landing waits, or null: the owner's latest word on the task family decides. */

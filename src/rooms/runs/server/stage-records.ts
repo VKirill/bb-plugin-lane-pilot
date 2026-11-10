@@ -1,5 +1,5 @@
 import { wfLiveRunWithIdem } from "@lane-pilot/workflow-engine";
-import { appendGateEvaluation, countAttempts, deleteStageReceipt, failureFieldsOf, getTaskPlan, latestAttemptRow, listIdleAttemptsInStates, listOpenStageTasks, listStageReceipts, newestAttemptState, openDatabase, saveStageReceipt, stageReceiptState, transitionAttempt } from "../../storage";
+import { setAttemptBarrier, appendGateEvaluation, countAttempts, deleteStageReceipt, failureFieldsOf, getTaskPlan, latestAttemptRow, listIdleAttemptsInStates, listOpenStageTasks, listStageReceipts, newestAttemptState, openDatabase, saveStageReceipt, stageReceiptState, transitionAttempt } from "../../storage";
 import { RETRY_ELIGIBLE } from "../../contracts/state-machine";
 import type { AttemptState } from "../../contracts/state-machine";
 import { sha256Hex as sha256 } from "@lane-pilot/kit";
@@ -51,7 +51,7 @@ export function recordGateEvaluation(db:ReturnType<typeof openDatabase>,input:{p
     const reason=typeof summary?.reason==="string" ? summary.reason : typeof summary?.writerStatus==="string" ? String(summary.writerStatus) : null;
     const barrier={gate:input.gate,status:input.status,reason,tree:input.tree??null,
       verdict:input.verdict?{status:input.verdict.status,summary:input.verdict.summary.slice(0,600)}:null,at:Date.now()};
-    db.prepare("UPDATE lane_pilot_attempt SET barrier_json=? WHERE id=?").run(JSON.stringify(barrier),input.attemptId);
+    setAttemptBarrier(db,input.attemptId,barrier);
   }
 }
 

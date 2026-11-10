@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { parseJsonOr } from "@lane-pilot/kit";
 import { TASK_SIZE_MIN_SAMPLE, type TaskSizeMedian } from "../tasks";
-import { ATTEMPT_TABLE, RUN_TABLE } from "../storage";
+import { ATTEMPT_TABLE, RUN_TABLE, hasReconcileCursor } from "../storage";
 import { failureClass } from "../contracts/failure-class";
 
 export type RollbackDb = Pick<Database.Database, "prepare">;
@@ -84,7 +84,7 @@ export function recoveryState(db: RollbackDb, attemptId: string): RecoveryState 
   const attempt = db.prepare(`SELECT state, reason, task_id FROM ${ATTEMPT_TABLE} WHERE id=?`).get(attemptId) as { state: string; reason: string | null; task_id: string } | undefined;
   if (!attempt) return "clear";
   if (attempt.state === "spawn_unknown") return "reconciling";
-  if (db.prepare("SELECT 1 AS n FROM lane_pilot_reconcile_cursor WHERE attempt_id=? LIMIT 1").get(attemptId)) return "reconciling";
+  if (hasReconcileCursor(db as never, attemptId)) return "reconciling";
   if (effectState(getAttemptChange(db, attemptId)) === "uncertain") return "reconciling";
   const revert = listTaskReceipts(db, attempt.task_id, "revert").at(-1);
   if (revert && (revert.state === "failed" || revert.state === "error")) return "rollback_failed";

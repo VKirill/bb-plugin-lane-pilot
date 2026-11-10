@@ -7,3 +7,4 @@ export { collectAndAppend, loadLiveExam, recordOwnerDecision } from "./live-exam
 export { composeMorningList } from "./morning";
 export { POLICY, TIERS, classifyChange, explainChange, globMatch } from "./policy";
 export type { ChangeDescriptor, Tier } from "./policy";
+export { integrityReport, rearmExpiredDisarms, renewDisarm } from "./protections";

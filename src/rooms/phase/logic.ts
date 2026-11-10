@@ -337,7 +337,11 @@ export function designGate(record: PhaseRecord, specText?: string | null): GateR
   // Drawing confirmed (SMA tb_design_gate_confirmed): the person's yes counts only for the drawing hash it names; a redraw asks again.
   if (record.ownerWords) {
     const said = wordOf(record, "design");
-    if (said?.decision !== "yes" || said.key !== drawing?.sha256) why.push("the drawing awaits the owner's word for this drawing (owner.words is on)");
+    // The word carries the hash under `key` (the door's own stamp) or `sha` (the version stamp of pc_contract): either
+    // one that differs from the drawing now voids the yes. A yes recorded before words were stamped carries neither
+    // and keeps counting — a phase in flight is not asked twice for what its owner already confirmed.
+    const signed = said?.key ?? said?.sha;
+    if (said?.decision !== "yes" || (signed !== undefined && signed !== drawing?.sha256)) why.push("the drawing awaits the owner's word for this drawing (owner.words is on)");
   }
   return gate(why);
 }
