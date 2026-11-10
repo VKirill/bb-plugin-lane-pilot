@@ -15,6 +15,8 @@ const costText = (row: ExecutorRow) => (row.costState === null ? null : row.cost
 export function StageSteps({ runId, taskId, locale }: { runId: string; taskId: string; locale: string }) {
   const navigate = useBbNavigate();
   const graph = (useLpRpcQuery("work_graph_task", { runId, taskId }, { pollMs: POLL_MS }).data ?? null) as TaskGraph | null;
+  // What the attempt does now, in words (SMA m_ws_attempt_log), beside the open-thread button.
+  const tail = (useLpRpcQuery("attempt_log_tail", { runId, taskId }, { pollMs: POLL_MS }).data ?? null) as { lines?: string[] } | null;
   if (!graph) return <p className="py-1 text-xs text-muted-foreground">{t("graphLoading")}</p>;
   const off = graph.stages.filter(isOff);
   return (
@@ -37,6 +39,7 @@ export function StageSteps({ runId, taskId, locale }: { runId: string; taskId: s
                 </div>
               );
             })}
+            {block.cell.state === "running" && tail?.lines?.length ? <ul className="mt-0.5 space-y-0.5 text-muted-foreground" data-testid="attempt-log-tail">{tail.lines.map((line, index) => <li key={index}>{line}</li>)}</ul> : null}
             {block.cell.state === "failed" && block.cell.reason ? <div className="break-words text-destructive/90">{block.cell.reason}</div> : null}
           </div>
         </div>

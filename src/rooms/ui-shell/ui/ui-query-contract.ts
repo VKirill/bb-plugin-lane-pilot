@@ -13,8 +13,10 @@ const method = { input: z.unknown(), output: z.unknown() } as const;
  * zod-only contract files, then swap `method` entries for the real ones.
  */
 export const uiQueryContract = defineRpcContract({
+  attempt_log_tail: method,
   helper_thread_labels: method,
   list_helper_threads: method,
+  money_status: method,
   owner_waiting: method,
   task_board: method,
   thread_live: method,
