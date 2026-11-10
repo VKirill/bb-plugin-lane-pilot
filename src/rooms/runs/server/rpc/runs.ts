@@ -349,7 +349,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         requiredSessionPolicy: detectRequiredSessionPolicyCapability((bb as { agents?: { experimental_vkRequiredSessionPolicy?: unknown } }).agents ?? {}) ? "required" : "none",
       };
     },
-    cancel_attempt: async ({ attemptId, code }) => cancelAttemptById(ctx, attemptId, services.rollback, "canceled by RPC", code),
+    cancel_attempt: async ({ attemptId, code, note }) => cancelAttemptById(ctx, attemptId, services.rollback, note ? `Остановлено владельцем: ${note}` : "canceled by RPC", code),
     pause_run: async ({ runId }) => await pauseRun(ctx, runId, "pause"),
     resume_run: async ({ runId }) => await pauseRun(ctx, runId, "resume"),
     halt_run: async ({ runId }) => {

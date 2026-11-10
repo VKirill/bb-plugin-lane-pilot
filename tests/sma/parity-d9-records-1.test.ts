@@ -106,3 +106,26 @@ describe("the project's planning home", () => {
     }
   });
 });
+
+describe("closing a task in words", () => {
+  it("[sma:m_ws_task_panel] cancel_attempt with note \"передумал\" ends the attempt canceled and its reason contains «передумал»; without a note the reason is unchanged", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const { openDatabase, createRun, createTask, createAttempt, transitionAttempt, getAttempt } = await import("../../src/rooms/plugin-db");
+    const { createCore } = await import("../../src/rooms/core/server/core");
+    const { cancelAttemptById } = await import("../../src/rooms/runs/server/cancel");
+    const db = openDatabase(bb);
+    const ctx = createCore(bb, db);
+    createRun(db, "run1", "projA");
+    const contract = { schema_version: 2, id: "t1", kind: "feature", title: "t1", risk: "low", lane: "writer", project_cwd: "/ws", read_first: [], interfaces: [], invariants: [], out_of_scope: [], expected_outputs: ["t1/a"], owns_paths: ["t1/**"], never_touch: [], depends_on: [], objective: "o", acceptance: [], verify: "t", verification: [] };
+    for (const [id, note] of [["a_note", "передумал"], ["a_plain", undefined]] as const) {
+      createTask(db, { id: `t_${id}`, runId: "run1", kind: "bb", contract: { ...contract, id: `t_${id}` } as never });
+      createAttempt(db, { id, runId: "run1", taskId: `t_${id}` });
+      transitionAttempt(db, id, "blocked", { reason: "boom" });
+      const why = note ? `Остановлено владельцем: ${note}` : "canceled by RPC";
+      const out = await cancelAttemptById(ctx, id, undefined, why);
+      expect(out.ok).toBe(true);
+      expect(getAttempt(db, id)!.reason).toContain(note ?? "canceled by RPC");
+    }
+    await harness.lifecycle.dispose();
+  });
+});
