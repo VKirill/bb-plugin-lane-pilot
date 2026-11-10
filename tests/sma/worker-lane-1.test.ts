@@ -25,9 +25,11 @@ describe("worker roles that live in Lane Pilot", () => {
   });
 
   it("[sma:wr_planner] the plan pipeline runs a planner and then a separate plan critic, neither of them the writer", () => {
-    const nodes = (JSON.parse(readFileSync("workflows/lp.plan.json", "utf8")) as { nodes: Array<{ id: string; role?: string }> }).nodes;
-    const roles = nodes.map((node) => node.role).filter((role): role is string => !!role);
+    const nodes = (JSON.parse(readFileSync("workflows/lp.plan.json", "utf8")) as { nodes: Array<{ id: string; role?: string; skip_when?: string }> }).nodes;
+    // The steps a project switches on (research, pattern map, validation strategy) carry a skip condition and are off unset; the rest always run.
+    const roles = nodes.filter((node) => !node.skip_when).map((node) => node.role).filter((role): role is string => !!role);
     expect(roles).toEqual(["planner", "plan-critic"]);
+    expect(nodes.filter((node) => node.skip_when).map((node) => node.role)).toEqual(["analyst", "analyst", "auditor"]);
     expect(roles).not.toContain("writer");
     expect(ROLE_PROFILES.planner).not.toEqual(ROLE_PROFILES.writer);
     expect(ROLE_PROFILES["plan-critic"].mcpServers).toEqual([]);

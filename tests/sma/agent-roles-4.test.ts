@@ -4,7 +4,8 @@ import { laneSessionOverlayPrompt } from "../../src/rooms/native-agent/native-ag
 describe("ported specialist sessions", () => {
   it("[sma:k_ag_selector] the selector recommends one option and does not build the feature", () => {
     const text = laneSessionOverlayPrompt("framework-selector");
-    expect(text).toContain("Recommend one and say why");
+    // One recommendation, now with the scored matrix that leads to it.
+    expect(text).toContain("Recommend the option with the highest weighted total and say why");
     expect(text).toContain("Do not build the feature");
   });
 

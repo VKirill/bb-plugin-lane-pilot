@@ -38,7 +38,7 @@ ${body}
 const item = (id: string, over: Partial<TodoMeta> = {}): TodoMeta => ({ id, title: id, status: "ready", priority: "medium", estimate: 2, dependsOn: [], created: "2026-01-01", ...over });
 
 
-describe("[sma:defaults] an install that sets nothing new runs the drill exactly as main", () => {
+describe("defaults: an install that sets nothing new runs the drill exactly as main", () => {
   it("ALL and QUICK are main's lists, and --quick and a plain --dry-run list what main lists", () => {
     const main = mainDrill();
     const lists = (path: string) => { const code = `import importlib.util, json\nspec = importlib.util.spec_from_file_location("d", ${JSON.stringify(path)})\nm = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\nprint(json.dumps([m.ALL, m.QUICK]))`; return spawnSync("python3", ["-I", "-c", code], { encoding: "utf8" }).stdout.trim(); };

@@ -2,6 +2,9 @@
 export const graphEn = {
   graphTitle: "How the work went",
   graphReturns: "Returns: {n}",
+  graphTurnsCeil: "Turns: {n} of {max}",
+  graphMonthCeil: "Month: {v}",
+  graphMonthCeilOf: "Month: {v} of {cap}",
   graphCost: "Cost: {v}",
   graphAgentTime: "Agent time: {v}",
   graphRounds: "rounds {n} · failed {f}",
@@ -59,6 +62,9 @@ export const graphEn = {
 export const graphRu: { [K in keyof typeof graphEn]: string } = {
   graphTitle: "Ход работы",
   graphReturns: "Возвраты: {n}",
+  graphTurnsCeil: "Ходы: {n} из {max}",
+  graphMonthCeil: "Месяц: {v}",
+  graphMonthCeilOf: "Месяц: {v} из {cap}",
   graphCost: "Цена: {v}",
   graphAgentTime: "Время агентов: {v}",
   graphRounds: "кругов {n} · неудачных {f}",

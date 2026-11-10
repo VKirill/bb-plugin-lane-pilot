@@ -268,7 +268,7 @@ describe("window parity d6 wave 2", () => {
     expect(document.querySelector("[data-testid='team-skills-empty']")!.textContent).toContain("навыки проекта «p1»");
   });
 
-  it("[sma:m_sw_machines_line] peerLine renders the Russian line with projects and today's counts", () => {
+  it("[sma:m_sw_machines] peerLine renders the Russian line with projects and today's counts", () => {
     const line = peerLine({ hostId: "h", name: "mini", online: true, at: 1, lastOnlineAt: 1, today: { projects: ["a", "b"], accepted: 3, blocked: 1, running: 0 } });
     expect(line).toBe("mini: на связи · проекты: a, b · сегодня: принято 3, стоит 1, идёт 0");
   });

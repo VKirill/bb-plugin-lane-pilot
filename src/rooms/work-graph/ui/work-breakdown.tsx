@@ -88,7 +88,6 @@ export function WorkBreakdown({ runId, taskId, locale }: { runId: string; taskId
   // Turns and money against the ceiling (SMA sc_spend): the latest writer row's turns of SESSION_MAX_TURNS, the month against the cap.
   const writerTurns = graph.stages.filter((block) => block.cell.stageId === "writer-agent").flatMap((block) => block.rows).map((row) => row.turns).filter((n): n is number => n !== null).at(-1) ?? null;
   const ceil = moneyStatus ? ceilingLine({ turns: writerTurns }, { monthUsd: moneyStatus.monthUsd, cap: moneyStatus.cap }) : null;
-  const ru = locale.startsWith("ru");
   return (
     <div className="space-y-2.5" data-testid="work-breakdown">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -96,8 +95,8 @@ export function WorkBreakdown({ runId, taskId, locale }: { runId: string; taskId
         <span>{fill("graphReturns", { n: summary.returns })}</span>
         <span title={summary.costState === "measured" ? t("graphEstimatedHelp") : t("graphPartialHelp")}>{fill("graphCost", { v: cost })}</span>
         <span>{fill("graphAgentTime", { v: duration(summary.seconds, locale) })}</span>
-        {ceil?.turns ? <span data-testid="graph-turns-ceil">{ru ? `Ходы: ${ceil.turns.n} из ${ceil.turns.max}` : `Turns: ${ceil.turns.n} of ${ceil.turns.max}`}</span> : null}
-        {ceil ? <span data-testid="graph-month-ceil" className={ceil.hot ? "text-destructive" : undefined}>{ru ? `Месяц: ${money(ceil.monthUsd)}${ceil.cap !== null ? ` из ${money(ceil.cap)}` : ""}` : `Month: ${money(ceil.monthUsd)}${ceil.cap !== null ? ` of ${money(ceil.cap)}` : ""}`}</span> : null}
+        {ceil?.turns ? <span data-testid="graph-turns-ceil">{fill("graphTurnsCeil", { n: ceil.turns.n, max: ceil.turns.max })}</span> : null}
+        {ceil ? <span data-testid="graph-month-ceil" className={ceil.hot ? "text-destructive" : undefined}>{ceil.cap !== null ? fill("graphMonthCeilOf", { v: money(ceil.monthUsd), cap: money(ceil.cap) }) : fill("graphMonthCeil", { v: money(ceil.monthUsd) })}</span> : null}
         {summary.models.length ? <span className="min-w-0 break-words">{summary.models.map((model) => shortModel(model)).join(" · ")}</span> : null}
       </div>
       {off.length ? <p className="text-xs text-muted-foreground" data-testid="graph-off">{fill("graphOff", { stages: off.map((block) => stageName(block.cell.stageId)).join(", ") })}</p> : null}

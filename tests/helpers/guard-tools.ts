@@ -28,6 +28,10 @@ export const UNSHOWN_FIELDS: Readonly<Record<string, string>> = {
   "phase_get.facts": "the raw facts of the pieces for the CLI and the PM; the screen shows the book and the lines",
   "world_version.version": "polled by screens to know when to read the board again; never shown itself",
   "money_status.series": "the 14-day series feeds the chart; the numbers are not listed",
+  "work_file_read.lineStart": "the reader opens a work file from its first line and marks a cut with «…»; it has no page control to show a range in",
+  "work_file_read.lineEnd": "see work_file_read.lineStart: the range of a page the reader does not turn",
+  "work_file_read.totalLines": "see work_file_read.lineStart: the cut is shown as «…», not as a count",
+  "work_file_read.sizeBytes": "the file's size is the server's bound on the read, not something the owner is told",
 };
 
 /** Permission rules parity (SMA: Permission rules parity, Session and terminal parity): the tools one place allows and the other does not. */
