@@ -4,6 +4,7 @@ import { taskBaselineEntries } from "../../baseline";
 import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, markCancelCode, saveProjectSetting, savePrototypeConfig, transitionAttempt } from "../../storage";
 import { cancelRejection, confirmWriterStopped, finishRunSafely, pauseRun } from "../../runs/server";
 import { conveyorState, renderTimeline, setConveyor, taskTimeline, unknownReasons } from "../../runs";
+import { TASK_RECORD_USAGE, blindRecord, readsBlind, renderTaskRecord, taskRecord } from "./task-record";
 import {bestEffort, isNotFound, orMiss, outputText, stringAt, valueAt} from "@lane-pilot/kit";
 import { PAIR_ROLE_SPECS } from "@lane-pilot/models";
 import {runSkillsCli, SKILLS_USAGE} from "../../platform/server";
@@ -245,6 +246,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"pause", summary:"Pause a run at a safe boundary: new tasks wait, running attempts finish their current stage and then wait, nothing is canceled", usage:"bb lane-pilot pause <run-id>" },
       { name:"reverify", summary:"Run a task's verification[] again on its recorded base plus the accepted change, in a fresh worktree on the project host; exit 0 only when every item passes, a receipt is kept", usage:"bb lane-pilot reverify <task-id|attempt-id>" },
       { name:"revert", summary:"Revert an accepted task's merge commit(s) with git revert in a worktree, check them, merge through the normal merge queue; refuses with the next step when later commits touch the same lines", usage:"bb lane-pilot revert <task-id> [--dry-run] [--no-gate]" },
+      { name:"task", summary:"One task's record for another agent: what it asked for, what the server saw done (changed files, merge), acceptance against fact, what is left", usage:TASK_RECORD_USAGE },
       { name:"changes", summary:"What is on record for a task or an attempt: base, merge, changed files (deletions included) and the reverify / revert receipts", usage:"bb lane-pilot changes <task-id|attempt-id>" },
       { name:"recover", summary:"Reconcile a known writer identity and emit its validated receipt", usage:"bb lane-pilot recover <attempt-id>" },
       { name:"start-cancel-probe", summary:"Spawn a long-running writer for a live stop observation", usage:"bb lane-pilot start-cancel-probe <project-id> <pm-thread-id>" },
@@ -484,6 +486,13 @@ ${ERRANDS_USAGE}` },
         if (command === "owner-presence") {
           const now = Date.now(), presence = await services.ownerPresence.sweep();
           return { exitCode:0, stdout:JSON.stringify(presence.map((row) => ({ ...row, minutesAgo:Math.round((now - row.at) / 60_000), holdsWriters:services.ownerPresence.holds(row.providerId, now) !== null })), null, 2) };
+        }
+        if (command === "task") {
+          const { taskId, runId } = timelineArgs(args.filter((arg) => arg !== "--plan"));
+          const found = taskId ? taskRecord(db, taskId, runId) : null;
+          if (!found) return { exitCode:1, stderr:taskId ? `no task ${taskId} on record` : `usage: ${TASK_RECORD_USAGE}` };
+          const record = readsBlind(found, invocation?.threadId) ? blindRecord(found) : found;
+          return { exitCode:0, stdout:args.includes("--json") ? JSON.stringify(record, null, 2) : renderTaskRecord(record, { fullPlan: args.includes("--plan") }) };
         }
         if (command === "timeline") {
           const { taskId, runId } = timelineArgs(args);

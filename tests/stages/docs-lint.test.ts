@@ -50,6 +50,8 @@ it("commits only the docs paths it is given", async () => {
     git("init", "-q"); git("config", "user.email", "t@t"); git("config", "user.name", "t");
     await writeFile(join(root, "a.ts"), "1"); git("add", "."); git("commit", "-qm", "base");
     await mkdir(join(root, "docs")); await writeFile(join(root, "docs/a.md"), "# a\n"); await writeFile(join(root, "a.ts"), "2");
+    // A project's pre-commit hook that builds code fails in a docs worktree without dependencies: the docs commit does not run it.
+    await mkdir(join(root, ".git/hooks"), { recursive: true }); await writeFile(join(root, ".git/hooks/pre-commit"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
     const result = await commitDocs({ projectCwd: root, paths: ["docs/a.md"], message: "docs: test" });
     expect(result.status).toBe("committed");
     expect(git("show", "--name-only", "--format=", "HEAD").trim()).toBe("docs/a.md");

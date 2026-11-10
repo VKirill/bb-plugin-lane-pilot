@@ -82,6 +82,16 @@ One way for every stage (`readAnswer`, `critique-runs.ts`; a graph step does the
 
 What the server observed is recorded apart from what the agent says. A writer's changed files, check exit codes and hashes come from the host (`buildCandidateEvidence`), not from the writer's message; a read-only step is checked by a git diff after it ran. A reviewer's finding counts as serious only with a file, a line and quoted evidence (`settleVerdict`).
 
+## Reading another task
+
+A task's record is read by its id, not retold: `bb lane-pilot task <task-id> [--run <run-id>] [--plan] [--json]` (`taskRecord`). It prints what the task asked for (objective, acceptance, owns_paths, the plan), what the server saw done (each attempt's merge commit and changed files), acceptance against fact, the stage states, what is left, and the id of the writer's thread.
+
+- A writer's brief names each `depends_on` task with this command, in its inputs. Before 0.1.500 it carried the bare ids, and what the earlier task decided reached the writer only through the PM's retelling.
+- The record holds what the server recorded. The writer's own final message is not copied into it; a claim appears only where plan-against-fact judged it.
+- A thread that judges the same task (plan critic, code critic, specialist) gets the record blind: no other judge's verdict, no stage reasons, no pointer to the writer's words (`readsBlind`, `blindRecord`). The code critic's own prompt never carried the writer's report.
+
+The idea of reading the task from one shared place is Multica's (the agent gets an issue id and a command to read it) and Maslov's (work rides as records and files, not as a retelling). Their comment thread is free text; ours stays the typed record.
+
 ## What the guard enforces
 
 `tests/handoff-standard.test.ts` reads the source. Its lists only shrink.

@@ -130,7 +130,10 @@ export async function commitDocs(input:{ projectCwd:string; paths:string[]; mess
       await git("add", "--all", "--", ...input.paths);
       const staged = (await git("diff", "--cached", "--name-only", "--", ...input.paths)).stdout.trim();
       if (!staged) return { status:"nothing" as const, commit:null, reason:null };
-      await git("-c", "user.name=Lane Pilot", "-c", "user.email=lane-pilot@localhost", "commit", "-q", "-m", input.message, "--", ...input.paths);
+      // --no-verify: the commit holds docs pages only, already checked by the docs lint. A project's pre-commit hook that builds code has
+      // nothing of its own to check here and cannot run in the docs worktree, which has no installed dependencies (selfystudio's
+      // `turbo run typecheck` hook failed 58 nightly units on 2026-11-09 and 11-10). The changelog commit of project-life does the same.
+      await git("-c", "user.name=Lane Pilot", "-c", "user.email=lane-pilot@localhost", "commit", "-q", "--no-verify", "-m", input.message, "--", ...input.paths);
       return { status:"committed" as const, commit:(await git("rev-parse", "HEAD")).stdout.trim(), reason:null };
     });
   } catch (cause) {

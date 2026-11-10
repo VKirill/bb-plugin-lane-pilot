@@ -313,6 +313,9 @@ export function contractSections(task: TaskV2, readListShown: boolean, taskFolde
     // This task follows a drawing: its screens are read first and the acceptance checks them unchanged.
     ...(task.drawing?.length ? [`drawing: ${task.drawing.join(", ")} — read it first; the screens you change match it, and the acceptance checks the drawing is unchanged.`] : []),
     ...bullets("skills"),
+    // The tasks this one is built on, as records to read (docs/guide/handoff.md, the read side): a bare id told the writer nothing
+    // about what that task asked for or changed, and the PM's retelling was the only other source.
+    ...(list("depends_on").length ? [`depends_on: ${list("depends_on").join(", ")} — accepted and merged into your workspace before you start. What each asked for, which files it changed and what it left open: \`bb lane-pilot task <id>\` (read it before you touch the same area; if the command is not there, go on from the code).`] : []),
     ...scalar("qa_url"),
     ...bullets("qa_cases"),
     ...scalar("qa_env_class"),
@@ -330,7 +333,6 @@ export function contractSections(task: TaskV2, readListShown: boolean, taskFolde
     ...bullets("invariants"),
     ...bullets("out_of_scope"),
     ...bullets("test_removals"),
-    ...bullets("depends_on"),
   ];
   const acceptance = [
     ...bullets("acceptance"),
