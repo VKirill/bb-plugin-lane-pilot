@@ -14,6 +14,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sha256Hex } from "../../packages/kit/src";
+import { RULE_TIERS, ruleLadderStep, ruleTier, logRuleEvent } from "../../packages/run-insights/src/rules";
+import { runRulesCli } from "../../src/rooms/rule-forms/cli";
 
 const groupAlive = (pid: number) => { try { process.kill(-pid, 0); return true; } catch { return false; } };
 const kv = () => { const store = new Map<string, unknown>(); return { get: async (k: string) => store.get(k) ?? null, set: async (k: string, v: never) => { store.set(k, v); }, store }; };
@@ -126,6 +128,37 @@ describe("closing a task in words", () => {
       expect(out.ok).toBe(true);
       expect(getAttempt(db, id)!.reason).toContain(note ?? "canceled by RPC");
     }
+    await harness.lifecycle.dispose();
+  });
+});
+
+describe("the rule maturation ladder", () => {
+  it("[sma:k_lib_ladder] a confirmed hook rule with 10 applications and 0 recurrences at warning steps to soft-deny; with 2 recurrences it steps back to note; a text-only rule never passes warning", () => {
+    const confirmed = { confirmed: true, applied: 10, recurrences: 0 };
+    expect(ruleLadderStep("warning", confirmed, { hasMechanism: false, form: "hook" })).toBe("up");
+    expect(ruleLadderStep("note", { confirmed: true, applied: 10, recurrences: 2 }, { hasMechanism: false, form: "hook" })).toBe("stay");
+    expect(ruleLadderStep("warning", { confirmed: true, applied: 10, recurrences: 2 }, { hasMechanism: false, form: "hook" })).toBe("down");
+    expect(ruleLadderStep("warning", confirmed, { hasMechanism: false, form: null })).toBe("stay");
+    expect(ruleLadderStep("soft-deny", confirmed, { hasMechanism: true, form: "check" })).toBe("up");
+    expect(ruleLadderStep("soft-deny", confirmed, { hasMechanism: false, form: "check" })).toBe("stay");
+    expect(RULE_TIERS).toEqual(["note", "warning", "soft-deny", "auto-fix"]);
+  });
+
+  it("[sma:k_v_ladder] `rules tune P` prints a due move and the tier event count stays unchanged; `rules ladder P` lists the tier of every accepted rule", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const { openDatabase } = await import("../../src/rooms/plugin-db");
+    const { upsertLessonProposal } = await import("../../packages/run-insights/src/rules");
+    const db = openDatabase(bb);
+    upsertLessonProposal(db, "projA", { rule: "run lint before commit", form: "hook" });
+    db.prepare("UPDATE lane_pilot_rule_proposal SET state='accepted', decided_by='auto', trial_state='confirmed' WHERE project_id='projA'").run();
+    const id = (db.prepare("SELECT id FROM lane_pilot_rule_proposal WHERE project_id='projA'").get() as { id: string }).id;
+    logRuleEvent(db, "projA", id, "tier", "warning");
+    expect(ruleTier(db, "projA", id)).toBe("warning");
+    const before = (db.prepare("SELECT count(*) AS n FROM lane_pilot_rule_event WHERE action='tier'").get() as { n: number }).n;
+    const out = await runRulesCli({ db, retire: () => undefined, repoPath: "/tmp" }, ["ladder", "projA"]);
+    expect(out.stdout).toContain("warning");
+    const after = (db.prepare("SELECT count(*) AS n FROM lane_pilot_rule_event WHERE action='tier'").get() as { n: number }).n;
+    expect(after).toBe(before);
     await harness.lifecycle.dispose();
   });
 });

@@ -3,7 +3,7 @@ import { checkBrief, renderBrief } from "../../brief";
 import { projectRoleField } from "../../runs/server";
 import { HELPER_ROLES, type HelperRole } from "../../contracts/helper-context";
 import {
-  classifyUnformed, codeVerdict, decideRuleTrial, scopeApplies, getRuleProposal, listRuleProposals, logRuleEvent, ruleTrialStats, saveTriage, setRuleTrial, splitRejectedPaths, triageQuestions, triageState, triageSummary, untriagedAttempts, upsertModelProposal, writerGroups,
+  classifyUnformed, codeVerdict, decideRuleTrial, scopeApplies, getRuleProposal, listRuleProposals, logRuleEvent, ruleLadderStep, ruleTier, ruleTrialStats, saveTriage, setRuleTrial, splitRejectedPaths, triageQuestions, triageState, triageSummary, untriagedAttempts, upsertModelProposal, writerGroups,
   type FailedAttempt, type RuleEvidence, type TriageSummary, type WriterGroup,
 } from "@lane-pilot/run-insights";
 
@@ -401,6 +401,15 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
       if (ctx.isDisposed()) break;
       const since = rule.revisionStartedAt ?? rule.decidedAt ?? now;
       const stats = ruleTrialStats(db, projectId, rule.id, since);
+      // The maturation ladder (SMA k_lib_ladder): the tier moves on measured benefit and the move is logged as a tier event.
+      const move = ruleLadderStep(ruleTier(db, projectId, rule.id), { confirmed: rule.trialState === "confirmed", applied: stats.applied, recurrences: stats.recurrences.length }, { hasMechanism: !!rule.mechanizedBy, form: rule.form ?? null });
+      if (move !== "stay") {
+        const tiers = ["note", "warning", "soft-deny", "auto-fix"] as const;
+        const from = ruleTier(db, projectId, rule.id);
+        const to = tiers[tiers.indexOf(from) + (move === "up" ? 1 : -1)]!;
+        logRuleEvent(db, projectId, rule.id, "tier", to, now);
+        ctx.log(`rule ${rule.id}: tier ${from} -> ${to} (applied ${stats.applied}, recurrences ${stats.recurrences.length})`);
+      }
       const decision = decideRuleTrial(rule, stats, now);
       if (decision.action === "confirm") {
         setRuleTrial(db, projectId, rule.id, { trialState: "confirmed" });
