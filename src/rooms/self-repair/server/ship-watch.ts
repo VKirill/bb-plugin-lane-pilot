@@ -12,8 +12,16 @@ const WATCH_KEY = "ship-watch:";
 
 function settingCap(db: Database.Database, projectId: string, key: string, fallback: number): number {
   const raw = bindingSettingValue(db as never, projectId, key);
-  const parsed = raw ? Number(JSON.parse(raw)) : NaN;
+  let parsed = NaN;
+  try { parsed = raw ? Number(JSON.parse(raw)) : NaN; } catch { parsed = NaN; }
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/** ship.watch is a switch: the sweep acts on a project only where it is "on"; unset, off or an unreadable value mean off. */
+function watchIsOn(db: Database.Database, projectId: string): boolean {
+  const raw = bindingSettingValue(db as never, projectId, "ship.watch");
+  if (!raw) return false;
+  try { return JSON.parse(raw) === "on"; } catch { return false; }
 }
 
 /** Commits and days since the checkout's last tag; null when the path is not a git repository on this machine. */
@@ -29,32 +37,37 @@ export function batchPile(cwd: string, now = Date.now()): { commits: number; day
 
 /**
  * The daily background watch: for every project checkout on this machine it counts commits and days since the last tag
- * and posts one owner item per project whose pile passed ship.max_batch_commits / ship.max_batch_days; the item is
+ * and (only where ship.watch is "on") posts one owner item per project whose pile passed ship.max_batch_commits / ship.max_batch_days; the item is
  * closed when the count falls (SMA k_lib_shiplane).
  */
 export function shipWatchSweep(db: Database.Database, now = Date.now()): { checked: number; flagged: string[] } {
   const flagged: string[] = [];
   let checked = 0;
   for (const projectId of listProjectsWithBindingSettings(db)) {
-    const config = loadPrototypeConfig(db, projectId);
-    const cwd = config?.pmWorkspacePath;
-    if (!cwd) continue;
-    let pile: ReturnType<typeof batchPile> = null;
-    try { pile = batchPile(cwd, now); } catch { pile = null; }
-    if (!pile) continue;
-    checked += 1;
-    const maxCommits = settingCap(db, projectId, "ship.max_batch_commits", SHIP_MAX_BATCH_COMMITS);
-    const maxDays = settingCap(db, projectId, "ship.max_batch_days", SHIP_MAX_BATCH_DAYS);
-    const over = [pile.commits > maxCommits ? `${pile.commits} commits over ${maxCommits}` : "", pile.days > maxDays ? `${pile.days} days over ${maxDays}` : ""].filter(Boolean);
-    if (!over.length) {
-      closeOwnerItemsByPrefix(db, `${WATCH_KEY}${projectId}`, "janitor: ship pile fell under the cap", now);
-      continue;
-    }
-    flagged.push(projectId);
-    postOwnerItem(db, { key: `${WATCH_KEY}${projectId}`, source: "ship-watch", kind: "ship_batch", projectId, wake: false,
-      what: `В проекте накопилось невыложенное: ${over.join(", ")} с ${pile.tag ?? "начала"}. Выложите партию (sma batch или ship-lane).`,
-      why: "Полоса отгрузки держит партии маленькими: сотня коммитов за раз — это риск, а не релиз.",
-      evidence: [{ kind: "file", ref: cwd }] });
+    // One project with an unreadable row or a broken checkout must not end the sweep for the rest.
+    try {
+      if (!watchIsOn(db, projectId)) continue;
+      const config = loadPrototypeConfig(db, projectId);
+      const cwd = config?.pmWorkspacePath;
+      if (!cwd) continue;
+      let pile: ReturnType<typeof batchPile> = null;
+      try { pile = batchPile(cwd, now); } catch { pile = null; }
+      // An untagged checkout would count every commit since the first: no tag, nothing to measure.
+      if (!pile || !pile.tag) continue;
+      checked += 1;
+      const maxCommits = settingCap(db, projectId, "ship.max_batch_commits", SHIP_MAX_BATCH_COMMITS);
+      const maxDays = settingCap(db, projectId, "ship.max_batch_days", SHIP_MAX_BATCH_DAYS);
+      const over = [pile.commits > maxCommits ? `${pile.commits} commits over ${maxCommits}` : "", pile.days > maxDays ? `${pile.days} days over ${maxDays}` : ""].filter(Boolean);
+      if (!over.length) {
+        closeOwnerItemsByPrefix(db, `${WATCH_KEY}${projectId}:`, "janitor: ship pile fell under the cap", now);
+        continue;
+      }
+      flagged.push(projectId);
+      postOwnerItem(db, { key: `${WATCH_KEY}${projectId}:`, source: "ship-watch", kind: "ship_batch", projectId, wake: false,
+        what: `В проекте накопилось невыложенное: ${over.join(", ")} с ${pile.tag ?? "начала"}. Выложите партию (sma batch или ship-lane).`,
+        why: "Полоса отгрузки держит партии маленькими: сотня коммитов за раз — это риск, а не релиз.",
+        evidence: [{ kind: "file", ref: cwd }] });
+    } catch { continue; }
   }
   return { checked, flagged };
 }

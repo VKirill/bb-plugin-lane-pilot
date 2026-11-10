@@ -91,7 +91,9 @@ OPEN_STATES = ("queued", "spawn_requested", "spawn_unknown", "running")
 TERMINAL = ("accepted", "blocked", "canceled")
 STAMP = time.strftime("%Y%m%d-%H%M%S")
 DATE = time.strftime("%Y-%m-%d")
-ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "skills_screen", "phase", "phase_route", "reload", "nogit", "nogit_repo", "flow_contract", "lead_shadow", "episodes", "memory_thread", "revert"]
+ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "phase", "phase_route", "reload", "nogit", "nogit_repo", "flow_contract", "lead_shadow", "episodes", "memory_thread"]
+# Scenes that run only by name (--scenario) or under --series: the deploy drill (--quick) and a plain run never reach them.
+EXTRA = ["skills_screen", "revert"]
 QUICK = ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3", "lead_shadow", "episodes"]
 # The release series as named suites (SMA rl_suites): task, batch, phase, release, window, worker, lockstep, wiring,
 # metrics. A `vitest:` entry runs its story file as the suite's scene; `metrics` holds no scenario — series_metrics
@@ -1001,30 +1003,45 @@ def clear_stale_owner_words(ctx: "Context") -> list[str]:
     return restore_owner_words(ctx, "off", int(saved[0]["version"]) if saved else 0)
 
 
-def live_word_scene() -> dict:
-    """The scene lp-ui-drive plays for the approve press (SMA m_sd_approve): open the owner-waiting board and click the green
-    task's yes button — a real press, not the task_word RPC."""
+def live_word_scene(run_id: str) -> dict:
+    """The scene lp-ui-drive plays for the approve press (SMA m_sd_approve): open the owner-waiting board (scope-nav-waiting) and
+    click the yes button of this drill's own task. The button's test id carries the item key `task-word:<run>:<family>:...`, so
+    tying the selector to the run id keeps the press off a real project's task on the same board."""
     return {"url": os.environ.get("LP_DRILL_UI_URL", "http://127.0.0.1:4173/"), "widths": [1280],
-            "steps": [{"wait": 1500}, {"click": '[data-testid^="owner-run-task-word:"][data-testid$="-yes"]'}],
+            "steps": [{"wait": 1500}, {"click": '[data-testid="scope-nav-waiting"]'}, {"wait": 1000},
+                      {"click": f'[data-testid^="owner-run-task-word:{run_id}:"][data-testid$="-yes"]'}],
             "asserts": [], "judge": "The owner's word landed the task."}
 
 
+def live_press() -> bool:
+    """The approve press through the window needs a window at LP_DRILL_UI_URL: it runs only where LP_DRILL_LIVE_PRESS=1."""
+    return os.environ.get("LP_DRILL_LIVE_PRESS") == "1"
+
+
 def scenario_live_word(ctx: "Context") -> dict:
-    """Live word drill (SMA: Live word drill, Approval drill): with owner.words on, a verified task waits for the owner's word and
-    lands on a real press of the Approve button; a task whose check fails ends blocked, offers no owner item, and an RPC yes
-    sent to it does not land it."""
+    """Live word drill (SMA: Live word drill, Approval drill): with owner.words on, a verified task waits for the owner's word, and lands once
+    the word is given (here through the task_word RPC, the path of the screen and the CLI). With LP_DRILL_LIVE_PRESS=1 the word is a real
+    press of the Approve button, and a task whose check fails ends blocked, offers no owner item, and an RPC yes does not land it."""
+    live = live_press()
     original, version = owner_words(ctx, "on")
     problems: list[str] = []
     row: dict = {}
     red_row: dict = {}
     try:
         spec = note_task(f"drill-word-{STAMP}", f"drills/word-{STAMP}.md", "owner word", ctx.cwd)
-        red = note_task(f"drill-word-red-{STAMP}", f"drills/word-red-{STAMP}.md", "owner word red", ctx.cwd)
-        red["verification"] = [{"command": "exit 1", "cwd": ctx.cwd}]
-        with ThreadPoolExecutor(2) as pool:
-            sent = list(pool.map(ctx.dispatch, [spec, red]))
-        if not all(sent):
-            problems.append("a dispatch-bb call exited with an error")
+        specs = [spec]
+        red: dict = {}
+        if live:
+            red = note_task(f"drill-word-red-{STAMP}", f"drills/word-red-{STAMP}.md", "owner word red", ctx.cwd)
+            red["verification"] = [{"command": "exit 1", "cwd": ctx.cwd}]
+            specs.append(red)
+        if live:
+            with ThreadPoolExecutor(2) as pool:
+                sent = list(pool.map(ctx.dispatch, specs))
+            if not all(sent):
+                problems.append("a dispatch-bb call exited with an error")
+        elif not ctx.dispatch(spec):
+            problems.append("dispatch-bb exited with an error")
         deadline, waiting = time.time() + 15 * 60, False
         while time.time() < deadline and not waiting:
             waiting = "waits for the owner's word before it lands" in thread_text(ctx.pm)
@@ -1032,43 +1049,47 @@ def scenario_live_word(ctx: "Context") -> dict:
                 time.sleep(POLL_SEC)
         if not waiting:
             problems.append("the verified task never said it waits for the owner's word")
-        else:
-            scene = (ctx.tmp if getattr(ctx, "tmp", None) else Path(tempfile.mkdtemp())) / f"approve-{STAMP}.json"
-            scene.write_text(json.dumps(live_word_scene()))
+        elif live:
+            scene = ctx.tmp / f"approve-{STAMP}.json"
+            scene.write_text(json.dumps(live_word_scene(ctx.run_id)))
             rc, out, err = run(["node", str(ROOT / "scripts" / "lp-ui-drive.mjs"), str(scene)], timeout=300)
             if rc != 0:
                 problems.append(f"the approve press through the window failed (exit {rc}): {(err or out).strip()[:300]}")
+        else:
+            setting_rpc("task_word", {"runId": ctx.run_id, "taskId": spec["id"], "decision": "yes", "text": "да"})
         rows = ctx.wait_ended([spec["id"]])
         row = summarize(rows, spec["id"], ctx.cwd, spec["expected_outputs"][0])
         if row["state"] != "accepted":
-            problems.append(f"the task did not land after the approve press: {row['states']} {row['reason']}")
-        # The red branch: the failed check ends the task blocked; no owner item is offered and no word lands it.
-        rows = ctx.wait_ended([red["id"]])
-        red_row = summarize(rows, red["id"], ctx.cwd, red["expected_outputs"][0])
-        if red_row["state"] == "accepted":
-            problems.append("a task whose check failed was accepted without a word")
-        red_items = hubsql(f"select count(*) as n from lane_pilot_owner_item where state='open' and key like '%{red['id']}%';")
-        if red_items and red_items[0]["n"]:
-            problems.append("the red task offered an owner item anyway")
-        try:
-            setting_rpc("task_word", {"runId": ctx.run_id, "taskId": red["id"], "decision": "yes", "text": "да"})
-        except Exception:
-            pass
-        time.sleep(POLL_SEC)
-        latest_red = latest_states(ctx.rows([red["id"]])).get(red["id"]) if hasattr(ctx, "rows") else red_row["state"]
-        if latest_red == "accepted":
-            problems.append("an RPC yes landed the red task")
+            problems.append(f"the task did not land after the word: {row['states']} {row['reason']}")
+        if live:
+            rows = ctx.wait_ended([red["id"]])
+            red_row = summarize(rows, red["id"], ctx.cwd, red["expected_outputs"][0])
+            if red_row["state"] == "accepted":
+                problems.append("a task whose check failed was accepted without a word")
+            red_items = hubsql(f"select count(*) as n from lane_pilot_owner_item where state='open' and key like '%{red['id']}%';")
+            if red_items and red_items[0]["n"]:
+                problems.append("the red task offered an owner item anyway")
+            try:
+                setting_rpc("task_word", {"runId": ctx.run_id, "taskId": red["id"], "decision": "yes", "text": "да"})
+            except Exception:
+                pass
+            time.sleep(POLL_SEC)
+            if latest_states(ctx.rows([red["id"]])).get(red["id"]) == "accepted":
+                problems.append("an RPC yes landed the red task")
     finally:
         problems.extend(restore_owner_words(ctx, original, version))
     return verdict("live_word", problems, tasks=[t for t in (row, red_row) if t])
 
 
-def tasks_no_code_exit(cwd: str) -> list[dict]:
-    """The three no-code tasks (SMA m_sd_answer): the owner's question, answer-only research and code work told to change nothing."""
+def tasks_no_code_exit(cwd: str, series: bool = False) -> list[dict]:
+    """The no-code tasks. The owner's question always; under --series (SMA m_sd_answer) also answer-only research and code work
+    told to change nothing."""
     path = f"drills/needs-human-{STAMP}.md"
     question = task(f"drill-human-{STAMP}", "a question for the owner", [path],
                     f"Do not create or change any file. Your whole final report is one line: `NEEDS_HUMAN: which colour should {path} use?`",
                     [f"{path} exists"], cwd)
+    if not series:
+        return [question]
     answer = task(f"drill-answer-{STAMP}", "one question, no files", ["the answer in the writer's report"],
                   "Answer one question in your report and change no file: which stage closes a task that only asks? Say it in one line.",
                   ["the report answers the question"], cwd)
@@ -1081,34 +1102,39 @@ def tasks_no_code_exit(cwd: str) -> list[dict]:
 
 
 def scenario_no_code_exit(ctx: "Context") -> dict:
-    """No-code exit drill (SMA): work without edits closes on an answer the first time; code work does not. And a writer that cannot
-    do the task without the owner ends with NEEDS_HUMAN, changes nothing, and the task is held with its question."""
-    specs = tasks_no_code_exit(ctx.cwd)
-    with ThreadPoolExecutor(3) as pool:
+    """No-code exit drill (SMA): a writer that cannot do the task without the owner ends with NEEDS_HUMAN, changes nothing, and the task is
+    held with its question instead of a forced change. Under --series (LP_DRILL_SERIES=1) edit-free work must also close on its answer
+    the first time and code work must not."""
+    series = os.environ.get("LP_DRILL_SERIES") == "1"
+    specs = tasks_no_code_exit(ctx.cwd, series)
+    with ThreadPoolExecutor(len(specs)) as pool:
         sent = list(pool.map(ctx.dispatch, specs))
     problems = [] if all(sent) else ["a dispatch-bb call exited with an error"]
     rows = ctx.wait_ended([s["id"] for s in specs])
-    tasks = [summarize(rows, s["id"], ctx.cwd) for s in specs]
+    path = f"drills/needs-human-{STAMP}.md"
+    tasks = [summarize(rows, s["id"], ctx.cwd, path) if s["id"] == f"drill-human-{STAMP}" else summarize(rows, s["id"], ctx.cwd) for s in specs]
     by_id = {s["id"]: row for s, row in zip(specs, tasks)}
     question = by_id[f"drill-human-{STAMP}"]
     if question["state"] == "accepted":
         problems.append("a writer that asked a question was accepted")
     if "needs_human" not in str(question.get("reason") or "").lower() and "needs human" not in str(question.get("reason") or "").lower():
         problems.append(f"the task did not end with the writer's question: {question['states']} {question['reason']}")
-    answer = by_id[f"drill-answer-{STAMP}"]
-    if answer["state"] != "accepted":
-        problems.append(f"edit-free answer work did not close on its answer the first time: {answer['states']} {answer['reason']}")
-    else:
-        if answer["attempts"] != 1:
-            problems.append(f"edit-free answer work needed {answer['attempts']} attempts to close on its answer")
-        receipts = hubsql(f"select count(*) as n from lane_pilot_stage_receipt where run_id='{ctx.run_id}' and task_id='{f'drill-answer-{STAMP}'}' and stage_id='writer-agent' and state='passed';")
-        if not receipts or not receipts[0]["n"]:
-            problems.append("the answer task was accepted with no answer on record (no writer-agent receipt)")
-        if list(Path(ctx.cwd).glob(f"drills/answer-{STAMP}*")):
-            problems.append("edit-free answer work left a file in the sandbox")
-    code = by_id[f"drill-noedit-{STAMP}"]
-    if code["state"] == "accepted":
-        problems.append("code work told to change nothing was accepted")
+    if question.get("fileInSandbox"):
+        problems.append("a file was written although the writer had a question")
+    if series:
+        answer = by_id[f"drill-answer-{STAMP}"]
+        if answer["state"] != "accepted":
+            problems.append(f"edit-free answer work did not close on its answer the first time: {answer['states']} {answer['reason']}")
+        else:
+            if answer["attempts"] != 1:
+                problems.append(f"edit-free answer work needed {answer['attempts']} attempts to close on its answer")
+            receipts = hubsql(f"select count(*) as n from lane_pilot_stage_receipt where run_id='{ctx.run_id}' and task_id='{f'drill-answer-{STAMP}'}' and stage_id='writer-agent' and state='passed';")
+            if not receipts or not receipts[0]["n"]:
+                problems.append("the answer task was accepted with no answer on record (no writer-agent receipt)")
+            if list(Path(ctx.cwd).glob(f"drills/answer-{STAMP}*")):
+                problems.append("edit-free answer work left a file in the sandbox")
+        if by_id[f"drill-noedit-{STAMP}"]["state"] == "accepted":
+            problems.append("code work told to change nothing was accepted")
     return verdict("no_code_exit", problems, tasks=tasks)
 
 
@@ -1229,18 +1255,30 @@ def scenario_phase_route(ctx: "Context") -> dict:
     return verdict("phase_route", problems, phaseId=phase_id, stage=snap.get("stage"), autoStarted=snap.get("auto_started"))
 
 
+def revert_merged(changes_json: str) -> bool:
+    """Whether `bb lane-pilot changes <task>` records the revert merge: a receipt of kind `revert` in state `merged` (the rollback
+    store's append-only ledger). The word «revert» elsewhere in the output (a summary, a dry-run or refused receipt) does not count."""
+    try:
+        data = json.loads(changes_json)
+    except ValueError:
+        return False
+    receipts = data.get("receipts") if isinstance(data, dict) else None
+    return any(isinstance(r, dict) and r.get("kind") == "revert" and r.get("state") == "merged" for r in receipts or [])
+
+
 def revert_judged(ctx: "Context", task_id: str, rel: str) -> list[str]:
     """What the revert owes (SMA m_sd_merge): a merge receipt on record, the note gone from main, no conflict markers, a sound sandbox."""
     problems: list[str] = []
     deadline, receipt = time.time() + 10 * 60, False
     while time.time() < deadline and not receipt:
-        rc, out, _ = bb("lane-pilot", "changes", task_id, "--json", timeout=60)
-        if rc == 0 and "revert" in out:
+        # `changes` takes no flags and always answers JSON.
+        rc, out, _ = bb("lane-pilot", "changes", task_id, timeout=60)
+        if rc == 0 and revert_merged(out):
             receipt = True
         else:
             time.sleep(POLL_SEC)
     if not receipt:
-        problems.append("the revert left no merge receipt (bb lane-pilot changes shows none)")
+        problems.append("the revert left no merge receipt (bb lane-pilot changes shows no revert receipt in state merged)")
     if (Path(ctx.cwd) / rel).exists():
         problems.append(f"{rel} is still on main after the revert")
     if conflict_markers(ctx.cwd, rel):
@@ -1279,9 +1317,10 @@ def scenario_revert(ctx: "Context") -> dict:
 
 def skills_screen_problems(report: dict) -> list[str]:
     """Window, door and disk (SMA m_sd_skills): the door lists the skill catalog, the window lists skills or explains the empty
-    list, and every skill file on disk survives the press."""
+    list, every skill file on disk survives the press, and the press narrows what a role may load."""
     problems: list[str] = []
-    if not (report.get("door") or {}).get("skills"):
+    door = report.get("door") or {}
+    if not door.get("catalog"):
         problems.append("the door (agent-access view) listed no skills")
     window = report.get("window") or {}
     if not window.get("listed") and not window.get("emptyExplained"):
@@ -1290,14 +1329,62 @@ def skills_screen_problems(report: dict) -> list[str]:
     changed = [path for path in set(before) | set(after) if before.get(path) != after.get(path)]
     if changed:
         problems.append(f"skill files changed after the press: {', '.join(changed[:5])}")
-    if (report.get("door") or {}).get("skills") and not (report.get("door") or {}).get("narrowed"):
+    if door.get("catalog") and not door.get("narrowed"):
         problems.append("the door view showed no change after a skill was removed")
+    return problems
+
+
+def access_skill_count(view: object) -> tuple[int, int]:
+    """(skills in the catalog, skills the roles load together): a role whose skill list is open (names null) loads the whole catalog."""
+    view = view if isinstance(view, dict) else {}
+    catalog = len((view.get("catalog") or {}).get("skills") or [])
+    loaded = 0
+    for role in view.get("roles") or []:
+        names = (((role or {}).get("groups") or {}).get("skills") or {}).get("names")
+        loaded += catalog if names is None else len(names)
+    return catalog, loaded
+
+
+def access_page_url(project: str) -> str | None:
+    """The window's access page of one project, from LP_DRILL_UI_ACCESS_URL with `{project}` in it; None when no such address is
+    set, because the window root shows whatever project was last open and a press there could change a real one."""
+    template = os.environ.get("LP_DRILL_UI_ACCESS_URL", "")
+    return template.replace("{project}", project) if "{project}" in template else None
+
+
+def restore_access_roles(project: str, before: list[dict]) -> list[str]:
+    """Put every role's access row back to what it was (a row that did not exist is removed): the press must leave no trace."""
+    problems: list[str] = []
+    try:
+        now = {r.get("key"): r for r in (setting_rpc("helper_access_view", {"projectId": project}).get("roles") or [])}
+    except Exception as cause:
+        return [f"could not read the access roles to restore them: {str(cause)[:160]}"]
+    for role in before:
+        current = now.get(role.get("key"))
+        if current is None or (current.get("value") == role.get("value") and current.get("version") == role.get("version")):
+            continue
+        try:
+            # A row that did not exist is removed (a stored null would hide the level below).
+            if role.get("value") is None:
+                saved = setting_rpc("reset_project_settings", {"projectId": project, "keys": [role["key"]], "expectedVersions": {role["key"]: current.get("version", 0)}})
+            else:
+                saved = setting_rpc("save_setting", {"projectId": project, "key": role["key"], "value": role.get("value"), "expectedVersion": current.get("version", 0)})
+            if not saved.get("ok"):
+                problems.append(f"could not restore {role['key']}: {saved}")
+        except Exception as cause:
+            problems.append(f"could not restore {role['key']}: {str(cause)[:160]}")
     return problems
 
 
 def scenario_skills_screen(ctx: "Context") -> dict:
     """Skills screen drill (SMA m_sd_skills): the skills screen at the window, the door and on disk — an empty list is
-    explained, and pressing the panel does not touch the files."""
+    explained, and pressing the panel does not touch the files. The window is opened on the access page of the drill's own project by
+    URL (LP_DRILL_UI_ACCESS_URL); without such an address nothing is clicked and the scene is reported «not run». The access
+    rows are read first and put back in a `finally`."""
+    url = access_page_url(ctx.project)
+    if url is None:
+        return {"name": "skills_screen", "result": "skipped", "problems": [],
+                "note": f"not run: the window cannot be opened on the access page of {ctx.project} (set LP_DRILL_UI_ACCESS_URL with {{project}}), so no press was made"}
     report: dict = {"door": {}, "window": {}, "diskBefore": {}, "diskAfter": {}}
     problems: list[str] = []
     skills_dir = Path(ctx.cwd) / ".agents" / "skills"
@@ -1309,28 +1396,30 @@ def scenario_skills_screen(ctx: "Context") -> dict:
     try:
         view = setting_rpc("helper_access_view", {"projectId": ctx.project})
     except Exception as cause:
-        view = {}
-        if not RPC_MISSING.search(str(cause)):
-            problems.append(f"the door view could not be read: {str(cause)[:200]}")
-    skills = view.get("skills") if isinstance(view, dict) else None
-    count = len(skills) if isinstance(skills, list) else (len(skills.get("chosen") or skills.get("all") or []) if isinstance(skills, dict) else 0)
-    report["door"] = {"skills": count}
-    if count:
-        scene = (ctx.tmp if getattr(ctx, "tmp", None) else Path(tempfile.mkdtemp())) / f"skills-{STAMP}.json"
-        scene.write_text(json.dumps({"url": os.environ.get("LP_DRILL_UI_URL", "http://127.0.0.1:4173/"), "widths": [1280],
-                                     "steps": [{"wait": 1500}, {"click": '[data-testid*="skill"] >> nth=0'}, {"wait": 500}, {"click": "text=Сохранить"}],
-                                     "asserts": [], "judge": "The skills list is shown or the empty-list explanation is."}))
-        rc, out, err = run(["node", str(ROOT / "scripts" / "lp-ui-drive.mjs"), str(scene)], timeout=300)
-        report["window"] = {"listed": rc == 0, "emptyExplained": "empty" in (out + err).lower() or "пуст" in (out + err).lower()}
-        if rc == 2:
-            report["window"]["error"] = (err or out).strip()[:200]
-        try:
-            again = setting_rpc("helper_access_view", {"projectId": ctx.project})
-            again_skills = again.get("skills") if isinstance(again, dict) else None
-            again_count = len(again_skills) if isinstance(again_skills, list) else (len(again_skills.get("chosen") or again_skills.get("all") or []) if isinstance(again_skills, dict) else 0)
-            report["door"]["narrowed"] = again_count <= count
-        except Exception:
-            report["door"]["narrowed"] = True  # the view went away: counted as changed, not as a problem of its own
+        if RPC_MISSING.search(str(cause)):
+            return {"name": "skills_screen", "result": "skipped", "problems": [], "note": f"not run: the access view is not deployed: {str(cause)[:160]}"}
+        return verdict("skills_screen", [f"the door view could not be read: {str(cause)[:200]}"])
+    catalog, loaded = access_skill_count(view)
+    report["door"] = {"catalog": catalog, "loaded": loaded}
+    roles_before = [dict(role) for role in (view.get("roles") or [])]
+    try:
+        if catalog:
+            scene = ctx.tmp / f"skills-{STAMP}.json"
+            scene.write_text(json.dumps({"url": url, "widths": [1280],
+                                         "steps": [{"wait": 1500}, {"click": '[data-testid*="skill"] >> nth=0'}, {"wait": 500}, {"click": "text=Сохранить"}],
+                                         "asserts": [], "judge": "The skills list is shown or the empty-list explanation is."}))
+            rc, out, err = run(["node", str(ROOT / "scripts" / "lp-ui-drive.mjs"), str(scene)], timeout=300)
+            report["window"] = {"listed": rc == 0, "emptyExplained": "empty" in (out + err).lower() or "пуст" in (out + err).lower()}
+            if rc == 2:
+                report["window"]["error"] = (err or out).strip()[:200]
+            try:
+                _, again = access_skill_count(setting_rpc("helper_access_view", {"projectId": ctx.project}))
+                report["door"]["loadedAfter"] = again
+                report["door"]["narrowed"] = again < loaded
+            except Exception as cause:
+                problems.append(f"the door view could not be read after the press: {str(cause)[:160]}")
+    finally:
+        problems += restore_access_roles(ctx.project, roles_before)
     report["diskAfter"] = hashes()
     problems += skills_screen_problems(report)
     return verdict("skills_screen", problems, door=report["door"], window=report["window"], diskChanged=[p for p in set(report["diskBefore"]) | set(report["diskAfter"]) if report["diskBefore"].get(p) != report["diskAfter"].get(p)])
@@ -1776,25 +1865,31 @@ def scenario_nogit_repo(tmp: Path) -> dict:
 
 # --- main ---------------------------------------------------------------------------------------------------------------
 
-def dry_run(names: list[str]) -> None:
+def dry_run(names: list[str], series: bool = False) -> None:
     print(f"drill {STAMP} in {SANDBOX['project']} ({SANDBOX['cwd']}), no-git {NOGIT['project']} ({NOGIT['cwd']}), hub db {HUB}:{HUB_DB}; scenarios: {', '.join(names)}")
     if "parallel3" in names:
         for spec in tasks_parallel3(SANDBOX["cwd"]):
             print(json.dumps(spec))
     cwd = SANDBOX["cwd"]
-    documents = {"memory_paths": [task_memory(cwd)], "conflict": tasks_conflict(cwd), "main_moved": [task_moved(cwd)], "provider": [task_provider(cwd)], "provider_limit": [task_limit(cwd)], "reload": [task_reload(cwd)], "nogit": [task_nogit(NOGIT["cwd"])], "nogit_repo": [task_nogit_repo(NOGIT["cwd"])],
-                 "no_code_exit": tasks_no_code_exit(cwd), "revert": [note_task(f"drill-{STAMP}-revert-a", f"notes/drill/{STAMP}-revert.md", f"Drill {STAMP} revert a", cwd), note_task(f"drill-{STAMP}-revert-b", f"notes/drill/{STAMP}-revert.md", f"Drill {STAMP} revert b", cwd)],
-                 "live_word": [note_task(f"drill-word-{STAMP}", f"drills/word-{STAMP}.md", "owner word", cwd), note_task(f"drill-word-red-{STAMP}", f"drills/word-red-{STAMP}.md", "owner word red", cwd)]}
-    expects = {"no_code_exit": {f"drill-answer-{STAMP}": "accepted_first_attempt", f"drill-human-{STAMP}": "held_with_question", f"drill-noedit-{STAMP}": "not_accepted"},
-               "live_word": {"green": f"drill-word-{STAMP}: accepted after the yes button click", "red": f"drill-word-red-{STAMP}: blocked, no owner item"},
-               "revert": {"scenario": "in ALL", "judge": "revert_judged"}}
+    documents = {"memory_paths": [task_memory(cwd)], "conflict": tasks_conflict(cwd), "main_moved": [task_moved(cwd)], "provider": [task_provider(cwd)], "provider_limit": [task_limit(cwd)], "reload": [task_reload(cwd)], "nogit": [task_nogit(NOGIT["cwd"])], "nogit_repo": [task_nogit_repo(NOGIT["cwd"])]}
+    expects: dict[str, dict] = {}
+    # What a default run prints is main's. The additions belong to the scenes that are new (revert) and to the extended forms
+    # of old ones (--series for no_code_exit, LP_DRILL_LIVE_PRESS=1 for live_word).
+    documents["revert"] = [note_task(f"drill-{STAMP}-revert-a", f"notes/drill/{STAMP}-revert.md", f"Drill {STAMP} revert a", cwd), note_task(f"drill-{STAMP}-revert-b", f"notes/drill/{STAMP}-revert.md", f"Drill {STAMP} revert b", cwd)]
+    expects["revert"] = {"scenario": "in EXTRA (by name or --series)", "judge": "revert_judged"}
+    if series:
+        documents["no_code_exit"] = tasks_no_code_exit(cwd, True)
+        expects["no_code_exit"] = {f"drill-answer-{STAMP}": "accepted_first_attempt", f"drill-human-{STAMP}": "held_with_question", f"drill-noedit-{STAMP}": "not_accepted"}
+    if live_press():
+        documents["live_word"] = [note_task(f"drill-word-{STAMP}", f"drills/word-{STAMP}.md", "owner word", cwd), note_task(f"drill-word-red-{STAMP}", f"drills/word-red-{STAMP}.md", "owner word red", cwd)]
+        expects["live_word"] = {"green": f"drill-word-{STAMP}: accepted after the yes button click", "red": f"drill-word-red-{STAMP}: blocked, no owner item"}
     for name in names:
         for spec in documents.get(name, []):
             print(f"scenario {name}: {json.dumps(spec)}")
         if name in expects:
             print(f"expects {name}: {json.dumps(expects[name])}")
-        if name == "live_word":
-            print(f"scene live_word: {json.dumps(live_word_scene())}")
+        if name == "live_word" and live_press():
+            print(f"scene live_word: {json.dumps(live_word_scene('<run id>'))}")
 
 
 def evidence_seen(run_id: str) -> dict | None:
@@ -1836,6 +1931,11 @@ def series_metrics(scenes: list[dict], receipts_dir: Path) -> dict:
     problems: list[str] = []
     receipts: list[dict] = []
     for scene in scenes:
+        if scene["name"].startswith("vitest:"):
+            # A story file leaves no drill receipt: its exit code is the whole verdict.
+            if scene.get("exit") != 0:
+                problems.append(f"scene {scene['name']} exited {scene.get('exit')}")
+            continue
         path = scene.get("receipt")
         data = None
         if path:
@@ -1852,7 +1952,7 @@ def series_metrics(scenes: list[dict], receipts_dir: Path) -> dict:
         if data is not None and not data.get("seen") and not data.get("judged"):
             problems.append(f"scene {scene['name']} left no evidence")
     accepted = sum(1 for row in receipts for s in (row["data"].get("scenarios") or []) if s.get("result") == "pass")
-    total = sum(len(row["data"].get("scenarios") or []) for row in receipts)
+    total = sum(1 for row in receipts for s in (row["data"].get("scenarios") or []) if s.get("result") != "skipped")
     if total and accepted / total < ACCEPTED_FLOOR:
         problems.append(f"only {accepted}/{total} scenario verdicts are green, under the {ACCEPTED_FLOOR} floor")
     try:
@@ -1872,23 +1972,24 @@ def series_metrics(scenes: list[dict], receipts_dir: Path) -> dict:
 
 
 def scout() -> dict:
-    """Scout of named suites (SMA rl_suites): every scenario_* in this file is named in ALL and sits in exactly one suite,
-    every name in ALL has its function, and every suite's scenario names are known. `vitest:` entries name a story file."""
+    """Scout of named suites (SMA rl_suites): every scenario_* in this file is named in ALL or EXTRA and sits in exactly one suite,
+    every name in ALL and EXTRA has its function, and every suite's scenario names are known. `vitest:` entries name a story file."""
     defined = sorted(name[len("scenario_"):] for name in globals() if name.startswith("scenario_"))
     members = [entry for entries in SUITES.values() for entry in entries if not entry.startswith("vitest:")]
     ungrouped = [name for name in defined if name not in members]
     regrouped = sorted({name for name in members if members.count(name) > 1})
-    unknown = sorted({name for name in members if name not in ALL})
+    unknown = sorted({name for name in members if name not in ALL and name not in EXTRA})
     missing_files = [entry for entries in SUITES.values() for entry in entries if entry.startswith("vitest:") and not (ROOT / entry.split(":", 1)[1]).exists()]
-    return {"defined": defined, "unlisted": [name for name in defined if name not in ALL], "undefined": [name for name in ALL if name not in defined],
+    return {"defined": defined, "unlisted": [name for name in defined if name not in ALL and name not in EXTRA], "undefined": [name for name in ALL + EXTRA if name not in defined],
             "suites": {name: entries for name, entries in SUITES.items()}, "ungrouped": ungrouped, "regrouped": regrouped, "unknown": unknown, "missingStories": missing_files,
             "empty": [name for name, entries in SUITES.items() if not entries and name != "metrics"]}
 
 
 def series_preparation() -> dict:
     """Series preparation (SMA rl_prep): what the series runs against — the plugin version and commit, the scout, a clean
-    sandbox — and the seven parts it refuses to start without: database, receipts, browser, accounts, limits, window,
-    person. A part the drill cannot probe is a problem too."""
+    sandbox — and the parts it refuses to start without: database, receipts, browser, limits, window. The SMA parts «accounts»
+    and «person» are not probed: a login cannot be checked without a real provider call and the owner's presence cannot be read
+    from the hub, so a probe for them could not fail; they are left out rather than kept as checks that always pass."""
     commit = git(str(ROOT), "rev-parse", "HEAD")
     version = json.loads((ROOT / "package.json").read_text()).get("version")
     dirty = git(SANDBOX["cwd"], "status", "--porcelain")
@@ -1911,7 +2012,7 @@ def series_preparation() -> dict:
     checks.append({"name": "receipts", "ok": receipts_ok, "detail": f"{receipt_dir} writable, last receipt {'parses' if last and _parses(last[0]) else 'none yet'}"})
     if not receipts_ok:
         problems.append(f"receipts: {receipt_dir} is missing, unwritable or its last receipt does not parse")
-    for name, probe in (("browser", _browser_probe), ("accounts", _accounts_probe), ("limits", _limits_probe), ("window", _window_probe), ("person", _person_probe)):
+    for name, probe in (("browser", _browser_probe), ("limits", _limits_probe), ("window", _window_probe)):
         try:
             ok, detail = probe()
         except Exception as cause:
@@ -1938,13 +2039,6 @@ def _browser_probe() -> tuple[bool, str]:
     return True, f"browser machine {json.loads(rows[0]['value'])}"
 
 
-def _accounts_probe() -> tuple[bool, str]:
-    """Each provider the sandbox project uses is logged in on the sandbox host: a dead account fails the series, not a scene."""
-    pairs = providers_in_use(SANDBOX["project"])
-    exhausted = [f"{p} ({m})" for p, m in pairs.items() if not p]
-    return (not exhausted), ", ".join(f"{p}={m}" for p, m in pairs.items()) or "no providers"
-
-
 def _limits_probe() -> tuple[bool, str]:
     """No provider window already exhausted: cockpit_windows names the host's usage windows."""
     try:
@@ -1967,19 +2061,6 @@ def _window_probe() -> tuple[bool, str]:
         return False, f"the host list did not answer: {(err or out).strip()[:160]}"
     host = os.environ.get("LP_DRILL_HOST", "host_7sea4qaad8")
     return (host in out), f"writer host {host} {'connected' if host in out else 'not in the host list'}"
-
-
-def _person_probe() -> tuple[bool, str]:
-    """The owner is reachable, or the series is marked unattended (LP_DRILL_UNATTENDED=1)."""
-    if os.environ.get("LP_DRILL_UNATTENDED") == "1":
-        return True, "the series is marked unattended"
-    try:
-        rows = hubsql("select count(*) as n from lane_pilot_owner_item where created_at > strftime('%s','now','-7 days')*1000;")
-        if rows and rows[0]["n"]:
-            return True, "the owner acted within a week"
-    except RuntimeError:
-        pass
-    return True, "owner-presence: no recent owner items, the series runs anyway"
 
 
 def write_receipt(path: Path, start: float, scenarios: list[dict], ctx: Context | None, problems: list[str], names: list[str],
@@ -2038,31 +2119,33 @@ def main() -> int:
     args = parser.parse_args()
     receipt_dir = Path(os.environ.get("LP_DRILL_RECEIPT_DIR") or ROOT / ".agents/runs/drills")
     skipped: dict[str, str] = {}
+    series = args.series or bool(args.suite)  # a suite is a part of the series: its judges and its metrics run with it
     if args.suite:
         if args.suite not in SUITES:
             print(f"unknown suite: {args.suite} (known: {', '.join(SUITES)})", file=sys.stderr)
             return 2
-        names = [entry for entry in SUITES[args.suite] if not entry.startswith("vitest:")]
-        if not names:
-            names = SUITES[args.suite]
+        names = list(SUITES[args.suite])
     elif args.quick and os.environ.get("LP_DRILL_SELECT") != "0":
         names, skipped = select_quick(receipt_dir)
     else:
-        names = QUICK if args.quick or args.quick_all else [n for n in args.scenario.split(",") if n] or ALL
+        names = QUICK if args.quick or args.quick_all else [n for n in args.scenario.split(",") if n]
+        if not names:
+            # A series runs the extra scenes and the story files too; a plain run is main's ALL.
+            names = ALL + EXTRA + [e for entries in SUITES.values() for e in entries if e.startswith("vitest:")] if series else ALL
     for name, why in skipped.items():
         log(f"scenario {name}: skipped ({why})")
     repair_guard = args.repair_guard or os.environ.get("LP_DRILL_REPAIR_GUARD") == "1"
-    unknown = [n for n in names if n not in ALL and not n.startswith("vitest:")]
+    unknown = [n for n in names if n not in ALL and n not in EXTRA and not n.startswith("vitest:")]
     if unknown:
-        print(f"unknown scenario: {', '.join(unknown)} (known: {', '.join(ALL)})", file=sys.stderr)
+        print(f"unknown scenario: {', '.join(unknown)} (known: {', '.join(ALL + EXTRA)})", file=sys.stderr)
         return 2
     if args.dry_run:
-        dry_run(names)
+        dry_run(names, series)
         return 0
     if args.scout:
         print(json.dumps(scout(), indent=1))
         return 0
-    if args.series:
+    if series:
         # One process per scene: each scenario runs in its own interpreter, so one that wedges or leaks state cannot spoil the next.
         prep = series_preparation()
         log(f"series: {json.dumps(prep)[:300]}")
@@ -2087,7 +2170,7 @@ def main() -> int:
                     rc, out, _ = run(["npx", "vitest", "run", entry.split(":", 1)[1]], timeout=TIMEOUT_MIN * 60)
                     receipts.append({"name": entry, "suite": suite, "exit": rc, "receipt": None})
                     continue
-                rc, out, _ = run([sys.executable, "-I", __file__, "--scenario", entry], timeout=TIMEOUT_MIN * 60 * 3)
+                rc, out, _ = run([sys.executable, "-I", __file__, "--scenario", entry], timeout=TIMEOUT_MIN * 60 * 3, env={**os.environ, "LP_DRILL_SERIES": "1"})
                 receipts.append({"name": entry, "suite": suite, "exit": rc, "receipt": next((line.split("=", 1)[1] for line in out.splitlines() if line.startswith("RECEIPT=")), None)})
         manifest = Path(os.environ.get("LP_DRILL_RECEIPT_DIR") or ROOT / ".agents/runs/drills") / f"series-{STAMP}.json"
         manifest.parent.mkdir(parents=True, exist_ok=True)

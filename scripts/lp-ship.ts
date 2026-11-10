@@ -42,14 +42,16 @@ function cliCommands(): Set<string> {
   return new Set([...text.matchAll(/\{ name:"([a-z0-9-]+)"/g)].map((m) => m[1]!));
 }
 
-function docAudit(): number {
+// `--strict` (the gate) adds the date rules and the verb-coverage baseline, which writes .agents/ship/doc-coverage-baseline.json; the plain verb is main's.
+function docAudit(args: string[] = []): number {
+  const strict = args.includes("--strict");
   const findings: string[] = [];
   const commands = cliCommands();
   const map = smaRows();
   const today = Math.floor(Date.now() / 1000);
   for (const file of docs()) {
     const text = read(file);
-    const updated = /^updated:\s*["']?(\d{4}-\d{2}-\d{2})/m.exec(text.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "")?.[1];
+    const updated = !strict ? undefined : /^updated:\s*["']?(\d{4}-\d{2}-\d{2})/m.exec(text.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "")?.[1];
     if (updated) {
       const stamp = Date.parse(`${updated}T00:00:00Z`) / 1000;
       if (stamp > today) findings.push(`${file}: front matter updated: ${updated} is in the future`);
@@ -66,6 +68,7 @@ function docAudit(): number {
   }
   // Coverage of the verbs: every CLI command must appear in some document. The count is kept against a stored baseline,
   // so a newly added undocumented verb fails but the ones already missing today do not (SMA k_lib_docaudit).
+  if (strict) {
   const documented = new Set<string>();
   for (const file of docs()) for (const m of read(file).matchAll(/lane-pilot ([a-z][a-z0-9-]+)/g)) documented.add(m[1]!);
   const undocumented = [...commands].filter((name) => !documented.has(name)).sort();
@@ -78,6 +81,7 @@ function docAudit(): number {
     writeFileSync(baselinePath, JSON.stringify({ undocumented: undocumented.length, verbs: undocumented }, null, 2) + "\n");
   } else if (undocumented.length > baseline) {
     findings.push(`undocumented CLI verbs grew ${baseline} -> ${undocumented.length}: ${undocumented.slice(0, 20).join(", ")}`);
+  }
   }
   return out(findings, `doc honesty: ${docs().length} documents agree with the code`);
 }
@@ -141,7 +145,9 @@ function badge(args: string[]): number {
 const vkey = (v: string) => v.replace(/^v/, "").split(".").map(Number);
 const newer = (a: string, b: string) => { const x = vkey(a), y = vkey(b); for (let i = 0; i < 3; i += 1) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0); return false; };
 
-function publishable(): number {
+// `--strict` (the gate) adds the entry-build check and the test-full receipt; the plain verb is main's.
+function publishable(args: string[] = []): number {
+  const strict = args.includes("--strict");
   const findings: string[] = [];
   const tag = lastTag();
   if (tag && !newer(pkg.version, tag)) findings.push(`version ${pkg.version} is not above the last tag ${tag}`);
@@ -152,7 +158,7 @@ function publishable(): number {
   // Entry files and their builds: the package is publishable only when bb.server/bb.host/bb.app exist, dist/ holds their
   // builds and every dist/*.meta.json agrees with package.json (SMA k_lib_pkgcheck).
   const bbEntries = (pkg as { bb?: Record<string, string> }).bb ?? {};
-  for (const slot of ["server", "host", "app"]) {
+  for (const slot of strict ? ["server", "host", "app"] : []) {
     const entry = bbEntries[slot];
     if (!entry) { findings.push(`package.json bb.${slot} is not set`); continue; }
     const rel = entry.replace(/^\.\//, "");
@@ -164,9 +170,11 @@ function publishable(): number {
     else if ((JSON.parse(readFileSync(metaPath, "utf8")) as { pluginVersion?: string }).pluginVersion !== pkg.version) findings.push(`dist/${name}.meta.json pluginVersion is not ${pkg.version}`);
   }
   // The badge is printed from a test-full receipt keyed by tree and node version: without the receipt the badge is a lie.
-  const receiptsDir = process.env.LP_TEST_RECEIPTS ?? join(process.env.HOME ?? "", ".lane-pilot/test-receipts");
-  const key = `${git("rev-parse", "HEAD^{tree}")}-${process.version}`;
-  if (!existsSync(join(receiptsDir, key))) findings.push(`no test-full receipt for this tree and ${process.version} (run scripts/test-full.sh)`);
+  if (strict) {
+    const receiptsDir = process.env.LP_TEST_RECEIPTS ?? join(process.env.HOME ?? "", ".lane-pilot/test-receipts");
+    const key = `${git("rev-parse", "HEAD^{tree}")}-${process.version}`;
+    if (!existsSync(join(receiptsDir, key))) findings.push(`no test-full receipt for this tree and ${process.version} (run scripts/test-full.sh)`);
+  }
   return out(findings, `publishable: ${pkg.version}`);
 }
 
@@ -195,17 +203,20 @@ function explain(): number {
   return out(findings, `explainers: every node they explain is proven (map ${smaDonePercent(smaRows())}%)`);
 }
 
+// Called the old way (`lane [base]`) it prints main's four fields and writes nothing; `--record` (with an optional `--cwd <repo>`)
+// also drafts the changelog entry and keeps one record per (base, head) in .agents/ship/lanes.jsonl (SMA k_v_shiplane).
 function lane(args: string[]): number {
+  const record = args.includes("--record");
   const cwd = args.includes("--cwd") ? args[args.indexOf("--cwd") + 1]! : ROOT;
   const gitIn = (...a: string[]) => execFileSync("git", ["-C", cwd, ...a], { encoding: "utf8" }).trim();
-  const positional = args.filter((a, i) => a !== "--cwd" && args[i - 1] !== "--cwd");
+  const positional = args.filter((a, i) => a !== "--cwd" && a !== "--record" && args[i - 1] !== "--cwd");
   const base = positional[0] ?? lastTag() ?? "HEAD~1";
   const files = gitIn("diff", "--name-only", `${base}...HEAD`).split("\n").filter(Boolean);
   const full = files.filter((file) => FULL_LANE_PATHS.test(file));
   const code = files.filter((file) => !/^(docs\/|.*\.md$|\.agents\/)/.test(file));
   const chosen = !code.length ? "docs" : full.length ? "full" : "batch";
   const why = chosen === "docs" ? "only documents changed: no drill" : chosen === "full" ? `core paths changed (${full.slice(0, 5).join(", ")}): full suite and full drill` : "code outside the core: the middle batch lane, quick drill";
-  // Ship-lane also drafts the changelog entry and keeps one record per (base, head) in .agents/ship/lanes.jsonl (SMA k_v_shiplane).
+  if (!record) { console.log(JSON.stringify({ base, files: files.length, lane: chosen, why }, null, 1)); return 0; }
   const head = gitIn("rev-parse", "HEAD");
   const subjects = gitIn("log", `${base}..HEAD`, "--format=%s").split("\n").filter(Boolean);
   const draft = `## ${pkg.version}\n\n${subjects.map((line) => `- ${line}`).join("\n")}`;
@@ -246,8 +257,8 @@ function gate(): number {
   // prediction lint, in this order, stopping at the first failure.
   try { execFileSync(process.env.BB_CLI || "bb", ["plugin", "build"], { cwd: ROOT, stdio: "inherit" }); }
   catch { console.log("bb plugin build failed"); return 1; }
-  for (const [name, step] of [["publishable", publishable], ["licenses", licenses], ["doc-audit", docAudit], ["predict-lint", predictLint]] as const) {
-    const rc = step([]);
+  for (const [name, step, flags] of [["publishable", publishable, ["--strict"]], ["licenses", licenses, []], ["doc-audit", docAudit, ["--strict"]], ["predict-lint", predictLint, []]] as const) {
+    const rc = step([...flags]);
     if (rc !== 0) { console.log(`gate: ${name} failed`); return rc; }
   }
   console.log("gate: build, publishable, licenses, doc-audit and predict-lint all clean");
@@ -290,13 +301,16 @@ function windowSources(): string[] {
   return files;
 }
 
-function freshness(): number {
+// `--strict` (the gate) adds the stale-bundle check; plain, the exit is main's: 2 hub unreachable, 1 version differs, 0 same.
+function freshness(args: string[] = []): number {
+  const strict = args.includes("--strict");
   const findings: string[] = [];
   let served: string | null = null;
   try { served = (JSON.parse(execFileSync("bb", ["plugin", "list", "--json"], { encoding: "utf8", env: { ...process.env, BB_CLI: "" } })) as Array<{ id: string; version?: string }>).find((p) => p.id === "lane-pilot")?.version ?? null; } catch { served = null; }
   const bundle = join(ROOT, "dist", "app.js");
   const sha = existsSync(bundle) ? createHash("sha256").update(readFileSync(bundle)).digest("hex").slice(0, 16) : null;
   console.log(JSON.stringify({ checkout: pkg.version, served, windowBundle: sha ? `dist/app.js ${sha}` : "not built" }));
+  if (!strict) return served === null ? 2 : served === pkg.version ? 0 : 1;
   if (served !== null && served !== pkg.version) findings.push(`the hub serves ${served}, the checkout is ${pkg.version}`);
   // The one ruler (SMA k_lib_spafresh): is the bundle behind its sources, by mtime or by git's last commit.
   if (existsSync(bundle)) {
