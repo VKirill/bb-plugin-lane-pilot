@@ -1322,7 +1322,9 @@ describe("stage → native writer → receipt", () => {
     },{threadId:pmThreadId,projectId})));
     expect(result.state).not.toBe("blocked");
     expect(String(result.reason ?? "")).not.toContain("pm_read_failed");
-    expect(spawned.map((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)).slice(0,2)).toEqual(["pm-read","plan-critique"]);
+    // The scout is asked once, in its own thread, to send the answer again (the hand-off standard); then the task goes on.
+    expect(spawned.filter((row)=>row.via==="send").map((row)=>String(row.prompt))).toEqual([expect.stringContaining("Do not redo the work")]);
+    expect(spawned.filter((row)=>!row.via).map((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)).slice(0,2)).toEqual(["pm-read","plan-critique"]);
     const receipt=listStageReceipts(db,"stage-run",longReadTask.id).find((row)=>row.stageId==="pm-read");
     expect(receipt?.state).toBe("failed");
     expect(receipt?.reason).toMatch(/JSON/i);
@@ -1819,7 +1821,9 @@ describe("stage → native writer → receipt", () => {
     const result = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
       {confirm:true,objective:"Проверка диспетча",plan:"Create the fixture", task }, { threadId:pmThreadId, projectId })));
     expect(result.state).toBe("blocked");
-    expect(spawned).toHaveLength(1);
+    // One critic session, asked once in its own thread to send the answer again (the hand-off standard); no writer.
+    expect(spawned.filter((row)=>!row.via)).toHaveLength(1);
+    expect(spawned.filter((row)=>row.via==="send")).toHaveLength(1);
     expect((spawned[0].pluginMetadata as Record<string,unknown>).stageId).toBe("plan-critique");
     expect(listStageReceipts(db, "stage-run", task.id).map((row) => [row.stageId,row.state]))
       .toEqual([["acceptance-receipt","skipped"],["plan-critique","failed"],["pm-read","skipped"],["specialist-review","skipped"],["verification","skipped"],["writer-agent","skipped"]]);

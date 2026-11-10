@@ -50,6 +50,8 @@ type Scenario = {
 async function runScenario(scenario: Scenario) {
   const spawned: Array<Record<string, unknown>> = [];
   const meta = new Map<string, Record<string, unknown>>();
+  // A helper asked to send its answer again (readAnswer): the follow-up turn is requested, started and completed.
+  const asked = new Map<string, number>();
   let nextWriter = 0, porcelain = 0;
   let runAfterCancel: string | null = null;
   // Every writer attempt of a git project works in its own worktree: the fake host makes, checks and merges them.
@@ -71,8 +73,9 @@ async function runScenario(scenario: Scenario) {
         wait: async () => ({ matched: true, thread: { status: "idle" } }),
         get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId, sourceThreadId: pmThreadId, lifecycleOwnerThreadId: pmThreadId, ...(threadId === pmThreadId ? { environmentId: "eq-pm-env" } : {}) }) as never,
         events: { list: async ({ threadId }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } },
-          ...(scenario.usage ? [{ type: "thread/tokenUsage/updated", threadId, seq: 3, createdAt: 2, data: { turnId: "t1", tokenUsage: { last: { inputTokens: 600, outputTokens: 400, totalTokens: 1000 }, total: { inputTokens: 600, outputTokens: 400, totalTokens: 1000 } } } }] : [])] },
-        send: async () => ({}) as never,
+          ...(scenario.usage ? [{ type: "thread/tokenUsage/updated", threadId, seq: 3, createdAt: 2, data: { turnId: "t1", tokenUsage: { last: { inputTokens: 600, outputTokens: 400, totalTokens: 1000 }, total: { inputTokens: 600, outputTokens: 400, totalTokens: 1000 } } } }] : []),
+          ...(asked.has(threadId) ? [{ type: "client/turn/requested", threadId, seq: 10, createdAt: asked.get(threadId) }, { type: "turn/started", threadId, seq: 11 }, { type: "turn/completed", threadId, seq: 12, data: { status: "completed" } }] : [])] },
+        send: async ({ threadId }: { threadId: string }) => { asked.set(threadId, Date.now()); return {} as never; },
         stop: async () => ({ ok: true }) as never,
         output: async ({ threadId }) => {
           if (threadId === "pm-read-thread" && scenario.cancelDuringPmRead) {

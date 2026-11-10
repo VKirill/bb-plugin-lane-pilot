@@ -17,7 +17,7 @@ import { critiquePrompt, parseCritique } from "../../src/rooms/critique/critique
 import { STAGE_IDS } from "@lane-pilot/contracts";
 import { docsMaintenancePrompt, nightlyDocsPrompt } from "../../src/rooms/docs/docs";
 import { gateTriagePrompt, gateTriageResultSchema, parseGateTriageResult } from "../../src/rooms/verification/gate-triage";
-import { extractModelJson, verdictSchema } from "@lane-pilot/workflow-engine";
+import { ANSWER_FORM_LINE, JSON_LAST_LINE, extractModelJson, verdictSchema } from "@lane-pilot/workflow-engine";
 import { nightFixBlockedReason, nightFixPrompt } from "../../src/rooms/night/night-fix";
 import { nightReviewPrompt, nightReviewResultSchema, parseNightReviewResult } from "../../src/rooms/night/night";
 import { onboardingPrompt, parseOnboardingPreview } from "../../src/rooms/project-life/onboarding";
@@ -94,7 +94,7 @@ describe("strict stage parsers tolerate a fence or a preamble and clip overlong 
 });
 
 describe("JSON-answering prompts state the exact contract", () => {
-  it("every reviewer says: one object, nothing else, the keys with caps, why no tools", () => {
+  it("every reviewer says: the object last, the honest exit, the keys with caps, why no tools", () => {
     const prompts = [
       critiquePrompt({ plan: "p", task: {} }),
       codeCritiquePrompt({ evidence: buildCandidateEvidence({ produced: [], hashes: {}, verification: [], output: "", ownsPaths: [], neverTouch: [], dirtOk: true }), task: {} }),
@@ -104,7 +104,8 @@ describe("JSON-answering prompts state the exact contract", () => {
       gateTriagePrompt({ schemaVersion: 1, projectId: "p", from: 0, to: 1, totalEvents: 0, totalGateEvents: 0, byStage: [], byGate: [], recentBlockers: [], recentGateBlockers: [] }),
     ];
     for (const prompt of prompts) {
-      expect(prompt).toContain("one JSON object and nothing else");
+      // One sentence for every form-answering helper (the hand-off standard): the object last, and the honest exit before the form.
+      expect(prompt).toContain(ANSWER_FORM_LINE);
       expect(prompt).toContain("at most");
       // The code critic (aa79f14f), the plan critic (2026-11-08) and the task scout (2026-11-10) read project files and change nothing;
       // the reviewers that judge only the data in their message (night review, gate triage) open nothing.
@@ -233,7 +234,7 @@ describe("code critique and its repair round", () => {
     expect(prompt).not.toContain("CANDIDATE ARTIFACT");
     expect(prompt).not.toContain("answer with the changed paths");
     expect(prompt).toContain('{"replies":[{"id":"<finding id>","status":"fixed"|"disputed"|"blocked"');
-    expect(prompt).toContain("one JSON object and nothing else");
+    expect(prompt).toContain(JSON_LAST_LINE);
     expect(prompt).toContain("PACKET");
     expect(prompt).toContain("<project_memory>");
     expect(prompt).toContain("- rule one");

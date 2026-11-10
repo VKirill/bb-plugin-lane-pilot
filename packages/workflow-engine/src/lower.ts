@@ -12,7 +12,20 @@ export const fanId = (id: string) => `${id}:fan`;
 export const childId = (id: string) => `${id}:child`;
 export const EMIT = "emit";
 
-const HANDOFF: Field = { name: "handoff", type: "string", required: true, description: "What was done, where the result is, what is left." };
+const HANDOFF: Field = { name: "handoff", type: "string", required: true, description: "What was done, where the result is (paths, file:line), what is left." };
+/**
+ * The hand-off standard (docs/guide/handoff.md): how the agent itself says whether the step's result exists. Optional on read
+ * (absent = done), so an executor that builds its output in code need not set it.
+ */
+export const OUTCOMES = ["done", "partial", "blocked", "failed"] as const;
+const OUTCOME: Field = { name: "outcome", type: "enum", values: [...OUTCOMES], required: false,
+  description: "\"done\" only when the result of the task exists; \"partial\" when part of it is missing (say which in handoff); \"blocked\" when you need something you cannot get yourself; \"failed\" when the task cannot be done as given. With \"blocked\" or \"failed\" the other fields may be left out." };
+const BLOCKER: Field = { name: "blocker", type: "object", required: false,
+  description: "Only with outcome \"blocked\": {\"needs\": what is missing, \"from\": who can give it (owner, pm, another step), \"fallback\": what can be done without it}." };
+/** A node that already routes on a worker state of its own (`status: done | blocked`) keeps it; the engine adds no second one. */
+const declaresOutcome = (out: readonly Field[]) => out.some((field) => field.name === "outcome" || (field.type === "enum" && (field.values ?? []).includes("blocked")));
+/** True when the engine added `outcome` to the node and therefore acts on it (engine.ts): a graph that declares the field routes on it itself. */
+export const engineOwnsOutcome = (node: WorkflowNode | undefined): boolean => node?.type === "agent" && !declaresOutcome(node.out);
 
 export type ResolveWorkflow = (id: string, version?: number) => Workflow | null;
 
@@ -21,7 +34,8 @@ export function outputFields(workflow: Workflow, node: WorkflowNode | typeof STA
   if (node === START) return workflow.inputs;
   if (node === END) return workflow.outputs;
   if (!node || node.type === "note") return [];
-  if (node.type === "agent") return node.out.some((field) => field.name === "handoff") ? node.out : [...node.out, HANDOFF];
+  if (node.type === "agent") return [...node.out, ...(node.out.some((field) => field.name === "handoff") ? [] : [HANDOFF]),
+    ...(declaresOutcome(node.out) ? [] : [OUTCOME, ...(node.out.some((field) => field.name === "blocker") ? [] : [BLOCKER])])];
   if (node.type === "decision" && node.out.length === 0 && node.reads_node) {
     const source = workflow.nodes.find((candidate) => candidate.id === node.reads_node);
     return source ? outputFields(workflow, source, resolve) : [];

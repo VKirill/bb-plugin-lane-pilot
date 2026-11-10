@@ -22,7 +22,7 @@ import { parsePmReadResult, parsePmReadSettings, pmReadPrompt } from "../pm-read
 import { boundedAgentName } from "../../contracts/review-vocabulary";
 import { candidateCitations } from "../citations";
 import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt, unreadableAnswer } from "../specialist";
-import { reasonForStatus } from "@lane-pilot/workflow-engine";
+import { helperExit, reasonForStatus } from "@lane-pilot/workflow-engine";
 import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode, withReferenceTestCritic } from "../../contracts/quality-mode";
 import type { CodeCriticDefault } from "../../contracts/task-enums";
 import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
@@ -155,7 +155,7 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
     await waitThreadIdle(input.bb,threadId,"pm_read_timeout");
     const output=(await input.bb.sdk.threads.output({threadId})).output;
     if(typeof output!=="string"||!output.trim()) throw new Error("pm_read_output_empty");
-    const parsed=parsePmReadResult(output);
+    const parsed=await readAnswer(input.bb,threadId,output,parsePmReadResult,"summary, keyFacts and openQuestions","pm_read_timeout");
     const summary=JSON.stringify(parsed);
     const result={...parsed,selectedLines,minLines:parsedSettings.minLines,packetSha256:packet.sha256};
     recordStage(input.db,{...base,state:"passed",providerId,model:modelId,threadId,result});
@@ -365,7 +365,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
         // ponytail: the critic reads the checkout itself, so a file it cites may be one it opened; the hub cannot see the host's files to check
         // the path, so only file, line and quoted evidence are required (settleVerdict). A host-side path check if invented paths show up.
-        const critique = parseCritique(raw);
+        const critique = await readAnswer(input.bb, threadId, raw, parseCritique, "status, summary, findings and evidence");
         const blocked = critique.decision === "changes_requested" && mode === "gate";
         const result = { ...critique, mode, ...(qualityMode !== "standard" ? { qualityMode } : {}), structuralCoverage:{status:coverageStatus,pathCount:coveragePathCount}, structuralFindings, rawOutput:raw.slice(0, 12_000) };
         const why = verdictReasons(critique, "plan-critique");
@@ -383,6 +383,8 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
         threadId = null;
         // Only a critic that could not answer retries: a dead or empty thread. A verdict the task disagrees with, a
         // malformed form the model keeps sending and a host refusal are the caller's problem, not the critic's pool.
+        // An answer still unreadable after the one re-ask (readAnswer) fails closed here: no writer has started yet, so a plan
+        // nobody reviewed waits for the PM instead of going on.
         const retryable = /critique_thread_timeout|critique_output_empty/.test(message);
         if (!retryable) throw cause;
         lastError = message;
@@ -447,27 +449,35 @@ export async function candidatePatches(bb:{ sdk:{ environments:{ list:(args:{ ho
 }
 
 /**
- * Reads the code critic's answer; one that cannot be read is sent back once to the same critic with the parse error, instead of
- * blocking a finished task (selfystudio 2026-10-30: an unescaped quote broke the JSON of a «pass»). A second unreadable answer fails.
+ * One reading of a helper's answer for every stage (the hand-off standard, docs/guide/handoff.md). A helper that took the honest
+ * exit throws `helper_blocked:…` with what it needs. An answer that cannot be read is sent back once to the same thread with the
+ * parse error, so the helper repeats its answer and not its work (selfystudio 2026-10-30: an unescaped quote broke the JSON of a
+ * «pass»). A second unreadable answer throws: the stage did not run, which is never the same as a stage with no findings.
  */
-export async function readCodeCritique(bb:BbPluginApi, threadId:string|null|undefined, raw:string, cites:Parameters<typeof parseCodeCritique>[1]) {
+const REASK_WAIT_MS = 10 * 60_000;
+export async function readAnswer<T>(bb:BbPluginApi, threadId:string|null|undefined, raw:string, parse:(text:string)=>T, keys:string, timeoutCode="critique_thread_timeout"):Promise<T> {
+  const exit = helperExit(raw);
+  if (exit) throw new Error(exit);
   try {
-    return parseCodeCritique(raw, cites);
+    return parse(raw);
   } catch (first) {
     if (!threadId) throw first;
     const why = (first instanceof Error ? first.message : String(first)).replace(/\s+/g, " ").slice(0, 600);
     const askedAt = Date.now();
     try {
-      await bb.sdk.threads.send({ threadId, mode:"queue-if-active", input:[{ type:"text", mentions:[], text:`Lane Pilot: your answer could not be read (${why}). Send the same verdict again as one valid JSON object with the keys status, summary, findings and evidence, and nothing else; escape every quote inside a string.` }] } as never);
-      await waitThreadIdle(bb, threadId, "critique_thread_timeout", undefined, askedAt);
+      await bb.sdk.threads.send({ threadId, mode:"queue-if-active", input:[{ type:"text", mentions:[], text:`Lane Pilot: your answer could not be read (${why}). Do not redo the work: send the same answer again as one valid JSON object with the keys ${keys}, and nothing else; escape every quote inside a string.` }] } as never);
+      // Repeating an answer is one short turn: a re-ask that BB never took in must not hold the stage forever.
+      await waitThreadIdle(bb, threadId, timeoutCode, REASK_WAIT_MS, askedAt);
     } catch {
       throw first;
     }
     const again = (await bb.sdk.threads.output({ threadId })).output;
     if (typeof again !== "string" || !again.trim()) throw first;
-    return parseCodeCritique(again, cites);
+    return parse(again);
   }
 }
+export const readCodeCritique = (bb:BbPluginApi, threadId:string|null|undefined, raw:string, cites:Parameters<typeof parseCodeCritique>[1]) =>
+  readAnswer(bb, threadId, raw, (text) => parseCodeCritique(text, cites), "status, summary, findings and evidence");
 
 export function attemptEnvironment(db:ReturnType<typeof openDatabase>, runId:string, taskId:string, path:string):{ type:"reuse"; environmentId:string } | null {
   const environmentId = latestAttemptEnvironmentId(db as never, runId, taskId, path);
@@ -869,50 +879,42 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
     if (tier && !(provider.serviceTiers ?? []).some((item) => item.id === tier)) throw new Error(`specialist_service_tier_unsupported:${tier}`);
     const helperPolicy=requireHelperSpawn(input);
     // An answer that does not read (magicseo T3.2, 2026-10-30: Gemini answered the rubric items {id,result,evidence} and no
-    // status) gets one more session told what was wrong; a second unreadable answer passes the task as the code critic's
-    // failed_infra does, rather than blocking it on the reviewer's form.
-    let formatNote = "";
-    for (let attempt = 1; ; attempt++) {
-      try {
-        const placement = await helperChildPlacement({
-          bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"specialist-reviewer", taskTitle:input.task.title,
-        });
-        const spawned = await fullAccessSpawn(input.bb, {
-          ...placement,
-          ...requiredPolicyField(input.bb, helperPolicy, providerId, "specialist-reviewer"),
-          ...writerExecutionSelection(providerId,modelId,effort,tier),
-          prompt:specialistPrompt({task:input.task,plan:input.plan,agent}) + formatNote,
-          environment:{type:"host",hostId:input.config.hostId,workspace:{type:"unmanaged",path:input.task.project_cwd}},
-          pluginMetadata:{role:"specialist-reviewer",lanePilotRunId:input.runId,lanePilotTaskId:input.taskId,
-            stageId:"specialist-review",parentPmThreadId:getRun(input.db,input.runId)?.pm_thread_id ?? null,
-            helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true,...graphStepMetadata(input.workflow)},
-        });
-        threadId = stringAt(spawned,"id");
-        if (!threadId) throw new Error("specialist_thread_id_missing");
-        recordStage(input.db,{...base,state:"running",providerId,model:modelId,threadId});
-        await waitThreadIdle(input.bb,threadId,"specialist_thread_timeout");
-        const raw = (await input.bb.sdk.threads.output({threadId})).output;
-        if (typeof raw !== "string" || !raw.trim()) throw new Error("specialist_output_empty");
-        // Like the plan critic it may cite a file it opened, which the hub cannot see: file, line and quoted evidence are still required.
-        const review = parseSpecialistResult(raw);
-        const blocked = review.decision === "block";
-        const why = verdictReasons(review, "specialist-review");
-        recordStage(input.db,{...base,state:blocked ? "blocked" : "passed",providerId,model:modelId,threadId,
-          result:{...review,rawOutput:raw.slice(0,12_000)},reason:blocked ? why.receipt : undefined});
-        return blocked ? {allowed:false,reason:why.returned,review} : {allowed:true,review};
-      } catch (cause) {
-        if (!unreadableAnswer(cause)) throw cause;
-        if (threadId) await bestEffort(input.bb.log, "critique thread stop", input.bb.sdk.threads.stop({ threadId }), undefined);
-        const issue = (cause instanceof Error ? cause.message : String(cause)).slice(0, 600);
-        if (attempt >= 2) {
-          const reason = `failed_infra:specialist answer unreadable twice: ${issue}`;
-          recordStage(input.db,{...base,state:"failed",providerId,model:modelId,threadId,reason,result:{error:reason}});
-          return {allowed:true,reason};
-        }
-        formatNote = `\n\nYOUR PREVIOUS ANSWER DID NOT MATCH THE FORMAT (${issue.replace(/\s+/g, " ").slice(0, 300)}). Answer with the one JSON object described above: status, summary, findings, evidence.`;
-        threadId = null;
-      }
+    // status) is asked for again in the same thread (readAnswer); a second unreadable answer passes the task as the code
+    // critic's failed_infra does, rather than blocking it on the reviewer's form. The receipt says the review did not run.
+    const placement = await helperChildPlacement({
+      bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"specialist-reviewer", taskTitle:input.task.title,
+    });
+    const spawned = await fullAccessSpawn(input.bb, {
+      ...placement,
+      ...requiredPolicyField(input.bb, helperPolicy, providerId, "specialist-reviewer"),
+      ...writerExecutionSelection(providerId,modelId,effort,tier),
+      prompt:specialistPrompt({task:input.task,plan:input.plan,agent}),
+      environment:{type:"host",hostId:input.config.hostId,workspace:{type:"unmanaged",path:input.task.project_cwd}},
+      pluginMetadata:{role:"specialist-reviewer",lanePilotRunId:input.runId,lanePilotTaskId:input.taskId,
+        stageId:"specialist-review",parentPmThreadId:getRun(input.db,input.runId)?.pm_thread_id ?? null,
+        helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true,...graphStepMetadata(input.workflow)},
+    });
+    threadId = stringAt(spawned,"id");
+    if (!threadId) throw new Error("specialist_thread_id_missing");
+    recordStage(input.db,{...base,state:"running",providerId,model:modelId,threadId});
+    await waitThreadIdle(input.bb,threadId,"specialist_thread_timeout");
+    const raw = (await input.bb.sdk.threads.output({threadId})).output;
+    if (typeof raw !== "string" || !raw.trim()) throw new Error("specialist_output_empty");
+    let review;
+    try {
+      // Like the plan critic it may cite a file it opened, which the hub cannot see: file, line and quoted evidence are still required.
+      review = await readAnswer(input.bb, threadId, raw, (text) => parseSpecialistResult(text), "status, summary, findings and evidence", "specialist_thread_timeout");
+    } catch (cause) {
+      if (!unreadableAnswer(cause)) throw cause;
+      const reason = `failed_infra:specialist answer unreadable twice: ${(cause instanceof Error ? cause.message : String(cause)).slice(0, 600)}`;
+      recordStage(input.db,{...base,state:"failed",providerId,model:modelId,threadId,reason,result:{error:reason}});
+      return {allowed:true,reason};
     }
+    const blocked = review.decision === "block";
+    const why = verdictReasons(review, "specialist-review");
+    recordStage(input.db,{...base,state:blocked ? "blocked" : "passed",providerId,model:modelId,threadId,
+      result:{...review,rawOutput:raw.slice(0,12_000)},reason:blocked ? why.receipt : undefined});
+    return blocked ? {allowed:false,reason:why.returned,review} : {allowed:true,review};
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);
     if (threadId) {

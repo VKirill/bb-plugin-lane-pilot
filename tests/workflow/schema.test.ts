@@ -177,7 +177,8 @@ describe("references", () => {
 
   it("gives an agent a handoff field without declaring it", () => {
     const parsed = parseWorkflow(workflow({ nodes: [{ id: "search", type: "action", output: [{ name: "items", type: "array" }] }, { id: "write", type: "agent", prompt: "x", output: [{ name: "text", type: "string" }] }] }));
-    expect((outputFields(parsed, parsed.nodes[1]!) as Array<{ name: string }>).map((field) => field.name)).toEqual(["text", "handoff"]);
+    // The hand-off standard: every agent answer also carries its own outcome and, when blocked, what it needs.
+    expect((outputFields(parsed, parsed.nodes[1]!) as Array<{ name: string }>).map((field) => field.name)).toEqual(["text", "handoff", "outcome", "blocker"]);
     const withHandoff = workflow({
       nodes: [{ id: "search", type: "action" }, { id: "write", type: "agent", prompt: "x", output: [{ name: "text", type: "string" }] }],
       edges: [{ from: "start", to: "search" }, { from: "search", to: "write" }, { from: "write", to: "end", with: { result: "write.handoff" } }],

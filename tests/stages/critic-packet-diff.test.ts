@@ -46,7 +46,7 @@ describe("code critic packet", () => {
     expect(evidence.verification[0]?.stdout).toBe(" ✓ a.test.ts\n\n Tests 2 passed");
     const prompt = codeCritiquePrompt({ evidence, task:{ id:"t" } });
     expect(prompt).toContain(`<file path="src/new.ts" status="new">\n${fresh}`);
-    expect(prompt.indexOf("</checks>")).toBeLessThan(prompt.indexOf("Answer with one JSON object"));
+    expect(prompt.indexOf("</checks>")).toBeLessThan(prompt.indexOf("Finish your final message with one JSON object"));
     expect(prompt).not.toContain("\\n+export");
   });
 

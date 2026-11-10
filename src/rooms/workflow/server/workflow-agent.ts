@@ -13,7 +13,7 @@ import type { ExtraAccess, HelperRole } from "../../contracts/helper-context";
 import { storeNativeSelection } from "../../native-agent/server";
 import { LEAD_ID } from "../../contracts";
 import {bestEffort, isNotFound, orMiss, outputText, redactKnown} from "@lane-pilot/kit";
-import { READ_ONLY_LINE, agentPrompt, contractProblems, contractRepairPrompt, describeProblems, goalsBlock, hasContractProblems, outputContract, outputFields, parseAgentOutput, planPacket, wfRunIdemParent } from "@lane-pilot/workflow-engine";
+import { READ_ONLY_LINE, agentPrompt, contractProblems, contractRepairPrompt, describeProblems, goalsBlock, hasContractProblems, honestExit, outputContract, outputFields, parseAgentOutput, planPacket, wfRunIdemParent } from "@lane-pilot/workflow-engine";
 import type { ContractNode, ContractProblems } from "@lane-pilot/workflow-engine";
 import type { AgentOutputError } from "@lane-pilot/workflow-engine";
 import type { StepContext } from "@lane-pilot/workflow-engine";
@@ -410,7 +410,8 @@ export function createWorkflowAgents() {
     for (let round = 0; round < 2 && !output; round += 1) {
       try {
         const parsed = parseAgentOutput(text, request.fields);
-        const issues = request.contract ? contractProblems(request.contract, parsed) : null;
+        // An agent that says it is blocked or could not do the task owes no artifact (the hand-off standard's honest exit).
+        const issues = request.contract && !honestExit(parsed) ? contractProblems(request.contract, parsed) : null;
         if (issues && hasContractProblems(issues)) throw new ContractFailure(issues);
         output = parsed;
       } catch (cause) {

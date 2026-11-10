@@ -21,7 +21,7 @@ export function outputContract(fields: readonly Field[]): string {
   return [
     "Finish with exactly one fenced JSON block (```json ... ```) as the last thing in your final message. Nothing may follow it. It is one object with these fields:",
     ...fields.map(describe),
-    "Use only these field names. A field you cannot fill truthfully gets the honest value (an empty list, false, 0), not an invented one; `handoff` says what you did, where the result is and what is left.",
+    "Use only these field names. A field you cannot fill truthfully gets the honest value (an empty list, false, 0), not an invented one; `handoff` says what you did, where the result is and what is left. Reason in plain text first; the block comes last.",
   ].join("\n");
 }
 

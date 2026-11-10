@@ -12,7 +12,7 @@ import { taskMemoryContext } from "../../memory/server";
 import { postOwnerItem } from "../../owner-waiting";
 import { writerQuestionKey } from "./writer-question-item";
 import { finishReturn, insertReturn, listReturns } from "../../stage-return";
-import { REVIEW_READ_ONLY_LINE, extractModelJson } from "@lane-pilot/workflow-engine";
+import { JSON_LAST_LINE, REVIEW_READ_ONLY_LINE, extractModelJson } from "@lane-pilot/workflow-engine";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { isProductDecision, markAnsweredByDefault, SAFE_DEFAULT_ANSWER } from "./question-default";
@@ -68,7 +68,9 @@ export function heuristicOutcome(question: string): PilotDecision["outcome"] {
 
 export function pilotPrompt(input: PilotCase): string {
   return [
-    "You are the second pilot of a Lane Pilot task: a writer stopped with a question to a human and nobody answered it in time. Decide what the machine does now. Answer with one JSON object and nothing else.",
+    "You are the second pilot of a Lane Pilot task: a writer stopped with a question to a human and nobody answered it in time. Decide what the machine does now.",
+    // Its own `outcome` already has the way out (`owner`), so it gets the form line without the standard's exit.
+    JSON_LAST_LINE,
     `You are running in the project checkout: open the task's read_first files and whatever else the question is about, so you decide from the code and not from the question's wording. ${REVIEW_READ_ONLY_LINE}`,
     "",
     `The writer asked:\n${input.question}`,

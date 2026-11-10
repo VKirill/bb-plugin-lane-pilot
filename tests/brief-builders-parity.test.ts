@@ -85,7 +85,7 @@ describe("every brief builder renders through renderBrief and keeps its facts", 
 
   it("pmReadPrompt keeps the plan, the task brief and the JSON answer spec", () => {
     const prompt = pmReadPrompt({ plan: "PLAN TEXT", task: { title: "Fix login", objective: "make it work" } });
-    for (const marker of ["PLAN TEXT", "<task_brief>", "Fix login", "keyFacts", "openQuestions", "no text before or after it"]) expect(prompt).toContain(marker);
+    for (const marker of ["PLAN TEXT", "<task_brief>", "Fix login", "keyFacts", "openQuestions", "Finish your final message with one JSON object", "\"outcome\": \"blocked\""]) expect(prompt).toContain(marker);
   });
 
   it("analyzerPrompt keeps the evidence tags and the JSON answer spec", () => {

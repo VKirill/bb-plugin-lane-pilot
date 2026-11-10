@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { settingOff, settingOn } from "@lane-pilot/models";
 import type { CoverageFinding } from "./critique-coverage";
-import { clipped, extractModelJson, REVIEW_READ_ONLY_LINE } from "@lane-pilot/workflow-engine";
+import { ANSWER_FORM_LINE, clipped, extractModelJson, REVIEW_READ_ONLY_LINE } from "@lane-pilot/workflow-engine";
 import { PLAN_CRITIC_METHOD } from "./role-method";
 import { demoteUncited } from "./citations";
 import type { Citation } from "./citations";
@@ -112,7 +112,7 @@ export function critiquePrompt(input: { plan:string; task:unknown; agent?:string
     `You are ${input.agent?.trim() || "the independent plan-critique stage"} for a bounded software task.`,
     `Review the plan against the task contract and the code. ${PLAN_CRITIC_READ_LINE}`,
     ...PLAN_CRITIC_METHOD,
-    "Answer with one JSON object and nothing else: no text before or after it. Keys: status (\"pass\", \"rework\" or \"block\"), summary (string, at most 2000 characters), findings (at most 30 objects, each with file, line, severity \"critical\", \"high\", \"medium\", \"low\" or \"info\", evidence (at most 2000 characters: the quoted line or the contract field you looked at), and optionally finding (at most 1000: what is wrong and the fix), criterion (at most 500: the acceptance line or rule it breaks)), evidence (string, what you examined and how, at most 4000 characters). Other keys are ignored.",
+    ANSWER_FORM_LINE + " Keys: status (\"pass\", \"rework\" or \"block\"), summary (string, at most 2000 characters), findings (at most 30 objects, each with file, line, severity \"critical\", \"high\", \"medium\", \"low\" or \"info\", evidence (at most 2000 characters: the quoted line or the contract field you looked at), and optionally finding (at most 1000: what is wrong and the fix), criterion (at most 500: the acceptance line or rule it breaks)), evidence (string, what you examined and how, at most 4000 characters). Other keys are ignored.",
     rubricPromptLine("plan"),
     "pass: the plan can go to a writer. rework: a concrete missing, contradictory, unsafe, or unverifiable requirement that the PM fixes by editing the plan or the contract and sending it again; its findings are critical or high. block: the task cannot be saved by editing, because it asks for something destructive or unsafe that the owner must decide, or contradicts its own objective; use it only then. Do not invent criteria. A critical or high finding counts only with a file, a line and quoted evidence; without them it is read as medium.",
     "A verification command that is not focused on this task (a whole-suite run) or that runs a suite the project marks sandbox-unsafe is an unverifiable requirement: rework, severity high, with the focused command as the fix.",

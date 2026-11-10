@@ -8,11 +8,11 @@ import { END, MAX_SUBWORKFLOW_DEPTH, START } from "./schema";
 import type { Field, GraphNode as WorkflowNode, PassMode, QualityMode, Workflow, WorkflowEdge } from "./schema";
 import { createJournal, sha256, stableId, TERMINAL_RUN } from "./journal";
 import type { EffectRow, Journal, RunRow, RunStatus, StepRow } from "./journal";
-import { executorKey, lowerWorkflow, outputFields } from "./lower";
+import { engineOwnsOutcome, executorKey, lowerWorkflow, outputFields } from "./lower";
 import type { ResolveWorkflow } from "./lower";
 import { definitionSha256 } from "./store";
 import { WorkflowError, validateWorkflow } from "./validate";
-import { checkOutput, slugOf, valueAtPath } from "./values";
+import { checkOutput, honestExit, slugOf, valueAtPath } from "./values";
 import { contractProblems, describeProblems, hasContractProblems } from "./contract";
 import { goalsSchema, goalsSha, parseGoals, regroundDue, tinyGoalByCode } from "./goals";
 import type { GoalAudit, RunGoal } from "./goals";
@@ -180,10 +180,22 @@ const scopeChain = (scope: string): string[] => {
 /** The output of a step against its declared fields and then its contract (`produces`, `gates`): the first problem throws, so the step is not done. */
 function checkStepOutput(node: WorkflowNode, fields: readonly Field[] | "unknown", output: Record<string, unknown>): Record<string, unknown> {
   const kept = fields === "unknown" ? output : checkOutput(fields, output);
+  const exit = fields !== "unknown" && fields.some((field) => field.name === "outcome") ? honestExit(kept) : null;
+  if (exit) {
+    // Where the graph does not route on the outcome itself, a step whose agent says it has no result is not done: the run stops with the agent's reason.
+    if (engineOwnsOutcome(node)) throw new MissingValueError(`agent_${exit}`, `${node.id}: ${blockerText(kept)}`);
+    return kept;
+  }
   const problems = contractProblems(node, kept);
   if (hasContractProblems(problems)) throw new MissingValueError(problems.produces.length ? "artifact_invalid" : "gate_failed", `${node.id}: ${describeProblems(problems).join("; ")}`);
   return kept;
 }
+/** What the agent said it needs (or why it could not), for the run's reason: the blocker first, then the handoff. */
+const blockerText = (output: Record<string, unknown>): string => {
+  const blocker = output.blocker && typeof output.blocker === "object" ? output.blocker as Record<string, unknown> : {};
+  const needs = typeof blocker.needs === "string" && blocker.needs.trim() ? `needs ${blocker.needs.trim()}${typeof blocker.from === "string" && blocker.from.trim() ? ` from ${blocker.from.trim()}` : ""}` : "";
+  return (needs || String(output.handoff ?? "")).replace(/\s+/g, " ").slice(0, 600);
+};
 const asObject = (text: string | null): Record<string, unknown> => (text ? JSON.parse(text) as Record<string, unknown> : {});
 const STARTED = ["succeeded", "failed", "running", "waiting", "interrupted"];
 /** In a value position (`emit.map`, `skip_out`, a node's `with`) a node that has not run gives nothing, where a condition on it would fail the run. */
@@ -948,6 +960,8 @@ export class WorkflowEngine {
         spentBefore = addSpend(spentBefore, (cause as { usage?: Usage } | null)?.usage);
         j.event(runId, stepKey, "attempt_failed", null, null, `${attempt}/${node.maxAttempts}: ${cause instanceof Error ? cause.message : String(cause)}`);
         if (abort.signal.aborted || this.stopped()) break;
+        // Another attempt cannot bring what the agent said it lacks.
+        if (cause instanceof MissingValueError && cause.code === "agent_blocked") break;
       }
     }
     // A step whose helper gave up because the plugin is stopping did not fail: it stays running for the reload, which runs a
@@ -985,7 +999,7 @@ export class WorkflowEngine {
     j.db.transaction(() => {
       if (j.moveStep(runId, stepKey, "running", "succeeded", { output_json: outputJson, ended: true,
         receipt_json: receipt({ inputSha256: sha256(step.input_json), outputSha256: sha256(outputJson), threadId: outcome.threadId ?? null, usage: usage ?? null,
-          handoff: node.type === "agent" ? outcome.output.handoff ?? null : null, attempts: j.getStep(runId, stepKey)!.attempt,
+          handoff: node.type === "agent" ? outcome.output.handoff ?? null : null, ...(node.type === "agent" && outcome.output.outcome ? { outcome: outcome.output.outcome } : {}), attempts: j.getStep(runId, stepKey)!.attempt,
           ...(outcome.detail !== undefined ? { detail: outcome.detail } : {}) }) })) addUsage();
     })();
     this.fault("after-record");

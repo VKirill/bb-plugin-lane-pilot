@@ -43,6 +43,29 @@ export const clipped = (max: number, min = 1) => z.preprocess(
   z.string().min(min).max(max),
 );
 
+/**
+ * The honest exit of the hand-off standard (docs/guide/handoff.md) for a helper that answers in a form of its own: said in
+ * its prompt, read by `helperExit`. A helper that cannot do the task says what it lacks instead of filling the form with guesses.
+ */
+export const HONEST_EXIT_LINE = 'If the task cannot be done as given (a named path does not exist, the checkout cannot be read, an input is missing), do not guess and do not fill the form: answer {"outcome": "blocked", "blocker": {"needs": what is missing, "from": who can give it}, "handoff": what you did find} instead.';
+
+/**
+ * How a helper that answers in a form of its own is told to answer: the same sentence in every such prompt. The reasoning may
+ * come first (an answer-only form costs the model its reasoning), the object is last, and the honest exit is offered before the form.
+ */
+export const JSON_LAST_LINE = "Finish your final message with one JSON object: plain-text reasoning may come before it, nothing after it.";
+export const ANSWER_FORM_LINE = `${JSON_LAST_LINE} ${HONEST_EXIT_LINE} Otherwise the object is as follows.`;
+
+/** What a helper that took the honest exit said, as one line for the stage's reason; null for an ordinary answer. */
+export function helperExit(raw: string): string | null {
+  let answer: Record<string, unknown>;
+  try { answer = extractModelJson(raw) as Record<string, unknown>; } catch { return null; }
+  if (answer.outcome !== "blocked" && answer.outcome !== "failed") return null;
+  const blocker = answer.blocker && typeof answer.blocker === "object" ? answer.blocker as Record<string, unknown> : {};
+  const needs = typeof blocker.needs === "string" && blocker.needs.trim() ? `needs ${blocker.needs.trim()}${typeof blocker.from === "string" && blocker.from.trim() ? ` from ${blocker.from.trim()}` : ""}` : "";
+  return `helper_${answer.outcome}:${(needs || String(answer.handoff ?? "no reason given")).replace(/\s+/g, " ").slice(0, 600)}`;
+}
+
 /** For reviewers that get everything in the prompt: the reason for the ban, since the thread itself is not read-only. */
 /** For a reviewer that checks claims against the code (plan critic, specialist reviewer, 2026-11-08): it may read, never write. */
 export const REVIEW_READ_ONLY_LINE = "Read only: create, edit or delete nothing and run nothing that writes; anything you change here counts as part of the task's changes.";

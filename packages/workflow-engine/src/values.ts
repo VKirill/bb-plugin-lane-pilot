@@ -26,14 +26,24 @@ const typeOk = (field: Field, value: unknown): boolean => {
   }
 };
 
+/**
+ * The honest exit of the hand-off standard: an agent that says it is blocked or could not do the task owes the handoff and
+ * nothing else. Asking it for the step's other fields would make it invent them.
+ */
+export const honestExit = (output: unknown): "blocked" | "failed" | null => {
+  const outcome = (output as { outcome?: unknown } | null)?.outcome;
+  return outcome === "blocked" || outcome === "failed" ? outcome : null;
+};
+
 /** The output of a step against its declared fields: the declared ones, typed, and nothing else. Throws with the first problem. */
 export function checkOutput(fields: readonly Field[], output: unknown): Record<string, unknown> {
   if (typeof output !== "object" || output === null || Array.isArray(output)) throw new MissingValueError("output_invalid", "output is not an object");
   const source = output as Record<string, unknown>, kept: Record<string, unknown> = {};
+  const exit = fields.some((field) => field.name === "outcome") && honestExit(source) !== null;
   for (const field of fields) {
     const value = source[field.name];
     if (value === undefined || value === null) {
-      if (field.required) throw new MissingValueError(field.name === "handoff" ? "handoff_missing" : "output_invalid", `output field "${field.name}" is missing`);
+      if (field.required && !(exit && field.name !== "handoff")) throw new MissingValueError(field.name === "handoff" ? "handoff_missing" : "output_invalid", `output field "${field.name}" is missing`);
       continue;
     }
     if (!typeOk(field, value)) throw new MissingValueError("output_invalid", `output field "${field.name}" is not a valid ${field.type}${field.type === "enum" ? ` (${field.values!.join("|")})` : ""}`);

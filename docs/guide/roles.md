@@ -35,6 +35,8 @@ Every agent step in Lane Pilot names a role, and the role names the model. One t
 
 ## How work is handed to a helper
 
+The full contract, task and result, is [The hand-off standard](handoff.md); this section is its task half in short.
+
 A helper is an agent in the project checkout with its own tools. Its brief says what the work is for, where to start, what it may not change and what to return; it does not do the helper's reading for it.
 
 - **Pointers, not contents.** A file the helper can open is named by path (`renderExecutionPacket`, `src/rooms/tasks/execution-packet.ts:92-99`), never pasted. Pasted source is cut by a budget, and the helper then reasons about the part that fit.
