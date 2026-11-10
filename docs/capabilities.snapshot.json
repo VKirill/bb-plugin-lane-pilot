@@ -1,5 +1,132 @@
 {
-  "capabilities": [],
+  "capabilities": [
+    {
+      "id": "dev-orchestrator",
+      "runtimes": 2,
+      "agents": 2,
+      "skills": 22,
+      "hooks": 0
+    },
+    {
+      "id": "copy-lead",
+      "runtimes": 2,
+      "agents": 2,
+      "skills": 20,
+      "hooks": 0
+    },
+    {
+      "id": "seo-specialist",
+      "runtimes": 2,
+      "agents": 2,
+      "skills": 50,
+      "hooks": 0
+    },
+    {
+      "id": "design-lead",
+      "runtimes": 2,
+      "agents": 2,
+      "skills": 14,
+      "hooks": 0
+    },
+    {
+      "id": "project-onboarder",
+      "runtimes": 2,
+      "agents": 2,
+      "skills": 2,
+      "hooks": 0
+    },
+    {
+      "id": "tavily",
+      "runtimes": 2,
+      "agents": 2,
+      "skills": 2,
+      "hooks": 0
+    },
+    {
+      "id": "advisor-researcher",
+      "runtimes": 2,
+      "agents": 2,
+      "skills": 2,
+      "hooks": 0
+    },
+    {
+      "id": "ai-researcher",
+      "runtimes": 2,
+      "agents": 2,
+      "skills": 2,
+      "hooks": 0
+    },
+    {
+      "id": "animator",
+      "runtimes": 2,
+      "agents": 2,
+      "skills": 0,
+      "hooks": 0
+    },
+    {
+      "id": "doc-classifier",
+      "runtimes": 2,
+      "agents": 2,
+      "skills": 0,
+      "hooks": 0
+    },
+    {
+      "id": "domain-researcher",
+      "runtimes": 2,
+      "agents": 2,
+      "skills": 2,
+      "hooks": 0
+    },
+    {
+      "id": "eval-auditor",
+      "runtimes": 2,
+      "agents": 2,
+      "skills": 0,
+      "hooks": 0
+    },
+    {
+      "id": "eval-planner",
+      "runtimes": 2,
+      "agents": 2,
+      "skills": 0,
+      "hooks": 0
+    },
+    {
+      "id": "framework-selector",
+      "runtimes": 2,
+      "agents": 2,
+      "skills": 0,
+      "hooks": 0
+    },
+    {
+      "id": "mempalace-curator",
+      "runtimes": 2,
+      "agents": 2,
+      "skills": 0,
+      "hooks": 0
+    },
+    {
+      "id": "nyquist-auditor",
+      "runtimes": 2,
+      "agents": 2,
+      "skills": 2,
+      "hooks": 0
+    },
+    {
+      "id": "ui-researcher",
+      "runtimes": 2,
+      "agents": 2,
+      "skills": 2,
+      "hooks": 0
+    },
+    {
+      "id": "session-guard",
+      "runtimes": 2,
+      "agents": 0,
+      "skills": 0,
+      "hooks": 12
+    }
+  ],
   "streams": [
     "dependency_store",
     "git_airbag",

@@ -6,6 +6,7 @@ import { rpcContract } from "../src/rooms/contracts";
 import { MEMORY_PATHS } from "../src/rooms/memory/memory-paths";
 import { TRANSITION_TABLE } from "../src/rooms/contracts/state-machine";
 import { SETTING_CATALOG } from "../packages/settings-catalog/src/channels";
+import { featureRegistry } from "../src/rooms/native-install";
 import type { AtlasInput } from "./atlas";
 
 /** The atlas's input read from the checkout: the rooms on disk and the registries in code. */
@@ -40,13 +41,12 @@ export function collectAtlasInput(root: string): AtlasInput {
     return sum + (statSync(path).isDirectory() ? tests(path) : /\.test\.tsx?$/.test(name) ? 1 : 0);
   }, 0);
   const sourceFiles = [...all, ...["server.ts", "host.ts", "app.tsx"].map((name) => join(root, name))];
-  const capabilities = (() => {
-    try {
-      const source = readFileSync(join(root, "src/rooms/native-install/feature-registry.ts"), "utf8");
-      return [...source.matchAll(/id:\s*"([a-z0-9._-]+)"[\s\S]*?agents:\s*\[([^\]]*)\][\s\S]*?skills:\s*\[([^\]]*)\][\s\S]*?hooks:\s*\[([^\]]*)\]/g)]
-        .map((hit) => ({ id: hit[1]!, runtimes: (source.match(/provider:\s*"/g) ?? []).length, agents: hit[2]!.split(",").filter((item) => item.trim() && item.includes('"')).length, skills: hit[3]!.split(",").filter((item) => item.trim() && item.includes('"')).length, hooks: hit[4]!.split(",").filter((item) => item.trim() && item.includes('"')).length }));
-    } catch { return [] as Array<{ id: string; runtimes: number; agents: number; skills: number; hooks: number }>; }
-  })();
+  // The registry is built at runtime from the bundled agents and the hook streams: ask the function, never the source text.
+  const capabilities = featureRegistry().map((row) => ({
+    id: row.id,
+    runtimes: (["claude", "opencode"] as const).filter((runtime) => [row.agents, row.skills, row.hooks].some((part) => (part[runtime] ?? []).length > 0)).length,
+    agents: Object.values(row.agents).flat().length, skills: Object.values(row.skills).flat().length, hooks: Object.values(row.hooks).flat().length,
+  }));
   return {
     rooms,
     capabilities,

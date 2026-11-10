@@ -9,7 +9,7 @@ import {bestEffort, isNotFound, orMiss, outputText, spawnAsync, stringAt, valueA
 import { PAIR_ROLE_SPECS } from "@lane-pilot/models";
 import {runSkillsCli, parseSkillHub, SKILLS_USAGE} from "../../platform/server";
 import { attemptSessionLayers, terminalParity, terminalSessionLayers } from "../../native-agent";
-import { projectStats } from "../../usage/server";
+import { projectStats } from "./project-stats";
 import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
 import type { InsightsApi, ScheduleAgentApi } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
@@ -450,10 +450,13 @@ ${ERRANDS_USAGE}` },
           const terminal = terminalSessionLayers({ db, projectId, skills:terminalSkills, model:config ? `${config.writerProviderId}/${config.writerModel}` : "unknown" });
           const lines = terminalParity(session, terminal);
           if (args.includes("--json")) return { exitCode:0, stdout:JSON.stringify({ attemptId, lines }, null, 2) };
-          return { exitCode:0, stdout:lines.map((line) => `${line.same ? "same" : "DIFF"} ${line.layer}: ${line.detail}`).join("\n") };
+          return { exitCode:0, stdout:lines.map((line) => `${line.same === null ? "n/a " : line.same ? "same" : "DIFF"} ${line.layer}: ${line.detail}`).join("\n") };
         }
         if (command === "stats") {
-          const days = args.includes("--days") ? Number(args[args.indexOf("--days") + 1]) : 30;
+          // A missing or non-numeric --days is a usage error, not NaN days and an empty report.
+          const daysAt = args.indexOf("--days");
+          const days = daysAt < 0 ? 30 : /^\d+$/.test(args[daysAt + 1] ?? "") ? Number(args[daysAt + 1]) : NaN;
+          if (!Number.isInteger(days) || days < 1) return { exitCode:1, stderr:"bb lane-pilot stats [project] [--days N]: --days takes a whole number of days, 1 or more" };
           const stats = projectStats(db as never, args[0] && !args[0].startsWith("--") ? args[0] : "", days);
           return { exitCode:0, stdout:JSON.stringify(stats, null, 2) };
         }

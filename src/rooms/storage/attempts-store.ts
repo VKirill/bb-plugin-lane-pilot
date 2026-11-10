@@ -276,20 +276,20 @@ export function markTaskOutcomesReported(db: LanePilotDatabase, rows: Array<Pick
 }
 
 export function listOpenAttempts(db: LanePilotDatabase): Array<{
-  id:string; run_id:string; task_id:string; thread_id:string|null; state:string; project_id:string;
+  id:string; run_id:string; task_id:string; thread_id:string|null; state:string; project_id:string; created_at?:number;
 }> {
   // A retry-eligible attempt with a saved reconcile page is still in flight: its scan died mid-page and the next
   // process continues it, so it is listed with the live states (fault-injection: a spawn rejected while its scan
   // was interrupted would otherwise sit open forever).
   const open = OPEN_ATTEMPT_STATES.map(() => "?").join(",");
   const retry = RETRY_ELIGIBLE.map(() => "?").join(",");
-  return db.prepare(`SELECT a.id,a.run_id,a.task_id,a.thread_id,a.state,r.project_id
+  return db.prepare(`SELECT a.id,a.run_id,a.task_id,a.thread_id,a.state,r.project_id,a.created_at
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     WHERE a.state IN (${open})
        OR (a.state IN (${retry})
            AND EXISTS (SELECT 1 FROM lane_pilot_reconcile_cursor c WHERE c.attempt_id=a.id))
     ORDER BY a.created_at`).all(...OPEN_ATTEMPT_STATES, ...RETRY_ELIGIBLE) as Array<{
-    id:string; run_id:string; task_id:string; thread_id:string|null; state:string; project_id:string;
+    id:string; run_id:string; task_id:string; thread_id:string|null; state:string; project_id:string; created_at?:number;
   }>;
 }
 
@@ -1332,4 +1332,13 @@ export function listUnmovedLiveAttempts(db: LanePilotDatabase, cutoff: number): 
 export function liveAttemptsOfRun(db: Pick<LanePilotDatabase, "prepare">, runId: string): Array<{ id: string; task_id: string }> {
   return db.prepare("SELECT id, task_id FROM lane_pilot_attempt WHERE run_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested') ORDER BY updated_at DESC")
     .all(runId) as Array<{ id: string; task_id: string }>;
+}
+
+/** The latest accepted attempt of each task of the project's runs created since `sinceMs` (the project report's git and timeline rows). */
+export function listAcceptedAttemptsSince(db: LanePilotDatabase, projectId: string, sinceMs: number): Array<{ runId: string; taskId: string; attemptId: string; createdAt: number }> {
+  return db.prepare(`SELECT a.run_id AS runId, a.task_id AS taskId, a.id AS attemptId, a.created_at AS createdAt
+    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+    WHERE r.project_id=? AND r.created_at>=? AND a.state='accepted'
+      AND a.attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id AND b.state='accepted')
+    ORDER BY a.created_at`).all(projectId, sinceMs) as Array<{ runId: string; taskId: string; attemptId: string; createdAt: number }>;
 }

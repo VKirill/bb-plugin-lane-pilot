@@ -1,5 +1,4 @@
 import { listMemory } from "@lane-pilot/memory-core";
-import { PM_CORE_TOOLS, PM_FAMILY_TOOLS } from "../platform/server";
 import { pmRulesOf } from "../learning";
 import { getAttempt, getReasoningTrace, HARNESS_VERSION, skillMetricSkillsForAttempt, type LanePilotDatabase } from "../storage";
 
@@ -10,8 +9,14 @@ import { getAttempt, getReasoningTrace, HARNESS_VERSION, skillMetricSkillsForAtt
  */
 export const PARITY_LAYERS = ["hooks", "memory", "rules", "skills", "permissions", "model"] as const;
 export type ParityLayer = (typeof PARITY_LAYERS)[number];
-export type ParityLayerSet = Record<ParityLayer, readonly string[]>;
-export type ParityLine = { layer: ParityLayer; same: boolean; detail: string };
+/** A layer is a list of entries, or null when that side has no record of it: such a layer is reported «not compared», never «same». */
+export type ParityLayerSet = Record<ParityLayer, readonly string[] | null>;
+export type ParityLine = { layer: ParityLayer; same: boolean | null; detail: string };
+
+/** Why a layer is not compared: the attempt records no permission policy and a terminal's tool list is not readable from here. */
+const NOT_COMPARED: Partial<Record<ParityLayer, string>> = {
+  permissions: "not compared: the attempt records no tool permissions, and a terminal session's tool list is not visible to Lane Pilot",
+};
 
 const diff = (a: readonly string[], b: readonly string[]) => {
   const left = a.filter((item) => !b.includes(item)).sort();
@@ -20,11 +25,14 @@ const diff = (a: readonly string[], b: readonly string[]) => {
 };
 
 export function terminalParity(session: ParityLayerSet, terminal: ParityLayerSet): ParityLine[] {
-  return PARITY_LAYERS.map((layer) => {
-    const gaps = diff(session[layer], terminal[layer]);
+  return PARITY_LAYERS.map((layer): ParityLine => {
+    const left = session[layer];
+    const right = terminal[layer];
+    if (left === null || right === null) return { layer, same: null, detail: NOT_COMPARED[layer] ?? "not compared: one side has no record of this layer" };
+    const gaps = diff(left, right);
     const same = gaps.onlySession.length === 0 && gaps.onlyTerminal.length === 0;
     const detail = same
-      ? `${new Set(session[layer]).size} entr${new Set(session[layer]).size === 1 ? "y" : "ies"}`
+      ? `${new Set(left).size} entr${new Set(left).size === 1 ? "y" : "ies"}`
       : [
           gaps.onlySession.length ? `only in the session: ${gaps.onlySession.join(", ")}` : "",
           gaps.onlyTerminal.length ? `only in the terminal: ${gaps.onlyTerminal.join(", ")}` : "",
@@ -44,7 +52,7 @@ export function attemptSessionLayers(db: LanePilotDatabase, attemptId: string): 
     memory: context?.memoryPicked ?? [],
     rules: context?.rulesPicked?.picked ?? [],
     skills: skillMetricSkillsForAttempt(db, attemptId),
-    permissions: [...PM_FAMILY_TOOLS, ...PM_CORE_TOOLS],
+    permissions: null,
     model: trace ? [`${trace.providerId}/${trace.model}`] : [],
   };
 }
@@ -62,7 +70,7 @@ export function terminalSessionLayers(input: {
     memory: listMemory(input.db, input.projectId, {}, 500, "subagent").map((record) => record.id),
     rules: pmRulesOf(input.db, input.projectId).map((rule) => rule.id),
     skills: [...input.skills],
-    permissions: [...PM_FAMILY_TOOLS, ...PM_CORE_TOOLS],
+    permissions: null,
     model: [input.model],
   };
 }

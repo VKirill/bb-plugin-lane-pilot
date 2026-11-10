@@ -3,7 +3,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { taskV2Schema, type PrototypeConfig, type TaskV2 } from "../../contracts";
 import { getAttempt, getRun, getRunSettingsScopes, getRunWriterHost, getTask, listStageReceipts, loadProjectSettings, taskBasePath, type WorktreeOwnerKind } from "../../storage";
-import { sha256Hex } from "@lane-pilot/kit";
+import { markOutputChanges, sha256Hex } from "@lane-pilot/kit";
 import { recordEvidence } from "../../storage";
 import { retargetTask } from "../../tasks";
 import { parseIntegrationGateSettings, type VerificationGatePort } from "../../contracts/integration-gate";
@@ -275,15 +275,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
       // Verification receipt (SMA ar_receipt): each re-run item is compared to the output hash recorded when
       // the command first passed; the summary counts changed outputs, the exit code still decides pass/fail.
       const recorded = listStageReceipts(db, t.runId, t.taskId).find((row) => row.stageId === "verification" && row.result && typeof row.result === "object")?.result as { verification?: Array<{ command?: unknown; stdoutSha256?: unknown }> } | undefined;
-      const expected = new Map<string, string>();
-      for (const row of recorded?.verification ?? []) if (typeof row.command === "string" && typeof row.stdoutSha256 === "string") expected.set(row.command, row.stdoutSha256);
-      for (const item of items) {
-        const want = expected.get(item.command);
-        if (!want || !item.stdoutSha256) continue;
-        item.expectedStdoutSha256 = want;
-        item.outputChanged = item.stdoutSha256 !== want;
-      }
-      const changed = items.filter((row) => row.outputChanged === true).length;
+      const changed = markOutputChanges(items, recorded?.verification);
       const failed = items.filter((row) => !row.ok);
       const unknown = failed.some((row) => row.hostError);
       const state: TaskReceiptState = failed.length === 0 ? "passed" : unknown && failed.every((row) => row.hostError) ? "error" : "failed";

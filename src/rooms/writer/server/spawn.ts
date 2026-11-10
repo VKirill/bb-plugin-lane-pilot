@@ -141,6 +141,9 @@ export const START_STALL_MS = 15 * 60_000;
 const START_POLL_MS = 15_000;
 const startSteps = new Map<string, string>();
 
+/** How long the pair whose launch was refused for a provider swap is held out of the writer chain. */
+const LAUNCH_PARITY_HOLD_MS = 30 * 60_000;
+
 export function createWriterSpawn(ctx: ServerCore, services: Services) {
   const { bb, db, effectiveProjectSettings, host } = ctx;
   const liveFolder = createLiveFolder(ctx);
@@ -603,20 +606,32 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       setReasoningThread(db, input.attemptId, writerThreadId);
       const spawnedTrace = getReasoningTrace(db, input.attemptId);
       if (spawnedTrace) bb.log.info(`Lane Pilot writer execution ${JSON.stringify({ attemptId:input.attemptId, threadId:writerThreadId, providerId:spawnedTrace.providerId, model:spawnedTrace.model, reasoningLevel:spawnedTrace.effectiveReasoningLevel, serviceTier:spawnedTrace.serviceTier })}`);
-      // Launch profile parity (SMA m_md_parity): the thread BB made is checked against the provider, model and
-      // effort asked for; a silent swap is refused so the writer chain takes the task (writer.launch_parity=warn keeps the old log line).
-      {
-        const parityMode = String(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId))["writer.launch_parity"] ?? "refuse");
+      // Launch profile parity (SMA m_md_parity). Unset writer.launch_parity keeps the old check as it was: a fire-and-forget read of the
+      // thread that only logs a warning. With `refuse` it is awaited, and a thread on another PROVIDER than asked is refused (a model
+      // alias or a clamped/renamed reasoning effort is only a warning); the refused pair is held so the chain moves on instead of retrying it.
+      if (String(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId))["writer.launch_parity"] ?? "").trim().toLowerCase() !== "refuse") {
+        void bb.sdk.threads.get({ threadId:writerThreadId }).then((thread) => {
+          const got = { providerId:stringAt(thread, "providerId"), model:stringAt(thread, "model") };
+          if ((got.providerId && got.providerId !== selectedProviderId) || (got.model && selectedModel && got.model !== selectedModel)) {
+            bb.log.warn(`Lane Pilot launch profile mismatch for ${input.attemptId}: asked ${selectedProviderId}/${selectedModel}, the thread runs ${got.providerId}/${got.model}`);
+          }
+        }, () => undefined);
+      } else {
         const thread = await bb.sdk.threads.get({ threadId:writerThreadId }).catch(() => null);
         const got = { providerId:stringAt(thread, "providerId"), model:stringAt(thread, "model"), reasoningLevel:stringAt(thread, "reasoningLevel") ?? stringAt(thread, "reasoningEffort") };
-        const mismatched = (got.providerId && got.providerId !== selectedProviderId) || (got.model && selectedModel && normalizeModel(got.model) !== normalizeModel(selectedModel))
-          || (got.reasoningLevel && lastExecution?.reasoningLevel && got.reasoningLevel !== lastExecution.reasoningLevel);
-        if (mismatched && parityMode === "warn") bb.log.warn(`Lane Pilot launch profile mismatch for ${input.attemptId}: asked ${selectedProviderId}/${selectedModel}/${lastExecution?.reasoningLevel ?? "?"}, the thread runs ${got.providerId}/${got.model}/${got.reasoningLevel ?? "?"}`);
-        else if (mismatched) {
+        const asked = `${selectedProviderId}/${selectedModel}/${lastExecution?.reasoningLevel ?? "?"}`;
+        const ran = `${got.providerId}/${got.model}/${got.reasoningLevel ?? "?"}`;
+        if (got.providerId && got.providerId !== selectedProviderId) {
           await bestEffort(bb.log, "writer thread stop", bb.sdk.threads.stop({ threadId:writerThreadId }), undefined);
-          const reason = `writer_provider_unavailable:launch_profile_mismatch:${selectedProviderId}/${selectedModel} vs ${got.providerId}/${got.model}`;
-          transitionAttempt(db, input.attemptId, "spawn_rejected", { reason });
-          return { ok:false, status:"spawn_rejected", reason, attemptId:input.attemptId };
+          // The hold resolves a half-open trial this start reserved (record clears it), so nothing is left for the finally block to release.
+          services.providerBreaker.record(breakerKey(selectedProviderId, selectedModel), "exhausted", Date.now(), Date.now() + LAUNCH_PARITY_HOLD_MS);
+          unusedTrial = null;
+          const reason = `writer_provider_unavailable:launch_profile_mismatch:${asked} vs ${ran}`;
+          return { ok:false, status:endSpawnFailure(db, input.attemptId, reason, writerThreadId), reason, attemptId:input.attemptId };
+        }
+        if ((got.model && selectedModel && normalizeModel(got.model) !== normalizeModel(selectedModel))
+          || (got.reasoningLevel && lastExecution?.reasoningLevel && got.reasoningLevel !== lastExecution.reasoningLevel)) {
+          bb.log.warn(`Lane Pilot launch profile mismatch for ${input.attemptId}: asked ${asked}, the thread runs ${ran}`);
         }
       }
       writerHoldsTrial = true;

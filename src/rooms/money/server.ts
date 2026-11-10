@@ -44,6 +44,17 @@ export function createMoney(ctx: Pick<ServerCore, "db" | "bb">) {
     const limit = cap !== null && Number.isFinite(cap) ? cap : null;
     return { ...book, monthUsd, estimated, estimatedUsd: estimated, cap: limit, capSet: limit !== null, unlimited: cap === Infinity, left: limit === null ? null : Math.max(0, Math.round((limit - monthUsd) * 100) / 100) };
   }
+  /**
+   * The money cap alone, for a chain member the writer walk asks about: a paid lane over the cap, or whose task estimate would cross it.
+   * No cap set (or the word unlimited) holds nothing and reads no window; a subscription lane never holds for money.
+   */
+  async function capHolds(providerId: string, model: string, _hostId: string, input?: { appetiteTokens?: number }): Promise<string | null> {
+    const cap = moneyCapFrom(settings());
+    if (!isPaid(providerId) || cap === null || cap === Infinity) return null;
+    const price = input?.appetiteTokens ? priceOf(providerId, model, overrides()) : null;
+    const taskUsd = input?.appetiteTokens && price ? input.appetiteTokens * price.outputPerM / 1_000_000 : 0;
+    return moneyHold(providerId, status().monthUsd, cap, taskUsd);
+  }
   /** Why a writer of this provider and model must wait now: the money cap of a paid lane, or a closed subscription window on its machine. */
   async function holds(providerId: string, model: string, hostId: string, input?: { appetiteTokens?: number }): Promise<string | null> {
     // Per-task ceiling (SMA m_mo_task_ceiling): the task is priced at its appetite in output tokens (the cautious
@@ -61,6 +72,6 @@ export function createMoney(ctx: Pick<ServerCore, "db" | "bb">) {
       return null;
     }
   }
-  return { money: { status, holds } };
+  return { money: { status, holds, capHolds } };
 }
 export type MoneyApi = ReturnType<typeof createMoney>["money"];
