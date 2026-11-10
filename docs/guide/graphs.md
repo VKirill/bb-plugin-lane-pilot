@@ -1,5 +1,6 @@
 ---
 title: Everything is a graph
+topic: graphs
 type: overview
 status: active
 created: 2026-11-06

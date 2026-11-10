@@ -15,12 +15,12 @@ export type WorktreeRecord = { head: string | null; dirty: number; ahead: number
 export type AttemptChange = {
   attemptId: string; runId: string; taskId: string;
   baseSha: string | null; mergeParent: string | null; mergeCommit: string | null; outcome: string | null;
-  changed: ChangedFile[]; worktree: WorktreeRecord | null; recordedAt: number; updatedAt: number;
+  changed: ChangedFile[]; worktree: WorktreeRecord | null; recordedAt: number; updatedAt: number; checksGreen: number | null;
 };
 
 type Raw = {
   attempt_id: string; run_id: string; task_id: string; base_sha: string | null; merge_parent: string | null; merge_commit: string | null; outcome: string | null;
-  changed_json: string; worktree_json: string | null; recorded_at: number; updated_at: number;
+  changed_json: string; worktree_json: string | null; recorded_at: number; updated_at: number; checks_green?: number | null;
 };
 
 const json = <T>(text: string | null, fallback: T): T => {
@@ -31,12 +31,12 @@ const json = <T>(text: string | null, fallback: T): T => {
 const fromRaw = (row: Raw): AttemptChange => ({
   attemptId: row.attempt_id, runId: row.run_id, taskId: row.task_id, baseSha: row.base_sha, mergeParent: row.merge_parent, mergeCommit: row.merge_commit,
   outcome: row.outcome, changed: json<ChangedFile[]>(row.changed_json, []), worktree: json<WorktreeRecord | null>(row.worktree_json, null),
-  recordedAt: row.recorded_at, updatedAt: row.updated_at,
+  recordedAt: row.recorded_at, updatedAt: row.updated_at, checksGreen: row.checks_green ?? null,
 });
 
 export type AttemptChangePatch = {
   baseSha?: string | null | undefined; mergeParent?: string | null | undefined; mergeCommit?: string | null | undefined; outcome?: string | undefined;
-  changed?: ChangedFile[] | undefined; worktree?: WorktreeRecord | undefined;
+  changed?: ChangedFile[] | undefined; worktree?: WorktreeRecord | undefined; checksGreen?: number | undefined;
 };
 
 /**
@@ -44,8 +44,8 @@ export type AttemptChangePatch = {
  * every other field is replaced when the new value is given, and kept when it is not.
  */
 export function upsertAttemptChange(db: RollbackDb, attempt: { attemptId: string; runId: string; taskId: string }, patch: AttemptChangePatch, now = Date.now()): void {
-  db.prepare(`INSERT INTO lane_pilot_attempt_change(attempt_id,run_id,task_id,base_sha,merge_parent,merge_commit,outcome,changed_json,worktree_json,recorded_at,updated_at)
-      VALUES(@attemptId,@runId,@taskId,@baseSha,@mergeParent,@mergeCommit,@outcome,COALESCE(@changed,'[]'),@worktree,@now,@now)
+  db.prepare(`INSERT INTO lane_pilot_attempt_change(attempt_id,run_id,task_id,base_sha,merge_parent,merge_commit,outcome,changed_json,worktree_json,recorded_at,updated_at,checks_green)
+      VALUES(@attemptId,@runId,@taskId,@baseSha,@mergeParent,@mergeCommit,@outcome,COALESCE(@changed,'[]'),@worktree,@now,@now,@checksGreen)
     ON CONFLICT(attempt_id) DO UPDATE SET
       base_sha=COALESCE(lane_pilot_attempt_change.base_sha,excluded.base_sha),
       merge_parent=COALESCE(excluded.merge_parent,lane_pilot_attempt_change.merge_parent),
@@ -53,10 +53,22 @@ export function upsertAttemptChange(db: RollbackDb, attempt: { attemptId: string
       outcome=COALESCE(excluded.outcome,lane_pilot_attempt_change.outcome),
       changed_json=CASE WHEN @changed IS NULL THEN lane_pilot_attempt_change.changed_json ELSE excluded.changed_json END,
       worktree_json=COALESCE(excluded.worktree_json,lane_pilot_attempt_change.worktree_json),
+      checks_green=COALESCE(excluded.checks_green,lane_pilot_attempt_change.checks_green),
       updated_at=excluded.updated_at`).run({
     ...attempt, baseSha: patch.baseSha ?? null, mergeParent: patch.mergeParent ?? null, mergeCommit: patch.mergeCommit ?? null, outcome: patch.outcome ?? null,
-    changed: patch.changed ? JSON.stringify(patch.changed.slice(0, 5000)) : null, worktree: patch.worktree ? JSON.stringify(patch.worktree) : null, now,
+    changed: patch.changed ? JSON.stringify(patch.changed.slice(0, 5000)) : null, worktree: patch.worktree ? JSON.stringify(patch.worktree) : null, checksGreen: patch.checksGreen ?? null, now,
   });
+}
+
+/**
+ * The landing record (SMA k_lib_landing) of an attempt whose merge landed green: the commit, the count of green checks and
+ * the files it carried, read from the attempt's change row — no receipt, so the task's receipts stay as they were.
+ */
+export function landingOf(change: AttemptChange | null | undefined): { commit: string; checksGreen: number | null; files: number; line: string } | null {
+  if (!change || change.outcome !== "merged" || !change.mergeCommit) return null;
+  const files = change.changed.length;
+  return { commit: change.mergeCommit, checksGreen: change.checksGreen, files,
+    line: `landed ${change.mergeCommit.slice(0, 12)} · ${change.checksGreen ?? "?"} checks green · ${files} files` };
 }
 
 /**

@@ -567,4 +567,23 @@ export const migrations = [
   `CREATE TRIGGER lane_pilot_attempt_transition_no_delete BEFORE DELETE ON lane_pilot_attempt_transition BEGIN SELECT RAISE(ABORT,'attempt transitions are append-only'); END`,
   `CREATE TRIGGER lane_pilot_attempt_no_delete BEFORE DELETE ON lane_pilot_attempt BEGIN SELECT RAISE(ABORT,'attempts are append-only'); END`,
 
+  // Task drafts the PM proposes before the owner says «да» (SMA m_sw_chat_draft, m_sw_batch_draft): the contract(s)
+  // wait in `proposed`; the one enqueue path records a result per contract (results_json), the draft is `created` once every contract is, `partial` while some failed.
+  `CREATE TABLE lane_pilot_task_draft (
+    id TEXT PRIMARY KEY,
+    run_id TEXT,
+    project_id TEXT NOT NULL,
+    thread_id TEXT,
+    kind TEXT NOT NULL DEFAULT 'task',
+    contracts_json TEXT NOT NULL,
+    objective TEXT,
+    plan TEXT,
+    state TEXT NOT NULL DEFAULT 'proposed',
+    task_ids_json TEXT,
+    results_json TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  // The landing record (SMA k_lib_landing): how many checks were green when the attempt's merge went in; nullable, beside merge_commit and changed_json.
+  `ALTER TABLE lane_pilot_attempt_change ADD COLUMN checks_green INTEGER`,
 ];

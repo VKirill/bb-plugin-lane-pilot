@@ -107,7 +107,9 @@ done`;
 }
 
 export async function persistTaskFolder(input:{
-  taskId:string; plan:string;
+  taskId:string; plan?:string;
+  /** Terminal outcome of the task (SMA k_pl_quick): written to OUTCOME.md beside PLAN.md. */
+  outcome?:string;
   /** Project lessons with a «WHEN <trigger> → <act>» line; written to REFLEXES.md (SMA k_lib_reflex). */
   reflexes?:string[];
   /** Appends the exclude line to the repo's real info/exclude on the workspace's host; a failure skips only the line. */
@@ -122,8 +124,11 @@ export async function persistTaskFolder(input:{
       console.warn(`lane-pilot: skipped the task-folder exclude line: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
   }
-  const plan = input.plan.endsWith("\n") ? input.plan : `${input.plan}\n`;
-  await input.writeFile(`${folder}/PLAN.md`, plan);
+  if (input.plan !== undefined) {
+    const plan = input.plan.endsWith("\n") ? input.plan : `${input.plan}\n`;
+    await input.writeFile(`${folder}/PLAN.md`, plan);
+  }
+  if (input.outcome !== undefined) await input.writeFile(`${folder}/OUTCOME.md`, input.outcome.endsWith("\n") ? input.outcome : `${input.outcome}\n`);
   // Burn lessons with a WHEN <trigger> → <act> line go here so the guard can fire them at the act (SMA k_lib_reflex).
   const reflexes = (input.reflexes ?? []).filter((line) => /WHEN\s+.+?\s*(?:→|->)\s*.+/.test(line));
   if (reflexes.length) await input.writeFile(`${folder}/REFLEXES.md`, `# Reflexes\n\n${reflexes.join("\n")}\n`);

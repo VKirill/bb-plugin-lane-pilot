@@ -1,6 +1,7 @@
 import { MACHINE_AFFINITY_ANY } from "@lane-pilot/contracts";
 import { loadProjectSettings, countAttempts, createAttempt, failedBackgroundStageRows, failureFieldsOf, getActivation, getAttempt, getRunCard, latestAttemptsPerTask, stageReceiptStates, openAttemptIdsOfRun, openRunOfPmThread, runTaskCardRows, taskCheckLogRows, transitionAttempt } from "../../../storage";
 import { ownerWordsMode } from "../../../tasks";
+import { createFromDraft, dispatchChecked, getDraftOf } from "../../../tasks/server";
 import { t } from "@lane-pilot/i18n";
 import { resolveRoleModel } from "@lane-pilot/models";
 import { setRunHalted } from "../runs-halt";
@@ -34,6 +35,7 @@ import type { ActivationApi, AgentOpsApi } from "../../../contracts";
 import type { RollbackApi } from "../../../rollback/server/rollback";
 import type { ResumeOrphansPort } from "../../../contracts/stability-api";
 import type { WriterHostApi } from "../../../platform/server";
+import type { DispatchWriter } from "../../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -50,6 +52,8 @@ interface Services {
   tokenCursorRow: TokenCursorReader;
   /** Phase cards for the board, dealt by the phase room (SMA m_sw_unit_card); injected so runs never imports phase. */
   phaseCards?: (input: { projectId: string | null; doneSince: number; onError?: (message: string) => void }) => BoardItem[];
+  dispatchWriter: DispatchWriter;
+  phaseIntake: { dispatchRefusal(threadId: string): Promise<string | null> };
 }
 
 
@@ -214,6 +218,25 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         queued: queuedTaskIds,
         ...(openRun ? { graph: buildTaskGraph(db, openRun.id) } : {}),
       };
+    },
+    task_draft_card: async ({ draftId, projectId }) => {
+      const draft = getDraftOf(db, draftId, projectId);
+      if (!draft) return null;
+      const titles = draft.contracts.map((contract) => String((contract as { display_title?: string }).display_title ?? (contract as { id?: string }).id ?? "task"));
+      const areas = [...new Set(draft.contracts.map((contract) => String((contract as { area?: string }).area ?? "")))].filter(Boolean);
+      return { id: draft.id, kind: draft.kind, state: draft.state, runId: draft.runId, taskIds: draft.taskIds,
+        failed: draft.results.flatMap((result, index) => (result?.state === "failed" ? [{ title: titles[index] ?? "task", reason: result.reason }] : [])),
+        title: draft.objective ?? titles[0] ?? "task", promise: draft.objective ?? `Создам ${titles.length === 1 ? "задачу" : `${titles.length} задачи`}: ${titles.join(", ")}`,
+        groups: areas.length ? areas.map((area) => ({ area, titles: draft.contracts.filter((c) => String((c as { area?: string }).area ?? "") === area).map((c) => String((c as { display_title?: string }).display_title ?? "")) })) : [{ area: "", titles }] };
+    },
+    // The card's button: the same createFromDraft and the same dispatch function as the PM's confirmed call and lane_pilot_dispatch_writer.
+    // A window that names its project (projectId) creates only that project's drafts. No owner-turn gate: this is the owner's own click, not an agent turn.
+    task_draft_create: async ({ draftId, projectId }) => {
+      const draft = getDraftOf(db, draftId, projectId);
+      if (!draft) throw new Error(projectId ? "draft_not_in_project" : `draft ${draftId} does not exist`);
+      return await createFromDraft(db, draftId, async (contract) => dispatchChecked(
+        { dispatchRefusal: (threadId) => services.phaseIntake.dispatchRefusal(threadId), dispatchWriter: services.dispatchWriter as never },
+        { threadId: draft.threadId ?? "", projectId: draft.projectId, task: contract, plan: draft.plan ?? undefined, objective: draft.objective ?? undefined }), { projectId });
     },
     task_board: async ({ projectId, doneHours }) => {
       const doneSince = Date.now() - doneHours * 3_600_000;
@@ -394,6 +417,6 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       return { ok: true, state: "queued", attemptId: nextId, reason: null };
     },
     resume_runs: ({ projectId }) => services.resumeOrphans(projectId),
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "native_install_status" | "prepare_native_session" | "helper_thread_labels" | "list_helper_threads" | "task_board" | "thread_live" | "work_file_read" | "task_card" | "get_run_card" | "native_thread" | "activation_context" | "cancel_attempt" | "pause_run" | "resume_run" | "halt_run" | "retry_attempt" | "resume_runs">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "native_install_status" | "prepare_native_session" | "helper_thread_labels" | "list_helper_threads" | "task_board" | "thread_live" | "work_file_read" | "task_draft_card" | "task_draft_create" | "task_card" | "get_run_card" | "native_thread" | "activation_context" | "cancel_attempt" | "pause_run" | "resume_run" | "halt_run" | "retry_attempt" | "resume_runs">;
   return handlers;
 }

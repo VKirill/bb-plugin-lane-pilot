@@ -598,13 +598,20 @@ function withShown(stats: RuleTrialStats, shown: Array<{ at: number }> | undefin
  * `ruleTrialStats` for many rules in two queries instead of two per rule: the rules list of a project with two dozen
  * rules re-read the attempts' reasoning traces once per rule. Same numbers, same derivation.
  */
+/** Attempts a rule was given to, with which rule: the one query `ruleTrialStatsMany` and `ruleRecurrences` share. */
+function pickedRuleRows(db: RulesDatabase, projectId: string | null, attemptIds?: readonly string[]): Array<{ id: string; state: string; at: number; ruleId: string }> {
+  // With `attemptIds` the rows are those attempts' only (read by the attempt id, never a scan of every trace).
+  const byAttempt = attemptIds ? `a.id IN (${attemptIds.map(() => "?").join(",")})` : "run.project_id=?";
+  return db.prepare(`SELECT a.id, a.state, a.created_at AS at, p.value AS ruleId FROM lane_pilot_attempt_reasoning r
+      JOIN lane_pilot_attempt a ON a.id=r.attempt_id JOIN lane_pilot_run run ON run.id=a.run_id,
+      json_each(COALESCE(json_extract(r.trace_json,'$.dispatchContext.rulesPicked.picked'),'[]')) p
+    WHERE ${byAttempt}`).all(...(attemptIds ?? [projectId])) as Array<{ id: string; state: string; at: number; ruleId: string }>;
+}
+
 export function ruleTrialStatsMany(db: RulesDatabase, projectId: string, rules: ReadonlyArray<{ id: string; since: number }>): Map<string, RuleTrialStats> {
   const out = new Map<string, RuleTrialStats>();
   if (!rules.length) return out;
-  const picked = db.prepare(`SELECT a.id, a.state, a.created_at AS at, p.value AS ruleId FROM lane_pilot_attempt_reasoning r
-      JOIN lane_pilot_attempt a ON a.id=r.attempt_id JOIN lane_pilot_run run ON run.id=a.run_id,
-      json_each(COALESCE(json_extract(r.trace_json,'$.dispatchContext.rulesPicked.picked'),'[]')) p
-    WHERE run.project_id=?`).all(projectId) as Array<{ id: string; state: string; at: number; ruleId: string }>;
+  const picked = pickedRuleRows(db, projectId);
   const triaged = db.prepare(`SELECT attempt_id AS attemptId, task_id AS taskId, reason, same_rule_id AS ruleId, failed_at AS failedAt FROM lane_pilot_failure_triage
     WHERE project_id=? AND same_rule_id IS NOT NULL AND status='ok'`).all(projectId) as Array<{ attemptId: string; taskId: string; reason: string; ruleId: string; failedAt: number }>;
   const shown = shownStats(db, projectId);
@@ -767,4 +774,29 @@ export function updateRuleProposalScopeJson(db: RulesDatabase, scopeJson: string
 /** Ids of a project's accepted rules whose text matches a LIKE pattern (the memory probe's cleanup). */
 export function acceptedRuleIdsLike(db: RulesDatabase, projectId: string, ruleLike: string): string[] {
   return (db.prepare("SELECT id FROM lane_pilot_rule_proposal WHERE project_id=? AND state='accepted' AND rule LIKE ?").all(projectId, ruleLike) as Array<{ id: string }>).map((row) => row.id);
+}
+
+/**
+ * Rule recurrences across all projects (SMA k_lib_curriculum): triage rows matched to a rule the attempt was given,
+ * grouped by project and rule — the curriculum's "ignored rule firings" source without a rules list.
+ */
+export function ruleRecurrences(db: RulesDatabase, since: number, limit = 5000): Array<{ projectId: string; ruleId: string; count: number; sampleTaskId: string }> {
+  // At most `limit` newest triage rows of the window; the picked rules are read for those attempts only (by the attempt id), never as a scan of every trace.
+  const triaged = db.prepare(`SELECT attempt_id AS attemptId, task_id AS taskId, same_rule_id AS ruleId, project_id AS projectId, failed_at AS failedAt
+    FROM lane_pilot_failure_triage WHERE same_rule_id IS NOT NULL AND status='ok' AND failed_at>=? ORDER BY failed_at DESC LIMIT ?`).all(since, limit) as Array<{ attemptId: string; taskId: string; ruleId: string; projectId: string; failedAt: number }>;
+  const attemptIds = [...new Set(triaged.map((row) => row.attemptId))];
+  const picked = new Set<string>();
+  for (let from = 0; from < attemptIds.length; from += 400) {
+    const chunk = attemptIds.slice(from, from + 400);
+    for (const row of pickedRuleRows(db, null, chunk)) picked.add(`${row.id} ${row.ruleId}`);
+  }
+  const by = new Map<string, { projectId: string; ruleId: string; count: number; sampleTaskId: string }>();
+  for (const row of triaged) {
+    if (!picked.has(`${row.attemptId} ${row.ruleId}`)) continue;
+    const key = `${row.projectId} ${row.ruleId}`;
+    const hit = by.get(key) ?? { projectId: row.projectId, ruleId: row.ruleId, count: 0, sampleTaskId: row.taskId };
+    hit.count += 1;
+    by.set(key, hit);
+  }
+  return [...by.values()].sort((a, b) => b.count - a.count);
 }

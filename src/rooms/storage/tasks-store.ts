@@ -257,10 +257,11 @@ export function listProjectEpisodeTaskRows(db: LanePilotDatabase, projectId: str
 }
 
 /** Tasks with forecast contracts created since a time, optionally one project's (the forecast report). */
-export function listForecastTaskRows(db: LanePilotDatabase, input: { sinceMs: number; projectId?: string }): Array<{ task_id: string; run_id: string; project_id: string; contract_json: string }> {
+export function listForecastTaskRows(db: LanePilotDatabase, input: { sinceMs: number; projectId?: string; limit?: number }): Array<{ task_id: string; run_id: string; project_id: string; contract_json: string }> {
+  // `limit` (the curriculum's row bound) keeps the newest rows; without it the read is as it was.
   return db.prepare(`SELECT t.id AS task_id, t.run_id, r.project_id, t.contract_json FROM lane_pilot_task t JOIN lane_pilot_run r ON r.id = t.run_id
-    WHERE t.created_at >= ? AND t.contract_json LIKE '%"forecast"%' ${input.projectId ? "AND r.project_id = ?" : ""} ORDER BY t.created_at`)
-    .all(input.sinceMs, ...(input.projectId ? [input.projectId] : [])) as
+    WHERE t.created_at >= ? AND t.contract_json LIKE '%"forecast"%' ${input.projectId ? "AND r.project_id = ?" : ""} ${input.limit !== undefined ? "ORDER BY t.created_at DESC LIMIT ?" : "ORDER BY t.created_at"}`)
+    .all(input.sinceMs, ...(input.projectId ? [input.projectId] : []), ...(input.limit !== undefined ? [input.limit] : [])) as
     Array<{ task_id: string; run_id: string; project_id: string; contract_json: string }>;
 }
 

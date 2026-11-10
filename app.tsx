@@ -11,7 +11,7 @@ import { ComposerAgentBadge, ComposerBoundary } from "./src/rooms/native-agent/u
 import { EnableLanePilotAction } from "./src/rooms/native-agent/ui";
 import { HelperThreadPanel, useHelperThreadIndex } from "./src/rooms/native-agent/ui";
 import { HELPER_PANEL_ACTION } from "./src/rooms/contracts/agent-picker";
-import { RUN_CARD_DIRECTIVE, RunCardDirective, ThreadLive } from "./src/rooms/runs/ui";
+import { LANE_DRAFT_DIRECTIVE, LaneDraftCardDirective, RUN_CARD_DIRECTIVE, RunCardDirective, ThreadLive } from "./src/rooms/runs/ui";
 import { bindThreadRowStatus } from "./src/rooms/runs/ui";
 
 /** VK core 0.46.1-vk.5: a section of the thread's info panel (feature-tested; older cores get a panel tab instead). */
@@ -127,6 +127,8 @@ export default definePluginApp((app) => {
   });
   // The PM's `::lane-run{id="…"}` line becomes a live card of the run's tasks.
   app.slots.messageDirective({ id: RUN_CARD_DIRECTIVE, component: RunCardDirective });
+  // The PM's `::lane-draft{id="…"}` line becomes a proposal card with a «Создать» button (SMA m_sw_chat_draft).
+  app.slots.messageDirective({ id: LANE_DRAFT_DIRECTIVE, component: LaneDraftCardDirective });
   // A question to the owner (PM, integration gate, repair thread, council) as BB's pending interaction; BB's
   // notification plugin sends the same interaction to the phone.
   app.slots.pendingInteraction({ id: OWNER_ASK_RENDERER_ID, component: OwnerAsk });

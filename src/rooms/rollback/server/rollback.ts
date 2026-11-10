@@ -96,14 +96,15 @@ export function createRollback(ctx: ServerCore, services: Services) {
     })();
   }
 
-  /** What a merge did: main before it, the merge commit and the files it changed. */
-  function noteMerge(attemptId: string, merged: { status: string; commit: string | null; base?: string | null | undefined; changed?: ChangedFile[] | undefined }): void {
+  /** What a merge did: main before it, the merge commit, the files it changed and (when it landed green) how many checks were green. */
+  function noteMerge(attemptId: string, merged: { status: string; commit: string | null; base?: string | null | undefined; changed?: ChangedFile[] | undefined }, checksGreen?: number): void {
     try {
       const attempt = getAttempt(db, attemptId);
       if (!attempt) return;
       upsertAttemptChange(db, { attemptId, runId: attempt.run_id, taskId: attempt.task_id }, {
         outcome: merged.status, mergeCommit: merged.status === "merged" ? merged.commit : undefined,
         mergeParent: merged.base ?? undefined, changed: merged.status === "merged" ? merged.changed : undefined,
+        checksGreen: merged.status === "merged" ? checksGreen : undefined,
       });
     } catch (cause) { log(`rollback record: merge of ${attemptId} not kept: ${cause instanceof Error ? cause.message : String(cause)}`); }
   }

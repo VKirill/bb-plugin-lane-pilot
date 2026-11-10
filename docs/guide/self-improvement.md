@@ -1,5 +1,6 @@
 ---
 title: Self-improvement
+topic: self-improvement
 type: overview
 status: active
 created: 2026-11-06

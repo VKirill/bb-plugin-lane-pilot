@@ -85,7 +85,7 @@ import type { ActivationApi, AgentOpsApi } from "../../contracts/agent-ops";
 import type { ScheduleService } from "../../schedule/server/schedule-service";
 import type { RuleScanApi } from "../../self-repair/server/rule-scan";
 import type { ReconcileApi } from "../../stability/server/reconcile";
-import type { BuildCliInvocation, WorkflowEngineApi, WorkflowTriggersApi, WriterHostApi } from "../../platform/server";
+import type { BuildCliInvocation, DispatchWriter, WorkflowEngineApi, WorkflowTriggersApi, WriterHostApi } from "../../platform/server";
 import type { WriterStateApi } from "../../writer/server";
 
 import type { StabilityPort } from "../../contracts";
@@ -93,6 +93,7 @@ import type { StabilityPort } from "../../contracts";
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
   tokenCursorRow: TokenCursorReader;
+  dispatchWriter: DispatchWriter;
   activate: ActivationApi["activate"];
   placeEmployeeOn: AgentOpsApi["placeEmployeeOn"];
   storeNativeSelection: AgentOpsApi["storeNativeSelection"];
@@ -120,6 +121,7 @@ interface Services {
   wallThreadReader: WallThreadReader;
   money: MoneyApi;
   phases: PhaseApi;
+  phaseIntake: { dispatchRefusal(threadId: string): Promise<string | null> };
   regression: RegressionApi;
   resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
   resumeOrphans: ReconcileApi["resumeOrphans"];

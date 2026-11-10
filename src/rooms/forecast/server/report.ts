@@ -19,9 +19,9 @@ skeptic: { overall: Calibration | null; rightAgainstPm: string[] } | null };
 
 const DAY_MS = 86_400_000;
 
-export function forecastReport(db: Database.Database, input: { projectId?: string | undefined; days?: number | undefined; now?: number | undefined } = {}): ForecastReport {
+export function forecastReport(db: Database.Database, input: { projectId?: string | undefined; days?: number | undefined; now?: number | undefined; limit?: number | undefined } = {}): ForecastReport {
   const days = input.days ?? 30, now = input.now ?? Date.now(), since = now - days * DAY_MS;
-  const tasks = listForecastTaskRows(db, { sinceMs: since, projectId: input.projectId });
+  const tasks = listForecastTaskRows(db, { sinceMs: since, projectId: input.projectId, ...(input.limit !== undefined ? { limit: input.limit } : {}) });
   const scored: ForecastRow[] = [];
   const skepticRows: Array<{ area: string | null; score: ForecastScore }> = [];
   const rightAgainstPm: string[] = [];

@@ -1,14 +1,18 @@
+import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { getAttempt, getReasoningTrace, getRunSettingsScopes, loadProjectSettings } from "../../storage";
+import { listAttemptChanges } from "../../rollback";
 import { settingOn } from "@lane-pilot/models";
 import { recordSkillSwitchMetric } from "../skill-switch";
 import { createSkillMaterializer, recordedMaterializedSkills } from "./skill-materialize";
 import { recordedWriterSkills } from "./skill-pick";
-import { outputText } from "@lane-pilot/kit";
+import { isNotFound, orMiss, outputText, redactKnown } from "@lane-pilot/kit";
+import { scrubQuote } from "../../anamnesis";
 import { upsertLessonProposal } from "@lane-pilot/run-insights";
 import { writerMarkers } from "../../tasks";
 
 import type { ServerCore } from "../../contracts/server";
 import { onAttemptFinished, type AttemptFinished } from "./attempt-finished";
+import { persistTaskFolder, taskFolderRel } from "../../verification";
 import type { createWriterSticky } from "./sticky";
 
 
@@ -89,10 +93,52 @@ export function mountWriterAttemptFinished(ctx: ServerCore, services: Services):
   }, "writer:failed-lesson");
 }
 
+/**
+ * OUTCOME.md (SMA k_pl_quick): off unless the global setting `task.outcome_file` is `on`, so a default install writes no
+ * new file. When on, written only into a task folder that already exists in the attempt's workspace_path — never
+ * created (a removed worktree, or a canceled task whose folder never existed, is left alone, so a later `git worktree add`
+ * on a reused path is not blocked). workspace_path is the attempt's own worktree or folder; a merge removes the worktree
+ * with the folder inside it, so after a merge the file survives only where the task worked in place. The reason is one
+ * line of at most 200 characters through `scrubQuote` (the mask the anamnesis quotes use) after the known-secret mask.
+ */
+export async function writeTaskOutcome(ctx: Pick<ServerCore, "bb" | "db" | "log">, event: AttemptFinished): Promise<void> {
+  const { bb, db } = ctx;
+  if (event.scope !== "task" || event.status === "running" || !["accepted", "blocked", "canceled"].includes(event.status)) return;
+  try {
+    if (String(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)["task.outcome_file"] ?? "off") !== "on") return;
+    const attempt = getAttempt(db, event.attemptId);
+    const workspace = attempt?.workspace_path ?? null;
+    const folder = taskFolderRel(event.taskId);
+    if (!workspace || !folder) return;
+    const listed = await orMiss(bb.sdk.files.listPaths({ hostId: event.config.hostId, path: `${workspace}/${folder}`, includeFiles: true, includeDirectories: true, includeHidden: true, limit: 1 }), null, isNotFound);
+    if (!listed) return;
+    const change = listAttemptChanges(db, event.taskId).find((row) => row.attemptId === event.attemptId) ?? listAttemptChanges(db, event.taskId).at(-1);
+    const reason = event.reason ? scrubQuote(redactKnown(String(event.reason)), 200) : "";
+    const markdown = [
+      `# OUTCOME — ${event.taskId}`, "",
+      `state: ${event.status}${reason ? ` · ${reason}` : ""}`,
+      `merge: ${change?.mergeCommit ?? "-"}`,
+      "", "changed:", ...(change?.changed.length ? change.changed.map((file) => `- ${file.status} ${file.path}`) : ["- (none)"]), "",
+    ].join("\n");
+    await persistTaskFolder({ taskId: event.taskId, outcome: markdown,
+      writeFile: async (rel, content) => {
+        await bb.sdk.files.write({ hostId: event.config.hostId, rootPath: workspace, path: `${workspace}/${rel}`, content, contentEncoding: "utf8", createParents: false, expectedSha256: null });
+      } });
+  } catch (cause) {
+    ctx.log(`task OUTCOME.md write for ${event.taskId} failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+  }
+}
+
 /** Task-scope reactions the writer owns; mounted by createWriterStart with its sticky instance. */
 export function mountWriterTaskFinished(ctx: ServerCore, _services: Services, sticky: ReturnType<typeof createWriterSticky>): void {
-  // The area's writer record: accepted work makes this thread the area's hot writer for the next task.
-  onAttemptFinished(ctx, (event) => {
+  const { bb, db } = ctx;
+  // Quick-task folder (SMA k_pl_quick): at a terminal state the task folder also holds OUTCOME.md — state, reason,
+  // changed files, merge commit, checks, rendered from the record. A failed write never fails the attempt.
+
+  // The area's writer record: accepted work makes this thread the area's hot writer for the next task. The same reaction
+  // also leaves OUTCOME.md (off by default, see writeTaskOutcome): one subscriber, so the reaction order stays as it was.
+  onAttemptFinished(ctx, async (event) => {
+    await writeTaskOutcome(ctx, event);
     if (event.scope !== "task" || event.status !== "accepted" || !event.acceptedAttemptId) return;
     return sticky.noteAccepted(event.projectId, event.runId, event.task, event.acceptedAttemptId,
       Array.isArray(event.result?.produced) ? (event.result.produced as unknown[]).filter((path): path is string => typeof path === "string") : [])

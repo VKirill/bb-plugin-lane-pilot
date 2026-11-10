@@ -1,5 +1,6 @@
 ---
 title: CLI, agent tools, UI and RPC
+topic: interfaces
 type: overview
 status: active
 created: 2026-11-06

@@ -75,6 +75,11 @@ let workStartGate: WorkStartGate | null = null;
 /** Installed once by createCore; null in tests that register tools without a hub. */
 export function setWorkStartGate(gate: WorkStartGate | null): void { workStartGate = gate; }
 
+/** Why a tool that starts work may not run in this turn (a turn another chat's message started), or null: the gate a `startsWork` tool passes, for a path that starts work inside a tool that does not. */
+export async function workStartRefusal(context: ObservedToolContext, toolName: string): Promise<string | null> {
+  return workStartGate ? workStartGate(context, toolName) : null;
+}
+
 function gatedExecute<S extends z.ZodType>(tool: ObservedTool<S>): ObservedTool<S>["execute"] {
   if (!tool.startsWork) return tool.execute;
   return async (params, context) => {

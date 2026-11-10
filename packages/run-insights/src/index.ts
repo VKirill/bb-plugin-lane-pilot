@@ -50,6 +50,7 @@ export {
   ruleTierState,
   ruleTrialStats,
   ruleTrialStatsMany,
+  ruleRecurrences,
   setRuleTrial,
   type RuleEvent,
   type RuleEventAction,
