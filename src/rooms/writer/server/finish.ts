@@ -95,6 +95,9 @@ const MERGE_QUEUE_MS = 15 * 60_000;
 const DIRTY_BASE_WAIT_MS = 2 * 3600_000;
 const dirtyBase = (merged:{ status:string; reason?:string|null }) => merged.status === "conflict" && Boolean(merged.reason?.startsWith("base checkout has uncommitted changes"));
 
+/** How long an idle writer whose background command still runs is waited for before its work is validated as it stands. */
+const BACKGROUND_TAIL_WAIT_MS = 5 * 60_000;
+
 export function createWriterFinish(ctx: ServerCore, services: Services) {
   const { bb, db, getThreadBounded, host } = ctx;
   // The attempt-finished reactions, in run order: the settle record, the landed check (verification's,
@@ -241,6 +244,13 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       }
       // A writer runs as long as it works, unless the run's wall or token budget is gone; BB's events say when it has failed.
       let completedThread: unknown;
+      let tailSince = 0;
+      /** How many background commands of the writer's session still run; threads.get has no such count, the environment's thread list does. */
+      const backgroundTail = async (envId: string | null | undefined): Promise<number> => {
+        const listed = envId ? await (bb.sdk.threads.list({ environmentId:envId, includeHidden:true } as never) as Promise<unknown>).catch(() => null) : null;
+        const row = Array.isArray(listed) ? (listed as Array<{ id:string; activity?:{ activeBackgroundCommandCount?:number } }>).find((item) => item.id === input.writerThreadId) : undefined;
+        return row?.activity?.activeBackgroundCommandCount ?? 0;
+      };
       for (;;) {
         if (ctx.state.disposed) throw new Error("Lane Pilot was reloaded while the writer ran");
         const pollStarted = Date.now();
@@ -278,9 +288,19 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           return ended;
         }
         if (currentStatus === "idle") {
+          // An idle thread whose background command still runs is not finished (SMA ag_infra): BB wakes the writer when the
+          // command ends, so validating now would judge half the work. Wait for it, at most BACKGROUND_TAIL_WAIT_MS — a
+          // command that never ends (a dev server left up) must not hold the attempt.
+          const tail = await backgroundTail(stringAt(currentThread, "environmentId"));
+          if (tail > 0 && Date.now() - (tailSince ||= Date.now()) < BACKGROUND_TAIL_WAIT_MS) {
+            await new Promise((resolve) => setTimeout(resolve, pollPause(5_000)));
+            continue;
+          }
+          if (tail > 0) ctx.log(`writer ${input.taskId}: ${tail} background command(s) still running ${Math.round(BACKGROUND_TAIL_WAIT_MS / 60_000)} min after the turn ended; validating what is on disk`);
           completedThread = currentThread;
           break;
         }
+        tailSince = 0;
         if (watchBudget) {
           await noteWriterTokens();
           const budgetStop = overBudget();
@@ -291,15 +311,6 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const pause = Math.max(0, 2_000 - (Date.now() - pollStarted));
         if (watchBudget) await new Promise((resolve) => setTimeout(resolve, pollPause(pause)));
         else await sleepUntilThreadSignal(bb, input.writerThreadId, mark, pause);
-      }
-      // The turn ended while a background command of the session still ran (SMA ag_infra): a non-work stop, the attempt
-      // is free and the chain continues. threads.get reports no such count; the environment's thread list does.
-      {
-        const envId = stringAt(completedThread, "environmentId");
-        const listed = envId ? await (bb.sdk.threads.list({ environmentId:envId, includeHidden:true } as never) as Promise<unknown>).catch(() => null) : null;
-        const row = Array.isArray(listed) ? (listed as Array<{ id:string; activity?:{ activeBackgroundCommandCount?:number } }>).find((item) => item.id === input.writerThreadId) : undefined;
-        const tailCommands = row?.activity?.activeBackgroundCommandCount ?? 0;
-        if (tailCommands > 0) return providerFailed(`writer_background_tail: ${tailCommands} background command(s) still running after the turn ended`);
       }
       const currentAttempt = getAttempt(db, input.attemptId);
       if (currentAttempt?.state === "cancel_requested" || currentAttempt?.state === "canceled") {
@@ -939,9 +950,10 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         } catch { return []; }
       };
       const wordSettings = loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId));
-      // Shape of the work (SMA ag_shape): a new top-level folder or a test that only tests itself asks a person too,
-      // folded into the same landing word — off only when the person steps are off entirely.
-      const shape = ownerWordsMode(wordSettings) === "off" ? [] : await attemptShapeFlags();
+      // Shape of the work (SMA ag_shape): a new top-level folder or a test that only tests itself is named to the person
+      // in the landing word. Only on owner.words=on, where every landing waits for him anyway: on the default (risky) a
+      // new test that imports through an alias, or any Python or Go test, would hold an ordinary task for six hours.
+      const shape = ownerWordsMode(wordSettings) === "on" ? await attemptShapeFlags() : [];
       const ownerWords = landingWordAsked(wordSettings, input.task.risk) || shape.length > 0;
       const wordsOf = async () => ((await bb.storage.kv.get(TASK_WORDS_KEY)) as Record<string, TaskWord[]> | null)?.[taskWordKey(input.runId, taskFamily(input.taskId))];
       { const stopped = stoppedMeanwhile("the plan-fact check", writerThreadId); if (stopped) return stopped; }

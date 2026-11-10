@@ -12,7 +12,7 @@ import type { CodeCriticDefault } from "../../contracts/task-enums";
 import { saveCriticCodeDefault } from "./critic-override";
 import { wfLivePipelineRun, wfRunInputsByKey } from "@lane-pilot/workflow-engine";
 import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, getTaskRow, hasFailedStageReceipt, listAttemptsForTask, listAttemptsUpdatedSince, listOpenAttempts, listRunsWithAttempts, listRunTaskRows, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, taskBasePath, transitionAttempt } from "../../storage";
-import { birthGates, commonTaskFolder, isMainfixTask, isTaskBase, ownerWordsOn, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask, sha256 , spendReserve, type BirthKind } from "../../tasks";
+import { birthGates, commonTaskFolder, isMainfixTask, isTaskBase, ownerWordsMode, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask, sha256 , spendReserve, type BirthKind } from "../../tasks";
 import { liveFolderLockNote, nextStep } from "../../contracts/failure-class"
 import { taskFamily } from "@lane-pilot/contracts";
 import { validateTaskV2 } from "../../tasks/task-v2";
@@ -258,9 +258,10 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     // Nothing of the family is sent again while a member's recovery is unfinished (SMA ac_recovery).
     const recovering = args.task && !isMainfixTask(args.task.id) ? recoveryGuard(db, runId, args.task.id) : null;
     if (recovering) return { ok:false, error:{ code:"recovery_unfinished", retryable:false, sideEffects:"none", hint:recovering }, hint:recovering };
-    // A red baseline asks a person, not the PM (SMA ac_baseline_red): while the owner's item is open the family is not sent again.
+    // A red baseline asks a person (SMA ac_baseline_red): while the owner's item is open the family is not sent again. The
+    // item exists only on owner.words=on; on the default the PM narrows the check or widens owns_paths and sends again.
     const baseRed = args.task && !isMainfixTask(args.task.id)
-      ? baselineRedGuard(db, runId, args.task.id, ownerWordsOn(loadProjectSettings(db, args.projectId, getRunSettingsScopes(db, runId)))) : null;
+      ? baselineRedGuard(db, runId, args.task.id, ownerWordsMode(loadProjectSettings(db, args.projectId, getRunSettingsScopes(db, runId))) === "on") : null;
     if (baseRed) return { ok:false, error:{ code:"baseline_red", retryable:false, sideEffects:"none", hint:baseRed }, hint:baseRed };
     // A family the wall ladder ended in the backlog is not sent again; one whose hunters found the ask itself wrong is not sent again unchanged.
     const walled = args.task && !isMainfixTask(args.task.id) ? services.wall?.dispatchGuard({ runId, family:taskFamily(args.task.id), task, plan:canonicalPlan }) ?? null : null;

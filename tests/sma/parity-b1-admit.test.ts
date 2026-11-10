@@ -5,7 +5,7 @@ import { blockingClass, shapeFlags, spendReserve, testOwnedImports } from "../..
 import { effectState, getAttemptChange, recoveryState, upsertAttemptChange, appendTaskReceipt } from "../../src/rooms/rollback/store";
 import { baselineRedGuard, recoveryGuard } from "../../src/rooms/writer/server/dispatch-guards";
 import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../../src/rooms/plugin-db";
-import { postOwnerItem, closeOwnerItem } from "../../src/rooms/owner-waiting";
+import { postOwnerItem, closeOwnerItem, ownerAnsweredItem } from "../../src/rooms/owner-waiting";
 
 const open = () => { const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" }); return { bb, harness, db: openDatabase(bb) }; };
 
@@ -67,14 +67,14 @@ describe("permit, effects, recovery, red baseline, non-work stops and the shape 
     createTask(db, { id: "t1", runId: "run1", kind: "bb", contract: { id: "t1" } as never });
     createAttempt(db, { id: "a1", runId: "run1", taskId: "t1" });
     transitionAttempt(db, "a1", "accepted", {});
-    appendTaskReceipt(db, { kind: "revert", projectId: "projA", runId: "run1", taskId: "t1", attemptId: "a1", baseSha: null, changeSha: null, resultCommit: null, state: "failed", summary: "git revert failed" });
+    appendTaskReceipt(db, { kind: "revert", projectId: "projA", runId: "run1", taskId: "t1", attemptId: "a1", baseSha: null, changeSha: null, resultCommit: null, state: "failed", summary: "git revert failed", detail: {} });
     expect(recoveryState(db, "a1")).toBe("rollback_failed");
     // A redispatch of the family is refused and names the unfinished recovery.
     const refusal = recoveryGuard(db, "run1", "t1.2");
     expect(refusal).toContain("rollback_failed");
     expect(refusal).toContain("a1");
     // A later passed revert clears it: the family dispatches again.
-    appendTaskReceipt(db, { kind: "revert", projectId: "projA", runId: "run1", taskId: "t1", attemptId: "a1", baseSha: null, changeSha: null, resultCommit: "deadbeef", state: "passed", summary: "reverted" });
+    appendTaskReceipt(db, { kind: "revert", projectId: "projA", runId: "run1", taskId: "t1", attemptId: "a1", baseSha: null, changeSha: null, resultCommit: "deadbeef", state: "passed", summary: "reverted", detail: {} });
     expect(recoveryState(db, "a1")).toBe("clear");
     expect(recoveryGuard(db, "run1", "t1.2")).toBeNull();
     // A spawn lost in flight is reconciling; a blocked needs_human waits on a decision.
@@ -105,6 +105,11 @@ describe("permit, effects, recovery, red baseline, non-work stops and the shape 
     // The owner's answer closes the item and the family dispatches again.
     closeOwnerItem(db as never, key, "owner:yes");
     expect(baselineRedGuard(db, "run1", "t1.2", true)).toBeNull();
+    // His yes stands for the family (the baseline stop lets the next start through); a row the janitor closed is not his yes.
+    expect(ownerAnsweredItem(db as never, key)).toBe(true);
+    postOwnerItem(db as never, { key: "baseline-red:run1:t9", source: "baseline", kind: "baseline_red", projectId: "projA", what: "База красная", why: "npm test red" });
+    closeOwnerItem(db as never, "baseline-red:run1:t9", "janitor:term");
+    expect(ownerAnsweredItem(db as never, "baseline-red:run1:t9")).toBe(false);
     await harness.lifecycle.dispose();
   });
 

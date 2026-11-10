@@ -159,6 +159,12 @@ export function closeOwnerItem(db: Db, key: string, by: string, now: number = Da
   return db.prepare("UPDATE lane_pilot_owner_item SET state='closed', closed_at=?, closed_by=? WHERE key=? AND state='open'").run(now, clip(by, 500), key).changes > 0;
 }
 
+/** Did a person (or the agent deciding for him) close this row? A row the system closed — the janitor, a goal gone green — is not his answer. */
+export function ownerAnsweredItem(db: Db, key: string): boolean {
+  const row = db.prepare("SELECT closed_by FROM lane_pilot_owner_item WHERE key=? AND state='closed'").get(key) as { closed_by: string | null } | undefined;
+  return !!row?.closed_by && !/^(janitor|run-goal|profile-check):/.test(row.closed_by);
+}
+
 /** Every open row under a key prefix (a question asked once per attempt: `task-word:<run>:<family>:`); returns how many closed. */
 export function closeOwnerItemsByPrefix(db: Db, prefix: string, by: string, now: number = Date.now()): number {
   return db.prepare("UPDATE lane_pilot_owner_item SET state='closed', closed_at=?, closed_by=? WHERE state='open' AND substr(key, 1, ?)=?").run(now, clip(by, 500), prefix.length, prefix).changes;

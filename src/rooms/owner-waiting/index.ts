@@ -2,6 +2,6 @@
 export { ownerWaitingMigrations } from "./migrations";
 // The owner's time zone (the push settings) is what a schedule without one runs in.
 export { loadPushConfig } from "./push";
-export { closeOwnerItem, collectOwnerWaiting, countOpenOwnerItems, hasOpenOwnerItem, listOpenOwnerItemKeys, ownerWaitingCounts, postOwnerItem, setSandboxProjects, isSandboxProject, closeOwnerItemsByPrefix, ownerItemPrefixCount, sweepOwnerItems, rpcLine, tableExists, OWNER_FACT_TTL_MS, OWNER_NOTE_TTL_MS } from "./items";
+export { closeOwnerItem, collectOwnerWaiting, countOpenOwnerItems, hasOpenOwnerItem, listOpenOwnerItemKeys, ownerAnsweredItem, ownerWaitingCounts, postOwnerItem, setSandboxProjects, isSandboxProject, closeOwnerItemsByPrefix, ownerItemPrefixCount, sweepOwnerItems, rpcLine, tableExists, OWNER_FACT_TTL_MS, OWNER_NOTE_TTL_MS } from "./items";
 export type { Answered, LearningItemsReader, OpenOwnerItemFilter, OwnerAction, OwnerEvidence, OwnerItem, OwnerItemSweep, OwnerWaiting, Overnight, PendingLearningItem, PostOwnerItem } from "./items";
 export { NOW_CAP, callReason } from "./items";

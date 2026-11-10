@@ -138,7 +138,8 @@ export function classifyFailure(state:string, reason:string | null | undefined):
   // machine's state, not the model's work. Free, and the task moves down the writer chain at once. A red check that prints the word is the task's.
   if (!CHECK_FAILED.test(text) && zcodeEnvironmentError(text)) return sure("limit");
   if (SILENT.test(text)) return sure("provider");
-  if (NON_WORK.test(text)) return sure("provider");
+  // A red check that prints one of these phrases is the task's own failure.
+  if (!CHECK_FAILED.test(text) && NON_WORK.test(text)) return sure("provider");
   if (NO_GIT.test(text) || WAITING_SECRET.test(text)) return sure("contract");
   if (MERGE.test(text)) return sure("merge");
   if (DIRTY_BASE.test(text) && !/^merge_blocked:/.test(text)) return sure("dirty_base");
