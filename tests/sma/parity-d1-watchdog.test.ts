@@ -119,7 +119,7 @@ describe("hub watchdog parity D1", () => {
       const bb = stub(dir, "bb", text);
       writeFileSync(join(dir, "mainpid"), "4242\n");
       writeFileSync(join(dir, "state"), "active\n");
-      const e = { ...env, CURL_AFTER: "0", CURL_STATE: join(dir, "s"), SYS_LOG: join(dir, "sys.log"), MAINPID_FILE: join(dir, "mainpid"), STATE_FILE: join(dir, "state"), LP_WATCH_USER: "1", LP_WATCH_SYSTEMCTL: sys, LP_WATCH_BB: bb, LP_WATCH_KNOCK_SEC: "1", LP_WATCH_SUSPECT_AFTER: "2", LP_WATCH_MAX_LIFTS: "1" };
+      const e = { ...env, CURL_AFTER: "0", CURL_STATE: join(dir, "s"), SYS_LOG: join(dir, "sys.log"), MAINPID_FILE: join(dir, "mainpid"), STATE_FILE: join(dir, "state"), LP_WATCH_USER: "1", LP_WATCH_SYSTEMCTL: sys, LP_WATCH_BB: bb, LP_WATCH_KNOCK_SEC: "1", LP_WATCH_SUSPECT_AFTER: "2", LP_WATCH_MAX_LIFTS: "1", LP_WATCH_BOARD_EVERY: "1" };
       expect(functions("door_probe", e).trim(), name).toBe("ok");
       expect(functions("board_probe", e).trim(), name).toBe("unknown");
       const status = run(["status"], e);
@@ -432,11 +432,11 @@ describe("hub watchdog parity D1", () => {
     stub(dir, "sleep", SLEEP_STUB);
     const sys = stub(dir, "systemctl", SYSTEMCTL_STUB);
     stub(dir, "ss", SS_STUB);
-    const lift = (mainpid: string, ssPids: number[], unitCg: string) => {
+    const lift = (mainpid: string, ssPids: number[], unitCg: string, more: Record<string, string> = { LP_WATCH_KILL_HOLDER: "1" }) => {
       rmSync(join(dir, "outages.jsonl"), { force: true });
       writeFileSync(join(dir, "mainpid"), `${mainpid}\n`);
       writeFileSync(join(dir, "ss.out"), ssPids.map((pid) => `LISTEN 0 1 127.0.0.1:38886 0.0.0.0:* users:(("node",pid=${pid},fd=1))`).join("\n") + "\n");
-      functions("lift || true", { ...env, ...silentDoor, CURL_STATE: join(dir, "s"), SS_OUT: join(dir, "ss.out"), SYS_LOG: join(dir, "sys.log"), SLEEP_LOG: join(dir, "sleep.log"), MAINPID_FILE: join(dir, "mainpid"), LP_WATCH_USER: "1", LP_WATCH_SYSTEMCTL: sys, LP_WATCH_MAX_LIFTS: "2", UNIT_CG: unitCg });
+      functions("lift || true", { ...env, ...silentDoor, CURL_STATE: join(dir, "s"), SS_OUT: join(dir, "ss.out"), SYS_LOG: join(dir, "sys.log"), SLEEP_LOG: join(dir, "sleep.log"), MAINPID_FILE: join(dir, "mainpid"), LP_WATCH_USER: "1", LP_WATCH_SYSTEMCTL: sys, LP_WATCH_MAX_LIFTS: "2", UNIT_CG: unitCg, ...more });
       return read(join(dir, "outages.jsonl"));
     };
     const stranger = holder();
@@ -452,7 +452,13 @@ describe("hub watchdog parity D1", () => {
     expect(stranger.alive()).toBe(true);
     // pid 1 and the watchdog's own parent are never signalled (they are outside the stand-in cgroup too)
     expect(lift("4242", [1, process.pid], elsewhere)).not.toContain("port_holder_killed");
-    // read MainPID, holder proven outside: killed on try 2 only, and recorded
+    // nothing set (main kills none): a holder proven outside is named in the record and left alone
+    const named = lift("4242", [stranger.pid], elsewhere, {});
+    expect(named).toContain(`"event":"port_holder_seen"`);
+    expect(named).toContain(`held by pid ${stranger.pid}`);
+    expect(named).not.toContain("port_holder_killed");
+    expect(stranger.alive()).toBe(true);
+    // LP_WATCH_KILL_HOLDER=1, read MainPID, holder proven outside: killed on try 2 only, and recorded
     const log = lift("4242", [stranger.pid], elsewhere);
     expect(log).toContain(`killing port holder ${stranger.pid}`);
     expect(log.match(/port_holder_killed/g)).toHaveLength(1);
@@ -568,7 +574,9 @@ print(row["result"], row.get("note", ""))`], { encoding: "utf8" });
     expect(readFileSync(log, "utf8")).toContain('"event":"outage"');
     proc.kill("SIGTERM");
     for (const which of ["system", "user"]) {
-      const out = run(["print-unit", which], env);
+      // main's unit has no cap (a capped watchdog that stays down leaves the hub unwatched): the cap is a setting
+      expect(run(["print-unit", which], env).stdout).not.toContain("StartLimit");
+      const out = run(["print-unit", which], { ...env, LP_WATCH_RESTART_CAP: "5" });
       expect(out.stdout).toContain("StartLimitBurst=5");
       expect(out.stdout).toContain("StartLimitIntervalSec=3600");
     }
@@ -581,7 +589,7 @@ print(row["result"], row.get("note", ""))`], { encoding: "utf8" });
     stub(dir, "crontab", `cat >> "$CRON_LOG"`);
     writeFileSync(join(dir, "state"), "active\n");
     const e = { ...env, HOME: dir, SYS_LOG: join(dir, "sys.log"), MAINPID_FILE: join(dir, "m"), STATE_FILE: join(dir, "state"), CRON_LOG: join(dir, "cron.log"), LP_WATCH_SYSTEMCTL: sys };
-    const user = run(["install"], e);
+    const user = run(["install"], { ...e, LP_WATCH_RESTART_CAP: "5" });
     expect(user.stdout.indexOf("no administrator rights (sudo -n refused)")).toBeLessThan(user.stdout.indexOf("installed: user unit"));
     expect(readFileSync(join(dir, ".config/systemd/user/lp-hub-watchdog.service"), "utf8")).toContain("StartLimitBurst=5");
     const cron = run(["install"], { ...e, USERCTL_RC: "1" });
@@ -592,7 +600,7 @@ print(row["result"], row.get("note", ""))`], { encoding: "utf8" });
   it("[sma:m_sp_watch_xml] print-unit system, user and mac state the two-minute delay and the restart cap, and register nothing", () => {
     const { dir, env } = tmp();
     for (const which of ["system", "user"]) {
-      const out = run(["print-unit", which], env);
+      const out = run(["print-unit", which], { ...env, LP_WATCH_RESTART_CAP: "5" });
       expect(out.stdout).toContain("first look waits 120 s");
       expect(out.stdout).toContain("StartLimitBurst=5");
     }

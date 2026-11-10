@@ -30,7 +30,7 @@
 # stand-in unit); LP_WATCH_USER=1 drops the sudo prefix and uses systemctl --user.
 # Exit codes: 0 the machine is as asked, 1 failed or down, 2 a refusal a named flag would lift (--force for live work and the lift limit).
 # One watchdog at a time: a lock file (flock, or an atomic mkdir lock where flock is missing, e.g. a stock Mac); install writes a unit
-# that runs `run` (Restart=always, capped at five restarts an hour). A second watchdog that finds the lock waits LP_WATCH_LOCK_HELD_SEC
+# that runs `run` (Restart=always; LP_WATCH_RESTART_CAP=5 at install caps the restarts of a fallen watchdog per hour, off by default). A second watchdog that finds the lock waits LP_WATCH_LOCK_HELD_SEC
 # (60 s; not in a dry run) before it exits, so the cap is not spent on it.
 set -uo pipefail
 SERVICE="${LP_WATCH_SERVICE:-bb-server}"
@@ -44,6 +44,9 @@ FIRST_SEC="${LP_WATCH_FIRST_SEC:-0}"  # main looks at once; a longer blind start
 STOP_SEC="${LP_WATCH_STOP_SEC:-}"       # empty: the unit's own TimeoutStopUSec, 90 s when unreadable
 RESTART_SETTLE_SEC="${LP_WATCH_RESTART_SETTLE_SEC:-10}"
 LOCK_HELD_SEC="${LP_WATCH_LOCK_HELD_SEC:-60}"
+KILL_HOLDER="${LP_WATCH_KILL_HOLDER:-0}"   # 1: a repeated lift also kills a port holder proven outside the unit; 0 (main): it is only named
+BOARD_EVERY="${LP_WATCH_BOARD_EVERY:-0}"   # every N-th knock `run` also makes the board request (a CLI start each time); 0 (main): never
+RESTART_CAP="${LP_WATCH_RESTART_CAP:-}"    # install: restarts of a fallen watchdog per hour before systemd gives up; empty (main): no cap
 RESTART_WAIT_SEC="${LP_WATCH_RESTART_WAIT_SEC:-120}"
 MAX_LIFTS="${LP_WATCH_MAX_LIFTS:-3}"
 STATE_DIR="${LP_WATCH_STATE:-$HOME/.lane-pilot}"
@@ -245,15 +248,18 @@ lift() { # kill the hung one first, then start; returns 0 when the door answers 
   if [ "$DRY" = 1 ]; then record "lift" "dry: would kill ${SERVICE} and start it"; return 1; fi
   for try in $(seq 1 "$MAX_LIFTS"); do
     read -r wait _ <<< "$(backoff_sec)" # the log only picks which wait (30, 60, 120 s); the wait itself is whole, as on main
+    case "$wait" in ''|*[!0-9]*) wait=$((30 << (try - 1))); [ "$wait" -gt 120 ] && wait=120 ;; esac # no python3, no log: main's doubling
     pid="$(main_pid)"
     record "lift" "try $try, killing pid ${pid:-none}"
     [ -n "$pid" ] && [ "$pid" != "0" ] && service_kill
     if [ "$try" -gt 1 ] && [ -n "$pid" ] && [ "$pid" != "0" ]; then
-      # a repeated lift also kills a port holder, but only one proven outside the unit while the MainPID was read; main kills none
+      # a repeated lift names a port holder proven outside the unit while the MainPID was read; it is killed only where
+      # LP_WATCH_KILL_HOLDER=1 says so (main kills none, and a process that is not ours is never killed by a guess)
       for h in $(port_holders); do
         never_killed "$h" && continue
         [ "$(holder_place "$h")" = outside ] || continue
-        record "port_holder_killed" "killing port holder $h"; kill -9 "$h" 2>/dev/null
+        if [ "$KILL_HOLDER" = 1 ]; then record "port_holder_killed" "killing port holder $h"; kill -9 "$h" 2>/dev/null
+        else record "port_holder_seen" "port $DOOR_PORT is held by pid $h outside $SERVICE; not killed (LP_WATCH_KILL_HOLDER=1 would)"; fi
       done
     fi
     sleep 2
@@ -344,7 +350,12 @@ restart_hub() { # the refusals of stop stand; then what main does — the manage
   echo "down: the door did not answer in ${RESTART_WAIT_SEC}s"; return 1
 }
 
-lock_held_exit() { # the unit restarts an exit at once and caps restarts at five an hour: wait before leaving so the cap is not spent (not in a dry run)
+restart_cap_lines() { # the unit's cap on restarts of a fallen watchdog: only where LP_WATCH_RESTART_CAP names it (a capped watchdog that stays down leaves the hub unwatched)
+  case "$RESTART_CAP" in ''|*[!0-9]*|0) return 0 ;; esac
+  printf 'StartLimitIntervalSec=3600\nStartLimitBurst=%s\n' "$RESTART_CAP"
+}
+
+lock_held_exit() { # the unit restarts an exit at once: wait before leaving, so a second watchdog does not spin (and a restart cap, where set, is not spent); not in a dry run
   [ "$DRY" = 1 ] || sleep "$LOCK_HELD_SEC"
   exit 0
 }
@@ -369,7 +380,7 @@ run() {
   take_lock
   record "start" "watchdog up; the first look waits ${FIRST_SEC}s"
   [ "$FIRST_SEC" -gt 0 ] && sleep "$FIRST_SEC"
-  local silent=0 refused_run=0 down_since=0 silent_pid="" probe state pid board last_board=""
+  local silent=0 refused_run=0 down_since=0 silent_pid="" probe state pid board last_board="" knocks=0
   while true; do
     rotate >/dev/null
     probe="$(door_probe)"
@@ -388,7 +399,8 @@ run() {
       fi
       silent=0; refused_run=0
       # the board request is a second reading, advisory: recorded when it changes, never counted
-      board="$(board_probe)"
+      knocks=$((knocks + 1)); board="$last_board"
+      [ "$BOARD_EVERY" -gt 0 ] 2>/dev/null && [ $((knocks % BOARD_EVERY)) -eq 0 ] && board="$(board_probe)"
       if [ "$board" != "$last_board" ]; then
         case "$board:$last_board" in none:*|ok:) ;; *) record "board_$board" "the board request says $board while the door answers" ;; esac
         last_board="$board"
@@ -480,9 +492,7 @@ print_unit() { # the startup entry text for system|user|mac: the two-minute dela
 [Unit]
 Description=Lane Pilot hub watchdog (knocks on bb-server, lifts a hung one)
 After=bb-server.service
-StartLimitIntervalSec=3600
-StartLimitBurst=5
-
+$(restart_cap_lines)
 [Service]
 Type=simple
 User=$USER
@@ -498,9 +508,7 @@ EOF
     user) cat <<EOF
 [Unit]
 Description=Lane Pilot hub watchdog (user)
-StartLimitIntervalSec=3600
-StartLimitBurst=5
-
+$(restart_cap_lines)
 [Service]
 # the first look waits 120 s only with Environment=LP_WATCH_FIRST_SEC=120 added here; the default is 0, as before
 ExecStart=/bin/bash $self run
