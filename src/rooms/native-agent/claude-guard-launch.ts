@@ -26,11 +26,11 @@ export function claudeGuardAgentType(role: string): string {
 export const HELPER_DISALLOWED_TOOLS = "Workflow,ScheduleWakeup,AskUserQuestion,Agent";
 
 /**
- * Turn ceiling on a writer's claude launch (`--max-turns`): a writer that cannot finish inside it ends and the task
- * retries instead of looping forever. ponytail: a constant, not a writer.max_turns setting — the settings catalog is a
- * counted package surface; the upgrade path is one catalog key when a project ever needs another ceiling.
+ * Turn ceiling on a writer's claude launch (`--max-turns`). 0 = no ceiling, the default: a long task legitimately runs
+ * hundreds of turns, and a fixed cap would cut finished-in-all-but-name work; stalls are caught by the silence and spin
+ * sweeps and by the token budget. The launch carries the flag whenever a ceiling above zero is passed.
  */
-export const WRITER_MAX_TURNS = 200;
+export const WRITER_MAX_TURNS = 0;
 
 /** Same launcher shape as a native session: `--settings` with the bundled guard, and no machine-wide hook. No `--agent`. */
 export function claudeGuardLauncherScript(input: {

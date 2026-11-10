@@ -45,7 +45,8 @@ import { markTaskSatisfied, reopenWriterStages } from "../../runs/server";
 import type { ServerCore } from "../../contracts/server";
 
 import { validateTaskV2 } from "../../tasks/task-v2";
-import { allowTestEditsOf, applyTrustedTooling, testEditHoldOf } from "../../tasks";
+import { TEST_EDIT_HOLD_ITEM, allowTestEditsOf, applyTrustedTooling, testEditHoldOf } from "../../tasks";
+import { closeOwnerItemsByPrefix } from "../../owner-waiting";
 import { planWithOutsideReads, rerootTask } from "../../tasks";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification";
 import { runOnHost } from "@lane-pilot/host-calls";
@@ -236,6 +237,7 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
         return { ok: false, error: { code: "not_test_edit_held", retryable: false, sideEffects: "none", hint: `no held edits recorded for attempt ${testHeld.id}; redispatch the task` } };
       }
       await allowTestEditsOf(bb.storage.kv as never, testHeld.id, held);
+      try { closeOwnerItemsByPrefix(db as never, `${TEST_EDIT_HOLD_ITEM}${testHeld.id}`, "approved:pm"); } catch { /* the janitor takes it later */ }
       const paths = held.map((row) => row.path);
       const ready = await reopen.checkReopenable({ runId: input.runId, taskId: input.taskId, run, attempt: testHeld });
       if (!ready.ok) {

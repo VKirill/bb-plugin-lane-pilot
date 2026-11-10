@@ -23,7 +23,7 @@ import { wasAnsweredByDefault } from "./question-default";
 import { appendTaskQa } from "./reopen-attempt";
 import {needsHumanQuestion, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines} from "./writer-task";
 import { isLiveDecision } from "../live-folder";
-import { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, acceptanceArtifactDir, acceptanceProofGap, taskSizeOf, landingWordGap, landingWordAsked, questionsFromFile, checkScriptEdits, recordTaskApproach, recordTaskQuestions, referenceTestEdits, taskWordKey, testEditAllowance, testEditHoldKey, testFitFindings, writerMarkers } from "../../tasks";
+import { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, acceptanceArtifactDir, acceptanceProofGap, taskSizeOf, landingWordGap, landingWordAsked, questionsFromFile, checkScriptEdits, recordTaskApproach, recordTaskQuestions, referenceTestEdits, taskWordKey, TEST_EDIT_HOLD_ITEM, testEditAllowance, testEditHoldKey, testFitFindings, writerMarkers } from "../../tasks";
 import type { TaskWord } from "../../tasks";
 import type { StageId } from "../../tasks";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, sleepUntilThreadSignal, startLimitWaiting, threadFailure, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -829,24 +829,34 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         fitFiles.push({ path, before: await readBefore(path), after: await readFit(fitAttempt?.workspace_path, path) });
       }
       const fitHits = testFitFindings(fitFiles, input.task.test_removals ?? []);
-      // A hit a person already allowed for this very content passes; the rest holds the hand-in without burning the
-      // attempt (sma av_test_edit_hold): blocked, worktree kept, the PM told, until that exact edit is allowed.
+      // A hit a person already allowed for this very content passes (sma av_test_edit_hold). The rest: where the owner's
+      // word is asked for this task, the hand-in is held for him — blocked, worktree kept — until that exact edit is
+      // allowed; elsewhere the writer gets the finding back as before and restores the test in its next turn, so a
+      // weakened test does not stop a task nobody is waiting to decide on.
       const afterShaOf = (path:string) => sha256Hex(fitFiles.find((file) => file.path === path)?.after ?? "missing");
       const allowance = fitHits.length ? await testEditAllowance(bb.storage.kv as never, input.attemptId) : [];
       const heldHits = fitHits.filter((hit) => !allowance.some((row) => row.path === hit.path && row.afterSha256 === afterShaOf(hit.path)));
+      const holdForOwner = heldHits.length > 0 && landingWordAsked(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)), input.task.risk);
+      if (heldHits.length && !holdForOwner) {
+        // The refusal names the door: a removal that is the task's purpose goes into the contract's test_removals, and the PM dispatches again.
+        const reason = `test_fit: ${heldHits.slice(0, 5).map((hit) => `${hit.path}: ${hit.evidence}`).join("; ")} (if removing these tests is the task, name the files in the contract's test_removals)`.slice(0, 500);
+        recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+          attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"test_fit",reason}});
+        transitionAttempt(db, input.attemptId, "validation_failed", { reason });
+        return { status:"validation_failed", reason, output:candidate.output, produced:candidate.produced, verification:candidate.verification, attemptId:input.attemptId, writerThreadId };
+      }
       if (heldHits.length) {
         const paths = heldHits.slice(0, 5).map((hit) => hit.path);
-        const reason = `test_edit_hold: ${paths.join(", ")} (weakened reference tests wait for a person's allow of that exact edit: lane_pilot_update_task {taskId, allowTestEdits:true}; a removal that is the task goes into the contract's test_removals)`.slice(0, 500);
+        const reason = `test_edit_hold: ${paths.join(", ")} (weakened reference tests wait for the owner's allow of that exact edit: ask him, then lane_pilot_update_task {taskId, allowTestEdits:true}; a removal that is the task goes into the contract's test_removals)`.slice(0, 500);
         recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
           attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"test_edit_hold",reason}});
         await bestEffort(ctx.log, "test edit hold record", bb.storage.kv.set(testEditHoldKey(input.attemptId),
           heldHits.map((hit) => ({ path:hit.path, afterSha256:afterShaOf(hit.path) })) as never), undefined);
         transitionAttempt(db, input.attemptId, "blocked", { reason });
-        const ownerWords = landingWordAsked(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)), input.task.risk);
-        if (ownerWords) postOwnerItem(db as never, { key:`test-edit-hold:${input.attemptId}`, source:"writer", kind:"task_word", projectId:input.projectId, wake:false,
-          what:`Писатель ослабил эталонный тест (${paths.join(", ")}) — сдача ждёт вашего разрешения`, why:reason.slice(0, 600) });
+        postOwnerItem(db as never, { key:`${TEST_EDIT_HOLD_ITEM}${input.attemptId}`, source:"writer", kind:"test_edit_hold", projectId:input.projectId, wake:false,
+          what:`Исполнитель ослабил проверочный тест (${paths.join(", ")}) — сдача ждёт вашего разрешения`, why:reason.slice(0, 600) });
         await bestEffort(ctx.log, "test edit hold notice", sendServiceMessage(bb, { threadId:input.pmThreadId,
-          text:`Lane Pilot: task ${input.taskId} weakened reference tests (${paths.join(", ")}) and its hand-in waits. Allow that exact edit with lane_pilot_update_task {taskId:"${input.taskId}", allowTestEdits:true}, or redispatch with the files in test_removals if removing them is the task.` }), undefined);
+          text:`Lane Pilot: task ${input.taskId} weakened reference tests (${paths.join(", ")}) and its hand-in waits for the owner. Ask him; on his yes allow that exact edit with lane_pilot_update_task {taskId:"${input.taskId}", allowTestEdits:true}, or redispatch with the files in test_removals if removing them is the task.` }), undefined);
         return { status:"blocked", reason, output:candidate.output, produced:candidate.produced, verification:candidate.verification, attemptId:input.attemptId, writerThreadId };
       }
       const markerWarnings = [

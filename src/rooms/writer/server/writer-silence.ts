@@ -71,11 +71,15 @@ export async function countRunNudges(kv:Kv, attemptIds:string[]):Promise<number>
 /** How a running writer's recent frames read: its turn closed, it loops one call with nothing written, or it moves. */
 export type WriterFrame = "closed" | "spinning" | "progressing";
 
-/** Item events of one window whose repeat counts toward a loop verdict. */
-const SPIN_WINDOW = 40;
+/** The same call this many times in a row, with nothing else between, reads as a loop: a check rerun three times is ordinary work. */
+export const SPIN_REPEATS = 6;
+/** A spinning writer hears about it at most this often, and is ended only when it loops again this long after its last nudge. */
+export const SPIN_NUDGE_GAP_MS = 10 * 60_000;
 
-/** Command/tool-call signature of one item event, or null for anything else (a file change, a message). */
+/** Command/tool-call signature of one finished item, "" for a file change, null for anything else (a message, an unfinished item). */
 function callSignatureOf(event: unknown): string | null {
+  // One call is several events (started, updated, completed): only the completed one counts, or one command would read as three.
+  if (eventType(event) !== "item/completed") return null;
   const item = event && typeof event === "object" ? (event as { data?: { item?: Record<string, unknown> } }).data?.item : undefined;
   if (!item) return null;
   const type = String(item.type ?? "");
@@ -84,24 +88,29 @@ function callSignatureOf(event: unknown): string | null {
   return `${String(item.tool ?? item.name ?? type)}:${call.slice(0, 300)}`;
 }
 
-/** The call a spinning writer keeps repeating (for the nudge text and the end reason); null when none repeats. */
-export function repeatedCallOf(events: unknown[]): string | null {
-  const counts = new Map<string, number>();
-  let changed = false;
-  for (const event of events.slice(0, SPIN_WINDOW)) {
+/**
+ * The call a spinning writer keeps repeating (for the nudge text and the end reason), null when it does not spin: the newest
+ * SPIN_REPEATS finished calls after `since` are one and the same call with no file change and no other call between them.
+ * Events come newest first, as listThreadEventsRaw returns them.
+ */
+export function repeatedCallOf(events: unknown[], since = 0): string | null {
+  let first: string | null = null;
+  let run = 0;
+  for (const event of events) {
+    if ((eventTime(event) ?? Infinity) <= since) break;
     const signature = callSignatureOf(event);
     if (signature === null) continue;
-    if (signature === "") { changed = true; continue; }
-    const n = (counts.get(signature) ?? 0) + 1;
-    counts.set(signature, n);
-    if (n >= 3 && !changed) return signature;
+    if (signature === "" || (first !== null && signature !== first)) break;
+    first = signature;
+    run += 1;
+    if (run >= SPIN_REPEATS) return first;
   }
   return null;
 }
 
 /**
  * The stall frame of a writer's last events (newest first, as listThreadEventsRaw returns them): closed when the turn
- * completed, spinning when one call repeats three times with no file change between, progressing otherwise.
+ * completed, spinning when the newest SPIN_REPEATS calls are one call with no file change between, progressing otherwise.
  */
 export function writerFrame(events: unknown[]): WriterFrame {
   // Either edge may be the newest event (the sweep reads desc, tests may pass asc): a completed turn ends the frame.
@@ -160,7 +169,9 @@ export async function sweepWriterSilence(deps:SilenceDeps, now = Date.now()):Pro
       // A nudge is an event of its own, and a writer that ignores it is silent from the nudge on.
       const silentMs = now - Math.max(last, record?.at ?? 0);
       // An active writer can still be stuck: one call looping with no file change is a stall, not silence (sma as_stagnation).
-      const spinCall = repeatedCallOf(listed.events);
+      // Only calls made after the last nudge count, and no sooner than SPIN_NUDGE_GAP_MS after it: a writer that was told and
+      // changed course is left alone, and one long wait polled with the same command is not ended within minutes.
+      const spinCall = now - (record?.at ?? 0) >= SPIN_NUDGE_GAP_MS ? repeatedCallOf(listed.events, record?.at ?? 0) : null;
       if (!spinCall && silentMs < Math.min(limitMs, LIMIT_PROBE_MIN * 60_000)) continue;
       // A form open for the owner (on the writer's thread, or the PM's question that its answer may hang on) is a wait, not silence.
       // A probe that throws is unknown, not "no form": skip this writer this sweep, and log the failure once per streak.

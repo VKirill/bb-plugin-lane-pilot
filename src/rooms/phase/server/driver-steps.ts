@@ -135,29 +135,43 @@ export function installSteps(tools: StepsTools) {
       if (issueYes?.decision !== "yes") return phase;
       // The yes signs the plan and the drawing the owner saw (sma as_launchable): re-read now, a change asks anew.
       const stale: string[] = [];
+      let filesChanged = false;
       if (issueYes.key && issueYes.key !== phase.record.plan?.sha) stale.push("the plan changed since the owner's yes");
       const designYes = wordOf(phase.record, "design");
       const drawing = phase.record.design?.drawing;
       if (designYes?.decision === "yes" && drawing?.paths.length) {
         // The files are re-read: an edit outside drawing() makes the recorded drawing stale, and a yes on an older
-        // drawing signs nothing the owner sees now.
+        // drawing signs nothing the owner sees now. A read that fails for another reason than a missing file is
+        // unknown, not a change: this pass issues nothing and the next one reads again.
         const hashes: string[] = [];
         for (const path of drawing.paths.slice(0, 30)) {
-          const file = await readFile(phase, path).catch(() => null);
+          const file = await readFile(phase, path).catch((cause: unknown) => /ENOENT|no such file|not found/i.test(cause instanceof Error ? cause.message : String(cause)) ? null : "unknown" as const);
+          if (file === "unknown") { ctx.log(`phase ${phase.id}: the drawing file ${path} could not be read; issue waits for the next pass`); return phase; }
           hashes.push(`${path}:${file?.sha256 ?? "missing"}`);
         }
         const currentSha = sha256Hex(hashes.join("\n"));
-        if (currentSha !== drawing.sha256) stale.push("the drawing's files changed since it was recorded");
+        if (currentSha !== drawing.sha256) filesChanged = true;
         else if (designYes.key && designYes.key !== drawing.sha256) stale.push("the drawing changed since the owner's yes");
+      }
+      if (filesChanged) {
+        // No word can sign files nobody recorded: the way out is the PM's — back to design, the drawing recorded again,
+        // and the design word asked for it. Said once.
+        const why = "the drawing's files changed since it was recorded";
+        if (!listParts(db, phase.id).some((part) => part.kind === "stale_consent" && part.text.startsWith(why))) {
+          book(phase, "execution", "stale_consent", `${why} — nothing issues until the drawing is recorded again`);
+          await bestEffort(ctx.log, "phase stale drawing notice", bb.sdk.threads.send({ threadId: phase.pmThreadId, mode: "queue-if-active", input: [{ type: "text", mentions: [], text:
+            `[Lane Pilot phase] Phase ${phase.id} «${phase.title}» issues nothing: its drawing files were edited after the drawing was recorded. Return the phase to design (lane_pilot_phase {action:"return", to:"design", note}), record the drawing again and get the design word for it.` }] } as never), undefined);
+        }
+        return phase;
       }
       if (stale.length) {
         const why = stale.join("; ");
-        // The changed thing is asked again under its own turn (a new yes re-keys it); a plan alone asks «issue».
-        const turn = stale.some((line) => line.startsWith("the drawing")) && !stale.some((line) => line.startsWith("the drawing's files")) ? "design" : "issue";
-        if (!listParts(db, phase.id).some((part) => part.kind === "stale_consent" && part.text === why)) {
+        // The changed thing is asked again under its own turn: a new yes re-keys it.
+        const turn = stale.some((line) => line.startsWith("the drawing")) ? "design" : "issue";
+        if (!listParts(db, phase.id).some((part) => part.kind === "stale_consent" && part.text.startsWith(why))) {
           book(phase, "execution", "stale_consent", `${why} — the owner is asked again`);
           reactions.postOwnerItem({ key: phaseWordItemKey(phase.id, turn), source: "phase", kind: "word", projectId: phase.projectId,
-            what: "После вашего «да» изменился план или чертёж — запуск ждёт нового слова", why: why.slice(0, 600) });
+            what: turn === "design" ? "После вашего «да» чертёж перерисован — запуск ждёт нового слова" : "После вашего «да» изменился план — запуск ждёт нового слова", why: why.slice(0, 600) });
           void reactions.askPhaseWord(phase, turn, undefined, `${why}: confirm again`);
         }
         return phase;

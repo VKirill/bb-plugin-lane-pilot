@@ -72,6 +72,8 @@ export function testFitFindings(files: readonly TestFitFile[], declared: readonl
 export type TestEditHold = { path: string; afterSha256: string };
 type HoldKv = { get(key:string):Promise<unknown>; set(key:string, value:never):Promise<unknown> };
 
+/** Key prefix of the owner's list row of a held hand-in; the allowance closes it. */
+export const TEST_EDIT_HOLD_ITEM = "test-edit-hold:";
 export const testEditHoldKey = (attemptId:string) => `lp.test-edit-hold:${attemptId}`;
 export const testEditAllowKey = (attemptId:string) => `lp.test-edit-allow:${attemptId}`;
 

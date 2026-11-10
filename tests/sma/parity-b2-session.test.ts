@@ -62,9 +62,9 @@ function taskAndAttempt(db: ReturnType<typeof openDatabase>, state: string, over
 
 describe("parity b2-session", () => {
   it("[sma:as_build_args] a writer's launcher carries the turn ceiling and the deny list, a PM's carries neither", () => {
-    const writer = claudeGuardLauncherScript({ destDir: "/d", command: "/bin/claude", settingsPath: "/s", role: "writer", agentType: "writer", maxTurns: WRITER_MAX_TURNS });
+    const writer = claudeGuardLauncherScript({ destDir: "/d", command: "/bin/claude", settingsPath: "/s", role: "writer", agentType: "writer", maxTurns: 150 });
     const pm = claudeGuardLauncherScript({ destDir: "/d", command: "/bin/claude", settingsPath: "/s", role: "pm", agentType: "lane-pilot-pm" });
-    expect(writer).toContain(`--max-turns ${WRITER_MAX_TURNS}`);
+    expect(writer).toContain("--max-turns 150");
     expect(writer).toContain("--disallowedTools");
     expect(writer).toContain(HELPER_DISALLOWED_TOOLS);
     expect(pm).not.toContain("--max-turns");
@@ -110,6 +110,9 @@ describe("parity b2-session", () => {
     const parts = db.prepare("SELECT kind,text FROM lane_pilot_phase_part WHERE phase_id=? AND kind='stale_consent'").all(phase.id) as Array<{ text: string }>;
     expect(parts.length).toBe(1);
     expect(parts[0]!.text).toContain("changed since it was recorded");
+    // A second pass says nothing more, and a read that fails for another reason than a missing file is not a change.
+    await phases.drive(getPhase(db, phase.id)!);
+    expect((db.prepare("SELECT count(*) AS n FROM lane_pilot_phase_part WHERE phase_id=? AND kind='stale_consent'").get(phase.id) as { n: number }).n).toBe(1);
     expect(held.record.execution?.issued ?? {}).toEqual({});
     // A new yes signs the drawing the owner now sees only after the PM records it again: simulate drawing() resubmitted.
     const fresh = getPhase(db, phase.id)!;
@@ -185,19 +188,26 @@ describe("parity b2-session", () => {
   });
 
   it("[sma:as_stagnation] frames read closed, spinning and progressing, and a spinning writer is nudged", async () => {
-    const cmd = (n: number) => ({ type: "item/updated", createdAt: Date.now() - n * 1000, data: { item: { type: "commandExecution", command: "npm test" } } });
-    const fileChange = { type: "item/updated", createdAt: Date.now(), data: { item: { type: "fileChange", changes: {} } } };
-    expect(writerFrame([cmd(1), cmd(2), cmd(3)])).toBe("spinning");
-    expect(repeatedCallOf([cmd(1), cmd(2), cmd(3)])).toContain("npm test");
-    expect(writerFrame([cmd(1), fileChange, cmd(2), cmd(3)])).toBe("progressing");
-    expect(writerFrame([{ type: "turn/completed", createdAt: Date.now() }, cmd(2), cmd(3), cmd(4)])).toBe("closed");
+    const cmd = (n: number, command = "npm test") => ({ type: "item/completed", createdAt: Date.now() - n * 1000, data: { item: { type: "commandExecution", command } } });
+    const fileChange = { type: "item/completed", createdAt: Date.now(), data: { item: { type: "fileChange", changes: {} } } };
+    const six = [1, 2, 3, 4, 5, 6].map((n) => cmd(n));
+    expect(writerFrame(six)).toBe("spinning");
+    expect(repeatedCallOf(six)).toContain("npm test");
+    // A check rerun three times, another call between, a file change, or one call seen as several events is ordinary work.
+    expect(repeatedCallOf(six.slice(0, 3))).toBeNull();
+    expect(repeatedCallOf([cmd(1), cmd(2), cmd(3), cmd(4, "git status"), cmd(5), cmd(6), cmd(7)])).toBeNull();
+    expect(writerFrame([cmd(1), fileChange, ...six])).toBe("progressing");
+    expect(repeatedCallOf(six.map((event) => ({ ...event, type: "item/updated" })))).toBeNull();
+    // Calls made before the last nudge do not count again.
+    expect(repeatedCallOf(six, Date.now() - 3500)).toBeNull();
+    expect(writerFrame([{ type: "turn/completed", createdAt: Date.now() }, ...six])).toBe("closed");
     // The sweep nudges the spinning writer with the repeated call named.
     const { bb } = base();
     const sent: string[] = [];
     const deps = {
       bb: { sdk: { threads: {
         send: async (args: never) => { sent.push(JSON.stringify(args)); return {}; },
-        events: { list: async () => [cmd(1), cmd(2), cmd(3)] },
+        events: { list: async () => six },
       } }, storage: { kv: bb.storage.kv } },
       openAttempts: () => [{ id: "a1", run_id: "run1", task_id: "t1", thread_id: "thr_w", state: "running", project_id: "proj1", pm_thread_id: "thr_pm" }],
       getThread: async () => ({ status: "active" }),
@@ -210,6 +220,8 @@ describe("parity b2-session", () => {
     expect(done).toEqual([{ attemptId: "a1", action: "nudged", count: 1 }]);
     expect(sent.join()).toContain("repeating");
     expect(sent.join()).toContain("npm test");
+    // The next sweep, a minute later, says nothing more: the writer has ten minutes to change course.
+    expect(await sweepWriterSilence(deps as never, Date.now() + 60_000)).toEqual([]);
   });
 
   it("[sma:av_test_edit_hold] a weakened reference test holds the hand-in until that exact edit is allowed", async () => {
