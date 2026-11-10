@@ -1,5 +1,6 @@
 import { MACHINE_AFFINITY_ANY } from "@lane-pilot/contracts";
-import { countAttempts, createAttempt, failedBackgroundStageRows, failureFieldsOf, getActivation, getAttempt, getRunCard, latestAttemptsPerTask, stageReceiptStates, openAttemptIdsOfRun, openRunOfPmThread, runTaskCardRows, taskCheckLogRows, transitionAttempt } from "../../../storage";
+import { loadProjectSettings, countAttempts, createAttempt, failedBackgroundStageRows, failureFieldsOf, getActivation, getAttempt, getRunCard, latestAttemptsPerTask, stageReceiptStates, openAttemptIdsOfRun, openRunOfPmThread, runTaskCardRows, taskCheckLogRows, transitionAttempt } from "../../../storage";
+import { ownerWordsMode } from "../../../tasks";
 import { t } from "@lane-pilot/i18n";
 import { resolveRoleModel } from "@lane-pilot/models";
 import { setRunHalted } from "../runs-halt";
@@ -293,6 +294,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         projectId: parsed.projectId,
         description: compiled?.description ?? shortId,
         role: typeof metadata?.role === "string" ? metadata.role : null,
+        ownerWords: ownerWordsMode(loadProjectSettings(db, parsed.projectId)),
       };
     },
     activation_context: async ({ projectId, threadId }) => {

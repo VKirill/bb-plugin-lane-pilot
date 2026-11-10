@@ -4,27 +4,29 @@ import type { rpcContract } from "../../contracts";
 import { t } from "@lane-pilot/i18n";
 
 /**
- * The boundary line under the PM chat's input (SMA m_ce_boundary): work queues only on the owner's own word here,
- * and accepting a result is his. Other threads — writers, helpers, ordinary chats — show nothing.
+ * The boundary line under the PM chat's input (SMA m_ce_boundary): who decides here. It says what the project's
+ * owner.words setting makes true — every task waits for the owner's word (on), only high-risk ones do (risky, the
+ * default), or nothing waits (off: no line). Other threads — writers, helpers, ordinary chats — show nothing.
  */
 export function ComposerBoundary() {
   const rpc = useRpc<typeof rpcContract>();
   const view = useComposer();
   const threadId = view.scope.kind === "thread" ? view.scope.threadId : null;
-  const [pm, setPm] = useState(false);
+  const [line, setLine] = useState<"composerBoundary" | "composerBoundaryRisky" | null>(null);
 
   useEffect(() => {
-    setPm(false);
+    setLine(null);
     if (!threadId) return;
     let current = true;
     void rpc.call("native_thread", { threadId }).then((row) => {
-      if (current) setPm((row as { role?: unknown } | null)?.role === "pm");
+      const thread = row as { role?: unknown; ownerWords?: unknown } | null;
+      if (current && thread?.role === "pm") setLine(thread.ownerWords === "on" ? "composerBoundary" : thread.ownerWords === "off" ? null : "composerBoundaryRisky");
     }).catch(() => undefined);
     return () => { current = false; };
   }, [rpc, threadId]);
 
-  if (!pm) return null;
+  if (!line) return null;
   return (
-    <div style={{ fontSize: 11, opacity: 0.6, padding: "2px 8px" }}>{t("composerBoundary")}</div>
+    <div style={{ fontSize: 11, opacity: 0.6, padding: "2px 8px" }}>{t(line)}</div>
   );
 }

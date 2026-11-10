@@ -104,23 +104,30 @@ export function registerConversationTools(ctx: ServerCore, services: Services): 
   registerObservedTool(bb.agents, {
     name: "lane_pilot_check",
     description: "Run a check the owner asked for in the chat as an operation: the request selects the recipe (quick, full, browser) and every result carries its five measures.",
-    instructions: "`run` (request: the owner's words; commands: for quick, the commands to run in the run's checkout, each with cwd relative to it and timeoutSec): quick starts them in the background and returns the checkId at once; poll `status` (checkId) for the receipt — per command the five measures (command, folder, expected exit, time limit, evidence) and passed. A request for the whole suite selects full: send the run's accepted tasks to the run-goal check (bb lane-pilot run-goal) instead; a request about a page selects browser: use lane_pilot_helpers {action:\"browser_qa\"}. `stop` (checkId) stops a running quick check; a check also ends when the turn that started it ends.",
+    instructions: "`run` (request: the owner's words; commands: for quick, the commands to run in the run's checkout, each with cwd relative to it and timeoutSec): quick runs them in the sandbox and returns per command the five measures — command, folder, expected exit, time limit, evidence (the output tail) — and passed. A request for the whole suite selects full: send the run's accepted tasks to the run-goal check (bb lane-pilot run-goal) instead; a request about a page selects browser: use lane_pilot_helpers {action:\"browser_qa\"}. `stop` stops this chat's running quick checks (or one by checkId) and `status` reads a receipt; a check also ends when its turn is stopped.",
     parameters: z.discriminatedUnion("action", [
       z.object({ action: z.literal("run"), request: z.string().trim().min(1).max(2000),
         commands: z.array(z.object({ command: z.string().trim().min(1).max(4000), cwd: z.string().max(400).default("."), timeoutSec: z.number().int().min(5).max(1800).default(300), expectExit: z.number().int().default(0) }).strict()).max(10).default([]) }).strict(),
       z.object({ action: z.literal("status"), checkId: z.string().min(1) }).strict(),
-      z.object({ action: z.literal("stop"), checkId: z.string().min(1) }).strict(),
+      z.object({ action: z.literal("stop"), checkId: z.string().min(1).optional() }).strict(),
     ]),
     execute: async (input, context) => {
+      // The id is known only once the check ended, so a stop without it ends the checks this thread has running now.
+      if (input.action === "stop" && !input.checkId) {
+        const ids = [...(byThread.get(context.threadId ?? "") ?? [])];
+        for (const id of ids) { const entry = running.get(id); if (entry) { entry.stopReason = "stopped"; entry.controller.abort(new Error("stopped by the PM")); } }
+        return JSON.stringify({ stopped: ids.length > 0, checkIds: ids });
+      }
       if (input.action === "status" || input.action === "stop") {
+        const id = input.checkId!;
         if (input.action === "stop") {
-          const entry = running.get(input.checkId);
+          const entry = running.get(id);
           if (entry) { entry.stopReason = "stopped"; entry.controller.abort(new Error("stopped by the PM")); }
         }
-        const receipt = await bb.storage.kv.get(receiptIdKey(input.checkId)).catch(() => null) as CheckReceipt | null;
-        if (!receipt && input.action === "stop") return JSON.stringify({ checkId: input.checkId, stopped: false });
+        const receipt = await bb.storage.kv.get(receiptIdKey(id)).catch(() => null) as CheckReceipt | null;
+        if (!receipt && input.action === "stop") return JSON.stringify({ checkId: id, stopped: false });
         if (!receipt) throw new ToolError("no check with this id", { code: "no_check", retryable: false, sideEffects: "none" });
-        return JSON.stringify({ ...receipt, stopped: receipt.state === "stopped" || receipt.state === "stopped_by_turn_stop", running: running.has(input.checkId) });
+        return JSON.stringify({ ...receipt, stopped: receipt.state === "stopped" || receipt.state === "stopped_by_turn_stop", running: running.has(id) });
       }
       const recipe = checkRecipe(input.request);
       if (recipe !== "quick") return JSON.stringify({ recipe, next: recipe === "full" ? "run the run-goal check of this run: every accepted task's checks together on main" : "use lane_pilot_helpers {action:\"browser_qa\"} with the page and the cases" });
@@ -151,10 +158,13 @@ export function registerConversationTools(ctx: ServerCore, services: Services): 
       const entry = { controller: new AbortController(), threadId: context.threadId ?? null, stopReason: "stopped" as "stopped" | "stopped_by_turn_stop" };
       running.set(checkId, entry);
       if (entry.threadId) byThread.set(entry.threadId, new Set([...(byThread.get(entry.threadId) ?? []), checkId]));
-      // The commands run in the background as host jobs so `stop` reaches them: the answer is the checkId, the
-      // receipt in kv carries the measures as they land (SMA m_ck_stop — the run's process tree ends on the owner's word).
+      // The stopped turn cancels its own tool call: the same stop, without waiting for the thread event.
+      context.signal?.addEventListener("abort", () => { if (running.has(checkId)) { entry.stopReason = "stopped_by_turn_stop"; entry.controller.abort(new Error("stopped_by_turn_stop")); } }, { once: true });
+      // The commands run as host jobs so a stop reaches their process tree (SMA m_ck_stop): `stop` by id from another
+      // call, or the end of the turn that started the check. The call itself waits and answers with the receipt — a PM
+      // cannot sleep, so a check it had to poll would either burn turns or die with the turn that went to wait for it.
       const commands = input.commands;
-      void (async () => {
+      await (async () => {
         let current: string | null = null;
         try {
           for (const [index, item] of commands.entries()) {
@@ -182,7 +192,7 @@ export function registerConversationTools(ctx: ServerCore, services: Services): 
           await writeReceipt();
         }
       })().catch((cause: unknown) => ctx.log(`chat check ${checkId} failed to finish: ${cause instanceof Error ? cause.message : String(cause)}`));
-      return JSON.stringify({ checkId, state: "running", recipe });
+      return JSON.stringify({ ...receipt, stopped: receipt.state === "stopped" || receipt.state === "stopped_by_turn_stop", passed: receipt.state === "passed" });
     },
   });
 }

@@ -111,8 +111,8 @@ describe("conversation gates", () => {
     const started = JSON.parse(String(await check.execute({
       action: "run", request: "run tests; rm -rf /", commands: [{ command: "npm test", cwd: ".", timeoutSec: 30, expectExit: 0 }],
     }, ctx)));
-    expect(started).toMatchObject({ recipe: "quick", state: "running" });
-    // The check runs in the background; status gives the receipt once it ends.
+    expect(started).toMatchObject({ recipe: "quick", state: "failed", passed: false });
+    // The call answers with the receipt; status reads the same receipt by id.
     let receipt: { state?: string; measures?: Array<Record<string, unknown>> } = {};
     for (let i = 0; i < 200; i++) {
       receipt = JSON.parse(String(await check.execute({ action: "status", checkId: started.checkId }, ctx)));

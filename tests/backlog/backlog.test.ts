@@ -68,7 +68,7 @@ describe("the scanner", () => {
     const api = createBacklog({ db, bb, host, log: () => undefined, isDisposed: () => false } as never).backlog;
     const now = Date.now();
     const first = await api.scan(now);
-    expect(first).toEqual([{ projectId: "P", offered: "t-01", board: { issuable: 2, needsEstimate: 0, decompose: 0, blocked: 0 } }]);
+    expect(first).toEqual([{ projectId: "P", offered: "t-01", scanned: true, lastScanAt: now, board: { issuable: 2, needsEstimate: 0, decompose: 0, blocked: 0 } }]);
     expect(sent).toEqual([]);
     const offer = collectOwnerWaiting(db).items.find((item) => item.key === "backlog:P:t-01")!;
     expect(offer).toMatchObject({ source: "backlog", kind: "backlog_ready", what: expect.stringContaining("«Item t-01»") });

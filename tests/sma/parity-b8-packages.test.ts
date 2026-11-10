@@ -51,7 +51,7 @@ const untilEnded = async (check: { execute: (input: unknown, ctx: never) => unkn
 };
 
 describe("checks from the conversation can be stopped", () => {
-  it("[sma:m_ck_stop] a running quick check returns its checkId at once; stop cancels the host job and the receipt names the stopped command", async () => {
+  it("[sma:m_ck_stop] a stop reaches a running quick check: the host job is cancelled and the receipt names the stopped command", async () => {
     const { bb, db, harness } = open();
     pmMeta(harness);
     const calls: JobCall[] = [];
@@ -60,24 +60,23 @@ describe("checks from the conversation can be stopped", () => {
     registerConversationTools({ db, bb, host, log: () => undefined } as never, { spendByModel: (projectId: string, day: string) => tokenDailyByModel(db, projectId, day) });
     const check = registeredTools(bb.agents).get("lane_pilot_check")!;
     const ctx = { threadId: "thr_pm", projectId: "proj", signal: new AbortController().signal };
-    const started = JSON.parse(String(await check.execute({
+    // The call holds until the check ends and answers with its receipt: a PM is never left to poll.
+    const pending = Promise.resolve(check.execute({
       action: "run", request: "run tests", commands: [{ command: "npm test --watch", cwd: ".", timeoutSec: 300, expectExit: 0 }],
-    }, ctx)));
-    // The answer is the check's id while its command still runs — the run no longer holds the turn.
-    expect(started).toMatchObject({ recipe: "quick", state: "running" });
-    expect(started.checkId).toMatch(/^chk_/);
+    }, ctx));
     for (let i = 0; i < 200 && !calls.some((row) => row.method === "jobStart"); i++) await new Promise((wake) => setTimeout(wake, 5));
-    const stopped = JSON.parse(String(await check.execute({ action: "stop", checkId: started.checkId }, ctx)));
-    expect(stopped.checkId).toBe(started.checkId);
-    const receipt = await untilEnded(check as never, ctx as never, started.checkId) as { state: string; stoppedCommand: string | null };
-    expect(receipt.state).toBe("stopped");
-    expect(receipt.stoppedCommand).toBe("npm test --watch");
-    // The stop reached the host: the command's whole process tree was cancelled, not just the poll.
+    const stopped = JSON.parse(String(await check.execute({ action: "stop" }, ctx)));
+    expect(stopped.stopped).toBe(true);
+    const receipt = JSON.parse(String(await pending)) as { checkId: string; state: string; stoppedCommand: string | null; stopped: boolean; passed: boolean };
+    expect(receipt.checkId).toBe(stopped.checkIds[0]);
+    expect(receipt).toMatchObject({ state: "stopped", stoppedCommand: "npm test --watch", stopped: true, passed: false });
+    // The stop reached the host: the command's whole process tree was cancelled, and status reads the same receipt by id.
     expect(calls.some((row) => row.method === "jobCancel")).toBe(true);
+    expect((await untilEnded(check as never, ctx as never, receipt.checkId) as { state: string }).state).toBe("stopped");
     await harness.lifecycle.dispose();
   });
 
-  it("[sma:m_cd_stop] a check of a PM thread that went idle ends as stopped_by_turn_stop; another thread's check keeps running", async () => {
+  it("[sma:m_cd_stop] a check ends with the turn that started it — the thread went idle or the call was aborted; another thread's check keeps running", async () => {
     const { bb: real, db, harness } = open();
     pmMeta(harness);
     const handlers = new Map<string, (payload: unknown) => unknown>();
@@ -87,23 +86,24 @@ describe("checks from the conversation can be stopped", () => {
     createRun(db, "run1", "proj", "bb", "/ws", "none", { schemaVersion: 1, pools: { provider: 5, verification: 2 } }, "host1");
     registerConversationTools({ db, bb, host, log: () => undefined } as never, { spendByModel: (projectId: string, day: string) => tokenDailyByModel(db, projectId, day) });
     const check = registeredTools(bb.agents).get("lane_pilot_check")!;
+    const turnB = new AbortController();
     const ctxA = { threadId: "thr_a", projectId: "proj", signal: new AbortController().signal };
-    const ctxB = { threadId: "thr_b", projectId: "proj", signal: new AbortController().signal };
-    const a = JSON.parse(String(await check.execute({ action: "run", request: "check a", commands: [{ command: "tail -f a" }] }, ctxA)));
-    const b = JSON.parse(String(await check.execute({ action: "run", request: "check b", commands: [{ command: "tail -f b" }] }, ctxB)));
+    const ctxB = { threadId: "thr_b", projectId: "proj", signal: turnB.signal };
+    let endedB = false;
+    const a = Promise.resolve(check.execute({ action: "run", request: "check a", commands: [{ command: "tail -f a" }] }, ctxA));
+    const b = Promise.resolve(check.execute({ action: "run", request: "check b", commands: [{ command: "tail -f b" }] }, ctxB)).then((out) => { endedB = true; return out; });
     for (let i = 0; i < 200 && calls.filter((row) => row.method === "jobStart").length < 2; i++) await new Promise((wake) => setTimeout(wake, 5));
     const cancelsBefore = calls.filter((row) => row.method === "jobCancel").length;
     await handlers.get("thread.idle")?.({ thread: { id: "thr_a" } });
-    const receipt = await untilEnded(check as never, ctxA as never, a.checkId) as { state: string; stoppedCommand: string | null };
+    const receipt = JSON.parse(String(await a)) as { state: string; stoppedCommand: string | null };
     expect(receipt.state).toBe("stopped_by_turn_stop");
     expect(receipt.stoppedCommand).toBe("tail -f a");
     expect(calls.filter((row) => row.method === "jobCancel").length).toBeGreaterThan(cancelsBefore);
     // The other thread's check still runs: a stop reaches only the turn that was stopped.
-    const alive = JSON.parse(String(await check.execute({ action: "status", checkId: b.checkId }, ctxB)));
-    expect(alive.state).toBe("running");
-    expect(alive.running).toBe(true);
-    await handlers.get("thread.idle")?.({ thread: { id: "thr_b" } });
-    await untilEnded(check as never, ctxB as never, b.checkId);
+    expect(endedB).toBe(false);
+    // Its own turn is stopped: the aborted tool call ends the check the same way.
+    turnB.abort();
+    expect((JSON.parse(String(await b)) as { state: string }).state).toBe("stopped_by_turn_stop");
     await harness.lifecycle.dispose();
   });
 });
@@ -116,12 +116,12 @@ describe("the composer boundary line", () => {
     expect(row?.scopes).toEqual(["thread"]);
     const banner = row?.banners?.[0];
     if (!banner) throw new Error("missing boundary banner");
-    const mount = (role: string | null, locale: "en" | "ru") => {
+    const mount = (role: string | null, locale: "en" | "ru", ownerWords: "on" | "risky" | "off" = "on") => {
       setLocaleOverride(locale);
       return renderSlot({ component: banner.component }, {}, {
         context: { projectId: null, threadId: "thr_pm" },
         composer: { scope: { kind: "thread", threadId: "thr_pm" }, text: "" },
-        rpc: { native_thread: () => ({ token: "t", agentId: "claude", agentType: "claude-code", projectId: "p", description: "pm", role }) },
+        rpc: { native_thread: () => ({ token: "t", agentId: "claude", agentType: "claude-code", projectId: "p", description: "pm", role, ownerWords }) },
       });
     };
     const en = mount("pm", "en");
@@ -130,6 +130,14 @@ describe("the composer boundary line", () => {
     cleanup();
     const ruMount = mount("pm", "ru");
     await waitFor(() => expect(ruMount.container.textContent).toContain("по вашему слову"));
+    cleanup();
+    // The line says what the project's setting makes true: only risky work waits by default, and nothing is claimed when no word is asked.
+    const risky = mount("pm", "ru", "risky");
+    await waitFor(() => expect(risky.container.textContent).toContain("с высоким риском"));
+    cleanup();
+    const off = mount("pm", "ru", "off");
+    await new Promise((wake) => setTimeout(wake, 30));
+    expect(off.container.textContent).toBe("");
     cleanup();
     for (const role of ["writer", null]) {
       const other = mount(role, "en");

@@ -106,6 +106,9 @@ export const rpcRuns = {
       agentType: z.string(),
       projectId: z.string(),
       description: z.string().min(1),
+      /** The thread's Lane Pilot role (pm, writer, …) and the project's owner.words mode: what the composer's boundary line says. */
+      role: z.string().nullable().optional(),
+      ownerWords: z.enum(["on", "risky", "off"]).optional(),
     }).strict().nullable(),
   },
   list_runs: {
