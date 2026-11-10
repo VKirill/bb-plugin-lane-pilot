@@ -251,6 +251,10 @@ export function nativeLauncherScript(input: {
  * hooks depending on where it landed, and the person's env keys reached every helper. Its layer is the bundle, the project's hooks
  * and core's flags: the same on every machine (docs/guide/hooks.md, rule 6). MCP servers still connect (live probe). A PM chat keeps
  * the person's layer: it is the owner's own conversation.
+ *
+ * A helper also runs with Claude Code's auto-memory off: core passes `autoMemoryEnabled: true`, and in a main checkout the folder's
+ * `MEMORY.md` (the owner's notes to his own chats, 5 KB on selfystudio) loaded into every helper. The guard layer is merged last, so
+ * the switch is set here and needs no core release.
  */
 const MERGE_SETTINGS_PY = [
   "import json,os,sys,hashlib,tempfile",
@@ -272,11 +276,13 @@ const MERGE_SETTINGS_PY = [
   "      for ev,lst in v.items(): a[k][ev]=list(a[k].get(ev,[]))+list(lst)",
   "    elif isinstance(v,dict) and isinstance(a.get(k),dict): merge(a[k],v)",
   "    else: a[k]=v",
+  "helper=os.environ.get(\"LANE_PILOT_ROLE\",\"pm\")!=\"pm\"",
   "final=guard",
-  "if vals:",
+  "if vals or helper:",
   "  try:",
   "    m={}",
   "    for v in vals+[guard]: merge(m,load(v))",
+  "    if helper: m[\"autoMemoryEnabled\"]=False",
   "    body=json.dumps(m,sort_keys=True)",
   "    d=os.path.join(tempfile.gettempdir(),\"lane-pilot-claude-settings-%d\"%os.getuid()); os.makedirs(d,mode=0o700,exist_ok=True)",
   "    final=os.path.join(d,hashlib.sha256(body.encode()).hexdigest()[:16]+\".json\")",
@@ -285,7 +291,7 @@ const MERGE_SETTINGS_PY = [
   "    os.replace(final+\".tmp\",final)",
   "  except Exception as e:",
   "    sys.stderr.write(\"Lane Pilot: core settings layer unreadable, guard only: %s\\n\"%e); final=guard",
-  "if os.environ.get(\"LANE_PILOT_ROLE\",\"pm\")!=\"pm\":",
+  "if helper:",
   "  nouser=lambda v: \",\".join(x for x in v.split(\",\") if x!=\"user\")",
   "  named=False",
   "  for j,a in enumerate(kept):",

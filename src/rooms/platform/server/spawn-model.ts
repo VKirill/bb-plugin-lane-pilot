@@ -30,11 +30,16 @@ const registered = new WeakMap<object, SpawnUsage>();
  * writers' chain aside, instead of each next call failing the same way — another instance's limits are not its.
  * Keyed by provider and the model's own sub-provider (`zai-coding-plan/…` vs `router9/…` on opencode2), so a spent GLM
  * plan does not take the free Gemini with it.
- * ponytail: a fixed hold, not the notice's reset time — the notices name it in the provider's local time; parse it if an hour proves wrong.
+ * The hold starts at an hour and doubles (to a day at most) each time the first try after it ends meets the limit again: a weekly
+ * quota (9router's Antigravity accounts, 2026-11-08..10: 66 docs-night threads hung 18 minutes each on «HTTP 403 (reset after 2m)»,
+ * one batch every hour) is then tried once a day, not every hour. The notice's own reset time is not read: providers name it in
+ * their local time, and 9router names its own two-minute lock.
+ * shortcut: kept in memory, so a plugin reload starts again from an hour; store it in kv when reloads prove frequent enough to matter.
  */
 export const SEEN_LIMIT_HOLD_MS = 60 * 60_000;
+export const SEEN_LIMIT_HOLD_MAX_MS = 24 * 60 * 60_000;
 type SpawnInstanceState = {
-  seenLimits: Map<string, { until: number; notice: string }>;
+  seenLimits: Map<string, { until: number; notice: string; hold: number }>;
   threadModels: Map<string, { providerId: string; model: string }>;
 };
 const instances = new WeakMap<object, SpawnInstanceState>();
@@ -44,8 +49,15 @@ function instanceOf(owner: object): SpawnInstanceState {
   return state;
 }
 const limitKey = (providerId: string, model: string | null | undefined) => `${providerId}|${model?.includes("/") ? model.split("/")[0] : ""}`;
-export function noteProviderLimit(owner: object, providerId: string, model: string | null | undefined, notice: string, now = Date.now()): void {
-  if (providerId) instanceOf(owner).seenLimits.set(limitKey(providerId, model), { until: now + SEEN_LIMIT_HOLD_MS, notice: notice.slice(0, 160) });
+/** Records the limit and returns how long the pair is held, in ms (0 without a provider). */
+export function noteProviderLimit(owner: object, providerId: string, model: string | null | undefined, notice: string, now = Date.now()): number {
+  if (!providerId) return 0;
+  const limits = instanceOf(owner).seenLimits, key = limitKey(providerId, model), last = limits.get(key);
+  // Seen again inside the hold (a thread spawned before it): same length. The first failure soon after the hold ended: twice as long.
+  const hold = !last ? SEEN_LIMIT_HOLD_MS : now < last.until ? last.hold
+    : now - last.until < last.hold ? Math.min(last.hold * 2, SEEN_LIMIT_HOLD_MAX_MS) : SEEN_LIMIT_HOLD_MS;
+  limits.set(key, { until: now + hold, notice: notice.slice(0, 160), hold });
+  return hold;
 }
 export function seenProviderLimit(owner: object, providerId: string, model: string | null | undefined, now = Date.now()): { percent: number; window: string } | null {
   const seen = instanceOf(owner).seenLimits.get(limitKey(providerId, model));
@@ -60,8 +72,8 @@ export const THREAD_NOT_STARTED = /thread_command_failed|thread\.start failed/i;
  */
 export function setAsideOnStartFailure(bb: { log: { warn(message: string): void } }, what: string, providerId: string, model: string, reason: string): boolean {
   if (!THREAD_NOT_STARTED.test(reason)) return false;
-  noteProviderLimit(bb, providerId, model, `thread did not start: ${reason}`);
-  bb.log.warn(`Lane Pilot: ${what}: ${providerId} could not start its thread (${reason.slice(0, 200)}); it is set aside for an hour`);
+  const hold = noteProviderLimit(bb, providerId, model, `thread did not start: ${reason}`);
+  bb.log.warn(`Lane Pilot: ${what}: ${providerId} could not start its thread (${reason.slice(0, 200)}); it is set aside for ${hold / 60_000} min`);
   return true;
 }
 

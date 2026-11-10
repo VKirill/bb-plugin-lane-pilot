@@ -4,7 +4,7 @@ import { RunWriterPool } from "../../tasks";
 import { createProviderUsage, usageSkipPercent } from "../../usage/server";
 import { createProviderRetryGuard } from "../../stability/server";
 import { createConcurrencyLimit } from "./concurrency-limit";
-import { CATALOG_WAIT_MS, modelCatalogOf, noteProviderLimit, registerSpawnUsage, SEEN_LIMIT_HOLD_MS, threadModelOf, within, zcodeBusy, zcodeBusyPeek } from "../../platform/server";
+import { CATALOG_WAIT_MS, modelCatalogOf, noteProviderLimit, registerSpawnUsage, threadModelOf, within, zcodeBusy, zcodeBusyPeek } from "../../platform/server";
 import { onThreadFailure } from "@lane-pilot/thread-observe";
 ;
 import type { ServerCore } from "../../contracts/server";
@@ -48,8 +48,8 @@ export function createWriterState(ctx: ServerCore) {
     const notice = providerLimitNotice(detail.replace(/^provider_error:/, "").slice(0, 400));
     const pair = notice ? threadModelOf(ctx.bb, threadId) : null;
     if (!notice || !pair) return;
-    noteProviderLimit(ctx.bb, pair.providerId, pair.model, notice);
-    ctx.bb.log.warn(`Lane Pilot: ${pair.providerId}/${pair.model} hit a provider limit (${notice}); helper picks skip it for ${SEEN_LIMIT_HOLD_MS / 60_000} min`);
+    const hold = noteProviderLimit(ctx.bb, pair.providerId, pair.model, notice);
+    ctx.bb.log.warn(`Lane Pilot: ${pair.providerId}/${pair.model} hit a provider limit (${notice}); helper picks skip it for ${hold / 60_000} min`);
   });
 
   /** Cancels the retry BB's provider-retry queued in a writer thread once the task moved on to another writer. */

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.506
+
+- **A model whose limit comes back is tried less and less often: an hour, two, four, up to a day.** The free Gemini Flash through 9router
+  is the first pick of the background roles. Five of its seven Antigravity accounts are out of weekly quota until 13-14 November and
+  two answer 403, so every request gets «HTTP 403 (reset after 2m)». The seen-limit hold was a fixed hour: every hour a batch of
+  docs-night threads went into the same wall, each hanging about 18 minutes before Codex took the unit (66 failed threads on 8-10
+  November, none succeeded on the 10th). `noteProviderLimit` now
+  doubles the hold when the first try after it ends fails again, a day at most, and starts from an hour after a long quiet period.
+  In memory: a plugin reload starts again from an hour.
+- **A helper on Claude Code runs without Claude Code's auto-memory.** Core passes `autoMemoryEnabled: true`, so in a main checkout
+  the folder's `MEMORY.md`, the owner's notes to his own chats, loaded into every helper (5,160 tokens in this repository). The
+  launcher's settings merge sets it off for every role but the PM. No core release needed.
+- **The owner's personal rules have one source: `~/.bb/AGENTS.md` on the hub.** See «The person's rules» in `docs/guide/hooks.md`.
+  The ADHD and Ponytail plugins no longer inject their text at session start on any machine.
+- The hub skill `lane-pilot-workflows` now tells a graph author about the engine's `outcome` and `blocker` fields and the
+  «paths, not contents» rule (hub skills commit 9c7c0caf85cf).
+
 ## 0.1.505
 
 - **A helper runs under the same hooks on every machine: it no longer loads the person's Claude Code settings.** The owner asked to check

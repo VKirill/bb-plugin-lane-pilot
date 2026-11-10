@@ -84,13 +84,28 @@ What a helper no longer inherits on OVH, with the reason (rule 6: removed with a
 | `gitnexus-hook.cjs` | 97% of its output was «Local augment is unavailable» (now filtered in the person's settings too) | 70 sessions |
 | tmux state, clipboard image, project-wiki | terminal-only or for the owner's own agents | n/a |
 
+## The person's rules: one file on the hub
+
+How an answer is shaped for the owner and how code is built (the ADHD rules and the Ponytail ladder) are not hook output any more.
+They are one file, `~/.bb/AGENTS.md` on the hub: BB core reads it as the user's instructions into every thread of every provider on
+every machine (delivery checked 2026-11-10 on Codex, Claude Code, Devin and Cursor on OVH and on Codex on the Mac mini; OpenCode
+could not be checked, its free model answered a provider error that day). A helper does not get it: `userInstructions` is off in a
+role's default context (`helper-context.ts`), and a writer has the ladder in the hub skill `writer-practices`.
+
+The two plugins stay installed for their on-demand skills, with the automatic start text off on all four machines: the ADHD flag
+`~/.claude/.i-have-adhd-always` is removed and Ponytail's `~/.config/ponytail/config.json` says `{"defaultMode":"off"}`. Before this
+the rules reached Claude Code and Codex chats on OVH only, twice in a chat that had both the plugin and the instructions file, and
+were paid again after every compaction.
+
+To change a rule, edit the hub file; nothing is copied to a machine.
+
 ## Known deviations
 
 - `apps/feed-gen` runs `tsc --noEmit` over the whole project after every edit: 3.5 seconds (measured), over the budget of rule 4. Kept: it is
   the owner's own per-edit check.
-- Helpers on Codex on OVH still pass the old Lane Stack guard from `~/.codex/hooks.json`; the Macs have no Codex hooks. Lane Pilot's
-  own Codex guard is the `bb` shim, the same on every machine.
+- Codex on OVH has two hook entries in `~/.codex/hooks.json`; the Macs have none. Both are shims left by the Lane Stack cleanup: the shell one forwards to
+  Lane Pilot's guard (the same file the Macs have), the edit one exits 0. Left in place: editing the file drops the trust Codex gave it, which only the owner can give again.
 - Windows has no Lane Pilot layer: `host-detect` refuses a Windows path, the guard is a `python3` script. No Lane Pilot thread ran
   there in 14 days.
-- The owner's own chats still differ per machine: ADHD is on OVH and both Macs since 2026-11-10 (installed by hand, `claude plugin install`), Ponytail on OVH only. Nothing mirrors the person's layer between machines, so a plugin update is per machine.
+- Codex on the Macs and Windows has no ADHD or Ponytail plugin; the rules reach those chats through the hub file above.
 - The static audit cannot see what a script file does: `guard-*.sh`, `gitnexus-hook.cjs` and plugin hooks answer for their own exit code.

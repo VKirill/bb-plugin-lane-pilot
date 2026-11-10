@@ -92,7 +92,13 @@ it("a helper launcher denies the orchestration built-ins, a PM launcher keeps th
   expect(await run("pm")).toContain("--setting-sources=user,project,local");
   extra = ["--setting-sources", "user,project"];
   expect((await run("code-critic")).join(" ")).toContain("--setting-sources project");
+  // Auto-memory is the owner's notes to his own chats: off for a helper whatever core passes, left as core set it for a PM.
+  extra = ["--settings", JSON.stringify({ autoMemoryEnabled: true, fastMode: false })];
+  const settingsOf = (args: string[]) => JSON.parse(readFileSync(args[args.indexOf("--settings") + 1], "utf8"));
+  expect(settingsOf(await run("writer"))).toMatchObject({ autoMemoryEnabled: false, fastMode: false });
+  expect(settingsOf(await run("pm"))).toMatchObject({ autoMemoryEnabled: true });
   extra = [];
+  expect(settingsOf(await run("errand")).autoMemoryEnabled).toBe(false);
   expect(await run("errand")).toContain("--setting-sources=project,local");
   expect((await run("pm")).join(" ")).not.toContain("--setting-sources");
 });
