@@ -254,7 +254,7 @@ export function planItems(phase: Phase, output: Record<string, unknown>): PlanIt
 
 export type AutoApi = {
   context(input: { phaseId: string; docs: string[]; risks: Partial<Record<RiskKey, string>>; decisions?: string[]; appetite?: string; noGos?: string[]; by: string }): Promise<Phase>;
-  plan(input: { phaseId: string; items: PlanItem[]; design?: boolean; alreadyMet?: string; fromRun?: string; by: string }): Phase;
+  plan(input: { phaseId: string; items: PlanItem[]; design?: boolean; alreadyMet?: string; fromRun?: string; objective?: string; premortem?: string[]; by: string }): Phase;
   planCheck(input: { phaseId: string; decision: "approve" | "changes_requested"; by: string; summary?: string; wfRunId?: string }): Promise<Phase>;
   question(input: { phaseId: string; text: string; blocking: boolean; by: string }): Phase;
   waveReview(input: { phaseId: string; wave: number; state: "passed" | "failed"; by: string; summary: string }): Phase;
@@ -342,7 +342,8 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       const old = phase.record.replan?.gaps ? phase.record.plan?.items ?? [] : [];
       const lastWave = Math.max(0, ...old.map((item) => item.wave));
       const items = old.length ? [...old.filter((item) => !fresh.some((next) => next.id === item.id)), ...fresh.map((item) => ({ ...item, wave: lastWave + item.wave }))] : fresh;
-      const planned = deps.api.plan({ phaseId: phase.id, items, design: output.has_ui === true, fromRun: auto.wfRunId, ...(met ? { alreadyMet: `the planner checked the repository: ${text(output.objective, 600) || phase.goal}` } : {}), by });
+      const premortem = Array.isArray(output.premortem) ? (output.premortem as unknown[]).map((risk) => text(risk, 300)).filter(Boolean) : [];
+      const planned = deps.api.plan({ phaseId: phase.id, items, design: output.has_ui === true, fromRun: auto.wfRunId, objective: text(output.objective, 600) || undefined, premortem, ...(met ? { alreadyMet: `the planner checked the repository: ${text(output.objective, 600) || phase.goal}` } : {}), by });
       // lp.plan has the whole plan critiqued by its own critic role in a session of its own; the gate reads that from the run's journal.
       const approved = output.status === "ok" && text(output.plan_verdict, 200) === "pass";
       await deps.api.planCheck({ phaseId: planned.id, decision: approved ? "approve" : "changes_requested", by: `${by}, plan critic`, summary: text(output.plan_verdict, 2000), wfRunId: auto.wfRunId });

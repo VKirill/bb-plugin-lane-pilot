@@ -134,6 +134,13 @@ export function installDocs(base: DriverBase) {
     return `${pieceId}.${n}`;
   }
 
+  /** The drawing's hash: the paths' current file hashes in path order — the same computation drawing() confirmed (SMA p5_design). */
+  async function drawingSha(phase: Phase, paths: readonly string[]): Promise<string> {
+    const hashes: string[] = [];
+    for (const path of paths) { const file = await readFile(phase, path); hashes.push(`${path}:${file.sha256}`); }
+    return sha256Hex(hashes.join("\n"));
+  }
+
   /** The PM chat's checkout: the folder a piece runs in when the planner left its task's project_cwd out. */
   async function pmCheckoutPath(phase: Phase): Promise<string | null> {
     const pm = await orMiss(bb.sdk.threads.get({ threadId: phase.pmThreadId }), null, isNotFound) as { environmentId?: string } | null;
@@ -146,5 +153,5 @@ export function installDocs(base: DriverBase) {
     return hostId ? createCandidates(bb.hosts.experimental_client({ contract: hostContract }) as never, hostId, bb.log) : null;
   }
 
-  return { mustGet, savePhase, book, move, facts, readFile, readText, writeDocs, writeBook, redoId, pmCheckoutPath, candidates };
+  return { mustGet, savePhase, book, move, facts, readFile, readText, writeDocs, writeBook, redoId, pmCheckoutPath, candidates, drawingSha };
 }

@@ -91,7 +91,7 @@ describe("phase controls", () => {
       const phase = await f.phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Old", goal: "already planned", legacy: true });
       expect(phase.stage).toBe("planning");
       expect(phase.record.context).toMatchObject({ legacy: true, docs: [] });
-      const queued = f.phases.plan({ phaseId: phase.id, items: [piece("a", ["src/a.ts"])], by: "pm" });
+      const queued = f.phases.plan({ phaseId: phase.id, items: [piece("a", ["src/a.ts"])], objective: "o", premortem: ["r1","r2","r3"], by: "pm" });
       expect(queued.stage).toBe("planning");
       expect(queued.record.plan?.admittedSha).toBeUndefined();
       expect(queued.record.plan?.items).toHaveLength(1);
@@ -106,7 +106,7 @@ describe("phase controls", () => {
       const screen = await f.phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Screens", goal: "a screen" });
       const docs = [{ path: "docs/CONTEXT.md", sha256: sha256Hex("docs/CONTEXT.md"), bytes: 40 }];
       savePhase(f.db, screen.id, { stage: "planning", record: { ...screen.record, context: { docs, sha: contextSignature(docs), signedAt: 1, risks } }, at: 2 });
-      f.phases.plan({ phaseId: screen.id, items: [piece("ui", ["src/App.tsx"])], by: "planner" });
+      f.phases.plan({ phaseId: screen.id, items: [piece("ui", ["src/App.tsx"])], objective: "o", premortem: ["r1","r2","r3"], by: "planner" });
       const sha = f.phases.status(screen.id).phase.record.plan!.sha;
       seedPlanRun(f.db, "wf_screen", sha);
       const admitted = await f.phases.planCheck({ phaseId: screen.id, decision: "approve", by: "critic", wfRunId: "wf_screen" });
@@ -115,7 +115,7 @@ describe("phase controls", () => {
       expect(admitted.record.design?.decision).toBe("needed");
       const plain = await f.phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Logic", goal: "no screen" });
       savePhase(f.db, plain.id, { stage: "planning", record: { ...plain.record, context: { docs, sha: contextSignature(docs), signedAt: 1, risks } }, at: 2 });
-      f.phases.plan({ phaseId: plain.id, items: [piece("a", ["src/a.ts"])], by: "planner" });
+      f.phases.plan({ phaseId: plain.id, items: [piece("a", ["src/a.ts"])], objective: "o", premortem: ["r1","r2","r3"], by: "planner" });
       const plainSha = f.phases.status(plain.id).phase.record.plan!.sha;
       seedPlanRun(f.db, "wf_plain", plainSha);
       const moved = await f.phases.planCheck({ phaseId: plain.id, decision: "approve", by: "critic", wfRunId: "wf_plain" });

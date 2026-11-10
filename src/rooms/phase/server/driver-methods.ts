@@ -18,7 +18,7 @@ import type { ContextDoc, Phase, PhaseRecord, PhaseStage, PlanItem, RiskKey, Wor
 type Reported = { phaseId: string; by?: string };
 export type OpenInput = { projectId: string; pmThreadId: string; title: string; goal: string; legacy?: boolean; roadmapRow?: string; rails?: boolean };
 export type ContextInput = Reported & { docs: string[]; risks?: Partial<Record<RiskKey, string>>; requirements?: string[]; decisions?: string[]; appetite?: string; noGos?: string[] };
-export type PlanInput = Reported & { items: PlanItem[]; design?: boolean; alreadyMet?: string; fromRun?: string };
+export type PlanInput = Reported & { items: PlanItem[]; design?: boolean; alreadyMet?: string; fromRun?: string; objective?: string; premortem?: string[] };
 export type PlanCheckInput = Reported & { decision: "approve" | "changes_requested"; by: string; summary?: string; wfRunId?: string };
 export type DrawingInput = Reported & { paths: string[]; designer: string; feasible: boolean; contradiction?: string; reviewer?: string; critique?: DrawingCritique; lesson?: string };
 export type GoalAuditInput = Reported & { state: "met" | "unmet"; by: string; summary: string };
@@ -35,6 +35,9 @@ export type SetStateInput = Reported & { state: "pause" | "resume" | "stop" | "c
 export type StopInput = Reported & { words?: string };
 export type StopWaveInput = Reported;
 export type CompensateInput = Reported & { note: string };
+export type UatLineInput = Reported & { line: number; result: "pass" | "fail"; note?: string };
+export type DecideInput = Reported & { piece: string; choice: "skip" | "retry" | "cancel"; note?: string };
+export type InterruptInput = Reported & { words?: string };
 
 /**
  * The phase's state transitions: every method the PM, the owner or the machine calls to move a phase between its stages, and the
@@ -89,6 +92,8 @@ export function installMethods(tools: MethodsTools) {
     const record: PhaseRecord = { ...phase.record, context: { docs, sha: contextSignature(docs), signedAt: now(), risks,
       ...(input.appetite?.trim() ? { appetite: input.appetite.trim().slice(0, 600) } : {}), ...(noGos.length ? { noGos } : {}),
       ...(input.requirements?.length ? { requirements: [...new Set(input.requirements)] } : {}), ...(input.decisions?.length ? { decisions: [...new Set(input.decisions)] } : {}) } };
+    // SMA pc_contract: a yes counts only for the version it was given on — a context signed again voids the earlier word.
+    if (record.context!.sha !== phase.record.context?.sha && record.words) record.words = record.words.filter((word) => word.turn !== "context");
     // A new signature is a new base for the plan: failures spent planning against the old documents are forgotten, so a phase
     // whose context was re-signed plans again (PH1: the plan tries stayed spent after the owner re-signed CONTEXT.md).
     if (record.context!.sha !== phase.record.context?.sha) {
@@ -119,7 +124,12 @@ export function installMethods(tools: MethodsTools) {
     const items = input.items.map((item) => ({ ...item, task: { ...item.task, id: item.id } }));
     const contextSha = phase.record.context.sha;
     // `alreadyMet`: the planner found the repository already doing what the goal asks, a plan with no pieces that the plan gate admits as such.
-    const record: PhaseRecord = { ...phase.record, plan: { items, contextSha, sha: planSignature(items, contextSha), rounds: phase.record.plan?.rounds ?? 0, submittedAt: now(), ...(input.fromRun ? { fromRun: input.fromRun } : {}), ...(input.alreadyMet ? { alreadyMet: { evidence: input.alreadyMet.slice(0, 1000) } } : {}) } };
+    const record: PhaseRecord = { ...phase.record, plan: { items, contextSha, sha: planSignature(items, contextSha), rounds: phase.record.plan?.rounds ?? 0, submittedAt: now(),
+      ...(input.objective?.trim() ? { objective: input.objective.trim().slice(0, 600) } : {}),
+      ...(input.premortem?.length ? { premortem: input.premortem.map((risk) => risk.trim()).filter(Boolean).slice(0, 10) } : {}),
+      ...(input.fromRun ? { fromRun: input.fromRun } : {}), ...(input.alreadyMet ? { alreadyMet: { evidence: input.alreadyMet.slice(0, 1000) } } : {}) } };
+    // SMA pc_contract: a resubmitted plan with another signature voids the owner's earlier planning yes.
+    if (record.plan!.sha !== phase.record.plan?.sha && record.words) record.words = record.words.filter((word) => word.turn !== "planning");
     if (input.design) record.design = designDecision(items, true);
     savePhase(db, phase.id, { record, at: now() });
     if (input.alreadyMet) book(phase, "plan", "already_met", `the planner found the goal already met, no pieces to build: ${input.alreadyMet.slice(0, 1000)}`);
@@ -162,16 +172,13 @@ export function installMethods(tools: MethodsTools) {
     const folder = `${phaseFolder(phase.id)}/design/`;
     const outside = input.paths.filter((path) => !path.startsWith(folder) || path.includes(".."));
     if (outside.length) throw new PhaseRefusal(`the drawing lives in its own folder ${folder}`, outside.map((path) => `${path} is outside it`));
-    const hashes: string[] = [];
-    for (const path of input.paths.slice(0, 30)) {
-      const file = await readFile(phase, path);
-      hashes.push(`${path}:${file.sha256}`);
-    }
-    const drawn = { paths: input.paths, sha256: sha256Hex(hashes.join("\n")), designer: input.designer, feasible: input.feasible, ...(input.contradiction ? { contradiction: input.contradiction } : {}), ...(input.reviewer ? { reviewer: input.reviewer } : {}) };
+    const drawn = { paths: input.paths.slice(0, 30), sha256: await tools.drawingSha(phase, input.paths.slice(0, 30)), designer: input.designer, feasible: input.feasible, ...(input.contradiction ? { contradiction: input.contradiction } : {}), ...(input.reviewer ? { reviewer: input.reviewer } : {}) };
     // The previous contract to the archive: a replaced drawing stays in the record with its hash.
     const archived = archiveDrawing(phase.record, drawn);
     if (archived.length > (phase.record.design?.archived?.length ?? 0)) book(phase, "design", "archived", `previous drawing ${phase.record.design!.drawing!.sha256.slice(0, 12)} (${phase.record.design!.drawing!.paths.join(", ")}) archived`);
     const record: PhaseRecord = { ...phase.record, design: { ...(phase.record.design ?? { decision: "needed", why: "" }), drawing: drawn, archived } };
+    // SMA pc_contract: a redrawn drawing (another sha) voids the owner's earlier design yes.
+    if (drawn.sha256 !== phase.record.design?.drawing?.sha256 && record.words) record.words = record.words.filter((word) => word.turn !== "design");
     if (input.critique) {
       const why = reactions.critiqueProblems(input.critique);
       if (why.length) throw new PhaseRefusal("the drawing critique form is not filled", why);
@@ -263,13 +270,24 @@ export function installMethods(tools: MethodsTools) {
     // Consent is the whole message: «да» alone is consent; «да, но …» is a new word that goes back as words, not as yes.
     if (input.decision === "yes" && !isWholeConsent(input.text) && !/^owner via (screen|cli)$/.test(input.by ?? "")) throw new PhaseRefusal("the owner's message is not a whole consent: «да, но …» is a new word — record it as decision no with his words, or ask again");
     if (input.turn === "uat" && input.decision === "yes") {
-      // Session complete: the owner's yes on UAT counts only when every line of UAT.md is marked passed.
-      const path = phase.record.uat?.path;
-      const text = path ? await readText(phase, path) : null;
-      const state = text ? uatState(text) : null;
-      if (!state || !state.lines || state.open.length || state.failed.length) throw new PhaseRefusal(`UAT is not complete: ${!state ? "no UAT.md" : `${state.open.length} open, ${state.failed.length} failed of ${state.lines}`} — the owner marks each line in ${path ?? "UAT.md"} first`);
+      // Session complete (SMA p5_uat_line): the owner's yes counts only when every UAT line of the record is passed.
+      const lines = phase.record.uat?.lines;
+      if (lines) {
+        const open = lines.filter((row) => row.state === "open"), failed = lines.filter((row) => row.state === "failed");
+        if (open.length || failed.length || !lines.length) throw new PhaseRefusal(`UAT is not complete: ${open.length} open, ${failed.length} failed of ${lines.length} — the owner answers each line by its number (uat_line)`);
+      } else {
+        // A UAT written before the record lines existed: fall back to the checkboxes of UAT.md.
+        const path = phase.record.uat?.path;
+        const text = path ? await readText(phase, path) : null;
+        const state = text ? uatState(text) : null;
+        if (!state || !state.lines || state.open.length || state.failed.length) throw new PhaseRefusal(`UAT is not complete: ${!state ? "no UAT.md" : `${state.open.length} open, ${state.failed.length} failed of ${state.lines}`} — the owner marks each line in ${path ?? "UAT.md"} first`);
+      }
     }
     const record: PhaseRecord = { ...phase.record, words: [...(phase.record.words ?? []), { turn: input.turn, decision: input.decision, by: input.by ?? "owner", text: input.text.slice(0, 2000), at: now(), ...(input.wave !== undefined ? { wave: input.wave } : {}),
+      // SMA pc_contract: the version this word signs, so a new version of the context, the plan or the drawing cannot pass on it.
+      ...(input.turn === "context" && phase.record.context ? { sha: phase.record.context.sha } : {}),
+      ...(input.turn === "planning" && phase.record.plan ? { sha: phase.record.plan.sha } : {}),
+      ...(input.turn === "design" && phase.record.design?.drawing ? { sha: phase.record.design.drawing.sha256 } : {}),
       ...(input.turn === "acceptance" ? { useful: input.useful === true, limits: input.limits === true, key: shownKey } : {}) }] };
     reactions.answerPhaseWord(phase.id, input.turn, input.wave, input.decision, input.text, input.by ?? "owner");
     reactions.closeOwnerItem(phaseWordItemKey(phase.id, input.turn, input.wave), input.by ?? "owner");
@@ -315,8 +333,11 @@ export function installMethods(tools: MethodsTools) {
     const items = plan.items.filter((item) => !input.pieces.includes(item.id));
     if (!items.length) throw new PhaseRefusal("withdrawing every piece closes the phase: use close with the words why");
     const sha = planSignature(items, plan.contextSha);
-    const record: PhaseRecord = { ...phase.record, plan: { ...plan, items, sha, ...(plan.admittedSha ? { admittedSha: sha } : {}) }, scope: { revisions: phase.record.scope?.revisions ?? 0, withdrawn: [...(phase.record.scope?.withdrawn ?? []), ...input.pieces] } };
-    book(phase, "decisions", "scope_withdrawn", `${input.pieces.join(", ")} withdrawn by ${input.by ?? "pm"}: ${input.note}`);
+    // A trimmed scope revokes the earlier permission to issue (SMA bi_revise): the new scope asks for a new «issue» word.
+    const revoked = (phase.record.words ?? []).some((word) => word.turn === "issue" || word.turn === "wave");
+    const record: PhaseRecord = { ...phase.record, plan: { ...plan, items, sha, ...(plan.admittedSha ? { admittedSha: sha } : {}) }, scope: { revisions: phase.record.scope?.revisions ?? 0, withdrawn: [...(phase.record.scope?.withdrawn ?? []), ...input.pieces] },
+      ...(revoked ? { words: (phase.record.words ?? []).filter((word) => word.turn !== "issue" && word.turn !== "wave") } : {}) };
+    book(phase, "decisions", "scope_withdrawn", `${input.pieces.join(", ")} withdrawn by ${input.by ?? "pm"}: ${input.note}${revoked ? "; issue permission revoked" : ""}`);
     savePhase(db, phase.id, { record, at: now() });
     return mustGet(phase.id);
   }
@@ -353,7 +374,13 @@ export function installMethods(tools: MethodsTools) {
     if (!RETURN_STAGES.includes(input.to)) throw new PhaseRefusal(`a phase returns to ${RETURN_STAGES.join(", ")}`);
     if (PHASE_STAGES.indexOf(input.to) >= PHASE_STAGES.indexOf(phase.stage)) throw new PhaseRefusal(`a return goes to an earlier stage: the phase is at ${phase.stage}`);
     if (!input.note.trim()) throw new PhaseRefusal("a return carries a note: what changed and why");
+    // Only a prepared phase returns to execution (SMA px_return_exec): acceptance holds a frozen verdict of the package; before
+    // it there is nothing prepared to send back. Without this the owner's «no» met the same verdict on the same work.
+    if (input.to === "execution" && (phase.stage !== "acceptance" || !phase.record.verification?.verdict))
+      throw new PhaseRefusal("a return to execution is allowed only from acceptance, on a frozen verdict — the preparation (verdict, candidate heads, acceptance) is withdrawn and execution queues one attempt higher");
     const record = staleAfterReturn(input.to, phase.record);
+    // The return's note rides into each redo's plan (the writer sees why the work runs again).
+    if (input.to === "execution" && record.execution) record.execution = { ...record.execution, returnNote: input.note.slice(0, 1000) };
     book(phase, "decisions", "return", `${phase.stage} → ${input.to} by ${input.by ?? "pm"}: ${input.note}`);
     savePhase(db, phase.id, { stage: input.to, record, state: phase.state === "closed" ? "active" : phase.state, at: now() });
     return mustGet(phase.id);
@@ -383,17 +410,25 @@ export function installMethods(tools: MethodsTools) {
    * The phase turns stopped only once every stop is observed (SMA audit N-01: a failed stop published a stopped phase over a live
    * writer); until then it keeps `stopping`, issues nothing, and each pass asks for the open stops again.
    */
-  async function stop(input: StopInput): Promise<{ phase: Phase; canceled: string[]; unconfirmed: string[] }> {
-    const phase = mustGet(input.phaseId);
+  /** Cancels every open attempt of the phase's pieces (stop()'s loop, shared with the force-interrupt): each canceled task is
+   *  named, each stop not yet observed comes back unconfirmed, never counted as stopped. */
+  async function cancelPhaseWork(phase: Phase, reason: string): Promise<{ canceled: string[]; unconfirmed: string[]; canceledPieces: string[] }> {
     const families = new Set(Object.values(phase.record.execution?.issued ?? {}).map(taskFamily));
     const canceled: string[] = [];
     const unconfirmed: string[] = [];
+    const canceledPieces = new Set<string>();
     for (const attempt of listOpenAttempts(db).filter((row) => row.run_id === phase.runId && families.has(taskFamily(row.task_id)))) {
-      const result = await cancelAttemptById(ctx, attempt.id, services.rollback, `canceled: phase ${phase.id} stopped by ${input.by ?? "pm"}${input.words ? `: ${input.words}` : ""}`, "superseded")
+      const result = await cancelAttemptById(ctx, attempt.id, services.rollback, reason, "superseded")
         .catch((cause: unknown) => ({ ok: false, state: "error", reason: cause instanceof Error ? cause.message : String(cause) }));
-      if (result.ok) canceled.push(attempt.task_id);
+      if (result.ok) { canceled.push(attempt.task_id); canceledPieces.add(taskFamily(attempt.task_id)); }
       else unconfirmed.push(`${attempt.task_id} (${result.reason ?? result.state})`);
     }
+    return { canceled, unconfirmed, canceledPieces: [...canceledPieces] };
+  }
+
+  async function stop(input: StopInput): Promise<{ phase: Phase; canceled: string[]; unconfirmed: string[] }> {
+    const phase = mustGet(input.phaseId);
+    const { canceled, unconfirmed } = await cancelPhaseWork(phase, `canceled: phase ${phase.id} stopped by ${input.by ?? "pm"}${input.words ? `: ${input.words}` : ""}`);
     const auto = phase.record.auto;
     if (auto) {
       // cancel answers false for a finished or unknown run (nothing to end); a throw is no answer: the run may go on, the phase keeps it
@@ -440,6 +475,80 @@ export function installMethods(tools: MethodsTools) {
     return { phase: mustGet(phase.id), canceled };
   }
 
+  /** A person answers one UAT line at a time, pass or fail, by its number (SMA p5_uat_line); every answer is recorded. */
+  function uatLine(input: UatLineInput): Phase {
+    const phase = mustGet(input.phaseId);
+    const lines = phase.record.uat?.lines;
+    if (!lines?.length) throw new PhaseRefusal(`phase ${phase.id} has no UAT lines yet: they are numbered when the UAT session opens at acceptance`);
+    const line = lines.find((row) => row.n === input.line);
+    if (!line) throw new PhaseRefusal(`no UAT line ${input.line}: the lines are 1 to ${lines.length}`);
+    const record: PhaseRecord = { ...phase.record, uat: { ...phase.record.uat!, lines: lines.map((row) => row.n === input.line
+      ? { ...row, state: input.result === "pass" ? "passed" as const : "failed" as const, ...(input.note?.trim() ? { note: input.note.trim().slice(0, 600) } : { note: undefined }), by: input.by ?? "owner", at: now() } : row) } };
+    book(phase, "acceptance", "uat_line", `UAT line ${input.line} (${line.pieceId}): ${input.result}${input.note ? ` — ${input.note}` : ""} by ${input.by ?? "owner"}`);
+    savePhase(db, phase.id, { record, at: now() });
+    return mustGet(phase.id);
+  }
+
+  /** The only way out of a stopped piece (SMA bi_decide): skip, retry or cancel — there is no fourth. */
+  async function decide(input: DecideInput): Promise<Phase> {
+    const phase = mustGet(input.phaseId);
+    const plan = phase.record.plan;
+    const item = plan?.items.find((row) => row.id === input.piece);
+    if (!item) throw new PhaseRefusal(`no piece ${input.piece} in the plan of phase ${phase.id}`);
+    const broken = ["blocked", "canceled"].includes(facts(phase).get(input.piece)?.state ?? "") || input.piece in (phase.record.execution?.issueErrors ?? {});
+    if (!broken) throw new PhaseRefusal(`piece ${input.piece} is not stopped (it is ${facts(phase).get(input.piece)?.state ?? (phase.record.execution?.issued[input.piece] ? "at work" : "not issued")}): decide is for a blocked or canceled piece, or one that failed to issue`);
+    if (input.choice === "cancel") return (await stop({ phaseId: phase.id, words: input.note ?? `piece ${input.piece}: cancel`, by: input.by })).phase;
+    if (input.choice === "skip") {
+      const items = plan!.items.filter((row) => row.id !== input.piece);
+      if (!items.length) throw new PhaseRefusal("skipping the last piece closes the phase: decide with cancel");
+      const sha = planSignature(items, plan!.contextSha);
+      const execution = phase.record.execution ? { ...phase.record.execution } : undefined;
+      if (execution) { delete execution.issued[input.piece]; delete execution.issuedSha?.[input.piece]; delete execution.issueErrors?.[input.piece]; }
+      const revoked = (phase.record.words ?? []).some((word) => word.turn === "issue" || word.turn === "wave");
+      const record: PhaseRecord = { ...phase.record, plan: { ...plan!, items, sha, ...(plan!.admittedSha ? { admittedSha: sha } : {}) }, ...(execution ? { execution } : {}),
+        scope: { revisions: phase.record.scope?.revisions ?? 0, withdrawn: [...(phase.record.scope?.withdrawn ?? []), input.piece] },
+        ...(revoked ? { words: (phase.record.words ?? []).filter((word) => word.turn !== "issue" && word.turn !== "wave") } : {}) };
+      book(phase, "decisions", "scope_withdrawn", `${input.piece} skipped by ${input.by ?? "pm"}: ${input.note ?? "decide skip"}${revoked ? "; issue permission revoked" : ""}`);
+      savePhase(db, phase.id, { record, at: now() });
+      return mustGet(phase.id);
+    }
+    // retry: the piece's contract print is withdrawn, so issue() sends it again as the next redo of its family.
+    const execution = phase.record.execution!;
+    const record: PhaseRecord = { ...phase.record, execution: { ...execution, issuedSha: { ...(execution.issuedSha ?? {}), [input.piece]: "retry" },
+      issueErrors: Object.fromEntries(Object.entries(execution.issueErrors ?? {}).filter(([piece]) => piece !== input.piece)) } };
+    book(phase, "execution", "retry", `${input.piece} is issued again as a redo by ${input.by ?? "pm"}: ${input.note ?? "decide retry"}`);
+    savePhase(db, phase.id, { record, at: now() });
+    return mustGet(phase.id);
+  }
+
+  /**
+   * Force-interrupt (SMA px_force): a person interrupts the phase's running work by an explicit choice, and only while that work
+   * is not proven stopped. The phase turns paused once every stop is observed; until then it keeps `interrupting` and each pass
+   * asks for the open stops again. On resume the interrupted pieces are issued again as redos of their families.
+   */
+  async function interrupt(input: InterruptInput): Promise<{ phase: Phase; canceled: string[]; unconfirmed: string[] }> {
+    const phase = mustGet(input.phaseId);
+    if (phase.state !== "pause_requested" && phase.state !== "paused")
+      throw new PhaseRefusal(`phase ${phase.id} is ${phase.state}: an interrupt is for a pausing or paused phase — pause it first`);
+    const families = new Set(Object.values(phase.record.execution?.issued ?? {}).map(taskFamily));
+    const running = listOpenAttempts(db).filter((row) => row.run_id === phase.runId && families.has(taskFamily(row.task_id)));
+    if (!running.length && !phase.record.interrupting) throw new PhaseRefusal(`phase ${phase.id} has no running work to interrupt: it is already still`);
+    const { canceled, unconfirmed, canceledPieces } = await cancelPhaseWork(phase, `canceled: phase ${phase.id} interrupted by ${input.by ?? "pm"}${input.words ? `: ${input.words}` : ""}`);
+    const line = [canceled.length ? `canceled: ${canceled.join(", ")}` : "no piece at work", ...(unconfirmed.length ? [`stop not observed yet: ${unconfirmed.join(", ")}`] : [])].join("; ");
+    const record = mustGet(phase.id).record;
+    // The interrupted pieces go again as redos on resume: their issued contract prints are withdrawn.
+    const issuedSha = { ...(record.execution?.issuedSha ?? {}) };
+    for (const piece of canceledPieces) issuedSha[piece] = "interrupted";
+    if (unconfirmed.length) {
+      book(phase, "execution", "interrupting", `${line}; the phase turns paused when every stop is observed`);
+      savePhase(db, phase.id, { state: "pause_requested", record: { ...record, execution: record.execution ? { ...record.execution, issuedSha } : record.execution, interrupting: { by: phase.record.interrupting?.by ?? input.by ?? "pm", at: phase.record.interrupting?.at ?? now(), unconfirmed } }, at: now() });
+      return { phase: mustGet(phase.id), canceled, unconfirmed };
+    }
+    book(phase, "execution", "interrupted", `${line}; every stop observed, the phase is paused`);
+    savePhase(db, phase.id, { state: "paused", record: { ...record, execution: record.execution ? { ...record.execution, issuedSha } : record.execution, interrupting: undefined }, at: now() });
+    return { phase: mustGet(phase.id), canceled, unconfirmed };
+  }
+
   /** Compensates the phase's own effects: each accepted piece is reverted (git revert through the merge lock), newest first. */
   async function compensate(input: CompensateInput): Promise<{ phase: Phase; results: Array<{ taskId: string; state: string; detail?: string }> }> {
     const phase = mustGet(input.phaseId);
@@ -467,5 +576,5 @@ export function installMethods(tools: MethodsTools) {
     return mustGet(phase.id);
   }
 
-  return { open, context, plan, planCheck, drawing, goalAudit, lessons, question, answer, word, waveReview, withdraw, revise, correct, returnTo, setState, stop, stopWave, compensate, admitIfReady };
+  return { open, context, plan, planCheck, drawing, goalAudit, lessons, question, answer, word, waveReview, withdraw, revise, correct, returnTo, setState, stop, stopWave, compensate, admitIfReady, uatLine, decide, interrupt };
 }
