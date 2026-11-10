@@ -83,6 +83,25 @@
       }
     },
     {
+      "id": "living",
+      "type": "action",
+      "action": "lp.retro_living",
+      "title": {
+        "en": "Living retrospective",
+        "ru": "Живая ретроспектива"
+      },
+      "skip_when": "retro.insights.length == 0",
+      "skip_out": {
+        "updated": 0,
+        "total": 0
+      },
+      "out": {
+        "updated": "int",
+        "total": "int",
+        "path": "string"
+      }
+    },
+    {
       "id": "stage",
       "consumes": [
         {
@@ -121,13 +140,18 @@
   ],
   "edges": [
     {
-      "from": "retro",
-      "to": "stage",
+      "from": "stage",
+      "to": "done",
       "pass": "artifact"
     },
     {
-      "from": "stage",
-      "to": "done",
+      "from": "retro",
+      "to": "living",
+      "pass": "artifact"
+    },
+    {
+      "from": "living",
+      "to": "stage",
       "pass": "artifact"
     }
   ],
@@ -154,6 +178,7 @@
       },
       "expect_path": [
         "retro",
+        "living",
         "stage",
         "done"
       ],

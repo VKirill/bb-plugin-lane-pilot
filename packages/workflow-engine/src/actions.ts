@@ -151,7 +151,7 @@ const aggregate: PureAction = ({ read }) => {
   const dropped = new Set(list(read(1)).map(String));
   const unchecked = list(read(2)).map(String);
   const unmet = num(read(3));
-  const candidates = list(read(0)).map(rec).filter((finding) => !dropped.has(str(finding.id)));
+  const candidates = [...list(read(4)).map(rec), ...list(read(0)).map(rec)].filter((finding) => !dropped.has(str(finding.id)));
   const asVerdict: Verdict = { status: "pass", evidence: "aggregate", findings: candidates.map((finding) => ({ ...finding, file: str(finding.file), severity: (str(finding.severity) in SEVERITY_RANK ? str(finding.severity) : "info"), evidence: str(finding.evidence) }) as VerdictFinding) };
   const findings = settleVerdict(asVerdict, "code").verdict.findings;
   const critical = findings.filter((finding) => finding.severity === "critical").length;
@@ -187,7 +187,7 @@ const ACTIONS: Record<string, { run: PureAction }> = {
   "verdict.aggregate": { run: aggregate }, "lp.path_class": { run: pathClass }, "lp.propose_workflow": { run: propose },
 };
 /** The inputs verdict.aggregate reads, whatever the node lists. */
-const AGGREGATE_READS = ["dims.findings", "confirm.dropped_ids", "dims.unchecked", "spec_check.unmet_count"];
+const AGGREGATE_READS = ["dims.findings", "confirm.dropped_ids", "dims.unchecked", "spec_check.unmet_count", "prepass.findings"];
 
 export const PURE_ACTION_KEYS = Object.keys(ACTIONS);
 

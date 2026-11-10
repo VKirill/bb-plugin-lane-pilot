@@ -48,8 +48,22 @@
   "budget": {
     "max_minutes": 60
   },
-  "entry": "frame",
+  "entry": "archive",
   "nodes": [
+    {
+      "id": "archive",
+      "type": "action",
+      "action": "lp.milestone_archive",
+      "title": {
+        "en": "Archive the previous milestone",
+        "ru": "Архив прошлого этапа"
+      },
+      "out": {
+        "folder": "string",
+        "files": "string[]",
+        "kept": "bool"
+      }
+    },
     {
       "id": "frame",
       "type": "agent",
@@ -58,7 +72,7 @@
         "en": "Milestone frame",
         "ru": "Рамка этапа"
       },
-      "prompt": "Archive the finished phases (lane-plan milestone archive <name> when the roadmap has [x] rows). From the goal: 3–7 requirements with ids into REQUIREMENTS.md, then the phases in order (lane-plan phase add <name> --goal …), each a vertical slice (templates/planning/references/mvp-stories.md).",
+      "prompt": "From the goal: 3–7 requirements with ids into REQUIREMENTS.md, then the phases in order (lane-plan phase add <name> --goal …), each a vertical slice (templates/planning/references/mvp-stories.md).",
       "out": {
         "phases": "string[]"
       },
@@ -85,6 +99,11 @@
   ],
   "edges": [
     {
+      "from": "archive",
+      "to": "frame",
+      "pass": "artifact"
+    },
+    {
       "from": "frame",
       "to": "done",
       "pass": "artifact"
@@ -105,6 +124,7 @@
         }
       },
       "expect_path": [
+        "archive",
         "frame",
         "done"
       ],

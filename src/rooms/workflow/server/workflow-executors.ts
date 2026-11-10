@@ -1,8 +1,10 @@
 import type { TaskV2 } from "../../contracts";
-import { noteEngineWrite } from "../../verification/server";
-import type { VerificationGatePort } from "../../contracts/integration-gate";
+import { noteEngineWrite, gateRunVerdict } from "../../verification/server";
+import { parseIntegrationGateSettings, type VerificationGatePort } from "../../contracts/integration-gate";
 import type { IsTaskSatisfied } from "../../contracts";
-import { getAttempt, getRun, getRunWriterHost, getTaskPlan, listAttemptsForTask, listOpenAttempts, listTaskIdsForRun } from "../../storage";
+import { getAttempt, getRun, getRunWriterHost, getRunSettingsScopes, getTaskPlan, latestGateRun, listAttemptsForTask, listOpenAttempts, listOpenWorktrees, listTaskIdsForRun, loadProjectSettings, fullGateVerdict } from "../../storage";
+import { listPhases } from "../../phase";
+import { unsafeReason } from "../../anamnesis";
 import { bestEffort, isNotFound, orMiss, redactKnown, sha256Hex, stringAt } from "@lane-pilot/kit";
 import { validateTaskV2 } from "../../tasks/task-v2";
 import { agentPrompt, outputContract, outputFields, parseAgentOutput, resolveTaskQualityMode } from "@lane-pilot/workflow-engine";
@@ -681,17 +683,133 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const tasks = listTaskIdsForRun(db, runId);
     const latest = tasks.map((taskId) => listAttemptsForTask(db, runId, taskId).at(-1)).filter(Boolean) as Array<{ state: string }>;
     const failed = latest.filter((attempt) => ["blocked", "canceled", "validation_failed"].includes(attempt.state)).length;
-    return { open_tasks: tasks.length - latest.filter((attempt) => attempt.state === "accepted").length - failed, failed_tasks: failed, unmerged: 0, gate_ok: failed === 0, running_attempts: open.length, merged_commits: list(c.resolve("ctx.merged_commits")).map(String) };
+    // The real integration state (SMA k_c_auditms): the latest recorded gate verdict, and the work that has not landed —
+    // unlanded phase candidates plus open phase worktrees (a candidate's tree is the same unit, so the larger count wins).
+    const gate = latestGateRun(db, rt.projectId);
+    const gateVerdict = gateRunVerdict(gate);
+    const gateOk = !gate || (!gateVerdict.pending && !gateVerdict.failed);
+    const unlanded = listPhases(db, { projectId: rt.projectId, live: true }).filter((phase) => phase.record.candidate && !phase.record.candidate.off && Object.keys(phase.record.candidate.trees).length > 0 && !phase.record.candidate.landedAt).length;
+    const phaseTrees = listOpenWorktrees(db).filter((tree) => tree.owner_kind === "phase").length;
+    return { open_tasks: tasks.length - latest.filter((attempt) => attempt.state === "accepted").length - failed, failed_tasks: failed, unmerged: Math.max(unlanded, phaseTrees), gate_ok: gateOk, running_attempts: open.length, merged_commits: list(c.resolve("ctx.merged_commits")).map(String) };
   });
 
-  // The integration gate keeps no receipt of its own (a red gate dispatches a repair task and tells the PM), so there is nothing to read here yet.
-  action("lp.integration_gate_status", async () => ({ ok: true, failing: [], skipped: true }));
+  // The full-gate mark (SMA k_ws_fullgate): the ship needs proof the integration gate ran green on the head being shipped,
+  // no more than six hours ago. A project without a gate passes as before (skipped); a configured gate never run does not.
+  action("lp.integration_gate_status", async (c, rt) => {
+    const gate = latestGateRun(db, rt.projectId);
+    const checkout = await pmCheckout(rt);
+    const head = (await bestEffort(ctx.log, "ship head probe", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: "git rev-parse HEAD", timeoutSec: 15, timeoutMs: 20_000 }), null))?.stdout.trim() || null;
+    if (!gate) {
+      const settings = parseIntegrationGateSettings(loadProjectSettings(db, rt.projectId, rt.runId ? getRunSettingsScopes(db, rt.runId) : []));
+      return settings.gateOff || !settings.gateCommand
+        ? { ok: true, failing: [], reason: "", skipped: true }
+        : { ok: false, failing: [`integration gate not run: no run of \`${settings.gateCommand}\` is recorded for this project`], reason: "the integration gate never ran" };
+    }
+    const verdict = fullGateVerdict(gate, head);
+    return { ok: verdict.ok, failing: verdict.ok ? [] : [verdict.reason], reason: verdict.reason };
+  });
 
   action("lp.run_close", async (c, lane) => {
     const rt = needLanePilot(lane, "lp.run_close");
     const runId = str(c.resolve("$inputs.run_id")) || rt.runId;
     // The PM's run is closed by the PM chat's own lifecycle (closeAbandonedRuns); this marks the workflow's end and leaves the run to it.
     return { archived: Boolean(getRun(db, runId)) };
+  });
+
+  // The requirement-coverage matrix of a milestone close (SMA k_c_auditms): ids of .agents/planning/REQUIREMENTS.md that no
+  // closed phase of the project covers in its plan items.
+  action("lp.requirement_coverage", async (_c, rt) => {
+    const checkout = await pmCheckout(rt);
+    const text = (await bestEffort(ctx.log, "requirements read", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: "cat .agents/planning/REQUIREMENTS.md 2>/dev/null || true", timeoutSec: 15, timeoutMs: 20_000 }), null))?.stdout ?? "";
+    const ids = [...new Set([...text.matchAll(/\bREQ-[A-Za-z0-9][\w.-]*/g)].map((hit) => hit[0]))];
+    const covered = new Set(listPhases(db, { projectId: rt.projectId }).filter((phase) => phase.stage === "closed" || phase.state === "closed")
+      .flatMap((phase) => (phase.record.plan?.items ?? []).flatMap((item) => item.covers ?? [])));
+    const uncovered = ids.filter((id) => !covered.has(id));
+    return { uncovered, covered: ids.filter((id) => covered.has(id)), total: ids.length };
+  });
+
+  // The milestone archive (SMA k_pl_milestones): a snapshot of the roadmap and requirements under
+  // .agents/planning/milestones/<name>/, indexed in INDEX.md. A second close of the same name keeps the first snapshot.
+  action("lp.milestone_archive", async (c, rt) => {
+    const checkout = await pmCheckout(rt);
+    const name = safeId(str(c.render(str(rec(rec(c.node).params).name))) || str(c.resolve("$inputs.goal")) || str(c.resolve("$inputs.run_id")) || `ms-${Date.now()}`);
+    const read = async (rel: string) => (await bestEffort(ctx.log, "milestone archive read", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: `cat ${quote(rel)} 2>/dev/null || true`, timeoutSec: 15, timeoutMs: 20_000 }), null))?.stdout ?? "";
+    const write = async (rel: string, content: string) => {
+      noteEngineWrite(checkout.path, rel);
+      await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: checkout.path, path: `${checkout.path}/${rel}`, content, contentEncoding: "utf8", createParents: true, expectedSha256: null });
+    };
+    const dir = `.agents/planning/milestones/${name}`;
+    const kept = await runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: `test -f ${quote(`${dir}/ROADMAP.md`)} && echo yes`, timeoutSec: 15, timeoutMs: 20_000 }).then((ran) => ran.stdout.trim() === "yes", () => false);
+    const files: string[] = [];
+    if (!kept) for (const file of ["ROADMAP.md", "REQUIREMENTS.md"]) {
+      const body = await read(`.agents/planning/${file}`);
+      if (body.trim()) { await write(`${dir}/${file}`, body); files.push(file); }
+    }
+    const index = await read(".agents/planning/milestones/INDEX.md");
+    await write(".agents/planning/milestones/INDEX.md", `${index}${index && !index.endsWith("\n") ? "\n" : ""}- ${name}: ${kept ? "already archived; first snapshot kept" : `archived ${new Date().toISOString().slice(0, 10)} (${files.join(" + ") || "nothing to copy"})`}\n`);
+    return { folder: dir, files, kept };
+  });
+
+  // The living retrospective (SMA k_d_tpl_milestone): insights upserted by their INS id into .agents/retro/LIVING.md —
+  // a repeated id only moves its last-seen milestone; nothing is ever deleted.
+  action("lp.retro_living", async (c, rt) => {
+    const checkout = await pmCheckout(rt);
+    const insights = list(c.resolve("retro.insights") ?? c.resolve("$inputs.insights")).map(rec);
+    const milestone = str(c.resolve("$inputs.goal")) || str(c.resolve("$inputs.run_id")) || c.runId || "milestone";
+    const byId = new Map(insights.filter((ins) => str(ins.id)).map((ins) => [str(ins.id), { id: str(ins.id), title: str(ins.title ?? ins.text).slice(0, 200), lens: str(ins.lens) }]));
+    const path = ".agents/retro/LIVING.md";
+    if (!byId.size) return { updated: 0, total: 0, path };
+    const prev = (await bestEffort(ctx.log, "living retro read", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: `cat ${quote(path)} 2>/dev/null || true`, timeoutSec: 15, timeoutMs: 20_000 }), null))?.stdout ?? "";
+    const seen = new Set<string>();
+    const lines = (prev.trim() ? prev.split("\n") : ["# Living retrospective", ""]).map((line) => {
+      const id = /INS-[A-Za-z0-9]{6,}/.exec(line)?.[0];
+      if (id && byId.has(id)) { seen.add(id); return `${line.replace(/\s*\(last seen [^)]*\)\s*$/, "")} (last seen ${milestone})`; }
+      return line;
+    });
+    for (const { id, title, lens } of byId.values()) if (!seen.has(id)) lines.push(`- ${id}${lens ? ` [${lens}]` : ""}${title ? ` ${title}` : ""} (last seen ${milestone})`);
+    noteEngineWrite(checkout.path, path);
+    await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: checkout.path, path: `${checkout.path}/${path}`, content: `${lines.join("\n").replace(/\n{3,}/g, "\n\n")}\n`, contentEncoding: "utf8", createParents: true, expectedSha256: null });
+    return { updated: byId.size, total: lines.filter((line) => /- INS-[A-Za-z0-9]{6,}/.test(line)).length, path };
+  });
+
+  // The structural pre-pass of a review (SMA k_wr_prepass): the cheap checks that run on the host before any model reads the
+  // code — conflict markers, leftover debugger/.only(, git diff --check, files over a size cap, secret-like lines. Secrets are
+  // reported by location and kind only, never their value.
+  action("lp.review_prepass", async (c, rt) => {
+    const checkout = await pmCheckout(rt);
+    const files = list(c.resolve("scope.files") ?? c.resolve("$inputs.files")).map(String).slice(0, 100);
+    const findings: Row[] = [];
+    const add = (file: string, severity: string, evidence: string, line?: number) => findings.push({ id: `pp-${findings.length + 1}`, file, severity, evidence, ...(line ? { line } : {}) });
+    if (files.length) {
+      const quoted = files.map(quote).join(" ");
+      const scan = (command: string) => bestEffort(ctx.log, "review prepass", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command, timeoutSec: 60, timeoutMs: 75_000 }), null);
+      const addGrep = async (command: string, severity: string, evidence: string, cap = 40) => {
+        const ran = await scan(command);
+        for (const line of (ran?.stdout ?? "").split("\n").filter(Boolean).slice(0, cap)) {
+          const at = /^(.+?):(\d+):(.*)$/.exec(line);
+          add(at ? `${at[1]}:${at[2]}` : line.slice(0, 160), severity, `${evidence}${at ? `: ${at[3].trim().slice(0, 200)}` : ""}`, at ? Number(at[2]) : undefined);
+        }
+      };
+      await addGrep(`git grep -n -E '^(<{7}|>{7})' -- ${quoted} 2>/dev/null; true`, "critical", "merge conflict marker left in the file");
+      await addGrep(`git grep -n -E '\\bdebugger\\b|\\.only\\(' -- ${quoted} 2>/dev/null; true`, "high", "leftover debugger or focused test");
+      await addGrep(`git diff --check -- ${quoted} 2>/dev/null; true`, "medium", "git diff --check");
+      const big = await scan(`wc -c -- ${quoted} 2>/dev/null | awk '$1 > 200000 {print $2 ":" $1}'`);
+      for (const line of (big?.stdout ?? "").split("\n").filter(Boolean).slice(0, 20)) {
+        const at = line.split(":");
+        add(at[0]!, "low", `file over the review size cap (${at[1]} bytes)`);
+      }
+      for (const file of files.slice(0, 50)) {
+        const ran = await scan(`head -c 200000 -- ${quote(file)} 2>/dev/null`);
+        const lines = (ran?.stdout ?? "").split("\n");
+        for (const [at, text] of lines.entries()) {
+          const reason = unsafeReason(text);
+          if (reason) add(`${file}:${at + 1}`, "critical", `possible ${reason} (location only, the value is withheld)`, at + 1);
+        }
+      }
+    }
+    const critical = findings.filter((finding) => finding.severity === "critical").length;
+    // A quick diff with a critical finding is rework before any model call; bigger diffs still get the model's pass.
+    return { findings, critical_count: critical, rework: critical > 0 && c.resolve("scope.level") === "quick" };
   });
 
   // chains-end: the goal check of a deliverable graph — validateDeliverable (validators room) on the artifact the

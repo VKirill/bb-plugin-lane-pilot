@@ -55,6 +55,20 @@
       }
     },
     {
+      "id": "prepass",
+      "type": "action",
+      "action": "lp.review_prepass",
+      "title": {
+        "en": "Structural pre-pass",
+        "ru": "Структурный предпроход"
+      },
+      "out": {
+        "findings": "Finding[]",
+        "critical_count": "int",
+        "rework": "bool"
+      }
+    },
+    {
       "id": "spec_check",
       "produces": [
         {
@@ -263,12 +277,22 @@
     },
     {
       "from": "scope",
-      "to": "spec_check",
-      "pass": "artifact",
-      "when": "$mode != 'quick'"
+      "to": "prepass",
+      "pass": "artifact"
     },
     {
-      "from": "scope",
+      "from": "prepass",
+      "to": "aggregate",
+      "when": "prepass.rework"
+    },
+    {
+      "from": "prepass",
+      "to": "spec_check",
+      "pass": "artifact",
+      "when": "$mode != 'quick' && !prepass.rework"
+    },
+    {
+      "from": "prepass",
       "to": "dims",
       "pass": "artifact"
     },

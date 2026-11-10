@@ -53,8 +53,22 @@
   "budget": {
     "max_minutes": 60
   },
-  "entry": "preflight",
+  "entry": "gate",
   "nodes": [
+    {
+      "id": "gate",
+      "type": "action",
+      "action": "lp.integration_gate_status",
+      "title": {
+        "en": "Full-gate marker",
+        "ru": "Метка полных ворот"
+      },
+      "out": {
+        "ok": "bool",
+        "failing": "string[]",
+        "reason": "string"
+      }
+    },
     {
       "id": "preflight",
       "type": "agent",
@@ -130,6 +144,16 @@
       }
     },
     {
+      "id": "held_gate",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "held",
+        "pr_url": "''",
+        "held_by": "gate.failing"
+      }
+    },
+    {
       "id": "goal_check",
       "type": "action",
       "action": "deliverable.validate",
@@ -147,6 +171,16 @@
     }
   ],
   "edges": [
+    {
+      "from": "gate",
+      "to": "preflight",
+      "pass": "artifact",
+      "when": "gate.ok"
+    },
+    {
+      "from": "gate",
+      "to": "held_gate"
+    },
     {
       "from": "preflight",
       "to": "held",
@@ -186,9 +220,15 @@
         },
         "open_pr": {
           "pr_url": "https://example/pr/1"
+        },
+        "gate": {
+          "ok": true,
+          "failing": [],
+          "reason": ""
         }
       },
       "expect_path": [
+        "gate",
         "preflight",
         "open_pr",
         "goal_check",

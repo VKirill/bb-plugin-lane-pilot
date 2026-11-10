@@ -37,7 +37,7 @@ export { putGlobalSettingValue } from "./settings-store";
 export { boundSettingValue, settingValue, settingValues, deleteBoundSetting, listProjectsWithGlobalSettings } from "./settings-store";
 export { secretIssuedForTask, recordSkillMetric, listSkillMetrics, countLanePilotTables } from "./checks-store";
 export { recordJanitorSweep, releaseWorktreeById } from "./worktrees-store";
-export { noteGateRunStart, finishGateRun, latestGateRun, latestGateRunForTask, gateRunRow } from "./gate-runs-store";
+export { noteGateRunStart, finishGateRun, latestGateRun, latestGateRunForTask, gateRunRow, fullGateVerdict, FULL_GATE_VALID_MS } from "./gate-runs-store";
 export type { GateRunRow, GateRunState } from "./gate-runs-store";
 export { reconcileCursorPage, saveReconcileCursor, clearReconcileCursor, hasReconcileCursor } from "./reconcile-store";
 export { saveDiffHiddenRows, diffHiddenAuditSummary, saveModelRebench, modelRebenchSummary, errandEpisodeColumns, listErrandEpisodeFacts, listErrandEpisodeTraces, listPendingErrandEpisodes, listErrandProcessKeys, listErrandEpisodeRows, listErrandEpisodeStates, listErrandEpisodeRunIds, latestErrandEpisodeRows, janitorSums, janitorKeptSample, saveBenchStabilityMarks, listBenchStabilityMarks } from "./analytics-store";
