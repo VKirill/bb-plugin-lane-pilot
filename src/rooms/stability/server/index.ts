@@ -8,6 +8,8 @@ export { HOOK_TIMEOUTS_KEY, mountHookTimeoutWatch } from "./hook-timeouts";
 export type { HookTimeoutRecord } from "./hook-timeouts";
 export { createProbes } from "./probes";
 export { createProviderRetryGuard } from "./provider-retry";
+export { createPmTurnWatch, mountPmTurnWatch, PM_MAX_TURNS_DEFAULT, PM_TURN_LIMIT_MIN_DEFAULT, PM_TURN_OUTCOME_PREFIX } from "./pm-turn-watch";
+export type { PmTurnWatch } from "./pm-turn-watch";
 export { hideServiceProjects, mountServiceProjects } from "./service-projects";
 export { createReconcile } from "./reconcile";
 export { BREAKERS_KEY, DRILL_KEY, createStability } from "./stability"

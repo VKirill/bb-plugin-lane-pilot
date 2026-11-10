@@ -11,9 +11,47 @@ import { sha256Hex } from "@lane-pilot/kit";
 /** A check as an operation (SMA m_ck_answer): one receipt per request hash. A request repeated while the check runs, or within
  *  half a minute of its end (a retried tool call), gets that receipt; later the same commands are a new check — the code may
  *  have been fixed in between, and an old red answer would hide it. */
-type CheckReceipt = { checkId: string; requestHash: string; recipe: string; state: "running" | "passed" | "failed" | "stopped"; measures: CheckMeasure[]; startedAt: number; endedAt: number | null };
+/** The five protections a check result reports (SMA m_ck_required): the recipe from the pinned snapshot, the throwaway
+ *  copy it ran in, the clean environment without ambient secrets, the closed publication (HOME is the sandbox temp dir,
+ *  so no git or npm credentials publish), and the protected-roots manifest taken before and after. */
+type CheckProtections = {
+  recipeSource: string | null;
+  copyPath: string | null;
+  cleanEnv: { backend: string; policySha256: string; secrets: boolean } | null;
+  publication: "closed";
+  manifest: { before: string | null; after: string | null };
+};
+type CheckReceipt = { checkId: string; requestHash: string; recipe: string; state: "running" | "passed" | "failed" | "stopped"; measures: CheckMeasure[]; protections?: CheckProtections; reason?: string; startedAt: number; endedAt: number | null };
 const RECEIPT_GRACE_MS = 30_000;
 const receiptKey = (runId: string, requestHash: string) => `chat-check:${runId}:${requestHash}`;
+
+/** Which protection is absent; the check's reason names it. A different manifest before and after is `roots_changed`. */
+function missingProtections(protections: CheckProtections): string[] {
+  const missing: string[] = [];
+  if (!protections.recipeSource) missing.push("recipe");
+  if (!protections.copyPath) missing.push("copy");
+  if (!protections.cleanEnv) missing.push("cleanEnv");
+  if (protections.manifest.before === null || protections.manifest.after === null) missing.push("manifest");
+  else if (protections.manifest.before !== protections.manifest.after) return ["roots_changed"];
+  return missing;
+}
+
+/** The package manager the copy's lockfile names (SMA m_ck_recipes): the recipe is the project's own declared one. */
+export function packageManagerOf(files: readonly string[]): "pnpm" | "yarn" | "bun" | "npm" {
+  if (files.includes("pnpm-lock.yaml")) return "pnpm";
+  if (files.includes("yarn.lock")) return "yarn";
+  if (files.some((file) => /^bun\.lockb?$/.test(file))) return "bun";
+  return "npm";
+}
+
+/** The quick recipe from the copy's package.json at its baseSha: scripts.test through the lockfile's package manager. */
+export function pinnedRecipe(packageJsonText: string, lockfiles: readonly string[], baseSha: string | null): { command: string; recipeSource: string } | null {
+  let scripts: Record<string, unknown> | undefined;
+  try { scripts = (JSON.parse(packageJsonText) as { scripts?: Record<string, unknown> }).scripts; } catch { return null; }
+  const test = scripts?.test;
+  if (typeof test !== "string" || !test.trim()) return null;
+  return { command: `${packageManagerOf(lockfiles)} run test`, recipeSource: `package.json@${baseSha ?? "HEAD"}` };
+}
 
 /**
  * The turn engine and the checks from the conversation (SMA map: Conversation and intake — One-turn engine, What kind of question,
@@ -111,21 +149,57 @@ export function registerConversationTools(ctx: ServerCore, services: Services): 
       const controller = new AbortController();
       running.set(checkId, controller);
       const host = bb.hosts.experimental_client({ contract: hostContract });
+      const base = run.writer_workspace_path;
+      const hostCall = (method: string, callInput: Record<string, unknown>, timeoutMs = 60_000) =>
+        host.call(method as never, { requestedHostId: hostId, ...callInput } as never, { hostId, timeoutMs }) as Promise<any>;
+      // The protected-roots manifest (SMA m_ck_isolated): the checkout's head and the hash of its porcelain status,
+      // taken before and after the run — a check that moved either changed the project it was not allowed to touch.
+      const manifestOf = async () => {
+        const result = await hostCall("runCommand", { cwd: base, command: "git rev-parse HEAD && git status --porcelain", timeoutSec: 30 }, 45_000);
+        const [head, ...rest] = String(result.stdout ?? "").trimEnd().split("\n");
+        return `${head ?? ""}:${sha256Hex(rest.join("\n"))}`;
+      };
+      // The throwaway copy the check runs in; its commands write there, never the run's checkout.
+      const copy = await hostCall("gitCreateWorktree", { basePath: base, name: checkId }, 120_000).catch((cause: unknown) => ({ status: "failed", path: null, reason: cause instanceof Error ? cause.message : String(cause) }));
+      const copyPath: string | null = copy.status === "ready" && typeof copy.path === "string" ? copy.path : null;
+      const protections: CheckProtections = { recipeSource: null, copyPath, cleanEnv: null, publication: "closed", manifest: { before: null, after: null } };
       try {
-        for (const item of input.commands) {
-          if (controller.signal.aborted) break;
-          const cwd = item.cwd === "." ? run.writer_workspace_path : `${run.writer_workspace_path}/${item.cwd.replace(/^\.?\//, "")}`;
-          const result = await host.call("runSandboxedCommand", { requestedHostId: hostId, workspacePath: run.writer_workspace_path, cwd, command: item.command, timeoutSec: item.timeoutSec }, { hostId, timeoutMs: (item.timeoutSec + 30) * 1000 });
+        protections.manifest.before = await manifestOf().catch(() => null);
+        // The recipe is the project's own: scripts.test of the copy's package.json at its baseSha, run through the
+        // package manager its lockfile names. The PM's commands are taken only when package.json has no test script.
+        let commands = input.commands;
+        if (copyPath) {
+          const listing = await hostCall("runCommand", { cwd: copyPath, command: `ls pnpm-lock.yaml yarn.lock package-lock.json bun.lockb bun.lock 2>/dev/null; echo "---PKG---"; cat package.json`, timeoutSec: 30 }, 45_000).catch(() => null);
+          if (listing) {
+            const [locks, pkg] = String(listing.stdout ?? "").split("---PKG---\n", 2);
+            const pinned = pinnedRecipe(pkg ?? "", (locks ?? "").split("\n").map((line) => line.trim()).filter(Boolean), copy.baseSha ?? null);
+            if (pinned) {
+              commands = [{ command: pinned.command, cwd: ".", timeoutSec: Math.max(...input.commands.map((item) => item.timeoutSec)), expectExit: 0 }];
+              protections.recipeSource = pinned.recipeSource;
+            } else protections.recipeSource = "pm";
+          }
+        }
+        for (const item of commands) {
+          if (controller.signal.aborted || !copyPath) break;
+          const cwd = item.cwd === "." ? copyPath : `${copyPath}/${item.cwd.replace(/^\.?\//, "")}`;
+          const result = await hostCall("runSandboxedCommand", { workspacePath: copyPath, cwd, command: item.command, timeoutSec: item.timeoutSec }, (item.timeoutSec + 30) * 1000);
+          // The clean environment the command saw: its backend and policy hash; no ambient secrets are passed.
+          if (!protections.cleanEnv) protections.cleanEnv = { backend: String(result.backend ?? ""), policySha256: String(result.policySha256 ?? ""), secrets: false };
           const evidence = `${result.stdout}\n${result.stderr}`.trim().slice(-1500);
           receipt.measures.push({ command: item.command, cwd, expectExit: item.expectExit, timeoutSec: item.timeoutSec, evidence, exitCode: result.exitCode, passed: result.exitCode === item.expectExit });
         }
+        protections.manifest.after = await manifestOf().catch(() => null);
       } finally {
         running.delete(checkId);
+        if (copyPath) await hostCall("gitRemoveWorktree", { basePath: base, worktreePath: copyPath }, 60_000).catch(() => undefined);
+        const missing = missingProtections(protections);
+        receipt.protections = protections;
         receipt.endedAt = Date.now();
-        receipt.state = controller.signal.aborted ? "stopped" : receipt.measures.every((row) => row.passed) ? "passed" : "failed";
+        receipt.state = controller.signal.aborted ? "stopped" : missing.length ? "failed" : receipt.measures.every((row) => row.passed) ? "passed" : "failed";
+        if (missing.length) receipt.reason = missing.includes("roots_changed") ? "roots_changed: the check's copy run changed the run checkout's protected roots" : `protection missing: ${missing.join(", ")}`;
         await kv.set(key, receipt as never).catch(() => undefined);
       }
-      return JSON.stringify({ ...receipt, stopped: controller.signal.aborted, passed: receipt.measures.every((row) => row.passed) });
+      return JSON.stringify({ ...receipt, stopped: controller.signal.aborted, passed: receipt.state === "passed" });
     },
   });
 }

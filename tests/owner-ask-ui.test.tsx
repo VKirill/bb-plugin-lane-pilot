@@ -31,7 +31,7 @@ async function mount(payload: unknown) {
 
 describe("the owner's question form (H8)", () => {
   it("shows the question, its context and the tappable answers; a tap submits the option", async () => {
-    const { view, submitted } = await mount(buildOwnerAskPayload({ source: "gate", question: "Gate is red. What should the PM do?", detail: "log tail", options: ["Investigate", "Leave it"] }));
+    const { view, submitted } = await mount(buildOwnerAskPayload({ source: "gate", kind: "decision", question: "Gate is red. What should the PM do?", detail: "log tail", options: ["Investigate", "Leave it"] }));
     expect(view.getByTestId("owner-ask-question").textContent).toBe("Gate is red. What should the PM do?");
     expect(view.getByTestId("owner-ask-detail").textContent).toContain("log tail");
     const options = view.getByTestId("owner-ask-options");
@@ -41,7 +41,7 @@ describe("the owner's question form (H8)", () => {
   });
 
   it("sends words of the owner's own, alone or with an option; Send needs text", async () => {
-    const { view, submitted } = await mount(buildOwnerAskPayload({ source: "pm", question: "Which provider?", options: ["Stripe"] }));
+    const { view, submitted } = await mount(buildOwnerAskPayload({ source: "pm", kind: "decision", question: "Which provider?", options: ["Stripe"] }));
     const send = Array.from(view.container.querySelectorAll("button")).find((button) => /Send|Отправить/.test(button.textContent ?? ""))! as HTMLButtonElement;
     expect(send.disabled).toBe(true);
     const field = view.container.querySelector("textarea")!;
@@ -55,7 +55,7 @@ describe("the owner's question form (H8)", () => {
   });
 
   it("can be dismissed, and a question without a free-text field offers only its options", async () => {
-    const { view, cancelled } = await mount(buildOwnerAskPayload({ source: "repair", question: "Go ahead?", options: ["Yes", "No"], allowText: false }));
+    const { view, cancelled } = await mount(buildOwnerAskPayload({ source: "repair", kind: "pause", question: "Go ahead?", options: ["Yes", "No"] }));
     expect(view.container.querySelector("textarea")).toBeNull();
     fireEvent.click(Array.from(view.container.querySelectorAll("button")).find((button) => /Not now|Не сейчас/.test(button.textContent ?? ""))!);
     await waitFor(() => expect(cancelled()).toBe(1));

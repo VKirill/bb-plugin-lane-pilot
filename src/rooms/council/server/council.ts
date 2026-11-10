@@ -76,7 +76,7 @@ export function askOwnerToJoin(ownerAsk: OwnerAsk | undefined, input: {
   pmThreadId: string; question: string; detail: string; decideLabel: string; timeoutMs: number; onWords: (text: string) => void; onDecide: () => void;
 }): () => void {
   const withdraw = new AbortController();
-  void ownerAsk?.askInBackground(input.pmThreadId, { source: "council", question: input.question, detail: input.detail, options: [input.decideLabel] }, (answer) => {
+  void ownerAsk?.askInBackground(input.pmThreadId, { source: "council", kind: "decision", question: input.question, detail: input.detail, options: [input.decideLabel] }, (answer) => {
     if (answer.outcome !== "answered") return;
     if (answer.text) input.onWords(answer.text);
     if (answer.choice) input.onDecide();

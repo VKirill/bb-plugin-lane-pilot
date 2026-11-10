@@ -143,7 +143,15 @@ export function registerPhaseTool(ctx: ServerCore, services: Services): void {
           case "lessons": return json(summary(api.lessons({ phaseId: input.phaseId, analysis: input.analysis, reviewRun: input.reviewRun, reviewerNode: input.reviewerNode })));
           case "question": return json(summary(api.question({ phaseId: input.phaseId, text: input.text, blocking: input.blocking })));
           case "answer": return json(summary(api.answer({ phaseId: input.phaseId, questionId: input.questionId, answer: input.answer, by: "pm" })));
-          case "word": return json(summary(await api.word({ phaseId: input.phaseId, turn: input.turn, decision: input.decision, text: input.text, wave: input.wave, useful: input.useful, limits: input.limits, key: input.key, by: "owner via pm" })));
+          case "word": {
+            // The owner's yes on the proposal counts only in the phase's own conversation (SMA m_ce_put_pending): a yes
+            // relayed from another chat does not bind the latest draft of this one.
+            if (input.decision === "yes" && (input.turn === "planning" || input.turn === "acceptance")) {
+              const own = api.status(input.phaseId).phase.pmThreadId;
+              if (context.threadId !== own) throw new PhaseRefusal(`the owner's yes counts only in the phase's own chat (${own}); record it from that conversation, not this one`);
+            }
+            return json(summary(await api.word({ phaseId: input.phaseId, turn: input.turn, decision: input.decision, text: input.text, wave: input.wave, useful: input.useful, limits: input.limits, key: input.key, by: "owner via pm" })));
+          }
           case "wave_review": return json(summary(api.waveReview({ phaseId: input.phaseId, wave: input.wave, state: input.state, by: input.by, summary: input.summary })));
           case "withdraw": return json(summary(api.withdraw({ phaseId: input.phaseId, pieces: input.pieces, note: input.note, by: "pm" })));
           case "revise": return json(summary(api.revise({ phaseId: input.phaseId, goal: input.goal, note: input.note, by: "pm" })));
