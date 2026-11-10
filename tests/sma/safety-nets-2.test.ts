@@ -33,7 +33,7 @@ describe("safety nets", () => {
     process.env.HOME = home;
     try {
       mkdirSync(join(home, ".agents", "permits", "sess1"), { recursive: true });
-      writeFileSync(join(home, ".agents", "permits", "sess1", "a1b2c3d4e5f60718.ticket.json"), JSON.stringify({ category: "delete", command: "rm build", cwd: "/w", at: 1 }));
+      writeFileSync(join(home, ".agents", "permits", "sess1", "a1b2c3d4e5f60718.ticket.json"), JSON.stringify({ category: "delete", command: "rm build", cwd: "/w", at: Date.now() / 1000 }));
       expect((await answerPermit({ requestedHostId: "h", session: "sess1", ticket: "a1b2c3d4e5f60718", decision: "deny", why: "not this task" } as never, {} as never)).written).toBe(true);
       const stored = JSON.parse(readFileSync(join(home, ".agents", "permits", "sess1", "a1b2c3d4e5f60718.answer.json"), "utf8"));
       expect(stored).toMatchObject({ decision: "deny", why: "not this task" });

@@ -25,6 +25,12 @@ export function claudeGuardAgentType(role: string): string {
  */
 export const HELPER_DISALLOWED_TOOLS = "Workflow,ScheduleWakeup,AskUserQuestion,Agent";
 
+/** Push, merge, tag and release stay human-only (SMA wb_human_only): the denial rides the launch, not only a call-time check. */
+export const WRITER_DISALLOWED_TOOLS = "Bash(git push:*),Bash(git merge:*),Bash(git tag:*),Bash(gh release:*)";
+
+/** Roles that never push, merge, tag or release; same set the bundled guard keys on (LANE_PILOT_WRITER_ROLES). */
+export const WRITER_ROLES = new Set(["writer", "emergency-writer"]);
+
 /** Same launcher shape as a native session: `--settings` with the bundled guard, and no machine-wide hook. No `--agent`. */
 export function claudeGuardLauncherScript(input: {
   destDir: string;
@@ -51,7 +57,7 @@ export function claudeGuardLauncherScript(input: {
     `export LANE_PILOT_AGENT_TYPE=${shellQuote(input.agentType)}`,
     "export AGENT_HOOK_CLIENT=claude",
     `export LANE_PILOT_HOOK_TRACE=${shellQuote(join(input.destDir, "hook-trace.jsonl"))}`,
-    claudeExecLine(input.command, input.settingsPath, input.role === "pm" ? [] : [`--disallowedTools ${shellQuote(HELPER_DISALLOWED_TOOLS)}`]),
+    claudeExecLine(input.command, input.settingsPath, input.role === "pm" ? [] : [`--disallowedTools ${shellQuote(WRITER_ROLES.has(input.role) ? `${HELPER_DISALLOWED_TOOLS},${WRITER_DISALLOWED_TOOLS}` : HELPER_DISALLOWED_TOOLS)}`]),
     "",
   ].join("\n");
 }

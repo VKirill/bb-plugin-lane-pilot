@@ -22,7 +22,10 @@ export const stabilityDrill: ExperimentalHostRpcHandlers<typeof hostContract>["s
   checks:await runStabilityDrill(),
 });
 
-/** The permit channel on this machine: every ticket a writer filed that has no answer yet. */
+/** A ticket stands unanswered for ten minutes, then a late answer cannot authorise the call (SMA wb_ticket). */
+export const PERMIT_TTL_S = 600;
+
+/** The permit channel on this machine: every live ticket a writer filed that has no answer yet. */
 export const listPermitTickets: ExperimentalHostRpcHandlers<typeof hostContract>["listPermitTickets"] = async (input) => {
   const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
   const root = join(homedir(), ".agents", "permits");
@@ -34,7 +37,8 @@ export const listPermitTickets: ExperimentalHostRpcHandlers<typeof hostContract>
         const id = name.slice(0, -".ticket.json".length);
         if (await stat(join(root, session, `${id}.answer.json`)).then(() => true, () => false)) continue;
         const raw = await readFile(join(root, session, name), "utf8").then((text) => JSON.parse(text) as Record<string, unknown>, () => null);
-        if (raw) tickets.push({ session, ticket: id, category: String(raw.category ?? ""), command: String(raw.command ?? "").slice(0, 2000), cwd: String(raw.cwd ?? ""), at: Number(raw.at ?? 0) });
+        // An expired ticket waits for nobody: the writer's next run files a fresh one.
+        if (raw && Number(raw.at ?? 0) > Date.now() / 1000 - PERMIT_TTL_S) tickets.push({ session, ticket: id, category: String(raw.category ?? ""), command: String(raw.command ?? "").slice(0, 2000), cwd: String(raw.cwd ?? ""), at: Number(raw.at ?? 0) });
       }
     } catch (cause) {
       console.warn(`lane-pilot: permit tickets unreadable in ${join(root, session)}: ${cause instanceof Error ? cause.message : String(cause)}`);
@@ -47,7 +51,10 @@ export const listPermitTickets: ExperimentalHostRpcHandlers<typeof hostContract>
 export const answerPermit: ExperimentalHostRpcHandlers<typeof hostContract>["answerPermit"] = async (input) => {
   const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
   const folder = join(homedir(), ".agents", "permits", input.session);
-  if (!await stat(join(folder, `${input.ticket}.ticket.json`)).then(() => true, () => false)) return { hostId, written: false };
+  const ticketPath = join(folder, `${input.ticket}.ticket.json`);
+  if (!await stat(ticketPath).then(() => true, () => false)) return { hostId, written: false };
+  const filed = await readFile(ticketPath, "utf8").then((text) => Number((JSON.parse(text) as Record<string, unknown>).at ?? 0), () => 0);
+  if (filed <= Date.now() / 1000 - PERMIT_TTL_S) return { hostId, written: false, expired: true };
   const temp = join(folder, `.${input.ticket}.${randomUUID().slice(0, 8)}`);
   const handle = await open(temp, "w");
   try { await handle.writeFile(JSON.stringify({ decision: input.decision, why: input.why, at: Date.now() / 1000 })); } finally { await handle.close(); }

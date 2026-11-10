@@ -20,7 +20,7 @@ export const machineHostMethods = {
   /** SMA «Approve or deny the call»: the PM's answer to a permit ticket, written next to it; a grant is used once by the same command. */
   answerPermit: {
     input: z.object({ requestedHostId:z.string().min(1), session:z.string().regex(/^[A-Za-z0-9_-]{1,80}$/), ticket:z.string().regex(/^[a-f0-9]{16}$/), decision:z.enum(["allow","deny"]), why:z.string().max(600) }).strict(),
-    output: z.object({ hostId:z.string(), written:z.boolean() }).strict(),
+    output: z.object({ hostId:z.string(), written:z.boolean(), expired:z.boolean().optional() }).strict(),
   },
   /** SMA «Five hours and seven days»: the subscription windows this machine's statusline last read (~/.agents/statusline/last_usage.json). */
   readUsageWindows: {

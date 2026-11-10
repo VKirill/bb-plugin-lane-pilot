@@ -1299,3 +1299,9 @@ export function listAttemptRefsSince(db: LanePilotDatabase, since: number, proje
     ? db.prepare("SELECT a.id, a.run_id, a.task_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.project_id=? AND a.created_at>=?").all(projectId, since)
     : db.prepare("SELECT id, run_id, task_id FROM lane_pilot_attempt WHERE created_at>=?").all(since)) as Array<{ id: string; run_id: string; task_id: string }>;
 }
+
+/** The writer threads a run ever ran: a fresh run budget is seeded from their token cursors, so spend of attempts killed
+ * with the previous plugin instance still counts (SMA dt_stopped_spend). */
+export function listRunWriterThreadIds(db: LanePilotDatabase, runId: string): string[] {
+  return (db.prepare("SELECT DISTINCT thread_id FROM lane_pilot_attempt WHERE run_id=? AND thread_id IS NOT NULL").all(runId) as Array<{ thread_id: string }>).map((row) => row.thread_id);
+}

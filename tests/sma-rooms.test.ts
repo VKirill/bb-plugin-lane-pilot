@@ -185,7 +185,7 @@ describe("permits: the ticket channel on a machine", () => {
     process.env.HOME = home;
     try {
       mkdirSync(join(home, ".agents", "permits", "sess1"), { recursive: true });
-      writeFileSync(join(home, ".agents", "permits", "sess1", "a1b2c3d4e5f60718.ticket.json"), JSON.stringify({ category: "delete", command: "rm -rf build", cwd: "/w", at: 1 }));
+      writeFileSync(join(home, ".agents", "permits", "sess1", "a1b2c3d4e5f60718.ticket.json"), JSON.stringify({ category: "delete", command: "rm -rf build", cwd: "/w", at: Date.now() / 1000 }));
       const listed = await listPermitTickets({ requestedHostId: "h" } as never, {} as never);
       expect(listed.tickets).toEqual([expect.objectContaining({ session: "sess1", ticket: "a1b2c3d4e5f60718", category: "delete" })]);
       expect((await answerPermit({ requestedHostId: "h", session: "sess1", ticket: "a1b2c3d4e5f60718", decision: "allow", why: "build output" } as never, {} as never)).written).toBe(true);
