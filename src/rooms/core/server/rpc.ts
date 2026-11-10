@@ -146,8 +146,11 @@ interface Services {
 /** One handler object from the five groups; each group carries the exact contract keys it implements. */
 const OWNER_ITEM_SWEEPS = [writerQuestionSweep, runGoalSweep, phaseWordSweep, scheduleFailureSweep];
 
+/** The sweeps «waiting for the owner» collects over: shared by the RPC read and the five-minute bell (SMA m_ws_notify). */
+export const ownerItemSweeps = (services: Services) => [...OWNER_ITEM_SWEEPS, budgetSpentSweep(services)];
+
 export function registerRpc(ctx: ServerCore, services: Services, contract: typeof rpcContract) {
-  const ownerSweeps = [...OWNER_ITEM_SWEEPS, budgetSpentSweep(services)];
+  const ownerSweeps = ownerItemSweeps(services);
   // Every call is timed (rpc-timing.ts). No caller check: every machine and every caller is the owner's (owner decision 2026-10-08).
   ctx.bb.rpc.register(contract, journalRpcHandlers(timeRpcHandlers({
     ...preferencesRpc(ctx, services),

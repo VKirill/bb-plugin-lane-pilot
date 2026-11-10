@@ -10,23 +10,40 @@ export const useCockpitRpc = () => useRpc<typeof rpcContract>();
 /** Fill a string's `{name}` slots. */
 export const fill = (key: I18nKey, values: Record<string, string | number>) => Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), t(key));
 
-/** One read: its data, its error, and a reload; `deps` change it. Waiting instead of a blank page while it loads. */
-export function useLoad<T>(load: () => Promise<T>, deps: readonly unknown[]) {
+/** One read: its data, its error, and a reload; `deps` change it. `pollMs` re-reads on a timer while the page is visible (the plugin's push). Waiting instead of a blank page while it loads. */
+export function useLoad<T>(load: () => Promise<T>, deps: readonly unknown[], pollMs?: number) {
   const [state, setState] = useState<{ data: T | null; error: string | null; loading: boolean }>({ data: null, error: null, loading: true });
   const reload = useCallback(() => {
     setState((prev) => ({ ...prev, loading: true }));
-    load().then((data) => setState({ data, error: null, loading: false }), (cause: unknown) => setState({ data: null, error: cause instanceof Error ? cause.message : String(cause), loading: false }));
+    load().then((data) => setState({ data, error: null, loading: false }), (cause: unknown) => setState((prev) =>
+      // A poll that fails once keeps what is on the screen: the next one retries; only a first read shows the error.
+      pollMs && prev.data !== null ? { ...prev, loading: false } : { data: null, error: cause instanceof Error ? cause.message : String(cause), loading: false }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
   useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    if (!pollMs) return;
+    const timer = setInterval(() => { if (document.visibilityState !== "hidden") reload(); }, pollMs);
+    return () => clearInterval(timer);
+  }, [pollMs, reload]);
   return { ...state, reload };
 }
 
-/** Waiting rings instead of a blank page; the error when the read failed. */
+/** Waiting rings instead of a blank page; after two seconds the wait says how long it has taken; the error when the read failed. */
 export function Loaded<T>({ state, children }: { state: { data: T | null; error: string | null; loading: boolean }; children: (data: T) => ReactNode }) {
   if (state.error) return <p className="text-sm text-destructive" role="alert">{fill("ckError", { e: state.error })}</p>;
-  if (state.data === null) return <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="ck-waiting"><span className="size-3 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />{t("ckLoading")}</p>;
+  if (state.data === null) return <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="ck-waiting"><span className="size-3 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />{t("ckLoading")}<WaitingNote /></p>;
   return <>{children(state.data)}</>;
+}
+
+/** The wait said aloud (SMA waiting): from two seconds on, «Ждём ответа уже N с», counted each second. */
+function WaitingNote() {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setSeconds((value) => value + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return seconds < 2 ? null : <span data-testid="ck-waiting-elapsed">{fill("ckWaiting", { n: seconds })}</span>;
 }
 
 export function Panel({ title, testId, actions, children }: { title: string; testId: string; actions?: ReactNode; children: ReactNode }) {

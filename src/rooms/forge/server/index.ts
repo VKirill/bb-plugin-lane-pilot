@@ -17,6 +17,20 @@ interface Services {
 
 const RECEIPTS = "lp.forge.receipts";
 
+/** The forge receipts of a project (kind, name, ok, findings): the window lists them as «drafts» (SMA m_sw_agents). */
+export async function readForgeReceipts(kv: Pick<ServerCore["bb"]["storage"]["kv"], "get">, projectId: string): Promise<ForgeReceipt[]> {
+  const all = ((await kv.get(RECEIPTS)) as Record<string, ForgeReceipt> | null) ?? {};
+  return Object.entries(all).filter(([key]) => key.startsWith(`${projectId}:`)).map(([, row]) => row);
+}
+
+/** The tool's parameter schema, exported so the contract of a field (for example the body's cap) is testable. */
+export const forgeToolParameters = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("draft"), kind: z.enum(FORGE_KINDS), name: z.string().regex(NAME), brief: z.string().trim().min(20).max(4000), body: z.string().max(20_000).optional() }).strict(),
+  z.object({ action: z.literal("lint"), kind: z.enum(FORGE_KINDS), name: z.string().regex(NAME) }).strict(),
+  z.object({ action: z.literal("enable"), kind: z.enum(FORGE_KINDS), name: z.string().regex(NAME), step: z.enum(["request", "confirm"]), ownerSaid: z.string().max(600).optional() }).strict(),
+  z.object({ action: z.literal("list") }).strict(),
+]);
+
 /**
  * The forge lane (SMA map: Forge lane, Creator, The forge): `draft` sends the Creator — a writer task that owns exactly the one draft
  * folder — `lint` reads the draft and writes the forge receipt, `enable` is two steps on that receipt (request, then confirm with the
@@ -47,12 +61,7 @@ export function mountForge(ctx: ServerCore, services: Services): void {
     name: "lane_pilot_forge",
     description: "The forge: have the Creator write exactly one new skill, role or workflow draft, lint it into a receipt, and enable it in two steps.",
     instructions: "`draft` (kind skill|role|workflow, name kebab-case, brief: what it is for and when to use it) sends the Creator — a writer task that owns only .agents/forge/<kind>s/<name>/ and writes the one draft file. When it is accepted, `lint` (kind, name) reads the draft: findings, or a receipt with its hash. `enable` step request, then step confirm (with owner.words on, ownerSaid = the owner's whole answer, after you asked him) puts the same bytes where the kind lives: .claude/skills/<name>/SKILL.md, .claude/agents/<name>.md or .lane-pilot/workflows/<name>.json. A changed draft needs a new lint. Never forbidden grants: permission bypass, every tool, destructive shell, secrets, the guard or hooks.",
-    parameters: z.discriminatedUnion("action", [
-      z.object({ action: z.literal("draft"), kind: z.enum(FORGE_KINDS), name: z.string().regex(NAME), brief: z.string().trim().min(20).max(4000) }).strict(),
-      z.object({ action: z.literal("lint"), kind: z.enum(FORGE_KINDS), name: z.string().regex(NAME) }).strict(),
-      z.object({ action: z.literal("enable"), kind: z.enum(FORGE_KINDS), name: z.string().regex(NAME), step: z.enum(["request", "confirm"]), ownerSaid: z.string().max(600).optional() }).strict(),
-      z.object({ action: z.literal("list") }).strict(),
-    ]),
+    parameters: forgeToolParameters,
     execute: async (input, context) => {
       if (input.action === "list") return JSON.stringify(Object.entries(await receipts()).filter(([key]) => key.startsWith(`${context.projectId}:`)).map(([, row]) => row));
       const run = await runOf(context.threadId, (context as { experimental_vkPluginMetadata?: unknown }).experimental_vkPluginMetadata);
@@ -66,7 +75,7 @@ export function mountForge(ctx: ServerCore, services: Services): void {
           task: { schema_version: 2, id, title: `Forge ${input.kind} ${input.name}`, display_title: `Черновик: ${input.name}`.slice(0, 60), kind: "docs", area: `forge:${input.name}`,
             risk: "low", lane: "default", project_cwd: run.cwd, read_first: [], interfaces: [], invariants: ["no forbidden grant"], out_of_scope: ["any file outside the draft folder"],
             expected_outputs: [file], owns_paths: [`${draftFolder(input.kind, input.name)}/`], never_touch: [".claude/", ".lane-pilot/"], depends_on: [],
-            objective: creatorBrief(input.kind, input.name, input.brief), acceptance: [`${file} passes lane-forge-lint`], verify: "smoke",
+            objective: creatorBrief(input.kind, input.name, input.brief, input.body), acceptance: [`${file} passes lane-forge-lint`], verify: "smoke",
             verification: [{ command: `lane-forge-lint ${input.kind} ${input.name} ${file}`, cwd: run.cwd, timeout_sec: 60 }] } as never,
           plan: `The forge: the Creator writes one ${input.kind} draft.`, objective: input.brief });
         return JSON.stringify({ ...reply, draft: file, next: "when the task is accepted: lane_pilot_forge lint" });

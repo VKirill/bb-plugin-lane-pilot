@@ -33,7 +33,7 @@ export type AccessView = {
   mode: string;
   modeOrigin: Origin | null;
   roles: RoleView[];
-  catalog: { bbPlugins: Array<{ id: string; name: string }>; skills: Array<{ name: string; description: string }> };
+  catalog: { bbPlugins: Array<{ id: string; name: string }>; skills: Array<{ name: string; description: string; store?: string }>; skillsLooked?: string[] };
   mandatory: { bbPlugins: string[]; mcpServers: string[] };
   providers: Record<string, string[]>;
 };

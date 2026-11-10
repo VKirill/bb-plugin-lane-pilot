@@ -628,15 +628,15 @@ export function listAttemptsUpdatedSince(db: LanePilotDatabase, runId: string, s
 }
 
 /** Attempt rows of a project for question answering: optionally only some states, only recent ones, newest first. */
-export function listAttemptRowsForProject(db: LanePilotDatabase, input: { projectId: string; states?: readonly string[]; updatedSince?: number; limit: number }): Array<{ taskId: string; state: string; reason: string | null; failureCode: string | null; at: number }> {
+export function listAttemptRowsForProject(db: LanePilotDatabase, input: { projectId: string; states?: readonly string[]; updatedSince?: number; limit: number }): Array<{ taskId: string; runId: string; state: string; reason: string | null; failureCode: string | null; at: number }> {
   const where = ["r.project_id=?"];
   const args: unknown[] = [input.projectId];
   if (input.states?.length) { where.push(`a.state IN (${input.states.map(() => "?").join(",")})`); args.push(...input.states); }
   if (input.updatedSince !== undefined) { where.push("a.updated_at>=?"); args.push(input.updatedSince); }
   args.push(input.limit);
-  return db.prepare(`SELECT a.task_id AS taskId, a.state, a.reason, a.failure_code AS failureCode, a.updated_at AS at FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+  return db.prepare(`SELECT a.task_id AS taskId, a.run_id AS runId, a.state, a.reason, a.failure_code AS failureCode, a.updated_at AS at FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     WHERE ${where.join(" AND ")} ORDER BY a.updated_at DESC LIMIT ?`).all(...args) as
-    Array<{ taskId: string; state: string; reason: string | null; failureCode: string | null; at: number }>;
+    Array<{ taskId: string; runId: string; state: string; reason: string | null; failureCode: string | null; at: number }>;
 }
 
 /** Each task's latest attempt in a project (the dead-letter scan reads it). */
@@ -1325,4 +1325,15 @@ export function listUnmovedLiveAttempts(db: LanePilotDatabase, cutoff: number): 
 export function liveAttemptsOfRun(db: Pick<LanePilotDatabase, "prepare">, runId: string): Array<{ id: string; task_id: string }> {
   return db.prepare("SELECT id, task_id FROM lane_pilot_attempt WHERE run_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested') ORDER BY updated_at DESC")
     .all(runId) as Array<{ id: string; task_id: string }>;
+}
+
+/** What a machine worked on today: the projects whose runs write on this host and the attempts that moved in the window, by state (SMA m_sw_machines). */
+export function hostActivityToday(db: LanePilotDatabase, hostId: string, since: number): { projects: string[]; accepted: number; blocked: number; running: number } {
+  const rows = db.prepare(`SELECT r.project_id AS projectId, a.state AS state FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.writer_host_id=? AND a.updated_at>=?`).all(hostId, since) as Array<{ projectId: string; state: string }>;
+  return {
+    projects: [...new Set(rows.map((row) => row.projectId))].sort(),
+    accepted: rows.filter((row) => row.state === "accepted").length,
+    blocked: rows.filter((row) => row.state === "blocked").length,
+    running: rows.filter((row) => row.state === "running").length,
+  };
 }

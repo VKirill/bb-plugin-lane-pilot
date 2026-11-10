@@ -1,3 +1,4 @@
+import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { agentPickerLabel } from "../contracts/agent-display";
@@ -333,6 +334,46 @@ export function TeamTab({ page }: { page: LpPage }) {
       </Surface>
       {isGlobal ? <ModelOverridesPanel page={page} /> : null}
       <AccessModePanel api={access} modeControl={modeControl} />
+      <SkillsBlock access={access} />
+      {isGlobal ? null : <NeedWorkerBlock projectId={projectId} />}
     </div>
+  );
+}
+
+/** The skills of the two stores (SMA m_sw_skills): listed with their store and description; an empty list names where it looked. */
+export function SkillsBlock({ access }: { access: AccessApi }) {
+  const skills = access.view?.catalog.skills ?? null;
+  if (!access.view) return null;
+  const looked = access.view.catalog.skillsLooked ?? ["общие навыки BB", "навыки проекта"];
+  return (
+    <Surface testId="team-skills">
+      <SurfaceHeader><h2 className="text-sm font-medium">{t("teamSkills")}</h2></SurfaceHeader>
+      <SurfaceBody>
+        {!skills?.length ? (
+          <p className="text-xs text-muted-foreground" data-testid="team-skills-empty">{t("teamSkillsEmpty").replace("{s}", looked.join(", "))}</p>
+        ) : (
+          <ul className="space-y-1 text-sm">{skills.map((skill) => (
+            <li key={`${skill.store ?? ""}:${skill.name}`} data-testid={`team-skill-${skill.name}`}>
+              <span className="font-medium">{skill.name}</span> <span className="text-xs text-muted-foreground">{skill.store ?? "общие BB"}</span>
+              {skill.description ? <span className="block text-xs text-muted-foreground">{skill.description}</span> : null}
+            </li>))}
+          </ul>
+        )}
+      </SurfaceBody>
+    </Surface>
+  );
+}
+
+/** «Нужен новый работник?» (SMA m_sw_agents): one button to the cockpit's forge screen, where the order box and the drafts live. */
+export function NeedWorkerBlock({ projectId }: { projectId: string | null }) {
+  const navigate = useBbNavigate();
+  return (
+    <Surface testId="team-need-worker">
+      <SurfaceBody className="flex items-center justify-between gap-2">
+        <p className="text-sm">{t("teamNeedWorker")}</p>
+        <button type="button" className="rounded-md border border-[var(--lp-hairline)] px-2 py-1 text-xs hover:bg-[var(--lp-well)]" data-testid="team-open-forge"
+          onClick={() => navigate.toPluginPanel("lane-pilot-cockpit", { subPath: "forge" })}>{t("teamOpenForge")}</button>
+      </SurfaceBody>
+    </Surface>
   );
 }

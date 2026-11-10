@@ -129,7 +129,9 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
         roles,
         catalog: {
           bbPlugins: pluginRows.filter((p) => typeof p.id === "string").map((p) => ({ id: p.id!, name: p.displayName ?? p.name ?? p.id! })).sort((a, b) => a.id.localeCompare(b.id)),
-          skills: [...new Map(skillRows.filter((k) => typeof k.name === "string").map((k) => [k.name!, { name: k.name!, description: (k.description ?? "").slice(0, 200) }])).values()].sort((a, b) => a.name.localeCompare(b.name)),
+          skills: [...new Map(skillRows.filter((k) => typeof k.name === "string").map((k) => [k.name!, { name: k.name!, description: (k.description ?? "").slice(0, 200), store: typeof (k as { store?: unknown }).store === "string" && (k as { store?: string }).store ? (k as { store: string }).store : "общие BB" }])).values()].sort((a, b) => a.name.localeCompare(b.name)),
+          // Where the list looked (SMA m_sw_skills): an empty list names the places, not silence.
+          skillsLooked: ["общие навыки BB", `навыки проекта «${projectId}»`],
         },
         mandatory: { bbPlugins: [...MANDATORY_BB_PLUGINS], mcpServers: [...MANDATORY_MCP_SERVERS] },
         providers: Object.fromEntries(Object.entries(CORE_PROVIDER_GROUPS).filter(([id]) => !PROVIDER_CAPABILITIES[id]?.notStarted).map(([id, groups]) => [id, [...groups]])),

@@ -249,7 +249,8 @@ export const rpcOps = {
   cockpit_today: { input: z.object({ projectId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
   cockpit_workers: { input: z.object({ projectId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
   cockpit_memory: { input: z.object({ runId: z.string().min(1).max(200), action: z.enum(["lint", "index", "tags", "consolidate"]) }).strict(), output: z.unknown() },
-  cockpit_forge_order: { input: z.object({ projectId: z.string().min(1).max(200), kind: z.enum(["skill", "role", "workflow"]), name: z.string().regex(/^[a-z][a-z0-9-]{1,47}$/), brief: z.string().trim().min(20).max(4000) }).strict(), output: z.unknown() },
+  cockpit_forge_order: { input: z.object({ projectId: z.string().min(1).max(200), kind: z.enum(["skill", "role", "workflow"]), name: z.string().regex(/^[a-z][a-z0-9-]{1,47}$/), brief: z.string().trim().min(20).max(4000), body: z.string().max(20_000).optional() }).strict(), output: z.unknown() },
+  cockpit_forge_list: { input: z.object({ projectId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
   cockpit_designer: { input: z.object({ projectId: z.string().min(1).max(200).optional() }).strict(), output: z.unknown() },
   cockpit_windows: { input: z.object({ hostId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
   cockpit_seen: { input: z.object({ screen: z.string().min(1).max(80), ms: z.number().int().min(0).max(86_400_000) }).strict(), output: z.unknown() },
@@ -258,6 +259,10 @@ export const rpcOps = {
   cockpit_queue: { input: z.object({ runId: z.string().min(1).max(200), taskIds: z.array(z.string().min(1).max(200)).min(1).max(50), action: z.enum(["hold", "release", "priority"]), priority: z.enum(["low", "normal", "high", "urgent"]).optional() }).strict(), output: z.unknown() },
   cockpit_update: { input: z.object({ hostId: z.string().min(1).max(200), apply: z.boolean().default(false) }).strict(), output: z.unknown() },
   cockpit_task: { input: z.object({ runId: z.string().min(1).max(200), taskId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
+  cockpit_task_drawing_ok: { input: z.object({ runId: z.string().min(1).max(200), taskId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
+  cockpit_task_correct: { input: z.object({ runId: z.string().min(1).max(200), taskId: z.string().min(1).max(200), text: z.string().trim().min(3).max(4000) }).strict(), output: z.unknown() },
+  cockpit_accounts: { input: z.object({}).strict(), output: z.unknown() },
+  cockpit_forge_enable: { input: z.object({ projectId: z.string().min(1).max(200), kind: z.enum(["skill", "role", "workflow"]), name: z.string().regex(/^[a-z][a-z0-9-]{1,47}$/) }).strict(), output: z.unknown() },
   /** One attempt's whole record in one answer: writer thread, stage receipts and gate events of that attempt, the dispatch context, verification results, critic input hash, the attempt-change row (SMA ap_run_dir). */
   cockpit_attempt: { input: z.object({ attemptId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
 

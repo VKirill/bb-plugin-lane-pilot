@@ -2,11 +2,10 @@ import { hostContract } from "../../contracts";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { listQaHosts } from "../../platform/server";
-import { getRun, getRunWriterHost, loadProjectSettings, saveProjectSetting } from "../../storage";
+import { getRun, getRunWriterHost, hostActivityToday, loadProjectSettings, saveProjectSetting } from "../../storage";
 import { runOnHost } from "@lane-pilot/host-calls";
-import { FIRST_RUN_STEPS, MUTATING_RPC, answerFirstRun, firstRunNeeded, firstRunSettings, helperDraft, parseHelper, peerLine, type FirstRunDraft, type FirstRunStep, type PeerSnapshot } from "../logic";
+import { FIRST_RUN_STEPS, HELPER_ROOTS, MUTATING_RPC, answerFirstRun, firstRunNeeded, firstRunSettings, helperDraft, parseHelper, peerLine, type FirstRunDraft, type FirstRunStep, type PeerSnapshot } from "../logic";
 
-const PEERS = "lp.front.peers";
 const ACTIONS = "lp.front.actions";
 const draftKey = (projectId: string) => `lp.front.first-run:${projectId}`;
 const sha = async (text: string) => (await import("node:crypto")).createHash("sha256").update(text).digest("hex");
@@ -19,6 +18,8 @@ const sha = async (text: string) => (await import("node:crypto")).createHash("sh
 export function createFront(ctx: ServerCore) {
   const { db, bb } = ctx;
   const kv = bb.storage.kv;
+  // The peers' last snapshots live in memory only: age-labelled, dropped on restart, never stored (SMA m_mc_snapshot).
+  const snapshots = new Map<string, PeerSnapshot>();
   const host = () => bb.hosts.experimental_client({ contract: hostContract });
   const runPlace = (runId: string) => {
     const run = getRun(db, runId);
@@ -46,13 +47,13 @@ export function createFront(ctx: ServerCore) {
     return { written: Object.keys(settings), goal: Boolean(draft.answers.goal) };
   }
 
-  /** Find the project's helpers and parse them (Claude Code and OpenCode agents, Codex agents). */
+  /** Find the project's helpers and parse them: agent and skill definitions of the other tools (SMA m_im_scan). */
   async function helpers(runId: string) {
     const place = runPlace(runId);
-    const listed = await host().call("listDocsPages", { requestedHostId: place.hostId, projectCwd: place.cwd, roots: [".claude/agents", ".opencode/agent", ".opencode/agents", ".codex/agents"] }, { hostId: place.hostId, timeoutMs: 30_000 });
+    const listed = await host().call("listDocsPages", { requestedHostId: place.hostId, projectCwd: place.cwd, roots: [...HELPER_ROOTS], skipOversized: true }, { hostId: place.hostId, timeoutMs: 30_000 });
     return listed.pages.map((page) => parseHelper(page.path, page.content)).filter((row): row is NonNullable<typeof row> => !!row);
   }
-  /** Take the chosen as drafts: each into .agents/forge/roles/<name>/; a draft that exists is never overwritten (the write is CAS on «absent»). */
+  /** Take the chosen as drafts: each into its kind's forge folder; a draft that exists is never overwritten (the write is CAS on «absent»). */
   async function importHelpers(runId: string, names: readonly string[]) {
     const place = runPlace(runId);
     const chosen = (await helpers(runId)).filter((row) => names.includes(row.name));
@@ -60,28 +61,38 @@ export function createFront(ctx: ServerCore) {
     for (const helper of chosen) {
       const text = helperDraft(helper);
       const name = text.match(/^name: (.+)$/m)![1]!;
-      const edits = [{ path: `.agents/forge/roles/${name}/${name}.md`, expectedSha256: null, content: text }];
+      const path = helper.kind === "skill" ? `.agents/forge/skills/${name}/SKILL.md` : `.agents/forge/roles/${name}/${name}.md`;
+      const edits = [{ path, expectedSha256: null, content: text }];
       const written = await host().call("writeForgeDraft", { requestedHostId: place.hostId, projectCwd: place.cwd, previewSha256: await sha(JSON.stringify(edits)), edits }, { hostId: place.hostId, timeoutMs: 30_000 }).catch((cause: unknown) => ({ status: `failed: ${cause instanceof Error ? cause.message : String(cause)}` }));
       results.push({ name, status: written.status === "conflict" ? "kept: a draft with this name exists" : written.status });
     }
     return results;
   }
 
-  /** Peers polled with every board: the hosts BB knows, each with its last snapshot (Last snapshot of a peer). */
+  /** Peers polled with every board: each connected host is asked its ordinary board (its subscription windows); a failure only marks
+   * that peer's line and never breaks the rest (SMA m_mc_poll). A host BB no longer lists is forgotten — but an empty list is a failed
+   * read and drops nothing (SMA m_sw_machine_row). */
   async function pollPeers(now = Date.now()) {
     const listed = await listQaHosts(bb);
-    const before = ((await kv.get(PEERS)) as Record<string, PeerSnapshot> | undefined) ?? {};
-    const next: Record<string, PeerSnapshot> = { ...before };
-    for (const row of listed) {
+    if (listed.length) for (const id of [...snapshots.keys()]) if (!listed.some((row) => row.id === id)) snapshots.delete(id);
+    // All peers at once, each in its own try/catch: a machine that does not answer changes only its own line and delays nobody.
+    await Promise.all(listed.map(async (row) => {
       const online = row.connected === true;
-      next[row.id] = { hostId: row.id, name: row.name ?? null, online, at: now, lastOnlineAt: online ? now : before[row.id]?.lastOnlineAt ?? null };
-    }
-    await kv.set(PEERS, next as never);
-    return Object.values(next);
+      const before = snapshots.get(row.id);
+      const next: PeerSnapshot = { hostId: row.id, name: row.name ?? null, online, at: now, lastOnlineAt: online ? now : before?.lastOnlineAt ?? null };
+      if (online) {
+        try {
+          next.windows = await host().call("readUsageWindows", { requestedHostId: row.id }, { hostId: row.id, timeoutMs: 5_000 });
+          next.answered = true;
+        } catch { next.answered = false; }
+      }
+      snapshots.set(row.id, next);
+    }));
+    return [...snapshots.values()];
   }
   async function peers() {
-    const known = Object.values(((await kv.get(PEERS)) as Record<string, PeerSnapshot> | undefined) ?? {});
-    return known.map((peer) => ({ ...peer, line: peerLine(peer) }));
+    const since = Date.now() - 86_400_000;
+    return [...snapshots.values()].map((peer) => { const today = hostActivityToday(db, peer.hostId, since); return { ...peer, today, line: peerLine({ ...peer, today }) }; });
   }
 
   /** Terminal coordination in the window: the claims of the run's checkout, and clearing one with a reason. */
@@ -111,6 +122,8 @@ export function createFront(ctx: ServerCore) {
 export type FrontApi = ReturnType<typeof createFront>["front"];
 
 export function mountFront(ctx: ServerCore, api: FrontApi): void {
+  // The snapshots live in memory only, so a fresh process asks once at once: the machines list is not empty until the first tick.
+  void api.pollPeers().catch((cause: unknown) => ctx.log(`peers poll failed: ${cause instanceof Error ? cause.message : String(cause)}`));
   scheduleIsolated(ctx.bb, "front-peers", "*/5 * * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
     await api.pollPeers().catch((cause: unknown) => ctx.log(`peers poll failed: ${cause instanceof Error ? cause.message : String(cause)}`));
