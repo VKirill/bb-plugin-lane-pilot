@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Markdown, useBbNavigate } from "@get-bb/plugin-sdk/app";
+import { drawingFeedbackNote, drawingFeedbackProblems } from "@lane-pilot/contracts";
 import { t } from "@lane-pilot/i18n";
 import { Badge, Button, Disclosure } from "@lane-pilot/ui-kit";
 import { Field, Loaded, Panel, RefreshButton, day, fill, useLoad, type Rpc } from "./kit";
@@ -86,6 +87,10 @@ function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId
   const [limits, setLimits] = useState(false);
   const [note, setNote] = useState("");
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  // The design-turn «нет» is the goal—obstacle—question form (SMA m_sw_design_feedback), sent as one note.
+  const [fbGoal, setFbGoal] = useState("");
+  const [fbObstacle, setFbObstacle] = useState("");
+  const [fbQuestion, setFbQuestion] = useState("");
   const control = (action: "pause" | "resume" | "stop_wave" | "stop" | "close" | "word" | "return" | "interrupt" | "decide" | "uat_line", extra: Record<string, unknown> = {}) =>
     void rpc.call("phase_control", { phaseId, action, ...extra } as never).then(() => { status.reload(); onChanged(); });
   const act = (action: "correct" | "answer", payload: Record<string, unknown>) =>
@@ -99,6 +104,9 @@ function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId
       const wave = turn === "wave" && asked?.[2] ? Number(asked[2]) : undefined;
       // The yes signs the package on the screen: its key goes with it, and a package that changed meanwhile is refused.
       const decisions = turn === "acceptance" ? { useful, limits, key: s.acceptancePackage?.key ?? s.ownerWord?.acceptanceKey } : turn === "design" ? { key: s.ownerWord?.designKey } : {};
+      const feedback = { goal: fbGoal, obstacle: fbObstacle, question: fbQuestion };
+      const designNote = turn === "design" && !drawingFeedbackProblems(feedback).length ? drawingFeedbackNote(feedback) : "";
+      const wordNote = turn === "design" ? designNote : words;
       return (
         <div className="mt-2 space-y-3 text-sm" data-testid="ck-phase-card">
           <p><span className="font-medium">{t("ckPhaseNext")}:</span> {s.next.text}</p>
@@ -193,9 +201,17 @@ function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId
                   {r.execution.waves[String(wave)]!.review ? <p className="text-muted-foreground" data-testid="ck-wave-review">{r.execution.waves[String(wave)]!.review!.by}: {r.execution.waves[String(wave)]!.review!.summary}</p> : null}
                 </div>
               ) : null}
-              <Field label={`${t("ckPhaseWord")} · ${turn === "uat" ? t("ckUatLine") : turn}`} value={words} onChange={setWords} />
-              <div className="flex gap-2"><Button size="sm" disabled={turn === "acceptance" && !(useful && limits)} onClick={() => control("word", { turn, wave, decision: "yes", note: words || "да", ...decisions })}>{turn === "wave" ? t("ckWaveAccept") : t("ckYes")}</Button>
-                <Button size="sm" variant="outline" disabled={!words.trim()} onClick={() => control("word", { turn, wave, decision: "no", note: words, ...decisions })}>{turn === "wave" ? t("ckWaveHold") : t("ckNo")}</Button></div>
+              {turn === "design" ? (
+                <div className="space-y-1" data-testid="ck-design-feedback">
+                  <Field label={t("ckFbGoal")} value={fbGoal} onChange={setFbGoal} />
+                  <Field label={t("ckFbObstacle")} value={fbObstacle} onChange={setFbObstacle} />
+                  <Field label={t("ckFbQuestion")} value={fbQuestion} onChange={setFbQuestion} />
+                </div>
+              ) : (
+                <Field label={`${t("ckPhaseWord")} · ${turn === "uat" ? t("ckUatLine") : turn}`} value={words} onChange={setWords} />
+              )}
+              <div className="flex gap-2"><Button size="sm" disabled={turn === "acceptance" && !(useful && limits)} onClick={() => control("word", { turn, wave, decision: "yes", note: wordNote || "да", ...decisions })}>{turn === "wave" ? t("ckWaveAccept") : t("ckYes")}</Button>
+                <Button size="sm" variant="outline" disabled={!wordNote.trim()} onClick={() => control("word", { turn, wave, decision: "no", note: wordNote, ...decisions })}>{turn === "wave" ? t("ckWaveHold") : t("ckNo")}</Button></div>
             </div>
           ) : null}
           <div className="space-y-1">

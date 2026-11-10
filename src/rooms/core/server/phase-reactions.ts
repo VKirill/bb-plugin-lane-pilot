@@ -6,7 +6,7 @@ import type { LanePilotDatabase } from "../../storage";
 import { storeMemoryRecords } from "@lane-pilot/memory-core";
 import { closeOwnerItem, closeOwnerItemsByPrefix, postOwnerItem } from "../../owner-waiting";
 import { answerPhaseWord, askPhaseWord } from "../../lead";
-import { appendDesignJournalLine, critiqueProblems, noteDesignJournalWord, roleLine } from "../../design-eval";
+import { appendDesignCritiqueCase, appendDesignJournalLine, critiqueProblems, noteDesignJournalWord, roleLine } from "../../design-eval";
 import { roleLinesKey } from "../../contracts/server";
 import type { PhaseReactions } from "../../phase/server";
 
@@ -40,6 +40,7 @@ export function createPhaseReactions(db: LanePilotDatabase, bb: BbPluginApi): Ph
     askPhaseWord: (phase, turn, wave, ask) => { askPhaseWord(db, phase, turn, wave, ask); },
     answerPhaseWord: (phaseId, turn, wave, decision, text, by) => { answerPhaseWord(db, phaseId, turn, wave, decision, text, by); },
     journalDrawing, noteDesignWord, addRoleLine,
+    storeCritiqueCase: (entry) => bestEffort(bb.log, "design critique case", appendDesignCritiqueCase(bb.storage.kv, entry), undefined),
     critiqueProblems, roleLine,
   };
 }

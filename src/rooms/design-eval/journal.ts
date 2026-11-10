@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
-import { isDesignJournalEvent, type DesignJournalEntry, type DesignJournalEvent, type DesignJournalLine } from "@lane-pilot/contracts";
+import { isDesignJournalEvent, type DesignCritiqueCase, type DesignJournalEntry, type DesignJournalEvent, type DesignJournalLine } from "@lane-pilot/contracts";
 
 /** The design journal's KV key: the drawing lines only, in the shape main always wrote (a list capped at 2000), so older code reads it unchanged. */
 export const DESIGN_JOURNAL_KEY = "lp.design.journal";
+/** Set cases a critique asked to store for later checks of the judge (SMA k_lib_dfeedback). */
+export const DESIGN_CRITIQUE_CASES_KEY = "lp.design.critique-cases";
 /** The owner's words and the pair judgements: a second key, so older code never reads an event as a drawing and events never push drawings out. */
 export const DESIGN_EVENTS_KEY = "lp.design.events";
 const LINE_CAP = 2000, EVENT_CAP = 1000;
@@ -67,6 +69,12 @@ export async function appendDesignJournalLine(kv: Kv, line: DesignJournalLine): 
   const previous = lines.filter((entry) => entry.phaseId === line.phaseId).at(-1);
   if (previous && keyOf(previous) === key && !(await eventEntries(kv)).some((event) => event.phaseId === line.phaseId && event.at >= previous.at)) return;
   await kv.set(DESIGN_JOURNAL_KEY, [...lines, { ...line, key }].slice(-LINE_CAP) as never);
+}
+
+/** Store one set case: the drawing's sha, the form and the verdict the judge should learn to give. */
+export async function appendDesignCritiqueCase(kv: Kv, entry: DesignCritiqueCase): Promise<void> {
+  const cases = ((await kv.get(DESIGN_CRITIQUE_CASES_KEY)) as DesignCritiqueCase[] | null) ?? [];
+  await kv.set(DESIGN_CRITIQUE_CASES_KEY, [...cases, entry].slice(-500) as never);
 }
 
 /** The owner's word on a phase is an event naming the drawing it was said about (the phase's latest line now); a phase with no line takes none. */

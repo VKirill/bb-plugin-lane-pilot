@@ -20,7 +20,9 @@ export const rpcOps = {
   cancel_attempt: {
     input: z.object({ attemptId: z.string().min(1),
       /** W31 rank 6: the closed cancel-code list; a call without it (or with a value outside it) lands as `unknown`. */
-      code: z.enum(CANCEL_CODES).catch("unknown").default("unknown") }).strict(),
+      code: z.enum(CANCEL_CODES).catch("unknown").default("unknown"),
+      /** The owner's reason in words (SMA m_ws_task_panel): 3–400 characters, stored on the attempt. */
+      note: z.string().min(3).max(400).optional() }).strict(),
     output: z.object({ ok: z.boolean(), state: z.string(), reason: z.string().nullable() }).strict(),
   },
   retry_attempt: {

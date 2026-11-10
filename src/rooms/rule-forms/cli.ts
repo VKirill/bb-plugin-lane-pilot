@@ -1,4 +1,4 @@
-import { classifyUnformed, listRuleForms, markMechanized, RULE_FORMS, type RuleFormRow, type RulesDatabase } from "@lane-pilot/run-insights";
+import { classifyUnformed, listRuleForms, markMechanized, RULE_FORMS, RULE_TIERS, ruleLadderStep, ruleTierState, ruleTrialStats, type RuleFormRow, type RulesDatabase } from "@lane-pilot/run-insights";
 import { applyJevForms, type FormAsk } from "./jev-forms";
 import { MECHANISMS, mechanismFor } from "./mechanisms";
 import { acceptPromotion, dismissPromotion, listPromotions, proposePromotions } from "./promotion";
@@ -9,6 +9,8 @@ export const RULES_USAGE = [
   "bb lane-pilot rules promote <project> [--repo <path>] [--list] [--json]   task contracts for the recurring check/hook rules (stored for the night loop, nothing dispatched)",
   "bb lane-pilot rules promote accept|dismiss <project> <rule-id>   one command: the candidate leaves (or enters) the dispatched list; the contract comes back for the handoff",
   "bb lane-pilot rules mechanize [project] [--apply]   rules that a mechanism of this repository fully refuses: record it and retire their text from the brief (dry without --apply)",
+  "bb lane-pilot rules ladder [project]   every accepted rule with its tier and its next step by measured benefit",
+  "bb lane-pilot rules tune [project]   the proposed tier moves, printed as rule-id: from -> to (why); never applied",
 ].join("\n");
 
 export type RulesCliDeps = {
@@ -129,6 +131,21 @@ export async function runRulesCli(deps: RulesCliDeps, args: string[]): Promise<O
         partial: found.filter((item) => item.mechanism.coverage === "partial").map(({ row, mechanism }) => ({ id: row.id, mechanism: mechanism.id, gap: mechanism.gap })),
         briefCharsFreed: apply ? full.filter((item) => item.row.state === "accepted").reduce((sum, item) => sum + item.row.rule.length + 3, 0) : 0,
         briefCharsWouldFree: full.filter((item) => item.row.state === "accepted").reduce((sum, item) => sum + item.row.rule.length + 3, 0) }) };
+    }
+    if (op === "ladder" || op === "tune") {
+      const rows = listRuleForms(deps.db, projectId, ["accepted"]);
+      const lines: string[] = [];
+      for (const row of rows) {
+        const { tier, movedAt } = ruleTierState(deps.db, row.projectId, row.id);
+        // The nightly job's evidence window (trial start), and only what came after the rule's last tier move.
+        const since = Math.max(row.revisionStartedAt ?? row.decidedAt ?? now, movedAt === null ? 0 : movedAt + 1);
+        const stat = ruleTrialStats(deps.db, row.projectId, row.id, since);
+        const move = ruleLadderStep(tier, { confirmed: row.trialState === "confirmed", applied: stat.applied, recurrences: stat.recurrences.length }, { hasMechanism: !!row.mechanizedBy, form: row.form ?? null });
+        const next = move === "stay" ? tier : RULE_TIERS[RULE_TIERS.indexOf(tier) + (move === "up" ? 1 : -1)]!;
+        if (op === "ladder") lines.push(`${row.id.slice(0, 13)}  ${tier.padEnd(9)} applied ${stat.applied}  recurrences ${stat.recurrences.length}  next ${next}  ${clip(row.rule, 90)}`);
+        else if (move !== "stay") lines.push(`${row.id}: ${tier} -> ${next} (${move === "up" ? `${stat.applied} applications, no recurrence` : `${stat.recurrences.length} recurrences`})`);
+      }
+      return { exitCode: 0, stdout: op === "tune" ? (lines.join("\n") || "no moves") : lines.join("\n") };
     }
     return { exitCode: 1, stderr: `unknown rules operation «${op}»\n${RULES_USAGE}` };
   } catch (cause) {

@@ -1,5 +1,5 @@
 import type { StoreMemoryInput } from "@lane-pilot/memory-core";
-import type { DesignJournalLine, DrawingCritique } from "@lane-pilot/contracts";
+import type { DesignCritiqueCase, DesignJournalLine, DrawingCritique } from "@lane-pilot/contracts";
 
 /**
  * The «Ждут владельца» row the phase posts — owner-waiting's PostOwnerItem shape kept structural, so the room
@@ -31,6 +31,8 @@ export type PhaseReactions = {
   journalDrawing(line: DesignJournalLine): Promise<void>;
   noteDesignWord(phaseId: string, decision: "yes" | "no"): Promise<void>;
   addRoleLine(projectId: string, role: string, line: string): Promise<void>;
+  /** A critique's set_case continuation: stored for later checks of the judge (SMA k_lib_dfeedback). */
+  storeCritiqueCase(entry: DesignCritiqueCase): Promise<void>;
   /** design-eval's pure rules the drawing step runs: the critique form check and the designer's dated role line. */
   critiqueProblems(critique: DrawingCritique): string[];
   roleLine(lesson: string): string;

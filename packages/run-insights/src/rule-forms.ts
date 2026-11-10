@@ -137,10 +137,11 @@ export function classifyRuleForm(rule: string): FormVerdict {
 export type RuleFormRow = {
   id: string; projectId: string; rule: string; state: string; form: RuleForm | null; formReason: string | null; formBy: string | null;
   mechanizedBy: string | null; occurrences: number; trialState: string | null; decidedBy: string | null;
+  decidedAt: number | null; revisionStartedAt: number | null;
 };
 
 const ROW_SQL = `SELECT id, project_id AS projectId, rule, state, form, form_reason AS formReason, form_by AS formBy, mechanized_by AS mechanizedBy,
-  occurrences, trial_state AS trialState, decided_by AS decidedBy FROM lane_pilot_rule_proposal`;
+  occurrences, trial_state AS trialState, decided_by AS decidedBy, decided_at AS decidedAt, revision_started_at AS revisionStartedAt FROM lane_pilot_rule_proposal`;
 
 export function listRuleForms(db: RulesDatabase, projectId: string | null, states: readonly string[] = ["accepted", "proposed"]): RuleFormRow[] {
   const marks = states.map(() => "?").join(",");

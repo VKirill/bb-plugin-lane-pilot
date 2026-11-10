@@ -14,6 +14,15 @@ export function critiqueProblems(form: DrawingCritique): string[] {
   for (const [axis, score] of Object.entries(form.scores)) if (!(CRITIQUE_AXES as readonly string[]).includes(axis) || !Number.isInteger(score) || score! < 0 || score! > 3) why.push(`${axis}: a score is 0–3 on a known axis`);
   if (Object.keys(form.scores).length < 4) why.push("score at least four axes of the critique form");
   if (form.verdict === "rework" && form.notes.trim().length < 10) why.push("a rework says what to change");
+  // The goal–obstacle–question form is optional (a rework without it is accepted as before); once one field is given all three are checked.
+  if (["goal", "obstacle", "question"].some((key) => form[key as "goal"] !== undefined))
+    for (const key of ["goal", "obstacle", "question"] as const) if (!form[key]?.trim()) why.push(`the feedback form names the ${key}`);
+  const continuation = form.continuation;
+  if (continuation) {
+    if (continuation.kind === "role_line") { if (!continuation.lesson?.trim()) why.push("a role_line continuation names the lesson"); }
+    else if (continuation.kind === "set_case") { if (!continuation.caseId?.trim()) why.push("a set_case continuation names the case"); }
+    else why.push("a continuation is role_line or set_case");
+  }
   return why;
 }
 

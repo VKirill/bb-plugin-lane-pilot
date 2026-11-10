@@ -343,7 +343,8 @@ function TaskPage({ item, locale, projectName, onBack, AcceptanceCard }: { item:
   const [card, setCard] = useState<Card | null | "gone">(null);
   const read = () => void rpc.call("task_card", { runId: item.runId, taskId: item.taskId }).then((result) => setCard(result ?? "gone")).catch(() => setCard("gone"));
   useEffect(read, [rpc, item.runId, item.taskId]); // eslint-disable-line react-hooks/exhaustive-deps
-  const act = (method: "cancel_attempt" | "retry_attempt") => item.attemptId && void rpc.call(method, { attemptId: item.attemptId }).then(read);
+  const act = (method: "cancel_attempt" | "retry_attempt") => item.attemptId && void rpc.call(method, { attemptId: item.attemptId, ...(method === "cancel_attempt" && cancelNote.trim() ? { note: cancelNote.trim() } : {}) }).then(read);
+  const [cancelNote, setCancelNote] = useState("");
   const finished = (state: string) => state === "accepted" || state === "succeeded";
   const rail = (className: string) => card && card !== "gone" ? (
     <aside className={className} data-testid="task-rail">
@@ -366,6 +367,7 @@ function TaskPage({ item, locale, projectName, onBack, AcceptanceCard }: { item:
         <span className="font-medium tabular-nums">{item.taskId ? shortTaskId(item.taskId) : t("boardChain")}</span>
         <span className="ml-auto flex flex-wrap gap-2">
           {item.kind === "task" && ["queued", "running", "checking"].includes(item.column) ? <Button size="sm" variant="outline" onClick={() => act("cancel_attempt")}>{t("cancel")}</Button> : null}
+          {item.kind === "task" && ["queued", "running", "checking"].includes(item.column) ? <input className="w-40 min-w-0 rounded border border-border bg-background px-2 text-xs" placeholder={t("boardCancelNote")} value={cancelNote} onChange={(e) => setCancelNote(e.target.value)} data-testid="board-cancel-note" /> : null}
           {item.kind === "task" && item.column === "blocked" ? <Button size="sm" variant="outline" onClick={() => act("retry_attempt")}>{t("retry")}</Button> : null}
           <Button size="sm" variant="outline" onClick={onBack}>{t("boardBack")}</Button>
         </span>

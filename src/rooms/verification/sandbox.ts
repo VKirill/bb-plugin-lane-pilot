@@ -294,7 +294,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
     const seatbeltSecrets=sandboxSecretEnv(input.env);
     const sb=launch(SANDBOX_EXEC,["-p",profile,"/bin/bash","--noprofile","--norc","-c",input.command],[...Object.keys(seatbeltSecrets),"PATH","HOME","TMPDIR","TMP","TEMP","BB_DATA_DIR","LANG","LC_ALL"]);
     const child = await spawnAsync(sb.program,sb.args,{
-      cwd,
+      cwd,group:true,
       env:{
         // Secrets first: the sandbox's own variables below always win.
         ...seatbeltSecrets,

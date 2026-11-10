@@ -13,8 +13,11 @@ export type SpawnResult = {
  * ETIMEDOUT / ENOBUFS; a failed launch sets `error` with no status.
  * `keepEnds` instead keeps each stream's beginning and end, up to that many bytes, and never stops the command for its
  * output: a check's verdict is its exit code, and a green test run that logs a lot is still green.
+ * `group` makes the child a process-group leader (SMA m_ac_job): only the abnormal ends (timeout, ENOBUFS) signal the whole
+ * group (SIGTERM, SIGKILL after 2 s), so the orphaned background children of a command that ran away die with it; a normal
+ * finish signals nothing, as without `group`.
  */
-export function spawnAsync(file:string,args:readonly string[],options:{cwd?:string;env?:NodeJS.ProcessEnv;timeout?:number;maxBuffer?:number;input?:string;keepEnds?:number}={}):Promise<SpawnResult> {
+export function spawnAsync(file:string,args:readonly string[],options:{cwd?:string;env?:NodeJS.ProcessEnv;timeout?:number;maxBuffer?:number;input?:string;keepEnds?:number;group?:boolean}={}):Promise<SpawnResult> {
   return new Promise((resolve)=>{
     const maxBuffer=options.maxBuffer??1024*1024;
     const out:Buffer[]=[]; const err:Buffer[]=[]; const size={out:0,err:0};
@@ -23,6 +26,8 @@ export function spawnAsync(file:string,args:readonly string[],options:{cwd?:stri
     let settled=false;
     let timer:NodeJS.Timeout|null=null;
     let grace:NodeJS.Timeout|null=null;
+    const child=spawn(file,[...args],{cwd:options.cwd,env:options.env,detached:options.group===true,stdio:[options.input===undefined?"ignore":"pipe","pipe","pipe"],windowsHide:true});
+    const groupSignal=(signal:NodeJS.Signals)=>{ if(child.pid===undefined) return; try { process.kill(-child.pid,signal); } catch { /* ESRCH: the group is already gone */ } };
     const finish=(status:number|null,signal:NodeJS.Signals|null)=>{
       if(settled) return;
       settled=true;
@@ -30,11 +35,11 @@ export function spawnAsync(file:string,args:readonly string[],options:{cwd?:stri
       if(grace) clearTimeout(grace);
       resolve({pid:child.pid,status,signal,stdout:ends?ends.out.text():Buffer.concat(out).toString("utf8"),stderr:ends?ends.err.text():Buffer.concat(err).toString("utf8"),...(error?{error}:{})});
     };
-    const child=spawn(file,[...args],{cwd:options.cwd,env:options.env,stdio:[options.input===undefined?"ignore":"pipe","pipe","pipe"],windowsHide:true});
     if(options.input!==undefined) child.stdin!.end(options.input);
     const stop=(code:string)=>{
       error??=Object.assign(new Error(`spawn ${file} ${code}`),{code});
-      child.kill("SIGTERM");
+      if(options.group) { groupSignal("SIGTERM"); const pid=child.pid; if(pid!==undefined) setTimeout(()=>{ try { process.kill(-pid,"SIGKILL"); } catch { /* gone */ } },2_000).unref(); }
+      else child.kill("SIGTERM");
     };
     if(options.timeout) timer=setTimeout(()=>stop("ETIMEDOUT"),options.timeout);
     const take=(chunks:Buffer[],key:"out"|"err")=>(chunk:Buffer)=>{

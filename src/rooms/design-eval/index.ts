@@ -3,7 +3,7 @@ export { compareDesigns, designScore, mergeFrames, MEASURE_SCRIPT, RUBRIC, score
 export type { Criterion, Measurement } from "./logic";
 export { CRITIQUE_AXES, critiqueProblems, readinessWords, roleLine, trainedConditions, trainingRatios } from "./training";
 export type { CritiqueAxis, DesignJournalLine, DrawingCritique } from "./training";
-export { DESIGN_EVENTS_KEY, DESIGN_JOURNAL_KEY, appendDesignJournalLine, appendDesignPair, designJournalKey, designJournalLines, designPairOf, noteDesignJournalWord } from "./journal";
+export { DESIGN_CRITIQUE_CASES_KEY, DESIGN_EVENTS_KEY, DESIGN_JOURNAL_KEY, appendDesignCritiqueCase, appendDesignJournalLine, appendDesignPair, designJournalKey, designJournalLines, designPairOf, noteDesignJournalWord } from "./journal";
 export { pairBasis, pairOrder } from "./pair";
 export { pairUrlRefusal } from "./url-guard";
 export type { PairUrlOptions } from "./url-guard";

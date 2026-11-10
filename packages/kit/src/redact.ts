@@ -99,19 +99,47 @@ export function redactKnownDeep<T>(value:T):T {
 export const CREDENTIAL_MASK = "[password hidden: it is in the owner's message; the PM keeps it in Env Catalog]";
 // A value: no spaces, 4+ characters, at least one Latin letter or digit (so «пароль такой же» is left alone), not a link.
 const VALUE = String.raw`(?!https?:\/\/)(?=[^\s]*[A-Za-z0-9])[^\s]{4,}`;
+// The phase intake's own loose form, exactly as it was: it only MASKS (a phase stores the owner's request), it never refuses anything.
 const KEYED = new RegExp(String.raw`((?:парол[ьяюе]|password|passwd|pwd|pass|токен|token|api[ _-]?key|secret|секрет)\s*(?:[:=—–-]\s*|\s+))(` + VALUE + ")", "giu");
 const AFTER_EMAIL = new RegExp(String.raw`([\w.+-]+@[\w-]+(?:\.[\w-]+)+)(\s*[:/|,;]?\s*)(?=[^\s]*[A-Za-z])(?=[^\s]*[\d\W_])(` + VALUE.replace("{4,}", "{6,}") + ")", "gu");
 
 /**
+ * The one credential masker every outward writer shares (SMA k_lib_secretsmask): private-key blocks, well-known token shapes,
+ * Bearer tokens and UPPER_KEY assignments, then every secret the server fetched (redactKnown). It only MASKS, and only
+ * credential-shaped text (no loose «password …» prose rule), so ordinary sentences pass. The table is the one the quote
+ * scrub had, no wider: a text the memory store refused (a JWT) must still reach that check unmasked. What a writer REFUSES
+ * stays that writer's own check. A rule keeps the part that names what was hidden (the key name, the Bearer scheme).
+ */
+type MaskRule = { pattern: RegExp; mask: (m: string[], mask: string) => string };
+const SHAPE_RULES: MaskRule[] = [
+  { pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, mask: (_m, mask) => mask },
+  { pattern: /\b(?:sk-[a-z0-9_-]{20,}|gh[pousr]_[a-z0-9]{20,}|xox[abp]-[a-z0-9-]{10,}|AKIA[0-9A-Z]{16})\b/gi, mask: (_m, mask) => mask },
+  { pattern: /(\bBearer\s+)[A-Za-z0-9._~+/=-]{16,}/g, mask: (m, mask) => `${m[1]}${mask}` },
+];
+const ASSIGNMENT_RULE: MaskRule = { pattern: /\b([A-Z0-9_]*(?:PASSWORD|SECRET|TOKEN|API_KEY)\s*[=:]\s*)\S+/gi, mask: (m, mask) => `${m[1]}${mask}` };
+const applyRules = (text:string, rules:MaskRule[], mask:string):{ text:string; masked:boolean } => {
+  let masked = false;
+  const out = rules.reduce((acc, rule) => acc.replace(rule.pattern, (...args) => { masked = true; return rule.mask(args as unknown as string[], mask); }), text);
+  return { text: out, masked };
+};
+
+/** The one mask: every table hit becomes `mask`, plus every secret the server fetched (redactKnown). */
+export function maskCredentials(text:string, mask:string = MASK):{ text:string; masked:boolean } {
+  const found = applyRules(text, [...SHAPE_RULES, ASSIGNMENT_RULE], mask);
+  const known = redactKnown(found.text);
+  return { text: known, masked: found.masked || known !== found.text };
+}
+
+/**
  * The owner's request without the credentials typed into it: a value after a keyword («пароль: …», «token …») and the word right after
- * an email address («Авторизация у меня там такая name@site.ru S3cr3t!»). A phase stored the magicseo ТЗ verbatim, so its password went
- * into BOOK.md, CONTEXT.md and SECURITY.md in the repository and into the first commit (replay 2026-10-31), and to every helper's prompt.
- * The email stays: it names the login.
+ * an email address («Авторизация у меня там такая name@site.ru S3cr3t!»), plus the shared token shapes. A phase stored the magicseo ТЗ
+ * verbatim, so its password went into BOOK.md, CONTEXT.md and SECURITY.md in the repository and into the first commit (replay
+ * 2026-10-31), and to every helper's prompt. The email stays: it names the login.
  */
 export function withoutCredentials(text:string):string {
   // Idempotent: a mask already in the text is kept as it is (a phase is cleaned when stored and again when read).
-  return text.split(CREDENTIAL_MASK).map((part) => part.replace(KEYED, (_match, lead:string) => `${lead}${CREDENTIAL_MASK}`)
-    .replace(AFTER_EMAIL, (_match, email:string, gap:string) => `${email}${gap || " "}${CREDENTIAL_MASK}`)).join(CREDENTIAL_MASK);
+  return text.split(CREDENTIAL_MASK).map((part) => applyRules(part.replace(KEYED, (_match, lead:string) => `${lead}${CREDENTIAL_MASK}`)
+    .replace(AFTER_EMAIL, (_match, email:string, gap:string) => `${email}${gap || " "}${CREDENTIAL_MASK}`), SHAPE_RULES, CREDENTIAL_MASK).text).join(CREDENTIAL_MASK);
 }
 
 /** Text without Lane Pilot's `[lane-pilot-selection:<uuid>]` markers: the token a session start carries is never part of a goal or a phase. */
