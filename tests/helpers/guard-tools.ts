@@ -16,7 +16,7 @@ export function leaks(text: string): Array<{ line: number; shape: string }> {
   return out;
 }
 
-const INTERNAL_ID = /\b(lpattempt_[0-9a-f]{8,}|lprun_[0-9a-f]{8,}|thr_[a-z0-9]{8,}|proj_[a-z0-9]{8,}|host_[a-z0-9]{8,})\b/;
+export const INTERNAL_ID = /\b(lpattempt_[0-9a-f]{8,}|lprun_[0-9a-f]{8,}|thr_[a-z0-9]{8,}|proj_[a-z0-9]{8,}|host_[a-z0-9]{8,})\b/;
 /** Internal ids forbidden: the strings of a catalog a person reads that carry an internal id (placeholders like {taskId} are fine). */
 export function internalIds(strings: Readonly<Record<string, string>>): string[] {
   return Object.entries(strings).filter(([, value]) => INTERNAL_ID.test(value)).map(([key]) => key);
@@ -34,4 +34,42 @@ export const UNSHOWN_FIELDS: Readonly<Record<string, string>> = {
 export function parityGaps(session: readonly string[], terminal: readonly string[]): { onlySession: string[]; onlyTerminal: string[] } {
   const a = new Set(session), b = new Set(terminal);
   return { onlySession: [...a].filter((tool) => !b.has(tool)).sort(), onlyTerminal: [...b].filter((tool) => !a.has(tool)).sort() };
+}
+
+/** House words, old brand names, hard-coded colours and internal ids forbidden in the texts a person reads, comments and tests. */
+export const FORBIDDEN_WORDS: ReadonlyArray<{ shape: RegExp; reason: string }> = [
+  { shape: /Claude Lane/, reason: "the old harness brand; the product a person reads about is Lane Pilot" },
+];
+const COLOUR_LITERAL = /#(?:[0-9a-f]{3}|[0-9a-f]{6})\b/i;
+
+/** The lines of a text file (comments, docs, tests) carrying a house word or a colour literal — the shapes that are never a legitimate word. */
+export function sourceWordHits(path: string, text: string): string[] {
+  return text.split("\n").flatMap((line, index) => FORBIDDEN_WORDS.some(({ shape }) => shape.test(line)) ? [`${path}:${index + 1}`] : []);
+}
+
+/** The strings of a catalog a person reads that carry a house word, an old brand, a colour literal or an internal id. */
+export function houseWordHits(strings: Readonly<Record<string, string>>): string[] {
+  return Object.entries(strings)
+    .filter(([, value]) => FORBIDDEN_WORDS.some(({ shape }) => shape.test(value)) || COLOUR_LITERAL.test(value) || INTERNAL_ID.test(value))
+    .map(([key]) => key);
+}
+
+/**
+ * Window contract is read (SMA map: Window contract is read): every top-level field of a zod-object output is either named in a
+ * ui source (as `.field`, `field:` or a destructured `field`) or explained as `method.field` in `explained` (UNSHOWN_FIELDS).
+ * Outputs that are `z.unknown()` or not plain objects report nothing — the baseline below carries today's unread fields.
+ */
+export function unreadFields(contract: Readonly<Record<string, { output: unknown }>>, uiSources: ReadonlyArray<{ path: string; text: string }>, explained: Readonly<Record<string, string>>): string[] {
+  const unread: string[] = [];
+  for (const [method, op] of Object.entries(contract)) {
+    const def = (op.output as { _def?: { type?: string; typeName?: string; shape?: Record<string, unknown> | (() => Record<string, unknown>) } })?._def;
+    const fields = typeof def?.shape === "function" ? def.shape() : def?.shape;
+    if ((def?.typeName !== "ZodObject" && def?.type !== "object") || !fields) continue;
+    for (const field of Object.keys(fields)) {
+      if (explained[`${method}.${field}`] !== undefined) continue;
+      const read = uiSources.some(({ text }) => new RegExp(`[.\\s,{]${field}\\b`).test(text) || new RegExp(`\\b${field}\\s*:`).test(text));
+      if (!read) unread.push(`${method}.${field}`);
+    }
+  }
+  return unread.sort();
 }

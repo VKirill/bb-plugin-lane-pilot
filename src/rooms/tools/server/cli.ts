@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import { listReviewedObservations } from "../../learning";
 import { prototypeConfigSchema, taskV2Schema } from "../../contracts";
 import { taskBaselineEntries } from "../../baseline";
@@ -44,7 +45,9 @@ import type { LearningItemsReader } from "../../owner-waiting";
 import { LEAD_USAGE, runLeadCli } from "../../lead/server";
 import { COVERAGE_USAGE, runCoverageCli } from "../../coverage";
 import { SMA_MAP_USAGE, runSmaLiveCli, runSmaMapCli, smaCheckedPercent, smaCounts, smaDonePercent, smaRows } from "../../sma-map";
-import { designJournalLines, readinessWords, trainedConditions, trainingRatios } from "../../design-eval";
+import { appendDesignPair, designJournalLines, judgeDesigns, pairOrder, readinessWords, trainedConditions, trainingRatios } from "../../design-eval";
+import { postOwnerItem } from "../../owner-waiting";
+import { jev } from "@lane-pilot/jev";
 import { PHASE_USAGE, phaseWordSweep, runPhaseCli } from "../../phase/server";
 import { attemptRecord, manifest, passport, preship, prPassport, receiptChain, subagentReceipts, verifyChain } from "./receipts";
 import { listTripped, rearmBreaker, breakerRowId } from "../../learning";
@@ -499,8 +502,36 @@ ${ERRANDS_USAGE}` },
           const all = await designJournalLines(ctx.bb.storage.kv);
           const project = args.includes("--project") ? args[args.indexOf("--project") + 1] : null;
           const lines = project ? all.filter((line) => line.projectId === project) : all;
-          const report = { ratios:trainingRatios(lines), conditions:trainedConditions(lines), readiness:readinessWords(lines) };
+          // Series assignment: which role-lines state each drawing was made under; the baseline is the first series, shown beside the latest.
+          const seriesOrder = [...new Set(lines.map((line) => line.series ?? "base"))];
+          const series = Object.fromEntries(seriesOrder.map((id) => [id, trainingRatios(lines.filter((line) => (line.series ?? "base") === id))]));
+          const report = { ratios:trainingRatios(lines), series, baseline:seriesOrder[0] ?? null, latest:seriesOrder.at(-1) ?? null, conditions:trainedConditions(lines), readiness:readinessWords(lines) };
           return { exitCode:0, stdout:args.includes("--json") ? JSON.stringify(report, null, 2) : `${report.readiness}\n\n${JSON.stringify(report.ratios)}\n${report.conditions.map((row) => `${row.ok ? "✓" : "✗"} ${row.id}: ${row.detail}`).join("\n")}` };
+        }
+        if (command === "design-pair" || command === "design-pair-answer") {
+          // Paired design judgement (SMA k_lib_djudgement): the model and the person see one basis and one order; the pair lands in the journal.
+          if (command === "design-pair-answer") {
+            const [phaseId, pick] = args;
+            if (!phaseId || !["a","b","tie"].includes(pick ?? "")) return { exitCode:1, stderr:"bb lane-pilot design-pair-answer <phaseId> <a|b|tie>" };
+            await appendDesignPair(ctx.bb.storage.kv, { phaseId, order: "ab", model: null, person: pick as "a"|"b"|"tie" });
+            return { exitCode:0, stdout:JSON.stringify({ recorded:{ phaseId, person:pick } }) };
+          }
+          const [phaseId, urlA, urlB] = args;
+          if (!phaseId || !urlA || !urlB) return { exitCode:1, stderr:"bb lane-pilot design-pair <phaseId> <url-a> <url-b>" };
+          const measured = await new Promise<string>((ok, fail) => {
+            execFile("npx", ["tsx", "scripts/lp-design-eval.ts", "design-pair", urlA, urlB], { cwd: process.cwd(), timeout: 300_000 },
+              (error, stdout) => error ? fail(new Error(`the pair measure failed: ${error.message}`)) : ok(stdout));
+          });
+          const pair = JSON.parse(measured) as { order: "ab" | "ba"; basis: string; shots: { a: string | null; b: string | null } };
+          const judge = jev();
+          const model = judge && pair.shots.a && pair.shots.b
+            ? (await judgeDesigns(judge as never, { grounds: pair.basis, a: { format: "png", data_base64: pair.shots.a }, b: { format: "png", data_base64: pair.shots.b } }).catch(() => null))?.winner ?? null
+            : null;
+          postOwnerItem(db, { key: `design-pair:${phaseId}`, source: "design-eval", kind: "design-pair", wake: false,
+            what: `Какой дизайн лучше? Ответьте: bb lane-pilot design-pair-answer ${phaseId} a|b|tie`, why: pair.basis.slice(0, 550),
+            evidence: [{ kind: "text", ref: pair.basis.slice(0, 300) }] });
+          await appendDesignPair(ctx.bb.storage.kv, { phaseId, order: pair.order, model, person: null });
+          return { exitCode:0, stdout:JSON.stringify({ phaseId, order: pair.order, model, asked: true }) };
         }
         if (command === "sma-map") {
           return args.includes("--live") ? runSmaLiveCli(db as never, args) : runSmaMapCli(args);

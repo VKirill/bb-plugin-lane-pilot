@@ -24,10 +24,19 @@ export function trainingRatios(lines: readonly DesignJournalLine[]) {
   const critiqued = lines.filter((line) => line.critique);
   const scored = lines.filter((line) => line.codeScore !== null);
   const worded = lines.filter((line) => line.ownerWord);
+  // judgeAgrees: of the lines carrying both a critique verdict and the owner's word, the share where they say the same
+  // (pass pairs with «yes», rework with «no»). pointCoverage: how much of the six-axis form the critiques actually scored.
+  const judged = lines.filter((line) => line.critique && line.ownerWord);
+  const agrees = judged.filter((line) => (line.critique!.verdict === "pass") === (line.ownerWord === "yes")).length;
   return {
     drawings: n,
     firstPass: share(lines.filter((line) => line.firstPass).length, n),
+    passedAll: share(scored.filter((line) => line.codeScore === 100).length, scored.length),
     critiquePass: share(critiqued.filter((line) => line.critique!.verdict === "pass").length, critiqued.length),
+    judgeAgrees: share(agrees, judged.length),
+    pointCoverage: critiqued.length
+      ? Math.round((critiqued.reduce((sum, line) => sum + Object.keys(line.critique!.scores).length / CRITIQUE_AXES.length, 0) / critiqued.length) * 100) / 100
+      : null,
     codeScore: scored.length ? Math.round(scored.reduce((sum, line) => sum + line.codeScore!, 0) / scored.length) : null,
     ownerYes: share(worded.filter((line) => line.ownerWord === "yes").length, worded.length),
   };
