@@ -13,8 +13,9 @@ export type SpawnResult = {
  * ETIMEDOUT / ENOBUFS; a failed launch sets `error` with no status.
  * `keepEnds` instead keeps each stream's beginning and end, up to that many bytes, and never stops the command for its
  * output: a check's verdict is its exit code, and a green test run that logs a lot is still green.
- * `group` makes the child a process-group leader (SMA m_ac_job): timeout, ENOBUFS and the finish itself signal the whole
- * group (SIGTERM, SIGKILL after 2 s), so a command's orphaned background children die with it.
+ * `group` makes the child a process-group leader (SMA m_ac_job): only the abnormal ends (timeout, ENOBUFS) signal the whole
+ * group (SIGTERM, SIGKILL after 2 s), so the orphaned background children of a command that ran away die with it; a normal
+ * finish signals nothing, as without `group`.
  */
 export function spawnAsync(file:string,args:readonly string[],options:{cwd?:string;env?:NodeJS.ProcessEnv;timeout?:number;maxBuffer?:number;input?:string;keepEnds?:number;group?:boolean}={}):Promise<SpawnResult> {
   return new Promise((resolve)=>{
@@ -32,13 +33,13 @@ export function spawnAsync(file:string,args:readonly string[],options:{cwd?:stri
       settled=true;
       if(timer) clearTimeout(timer);
       if(grace) clearTimeout(grace);
-      if(options.group) { groupSignal("SIGTERM"); const pid=child.pid; if(pid!==undefined) setTimeout(()=>{ try { process.kill(-pid,"SIGKILL"); } catch { /* gone */ } },2_000).unref(); }
       resolve({pid:child.pid,status,signal,stdout:ends?ends.out.text():Buffer.concat(out).toString("utf8"),stderr:ends?ends.err.text():Buffer.concat(err).toString("utf8"),...(error?{error}:{})});
     };
     if(options.input!==undefined) child.stdin!.end(options.input);
     const stop=(code:string)=>{
       error??=Object.assign(new Error(`spawn ${file} ${code}`),{code});
-      if(options.group) groupSignal("SIGTERM"); else child.kill("SIGTERM");
+      if(options.group) { groupSignal("SIGTERM"); const pid=child.pid; if(pid!==undefined) setTimeout(()=>{ try { process.kill(-pid,"SIGKILL"); } catch { /* gone */ } },2_000).unref(); }
+      else child.kill("SIGTERM");
     };
     if(options.timeout) timer=setTimeout(()=>stop("ETIMEDOUT"),options.timeout);
     const take=(chunks:Buffer[],key:"out"|"err")=>(chunk:Buffer)=>{

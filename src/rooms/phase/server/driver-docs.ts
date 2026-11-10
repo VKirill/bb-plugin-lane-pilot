@@ -1,5 +1,4 @@
-import { getRun, getRunSettingsScopes, getRunWriterHost, getTask, listRunAttemptStates, listStageReceipts, listTaskIdsForRun, loadProjectSettings } from "../../storage";
-import { planningDir } from "@lane-pilot/settings-catalog";
+import { getRun, getRunWriterHost, getTask, listRunAttemptStates, listStageReceipts, listTaskIdsForRun } from "../../storage";
 import { taskFamily } from "@lane-pilot/contracts";
 import { hostContract } from "../../contracts";
 import { runOnHost } from "@lane-pilot/host-calls";
@@ -81,8 +80,7 @@ export function installDocs(base: DriverBase) {
       edits.push({ path: file.path, expectedSha256: current === null ? null : sha256Hex(current), content: file.content });
     }
     const host = bb.hosts.experimental_client({ contract: hostContract });
-    const planning = planningDir(loadProjectSettings(db, phase.projectId, getRunSettingsScopes(db, phase.runId)));
-    const result = await host.call("writePhaseBook", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, previewSha256: sha256Hex(JSON.stringify(edits)), planningDir: planning, edits }, { hostId, timeoutMs: 30_000 });
+    const result = await host.call("writePhaseBook", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId, timeoutMs: 30_000 });
     const applied = result.writes.filter((row) => row.status === "applied");
     const written = applied.map((row) => row.path);
     const shas = Object.fromEntries(applied.filter((row) => typeof row.afterSha256 === "string").map((row) => [row.path, row.afterSha256 as string]));

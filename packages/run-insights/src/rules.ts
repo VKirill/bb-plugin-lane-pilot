@@ -526,8 +526,9 @@ export function logRulesShown(db: RulesDatabase, projectId: string, ruleIds: rea
   return added;
 }
 
+/** The last 30/50 rows are the rule history readers show; the ladder's `tier` rows are bookkeeping and never take a slot in it. */
 export function listRuleEvents(db: RulesDatabase, projectId: string, limit = 50): RuleEvent[] {
-  return db.prepare("SELECT rule_id AS ruleId, action, detail, at FROM lane_pilot_rule_event WHERE project_id=? ORDER BY at DESC, id DESC LIMIT ?")
+  return db.prepare("SELECT rule_id AS ruleId, action, detail, at FROM lane_pilot_rule_event WHERE project_id=? AND action<>'tier' ORDER BY at DESC, id DESC LIMIT ?")
     .all(projectId, Math.min(Math.max(limit, 1), 500)) as RuleEvent[];
 }
 
@@ -658,11 +659,12 @@ export function decideRuleTrial(rule: Pick<RuleProposal, "trialState" | "revisio
 export const RULE_TIERS = ["note", "warning", "soft-deny", "auto-fix"] as const;
 export type RuleTier = (typeof RULE_TIERS)[number];
 
-/** A rule's tier is the detail of its latest `tier` row in lane_pilot_rule_event; no row is `note`. */
-export function ruleTier(db: RulesDatabase, projectId: string, ruleId: string): RuleTier {
-  const row = db.prepare("SELECT detail FROM lane_pilot_rule_event WHERE project_id=? AND rule_id=? AND action='tier' ORDER BY at DESC, id DESC LIMIT 1").get(projectId, ruleId) as { detail: string | null } | undefined;
-  return (RULE_TIERS as readonly string[]).includes(row?.detail ?? "") ? row!.detail as RuleTier : "note";
+/** A rule's tier and when it last moved: the latest `tier` row in lane_pilot_rule_event; no row is `note`, moved never. It is a label only: nothing refuses or edits work by it. */
+export function ruleTierState(db: RulesDatabase, projectId: string, ruleId: string): { tier: RuleTier; movedAt: number | null } {
+  const row = db.prepare("SELECT detail, at FROM lane_pilot_rule_event WHERE project_id=? AND rule_id=? AND action='tier' ORDER BY at DESC, id DESC LIMIT 1").get(projectId, ruleId) as { detail: string | null; at: number } | undefined;
+  return (RULE_TIERS as readonly string[]).includes(row?.detail ?? "") ? { tier: row!.detail as RuleTier, movedAt: row!.at } : { tier: "note", movedAt: null };
 }
+export const ruleTier = (db: RulesDatabase, projectId: string, ruleId: string): RuleTier => ruleTierState(db, projectId, ruleId).tier;
 
 /**
  * The ladder move for one rule (SMA k_lib_ladder): up one step when the rule is confirmed and was applied at least

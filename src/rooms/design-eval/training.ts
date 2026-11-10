@@ -13,11 +13,10 @@ export function critiqueProblems(form: DrawingCritique): string[] {
   const why: string[] = [];
   for (const [axis, score] of Object.entries(form.scores)) if (!(CRITIQUE_AXES as readonly string[]).includes(axis) || !Number.isInteger(score) || score! < 0 || score! > 3) why.push(`${axis}: a score is 0–3 on a known axis`);
   if (Object.keys(form.scores).length < 4) why.push("score at least four axes of the critique form");
-  if (form.verdict === "rework") {
-    if (form.notes.trim().length < 10) why.push("a rework says what to change");
-    // A rework carries the goal–obstacle–question of the drawing (SMA k_lib_dfeedback).
-    for (const key of ["goal", "obstacle", "question"] as const) if (!form[key]?.trim()) why.push(`a rework names the ${key}`);
-  }
+  if (form.verdict === "rework" && form.notes.trim().length < 10) why.push("a rework says what to change");
+  // The goal–obstacle–question form is optional (a rework without it is accepted as before); once one field is given all three are checked.
+  if (["goal", "obstacle", "question"].some((key) => form[key as "goal"] !== undefined))
+    for (const key of ["goal", "obstacle", "question"] as const) if (!form[key]?.trim()) why.push(`the feedback form names the ${key}`);
   const continuation = form.continuation;
   if (continuation) {
     if (continuation.kind === "role_line") { if (!continuation.lesson?.trim()) why.push("a role_line continuation names the lesson"); }

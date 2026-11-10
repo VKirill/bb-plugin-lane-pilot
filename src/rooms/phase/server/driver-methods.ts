@@ -182,7 +182,10 @@ export function installMethods(tools: MethodsTools) {
     if (input.critique) {
       const why = reactions.critiqueProblems(input.critique);
       if (why.length) throw new PhaseRefusal("the drawing critique form is not filled", why);
-      // A set_case continuation keeps the form and its verdict for later checks of the judge.
+      // A rework without the goal–obstacle–question form is accepted as before; the book says the form was not filled.
+      if (input.critique.verdict === "rework" && !input.critique.goal && !input.critique.obstacle && !input.critique.question) book(phase, "design", "critique", "critique form not filled");
+      // A role_line continuation is the designer's role line; a set_case one keeps the form and its verdict for later checks of the judge.
+      if (input.critique.continuation?.kind === "role_line" && !input.lesson?.trim()) await reactions.addRoleLine(phase.projectId, "design-lead", reactions.roleLine(input.critique.continuation.lesson));
       if (input.critique.continuation?.kind === "set_case")
         await reactions.storeCritiqueCase({ drawingSha: drawn.sha256, form: input.critique, expectedVerdict: input.critique.verdict });
     }

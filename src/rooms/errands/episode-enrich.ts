@@ -1,5 +1,6 @@
 import { summarizeThreadEvents, type ThreadEventLike, type ThreadToolTraceEntry } from "@lane-pilot/harness-core";
 import { checkBrief, renderBrief } from "../brief";
+import { redactKnown } from "@lane-pilot/kit";
 import { maskPii, scrubQuote } from "../anamnesis";
 import { pmSkillName } from "../native-agent";
 import { extractSkillSequence } from "../contracts";
@@ -17,7 +18,7 @@ import { listErrandRuns, listWfRunsByIdsOrdered } from "@lane-pilot/workflow-eng
 /**
  * Errand episodes, phase B (the crystallization foundation, stream R5): the hourly sweep that adds meaning to the
  * phase-A facts. For each pending episode it reads the helper thread, masks secrets and PII before any model sees the
- * text (the shared credential mask inside scrubQuote → maskPii; the row sits in `enrichment_state='held'` while unmasked text is in
+ * text (redactKnown → scrubQuote → maskPii; the row sits in `enrichment_state='held'` while unmasked text is in
  * memory), makes exactly one call to the `episode-analyst` role's hidden analyzer thread, parses the strict JSON answer
  * and writes the enrichment columns. The model proposes a candidate into `process_key_proposed`; `deps.chooseKey`
  * (R6: 8 nearest known keys, Jev chooses) writes the final `process_key`.
@@ -258,7 +259,7 @@ export async function enrichEpisode(row: PendingEpisode, deps: EpisodeEnrichDeps
   mark(db, row.runId, "enrichment_state='held'", [], now);
   let masked: string;
   try {
-    masked = maskPii(scrubQuote(text, MODEL_TEXT_MAX)).text;
+    masked = maskPii(scrubQuote(redactKnown(text), MODEL_TEXT_MAX)).text;
   } catch (cause) {
     warn?.(`episode_mask_failed:${row.runId}:${cause instanceof Error ? cause.message : String(cause)}`);
     return "held";

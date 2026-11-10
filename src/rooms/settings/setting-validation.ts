@@ -1,4 +1,4 @@
-import { PROVIDER_POOL_KEY, SETTING_WRITER_SILENCE_NUDGE_MIN, providerPoolProblem, planningDirProblem, PLANNING_DIR_SETTING } from "@lane-pilot/settings-catalog";
+import { PROVIDER_POOL_KEY, SETTING_WRITER_SILENCE_NUDGE_MIN, providerPoolProblem } from "@lane-pilot/settings-catalog";
 import { leadSettingProblem } from "../lead";
 import { ROLE_MODEL_KEY_PREFIX, ZCODE_BACKGROUND_KEY, ZCODE_WINDOW_KEY, roleModelProblem, zcodeWindowProblem } from "@lane-pilot/models";
 import { SCHEDULE_ERRAND_DEFAULT_KEY, errandDefaultProblem } from "../schedule";
@@ -44,11 +44,6 @@ const PROJECT_CHECK_KEYS: ReadonlySet<string> = new Set([...PROJECT_DEFAULT_KEYS
 const WORKFLOW_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 
 export function validateSettingValue(key: string, value: unknown): SettingValidationError | null {
-  // The project's planning home (SMA m_pj_register): a relative path inside the code tree.
-  if (key === PLANNING_DIR_SETTING) {
-    const problem = planningDirProblem(value);
-    return problem ? { code: "invalid_choice", key, params: [key, problem] } : null;
-  }
   // The lead's settings (src/rooms/lead/settings.ts): the switch, the home project, the zone, the daily budget, the cron, the proposals per tick.
   if (key.startsWith("lead.")) {
     const problem = leadSettingProblem(key, value);

@@ -3,7 +3,7 @@ import { checkBrief, renderBrief } from "../../brief";
 import { projectRoleField } from "../../runs/server";
 import { HELPER_ROLES, type HelperRole } from "../../contracts/helper-context";
 import {
-  classifyUnformed, codeVerdict, decideRuleTrial, scopeApplies, getRuleProposal, listRuleProposals, logRuleEvent, ruleLadderStep, ruleTier, ruleTrialStats, saveTriage, setRuleTrial, splitRejectedPaths, triageQuestions, triageState, triageSummary, untriagedAttempts, upsertModelProposal, writerGroups,
+  classifyUnformed, codeVerdict, decideRuleTrial, scopeApplies, getRuleProposal, listRuleProposals, logRuleEvent, ruleLadderStep, ruleTierState, ruleTrialStats, saveTriage, setRuleTrial, splitRejectedPaths, triageQuestions, triageState, triageSummary, untriagedAttempts, upsertModelProposal, writerGroups,
   type FailedAttempt, type RuleEvidence, type TriageSummary, type WriterGroup,
 } from "@lane-pilot/run-insights";
 
@@ -401,14 +401,16 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
       if (ctx.isDisposed()) break;
       const since = rule.revisionStartedAt ?? rule.decidedAt ?? now;
       const stats = ruleTrialStats(db, projectId, rule.id, since);
-      // The maturation ladder (SMA k_lib_ladder): the tier moves on measured benefit and the move is logged as a tier event.
-      const move = ruleLadderStep(ruleTier(db, projectId, rule.id), { confirmed: rule.trialState === "confirmed", applied: stats.applied, recurrences: stats.recurrences.length }, { hasMechanism: !!rule.mechanizedBy, form: rule.form ?? null });
+      // The maturation ladder (SMA k_lib_ladder): the tier moves on benefit measured SINCE the rule's last tier move (a move needs new
+      // evidence, so a rule climbs one step per batch of evidence, not per night); the move is logged as a tier event. The tier is a label only.
+      const { tier: from, movedAt } = ruleTierState(db, projectId, rule.id);
+      const tierStats = movedAt === null ? stats : ruleTrialStats(db, projectId, rule.id, Math.max(since, movedAt + 1));
+      const move = ruleLadderStep(from, { confirmed: rule.trialState === "confirmed", applied: tierStats.applied, recurrences: tierStats.recurrences.length }, { hasMechanism: !!rule.mechanizedBy, form: rule.form ?? null });
       if (move !== "stay") {
         const tiers = ["note", "warning", "soft-deny", "auto-fix"] as const;
-        const from = ruleTier(db, projectId, rule.id);
         const to = tiers[tiers.indexOf(from) + (move === "up" ? 1 : -1)]!;
         logRuleEvent(db, projectId, rule.id, "tier", to, now);
-        ctx.log(`rule ${rule.id}: tier ${from} -> ${to} (applied ${stats.applied}, recurrences ${stats.recurrences.length})`);
+        ctx.log(`rule ${rule.id}: tier ${from} -> ${to} (applied ${tierStats.applied}, recurrences ${tierStats.recurrences.length})`);
       }
       const decision = decideRuleTrial(rule, stats, now);
       if (decision.action === "confirm") {

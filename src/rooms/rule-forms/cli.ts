@@ -1,4 +1,4 @@
-import { classifyUnformed, listRuleForms, markMechanized, RULE_FORMS, RULE_TIERS, ruleLadderStep, ruleTier, ruleTrialStatsMany, type RuleFormRow, type RulesDatabase } from "@lane-pilot/run-insights";
+import { classifyUnformed, listRuleForms, markMechanized, RULE_FORMS, RULE_TIERS, ruleLadderStep, ruleTierState, ruleTrialStats, type RuleFormRow, type RulesDatabase } from "@lane-pilot/run-insights";
 import { applyJevForms, type FormAsk } from "./jev-forms";
 import { MECHANISMS, mechanismFor } from "./mechanisms";
 import { acceptPromotion, dismissPromotion, listPromotions, proposePromotions } from "./promotion";
@@ -134,11 +134,12 @@ export async function runRulesCli(deps: RulesCliDeps, args: string[]): Promise<O
     }
     if (op === "ladder" || op === "tune") {
       const rows = listRuleForms(deps.db, projectId, ["accepted"]);
-      const stats = ruleTrialStatsMany(deps.db, projectId ?? "", rows.filter((row) => row.projectId === projectId || !projectId).map((row) => ({ id: row.id, since: 0 })));
       const lines: string[] = [];
       for (const row of rows) {
-        const tier = ruleTier(deps.db, row.projectId, row.id);
-        const stat = stats.get(row.id) ?? { applied: 0, recurrences: [] };
+        const { tier, movedAt } = ruleTierState(deps.db, row.projectId, row.id);
+        // The nightly job's evidence window (trial start), and only what came after the rule's last tier move.
+        const since = Math.max(row.revisionStartedAt ?? row.decidedAt ?? now, movedAt === null ? 0 : movedAt + 1);
+        const stat = ruleTrialStats(deps.db, row.projectId, row.id, since);
         const move = ruleLadderStep(tier, { confirmed: row.trialState === "confirmed", applied: stat.applied, recurrences: stat.recurrences.length }, { hasMechanism: !!row.mechanizedBy, form: row.form ?? null });
         const next = move === "stay" ? tier : RULE_TIERS[RULE_TIERS.indexOf(tier) + (move === "up" ? 1 : -1)]!;
         if (op === "ladder") lines.push(`${row.id.slice(0, 13)}  ${tier.padEnd(9)} applied ${stat.applied}  recurrences ${stat.recurrences.length}  next ${next}  ${clip(row.rule, 90)}`);

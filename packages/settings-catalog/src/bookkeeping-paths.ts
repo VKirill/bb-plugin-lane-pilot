@@ -29,26 +29,6 @@ export const BOOKKEEPING_EXCLUDE_LINES = [".agents/runs/", ".agents/reports/", "
 
 export const BOOKKEEPING_SETTING = "bookkeeping.paths";
 
-/** The project's second address (SMA m_pj_register): where its planning marks live, relative to the code tree. */
-export const PLANNING_DIR_SETTING = "planning.dir";
-export const PLANNING_DIR_DEFAULT = ".agents/planning";
-
-/** Why a planning.dir value is refused: a relative path inside the tree, no leading slash, no `..`, no backslash. */
-export function planningDirProblem(value: unknown): string | null {
-  if (value === undefined || value === null || value === "") return null;
-  if (typeof value !== "string") return "a path relative to the project tree";
-  const dir = value.trim().replace(/\/+$/, "");
-  if (!dir || dir.startsWith("/") || dir.includes("\\") || dir.split("/").includes("..")) return "a path relative to the project tree, no leading slash, no .., no backslash";
-  return null;
-}
-
-/** The planning home of a project: planning.dir when set and valid, else `.agents/planning`. */
-export function planningDir(settings: Record<string, unknown>): string {
-  const raw = settings[PLANNING_DIR_SETTING];
-  if (typeof raw !== "string" || planningDirProblem(raw)) return PLANNING_DIR_DEFAULT;
-  return raw.trim().replace(/\/+$/, "");
-}
-
 /** The project's extra bookkeeping patterns: an array, or one string split on newlines and commas. */
 export function bookkeepingSetting(settings:Record<string, unknown>):string[] {
   const raw = settings[BOOKKEEPING_SETTING];

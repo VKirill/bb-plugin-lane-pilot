@@ -47,6 +47,7 @@ export {
   RULE_TRIAL,
   ruleLadderStep,
   ruleTier,
+  ruleTierState,
   ruleTrialStats,
   ruleTrialStatsMany,
   setRuleTrial,

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { credentialIssue, maskCredentials } from "@lane-pilot/kit";
+import { maskCredentials } from "@lane-pilot/kit";
 
 /**
  * Anamnesis (A1): what Lane Pilot knows about its owner as a person. Short records with evidence and dates, never one block of
@@ -91,12 +91,13 @@ const UNSAFE: Array<[RegExp, string]> = [
   [/[\u0000-\u0008\u000b-\u001f\u007f​-‏‪-‮⁠﻿]/u, "control characters"],
   [/<\/?\s*(system|developer|assistant|tool)(?:\s|>)/iu, "role markup"],
   [/\b(ignore|disregard|override)\b.{0,50}\b(previous|prior|system|developer)\b/isu, "instructions to the reader"],
+  [/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/u, "a private key"],
+  [/\b(?:sk-[a-z0-9_-]{20,}|gh[pousr]_[a-z0-9]{20,})\b/iu, "an API key"],
+  [/\b[A-Z0-9_]*(?:PASSWORD|SECRET|TOKEN|API_KEY)\s*=\s*(?!\*\*\*)\S+/iu, "a credential assignment"],
 ];
 /** The reason a text may not be stored as a statement, or null. The record is skipped, never half-written. */
 export function unsafeReason(text: string): string | null {
   for (const [pattern, reason] of UNSAFE) if (pattern.test(text)) return reason;
-  const credential = credentialIssue(text);
-  if (credential) return credential;
   return null;
 }
 

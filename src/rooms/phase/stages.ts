@@ -45,11 +45,11 @@ export const rubricLine = (stage: PhaseStage) => {
 };
 
 /** Stage initialization (SMA: Phase/Plan/Discussion/Verification initialization): what to read before the stage starts. */
-export function stageInit(phase: Pick<Phase, "id" | "stage" | "record">, planning = ".agents/planning"): string[] {
+export function stageInit(phase: Pick<Phase, "id" | "stage" | "record">): string[] {
   const folder = `.agents/phases/${phase.id}`;
   const docs = (phase.record.context?.docs ?? []).map((doc) => doc.path);
   switch (phase.stage) {
-    case "discussion": return [`${planning}/ROADMAP.md`, `${planning}/REQUIREMENTS.md`, `${folder}/DISCUSSION.md`];
+    case "discussion": return [".agents/planning/ROADMAP.md", ".agents/planning/REQUIREMENTS.md", `${folder}/DISCUSSION.md`];
     case "planning": return [...docs, `${folder}/SPEC.md`, `${folder}/RESEARCH.md`, `${folder}/PATTERNS.md`];
     case "design": return [...docs, `${folder}/SPEC.md`, `${folder}/PLAN.md`, "DESIGN.md"];
     case "execution": return [...(phase.record.design?.drawing?.paths ?? []), `${folder}/PLAN.md`];

@@ -61,15 +61,9 @@ export const applyOnboardingPages: ExperimentalHostRpcHandlers<typeof hostContra
 export const writeDocsPages: ExperimentalHostRpcHandlers<typeof hostContract>["writeDocsPages"] = async (input) =>
   casWriteMarkdown({ ...input, confirmed:true }, 2_000_000, (path) => /(^|\/)docs\//.test(path));
 
-/** The phase book (BOOK.md) and the phase's own files, only inside `.agents/phases/<phase-id>/`, plus the two planning marks
- * at the project's planning home (input.planningDir, confined to a relative dir with no `..`). */
-export const writePhaseBook: ExperimentalHostRpcHandlers<typeof hostContract>["writePhaseBook"] = async (input) => {
-  const raw = typeof input.planningDir === "string" ? input.planningDir : ".agents/planning";
-  const dir = raw && !raw.startsWith("/") && !raw.includes("\\") && !raw.split("/").includes("..") ? raw.replace(/\/+$/, "") : ".agents/planning";
-  const escaped = dir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const mark = new RegExp(`^${escaped}/(STATE|ROADMAP)\\.md$`);
-  return casWriteMarkdown({ ...input, confirmed:true }, 2_000_000, (path) => (/^\.agents\/phases\/ph_[a-z0-9]{6,}\/[^/]+(\/[^/]+)*$/.test(path) || mark.test(path)) && !path.includes(".."));
-};
+/** The phase book (BOOK.md) and the phase's own files, only inside `.agents/phases/<phase-id>/` (src/rooms/phase). */
+export const writePhaseBook: ExperimentalHostRpcHandlers<typeof hostContract>["writePhaseBook"] = async (input) =>
+  casWriteMarkdown({ ...input, confirmed:true }, 2_000_000, (path) => (/^\.agents\/phases\/ph_[a-z0-9]{6,}\/[^/]+(\/[^/]+)*$/.test(path) || /^\.agents\/planning\/(STATE|ROADMAP)\.md$/.test(path)) && !path.includes(".."));
 
 /** A forge draft lands only under `.agents/forge/(skills|roles|workflows)/<name>/` (src/rooms/front, src/rooms/forge). */
 export const writeForgeDraft: ExperimentalHostRpcHandlers<typeof hostContract>["writeForgeDraft"] = async (input) =>
