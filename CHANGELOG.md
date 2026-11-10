@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.515
+
+- **A drill stopped by the next deploy no longer makes that deploy's drill «red».** 0.1.514 went out six minutes after 0.1.513: the deploy stopped the drill still running against 0.1.513 with SIGTERM, Python ended without its `finally`, `/tmp/lp-drill.lock` stayed, and the drill against 0.1.514 ended with exit 2 «another drill is running» — reported to the owner as a red drill of a healthy version. The drill turns SIGTERM into an exit, so its cleanup runs (the memory probe, the receipt, the lock), and the lock carries its process id: a lock whose process is gone is taken over (`take_lock`), a live one is still refused.
+
 ## 0.1.514
 
 - **`bb lane-pilot cancel` goes through the shared cancel.** 0.1.513 put the close of an ended task into `cancelAttemptById`, but the command kept its own copy of the cancel code and never reached it: on the hub `bb lane-pilot cancel` still answered «cancel is not legal from blocked». The command calls `cancelAttemptById` now, so the PM's tool, the board and the command line take one road (queued at once, running once the writer's stop is observed, ended by closing it).

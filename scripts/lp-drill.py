@@ -61,6 +61,7 @@ import shlex
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -1669,6 +1670,24 @@ def write_receipt(path: Path, start: float, scenarios: list[dict], ctx: Context 
     return result
 
 
+def take_lock(lock: Path) -> bool:
+    """Takes the drill lock; a lock left by a process that no longer exists is stale and is taken over."""
+    for _ in range(2):
+        try:
+            lock.mkdir()
+            (lock / "pid").write_text(str(os.getpid()))
+            return True
+        except FileExistsError:
+            try:
+                os.kill(int((lock / "pid").read_text()), 0)
+                return False
+            except PermissionError:  # the process exists under another user
+                return False
+            except (OSError, ValueError):  # no pid file (a lock from before this check), a dead or unreadable pid
+                shutil.rmtree(lock, ignore_errors=True)
+    return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(add_help=True, description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--quick", action="store_true")
@@ -1716,10 +1735,11 @@ def main() -> int:
         return 0 if verdict_all == "pass" else 1
 
     lock = Path(tempfile.gettempdir()) / "lp-drill.lock"
-    try:
-        lock.mkdir()
-    except FileExistsError:
-        print(f"another drill is running ({lock}); remove it if it is stale", file=sys.stderr)
+    # A deploy stops the previous deploy's drill with SIGTERM: without this the `finally` below never ran, the lock stayed and the
+    # next drill ended «red» with exit 2 (0.1.514, 2026-11-10). A lock whose process is gone (SIGKILL, OOM) is taken over.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+    if not take_lock(lock):
+        print(f"another drill is running ({lock})", file=sys.stderr)
         return 2
     start = time.time()
     tmp = Path(tempfile.mkdtemp(prefix="lp-drill-"))
@@ -1825,7 +1845,7 @@ def main() -> int:
             clean_memory_probe()  # also when the PM did not start or a scenario broke: a probe rule must not outlive the drill
         result = write_receipt(receipt, start, scenarios, ctx, problems, names, skipped, quick=args.quick or args.quick_all)
         shutil.rmtree(tmp, ignore_errors=True)
-        lock.rmdir()
+        shutil.rmtree(lock, ignore_errors=True)
     log(f"receipt: {receipt}")
     print(f"RECEIPT={receipt}")
     log("PASS" if result == "pass" else f"FAIL: see {receipt}")

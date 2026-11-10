@@ -49,6 +49,27 @@ describe("scripts/lp-drill.sh (E3)", () => {
     expect(unknown.status).toBe(2);
   });
 
+  it("the drill lock of a process that is gone is taken over; a live process keeps it (a deploy stops the previous drill mid-run)", () => {
+    const code = String.raw`
+import importlib.util, json, os, sys, tempfile
+from pathlib import Path
+spec = importlib.util.spec_from_file_location("drill", sys.argv[1]); d = importlib.util.module_from_spec(spec); spec.loader.exec_module(d)
+lock = Path(tempfile.mkdtemp()) / "lp-drill.lock"
+out = []
+lock.mkdir()                                   # a lock from before the pid file: nobody to ask, stale
+out.append(d.take_lock(lock))
+(lock / "pid").write_text("999999999")        # a process that does not exist
+out.append(d.take_lock(lock))
+out.append((lock / "pid").read_text() == str(os.getpid()))
+(lock / "pid").write_text(str(os.getppid()))  # a live process holds it
+out.append(d.take_lock(lock))
+print(json.dumps(out))
+`;
+    const run = spawnSync("python3", ["-I", "-c", code, fileURLToPath(new URL("../scripts/lp-drill.py", import.meta.url))], { encoding: "utf8", timeout: 30_000, env: ownEnv });
+    expect(run.stderr).toBe("");
+    expect(JSON.parse(run.stdout)).toEqual([true, true, true, false]);
+  });
+
   it("helper_providers: a provider that started and was refused by its quota is a note, not a red; red when no provider answered or when a start failed", () => {
     const code = String.raw`
 import importlib.util, json, sys
