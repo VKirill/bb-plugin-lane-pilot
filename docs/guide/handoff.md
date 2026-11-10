@@ -1,5 +1,6 @@
 ---
 title: The hand-off standard
+topic: handoff
 type: reference
 status: active
 created: 2026-11-10

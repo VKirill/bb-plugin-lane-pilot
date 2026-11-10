@@ -2,6 +2,9 @@ import type Database from "better-sqlite3";
 import { acceptedTaskCountsByProject } from "../../storage";
 import { projectTokenTotalsSince } from "../../usage";
 import { listMemoryMisses } from "@lane-pilot/memory-core";
+import { ruleRecurrences } from "@lane-pilot/run-insights";
+import { forecastReport } from "../../forecast/server";
+import { listClasses } from "../../wall";
 
 /**
  * Self-improvement and measurement (SMA map: Self-improvement and measurement):
@@ -25,6 +28,62 @@ export function missCurriculum(db: Db, days = 30, now = Date.now()) {
   }
   return [...by.values()].sort((a, b) => b.count - a.count).slice(0, 50);
 }
+
+/** One weak spot: a repeated miss from one of four sources (SMA k_lib_curriculum). */
+export type CurriculumCluster = { source: "memory" | "forecast" | "wall" | "rule"; key: string; count: number; sample: string; projectId: string };
+
+/**
+ * The four miss sources of the weekly curriculum, each grouped and ranked by count, top 50 per source:
+ * memory misses by query, forecast rows whose file or first-try score missed grouped by area, open wall classes by
+ * class key, and rules a picked attempt failed on anyway grouped by rule id.
+ */
+export function curriculumClusters(db: Db, days = 7, now = Date.now()): CurriculumCluster[] {
+  const since = now - days * 86_400_000;
+  const clusters: CurriculumCluster[] = [];
+
+  const byQuery = new Map<string, CurriculumCluster>();
+  for (const row of listMemoryMisses(db as never, since, undefined, 1_000_000_000)) {
+    const key = row.query.toLowerCase().replace(/\s+/g, " ").trim();
+    const hit = byQuery.get(`${row.projectId}\n${key}`) ?? { source: "memory" as const, key: row.query.slice(0, 200), count: 0, sample: row.query.slice(0, 200), projectId: row.projectId };
+    hit.count += 1;
+    byQuery.set(`${row.projectId}\n${key}`, hit);
+  }
+  clusters.push(...[...byQuery.values()].sort((a, b) => b.count - a.count).slice(0, 50));
+
+  const byArea = new Map<string, CurriculumCluster>();
+  for (const row of forecastReport(db as never, { days, now }).scored) {
+    const fileMiss = (row.score.paths?.unplanned.length ?? 0) + (row.score.paths?.untouched.length ?? 0) > 0;
+    if (!fileMiss && row.score.firstTry.hit) continue;
+    const area = row.area ?? "(unknown)";
+    const hit = byArea.get(`${row.projectId}\n${area}`) ?? { source: "forecast" as const, key: area, count: 0, sample: row.taskId, projectId: row.projectId };
+    hit.count += 1;
+    byArea.set(`${row.projectId}\n${area}`, hit);
+  }
+  clusters.push(...[...byArea.values()].sort((a, b) => b.count - a.count).slice(0, 50));
+
+  for (const wall of listClasses(db as never, { state: "open" }).slice(0, 50))
+    clusters.push({ source: "wall", key: wall.classKey, count: wall.total, sample: wall.reasonNorm.slice(0, 200), projectId: "" });
+
+  const rules = ruleRecurrences(db as never, since)
+    .map((row) => ({ source: "rule" as const, key: row.ruleId, count: row.count, sample: row.sampleTaskId, projectId: row.projectId }));
+  clusters.push(...rules.sort((a, b) => b.count - a.count).slice(0, 50));
+
+  return clusters;
+}
+
+/** The weekly weak-spots brief (SMA k_v_curriculum): each top cluster as one imperative line — trigger, what failed,
+ *  where the fact should live — at most 10 lines. The Monday job stores it at lp.curriculum.latest; nothing injects it. */
+export function weakSpotsBrief(clusters: readonly CurriculumCluster[], now = new Date()): string {
+  const line = (c: CurriculumCluster) => c.source === "memory"
+    ? `WHEN a ${c.projectId} question like «${c.sample}» returns nothing → write the fact to memory (${c.count} misses)`
+    : c.source === "forecast"
+    ? `WHEN planning in ${c.projectId}/${c.key} → check the file list and the first-try guess against the last merge (${c.count} misses)`
+    : c.source === "wall"
+    ? `WHEN ${c.key} hits the wall again → fix the class's rail, not the retry (${c.count} hits)`
+    : `WHEN rule ${c.key} was picked and the attempt failed anyway (${c.projectId}) → revise the rule's wording (${c.count} recurrences)`;
+  return clusters.slice(0, 10).map(line).join("\n");
+}
+export const CURRICULUM_KV_KEY = "lp.curriculum.latest";
 
 /** Lesson candidates from another repository's history: commits whose subject says it fixed something, with the files they touched. */
 export function excavate(gitLog: string): Array<{ commit: string; subject: string; files: string[] }> {

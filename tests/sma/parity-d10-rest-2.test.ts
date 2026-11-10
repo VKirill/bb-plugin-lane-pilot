@@ -3,6 +3,13 @@ import { phaseStageCells, PHASE_STAGES } from "../../src/rooms/phase";
 import { ceilingLine } from "../../src/rooms/work-graph";
 import { tailWords } from "../../src/rooms/work-graph";
 import { workerSecretReach } from "../../src/rooms/verification";
+import { persistTaskFolder } from "../../src/rooms/verification";
+import { explainCatalog, explainWord, firstSection } from "../../src/rooms/tools/server/explain";
+import { weakSpotsBrief, type CurriculumCluster } from "../../src/rooms/tools/server/self-improve";
+import { verdictInventory } from "../../src/rooms/tools/server/verdicts";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const calls: Array<{ program: string; args: string[] }> = [];
 vi.mock("@lane-pilot/kit", async (importOriginal) => {
@@ -49,6 +56,66 @@ describe("parity d10-rest-2", () => {
     expect(capped).toHaveLength(8);
     expect(capped.every((line) => line === "запускает проверку")).toBe(true);
     expect(tailWords([])).toEqual([]);
+  });
+
+  it("[sma:k_v_explain + k_lib_explain] explain a verb gives summary and usage, a topic gives the doc's first section, an unknown word yields the catalog", () => {
+    const verbs = [{ name: "memory-eval", summary: "score the memory", usage: "bb lane-pilot memory-eval <project>" }];
+    const docs = [
+      { file: "docs/guide/memory.md", text: "---\ntitle: Memory\ntopic: memory\n---\n# Memory\n\nOne fact store.\n\n## Details\n\nlong part\n", topic: "memory" },
+      { file: "docs/guide/flow.md", text: "---\ntitle: Flow\ntopic: flow\n---\n# Flow\n\nUses `memory-eval`.\n", topic: "flow" },
+    ];
+    const verb = explainWord("memory-eval", verbs, docs);
+    expect(verb?.kind).toBe("verb");
+    expect(verb?.text).toContain("score the memory");
+    expect(verb?.text).toContain("bb lane-pilot memory-eval");
+    expect(verb?.source).toBe("docs/guide/flow.md");
+    const topic = explainWord("memory", verbs, docs);
+    expect(topic?.kind).toBe("topic");
+    expect(topic?.text).toContain("One fact store.");
+    expect(topic?.text).not.toContain("long part");
+    expect(firstSection(docs[0]!.text)).toContain("# Memory");
+    expect(explainWord("zzz", verbs, docs)).toBeNull();
+    expect(explainCatalog(verbs, docs)).toEqual(["flow", "memory", "memory-eval"]);
+  });
+
+  it("[sma:k_v_curriculum] weakSpotsBrief turns each top cluster into one imperative line — trigger, what failed, where the fact lives — capped at 10 lines", () => {
+    const clusters: CurriculumCluster[] = [
+      { source: "memory", key: "q", count: 7, sample: "who owns the wall", projectId: "p1" },
+      { source: "wall", key: "timeout|v1", count: 5, sample: "timeout", projectId: "" },
+      { source: "rule", key: "r-9", count: 3, sample: "t-2", projectId: "p2" },
+      { source: "forecast", key: "ui", count: 2, sample: "t-7", projectId: "p1" },
+    ];
+    const brief = weakSpotsBrief(clusters);
+    const lines = brief.split("\n");
+    expect(lines).toHaveLength(4);
+    expect(lines[0]).toContain("WHEN a p1 question");
+    expect(lines[0]).toContain("memory");
+    expect(lines[2]).toContain("rule r-9");
+    const many = Array.from({ length: 20 }, (_, i) => ({ source: "memory" as const, key: `k${i}`, count: 1, sample: `s${i}`, projectId: "p" }));
+    expect(weakSpotsBrief(many).split("\n")).toHaveLength(10);
+    expect(weakSpotsBrief([])).toBe("");
+  });
+
+  it("[sma:k_pl_spikes] the verdict inventory lists each spike and sketch with question and verdict; missing verdict is open", () => {
+    const root = mkdtempSync(join(tmpdir(), "verdicts-"));
+    mkdirSync(join(root, ".agents/planning/spikes"), { recursive: true });
+    mkdirSync(join(root, ".agents/planning/sketches"), { recursive: true });
+    writeFileSync(join(root, ".agents/planning/spikes/s1.md"), "---\nquestion: can the queue hold 1k tasks?\nverdict: yes\n---\n# spike\n");
+    writeFileSync(join(root, ".agents/planning/sketches/home.html"), "---\ntitle: home sketch\n---\n<html/>\n");
+    const rows = verdictInventory(root);
+    expect(rows).toHaveLength(2);
+    expect(rows.find((r) => r.kind === "spike")).toMatchObject({ question: "can the queue hold 1k tasks?", verdict: "yes" });
+    expect(rows.find((r) => r.kind === "sketch")?.verdict).toBe("open");
+    expect(verdictInventory(mkdtempSync(join(tmpdir(), "verdicts-empty-")))).toEqual([]);
+  });
+
+  it("[sma:k_pl_quick] persistTaskFolder writes OUTCOME.md with the terminal state, and no plan means no PLAN.md rewrite", async () => {
+    const files = new Map<string, string>();
+    const writeFile = async (rel: string, content: string) => { files.set(rel, content); };
+    const done = await persistTaskFolder({ taskId: "t-outcome", outcome: "# OUTCOME — t-outcome\nstate: accepted\n", writeFile });
+    expect(done?.folder).toBe(".agents/plans/items/t-outcome");
+    expect(files.get(".agents/plans/items/t-outcome/OUTCOME.md")).toContain("state: accepted");
+    expect(files.has(".agents/plans/items/t-outcome/PLAN.md")).toBe(false);
   });
 
   it("[sma:m_ac_identity_probe] workerSecretReach names a secret path the worker can read as exposed, a 0600 file as closed, and an invalid user fails without running sudo", async () => {

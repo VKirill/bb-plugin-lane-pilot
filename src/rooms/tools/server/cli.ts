@@ -33,6 +33,8 @@ import { calibrationPassport } from "../../forecast/server";
 import { RUN_GOAL_USAGE, runGoalSweep, runRunGoalCli } from "../../run-goal/server";
 import { CAPABILITY_USAGE, runCapabilityCli } from "../../capability/server";
 import { workerSecretReach } from "../../verification";
+import { explainCatalog, explainWord, guideDocs } from "./explain";
+import { renderVerdicts, verdictInventory } from "./verdicts";
 import { OUTAGE_USAGE, runOutageCli } from "../../outage/server";
 import { BACKLOG_USAGE, runBacklogCli } from "../../backlog/server";
 import { runHypothesisCli } from "../../hypotheses/server";
@@ -302,6 +304,8 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"gates", summary:"Gate firings: mark one a false alarm so it stops counting against the gate", usage:"bb lane-pilot gates ack <event-id> --why \"<reason>\"" },
       { name:"design-metrics", summary:"The designer's training: the four ratios from the design measurement journal, the four conditions of «trained» and the readiness words", usage:"bb lane-pilot design-metrics [--project <id>] [--json]" },
       { name:"sma-map", summary:"The SMA product map node by node: what Lane Pilot has for each of its 1798 nodes, the card text, the proof link, the contract tests that check it, and the shares mapped and checked", usage:SMA_MAP_USAGE },
+      { name:"explain", summary:"One word about a verb or a concept: the verb's summary and usage with the doc that names it, or the guide doc whose front matter declares the topic", usage:"bb lane-pilot explain <verb or topic>" },
+      { name:"planning", summary:"The planning verdicts inventory: every spike and sketch under .agents/planning with its question and verdict (open when none)", usage:"bb lane-pilot planning verdicts [--root path]" },
       { name:"rules", summary:"The rules by form (always | skill | check | hook | memory) and the mechanism that enforces each; classify them, generate mechanism tasks for the recurring check rules, retire the text a mechanism now holds", usage:RULES_USAGE },
       { name:"workflow-trigger", summary:"Start a workflow in a project as its schedule trigger does (the automation of a schedule calls this); exit 1 with the reason when it cannot start", usage:"bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]" },
       { name:"workflow-answer", summary:"Answer the question a workflow run in a project without a PM chat put on the owner's list (the option, or words that name one, or a free answer)", usage:"bb lane-pilot workflow-answer <run-id> <step-key> <option or words>" },
@@ -451,7 +455,27 @@ ${ERRANDS_USAGE}` },
           return { exitCode:result.clear ? 0 : 1, stdout:JSON.stringify(result, null, 2) };
         }
         if (command === "pr-passport" && args[0] && args[1]) return { exitCode:0, stdout:prPassport(db, args[0], args[1]) };
-        if (command === "curriculum") return { exitCode:0, stdout:JSON.stringify(missCurriculum(db, args[0] === "--days" ? Number(args[1]) || 30 : 30), null, 2) };
+        if (command === "curriculum") {
+          if (args[0] === "--brief") {
+            const brief = await (bb.storage.kv as { get(key: string): Promise<unknown> }).get("lp.curriculum.latest").catch(() => null);
+            return { exitCode:0, stdout: typeof brief === "string" ? brief : JSON.stringify(brief ?? { lines: [] }, null, 2) };
+          }
+          return { exitCode:0, stdout:JSON.stringify(missCurriculum(db, args[0] === "--days" ? Number(args[1]) || 30 : 30), null, 2) };
+        }
+        if (command === "planning") {
+          if (args[0] !== "verdicts") return { exitCode:1, stderr:"usage: bb lane-pilot planning verdicts [--root path]" };
+          const root = args[1] === "--root" ? args[2] : process.cwd();
+          if (!root) return { exitCode:1, stderr:"usage: bb lane-pilot planning verdicts [--root path]" };
+          return { exitCode:0, stdout:renderVerdicts(verdictInventory(root)) };
+        }
+        if (command === "explain") {
+          const word = args[0];
+          const docs = guideDocs(process.cwd());
+          if (!word) return { exitCode:1, stderr: `usage: bb lane-pilot explain <verb or topic>\n${explainCatalog(commands, docs).join("  ")}` };
+          const hit = explainWord(word, commands, docs);
+          if (!hit) return { exitCode:0, stdout:`no explainer for «${word}». Try:\n${explainCatalog(commands, docs).join("\n")}` };
+          return { exitCode:0, stdout:`${hit.title} — ${hit.kind}\n\n${hit.text}${hit.source ? `\n\ndoc: ${hit.source}` : ""}` };
+        }
         if (command === "cost") return { exitCode:0, stdout:JSON.stringify(costPerVerified(db, args[0] === "--days" ? Number(args[1]) || 30 : 30), null, 2) };
         if (command === "approvals-suggest") {
           const live = await bestEffort(bb.log, "approvals-suggest live exam", loadLiveExam(bb.storage.kv as never), null);

@@ -46,6 +46,7 @@ export {
   RULE_TRIAL,
   ruleTrialStats,
   ruleTrialStatsMany,
+  ruleRecurrences,
   setRuleTrial,
   type RuleEvent,
   type RuleEventAction,

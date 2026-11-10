@@ -1,4 +1,5 @@
 import { getAttempt, getReasoningTrace } from "../../storage";
+import { listAttemptChanges } from "../../rollback";
 import { recordSkillSwitchMetric } from "../skill-switch";
 import { createSkillMaterializer, recordedMaterializedSkills } from "./skill-materialize";
 import { recordedWriterSkills } from "./skill-pick";
@@ -8,6 +9,7 @@ import { writerMarkers } from "../../tasks";
 
 import type { ServerCore } from "../../contracts/server";
 import { onAttemptFinished, type AttemptFinished } from "./attempt-finished";
+import { persistTaskFolder } from "../../verification";
 import type { createWriterSticky } from "./sticky";
 
 
@@ -85,6 +87,31 @@ export function mountWriterAttemptFinished(ctx: ServerCore, services: Services):
 
 /** Task-scope reactions the writer owns; mounted by createWriterStart with its sticky instance. */
 export function mountWriterTaskFinished(ctx: ServerCore, _services: Services, sticky: ReturnType<typeof createWriterSticky>): void {
+  const { bb, db } = ctx;
+  // Quick-task folder (SMA k_pl_quick): at a terminal state the task folder also holds OUTCOME.md — state, reason,
+  // changed files, merge commit, checks, rendered from the record. A failed write never fails the attempt.
+  onAttemptFinished(ctx, async (event) => {
+    if (event.scope !== "task" || event.status === "running" || !["accepted", "blocked", "canceled"].includes(event.status)) return;
+    try {
+      const attempt = getAttempt(db, event.attemptId);
+      const workspace = attempt?.workspace_path ?? null;
+      if (!workspace) return;
+      const change = listAttemptChanges(db, event.taskId).find((row) => row.attemptId === event.attemptId) ?? listAttemptChanges(db, event.taskId).at(-1);
+      const markdown = [
+        `# OUTCOME — ${event.taskId}`, "",
+        `state: ${event.status}${event.reason ? ` · ${event.reason}` : ""}`,
+        `merge: ${change?.mergeCommit ?? "-"}`,
+        "", "changed:", ...(change?.changed.length ? change.changed.map((file) => `- ${file.status} ${file.path}`) : ["- (none)"]), "",
+      ].join("\n");
+      await persistTaskFolder({ taskId: event.taskId, outcome: markdown,
+        writeFile: async (rel, content) => {
+          await bb.sdk.files.write({ hostId: event.config.hostId, rootPath: workspace, path: `${workspace}/${rel}`, content, contentEncoding: "utf8", createParents: true, expectedSha256: null });
+        } });
+    } catch (cause) {
+      ctx.log(`task OUTCOME.md write for ${event.taskId} failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+  }, "writer:task-outcome-md");
+
   // The area's writer record: accepted work makes this thread the area's hot writer for the next task.
   onAttemptFinished(ctx, (event) => {
     if (event.scope !== "task" || event.status !== "accepted" || !event.acceptedAttemptId) return;

@@ -1,5 +1,6 @@
 ---
 title: Failure handling and stability
+topic: failures
 type: overview
 status: active
 created: 2026-11-06

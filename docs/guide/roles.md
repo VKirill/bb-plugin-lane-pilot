@@ -1,5 +1,6 @@
 ---
 title: Roles, agents and models
+topic: roles
 type: overview
 status: active
 created: 2026-11-06

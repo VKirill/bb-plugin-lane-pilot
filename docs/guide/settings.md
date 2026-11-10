@@ -1,5 +1,6 @@
 ---
 title: Settings and experimental features
+topic: settings
 type: overview
 status: active
 created: 2026-11-06

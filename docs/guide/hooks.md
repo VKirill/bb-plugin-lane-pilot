@@ -1,5 +1,6 @@
 ---
 title: The hook standard
+topic: hooks
 type: reference
 status: active
 created: 2026-11-10

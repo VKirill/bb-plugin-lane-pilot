@@ -1,5 +1,6 @@
 ---
 title: Observability
+topic: observability
 type: overview
 status: active
 created: 2026-11-06

@@ -28,7 +28,8 @@ import { mountWorkflowArchitect } from "../../workflow/server";
 import { mountLeadTool } from "../../lead/server";
 import { mountScheduleTools } from "../../schedule/server";
 import { mountToolFamilies } from "./tool-families";
-import { registerObservedTool, requirePmThread, requirePmThreadRun } from "../../platform/server";
+import { CURRICULUM_KV_KEY, curriculumClusters, weakSpotsBrief } from "./self-improve";
+import { registerObservedTool, requirePmThread, requirePmThreadRun, scheduleIsolated } from "../../platform/server";
 import { selfRepairDeps } from "../../self-repair/server";
 import { ToolError } from "../../contracts/server";
 import { compactDispatchReply, compactReceipt, stageDetail } from "../../runs/server";
@@ -130,6 +131,16 @@ export function pmRunInstructions(args: { runId: string; writerLabel: string | n
 
 export function registerTools(ctx: ServerCore, services: Services, familyContributors: readonly (() => void)[] = []) {
   const { bb, db } = ctx;
+
+  // The weekly weak-spots brief (SMA k_v_curriculum): every Monday the four miss sources are clustered into at most
+  // ten imperative lines at lp.curriculum.latest; `bb lane-pilot curriculum --brief` prints them. Nothing injects the
+  // brief into a PM's or a writer's context.
+  scheduleIsolated(bb, "curriculum-weekly", "0 9 * * 1", async (signal) => {
+    void signal;
+    const brief = weakSpotsBrief(curriculumClusters(db, 7));
+    await (bb.storage.kv as { set(key: string, value: unknown): Promise<unknown> }).set(CURRICULUM_KV_KEY, brief);
+    ctx.log(`curriculum weekly: ${brief.split("\n").filter(Boolean).length} weak-spot line(s) at ${CURRICULUM_KV_KEY}`);
+  }, { timeoutMs: 10 * 60_000 });
 
   registerObservedTool(bb.agents, {
     name:LANE_PILOT_READ_NAME,
