@@ -88,8 +88,7 @@ What a helper no longer inherits on OVH, with the reason (rule 6: removed with a
 
 How an answer is shaped for the owner and how code is built (the ADHD rules and the Ponytail ladder) are not hook output any more.
 They are one file, `~/.bb/AGENTS.md` on the hub: BB core reads it as the user's instructions into every thread of every provider on
-every machine (delivery checked 2026-11-10 on Codex, Claude Code, Devin and Cursor on OVH and on Codex on the Mac mini; OpenCode
-could not be checked, its free model answered a provider error that day). A helper does not get it: `userInstructions` is off in a
+every machine (delivery checked 2026-11-10 on Codex, Claude Code, Devin, Cursor and OpenCode on OVH and on Codex on the Mac mini). A helper does not get it: `userInstructions` is off in a
 role's default context (`helper-context.ts`), and a writer has the ladder in the hub skill `writer-practices`.
 
 The two plugins stay installed for their on-demand skills, with the automatic start text off on all four machines: the ADHD flag
@@ -98,6 +97,10 @@ the rules reached Claude Code and Codex chats on OVH only, twice in a chat that 
 were paid again after every compaction.
 
 To change a rule, edit the hub file; nothing is copied to a machine.
+
+Claude Code's auto-memory is off for every BB thread since 2026-11-10 (`bb plugin config provider-claude-code set memoryEnabled false`;
+the core passed `autoMemoryEnabled: true` over the person's own `settings.json`). A project's memory is the Lane Pilot memory on the hub;
+the notes that were in `~/.claude/projects/*/memory` on OVH were copied there (146 of 150; four hold credentials and were refused).
 
 ## Known deviations
 
