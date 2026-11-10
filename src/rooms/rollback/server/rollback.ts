@@ -452,7 +452,24 @@ export function createRollback(ctx: ServerCore, services: Services) {
    */
   const kit = { targetOf, changeOf, makeWorktree, dropWorktree, runChecks };
 
-  return { rollback: { noteBase, ensureBase, noteMerge, noteWorktree, noteSaved, noteStopped, reverify, revert, status, kit } };
+  /**
+   * Work diff (SMA d_diff): the changes of a work as a patch. The worktree of a merged attempt is gone, so the patch is
+   * the merge commit's `git show`; clipped to a fixed budget with a mark when it does not fit.
+   */
+  const DIFF_LIMIT = 60_000;
+  async function diff(ref: string): Promise<{ patch: string; truncated: boolean } | { reason: string }> {
+    const found = await targetOf(ref);
+    if ("error" in found) return { reason: found.error };
+    if (!found.attemptId) return { reason: `${ref} is a task, not an attempt; name the attempt to see its patch` };
+    const change = await changeOf(found.target, found.attemptId);
+    if ("refused" in change) return { reason: change.refused };
+    const out = await host.call("runCommand", { requestedHostId: found.target.hostId, command: `git show --patch --stat --format= ${change.mergeCommit}`, cwd: found.target.basePath, timeoutSec: 60 }, { hostId: found.target.hostId, timeoutMs: 65_000 });
+    if (out.exitCode !== 0) return { reason: `git show of ${change.mergeCommit.slice(0, 12)} failed: ${String(out.stderr ?? "").slice(0, 200)}` };
+    const patch = String(out.stdout ?? "");
+    return patch.length > DIFF_LIMIT ? { patch: `${patch.slice(0, DIFF_LIMIT)}\n… показано начало (diff обрезан)`, truncated: true } : { patch, truncated: false };
+  }
+
+  return { rollback: { noteBase, ensureBase, noteMerge, noteWorktree, noteSaved, noteStopped, reverify, revert, status, diff, kit } };
 }
 
 export type RollbackApi = ReturnType<typeof createRollback>["rollback"];

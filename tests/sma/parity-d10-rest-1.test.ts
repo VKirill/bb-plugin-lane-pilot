@@ -18,6 +18,9 @@ import { postOwnerItem } from "../../src/rooms/owner-waiting";
 import { savePushConfig } from "../../src/rooms/owner-waiting/push";
 import { saveProjectSetting } from "../../src/rooms/storage";
 import { EVENT_FIELDS } from "../../src/rooms/relay/server/outbound";
+import { createRollback } from "../../src/rooms/rollback/server/rollback";
+import { upsertAttemptChange } from "../../src/rooms/rollback/store";
+import { createTask } from "../../src/rooms/plugin-db";
 import { BB_AGENT_SESSIONS } from "../../src/rooms/native-agent/native-agent-overlay";
 
 const DAY = 86_400_000;
@@ -182,5 +185,31 @@ describe("pool readiness and the green word (parity d10-rest-1)", () => {
     globalThis.fetch = (async () => { posts2.push(1); return { ok: true } as never; }) as never;
     try { await ownerWaitingRpc(db2).owner_waiting_digest(); } finally { globalThis.fetch = realFetch; }
     expect(posts2).toHaveLength(0);
+  });
+
+  it("[sma:d_diff] task_diff shows the merge commit's patch through the host, clipped with a mark, or names the reason", async () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    createRun(db, "run", "proj", "cli", "/repo", "none", undefined, "hub");
+    createTask(db, { id: "t1", runId: "run", kind: "bb", contract: {
+      schema_version: 2, id: "t1", title: "t", risk: "low", lane: "server", project_cwd: "/repo", read_first: [], interfaces: [], invariants: [], out_of_scope: [],
+      expected_outputs: ["x"], owns_paths: ["**"], never_touch: [], depends_on: [], objective: "t1", acceptance: ["done"], verify: "tests", verification: [],
+    } });
+    createAttempt(db, { id: "att-1", runId: "run", taskId: "t1" });
+    upsertAttemptChange(db, { attemptId: "att-1", runId: "run", taskId: "t1" }, { outcome: "merged", mergeCommit: "a".repeat(40), mergeParent: "b".repeat(40), changed: [] });
+    const commands: string[] = [];
+    const rollback = createRollback({
+      db, log: () => undefined, isDisposed: () => false,
+      configForRun: async () => ({ hostId: "hub", projectId: "proj" }),
+      host: { call: async (method: string, input: { command?: string }) => { commands.push(input.command ?? ""); return { exitCode: 0, stdout: "x".repeat(70_000) }; } },
+    } as never, {} as never);
+    const answer = await rollback.rollback.diff("att-1") as { patch: string; truncated: boolean };
+    expect(commands[0]).toContain(`git show --patch --stat --format= ${"a".repeat(40)}`);
+    expect(answer.truncated).toBe(true);
+    expect(answer.patch).toContain("показано начало");
+    expect(answer.patch.length).toBeLessThan(70_000);
+    createAttempt(db, { id: "att-2", runId: "run", taskId: "t1" });
+    const none = await rollback.rollback.diff("att-2") as { reason: string };
+    expect(none.reason).toContain("no merge commit");
   });
 });

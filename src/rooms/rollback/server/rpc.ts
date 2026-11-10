@@ -8,5 +8,6 @@ export function rollbackRpc(rollback: RollbackApi) {
     task_reverify: async ({ ref }) => await rollback.reverify(ref),
     task_revert: async ({ ref, dryRun, skipGate, why, by }) => await rollback.revert(ref, { dryRun, skipGate, why, by }),
     task_changes: async ({ ref }) => rollback.status(ref),
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "task_reverify" | "task_revert" | "task_changes">;
+    task_diff: async ({ ref }) => await rollback.diff(ref),
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "task_reverify" | "task_revert" | "task_changes" | "task_diff">;
 }

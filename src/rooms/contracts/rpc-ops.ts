@@ -189,6 +189,11 @@ export const rpcOps = {
     input: z.object({ ref: z.string().min(1).max(200) }).strict(),
     output: z.unknown(),
   },
+  /** The changes of a work as a patch: git show of its merge commit, clipped with a mark (src/rooms/rollback). */
+  task_diff: {
+    input: z.object({ ref: z.string().min(1).max(200) }).strict(),
+    output: z.unknown(),
+  },
   /** Sends a task back to discussion, planning or the writer with a note: recorded, the stale receipts reset, the running attempt stopped, the work restarted from that stage (src/rooms/stage-return). */
   task_return_stage: {
     input: z.object({ ref: z.string().min(1).max(200), to: z.enum(["discussion", "planning", "writer"]), note: z.string().max(8000), by: z.string().min(1).max(60).optional() }).strict(),

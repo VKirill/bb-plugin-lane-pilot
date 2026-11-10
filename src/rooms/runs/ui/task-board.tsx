@@ -337,6 +337,24 @@ function RailRow({ label, children }: { label: string; children: ReactNode }) {
   return <div className="py-1"><div className="text-[11px] font-semibold text-muted-foreground">{label}</div><div className="mt-0.5 min-w-0 break-words text-sm">{children}</div></div>;
 }
 
+/** «Что изменилось»: the patch of the attempt's merge, loaded only when the section opens (SMA d_diff). */
+function TaskDiff({ attemptId }: { attemptId: string }) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [result, setResult] = useState<{ patch: string; truncated: boolean } | { reason: string } | "loading" | null>(null);
+  const load = (open: boolean) => {
+    if (!open || result !== null) return;
+    setResult("loading");
+    void rpc.call("task_diff", { ref: attemptId }).then((answer) => setResult(answer as never)).catch(() => setResult({ reason: "?" }));
+  };
+  return (
+    <Disclosure compact testId="task-diff" summary={attemptId.slice(0, 12)} onToggle={load}>
+      {result === null || result === "loading" ? <p className="text-xs text-muted-foreground">{t("boardLoading")}</p>
+        : "reason" in result ? <p className="text-xs text-muted-foreground">{result.reason}</p>
+        : <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap break-words font-mono text-xs">{result.patch}</pre>}
+    </Disclosure>
+  );
+}
+
 function TaskPage({ item, locale, projectName, onBack, AcceptanceCard }: { item: Item; locale: string; projectName: string; onBack: () => void; AcceptanceCard: AcceptanceCardView }) {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
@@ -450,6 +468,9 @@ function TaskPage({ item, locale, projectName, onBack, AcceptanceCard }: { item:
                     <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap break-words text-xs">{card.plan}</pre>
                   </Disclosure>
                 </Section>
+              ) : null}
+              {card.attempts.length ? (
+                <Section title={t("boardDiff")}><TaskDiff attemptId={card.attempts[0]!.id} /></Section>
               ) : null}
             </div>
             {rail("hidden w-56 shrink-0 border-l border-border py-8 pl-4 pr-5 @[45rem]:block")}
