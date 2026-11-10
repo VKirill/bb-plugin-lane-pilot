@@ -204,6 +204,8 @@ describe("parity d5-phase-2", () => {
     expect(nextRoadmapRow("# R\n\n## Backlog\n\n- [ ] 999.1 only — g\n")).toBeNull();
     expect(nextRoadmapRow("# R\n\n- [x] 1.1 done\n- [ ] 999.1 a real phase — g\n")).toMatchObject({ n: "999.1" });
     expect(nextRoadmapRow("# R\n\n## Backlog ideas\n\n- [ ] 999.1 not parked — g\n")).toMatchObject({ n: "999.1" });
+    // A person's own row under a Backlog heading is not a parked 999.N row: it is still the next phase, as on main.
+    expect(nextRoadmapRow("# R\n\n## Backlog\n\n- [ ] 3.1 a person's row — g\n- [ ] 999.1 parked — g\n")).toMatchObject({ n: "3.1" });
     expect(nextRoadmapRow("# R\n\n## Backlog\n\n- [ ] 999.1 parked\n\n## Later\n\n- [ ] 2.1 after the lot — g\n")).toMatchObject({ n: "2.1" });
   });
 

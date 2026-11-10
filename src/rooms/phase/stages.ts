@@ -388,15 +388,17 @@ export function milestoneOf(roadmapText: string, row: string): string | null {
 const BACKLOG_HEADING = "## Backlog";
 
 /** Transition (SMA: advance to the next phase): the first open row of the roadmap. Rows that sit under the `## Backlog`
- *  heading are the parking lot (SMA k_c_backlog): the machine never opens them, a person promotes one by renumbering it.
- *  A roadmap without that heading advances exactly as it always did — a real phase 999.x is a phase. */
+ *  heading and are numbered 999.N are the parking lot (SMA k_c_backlog): the machine never opens them, a person promotes one by
+ *  renumbering it. Any other roadmap advances exactly as it always did: a real phase 999.x elsewhere is a phase, and so is a
+ *  person's own row under a Backlog heading. */
 export function nextRoadmapRow(text: string): { n: string; name: string; goal: string } | null {
   let parked = false;
   for (const line of text.split("\n")) {
     const trimmed = line.trim();
     if (/^#{1,6}\s/.test(trimmed)) { parked = trimmed === BACKLOG_HEADING; continue; }
     const found = trimmed.match(ROW);
-    if (found && found[1] === " " && !parked) return { n: found[2]!, name: found[3]!.trim(), goal: (found[4] ?? "").trim() };
+    // Only a 999.N row under that heading is parked: a person's own open row there is still the next phase, as it always was.
+    if (found && found[1] === " " && !(parked && found[2]!.startsWith("999."))) return { n: found[2]!, name: found[3]!.trim(), goal: (found[4] ?? "").trim() };
   }
   return null;
 }
