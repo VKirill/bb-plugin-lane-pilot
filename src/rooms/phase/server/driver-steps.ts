@@ -9,7 +9,7 @@ import { spendReserve } from "../../tasks";
 import type { RecheckPlanFact } from "../../platform/server";
 import { hostContract } from "../../contracts";
 import { runOnHost } from "@lane-pilot/host-calls";
-import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
+import { bookkeepingSetting, planningDir } from "@lane-pilot/settings-catalog";
 import { sha256Hex, bestEffort } from "@lane-pilot/kit";
 import { acceptanceLines, alreadyMetVerdict, blindVerdict, brokenLink, candidateOn, canonical, executionGate, issuable, lessonsNeeded, nextAction, observationOutcome, piecesOfWave, phaseFolder, pieceSha, provenPieces, renderBook, waveCleared, waveLines, wavePackage, wavePieceLines, wavesOf, wordOf } from "../logic";
 import { buildsScreens, conclusionText, issuedContract, markRoadmap, nextRoadmapRow, stateText, waveTable, piecePlan, uatText } from "../stages";
@@ -434,13 +434,15 @@ export function installSteps(tools: StepsTools) {
     phase = mustGet(phase.id);
     const summaryPath = `${phaseFolder(phase.id)}/SUMMARY.md`;
     const files: Array<{ path: string; content: string }> = [{ path: summaryPath, content: conclusionText(phase, listParts(db, phase.id), facts(phase)) }];
-    const roadmap = await readText(phase, ".agents/planning/ROADMAP.md");
+    // The planning marks live at the project's planning home (SMA m_pj_planning), which moves with planning.dir.
+    const planning = planningDir(phase.runId ? loadProjectSettings(db, phase.projectId, getRunSettingsScopes(db, phase.runId)) : {});
+    const roadmap = await readText(phase, `${planning}/ROADMAP.md`);
     if (roadmap !== null && phase.record.roadmapRow) {
       const marked = markRoadmap(roadmap, phase.record.roadmapRow);
-      if (marked !== roadmap) files.push({ path: ".agents/planning/ROADMAP.md", content: marked });
+      if (marked !== roadmap) files.push({ path: `${planning}/ROADMAP.md`, content: marked });
     }
-    const stateNow = await readText(phase, ".agents/planning/STATE.md");
-    if (stateNow !== null || roadmap !== null) files.push({ path: ".agents/planning/STATE.md", content: stateText(stateNow, { phase: phase.record.roadmapRow ?? phase.id, stage: "closed", last_phase: phase.id }) });
+    const stateNow = await readText(phase, `${planning}/STATE.md`);
+    if (stateNow !== null || roadmap !== null) files.push({ path: `${planning}/STATE.md`, content: stateText(stateNow, { phase: phase.record.roadmapRow ?? phase.id, stage: "closed", last_phase: phase.id }) });
     const out = await writeDocs(phase, files, `phase ${phase.id}: closed — summary, roadmap and state`).catch((cause: unknown) => { ctx.log(`phase ${phase.id}: closing documents not written: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
     if (!out) return phase;
     // A run that has no writer workspace or host has nowhere to write: its book lives on the hub only, like a phase without a run.

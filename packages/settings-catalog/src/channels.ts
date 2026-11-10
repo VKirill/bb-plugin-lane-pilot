@@ -145,6 +145,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"run.max_children", channel:"OWN", reason:"Native Lane Pilot run budget: writer and helper threads one run may spawn" },
   { key:SETTING_WRITER_SILENCE_NUDGE_MIN, channel:"OWN", reason:"Native Lane Pilot writer watchdog: minutes of silence before a running writer is nudged" },
   { key:"bookkeeping.paths", channel:"OWN", reason:"Native Lane Pilot project bookkeeping patterns that ownership gates and merges treat as not the writer's work" },
+  { key:"planning.dir", channel:"OWN", reason:"Native Lane Pilot planning home: the project's second address, where the phase machine reads and writes the planning marks" },
   { key:"integration.gate_command", channel:"OWN", reason:"Native Lane Pilot integration gate: the whole-suite command run after a batch of tasks merged" },
   { key:"integration.gate_when", channel:"OWN", reason:"Native Lane Pilot integration gate: run when the queue is drained or after every N merged tasks" },
   { key:"integration.gate_every", channel:"OWN", reason:"Native Lane Pilot integration gate: merged tasks between two runs when the gate is every_n" },

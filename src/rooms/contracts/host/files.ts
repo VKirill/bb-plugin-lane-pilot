@@ -63,7 +63,7 @@ export const fileHostMethods = {
   /** The phase book and the phase's documents, written only under the project's `.agents/phases/<phase-id>/`, and the marks in `.agents/planning/STATE.md` / `ROADMAP.md` (src/rooms/phase). */
   writePhaseBook: {
     input: z.object({
-      requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), previewSha256:z.string().regex(/^[a-f0-9]{64}$/),
+      requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), previewSha256:z.string().regex(/^[a-f0-9]{64}$/), planningDir:z.string().min(1).max(120).optional(),
       edits:z.array(z.object({path:z.string().min(1).max(240),expectedSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(),content:z.string().max(400_000)}).strict()).min(1).max(10),
     }).strict(),
     output:z.object({hostId:z.string(),previewSha256:z.string().regex(/^[a-f0-9]{64}$/),status:z.enum(["applied","conflict","blocked"]),writes:z.array(z.object({path:z.string(),beforeSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(),afterSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(),status:z.enum(["applied","conflict","blocked"]),reason:z.string().nullable()}).strict()),reason:z.string().nullable()}).strict(),

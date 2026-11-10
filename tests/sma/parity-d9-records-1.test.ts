@@ -5,6 +5,17 @@ import { DESIGN_CRITIQUE_CASES_KEY, appendDesignCritiqueCase, critiqueProblems }
 import { credentialIssue, forgetSecrets, maskCredentials, registerSecrets, withoutCredentials } from "../../packages/kit/src/redact";
 import { memoryContentIssue } from "../../packages/memory-core/src/candidates";
 import { scrubQuote, unsafeReason } from "../../src/rooms/anamnesis/model";
+import { spawnAsync } from "../../packages/kit/src/spawn-async";
+import { planningDir, planningDirProblem } from "../../packages/settings-catalog/src/bookkeeping-paths";
+import { validateSettingValue } from "../../src/rooms/settings/setting-validation";
+import { stageInit } from "../../src/rooms/phase/stages";
+import { writePhaseBook } from "../../src/rooms/host-worker/handlers/writes";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { sha256Hex } from "../../packages/kit/src";
+
+const groupAlive = (pid: number) => { try { process.kill(-pid, 0); return true; } catch { return false; } };
 const kv = () => { const store = new Map<string, unknown>(); return { get: async (k: string) => store.get(k) ?? null, set: async (k: string, v: never) => { store.set(k, v); }, store }; };
 
 const critique = (over: Partial<DrawingCritique> = {}): DrawingCritique => ({
@@ -51,6 +62,47 @@ describe("one credential mask for every outward writer", () => {
       expect(credentialIssue("nothing worth hiding")).toBeNull();
     } finally {
       forgetSecrets();
+    }
+  });
+});
+
+describe("worker processes die with the worker", () => {
+  it("[sma:m_ac_job] a command that backgrounds a sleeping child leaves no process of its group alive after spawnAsync with group:true resolves", async () => {
+    const result = await spawnAsync("/bin/bash", ["-c", "sleep 30 & exit 0"], { group: true });
+    expect(result.status).toBe(0);
+    const pid = result.pid!;
+    await new Promise((resolve) => setTimeout(resolve, 2_600));
+    expect(groupAlive(pid)).toBe(false);
+  });
+});
+
+describe("the project's planning home", () => {
+  it("[sma:m_pj_register] planning.dir rejects an absolute path and one with .., accepts docs/planning, and an unset value reads as .agents/planning", () => {
+    expect(planningDirProblem("/abs/path")).toBeTruthy();
+    expect(planningDirProblem("docs/../up")).toBeTruthy();
+    expect(planningDirProblem("docs\\win")).toBeTruthy();
+    expect(planningDirProblem("docs/planning")).toBeNull();
+    expect(validateSettingValue("planning.dir", "/abs")?.code).toBe("invalid_choice");
+    expect(validateSettingValue("planning.dir", "docs/planning")).toBeNull();
+    expect(planningDir({})).toBe(".agents/planning");
+    expect(planningDir({ "planning.dir": "docs/planning" })).toBe("docs/planning");
+  });
+
+  it("[sma:m_pj_planning] with planning.dir=docs/plan the stage reads docs/plan/ROADMAP.md, the mark writes there only, and a write to src/x.ts through the same call is refused", async () => {
+    expect(stageInit({ id: "ph_1", stage: "discussion", record: {} } as never, "docs/plan")[0]).toBe("docs/plan/ROADMAP.md");
+    const cwd = mkdtempSync(join(tmpdir(), "lp-planning-"));
+    try {
+      mkdirSync(join(cwd, "docs/plan"), { recursive: true });
+      mkdirSync(join(cwd, "src"), { recursive: true });
+      const call = (edits: Array<{ path: string; content: string }>) => {
+        const full = edits.map((e) => ({ ...e, expectedSha256: null }));
+        return writePhaseBook({ requestedHostId: "h1", projectCwd: cwd, previewSha256: sha256Hex(JSON.stringify(full)), planningDir: "docs/plan", edits: full } as never);
+      };
+      const ok = await call([{ path: "docs/plan/ROADMAP.md", content: "- [ ] phase one" }]);
+      expect(ok.writes[0]!.status).toBe("applied");
+      await expect(call([{ path: "src/x.ts", content: "nope" }])).rejects.toThrow(/scope/);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
     }
   });
 });
