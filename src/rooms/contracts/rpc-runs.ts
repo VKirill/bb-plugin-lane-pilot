@@ -43,13 +43,15 @@ export const rpcRuns = {
   task_board: {
     input: z.object({ projectId: z.string().min(1).optional(), doneHours: z.number().int().min(1).max(24 * 30).default(24) }).strict(),
     output: z.object({ items: z.array(z.object({
-      kind: z.enum(["task", "workflow"]), key: z.string(), runId: z.string(), taskId: z.string().nullable(), title: z.string(), techTitle: z.string().nullable(),
+      kind: z.enum(["task", "workflow", "phase"]), key: z.string(), runId: z.string(), taskId: z.string().nullable(), title: z.string(), techTitle: z.string().nullable(),
       taskKind: z.enum(TASK_KINDS).nullable(), area: z.string().nullable(), objective: z.string().nullable(),
       projectId: z.string().nullable(), pmThreadId: z.string().nullable(), pmThreadTitle: z.string().nullable(),
       column: z.enum(["queued", "running", "checking", "blocked", "done"]), state: z.string(),
       phase: z.enum(["queued", "planning", "waiting", "writing", "checking", "retrying", "blocked", "stuck", "closed", "accepted", "canceled", "chain"]),
       stage: z.string().nullable(), model: z.string().nullable(), since: z.number().nullable(), waitingFor: z.array(z.string()), detail: z.string().nullable(),
       attemptNo: z.number().int(), threadId: z.string().nullable(), attemptId: z.string().nullable(), updatedAt: z.number(),
+      held: z.boolean(), gates: z.array(z.object({ name: z.enum(["discussion", "plan", "design"]), ok: z.boolean(), why: z.array(z.string()) }).strict()).nullable(),
+      wave: z.object({ n: z.number().int(), m: z.number().int() }).strict().nullable(),
     }).strict()) }).strict(),
   },
   /** One board card opened: contract, plan, stages, attempts and the tree of threads that worked on it. */
@@ -71,6 +73,11 @@ export const rpcRuns = {
       attempts: z.array(z.object({ id: z.string(), no: z.number().int(), state: z.string(), reason: z.string().nullable(), threadId: z.string().nullable(), createdAt: z.number(), updatedAt: z.number() }).strict()),
       threads: cardThreadSchema.nullable(),
     }).strict().nullable(),
+  },
+  /** A bounded read of a work file of the run's checkout by relative path (SMA d_artifact, src/rooms/runs/server/work-file.ts). */
+  work_file_read: {
+    input: z.object({ runId: z.string().min(1), relativePath: z.string().min(1).max(1024), offset: z.number().int().min(0).max(100000).default(0) }).strict(),
+    output: z.object({ path: z.string(), content: z.string(), totalLines: z.number().int(), lineStart: z.number().int(), lineEnd: z.number().int(), truncated: z.boolean(), sizeBytes: z.number().int() }).strict(),
   },
   /** The acceptance card of a task: one screen for «why was this accepted, on what proof, and what was not looked at». */
   task_acceptance_card: {

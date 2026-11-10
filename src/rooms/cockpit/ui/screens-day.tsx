@@ -80,7 +80,8 @@ export function MoneyScreen({ rpc, hostId }: { rpc: Rpc; hostId: string | null }
   );
 }
 
-type Worker = { providerId: string; model: string; tokens: number; days: Array<{ day: string; tokens: number }>; capabilities: Array<{ capability: string; state: string; version: string }> };
+type WorkerDay = { day: string; tokens: number; done?: number; notDone?: number };
+type Worker = { providerId: string; model: string; tokens: number; days: WorkerDay[]; capabilities: Array<{ capability: string; state: string; version: string }>; running: number; runningTasks: string[]; lastAt: number | null; windows: Record<string, { utilization: number; resetsAt: string | null }> };
 type Designer = { ratios: Record<string, number | null>; conditions: Array<{ id: string; ok: boolean; detail: string }>; readiness: string };
 
 /** Workers: each worker's card with its 30-day history, the lane table of capability cells, and the designer's statistics. */
@@ -98,8 +99,10 @@ export function WorkersScreen({ rpc, projectId }: { rpc: Rpc; projectId: string 
               <div key={`${worker.providerId}/${worker.model}`} className="rounded-md border border-border p-2" data-testid="ck-worker-card">
                 <p className="truncate text-sm font-medium">{worker.model}</p>
                 <p className="text-xs text-muted-foreground">{worker.providerId} · {fill("ckWorkerTokens", { v: worker.tokens.toLocaleString() })}</p>
+                {(worker.running > 0 || worker.lastAt) && <p className="text-xs" data-testid="ck-worker-presence">{worker.running > 0 ? fill("ckWorkerRunning", { n: String(worker.running), tasks: worker.runningTasks.join(", ") }) : ""}{worker.lastAt ? ` · ${day(worker.lastAt)}` : ""}</p>}
+                {Object.entries(worker.windows).map(([key, w]) => <p key={key} className="text-xs text-muted-foreground" data-testid="ck-worker-window">{key}: {w.utilization}%{w.resetsAt ? ` → ${new Date(w.resetsAt).toLocaleString()}` : ""}</p>)}
                 {/* Worker history: tokens per day over 30 days. */}
-                <div className="mt-1 flex h-8 items-end gap-px" aria-hidden>{worker.days.map((row) => <div key={row.day} className="flex-1 bg-primary/60" style={{ height: `${Math.max(4, (row.tokens / peak) * 100)}%` }} title={`${row.day}: ${row.tokens}`} />)}</div>
+                <div className="mt-1 flex h-8 items-end gap-px" aria-hidden>{worker.days.map((row) => <div key={row.day} className="flex-1 bg-primary/60" style={{ height: `${Math.max(4, (row.tokens / peak) * 100)}%` }} title={`${row.day}: ${row.tokens} tok, ${row.done ?? 0} done, ${row.notDone ?? 0} not done`} />)}</div>
               </div>
             );
           })}</div>

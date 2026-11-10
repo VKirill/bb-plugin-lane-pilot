@@ -1,3 +1,4 @@
+import { runCount, type LanePilotDatabase } from "../storage";
 /**
  * The conveyor switch (SMA atlas D2-10: «Conveyor switch», «Conveyor off from the factory»): one flag for the whole plugin. Off, no new
  * work is issued anywhere — a task waits before it takes a writer slot exactly as in a paused run (`isHeld`, runs/server/runs-pause.ts), parked tasks are not restarted, the
@@ -19,4 +20,16 @@ export async function setConveyor(kv: Kv, on: boolean, reason?: string): Promise
   if (on) await kv.set(CONVEYOR_KEY, null);
   else if ((await conveyorState(kv)).on) await kv.set(CONVEYOR_KEY, { at: Date.now(), reason: reason?.trim().slice(0, 300) || null });
   return await conveyorState(kv);
+}
+
+const SEEDED_KEY = "conveyor:seeded";
+/**
+ * A fresh install ships with the conveyor off (SMA m_cfg_pipeline_off): the seed runs once at startup recovery and,
+ * only while the base has no run yet, writes the switch with its reason so a person sees it exists. A hub that already
+ * has runs is never touched — it relies on the on-default. The seeded marker means the check itself runs once.
+ */
+export async function seedConveyor(kv: Kv, db: LanePilotDatabase): Promise<void> {
+  if (await kv.get(SEEDED_KEY)) return;
+  await kv.set(SEEDED_KEY, { at: Date.now() });
+  if (runCount(db) === 0) await setConveyor(kv, false, "factory default: switch on with bb lane-pilot conveyor on");
 }

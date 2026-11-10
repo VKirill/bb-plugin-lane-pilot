@@ -558,4 +558,10 @@ export const migrations = [
   `CREATE TRIGGER lane_pilot_task_contract_edition_no_delete BEFORE DELETE ON lane_pilot_task_contract_edition BEGIN SELECT RAISE(ABORT,'contract editions are append-only'); END`,
   // The barrier's outcome on the attempt row itself (sma av_record): gate, status, why, tree and the verdict's summary.
   `ALTER TABLE lane_pilot_attempt ADD COLUMN barrier_json TEXT`,
+  // The attempt ledger (SMA ar_ledger): the attempt row is the current state; its transition log is the ledger —
+  // appended, never rewritten or removed, like the stage and gate event journals. An attempt row is not deleted either.
+  `CREATE TRIGGER lane_pilot_attempt_transition_no_update BEFORE UPDATE ON lane_pilot_attempt_transition BEGIN SELECT RAISE(ABORT,'attempt transitions are append-only'); END`,
+  `CREATE TRIGGER lane_pilot_attempt_transition_no_delete BEFORE DELETE ON lane_pilot_attempt_transition BEGIN SELECT RAISE(ABORT,'attempt transitions are append-only'); END`,
+  `CREATE TRIGGER lane_pilot_attempt_no_delete BEFORE DELETE ON lane_pilot_attempt BEGIN SELECT RAISE(ABORT,'attempts are append-only'); END`,
+
 ];

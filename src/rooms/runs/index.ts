@@ -10,5 +10,5 @@ export { renderTimeline, taskTimeline } from "./timeline";
 export type { TaskTimeline, TimelineEntry } from "./timeline";
 export { failureClassJudgment } from "./failure-class-judgment";
 export type { FailureClassDecision, FailureClassInput } from "./failure-class-judgment";
-export { CONVEYOR_KEY, conveyorState, setConveyor } from "./conveyor";
+export { CONVEYOR_KEY, conveyorState, setConveyor, seedConveyor } from "./conveyor";
 export type { ConveyorState } from "./conveyor";

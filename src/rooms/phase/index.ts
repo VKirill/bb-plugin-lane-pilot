@@ -6,5 +6,7 @@ export {
 } from "./logic";
 export type { AcceptanceLine, BookPart, BookSection, ContextDoc, FrozenVerdict, GateResult, NextAction, Phase, PhaseObservation, PhaseRecord, PhaseStage, PhaseState, PlanItem, TaskFact } from "./logic";
 export { getPhase, listParts, listPhases, listPhasePartsSince, resolvePhaseRef } from "./store";
+export { phaseBoardCards } from "./board-cards";
+export type { PhaseBoardItem } from "./board-cards";
 export { intakeJudgment, isMachineMessage, pathClassJudgment } from "./intake";
 export { rubricLine } from "./stages";

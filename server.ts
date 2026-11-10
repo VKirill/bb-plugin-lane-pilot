@@ -4,6 +4,7 @@ import { PROVIDER_CAPABILITIES } from "@lane-pilot/models";
 import { migrations as lanePilotMigrations } from "./src/rooms/migrations";
 import { coupledSettingKeys, validateSettingChanges, validateSettingValue, validateSettingsObject } from "./src/rooms/settings";
 import { createTaskReconcile } from "./src/rooms/runs/server";
+import { seedConveyor } from "./src/rooms/runs";
 import { createActivation } from "./src/rooms/native-agent/server";
 import { placeEmployeeOn, compileEffectiveMainAgent, detectCompiledMainAgentCapability, pendingSwitch } from "./src/rooms/native-agent";
 import { storeNativeSelection } from "./src/rooms/native-agent/server/native-profile";
@@ -137,6 +138,7 @@ import type { BenchApi } from "./src/rooms/bench/server";
 import type { BaselineApi, RegressionApi } from "./src/rooms/baseline/server";
 import type { RunGoalApi } from "./src/rooms/run-goal/server";
 import type { PhaseApi, PhaseIntake } from "./src/rooms/phase/server";
+import { phaseBoardCards } from "./src/rooms/phase";
 import type { MoneyApi } from "./src/rooms/money";
 import type { FrontApi } from "./src/rooms/front";
 import type { CapabilitiesApi } from "./src/rooms/capability/server";
@@ -151,6 +153,10 @@ import type { WorldApi } from "./src/rooms/world/server";
 import type { Canary } from "./src/rooms/stability/server";
 import type { MemoryConflictsApi } from "./src/rooms/memory/server";
 import type { PromotionServiceApi } from "./src/rooms/rule-forms";
+import type { BoardItem } from "./src/rooms/runs/server";
+
+/** The phase room's board-card dealer (src/rooms/phase/board-cards.ts): project filter plus the board's doneSince. */
+type PhaseBoardCards = (input: { projectId: string | null; doneSince: number }) => BoardItem[];
 
 /** Every function one server module offers another; filled once all modules exist, read at call time. */
 export interface Services {
@@ -185,6 +191,8 @@ export interface Services {
   runGoal: RunGoalApi;
   /** Phases on rails: the driver that moves a phase through its stages by gates in code and wakes the PM at each turn (src/rooms/phase). */
   phases: PhaseApi;
+  /** Phase cards for the task board (src/rooms/phase/board-cards.ts), handed to runs so it never imports phase. */
+  phaseCards: PhaseBoardCards;
   /** Rails by default: the owner's newest message in a PM chat read before the PM acts; a heavy goal goes into a phase (src/rooms/phase/server/intake.ts). */
   phaseIntake: PhaseIntake;
   /** The spend book, the money cap of paid lanes and the subscription windows (src/rooms/money). */
@@ -399,6 +407,7 @@ export default async function plugin(bb: BbPluginApi) {
     createRunGoal(ctx, services),
     createProfileCheck(ctx),
     createPhaseDriver(ctx, services, createPhaseReactions(ctx.db, ctx.bb)),
+    { phaseCards: ((input: { projectId: string | null; doneSince: number }) => phaseBoardCards(ctx.db, input)) satisfies PhaseBoardCards },
     createMoney(ctx),
     createFront(ctx),
     createCapabilities(ctx, services),
@@ -595,6 +604,8 @@ export default async function plugin(bb: BbPluginApi) {
         await step("restore of the breakers", () => services.stability.restoreBreakers());
         // A version's first start is its deploy time: the canary counts the attempts from here.
         await step("canary start", () => services.canary.noteStart());
+        // The factory conveyor switch (SMA m_cfg_pipeline_off): once, on a hub with no runs yet.
+        await step("conveyor seed", () => seedConveyor(bb.storage.kv, db));
         await taskReconcile.reconcileTasks({ phase: "startup", step, afterResume: async () => {
           if (!skipScans) await step("run sweep", sweepRuns);
           if (!skipScans) await step("worktree sweep", sweepEnvironments);
