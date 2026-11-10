@@ -76,13 +76,23 @@ it("a helper launcher denies the orchestration built-ins, a PM launcher keeps th
   const command = join(dest, "real-claude");
   await writeFile(command, "#!/bin/sh\nfor a in \"$@\"; do echo \"$a\"; done\n");
   await chmod(command, 0o700);
+  let extra: string[] = [];
   const run = async (role: string) => {
     const launcher = join(dest, `claude-${role}`);
     await writeFile(launcher, claudeGuardLauncherScript({ destDir: dest, command, settingsPath, role, agentType: role }));
     await chmod(launcher, 0o700);
-    return spawnSync(launcher, ["-p", "hi"], { encoding: "utf8" }).stdout.trim().split("\n");
+    return spawnSync(launcher, ["-p", "hi", ...extra], { encoding: "utf8" }).stdout.trim().split("\n");
   };
   const writer = await run("writer");
   expect(writer[writer.indexOf("--disallowedTools") + 1]).toBe(HELPER_DISALLOWED_TOOLS);
   expect(await run("pm")).not.toContain("--disallowedTools");
+  // The person's settings differ per machine: a helper does not load them, a PM chat does (docs/guide/hooks.md, rule 6).
+  extra = ["--setting-sources=user,project,local"];
+  expect(await run("writer")).toContain("--setting-sources=project,local");
+  expect(await run("pm")).toContain("--setting-sources=user,project,local");
+  extra = ["--setting-sources", "user,project"];
+  expect((await run("code-critic")).join(" ")).toContain("--setting-sources project");
+  extra = [];
+  expect(await run("errand")).toContain("--setting-sources=project,local");
+  expect((await run("pm")).join(" ")).not.toContain("--setting-sources");
 });

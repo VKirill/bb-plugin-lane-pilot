@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.505
+
+- **A helper runs under the same hooks on every machine: it no longer loads the person's Claude Code settings.** The owner asked to check
+  every machine, because «everything is synchronized everywhere». It is not, for hooks: the person's `~/.claude/settings.json` holds 14 hooks
+  on OVH, none on the Mac mini and the MacBook, one on Windows, and the Mac mini ran 2,837 Lane Pilot threads in 14 days against 3,735 on OVH.
+  So the same role worked under an edit guard, a code guard and a search hint on one machine and under none on the other; the person's
+  API keys from the settings `env` reached every helper too. A helper's or writer's launcher now drops the `user` setting source
+  (`--setting-sources=project,local`): its layer is the bundled guard, the project's hooks and core's flags. A PM chat keeps the person's
+  layer. Live rehearsal on OVH (Haiku, feed-gen): the bundled guard refused a commit, MCP servers connected, no personal plugin loaded.
+- **`scripts/hooks-audit.py --host <machine-id> <home> [project-root ...]` audits another BB machine** through `bb file`, and Codex's
+  `~/.codex/hooks.json` is read on every machine. All four machines: 0 findings. `docs/guide/hooks.md` has the per-machine table and
+  the list of the person's hooks a helper no longer inherits, each with its reason and how often it fired.
+
 ## 0.1.504
 
 - **A standard for session hooks and an audit of a machine against it: `docs/guide/hooks.md`, `python3 scripts/hooks-audit.py`.** The owner asked what the failing «wiki» hook was and to bring every hook to the shape Maslov's SMA describes. His map gives six rules (a hook is fail-open, anchored to the project root, speaks only when it has something to say, fits 1.5 seconds per tool call, an installer touches only its own entries, a worker's hook layer is known). Lane Pilot's own session hooks were built to them already. The first audit of OVH found the rest: a start hook reading `wiki/index.md` exited 1 on every session start in six projects that have no wiki; a start hook read a skill file that no longer exists; the edit hooks of feed-gen and seo-cluster ran in the hard-coded main checkout, so a writer in a worktree typechecked and auto-fixed the owner's files, not its own. All are fixed in those projects' settings; the audit reports 0 findings. No code of the plugin changed.

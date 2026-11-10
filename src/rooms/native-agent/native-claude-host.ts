@@ -230,6 +230,7 @@ export function nativeLauncherScript(input: {
     "  echo 'Lane Pilot: claude CLI is not executable' >&2",
     "  exit 78",
     "fi",
+    "unset LANE_PILOT_ROLE",
     `export LANE_PILOT_AGENT_TYPE=${shellQuote(input.settingId)}`,
     "export AGENT_HOOK_CLIENT=claude",
     `export LANE_PILOT_HOOK_TRACE=${shellQuote(join(input.destDir, "hook-trace.jsonl"))}`,
@@ -244,6 +245,12 @@ export function nativeLauncherScript(input: {
  * as a second `--settings` threw that layer away: the owner's ADHD and ponytail hooks then ran in every helper (2026-11-07).
  * The exec line merges every `--settings` it sees with the guard file (guard last; hook lists concatenate) and hands
  * Claude one. No `--settings` from core: the guard file goes as before. A layer that cannot be read: guard only, said on stderr.
+ *
+ * A helper or writer (`LANE_PILOT_ROLE` set by its launcher, not `pm`) does not load the `user` setting source: the person's
+ * `~/.claude/settings.json` differs per machine (14 hooks on OVH, none on the Macs, 2026-11-10), so the same role ran under different
+ * hooks depending on where it landed, and the person's env keys reached every helper. Its layer is the bundle, the project's hooks
+ * and core's flags: the same on every machine (docs/guide/hooks.md, rule 6). MCP servers still connect (live probe). A PM chat keeps
+ * the person's layer: it is the owner's own conversation.
  */
 const MERGE_SETTINGS_PY = [
   "import json,os,sys,hashlib,tempfile",
@@ -278,6 +285,13 @@ const MERGE_SETTINGS_PY = [
   "    os.replace(final+\".tmp\",final)",
   "  except Exception as e:",
   "    sys.stderr.write(\"Lane Pilot: core settings layer unreadable, guard only: %s\\n\"%e); final=guard",
+  "if os.environ.get(\"LANE_PILOT_ROLE\",\"pm\")!=\"pm\":",
+  "  nouser=lambda v: \",\".join(x for x in v.split(\",\") if x!=\"user\")",
+  "  named=False",
+  "  for j,a in enumerate(kept):",
+  "    if a.startswith(\"--setting-sources=\"): kept[j]=\"--setting-sources=\"+nouser(a[18:]); named=True",
+  "    elif a==\"--setting-sources\" and j+1<len(kept): kept[j+1]=nouser(kept[j+1]); named=True",
+  "  if not named: kept.append(\"--setting-sources=project,local\")",
   "os.execv(cmd,[cmd]+kept+[\"--settings\",final]+extra)",
 ].join("\n");
 
