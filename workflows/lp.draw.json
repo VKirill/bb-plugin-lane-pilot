@@ -38,11 +38,35 @@
     "scores": "json",
     "notes": "string"
   },
-  "entry": "draw",
+  "entry": "material",
   "budget": {
     "max_minutes": 60
   },
   "nodes": [
+    {
+      "id": "material",
+      "type": "agent",
+      "role": "specialist:design-lead",
+      "session": "new",
+      "title": {
+        "en": "Material for the drawing",
+        "ru": "Материал для чертежа"
+      },
+      "prompt": "Gather the material for the drawing into `<folder>/design/MATERIAL.md` — three lists with sources, no mock-up and no proposed layout: (1) patterns — existing screens and components in the repo that do a similar job, with paths; (2) references — DESIGN.md, brand, the phase's CONTEXT.md/SPEC.md/PLAN.md and any example the owner named; (3) constraints — breakpoints, accessibility, tokens, pieces that cannot change. Write nothing outside `<folder>/design/MATERIAL.md`.",
+      "out": {
+        "material_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
     {
       "id": "draw",
       "type": "agent",
@@ -51,7 +75,7 @@
         "en": "Draw the screens",
         "ru": "Нарисовать экраны"
       },
-      "prompt": "Draw every screen the pieces in `pieces` change, as a clickable gray HTML mock-up (one file per screen) under `<folder>/design/`, following the project's DESIGN.md when there is one. Each file names the piece ids it serves. Also write `<folder>/design/UI-SPEC.md`, the drawing's contract that the verification checks: one `##` heading per section named in `requirements`, the heading text being that section's name as given (for example `## actions`, `## screens_states`), and for each screen its piece ids, its states (empty, loading, error, filled) and its breakpoints, as checkable points. Write nothing outside `<folder>/design/`.\nList the files you wrote in `paths` (relative to the project), UI-SPEC.md among them. Set `feasible` false and say why in `contradiction` when a piece cannot be drawn as asked (the pieces contradict each other or the design system).",
+      "prompt": "Drawing rules — DESIGN.md first, then the phase's CONTEXT.md/SPEC.md/PLAN.md; every screen names its states (empty, loading, error, filled) and its breakpoints; scored on six axes: hierarchy, spacing, contrast, states, brand, motion. Motion rows follow the animator law: motion rows: animate transform and opacity only, 150–300 ms for UI feedback, ease-out entering and ease-in leaving, respect prefers-reduced-motion, no motion that blocks input, every animation has its end state drawn. Sketch rules: light and dark themes through a data-theme attribute, variants as <screen>--<variant>.html, interactivity through the shared proto script of page-prototype, plain static HTML with no build step.\nRead MATERIAL.md first; do not copy a pattern wholesale. Draw every screen the pieces in `pieces` change, as a clickable gray HTML mock-up (one file per screen) under `<folder>/design/`, following the project's DESIGN.md when there is one. Each file names the piece ids it serves. Also write `<folder>/design/UI-SPEC.md`, the drawing's contract that the verification checks: one `##` heading per section named in `requirements`, the heading text being that section's name as given (for example `## actions`, `## screens_states`), and for each screen its piece ids, its states (empty, loading, error, filled) and its breakpoints, as checkable points. Write nothing outside `<folder>/design/`.\nList the files you wrote in `paths` (relative to the project), UI-SPEC.md among them. Set `feasible` false and say why in `contradiction` when a piece cannot be drawn as asked (the pieces contradict each other or the design system).",
       "out": {
         "paths": "string[]",
         "feasible": "bool",
@@ -66,6 +90,13 @@
           "kind": "report",
           "version": 1
         }
+      ],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "material"
+        }
       ]
     },
     {
@@ -76,7 +107,7 @@
         "en": "Check the drawing",
         "ru": "Проверить чертёж"
       },
-      "prompt": "Read the mock-ups in `draw.paths` and the pieces in `pieces`. You did not draw them. For each piece: is its screen there, does it show the promised behaviour, does it follow DESIGN.md, and does UI-SPEC.md list its screen's states and breakpoints and carry a heading per required section. Answer `verdict` pass or rework, with `notes` naming what to change; rework only for a missing screen, a broken promise or a design-system break, not for taste. Score the drawing 0–3 on each rubric axis in `scores` (hierarchy, spacing, contrast, states, brand, motion).",
+      "prompt": "Drawing rules — DESIGN.md first, then the phase's CONTEXT.md/SPEC.md/PLAN.md; every screen names its states (empty, loading, error, filled) and its breakpoints; scored on six axes: hierarchy, spacing, contrast, states, brand, motion. Motion rows follow the animator law: motion rows: animate transform and opacity only, 150–300 ms for UI feedback, ease-out entering and ease-in leaving, respect prefers-reduced-motion, no motion that blocks input, every animation has its end state drawn. Sketch rules: light and dark themes through a data-theme attribute, variants as <screen>--<variant>.html, interactivity through the shared proto script of page-prototype, plain static HTML with no build step. Read the mock-ups in `draw.paths` and the pieces in `pieces`. You did not draw them. For each piece: is its screen there, does it show the promised behaviour, does it follow DESIGN.md, and does UI-SPEC.md list its screen's states and breakpoints and carry a heading per required section. Answer `verdict` pass or rework, with `notes` naming what to change; rework only for a missing screen, a broken promise or a design-system break, not for taste. Score the drawing 0–3 on each rubric axis in `scores` (hierarchy, spacing, contrast, states, brand, motion). Verify the drawing cites MATERIAL.md.",
       "out": {
         "verdict": "pass|rework",
         "scores": "json",
@@ -115,6 +146,11 @@
     }
   ],
   "edges": [
+    {
+      "from": "material",
+      "to": "draw",
+      "pass": "artifact"
+    },
     {
       "from": "draw",
       "to": "check",

@@ -134,7 +134,8 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number },
       // After a failed verdict, or when the plan gate (code) refused an approved plan, the planner sees the pieces as they are, with covers.
       const gateRound = gateGaps.length > 0 && r.plan?.critique?.decision === "approve";
       const current = (r.replan?.gaps || gateRound) && r.plan ? (r.plan.items ?? []).map((item) => ({ id: item.id, wave: item.wave, covers: item.covers ?? [], task: item.task })) : null;
-      return { goal: phase.goal, median_task: medianTask ?? "", findings: { context: contextText, decisions: r.context?.decisions ?? [], requirements: r.context?.requirements ?? [], ...answered, ...(current ? { current_pieces: current } : {}) },
+      return { goal: phase.goal, median_task: medianTask ?? "", skip_research: r.research !== "on", patterns: r.patternMap === "on",
+        findings: { context: contextText, decisions: r.context?.decisions ?? [], requirements: r.context?.requirements ?? [], ...answered, ...(current ? { current_pieces: current } : {}) },
         ...(gaps.length ? { mode: "gaps", gaps } : {}),
         extra_rules: [...answerRule, "every command an acceptance line names is one of the task's verification commands", "each task's id is the piece id; depends_on only on tasks of earlier waves",
           "each task lists in a top-level field `covers` the ids of the requirements and locked decisions (findings.requirements, findings.decisions) it carries out; together the tasks cover every id",
@@ -145,7 +146,7 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number },
     }
     // The check of a plan the PM submitted: lp.plan with the plan's sha, its critic in a session of its own (PH1). The current
     // pieces go as findings so the critic checks this plan, not a new one.
-    case "check": return { goal: phase.goal, plan_sha: r.plan!.sha,
+    case "check": return { goal: phase.goal, plan_sha: r.plan!.sha, skip_research: true, patterns: false,
       findings: { context: contextText, decisions: r.context?.decisions ?? [], requirements: r.context?.requirements ?? [],
         current_pieces: (r.plan?.items ?? []).map((item) => ({ id: item.id, wave: item.wave, covers: item.covers ?? [], task: item.task })), ...answered },
       extra_rules: [...answerRule, "the phase's plan is already submitted: return its pieces unchanged (same ids, same contracts) and let the plan critic check them; do not replan"] };
@@ -350,6 +351,11 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       const items = old.length ? [...old.filter((item) => !fresh.some((next) => next.id === item.id)), ...fresh.map((item) => ({ ...item, wave: lastWave + item.wave }))] : fresh;
       const premortem = Array.isArray(output.premortem) ? (output.premortem as unknown[]).map((risk) => text(risk, 300)).filter(Boolean) : [];
       const planned = deps.api.plan({ phaseId: phase.id, items, design: output.has_ui === true, fromRun: auto.wfRunId, objective: text(output.objective, 600) || undefined, premortem, ...(met ? { alreadyMet: `the planner checked the repository: ${text(output.objective, 600) || phase.goal}` } : {}), by });
+      // The pre-plan documents (SMA k_wp_research / k_wp_validation / k_wp_patterns): written only when the run produced them.
+      const preDocs = [["research_md", "RESEARCH.md"], ["validation_md", "VALIDATION.md"], ["patterns_md", "PATTERNS.md"]]
+        .map(([field, file]) => ({ path: `${phaseFolder(phase.id)}/${file}`, content: text(output[field as string], 60_000) }))
+        .filter((doc) => doc.content);
+      if (preDocs.length) await deps.writeDocs(phase, preDocs, `phase ${phase.id}: ${preDocs.map((doc) => doc.path.split("/").at(-1)).join(", ")} from the plan run`);
       // lp.plan has the whole plan critiqued by its own critic role in a session of its own; the gate reads that from the run's journal.
       const approved = output.status === "ok" && text(output.plan_verdict, 200) === "pass";
       await deps.api.planCheck({ phaseId: planned.id, decision: approved ? "approve" : "changes_requested", by: `${by}, plan critic`, summary: text(output.plan_verdict, 2000), wfRunId: auto.wfRunId });

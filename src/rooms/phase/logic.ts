@@ -134,6 +134,10 @@ export type PhaseRecord = {
   subagents?: boolean;
   /** A marker branch phase/<id> at the accepted main (setting phase.branch = phase). */
   branch?: "none" | "phase";
+  /** Research before the plan (setting phase.research, off by default = the daemon's skip answer; SMA k_wp_research). */
+  research?: "on";
+  /** Pattern mapping before the plan (setting phase.pattern_map, off by default; SMA k_wp_patterns). */
+  patternMap?: "on";
   /** The phase candidate (SMA p6_prepared → p6_merge): the pieces merge into branch phase/<id>, one worktree per base checkout, and the
    *  branch lands on main only after the acceptance. `off` says why a phase merges its pieces into main as before. */
   candidate?: PhaseCandidate;

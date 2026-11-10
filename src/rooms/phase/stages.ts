@@ -6,6 +6,12 @@ import type { BookPart, Drawing, Phase, PhaseRecord, PhaseStage, PlanItem, TaskF
  * lessons workflows). Pure: the driver (server/driver.ts) and nextAction read these; nothing here touches the database or a host.
  */
 
+/** The animator law, inline for a run without subagents (SMA: Headless: the animator law inline). */
+export const ANIMATOR_LAW = "motion rows: animate transform and opacity only, 150–300 ms for UI feedback, ease-out entering and ease-in leaving, respect prefers-reduced-motion, no motion that blocks input, every animation has its end state drawn";
+
+/** The shared drawing rules (SMA k_d_ref_design, k_d_ref_sketch): the same text the draw and check steps of lp.draw carry. */
+export const DRAWING_RULES = `Drawing rules — DESIGN.md first, then the phase's CONTEXT.md/SPEC.md/PLAN.md; every screen names its states (empty, loading, error, filled) and its breakpoints; scored on six axes: hierarchy, spacing, contrast, states, brand, motion. Motion rows follow the animator law: ${ANIMATOR_LAW}. Sketch rules: light and dark themes through a data-theme attribute, variants as <screen>--<variant>.html, interactivity through the shared proto script of page-prototype, plain static HTML with no build step.`;
+
 /** Stage rubrics: the order of work and the antipatterns that block, per stage (SMA: Discuss/Plan/Design/Execute/Verify/Lessons stage rubric). */
 export const STAGE_RUBRICS: Readonly<Record<Exclude<PhaseStage, "closed">, { order: readonly string[]; antipatterns: readonly string[] }>> = {
   discussion: {
@@ -14,10 +20,10 @@ export const STAGE_RUBRICS: Readonly<Record<Exclude<PhaseStage, "closed">, { ord
   },
   planning: {
     order: ["read CONTEXT.md and SPEC.md", "research where the context leaves a how open", "find the closest code patterns", "cut pieces: one promise, owned paths and a check each", "order them in waves by depends_on", "cover every requirement and locked decision", "independent check, up to three rounds"],
-    antipatterns: ["a piece without a check that would fail without it", "a dependency inside one wave", "a requirement no piece covers", "replanning a closed phase"],
+    antipatterns: ["a piece without a check that would fail without it", "a dependency inside one wave", "a requirement no piece covers", "a new file with no analog named", "replanning a closed phase"],
   },
   design: {
-    order: ["read the phase (CONTEXT, SPEC, PLAN) before drawing", "pick the mode: screens, system or mixed", "gather the material: brand, DESIGN.md, the screens that exist", "draw by the shared sketch rules into the phase's design folder", "write UI-SPEC.md: the checkable points of the drawing", "a separate role reviews it", "say feasible, or the contradiction with the plan"],
+    order: ["read the phase (CONTEXT, SPEC, PLAN) before drawing", "pick the mode: screens, system or mixed", "gather the material (patterns, references, constraints) into MATERIAL.md", `draw by the shared drawing rules into the phase's design folder — ${DRAWING_RULES}`, "write UI-SPEC.md: the checkable points of the drawing", "a separate role reviews it", "say feasible, or the contradiction with the plan"],
     antipatterns: ["drawing before reading the plan", "a drawing without a contract a check can read", "the designer reviewing his own drawing", "motion without the animator's rules"],
   },
   execution: {
@@ -106,9 +112,6 @@ export function designMode(items: readonly PlanItem[]): "screens" | "system" | "
 /** Motion rows (SMA: Animator for motion rows): pieces whose promise or title is about motion get the animator's rules. */
 export const motionRows = (items: readonly PlanItem[]) =>
   items.filter((item) => MOTION.test(`${item.title} ${item.promise.given} ${item.promise.when} ${item.promise.then}`)).map((item) => item.id);
-
-/** The animator law, inline for a run without subagents (SMA: Headless: the animator law inline). */
-export const ANIMATOR_LAW = "motion rows: animate transform and opacity only, 150–300 ms for UI feedback, ease-out entering and ease-in leaving, respect prefers-reduced-motion, no motion that blocks input, every animation has its end state drawn";
 
 /** The heading a required drawing section is read under in UI-SPEC.md (SMA p3_requirements). */
 const SECTION_HEADING: Record<string, RegExp> = {

@@ -68,7 +68,10 @@ export function installMethods(tools: MethodsTools) {
     book(phase, "goal", "opened", `phase opened: ${input.title}${ownerWords ? " (the owner's word is asked at the turns: owner.words on)" : ""}`);
     const record: PhaseRecord = { ownerWords, waveReview, issueCap, scope: { revisions: 0, withdrawn: [] },
       autonomous: String(settings["phase.autonomous"] ?? "off") === "on", subagents: String(settings["phase.subagents"] ?? "on") !== "off",
-      branch: String(settings["phase.branch"] ?? "none") === "phase" ? "phase" : "none", ...(input.roadmapRow ? { roadmapRow: input.roadmapRow } : {}), ...(input.rails ? { rails: true } : {}),
+      branch: String(settings["phase.branch"] ?? "none") === "phase" ? "phase" : "none",
+      ...(String(settings["phase.research"] ?? "off") === "on" ? { research: "on" as const } : {}),
+      ...(String(settings["phase.pattern_map"] ?? "off") === "on" ? { patternMap: "on" as const } : {}),
+      ...(input.roadmapRow ? { roadmapRow: input.roadmapRow } : {}), ...(input.rails ? { rails: true } : {}),
       ...(String(settings["phase.train"] ?? "on") === "off" ? { train: false } : {}) };
     if (input.legacy) {
       // Legacy mode without signature: a plan written before the phase existed is admitted on its own; the book says so.
