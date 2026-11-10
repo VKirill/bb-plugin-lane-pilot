@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { validateWorkflow } from "@lane-pilot/workflow-engine";
 import { createRuleScan } from "../../src/rooms/self-repair/server/rule-scan";
 import { selfRepairDeps } from "../../src/rooms/self-repair/server";
@@ -10,6 +10,7 @@ import { createWriterHost } from "../../src/rooms/writer/server/writer-host";
 import { savePrototypeConfig } from "../../src/rooms/plugin-db";
 import { noteProviderStartFailure } from "../../src/rooms/platform/server/spawn-model";
 import incident from "../fixtures/learning-stale-binding-2026-10-30.json";
+import providerRetries from "../fixtures/rules-ask-provider-retries-2026-11-10.json";
 
 const PROJECT = "proj-1";
 const RULE = JSON.stringify({ rules: [{ rule: "Run the spec next to the file before you answer.", why: "x", evidence: ["t1"], also_seen: [] }], not_writer: [] });
@@ -138,6 +139,29 @@ describe("the rules scan graph", () => {
       // A refused spawn (the Error) leaves no thread; a limit answer leaves the opencode2 one.
       expect(w.state.spawned.map((row: any) => row.providerId)).toEqual(first instanceof Error ? ["codex"] : ["opencode2", "codex"]);
       expect(w.runs("lp.rules-ask")).toEqual([expect.objectContaining({ status: "succeeded" })]);
+    }
+  });
+
+  it.each(providerRetries)("keeps the provider's 403 cause at $mode so rules-ask can use its existing fallback (2026-11-10)", async (sample) => {
+    const { w, scan } = setup(["", "{\"items\":[]}"]);
+    let now = sample.events[0]!.createdAt;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    w.state.runningThreads.add("night-thr-1");
+    w.state.eventsFor = (threadId) => {
+      if (threadId !== "night-thr-1") return [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }];
+      // Replay the real provider stream at the end of the unchanged 20-minute wait.
+      now += 20 * 60_000 + 1;
+      return sample.events.map((event) => ({ ...event, threadId }));
+    };
+    try {
+      const analyzer = { providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningLevel: "medium", serviceTier: null } as const;
+      expect(await scan.runAnalyzer(PROJECT, "episode retry incident", "Extract", { hostId: "host-1", path: "/proj" }, analyzer, { role: "episode-analyst" }))
+        .toBe("{\"items\":[]}");
+      expect(w.state.spawned.map((row) => row.providerId)).toEqual(["opencode2", "codex"]);
+      expect(w.state.stopped).toEqual(["night-thr-1"]);
+      expect(w.runs("lp.rules-ask")).toEqual([expect.objectContaining({ status: "succeeded" })]);
+    } finally {
+      clock.mockRestore();
     }
   });
 

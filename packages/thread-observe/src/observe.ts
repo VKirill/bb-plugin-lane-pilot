@@ -1,5 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { decideThreadCompletion, THREAD_WATCH_EVENT_TYPES } from "./completion";
+import { decideThreadCompletion, threadFailure, THREAD_WATCH_EVENT_TYPES } from "./completion";
 import { sleepUntilThreadSignal, threadWatchMark } from "./signals";
 
 function stringAt(value: unknown, key: string): string | null {
@@ -63,6 +63,7 @@ export async function startLimitWaiting(bb: BbPluginApi, threadId: string, failu
  */
 export async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutMessage: string, probeMs?: number, requestedAfter?: number, shouldStop?: () => string | null): Promise<void> {
   let lastDetail = "status=unknown;queuedWork=unknown;started_seq=none;turn=none";
+  let lastEvents: unknown[] = [];
   const deadline = probeMs === undefined ? Infinity : Date.now() + probeMs;
   while (Date.now() < deadline) {
     // The caller knows something BB's thread events do not (the queued instruction was deleted): it ends the wait.
@@ -76,6 +77,7 @@ export async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutM
       threadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"50",
     });
     if (!listed.ok) throw new Error(`${timeoutMessage}:${listed.detail}`);
+    lastEvents = listed.events;
     const decision = decideThreadCompletion({
       threadId,
       status:stringAt(thread, "status"),
@@ -90,6 +92,23 @@ export async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutM
     }
     lastDetail = decision.detail;
     await sleepUntilThreadSignal(bb, threadId, mark, 1000, undefined, { deadlineAt: deadline, ...(shouldStop ? { maxMs: 1000 } : {}) });
+  }
+  // Retries remain nonterminal while waiting. At the caller's deadline their cause must survive for its fallback.
+  const stop = shouldStop?.();
+  if (stop) throw new Error(`${timeoutMessage}:${stop}`);
+  // This final diagnostic read gets at most one poll interval; an unavailable core cannot hold a finished wait open.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const listed = await Promise.race([
+    listThreadEventsRaw(bb, { threadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"50" }),
+    new Promise<{ ok:true; events:unknown[] }>((resolve) => { timer = setTimeout(() => resolve({ ok:true, events:lastEvents }), 1000); }),
+  ]).finally(() => clearTimeout(timer));
+  if (!listed.ok) throw new Error(`${timeoutMessage}:${listed.detail}`);
+  const stopped = shouldStop?.();
+  if (stopped) throw new Error(`${timeoutMessage}:${stopped}`);
+  const cause = threadFailure(listed.events, Date.now(), { includeRetrying: true, requestedAfter });
+  if (cause && !(await startLimitWaiting(bb, threadId, cause))) {
+    try { failureListeners.get(bb)?.(threadId, cause); } catch { /* a listener never fails the wait */ }
+    throw new Error(`${timeoutMessage}:error:${cause}`);
   }
   throw new Error(`${timeoutMessage}:incomplete:${lastDetail}`);
 }

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Rules analyzer fallbacks keep the provider's actual error.** Eleven `lp.rules-ask` runs on November 9–10 failed after OpenCode repeatedly returned `HTTP 403 (reset after 2m)`: ten hit the existing 20-minute deadline and one ended with a failed turn. The shared thread observer discarded the provider's cause in both paths, so the existing analyzer fallback could not recognize the limit. It now preserves the cause at the deadline and on a failed turn, including a follow-up accepted into a running turn. Provider retries still run until the same deadline, successful retries still succeed, and ordinary cancellation stays cancellation. Regression tests replay captured timeout and terminal-error streams through the rules graph.
+
 ## 0.1.499
 
 - **One standard for handing work between agents: `docs/guide/handoff.md`.** The owner asked to doubt the whole hand-off and to research how others do it. Five reports (23 frameworks, the A2A/MCP/ACP protocols, 35 papers, field practice of Anthropic, Cognition, Manus and others, our own inventory of about 60 hand-off sites) and Google's Elephant–Goldfish model agree on a small contract, most of which the graph engine already had. Hub numbers of 14 days say where it hurts: 20,579 graph steps succeeded and 411 failed, almost all on providers; an answer that did not parse is a single-digit count. So the standard finishes the existing contract instead of replacing it.
