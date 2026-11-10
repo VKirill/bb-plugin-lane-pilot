@@ -19,7 +19,7 @@ const signed = (): PhaseRecord => {
 const planned = (items: PlanItem[]): PhaseRecord => {
   const record = signed();
   const contextSha = record.context!.sha;
-  return { ...record, plan: { items, contextSha, sha: planSignature(items, contextSha), critique: { decision: "approve", by: "plan-critic", independence: { ok: true, why: "checker thr_c started after planner thr_p" } } } };
+  return { ...record, plan: { items, contextSha, sha: planSignature(items, contextSha), objective: "the goal", premortem: ["r1", "r2", "r3"], critique: { decision: "approve", by: "plan-critic", independence: { ok: true, why: "checker thr_c started after planner thr_p" } } } };
 };
 
 const phaseWith = (record: PhaseRecord, extra: Partial<Phase> = {}): Phase => ({

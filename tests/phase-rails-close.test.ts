@@ -47,6 +47,7 @@ async function executing(accepted: boolean) {
   if (accepted) phases.db.prepare("UPDATE lane_pilot_attempt SET state='accepted' WHERE id='att1'").run();
   phases.db.prepare("UPDATE lane_pilot_run SET writer_host_id='h' WHERE id='run1'").run();
   recordStage(phases.db, { runId: "run1", taskId: "hud", stageId: "verification", state: "passed", attempt: 1, input: "v", result: { produced: ["src/hud.ts"], verification: [{ command: "npm test", exitCode: 0 }] } });
+  recordStage(phases.db, { runId: "run1", taskId: "hud", stageId: "code-critique", state: "passed", attempt: 1, input: "c" });
   recordStage(phases.db, { runId: "run1", taskId: "hud", stageId: "plan-fact", state: "failed", attempt: 1, input: "p", reason: "plan_fact_unproven",
     result: { table: "ok", tableReason: null, mode: "record", base: null, extraRows: [], blocking: [1], notChecked: [], items: [
       { item: 1, acceptance: "the bar stays centred as now", claimed: "done", verdict: "unproven", severity: "blocking", why: null, evidence: [{ evidence: "tests/bar_spec.ts", kind: "file", ok: false, code: "file_not_in_diff", note: "" }] }] } });

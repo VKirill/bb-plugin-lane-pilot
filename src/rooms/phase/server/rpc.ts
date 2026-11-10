@@ -22,7 +22,7 @@ export function phaseRpc(api: PhaseApi) {
         : api.lessons({ phaseId: need(), analysis: p.analysis, reviewRun: p.reviewRun, reviewerNode: p.reviewerNode });
       return api.status(done.id);
     },
-    phase_control: async ({ phaseId: ref, action, to, note, turn, decision, wave, useful, limits, key }) => {
+    phase_control: async ({ phaseId: ref, action, to, note, turn, decision, wave, useful, limits, key, piece, choice, line, result }) => {
       const phaseId = api.resolve?.(null, ref)?.id ?? ref;
       if (action === "word") {
         if (!turn || !decision) throw new Error("the owner's word names the turn and the decision");
@@ -33,6 +33,15 @@ export function phaseRpc(api: PhaseApi) {
         return api.status(api.returnTo({ phaseId, to, note, by: "owner" }).id);
       }
       if (action === "stop_wave") return { ...(await api.stopWave({ phaseId, by: "owner" })), status: api.status(phaseId) };
+      if (action === "interrupt") return { ...(await api.interrupt({ phaseId, words: note, by: "owner" })), status: api.status(phaseId) };
+      if (action === "decide") {
+        if (!piece || !choice) throw new Error("a decision names the piece and one of skip, retry, cancel");
+        return api.status((await api.decide({ phaseId, piece, choice, note, by: "owner" })).id);
+      }
+      if (action === "uat_line") {
+        if (!line || !result) throw new Error("a UAT answer names the line's number and pass or fail");
+        return api.status(api.uatLine({ phaseId, line, result, note, by: "owner via screen" }).id);
+      }
       if (action === "stop") return api.status((await api.stop({ phaseId, words: note, by: "owner" })).phase.id);
       if (action === "close" && !note?.trim()) throw new Error("closing in words carries the words");
       return api.status(api.setState({ phaseId, state: action, words: note, by: "owner" }).id);

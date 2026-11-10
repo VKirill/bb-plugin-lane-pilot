@@ -11,7 +11,7 @@ import { hostContract } from "../../contracts";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { sha256Hex, bestEffort } from "@lane-pilot/kit";
-import { acceptanceLines, alreadyMetVerdict, blindVerdict, brokenLink, candidateOn, canonical, executionGate, issuable, lessonsNeeded, nextAction, observationOutcome, piecesOfWave, phaseFolder, pieceSha, provenPieces, renderBook, waveCleared, waveLines, wavePackage, wavesOf, wordOf } from "../logic";
+import { acceptanceLines, alreadyMetVerdict, blindVerdict, brokenLink, candidateOn, canonical, executionGate, issuable, lessonsNeeded, nextAction, observationOutcome, piecesOfWave, phaseFolder, pieceSha, provenPieces, renderBook, waveCleared, waveLines, wavePackage, wavePieceLines, wavesOf, wordOf } from "../logic";
 import { buildsScreens, conclusionText, issuedContract, markRoadmap, nextRoadmapRow, stateText, waveTable, piecePlan, uatText } from "../stages";
 import { getPhase, listParts, notePoked, savePhase } from "../store";
 import { checkProofs, hostGit, phaseProofRecords, renderProofCurrency } from "./proof-currency";
@@ -166,7 +166,8 @@ export function installSteps(tools: StepsTools) {
         task: { ...issuedTask.task, id: taskIdForIssue, quality_mode: "full", ...(typeof item.task.priority === "string" && item.task.priority ? { priority: item.task.priority } : {}), ...(phase.record.design?.drawing && buildsScreens(item) ? { drawing: phase.record.design.drawing.paths } : {}),
           ...(tree ? { project_cwd: tree.path, ...(verification ? { verification } : {}) } : typeof item.task.project_cwd === "string" && item.task.project_cwd ? {} : { project_cwd: base ?? undefined }),
           ...(typeof item.task.objective === "string" && item.task.objective.trim() ? {} : { objective: `${item.title}: given ${item.promise.given}, when ${item.promise.when}, then ${item.promise.then}` }) } as never,
-        plan: piecePlan(phase, item),
+        // A redo after a return to execution carries the return's note (SMA px_return_exec): the writer sees why it runs again.
+        plan: piecePlan(phase, item) + (redoOf && phase.record.execution?.returnNote ? `\nReturned to execution: ${phase.record.execution.returnNote}` : ""),
         objective: phase.goal }).catch((cause: unknown) => ({ ok: false, reason: cause instanceof Error ? cause.message : String(cause) }));
       const taskId = typeof reply.taskId === "string" ? reply.taskId : null;
       if (taskId) {
@@ -215,6 +216,8 @@ export function installSteps(tools: StepsTools) {
   async function drive(phase: Phase): Promise<Phase> {
     // A stop whose writers' stops were not all observed: ask again; the phase does nothing else until it is stopped.
     if (phase.record.stopping && phase.state !== "stopped" && phase.state !== "closed") return (await tools.stop({ phaseId: phase.id })).phase;
+    // A force-interrupt whose writers' stops were not all observed: ask again; the phase turns paused only when none is open (SMA px_force).
+    if (phase.record.interrupting && phase.state !== "stopped" && phase.state !== "closed") return (await tools.interrupt({ phaseId: phase.id })).phase;
     if (phase.state === "pause_requested") { savePhase(db, phase.id, { state: "paused", at: now() }); return mustGet(phase.id); }
     if (phase.state !== "active") return phase;
     let current = phase;
@@ -239,8 +242,8 @@ export function installSteps(tools: StepsTools) {
         if (!pieces.every((item) => current.record.execution?.issued[item.id] && f.get(item.id)?.state === "accepted")) continue;
         // A wave whose pieces got new facts (a redo) is weighed again; the same package is not (its review stays).
         if (waves[String(wave)]?.packageSha === wavePackage(pieces, f)) continue;
-        const lines = waveLines(pieces, f);
-        waves[String(wave)] = { packageSha: wavePackage(pieces, f), lines, at: now() };
+        const lines = waveLines(pieces, f, current.record.execution?.issuedSha);
+        waves[String(wave)] = { packageSha: wavePackage(pieces, f), lines, pieces: wavePieceLines(pieces, f, current.record.execution?.issuedSha), at: now() };
         book(current, "execution", "wave_in", `wave ${wave} in, package ${waves[String(wave)]!.packageSha.slice(0, 12)}: ${lines.map((line) => `${line.ok ? "✓" : "✗"} ${line.id}`).join(", ")}`);
         wrote = true;
       }
@@ -280,7 +283,18 @@ export function installSteps(tools: StepsTools) {
       const runId = current.runId!;
       const goal = onCandidate ? current.record.candidate!.goal ?? null : getRunGoal(db, runId) ?? await bestEffort(ctx.log, "phase goal check", services.runGoal.check(runId), null);
       if (goal) {
-        const verdict = blindVerdict(current.record.plan?.items ?? [], facts(current), goal as never, now());
+        // SMA p5_design: the verdict checks against exactly the confirmed drawing. Its hash is recomputed now; a drawing
+        // changed after confirmation fails the verdict, and the confirmed hash and contract path freeze into its input.
+        const drawing = current.record.design?.drawing;
+        let bound: { sha256: string; contract?: string | null; changed?: string | null } | undefined;
+        if (drawing?.paths.length) {
+          const contract = drawing.paths.find((path) => /(UI-SPEC|DESIGN)\.md$/i.test(path)) ?? null;
+          const actual = await tools.drawingSha(current, drawing.paths).catch((cause: unknown) => `unreadable: ${cause instanceof Error ? cause.message : String(cause)}`);
+          bound = actual.startsWith("unreadable: ")
+            ? { sha256: drawing.sha256, contract, changed: `its files cannot be read now (${actual.slice(0, 200)})` }
+            : { sha256: actual, contract, changed: actual === drawing.sha256 ? null : `confirmed ${drawing.sha256.slice(0, 12)}, now ${actual.slice(0, 12)}` };
+        }
+        const verdict = blindVerdict(current.record.plan?.items ?? [], facts(current), goal as never, now(), bound);
         // The goal check is still running: nothing is frozen, the next pass asks again.
         if (verdict.state === "pending") return current;
         book(current, "verification", "blind_verdict", `${verdict.state}: ${verdict.detail} (input ${verdict.inputSha.slice(0, 12)})`);
@@ -298,14 +312,22 @@ export function installSteps(tools: StepsTools) {
       current = mustGet(current.id);
     }
     // The UAT session opens only once the candidate's heads are frozen (SMA p5_uat_stage): the owner tests the verified package.
+    // Its lines live in the record, numbered from 1 (SMA p5_uat_line); the document lands on main only after the phase itself
+    // is in main (SMA p5_record_after) — before that the answers are the record's, not a file's.
     if (current.stage === "acceptance" && current.record.ownerWords && !current.record.uat && (!candidateOn(current.record) || !!current.record.candidate?.verified)) {
-      // Create UAT.md: with owner.words on, the plan's promises become the lines the owner tests and answers.
       const path = `${phaseFolder(current.id)}/UAT.md`;
+      const lines = (current.record.plan?.items ?? []).map((item, index) => ({ n: index + 1, pieceId: item.id, state: "open" as const }));
+      const record: PhaseRecord = { ...current.record, uat: { path, sha256: "", at: now(), lines } };
+      savePhase(db, current.id, { record, at: now() });
+      current = mustGet(current.id);
+    }
+    if (current.stage === "acceptance" && current.record.uat && !current.record.uat.sha256 && (!candidateOn(current.record) || !!current.record.candidate?.landedAt)) {
+      const path = current.record.uat.path;
       const content = uatText(current);
       const out = await bestEffort(ctx.log, "phase UAT doc", writeDocs(current, [{ path, content }], `phase ${current.id}: UAT.md for the owner`), { written: [] as string[], commit: null });
       if (out.written.includes(path)) {
-        book(current, "acceptance", "uat_written", `${path}: ${(current.record.plan?.items ?? []).length} line(s) for the owner`);
-        savePhase(db, current.id, { record: { ...current.record, uat: { path, sha256: sha256Hex(content), at: now() } }, at: now() });
+        book(current, "acceptance", "uat_written", `${path}: ${(current.record.uat.lines ?? []).length} line(s) for the owner`);
+        savePhase(db, current.id, { record: { ...mustGet(current.id).record, uat: { ...mustGet(current.id).record.uat!, sha256: sha256Hex(content) } }, at: now() });
         current = mustGet(current.id);
       }
     }

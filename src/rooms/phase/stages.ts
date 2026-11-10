@@ -199,12 +199,16 @@ export function uatText(phase: Pick<Phase, "id" | "title" | "goal" | "record">):
   const items = phase.record.plan?.items ?? [];
   const candidate = phase.record.candidate;
   const trees = candidate && !candidate.off ? Object.entries(candidate.trees) : [];
-  const where = trees.length
+  const where = candidate?.landedAt ? `Test the work on main: the phase landed (${candidate.branch}).`
+    : trees.length
     ? `Test the work on the phase candidate branch ${candidate!.branch}${candidate!.verified ? ` at the verified head ${Object.values(candidate!.verified).map((sha) => sha.slice(0, 12)).join(", ")}` : ""} — worktree(s): ${trees.map(([, tree]) => tree.path).join(", ")}. Do not test main: it does not have this phase's work yet.`
     : "Test the work on main.";
+  // The record's lines carry the person's answers (SMA p5_uat_line): a written document renders them as they now stand.
+  const byPiece = new Map((phase.record.uat?.lines ?? []).map((line) => [line.pieceId, line]));
+  const mark = { open: " ", passed: "x", failed: "!" } as const;
   return [`# UAT — phase ${phase.id}: ${phase.title}`, "", `Goal: ${phase.goal}`, "", where, "",
-    "One line per test. Mark `[x]` passed, `[!]` failed (and say what you saw), `[ ]` open. The phase is accepted only when every line passed.", "",
-    ...items.map((item) => `- [ ] ${item.id}: given ${item.promise.given}, when ${item.promise.when}, then ${item.promise.then}`), ""].join("\n");
+    "One line per test, answered by its number with uat_line (pass or fail). The phase is accepted only when every line passed.", "",
+    ...items.map((item, index) => { const line = byPiece.get(item.id); return `- [${line ? mark[line.state] : " "}] ${line?.n ?? index + 1}. ${item.id}: given ${item.promise.given}, when ${item.promise.when}, then ${item.promise.then}${line?.note ? ` — ${line.note}` : ""}`; }), ""].join("\n");
 }
 
 const UAT_LINE = /^- \[([ xX!])\] (.+)$/;

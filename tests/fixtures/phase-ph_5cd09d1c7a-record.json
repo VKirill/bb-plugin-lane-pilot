@@ -164,7 +164,13 @@
   "critique": {
    "decision": "approve",
    "by": "Lane Pilot lp.plan (wfrun_9781e0e760f2413781e0a816db02c4e7), plan critic"
-  }
+  },
+  "objective": "the phase goal",
+  "premortem": [
+   "risk one",
+   "risk two",
+   "risk three"
+  ]
  },
  "autoFailures": {
   "plan": 2

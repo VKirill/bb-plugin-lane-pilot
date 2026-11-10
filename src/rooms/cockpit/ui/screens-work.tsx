@@ -6,7 +6,7 @@ import { Field, Loaded, Panel, RefreshButton, fill, useLoad, type Rpc } from "./
 
 type PhaseRow = { id: string; title: string; goal: string; stage: string; state: string; next?: { text: string; waitsForPm: boolean } };
 type PhaseStatus = {
-  phase: PhaseRow & { record: { plan?: { items: Array<{ id: string; title: string; wave: number; promise: { then: string } }> }; questions?: Array<{ id: string; text: string; blocking: boolean; answer?: string }>; acceptance?: { lines: Array<{ id: string; ok: boolean; detail: string }> }; uat?: { path: string }; ownerWords?: boolean; execution?: { issued: Record<string, string> };
+  phase: PhaseRow & { record: { plan?: { items: Array<{ id: string; title: string; wave: number; promise: { then: string } }> }; questions?: Array<{ id: string; text: string; blocking: boolean; answer?: string }>; acceptance?: { lines: Array<{ id: string; ok: boolean; detail: string }> }; uat?: { path: string; lines?: Array<{ n: number; pieceId: string; state: string; note?: string }> }; ownerWords?: boolean; execution?: { issued: Record<string, string> };
     lessons?: { draft?: { text: string; state: string } } } };
   next: { text: string; key?: string }; ownerWord?: { acceptanceKey?: string }; gates: Record<string, { ok: boolean; why?: string[] }>; book: string; facts: Record<string, { taskId: string; state: string | null }>;
   acceptancePackage?: { key: string; verdict: { state: string; detail: string; mainSha: string | null } | null; diffStat: string | null } | null;
@@ -42,7 +42,7 @@ function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId
   const [limits, setLimits] = useState(false);
   const [note, setNote] = useState("");
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const control = (action: "pause" | "resume" | "stop_wave" | "stop" | "close" | "word" | "return", extra: Record<string, unknown> = {}) =>
+  const control = (action: "pause" | "resume" | "stop_wave" | "stop" | "close" | "word" | "return" | "interrupt" | "decide" | "uat_line", extra: Record<string, unknown> = {}) =>
     void rpc.call("phase_control", { phaseId, action, ...extra } as never).then(() => { status.reload(); onChanged(); });
   const act = (action: "correct" | "answer", payload: Record<string, unknown>) =>
     void rpc.call("phase_act", { action, projectId, pmThreadId: "screen", phaseId, payload }).then(() => status.reload());
@@ -108,6 +108,17 @@ function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId
                   <label className="flex items-center gap-2"><input type="checkbox" checked={limits} onChange={(e) => setLimits(e.target.checked)} data-testid="ck-limits" /> {t("ckLimits")}</label>
                 </div>
               ) : null}
+              {/* UAT lines (SMA p5_uat_line): answered one by one, by number, pass or fail. */}
+              {turn === "uat" && r.uat?.lines?.length ? (
+                <ul className="space-y-1" data-testid="ck-uat-lines">{r.uat.lines.map((row) => (
+                  <li key={row.n} className="flex items-center gap-2" data-testid={`ck-uat-line-${row.n}`}>
+                    <span>{row.n}. {row.pieceId} — {row.state}{row.note ? ` (${row.note})` : ""}</span>
+                    {row.state === "open" ? <>
+                      <Button size="sm" variant="outline" onClick={() => control("uat_line", { line: row.n, result: "pass", note: words })}>{t("ckYes")}</Button>
+                      <Button size="sm" variant="outline" disabled={!words.trim()} onClick={() => control("uat_line", { line: row.n, result: "fail", note: words })}>{t("ckNo")}</Button>
+                    </> : null}
+                  </li>))}</ul>
+              ) : null}
               <Field label={`${t("ckPhaseWord")} · ${turn === "uat" ? t("ckUatLine") : turn}`} value={words} onChange={setWords} />
               <div className="flex gap-2"><Button size="sm" disabled={turn === "acceptance" && !(useful && limits)} onClick={() => control("word", { turn, wave, decision: "yes", note: words || "да", ...decisions })}>{t("ckYes")}</Button>
                 <Button size="sm" variant="outline" disabled={!words.trim()} onClick={() => control("word", { turn, wave, decision: "no", note: words, ...decisions })}>{t("ckNo")}</Button></div>
@@ -120,6 +131,8 @@ function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId
               <Button size="sm" variant="outline" onClick={() => control(s.phase.state === "paused" ? "resume" : "pause")}>{s.phase.state === "paused" ? t("ckResume") : t("ckPause")}</Button>
               {/* Hold or release a wave: the queued pieces of the wave are held back. */}
               <Button size="sm" variant="outline" onClick={() => control("stop_wave")}>{t("ckStopWave")}</Button>
+              {/* Force-interrupt (SMA px_force): only while the running work is not proven stopped; the phase pauses when every stop is observed. */}
+              {s.phase.state === "paused" || s.phase.state === "pause_requested" ? <Button size="sm" variant="outline" onClick={() => control("interrupt")}>Прервать работу</Button> : null}
               {/* Stop the phase: its writers at work are stopped first, then the phase (SMA px_stop); the note says why. */}
               <Button size="sm" variant="outline" disabled={!note.trim()} onClick={() => control("stop", { note })}>{t("ckStopPhase")}</Button>
               <Button size="sm" variant="outline" disabled={!note.trim()} onClick={() => control("close", { note })}>{t("ckClose")}</Button>

@@ -79,10 +79,15 @@ export type StageQuestion = { id: string; stage: PhaseStage; text: string; block
 export const WORD_TURNS = ["context", "planning", "design", "issue", "wave", "acceptance", "uat", "lesson"] as const;
 export type WordTurn = (typeof WORD_TURNS)[number];
 /** At acceptance the word is two decisions (SMA p6_l_useful, p6_l_limits) under the key of the package the person was shown (p6_decide). */
-export type OwnerWord = { turn: WordTurn; decision: "yes" | "no"; by: string; text: string; at: number; wave?: number; useful?: boolean; limits?: boolean; key?: string };
+export type OwnerWord = { turn: WordTurn; decision: "yes" | "no"; by: string; text: string; at: number; wave?: number; useful?: boolean; limits?: boolean; key?: string;
+  /** The version the word was given on (SMA pc_contract): context sha, plan sha or drawing sha256; a yes counts only for it. */ sha?: string };
+
+/** One UAT line a person answers by its number, pass or fail (SMA p5_uat_line). */
+export type UatLine = { n: number; pieceId: string; state: "open" | "passed" | "failed"; note?: string; by?: string; at?: number };
 
 /** A wave of the plan once its pieces are in (SMA: Wave package with hash, Wave acceptance lines, Wave verified by another model, Wave written to the book). */
-export type WaveRecord = { packageSha: string; lines: Array<{ id: string; ok: boolean; detail: string }>; review?: { state: "passed" | "failed"; by: string; summary: string; at: number }; at: number };
+export type WaveRecord = { packageSha: string; lines: Array<{ id: string; ok: boolean; detail: string }>; review?: { state: "passed" | "failed"; by: string; summary: string; at: number }; at: number;
+  /** Each piece's own lines, the same set the wave folds (SMA bw_lines). */ pieces?: Record<string, Array<{ id: string; ok: boolean; detail: string }>> };
 
 /** What the phase holds besides its row: one JSON record, each stage writes its part. */
 export type PhaseRecord = {
@@ -115,6 +120,8 @@ export type PhaseRecord = {
   /** Goal revisions and withdrawn pieces, each one a decision in the book. */
   scope?: { revisions: number; withdrawn: string[] };
   plan?: { items: PlanItem[]; sha: string; contextSha: string; critique?: PlanCritique; admittedSha?: string; admittedAt?: number; /** When the plan was submitted. */ submittedAt?: number; /** The workflow run whose planner made this plan (the auto plan stage); its critic reviewed this very plan. */ fromRun?: string; /** Rounds of the independent check that asked for changes. */ rounds?: number;
+    /** The plan's goals in one line (SMA p2_record: the plan's shape). */ objective?: string;
+    /** Three to five pre-mortem risks: each a likely cause of failure a week after merge (SMA p2_record). */ premortem?: string[];
     /** The planner checked that the repository already does what the goal asks: no pieces, no execution; the goal audit checks the claim. */ alreadyMet?: { evidence: string } };
   design?: { decision: "needed" | "not_needed"; why: string; drawing?: Drawing; confirmedAt?: number; mode?: "screens" | "system" | "mixed"; motion?: string[]; archived?: Drawing[];
     /** The sections the drawing's UI-SPEC.md must cover, decided before anything is drawn (SMA p3_requirements). */ requirements?: string[] };
@@ -129,19 +136,22 @@ export type PhaseRecord = {
   /** The phase candidate (SMA p6_prepared → p6_merge): the pieces merge into branch phase/<id>, one worktree per base checkout, and the
    *  branch lands on main only after the acceptance. `off` says why a phase merges its pieces into main as before. */
   candidate?: PhaseCandidate;
-  /** UAT.md written for the owner at acceptance (owner.words on). */
-  uat?: { path: string; sha256: string; at: number };
+  /** UAT.md written for the owner at acceptance (owner.words on): its lines, answered one by one by number (SMA p5_uat_line). */
+  uat?: { path: string; sha256: string; at: number; lines?: UatLine[] };
   /** The conclusion and the roadmap/STATE marks written when the phase closed. */
   closedDocs?: { at: number; commit: string | null };
   execution?: { issued: Record<string, string>; startedAt?: number; baseSha?: string | null; issueErrors?: Record<string, string>; acceptedNoted?: string[]; waves?: Record<string, WaveRecord>;
     /** The contract each piece was issued with (pieceSha): a piece whose contract changed after a return to planning is issued again. */
     issuedSha?: Record<string, string>;
     /** All pieces accepted, but the facts are the ones a verdict already failed on: the phase waits for new work instead of failing again. */
-    unchanged?: { inputSha: string; detail: string } };
+    unchanged?: { inputSha: string; detail: string };
+    /** The note of the return to execution: it rides into each redo's plan (SMA px_return_exec). */ returnNote?: string };
   /** Each finished wave is verified by another model before the next one is issued (setting phase.wave_review, on by default). */
   waveReview?: boolean;
   /** A stop asked for while a writer's stop is not observed yet (SMA px_stop): the phase stays open, issues nothing and asks again each pass. */
   stopping?: { by: string; words?: string; at: number; unconfirmed: string[] };
+  /** A force-interrupt (SMA px_force): running work canceled by an explicit choice; the phase turns paused only once every stop is observed. */
+  interrupting?: { by: string; at: number; unconfirmed: string[] };
   /** The most pieces the driver issues in one pass (Batch issue capacity; setting phase.issue_cap, 8 by default). */
   issueCap?: number;
   /** The seven-day rollback watch after acceptance (SMA p6_observe): what the machine saw in history; the acceptance is never touched. */
@@ -259,6 +269,12 @@ export function planGate(record: PhaseRecord): GateResult {
   why.push(...(plan.alreadyMet ? [] : coverageGaps(record)), ...validationGaps(plan.items));
   const threat = threatGap(record);
   if (threat) why.push(threat);
+  // The plan's own shape (SMA p2_record): goals and three to five pre-mortem risks. A plan the goal already meets plans nothing.
+  if (!plan.alreadyMet) {
+    if (!plan.objective?.trim()) why.push("the plan names no objective: its goals in one line");
+    const risks = (plan.premortem ?? []).filter((risk) => risk.trim());
+    if (risks.length < 3 || risks.length > 5) why.push(`the plan names ${risks.length} pre-mortem risk(s): name three to five, each a likely cause of failure a week after merge`);
+  }
   if ((plan.rounds ?? 0) >= PLAN_ROUNDS_MAX && plan.critique?.decision !== "approve") why.push(`${plan.rounds} rounds of the plan check asked for changes: stop revising — return the phase to discussion with what the checker keeps finding, or close it`);
   if (!plan.critique) why.push("no independent plan check: run the plan critic (workflow lp.plan) and report its decision with the run's wfRunId");
   else if (plan.critique.decision !== "approve") why.push(`the plan checker asked for changes${plan.critique.summary ? `: ${plan.critique.summary}` : ""}`);
@@ -341,20 +357,41 @@ export const wavesOf = (items: readonly PlanItem[]) => [...new Set(items.map((it
 export const wavePackage = (pieces: readonly PlanItem[], facts: ReadonlyMap<string, TaskFact>) =>
   sha256Hex(canonical(pieces.map((item) => [item.id, facts.get(item.id)?.taskId ?? null, facts.get(item.id)?.state ?? null, facts.get(item.id)?.planFact ?? null])));
 
-/** The wave's acceptance lines, decided by code from what its pieces left. */
-export function waveLines(pieces: readonly PlanItem[], facts: ReadonlyMap<string, TaskFact>): WaveRecord["lines"] {
-  const bad = (pick: (fact: TaskFact | undefined) => boolean) => pieces.filter((item) => pick(facts.get(item.id))).map((item) => item.id);
-  const notIn = bad((fact) => fact?.state !== "accepted");
-  const unproved = bad((fact) => fact?.planFact === "failed");
-  const red = bad((fact) => fact?.verification === "failed");
-  const blocked = bad((fact) => fact?.codeCritique === "blocked");
+/** The ids of the acceptance lines a piece is held to: the same set the wave folds and the phase acceptance reads (SMA bw_lines). */
+export const PIECE_LINE_IDS = ["contract_current", "landed", "promises_proved", "checks_passed", "independent_check", "qa_read"] as const;
+export type PieceLineId = (typeof PIECE_LINE_IDS)[number];
+
+/** One piece's acceptance lines, judged by the same rules the phase acceptance uses. `issuedSha` is the contract print it was
+ *  issued with; left out it is taken as current (a piece not issued yet is judged on the plan's contract). */
+export function pieceLines(item: PlanItem, fact: TaskFact | undefined, issuedSha?: string): Array<{ id: PieceLineId; ok: boolean; detail: string }> {
+  const current = issuedSha === undefined || issuedSha === pieceSha(item);
+  const proved = fact?.planFact === "passed" || (fact?.planFact === "skipped" && !needsPlanFact(item));
+  const checks = fact?.verification !== "failed";
+  const critiqued = fact?.codeCritique === "passed";
+  const qa = fact?.browserQa !== "failed" && !(fact?.qaPlanned && fact.browserQa !== "passed");
   return [
-    { id: "pieces_accepted", ok: !notIn.length, detail: notIn.length ? `not accepted: ${notIn.join(", ")}` : `${pieces.length} piece(s) accepted` },
-    { id: "promises_proved", ok: !unproved.length, detail: unproved.length ? `plan-fact failed: ${unproved.join(", ")}` : "every promise of the wave is proved" },
-    { id: "checks_passed", ok: !red.length, detail: red.length ? `checks failed: ${red.join(", ")}` : "the wave's checks pass" },
-    { id: "no_critic_block", ok: !blocked.length, detail: blocked.length ? `the code critic blocks: ${blocked.join(", ")}` : "no critic blocks" },
+    { id: "contract_current", ok: current, detail: current ? "the issued contract is the plan's" : "its contract changed after issue" },
+    { id: "landed", ok: fact?.state === "accepted", detail: fact?.state === "accepted" ? "merged" : `is ${fact?.state ?? "not issued"}` },
+    { id: "promises_proved", ok: proved, detail: proved ? "plan-fact proved the promise" : `plan-fact ${fact?.planFact ?? "left no receipt"}` },
+    { id: "checks_passed", ok: checks, detail: checks ? "its checks pass" : "its checks failed" },
+    { id: "independent_check", ok: critiqued, detail: critiqued ? "the code critic passed it" : `the code critic ${fact?.codeCritique === "blocked" ? "blocks it" : "has not passed it (no critic receipt is no reading)"}` },
+    { id: "qa_read", ok: qa, detail: qa ? (fact?.browserQa === "passed" ? "the browser check passed" : "no browser check planned (no qa_cases)") : `the browser check ${fact?.browserQa === "failed" ? "failed" : "has not passed"}` },
   ];
 }
+
+/** The wave's acceptance lines: one and the same set for the wave and for each of its pieces (SMA bw_lines) — a line holds only
+ *  when every piece's line holds, and it names the pieces that fail it. */
+export function waveLines(pieces: readonly PlanItem[], facts: ReadonlyMap<string, TaskFact>, issuedSha: Readonly<Record<string, string>> = {}): WaveRecord["lines"] {
+  const per = pieces.map((item) => ({ item, lines: pieceLines(item, facts.get(item.id), issuedSha[item.id]) }));
+  return PIECE_LINE_IDS.map((id) => {
+    const failing = per.filter(({ lines }) => !lines.find((line) => line.id === id)!.ok).map(({ item }) => item.id);
+    return { id, ok: failing.length === 0, detail: failing.length ? `${id} fails: ${failing.join(", ")}` : `${pieces.length} piece(s) hold ${id}` };
+  });
+}
+
+/** Each piece's own lines of a wave, kept in its record (SMA bw_lines). */
+export const wavePieceLines = (pieces: readonly PlanItem[], facts: ReadonlyMap<string, TaskFact>, issuedSha: Readonly<Record<string, string>> = {}): Record<string, WaveRecord["lines"]> =>
+  Object.fromEntries(pieces.map((item) => [item.id, pieceLines(item, facts.get(item.id), issuedSha[item.id])]));
 
 /** Is a finished wave cleared for the next one: its lines hold, another model verified it (when asked), the owner said yes (when asked). */
 export function waveCleared(record: PhaseRecord, wave: number): boolean {
@@ -416,14 +453,17 @@ export function provenPieces(items: readonly PlanItem[], facts: ReadonlyMap<stri
   return { proven, unproven };
 }
 
-export function blindVerdict(items: readonly PlanItem[], facts: ReadonlyMap<string, TaskFact>, runGoal: { state: string; detail?: string | null; headSha?: string | null } | null, now: number): FrozenVerdict | PendingVerdict {
+export function blindVerdict(items: readonly PlanItem[], facts: ReadonlyMap<string, TaskFact>, runGoal: { state: string; detail?: string | null; headSha?: string | null } | null, now: number,
+  /** The drawing bound into the verdict (SMA p5_design): its recomputed hash and contract path; `changed` when it no longer is the confirmed one. */
+  drawing?: { sha256: string; contract?: string | null; changed?: string | null }): FrozenVerdict | PendingVerdict {
   const problems: string[] = [];
   for (const item of items) problems.push(...pieceProof(item, facts.get(item.id)));
+  if (drawing?.changed) problems.push(`the drawing changed since it was confirmed: ${drawing.changed}`);
   const waiting = runGoalPending(runGoal);
   if (!runGoal) problems.push("the run's goal check has not run yet");
   else if (runGoal.state === "failed") problems.push(`the run's goal check failed${runGoal.detail ? `: ${runGoal.detail}` : ""}`);
   else if (runGoal.state === "partial" || runGoal.state === "inconclusive") problems.push(`the run's goal check is ${runGoal.state}, not a full pass${runGoal.detail ? `: ${runGoal.detail}` : ""}`);
-  const inputSha = sha256Hex(canonical({ items: items.map((item) => item.id), facts: items.map((item) => facts.get(item.id) ?? null), runGoal }));
+  const inputSha = sha256Hex(canonical({ items: items.map((item) => item.id), facts: items.map((item) => facts.get(item.id) ?? null), runGoal, drawing: drawing ? { sha256: drawing.sha256, contract: drawing.contract ?? null } : null }));
   const state = problems.length ? "failed" : waiting ? "pending" : "passed";
   return { state, detail: problems.join("; ") || (waiting ? "the run's goal check is still running" : "every piece accepted and proved; the composition passes on main"), mainSha: runGoal?.headSha ?? null, at: now, inputSha } as FrozenVerdict | PendingVerdict;
 }
@@ -436,7 +476,9 @@ export function alreadyMetVerdict(alreadyMet: { evidence: string }, now: number)
 export const ACCEPTANCE_LINES = ["contract_current", "promises_proved", "checks_passed", "independent_check", "landed", "composition_verified", "main_unmoved", "qa_read", "goal_met", "nothing_missing", "book_intact", "limits_acknowledged", "result_useful"] as const;
 
 /** The key of the package a person decides on (SMA p6_decide): the plan, the verdict's input and the tree it saw. A new verdict or tree is a new key. */
-export const acceptanceKey = (record: PhaseRecord) => sha256Hex(canonical({ plan: record.plan?.sha ?? null, verdict: record.verification?.verdict?.inputSha ?? null, tree: record.verification?.verdict?.mainSha ?? null })).slice(0, 16);
+export const acceptanceKey = (record: PhaseRecord) => sha256Hex(canonical({ plan: record.plan?.sha ?? null, verdict: record.verification?.verdict?.inputSha ?? null, tree: record.verification?.verdict?.mainSha ?? null,
+  // The drawing bound into the package (SMA p5_design): its hash and contract path — a redrawn drawing is a new package.
+  drawing: record.design?.drawing ? { sha256: record.design.drawing.sha256, contract: record.design.drawing.paths.find((path) => /(UI-SPEC|DESIGN)\.md$/i.test(path)) ?? null } : null })).slice(0, 16);
 export type AcceptanceLineId = (typeof ACCEPTANCE_LINES)[number];
 
 /** The phase acceptance calculation: each line decided by code; the phase is accepted only when every line holds. */
@@ -445,16 +487,19 @@ export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFac
   const verdict = phase.record.verification?.verdict;
   const line = (id: AcceptanceLineId, ok: boolean, detail: string): AcceptanceLine => ({ id, ok, detail });
   const failed = (pick: (fact: TaskFact | undefined) => boolean) => items.filter((item) => pick(facts.get(item.id))).map((item) => item.id);
-  const notProved = items.filter((item) => { const fact = facts.get(item.id); return fact?.planFact !== "passed" && !(fact?.planFact === "skipped" && !needsPlanFact(item)); }).map((item) => item.id);
-  const notChecked = failed((fact) => fact?.verification === "failed");
+  // The piece-level lines come from the one function the wave folds (SMA bw_lines): the phase acceptance holds a piece to
+  // exactly the lines its wave was held to.
+  const pieceLine = (item: PlanItem, id: PieceLineId) => pieceLines(item, facts.get(item.id), phase.record.execution?.issuedSha?.[item.id]).find((line) => line.id === id)!.ok;
+  const notProved = items.filter((item) => !pieceLine(item, "promises_proved")).map((item) => item.id);
+  const notChecked = items.filter((item) => !pieceLine(item, "checks_passed")).map((item) => item.id);
   const blockedByCritic = failed((fact) => fact?.codeCritique === "blocked");
-  const notLanded = failed((fact) => fact?.state !== "accepted");
+  const notLanded = items.filter((item) => !pieceLine(item, "landed")).map((item) => item.id);
   const qaRed = failed((fact) => fact?.browserQa === "failed");
   // What did read the pieces, said as it is: no receipt is no reading (2026-10-29 audit: «no independent checker blocks» and «the
   // browser checks read clean» were printed for pieces no critic and no browser check had seen; the code critic is off by default).
   // SMA p6_l_verdict / p6_evidence: a line is green on a positive verdict only. A piece with no critic receipt is unread, and a piece
   // whose contract plans a browser check (qa_cases) is unread until that check passed; a piece without qa_cases says it has none.
-  const uncritiqued = failed((fact) => fact?.codeCritique !== "passed");
+  const uncritiqued = items.filter((item) => !pieceLine(item, "independent_check")).map((item) => item.id);
   const qaOwed = failed((fact) => !!fact?.qaPlanned && fact.browserQa !== "passed");
   const qaPassed = failed((fact) => fact?.browserQa === "passed").length;
   const qaNone = failed((fact) => !fact?.qaPlanned).length;
@@ -578,11 +623,12 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
       const issued = r.execution?.issued ?? {};
       const open = items.filter((item) => issued[item.id] && facts.get(item.id)?.state !== "accepted");
       const blocked = open.filter((item) => ["blocked", "canceled"].includes(facts.get(item.id)?.state ?? ""));
+      // A broken piece leaves the stop by exactly one of skip, retry or cancel (SMA bi_decide); there is no fourth way out.
       if (blocked.length) return { key: key(`blocked:${blocked.map((item) => item.id).join(",")}`), stage: phase.stage, waitsForPm: true,
-        text: `${head} — stage 4, execution: ${blocked.map((item) => `${item.id} is ${facts.get(item.id)?.state}`).join("; ")}. Fix the task (lane_pilot_update_task) and send it again, or return the phase to planning with ${tool("return", `, phaseId:"${id}", to:"planning", note`)}.` };
+        text: `${head} — stage 4, execution: ${blocked.map((item) => `${item.id} is ${facts.get(item.id)?.state}`).join("; ")}. Decide each: ${tool("decide", `, phaseId:"${id}", piece:"${blocked[0]!.id}", choice:"skip"|"retry"|"cancel", note`)} — skip drops it, retry issues it again, cancel stops the phase.` };
       const errors = Object.entries(r.execution?.issueErrors ?? {});
       if (errors.length) return { key: key(`issue_error:${errors.map(([piece]) => piece).join(",")}`), stage: phase.stage, waitsForPm: true,
-        text: `${head} — stage 4, execution: Lane Pilot could not issue ${errors.map(([piece, why]) => `${piece} (${why})`).join("; ")}. Correct the plan with ${tool("return", `, phaseId:"${id}", to:"planning", note`)}.` };
+        text: `${head} — stage 4, execution: Lane Pilot could not issue ${errors.map(([piece, why]) => `${piece} (${why})`).join("; ")}. Decide each: ${tool("decide", `, phaseId:"${id}", piece:"${errors[0]![0]}", choice:"skip"|"retry"|"cancel", note`)} — skip drops it, retry issues it again, cancel stops the phase.` };
       if (r.ownerWords && !wordOf(r, "issue")) return { key: key("word:issue"), stage: phase.stage, waitsForPm: true,
         text: `${head} — stage 4, execution awaits the owner's word «issue» (owner.words is on). Ask him, then ${tool("word", `, phaseId:"${id}", turn:"issue", decision:"yes"|"no", text`)}.` };
       // A wave that is in with a failing line stops the next wave: said to the PM, not left as «Lane Pilot issues the next wave».
@@ -641,8 +687,17 @@ export function staleAfterReturn(to: PhaseStage, record: PhaseRecord): PhaseReco
   if (order <= PHASE_STAGES.indexOf("execution")) { delete next.verification; delete next.acceptance; }
   delete next.lessons;
   const later = (stage: string) => PHASE_STAGES.indexOf(stage as PhaseStage) >= order;
-  const stageOfTurn = (turn: WordTurn) => turn === "context" ? "discussion" : turn === "uat" ? "acceptance" : turn === "lesson" ? "lessons" : turn;
+  // The issue and wave words are execution turns: a return to (or before) execution revokes them, so a new scope needs a new
+  // permission (SMA bi_revise). Before this mapping they matched no stage and survived every return.
+  const stageOfTurn = (turn: WordTurn) => turn === "context" ? "discussion" : turn === "uat" ? "acceptance" : turn === "lesson" ? "lessons" : turn === "issue" || turn === "wave" ? "execution" : turn;
   if (next.words) next.words = next.words.filter((word) => !later(stageOfTurn(word.turn)));
+  // A return to execution takes the preparation back too (SMA px_return_exec): the candidate's frozen heads and goal check
+  // belong to the verdict it now leaves; every piece's issued contract print is withdrawn, so each is issued again as the
+  // next redo of its family — execution queues one attempt higher.
+  if (to === "execution") {
+    if (next.candidate) next.candidate = { ...next.candidate, verified: undefined, goal: undefined };
+    if (next.execution?.issuedSha) next.execution = { ...next.execution, issuedSha: Object.fromEntries(Object.keys(next.execution.issuedSha).map((id) => [id, "returned"])) };
+  }
   return next;
 }
 

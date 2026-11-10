@@ -7,6 +7,7 @@ import { contextSignature, designDecision, executionGate, issuable, pieceProblem
 import { getPhase, listParts, savePhase } from "../../src/rooms/phase/store";
 import { pauseRun } from "../../src/rooms/runs/server/runs-pause";
 import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
+import { recordStage } from "../../src/rooms/runs/server";
 
 const piece = (id: string, wave = 1): PlanItem => ({
   id, title: id, wave, promise: { given: "a cell", when: "the sum runs", then: "the cell is skipped" },
@@ -121,6 +122,8 @@ describe("batch graph", () => {
     createTask(db, { id: "a", runId: "run1", kind: "bb", contract: item.task });
     createAttempt(db, { id: "att", runId: "run1", taskId: "a" });
     db.prepare("UPDATE lane_pilot_attempt SET state='accepted', thread_id='thr_w' WHERE id='att'").run();
+    recordStage(db, { runId: "run1", taskId: "a", stageId: "code-critique", state: "passed", attempt: 1, input: "c" });
+    recordStage(db, { runId: "run1", taskId: "a", stageId: "plan-fact", state: "passed", attempt: 1, input: "p" });
     const sha = planSignature([item], "ctx");
     savePhase(db, opened.id, {
       stage: "execution", runId: "run1",

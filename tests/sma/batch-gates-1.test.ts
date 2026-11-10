@@ -140,8 +140,10 @@ describe("batch gates", () => {
     const items = [piece("a", 1), piece("b", 1)];
     const facts = new Map([["a", fact("a", { state: "running", planFact: "failed", verification: "failed", codeCritique: "blocked" })], ["b", fact("b")]]);
     const lines = waveLines(items, facts);
-    expect(lines.map((line) => line.id)).toEqual(["pieces_accepted", "promises_proved", "checks_passed", "no_critic_block"]);
-    expect(lines.every((line) => line.ok === false && /\ba\b/.test(line.detail) && !/\bb\b/.test(line.detail))).toBe(true);
+    expect(lines.map((line) => line.id)).toEqual(["contract_current", "landed", "promises_proved", "checks_passed", "independent_check", "qa_read"]);
+    const failing = lines.filter((line) => !line.ok);
+    expect(failing.map((line) => line.id)).toEqual(["landed", "promises_proved", "checks_passed", "independent_check"]);
+    expect(failing.every((line) => /\ba\b/.test(line.detail) && !/\bb\b/.test(line.detail))).toBe(true);
   });
 
 

@@ -44,7 +44,7 @@ describe("daemon tick", () => {
     await phases.drive(phases.list({ live: true })[0]!);
     const lines = listParts(db, phase.id).filter((part) => part.kind === "wave_in");
     expect(lines).toHaveLength(1);
-    expect(lines[0]!.text).toContain("✓ pieces_accepted");
+    expect(lines[0]!.text).toContain("✓ landed");
     await phases.drive(phases.list({ live: true })[0]!);
     expect(listParts(db, phase.id).filter((part) => part.kind === "wave_in")).toHaveLength(1);
   });
