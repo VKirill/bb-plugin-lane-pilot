@@ -40,12 +40,35 @@ case "$*" in
   *"show -p MainPID"*) cat "$MAINPID_FILE" 2>/dev/null || echo 4242 ;;
   *"show -p ActiveState"*) cat "$STATE_FILE" 2>/dev/null || echo inactive ;;
   *"show -p Result"*) echo failure; echo 1 ;;
+  *"show -p ControlGroup"*) echo "$UNIT_CG" ;;
+  *"show -p TimeoutStopUSec"*) echo "$TIMEOUT_STOP" ;;
   *show-environment*) exit "\${USERCTL_RC:-0}" ;;
   *restart*) [ -n "\${RESTART_ERR:-}" ] && echo "$RESTART_ERR" >&2; [ -n "\${MAINPID_AFTER:-}" ] && echo "$MAINPID_AFTER" > "$MAINPID_FILE"; exit "\${RESTART_RC:-0}" ;;
 esac
 exit 0`;
 
 const SS_STUB = `cat "$SS_OUT" 2>/dev/null`;
+
+/** sleep stub: logs its argument and returns at once, so a wait of minutes is read from the log, not waited out. */
+const SLEEP_STUB = `echo "$1" >> "$SLEEP_LOG"`;
+
+/** A process the test starts itself, to stand for the port holder; the watchdog may only signal it under its rules. */
+function holder(): { pid: number; alive: () => boolean; stop: () => void; cgroup: () => string } {
+  const child = spawn("sleep", ["120"], { stdio: "ignore" });
+  const pid = child.pid!;
+  const alive = () => { try { process.kill(pid, 0); return !readFileSync(`/proc/${pid}/stat`, "utf8").split(" ")[2].startsWith("Z"); } catch { return false; } };
+  const cgroup = () => { try { return readFileSync(`/proc/${pid}/cgroup`, "utf8").split("\n")[0].replace(/^[^:]*:[^:]*:/, ""); } catch { return ""; } };
+  holders.push(() => { try { child.kill("SIGKILL"); } catch { /* gone */ } });
+  return { pid, alive, stop: () => child.kill("SIGKILL"), cgroup };
+}
+const holders: Array<() => void> = [];
+
+async function until(check: () => boolean, ms = 3000): Promise<boolean> {
+  const end = Date.now() + ms;
+  while (Date.now() < end) { if (check()) return true; await new Promise((resolve) => setTimeout(resolve, 50)); }
+  return check();
+}
+const read = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : "");
 
 /** A stub bin dir with everything from /usr/bin and /bin except the named tools (to fake a missing prerequisite). */
 function pathWithout(...missing: string[]): string {
@@ -77,45 +100,92 @@ function tmp(): { dir: string; bin: string; env: Record<string, string> } {
   };
   return { dir, bin: join(dir, "bin"), env };
 }
-afterEach(() => { while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true }); });
+afterEach(() => { while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true }); while (holders.length) holders.pop()!(); });
 
 const silentDoor = { CURL_AFTER: "999999", CURL_CODE: "000", CURL_RC: "28" };
 
 describe("hub watchdog parity D1", () => {
-  it("[sma:m_ctl_probe] the knock is the window's board request behind the same token: a failing CLI makes it false despite a 200, a CLI that cannot sign in makes it unknown, not silence", () => {
+  it("[sma:m_ctl_probe] the HTTP 200 alone says the hub answers: a board request that fails, is noisy or hangs is advisory, never an outage, a lift or a failed status", async () => {
+    const variants: Record<string, string> = {
+      "bb exits 127 (no node on the PATH)": "echo 'env: node: No such file or directory' >&2; exit 127",
+      "bb prints noise on stderr and a reply that is no array": "echo 'warn: something' >&2; echo '{\"threads\":[]}'",
+      "bb times out": "exit 0",
+    };
+    for (const [name, text] of Object.entries(variants)) {
+      const { dir, env } = tmp();
+      stub(dir, "curl", CURL_STUB);
+      const sys = stub(dir, "systemctl", SYSTEMCTL_STUB);
+      stub(dir, "timeout", name === "bb times out" ? "exit 124" : 'shift; exec "$@"'); // 124 is what timeout(1) returns when it cut the command
+      const bb = stub(dir, "bb", text);
+      writeFileSync(join(dir, "mainpid"), "4242\n");
+      writeFileSync(join(dir, "state"), "active\n");
+      const e = { ...env, CURL_AFTER: "0", CURL_STATE: join(dir, "s"), SYS_LOG: join(dir, "sys.log"), MAINPID_FILE: join(dir, "mainpid"), STATE_FILE: join(dir, "state"), LP_WATCH_USER: "1", LP_WATCH_SYSTEMCTL: sys, LP_WATCH_BB: bb, LP_WATCH_KNOCK_SEC: "1", LP_WATCH_SUSPECT_AFTER: "2", LP_WATCH_MAX_LIFTS: "1" };
+      expect(functions("door_probe", e).trim(), name).toBe("ok");
+      expect(functions("board_probe", e).trim(), name).toBe("unknown");
+      const status = run(["status"], e);
+      expect(status.status, name).toBe(0);
+      expect(status.stdout, name).toContain("board request (advisory): unknown");
+      expect(functions("lift", e), name).toContain("nothing to do: the door answers");
+      const proc = spawn("bash", [script, "run"], { env: { ...process.env, ...e }, stdio: "ignore" });
+      await new Promise((resolve) => setTimeout(resolve, 4500));
+      proc.kill("SIGTERM");
+      const log = read(join(dir, "outages.jsonl"));
+      expect(log, name).not.toContain('"event":"outage"');
+      expect(log, name).not.toContain('"event":"lift"');
+      expect(log, name).toContain('"event":"board_unknown"');
+      expect(read(join(dir, "sys.log")), name).not.toMatch(/kill -s|restart bb-server|stop --no-block/);
+    }
+    // the clean results still count: a signed-out CLI says auth, a bare array says ok
     const { dir, env } = tmp();
     stub(dir, "curl", CURL_STUB);
-    const bbFail = stub(dir, "bb", "exit 1");
-    const bbOk = stub(dir, "bb-ok", "echo '[]'");
-    const bbAuth = stub(dir, "bb-auth", "echo 'error: not signed in (run `bb auth login`)' >&2; exit 1");
     const base = { ...env, CURL_AFTER: "0" };
-    expect(functions("door_answers || echo no", { ...base, LP_WATCH_BB: bbFail })).toContain("no");
-    expect(functions("door_answers && echo yes", { ...base, LP_WATCH_BB: bbOk })).toContain("yes");
-    expect(functions("door_probe", { ...base, LP_WATCH_BB: bbAuth }).trim()).toBe("unknown");
-  });
+    expect(functions("board_probe", { ...base, LP_WATCH_BB: stub(dir, "bb-auth", "echo 'error: not signed in (run bb auth login)'; exit 1") }).trim()).toBe("auth");
+    expect(functions("board_probe", { ...base, LP_WATCH_BB: stub(dir, "bb-ok", "echo '[]'") }).trim()).toBe("ok");
+    expect(functions("board_probe", env).trim()).toBe("none");
+  }, 60000);
 
-  it("[sma:m_ctl_unnamed] the door answers but the port holder is not the service's process: status, stop, restart and lift say 'process unproven' and run no kill", () => {
+  it("[sma:m_ctl_unnamed] the door answers but the port holder is proven outside the unit's cgroup: status, stop, restart and lift say 'process unproven' and run no kill; --force goes on; a holder that cannot be read is only 'unknown'", () => {
     const { dir, env } = tmp();
     stub(dir, "curl", CURL_STUB);
     const sys = stub(dir, "systemctl", SYSTEMCTL_STUB);
     stub(dir, "ss", SS_STUB);
-    writeFileSync(join(dir, "ss.out"), 'LISTEN 0 1 127.0.0.1:38886 0.0.0.0:* users:(("node",pid=9999,fd=1))\n');
+    const other = holder();
+    writeFileSync(join(dir, "ss.out"), `LISTEN 0 1 127.0.0.1:38886 0.0.0.0:* users:(("node",pid=${other.pid},fd=1))\n`);
     writeFileSync(join(dir, "mainpid"), "4242\n");
     writeFileSync(join(dir, "state"), "active\n");
-    const e = { ...env, CURL_AFTER: "0", SS_OUT: join(dir, "ss.out"), SYS_LOG: join(dir, "sys.log"), MAINPID_FILE: join(dir, "mainpid"), STATE_FILE: join(dir, "state"), LP_WATCH_USER: "1", LP_WATCH_SYSTEMCTL: sys };
+    const db = join(dir, "data.db");
+    execFileSync("sqlite3", [db, "create table lane_pilot_attempt(id,task_id,state,thread_id);"]);
+    const e = { ...env, CURL_AFTER: "0", SS_OUT: join(dir, "ss.out"), SYS_LOG: join(dir, "sys.log"), MAINPID_FILE: join(dir, "mainpid"), STATE_FILE: join(dir, "state"), LP_WATCH_USER: "1", LP_WATCH_SYSTEMCTL: sys, LP_WATCH_LP_DB: db, UNIT_CG: "/lp-test.slice/bb-server.service", LP_WATCH_STOP_SEC: "1" };
     const status = run(["status"], e);
     expect(status.status).toBe(1);
-    expect(status.stdout).toContain("door answers, process unproven: port 38886 is held by pid 9999, not bb-server pid 4242; nothing was touched");
+    expect(status.stdout).toContain(`door answers, process unproven: port 38886 is held by pid ${other.pid}, outside bb-server (pid 4242); nothing was touched`);
     for (const verb of ["stop", "restart", "lift"]) {
       const out = run([verb], e);
       expect(out.status).toBe(1);
       expect(out.stdout).toContain("door answers, process unproven");
     }
-    const calls = readFileSync(join(dir, "sys.log"), "utf8");
-    expect(calls).not.toMatch(/stop --no-block|kill -s|restart bb-server/);
-  });
+    expect(read(join(dir, "sys.log"))).not.toMatch(/stop --no-block|kill -s|restart bb-server/);
+    expect(other.alive()).toBe(true);
+    // --force overrides the refusal
+    const forced = run(["stop", "--force"], e);
+    expect(forced.stdout).toContain("--force given, going on");
+    expect(read(join(dir, "sys.log"))).toContain("stop --no-block bb-server");
+    // a holder inside the unit's cgroup is ours
+    const inside = run(["status"], { ...e, UNIT_CG: other.cgroup() });
+    expect(inside.status).toBe(0);
+    expect(inside.stdout).not.toContain("unproven");
+    // unreadable is unknown: printed, never a refusal (no cgroup of the unit; a pid that is not there; a listener without a pid)
+    for (const [why, ssText, unitCg] of [["unit cgroup unreadable", `LISTEN 0 1 127.0.0.1:38886 0.0.0.0:* users:(("node",pid=${other.pid},fd=1))\n`, ""], ["pid not there", 'LISTEN 0 1 127.0.0.1:38886 0.0.0.0:* users:(("node",pid=4999999,fd=1))\n', "/lp-test.slice/bb-server.service"], ["listener without a pid", "LISTEN 0 1 127.0.0.1:38886 0.0.0.0:*\n", "/lp-test.slice/bb-server.service"]]) {
+      writeFileSync(join(dir, "ss.out"), ssText);
+      const unknown = run(["status"], { ...e, UNIT_CG: unitCg });
+      expect(unknown.status, why).toBe(0);
+      expect(unknown.stdout, why).toContain("unknown: the holder of port 38886");
+      expect(unknown.stdout, why).not.toContain("unproven");
+      expect(run(["lift"], { ...e, UNIT_CG: unitCg }).stdout, why).toContain("nothing to do: the door answers");
+    }
+  }, 60000);
 
-  it("[sma:m_ctl_live_work] a stop refuses while live work runs, listing the workers, until --force is said", () => {
+  it("[sma:m_ctl_live_work] a stop refuses while live work was read (every open attempt state), listing the workers, until --force is said; a database that cannot be read is 'unknown: proceeding'", () => {
     const { dir, env } = tmp();
     stub(dir, "curl", CURL_STUB);
     const sys = stub(dir, "systemctl", SYSTEMCTL_STUB);
@@ -127,48 +197,92 @@ describe("hub watchdog parity D1", () => {
     expect(refused.status).toBe(2);
     expect(refused.stdout).toContain("refused: live work holds the stop");
     expect(refused.stdout).toContain("att1 task1 thr1");
-    expect(existsSync(join(dir, "sys.log")) ? readFileSync(join(dir, "sys.log"), "utf8") : "").not.toContain("stop --no-block");
+    expect(read(join(dir, "sys.log"))).not.toContain("stop --no-block");
     const forced = run(["stop", "--force"], e);
     expect(forced.status).toBe(0);
-    expect(readFileSync(join(dir, "sys.log"), "utf8")).toContain("stop --no-block bb-server");
+    expect(read(join(dir, "sys.log"))).toContain("stop --no-block bb-server");
     expect(readFileSync(join(dir, "outages.jsonl"), "utf8")).toContain('"event":"stop_forced"');
-    execFileSync("sqlite3", [db, "delete from lane_pilot_attempt;"]);
+    // the repo's open attempt states all hold the stop; a finished one does not
+    for (const state of ["queued", "spawn_requested", "spawn_unknown", "cancel_requested"]) {
+      execFileSync("sqlite3", [db, `delete from lane_pilot_attempt; insert into lane_pilot_attempt values('att2','task2','${state}',null);`]);
+      const out = run(["stop"], e);
+      expect(out.status, state).toBe(2);
+      expect(out.stdout, state).toContain("att2 task2 -");
+    }
+    execFileSync("sqlite3", [db, "delete from lane_pilot_attempt; insert into lane_pilot_attempt values('att3','task3','accepted','thr3');"]);
     expect(run(["stop"], e).status).toBe(0);
-  });
+    // unreadable: no database, no sqlite3, a query that fails: proceeds and says so
+    const noDb = run(["stop"], { ...e, LP_WATCH_LP_DB: join(dir, "missing.db") });
+    expect(noDb.status).toBe(0);
+    expect(noDb.stdout).toContain("unknown live work: the Lane Pilot database cannot be read");
+    expect(noDb.stdout).toContain("proceeding");
+    const broken = join(dir, "broken.db");
+    writeFileSync(broken, "not a database at all");
+    expect(run(["stop"], { ...e, LP_WATCH_LP_DB: broken }).stdout).toContain("proceeding");
+    const noSqlite = run(["stop"], { ...e, PATH: `${join(dir, "bin")}:${pathWithout("sqlite3")}` });
+    expect(noSqlite.status).toBe(0);
+    expect(noSqlite.stdout).toContain("proceeding");
+  }, 30000);
 
-  it("[sma:m_ctl_killed] a stop the process does not obey in time is escalated to a kill and said to have been hard", () => {
+  it("[sma:m_ctl_killed] a stop the process does not obey is escalated to a kill and said to have been hard, after the unit's own TimeoutStopUSec (90 s when unreadable)", () => {
     const { dir, env } = tmp();
     stub(dir, "curl", CURL_STUB);
+    stub(dir, "sleep", SLEEP_STUB);
     const sys = stub(dir, "systemctl", SYSTEMCTL_STUB);
     const db = join(dir, "data.db");
     execFileSync("sqlite3", [db, "create table lane_pilot_attempt(id,task_id,state,thread_id);"]);
     writeFileSync(join(dir, "state"), "active\n");
-    const e = { ...env, ...silentDoor, SYS_LOG: join(dir, "sys.log"), STATE_FILE: join(dir, "state"), LP_WATCH_USER: "1", LP_WATCH_SYSTEMCTL: sys, LP_WATCH_LP_DB: db, LP_WATCH_STOP_SEC: "1" };
-    const hard = run(["stop"], e);
-    expect(hard.status).toBe(0);
-    expect(hard.stdout).toContain("stopped hard: the process did not leave in 1s and was killed");
-    expect(readFileSync(join(dir, "sys.log"), "utf8")).toContain("kill -s SIGKILL bb-server");
+    const e = { ...env, ...silentDoor, SYS_LOG: join(dir, "sys.log"), SLEEP_LOG: join(dir, "sleep.log"), STATE_FILE: join(dir, "state"), LP_WATCH_USER: "1", LP_WATCH_SYSTEMCTL: sys, LP_WATCH_LP_DB: db };
+    const waited = () => read(join(dir, "sleep.log")).split("\n").filter((l) => l === "1").length;
+    for (const [timeout, seconds] of [["1min 30s", 90], ["45s", 45], ["", 90], ["infinity", 90], ["2min", 120]] as const) {
+      rmSync(join(dir, "sleep.log"), { force: true });
+      const hard = run(["stop"], { ...e, TIMEOUT_STOP: timeout });
+      expect(hard.status, timeout).toBe(0);
+      expect(hard.stdout, timeout).toContain(`stopped hard: the process did not leave in ${seconds}s and was killed`);
+      expect(waited(), timeout).toBe(seconds);
+    }
+    expect(read(join(dir, "sys.log"))).toContain("kill -s SIGKILL bb-server");
     expect(readFileSync(join(dir, "outages.jsonl"), "utf8")).toContain('"event":"stopped_hard"');
+    // a setting still wins over the unit
+    rmSync(join(dir, "sleep.log"), { force: true });
+    expect(run(["stop"], { ...e, TIMEOUT_STOP: "5min", LP_WATCH_STOP_SEC: "3" }).stdout).toContain("did not leave in 3s");
     writeFileSync(join(dir, "state"), "inactive\n");
-    const soft = run(["stop"], e);
-    expect(soft.stdout).toContain("stopped:");
-  });
+    expect(run(["stop"], e).stdout).toContain("stopped:");
+  }, 30000);
 
-  it("[sma:m_ctl_restart] [sma:m_ctl_lift_cmd] restart is stop, the platform lift and a wait on the door; its last line says whether the door answered", () => {
+  it("[sma:m_ctl_restart] [sma:m_ctl_lift_cmd] restart does what main does: the manager's own restart, launched detached before anything is stopped; the stop refusals stand; its last line says whether the door answered", async () => {
     const { dir, env } = tmp();
     stub(dir, "curl", CURL_STUB);
+    stub(dir, "sleep", SLEEP_STUB);
     const sys = stub(dir, "systemctl", SYSTEMCTL_STUB);
     const db = join(dir, "data.db");
     execFileSync("sqlite3", [db, "create table lane_pilot_attempt(id,task_id,state,thread_id);"]);
-    writeFileSync(join(dir, "state"), "inactive\n");
-    const base = { ...env, CURL_STATE: join(dir, "s"), SYS_LOG: join(dir, "sys.log"), STATE_FILE: join(dir, "state"), LP_WATCH_USER: "1", LP_WATCH_SYSTEMCTL: sys, LP_WATCH_LP_DB: db, LP_WATCH_RESTART_WAIT_SEC: "10" };
+    writeFileSync(join(dir, "state"), "active\n");
+    const base = { ...env, CURL_STATE: join(dir, "s"), SYS_LOG: join(dir, "sys.log"), SLEEP_LOG: join(dir, "sleep.log"), STATE_FILE: join(dir, "state"), LP_WATCH_USER: "1", LP_WATCH_SYSTEMCTL: sys, LP_WATCH_LP_DB: db, LP_WATCH_RESTART_WAIT_SEC: "30" };
     const ok = run(["restart"], { ...base, CURL_AFTER: "3" });
     expect(ok.status).toBe(0);
     expect(ok.stdout.trim().split("\n").pop()).toMatch(/^ok: the door answers after \d+s$/);
+    expect(await until(() => read(join(dir, "sys.log")).includes("restart bb-server"))).toBe(true);
+    const calls = read(join(dir, "sys.log"));
+    expect(calls).not.toMatch(/stop --no-block|kill -s/); // nothing to escalate: no stop of ours runs before or after
+    expect(read(join(dir, "sleep.log")).split("\n")[0]).toBe("10"); // main's ten seconds before the first look
+    rmSync(join(dir, "s"), { force: true });
     const down = run(["restart"], { ...base, ...silentDoor });
     expect(down.status).toBe(1);
-    expect(down.stdout.trim().split("\n").pop()).toBe("down: the door did not answer in 10s");
-    expect(readFileSync(join(dir, "sys.log"), "utf8")).toContain("restart bb-server");
+    expect(down.stdout.trim().split("\n").pop()).toBe("down: the door did not answer in 30s");
+    // live work read holds the restart, and nothing is restarted
+    execFileSync("sqlite3", [db, "insert into lane_pilot_attempt values('att1','task1','running','thr1');"]);
+    rmSync(join(dir, "sys.log"), { force: true });
+    const refused = run(["restart"], { ...base, CURL_AFTER: "0" });
+    expect(refused.status).toBe(2);
+    expect(refused.stdout).toContain("att1 task1 thr1");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(read(join(dir, "sys.log"))).not.toContain("restart bb-server");
+    // an unreadable database does not hold it
+    const unknown = run(["restart"], { ...base, CURL_AFTER: "0", LP_WATCH_LP_DB: join(dir, "missing.db") });
+    expect(unknown.stdout).toContain("unknown live work");
+    expect(unknown.status).toBe(0);
+    expect(await until(() => read(join(dir, "sys.log")).includes("restart bb-server"))).toBe(true);
   }, 30000);
 
   it("[sma:m_ctl_lift_cmd] lift_cmd picks the platform command: launchctl on darwin, sudo systemctl with sudo, systemctl --user without", () => {
@@ -250,64 +364,99 @@ describe("hub watchdog parity D1", () => {
     expect(other.tg).toContain("поднялся");
   }, 30000);
 
-  it("[sma:m_w_suspect] three refused connections or eight timeouts in a row declare an outage; a mixed row does not", async () => {
-    const outageWithin = async (rc: string, after: number, seconds: number) => {
+  it("[sma:m_w_suspect] main's count is the default: eight silent knocks in a row of any kind declare an outage, seven do not; a shorter count of refused ones is a setting only", async () => {
+    const outageWithin = async (extra: Record<string, string>, seconds: number, curl = CURL_STUB) => {
       const { dir, env } = tmp();
-      stub(dir, "curl", CURL_STUB);
-      const e = { ...process.env, ...env, LP_WATCH_DRY: "1", CURL_AFTER: "999999", CURL_RC: rc, CURL_STATE: join(dir, "s"), LP_WATCH_KNOCK_SEC: "1", LP_WATCH_SUSPECT_AFTER: String(after), LP_WATCH_REFUSED_AFTER: "3" };
+      stub(dir, "curl", curl);
+      const e = { ...process.env, ...env, LP_WATCH_DRY: "1", CURL_STATE: join(dir, "s"), LP_WATCH_KNOCK_SEC: "1", ...extra };
       const proc = spawn("bash", [script, "run"], { env: e, stdio: "ignore" });
       await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
       proc.kill("SIGTERM");
-      const log = join(dir, "outages.jsonl");
-      return existsSync(log) ? readFileSync(log, "utf8") : "";
+      return read(join(dir, "outages.jsonl"));
     };
-    const refused = await outageWithin("7", 8, 5);
-    expect(refused).toContain('"event":"outage"');
-    expect(refused).toContain("refused");
-    // two refused, a timeout, two refused: neither kind reaches its count in a row
-    const { dir, env } = tmp();
-    stub(dir, "curl", `seq="$(cat "$CURL_SEQ")"; n=0; [ -f "$CURL_STATE" ] && n=$(cat "$CURL_STATE"); echo $((n+1)) > "$CURL_STATE"; code=$(echo "$seq" | cut -d' ' -f$((n+1))); echo 000; exit "$code"`);
-    writeFileSync(join(dir, "seq"), "7 7 28 7 7 28 7 7 28 7 7");
-    const e = { ...process.env, ...env, LP_WATCH_DRY: "1", CURL_SEQ: join(dir, "seq"), CURL_STATE: join(dir, "s"), LP_WATCH_KNOCK_SEC: "1", LP_WATCH_SUSPECT_AFTER: "8", LP_WATCH_REFUSED_AFTER: "3" };
-    const mixed = spawn("bash", [script, "run"], { env: e, stdio: "ignore" });
-    await new Promise((resolve) => setTimeout(resolve, 6000));
-    mixed.kill("SIGTERM");
-    const mixedLog = join(dir, "outages.jsonl");
-    expect(existsSync(mixedLog) ? readFileSync(mixedLog, "utf8") : "").not.toContain('"event":"outage"');
-    const timeouts = await outageWithin("28", 8, 11);
+    expect(functions('echo "$REFUSED_AFTER $SUSPECT_AFTER $FIRST_SEC"', tmp().env).trim()).toBe("8 8 0");
+    // seven refused knocks, then the door answers: no outage (a count of three would have declared it)
+    const seven = await outageWithin({ CURL_AFTER: "7", CURL_RC: "7" }, 11);
+    expect(seven).not.toContain('"event":"outage"');
+    // refused for good: declared at the eighth, not before
+    const early = await outageWithin({ CURL_AFTER: "999999", CURL_RC: "7" }, 5);
+    expect(early).not.toContain('"event":"outage"');
+    const eight = await outageWithin({ CURL_AFTER: "999999", CURL_RC: "7" }, 11);
+    expect(eight).toContain('"event":"outage"');
+    expect(eight).toContain("refused");
+    // the shorter count is a setting
+    const short = await outageWithin({ CURL_AFTER: "999999", CURL_RC: "7", LP_WATCH_REFUSED_AFTER: "3" }, 5);
+    expect(short).toContain('"event":"outage"');
+    // eight timeouts
+    const timeouts = await outageWithin({ CURL_AFTER: "999999", CURL_RC: "28" }, 11);
     expect(timeouts).toContain('"event":"outage"');
     expect(timeouts).toContain("timeout");
-  }, 40000);
+    // main counts a mixed row as silence too: refused and timeouts together reach eight
+    const mixedCurl = `seq="$(cat "$CURL_SEQ")"; n=0; [ -f "$CURL_STATE" ] && n=$(cat "$CURL_STATE"); echo $((n+1)) > "$CURL_STATE"; code=$(echo "$seq" | cut -d' ' -f$((n+1))); echo 000; exit "\${code:-0}"`;
+    const { dir: seqDir } = tmp();
+    writeFileSync(join(seqDir, "seq"), "7 7 28 7 7 28 7 7 28 7 7");
+    const mixed = await outageWithin({ CURL_SEQ: join(seqDir, "seq"), LP_WATCH_REFUSED_AFTER: "5" }, 11, mixedCurl);
+    expect(mixed).toContain('"event":"outage"');
+  }, 90000);
 
-  it("[sma:m_w_backoff] the backoff doubles counted from the last attempt on record, not process memory", () => {
-    const { dir, env } = tmp();
-    const now = Math.floor(Date.now() / 1000);
-    const out = functions(`
-      printf '{"at":%s,"event":"lift","detail":"a"}\\n{"at":%s,"event":"lift","detail":"b"}\\n' $(( $(date +%s) - 40 )) $(( $(date +%s) - 10 )) >> "$LOG"
-      backoff_sec
-      record "risen" "x"
-      backoff_sec
-    `, env);
-    const [waitA, lastA, waitB] = out.trim().split(/\s+/);
-    expect(Number(waitA)).toBe(120);
-    const left = Number(waitA) - (now + 60 - Number(lastA)); // the wait left is reduced by the time since the last lift
-    expect(left).toBeLessThan(Number(waitA));
-    expect(Number(waitB)).toBe(30);
-  });
-
-  it("[sma:m_w_lifting] a repeated lift first kills whatever holds the port, and records it", () => {
+  it("[sma:m_w_backoff] after each restart the lift sleeps the whole wait main sleeps (30, 60, 120 s); the log only picks which wait", () => {
     const { dir, env } = tmp();
     stub(dir, "curl", CURL_STUB);
+    stub(dir, "sleep", SLEEP_STUB);
+    const sys = stub(dir, "systemctl", SYSTEMCTL_STUB);
+    writeFileSync(join(dir, "mainpid"), "4242\n");
+    const e = { ...env, ...silentDoor, CURL_STATE: join(dir, "s"), SYS_LOG: join(dir, "sys.log"), SLEEP_LOG: join(dir, "sleep.log"), MAINPID_FILE: join(dir, "mainpid"), LP_WATCH_USER: "1", LP_WATCH_SYSTEMCTL: sys };
+    const fives = () => read(join(dir, "sleep.log")).split("\n").filter((l) => l === "5").length;
+    // a fresh outage: try 1 waits 30 s, try 2 waits 60 s, try 3 waits 120 s — whatever time passed between the tries
+    functions("lift || true", { ...e, LP_WATCH_MAX_LIFTS: "3" });
+    const log = readFileSync(join(dir, "outages.jsonl"), "utf8");
+    expect(log).toContain("try 1, waited 30s");
+    expect(log).toContain("try 2, waited 60s");
+    expect(log).toContain("try 3, waited 120s");
+    expect(fives()).toBe((30 + 60 + 120) / 5);
+    // a lift the log already holds (40 s ago) is not subtracted from the next wait: the whole 60 s
+    rmSync(join(dir, "sleep.log"), { force: true });
+    rmSync(join(dir, "outages.jsonl"));
+    writeFileSync(join(dir, "outages.jsonl"), `{"at":${Math.floor(Date.now() / 1000) - 40},"event":"lift","detail":"a"}\n`);
+    functions("lift || true", { ...e, LP_WATCH_MAX_LIFTS: "1" });
+    expect(fives()).toBe(60 / 5);
+    // a risen outage in the log starts over at 30 s
+    rmSync(join(dir, "sleep.log"), { force: true });
+    functions('record risen x; lift || true', { ...e, LP_WATCH_MAX_LIFTS: "1" });
+    expect(fives()).toBe(30 / 5);
+  }, 30000);
+
+  it("[sma:m_w_lifting] a repeated lift kills a port holder only when the MainPID was read and is not 0 and the holder is proven outside the unit's cgroup; never a holder inside it, never pid 1, the watchdog or its parent; main kills none", () => {
+    const { dir, env } = tmp();
+    stub(dir, "curl", CURL_STUB);
+    stub(dir, "sleep", SLEEP_STUB);
     const sys = stub(dir, "systemctl", SYSTEMCTL_STUB);
     stub(dir, "ss", SS_STUB);
-    writeFileSync(join(dir, "ss.out"), 'LISTEN 0 1 127.0.0.1:38886 0.0.0.0:* users:(("node",pid=9999,fd=1))\n');
-    writeFileSync(join(dir, "mainpid"), "4242\n");
-    const e = { ...env, CURL_AFTER: "9", CURL_STATE: join(dir, "s"), SS_OUT: join(dir, "ss.out"), SYS_LOG: join(dir, "sys.log"), MAINPID_FILE: join(dir, "mainpid"), LP_WATCH_USER: "1", LP_WATCH_SYSTEMCTL: sys, LP_WATCH_MAX_LIFTS: "2" };
-    functions("lift || true", e);
-    const log = readFileSync(join(dir, "outages.jsonl"), "utf8");
-    expect(log).toContain('"event":"port_holder_killed"');
-    expect(log).toContain("killing port holder 9999");
-    expect(log.match(/port_holder_killed/g)).toHaveLength(1); // on try 2, not try 1
+    const lift = (mainpid: string, ssPids: number[], unitCg: string) => {
+      rmSync(join(dir, "outages.jsonl"), { force: true });
+      writeFileSync(join(dir, "mainpid"), `${mainpid}\n`);
+      writeFileSync(join(dir, "ss.out"), ssPids.map((pid) => `LISTEN 0 1 127.0.0.1:38886 0.0.0.0:* users:(("node",pid=${pid},fd=1))`).join("\n") + "\n");
+      functions("lift || true", { ...env, ...silentDoor, CURL_STATE: join(dir, "s"), SS_OUT: join(dir, "ss.out"), SYS_LOG: join(dir, "sys.log"), SLEEP_LOG: join(dir, "sleep.log"), MAINPID_FILE: join(dir, "mainpid"), LP_WATCH_USER: "1", LP_WATCH_SYSTEMCTL: sys, LP_WATCH_MAX_LIFTS: "2", UNIT_CG: unitCg });
+      return read(join(dir, "outages.jsonl"));
+    };
+    const stranger = holder();
+    const elsewhere = "/lp-test.slice/bb-server.service";
+    // MainPID 0 (the usual state right after the kill) or unreadable: nothing is killed
+    expect(lift("0", [stranger.pid], elsewhere)).not.toContain("port_holder_killed");
+    expect(stranger.alive()).toBe(true);
+    expect(lift("", [stranger.pid], elsewhere)).not.toContain("port_holder_killed");
+    expect(stranger.alive()).toBe(true);
+    // the unit's cgroup cannot be read, or the holder is inside it: nothing is killed
+    expect(lift("4242", [stranger.pid], "")).not.toContain("port_holder_killed");
+    expect(lift("4242", [stranger.pid], stranger.cgroup())).not.toContain("port_holder_killed");
+    expect(stranger.alive()).toBe(true);
+    // pid 1 and the watchdog's own parent are never signalled (they are outside the stand-in cgroup too)
+    expect(lift("4242", [1, process.pid], elsewhere)).not.toContain("port_holder_killed");
+    // read MainPID, holder proven outside: killed on try 2 only, and recorded
+    const log = lift("4242", [stranger.pid], elsewhere);
+    expect(log).toContain(`killing port holder ${stranger.pid}`);
+    expect(log.match(/port_holder_killed/g)).toHaveLength(1);
+    expect(stranger.alive()).toBe(false);
   }, 60000);
 
   it("[sma:m_out_marker] [sma:m_out_lift_failed] an outage record holds the first silence, the declaration, the messages and every lift attempt with its time; `outages` prints the block and `daily` counts it", async () => {
@@ -318,14 +467,15 @@ describe("hub watchdog parity D1", () => {
     writeFileSync(join(dir, "state"), "active\n");
     const envFile = join(dir, "tg.env");
     writeFileSync(envFile, "TG_TOKEN=t\nTG_CHAT=1\n");
-    writeFileSync(join(dir, "outages.jsonl"), `{"at":${Math.floor(Date.now() / 1000) - 100},"event":"lift","detail":"old"}\n`); // a spent attempt: the wait left is zero
+    writeFileSync(join(dir, "hub-watchdog.out-tries-said"), ""); // left by an earlier outage (a watchdog restarted mid-outage): a new outage must still say «lift failed»
+    stub(dir, "sleep", 'exec /bin/sleep "$(awk "BEGIN{print $1 / 10}")"'); // ten times faster, so the 30 s wait is read in three
     const e = { ...process.env, ...env, ...silentDoor, LP_WATCH_TG_ENV: envFile, CURL_STATE: join(dir, "s"), TG_LOG: join(dir, "tg.log"), SYS_LOG: join(dir, "sys.log"), MAINPID_FILE: join(dir, "mainpid"), STATE_FILE: join(dir, "state"), LP_WATCH_USER: "1", LP_WATCH_SYSTEMCTL: sys, LP_WATCH_KNOCK_SEC: "1", LP_WATCH_SUSPECT_AFTER: "2", LP_WATCH_MAX_LIFTS: "1", RESTART_ERR: "Job failed. See journalctl", RESTART_RC: "1" };
     const proc = spawn("bash", [script, "run"], { env: e, stdio: "ignore" });
     await new Promise((resolve) => setTimeout(resolve, 9000));
     proc.kill("SIGTERM");
     const rows = readFileSync(join(dir, "outages.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
     const events = rows.map((r) => r.event);
-    const tail = events.slice(events.indexOf("first_silence")); // the seeded old lift and the 'start' line come first
+    const tail = events.slice(events.indexOf("first_silence")); // the 'start' line comes first
     expect(tail.slice(0, 3)).toEqual(["first_silence", "outage", "message_sent"]);
     expect(tail).toContain("lift_without_outcome");
     const outIdx = tail.indexOf("out_of_tries");
@@ -486,7 +636,7 @@ echo 000; exit 28`);
     const restricted = pathWithout("flock");
     const first = spawn("bash", [script, "run"], { env: { ...e, PATH: `${join(dir, "bin")}:${restricted}` }, stdio: "ignore" });
     await new Promise((resolve) => setTimeout(resolve, 500));
-    const second = spawnSync("bash", [script, "run"], { env: { ...e, PATH: `${join(dir, "bin")}:${restricted}` }, encoding: "utf8" });
+    const second = spawnSync("bash", [script, "run"], { env: { ...e, PATH: `${join(dir, "bin")}:${restricted}`, LP_WATCH_LOCK_HELD_SEC: "0" }, encoding: "utf8" });
     first.kill("SIGTERM");
     expect(second.status).toBe(0);
     expect(second.stdout).toContain("another watchdog runs");
@@ -512,4 +662,69 @@ echo 000; exit 28`);
     const after = Number(spawnSync("sqlite3", ["-readonly", db, "select count(*) from beats;"], { encoding: "utf8" }).stdout.trim());
     expect(after).toBeGreaterThanOrEqual(before);
   });
+
+  it("[sma:m_out_marker] every record line is valid JSON whatever the reason holds: quotes, backslashes, tabs, carriage returns and newlines", () => {
+    const { dir, env } = tmp();
+    functions(String.raw`record reason "a\b	c"$'\r'"d"$'\n'"e \"q\" \\ end"; record_at 1700000000 first_silence "x\ny"`, env);
+    const rows = readFileSync(join(dir, "outages.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(rows).toHaveLength(2);
+    expect(rows[0].detail).toContain("a\\b");
+    expect(rows[0].detail).toContain("\t");
+    expect(rows[0].detail).toContain("\n");
+    expect(rows[0].detail).toContain("'q'");
+    expect(rows[1].detail).toBe("x\\ny");
+  });
+
+  it("[sma:m_sp_watch_lock] a second watchdog that finds the lock waits 60 s before it leaves, so the unit's five-restarts cap is not spent on it; a dry run does not wait", async () => {
+    const { dir, env } = tmp();
+    stub(dir, "sleep", SLEEP_STUB);
+    stub(dir, "curl", CURL_STUB); // nothing real can be reached if the lock were ever free: the manager is a stub too
+    const sys = stub(dir, "systemctl", SYSTEMCTL_STUB);
+    const holderOfLock = spawn("flock", ["-n", join(dir, "hub-watchdog.lock"), "/bin/sleep", "20"], { stdio: "ignore" });
+    try {
+      expect(await until(() => existsSync(join(dir, "hub-watchdog.lock")))).toBe(true);
+      const e = { ...env, SLEEP_LOG: join(dir, "sleep.log"), LP_WATCH_DOOR: "http://127.0.0.1:1/no", LP_WATCH_USER: "1", LP_WATCH_SYSTEMCTL: sys, SYS_LOG: join(dir, "sys.log"), CURL_STATE: join(dir, "s"), TG_LOG: join(dir, "tg.log") };
+      const second = run(["run"], e);
+      expect(second.status).toBe(0);
+      expect(second.stdout).toContain("another watchdog runs");
+      expect(read(join(dir, "sleep.log")).trim().split("\n")).toEqual(["60"]);
+      rmSync(join(dir, "sleep.log"));
+      run(["run"], { ...e, LP_WATCH_DRY: "1" });
+      expect(read(join(dir, "sleep.log"))).toBe("");
+    } finally {
+      holderOfLock.kill("SIGKILL");
+    }
+  }, 20000);
+
+  it("[sma:m_sd_outage] the full drill and the deploy drill list what they listed on main; outage_live runs only by name, its live pass only with LP_DRILL_WATCHDOG_LIVE=1, and no signal goes to a pid that is not an integer above 1", () => {
+    const { dir } = tmp();
+    const probe = spawnSync("python3", ["-c", `import importlib.machinery, json, os, pathlib
+m = importlib.machinery.SourceFileLoader("drill", ${JSON.stringify(drillPy)}).load_module()
+os.environ.pop("LP_DRILL_WATCHDOG_LIVE", None)
+row = m.scenario_outage_live(pathlib.Path(${JSON.stringify(dir)}))
+print(json.dumps({"all": m.ALL, "quick": m.QUICK, "byName": m.BY_NAME, "row": row["result"], "note": row.get("note", ""), "unlisted": m.scout()["unlisted"], "undefined": m.scout()["undefined"]}))`], { encoding: "utf8" });
+    const out = JSON.parse(probe.stdout.trim().split("\n").pop()!);
+    const main = execFileSync("git", ["show", "main:scripts/lp-drill.py"], { encoding: "utf8" });
+    const mainList = (name: string) => JSON.parse(main.match(new RegExp(`^${name} = (\\[.*\\])$`, "m"))![1]);
+    expect(out.all).toEqual(mainList("ALL"));
+    expect(out.quick).toEqual(mainList("QUICK"));
+    expect(out.byName).toEqual(["outage_live"]);
+    expect(out.unlisted).toEqual([]);
+    expect(out.undefined).toEqual([]);
+    expect(out.row).toBe("skipped");
+    expect(out.note).toContain("LP_DRILL_WATCHDOG_LIVE=1");
+    // the live pass of the watchdog scenario is off by default
+    const src = readFileSync(drillPy, "utf8");
+    expect(src).toContain('os.environ.get("LP_DRILL_WATCHDOG_LIVE") == "1"');
+    // a stand-in service whose main pid reads 0 is never signalled (0 would be the drill's own process group); run in a session of its own
+    const bin = join(dir, "bin");
+    stub(dir, "systemctl", 'case "$*" in *"show -p MainPID"*) echo 0 ;; esac; exit 0');
+    stub(dir, "curl", "echo 200");
+    const guard = spawnSync("setsid", ["-w", "python3", "-c", `import importlib.machinery, pathlib
+m = importlib.machinery.SourceFileLoader("drill", ${JSON.stringify(drillPy)}).load_module()
+problems, _ = m._watchdog_live(pathlib.Path(${JSON.stringify(dir)}), False, False)
+print(problems)`], { encoding: "utf8", env: { ...process.env, HOME: dir, PATH: `${bin}:${process.env.PATH}` } });
+    expect(guard.stdout).toContain("no usable main pid");
+    expect(guard.status).toBe(0);
+  }, 60000);
 });

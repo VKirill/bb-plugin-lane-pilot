@@ -6,13 +6,15 @@
 #   systemd says activating               -> still loading, wait
 #   no MainPID                            -> no record: a stop; systemd lifts it itself, wait
 #   same process as our last lift, young  -> false alarm, wait
-#   3 refused knocks or 8 timeouts in a row -> outage: «it fell» to Telegram, kill the hung one first, start the lift,
-#                                            backoff counted from the log (30, 60, 120 s), at most 3 lifts; out of tries -> «lift failed», to the person
-# The knock is the window's own board request when a bb is here (bb thread list --json): a CLI that cannot sign in counts as unknown,
-# never as silence, so a lost token cannot make the watchdog kill a healthy hub. Without a bb on PATH only the version request is made.
+#   8 silent knocks in a row (as on main; LP_WATCH_REFUSED_AFTER may shorten the count of refused ones) -> outage: «it fell» to Telegram,
+#                                            kill the hung one first, start the lift, backoff counted from the log (30, 60, 120 s), at most
+#                                            3 lifts; out of tries -> «lift failed», to the person
+# The HTTP 200 of the version request alone says «the hub answers» (outage count, lift). When a bb is here the window's own board request
+# (bb thread list --json) is a second, advisory reading: ok, auth (the CLI cannot sign in) or unknown; it is recorded and printed, and it
+# never counts toward an outage, never triggers a lift and never fails status.
 # Outages are appended to ~/.lane-pilot/outages.jsonl with their times: first_silence, outage, message_sent/_not_sent, lifts, risen.
 #
-# Usage (on the hub):  hub-watchdog.sh run | status | stop [--force] | restart [--force] | lift [--force] | install | daily | rotate | db-ready | outages | print-unit | selfcheck
+# Usage (on the hub):  hub-watchdog.sh run | status [--force] | stop [--force] | restart [--force] | lift [--force] | install | daily | rotate | db-ready | outages | print-unit | selfcheck
 #   lift       when the door already answers it does nothing (Door already answers — nothing)
 #   install    a systemd unit with sudo; without admin a systemd --user unit (or an @reboot crontab line); on a Mac a LaunchAgent
 #   daily      the lifts per day from the outage log (Daily lift log)
@@ -22,11 +24,14 @@
 #   print-unit the startup entry text for system|user|mac without registering anything (the task ships disabled until install runs)
 #   selfcheck  verbs and host prerequisites by a list; the exit code is the number of failures
 # Five lifts within an hour refuse the next one and call the person (Five restarts in a row); --force lifts anyway.
+# A door that answers from a process proven outside the unit's cgroup refuses status/stop/restart/lift (--force goes on); a holder whose pid or
+# cgroup cannot be read is «unknown»: printed, never a refusal.
 # LP_WATCH_DRY=1 (drills) records instead of acting. LP_WATCH_SYSTEMCTL names the service-manager command (drills point it at a stub or a
 # stand-in unit); LP_WATCH_USER=1 drops the sudo prefix and uses systemctl --user.
 # Exit codes: 0 the machine is as asked, 1 failed or down, 2 a refusal a named flag would lift (--force for live work and the lift limit).
 # One watchdog at a time: a lock file (flock, or an atomic mkdir lock where flock is missing, e.g. a stock Mac); install writes a unit
-# that runs `run` (Restart=always, capped at five restarts an hour, first look two minutes after start).
+# that runs `run` (Restart=always, capped at five restarts an hour). A second watchdog that finds the lock waits LP_WATCH_LOCK_HELD_SEC
+# (60 s; not in a dry run) before it exits, so the cap is not spent on it.
 set -uo pipefail
 SERVICE="${LP_WATCH_SERVICE:-bb-server}"
 DOOR="${LP_WATCH_DOOR:-http://127.0.0.1:38886/install/version}"
@@ -34,9 +39,11 @@ DOOR_PORT="${DOOR#*://}"; DOOR_PORT="${DOOR_PORT%%/*}"; DOOR_PORT="${DOOR_PORT##
 if [ -z "$DOOR_PORT" ] || [ -n "${DOOR_PORT//[0-9]/}" ]; then case "$DOOR" in https:*) DOOR_PORT=443 ;; *) DOOR_PORT=80 ;; esac; fi
 KNOCK_SEC="${LP_WATCH_KNOCK_SEC:-15}"
 SUSPECT_AFTER="${LP_WATCH_SUSPECT_AFTER:-8}"
-REFUSED_AFTER="${LP_WATCH_REFUSED_AFTER:-3}"
-FIRST_SEC="${LP_WATCH_FIRST_SEC:-120}"
-STOP_SEC="${LP_WATCH_STOP_SEC:-30}"
+REFUSED_AFTER="${LP_WATCH_REFUSED_AFTER:-8}"
+FIRST_SEC="${LP_WATCH_FIRST_SEC:-0}"  # main looks at once; a longer blind start is a setting
+STOP_SEC="${LP_WATCH_STOP_SEC:-}"       # empty: the unit's own TimeoutStopUSec, 90 s when unreadable
+RESTART_SETTLE_SEC="${LP_WATCH_RESTART_SETTLE_SEC:-10}"
+LOCK_HELD_SEC="${LP_WATCH_LOCK_HELD_SEC:-60}"
 RESTART_WAIT_SEC="${LP_WATCH_RESTART_WAIT_SEC:-120}"
 MAX_LIFTS="${LP_WATCH_MAX_LIFTS:-3}"
 STATE_DIR="${LP_WATCH_STATE:-$HOME/.lane-pilot}"
@@ -59,17 +66,21 @@ if [ "${LP_WATCH_USER:-0}" = 1 ] || [ "$SYSTEMCTL" != "systemctl" ]; then SUDO="
 platform() { case "$PLATFORM" in Darwin|darwin) echo darwin ;; *) echo linux ;; esac; }
 have_sudo() { [ -n "$SUDO" ] && sudo -n true 2>/dev/null; }
 
-door_probe() { # ok | refused | timeout | unknown — the same board request the window makes, behind the same token, when a bb is here
-  local code rc out
+door_probe() { # ok | refused | timeout — the HTTP 200 of the version request alone, exactly as on main
+  local code rc
   code="$(curl -s -o /dev/null -m 10 -w '%{http_code}' "$DOOR" 2>/dev/null)"; rc=$?
-  if [ "$code" != "200" ]; then [ "$rc" = "7" ] && echo "refused" || echo "timeout"; return; fi
-  command -v "$BB" >/dev/null 2>&1 || { echo "ok"; return; }
-  if command -v timeout >/dev/null 2>&1; then out="$(timeout 15 "$BB" thread list --json 2>&1)"; rc=$?; else out="$("$BB" thread list --json 2>&1)"; rc=$?; fi
-  if [ "$rc" = "0" ] && printf '%s' "$out" | python3 -c 'import json,sys; sys.exit(0 if isinstance(json.load(sys.stdin), list) else 1)' 2>/dev/null; then echo "ok"; return; fi
-  # The CLI's own auth error is unknown, not silence: a lost token must not read as a dead hub.
-  printf '%s' "$out" | grep -qiE 'auth|sign.?in|log ?in|token|unauthorized' && echo "unknown" || echo "timeout"
+  if [ "$code" = "200" ]; then echo "ok"; return; fi
+  [ "$rc" = "7" ] && echo "refused" || echo "timeout"
 }
 door_answers() { [ "$(door_probe)" = "ok" ]; }
+board_probe() { # ok | auth | unknown | none — the window's board request, advisory: only a clean answer or a clean sign-in refusal is named
+  local out rc
+  command -v "$BB" >/dev/null 2>&1 || { echo "none"; return; }
+  if command -v timeout >/dev/null 2>&1; then out="$(timeout 15 "$BB" thread list --json 2>/dev/null)"; rc=$?; else out="$("$BB" thread list --json 2>/dev/null)"; rc=$?; fi
+  if [ "$rc" = "0" ] && printf '%s' "$out" | python3 -c 'import json,sys; sys.exit(0 if isinstance(json.load(sys.stdin), list) else 1)' 2>/dev/null; then echo "ok"; return; fi
+  [ "$rc" != "0" ] && printf '%s' "$out" | grep -qiE 'auth|sign.?in|log ?in|token|unauthorized' && { echo "auth"; return; }
+  echo "unknown"
+}
 
 main_pid() {
   [ "$DRY" = 1 ] && { echo 4242; return; }
@@ -131,17 +142,46 @@ proc_is_ours() { # the holder is the service's MainPID or its descendant
   done
   return 1
 }
-foreign_door_refusal() { # door answers but the listener is not the service's process: say so, never kill the other process
-  local h bad=""
-  for h in $(port_holders); do proc_is_ours "$h" || bad="$h"; done
-  [ -n "$bad" ] || port_holder_unreadable || return 1
-  echo "door answers, process unproven: port $DOOR_PORT is held by pid ${bad:-unknown}, not $SERVICE pid $(main_pid); nothing was touched"
-  return 0
+unit_cgroup() { # the unit's control group path; empty when it cannot be read (no systemd, a Mac, a stub)
+  [ "$(platform)" = darwin ] && return 0
+  $SYSTEMCTL $SYSTYPE show -p ControlGroup --value "$SERVICE" 2>/dev/null | head -1
+}
+holder_place() { # inside | outside | unknown — only a pid that was read, in a cgroup file that was read, against a unit cgroup that was read, is outside
+  local pid="$1" cg line path seen=0
+  case "$pid" in ''|*[!0-9]*) echo unknown; return ;; esac
+  cg="$(unit_cgroup)"
+  [ -n "$cg" ] && [ -r "/proc/$pid/cgroup" ] || { echo unknown; return; }
+  while IFS= read -r line; do
+    path="${line#*:*:}"; seen=1
+    case "$path" in "$cg"|"$cg"/*) echo inside; return ;; esac
+  done < "/proc/$pid/cgroup"
+  [ "$seen" = 1 ] && echo outside || echo unknown
+}
+never_killed() { [ "$1" = "1" ] || [ "$1" = "$$" ] || [ "$1" = "$PPID" ]; }
+foreign_door_refusal() { # door answers from a process proven outside the unit: say so, never kill it; unreadable is «unknown», printed only
+  local h bad="" unknown=""
+  for h in $(port_holders); do
+    case "$(holder_place "$h")" in
+      outside) proc_is_ours "$h" || bad="$h" ;;
+      unknown) unknown="$h" ;;
+    esac
+  done
+  if [ -n "$bad" ]; then
+    if [ "$FORCE" = 1 ]; then echo "door answers, process unproven: port $DOOR_PORT is held by pid $bad outside $SERVICE; --force given, going on"; return 1; fi
+    echo "door answers, process unproven: port $DOOR_PORT is held by pid $bad, outside $SERVICE (pid $(main_pid)); nothing was touched (--force goes on)"
+    return 0
+  fi
+  if [ -n "$unknown" ] || port_holder_unreadable; then echo "unknown: the holder of port $DOOR_PORT cannot be attributed to $SERVICE or to another process; going on"; fi
+  return 1
 }
 
 live_work() { # the open attempts of Lane Pilot, "attempt task thread" per line; exit 2 when the database cannot be read
-  [ -f "$LP_DB" ] || return 2
-  sqlite3 -readonly "$LP_DB" "select a.id||' '||a.task_id||' '||coalesce(a.thread_id,'-') from lane_pilot_attempt a where a.state in ('running','cancel_requested');" 2>/dev/null
+  local out
+  [ -f "$LP_DB" ] && command -v sqlite3 >/dev/null 2>&1 || return 2
+  # the repo's OPEN_ATTEMPT_STATES (src/rooms/contracts/state-machine.ts)
+  out="$(sqlite3 -readonly "$LP_DB" "select a.id||' '||a.task_id||' '||coalesce(a.thread_id,'-') from lane_pilot_attempt a where a.state in ('queued','spawn_requested','spawn_unknown','running','cancel_requested');" 2>/dev/null)" || return 2
+  printf '%s' "$out"
+  [ -z "$out" ] || echo
 }
 
 say() { # Telegram, the same bot and topic as the daily report; a send that cannot happen names its reason in the log.
@@ -164,8 +204,13 @@ say() { # Telegram, the same bot and topic as the daily report; a send that cann
   return 0
 }
 
-record() { printf '{"at":%s,"event":"%s","detail":"%s"}\n' "$(date +%s)" "$1" "${2//\"/\'}" >> "$LOG"; }
-record_at() { printf '{"at":%s,"event":"%s","detail":"%s"}\n' "$1" "$2" "${3//\"/\'}" >> "$LOG"; }
+json_text() { # a JSON string body: quote to apostrophe, backslash, tab, CR, newline escaped, other control characters blanked (pure bash: macOS too)
+  local t="$1"
+  t="${t//\\/\\\\}"; t="${t//\"/\'}"; t="${t//$'\t'/\\t}"; t="${t//$'\r'/\\r}"; t="${t//$'\n'/\\n}"; t="${t//[[:cntrl:]]/ }"
+  printf '%s' "$t"
+}
+record() { printf '{"at":%s,"event":"%s","detail":"%s"}\n' "$(date +%s)" "$1" "$(json_text "$2")" >> "$LOG"; }
+record_at() { printf '{"at":%s,"event":"%s","detail":"%s"}\n' "$1" "$2" "$(json_text "$3")" >> "$LOG"; }
 
 lifts_in_window() { local since=$(( $(date +%s) - LIFT_WINDOW_SEC )); [ -f "$LOG" ] && awk -v since="$since" -F'"at":' '/"event":"lift"/ { split($2, a, ","); if (a[1] + 0 >= since) n++ } END { print n + 0 }' "$LOG" || echo 0; }
 
@@ -186,7 +231,7 @@ EOF
 }
 
 lift() { # kill the hung one first, then start; returns 0 when the door answers within the backoff
-  local wait last_at try pid left h
+  local wait try pid h
   if door_answers; then
     foreign_door_refusal && return 1
     record "lift_skipped" "the door already answers"; echo "nothing to do: the door answers"; return 0
@@ -199,22 +244,23 @@ lift() { # kill the hung one first, then start; returns 0 when the door answers 
   fi
   if [ "$DRY" = 1 ]; then record "lift" "dry: would kill ${SERVICE} and start it"; return 1; fi
   for try in $(seq 1 "$MAX_LIFTS"); do
-    read -r wait prev_lift <<< "$(backoff_sec)"
+    read -r wait _ <<< "$(backoff_sec)" # the log only picks which wait (30, 60, 120 s); the wait itself is whole, as on main
     pid="$(main_pid)"
     record "lift" "try $try, killing pid ${pid:-none}"
     [ -n "$pid" ] && [ "$pid" != "0" ] && service_kill
-    if [ "$try" -gt 1 ]; then # a repeated lift first kills whatever holds the port (a leftover child or a foreign process)
-      for h in $(port_holders); do proc_is_ours "$h" || { record "port_holder_killed" "killing port holder $h"; kill -9 "$h" 2>/dev/null; }; done
+    if [ "$try" -gt 1 ] && [ -n "$pid" ] && [ "$pid" != "0" ]; then
+      # a repeated lift also kills a port holder, but only one proven outside the unit while the MainPID was read; main kills none
+      for h in $(port_holders); do
+        never_killed "$h" && continue
+        [ "$(holder_place "$h")" = outside ] || continue
+        record "port_holder_killed" "killing port holder $h"; kill -9 "$h" 2>/dev/null
+      done
     fi
     sleep 2
     { service_restart 2>&1 || true; service_result; } | grep -v '^$' | tail -n 3 > "$STATE_DIR/hub-watchdog.lift-reason"
     echo "$(main_pid)" > "$STATE_DIR/hub-watchdog.lifted-pid"
-    # only the remainder since the last recorded attempt: a watchdog restart does not restart the backoff
-    left=$wait
-    [ "${prev_lift:-0}" != "0" ] && left=$(( wait - ($(date +%s) - prev_lift) ))
-    [ "$left" -lt 0 ] && left=0
-    local end=$(( $(date +%s) + left ))
-    while [ "$(date +%s)" -lt "$end" ]; do sleep 5; door_answers && return 0; done
+    local waited=0
+    while [ "$waited" -lt "$wait" ]; do sleep 5; waited=$((waited + 5)); door_answers && return 0; done
     record "lift_without_outcome" "try $try, waited ${wait}s"
   done
   return 1
@@ -225,64 +271,94 @@ status() {
   [ -n "$state" ] || { echo "unknown: systemd does not answer for $SERVICE"; return 1; }
   if door_answers; then
     foreign_door_refusal && return 1
-    echo "ok: $SERVICE $state, pid $(main_pid), up $(uptime_sec)s, the door answers"; return 0
+    echo "ok: $SERVICE $state, pid $(main_pid), up $(uptime_sec)s, the door answers"
+    local board; board="$(board_probe)"; [ "$board" = none ] || echo "board request (advisory): $board"
+    return 0
   fi
   if [ "$state" = "active" ]; then echo "down: $SERVICE is active (pid $(main_pid)) but the door does not answer — process unproven"; else echo "down: $SERVICE is $state"; fi
   return 1
 }
 
-stop_hub() { # the graceful stop: live work or a foreign door refuses (exit 2 names --force); a process that stays is killed hard
+stop_wait_sec() { # how long a graceful stop may take: LP_WATCH_STOP_SEC, else the unit's TimeoutStopUSec, 90 s when unreadable
+  local raw sec
+  if [ -n "$STOP_SEC" ]; then echo "$STOP_SEC"; return; fi
+  [ "$(platform)" = linux ] && raw="$($SYSTEMCTL $SYSTYPE show -p TimeoutStopUSec --value "$SERVICE" 2>/dev/null | head -1)"
+  sec="$(python3 - "${raw:-}" <<'PY'
+import re, sys
+raw = sys.argv[1].strip()
+unit = {"d": 86400, "h": 3600, "min": 60, "m": 60, "s": 1, "ms": 0.001, "us": 0.000001}
+total, seen = 0.0, False
+for num, name in re.findall(r"(\d+(?:\.\d+)?)\s*(ms|us|min|d|h|m|s)", raw):
+    total += float(num) * unit[name]; seen = True
+if not seen and raw.isdigit(): total, seen = int(raw) / 1e6, True  # raw microseconds
+print(int(total + 0.999) if seen and total > 0 else 90)
+PY
+)"
+  case "$sec" in ''|*[!0-9]*) sec=90 ;; esac
+  echo "$sec"
+}
+
+stop_guard() { # the refusals of stop and restart: a proven foreign door, live work actually read; 0 go on, 1 foreign door, 2 live work
   if door_answers && foreign_door_refusal; then return 1; fi
-  local workers
-  if workers="$(live_work)"; then
-    if [ -n "$workers" ] && [ "$FORCE" != 1 ]; then
+  local workers rc
+  workers="$(live_work)"; rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "unknown live work: the Lane Pilot database cannot be read ($LP_DB); proceeding"
+    record "stop_unknown_live_work" "database unreadable, proceeding"
+  elif [ -n "$workers" ]; then
+    if [ "$FORCE" != 1 ]; then
       echo "refused: live work holds the stop (--force would stop anyway):"; echo "$workers"
       record "stop_refused" "live work: $(echo "$workers" | tr '\n' ' ')"
       return 2
     fi
-    [ -n "$workers" ] && record "stop_forced" "live work overridden: $(echo "$workers" | tr '\n' ' ')"
-  else
-    if [ "$FORCE" != 1 ]; then
-      echo "refused: unknown live work — the database cannot be read; --force would stop anyway"
-      record "stop_refused" "unknown live work"
-      return 2
-    fi
-    record "stop_forced" "unknown live work overridden"
+    record "stop_forced" "live work overridden: $(echo "$workers" | tr '\n' ' ')"
   fi
+  return 0
+}
+
+stop_hub() { # the graceful stop: a proven foreign door or live work refuses (exit 2 names --force); a process that stays is killed hard
+  stop_guard || return $?
   service_stop
-  local waited=0 state="active"
-  while [ "$waited" -lt "$STOP_SEC" ]; do
+  local waited=0 state="active" limit; limit="$(stop_wait_sec)"
+  while [ "$waited" -lt "$limit" ]; do
     state="$(active_state)"
     case "$state" in inactive|dead|failed) break ;; esac
     sleep 1; waited=$((waited + 1))
   done
   case "$state" in
     inactive|dead|failed) echo "stopped: $SERVICE is $state" ;;
-    *) service_kill; record "stopped_hard" "the process did not leave in ${STOP_SEC}s"; echo "stopped hard: the process did not leave in ${STOP_SEC}s and was killed" ;;
+    *) service_kill; record "stopped_hard" "the process did not leave in ${limit}s"; echo "stopped hard: the process did not leave in ${limit}s and was killed" ;;
   esac
 }
 
-restart_hub() { # stop (its refusals stand), the platform lift detached, then a wait on the door
-  stop_hub || return $?
+restart_hub() { # the refusals of stop stand; then what main does — the manager's own restart — started detached first, so a caller inside the unit survives
+  stop_guard || return $?
   setsid nohup bash -c "$(lift_cmd)" >/dev/null 2>&1 &
-  local waited=0
+  sleep "$RESTART_SETTLE_SEC" # the old process may still answer for a moment: main waited 10 s before it asked
+  local waited="$RESTART_SETTLE_SEC"
   while [ "$waited" -lt "$RESTART_WAIT_SEC" ]; do
     door_answers && { echo "ok: the door answers after ${waited}s"; return 0; }
     sleep 3; waited=$((waited + 3))
   done
+  door_answers && { echo "ok: the door answers after ${waited}s"; return 0; }
   echo "down: the door did not answer in ${RESTART_WAIT_SEC}s"; return 1
+}
+
+lock_held_exit() { # the unit restarts an exit at once and caps restarts at five an hour: wait before leaving so the cap is not spent (not in a dry run)
+  [ "$DRY" = 1 ] || sleep "$LOCK_HELD_SEC"
+  exit 0
 }
 
 take_lock() { # one watchdog per machine: flock where it exists, an atomic mkdir lock where it does not (a stock Mac)
   if command -v flock >/dev/null 2>&1; then
     exec 9>"$LOCK"
-    flock -n 9 || { echo "another watchdog runs (lock $LOCK)"; exit 0; }
+    flock -n 9 || { echo "another watchdog runs (lock $LOCK)"; lock_held_exit; }
   else
     local dir="$LOCK.d" holder
     if ! mkdir "$dir" 2>/dev/null; then
       holder="$(cat "$dir/pid" 2>/dev/null)"
-      if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then rm -rf "$dir"; mkdir "$dir" 2>/dev/null || { echo "another watchdog runs (lock $dir)"; exit 0; }
-      else echo "another watchdog runs (lock $dir)"; exit 0; fi
+      if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then rm -rf "$dir"; mkdir "$dir" 2>/dev/null || { echo "another watchdog runs (lock $dir)"; lock_held_exit; }
+      else echo "another watchdog runs (lock $dir)"; lock_held_exit; fi
     fi
     echo $$ > "$dir/pid"
     trap 'rm -rf "$LOCK.d"' EXIT
@@ -291,9 +367,9 @@ take_lock() { # one watchdog per machine: flock where it exists, an atomic mkdir
 
 run() {
   take_lock
-  record "start" "watchdog up; the first look waits ${FIRST_SEC}s so a booting server is not judged"
-  sleep "$FIRST_SEC"
-  local refused=0 timeouts=0 down_since=0 silent_pid="" probe state pid
+  record "start" "watchdog up; the first look waits ${FIRST_SEC}s"
+  [ "$FIRST_SEC" -gt 0 ] && sleep "$FIRST_SEC"
+  local silent=0 refused_run=0 down_since=0 silent_pid="" probe state pid board last_board=""
   while true; do
     rotate >/dev/null
     probe="$(door_probe)"
@@ -310,18 +386,25 @@ run() {
         rm -f "$STATE_DIR/hub-watchdog.out-tries-said"
         down_since=0; silent_pid=""
       fi
-      refused=0; timeouts=0
-    elif [ "$probe" = "unknown" ]; then : # the CLI cannot sign in: not the hub's silence, the counters hold
+      silent=0; refused_run=0
+      # the board request is a second reading, advisory: recorded when it changes, never counted
+      board="$(board_probe)"
+      if [ "$board" != "$last_board" ]; then
+        case "$board:$last_board" in none:*|ok:) ;; *) record "board_$board" "the board request says $board while the door answers" ;; esac
+        last_board="$board"
+      fi
     else
       state="$(active_state)"; pid="$(main_pid)"
-      if [ "$state" = "activating" ] || [ "$state" = "reloading" ]; then refused=0; timeouts=0          # still loading — wait
-      elif [ -z "$pid" ] || [ "$pid" = "0" ]; then refused=0; timeouts=0                                # no record — a stop; systemd lifts it
-      elif [ "$pid" = "$(cat "$STATE_DIR/hub-watchdog.lifted-pid" 2>/dev/null)" ] && [ "$(uptime_sec)" -lt 120 ]; then refused=0; timeouts=0   # same process we lifted, still young: false alarm
-      elif [ "$probe" = "refused" ]; then refused=$((refused + 1)); timeouts=0                          # suspect: refused connections in a row
-      else timeouts=$((timeouts + 1)); refused=0                                                        # suspect: timeouts in a row
+      if [ "$state" = "activating" ] || [ "$state" = "reloading" ]; then silent=0; refused_run=0         # still loading — wait
+      elif [ -z "$pid" ] || [ "$pid" = "0" ]; then silent=0; refused_run=0                               # no record — a stop; systemd lifts it
+      elif [ "$pid" = "$(cat "$STATE_DIR/hub-watchdog.lifted-pid" 2>/dev/null)" ] && [ "$(uptime_sec)" -lt 120 ]; then silent=0; refused_run=0   # same process we lifted, still young: false alarm
+      else                                                                                                # suspect: silence in a row, any kind, as on main
+        silent=$((silent + 1))
+        if [ "$probe" = "refused" ]; then refused_run=$((refused_run + 1)); else refused_run=0; fi
       fi
-      if { [ "$probe" = "refused" ] && [ "$refused" -ge "$REFUSED_AFTER" ]; } || { [ "$probe" != "refused" ] && [ "$timeouts" -ge "$SUSPECT_AFTER" ]; }; then
-        local count kind; if [ "$probe" = "refused" ]; then count=$refused; kind="refused"; else count=$timeouts; kind="timeout"; fi
+      if [ "$silent" -ge "$SUSPECT_AFTER" ] || { [ "$probe" = "refused" ] && [ "$refused_run" -ge "$REFUSED_AFTER" ]; }; then
+        local count="$silent" kind="timeout"; [ "$probe" = "refused" ] && kind="refused"
+        [ "$down_since" -eq 0 ] && rm -f "$STATE_DIR/hub-watchdog.out-tries-said" # a new outage gets its own «lift failed» word
         down_since=$(( $(date +%s) - count * KNOCK_SEC ))
         record_at "$down_since" "first_silence" "first knock without an answer ($kind)"
         record "outage" "$kind: no answer for $((count * KNOCK_SEC))s from pid $pid ($state)"
@@ -336,7 +419,7 @@ run() {
           fi
           sleep 600
         fi
-        refused=0; timeouts=0
+        silent=0; refused_run=0
       fi
     fi
     sleep "$KNOCK_SEC"
@@ -403,7 +486,7 @@ StartLimitBurst=5
 [Service]
 Type=simple
 User=$USER
-# the first look waits 120 s (LP_WATCH_FIRST_SEC inside run), so a booting server is not judged
+# the first look waits 120 s only with Environment=LP_WATCH_FIRST_SEC=120 added here; the default is 0, as before
 ExecStart=/bin/bash $self run
 Restart=always
 RestartSec=30
@@ -419,7 +502,7 @@ StartLimitIntervalSec=3600
 StartLimitBurst=5
 
 [Service]
-# the first look waits 120 s (LP_WATCH_FIRST_SEC inside run), so a booting server is not judged
+# the first look waits 120 s only with Environment=LP_WATCH_FIRST_SEC=120 added here; the default is 0, as before
 ExecStart=/bin/bash $self run
 Restart=always
 RestartSec=30
@@ -434,7 +517,7 @@ EOF
 <plist version="1.0"><dict>
   <key>Label</key><string>pro.vechkasov.lp-hub-watchdog</string>
   <key>ProgramArguments</key><array><string>/bin/bash</string><string>$self</string><string>run</string></array>
-  <!-- the first look waits 120 s (LP_WATCH_FIRST_SEC inside run); launchd keeps the relift at least 30 s away -->
+  <!-- the first look waits 120 s only with LP_WATCH_FIRST_SEC=120 in EnvironmentVariables; the default is 0; launchd keeps the relift at least 30 s away -->
   <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>30</integer>
   <key>StandardOutPath</key><string>$STATE_DIR/hub-watchdog.log</string><key>StandardErrorPath</key><string>$STATE_DIR/hub-watchdog.log</string>
@@ -494,7 +577,7 @@ install_unit() {
 
 case "${1:-status}" in
   run) run ;;
-  status) status; exit $? ;;
+  status) [ "${2:-}" = "--force" ] && FORCE=1; status; exit $? ;;
   stop) [ "${2:-}" = "--force" ] && FORCE=1; stop_hub; rc=$?; [ "$rc" -eq 0 ] && { status || true; }; exit "$rc" ;;
   restart) [ "${2:-}" = "--force" ] && FORCE=1; restart_hub; exit $? ;;
   lift) [ "${2:-}" = "--force" ] && FORCE=1; lift && { status; exit 0; } || exit $? ;;

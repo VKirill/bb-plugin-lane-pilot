@@ -92,11 +92,13 @@ OPEN_STATES = ("queued", "spawn_requested", "spawn_unknown", "running")
 TERMINAL = ("accepted", "blocked", "canceled")
 STAMP = time.strftime("%Y%m%d-%H%M%S")
 DATE = time.strftime("%Y-%m-%d")
-ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "outage_live", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "phase", "phase_route", "reload", "nogit", "nogit_repo", "flow_contract", "lead_shadow", "episodes", "memory_thread"]
+ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "phase", "phase_route", "reload", "nogit", "nogit_repo", "flow_contract", "lead_shadow", "episodes", "memory_thread"]
 QUICK = ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3", "lead_shadow", "episodes"]
 # What a provider runs when no setting of the sandbox project names a model for it.
 PROVIDER_FALLBACK_MODEL = {"claude-code": "claude-sonnet-5-5", "codex": "gpt-6-luna", "opencode2": "zai-coding-plan/glm-5.3-flash"}
 # Scenarios that need no PM and no run of their own: they run before the PM starts (guard_hash) or on a project of their own (nogit).
+# Scenarios that run only when named (--scenario outage_live): never in ALL, so no full drill and no deploy starts them.
+BY_NAME = ["outage_live"]
 STANDALONE = ("guard_hash", "deferrals", "checkers", "watchdog", "outage_live", "nogit", "nogit_repo", "lead_shadow", "episodes", "memory_thread")
 
 # Which changed files a live scenario reads. A path no live scenario reads (NOT_LIVE) starts none; a shared one (FOUNDATION, and anything
@@ -1032,6 +1034,9 @@ def _watchdog_live(tmp: Path, with_bot: bool, census: bool) -> tuple[list[str], 
         _, pid, _ = run(["systemctl", "--user", "show", "-p", "MainPID", "--value", "lp-drill-door"], timeout=15)
         pid = pid.strip()
         census_before = _db_census(script, env, db) if db else None
+        if not pid.isdigit() or int(pid) <= 1:  # 0 would signal the drill's own process group, 1 is init
+            _stand_down()
+            return [f"the stand-in service has no usable main pid (read {pid!r}); nothing was signalled"], {}
         os.kill(int(pid), signal.SIGSTOP)  # hung: the process lives, the door is silent
         proc = subprocess.Popen(["bash", script, "run"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         log_path = state / "outages.jsonl"
@@ -1084,6 +1089,8 @@ def scenario_outage_live(tmp: Path) -> dict:
     if named != "lp-drill-door":
         return {"name": "outage_live", "result": "skipped", "problems": [],
                 "note": f"refuses to run a non-dry watchdog against {named}: only its own stand-in unit lp-drill-door may be killed"}
+    if os.environ.get("LP_DRILL_WATCHDOG_LIVE") != "1":
+        return {"name": "outage_live", "result": "skipped", "problems": [], "note": "the live pass writes a user unit and hangs a stand-in process: it runs only with LP_DRILL_WATCHDOG_LIVE=1"}
     problems, details = _watchdog_live(tmp, with_bot=True, census=False)
     return verdict("outage_live", problems, **details)
 
@@ -1113,11 +1120,11 @@ def scenario_watchdog(tmp: Path) -> dict:
     run(["bash", script, "rotate"], env=env, timeout=30)
     if not (state / "outages-2023-11-14.jsonl").exists():
         problems.append("an old log did not rotate to its day")
-    if os.environ.get("LP_DRILL_WATCHDOG_LIVE", "1") != "0" and shutil.which("systemctl"):
+    if os.environ.get("LP_DRILL_WATCHDOG_LIVE") == "1" and shutil.which("systemctl"):
         live_problems, live = _watchdog_live(tmp, with_bot=False, census=True)
         problems += live_problems
     else:
-        live = {"note": "live pass off (LP_DRILL_WATCHDOG_LIVE=0) or no systemd --user here"}
+        live = {"note": "live pass off (it runs only with LP_DRILL_WATCHDOG_LIVE=1) or no systemd --user here"}
     return verdict("watchdog", problems, events=events, live=live)
 
 
@@ -1799,7 +1806,7 @@ def judge_series(judged: list[dict], names: list[str]) -> dict:
 def scout() -> dict:
     """Scout of named suites: every scenario_* in this file is named in ALL, and every name in ALL has its function."""
     defined = sorted(name[len("scenario_"):] for name in globals() if name.startswith("scenario_"))
-    return {"defined": defined, "unlisted": [name for name in defined if name not in ALL], "undefined": [name for name in ALL if name not in defined]}
+    return {"defined": defined, "unlisted": [name for name in defined if name not in ALL and name not in BY_NAME], "undefined": [name for name in ALL if name not in defined]}
 
 
 def series_preparation() -> dict:
@@ -1872,9 +1879,9 @@ def main() -> int:
     for name, why in skipped.items():
         log(f"scenario {name}: skipped ({why})")
     repair_guard = args.repair_guard or os.environ.get("LP_DRILL_REPAIR_GUARD") == "1"
-    unknown = [n for n in names if n not in ALL]
+    unknown = [n for n in names if n not in ALL and n not in BY_NAME]
     if unknown:
-        print(f"unknown scenario: {', '.join(unknown)} (known: {', '.join(ALL)})", file=sys.stderr)
+        print(f"unknown scenario: {', '.join(unknown)} (known: {', '.join(ALL + BY_NAME)})", file=sys.stderr)
         return 2
     if args.dry_run:
         dry_run(names)
