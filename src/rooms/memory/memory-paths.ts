@@ -131,6 +131,15 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
   { id: "pm.owner_card", consumer: "the owner card in a PM's first prompt (anamnesis)", carries: [], alwaysOn: [], status: "exempt",
     reason: "Facts about the owner from the anamnesis room, not project memory; it has its own checks (`bb lane-pilot anamnesis status`).",
     sites: [{ file: "src/rooms/native-agent/server/activation.ts", primitive: "ownerCardBlock", count: 1 }] },
+  { id: "analyze.owner_card", consumer: "the owner card handed to the phase analysis (lp.analyze) when phase.gray_areas is on", carries: [], alwaysOn: [], status: "exempt",
+    reason: "The same anamnesis card pm.owner_card names, not project memory; it rides only when the owner switched the gray-areas question on.",
+    sites: [{ file: "src/rooms/phase/server/driver-wiring.ts", primitive: "ownerCardBlock", count: 1 }] },
+  { id: "cli.parity_report", consumer: "`bb lane-pilot parity`: which memory and rule ids an attempt and a terminal session would both get", carries: [], alwaysOn: [], status: "exempt",
+    reason: "A command's printed comparison of ids, not text injected into a prompt; nothing reaches an agent unless it ran the command itself.",
+    sites: [
+      { file: "src/rooms/native-agent/terminal-parity.ts", primitive: "listMemory", count: 1 },
+      { file: "src/rooms/native-agent/terminal-parity.ts", primitive: "pmRulesOf", count: 1 },
+    ] },
 ];
 
 export const pathById = (id: string): MemoryPath | undefined => MEMORY_PATHS.find((entry) => entry.id === id);
