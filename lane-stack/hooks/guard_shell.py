@@ -2161,8 +2161,14 @@ def _deps_guard_error(name: str, p: dict) -> str | None:
     cwd = str(cwd)
     cwd_real = os.path.realpath(cwd)
 
-    def hits_foreign_store(target: str) -> str | None:
-        resolved = os.path.realpath(target if os.path.isabs(target) else os.path.join(cwd, target))
+    def hits_foreign_store(target: str, removes_link: bool = False) -> str | None:
+        literal = target if os.path.isabs(target) else os.path.join(cwd, target)
+        # Removing the link itself only drops the link — the shared store is untouched, and the install
+        # refusal below prescribes exactly this. Only a path that reaches inside through it is foreign.
+        # An edit, or a shred, of a link writes through it, so the exemption is for rm/unlink alone.
+        if removes_link and os.path.islink(literal):
+            return None
+        resolved = os.path.realpath(literal)
         if f"{os.sep}node_modules{os.sep}" in resolved and _outside_checkout(resolved, cwd_real):
             return resolved
         return None
@@ -2181,13 +2187,14 @@ def _deps_guard_error(name: str, p: dict) -> str | None:
             return (f"[deps-guard] installing here writes through {link} into another checkout's shared dependency store. "
                     "To add or change a package, make the store your own first: remove node_modules in this checkout "
                     "(only the links go), then run the install again.")
+    # _delete_commands yields the target lists of every rm/unlink/shred/find -delete, not the verbs:
+    # each listed word is a path the command would remove.
+    removes_link = not re.search(r"\bshred\b", command)
     for segment in _delete_commands(command):
-        if not segment or Path(segment[0]).name not in _FILE_OPS:
-            continue
-        for word in segment[1:]:
+        for word in segment:
             if word.startswith("-"):
                 continue
-            hit = hits_foreign_store(word)
+            hit = hits_foreign_store(word, removes_link)
             if hit:
                 return f"[deps-guard] {word} resolves into another checkout's dependency store ({hit}): a worktree's packages are linked, not yours to change."
     return None
