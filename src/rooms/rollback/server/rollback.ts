@@ -93,23 +93,17 @@ export function createRollback(ctx: ServerCore, services: Services) {
     })();
   }
 
-  /** What a merge did: main before it, the merge commit and the files it changed. */
-  function noteMerge(attemptId: string, merged: { status: string; commit: string | null; base?: string | null | undefined; changed?: ChangedFile[] | undefined }): void {
+  /** What a merge did: main before it, the merge commit, the files it changed and (when it landed green) how many checks were green. */
+  function noteMerge(attemptId: string, merged: { status: string; commit: string | null; base?: string | null | undefined; changed?: ChangedFile[] | undefined }, checksGreen?: number): void {
     try {
       const attempt = getAttempt(db, attemptId);
       if (!attempt) return;
       upsertAttemptChange(db, { attemptId, runId: attempt.run_id, taskId: attempt.task_id }, {
         outcome: merged.status, mergeCommit: merged.status === "merged" ? merged.commit : undefined,
         mergeParent: merged.base ?? undefined, changed: merged.status === "merged" ? merged.changed : undefined,
+        checksGreen: merged.status === "merged" ? checksGreen : undefined,
       });
     } catch (cause) { log(`rollback record: merge of ${attemptId} not kept: ${cause instanceof Error ? cause.message : String(cause)}`); }
-  }
-
-  /** The landing stamp (SMA k_lib_landing): a merge that passed green gets one receipt naming the commit, the count of
-   *  green checks and the files it carried — the terminal line the landing row leaves in the record. */
-  function noteLanded(t: Pick<RollbackTarget, "projectId" | "runId" | "taskId">, input: { attemptId: string | null; mergeCommit: string | null; baseSha?: string | null; checksGreen: number; files: number }): number {
-    return receipt(t as RollbackTarget, "landed", "merged", `landed ${input.mergeCommit ? input.mergeCommit.slice(0, 12) : "no-commit"} · ${input.checksGreen} checks green · ${input.files} files`,
-      { attemptId: input.attemptId ?? null, baseSha: input.baseSha ?? null, changeSha: input.mergeCommit, resultCommit: input.mergeCommit });
   }
 
   /**
@@ -459,7 +453,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
    */
   const kit = { targetOf, changeOf, makeWorktree, dropWorktree, runChecks };
 
-  return { rollback: { noteBase, ensureBase, noteMerge, noteLanded, noteWorktree, noteSaved, noteStopped, reverify, revert, status, kit } };
+  return { rollback: { noteBase, ensureBase, noteMerge, noteWorktree, noteSaved, noteStopped, reverify, revert, status, kit } };
 }
 
 export type RollbackApi = ReturnType<typeof createRollback>["rollback"];

@@ -16,6 +16,7 @@ const row = (enPending: string, enCompleted: string, ruPending: string, ruComple
 export const TOOL_PRESENTATION: Record<string, Entry> = {
   lane_pilot_read: row("Reading a workspace file", "Read a workspace file", "Читаю файл рабочей папки", "Прочитан файл рабочей папки", true),
   lane_pilot_dispatch_writer: row("Sending a task to a writer", "Sent a task to a writer", "Отправляю задачу писателю", "Задача отправлена писателю"),
+  lane_pilot_propose: row("Proposing a task to the owner", "Proposed a task to the owner", "Предлагаю задачу владельцу", "Задача предложена владельцу"),
   lane_pilot_cancel_task: row("Canceling a task", "Canceled a task", "Отменяю задачу", "Задача отменена"),
   lane_pilot_update_task: row("Updating a task", "Updated a task", "Обновляю задачу", "Задача обновлена"),
   lane_pilot_reassign_task: row("Reassigning a task", "Reassigned a task", "Переназначаю задачу", "Задача переназначена"),

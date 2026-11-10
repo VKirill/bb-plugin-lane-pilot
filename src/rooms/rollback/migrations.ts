@@ -42,28 +42,4 @@ export const rollbackMigrations: readonly string[] = [
   `CREATE INDEX lane_pilot_task_receipt_task ON lane_pilot_task_receipt(task_id, at)`,
   `CREATE TRIGGER lane_pilot_task_receipt_no_update BEFORE UPDATE ON lane_pilot_task_receipt BEGIN SELECT RAISE(ABORT, 'task receipts are append-only'); END`,
   `CREATE TRIGGER lane_pilot_task_receipt_no_delete BEFORE DELETE ON lane_pilot_task_receipt BEGIN SELECT RAISE(ABORT, 'task receipts are append-only'); END`,
-  // The landing stamp (SMA k_lib_landing): kind 'landed' needs the CHECK widened; SQLite rebuilds the table for that.
-  // The append-only triggers are dropped with the table and recreated on the new one, so stored receipts keep their shape.
-  `CREATE TABLE lane_pilot_task_receipt_landed (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    at INTEGER NOT NULL,
-    kind TEXT NOT NULL CHECK(kind IN ('reverify','revert','landed')),
-    project_id TEXT NOT NULL,
-    run_id TEXT NOT NULL,
-    task_id TEXT NOT NULL,
-    attempt_id TEXT,
-    base_sha TEXT,
-    change_sha TEXT,
-    result_commit TEXT,
-    state TEXT NOT NULL CHECK(state IN ('passed','failed','merged','dry_run','refused','error')),
-    summary TEXT NOT NULL,
-    detail_json TEXT NOT NULL DEFAULT '{}'
-  )`,
-  `INSERT INTO lane_pilot_task_receipt_landed(id,at,kind,project_id,run_id,task_id,attempt_id,base_sha,change_sha,result_commit,state,summary,detail_json)
-    SELECT id,at,kind,project_id,run_id,task_id,attempt_id,base_sha,change_sha,result_commit,state,summary,detail_json FROM lane_pilot_task_receipt`,
-  `DROP TABLE lane_pilot_task_receipt`,
-  `ALTER TABLE lane_pilot_task_receipt_landed RENAME TO lane_pilot_task_receipt`,
-  `CREATE INDEX lane_pilot_task_receipt_task ON lane_pilot_task_receipt(task_id, at)`,
-  `CREATE TRIGGER lane_pilot_task_receipt_no_update BEFORE UPDATE ON lane_pilot_task_receipt BEGIN SELECT RAISE(ABORT, 'task receipts are append-only'); END`,
-  `CREATE TRIGGER lane_pilot_task_receipt_no_delete BEFORE DELETE ON lane_pilot_task_receipt BEGIN SELECT RAISE(ABORT, 'task receipts are append-only'); END`,
 ];

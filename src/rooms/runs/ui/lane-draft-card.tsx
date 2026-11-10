@@ -7,15 +7,17 @@ import type { rpcContract } from "../../contracts";
 export const LANE_DRAFT_DIRECTIVE = "lane-draft";
 const POLL_MS = 5_000;
 
-type DraftCard = { id: string; kind: "task" | "batch"; state: "proposed" | "created"; runId: string | null; taskIds: string[];
+type DraftCard = { id: string; kind: "task" | "batch"; state: "proposed" | "created" | "partial"; runId: string | null; taskIds: string[]; failed?: Array<{ title: string; reason: string }>;
   title: string; promise: string; groups: Array<{ area: string; titles: string[] }> };
 
 /** A proposed task's card: its title, the PM's promise in plain words, and one «Создать» button. The button and the
  *  PM's confirmed call share the server's one enqueue path, so a second create only reads «already created». */
-export function LaneDraftCardDirective({ attributes }: PluginMessageDirectiveProps) {
+export function LaneDraftCardDirective({ attributes, message }: PluginMessageDirectiveProps) {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
   const draftId = attributes.id ?? "";
+  // The window's project scopes both calls: a draft of another project is refused by the server.
+  const scope = message.projectId ? { projectId: message.projectId } : {};
   const [card, setCard] = useState<DraftCard | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -23,7 +25,7 @@ export function LaneDraftCardDirective({ attributes }: PluginMessageDirectivePro
     if (!draftId) return;
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const read = () => void rpc.call("task_draft_card", { draftId }).then((result) => {
+    const read = () => void rpc.call("task_draft_card", { draftId, ...scope }).then((result) => {
       if (!alive) return;
       const next = (result ?? null) as DraftCard | null;
       setCard(next);
@@ -31,12 +33,12 @@ export function LaneDraftCardDirective({ attributes }: PluginMessageDirectivePro
     }).catch(() => { if (alive) timer = setTimeout(read, POLL_MS * 3); });
     read();
     return () => { alive = false; if (timer) clearTimeout(timer); };
-  }, [rpc, draftId]);
+  }, [rpc, draftId, message.projectId]);
 
   if (!card) return <div role="status" aria-busy="true" className="my-2 h-14 animate-pulse rounded-md border border-border bg-muted/40" />;
   const create = async () => {
     setBusy(true);
-    try { await rpc.call("task_draft_create", { draftId }); } finally { setBusy(false); }
+    try { await rpc.call("task_draft_create", { draftId, ...scope }); const next = await rpc.call("task_draft_card", { draftId, ...scope }); setCard((next ?? null) as DraftCard | null); } finally { setBusy(false); }
   };
   const firstTask = card.taskIds[0];
   return (
@@ -58,10 +60,11 @@ export function LaneDraftCardDirective({ attributes }: PluginMessageDirectivePro
           </ul>
         ) : null}
       </div>
+      {card.failed?.length ? <ul className="px-3 pb-2 text-xs text-destructive" data-testid="lane-draft-failed">{card.failed.map((item, index) => <li key={index} className="break-words">{item.title}: {item.reason}</li>)}</ul> : null}
       <div className="flex items-center gap-2 border-t border-border px-3 py-2">
-        {card.state === "proposed"
+        {card.state === "proposed" || card.state === "partial"
           ? <button type="button" disabled={busy} onClick={() => void create()} data-testid="lane-draft-create"
-              className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50">Создать</button>
+              className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50">{card.state === "partial" ? "Создать остальное" : "Создать"}</button>
           : <>
               <span className="text-xs text-muted-foreground">Создано · {card.taskIds.join(", ") || "—"}</span>
               {firstTask && card.runId ? (

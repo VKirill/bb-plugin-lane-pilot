@@ -37,12 +37,15 @@ export type CurriculumCluster = { source: "memory" | "forecast" | "wall" | "rule
  * memory misses by query, forecast rows whose file or first-try score missed grouped by area, open wall classes by
  * class key, and rules a picked attempt failed on anyway grouped by rule id.
  */
+/** Rows any one curriculum source reads: every source is limited to the window and to this many rows (the newest). */
+export const CURRICULUM_ROW_BOUND = 5000;
+
 export function curriculumClusters(db: Db, days = 7, now = Date.now()): CurriculumCluster[] {
   const since = now - days * 86_400_000;
   const clusters: CurriculumCluster[] = [];
 
   const byQuery = new Map<string, CurriculumCluster>();
-  for (const row of listMemoryMisses(db as never, since, undefined, 1_000_000_000)) {
+  for (const row of listMemoryMisses(db as never, since, undefined, CURRICULUM_ROW_BOUND)) {
     const key = row.query.toLowerCase().replace(/\s+/g, " ").trim();
     const hit = byQuery.get(`${row.projectId}\n${key}`) ?? { source: "memory" as const, key: row.query.slice(0, 200), count: 0, sample: row.query.slice(0, 200), projectId: row.projectId };
     hit.count += 1;
@@ -51,7 +54,7 @@ export function curriculumClusters(db: Db, days = 7, now = Date.now()): Curricul
   clusters.push(...[...byQuery.values()].sort((a, b) => b.count - a.count).slice(0, 50));
 
   const byArea = new Map<string, CurriculumCluster>();
-  for (const row of forecastReport(db as never, { days, now }).scored) {
+  for (const row of forecastReport(db as never, { days, now, limit: CURRICULUM_ROW_BOUND }).scored) {
     const fileMiss = (row.score.paths?.unplanned.length ?? 0) + (row.score.paths?.untouched.length ?? 0) > 0;
     if (!fileMiss && row.score.firstTry.hit) continue;
     const area = row.area ?? "(unknown)";
@@ -61,10 +64,10 @@ export function curriculumClusters(db: Db, days = 7, now = Date.now()): Curricul
   }
   clusters.push(...[...byArea.values()].sort((a, b) => b.count - a.count).slice(0, 50));
 
-  for (const wall of listClasses(db as never, { state: "open" }).slice(0, 50))
+  for (const wall of listClasses(db as never, { state: "open", since, limit: 50 }))
     clusters.push({ source: "wall", key: wall.classKey, count: wall.total, sample: wall.reasonNorm.slice(0, 200), projectId: "" });
 
-  const rules = ruleRecurrences(db as never, since)
+  const rules = ruleRecurrences(db as never, since, CURRICULUM_ROW_BOUND)
     .map((row) => ({ source: "rule" as const, key: row.ruleId, count: row.count, sample: row.sampleTaskId, projectId: row.projectId }));
   clusters.push(...rules.sort((a, b) => b.count - a.count).slice(0, 50));
 
@@ -84,6 +87,14 @@ export function weakSpotsBrief(clusters: readonly CurriculumCluster[], now = new
   return clusters.slice(0, 10).map(line).join("\n");
 }
 export const CURRICULUM_KV_KEY = "lp.curriculum.latest";
+
+/** The Monday job's body: nothing unless the global setting `curriculum.weekly` is `on`; then the clusters of the last 7 days, the brief, one kv write. Returns the number of lines, or null when it did not run. */
+export async function runCurriculumWeekly(db: Db, kv: { set(key: string, value: unknown): Promise<unknown> }, settings: Record<string, unknown>, now = Date.now()): Promise<number | null> {
+  if (String(settings["curriculum.weekly"] ?? "off") !== "on") return null;
+  const brief = weakSpotsBrief(curriculumClusters(db, 7, now));
+  await kv.set(CURRICULUM_KV_KEY, brief);
+  return brief.split("\n").filter(Boolean).length;
+}
 
 /** Lesson candidates from another repository's history: commits whose subject says it fixed something, with the files they touched. */
 export function excavate(gitLog: string): Array<{ commit: string; subject: string; files: string[] }> {

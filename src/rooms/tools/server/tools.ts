@@ -1,3 +1,4 @@
+import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { secretShaped } from "../../tasks";
 import type { BacklogApi } from "../../backlog/server";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
@@ -28,9 +29,9 @@ import { mountWorkflowArchitect } from "../../workflow/server";
 import { mountLeadTool } from "../../lead/server";
 import { mountScheduleTools } from "../../schedule/server";
 import { mountToolFamilies } from "./tool-families";
-import { CURRICULUM_KV_KEY, curriculumClusters, weakSpotsBrief } from "./self-improve";
-import { createFromDraft, getDraft, proposeDraft } from "../../tasks/server";
-import { registerObservedTool, requirePmThread, requirePmThreadRun, scheduleIsolated } from "../../platform/server";
+import { CURRICULUM_KV_KEY, runCurriculumWeekly } from "./self-improve";
+import { createFromDraft, dispatchChecked, getDraft, proposeDraft } from "../../tasks/server";
+import { registerObservedTool, requirePmThread, requirePmThreadRun, scheduleIsolated, workStartRefusal } from "../../platform/server";
 import { selfRepairDeps } from "../../self-repair/server";
 import { ToolError } from "../../contracts/server";
 import { compactDispatchReply, compactReceipt, stageDetail } from "../../runs/server";
@@ -133,14 +134,15 @@ export function pmRunInstructions(args: { runId: string; writerLabel: string | n
 export function registerTools(ctx: ServerCore, services: Services, familyContributors: readonly (() => void)[] = []) {
   const { bb, db } = ctx;
 
-  // The weekly weak-spots brief (SMA k_v_curriculum): every Monday the four miss sources are clustered into at most
-  // ten imperative lines at lp.curriculum.latest; `bb lane-pilot curriculum --brief` prints them. Nothing injects the
-  // brief into a PM's or a writer's context.
+  // The weekly weak-spots brief (SMA k_v_curriculum): every Monday the four miss sources (each limited to the last 7 days and
+  // 5000 rows) are clustered into at most ten imperative lines at lp.curriculum.latest; `bb lane-pilot curriculum --brief`
+  // prints them. Nothing injects the brief into a PM's or a writer's context. Off unless the global setting
+  // curriculum.weekly is `on`: a default install runs no new job. registerTools runs once, in the plugin server on the hub
+  // (server.ts), where the one data.db lives; the named schedule skips an overlapping run.
   scheduleIsolated(bb, "curriculum-weekly", "0 9 * * 1", async (signal) => {
-    void signal;
-    const brief = weakSpotsBrief(curriculumClusters(db, 7));
-    await (bb.storage.kv as { set(key: string, value: unknown): Promise<unknown> }).set(CURRICULUM_KV_KEY, brief);
-    ctx.log(`curriculum weekly: ${brief.split("\n").filter(Boolean).length} weak-spot line(s) at ${CURRICULUM_KV_KEY}`);
+    if (ctx.isDisposed() || signal?.aborted) return;
+    const lines = await runCurriculumWeekly(db, bb.storage.kv as { set(key: string, value: unknown): Promise<unknown> }, loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID));
+    if (lines !== null) ctx.log(`curriculum weekly: ${lines} weak-spot line(s) at ${CURRICULUM_KV_KEY}`);
   }, { timeoutMs: 10 * 60_000 });
 
   registerObservedTool(bb.agents, {
@@ -164,11 +166,10 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
     parameters:z.object({ confirm:z.literal(true), plan:z.string().min(1), task:taskV2Schema.optional(), baseRef:z.string().trim().min(1).max(240).optional(),
       objective:z.string().trim().min(1).max(2000).describe("Required on the first dispatch of a run (later ones may omit it): what this whole run is for, one phrase in the language the owner writes in. Lane Pilot keeps the first one in the run's record.").optional() }).strict(),
     execute: async (params, context) => {
-      // Rails by default: the owner's heavy request is a phase, and its pieces are issued by the phase, not by hand.
-      const refusal = await services.phaseIntake.dispatchRefusal(context.threadId);
-      if (refusal) throw new ToolError(refusal, { code:"phase_rails", retryable:false, sideEffects:"none" });
+      // Rails by default, then the writer dispatch with its gates: one function, shared with the task drafts (tasks/server/draft.ts).
       return JSON.stringify(
-        compactDispatchReply(await services.dispatchWriter({ threadId:context.threadId, projectId:context.projectId, task:params.task, plan:params.plan, baseRef:params.baseRef, objective:params.objective, requireObjective:true })),
+        compactDispatchReply(await dispatchChecked({ dispatchRefusal: (threadId) => services.phaseIntake.dispatchRefusal(threadId), dispatchWriter: services.dispatchWriter as never },
+          { threadId:context.threadId, projectId:context.projectId, task:params.task, plan:params.plan, baseRef:params.baseRef, objective:params.objective })),
       );
     },
   });
@@ -183,13 +184,16 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
     }).strict(),
     execute: async (params, context) => {
       if (params.draftId) {
-        if (!params.create) return JSON.stringify({ error:"draftId without create:true does nothing" });
+        if (!params.create) return JSON.stringify({ error:`draftId without create:true does nothing` });
+        // Creating starts work: the same owner-turn gate lane_pilot_dispatch_writer passes (startsWork), then the same dispatch function per contract.
+        const turnRefusal = await workStartRefusal(context, "lane_pilot_dispatch_writer");
+        if (turnRefusal) throw new ToolError(turnRefusal, { code:"not_owner_turn", retryable:false, sideEffects:"none" });
         const draft = getDraft(db, params.draftId);
-        if (!draft) return JSON.stringify({ error:`draft ${params.draftId} does not exist` });
-        return JSON.stringify(await createFromDraft(db, draft.id, async (contract) => {
-          const reply = await services.dispatchWriter({ threadId: draft.threadId ?? context.threadId, projectId: draft.projectId, task: contract as never, plan: draft.plan ?? undefined, objective: draft.objective ?? undefined, requireObjective: false });
-          return String((reply as { taskId?: string }).taskId ?? "");
-        }));
+        // A draft of another project or another chat is not this PM's to create.
+        if (!draft || draft.projectId !== context.projectId) return JSON.stringify({ error:`draft ${params.draftId} does not exist` });
+        return JSON.stringify(await createFromDraft(db, draft.id, async (contract) => compactDispatchReply(await dispatchChecked(
+          { dispatchRefusal: (threadId) => services.phaseIntake.dispatchRefusal(threadId), dispatchWriter: services.dispatchWriter as never },
+          { threadId: draft.threadId ?? context.threadId, projectId: draft.projectId, task: contract, plan: draft.plan ?? undefined, objective: draft.objective ?? undefined })), { projectId: context.projectId }));
       }
       const contracts = params.tasks ?? (params.task ? [params.task] : []);
       if (!contracts.length) throw new ToolError("propose names task or tasks", { code:"bad_input", retryable:false, sideEffects:"none" });

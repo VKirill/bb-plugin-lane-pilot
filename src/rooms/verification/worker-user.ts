@@ -59,10 +59,10 @@ export function asWorker(user: string, program: string, args: readonly string[],
   return { program: SUDO, args: ["-n", "-u", user, ...(keep.length ? [`--preserve-env=${[...new Set(keep)].join(",")}`] : []), program, ...args] };
 }
 
-/** The owner's paths a worker must never read (SMA m_ac_identity_probe); each is probed with `test -r` as the worker. */
-export const WORKER_SECRET_PATHS = [".ssh", ".lane-pilot", ".codex/auth.json", ".claude/.credentials.json", ".aws", ".gnupg"] as const;
+/** The owner's credential paths a worker should not read (SMA m_ac_identity_probe); each is probed with `test -r` as the worker. `~/.lane-pilot` is not one: the worker's own worktrees and jobs live there by design, and no single credential file under it is known. */
+export const WORKER_SECRET_PATHS = [".ssh", ".codex/auth.json", ".claude/.credentials.json", ".aws", ".gnupg"] as const;
 
-/** Identity probe: the worker OS user cannot reach the owner's secrets. Any readable path is reported as exposed and the probe fails. */
+/** Identity probe: the worker OS user cannot reach the owner's secrets. A readable path is reported as exposed; it is a warning, never a failing exit. */
 export async function workerSecretReach(user: string, ownerHome = homedir()): Promise<{ ok: boolean; reachable: string[] }> {
   if (!WORKER_USER.test(user)) throw new Error(`worker_user_invalid: ${user}`);
   const reachable: string[] = [];

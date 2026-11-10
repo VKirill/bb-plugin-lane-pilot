@@ -1,7 +1,7 @@
 import { MACHINE_AFFINITY_ANY } from "@lane-pilot/contracts";
 import { loadProjectSettings, countAttempts, createAttempt, failedBackgroundStageRows, failureFieldsOf, getActivation, getAttempt, getRunCard, latestAttemptsPerTask, stageReceiptStates, openAttemptIdsOfRun, openRunOfPmThread, runTaskCardRows, taskCheckLogRows, transitionAttempt } from "../../../storage";
 import { ownerWordsMode } from "../../../tasks";
-import { createFromDraft, getDraft } from "../../../tasks/server";
+import { createFromDraft, dispatchChecked, getDraftOf } from "../../../tasks/server";
 import { t } from "@lane-pilot/i18n";
 import { resolveRoleModel } from "@lane-pilot/models";
 import { setRunHalted } from "../runs-halt";
@@ -50,6 +50,7 @@ interface Services {
   rollback: RollbackApi;
   tokenCursorRow: TokenCursorReader;
   dispatchWriter: DispatchWriter;
+  phaseIntake: { dispatchRefusal(threadId: string): Promise<string | null> };
 }
 
 
@@ -212,22 +213,24 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         ...(openRun ? { graph: buildTaskGraph(db, openRun.id) } : {}),
       };
     },
-    task_draft_card: async ({ draftId }) => {
-      const draft = getDraft(db, draftId);
+    task_draft_card: async ({ draftId, projectId }) => {
+      const draft = getDraftOf(db, draftId, projectId);
       if (!draft) return null;
       const titles = draft.contracts.map((contract) => String((contract as { display_title?: string }).display_title ?? (contract as { id?: string }).id ?? "task"));
       const areas = [...new Set(draft.contracts.map((contract) => String((contract as { area?: string }).area ?? "")))].filter(Boolean);
       return { id: draft.id, kind: draft.kind, state: draft.state, runId: draft.runId, taskIds: draft.taskIds,
+        failed: draft.results.flatMap((result, index) => (result?.state === "failed" ? [{ title: titles[index] ?? "task", reason: result.reason }] : [])),
         title: draft.objective ?? titles[0] ?? "task", promise: draft.objective ?? `Создам ${titles.length === 1 ? "задачу" : `${titles.length} задачи`}: ${titles.join(", ")}`,
         groups: areas.length ? areas.map((area) => ({ area, titles: draft.contracts.filter((c) => String((c as { area?: string }).area ?? "") === area).map((c) => String((c as { display_title?: string }).display_title ?? "")) })) : [{ area: "", titles }] };
     },
-    task_draft_create: async ({ draftId }) => {
-      const draft = getDraft(db, draftId);
-      if (!draft) return { state: "already_created", taskIds: [] as string[], runId: null as string | null };
-      return await createFromDraft(db, draftId, async (contract) => {
-        const reply = await services.dispatchWriter({ threadId: draft.threadId ?? "", projectId: draft.projectId, task: contract as never, plan: draft.plan ?? undefined, objective: draft.objective ?? undefined, requireObjective: false, birth: "pm" });
-        return String((reply as { taskId?: string }).taskId ?? "");
-      });
+    // The card's button: the same createFromDraft and the same dispatch function as the PM's confirmed call and lane_pilot_dispatch_writer.
+    // A window that names its project (projectId) creates only that project's drafts. No owner-turn gate: this is the owner's own click, not an agent turn.
+    task_draft_create: async ({ draftId, projectId }) => {
+      const draft = getDraftOf(db, draftId, projectId);
+      if (!draft) throw new Error(projectId ? "draft_not_in_project" : `draft ${draftId} does not exist`);
+      return await createFromDraft(db, draftId, async (contract) => dispatchChecked(
+        { dispatchRefusal: (threadId) => services.phaseIntake.dispatchRefusal(threadId), dispatchWriter: services.dispatchWriter as never },
+        { threadId: draft.threadId ?? "", projectId: draft.projectId, task: contract, plan: draft.plan ?? undefined, objective: draft.objective ?? undefined }), { projectId });
     },
     task_board: async ({ projectId, doneHours }) => {
       const items = buildTaskBoard(db, { projectId: projectId ?? null, doneSince: Date.now() - doneHours * 3_600_000 });

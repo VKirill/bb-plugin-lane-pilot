@@ -1158,13 +1158,9 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         }
         integration = { status:merged.status, commit:merged.commit, conflicts:[], ...(merged.rebased ? { rebased:true } : {}) };
         // The base, the merge commit and the files it changed (deletions included) go on the attempt's record (SMA wall 4).
-        services.rollback?.noteMerge(input.attemptId, merged);
+        // The landing record (SMA k_lib_landing) rides the same row: the count of checks that were green when the merge went in.
+        services.rollback?.noteMerge(input.attemptId, merged, (candidate.verification ?? []).filter((check) => check.exitCode === 0).length);
         if (merged.status === "merged") {
-          // The landing stamp (SMA k_lib_landing): the merge is in, the gate ran green — the record keeps one receipt
-          // with the commit and the numbers (checks green, files carried).
-          services.rollback?.noteLanded?.({ projectId: input.projectId, runId: input.runId, taskId: input.taskId },
-            { attemptId: input.attemptId, mergeCommit: merged.commit, baseSha: merged.base ?? null,
-              checksGreen: (candidate.verification ?? []).filter((check) => check.exitCode === 0).length, files: (candidate.produced ?? []).length });
           // The landed reactions run now, fire-and-forget as before: the merge intent is cleared below, and a
           // reload between merge and this launch leaves the intent for recovery to redo.
           verification.landed(input, basePath, merged.commit, candidate.produced ?? [], false, bound.workspace_path,

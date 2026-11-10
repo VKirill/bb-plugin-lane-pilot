@@ -10,5 +10,5 @@ export type { CheckReading, CheckRun, CheckVerdict } from "./check-reading";
 export type { TestSummary } from "./tests-ran";
 export { bindBacklogIssued, registerQueueTool } from "./queue-tool";
 export { registerConversationTools } from "./conversation-tools";
-export { proposeDraft, getDraft, createFromDraft } from "./draft";
-export type { TaskDraft } from "./draft";
+export { proposeDraft, getDraft, getDraftOf, createFromDraft, dispatchChecked, settleReply, MAX_DRAFT_CONTRACTS, MAX_DRAFT_BYTES, DRAFT_KEEP_MS } from "./draft";
+export type { TaskDraft, ContractResult, CreateOutcome } from "./draft";

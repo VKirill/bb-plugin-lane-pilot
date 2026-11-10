@@ -250,9 +250,10 @@ export const classFrom = (row: ClassRow): WallClass => ({
   failedMoves: row.failed_moves, hunt: row.hunt_state, afterHuntFailed: row.after_hunt_failed, stage: row.stage,
 });
 
-export function listClasses(db: WallDb, filter: { state?: "open" | "closed" } = {}): WallClass[] {
-  const rows = db.prepare(`SELECT * FROM lane_pilot_wall_class ${filter.state ? "WHERE state=?" : ""} ORDER BY recur1 DESC, recur7 DESC, last_seen DESC`)
-    .all(...(filter.state ? [filter.state] : [])) as ClassRow[];
+export function listClasses(db: WallDb, filter: { state?: "open" | "closed"; since?: number; limit?: number } = {}): WallClass[] {
+  const where = [...(filter.state ? ["state=?"] : []), ...(filter.since !== undefined ? ["last_seen>=?"] : [])];
+  const rows = db.prepare(`SELECT * FROM lane_pilot_wall_class ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY recur1 DESC, recur7 DESC, last_seen DESC${filter.limit !== undefined ? " LIMIT ?" : ""}`)
+    .all(...(filter.state ? [filter.state] : []), ...(filter.since !== undefined ? [filter.since] : []), ...(filter.limit !== undefined ? [filter.limit] : [])) as ClassRow[];
   return rows.map(classFrom);
 }
 

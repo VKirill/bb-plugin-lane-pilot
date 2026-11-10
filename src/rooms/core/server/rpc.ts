@@ -121,6 +121,7 @@ interface Services {
   wallThreadReader: WallThreadReader;
   money: MoneyApi;
   phases: PhaseApi;
+  phaseIntake: { dispatchRefusal(threadId: string): Promise<string | null> };
   regression: RegressionApi;
   resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
   resumeOrphans: ReconcileApi["resumeOrphans"];

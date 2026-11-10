@@ -6,17 +6,21 @@ import type { ExecutorRow, StageBlock, TaskGraph } from "../logic";
 import { StageStrip } from "./stage-strip";
 import { duration, fill, money, roleName, shortModel, stageName, stageState } from "./format";
 import { useLpRpcQuery } from "../../ui-shell/ui";
+import { usePageVisible } from "./page-visible";
 
 const POLL_MS = 8_000;
 const isOff = (block: StageBlock) => block.cell.state === "skipped" && block.cell.rounds === 0;
 const costText = (row: ExecutorRow) => (row.costState === null ? null : row.costUsd !== null ? money(row.costUsd) : t(row.costState === "not_measured" ? "graphNotMeasured" : "graphPartial"));
 
 /** A task step by step, narrow enough for a side panel: one line per stage, who ran it, how long, what it cost, the thread to open. */
-export function StageSteps({ runId, taskId, locale }: { runId: string; taskId: string; locale: string }) {
+export function StageSteps({ runId, taskId, locale, projectId }: { runId: string; taskId: string; locale: string; projectId?: string | null }) {
   const navigate = useBbNavigate();
   const graph = (useLpRpcQuery("work_graph_task", { runId, taskId }, { pollMs: POLL_MS }).data ?? null) as TaskGraph | null;
   // What the attempt does now, in words (SMA m_ws_attempt_log), beside the open-thread button.
-  const tail = (useLpRpcQuery("attempt_log_tail", { runId, taskId }, { pollMs: POLL_MS }).data ?? null) as { lines?: string[] } | null;
+  // Read only while a cell is running and the page is shown; the window's project, when it names one, scopes the read.
+  const visible = usePageVisible();
+  const running = graph?.cells.some((cell) => cell.state === "running") ?? false;
+  const tail = (useLpRpcQuery("attempt_log_tail", { runId, taskId, ...(projectId ? { projectId } : {}) }, { pollMs: POLL_MS, enabled: running && visible }).data ?? null) as { lines?: string[] } | null;
   if (!graph) return <p className="py-1 text-xs text-muted-foreground">{t("graphLoading")}</p>;
   const off = graph.stages.filter(isOff);
   return (

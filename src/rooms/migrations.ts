@@ -559,7 +559,7 @@ export const migrations = [
   // The barrier's outcome on the attempt row itself (sma av_record): gate, status, why, tree and the verdict's summary.
   `ALTER TABLE lane_pilot_attempt ADD COLUMN barrier_json TEXT`,
   // Task drafts the PM proposes before the owner says «да» (SMA m_sw_chat_draft, m_sw_batch_draft): the contract(s)
-  // wait in `proposed`; the one enqueue path flips to `created`, and a second create reads `already_created`.
+  // wait in `proposed`; the one enqueue path records a result per contract (results_json), the draft is `created` once every contract is, `partial` while some failed.
   `CREATE TABLE lane_pilot_task_draft (
     id TEXT PRIMARY KEY,
     run_id TEXT,
@@ -571,7 +571,10 @@ export const migrations = [
     plan TEXT,
     state TEXT NOT NULL DEFAULT 'proposed',
     task_ids_json TEXT,
+    results_json TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`,
+  // The landing record (SMA k_lib_landing): how many checks were green when the attempt's merge went in; nullable, beside merge_commit and changed_json.
+  `ALTER TABLE lane_pilot_attempt_change ADD COLUMN checks_green INTEGER`,
 ];

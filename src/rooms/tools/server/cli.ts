@@ -599,10 +599,7 @@ ${ERRANDS_USAGE}` },
           return { exitCode:0, stdout:JSON.stringify(subagentReceipts(db, { projectId, days }), null, 2) };
         }
         if (command === "run-goal") return await runRunGoalCli(services.runGoal, args);
-        if (command === "capabilities") return await runCapabilityCli(services.capabilities, args, async () => {
-          const user = args[1] ?? "lp-worker";
-          return await workerSecretReach(user);
-        });
+        if (command === "capabilities") return await runCapabilityCli(services.capabilities, args, (user) => workerSecretReach(user), Boolean(invocation?.threadId));
         if (command === "outages") return runOutageCli(ctx, args);
         if (command === "failures") {
           const days = args[0] === "--since" ? Number(args[1]) : undefined;

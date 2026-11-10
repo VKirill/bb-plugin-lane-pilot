@@ -3,7 +3,7 @@ import type { rpcContract } from "../../contracts";
 import { TURN_REQUESTED } from "../../anamnesis";
 import type { ServerCore } from "../../contracts/server";
 import { workGraphStats, workGraphStrips, workGraphTask, type TokenCursorReader } from "./report";
-import { listAttemptHistory } from "../../storage";
+import { getRun, listAttemptHistory } from "../../storage";
 import { tailWords } from "../log-tail";
 
 /** BB pages thread events at 100 at most; a thread with more requested turns shows 100. */
@@ -31,7 +31,9 @@ export function workGraphRpc(ctx: Pick<ServerCore, "bb" | "db">, services: { tok
       return workGraphTask(db, { runId, taskId }, services.tokenCursorRow, (threadId) => turns.get(threadId) ?? null);
     },
     /** The attempt's last lines in words (SMA m_ws_attempt_log): the latest attempt's thread tail as short Russian lines. */
-    attempt_log_tail: async ({ runId, taskId }) => {
+    attempt_log_tail: async ({ runId, taskId, projectId }) => {
+      // A window that names its project reads only that project's runs.
+      if (projectId && getRun(db, runId)?.project_id !== projectId) throw new Error("run_not_in_project");
       const threadId = listAttemptHistory(db, runId, taskId).at(-1)?.thread_id ?? null;
       if (!threadId) return { threadId: null, lines: [] as string[] };
       const listed = await (bb.sdk.threads.events.list({ threadId, order: "desc", limit: "40" } as never) as Promise<unknown>).catch(() => null);

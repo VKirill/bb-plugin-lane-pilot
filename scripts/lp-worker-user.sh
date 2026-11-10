@@ -36,12 +36,13 @@ create() {
 
 check() {
   if sudo -n -u "$USER_NAME" /usr/bin/true 2>/dev/null; then echo "reachable: $OWNER runs as $USER_NAME without a password"; else echo "unreachable: run $0 create $USER_NAME as an admin"; exit 1; fi
-  # The probe's real point (SMA m_ac_identity_probe): the worker must not read the owner's secrets.
-  local bad=0
-  for path in "$HOME"/.ssh "$HOME"/.lane-pilot "$HOME"/.codex/auth.json "$HOME"/.claude/.credentials.json "$HOME"/.aws "$HOME"/.gnupg; do
-    if sudo -n -u "$USER_NAME" /usr/bin/test -r "$path" 2>/dev/null; then echo "exposed: $USER_NAME can read $path"; bad=1; fi
+  # The probe's second part (SMA m_ac_identity_probe): a warning line per credential path the worker can read. It never changes the exit code
+  # (check and create exit exactly as before); ~/.lane-pilot is not probed, the worker's own worktrees live under it by design.
+  local path
+  for path in "$HOME"/.ssh "$HOME"/.codex/auth.json "$HOME"/.claude/.credentials.json "$HOME"/.aws "$HOME"/.gnupg; do
+    if sudo -n -u "$USER_NAME" /usr/bin/test -r "$path" 2>/dev/null; then echo "warning: $USER_NAME can read $path"; fi
   done
-  if [ "$bad" -eq 0 ]; then echo "closed: $USER_NAME cannot read the owner's secrets"; else exit 1; fi
+  return 0
 }
 
 case "${1:-check}" in

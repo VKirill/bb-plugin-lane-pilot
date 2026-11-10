@@ -7,6 +7,7 @@ import { StageStrip } from "./stage-strip";
 import { duration, fill, money, roleName, shortModel, stageName, stageState, tokens } from "./format";
 import { ceilingLine } from "../logic";
 import { useLpRpcQuery } from "../../ui-shell/ui";
+import { usePageVisible } from "./page-visible";
 
 const POLL_MS = 10_000;
 /** A stage the project's settings turned off never ran: one line names them all instead of a card each. */
@@ -75,8 +76,10 @@ function StageCard({ block, locale, onThread }: { block: StageBlock; locale: str
 export function WorkBreakdown({ runId, taskId, locale }: { runId: string; taskId: string; locale: string }) {
   const navigate = useBbNavigate();
   const graph = (useLpRpcQuery("work_graph_task", { runId, taskId }, { pollMs: POLL_MS }).data ?? null) as TaskGraph | null;
-  const moneyStatus = (useLpRpcQuery("money_status", {}, { pollMs: POLL_MS * 3 }).data ?? null) as { monthUsd: number; cap: number | null } | null;
-  const running = graph?.cells.some((cell) => cell.state === "running" || cell.state === "pending") ?? true;
+  const running = graph?.cells.some((cell) => cell.state === "running" || cell.state === "pending") ?? false;
+  // The month line is read only while the task is at work and the page is shown.
+  const visible = usePageVisible();
+  const moneyStatus = (useLpRpcQuery("money_status", {}, { pollMs: POLL_MS * 3, enabled: running && visible }).data ?? null) as { monthUsd: number; cap: number | null } | null;
   if (!graph) return <p className="text-sm text-muted-foreground">{t("graphLoading")}</p>;
   if (!graph.cells.length) return <p className="text-sm text-muted-foreground">{t("graphNoStages")}</p>;
   const { summary } = graph;

@@ -9,7 +9,7 @@ import { useThreadRowStatus } from "./thread-row-status";
 
 type Item = {
   key: string; runId: string; taskId: string | null; title: string; column: "queued" | "running" | "checking" | "blocked" | "done"; phase: string;
-  stage: string | null; model: string | null; since: number | null; threadId: string | null; updatedAt: number; detail: string | null;
+  stage: string | null; model: string | null; since: number | null; threadId: string | null; updatedAt: number; detail: string | null; projectId?: string | null;
 };
 type Live = { role: "pm" | "writer" | "helper"; pmThreadId: string | null; items: Item[]; strips: Record<string, Strip> } | null;
 
@@ -42,7 +42,7 @@ function Row({ item, strip, locale, open, onToggle }: { item: Item; strip: Strip
         <span className="min-w-0 truncate">{line}</span>
       </div>
       {now && item.column === "blocked" && item.detail ? <div className="break-words pl-6 text-xs text-destructive/90">{item.detail}</div> : null}
-      {open && item.taskId ? <div className="pl-6"><StageSteps runId={item.runId} taskId={item.taskId} locale={locale} /></div> : null}
+      {open && item.taskId ? <div className="pl-6"><StageSteps runId={item.runId} taskId={item.taskId} locale={locale} projectId={item.projectId} /></div> : null}
     </div>
   );
 }

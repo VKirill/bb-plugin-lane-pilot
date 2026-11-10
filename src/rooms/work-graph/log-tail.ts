@@ -9,12 +9,16 @@ const VERB: ReadonlyArray<readonly [RegExp, string]> = [
 export function tailWords(events: readonly unknown[], max = 8): string[] {
   const lines: string[] = [];
   for (const event of events) {
+    // One call is several events (started, updated, completed): only the completed one counts, or one command would read as three.
+    const kind = (event as { type?: unknown })?.type;
+    if (typeof kind === "string" && kind.startsWith("item/") && kind !== "item/completed") continue;
     const item = ((event as { data?: { item?: Record<string, unknown> } })?.data?.item ?? event) as Record<string, unknown>;
     const type = String(item?.type ?? "");
     let line: string | null = null;
     if (type === "commandExecution") line = "запускает проверку";
+    else if (type === "fileChange") line = "правит файл…";
     else if (type === "toolCall") {
-      const name = String(item.name ?? item.tool ?? "");
+      const name = String(item.tool ?? item.name ?? "");
       line = VERB.find(([re]) => re.test(name))?.[1] ?? null;
     } else if (type === "agentMessage" || type === "assistantMessage") line = "пишет ответ";
     if (line) lines.push(line);
