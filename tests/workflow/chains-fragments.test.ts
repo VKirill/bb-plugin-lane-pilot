@@ -10,13 +10,13 @@ describe("lp.analyze", () => {
   it("standard: gather, assess, done", async () => {
     const r = await runSim("lp.analyze", { input: { goal: "Add a --json flag" }, stubs: { assess: { confidence: 80, scope_verdict: "small" } } });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("gather assess done");
+    expect(pathOf(r)).toBe("gather assess choose advise done");
     expect(out(r)).toMatchObject({ scope_verdict: "small", recommendation: "go", confidence: 80 });
   });
 
   it("low confidence goes back to gather in the same session until it rises (at most 3 rounds)", async () => {
     const r = await runSim("lp.analyze", { input: { goal: "g" }, stubs: { assess: [{ confidence: 40 }, { confidence: 55 }, { confidence: 75 }] } });
-    expect(pathOf(r)).toBe("gather assess gather assess gather assess done");
+    expect(pathOf(r)).toBe("gather assess gather assess gather assess choose advise done");
     expect(r.calls.filter((call) => call.node === "assess")).toHaveLength(3);
     const via = r.db.prepare("SELECT input_json FROM lane_pilot_wf_step WHERE run_id=? AND step_key='gather#2'").get(r.summary.runId) as { input_json: string };
     expect(JSON.parse(via.input_json).via.mode).toBe("same-session");
@@ -24,15 +24,15 @@ describe("lp.analyze", () => {
 
   it("a stalled analysis stops asking for more and says what it still does not know", async () => {
     const r = await runSim("lp.analyze", { input: { goal: "g" }, stubs: { assess: { confidence: 45, stalled: true, residual_risks: ["no tests in the area"] } } });
-    expect(pathOf(r)).toBe("gather assess done");
+    expect(pathOf(r)).toBe("gather assess choose advise done");
     expect(out(r)).toMatchObject({ confidence: 45, residual_risks: ["no tests in the area"] });
   });
 
   it("quick depth never loops; full adds the independent second opinion", async () => {
     const quick = await runSim("lp.analyze", { input: { goal: "g", depth: "quick" }, mode: "quick", stubs: { assess: { confidence: 30 } } });
-    expect(pathOf(quick)).toBe("gather assess done");
+    expect(pathOf(quick)).toBe("gather assess choose advise done");
     const full = await runSim("lp.analyze", { input: { goal: "g", depth: "deep" }, mode: "full", stubs: { assess: { confidence: 90 } } });
-    expect(pathOf(full)).toBe("gather assess second_opinion done");
+    expect(pathOf(full)).toBe("gather assess second_opinion choose advise done");
   });
 });
 

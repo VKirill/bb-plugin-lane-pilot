@@ -1,0 +1,130 @@
+{
+  "id": "audit-uat",
+  "name": {
+    "en": "UAT audit",
+    "ru": "Аудит приёмки"
+  },
+  "description": {
+    "en": "Every open acceptance item across all phases plus a manual test plan, written to .agents/planning/UAT-AUDIT.md. Changes nothing in any UAT.md.",
+    "ru": "Все открытые пункты приёмки по всем фазам и план ручной проверки в .agents/planning/UAT-AUDIT.md. Сами UAT.md не меняются."
+  },
+  "examples": {
+    "ru": [
+      "Что осталось непринятым по всем фазам?",
+      "Сделай план ручной проверки приёмки"
+    ],
+    "en": [
+      "What is still unaccepted across all phases?",
+      "Write a manual test plan for acceptance"
+    ]
+  },
+  "status": "published",
+  "tags": [
+    "audit",
+    "uat"
+  ],
+  "inputs": {},
+  "outputs": {
+    "status": "done",
+    "open_count": "int",
+    "audit_path": "string"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "project": {
+      "git": true
+    }
+  },
+  "budget": {
+    "max_minutes": 60
+  },
+  "entry": "audit",
+  "nodes": [
+    {
+      "id": "audit",
+      "type": "agent",
+      "role": "auditor",
+      "title": {
+        "en": "Open acceptance items",
+        "ru": "Открытые пункты приёмки"
+      },
+      "prompt": "Run `lane-plan audit-uat` and also glob .agents/phases/*/UAT.md (phases outside the roadmap). Then write .agents/planning/UAT-AUDIT.md: the open and failed acceptance lines grouped by phase, and a manual test plan — the steps of each item and where to test it (the phase's candidate branch or main). Change no UAT.md. Return open_count and audit_path.",
+      "out": {
+        "open_count": "int",
+        "audit_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить цель"
+      },
+      "rule": "validateDeliverable on UAT-AUDIT.md: the audit file the run produced",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "'done'",
+        "open_count": "audit.open_count",
+        "audit_path": "audit.audit_path"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "audit",
+      "to": "goal_check",
+      "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "uat-1",
+    "sim": {
+      "input": {},
+      "stubs": {
+        "audit": {
+          "open_count": 2,
+          "audit_path": ".agents/planning/UAT-AUDIT.md"
+        }
+      },
+      "expect_path": [
+        "audit",
+        "goal_check",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "open_count == 2"
+      ]
+    }
+  },
+  "goal_check": "validate"
+}

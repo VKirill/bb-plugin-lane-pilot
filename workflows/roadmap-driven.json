@@ -119,7 +119,12 @@
     },
     {
       "id": "roadmap",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "planner",
       "title": {
@@ -127,7 +132,7 @@
         "ru": "Разложить на сессии"
       },
       "src": "maestro-flow:workflows/roadmap.md, roadmap-common.md",
-      "prompt": "Split the requirements into sessions; each session is a complete cycle (analyze, plan, execute, verify) with a meaningful delivery boundary.\nDefault is ONE session. Split only when ALL hold: (1) runtime dependency - code of B calls a real output of A and it cannot be mocked, (2) it cannot be parallelized by a contract/interface, (3) a full barrier - all of A before any of B. At least 5 tasks per session (merge smaller). More than 3 sessions needs a stated reason for each boundary.\nprogressive = layers MVP, Usable, Refined chained by depends_on (MVP self-sufficient); direct = independent parallel sessions. Each active requirement maps to exactly one session.\nEach session: id, intent, depends_on, scope, success_criteria (observable from the user's side - what must be TRUE), complexity small|medium|large.\n",
+      "prompt": "Split the requirements into sessions; each session is a complete cycle (analyze, plan, execute, verify) with a meaningful delivery boundary.\nDefault is ONE session. Split only when ALL hold: (1) runtime dependency - code of B calls a real output of A and it cannot be mocked, (2) it cannot be parallelized by a contract/interface, (3) a full barrier - all of A before any of B. At least 5 tasks per session (merge smaller). More than 3 sessions needs a stated reason for each boundary.\nprogressive = layers MVP, Usable, Refined chained by depends_on (MVP self-sufficient); direct = independent parallel sessions. Each active requirement maps to exactly one session.\nEach session: id, intent, depends_on, scope, success_criteria (observable from the user's side - what must be TRUE), complexity small|medium|large.\nThe analysis upstream holds the stack (languages, frameworks, versions, test command) and the features the area already does: cut the sessions with them in view.\n",
       "out": {
         "sessions": "Session[]",
         "mode": "progressive|direct|single",

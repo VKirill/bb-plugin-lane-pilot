@@ -60,11 +60,12 @@
         "en": "Eval audit",
         "ru": "Аудит оценки"
       },
-      "prompt": "Read the AI-SPEC.md, the gold set and the scoring code. Answer each question of the EVAL-REVIEW template with evidence (file:line, a sample): gold set written before the prompt was tuned, metric tied to the user goal, gaming (a trivial output scoring high), leakage (test items in the prompt or few-shots), threshold justified. Write .agents/phases/<id>/EVAL-REVIEW.md.",
+      "prompt": "Read the AI-SPEC.md, the gold set and the scoring code. First, for each dimension the AI-SPEC.md evaluation section lists, mark it covered, partial or missing with evidence (file:line or a sample) — a table in EVAL-REVIEW.md; any missing dimension makes the verdict flawed. Then answer each question of the EVAL-REVIEW template with evidence: gold set written before the prompt was tuned, metric tied to the user goal, gaming (a trivial output scoring high), leakage (test items in the prompt or few-shots), threshold justified. Write .agents/phases/<id>/EVAL-REVIEW.md.",
       "out": {
         "findings": "Finding[]",
         "review_path": "string",
-        "flawed": "bool"
+        "flawed": "bool",
+        "coverage": "any"
       },
       "guards": {
         "maxVisits": 1,

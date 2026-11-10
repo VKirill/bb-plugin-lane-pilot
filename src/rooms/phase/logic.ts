@@ -96,15 +96,15 @@ export type PhaseRecord = {
   /** The machine runs the stages' workflows itself (setting phase.train, on by default); false leaves every stage to the PM. */
   train?: boolean;
   /** The stage workflow the machine runs now (src/rooms/phase/server/auto-stages.ts). */
-  auto?: { kind: "analyze" | "plan" | "draw" | "review" | "check" | "close" | "lessons"; wfRunId: string; startedAt: number; wave?: number };
+  auto?: { kind: "analyze" | "plan" | "draw" | "review" | "check" | "close" | "lessons" | "diagnose"; wfRunId: string; startedAt: number; wave?: number };
   /** The context signed before a return to discussion: the machine signs these documents again instead of analysing anew. */
   signedBefore?: { docs: string[]; risks?: Partial<Record<RiskKey, string>>; decisions?: string[]; appetite?: string; noGos?: string[] };
   /** Runs of a stage's workflow that did not finish; at two the loop is spent and the machine ends it (scope cut, hunters, backlog). */
-  autoFailures?: Partial<Record<"analyze" | "plan" | "check" | "draw" | "review" | "close" | "lessons", number>>;
+  autoFailures?: Partial<Record<"analyze" | "plan" | "check" | "draw" | "review" | "close" | "lessons" | "diagnose", number>>;
   /** Runs of a stage that failed from Lane Pilot's own fault (MACHINE_STAGE_FAILURE): at two the stage waits for a release; never cuts the scope. */
-  autoMachineFailures?: Partial<Record<"analyze" | "plan" | "check" | "draw" | "review" | "close" | "lessons", number>>;
+  autoMachineFailures?: Partial<Record<"analyze" | "plan" | "check" | "draw" | "review" | "close" | "lessons" | "diagnose", number>>;
   /** Failed runs of each stage's workflow over the phase's whole life, across versions (a new version forgets autoFailures, not this). */
-  autoFailuresTotal?: Partial<Record<"analyze" | "plan" | "check" | "draw" | "review" | "close" | "lessons", number>>;
+  autoFailuresTotal?: Partial<Record<"analyze" | "plan" | "check" | "draw" | "review" | "close" | "lessons" | "diagnose", number>>;
   /** Set before the machine's outcome for a spent loop runs (exhausted), so a pass that finds the phase still active does not run it again. */
   exhausted?: { at: number };
   /** The machine's returns to planning after a failed verdict: what to plan for (cleared once planned) and how many so far. */
@@ -157,7 +157,9 @@ export type PhaseRecord = {
   issueCap?: number;
   /** The seven-day rollback watch after acceptance (SMA p6_observe): what the machine saw in history; the acceptance is never touched. */
   observation?: PhaseObservation;
-  verification?: { verdict?: FrozenVerdict; model?: ModelVerdict };
+  verification?: { verdict?: FrozenVerdict; model?: ModelVerdict;
+    /** The parallel diagnosis of a failed verdict's gaps (SMA k_c_diagnose): one per verdict, keyed by its inputSha. */
+    diagnosis?: { inputSha: string; diagnoses: unknown[]; diagnosis: string; at: number } };
   acceptance?: { lines: AcceptanceLine[]; at: number; accepted: boolean };
   lessons?: { needed: boolean; why: string; analysis?: string; author?: string; reviewer?: string; reviewedHash?: string; /** The workflow run whose reviewer step read the analysis (its journal is the proof). */ reviewRun?: string; at?: number;
     /** The lesson as a draft (SMA p7_staged): it waits for the owner's word «lesson»; applied, it goes into memory (m_apply). A write that did not land is finished on a later pass from the same text (p7_recover). */
@@ -679,7 +681,7 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
     case "verification": {
       const verdict = r.verification?.verdict;
       if (verdict?.state === "failed") return { key: key(`verdict-failed:${verdict.inputSha}`), stage: phase.stage, waitsForPm: true,
-        text: `${head} — stage 5, verification failed: ${verdict.detail}. Accepted pieces are not run again by themselves: return the phase to planning (${tool("return", `, phaseId:"${id}", to:"planning", note`)}) and change the failing piece's contract (a changed piece is issued again as a redo) or add a piece; a return to execution without new work meets the same verdict.` };
+        text: `${head} — stage 5, verification failed: ${verdict.detail}.${r.verification?.diagnosis?.inputSha === verdict.inputSha && r.verification.diagnosis.diagnosis ? ` Diagnosis: ${r.verification.diagnosis.diagnosis.slice(0, 600)}` : ""} Accepted pieces are not run again by themselves: return the phase to planning (${tool("return", `, phaseId:"${id}", to:"planning", note`)}) and change the failing piece's contract (a changed piece is issued again as a redo) or add a piece; a return to execution without new work meets the same verdict.` };
       if (verdict && !r.verification?.model) return { key: key("model"), stage: phase.stage, waitsForPm: true,
         text: `${head} — stage 5, verification: the blind check passed (${verdict.detail}). Run the goal audit (workflow lp.close) against the phase goal «${phase.goal}»${r.design?.drawing ? ` and the phase drawing (${r.design.drawing.paths.join(", ")})` : ""} and report it with ${tool("goal_audit", `, phaseId:"${id}", state:"met"|"unmet", by, summary`)}.` };
       return { key: key("running"), stage: phase.stage, waitsForPm: false, text: `${head} — stage 5, verification: Lane Pilot runs every piece's checks together on main.` };

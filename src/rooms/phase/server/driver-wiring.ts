@@ -8,6 +8,7 @@ import { medianTaskSize } from "../../rollback/server";
 import { isRunHalted, isRunPaused } from "../../runs/server";
 import { intakeRunGoals } from "../intake";
 import { createAutoStages } from "./auto-stages";
+import { anamnesisFor, ownerCardBlock } from "../../anamnesis";
 import type { DriverBase } from "./driver-tools";
 import type { Docs } from "./driver-docs";
 import type { Journal } from "./driver-journal";
@@ -40,6 +41,7 @@ export function installWiring(tools: WiringTools) {
     runStopped: async (phase) => !!phase.runId && (await isRunHalted(bb.storage.kv as never, phase.runId) || await isRunPaused(bb.storage.kv as never, phase.runId)),
     proofCurrency: tools.proofCurrency,
     journal: (line) => tools.reactions.journalDrawing(line),
+    ownerCard: () => ownerCardBlock(anamnesisFor(ctx).hub),
   });
   const architect = services.architect;
   const library = services.workflowLibrary;

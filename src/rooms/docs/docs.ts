@@ -234,7 +234,9 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
   /** Decision drafts agents recorded in .agents/decisions/ that docs/decisions.md does not hold yet. */
   decisionDrafts?:string[];
   /** When set, the changed/refresh/gap/doubt/draft lists live in this file in the task's folder, not in the brief. */
-  materialPath?:string}):string {
+  materialPath?:string;
+  /** The owner's assignment: a document to create or update even when the code did not change (SMA k_ag_docwriter). */
+  assignment?:string}):string {
   const listed = input.materialPath ? [] : input.changed.slice(0, NIGHTLY_CHANGED_LIMIT);
   const refresh = input.refresh ?? [];
   const unit = input.unit ?? { docsDir:"docs" };
@@ -312,6 +314,7 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
     boundaries: `Read the code before writing about it. Write only ${flow ? `${page} and docs/flows/${flow.slug}/**` : ws ? `${d}/**` : "docs/**, README.md and PROJECT.md"}; do not edit code, tests, settings or other docs folders, and do not commit. Lane Pilot reverts changes anywhere else, checks the pages, builds ${d}/index.md and commits.`,
     output: "Finish with a short list of the pages you created or changed.",
     data: [
+      ...(input.assignment?.trim() ? [{ tag: "owner_assignment", title: `The owner's assignment for this pass; write or update the page(s) it names under ${d}/ even when nothing else changed`, text: input.assignment.slice(0, 4000) }] : []),
       ...(drafts.length ? [{ tag: "decision_drafts", text: drafts.join("\n") }] : []),
       ...(!input.materialPath && refresh.length ? [{ tag: "refresh", title: "Pages whose sources changed or that are drafts", text: refresh.map((path) => `- ${path}`).join("\n") }] : []),
       ...(!input.materialPath && input.doubts?.length ? [{ tag: "doubts", title: "Claims the analyzer doubted after the last pass; recheck each in the code: fix the claim or its citation, or leave it if the code backs it", text: input.doubts.slice(0, 40).map((doubt) => `- ${doubt.path}: ${doubt.detail}`).join("\n") }] : []),

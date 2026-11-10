@@ -23,6 +23,16 @@
     },
     "upstream": {
       "type": "string"
+    },
+    "ask_owner": {
+      "type": "bool",
+      "default": false,
+      "note": "the owner picks which gray areas (open questions and free decisions) get discussed now; unset means all"
+    },
+    "owner_card": {
+      "type": "string",
+      "default": "",
+      "note": "the owner's anamnesis card; a developer profile in it runs an advisor per chosen area"
     }
   },
   "outputs": {
@@ -35,7 +45,31 @@
     "residual_risks": "string[]",
     "anchors": "Anchor[]",
     "appetite": "string",
-    "no_gos": "string[]"
+    "no_gos": "string[]",
+    "stack": {
+      "type": "array",
+      "required": false
+    },
+    "features": {
+      "type": "array",
+      "required": false
+    },
+    "pitfalls": {
+      "type": "array",
+      "required": false
+    },
+    "chosen": {
+      "type": "json",
+      "required": false
+    },
+    "deferred_by_owner": {
+      "type": "array",
+      "required": false
+    },
+    "advice": {
+      "type": "array",
+      "required": false
+    }
   },
   "entry": "gather",
   "budget": {
@@ -64,12 +98,20 @@
         "ru": "Карта области"
       },
       "src": "maestro-flow:workflows/analyze.md",
-      "prompt": "Read-only. Map the area the goal touches in three layers: L1 modules, L2 call chains of 3-5 key files, L3 code anchors (20-50 lines each).\nRead project conventions (AGENTS.md, DESIGN.md for UI) and any upstream report in `upstream`. Write nothing into the repository.\nEvery statement carries file:line; a claim about code you did not open is not a finding.\n",
+      "prompt": "Read-only. Map the area the goal touches in three layers: L1 modules, L2 call chains of 3-5 key files, L3 code anchors (20-50 lines each).\nRead project conventions (AGENTS.md, DESIGN.md for UI) and any upstream report in `upstream`. Write nothing into the repository.\nEvery statement carries file:line; a claim about code you did not open is not a finding.\nAlso report the stack (languages, frameworks, versions, the test command) and the features the area already does, each with file:line.\n",
       "out": {
         "anchors": "Anchor[]",
         "modules": "string[]",
         "conventions": "string[]",
-        "summary": "string"
+        "summary": "string",
+        "stack": {
+          "type": "array",
+          "required": false
+        },
+        "features": {
+          "type": "array",
+          "required": false
+        }
       },
       "guards": {
         "maxVisits": 3,
@@ -101,7 +143,7 @@
         "ru": "Оценка и решения"
       },
       "src": "maestro-flow:workflows/analyze.md",
-      "prompt": "Score feasibility, impact, risk, complexity, dependencies 1-5, each citing evidence from `gather` (a manual guess does not count).\nClassify every decision as locked (binding for the plan), free (planner's choice) or deferred (excluded). Do a pressure pass: state the strongest argument against the goal, then answer it.\nscope_verdict large = 3+ independent subsystems or hard sequential dependencies. confidence 0-100 from depth of findings, strength of evidence, breadth of coverage.\nIf confidence rose by less than 5 points over two rounds set stalled=true and stop; put what is still unknown into residual_risks.\nBefore any solution, state the appetite: how much this phase may take (time or size), and the no-gos: what it will not do («none» is an answer).\nName each risk with its kind: value, usability, feasibility or viability, and security beside them when there is one.\n",
+      "prompt": "Score feasibility, impact, risk, complexity, dependencies 1-5, each citing evidence from `gather` (a manual guess does not count).\nClassify every decision as locked (binding for the plan), free (planner's choice) or deferred (excluded). Do a pressure pass: state the strongest argument against the goal, then answer it.\nscope_verdict large = 3+ independent subsystems or hard sequential dependencies. confidence 0-100 from depth of findings, strength of evidence, breadth of coverage.\nIf confidence rose by less than 5 points over two rounds set stalled=true and stop; put what is still unknown into residual_risks.\nBefore any solution, state the appetite: how much this phase may take (time or size), and the no-gos: what it will not do («none» is an answer).\nName each risk with its kind: value, usability, feasibility or viability, and security beside them when there is one.\nBeside the risks, list the pitfalls known for this kind of work in this stack.\n",
       "out": {
         "decisions": "Decision[]",
         "risks": "Risk[]",
@@ -114,7 +156,11 @@
         "open_questions": "string[]",
         "residual_risks": "string[]",
         "appetite": "string",
-        "no_gos": "string[]"
+        "no_gos": "string[]",
+        "pitfalls": {
+          "type": "array",
+          "required": false
+        }
       },
       "guards": {
         "maxVisits": 3,
@@ -177,7 +223,75 @@
         "residual_risks": "assess.residual_risks",
         "anchors": "gather.anchors",
         "appetite": "assess.appetite",
-        "no_gos": "assess.no_gos"
+        "no_gos": "assess.no_gos",
+        "stack": "gather.stack",
+        "features": "gather.features",
+        "pitfalls": "assess.pitfalls",
+        "chosen": "choose.chosen",
+        "deferred_by_owner": "choose.deferred",
+        "advice": "advise.advice"
+      }
+    },
+    {
+      "id": "choose",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Pick the gray areas",
+        "ru": "Выбор серых зон"
+      },
+      "skip_when": "!$inputs.ask_owner || assess.open_questions.length == 0",
+      "skip_out": {
+        "chosen": "all",
+        "answer_kind": "all",
+        "deferred": []
+      },
+      "prompt": "List assess.open_questions and the free decisions as gray areas; the owner picks which ones are settled now (the rest are deferred). A timeout counts as all chosen.",
+      "out": {
+        "chosen": "any",
+        "answer_kind": "chosen|all|timeout",
+        "deferred": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "advise",
+      "type": "parallel",
+      "for_each": "assess.open_questions where choose.chosen == 'all' || item in choose.chosen",
+      "max_fan_out": 6,
+      "title": {
+        "en": "Advisor per area",
+        "ru": "Советчик на зону"
+      },
+      "skip_when": "$inputs.owner_card == ''",
+      "skip_out": {
+        "advice": []
+      },
+      "child": {
+        "type": "agent",
+        "role": "analyst",
+        "prompt": "Advisor for one gray area only ({{item}}), for a developer with the profile of `owner_card`: two or three options with cost, risk, fit, a recommended pick, and file:line evidence.",
+        "out": {
+          "area": "string",
+          "options": "any",
+          "pick": "string",
+          "advice": "Option[]"
+        },
+        "produces": [
+          {
+            "kind": "report",
+            "version": 1
+          }
+        ]
+      },
+      "join": {
+        "policy": "all",
+        "out": {
+          "advice": "Option[]"
+        }
       }
     }
   ],
@@ -203,11 +317,21 @@
     },
     {
       "from": "assess",
-      "to": "done",
+      "to": "choose",
       "pass": "artifact"
     },
     {
       "from": "second_opinion",
+      "to": "choose",
+      "pass": "artifact"
+    },
+    {
+      "from": "choose",
+      "to": "advise",
+      "pass": "artifact"
+    },
+    {
+      "from": "advise",
       "to": "done",
       "pass": "artifact"
     }

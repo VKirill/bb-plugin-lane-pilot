@@ -21,7 +21,7 @@ interface Services {
  * do a stage's work and to choose which workflow runs; a stage whose workflow failed twice goes back to the PM's hands, so the
  * train never stands without anyone named.
  */
-export type AutoKind = "analyze" | "plan" | "check" | "draw" | "review" | "close" | "lessons";
+export type AutoKind = "analyze" | "plan" | "check" | "draw" | "review" | "close" | "lessons" | "diagnose";
 /** Not a workflow: the machine signs again the documents a return to discussion left (the PM's or the owner's correction). */
 export type AutoDue = { kind: AutoKind; wave?: number } | { kind: "resign" } | { kind: "replan" };
 /** How many times the machine returns a phase to planning after a failed verdict before the loop is spent. */
@@ -29,7 +29,7 @@ export type AutoDue = { kind: AutoKind; wave?: number } | { kind: "resign" } | {
 export const MACHINE_STAGE_FAILURE = /repo_edited|artifact_invalid|output_invalid|output field "[^"]+" is missing|thread_failed|thread_id_missing|plugin_stopped|interrupted by a reload|budget_exceeded|provider_error|writer_stream_error|read_binary_rejected|guard:|no_pm_environment|internal_error|timed out waiting|(?:CONTEXT|SECURITY)\.md was not written|needs a threat model|native profile needs Claude Code/i;
 
 export const AUTO_REPLANS = 2;
-export const AUTO_WORKFLOWS: Record<AutoKind, string> = { analyze: "lp.analyze", plan: "lp.plan", check: "lp.plan", draw: "lp.draw", review: "lp.review", close: "lp.close", lessons: "retrospective" };
+export const AUTO_WORKFLOWS: Record<AutoKind, string> = { analyze: "lp.analyze", plan: "lp.plan", check: "lp.plan", draw: "lp.draw", review: "lp.review", close: "lp.close", lessons: "retrospective", diagnose: "debug" };
 /** Failed runs of one stage's workflow before the loop is spent. */
 export const AUTO_TRIES = 2;
 /** Failed runs of one stage's workflow over the phase's whole life: a new version forgets AUTO_TRIES, not this, so frequent releases do not give endless tries. */
@@ -68,6 +68,8 @@ export function autoDue(phase: Phase): AutoDue | null {
     if (wave && !tried("review")) return { kind: "review", wave: Number(wave[0]) };
   }
   if (phase.stage === "verification" && r.verification?.verdict?.state === "passed" && !r.verification.model && !tried("close")) return { kind: "close" };
+  // A failed verdict (or a red acceptance line) first gets a parallel diagnosis over its gaps (SMA k_c_diagnose), once per verdict.
+  if (phase.stage === "verification" && (r.verification?.verdict?.state === "failed" || (r.acceptance?.lines ?? []).some((line) => !line.ok)) && r.verification?.verdict && r.verification.diagnosis?.inputSha !== r.verification.verdict.inputSha && !tried("diagnose")) return { kind: "diagnose" };
   // A failed verdict (red checks or an unmet goal audit) is planned again by the machine, with the verdict as the gaps, twice at most.
   if (phase.stage === "verification" && r.verification?.verdict?.state === "failed" && (r.replan?.count ?? 0) < AUTO_REPLANS) return { kind: "replan" };
   if (phase.stage === "lessons" && !r.lessons?.analysis && phase.runId && !tried("lessons")) return { kind: "lessons" };
@@ -113,7 +115,7 @@ export function replansSpent(phase: Phase): boolean {
 }
 
 /** The inputs of a stage's workflow, from the phase record. */
-export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number }, medianTask?: string): Record<string, unknown> {
+export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number }, medianTask?: string, ownerCard?: string): Record<string, unknown> {
   const r = phase.record;
   const contextText = (r.context?.docs ?? []).map((doc) => doc.path).join(", ");
   // CONTEXT.md is written from the analysis before the owner answers its open questions; the answers live only in the record. The magicseo
@@ -125,7 +127,14 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number },
     // The owner's «no» to a context he was asked to sign rides the next analysis as part of the goal it reads.
     case "analyze": {
       const said = (r.words ?? []).filter((word) => word.turn === "context" && word.decision === "no").map((word) => word.text).slice(-3);
-      return { goal: said.length ? `${phase.goal}\n\nThe owner said no to the last context: ${said.join(" / ")}` : phase.goal, depth: "standard" };
+      return { goal: said.length ? `${phase.goal}\n\nThe owner said no to the last context: ${said.join(" / ")}` : phase.goal, depth: "standard",
+        ask_owner: r.ownerWords === true, owner_card: ownerCard ?? "" };
+    }
+    // The diagnosis of a failed verdict: parallel debuggers over the verdict's gaps (SMA k_c_diagnose), the session file names the verdict's input.
+    case "diagnose": {
+      const verdict = r.verification!.verdict!;
+      const gaps = [verdict.detail, ...(r.acceptance?.lines ?? []).filter((line) => !line.ok).map((line) => `acceptance ${line.id}`)].filter(Boolean);
+      return { mode: "from_failures", symptom: gaps, session: `verdict-${verdict.inputSha.slice(0, 12)}`, auto_fix: false };
     }
     case "plan": {
       const gateGaps = r.plan ? planGaps(r) : [];
@@ -221,6 +230,10 @@ export function contextDoc(phase: Phase, output: Record<string, unknown>): { con
     return `- **${id}** (${text(d?.status ?? d?.kind, 20) || "locked"}): ${text(d?.text ?? d?.decision ?? decision, 500)}`;
   });
   const questions = (Array.isArray(output.open_questions) ? output.open_questions as unknown[] : []).map((question) => text(question, 1000)).filter(Boolean);
+  // The owner picked the gray areas to settle (SMA k_wdi_gray): the others are marked deferred, "all" defers nothing.
+  const chosen = output.chosen;
+  const deferred = new Set(Array.isArray(output.deferred_by_owner) ? (output.deferred_by_owner as unknown[]).map((q) => text(q, 1000)) : Array.isArray(chosen) ? questions.filter((q) => !(chosen as unknown[]).map(String).some((c) => q.includes(c))) : []);
+  const questionLines = questions.map((q) => `- ${q}${deferred.has(q) ? " — deferred by the owner" : ""}`);
   // Appetite before solution and the no-gos (SMA p1_card, p1_appetite): the analysis decides them; «none» is an answer for the no-gos.
   const appetite = text(output.appetite, 600) || `scope ${text(output.scope_verdict, 40) || "unknown"}: no more than the analysis found for the goal`;
   const noGos = (Array.isArray(output.no_gos) ? output.no_gos as unknown[] : []).map((line) => text(line, 300)).filter(Boolean).slice(0, 30);
@@ -231,7 +244,7 @@ export function contextDoc(phase: Phase, output: Record<string, unknown>): { con
     "## Decisions", ...(decisionLines.length ? decisionLines : ["- none recorded"]), "",
     "## No-gos", ...(noGos.length ? noGos.map((line) => `- ${line}`) : ["- none"]), "",
     "## Risks", ...RISK_KEYS.filter((kind) => kind !== "security" || byKind.security.length).map((kind) => `- ${kind}: ${byKind[kind].join("; ") || "none seen"}`), "",
-    "## Open questions", ...(questions.length ? questions.map((question) => `- ${question}`) : ["- none"]), "",
+    "## Open questions", ...(questionLines.length ? questionLines : ["- none"]), "",
     "Written by Lane Pilot from the analysis (lp.analyze); the plan stands on this file.",
   ].join("\n");
   const risksText = Object.fromEntries(RISK_KEYS.filter((kind) => kind !== "security" || byKind.security.length).map((kind) => [kind, (byKind[kind].join("; ") || "none seen").slice(0, 600)])) as Record<RiskKey, string>;
@@ -292,6 +305,8 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
   medianTask?(phase: Phase): string | null;
   /** The design measurement journal (SMA p3_judge): a reworked drawing's scores and remarks are kept too. */
   journal?(line: DesignJournalLine): Promise<void>;
+  /** The owner's anamnesis card ("" when none): lp.analyze's advisor reads it (SMA k_wdi_advisor). */
+  ownerCard?(phase: Phase): Promise<string>;
 }) {
   const version = deps.version ?? packageJson.version;
   /** Counts a failed run of a stage's workflow. True when that spent the stage's tries: the loop is ended by the machine (scope cut, hunters, backlog), not handed to the PM. */
@@ -381,6 +396,12 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       const passed = output.status === "pass";
       deps.api.waveReview({ phaseId: phase.id, wave: auto.wave ?? 1, state: passed ? "passed" : "failed", by,
         summary: text(`${output.status}; critical ${text(output.critical_count, 6)}, high ${text(output.high_count, 6)}; ${JSON.stringify(output.findings ?? []).slice(0, 1500)}`, 2000) });
+    } else if (auto.kind === "diagnose") {
+      if (phase.stage !== "verification" || !phase.record.verification?.verdict) return;
+      const diagnosis = { inputSha: phase.record.verification.verdict.inputSha,
+        diagnoses: Array.isArray(output.diagnoses) ? output.diagnoses as unknown[] : [],
+        diagnosis: text(output.diagnosis, 2000) || JSON.stringify(output.diagnoses ?? []).slice(0, 2000), at: deps.now() };
+      deps.save(phase.id, { ...phase.record, verification: { ...phase.record.verification, diagnosis } });
     } else if (auto.kind === "lessons") {
       if (phase.stage !== "lessons" || phase.record.lessons?.analysis) return;
       // The retrospective's two roles: «retro» writes, «stage» reads and weighs in a session of its own. The analysis is what «stage» was
@@ -491,7 +512,8 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
     // A run the owner stopped or paused starts no stage on the machine's own; the stage is held (the PM is not poked) until it goes on.
     if (await deps.runStopped?.(phase)) return true;
     if (due.kind === "replan") {
-      const detail = phase.record.verification?.verdict?.detail ?? "the verification failed";
+      const diagnosis = phase.record.verification?.diagnosis?.diagnosis;
+      const detail = `${phase.record.verification?.verdict?.detail ?? "the verification failed"}${diagnosis ? `; diagnosis: ${diagnosis.slice(0, 800)}` : ""}`;
       const count = (phase.record.replan?.count ?? 0) + 1;
       const back = deps.api.returnTo({ phaseId: phase.id, to: "planning", note: `the verification failed (${count} of ${AUTO_REPLANS} machine returns): ${detail}`, by: "Lane Pilot (replan after a failed verdict)" });
       deps.save(back.id, { ...back.record, replan: { gaps: detail, count } });
@@ -522,7 +544,8 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       // The goal audit is told from git which recorded proofs are stale, so it does not work currency out by hand; a failed lookup only leaves the facts out.
       const currency = due.kind === "close" && deps.proofCurrency ? await bestEffort(ctx.log, "phase proof currency", deps.proofCurrency(phase), null) : null;
       // The plan runs in full mode: lp.plan's critic otherwise skips a plan below three tasks, and SMA checks every plan (p2_checker).
-      const started = services.workflowEngine.start({ workflow, inputs: { ...autoInputs(phase, due, deps.medianTask?.(phase) ?? undefined), ...(currency ? { proof_currency: currency } : {}) }, key: `phase:${phase.id}:${due.kind}:${phase.edition}:${deps.now()}`, runtime,
+      const ownerCard = due.kind === "analyze" && deps.ownerCard ? await bestEffort(ctx.log, "owner card for the analysis", deps.ownerCard(phase), "") : undefined;
+      const started = services.workflowEngine.start({ workflow, inputs: { ...autoInputs(phase, due, deps.medianTask?.(phase) ?? undefined, ownerCard ?? undefined), ...(currency ? { proof_currency: currency } : {}) }, key: `phase:${phase.id}:${due.kind}:${phase.edition}:${deps.now()}`, runtime,
         ...(due.kind === "plan" ? { mode: "full" as const } : {}),
         link: { projectId: phase.projectId, ...(phase.runId ? { runId: phase.runId } : {}) } });
       started.done.catch((cause: unknown) => ctx.log(`phase ${phase.id}: ${AUTO_WORKFLOWS[due.kind]} stopped: ${cause instanceof Error ? cause.message : String(cause)}`));

@@ -405,7 +405,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
 
   /** What one docs unit's graph run is started with: everything its steps need that the unit record does not hold yet. */
   type UnitInputs={projectId:string;place:{hostId:string;path:string};basePath:string;scopes:string[];unit:DocsUnit;roots:string[];exclude:string[];
-    workspaces:Array<{path:string;name:string;docsDir:string|null}>;base:string;runKey:string};
+    workspaces:Array<{path:string;name:string;docsDir:string|null}>;base:string;runKey:string;assignment?:string};
   /** What the prepare step found for a unit with work to do, handed to the write step (the unit record is made once the agent has a thread). */
   type UnitPlan={label:string;hasDocs:boolean;changed:string[];changedCount:number;refresh:string[];gaps:{missingPages:string[];uncoveredCore:string[]};
     anchors:{count:number;jev:string;briefPath?:string;deploy:boolean}|null;core:Array<{name:string;file:string;line:number;endLine:number}>;kvKey:string;
@@ -464,7 +464,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       const decisions=(await allPages()).find((page)=>page.path===`${d}/decisions.md`)?.content??"";
       return drafts.map((page)=>page.path).filter((path)=>!decisions.includes(path)).sort();
     })();
-    if(hasDocs&&changed.length===0&&!pending&&!decisionDrafts.length) return {state:"skipped",row:report("skipped",{reason:"no code changes"})};
+    if(hasDocs&&changed.length===0&&!pending&&!decisionDrafts.length&&!i.assignment) return {state:"skipped",row:report("skipped",{reason:"no code changes"})};
     const existing=hasDocs?mine(await allPages()):[];
     // The root README.md and PROJECT.md describe the code too, so they are checked for staleness with the root docs.
     const readRootPages=async()=>unit.workspace||flow?[]:(await Promise.all(["README.md","PROJECT.md"].map(async(path)=>{
@@ -490,7 +490,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
         const cited=new Set(existing.flatMap((page)=>citedFiles([page])));
         const product=new Set(anchors&&anchors.jev!=="disabled"?anchors.productFiles:changed);
         const uncovered=changed.filter((file)=>product.has(file)&&!cited.has(file));
-        if(!pending&&!decisionDrafts.length&&!stale.refresh.length&&!uncovered.length&&!gaps.missingPages.length&&!gaps.uncoveredCore.length) return {state:"skipped",row:report("skipped",{reason:"Jev found no section the changes made wrong, and no changed product file is undocumented"})};
+        if(!pending&&!decisionDrafts.length&&!i.assignment&&!stale.refresh.length&&!uncovered.length&&!gaps.missingPages.length&&!gaps.uncoveredCore.length) return {state:"skipped",row:report("skipped",{reason:"Jev found no section the changes made wrong, and no changed product file is undocumented"})};
         refresh=stale.refresh;
       }
     }
@@ -548,7 +548,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
         ...writerExecutionSelection(selection.providerId,selection.model,effort,tier),
         ...projectRoleField(bb,db,i.projectId,selection.providerId,"docs-maintainer"),
         prompt:nightlyDocsPrompt({since:docs.since,hasDocs:plan.hasDocs,changed:plan.changed,refresh:plan.refresh,anchorsPath:plan.anchors?.briefPath,deploy:plan.anchors?.deploy??false,missingPages:plan.gaps.missingPages,uncoveredCore:plan.gaps.uncoveredCore,
-          agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit,doubts:plan.doubts,decisionDrafts:plan.decisionDrafts,...(materialPath?{materialPath}:{})}),
+          agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit,doubts:plan.doubts,decisionDrafts:plan.decisionDrafts,assignment:i.assignment||undefined,...(materialPath?{materialPath}:{})}),
         environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
         pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly",spawnId:`${i.projectId}:${sha256(`${place.path}\n${label}`).slice(0,12)}:${plan.localDate}${retry}`,...graphStepMetadata(step)}});
       // From here on the unit's progress is saved, so a plugin reload picks the same agent thread up again.
@@ -868,7 +868,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     const list=(value:unknown):string[]=>Array.isArray(value)?value.map(String):[];
     const inputsOf=(c:StepContext):UnitInputs=>({projectId:text(input(c,"project_id")),place:{hostId:text(input(c,"host_id")),path:text(input(c,"path"))},basePath:text(input(c,"base_path")),
       scopes:list(input(c,"scopes")),unit:input(c,"unit") as DocsUnit,roots:list(input(c,"roots")),exclude:list(input(c,"exclude")),workspaces:(Array.isArray(input(c,"workspaces"))?input(c,"workspaces"):[]) as UnitInputs["workspaces"],
-      base:text(input(c,"base")),runKey:text(input(c,"run_key"))});
+      base:text(input(c,"base")),runKey:text(input(c,"run_key")),assignment:text(input(c,"assignment"))});
     const keyOf=(i:UnitInputs)=>docsUnitRecordKey(i.projectId,i.place.path,unitLabelOf(i.unit));
     const earlier=(c:StepContext,ref:string):unknown=>{ try{ return c.resolve(ref); }catch{ return undefined; } };
 

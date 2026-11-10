@@ -232,6 +232,23 @@ export function conclusionText(phase: Pick<Phase, "id" | "title" | "goal" | "rec
     "## Lessons", "", phase.record.lessons?.analysis ?? phase.record.lessons?.why ?? "—", ""].join("\n");
 }
 
+const QUICK_TABLE = "## Quick Tasks Completed";
+
+/** The «Quick Tasks Completed» table of STATE.md (SMA k_wq_state): one row per finished quick task, header keys and body kept. */
+export function quickRow(previous: string, row: { date: string; task: string; commit: string }): string {
+  const line = `| ${row.date} | ${row.task} | ${row.commit} |`;
+  if (!previous.includes(QUICK_TABLE)) return `${previous.trimEnd()}\n\n${QUICK_TABLE}\n\n| date | task | commit |\n| --- | --- | --- |\n${line}\n`;
+  const at = previous.indexOf(QUICK_TABLE);
+  const rest = previous.slice(at + QUICK_TABLE.length);
+  // The table ends at the next heading; the row goes after its last line (or after a fresh header when the table is still empty).
+  const next = rest.search(/^#{1,6} /m);
+  const table = next >= 0 ? rest.slice(0, next) : rest;
+  const tail = next >= 0 ? rest.slice(next) : "";
+  const rows = table.split("\n").filter((l) => l.trim().startsWith("|"));
+  const body = rows.length ? [...rows, line].join("\n") : `| date | task | commit |\n| --- | --- | --- |\n${line}`;
+  return `${previous.slice(0, at + QUICK_TABLE.length)}\n\n${body}\n${tail}`.replace(/\n{3,}/g, "\n\n");
+}
+
 const ROW = /^- \[([ xX])\] (\d+(?:\.\d+)*) (.+?)(?: — (.*))?$/;
 
 /** Phase closed in the roadmap: the row of the phase gets its [x]; the text is returned unchanged when there is no such row. */

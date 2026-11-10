@@ -28,6 +28,8 @@ import type { ServerCore } from "../../contracts/server";
 
 import { ownerLocale, workflowHumanDetail } from "../../relay/server";
 import { runOnHost } from "@lane-pilot/host-calls";
+import { hostContract } from "../../contracts";
+import { quickRow } from "../../phase";
 import { pageReviewByAgent } from "../../critique/server";
 
 import type { DispatchWriter } from "../../platform/server";
@@ -743,6 +745,52 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     // An empty plan is right when the planner checked that the repository already does what the goal asks (already_met).
     if (!tasks.length && c.resolve("plan.already_met") !== true) errors.push("the plan has no tasks");
     return { ok: errors.length === 0, errors };
+  });
+
+  // The quick path's row in STATE.md (SMA k_wq_state): the task joins the «Quick Tasks Completed» table of
+  // .agents/planning/STATE.md on the writer host and is committed; a failed write is returned, never thrown — a closed
+  // task does not reopen for a bookkeeping write.
+  action("lp.quick_state", async (c, lane) => {
+    const rt = needLanePilot(lane, "lp.quick_state");
+    const comment = str((c.input.with as Row | undefined)?.comment ?? c.resolve("review.comment")) || "quick path: built and verified";
+    const run = getRun(db, rt.runId);
+    const hostId = getRunWriterHost(db, rt.runId);
+    if (!run?.writer_workspace_path || !hostId) return { ok: false, note: "no writer workspace", comment };
+    const read = await runOnHost(ctx.host, { hostId, cwd: run.writer_workspace_path, command: "cat .agents/planning/STATE.md 2>/dev/null || true", timeoutSec: 20, timeoutMs: 30_000 });
+    const title = str((c.input.with as Row | undefined)?.title ?? c.resolve("$inputs.title")) || "quick task";
+    const commit = list((c.input.with as Row | undefined)?.commits ?? c.resolve("ctx.merged_commits")).map(String)[0] ?? "—";
+    const content = quickRow(read.stdout, { date: new Date().toISOString().slice(0, 10), task: title.slice(0, 120), commit });
+    const host = bb.hosts.experimental_client({ contract: hostContract });
+    const path = ".agents/planning/STATE.md";
+    try {
+      const edits = [{ path, expectedSha256: read.exitCode === 0 && read.stdout ? sha256Hex(read.stdout) : null, content }];
+      const written = await host.call("writePhaseBook", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId, timeoutMs: 30_000 });
+      if (!written.writes.some((row) => row.path === path && row.status === "applied")) throw new Error(written.writes.find((row) => row.path === path)?.status ?? "not applied");
+      const committed = await bestEffort(ctx.log, "quick STATE.md commit", host.call("gitCommitDocs", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, paths: [path], message: `state: quick task done — ${title.slice(0, 60)}` }, { hostId, timeoutMs: 60_000 }), null);
+      return { ok: true, note: committed?.commit ? "" : "row written, not committed", comment };
+    } catch (cause) {
+      return { ok: false, note: `STATE.md write failed: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 300), comment };
+    }
+  });
+
+  // The debug session file of an investigation (SMA k_pl_debug): `.agents/planning/debug/<slug>.md` — an existing one is
+  // resumed instead of asking the symptoms again; a new run starts the file with the symptom and status open.
+  action("lp.debug_session", async (c, rt) => {
+    const slug = str((c.input.with as Row | undefined)?.session ?? c.resolve("$inputs.session")).replace(/[^A-Za-z0-9._-]+/g, "-").slice(0, 60);
+    if (!slug) return { found: false, path: "" };
+    const path = `.agents/planning/debug/${slug}.md`;
+    const checkout = await pmCheckout(rt);
+    const read = await runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: `test -f ${quote(path)} && cat ${quote(path)} || true`, timeoutSec: 20, timeoutMs: 30_000 });
+    if (read.exitCode === 0 && read.stdout.trim()) return { found: true, path };
+    const symptom = str(c.resolve("$inputs.symptom")).slice(0, 2000);
+    const content = `# Debug session — ${slug}\n\nStatus: open\n\n## Symptom\n\n${symptom || "—"}\n\n## Hypotheses\n\n## Evidence\n\n## Root cause\n\n## Fix directions\n`;
+    try {
+      noteEngineWrite(checkout.path, path);
+      await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: checkout.path, path: `${checkout.path}/${path}`, content, contentEncoding: "utf8", createParents: true });
+      return { found: false, path };
+    } catch {
+      return { found: false, path: "" };
+    }
   });
 
   // ---------------------------------------------------------------- actions that go through a helper thread (skills, MCP, accounts)
