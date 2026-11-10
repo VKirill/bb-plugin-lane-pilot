@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { t, type I18nKey } from "@lane-pilot/i18n";
-import { Button, Disclosure, Icon, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Switch } from "@lane-pilot/ui-kit";
+import { Button, Disclosure, Icon, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Switch, useMediaQuery } from "@lane-pilot/ui-kit";
 import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
 /** The acceptance card the task page shows, implemented by src/rooms/acceptance and handed in from the page shell. */
@@ -105,9 +105,13 @@ function TaskCardTile({ item, showProject, projectName, locale, onOpen }: { item
         <PhaseLine item={item} locale={locale} />
       </div>
       <div className="mt-1 line-clamp-2 text-sm font-medium leading-snug">{item.title}</div>
+      {item.held ? <div className="mt-1 text-xs font-medium text-destructive">{t("boardHeld")}</div> : null}
+      {item.gates?.some((gate) => !gate.ok) ? <div className="mt-1 line-clamp-1 text-xs text-destructive" title={item.gates.filter((gate) => !gate.ok).flatMap((gate) => gate.why).join("; ")}>{fill("boardGates", { names: item.gates.filter((gate) => !gate.ok).map((gate) => t(`boardGate_${gate.name}` as I18nKey)).join(", ") })}</div> : null}
       {item.column === "blocked" && item.detail ? <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.detail}</div> : null}
+      {item.kind === "phase" && item.detail && item.column !== "blocked" ? <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.detail}</div> : null}
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-        <KindChip kind={item.taskKind} />
+        {item.kind === "phase" ? <span className={chip}>{t("boardKindPhase")}</span> : <KindChip kind={item.taskKind} />}
+        {item.wave ? <span className={chip}>{fill("boardWave", { n: item.wave.n, m: item.wave.m })}</span> : null}
         {item.area ? <span className={chip}>{areaLabel(item.area)}</span> : null}
         {showProject && projectName ? <span className={chip}>{projectName}</span> : null}
         {item.attemptNo > 1 ? <span className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground" title={fill("boardAttemptsN", { n: item.attemptNo })}><Icon name="RefreshCw" className="size-3" />{item.attemptNo}</span> : null}
@@ -132,10 +136,13 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
   AcceptanceCard: AcceptanceCardView;
 }) {
   const rpc = useRpc<typeof rpcContract>();
+  const navigate = useBbNavigate();
   const locked = lockedProjectId != null;
+  // On a phone the fixed columns hide all but one: the board opens as the list and stacks at full width (SMA m_wnr_tasks).
+  const narrow = useMediaQuery("(max-width: 639px)");
   const [projectId, setProjectId] = useState<string>(lockedProjectId ?? initialProjectId ?? "all");
-  const [kind, setKind] = useState<"all" | "task" | "workflow">("all");
-  const [view, setView] = useState<"board" | "list" | "stats">("board");
+  const [kind, setKind] = useState<"all" | "task" | "workflow" | "phase">("all");
+  const [view, setView] = useState<"board" | "list" | "stats">(narrow ? "list" : "board");
   const [groupBy, setGroupBy] = useState<GroupBy>("goal");
   const [doneHours, setDoneHours] = useState(24);
   const [drills, setDrills] = useState(false);
@@ -154,7 +161,8 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
 
   if (open) return <TaskPage item={open} locale={locale} projectName={projectName(open.projectId)} onBack={() => setOpen(null)} AcceptanceCard={AcceptanceCard} />;
   const showProject = projectId === "all";
-  const tile = (item: Item) => <TaskCardTile key={item.key} item={item} showProject={showProject} projectName={projectName(item.projectId)} locale={locale} onOpen={() => setOpen(item)} />;
+  const tile = (item: Item) => <TaskCardTile key={item.key} item={item} showProject={showProject} projectName={projectName(item.projectId)} locale={locale}
+    onOpen={() => item.kind === "phase" ? navigate.toPluginPanel("lane-pilot-cockpit", { subPath: "phases" }) : setOpen(item)} />;
   return (
     <div className="space-y-3" data-testid="task-board">
       <div className="flex flex-wrap items-end justify-between gap-2">
@@ -189,6 +197,7 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
             <SelectItem value="all">{t("boardAllKinds")}</SelectItem>
             <SelectItem value="task">{t("boardKindTasks")}</SelectItem>
             <SelectItem value="workflow">{t("boardKindFlows")}</SelectItem>
+            <SelectItem value="phase">{t("boardKindPhases")}</SelectItem>
           </SelectContent>
         </Select>
         {view === "list" ? (
@@ -221,11 +230,11 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
       {view === "stats" ? (
         <StageModelStats locale={locale} projectId={projectId === "all" ? undefined : projectId} excludeProjectIds={drills ? [] : serviceProjectIds} />
       ) : items === null ? (offline ? null : <p className="text-sm text-muted-foreground">{t("boardLoading")}</p>) : view === "board" ? (
-        <div className="-mx-1 flex items-start gap-3 overflow-x-auto px-1 pb-3" data-testid="board-columns">
+        <div className={narrow ? "flex flex-col gap-3" : "-mx-1 flex items-start gap-3 overflow-x-auto px-1 pb-3"} data-testid="board-columns" data-narrow={narrow || undefined}>
           {COLUMNS.map((column) => {
             const cards = shown.filter((item) => item.column === column.id);
             return (
-              <section key={column.id} className="flex w-[264px] shrink-0 flex-col" data-testid={`board-col-${column.id}`}>
+              <section key={column.id} className={narrow ? "flex w-full flex-col" : "flex w-[264px] shrink-0 flex-col"} data-testid={`board-col-${column.id}`}>
                 <div className="flex items-center gap-1.5 px-1 pb-2 text-sm font-semibold">
                   <StatusIcon column={column.id} />
                   <span>{t(column.label)}</span>
@@ -440,7 +449,7 @@ function TaskPage({ item, locale, projectName, onBack, AcceptanceCard }: { item:
                     <div className="space-y-3 text-xs">
                       {[[t("boardOwns"), card.contract.ownsPaths], [t("boardOutputs"), card.contract.expectedOutputs], [t("boardChecks"), card.contract.checks]].map(([title, rows]) => (rows as string[]).length ? (
                         <div key={title as string}><div className="mb-1 font-semibold text-muted-foreground">{title as string}</div>
-                          <ul className="space-y-0.5 font-mono">{(rows as string[]).map((row) => <li key={row} className="break-all">{row}</li>)}</ul></div>
+                          <ul className="space-y-0.5 font-mono">{(rows as string[]).map((row) => <WorkFileLine key={row} runId={item.runId} path={row} />)}</ul></div>
                       ) : null)}
                     </div>
                   </Disclosure>
@@ -459,5 +468,29 @@ function TaskPage({ item, locale, projectName, onBack, AcceptanceCard }: { item:
         </div>
       )}
     </div>
+  );
+}
+
+/** One contract path in «Файлы»: a button that opens the bounded file text under it (SMA d_artifact). */
+function WorkFileLine({ runId, path }: { runId: string; path: string }) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [open, setOpen] = useState<null | { status: "loading" } | { status: "ready"; text: string; more: boolean } | { status: "failed"; why: string }>(null);
+  const glob = /[*?[]/.test(path);
+  const toggle = () => {
+    if (open !== null) { setOpen(null); return; }
+    setOpen({ status: "loading" });
+    void rpc.call("work_file_read", { runId, relativePath: path, offset: 0 })
+      .then((file) => setOpen({ status: "ready", text: file.content, more: file.truncated }))
+      .catch((cause) => setOpen({ status: "failed", why: cause instanceof Error ? cause.message : String(cause) }));
+  };
+  return (
+    <li className="break-all">
+      {glob ? <span>{path}</span> : (
+        <button type="button" onClick={toggle} data-testid={`work-file-${path}`} className="text-left underline decoration-input underline-offset-2 hover:decoration-current">{path}</button>
+      )}
+      {open?.status === "ready" ? <pre className="mt-1 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-[var(--lp-well,transparent)] p-2">{open.text}{open.more ? "\n…" : ""}</pre> : null}
+      {open?.status === "loading" ? <div className="text-muted-foreground">{t("boardLoading")}</div> : null}
+      {open?.status === "failed" ? <div className="text-destructive">{open.why}</div> : null}
+    </li>
   );
 }

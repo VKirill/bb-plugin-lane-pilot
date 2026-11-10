@@ -17,7 +17,7 @@ import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../../contracts/state-mac
 import type { AttemptState } from "../../../contracts/state-machine";
 import { finishRunSafely } from "../run-finish";
 import { buildTaskGraph } from "../task-graph";
-import { buildTaskBoard, readTaskCard, type CardThread } from "../task-board";
+import { buildTaskBoard, readTaskCard, type BoardItem, type CardThread } from "../task-board";
 import type { TokenCursorReader } from "../../../work-graph/server";
 import { readThreadLive } from "../thread-live";
 import { cancelAttemptById } from "../cancel";
@@ -26,7 +26,8 @@ import { pauseRun } from "../runs-pause";
 import { folderEnvironment, projectSources } from "../../../platform/server";
 import { id, stringAt, valueAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
-import { rpcContract } from "../../../contracts";
+import { hostContract, rpcContract } from "../../../contracts";
+import { workFileRead } from "../work-file";
 import type { ServerCore } from "../../../contracts/server";
 
 import type { ActivationApi, AgentOpsApi } from "../../../contracts";
@@ -47,8 +48,13 @@ interface Services {
   resumeOrphans: ResumeOrphansPort["resumeOrphans"];
   rollback: RollbackApi;
   tokenCursorRow: TokenCursorReader;
+  /** Phase cards for the board, dealt by the phase room (SMA m_sw_unit_card); injected so runs never imports phase. */
+  phaseCards?: (input: { projectId: string | null; doneSince: number; onError?: (message: string) => void }) => BoardItem[];
 }
 
+
+/** Phase-card failures already logged (one line per distinct message, not one per refresh). */
+const phaseCardsFailed = new Set<string>();
 
 export function runsRpc(ctx: ServerCore, services: Services) {
   const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, nativeInstaller, ownedAgents } = ctx;
@@ -210,7 +216,12 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       };
     },
     task_board: async ({ projectId, doneHours }) => {
-      const items = buildTaskBoard(db, { projectId: projectId ?? null, doneSince: Date.now() - doneHours * 3_600_000 });
+      const doneSince = Date.now() - doneHours * 3_600_000;
+      // The board renders without phase cards rather than fail because of them.
+      let phases: BoardItem[] = [];
+      try { phases = services.phaseCards?.({ projectId: projectId ?? null, doneSince, onError: (message) => bb.log.warn(`Lane Pilot task_board: ${message}`) }) ?? []; }
+      catch (cause) { const message = cause instanceof Error ? cause.message : String(cause); if (!phaseCardsFailed.has(message)) { phaseCardsFailed.add(message); bb.log.warn(`Lane Pilot task_board: phase cards left off: ${message}`); } }
+      const items = buildTaskBoard(db, { projectId: projectId ?? null, doneSince }, phases);
       // The PM chat's title groups the board «by chat»; titles change rarely, so each is read at most every five minutes.
       const now = Date.now();
       const ids = [...new Set(items.flatMap((item) => (item.pmThreadId ? [item.pmThreadId] : [])))];
@@ -221,6 +232,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       return { items: items.map((item) => ({ ...item, pmThreadTitle: item.pmThreadId ? pmTitles.get(item.pmThreadId)?.title ?? null : null })) };
     },
     thread_live: async ({ threadId }) => readThreadLive(db, threadId, services.tokenCursorRow),
+    work_file_read: async ({ runId, projectId, relativePath, offset }) => workFileRead(db, bb.hosts.experimental_client({ contract: hostContract }), { runId, ...(projectId ? { projectId } : {}), relativePath, offset }),
     task_card: async ({ runId, taskId }) => {
       const card = readTaskCard(db, { runId, taskId });
       if (!card) return null;
@@ -382,6 +394,6 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       return { ok: true, state: "queued", attemptId: nextId, reason: null };
     },
     resume_runs: ({ projectId }) => services.resumeOrphans(projectId),
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "native_install_status" | "prepare_native_session" | "helper_thread_labels" | "list_helper_threads" | "task_board" | "thread_live" | "task_card" | "get_run_card" | "native_thread" | "activation_context" | "cancel_attempt" | "pause_run" | "resume_run" | "halt_run" | "retry_attempt" | "resume_runs">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "native_install_status" | "prepare_native_session" | "helper_thread_labels" | "list_helper_threads" | "task_board" | "thread_live" | "work_file_read" | "task_card" | "get_run_card" | "native_thread" | "activation_context" | "cancel_attempt" | "pause_run" | "resume_run" | "halt_run" | "retry_attempt" | "resume_runs">;
   return handlers;
 }

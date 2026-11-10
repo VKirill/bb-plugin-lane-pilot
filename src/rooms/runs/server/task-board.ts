@@ -1,5 +1,5 @@
 import { createJournal, receiptThreadId, wfBoardRuns, wfCurrentNodeId } from "@lane-pilot/workflow-engine";
-import { getRun, getRunObjective, getTaskContractJson, getTaskPlan, laterFamilyAttemptTaskIds, listAttemptHistory, listBoardAttemptRows, listStageReceipts, type LanePilotDatabase } from "../../storage";
+import { getRun, getRunObjective, getTask, getTaskContractJson, getTaskPlan, laterFamilyAttemptTaskIds, listAttemptHistory, listBoardAttemptRows, listRunAttemptStates, listStageReceipts, taskHeldUntil, type LanePilotDatabase } from "../../storage";
 import { taskFamily, TASK_KINDS, CARD_STAGE_ORDER, CHECK_STAGE_IDS, PLAN_STAGE_IDS } from "@lane-pilot/contracts";
 import { OPEN_ATTEMPT_STATES } from "../../contracts";
 
@@ -18,13 +18,19 @@ export type TaskKind = (typeof TASK_KINDS)[number];
  */
 export type BoardPhase = "queued" | "planning" | "waiting" | "writing" | "checking" | "retrying" | "blocked" | "stuck" | "closed" | "accepted" | "canceled" | "chain";
 export type BoardItem = {
-  kind: "task" | "workflow"; key: string; runId: string; taskId: string | null;
+  kind: "task" | "workflow" | "phase"; key: string; runId: string; taskId: string | null;
   /** The owner-facing title (`display_title` of the task standard) or, for older tasks, the technical one. */
   title: string; techTitle: string | null; taskKind: TaskKind | null; area: string | null; objective: string | null;
   projectId: string | null; pmThreadId: string | null; column: BoardColumn; state: string; phase: BoardPhase;
   /** The stage the phase is in (`plan-critique`, `verification`...), its model and since when. */
   stage: string | null; model: string | null; since: number | null;
   waitingFor: string[]; detail: string | null; attemptNo: number; threadId: string | null; attemptId: string | null; updatedAt: number;
+  /** The task's hold is still up (`held_until` in the future); the board says «Удержана» instead of treating it as free. */
+  held: boolean;
+  /** A phase card carries the {ok, why} of its discussion, plan and design gates; null for a task or a chain. */
+  gates: Array<{ name: "discussion" | "plan" | "design"; ok: boolean; why: string[] }> | null;
+  /** The phase's current wave out of its plan's waves (n of m); null for a task or a chain. */
+  wave: { n: number; m: number } | null;
 };
 
 const LIVE = new Set<string>(OPEN_ATTEMPT_STATES);
@@ -59,7 +65,7 @@ function waitsFor(reason: string | null): string[] {
   return holder ? [holder[1]!] : [];
 }
 
-export function buildTaskBoard(db: LanePilotDatabase, input: { projectId?: string | null; doneSince: number; limit?: number; runIds?: readonly string[] }): BoardItem[] {
+export function buildTaskBoard(db: LanePilotDatabase, input: { projectId?: string | null; doneSince: number; limit?: number; runIds?: readonly string[] }, phases: BoardItem[] = []): BoardItem[] {
   const limit = input.limit ?? 400;
   const rawTasks = listBoardAttemptRows(db, { projectId: input.projectId, runIds: input.runIds, doneSince: input.doneSince, limit });
   // A version the PM replaced is not on the board: the check above finds only `x.3.1`, and PMs number redos `x.4`, so a blocked
@@ -113,6 +119,7 @@ export function buildTaskBoard(db: LanePilotDatabase, input: { projectId?: strin
       area: text(contract.area), objective: clip(row.objective, 160), projectId: row.project_id, pmThreadId: row.pm_thread_id,
       column, state: row.state, phase, stage: at?.stage_id ?? null, model: at?.model ?? null, since: at ? at.updated_at : null,
       waitingFor, detail, attemptNo: row.attempt_no, threadId: row.thread_id, attemptId: row.attempt_id, updatedAt: row.updated_at,
+      held: (taskHeldUntil(db, row.task_id) ?? 0) > now, gates: null, wave: null,
     };
   });
   // Workflow runs the owner or a PM started (insights, research, reels...); a task's own pipeline run is part of the task above.
@@ -127,9 +134,12 @@ export function buildTaskBoard(db: LanePilotDatabase, input: { projectId?: strin
       kind: "workflow", key: `workflow:${row.id}`, runId: row.id, taskId: null, title: nameOf(definition.name ?? definition.title, row.workflow_id), techTitle: row.workflow_id,
       taskKind: null, area: null, objective: null, projectId: row.project_id, pmThreadId: null, column, state: row.status, phase: "chain",
       stage: step, model: null, since: step ? row.updated_at : null, waitingFor: [], detail: column === "blocked" ? clip(row.reason) : null,
-      attemptNo: 0, threadId: null, attemptId: null, updatedAt: row.updated_at,
+      attemptNo: 0, threadId: null, attemptId: null, updatedAt: row.updated_at, held: false, gates: null, wave: null,
     });
   }
+  // Phase cards are dealt by the phase room and passed in (SMA m_sw_unit_card): phase→runs is the one allowed
+  // direction — runs reaching back for them would close a room cycle.
+  items.push(...phases);
   return items.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 

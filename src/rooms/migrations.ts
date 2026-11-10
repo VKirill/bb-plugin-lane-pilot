@@ -561,4 +561,10 @@ export const migrations = [
   // A miss the owner flagged ("I had to remind you") keeps the record that held the answer, so memory-eval gains a gold case (sma k_v_mem_miss).
   `ALTER TABLE lane_pilot_memory_miss ADD COLUMN kind TEXT NOT NULL DEFAULT 'empty'`,
   `ALTER TABLE lane_pilot_memory_miss ADD COLUMN note_id TEXT`,
+  // The attempt ledger (SMA ar_ledger): the attempt row is the current state; its transition log is the ledger —
+  // appended, never rewritten or removed, like the stage and gate event journals. An attempt row is not deleted either.
+  `CREATE TRIGGER lane_pilot_attempt_transition_no_update BEFORE UPDATE ON lane_pilot_attempt_transition BEGIN SELECT RAISE(ABORT,'attempt transitions are append-only'); END`,
+  `CREATE TRIGGER lane_pilot_attempt_transition_no_delete BEFORE DELETE ON lane_pilot_attempt_transition BEGIN SELECT RAISE(ABORT,'attempt transitions are append-only'); END`,
+  `CREATE TRIGGER lane_pilot_attempt_no_delete BEFORE DELETE ON lane_pilot_attempt BEGIN SELECT RAISE(ABORT,'attempts are append-only'); END`,
+
 ];

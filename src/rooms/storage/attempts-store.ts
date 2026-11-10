@@ -1,8 +1,9 @@
 import { parseDirtSnapshots, type DirtSnapshot } from "../dirt-snapshot";
 import { taskFamily, taskRedispatchBase } from "@lane-pilot/contracts";
 import { FREE_CLASSES, failureClass, isOwnerDecision, isPreStartStop, isWaitingSecret, isWriterSilent, type FailureCode } from "../contracts/failure-class";
-import { IllegalTransitionError, isLegalMove, OPEN_ATTEMPT_STATES, RETRY_ELIGIBLE } from "../contracts/state-machine";
+import { IllegalTransitionError, isLegalMove, isOpenAttemptState, OPEN_ATTEMPT_STATES, RETRY_ELIGIBLE } from "../contracts/state-machine";
 import { HARNESS_VERSION, type LanePilotDatabase } from "./database";
+import { listStageReceipts } from "./stages-store";
 
 /**
  * Parks a queued attempt until `wakeAt` while every writer provider is held (H2): the attempt stays `queued`, the
@@ -372,15 +373,20 @@ export function transitionAttempt(
     throw error;
   }
   // A settled attempt keeps its state unless the move is a declared way out (canceled -> queued, the PM's replan).
-  const reopen = settled && before.state !== state && isLegalMove(before.state, state) ? 1 : 0;
-  const changed = db.prepare(`UPDATE lane_pilot_attempt SET state=?, thread_id=COALESCE(?,thread_id), reason=?, failure_code=?, check_name=?, timeout_sec=?, updated_at=?,
-    wake_at=CASE WHEN ?<>'queued' THEN NULL ELSE wake_at END
-    WHERE id=? AND (state NOT IN (${FINAL_ATTEMPT_STATES.map(() => "?").join(",")}) OR state=? OR ?)`)
-    .run(state, fields.threadId ?? null, fields.reason ?? null, fields.failureCode ?? null,
-      fields.checkName ?? null, fields.timeoutSec ?? null,
-      now, state, attemptId, ...FINAL_ATTEMPT_STATES, state, reopen).changes === 1;
-  db.prepare(`INSERT INTO lane_pilot_attempt_transition(attempt_id,from_state,to_state,reason,refused,at) VALUES(?,?,?,?,?,?)`)
-    .run(attemptId, before.state, state, fields.reason ?? null, changed ? 0 : 1, now);
+  // The state write and its journal row land in one transaction (SMA m_wrappers): a crash between them used to leave a
+  // state with no journal. Listeners fire after the commit, so a screen never sees a state that was rolled back.
+  const changed = db.transaction(() => {
+    const reopen = settled && before.state !== state && isLegalMove(before.state, state) ? 1 : 0;
+    const wrote = db.prepare(`UPDATE lane_pilot_attempt SET state=?, thread_id=COALESCE(?,thread_id), reason=?, failure_code=?, check_name=?, timeout_sec=?, updated_at=?,
+      wake_at=CASE WHEN ?<>'queued' THEN NULL ELSE wake_at END
+      WHERE id=? AND (state NOT IN (${FINAL_ATTEMPT_STATES.map(() => "?").join(",")}) OR state=? OR ?)`)
+      .run(state, fields.threadId ?? null, fields.reason ?? null, fields.failureCode ?? null,
+        fields.checkName ?? null, fields.timeoutSec ?? null,
+        now, state, attemptId, ...FINAL_ATTEMPT_STATES, state, reopen).changes === 1;
+    db.prepare(`INSERT INTO lane_pilot_attempt_transition(attempt_id,from_state,to_state,reason,refused,at) VALUES(?,?,?,?,?,?)`)
+      .run(attemptId, before.state, state, fields.reason ?? null, wrote ? 0 : 1, now);
+    return wrote;
+  })();
   if (changed && before.state !== state) attemptChanged(db, attemptId, state, fields.reason);
   return changed;
 }
@@ -450,7 +456,47 @@ export function inspectAttempt(db: LanePilotDatabase, projectId: string, attempt
   return { ...rest, reason: reason?.slice(reasonOffset, end) ?? null,
     reason_offset: reasonOffset, reason_chars: reason?.length ?? 0, reason_truncated: reason !== null && (reasonOffset > 0 || reason.length > end),
     ...(reason && reason.length > end ? { reason_next: `bb lane-pilot state ${projectId} --attempt ${attemptId} --reason-offset ${end}` } : {}),
-    workspace_decision, dirt_before: dirt.slice(0, 200), dirt_before_count: dirt.length };
+    workspace_decision, dirt_before: dirt.slice(0, 200), dirt_before_count: dirt.length,
+    // The per-attempt dossier (SMA ar_run_dir), read back from the store. It goes to a terminal and into a PM prompt, so it
+    // is bounded: the trace is its stamp, shas and lengths (never the texts); receipts and gate events are those written
+    // while THIS attempt was the task's newest; each list is the newest DOSSIER_LIST_LIMIT and says when it was cut.
+    dossier: attemptDossier(db, rest as { id: string; run_id: string; task_id: string; created_at: number; thread_id?: string | null; holder_thread_id?: string | null; barrier_json?: string | null }),
+  };
+}
+
+export const DOSSIER_LIST_LIMIT = 50;
+
+function attemptDossier(db: LanePilotDatabase, attempt: { id: string; run_id: string; task_id: string; created_at: number; thread_id?: string | null; holder_thread_id?: string | null; barrier_json?: string | null }): Record<string, unknown> {
+  const limit = DOSSIER_LIST_LIMIT;
+  const cut: Record<string, { shown: number; total: number }> = {};
+  // The attempt's own window: from its start to the start of the task's next attempt (open-ended for the newest).
+  const next = db.prepare("SELECT MIN(created_at) AS at FROM lane_pilot_attempt WHERE run_id=? AND task_id=? AND created_at>? AND id<>?").get(attempt.run_id, attempt.task_id, attempt.created_at, attempt.id) as { at: number | null };
+  const until = next.at ?? Number.MAX_SAFE_INTEGER;
+  const newest = <T>(name: string, count: string, listSql: string, ...args: unknown[]): T[] => {
+    const total = (db.prepare(`SELECT COUNT(*) AS n ${count}`).get(...args) as { n: number }).n;
+    const rows = (db.prepare(`${listSql} DESC LIMIT ${limit}`).all(...args) as T[]).reverse();
+    if (total > rows.length) cut[name] = { shown: rows.length, total };
+    return rows;
+  };
+  const transitions = newest("transitions", "FROM lane_pilot_attempt_transition WHERE attempt_id=?",
+    "SELECT from_state, to_state, reason, refused, at FROM lane_pilot_attempt_transition WHERE attempt_id=? ORDER BY at DESC, rowid", attempt.id);
+  const stageReceipts = newest("stageReceipts", "FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND updated_at>=? AND updated_at<?",
+    `SELECT stage_id AS stageId, state, attempt, provider_id AS providerId, model, thread_id AS threadId, (result_json IS NOT NULL) AS hasResult, reason, updated_at AS updatedAt
+      FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND updated_at>=? AND updated_at<? ORDER BY updated_at`, attempt.run_id, attempt.task_id, attempt.created_at, until);
+  const gateEvents = newest("gateEvents", "FROM lane_pilot_gate_event WHERE run_id=? AND task_id=? AND occurred_at>=? AND occurred_at<?",
+    "SELECT gate, status, attempt, occurred_at FROM lane_pilot_gate_event WHERE run_id=? AND task_id=? AND occurred_at>=? AND occurred_at<? ORDER BY id", attempt.run_id, attempt.task_id, attempt.created_at, until);
+  const trace = getReasoningTrace(db, attempt.id);
+  const context = trace?.dispatchContext;
+  return {
+    threadId: attempt.thread_id ?? null, holderThreadId: attempt.holder_thread_id ?? null,
+    transitions, stageReceipts, gateEvents,
+    reasoningTrace: trace ? {
+      stamp: trace.stamp ?? null, planSha256: trace.planSha256, sentPlanSha256: trace.sentPlanSha256, sourceLength: trace.sourceLength, sentLength: trace.sentLength,
+      ...(context ? { executionPacketSha256: context.executionPacketSha256, lengths: { executionPacket: context.executionPacket.length, memoryText: context.memoryText.length, rulesText: context.rulesText?.length ?? 0, pmReadContext: context.pmReadContext.length, ...(context.promptChars !== undefined ? { prompt: context.promptChars } : {}) } } : {}),
+    } : null,
+    verdict: attempt.barrier_json ? (() => { try { return JSON.parse(attempt.barrier_json!) as unknown; } catch { return null; } })() : null,
+    ...(Object.keys(cut).length ? { cut, limit } : {}),
+  };
 }
 
 export function getAttempt(db: LanePilotDatabase, attemptId: string): {
@@ -474,6 +520,8 @@ export function getAttempt(db: LanePilotDatabase, attemptId: string): {
 }
 
 export type ReasoningTrace = {
+  /** Which machine wrote this trace (SMA ar_stamp): state-machine revision plus the harness version. */
+  stamp?:{stateMachineVersion:number;harnessVersion:string};
   planSha256:string;
   sentPlanSha256:string|null;
   sourceLength:number;
@@ -607,6 +655,49 @@ export function listTracedAttemptsSince(db: LanePilotDatabase, projectId: string
   return db.prepare(`SELECT t.trace_json, a.state FROM lane_pilot_attempt a
     JOIN lane_pilot_run r ON r.id=a.run_id JOIN lane_pilot_attempt_reasoning t ON t.attempt_id=a.id
     WHERE r.project_id=? AND a.created_at>=?`).all(projectId, sinceMs) as Array<{ trace_json: string; state: string }>;
+}
+
+/** Provider and model of an attempt's reasoning trace, taken in SQL: the whole trace (tens of KB) is never read for two fields. */
+const TRACE_WORKER = `COALESCE(json_extract(t.trace_json,'$.providerId'),'unknown') AS provider_id, COALESCE(json_extract(t.trace_json,'$.model'),'unknown') AS model`;
+const asWorker = (row: { provider_id: unknown; model: unknown }) => ({ providerId: typeof row.provider_id === "string" ? row.provider_id : "unknown", model: typeof row.model === "string" ? row.model : "unknown" });
+
+/** Done and not done per worker and day (SMA m_sw_worker_history): attempts of a project since a time, grouped by the
+ * provider/model of their reasoning trace — an attempt without a trace counts under "unknown". `done` is accepted,
+ * `notDone` is every ended state that is not (blocked, failed kinds, canceled); open attempts count in neither. */
+export function workerOutcomesSince(db: LanePilotDatabase, projectId: string, sinceMs: number): Array<{ providerId: string; model: string; day: string; done: number; notDone: number }> {
+  // json_extract on a broken trace raises; only a stored trace that is valid JSON is asked.
+  const rows = db.prepare(`SELECT a.state, a.created_at, ${TRACE_WORKER} FROM lane_pilot_attempt a
+    JOIN lane_pilot_run r ON r.id=a.run_id LEFT JOIN lane_pilot_attempt_reasoning t ON t.attempt_id=a.id AND json_valid(t.trace_json)
+    WHERE r.project_id=? AND a.created_at>=?`).all(projectId, sinceMs) as Array<{ state: string; created_at: number; provider_id: unknown; model: unknown }>;
+  const out = new Map<string, { providerId: string; model: string; day: string; done: number; notDone: number }>();
+  for (const row of rows) {
+    const { providerId, model } = asWorker(row);
+    const day = new Date(row.created_at).toISOString().slice(0, 10);
+    const key = `${providerId}/${model}/${day}`;
+    const cell = out.get(key) ?? { providerId, model, day, done: 0, notDone: 0 };
+    if (row.state === "accepted") cell.done += 1;
+    else if (!isOpenAttemptState(row.state)) cell.notDone += 1;
+    out.set(key, cell);
+  }
+  return [...out.values()];
+}
+
+/** What each worker holds right now (SMA m_sw_worker_card): its open attempts with the task ids and the time of its
+ * newest attempt, grouped by the trace's provider/model like workerOutcomesSince. */
+export function workerPresenceNow(db: LanePilotDatabase, projectId: string, sinceMs: number): Array<{ providerId: string; model: string; running: number; taskIds: string[]; lastAt: number | null }> {
+  const rows = db.prepare(`SELECT a.task_id, a.state, a.updated_at, ${TRACE_WORKER} FROM lane_pilot_attempt a
+    JOIN lane_pilot_run r ON r.id=a.run_id LEFT JOIN lane_pilot_attempt_reasoning t ON t.attempt_id=a.id AND json_valid(t.trace_json)
+    WHERE r.project_id=? AND a.updated_at>=?`).all(projectId, sinceMs) as Array<{ task_id: string; state: string; updated_at: number; provider_id: unknown; model: unknown }>;
+  const out = new Map<string, { providerId: string; model: string; running: number; taskIds: string[]; lastAt: number | null }>();
+  for (const row of rows) {
+    const { providerId, model } = asWorker(row);
+    const key = `${providerId}/${model}`;
+    const cell = out.get(key) ?? { providerId, model, running: 0, taskIds: [], lastAt: null };
+    if (isOpenAttemptState(row.state)) { cell.running += 1; if (!cell.taskIds.includes(row.task_id)) cell.taskIds.push(row.task_id); }
+    cell.lastAt = Math.max(cell.lastAt ?? 0, row.updated_at);
+    out.set(key, cell);
+  }
+  return [...out.values()];
 }
 
 /** The task's attempts before this one, newest first. */

@@ -138,6 +138,7 @@ import type { BenchApi } from "./src/rooms/bench/server";
 import type { BaselineApi, RegressionApi } from "./src/rooms/baseline/server";
 import type { RunGoalApi } from "./src/rooms/run-goal/server";
 import type { PhaseApi, PhaseIntake } from "./src/rooms/phase/server";
+import { phaseBoardCards } from "./src/rooms/phase";
 import type { MoneyApi } from "./src/rooms/money";
 import type { FrontApi } from "./src/rooms/front";
 import type { CapabilitiesApi } from "./src/rooms/capability/server";
@@ -152,6 +153,10 @@ import type { WorldApi } from "./src/rooms/world/server";
 import type { Canary } from "./src/rooms/stability/server";
 import type { MemoryConflictsApi } from "./src/rooms/memory/server";
 import type { PromotionServiceApi } from "./src/rooms/rule-forms";
+import type { BoardItem } from "./src/rooms/runs/server";
+
+/** The phase room's board-card dealer (src/rooms/phase/board-cards.ts): project filter plus the board's doneSince. */
+type PhaseBoardCards = (input: { projectId: string | null; doneSince: number; onError?: (message: string) => void }) => BoardItem[];
 
 /** Every function one server module offers another; filled once all modules exist, read at call time. */
 export interface Services {
@@ -186,6 +191,8 @@ export interface Services {
   runGoal: RunGoalApi;
   /** Phases on rails: the driver that moves a phase through its stages by gates in code and wakes the PM at each turn (src/rooms/phase). */
   phases: PhaseApi;
+  /** Phase cards for the task board (src/rooms/phase/board-cards.ts), handed to runs so it never imports phase. */
+  phaseCards: PhaseBoardCards;
   /** Rails by default: the owner's newest message in a PM chat read before the PM acts; a heavy goal goes into a phase (src/rooms/phase/server/intake.ts). */
   phaseIntake: PhaseIntake;
   /** The spend book, the money cap of paid lanes and the subscription windows (src/rooms/money). */
@@ -400,6 +407,7 @@ export default async function plugin(bb: BbPluginApi) {
     createRunGoal(ctx, services),
     createProfileCheck(ctx),
     createPhaseDriver(ctx, services, createPhaseReactions(ctx.db, ctx.bb)),
+    { phaseCards: ((input: { projectId: string | null; doneSince: number; onError?: (message: string) => void }) => phaseBoardCards(ctx.db, input)) satisfies PhaseBoardCards },
     createMoney(ctx),
     createFront(ctx),
     createCapabilities(ctx, services),

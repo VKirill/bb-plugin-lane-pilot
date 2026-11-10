@@ -16,6 +16,11 @@ export const ATTEMPT_STATES = [
 
 export type AttemptState = (typeof ATTEMPT_STATES)[number];
 
+/** The state machine's own revision (SMA ar_stamp): bump when ATTEMPT_STATES or the legal-move table changes; each
+ * reasoning trace carries it in `stamp` so a stored attempt can be read back against the rules it was written under. */
+export const STATE_MACHINE_VERSION = 1;
+
+
 export const RUN_STATES = ["pending", "running", "accepted", "blocked", "closed"] as const;
 export type RunState = (typeof RUN_STATES)[number];
 

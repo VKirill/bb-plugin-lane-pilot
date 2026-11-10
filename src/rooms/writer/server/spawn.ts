@@ -1,6 +1,6 @@
 import { breakerKey, RunBudgetExceeded } from "@lane-pilot/resilience";
 import { normalizeModel, openTokenCursor } from "../../usage/server";
-import { briefMode, briefParts } from "../../contracts";
+import { briefMode, briefParts, STATE_MACHINE_VERSION } from "../../contracts";
 import { estimateTokens, recordMemoryMixed, recordMemoryReceipt } from "@lane-pilot/memory-core";
 import { writerKnowledge } from "./writer-knowledge";
 import { parseDirtSnapshots } from "../cli-outcome";
@@ -301,6 +301,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         serviceTier:effectiveServiceTier, reasoningLevelSource,
       };
       const trace = {
+        stamp:{stateMachineVersion:STATE_MACHINE_VERSION, harnessVersion:HARNESS_VERSION},
         planSha256:digest.sha256, sentPlanSha256:jev.sentPlanSha256, sourceLength:digest.length, sentLength:jev.sentLength,
         jevStatus:jev.status, jevDecision, requestedReasoningLevel:requested,
         effectiveReasoningLevel:effective, fallbackReason,

@@ -15,3 +15,4 @@ export { compactDispatchReply, compactReceipt, stageDetail } from "./stage-brief
 export { closeWriterStages, recordGateEvaluation, recordStage, reopenWriterStages, resetHelperStages } from "./stage-records";
 export { createTaskReconcile } from "./task-reconcile";
 export { readTaskCard } from "./task-board";
+export type { BoardItem } from "./task-board";
