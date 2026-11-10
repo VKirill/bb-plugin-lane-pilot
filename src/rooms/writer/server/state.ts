@@ -1,7 +1,8 @@
 import { PROVIDER_CAPABILITIES, providerLimitNotice, usageProviderOf, zcodeBlock } from "@lane-pilot/models";
 import { createProviderBreaker, createRunBudget, parseRunBudgetLimits, type RunBudget } from "@lane-pilot/resilience";
 import { RunWriterPool } from "../../tasks";
-import { createProviderUsage, usageSkipPercent } from "../../usage/server";
+import { createProviderUsage, usageSkipPercent, parseBreakdown, tokenCursorRow } from "../../usage/server";
+import { listRunWriterThreadIds } from "../../storage";
 import { createProviderRetryGuard } from "../../stability/server";
 import { createConcurrencyLimit } from "./concurrency-limit";
 import { CATALOG_WAIT_MS, modelCatalogOf, noteProviderLimit, registerSpawnUsage, threadModelOf, within, zcodeBusy, zcodeBusyPeek } from "../../platform/server";
@@ -71,6 +72,14 @@ export function createWriterState(ctx: ServerCore) {
       if (JSON.stringify(budget.snapshot().limits) !== JSON.stringify(limits)) budget.setLimits(limits);
     } else {
       budget = createRunBudget(limits);
+      // A fresh budget starts at the spend the token cursors already know: attempts killed with the previous
+      // plugin instance left spend behind, and it counts against this run's limits (SMA dt_stopped_spend).
+      try {
+        for (const threadId of listRunWriterThreadIds(ctx.db, runId)) {
+          const total = parseBreakdown(tokenCursorRow(ctx.db, threadId)?.total_json ?? "{}").total;
+          if (total > 0) budget.noteTokens(threadId, total);
+        }
+      } catch (cause) { ctx.log(`Lane Pilot run ${runId}: budget seed from token cursors failed: ${cause instanceof Error ? cause.message : String(cause)}`); }
       runBudgets.set(runId, budget);
     }
     return budget;

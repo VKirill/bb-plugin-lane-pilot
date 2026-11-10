@@ -1,5 +1,5 @@
 import { accessSync, constants as fsConstants, existsSync } from "node:fs";
-import { access, lstat, mkdir, mkdtemp, readdir, realpath, rm, rmdir, symlink } from "node:fs/promises";
+import { access, copyFile, lstat, mkdir, mkdtemp, readdir, realpath, rm, rmdir, symlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { bestEffort, createCapture, lstatOrNull, redactSecrets, sha256Hex } from "@lane-pilot/kit";
@@ -242,6 +242,27 @@ async function realDirectory(path:string, label:string):Promise<string> {
   return realpath(path);
 }
 
+/** Own clone, nothing borrowed (SMA wi_clone): a standalone clone of the run folder — HEAD, the uncommitted diff and the
+ * untracked files — so the strict worker's .git is a directory of its own, never the linked worktree that points into the
+ * owner's repository. */
+async function cloneRunFolder(source:string, dest:string):Promise<void> {
+  const git = async (args:readonly string[], input?:string):Promise<string> => {
+    const done = await spawnAsync("git",[...args],{input,timeout:300_000,maxBuffer:64*1024*1024});
+    if (done.status !== 0) throw new Error(`worker_clone_failed: git ${args.filter((a)=>!a.startsWith("-C"))[0]}: ${(done.stderr ?? "").slice(0,300)}`);
+    return done.stdout ?? "";
+  };
+  await git(["clone","--no-local","--no-hardlinks","--quiet",source,dest]);
+  const patch = await spawnAsync("git",["-C",source,"diff","HEAD","--binary"],{timeout:120_000,maxBuffer:64*1024*1024});
+  if (patch.status !== 0) throw new Error(`worker_clone_failed: git diff: ${(patch.stderr ?? "").slice(0,300)}`);
+  if (patch.stdout?.trim()) await git(["-C",dest,"apply","--whitespace=nowarn","-"],patch.stdout);
+  const untracked = await git(["-C",source,"ls-files","--others","--exclude-standard","-z"]);
+  for (const rel of untracked.split("\0").filter(Boolean)) {
+    if (isAbsolute(rel) || rel.split("/").includes("..")) continue;
+    await mkdir(dirname(join(dest,rel)),{recursive:true});
+    await copyFile(join(source,rel),join(dest,rel));
+  }
+}
+
 /** The command was killed at its time limit: reported as 124 like timeout(1), so a caller can tell it from a failure. */
 const timedOut=(child:{error?:Error})=>(child.error as NodeJS.ErrnoException|undefined)?.code==="ETIMEDOUT";
 
@@ -260,41 +281,52 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
   // so an unresolved temp path would leave the sandbox's own HOME unwritable.
   const tempPath = await realpath(await mkdtemp(resolve(tmpdir(),"lane-pilot-sandbox-")));
   await linkUserToolHomes(tempPath);
-  // Checks as the worker: probe first, then rights on exactly the run folder and this job's temp folder (the job spool).
+  // Checks as the worker: probe first, then a standalone clone inside the job's temp folder — the linked worktree and the
+  // owner's .git are never granted; rights go on exactly the clone and the spool (SMA wi_clone).
+  let runWorkspace = workspacePath;
+  let runCwd = cwd;
   if (input.asUser) {
     if (!await workerReachable(input.asUser)) {
       await rm(tempPath,{recursive:true,force:true});
       throw new Error(`worker_unreachable: sudo cannot run as ${input.asUser} without a password; an admin runs scripts/lp-worker-user.sh create ${input.asUser} on this machine, or worker.strict_user goes off`);
     }
-    await grantRunFolders(input.asUser,[workspacePath,tempPath]);
+    runWorkspace = join(tempPath,"work");
+    try {
+      await cloneRunFolder(workspacePath,runWorkspace);
+    } catch (cause) {
+      await rm(tempPath,{recursive:true,force:true});
+      throw cause;
+    }
+    runCwd = join(runWorkspace,relative(workspacePath,cwd));
+    await grantRunFolders(input.asUser,[runWorkspace,tempPath]);
   }
   const launch=(program:string,args:string[],keep:string[])=>input.asUser ? asWorker(input.asUser,program,args,keep) : { program, args };
   let releaseGuards=async():Promise<void>=>{};
   try {
     if (backend === "linux-bubblewrap") {
-      const {guardPaths,created}=await prepareGuardPaths(workspacePath);
+      const {guardPaths,created}=await prepareGuardPaths(runWorkspace);
       releaseGuards=()=>releaseGuardPaths(created);
       // Secrets travel in bwrap's own environment, never in its arguments (a process list shows those); without --clearenv
       // the sandbox keeps exactly them plus the variables --setenv gives it.
       const secrets=sandboxSecretEnv(input.env);
-      const args=buildBubblewrapArgs({workspacePath,cwd,tempPath,guardPaths});
+      const args=buildBubblewrapArgs({workspacePath:runWorkspace,cwd:runCwd,tempPath,guardPaths});
       const policySha256=sha256Hex(JSON.stringify(args));
       const bw=launch(bubblewrapPath!,[...(Object.keys(secrets).length?args.filter((arg)=>arg!=="--clearenv"):args),input.command],Object.keys(secrets));
       const child=await spawnAsync(bw.program,bw.args,{
-        cwd,env:secrets,timeout:Math.min(timeoutSec * 1000,MAX_TIMEOUT_MS),keepEnds:KEEP_STDOUT,
+        cwd:runCwd,env:secrets,timeout:Math.min(timeoutSec * 1000,MAX_TIMEOUT_MS),keepEnds:KEEP_STDOUT,
       });
       if (child.error && ["EPERM","EACCES","ENOENT"].includes(String((child.error as NodeJS.ErrnoException).code))) {
         throw new Error("sandbox_backend_unavailable: bubblewrap launch was denied or executable is missing");
       }
-      return {hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,exitCode:child.status ?? (timedOut(child) ? 124 : 1),
+      return {hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath:runWorkspace,cwd:runCwd,exitCode:child.status ?? (timedOut(child) ? 124 : 1),
         policySha256,stdout:maskSecrets(child.stdout ?? "",secrets),stderr:maskSecrets(keepEnds(child.stderr ?? child.error?.message ?? "",KEEP_STDERR),secrets)};
     }
-    const profile = buildSeatbeltProfile(workspacePath,tempPath);
+    const profile = buildSeatbeltProfile(runWorkspace,tempPath);
     const policySha256 = sha256Hex(profile);
     const seatbeltSecrets=sandboxSecretEnv(input.env);
     const sb=launch(SANDBOX_EXEC,["-p",profile,"/bin/bash","--noprofile","--norc","-c",input.command],[...Object.keys(seatbeltSecrets),"PATH","HOME","TMPDIR","TMP","TEMP","BB_DATA_DIR","LANG","LC_ALL"]);
     const child = await spawnAsync(sb.program,sb.args,{
-      cwd,
+      cwd:runCwd,
       env:{
         // Secrets first: the sandbox's own variables below always win.
         ...seatbeltSecrets,
@@ -311,7 +343,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
       throw new Error("sandbox_backend_unavailable: Seatbelt policy could not be applied by the host");
     }
     return {
-      hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,
+      hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath:runWorkspace,cwd:runCwd,
       exitCode:child.status ?? (timedOut(child) ? 124 : 1),policySha256,
       stdout:maskSecrets(child.stdout ?? "",seatbeltSecrets),stderr:maskSecrets(keepEnds(child.stderr ?? child.error?.message ?? "",KEEP_STDERR),seatbeltSecrets),
     };

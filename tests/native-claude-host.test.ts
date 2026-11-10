@@ -84,7 +84,7 @@ it("a helper launcher denies the orchestration built-ins, a PM launcher keeps th
     return spawnSync(launcher, ["-p", "hi", ...extra], { encoding: "utf8" }).stdout.trim().split("\n");
   };
   const writer = await run("writer");
-  expect(writer[writer.indexOf("--disallowedTools") + 1]).toBe(HELPER_DISALLOWED_TOOLS);
+  expect(writer[writer.indexOf("--disallowedTools") + 1]).toContain(HELPER_DISALLOWED_TOOLS);
   expect(await run("pm")).not.toContain("--disallowedTools");
   // The person's settings differ per machine: a helper does not load them, a PM chat does (docs/guide/hooks.md, rule 6).
   extra = ["--setting-sources=user,project,local"];

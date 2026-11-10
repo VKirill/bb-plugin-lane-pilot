@@ -109,7 +109,9 @@ export function mountPermits(ctx: ServerCore): void {
         attempt = matched ? open.find((row) => row.id === matched.id) : undefined;
       }
       const written = await host().call("answerPermit", { requestedHostId: input.hostId, session: input.session, ticket: input.ticket, decision: input.decision, why: input.why }, { hostId: input.hostId, timeoutMs: 10_000 });
-      if (!written.written) throw new ToolError(`no ticket ${input.ticket} on ${input.hostId}`, { code: "no_ticket", retryable: false, sideEffects: "none" });
+      if (!written.written) throw new ToolError(written.expired
+        ? `expired: the writer asks again`
+        : `no ticket ${input.ticket} on ${input.hostId}`, { code: written.expired ? "permit_expired" : "no_ticket", retryable: false, sideEffects: "none" });
       if (attempt?.thread_id) await bestEffort(bb.log, "permit decision notice", bb.sdk.threads.send({ threadId: attempt.thread_id, mode: "queue-if-active", input: [{ type: "text", mentions: [], text: `[Lane Pilot] Permit ${input.ticket}: ${input.decision === "allow" ? "granted — run the same command again, once" : `refused — ${input.why}`}.` }] } as never), undefined);
       return JSON.stringify({ ticket: input.ticket, decision: input.decision, written: true });
     },

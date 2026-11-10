@@ -1,4 +1,4 @@
-import { listCliPmProjects, listCliPmThreads, loadPrototypeConfig } from "../../storage";
+import { listCliPmProjects, listCliPmThreads, loadProjectSettings, loadPrototypeConfig } from "../../storage";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { isPmChat } from "../../native-agent/server";
@@ -77,6 +77,14 @@ export function createBacklog(ctx: ServerCore) {
       }
       const next = current.issuable[0];
       if (!pm || !next || projectToday >= PER_PROJECT_PER_DAY || issuedToday() >= PER_DAY) { out.push({ projectId, offered: null, board: counts }); continue; }
+      // backlog.auto_issue on: the scan itself sends the ready item into the project's PM chat, the same caps
+      // guarding it (SMA dt_intake). Off stays the default: the owner's «выдать» issues (0.1.458).
+      const autoIssue = loadProjectSettings(db, projectId)["backlog.auto_issue"];
+      if (autoIssue === "on" || autoIssue === true) {
+        const done = await issue(projectId, next.id, now);
+        out.push({ projectId, offered: done.ok ? next.id : null, board: counts });
+        continue;
+      }
       // The offer says how fresh the backlog is, in the owner's words: read just now, behind the server, or not compared.
       const ageLine = !current.fetched ? " Свежесть бэклога не проверена: сервер с кодом не ответил."
         : current.behind ? ` Папка проекта отстаёт от сервера с кодом, новых правок там: ${current.behind}.`
