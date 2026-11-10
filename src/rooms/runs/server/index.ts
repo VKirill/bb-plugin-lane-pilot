@@ -2,7 +2,7 @@
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { isTaskSatisfied, loadBlockedBy, markTaskSatisfied, saveBlockedBy } from "./blocked-by";
 export type { BlockedBy } from "./blocked-by";
-export { cancelAttemptById } from "./cancel";
+export { cancelAttemptById, closeEndedAttempt } from "./cancel";
 export { childResultObject, docsChildSnapshot, docsResultObject, memoryChildSnapshot, projectLifeChildSnapshot, resolveDocsSnapshotPageCap, spawnRefused } from "./child-snapshots";
 export type { DocsChildSnapshot, MemoryChildSnapshot, ProjectLifeChildSnapshot } from "./child-snapshots";
 export { runsRpc } from "./rpc/runs";

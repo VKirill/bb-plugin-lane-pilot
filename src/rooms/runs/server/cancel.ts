@@ -1,4 +1,5 @@
-import { getAttempt, getTask, getTaskPlan, listStageReceipts, markCancelCode, transitionAttempt, type CancelCode } from "../../storage";
+import { getAttempt, getRun, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, markCancelCode, transitionAttempt, type CancelCode } from "../../storage";
+import { FAILED_ATTEMPT_STATES } from "../../contracts";
 export { CANCEL_CODES, markCancelCode, type CancelCode } from "../../storage";
 import { cancelRejection } from "./run-finish";
 import { closeHelperStages, recordStage } from "./stage-records";
@@ -14,11 +15,27 @@ async function cancelStageHelpers(ctx: Pick<ServerCore, "bb" | "db">, attempt: N
     attempt:attempt.attempt_no, state:"canceled", reason:"task canceled" });
 }
 
-/** Cancels one attempt: a queued one at once, a running one once its writer's stop is observed. */
+/**
+ * A task that ended without acceptance (blocked, failed) is closed: it leaves the board and holds no task behind it. Only the task's
+ * newest attempt, in a run that is still open; a refused spawn is not a task that ran. Null when the attempt is not such a one.
+ */
+export function closeEndedAttempt(db: ServerCore["db"], attempt: { id: string; state: string; run_id: string; task_id: string }, why: string | undefined, code: CancelCode): { ok:true; state:"canceled"; reason:string } | null {
+  if (!(FAILED_ATTEMPT_STATES as readonly string[]).includes(attempt.state) || attempt.state === "spawn_rejected") return null;
+  if (getRun(db, attempt.run_id)?.closed_at || listAttemptsForTask(db, attempt.run_id, attempt.task_id).at(-1)?.id !== attempt.id) return null;
+  const was = attempt.state;
+  transitionAttempt(db, attempt.id, "canceled", { reason: why?.trim() || `canceled: the task had ended ${was}` });
+  markCancelCode(db, attempt.id, code);
+  return { ok:true, state:"canceled", reason:`it had ended ${was}; it is closed: it leaves the board and holds no task behind it` };
+}
+
+/** Cancels one attempt: a queued one at once, a running one once its writer's stop is observed, an ended one by closing it. */
 export async function cancelAttemptById(ctx: Pick<ServerCore, "bb" | "db" | "cancelQueuedAttempt">, attemptId: string, rollback?: { noteStopped(attemptId: string): Promise<{ recorded: boolean; error?: string } | void> }, why?: string, code: CancelCode = "unknown"): Promise<{ ok:boolean; state:string; reason:string | null }> {
   const { bb, db } = ctx;
   const attempt = getAttempt(db, attemptId);
   if (!attempt) return { ok: false, state: "missing", reason: "attempt does not exist" };
+  // The same close the PM's tool gives: the command line and the board refused it («cancel is not legal from blocked»).
+  const closed = closeEndedAttempt(db, attempt, why, code);
+  if (closed) return closed;
   if (!attempt.thread_id) {
     const canceled = ctx.cancelQueuedAttempt(attempt, why, code);
     if (canceled.ok) await cancelStageHelpers(ctx, attempt);

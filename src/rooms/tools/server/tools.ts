@@ -4,7 +4,7 @@ import type { IsTaskSatisfied } from "../../contracts";
 import type { StageHelperSettings, WorkflowEngineApi, WorkflowTriggersApi } from "../../platform/server";
 import { gateVocabularyLines } from "../../contracts";
 import { registerBrowserExecutors, runBrowserQaGraph } from "../../qa/server";
-import { cancelAttemptById, cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees } from "../../runs/server";
+import { cancelAttemptById, cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeEndedAttempt } from "../../runs/server";
 import { bestEffort, LANE_PILOT_READ_NAME } from "@lane-pilot/kit";
 import { taskV2Schema, TASK_KINDS } from "../../contracts";
 import { getRun, getRunSettingsScopes, listAttemptsForTask, listEndedTaskIds, listOpenAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig, markCancelCode, noteToldPmDirectly, setTaskClosedWords, transitionAttempt } from "../../storage";
@@ -177,12 +177,10 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
           // Ended without acceptance (blocked, failed): the PM closes it, so it leaves the board and holds no task behind it. feed-gen 2026-11-10:
           // «cancel is not legal from blocked» left four superseded tasks on the board and one of them holding its area as the pilot.
           const newest = listAttemptsForTask(db, runId, taskId).at(-1);
-          if (newest && (FAILED_ATTEMPT_STATES as readonly string[]).includes(newest.state) && newest.state !== "spawn_rejected") {
-            const was = newest.state;
-            transitionAttempt(db, newest.id, "canceled", { reason: params.words?.trim() ? `PM canceled: ${params.words.trim()}` : `PM canceled the task (it had ended ${was})` });
-            markCancelCode(db, newest.id, "owner_cancel");
+          const closed = newest ? closeEndedAttempt(db, { ...newest, run_id:runId, task_id:taskId }, params.words?.trim() ? `PM canceled: ${params.words.trim()}` : `PM canceled the task (it had ended ${newest.state})`, "owner_cancel") : null;
+          if (newest && closed) {
             if (params.words) setTaskClosedWords(db, taskId, params.words);
-            results.push({ taskId, attemptId:newest.id, ok:true, state:"canceled", reason:`it had ended ${was}; it is closed: it leaves the board and holds no task behind it` });
+            results.push({ taskId, attemptId:newest.id, ...closed });
             continue;
           }
           results.push({ taskId, ok:false, state:newest?.state ?? "not_open", reason:newest ? `its last attempt is ${newest.state}: nothing to cancel` : "no attempt of this task in this run" });

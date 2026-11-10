@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.513
+
+- **`bb lane-pilot cancel` and the board close a task that ended blocked, as the PM's tool does.** 0.1.507 taught only `lane_pilot_cancel_task` to close an ended task; the command line and the RPC still answered «cancel is not legal from blocked», so four dead tasks of feed-gen stayed on the board. The close lives in `cancelAttemptById` now (`closeEndedAttempt`): the newest attempt of a task that ended without acceptance, in an open run, becomes `canceled`. A batch of canceled tasks alone does not wake its PM chat.
+- **Twelve rows of the SMA map are BB core's.** Readers of the conversation and usage rows found the card's guarantee in BB itself (thread events, thread list and title, the stopping state, the send schema, the thread-changed frame, the stored turn, provider retry, compaction, usage normalization): the entries are `have` with `core:` proofs.
+
 ## 0.1.512
 
 - **Work the lead handed over does not wake the project's PM chat.** The owner, November 10: the Aura Lab chat had been idle for more than 15 hours and got «Lane Pilot: results of your tasks». The task was not that chat's: a «да» to the lead's proposal «Навык для: aura lab неделя пересчёт» started `issue-full` under the project's latest PM chat, and the per-task result of its writer was pushed there. The end of such a run already went back to the lead's road since November 3 (`leadRoadOf`, 1085d647); its tasks did not. A task of a lead hand-over is born `lead` (a seventh birth kind), and `listUnreportedTaskOutcomes` leaves it out: its fate reaches the lead through the run's end, as before.

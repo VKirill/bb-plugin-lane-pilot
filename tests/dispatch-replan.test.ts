@@ -1,3 +1,4 @@
+import { closeEndedAttempt } from "../src/rooms/runs/server";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../server";
@@ -161,6 +162,13 @@ describe("a replan keeps the task and its attempt", () => {
       { taskId:"dead", ok:true, state:"canceled" }, { taskId:"done", ok:false, state:"accepted" }] });
     expect(getAttempt(db, "dead-a1")).toMatchObject({ state:"canceled", reason:"PM canceled: superseded by text-gen-fallback-chain" });
     expect(getAttempt(db, "done-a1")).toMatchObject({ state:"accepted" });
+    // The command line and the board cancel through the same function: an ended task is closed there too, an accepted one is not.
+    createTask(db, { id:"cli", runId, kind:"bb", contract:{ ...task, id:"cli" } });
+    createAttempt(db, { id:"cli-a1", runId, taskId:"cli" });
+    db.prepare("UPDATE lane_pilot_attempt SET state='blocked' WHERE id='cli-a1'").run();
+    expect(closeEndedAttempt(db, { id:"done-a1", state:"accepted", run_id:runId, task_id:"done" }, undefined, "owner_cancel")).toBeNull();
+    expect(closeEndedAttempt(db, { id:"cli-a1", state:"blocked", run_id:runId, task_id:"cli" }, undefined, "owner_cancel")).toMatchObject({ ok:true, state:"canceled" });
+    expect(getAttempt(db, "cli-a1")).toMatchObject({ state:"canceled", reason:"canceled: the task had ended blocked" });
     releaseBase();
     await harness.lifecycle.dispose();
   });
