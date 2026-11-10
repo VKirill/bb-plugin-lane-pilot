@@ -23,7 +23,7 @@ import { wasAnsweredByDefault } from "./question-default";
 import { appendTaskQa } from "./reopen-attempt";
 import {needsHumanQuestion, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines} from "./writer-task";
 import { isLiveDecision } from "../live-folder";
-import { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, acceptanceArtifactDir, acceptanceProofGap, taskSizeOf, landingWordGap, landingWordAsked, questionsFromFile, checkScriptEdits, recordTaskApproach, recordTaskQuestions, referenceTestEdits, taskWordKey, testFitFindings, writerMarkers } from "../../tasks";
+import { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, TEST_PATH, acceptanceArtifactDir, acceptanceProofGap, taskSizeOf, landingWordGap, landingWordAsked, ownerWordsMode, questionsFromFile, checkScriptEdits, recordTaskApproach, recordTaskQuestions, referenceTestEdits, shapeFlags, taskWordKey, testFitFindings, testOwnedImports, writerMarkers } from "../../tasks";
 import type { TaskWord } from "../../tasks";
 import type { StageId } from "../../tasks";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, sleepUntilThreadSignal, startLimitWaiting, threadFailure, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -291,6 +291,15 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const pause = Math.max(0, 2_000 - (Date.now() - pollStarted));
         if (watchBudget) await new Promise((resolve) => setTimeout(resolve, pollPause(pause)));
         else await sleepUntilThreadSignal(bb, input.writerThreadId, mark, pause);
+      }
+      // The turn ended while a background command of the session still ran (SMA ag_infra): a non-work stop, the attempt
+      // is free and the chain continues. threads.get reports no such count; the environment's thread list does.
+      {
+        const envId = stringAt(completedThread, "environmentId");
+        const listed = envId ? await (bb.sdk.threads.list({ environmentId:envId, includeHidden:true } as never) as Promise<unknown>).catch(() => null) : null;
+        const row = Array.isArray(listed) ? (listed as Array<{ id:string; activity?:{ activeBackgroundCommandCount?:number } }>).find((item) => item.id === input.writerThreadId) : undefined;
+        const tailCommands = row?.activity?.activeBackgroundCommandCount ?? 0;
+        if (tailCommands > 0) return providerFailed(`writer_background_tail: ${tailCommands} background command(s) still running after the turn ended`);
       }
       const currentAttempt = getAttempt(db, input.attemptId);
       if (currentAttempt?.state === "cancel_requested" || currentAttempt?.state === "canceled") {
@@ -911,7 +920,29 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       // The owner's word before landing (SMA: Approving, Authorized by a person): with owner.words on, a verified task waits here,
       // in place and with its worktree, for the owner's yes the PM records (lane_pilot_queue word); a no or six silent hours block it.
       // On owner.words=risky (the default) only a task of risk high waits; a low or medium one lands by itself.
-      const ownerWords = landingWordAsked(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)), input.task.risk);
+      // What of the work's shape a person must see: top-level folders the base did not have, and test files the base
+      // did not have that import none of the task's own files. Reads are bounded; a failure flags nothing.
+      const attemptShapeFlags = async ():Promise<string[]> => {
+        try {
+          const produced = (candidate.produced ?? []).map((path) => path.replace(/^\.\//, ""));
+          if (!produced.length || !basePathForTests) return [];
+          const listed = await runOnHost(host, { hostId:input.config.hostId, cwd:basePathForTests, command:"git ls-tree --name-only HEAD 2>/dev/null || ls -1A", timeoutSec:20, timeoutMs:25_000 });
+          if (listed.exitCode !== 0 || typeof listed.stdout !== "string") return [];
+          const baseTopLevel = new Set(listed.stdout.split("\n").map((line) => line.trim()).filter(Boolean));
+          const newTests: Array<{ path:string; imports:string[] }> = [];
+          for (const path of produced) {
+            if (!TEST_PATH.test(path) || await readBefore(path) !== null) continue;
+            const content = await readFit(workedAt ?? input.task.project_cwd, path);
+            newTests.push({ path, imports:content ? testOwnedImports(path, content, input.task.owns_paths) : [] });
+          }
+          return shapeFlags({ changedPaths:produced, baseTopLevel, newTests });
+        } catch { return []; }
+      };
+      const wordSettings = loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId));
+      // Shape of the work (SMA ag_shape): a new top-level folder or a test that only tests itself asks a person too,
+      // folded into the same landing word — off only when the person steps are off entirely.
+      const shape = ownerWordsMode(wordSettings) === "off" ? [] : await attemptShapeFlags();
+      const ownerWords = landingWordAsked(wordSettings, input.task.risk) || shape.length > 0;
       const wordsOf = async () => ((await bb.storage.kv.get(TASK_WORDS_KEY)) as Record<string, TaskWord[]> | null)?.[taskWordKey(input.runId, taskFamily(input.taskId))];
       { const stopped = stoppedMeanwhile("the plan-fact check", writerThreadId); if (stopped) return stopped; }
       let wordGap = landingWordGap(ownerWords, await wordsOf());
@@ -924,7 +955,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           const wordInput = (decision:"yes"|"no") => ({ runId:input.runId, taskId:input.taskId, decision, text: decision === "yes" ? "Да, сливайте" : "Нет, не сливать" });
           postOwnerItem(db as never, { key:`${taskWordItemPrefix(input.runId, taskFamily(input.taskId))}${input.attemptId}`, source:"writer", kind:"task_word", projectId:input.projectId, wake:false,
             what:`Задача проверена и ждёт вашего слова перед слиянием: ${input.task.title}`,
-            why:`Риск задачи ${input.task.risk}: по вашему правилу такая работа не сливается без вашего «да». Без ответа за ${Math.round(OWNER_WORD_WAIT_MS / 3_600_000)} часов она остановится, и её можно будет отправить снова.`,
+            why:`Риск задачи ${input.task.risk}: по вашему правилу такая работа не сливается без вашего «да».${shape.length ? ` Форма работы: ${shape.join(", ")}.` : ""} Без ответа за ${Math.round(OWNER_WORD_WAIT_MS / 3_600_000)} часов она остановится, и её можно будет отправить снова.`,
             evidence:[{ kind:"attempt", ref:input.attemptId }, { kind:"task", ref:input.taskId }],
             actions:[{ id:"yes", label:"Да, сливать", cli:rpcLine("task_word", wordInput("yes")), rpc:{ method:"task_word", input:wordInput("yes") } },
               { id:"no", label:"Нет", cli:rpcLine("task_word", wordInput("no")), rpc:{ method:"task_word", input:wordInput("no") } }] });

@@ -1,5 +1,6 @@
 import { taskV2Schema } from "../../contracts";
 import { getAttempt, getRun, getTask, listAttemptsForTask } from "../../storage";
+import { recoveryState } from "../../rollback/store";
 import type { ServerCore } from "../../contracts/server";
 
 import { answerTurnPrompt } from "./writer-task";
@@ -44,6 +45,11 @@ export function createWriterAnswer(ctx: ServerCore, services: Services) {
     const attempt = latest ? getAttempt(db, latest.id) : undefined;
     if (!attempt || !awaitsWriterAnswer(attempt)) {
       return notAnswerable("the task's latest attempt is not blocked with a writer question; redispatch the task instead");
+    }
+    // Recovery state (SMA ac_recovery): an answer does not restart an attempt still reconciling or rollback_failed.
+    const recovery = recoveryState(db, attempt.id);
+    if (recovery === "reconciling" || recovery === "rollback_failed") {
+      return notAnswerable(`the task's latest attempt is ${recovery}: recovery is unfinished; settle it before answering or redispatching`);
     }
     const ready = await reopen.checkReopenable({ runId:input.runId, taskId:input.taskId, run, attempt });
     if (!ready.ok) return notAnswerable(ready.hint);

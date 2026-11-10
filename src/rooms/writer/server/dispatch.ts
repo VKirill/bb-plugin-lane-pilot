@@ -12,7 +12,7 @@ import type { CodeCriticDefault } from "../../contracts/task-enums";
 import { saveCriticCodeDefault } from "./critic-override";
 import { wfLivePipelineRun, wfRunInputsByKey } from "@lane-pilot/workflow-engine";
 import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, getTaskRow, hasFailedStageReceipt, listAttemptsForTask, listAttemptsUpdatedSince, listOpenAttempts, listRunsWithAttempts, listRunTaskRows, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, taskBasePath, transitionAttempt } from "../../storage";
-import { birthGates, commonTaskFolder, isMainfixTask, isTaskBase, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask, sha256 , spendReserve, type BirthKind } from "../../tasks";
+import { birthGates, commonTaskFolder, isMainfixTask, isTaskBase, ownerWordsOn, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask, sha256 , spendReserve, type BirthKind } from "../../tasks";
 import { liveFolderLockNote, nextStep } from "../../contracts/failure-class"
 import { taskFamily } from "@lane-pilot/contracts";
 import { validateTaskV2 } from "../../tasks/task-v2";
@@ -25,7 +25,7 @@ import { gateResolverFor, gateRunVerdict } from "../../verification/server"
 import { latestGateRunForTask } from "../../storage"
 import { parseIntegrationGateSettings } from "../../contracts/integration-gate";
 import { jev } from "@lane-pilot/jev";
-import { batchAdviceFor, topicLoopGuard } from "./dispatch-guards";
+import { batchAdviceFor, baselineRedGuard, recoveryGuard, topicLoopGuard } from "./dispatch-guards";
 import { ownerLastWroteAt } from "../../critique/server";
 import { reviveCanceledTask } from "./revive";
 import { countRunNudges } from "./writer-silence";
@@ -255,6 +255,13 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       const hint = `${inProgress.taskId} of the same task is running: use lane_pilot_update_task / lane_pilot_answer_writer; redispatch only to change the contract, and cancel it first with lane_pilot_cancel_task`;
       return { ok:false, error:{ code:"task_in_progress", retryable:false, sideEffects:"none", hint }, runningTaskId:inProgress.taskId, hint };
     }
+    // Nothing of the family is sent again while a member's recovery is unfinished (SMA ac_recovery).
+    const recovering = args.task && !isMainfixTask(args.task.id) ? recoveryGuard(db, runId, args.task.id) : null;
+    if (recovering) return { ok:false, error:{ code:"recovery_unfinished", retryable:false, sideEffects:"none", hint:recovering }, hint:recovering };
+    // A red baseline asks a person, not the PM (SMA ac_baseline_red): while the owner's item is open the family is not sent again.
+    const baseRed = args.task && !isMainfixTask(args.task.id)
+      ? baselineRedGuard(db, runId, args.task.id, ownerWordsOn(loadProjectSettings(db, args.projectId, getRunSettingsScopes(db, runId)))) : null;
+    if (baseRed) return { ok:false, error:{ code:"baseline_red", retryable:false, sideEffects:"none", hint:baseRed }, hint:baseRed };
     // A family the wall ladder ended in the backlog is not sent again; one whose hunters found the ask itself wrong is not sent again unchanged.
     const walled = args.task && !isMainfixTask(args.task.id) ? services.wall?.dispatchGuard({ runId, family:taskFamily(args.task.id), task, plan:canonicalPlan }) ?? null : null;
     if (walled) return { ok:false, error:{ code:"wall_stop", retryable:false, sideEffects:"none", hint:walled }, hint:walled };
@@ -284,6 +291,10 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     if (lint.errors.length || noObjective.length) return lintReply(runId, [...lint.errors, ...noObjective]);
     // Spend reserve: the run's token budget must still hold this task's appetite after the appetites of its open tasks.
     const budgetNow = services.runBudgets.get(runId)?.snapshot();
+    // A run priced in tokens (run.max_tokens) admits no task whose price is unknown: the spend reserve could not hold it.
+    if (budgetNow?.limits.maxTokens && !task.appetite?.tokens) {
+      return lintReply(runId, [{ code:"price_unknown", message:"the run has run.max_tokens, so every task names its price: set appetite.tokens (a forecast of the tokens it will spend), then send it again" }]);
+    }
     if (budgetNow?.limits.maxTokens && task.appetite?.tokens) {
       const openAppetites = listOpenAttempts(db).filter((row) => row.run_id === runId).map((row) => Number((getTask(db, row.task_id)?.contract as { appetite?: { tokens?: number } } | undefined)?.appetite?.tokens ?? 0));
       // Best-of-3 (quality_mode full + writer.best_of) runs three candidates: the reserve holds all of them.

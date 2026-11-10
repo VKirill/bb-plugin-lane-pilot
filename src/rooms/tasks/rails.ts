@@ -27,7 +27,7 @@ export function queueOrder<T extends { priority?: string; birth?: string; queued
 /** The three classes a task that cannot start falls into (SMA: Three blocking classes): something is missing, something must come first, or something is in the way. */
 export type BlockingClass = "missing_info" | "dependency" | "conflict";
 export function blockingClass(code: string): BlockingClass | null {
-  if (/^(clarify_open|clarify_needs_owner|owner_word|read_first_missing|read_first_path|secret_missing|secret_name_unknown|secret_catalog_unavailable|task_standard_|promise_missing|check_not_runnable|missing_)/.test(code)) return "missing_info";
+  if (/^(clarify_open|clarify_needs_owner|owner_word|read_first_missing|read_first_path|secret_missing|secret_name_unknown|secret_catalog_unavailable|task_standard_|promise_missing|check_not_runnable|price_unknown|missing_)/.test(code)) return "missing_info";
   if (/^(depends_dead|depends_|waiting_secret|held)/.test(code)) return "dependency";
   if (/^(owns_overlap|ownership_|never_touch|area_busy|conflict|verification_cwd|task_in_progress)/.test(code)) return "conflict";
   return null;
@@ -107,7 +107,7 @@ export function questionsFromFile(text: string): Array<{ question: string; kind:
 }
 const questionKindOf = (question: string) => questionKind(question);
 
-const TEST_PATH = /(^|\/)(__tests__|tests?|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|_test\.(go|py)$|(^|\/)test_[^/]+\.py$/;
+export const TEST_PATH = /(^|\/)(__tests__|tests?|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|_test\.(go|py)$|(^|\/)test_[^/]+\.py$/;
 
 /**
  * Reference-test edit trace (SMA: Reference-test edit trace, Unauthorised reference edit): tests that existed before the attempt and
@@ -157,6 +157,40 @@ function scriptsRun(command: string): string[] {
     } else if (program.includes("/")) out.push(at(program));
   }
   return out;
+}
+
+/**
+ * The repo paths a test file's relative imports point at, kept to those inside `owned` and not tests themselves
+ * (SMA ag_shape): a test importing none of them only tests itself.
+ */
+export function testOwnedImports(testPath: string, content: string, owned: readonly string[]): string[] {
+  const dir = testPath.replace(/^\.\//, "").split("/").slice(0, -1);
+  const specs = [...content.matchAll(/(?:from|import|require)\s*\(?\s*["']([^"']+)["']/g)].map((match) => match[1]!);
+  const resolved = specs.filter((spec) => spec.startsWith("./") || spec.startsWith("../")).map((spec) => {
+    const out: string[] = [];
+    for (const part of [...dir, ...spec.split("/")]) {
+      if (part === "" || part === ".") continue;
+      if (part === "..") out.pop(); else out.push(part);
+    }
+    return out.join("/").replace(/\.(tsx?|jsx?|mjs|cjs|py|go)$/, "").replace(/\/index$/, "");
+  });
+  return [...new Set(resolved)].filter((path) => !TEST_PATH.test(path) && owned.some((own) => {
+    const bare = own.replace(/^\.\//, "").replace(/\/$/, "");
+    return path === bare.replace(/\.(tsx?|jsx?|mjs|cjs|py|go)$/, "") || path.startsWith(`${bare}/`);
+  }));
+}
+
+/**
+ * The shape of the work (SMA ag_shape): flags a changed path whose first segment did not exist at the base
+ * (`new_top_level:` — a folder nobody has seen) and a test file that imports none of the task's non-test owned
+ * files (`self_test:` — a test that only tests itself). Any flag asks a person before the work lands.
+ */
+export function shapeFlags(input: { changedPaths: readonly string[]; baseTopLevel: ReadonlySet<string>; newTests: ReadonlyArray<{ path: string; imports: readonly string[] }> }): string[] {
+  const flags: string[] = [];
+  const tops = [...new Set(input.changedPaths.map((path) => path.replace(/^\.\//, "").split("/")[0]!).filter((seg) => seg && !input.baseTopLevel.has(seg)))];
+  for (const seg of tops) flags.push(`new_top_level:${seg}`);
+  for (const test of input.newTests) if (!test.imports.length) flags.push(`self_test:${test.path}`);
+  return flags;
 }
 
 /** Spend reserve (SMA: Spend reserve): a task may start only when the run's budget still holds its appetite after the open tasks' appetites. */

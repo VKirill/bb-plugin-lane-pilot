@@ -1,4 +1,6 @@
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
+import { taskFamily } from "@lane-pilot/contracts";
+import { postOwnerItem, rpcLine } from "../../owner-waiting";
 import { getRunSettingsScopes, listCheckDurations, noteToldPmDirectly, taskBasePath } from "../../storage";
 import type { RollbackApi, RollbackTarget } from "../../rollback/server";
 import { bestEffort } from "@lane-pilot/kit";
@@ -161,6 +163,21 @@ export function createBaseline(ctx: ServerCore, services: Services) {
           noteToldPmDirectly(db, input.pmThreadId, input.taskId);
           await bestEffort(log, `baseline block notice ${input.taskId}`, bb.sdk.threads.send({ threadId: input.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text: `Lane Pilot: задача ${input.taskId} не запущена: ${text}`, mentions: [] }] } as never), undefined);
         }
+        // A red baseline is a person's call (SMA ac_baseline_red): the stop also asks the owner — while his item is
+        // open a dispatch of this family is refused; his «yes» closes it and lets the task proceed.
+        try {
+          const itemKey = `baseline-red:${input.runId}:${taskFamily(input.taskId)}`;
+          postOwnerItem(db as never, {
+            key: itemKey, source: "baseline", kind: "baseline_red", projectId: input.projectId, wake: false,
+            what: `База красная вне файлов задачи ${input.taskId}: ${detail}`,
+            why: `Проверки базы${baseSha ? ` (${baseSha.slice(0, 10)})` : ""} красные в файлах, которых задача не касается. Пока вы не решите, эту семью задач не отправят снова. «Да» — запускать на красной базе.`,
+            evidence: [{ kind: "task", ref: input.taskId }, { kind: "attempt", ref: input.attemptId }],
+            actions: [
+              { id: "yes", label: "Да, запускать на красной базе", cli: rpcLine("owner_waiting_close", { key: itemKey }), rpc: { method: "owner_waiting_close", input: { key: itemKey } } },
+              { id: "no", label: "Нет", cli: rpcLine("owner_waiting_close", { key: itemKey }), rpc: { method: "owner_waiting_close", input: { key: itemKey } } },
+            ],
+          });
+        } catch { /* the item is a mirror of the stop; the stop itself already happened */ }
         return { stop: `verdict_block: ${code}: ${detail.slice(0, 600)}. ${unrunnable.length ? "Fix the command or cwd, or drop the check" : "Narrow the check to the task's files or widen owns_paths"}; nothing was started and no attempt was spent`, record: getBaseline(db, input.runId, input.taskId) ?? null };
       }
       // Red before green. An all-green check task is done: close accepted. Any other kind (a fix too: magicseo F1)

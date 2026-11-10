@@ -8,7 +8,7 @@ import { parseIntegrationGateSettings, type VerificationGatePort } from "../../c
 
 import type { ServerCore } from "../../contracts/server";
 import {
-  appendTaskReceipt, getAttemptChange, listTaskReceipts, upsertAttemptChange,
+  appendTaskReceipt, effectState, getAttemptChange, listTaskReceipts, recoveryState, upsertAttemptChange,
   type ChangedFile, type TaskReceipt, type TaskReceiptKind, type TaskReceiptState,
 } from "../store";
 
@@ -115,9 +115,15 @@ export function createRollback(ctx: ServerCore, services: Services) {
       if (!attempt) return { recorded: true };
       const state = await host.call("gitWorktreeState", { requestedHostId: input.hostId, basePath: input.basePath, worktreePath: input.worktreePath }, { hostId: input.hostId, timeoutMs: 60_000 });
       if (state.status !== "ready") {
-        upsertAttemptChange(db, { attemptId: input.attemptId, runId: attempt.run_id, taskId: attempt.task_id }, { outcome: input.outcome });
-        // A missing worktree holds nothing to record; a failed read is no record (2026-10-29 audit A-004 recheck).
-        return state.status === "missing" ? { recorded: true } : { recorded: false, error: state.reason ?? "the worktree could not be read" };
+        // A missing worktree holds nothing to record. A failed read is an uncertain effect, not an empty one
+        // (SMA ac_effects): the reason stays on the row and `changed` keeps what it held, so nothing mistakes it
+        // for «nothing changed».
+        const failedRead = state.status !== "missing";
+        upsertAttemptChange(db, { attemptId: input.attemptId, runId: attempt.run_id, taskId: attempt.task_id }, {
+          outcome: input.outcome,
+          ...(failedRead ? { worktree: { head: null, dirty: 0, ahead: 0, savedAs: null, at: Date.now(), read: "failed" as const, readError: state.reason ?? "the worktree could not be read" } } : {}),
+        });
+        return failedRead ? { recorded: false, error: state.reason ?? "the worktree could not be read" } : { recorded: true };
       }
       upsertAttemptChange(db, { attemptId: input.attemptId, runId: attempt.run_id, taskId: attempt.task_id }, {
         baseSha: state.base, outcome: input.outcome, changed: state.changed,
@@ -303,6 +309,11 @@ export function createRollback(ctx: ServerCore, services: Services) {
     const changes: Change[] = [];
     for (const attempt of attempts) {
       if (getAttempt(db, attempt.id)?.state !== "accepted") return refuse(t, "revert", ref, `attempt ${attempt.id} is ${getAttempt(db, attempt.id)?.state}, not accepted: its work is not in main`, `revert the task by its id to take every accepted attempt`, { attemptId: attempt.id });
+      const recorded = getAttemptChange(db, attempt.id);
+      // An unread worktree is an uncertain effect, not an empty one (SMA ac_effects): reverting would pretend it changed nothing.
+      if (recorded && effectState(recorded) === "uncertain") {
+        return refuse(t, "revert", ref, `the worktree of attempt ${attempt.id} was never read (${recorded.worktree?.readError ?? "the read failed"}), so its effects are unknown — it is not recorded as changing nothing`, `read the worktree again on the project's host, then run the revert`, { attemptId: attempt.id });
+      }
       const change = await changeOf(t, attempt.id);
       if ("refused" in change) return refuse(t, "revert", ref, change.refused, `without a merge commit there is nothing for git revert to undo; restore the files by hand or dispatch a task that removes the work`, { attemptId: attempt.id });
       changes.push(change);
@@ -414,7 +425,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
     const attempt = getAttempt(db, ref);
     const taskId = attempt ? attempt.task_id : ref;
     const attempts = listAttemptStatesForTask(db, taskId)
-      .map((row) => ({ ...row, change: getAttemptChange(db, row.id) ?? null }));
+      .map((row) => ({ ...row, change: getAttemptChange(db, row.id) ?? null, recovery: recoveryState(db, row.id) }));
     const receipts = listTaskReceipts(db, taskId);
     const reverted = [...receipts].reverse().find((row) => row.kind === "revert" && row.state === "merged");
     const mark = (reverted?.detail as { rollbackMark?: { cause?: string | null } } | undefined)?.rollbackMark;
