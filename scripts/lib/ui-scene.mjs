@@ -11,7 +11,7 @@ import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { extname, join, resolve } from "node:path";
+import { extname, isAbsolute, join, relative, resolve } from "node:path";
 
 const USAGE = "usage: node scripts/lp-ui-drive.mjs [--stage] [--tree <path> | --trees a,b | --trees kit] [--port n] [--width w] <scene.json>";
 
@@ -103,21 +103,32 @@ export async function serveTree(treePath, { port } = {}) {
   if (error) throw new SceneUsage(error);
   const dist = join(treePath, "dist");
   const temp = mkdtempSync(join(tmpdir(), "lp-ui-stage-"));
+  liveTemps.add(temp);
+  const dropTemp = () => { liveTemps.delete(temp); rmSync(temp, { recursive: true, force: true }); };
   writeFileSync(join(temp, "index.html"), "<!doctype html><meta charset=\"utf-8\"><title>lp-ui-stage</title><div id=\"root\"></div><script type=\"module\" src=\"/app.js\"></script>\n");
   const server = createServer((req, res) => {
-    const name = decodeURIComponent((req.url ?? "/").split("?")[0]);
+    // A malformed %-escape is the client's mistake, not a crash of the script; a path that leaves dist/ (not a string prefix: /dist-old is a sibling) is a 404.
+    let name;
+    try { name = decodeURIComponent((req.url ?? "/").split("?")[0]); } catch { res.writeHead(400).end("bad request"); return; }
     const file = name === "/" ? join(temp, "index.html") : join(dist, name);
-    if (!file.startsWith(dist) && !file.startsWith(temp) || !existsSync(file) || !statSync(file).isFile()) { res.writeHead(404).end("not found"); return; }
+    const rel = name === "/" ? "index.html" : relative(dist, file);
+    if (rel === "" || rel.startsWith("..") || isAbsolute(rel) || !existsSync(file) || !statSync(file).isFile()) { res.writeHead(404).end("not found"); return; }
     res.writeHead(200, { "content-type": MIME[extname(file)] ?? "application/octet-stream" }).end(readFileSync(file));
   });
   const address = treeAddress(treePath, port);
   const n = new URL(address).port;
-  await new Promise((ok, fail) => { server.once("error", fail); server.listen(Number(n), "127.0.0.1", ok); });
+  try { await new Promise((ok, fail) => { server.once("error", fail); server.listen(Number(n), "127.0.0.1", ok); }); }
+  catch (cause) { dropTemp(); throw cause; }
   return {
     url: address, temp,
-    async close() { await new Promise((ok) => server.close(ok)); rmSync(temp, { recursive: true, force: true }); },
+    async close() { await new Promise((ok) => server.close(ok)); dropTemp(); },
   };
 }
+
+/** Temp dirs of windows still up: removed synchronously on exit, on a crash or a signal, not only when a run ends well. */
+const liveTemps = new Set();
+export function cleanupStaged() { for (const dir of liveTemps) { try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ } } liveTemps.clear(); }
+process.on("exit", cleanupStaged);
 
 /** Wait for the staged page to answer; returns false when it never does. */
 export async function waitForPage(url, timeoutMs = 15_000) {

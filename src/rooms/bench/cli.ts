@@ -11,8 +11,8 @@ export const BENCH_USAGE = [
   "                       (--noise N: the same set N times, then pass@1 and pass^N; N is 2 to 10. The frozen set is not changed.)",
   "bb lane-pilot bench noise <armA> <armB> [--set vN]      (two identical arms: calibrates the threshold of compare)",
   "bb lane-pilot bench compare <armA> <armB> [--set vN] [--noise X,Y] [--harness-id <tree id>] [--json]   (A is the baseline; --harness-id records the verdict harness.adopt_by=bench waits for)",
-  "bb lane-pilot bench arena <armA>[=provider/model] <armB>[=..] <armC>[=..] <armD>[=..] [--set vN] [--repeat k] [--json]",
-  "                       (four arms over one set on neutral ground: a stored arm is reused, a new one runs; ranked by cost per verified result)",
+  "bb lane-pilot bench arena <armA>[=provider/model] <armB>[=..] <armC>[=..] <armD>[=..] [--set vN] [--repeat k (1 to 10)] [--json]",
+  "                       (four arms with different names over one set on neutral ground: a stored arm is reused, a new one runs; ranked by cost per verified result)",
   "bb lane-pilot bench sweep                                 (close a series still running past its hour cap)",
   "bb lane-pilot bench status [--set vN]                  (without --set: every set)",
   "bb lane-pilot bench config [budget_tokens=N] [budget_hours=H] [host=MACHINE] [noise_repeats=N] [repos_root=DIR]",
@@ -136,7 +136,9 @@ export async function runBenchCli(bench: BenchApi, argv: string[]): Promise<Resu
         return { arm: word.slice(0, at), writer: { providerId: writer.slice(0, slash), model: writer.slice(slash + 1) } };
       });
       const result = await bench.arena({ version: flags.set ?? defaultVersion(bench, "newest"), arms, ...(flags.repeat ? { repeat: positive("repeat", flags.repeat)! } : {}) });
-      return out(flags.json === "true" ? result.table : result.text);
+      // A failed arm is named in the output and the exit code is 1; the arms that finished are still ranked.
+      const body = flags.json === "true" ? JSON.stringify({ table: result.table, failed: result.failed }, null, 2) : result.text;
+      return result.failed.length ? { exitCode: 1, stdout: body } : out(body);
     }
     if (sub === "status") {
       const { flags } = parseBenchArgs(rest, ["set"]);

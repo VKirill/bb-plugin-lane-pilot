@@ -5,6 +5,7 @@
  */
 import { chromium } from "playwright";
 import { compareDesigns, designScore, mergeFrames, MEASURE_SCRIPT, pairBasis, type Measurement } from "../src/rooms/design-eval";
+import { pairUrlsRefusal } from "../src/rooms/design-eval/server";
 
 async function measure(url: string, shot = false): Promise<{ measurements: Measurement[]; shotPng?: string }> {
   const browser = await chromium.launch();
@@ -26,11 +27,17 @@ async function measure(url: string, shot = false): Promise<{ measurements: Measu
   }
 }
 
-const args = process.argv.slice(2).filter((arg) => arg !== "--json");
+const args = process.argv.slice(2).filter((arg) => arg !== "--json" && arg !== "--local");
+const local = process.argv.includes("--local");
 // design-pair: the paired judgement — one basis text (scores + fixed order) for the model and the person, plus a screenshot of each for the judge.
 if (args[0] === "design-pair") {
   const [urlA, urlB] = args.slice(1);
-  if (!urlA || !urlB) { console.error("usage: npx tsx scripts/lp-design-eval.ts design-pair <url-a> <url-b>"); process.exit(1); }
+  if (!urlA || !urlB) { console.error("usage: npx tsx scripts/lp-design-eval.ts design-pair <url-a> <url-b> [--local]"); process.exit(1); }
+  // Checked again here, before any browser starts: the screenshots of a refused pair are never taken.
+  const fromUrl = (value: string | undefined): number[] => { try { const url = new URL(value ?? ""); return [Number(url.port || (url.protocol === "https:" ? 443 : 80))]; } catch { return []; } };
+  const hubPorts = [...fromUrl(process.env.BB_SERVER_URL), Number(process.env.BB_HOST_DAEMON_PORT), Number(process.env.PORT)].filter((n) => Number.isInteger(n) && n > 0);
+  const refused = await pairUrlsRefusal([urlA, urlB], { local, hubPorts });
+  if (refused) { console.error(refused); process.exit(1); }
   const a = await measure(urlA, true), b = await measure(urlB, true);
   const { order, basis, comparison } = pairBasis(urlA, urlB, a.measurements, b.measurements);
   console.log(JSON.stringify({ order, basis, comparison, shots: { a: a.shotPng ?? null, b: b.shotPng ?? null } }, null, 2));

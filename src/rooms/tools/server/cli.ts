@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { dirname, join } from "node:path";
 import { listReviewedObservations } from "../../learning";
 import { prototypeConfigSchema, taskV2Schema } from "../../contracts";
 import { taskBaselineEntries } from "../../baseline";
@@ -6,7 +7,7 @@ import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, g
 import { cancelAttemptById, finishRunSafely, pauseRun } from "../../runs/server";
 import { conveyorState, renderTimeline, setConveyor, taskTimeline, unknownReasons } from "../../runs";
 import { TASK_RECORD_USAGE, blindRecord, readsBlind, renderTaskRecord, taskRecord } from "./task-record";
-import {bestEffort, isNotFound, orMiss, outputText, stringAt, valueAt} from "@lane-pilot/kit";
+import {bestEffort, isNotFound, orMiss, outputText, pluginRootFromModule, stringAt, valueAt} from "@lane-pilot/kit";
 import { PAIR_ROLE_SPECS } from "@lane-pilot/models";
 import {runSkillsCli, SKILLS_USAGE} from "../../platform/server";
 import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -45,8 +46,10 @@ import type { LearningItemsReader } from "../../owner-waiting";
 import { LEAD_USAGE, runLeadCli } from "../../lead/server";
 import { COVERAGE_USAGE, runCoverageCli } from "../../coverage";
 import { SMA_MAP_USAGE, runSmaLiveCli, runSmaMapCli, smaCheckedPercent, smaCounts, smaDonePercent, smaRows } from "../../sma-map";
-import { appendDesignPair, designJournalLines, judgeDesigns, pairOrder, readinessWords, trainedConditions, trainingRatios } from "../../design-eval";
-import { postOwnerItem } from "../../owner-waiting";
+import { designJournalLines, readinessWords, trainedConditions, trainingRatios } from "../../design-eval";
+import { DESIGN_PAIR_USAGE, runDesignPairCli } from "../../design-eval/server";
+import { closeOwnerItem, postOwnerItem } from "../../owner-waiting";
+import { getPhase } from "../../phase";
 import { jev } from "@lane-pilot/jev";
 import { PHASE_USAGE, phaseWordSweep, runPhaseCli } from "../../phase/server";
 import { attemptRecord, manifest, passport, preship, prPassport, receiptChain, subagentReceipts, verifyChain } from "./receipts";
@@ -303,6 +306,8 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"phase", summary:"Phases on rails: list, show (with the phase book), drive now, return to an earlier stage with a note, pause, resume, close in words", usage:PHASE_USAGE },
       { name:"gates", summary:"Gate firings: mark one a false alarm so it stops counting against the gate", usage:"bb lane-pilot gates ack <event-id> --why \"<reason>\"" },
       { name:"design-metrics", summary:"The designer's training: the four ratios from the design measurement journal, the four conditions of «trained» and the readiness words", usage:"bb lane-pilot design-metrics [--project <id>] [--json]" },
+      { name:"design-pair", summary:"Paired design judgement of two pages: measures both, asks the judge, asks the owner (owner at a terminal or the project's PM chat; one pair per phase unless --again)", usage:DESIGN_PAIR_USAGE.split("   |   ")[0]! },
+      { name:"design-pair-answer", summary:"The owner's pick for a started design pair; closes its waiting item", usage:DESIGN_PAIR_USAGE.split("   |   ")[1]! },
       { name:"sma-map", summary:"The SMA product map node by node: what Lane Pilot has for each of its 1798 nodes, the card text, the proof link, the contract tests that check it, and the shares mapped and checked", usage:SMA_MAP_USAGE },
       { name:"rules", summary:"The rules by form (always | skill | check | hook | memory) and the mechanism that enforces each; classify them, generate mechanism tasks for the recurring check rules, retire the text a mechanism now holds", usage:RULES_USAGE },
       { name:"workflow-trigger", summary:"Start a workflow in a project as its schedule trigger does (the automation of a schedule calls this); exit 1 with the reason when it cannot start", usage:"bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]" },
@@ -510,28 +515,31 @@ ${ERRANDS_USAGE}` },
         }
         if (command === "design-pair" || command === "design-pair-answer") {
           // Paired design judgement (SMA k_lib_djudgement): the model and the person see one basis and one order; the pair lands in the journal.
-          if (command === "design-pair-answer") {
-            const [phaseId, pick] = args;
-            if (!phaseId || !["a","b","tie"].includes(pick ?? "")) return { exitCode:1, stderr:"bb lane-pilot design-pair-answer <phaseId> <a|b|tie>" };
-            await appendDesignPair(ctx.bb.storage.kv, { phaseId, order: "ab", model: null, person: pick as "a"|"b"|"tie" });
-            return { exitCode:0, stdout:JSON.stringify({ recorded:{ phaseId, person:pick } }) };
-          }
-          const [phaseId, urlA, urlB] = args;
-          if (!phaseId || !urlA || !urlB) return { exitCode:1, stderr:"bb lane-pilot design-pair <phaseId> <url-a> <url-b>" };
-          const measured = await new Promise<string>((ok, fail) => {
-            execFile("npx", ["tsx", "scripts/lp-design-eval.ts", "design-pair", urlA, urlB], { cwd: process.cwd(), timeout: 300_000 },
-              (error, stdout) => error ? fail(new Error(`the pair measure failed: ${error.message}`)) : ok(stdout));
-          });
-          const pair = JSON.parse(measured) as { order: "ab" | "ba"; basis: string; shots: { a: string | null; b: string | null } };
-          const judge = jev();
-          const model = judge && pair.shots.a && pair.shots.b
-            ? (await judgeDesigns(judge as never, { grounds: pair.basis, a: { format: "png", data_base64: pair.shots.a }, b: { format: "png", data_base64: pair.shots.b } }).catch(() => null))?.winner ?? null
-            : null;
-          postOwnerItem(db, { key: `design-pair:${phaseId}`, source: "design-eval", kind: "design-pair", wake: false,
-            what: `Какой дизайн лучше? Ответьте: bb lane-pilot design-pair-answer ${phaseId} a|b|tie`, why: pair.basis.slice(0, 550),
-            evidence: [{ kind: "text", ref: pair.basis.slice(0, 300) }] });
-          await appendDesignPair(ctx.bb.storage.kv, { phaseId, order: pair.order, model, person: null });
-          return { exitCode:0, stdout:JSON.stringify({ phaseId, order: pair.order, model, asked: true }) };
+          // The plugin's own scripts/ folder, not the shell's cwd; the caller rules and the URL table live in design-eval/server.
+          const script = join(pluginRootFromModule(import.meta.url), "scripts", "lp-design-eval.ts");
+          const portOf = (value: string | undefined): number[] => { try { const url = new URL(value ?? ""); return [Number(url.port || (url.protocol === "https:" ? 443 : 80))]; } catch { return []; } };
+          const hubPorts = [...portOf(process.env.BB_SERVER_URL), Number(process.env.BB_HOST_DAEMON_PORT), Number(process.env.PORT)].filter((n) => Number.isInteger(n) && n > 0);
+          return await runDesignPairCli({
+            kv: ctx.bb.storage.kv, threadId: invocation?.threadId ?? null, script, hubPorts,
+            thread: async (threadId) => {
+              const thread = await orMiss(bb.sdk.threads.get({ threadId }), null, isNotFound) as { projectId?: unknown } | null;
+              if (!thread) return null;
+              const metadata = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId }), null, isNotFound) as { role?: unknown } | null;
+              return { projectId: typeof thread.projectId === "string" ? thread.projectId : null, role: typeof metadata?.role === "string" ? metadata.role : null };
+            },
+            phaseProject: (phaseId) => getPhase(db as never, phaseId)?.projectId ?? null,
+            jev: () => jev(),
+            // The judge is a paid call on the API lane: the same money cap the writers wait on (no cap set = no hold).
+            moneyHold: async () => services.money.holds("api", "", ""),
+            measure: (file, scriptArgs) => new Promise<string>((ok, fail) => {
+              execFile("npx", ["tsx", file, ...scriptArgs], { cwd: dirname(dirname(file)), timeout: 300_000, maxBuffer: 64 * 1024 * 1024 },
+                (error, stdout) => error ? fail(error) : ok(stdout));
+            }),
+            ownerItem: {
+              post: (item) => { postOwnerItem(db, { key: item.key, source: "design-eval", kind: "design-pair", wake: false, ...(item.projectId ? { projectId: item.projectId } : {}), what: item.what, why: item.why, evidence: [{ kind: "text", ref: item.basis }] }); },
+              close: (key, by) => { closeOwnerItem(db, key, by); },
+            },
+          }, command, args);
         }
         if (command === "sma-map") {
           return args.includes("--live") ? runSmaLiveCli(db as never, args) : runSmaMapCli(args);

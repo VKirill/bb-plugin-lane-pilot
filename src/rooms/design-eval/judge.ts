@@ -11,6 +11,8 @@ export const DESIGN_PAIR_ID = "design.pair";
 export type DesignPairShot = { format: "png" | "jpg" | "jpeg"; data_base64: string };
 export type DesignPairInput = { grounds: string; a: DesignPairShot; b: DesignPairShot; criteria?: string[] };
 export type DesignPairDecision = { winner: "a" | "b" | "tie"; p: number; scores: Record<string, number> };
+/** Where a verdict came from: the judge in active mode, the judge's shadow answer (its default mode keeps the fallback as the official one), or the code fallback. */
+export type DesignPairVerdict = DesignPairDecision & { from: "jev" | "shadow" | "fallback" };
 
 export const designPairJudgment = defineJudgment<DesignPairInput, DesignPairDecision>({
   id: DESIGN_PAIR_ID,
@@ -60,10 +62,15 @@ export const designPairJudgment = defineJudgment<DesignPairInput, DesignPairDeci
   describe: (d) => `winner ${d.winner} (p=${d.p})`,
 });
 
-type JevPort = { judge(judgment: unknown, input: unknown, ctx: unknown): Promise<{ decision?: DesignPairDecision }> };
+type JevPort = { judge(judgment: unknown, input: unknown, ctx: unknown): Promise<{ decision?: DesignPairDecision; status?: string; shadow?: { decision?: DesignPairDecision } }> };
 
-/** The judged pair: a one-call wrapper the design-pair flow and the script use. */
-export async function judgeDesigns(jev: JevPort, input: DesignPairInput, ctx: Record<string, unknown> = {}): Promise<DesignPairDecision> {
+/**
+ * The judged pair: a one-call wrapper the design-pair flow and the script use. The judgment's default mode is shadow: the run then
+ * returns the fallback (a tie, p 0) and keeps the real verdict in `shadow`, so a shadow run is read from there and marked `from: "shadow"`.
+ */
+export async function judgeDesigns(jev: JevPort, input: DesignPairInput, ctx: Record<string, unknown> = {}): Promise<DesignPairVerdict> {
   const result = await jev.judge(designPairJudgment, input, ctx);
-  return result.decision ?? designPairJudgment.fallback(input);
+  if (result.status === "shadow" && result.shadow?.decision) return { ...result.shadow.decision, from: "shadow" };
+  if (result.decision && result.status === undefined) return { ...result.decision, from: "jev" };
+  return { ...(result.decision ?? designPairJudgment.fallback(input)), from: "fallback" };
 }

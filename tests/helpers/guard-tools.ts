@@ -42,9 +42,39 @@ export const FORBIDDEN_WORDS: ReadonlyArray<{ shape: RegExp; reason: string }> =
 ];
 const COLOUR_LITERAL = /#(?:[0-9a-f]{3}|[0-9a-f]{6})\b/i;
 
-/** The lines of a text file (comments, docs, tests) carrying a house word or a colour literal — the shapes that are never a legitimate word. */
+/** Files a tool writes: their text follows the code, so a scan of them only repeats the scan of the sources. */
+export const isGeneratedFile = (path: string): boolean => /(^|\/)(docs\/atlas\.md|docs\/enabled-settings\.md|docs\/map\/|src\/rooms\/sma-map\/)/.test(path.replaceAll("\\", "/"));
+
+/**
+ * The house-word hits of a source text (comments, docs, tests): one `path|matched text` per occurrence. Only the old brand is flagged here —
+ * colour literals and internal ids are checked in the catalogs a person reads (`houseWordHits`), not in the sources. Not line numbers: another
+ * branch that adds a line above a baselined one must not turn the suite red.
+ */
 export function sourceWordHits(path: string, text: string): string[] {
-  return text.split("\n").flatMap((line, index) => FORBIDDEN_WORDS.some(({ shape }) => shape.test(line)) ? [`${path}:${index + 1}`] : []);
+  return text.split("\n").flatMap((line) => FORBIDDEN_WORDS.flatMap(({ shape }) => {
+    const found = new RegExp(shape.source, `${shape.flags.replace("g", "")}g`);
+    return [...line.matchAll(found)].map((hit) => `${path}|${hit[0]}`);
+  }));
+}
+
+/** Baseline shape: file -> matched text -> how many occurrences are tolerated. */
+export type HouseWordBaseline = Record<string, Record<string, number>>;
+
+export function countHouseWordHits(hits: readonly string[]): HouseWordBaseline {
+  const counts: HouseWordBaseline = {};
+  for (const hit of hits) {
+    const at = hit.indexOf("|");
+    const file = hit.slice(0, at), word = hit.slice(at + 1);
+    counts[file] = { ...(counts[file] ?? {}), [word]: (counts[file]?.[word] ?? 0) + 1 };
+  }
+  return Object.fromEntries(Object.entries(counts).sort(([x], [y]) => x.localeCompare(y)));
+}
+
+/** The occurrences beyond what the baseline tolerates, as `path|word (n over baseline m)`. */
+export function freshHouseWordHits(found: HouseWordBaseline, baseline: HouseWordBaseline): string[] {
+  return Object.entries(found).flatMap(([file, words]) => Object.entries(words)
+    .filter(([word, count]) => count > (baseline[file]?.[word] ?? 0))
+    .map(([word, count]) => `${file}|${word} (${count} found, ${baseline[file]?.[word] ?? 0} in the baseline)`));
 }
 
 /** The strings of a catalog a person reads that carry a house word, an old brand, a colour literal or an internal id. */
