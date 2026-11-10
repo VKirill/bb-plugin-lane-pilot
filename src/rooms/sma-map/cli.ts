@@ -19,7 +19,8 @@ export function defaultProofRoots(cwd: string): ProofRoots {
   const laneStack = [join(cwd, "..", "claude-lane-stack"), join(homedir(), "tools", "claude-lane-stack")].find((path) => existsSync(path)) ?? join(cwd, "..", "claude-lane-stack");
   const core = join(homedir(), ".local", "share", "bb-source-vk");
   const telegram = join(cwd, "..", "bb-plugin-telegram-projects");
-  return { lanePilot: cwd, ...(existsSync(laneStack) ? { laneStack } : {}), ...(existsSync(core) ? { core } : {}), ...(existsSync(telegram) ? { telegram } : {}) };
+  // Sources, not a built copy: the hub's install has no src/, and a proof cannot be judged there.
+  return { lanePilot: existsSync(join(cwd, "src/rooms/sma-map/entries.ts")) ? cwd : "", ...(existsSync(laneStack) ? { laneStack } : {}), ...(existsSync(core) ? { core } : {}), ...(existsSync(telegram) ? { telegram } : {}) };
 }
 
 export function renderSmaMap(all: readonly SmaRow[], listed: readonly SmaRow[] = []): string {
@@ -86,7 +87,7 @@ export function runSmaMapCli(argv: string[], cwd: string = process.cwd()): Resul
   if (holes.length) out.push("", `Registry holes (${holes.length}):`, ...holes.map((hole) => `  ${hole}`));
   if (broken.length) out.push("", `Broken proofs (${broken.length}):`, ...broken.map((line) => `  ${line}`));
   if (drifted.length) out.push("", `Drifted proofs (${drifted.length}) — they resolve, but no longer where the entry points:`, ...drifted.map((line) => `  ${line}`));
-  if (unjudged) out.push("", `Proofs not judged: ${unjudged} point into a sibling repository this machine does not have.`);
+  if (unjudged) out.push("", `Proofs not judged: ${unjudged} point into a repository whose sources this machine does not have${roots.lanePilot ? "" : " (this one included: run the check in a source checkout)"}.`);
   return { exitCode: holes.length || broken.length ? 1 : 0, stdout: out.join("\n") };
 }
 

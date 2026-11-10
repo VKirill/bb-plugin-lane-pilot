@@ -63,4 +63,17 @@ describe("the split evidence states (X-2)", () => {
     expect(json.states.checked).toBeGreaterThan(0);
     expect(json.states.observed).toBeNull();
   });
+
+  it("judges no proof on a machine without the sources, and counts the unjudged ones (the hub called 1509 proofs broken, 2026-11-10)", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const built = runSmaMapCli(["--check-proofs", "--states"], mkdtempSync(`${tmpdir()}/lp-built-`));
+    expect(built.exitCode).toBe(0);
+    expect(built.stdout).not.toMatch(/Broken proofs/);
+    expect(built.stdout).toMatch(/reachable 0 \(0 broken, 1\d{3} unjudged\)/);
+    expect(built.stdout).toMatch(/Proofs not judged: 1\d{3} point .*this one included/);
+    const here = runSmaMapCli(["--check-proofs", "--states"]);
+    const unjudged = Number(/Proofs not judged: (\d+)/.exec(here.stdout ?? "")?.[1] ?? 0);
+    expect(here.stdout).toContain(`0 broken, ${unjudged} unjudged`);
+  });
 });

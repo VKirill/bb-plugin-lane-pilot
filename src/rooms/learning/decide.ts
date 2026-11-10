@@ -63,6 +63,15 @@ export function createDecisions(deps: DecideDeps) {
         return { item: getItem(deps.db, id)!, note: `Saved as a global preference (${memoryId}).` };
       } catch (cause) {
         const reason = cause instanceof Error ? cause.message.slice(0, 200) : String(cause);
+        // BB memory is off on the hub since 2026-11-06, so every accepted preference ended as `bb-memory:error` and was kept nowhere
+        // (2026-11-10). It goes into the hub memory of the project it was said in.
+        // ponytail: one project, not owner-wide. The hub memory has no shared scope yet; add the scope, then write there.
+        try {
+          const noteId = deps.notes.remember(item.projectId, item.text, item.evidence, at);
+          const note = `BB memory is off (${reason.slice(0, 80)}): kept in this project's memory on the hub (${noteId}), not owner-wide.`;
+          setItemState(deps.db, id, { state: "accepted", target: `note:${noteId}`, note }, at);
+          return { item: getItem(deps.db, id)!, note };
+        } catch { /* the hub memory refused too: the error below is the receipt */ }
         setItemState(deps.db, id, { state: "accepted", target: `bb-memory:error`, note: `bb memory add failed: ${reason}` }, at);
         return { item: getItem(deps.db, id)!, note: `bb memory add failed: ${reason}` };
       }

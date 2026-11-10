@@ -266,7 +266,11 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     // The work comes first: the run's title and its goal are read from the first line, and the origin line made them «Opened by the lead…»
     // on every hand-over (hub, 2026-11-04: the goal audit then judged that sentence).
     const text = `${input.text}\n\n${input.origin}`;
-    if (kind === "heavy") {
+    const trainOn = !!train && String(settings["phase.train"] ?? "on") !== "off";
+    // Decided heavy work in a project without phase rails had nowhere to go: the «да» was recorded «accepted» and the work never started
+    // (two lead branches of BB-сервис, 2026-11-10; `phase.rails` is off by default). It goes down issue-full, as large decided work does.
+    const downFull = decided && kind === "heavy" && !railsOn(settings) && trainOn;
+    if (kind === "heavy" && !downFull) {
       if (!railsOn(settings)) return { started: false, kind, reason: "phase rails are off" };
       const live = phases.list({ pmThreadId: input.pmThreadId, live: true })[0];
       if (live) return { started: false, kind, reason: `phase ${live.id} is already live in the PM chat` };
@@ -280,10 +284,10 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
       await bestEffort(ctx.log, "phase handover tick", phases.tick(), 0);
       return { started: true, via: "phase", id: phase.id };
     }
-    if ((kind === "small" || kind === "batch") && train && String(settings["phase.train"] ?? "on") !== "off") {
+    if ((kind === "small" || kind === "batch" || downFull) && train && trainOn) {
       // Decided work the size reads as large or risky would stop at issue-quick's «proposed to the full path», which nobody takes up for a
       // hand-over: all four such lead runs of a month ended blocked there (hub, 2026-11-06). It goes down issue-full itself.
-      const full = decided && kind === "small" && (path.size === "large" || path.risk === "high");
+      const full = downFull || (decided && kind === "small" && (path.size === "large" || path.risk === "high"));
       const via = full ? "issue-full" : kind === "batch" ? "issue-batch" : "issue-quick";
       const id = train.start({ projectId: run.project_id, pmThreadId: input.pmThreadId, runId: run.id, requestId: input.key, text, kind: full ? "full" : kind, ...(kind === "small" ? { path } : {}) });
       if (id) { ctx.log(`phase intake: hand-over (${input.origin.slice(0, 80)}) is ${kind} (${by}); ${via} ${id} started`); return { started: true, via, id }; }

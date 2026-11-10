@@ -112,7 +112,12 @@ export function capBlock(text: string, cap: number): { text: string; cut: boolea
 }
 
 /** `<tag>\nbody\n</tag>` — the section/data wrapper every brief shares. */
-export const tagSection = (tag: string, body: string): string => `<${tag}>\n${body}\n</${tag}>`;
+/**
+ * A tagged section. Its own closing tag inside the body is defused: a check log or a memory note that carries `</previous_attempt>`
+ * would otherwise end the data block early, and the rest of it would read as instructions (the same rule as `fenceOutside`).
+ */
+export const tagSection = (tag: string, body: string): string =>
+  `<${tag}>\n${body.replace(new RegExp(`<\\s*/\\s*${tag}\\s*>`, "gi"), `< /${tag}>`)}\n</${tag}>`;
 
 /**
  * Renders one brief in the standard order: instructions, the tagged contract sections, the data

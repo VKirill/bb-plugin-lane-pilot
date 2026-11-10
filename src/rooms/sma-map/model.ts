@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { declaredNames, relocateAnchor } from "./exports";
 import { SMA_CONTRACT_TESTS } from "./contracts";
-import { SMA_CONTRACT_GAPS } from "./gaps";
+import { SMA_AUDIT_GAPS, SMA_CONTRACT_GAPS } from "./gaps";
 import { SMA_ENTRIES, type SmaStatus } from "./entries";
 import { SMA_CARDS, SMA_NODES, SMA_REGIONS, type SmaKind } from "./graph";
 
@@ -19,7 +19,7 @@ export function smaRows(): SmaRow[] {
   return SMA_NODES.map(([id, region, group, kind, label]) => {
     const entry = SMA_ENTRIES[id];
     const card = SMA_CARDS[id];
-    const gaps = SMA_CONTRACT_GAPS[card?.[0] ?? id] ?? [];
+    const gaps = [...(SMA_CONTRACT_GAPS[card?.[0] ?? id] ?? []), ...(SMA_AUDIT_GAPS[card?.[0] ?? id] ?? [])];
     // A behaviour test that found the card's behaviour missing (it.todo) outranks the claim of the map (2026-10-29 SMA zone tests).
     const status: SmaStatus = gaps.length && entry?.[0] === "have" ? "partial" : entry?.[0] ?? "missing";
     return { id, smaId: card?.[0] ?? id, region: SMA_REGIONS[region] ?? String(region), group, kind, label, detail: card?.[1] ?? "", unsure: card?.[3] ?? false,
@@ -80,6 +80,7 @@ export function smaStateCounts(rows: readonly SmaRow[], roots: ProofRoots, obser
     if (evidence.available) out.available++;
     if (evidence.reachable === true) out.reachable++;
     else if (evidence.reachable === false) out.unreachable++;
+    else if (row.proof) out.unjudged++;
     if (evidence.checked) out.checked++;
     if (observed === true) out.observed!++;
     if (evidence.outcome === "verified") out.outcomeVerified!++;
@@ -97,10 +98,15 @@ export function smaHoles(): string[] {
   return holes;
 }
 
-/** A proof into a sibling repository this machine does not have: not judged, and counted as such (never as resolved). */
+/**
+ * A proof into a repository whose sources this machine does not have: not judged, and counted as such (never as resolved).
+ * That includes this plugin's own sources: the hub runs the built plugin, and `--check-proofs` there called all 1509 local
+ * proofs broken with «no such file» (2026-11-10). An empty `lanePilot` root says the sources are absent.
+ */
 export function unjudgedProof(proof: string, roots: ProofRoots): boolean {
   const prefix = proof.match(/^(lane-stack|core|telegram):/);
-  return !!prefix && !(prefix[1] === "lane-stack" ? roots.laneStack : prefix[1] === "telegram" ? roots.telegram : roots.core);
+  if (!prefix) return !roots.lanePilot;
+  return !(prefix[1] === "lane-stack" ? roots.laneStack : prefix[1] === "telegram" ? roots.telegram : roots.core);
 }
 
 /** Extensions whose file is a module: a `#anchor` must name a declared unit in the file — a function, const, class,

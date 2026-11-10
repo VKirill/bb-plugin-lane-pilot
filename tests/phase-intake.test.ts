@@ -436,6 +436,20 @@ describe("a hand-over is approved work, whatever it reads like (lead «да», 2
     expect(started[0]!.kind).toBe("full");
     expect(started[0]!.text.startsWith("Навык для: прогоны фото-инструмента")).toBe(true);
   });
+
+  it("decided heavy work in a project without phase rails goes down issue-full instead of «phase rails are off» (BB-сервис, 2026-11-10)", async () => {
+    const started: string[] = [];
+    const train: IntakeTrain = { start: (input) => { started.push(input.kind); return `wfrun_${started.length}`; }, status: () => "succeeded" };
+    const { intake, opened } = world({ train, settings: { "phase.rails": "off" } });
+    expect(await intake.handOver({ projectId: "projA", pmThreadId: PM, runId: "run1", text: goal, key: "lead:road_z", origin: "Accepted by the owner" }))
+      .toMatchObject({ started: true, via: "issue-full", id: "wfrun_1" });
+    expect(started).toEqual(["full"]);
+    expect(opened).toHaveLength(0);
+    // Without the graph road there is still nowhere to go, and the refusal says why.
+    const bare = world({ settings: { "phase.rails": "off" } });
+    expect(await bare.intake.handOver({ projectId: "projA", pmThreadId: PM, runId: "run1", text: goal, key: "lead:road_z", origin: "Accepted by the owner" }))
+      .toMatchObject({ started: false, reason: "phase rails are off" });
+  });
 });
 
 describe("intake self-consistency", () => {

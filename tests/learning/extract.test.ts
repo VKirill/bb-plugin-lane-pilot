@@ -220,6 +220,17 @@ describe("the owner's decisions on items", () => {
     expect(bbMemoryAddLine({ id: "x", text: "it's \"quoted\"", evidence: "e" })).toContain(`'it'\\''s "quoted"'`);
   });
 
+  it("with BB memory off the preference is kept in the project's hub memory, not lost as an error (2026-11-10)", async () => {
+    const { s, item } = await waiting("preference");
+    const kept: string[] = [];
+    const notes = { remember: (projectId: string, text: string) => { kept.push(`${projectId}:${text}`); return "mem_hub_1"; }, forget: () => undefined };
+    const off = createDecisions({ db: s.db, rules: s.rules, notes, remind: async () => "r", runBb: async () => { throw new Error("unknown command memory"); }, now: () => NOW });
+    const accepted = await off.accept(item.id);
+    expect(accepted.item).toMatchObject({ state: "accepted", target: "note:mem_hub_1" });
+    expect(accepted.note).toMatch(/BB memory is off.*not owner-wide/);
+    expect(kept).toEqual([`${item.projectId}:${item.text}`]);
+  });
+
   it("a yes to a date sets a reminder; an item cannot be accepted twice; a no closes it", async () => {
     const { decisions, reminders, item } = await waiting("deadline");
     const accepted = await decisions.accept(item.id);
