@@ -64,7 +64,7 @@ import { registerRpc } from "./src/rooms/core/server/rpc";
 import { mountAnamnesis } from "./src/rooms/anamnesis";
 import { mountWorldAssets } from "./src/rooms/world/server";
 import { registerLaneWorktreeProvider } from "./src/rooms/native-agent/server";
-import { scheduleIsolated } from "./src/rooms/platform/server";
+import { checkTickDeps, scheduleIsolated } from "./src/rooms/platform/server";
 import { clearDrainSnapshot, readDrainSnapshot, skipRedundantStartupScans } from "./src/rooms/stability/server";
 import { tokenCursorRow, tokenDailyByModel } from "./src/rooms/usage/server";
 import type { TokenCursorReader } from "./src/rooms/work-graph/server";
@@ -412,6 +412,11 @@ export default async function plugin(bb: BbPluginApi) {
     createScheduleService(ctx, services),
     { lead: createLeadService(ctx, services, services.memoryEval, lanePilotMigrations) },
   );
+  // Tick wiring (SMA m_tick_deps): every service the schedules ask for by name exists before the first tick;
+  // the report stays on lp.tick-deps for inspection.
+  { const tickDeps = checkTickDeps(services as unknown as Record<string, unknown>);
+    if (tickDeps.missing.length) bb.log.error(`Lane Pilot tick deps missing: ${tickDeps.missing.join(", ")}`);
+    await bb.storage.kv.set("lp.tick-deps", tickDeps).catch(() => undefined); }
   // The writer's `lp.*` executors (the task pipeline and its steps): writer registers them on the shared engine; workflow only mounts the delegates.
   registerDispatchExecutors(services.workflowEngine, ctx.bb);
   // The two code steps of `agent-routine`, the graph a schedule of kind agent runs (registered here: the schedule room imports the workflow room, not the other way).

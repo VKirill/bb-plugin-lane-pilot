@@ -5,3 +5,5 @@ export { createNativeInstaller, experimental_vkLifecycle } from "./native-instal
 
 export { connectOpencodeStack, detectStack, importConfigStack, installStack, rollbackStack, snapshotStack } from "./stack-ops";
 export type { HostContext } from "./stack-ops";
+export { featureRegistry, featureRegistryGaps } from "./feature-registry";
+export type { FeatureCapability, FeatureRuntime } from "./feature-registry";

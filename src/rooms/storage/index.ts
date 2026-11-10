@@ -35,7 +35,7 @@ export { staleStageReceipts, taskCheckLogRows, failedBackgroundStageRows, stageE
 export { latestStageResultJson, listStageReceiptsForProject, listReviewStageRows, listFailedStageReceipts, listStageReceiptStates, listStaleOpenStages, listProjectsWithCriticReceipts, gateEventFailureCounts, failedStageCounts } from "./stages-store";
 export { putGlobalSettingValue } from "./settings-store";
 export { boundSettingValue, settingValue, settingValues, deleteBoundSetting, listProjectsWithGlobalSettings } from "./settings-store";
-export { secretIssuedForTask, recordSkillMetric, listSkillMetrics, countLanePilotTables } from "./checks-store";
+export { secretIssuedForTask, recordSkillMetric, listSkillMetrics, skillMetricSkillsForAttempt, countLanePilotTables } from "./checks-store";
 export { recordJanitorSweep, releaseWorktreeById } from "./worktrees-store";
 export { noteGateRunStart, finishGateRun, latestGateRun, latestGateRunForTask, gateRunRow } from "./gate-runs-store";
 export type { GateRunRow, GateRunState } from "./gate-runs-store";
