@@ -19,8 +19,14 @@ describe("SMA command workflows", () => {
 
   it("ai-integration-phase: select, research, spec", async () => {
     const r = await runSim("ai-integration-phase", { input: { goal: "rank photos" }, stubs: { select: { framework: "typesafe", options: [] }, research: { notes: "ok" }, spec: { spec_path: "AI-SPEC.md" } } });
-    expect(pathOf(r)).toBe("select research spec done");
+    expect(pathOf(r)).toBe("select research eval_plan spec check done");
     expect(out(r)).toMatchObject({ status: "done", framework: "typesafe", spec_path: "AI-SPEC.md" });
+  });
+
+  it("audit-uat: open items across phases go to UAT-AUDIT.md", async () => {
+    const r = await runSim("audit-uat", { input: {}, stubs: { audit: { open_count: 2, document: "# UAT audit" }, goal_check: { ok: true, verdict: "pass", reason: "", details: {} } } });
+    expect(pathOf(r)).toBe("audit write goal_check done");
+    expect(out(r)).toMatchObject({ status: "done", open_count: 2 });
   });
 
   it("spike: answered or inconclusive", async () => {

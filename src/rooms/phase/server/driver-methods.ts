@@ -84,7 +84,9 @@ export function installMethods(tools: MethodsTools) {
       ...(String(settings["phase.pattern_map"] ?? "off") === "on" ? { patternMap: "on" as const } : {}),
       ...(String(settings["phase.validation"] ?? "off") === "on" ? { validation: "on" as const } : {}),
       ...(String(settings["phase.draw_material"] ?? "off") === "on" ? { drawMaterial: "on" as const } : {}),
-      ...(String(settings["phase.train"] ?? "on") === "off" ? { train: false } : {}) };
+      ...(String(settings["phase.train"] ?? "on") === "off" ? { train: false } : {}),
+      ...(String(settings["phase.diagnose"] ?? "off") === "on" ? { diagnose: true } : {}),
+      ...(String(settings["phase.gray_areas"] ?? "off") === "on" ? { grayAreas: true } : {}) };
     if (input.legacy) {
       // Legacy mode without signature: a plan written before the phase existed is admitted on its own; the book says so.
       record.context = { docs: [], sha: sha256Hex(`legacy:${id}`), signedAt: now(), legacy: true };

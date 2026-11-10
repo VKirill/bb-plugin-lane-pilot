@@ -43,6 +43,20 @@ export const REDUCERS: Record<string, Reducer> = {
     return { ok_folders: ok.map((row) => str(row.data.post_folder)), summary_paths: ok.map((row) => str(row.data.summary_path)), ok_count: ok.length, failed_count: input.rows.length - ok.length };
   },
   "reduce.issue-discover.scan": (input) => { const findings = flat(input.results, "findings"); return { findings, count: findings.length }; },
+  // The quick path's advisory review: counts for the comment, the findings for the output; a review that failed to run
+  // is noted and never blocks closing (SMA k_wq_review).
+  "reduce.issue-quick.review": (input) => {
+    const findings = flat(input.results, "findings");
+    const critical = findings.filter((finding) => str(rec(finding).severity) === "critical").length;
+    const high = findings.filter((finding) => str(rec(finding).severity) === "high").length;
+    return { findings, critical_count: critical, high_count: high, failed_count: input.failed.length,
+      comment: `quick path: built and verified; review: ${critical} critical, ${high} high${input.failed.length ? "; the review itself failed to run" : ""}` };
+  },
+  // One diagnosis per acceptance gap: the gap it names, from the debugger child that ran for it (SMA k_c_diagnose).
+  "reduce.debug.diagnose": (input) => ({
+    diagnoses: input.rows.map((row) => ({ gap: str(rec(row.item).gap ?? rec(row.item).text ?? row.item),
+      ...(row.ok ? { root_cause: str(row.data?.root_cause), confidence: row.data?.confidence ?? 0, status: str(row.data?.status) } : { root_cause: "", confidence: 0, error: row.error ?? "" }) })),
+  }),
   "reduce.lp.brainstorm.designs": (input) => {
     const ok = done(input).filter((row) => row.data.ok !== false);
     const failedRoles = [...lost(input).map((row) => str(row.item)), ...done(input).filter((row) => row.data.ok === false).map((row) => str(row.data.role) || str(row.item))];

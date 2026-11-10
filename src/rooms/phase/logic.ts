@@ -116,6 +116,11 @@ export type PhaseRecord = {
   questions?: StageQuestion[];
   /** The project asked for the owner's word at the turns (owner.words = on when the phase opened). */
   ownerWords?: boolean;
+  /** The project set phase.diagnose = on when the phase opened: a failed verdict gets a parallel diagnosis before the replan. Absent = off. */
+  diagnose?: boolean;
+  /** The project set phase.gray_areas = on when the phase opened (and owner.words is on): the analysis asks the owner which gray areas to settle and
+   * starts an adviser per area. Absent = off: the analysis is what it was. */
+  grayAreas?: boolean;
   words?: OwnerWord[];
   /** Goal revisions and withdrawn pieces, each one a decision in the book. */
   scope?: { revisions: number; withdrawn: string[] };
@@ -197,7 +202,9 @@ export type PhaseRecord = {
     live?: { state: "passed" | "blocked"; score40?: number; findings?: unknown; reportPath?: string; head?: string | null; at: number };
     /** The drawing contract's checkable points (SMA k_wv_design): read from UI-SPEC.md at verification, each an
      *  acceptance line once the goal audit judges it (met only with evidence). */
-    points?: Array<{ id: string; text: string; met?: boolean; evidence?: string }> };
+    points?: Array<{ id: string; text: string; met?: boolean; evidence?: string }>;
+    /** The parallel diagnosis of a failed verdict's gaps (SMA k_c_diagnose): one per verdict, keyed by its inputSha. */
+    diagnosis?: { inputSha: string; diagnoses: unknown[]; diagnosis: string; at: number } };
   acceptance?: { lines: AcceptanceLine[]; at: number; accepted: boolean };
   lessons?: { needed: boolean; why: string; analysis?: string; author?: string; reviewer?: string; reviewedHash?: string; /** The workflow run whose reviewer step read the analysis (its journal is the proof). */ reviewRun?: string; at?: number;
     /** The lesson as a draft (SMA p7_staged): it waits for the owner's word «lesson»; applied, it goes into memory (m_apply). A write that did not land is finished on a later pass from the same text (p7_recover). */
@@ -740,7 +747,7 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
         return { key: key("live"), stage: phase.stage, waitsForPm: false,
           text: `${head} — stage 5, verification: Lane Pilot runs the live interface check (ui-audit) before the goal audit.` };
       if (verdict?.state === "failed") return { key: key(`verdict-failed:${verdict.inputSha}`), stage: phase.stage, waitsForPm: true,
-        text: `${head} — stage 5, verification failed: ${verdict.detail}. Accepted pieces are not run again by themselves: return the phase to planning (${tool("return", `, phaseId:"${id}", to:"planning", note`)}) and change the failing piece's contract (a changed piece is issued again as a redo) or add a piece; a return to execution without new work meets the same verdict.` };
+        text: `${head} — stage 5, verification failed: ${verdict.detail}.${r.verification?.diagnosis?.inputSha === verdict.inputSha && r.verification.diagnosis.diagnosis ? ` Diagnosis: ${r.verification.diagnosis.diagnosis.slice(0, 600)}` : ""} Accepted pieces are not run again by themselves: return the phase to planning (${tool("return", `, phaseId:"${id}", to:"planning", note`)}) and change the failing piece's contract (a changed piece is issued again as a redo) or add a piece; a return to execution without new work meets the same verdict.` };
       if (verdict && !r.verification?.model) return { key: key("model"), stage: phase.stage, waitsForPm: true,
         text: `${head} — stage 5, verification: the blind check passed (${verdict.detail}). Run the goal audit (workflow lp.close) against the phase goal «${phase.goal}»${r.design?.drawing ? ` and the phase drawing (${r.design.drawing.paths.join(", ")})` : ""} and report it with ${tool("goal_audit", `, phaseId:"${id}", state:"met"|"unmet", by, summary`)}.` };
       return { key: key("running"), stage: phase.stage, waitsForPm: false, text: `${head} — stage 5, verification: Lane Pilot runs every piece's checks together on main.` };

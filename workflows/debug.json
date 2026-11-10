@@ -52,6 +52,10 @@
       "type": "bool",
       "default": false,
       "note": "предложить analyze-plan-execute после подтверждённой причины"
+    },
+    "session": {
+      "type": "string",
+      "note": "a slug naming this investigation's session file .agents/planning/debug/<slug>.md; an existing one is resumed, a new one is written with status open"
     }
   },
   "outputs": {
@@ -64,7 +68,8 @@
     "risks": "string[]",
     "evidence_path": "string",
     "fix_directions": "string[]",
-    "diagnosis": "string"
+    "diagnosis": "string",
+    "diagnoses": "{gap, root_cause, confidence}[]"
   },
   "quality_mode": {
     "default": "standard",
@@ -95,10 +100,49 @@
         "en": "Symptoms",
         "ru": "Симптомы"
       },
-      "skip_when": "$inputs.mode == 'from_failures' || $inputs.symptom.length >= 40",
+      "skip_when": "$inputs.mode == 'from_failures' || $inputs.symptom.length >= 40 || $inputs.session",
       "skip_out": {
         "answer": "$inputs.symptom",
         "answer_kind": "given"
+      },
+      "src": "maestro-flow:workflows/debug.md (symptoms)",
+      "prompt": "Five questions in one form - what was expected, what happened, the exact error text, since when (last good version if known), steps to reproduce. Anything not in the form the agent finds in git log -10 and git diff --stat HEAD~3.",
+      "out": {
+        "answer": "any",
+        "answer_kind": "given|answered|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 120
+      }
+    },
+    {
+      "id": "session",
+      "type": "action",
+      "action": "lp.debug_session",
+      "title": {
+        "en": "The debug session file",
+        "ru": "Файл сессии отладки"
+      },
+      "rule": "runs only when input `session` is set: reads .agents/planning/debug/<session>.md on the PM checkout; a new run starts the file with the symptom and status open",
+      "with": {
+        "session": "{{$inputs.session}}"
+      },
+      "out": {
+        "found": "bool",
+        "path": "string"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "ask_symptoms_new",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Symptoms (new session)",
+        "ru": "Симптомы (новая сессия)"
       },
       "src": "maestro-flow:workflows/debug.md (symptoms)",
       "prompt": "Five questions in one form - what was expected, what happened, the exact error text, since when (last good version if known), steps to reproduce. Anything not in the form the agent finds in git log -10 and git diff --stat HEAD~3.",
@@ -136,7 +180,7 @@
         "ru": "Расследовать"
       },
       "src": "maestro-flow:ref/scientific-debug.md, workflows/debug.md",
-      "prompt": "SCIENTIFIC_DEBUG_METHOD. Read-only on the repository; reproduction only in a throwaway copy. Loop: FORM a hypothesis, PREDICT what you would observe, TEST it (change one variable at a time), RECORD {hypothesis, prediction, observation, verdict} in evidence.ndjson (append-only), DECIDE.\nRoot cause is confirmed only with a reproduction or file:line plus the mechanism. Red flags: \"probably\", \"let me just try changing this\", \"works on my machine\". Trace backward from the symptom to the first bad state, following data, not control flow.\nAfter 3 refuted hypotheses on one surface re-read the module boundaries and doubt the \"unchanged\" assumptions; do not raise a 4th hypothesis on your own - return inconclusive with what you learned.\nconfidence from reproduction reliability, directness of the evidence chain, whether the predicted fix was tested. Before declaring a cause: evidence_completeness >= 40%, a pressure pass done (strongest counter-argument answered), no contradicting evidence, fix_direction names concrete files.\n",
+      "prompt": "SCIENTIFIC_DEBUG_METHOD. Read-only on the repository; reproduction only in a throwaway copy. Loop: FORM a hypothesis, PREDICT what you would observe, TEST it (change one variable at a time), RECORD {hypothesis, prediction, observation, verdict} in evidence.ndjson (append-only), DECIDE.\nRoot cause is confirmed only with a reproduction or file:line plus the mechanism. Red flags: \"probably\", \"let me just try changing this\", \"works on my machine\". Trace backward from the symptom to the first bad state, following data, not control flow.\nAfter 3 refuted hypotheses on one surface re-read the module boundaries and doubt the \"unchanged\" assumptions; do not raise a 4th hypothesis on your own - return inconclusive with what you learned.\nconfidence from reproduction reliability, directness of the evidence chain, whether the predicted fix was tested. Before declaring a cause: evidence_completeness >= 40%, a pressure pass done (strongest counter-argument answered), no contradicting evidence, fix_direction names concrete files.\n\nSession file: when input `session` is set, work in .agents/planning/debug/<session>.md — an existing file is where you resume (skip asking the symptoms again); append each hypothesis with its verdict, the evidence lines, the root cause and the fix directions there and set its Status to open or resolved.\n",
       "out": {
         "status": "confirmed|partial|inconclusive",
         "root_cause": "string",
@@ -155,6 +199,43 @@
       "guards": {
         "maxVisits": 3,
         "timeoutMin": 40
+      }
+    },
+    {
+      "id": "diagnose",
+      "type": "parallel",
+      "for_each": "$inputs.symptom",
+      "max_fan_out": 6,
+      "onOverflow": "truncate",
+      "title": {
+        "en": "Debuggers per gap",
+        "ru": "Отладчик на каждый пробел"
+      },
+      "child": {
+        "type": "agent",
+        "role": "debugger",
+        "session": "new",
+        "prompt": "SCIENTIFIC_DEBUG_METHOD, read-only. One acceptance gap only: {{item}}. Form hypotheses, predict, test in a throwaway copy, record verdicts in evidence.ndjson; root cause is confirmed only with a reproduction or file:line plus the mechanism; at most 3 refuted hypotheses, then inconclusive.",
+        "out": {
+          "status": "confirmed|partial|inconclusive",
+          "root_cause": "string",
+          "confidence": "int",
+          "fix_direction": "string",
+          "affected_files": "string[]"
+        },
+        "produces": [
+          {
+            "kind": "diagnosis",
+            "version": 1
+          }
+        ]
+      },
+      "join": {
+        "policy": "all",
+        "uses": "reduce.debug.diagnose",
+        "out": {
+          "diagnoses": "any"
+        }
       }
     },
     {
@@ -186,7 +267,7 @@
         "confirmed": true,
         "objections": "[]"
       },
-      "prompt": "Fresh agent re-checks the claimed cause from the evidence log and the code only; try to refute it with one cheaper explanation; report confirmed or the objection with file:line.",
+      "prompt": "Fresh agent re-checks the claimed cause from the evidence log and the code only; try to refute it with one cheaper explanation; report confirmed or the objection with file:line.\nSession file: when input `session` is set, work in .agents/planning/debug/<session>.md — an existing file is where you resume (skip asking the symptoms again); append each hypothesis with its verdict, the evidence lines, the root cause and the fix directions there and set its Status to open or resolved.\n",
       "out": {
         "confirmed": "bool",
         "objections": "string[]"
@@ -279,12 +360,72 @@
         "diagnosis": "investigate.mechanism",
         "confidence": "investigate.confidence"
       }
+    },
+    {
+      "id": "diagnosed",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "'confirmed'",
+        "diagnoses": "diagnose.diagnoses"
+      }
     }
   ],
   "edges": [
     {
       "from": "ask_symptoms",
+      "to": "session",
+      "pass": "artifact",
+      "when": "$inputs.session"
+    },
+    {
+      "from": "ask_symptoms",
+      "to": "diagnose",
+      "pass": "artifact",
+      "when": "$inputs.mode == 'from_failures' && $inputs.symptom.length > 1"
+    },
+    {
+      "from": "ask_symptoms",
       "to": "investigate",
+      "pass": "artifact"
+    },
+    {
+      "from": "session",
+      "to": "diagnose",
+      "pass": "artifact",
+      "when": "session.found && $inputs.mode == 'from_failures' && $inputs.symptom.length > 1"
+    },
+    {
+      "from": "session",
+      "to": "investigate",
+      "pass": "artifact",
+      "when": "session.found"
+    },
+    {
+      "from": "session",
+      "to": "ask_symptoms_new",
+      "pass": "artifact",
+      "when": "$inputs.mode != 'from_failures' && (!$inputs.symptom || $inputs.symptom.length < 40)"
+    },
+    {
+      "from": "session",
+      "to": "diagnose",
+      "pass": "artifact",
+      "when": "$inputs.mode == 'from_failures' && $inputs.symptom.length > 1"
+    },
+    {
+      "from": "session",
+      "to": "investigate",
+      "pass": "artifact"
+    },
+    {
+      "from": "ask_symptoms_new",
+      "to": "investigate",
+      "pass": "artifact"
+    },
+    {
+      "from": "diagnose",
+      "to": "diagnosed",
       "pass": "artifact"
     },
     {
@@ -363,7 +504,8 @@
     "sim": {
       "input": {
         "symptom": "CSV import crashes with 'Cannot read properties of undefined (reading split)' on files with an empty last line; started after v2.3",
-        "scope": "src/import"
+        "scope": "src/import",
+        "session": ""
       },
       "stubs": {
         "investigate": {
@@ -393,7 +535,30 @@
         "affected_files.length >= 1",
         "confidence > 70"
       ],
-      "expect_no_repo_edits": true
+      "expect_no_repo_edits": true,
+      "variant_from_failures": {
+        "input": {
+          "mode": "from_failures",
+          "symptom": [
+            "check p1 red: lint fails",
+            "check p2 red: test fails"
+          ],
+          "session": ""
+        },
+        "stubs": {
+          "diagnose": {
+            "status": "confirmed",
+            "root_cause": "stubbed cause",
+            "confidence": 80,
+            "fix_direction": "fix"
+          }
+        },
+        "expect_path": [
+          "ask_symptoms",
+          "diagnose",
+          "diagnosed"
+        ]
+      }
     },
     "live": "песочница: заведомый баг (пустая последняя строка); ответ содержит file:line и механизм, evidence.ndjson есть, изменений в репозитории нет (repo_edited = 0)"
   },

@@ -36,7 +36,7 @@
     }
   },
   "outputs": {
-    "status": "done",
+    "status": "done|blocked",
     "framework": "string",
     "spec_path": "string"
   },
@@ -86,9 +86,12 @@
         "en": "Framework research",
         "ru": "Исследование фреймворка"
       },
-      "prompt": "Framework researcher: current docs, limits and prices of the chosen framework and model, with links; pitfalls others hit.",
+      "prompt": "Framework researcher: current docs, limits and prices of the chosen framework and model, with links and dates; pitfalls others hit. Return quick_reference (API shape, limits, prices, pitfalls with links and dates), implementation_notes (call pattern, retries, the schema of the answer) and domain_notes (what a domain expert judges a good result by, the failure modes known in the industry, the regulation that binds, each with a source).",
       "out": {
-        "notes": "string"
+        "notes": "string",
+        "quick_reference": "string",
+        "implementation_notes": "string",
+        "domain_notes": "string"
       },
       "guards": {
         "maxVisits": 1,
@@ -109,6 +112,36 @@
       ]
     },
     {
+      "id": "eval_plan",
+      "type": "agent",
+      "role": "planner",
+      "title": {
+        "en": "Evaluation plan",
+        "ru": "План оценки"
+      },
+      "prompt": "Evaluation plan before any prompt is tuned: a gold set of 20-50 cases covering the edges, the metric that tracks the user goal, the threshold and why, the cost ceiling, and how a regression is noticed. Use the domain's expert criteria, failure modes and regulation from research.domain_notes.",
+      "out": {
+        "eval_plan": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "research"
+        }
+      ]
+    },
+    {
       "id": "spec",
       "type": "agent",
       "role": "planner",
@@ -116,12 +149,12 @@
         "en": "AI-SPEC",
         "ru": "AI-SPEC"
       },
-      "prompt": "Write .agents/phases/<id>/AI-SPEC.md (lane-plan template fill AI-SPEC --phase …): framework and model, typed inputs and outputs, failure modes and guards (timeout, fallback, ceiling), the evaluation (gold set written now, metric, threshold), cost per call. See templates/planning/references/ai-systems.md.",
+      "prompt": "Write .agents/phases/<id>/AI-SPEC.md (lane-plan template fill AI-SPEC --phase …): framework and model, typed inputs and outputs, failure modes and guards (timeout, fallback, ceiling), cost per call. It must hold the sections '## Quick reference' and '## Implementation guidance' from the research, and an '## Evaluation' section with dimensions (what quality means for this feature, grounded in domain_notes), a rubric per dimension with the gold-set cases, guardrails (checks on input and output at run time), monitoring (how a regression is noticed after release), metric and threshold. See templates/planning/references/ai-systems.md.",
       "out": {
         "spec_path": "string"
       },
       "guards": {
-        "maxVisits": 1,
+        "maxVisits": 3,
         "timeoutMin": 25
       },
       "produces": [
@@ -140,6 +173,42 @@
           "kind": "report",
           "version": 1,
           "from": "research"
+        },
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "eval_plan"
+        }
+      ]
+    },
+    {
+      "id": "check",
+      "type": "agent",
+      "role": "auditor",
+      "title": {
+        "en": "Check the AI-SPEC",
+        "ru": "Проверка AI-SPEC"
+      },
+      "prompt": "Read .agents/phases/<id>/AI-SPEC.md. ok=true only when every section is present (framework and model, typed inputs and outputs, guards, '## Evaluation' with dimensions, rubrics, guardrails and monitoring, '## Quick reference', '## Implementation guidance', cost), the numbers are consistent and no secret is in it. Otherwise name the gaps.",
+      "out": {
+        "ok": "bool",
+        "gaps": "string[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      },
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "spec"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
         }
       ]
     },
@@ -149,6 +218,16 @@
       "action": "emit",
       "map": {
         "status": "done",
+        "framework": "select.framework",
+        "spec_path": "spec.spec_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "'blocked'",
         "framework": "select.framework",
         "spec_path": "spec.spec_path"
       }
@@ -162,12 +241,35 @@
     },
     {
       "from": "research",
+      "to": "eval_plan",
+      "pass": "artifact"
+    },
+    {
+      "from": "eval_plan",
       "to": "spec",
       "pass": "artifact"
     },
     {
       "from": "spec",
+      "to": "check",
+      "pass": "artifact"
+    },
+    {
+      "from": "check",
+      "to": "spec",
+      "pass": "same-session",
+      "when": "!check.ok && visits('check') < 2",
+      "label": "gaps"
+    },
+    {
+      "from": "check",
       "to": "done",
+      "pass": "artifact",
+      "when": "check.ok"
+    },
+    {
+      "from": "check",
+      "to": "blocked",
       "pass": "artifact"
     }
   ],
@@ -187,12 +289,21 @@
         },
         "spec": {
           "spec_path": "x/AI-SPEC.md"
+        },
+        "eval_plan": {
+          "eval_plan": "dims, metric"
+        },
+        "check": {
+          "ok": true,
+          "gaps": []
         }
       },
       "expect_path": [
         "select",
         "research",
+        "eval_plan",
         "spec",
+        "check",
         "done"
       ],
       "expect_outputs": [

@@ -101,6 +101,7 @@ import xToTelegramDigest from "../../../workflows/x-to-telegram-digest.json";
 import yearReview from "../../../workflows/year-review.json";
 import validatePhase from "../../../workflows/validate-phase.json";
 import evalReview from "../../../workflows/eval-review.json";
+import auditUat from "../../../workflows/audit-uat.json";
 import aiIntegrationPhase from "../../../workflows/ai-integration-phase.json";
 import spike from "../../../workflows/spike.json";
 import specialist from "../../../workflows/specialist.json";
@@ -225,6 +226,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "year-review.json", value: yearReview },
   { name: "validate-phase.json", value: validatePhase },
   { name: "eval-review.json", value: evalReview },
+  { name: "audit-uat.json", value: auditUat },
   { name: "ai-integration-phase.json", value: aiIntegrationPhase },
   { name: "spike.json", value: spike },
   { name: "specialist.json", value: specialist },
