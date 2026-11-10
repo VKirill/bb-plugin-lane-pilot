@@ -227,6 +227,26 @@ export function hardRuleDeny(rules: HardRule[], tool: string, subject: string): 
   return null;
 }
 
+export type ConventionGate = { id: string; pattern: string; paths?: string[]; message?: string; mode?: "warn" | "block" };
+
+/** A project convention as a checkable rule (SMA k_lib_gates): `paths` entries are globs matched on the changed
+ * file; a hit on an added line is the gate's `message`, warn by default. */
+export function conventionGateHits(gates: ConventionGate[], patches: Record<string, string>): { warnings: string[]; blocks: string[] } {
+  const warnings: string[] = [];
+  const blocks: string[] = [];
+  const glob = (pattern: string) => new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*\*/g, "\0").replace(/\*/g, "[^/]*").replace(/\0/g, ".*").replace(/\?/g, ".")}$`);
+  for (const gate of gates ?? []) {
+    let regex: RegExp;
+    try { regex = new RegExp(gate.pattern); } catch { continue; }
+    const hit = Object.entries(patches).some(([path, patch]) => {
+      if (gate.paths?.length && !gate.paths.some((candidate) => glob(candidate).test(path))) return false;
+      return patch.split("\n").some((line) => line.startsWith("+") && !line.startsWith("+++") && regex.test(line));
+    });
+    if (hit) (gate.mode === "block" ? blocks : warnings).push(gate.message || gate.id);
+  }
+  return { warnings, blocks };
+}
+
 export function reflexAdvice(lines: string[], subject: string): string | null {
   for (const line of lines) {
     const match = /^\s*[-*]?\s*WHEN\s+(.+?)\s*(?:→|->)\s*(.+)$/.exec(line);

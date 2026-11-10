@@ -6,6 +6,8 @@ import type { ServerCore } from "../../contracts/server";
 import { OPEN_ATTEMPT_STATES, RETRY_ELIGIBLE, isOpenAttemptState } from "../../contracts/state-machine";
 import { DOCS_WORKTREE_PREFIX, docsWorktreeKey, REGRESS_MARKER_TTL_MS, REGRESS_WORKTREE_PREFIX, regressWorktreeKey, regressWorktreePath, SELF_REPAIR_STATE_KEY, selfRepairWorktrees } from "../../contracts";
 import { bestEffort } from "@lane-pilot/kit";
+import { recordEvidence } from "../../runs/server/evidence";
+import { rearmExpiredDisarms } from "../../policy/protections";
 
 /**
  * The hourly safety net over ~/.lane-pilot/worktrees on every connected machine (WT1, 2026-10-30): copies of docs,
@@ -71,6 +73,11 @@ export async function runWorktreeJanitor(ctx: Pick<ServerCore, "bb" | "db" | "lo
   const snapshot = async (hostId: string, worktreePath: string, name: string) =>
     (await ctx.host.call("gitWorktreeSnapshot", { requestedHostId: hostId, worktreePath, name }, { hostId, timeoutMs: 120_000 })) as { status: "clean" | "saved" | "missing" | "failed"; path: string | null; reason: string | null };
   const envSwept = await bestEffort(ctx.log, "attempt environment sweep", cleanupFinishedAttemptEnvironments(bb, db, snapshot, now, signal), [] as string[]);
+  // A hub-wide protection switched off past its term comes back at warning level (SMA k_lib_stpa) — only where the
+  // owner asked for it (protection.rearm=on): a setting he switched off is his, and nothing turns it back by itself.
+  // Without it the ended term is still shown by `bb lane-pilot integrity`.
+  const rearmed = loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)["protection.rearm"] === "on" ? rearmExpiredDisarms(db, GLOBAL_SETTINGS_PROJECT_ID, now) : [];
+  for (const key of rearmed) ctx.log(`Lane Pilot: protection ${key} re-armed to warning after its disarm term`);
   const hosts = await listQaHosts(bb);
   let removed = 0, freedBytes = 0, kept = 0;
   for (const machine of hosts.filter((row) => row.connected)) {
@@ -191,7 +198,20 @@ export async function reconcileWorktreeRegistry(ctx: Pick<ServerCore, "bb" | "db
     // The host call needs the base checkout the copy came from; the attempt's run knows it, others take it from the worktree itself.
     const basePath = writerBaseForWorkspace(db, row.path) ?? row.path;
     const out = await ctx.host.call("gitRemoveWorktree", { requestedHostId: row.host, basePath, worktreePath: row.path, release: true }, { hostId: row.host, timeoutMs: 120_000 }).catch((cause: unknown) => { ctx.log(`Lane Pilot reconcile: worktree removal on ${row.host} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; }) as { removed?: boolean } | null;
-    if (out?.removed === true) { releaseWorktreeById(db, row.id, now); removed++; }
+    if (out?.removed === true) {
+      releaseWorktreeById(db, row.id, now); removed++;
+      // Removing a copy registered to another owner is a risky act: its checks go on record first (SMA k_lib_evidence).
+      const saved = await recordEvidence(ctx.bb.storage.kv as never, {
+        op: "janitor", projectId: row.owner_id ?? row.host, target: row.path,
+        why: `copy of ${row.owner_kind} ${row.owner_id ?? "?"} whose owner is gone`,
+        checks: [
+          { name: "no open attempt or live pass holds it", ok: true },
+          { name: "uncommitted work snapshotted before removal (release)", ok: true },
+        ],
+        by: "worktree-reconcile", at: now,
+      });
+      if (!saved) ctx.log(`Lane Pilot reconcile: evidence of ${row.path} not kept`);
+    }
   }
   if (removed) ctx.log(`Lane Pilot reconcile: removed ${removed} worktree copies whose owner is gone`);
   return removed;

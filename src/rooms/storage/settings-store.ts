@@ -2,6 +2,7 @@ import type { PrototypeConfig } from "@lane-pilot/contracts";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { SettingValidationError } from "../setting-validation";
 import { requireSettingValidator, type LanePilotDatabase } from "./database";
+import { noteProtectionDisarm } from "../policy/protections";
 
 const CONFIG_KEYS = [
   "hostId", "pmWorkspacePath", "writerWorkspacePath", "pmProviderId",
@@ -128,6 +129,7 @@ export function saveProjectSetting(
         value=excluded.value, version=excluded.version, updated_at=excluded.updated_at`)
       .run(projectId, "", key, JSON.stringify(value), nextVersion, Date.now());
     bumpSettingGeneration(db,projectId,key,nextVersion);
+    noteProtectionDisarm(db, projectId, key, value);
   })();
 }
 

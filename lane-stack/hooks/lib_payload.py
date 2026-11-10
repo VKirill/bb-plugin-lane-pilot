@@ -90,12 +90,14 @@ def is_edit_tool(name: str) -> bool:
         "write_to_file", "create_file", "edit_file",
     }
 
-def emit_allow(client: str) -> None:
+def emit_allow(client: str, context: str | None = None) -> None:
     if client == "":
-        print(json.dumps({"decision": "allow"}))
+        print(json.dumps({"decision": "allow", **({"reason": context} if context else {})}))
     elif client == "grok":
-        print(json.dumps({"decision": "allow"}))
-    # Claude/Codex: silent allow via exit 0 is fine
+        print(json.dumps({"decision": "allow", **({"reason": context} if context else {})}))
+    elif context:
+        # Claude/Codex: silent allow via exit 0 is fine; a note rides as additionalContext.
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": context}}, ensure_ascii=False))
     sys.exit(0)
 
 def emit_deny(client: str, reason: str, *, block_exit: int = 2) -> None:

@@ -3,6 +3,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { taskV2Schema, type PrototypeConfig, type TaskV2 } from "../../contracts";
 import { getAttempt, getRun, getRunSettingsScopes, getRunWriterHost, getTask, loadProjectSettings, taskBasePath, type WorktreeOwnerKind } from "../../storage";
+import { recordEvidence } from "../../runs/server/evidence";
 import { retargetTask } from "../../tasks";
 import { parseIntegrationGateSettings, type VerificationGatePort } from "../../contracts/integration-gate";
 
@@ -301,6 +302,8 @@ export function createRollback(ctx: ServerCore, services: Services) {
   const taskOfSubject = (subject: string) => /^([A-Za-z0-9][A-Za-z0-9._-]{0,127}): /.exec(subject)?.[1] ?? null;
 
   async function revert(ref: string, options: { dryRun?: boolean; skipGate?: boolean; why?: string; by?: string } = {}): Promise<RollbackResult> {
+    // Skipping the integration gate is the risky path: it runs only with a stated reason on record (SMA k_lib_evidence).
+    if (options.skipGate && !options.why?.trim()) return { ok: false, state: "refused", taskId: ref, attemptId: null, base: null, change: null, summary: `revert without the gate needs a stated cause: pass --why`, next: "run the same revert with --why <cause>, or leave the gate on" };
     const found = await targetOf(ref);
     if ("error" in found) return { ok: false, state: "refused", taskId: ref, attemptId: null, base: null, change: null, summary: found.error, next: "check the id with `bb lane-pilot state <project-id>`" };
     const { target: t } = found;
@@ -391,6 +394,16 @@ export function createRollback(ctx: ServerCore, services: Services) {
       // The rollback mark (SMA k_lib_rollbackmark): the cause a person or agent stated; a git signal never fills it in.
       const rollbackMark = { cause: options.why ?? null, by: options.by ?? "cli", at: new Date().toISOString() };
       const detail = { files, checks: verification, gate, rollbackMark };
+
+      // The gate was skipped on a stated cause: the reason and the checks that did run go on record (SMA k_lib_evidence).
+      if (options.skipGate) await recordEvidence(ctx.bb.storage.kv as never, {
+        op: "revert", projectId: t.projectId, target: t.taskId, why: options.why ?? "",
+        checks: [
+          { name: "integration_gate", ok: true, detail: "skipped by --no-gate" },
+          ...verification.ran.map((row) => ({ name: `verification:${row.command}`, ok: row.ok, detail: row.tail || undefined })),
+        ],
+        by: options.by ?? "cli", at: Date.now(),
+      }).then((saved) => { if (!saved) log(`rollback: evidence of ${t.taskId} not kept`); });
 
       if (verification.blocking.length || gateBlocks) {
         const names = [...verification.blocking.map((row) => row.command), ...(gateBlocks ? [gate!.command] : [])];

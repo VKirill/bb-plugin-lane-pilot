@@ -53,6 +53,8 @@ import { JEV_USAGE, runJevCli } from "../../jev";
 import { ERRANDS_USAGE, runErrandsCli } from "../../errands";
 import { retireAdoptedRule } from "../../self-repair/server";
 import { ROLLBACK_USAGE, runRollbackCli } from "../../rollback/server";
+import { listEvidence } from "../../runs/server/evidence";
+import { integrityReport, renewDisarm } from "../../policy/protections";
 import { isCodeCriticDefault } from "../../contracts/task-enums"
 import { CODE_CRITIC_DEFAULTS } from "../../contracts/task-enums";
 import { runSkillLintCli } from "../../forge";
@@ -249,6 +251,9 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"revert", summary:"Revert an accepted task's merge commit(s) with git revert in a worktree, check them, merge through the normal merge queue; refuses with the next step when later commits touch the same lines", usage:"bb lane-pilot revert <task-id> [--dry-run] [--no-gate]" },
       { name:"task", summary:"One task's record for another agent: what it asked for, what the server saw done (changed files, merge), acceptance against fact, what is left", usage:TASK_RECORD_USAGE },
       { name:"changes", summary:"What is on record for a task or an attempt: base, merge, changed files (deletions included) and the reverify / revert receipts", usage:"bb lane-pilot changes <task-id|attempt-id>" },
+      { name:"evidence", summary:"The reason and checks stored before each risky operation, newest first", usage:"bb lane-pilot evidence <project-id> [--op permit|revert|janitor] [--days N]" },
+      { name:"integrity", summary:"Each protection with its hazard, armed and current value, disarm term and shadow findings; renew a disarm with a reason", usage:"bb lane-pilot integrity [project-id] [--renew <key> --days N --why <cause>]" },
+      { name:"airbag", summary:"List, prune and probe the return points (refs/lane-airbag/*) of a project's checkout", usage:"bb lane-pilot airbag <project-id> [--prune DAYS] [--probe]" },
       { name:"recover", summary:"Reconcile a known writer identity and emit its validated receipt", usage:"bb lane-pilot recover <attempt-id>" },
       { name:"start-cancel-probe", summary:"Spawn a long-running writer for a live stop observation", usage:"bb lane-pilot start-cancel-probe <project-id> <pm-thread-id>" },
       { name:"start-provider-error-probe", summary:"Observe a live provider error and persist provider_error", usage:"bb lane-pilot start-provider-error-probe <project-id> <pm-thread-id>" },
@@ -353,6 +358,39 @@ ${ERRANDS_USAGE}` },
         if (refusal) return { exitCode:1, stdout:JSON.stringify({ ok:false, error:refusal }) };
         if (command === "reverify" || command === "revert" || command === "changes") {
           return await runRollbackCli(services.rollback, command, args);
+        }
+        if (command === "evidence") {
+          const [projectId] = args.filter((a) => !a.startsWith("--"));
+          if (!projectId) return { exitCode:1, stderr:"usage: bb lane-pilot evidence <project-id> [--op permit|revert|janitor] [--days N]" };
+          const op = args[args.indexOf("--op") + 1], days = args.includes("--days") ? Number(args[args.indexOf("--days") + 1]) : undefined;
+          const rows = await listEvidence(bb.storage.kv as never, projectId, { op, days });
+          return { exitCode:0, stdout:rows.map((row) => `${new Date(row.at).toISOString()} ${row.op} ${row.target}\n  why: ${row.why}\n  checks: ${row.checks.map((c) => `${c.ok ? "ok" : "FAIL"} ${c.name}${c.detail ? ` — ${c.detail}` : ""}`).join("; ")}\n  by: ${row.by}`).join("\n") || "no evidence records" };
+        }
+        if (command === "integrity") {
+          const [projectId] = args.filter((a) => !a.startsWith("--"));
+          const pid = projectId ?? args[0] ?? "";
+          if (args.includes("--renew")) {
+            const key = args[args.indexOf("--renew") + 1]!, days = Number(args[args.indexOf("--days") + 1] ?? 7), why = args[args.indexOf("--why") + 1] ?? "";
+            const result = renewDisarm(db, pid, key, days, why);
+            return "error" in result ? { exitCode:1, stderr:result.error } : { exitCode:0, stdout:JSON.stringify(result.record, null, 2) };
+          }
+          const settings = loadProjectSettings(db, pid);
+          return { exitCode:0, stdout:JSON.stringify(integrityReport(db, settings, pid), null, 2) };
+        }
+        if (command === "airbag") {
+          const [projectId] = args.filter((a) => !a.startsWith("--"));
+          if (!projectId) return { exitCode:1, stderr:"usage: bb lane-pilot airbag <project-id> [--prune DAYS] [--probe]" };
+          const config = loadPrototypeConfig(db, projectId);
+          if (!config) return { exitCode:1, stderr:`project ${projectId} has no configured checkout` };
+          const pruneDays = args.includes("--prune") ? Number(args[args.indexOf("--prune") + 1] ?? 14) : 0;
+          const probe = args.includes("--probe");
+          const script = [
+            `git for-each-ref --format='%(refname) %(creatordate:unix) %(objectname)' refs/lane-airbag/`,
+            pruneDays > 0 ? `git for-each-ref --format='%(refname) %(creatordate:unix)' refs/lane-airbag/ | awk -v cut=$(( $(date +%s) - ${Math.round(pruneDays) * 86400} )) '$2 < cut {print $1}' | xargs -r -n1 git update-ref -d` : ":",
+            probe ? `for r in $(git for-each-ref --format='%(refname)' refs/lane-airbag/); do git cat-file -e "$r" && git cat-file -e "$r^{tree}" && echo "probe ok $r" || echo "probe broken $r"; done` : ":",
+          ].join("\n");
+          const ran = await host.call("runCommand", { requestedHostId: config.hostId, command: script, cwd: config.writerWorkspacePath, timeoutSec: 60 }, { hostId: config.hostId, timeoutMs: 65_000 });
+          return { exitCode:ran.exitCode, stdout:ran.stdout, stderr:ran.stderr || undefined };
         }
         if (command === "pause" && args.length === 1) {
           return { exitCode:0, stdout:JSON.stringify(await pauseRun(ctx, args[0]!, "pause"), null, 2) };
