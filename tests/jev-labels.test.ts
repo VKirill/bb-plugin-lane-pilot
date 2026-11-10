@@ -103,6 +103,17 @@ describe("outcome labels: critique.worth", () => {
       .run("run1", "task1", "plan-critique", 1, "failed", "x", 0, '{"decision":"changes_requested"}', OLD + 500);
     expect(labelCritiqueWorth(database2, NOW)).toEqual([{ receiptId: run2, outcome: "agree:outcome" }]);
   });
+
+  it("a receipt that names a graph step, not a task, gets no label, and the old wrong ones are taken back", () => {
+    const database = db();
+    task(database, "accepted");
+    const step = receipt(database, { judgment: "critique.worth", decision: "all critics", subject: "worth-check" });
+    const real = receipt(database, { judgment: "critique.worth", decision: "skip pm_read,plan_critique", subject: "task1" });
+    expect(labelCritiqueWorth(database, NOW)).toEqual([{ receiptId: real, outcome: "agree:outcome" }]);
+    database.prepare("UPDATE lane_pilot_jev_receipt SET outcome='disagree:outcome' WHERE id=?").run(step);
+    applyOutcomeLabels(database, NOW);
+    expect(database.prepare("SELECT id, outcome FROM lane_pilot_jev_receipt ORDER BY id").all()).toEqual([{ id: step, outcome: null }, { id: real, outcome: "agree:outcome" }]);
+  });
 });
 
 describe("outcome labels: lead.predict copies the journal verdict", () => {

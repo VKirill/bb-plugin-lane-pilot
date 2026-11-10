@@ -172,10 +172,12 @@ export type DeferralApi = ReturnType<typeof createDeferrals>;
 
 /**
  * What a PM reads before it promises a date (SMA rule 6), as lines of its task-result message: the overdue and the open deferrals
- * of its project and the global ones. Nothing when there is none.
+ * of its project and the global ones that carry a term. Nothing when there is none.
  */
 export function pmDeferralLines(db: DeferralDb, projectId: string, at: number): string[] {
-  const live = listDeferrals(db, { projectId, states: ["open", "overdue", "needs_owner_term"] });
+  // A global entry with no term is the plugin's own skipped test or pending decision: no project's acceptance counts it
+  // (noTermDeferralsOf), and 25 of them rode every task-result message of every project. A global entry with a term still shows.
+  const live = listDeferrals(db, { projectId, states: ["open", "overdue", "needs_owner_term"] }).filter((row) => row.projectId === projectId || row.state !== "needs_owner_term");
   const noTerm = live.filter((row) => row.state === "needs_owner_term");
   const overdue = live.filter((row) => row.state === "overdue" || (row.state === "open" && row.dueAt !== null && row.dueAt < at));
   const open = live.filter((row) => !overdue.includes(row) && !noTerm.includes(row));

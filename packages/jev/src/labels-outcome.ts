@@ -36,15 +36,18 @@ function unlabeled(db: Db, judgment: string, olderThan: number): ReceiptRow[] {
  */
 export function taskOutcome(db: Db, runId: string | null, taskId: string | null): "accepted" | "failed" | "pending" {
   if (!runId || !taskId) return "pending";
+  const known = db.prepare("SELECT 1 FROM lane_pilot_task WHERE id=? LIMIT 1");
   if (db.prepare("SELECT 1 FROM lane_pilot_attempt WHERE run_id=? AND task_id=? AND state='accepted' LIMIT 1").get(runId, taskId)) {
     const named = db.prepare("SELECT 1 FROM lane_pilot_regression WHERE (task_id=? OR culprit_task=?) AND kind='regression' LIMIT 1").get(taskId, taskId);
-    const mainfix = db.prepare("SELECT 1 FROM lane_pilot_task WHERE id=? LIMIT 1").get(`${taskId}-mainfix`);
+    const mainfix = known.get(`${taskId}-mainfix`);
     return named || mainfix ? "failed" : "accepted";
   }
   const open = db.prepare(`SELECT 1 FROM lane_pilot_attempt WHERE run_id=? AND task_id=? AND state IN (${OPEN_ATTEMPT_STATES}) LIMIT 1`).get(runId, taskId);
   if (open) return "pending";
   const had = db.prepare("SELECT 1 FROM lane_pilot_attempt WHERE run_id=? AND task_id=? LIMIT 1").get(runId, taskId);
   if (had) return "failed";
+  // A subject that is no task of the run (a step name, a thread) has no fate: «failed» here labelled 887 receipts wrong.
+  if (!known.get(taskId)) return "pending";
   const run = db.prepare("SELECT state, closed_at FROM lane_pilot_run WHERE id=?").get(runId) as { state: string; closed_at: number | null } | undefined;
   if (!run) return "pending";
   return run.closed_at !== null || run.state !== "running" ? "failed" : "pending";
@@ -170,6 +173,9 @@ export function labelErrandFailure(db: Db, now = Date.now()): OutcomeLabel[] {
 
 /** Every outcome rule this file covers, run over the unlabeled receipts and written. Returns per-judgment counts. */
 export function applyOutcomeLabels(db: Database.Database, now = Date.now()): Record<string, number> {
+  // Until 0.1.512 a `critique.worth` receipt named its graph step, not its task, and every one in a closed run was labelled
+  // «disagree». Those labels say nothing: they are taken back (the receipts age out with the 30-day window).
+  db.prepare("UPDATE lane_pilot_jev_receipt SET outcome=NULL, outcome_at=NULL WHERE judgment='critique.worth' AND subject='worth-check' AND outcome='disagree:outcome'").run();
   const groups: Array<[string, OutcomeLabel[]]> = [
     ["critique.screen", labelCritiqueScreen(db, now)],
     ["critique.worth", labelCritiqueWorth(db, now)],

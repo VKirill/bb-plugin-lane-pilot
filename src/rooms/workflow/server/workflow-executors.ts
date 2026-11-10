@@ -177,6 +177,16 @@ function machineStarted(engine: WorkflowEngine, runId: string): boolean {
   return false;
 }
 
+/** Whether the run (or the run it is a subworkflow of) is work the lead handed over: intake key `intake:<pm thread>:lead:<road>`. */
+function leadHanded(engine: WorkflowEngine, runId: string): boolean {
+  let row = engine.journal.getRun(runId);
+  for (let hop = 0; row && hop < 8; hop += 1) {
+    if (/^intake:[^:]+:lead:/.test(row.idem_key ?? "")) return true;
+    row = row.parent_run_id ? engine.journal.getRun(row.parent_run_id) : undefined;
+  }
+  return false;
+}
+
 // ---------------------------------------------------------------- code tasks of a chain
 
 const TERMINAL_ATTEMPT = ["accepted", "blocked", "canceled"];
@@ -291,7 +301,8 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       // The decision's own fields also sit at the top level of the output, so an artifact consumer or a `when` edge can
       // read them directly (goal-screen.goals) while `value` keeps the whole object for a nested read.
       const flat = (decision: unknown) => (decision && typeof decision === "object" && !Array.isArray(decision) ? decision as Record<string, unknown> : {});
-      const verdict = await instance.judge(judgment, state, { projectId: rt?.projectId ?? null, runId: rt?.runId ?? null, subject: node.id, settings });
+      // In a task's own pipeline the receipt names the task: the nightly labels find a task's fate by run and subject.
+      const verdict = await instance.judge(judgment, state, { projectId: rt?.projectId ?? null, runId: rt?.runId ?? null, subject: typeof task?.["id"] === "string" && task["id"] ? task["id"] : node.id, settings });
       const handoff = (decision: unknown) => (decision && typeof decision === "object" ? judgment.describe(decision) : "escalated");
       // `receiptId` and `would` let a later step label the receipt with what really happened (`jev().outcome`): `would` is the
       // decision Jev gave or, in shadow, would have given — the fallback that actually applied is in `decision`. A graph that
@@ -527,7 +538,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       // A reentrant dispatch keeps its stored plan, including the legacy format: changing its hash would defeat duplicate detection.
       const plan = getTaskPlan(db, valid.task.id) ?? (valid.task.files?.length ? [valid.task.objective, "Planned changes:", ...valid.task.files.map((file, index) =>
         `${index + 1}. ${file.action} ${file.path}${file.target ? ` (${file.target})` : ""}: ${file.change}`)].join("\n\n") : valid.task.objective);
-      const reply = await services.dispatchWriter({ threadId: rt.pmThreadId, projectId: rt.projectId, task: valid.task, plan, birth: "workflow", criticCodeDefault: shortPathCriticDefault(c.workflow.id, picked.mode) });
+      const reply = await services.dispatchWriter({ threadId: rt.pmThreadId, projectId: rt.projectId, task: valid.task, plan, birth: leadHanded(engine, c.runId) ? "lead" : "workflow", criticCodeDefault: shortPathCriticDefault(c.workflow.id, picked.mode) });
       if (reply.state === "rejected" || reply.ok === false) return { output: failedTask("blocked", String(reply.reason ?? reply.hint ?? "the dispatch was rejected")) };
       const taskId = str(reply.taskId) || valid.task.id;
       // chains-end: an attempt whose row is lost (task deleted, base wiped) would wait forever; the wait gets a

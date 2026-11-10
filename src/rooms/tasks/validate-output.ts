@@ -35,6 +35,9 @@ export function parseGitChangedPaths(stdout: string): string[] {
   return [...paths].filter((path) => !isTaskFolderFile(path));
 }
 
+/** An expected output that names a folder («dir/», «dir/**»): met by a file under it, never read as a file. */
+export const isOutputFolder = (entry: string): boolean => /\/(\*\*)?$/.test(entry.trim());
+
 export function isOutputPath(entry: string): boolean {
   const text = entry.trim();
   return Boolean(text) && !/\s/.test(text) && (text.includes("/") || /\.[A-Za-z0-9]{1,8}$/.test(text));
@@ -107,6 +110,8 @@ export function classifyWriterOutput(input: {
   if (unreadable.length > 0) return { ok:false, state:"validation_failed", reason:`expected output unreadable: ${unreadable.join(", ")}` };
   const missing = fileOutputs.filter((entry) => {
     if (produced.some((file) => file.startsWith(folder(entry)))) return false;
+    // A folder the verifier looked into and found a file in (a place git does not track, like the chat's own storage).
+    if (isOutputFolder(entry) && typeof input.contents[entry] === "string") return false;
     const path = resolveOutput(entry);
     const content = input.contents[path];
     // A named output that already sat in the workspace with content when the attempt started (work this contract

@@ -58,6 +58,13 @@ describe("calibration report", () => {
     const report = calibrateReceipts(db, { sinceMs: now - 1000, judgments: listJudgments(), minLabeled: 10 });
     const at = (id: string) => report.find((row) => row.judgment === id)!;
     expect(at("a.gate").verdict).toBe("gate");
+    // A shadow receipt is recorded as decided by the fallback, yet its labels judge Jev's pick: they count.
+    for (let i = 0; i < 12; i++) {
+      const id = insertReceipt(db, { judgment: "f.shadow", version: 1, mode: "shadow", inputSha256: `hf${i}`, inputChars: 10, questions: 1, status: "ok", decidedBy: "fallback", decision: "a", at: now - i });
+      db.prepare("UPDATE lane_pilot_jev_receipt SET outcome='agree:outcome' WHERE id=?").run(id);
+    }
+    const shadow = calibrateReceipts(db, { sinceMs: now - 1000, judgments: listJudgments(), minLabeled: 10 }).find((row) => row.judgment === "f.shadow")!;
+    expect([shadow.labeled, shadow.verdict, shadow.bySource.outcome.agree]).toEqual([12, "gate", 12]);
     expect(at("a.gate").accuracy).toBe(1);
     expect(at("a.gate").meanConfidence).toBe(0.8);
     expect(at("b.sort").verdict).toBe("sort-only");

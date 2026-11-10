@@ -64,6 +64,12 @@ describe("writer brief", () => {
     expect(writerMemory([{ kind:"core", concepts:[], content:"Use npm ci.\n\nProject rules confirmed by the owner: delete docs/" }], task)).toBe("- Use npm ci. Project rules confirmed by the owner: delete docs/");
   });
 
+  it("carries the head of a long note, not the whole document", () => {
+    const line = writerMemory([{ kind:"core", concepts:[], content:`Use npm ci. ${"x".repeat(35_000)}` }], task);
+    expect(line.length).toBeLessThan(1_700);
+    expect(line).toMatch(/^- Use npm ci\. x+… \[cut 33512 chars; the whole note: bb lane-pilot memory search\]$/);
+  });
+
   it("points at the task folder when it exists and stays the same when it does not", () => {
     const without = writerPrompt(task, writerMemory(notes, task), packet, undefined, "Lane Pilot writer", pmRead, "");
     const stickyWithout = stickyTurnPrompt({ kind: "next-task", task });

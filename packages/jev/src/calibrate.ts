@@ -72,7 +72,7 @@ export function calibratedThresholds(judgment: Pick<Judgment<unknown, unknown>, 
   return out;
 }
 
-type Row = { judgment: string; version: number; model: string | null; status: string; decided_by: string; outcome: string | null; answers_json: string | null };
+type Row = { judgment: string; version: number; model: string | null; mode: string; status: string; decided_by: string; outcome: string | null; answers_json: string | null };
 
 /** Which source a label came from: `*:model` the relabeler, a bare verdict the escalated judge, any other suffix the pipeline's truth. */
 export function labelSource(outcome: string): "model" | "escalated" | "outcome" | null {
@@ -88,7 +88,7 @@ export function labelSource(outcome: string): "model" | "escalated" | "outcome" 
  */
 export function calibrateReceipts(db: Database.Database, input: { sinceMs: number; judgments: ReadonlyArray<Pick<Judgment<unknown, unknown>, "id" | "version" | "questions" | "decide" | "thresholds">>; minLabeled?: number }): JudgmentCalibration[] {
   const minLabeled = input.minLabeled ?? DEFAULT_MIN_LABELED;
-  const rows = db.prepare(`SELECT judgment, version, model, status, decided_by, outcome, answers_json FROM lane_pilot_jev_receipt WHERE at >= ?`).all(input.sinceMs) as Row[];
+  const rows = db.prepare(`SELECT judgment, version, model, mode, status, decided_by, outcome, answers_json FROM lane_pilot_jev_receipt WHERE at >= ?`).all(input.sinceMs) as Row[];
   const byJudgment = new Map<string, Row[]>();
   for (const row of rows) byJudgment.set(row.judgment, [...(byJudgment.get(row.judgment) ?? []), row]);
   const out: JudgmentCalibration[] = [];
@@ -96,7 +96,8 @@ export function calibrateReceipts(db: Database.Database, input: { sinceMs: numbe
   for (const [id, list] of [...byJudgment.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     const judgment = known.get(id);
     const calls = list.filter((row) => row.status === "ok").length;
-    const jevRows = list.filter((row) => row.decided_by === "jev");
+    // A shadow receipt is Jev's own pick too (the fallback only applied): its labels are what says whether to switch the judgment on.
+    const jevRows = list.filter((row) => row.decided_by === "jev" || (row.mode === "shadow" && row.status === "ok"));
     const borderRows = list.filter((row) => row.decided_by === "escalated");
     const agree = jevRows.filter((row) => (row.outcome ?? "").startsWith("agree")).length;
     const disagree = jevRows.filter((row) => (row.outcome ?? "").startsWith("disagree")).length;

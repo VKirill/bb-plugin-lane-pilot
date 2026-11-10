@@ -173,6 +173,14 @@ it("tasks of the run it left tell no one: a result of the closed run is not sent
   expect(listUnreportedTaskOutcomes(db, 0)).toEqual([]);
 });
 
+it("a task of work the lead handed over tells no PM chat: the chat it runs under did not start it", async () => {
+  const { db, runId } = await pmChat("thr_pm");
+  createTask(db, { id: "mine", runId, kind: "bb", contract: {} });
+  createTask(db, { id: "handed", runId, kind: "bb", contract: {}, birth: "lead" });
+  for (const id of ["mine", "handed"]) { createAttempt(db, { id: `a-${id}`, runId, taskId: id }); transitionAttempt(db, `a-${id}`, "canceled", { reason: "x" } as never); }
+  expect(listUnreportedTaskOutcomes(db, 0).map((row) => row.taskId)).toEqual(["mine"]);
+});
+
 it("a PM chat whose writers are at work refuses the move to a specialist, and to off, and changes nothing", async () => {
   const { t, db, runId } = await pmChat("thr_pm");
   createTask(db, { id: "t1", runId, kind: "bb", contract: {} });

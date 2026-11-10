@@ -40,8 +40,12 @@ export function writerMemory(notes:readonly MemoryNote[], task:Pick<TaskV2, "own
 
 /** One bullet per note, on one line, without the wrapper tags of the block it goes into: a note cannot close the block or forge a heading. */
 export function memoryLine(note:Pick<MemoryNote, "content">):string {
-  return `- ${note.content.replace(/<\/?project_memory>/gi, "").replace(/\s+/g, " ").trim()}`;
+  const text = note.content.replace(/<\/?project_memory>/gi, "").replace(/\s+/g, " ").trim();
+  // A brief carries the head of a long note, not a document: one 35,000-character note once made a writer brief five times its size.
+  return `- ${text.length > MEMORY_LINE_CHARS ? `${text.slice(0, MEMORY_LINE_CHARS)}… [cut ${text.length - MEMORY_LINE_CHARS} chars; the whole note: bb lane-pilot memory search]` : text}`;
 }
+/** The most of one note a brief line carries; 82 % of the hub's notes are shorter. */
+export const MEMORY_LINE_CHARS = 1_500;
 
 const REVIEW_LIMIT = 5;
 /** A core convention this young goes before the proven ones: by usefulness alone a new one never reached a reviewer (it gains use only by being there). */

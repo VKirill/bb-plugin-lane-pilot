@@ -94,7 +94,9 @@ describe("what the PM reads before it promises a date", () => {
     insertDeferral(db, row({ id: "dfr_000000000002", what: "stale open row", dueAt: NOW - 2 * DAY, state: "open" }));
     insertDeferral(db, row({ id: "dfr_000000000003", what: "later", dueAt: NOW + 5 * DAY, projectId: "P" }));
     insertDeferral(db, row({ id: "dfr_000000000004", what: "other project", dueAt: NOW - DAY, projectId: "Q", state: "overdue" }));
-    insertDeferral(db, row({ id: "dfr_000000000005", what: "no term", state: "needs_owner_term" }));
+    insertDeferral(db, row({ id: "dfr_000000000005", what: "no term", state: "needs_owner_term", projectId: "P" }));
+    // The plugin's own entry with no term (a seed) is no project's matter: it is not in the PM's message.
+    insertDeferral(db, row({ id: "dfr_000000000007", what: "plugin seed", state: "needs_owner_term" }));
     insertDeferral(db, row({ id: "dfr_000000000006", what: "done", dueAt: NOW - DAY, state: "closed" }));
     const text = pmDeferralLines(db, "P", NOW).join("\n");
     expect(text).toContain("- overdue 2:");
@@ -105,7 +107,7 @@ describe("what the PM reads before it promises a date", () => {
     // An entry with no term from the owner is told apart: open, no term, and it counts as unproven in the project's acceptance.
     expect(text).toContain("- open, no term 1: no term (dfr_000000000005, term none)");
     expect(text).toContain("counts as unproven in this project's phase acceptance");
-    expect(text).not.toMatch(/other project|done/);
+    expect(text).not.toMatch(/other project|done|plugin seed/);
     expect(pmDeferralLines(db, "R", NOW).join("\n")).toContain("overdue 2");
     expect(pmDeferralLines(database(), "P", NOW)).toEqual([]);
   });

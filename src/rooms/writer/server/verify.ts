@@ -1,7 +1,7 @@
 import { SETTING_WORKER_STRICT_USER, SETTING_WORKER_USER, bookkeepingSetting, filterOwnershipNoise } from "@lane-pilot/settings-catalog";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { isAbsolute, relative, resolve } from "node:path";
-import { acceptanceArtifactDir, bbWriterReportMarkdown, buildAcceptanceV2, buildRunExecutionProfile, buildRunPolicy, classifyWriterOutput, isOutputPath, mapBounded, sha256, trustedToolingHint, validateAcceptanceV2 } from "../../tasks";
+import { acceptanceArtifactDir, bbWriterReportMarkdown, buildAcceptanceV2, buildRunExecutionProfile, buildRunPolicy, classifyWriterOutput, isOutputFolder, isOutputPath, mapBounded, sha256, trustedToolingHint, validateAcceptanceV2 } from "../../tasks";
 import { attemptProduced } from "../cli-outcome";
 import { taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
@@ -499,6 +499,14 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     for (const rel of new Set([...input.task.expected_outputs.filter(isOutputPath), ...produced])) {
       const absolute = rel.startsWith("/") ? rel : `${input.task.project_cwd}/${rel}`;
       let content: string | null | undefined;
+      // A folder («…/scripts-snapshot/», «…/out/**») is not a file to read: it is there when a file is under it. Read as a file it came
+      // back «unreadable» and a finished writer was blocked on it three times (aura-lab w3d13f9ae-T1, 2026-11-10).
+      if (isOutputFolder(rel)) {
+        const dir = absolute.replace(/\/\*\*$/, "");
+        const probe = await bestEffort(ctx.log, "verification folder probe", runOnHost(host, { hostId:input.config.hostId, cwd:input.task.project_cwd, command:`find '${dir.replace(/'/g, `'\\''`)}' -type f -print -quit`, timeoutSec:15 }), null);
+        contents[rel] = !probe ? undefined : probe.exitCode === 0 && probe.stdout.trim() ? "" : null;
+        continue;
+      }
       try {
         const read = await orMiss(bb.sdk.files.read({
           hostId:input.config.hostId,

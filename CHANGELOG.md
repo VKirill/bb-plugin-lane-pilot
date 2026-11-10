@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.512
+
+- **Work the lead handed over does not wake the project's PM chat.** The owner, November 10: the Aura Lab chat had been idle for more than 15 hours and got «Lane Pilot: results of your tasks». The task was not that chat's: a «да» to the lead's proposal «Навык для: aura lab неделя пересчёт» started `issue-full` under the project's latest PM chat, and the per-task result of its writer was pushed there. The end of such a run already went back to the lead's road since November 3 (`leadRoadOf`, 1085d647); its tasks did not. A task of a lead hand-over is born `lead` (a seventh birth kind), and `listUnreportedTaskOutcomes` leaves it out: its fate reaches the lead through the run's end, as before.
+- **A folder named as an expected output is looked into, not read as a file.** That task was blocked three times in 49 minutes with «expected output unreadable: …/scripts-snapshot/»: the folder sat in the chat's own storage, which git does not track, so no changed file was found under it and the read of a folder failed. The verifier now asks the host whether a file is under the folder (`isOutputFolder`); a file there meets the output, an empty or absent folder is missing, a failed look stays unknown.
+- **A PM's result message carries its project's deferrals, not the plugin's own.** The same message listed «open, no term 25: tests/sma/*.test.ts…»: the plugin's seeded skips have no project and rode every result message of every project, with a line saying they count in «this project's phase acceptance» (they never did: `noTermDeferralsOf`). A global entry with no term is left out; a global entry with a term still shows.
+- **One long memory note no longer fills a writer brief.** In the week to November 10, 29 of 687 briefs were over 30,000 characters: a single note of 11,000–35,000 characters rode whole (259 of the hub's 1,449 notes are over 1,500). A brief line carries the first 1,500 characters of a note and says how many were cut (`MEMORY_LINE_CHARS`).
+- **A shadow judge's labels are counted, and `critique.worth` names its task.** `bb lane-pilot jev calibrate` showed 0 labels for every judgment in shadow: it counted only receipts «decided by Jev», and a shadow receipt is recorded as decided by the fallback. 1,096 labels of `critique.worth` and 773 of `plan.fact` were invisible to the report that decides whether to switch them on. Shadow receipts count. A judgment step of a task's pipeline wrote its step name as the receipt's subject, so the nightly labels looked for a task called «worth-check», found none and labelled 887 receipts «disagree»; the subject is the task's id now, a subject that is no task gets no label, and those 887 labels are taken back.
+
+Re-measured on the hub, November 10 (the checks due November 7–9):
+- Acceptance as one claim (0.1.474): items over 400 characters 57 of 996 → 15 of 1,594; over 600: 9 → 1; average item 178 → 146 characters; first-attempt acceptance 34 % → 53 % (300 of 565 tasks). The norm holds.
+- `critique.worth` stays in shadow: of 9 «skip the plan critic» verdicts with the critic's real answer, 2 fell on plans the critic blocked.
+- `errand.kind` wrote no receipt in nine days: the PM named the kind itself in all 218 errands, so the judgment was never asked. Nothing to switch.
+
 ## 0.1.511
 
 - **A change of model is not an attempt.** The owner, November 10: «if the model is unavailable the spare one must work, and a change of model is not an attempt». On the hub it was one: in 14 days 77 tasks ended «retry limit 2 exhausted» on a reason that was the provider's — 47 «writer thread status error», 27 «writer_model_unavailable:devin/…», 3 «writer_service_tier_unavailable». Three rules changed.

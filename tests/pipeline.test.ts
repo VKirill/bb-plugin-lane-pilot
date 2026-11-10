@@ -269,6 +269,13 @@ describe("writer output validation", () => {
     expect(classified.ok).toBe(false);
     if (!classified.ok) expect(classified.reason).toMatch(/false/);
   });
+  it("a folder named as an expected output is met by a file found under it, missing when empty, unknown when the look failed", () => {
+    const folderTask = { ...task, verify:"none" as const, verification:[], owns_paths:[".bb/out/**"], expected_outputs:[".bb/out/SKILL.md", ".bb/out/scripts/"] };
+    const check = (folder: string | null | undefined) => classifyWriterOutput({ task:folderTask, produced:[".bb/out/SKILL.md"], contents:{ ".bb/out/SKILL.md":"# skill\n", ".bb/out/scripts/":folder } });
+    expect(check("")).toEqual({ ok:true });
+    expect(check(undefined)).toMatchObject({ ok:false, reason:"expected output unreadable: .bb/out/scripts/" });
+    expect(check(null)).toMatchObject({ ok:false });
+  });
   it("fails a dirty path outside owns_paths", () => {
     const classified = classifyWriterOutput({
       task,

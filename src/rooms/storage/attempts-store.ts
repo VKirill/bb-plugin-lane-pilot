@@ -195,6 +195,7 @@ export function listUnreportedTaskOutcomes(db: LanePilotDatabase, since: number)
     JOIN lane_pilot_attempt_transition t ON t.rowid=(SELECT t2.rowid FROM lane_pilot_attempt_transition t2
       WHERE t2.attempt_id=a.id AND t2.refused=0 AND t2.to_state=a.state ORDER BY t2.at DESC, t2.rowid DESC LIMIT 1)
     WHERE a.state IN ('accepted','blocked','canceled') AND r.pm_thread_id IS NOT NULL AND r.closed_at IS NULL AND a.updated_at>=? AND t.at>=?
+      AND NOT EXISTS (SELECT 1 FROM lane_pilot_task k WHERE k.run_id=a.run_id AND k.id=a.task_id AND k.birth='lead')
       AND a.attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)
       AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt c JOIN lane_pilot_run rc ON rc.id=c.run_id
         WHERE rc.project_id=r.project_id AND c.created_at>=a.created_at AND substr(c.task_id,1,length(a.task_id)+1)=a.task_id || '.')
