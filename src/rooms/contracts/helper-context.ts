@@ -108,7 +108,8 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "plan-critic": ONE_SHOT,
   "code-critic": READER,
   "specialist-reviewer": READER,
-  "gate-triage": READER,
+  // It judges check counters from its message (NO_TOOLS_LINE); 0 of 12 threads called the code graph in the week to 2026-11-10.
+  "gate-triage": ONE_SHOT,
   "pm-reader": ONE_SHOT,
   "docs-maintainer": { bbPlugins: [], skills: ["docs-maintain", "docs-methodology"], mcpServers: ["gitnexus"] },
   "onboarder": { bbPlugins: [], skills: ["project-life"], mcpServers: ["gitnexus"] },
@@ -123,9 +124,12 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "api-recon": { bbPlugins: ["browser-automation", "env-catalog"], skills: ["browser-automation", "env-catalog"], mcpServers: [] },
   // The thin roles of the workflow chains (W3): read the repository and answer in a typed message, nothing else. A chain node may
   // name more skills for one step; the owner changes a role here like any other (Agent access).
-  "analyst": READER,
-  "planner": READER,
-  "auditor": READER,
+  // Measured on the hub, the week to 2026-11-10: the code graph was called by 1 of 54 analyst threads, 0 of 27 auditor and 0 of 9 planner
+  // threads (most graph steps are not about code). They read the checkout with the provider's own file tools, like the plan critic;
+  // a node that needs the graph names it (`mcp` on the node), and the owner can give it back to a role (Agent access).
+  "analyst": ONE_SHOT,
+  "planner": ONE_SHOT,
+  "auditor": ONE_SHOT,
   "debugger": READER,
   "council-seat": { bbPlugins: [], skills: [], mcpServers: [] },
   "rules-analyzer": { bbPlugins: [], skills: [], mcpServers: [] },

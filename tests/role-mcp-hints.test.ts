@@ -19,13 +19,17 @@ describe("role MCP server configurations", () => {
     const gitnexusRoles: HelperRole[] = [
       "code-critic",
       "specialist-reviewer",
-      "gate-triage",
       "docs-maintainer",
       "onboarder",
       "project-life",
     ];
     for (const role of gitnexusRoles) {
       expect(ROLE_PROFILES[role].mcpServers, `Role ${role} should have gitnexus`).toEqual(["gitnexus"]);
+    }
+
+    // Roles that did not call the code graph in a measured week carry no MCP server (hub, the week to 2026-11-10).
+    for (const role of ["gate-triage", "analyst", "planner", "auditor", "plan-critic", "pm-reader"] as HelperRole[]) {
+      expect(ROLE_PROFILES[role].mcpServers, `Role ${role} carries no MCP server`).toEqual([]);
     }
 
     // 3. specialist:design-lead gets metamcp

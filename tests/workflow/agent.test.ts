@@ -88,10 +88,10 @@ describe("roles of a chain", () => {
     expect(roleSpec("project-life").editable("CHANGELOG.md")).toBe(true);
   });
 
-  it("the thin profiles exist and are read-only: no plugin, no skill, only the code graph", () => {
+  it("the thin profiles exist and are read-only: no plugin, no skill; only the debugger keeps the code graph", () => {
     for (const role of ["analyst", "planner", "auditor", "debugger"] as const) {
       expect(HELPER_ROLES).toContain(role);
-      expect(ROLE_PROFILES[role]).toEqual({ bbPlugins: [], skills: [], mcpServers: ["gitnexus"] });
+      expect(ROLE_PROFILES[role]).toEqual({ bbPlugins: [], skills: [], mcpServers: role === "debugger" ? ["gitnexus"] : [] });
     }
   });
 

@@ -9,7 +9,8 @@ import { pmReadPrompt } from "../../src/rooms/critique/pm-read";
 import { roleSpec } from "../../src/rooms/workflow/server/workflow-agent";
 
 // Batch C of review 2: the one-shot readers answer from the message and carry no MCP schema (the code-graph tools cost ~8k tokens a turn).
-const ONE_SHOT: HelperRole[] = ["plan-critic", "pm-reader"];
+// 0.1.501: gate triage and the thin chain roles joined them by measurement (the code graph was called by 1 of 102 of their threads in a week).
+const ONE_SHOT: HelperRole[] = ["plan-critic", "pm-reader", "gate-triage", "analyst", "planner", "auditor"];
 const snapshot = { schemaVersion: 1 as const, mode: "roles" as const, settings: { mode: "roles" as const, skills: [], mcpServers: [], bbPlugins: [], nativePlugins: [] }, parentRequired: false, parentPolicy: null, policy: null };
 const bound = (role: HelperRole, providerId: string, roleAccess?: Record<string, unknown>) => {
   const b = requiredSessionPolicySpawnBinding({
@@ -39,8 +40,8 @@ describe("one-shot readers load no MCP server beyond the mandatory one", () => {
     expect(roleSpec("plan-critic").helper).toBe("plan-critic");
   });
 
-  it("other readers keep the code graph: the code critic, reviewers, triage and the thin chain roles", () => {
-    const keep: HelperRole[] = ["code-critic", "specialist-reviewer", "gate-triage", "analyst", "planner", "auditor", "debugger"];
+  it("other readers keep the code graph: the code critic, the specialist reviewer and the debugger", () => {
+    const keep: HelperRole[] = ["code-critic", "specialist-reviewer", "debugger"];
     for (const role of keep) expect(ROLE_PROFILES[role].mcpServers, role).toEqual(["gitnexus"]);
     expect(bound("code-critic", "codex").mcpServers?.names).toEqual(["bb-bridge", "gitnexus"]);
     // The profile never takes away reading files: that is the provider's own tool, not an MCP server.
