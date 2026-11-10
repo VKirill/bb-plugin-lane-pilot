@@ -13,6 +13,11 @@ import { coverageRows, untermedGaps } from "../../src/rooms/coverage/model";
 import { runCoverageCli } from "../../src/rooms/coverage/cli";
 import { instructionForms } from "../../src/rooms/project-life/instruction-forms";
 import { mergeFrontmatter, parseFrontmatter, setFrontmatter } from "../../src/rooms/docs/docs-lint";
+import { ownerWaitingRpc } from "../../src/rooms/owner-waiting/server/rpc";
+import { postOwnerItem } from "../../src/rooms/owner-waiting";
+import { savePushConfig } from "../../src/rooms/owner-waiting/push";
+import { saveProjectSetting } from "../../src/rooms/storage";
+import { EVENT_FIELDS } from "../../src/rooms/relay/server/outbound";
 import { BB_AGENT_SESSIONS } from "../../src/rooms/native-agent/native-agent-overlay";
 
 const DAY = 86_400_000;
@@ -144,5 +149,38 @@ describe("pool readiness and the green word (parity d10-rest-1)", () => {
     const fresh = setFrontmatter("no header here\n", { k: "v" });
     expect(parseFrontmatter(fresh)!.data.k).toBe("v");
     expect(parseFrontmatter(fresh)!.body).toBe("no header here\n");
+  });
+
+  it("[sma:k_lib_notify] an unset webhook posts nothing; a named one gets owner.waiting per new wake key and one pulse, each with the nine fields", async () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    savePushConfig(db, { enabled: "on", quiet: "00:00-00:00" });
+    saveProjectSetting(db, "proj", "events.webhook_url", "https://hook.example/x");
+    postOwnerItem(db, { key: "night:w1", source: "night", kind: "wall", projectId: "proj", what: "Wall stuck", why: "The loop stopped", wake: true }, Date.now());
+    const posts: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: unknown, init: { body?: string }) => { posts.push({ url: String(url), body: JSON.parse(init.body ?? "{}") }); return { ok: true } as never; }) as never;
+    try {
+      const rpc = ownerWaitingRpc(db);
+      // First pass: one owner.waiting for the new key and one pulse.
+      const digest = await rpc.owner_waiting_digest();
+      // A pass over acknowledged keys posts nothing more for them.
+      await rpc.owner_waiting_ack({ keys: digest.keys });
+      await rpc.owner_waiting_digest();
+    } finally { globalThis.fetch = realFetch; }
+    const waiting = posts.filter((post) => post.body.event === "owner.waiting");
+    expect(waiting).toHaveLength(1);
+    expect(Object.keys(waiting[0]!.body).sort()).toEqual([...EVENT_FIELDS].sort());
+    expect(waiting[0]!.body).toMatchObject({ projectId: "proj", title: "Wall stuck", kind: "wall", state: "waiting" });
+    expect(posts.filter((post) => post.body.event === "pulse")).toHaveLength(1);
+    // With no webhook the pass is silent.
+    const { bb: bb2 } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db2 = openDatabase(bb2);
+    savePushConfig(db2, { enabled: "on", quiet: "00:00-00:00" });
+    postOwnerItem(db2, { key: "night:w2", source: "night", kind: "wall", projectId: "proj", what: "No hook", why: "silent", wake: true }, Date.now());
+    const posts2: unknown[] = [];
+    globalThis.fetch = (async () => { posts2.push(1); return { ok: true } as never; }) as never;
+    try { await ownerWaitingRpc(db2).owner_waiting_digest(); } finally { globalThis.fetch = realFetch; }
+    expect(posts2).toHaveLength(0);
   });
 });
