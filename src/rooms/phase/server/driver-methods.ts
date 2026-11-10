@@ -6,7 +6,7 @@ import { latestRunForPmThread, listOpenAttempts } from "../../storage";
 import { isWholeConsent, ownerWordsOn } from "../../tasks";
 import type { DrawingCritique } from "@lane-pilot/contracts";
 import { sha256Hex } from "@lane-pilot/kit";
-import { PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceKey, checkerIndependence, contextSignature, designDecision, designGate, discussionGate, executionGate, phaseFolder, planGate, planGate as planGateOf, planSignature, staleAfterReturn } from "../logic";
+import { PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceKey, checkerIndependence, contextSignature, designDecision, designGate, discussionGate, executionGate, phaseFolder, planGate, planGate as planGateOf, planSignature, staleAfterReturn, wordKeyOf } from "../logic";
 import { archiveDrawing, uatState } from "../stages";
 import { sendServiceMessage } from "../../relay/server";
 import { insertPhase, listParts, listPhases, savePhase } from "../store";
@@ -301,11 +301,16 @@ export function installMethods(tools: MethodsTools) {
         if (!state || !state.lines || state.open.length || state.failed.length) throw new PhaseRefusal(`UAT is not complete: ${!state ? "no UAT.md" : `${state.open.length} open, ${state.failed.length} failed of ${state.lines}`} — the owner marks each line in ${path ?? "UAT.md"} first`);
       }
     }
+    // A yes at planning, design or issue signs what was shown (the plan, the drawing) under its key, like the acceptance's
+    // (sma as_launchable): what changes after the word launches nothing on it.
+    const consentKey = input.turn !== "acceptance" && input.decision === "yes" ? wordKeyOf(phase.record, input.turn) : null;
     const record: PhaseRecord = { ...phase.record, words: [...(phase.record.words ?? []), { turn: input.turn, decision: input.decision, by: input.by ?? "owner", text: input.text.slice(0, 2000), at: now(), ...(input.wave !== undefined ? { wave: input.wave } : {}),
       // SMA pc_contract: the version this word signs, so a new version of the context, the plan or the drawing cannot pass on it.
       ...(input.turn === "context" && phase.record.context ? { sha: phase.record.context.sha } : {}),
       ...(input.turn === "planning" && phase.record.plan ? { sha: phase.record.plan.sha, key: phase.record.plan.sha } : {}),
       ...(input.turn === "design" ? { ...(phase.record.design?.drawing ? { sha: phase.record.design.drawing.sha256 } : {}), key: drawingSha ?? undefined } : {}),
+      // The issue yes signs the plan it launches (sma as_launchable).
+      ...(input.turn === "issue" && consentKey ? { key: consentKey } : {}),
       ...(input.turn === "acceptance" ? { useful: input.useful === true, limits: input.limits === true, key: shownKey } : {}) }] };
     reactions.answerPhaseWord(phase.id, input.turn, input.wave, input.decision, input.text, input.by ?? "owner");
     reactions.closeOwnerItem(phaseWordItemKey(phase.id, input.turn, input.wave), input.by ?? "owner");

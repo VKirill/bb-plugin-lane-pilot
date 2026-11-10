@@ -202,12 +202,15 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
   registerObservedTool(bb.agents, {
     name:"lane_pilot_update_task",
     description:"Update the contract or plan of a task in place under the same id: a queued task that has not started yet, or a blocked task whose writer stopped with a question.",
-    instructions:"Use only from a Lane Pilot PM thread to correct a task. A queued task, or one blocked by the plan critique or validation before any writer, keeps its id, queue position and depends_on edges, gets a rewritten PLAN.md, and reruns pm-read and plan critique; no attempt is spent. A blocked task whose writer stopped with a needs_human question: send the whole task with the corrected verification, acceptance, expected_outputs, owns_paths or never_touch (and plan); the same attempt reopens in the same writer thread and worktree, no attempt is charged, and the writer gets a turn naming each changed field with its old and new value. Any other field of a blocked task (id, objective, project_cwd, area, depends_on, ...) returns redispatch_required: cancel the task and dispatch it again. A running task returns task_started and is not changed. With satisfied:true (no task or plan) a BLOCKED task whose work you verified yourself counts as done for the tasks that depend on it, so they start without a dummy follow-up task; the task itself stays blocked in the record.",
+    instructions:"Use only from a Lane Pilot PM thread to correct a task. A queued task, or one blocked by the plan critique or validation before any writer, keeps its id, queue position and depends_on edges, gets a rewritten PLAN.md, and reruns pm-read and plan critique; no attempt is spent. A blocked task whose writer stopped with a needs_human question: send the whole task with the corrected verification, acceptance, expected_outputs, owns_paths or never_touch (and plan); the same attempt reopens in the same writer thread and worktree, no attempt is charged, and the writer gets a turn naming each changed field with its old and new value. Any other field of a blocked task (id, objective, project_cwd, area, depends_on, ...) returns redispatch_required: cancel the task and dispatch it again. A running task returns task_started for contract changes but takes a bare note (see note/when). With satisfied:true (no task or plan) a BLOCKED task whose work you verified yourself counts as done for the tasks that depend on it, so they start without a dummy follow-up task; the task itself stays blocked in the record.",
     parameters:z.object({
       taskId:z.string().min(1),
       task:taskV2Schema.optional(),
       plan:z.string().min(1).optional(),
       satisfied:z.boolean().optional(),
+      note:z.string().min(1).max(4000).optional().describe("A word for a running writer: now steers the live turn, next_turn queues, task rides the next attempt."),
+      when:z.enum(["now","next_turn","task"]).optional(),
+      allowTestEdits:z.literal(true).optional().describe("On a test_edit_hold block: allows the recorded edits and finishes the hand-in."),
     }).strict(),
     execute: async (params, context) => {
       const runId = await requirePmThreadRun(bb, context);
@@ -220,6 +223,9 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
           task:params.task,
           plan:params.plan,
           satisfied:params.satisfied,
+          note:params.note,
+          when:params.when,
+          allowTestEdits:params.allowTestEdits,
         }),
         null,
         2,

@@ -64,3 +64,31 @@ export function testFitFindings(files: readonly TestFitFile[], declared: readonl
   }
   return hits;
 }
+
+/**
+ * One held or allowed reference-test edit, bound to the content it allowed (sma av_test_edit_hold): the same file edited
+ * again is a new edit and holds anew.
+ */
+export type TestEditHold = { path: string; afterSha256: string };
+type HoldKv = { get(key:string):Promise<unknown>; set(key:string, value:never):Promise<unknown> };
+
+/** Key prefix of the owner's list row of a held hand-in; the allowance closes it. */
+export const TEST_EDIT_HOLD_ITEM = "test-edit-hold:";
+export const testEditHoldKey = (attemptId:string) => `lp.test-edit-hold:${attemptId}`;
+export const testEditAllowKey = (attemptId:string) => `lp.test-edit-allow:${attemptId}`;
+
+async function readHoldList(kv:HoldKv, key:string):Promise<TestEditHold[]> {
+  const kept = await kv.get(key);
+  return Array.isArray(kept) ? kept.filter((row):row is TestEditHold => !!row && typeof row === "object" && typeof (row as TestEditHold).path === "string" && typeof (row as TestEditHold).afterSha256 === "string") : [];
+}
+
+/** What the attempt's last hand-in is held on: [{path, afterSha256}] of the edits the person has not allowed yet. */
+export const testEditHoldOf = (kv:HoldKv, attemptId:string) => readHoldList(kv, testEditHoldKey(attemptId));
+
+/** The edits a person allowed on this attempt: finish skips a hit only when path and content hash match one. */
+export const testEditAllowance = (kv:HoldKv, attemptId:string) => readHoldList(kv, testEditAllowKey(attemptId));
+
+/** Records an allowance for exactly the edits now held. */
+export async function allowTestEditsOf(kv:HoldKv, attemptId:string, edits:readonly TestEditHold[]):Promise<void> {
+  await kv.set(testEditAllowKey(attemptId), [...await testEditAllowance(kv, attemptId), ...edits] as never);
+}

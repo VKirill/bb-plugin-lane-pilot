@@ -556,4 +556,6 @@ export const migrations = [
   )`,
   `CREATE TRIGGER lane_pilot_task_contract_edition_no_update BEFORE UPDATE ON lane_pilot_task_contract_edition BEGIN SELECT RAISE(ABORT,'contract editions are append-only'); END`,
   `CREATE TRIGGER lane_pilot_task_contract_edition_no_delete BEFORE DELETE ON lane_pilot_task_contract_edition BEGIN SELECT RAISE(ABORT,'contract editions are append-only'); END`,
+  // The barrier's outcome on the attempt row itself (sma av_record): gate, status, why, tree and the verdict's summary.
+  `ALTER TABLE lane_pilot_attempt ADD COLUMN barrier_json TEXT`,
 ];

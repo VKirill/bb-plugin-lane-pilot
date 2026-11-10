@@ -30,7 +30,7 @@ import { coreHostsRequiredProvider, isTaskSatisfied } from "../../runs/server";
 import { walkWriterChain, waitingWriterReason, waitingWriterText, type ChainWalk } from "./writer-hold";
 import { noteUnsupportedProvider, noteWriterWait } from "./writer-wake";
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
-import { attemptFeedback, isWriterStreamError, previousAttemptBrief } from "./writer-task";
+import { attemptFeedback, isWriterStreamError, pendingWordTake, previousAttemptBrief } from "./writer-task";
 import { trimCheckLogsIn } from "../log-trim";
 import { stickyTurnPromptWithRules } from "./writer-knowledge";
 import { parseMemorySettings } from "../../memory";
@@ -1134,12 +1134,14 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             ? await bestEffort(ctx.log, "writer previous attempt events", listThreadEventsRaw(bb,{threadId:failedThreadId,order:"desc",limit:"50"}), null) : null;
           const prevEvents=listedPrev?.ok ? listedPrev.events as Parameters<typeof attemptFeedback>[1] : [];
           const prevFeedback=attemptFeedback(countAttempts(db,input.runId,input.taskId),prevEvents,prevBrief,true);
+          // A PM's word the running writer could not take rides this fresh thread's brief, once (sma as_redirect_deferred).
+          const pendingWord=await pendingWordTake(bb.storage.kv as never,input.runId,input.taskId).catch(()=>null);
           const spawned = await services.spawnWriterAttempt({
             projectId:input.projectId, runId:input.runId, taskId:input.taskId, attemptId,
             config:freshConfig, task:freshTask, plan:input.plan, pmThreadId:input.pmThreadId, pmReadContext, writerSettings:spawnSettings,
             retryIndex:Math.max(0,countAttempts(db,input.runId,input.taskId)-1),
             // A fresh writer starts from main: of the failures before it, the task's own is the one to avoid, not a provider's cut.
-            previousAttempt:roundSeed ? [prevFeedback, roundSeed].filter(Boolean).join("\n\n") : prevFeedback,
+            previousAttempt:[prevFeedback, roundSeed, pendingWord].filter(Boolean).join("\n\n"),
             ...(requested ? { emergency:{...requested, reason:"reassigned by the PM"} } : {}),
             ...(carried ? { continuation:carried } : {}),
           });

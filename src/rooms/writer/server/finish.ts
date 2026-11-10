@@ -18,13 +18,13 @@ import { candidatePatches, headSides, runCodeCritique } from "../../critique/ser
 import { fullAccessSpawn, setAsideOnStartFailure } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { closeWriterStages, recordGateEvaluation, recordStage } from "../../runs/server";
-import {bestEffort, fileAllowedByOwns, isNotFound, orMiss, outputText, stringAt} from "@lane-pilot/kit";
+import {bestEffort, fileAllowedByOwns, isNotFound, orMiss, outputText, sha256Hex, stringAt} from "@lane-pilot/kit";
 import { wasAnsweredByDefault } from "./question-default";
 import { appendTaskQa } from "./reopen-attempt";
 import {needsHumanQuestion, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines} from "./writer-task";
 import { isLiveDecision } from "../live-folder";
 import { conventionGateHits, type ConventionGate } from "../../session-hooks/logic";
-import { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, TEST_PATH, acceptanceArtifactDir, acceptanceProofGap, taskSizeOf, landingWordGap, landingWordAsked, ownerWordsMode, questionsFromFile, checkScriptEdits, recordTaskApproach, recordTaskQuestions, referenceTestEdits, shapeFlags, taskWordKey, testFitFindings, testOwnedImports, writerMarkers } from "../../tasks";
+import { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, TEST_PATH, acceptanceArtifactDir, acceptanceProofGap, taskSizeOf, landingWordGap, landingWordAsked, ownerWordsMode, questionsFromFile, checkScriptEdits, recordTaskApproach, recordTaskQuestions, referenceTestEdits, shapeFlags, taskWordKey, TEST_EDIT_HOLD_ITEM, testEditAllowance, testEditHoldKey, testFitFindings, testOwnedImports, writerMarkers } from "../../tasks";
 import type { TaskWord } from "../../tasks";
 import type { StageId } from "../../tasks";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, sleepUntilThreadSignal, startLimitWaiting, threadFailure, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -343,7 +343,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         // Asked again after the machine's default answer (question-timeout.ts): nobody is coming, the attempt ends and frees the task.
         const askedAgain = await wasAnsweredByDefault(bb.storage.kv as never, input.runId, input.taskId);
         const reason = askedAgain ? `verdict_block: question_unanswered: the writer asked again after the default answer. It asked: ${question}` : `needs_human: ${question}`;
-        recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"skipped",
+        recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"skipped",
           attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{reason:"needs_human"}});
         transitionAttempt(db, input.attemptId, "blocked", { reason });
         // The parked question is a file in the task folder, not only attempt.reason: a person, the next session or a
@@ -364,7 +364,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         dirtBefore:input.dirtBefore,
       });
       if (checked.status !== "accepted") {
-        recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+        recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
           attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:checked.status}});
         const stopped = endedByStop(checked.reason ?? checked.status);
         if (stopped) return stopped;
@@ -516,8 +516,9 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           });
           if (recritique.policy) frozenPolicy = recritique.policy;
           if (recritique.allowed) { keepAdvisory(recritique); review = recritique.review; approvedArtifact = evidence.artifactRevisionSha256; break; }
-          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
-            attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason:recritique.reason}});
+          recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+            attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason:recritique.reason},
+            tree:evidence.artifactRevisionSha256,verdict:recritique.parsed?{status:String(recritique.parsed.status),summary:String(recritique.parsed.summary??"")}:null});
           transitionAttempt(db, input.attemptId, "blocked", { reason:recritique.reason });
           return { status:"blocked", reason:recritique.reason, attemptId:input.attemptId, writerThreadId };
         }
@@ -527,7 +528,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         });
         if (inflight === "unknown") {
           const reason = "code_critique_repair_unknown";
-          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+          recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason}});
           transitionAttempt(db, input.attemptId, "blocked", { reason });
           return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
@@ -543,7 +544,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             attemptId:input.attemptId, dirtBefore:input.dirtBefore,
           });
           if (candidate.status !== "accepted") {
-            recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+            recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
               attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:candidate.status}});
             const stopped = endedByStop(candidate.reason ?? candidate.status, writerThreadId);
             if (stopped) return stopped;
@@ -563,7 +564,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         if (lastArtifact && evidence.artifactRevisionSha256 === lastArtifact && repairRound > 0
           && !(disputes && disputes.replies.some((row) => row.status === "disputed"))) {
           const reason = "code_critique_revision_unchanged";
-          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+          recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason}});
           transitionAttempt(db, input.attemptId, "blocked", { reason });
           return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
@@ -606,8 +607,9 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const parsed = critique.parsed;
         const critiqueSettings = frozenPolicy ? settingsFromFrozenPolicy(frozenPolicy) : critique.settings;
         if (!parsed || !critiqueSettings || !shouldRequestRepair({ settings:critiqueSettings, result:parsed, round:repairRound })) {
-          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
-            attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason:critique.reason}});
+          recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+            attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason:critique.reason},
+            tree:evidence.artifactRevisionSha256,verdict:parsed?{status:String(parsed.status),summary:String(parsed.summary??"")}:null});
           await archiveBarrierInput("blocked");
           transitionAttempt(db, input.attemptId, "blocked", { reason:critique.reason });
           return { status:"blocked", reason:critique.reason, attemptId:input.attemptId, writerThreadId };
@@ -615,7 +617,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const nextFindings = actionableFindings(parsed);
         if (previousFindings.length && sameUnresolvedFindings(previousFindings, nextFindings)) {
           const reason = "code_critique_repeated_finding";
-          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+          recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason}});
           transitionAttempt(db, input.attemptId, "blocked", { reason });
           return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
@@ -627,7 +629,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const action = nextRepairAction({ ledger:spawnLedger, nextRound, attemptId:input.attemptId, artifactRevisionSha256:evidence.artifactRevisionSha256 });
         if (action === "unknown") {
           const reason = "code_critique_repair_unknown";
-          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+          recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason}});
           transitionAttempt(db, input.attemptId, "blocked", { reason });
           return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
@@ -636,7 +638,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const bound = getAttempt(db, input.attemptId);
         if (!trace || !bound) {
           const reason = "code_critique_writer_identity_unknown";
-          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+          recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason}});
           transitionAttempt(db, input.attemptId, "blocked", { reason });
           return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
@@ -652,7 +654,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         };
         if (trace.attemptId !== input.attemptId || (spawnLedger?.writer && !sameWriterIdentity(spawnLedger.writer, writerSnapshot))) {
           const reason = "code_critique_writer_mismatch";
-          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+          recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason}});
           transitionAttempt(db, input.attemptId, "blocked", { reason });
           return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
@@ -661,7 +663,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const frozenHash = spawnLedger?.findingsHash || findingsHash(frozenFindings);
         if (frozenHash !== findingsHash(nextFindings) && spawnLedger?.findingsHash) {
           const reason = "code_critique_findings_mutated";
-          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+          recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason}});
           transitionAttempt(db, input.attemptId, "blocked", { reason });
           return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
@@ -799,7 +801,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           attemptId:input.attemptId, dirtBefore:input.dirtBefore,
         });
         if (candidate.status !== "accepted") {
-          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+          recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:candidate.status}});
           const stopped = endedByStop(candidate.reason ?? candidate.status, writerThreadId);
           if (stopped) return stopped;
@@ -819,7 +821,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       // A revision that moved after the critique still does.
       if (!confirm.truncated && (!approvedArtifact || confirm.artifactRevisionSha256 !== approvedArtifact)) {
         const reason = "code_critique_stale_revision";
-        recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+        recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
           attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason}});
         transitionAttempt(db, input.attemptId, "blocked", { reason });
         return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
@@ -832,7 +834,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         hostId:input.config.hostId, task:input.task, answers:[candidate.output, answer], produced:candidate.produced ?? [], verification:candidate.verification ?? [] })
         .catch((cause:unknown) => { ctx.log(`plan-fact: ${input.taskId} could not be checked: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
       if (planFact?.refusal) {
-        recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+        recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
           attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"plan_fact_unproven",reason:planFact.refusal}});
         const stopped = endedByStop(planFact.refusal, writerThreadId);
         if (stopped) return stopped;
@@ -862,13 +864,35 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         fitFiles.push({ path, before: await readBefore(path), after: await readFit(fitAttempt?.workspace_path, path) });
       }
       const fitHits = testFitFindings(fitFiles, input.task.test_removals ?? []);
-      if (fitHits.length) {
+      // A hit a person already allowed for this very content passes (sma av_test_edit_hold). The rest: where the owner's
+      // word is asked for this task, the hand-in is held for him — blocked, worktree kept — until that exact edit is
+      // allowed; elsewhere the writer gets the finding back as before and restores the test in its next turn, so a
+      // weakened test does not stop a task nobody is waiting to decide on.
+      const afterShaOf = (path:string) => sha256Hex(fitFiles.find((file) => file.path === path)?.after ?? "missing");
+      const allowance = fitHits.length ? await testEditAllowance(bb.storage.kv as never, input.attemptId) : [];
+      const heldHits = fitHits.filter((hit) => !allowance.some((row) => row.path === hit.path && row.afterSha256 === afterShaOf(hit.path)));
+      const holdForOwner = heldHits.length > 0 && landingWordAsked(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)), input.task.risk);
+      if (heldHits.length && !holdForOwner) {
         // The refusal names the door: a removal that is the task's purpose goes into the contract's test_removals, and the PM dispatches again.
-        const reason = `test_fit: ${fitHits.slice(0, 5).map((hit) => `${hit.path}: ${hit.evidence}`).join("; ")} (if removing these tests is the task, name the files in the contract's test_removals)`.slice(0, 500);
-        recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+        const reason = `test_fit: ${heldHits.slice(0, 5).map((hit) => `${hit.path}: ${hit.evidence}`).join("; ")} (if removing these tests is the task, name the files in the contract's test_removals)`.slice(0, 500);
+        recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
           attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"test_fit",reason}});
         transitionAttempt(db, input.attemptId, "validation_failed", { reason });
         return { status:"validation_failed", reason, output:candidate.output, produced:candidate.produced, verification:candidate.verification, attemptId:input.attemptId, writerThreadId };
+      }
+      if (heldHits.length) {
+        const paths = heldHits.slice(0, 5).map((hit) => hit.path);
+        const reason = `test_edit_hold: ${paths.join(", ")} (weakened reference tests wait for the owner's allow of that exact edit: ask him, then lane_pilot_update_task {taskId, allowTestEdits:true}; a removal that is the task goes into the contract's test_removals)`.slice(0, 500);
+        recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+          attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"test_edit_hold",reason}});
+        await bestEffort(ctx.log, "test edit hold record", bb.storage.kv.set(testEditHoldKey(input.attemptId),
+          heldHits.map((hit) => ({ path:hit.path, afterSha256:afterShaOf(hit.path) })) as never), undefined);
+        transitionAttempt(db, input.attemptId, "blocked", { reason });
+        postOwnerItem(db as never, { key:`${TEST_EDIT_HOLD_ITEM}${input.attemptId}`, source:"writer", kind:"test_edit_hold", projectId:input.projectId, wake:false,
+          what:`Исполнитель ослабил проверочный тест (${paths.join(", ")}) — сдача ждёт вашего разрешения`, why:reason.slice(0, 600) });
+        await bestEffort(ctx.log, "test edit hold notice", sendServiceMessage(bb, { threadId:input.pmThreadId,
+          text:`Lane Pilot: task ${input.taskId} weakened reference tests (${paths.join(", ")}) and its hand-in waits for the owner. Ask him; on his yes allow that exact edit with lane_pilot_update_task {taskId:"${input.taskId}", allowTestEdits:true}, or redispatch with the files in test_removals if removing them is the task.` }), undefined);
+        return { status:"blocked", reason, output:candidate.output, produced:candidate.produced, verification:candidate.verification, attemptId:input.attemptId, writerThreadId };
       }
       const markerWarnings = [
         ...(!markers.approach ? ["the report has no APPROACH line"] : []),
@@ -915,7 +939,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const drawingTouched = (input.task.drawing ?? []).filter((path) => (candidate.produced ?? []).some((changed) => changed.replace(/^\.\//, "") === path.replace(/^\.\//, "")));
       if (drawingTouched.length) {
         const reason = `drawing_changed: the task follows the drawing ${drawingTouched.join(", ")} and must not change it; undo those edits (the drawing is changed in the phase's design stage)`;
-        recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+        recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
           attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"drawing_changed",reason}});
         transitionAttempt(db, input.attemptId, "validation_failed", { reason });
         return { status:"validation_failed", reason, output:candidate.output, produced:candidate.produced, verification:candidate.verification, attemptId:input.attemptId, writerThreadId };
@@ -931,14 +955,14 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const challengeOn = String(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId))["critic.challenge_high"] ?? "off") === "on";
       if (challengeOn && (input.task.risk === "high" || input.task.risk === "critical") && review !== "passed") {
         const reason = `challenge_gate: a ${input.task.risk}-risk task needs the code critic's pass before acceptance (critic.challenge_high is on); the critic ${review ?? "did not run"}`;
-        recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+        recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
           attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"challenge_gate",reason}});
         transitionAttempt(db, input.attemptId, "blocked", { reason });
         return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
       }
       const proofGap = acceptanceProofGap(provenBy);
       if (proofGap) {
-        recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+        recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
           attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"no_code_proof",reason:proofGap}});
         transitionAttempt(db, input.attemptId, "blocked", { reason:proofGap });
         return { status:"blocked", reason:proofGap, attemptId:input.attemptId, writerThreadId };
@@ -1002,7 +1026,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         closeOwnerItemsByPrefix(db as never, taskWordItemPrefix(input.runId, taskFamily(input.taskId)), wordGap ? "closed:wait over" : "closed:answered");
       }
       if (wordGap) {
-        recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+        recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
           attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"owner_word",reason:wordGap}});
         transitionAttempt(db, input.attemptId, "blocked", { reason:wordGap });
         return { status:"blocked", reason:wordGap, attemptId:input.attemptId, writerThreadId };
@@ -1076,7 +1100,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         if (merged.status === "busy") {
           const blockedBy = mergeHolder(input.runId, merged.holder ?? null, queuedSince);
           const reason = `merge_queue_timeout: ${merged.reason ?? "another integration holds the base checkout"}`;
-          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"failed",
+          recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"failed",
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{integration:merged,blockedBy}});
           await saveBlockedBy(bb.storage.kv, input.attemptId, blockedBy);
           // The PM is woken when the holder settles, or in 10 minutes, without the owner.
@@ -1109,7 +1133,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             const blockedBy:BlockedBy = { kind:"human", holderTaskId:null, holderThreadId:null, holderAttemptId:null,
               since:new Date(since).toISOString(), retryAfterSec:600, detail:merged.conflicts.join(", ") };
             await saveBlockedBy(bb.storage.kv, input.attemptId, blockedBy);
-            recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"failed",
+            recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"failed",
               attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{integration:merged,blockedBy}});
             transitionAttempt(db, input.attemptId, "blocked", { reason });
             await settleIntent();
@@ -1122,7 +1146,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           const reason = merged.status === "conflict"
             ? `merge_conflict: ${merged.reason?.startsWith("base checkout") ? merged.reason : "main changed since this attempt started"}: ${replayRed ? merged.reason : merged.conflicts.join(", ")}`
             : `merge_failed: ${merged.reason ?? "unknown"}`;
-          recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+          recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{integration:merged}});
           const stopped = endedByStop(reason, writerThreadId);
           if (!stopped) transitionAttempt(db, input.attemptId, "validation_failed", { reason, ...failureFieldsOf(merged) });
@@ -1153,7 +1177,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       }
       const firstAttempt = firstAttemptAt(db, input.taskId);
       const size = taskSizeOf({ files:(candidate.produced ?? []).length, lines:sizeLines, createdAt:firstAttempt, finishedAt:Date.now(), attempts:countAttempts(db,input.runId,input.taskId) });
-      recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"passed",
+      recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"passed",
         attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{acceptanceReceiptPersisted:true,integration,size,execution_checklist:checklist}});
       transitionAttempt(db, input.attemptId, "accepted");
       if (integration) await clearMergeIntent(bb.storage.kv as never, input.attemptId);
