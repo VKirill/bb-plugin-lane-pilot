@@ -17,13 +17,18 @@ import { ownerWaitingRpc } from "../../src/rooms/owner-waiting/server/rpc";
 import { postOwnerItem } from "../../src/rooms/owner-waiting";
 import { savePushConfig } from "../../src/rooms/owner-waiting/push";
 import { saveProjectSetting } from "../../src/rooms/storage";
-import { EVENT_FIELDS } from "../../src/rooms/relay/server/outbound";
+import { EVENT_FIELDS, postEvent } from "../../src/rooms/relay/server/outbound";
 import { createRollback } from "../../src/rooms/rollback/server/rollback";
 import { upsertAttemptChange } from "../../src/rooms/rollback/store";
 import { createTask } from "../../src/rooms/plugin-db";
 import { EXAM_DRAFTS_KEY, mineDecisions, settleDraft } from "../../src/rooms/policy/mine";
 import { loadLiveExam } from "../../src/rooms/policy/live-exam";
+import { buildAcceptanceCard } from "../../src/rooms/acceptance/card";
+import { closeOwnerItem } from "../../src/rooms/owner-waiting";
+import { taskWordItemPrefix } from "../../src/rooms/contracts";
+import { taskFamily } from "@lane-pilot/contracts";
 import { BB_AGENT_SESSIONS } from "../../src/rooms/native-agent/native-agent-overlay";
+import { backlogRpc } from "../../src/rooms/backlog/server";
 
 const DAY = 86_400_000;
 
@@ -166,7 +171,7 @@ describe("pool readiness and the green word (parity d10-rest-1)", () => {
     const realFetch = globalThis.fetch;
     globalThis.fetch = (async (url: unknown, init: { body?: string }) => { posts.push({ url: String(url), body: JSON.parse(init.body ?? "{}") }); return { ok: true } as never; }) as never;
     try {
-      const rpc = ownerWaitingRpc(db);
+      const rpc = ownerWaitingRpc(db, [], undefined, undefined, postEvent);
       // First pass: one owner.waiting for the new key and one pulse.
       const digest = await rpc.owner_waiting_digest();
       // A pass over acknowledged keys posts nothing more for them.
@@ -185,7 +190,7 @@ describe("pool readiness and the green word (parity d10-rest-1)", () => {
     postOwnerItem(db2, { key: "night:w2", source: "night", kind: "wall", projectId: "proj", what: "No hook", why: "silent", wake: true }, Date.now());
     const posts2: unknown[] = [];
     globalThis.fetch = (async () => { posts2.push(1); return { ok: true } as never; }) as never;
-    try { await ownerWaitingRpc(db2).owner_waiting_digest(); } finally { globalThis.fetch = realFetch; }
+    try { await ownerWaitingRpc(db2, [], undefined, undefined, postEvent).owner_waiting_digest(); } finally { globalThis.fetch = realFetch; }
     expect(posts2).toHaveLength(0);
   });
 
@@ -233,5 +238,25 @@ describe("pool readiness and the green word (parity d10-rest-1)", () => {
     expect(settled.ok).toBe(true);
     expect((await loadLiveExam(store)).items).toHaveLength(1);
     expect(await settleDraft(store, draftId, "accept")).toMatchObject({ ok: false });
+  });
+
+  it("[sma:sc_acceptance] an open task_word item on the task's family answers awaitsWord true; the owner's word closes it", () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    createRun(db, "run", "proj", "cli", "/repo");
+    const contract = { project_cwd: "/repo", title: "t" };
+    createTask(db, { id: "task-1", runId: "run", kind: "bb", contract });
+    expect(buildAcceptanceCard(db, { runId: "run", taskId: "task-1" })!.awaitsWord).toBe(false);
+    postOwnerItem(db, { key: `${taskWordItemPrefix("run", taskFamily("task-1"))}att-1`, source: "writer", kind: "task_word", projectId: "proj", what: "Слить?", why: "acceptance" }, Date.now());
+    expect(buildAcceptanceCard(db, { runId: "run", taskId: "task-1" })!.awaitsWord).toBe(true);
+    closeOwnerItem(db, `${taskWordItemPrefix("run", taskFamily("task-1"))}att-1`, "screen");
+    expect(buildAcceptanceCard(db, { runId: "run", taskId: "task-1" })!.awaitsWord).toBe(false);
+  });
+
+  it("[sma:m_sw_backlog] the backlog_board RPC answers the scanner's four-lane board for the screen", async () => {
+    const item = { id: "t-1", title: "Job", status: "ready", priority: "high", estimate: 3, dependsOn: [], created: "2026-01-01" };
+    const rpc = backlogRpc({ board: async () => ({ issuable: [item], needsEstimate: [], decompose: [], blocked: [] }), issue: async () => ({ ok: true, pmThreadId: "thr" }) } as never);
+    const board = await rpc.backlog_board({ projectId: "P" }) as { issuable: Array<{ id: string }> };
+    expect(board.issuable.map((row) => row.id)).toEqual(["t-1"]);
   });
 });

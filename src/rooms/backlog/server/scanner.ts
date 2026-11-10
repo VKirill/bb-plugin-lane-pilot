@@ -147,7 +147,10 @@ export function createBacklog(ctx: ServerCore) {
 export type BacklogApi = ReturnType<typeof createBacklog>["backlog"];
 
 export function backlogRpc(api: BacklogApi) {
-  return { backlog_issue: async ({ projectId, todoId }: { projectId: string; todoId: string }) => api.issue(projectId, todoId) };
+  return {
+    backlog_issue: async ({ projectId, todoId }: { projectId: string; todoId: string }) => api.issue(projectId, todoId),
+    backlog_board: async ({ projectId }: { projectId: string }) => api.board(projectId),
+  };
 }
 
 export function mountBacklog(ctx: ServerCore, api: BacklogApi): void {

@@ -215,6 +215,14 @@ export function AcceptanceCard({ runId, taskId, fallback, finished, refreshKey }
         </Block>
       </div>
 
+      {card.awaitsWord ? (
+        <div className="mt-3 flex flex-wrap gap-2" data-testid="acc-word">
+          <button type="button" className="rounded-md border border-border px-2 py-1 text-xs hover:bg-[var(--lp-well)]" data-testid="acc-word-yes"
+            onClick={() => void rpc.call("task_word", { runId, taskId, decision: "yes", text: "да" }).then(() => rpc.call("task_acceptance_card", { runId, taskId })).then((next) => setCard(next ?? "gone"))}>{t("accWordYes")}</button>
+          <button type="button" className="rounded-md border border-border px-2 py-1 text-xs hover:bg-[var(--lp-well)]" data-testid="acc-word-no"
+            onClick={() => { const text = window.prompt(t("accWordWhyPrompt"))?.trim(); if (text) void rpc.call("task_word", { runId, taskId, decision: "no", text }).then(() => rpc.call("task_acceptance_card", { runId, taskId })).then((next) => setCard(next ?? "gone")); }}>{t("accWordNo")}</button>
+        </div>
+      ) : null}
       <ReturnStage runId={runId} taskId={taskId} />
     </section>
   );

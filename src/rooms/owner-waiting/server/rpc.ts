@@ -4,10 +4,12 @@ import type { LanePilotDatabase } from "../../storage";
 import { listOpenAttempts } from "../../storage";
 import { closeOwnerItem, collectOwnerWaiting, type LearningItemsReader, type OwnerItemSweep } from "../items";
 import { ackDigest, loadPushConfig, planDigest, savePushConfig } from "../push";
-import { postEvent } from "../../relay/server";
+// The webhook poster is injected (relay/server/outbound.postEvent): importing relay here would close a
+// room cycle owner-waiting -> relay -> verification -> owner-waiting.
+type PostEvent = (db: LanePilotDatabase, projectId: string, input: Partial<Record<string, unknown>>, log: (message: string) => void) => Promise<boolean>;
 
 /** What waits for the owner (screen, hub script): a read, the digest of new items for Telegram, its acknowledgement and the push settings. */
-export function ownerWaitingRpc(db: LanePilotDatabase, sweeps: readonly OwnerItemSweep[] = [], learningReader?: LearningItemsReader, log: (message: string) => void = () => undefined) {
+export function ownerWaitingRpc(db: LanePilotDatabase, sweeps: readonly OwnerItemSweep[] = [], learningReader?: LearningItemsReader, log: (message: string) => void = () => undefined, postEvent: PostEvent = async () => false) {
   return {
     owner_waiting: async () => collectOwnerWaiting(db, Date.now(), sweeps, undefined, learningReader),
     // The webhook is the one sanctioned outbound path (SMA k_lib_notify): every wake item the digest sends also posts

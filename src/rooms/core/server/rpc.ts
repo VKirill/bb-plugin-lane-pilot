@@ -44,7 +44,7 @@ import { tokenCursorRow } from "../../usage/server";
 import type { TokenCursorReader } from "../../work-graph/server";
 import { runGoalRpc } from "../../run-goal/server";
 import { phaseRpc } from "../../phase/server";
-import { worldVersion } from "../../relay/server";
+import { postEvent, worldVersion } from "../../relay/server";
 import { capabilityRpc } from "../../capability/server";
 import { conveyorState, setConveyor } from "../../runs";
 import { wallRpc } from "../../wall/server";
@@ -175,7 +175,7 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
     ...rollbackRpc(services.rollback),
     ...acceptanceRpc(ctx.db),
     ...benchRpc(services.bench),
-    ...ownerWaitingRpc(ctx.db, ownerSweeps, services.ownerLearningItems),
+    ...ownerWaitingRpc(ctx.db, ownerSweeps, services.ownerLearningItems, undefined, postEvent),
     ...backlogRpc(services.backlog),
     ...leadRpc(ctx.db, services.lead),
     ...errandsRpc(ctx, services),

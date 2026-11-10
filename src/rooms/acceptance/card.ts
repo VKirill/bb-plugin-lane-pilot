@@ -2,6 +2,9 @@ import type { AcceptanceCard } from "../contracts";
 import { getRun, getTask, getTaskGitBase, listGateEventsForTask, listStageReceipts } from "../storage";
 import type { LanePilotDatabase } from "../storage";
 import { STAGE_PROOF, isAdvisoryProof } from "../tasks";
+import { taskFamily } from "@lane-pilot/contracts";
+import { taskWordItemPrefix } from "../contracts";
+import { listOpenOwnerItemKeys } from "../owner-waiting";
 import { CARD_STAGE_ORDER, type StageId } from "@lane-pilot/contracts";
 import { attemptMetrics } from "../usage/server";
 import { getBaseline } from "../baseline";
@@ -84,5 +87,7 @@ export function buildAcceptanceCard(db: LanePilotDatabase, input: { runId: strin
       usd, tokens: measured.length ? measured.reduce((sum, row) => sum + (row.tokens?.total ?? 0), 0) : null,
       note, attempts: metrics.length, measured: measured.length,
     },
+    // sc_acceptance: an open task_word item on this task's family means the card must offer the yes/no controls.
+    awaitsWord: listOpenOwnerItemKeys(db, { kind: "task_word" }).some((key) => key.startsWith(taskWordItemPrefix(input.runId, taskFamily(input.taskId)))),
   };
 }
