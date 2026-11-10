@@ -482,7 +482,7 @@ ${ERRANDS_USAGE}` },
           return { exitCode:0, stdout:JSON.stringify(unknownReasons(rows).slice(0, 50), null, 2) };
         }
         if (command === "phase") {
-          return await runPhaseCli(services.phases, args);
+          return await runPhaseCli(services.phases, args, invocation?.threadId);
         }
         if (command === "gates" && args[0] === "ack" && /^\d+$/.test(args[1] ?? "")) {
           // A firing a person marks as a false alarm stops counting against the gate (SMA k_v_gates).

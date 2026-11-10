@@ -186,8 +186,8 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number },
         contract: { acceptance: item.task.acceptance ?? [], verification: item.task.verification ?? [], owns_paths: item.task.owns_paths ?? [] },
         depends_on: Array.isArray(item.task.depends_on) ? item.task.depends_on : [] }));
       const head = tree ? r.candidate!.branch : "HEAD";
-      // SMA k_wv_design: the contract's checkable points ride the audit — every one is judged against the screens.
-      const drawing = r.design?.drawing ? { paths: r.design.drawing.paths, sha256: r.design.drawing.sha256, ui_spec: r.design.drawing.paths.find((path) => /UI-SPEC\.md$/i.test(path)) ?? null, points: (r.verification?.points ?? []).map((point) => ({ id: point.id, text: point.text })) } : undefined;
+      // SMA k_wv_design: with phase.design_points on, the contract's checkable points ride the audit — every one is judged against the screens.
+      const drawing = r.design?.drawing ? { paths: r.design.drawing.paths, sha256: r.design.drawing.sha256, ui_spec: r.design.drawing.paths.find((path) => /UI-SPEC\.md$/i.test(path)) ?? null, ...(r.designPoints === true && r.verification?.points?.length ? { points: r.verification.points.map((point) => ({ id: point.id, text: point.text })) } : {}) } : undefined;
       return { goal: phase.goal, goals, merged_commits: r.execution?.baseSha ? [`${r.execution.baseSha}..${head}`] : [], ...(drawing ? { drawing } : {}),
         summary: `${tree ? `The phase's work is on branch ${r.candidate!.branch}, checked out at ${tree.path}, and lands on main only after the acceptance: read and run the evidence there. ` : ""}${r.verification?.verdict?.detail ?? ""}` };
     }

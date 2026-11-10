@@ -16,7 +16,7 @@ describe("plan-import", () => {
     const r = await runSim("plan-import", { input: { plan: "step 1: cache", goal: "caching" },
       stubs: { "grill-plan": { open: ["conflicts with locked decision D3"], risk_register: [] }, pieces: { pieces: [{ id: "p1" }], waves: [["p1"]] } },
       humans: { resolve: { answer_kind: "resolved", answer: "keep D3" } } });
-    expect(pathOf(r)).toBe("grill resolve pieces emit");
+    expect(pathOf(r)).toBe("grill resolve pieces check emit");
     expect(r.skipped).not.toContain("resolve");
     expect(out(r)).toMatchObject({ conflicts: ["conflicts with locked decision D3"] });
   });
@@ -24,7 +24,7 @@ describe("plan-import", () => {
   it("with no conflicts the resolve step is skipped", async () => {
     const r = await runSim("plan-import", { input: { plan: "step 1", goal: "g" },
       stubs: { "grill-plan": { open: [], risk_register: [] }, pieces: { pieces: [{ id: "p1" }], waves: [["p1"]] } } });
-    expect(pathOf(r)).toBe("grill resolve pieces emit");
+    expect(pathOf(r)).toBe("grill resolve pieces check emit");
     expect(r.skipped).toContain("resolve");
     expect(out(r)).toMatchObject({ conflicts: [] });
   });

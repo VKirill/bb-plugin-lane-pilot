@@ -3,7 +3,8 @@ import type { PhaseApi } from "./driver";
 export const PHASE_USAGE = "bb lane-pilot phase list [--project <id>] | show <phase-id> [--book] | drive | return <phase-id> <discussion|planning|design|execution> <note> | pause|resume <phase-id> | close <phase-id> <words> | uat [--project <id>] | state <phase-id|--project id> [--set k=v] [--decision text] [--blocker text] | roadmap <phase-id|--project id> [row]   (phases on rails: stages, gates, the phase book)";
 type Result = { exitCode: number; stdout?: string; stderr?: string };
 
-export async function runPhaseCli(api: PhaseApi, argv: readonly string[]): Promise<Result> {
+/** `callerThreadId` is the BB thread the command was typed in (an agent); none is the owner at a shell. */
+export async function runPhaseCli(api: PhaseApi, argv: readonly string[], callerThreadId?: string): Promise<Result> {
   try {
     const [command, id, ...rest] = argv;
     if (command === "list") {
@@ -25,7 +26,7 @@ export async function runPhaseCli(api: PhaseApi, argv: readonly string[]): Promi
     // STATE.md read and edited (SMA k_t_state): no flag prints it parsed; the flags edit command-owned parts only.
     if (command === "state") {
       const flag = (name: string) => { const at = argv.indexOf(name); return at >= 0 ? argv[at + 1] : undefined; };
-      const out = await api.state({ phaseId: id && !id.startsWith("--") ? id : undefined, projectId: flag("--project"), set: flag("--set"), decision: flag("--decision"), blocker: flag("--blocker") });
+      const out = await api.state({ phaseId: id && !id.startsWith("--") ? id : undefined, projectId: flag("--project"), set: flag("--set"), decision: flag("--decision"), blocker: flag("--blocker"), callerThreadId });
       if (!rest.length && !(id?.startsWith("--"))) return { exitCode: 0, stdout: out.text || "no STATE.md" };
       return { exitCode: 0, stdout: out.text || `position: ${out.marks.stage ?? "—"}; decisions: ${(out.sections.Decisions ?? []).length}; blockers: ${(out.sections.Blockers ?? []).length}` };
     }

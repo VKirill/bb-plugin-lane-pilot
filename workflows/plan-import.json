@@ -20,7 +20,7 @@
     }
   },
   "outputs": {
-    "status": "done",
+    "status": "done|aborted|invalid",
     "pieces": "PlanItem[]",
     "conflicts": "string[]"
   },
@@ -92,13 +92,33 @@
           "version": 1
         }
       ],
-      "prompt": "Turn the imported plan into task-v2 pieces: each {id, title, wave, promise:{given, when, then}, task:<task-v2 with the same id>}; depends_on only on pieces of earlier waves; each piece has owns_paths and a check that would fail without the work.\nThe plan: {{$inputs.plan}}\nGoal: {{$inputs.goal}}\nConflicts and their resolution: {{grill.open}} {{grill.risk_register}} {{resolve.answer}}\nNext calls after this workflow: lane_pilot_phase {action:\"open\", title, goal, legacy:true}, then lane_pilot_phase {action:\"plan\", phaseId, items:<these pieces>}; the machine's own check kind is the independent check, and PLAN.md is written and committed at admission (k_wp_commit).",
+      "prompt": "Turn the imported plan into task-v2 pieces: each {id, title, wave, promise:{given, when, then}, task:<task-v2 with the same id>}; depends_on only on pieces of earlier waves; each piece has owns_paths and a check that would fail without the work.\nThe plan: {{$inputs.plan}}\nGoal: {{$inputs.goal}}\nConflicts and their resolution: {{grill.open}} {{grill.risk_register}} {{resolve.answer}}\nNext calls after this workflow: lane_pilot_phase {action:\"open\", title, goal, legacy:true}, then lane_pilot_phase {action:\"plan\", phaseId, items:<these pieces>}; the machine's own check kind is the independent check, and PLAN.md is written and committed at admission where phase.doc_files is on (k_wp_commit).",
       "out": {
         "pieces": "PlanItem[]",
         "waves": "string[][]"
       },
       "guards": {
         "maxVisits": 2
+      }
+    },
+    {
+      "id": "check",
+      "type": "action",
+      "action": "lp.plan_import_check",
+      "title": {
+        "en": "Check the owned paths",
+        "ru": "Check the owned paths"
+      },
+      "out": {
+        "ok": "bool",
+        "problems": "string[]"
+      },
+      "guards": {
+        "maxVisits": 2
+      },
+      "proof": {
+        "kind": "receipt",
+        "check": "the receipt lists no piece whose owns_paths leave the checkout (.., absolute, drive letter, ~)"
       }
     },
     {
@@ -111,8 +131,36 @@
         "conflicts": "{{grill.open}}"
       },
       "title": {
-        "ru": "x",
-        "en": "emit"
+        "ru": "Pieces ready",
+        "en": "Pieces ready"
+      }
+    },
+    {
+      "id": "aborted",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "aborted",
+        "pieces": "[]",
+        "conflicts": "{{grill.open}}"
+      },
+      "title": {
+        "ru": "Aborted",
+        "en": "Aborted: no pieces"
+      }
+    },
+    {
+      "id": "invalid",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "invalid",
+        "pieces": "[]",
+        "conflicts": "{{check.problems}}"
+      },
+      "title": {
+        "ru": "Invalid pieces",
+        "en": "Invalid pieces: none returned"
       }
     }
   ],
@@ -123,11 +171,25 @@
     },
     {
       "from": "resolve",
-      "to": "pieces"
+      "to": "pieces",
+      "when": "resolve.answer_kind == 'resolved'"
+    },
+    {
+      "from": "resolve",
+      "to": "aborted"
     },
     {
       "from": "pieces",
-      "to": "emit"
+      "to": "check"
+    },
+    {
+      "from": "check",
+      "to": "emit",
+      "when": "check.ok == true"
+    },
+    {
+      "from": "check",
+      "to": "invalid"
     }
   ]
 }

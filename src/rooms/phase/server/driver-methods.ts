@@ -5,9 +5,9 @@ import { taskFamily } from "@lane-pilot/contracts";
 import { latestRunForPmThread, listOpenAttempts } from "../../storage";
 import { isWholeConsent, ownerWordsOn } from "../../tasks";
 import type { DrawingCritique } from "@lane-pilot/contracts";
-import { sha256Hex, bestEffort } from "@lane-pilot/kit";
+import { sha256Hex, bestEffort, isNotFound, orMiss } from "@lane-pilot/kit";
 import { PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceKey, checkerIndependence, contextSignature, designDecision, designGate, discussionGate, executionGate, phaseFolder, planGate, planGate as planGateOf, planSignature, staleAfterReturn, wordKeyOf } from "../logic";
-import { archiveDrawing, markUatLine, parseState, planText, roadmapAnalysis, roadmapSection, specText, stateText, uatState } from "../stages";
+import { archiveDrawing, markUatLine, oneLine, parseState, stateBlockSections, planText, roadmapAnalysis, roadmapSection, specText, stateBlockText, stateHasHeader, STATE_MANUAL, uatState } from "../stages";
 import { sendServiceMessage } from "../../relay/server";
 import { insertPhase, listParts, listPhases, savePhase } from "../store";
 import { PhaseRefusal, type DriverBase } from "./driver-tools";
@@ -48,7 +48,7 @@ export type MethodsTools = DriverBase & Docs & Journal;
 export type Methods = ReturnType<typeof installMethods>;
 export function installMethods(tools: MethodsTools) {
   const { ctx, services, db, bb, now, reactions } = tools;
-  const { mustGet, book, move, facts, readFile, readText, writeDocs } = tools;
+  const { mustGet, book, move, facts, readFile, readText, readDoc, writeDocs, writeGenerated } = tools;
 
   async function open(input: { projectId: string; pmThreadId: string; title: string; goal: string; legacy?: boolean; roadmapRow?: string; rails?: boolean }): Promise<Phase> {
     // A roadmap row is one address (SMA pc_folder): a live phase already on it is named, never shadowed by a second.
@@ -69,8 +69,14 @@ export function installMethods(tools: MethodsTools) {
     const record: PhaseRecord = { ownerWords, waveReview, issueCap, scope: { revisions: 0, withdrawn: [] },
       autonomous: String(settings["phase.autonomous"] ?? "off") === "on", subagents: String(settings["phase.subagents"] ?? "on") !== "off",
       planBounce: String(settings["phase.plan_bounce"] ?? "off") === "on",
-      commitDocs: String(settings["phase.commit_docs"] ?? "on") !== "off",
-      threatClosure: String(settings["phase.threat_closure"] ?? "off") === "on",
+      // The switches below are copied once, here, and each is read from the record as `=== true` (an absent field is off): a phase opened
+      // before them, and a project that sets nothing, run exactly as they always did. phase.commit_docs is read as `=== false`.
+      ...(String(settings["phase.commit_docs"] ?? "on") === "off" ? { commitDocs: false } : {}),
+      ...(String(settings["phase.threat_closure"] ?? "off") === "on" ? { threatClosure: true } : {}),
+      ...(String(settings["phase.design_points"] ?? "off") === "on" ? { designPoints: true } : {}),
+      ...(String(settings["phase.doc_files"] ?? "off") === "on" ? { docFiles: true } : {}),
+      ...(String(settings["phase.ambiguity_gate"] ?? "off") === "on" ? { ambiguityGate: true } : {}),
+      ...(String(settings["phase.piece_notes"] ?? "off") === "on" ? { pieceNotes: true } : {}),
       // Off unless the project switched the browser check on: an unset key keeps visible work as it was before the live check.
       liveCheck: ["on", "true", "1"].includes(String(settings["browser_qa.enabled"] ?? "").toLowerCase()),
       branch: (() => { const mode = String(settings["phase.branch"] ?? "none"); return mode === "phase" || mode === "milestone" ? mode : "none"; })(), ...(input.roadmapRow ? { roadmapRow: input.roadmapRow } : {}), ...(input.rails ? { rails: true } : {}),
@@ -117,8 +123,8 @@ export function installMethods(tools: MethodsTools) {
       return mustGet(phase.id);
     }
     move(phase, "planning", record, "the context documents exist, none is empty, and they are signed");
-    // SMA k_pl_spec: SPEC.md lands with the signed context — what the phase delivers, with its ambiguity score.
-    await bestEffort(ctx.log, "phase spec write", writeDocs(mustGet(phase.id), [{ path: `${phaseFolder(phase.id)}/SPEC.md`, content: specText(mustGet(phase.id)) }], `phase ${phase.id}: SPEC.md`), null);
+    // SMA k_pl_spec: with phase.doc_files on, SPEC.md lands with the signed context — what the phase delivers.
+    if (record.docFiles === true) await bestEffort(ctx.log, "phase spec write", writeGenerated(mustGet(phase.id), `${phaseFolder(phase.id)}/SPEC.md`, specText(mustGet(phase.id)), `phase ${phase.id}: SPEC.md`), null);
     return mustGet(phase.id);
   }
 
@@ -237,9 +243,9 @@ export function installMethods(tools: MethodsTools) {
     const phase = mustGet(input.phaseId);
     if (phase.stage !== "verification" || !phase.record.verification?.verdict) throw new PhaseRefusal("no blind verdict to audit yet");
     // SMA k_wv_design: the audit's verdict on each drawing contract point merges into the points read at verification.
-    const judged = new Map((input.points ?? []).map((point) => [point.id, point]));
-    const points = (phase.record.verification?.points ?? []).map((point) => { const hit = judged.get(point.id); return hit ? { ...point, met: hit.met === true, ...(hit.evidence ? { evidence: hit.evidence.slice(0, 300) } : {}) } : point; });
-    const record: PhaseRecord = { ...phase.record, verification: { ...phase.record.verification, ...(points.length ? { points } : {}), model: { state: input.state, by: input.by, summary: input.summary.slice(0, 2000), at: now() } } };
+    const judged = new Map((phase.record.designPoints === true ? input.points ?? [] : []).map((point) => [point.id, point]));
+    const points = (phase.record.designPoints === true ? phase.record.verification?.points ?? [] : []).map((point) => { const hit = judged.get(point.id); return hit ? { ...point, met: hit.met === true, ...(hit.evidence ? { evidence: hit.evidence.slice(0, 300) } : {}) } : point; });
+    const record: PhaseRecord = { ...phase.record, verification: { ...phase.record.verification, ...(points.length ? { points } : phase.record.verification?.points ? { points: phase.record.verification.points } : {}), model: { state: input.state, by: input.by, summary: input.summary.slice(0, 2000), at: now() } } };
     book(phase, "verification", "goal_audit", `${input.by}: ${input.state} — ${input.summary}`);
     savePhase(db, phase.id, { record, at: now() });
     return mustGet(phase.id);
@@ -354,7 +360,7 @@ export function installMethods(tools: MethodsTools) {
       if (input.decision === "no") { savePhase(db, phase.id, { record: { ...record, context: undefined }, at: now() }); return mustGet(phase.id); }
       if (discussionGate(record).ok) {
         move(phase, "planning", record, "the owner signed the context");
-        await bestEffort(ctx.log, "phase spec write", writeDocs(mustGet(phase.id), [{ path: `${phaseFolder(phase.id)}/SPEC.md`, content: specText(mustGet(phase.id)) }], `phase ${phase.id}: SPEC.md`), null);
+        if (record.docFiles === true) await bestEffort(ctx.log, "phase spec write", writeGenerated(mustGet(phase.id), `${phaseFolder(phase.id)}/SPEC.md`, specText(mustGet(phase.id)), `phase ${phase.id}: SPEC.md`), null);
       }
       return mustGet(phase.id);
     }
@@ -562,12 +568,14 @@ export function installMethods(tools: MethodsTools) {
       ? { ...row, state: input.result === "pass" ? "passed" as const : "failed" as const, ...(input.note?.trim() ? { note: input.note.trim().slice(0, 600) } : { note: undefined }), by: input.by ?? "owner", at: now() } : row) } };
     book(phase, "acceptance", "uat_line", `UAT line ${input.line} (${line.pieceId}): ${input.result}${input.note ? ` — ${input.note}` : ""} by ${input.by ?? "owner"}`);
     savePhase(db, phase.id, { record, at: now() });
-    // The written document follows the record once UAT.md is on disk (d_phase_uat): the numbered line is marked there too.
+    // With phase.doc_files on, the written document follows the record once UAT.md is on disk (d_phase_uat): the numbered line is
+    // marked there too, every other byte of the file stays (CRLF included). A file that cannot be read is left alone.
     const uat = record.uat!;
-    if (uat.sha256 && uat.path) {
-      const text = await readText(phase, uat.path);
-      const marked = text ? markUatLine(text, input.line, input.result === "pass", input.note) : null;
-      if (marked) {
+    if (phase.record.docFiles === true && uat.sha256 && uat.path) {
+      const got = await readDoc(phase, uat.path);
+      const marked = got.kind === "ok" && !got.truncated ? markUatLine(got.text, input.line, input.result === "pass", input.note) : null;
+      if (got.kind === "failed") ctx.log(`phase UAT line not written: ${got.why}`);
+      if (got.kind === "ok" && marked !== null && marked !== got.text) {
         await bestEffort(ctx.log, "phase uat line write", writeDocs(phase, [{ path: uat.path, content: marked }], `phase ${phase.id}: UAT line ${input.line} ${input.result}`), null);
         savePhase(db, phase.id, { record: { ...mustGet(phase.id).record, uat: { ...mustGet(phase.id).record.uat!, sha256: sha256Hex(marked) } }, at: now() });
       }
@@ -650,26 +658,47 @@ export function installMethods(tools: MethodsTools) {
     return out;
   }
 
-  /** STATE.md read and edited (SMA k_t_state): the header keys plus the Position/Decisions/Blockers/Session sections;
-   *  the flags edit only command-owned parts, through stateText and the hash-guarded writeDocs. */
-  async function state(input: { phaseId?: string; projectId?: string; set?: string; decision?: string; blocker?: string }): Promise<{ text: string; marks: Record<string, string>; sections: Record<string, string[]> }> {
-    const phase = input.phaseId ? mustGet(input.phaseId) : listPhases(db, { projectId: input.projectId, limit: 1 }).at(-1);
+  /** STATE.md read and edited (SMA k_t_state). Who calls it: `bb lane-pilot phase state`, from a shell (the owner: no thread) or from a
+   *  BB thread (an agent: the CLI passes the calling thread). An agent reads and edits the phases of its own thread's project only; a
+   *  call without a thread may name any project. An explicit command, so it works without phase.doc_files; the flags edit only the
+   *  command's block (`manual:` lines in Decisions and Blockers) and the front-matter keys — never a byte a person wrote. Every flag is
+   *  one line: a newline would inject header lines or a heading. */
+  async function state(input: { phaseId?: string; projectId?: string; set?: string; decision?: string; blocker?: string; callerThreadId?: string }): Promise<{ text: string; marks: Record<string, string>; sections: Record<string, string[]> }> {
+    for (const [flag, value] of [["--set", input.set], ["--decision", input.decision], ["--blocker", input.blocker]] as const)
+      if (value !== undefined && /[\r\n]/.test(value)) throw new PhaseRefusal(`${flag} takes one line: a line break would write lines of its own into STATE.md`);
+    let mark: [string, string] | null = null;
+    if (input.set !== undefined) {
+      const found = /^([A-Za-z0-9_.-]+)=(.*)$/.exec(input.set);
+      if (!found) throw new PhaseRefusal("--set takes key=value, the key made of letters, digits, «_», «.» and «-»");
+      mark = [found[1]!, found[2]!.trim().slice(0, 200)];
+    }
+    const callerProject = input.callerThreadId
+      ? ((await orMiss(bb.sdk.threads.get({ threadId: input.callerThreadId }), null, isNotFound)) as { projectId?: unknown } | null)?.projectId
+      : undefined;
+    if (input.callerThreadId && typeof callerProject !== "string") throw new PhaseRefusal("the calling thread has no project: STATE.md is not edited through it");
+    const phase = input.phaseId ? mustGet(input.phaseId) : listPhases(db, { projectId: input.projectId ?? (callerProject as string | undefined), limit: 1 }).at(-1);
     if (!phase) throw new PhaseRefusal("no phase to read STATE.md through");
+    if (callerProject && phase.projectId !== callerProject) throw new PhaseRefusal("a thread reaches the phases of its own project only");
     const path = ".agents/planning/STATE.md";
-    const previous = await readText(phase, path);
-    if (!input.set && !input.decision && !input.blocker) {
+    const got = await readDoc(phase, path);
+    if (got.kind === "failed") throw new PhaseRefusal(`STATE.md cannot be read: ${got.why}`);
+    const previous = got.kind === "ok" ? got.text : null;
+    if (!mark && !input.decision?.trim() && !input.blocker?.trim()) {
       const parsed = parseState(previous ?? "");
       return { text: previous ?? "", marks: parsed.marks, sections: parsed.sections };
     }
+    if (got.kind === "ok" && got.truncated) throw new PhaseRefusal("STATE.md is longer than the read window: it is not edited through the command");
     // STATE.md is created only where planning files already live (the close's own rule); the flags never invent one.
     if (previous === null && (await readText(phase, ".agents/planning/ROADMAP.md")) === null)
       throw new PhaseRefusal("the project has no planning STATE.md and no ROADMAP.md: nothing edits it into being");
-    const parsed = parseState(previous ?? "");
-    const marks = input.set ? Object.fromEntries([[input.set.slice(0, input.set.indexOf("=")).trim(), input.set.slice(input.set.indexOf("=") + 1).trim()]]) : {};
+    if (mark && previous !== null && !stateHasHeader(previous)) throw new PhaseRefusal("STATE.md has no front matter to hold key=value: the header is written by the close; use --decision / --blocker");
+    const own = stateBlockSections(previous);
     const sections: Record<string, string[]> = {};
-    if (input.decision?.trim()) sections.Decisions = [...parsed.sections.Decisions ?? [], input.decision.trim().slice(0, 300)];
-    if (input.blocker?.trim()) sections.Blockers = [...parsed.sections.Blockers ?? [], input.blocker.trim().slice(0, 300)];
-    await writeDocs(phase, [{ path, content: stateText(previous, marks, sections) }], `phase ${phase.id}: STATE.md edited by command`);
+    if (input.decision?.trim()) sections.Decisions = [...own.Decisions ?? [], `${STATE_MANUAL}${oneLine(input.decision, 300)}`];
+    if (input.blocker?.trim()) sections.Blockers = [...own.Blockers ?? [], `${STATE_MANUAL}${oneLine(input.blocker, 300)}`];
+    const next = stateBlockText(previous, mark ? { [mark[0]]: mark[1] } : {}, sections);
+    if ("refused" in next) throw new PhaseRefusal(next.refused);
+    await writeDocs(phase, [{ path, content: next.text }], `phase ${phase.id}: STATE.md edited by command`);
     const text = (await readText(phase, path)) ?? "";
     return { text, ...parseState(text) };
   }
@@ -712,8 +741,8 @@ export function installMethods(tools: MethodsTools) {
     book(phase, "plan", "admitted", `plan ${record.plan.sha.slice(0, 12)} admitted; drawing ${record.design.decision === "needed" ? "needed" : "not needed"}: ${record.design.why}`);
     move(phase, record.design.decision === "needed" ? "design" : "execution", record, "the plan is admitted");
     const admitted = mustGet(phase.id);
-    // SMA k_wp_commit / k_t_template: the admitted plan is written and committed as PLAN.md (the design stage reads it).
-    await bestEffort(ctx.log, "phase plan write", writeDocs(admitted, [{ path: `${phaseFolder(phase.id)}/PLAN.md`, content: planText(admitted) }], `phase ${phase.id}: PLAN.md`), null);
+    // SMA k_wp_commit / k_t_template: with phase.doc_files on, the admitted plan is written (and committed) as PLAN.md.
+    if (record.docFiles === true) await bestEffort(ctx.log, "phase plan write", writeGenerated(admitted, `${phaseFolder(phase.id)}/PLAN.md`, planText(admitted), `phase ${phase.id}: PLAN.md`), null);
     return mustGet(phase.id);
   }
 

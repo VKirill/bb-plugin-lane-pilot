@@ -56,7 +56,9 @@ export const phaseToolParams = z.discriminatedUnion("action", [
   z.object({ action: z.literal("plan_check"), phaseId, decision: z.enum(["approve", "changes_requested"]), by: z.string().trim().min(1).max(120), summary: z.string().max(2000).optional(), wfRunId: z.string().trim().min(1).max(80).optional() }).strict(),
   z.object({ action: z.literal("drawing"), phaseId, paths: asJson(z.array(z.string().trim().min(1).max(1024)).min(1).max(30)), designer: z.string().trim().min(1).max(120), feasible: asJson(z.boolean()), contradiction: z.string().max(2000).optional(), reviewer: z.string().trim().min(1).max(120).optional(),
     critique: asJson(z.object({ scores: z.record(z.string(), z.number().int().min(0).max(3)), verdict: z.enum(["pass", "rework"]), notes: z.string().max(2000) }).strict()).optional(), lesson: z.string().trim().min(5).max(300).optional() }).strict(),
-  z.object({ action: z.literal("goal_audit"), phaseId, state: z.enum(["met", "unmet"]), by: z.string().trim().min(1).max(120), summary: z.string().trim().min(1).max(2000) }).strict(),
+  z.object({ action: z.literal("goal_audit"), phaseId, state: z.enum(["met", "unmet"]), by: z.string().trim().min(1).max(120), summary: z.string().trim().min(1).max(2000),
+    /** Only read where the phase was opened with phase.design_points on: the audit's verdict on each point of the drawing contract. */
+    points: asJson(z.array(z.object({ id: z.string().trim().min(1).max(80), met: z.boolean(), evidence: z.string().max(300).optional() }).strict()).max(40)).optional() }).strict(),
   // The lessons name the workflow run whose reviewer step read them; author, reviewer and the read are taken from its journal (SMA p7_saw_bytes).
   z.object({ action: z.literal("lessons"), phaseId, analysis: z.string().trim().min(1).max(4000), reviewRun: z.string().trim().min(1).max(120), reviewerNode: z.string().trim().min(1).max(80).optional() }).strict(),
   z.object({ action: z.literal("question"), phaseId, text: z.string().trim().min(1).max(1000), blocking: asJson(z.boolean()).default(true) }).strict(),
@@ -143,7 +145,7 @@ export function registerPhaseTool(ctx: ServerCore, services: Services): void {
           }
           case "plan_check": return json(summary(await api.planCheck({ phaseId: input.phaseId, decision: input.decision, by: input.by, summary: input.summary, wfRunId: input.wfRunId })));
           case "drawing": return json(summary(await api.drawing({ phaseId: input.phaseId, paths: input.paths, designer: input.designer, feasible: input.feasible, contradiction: input.contradiction, reviewer: input.reviewer, critique: input.critique as never, lesson: input.lesson })));
-          case "goal_audit": return json(summary(api.goalAudit({ phaseId: input.phaseId, state: input.state, by: input.by, summary: input.summary })));
+          case "goal_audit": return json(summary(api.goalAudit({ phaseId: input.phaseId, state: input.state, by: input.by, summary: input.summary, points: input.points })));
           case "lessons": return json(summary(api.lessons({ phaseId: input.phaseId, analysis: input.analysis, reviewRun: input.reviewRun, reviewerNode: input.reviewerNode })));
           case "question": return json(summary(api.question({ phaseId: input.phaseId, text: input.text, blocking: input.blocking })));
           case "answer": return json(summary(api.answer({ phaseId: input.phaseId, questionId: input.questionId, answer: input.answer, by: "pm" })));

@@ -16,7 +16,7 @@ export function phaseRpc(api: PhaseApi) {
         : action === "plan" ? api.plan({ phaseId: need(), items: p.items, design: p.design })
         : action === "plan_check" ? await api.planCheck({ phaseId: need(), decision: p.decision, by: p.by, summary: p.summary, wfRunId: p.wfRunId })
         : action === "drawing" ? await api.drawing({ phaseId: need(), paths: p.paths, designer: p.designer, feasible: p.feasible, contradiction: p.contradiction, reviewer: p.reviewer, critique: p.critique, lesson: p.lesson })
-        : action === "goal_audit" ? api.goalAudit({ phaseId: need(), state: p.state, by: p.by, summary: p.summary })
+        : action === "goal_audit" ? api.goalAudit({ phaseId: need(), state: p.state, by: p.by, summary: p.summary, points: p.points })
         // Context note: the owner's note goes to the writers of the pieces at work; an answer settles a stage question.
         : action === "correct" ? (await api.correct({ phaseId: need(), note: p.note, pieces: p.pieces, by: "owner" })).phase
         : action === "answer" ? api.answer({ phaseId: need(), questionId: p.questionId, answer: p.answer, by: "owner via screen" })

@@ -9,13 +9,15 @@ import { PhaseRefusal, STAGE_RU, type DriverBase } from "./driver-tools";
 import type { Phase, PhaseRecord, PhaseStage, TaskFact } from "../logic";
 import { sha256Hex, isNotFound, orMiss, bestEffort } from "@lane-pilot/kit";
 import { nextAction, phaseFolder, renderBook } from "../logic";
-import { stateText } from "../stages";
+import { sameStateIgnoringTime, stateBlockText } from "../stages";
 
 /**
  * The phase's own reads and its book: the files of the PM's run (their hashes, their text), the documents written back, the
  * book parts and the phase's facts. Everything here is about the phase's state and its workspace, so it changes with the state
  * machine and lives with it.
  */
+/** The first line of SPEC.md / PLAN.md / VERIFICATION.md as the command writes them (phase.doc_files): what makes the file provably its own. */
+export const GENERATED = "<!-- lp:generated -->";
 export type Docs = ReturnType<typeof installDocs>;
 export function installDocs(base: DriverBase) {
   const { services, db, bb, now } = base;
@@ -37,21 +39,20 @@ export function installDocs(base: DriverBase) {
   function move(phase: Phase, stage: PhaseStage, record: PhaseRecord, why: string) {
     savePhaseRow(db, phase.id, { stage, record, at: now() });
     book(phase, "decisions", "stage", `${phase.stage} → ${stage}: ${why}`);
-    // SMA k_pl_state: every stage move writes STATE.md — Position, Decisions, Blockers and Session are command-owned
-    // sections, regenerated each move (hand edits there are overwritten; the rest of the body survives).
-    stateQueue = stateQueue.then(() => bestEffort(bb.log, "phase STATE.md write", markState({ ...phase, stage, record }), null));
+    // SMA k_pl_state: where the phase was opened with phase.doc_files on, a stage move refreshes the command's block of STATE.md.
+    // Otherwise a move writes nothing into the project (as it always was).
+    if (record.docFiles === true) stateQueue = stateQueue.then(() => bestEffort(bb.log, "phase STATE.md write", markState({ ...phase, stage, record }), null));
   }
 
   /** Serialized STATE.md writes: moves are sync, the write is not — callers in a test can drain `stateDone()`. */
   let stateQueue: Promise<unknown> = Promise.resolve();
   const stateDone = () => stateQueue;
 
-  /** The command-owned sections of STATE.md for a move (SMA k_pl_state). Only where planning files already live:
-   *  a project without STATE.md or ROADMAP.md gets none (the close's own rule). */
+  /** The command-owned block of STATE.md for a move (SMA k_pl_state), only where phase.doc_files is on. Only where planning
+   *  files already live: a project without STATE.md or ROADMAP.md gets none (the close's own rule). Nothing is written when the
+   *  block would differ only by a timestamp, and nothing outside the block is ever touched (see stateBlockText). */
   async function markState(phase: Phase): Promise<void> {
-    const stateNow = await readText(phase, ".agents/planning/STATE.md");
-    const roadmap = await readText(phase, ".agents/planning/ROADMAP.md");
-    if (stateNow === null && roadmap === null) return;
+    if (phase.record.docFiles !== true) return;
     const items = phase.record.plan?.items ?? [];
     const issuedWave = Math.max(0, ...items.filter((item) => phase.record.execution?.issued[item.id]).map((item) => item.wave));
     const f = facts(phase);
@@ -64,7 +65,53 @@ export function installDocs(base: DriverBase) {
         ...Object.entries(phase.record.execution?.issueErrors ?? {}).map(([piece, why]) => `piece ${piece}: ${why.slice(0, 160)}`)],
       Session: [`pm ${phase.pmThreadId}`, `activity ${new Date(now()).toISOString()}`],
     };
-    await writeDocs(phase, [{ path: ".agents/planning/STATE.md", content: stateText(stateNow, { phase: phase.record.roadmapRow ?? phase.id, stage: phase.stage }, sections) }], `phase ${phase.id}: STATE.md at ${phase.stage}`);
+    await writeStateBlock(phase, { phase: phase.record.roadmapRow ?? phase.id, stage: phase.stage }, sections, `phase ${phase.id}: STATE.md at ${phase.stage}`);
+  }
+
+  /** STATE.md with `marks` in its header and `sections` in the command's block (docFiles only; the callers check). Created only
+   *  where ROADMAP.md exists; a failed read or a block the command cannot place is logged and nothing is written. */
+  async function writeStateBlock(phase: Phase, marks: Record<string, string>, sections: Record<string, string[]>, message: string): Promise<void> {
+    const path = ".agents/planning/STATE.md";
+    const got = await readDoc(phase, path);
+    if (got.kind === "failed" || (got.kind === "ok" && got.truncated)) { bb.log.warn(`phase STATE.md not written: ${got.kind === "failed" ? got.why : "longer than the read window"}`); return; }
+    const previous = got.kind === "ok" ? got.text : null;
+    if (previous === null) {
+      const roadmap = await readDoc(phase, ".agents/planning/ROADMAP.md");
+      if (roadmap.kind !== "ok") return;
+    }
+    const next = stateBlockText(previous, marks, sections, true);
+    if ("refused" in next) { bb.log.warn(`phase STATE.md not written: ${next.refused}`); book(phase, "decisions", "note", next.refused); return; }
+    if (sameStateIgnoringTime(previous, next.text)) return;
+    await writeDocs(phase, [{ path, content: next.text }], message);
+  }
+
+  /** SPEC.md / PLAN.md / VERIFICATION.md (docFiles only): the file is the command's while it is absent, or still carries the
+   *  generated marker and the sha the record kept from the last write. Otherwise the new text goes to `<name>.new.md` and the
+   *  book says so. Unchanged text writes nothing (so commits nothing). */
+  async function writeGenerated(phase: Phase, path: string, body: string, message: string): Promise<void> {
+    const content = `${GENERATED}\n${body}`;
+    const got = await readDoc(phase, path);
+    if (got.kind === "failed" || (got.kind === "ok" && got.truncated)) { bb.log.warn(`phase ${path} not written: ${got.kind === "failed" ? got.why : "longer than the read window"}`); return; }
+    let target = path;
+    if (got.kind === "ok") {
+      if (got.text === content) return;
+      const mine = got.text.includes(GENERATED) && mustGet(phase.id).record.docShas?.[path] === sha256Hex(got.text);
+      if (!mine) {
+        target = path.replace(/\.md$/, ".new.md");
+        const aside = await readDoc(phase, target);
+        if (aside.kind === "failed" || (aside.kind === "ok" && (aside.truncated || !aside.text.includes(GENERATED)))) {
+          book(phase, "decisions", "note", `${path.split("/").at(-1)} exists and is not the command's, and ${target.split("/").at(-1)} exists too: the new text is not written`);
+          return;
+        }
+        if (aside.kind === "ok" && aside.text === content) return;
+      }
+    }
+    const done = await writeDocs(phase, [{ path: target, content }], message);
+    if (done.shas[target] && target === path) {
+      const live = mustGet(phase.id);
+      savePhaseRow(db, phase.id, { record: { ...live.record, docShas: { ...(live.record.docShas ?? {}), [path]: done.shas[target]! } }, at: now() });
+    }
+    if (target !== path && done.written.includes(target)) book(phase, "decisions", "note", `${path.split("/").at(-1)} already exists and was changed by hand (or is not the command's): the new text is in ${target.split("/").at(-1)} next to it`);
   }
 
   /** A file of the project as the PM's run sees it (its frozen writer workspace), for the signature of a stage's documents. */
@@ -90,11 +137,26 @@ export function installDocs(base: DriverBase) {
     return ran && ran.exitCode === 0 ? binaryFileFingerprint(ran.stdout) : null;
   }
 
-  async function readText(phase: Phase, path: string): Promise<string | null> {
+  type DocRead = { kind: "ok"; text: string; truncated: boolean } | { kind: "absent" } | { kind: "failed"; why: string };
+  /** A project file as the PM's run sees it, told apart: there, not there, or unreadable (a longer file comes back cut: `truncated`). */
+  async function readDoc(phase: Phase, path: string): Promise<DocRead> {
     try {
-      const file = await services.readWriterWorkspaceFile({ threadId: phase.pmThreadId, projectId: phase.projectId, path, offset: 0, maxLines: 2000 }) as { content?: string };
-      return typeof file.content === "string" ? file.content : null;
-    } catch { return null; }
+      const file = await services.readWriterWorkspaceFile({ threadId: phase.pmThreadId, projectId: phase.projectId, path, offset: 0, maxLines: 2000 }) as { content?: string; truncated?: boolean };
+      return typeof file.content === "string" ? { kind: "ok", text: file.content, truncated: file.truncated === true } : { kind: "failed", why: "the read returned no text" };
+    } catch (cause) {
+      const why = cause instanceof Error ? cause.message : String(cause);
+      return /ENOENT|no such file|not found|does not exist/i.test(why) ? { kind: "absent" } : { kind: "failed", why };
+    }
+  }
+
+  const readFailed = new Set<string>();
+  /** The text of a project file, or null when it is absent or cannot be read; a read that failed for another reason than
+   *  absence is logged once per file and reason. */
+  async function readText(phase: Phase, path: string): Promise<string | null> {
+    const got = await readDoc(phase, path);
+    if (got.kind === "ok") return got.text;
+    if (got.kind === "failed" && !readFailed.has(`${path}:${got.why}`)) { readFailed.add(`${path}:${got.why}`); bb.log.warn(`phase read of ${path} failed: ${got.why}`); }
+    return null;
   }
 
   /** Writes phase documents and planning marks into the project, then commits exactly those files (SMA: Commit the plans / drawing / REVIEW / STATE). */
@@ -232,5 +294,5 @@ export function installDocs(base: DriverBase) {
     return hostId ? createCandidates(bb.hosts.experimental_client({ contract: hostContract }) as never, hostId, bb.log) : null;
   }
 
-  return { mustGet, savePhase, book, move, facts, readFile, readText, writeDocs, commitFiles, pauseHandoff, writeBook, redoId, pmCheckoutPath, candidates, drawingSha, markState, stateDone };
+  return { mustGet, savePhase, book, move, facts, readFile, readText, readDoc, writeStateBlock, writeGenerated, writeDocs, commitFiles, pauseHandoff, writeBook, redoId, pmCheckoutPath, candidates, drawingSha, markState, stateDone };
 }
