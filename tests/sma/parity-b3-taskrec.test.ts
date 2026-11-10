@@ -60,7 +60,8 @@ describe("task acceptance and queue rows (wave B)", () => {
 
   it("[sma:ta_closed] the phase is closed only after its closing docs read back intact", async () => {
     const { bb, db, sent } = world();
-    createRun(db, "r", "p");
+    createRun(db, "r", "p", "bb", "/ws");
+    db.prepare("UPDATE lane_pilot_run SET writer_host_id='h1' WHERE id='r'").run();
     insertPhase(db, { id: "ph_x", projectId: "p", pmThreadId: "t", runId: "r", title: "T", goal: "g", at: NOW });
     savePhase(db, "ph_x", { stage: "closed", state: "active", record: {}, at: NOW });
     const summaryPath = ".agents/phases/ph_x/SUMMARY.md";
@@ -80,7 +81,10 @@ describe("task acceptance and queue rows (wave B)", () => {
     const held = await make({ [summaryPath]: "tampered", [bookPath]: "shaB" });
     expect(held.state).toBe("active");
     expect(held.record.closedDocs).toBeUndefined();
-    expect(sent.some((text) => text.includes("did not read back intact"))).toBe(true);
+    expect(sent.filter((text) => text.includes("did not read back intact"))).toHaveLength(1);
+    // The pass retries every tick, but the PM and the book hear of it once a day.
+    await make({ [summaryPath]: "tampered", [bookPath]: "shaB" });
+    expect(sent.filter((text) => text.includes("did not read back intact"))).toHaveLength(1);
     savePhase(db, "ph_x", { record: { ...(getPhase(db, "ph_x")!.record), closedDocs: undefined }, at: NOW });
     // A faithful host: the docs read back as written and the phase closes.
     const closed = await make({ [summaryPath]: "shaS", [bookPath]: "shaB" });
@@ -167,8 +171,11 @@ describe("task acceptance and queue rows (wave B)", () => {
     const first = decideTaskWord(db as never, "run1", "P1", "yes", "screen");
     expect(first.ok).toBe(true);
     if (first.ok) await recordTaskWord(bb.storage.kv as never, "run1", "P1", "yes", "да");
-    const second = decideTaskWord(db as never, "run1", "P1", "no", "screen");
+    const second = decideTaskWord(db as never, "run1", "P1", "no", "screen", NOW, "att1");
     expect(second.ok).toBe(false);
+    // The decided candidate ended (another one waits, or none): a later word is a new word, not a second press.
+    expect(decideTaskWord(db as never, "run1", "P1", "yes", "pm", NOW, null).ok).toBe(true);
+    expect(decideTaskWord(db as never, "run1", "P1", "yes", "pm", NOW, "att2").ok).toBe(true);
     if (!second.ok) expect(second.reason).toMatch(/already decided/);
     const all = (await bb.storage.kv.get("lp.task.words")) as Record<string, Array<{ decision: string }>>;
     expect(all["run1:P1"]!.map((word) => word.decision)).toEqual(["yes"]);

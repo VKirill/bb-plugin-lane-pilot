@@ -12,5 +12,5 @@ export interface TaskWordPort {
   ask(db: TaskWordDb, input: { runId: string; projectId: string; family: string; task: WordTask }, settings?: JevSettings, now?: number): Promise<void>;
   answer(db: TaskWordDb, runId: string, family: string, decision: "yes" | "no", text: string, by: string, now?: number): void;
   /** Compare-and-set claim of the decision (SMA tr_approving): the second presser is refused as already decided. */
-  decide(db: TaskWordDb, runId: string, family: string, decision: "yes" | "no", by: string, now?: number): { ok: true } | { ok: false; reason: string };
+  decide(db: TaskWordDb, runId: string, family: string, decision: "yes" | "no", by: string, now?: number, waitingAttemptId?: string | null): { ok: true } | { ok: false; reason: string };
 }

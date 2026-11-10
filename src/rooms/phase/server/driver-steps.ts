@@ -375,15 +375,21 @@ export function installSteps(tools: StepsTools) {
     if (stateNow !== null || roadmap !== null) files.push({ path: ".agents/planning/STATE.md", content: stateText(stateNow, { phase: phase.record.roadmapRow ?? phase.id, stage: "closed", last_phase: phase.id }) });
     const out = await writeDocs(phase, files, `phase ${phase.id}: closed — summary, roadmap and state`).catch((cause: unknown) => { ctx.log(`phase ${phase.id}: closing documents not written: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
     if (!out) return phase;
-    if (phase.runId) {
+    // A run that has no writer workspace or host has nowhere to write: its book lives on the hub only, like a phase without a run.
+    if (phase.runId && getRun(db, phase.runId)?.writer_workspace_path && getRunWriterHost(db, phase.runId)) {
       const bookPath = `${phaseFolder(phase.id)}/BOOK.md`;
-      const expected: Array<[string, string | null]> = [[summaryPath, out.shas[summaryPath] ?? null], [bookPath, mustGet(phase.id).record.bookWritten?.sha256 ?? null]];
-      let confirmed = true;
+      // SUMMARY.md is compared with the text sent: a pass that finds the file already as it should be writes nothing and returns no hash.
+      const expected: Array<[string, string | null]> = [[summaryPath, out.shas[summaryPath] ?? sha256Hex(files[0]!.content)], [bookPath, mustGet(phase.id).record.bookWritten?.sha256 ?? null]];
+      const missed: string[] = [];
       for (const [path, sha] of expected) {
         const back = sha ? await readFile(phase, path).then((file) => file.sha256 === sha, () => false) : false;
-        if (!back) { confirmed = false; book(phase, "lessons", "closing_docs_unconfirmed", `closing docs not confirmed: ${path} did not read back as written`); }
+        if (!back) missed.push(path);
       }
-      if (!confirmed) {
+      if (missed.length) {
+        // Said once a day: the pass retries every tick, and a book part and a PM message per tick would bury both.
+        const lastSaid = [...listParts(db, phase.id)].reverse().find((part) => part.kind === "closing_docs_unconfirmed")?.at ?? 0;
+        if (now() - lastSaid < 24 * 3_600_000) return mustGet(phase.id);
+        book(phase, "lessons", "closing_docs_unconfirmed", `closing docs not confirmed: ${missed.join(", ")} did not read back as written`);
         await bestEffort(ctx.log, "phase closing docs notice", bb.sdk.threads.send({ threadId: phase.pmThreadId, mode: "queue-if-active", input: [{ type: "text", mentions: [], text:
           `[Lane Pilot phase] Phase ${phase.id} «${phase.title}» could not be closed: its closing documents did not read back intact (SUMMARY.md / BOOK.md). Check the writer workspace; the next pass tries again.` }] } as never), undefined);
         return mustGet(phase.id);

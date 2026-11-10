@@ -23,6 +23,8 @@ interface Services {
 
 /** A periodic pass leaves an attempt that moved this recently alone: a loop between two attempts is not an orphan. */
 const PERIODIC_IDLE_MS = 3 * 60_000;
+/** A take-back that did not move the attempt is tried again this long after. */
+const TAKE_BACK_RETRY_MS = 15 * 60_000;
 /** ...and a merge intent this recent: the merge may still be running on the machine. */
 const PERIODIC_INTENT_GRACE_MS = 2 * 60_000;
 
@@ -44,6 +46,7 @@ type StepRunner = (name:string, work:() => Promise<unknown> | unknown) => Promis
  */
 export function createTaskReconcile(ctx:ServerCore, services:Services) {
   const { bb, db } = ctx;
+  const takeBackTried = new Map<string, number>();
   
   async function reconcileTasks(options:{ phase:ReconcilePhase; step?:StepRunner; afterResume?:() => Promise<unknown> | unknown; now?:number }):Promise<void> {
     const startup = options.phase === "startup";
@@ -69,7 +72,10 @@ export function createTaskReconcile(ctx:ServerCore, services:Services) {
         const lost = (db.prepare(`SELECT id, run_id, task_id FROM lane_pilot_attempt WHERE state IN ('spawn_requested','spawn_unknown','running','cancel_requested') AND updated_at < ?`)
           .all(cutoff) as Array<{ id: string; run_id: string; task_id: string }>)
           .filter((row) => !services.activeWriterTasks.has(`${row.run_id}:${row.task_id}`))
-          .map((row) => row.id);
+          .map((row) => row.id)
+          // An attempt the resume could not start again (its run or contract is gone) is not asked about every minute.
+          .filter((id) => cutoff + PERIODIC_IDLE_MS - (takeBackTried.get(id) ?? 0) >= TAKE_BACK_RETRY_MS);
+        for (const id of lost) takeBackTried.set(id, cutoff + PERIODIC_IDLE_MS);
         if (lost.length) {
           const took = await services.resumeOrphans(undefined, lost);
           bb.log.info(`Lane Pilot took back ${took.resumed.length + took.finished.length} attempt(s) whose hold had lapsed${took.skipped.length ? ` (${took.skipped.length} skipped)` : ""}`);

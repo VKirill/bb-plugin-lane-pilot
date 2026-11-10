@@ -198,9 +198,10 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
     task_word: async ({ runId, taskId, decision, text }: { runId: string; taskId: string; decision: "yes" | "no"; text: string }) => {
       const family = taskFamily(taskId);
       // The first press claims the decision (SMA tr_approving): the second presser loses.
-      const claim = services.taskWords.decide(ctx.db, runId, family, decision, "screen");
+      const waiting = waitingAttemptId(ctx.db, runId, family) ?? null;
+      const claim = services.taskWords.decide(ctx.db, runId, family, decision, "screen", Date.now(), waiting);
       if (!claim.ok) return { ok: false as const, reason: claim.reason };
-      await recordTaskWord(ctx.bb.storage.kv as never, runId, family, decision, text, Date.now(), waitingAttemptId(ctx.db, runId, family) ?? null);
+      await recordTaskWord(ctx.bb.storage.kv as never, runId, family, decision, text, Date.now(), waiting);
       services.taskWords.answer(ctx.db, runId, family, decision, text, "screen");
       return { ok: true as const };
     },

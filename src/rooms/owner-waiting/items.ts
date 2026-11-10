@@ -172,10 +172,10 @@ export function ownerItemOutcome(row: { state: string; closed_by: string | null 
 }
 
 /** A decided owner item under a key prefix (closed approved:* or returned:*): the answer that already stands, or null. */
-export function decidedOwnerItem(db: Db, prefix: string): { by: string; at: number } | null {
-  const row = db.prepare("SELECT closed_by AS by, closed_at AS at FROM lane_pilot_owner_item WHERE state='closed' AND substr(key, 1, ?)=? AND (closed_by LIKE 'approved:%' OR closed_by LIKE 'returned:%') ORDER BY closed_at DESC LIMIT 1")
-    .get(prefix.length, prefix) as { by: string | null; at: number | null } | undefined;
-  return row?.by ? { by: row.by, at: row.at ?? 0 } : null;
+export function decidedOwnerItem(db: Db, prefix: string): { key: string; by: string; at: number } | null {
+  const row = db.prepare("SELECT key, closed_by AS by, closed_at AS at FROM lane_pilot_owner_item WHERE state='closed' AND substr(key, 1, ?)=? AND (closed_by LIKE 'approved:%' OR closed_by LIKE 'returned:%') ORDER BY closed_at DESC LIMIT 1")
+    .get(prefix.length, prefix) as { key: string; by: string | null; at: number | null } | undefined;
+  return row?.by ? { key: row.key, by: row.by, at: row.at ?? 0 } : null;
 }
 
 /** How many rows already exist under a key prefix — the next episode's sequence number, so a repost after a close is a fresh row. */

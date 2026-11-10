@@ -55,9 +55,10 @@ export function registerQueueTool(ctx: ServerCore, taskWords: TaskWordPort): voi
       if (input.action === "word") {
         const family = taskFamily(input.taskId);
         // The first press claims the decision (SMA tr_approving); a second presser is refused.
-        const claim = taskWords.decide(db, runId, family, input.decision, "pm");
+        const wordFor = waitingAttemptId(db, runId, family) ?? null;
+        const claim = taskWords.decide(db, runId, family, input.decision, "pm", Date.now(), wordFor);
         if (!claim.ok) return JSON.stringify({ runId, taskId: input.taskId, ok: false, reason: claim.reason });
-        await recordTaskWord(bb.storage.kv as never, runId, family, input.decision, input.text, Date.now(), waitingAttemptId(db, runId, family) ?? null);
+        await recordTaskWord(bb.storage.kv as never, runId, family, input.decision, input.text, Date.now(), wordFor);
         taskWords.answer(db, runId, family, input.decision, input.text, "pm");
         // The attempt that waits for the word (finish.ts, up to six hours) picks it up within a minute: telling the PM to resend it made two
         // attempts of one task (Gemini F-008.3).
