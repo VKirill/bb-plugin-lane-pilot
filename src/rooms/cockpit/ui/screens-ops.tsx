@@ -65,8 +65,7 @@ export function MemoryScreen({ rpc, runId, projectId }: { rpc: Rpc; runId: strin
   const [out, setOut] = useState<{ action: string; output: string; tags?: Array<{ tag: string; count: number }> } | null>(null);
   const [query, setQuery] = useState("");
   const [found, setFound] = useState<{ records: Array<{ id: string; kind: string; content: string; concepts: string[] }>; nothingRelevant?: boolean; message?: string } | null>(null);
-  // Two reads, two buttons: «rebuild the index» and «corpus review» printed the same list and rebuilt nothing (SMA audit, 2026-11-10).
-  const run = (action: "lint" | "tags") => runId && void rpc.call("cockpit_memory", { runId, action }).then((result) => setOut({ action, ...(result as { output: string; tags?: Array<{ tag: string; count: number }> }) }), (cause: unknown) => setOut({ action, output: String(cause) }));
+  const run = (action: "lint" | "index" | "tags" | "consolidate") => runId && void rpc.call("cockpit_memory", { runId, action }).then((result) => setOut({ action, ...(result as { output: string; tags?: Array<{ tag: string; count: number }> }) }), (cause: unknown) => setOut({ action, output: String(cause) }));
   const search = () => void rpc.call("session_memory_search", { projectId, query: query.trim(), limit: 8 }).then((result) => setFound(result as typeof found), (cause: unknown) => setFound({ records: [], message: String(cause) }));
   return (
     <Panel title={t("ckScreen_memory")} testId="ck-memory">
@@ -82,6 +81,8 @@ export function MemoryScreen({ rpc, runId, projectId }: { rpc: Rpc; runId: strin
         <div className="space-y-2">
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={() => run("lint")}>{t("ckMemoryLint")}</Button>
+            <Button size="sm" variant="outline" onClick={() => run("index")}>{t("ckMemoryIndex")}</Button>
+            <Button size="sm" variant="outline" onClick={() => run("consolidate")}>{t("ckMemoryReview")}</Button>
             <Button size="sm" variant="outline" onClick={() => run("tags")}>{t("ckMemoryTags")}</Button>
           </div>
           {out?.tags?.length ? (

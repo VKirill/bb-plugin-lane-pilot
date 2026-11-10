@@ -133,7 +133,7 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
     // Agentmemory is an observation archive. It does not author project core or, by the check above, rules.
     if (origin === "agentmemory") for (const entry of input.entries) if (entry.kind === "core") throw new Error("memory core is not written by agentmemory");
     const expiredIds = expireMemory(db, input.projectId, personalBot, now, (projectId, id) => dropMemoryIndexes(db, projectId, id));
-    const rows = db.prepare(`SELECT ${cols()}, scope_json FROM lane_pilot_memory WHERE project_id=? AND personal_bot=?`).all(input.projectId, personalBot) as Array<Row & { scope_json: string | null }>;
+    const rows = db.prepare(`SELECT ${cols()}, scope_json, expired_reason FROM lane_pilot_memory WHERE project_id=? AND personal_bot=?`).all(input.projectId, personalBot) as Array<Row & { scope_json: string | null; expired_reason: string | null }>;
     const scope = input.scope ?? [];
     const identity = (row: { kind: MemoryKind; content: string; audience: string; scope_json?: string | null }) => memoryRecordId(input.projectId, row.kind, row.content, personalBot, row.audience, parseScopeJson(row.scope_json));
     const known = new Map(rows.map((row) => [identity(row), row]));
@@ -149,6 +149,9 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
       if (!hit) { if (entry.validUntil == null || entry.validUntil > now) pending.push({ entry, id }); continue; }
       if (hit.status === "active") { if (hit.trust === "observed" && hit.source_sha256 !== input.sourceSha256) corroborate.push(hit.id); continue; }
       // A hidden record comes back when its fact is stated again, or when the file it came from says so; a replaced one stays replaced otherwise.
+      // A revoked one never does, on any path (restated, re-imported from its file): the owner withdrew that fact. An archived one
+      // stays in the cold tier too: the owner moved it there, and only a PM query (reactivateColdMemory) or the owner brings it back.
+      if (hit.status === "expired" && (hit.expired_reason === "revoked" || hit.expired_reason === "archived")) continue;
       const wanted = hit.status === "expired" || (entry.sourceFileId != null && entry.sourceFileId === hit.source_file_id);
       if (wanted && (entry.validUntil == null || entry.validUntil > now)) revive.push({ entry, id: hit.id });
     }
@@ -431,19 +434,54 @@ export function firstUnusedCoreRecordId(db: Database.Database, projectId: string
     AND accepted_count=0 AND concepts_json NOT LIKE '%"rule"%' ORDER BY created_at, id LIMIT 1`).get(projectId) as { id: string } | undefined)?.id ?? null;
 }
 
-/** Removes a record and its indexes (the rules' delete keeps them together). */
-export function deleteMemoryRecord(db: Database.Database, projectId: string, id: string): void {
-  dropMemoryIndexes(db, projectId, id);
-  db.prepare("DELETE FROM lane_pilot_memory WHERE project_id=? AND id=?").run(projectId, id);
+const hasTable = (db: MemoryDatabase, name: string) => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE name=?").get(name));
+
+/**
+ * Removes a record and its bytes everywhere: the row, both word indexes, its embedding, the promotion and
+ * conflict rows that name it (SMA k_lib_erase). `eraseLeftovers` verifies nothing is left; callers report what it returns.
+ * A conflict row quotes both notes, so it goes with the record, and the surviving note is no longer held by it. A held pair may
+ * have opened a deferral entry: its ids are returned so the caller (the conflict service) closes them and none stays open.
+ */
+export function deleteMemoryRecord(db: Database.Database, projectId: string, id: string): string[] {
+  // secure_delete is a setting of the shared connection: put back what it was.
+  const before = (db.prepare("PRAGMA secure_delete").get() as { secure_delete: number } | undefined)?.secure_delete ?? 0;
+  db.prepare("PRAGMA secure_delete=ON").get();
+  try {
+    let orphaned: string[] = [];
+    if (hasTable(db, "lane_pilot_memory_conflict")) orphaned = (db.prepare("SELECT deferral_id FROM lane_pilot_memory_conflict WHERE project_id=? AND state='held' AND deferral_id IS NOT NULL AND (note_a=? OR note_b=?)")
+      .all(projectId, id, id) as Array<{ deferral_id: string }>).map((row) => row.deferral_id);
+    dropMemoryIndexes(db, projectId, id);
+    if (hasTable(db, "lane_pilot_memory_vec")) db.prepare("DELETE FROM lane_pilot_memory_vec WHERE project_id=? AND id=?").run(projectId, id);
+    if (hasTable(db, "lane_pilot_memory_promotion")) db.prepare("DELETE FROM lane_pilot_memory_promotion WHERE project_id=? AND memory_id=?").run(projectId, id);
+    if (hasTable(db, "lane_pilot_memory_conflict")) db.prepare("DELETE FROM lane_pilot_memory_conflict WHERE project_id=? AND (note_a=? OR note_b=?)").run(projectId, id, id);
+    db.prepare("DELETE FROM lane_pilot_memory WHERE project_id=? AND id=?").run(projectId, id);
+    return orphaned;
+  } finally { db.prepare(`PRAGMA secure_delete=${Math.trunc(before)}`).get(); }
+}
+
+/** The tables that still hold the id (or its embedding) after an erase; empty means the record is gone everywhere. */
+export function eraseLeftovers(db: MemoryDatabase, projectId: string, id: string): string[] {
+  const left: string[] = [];
+  const holds = (table: string, where: string, args: unknown[]) => {
+    if (!hasTable(db, table)) return;
+    if (db.prepare(`SELECT 1 FROM ${table} WHERE ${where} LIMIT 1`).get(...args)) left.push(table);
+  };
+  holds("lane_pilot_memory", "project_id=? AND id=?", [projectId, id]);
+  holds("lane_pilot_memory_fts", "project_id=? AND id=?", [projectId, id]);
+  holds("lane_pilot_memory_trgm", "project_id=? AND id=?", [projectId, id]);
+  holds("lane_pilot_memory_vec", "project_id=? AND id=?", [projectId, id]);
+  holds("lane_pilot_memory_promotion", "project_id=? AND memory_id=?", [projectId, id]);
+  holds("lane_pilot_memory_conflict", "project_id=? AND (note_a=? OR note_b=?)", [projectId, id, id]);
+  return left;
 }
 
 /** Active records of a project, newest first (the records tab's list). */
 export function listActiveMemoryRows(db: Database.Database, projectId: string, limit: number): Array<{
   id: string; kind: "core" | "note"; audience: string; content: string; concepts_json: string; created_at: number;
-  use_count: number; accepted_count: number; origin_task_id: string | null; origin: string; scope_json: string | null; sources: number;
+  use_count: number; accepted_count: number; origin_task_id: string | null; source_file_id: string | null; origin: string; scope_json: string | null; sources: number;
 }> {
-  return db.prepare("SELECT id, kind, audience, content, concepts_json, created_at, use_count, accepted_count, origin_task_id, origin, scope_json, json_array_length(COALESCE(verification_json,'[]')) AS sources FROM lane_pilot_memory WHERE project_id=? AND status='active' ORDER BY created_at DESC LIMIT ?")
-    .all(projectId, limit) as Array<{ id: string; kind: "core" | "note"; audience: string; content: string; concepts_json: string; created_at: number; use_count: number; accepted_count: number; origin_task_id: string | null; origin: string; scope_json: string | null; sources: number }>;
+  return db.prepare("SELECT id, kind, audience, content, concepts_json, created_at, use_count, accepted_count, origin_task_id, source_file_id, origin, scope_json, json_array_length(COALESCE(verification_json,'[]')) AS sources FROM lane_pilot_memory WHERE project_id=? AND status='active' ORDER BY created_at DESC LIMIT ?")
+    .all(projectId, limit) as Array<{ id: string; kind: "core" | "note"; audience: string; content: string; concepts_json: string; created_at: number; use_count: number; accepted_count: number; origin_task_id: string | null; source_file_id: string | null; origin: string; scope_json: string | null; sources: number }>;
 }
 
 /** A record's concepts_json (the delete guard reads it for the rule tag). */
@@ -455,8 +493,8 @@ export function memoryConceptsJson(db: Database.Database, projectId: string, id:
  * Rooms that rank, seed and probe memory cannot all import each other; the table's
  * engine lives in this package, so the SQL they share sits here. */
 
-/** Idle-expired note rows for one project's cold-tier read (memory-tiers). */
-const COLD_TIER = "status='expired' AND kind='note' AND valid_until IS NULL AND superseded_by IS NULL AND (expired_reason='idle' OR expired_reason IS NULL)";
+/** Idle-expired note rows for one project's cold-tier read (memory-tiers). An owner-archived note is cold too: a PM query can bring it back. */
+const COLD_TIER = "status='expired' AND kind='note' AND valid_until IS NULL AND superseded_by IS NULL AND (expired_reason IN ('idle','archived') OR expired_reason IS NULL)";
 
 export function coldMemoryRows(db: MemoryDatabase, input: { projectId: string; audience: MemoryAudience; personalBot: string; chain: readonly string[]; includeObserved: boolean; now: number }): Array<{ id: string; content: string; concepts_json: string }> {
   const trust = input.includeObserved ? "" : ` AND (trust='confirmed' OR created_at<=${Math.floor(input.now) - OBSERVED_QUARANTINE_MS})`;
@@ -483,11 +521,6 @@ export function listIdlePromotions(db: MemoryDatabase, beforeMs: number): string
 /** Expires a still-active note as idle (the demote sweep's write). */
 export function expireIdleMemory(db: MemoryDatabase, id: string): void {
   db.prepare("UPDATE lane_pilot_memory SET status='expired', expired_reason='idle' WHERE id=? AND status='active'").run(id);
-}
-
-/** One recorded miss (a query that found nothing). */
-export function recordMemoryMiss(db: MemoryDatabase, projectId: string, query: string, now: number): void {
-  db.prepare("INSERT INTO lane_pilot_memory_miss(project_id,query,at) VALUES (?,?,?)").run(projectId, query.slice(0, 1000), now);
 }
 
 /** Cold-tier size, optionally one project (the tier report). */
@@ -573,13 +606,113 @@ export function pruneMemoryProbeBefore(db: MemoryDatabase, beforeMs: number): vo
   db.prepare("DELETE FROM lane_pilot_memory_probe WHERE at < ?").run(beforeMs);
 }
 
-/** kind/content/concepts of a project's active notes, most-accepted first (the cockpit memory card). */
-export function activeMemoryDigestRows(db: MemoryDatabase, projectId: string): Array<{ kind: string; content: string; concepts_json: string }> {
-  return db.prepare("SELECT kind, content, concepts_json FROM lane_pilot_memory WHERE project_id=? AND status='active' ORDER BY accepted_count DESC, created_at DESC LIMIT 80").all(projectId) as
-    Array<{ kind: string; content: string; concepts_json: string }>;
+/** kind/content/concepts of a project's active notes, most-accepted first (the cockpit memory card), with the trace columns the lint reads. */
+export function activeMemoryDigestRows(db: MemoryDatabase, projectId: string): Array<{ id: string; kind: string; content: string; concepts_json: string; origin_task_id: string | null; source_file_id: string | null }> {
+  return db.prepare("SELECT id, kind, content, concepts_json, origin_task_id, source_file_id FROM lane_pilot_memory WHERE project_id=? AND status='active' ORDER BY accepted_count DESC, created_at DESC LIMIT 80").all(projectId) as
+    Array<{ id: string; kind: string; content: string; concepts_json: string; origin_task_id: string | null; source_file_id: string | null }>;
 }
 
 /** Whether a memory record exists in a project (the rule proposal's join guard). */
 export function memoryRecordExists(db: MemoryDatabase, projectId: string, memoryId: string): boolean {
   return db.prepare("SELECT 1 FROM lane_pilot_memory WHERE project_id=? AND id=? LIMIT 1").get(projectId, memoryId) !== undefined;
+}
+
+// ---- index operator verbs (SMA d_mem_index / k_v_mem_index / k_v_build_index) ----
+
+const indexIds = (db: MemoryDatabase, table: string, projectId?: string): Set<string> =>
+  new Set((db.prepare(`SELECT id FROM ${table}${projectId ? " WHERE project_id=?" : ""}`).all(...(projectId ? [projectId] : [])) as Array<{ id: string }>).map((row) => row.id));
+
+const activeRowsForIndex = (db: MemoryDatabase, projectId?: string): Array<{ id: string; project_id: string; content: string; concepts_json: string }> =>
+  db.prepare(`SELECT id, project_id, content, concepts_json FROM lane_pilot_memory WHERE status='active'${projectId ? " AND project_id=?" : ""}`)
+    .all(...(projectId ? [projectId] : [])) as Array<{ id: string; project_id: string; content: string; concepts_json: string }>;
+
+/**
+ * Drift between the active records and the derived word indexes (fts, trigram, vectors): `missing` are active ids an
+ * index lost (a failed write, a hand edit), `orphaned` are ids an index still serves though the record is hidden or gone.
+ */
+export function memoryIndexStatus(db: MemoryDatabase, projectId?: string): {
+  active: number; fts: number; trgm: number | null; vec: number | null;
+  missingIds: string[]; orphanedIds: string[];
+} {
+  const rows = activeRowsForIndex(db, projectId);
+  const active = new Set(rows.map((row) => row.id));
+  const fts = indexIds(db, "lane_pilot_memory_fts", projectId);
+  const missingIds: string[] = [], orphanedIds: string[] = [];
+  for (const id of active) if (!fts.has(id)) missingIds.push(id);
+  for (const id of fts) if (!active.has(id)) orphanedIds.push(id);
+  const trgm = trigramReady(db) ? indexIds(db, "lane_pilot_memory_trgm", projectId).size : null;
+  const vec = hasTable(db, "lane_pilot_memory_vec")
+    ? (db.prepare(`SELECT count(*) AS n FROM lane_pilot_memory_vec${projectId ? " WHERE project_id=?" : ""}`).get(...(projectId ? [projectId] : [])) as { n: number }).n
+    : null;
+  return { active: rows.length, fts: fts.size, trgm, vec, missingIds: missingIds.sort(), orphanedIds: orphanedIds.sort() };
+}
+
+/**
+ * Rebuilds the derived word indexes from the active records in one transaction: the project's fts and trigram rows are
+ * dropped and every active record goes back through `addToIndexes`. `check` only counts the drift. Returns how many
+ * index rows were missing (`added`) and how many stale ones were removed (`stale`).
+ */
+export function rebuildMemoryIndexes(db: MemoryDatabase, projectId?: string, options: { check?: boolean } = {}): { active: number; added: number; stale: number } {
+  const status = memoryIndexStatus(db, projectId);
+  const counts = { active: status.active, added: status.missingIds.length, stale: status.orphanedIds.length };
+  if (options.check || (!status.missingIds.length && !status.orphanedIds.length)) return counts;
+  db.transaction(() => {
+    db.prepare(`DELETE FROM lane_pilot_memory_fts${projectId ? " WHERE project_id=?" : ""}`).run(...(projectId ? [projectId] : []));
+    if (trigramReady(db)) db.prepare(`DELETE FROM lane_pilot_memory_trgm${projectId ? " WHERE project_id=?" : ""}`).run(...(projectId ? [projectId] : []));
+    for (const row of activeRowsForIndex(db, projectId)) {
+      let concepts: string[] = [];
+      try { concepts = JSON.parse(row.concepts_json) as string[]; } catch { /* indexed without tags */ }
+      addToIndexes(db, row.project_id, row.id, row.content, concepts);
+    }
+  })();
+  return counts;
+}
+
+/**
+ * Active records with no trace back to the pipeline (SMA d_mem_lint): no task they came from, no file, no voucher,
+ * and not written by the owner or an import (those legitimately have none). The one definition: lint, the cockpit and
+ * the records badge all use it. Without a project it covers every project.
+ */
+export function memoryWithoutTrace(db: MemoryDatabase, projectId?: string): Array<{ id: string; content: string }> {
+  return db.prepare(`SELECT id, content FROM lane_pilot_memory WHERE status='active'${projectId ? " AND project_id=?" : ""}
+    AND origin_task_id IS NULL AND source_file_id IS NULL
+    AND (verification_json IS NULL OR verification_json='[]')
+    AND COALESCE(origin,'') NOT IN ('owner','import')
+    ORDER BY created_at, id`).all(...(projectId ? [projectId] : [])) as Array<{ id: string; content: string }>;
+}
+
+/** All active records of a project: the real total behind «N of M» (the digest read is capped at 80). */
+export function countActiveMemory(db: MemoryDatabase, projectId: string): number {
+  return (db.prepare("SELECT count(*) AS n FROM lane_pilot_memory WHERE project_id=? AND status='active'").get(projectId) as { n: number }).n;
+}
+
+/** One recorded miss, optionally an owner-reminded one tied to the record that held the answer (SMA k_v_mem_miss). */
+export function recordMemoryMiss(db: MemoryDatabase, projectId: string, query: string, now: number, kind: "empty" | "reminded" = "empty", noteId?: string): void {
+  const columns = hasTable(db, "lane_pilot_memory_miss") && db.prepare("PRAGMA table_info(lane_pilot_memory_miss)").all().some((row) => (row as { name: string }).name === "kind");
+  if (columns) db.prepare("INSERT INTO lane_pilot_memory_miss(project_id,query,at,kind,note_id) VALUES (?,?,?,?,?)").run(projectId, query.slice(0, 1000), now, kind, noteId ?? null);
+  else db.prepare("INSERT INTO lane_pilot_memory_miss(project_id,query,at) VALUES (?,?,?)").run(projectId, query.slice(0, 1000), now);
+}
+
+/** Misses with the new columns; empty rows on a database from before them. */
+export function listRemindedMisses(db: MemoryDatabase, projectId?: string): Array<{ projectId: string; query: string; noteId: string }> {
+  if (!hasTable(db, "lane_pilot_memory_miss")) return [];
+  if (!db.prepare("PRAGMA table_info(lane_pilot_memory_miss)").all().some((row) => (row as { name: string }).name === "note_id")) return [];
+  const sql = "SELECT project_id AS projectId, query, note_id AS noteId FROM lane_pilot_memory_miss WHERE kind='reminded' AND note_id IS NOT NULL";
+  return db.prepare(projectId ? `${sql} AND project_id=?` : sql).all(...(projectId ? [projectId] : [])) as Array<{ projectId: string; query: string; noteId: string }>;
+}
+
+/** Token weight of the corpus against its budgets (SMA k_v_mem_stats): core, notes, the whole index, and the hidden rows by status. */
+export function memoryTokenStats(db: MemoryDatabase, projectId: string, budgets: { coreBudget: number; noteBudget: number; indexBudget: number }): {
+  coreTokens: number; noteTokens: number; indexTokens: number; budgets: { coreBudget: number; noteBudget: number; indexBudget: number };
+  records: { active: number; hidden: Record<string, number> };
+} {
+  const rows = db.prepare("SELECT kind, status, content FROM lane_pilot_memory WHERE project_id=?").all(projectId) as Array<{ kind: string; status: string; content: string }>;
+  let coreTokens = 0, noteTokens = 0;
+  const hidden: Record<string, number> = {};
+  for (const row of rows) {
+    if (row.status !== "active") { hidden[row.status] = (hidden[row.status] ?? 0) + 1; continue; }
+    if (row.kind === "core") coreTokens += estimate(row.content); else noteTokens += estimate(row.content);
+  }
+  const active = rows.filter((row) => row.status === "active").length;
+  return { coreTokens, noteTokens, indexTokens: coreTokens + noteTokens, budgets, records: { active, hidden } };
 }

@@ -1,6 +1,6 @@
 {
-  "rows": 530,
-  "editable": 269,
+  "rows": 532,
+  "editable": 271,
   "readonly": 111,
   "gap": 0,
   "excluded": 153,
@@ -75,6 +75,8 @@
     "memory.personal_bot",
     "memory.provider",
     "memory.search_engine",
+    "memory.single_claim",
+    "memory.tag_notes",
     "night_review.agent",
     "night_review.auto_merge",
     "night_review.enabled",

@@ -96,6 +96,8 @@ export function planCorpus(input: PlanInput): SizePlan {
   }
   const goldCount = picked.size - poisons.length;
   for (const note of shuffled(universe, random)) { if (picked.size >= size) break; add(note); }
+  // Gold of a reminded miss belongs in the corpus too, or its question can never be answered.
+  for (const miss of input.data.misses ?? []) { const note = byId.get(miss.noteId); if (note && !picked.has(note.id) && picked.size < size) add(note); }
   const fill = picked.size - goldCount;
   let synthetic = 0;
   const base = shuffled(universe, random);
@@ -137,6 +139,16 @@ export function planCorpus(input: PlanInput): SizePlan {
   }
   OFFTOPIC.forEach((item, index) => questions.push({ id: `offtopic-${index + 1}`, kind: "offtopic", projectId: "none", taskId: `offtopic-${index + 1}`, startedAt: (input.now ?? Date.now()),
     query: `${item.title}\n${item.objective}`, text: { title: item.title, objective: item.objective, acceptance: [] }, scope: largest[0], paths: { owns_paths: item.owns_paths, read_first: [] }, produced: [], gold: [], area: [] }));
+  // An owner-reminded miss is a positive question whose gold is the record that held the answer (sma k_v_mem_miss).
+  let missCount = 0;
+  for (const miss of input.data.misses ?? []) {
+    const note = notes.find((item) => item.id === miss.noteId);
+    if (!note) continue;
+    missCount += 1;
+    questions.push({ id: `miss-${missCount}`, kind: "positive", projectId: miss.projectId, taskId: `miss-${missCount}`, startedAt: (input.now ?? Date.now()),
+      query: miss.query, text: { title: miss.query, objective: "", acceptance: [] },
+      scope: scope === "pile" ? EVAL_PROJECT : miss.projectId, paths: { owns_paths: [], read_first: [] }, produced: [], gold: [miss.noteId], area: [] });
+  }
 
   return { size, scope, notes, questions, composition: { gold: goldCount, fill, synthetic, poison: poisons.length, core: notes.filter((note) => note.kind === "core").length, pool: largest[1] } };
 }

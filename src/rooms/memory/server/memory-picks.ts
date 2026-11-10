@@ -33,9 +33,9 @@ export function pathAnchors(task:Pick<TaskV2, "owns_paths" | "read_first">):stri
  * tags. Raw failure episodes stay out: what repeats becomes a rule through the rules pipeline, and the brief
  * carries the rule instead.
  */
-export function writerMemory(notes:readonly MemoryNote[], task:Pick<TaskV2, "owns_paths" | "read_first">):string {
+export function writerMemory(notes:readonly MemoryNote[], task:Pick<TaskV2, "owns_paths" | "read_first">, tags:readonly string[] = []):string {
   // One line per note: a note with line breaks could forge the next heading of the brief.
-  return writerMemoryPicks(notes, task).map(memoryLine).join("\n");
+  return writerMemoryPicks(notes, task, tags).map(memoryLine).join("\n");
 }
 
 /** One bullet per note, on one line, without the wrapper tags of the block it goes into: a note cannot close the block or forge a heading. */
@@ -86,14 +86,16 @@ export function reviewerMemoryPicks<T extends MemoryNote>(found:readonly T[], al
  * been picked before ahead of the best match and cut the hit rate on the real hub shelf from 63% to 41% (`bb lane-pilot memory-eval`,
  * docs/memory.md). The counters still rank the PM context and the reviewers' tiers.
  */
-export function writerMemoryPicks<T extends MemoryNote>(notes:readonly T[], task:Pick<TaskV2, "owns_paths" | "read_first">):T[] {
+export function writerMemoryPicks<T extends MemoryNote>(notes:readonly T[], task:Pick<TaskV2, "owns_paths" | "read_first">, tags:readonly string[] = []):T[] {
   const anchors = pathAnchors(task);
   const usable = notes.filter((note) => !note.concepts.includes("lesson"));
   const aboutPaths = usable.filter((note) => anchors.some((anchor) => note.content.includes(anchor)));
-  const core = usable.filter((note) => note.kind === "core" && !aboutPaths.includes(note));
+  // Notes carrying a tag of the task sit between path-named notes and core conventions (memory.tag_notes opt-in).
+  const tagged = usable.filter((note) => !aboutPaths.includes(note) && note.kind !== "core" && note.concepts.some((concept) => tags.includes(concept)));
+  const core = usable.filter((note) => note.kind === "core" && !aboutPaths.includes(note) && !tagged.includes(note));
   const picked: T[] = [];
   // A near-duplicate would spend one of the three slots on the same fact (arxiv slate). Search order stays; usefulness does not reorder.
-  for (const note of [...aboutPaths, ...core]) {
+  for (const note of [...aboutPaths, ...tagged, ...core]) {
     if (picked.some((kept) => sameSubject(kept, note))) continue;
     picked.push(note);
     if (picked.length === MEMORY_LIMIT) break;

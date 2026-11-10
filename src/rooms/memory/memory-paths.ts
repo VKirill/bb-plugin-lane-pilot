@@ -50,6 +50,7 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
       { file: "src/rooms/writer/server/writer-knowledge.ts", primitive: "acceptedRules", count: 1 },
       { file: "src/rooms/writer/server/writer-knowledge.ts", primitive: "mixWriterMemory", count: 1 },
       { file: "src/rooms/memory/server/memory-mix.ts", primitive: "searchMemoryRecords", count: 1 },
+      { file: "src/rooms/memory/server/memory-mix.ts", primitive: "listMemory", count: 1 },
     ] },
   { id: "writer.turn", consumer: "the turn that gives a continuing writer thread its next task (stickyTurnPrompt)", carries: ["rule"], alwaysOn: ["rule"], status: "probed",
     sites: [
@@ -109,6 +110,9 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
       { file: "src/rooms/memory/server/session-memory.ts", primitive: "session_memory_core", count: 1 },
       { file: "src/rooms/memory/server/session-memory.ts", primitive: "searchMemoryRecords", count: 1 },
     ] },
+  { id: "cli.memory_load", consumer: "`bb lane-pilot memory load --tags a,b`: the core plus the notes carrying the tags, printed for whoever ran the command", carries: [], alwaysOn: [], status: "exempt",
+    reason: "A command's printed output (like the session search above), not text injected into a prompt; nothing reaches an agent unless it ran the command itself.",
+    sites: [{ file: "src/rooms/tools/server/cli.ts", primitive: "listMemory", count: 2 }] },
   { id: "pm.cold", consumer: "cold notes added when the PM asks for memory and the active set is thin", carries: ["note"], alwaysOn: [], status: "exempt",
     reason: "It only adds notes the active search missed. The probe's active note is already delivered by pm.memory_tool.",
     sites: [{ file: "src/rooms/memory/server/memory.ts", primitive: "enrichMemoryContext", count: 1 }] },

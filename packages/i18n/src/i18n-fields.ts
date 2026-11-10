@@ -1061,6 +1061,10 @@ export const fieldEn = {
   reason_s612: "shadow: the process-key judgment asks which known kind of work the errand continues and keeps the answer in a receipt, but the proposed key stands. active: a confident answer sets the process key. Turn on only after the gold-set score reaches 0.8. Default shadow.",
   field_s613: "Backlog: scan interval",
   reason_s613: "How often the backlog scanner reads this project's todos and offers the first ready item. The sweep wakes every five minutes; a project is scanned only when this many minutes passed since its last scan. Default 60.",
+  field_s614: "Memory: one claim per record",
+  reason_s614: "Refuses or drops a memory write that packs three or more list lines into one record. Off by default.",
+  field_s615: "Memory: notes by the task's tags",
+  reason_s615: "Adds notes carrying a tag of the task to the writer's brief. Off by default.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -2125,4 +2129,8 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s612: "shadow: проверка ключа процесса спрашивает, к какому известному виду работы относится поручение, и хранит ответ в квитанции, но предложенный ключ остаётся. active: уверенный ответ назначает ключ процесса. Включайте только после того, как оценка на размеченном наборе достигнет 0.8. По умолчанию shadow.",
   field_s613: "Бэклог: интервал сканирования",
   reason_s613: "Как часто сканер бэклога читает задачи этого проекта и предлагает первую готовую. Обход просыпается каждые пять минут; проект сканируется, только когда с прошлого сканирования прошло столько минут. По умолчанию 60.",
+  field_s614: "Память: одна мысль — одна запись",
+  reason_s614: "Отклоняет или отбрасывает запись памяти, где в одну запись сложен список из трёх и более пунктов. По умолчанию выключено.",
+  field_s615: "Память: заметки по тегам задачи",
+  reason_s615: "Добавляет в бриф исполнителя заметки с тегом задачи. По умолчанию выключено.",
 };

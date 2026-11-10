@@ -18,6 +18,19 @@ export function memoryContentIssue(content:string):string|null {
   return null;
 }
 
+/** A line that starts a list item: a bullet or a number marker. */
+const LIST_LINE=/^\s*(?:[-*•+]|\d{1,2}[.)])\s+\S/;
+
+/**
+ * One record carries one claim (SMA m_extract): three or more list lines mean a list was packed into a single
+ * record, which retrieval then serves whole or not at all. The session write door and the maintainer refuse it;
+ * imports and rules are exempt — a MEMORY.md file is legitimately a list.
+ */
+export function memoryClaimIssue(content:string):string|null {
+  const listLines=content.split(/\r?\n/).filter((line)=>LIST_LINE.test(line));
+  return listLines.length>=3?"memory content is a list: one record carries one claim; split it into several notes":null;
+}
+
 /** Concrete claims a note can make: file paths, versions, numbers, quoted identifiers. */
 const SPECIFIC=/[\w.-]+\/[\w./-]+|v?\d+\.\d+(?:\.\d+)?|\b\d{2,}\b/g;
 

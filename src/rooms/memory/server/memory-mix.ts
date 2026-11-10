@@ -1,7 +1,7 @@
-import { DEFAULT_RELEVANCE_FLOOR, MEMORY_SETTING_KEYS, projectUsesSections, relevantRecords, resolveProjectKind, REVIEWER_CONCEPTS, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, recordCriticUse, roleContextBudget, searchMemoryRecords, type MemoryRecord, type MemorySearchEngine, type MemorySettings, type RelevanceFloor } from "@lane-pilot/memory-core";
+import { DEFAULT_RELEVANCE_FLOOR, MEMORY_SETTING_KEYS, projectUsesSections, relevantRecords, resolveProjectKind, REVIEWER_CONCEPTS, activeMemoryDigestRows, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, recordCriticUse, roleContextBudget, searchMemoryRecords, type MemoryRecord, type MemorySearchEngine, type MemorySettings, type RelevanceFloor } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
 import { getRunSettingsScopes, loadProjectSettings, projectHasScopedRun, type LanePilotDatabase } from "../../storage";
-import { memoryLine, reviewerMemoryPicks, writerMemory, writerMemoryPicks } from "./memory-picks";
+import { memoryLine, pathAnchors, reviewerMemoryPicks, writerMemory, writerMemoryPicks } from "./memory-picks";
 import { configuredSetting } from "../../contracts/server";
 
 type TaskPaths = Pick<TaskV2, "owns_paths" | "read_first">;
@@ -11,7 +11,9 @@ type TaskPaths = Pick<TaskV2, "owns_paths" | "read_first">;
  * useful first. Confirmed rules are left out (the rules block carries them). The caller records the mix once the
  * brief is final (`recordMemoryMixed`), so a mix that never reached a writer is not counted.
  */
-type WriterMixInput = { projectId: string; query: string; task: TaskPaths; searchEngine: MemorySearchEngine; personalBot: string; ruleMemoryIds: ReadonlySet<string>; now?: number; kind?: "auto"|"standalone"|"umbrella";
+type WriterMixInput = { projectId: string; query: string; task: TaskPaths & Partial<Pick<TaskV2, "kind" | "area" | "skills">>; searchEngine: MemorySearchEngine; personalBot: string; ruleMemoryIds: ReadonlySet<string>; now?: number; kind?: "auto"|"standalone"|"umbrella";
+  /** memory.tag_notes: notes carrying a tag of the task (kind, area words, skills, path folders) join the brief. */
+  tagNotes?: boolean;
   /** The run's sections: notes of a sibling section of a shared project are not this writer's. */
   chain?: readonly string[];
   /** Current bytes of a repo-relative path. A note whose stored file hash no longer matches is left out of the brief. */
@@ -35,10 +37,28 @@ export async function snapshotFileRead(paths: readonly string[], readBytes: (pat
   return (path) => cache.get(path) ?? null;
 }
 
+/** The tags of a task, kept only where the project's tag cloud knows them: kind, skills, area words and the folders its paths name. */
+export function taskMemoryTags(task: TaskPaths & Partial<Pick<TaskV2, "kind" | "area" | "skills">>, cloud: ReadonlySet<string>): string[] {
+  const candidates = new Set<string>([
+    ...(task.kind ? [task.kind] : []),
+    ...(task.skills ?? []).flatMap((skill) => skill.toLowerCase().split(/[\s/,-]+/)),
+    ...(task.area ?? "").toLowerCase().split(/[\s/,-]+/),
+    ...pathAnchors(task).flatMap((anchor) => anchor.split("/")),
+  ]);
+  return [...candidates].filter((word) => word.length >= 3 && cloud.has(word));
+}
+
 export function mixWriterMemory(db: LanePilotDatabase, input: WriterMixInput): { text: string; ids: string[] } {
   const found = writerCandidates(db, input);
   const kept = input.readFile ? found.filter((record) => !filesDrifted(record.fileFingerprint, pathsNamed(record.content), input.readFile!)) : found;
-  return { text: writerMemory(kept, input.task), ids: writerMemoryPicks(kept, input.task).map((record) => record.id) };
+  const scoped = { chain: input.chain ?? [], umbrella: umbrellaFor(db, input), ...(input.now !== undefined ? { now: input.now } : {}) };
+  const tagged = input.tagNotes
+    ? listMemory(db, input.projectId, { concepts: taskMemoryTags(input.task, new Set(activeMemoryDigestRows(db, input.projectId).flatMap((row) => JSON.parse(row.concepts_json || "[]") as string[]))) }, 20, "subagent", input.personalBot, scoped)
+      .filter((record) => !input.ruleMemoryIds.has(record.id) && !kept.some((hit) => hit.id === record.id))
+    : [];
+  const all = [...kept, ...tagged];
+  const tags = input.tagNotes ? taskMemoryTags(input.task, new Set(tagged.flatMap((record) => record.concepts))) : [];
+  return { text: writerMemory(all, input.task, tags), ids: writerMemoryPicks(all, input.task, tags).map((record) => record.id) };
 }
 
 type ReviewTask = TaskPaths & Partial<Pick<TaskV2, "title" | "objective" | "acceptance">>;

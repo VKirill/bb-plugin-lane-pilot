@@ -298,6 +298,8 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"memory.note_budget", channel:"OWN", reason:"Native Lane Pilot stage setting: cap note memory tokens" },
   { key:"memory.index_budget", channel:"OWN", reason:"Native Lane Pilot stage setting: cap total project index tokens" },
   { key:"memory.context_budget", channel:"OWN", reason:"Native Lane Pilot stage setting: cap injected memory context tokens" },
+  { key:"memory.single_claim", channel:"OWN", reason:"Native Lane Pilot stage setting: refuse a list packed into one memory record (off by default)" },
+  { key:"memory.tag_notes", channel:"OWN", reason:"Native Lane Pilot stage setting: add notes carrying the task's tags to the writer brief (off by default)" },
   { key:"memory.agent", channel:"OWN", reason:"Native Lane Pilot memory role label included in its prompt" },
   { key:"night_review.enabled", channel:"OWN", reason:"Native Lane Pilot stage setting, reserved: no stage reads it yet — the after-accept graph (workflows/lp.after-accept.json) has no night reviewer; the night's checks are the wall, the rules scan and the run goal" },
   { key:"night_review.auto_merge", channel:"OWN", reason:"Native Lane Pilot stage setting, reserved with night_review.enabled: nothing merges on it today" },

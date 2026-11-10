@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { listRemindedMisses } from "@lane-pilot/memory-core";
 import type { EvalData, RawNote, RawQuestion, RawTask } from "../../contracts/memory-eval";
 
 /**
@@ -59,7 +60,8 @@ export function loadEvalData(db: Reader): EvalData {
       questions: (db.prepare("SELECT * FROM question ORDER BY started_at").all() as QuestionRow[]).map(toQuestion),
     };
   }
-  return { origin: "live", notes: (db.prepare(MEMORY_SQL).all() as NoteRow[]).map(toNote), questions: (db.prepare(QUESTION_SQL).all() as QuestionRow[]).map(toQuestion) };
+  const misses = listRemindedMisses(db as never);
+  return { origin: "live", notes: (db.prepare(MEMORY_SQL).all() as NoteRow[]).map(toNote), questions: (db.prepare(QUESTION_SQL).all() as QuestionRow[]).map(toQuestion), misses };
 }
 
 /** Writes the extract file a run can read later (`memory-eval --source`); the live database is only read. */

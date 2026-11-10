@@ -109,6 +109,10 @@ export const rpcKnowledge = {
       createdAt: z.number().int(), rule: z.boolean(),
       /** Times the note went into a brief, and how many of those attempts were accepted. */
       useCount: z.number().int(), acceptedCount: z.number().int(), originTaskId: z.string().nullable(),
+      /** The file record this one came from, so a record with no task and no file can be flagged as «no trace». */
+      sourceFileId: z.string().nullable(),
+      /** Decided on the server by the one «no trace» definition (memoryWithoutTrace): no task, no file, no voucher, not the owner's or an import. */
+      noTrace: z.boolean(),
       /** Whose authority this record carries (maintainer/session/probe…) and where it applies: the section chain it was written under. */
       origin: z.string(), scope: z.array(z.string()),
       /** Independent confirmations the record carries (one per accepted write that corroborated it). */
@@ -117,7 +121,8 @@ export const rpcKnowledge = {
   },
   memory_record_delete: {
     input: z.object({ projectId: z.string().min(1), id: z.string().min(1) }).strict(),
-    output: z.object({ deleted: z.boolean(), reason: z.string().nullable() }).strict(),
+    // `deleted` is true once the record is gone; `leftovers` names tables that still hold its bytes after the erase (empty when clean).
+    output: z.object({ deleted: z.boolean(), reason: z.string().nullable(), leftovers: z.array(z.string()) }).strict(),
   },
   docs_overview: {
     input: z.object({ projectId: z.string().min(1), recheck: z.boolean().optional() }).strict(),
