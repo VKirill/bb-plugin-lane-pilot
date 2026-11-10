@@ -118,6 +118,9 @@ export type PhaseRecord = {
   ownerWords?: boolean;
   /** The project set phase.diagnose = on when the phase opened: a failed verdict gets a parallel diagnosis before the replan. Absent = off. */
   diagnose?: boolean;
+  /** The project set phase.gray_areas = on when the phase opened (and owner.words is on): the analysis asks the owner which gray areas to settle and
+   * starts an adviser per area. Absent = off: the analysis is what it was. */
+  grayAreas?: boolean;
   words?: OwnerWord[];
   /** Goal revisions and withdrawn pieces, each one a decision in the book. */
   scope?: { revisions: number; withdrawn: string[] };

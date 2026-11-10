@@ -128,7 +128,7 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number },
     case "analyze": {
       const said = (r.words ?? []).filter((word) => word.turn === "context" && word.decision === "no").map((word) => word.text).slice(-3);
       return { goal: said.length ? `${phase.goal}\n\nThe owner said no to the last context: ${said.join(" / ")}` : phase.goal, depth: "standard",
-        ...(r.ownerWords === true ? { ask_owner: true, owner_card: ownerCard ?? "" } : {}) };
+        ...(r.ownerWords === true && r.grayAreas === true ? { ask_owner: true, owner_card: ownerCard ?? "" } : {}) };
     }
     // The diagnosis of a failed verdict: parallel debuggers over the verdict's gaps (SMA k_c_diagnose), the session file names the verdict's input.
     case "diagnose": {
@@ -551,7 +551,7 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       // The goal audit is told from git which recorded proofs are stale, so it does not work currency out by hand; a failed lookup only leaves the facts out.
       const currency = due.kind === "close" && deps.proofCurrency ? await bestEffort(ctx.log, "phase proof currency", deps.proofCurrency(phase), null) : null;
       // The plan runs in full mode: lp.plan's critic otherwise skips a plan below three tasks, and SMA checks every plan (p2_checker).
-      const ownerCard = due.kind === "analyze" && phase.record.ownerWords === true && deps.ownerCard ? await bestEffort(ctx.log, "owner card for the analysis", deps.ownerCard(phase), "") : undefined;
+      const ownerCard = due.kind === "analyze" && phase.record.ownerWords === true && phase.record.grayAreas === true && deps.ownerCard ? await bestEffort(ctx.log, "owner card for the analysis", deps.ownerCard(phase), "") : undefined;
       const started = services.workflowEngine.start({ workflow, inputs: { ...autoInputs(phase, due, deps.medianTask?.(phase) ?? undefined, ownerCard ?? undefined), ...(currency ? { proof_currency: currency } : {}) }, key: `phase:${phase.id}:${due.kind}:${phase.edition}:${deps.now()}`, runtime,
         ...(due.kind === "plan" ? { mode: "full" as const } : {}),
         link: { projectId: phase.projectId, ...(phase.runId ? { runId: phase.runId } : {}) } });

@@ -340,10 +340,13 @@ describe("parity d3 workflows a", () => {
     const wide = await runSim("lp.analyze", { input: { goal: "g", ask_owner: true, owner_card: "c" }, stubs: { ...ANALYZE_STUBS, assess: { ...ANALYZE_STUBS.assess, open_questions: many } }, humans: { choose: { answer: "", answer_kind: "all" } } });
     expect(wide.summary.status).toBe("succeeded");
     expect(wide.called("advise:child").length).toBe(6);
-    // The phase passes the owner-words switch on, nothing else: with it off the analysis gets main's two inputs.
+    // With nothing set the analysis gets main's two inputs.
     const off = autoInputs(phase({}, "discussion"), { kind: "analyze" }, undefined, "card") as Record<string, unknown>;
     expect(Object.keys(off).sort()).toEqual(["depth", "goal"]);
-    const on = autoInputs(phase({ ownerWords: true }, "discussion"), { kind: "analyze" }, undefined, "card") as Record<string, unknown>;
+    // owner.words alone (an install that has it on today) changes nothing: the question and the advisers need phase.gray_areas too.
+    expect(Object.keys(autoInputs(phase({ ownerWords: true }, "discussion"), { kind: "analyze" }, undefined, "card") as Record<string, unknown>).sort()).toEqual(["depth", "goal"]);
+    expect(Object.keys(autoInputs(phase({ grayAreas: true }, "discussion"), { kind: "analyze" }, undefined, "card") as Record<string, unknown>).sort()).toEqual(["depth", "goal"]);
+    const on = autoInputs(phase({ ownerWords: true, grayAreas: true }, "discussion"), { kind: "analyze" }, undefined, "card") as Record<string, unknown>;
     expect(on.ask_owner).toBe(true);
     expect(on.owner_card).toBe("card");
   });
