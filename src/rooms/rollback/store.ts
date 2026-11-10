@@ -105,7 +105,7 @@ export function listAttemptChanges(db: RollbackDb, taskId: string): AttemptChang
   return (db.prepare("SELECT * FROM lane_pilot_attempt_change WHERE task_id=? ORDER BY recorded_at, attempt_id").all(taskId) as Raw[]).map(fromRaw);
 }
 
-export type TaskReceiptKind = "reverify" | "revert";
+export type TaskReceiptKind = "reverify" | "revert" | "landed";
 export type TaskReceiptState = "passed" | "failed" | "merged" | "dry_run" | "refused" | "error";
 
 export type TaskReceipt = {

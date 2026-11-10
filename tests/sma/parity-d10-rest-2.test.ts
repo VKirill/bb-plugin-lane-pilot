@@ -9,6 +9,7 @@ import { weakSpotsBrief, type CurriculumCluster } from "../../src/rooms/tools/se
 import { verdictInventory } from "../../src/rooms/tools/server/verdicts";
 import { createFromDraft, proposeDraft } from "../../src/rooms/tasks/server";
 import { migrations } from "../../src/rooms/plugin-db";
+import { appendTaskReceipt, listTaskReceipts } from "../../src/rooms/rollback";
 import Database from "better-sqlite3";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -127,6 +128,20 @@ describe("parity d10-rest-2", () => {
     const again = await createFromDraft(db, batch.id, dispatch);
     expect(again.state).toBe("already_created");
     expect(enqueued).toHaveLength(2);
+    db.close();
+  });
+
+  it("[sma:k_lib_landing] a landed receipt after the green gate names the merge commit and the counts", () => {
+    const db = new Database(":memory:");
+    for (const statement of migrations) db.exec(statement);
+    appendTaskReceipt(db, { kind: "landed", projectId: "p", runId: "r", taskId: "t-1", attemptId: "a-1",
+      baseSha: "b".repeat(40), changeSha: "c".repeat(40), resultCommit: "c".repeat(40), state: "merged",
+      summary: `landed ${"c".repeat(12)} · 4 checks green · 3 files`, detail: {} });
+    const rows = listTaskReceipts(db, "t-1");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe("landed");
+    expect(rows[0]!.resultCommit).toBe("c".repeat(40));
+    expect(rows[0]!.summary).toContain("4 checks green");
     db.close();
   });
 

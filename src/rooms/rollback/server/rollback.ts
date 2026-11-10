@@ -105,6 +105,13 @@ export function createRollback(ctx: ServerCore, services: Services) {
     } catch (cause) { log(`rollback record: merge of ${attemptId} not kept: ${cause instanceof Error ? cause.message : String(cause)}`); }
   }
 
+  /** The landing stamp (SMA k_lib_landing): a merge that passed green gets one receipt naming the commit, the count of
+   *  green checks and the files it carried — the terminal line the landing row leaves in the record. */
+  function noteLanded(t: Pick<RollbackTarget, "projectId" | "runId" | "taskId">, input: { attemptId: string | null; mergeCommit: string | null; baseSha?: string | null; checksGreen: number; files: number }): number {
+    return receipt(t as RollbackTarget, "landed", "merged", `landed ${input.mergeCommit ? input.mergeCommit.slice(0, 12) : "no-commit"} · ${input.checksGreen} checks green · ${input.files} files`,
+      { attemptId: input.attemptId ?? null, baseSha: input.baseSha ?? null, changeSha: input.mergeCommit, resultCommit: input.mergeCommit });
+  }
+
   /**
    * What an attempt's worktree holds, asked of git on the project's machine and written down: where it started, what it changed
    * (deletions as D), how much is uncommitted. Called when a stop is confirmed and before a failed attempt's worktree goes,
@@ -452,7 +459,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
    */
   const kit = { targetOf, changeOf, makeWorktree, dropWorktree, runChecks };
 
-  return { rollback: { noteBase, ensureBase, noteMerge, noteWorktree, noteSaved, noteStopped, reverify, revert, status, kit } };
+  return { rollback: { noteBase, ensureBase, noteMerge, noteLanded, noteWorktree, noteSaved, noteStopped, reverify, revert, status, kit } };
 }
 
 export type RollbackApi = ReturnType<typeof createRollback>["rollback"];
