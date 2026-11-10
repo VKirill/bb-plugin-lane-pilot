@@ -173,7 +173,9 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
       }
       const all = ((await kv.get(DRAWING_OK)) as Record<string, { at: number; shas: Record<string, string> }> | null) ?? {};
       all[`${runId}:${taskId}`] = { at: Date.now(), shas };
-      await kv.set(DRAWING_OK, all as never);
+      // One kv value for every task: keep the newest 300 so it does not grow with the life of the hub.
+      const kept = Object.fromEntries(Object.entries(all).sort((a, b) => b[1].at - a[1].at).slice(0, 300));
+      await kv.set(DRAWING_OK, kept as never);
       return { ok: true as const, at: all[`${runId}:${taskId}`]!.at };
     },
     /** «Поправить» on the promise block: the correction goes to the run's PM, who applies it with lane_pilot_update_task. */

@@ -15,7 +15,9 @@ export function useLoad<T>(load: () => Promise<T>, deps: readonly unknown[], pol
   const [state, setState] = useState<{ data: T | null; error: string | null; loading: boolean }>({ data: null, error: null, loading: true });
   const reload = useCallback(() => {
     setState((prev) => ({ ...prev, loading: true }));
-    load().then((data) => setState({ data, error: null, loading: false }), (cause: unknown) => setState({ data: null, error: cause instanceof Error ? cause.message : String(cause), loading: false }));
+    load().then((data) => setState({ data, error: null, loading: false }), (cause: unknown) => setState((prev) =>
+      // A poll that fails once keeps what is on the screen: the next one retries; only a first read shows the error.
+      pollMs && prev.data !== null ? { ...prev, loading: false } : { data: null, error: cause instanceof Error ? cause.message : String(cause), loading: false }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
   useEffect(() => { reload(); }, [reload]);
