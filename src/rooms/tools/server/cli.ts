@@ -653,6 +653,11 @@ ${ERRANDS_USAGE}` },
           return await runReturnCli(services.stageReturn, command, args);
         }
         if (command === "bench") {
+          // The arena is up to four series of real model runs: from a thread only the PM chat starts it. `bench run` keeps main's rule.
+          if (args[0] === "arena" && invocation?.threadId) {
+            const metadata = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId: invocation.threadId }), null, isNotFound) as { role?: unknown } | null;
+            if (metadata?.role !== "pm") return { exitCode:1, stderr:"refused: bench arena starts up to four series of real model runs; from a thread only the PM chat starts it. Ask the PM or the owner" };
+          }
           return await runBenchCli(services.bench, args);
         }
         if (command === "wall") {
