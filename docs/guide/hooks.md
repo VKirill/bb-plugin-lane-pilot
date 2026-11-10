@@ -62,7 +62,7 @@ skills, not hooks). Measured 2026-11-10 through `scripts/hooks-audit.py --host`:
 | Lane Pilot threads in 14 days | 3,735 | 2,837 | 0 | 0 |
 | Lane Pilot's guard (`~/.agents/lane-pilot/pm/guard_shell.py`) | same file | same file | same file | absent |
 | The person's Claude Code hooks | 14 | 0 | 0 | 1 |
-| The person's Claude Code plugins | Ponytail, ADHD, typesafe, fast-jev-compaction | remotion, fast-jev-compaction | fast-jev-compaction | none |
+| The person's Claude Code plugins | Ponytail 5.3.3, ADHD 0.4.1, typesafe, fast-jev-compaction | ADHD 0.4.1, remotion, fast-jev-compaction | ADHD 0.4.1, fast-jev-compaction | none |
 | Codex hooks (`~/.codex/hooks.json`) | 2 (the old Lane Stack guard) | 0 | 0 | 0 |
 | Project hooks | 6 in 5 projects | 0 | 0 | 0 |
 | Audit findings | 0 | 0 | 0 | 0 |
@@ -92,5 +92,5 @@ What a helper no longer inherits on OVH, with the reason (rule 6: removed with a
   own Codex guard is the `bb` shim, the same on every machine.
 - Windows has no Lane Pilot layer: `host-detect` refuses a Windows path, the guard is a `python3` script. No Lane Pilot thread ran
   there in 14 days.
-- The owner's own chats differ per machine (Ponytail and ADHD on OVH only): nothing mirrors the person's layer between machines.
+- The owner's own chats still differ per machine: ADHD is on OVH and both Macs since 2026-11-10 (installed by hand, `claude plugin install`), Ponytail on OVH only. Nothing mirrors the person's layer between machines, so a plugin update is per machine.
 - The static audit cannot see what a script file does: `guard-*.sh`, `gitnexus-hook.cjs` and plugin hooks answer for their own exit code.
