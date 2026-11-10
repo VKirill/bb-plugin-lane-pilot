@@ -111,3 +111,22 @@ export function ackDigest(db: Db, keys: readonly string[], now: number = Date.no
   for (const key of keys) added += db.prepare("INSERT OR IGNORE INTO lane_pilot_owner_push(key,pushed_at) VALUES (?,?)").run(key, now).changes;
   return added;
 }
+
+/** The `bell:` keys in lane_pilot_owner_push mark a wake item the browser bell already announced (SMA m_ws_notify). */
+export const BELL_PREFIX = "bell:";
+
+export type BellNotice = { send: boolean; reason: "disabled" | "quiet_hours" | "nothing_new" | null; title: string; text: string; keys: string[] };
+
+/** The browser bell's notice: one count line for the wake items not yet announced, no item text, the same enabled and
+ * quiet-hours rules as the Telegram digest. `keys` are the `bell:`-prefixed item keys the caller acknowledges on a sent notice. */
+export function planBellNotice(db: Db, now: number = Date.now(), sweeps: readonly OwnerItemSweep[] = [], learningReader?: LearningItemsReader): BellNotice {
+  const config = loadPushConfig(db);
+  const none = (reason: BellNotice["reason"]): BellNotice => ({ send: false, reason, title: "", text: "", keys: [] });
+  if (!config.enabled) return none("disabled");
+  if (inQuietHours(now, config.quiet, config.timezone)) return none("quiet_hours");
+  const announced = new Set((db.prepare("SELECT key FROM lane_pilot_owner_push WHERE key LIKE 'bell:%'").all() as Array<{ key: string }>).map((row) => row.key));
+  const fresh = collectOwnerWaiting(db, now, sweeps, undefined, learningReader).items
+    .filter((item) => item.wake && item.tier === "now" && !announced.has(`${BELL_PREFIX}${item.key}`));
+  if (!fresh.length) return none("nothing_new");
+  return { send: true, reason: null, title: `Lane Pilot: ждёт решения — ${fresh.length}`, text: `${fresh.length} — на экране «Ждут владельца».`, keys: fresh.map((item) => `${BELL_PREFIX}${item.key}`) };
+}

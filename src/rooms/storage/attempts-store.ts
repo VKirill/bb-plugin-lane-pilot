@@ -1326,3 +1326,14 @@ export function liveAttemptsOfRun(db: Pick<LanePilotDatabase, "prepare">, runId:
   return db.prepare("SELECT id, task_id FROM lane_pilot_attempt WHERE run_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested') ORDER BY updated_at DESC")
     .all(runId) as Array<{ id: string; task_id: string }>;
 }
+
+/** What a machine worked on today: the projects whose runs write on this host and the attempts that moved in the window, by state (SMA m_sw_machines). */
+export function hostActivityToday(db: LanePilotDatabase, hostId: string, since: number): { projects: string[]; accepted: number; blocked: number; running: number } {
+  const rows = db.prepare(`SELECT r.project_id AS projectId, a.state AS state FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.writer_host_id=? AND a.updated_at>=?`).all(hostId, since) as Array<{ projectId: string; state: string }>;
+  return {
+    projects: [...new Set(rows.map((row) => row.projectId))].sort(),
+    accepted: rows.filter((row) => row.state === "accepted").length,
+    blocked: rows.filter((row) => row.state === "blocked").length,
+    running: rows.filter((row) => row.state === "running").length,
+  };
+}

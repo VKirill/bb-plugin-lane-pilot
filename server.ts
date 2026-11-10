@@ -60,7 +60,8 @@ import { createPluginCheckers } from "./src/rooms/checkers/server";
 import { createStageReturn } from "./src/rooms/stage-return/server";
 import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, closeStaleRuns, isTaskSatisfied } from "./src/rooms/runs/server"
 import { pluginStopped } from "./src/rooms/contracts/errors";
-import { registerRpc } from "./src/rooms/core/server/rpc";
+import { registerRpc, ownerItemSweeps } from "./src/rooms/core/server/rpc";
+import { mountOwnerBell } from "./src/rooms/owner-waiting/server";
 import { mountAnamnesis } from "./src/rooms/anamnesis";
 import { mountWorldAssets } from "./src/rooms/world/server";
 import { registerLaneWorktreeProvider } from "./src/rooms/native-agent/server";
@@ -473,6 +474,8 @@ export default async function plugin(bb: BbPluginApi) {
   mountPermits(ctx);
   mountForge(ctx, services);
   mountFront(ctx, services.front);
+  // The bell «awaits a decision»: one browser notification for the wake items not yet announced (SMA m_ws_notify).
+  mountOwnerBell(ctx, ownerItemSweeps(services), services.ownerLearningItems);
   // bench is another field of this bag: each mount below reads it at call time through the thunk.
   // Every Sunday 02:00 UTC the newest bench set runs as this week's arm and is compared with last week's (bench.weekly).
   mountBenchWeekly(ctx, () => services.bench);
