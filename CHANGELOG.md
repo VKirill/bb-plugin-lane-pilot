@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.503
+
+- **A finished task's free redo after a merge conflict is no longer refused as «a forged receipt».** feed-gen, November 10: the Devin writer of `text-gen-openrouter.2` passed its checks, main had moved under it (`merge_conflict`, a free redo), and the retry-safety gate stopped the redo: «check evidence …/lane-pilot-receipt.json was modified after the attempt ended». The receipt is Lane Pilot's own, written at 10:34:57.026; the attempt ended at 10:34:57.361; the gate's window was rounded down to the second and opened at :57.000. The window now opens after the attempt's last second with 2 seconds of grace (the worktree's host has its own clock). The same rounding stood behind the check-log exception of October 31.
+
 ## 0.1.502
 
 - **A writer whose session never started no longer spends the task's attempts.** On November 10 the owner's feed-gen run stood still: the free Devin writer went silent, and every fallback writer on Antigravity died at `thread.start` (the Antigravity plugin did not declare the core's required-session-policy capability; fixed in that plugin, 0.2.6: 34 dead starts on November 9–10, a live probe answers now). Lane Pilot read each dead start as «writer thread status error», charged it as an attempt of the task and ended two tasks with «retry limit 2 exhausted». The writer now reads the cause from the thread's events; a session the core could not start ends as `writer_provider_unavailable:thread_not_started` with the core's code in the reason, costs the task nothing, the pair is set aside for an hour (the same note the critics use since 0.1.498) and the chain's next writer takes the task at once.

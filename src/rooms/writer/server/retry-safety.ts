@@ -23,7 +23,11 @@ export async function retrySafetyStop(input: {
   const workspace = row?.workspace_path;
   if (!workspace || liveFolder) return null;
   const endedAt = row!.updated_at;
-  const epoch = Math.floor(endedAt / 1000);
+  // The window opens after the attempt's last second, not at its start. Rounded down, it took Lane Pilot's own receipt for a forged one:
+  // written at 10:34:57.026, attempt ended 10:34:57.361, window opened at :57.000 — a finished task's free redo after a merge conflict
+  // was refused (feed-gen text-gen-openrouter.2, 2026-11-10). ponytail: 2 s of grace also covers the host's clock against the hub's;
+  // an edit inside those 2 s is not seen — compare content hashes of the receipts if that ever matters.
+  const epoch = Math.ceil(endedAt / 1000) + 2;
   const scan = await bestEffort(input.log ?? ((message: string) => {}), "retry safety scan", runOnHost(host, {
     hostId, cwd: workspace, timeoutSec: 30, timeoutMs: 35_000,
     command: `git log --since=@${epoch} --oneline -10 2>/dev/null; find . -path ./.git -prune -o -type f -newermt @${epoch} -print 2>/dev/null | head -80`,

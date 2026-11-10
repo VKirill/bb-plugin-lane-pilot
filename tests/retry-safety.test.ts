@@ -79,6 +79,16 @@ describe("retrySafetyStop (H-04)", () => {
     expect(await retrySafetyStop({ db: d, host: hostOf(() => ({ exitCode: 0, stdout: out })), hostId: "h", task, attemptId: "A1", liveFolder: false })).toBeNull();
   });
 
+  // feed-gen 2026-11-10: Lane Pilot's own receipt, written 0.3 s before the attempt's end, fell into a window rounded down to the second.
+  it("opens its window after the attempt's last second, with 2 s of grace", async () => {
+    const d = db();
+    let asked = "";
+    const host = hostOf((command) => { asked = command; return { exitCode: 0, stdout: "" }; });
+    await retrySafetyStop({ db: d, host, hostId: "h", task, attemptId: attempt(d, 1_794_306_897_361), liveFolder: false });
+    expect(asked).toContain("--since=@1794306900");
+    expect(asked).toContain("-newermt @1794306900");
+  });
+
   it("blocks when a catalog secret value sits in the worktree diff of a secret-using task", async () => {
     forgetSecrets();
     const d = db();
