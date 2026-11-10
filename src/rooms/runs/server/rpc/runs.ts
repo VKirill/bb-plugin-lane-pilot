@@ -49,9 +49,12 @@ interface Services {
   rollback: RollbackApi;
   tokenCursorRow: TokenCursorReader;
   /** Phase cards for the board, dealt by the phase room (SMA m_sw_unit_card); injected so runs never imports phase. */
-  phaseCards?: (input: { projectId: string | null; doneSince: number }) => BoardItem[];
+  phaseCards?: (input: { projectId: string | null; doneSince: number; onError?: (message: string) => void }) => BoardItem[];
 }
 
+
+/** Phase-card failures already logged (one line per distinct message, not one per refresh). */
+const phaseCardsFailed = new Set<string>();
 
 export function runsRpc(ctx: ServerCore, services: Services) {
   const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, nativeInstaller, ownedAgents } = ctx;
@@ -214,7 +217,11 @@ export function runsRpc(ctx: ServerCore, services: Services) {
     },
     task_board: async ({ projectId, doneHours }) => {
       const doneSince = Date.now() - doneHours * 3_600_000;
-      const items = buildTaskBoard(db, { projectId: projectId ?? null, doneSince }, services.phaseCards?.({ projectId: projectId ?? null, doneSince }) ?? []);
+      // The board renders without phase cards rather than fail because of them.
+      let phases: BoardItem[] = [];
+      try { phases = services.phaseCards?.({ projectId: projectId ?? null, doneSince, onError: (message) => bb.log.warn(`Lane Pilot task_board: ${message}`) }) ?? []; }
+      catch (cause) { const message = cause instanceof Error ? cause.message : String(cause); if (!phaseCardsFailed.has(message)) { phaseCardsFailed.add(message); bb.log.warn(`Lane Pilot task_board: phase cards left off: ${message}`); } }
+      const items = buildTaskBoard(db, { projectId: projectId ?? null, doneSince }, phases);
       // The PM chat's title groups the board «by chat»; titles change rarely, so each is read at most every five minutes.
       const now = Date.now();
       const ids = [...new Set(items.flatMap((item) => (item.pmThreadId ? [item.pmThreadId] : [])))];
@@ -225,7 +232,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       return { items: items.map((item) => ({ ...item, pmThreadTitle: item.pmThreadId ? pmTitles.get(item.pmThreadId)?.title ?? null : null })) };
     },
     thread_live: async ({ threadId }) => readThreadLive(db, threadId, services.tokenCursorRow),
-    work_file_read: async ({ runId, relativePath, offset }) => workFileRead(db, bb.hosts.experimental_client({ contract: hostContract }), { runId, relativePath, offset }),
+    work_file_read: async ({ runId, projectId, relativePath, offset }) => workFileRead(db, bb.hosts.experimental_client({ contract: hostContract }), { runId, ...(projectId ? { projectId } : {}), relativePath, offset }),
     task_card: async ({ runId, taskId }) => {
       const card = readTaskCard(db, { runId, taskId });
       if (!card) return null;

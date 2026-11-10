@@ -1,8 +1,7 @@
 import { hostContract, rpcContract } from "../contracts";
 
 import type { ServerCore } from "../contracts/server";
-import { PROVIDER_CAPABILITIES } from "@lane-pilot/models";
-import { activeRunForProject, getRun, getRunCard, getTaskContractJson, listAttemptRowsForProject, setTaskHeldUntil, taskHeldUntil, updateTaskContractJson, workerOutcomesSince, workerPresenceNow } from "../storage";
+import { activeRunForProject, getRun, getTaskContractJson, listAttemptRowsForProject, setTaskHeldUntil, taskHeldUntil, updateTaskContractJson, workerOutcomesSince, workerPresenceNow } from "../storage";
 import { attemptRecord } from "../tools/server";
 import { listReceipts } from "../capability";
 import { tokenDailySeries, tokenDailyTotal } from "../usage/server";
@@ -59,13 +58,9 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
         const worker = byWorker.get(key) ?? { providerId: row.providerId, model: row.model, tokens: 0, days: [] };
         worker.tokens += row.tokens; worker.days.push({ day: row.day, tokens: row.tokens }); byWorker.set(key, worker);
       }
-      // Done and not done over 30 days per worker and day (SMA m_sw_worker_history); presence and subscription windows
-      // join only the providers that publish a usage cache (m_sw_worker_card).
+      // Done and not done over 30 days per worker and day (SMA m_sw_worker_history) and what each worker holds now (m_sw_worker_card).
       const outcomes = workerOutcomesSince(db, projectId, Date.now() - 30 * DAY_MS);
       const presence = workerPresenceNow(db, projectId, Date.now() - 30 * DAY_MS);
-      const liveRun = activeRun(projectId);
-      const hostId = liveRun ? getRunCard(db, liveRun.id)?.writer_host_id ?? null : null;
-      const windows = hostId ? await host().call("readUsageWindows", { requestedHostId: hostId }, { hostId, timeoutMs: 5_000 }).then((row) => row.windows, () => ({})) : {};
       for (const worker of byWorker.values()) {
         const key = `${worker.providerId}/${worker.model}`;
         for (const row of outcomes.filter((row) => `${row.providerId}/${row.model}` === key)) {
@@ -76,8 +71,7 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
       return [...byWorker.values()].sort((a, b) => b.tokens - a.tokens).map((worker) => {
         const at = presence.find((row) => row.providerId === worker.providerId && row.model === worker.model);
         return { ...worker, capabilities: cells.filter((cell) => cell.providerId === worker.providerId).map((cell) => ({ capability: cell.capability, state: cell.state, version: cell.version })),
-          running: at?.running ?? 0, runningTasks: at?.taskIds ?? [], lastAt: at?.lastAt ?? null,
-          windows: PROVIDER_CAPABILITIES[worker.providerId]?.publishesUsageWindows ? windows : {} };
+          running: at?.running ?? 0, runningTasks: at?.taskIds ?? [], lastAt: at?.lastAt ?? null };
       });
     },
     /** Hub memory for this run's project. (2026-10-29) the terminal lane-memory tool is not called. */

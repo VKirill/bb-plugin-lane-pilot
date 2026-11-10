@@ -76,7 +76,7 @@ export const rpcRuns = {
   },
   /** A bounded read of a work file of the run's checkout by relative path (SMA d_artifact, src/rooms/runs/server/work-file.ts). */
   work_file_read: {
-    input: z.object({ runId: z.string().min(1), relativePath: z.string().min(1).max(1024), offset: z.number().int().min(0).max(100000).default(0) }).strict(),
+    input: z.object({ runId: z.string().min(1), projectId: z.string().min(1).optional(), relativePath: z.string().min(1).max(1024), offset: z.number().int().min(0).max(100000).default(0) }).strict(),
     output: z.object({ path: z.string(), content: z.string(), totalLines: z.number().int(), lineStart: z.number().int(), lineEnd: z.number().int(), truncated: z.boolean(), sizeBytes: z.number().int() }).strict(),
   },
   /** The acceptance card of a task: one screen for «why was this accepted, on what proof, and what was not looked at». */

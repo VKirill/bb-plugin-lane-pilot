@@ -124,6 +124,12 @@ export function listStageReceipts(db:LanePilotDatabase, runId:string, taskId?:st
   }));
 }
 
+/** The state of some stages of a run's tasks, nothing else (no result bodies): what a board card needs of the checks. */
+export function listStageStatesForRun(db:LanePilotDatabase, runId:string, stageIds:readonly string[]): Array<{taskId:string; stageId:string; state:string}> {
+  return (db.prepare(`SELECT task_id,stage_id,state FROM lane_pilot_stage_receipt WHERE run_id=? AND stage_id IN (${stageIds.map(() => "?").join(",")})`)
+    .all(runId, ...stageIds) as Array<{task_id:string; stage_id:string; state:string}>).map((row) => ({ taskId:row.task_id, stageId:row.stage_id, state:row.state }));
+}
+
 /** The stage rows of a run without their result bodies: the screen lists these and loads one body only when it is opened. */
 export function listStageReceiptSummaries(db:LanePilotDatabase, runId:string): Array<Omit<StageReceiptRow,"result"> & {hasResult:boolean}> {
   const rows = db.prepare(`SELECT run_id,task_id,stage_id,contract_version,state,input_sha256,output_sha256,attempt,provider_id,model,thread_id,

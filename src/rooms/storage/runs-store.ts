@@ -395,11 +395,6 @@ export function projectIdForPmThread(db: LanePilotDatabase, threadId: string): s
   return (db.prepare("SELECT project_id FROM lane_pilot_run WHERE pm_thread_id=? LIMIT 1").get(threadId) as { project_id: string } | undefined)?.project_id ?? null;
 }
 
-/** Total runs ever written (the conveyor seed checks «a hub that never ran»). */
-export function runCount(db: LanePilotDatabase): number {
-  return (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_run").get() as { n: number }).n;
-}
-
 export function runStateCounts(db: LanePilotDatabase, projectId: string): Record<string, number> {
   return Object.fromEntries((db.prepare("SELECT state, COUNT(*) AS n FROM lane_pilot_run WHERE project_id=? GROUP BY state")
     .all(projectId) as Array<{ state: string; n: number }>).map((row) => [row.state, row.n]));

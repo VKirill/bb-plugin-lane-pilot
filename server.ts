@@ -4,7 +4,6 @@ import { PROVIDER_CAPABILITIES } from "@lane-pilot/models";
 import { migrations as lanePilotMigrations } from "./src/rooms/migrations";
 import { coupledSettingKeys, validateSettingChanges, validateSettingValue, validateSettingsObject } from "./src/rooms/settings";
 import { createTaskReconcile } from "./src/rooms/runs/server";
-import { seedConveyor } from "./src/rooms/runs";
 import { createActivation } from "./src/rooms/native-agent/server";
 import { placeEmployeeOn, compileEffectiveMainAgent, detectCompiledMainAgentCapability, pendingSwitch } from "./src/rooms/native-agent";
 import { storeNativeSelection } from "./src/rooms/native-agent/server/native-profile";
@@ -156,7 +155,7 @@ import type { PromotionServiceApi } from "./src/rooms/rule-forms";
 import type { BoardItem } from "./src/rooms/runs/server";
 
 /** The phase room's board-card dealer (src/rooms/phase/board-cards.ts): project filter plus the board's doneSince. */
-type PhaseBoardCards = (input: { projectId: string | null; doneSince: number }) => BoardItem[];
+type PhaseBoardCards = (input: { projectId: string | null; doneSince: number; onError?: (message: string) => void }) => BoardItem[];
 
 /** Every function one server module offers another; filled once all modules exist, read at call time. */
 export interface Services {
@@ -407,7 +406,7 @@ export default async function plugin(bb: BbPluginApi) {
     createRunGoal(ctx, services),
     createProfileCheck(ctx),
     createPhaseDriver(ctx, services, createPhaseReactions(ctx.db, ctx.bb)),
-    { phaseCards: ((input: { projectId: string | null; doneSince: number }) => phaseBoardCards(ctx.db, input)) satisfies PhaseBoardCards },
+    { phaseCards: ((input: { projectId: string | null; doneSince: number; onError?: (message: string) => void }) => phaseBoardCards(ctx.db, input)) satisfies PhaseBoardCards },
     createMoney(ctx),
     createFront(ctx),
     createCapabilities(ctx, services),
@@ -604,8 +603,6 @@ export default async function plugin(bb: BbPluginApi) {
         await step("restore of the breakers", () => services.stability.restoreBreakers());
         // A version's first start is its deploy time: the canary counts the attempts from here.
         await step("canary start", () => services.canary.noteStart());
-        // The factory conveyor switch (SMA m_cfg_pipeline_off): once, on a hub with no runs yet.
-        await step("conveyor seed", () => seedConveyor(bb.storage.kv, db));
         await taskReconcile.reconcileTasks({ phase: "startup", step, afterResume: async () => {
           if (!skipScans) await step("run sweep", sweepRuns);
           if (!skipScans) await step("worktree sweep", sweepEnvironments);

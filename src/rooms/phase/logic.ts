@@ -260,14 +260,16 @@ export const INDEPENDENCE_GAP = "the plan check is not proven independent";
 /** Planning → admission: every piece becomes a work, waves are computable, the plan was built on the signed context, and an independent checker approved it. */
 export function planGate(record: PhaseRecord): GateResult {
   const plan = record.plan;
-  if (!plan?.items.length && !plan?.alreadyMet) return { ok: false, why: ["no plan: submit the plan's pieces (each a task-v2 contract with a Given/When/Then promise and its wave)"] };
-  const why = [...plan.items.flatMap(pieceProblems), ...waveProblems(plan.items)];
-  const ids = plan.items.map((item) => item.id);
+  // A stored plan without `items` (older or hand-edited record) is «no plan», not a crash.
+  const items = plan?.items ?? [];
+  if (!plan || (!items.length && !plan.alreadyMet)) return { ok: false, why: ["no plan: submit the plan's pieces (each a task-v2 contract with a Given/When/Then promise and its wave)"] };
+  const why = [...items.flatMap(pieceProblems), ...waveProblems(items)];
+  const ids = items.map((item) => item.id);
   if (new Set(ids).size !== ids.length) why.push("two pieces have the same id");
   if (!record.context || plan.contextSha !== record.context.sha) why.push("the plan was not built on the signed context (contextSha differs): read the context documents and plan again");
-  if (plan.sha !== planSignature(plan.items, plan.contextSha)) why.push("the plan signature does not match its pieces");
+  if (plan.sha !== planSignature(items, plan.contextSha)) why.push("the plan signature does not match its pieces");
   // A goal the repository already meets has no pieces to cover its requirements; the goal audit checks each of them.
-  why.push(...(plan.alreadyMet ? [] : coverageGaps(record)), ...validationGaps(plan.items));
+  why.push(...(plan.alreadyMet ? [] : coverageGaps(record)), ...validationGaps(items));
   const threat = threatGap(record);
   if (threat) why.push(threat);
   // The plan's own shape (SMA p2_record): goals and three to five pre-mortem risks. A plan the goal already meets plans nothing.
