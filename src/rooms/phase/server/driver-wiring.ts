@@ -33,6 +33,7 @@ export function installWiring(tools: WiringTools) {
     save: (phaseId, record) => tools.savePhase(phaseId, { record, at: now() }),
     book: (phase, section, kind, text) => tools.book(phase, section as never, kind, text),
     writeDocs: tools.writeDocs,
+    readText: tools.readText,
     runtime: (phase) => (phase.runId ? { ctx, services, pmThreadId: phase.pmThreadId, projectId: phase.projectId, runId: phase.runId } : null),
     pmIdle: async (phase) => ((await orMiss(bb.sdk.threads.get({ threadId: phase.pmThreadId }), null, isNotFound)) as { status?: unknown } | null)?.status === "idle",
     now,

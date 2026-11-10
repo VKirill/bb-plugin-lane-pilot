@@ -28,6 +28,7 @@ import type { ServerCore } from "../../contracts/server";
 
 import { ownerLocale, workflowHumanDetail } from "../../relay/server";
 import { runOnHost } from "@lane-pilot/host-calls";
+import { oneLine, ownsPathProblems, parkRoadmapRow } from "../../phase";
 import { pageReviewByAgent } from "../../critique/server";
 
 import type { DispatchWriter } from "../../platform/server";
@@ -672,6 +673,42 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     }
     const open = listOpenAttempts(db).filter((row) => row.project_id === rt.projectId).length;
     return { has_passport: hasPassport, open_tasks: open, plan_exists: open > 0, has_ui: hasUi };
+  });
+
+  // SMA k_c_backlog: an item into the roadmap's parking lot under the next 999.N number, hash-guarded like the phase's own marks.
+  // The file is read with the host's bounded reader (its hash comes with it): absent is the only reason to start a new file; a read
+  // that failed, was cut, or does not match its hash stops the action with the reason and writes nothing. (The host's writePhaseBook
+  // answers `conflict` and writes nothing when it is given `expectedSha256: null` for a file that exists, so a file wrongly taken as
+  // absent could not have been overwritten either; the action now says why instead of reporting a hash conflict.)
+  action("lp.roadmap_park", async (c, rt) => {
+    const checkout = await pmCheckout(rt);
+    const path = ".agents/planning/ROADMAP.md";
+    const host = ctx.host as never as { call(m: string, i: unknown, o?: unknown): Promise<Record<string, unknown>> };
+    let current = "", expected: string | null = null;
+    try {
+      const file = await host.call("readBoundedFile", { requestedHostId: checkout.hostId, projectCwd: checkout.path, relativePath: path, offset: 0, maxLines: 2000 }, { hostId: checkout.hostId, timeoutMs: 20_000 });
+      if (typeof file.content !== "string") throw new Error("the read returned no text");
+      if (file.truncated === true) throw new Error("the file is longer than one read");
+      if (typeof file.sha256 === "string" && file.sha256 !== sha256Hex(file.content)) throw new Error("the text read does not match the file's hash");
+      current = file.content;
+      expected = sha256Hex(current);
+    } catch (cause) {
+      const why = cause instanceof Error ? cause.message : String(cause);
+      if (!/ENOENT|no such file/i.test(why)) throw new Error(`lp.roadmap_park: ${path} could not be read (${why.slice(0, 300)}): nothing is written`);
+    }
+    const name = oneLine(str(c.resolve("$inputs.name")), 200);
+    if (!name) throw new Error("lp.roadmap_park: the item needs a name");
+    const parked = parkRoadmapRow(current, name, str(c.resolve("$inputs.goal")));
+    const edits = [{ path, expectedSha256: expected, content: parked.text }];
+    const result = await host.call("writePhaseBook", { requestedHostId: checkout.hostId, projectCwd: checkout.path, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId: checkout.hostId, timeoutMs: 30_000 }) as { status: string; reason?: string | null };
+    if (result.status !== "applied") throw new Error(`lp.roadmap_park: ${result.reason ?? result.status}`);
+    return { ok: true, n: parked.n, path };
+  });
+
+  // SMA k_c_import: the pieces an imported plan was cut into stay inside the checkout (the plan gate only asks for some owns_paths).
+  action("lp.plan_import_check", async (c) => {
+    const problems = list(c.resolve("pieces.pieces")).flatMap((piece) => ownsPathProblems(str(rec(piece).id) || "piece", rec(rec(piece).task).owns_paths));
+    return { ok: problems.length === 0, problems: problems.slice(0, 40) };
   });
 
   action("lp.run_status", async (c, lane) => {

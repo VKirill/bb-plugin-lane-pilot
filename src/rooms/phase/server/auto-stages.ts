@@ -5,6 +5,7 @@ import { threatGap } from "../stages";
 import { bestEffort, parseJsonOr, sha256Hex } from "@lane-pilot/kit";
 import { CRITIQUE_AXES, type DesignJournalLine } from "@lane-pilot/contracts";
 import { PLAN_WORD_GAP, INDEPENDENCE_GAP, openQuestions, phaseFolder, planGate, type Phase, type PhaseRecord, type PlanItem, type RiskKey, candidateOn } from "../logic";
+import { buildsScreens } from "../stages";
 import packageJson from "../../../../package.json";
 
 import type { WorkflowEngineApi } from "../../platform/server";
@@ -21,7 +22,7 @@ interface Services {
  * do a stage's work and to choose which workflow runs; a stage whose workflow failed twice goes back to the PM's hands, so the
  * train never stands without anyone named.
  */
-export type AutoKind = "analyze" | "plan" | "check" | "draw" | "review" | "close" | "lessons";
+export type AutoKind = "analyze" | "plan" | "check" | "draw" | "review" | "close" | "lessons" | "live" | "bounce";
 /** Not a workflow: the machine signs again the documents a return to discussion left (the PM's or the owner's correction). */
 export type AutoDue = { kind: AutoKind; wave?: number } | { kind: "resign" } | { kind: "replan" };
 /** How many times the machine returns a phase to planning after a failed verdict before the loop is spent. */
@@ -29,7 +30,7 @@ export type AutoDue = { kind: AutoKind; wave?: number } | { kind: "resign" } | {
 export const MACHINE_STAGE_FAILURE = /repo_edited|artifact_invalid|output_invalid|output field "[^"]+" is missing|thread_failed|thread_id_missing|plugin_stopped|interrupted by a reload|budget_exceeded|provider_error|writer_stream_error|read_binary_rejected|guard:|no_pm_environment|internal_error|timed out waiting|(?:CONTEXT|SECURITY)\.md was not written|needs a threat model|native profile needs Claude Code/i;
 
 export const AUTO_REPLANS = 2;
-export const AUTO_WORKFLOWS: Record<AutoKind, string> = { analyze: "lp.analyze", plan: "lp.plan", check: "lp.plan", draw: "lp.draw", review: "lp.review", close: "lp.close", lessons: "retrospective" };
+export const AUTO_WORKFLOWS: Record<AutoKind, string> = { analyze: "lp.analyze", plan: "lp.plan", check: "lp.plan", draw: "lp.draw", review: "lp.review", close: "lp.close", lessons: "retrospective", live: "ui-audit", bounce: "plan-review-convergence" };
 /** Failed runs of one stage's workflow before the loop is spent. */
 export const AUTO_TRIES = 2;
 /** Failed runs of one stage's workflow over the phase's whole life: a new version forgets AUTO_TRIES, not this, so frequent releases do not give endless tries. */
@@ -61,12 +62,17 @@ export function autoDue(phase: Phase): AutoDue | null {
   // A plan the PM handed in waits for its independent check: the machine runs lp.plan itself with the plan's sha — the PM cannot
   // start an internal workflow, and its verdict comes back through the same gates (PH1: the manual-plan dead end).
   if (phase.stage === "planning" && r.context && r.plan && !stale && !r.plan.critique && !r.plan.admittedSha && !tried("check")) return { kind: "check" };
+  // The external plan bounce (SMA k_wp_bounce): when the project asks for it, an approved plan is refined once by a second
+  // tool before admission — once per plan sha.
+  if (phase.stage === "planning" && r.context && r.plan?.critique?.decision === "approve" && !r.plan.admittedSha && r.planBounce && r.plan.bounce?.sha !== r.plan.sha && !tried("bounce")) return { kind: "bounce" };
   // No drawing over an open design question (SMA ts_needs_clarify): the words are agreed first, except the batch service drawing.
   if (phase.stage === "design" && !r.design?.drawing && !tried("draw") && !openQuestions(r, "design").length) return { kind: "draw" };
   if (phase.stage === "execution" && r.waveReview) {
     const wave = Object.entries(r.execution?.waves ?? {}).find(([, done]) => done.lines.every((line) => line.ok) && !done.review);
     if (wave && !tried("review")) return { kind: "review", wave: Number(wave[0]) };
   }
+  // The live interface check (SMA k_we_uiqa): after the verifier and before the goal audit, only when a piece built screens.
+  if (phase.stage === "verification" && r.verification?.verdict?.state === "passed" && !r.verification.live && r.liveCheck === true && (r.plan?.items ?? []).some(buildsScreens) && !tried("live")) return { kind: "live" };
   if (phase.stage === "verification" && r.verification?.verdict?.state === "passed" && !r.verification.model && !tried("close")) return { kind: "close" };
   // A failed verdict (red checks or an unmet goal audit) is planned again by the machine, with the verdict as the gaps, twice at most.
   if (phase.stage === "verification" && r.verification?.verdict?.state === "failed" && (r.replan?.count ?? 0) < AUTO_REPLANS) return { kind: "replan" };
@@ -113,7 +119,7 @@ export function replansSpent(phase: Phase): boolean {
 }
 
 /** The inputs of a stage's workflow, from the phase record. */
-export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number }, medianTask?: string): Record<string, unknown> {
+export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number }, medianTask?: string, contextExisting?: string | null): Record<string, unknown> {
   const r = phase.record;
   const contextText = (r.context?.docs ?? []).map((doc) => doc.path).join(", ");
   // CONTEXT.md is written from the analysis before the owner answers its open questions; the answers live only in the record. The magicseo
@@ -125,7 +131,9 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number },
     // The owner's «no» to a context he was asked to sign rides the next analysis as part of the goal it reads.
     case "analyze": {
       const said = (r.words ?? []).filter((word) => word.turn === "context" && word.decision === "no").map((word) => word.text).slice(-3);
-      return { goal: said.length ? `${phase.goal}\n\nThe owner said no to the last context: ${said.join(" / ")}` : phase.goal, depth: "standard" };
+      return { goal: said.length ? `${phase.goal}\n\nThe owner said no to the last context: ${said.join(" / ")}` : phase.goal, depth: "standard",
+        // An existing CONTEXT.md rides the analysis (SMA k_wdi_existing): its decisions are kept, not overwritten.
+        ...(contextExisting?.trim() ? { context_existing: contextExisting.slice(0, 8000) } : {}) };
     }
     case "plan": {
       const gateGaps = r.plan ? planGaps(r) : [];
@@ -178,11 +186,20 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number },
         contract: { acceptance: item.task.acceptance ?? [], verification: item.task.verification ?? [], owns_paths: item.task.owns_paths ?? [] },
         depends_on: Array.isArray(item.task.depends_on) ? item.task.depends_on : [] }));
       const head = tree ? r.candidate!.branch : "HEAD";
-      const drawing = r.design?.drawing ? { paths: r.design.drawing.paths, sha256: r.design.drawing.sha256, ui_spec: r.design.drawing.paths.find((path) => /UI-SPEC\.md$/i.test(path)) ?? null } : undefined;
+      // SMA k_wv_design: with phase.design_points on, the contract's checkable points ride the audit — every one is judged against the screens.
+      const drawing = r.design?.drawing ? { paths: r.design.drawing.paths, sha256: r.design.drawing.sha256, ui_spec: r.design.drawing.paths.find((path) => /UI-SPEC\.md$/i.test(path)) ?? null, ...(r.designPoints === true && r.verification?.points?.length ? { points: r.verification.points.map((point) => ({ id: point.id, text: point.text })) } : {}) } : undefined;
       return { goal: phase.goal, goals, merged_commits: r.execution?.baseSha ? [`${r.execution.baseSha}..${head}`] : [], ...(drawing ? { drawing } : {}),
         summary: `${tree ? `The phase's work is on branch ${r.candidate!.branch}, checked out at ${tree.path}, and lands on main only after the acceptance: read and run the evidence there. ` : ""}${r.verification?.verdict?.detail ?? ""}` };
     }
     case "lessons": return { run_id: phase.runId ?? "" };
+    // The live check audits the served interface on the candidate tree (SMA k_we_uiqa): the visible pieces' qa_url and their promises as flows.
+    case "live": {
+      const visible = (r.plan?.items ?? []).filter(buildsScreens);
+      const urls = [...new Set(visible.map((item) => String(item.task.qa_url ?? "").trim()).filter(Boolean))];
+      return { url: urls[0] ?? "", urls, flows: visible.map((item) => `${item.id}: given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}`),
+        dev_server: [...new Set(visible.map((item) => String(item.task.qa_dev_server ?? "").trim()).filter(Boolean))][0] ?? "" };
+    }
+    case "bounce": return { phase_id: phase.id, machine: true };
   }
 }
 
@@ -264,7 +281,7 @@ export type AutoApi = {
   planCheck(input: { phaseId: string; decision: "approve" | "changes_requested"; by: string; summary?: string; wfRunId?: string }): Promise<Phase>;
   question(input: { phaseId: string; text: string; blocking: boolean; by: string }): Phase;
   waveReview(input: { phaseId: string; wave: number; state: "passed" | "failed"; by: string; summary: string }): Phase;
-  goalAudit(input: { phaseId: string; state: "met" | "unmet"; by: string; summary: string }): Phase;
+  goalAudit(input: { phaseId: string; state: "met" | "unmet"; by: string; summary: string; points?: Array<{ id: string; met: boolean; evidence?: string }> }): Phase;
   lessons(input: { phaseId: string; analysis: string; reviewRun: string; reviewerNode?: string; by: string }): Phase;
   drawing(input: { phaseId: string; paths: string[]; designer: string; feasible: boolean; contradiction?: string; reviewer?: string; by: string }): Promise<Phase>;
   returnTo(input: { phaseId: string; to: "planning" | "discussion"; note: string; by: string }): Phase;
@@ -278,6 +295,8 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
   save(phaseId: string, record: PhaseRecord): void;
   book(phase: Phase, section: string, kind: string, text: string): void;
   writeDocs(phase: Phase, files: Array<{ path: string; content: string }>, message: string): Promise<{ written: string[] }>;
+  /** A text file of the project as the run sees it (driver-docs readText); null when unreadable or absent. */
+  readText?(phase: Phase, path: string): Promise<string | null>;
   runtime(phase: Phase): unknown | null;
   /** Whether the PM chat is idle (no turn running). */
   pmIdle(phase: Phase): Promise<boolean>;
@@ -330,6 +349,13 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       const doc = contextDoc(phase, output);
       const path = `${phaseFolder(phase.id)}/CONTEXT.md`;
       const securityPath = `${phaseFolder(phase.id)}/SECURITY.md`;
+      // SMA k_wdi_existing: a CONTEXT.md already on disk is found and its decisions kept, not overwritten — unless a signed
+      // context is being re-signed (resign path), which keeps itself.
+      const earlier = deps.readText && !phase.record.signedBefore?.docs.length ? await deps.readText(phase, path).catch(() => null) : null;
+      if (earlier?.trim()) {
+        doc.content += `\n## Earlier decisions (kept)\n\n${earlier.trim().slice(0, 20000)}\n`;
+        deps.book(phase, "discussion", "context_existing", `an existing CONTEXT.md was found (${earlier.trim().length} chars): its text is kept under «Earlier decisions (kept)» in the new one`);
+      }
       const files = [{ path, content: doc.content }, ...(doc.security ? [{ path: securityPath, content: doc.security }] : [])];
       const written = await deps.writeDocs(phase, files, `phase ${phase.id}: ${files.map((file) => file.path.split("/").at(-1)).join(" and ")} from the analysis`);
       if (!written.written.includes(path)) throw new Error("CONTEXT.md was not written");
@@ -381,6 +407,46 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       const passed = output.status === "pass";
       deps.api.waveReview({ phaseId: phase.id, wave: auto.wave ?? 1, state: passed ? "passed" : "failed", by,
         summary: text(`${output.status}; critical ${text(output.critical_count, 6)}, high ${text(output.high_count, 6)}; ${JSON.stringify(output.findings ?? []).slice(0, 1500)}`, 2000) });
+      // SMA k_wr_commit: the review's findings are kept in the phase as a committed REVIEW.md, one section per wave
+      // (a later wave's section replaces an earlier attempt's for the same wave, keeps the rest).
+      const wave = auto.wave ?? 1;
+      const path = `${phaseFolder(phase.id)}/REVIEW.md`;
+      const findings = Array.isArray(output.findings) ? (output.findings as unknown[]).map((finding) => {
+        const row = finding as { file?: unknown; line?: unknown; path?: unknown; severity?: unknown; title?: unknown; text?: unknown; message?: unknown };
+        const where = row?.file ?? row?.path ? `${row.file ?? row.path}${row.line ? `:${row.line}` : ""} ` : "";
+        return `- ${where}${text(row?.title ?? row?.text ?? row?.message ?? finding, 300)}`;
+      }) : [];
+      const section = [`## Wave ${wave} — ${passed ? "passed" : "failed"}`, "",
+        `status ${text(output.status, 40) || "?"}; critical ${text(output.critical_count, 6) || "0"}, high ${text(output.high_count, 6) || "0"}; reviewer ${by}`, "",
+        ...(findings.length ? findings : ["- no findings"]), ""].join("\n");
+      const before = (await deps.readText?.(phase, path).catch(() => null)) ?? null;
+      const stripped = (before ?? `# Review — phase ${phase.id}\n`).replace(new RegExp(`\\n*## Wave ${wave} — [\\s\\S]*?(?=\\n## Wave \\d+ — |$)`), "");
+      await deps.writeDocs(phase, [{ path, content: `${stripped.trimEnd()}\n\n${section}` }], `phase ${phase.id}: REVIEW.md wave ${wave}`).catch((cause: unknown) => ctx.log(`phase ${phase.id}: REVIEW.md not written: ${cause instanceof Error ? cause.message : String(cause)}`));
+    } else if (auto.kind === "live") {
+      // SMA k_we_uiqa: the live check's result is stored on the phase, tied to the candidate head it was taken on; a blocked
+      // check fails the verdict like a failed piece, so the machine plans the fix (replan path).
+      if (phase.stage !== "verification" || !phase.record.verification?.verdict) return;
+      const blocked = output.status === "blocked";
+      const head = candidateOn(phase.record) && phase.record.candidate!.verified ? Object.values(phase.record.candidate!.verified)[0] ?? null : null;
+      const live = { state: (blocked ? "blocked" : "passed") as "passed" | "blocked", score40: typeof output.score_40 === "number" ? output.score_40 : undefined,
+        findings: output.findings, reportPath: text(output.report_path, 400) || undefined, head, at: deps.now() };
+      const verdict = phase.record.verification.verdict;
+      const record: PhaseRecord = { ...phase.record, verification: { ...phase.record.verification, live,
+        ...(blocked ? { verdict: { ...verdict, state: "failed" as const, detail: `the live interface check is blocked: ${text(output.status_detail ?? output.findings, 400) || "see the audit report"}` } } : {}) } };
+      deps.book(phase, "verification", "live_check", `live interface check (${AUTO_WORKFLOWS.live}): ${live.state}${live.score40 !== undefined ? `, score ${live.score40}/40` : ""}${live.head ? ` on head ${live.head.slice(0, 12)}` : ""}${live.reportPath ? ` — report ${live.reportPath}` : ""}`);
+      deps.save(phase.id, record);
+    } else if (auto.kind === "bounce") {
+      // SMA k_wp_bounce: one external refinement per plan sha. changes_requested sets the replan gaps, so the existing plan
+      // stage runs once more; anything else changes nothing and never blocks admission.
+      if (phase.stage !== "planning" || !phase.record.plan || phase.record.plan.bounce?.sha === phase.record.plan.sha) return;
+      const decision = output.status === "changes_requested" ? "changes_requested" : "approve";
+      const rounds = typeof output.rounds === "number" ? output.rounds : undefined;
+      const bounce = { sha: phase.record.plan.sha, decision, rounds, at: deps.now() };
+      const gaps = decision === "changes_requested"
+        ? `the external plan bounce asked for changes: ${text(JSON.stringify(output.findings ?? []), 1500) || "see the review"}`
+        : null;
+      deps.book(phase, "plan", "bounce", `external plan bounce (${AUTO_WORKFLOWS.bounce}): ${decision}${rounds !== undefined ? ` in ${rounds} round(s)` : ""}${gaps ? ` — the plan runs once more on its findings` : ""}`);
+      deps.save(phase.id, { ...phase.record, plan: { ...phase.record.plan, bounce }, ...(gaps ? { replan: { gaps, count: phase.record.replan?.count ?? 0 } } : {}) });
     } else if (auto.kind === "lessons") {
       if (phase.stage !== "lessons" || phase.record.lessons?.analysis) return;
       // The retrospective's two roles: «retro» writes, «stage» reads and weighs in a session of its own. The analysis is what «stage» was
@@ -398,7 +464,9 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       const lacking = goals.filter((goal) => String(goal?.status ?? "").toUpperCase() !== "MET").map((goal) => `- ${text(goal.id, 80)}: ${text(goal.missing, 400) || "not met"}`);
       const drift = (Array.isArray(output.drift_items) ? output.drift_items : []).map((item) => `- drift: ${text(item, 400)}`);
       const unmetSummary = [`unmet: ${JSON.stringify(output.unmet_ids ?? [])}; ${text(output.status, 30)}`, ...lacking, ...drift].join("\n");
-      deps.api.goalAudit({ phaseId: phase.id, state: met ? "met" : "unmet", by, summary: text(met ? `every goal met; report ${text(output.report_path, 200)}` : unmetSummary, 2000) || "goal audit" });
+      // SMA k_wv_design: the audit's per-point verdicts on the drawing contract ride into the acceptance lines.
+      const points = Array.isArray(output.points) ? (output.points as Array<{ id?: unknown; met?: unknown; evidence?: unknown }>).map((point) => ({ id: text(point.id, 80), met: point.met === true, ...(point.evidence ? { evidence: text(point.evidence, 300) } : {}) })).filter((point) => point.id) : undefined;
+      deps.api.goalAudit({ phaseId: phase.id, state: met ? "met" : "unmet", by, summary: text(met ? `every goal met; report ${text(output.report_path, 200)}` : unmetSummary, 2000) || "goal audit", ...(points?.length ? { points } : {}) });
     }
   }
 
@@ -441,19 +509,25 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       const summary = services.workflowEngine.get(running.wfRunId);
       if (!summary || summary.status === "running" || summary.status === "waiting") return true;
       if (summary.status !== "succeeded" || !summary.output) {
+        // A bounce that failed never blocks admission (SMA k_wp_bounce): it is recorded on the plan as unavailable, not counted.
+        if (running.kind === "bounce") {
+          deps.book(phase, "plan", "bounce", `the external plan bounce did not finish (${summary.error ?? summary.reason ?? summary.status}): the plan is admitted without it`);
+          deps.save(phase.id, { ...phase.record, auto: undefined, plan: phase.record.plan ? { ...phase.record.plan, bounce: { sha: phase.record.plan.sha, decision: "unavailable", at: deps.now() } } : phase.record.plan });
+          return true;
+        }
         // A run a reload or deploy stopped (its helper thread died with the plugin) is not the stage's failure: it runs again and keeps its tries (live, 2026-10-25).
         if (summary.status === "interrupted" || /plugin_stopped|interrupted by a reload/.test(`${summary.error ?? ""} ${summary.reason ?? ""}`)) {
-          deps.book(phase, "decisions", "auto_restart", `${AUTO_WORKFLOWS[running.kind]} was stopped by a reload (${summary.error ?? summary.reason ?? summary.status}): run again, the try is not counted`);
+          deps.book(phase, "decisions", "auto_restart", `${AUTO_WORKFLOWS[running.kind as AutoKind]} was stopped by a reload (${summary.error ?? summary.reason ?? summary.status}): run again, the try is not counted`);
           deps.save(phase.id, { ...phase.record, auto: undefined });
           return false;
         }
-        return fail(phase, running.kind, summary.error ?? summary.reason ?? summary.status);
+        return fail(phase, running.kind as AutoKind, summary.error ?? summary.reason ?? summary.status);
       }
       try {
-        await apply(phase, running, running.kind === "close" ? withAuditGoals(running.wfRunId, summary.output) : summary.output);
+        await apply(phase, running as AutoRecord, running.kind === "close" ? withAuditGoals(running.wfRunId, summary.output) : summary.output);
         const after = deps.get(phase.id);
         deps.save(after.id, { ...after.record, auto: undefined });
-        deps.book(after, "decisions", "auto_done", `${AUTO_WORKFLOWS[running.kind]} done (${running.wfRunId}) and reported through the gates`);
+        deps.book(after, "decisions", "auto_done", `${AUTO_WORKFLOWS[running.kind as AutoKind]} done (${running.wfRunId}) and reported through the gates`);
       } catch (cause) {
         // A gate's refusal carries its reasons (PhaseRefusal.why): the book said only «the plan is not admitted» and the cause had to be
         // rebuilt from the record (drill ph_5cd09d1c7a: the missing SECURITY.md, Fable 2026-10-27).
@@ -467,7 +541,7 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
           deps.api.returnTo({ phaseId: phase.id, to: "discussion", note: message, by: "Lane Pilot (resign after a context edit)" });
           return true;
         }
-        await fail(deps.get(phase.id), running.kind, message);
+        await fail(deps.get(phase.id), running.kind as AutoKind, message);
       }
       return true;
     }
@@ -522,7 +596,9 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       // The goal audit is told from git which recorded proofs are stale, so it does not work currency out by hand; a failed lookup only leaves the facts out.
       const currency = due.kind === "close" && deps.proofCurrency ? await bestEffort(ctx.log, "phase proof currency", deps.proofCurrency(phase), null) : null;
       // The plan runs in full mode: lp.plan's critic otherwise skips a plan below three tasks, and SMA checks every plan (p2_checker).
-      const started = services.workflowEngine.start({ workflow, inputs: { ...autoInputs(phase, due, deps.medianTask?.(phase) ?? undefined), ...(currency ? { proof_currency: currency } : {}) }, key: `phase:${phase.id}:${due.kind}:${phase.edition}:${deps.now()}`, runtime,
+      // An existing CONTEXT.md is handed to the analysis so its decisions are kept (SMA k_wdi_existing); unreadable is no blocker.
+      const contextExisting = due.kind === "analyze" && deps.readText ? await deps.readText(phase, `${phaseFolder(phase.id)}/CONTEXT.md`).catch(() => null) : null;
+      const started = services.workflowEngine.start({ workflow, inputs: { ...autoInputs(phase, due, deps.medianTask?.(phase) ?? undefined, contextExisting), ...(currency ? { proof_currency: currency } : {}) }, key: `phase:${phase.id}:${due.kind}:${phase.edition}:${deps.now()}`, runtime,
         ...(due.kind === "plan" ? { mode: "full" as const } : {}),
         link: { projectId: phase.projectId, ...(phase.runId ? { runId: phase.runId } : {}) } });
       started.done.catch((cause: unknown) => ctx.log(`phase ${phase.id}: ${AUTO_WORKFLOWS[due.kind]} stopped: ${cause instanceof Error ? cause.message : String(cause)}`));

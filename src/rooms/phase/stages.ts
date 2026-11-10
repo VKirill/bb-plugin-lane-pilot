@@ -1,4 +1,5 @@
 import { TASK_KINDS } from "@lane-pilot/contracts";
+import { sha256Hex } from "@lane-pilot/kit";
 import type { BookPart, Drawing, Phase, PhaseRecord, PhaseStage, PlanItem, TaskFact } from "./logic";
 
 /**
@@ -81,11 +82,19 @@ export function threatGap(record: PhaseRecord): string | null {
 const EXISTENCE_ONLY = /^\s*(test\s+-[efsd]|ls\b|stat\b|\[\s+-[efsd])/;
 
 /** Validation strategy: a piece whose every check only tests that something exists proves nothing about its promise. */
-export function validationGaps(items: readonly PlanItem[]): string[] {
-  return items.filter((item) => {
+export function validationGaps(items: readonly PlanItem[], liveCheckOff = true): string[] {
+  const why = items.filter((item) => {
     const checks = Array.isArray(item.task.verification) ? (item.task.verification as Array<{ command?: unknown }>).map((check) => String(check.command ?? "")) : [];
     return checks.length > 0 && checks.every((command) => EXISTENCE_ONLY.test(command));
   }).map((item) => `${item.id}: every check only tests that a file exists — add one that would fail without the work (VALIDATION.md)`);
+  // SMA k_we_verify: visible work owes a live check — unless the project switched browser_qa off, where the acceptance line
+  // names «visible work, no live check owed» and the owner decides on it there.
+  if (!liveCheckOff) for (const item of items.filter(buildsScreens)) {
+    const cases = Array.isArray(item.task.qa_cases) ? item.task.qa_cases.length : 0;
+    const url = typeof item.task.qa_url === "string" && item.task.qa_url.trim();
+    if (!cases || !url) why.push(`${item.id}: visible work owes a live check — name qa_cases and a qa_url to run them on (this project has browser_qa.enabled on; switch it off for work no browser can check)`);
+  }
+  return why;
 }
 
 /** The most rounds of the independent plan check before the phase stops and goes back (SMA: Up to three revision rounds, plan review convergence). */
@@ -109,6 +118,9 @@ export const motionRows = (items: readonly PlanItem[]) =>
 
 /** The animator law, inline for a run without subagents (SMA: Headless: the animator law inline). */
 export const ANIMATOR_LAW = "motion rows: animate transform and opacity only, 150–300 ms for UI feedback, ease-out entering and ease-in leaving, respect prefers-reduced-motion, no motion that blocks input, every animation has its end state drawn";
+
+/** The rule for frequent actions (SMA k_ag_animator): carried by a piece plan only where phase.piece_notes is on. */
+export const ANIMATOR_FREQUENT_RULE = "an action the person performs many times in a session (typing, row hover, list moves) is not animated";
 
 /** The heading a required drawing section is read under in UI-SPEC.md (SMA p3_requirements). */
 const SECTION_HEADING: Record<string, RegExp> = {
@@ -154,6 +166,14 @@ export function piecePlan(phase: Pick<Phase, "id" | "title" | "record">, item: P
     typeof value === "string" ? value : value && typeof value === "object" && "command" in value ? String((value as { command: unknown }).command) : JSON.stringify(value)).filter(Boolean);
   const drawing = phase.record.design?.drawing && buildsScreens(item) ? phase.record.design.drawing.paths : [];
   const line = (label: string, values: string[]) => values.length ? `${label}: ${values.join("; ")}` : "";
+  // SMA k_d_tpl_predictions / k_we_animator_inline: the forecast, the risk and the animator's law go into a piece's plan only where
+  // the phase was opened with phase.piece_notes on — the plan text of every other piece is exactly what it was (the writer dispatch
+  // compares plan texts to recognise a piece it already dispatched, so a text that changed with the code would be dispatched twice).
+  const notes = phase.record.pieceNotes === true;
+  const forecast = notes && task.forecast && typeof task.forecast === "object" ? task.forecast as { files?: number; checks_pass_first_try?: boolean; tokens?: number; minutes?: number } : null;
+  const predictions = forecast ? `Predictions: ${[typeof forecast.files === "number" ? `files ${forecast.files}` : "", forecast.checks_pass_first_try === true ? "first try" : forecast.checks_pass_first_try === false ? "not first try" : "", typeof forecast.tokens === "number" ? `tokens ${forecast.tokens}` : "", typeof forecast.minutes === "number" ? `minutes ${forecast.minutes}` : ""].filter(Boolean).join(", ")}` : "";
+  const contextRisks = notes ? Object.entries(phase.record.context?.risks ?? {}).filter(([, text]) => text?.trim() && !/^(none|нет|no)\b/i.test(text.trim())).map(([kind, text]) => `${kind}: ${text}`) : [];
+  const risk = notes ? [task.risk ? String(task.risk) : "", Array.isArray(task.never_touch) && task.never_touch.length ? `never_touch: ${(task.never_touch as unknown[]).map(String).join(", ")}` : "", ...contextRisks].filter(Boolean).join("; ") : "";
   const steps = [
     line("1. Read first", list("read_first")),
     line("2. Run the checks, red before the work", list("verification")),
@@ -161,8 +181,12 @@ export function piecePlan(phase: Pick<Phase, "id" | "title" | "record">, item: P
     line("   with the interfaces", list("interfaces")),
     line("   keeping the invariants", list("invariants")),
     drawing.length ? `   the screens follow the phase drawing: ${drawing.join(", ")}` : "",
+    // SMA k_we_animator_inline: a motion piece carries the animator's law inline, no subagent needed.
+    notes && motionRows([item]).length ? `Motion (the animator's law): ${ANIMATOR_LAW}; ${ANIMATOR_FREQUENT_RULE}` : "",
     line("4. Done when", list("acceptance")),
     line("Out of scope", list("out_of_scope")),
+    predictions,
+    risk ? `Risk: ${risk}` : "",
   ].filter(Boolean);
   return [`Phase ${phase.id} «${phase.title}», wave ${item.wave}, piece ${item.id}. Promise — given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}.`,
     "The phase's plan critic approved this contract; the steps follow it.", ...steps].join("\n").slice(0, 12000);
@@ -214,9 +238,114 @@ export function uatText(phase: Pick<Phase, "id" | "title" | "goal" | "record">):
 const UAT_LINE = /^- \[([ xX!])\] (.+)$/;
 
 /** Is a UAT session open, and is it complete: the lines of UAT.md by state. */
+/** One UAT line marked by its number (SMA d_phase_uat): [ ]→[x] or [!], a note appended; the other lines stay
+ *  byte-equal. Null when no line carries that number. */
+export function markUatLine(text: string, n: number, ok: boolean, note?: string): string | null {
+  let hit = false;
+  const out = text.split("\n").map((line) => {
+    // A CRLF file: `.` does not match \r, so the line is matched without it and the \r goes back untouched.
+    const cr = line.endsWith("\r") ? "\r" : "";
+    const row = line.slice(0, line.length - cr.length).match(UAT_LINE);
+    if (!row || !row[2]!.trim().startsWith(`${n}.`)) return line;
+    hit = true;
+    return `- [${ok ? "x" : "!"}] ${row[2]}${note?.trim() ? ` — ${note.trim().replace(/\s+/g, " ").slice(0, 600)}` : ""}${cr}`;
+  });
+  return hit ? out.join("\n") : null;
+}
+
 export function uatState(text: string): { lines: number; passed: number; failed: string[]; open: string[] } {
   const rows = text.split("\n").map((line) => line.trim().match(UAT_LINE)).filter((row): row is RegExpMatchArray => !!row);
   return { lines: rows.length, passed: rows.filter((row) => /[xX]/.test(row[1]!)).length, failed: rows.filter((row) => row[1] === "!").map((row) => row[2]!), open: rows.filter((row) => row[1] === " ").map((row) => row[2]!) };
+}
+
+/** The plan as a document (SMA k_wp_commit, k_t_template): title, goal, the waves table and every piece's promise,
+ *  contract and coverage — the same facts the admitted plan carries. */
+export function planText(phase: Pick<Phase, "id" | "title" | "goal" | "record">): string {
+  return templateFill("PLAN", phase, new Map());
+}
+
+/** A prefilled phase document (SMA k_t_template): PLAN from the plan, VERIFICATION from each piece's checks and
+ *  their latest result in `facts` — created from the phase's facts instead of by hand. */
+export function templateFill(kind: "PLAN" | "VERIFICATION", phase: Pick<Phase, "id" | "title" | "goal" | "record">, facts: ReadonlyMap<string, TaskFact>): string {
+  const items = phase.record.plan?.items ?? [];
+  const waves = wavesOfPublic(items);
+  if (kind === "PLAN") {
+    return [`# Plan — phase ${phase.id}: ${phase.title}`, "", `Goal: ${phase.goal}`, "",
+      phase.record.plan?.objective ? `Objective: ${phase.record.plan.objective}` : "", `## Waves`, "",
+      ...waves.flatMap((wave) => [`### Wave ${wave}`, "", ...items.filter((item) => item.wave === wave).map((item) => [
+        `- ${item.id}: given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}`,
+        `  owns: ${(Array.isArray(item.task.owns_paths) ? item.task.owns_paths : []).map(String).join(", ") || "—"}`,
+        `  checks: ${(Array.isArray(item.task.verification) ? item.task.verification as Array<{ command?: unknown }> : []).map((check) => String(check?.command ?? "")).filter(Boolean).join("; ") || "—"}`,
+        ...(item.covers?.length ? [`  covers: ${item.covers.join(", ")}`] : []),
+      ].join("\n"))]), "",
+    ].filter((line) => line !== "").join("\n");
+  }
+  return [`# Verification — phase ${phase.id}: ${phase.title}`, "", `Goal: ${phase.goal}`, "",
+    ...items.map((item) => {
+      const checks = (Array.isArray(item.task.verification) ? item.task.verification as Array<{ command?: unknown }> : []).map((check) => String(check?.command ?? "")).filter(Boolean);
+      const fact = facts.get(item.id);
+      const result = fact?.verification ?? fact?.state ?? "not issued";
+      return `- ${item.id} (${result}): ${checks.map((command) => `\`${command}\``).join(", ") || "no checks"} — then ${item.promise.then}`;
+    }), ""].join("\n");
+}
+
+const wavesOfPublic = (items: readonly PlanItem[]) => [...new Set(items.map((item) => item.wave))].sort((a, b) => a - b);
+
+/** SPEC.md (SMA k_pl_spec): what the phase delivers — goal, requirements, locked decisions, appetite, no-gos and the
+ *  ambiguity score the plan gate reads. */
+export function specText(phase: Pick<Phase, "id" | "title" | "goal" | "record">): string {
+  const context = phase.record.context;
+  return [`# Spec — phase ${phase.id}: ${phase.title}`, "", `Goal: ${phase.goal}`, "",
+    ...(phase.record.ambiguityGate === true ? [`Ambiguity: ${ambiguityScore(phase.record)}`, ""] : []),
+    `## Requirements`, ...(context?.requirements?.length ? context.requirements.map((id) => `- ${id}`) : ["- none named"]), "",
+    `## Locked decisions`, ...(context?.decisions?.length ? context.decisions.map((id) => `- ${id}`) : ["- none"]), "",
+    `## Appetite`, context?.appetite ?? "—", "",
+    `## No-gos`, ...(context?.noGos?.length ? context.noGos.map((line) => `- ${line}`) : ["- none"]), ""].join("\n");
+}
+
+/** The questions that hold the plan: blocking, asked at planning, not yet answered. The plan gate and the ambiguity score read the same list. */
+export const openQuestions = (record: PhaseRecord, stage: PhaseStage) => (record.questions ?? []).filter((question) => question.stage === stage && question.blocking && !question.answer);
+
+/** The context's ambiguity (SMA k_pl_spec), read only where phase.ambiguity_gate is on: the open planning questions over
+ *  those questions plus the locked decisions, 0–1 to two decimals. Non-blocking questions and questions of other stages
+ *  are not counted (they do not hold the plan either). */
+export function ambiguityScore(record: PhaseRecord): number {
+  const open = openQuestions(record, "planning").length;
+  const total = (record.questions ?? []).filter((question) => question.stage === "planning" && question.blocking).length + (record.context?.decisions?.length ?? 0);
+  return total ? Math.round((open / total) * 100) / 100 : 0;
+}
+
+/** Most contract points one phase carries (SMA k_wv_design); the book says when the list was cut. */
+export const DESIGN_POINTS_MAX = 40;
+
+/** Design contract points (SMA k_wv_design), read only where phase.design_points is on: the checklist items (`- [ ]` /
+ *  `- [x]`) of UI-SPEC.md, each with a stable id from its own text, at most 40. A plain bullet is prose, not a point. */
+export function designPoints(specText: string): { points: Array<{ id: string; text: string }>; total: number } {
+  const seen = new Set<string>();
+  const all = specText.split(/\r?\n/).map((line) => /^[-*]\s+\[[ xX]\]\s+(.+)$/.exec(line.trim())?.[1]?.trim() ?? "").filter(Boolean)
+    .map((text) => ({ id: `design_${sha256Hex(text).slice(0, 8)}`, text: text.slice(0, 300) }))
+    .filter((point) => !seen.has(point.id) && !!seen.add(point.id));
+  return { points: all.slice(0, DESIGN_POINTS_MAX), total: all.length };
+}
+
+/** Threat closure (SMA k_pl_security): every threat row of SECURITY.md needs a mitigation citing `file:line`, and the
+ *  cited file must exist and have that line. `has` answers file-exists-and-line-exists, or null when it could not be told
+ *  (the tree could not be read): such a row is `unchecked`, not a gap. */
+export function threatClosureGaps(securityText: string, has: (path: string, line: number) => boolean | null): { gaps: string[]; unchecked: string[] } {
+  const gaps: string[] = [], unchecked: string[] = [];
+  let inThreats = false;
+  for (const row of securityText.split(/\r?\n/)) {
+    if (/^#{1,6}\s/.test(row.trim())) { inThreats = /threat|risk/i.test(row) && !/mitigation|must hold|what the plan/i.test(row); continue; }
+    const bullet = /^-\s+(.+)$/.exec(row.trim());
+    if (!bullet) continue;
+    if (!inThreats) continue;
+    const cite = /([^\s`"'()]+\.[a-z0-9]+):(\d{1,6})\b/i.exec(bullet[1]!);
+    if (!cite) { gaps.push(`threat without a mitigation citing file:line: ${bullet[1]!.slice(0, 120)}`); continue; }
+    const there = has(cite[1]!, Number(cite[2]));
+    if (there === null) unchecked.push(`${cite[1]}:${cite[2]}`);
+    else if (!there) gaps.push(`mitigation cites ${cite[1]}:${cite[2]}, which is not in the code: ${bullet[1]!.slice(0, 120)}`);
+  }
+  return { gaps, unchecked };
 }
 
 /** The daemon writes the conclusion (SMA): the phase's SUMMARY.md in the short form, from the record and the book. */
@@ -239,13 +368,113 @@ export function markRoadmap(text: string, row: string): string {
   return text.split("\n").map((line) => { const found = line.trim().match(ROW); return found && found[2] === row ? line.replace("- [ ]", "- [x]") : line; }).join("\n");
 }
 
-/** Transition (SMA: advance to the next phase): the first open row of the roadmap. */
-export function nextRoadmapRow(text: string): { n: string; name: string; goal: string } | null {
-  for (const line of text.split("\n")) {
+/** The milestone a roadmap row sits under (SMA k_we_branch): the last heading before the row, as a branch slug. */
+export function milestoneOf(roadmapText: string, row: string): string | null {
+  let section: string | null = null;
+  for (const line of roadmapText.split("\n")) {
+    const head = /^#{1,6}\s+(.+)$/.exec(line.trim());
+    if (head) section = head[1]!.trim();
     const found = line.trim().match(ROW);
-    if (found && found[1] === " ") return { n: found[2]!, name: found[3]!.trim(), goal: (found[4] ?? "").trim() };
+    if (found && found[2] === row) {
+      if (!section) return null;
+      const slug = section.replace(/milestone\s*/i, "").trim().toLowerCase().replace(/[^a-z0-9а-яё]+/gi, "-").replace(/^-+|-+$/g, "");
+      return slug || null;
+    }
   }
   return null;
+}
+
+/** The heading of the roadmap's parking lot, exactly (SMA k_c_backlog); no other heading is one. */
+const BACKLOG_HEADING = "## Backlog";
+
+/** Transition (SMA: advance to the next phase): the first open row of the roadmap. Rows that sit under the `## Backlog`
+ *  heading and are numbered 999.N are the parking lot (SMA k_c_backlog): the machine never opens them, a person promotes one by
+ *  renumbering it. Any other roadmap advances exactly as it always did: a real phase 999.x elsewhere is a phase, and so is a
+ *  person's own row under a Backlog heading. */
+export function nextRoadmapRow(text: string): { n: string; name: string; goal: string } | null {
+  let parked = false;
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (/^#{1,6}\s/.test(trimmed)) { parked = trimmed === BACKLOG_HEADING; continue; }
+    const found = trimmed.match(ROW);
+    // Only a 999.N row under that heading is parked: a person's own open row there is still the next phase, as it always was.
+    if (found && found[1] === " " && !(parked && found[2]!.startsWith("999."))) return { n: found[2]!, name: found[3]!.trim(), goal: (found[4] ?? "").trim() };
+  }
+  return null;
+}
+
+/** One line of text for a roadmap row (SMA k_c_backlog): whitespace collapsed (a newline would inject rows or headings),
+ *  leading `#` and `-` dropped (they would make a heading or a list item of it). */
+export const oneLine = (value: string, max = 300) => value.replace(/\s+/g, " ").replace(/^[\s#>*\-]+/, "").trim().slice(0, max);
+
+/** Owned paths that leave the checkout (SMA k_c_import): the plan gate asks only that a piece has some owns_paths, so a plan
+ *  brought in from outside is checked here — no `..`, no absolute path, no drive letter, no `~`, no backslash, no empty segment. */
+export function ownsPathProblems(pieceId: string, owns: unknown): string[] {
+  if (!Array.isArray(owns) || !owns.length) return [`${pieceId}: no owns_paths`];
+  return owns.flatMap((path) => {
+    if (typeof path !== "string" || !path.trim()) return [`${pieceId}: an owns_paths entry is empty`];
+    const p = path.trim();
+    const bad = p.startsWith("/") || p.startsWith("~") || /^[A-Za-z]:/.test(p) || p.includes("\\") || p.includes("\0") || p.replace(/\/$/, "").split("/").some((part) => part === ".." || part === "");
+    return bad ? [`${pieceId}: owns_paths «${p.slice(0, 120)}» is not a path inside the checkout`] : [];
+  });
+}
+
+/** The roadmap's parking lot (SMA k_c_backlog): the next 999.N row is appended under the exact heading `## Backlog`
+ *  (created at the end when absent). The file's own line ends are kept. */
+export function parkRoadmapRow(text: string, name: string, goal: string): { text: string; n: string } {
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  let max = 0;
+  for (const line of text.split("\n")) {
+    const found = line.trim().match(ROW);
+    if (found && found[2]!.startsWith("999.")) max = Math.max(max, Number(found[2]!.slice(4)) || 0);
+  }
+  const n = `999.${max + 1}`;
+  const tail = oneLine(goal, 600);
+  const row = `- [ ] ${n} ${oneLine(name, 200) || "untitled"}${tail ? ` — ${tail}` : ""}`;
+  const lines = text.split("\n");
+  const backlog = lines.findIndex((line) => line.trim() === BACKLOG_HEADING);
+  if (backlog >= 0) {
+    let at = backlog + 1;
+    while (at < lines.length && !/^#{1,6}\s/.test(lines[at]!.trim())) at += 1;
+    while (at > backlog + 1 && !lines[at - 1]!.trim()) at -= 1;
+    lines.splice(at, 0, eol === "\r\n" ? `${row}\r` : row);
+    return { text: lines.join("\n"), n };
+  }
+  const head = text.trim() ? text.replace(/\s+$/, "") + eol + eol : "";
+  return { text: `${head}${BACKLOG_HEADING}${eol}${eol}${row}${eol}`, n };
+}
+
+/** A phase section of the roadmap (SMA k_t_roadmap): the row plus the indented lines under it. */
+export function roadmapSection(text: string, row: string): string | null {
+  const lines = text.split("\n");
+  const at = lines.findIndex((line) => line.trim().match(ROW)?.[2] === row);
+  if (at < 0) return null;
+  const out = [lines[at]!];
+  for (let i = at + 1; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (!line.trim()) break;
+    if (line.trim().match(ROW) || /^#{1,6}\s/.test(line.trim())) break;
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
+/** The roadmap read together with the disk (SMA k_t_roadmap): rows ticked whose phase folder has no SUMMARY.md,
+ *  phase folders no row names, and the next open row. `phases` pairs each folder with its roadmap row and SUMMARY. */
+export function roadmapAnalysis(text: string, phases: readonly { id: string; row?: string; hasSummary: boolean }[]): {
+  tickedWithoutSummary: string[]; foldersWithoutRow: string[]; next: { n: string; name: string; goal: string } | null } {
+  const ticked = new Map<string, string>();
+  for (const line of text.split("\n")) {
+    const found = line.trim().match(ROW);
+    if (found && found[1] !== " ") ticked.set(found[2]!, found[3]!.trim());
+  }
+  const inText = new Set<string>();
+  for (const line of text.split("\n")) { const found = line.trim().match(ROW); if (found) inText.add(found[2]!); }
+  return {
+    tickedWithoutSummary: phases.filter((phase) => phase.row !== undefined && ticked.has(phase.row) && !phase.hasSummary).map((phase) => `${phase.row} ${ticked.get(phase.row!)} (phase ${phase.id})`),
+    foldersWithoutRow: phases.filter((phase) => !phase.row || !inText.has(phase.row)).map((phase) => phase.id),
+    next: nextRoadmapRow(text),
+  };
 }
 
 /** Marks in STATE: the header keys phase and stage set, the body kept (lane-plan reads the same header). */
@@ -255,6 +484,110 @@ export function stateText(previous: string | null, marks: Record<string, string>
   const keys = new Map(head.split("\n").filter((line) => line.includes(":")).map((line) => [line.slice(0, line.indexOf(":")).trim(), line.slice(line.indexOf(":") + 1).trim()]));
   for (const [key, value] of Object.entries({ ...marks, updated: today })) keys.set(key, JSON.stringify(value));
   return `---\n${[...keys].map(([key, value]) => `${key}: ${value}`).join("\n")}\n---\n${body.startsWith("\n") ? body : `\n${body}`}`;
+}
+
+/** The block of STATE.md the command owns (SMA k_pl_state, k_t_state). Everything outside the two markers is a person's
+ *  and is never read for rewriting, never moved and never dropped. */
+export const STATE_BLOCK_START = "<!-- lp:state:start -->";
+export const STATE_BLOCK_END = "<!-- lp:state:end -->";
+/** A line the `phase state --decision/--blocker` verb added: it survives the machine's rewrite of its own block. */
+export const STATE_MANUAL = "manual: ";
+const STATE_ORDER = ["Position", "Decisions", "Blockers", "Session"];
+const STATE_SUFFIX = / \(Lane Pilot\)$/;
+const stateLine = (line: string) => line.replace(/<!--|-->/g, " ").replace(/\s+/g, " ").trim();
+
+function stateBlockSpan(text: string): { start: number; end: number } | "broken" | null {
+  const start = text.indexOf(STATE_BLOCK_START);
+  if (start < 0) return null;
+  const end = text.indexOf(STATE_BLOCK_END, start + STATE_BLOCK_START.length);
+  return end < 0 ? "broken" : { start, end: end + STATE_BLOCK_END.length };
+}
+
+/** Sections (`## Name` and its lines) of a piece of STATE.md; a line's list dash is dropped, comments are skipped. */
+function stateSections(body: string): Record<string, string[]> {
+  const sections: Record<string, string[]> = {};
+  let name: string | null = null;
+  for (const raw of body.split(/\r?\n/)) {
+    const heading = /^##\s+(.+?)\s*$/.exec(raw);
+    if (heading) { name = heading[1]!.replace(STATE_SUFFIX, ""); sections[name] = []; continue; }
+    const row = raw.trim();
+    if (name && row && !row.startsWith("<!--")) sections[name]!.push(row.replace(/^-\s+/, ""));
+  }
+  return sections;
+}
+
+/** Header keys set in place (the front matter lane-plan reads): the other header lines and the line ends stay as they were. */
+function setHeaderKeys(text: string, marks: Record<string, string>): string {
+  const open = /^---\r?\n/.exec(text);
+  if (!open) return text;
+  const close = /\r?\n---[ \t]*(?:\r?\n|$)/.exec(text.slice(open[0].length));
+  if (!close) return text;
+  const headEnd = open[0].length + close.index;
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  let head = text.slice(open[0].length, headEnd);
+  for (const [key, value] of Object.entries({ ...marks, updated: new Date().toISOString().slice(0, 10) })) {
+    const line = `${key}: ${JSON.stringify(value)}`;
+    const own = new RegExp(`^${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[ \\t]*:.*$`, "m");
+    head = own.test(head) ? head.replace(own, () => line) : head ? `${head}${eol}${line}` : line;
+  }
+  return text.slice(0, open[0].length) + head + text.slice(headEnd);
+}
+
+/** True when STATE.md has a front matter the header keys can be set in. */
+export const stateHasHeader = (text: string | null) => !!text && /^---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/.test(text);
+
+/** STATE.md with the command-owned block rewritten (SMA k_pl_state, k_t_state): `sections` replace the sections of the block
+ *  of the same name; the rest of the block and every byte outside it stay. No block yet: one is appended at the end (the file's
+ *  line ends and its missing final newline are kept). A section a person wrote outside the block is never replaced: when the
+ *  block needs the same heading it is written as `## Name (Lane Pilot)`. `marks` are set in the front matter when there is
+ *  one. `keepManual` carries the lines the verb added across a rewrite. Refused when the block's start marker has no end. */
+export function stateBlockText(previous: string | null, marks: Record<string, string>, sections: Record<string, string[]>, keepManual = false): { text: string } | { refused: string } {
+  const existing = previous ?? "";
+  const span = stateBlockSpan(existing);
+  if (span === "broken") return { refused: `STATE.md has «${STATE_BLOCK_START}» without «${STATE_BLOCK_END}»: nothing is written until a person fixes it` };
+  const eol = existing.includes("\r\n") ? "\r\n" : "\n";
+  const outside = span ? existing.slice(0, span.start) + existing.slice(span.end) : existing;
+  const own = span ? stateSections(existing.slice(span.start + STATE_BLOCK_START.length, span.end - STATE_BLOCK_END.length)) : {};
+  const merged: Record<string, string[]> = { ...own };
+  for (const [name, lines] of Object.entries(sections)) {
+    const kept = keepManual ? (own[name] ?? []).filter((line) => line.startsWith(STATE_MANUAL) && !lines.includes(line)) : [];
+    merged[name] = [...lines, ...kept];
+  }
+  const names = [...STATE_ORDER.filter((name) => name in merged), ...Object.keys(merged).filter((name) => !STATE_ORDER.includes(name))];
+  const personal = new Set([...outside.matchAll(/^##\s+(.+?)\s*$/gm)].map((row) => row[1]!.toLowerCase()));
+  const rows = [STATE_BLOCK_START, "<!-- Lane Pilot writes this block; the text outside it is yours and is never touched. -->",
+    ...names.flatMap((name) => [personal.has(name.toLowerCase()) ? `## ${name} (Lane Pilot)` : `## ${name}`, ...merged[name]!.map(stateLine).filter(Boolean).map((line) => `- ${line}`), ""]).slice(0, -1), STATE_BLOCK_END];
+  const block = rows.join(eol);
+  let text: string;
+  if (span) text = existing.slice(0, span.start) + block + existing.slice(span.end);
+  else if (!names.length) text = previous ?? stateText(null, marks);
+  else if (previous === null) text = `${stateText(null, marks)}${eol}${block}${eol}`;
+  else text = existing.endsWith("\n") ? `${existing}${eol}${block}${eol}` : `${existing}${eol}${eol}${block}`;
+  return { text: previous === null ? text : setHeaderKeys(text, marks) };
+}
+
+/** Two STATE.md texts that differ only by a timestamp (the `updated` key, the session's activity line) are the same state. */
+export const sameStateIgnoringTime = (a: string | null, b: string) => {
+  if (a === null) return false;
+  const strip = (text: string) => text.replace(/^updated:.*$/gm, "").replace(/^- activity .*$/gm, "");
+  return strip(a) === strip(b);
+};
+
+/** The sections of the command's own block only ({} when there is none): what the verb may extend, as opposed to what a person wrote. */
+export function stateBlockSections(text: string | null): Record<string, string[]> {
+  const span = text ? stateBlockSpan(text) : null;
+  return text && span && span !== "broken" ? stateSections(text.slice(span.start + STATE_BLOCK_START.length, span.end - STATE_BLOCK_END.length)) : {};
+}
+
+/** STATE.md read back (SMA k_t_state): the header keys, and the `## ` sections of the command's block (of the whole body when there is no block). */
+export function parseState(text: string): { marks: Record<string, string>; sections: Record<string, string[]> } {
+  const open = /^---\r?\n/.exec(text);
+  const close = open ? /\r?\n---[ \t]*(?:\r?\n|$)/.exec(text.slice(open[0].length)) : null;
+  const head = open && close ? text.slice(open[0].length, open[0].length + close.index) : "";
+  const body = open && close ? text.slice(open[0].length + close.index + close[0].length) : text;
+  const marks = Object.fromEntries(head.split(/\r?\n/).filter((line) => line.includes(":")).map((line) => [line.slice(0, line.indexOf(":")).trim(), line.slice(line.indexOf(":") + 1).trim().replace(/^"(.*)"$/, "$1")]));
+  const span = stateBlockSpan(body);
+  return { marks, sections: stateSections(span && span !== "broken" ? body.slice(span.start + STATE_BLOCK_START.length, span.end - STATE_BLOCK_END.length) : body) };
 }
 
 /**

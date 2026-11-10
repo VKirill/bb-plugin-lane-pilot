@@ -1,0 +1,195 @@
+{
+  "id": "plan-import",
+  "name": {
+    "en": "Import an external plan",
+    "ru": "Импорт внешнего плана"
+  },
+  "description": {
+    "en": "/sma-import: an external plan is grilled for conflicts with the code and locked decisions, resolved by the owner, cut into task-v2 pieces and waves, then opened as a phase whose own check is the independent check.",
+    "ru": "/sma-import: внешний план проверяется на конфликты с кодом и решениями, владелец разрешает их, план режется на кусочки task-v2 и волны, затем открывается фаза — её машинная проверка и есть независимая."
+  },
+  "status": "published",
+  "inputs": {
+    "plan": {
+      "type": "string",
+      "required": true
+    },
+    "goal": {
+      "type": "string",
+      "required": true
+    }
+  },
+  "outputs": {
+    "status": "done|aborted|invalid",
+    "pieces": "PlanItem[]",
+    "conflicts": "string[]"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "project": {
+      "git": true
+    }
+  },
+  "entry": "grill",
+  "nodes": [
+    {
+      "id": "grill",
+      "type": "subworkflow",
+      "workflow": "grill-plan",
+      "title": {
+        "en": "Conflicts with code and locked decisions",
+        "ru": "Conflicts with code and locked decisions"
+      },
+      "with": {
+        "plan": "{{$inputs.plan}}",
+        "goal": "{{$inputs.goal}}",
+        "depth": "standard"
+      },
+      "out": {
+        "open": "string[]",
+        "risk_register": "Risk[]"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "resolve",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Resolve the conflicts",
+        "ru": "Resolve the conflicts"
+      },
+      "skip_when": "grill.open.length == 0 && grill.risk_register.length == 0",
+      "skip_out": {
+        "answer_kind": "resolved",
+        "answer": ""
+      },
+      "prompt": "The imported plan conflicts with the code or a locked decision ({{grill.open}} {{grill.risk_register}}). Resolve each, or abort.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "resolved|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "pieces",
+      "type": "agent",
+      "role": "planner",
+      "title": {
+        "en": "Cut into pieces and waves",
+        "ru": "Cut into pieces and waves"
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "prompt": "Turn the imported plan into task-v2 pieces: each {id, title, wave, promise:{given, when, then}, task:<task-v2 with the same id>}; depends_on only on pieces of earlier waves; each piece has owns_paths and a check that would fail without the work.\nThe plan: {{$inputs.plan}}\nGoal: {{$inputs.goal}}\nConflicts and their resolution: {{grill.open}} {{grill.risk_register}} {{resolve.answer}}\nNext calls after this workflow: lane_pilot_phase {action:\"open\", title, goal, legacy:true}, then lane_pilot_phase {action:\"plan\", phaseId, items:<these pieces>}; the machine's own check kind is the independent check, and PLAN.md is written and committed at admission where phase.doc_files is on (k_wp_commit).",
+      "out": {
+        "pieces": "PlanItem[]",
+        "waves": "string[][]"
+      },
+      "guards": {
+        "maxVisits": 2
+      }
+    },
+    {
+      "id": "check",
+      "type": "action",
+      "action": "lp.plan_import_check",
+      "title": {
+        "en": "Check the owned paths",
+        "ru": "Check the owned paths"
+      },
+      "out": {
+        "ok": "bool",
+        "problems": "string[]"
+      },
+      "guards": {
+        "maxVisits": 2
+      },
+      "proof": {
+        "kind": "receipt",
+        "check": "the receipt lists no piece whose owns_paths leave the checkout (.., absolute, drive letter, ~)"
+      }
+    },
+    {
+      "id": "emit",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "pieces": "{{pieces.pieces}}",
+        "conflicts": "{{grill.open}}"
+      },
+      "title": {
+        "ru": "Pieces ready",
+        "en": "Pieces ready"
+      }
+    },
+    {
+      "id": "aborted",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "aborted",
+        "pieces": "[]",
+        "conflicts": "{{grill.open}}"
+      },
+      "title": {
+        "ru": "Aborted",
+        "en": "Aborted: no pieces"
+      }
+    },
+    {
+      "id": "invalid",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "invalid",
+        "pieces": "[]",
+        "conflicts": "{{check.problems}}"
+      },
+      "title": {
+        "ru": "Invalid pieces",
+        "en": "Invalid pieces: none returned"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "grill",
+      "to": "resolve"
+    },
+    {
+      "from": "resolve",
+      "to": "pieces",
+      "when": "resolve.answer_kind == 'resolved'"
+    },
+    {
+      "from": "resolve",
+      "to": "aborted"
+    },
+    {
+      "from": "pieces",
+      "to": "check"
+    },
+    {
+      "from": "check",
+      "to": "emit",
+      "when": "check.ok == true"
+    },
+    {
+      "from": "check",
+      "to": "invalid"
+    }
+  ]
+}

@@ -31,6 +31,9 @@
     "phase_id": {
       "type": "string",
       "required": true
+    },
+    "machine": {
+      "type": "boolean"
     }
   },
   "outputs": {
@@ -107,7 +110,7 @@
         "en": "Converge",
         "ru": "Свести"
       },
-      "prompt": "Merge A's and B's findings (dedupe by file and claim). approve only when both approve; otherwise changes_requested with the merged list. Report it to the phase driver with lane_pilot_phase plan_check (by: both critics); the driver counts the rounds (three at most).",
+      "prompt": "Merge A's and B's findings (dedupe by file and claim). approve only when both approve; otherwise changes_requested with the merged list. When the input machine is true, return only {decision, findings, rounds} and do not report: the phase machine that started you reads the output. Otherwise report it to the phase driver with lane_pilot_phase plan_check (by: both critics); the driver counts the rounds (three at most).",
       "out": {
         "decision": "string",
         "findings": "Finding[]",

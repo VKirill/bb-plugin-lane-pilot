@@ -46,7 +46,8 @@
     "candidate_ids": "string[]",
     "report_path": "string",
     "goals": "GoalResult[]",
-    "drift_items": "string[]"
+    "drift_items": "string[]",
+    "points": "PointResult[]"
   },
   "entry": "goal-screen",
   "budget": {
@@ -144,16 +145,18 @@
         "all_met": true,
         "unmet_ids": "[]",
         "intent_aligned": true,
-        "drift_items": "[]"
+        "drift_items": "[]",
+        "points": "[]"
       },
       "src": "maestro-flow:prepare/ralph.md (post-goal-audit, post-reground)",
-      "prompt": "For each goal check `done_when` against evidence (command output, file:line, test result); met only with evidence you re-checked now.\nEach goal carries its piece's contract (acceptance, verification commands, owns_paths) and `depends_on`: check each goal against its own contract, and a goal whose dependency is unmet is unmet.\n`merged_commits` names the diff range of the phase's work: read the changes there. When `drawing` is given, check the screens against its UI-SPEC.md.\n`proof_currency`, when given, is git's own verdict on whether each recorded proof still covers the code: use it, do not work currency out from git by hand. A proof marked STALE, NOT ON THIS HISTORY or UNKNOWN COMMIT is not current evidence: re-check that goal on the code as it is now and name the changed paths in the evidence.\nintent_aligned=false when the result drifts from the original goal: two or more in_scope items missing or one out_of_scope item violated (confident drift at 80%+).\nDifferent model from the writer. Never ask the owner for what the repository can answer.\n",
+      "prompt": "For each goal check `done_when` against evidence (command output, file:line, test result); met only with evidence you re-checked now.\nEach goal carries its piece's contract (acceptance, verification commands, owns_paths) and `depends_on`: check each goal against its own contract, and a goal whose dependency is unmet is unmet.\n`merged_commits` names the diff range of the phase's work: read the changes there. When `drawing` is given, check the screens against its UI-SPEC.md.\n`proof_currency`, when given, is git's own verdict on whether each recorded proof still covers the code: use it, do not work currency out from git by hand. A proof marked STALE, NOT ON THIS HISTORY or UNKNOWN COMMIT is not current evidence: re-check that goal on the code as it is now and name the changed paths in the evidence.\nintent_aligned=false when the result drifts from the original goal: two or more in_scope items missing or one out_of_scope item violated (confident drift at 80%+).\nDifferent model from the writer. Never ask the owner for what the repository can answer.\nWhen `drawing.points` is given, judge every point of the drawing contract against the screens and return it in `points` with its id: met only with evidence you re-checked now.\n",
       "out": {
         "goals": "GoalResult[]",
         "all_met": "bool",
         "unmet_ids": "string[]",
         "intent_aligned": "bool",
-        "drift_items": "string[]"
+        "drift_items": "string[]",
+        "points": "PointResult[]"
       },
       "guards": {
         "maxVisits": 1,
@@ -239,7 +242,8 @@
         "intent_aligned": true,
         "staged": "memory.staged",
         "candidate_ids": "memory.candidate_ids",
-        "report_path": "report.report_path"
+        "report_path": "report.report_path",
+        "points": "goal_audit.points"
       }
     },
     {
@@ -251,7 +255,8 @@
         "unmet_ids": "goal_audit.unmet_ids",
         "intent_aligned": "goal_audit.intent_aligned",
         "goals": "goal_audit.goals",
-        "drift_items": "goal_audit.drift_items"
+        "drift_items": "goal_audit.drift_items",
+        "points": "goal_audit.points"
       }
     },
     {

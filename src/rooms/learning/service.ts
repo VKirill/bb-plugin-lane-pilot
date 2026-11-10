@@ -6,7 +6,7 @@ import { ownerWordsOn } from "../tasks";
 import { jev } from "@lane-pilot/jev";
 import { explicitOwnerLocale, relayFor } from "../relay/server";
 import { scheduleIsolated } from "../platform/server";
-import type { MemorySettings } from "@lane-pilot/memory-core";
+import { listMemoryByOrigin, type MemorySettings } from "@lane-pilot/memory-core";
 import type { InsightsApi, RuleScanSurface } from "../contracts/server";
 import { registerObservedTool } from "../platform/server";
 import type { ServerCore } from "../contracts/server";
@@ -56,7 +56,7 @@ interface Services {
 const EXTRACT_AFTER_MS = 10 * 60_000;
 const EXTRACT_AT_COUNT = 5;
 
-export const OPS = ["status", "review", "label", "items", "accept", "reject", "drop", "digest", "rules", "promotion", "agreement", "signals", "config", "extract"] as const;
+export const OPS = ["status", "review", "label", "items", "accept", "reject", "drop", "digest", "rules", "promotion", "agreement", "signals", "config", "extract", "lessons"] as const;
 export type LearningOp = (typeof OPS)[number];
 
 export function createLearning(ctx: ServerCore, services: Services) {
@@ -235,6 +235,8 @@ export function createLearning(ctx: ServerCore, services: Services) {
       case "signals": return { counts: ops.signals(args.kind, args.limit ?? 30), complexity: complexityReport(db, Date.now() - 30 * DAY_MS) };
       case "config": return await ops.configure(args.settings ?? []);
       case "extract": { if (!args.projectId) throw new Error('op "extract" needs a project'); return await extractNow(args.projectId); }
+      // Phase learnings of every project in the user-wide store (SMA k_t_learnings): each names the project it came from.
+      case "lessons": return { lessons: listMemoryByOrigin(db, "phase-lessons", args.text).map((row) => ({ id: row.id, sourceProject: row.projectId, text: row.content, at: row.createdAt })) };
     }
   }
 

@@ -2,7 +2,7 @@ import { scheduleIsolated } from "../../platform/server";
 import { bindPhaseDesigns } from "../../tasks/server";
 import { type ServerCore } from "../../contracts/server";
 import { listPhases, listParts, resolvePhaseRef } from "../store";
-import { acceptanceKey, observationDue, candidateOn, designGate, discussionGate, nextAction, openQuestions, planGate, planSignature, renderBook, wordOf, type Phase } from "../logic";
+import { acceptanceKey, observationDue, candidateOn, designGate, discussionGate, nextAction, openQuestions, phaseFolder, planGate, planSignature, renderBook, wordOf, type Phase } from "../logic";
 import { getRun, getRunWriterHost } from "../../storage";
 import { hostContract } from "../../contracts";
 import { runOnHost } from "@lane-pilot/host-calls";
@@ -146,8 +146,25 @@ export function createPhaseDriver(ctx: ServerCore, services: Services, reactions
   /** Did the plan stay the admitted one (Plan unchanged since checking). */
   const planUnchanged = (phase: Phase) => !!phase.record.plan?.admittedSha && phase.record.plan.admittedSha === planSignature(phase.record.plan.items, phase.record.plan.contextSha);
 
-  const phases = { open: methods.open, context: methods.context, plan: methods.plan, planCheck: methods.planCheck, drawing: methods.drawing, goalAudit: methods.goalAudit, lessons: methods.lessons, question: methods.question, answer: methods.answer, word: methods.word, waveReview: methods.waveReview, withdraw: methods.withdraw, revise: methods.revise, correct: methods.correct, returnTo: methods.returnTo, setState: methods.setState, stop: methods.stop, stopWave: methods.stopWave, compensate: methods.compensate, uatLine: methods.uatLine, decide: methods.decide, interrupt: methods.interrupt, tick, drive: steps.drive, status, facts: docs.facts, planUnchanged, writeBook: docs.writeBook,
+  const phases = { open: methods.open, context: methods.context, plan: methods.plan, planCheck: methods.planCheck, drawing: methods.drawing, goalAudit: methods.goalAudit, lessons: methods.lessons, question: methods.question, answer: methods.answer, word: methods.word, waveReview: methods.waveReview, withdraw: methods.withdraw, revise: methods.revise, correct: methods.correct, returnTo: methods.returnTo, setState: methods.setState, stop: methods.stop, stopWave: methods.stopWave, compensate: methods.compensate, uatLine: methods.uatLine, uatOpen: methods.uatOpen, decide: methods.decide, interrupt: methods.interrupt, state: methods.state, roadmap: methods.roadmap, tick, drive: steps.drive, status, facts: docs.facts, planUnchanged, writeBook: docs.writeBook, stateDone: docs.stateDone,
     acceptancePackage, resolve: (projectId: string | null | undefined, ref: string) => resolvePhaseRef(db, projectId, ref),
+    /** The phase folder as a tree, and one file as text (SMA d_phase_files): reads stay under .agents/phases/<id>/. */
+    phaseFiles: async (phaseId: string, path?: string) => {
+      const phase = docs.mustGet(resolvePhaseRef(db, null, phaseId).id);
+      const folder = phaseFolder(phase.id);
+      const run = phase.runId ? getRun(db, phase.runId) : null;
+      const hostId = phase.runId ? getRunWriterHost(db, phase.runId) : null;
+      if (!run?.writer_workspace_path || !hostId) return { files: [] as Array<{ path: string; size: number }>, content: null };
+      const host = bb.hosts.experimental_client({ contract: hostContract });
+      if (!path) {
+        const out = await bestEffort(ctx.log, "phase files list", runOnHost(host, { hostId, cwd: run.writer_workspace_path, command: `find ${folder} -maxdepth 3 -type f -exec wc -c {} +`, timeoutSec: 30 }), null);
+        const files = out?.exitCode === 0 ? out.stdout.trim().split("\n").map((line) => /^\s*(\d+)\s+(.+)$/.exec(line)).filter((m): m is RegExpExecArray => !!m && !/ total$/.test(m[2]!)).map((m) => ({ path: m[2]!, size: Number(m[1]) })) : [];
+        return { files, content: null };
+      }
+      if (path.startsWith("/") || path.includes("..") || !path.startsWith(`${folder}/`)) throw new PhaseRefusal(`phase files live under ${folder}/`);
+      const file = await host.call("readBoundedFile", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, relativePath: path, offset: 0, maxLines: 400 }, { hostId, timeoutMs: 30_000 }) as { path: string; content: string; truncated: boolean };
+      return { files: [], content: { path: file.path, text: file.content, truncated: file.truncated } };
+    },
     list: (filter: Parameters<typeof listPhases>[1]) => listPhases(db, filter) };
   return { phases, phaseIntake: createPhaseIntake(ctx, phases, train) };
 }

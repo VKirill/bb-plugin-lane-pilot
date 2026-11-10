@@ -12,7 +12,7 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { sha256Hex, bestEffort } from "@lane-pilot/kit";
 import { acceptanceLines, alreadyMetVerdict, blindVerdict, brokenLink, candidateOn, canonical, executionGate, issuable, lessonsNeeded, nextAction, observationOutcome, piecesOfWave, phaseFolder, pieceSha, provenPieces, renderBook, waveCleared, waveLines, wavePackage, wavePieceLines, wavesOf, wordOf } from "../logic";
-import { buildsScreens, conclusionText, issuedContract, markRoadmap, nextRoadmapRow, stateText, waveTable, piecePlan, uatText } from "../stages";
+import { buildsScreens, conclusionText, designPoints, issuedContract, markRoadmap, milestoneOf, nextRoadmapRow, stateText, templateFill, threatClosureGaps, waveTable, piecePlan, uatText } from "../stages";
 import { getPhase, listParts, notePoked, savePhase } from "../store";
 import { checkProofs, hostGit, phaseProofRecords, renderProofCurrency } from "./proof-currency";
 import { candidateBranch } from "./candidate";
@@ -31,7 +31,7 @@ export type StepsTools = DriverBase & Docs & Methods;
 export type Steps = ReturnType<typeof installSteps>;
 export function installSteps(tools: StepsTools) {
   const { ctx, services, db, bb, now, reactions } = tools;
-  const { mustGet, book, move, facts, readFile, readText, writeDocs, writeBook, pmCheckoutPath, candidates } = tools;
+  const { mustGet, book, move, facts, readFile, readText, writeDocs, writeStateBlock, writeGenerated, commitFiles, pauseHandoff, writeBook, pmCheckoutPath, candidates } = tools;
 
   /** The candidate tree of a piece's base checkout, made on first need; null (and `off` with the reason, booked once) when it cannot be. */
   async function candidateTree(phase: Phase, candidate: PhaseCandidate, base: string): Promise<import("./candidate").CandidateTree | null | { wait: string }> {
@@ -52,6 +52,29 @@ export function installSteps(tools: StepsTools) {
     candidate.trees[base] = made;
     book(phase, "execution", "candidate", `the phase's pieces merge into ${candidate.branch} (worktree ${made.path}, from ${made.startSha.slice(0, 12)}); main gets the branch after the acceptance`);
     return made;
+  }
+
+  /** How many lines a file cited by SECURITY.md has in the tree the verdict judged: the candidate's trees while the phase's package is
+   *  not landed, the PM's checkout otherwise. A number; or null when no tree could be read (not the same as «the file is not there»,
+   *  which is 0 lines: every line cited in it is then past its end). */
+  async function judgedTreeLines(phase: Phase, path: string): Promise<number | null> {
+    const run = phase.runId ? getRun(db, phase.runId) : null;
+    const hostId = phase.runId ? getRunWriterHost(db, phase.runId) : null;
+    const roots = candidateOn(phase.record) && !phase.record.candidate!.landedAt ? Object.values(phase.record.candidate!.trees).map((tree) => tree.path) : run?.writer_workspace_path ? [run.writer_workspace_path] : [];
+    if (!hostId || !roots.length) return null;
+    const host = bb.hosts.experimental_client({ contract: hostContract });
+    let unreachable = false;
+    for (const root of roots) {
+      try {
+        const file = await host.call("readBoundedFile", { requestedHostId: hostId, projectCwd: root, relativePath: path, offset: 0, maxLines: 1 }, { hostId, timeoutMs: 15_000 }) as { totalLines?: unknown };
+        if (typeof file.totalLines === "number") return file.totalLines;
+        unreachable = true;
+      } catch (cause) {
+        // Not there in this tree (or not a file inside it): try the next tree. Anything else (a host that did not answer) is «not reached».
+        if (!/ENOENT|ENOTDIR|escaped_workspace|regular_file|must_be_directory|symlink/i.test(cause instanceof Error ? cause.message : String(cause))) unreachable = true;
+      }
+    }
+    return unreachable ? null : 0;
   }
 
   /** The candidate's own goal check: the accepted pieces' checks on its trees' heads (the run's goal check reads main). */
@@ -232,6 +255,10 @@ export function installSteps(tools: StepsTools) {
       if (!next.some((item) => item.wave === wave && execution.issued[item.id])) continue;
       if (listParts(db, phase.id).some((part) => part.kind === "wave_table" && part.text.startsWith(`wave ${wave}:`))) continue;
       book(phase, "execution", "wave_table", waveTable(wave, piecesOfWave(items, wave), execution.issued));
+      // SMA k_wp_state: with phase.doc_files on, the wave's mark in STATE.md (the header keys; a person's text stays) — only where
+      // planning files already live, like the close's marks.
+      if (phase.record.docFiles === true)
+        await bestEffort(ctx.log, "phase wave state mark", writeStateBlock(phase, { phase: phase.record.roadmapRow ?? phase.id, stage: "execution", planned: "true", wave: String(wave) }, {}, `phase ${phase.id}: STATE.md, wave ${wave} issued`), null);
     }
     // Phase base at start: the commit the first piece was cut from.
     const firstTask = Object.values(execution.issued)[0];
@@ -264,7 +291,11 @@ export function installSteps(tools: StepsTools) {
     if (phase.record.stopping && phase.state !== "stopped" && phase.state !== "closed") return (await tools.stop({ phaseId: phase.id })).phase;
     // A force-interrupt whose writers' stops were not all observed: ask again; the phase turns paused only when none is open (SMA px_force).
     if (phase.record.interrupting && phase.state !== "stopped" && phase.state !== "closed") return (await tools.interrupt({ phaseId: phase.id })).phase;
-    if (phase.state === "pause_requested") { savePhase(db, phase.id, { state: "paused", at: now() }); return mustGet(phase.id); }
+    if (phase.state === "pause_requested") {
+      savePhase(db, phase.id, { state: "paused", at: now() });
+      await pauseHandoff(mustGet(phase.id)).catch((cause: unknown) => ctx.log(`phase ${phase.id}: pause handoff not written: ${cause instanceof Error ? cause.message : String(cause)}`));
+      return mustGet(phase.id);
+    }
     if (phase.state !== "active") return phase;
     let current = phase;
     if (current.stage === "execution") {
@@ -288,8 +319,8 @@ export function installSteps(tools: StepsTools) {
         if (!pieces.every((item) => current.record.execution?.issued[item.id] && f.get(item.id)?.state === "accepted")) continue;
         // A wave whose pieces got new facts (a redo) is weighed again; the same package is not (its review stays).
         if (waves[String(wave)]?.packageSha === wavePackage(pieces, f)) continue;
-        const lines = waveLines(pieces, f, current.record.execution?.issuedSha);
-        waves[String(wave)] = { packageSha: wavePackage(pieces, f), lines, pieces: wavePieceLines(pieces, f, current.record.execution?.issuedSha), at: now() };
+        const lines = waveLines(pieces, f, current.record.execution?.issuedSha, current.record.liveCheck === true);
+        waves[String(wave)] = { packageSha: wavePackage(pieces, f), lines, pieces: wavePieceLines(pieces, f, current.record.execution?.issuedSha, current.record.liveCheck === true), at: now() };
         book(current, "execution", "wave_in", `wave ${wave} in, package ${waves[String(wave)]!.packageSha.slice(0, 12)}: ${lines.map((line) => `${line.ok ? "✓" : "✗"} ${line.id}`).join(", ")}`);
         wrote = true;
       }
@@ -320,6 +351,19 @@ export function installSteps(tools: StepsTools) {
       current = mustGet(current.id);
     }
     if (current.stage === "verification" && !current.record.verification?.verdict && current.runId) {
+      // SMA k_wv_design: only where the phase was opened with phase.design_points on, the drawing contract's checklist items are read
+      // from UI-SPEC.md here and stored; the goal audit judges each, and acceptanceLines holds a line per point. Any other phase
+      // reads nothing and stores nothing.
+      const specPath = current.record.designPoints === true ? current.record.design?.drawing?.paths.find((path) => /UI-SPEC\.md$/i.test(path)) : undefined;
+      if (specPath && !current.record.verification?.points) {
+        const text = await readText(current, specPath);
+        const found = text ? designPoints(text) : { points: [], total: 0 };
+        if (found.points.length) {
+          savePhase(db, current.id, { record: { ...current.record, verification: { ...current.record.verification, points: found.points } }, at: now() });
+          book(current, "verification", "design_points", `${found.points.length} contract point(s) of ${specPath} become acceptance lines${found.total > found.points.length ? `; the list was cut: ${found.total} checklist items, the first ${found.points.length} are kept` : ""}`);
+          current = mustGet(current.id);
+        }
+      }
       // With a candidate the verdict reads its trees (p6_prepared): their goal check and their heads, the package the acceptance decides on.
       const onCandidate = candidateOn(current.record);
       if (onCandidate && !current.record.candidate!.goal) {
@@ -340,13 +384,36 @@ export function installSteps(tools: StepsTools) {
             ? { sha256: drawing.sha256, contract, changed: `its files cannot be read now (${actual.slice(0, 200)})` }
             : { sha256: actual, contract, changed: actual === drawing.sha256 ? null : `confirmed ${drawing.sha256.slice(0, 12)}, now ${actual.slice(0, 12)}` };
         }
-        const verdict = blindVerdict(current.record.plan?.items ?? [], facts(current), goal as never, now(), bound);
+        let verdict = blindVerdict(current.record.plan?.items ?? [], facts(current), goal as never, now(), bound);
         // The goal check is still running: nothing is frozen, the next pass asks again.
         if (verdict.state === "pending") return current;
+        // SMA k_pl_security: where the project switched threat closure on (phase.threat_closure, copied to the record at open) and a
+        // security risk was named, a pass is refused while a SECURITY.md threat row lacks a mitigation citing a real file:line. The
+        // cited files are read in the tree the verdict judged (the candidate's, when the phase has one), the whole file, not a 2000-line window;
+        // a file or line the reader could not reach is «not checked» and said so, never a gap.
+        if (verdict.state === "passed" && current.record.threatClosure === true) {
+          const risk = current.record.context?.risks?.security?.trim();
+          const secPath = (current.record.context?.docs ?? []).find((doc) => /SECURITY\.md$/i.test(doc.path))?.path;
+          if (risk && !/^(none|нет|no)\b/i.test(risk) && secPath) {
+            const security = await readText(current, secPath);
+            if (security) {
+              const lines: Record<string, number | null> = {};
+              for (const cite of security.matchAll(/([^\s`"'()]+\.[a-z0-9]+):(\d{1,6})\b/gi)) if (!(cite[1]! in lines)) lines[cite[1]!] = await judgedTreeLines(current, cite[1]!);
+              const closure = threatClosureGaps(security, (path, line) => { const total = lines[path]; return total === undefined || total === null ? null : total >= line; });
+              if (closure.gaps.length) verdict = { ...verdict, state: "failed", detail: `threats not closed: ${closure.gaps.join("; ")}${closure.unchecked.length ? `; not checked: ${closure.unchecked.join("; ")}` : ""}`.slice(0, 1000) };
+              else if (closure.unchecked.length) verdict = { ...verdict, detail: `${verdict.detail}; threat citations not checked (the file could not be reached): ${closure.unchecked.join("; ")}`.slice(0, 1000) };
+            }
+          }
+        }
         book(current, "verification", "blind_verdict", `${verdict.state}: ${verdict.detail} (input ${verdict.inputSha.slice(0, 12)})`);
         const verified = onCandidate ? await candidateHeads(current) : undefined;
         savePhase(db, current.id, { record: { ...current.record, ...(verified ? { candidate: { ...current.record.candidate!, verified } } : {}), verification: { ...current.record.verification, verdict } }, at: now() });
         current = mustGet(current.id);
+        // SMA k_t_template: with phase.doc_files on, the verdict is stored as VERIFICATION.md — each piece's checks with its latest result.
+        if (current.record.docFiles === true) {
+          await bestEffort(ctx.log, "phase verification doc", writeGenerated(current, `${phaseFolder(current.id)}/VERIFICATION.md`, templateFill("VERIFICATION", current, facts(current)), `phase ${current.id}: VERIFICATION.md`), null);
+          current = mustGet(current.id);
+        }
       }
     }
     if (current.stage === "verification" && current.record.verification?.verdict?.state === "passed" && current.record.verification.model) {
@@ -464,13 +531,19 @@ export function installSteps(tools: StepsTools) {
       }
     }
     book(phase, "lessons", "concluded", `SUMMARY.md written${out.written.length > 1 ? `, ${out.written.slice(1).join(", ")} marked` : ""}${out.commit ? ` (commit ${out.commit.slice(0, 12)})` : ""}`);
-    if (phase.record.branch === "phase" && phase.runId) {
+    if ((phase.record.branch === "phase" || phase.record.branch === "milestone") && phase.runId) {
       const run = getRun(db, phase.runId);
       const hostId = getRunWriterHost(db, phase.runId);
       if (run?.writer_workspace_path && hostId) {
+        // SMA k_we_branch: the marker branch is phase/<id>, or milestone/<slug> of the roadmap section the phase's row sits under.
+        const stateMilestone = /^milestone:\s*"?([^"\n]+)"?/m.exec(stateNow?.split("\n---\n")[0] ?? "")?.[1]?.trim();
+        const slug = phase.record.branch === "milestone"
+          ? (phase.record.roadmapRow && roadmap !== null ? milestoneOf(roadmap, phase.record.roadmapRow) : null) ?? (stateMilestone ? stateMilestone.toLowerCase().replace(/[^a-z0-9а-яё]+/gi, "-").replace(/^-+|-+$/g, "") : null) ?? phase.id
+          : null;
+        const name = phase.record.branch === "phase" ? `phase/${phase.id}` : `milestone/${slug}`;
         const host = bb.hosts.experimental_client({ contract: hostContract });
-        const made = await bestEffort(ctx.log, "phase marker branch", runOnHost(host, { hostId, cwd: run.writer_workspace_path, command: `git branch -f phase/${phase.id} HEAD`, timeoutSec: 30 }), null);
-        book(phase, "decisions", "branch", made && made.exitCode === 0 ? `marker branch phase/${phase.id} at the accepted main` : "the marker branch could not be made");
+        const made = await bestEffort(ctx.log, "phase marker branch", runOnHost(host, { hostId, cwd: run.writer_workspace_path, command: `git branch -f ${name} HEAD`, timeoutSec: 30 }), null);
+        book(phase, "decisions", "branch", made && made.exitCode === 0 ? `marker branch ${name} at the accepted main` : "the marker branch could not be made");
       }
     }
     savePhase(db, phase.id, { record: { ...phase.record, closedDocs: { at: now(), commit: out.commit } }, state: "closed", at: now() });
