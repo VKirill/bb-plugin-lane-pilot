@@ -1430,17 +1430,28 @@ export function listUnmovedLiveAttempts(db: LanePilotDatabase, cutoff: number): 
 }
 
 /** A project's live attempts with their task's claims, newest movement first (SMA k_hss_summary, k_hss_digest). */
-export function projectLiveAttempts(db: LanePilotDatabase, projectId: string): Array<{ id: string; task_id: string; state: string; updated_at: number; owns_paths: string | null }> {
-  return db.prepare(`SELECT a.id, a.task_id, a.state, a.updated_at, json_extract(t.contract_json,'$.owns_paths') AS owns_paths
+export function projectLiveAttempts(db: LanePilotDatabase, projectId: string): Array<{ id: string; task_id: string; state: string; updated_at: number; owns_paths: string | null; workspace_path: string | null }> {
+  return db.prepare(`SELECT a.id, a.task_id, a.state, a.updated_at, a.workspace_path, json_extract(t.contract_json,'$.owns_paths') AS owns_paths
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id LEFT JOIN lane_pilot_task t ON t.id=a.task_id
     WHERE r.project_id=? AND a.state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested') ORDER BY a.updated_at DESC`)
-    .all(projectId) as Array<{ id: string; task_id: string; state: string; updated_at: number; owns_paths: string | null }>;
+    .all(projectId) as Array<{ id: string; task_id: string; state: string; updated_at: number; owns_paths: string | null; workspace_path: string | null }>;
 }
 
 /** The project a checkout belongs to: a run's own workspace or an attempt's worktree. */
 export function projectIdForWorkspacePath(db: LanePilotDatabase, path: string): string | null {
-  return (db.prepare("SELECT r.project_id AS p FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.workspace_path=? OR r.writer_workspace_path=? LIMIT 1")
+  return (db.prepare(`SELECT p FROM (SELECT r.project_id AS p FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.workspace_path=?
+      UNION ALL SELECT project_id FROM lane_pilot_run WHERE writer_workspace_path=?) LIMIT 1`)
     .get(path, path) as { p?: string } | undefined)?.p ?? null;
+}
+
+/** The section chain of the run a checkout belongs to (its settings scopes, outermost first); empty for a checkout no run owns: the project root. */
+export function settingsScopesForWorkspacePath(db: LanePilotDatabase, path: string): string[] {
+  const row = db.prepare(`SELECT scopes FROM (
+      SELECT r.settings_scopes_json AS scopes, a.updated_at AS at FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.workspace_path=?
+      UNION ALL SELECT r.settings_scopes_json, r.updated_at FROM lane_pilot_run r WHERE r.writer_workspace_path=?) ORDER BY at DESC LIMIT 1`)
+    .get(path, path) as { scopes?: string | null } | undefined;
+  try { const scopes = JSON.parse(row?.scopes ?? "[]"); return Array.isArray(scopes) ? scopes.filter((item): item is string => typeof item === "string") : []; }
+  catch { return []; }
 }
 
 /** The run's attempts still in flight, the one that moved last first. */

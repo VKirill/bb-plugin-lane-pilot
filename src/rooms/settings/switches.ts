@@ -46,6 +46,7 @@ export const UNLISTED_SWITCHES: Readonly<Record<string, readonly [scope: SwitchS
   "money.cap_unset_zero": ["global", "on|off", "an unset money cap reads as zero for paid lanes (unset cap: no limit, as the owner decided)"],
   "money.silent_estimate_tokens": ["global", "number", "an attempt whose paid provider reported no usage is priced at this many tokens"],
   // session hooks
+  "hook.prompt_recall": ["project", "on|off", "a session's prompt of 3 words or more is answered with pointers to the project's confirmed notes that match its words (word index only, no model call; ON when unset: off silences it)"],
   "hook.subagent_pack": ["project", "on|off", "a Task call's subagent is born with the project's accepted rules and confirmed memory lessons in its context pack (unset: the pack holds the repo and the window's claimed files only)"],
   // docs
   "docs.gitnexus_refresh": ["project", "on|off", "the nightly docs pass refreshes the GitNexus code index (.gitnexus) of a checkout that lacks it or lags HEAD"],
