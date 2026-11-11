@@ -10,7 +10,7 @@ import { homedir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
 // node --experimental-strip-types resolves this file only with a .ts specifier.
 // @ts-expect-error TS5097
-import { buildCapsule, capsuleDetails, claimablePath, claimedPaths, claimedState, codeMapDrift, draftTarget, EDIT_TOOLS, failOpen, hookOutput, injectPack, ledgerAddAsk, ledgerAddCommand, ledgerAddFile, ledgerOf, maskText, pmSkillUseOf, pretaskDecision, progressRecord, promptRecall, protectionsOff, runStreams, sessionEndDraft, sessionStartText, stallObserve, subagentVerify, subagentVerifyText, treeVerifyText, type Capsule, type ClaimedState, type PmSkillUse, type SessionLedger, type ToolCtx } from "./logic.ts";
+import { buildCapsule, capsuleDetails, claimedPaths, claimedState, codeMapDrift, draftTarget, EDIT_TOOLS, failOpen, hookOutput, injectPack, ledgerAddAsk, ledgerAddCommand, ledgerAddFile, ledgerOf, maskText, pmSkillUseOf, pretaskDecision, progressRecord, promptRecall, protectionsOff, runStreams, sessionEndDraft, sessionStartText, stallObserve, subagentVerify, subagentVerifyText, treeVerifyText, type Capsule, type ClaimedState, type PmSkillUse, type SessionLedger, type ToolCtx } from "./logic.ts";
 // @ts-expect-error TS5097
 import { appendTouch, buildCatalog, cardNotes, findRepo, startCatalogBuild } from "../file-cards/index.ts";
 
@@ -402,7 +402,8 @@ function handle(payload: Payload): void {
     const root = resolve(cwd || ".");
     // A bare name counts only when a file of that exact name sits at the repo root.
     const rootHas = (name: string): boolean => { try { return statSync(join(root, name)).isFile(); } catch { return false; } };
-    const claimed = (payloadClaimed.length ? payloadClaimed.filter((path) => claimablePath(path, rootHas)) : claimedPaths(message, 10, rootHas));
+    // The payload's own list is the harness's, taken as it is; only the paths read out of prose are filtered.
+    const claimed = payloadClaimed.length ? payloadClaimed : claimedPaths(message, 10, rootHas);
     // A claimed path is probed only when it stays inside the checkout (symlinks resolved).
     const insideRoot = (path: string): boolean => {
       const full = resolve(root, path);
@@ -410,7 +411,7 @@ function handle(payload: Payload): void {
       try { const real = realpathSync(full); const realRoot = realpathSync(root); return real === realRoot || real.startsWith(realRoot + sep); } catch { return true; }
     };
     const changed = Array.isArray(payload.changed) ? payload.changed.map(String) : [];
-    const checked = subagentVerify({ claimed, changed, exists: (path) => insideRoot(path) && existsSync(resolve(root, path)) });
+    const checked = subagentVerify({ claimed, changed, exists: (path) => existsSync(resolve(root, path)) });
     // The spawn time is the last pack record this session wrote (SMA k_hpt_record).
     const lastSpawn = readText(join(dir, "subagents.jsonl")).split("\n").filter(Boolean).pop();
     let spawnSeconds = 0;

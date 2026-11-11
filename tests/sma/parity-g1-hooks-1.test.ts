@@ -85,13 +85,13 @@ describe("the ordered check streams of one tool call", () => {
     const out = guard(bashPayload("git reset --hard", repo), { LANE_PILOT_ROLE: "writer", HOME: home });
     expect(out.stdout.indexOf("git-airbag")).toBeLessThan(out.stdout.indexOf("[reflex]"));
     const perf = lines(join(home, ".lane-pilot/session-hooks/sess-test/perf.jsonl")).map((line) => JSON.parse(line) as { stream: string });
-    expect(perf.map((row) => row.stream)).toEqual(["deps", "git_airbag", "reflexes", "file_card", "spend"]);
+    expect(perf.map((row) => row.stream)).toEqual(["deps", "git_airbag", "reflexes", "file_card", "spend", "claims"]);
     const limited = guard(bashPayload("git reset --hard", repo), { LANE_PILOT_ROLE: "writer", HOME: home, LANE_STREAM_BUDGET_SEC: "0" });
     expect(limited.code).toBe(0);
     const rows = lines(join(home, ".lane-pilot/session-hooks/sess-test/perf.jsonl")).map((line) => JSON.parse(line) as { stream: string; error?: string });
-    const lastRun = rows.slice(-5);
-    // The airbag is a side effect, not advice: the budget never skips it; the three advice streams are skipped.
-    expect(lastRun.filter((row) => row.error === "skipped: soft budget spent").map((row) => row.stream)).toEqual(["reflexes", "file_card", "spend"]);
+    const lastRun = rows.slice(-6);
+    // The airbag is a side effect, not advice: the budget never skips it; the four advice streams are skipped.
+    expect(lastRun.filter((row) => row.error === "skipped: soft budget spent").map((row) => row.stream)).toEqual(["reflexes", "file_card", "spend", "claims"]);
     expect(lastRun.find((row) => row.stream === "git_airbag")!.error).toBeUndefined();
   });
 
@@ -343,7 +343,7 @@ describe("the session's own state folder", () => {
     writeFileSync(join(folder, "perf.jsonl"), old);
     guard(bashPayload("ls", home), { LANE_PILOT_ROLE: "writer", HOME: home });
     const afterGuard = lines(join(folder, "perf.jsonl"));
-    expect(afterGuard.length).toBeLessThanOrEqual(505);
+    expect(afterGuard.length).toBeLessThanOrEqual(506);
     expect(afterGuard.length).toBeGreaterThan(400);
     expect(JSON.parse(afterGuard[0]!).n).toBeGreaterThanOrEqual(3500);
     writeFileSync(join(folder, "perf.jsonl"), old);
@@ -354,7 +354,7 @@ describe("the session's own state folder", () => {
     // Under the cap nothing is cut.
     writeFileSync(join(folder, "perf.jsonl"), "{\"stream\":\"a\"}\n");
     guard(bashPayload("ls", home), { LANE_PILOT_ROLE: "writer", HOME: home });
-    expect(lines(join(folder, "perf.jsonl")).length).toBe(6);
+    expect(lines(join(folder, "perf.jsonl")).length).toBe(7);
   });
 
   it("[sma:k_h_pre] a session start removes at most 50 state folders whose newest file is over 30 days old, never the current one, a recent one, a link or a folder with another name", () => {

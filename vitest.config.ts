@@ -29,6 +29,8 @@ const mocking = [
   "tests/stage-return/return.test.ts",
   // Replaces spawnAsync of @lane-pilot/kit (the worker probe's sudo): shared, it would answer for every other file's commands.
   "tests/sma/parity-d10-rest-2.test.ts",
+  // Replaces the embedding call and the reranker, to count that the prompt recall makes neither.
+  "tests/sma/parity-g2-hooks-2.test.ts",
 ];
 const nodeTests = ["tests/**/*.test.ts", "src/rooms/**/tests/**/*.test.ts", "packages/*/tests/**/*.test.ts"];
 // Page tests that fail when the document (an open picker window, a registered settings backend) is shared with the files before them.
