@@ -1,5 +1,5 @@
 import { accessSync, constants as fsConstants, existsSync } from "node:fs";
-import { access, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, rmdir, symlink } from "node:fs/promises";
+import { access, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, rmdir, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { bestEffort, createCapture, lstatOrNull, redactSecrets, sha256Hex } from "@lane-pilot/kit";
@@ -345,6 +345,19 @@ async function realDirectory(path:string, label:string):Promise<string> {
 /** The command was killed at its time limit: reported as 124 like timeout(1), so a caller can tell it from a failure. */
 const timedOut=(child:{error?:Error})=>(child.error as NodeJS.ErrnoException|undefined)?.code==="ETIMEDOUT";
 
+/**
+ * A check as the worker (worker.strict_user) runs git in the owner's checkout, and git refuses a repository another user
+ * owns: `git status` says «dubious ownership», `git diff` says «Not a git repository». Every check that called git was
+ * red whatever the writer did (live phase 2026-11-11: both attempts blocked on `git diff --quiet <base>`). The sandbox's
+ * own HOME names this one checkout as trusted; no other repository is.
+ */
+export async function trustWorkspaceForGit(tempPath:string, workspacePath:string):Promise<string> {
+  const top=await spawnAsync("git",["-C",workspacePath,"rev-parse","--show-toplevel"],{timeout:15_000});
+  const path=top.status===0&&top.stdout.trim() ? top.stdout.trim() : workspacePath;
+  await writeFile(join(tempPath,".gitconfig"),`[safe]\n\tdirectory = "${path.replace(/[\\"]/g,"\\$&")}"\n`,{mode:0o644});
+  return path;
+}
+
 export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Promise<SandboxedCommandResult> {
   const requestedBackend=input.backend ?? "auto";
   const seatbeltAvailable=await access(SANDBOX_EXEC).then(()=>true,()=>false);
@@ -366,6 +379,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
       await rm(tempPath,{recursive:true,force:true});
       throw new Error(`worker_unreachable: sudo cannot run as ${input.asUser} without a password; an admin runs scripts/lp-worker-user.sh create ${input.asUser} on this machine, or worker.strict_user goes off`);
     }
+    await trustWorkspaceForGit(tempPath,workspacePath);
     await grantRunFolders(input.asUser,[workspacePath,tempPath]);
   }
   const launch=(program:string,args:string[],keep:string[])=>input.asUser ? asWorker(input.asUser,program,args,keep) : { program, args };

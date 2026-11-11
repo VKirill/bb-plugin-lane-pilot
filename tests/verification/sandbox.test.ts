@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { bbDataDir, buildBubblewrapArgs, buildSeatbeltProfile, passEnvWords, prepareSandboxedCommandLine, releaseSandboxedCommandLine, resolveSandboxBackend } from "../../src/rooms/verification/sandbox";
+import { bbDataDir, buildBubblewrapArgs, buildSeatbeltProfile, passEnvWords, prepareSandboxedCommandLine, releaseSandboxedCommandLine, resolveSandboxBackend, trustWorkspaceForGit } from "../../src/rooms/verification/sandbox";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, realpathSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hostContract } from "../../src/rooms/contracts";
@@ -69,5 +69,23 @@ describe("host sandbox policy", () => {
       const out=execFileSync("/bin/zsh",["-c",line.commandLine],{encoding:"utf8",env:{...process.env,LP_SET:"a b$c",LP_UNSET:undefined}});
       expect(out).toBe(`a b$c|unset|${line.cleanup.tempPath}`);
     } finally { await releaseSandboxedCommandLine(line.cleanup); }
+  });
+});
+
+describe("a check as the worker in the owner's checkout", () => {
+  // Live phase 2026-11-11: under worker.strict_user every check that called git was red («Not a git repository»),
+  // because git refuses a repository another user owns. The sandbox's HOME names the one checkout as trusted.
+  it("the sandbox home trusts the checkout's top folder, and git reads the path back whole", async () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), "lp-trust \"repo\" ")));
+    execFileSync("git", ["init", "-q", repo]);
+    mkdirSync(join(repo, "packages", "app"), { recursive: true });
+    const home = mkdtempSync(join(tmpdir(), "lp-trust-home-"));
+    expect(await trustWorkspaceForGit(home, join(repo, "packages", "app"))).toBe(repo);
+    expect(execFileSync("git", ["config", "--file", join(home, ".gitconfig"), "--get-all", "safe.directory"], { encoding: "utf8" }).trim()).toBe(repo);
+  });
+  it("a folder that is no repository is named itself", async () => {
+    const plain = realpathSync(mkdtempSync(join(tmpdir(), "lp-trust-plain-")));
+    const home = mkdtempSync(join(tmpdir(), "lp-trust-home-"));
+    expect(await trustWorkspaceForGit(home, plain)).toBe(plain);
   });
 });
