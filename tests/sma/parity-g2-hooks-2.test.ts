@@ -588,7 +588,8 @@ describe("the terminal claim ledger and the draft move", () => {
     expect(existsSync(claimsBook(home2))).toBe(false);
   });
 
-  it("[sma:m_draft_move] two SessionEnd events with work leave two distinct draft files; an empty farewell leaves none; two projects named alike stay apart; 50 are kept", () => {
+  // Some sixty hook processes one after another: 18 s on a loaded machine (the full run), 5 s alone.
+  it("[sma:m_draft_move] two SessionEnd events with work leave two distinct draft files; an empty farewell leaves none; two projects named alike stay apart; 50 are kept", { timeout: 90_000 }, () => {
     const repo = newRepo("g2-draft-");
     const home = tmp("g2-draft-home-");
     const end = { hook_event_name: "SessionEnd", session_id: "s-end2", cwd: repo, files: ["src/a.ts"] };

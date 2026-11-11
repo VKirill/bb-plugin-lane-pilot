@@ -65,10 +65,10 @@ function harness(script: Step[], refuseFallbacks = false) {
   fake.sdk.stub("threads.send", async () => undefined);
   fake.sdk.stub("threads.context", async () => ({ usage: null }));
   fake.sdk.stub("threads.updatePluginMetadata", async () => ({}));
-  // The interrupted writer's events, newest first; the usage query (it names a type) reads nothing.
-  fake.sdk.stub("threads.events.list", async (query: { types?: unknown }) => query.types ? [] : [
-    { data: { item: { type: "agentMessage", text: "Parser half done" } } },
-    { data: { item: { type: "commandExecution", command: "npm test", exitCode: 1, aggregatedOutput: "AssertionError: boom" } } },
+  // The interrupted writer's events, newest first: the handoff asks for item events; the usage query (another type) reads nothing.
+  fake.sdk.stub("threads.events.list", async (query: { types?: readonly string[] }) => !query.types?.includes("item/completed") ? [] : [
+    { type: "item/completed", data: { item: { type: "agentMessage", text: "Parser half done" } } },
+    { type: "item/completed", data: { item: { type: "commandExecution", command: "npm test", exitCode: 1, aggregatedOutput: "AssertionError: boom" } } },
   ]);
   fake.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
   const db = openDatabase(bb);
