@@ -1,7 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.530
 
+- **A phase passed live from analysis to close.** Live phase 11 on 0.1.529 (drill scenario `phase`, 47 minutes): analysis, plan, execution, wave review, closing graph, acceptance, the landing on main and the close, with nobody touching it. Checked in the phase book, in the sandbox repository's history (the merge commit and both files on main) and in the phase state on the hub. The landing of 0.1.528 met three Lane Pilot records on main and did not send the phase back.
+- **The strict doc audit is green.** `npx tsx scripts/lp-ship.ts doc-audit --strict` named 17 stale references and now prints «101 documents agree with the code». Fifteen paths follow the code to where it moved; the guide no longer describes `writer.trajectory_export`, which main never had.
 - **A waiting subworkflow step closes when its child fails.** On the hub, `seo-cocoon` run `wfrun_e0e076659cbb4b259d5ae42051738314` kept `research#1` waiting after `seo-research` failed on missing GSC access (2026-11-11). The built-in poll let the terminal child's exception escape; the polling loop logged it and left the step waiting on every tick. It now returns that terminal result as a step error, preserving the original cause and the child's once-only spending charge. Journal read errors remain retryable. The regression replays the captured parent/child boundary, including its existing spending receipt, after a reload; it also covers other terminal child states, a first spending charge and a transient database error. Live after deployment: the existing parent must leave `waiting` on its next poll, keep the GSC error and its spending, and stop emitting the repeated poll log. GSC access itself is still missing.
 
 ## 0.1.529
