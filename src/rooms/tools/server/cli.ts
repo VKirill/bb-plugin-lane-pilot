@@ -37,7 +37,7 @@ import { FORECAST_USAGE, runForecastCli } from "../../forecast/server";
 import { calibrationPassport } from "../../forecast/server";
 import { RUN_GOAL_USAGE, runGoalSweep, runRunGoalCli } from "../../run-goal/server";
 import { CAPABILITY_USAGE, runCapabilityCli } from "../../capability/server";
-import { workerSecretReach } from "../../verification";
+import { runWindowCli, WINDOW_USAGE, workerSecretReach } from "../../verification";
 import { explainCatalog, explainWord, guideDocs } from "./explain";
 import { VERDICT_LIST_COMMAND, renderVerdicts, verdictFiles, verdictInventory } from "./verdicts";
 import { OUTAGE_USAGE, runOutageCli } from "../../outage/server";
@@ -239,6 +239,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
     JEV_USAGE,
     SKILLS_USAGE,
     PM_SKILLS_USAGE,
+    WINDOW_USAGE,
   ].join("\n");
 
   const commands:Array<{ name:string; summary:string; usage:string }> = [
@@ -300,6 +301,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"waiting", summary:"Everything only the owner can decide, with why, evidence and the exact action; what went red overnight; the Telegram digest of new items (quiet hours 23:00-08:00 Europe/Madrid by default)", usage:WAITING_USAGE },
       { name:"lead", summary:"Штурман, the lead over the runs: its state and ticks, the road tree, the owner's answers to its proposals, the rights per class, the decision journal with the prediction made before each answer, the exam and the backtest", usage:LEAD_USAGE },
       { name:"coverage", summary:"What proves each pipeline stage, attempt transition, failure class, gate, memory path, room and key mechanism: covered live by a deploy-drill scenario, covered by tests only (and why no drill), or not covered; --receipt checks the live claims against a drill receipt", usage:COVERAGE_USAGE },
+      { name:"window", summary:"The people windows in a project's checkouts: who works there (leases), the file scopes they announced (claims), overlaps with open tasks; claims are advisory and never block", usage:WINDOW_USAGE },
       { name:"frontmatter", summary:"Read, set and merge a file's YAML header; the body is never touched and a file changed under the read is refused", usage:"bb lane-pilot frontmatter <project-id> <path> [--set k=v]... [--merge k=a,b]..." },
       { name:"attempt", summary:"One attempt's whole record: writer thread, stage receipts and gate events of that attempt, dispatch context, verification results, critic input hash, the attempt-change row", usage:"bb lane-pilot attempt <attempt-id>" },
       { name:"stats", summary:"Project report (sma-stats): phases, plans, requirements, git metrics, a timeline and the attempt metrics", usage:"bb lane-pilot stats [project-id] [--days N]" },
@@ -447,6 +449,11 @@ ${ERRANDS_USAGE}` },
               return { decision: approve ? "approve" : "refuse", descriptor: { kind: "other", attrs: {} }, expected: "owner_only", why: `the owner ${approve ? "approved" : "refused"} a change in a message` };
             },
           }, command, args);
+        }
+        if (command === "window") {
+          // The person's door onto the window leases and claims (SMA window region); advisory, never refuses a merge.
+          return await runWindowCli({ db, kv: bb.storage.kv as never, host, threadId: invocation?.threadId ?? null,
+            thread: async (threadId) => await orMiss(bb.sdk.threads.get({ threadId }), null, isNotFound) as { projectId?: string | null } | null }, args);
         }
         if (command === "coverage") {
           return runCoverageCli(args);
