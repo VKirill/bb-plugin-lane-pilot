@@ -1,6 +1,6 @@
 import type { CapabilitiesApi } from "./capability";
 
-export const CAPABILITY_USAGE = "bb lane-pilot capabilities [--probe] [--worker [user]]   (per provider in use: the adapter version and whether it is proven to answer; --probe tries the unproven now; --worker lists the owner's credential paths the worker user can read, a warning and never a failing exit)";
+export const CAPABILITY_USAGE = "bb lane-pilot capabilities [--probe] [--worker [user]]   (per provider in use: the adapter version and whether it is proven to answer; --probe tries the unproven now and re-probes the red documentary cells (a new result replaces the receipt); --worker lists the owner's credential paths the worker user can read, a warning and never a failing exit)";
 type Result = { exitCode: number; stdout?: string; stderr?: string };
 
 export type WorkerProbe = (user: string) => Promise<{ ok: boolean; reachable: string[] }>;
@@ -16,7 +16,7 @@ export async function runCapabilityCli(api: CapabilitiesApi, argv: readonly stri
       return { exitCode: 0, stdout: JSON.stringify(body, null, 2) };
     }
     if (argv.length > 1 || (argv[0] && argv[0] !== "--probe")) return { exitCode: 1, stderr: CAPABILITY_USAGE };
-    const probed = argv[0] === "--probe" ? await api.sweep() : null;
+    const probed = argv[0] === "--probe" ? await api.sweep(Date.now(), { reprobeRed: true }) : null;
     const table = await api.table();
     return { exitCode: table.some((row) => Object.values(row.capabilities).includes("not_supported")) ? 1 : 0, stdout: JSON.stringify({ ...(probed ? { probed } : {}), table }, null, 2) };
   } catch (cause) {

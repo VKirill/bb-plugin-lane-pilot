@@ -1,5 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { CAPABILITIES, DOCUMENTARY_CELLS, capabilityTable, dueProbes, isDocumentaryRole, receiptKey, documentaryProved, type CapabilityReceipt } from "../../src/rooms/capability";
 import { createCapabilities } from "../../src/rooms/capability/server";
 import { CapabilityUnproven, documentaryGateOf, fullAccessSpawn } from "../../src/rooms/platform/server/pm-spawn";
@@ -156,7 +156,7 @@ describe("spend book, PM prompt and the rule breaker", () => {
     expect(rows.map((row) => `${row.target}:${row.count}`)).toEqual(["task-a:2"]);
   });
 
-  it("[sma:ap_caps] the documentary gate probes a missing or stale receipt once before the stage runs: green runs, red or an unprobeable provider holds like a red receipt; observe mode refuses nothing", async () => {
+  it("[sma:ap_caps] the documentary gate probes one missing or stale cell per call: green runs, a really wrong answer holds like a red receipt, a probe that could not run is observed (the stage runs); observe mode refuses nothing", async () => {
     const { bb, db, harness } = open();
     const { createCapabilities } = await import("../../src/rooms/capability/server");
     const { saveProjectSetting } = await import("../../src/rooms/storage");
@@ -172,24 +172,27 @@ describe("spend book, PM prompt and the rule breaker", () => {
     createCapabilities({ db, bb, log: () => undefined, isDisposed: () => false } as never,
       { startHelperProbe: async (_p: string, _r: string, provider: string, _m: string, cell: string) => { probes.push(`${provider}:${cell}`); return answer; } } as never);
     const gate = documentaryGateOf(bb)!;
-    // No receipt at all: probed once per documentary cell before the stage runs; green writes the receipts and the stage goes.
+    // No receipt at all: ONE cell is probed per gate call; green writes its receipt and the stage goes.
     expect(await gate.deny("codex", "m", "proj")).toBeNull();
+    expect(probes).toEqual(["codex:documentary.nested"]);
+    for (let n = 0; n < 3; n++) expect(await gate.deny("codex", "m", "proj")).toBeNull();
     expect(probes).toEqual(["codex:documentary.nested", "codex:documentary.role", "codex:documentary.hooks", "codex:documentary.session_end"]);
     // The fresh green proof is reused: nothing is probed again.
     expect(await gate.deny("codex", "m", "proj")).toBeNull();
     expect(probes).toHaveLength(4);
     expect(await gate.proved("proj")).toBeNull();
-    // A stale cell (its receipt gone) is probed once more before the stage: a probe that cannot run holds with its
-    // reason and the re-probe command, and writes no receipt.
+    // A stale cell (its receipt gone) is probed once more: a probe that could not run is OBSERVED (the stage runs), writes no receipt.
     db.prepare("DELETE FROM lane_pilot_capability WHERE provider_id='codex' AND capability='documentary.hooks'").run();
     answer = { ok: false, reason: "Parent thread is invalid" };
-    const unrunnable = await gate.deny("codex", "m", "proj");
-    expect(unrunnable).toMatch(/^capability_unproven:codex:documentary\.hooks \(the probe could not run:/);
-    expect(unrunnable).toContain("re-probe");
-    // A probe that comes back red holds exactly as a red receipt: the cell's receipt is written by the probe itself.
-    answer = { ok: false, reason: "did not answer" };
+    expect(await gate.deny("codex", "m", "proj")).toBeNull();
+    expect(db.prepare("SELECT count(*) AS n FROM lane_pilot_capability WHERE capability='documentary.hooks'").get()).toEqual({ n: 0 });
+    // A probe that really answered wrong holds exactly as a red receipt: the cell's receipt is written by the probe itself.
+    // (A fresh gate, since a «could not run» is remembered for ten minutes.)
+    answer = { ok: false, answered: true, reason: "helper_probe_documentary.hooks_unexpected: the answer lacks what the probe asks for" } as never;
+    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(Date.now() + 11 * 60_000);
     const probeRed = await gate.deny("codex", "m", "proj");
     expect(probeRed).toMatch(/^capability_unproven:codex:documentary\.hooks \(receipt/);
+    vi.useRealTimers();
     // A red documentary receipt on the installed key holds, naming the cell and the re-probe command.
     const key = receiptKey({ version: "0.1.0", model: "gpt-6-luna", settings: [], hooks: JSON.stringify(NATIVE_HOOK_SOURCES) });
     saveReceipt(db as never, { providerId: "codex", version: key, capability: "documentary.nested", state: "not_supported", model: "m", detail: null, at: 1 } as never);
