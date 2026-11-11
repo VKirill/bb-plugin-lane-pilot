@@ -19,6 +19,8 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import { parseJsonOr } from "@lane-pilot/kit";
 import { withUsage } from "../../usage/server";
 import { taskUsage } from "./attempt-usage";
+import { reflexLinesOf, taskFileCards } from "./writer-knowledge";
+import { writerDiffRules } from "../../learning";
 
 import type { BaselineApi } from "../../baseline/server/baseline";
 import type { WriterSpawnApi } from "./spawn";
@@ -225,6 +227,9 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
     try {
       await persistTaskFolder({
         taskId: r.taskId, plan: r.plan,
+        // The project's accepted WHEN → act rules reach the writer's guard as REFLEXES.md (SMA k_hs_reflex).
+        reflexes: reflexLinesOf(writerDiffRules(r.ctx.db as never, r.projectId)),
+        filecards: await taskFileCards(r.ctx.db as never, r.projectId, r.task).catch(() => []),
         // The line goes into the repository's real info/exclude, resolved by git on the workspace's own host —
         // never into a stray `.git` of a subfolder workspace (OVH 2026-10-06). PLAN.md is written regardless.
         exclude: live ? undefined : async (line) => {

@@ -44,6 +44,9 @@ export const STREAMS: StreamName[] = ["hard_rules", "git_airbag", "dependency_st
 
 const REQUIRED_STREAMS = new Set<StreamName>(["hard_rules"]);
 
+/** Only these streams may refuse the call (SMA k_hp_merge): a deny of any other stream merges as a warning. */
+const DENY_RIGHTS = new Set<StreamName>(["hard_rules"]);
+
 /**
  * Inventory of checkable gates (SMA k_d_ref_gates_inv): every pre-tool guard with when it fires
  * (matcher), the deny/advice it gives (text) and the switch that holds it (the env that tunes it or
@@ -81,8 +84,18 @@ export function pretaskDecision(input: {
   claims?: string[];
   repo?: string;
   cap?: number;
+  /** The machine's usage snapshot (SMA k_hs_spend): a Task past a human-set window cap is refused with the reset time. */
+  usage?: { skipSetByHuman?: boolean; skipPercent?: number; percent?: number; resetsAt?: string | null; atMs?: number };
 }): { deny?: string; prompt?: string; spawned: number } {
   const cap = input.cap ?? SUBAGENT_CAP;
+  const usage = input.usage;
+  if (usage?.skipSetByHuman && typeof usage.percent === "number" && typeof usage.skipPercent === "number" && usage.percent >= usage.skipPercent
+    && (!usage.atMs || Date.now() - usage.atMs <= 15 * 60_000)) {
+    return {
+      deny: `[spend-cap] the subscription window is at ${Math.round(usage.percent)}% (cap ${usage.skipPercent}%, set by a person): no subagent until it resets${usage.resetsAt ? ` at ${usage.resetsAt}` : ""}. Finish with what you have.`,
+      spawned: input.spawned,
+    };
+  }
   const kind = input.kind || "general-purpose";
   if (input.role === "writer" && !DOCUMENTARY_AGENTS.includes(kind as typeof DOCUMENTARY_AGENTS[number])) {
     return {
@@ -152,12 +165,66 @@ export function stallHint(tool: string, n: number, isFailed: boolean): string {
   return `[lane-stall] Same ${tool} result ${n} times. Change the hypothesis before retrying. ${CLASS_SWEEP}`;
 }
 
-export function stallObserve(counts: Record<string, number>, tool: string, toolInput: unknown, response: unknown): { counts: Record<string, number>; hint: string; fingerprint: string } {
+/** The per-session stall record: fingerprint counts, the last calls' trail, the read-only run, and the patterns already nudged. */
+export type StallState = {
+  counts: Record<string, number>;
+  /** Last 8 fingerprints, for the ping-pong rule (A B A B). */
+  recent: string[];
+  /** Read/Grep/Glob calls in a row with no Edit/Write/Bash between (the monologue rule). */
+  readRun: number;
+  /** «rule:fingerprint» keys that already nudged this session: one nudge per pattern (SMA k_hst_nudge). */
+  nudged: string[];
+};
+
+/** A stall.json written before the trail existed is a bare counts map; it upgrades in place. */
+export function stallStateOf(raw: unknown): StallState {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const row = raw as Record<string, unknown>;
+    if (row.counts && typeof row.counts === "object") {
+      return {
+        counts: { ...(row.counts as Record<string, number>) },
+        recent: Array.isArray(row.recent) ? row.recent.map(String).slice(-8) : [],
+        readRun: typeof row.readRun === "number" ? row.readRun : 0,
+        nudged: Array.isArray(row.nudged) ? row.nudged.map(String).slice(-60) : [],
+      };
+    }
+    return { counts: { ...(row as Record<string, number>) }, recent: [], readRun: 0, nudged: [] };
+  }
+  return { counts: {}, recent: [], readRun: 0, nudged: [] };
+}
+
+/**
+ * Four stuck rules on the plain call record, no model (SMA k_hst_detect): the same failing call twice, the same
+ * result three times, the last six calls alternating between two fingerprints, eight read-only calls in a row.
+ * Each pattern speaks once per session (SMA k_hst_nudge): a second hit of the same rule and fingerprint stays silent.
+ */
+export function stallObserve(state: Record<string, number> | StallState, tool: string, toolInput: unknown, response: unknown): { state: StallState; counts: Record<string, number>; hint: string; fingerprint: string } {
+  const current = stallStateOf(state);
   const fingerprint = stallFingerprint(tool, toolInput, response);
-  const next = { ...counts, [fingerprint]: (counts[fingerprint] ?? 0) + 1 };
-  const keys = Object.keys(next);
-  const trimmed = keys.length > 300 ? Object.fromEntries(keys.slice(-300).map((key) => [key, next[key]!])) : next;
-  return { counts: trimmed, fingerprint, hint: stallHint(tool, trimmed[fingerprint] ?? 1, stallFailed(response)) };
+  const name = tool.toLowerCase();
+  current.counts[fingerprint] = (current.counts[fingerprint] ?? 0) + 1;
+  const keys = Object.keys(current.counts);
+  if (keys.length > 300) current.counts = Object.fromEntries(keys.slice(-300).map((key) => [key, current.counts[key]!]));
+  current.recent = [...current.recent, fingerprint].slice(-8);
+  current.readRun = READ_TOOLS.has(name) ? current.readRun + 1 : 0;
+
+  // rule + fingerprint: a nudge repeats only for a different pattern or a different call.
+  const say = (rule: string, text: string): string => {
+    const key = `${rule}:${fingerprint}`;
+    if (current.nudged.includes(key)) return "";
+    current.nudged = [...current.nudged, key].slice(-60);
+    return text;
+  };
+  const last6 = current.recent.slice(-6);
+  const pingPong = last6.length === 6 && last6[0] === last6[2] && last6[2] === last6[4] && last6[1] === last6[3] && last6[3] === last6[5] && last6[0] !== last6[1];
+  let hint = "";
+  if (pingPong) hint = say("pingpong", "[lane-stall] you are alternating between two calls; stop and decide which result you trust");
+  if (!hint && current.readRun >= 8) hint = say("monologue", "[lane-stall] eight read-only calls in a row and nothing written: write down what you know and take the next step");
+  if (!hint) {
+    const repeated = stallHint(tool, current.counts[fingerprint] ?? 1, stallFailed(response));
+    if (repeated) hint = say("stall", repeated);
+  }
+  return { state: current, counts: current.counts, fingerprint, hint };
 }
 
 export function buildCapsule(input: Capsule): Capsule {
@@ -198,6 +265,8 @@ export function sessionStartText(input: {
   capsule?: Capsule | null;
   changed?: string[];
   account?: string;
+  /** Commits the code map is behind HEAD (SMA k_wp_drift); 0 or undefined says nothing. */
+  codeMapBehind?: number;
 }): string | null {
   const parts: string[] = [];
   if (input.lastModel && input.model && input.lastModel !== input.model) {
@@ -207,6 +276,7 @@ export function sessionStartText(input: {
   if (input.protections?.length) parts.push(`Protections switched off: ${input.protections.join("; ")}`);
   const budget = input.memoryLines != null ? memoryBudgetLine(input.memoryLines) : null;
   if (budget) parts.push(budget);
+  if (input.codeMapBehind) parts.push(`Code map is ${input.codeMapBehind} commits behind HEAD: reindex before relying on it`);
   if (input.changed?.length) parts.push(`What changed since last time:\n${input.changed.slice(0, 30).join("\n")}`);
   if (input.capsule) parts.push(capsuleRestored(input.capsule));
   return parts.length ? parts.join("\n\n") : null;
@@ -222,8 +292,15 @@ export function promptRecall(input: { hits: Array<{ id?: string; content?: strin
   return { text: `Memory for these words (pointers, not orders):\n${pointers}`, given: next };
 }
 
-export function sessionEndDraft(input: { files: string[]; at: string }): string {
-  return `# Farewell lesson draft (${input.at})\n\nThis session changed: ${input.files.slice(0, 20).join(", ") || "nothing"}.\nWhat should the next window know? (a draft: it waits for a person or the memory maintainer)\n`;
+/** Commits the code map is behind, or 0 when it is fresh or unknown (SMA k_wp_drift): equal or unreadable shas add nothing. */
+export function codeMapDrift(metaLastCommit: string | null | undefined, headSha: string | null | undefined, behind: number | null | undefined): number {
+  if (!metaLastCommit || !headSha || metaLastCommit === headSha || !behind || behind <= 0) return 0;
+  return Math.floor(behind);
+}
+
+export function sessionEndDraft(input: { files: string[]; at: string; subagents?: { count: number; missing: string[] } }): string {
+  const subs = input.subagents ? `Subagents: ${input.subagents.count}${input.subagents.missing.length ? `, unverified: ${input.subagents.missing.slice(0, 10).join(", ")}` : ""}.\n` : "";
+  return `# Farewell lesson draft (${input.at})\n\nThis session changed: ${input.files.slice(0, 20).join(", ") || "nothing"}.\n${subs}What should the next window know? (a draft: it waits for a person or the memory maintainer)\n`;
 }
 
 export function turnOutside(files: string[], claims: string[]): string[] {
@@ -334,8 +411,12 @@ export function runStreams(
       const result = (runners[name] ?? defaultRunners[name])(ctx);
       perf.push({ stream: name, ms: Math.max(0, now() - started) });
       if (result.deny && !deny) {
-        deny = result.deny;
-        denials[name] = (denials[name] ?? 0) + 1;
+        if (DENY_RIGHTS.has(name)) {
+          deny = result.deny;
+          denials[name] = (denials[name] ?? 0) + 1;
+        } else {
+          advice.push(`[downgraded] ${result.deny}`);
+        }
       }
       if (result.advice) advice.push(result.advice);
     } catch (error) {

@@ -24,10 +24,11 @@ import { mountRelay, ownerLocale } from "../../relay/server";
 import { ownerAnswerText } from "../owner-answer-text";
 import { mountWorkflowTools } from "../../workflow/server";
 import { mountSelfRepair } from "../../self-repair/server";
-import { mountHookTimeoutWatch, mountPmTurnWatch, mountServiceProjects, mountWorktreeJanitor } from "../../stability/server";
+import { mountHookTimeoutWatch, mountPmTurnWatch, mountRateLimitWatch, mountServiceProjects, mountWorktreeJanitor } from "../../stability/server";
 import { mountWorkflowArchitect } from "../../workflow/server";
 import { mountLeadTool } from "../../lead/server";
 import { mountScheduleTools } from "../../schedule/server";
+import { mountUsageSnapshots } from "../../usage/server";
 import { mountToolFamilies } from "./tool-families";
 import { CURRICULUM_KV_KEY, runCurriculumWeekly } from "./self-improve";
 import { createFromDraft, dispatchChecked, getDraft, proposeDraft } from "../../tasks/server";
@@ -440,6 +441,9 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
   mountSelfRepair(ctx, services, selfRepairDeps());
   mountHookTimeoutWatch(ctx);
   mountPmTurnWatch(ctx);
+  mountRateLimitWatch(ctx);
+  // The session guards' spend facts reach each machine's usage-snapshot.json (SMA k_hs_spend).
+  mountUsageSnapshots(ctx, (services as { providerUsage?: { windows: (input: { providerId: string; hostId: string }) => Promise<unknown> } }).providerUsage as never);
   mountServiceProjects(ctx);
   mountWorktreeJanitor(ctx, { cleanupStickyLaneWorktrees, cleanupFinishedAttemptEnvironments });
   mountWorkflowArchitect(ctx, services);

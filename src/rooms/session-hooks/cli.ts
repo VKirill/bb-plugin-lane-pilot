@@ -2,13 +2,13 @@
  * Fail-open session hook for a native Claude session Lane Pilot launches.
  * A hook never wedges a session: failOpen swallows errors and the process exits 0.
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 // node --experimental-strip-types resolves this file only with a .ts specifier.
 // @ts-expect-error TS5097
-import { buildCapsule, failOpen, hookOutput, injectPack, pmSkillUseOf, pretaskDecision, progressRecord, promptRecall, runStreams, sessionEndDraft, sessionStartText, stallObserve, subagentVerify, subagentVerifyText, type Capsule, type PmSkillUse, type ToolCtx } from "./logic.ts";
+import { buildCapsule, codeMapDrift, failOpen, hookOutput, injectPack, pmSkillUseOf, pretaskDecision, progressRecord, promptRecall, runStreams, sessionEndDraft, sessionStartText, stallObserve, subagentVerify, subagentVerifyText, type Capsule, type PmSkillUse, type ToolCtx } from "./logic.ts";
 
 type Payload = Record<string, unknown>;
 
@@ -48,6 +48,14 @@ function toolInput(payload: Payload): Record<string, unknown> {
 
 
 // Fire and forget: a PM's Skill call lands one row in lane_pilot_pm_skill_use. Never blocks the tool call.
+/** One git call in the workspace, nothing on failure: the hook must answer inside its budget either way. */
+function spawnSyncGit(cwd: string, args: string[]): string {
+  try {
+    const ran = spawnSync("git", args, { cwd, encoding: "utf8", timeout: 3000 });
+    return ran.status === 0 ? (ran.stdout ?? "").trim() : "";
+  } catch { return ""; }
+}
+
 function reportPmSkill(row: PmSkillUse): void {
   try {
     const args = ["lane-pilot", "pm-skill-use", row.skill, "--thread", row.thread];
@@ -80,11 +88,22 @@ function handle(payload: Payload): void {
     let memoryLines = 0;
     const memoryPath = cwd ? join(cwd, "MEMORY.md") : "";
     if (memoryPath && existsSync(memoryPath)) memoryLines = readFileSync(memoryPath, "utf8").split("\n").length;
+    // The code map's freshness (SMA k_wp_drift): .gitnexus/meta.json lastCommit against the checkout's HEAD.
+    let codeMapBehind = 0;
+    const metaCommit = readJson<{ lastCommit?: string } | null>(cwd ? join(cwd, ".gitnexus", "meta.json") : "/dev/null", null)?.lastCommit;
+    if (metaCommit && cwd) {
+      try {
+        const head = spawnSyncGit(cwd, ["rev-parse", "HEAD"]);
+        const behind = head && head !== metaCommit ? Number(spawnSyncGit(cwd, ["rev-list", "--count", `${metaCommit}..HEAD`])) : 0;
+        codeMapBehind = codeMapDrift(metaCommit, head, Number.isFinite(behind) ? behind : 0);
+      } catch { /* a map that cannot be read stays silent */ }
+    }
     const text = sessionStartText({
       model: typeof payload.model === "string" ? payload.model : undefined,
       lastModel: readText(join(dir, "model.txt")),
       memoryLines,
       capsule,
+      codeMapBehind,
     });
     if (typeof payload.model === "string") writeFileSync(join(dir, "model.txt"), payload.model);
     emit(hookOutput(event, text));
@@ -102,7 +121,12 @@ function handle(payload: Payload): void {
     const input = toolInput(payload);
     if (name === "Task" || name === "Agent") {
       const spawned = readJson<number>(join(dir, "spawned.txt"), 0);
+      // The machine's spend facts (SMA k_hs_spend): a Task past a human-set window cap is refused, else allowed.
+      const snap = readJson<{ at?: string; windows?: Array<{ usedPercent?: number; resetsAt?: string | null }>; skipPercent?: number; skipSetByHuman?: boolean } | null>(join(homedir(), ".lane-pilot", "usage-snapshot.json"), null);
+      const worst = (snap?.windows ?? []).reduce((top, w) => Math.max(top, typeof w?.usedPercent === "number" ? w.usedPercent : 0), 0);
+      const snapReset = (snap?.windows ?? []).find((w) => typeof w?.usedPercent === "number" && w.usedPercent === worst)?.resetsAt ?? null;
       const decision = pretaskDecision({
+        usage: snap ? { skipSetByHuman: snap.skipSetByHuman === true, skipPercent: snap.skipPercent, percent: worst, resetsAt: snapReset, atMs: snap.at ? Date.parse(snap.at) : 0 } : undefined,
         role: process.env.LANE_PILOT_ROLE ?? "",
         kind: String(input.subagent_type ?? input.kind ?? "general-purpose"),
         background: input.run_in_background === true,
@@ -141,9 +165,13 @@ function handle(payload: Payload): void {
   if (event === "PostToolUse") {
     const pmSkill = pmSkillUseOf(toolName(payload), toolInput(payload), process.env);
     if (pmSkill) reportPmSkill(pmSkill);
-    const counts = readJson<Record<string, number>>(join(dir, "stall.json"), {});
-    const observed = stallObserve(counts, toolName(payload), toolInput(payload), payload.tool_response ?? payload.toolResponse);
-    writeFileSync(join(dir, "stall.json"), JSON.stringify(observed.counts));
+    const observed = stallObserve(readJson(join(dir, "stall.json"), {}), toolName(payload), toolInput(payload), payload.tool_response ?? payload.toolResponse);
+    writeFileSync(join(dir, "stall.json"), JSON.stringify(observed.state));
+    // What this session touched (SMA k_hse_farewell): the farewell draft is built from it when the payload names no files.
+    const touchedPath = String(toolInput(payload).file_path ?? toolInput(payload).path ?? "");
+    if (/^(edit|multiedit|write|notebookedit)$/i.test(toolName(payload)) && touchedPath) {
+      appendFileSync(join(dir, "touched.jsonl"), `${JSON.stringify({ at: new Date().toISOString(), tool: toolName(payload), path: touchedPath })}\n`);
+    }
     emit(hookOutput(event, observed.hint || null));
     return;
   }
@@ -156,8 +184,20 @@ function handle(payload: Payload): void {
     return;
   }
   if (event === "SessionEnd") {
-    const files = Array.isArray(payload.files) ? payload.files.map(String) : [];
-    writeFileSync(join(dir, "farewell.md"), sessionEndDraft({ files, at: new Date().toISOString() }));
+    // The payload names no files: the touched journal of this session is the record (SMA k_hse_farewell).
+    let files = Array.isArray(payload.files) ? payload.files.map(String) : [];
+    if (!files.length) {
+      files = readText(join(dir, "touched.jsonl")).split("\n").filter(Boolean)
+        .map((line) => { try { return String((JSON.parse(line) as { path?: unknown }).path ?? ""); } catch { return ""; } })
+        .filter(Boolean).slice(-20);
+    }
+    // The subagent receipts the session filed (SMA k_wd_c2): how many, and which claimed files are unverified.
+    const receipts = readText(join(dir, "receipts.jsonl")).split("\n").filter(Boolean)
+      .map((line) => { try { return (JSON.parse(line) as { subagent_receipt?: { missing?: string[] } }).subagent_receipt ?? null; } catch { return null; } })
+      .filter((row): row is { missing?: string[] } => row !== null);
+    const missing = [...new Set(receipts.flatMap((row) => row.missing ?? []))];
+    const subagents = receipts.length ? { count: receipts.length, missing } : undefined;
+    writeFileSync(join(dir, "farewell.md"), sessionEndDraft({ files, at: new Date().toISOString(), subagents }));
     return;
   }
   if (event === "Stop") return;
