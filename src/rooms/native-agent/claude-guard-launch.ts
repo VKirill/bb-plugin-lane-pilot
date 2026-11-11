@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { nativeThreadKey } from "../contracts";
+import { nativeThreadKey, resolvePlanningHome } from "../contracts";
+import { getRun, planningHomeInputs, type LanePilotDatabase } from "../storage";
+import type { RunCommandHost } from "@lane-pilot/host-calls";
 import { sha256Hex } from "@lane-pilot/kit";
 import { claudeExecLine, installedClaudeExecutable, shellQuote } from "./native-claude-host";
 import { materializeNativeHookSession } from "./native-session-hooks";
@@ -133,12 +135,21 @@ async function within<T>(ms: number, label: string, work: Promise<T>): Promise<T
 
 type HostCall = { call(method: string, input: unknown, options: { hostId: string }): Promise<unknown> };
 
+/** The PM's planning home for the bundled guard (SMA d_project_planning): the confirmed home's path, or null. */
+async function pmPlanningHome(ctx: { bb: BbPluginApi; db: LanePilotDatabase; nativeHost: HostCall }, thread: { threadId: string | null; hostId: string }, metadata: unknown, cwd: string | null): Promise<string | null> {
+  const runId = metadata && typeof metadata === "object" ? (metadata as Record<string, unknown>).lanePilotRunId : null;
+  const run = typeof runId === "string" && runId ? getRun(ctx.db, runId) : null;
+  if (!run || !cwd) return null;
+  const host = { call: (method: string, input: unknown, options: { hostId: string }) => ctx.nativeHost.call(method, input, options) } as unknown as RunCommandHost;
+  return resolvePlanningHome({ host, hostId: thread.hostId, cwd, inputs: planningHomeInputs(ctx.db, run.project_id), log: ctx.bb.log });
+}
+
 /**
  * Claude Code threads Lane Pilot started (PM, helpers, writers, errands) get the bundled guard through
  * BB_CLAUDE_CODE_EXECUTABLE. Native sessions already have their own launcher. The owner's chats have no role.
  * (2026-10-29 claude-guard)
  */
-export function createClaudeGuardEnv(ctx: { bb: BbPluginApi; nativeHost: HostCall }) {
+export function createClaudeGuardEnv(ctx: { bb: BbPluginApi; db: LanePilotDatabase; nativeHost: HostCall }) {
   const cache = new Map<string, { at: number; env: EnvEntry[] }>();
   return async (thread: { threadId: string | null; hostId: string }): Promise<EnvEntry[]> => {
     if (!thread.threadId) return [];
@@ -166,7 +177,18 @@ export function createClaudeGuardEnv(ctx: { bb: BbPluginApi; nativeHost: HostCal
     const key = `${thread.hostId}\n${role}\n${cwd ?? ""}`;
     const hit = cache.get(key);
     const now = Date.now();
-    if (hit && now - hit.at < CACHE_MS) return hit.env;
+    // The planning home is per project, never cached: two projects can share one checkout path, and a cleared setting must apply at once.
+    const withHome = async (base: EnvEntry[]): Promise<EnvEntry[]> => {
+      const env = [...base];
+      // Only a confirmed home travels to the guard (resolvePlanningHome runs the host-side git check);
+      // a failure leaves the PM writing in the checkout only, as today.
+      if (role === "pm") {
+        const home = await pmPlanningHome(ctx, thread, metadata, cwd).catch(() => null);
+        if (home) env.push({ name: "LANE_PILOT_PLANNING_HOME", value: home, reason: `Lane Pilot: the PM writes its planning folders under the confirmed planning home` });
+      }
+      return env;
+    };
+    if (hit && now - hit.at < CACHE_MS) return withHome(hit.env);
     try {
       const prepared = await within(CALL_MS, "prepareClaudeGuard", Promise.resolve(ctx.nativeHost.call("prepareClaudeGuard", {
         role, ...(cwd ? { cwd } : {}),
@@ -174,7 +196,7 @@ export function createClaudeGuardEnv(ctx: { bb: BbPluginApi; nativeHost: HostCal
       const env = Array.isArray(prepared?.env) ? prepared.env : [];
       if (!env.some((entry) => entry.name === "BB_CLAUDE_CODE_EXECUTABLE")) throw new Error("prepareClaudeGuard returned no launcher");
       cache.set(key, { at: now, env });
-      return env;
+      return await withHome(env);
     } catch (cause) {
       throw new Error(`claude_guard_failed:${thread.hostId}: ${reasonOf(cause)}`);
     }

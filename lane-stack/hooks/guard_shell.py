@@ -210,7 +210,7 @@ SQL_MUTATION = re.compile(
 )
 
 
-_LANE_PILOT_PM_WRITES = ".agents/ (not the Lane Pilot receipts), .bb/chats/<this chat>/, docs/plans/, .env* and /tmp"
+_LANE_PILOT_PM_WRITES = ".agents/ (not the Lane Pilot receipts), .bb/chats/<this chat>/, docs/plans/, .env*, /tmp, and the confirmed planning home's .agents/phases|planning|todos|notes/"
 
 
 def _lane_pilot_edit_tail(path: str) -> str:
@@ -707,6 +707,45 @@ def _is_env_secret_file(name: str) -> bool:
     return False
 
 
+# Lane Pilot bookkeeping files the PM never edits, wherever they live (the checkout and the planning home alike):
+# PROGRESS.md and CHANGELOG.md are owned by project-life / living memory; LESSONS.md is not kept any more (lessons are
+# rules on the hub: lane_pilot_memory action lesson / lane-memory lesson).
+_PM_DENIED_BASENAMES = frozenset({"PROGRESS.md", "CHANGELOG.md", "LESSONS.md"})
+
+# The planning folders of the confirmed planning home the PM may write (SMA d_project_planning): nothing else outside the checkout.
+_PM_HOME_FOLDERS = ("phases", "planning", "todos", "notes")
+
+
+def _pm_planning_home_allowed(target: Path, suffix: str) -> bool:
+    """The PM's planning home (LANE_PILOT_PLANNING_HOME, set by the launcher only after the hub confirmed it):
+    writes under <home>/.agents/phases|planning|todos|notes/, text files only. The guard re-checks the home itself —
+    a git folder that is not the user's home — the same check the hub ran, so a home the launcher never confirmed
+    (no git work tree there) is refused here too. Any doubt is a refusal, like everywhere else in this function."""
+    raw = os.environ.get("LANE_PILOT_PLANNING_HOME", "").strip()
+    if not raw.startswith("/") or raw == "/" or ".." in raw.split("/"):
+        return False
+    try:
+        home = Path(raw).resolve()
+    except OSError:
+        return False
+    if home == Path.home().resolve():
+        return False
+    if not any(target.is_relative_to(home / ".agents" / folder) for folder in _PM_HOME_FOLDERS):
+        return False
+    if target.name in _PM_DENIED_BASENAMES:
+        return False
+    if suffix not in _PM_TEXT_SUFFIXES:
+        return False
+    try:
+        inside = subprocess.run(
+            ["git", "-C", str(home), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True, text=True, timeout=10,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return inside == "true"
+
+
 def _pm_edit_allowed(path: str, cwd: object) -> bool:
     """PM may edit control-plane docs + dotenv files — never production source.
 
@@ -734,18 +773,15 @@ def _pm_edit_allowed(path: str, cwd: object) -> bool:
     if requested.is_absolute() and any(target.is_relative_to(temp) for temp in _PM_TEMP_ROOTS):
         return True
     if not target.is_relative_to(root):
-        return False
+        return _pm_planning_home_allowed(target, suffix)
     relative = target.relative_to(root)
     normalized = relative.as_posix()
-    # LESSONS.md is not kept any more: lessons are rules on the hub (lane_pilot_memory action lesson / lane-memory lesson).
-    if normalized.rsplit("/", 1)[-1] == "LESSONS.md":
+    # Bookkeeping files (PROGRESS.md, CHANGELOG.md, LESSONS.md): Lane Pilot's own, the PM never edits them.
+    if normalized.rsplit("/", 1)[-1] in _PM_DENIED_BASENAMES:
         return False
     # The repository-local git exclude (main repo or a linked worktree's): the PM keeps local ignores there.
     if re.fullmatch(r"\.git/(?:worktrees/[^/]+/)?info/exclude", normalized):
         return True
-    # Lane Pilot bookkeeping files are owned by Lane Pilot project-life / living memory; PM never edits them.
-    if normalized.rsplit("/", 1)[-1] in {"PROGRESS.md", "CHANGELOG.md"}:
-        return False
     if _is_env_secret_file(normalized):
         return True
     if normalized.startswith("docs/plans/"):

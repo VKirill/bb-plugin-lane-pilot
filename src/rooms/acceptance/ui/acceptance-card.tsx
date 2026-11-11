@@ -39,10 +39,12 @@ function Block({ title, testId, children }: { title: string; testId?: string; ch
   );
 }
 
-export function AcceptanceCard({ runId, taskId, fallback, finished, refreshKey }: {
+export function AcceptanceCard({ runId, taskId, fallback, finished, refreshKey, onStop }: {
   runId: string; taskId: string; refreshKey: unknown; finished: boolean;
   /** What the task page already knows of the contract, shown when the card cannot be read. */
   fallback: { objective: string | null; acceptance: string[] } | null;
+  /** «Stop» beside Accept and Return (SMA sc_acceptance): the task page passes its cancel; null on a finished task. */
+  onStop?: (() => void) | null;
 }) {
   const rpc = useRpc<typeof rpcContract>();
   const [card, setCard] = useState<Card | null | "gone">(null);
@@ -63,6 +65,7 @@ export function AcceptanceCard({ runId, taskId, fallback, finished, refreshKey }
           ))}</ul>
         ) : null}
         <ReturnStage runId={runId} taskId={taskId} />
+        {onStop ? <button type="button" className="mt-3 rounded-md border border-border px-2 py-1 text-xs hover:bg-[var(--lp-well)]" data-testid="acc-stop" onClick={onStop}>{t("accStop")}</button> : null}
       </section>
     );
   }
@@ -224,6 +227,7 @@ export function AcceptanceCard({ runId, taskId, fallback, finished, refreshKey }
         </div>
       ) : null}
       <ReturnStage runId={runId} taskId={taskId} />
+      {onStop ? <button type="button" className="mt-3 rounded-md border border-border px-2 py-1 text-xs hover:bg-[var(--lp-well)]" data-testid="acc-stop" onClick={onStop}>{t("accStop")}</button> : null}
     </section>
   );
 }

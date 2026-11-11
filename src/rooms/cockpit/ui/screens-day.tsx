@@ -173,8 +173,11 @@ type Worker = { providerId: string; model: string; tokens: number; days: WorkerD
 type Designer = { ratios: Record<string, number | null>; conditions: Array<{ id: string; ok: boolean; detail: string }>; readiness: string };
 
 /** Workers: each worker's card with its 30-day history, the lane table of capability cells, and the designer's statistics. */
-export function WorkersScreen({ rpc, projectId }: { rpc: Rpc; projectId: string }) {
+export function WorkersScreen({ rpc, projectId, hostId }: { rpc: Rpc; projectId: string; hostId: string | null }) {
   const workers = useLoad(() => rpc.call("cockpit_workers", { projectId }) as Promise<Worker[]>, [projectId]);
+  // The subscription windows of this machine's claude-code account (the same read the Money screen draws, SMA m_sw_worker_card).
+  // One read for every card, polled like the feed so an open screen does not keep an old figure.
+  const windows = useLoad(() => (hostId ? rpc.call("cockpit_windows", { hostId }) as Promise<Windows> : Promise.resolve({ at: null, windows: {} })), [hostId], FEED_POLL_MS);
   const designer = useLoad(() => rpc.call("cockpit_designer", { projectId }) as Promise<Designer>, [projectId]);
   const capabilities = ["answers", "documentary.nested", "documentary.role", "documentary.hooks", "documentary.session_end", "pause", "accounting", "progress", "gate"];
   return (
@@ -188,6 +191,9 @@ export function WorkersScreen({ rpc, projectId }: { rpc: Rpc; projectId: string 
                 <p className="truncate text-sm font-medium">{worker.model}</p>
                 <p className="text-xs text-muted-foreground">{worker.providerId} · {fill("ckWorkerTokens", { v: worker.tokens.toLocaleString() })}</p>
                 {(worker.running > 0 || worker.lastAt) && <p className="text-xs" data-testid="ck-worker-presence">{worker.running > 0 ? fill("ckWorkerRunning", { n: String(worker.running), tasks: worker.runningTasks.join(", ") }) : ""}{worker.lastAt ? ` · ${day(worker.lastAt)}` : ""}</p>}
+                {worker.providerId === "claude-code" && windows.data && Object.keys(windows.data.windows).length ? (
+                  <p className="text-xs text-muted-foreground" data-testid="ck-worker-window">{Object.entries(windows.data.windows).map(([name, window]) => `${WINDOW_WORDS[name] ?? name} ${Math.round(window.utilization)}%`).join(" · ")}{windows.data.limitEventAt ? ` · ${fill("ckWindowsFromEvent", { t: new Date(windows.data.limitEventAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) })}` : ""}</p>
+                ) : null}
                 {/* Worker history: tokens per day over 30 days. */}
                 <div className="mt-1 flex h-8 items-end gap-px" aria-hidden>{worker.days.map((row) => <div key={row.day} className="flex-1 bg-primary/60" style={{ height: `${Math.max(4, (row.tokens / peak) * 100)}%` }} title={`${row.day}: ${row.tokens} tok, ${row.done ?? 0} done, ${row.notDone ?? 0} not done`} />)}</div>
               </div>
