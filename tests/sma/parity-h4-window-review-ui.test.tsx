@@ -29,3 +29,27 @@ describe("[review 6] a batch card with nothing to open", () => {
     expect((slot.getByTestId("board-card-batch:dr_chat") as HTMLButtonElement).disabled).toBe(false);
   });
 });
+
+describe("[review 4] the worker card window figure from the stored limit event", () => {
+  it("carries the Money screen's marker, and the loader is polled", async () => {
+    await loadPluginApp(() => import("../../app"));
+    const { WorkersScreen } = await import("../../src/rooms/cockpit/ui/screens-day");
+    let reads = 0;
+    const table: Record<string, unknown> = {
+      cockpit_workers: () => [{ providerId: "claude-code", model: "m", tokens: 1, days: [], capabilities: [], running: 0, runningTasks: [], lastAt: null }],
+      cockpit_windows: () => { reads += 1; return { at: "2026-11-11T10:20:00.000Z", limitEventAt: "2026-11-11T10:20:00.000Z", windows: { five_hour: { utilization: 99, resetsAt: null } } }; },
+      cockpit_designer: () => ({ readiness: "ready", conditions: [], ratios: {} }),
+    };
+    const rpc = { call: (name: string, params: unknown) => Promise.resolve((table[name] as (p: unknown) => unknown)?.(params)) };
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const slot = await renderSlot({ component: () => <WorkersScreen rpc={rpc as never} projectId="p" hostId="h" /> }, {}, { context: { projectId: null, threadId: null }, rpc: table as never });
+    const line = await slot.findByTestId("ck-worker-window");
+    expect(line.textContent).toContain("99%");
+    expect(line.textContent).toContain("from the last limit event");
+    try {
+      const before = reads;
+      await vi.advanceTimersByTimeAsync(8_100);
+      expect(reads).toBeGreaterThan(before);
+    } finally { vi.useRealTimers(); }
+  });
+});
