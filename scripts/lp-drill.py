@@ -1175,28 +1175,39 @@ def clear_stale_owner_words(ctx: "Context") -> list[str]:
     return restore_owner_words(ctx, "off", int(saved[0]["version"]) if saved else 0)
 
 
+def window_url() -> str:
+    """The window the scenes open: LP_DRILL_UI_URL when it is set, else the hub itself (BB_SERVER_URL, the same address the
+    drill's probes read), else the dev-window default."""
+    base = os.environ.get("LP_DRILL_UI_URL") or os.environ.get("BB_SERVER_URL") or "http://127.0.0.1:4173"
+    return base.rstrip("/") + "/"
+
+
 def live_word_scene(run_id: str) -> dict:
     """The scene lp-ui-drive plays for the approve press (SMA m_sd_approve): open the owner-waiting board (scope-nav-waiting) and
     click the yes button of this drill's own task. The button's test id carries the item key `task-word:<run>:<family>:...`, so
     tying the selector to the run id keeps the press off a real project's task on the same board."""
-    return {"url": os.environ.get("LP_DRILL_UI_URL", "http://127.0.0.1:4173/"), "widths": [1280],
+    return {"url": window_url(), "widths": [1280],
             "steps": [{"wait": 1500}, {"click": '[data-testid="scope-nav-waiting"]'}, {"wait": 1000},
                       {"click": f'[data-testid^="owner-run-task-word:{run_id}:"][data-testid$="-yes"]'}],
             "asserts": [], "judge": "The owner's word landed the task."}
 
 
 def live_press() -> bool:
-    """The approve press through the window needs a window at LP_DRILL_UI_URL: it runs only where LP_DRILL_LIVE_PRESS=1."""
-    return os.environ.get("LP_DRILL_LIVE_PRESS") == "1"
+    """The approve press through the window runs wherever a window can be found (window_url); LP_DRILL_LIVE_PRESS=0 opts out and
+    leaves the RPC word path, as before the press existed."""
+    return os.environ.get("LP_DRILL_LIVE_PRESS", "1") != "0"
 
 
 def scenario_live_word(ctx: "Context") -> dict:
     """Live word drill (SMA: Live word drill, Approval drill): with owner.words on, a verified task waits for the owner's word, and lands once
-    the word is given (here through the task_word RPC, the path of the screen and the CLI). With LP_DRILL_LIVE_PRESS=1 the word is a real
-    press of the Approve button, and a task whose check fails ends blocked, offers no owner item, and an RPC yes does not land it."""
+    the word is given (here through the task_word RPC, the path of the screen and the CLI). By default the word is a real
+    press of the Approve button (LP_DRILL_LIVE_PRESS=0 opts out), and a task whose check fails ends blocked, offers no owner
+    item, and an RPC yes does not land it. A browser that cannot start skips the press («skipped: no browser») and the word goes
+    through the RPC, as without the press."""
     live = live_press()
     original, version = owner_words(ctx, "on")
     problems: list[str] = []
+    press_note = ""
     row: dict = {}
     red_row: dict = {}
     try:
@@ -1225,7 +1236,10 @@ def scenario_live_word(ctx: "Context") -> dict:
             scene = ctx.tmp / f"approve-{STAMP}.json"
             scene.write_text(json.dumps(live_word_scene(ctx.run_id)))
             rc, out, err = run(["node", str(ROOT / "scripts" / "lp-ui-drive.mjs"), str(scene)], timeout=300)
-            if rc != 0:
+            if rc == 2:
+                press_note = f"skipped: no browser ({(err or out).strip()[:160]})"
+                setting_rpc("task_word", {"runId": ctx.run_id, "taskId": spec["id"], "decision": "yes", "text": "да"})
+            elif rc != 0:
                 problems.append(f"the approve press through the window failed (exit {rc}): {(err or out).strip()[:300]}")
         else:
             setting_rpc("task_word", {"runId": ctx.run_id, "taskId": spec["id"], "decision": "yes", "text": "да"})
@@ -1250,7 +1264,7 @@ def scenario_live_word(ctx: "Context") -> dict:
                 problems.append("an RPC yes landed the red task")
     finally:
         problems.extend(restore_owner_words(ctx, original, version))
-    return verdict("live_word", problems, tasks=[t for t in (row, red_row) if t])
+    return verdict("live_word", problems, tasks=[t for t in (row, red_row) if t], **({"note": press_note} if press_note else {}))
 
 
 def tasks_no_code_exit(cwd: str, series: bool = False) -> list[dict]:
@@ -1512,11 +1526,14 @@ def access_skill_count(view: object) -> tuple[int, int]:
     return catalog, loaded
 
 
-def access_page_url(project: str) -> str | None:
-    """The window's access page of one project, from LP_DRILL_UI_ACCESS_URL with `{project}` in it; None when no such address is
-    set, because the window root shows whatever project was last open and a press there could change a real one."""
+def access_page_url(project: str) -> str:
+    """The window's access page of one project: LP_DRILL_UI_ACCESS_URL with `{project}` when it is set, else the team's access
+    tab of the Lane Pilot page on the hub's own window (`…/plugins/lane-pilot/lane-pilot/<project>/access`, the address the
+    pages room gives the tab). The project is always in the address: a press on the window root could change a real project."""
     template = os.environ.get("LP_DRILL_UI_ACCESS_URL", "")
-    return template.replace("{project}", project) if "{project}" in template else None
+    if "{project}" in template:
+        return template.replace("{project}", project)
+    return f"{window_url()}plugins/lane-pilot/lane-pilot/{project}/access"
 
 
 def restore_access_roles(project: str, before: list[dict]) -> list[str]:
@@ -1545,13 +1562,10 @@ def restore_access_roles(project: str, before: list[dict]) -> list[str]:
 
 def scenario_skills_screen(ctx: "Context") -> dict:
     """Skills screen drill (SMA m_sd_skills): the skills screen at the window, the door and on disk — an empty list is
-    explained, and pressing the panel does not touch the files. The window is opened on the access page of the drill's own project by
-    URL (LP_DRILL_UI_ACCESS_URL); without such an address nothing is clicked and the scene is reported «not run». The access
+    explained, and pressing the panel does not touch the files. The window is opened on the access page of the drill's own project
+    (access_page_url: LP_DRILL_UI_ACCESS_URL, else the page's own address on the hub window). The access
     rows are read first and put back in a `finally`."""
     url = access_page_url(ctx.project)
-    if url is None:
-        return {"name": "skills_screen", "result": "skipped", "problems": [],
-                "note": f"not run: the window cannot be opened on the access page of {ctx.project} (set LP_DRILL_UI_ACCESS_URL with {{project}}), so no press was made"}
     report: dict = {"door": {}, "window": {}, "diskBefore": {}, "diskAfter": {}}
     problems: list[str] = []
     skills_dir = Path(ctx.cwd) / ".agents" / "skills"
