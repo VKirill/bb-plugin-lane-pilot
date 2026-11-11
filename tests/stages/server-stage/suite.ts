@@ -1594,7 +1594,9 @@ describe("stage → native writer → receipt", () => {
       // Each check row also carries the hashes of what it printed (here: of nothing), so a later re-run can say «the output changed».
       produced:["note.txt"], verification:[{ command:"test -f note.txt", exitCode:0, stdout:"", stderr:"",
         stdoutSha256:createHash("sha256").update("").digest("hex"), stderrSha256:createHash("sha256").update("").digest("hex"),
-        sandboxBackend:"macos-seatbelt",policySha256:"c".repeat(64),workspacePath:attemptWorktree,timeoutSec:30 }],
+        sandboxBackend:"macos-seatbelt",policySha256:"c".repeat(64),workspacePath:attemptWorktree,timeoutSec:30,
+        // The measures every check receipt records (SMA m_ck_required): where the recipe came from, the copy it ran in, its environment and its way out.
+        recipe:"from snapshot",copy:"worktree",env:"cleared",publication:"closed" }],
       runV2:{schemaVersion:1,pools:{provider:15,verification:2},score:2,risk:"low",sourceRisk:"low",scoreAdapter:"task-risk-v1"},
     });
     // The check runs in the attempt worktree, then once more on the run folder after the merge.

@@ -31,6 +31,12 @@ const mocking = [
   "tests/sma/parity-d10-rest-2.test.ts",
   // Replaces the embedding call and the reranker, to count that the prompt recall makes neither.
   "tests/sma/parity-g2-hooks-2.test.ts",
+  // Replaces the QA thread: shared, the mock took effect only when no earlier file had loaded the module (three reds in a full run, green alone).
+  "tests/sma/parity-g7-rest-b.test.ts",
+  // The same hazard, found by tests/architecture/mocking-isolated.test.ts: the writer's diff rules, waitThreadIdle, and the platform and runs servers.
+  "tests/sma/parity-g1-hooks-1.test.ts",
+  "tests/sma/parity-c1-have.test.ts",
+  "tests/workflow/agent-send-dedup.test.ts",
 ];
 const nodeTests = ["tests/**/*.test.ts", "src/rooms/**/tests/**/*.test.ts", "packages/*/tests/**/*.test.ts"];
 // Page tests that fail when the document (an open picker window, a registered settings backend) is shared with the files before them.
