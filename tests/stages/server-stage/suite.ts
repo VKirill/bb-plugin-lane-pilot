@@ -510,7 +510,7 @@ describe("stage → native writer → receipt", () => {
     writerControl.states.set(secondWriter,"idle");
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:10},{threadId:pmThreadId,projectId})));
     expect(waited.state).toBe("accepted");
-    expect(JSON.parse(getRun(db,"stage-run")!.run_policy_json)).toEqual({schemaVersion:1,pools:{provider:1,verification:2}});
+    expect(JSON.parse(getRun(db,"stage-run")!.run_policy_json)).toEqual({schemaVersion:1,pools:{provider:1,verification:2},maxTurns:300});
     for(const taskId of [task.id,secondTask.id]){
       const attempt=db.prepare("SELECT id FROM lane_pilot_attempt WHERE task_id=?").get(taskId) as {id:string};
       expect(getAttempt(db,attempt.id)?.state).toBe("accepted");
@@ -618,7 +618,7 @@ describe("stage → native writer → receipt", () => {
     const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId})));
     expect(result.state).toBe("accepted");
     expect(JSON.parse((await import("../../../src/rooms/plugin-db")).getRun(db,"stage-run")!.run_policy_json))
-      .toEqual({schemaVersion:1,pools:{provider:15,verification:2}});
+      .toEqual({schemaVersion:1,pools:{provider:15,verification:2},maxTurns:300});
     const receipt=(await import("../../../src/rooms/plugin-db")).listStageReceipts(db,"stage-run",task.id)
       .find((row)=>row.stageId==="writer-agent")?.result as {runV2?:unknown};
     expect(receipt.runV2).toMatchObject({schemaVersion:1,pools:{provider:15,verification:2},score:2,risk:"low",sourceRisk:"low"});
