@@ -164,9 +164,28 @@ describe("parity d4 workflows b1", () => {
     expect(executed(t, summary.runId)).toEqual(["scope", "prepass", "aggregate", "result"]);
   });
 
-  it("[sma:k_wr_prepass] default (review.prepass unset): the same line is a note for the reviewers, the verdict is the one without a prepass", async () => {
+  it("[sma:k_wr_prepass] unset review.prepass, and a word it does not know, is the default strict: an ADDED conflict marker is rework on the prepass alone, before any model", async () => {
+    for (const word of [undefined, "maybe"]) {
+      const t = await setup({});
+      dispose = t.dispose;
+      if (word) t.set("review.prepass", word);
+      commitFile(t, "README.md", "hello\n", "base");
+      commitFile(t, "src/bad.ts", "x\n<<<<<<< HEAD\ny\n=======\nz\n>>>>>>> other\n", "bad");
+      const summary = await t.start(wf("lp.review.json"), reviewInput).done;
+      expect(summary.status).toBe("succeeded");
+      expect(summary.output).toMatchObject({ status: "rework", critical_count: 2 });
+      const findings = summary.output!.findings as Array<{ file: string; severity: string }>;
+      expect(findings.some((f) => f.severity === "critical" && /src\/bad\.ts:2$/.test(f.file))).toBe(true);
+      expect(t.spawned).toHaveLength(0);
+      expect(executed(t, summary.runId)).toEqual(["scope", "prepass", "aggregate", "result"]);
+      await dispose(); dispose = null;
+    }
+  });
+
+  it("[sma:k_wr_prepass] review.prepass off: the same line is a note for the reviewers, the verdict is the one without a prepass", async () => {
     const t = await setup({});
     dispose = t.dispose;
+    t.set("review.prepass", "off");
     const calls = stubModels(t, { dims: { dimension: "correctness", findings: [] }, spec_check: { unmet_count: 0, partial_count: 0, criteria: [] } });
     commitFile(t, "README.md", "hello\n", "base");
     commitFile(t, "src/bad.ts", "x\n<<<<<<< HEAD\ny\n>>>>>>> other\nconst ok = 1;\n", "bad");
@@ -215,16 +234,20 @@ describe("parity d4 workflows b1", () => {
     insertPhase(t.db, { id: "ph_other", projectId: "other-project", pmThreadId: "o-pm", title: "t", goal: "g", at: 1 });
     registerWorktree(t.db, { host: "local", path: "/x/other-wt", branch: "phase/ph_other", owner_kind: "phase", owner_id: "ph_other" });
     const status = (await t.start(statusChain()).done).output as Row;
-    expect(status).toMatchObject({ gate_ok: true, unmerged: 0, gate_state: "red", unmerged_seen: 0, uncovered_reqs: ["REQ-2"], retro_living: "off", milestone_archive: "off" });
+    // Unset: the switches are on by default; the readings beside main's gate_ok and unmerged are the same.
+    expect(status).toMatchObject({ gate_ok: true, unmerged: 0, gate_state: "red", unmerged_seen: 0, uncovered_reqs: ["REQ-2"], retro_living: "on", milestone_archive: "on" });
+    t.set("retro.living", "off"); t.set("milestone.archive", "off");
+    expect((await t.start(statusChain()).done).output).toMatchObject({ retro_living: "off", milestone_archive: "off" });
     registerWorktree(t.db, { host: "local", path: "/x/own-wt", branch: "phase/ph_done", owner_kind: "phase", owner_id: "ph_done" });
     expect(((await t.start(statusChain()).done).output as Row).unmerged_seen).toBe(1);
     const cov = await t.start(actionChain("lp.requirement_coverage", { uncovered: "string[]", covered: "string[]", total: "int" })).done;
     expect(cov.output!.uncovered).toEqual(["REQ-2"]);
   });
 
-  it("[sma:k_c_auditms] milestone-close with an uncovered REQ id, a red old gate and another project's worktree goes straight to retro, as on main", async () => {
+  it("[sma:k_c_auditms] milestone-close with an uncovered REQ id, a red old gate and another project's worktree, with the milestone switches off, goes straight to retro, as on main", async () => {
     const t = await setup({});
     dispose = t.dispose;
+    for (const key of ["milestone.summary", "milestone.archive", "retro.living"]) t.set(key, "off");
     stubModels(t, { retro: { insights: [], retro_path: "retro/r.md", metrics: {} } });
     commitFile(t, "README.md", "one\n", "one");
     mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
@@ -243,7 +266,7 @@ describe("parity d4 workflows b1", () => {
     expect(existsSync(join(t.checkout, `.agents/milestones/${RUN}.md`))).toBe(false);
   });
 
-  it("[sma:k_ws_fullgate] default: the node answers ok as it always did; with ship.full_gate on it needs a passed run on this head within six hours", async () => {
+  it("[sma:k_ws_fullgate] ship.full_gate off: the node answers ok as it always did; unset (the default) and on need a passed run on this head within six hours", async () => {
     const t = await setup({});
     dispose = t.dispose;
     commitFile(t, "README.md", "one\n", "one");
@@ -254,9 +277,11 @@ describe("parity d4 workflows b1", () => {
       finishGateRun(t.db, id, state, { head: ghead });
       if (age) t.db.prepare("UPDATE lane_pilot_gate_run SET updated_at=? WHERE id=?").run(Date.now() - age, id);
     };
-    // Unset: absent, red, old and wrong-head runs all answer ok.
+    // Unset is the default, on: a red run on this head is not ok.
+    note("failed", head); expect((await run()).ok).toBe(false);
+    // Off: red, old and wrong-head runs all answer ok.
+    t.set("ship.full_gate", "off");
     expect((await run()).ok).toBe(true);
-    note("failed", head); expect((await run()).ok).toBe(true);
     note("passed", "0".repeat(40), 7 * 3_600_000); expect((await run()).ok).toBe(true);
     // On.
     t.set("ship.full_gate", "on");
@@ -270,15 +295,15 @@ describe("parity d4 workflows b1", () => {
   it("[sma:k_pl_milestones] [sma:k_d_tpl_milestone] with the switches on, the close snapshots the docs, writes the record and keeps a living retro (graph run)", { timeout: 60_000 }, async () => {
     const t = await setup({});
     dispose = t.dispose;
-    t.set("milestone.archive", "on"); t.set("retro.living", "on");
-    stubModels(t, { retro: { insights: [{ id: "INS-aaa11111", title: "one", lens: "technical" }], retro_path: "retro/r.md", metrics: {} } });
+    t.set("milestone.archive", "on"); t.set("retro.living", "on"); // as unset: both are on by default
+    stubModels(t, { summary: { summary_path: ".agents/planning/MILESTONE-SUMMARY.md", open_items: [] }, retro: { insights: [{ id: "INS-aaa11111", title: "one", lens: "technical" }], retro_path: "retro/r.md", metrics: {} } });
     commitFile(t, "README.md", "one\n", "one");
     mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
     writeFileSync(join(t.checkout, ".agents/planning/ROADMAP.md"), "# Roadmap: v1\n- [x] 1 one\n");
     writeFileSync(join(t.checkout, ".agents/planning/REQUIREMENTS.md"), "- REQ-1 export\n");
     const summary = await t.start(wf("milestone-close.json"), { run_id: RUN, goal: "Stats export", goals: [] }).done;
     expect(summary.status).toBe("succeeded");
-    expect(executed(t, summary.runId)).toEqual(["status", "retro", "living", "close", "record", "snapshot", "archive", "closed"]);
+    expect(executed(t, summary.runId)).toEqual(["status", "retro", "living", "close", "summary", "record", "snapshot", "archive", "closed"]);
     const folder = readdirSync(join(t.checkout, ".agents/planning/milestones")).find((name) => name !== "INDEX.md")!;
     expect(folder).toMatch(/^stats-export-[0-9a-f]{8}$/);
     expect(readFileSync(join(t.checkout, ".agents/planning/milestones", folder, "ROADMAP.md"), "utf8")).toContain("- [x] 1 one");
@@ -292,10 +317,13 @@ describe("parity d4 workflows b1", () => {
     mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
     writeFileSync(join(t.checkout, ".agents/planning/ROADMAP.md"), "# Roadmap: Billing v2\n- [x] 1 one\n");
     const run = async (goal: string, name?: string) => (await t.start(archiveChain(name), { goal, run_id: RUN }).done).output as Row;
-    // Switch unset: nothing is written.
+    // Switch off: nothing is written.
+    t.set("milestone.archive", "off");
     expect(await run("m1", "{{$inputs.goal}}")).toMatchObject({ folder: "", files: [] });
     expect(existsSync(join(t.checkout, ".agents/planning/milestones"))).toBe(false);
-    t.set("milestone.archive", "on");
+    // Unset (the default) writes the snapshot; a word the switch does not know is the default too.
+    t.set("milestone.archive", "maybe");
+    expect((await run("m1", "{{$inputs.goal}}")).files).toEqual(["ROADMAP.md"]);
     const long = "x".repeat(60);
     const a = await run(`${long}-first`, "{{$inputs.goal}}"), b = await run(`${long}-second`, "{{$inputs.goal}}");
     expect(a.folder).not.toBe(b.folder);
@@ -317,13 +345,14 @@ describe("parity d4 workflows b1", () => {
     expect(failed.output).toMatchObject({ kept: false });
   });
 
-  it("[sma:k_d_tpl_milestone] the living retro is written only with retro.living on, upserts by id, drops a malformed id and cuts model text to one line", async () => {
+  it("[sma:k_d_tpl_milestone] the living retro is written unless retro.living is off, upserts by id, drops a malformed id and cuts model text to one line", async () => {
     const t = await setup({});
     dispose = t.dispose;
     const run = async (goal: string, insights: Row[]) => (await t.start(livingChain(), { goal, run_id: RUN, insights }).done).output as Row;
+    t.set("retro.living", "off");
     await run("m0", [{ id: "INS-aaa11111", title: "off", lens: "technical" }]);
     expect(existsSync(join(t.checkout, ".agents/retro"))).toBe(false);
-    t.set("retro.living", "on");
+    t.set("retro.living", "yes"); // not a word of the switch: the default, on
     await run("m1", [{ id: "INS-aaa11111", title: "one\n## injected heading", lens: "technical" }, { id: "INS-bbb22222", title: "two", lens: "process" }, { id: "evil\n# x", title: "bad" }]);
     await run("m2", [{ id: "INS-aaa11111", title: "one again", lens: "technical" }, { id: "INS-ccc33333", title: "three", lens: "quality" }]);
     const living = readFileSync(join(t.checkout, ".agents/retro/LIVING.md"), "utf8");
