@@ -46,6 +46,7 @@ export const execHostMethods = {
     output:z.object({
       hostId:z.string(),backend:z.enum(["macos-seatbelt","linux-bubblewrap"]),workspacePath:z.string(),cwd:z.string(),
       exitCode:z.number().int(),policySha256:z.string().regex(/^[a-f0-9]{64}$/),stdout:z.string(),stderr:z.string(),
+      rootsManifest:z.object({before:z.string(),after:z.string(),changed:z.boolean()}).optional(),
     }).strict(),
   },
   sandboxCommandLine: {

@@ -1,4 +1,4 @@
-import { accessSync, constants as fsConstants, existsSync } from "node:fs";
+import { accessSync, constants as fsConstants, existsSync, lstatSync, readdirSync } from "node:fs";
 import { access, lstat, mkdir, mkdtemp, readdir, realpath, rm, rmdir, symlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -15,8 +15,49 @@ export type SandboxedCommandInput = {
 };
 export type SandboxedCommandResult = {
   hostId:string; backend:"macos-seatbelt"|"linux-bubblewrap"; workspacePath:string; cwd:string; exitCode:number;
-  policySha256:string; stdout:string; stderr:string;
+  policySha256:string;
+  /** .git/.agents/.cls hashed before and after (SMA m_ck_isolated); a change fails the check. */
+  rootsManifest?:{ before:string; after:string; changed:boolean };
+  stdout:string; stderr:string;
 };
+
+/**
+ * The roots a sandboxed check must leave untouched (SMA m_ck_isolated): .git, .agents, .cls, hashed before and after.
+ * One digest over path/size/mtime rows, sorted; bounded — a giant .git truncates deterministically instead of unbounded.
+ */
+export const PROTECTED_ROOTS = [".git",".agents",".cls"] as const;
+export const PROTECTED_MANIFEST_CAP = 50_000;
+export function protectedRootsManifest(workspacePath:string, cap = PROTECTED_MANIFEST_CAP):{sha256:string;entries:number;truncated:boolean} {
+  const rows:string[]=[];
+  let truncated=false;
+  for (const name of PROTECTED_ROOTS) {
+    const stack=[join(workspacePath,name)];
+    while (stack.length) {
+      if (rows.length>=cap) { truncated=true; break; }
+      const dir=stack.pop()!;
+      let listing;
+      try { listing=readdirSync(dir,{withFileTypes:true}); } catch { continue; }
+      for (const entry of listing) {
+        const path=join(dir,entry.name);
+        if (entry.isDirectory()) { stack.push(path); continue; }
+        try {
+          const st=lstatSync(path);
+          rows.push(`${relative(workspacePath,path)}:${entry.isSymbolicLink()?"l":"f"}:${st.size}:${Math.trunc(st.mtimeMs)}`);
+        } catch { rows.push(`${relative(workspacePath,path)}:?`); }
+      }
+    }
+    if (truncated) break;
+  }
+  rows.sort();
+  return { sha256:sha256Hex(rows.join("\n")), entries:rows.length, truncated };
+}
+
+/** Credential stores a publish would reach for (SMA m_ck_required): masked in the sandbox so a check can use the net but not publish. */
+export function credentialMaskPaths(home = homedir()):{dirs:string[];files:string[]} {
+  const dirs=[".ssh",".gnupg",".aws",".azure",join(".config","gh")].map((name)=>join(home,name)).filter((path)=>existsSync(path));
+  const files=[".git-credentials",".netrc"].map((name)=>join(home,name)).filter((path)=>existsSync(path));
+  return {dirs,files};
+}
 
 const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
 import { SANDBOX_OWN_ENV } from "../contracts";
@@ -62,10 +103,13 @@ function sbplPath(path:string):string {
   return `"${path}"`;
 }
 
-export function buildSeatbeltProfile(workspacePath:string, tempPath:string):string {
+export function buildSeatbeltProfile(workspacePath:string, tempPath:string, credentialMask?:{dirs?:string[];files?:string[]}):string {
   const workspace = sbplPath(workspacePath);
   const temporary = sbplPath(tempPath);
   const denyWrites = [".git", ".agents", ".cls"].map((name) => `(deny file-write* (subpath ${sbplPath(resolve(workspacePath,name))}))`).join("\n");
+  // Closed publication (SMA m_ck_required): the credential stores a push would reach for are unreadable inside the check.
+  const denyReads = [...(credentialMask?.dirs ?? []).map((dir) => `(deny file-read* (subpath ${sbplPath(dir)}))`),
+    ...(credentialMask?.files ?? []).map((file) => `(deny file-read* (literal ${sbplPath(file)}))`)].join("\n");
   return [
     "(version 1)",
     "(allow default)",
@@ -74,6 +118,7 @@ export function buildSeatbeltProfile(workspacePath:string, tempPath:string):stri
     // studio_test.py: a lock and the run's files in /tmp/vf-tests, read by Roblox Studio; «Operation not permitted», 2026-10-23).
     `(deny file-write* (require-all (require-not (subpath ${workspace})) (require-not (subpath ${temporary})) (require-not (subpath \"/private/tmp\")) (require-not (literal \"/dev/null\"))))`,
     denyWrites,
+    denyReads,
   ].join("\n");
 }
 
@@ -161,13 +206,18 @@ function sandboxPath(base:string):string {
   return [base, ...userToolBins(), ...(bb ? [bb] : [])].join(":");
 }
 
-export function buildBubblewrapArgs(input:{workspacePath:string;cwd:string;tempPath:string;guardPaths:string[]}):string[] {
+export function buildBubblewrapArgs(input:{workspacePath:string;cwd:string;tempPath:string;guardPaths:string[];
+  /** Credential stores masked out of the sandbox (SMA m_ck_required): dirs get an empty tmpfs, files /dev/null. */
+  credentialMask?:{dirs?:string[];files?:string[]};
+}):string[] {
   // --share-net keeps the host network while every other namespace stays private: a check may curl a dev
   // server or an API, but still writes only into the workspace and its temp folder. Before, --unshare-all
   // alone cut the network, so no curl verification could ever pass.
   // The shared /tmp stays writable (see buildSeatbeltProfile); the workspace and the guards are bound after it, so they still win.
   const args=["--die-with-parent","--new-session","--unshare-all","--share-net","--ro-bind","/","/","--bind","/tmp","/tmp","--bind",input.workspacePath,input.workspacePath];
   for (const guardPath of input.guardPaths) args.push("--ro-bind",guardPath,guardPath);
+  for (const dir of input.credentialMask?.dirs ?? []) args.push("--tmpfs",dir);
+  for (const file of input.credentialMask?.files ?? []) args.push("--ro-bind","/dev/null",file);
   args.push("--bind",input.tempPath,input.tempPath,"--proc","/proc","--dev","/dev","--chdir",input.cwd,
     "--clearenv","--setenv","PATH",sandboxPath("/usr/local/bin:/usr/bin:/bin"),"--setenv","HOME",input.tempPath,
     "--setenv","TMPDIR",input.tempPath,"--setenv","TMP",input.tempPath,"--setenv","TEMP",input.tempPath,
@@ -270,6 +320,9 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
   }
   const launch=(program:string,args:string[],keep:string[])=>input.asUser ? asWorker(input.asUser,program,args,keep) : { program, args };
   let releaseGuards=async():Promise<void>=>{};
+  const rootsBefore=protectedRootsManifest(workspacePath).sha256;
+  const rootsAfter=()=>{ const after=protectedRootsManifest(workspacePath).sha256; return { before:rootsBefore, after, changed:rootsBefore!==after }; };
+  const credentialMask=credentialMaskPaths();
   try {
     if (backend === "linux-bubblewrap") {
       const {guardPaths,created}=await prepareGuardPaths(workspacePath);
@@ -277,7 +330,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
       // Secrets travel in bwrap's own environment, never in its arguments (a process list shows those); without --clearenv
       // the sandbox keeps exactly them plus the variables --setenv gives it.
       const secrets=sandboxSecretEnv(input.env);
-      const args=buildBubblewrapArgs({workspacePath,cwd,tempPath,guardPaths});
+      const args=buildBubblewrapArgs({workspacePath,cwd,tempPath,guardPaths,credentialMask});
       const policySha256=sha256Hex(JSON.stringify(args));
       const bw=launch(bubblewrapPath!,[...(Object.keys(secrets).length?args.filter((arg)=>arg!=="--clearenv"):args),input.command],Object.keys(secrets));
       const child=await spawnAsync(bw.program,bw.args,{
@@ -287,9 +340,9 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
         throw new Error("sandbox_backend_unavailable: bubblewrap launch was denied or executable is missing");
       }
       return {hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,exitCode:child.status ?? (timedOut(child) ? 124 : 1),
-        policySha256,stdout:maskSecrets(child.stdout ?? "",secrets),stderr:maskSecrets(keepEnds(child.stderr ?? child.error?.message ?? "",KEEP_STDERR),secrets)};
+        policySha256,rootsManifest:rootsAfter(),stdout:maskSecrets(child.stdout ?? "",secrets),stderr:maskSecrets(keepEnds(child.stderr ?? child.error?.message ?? "",KEEP_STDERR),secrets)};
     }
-    const profile = buildSeatbeltProfile(workspacePath,tempPath);
+    const profile = buildSeatbeltProfile(workspacePath,tempPath,credentialMask);
     const policySha256 = sha256Hex(profile);
     const seatbeltSecrets=sandboxSecretEnv(input.env);
     const sb=launch(SANDBOX_EXEC,["-p",profile,"/bin/bash","--noprofile","--norc","-c",input.command],[...Object.keys(seatbeltSecrets),"PATH","HOME","TMPDIR","TMP","TEMP","BB_DATA_DIR","LANG","LC_ALL"]);
@@ -312,7 +365,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
     }
     return {
       hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,
-      exitCode:child.status ?? (timedOut(child) ? 124 : 1),policySha256,
+      exitCode:child.status ?? (timedOut(child) ? 124 : 1),policySha256,rootsManifest:rootsAfter(),
       stdout:maskSecrets(child.stdout ?? "",seatbeltSecrets),stderr:maskSecrets(keepEnds(child.stderr ?? child.error?.message ?? "",KEEP_STDERR),seatbeltSecrets),
     };
   } finally {
@@ -358,7 +411,7 @@ export async function prepareSandboxedCommandLine(input:SandboxedCommandInput & 
   const hostId=process.env.BB_HOST_ID ?? input.requestedHostId;
   if (backend === "linux-bubblewrap") {
     const {guardPaths,created}=await prepareGuardPaths(workspacePath);
-    const args=buildBubblewrapArgs({workspacePath,cwd,tempPath,guardPaths});
+    const args=buildBubblewrapArgs({workspacePath,cwd,tempPath,guardPaths,credentialMask:credentialMaskPaths()});
     const policySha256=sha256Hex(JSON.stringify(args));
     // With variables to pass, `env -i` starts bwrap with only those, instead of bwrap's --clearenv; the sandbox's
     // own PATH, HOME and temp folders are still set by --setenv and win.
@@ -366,7 +419,7 @@ export async function prepareSandboxedCommandLine(input:SandboxedCommandInput & 
     return {hostId,backend,workspacePath,cwd,policySha256,cleanup:{tempPath,created},
       commandLine:passed.length?`exec /usr/bin/env -i ${passed.join(" ")} ${bwrapLine}`:`exec ${bwrapLine}`};
   }
-  const profile = buildSeatbeltProfile(workspacePath,tempPath);
+  const profile = buildSeatbeltProfile(workspacePath,tempPath,credentialMaskPaths());
   const policySha256 = sha256Hex(profile);
   const env = [`PATH=${sandboxPath("/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin")}`,`HOME=${tempPath}`,`TMPDIR=${tempPath}`,`TMP=${tempPath}`,`TEMP=${tempPath}`,`BB_DATA_DIR=${bbDataDir()}`,"LANG=C","LC_ALL=C"];
   return {hostId,backend,workspacePath,cwd,policySha256,cleanup:{tempPath,created:[]},

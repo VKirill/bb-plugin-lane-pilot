@@ -175,8 +175,7 @@ export function registerConversationTools(ctx: ServerCore, services: Services): 
             try {
               const result = await host.call("runSandboxedCommand", { requestedHostId: hostId, workspacePath, cwd, command: item.command, timeoutSec },
                 { hostId, timeoutMs: (timeoutSec + 30) * 1000, job: true, jobKey: `${checkId}:${index}`, signal: entry.controller.signal, cancelOnAbort: true });
-              const evidence = `${result.stdout}\n${result.stderr}`.trim().slice(-1500);
-              receipt.measures.push({ command: item.command, cwd, expectExit, timeoutSec, evidence, exitCode: result.exitCode, passed: result.exitCode === expectExit });
+              receipt.measures.push(checkMeasureOf({ command: item.command, cwd, expectExit, timeoutSec, result }));
             } catch (cause) {
               if (entry.controller.signal.aborted) break;
               receipt.measures.push({ command: item.command, cwd, expectExit, timeoutSec,
@@ -195,4 +194,21 @@ export function registerConversationTools(ctx: ServerCore, services: Services): 
       return JSON.stringify({ ...receipt, stopped: receipt.state === "stopped" || receipt.state === "stopped_by_turn_stop", passed: receipt.state === "passed" });
     },
   });
+}
+
+/**
+ * One check measure from a sandboxed run (SMA m_ck_required): the command's record plus the sandbox's own
+ * measures — throwaway copy, cleared environment, closed publication, the protected-roots manifest. A changed
+ * .git/.agents/.cls fails the measure whatever the exit code was.
+ */
+export function checkMeasureOf(input: {
+  command: string; cwd: string; expectExit: number; timeoutSec: number;
+  result: { exitCode: number; stdout: string; stderr: string; backend?: string; policySha256?: string; rootsManifest?: { before: string; after: string; changed: boolean } };
+}): CheckMeasure {
+  const rootsChanged = input.result.rootsManifest?.changed === true;
+  const evidence = `${input.result.stdout}\n${input.result.stderr}`.trim().slice(-1500) + (rootsChanged ? "\nprotected roots (.git/.agents/.cls) changed during the check" : "");
+  return { command: input.command, cwd: input.cwd, expectExit: input.expectExit, timeoutSec: input.timeoutSec,
+    evidence, exitCode: input.result.exitCode, passed: input.result.exitCode === input.expectExit && !rootsChanged,
+    backend: input.result.backend, policySha256: input.result.policySha256, env: "cleared", publication: "closed",
+    rootsSha256: input.result.rootsManifest?.after, rootsChanged };
 }

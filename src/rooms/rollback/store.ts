@@ -16,11 +16,16 @@ export type AttemptChange = {
   attemptId: string; runId: string; taskId: string;
   baseSha: string | null; mergeParent: string | null; mergeCommit: string | null; outcome: string | null;
   changed: ChangedFile[]; worktree: WorktreeRecord | null; recordedAt: number; updatedAt: number; checksGreen: number | null;
+  /** The post-merge suite verdict (SMA k_lib_landing): the task's own checks run on the merged head by the background sweep. */
+  suite: LandingSuite | null;
 };
+
+/** The landing suite result stored on the change row (SMA k_lib_landing): green/red of the checks on the merged head, or why none ran. */
+export type LandingSuite = { suite: "green" | "red" | "none" | "error"; head: string | null; at: number; red?: string[]; reason?: string };
 
 type Raw = {
   attempt_id: string; run_id: string; task_id: string; base_sha: string | null; merge_parent: string | null; merge_commit: string | null; outcome: string | null;
-  changed_json: string; worktree_json: string | null; recorded_at: number; updated_at: number; checks_green?: number | null;
+  changed_json: string; worktree_json: string | null; recorded_at: number; updated_at: number; checks_green?: number | null; suite_json?: string | null;
 };
 
 const json = <T>(text: string | null, fallback: T): T => {
@@ -32,6 +37,7 @@ const fromRaw = (row: Raw): AttemptChange => ({
   attemptId: row.attempt_id, runId: row.run_id, taskId: row.task_id, baseSha: row.base_sha, mergeParent: row.merge_parent, mergeCommit: row.merge_commit,
   outcome: row.outcome, changed: json<ChangedFile[]>(row.changed_json, []), worktree: json<WorktreeRecord | null>(row.worktree_json, null),
   recordedAt: row.recorded_at, updatedAt: row.updated_at, checksGreen: row.checks_green ?? null,
+  suite: parseJsonOr<LandingSuite | null>(row.suite_json ?? "null", null),
 });
 
 export type AttemptChangePatch = {
@@ -198,4 +204,17 @@ export function medianTaskSize(db: RollbackDb, projectId: string): TaskSizeMedia
 /** An attempt change's raw changed_json (the forecast report counts the files itself). */
 export function attemptChangeJson(db: RollbackDb, attemptId: string): string | undefined {
   return (db.prepare("SELECT changed_json FROM lane_pilot_attempt_change WHERE attempt_id=?").get(attemptId) as { changed_json: string } | undefined)?.changed_json;
+}
+
+/** Merged landings the suite sweep has not checked yet, oldest first (SMA k_lib_landing). */
+export function listLandingSuitePending(db: RollbackDb, limit = 4): Array<{ attemptId: string; runId: string; taskId: string; mergeCommit: string | null }> {
+  return (db.prepare(`SELECT attempt_id, run_id, task_id, merge_commit FROM lane_pilot_attempt_change
+    WHERE outcome='merged' AND suite_json IS NULL ORDER BY recorded_at LIMIT ?`).all(limit) as
+    Array<{ attempt_id: string; run_id: string; task_id: string; merge_commit: string | null }>)
+    .map((row) => ({ attemptId: row.attempt_id, runId: row.run_id, taskId: row.task_id, mergeCommit: row.merge_commit }));
+}
+
+/** The sweep's verdict on the change row: suite_json, never a write into the project's repository. */
+export function noteLandingSuite(db: RollbackDb, attemptId: string, suite: LandingSuite): void {
+  db.prepare("UPDATE lane_pilot_attempt_change SET suite_json=?, updated_at=? WHERE attempt_id=?").run(JSON.stringify(suite), Date.now(), attemptId);
 }

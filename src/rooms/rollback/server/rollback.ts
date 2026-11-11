@@ -10,9 +10,10 @@ import { parseIntegrationGateSettings, type VerificationGatePort } from "../../c
 
 import type { ServerCore } from "../../contracts/server";
 import {
-  appendTaskReceipt, effectState, getAttemptChange, listTaskReceipts, recoveryState, upsertAttemptChange,
-  type ChangedFile, type TaskReceipt, type TaskReceiptKind, type TaskReceiptState,
+  appendTaskReceipt, effectState, getAttemptChange, listLandingSuitePending, listTaskReceipts, noteLandingSuite, recoveryState, upsertAttemptChange,
+  type ChangedFile, type LandingSuite, type TaskReceipt, type TaskReceiptKind, type TaskReceiptState,
 } from "../store";
+import { postOwnerItem } from "../../owner-waiting";
 
 import type { RunVerification } from "../../platform/server";
 import { listAcceptedAttemptsForTask, listAttemptStatesForTask } from "../../storage";
@@ -480,7 +481,52 @@ export function createRollback(ctx: ServerCore, services: Services) {
     return Buffer.byteLength(patch) > DIFF_LIMIT ? { patch: `${patch.slice(0, DIFF_LIMIT)}\n… показано начало (diff обрезан)`, truncated: true } : { patch, truncated: false };
   }
 
-  return { rollback: { noteBase, ensureBase, noteMerge, noteWorktree, noteSaved, noteStopped, reverify, revert, status, diff, kit } };
+  /**
+   * The landing suite (SMA k_lib_landing): after a green merge the task's own checks run on the merged head in a
+   * throwaway worktree — the merge is never blocked, delayed or reverted, and the project's repository is never
+   * written; the verdict lands on the attempt's change row.
+   */
+  async function landingSuiteSweep(): Promise<number> {
+    let done = 0;
+    for (const pending of listLandingSuitePending(db)) {
+      try {
+        await landingSuite(pending);
+      } catch (cause) {
+        const reason = cause instanceof Error ? cause.message : String(cause);
+        log(`landing suite of ${pending.attemptId} failed: ${reason}`);
+        try { noteLandingSuite(db, pending.attemptId, { suite: "error", head: pending.mergeCommit, at: Date.now(), reason }); } catch { /* a failed record must not stop the sweep */ }
+      }
+      done++;
+    }
+    return done;
+  }
+
+  async function landingSuite(pending: { attemptId: string; taskId: string; mergeCommit: string | null }): Promise<void> {
+    const head = pending.mergeCommit;
+    const write = (suite: LandingSuite) => noteLandingSuite(db, pending.attemptId, suite);
+    if (!head) return write({ suite: "none", head: null, at: Date.now(), reason: "no merge commit on record" });
+    const found = await targetOf(pending.taskId);
+    if ("error" in found) return write({ suite: "error", head, at: Date.now(), reason: found.error });
+    const t = found.target;
+    if (!t.task.verification.length) return write({ suite: "none", head, at: Date.now(), reason: "the task's contract names no checks" });
+    const made = await makeWorktree(t, `suite-${safeName(t.taskId)}-${nonce()}`, head, "rollback");
+    if ("error" in made) return write({ suite: "error", head, at: Date.now(), reason: made.error });
+    try {
+      const items = await runChecks(t, made.path);
+      const red = items.filter((item) => !item.ok).map((item) => item.command).slice(0, 10);
+      write({ suite: red.length ? "red" : "green", head, at: Date.now(), ...(red.length ? { red } : {}) });
+      // A red suite never un-lands the merge: one item on the owner's list names the task and the command that went red.
+      if (red.length) postOwnerItem(db as never, { key: `landing-suite:${pending.attemptId}`, source: "landing-suite", kind: "landing_suite_red",
+        projectId: t.projectId, wake: false,
+        what: `Задача ${t.taskId}: после вливания проверка упала — ${red[0]!.slice(0, 200)}`,
+        why: `На голове ${head.slice(0, 12)} не прошли проверки (${red.length}): ${red.slice(0, 3).join("; ").slice(0, 300)}. Вливание не отменялось.`,
+        evidence: [{ kind: "task", ref: t.taskId }] });
+    } finally {
+      await dropWorktree(t, made.path);
+    }
+  }
+
+  return { rollback: { noteBase, ensureBase, noteMerge, noteWorktree, noteSaved, noteStopped, reverify, revert, status, diff, kit, landingSuite: landingSuiteSweep } };
 }
 
 export type RollbackApi = ReturnType<typeof createRollback>["rollback"];
