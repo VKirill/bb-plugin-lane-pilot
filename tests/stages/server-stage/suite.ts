@@ -769,7 +769,10 @@ describe("stage → native writer → receipt", () => {
   };
   const docsSettings=(extra:Record<string,unknown>={})=>({
     "docs.enabled":true,"docs.maintain":true,"docs.since":"7 days ago","docs.page_cap":3,"docs.hour":new Date().getHours(),
-    "docs.provider":"critic","docs.model":"critic-model",...extra,
+    "docs.provider":"critic","docs.model":"critic-model",
+    // These tests drive the maintainer child alone (their host hands every spawn one thread id); the review gate that is on by
+    // default has its own tests in tests/sma/parity-a6-misc.test.ts.
+    "docs.review":"off",...extra,
   });
   const docsRunning=(db:ReturnType<typeof openDatabase>,taskId:string)=>docsReceiptOf(db,taskId)?.state==="running"&&docsReceiptOf(db,taskId)?.threadId==="docs-thread";
   it("routes docs maintenance through its configured native provider and records a stage receipt",async()=>{

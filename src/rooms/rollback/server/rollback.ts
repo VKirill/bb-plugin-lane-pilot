@@ -557,7 +557,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
     if (posted >= SUITE_ITEMS_PER_DAY) { log(`landing suite red on ${t.taskId} (${attemptId}): not posted, ${SUITE_ITEMS_PER_DAY} landing items already today for ${t.projectId}: ${red[0]!.slice(0, 200)}`); return; }
     const result = postOwnerItem(db as never, { key: `landing-suite:${attemptId}`, source: "landing-suite", kind: "landing_suite_red",
       projectId: t.projectId, wake: false,
-      what: `Задача ${t.taskId}: после вливания проверка упала — ${red[0]!.slice(0, 200)}`,
+      what: `После вливания принятой задачи её проверка упала — ${red[0]!.slice(0, 200)}`,
       why: `На голове ${head.slice(0, 12)} не прошли проверки (${red.length}): ${red.slice(0, 3).join("; ").slice(0, 300)}. Вливание не отменялось.`,
       evidence: [{ kind: "task", ref: t.taskId }] });
     if (result.created) await kv().set(dayKey, posted + 1).catch(() => undefined);

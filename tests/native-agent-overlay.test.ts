@@ -115,6 +115,8 @@ it("gives specialists the schedule and no other bb-bridge tool, and keeps the fo
     "mcp__bb-bridge",
     "mcp__bb-bridge__lane_pilot_read",
     "mcp__bb-bridge__lane_pilot_dispatch_writer",
+    // The task draft (SMA m_sw_chat_draft): the PM proposes, the owner presses «Создать».
+    "mcp__bb-bridge__lane_pilot_propose",
     "mcp__bb-bridge__lane_pilot_wait_writer",
     "mcp__bb-bridge__lane_pilot_answer_writer",
     "mcp__bb-bridge__lane_pilot_cancel_task",
