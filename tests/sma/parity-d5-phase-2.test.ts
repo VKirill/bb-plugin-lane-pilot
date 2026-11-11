@@ -49,6 +49,9 @@ const planRec = (items: PlanItem[], over: Partial<NonNullable<PhaseRecord["plan"
   objective: "o", premortem: ["a", "b", "c"], ...over });
 
 type DriverOptions = { settings?: Record<string, unknown>; failRead?: string[]; failWrite?: boolean; projects?: Record<string, string> };
+/** Every phase switch opted out with the word «off» (and no branch): the old path an install took before the switches were on by default. */
+const PHASE_OFF: Record<string, unknown> = Object.fromEntries([...["diagnose", "gray_areas", "research", "pattern_map", "validation", "draw_material", "plan_bounce",
+  "design_points", "doc_files", "ambiguity_gate", "piece_notes", "threat_closure", "commit_docs"].map((name) => [`phase.${name}`, "off"]), ["phase.branch", "none"]]);
 const STATE = ".agents/planning/STATE.md", ROADMAP = ".agents/planning/ROADMAP.md";
 const enoent = (path: string) => Object.assign(new Error(`ENOENT: no such file or directory, lstat '${path}'`), { code: "ENOENT" });
 
@@ -429,7 +432,7 @@ describe("parity d5-phase-2", () => {
     return { design: { decision: "needed" as const, why: "screens", drawing: { paths: [SPEC_PATH], sha256: sha256Hex(`${SPEC_PATH}:${sha256Hex(text)}`), designer: "lp.draw" } } };
   };
 
-  it("[sma:k_wv_design] verification reads the points only with phase.design_points; an unset project, and a record opened earlier, store none and keep main's acceptance lines", async () => {
+  it("[sma:k_wv_design] verification reads the points unless phase.design_points is off (unset reads them); an «off» project, and a record opened earlier, store none and keep main's acceptance lines", async () => {
     const on = candWorld({ settings: { "phase.design_points": "on", "phase.doc_files": "on" } });
     const a = await atVerification(on, drawn(on));
     expect(a.phase.stage).toBe("verification");
@@ -441,7 +444,14 @@ describe("parity d5-phase-2", () => {
     // phase.doc_files: the verdict is stored as VERIFICATION.md with the generated marker; the default run below writes none.
     expect(on.files.get(`.agents/phases/${a.id}/VERIFICATION.md`)).toMatch(new RegExp(`^${GENERATED}\n# Verification`));
 
-    const off = candWorld();
+    // Unset is the default, on: the same points are read and stored as with the word «on».
+    const dflt = candWorld();
+    const c = await atVerification(dflt, drawn(dflt));
+    expect(c.phase.record.designPoints).toBe(true);
+    expect(c.phase.record.verification?.points).toHaveLength(40);
+    expect(dflt.files.get(`.agents/phases/${c.id}/VERIFICATION.md`)).toMatch(new RegExp(`^${GENERATED}\n# Verification`));
+
+    const off = candWorld({ settings: PHASE_OFF });
     const b = await atVerification(off, drawn(off));
     expect(b.phase.stage).toBe("verification");
     expect(b.phase.record.designPoints).toBeUndefined();
@@ -456,8 +466,8 @@ describe("parity d5-phase-2", () => {
   });
 
   // ---- item 2: documents in the project ----
-  it("[sma:k_wp_commit] a default phase writes and commits what main's code does: nothing, through open, context, plan admission and the first wave", async () => {
-    const d = driver();
+  it("[sma:k_wp_commit] a phase with the document switches off writes and commits what main's code does: nothing, through open, context, plan admission and the first wave", async () => {
+    const d = driver({ settings: PHASE_OFF });
     d.texts.set(STATE, HAND);
     d.texts.set(ROADMAP, "- [ ] 1.1 A\n");
     d.texts.set(".agents/phases/ph_ctx/CONTEXT.md", "ctx body");
@@ -483,10 +493,11 @@ describe("parity d5-phase-2", () => {
     expect(live(d, first.id).record.docShas).toBeUndefined();
   });
 
-  it("[sma:k_wp_commit] with phase.doc_files on, SPEC.md and PLAN.md are written with the generated marker and committed; phase.commit_docs off keeps the files and drops only the commits; an absent field commits as main does", async () => {
+  it("[sma:k_wp_commit] with phase.doc_files on (and phase.ambiguity_gate off), SPEC.md and PLAN.md are written with the generated marker and committed; phase.commit_docs off keeps the files and drops only the commits; an absent field commits as main does", async () => {
     const items = [item("p1")];
     for (const commit of ["on", "off", "unset"] as const) {
-      const d = driver({ settings: { "phase.doc_files": "on", ...(commit === "unset" ? {} : { "phase.commit_docs": commit }) } });
+      const { "phase.commit_docs": _commitOff, ...docsOff } = PHASE_OFF; // commit_docs is on by default: left unset in the «unset» case
+      const d = driver({ settings: { ...docsOff, "phase.doc_files": "on", ...(commit === "unset" ? {} : { "phase.commit_docs": commit }) } });
       const opened = await d.phases.open({ projectId: "projA", pmThreadId: "t", title: "Sum", goal: "sums" });
       expect(opened.record.commitDocs).toBe(commit === "off" ? false : undefined);
       savePhase(d.db, opened.id, { stage: "discussion", at: 2 });
@@ -503,6 +514,29 @@ describe("parity d5-phase-2", () => {
       expect(d.commits.some((c) => c.paths.some((p) => p.endsWith("/PLAN.md")))).toBe(commit !== "off");
       expect(d.commits.length > 0).toBe(commit !== "off");
     }
+  });
+
+  it("[sma:k_wp_commit] a phase on an install that sets nothing writes SPEC.md with its ambiguity line, PLAN.md and the STATE.md block, and commits them", async () => {
+    const d = driver();
+    d.texts.set(STATE, HAND);
+    const opened = await d.phases.open({ projectId: "projA", pmThreadId: "t", title: "Sum", goal: "sums" });
+    expect(opened.record).toMatchObject({ docFiles: true, ambiguityGate: true });
+    savePhase(d.db, opened.id, { stage: "discussion", at: 2 });
+    const ctxPath = `.agents/phases/${opened.id}/CONTEXT.md`;
+    d.texts.set(ctxPath, "ctx body");
+    await d.phases.context({ phaseId: opened.id, docs: [ctxPath], risks: { value: "v", usability: "u", feasibility: "f", viability: "vi" }, appetite: "a", noGos: ["none"], by: "pm" });
+    const spec = d.texts.get(`.agents/phases/${opened.id}/SPEC.md`)!;
+    expect(spec.startsWith(`${GENERATED}\n# Spec`)).toBe(true);
+    expect(spec).toContain("Ambiguity: 0");
+    savePhase(d.db, opened.id, { record: { ...live(d, opened.id).record, plan: planOn(live(d, opened.id), [item("p1")]), ownerWords: true }, at: 3 });
+    await d.phases.word({ phaseId: opened.id, turn: "planning", decision: "yes", text: "yes", by: "owner via screen" });
+    await d.phases.stateDone();
+    expect(d.texts.get(`.agents/phases/${opened.id}/PLAN.md`)).toContain("then-p1");
+    expect(d.commits.some((c) => c.paths.some((p) => p.endsWith("/PLAN.md")))).toBe(true);
+    const state = d.texts.get(STATE)!;
+    expect(state.startsWith(HAND)).toBe(true);
+    expect(state).toContain("<!-- lp:state:start -->");
+    expect(live(d, opened.id).record.docShas).toBeDefined();
   });
 
   it("[sma:k_wp_commit] SPEC.md / PLAN.md / VERIFICATION.md replace only the command's own file: a file it wrote and a person changed keeps its text and the new one goes to <name>.new.md, the book says so; a file it never wrote is left and committed; an unchanged text writes and commits nothing", async () => {
@@ -576,8 +610,8 @@ describe("parity d5-phase-2", () => {
     await d.docs.markState(live(d, first.id));
     expect(d.texts.get(STATE)).toBe(`# Mine\n${STATE_BLOCK_START}\nno end`);
     expect(listParts(d.db, first.id).some((part) => part.text.includes("without"))).toBe(true);
-    // Default phases never reach it.
-    const off = driver();
+    // A phase with phase.doc_files off never reaches it.
+    const off = driver({ settings: PHASE_OFF });
     off.texts.set(STATE, HAND);
     await off.phases.open({ projectId: "projA", pmThreadId: "t", title: "Sum", goal: "sums", legacy: true });
     await off.phases.stateDone();
@@ -695,8 +729,8 @@ describe("parity d5-phase-2", () => {
     expect(flaky.phase.record.verification?.verdict).toMatchObject({ state: "passed" });
     expect(flaky.phase.record.verification?.verdict?.detail).toContain("not checked");
     expect(flaky.phase.record.verification?.verdict?.detail).toContain("src/flaky.ts:5");
-    // Off (unset): the verdict is the blind verdict, no citation is read.
-    const off = await run({}, ["src/gone.ts:1"], tree);
+    // Off: the verdict is the blind verdict, no citation is read.
+    const off = await run({ "phase.threat_closure": "off" }, ["src/gone.ts:1"], tree);
     expect(off.phase.record.threatClosure).toBeUndefined();
     expect(off.phase.record.verification?.verdict).toMatchObject({ state: "passed" });
     expect(off.reads).toEqual([]);
@@ -773,15 +807,20 @@ describe("parity d5-phase-2", () => {
     }
   });
 
-  it("a phase opened on an install that sets nothing carries none of the new record fields; each switch lands on the record as true", async () => {
-    const plain = await driver().phases.open({ projectId: "projA", pmThreadId: "t", title: "Sum", goal: "sums", legacy: true });
-    for (const key of ["designPoints", "docFiles", "ambiguityGate", "pieceNotes", "commitDocs", "threatClosure", "docShas"]) expect(plain.record).not.toHaveProperty(key);
+  it("a phase opened with every switch off carries none of the new record fields; one opened on an install that sets nothing carries each as true; a loose word is not off", async () => {
+    const keys = ["designPoints", "docFiles", "ambiguityGate", "pieceNotes", "threatClosure"];
+    const plain = await driver({ settings: PHASE_OFF }).phases.open({ projectId: "projA", pmThreadId: "t", title: "Sum", goal: "sums", legacy: true });
+    for (const key of [...keys, "docShas"]) expect(plain.record).not.toHaveProperty(key);
+    expect(plain.record.commitDocs).toBe(false); // the opt-out of the commits is recorded; its absence is the default, on
+    const unset = await driver().phases.open({ projectId: "projA", pmThreadId: "t", title: "Sum", goal: "sums", legacy: true });
+    expect(unset.record).toMatchObject(Object.fromEntries(keys.map((key) => [key, true])));
+    expect(unset.record).not.toHaveProperty("commitDocs");
     const settings = { "phase.design_points": "on", "phase.doc_files": "on", "phase.ambiguity_gate": "on", "phase.piece_notes": "on", "phase.commit_docs": "off", "phase.threat_closure": "on" };
     const all = await driver({ settings }).phases.open({ projectId: "projA", pmThreadId: "t", title: "Sum", goal: "sums", legacy: true });
     expect(all.record).toMatchObject({ designPoints: true, docFiles: true, ambiguityGate: true, pieceNotes: true, commitDocs: false, threatClosure: true });
     const loose = await driver({ settings: { "phase.design_points": "true", "phase.doc_files": "yes" } }).phases.open({ projectId: "projA", pmThreadId: "t", title: "Sum", goal: "sums", legacy: true });
-    expect(loose.record.designPoints).toBeUndefined();
-    expect(loose.record.docFiles).toBeUndefined();
+    expect(loose.record.designPoints).toBe(true);
+    expect(loose.record.docFiles).toBe(true);
   });
 
   it("[sma:k_t_roadmap] roadmapAnalysis flags a ticked row with no SUMMARY.md and a phase folder with no row, and roadmapSection returns only the requested row's block", () => {
