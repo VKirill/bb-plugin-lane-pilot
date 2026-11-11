@@ -84,17 +84,17 @@ describe("parity g6 rest a", () => {
   });
 
   it("[sma:k_lib_workerprog] finishing a task whose thread returned 500 events writes PROGRESS.md with the not-shown line; with fewer events the file has none", async () => {
-    for (const count of [500, 3]) {
+    for (const [count, cwd] of [[500, "/repo"], [3, "/repo"], [3, "/wt/a"]] as const) {
       const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
       const db = openDatabase(bb);
       const config: PrototypeConfig = { projectId: "P", hostId: "h", pmWorkspacePath: "/repo", writerWorkspacePath: "/repo", pmProviderId: "codex", pmModel: "m", writerProviderId: "codex", writerModel: "m" };
-      const task: TaskV2 = { schema_version: 2, id: "t1", title: "Write", risk: "low", lane: "writer", project_cwd: "/repo", read_first: [], interfaces: [], invariants: [], out_of_scope: [], expected_outputs: ["note.txt"], owns_paths: ["note.txt"], never_touch: [], depends_on: [], objective: "write", acceptance: ["file exists"], verify: "none", verification: [] };
+      const task: TaskV2 = { schema_version: 2, id: "t1", title: "Write", risk: "low", lane: "writer", project_cwd: cwd, read_first: [], interfaces: [], invariants: [], out_of_scope: [], expected_outputs: ["note.txt"], owns_paths: ["note.txt"], never_touch: [], depends_on: [], objective: "write", acceptance: ["file exists"], verify: "none", verification: [] };
       createRun(db, "run", "P", "cli", "/repo");
       createTask(db, { id: "t1", runId: "run", kind: "bb", contract: task });
       createAttempt(db, { id: "a-t1", runId: "run", taskId: "t1" });
       transitionAttempt(db, "a-t1", "spawn_requested");
       transitionAttempt(db, "a-t1", "running", { threadId: "writer-t1" });
-      const writes: Array<{ path: string; content: string }> = [];
+      const writes: Array<{ rootPath?: string; path: string; content: string }> = [];
       const events = Array.from({ length: count }, (_, n) => ({ seq: n, type: "item/completed", data: { item: { type: "toolCall", tool: "x" } } }));
       const { setJevForTests } = await import("@lane-pilot/jev");
       setJevForTests({ judge: async () => ({ by: "jev", decision: {} }) } as never);
@@ -103,7 +103,7 @@ describe("parity g6 rest a", () => {
         state: { disposed: false }, db, isDisposed: () => false, log: () => undefined, getThreadBounded: async () => ({ status: "idle" }), host: { call: async () => ({}) },
         bb: { storage: bb.storage, log: { warn() {}, error() {}, info() {} },
           sdk: { threads: { stop: async () => undefined, events: { list: async () => events }, get: async () => ({ status: "idle" }), output: async () => ({ text: "done" }) },
-            files: { read: async () => ({ content: "note" }), write: async (args: { path: string; content: string }) => { writes.push(args); return {}; } },
+            files: { read: async () => ({ content: "note" }), write: async (args: { rootPath?: string; path: string; content: string }) => { writes.push(args); return {}; } },
             plugins: { callRpc: async ({ method }: { method: string }) => method === "files"
               ? { outcome: "available", files: [{ path: "note.txt", revision: "r1" }], initialPatches: [{ path: "note.txt", patch: "@@\n+note\n", truncated: false }] }
               : { outcome: "available", patches: { "note.txt": { outcome: "available", patch: { path: "note.txt", patch: "@@\n+note\n", truncated: false } } } } },
@@ -118,6 +118,8 @@ describe("parity g6 rest a", () => {
       setJevForTests(null);
       const journal = writes.find((write) => write.path.endsWith("PROGRESS.md"));
       expect(journal, `PROGRESS.md written for ${count} events`).toBeDefined();
+      // A worktree attempt's journal lands in the run's own folder, where the receipts are: the worktree goes with the attempt.
+      expect([journal!.rootPath, journal!.path], `journal of an attempt in ${cwd}`).toEqual(["/repo", "/repo/.agents/runs/run/artifacts/t1/PROGRESS.md"]);
       if (count === 500) expect(journal!.content).toContain("calls after the first 500 thread events are not shown");
       else expect(journal!.content).not.toContain("are not shown");
     }

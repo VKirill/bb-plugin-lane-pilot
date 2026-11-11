@@ -288,9 +288,10 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
         priorReasons: priorAttemptStates(db, input.runId, input.taskId, input.attemptId).map((row) => row.reason).filter((r): r is string => typeof r === "string"),
         produced: candidate.produced ?? [], ownsPaths: input.task.owns_paths ?? [], referenceTestEdits: testEdits });
       // The diagnostic progress journal beside QA.md (sma k_lib_workerprog): files touched and commands run,
-      // every cut marked. Kept in the run's bookkeeping folder beside the task's receipts, never in the attempt's checkout.
+      // every cut marked. Kept in the run's bookkeeping folder beside the task's receipts, never in the attempt's checkout:
+      // a worktree is removed with the attempt, and the journal went with it (0 journals for 66 accepted tasks, 2026-11-11).
       {
-        const journalWorkspace = input.task.project_cwd;
+        const journalWorkspace = getRun(db, input.runId)?.writer_workspace_path ?? input.task.project_cwd;
         if (journalWorkspace) {
           const journalEvents = await bestEffort(ctx.log, "progress journal events", Promise.resolve().then(() => listThreadEventsRaw(bb, { threadId: input.writerThreadId, order: "asc", limit: "500" } as never)), null);
           await bestEffort(ctx.log, "progress journal write", Promise.resolve().then(() => bb.sdk.files.write({ hostId:input.config.hostId, rootPath:journalWorkspace,

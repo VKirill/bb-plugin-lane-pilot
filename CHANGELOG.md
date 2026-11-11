@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.532
+
+- **The attempt's progress journal is kept.** `PROGRESS.md` (files touched, commands run, every cut marked) was written into the attempt's own checkout, and a worktree is removed with the attempt: 0 journals stood beside the receipts of 66 accepted tasks in the drill sandbox (2026-11-11). It is now written to the run's own folder, `.agents/runs/<run>/artifacts/<task>/PROGRESS.md`, where the receipts are. Measured in `tests/sma/parity-g6-rest-a.test.ts`: the journal of an attempt that worked in `/wt/a` lands under the run's `/repo`; red on the old code.
+- **1 297 archived helper probe chats are gone from the hub** (deleted one by one, 0 failures); 3 unanswered ones stay to be read. The drill after 0.1.531 ran while they were being deleted and went red: no chat of any provider got a session in 185 seconds. The same drill against the same 0.1.531 after the deletion ended passed (`drills/2026-11-11-222659.json`), so the cause was the deletion, not the version.
+
 ## 0.1.531
 
 - **A landed or stopped phase gives its folder back.** The removal on the machine took `lane/` branches only, so the phase's own drop answered «not removed» without a word, and every phase kept `.git/lp-phases/<id>` with its dependencies: 11 folders of closed phases stood in the drill sandbox (2026-11-11). A phase's tree now goes (branch `phase/<id>` at that path, both marks asked for); the branch stays as the record. Measured on real git in `tests/orphaned-worktree.test.ts`: the folder is gone, the branch is there, a person's worktree on a branch named `phase/x` elsewhere is untouched; the first case is red on the old code.
