@@ -14,6 +14,7 @@ import { listPhasePartsSince } from "../phase";
 import { activeMemoryDigestRows, countActiveMemory, lintMemory, memoryWithoutTrace, rebuildMemoryIndexes, reviewMemory } from "@lane-pilot/memory-core";
 import { currentEmbedder, embedPending, memorySettingsFor } from "../memory/server";
 import { loadProjectSettings } from "../storage";
+import { readRateLimitSnapshot, snapshotAsBoardWindows } from "../stability/server";
 
 import type { FrontApi } from "../front/server/index";
 import type { ReadWriterWorkspaceFile } from "../platform/server";
@@ -43,7 +44,12 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
   const kv = bb.storage.kv;
   const host = () => bb.hosts.experimental_client({ contract: hostContract });
   const activeRun = (projectId: string) => activeRunForProject(db, projectId);
-  const liveWindows = async (hostId: string) => (await services.providerUsage?.windows({ providerId: WINDOW_PROVIDER, hostId })) ?? { at: null, windows: {} };
+  // The live figure first; when BB's usage source has not answered, the rate-limit watch's stored event is the fallback (SMA k_h_statusline).
+  const liveWindows = async (hostId: string) => {
+    const live = (await services.providerUsage?.windows({ providerId: WINDOW_PROVIDER, hostId })) ?? { at: null, windows: {} };
+    if (live.at) return live;
+    return snapshotAsBoardWindows(await readRateLimitSnapshot(kv as never, WINDOW_PROVIDER).catch(() => null), Date.now());
+  };
 
   return {
     /** Today: the day's KPI strip and its feed (accepted, blocked, phase parts, actions). */

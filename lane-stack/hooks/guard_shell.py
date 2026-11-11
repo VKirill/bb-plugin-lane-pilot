@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PreToolUse: block destructive shell across CLIs."""
 from __future__ import annotations
-import hashlib, ipaddress, json, os, re, shlex, shutil, socket, subprocess, sys, tempfile, threading, time
+import fnmatch, hashlib, ipaddress, json, os, re, shlex, shutil, socket, subprocess, sys, tempfile, threading, time
 from pathlib import Path
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -2080,6 +2080,27 @@ def _git_airbag(cwd: str) -> tuple[str, str] | None:
         return None
 
 
+def _session_dir_name(p: dict) -> str:
+    """The session's state folder under ~/.lane-pilot/session-hooks: the rule of session-hooks/cli.ts stateName (a dot stays; a dot-only id is not a folder name)."""
+    name = re.sub(r"[^A-Za-z0-9_.-]", "_", str(p.get("session_id") or p.get("sessionId") or "session"))
+    return "session" if not name or set(name) == {"."} else name
+
+
+def _task_note_file(folder: Path, name: str) -> Path | None:
+    """The task folder's note file Lane Pilot wrote at spawn (.agents/plans/items/<task>/<name>): the session's own task when the launcher names it
+    (LANE_TASK_FILE, its basename is the task id), else the one written last. A named task with no such file gives none, never another task's."""
+    items = folder / ".agents" / "plans" / "items"
+    task = re.sub(r"\.ya?ml$", "", Path(os.environ.get("LANE_TASK_FILE") or "").name)
+    try:
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", task):
+            one = items / task / name
+            return one if one.is_file() else None
+        found = [candidate for candidate in items.glob(f"*/{name}") if candidate.is_file()]
+        return max(found, key=lambda candidate: candidate.stat().st_mtime) if found else None
+    except OSError:
+        return None
+
+
 def _reflex_lines(cwd: str) -> tuple[Path, list[str]] | None:
     """The task folder's REFLEXES.md (walked up a few parents) split into its WHEN trigger → act lines."""
     try:
@@ -2089,8 +2110,9 @@ def _reflex_lines(cwd: str) -> tuple[Path, list[str]] | None:
             if candidate.is_file():
                 return candidate, candidate.read_text(errors="replace").splitlines()
             # The task folder REFLEXES.md Lane Pilot writes at spawn.
-            for candidate in sorted((folder / ".agents" / "plans" / "items").glob("*/REFLEXES.md")):
-                return candidate, candidate.read_text(errors="replace").splitlines()
+            noted = _task_note_file(folder, "REFLEXES.md")
+            if noted:
+                return noted, noted.read_text(errors="replace").splitlines()
             if len(folder.parts) <= 2:
                 break
         return None
@@ -2109,8 +2131,7 @@ def _reflex_advice(p: dict, command: str, path: str) -> str | None:
         match = re.match(r"^\s*[-*]?\s*WHEN\s+(.+?)\s*(?:→|->)\s*(.+)$", line)
         if not match or match.group(1).strip().lower() not in subject:
             continue
-        sid = re.sub(r"[^A-Za-z0-9_-]", "_", str(p.get("session_id") or ""))[:80] or "unknown"
-        counter = Path.home() / ".lane-pilot" / "session-hooks" / sid / "reflex.json"
+        counter = Path.home() / ".lane-pilot" / "session-hooks" / _session_dir_name(p) / "reflex.json"
         try:
             counts = json.loads(counter.read_text()) if counter.is_file() else {}
         except (OSError, ValueError):
@@ -2126,6 +2147,219 @@ def _reflex_advice(p: dict, command: str, path: str) -> str | None:
             pass
         return f"[reflex] {match.group(2).strip()}"
     return None
+
+
+def _filecard_lines(cwd: str) -> tuple[Path, list[str]]:
+    """The task folder's FILECARDS.md (walked up a few parents, like REFLEXES.md): the folder it belongs to (the repository root its paths are relative to) and its «path-or-glob -> claim» lines."""
+    try:
+        root = Path(cwd).resolve()
+        for folder in (root, *root.parents):
+            for candidate in (folder / "FILECARDS.md", _task_note_file(folder, "FILECARDS.md")):
+                if candidate and candidate.is_file():
+                    return folder, candidate.read_text(errors="replace").splitlines()
+            if len(folder.parts) <= 2:
+                break
+        return root, []
+    except OSError:
+        return Path(cwd), []
+
+
+def _card_matches(pattern: str, rel: str) -> bool:
+    """A card's path is the file itself, a directory (trailing slash) or a glob of the repository-relative path; never a bare substring."""
+    pattern = pattern.strip().removeprefix("./")
+    if not pattern:
+        return False
+    if pattern.endswith("/"):
+        return rel.startswith(pattern)
+    return rel == pattern or fnmatch.fnmatchcase(rel, pattern)
+
+
+def _session_counter(p: dict, name: str) -> Path:
+    return Path.home() / ".lane-pilot" / "session-hooks" / _session_dir_name(p) / name
+
+
+def _stream_airbag(p: dict, name: str, cmd: str, path: str) -> tuple[str | None, str | None]:
+    if not (is_shell_tool(name) and _DESTRUCTIVE_GIT.search(cmd)):
+        return None, None
+    saved = _git_airbag(str(p.get("cwd") or p.get("workspaceRoot") or "."))
+    if saved:
+        return None, f"[git-airbag] saved as {saved[0]}: git checkout {saved[1][:10]} -- . brings it back"
+    return None, None
+
+
+def _stream_reflex(p: dict, name: str, cmd: str, path: str) -> tuple[str | None, str | None]:
+    return None, _reflex_advice(p, cmd, path)
+
+
+def _stream_deps(p: dict, name: str, cmd: str, path: str) -> tuple[str | None, str | None]:
+    return _deps_guard_error(name, p), None
+
+
+def _stream_filecard(p: dict, name: str, cmd: str, path: str) -> tuple[str | None, str | None]:
+    """The confirmed notes that concern the file about to change (SMA k_hs_context), twice at most per session and path. Tagged [file-note]: [file-card] belongs to the per-file catalog."""
+    if not is_edit_tool(name) or not path:
+        return None, None
+    cwd = str(p.get("cwd") or p.get("workspaceRoot") or ".")
+    root, lines = _filecard_lines(cwd)
+    try:
+        rel = os.path.relpath(os.path.realpath(path if os.path.isabs(path) else os.path.join(cwd, path)), os.path.realpath(root))
+    except (OSError, ValueError):
+        return None, None
+    if rel == ".." or rel.startswith("../"):
+        return None, None
+    for index, line in enumerate(lines):
+        match = re.match(r"^\s*[-*]?\s*(.+?)\s*(?:→|->)\s*(.+)$", line)
+        if not match:
+            continue
+        pattern, claim = match.group(1).strip(), match.group(2).strip()
+        if not _card_matches(pattern, rel):
+            continue
+        counter = _session_counter(p, "filecard.json")
+        try:
+            counts = json.loads(counter.read_text()) if counter.is_file() else {}
+        except (OSError, ValueError):
+            counts = {}
+        key = f"{index}:{path}"
+        if int(counts.get(key, 0)) >= 2:
+            return None, None
+        try:
+            counter.parent.mkdir(parents=True, exist_ok=True)
+            counts[key] = int(counts.get(key, 0)) + 1
+            counter.write_text(json.dumps(counts))
+        except OSError:
+            pass
+        return None, f"[file-note] {claim[:200]}"
+    return None, None
+
+
+def _iso_epoch(value: object) -> float | None:
+    """An ISO time (or epoch milliseconds) as epoch seconds; None when it cannot be read."""
+    try:
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value) / 1000 if value > 1e11 else float(value)
+        if isinstance(value, str) and value.strip():
+            from datetime import datetime, timezone
+            parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+            return (parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)).timestamp()
+    except (ValueError, OverflowError):
+        pass
+    return None
+
+
+def _usage_snapshot() -> dict | None:
+    """The spend facts a scheduled pass wrote for this machine (~/.lane-pilot/usage-snapshot.json)."""
+    try:
+        path = Path.home() / ".lane-pilot" / "usage-snapshot.json"
+        if not path.is_file():
+            return None
+        snap = json.loads(path.read_text())
+        return snap if isinstance(snap, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _stream_spend(p: dict, name: str, cmd: str, path: str) -> tuple[str | None, str | None]:
+    """The subscription window's warnings at 70 and 90 percent, once each per session (SMA k_hs_spend)."""
+    snap = _usage_snapshot()
+    if not snap:
+        return None, None
+    # An old figure is not advice: the snapshot must say when it was measured, and that within two hours.
+    measured = _iso_epoch(snap.get("at"))
+    if measured is None or time.time() - measured > 2 * 3600:
+        return None, None
+    worst = 0.0
+    label = "the window"
+    for window in snap.get("windows") or []:
+        if not isinstance(window, dict):
+            continue
+        reset = _iso_epoch(window.get("resetsAt"))
+        if reset is not None and reset <= time.time():
+            continue  # the window has already reset: its percent is of the past
+        try:
+            pct = float(window.get("usedPercent") or window.get("utilization") or 0)
+        except (TypeError, ValueError):
+            continue
+        if pct > worst:
+            worst, label = pct, str(window.get("label") or "the window")
+    if worst < 70:
+        return None, None
+    counter = _session_counter(p, "spend.json")
+    try:
+        marks = set(json.loads(counter.read_text())) if counter.is_file() else set()
+    except (OSError, ValueError):
+        marks = set()
+    mark = "90" if worst >= 90 else "70"
+    if mark in marks:
+        return None, None
+    try:
+        counter.parent.mkdir(parents=True, exist_ok=True)
+        counter.write_text(json.dumps(sorted(marks | {mark})))
+    except OSError:
+        pass
+    return None, f"[spend] {label} is at {worst:.0f}%"
+
+
+def _stream_budget_sec() -> float:
+    """The streams' soft budget in seconds; LANE_STREAM_BUDGET_SEC overrides it for tests (SMA k_h_pre)."""
+    try:
+        return float(os.environ.get("LANE_STREAM_BUDGET_SEC") or 1.5)
+    except ValueError:
+        return 1.5
+
+
+def _perf_note(p: dict, row: dict) -> None:
+    """One row per stream run to the session's perf.jsonl (past 256 KB it keeps its newest 500 lines); a hook's own bookkeeping never fails the call."""
+    perf = Path.home() / ".lane-pilot" / "session-hooks" / _session_dir_name(p) / "perf.jsonl"
+    try:
+        perf.parent.mkdir(parents=True, exist_ok=True)
+        if perf.is_file() and perf.stat().st_size > 256 * 1024:
+            perf.write_text("\n".join(perf.read_text(errors="replace").splitlines()[-500:]) + "\n")
+        with perf.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row) + "\n")
+    except OSError:
+        pass
+
+
+# The check streams of one Edit/Write/Bash call, in order (SMA k_h_pre): (name, run, required, can_deny). Only a
+# stream with can_deny may refuse; any other stream's deny is merged as a [downgraded] warning (SMA k_hp_merge).
+# `required` is for a side effect that is not advice (the airbag): it runs whatever the soft budget says, and when it raises the
+# error goes up as it did before the streams existed (the guard's top level refuses the call). Any other stream that raises is
+# recorded and skipped, and past the soft budget only the required streams still run.
+_STREAMS = (
+    ("deps", _stream_deps, True, True),
+    ("git_airbag", _stream_airbag, True, False),
+    ("reflexes", _stream_reflex, False, False),
+    ("file_card", _stream_filecard, False, False),
+    ("spend", _stream_spend, False, False),
+)
+
+
+def _run_streams(p: dict, name: str, cmd: str, path: str) -> tuple[str | None, list[str]]:
+    begun = time.monotonic()
+    budget = _stream_budget_sec()
+    deny: str | None = None
+    advice: list[str] = []
+    for stream_name, run, required, can_deny in _STREAMS:
+        if not required and time.monotonic() - begun > budget:
+            _perf_note(p, {"stream": stream_name, "ms": 0, "error": "skipped: soft budget spent"})
+            continue
+        started = time.monotonic()
+        try:
+            sdeny, sadvice = run(p, name, cmd, path)
+            _perf_note(p, {"stream": stream_name, "ms": round((time.monotonic() - started) * 1000)})
+        except Exception as exc:
+            _perf_note(p, {"stream": stream_name, "ms": round((time.monotonic() - started) * 1000), "error": str(exc)[:200]})
+            if required:
+                raise
+            continue
+        if sdeny and not deny:
+            if can_deny:
+                deny = sdeny
+            else:
+                advice.append(f"[downgraded] {sdeny}")
+        if sadvice:
+            advice.append(sadvice)
+    return deny, advice
 
 
 _PACKAGE_INSTALL = re.compile(r"(?:^|[;&|(]\s*)(npm|pnpm|yarn|bun)\s+(install|i|add|ci|update|uninstall)\b")
@@ -2290,7 +2524,12 @@ def main() -> None:
         # The BB PM comes in as dev-orchestrator with LANE_PILOT_AGENT_TYPE set (hook trace, 2026-10-09).
         _route_first(client, name, p)
     if name and not is_shell_tool(name):
-        emit_allow(client)
+        # Edit/Write calls run the same ordered check streams (SMA k_h_pre); a deny there names its stream.
+        # Only an edit tool: a Read or a Grep is allowed at once, as before, with no stream run and no perf line.
+        deny_edit, advice_edit = _run_streams(p, name, "", file_path(p) or "") if is_edit_tool(name) and (_lane_marked() or _lane_pilot_agent_session(key)) else (None, [])
+        if deny_edit:
+            emit_deny(client, deny_edit)
+        emit_allow(client, "\n".join(advice_edit) or None)
     cmd = shell_command(p)
     if not cmd.strip():
         if is_shell_tool(name):
@@ -2400,16 +2639,14 @@ def main() -> None:
         if refusal:
             emit_deny(client, refusal)
 
-    # Advice that rides on an allow in a lane session: the airbag note and a burn lesson's reflex.
+    # The ordered check streams of one call (SMA k_h_pre): the airbag note, a burn lesson's reflex, the file's
+    # stored facts, the window's spend marks. A stream's deny names its stream; every denial has a way out.
     advice: list[str] = []
+    deny: str | None = None
     if _lane_marked() or _lane_pilot_agent_session(key):
-        if is_shell_tool(name) and _DESTRUCTIVE_GIT.search(cmd):
-            saved = _git_airbag(str(p.get("cwd") or p.get("workspaceRoot") or "."))
-            if saved:
-                advice.append(f"[git-airbag] saved as {saved[0]}: git checkout {saved[1][:10]} -- . brings it back")
-        reflex = _reflex_advice(p, cmd, file_path(p) or "")
-        if reflex:
-            advice.append(reflex)
+        deny, advice = _run_streams(p, name, cmd, file_path(p) or "")
+    if deny:
+        emit_deny(client, deny)
     emit_allow(client, "\n".join(advice) or None)
 
 if __name__ == "__main__":

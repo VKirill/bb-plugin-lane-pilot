@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { isZcodeProvider, type ZcodeBlock } from "@lane-pilot/models";
+import { spentWindows, windowAppliesTo } from "../../session-hooks";
 
 /**
  * Provider usage (BB official plugin `provider-usage`, I1). The plugin's own RPC (`getUsage`) is only a display
@@ -60,12 +61,6 @@ export function usageSkipPercent(settings: Record<string, unknown>): number {
   return Number.isFinite(value) && value >= 0 ? value : DEFAULT_USAGE_SKIP_PERCENT;
 }
 
-/** A window of a model family (`opus`) applies to a model id that names it; a window of no model applies to all. */
-function windowAppliesTo(window: { model?: string | null | undefined }, model: string): boolean {
-  const family = window.model?.trim().toLowerCase();
-  return !family || model.toLowerCase().includes(family);
-}
-
 /**
  * Whether a pair is held now: every resource that serves it (the writer's machine's own, else the shared ones) has a
  * window that applies to the model, is at or above the threshold and has not reset yet. One resource with room means
@@ -76,15 +71,12 @@ export function usageHold(
   input: { providerId: string; model: string; hostId: string; threshold: number; now: number },
 ): UsageHold | null {
   if (input.threshold <= 0) return null;
-  const ofProvider = resources.filter((row) => row.resource.providerId === input.providerId);
-  const own = ofProvider.filter((row) => row.resource.scope.kind === "host" && row.resource.scope.hostId === input.hostId);
-  const serving = own.length ? own : ofProvider.filter((row) => row.resource.scope.kind === "shared");
+  const serving = servingOf(resources, input);
   if (!serving.length) return null;
   const held: UsageHold[] = [];
   for (const { measurement } of serving) {
     if (measurement?.usage.status !== "ok") return null;
-    const spent = measurement.usage.windows.filter((window) => windowAppliesTo(window, input.model) && window.usedPercent >= input.threshold
-      && !(window.resetsAt && Date.parse(window.resetsAt) <= input.now));
+    const spent = spentWindows(measurement.usage.windows, input);
     if (!spent.length) return null;
     const worst = spent.reduce((a, b) => (b.usedPercent > a.usedPercent ? b : a));
     // The resource is free again once its last spent window resets; a window with no known reset keeps it unknown.
@@ -99,6 +91,33 @@ export function usageHold(
     resetsAt: resets.some((at) => at === null) ? null : resets.map((at) => at!).sort((a, b) => Date.parse(a) - Date.parse(b))[0]! };
 }
 
+/** The resources that serve a provider on a machine: its own, else the shared ones. */
+function servingOf(resources: ReadonlyArray<{ resource: UsageResource; measurement: UsageMeasurement | null }>, input: { providerId: string; hostId: string }) {
+  const ofProvider = resources.filter((row) => row.resource.providerId === input.providerId);
+  const own = ofProvider.filter((row) => row.resource.scope.kind === "host" && row.resource.scope.hostId === input.hostId);
+  return own.length ? own : ofProvider.filter((row) => row.resource.scope.kind === "shared");
+}
+
+/** A rate-limit event the stability room stored (`provider/rateLimits/updated`): the fallback when the live reading has no answer. */
+export type LimitEvent = { at: number; windows: Array<{ label: string | null; providerKey?: string | null; status: string; resetsAtMs: number | null }> };
+export type LimitEventReader = (providerId: string) => Promise<LimitEvent | null>;
+export const LIMIT_EVENT_MAX_AGE_MS = 6 * 3_600_000;
+
+/**
+ * The hold a stored limit event gives a provider whose live reading has no answer: a blocked window whose reset is still ahead, on an
+ * event under six hours old, and only where `usage.skip_percent` is stored and above 0. A window that names a model family
+ * (`opus`) counts only for that model. Reset = when the last blocked window frees (as usageHold).
+ */
+export function limitEventHold(event: LimitEvent | null, input: { model: string; threshold: number; now: number; settings?: Record<string, unknown> }): UsageHold | null {
+  const stored = input.settings?.[USAGE_SKIP_KEY];
+  if (input.threshold <= 0 || stored === undefined || stored === null || stored === "" || !(Number(stored) > 0)) return null;
+  if (!event || !(event.at > 0) || input.now - event.at > LIMIT_EVENT_MAX_AGE_MS) return null;
+  const blocked = event.windows.filter((w) => w.status === "blocked" && typeof w.resetsAtMs === "number" && w.resetsAtMs > input.now
+    && windowAppliesTo({ model: /opus|sonnet|haiku/.exec(`${w.label ?? ""} ${w.providerKey ?? ""}`.toLowerCase())?.[0] ?? null }, input.model));
+  if (!blocked.length) return null;
+  return { percent: 100, window: blocked[0]!.label ?? "usage window", resetsAt: new Date(Math.max(...blocked.map((w) => w.resetsAtMs!))).toISOString() };
+}
+
 export type BoardWindows = { at: string | null; windows: Record<string, { utilization: number; resetsAt: string | null }> };
 
 /**
@@ -110,9 +129,7 @@ export function boardWindows(
   resources: ReadonlyArray<{ resource: UsageResource; measurement: UsageMeasurement | null }>,
   input: { providerId: string; hostId: string; now: number },
 ): BoardWindows {
-  const ofProvider = resources.filter((row) => row.resource.providerId === input.providerId);
-  const own = ofProvider.filter((row) => row.resource.scope.kind === "host" && row.resource.scope.hostId === input.hostId);
-  const serving = own.length ? own : ofProvider.filter((row) => row.resource.scope.kind === "shared");
+  const serving = servingOf(resources, input);
   const windows: BoardWindows["windows"] = {};
   let read = false;
   for (const { measurement } of serving) {
@@ -147,7 +164,7 @@ type PluginsApi = {
  */
 export type ZcodeProbe = (input: { hostId: string; settings: Record<string, unknown> }) => Promise<ZcodeBlock | null>;
 
-export function createProviderUsage(bb: BbPluginApi, now: () => number = Date.now, zcode?: ZcodeProbe) {
+export function createProviderUsage(bb: BbPluginApi, now: () => number = Date.now, zcode?: ZcodeProbe, limitEvent?: LimitEventReader) {
   const plugins = (bb.sdk as { plugins?: PluginsApi }).plugins;
   let sources: { ids: string[]; at: number } | null = null;
   const inventories = new Map<string, { at: number; resources: UsageResource[] }>();
@@ -175,28 +192,28 @@ export function createProviderUsage(bb: BbPluginApi, now: () => number = Date.no
     return resources;
   }
 
-  async function measurement(pluginId: string, resource: UsageResource): Promise<UsageMeasurement | null> {
+  async function measurement(pluginId: string, resource: UsageResource, fresh = false): Promise<UsageMeasurement | null> {
     const key = JSON.stringify([pluginId, resource.id]);
     const cached = measurements.get(key);
-    if (cached && now() - cached.at < MEASUREMENT_TTL_MS) return cached.value;
-    // an unreadable measurement caches as null for the TTL
-    const value = await call(pluginId, USAGE_FETCH_METHOD, { resourceId: resource.id, refresh: false }, measurementSchema).catch(() => null);
+    if (!fresh && cached && now() - cached.at < MEASUREMENT_TTL_MS) return cached.value;
+    // an unreadable measurement caches as null for the TTL; `fresh` asks the source to measure again
+    const value = await call(pluginId, USAGE_FETCH_METHOD, { resourceId: resource.id, refresh: fresh }, measurementSchema).catch(() => null);
     measurements.set(key, { at: now(), value });
     return value;
   }
 
-  async function lookup(input: { providerId: string; model: string; hostId: string }): Promise<Array<{ resource: UsageResource; measurement: UsageMeasurement | null }>> {
+  async function lookup(input: { providerId: string; model: string; hostId: string; fresh?: boolean }): Promise<Array<{ resource: UsageResource; measurement: UsageMeasurement | null }>> {
     const rows: Array<{ resource: UsageResource; measurement: UsageMeasurement | null }> = [];
     for (const pluginId of await discover()) {
       const matching = (await inventory(pluginId)).filter((resource) => resource.providerId === input.providerId
         && (resource.scope.kind === "shared" || resource.scope.hostId === input.hostId));
-      rows.push(...await Promise.all(matching.map(async (resource) => ({ resource, measurement: await measurement(pluginId, resource) }))));
+      rows.push(...await Promise.all(matching.map(async (resource) => ({ resource, measurement: await measurement(pluginId, resource, input.fresh) }))));
     }
     return rows;
   }
 
   /** The lookup of one decision, held at most HOLD_TIMEOUT_MS: null when it is slow or fails. */
-  async function bounded(input: { providerId: string; model: string; hostId: string }): Promise<Array<{ resource: UsageResource; measurement: UsageMeasurement | null }> | null> {
+  async function bounded(input: { providerId: string; model: string; hostId: string; fresh?: boolean }): Promise<Array<{ resource: UsageResource; measurement: UsageMeasurement | null }> | null> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
@@ -222,7 +239,10 @@ export function createProviderUsage(bb: BbPluginApi, now: () => number = Date.no
     }
     if (input.threshold <= 0 || !input.providerId || !input.model) return null;
     const rows = await bounded(input);
-    return rows ? usageHold(rows, { ...input, now: now() }) : null;
+    const live = rows ? usageHold(rows, { ...input, now: now() }) : null;
+    // The stored rate-limit event answers only where the live reading has none for this provider: no readable window at all.
+    if (live || !limitEvent || rows?.some((row) => row.measurement?.usage.status === "ok")) return live;
+    return limitEventHold(await limitEvent(input.providerId).catch(() => null), { ...input, now: now() });
   }
 
   const refreshing = new Map<string, Promise<unknown>>();
@@ -281,7 +301,23 @@ export function createProviderUsage(bb: BbPluginApi, now: () => number = Date.no
     return boardWindows(rows ?? [], { ...input, now: now() });
   }
 
-  return { hold, peek, warm, windows };
+  /**
+   * The raw windows (with their model and reset) of a provider on a machine, measured again now: what the session guard's usage snapshot
+   * carries. `measuredAt` is the moment of that fresh reading; null when nothing readable came back, so no snapshot is written for it.
+   */
+  async function readings(input: { providerId: string; hostId: string }): Promise<{ measuredAt: string | null; windows: Array<{ label: string; usedPercent: number; resetsAt: string | null; model: string | null }> }> {
+    const rows = await bounded({ ...input, model: "", fresh: true });
+    const windows: Array<{ label: string; usedPercent: number; resetsAt: string | null; model: string | null }> = [];
+    let read = false;
+    for (const { measurement } of servingOf(rows ?? [], input)) {
+      if (measurement?.usage.status !== "ok") continue;
+      read = true;
+      for (const w of measurement.usage.windows) windows.push({ label: w.label ?? w.kind ?? "window", usedPercent: w.usedPercent, resetsAt: w.resetsAt ?? null, model: w.model?.trim() || null });
+    }
+    return { measuredAt: read ? new Date(now()).toISOString() : null, windows };
+  }
+
+  return { hold, peek, warm, windows, readings };
 }
 
 export type ProviderUsage = ReturnType<typeof createProviderUsage>;

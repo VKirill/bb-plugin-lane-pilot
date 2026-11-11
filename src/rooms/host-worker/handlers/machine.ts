@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { access, lstat, open, readFile, readdir, realpath, rename, stat, statfs } from "node:fs/promises";
+import { access, lstat, mkdir, open, readFile, readdir, realpath, rename, stat, statfs } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { delimiter, join, relative } from "node:path";
 import { homedir, networkInterfaces } from "node:os";
@@ -73,6 +73,19 @@ export const readUsageWindows: ExperimentalHostRpcHandlers<typeof hostContract>[
     if (typeof value?.utilization === "number") windows[key] = { utilization: value.utilization, resetsAt: typeof value.resets_at === "string" ? value.resets_at : null };
   }
   return { hostId, at: typeof raw?.at === "string" ? raw.at : null, windows };
+};
+
+/** The hub's latest usage snapshot for this machine's session guard (~/.lane-pilot/usage-snapshot.json). */
+export const writeUsageSnapshot: ExperimentalHostRpcHandlers<typeof hostContract>["writeUsageSnapshot"] = async (input) => {
+  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  const dir = join(homedir(), ".lane-pilot");
+  const file = join(dir, "usage-snapshot.json");
+  const temp = `${file}.${randomUUID().slice(0, 8)}`;
+  await mkdir(dir, { recursive: true });
+  const handle = await open(temp, "w");
+  try { await handle.writeFile(JSON.stringify(input.snapshot)); } finally { await handle.close(); }
+  await rename(temp, file);
+  return { hostId, written: true };
 };
 
 /** Close exactly that line: the backlog item's meta.yaml gets `status: done`; a file with no or two status lines is refused, not guessed. */

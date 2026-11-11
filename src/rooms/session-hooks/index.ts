@@ -4,3 +4,4 @@ export { buildCapsule, capsuleRestored } from "./logic";
 export { conventionGateHits, type ConventionGate } from "./logic";
 export { STREAMS, type StreamName } from "./logic";
 export { GUARD_INVENTORY, guardInventoryGaps, type GuardRow } from "./logic";
+export { spentWindows, windowAppliesTo, SNAPSHOT_MAX_AGE_MS, type SpendWindow } from "./logic";

@@ -3,7 +3,7 @@ import { existsSync, unlinkSync } from "node:fs";
 import { appendFile, chmod, cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, rmdir, stat, symlink, unlink, utimes, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { bestEffort, spawnAsync, isFsAbsent, lstatOrNull, orMiss, parseJsonOr, readTextOrNull, statOrNull } from "@lane-pilot/kit";
+import { bestEffort, maskCredentials, spawnAsync, isFsAbsent, lstatOrNull, orMiss, parseJsonOr, readTextOrNull, statOrNull } from "@lane-pilot/kit";
 import { isBookkeepingPath, isOwnershipNoise } from "@lane-pilot/settings-catalog";
 import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath } from "@lane-pilot/kit";
 import { satelliteOf } from "../contracts/ownership";
@@ -112,6 +112,10 @@ export async function persistTaskFolder(input:{
   outcome?:string;
   /** Project lessons with a «WHEN <trigger> → <act>» line; written to REFLEXES.md (SMA k_lib_reflex). */
   reflexes?:string[];
+  /** «path -> claim» lines of the confirmed notes that concern the task's paths; written to FILECARDS.md (SMA k_hs_context). */
+  filecards?:string[];
+  /** Whether a file of the task folder is there already (task-folder relative path): an empty list then blanks the file instead of leaving a retired rule in it. */
+  exists?:(relativePath:string)=>Promise<boolean>;
   /** Appends the exclude line to the repo's real info/exclude on the workspace's host; a failure skips only the line. */
   exclude?:(line:string)=>Promise<void>;
   writeFile:(relativePath:string, content:string)=>Promise<void>;
@@ -131,7 +135,13 @@ export async function persistTaskFolder(input:{
   if (input.outcome !== undefined) await input.writeFile(`${folder}/OUTCOME.md`, input.outcome.endsWith("\n") ? input.outcome : `${input.outcome}\n`);
   // Burn lessons with a WHEN <trigger> → <act> line go here so the guard can fire them at the act (SMA k_lib_reflex).
   const reflexes = (input.reflexes ?? []).filter((line) => /WHEN\s+.+?\s*(?:→|->)\s*.+/.test(line));
+  // A retired rule must not keep firing from a stale file: with no lines left, a file that is there is rewritten with none.
   if (reflexes.length) await input.writeFile(`${folder}/REFLEXES.md`, `# Reflexes\n\n${reflexes.join("\n")}\n`);
+  else if (input.reflexes !== undefined && await input.exists?.(`${folder}/REFLEXES.md`).catch(() => false)) await input.writeFile(`${folder}/REFLEXES.md`, "# Reflexes\n");
+  // The line enters the model's context: masked here too, whoever built it, and clipped.
+  const filecards=(input.filecards??[]).map((line)=>maskCredentials(line.slice(0,260)).text).filter(Boolean).slice(0,40);
+  if (filecards.length) await input.writeFile(`${folder}/FILECARDS.md`, `# File notes\n\n${filecards.join("\n")}\n`);
+  else if (input.filecards !== undefined && await input.exists?.(`${folder}/FILECARDS.md`).catch(() => false)) await input.writeFile(`${folder}/FILECARDS.md`, "# File notes\n");
   return { folder };
 }
 
