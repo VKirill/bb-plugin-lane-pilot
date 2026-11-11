@@ -34,7 +34,7 @@ export function createMoney(ctx: Pick<ServerCore, "db" | "bb">) {
       silentAttempts += 1;
       let tokens = attempt.appetiteTokens ?? fallback;
       if (!tokens || !Number.isFinite(tokens)) {
-        lanes ??= measuredAttemptTokens(ctx.db, { sinceMs: 0, limit: 20 });
+        lanes ??= measuredAttemptTokens(ctx.db, { sinceMs: now - 90 * 86_400_000, limit: 20 }); // a bounded read: the last 20 of a lane are not older than a quarter
         tokens = medianTokens(lanes.get(`${attempt.providerId}${attempt.model ?? ""}`) ?? []) ?? null;
       }
       if (!tokens) continue;

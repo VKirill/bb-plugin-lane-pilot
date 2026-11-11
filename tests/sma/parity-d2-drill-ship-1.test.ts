@@ -21,7 +21,6 @@ function mainDrill(): string {
   return path;
 }
 const dry = (script: string, ...args: string[]) => spawnSync("python3", ["-I", script, ...args, "--dry-run"], { encoding: "utf8", timeout: 60_000 }).stdout.replace(/\d{8}-\d{6}/g, "STAMP");
-const dryEnv = (script: string, env: Record<string, string>, ...args: string[]) => spawnSync("python3", ["-I", script, ...args, "--dry-run"], { env: { ...process.env, ...env }, encoding: "utf8", timeout: 60_000 }).stdout.replace(/\d{8}-\d{6}/g, "STAMP");
 
 /** Runs `body` (python) against the drill module and prints its result as JSON. */
 function drillPy(body: string): unknown {
@@ -44,12 +43,9 @@ describe("defaults: an install that sets nothing new runs the drill exactly as m
     const main = mainDrill();
     const lists = (path: string) => { const code = `import importlib.util, json\nspec = importlib.util.spec_from_file_location("d", ${JSON.stringify(path)})\nm = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\nprint(json.dumps([m.ALL, m.QUICK]))`; return spawnSync("python3", ["-I", "-c", code], { encoding: "utf8" }).stdout.trim(); };
     expect(lists(drill)).toBe(lists(main));
-    // The approve press is on without a switch now: main's output is matched at the opt-out (=0), and unset matches main's =1.
-    const off = { LP_DRILL_LIVE_PRESS: "0", BB_SERVER_URL: "" };
-    expect(dryEnv(drill, off, "--quick")).toBe(dryEnv(main, off, "--quick"));
-    expect(dryEnv(drill, off)).toBe(dryEnv(main, off));
-    expect(dryEnv(drill, off, "--scenario", "live_word,no_code_exit")).toBe(dryEnv(main, off, "--scenario", "live_word,no_code_exit"));
-    expect(dryEnv(drill, { BB_SERVER_URL: "" }, "--scenario", "live_word")).toBe(dryEnv(main, { LP_DRILL_LIVE_PRESS: "1", BB_SERVER_URL: "" }, "--scenario", "live_word"));
+    expect(dry(drill, "--quick")).toBe(dry(main, "--quick"));
+    expect(dry(drill)).toBe(dry(main));
+    expect(dry(drill, "--scenario", "live_word,no_code_exit")).toBe(dry(main, "--scenario", "live_word,no_code_exit"));
   });
 
   it("the new scenes run only by name or under --series", () => {
@@ -104,10 +100,11 @@ print(json.dumps({"sent": len(sent), "problems": out["problems"]}))
   });
 });
 
-describe("[sma:m_sd_approve] the press is tied to the drill's own run, and runs unless LP_DRILL_LIVE_PRESS=0", () => {
+describe("[sma:m_sd_approve] the press is tied to the drill's own run, and happens only where a window is named or LP_DRILL_LIVE_PRESS=1", () => {
   const scenario = (live: boolean) => drillPy(`
 import os, tempfile, pathlib
-os.environ["LP_DRILL_LIVE_PRESS"] = ${live ? '"1"' : '"0"'}
+if ${live ? "True" : "False"}: os.environ["LP_DRILL_LIVE_PRESS"] = "1"
+else: os.environ.pop("LP_DRILL_LIVE_PRESS", None)
 calls, runs, sent = [], [], []
 m.owner_words = lambda ctx, v: ("off", 1)
 m.restore_owner_words = lambda ctx, o, v: []
@@ -129,7 +126,7 @@ scene = json.loads(next(tmp.glob("approve-*.json")).read_text()) if runs else No
 print(json.dumps({"result": out["result"], "problems": out["problems"], "calls": calls, "pressed": len(runs), "sent": len(sent), "scene": scene}))
 `) as { result: string; problems: string[]; calls: string[]; pressed: number; sent: number; scene: { steps: Array<{ click?: string }> } | null };
 
-  it("with LP_DRILL_LIVE_PRESS=0 the word goes through the RPC as on main: no window, one task", () => {
+  it("by default the word goes through the RPC as on main: no window, one task", () => {
     const out = scenario(false);
     expect(out.pressed).toBe(0);
     expect(out.calls).toEqual(["task_word"]);
@@ -192,8 +189,8 @@ describe("[sma:m_sd_skills] the skills screen opens the drill's own project by U
   const view = (names: string[] | null, value: unknown, version: number) => ({ catalog: { skills: [{ name: "a" }, { name: "b" }] }, roles: [{ role: "pm", key: "access_pm", version, value, groups: { skills: { names } } }] });
   const scenario = (url: string | null, views: unknown[]) => drillPy(`
 import os, tempfile, pathlib
-for k in ("LP_DRILL_UI_ACCESS_URL", "LP_DRILL_UI_URL", "BB_SERVER_URL"): os.environ.pop(k, None)
 if ${url ? "True" : "False"}: os.environ["LP_DRILL_UI_ACCESS_URL"] = ${JSON.stringify(url ?? "")}
+else: os.environ.pop("LP_DRILL_UI_ACCESS_URL", None)
 views = json.loads(${JSON.stringify(JSON.stringify(views))})
 calls, runs, saved = [], [], []
 def rpc(method, payload):
@@ -209,11 +206,12 @@ scene = json.loads(next(tmp.glob("skills-*.json")).read_text()) if runs else Non
 print(json.dumps({"out": out, "calls": calls, "pressed": len(runs), "saved": saved, "scene": scene}))
 `) as { out: { result: string; problems: string[]; note?: string }; calls: string[]; pressed: number; saved: Array<{ keys?: string[]; key?: string }>; scene: { url: string } | null };
 
-  it("without an address env the page is derived from the window's own address and the press runs on it", () => {
-    const out = scenario(null, [view(null, null, 0), view(["a"], { skills: ["a"] }, 1)]);
-    expect(out.pressed).toBe(1);
-    expect(out.scene!.url).toBe("http://127.0.0.1:4173/plugins/lane-pilot/lane-pilot/proj_sb/access");
-    expect(out.calls).toContain("helper_access_view");
+  it("without an address for the project's page it clicks nothing and says «not run»", () => {
+    const out = scenario(null, [view(null, null, 0)]);
+    expect(out.pressed).toBe(0);
+    expect(out.calls).toEqual([]);
+    expect(out.out.result).toBe("skipped");
+    expect(out.out.note).toContain("not run");
   });
 
   it("with the address it presses on that project's page, then puts the access row back (a row that did not exist is removed)", () => {

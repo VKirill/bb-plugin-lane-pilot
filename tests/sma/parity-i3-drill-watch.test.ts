@@ -125,9 +125,9 @@ scene = json.loads(next(tmp.glob("approve-*.json")).read_text()) if runs else No
 print(json.dumps({"result": out["result"], "note": out.get("note"), "problems": out["problems"], "calls": calls, "pressed": len(runs), "sent": len(sent), "scene": scene}))
 `) as { result: string; note?: string; problems: string[]; calls: string[]; pressed: number; sent: number; scene: { url: string; steps: Array<{ click?: string }> } | null };
 
-describe("[sma:m_sd_approve] the approval drill presses the real Approve on the hub's window without a switch; =0 opts out", () => {
-  it("unset env: the press runs on the window derived from BB_SERVER_URL, with the red branch in the same scene", () => {
-    const out = approveScenario({ BB_SERVER_URL: "https://hub.example/" });
+describe("[sma:m_sd_approve] the approval drill presses the real Approve on a named window without a second switch; =0 opts out", () => {
+  it("a window named in LP_DRILL_UI_URL is enough: the press runs there, with the red branch in the same scene", () => {
+    const out = approveScenario({ LP_DRILL_UI_URL: "https://hub.example/" });
     expect(out.pressed).toBe(1);
     expect(out.sent).toBe(2);
     expect(out.scene!.url).toBe("https://hub.example/");
@@ -137,20 +137,22 @@ describe("[sma:m_sd_approve] the approval drill presses the real Approve on the 
     expect(out.result).toBe("pass");
   });
 
-  it("LP_DRILL_UI_URL still wins over the derived window; LP_DRILL_LIVE_PRESS=0 keeps the old RPC path", () => {
-    const explicit = approveScenario({ BB_SERVER_URL: "https://hub.example", LP_DRILL_UI_URL: "http://win.example:4173/" });
-    expect(explicit.scene!.url).toBe("http://win.example:4173/");
-    const off = approveScenario({ LP_DRILL_LIVE_PRESS: "0" });
+  it("the hub's own port is not a window (BB answers 403 to a browser there): with only BB_SERVER_URL the word goes through the RPC; LP_DRILL_LIVE_PRESS=0 opts out of a named window", () => {
+    const hubOnly = approveScenario({ BB_SERVER_URL: "https://hub.example" });
+    expect(hubOnly.pressed).toBe(0);
+    expect(hubOnly.calls).toEqual(["task_word"]);
+    expect(hubOnly.result).toBe("pass");
+    const off = approveScenario({ LP_DRILL_UI_URL: "http://win.example:4173/", LP_DRILL_LIVE_PRESS: "0" });
     expect(off.pressed).toBe(0);
     expect(off.sent).toBe(1);
     expect(off.calls).toEqual(["task_word"]);
     expect(off.result).toBe("pass");
   });
 
-  it("a browser that cannot start skips the press («skipped: no browser») and the word still lands through the RPC", () => {
-    const out = approveScenario({ BB_SERVER_URL: "https://hub.example" }, 2);
+  it("a window that does not open skips the press, says why, and the word still lands through the RPC", () => {
+    const out = approveScenario({ LP_DRILL_UI_URL: "https://hub.example" }, 2);
     expect(out.pressed).toBe(1);
-    expect(out.note).toContain("skipped: no browser");
+    expect(out.note).toContain("press skipped, the window did not open");
     expect(out.calls).toContain("task_word");
     expect(out.result).toBe("pass");
   });
@@ -176,10 +178,17 @@ scene = json.loads(next(tmp.glob("skills-*.json")).read_text()) if runs else Non
 print(json.dumps({"out": out, "calls": calls, "pressed": len(runs), "saved": saved, "scene": scene}))
 `) as { out: { result: string; problems: string[]; note?: string }; calls: string[]; pressed: number; saved: Array<{ keys?: string[]; key?: string }>; scene: { url: string } | null };
 
-describe("[sma:m_sd_skills] the skills drill opens its own project's access page by address, derived from BB_SERVER_URL", () => {
-  it("no env: the page address is the lane-pilot page's <project>/access route on the hub window, and «access» resolves to the team tab", () => {
-    expect(resolveTab("access")).toEqual({ tab: "team" });
+describe("[sma:m_sd_skills] the skills drill opens its own project's access page by address, derived from the named window", () => {
+  it("no window named: nothing is pressed and the scene says «not run», the hub's own port is not taken for a window", () => {
     const out = skillsScenario({ BB_SERVER_URL: "https://hub.example/" }, [view(null, null, 0), view(["a"], { skills: ["a"] }, 1)]);
+    expect(out.pressed).toBe(0);
+    expect(out.out.result).toBe("skipped");
+    expect(out.out.note).toContain("not run");
+  });
+
+  it("LP_DRILL_UI_URL: the page address is the lane-pilot page's <project>/access route on that window, and «access» resolves to the team tab", () => {
+    expect(resolveTab("access")).toEqual({ tab: "team" });
+    const out = skillsScenario({ LP_DRILL_UI_URL: "https://hub.example/" }, [view(null, null, 0), view(["a"], { skills: ["a"] }, 1)]);
     expect(out.pressed).toBe(1);
     expect(out.scene!.url).toBe("https://hub.example/plugins/lane-pilot/lane-pilot/proj_sb/access");
     expect(out.out.problems).toEqual([]);
