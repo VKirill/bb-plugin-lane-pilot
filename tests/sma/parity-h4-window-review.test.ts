@@ -95,3 +95,20 @@ describe("[review 3] a malformed draft row does not take the board down", () => 
     db.close();
   });
 });
+
+describe("[review 7] the since window spares proposed and partial drafts", () => {
+  it("an old proposed or partial draft stays on the board, an old created one drops out", () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const old = Date.now() - 10 * 86_400_000;
+    const ids = (["proposed", "partial", "created"] as const).map((state) => {
+      const draft = proposeDraft(db, { runId: "run-w", projectId: "proj-w", threadId: "pm-w", kind: "batch", contracts: [{ id: "a" }, { id: "b" }], at: old });
+      db.prepare("UPDATE lane_pilot_task_draft SET state=?, updated_at=? WHERE id=?").run(state, old, draft.id);
+      return [state, draft.id] as const;
+    });
+    const states = buildTaskBoard(db, { projectId: "proj-w", doneSince: Date.now() - 86_400_000 }, []).filter((item) => item.kind === "batch").map((item) => item.state).sort();
+    expect(states).toEqual(["partial", "proposed"]);
+    expect(ids).toHaveLength(3);
+    db.close();
+  });
+});

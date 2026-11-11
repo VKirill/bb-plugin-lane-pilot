@@ -21,11 +21,15 @@ export function pruneTaskDraftRows(db: Db, before: number): number {
   return db.prepare("DELETE FROM lane_pilot_task_draft WHERE updated_at<?").run(before).changes;
 }
 
-/** Batch drafts of one project (or of all of them) touched since `since`, newest first — the board's batch cards. */
+/**
+ * Batch drafts of one project (or of all of them), newest first — the board's batch cards. The `since` window applies to `created`
+ * drafts only: a `proposed` or `partial` draft stays creatable for 30 days (DRAFT_KEEP_MS) and must stay visible that long.
+ */
 export function listBatchDraftRows(db: Db, input: { projectId?: string | null; since?: number; limit?: number }): TaskDraftRow[] {
   const since = input.since ?? 0;
   const limit = input.limit ?? 200;
+  const window = "(state<>'created' OR updated_at>=?)";
   return (input.projectId
-    ? db.prepare("SELECT * FROM lane_pilot_task_draft WHERE kind='batch' AND project_id=? AND updated_at>=? ORDER BY updated_at DESC LIMIT ?").all(input.projectId, since, limit)
-    : db.prepare("SELECT * FROM lane_pilot_task_draft WHERE kind='batch' AND updated_at>=? ORDER BY updated_at DESC LIMIT ?").all(since, limit)) as TaskDraftRow[];
+    ? db.prepare(`SELECT * FROM lane_pilot_task_draft WHERE kind='batch' AND project_id=? AND ${window} ORDER BY updated_at DESC LIMIT ?`).all(input.projectId, since, limit)
+    : db.prepare(`SELECT * FROM lane_pilot_task_draft WHERE kind='batch' AND ${window} ORDER BY updated_at DESC LIMIT ?`).all(since, limit)) as TaskDraftRow[];
 }
