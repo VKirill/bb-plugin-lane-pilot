@@ -1,10 +1,8 @@
 import { appetiteStop, breakerKey, runningWriterBudgetStop, tokenUsageFromEvent } from "@lane-pilot/resilience";
-import type { StageHelperSettings } from "../../platform/server";
 import { checkTimeoutSec } from "../check-timing";
 import { pipelineWriterStep, pipelineWriterTag } from "./pipeline-tag";
-import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { writerLeftWorktree } from "./left-worktree";
-import { countAttempts, countOtherLiveAttemptsInArea, countThreadTurns, firstAttemptAt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, noteAttemptStream, priorAttemptStates, transitionAttempt, taskBasePath, failureFieldsOf } from "../../storage";
+import { countAttempts, countThreadTurns, firstAttemptAt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, listStageReceipts, loadProjectSettings, noteAttemptStream, priorAttemptStates, transitionAttempt, taskBasePath, failureFieldsOf } from "../../storage";
 import { saveBlockedBy, type BlockedBy } from "../../runs/server";
 import { relayFor } from "../../relay/server";
 import type { HelperPolicySnapshot } from "../../contracts/helper-context";
@@ -45,7 +43,7 @@ import { dependenciesAddedInDiff } from "../../forecast";
 import { sendServiceMessage } from "../../relay/server";
 import { judgeRulesOnDiff, ruleViolationRemark } from "../../learning";
 import { jev, type JevSettings } from "@lane-pilot/jev";
-import { taskWordItemPrefix, type LeadRoadApi, type TaskWordPort } from "../../contracts";
+import { taskWordItemPrefix } from "../../contracts";
 import { closeOwnerItemsByPrefix, postOwnerItem, rpcLine } from "../../owner-waiting";
 import { writerFinishScanJudgment } from "../finish-scan";
 import { runOnHost } from "@lane-pilot/host-calls";
@@ -58,46 +56,12 @@ import { mountRuleFormsAttemptFinished } from "./rule-forms";
 import { barrierInputBody } from "./barrier-input";
 import { executionChecklist } from "./execution-checklist";
 
-import type { RollbackApi } from "../../rollback/server/rollback";
-import type { WriterSpawnApi } from "./spawn";
-import type { WriterStateApi } from "./state";
-import type { WriterVerifyApi } from "./verify";
-
-import type { BaselineApi } from "../../baseline/server/baseline";
-import type { PromotionServiceApi } from "../../rule-forms/promotion-service";
-import type { WriterDispatchApi } from "./dispatch";
-
-/** The fields of the services bag this file reads, typed by the rooms that own them. */
-interface Services {
-  stageHelperSettings: StageHelperSettings;
-  baseline: BaselineApi;
-  dispatchWriter: WriterDispatchApi["dispatchWriter"];
-  persistWriterAcceptance: WriterVerifyApi["persistWriterAcceptance"];
-  promotions: PromotionServiceApi;
-  providerBreaker: WriterStateApi["providerBreaker"];
-  rollback: RollbackApi;
-  runBudgetFor: WriterStateApi["runBudgetFor"];
-  runVerification: WriterVerifyApi["runVerification"];
-  validateWriterResult: WriterVerifyApi["validateWriterResult"];
-  workspaceDirt: WriterSpawnApi["workspaceDirt"];
-  taskWords: TaskWordPort;
-  leadRoad: LeadRoadApi;
-}
+import type { FinishInput, Services } from "./finish-types";
+import { areaHasLiveWork, dirtyBase, DIRTY_BASE_WAIT_MS, MERGE_QUEUE_MS, mergeHolder } from "./merge-queue";
 
 export { postMergeRepair } from "./verification";
 
-/** The area's copy stays while it holds queued or running work; with none, the merge removes it now, not at the sweep (WT2 A2). */
-function areaHasLiveWork(db: Parameters<typeof countOtherLiveAttemptsInArea>[0], input: { projectId: string; taskId: string }): boolean {
-  return countOtherLiveAttemptsInArea(db, input.taskId) > 0;
-}
-
 const FOLLOW_UP_DELETED = "the owner deleted the queued instruction for this writer";
-
-/** How long an accepted attempt waits for another task's merge into the same checkout before it reports the block. */
-const MERGE_QUEUE_MS = 15 * 60_000;
-/** How long finished work waits for someone's uncommitted edits in the base checkout to be committed or put away. */
-const DIRTY_BASE_WAIT_MS = 2 * 3600_000;
-const dirtyBase = (merged:{ status:string; reason?:string|null }) => merged.status === "conflict" && Boolean(merged.reason?.startsWith("base checkout has uncommitted changes"));
 
 /** How long an idle writer whose background command still runs is waited for before its work is validated as it stands. */
 const BACKGROUND_TAIL_WAIT_MS = 5 * 60_000;
@@ -109,24 +73,6 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
   mountRuleFormsAttemptFinished(ctx, services);
   const verification = mountVerificationAttemptFinished(ctx, services);
   mountWriterAttemptFinished(ctx, services);
-
-  /** Who holds the checkout: the open attempt whose task the holder's commit message names. */
-  function mergeHolder(runId: string, holder: string | null, since: number): BlockedBy {
-    const projectId = getRun(db, runId)?.project_id;
-    const taskId = holder?.split(":")[0]?.trim() || null;
-    const attempt = taskId ? listOpenAttempts(db).find((row) => row.task_id === taskId && row.project_id === projectId) : undefined;
-    return { kind:"merge-lock", holderTaskId:taskId, holderThreadId:attempt?.thread_id ?? null, holderAttemptId:attempt?.id ?? null,
-      since:new Date(since).toISOString(), retryAfterSec:60, detail:holder };
-  }
-
-  type FinishInput = {
-    projectId:string; config:PrototypeConfig; task:TaskV2;
-    runId:string; taskId:string; attemptId:string; pmThreadId:string; writerThreadId:string;
-    dirtBefore:import("../cli-outcome").DirtSnapshot[];
-    emergencyFallback?:{reason:string;primaryAttemptId:string;providerId:string;model:string};
-    /** Gives the writer's pool slot back early: the wait for the owner's word needs no writer seat (Gemini F-008.2). */
-    releaseSlot?:()=>void;
-  };
 
   /** The attempt's end, whatever its outcome: the reactions on the attempt-finished bus run last (attempt-finished.ts). */
   async function finishWriterAttempt(input: FinishInput): Promise<Record<string,unknown>> {
@@ -1110,7 +1056,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           merged = await integrate();
         }
         if (merged.status === "busy") {
-          const blockedBy = mergeHolder(input.runId, merged.holder ?? null, queuedSince);
+          const blockedBy = mergeHolder(db, input.runId, merged.holder ?? null, queuedSince);
           const reason = `merge_queue_timeout: ${merged.reason ?? "another integration holds the base checkout"}`;
           recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"failed",
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{integration:merged,blockedBy}});
