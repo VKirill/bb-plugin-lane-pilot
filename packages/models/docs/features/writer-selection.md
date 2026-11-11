@@ -2,9 +2,9 @@
 title: Writer Selection and Fallbacks
 type: component
 created: 2026-11-08
-updated: 2026-11-09
+updated: 2026-11-11
 status: active
-confidence: low
+confidence: medium
 tags: [models, writers, anamnesis, jev-reasoning, fallbacks, rotation]
 sources:
   - packages/models/src/model-profiles.ts
@@ -28,16 +28,16 @@ TL;DR: Evaluates coding models from the writers' anamnesis, resolves Jev reasoni
 ## Purpose
 
 The writer subsystem manages execution models for task writers (packages/models/src/model-profiles.ts:1-6).
-The task writer is not part of the static role table; it is chosen per task from benchmarked coding profiles, automated Jev effort judgments, and configurable fallback chains (packages/models/src/role-models.ts:10; packages/models/src/jev-reasoning.ts:9-30; packages/models/src/writer-fallbacks.ts:1-6).
+The package maintains `ROLE_TABLE` for role-based model resolution; writer selection uses a separate registry of coding profiles and filters those profiles as candidates ([Role-to-Model Resolution](role-models.md); packages/models/src/role-models.ts:102-145; packages/models/src/model-profiles.ts:24-120).
 
 ## How it works
 
-1. Filter active writer candidates using `writerCandidates`: exclude models flagged `available: false` and restrict to `writer.models` when the setting is configured (packages/models/src/model-profiles.ts:112-115).
+1. Filter writer candidates using `writerCandidates`: exclude profiles marked unavailable, exclude keys in `writer.models_off`, and, when `writer.models` is an array, keep only keys in that list (packages/models/src/model-profiles.ts:112-120).
 2. Determine writer service tier via `writerServiceTier`: inspect `writer.service_tier` ("standard" or "fast"), falling back to legacy `writer.fast_mode` ("1", "true", "on") (packages/models/src/jev-reasoning.ts:40-48). Map to BB service tier using `bbServiceTier` ("fast" -> "fast", otherwise "default") (packages/models/src/jev-reasoning.ts:50-52).
 3. Check `listedServiceTier`: strip tier when the provider lacks `supportsServiceTier` capability or when "default" tier is unlisted (packages/models/src/jev-reasoning.ts:58-62).
 4. Resolve Jev reasoning effort using `resolveJevReasoning`: when Jev status is "ok" and its decision is supported by the model, use `jevDecision`; otherwise revert to `manualLevel` with a diagnostic fallback reason (packages/models/src/jev-reasoning.ts:9-30).
 5. Build the final execution payload using `writerExecutionSelection`: ensure provider and model consistency via `consistentProvider` and mark input sources as explicit (packages/models/src/jev-reasoning.ts:64-84).
-6. Build writer fallback slots using `writerFallbackSlots` initialized from defaults `WRITER_FALLBACK_DEFAULTS`: slot 1 defaults to GLM-5.3-Flash, slot 2 defaults to Gemini 3.8 Flash high, and slot 3 defaults to null (off) (packages/models/src/writer-fallbacks.ts:12-36).
+6. Fallback defaults are GLM-5.3 Flash (slot 1), Gemini 3.8 Flash high (slot 2), and off (slot 3) (packages/models/src/writer-fallbacks.ts:12-16). `writerFallbackSlots` reads configured slots and uses the matching default when a provider is unset; malformed configured values turn that slot off (packages/models/src/writer-fallbacks.ts:25-35).
 7. Assemble the fallback sequence using `writerFallbackChain`: deduplicate against the primary writer and append the PM model as the emergency fallback (packages/models/src/writer-fallbacks.ts:44-54).
 8. Apply task rotation via `rotatedWriterSettings`: compute an FNV-1a hash bucket of `taskId` via `rotationBucket`; if below `writer.rotation_share` (default 25%), swap the primary writer with fallback 1 and set `writer.rotated = true` (packages/models/src/writer-fallbacks.ts:62-84).
 
@@ -46,21 +46,21 @@ The task writer is not part of the static role table; it is chosen per task from
 | Profile key | Provider ID | Model | Default effort | Tier | Status | Focus and suitability | Evidence |
 |---|---|---|---|---|---|---|---|
 | `composer` | `acp-cursor` | `composer-2.5` | `medium` | `standard` | Active | Everyday multi-file features and refactors in mainstream stacks | (packages/models/src/model-profiles.ts:25-29) |
-| `grok` | `acp-cursor` | `grok-4.6` | `medium` | `standard` | Active | Multi-file changes adhering to clear plans; long runs without degradation | (packages/models/src/model-profiles.ts:30-34) |
+| `grok` | `acp-cursor` | `grok-4.6` | `medium` | `standard` | Active | Routine features and fixes following a written plan; multi-file work and long well-specified runs | (packages/models/src/model-profiles.ts:31-32) |
 | `gemini-flash` | `opencode2` | `router9/ag/gemini-3.8-flash-high` | `medium` | `standard` | Active | Fast prototyping, UI tweaks, and quick well-described tasks | (packages/models/src/model-profiles.ts:35-39) |
-| `gpt-astra` | `codex` | `gpt-6-astra` | `high` | `strong` | Active | Demanding research-heavy or scientific coding where other models fail | (packages/models/src/model-profiles.ts:40-44) |
+| `gpt-astra` | `codex` | `gpt-6-astra` | `high` | `strong` | Active | The most demanding scientific or research-heavy coding when Sol has failed | (packages/models/src/model-profiles.ts:41-42) |
 | `gpt-sol` | `codex` | `gpt-6.1-sol` | `high` | `strong` | Active | Algorithmic and backend logic, difficult bugs, terminal and build work | (packages/models/src/model-profiles.ts:45-49) |
-| `gpt-terra` | `codex` | `gpt-6.1-terra` | `medium` | `standard` | Active | Moderate features, data analysis, build work, UI changes | (packages/models/src/model-profiles.ts:50-54) |
-| `gpt-luna` | `codex` | `gpt-6-luna` | `high` | `light` | Active | Small mechanical edits, configs, tests, one-file fixes, documentation | (packages/models/src/model-profiles.ts:55-59) |
+| `gpt-terra` | `codex` | `gpt-6.1-terra` | `medium` | `standard` | Active | Well-specified moderate features and fixes, terminal and build work, UI changes, and data analysis | (packages/models/src/model-profiles.ts:51-52) |
+| `gpt-luna` | `codex` | `gpt-6-luna` | `high` | `light` | Active | Small mechanical tasks with clear checks: configs, tests, one-file fixes, scripts, and documentation | (packages/models/src/model-profiles.ts:56-57) |
 | `sonnet` | `claude-code` | `claude-sonnet-5-5` | `medium` | `standard` | Active | Daily features, bug fixes, refactors, documentation, and UI copy | (packages/models/src/model-profiles.ts:60-64) |
 | `fable` | `claude-code` | `claude-fable-5-1` | `high` | `strong` | Active | Long-horizon multi-step features, deep debugging, architecture changes | (packages/models/src/model-profiles.ts:65-69) |
 | `opus` | `claude-code` | `claude-opus-5-5` | `high` | `strong` | Active | High-risk cross-cutting refactors, security-sensitive logic, migrations | (packages/models/src/model-profiles.ts:70-74) |
-| `swe2` | `devin` | `swe-2-high` | `high` | `strong` | Active | Autonomous repository-wide editing, iterations, deep debugging | (packages/models/src/model-profiles.ts:75-79) |
+| `swe2` | `devin` | `swe-2-high` | `high` | `strong` | Active | Hard features, deep debugging, cross-cutting refactors, and tasks other writers failed | (packages/models/src/model-profiles.ts:76-77) |
 | `glm-flash` | `opencode2` | `zai-coding-plan/glm-5.3-flash` | `high` | `light` | Active | Routine agentic coding, scripts, small failure debugging | (packages/models/src/model-profiles.ts:80-84) |
 | `zcode-flash` | `zcode` | `glm-5.3-flash-free` | `high` | `standard` | Active | Bulk mechanical edits, documentation, tests, patterned migrations | (packages/models/src/model-profiles.ts:85-90) |
-| `haiku` | `claude-code` | `claude-haiku-5-5` | `medium` | `light` | Active | Short well-scoped edits, single-file features, copy changes | (packages/models/src/model-profiles.ts:91-95) |
+| `haiku` | `claude-code` | `claude-haiku-5-5` | `medium` | `light` | Active | Short, well-scoped edits with clear checks; not large features or wide repository changes | (packages/models/src/model-profiles.ts:92-93) |
 | `minimax-flash` | `opencode2` | `openlux/MiniMax-M3.1-Flash` | `high` | `light` | Inactive | Pay-per-token via OpenLux; kept out of automatic picks | (packages/models/src/model-profiles.ts:97-100) |
-| `gemini-pro` | `opencode2` | `openrouter/~google/gemini-pro-latest` | `high` | `strong` | Inactive | Excluded due to benchmark and performance evaluation | (packages/models/src/model-profiles.ts:101-104) |
+| `gemini-pro` | `opencode2` | `openrouter/~google/gemini-pro-latest` | `high` | `strong` | Inactive | Owner marks it weak for this work and does not use it | (packages/models/src/model-profiles.ts:102-103) |
 | `gemini-argon` | `acp-antigravity` | `gemini-4-argon` | `high` | `strong` | Inactive | Antigravity subscription model; pending review-based profile | (packages/models/src/model-profiles.ts:105-108) |
 
 ### Failures and compensation
@@ -81,13 +81,14 @@ The task writer is not part of the static role table; it is chosen per task from
 - Fallback chain deduplication: A candidate matching the primary writer or an earlier fallback in `providerId/model` is discarded from the chain (packages/models/src/writer-fallbacks.ts:45-50).
 - Provider and model consistency: `writerExecutionSelection` passes provider and model through `consistentProvider`, preventing mismatch errors (packages/models/src/jev-reasoning.ts:71-73).
 - Stage writer override order: `resolveStageWriterSelection` checks stage provider/model first, then writer profile settings, then prototype config (packages/models/src/stage-writer-selection.ts:15-31).
+- Worker exclusion: keys in `writer.models_off` are omitted from the candidate pick while their writer configuration remains intact; the exclusion is read when candidates are built (packages/models/src/model-profiles.ts:112-120).
 
 ## Public API
 
 | Export | Purpose | Evidence |
 |---|---|---|
 | `WRITER_PROFILES` | Registry of coding models with benchmarks, summaries, and availability | (packages/models/src/model-profiles.ts:24-109) |
-| `writerCandidates` | Filters active profiles by availability and project `writer.models` | (packages/models/src/model-profiles.ts:112-115) |
+| `writerCandidates` | Filters profiles by availability, `writer.models_off`, and optional `writer.models` allowlist | (packages/models/src/model-profiles.ts:112-120) |
 | `resolveJevReasoning` | Reconciles automated Jev reasoning decisions with model capabilities and manual fallbacks | (packages/models/src/jev-reasoning.ts:9-30) |
 | `writerExecutionSelection` | Prepares execution parameters and sources for writer spawns | (packages/models/src/jev-reasoning.ts:64-84) |
 | `writerServiceTier` | Reads `writer.service_tier` and legacy `writer.fast_mode` settings | (packages/models/src/jev-reasoning.ts:40-48) |
