@@ -10,10 +10,10 @@ import { critiquePrompt, parseCritique, shouldRunPlanCritique } from "../../crit
 import { ownerWordsOfRun } from "../owner-words";
 import { binaryOutputs, dropIntendedGaps, findTaskPlaceholderPaths } from "../../critique-coverage";
 import type { CoverageFinding } from "../../critique-coverage";
-import { boundedAgentName } from "../../../contracts/review-vocabulary";
+import { boundedAgentName } from "../../../contracts";
 import { fullAccessSpawn, graphStepMetadata, setAsideOnStartFailure, zcodeBusyPeek } from "../../../platform/server";
 import type { StageHelperSettings } from "../../../platform/server";
-import { QUALITY_MODE_SETTING, applyQualityMode, resolveQualityMode } from "../../../contracts/quality-mode";
+import { QUALITY_MODE_SETTING, applyQualityMode, resolveQualityMode } from "../../../contracts";
 import { helperChildPlacement, recordStage, requireHelperSpawn, requiredPolicyField } from "../../../runs/server";
 import { bestEffort, stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";

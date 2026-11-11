@@ -3,7 +3,7 @@ import { roleSelection, sdkCriticCatalog } from "../../critic-pair";
 import { bbServiceTier, findModelIn, listedServiceTier, resolveStageWriterSelection, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../../tasks";
 import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt, unreadableAnswer } from "../../specialist";
-import { boundedAgentName } from "../../../contracts/review-vocabulary";
+import { boundedAgentName } from "../../../contracts";
 import { fullAccessSpawn, graphStepMetadata, setAsideOnStartFailure, zcodeBusyPeek } from "../../../platform/server";
 import type { StageHelperSettings } from "../../../platform/server";
 import type { PrototypeConfig, TaskV2 } from "../../../contracts";
