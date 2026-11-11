@@ -1,8 +1,8 @@
-import { appetiteStop, breakerKey, runningWriterBudgetStop, tokenUsageFromEvent } from "@lane-pilot/resilience";
+import { appetiteStop, runningWriterBudgetStop, tokenUsageFromEvent } from "@lane-pilot/resilience";
 import type { ServerCore } from "../../contracts/server";
 import type { FinishInput, Services } from "./finish-types";
 import type { AttemptFinished } from "./attempt-finished";
-import { countAttempts, getAttempt, getReasoningTrace, getTaskPlan, getRunSettingsScopes, loadProjectSettings, transitionAttempt } from "../../storage";
+import { countAttempts, getReasoningTrace, getTaskPlan, getRunSettingsScopes, loadProjectSettings, transitionAttempt } from "../../storage";
 import { closeWriterStages } from "../../runs/server";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, sleepUntilThreadSignal, startLimitWaiting, threadFailure, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { setAsideOnStartFailure } from "../../platform/server";

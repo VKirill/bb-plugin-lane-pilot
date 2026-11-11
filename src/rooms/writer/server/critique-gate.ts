@@ -2,7 +2,7 @@ import { barrierInputBody } from "./barrier-input";
 import type { ServerCore } from "../../contracts/server";
 import type { HelperPolicySnapshot } from "../../contracts/helper-context";
 import type { FinishInput, Services } from "./finish-types";
-import { countAttempts, getAttempt, getReasoningTrace, getTask, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../storage";
+import { countAttempts, getAttempt, getReasoningTrace, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../storage";
 import { actionableFindings, advisoryFeedback, buildCandidateEvidence, codeCritiqueSource, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "../../critique";
 import type { WriterIdentity } from "../../critique";
 import { candidatePatches, runCodeCritique } from "../../critique/server";
