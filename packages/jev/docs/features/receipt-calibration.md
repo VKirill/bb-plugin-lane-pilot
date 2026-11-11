@@ -2,7 +2,7 @@
 title: Jev receipts, calibration and monitoring
 type: component
 created: 2026-11-05
-updated: 2026-11-08
+updated: 2026-11-11
 status: active
 confidence: medium
 tags: [jev, receipts, calibration, monitoring]
@@ -36,9 +36,9 @@ The `createJev` runner writes only when a DB exists, mode is not off and the pro
 1. **Receipt insertion**: on non-cached calls where a database is attached and mode is not off, `createJev` inserts a receipt with the redacted state's hash and character count, answer summary, field sizes, and effective thresholds (`packages/jev/src/run.ts:79-122`).
 2. **Sampled input retention**: one in five deterministic input-hash samples retains redacted input JSON, capped at 8 KiB (`INPUT_JSON_CAP`), ensuring model relabelers have input context without storing plain text on all calls (`packages/jev/src/receipts.ts:58-70`).
 3. **Outcome labeling**: escalated workflows or deterministic outcome sweeps attach ground-truth labels using `recordOutcome`, updating `outcome` and `outcome_at` (`packages/jev/src/receipts.ts:86-88`).
-4. **Deterministic outcome sweeps**: `applyOutcomeLabels` grades receipts older than 24 hours for `critique.screen`, `critique.worth`, `lead.predict`, `guard.host_command`, and `errand.failure`, leaving records unlabeled when later truth is absent (`packages/jev/src/labels-outcome.ts:20-30`, `packages/jev/src/labels-outcome.ts:171-185`).
+4. **Deterministic outcome sweeps**: `applyOutcomeLabels` grades receipts older than 24 hours for `critique.screen`, `critique.worth`, `lead.predict`, `guard.host_command`, and `errand.failure`, leaving records unlabeled when later truth is absent (`packages/jev/src/labels-outcome.ts:20-30`, `packages/jev/src/labels-outcome.ts:171-185`). It also clears the legacy `critique.worth` label for `worth-check` subjects before relabeling; see [Judgment receipts](../data-model/receipts.md) for the eligibility rules (`packages/jev/src/labels-outcome.ts:174-185`).
 5. **Accuracy queries**: `judgeAccuracy` queries successful receipts (`status = 'ok'`) with an outcome, calculating `agree / (agree + disagree)` or returning null if never called (`packages/jev/src/labels-outcome.ts:192-200`).
-6. **Sweep registration**: judgment owners register sweep callbacks using `registerOutcomeSweep` (`packages/jev/src/labels-outcome.ts:207-212`), which the nightly label sweep invokes via `outcomeSweepFor`.
+6. **Sweep registration**: judgment owners register sweep callbacks using `registerOutcomeSweep` (`packages/jev/src/labels-outcome.ts:215-218`), which the nightly label sweep invokes via `outcomeSweepFor`.
 
 ### Threshold calibration with `calibrateReceipts`
 
@@ -46,14 +46,14 @@ The `createJev` runner writes only when a DB exists, mode is not off and the pro
 
 1. **Receipt querying**: selects receipts from SQLite since `sinceMs`, reading `judgment, version, model, status, decided_by, outcome, answers_json` (`packages/jev/src/calibrate.ts:91`).
 2. **Cohort grouping**: groups rows by judgment ID and matches them against the registered judgment specifications (`packages/jev/src/calibrate.ts:92-97`).
-3. **Metric calculation**: counts successful calls (`calls`), Jev decisions, escalations, and agree/disagree outcomes (`packages/jev/src/calibrate.ts:98-106`). Parses `answers_json` to compute average answer confidence (`packages/jev/src/calibrate.ts:107-115`).
+3. **Metric calculation**: counts successful calls. The gate sample includes rows Jev decided and successful shadow calls; escalated decisions are counted separately as the border sample, whose labels measure threshold separation and do not determine the gate/dead verdict (`packages/jev/src/calibrate.ts:98-107`). It parses `answers_json` for mean answer confidence (`packages/jev/src/calibrate.ts:108-115`).
 4. **Model binding**: identifies the most frequent answering model via `jevModelBase` among successful calls (`packages/jev/src/calibrate.ts:117-119`).
 5. **Source classification**: classifies outcome labels into `outcome` (later truth), `model` (nightly relabeler), and `escalated` (owner review) via `labelSource` (`packages/jev/src/calibrate.ts:120-125`).
 6. **Verdict assignment**:
    - `"dead"`: zero successful calls, or labeled receipts have accuracy below 50% (`packages/jev/src/calibrate.ts:129-130`).
    - `"gate"`: labeled sample meets `minLabeled` (default 10 via `DEFAULT_MIN_LABELED`) with accuracy at least 75% (`packages/jev/src/calibrate.ts:90`, `packages/jev/src/calibrate.ts:127-131`).
    - `"sort-only"`: labeled sample is below `minLabeled` or accuracy is between 50% and 75% (`packages/jev/src/calibrate.ts:127-132`).
-7. **Fingerprint generation**: attaches `judgmentFingerprint` (`packages/jev/src/calibrate.ts:134`).
+7. **Fingerprint generation**: attaches `judgmentFingerprint` (`packages/jev/src/calibrate.ts:48-50`).
 The `calibrationRecord` helper formats certified thresholds for `--save` (`packages/jev/src/calibrate.ts:144-147`).
 
 ### Drift monitoring with `jevWatch`
@@ -89,7 +89,7 @@ The `calibrationRecord` helper formats certified thresholds for `--save` (`packa
 | Outcome label | Receipt ID and label text | Sets `outcome` and `outcome_at` | `packages/jev/src/receipts.ts:86-88` |
 | Deterministic outcome labeling | Successful, decided, unlabeled receipts older than 24 hours | Counts labels written per supported judgment; unavailable truth stays unlabeled | `packages/jev/src/labels-outcome.ts:20-30`, `packages/jev/src/labels-outcome.ts:171-185` |
 | Per-judgment accuracy | Judgment ID | Labeled count and `agree / (agree + disagree)` across successful receipts, or null if zero calls | `packages/jev/src/labels-outcome.ts:192-200` |
-| Threshold calibration | Receipts since timestamp; minimum 10 labels by default | Gate, sort-only or dead classification and suggested thresholds | `packages/jev/src/calibrate.ts:16-17`, `packages/jev/src/calibrate.ts:42-47`, `packages/jev/src/calibrate.ts:89-147` |
+| Threshold calibration | Receipts since timestamp; minimum 10 Jev-decision or successful-shadow labels by default | Gate, sort-only or dead classification and suggested thresholds; escalated labels are reported separately as border evidence | `packages/jev/src/calibrate.ts:16-17`, `packages/jev/src/calibrate.ts:42-47`, `packages/jev/src/calibrate.ts:89-147` |
 | Autoresearch | At least 30 labeled receipts by default | Grid-search threshold proposals | `packages/jev/src/autoresearch.ts:10-12`, `packages/jev/src/autoresearch.ts:37-62` |
 | Watch | Explicit window and baseline days | Per judgment/project slices and drift findings | `packages/jev/src/watch.ts:17-45`, `packages/jev/src/watch.ts:79-116` |
 | Pruning | Runs on every 100th generated receipt ID | Deletes older than 30 days and rows beyond 50,000 | `packages/jev/src/receipts.ts:55-56`, `packages/jev/src/receipts.ts:72-83`, `packages/jev/src/receipts.ts:90-93` |
@@ -120,7 +120,7 @@ The `calibrationRecord` helper formats certified thresholds for `--save` (`packa
 
 Reader queries for outcome sweeps and reporting provide direct queries without raw SQL: `unlabeledJevReceipts`, `unlabeledSubjectReceipts`, `unlabeledJevSubjectReceipts`, and `unlabeledRunReceipts` query unlabeled receipts (`packages/jev/src/receipts.ts:106-132`); `labeledOutcomes`, `countJudgmentReceipts`, `jevDecisionCounts`, `jevCostStats`, and `jevReceiptDecision` provide metrics (`packages/jev/src/receipts.ts:135-163`); `listPlanFactJevReceipts` and `listJevRebenchReceipts` return comparison subsets (`packages/jev/src/receipts.ts:146-149`, `packages/jev/src/receipts.ts:170-181`); `jevMaturedJudgmentCount` counts mature judgments (`packages/jev/src/receipts.ts:165-168`).
 
-`registerOutcomeSweep` registers judgment sweep callbacks, and `outcomeSweepFor` resolves them (`packages/jev/src/labels-outcome.ts:207-212`).
+`registerOutcomeSweep` registers judgment sweep callbacks, and `outcomeSweepFor` resolves them (`packages/jev/src/labels-outcome.ts:215-218`).
 
 `calibrateReceipts` and `calibrationRecord` build threshold reports (`packages/jev/src/calibrate.ts:89-159`).
 
