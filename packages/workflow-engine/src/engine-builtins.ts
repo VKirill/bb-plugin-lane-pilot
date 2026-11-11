@@ -14,6 +14,9 @@ import type { WorkflowEngine } from "./engine";
 /** A human wait without a node timeout still ends: this is its deadline in seconds (72 h). */
 const HUMAN_WAIT_DEFAULT_SEC = 72 * 3_600;
 
+/** A terminal child result, distinct from a retryable failure to read its journal. */
+class ChildRunError extends Error {}
+
 export function registerBuiltins(engine: WorkflowEngine): void {
   engine.register("builtin:parallel", { reentrant: true, run: async () => ({ output: {} }) });
   // `type:"jev"` outside a runtime that provides Jev (a simulation, a bare engine): the verdict is «escalated to model»,
@@ -79,8 +82,13 @@ export function registerBuiltins(engine: WorkflowEngine): void {
       const child = engine.journal.db.prepare("SELECT id, status FROM lane_pilot_wf_run WHERE parent_run_id=? AND parent_step_key=?").get(step.runId, step.stepKey) as { id: string; status: RunStatus } | undefined;
       if (!child) return { error: "child run not found" };
       if (child.status === "running" || child.status === "waiting") return null;
-      const outcome = childOutcome(engine, summary(engine, child.id), node as Extract<WorkflowNode, { type: "subworkflow" }>);
-      return "wait" in outcome ? null : outcome;
+      try {
+        const outcome = childOutcome(engine, summary(engine, child.id), node as Extract<WorkflowNode, { type: "subworkflow" }>);
+        return "wait" in outcome ? null : outcome;
+      } catch (cause) {
+        if (cause instanceof ChildRunError) return { error: cause.message };
+        throw cause;
+      }
     },
   });
 }
@@ -104,5 +112,5 @@ export function childOutcome(engine: WorkflowEngine, child: RunSummary, node: Ex
       })();
     }
   }
-  throw new Error(`subworkflow ${node.workflow} ${child.status}: ${child.error ?? child.reason ?? ""}`);
+  throw new ChildRunError(`subworkflow ${node.workflow} ${child.status}: ${child.error ?? child.reason ?? ""}`);
 }

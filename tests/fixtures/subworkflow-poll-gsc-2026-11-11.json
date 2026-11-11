@@ -1,0 +1,32 @@
+{
+  "source": "hub workflow_run_snapshot and plugin.log, 2026-11-11; reduced to the subworkflow poll boundary",
+  "parent": {
+    "id": "wfrun_e0e076659cbb4b259d5ae42051738314",
+    "workflowId": "seo-cocoon",
+    "status": "waiting",
+    "tokens": 850256,
+    "costUsd": 1.307872
+  },
+  "step": {
+    "key": "research#1",
+    "nodeId": "research",
+    "state": "waiting",
+    "awaiting": "subworkflow"
+  },
+  "child": {
+    "id": "wfrun_0666cda6c7f34d9b8faaa84ad1266517",
+    "workflowId": "seo-research",
+    "status": "failed",
+    "reason": "agent_blocked:corpus:child",
+    "tokens": 518486,
+    "costUsd": 0.807808
+  },
+  "failure": {
+    "key": "corpus:child#1@c8a842",
+    "nodeId": "corpus:child",
+    "state": "failed",
+    "error": "corpus:child: needs Access to GSC Performance data for vechkasov.ru: a connected BB desktop browser signed in to a Google account with access to the property, or a CSV export of queries and pages for 16 months, or OAuth access to the Search Console API in the credentials catalog from owner",
+    "endedAt": 1794409355435
+  },
+  "usageCharged": true
+}
