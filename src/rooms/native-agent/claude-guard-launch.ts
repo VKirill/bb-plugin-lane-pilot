@@ -177,21 +177,26 @@ export function createClaudeGuardEnv(ctx: { bb: BbPluginApi; db: LanePilotDataba
     const key = `${thread.hostId}\n${role}\n${cwd ?? ""}`;
     const hit = cache.get(key);
     const now = Date.now();
-    if (hit && now - hit.at < CACHE_MS) return hit.env;
-    try {
-      const prepared = await within(CALL_MS, "prepareClaudeGuard", Promise.resolve(ctx.nativeHost.call("prepareClaudeGuard", {
-        role, ...(cwd ? { cwd } : {}),
-      }, { hostId: thread.hostId }))) as { env?: EnvEntry[] };
-      const env = Array.isArray(prepared?.env) ? prepared.env : [];
-      if (!env.some((entry) => entry.name === "BB_CLAUDE_CODE_EXECUTABLE")) throw new Error("prepareClaudeGuard returned no launcher");
+    // The planning home is per project, never cached: two projects can share one checkout path, and a cleared setting must apply at once.
+    const withHome = async (base: EnvEntry[]): Promise<EnvEntry[]> => {
+      const env = [...base];
       // Only a confirmed home travels to the guard (resolvePlanningHome runs the host-side git check);
       // a failure leaves the PM writing in the checkout only, as today.
       if (role === "pm") {
         const home = await pmPlanningHome(ctx, thread, metadata, cwd).catch(() => null);
         if (home) env.push({ name: "LANE_PILOT_PLANNING_HOME", value: home, reason: `Lane Pilot: the PM writes its planning folders under the confirmed planning home` });
       }
-      cache.set(key, { at: now, env });
       return env;
+    };
+    if (hit && now - hit.at < CACHE_MS) return withHome(hit.env);
+    try {
+      const prepared = await within(CALL_MS, "prepareClaudeGuard", Promise.resolve(ctx.nativeHost.call("prepareClaudeGuard", {
+        role, ...(cwd ? { cwd } : {}),
+      }, { hostId: thread.hostId }))) as { env?: EnvEntry[] };
+      const env = Array.isArray(prepared?.env) ? prepared.env : [];
+      if (!env.some((entry) => entry.name === "BB_CLAUDE_CODE_EXECUTABLE")) throw new Error("prepareClaudeGuard returned no launcher");
+      cache.set(key, { at: now, env });
+      return await withHome(env);
     } catch (cause) {
       throw new Error(`claude_guard_failed:${thread.hostId}: ${reasonOf(cause)}`);
     }
