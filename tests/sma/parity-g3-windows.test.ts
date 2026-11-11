@@ -171,7 +171,7 @@ describe("parity g3 window verbs", () => {
     expect((await listClaims(kv as never, PATH))[0]!.globs).toEqual(["app/**"]);
   });
 
-  it("[sma:k_v_release + sma:k_lib_termattempt] release by the holder deletes the claim, prints edits_left, and writes a window evidence record with base, the changed files and the outcome; a release by another thread is refused", async () => {
+  it("[sma:k_v_release] [sma:k_lib_termattempt] release by the holder deletes the claim, prints edits_left, and writes a window evidence record with base, the changed files and the outcome; a release by another thread is refused", async () => {
     const { harness, db, kv } = cli(async (_m, input) => {
       const command = input.command ?? "";
       if (command === "git rev-parse HEAD") return { exitCode: 0, stdout: "ba5e\n", stderr: "" };
