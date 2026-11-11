@@ -204,6 +204,8 @@ with dark(name) as (
   select 'lane_pilot_task_plan' as name where (select count(*) from lane_pilot_task_plan) = 0
   union all
   select 'lane_pilot_task_receipt' as name where (select count(*) from lane_pilot_task_receipt where at >= (select since from lp_morning_30)) = 0
+union all
+  select 'lane_pilot_task_transition' as name where (select count(*) from lane_pilot_task_transition where at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_token_cursor' as name where (select count(*) from lane_pilot_token_cursor where updated_at >= (select since from lp_morning_30)) = 0
   union all
