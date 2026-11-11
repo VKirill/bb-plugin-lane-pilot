@@ -57,6 +57,18 @@ export function createOwnerPresence(ctx: Pick<ServerCore, "bb" | "log">) {
     presence = next;
   }
 
+  let journalLoad: Promise<void> | null = null;
+  // Once, lazily: the first caller (a message or the sweep) reads the stored rows, the others wait for it; a failed read is tried again next time.
+  function loadJournal(): Promise<void> {
+    journalLoad ??= (async () => {
+      const saved = await kv.get(JOURNAL_KV);
+      if (typeof saved === "string" && saved) {
+        try { const rows = JSON.parse(saved) as unknown; if (Array.isArray(rows)) journal = rows.filter((row): row is JournalRow => !!row && typeof row.day === "string" && typeof row.threadId === "string"); } catch { /* a corrupt journal starts empty */ }
+      }
+    })().catch((cause: unknown) => { journalLoad = null; throw cause; });
+    return journalLoad;
+  }
+
   async function note(mark: Presence, extra?: { threadId?: string }) {
     const memory = marksText(presence);
     replace(readPresence([
@@ -67,10 +79,16 @@ export function createOwnerPresence(ctx: Pick<ServerCore, "bb" | "log">) {
       ctx.log(`owner presence save failed: ${cause instanceof Error ? cause.message : String(cause)}`);
     });
     if (extra?.threadId) {
-      journal = journalAppend(journal, { threadId: extra.threadId, providerId: mark.providerId, hostId: mark.hostId, at: mark.at }, Date.now());
-      await kv.set(JOURNAL_KV, JSON.stringify(journal)).catch((cause: unknown) => {
+      try {
+        // The stored journal is read before the first write: a message that beats the startup sweep must not replace ninety days with one row.
+        await loadJournal();
+        const next = journalAppend(journal, { threadId: extra.threadId, providerId: mark.providerId, hostId: mark.hostId, at: mark.at }, Date.now());
+        const added = next.length > 0 && !journal.includes(next[next.length - 1]!);
+        journal = next;
+        if (added) await kv.set(JOURNAL_KV, JSON.stringify(journal));
+      } catch (cause) {
         ctx.log(`owner presence journal save failed: ${cause instanceof Error ? cause.message : String(cause)}`);
-      });
+      }
     }
   }
 
@@ -84,10 +102,7 @@ export function createOwnerPresence(ctx: Pick<ServerCore, "bb" | "log">) {
         { hostId: "bb", text: saved },
       ]));
     }
-    const savedJournal = await kv.get(JOURNAL_KV);
-    if (typeof savedJournal === "string" && savedJournal) {
-      try { const rows = JSON.parse(savedJournal) as unknown; if (Array.isArray(rows)) journal = rows.filter((row): row is JournalRow => !!row && typeof row.day === "string" && typeof row.threadId === "string"); } catch { /* a corrupt journal starts empty */ }
-    }
+    await loadJournal().catch(() => undefined);
     return presence;
   }
 

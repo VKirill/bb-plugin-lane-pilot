@@ -5,6 +5,7 @@ import { spawnTextId } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { bestEffort, outputText, redactKnownDeep } from "@lane-pilot/kit";
 import { stringAt } from "@lane-pilot/kit";
+import { QA_DEFAULT_PORTS } from "../../contracts";
 import { FRONTEND_VERIFY_METHOD } from "../../contracts/review-vocabulary";
 import { qaStateToStatus, settleVerdict, verdictSchema, verdictSummary } from "@lane-pilot/workflow-engine";
 import { checkBrief, renderBrief } from "../../brief";
@@ -71,6 +72,7 @@ export function qaThreadPrompt(input: { url: string; cases: string[]; viewports:
     : `   The browser runs on ${input.qaHostId}, which may not be the machine you run on. If the target is localhost or 127.0.0.1 and your machine (\`bb status\`) is not ${input.qaHostId}, you cannot reach it: bb connect no longer exists, so do not try to share the port and do not guess an address. Mark every case blocked with the reason "no VPN address for the browser machine".`;
   const devServer = input.devServer ? [
     `0. The target is served by a dev server you start: run \`bb terminal create --thread "$BB_THREAD_ID" --title "Dev server" --json -- ${input.devServer}\` from your workspace, keep its terminal id, and wait until the target answers (\`curl -sS -o /dev/null -w "%{http_code}" <url>\`, up to 3 minutes; read \`bb terminal output <id>\` if it does not). When you are done, close it with \`bb terminal close <id>\`, whatever the verdict.`,
+    ...(input.url ? [] : [`   No address was given and nothing answered on the default ports. After starting it, wait up to 30 seconds for one of these addresses to answer with a page (${QA_DEFAULT_PORTS.map((port) => `http://127.0.0.1:${port}/`).join(", ")}) and use that address as the target. If none answers, mark every case blocked with the reason "no app answered after the dev server start".`])
   ] : [];
   const parsed = parseQaCases(input.cases);
   const brief = renderBrief({
@@ -93,7 +95,7 @@ export function qaThreadPrompt(input: { url: string; cases: string[]; viewports:
       ].join("\n"),
     ],
     inputs: [
-      `Target: ${input.url} (environment: ${input.envClass}${input.authorized ? ", side effects authorized" : ", no stateful side effects: do not submit, pay, delete or send"}).`,
+      `Target: ${input.url || "not known yet, see step 0"} (environment: ${input.envClass}${input.authorized ? ", side effects authorized" : ", no stateful side effects: do not submit, pay, delete or send"}).`,
       `Viewports (CSS width): ${input.viewports}.`,
       "Cases:",
       ...parsed.cases.map((item, index) => `${index + 1}. ${item.text}${item.login ? ` (sign in first with the login ${item.login})` : ""}`),

@@ -309,7 +309,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"parity", summary:"Session and terminal parity of one attempt: six lines (hooks, memory, rules, skills, permissions, model) saying whether the BB session and a terminal session got the same layer", usage:"bb lane-pilot parity <attempt-id> [--json]" },
       { name:"passport", summary:"An attempt's passport: provider, model, harness and Lane Pilot versions, the receipts of its stages; --calibration prints the current PM model's calibration badge", usage:"bb lane-pilot passport <attempt-id> | --calibration --project <id>" },
       { name:"manifest", summary:"This build: name, version, its tables", usage:"bb lane-pilot manifest" },
-      { name:"intel", summary:"The code facts of a project: whether the GitNexus index exists, is fresh or lags HEAD, and --refresh re-analyzes it on the project's machine", usage:"bb lane-pilot intel <project-id> [--refresh]" },
+      { name:"intel", summary:"The code facts of a project: whether the GitNexus index exists, is fresh or lags HEAD, and --refresh re-analyzes it on the project's machine", usage:"bb lane-pilot intel <project-id> [--refresh]  (from a thread: its own project only, --refresh from the PM thread only)" },
       { name:"receipt-chain", summary:"A task's stage receipts hashed in order (tip), or verify a tip recorded earlier", usage:"bb lane-pilot receipt-chain <run-id> <task-id> [--verify <tip>]" },
       { name:"preship", summary:"What is open before a release (unfinished tasks, open regressions, deferrals) and the disposition each needs; exit 1 when not clear", usage:"bb lane-pilot preship [--project <id>]" },
       { name:"pr-passport", summary:"A pull request body assembled from a task's receipts", usage:"bb lane-pilot pr-passport <run-id> <task-id>" },
@@ -335,7 +335,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"defer", summary:"Put a mandatory check off: write it in the register with the reason. It is born with no term (only a date in a message of the owner sets one, --owner-msg) and counts as unproven in its project's phase acceptance until closed with evidence", usage:"bb lane-pilot defer <what> --kind drill_scenario|skipped_test|gate|plan_decision --reason \"…\" [--area A] [--project P]" },
       { name:"defer-close", summary:"Close a deferral with the evidence that settles it", usage:"bb lane-pilot defer-close <dfr_id> --evidence <text>" },
       { name:"deferrals", summary:"The register of deferrals: overdue and open, with their terms", usage:"bb lane-pilot deferrals [--project P] [--state open|overdue|closed]" },
-      { name:"owner-presence", summary:"Where the owner typed in a session of his own in the last minutes: Lane Pilot's writers keep off that provider meanwhile", usage:"bb lane-pilot owner-presence" },
+      { name:"owner-presence", summary:"Where the owner typed in a session of his own in the last minutes: Lane Pilot's writers keep off that provider meanwhile", usage:"bb lane-pilot owner-presence [--journal]" },
       { name:"hypothesis", summary:"Ideas to make the system better (from outside or inside) as the settings that carry them, checked on the bench set: two arms, the verdict, adoption through the night policy", usage:"bb lane-pilot hypothesis list|add|test|verdict|revert" },
       { name:"memory-tiers", summary:"The memory's cold tier (notes unused for 90 days, kept out of briefs) and how many of it a PM needed again, plus the PM queries that found nothing (candidates for memory-eval's golden set)", usage:"bb lane-pilot memory-tiers [--project P]" },
       { name:"backlog", summary:"A project's ready todos sorted for issue: issuable in queue order (estimate at most 13, dependencies done), to estimate, to split, blocked; --scan hands the next ones to the PMs now", usage:BACKLOG_USAGE },
@@ -538,6 +538,15 @@ ${ERRANDS_USAGE}` },
         }
         if (command === "manifest") return { exitCode:0, stdout:JSON.stringify(manifest(db), null, 2) };
         if (command === "intel" && args[0]) {
+          // A thread is an agent: it reads and refreshes only its own project, and only a PM thread starts the half-hour indexer; the owner at a terminal is unrestricted.
+          if (invocation?.threadId) {
+            const caller = await orMiss(bb.sdk.threads.get({ threadId: invocation.threadId }), null, isNotFound) as { projectId?: unknown } | null;
+            if (!caller || typeof caller.projectId !== "string" || caller.projectId !== args[0]) return { exitCode:1, stderr:`refused: intel from a thread reaches only that thread's own project (${typeof caller?.projectId === "string" ? caller.projectId : "unknown"}), not ${args[0]}` };
+            if (args.includes("--refresh")) {
+              const metadata = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId: invocation.threadId }), null, isNotFound) as { role?: unknown } | null;
+              if (metadata?.role !== "pm") return { exitCode:1, stderr:`refused: intel --refresh is not for a ${typeof metadata?.role === "string" ? `${metadata.role} thread` : "thread whose role is unknown"}; ask the PM or the owner` };
+            }
+          }
           const config = loadPrototypeConfig(db, args[0]);
           const cwd = config?.writerWorkspacePath ?? config?.pmWorkspacePath;
           if (!config?.hostId || !cwd) return { exitCode:1, stderr:`project ${args[0]} has no checkout bound in Lane Pilot` };
@@ -751,10 +760,9 @@ ${ERRANDS_USAGE}` },
         if (command === "hypothesis") return await runHypothesisCli(services.hypotheses, args);
         if (command === "owner-presence") {
           const now = Date.now(), presence = await services.ownerPresence.sweep();
-          return { exitCode:0, stdout:JSON.stringify({
-            presence: presence.map((row) => ({ ...row, minutesAgo:Math.round((now - row.at) / 60_000), holdsWriters:services.ownerPresence.holds(row.providerId, now) !== null })),
-            journal: services.ownerPresence.journal(),
-          }, null, 2) };
+          // Without --journal the output is main's: the bare array of marks.
+          if (args.includes("--journal")) return { exitCode:0, stdout:JSON.stringify(services.ownerPresence.journal(), null, 2) };
+          return { exitCode:0, stdout:JSON.stringify(presence.map((row) => ({ ...row, minutesAgo:Math.round((now - row.at) / 60_000), holdsWriters:services.ownerPresence.holds(row.providerId, now) !== null })), null, 2) };
         }
         if (command === "task") {
           const { taskId, runId } = timelineArgs(args.filter((arg) => arg !== "--plan"));

@@ -47,6 +47,12 @@ const local = process.argv.includes("--local");
 const flagValue = (name: string): string | undefined => { const at = process.argv.indexOf(name); return at >= 0 ? process.argv[at + 1] : undefined; };
 const flagArgs = args.filter((arg, index, all) => all[index - 1] !== "--save" && all[index - 1] !== "--case" && arg !== "--save" && arg !== "--case");
 // --case <file>: re-score a pinned case; its bytes and rubric balance are checked before any score is printed.
+// A value flag with nothing after it would be silently ignored: refuse it.
+for (const flag of ["--save", "--case"]) {
+  if (process.argv.includes(flag) && (process.argv.indexOf(flag) === process.argv.length - 1 || process.argv[process.argv.indexOf(flag) + 1]!.startsWith("--"))) {
+    console.error(`${flag} needs a file\nusage: npx tsx scripts/lp-design-eval.ts <url> [<url-b>] [--json] [--save <case-file>] [--case <case-file>]`); process.exit(1);
+  }
+}
 const caseFile = flagValue("--case");
 if (caseFile) {
   const result = readDesignCase(readFileSync(caseFile, "utf8"));

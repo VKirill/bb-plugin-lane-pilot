@@ -43,7 +43,7 @@ export const desktopHostMethods = {
       requestedHostId: z.string().min(1),
     }).strict(),
     output: z.object({
-      hostId: z.string(), url: z.string().nullable(),
+      hostId: z.string(), urls: z.array(z.string()),
     }).strict(),
   },
   probeBrowserQaTarget: {

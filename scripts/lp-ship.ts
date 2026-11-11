@@ -155,8 +155,8 @@ function publishable(args: string[] = []): number {
   if (!read("CHANGELOG.md").includes(`## ${pkg.version}`)) findings.push(`CHANGELOG.md has no «## ${pkg.version}» entry`);
   if (git("status", "--porcelain", "--untracked-files=no")) findings.push("the tree has uncommitted changes");
   if (!existsSync(join(ROOT, "LICENSE"))) findings.push("no LICENSE");
-  // The same scan the test run is red on (SMA m_tl_rebrand_wired): a leak fails the publish too.
-  for (const hit of leakFindings(ROOT)) findings.push(`leak scan: ${hit}`);
+  // The same scan the test run is red on (SMA m_tl_rebrand_wired): the gate's strict form fails on a leak too; plain stays main's.
+  if (strict) for (const hit of leakFindings(ROOT)) findings.push(`leak scan: ${hit}`);
   try { execFileSync("npx", ["tsx", "scripts/generate-atlas.ts", "--check"], { cwd: ROOT, stdio: "pipe" }); } catch { findings.push("the atlas is stale: npx tsx scripts/generate-atlas.ts"); }
   // Entry files and their builds: the package is publishable only when bb.server/bb.host/bb.app exist, dist/ holds their
   // builds and every dist/*.meta.json agrees with package.json (SMA k_lib_pkgcheck).

@@ -45,15 +45,17 @@ export function presenceHold(providerId: string, presence: readonly Presence[], 
 /** The terminal journal (SMA m_sp_tjournal): one row per owner's own thread per day — ids and day only, never text. */
 export type JournalRow = { day: string; threadId: string; providerId: string; hostId: string };
 export const JOURNAL_KEEP_DAYS = 90;
+/** Besides the ninety days, at most this many rows are kept (the oldest go first). */
+export const JOURNAL_MAX_ROWS = 2000;
 const dayKey = (at: number) => new Date(at).toISOString().slice(0, 10);
 
-/** The journal after one mark: same thread same day counts once; rows over ninety days old are dropped. */
+/** The journal after one mark: same thread same day counts once; rows over ninety days old are dropped; at most 2000 rows. */
 export function journalAppend(rows: readonly JournalRow[], mark: { threadId: string; providerId: string; hostId: string; at: number }, now: number): JournalRow[] {
   const day = dayKey(mark.at);
   const keep = dayKey(now - (JOURNAL_KEEP_DAYS - 1) * 86_400_000);
   const kept = rows.filter((row) => row.day >= keep);
   if (day < keep || kept.some((row) => row.threadId === mark.threadId && row.day === day)) return kept;
-  return [...kept, { day, threadId: mark.threadId, providerId: mark.providerId, hostId: mark.hostId }];
+  return [...kept, { day, threadId: mark.threadId, providerId: mark.providerId, hostId: mark.hostId }].slice(-JOURNAL_MAX_ROWS);
 }
 
 /** The report's last number (SMA m_sp_tjournal_report): on how many of the window's days the owner worked in his own threads. */

@@ -157,21 +157,24 @@ export function createQaStages(ctx: ServerCore) {
       return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
     }
     if (!args.url) {
-      // Find the app (SMA k_wqa_find): no address given — the QA host's default dev ports are scanned; dev_server,
-      // when set, is started and the ports rescanned once.
-      const scan = () => bestEffort(ctx.log, `browser qa target scan ${qaTarget.hostId}`, host.call("findBrowserQaTarget", { requestedHostId:qaTarget.hostId }, { hostId:qaTarget.hostId, timeoutMs:30_000 }), null);
-      let found = (await scan())?.url ?? null;
-      if (!found && args.devServer) {
-        await bestEffort(ctx.log, `browser qa dev server ${qaTarget.hostId}`, host.call("runCommand", { requestedHostId:qaTarget.hostId, command:`nohup ${args.devServer} >/tmp/lp-browser-qa-devserver.log 2>&1 &`, cwd:qaTarget.workspacePath ?? "/", timeoutSec:15 }, { hostId:qaTarget.hostId, timeoutMs:20_000 }), null);
-        found = (await scan())?.url ?? null;
+      // Find the app (SMA k_wqa_find): no address given, so the QA host's default dev ports are scanned. The hub never starts a
+      // server: with nothing running and a devServer given, the check thread starts it in its own terminal and finds the port.
+      const found = (await bestEffort(ctx.log, `browser qa target scan ${qaTarget.hostId}`, host.call("findBrowserQaTarget", { requestedHostId:qaTarget.hostId }, { hostId:qaTarget.hostId, timeoutMs:30_000 }), null))?.urls ?? [];
+      if (found.length > 1) {
+        const reason = `browser_qa_ambiguous_app:${found.join(" ")} all answer; pass url to say which one to check`;
+        recordStage(db,{...base,state:"blocked",reason});
+        return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
       }
-      if (!found) {
+      if (found.length === 1) {
+        // The app is already up: the check thread must not start a second copy.
+        args = {...args, url:found[0]!};
+        delete args.devServer;
+        base.input = JSON.stringify({...requestInput, url:found[0]});
+      } else if (!(args.devServer && threadQa)) {
         const reason = `browser_qa_no_app_found:nothing answered on 127.0.0.1 ports ${QA_DEFAULT_PORTS.join(",")}`;
         recordStage(db,{...base,state:"blocked",reason});
         return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
       }
-      args = {...args, url:found};
-      base.input = JSON.stringify({...requestInput, url:found});
     }
     if (provider === "codex" && !threadQa) {
       try {
@@ -248,7 +251,7 @@ export function createQaStages(ctx: ServerCore) {
             result:{...targetSnapshot,spawnAttempted:true,threadId,link:`@thread:${threadId}`,deadline,timeoutSec,...(logins.length ? { logins } : {})}}),
         });
         const state = verdict.verdict;
-        const snapshot = { ...targetSnapshot, url:args.url, backend:"bb-browser", agent, ...verdict };
+        const snapshot = { ...targetSnapshot, url:args.url || null, backend:"bb-browser", agent, ...verdict };
         const reason = state === "passed" ? undefined : verdict.summary || undefined;
         recordStage(db,{...dispatchedBase,state,result:snapshot,...(reason ? {reason} : {})});
         return {runId:args.runId,taskId:args.taskId,state,link:verdict.link,stage:listStageReceipts(db,args.runId,args.taskId).find((row) => row.stageId === "browser-qa"),result:snapshot,reason};
