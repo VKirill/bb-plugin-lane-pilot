@@ -173,23 +173,23 @@ describe("the check against an owner item", () => {
     return { api, corePath, ownerRow, db };
   }
 
-  it("red -> green -> red: the owner row closes on green and reopens on the next red", () => {
+  it("red -> green -> red: the owner row closes on green and reopens on the next red", async () => {
     const { api, corePath, ownerRow } = rig([{ id: "w", role: "writer", policy: null }]);
-    api.check(NOW, corePath);
+    await api.check(NOW, corePath);
     expect(ownerRow()?.state).toBe("open");
     expect(ownerRow()?.why).toContain("writer");
 
     coreDbReuse(corePath, [{ id: "w2", role: "writer", policy: writerPolicy() }]);
-    api.check(NOW + HOUR, corePath);
+    await api.check(NOW + HOUR, corePath);
     expect(ownerRow()?.state).toBe("closed");
 
     coreDbReuse(corePath, [{ id: "w3", role: "writer", policy: null }]);
-    api.check(NOW + 2 * HOUR, corePath);
+    await api.check(NOW + 2 * HOUR, corePath);
     expect(ownerRow()?.state).toBe("open");
     expect(ownerRow()?.why).toContain("writer");
   });
 
-  it("reads the core base from another process: the -shm file its holder has mapped keeps its size, and the holder writes on", () => {
+  it("reads the core base from another process: the -shm file its holder has mapped keeps its size, and the holder writes on", async () => {
     // The hub died of SIGBUS once a day, 2026-11-07…11: the check opened bb.db with a second SQLite copy inside BB's
     // process, which truncated the -shm file BB had mapped and dropped BB's locks on close.
     const { api, corePath } = rig([{ id: "w", role: "writer", policy: writerPolicy() }]);
@@ -202,7 +202,7 @@ describe("the check against an owner item", () => {
     holder.pragma("wal_checkpoint(TRUNCATE)");
     fill.run("x");
     const mapped = statSync(`${corePath}-shm`).size;
-    const report = api.check(NOW, corePath);
+    const report = await api.check(NOW, corePath);
     expect(report.unverified ?? null).toBeNull();
     expect(report.threads).toBe(1);
     expect(statSync(`${corePath}-shm`).size).toBe(mapped);
@@ -210,9 +210,9 @@ describe("the check against an owner item", () => {
     holder.close();
   });
 
-  it("an unreadable core base is «не проверено»: report saved, no owner item", () => {
+  it("an unreadable core base is «не проверено»: report saved, no owner item", async () => {
     const { api, ownerRow, db } = rig([]);
-    const report = api.check(NOW, join(tmpdir(), "lp-profile-check-no-such-dir", "bb.db"));
+    const report = await api.check(NOW, join(tmpdir(), "lp-profile-check-no-such-dir", "bb.db"));
     expect(report.unverified).not.toBeNull();
     expect(report.red).toEqual([]);
     expect(ownerRow()).toBeUndefined();

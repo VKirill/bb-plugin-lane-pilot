@@ -1,15 +1,17 @@
-import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { spawnAsync } from "@lane-pilot/kit";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { closeOwnerItem, postOwnerItem } from "../../owner-waiting";
 import {
   PROFILE_CHECK_WINDOW_MS,
   buildProfileReport,
-  helperThreads,
+  helperThreadsVia,
   profileCheckMorningLine,
   saveProfileCheck,
+  type CoreRead,
+  type HelperThreadRow,
   type ProfileReport,
 } from "../profile-check";
 
@@ -38,25 +40,26 @@ try {
 } catch (error) { out = { error: String((error && error.message) || error) }; }
 process.stdout.write(JSON.stringify(out));`;
 
-export function coreReader(file: string) {
-  const read = (method: "all" | "get", sql: string, params: unknown[]): unknown => {
-    const out = JSON.parse(execFileSync(process.execPath, ["-e", CORE_READER, file, method, sql, JSON.stringify(params)], { encoding: "utf8", timeout: 120_000, maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] })) as { rows?: unknown; error?: string };
+export function coreRead(file: string): CoreRead {
+  return async (method, sql, params) => {
+    const run = await spawnAsync(process.execPath, ["-e", CORE_READER, file, method, sql, JSON.stringify(params)], { timeout: 120_000, maxBuffer: 64 * 1024 * 1024 });
+    if (run.error || run.status !== 0) throw new Error(run.error?.message ?? `the reader of the core base exited ${run.status}: ${run.stderr.slice(-300)}`);
+    const out = JSON.parse(run.stdout) as { rows?: unknown; error?: string };
     if (out.error) throw new Error(out.error);
     return out.rows ?? undefined;
   };
-  return { prepare: (sql: string) => ({ all: (...params: unknown[]) => read("all", sql, params), get: (...params: unknown[]) => read("get", sql, params) }) };
 }
 
 export function createProfileCheck(ctx: ServerCore) {
   const { db, bb } = ctx;
 
   /** The report with the red list; `corePath` is injectable so the test needs no hub. */
-  function check(now: number = Date.now(), corePath: string = PROFILE_CHECK_CORE_DB): ProfileReport {
+  async function check(now: number = Date.now(), corePath: string = PROFILE_CHECK_CORE_DB): Promise<ProfileReport> {
     const since = now - PROFILE_CHECK_WINDOW_MS;
-    let threads: ReturnType<typeof helperThreads>;
+    let threads: HelperThreadRow[];
     let coreMissing: string | null = null;
     try {
-      threads = helperThreads(coreReader(corePath) as never, since);
+      threads = await helperThreadsVia(coreRead(corePath), since);
     } catch (cause) {
       threads = [];
       // A base the check cannot read makes the day unknown, not red (plugin off the DB machine, file missing):
@@ -99,6 +102,6 @@ export function mountProfileCheck(ctx: ServerCore, api: ProfileCheckApi): void {
   // 04:52, after the night repairs (03:25) and before the 09:00 report: the day knows its loss by breakfast.
   scheduleIsolated(ctx.bb, PROFILE_CHECK_SCHEDULE, "52 4 * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
-    await Promise.resolve().then(() => api.check()).catch((cause: unknown) => ctx.log(`profile-check failed: ${cause instanceof Error ? cause.message : String(cause)}`));
+    await api.check().catch((cause: unknown) => ctx.log(`profile-check failed: ${cause instanceof Error ? cause.message : String(cause)}`));
   }, { timeoutMs: 10 * 60_000 });
 }

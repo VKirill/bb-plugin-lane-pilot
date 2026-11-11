@@ -48,9 +48,10 @@ export type ProfileReport = {
 
 /** The unit of `threads.created_at`: milliseconds on the current hub, seconds in older rows. Read once, so the window
  * compares the raw column (no CASE on it) — the same unit question lp-graph-coverage.sql answers inside the query. */
+const LATEST_CREATED_AT_SQL = "SELECT MAX(created_at) AS at FROM threads";
+const unitOf = (row: { at: number | null } | undefined): number => row?.at !== null && row?.at !== undefined && row.at > 100000000000 ? 1 : 1000;
 function createdAtUnit(coreDb: Db): number {
-  const row = coreDb.prepare("SELECT MAX(created_at) AS at FROM threads").get() as { at: number | null } | undefined;
-  return row?.at !== null && row?.at !== undefined && row.at > 100000000000 ? 1 : 1000;
+  return unitOf(coreDb.prepare(LATEST_CREATED_AT_SQL).get() as { at: number | null } | undefined);
 }
 
 /**
@@ -59,8 +60,7 @@ function createdAtUnit(coreDb: Db): number {
  * in the column's own unit; probes (`helperProbe`) and bench lanes (`lanePilotBench`) are out by marker, not by name —
  * a real writer without a policy stays in. Capped: more than HELPER_THREAD_CAP helpers a day is a finding of its own.
  */
-export function helperThreads(coreDb: Db, since: number): HelperThreadRow[] {
-  return coreDb.prepare(`SELECT m.thread_id AS threadId, json_extract(m.metadata_json, '$.role') AS role,
+const HELPER_THREADS_SQL = `SELECT m.thread_id AS threadId, json_extract(m.metadata_json, '$.role') AS role,
       (SELECT p.metadata_json FROM thread_plugin_metadata p WHERE p.thread_id = m.thread_id AND p.plugin_id = '__vk.required-session-policy') AS policyJson
     FROM thread_plugin_metadata m JOIN threads t ON t.id = m.thread_id
     WHERE m.plugin_id = 'lane-pilot'
@@ -69,7 +69,18 @@ export function helperThreads(coreDb: Db, since: number): HelperThreadRow[] {
       AND json_extract(m.metadata_json, '$.role') IS NOT NULL
       AND json_extract(m.metadata_json, '$.helperProbe') IS NOT 1
       AND json_extract(m.metadata_json, '$.lanePilotBench') IS NOT 1
-    LIMIT ${HELPER_THREAD_CAP}`).all(Math.floor(since / createdAtUnit(coreDb))) as HelperThreadRow[];
+    LIMIT ${HELPER_THREAD_CAP}`;
+export function helperThreads(coreDb: Db, since: number): HelperThreadRow[] {
+  return coreDb.prepare(HELPER_THREADS_SQL).all(Math.floor(since / createdAtUnit(coreDb))) as HelperThreadRow[];
+}
+
+/** One read-only query of the core base, answered somewhere else (the server asks a child process: see server/profile-check.ts). */
+export type CoreRead = (method: "all" | "get", sql: string, params: unknown[]) => Promise<unknown>;
+
+/** `helperThreads` through an asynchronous door: the same two queries, one at a time. */
+export async function helperThreadsVia(read: CoreRead, since: number): Promise<HelperThreadRow[]> {
+  const unit = unitOf(await read("get", LATEST_CREATED_AT_SQL, []) as { at: number | null } | undefined);
+  return await read("all", HELPER_THREADS_SQL, [Math.floor(since / unit)]) as HelperThreadRow[];
 }
 
 /** The names of one group the stored policy allows; a group the policy does not carry allows nothing (fail closed on reading). */
