@@ -39,7 +39,7 @@ async function phaseOnRun(phases: Awaited<ReturnType<typeof host>>["phases"], db
 }
 
 describe("plan as a nested batch [sma:p4_nested_batch]", () => {
-  it("closes every still-open phase bound to a run when that run closes, naming the run", async () => {
+  it("closes a phase executing its plan in a run when a person closes that run, naming the run", async () => {
     const { db, phases, sent } = await host();
     createRun(db, "run1", "projA");
     const phaseId = await phaseOnRun(phases, db, "run1");
@@ -74,6 +74,24 @@ describe("plan as a nested batch [sma:p4_nested_batch]", () => {
     await phases.tick();
     expect(getPhase(db, bound)!.state).toBe("closed");
     expect(getPhase(db, other)!.state).not.toBe("closed");
+  });
+
+  it("the hub's own cleaning of an idle run (sweep, ttl) ends nobody's plan, and a paused phase or one not in execution is left to its owner", async () => {
+    const { db, phases } = await host();
+    for (const run of ["run1", "run2", "run3", "run4"]) createRun(db, run, "projA");
+    const swept = await phaseOnRun(phases, db, "run1");
+    const expired = await phaseOnRun(phases, db, "run2");
+    const paused = await phaseOnRun(phases, db, "run3");
+    savePhase(db, paused, { state: "paused", at: 3 });
+    const planning = await phaseOnRun(phases, db, "run4");
+    savePhase(db, planning, { stage: "planning", at: 3 });
+    closeRun(db, "run1", "sweep");
+    closeRun(db, "run2", "ttl");
+    closeRun(db, "run3", "cli");
+    closeRun(db, "run4", "cli");
+    await phases.tick();
+    for (const id of [swept, expired, paused, planning]) expect(getPhase(db, id)!.state, id).not.toBe("closed");
+    expect(getPhase(db, paused)!.state).toBe("paused");
   });
 
   it("never reopens a phase the batch close ended", async () => {
