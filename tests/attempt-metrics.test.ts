@@ -2,6 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { attemptMetrics, renderAttemptMetrics } from "../src/rooms/usage/server/attempt-metrics";
 import { createRun, openDatabase } from "../src/rooms/plugin-db";
+import { rpcKnowledge } from "../src/rooms/contracts/rpc-knowledge";
 
 const NOW = 10 * 86_400_000;
 
@@ -37,6 +38,9 @@ describe("lp_attempt_metrics", () => {
     w.gate("codex-task", "owns-paths", "passed", at + 2000); w.gate("codex-task", "accept", "rejected", at + 3000);
 
     const report = attemptMetrics(w.db as never, { projectId:"proj", days:7, now:NOW });
+    // The handler returns the report as it is: fields the contract does not know fail the whole answer (the hub, 2026-11-10:
+    // «rpc output validation failed (summary: Unrecognized keys: "queueWait", "firstByTier", …)»).
+    expect(rpcKnowledge.lp_attempt_metrics.output.safeParse(report).error?.message).toBeUndefined();
     const codex = report.attempts.find((row) => row.taskId === "codex-task")!;
     const cursor = report.attempts.find((row) => row.taskId === "cursor-task")!;
 
