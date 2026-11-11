@@ -57,6 +57,7 @@ import { waitForDependencies } from "./start-wait-dependencies";
 import { waitForSecrets } from "./start-wait-secrets";
 import { waitForRegressionQuarantine } from "./start-wait-quarantine";
 import { waitForOverlappingTasks } from "./start-wait-overlap";
+import { bindLiveBackup, dropLiveWriterKey, liveBackupKey, rollbackLive } from "./start-live-folder";
 import { sameArea } from "./start-area";
 
 import type { AttemptState } from "../../contracts/state-machine";
@@ -164,36 +165,6 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
       providerId:existingTrace.providerId, model:existingTrace.model,
       reasoningLevel:existingTrace.effectiveReasoningLevel, serviceTier:existingTrace.serviceTier,
       selectionSource:existingTrace.selectionSource,
-    };
-    const dropLiveWriterKey = () => {
-      if (!state.holdsLiveWriter) return;
-      state.holdsLiveWriter = false;
-      admitted.delete(key);
-      services.activeWriterTasks.delete(key);
-    };
-    /** The backup an attempt works under, kept so an attempt resumed later (the PM's answer, a reload) finds it. */
-    const liveBackupKey = (forAttemptId:string) => `live-backup:${forAttemptId}`;
-    const bindLiveBackup = async ():Promise<void> => {
-      if (state.liveBackupId) await bestEffort(ctx.log, "writer live backup bind", bb.storage.kv.set(liveBackupKey(state.attemptId), state.liveBackupId as never), undefined);
-    };
-    /** Puts the owned files back after a failed attempt and takes out what the writer created there; once per backup. */
-    const rollbackLive = async ():Promise<void> => {
-      const backupId = state.liveBackupId;
-      if (!backupId) return;
-      // A writer's question is a pause, not a rejection: its answer continues the same attempt on the files as it left them.
-      if (failureClass(String(state.last.status), typeof state.last.reason === "string" ? state.last.reason : null) === "judgment") return;
-      state.liveBackupId = null;
-      const folder = taskBasePath(db, input.runId, input.taskId) ?? input.task.project_cwd;
-      const rolled = await services.restoreLiveFolder({ hostId:input.config.hostId, folder, backupId, task:state.freshTask })
-        .catch((cause:unknown) => ({ ok:false as const, reason:cause instanceof Error ? cause.message : String(cause) }));
-      if (rolled.ok && !rolled.failed.length) {
-        ctx.log(`writer ${input.taskId}: rolled back ${backupId}: ${rolled.restored.length} restored, ${rolled.removed.length} removed`);
-        return;
-      }
-      const why = rolled.ok ? `could not put back ${rolled.failed.join("; ")}` : rolled.reason;
-      ctx.log(`writer ${input.taskId}: rollback of ${backupId} incomplete: ${why}`);
-      if (input.pmThreadId) void bestEffort(ctx.log, "writer rollback notice", bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[],
-        text:`Lane Pilot: task ${input.taskId} was not accepted and its files in ${folder} could not be put back automatically (${why.slice(0, 600)}). The originals are in ~/.lane-pilot/live-backups/${backupId}/files on the folder's machine; tell the owner before another task runs there.` }] } as never), undefined);
     };
     /** Gives up the threads of this task's failed attempts: provider-retry's queued retries in them are cancelled (I2). */
     const releaseFailedThreads = async () => {
@@ -747,7 +718,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
             state.last = { status:spawned.status, reason:spawned.reason, attemptId:spawned.attemptId };
           } else {
             state.writerThreadId = spawned.threadId;
-            if (state.liveFolder) { state.liveBackupId = state.attemptId; await bindLiveBackup(); }
+            if (state.liveFolder) { state.liveBackupId = state.attemptId; await bindLiveBackup(deps, state); }
             state.writerSelection=spawned.providerId&&spawned.model?{
               providerId:spawned.providerId,model:spawned.model,
               reasoningLevel:spawned.reasoningLevel,serviceTier:spawned.serviceTier,selectionSource:spawned.selectionSource,
@@ -777,7 +748,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
           // The question is already on the attempt. Drop the live-writer key before the awaits below (token
           // events, retry lookup, worktree remove): while it stayed until finally, the question sweep skipped
           // this task for the whole wait.
-          if (failureClass(String(state.last.status), typeof state.last.reason === "string" ? state.last.reason : null) === "judgment") dropLiveWriterKey();
+          if (failureClass(String(state.last.status), typeof state.last.reason === "string" ? state.last.reason : null) === "judgment") dropLiveWriterKey(deps, state);
           await noteAttemptOutcome({ budget: state.budget, writerThreadId: state.writerThreadId, writerSelection: state.writerSelection, status:String(state.last.status), reason:typeof state.last.reason === "string" ? state.last.reason : null });
           noteOwnFailure(state, state.last);
         }
@@ -821,7 +792,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
         // A failed attempt's own worktree is never merged; the next attempt starts from a fresh one.
         const removeFailedWorktree = () => removeWorktreeOf(failedBinding);
         // The worktree waits: the next attempt removes it when it starts, and a fallback writer may continue in it (below).
-        if (!redo) { state.unremovedWorktree = failedBinding; await rollbackLive(); }
+        if (!redo) { state.unremovedWorktree = failedBinding; await rollbackLive(deps, state, input); }
         if (state.last.status === "spawn_rejected" && typeof state.last.reason === "string"
           && (state.last.reason.startsWith("execution_packet_failed:") || state.last.reason.startsWith("attempt_worktree_")
             || state.last.reason.startsWith("attempt_workspace_"))) {
@@ -1025,10 +996,10 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
         state.executionPacketSha256 = null;
         if (redo && !await continueWith(redo, redo.kind, previousAttemptBrief(await trimCheckLogsIn(jev(), { ...failedLast, produced:[] }, state.freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:state.runSettings }, ctx.log), state.freshTask, failedBinding?.dirt_before ?? [], state.liveFolder), failedBinding?.dirt_before)) {
           await removeFailedWorktree();
-          await rollbackLive();
+          await rollbackLive(deps, state, input);
         }
         state.inSession = Boolean(redo && state.writerThreadId);
-        if (state.inSession) await bindLiveBackup();
+        if (state.inSession) await bindLiveBackup(deps, state);
       }
       // No attempt was left for this start: end the queued attempt instead of leaving it queued with failed stages.
       if (state.attemptsHere === 0 && getAttempt(db, state.attemptId)?.state === "queued") {
@@ -1113,7 +1084,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
             ctx.log(`writer ${input.taskId}: ${retryBudgetReason(input.taskId, fallbackSpent.record)}`);
             break;
           }
-          await rollbackLive();
+          await rollbackLive(deps, state, input);
           // The task moves to another writer: a retry BB's provider-retry queued in a failed thread must not wake it later.
           await releaseFailedThreads();
           const emergencySelection={providerId:fallback.providerId,model:fallback.model};
@@ -1158,7 +1129,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
               // The fallback owns the continued worktree now; the next fallback, if this one fails, continues from here.
               if (continuation) state.unremovedWorktree=undefined;
               continueFrom=getAttempt(db,emergencyAttemptId);
-              if (state.liveFolder) { state.liveBackupId=emergencyAttemptId; await bindLiveBackup(); }
+              if (state.liveFolder) { state.liveBackupId=emergencyAttemptId; await bindLiveBackup(deps, state); }
               state.writerSelection=spawned.providerId&&spawned.model?{
               providerId:spawned.providerId,model:spawned.model,
               reasoningLevel:spawned.reasoningLevel,serviceTier:spawned.serviceTier,selectionSource:spawned.selectionSource,
@@ -1177,7 +1148,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
                 attemptId:emergencyAttemptId,pmThreadId:input.pmThreadId,writerThreadId: state.writerThreadId,dirtBefore: state.dirtBefore,
                 emergencyFallback,releaseSlot:()=>{ state.releaseWriterSlot?.(); state.releaseWriterSlot=undefined; },
               }),emergencyFallback:{state:"completed",...emergencyFallback,attemptId:emergencyAttemptId}};
-              if (failureClass(String(state.last.status), typeof state.last.reason === "string" ? state.last.reason : null) === "judgment") dropLiveWriterKey();
+              if (failureClass(String(state.last.status), typeof state.last.reason === "string" ? state.last.reason : null) === "judgment") dropLiveWriterKey(deps, state);
               const workspaceBinding=getAttempt(db,emergencyAttemptId);
               if(workspaceBinding?.workspace_path) state.last={...state.last,workspace:{path:workspaceBinding.workspace_path,
                 environmentId:workspaceBinding.environment_id,decision:workspaceBinding.workspace_decision,
@@ -1210,7 +1181,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
       const questionWorktree = asked && state.unremovedWorktree?.id === (typeof state.last.attemptId === "string" ? state.last.attemptId : state.attemptId);
       if (state.unremovedWorktree && !questionWorktree) await removeWorktreeOf(state.unremovedWorktree);
       // Whatever the writers left in a folder without git is taken back when no attempt was accepted.
-      if (state.last.status !== "accepted") await rollbackLive();
+      if (state.last.status !== "accepted") await rollbackLive(deps, state, input);
       // The task is over for these writers (a writer's question keeps its thread: its answer goes on there).
       if (state.last.status !== "accepted" && failureClass(String(state.last.status), typeof state.last.reason === "string" ? state.last.reason : null) !== "judgment") await releaseFailedThreads();
       // The writer's turns on this task (its first answer and every feedback turn), kept in the stage receipt.
@@ -1339,7 +1310,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
       }
     }).finally(() => {
       state.releaseWriterSlot?.();
-      dropLiveWriterKey();
+      dropLiveWriterKey(deps, state);
     });
   }
 
