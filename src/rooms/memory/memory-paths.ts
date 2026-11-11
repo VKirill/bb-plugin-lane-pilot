@@ -54,11 +54,11 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
     ] },
   { id: "writer.turn", consumer: "the turn that gives a continuing writer thread its next task (stickyTurnPrompt)", carries: ["rule"], alwaysOn: ["rule"], status: "probed",
     sites: [
-      { file: "src/rooms/writer/server/start.ts", primitive: "stickyTurnPromptWithRules", count: 1 },
+      { file: "src/rooms/writer/server/start-writer-task.ts", primitive: "stickyTurnPromptWithRules", count: 1 },
       { file: "src/rooms/writer/server/writer-knowledge.ts", primitive: "writerRules", count: 1 },
     ] },
   { id: "writer.repair", consumer: "the code-critique repair round (the dispatch context of the first brief, kept in the attempt trace)", carries: ["note", "core", "rule"], alwaysOn: ["core", "rule"], status: "probed",
-    sites: [{ file: "src/rooms/writer/server/finish.ts", primitive: "writerContextBlocks", count: 1 }] },
+    sites: [{ file: "src/rooms/writer/server/critique-gate.ts", primitive: "writerContextBlocks", count: 1 }] },
   { id: "pm.start", consumer: "a PM's first prompt (activation)", carries: ["rule"], alwaysOn: ["rule"], status: "probed", live: "pm-prompt",
     sites: [
       { file: "src/rooms/native-agent/server/activation.ts", primitive: "pmRulesPromptBlock", count: 1 },

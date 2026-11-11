@@ -133,7 +133,7 @@ PARALLEL3_SKIP = [f"src/rooms/{room}/**" for room in ("phase", "council", "cockp
                   "forecast", "coverage", "docs", "backlog", "anamnesis", "twins", "outbound", "owner-presence", "memory-eval", "design-eval", "deferral", "checkers")]
 SCENARIO_CODE = {
     "episodes": ["src/rooms/errands/**", "src/rooms/qa/server/errand*", "src/rooms/workflow/server/workflow.ts", "packages/harness-core/src/trajectory.ts"],
-    "helper_providers": ["src/rooms/native-agent/**", "src/rooms/runs/server/run-routing*", "src/rooms/stability/server/probes.ts", "src/rooms/tools/server/cli.ts",
+    "helper_providers": ["src/rooms/native-agent/**", "src/rooms/runs/server/run-routing*", "src/rooms/stability/server/probes.ts", "src/rooms/tools/server/cli*",
                          "src/rooms/critique/pm-read.ts", "packages/thread-observe/**"],
     "memory_paths": ["src/rooms/memory/**", "src/rooms/memory-probe/**", "src/rooms/memory-tiers/**", "packages/memory-core/**", "src/rooms/native-agent/**",
                      "src/rooms/writer/server/writer-task.ts", "src/rooms/writer/server/writer-knowledge.ts", "src/rooms/critique/**", "src/rooms/council/server/**"],
