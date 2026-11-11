@@ -180,8 +180,7 @@
     {
       "from": "synth",
       "to": "done",
-      "pass": "artifact",
-      "when": "synth.open.length == 0"
+      "pass": "artifact"
     }
   ],
   "test": {
@@ -215,7 +214,7 @@
       "expect_path": [
         "walk",
         "synth",
-        "done"
+        "open"
       ],
       "expect_outputs": [
         "status == 'open'",

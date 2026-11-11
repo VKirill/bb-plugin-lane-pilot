@@ -435,7 +435,11 @@
           "merged_commits": [
             "m1",
             "m2"
-          ]
+          ],
+          "gate_state": "none",
+          "unmerged_seen": 0,
+          "uncovered_reqs": [],
+          "coverage_matrix": ""
         },
         "lp.close": {
           "status": "closed",

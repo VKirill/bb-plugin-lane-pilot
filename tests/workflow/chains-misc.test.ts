@@ -83,7 +83,7 @@ describe("companion", () => {
 
 describe("milestone-close", () => {
   const input = { goals: [{ id: "g1", done_when: "export button works", evidence: "test export.spec passes" }], goal: "Stats export" };
-  const ready = { open_tasks: 0, unmerged: 0, gate_ok: true, running_attempts: 0, merged_commits: ["m1", "m2"] };
+  const ready = { open_tasks: 0, unmerged: 0, gate_ok: true, running_attempts: 0, merged_commits: ["m1", "m2"], gate_state: "none", unmerged_seen: 0, uncovered_reqs: [] };
 
   it("the spec's case: status, retro, close, the owner defers the knowledge candidates, archive", async () => {
     const r = await runSim("milestone-close", { input, stubs: { "lp.run_status": ready, "lp.close": { status: "closed", staged: 2, report_path: "reports/r1.md" } }, humans: { approve_knowledge: { answer_kind: "deferred", approved_ids: [] } } });
