@@ -445,3 +445,10 @@ export function deleteBoundSetting(db: LanePilotDatabase, projectId: string, key
 export function listProjectsWithGlobalSettings(db: LanePilotDatabase): string[] {
   return (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_project_settings WHERE binding_id=''").all() as Array<{ project_id: string }>).map((row) => row.project_id);
 }
+
+/** The project whose configured checkout (writer or PM workspace path) this folder is; null when no configured project claims it. */
+export function projectIdForCheckoutPath(db: LanePilotDatabase, path: string): string | null {
+  const row = db.prepare(`SELECT project_id FROM lane_pilot_project_settings
+    WHERE binding_id='' AND key IN ('writerWorkspacePath','pmWorkspacePath') AND value=? LIMIT 1`).get(JSON.stringify(path)) as { project_id: string } | undefined;
+  return row?.project_id ?? null;
+}

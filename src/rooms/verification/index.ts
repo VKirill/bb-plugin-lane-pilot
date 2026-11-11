@@ -20,3 +20,4 @@ export { cachedReplayVerdicts, recordedReplayFailure, recordReplayVerdict, repla
 export type { ReplayCacheEntry } from "./replay-cache";
 export { PRESSURE_LIMITS, flakyEvidence, outputTail, pressureOf, readingFrom, readingNote } from "./machine-pressure";
 export { DEFAULT_WORKER, WORKER_SECRET_PATHS, workerSecretReach } from "./worker-user";
+export { WINDOW_USAGE, runWindowCli } from "./server";
