@@ -1,11 +1,17 @@
 import { createHash } from "node:crypto";
+import { CREDENTIAL_SHAPE_PATTERNS } from "@lane-pilot/kit";
 import type { MemoryCandidate, MemoryKind, MemorySettings } from "./settings";
 
 const MAX_ENTRY_BYTES=64_000;
 /** The concepts the maintainer prompt tells a note to carry for reviewers (context.ts). */
 const REVIEW_CONCEPTS=new Set(["review","pitfall","invariant","security","regression"]);
 const KNOWN_FIELDS=new Set(["kind","content","concepts","supersedes","valid_until","valid_from"]);
-const SECRET_LIKE=/(?:\bsk-[A-Za-z0-9_-]{20,}\b|\bgh[pousr]_[A-Za-z0-9]{20,}\b|\bxox[baprs]-[A-Za-z0-9-]{20,}\b|\bAKIA[0-9A-Z]{16}\b|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|\bBearer\s+[A-Za-z0-9._~+/-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:api[_-]?key|access[_-]?token|secret|password)\s*[:=]\s*\S+)/i;
+// The refusal shares kit's credential shape table (SMA k_lib_secretsmask); its own keyed and extra forms are what memory
+// refused before the table was shared: `password:`, `api-key:` and friends, a JWT, the rarer xox letters.
+// A keyed value written with `=` is refused in any case (`API_KEY=…`, the env form); with `:` only in lower case, as before, so
+// prose that names a variable («CLIENT_SECRET: rotate monthly») still stores.
+const SECRET_LIKE=/(?:\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|\bxox[rs]-[A-Za-z0-9-]{20,}\b|(?:api[_-]?key|access[_-]?token|secret|password)\s*[:=]\s*\S+|(?:API[_-]?KEY|ACCESS[_-]?TOKEN|SECRET|PASSWORD)\s*=\s*\S+)/;
+const secretLike=(text:string):boolean=>CREDENTIAL_SHAPE_PATTERNS.some((pattern)=>{pattern.lastIndex=0;return pattern.test(text);})||SECRET_LIKE.test(text);
 const INSTRUCTION_INJECTION=/(?:ignore (?:all )?(?:previous|prior|above) instructions|forget (?:all )?(?:previous|prior) instructions|disregard (?:all )?(?:previous|prior|above)|you are now\b|^\s*#{0,6}\s*(?:system|assistant)\s*:|<\/?(?:system|instructions)>|забудь(?:те)? (?:все )?(?:прежние |предыдущие )?инструкции|игнорируй (?:все )?(?:прежние |предыдущие )?инструкции)/im;
 
 /**
@@ -13,7 +19,7 @@ const INSTRUCTION_INJECTION=/(?:ignore (?:all )?(?:previous|prior|above) instruc
  * instruction override. Every path that writes memory checks this — maintainer output, imports, rules.
  */
 export function memoryContentIssue(content:string):string|null {
-  if(SECRET_LIKE.test(content))return "memory content appears to contain a credential; no memory was saved";
+  if(secretLike(content))return "memory content appears to contain a credential; no memory was saved";
   if(INSTRUCTION_INJECTION.test(content))return "memory content addresses the assistant with an instruction override; no memory was saved";
   return null;
 }

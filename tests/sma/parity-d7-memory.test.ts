@@ -267,7 +267,7 @@ describe("memory corpus care (parity wave d7)", () => {
     expect((await forget(replaced!, "--replace", keeper!)).exitCode).toBe(0);
     expect(row(h.db, revoke!)).toEqual({ status: "expired", reason: "revoked" });
     expect(row(h.db, archive!)).toEqual({ status: "expired", reason: "archived" });
-    expect(row(h.db, expire!)).toEqual({ status: "expired", reason: "dated" });
+    expect(row(h.db, expire!)).toEqual({ status: "expired", reason: "owner" });
     expect(row(h.db, replaced!)?.status).toBe("superseded");
     expect(row(h.db, keeper!)?.status).toBe("active");
     // Nothing picked, nothing done.

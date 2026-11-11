@@ -933,13 +933,15 @@ ${ERRANDS_USAGE}` },
             if (replaceAt >= 0) {
               const by = args[replaceAt + 1];
               if (!by || !memoryRecordExists(db, projectId, by)) return { exitCode:1, stderr:`--replace needs an existing record id` };
-              hideRecord(db, projectId, id, "superseded", by, unindex);
+              // `owner` on the superseded row is the tombstone: a re-import of the record's file never brings it back (SMA m_lifecycle).
+              hideRecord(db, projectId, id, "superseded", by, unindex, "owner");
               return { exitCode:0, stdout:`${id} superseded by ${by}\n` };
             }
-            const reason = args.includes("--revoke") ? "revoked" : args.includes("--archive") ? "archived" : args.includes("--expire") ? "dated" : null;
+            // `--expire` is the owner's act too: the `owner` reason keeps it down on every path, unlike `dated` which a restatement revives.
+            const reason = args.includes("--revoke") ? "revoked" : args.includes("--archive") ? "archived" : args.includes("--expire") ? "owner" : null;
             if (!reason) return { exitCode:1, stderr:"pick one: --revoke, --expire, --archive, --replace <newId>, or --erase --yes" };
             if (!hideRecord(db, projectId, id, "expired", null, unindex, reason)) return { exitCode:1, stderr:`record ${id} is not active` };
-            return { exitCode:0, stdout:`${id} ${reason === "dated" ? "expired" : reason}\n` };
+            return { exitCode:0, stdout:`${id} ${reason === "owner" ? "expired" : reason}\n` };
           }
           if (sub === "history") {
             if (!projectId) return { exitCode:1, stderr:"no project: pass --project <id> outside a BB thread" };

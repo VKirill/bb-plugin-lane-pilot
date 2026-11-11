@@ -6,8 +6,8 @@ export const OBSERVED_QUARANTINE_MS = 24 * 3_600_000;
 /** A note nobody was given for this long stops being mixed; a note is not eternal just because nobody deleted it. Core, rules and file imports (their file decides) are exempt. */
 export const NOTE_IDLE_MS = 90 * 24 * 3_600_000;
 
-/** budget: eviction for room; idle: 90 days given to nobody; dated: its date passed; refuted: a check quoted it; revoked: the owner withdrew it; archived: the owner moved it to the cold tier. */
-export type ExpiredReason = "budget" | "idle" | "dated" | "refuted" | "revoked" | "archived";
+/** budget: eviction for room; idle: 90 days given to nobody; dated: its date passed; refuted: a check quoted it; revoked: the owner withdrew it; archived: the owner moved it to the cold tier; owner: `memory forget --expire|--replace`, a tombstone no restatement or re-import revives (SMA m_lifecycle). */
+export type ExpiredReason = "budget" | "idle" | "dated" | "refuted" | "revoked" | "archived" | "owner";
 
 /** A failed check refutes a note only when the failure quotes a long stretch of that note. A generic red check does not. */
 export function noteRefutedByCheck(content: string, failureText: string): boolean {
@@ -17,7 +17,7 @@ export function noteRefutedByCheck(content: string, failureText: string): boolea
   return false;
 }
 
-/** Hides a record (it stays in the table, leaves every index) with the status that says why. An expiry records budget eviction, idleness, a passed date, or a check that quoted the note; a replacement clears that reason. */
+/** Hides a record (it stays in the table, leaves every index) with the status that says why. An expiry records the reason given; a replacement keeps the reason only when the caller marks one (`--replace` marks `owner`, an automatic supersede keeps none). */
 /** The memory-profile nightly curator is off. A note that still says it is running is dated, not a fact. */
 const STALE_CURATOR = /memory-profile[\s\S]{0,80}nightly|nightly[\s\S]{0,80}memory-profile/i;
 
@@ -29,7 +29,7 @@ export function retireStaleCuratorClaims(db: MemoryDatabase, projectId: string, 
 }
 
 export function hideRecord(db: MemoryDatabase, projectId: string, id: string, status: "superseded" | "expired", supersededBy: string | null, unindex: (projectId: string, id: string) => void, expiredReason?: ExpiredReason | null): boolean {
-  const changed = db.prepare("UPDATE lane_pilot_memory SET status=?, superseded_by=COALESCE(?,superseded_by), expired_reason=CASE WHEN ?='expired' THEN ? ELSE NULL END WHERE project_id=? AND id=? AND status='active'").run(status, supersededBy, status, status === "expired" ? expiredReason ?? null : null, projectId, id).changes === 1;
+  const changed = db.prepare("UPDATE lane_pilot_memory SET status=?, superseded_by=COALESCE(?,superseded_by), expired_reason=? WHERE project_id=? AND id=? AND status='active'").run(status, supersededBy, expiredReason ?? null, projectId, id).changes === 1;
   if (changed) unindex(projectId, id);
   return changed;
 }

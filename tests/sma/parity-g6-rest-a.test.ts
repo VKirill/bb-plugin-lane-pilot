@@ -337,7 +337,7 @@ describe("parity g6 rest a", () => {
     });
   });
 
-  it("[sma:m_mc_poll] pollPeers gives each peer its own 5 s: a hung board call marks only its own line, the others are stored at once; an answer with no windows stays answered:false", async () => {
+  it("[sma:m_mc_poll] pollPeers gives each peer its own 5 s: a hung board call marks only its own line, the others are stored at once; an answer with no windows is answered:true — it resolved, only silence reads answered:false", async () => {
     vi.useFakeTimers();
     try {
       const { bb, harness, db } = open();
@@ -354,8 +354,8 @@ describe("parity g6 rest a", () => {
       const rows = await polling;
       expect(rows.find((row) => row.hostId === "h1")).toMatchObject({ answered: true, windows: { windows: { five_hour: { utilization: 42 } } } });
       expect(rows.find((row) => row.hostId === "h2")!.answered).toBe(false);
-      // The reading says at:null for "no subscription windows" and for "nobody answered": it cannot tell them apart, so answered stays false.
-      expect(rows.find((row) => row.hostId === "h3")!.answered).toBe(false);
+      // at:null says "answered, no subscription windows": the call resolved, so the peer answered — only a thrown or hung call is silence.
+      expect(rows.find((row) => row.hostId === "h3")!.answered).toBe(true);
       await harness.lifecycle.dispose();
     } finally { vi.useRealTimers(); }
   });

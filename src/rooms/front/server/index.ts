@@ -96,9 +96,9 @@ export function createFront(ctx: ServerCore, deps?: {
             new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("board timeout")), PEER_BOARD_MS); }),
           ]).finally(() => { if (timer) clearTimeout(timer); });
           next.windows = answer;
-          // The live reader never throws and says at:null when nothing answered. It says the same for a machine that answered with no
-          // subscription windows, so the two cannot be told apart here: at:null stays answered:false.
-          next.answered = deps?.board ? Boolean((answer as { at?: unknown } | null)?.at) : true;
+          // The board says null for silence (the lookup failed, ran out of time, or a listed subscription gave nothing readable);
+          // an answer with `at:null` and no windows is a machine without a subscription, which did answer (SMA m_mc_poll).
+          next.answered = answer != null;
         } catch { next.answered = false; }
       }
       snapshots.set(row.id, next);
