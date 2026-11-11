@@ -67,31 +67,50 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-BB = os.environ.get("BB_CLI", "bb")
-HUB = os.environ.get("BB_HUB_HOST", "ubuntu@10.8.0.1")
-KEY = os.environ.get("BB_HUB_KEY", str(Path.home() / ".ssh/oracle_bb"))
-HUB_DB = os.environ.get("LP_DRILL_HUB_DB", "/home/ubuntu/.bb/plugins/lane-pilot/data.db")
-TIMEOUT_MIN = int(os.environ.get("LP_DRILL_TIMEOUT_MIN", "20"))
-# parallel3 ends in 2-4 minutes: a stall (2026-10-29: three finished tasks waiting on a dirty base) is told in ten, not twenty.
-PARALLEL3_TIMEOUT_MIN = int(os.environ.get("LP_DRILL_PARALLEL3_TIMEOUT_MIN", str(min(TIMEOUT_MIN, 10))))
-PHASE_TIMEOUT_MIN = int(os.environ.get("LP_DRILL_PHASE_TIMEOUT_MIN", "35"))
-POLL_SEC = int(os.environ.get("LP_DRILL_POLL_SEC", "20"))
-BAD_MODEL = os.environ.get("LP_DRILL_BAD_MODEL", "lp-drill-model-that-does-not-exist")
-SANDBOX = dict(project=os.environ.get("LP_DRILL_PROJECT", "proj_3tb652jpsi"),
-               environment=os.environ.get("LP_DRILL_ENVIRONMENT", "env_mybrzmx7nz"),
-               cwd=os.environ.get("LP_DRILL_CWD", "/Users/vechkasov/lp-sandbox-rules"))
-NOGIT = dict(project=os.environ.get("LP_DRILL_NOGIT_PROJECT", "proj_cpxzk7r2vs"),
-             environment=os.environ.get("LP_DRILL_NOGIT_ENVIRONMENT", "env_6adk43aq2y"),
-             cwd=os.environ.get("LP_DRILL_NOGIT_CWD", "/Users/vechkasov/lp-sandbox-layouts/n-nogit"))
-SANDBOX_PROJECTS = {SANDBOX["project"], NOGIT["project"]}
-OPEN_STATES = ("queued", "spawn_requested", "spawn_unknown", "running")
-TERMINAL = ("accepted", "blocked", "canceled")
-STAMP = time.strftime("%Y%m%d-%H%M%S")
-DATE = time.strftime("%Y-%m-%d")
+# The code lives in scripts/lp_drill/ (one module per responsibility); the door re-exports every name the file had as
+# one file, so tests still load it alone. Its folder goes first on sys.path: under python3 -I it is not there by itself.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import lp_drill.env
+
+for _mod in (lp_drill.env,):
+    for _name in dir(_mod):
+        if not _name.startswith("__"):
+            _value = getattr(_mod, _name)
+            if not isinstance(_value, types.ModuleType):
+                globals()[_name] = _value
+
+
+def _rehome(fn):
+    """Rebind a moved-out function's globals to this door's: this file's names keep one home here, so a test that
+    replaces a module global (m.run = ..., m.hubsql = ...) is seen by the code that moved into lp_drill/."""
+    moved = types.FunctionType(fn.__code__, globals(), fn.__name__, fn.__defaults__, fn.__closure__)
+    moved.__kwdefaults__ = fn.__kwdefaults__
+    moved.__dict__.update(fn.__dict__)
+    moved.__annotations__ = fn.__annotations__
+    moved.__qualname__ = fn.__qualname__
+    moved.__module__ = fn.__module__
+    moved.__doc__ = fn.__doc__
+    return moved
+
+
+for _name, _value in list(globals().items()):
+    if type(_value) is types.FunctionType and str(_value.__module__ or "").startswith("lp_drill"):
+        globals()[_name] = _rehome(_value)
+    elif isinstance(_value, type) and str(_value.__module__ or "").startswith("lp_drill"):
+        for _mname, _member in list(vars(_value).items()):
+            _wrap = type(_member) if isinstance(_member, (staticmethod, classmethod)) else None
+            _fn = _member.__func__ if _wrap else _member
+            if type(_fn) is types.FunctionType:
+                setattr(_value, _mname, _wrap(_rehome(_fn)) if _wrap else _rehome(_fn))
+
+del _mod, _name, _value
+for _tmp in ("_mname", "_member", "_wrap", "_fn"):
+    globals().pop(_tmp, None)
+del _tmp
 ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "phase", "phase_route", "reload", "nogit", "nogit_repo", "flow_contract", "lead_shadow", "episodes", "memory_thread"]
 # Scenes that run only by name (--scenario) or under --series: the deploy drill (--quick) and a plain run never reach them.
 EXTRA = ["skills_screen", "revert"]
