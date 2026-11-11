@@ -1,0 +1,28 @@
+{
+  "schema": "lp.calendar-ru/1",
+  "version": 1,
+  "timezone": "Europe/Moscow",
+  "annual_holidays": [
+    { "id": "new_year_holidays", "start_mm_dd": "01-01", "end_mm_dd": "01-08", "kind": "state_holiday", "b2b_dip": true, "ecom_shift": true },
+    { "id": "defender_day", "start_mm_dd": "02-23", "end_mm_dd": "02-23", "kind": "state_holiday", "b2b_dip": true, "ecom_shift": true },
+    { "id": "womens_day", "start_mm_dd": "03-08", "end_mm_dd": "03-08", "kind": "state_holiday", "b2b_dip": true, "ecom_shift": true },
+    { "id": "spring_labour_may", "start_mm_dd": "05-01", "end_mm_dd": "05-04", "kind": "state_holiday", "b2b_dip": true, "ecom_shift": false },
+    { "id": "victory_day_may", "start_mm_dd": "05-08", "end_mm_dd": "05-11", "kind": "state_holiday", "b2b_dip": true, "ecom_shift": false },
+    { "id": "russia_day", "start_mm_dd": "06-12", "end_mm_dd": "06-14", "kind": "state_holiday", "b2b_dip": true, "ecom_shift": false },
+    { "id": "unity_day", "start_mm_dd": "11-04", "end_mm_dd": "11-04", "kind": "state_holiday", "b2b_dip": true, "ecom_shift": false },
+    { "id": "year_end_pre_ny", "start_mm_dd": "12-28", "end_mm_dd": "12-31", "kind": "seasonal_dip", "b2b_dip": true, "ecom_shift": true }
+  ],
+  "retail_surges": [
+    { "id": "back_to_school", "start_mm_dd": "08-20", "end_mm_dd": "09-05", "cpc_inflation_expected": true },
+    { "id": "singles_day_11_11", "start_mm_dd": "11-09", "end_mm_dd": "11-13", "cpc_inflation_expected": true },
+    { "id": "black_friday_ru", "start_mm_dd": "11-24", "end_mm_dd": "11-30", "cpc_inflation_expected": true },
+    { "id": "december_gift_peak", "start_mm_dd": "12-10", "end_mm_dd": "12-27", "cpc_inflation_expected": true }
+  ],
+  "b2b_tax_and_budget_windows": [
+    { "id": "q1_budget_unlock", "start_mm_dd": "01-15", "end_mm_dd": "02-05" },
+    { "id": "vat_quarterly_apr", "start_mm_dd": "04-20", "end_mm_dd": "04-28" },
+    { "id": "vat_quarterly_jul", "start_mm_dd": "07-20", "end_mm_dd": "07-28" },
+    { "id": "vat_quarterly_oct", "start_mm_dd": "10-20", "end_mm_dd": "10-28" },
+    { "id": "q4_budget_burn", "start_mm_dd": "12-01", "end_mm_dd": "12-22" }
+  ]
+}

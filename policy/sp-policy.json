@@ -1,0 +1,63 @@
+{
+  "schema": "lp.sp-policy/1",
+  "version": 1,
+  "autonomy": {
+    "classes": ["observe", "propose", "bounded_auto"],
+    "default_class": "propose",
+    "promotion_gates": {
+      "min_samples": 20,
+      "wilson_lower_bound_min": 0.80,
+      "cohen_kappa_min": 0.60,
+      "zero_critical_incidents_days": 30
+    },
+    "high_risk_never_auto": [
+      "direct_api_tier_L",
+      "direct_api_tier_S",
+      "budget_increase_over_15pct",
+      "bid_strategy_switch",
+      "robots_txt_edit",
+      "canonical_top20_edit",
+      "redirect_301_mass",
+      "ord_erid_override",
+      "publish_live_without_canary"
+    ]
+  },
+  "budgets": {
+    "daily_cap_usd_default": 25.0,
+    "cell_cap_usd_default": 5.0,
+    "rolling_24h_auto_cap_usd_default": 15.0,
+    "max_concurrent_active_cells": 3,
+    "refuse_unknown_upper_bound": true
+  },
+  "mutation_guards": {
+    "approval_nonce_ttl_ms": 900000,
+    "single_use_nonce": true,
+    "strategy_guard": {
+      "max_budget_delta_ratio": 0.15,
+      "min_hours_between_budget_edits": 120,
+      "max_bid_strategy_changes_per_7d": 1
+    }
+  },
+  "locks": {
+    "seo_indexation_observation_min_days": 21,
+    "seo_indexation_observation_max_days": 45,
+    "default_entity_lock_ttl_ms": 86400000
+  },
+  "cohorts": {
+    "min_cdf_for_stop": 0.60,
+    "default_maturity_window_days": 14
+  },
+  "content_factory": {
+    "canary_waves": [10, 50, "full"],
+    "min_canary_indexation_rate_14d": 0.65,
+    "max_first_bofu_batch_urls": 15,
+    "max_next_bofu_batch_urls": 60,
+    "draft_only_scenarios": true
+  },
+  "questions": {
+    "max_owner_questions_per_tick": 3,
+    "max_shadow_ext_questions": 20,
+    "p0_impact_weight_min": 0.85,
+    "default_cooldown_hours": 72
+  }
+}

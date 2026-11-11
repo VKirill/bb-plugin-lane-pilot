@@ -51,32 +51,46 @@ describe("seo-release", () => {
   const base = () => ({
     baseline: { change_log_path: "change-log.json", cohort: "service" },
     plan: { plan_path: "plan.md" },
+    premortem: { chains_over_1_hop: 0, loops: 0, top_url_changes: 0, report_path: "premortem.json" },
     staging_qa: { status: "pass", qa_path: "staging-qa.md" },
     publish: { publish_status: "ok" },
     prod_qa: { status: "pass" },
     submit: { submit_path: "submit.md", requested: 3 },
+    indexnow: { pushed: 3, engines: ["yandex", "bing"], receipt_path: "indexnow.json" },
+    lock_release: { intents: 0, locks_created: 3 },
     index_check: { index_status_path: "index-status.json", not_indexed: [] },
     package: { release_report_path: ".agents/seo/release/r1/release-report.md" },
+    index_check_only: { index_status_path: "index-status.json", not_indexed: [] },
+    package_check: { release_report_path: ".agents/seo/release/r1/index-check.md" },
   });
 
-  it("happy path: baseline -> plan -> (redirects skipped) -> staging -> owner go -> publish -> prod QA -> submit -> index check -> done", async () => {
+  it("happy path: baseline -> plan -> (redirects skipped) -> premortem -> staging -> owner go -> publish -> prod QA -> submit -> indexnow -> lock -> index check -> done", async () => {
     const r = await runSim("seo-release", { input, stubs: base(), humans: { owner_go: { answer_kind: "approve", answer: "да" } } });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("baseline plan redirects staging_qa owner_go publish prod_qa submit index_check package done");
+    expect(pathOf(r)).toBe("baseline plan redirects premortem staging_qa owner_go publish prod_qa submit indexnow lock_release index_check package done");
     expect(r.skipped).toEqual(["redirects"]);
-    expect(out(r)).toMatchObject({ status: "done", change_log_path: "change-log.json", index_status_path: "index-status.json" });
+    expect(out(r)).toMatchObject({ status: "done", change_log_path: "change-log.json", index_status_path: "index-status.json", indexnow_pushed: 3 });
+  });
+
+  it("premortem redirect loop blocks the release before staging QA", async () => {
+    const r = await runSim("seo-release", {
+      input,
+      stubs: { ...base(), premortem: { chains_over_1_hop: 2, loops: 1, top_url_changes: 0, report_path: "premortem.json" } },
+    });
+    expect(pathOf(r)).toBe("baseline plan redirects premortem blocked");
+    expect(out(r)).toMatchObject({ status: "blocked" });
   });
 
   it("owner decline stops the run before publish", async () => {
     const r = await runSim("seo-release", { input, stubs: base(), humans: { owner_go: { answer_kind: "decline", answer: "не публиковать" } } });
-    expect(pathOf(r)).toBe("baseline plan redirects staging_qa owner_go blocked");
+    expect(pathOf(r)).toBe("baseline plan redirects premortem staging_qa owner_go blocked");
     expect(out(r)).toMatchObject({ status: "blocked" });
   });
 
-  it("index_check mode skips the publish path and still reaches the index check", async () => {
+  it("index_check mode skips the publish path and runs index_check_only", async () => {
     const r = await runSim("seo-release", { input: { ...input, mode: "index_check" }, stubs: base() });
-    expect(pathOf(r)).toBe("baseline plan redirects staging_qa owner_go index_check package done");
-    expect(r.skipped).toEqual(expect.arrayContaining(["baseline", "plan", "redirects", "staging_qa", "owner_go"]));
+    expect(pathOf(r)).toBe("baseline plan redirects premortem staging_qa owner_go index_check_only package_check done_check");
+    expect(r.skipped).toEqual(expect.arrayContaining(["baseline", "plan", "redirects", "premortem", "staging_qa", "owner_go"]));
     expect(out(r)).toMatchObject({ status: "done", index_status_path: "index-status.json" });
   });
 

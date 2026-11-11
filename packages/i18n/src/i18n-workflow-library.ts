@@ -2,6 +2,7 @@
 export const libraryEn = {
   wfCatAll: "All",
   wfCat_seo: "SEO",
+  wfCat_marketing: "Marketing",
   wfCat_code: "Code and tasks",
   wfCat_content: "Content and posts",
   wfCat_research: "Research",
@@ -22,6 +23,7 @@ export const libraryEn = {
 export const libraryRu: { [K in keyof typeof libraryEn]: string } = {
   wfCatAll: "Все",
   wfCat_seo: "SEO",
+  wfCat_marketing: "Маркетинг",
   wfCat_code: "Код и задачи",
   wfCat_content: "Контент и посты",
   wfCat_research: "Исследования",

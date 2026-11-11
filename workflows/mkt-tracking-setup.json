@@ -1,0 +1,680 @@
+{
+  "id": "mkt-tracking-setup",
+  "name": {
+    "en": "Marketing tracking setup",
+    "ru": "Настройка сквозного трекинга: Метрика, GA4, GTM, UTM и диплинки бота"
+  },
+  "description": {
+    "en": "End-to-end analytics repair: UTM and start-parameter passing, Metrika/GA4 goals, GTM dataLayer events, CRM and server-to-server conversions, the gap between analytics and the database. Writes the telemetry map and a code task to add missing events.",
+    "ru": "Ремонт сквозной аналитики: передача UTM и start-параметров, цели Метрики и GA4, события dataLayer в GTM, CRM и серверные конверсии, расхождение аналитики с базой. Пишет карту телеметрии и задачу в код на недостающие события."
+  },
+  "examples": {
+    "en": [
+      "Payments have no source: fix UTM and Client ID passing",
+      "Set up Metrika goals and offline conversions",
+      "Metrika and the database disagree by 15%"
+    ],
+    "ru": [
+      "Оплаты не привязываются к каналам: почини сквозную аналитику",
+      "Настрой цели Метрики, события GA4 и GTM для лендинга и бота",
+      "Проверь UTM-метки и start= диплинки телеграм-бота",
+      "Сверь конверсии Метрики с таблицей оплат и закрой расхождение"
+    ]
+  },
+  "not_for": [
+    "mkt-experiment-cycle: designing or reading an A/B test once tracking is trusted",
+    "mkt-pulse-monitor: watching metric corridors once tracking works",
+    "seo-tech-audit: crawl, indexation, canonicals and rendering of a site, not analytics counters",
+    "mkt-landing-cro-audit: why visitors do not convert, with tracking already trusted",
+    "mkt-project-intake: the charter and the budget split"
+  ],
+  "status": "published",
+  "tags": [
+    "marketing",
+    "analytics",
+    "tracking"
+  ],
+  "triggers": [
+    "manual"
+  ],
+  "inputs": {
+    "site_url": {
+      "type": "string",
+      "required": true,
+      "description": "landing or bot whose tracking is fixed"
+    },
+    "stack": {
+      "type": "metrika|ga4|both",
+      "default": "both",
+      "description": "which analytics to set up: Yandex Metrika, GA4 or both"
+    },
+    "channel_scope": {
+      "type": "web|tg_bot|web_and_bot",
+      "default": "web_and_bot",
+      "description": "what to tag: web pages, the Telegram bot start= links, or both"
+    },
+    "apply_live": {
+      "type": "bool",
+      "default": false,
+      "description": "after owner_go, write goals and tags into the live Metrika/GTM/GA4 accounts (otherwise only code tasks and a change plan)"
+    }
+  },
+  "outputs": {
+    "status": "done|planned|held",
+    "telemetry_map_path": "string?",
+    "discrepancy_pct": "number?",
+    "live_changes_applied": "int?",
+    "dispatched_count": "int?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "mkt-end-to-end-analytics",
+      "lp-agentic-discipline",
+      "browser-automation"
+    ],
+    "secrets": [
+      "YANDEX_METRIKA_RO_TOKEN?",
+      "GA4_RO_CREDENTIALS?",
+      "PAYMENTS_DB_RO_URL?"
+    ]
+  },
+  "budget": {
+    "max_minutes": 90,
+    "max_usd": 6
+  },
+  "goal_check": "gate",
+  "entry": "load_state",
+  "nodes": [
+    {
+      "id": "load_state",
+      "type": "action",
+      "action": "sp.load_memory",
+      "title": {
+        "en": "Charter, telemetry map, locks",
+        "ru": "Устав, карта телеметрии, замки"
+      },
+      "domain": "marketing",
+      "graphId": "mkt-tracking-setup",
+      "acquireTick": false,
+      "requireMcp": [
+        "mcp-yandex-seo-ro",
+        "mcp-gtm-ro"
+      ],
+      "out": {
+        "has_charter": "bool",
+        "charter_json": "string",
+        "active_locks_json": "string",
+        "telemetry_map_json": "string"
+      }
+    },
+    {
+      "id": "inventory",
+      "type": "agent",
+      "role": "specialist:growth-marketer",
+      "profile": {
+        "skills": [
+          "mkt-end-to-end-analytics"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Read-only inventory of counters, goals, events, tags",
+        "ru": "Инвентаризация счётчиков, целей, событий и тегов (чтение)"
+      },
+      "prompt": "Read-only inventory for {{$inputs.site_url}} (stack {{$inputs.stack}}, scope {{$inputs.channel_scope}}): Metrika counters and goals with their conditions (mcp-yandex-seo-ro), GA4 data streams, key events and conversions (mcp-ga4-ro), GTM containers, live version, tags, triggers and variables (mcp-gtm-ro), dataLayer pushes found in the site code, /start deep links and payment webhooks of the bot. Previous map: <data>{{load_state.telemetry_map_json}}</data>. Never call a write tool. Write .agents/marketing/tracking/inventory.json. Return inventory_path, counters, goals_found and gaps.",
+      "out": {
+        "inventory_path": "string",
+        "counters": "int",
+        "goals_found": "string[]",
+        "gaps": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "utm_check",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "UTM and start= taxonomy check ($0)",
+        "ru": "Проверка таксономии UTM и start= ($0)"
+      },
+      "skill": "mkt-end-to-end-analytics",
+      "script": "utm_validator.py",
+      "args": {
+        "inventory": "{{inventory.inventory_path}}",
+        "scope": "{{$inputs.channel_scope}}"
+      },
+      "timeoutSec": 60,
+      "out": {
+        "invalid_share": "number",
+        "invalid_examples": "string[]",
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "reconcile",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Analytics vs payments reconcile ($0)",
+        "ru": "Сверка аналитики с оплатами ($0)"
+      },
+      "skill": "mkt-end-to-end-analytics",
+      "script": "funnel_reconcile.py",
+      "args": {
+        "stack": "{{$inputs.stack}}",
+        "window_days": 14,
+        "exclude_immature_days": 3
+      },
+      "secrets": [
+        "YANDEX_METRIKA_RO_TOKEN?",
+        "GA4_RO_CREDENTIALS?",
+        "PAYMENTS_DB_RO_URL?"
+      ],
+      "timeoutSec": 120,
+      "out": {
+        "discrepancy_pct": "number",
+        "unattributed_paid_share": "number",
+        "tracking_health_ok": "bool",
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "design",
+      "type": "agent",
+      "role": "specialist:growth-marketer",
+      "profile": {
+        "skills": [
+          "mkt-end-to-end-analytics",
+          "lp-agentic-discipline"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Telemetry map, event contract, fixes and the live change plan",
+        "ru": "Карта телеметрии, контракт событий, исправления и план боевых правок"
+      },
+      "prompt": "From <data>inventory {{inventory.inventory_path}} (gaps {{inventory.gaps}}), UTM report {{utm_check.report_path}} (invalid share {{utm_check.invalid_share}}), reconcile {{reconcile.report_path}} (discrepancy {{reconcile.discrepancy_pct}}%, unattributed paid share {{reconcile.unattributed_paid_share}})</data> design:\n1. telemetry-map.json: event names and params of the dataLayer contract, Metrika goals and GA4 key events mapped 1:1, the UTM and start= taxonomy, offline conversion upload, the reconcile query.\n2. code_tasks: ActionOrder objects of kind code_task, each a TaskV2 contract (owns_paths, acceptance, verification) for missing dataLayer pushes, bot start= capture and webhook events, with qa_cases for browser-qa.\n3. live_changes: the exact list of account mutations (Metrika goal create/update, GTM tag/trigger in a workspace, GTM publish, GA4 key event) with a rollback for each; every one is class L except a GTM workspace draft (class D). live_change_count is its length.\nnever propose deleting a goal that has history; rename instead. Return telemetry_map_path, code_tasks, live_changes, live_change_count, needs_owner_go (true when live_change_count > 0 and apply_live is {{$inputs.apply_live}}).",
+      "out": {
+        "telemetry_map_path": "string",
+        "code_tasks": "ActionOrder[]",
+        "live_changes": "object[]",
+        "live_change_count": "int",
+        "needs_owner_go": "bool"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "audit",
+      "type": "agent",
+      "role": "auditor",
+      "session": "new",
+      "profile": {
+        "skills": [
+          "mkt-end-to-end-analytics",
+          "lp-agentic-discipline"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Audit the event contract and the change plan",
+        "ru": "Ревизия контракта событий и плана правок"
+      },
+      "prompt": "Audit <data>telemetry map {{design.telemetry_map_path}}, code tasks {{design.code_tasks}}, live changes {{design.live_changes}}</data>. Check: every gap from the inventory is closed by a task or a change; every code task is a valid TaskV2 with focused verification; every live change has a rollback and a class (D or L); no change deletes a goal with history or publishes GTM without a preview diff; the reconcile figure {{reconcile.discrepancy_pct}} is quoted, not invented. Status pass, rework (what to change in reasons) or block; findings carry severity critical, high, medium, low or info.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]",
+        "reasons": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 10
+      }
+    },
+    {
+      "id": "hold",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Hold the plan for the owner",
+        "ru": "Отложить план владельцу"
+      },
+      "phase": "hold",
+      "domain": "marketing",
+      "orders": "{{design.code_tasks}}",
+      "auditReasons": "{{audit.reasons}}",
+      "out": {
+        "held": "int"
+      }
+    },
+    {
+      "id": "owner_go",
+      "type": "human",
+      "role": "owner",
+      "skip_when": "$inputs.apply_live == false || design.live_change_count == 0",
+      "skip_out": {
+        "answer": "",
+        "answer_kind": "none"
+      },
+      "title": {
+        "en": "Approve live analytics changes",
+        "ru": "Утвердить боевые правки аналитики"
+      },
+      "prompt": "Approve the live analytics changes (Metrika goals, GTM publish, GA4 key events) with the preview diff and the rollback receipts in front of you. approve lets the code mint a one-time token for exactly this plan (15 minutes); decline keeps only the code tasks. hold (the default) keeps everything as it is and asks again on the next tick. «Сам реши» or no answer is never an approval: a timeout routes like hold.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approve|decline|hold|timeout|none"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 1440
+      },
+      "options": [
+        "approve",
+        "decline",
+        "hold"
+      ],
+      "defaultOption": "hold"
+    },
+    {
+      "id": "live_apply",
+      "type": "action",
+      "action": "sp.apply_mutation",
+      "title": {
+        "en": "Apply the approved plan via the write twins (token-gated)",
+        "ru": "Применить утверждённый план через пишущих двойников (по токену)"
+      },
+      "skip_when": "owner_go.answer_kind != 'approve'",
+      "skip_out": {
+        "applied": 0,
+        "failed": 0,
+        "receipt_path": "",
+        "mutation_ids": []
+      },
+      "tier": "L",
+      "plan": "{{design.live_changes}}",
+      "servers": [
+        "mcp-yandex-seo",
+        "mcp-gtm",
+        "mcp-ga4"
+      ],
+      "approvalStep": "owner_go",
+      "rollbackDir": ".agents/marketing/rollback/",
+      "out": {
+        "applied": "int",
+        "failed": "int",
+        "receipt_path": "string",
+        "mutation_ids": "string[]"
+      }
+    },
+    {
+      "id": "commit_intents",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Telemetry map, code tasks, recheck schedule",
+        "ru": "Карта телеметрии, код-задачи, перепроверка по расписанию"
+      },
+      "phase": "intents",
+      "domain": "marketing",
+      "orders": "{{design.code_tasks}}",
+      "ownerAnswer": "{{owner_go.answer_kind}}",
+      "artifacts": [
+        "{{design.telemetry_map_path}}",
+        "{{reconcile.report_path}}",
+        "{{live_apply.receipt_path}}"
+      ],
+      "scheduleRecheck": {
+        "graph": "mkt-tracking-setup",
+        "after_days": 3,
+        "reason_code": "tracking_recheck"
+      },
+      "out": {
+        "final_status": "done|planned",
+        "intents": "int"
+      }
+    },
+    {
+      "id": "drain_outbox",
+      "type": "action",
+      "action": "sp.dispatch_tasks",
+      "title": {
+        "en": "Dispatch writer tasks (idempotent)",
+        "ru": "Поставить задачи писателю (идемпотентно)"
+      },
+      "domain": "marketing",
+      "sourceGraph": "mkt-tracking-setup",
+      "out": {
+        "dispatched_count": "int",
+        "dispatched_ids": "string[]"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "commit_intents.final_status",
+        "telemetry_map_path": "design.telemetry_map_path",
+        "discrepancy_pct": "reconcile.discrepancy_pct",
+        "live_changes_applied": "live_apply.applied",
+        "dispatched_count": "drain_outbox.dispatched_count"
+      }
+    },
+    {
+      "id": "held",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "held",
+        "discrepancy_pct": "reconcile.discrepancy_pct",
+        "dispatched_count": 0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "load_state",
+      "to": "inventory"
+    },
+    {
+      "from": "inventory",
+      "to": "utm_check"
+    },
+    {
+      "from": "utm_check",
+      "to": "reconcile"
+    },
+    {
+      "from": "reconcile",
+      "to": "design"
+    },
+    {
+      "from": "design",
+      "to": "audit"
+    },
+    {
+      "from": "audit",
+      "to": "design",
+      "when": "audit.status == 'rework' && visits('audit') < 2",
+      "label": "rework design"
+    },
+    {
+      "from": "audit",
+      "to": "owner_go",
+      "when": "audit.status == 'pass'"
+    },
+    {
+      "from": "audit",
+      "to": "hold"
+    },
+    {
+      "from": "hold",
+      "to": "held"
+    },
+    {
+      "from": "owner_go",
+      "to": "live_apply"
+    },
+    {
+      "from": "live_apply",
+      "to": "commit_intents"
+    },
+    {
+      "from": "commit_intents",
+      "to": "drain_outbox"
+    },
+    {
+      "from": "drain_outbox",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "mkt-tracking-sim-1",
+    "sim": {
+      "input": {
+        "site_url": "https://photoalive.example",
+        "stack": "both",
+        "channel_scope": "web_and_bot",
+        "apply_live": true
+      },
+      "stubs": {
+        "load_state": {
+          "has_charter": true,
+          "charter_json": "{}",
+          "active_locks_json": "[]",
+          "telemetry_map_json": "{}"
+        },
+        "inventory": {
+          "inventory_path": ".agents/marketing/tracking/inventory.json",
+          "counters": 1,
+          "goals_found": [
+            "pay_success"
+          ],
+          "gaps": [
+            "no start= capture",
+            "no GA4 purchase event"
+          ]
+        },
+        "utm_check": {
+          "invalid_share": 0.22,
+          "invalid_examples": [
+            "utm_source=TG"
+          ],
+          "report_path": ".agents/marketing/tracking/utm.json"
+        },
+        "reconcile": {
+          "discrepancy_pct": 16.4,
+          "unattributed_paid_share": 0.16,
+          "tracking_health_ok": false,
+          "report_path": ".agents/marketing/tracking/reconcile.json"
+        },
+        "design": {
+          "telemetry_map_path": ".agents/marketing/telemetry-map.json",
+          "code_tasks": [
+            {
+              "kind": "code_task",
+              "task": {
+                "id": "T-start-capture",
+                "title": "Capture start= payload in the bot"
+              },
+              "reason_code": "tracking_gap",
+              "entity_ids": [
+                "funnel:start"
+              ],
+              "touches_scopes": [
+                "tracking_tags"
+              ],
+              "forecast": {
+                "metric": "unattributed_paid_share",
+                "point": 0.04,
+                "lo80": 0.02,
+                "hi80": 0.07,
+                "horizon_days": 5
+              },
+              "risk": "low"
+            }
+          ],
+          "live_changes": [
+            {
+              "server": "mcp-yandex-seo",
+              "tool": "metrika.goals.create",
+              "class": "L",
+              "rollback": "metrika.goals.delete"
+            },
+            {
+              "server": "mcp-gtm",
+              "tool": "gtm.version.publish",
+              "class": "L",
+              "rollback": "gtm.version.publish(previous)"
+            }
+          ],
+          "live_change_count": 2,
+          "needs_owner_go": true
+        },
+        "audit": {
+          "status": "pass",
+          "findings": [],
+          "reasons": ""
+        },
+        "hold": {
+          "held": 1
+        },
+        "live_apply": {
+          "applied": 2,
+          "failed": 0,
+          "receipt_path": ".agents/marketing/rollback/mut_7.json",
+          "mutation_ids": [
+            "mut_7",
+            "mut_8"
+          ]
+        },
+        "commit_intents": {
+          "final_status": "done",
+          "intents": 2
+        },
+        "drain_outbox": {
+          "dispatched_count": 2,
+          "dispatched_ids": [
+            "lptask_T-start-capture",
+            "sched_recheck_1"
+          ]
+        }
+      },
+      "human_answers": {
+        "owner_go": "approve"
+      },
+      "expect_path": [
+        "load_state",
+        "inventory",
+        "utm_check",
+        "reconcile",
+        "design",
+        "audit",
+        "owner_go",
+        "live_apply",
+        "commit_intents",
+        "drain_outbox",
+        "done"
+      ],
+      "expect_output": {
+        "status": "done",
+        "discrepancy_pct": 16.4,
+        "live_changes_applied": 2,
+        "dispatched_count": 2
+      },
+      "variant_plan_only": {
+        "input": {
+          "apply_live": false
+        },
+        "stubs": {
+          "commit_intents": {
+            "final_status": "planned",
+            "intents": 2
+          }
+        },
+        "expect_path": [
+          "load_state",
+          "inventory",
+          "utm_check",
+          "reconcile",
+          "design",
+          "audit",
+          "owner_go",
+          "live_apply",
+          "commit_intents",
+          "drain_outbox",
+          "done"
+        ],
+        "expect_output": {
+          "status": "planned",
+          "live_changes_applied": 0
+        }
+      },
+      "variant_decline": {
+        "human_answers": {
+          "owner_go": "decline"
+        },
+        "stubs": {
+          "commit_intents": {
+            "final_status": "planned",
+            "intents": 2
+          }
+        },
+        "expect_path": [
+          "load_state",
+          "inventory",
+          "utm_check",
+          "reconcile",
+          "design",
+          "audit",
+          "owner_go",
+          "live_apply",
+          "commit_intents",
+          "drain_outbox",
+          "done"
+        ],
+        "expect_output": {
+          "status": "planned",
+          "live_changes_applied": 0
+        }
+      },
+      "variant_audit_fail_twice_hold": {
+        "stubs": {
+          "audit": {
+            "status": "rework",
+            "findings": [
+              {
+                "severity": "high",
+                "title": "GTM publish without a preview diff"
+              }
+            ],
+            "reasons": "attach the workspace diff"
+          }
+        },
+        "expect_path": [
+          "load_state",
+          "inventory",
+          "utm_check",
+          "reconcile",
+          "design",
+          "audit",
+          "design",
+          "audit",
+          "hold",
+          "held"
+        ],
+        "expect_output": {
+          "status": "held",
+          "discrepancy_pct": 16.4
+        }
+      }
+    },
+    "live": "photoalive: инвентаризация Метрики/GTM через -ro, сверка с таблицей оплат, код-задача на start= в боте, публикация GTM только после approve",
+    "note": "Wired to ohmy-seo read twins (mcp-yandex-seo-ro Metrika, mcp-ga4-ro, mcp-gtm-ro); live writes only via sp.apply_mutation with a code-minted HMAC token (council M-01..M-04). servers in live_apply name the logical servers; the executor resolves their write twins."
+  }
+}

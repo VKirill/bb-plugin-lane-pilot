@@ -1,0 +1,641 @@
+{
+  "id": "mkt-landing-cro-audit",
+  "name": {
+    "en": "Landing page CRO audit",
+    "ru": "CRO-аудит лендинга с проверкой соответствия объявлению"
+  },
+  "description": {
+    "en": "Read-only conversion audit of a paid landing or paywall: first screen offer, speed, mobile layout, trust and proof, the form; writes a loss map and hands design, copy and a code task for an A/B variant in a branch.",
+    "ru": "Аудит конверсии платного лендинга или пейволла только на чтение: оффер первого экрана, скорость, мобильная вёрстка, доверие и доказательства, форма; пишет карту потерь и передаёт дизайн, копирайт и задачу в код на A/B-вариант в ветке."
+  },
+  "examples": {
+    "en": [
+      "Why does the paid landing convert so badly on mobile?",
+      "Audit the first screen and the booking form",
+      "Bounce on the ad landing is 75%, find what breaks"
+    ],
+    "ru": [
+      "На лендинг идёт трафик, но никто не покупает: проведи CRO-аудит",
+      "Проверь, совпадают ли объявления Директа с первым экраном лендинга",
+      "Разбери мобильный первый экран и предложи A/B-вариант",
+      "Почему такая низкая конверсия страницы с ценами?"
+    ]
+  },
+  "not_for": [
+    "mkt-direct-search-campaign: keywords, negatives, ads and bids of the Direct campaign itself",
+    "seo-page-refresh: updating a page for search rankings and snippets, not for conversion",
+    "mkt-experiment-cycle: running and reading the A/B test itself",
+    "ui-audit: a general UX/UI design review of an app, not a conversion-loss map",
+    "seo-page: writing a new search page"
+  ],
+  "status": "published",
+  "tags": [
+    "marketing",
+    "cro",
+    "landing"
+  ],
+  "triggers": [
+    "manual"
+  ],
+  "inputs": {
+    "landing_url": {
+      "type": "string",
+      "required": true,
+      "description": "the landing to audit"
+    },
+    "traffic_source": {
+      "type": "direct|tg_ads|seo|mixed",
+      "default": "mixed",
+      "description": "where the visitors come from: Yandex Direct, Telegram Ads, organic search or mixed (decides the message-match source)"
+    },
+    "device_focus": {
+      "type": "mobile|desktop|both",
+      "default": "both",
+      "description": "which first screen matters most"
+    },
+    "build_variant": {
+      "type": "bool",
+      "default": true,
+      "description": "dispatch a writer task for the A/B variant branch after the audit"
+    },
+    "ad_copy_path": {
+      "type": "string",
+      "default": "",
+      "note": "ads.json of a campaign for the message match; empty = read the live ads of the source"
+    }
+  },
+  "outputs": {
+    "status": "done|held",
+    "cro_path": "string?",
+    "message_match_score": "number?",
+    "hypotheses": "int?",
+    "dispatched_count": "int?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot",
+      "browser-automation"
+    ],
+    "skills": [
+      "mkt-landing-cro",
+      "seo-page-templates",
+      "project-design",
+      "drmax-brandcore",
+      "lp-agentic-discipline"
+    ],
+    "secrets": []
+  },
+  "budget": {
+    "max_minutes": 90,
+    "max_usd": 6
+  },
+  "goal_check": "gate",
+  "entry": "load_state",
+  "nodes": [
+    {
+      "id": "load_state",
+      "type": "action",
+      "action": "sp.load_memory",
+      "title": {
+        "en": "Charter, brandcore facts, landing locks",
+        "ru": "Устав, факты brandcore, замки лендинга"
+      },
+      "domain": "marketing",
+      "graphId": "mkt-landing-cro-audit",
+      "acquireTick": false,
+      "out": {
+        "has_charter": "bool",
+        "charter_json": "string",
+        "brandcore_json": "string",
+        "active_locks_json": "string"
+      }
+    },
+    {
+      "id": "speed",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Speed signals ($0)",
+        "ru": "Сигналы скорости ($0)"
+      },
+      "skill": "mkt-landing-cro",
+      "script": "cro_speed_signals.py",
+      "args": {
+        "url": "{{$inputs.landing_url}}",
+        "device": "{{$inputs.device_focus}}"
+      },
+      "timeoutSec": 120,
+      "out": {
+        "lcp_ms": "number",
+        "cls": "number",
+        "inp_ms": "number",
+        "render_blocking": "int",
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "capture",
+      "type": "agent",
+      "role": "browser-qa",
+      "profile": {
+        "skills": [
+          "browser-automation"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "First-screen captures and DOM text",
+        "ru": "Снимки первого экрана и текст DOM"
+      },
+      "prompt": "Open {{$inputs.landing_url}} at 375x812 and 1280x800. Save full and first-screen screenshots, the visible first-screen text, H1, title, the offer and price strings, every CTA with its target, forms and their fields, and the trust elements (reviews, guarantees, requisites). Do not submit forms. Write .agents/marketing/cro/<slug>/capture.json. Return screens_path, h1, offer_text, price_text, cta_count.",
+      "out": {
+        "screens_path": "string",
+        "h1": "string",
+        "offer_text": "string",
+        "price_text": "string",
+        "cta_count": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "message_match",
+      "type": "action",
+      "action": "sp.message_match",
+      "title": {
+        "en": "Ad-to-landing message-match guard",
+        "ru": "Проверка соответствия объявления лендингу"
+      },
+      "skip_when": "$inputs.traffic_source == 'seo'",
+      "skip_out": {
+        "min_score": 1,
+        "mismatches": 0,
+        "price_mismatch": false,
+        "report_path": ""
+      },
+      "ads": "{{$inputs.ad_copy_path}}",
+      "adsSource": "{{$inputs.traffic_source}}",
+      "target": "{{$inputs.landing_url}}",
+      "capture": "{{capture.screens_path}}",
+      "viewport": "375x812",
+      "minLemmaOverlap": 0.5,
+      "minJevP": 0.75,
+      "out": {
+        "min_score": "number",
+        "mismatches": "int",
+        "price_mismatch": "bool",
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "analyze",
+      "type": "agent",
+      "role": "specialist:growth-marketer",
+      "profile": {
+        "skills": [
+          "mkt-landing-cro",
+          "drmax-brandcore",
+          "seo-page-templates",
+          "lp-agentic-discipline"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Loss map and ranked hypotheses",
+        "ru": "Карта потерь и ранжированные гипотезы"
+      },
+      "prompt": "Build the conversion-loss map of {{$inputs.landing_url}} (traffic {{$inputs.traffic_source}}, focus {{$inputs.device_focus}}) from <data>capture {{capture.screens_path}} (H1 '{{capture.h1}}', offer '{{capture.offer_text}}', price '{{capture.price_text}}', CTAs {{capture.cta_count}}); speed {{speed.report_path}} (LCP {{speed.lcp_ms}} ms, CLS {{speed.cls}}, INP {{speed.inp_ms}}); message match {{message_match.report_path}} (min {{message_match.min_score}}, price mismatch {{message_match.price_mismatch}}); brandcore facts {{load_state.brandcore_json}}; locks {{load_state.active_locks_json}}</data>.\nSections: 5-second clarity (who, what, price, next step), message match, trust and proof (only facts present in brandcore; a missing fact becomes an owner question, never an invented review), friction (fields, steps), speed, micro-conversions. Rank hypotheses by expected lift x confidence / effort and check the MDE feasibility at the current traffic. When the message-match min score is below 0.6 the top hypothesis must close that mismatch.\norders: ActionOrder objects — specialist_handoff to design-lead (first-screen prototype) and copy-lead (offer and proof copy), code_task for the variant on a git branch with qa_cases at 375 and 1280 for browser-qa (only when build_variant is {{$inputs.build_variant}} and true), sub_graph mkt-experiment-cycle for the test — each with reason_code, entity_ids, touches_scopes (landing_variant), an interval forecast and risk low | medium | high. needs_owner_go is true only when the variant changes prices, legal or guarantee claims. Write .agents/marketing/cro/<slug>.json. Return cro_path, hypotheses, orders, needs_owner_go.",
+      "out": {
+        "cro_path": "string",
+        "hypotheses": "object[]",
+        "orders": "ActionOrder[]",
+        "needs_owner_go": "bool"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "audit",
+      "type": "agent",
+      "role": "auditor",
+      "session": "new",
+      "profile": {
+        "skills": [
+          "mkt-landing-cro",
+          "lp-agentic-discipline"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Audit evidence and the message-match rule",
+        "ru": "Ревизия доказательств и правила соответствия"
+      },
+      "prompt": "Audit the CRO map <data>{{analyze.cro_path}}, hypotheses {{analyze.hypotheses}}, orders {{analyze.orders}}</data>. Check: every loss cites a screenshot, a speed figure or the match report; no invented proof (only brandcore facts); a message-match score {{message_match.min_score}} below 0.6 or a price mismatch is addressed by the top hypothesis; the variant task owns only landing paths and carries browser-qa cases at 375 and 1280; no order touches a locked landing variant. Status pass, rework (what to change in reasons) or block; findings carry severity critical, high, medium, low or info.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]",
+        "reasons": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 10
+      }
+    },
+    {
+      "id": "hold",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Hold the CRO orders",
+        "ru": "Отложить приказы CRO"
+      },
+      "phase": "hold",
+      "domain": "marketing",
+      "orders": "{{analyze.orders}}",
+      "auditReasons": "{{audit.reasons}}",
+      "out": {
+        "held": "int"
+      }
+    },
+    {
+      "id": "owner_go",
+      "type": "human",
+      "role": "owner",
+      "skip_when": "analyze.needs_owner_go == false",
+      "skip_out": {
+        "answer": "",
+        "answer_kind": "none"
+      },
+      "title": {
+        "en": "Approve price, legal or guarantee changes",
+        "ru": "Утвердить правки цены, юр. или гарантийных обещаний"
+      },
+      "prompt": "The variant changes a price, a legal statement or a guarantee on the landing. The diff and the evidence are in the report. approve lets the variant task go; decline keeps only the hand-offs that do not touch those claims. hold (the default) keeps everything as it is and asks again on the next tick. «Сам реши» or no answer is never an approval: a timeout routes like hold.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approve|decline|hold|timeout|none"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 1440
+      },
+      "options": [
+        "approve",
+        "decline",
+        "hold"
+      ],
+      "defaultOption": "hold"
+    },
+    {
+      "id": "commit_intents",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "CRO map, hypotheses and orders in one transaction",
+        "ru": "Карта CRO, гипотезы и приказы одной транзакцией"
+      },
+      "phase": "intents",
+      "domain": "marketing",
+      "orders": "{{analyze.orders}}",
+      "ownerAnswer": "{{owner_go.answer_kind}}",
+      "artifacts": [
+        "{{analyze.cro_path}}",
+        "{{capture.screens_path}}",
+        "{{message_match.report_path}}"
+      ],
+      "out": {
+        "final_status": "string",
+        "intents": "int"
+      }
+    },
+    {
+      "id": "drain_outbox",
+      "type": "action",
+      "action": "sp.dispatch_tasks",
+      "title": {
+        "en": "Hand-offs and the variant task (idempotent)",
+        "ru": "Поручения и задача варианта (идемпотентно)"
+      },
+      "domain": "marketing",
+      "sourceGraph": "mkt-landing-cro-audit",
+      "out": {
+        "dispatched_count": "int",
+        "dispatched_ids": "string[]"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "cro_path": "analyze.cro_path",
+        "message_match_score": "message_match.min_score",
+        "hypotheses": "analyze.hypotheses.length",
+        "dispatched_count": "drain_outbox.dispatched_count"
+      }
+    },
+    {
+      "id": "held",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "held",
+        "cro_path": "analyze.cro_path",
+        "message_match_score": "message_match.min_score",
+        "dispatched_count": 0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "load_state",
+      "to": "speed"
+    },
+    {
+      "from": "speed",
+      "to": "capture"
+    },
+    {
+      "from": "capture",
+      "to": "message_match"
+    },
+    {
+      "from": "message_match",
+      "to": "analyze"
+    },
+    {
+      "from": "analyze",
+      "to": "audit"
+    },
+    {
+      "from": "audit",
+      "to": "analyze",
+      "when": "audit.status == 'rework' && visits('audit') < 2",
+      "label": "rework analysis"
+    },
+    {
+      "from": "audit",
+      "to": "owner_go",
+      "when": "audit.status == 'pass'"
+    },
+    {
+      "from": "audit",
+      "to": "hold"
+    },
+    {
+      "from": "hold",
+      "to": "held"
+    },
+    {
+      "from": "owner_go",
+      "to": "commit_intents"
+    },
+    {
+      "from": "commit_intents",
+      "to": "drain_outbox"
+    },
+    {
+      "from": "drain_outbox",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "mkt-cro-sim-1",
+    "sim": {
+      "input": {
+        "landing_url": "https://example.ru/restavratsiya-foto",
+        "traffic_source": "direct",
+        "device_focus": "mobile",
+        "build_variant": true,
+        "ad_copy_path": ".agents/marketing/campaigns/direct-restore/ads.json"
+      },
+      "stubs": {
+        "load_state": {
+          "has_charter": true,
+          "charter_json": "{}",
+          "brandcore_json": "{\"reviews_count\":124,\"guarantee\":\"переделка бесплатно\"}",
+          "active_locks_json": "[]"
+        },
+        "speed": {
+          "lcp_ms": 4100,
+          "cls": 0.18,
+          "inp_ms": 260,
+          "render_blocking": 6,
+          "report_path": ".agents/marketing/cro/restore/speed.json"
+        },
+        "capture": {
+          "screens_path": ".agents/marketing/cro/restore/capture.json",
+          "h1": "Реставрация фотографий",
+          "offer_text": "Восстановим любое фото",
+          "price_text": "от 990 ₽",
+          "cta_count": 1
+        },
+        "message_match": {
+          "min_score": 0.74,
+          "mismatches": 0,
+          "price_mismatch": false,
+          "report_path": ".agents/marketing/cro/restore/match.json"
+        },
+        "analyze": {
+          "cro_path": ".agents/marketing/cro/restore.json",
+          "hypotheses": [
+            {
+              "id": "H1",
+              "title": "Пример до/после в первом экране"
+            },
+            {
+              "id": "H2",
+              "title": "Убрать 4 поля из формы"
+            }
+          ],
+          "orders": [
+            {
+              "kind": "specialist_handoff",
+              "role": "design-lead",
+              "task": "first screen with before/after",
+              "reason_code": "cro_first_screen",
+              "entity_ids": [
+                "landing:restore"
+              ],
+              "touches_scopes": [
+                "landing_variant"
+              ],
+              "forecast": {
+                "metric": "lead_cr",
+                "point": 0.15,
+                "lo80": 0.03,
+                "hi80": 0.3,
+                "horizon_days": 14
+              },
+              "risk": "low"
+            }
+          ],
+          "needs_owner_go": false
+        },
+        "audit": {
+          "status": "pass",
+          "findings": [],
+          "reasons": ""
+        },
+        "hold": {
+          "held": 1
+        },
+        "commit_intents": {
+          "final_status": "done",
+          "intents": 3
+        },
+        "drain_outbox": {
+          "dispatched_count": 3,
+          "dispatched_ids": [
+            "thr_design_1",
+            "thr_copy_1",
+            "lptask_variant_1"
+          ]
+        }
+      },
+      "expect_path": [
+        "load_state",
+        "speed",
+        "capture",
+        "message_match",
+        "analyze",
+        "audit",
+        "owner_go",
+        "commit_intents",
+        "drain_outbox",
+        "done"
+      ],
+      "expect_output": {
+        "status": "done",
+        "message_match_score": 0.74,
+        "hypotheses": 2,
+        "dispatched_count": 3
+      },
+      "variant_seo_traffic_price_change": {
+        "input": {
+          "traffic_source": "seo"
+        },
+        "stubs": {
+          "analyze": {
+            "cro_path": ".agents/marketing/cro/restore.json",
+            "hypotheses": [
+              {
+                "id": "H1",
+                "title": "Цена «от 690 ₽» за простое фото"
+              }
+            ],
+            "orders": [
+              {
+                "kind": "code_task",
+                "task": {
+                  "id": "T-price-variant"
+                },
+                "reason_code": "cro_price_anchor",
+                "entity_ids": [
+                  "landing:restore"
+                ],
+                "touches_scopes": [
+                  "landing_variant"
+                ],
+                "forecast": {
+                  "metric": "lead_cr",
+                  "point": 0.2,
+                  "lo80": 0.05,
+                  "hi80": 0.35,
+                  "horizon_days": 14
+                },
+                "risk": "medium"
+              }
+            ],
+            "needs_owner_go": true
+          },
+          "drain_outbox": {
+            "dispatched_count": 1,
+            "dispatched_ids": [
+              "lptask_price_1"
+            ]
+          }
+        },
+        "human_answers": {
+          "owner_go": "approve"
+        },
+        "expect_path": [
+          "load_state",
+          "speed",
+          "capture",
+          "message_match",
+          "analyze",
+          "audit",
+          "owner_go",
+          "commit_intents",
+          "drain_outbox",
+          "done"
+        ],
+        "expect_output": {
+          "status": "done",
+          "message_match_score": 1,
+          "hypotheses": 1,
+          "dispatched_count": 1
+        }
+      },
+      "variant_message_mismatch": {
+        "stubs": {
+          "message_match": {
+            "min_score": 0.35,
+            "mismatches": 3,
+            "price_mismatch": true,
+            "report_path": ".agents/marketing/cro/restore/match.json"
+          },
+          "audit": {
+            "status": "rework",
+            "findings": [
+              {
+                "severity": "high",
+                "title": "top hypothesis ignores the price mismatch"
+              }
+            ],
+            "reasons": "make the price mismatch H1"
+          }
+        },
+        "expect_path": [
+          "load_state",
+          "speed",
+          "capture",
+          "message_match",
+          "analyze",
+          "audit",
+          "analyze",
+          "audit",
+          "hold",
+          "held"
+        ],
+        "expect_output": {
+          "status": "held",
+          "message_match_score": 0.35
+        }
+      }
+    },
+    "live": "лендинг услуги из Директа: снимки 375x812, сверка с ads.json кампании, поручения design-lead/copy-lead и задача варианта с browser-qa",
+    "note": "Message-match guard per council §5/§6.5: deterministic lemmas + price + erid first, then the Jev noul on the 375x812 first screen (p >= 0.75 pass, <= 0.3 block)."
+  }
+}

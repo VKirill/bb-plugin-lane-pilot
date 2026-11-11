@@ -1,0 +1,853 @@
+{
+  "id": "mkt-pulse-monitor",
+  "name": {
+    "en": "Marketing pulse monitor",
+    "ru": "Пульс-монитор маркетинга (коридоры, алерты, готовность выборок)"
+  },
+  "description": {
+    "en": "The scheduled daily (or hourly) marketing sweep over paid channels: spend, CPA, CR and funnel deltas against the corridor, alert rules, sample readiness of running tests; wakes tracking, CRO, experiment close or drop diagnosis only when a metric leaves the corridor, quiet otherwise. Paid-channel and conversion metrics, not organic rankings.",
+    "ru": "Плановый ежедневный (или почасовой) обход платных каналов: траты, CPA, CR и сдвиги воронки против коридора, правила алертов, готовность выборок идущих тестов; будит трекинг, CRO, закрытие эксперимента или диагностику просадки только когда метрика вышла из коридора, иначе молчит. Метрики платных каналов и конверсий, не органические позиции."
+  },
+  "examples": {
+    "en": [
+      "Check yesterday's ad spend and CPA against the corridor",
+      "Daily marketing pulse: anything abnormal?",
+      "Scheduled daily_sweep of marketing",
+      "Site conversions dipped yesterday: check channels and CPA"
+    ],
+    "ru": [
+      "Сверь сегодняшние маркетинговые метрики с коридором",
+      "Не упали ли платные конверсии за ночь? Запусти пульс",
+      "Запусти часовой надзор за тратой и конверсиями рекламы",
+      "Каким идущим тестам уже хватает выборки?"
+    ]
+  },
+  "not_for": [
+    "organic search traffic or ranking drops (seo-drop-diagnosis)",
+    "the weekly SEO loop (seo-monitor)",
+    "a whole specialist shift (sp-specialist-tick)"
+  ],
+  "status": "published",
+  "tags": [
+    "marketing",
+    "analytics",
+    "monitor",
+    "schedule"
+  ],
+  "triggers": [
+    "manual",
+    "schedule"
+  ],
+  "inputs": {
+    "window": {
+      "type": "hourly|daily|weekly",
+      "default": "daily",
+      "description": "the window read from the cursor: last hour, last day or last week"
+    },
+    "scope": {
+      "type": "all|paid|organic|product",
+      "default": "all",
+      "description": "which metric family to watch: everything, paid ads, organic traffic or product funnel"
+    },
+    "quiet": {
+      "type": "bool",
+      "default": true,
+      "description": "inside the corridor write one line only, no owner message"
+    }
+  },
+  "outputs": {
+    "status": "quiet|alerted|tracking_outage|held",
+    "alerts": "int?",
+    "report_path": "string?",
+    "dispatched_count": "int?"
+  },
+  "live_success": {
+    "output": "status",
+    "in": [
+      "quiet",
+      "alerted"
+    ]
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "mkt-ab-mde-alerts",
+      "mkt-end-to-end-analytics",
+      "lp-agentic-discipline"
+    ],
+    "secrets": [
+      "YANDEX_METRIKA_RO_TOKEN?",
+      "POSTHOG_READ_KEY?"
+    ]
+  },
+  "budget": {
+    "max_minutes": 30,
+    "max_usd": 2
+  },
+  "goal_check": "gate",
+  "entry": "load_state",
+  "nodes": [
+    {
+      "id": "load_state",
+      "type": "action",
+      "action": "sp.load_memory",
+      "title": {
+        "en": "Cursors, locks, corridors, calendar",
+        "ru": "Курсоры, замки, коридоры, календарь"
+      },
+      "domain": "marketing",
+      "graphId": "mkt-pulse-monitor",
+      "acquireTick": false,
+      "out": {
+        "has_charter": "bool",
+        "charter_json": "string",
+        "active_locks_json": "string",
+        "cursors_json": "string"
+      }
+    },
+    {
+      "id": "alerts",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Anomalies by robust z with BH correction ($0)",
+        "ru": "Аномалии по робастному z с поправкой BH ($0)"
+      },
+      "skill": "mkt-ab-mde-alerts",
+      "script": "product_alerts.py",
+      "args": {
+        "window": "{{$inputs.window}}",
+        "scope": "{{$inputs.scope}}",
+        "cursors": "{{load_state.cursors_json}}",
+        "locks": "{{load_state.active_locks_json}}",
+        "fdr_q": 0.1,
+        "robust_z": 3.5,
+        "hysteresis_windows": 2,
+        "holiday_calendar": "calendar-ru"
+      },
+      "secrets": [
+        "YANDEX_METRIKA_RO_TOKEN?",
+        "POSTHOG_READ_KEY?"
+      ],
+      "timeoutSec": 120,
+      "onError": "output",
+      "out": {
+        "freshness_ok": "bool",
+        "anomaly_count": "int",
+        "anomalies_json": "string",
+        "matured_locks": "int",
+        "readiness_json": "string",
+        "new_cursor_json": "string",
+        "breaker_signals_json": "string"
+      }
+    },
+    {
+      "id": "forecast",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Forecast corridors ($0)",
+        "ru": "Коридоры прогноза ($0)"
+      },
+      "skill": "mkt-ab-mde-alerts",
+      "script": "metric_forecast.py",
+      "args": {
+        "window": "{{$inputs.window}}",
+        "scope": "{{$inputs.scope}}",
+        "interval": 0.8
+      },
+      "timeoutSec": 120,
+      "out": {
+        "out_of_corridor": "int",
+        "corridor_json": "string"
+      }
+    },
+    {
+      "id": "breaker",
+      "type": "action",
+      "action": "sp.breaker_eval",
+      "title": {
+        "en": "Emergency breaker triggers",
+        "ru": "Триггеры аварийной отсечки"
+      },
+      "domain": "marketing",
+      "signals": [
+        "{{alerts.breaker_signals_json}}"
+      ],
+      "locks": "{{load_state.active_locks_json}}",
+      "out": {
+        "fired": "bool",
+        "trigger_codes": "string[]",
+        "reason": "string",
+        "stop_plan_json": "string"
+      }
+    },
+    {
+      "id": "breaker_apply",
+      "type": "action",
+      "action": "sp.apply_mutation",
+      "title": {
+        "en": "Cut spend (class S)",
+        "ru": "Срезать трату (класс S)"
+      },
+      "skip_when": "breaker.fired == false",
+      "skip_out": {
+        "applied": 0,
+        "failed": 0,
+        "receipt_path": "",
+        "mutation_ids": []
+      },
+      "tier": "S",
+      "plan": "{{breaker.stop_plan_json}}",
+      "authorisation": "charter.emergency_actions",
+      "out": {
+        "applied": "int",
+        "failed": "int",
+        "receipt_path": "string",
+        "mutation_ids": "string[]"
+      }
+    },
+    {
+      "id": "outage",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Tracking outage: freeze and queue the repair",
+        "ru": "Обрыв трекинга: заморозка и ремонт"
+      },
+      "phase": "outage",
+      "domain": "marketing",
+      "repairGraph": "mkt-tracking-setup",
+      "reasonCode": "tracking_outage",
+      "out": {
+        "intents": "int",
+        "frozen_sources": "string[]"
+      }
+    },
+    {
+      "id": "triage",
+      "type": "action",
+      "action": "sp.jev_question_triage",
+      "title": {
+        "en": "Real anomaly or noise (Jev noul, p >= 0.70 / <= 0.25)",
+        "ru": "Реальная аномалия или шум (Jev noul, p >= 0.70 / <= 0.25)"
+      },
+      "domain": "marketing",
+      "mode": "every_tick",
+      "deltas": [
+        "{{alerts.anomalies_json}}",
+        "{{forecast.corridor_json}}"
+      ],
+      "realP": 0.7,
+      "noiseP": 0.25,
+      "maxPerJudgment": 48,
+      "out": {
+        "due_count": "int",
+        "selected_count": "int",
+        "selected_json": "string",
+        "real_count": "int"
+      }
+    },
+    {
+      "id": "classify",
+      "type": "agent",
+      "role": "specialist:growth-marketer",
+      "skip_when": "alerts.anomaly_count == 0 && forecast.out_of_corridor == 0 && alerts.matured_locks == 0 && breaker.fired == false",
+      "skip_out": {
+        "alert_level": "none",
+        "causes": [],
+        "orders": [],
+        "summary": "'в коридоре нормы'",
+        "needs_owner_go": false
+      },
+      "profile": {
+        "skills": [
+          "mkt-ab-mde-alerts",
+          "mkt-end-to-end-analytics",
+          "lp-agentic-discipline"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Classify causes and route follow-ups",
+        "ru": "Классифицировать причины и маршрутизировать продолжения"
+      },
+      "prompt": "Window {{$inputs.window}}, scope {{$inputs.scope}}. <data>Anomalies {{alerts.anomalies_json}}; corridors {{forecast.corridor_json}}; sample readiness {{alerts.readiness_json}} ({{alerts.matured_locks}} matured); Jev triage {{triage.selected_json}} ({{triage.real_count}} judged real); breaker {{breaker.reason}}</data>.\nFor each signal pick a cause class: tracking_outage, seasonality, holiday, gsc_lag, immature_cohort, real_drop, fraud or noise. Only real_drop and fraud justify action. Route: real organic drop -> sub_graph seo-drop-diagnosis; landing CR drop with stable traffic -> sub_graph mkt-landing-cro-audit; tracking gap -> sub_graph mkt-tracking-setup; matured lock -> sub_graph mkt-experiment-cycle with phase evaluate. alert_level: none, watch, act or emergency. Orders are ActionOrder objects with reason_code, entity_ids, touches_scopes, an interval forecast and risk low | medium | high; needs_owner_go only for an order that spends. Return alert_level, causes, orders, summary (one line), needs_owner_go.",
+      "out": {
+        "alert_level": "none|watch|act|emergency",
+        "causes": "object[]",
+        "orders": "ActionOrder[]",
+        "summary": "string",
+        "needs_owner_go": "bool"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "audit",
+      "type": "agent",
+      "role": "auditor",
+      "session": "new",
+      "skip_when": "alerts.anomaly_count == 0 && forecast.out_of_corridor == 0 && alerts.matured_locks == 0 && breaker.fired == false",
+      "skip_out": {
+        "status": "pass",
+        "findings": [],
+        "reasons": ""
+      },
+      "profile": {
+        "skills": [
+          "mkt-ab-mde-alerts",
+          "lp-agentic-discipline"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Audit the cause classes and routes",
+        "ru": "Ревизия классов причин и маршрутов"
+      },
+      "prompt": "Audit the pulse classification <data>{{classify.causes}}; orders {{classify.orders}}; summary {{classify.summary}}</data> against <data>{{alerts.anomalies_json}}</data>. Check: no action on a signal classed seasonality, holiday, gsc_lag, immature_cohort or noise; a real_drop cites the robust z, the BH-adjusted p and two windows of persistence; a matured-lock route cites readiness >= 1 or a boundary; no duplicate route already open for the same entity. Status pass, rework (what to change in reasons) or block; findings carry severity critical, high, medium, low or info.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]",
+        "reasons": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 8
+      }
+    },
+    {
+      "id": "hold",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Hold unaudited routes",
+        "ru": "Отложить непроверенные маршруты"
+      },
+      "phase": "hold",
+      "domain": "marketing",
+      "orders": "{{classify.orders}}",
+      "auditReasons": "{{audit.reasons}}",
+      "out": {
+        "held": "int"
+      }
+    },
+    {
+      "id": "owner_go",
+      "type": "human",
+      "role": "owner",
+      "skip_when": "classify.needs_owner_go == false",
+      "skip_out": {
+        "answer": "",
+        "answer_kind": "none"
+      },
+      "title": {
+        "en": "Approve a spending follow-up",
+        "ru": "Утвердить продолжение с тратой"
+      },
+      "prompt": "A follow-up of this pulse spends money (for example insurance bidding during a confirmed organic drop). The signal, the cause class and the forecast are in the report. approve runs it; decline drops it. hold (the default) keeps everything as it is and asks again on the next tick. «Сам реши» or no answer is never an approval: a timeout routes like hold.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approve|decline|hold|timeout|none"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      },
+      "options": [
+        "approve",
+        "decline",
+        "hold"
+      ],
+      "defaultOption": "hold"
+    },
+    {
+      "id": "commit_intents",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Snapshot, readiness, routes in one transaction",
+        "ru": "Снимок, готовность, маршруты одной транзакцией"
+      },
+      "phase": "intents",
+      "domain": "marketing",
+      "orders": "{{classify.orders}}",
+      "ownerAnswer": "{{owner_go.answer_kind}}",
+      "snapshot": [
+        "{{alerts.anomalies_json}}",
+        "{{forecast.corridor_json}}",
+        "{{alerts.readiness_json}}"
+      ],
+      "out": {
+        "intents": "int"
+      }
+    },
+    {
+      "id": "drain_outbox",
+      "type": "action",
+      "action": "sp.dispatch_tasks",
+      "title": {
+        "en": "Start follow-up graphs (idempotent)",
+        "ru": "Запустить продолжения (идемпотентно)"
+      },
+      "domain": "marketing",
+      "sourceGraph": "mkt-pulse-monitor",
+      "out": {
+        "dispatched_count": "int",
+        "dispatched_ids": "string[]"
+      }
+    },
+    {
+      "id": "receipt",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Pulse line, cursor CAS, status",
+        "ru": "Строка пульса, CAS курсора, статус"
+      },
+      "phase": "receipt",
+      "domain": "marketing",
+      "cursorUpdates": [
+        "{{alerts.new_cursor_json}}"
+      ],
+      "expectedCursors": "{{load_state.cursors_json}}",
+      "freshness": [
+        "{{alerts.freshness_ok}}"
+      ],
+      "quiet": "{{$inputs.quiet}}",
+      "out": {
+        "final_status": "quiet|alerted|tracking_outage|held",
+        "alerts": "int",
+        "report_path": "string",
+        "dispatched_count": "int"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "receipt.final_status",
+        "alerts": "receipt.alerts",
+        "report_path": "receipt.report_path",
+        "dispatched_count": "receipt.dispatched_count"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "load_state",
+      "to": "alerts"
+    },
+    {
+      "from": "alerts",
+      "to": "forecast"
+    },
+    {
+      "from": "forecast",
+      "to": "breaker"
+    },
+    {
+      "from": "breaker",
+      "to": "breaker_apply"
+    },
+    {
+      "from": "breaker_apply",
+      "to": "outage",
+      "when": "alerts.freshness_ok == false",
+      "label": "tracking outage: freeze"
+    },
+    {
+      "from": "breaker_apply",
+      "to": "triage"
+    },
+    {
+      "from": "outage",
+      "to": "drain_outbox"
+    },
+    {
+      "from": "triage",
+      "to": "classify"
+    },
+    {
+      "from": "classify",
+      "to": "audit"
+    },
+    {
+      "from": "audit",
+      "to": "classify",
+      "when": "audit.status == 'rework' && visits('audit') < 2",
+      "label": "rework classification"
+    },
+    {
+      "from": "audit",
+      "to": "owner_go",
+      "when": "audit.status == 'pass'"
+    },
+    {
+      "from": "audit",
+      "to": "hold"
+    },
+    {
+      "from": "hold",
+      "to": "receipt"
+    },
+    {
+      "from": "owner_go",
+      "to": "commit_intents"
+    },
+    {
+      "from": "commit_intents",
+      "to": "drain_outbox"
+    },
+    {
+      "from": "drain_outbox",
+      "to": "receipt"
+    },
+    {
+      "from": "receipt",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "mkt-pulse-sim-1",
+    "sim": {
+      "input": {
+        "window": "daily",
+        "scope": "all",
+        "quiet": true
+      },
+      "stubs": {
+        "load_state": {
+          "has_charter": true,
+          "charter_json": "{}",
+          "active_locks_json": "[{\"id\":\"lock_h12\",\"lock_scope\":\"test_cell\"}]",
+          "cursors_json": "{\"metrika\":\"2026-11-10\"}"
+        },
+        "alerts": {
+          "freshness_ok": true,
+          "anomaly_count": 0,
+          "anomalies_json": "[]",
+          "matured_locks": 0,
+          "readiness_json": "{\"lock_h12\":0.62}",
+          "new_cursor_json": "{\"metrika\":\"2026-11-11\"}",
+          "breaker_signals_json": "{}"
+        },
+        "forecast": {
+          "out_of_corridor": 0,
+          "corridor_json": "{}"
+        },
+        "breaker": {
+          "fired": false,
+          "trigger_codes": [],
+          "reason": "no trigger",
+          "stop_plan_json": "[]"
+        },
+        "breaker_apply": {
+          "applied": 0,
+          "failed": 0,
+          "receipt_path": "",
+          "mutation_ids": []
+        },
+        "outage": {
+          "intents": 1,
+          "frozen_sources": [
+            "metrika"
+          ]
+        },
+        "triage": {
+          "due_count": 0,
+          "selected_count": 0,
+          "selected_json": "[]",
+          "real_count": 0
+        },
+        "classify": {
+          "alert_level": "act",
+          "causes": [
+            {
+              "metric": "pay_cr",
+              "cause": "real_drop"
+            }
+          ],
+          "orders": [],
+          "summary": "",
+          "needs_owner_go": false
+        },
+        "audit": {
+          "status": "pass",
+          "findings": [],
+          "reasons": ""
+        },
+        "hold": {
+          "held": 1
+        },
+        "commit_intents": {
+          "intents": 0
+        },
+        "drain_outbox": {
+          "dispatched_count": 0,
+          "dispatched_ids": []
+        },
+        "receipt": {
+          "final_status": "quiet",
+          "alerts": 0,
+          "report_path": ".agents/marketing/pulse/2026-11-11.md",
+          "dispatched_count": 0
+        }
+      },
+      "expect_path": [
+        "load_state",
+        "alerts",
+        "forecast",
+        "breaker",
+        "breaker_apply",
+        "triage",
+        "classify",
+        "audit",
+        "owner_go",
+        "commit_intents",
+        "drain_outbox",
+        "receipt",
+        "done"
+      ],
+      "expect_output": {
+        "status": "quiet",
+        "alerts": 0,
+        "dispatched_count": 0
+      },
+      "variant_matured_lock_and_drop": {
+        "stubs": {
+          "alerts": {
+            "freshness_ok": true,
+            "anomaly_count": 1,
+            "anomalies_json": "[{\"metric\":\"pay_cr\",\"z\":-4.1,\"q\":0.03,\"windows\":2}]",
+            "matured_locks": 1,
+            "readiness_json": "{\"lock_h12\":1.05}",
+            "new_cursor_json": "{\"metrika\":\"2026-11-11\"}",
+            "breaker_signals_json": "{}"
+          },
+          "triage": {
+            "due_count": 1,
+            "selected_count": 1,
+            "selected_json": "[{\"id\":\"Q-MKT-005\",\"p_real\":0.83}]",
+            "real_count": 1
+          },
+          "classify": {
+            "alert_level": "act",
+            "causes": [
+              {
+                "metric": "pay_cr",
+                "cause": "real_drop"
+              }
+            ],
+            "orders": [
+              {
+                "kind": "sub_graph",
+                "workflow_id": "mkt-landing-cro-audit",
+                "inputs": {
+                  "landing_url": "https://example.ru"
+                },
+                "reason_code": "cr_drop_landing",
+                "entity_ids": [
+                  "metric:pay_cr"
+                ],
+                "touches_scopes": [
+                  "reporting"
+                ],
+                "forecast": {
+                  "metric": "pay_cr",
+                  "point": 0.03,
+                  "lo80": 0.025,
+                  "hi80": 0.035,
+                  "horizon_days": 7
+                },
+                "risk": "low"
+              },
+              {
+                "kind": "sub_graph",
+                "workflow_id": "mkt-experiment-cycle",
+                "inputs": {
+                  "phase": "evaluate",
+                  "lock_id": "lock_h12"
+                },
+                "reason_code": "lock_matured",
+                "entity_ids": [
+                  "lock:lock_h12"
+                ],
+                "touches_scopes": [
+                  "reporting"
+                ],
+                "forecast": {
+                  "metric": "pay_cr",
+                  "point": 0.18,
+                  "lo80": 0.05,
+                  "hi80": 0.3,
+                  "horizon_days": 1
+                },
+                "risk": "low"
+              }
+            ],
+            "summary": "CR оплаты -22% два окна подряд (z -4.1); тест h-12 созрел",
+            "needs_owner_go": false
+          },
+          "commit_intents": {
+            "intents": 2
+          },
+          "drain_outbox": {
+            "dispatched_count": 2,
+            "dispatched_ids": [
+              "wfrun_cro_1",
+              "wfrun_exp_eval_1"
+            ]
+          },
+          "receipt": {
+            "final_status": "alerted",
+            "alerts": 1,
+            "report_path": ".agents/marketing/pulse/2026-11-11.md",
+            "dispatched_count": 2
+          }
+        },
+        "expect_path": [
+          "load_state",
+          "alerts",
+          "forecast",
+          "breaker",
+          "breaker_apply",
+          "triage",
+          "classify",
+          "audit",
+          "owner_go",
+          "commit_intents",
+          "drain_outbox",
+          "receipt",
+          "done"
+        ],
+        "expect_output": {
+          "status": "alerted",
+          "alerts": 1,
+          "dispatched_count": 2
+        }
+      },
+      "variant_tracking_outage": {
+        "stubs": {
+          "alerts": {
+            "freshness_ok": false,
+            "anomaly_count": 0,
+            "anomalies_json": "[]",
+            "matured_locks": 0,
+            "readiness_json": "{}",
+            "new_cursor_json": "{}",
+            "breaker_signals_json": "{\"hits_drop\":0.93,\"spend\":12}"
+          },
+          "breaker": {
+            "fired": true,
+            "trigger_codes": [
+              "tracking_down_with_spend"
+            ],
+            "reason": "hits -93% while spend continues",
+            "stop_plan_json": "[{\"tool\":\"direct.strategy.pause_learning\",\"ids\":[\"c_1\"]}]"
+          },
+          "breaker_apply": {
+            "applied": 1,
+            "failed": 0,
+            "receipt_path": ".agents/marketing/rollback/mut_31.json",
+            "mutation_ids": [
+              "mut_31"
+            ]
+          },
+          "drain_outbox": {
+            "dispatched_count": 1,
+            "dispatched_ids": [
+              "wfrun_tracking_3"
+            ]
+          },
+          "receipt": {
+            "final_status": "tracking_outage",
+            "alerts": 1,
+            "report_path": ".agents/marketing/pulse/2026-11-11.md",
+            "dispatched_count": 1
+          }
+        },
+        "expect_path": [
+          "load_state",
+          "alerts",
+          "forecast",
+          "breaker",
+          "breaker_apply",
+          "outage",
+          "drain_outbox",
+          "receipt",
+          "done"
+        ],
+        "expect_output": {
+          "status": "tracking_outage",
+          "dispatched_count": 1
+        }
+      },
+      "variant_audit_fail_twice_hold": {
+        "stubs": {
+          "alerts": {
+            "freshness_ok": true,
+            "anomaly_count": 1,
+            "anomalies_json": "[{\"metric\":\"clicks\",\"z\":-3.6,\"q\":0.08,\"windows\":1}]",
+            "matured_locks": 0,
+            "readiness_json": "{}",
+            "new_cursor_json": "{\"metrika\":\"2026-11-11\"}",
+            "breaker_signals_json": "{}"
+          },
+          "audit": {
+            "status": "rework",
+            "findings": [
+              {
+                "severity": "medium",
+                "title": "one window only: hysteresis not met"
+              }
+            ],
+            "reasons": "reclass as watch"
+          },
+          "receipt": {
+            "final_status": "held",
+            "alerts": 1,
+            "report_path": ".agents/marketing/pulse/2026-11-11.md",
+            "dispatched_count": 0
+          }
+        },
+        "expect_path": [
+          "load_state",
+          "alerts",
+          "forecast",
+          "breaker",
+          "breaker_apply",
+          "triage",
+          "classify",
+          "audit",
+          "classify",
+          "audit",
+          "hold",
+          "receipt",
+          "done"
+        ],
+        "expect_output": {
+          "status": "held",
+          "dispatched_count": 0
+        }
+      }
+    },
+    "live": "расписание daily 08:30 на photoalive: тихая строка в коридоре; при созревании замка — автозапуск mkt-experiment-cycle phase=evaluate",
+    "note": "Quiet windows skip classify and audit (skip_out pass) and cost $0 LLM. Council D-02/D-03/S-05: BH q=0.10, robust z >= 3.5, 2-window hysteresis, RU calendar, tracking health precondition; §2 breaker class S."
+  }
+}

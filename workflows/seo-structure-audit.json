@@ -22,8 +22,8 @@
   },
   "not_for": [
     "seo-cocoon",
-    "seo-tech-audit",
-    "seo-release"
+    "a technical crawl audit (seo-tech-audit)",
+    "one page refresh (seo-page-refresh)"
   ],
   "status": "published",
   "tags": [

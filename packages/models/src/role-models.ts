@@ -107,6 +107,7 @@ export const ROLE_TABLE: readonly RoleRow[] = [
   { id: "specialist", default: { model: "claude-opus-5-5", effort: "high", why: "An agent the owner created that has no row of its own. It writes, so Claude Opus. Known employees have their own rows." }, legacy: ["specialist"] },
   { id: "copy-lead", default: { model: "claude-sonnet-5-5", effort: "high", why: "Writes the words people read. Sonnet is enough; Opus stays for planning. The profile runs only on Claude." } },
   { id: "seo-specialist", default: { model: "claude-sonnet-5-5", effort: "high", why: "Builds a search plan from the SEO section of the catalog. A strong writer, not a routine click." } },
+  { id: "growth-marketer", default: { model: "claude-sonnet-5-5", effort: "high", why: "Plans unit economics, Direct, Telegram Ads, A/B tests and CRO from the Marketing catalog." } },
   { id: "design-lead", default: { model: "claude-sonnet-5-5", effort: "high", why: "Owns DESIGN.md and the screens. Judgment, so Sonnet high, and the profile runs only on Claude." } },
   { id: "video-lead", default: { model: "claude-sonnet-5-5", effort: "high", why: "Produces the film and checks the rendered file. Tool use plus judgment." } },
   { id: "tavily", default: { model: "claude-sonnet-5-5", effort: "high", why: "Reads sources and writes a cited note. Not a one-click search." } },

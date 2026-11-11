@@ -15,6 +15,7 @@ describe("bundled BB session profiles", () => {
       "dev-orchestrator",
       "copy-lead",
       "seo-specialist",
+      "growth-marketer",
       "design-lead",
       "project-onboarder",
       "tavily",

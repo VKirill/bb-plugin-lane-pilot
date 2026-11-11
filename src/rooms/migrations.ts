@@ -30,6 +30,7 @@ import { hypothesisMigrations } from "./hypotheses";
 import { wallMigrations } from "./wall";
 import { checkerMigrations } from "./checkers";
 import { memoryConflictMigrations } from "@lane-pilot/memory-core";
+import { spMigrations } from "./specialist";
 export const migrations = [
   `CREATE TABLE lane_pilot_project_settings (
     project_id TEXT NOT NULL,
@@ -597,4 +598,5 @@ export const migrations = [
   `ALTER TABLE lane_pilot_task ADD COLUMN world_seq INTEGER`,
   // The counter's next value is two MAX reads, one per table, each on its index: no table is scanned on a transition.
   `CREATE INDEX IF NOT EXISTS lane_pilot_task_world_seq ON lane_pilot_task(world_seq)`,
+  ...spMigrations,
 ];

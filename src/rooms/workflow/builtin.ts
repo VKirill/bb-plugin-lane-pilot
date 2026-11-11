@@ -92,6 +92,17 @@ import seoTrust from "../../../workflows/seo-trust.json";
 import seoLinkbuilding from "../../../workflows/seo-linkbuilding.json";
 import seoOutreach from "../../../workflows/seo-outreach.json";
 import seoMentions from "../../../workflows/seo-mentions.json";
+import seoAiVisibility from "../../../workflows/seo-ai-visibility.json";
+import spSpecialistTick from "../../../workflows/sp-specialist-tick.json";
+import mktProjectIntake from "../../../workflows/mkt-project-intake.json";
+import mktTrackingSetup from "../../../workflows/mkt-tracking-setup.json";
+import mktExperimentCycle from "../../../workflows/mkt-experiment-cycle.json";
+import mktTgAdsCampaign from "../../../workflows/mkt-tg-ads-campaign.json";
+import mktDirectSearchCampaign from "../../../workflows/mkt-direct-search-campaign.json";
+import mktLandingCroAudit from "../../../workflows/mkt-landing-cro-audit.json";
+import mktPulseMonitor from "../../../workflows/mkt-pulse-monitor.json";
+import lpSpecialistEval from "../../../workflows/lp.specialist-eval.json";
+import lpCurriculumIngest from "../../../workflows/lp.curriculum-ingest.json";
 import socialPost from "../../../workflows/social-post.json";
 import telegramSend from "../../../workflows/telegram-send.json";
 import testGen from "../../../workflows/test-gen.json";
@@ -217,6 +228,17 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "seo-linkbuilding.json", value: seoLinkbuilding },
   { name: "seo-mentions.json", value: seoMentions },
   { name: "seo-outreach.json", value: seoOutreach },
+  { name: "seo-ai-visibility.json", value: seoAiVisibility },
+  { name: "sp-specialist-tick.json", value: spSpecialistTick },
+  { name: "mkt-project-intake.json", value: mktProjectIntake },
+  { name: "mkt-tracking-setup.json", value: mktTrackingSetup },
+  { name: "mkt-experiment-cycle.json", value: mktExperimentCycle },
+  { name: "mkt-tg-ads-campaign.json", value: mktTgAdsCampaign },
+  { name: "mkt-direct-search-campaign.json", value: mktDirectSearchCampaign },
+  { name: "mkt-landing-cro-audit.json", value: mktLandingCroAudit },
+  { name: "mkt-pulse-monitor.json", value: mktPulseMonitor },
+  { name: "lp.specialist-eval.json", value: lpSpecialistEval },
+  { name: "lp.curriculum-ingest.json", value: lpCurriculumIngest },
   { name: "social-post.json", value: socialPost },
   { name: "telegram-send.json", value: telegramSend },
   { name: "test-gen.json", value: testGen },

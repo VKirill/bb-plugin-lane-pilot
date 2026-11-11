@@ -1,0 +1,668 @@
+{
+  "id": "mkt-project-intake",
+  "name": {
+    "en": "Marketing project intake",
+    "ru": "Старт маркетинга проекта (устав)"
+  },
+  "description": {
+    "en": "Cold start of a paid-marketing direction: reads unit economics (margin, LTV, max CAC), maps the funnel, writes the marketing charter with the North Star and budgets, and asks the owner the few facts only they know. It then starts tracking setup or a landing audit and schedules the pulse monitor. It runs no ads itself.",
+    "ru": "Холодный старт платного маркетинга: читает юнит-экономику (маржа, LTV, потолок CAC), строит карту воронки, пишет маркетинговый устав с North Star и бюджетами и задаёт владельцу только те вопросы, ответ на которые знает лишь он. Затем запускает настройку трекинга или аудит лендинга и ставит пульс-монитор в расписание. Рекламу сам не запускает."
+  },
+  "examples": {
+    "en": [
+      "Start marketing for a new product: margin, max CAC and budgets",
+      "Onboard the growth marketer on this project",
+      "Set up the marketing charter and North Star"
+    ],
+    "ru": [
+      "Заведи маркетинг нового проекта: цель, бюджет, юнит-экономика",
+      "Составь маркетинговый устав для телеграм-бота: North Star и потолок CAC",
+      "Подключи маркетолога к продукту и реши, с чего начать",
+      "Со следующего месяца запускаем платный трафик: карта воронки и раскладка бюджета"
+    ]
+  },
+  "not_for": [
+    "mkt-pulse-monitor: the daily corridor check once a charter exists",
+    "seo-project-intake: the SEO passport of a site (brandcore, technical route), not ad budgets and CAC",
+    "mkt-tracking-setup: fixing counters, goals and UTM once the charter exists",
+    "sp-specialist-tick: the scheduled shift that runs on top of an existing charter",
+    "mkt-experiment-cycle: designing or reading one A/B test"
+  ],
+  "status": "published",
+  "tags": [
+    "marketing",
+    "analytics",
+    "intake"
+  ],
+  "triggers": [
+    "manual"
+  ],
+  "inputs": {
+    "project_url": {
+      "type": "string",
+      "required": true,
+      "description": "site, bot or store URL of the product"
+    },
+    "product_kind": {
+      "type": "tg_bot|saas|ecommerce|services|infobiz",
+      "default": "saas",
+      "description": "what is sold: telegram bot, SaaS, online store, services or info products (changes the funnel template)"
+    },
+    "has_paid_traffic": {
+      "type": "bool",
+      "default": false,
+      "description": "paid channels already run with spend history (false = cold start with a competitor baseline)"
+    },
+    "analytics_stack": {
+      "type": "metrika|ga4|both|none",
+      "default": "both",
+      "description": "web analytics in place: Yandex Metrika, GA4, both or none yet"
+    },
+    "budget_monthly_eur": {
+      "type": "number",
+      "default": 0,
+      "note": "media budget the owner named; 0 = ask with a safe default"
+    }
+  },
+  "outputs": {
+    "status": "done|charter_proposed|held",
+    "charter_version": "int?",
+    "first_graph": "string?",
+    "owner_questions_queued": "int?",
+    "dispatched_count": "int?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "mkt-end-to-end-analytics",
+      "lp-agentic-discipline",
+      "drmax-brandcore",
+      "mkt-ab-mde-alerts"
+    ],
+    "secrets": [
+      "YANDEX_METRIKA_RO_TOKEN?",
+      "XMLSTOCK_KEY?"
+    ]
+  },
+  "budget": {
+    "max_minutes": 90,
+    "max_usd": 6
+  },
+  "goal_check": "gate",
+  "entry": "load_state",
+  "nodes": [
+    {
+      "id": "load_state",
+      "type": "action",
+      "action": "sp.load_memory",
+      "title": {
+        "en": "Existing charter, history depth, open facts",
+        "ru": "Текущий устав, глубина истории, открытые факты"
+      },
+      "domain": "marketing",
+      "graphId": "mkt-project-intake",
+      "acquireTick": false,
+      "out": {
+        "has_charter": "bool",
+        "cold_start": "bool",
+        "charter_json": "string",
+        "open_assumptions_json": "string"
+      }
+    },
+    {
+      "id": "discover",
+      "type": "agent",
+      "role": "specialist:growth-marketer",
+      "profile": {
+        "skills": [
+          "mkt-end-to-end-analytics",
+          "drmax-brandcore",
+          "lp-agentic-discipline"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Product, funnel and counters inventory (read-only)",
+        "ru": "Инвентаризация продукта, воронки и счётчиков (только чтение)"
+      },
+      "prompt": "Inventory {{$inputs.project_url}} ({{$inputs.product_kind}}, stack {{$inputs.analytics_stack}}). Read-only: the offer and prices from the site, the funnel steps from visit to payment (for a bot: /start deep links, activation, payment webhook), Metrika counters and goals (mcp-yandex-seo-ro), GA4 properties and key events (mcp-ga4-ro), GTM containers (mcp-gtm-ro), and where payments are recorded. Existing charter, if any: <data>{{load_state.charter_json}}</data>. Never change an account. Write .agents/marketing/intake/brief.md. Return brief_path, funnel_steps, counters_found, payment_source and facts_missing (facts only the owner knows: margin, refunds, forbidden topics, geos).",
+      "out": {
+        "brief_path": "string",
+        "funnel_steps": "string[]",
+        "counters_found": "string[]",
+        "payment_source": "string",
+        "facts_missing": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "unit_econ",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Unit economics and payback maturity ($0)",
+        "ru": "Юнит-экономика и дозревание окупаемости ($0)"
+      },
+      "skill": "mkt-end-to-end-analytics",
+      "script": "unit_economics_check.py",
+      "args": {
+        "brief": "{{discover.brief_path}}",
+        "budget_monthly_eur": "{{$inputs.budget_monthly_eur}}",
+        "safe_default_floor": 0.65
+      },
+      "timeoutSec": 60,
+      "out": {
+        "max_cac_eur": "number",
+        "payback_days": "number",
+        "maturity_window_days": "number",
+        "margin_known": "bool",
+        "assumptions_json": "string"
+      }
+    },
+    {
+      "id": "baseline",
+      "type": "agent",
+      "role": "specialist:growth-marketer",
+      "skip_when": "load_state.cold_start == false && $inputs.has_paid_traffic == true",
+      "skip_out": {
+        "baseline_path": "",
+        "priors_json": "'{}'"
+      },
+      "profile": {
+        "skills": [
+          "mkt-end-to-end-analytics",
+          "mkt-ab-mde-alerts"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Cold-start competitor baseline",
+        "ru": "Конкурентный бейзлайн холодного старта"
+      },
+      "prompt": "Cold start (no 28 days of history). Build the competitor baseline for {{$inputs.project_url}}: SERP share of the top-10 competitors on 30-50 core queries (mcp-xmlstock, cached per day), frequency and competition (mcp-mutagen), and industry priors for CTR, CR and CPC as Beta priors with an effective size of at most 20 and wide intervals. Anomaly detection stays off until a source has 14 days. Write .agents/marketing/intake/baseline_prior.json. Return baseline_path and priors_json.",
+      "out": {
+        "baseline_path": "string",
+        "priors_json": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "charter",
+      "type": "agent",
+      "role": "specialist:growth-marketer",
+      "profile": {
+        "skills": [
+          "mkt-end-to-end-analytics",
+          "lp-agentic-discipline",
+          "mkt-ab-mde-alerts"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Charter draft, first graph, owner questions",
+        "ru": "Черновик устава, первый граф, вопросы владельцу"
+      },
+      "prompt": "Draft the charter (schema_version 1) from <data>brief {{discover.brief_path}}; unit economics max_cac_eur {{unit_econ.max_cac_eur}}, payback_days {{unit_econ.payback_days}}, maturity_window_days {{unit_econ.maturity_window_days}}, margin_known {{unit_econ.margin_known}}, assumptions {{unit_econ.assumptions_json}}; priors {{baseline.priors_json}}; missing facts {{discover.facts_missing}}</data>.\nFill north_star (metric_id, formula, baseline, target, horizon_date, source_of_truth), guardrails (max_cac, min_romi, min_sample_events_before_kill, forbidden_topics), budgets (monthly, daily, auto_test_cell_cap, daily_auto_commit_cap, max_concurrent_test_cells, llm_compute_cap_daily_usd, api_cap_daily, 70/20/10 allocation; on cold start 100% to measurability first), arsenal (allowed channels and graphs) and emergency_actions (class S only: pause, budget down, exclude placement). Combined safe-default discount is 1 - sqrt(sum w_i * d_i^2), never below 0.65.\nSet tracking_ok false when a payment cannot be tied to a source (discrepancy above 10% or no start= tagging). first_graph: mkt-tracking-setup when tracking_ok is false; mkt-landing-cro-audit when traffic exists but the landing converts below payback; mkt-experiment-cycle otherwise. orders: ActionOrder objects (kind sub_graph for first_graph, kind schedule for mkt-pulse-monitor daily), each with reason_code, entity_ids, touches_scopes, an interval forecast and risk low | medium | high. owner_questions: at most 4, each with fact_key, 2-4 options and a safe_default. needs_owner_go is true whenever the draft sets any budget cap (caps are owner_only). Return charter_draft_json, tracking_ok, first_graph, orders, owner_questions, needs_owner_go.",
+      "out": {
+        "charter_draft_json": "string",
+        "tracking_ok": "bool",
+        "first_graph": "mkt-tracking-setup|mkt-landing-cro-audit|mkt-experiment-cycle",
+        "orders": "ActionOrder[]",
+        "owner_questions": "OwnerQuestion[]",
+        "needs_owner_go": "bool"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "audit",
+      "type": "agent",
+      "role": "auditor",
+      "session": "new",
+      "profile": {
+        "skills": [
+          "lp-agentic-discipline",
+          "mkt-end-to-end-analytics"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Audit the charter math and caps",
+        "ru": "Ревизия математики и лимитов устава"
+      },
+      "prompt": "Audit the charter draft <data>{{charter.charter_draft_json}}</data> against unit economics (max_cac_eur {{unit_econ.max_cac_eur}}, payback_days {{unit_econ.payback_days}}) and the owner's budget {{$inputs.budget_monthly_eur}}. Check: every number traces to the brief, the script or the baseline; caps never exceed the owner's budget; the auto cell is at least the minimum viable cell (cpa_est x n_required / horizon_days) or the experiment share is moved to core; safe defaults are conservative but the combined discount is not below 0.65; emergency_actions hold only class S actions; first_graph follows the tracking rule; no forbidden promise. Status pass, rework (say what to change in reasons) or block; findings carry severity critical, high, medium, low or info.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]",
+        "reasons": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 10
+      }
+    },
+    {
+      "id": "hold",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Keep the draft, ask the owner",
+        "ru": "Сохранить черновик, спросить владельца"
+      },
+      "phase": "hold",
+      "domain": "marketing",
+      "draftCharter": "{{charter.charter_draft_json}}",
+      "auditReasons": "{{audit.reasons}}",
+      "out": {
+        "held": "int"
+      }
+    },
+    {
+      "id": "owner_go",
+      "type": "human",
+      "role": "owner",
+      "skip_when": "charter.needs_owner_go == false",
+      "skip_out": {
+        "answer": "",
+        "answer_kind": "none"
+      },
+      "title": {
+        "en": "Approve the charter caps",
+        "ru": "Утвердить лимиты устава"
+      },
+      "prompt": "Approve the marketing charter: North Star, CAC cap, monthly and daily media caps, the auto test cell cap and the emergency actions the breaker may take alone. approve makes it the authoritative charter; decline keeps it as a draft; with no answer the specialist works in proposes-only mode with zero auto spend. hold (the default) keeps everything as it is and asks again on the next tick. «Сам реши» or no answer is never an approval: a timeout routes like hold.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approve|decline|hold|timeout|none"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 1440
+      },
+      "options": [
+        "approve",
+        "decline",
+        "hold"
+      ],
+      "defaultOption": "hold"
+    },
+    {
+      "id": "set_charter",
+      "type": "action",
+      "action": "sp.charter_set",
+      "title": {
+        "en": "Write the authoritative charter (owner act)",
+        "ru": "Записать действующий устав (действие владельца)"
+      },
+      "skip_when": "owner_go.answer_kind != 'approve'",
+      "skip_out": {
+        "version": 0,
+        "sha256": ""
+      },
+      "domain": "marketing",
+      "charter": "{{charter.charter_draft_json}}",
+      "approvedBy": "{{owner_go.answer}}",
+      "out": {
+        "version": "int",
+        "sha256": "string"
+      }
+    },
+    {
+      "id": "commit_intents",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Funnel map, open facts and the first orders in one transaction",
+        "ru": "Карта воронки, открытые факты и первые приказы одной транзакцией"
+      },
+      "phase": "intents",
+      "domain": "marketing",
+      "orders": "{{charter.orders}}",
+      "ownerQuestions": "{{charter.owner_questions}}",
+      "ownerAnswer": "{{owner_go.answer_kind}}",
+      "charterVersion": "{{set_charter.version}}",
+      "artifacts": [
+        "{{discover.brief_path}}",
+        "{{baseline.baseline_path}}"
+      ],
+      "out": {
+        "final_status": "done|charter_proposed",
+        "intents": "int",
+        "owner_cards": "int"
+      }
+    },
+    {
+      "id": "drain_outbox",
+      "type": "action",
+      "action": "sp.dispatch_tasks",
+      "title": {
+        "en": "Start the first graph, schedule the pulse",
+        "ru": "Запустить первый граф, поставить пульс"
+      },
+      "domain": "marketing",
+      "sourceGraph": "mkt-project-intake",
+      "out": {
+        "dispatched_count": "int",
+        "dispatched_ids": "string[]"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "commit_intents.final_status",
+        "charter_version": "set_charter.version",
+        "first_graph": "charter.first_graph",
+        "owner_questions_queued": "commit_intents.owner_cards",
+        "dispatched_count": "drain_outbox.dispatched_count"
+      }
+    },
+    {
+      "id": "held",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "held",
+        "dispatched_count": 0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "load_state",
+      "to": "discover"
+    },
+    {
+      "from": "discover",
+      "to": "unit_econ"
+    },
+    {
+      "from": "unit_econ",
+      "to": "baseline"
+    },
+    {
+      "from": "baseline",
+      "to": "charter"
+    },
+    {
+      "from": "charter",
+      "to": "audit"
+    },
+    {
+      "from": "audit",
+      "to": "charter",
+      "when": "audit.status == 'rework' && visits('audit') < 2",
+      "label": "rework charter"
+    },
+    {
+      "from": "audit",
+      "to": "owner_go",
+      "when": "audit.status == 'pass'"
+    },
+    {
+      "from": "audit",
+      "to": "hold"
+    },
+    {
+      "from": "hold",
+      "to": "held"
+    },
+    {
+      "from": "owner_go",
+      "to": "set_charter"
+    },
+    {
+      "from": "set_charter",
+      "to": "commit_intents"
+    },
+    {
+      "from": "commit_intents",
+      "to": "drain_outbox"
+    },
+    {
+      "from": "drain_outbox",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "mkt-intake-sim-1",
+    "sim": {
+      "input": {
+        "project_url": "https://t.me/photoalive_bot",
+        "product_kind": "tg_bot",
+        "has_paid_traffic": false,
+        "analytics_stack": "metrika",
+        "budget_monthly_eur": 1500
+      },
+      "stubs": {
+        "load_state": {
+          "has_charter": false,
+          "cold_start": true,
+          "charter_json": "",
+          "open_assumptions_json": "[]"
+        },
+        "discover": {
+          "brief_path": ".agents/marketing/intake/brief.md",
+          "funnel_steps": [
+            "start",
+            "upload",
+            "preview",
+            "pay"
+          ],
+          "counters_found": [
+            "metrika:98765"
+          ],
+          "payment_source": "db:payments",
+          "facts_missing": [
+            "gross_margin_pct"
+          ]
+        },
+        "unit_econ": {
+          "max_cac_eur": 3.8,
+          "payback_days": 14,
+          "maturity_window_days": 9,
+          "margin_known": false,
+          "assumptions_json": "[{\"fact_key\":\"unit_econ.gross_margin_pct\",\"safe_default\":0.55}]"
+        },
+        "baseline": {
+          "baseline_path": ".agents/marketing/intake/baseline_prior.json",
+          "priors_json": "{\"cr_start_to_pay\":{\"alpha\":2,\"beta\":38}}"
+        },
+        "charter": {
+          "charter_draft_json": "{\"north_star\":{\"metric_id\":\"net_paid_users_30d\",\"target\":600},\"budgets\":{\"monthly_media_cap\":1500,\"auto_test_cell_cap\":25}}",
+          "tracking_ok": false,
+          "first_graph": "mkt-tracking-setup",
+          "orders": [
+            {
+              "kind": "sub_graph",
+              "workflow_id": "mkt-tracking-setup",
+              "inputs": {
+                "site_url": "https://t.me/photoalive_bot"
+              },
+              "reason_code": "tracking_gap",
+              "entity_ids": [
+                "funnel:start"
+              ],
+              "touches_scopes": [
+                "tracking_tags"
+              ],
+              "forecast": {
+                "metric": "attributed_paid_share",
+                "point": 0.95,
+                "lo80": 0.9,
+                "hi80": 0.99,
+                "horizon_days": 7
+              },
+              "risk": "low"
+            }
+          ],
+          "owner_questions": [
+            {
+              "fact_key": "unit_econ.gross_margin_pct",
+              "options": [
+                "40%",
+                "55%",
+                "70%"
+              ],
+              "safe_default": "40%"
+            }
+          ],
+          "needs_owner_go": true
+        },
+        "audit": {
+          "status": "pass",
+          "findings": [],
+          "reasons": ""
+        },
+        "hold": {
+          "held": 1
+        },
+        "set_charter": {
+          "version": 1,
+          "sha256": "a1b2c3"
+        },
+        "commit_intents": {
+          "final_status": "done",
+          "intents": 2,
+          "owner_cards": 1
+        },
+        "drain_outbox": {
+          "dispatched_count": 2,
+          "dispatched_ids": [
+            "wfrun_tracking_1",
+            "sched_pulse_1"
+          ]
+        }
+      },
+      "human_answers": {
+        "owner_go": "approve"
+      },
+      "expect_path": [
+        "load_state",
+        "discover",
+        "unit_econ",
+        "baseline",
+        "charter",
+        "audit",
+        "owner_go",
+        "set_charter",
+        "commit_intents",
+        "drain_outbox",
+        "done"
+      ],
+      "expect_output": {
+        "status": "done",
+        "charter_version": 1,
+        "first_graph": "mkt-tracking-setup",
+        "owner_questions_queued": 1,
+        "dispatched_count": 2
+      },
+      "variant_history_timeout": {
+        "input": {
+          "has_paid_traffic": true
+        },
+        "stubs": {
+          "load_state": {
+            "has_charter": false,
+            "cold_start": false,
+            "charter_json": "",
+            "open_assumptions_json": "[]"
+          },
+          "commit_intents": {
+            "final_status": "charter_proposed",
+            "intents": 0,
+            "owner_cards": 1
+          },
+          "drain_outbox": {
+            "dispatched_count": 0,
+            "dispatched_ids": []
+          }
+        },
+        "human_answers": {
+          "owner_go": "timeout"
+        },
+        "expect_path": [
+          "load_state",
+          "discover",
+          "unit_econ",
+          "baseline",
+          "charter",
+          "audit",
+          "owner_go",
+          "set_charter",
+          "commit_intents",
+          "drain_outbox",
+          "done"
+        ],
+        "expect_output": {
+          "status": "charter_proposed",
+          "charter_version": 0,
+          "dispatched_count": 0
+        }
+      },
+      "variant_audit_fail_twice_hold": {
+        "stubs": {
+          "audit": {
+            "status": "rework",
+            "findings": [
+              {
+                "severity": "high",
+                "title": "auto cell below the minimum viable cell"
+              }
+            ],
+            "reasons": "raise the cell or move the share to core"
+          }
+        },
+        "expect_path": [
+          "load_state",
+          "discover",
+          "unit_econ",
+          "baseline",
+          "charter",
+          "audit",
+          "charter",
+          "audit",
+          "hold",
+          "held"
+        ],
+        "expect_output": {
+          "status": "held",
+          "dispatched_count": 0
+        }
+      }
+    },
+    "live": "запуск на photoalive (tg_bot, metrika): черновик устава, approve владельца, авто-старт mkt-tracking-setup и расписание mkt-pulse-monitor",
+    "note": "Cold start (council §4) runs the baseline node; caps are owner_only (E-11/E-17): the authoritative row in lane_pilot_sp_charter is written only by sp.charter_set after approve."
+  }
+}

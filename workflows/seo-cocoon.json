@@ -27,9 +27,9 @@
     ]
   },
   "not_for": [
+    "writing briefs for pages of an already designed cocoon (seo-brief)",
     "web-research",
-    "insights-post",
-    "analyze-plan-execute"
+    "insights-post"
   ],
   "status": "tested",
   "live_success": {

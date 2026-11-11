@@ -21,9 +21,10 @@
     ]
   },
   "not_for": [
-    "seo-page",
-    "seo-cocoon",
-    "seo-release"
+    "seo-cocoon: a topical cocoon of hand-planned articles, not template pages from an entity matrix",
+    "seo-page: one flagship page written by hand",
+    "seo-release: shipping without new templates",
+    "mkt-direct-search-campaign: ad groups, not site pages"
   ],
   "status": "published",
   "tags": [
@@ -32,8 +33,9 @@
   ],
   "inputs": {
     "mode": {
-      "type": "catalog|service_geo|meta_alt",
-      "default": "catalog"
+      "type": "catalog|service_geo|meta_alt|bofu_programmatic",
+      "default": "catalog",
+      "description": "catalog and PDP templates, service x geo matrix, batch meta/alt, or BOFU comparison/alternative/migration/integration pages through Content Factory"
     },
     "catalog_export_path": {
       "type": "string",
@@ -67,7 +69,8 @@
     "geo_specs_path": "string?",
     "meta_import_path": "string?",
     "verdict_path": "string?",
-    "release_report_path": "string?"
+    "release_report_path": "string?",
+    "cf_batch_id": "string?"
   },
   "requires": {
     "plugins": [
@@ -78,7 +81,12 @@
       "seo-tools",
       "seo-page-templates",
       "seo-release-protocol",
-      "seo-measurement-loop"
+      "seo-measurement-loop",
+      "seo-programmatic-bofu",
+      "drmax-latent-intent"
+    ],
+    "secrets": [
+      "XMLSTOCK_KEY?"
     ]
   },
   "budget": {
@@ -251,6 +259,95 @@
       }
     },
     {
+      "id": "bofu_matrix",
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "skip_when": "$inputs.mode != 'bofu_programmatic'",
+      "skip_out": {
+        "matrix_path": "",
+        "rows": 0
+      },
+      "profile": {
+        "skills": [
+          "seo-programmatic-bofu",
+          "drmax-latent-intent",
+          "seo-page-templates"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "BOFU entity matrix",
+        "ru": "Матрица BOFU-сущностей"
+      },
+      "prompt": "Build the BOFU entity matrix from the catalog and demand exports ({{$inputs.catalog_export_path}}, {{$inputs.demand_data_path}}): Comparison (X vs Y), Alternative to X, Migration from X, Integration with X, Role/Use-case. One row per page candidate with the target query, the parent page, the verified facts available from brandcore/fact registry, and the SERP top-10. No row without real demand. Return matrix_path and rows.",
+      "out": {
+        "matrix_path": "string",
+        "rows": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 40
+      }
+    },
+    {
+      "id": "info_gain",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Information-gain gate and cannibalization guard ($0)",
+        "ru": "Гейт прироста информации и защита от каннибализации ($0)"
+      },
+      "skip_when": "$inputs.mode != 'bofu_programmatic'",
+      "skip_out": {
+        "passed": 0,
+        "absorbed": 0,
+        "report_path": ""
+      },
+      "skill": "seo-programmatic-bofu",
+      "script": "cannibalization_guard.py",
+      "args": {
+        "matrix": "{{bofu_matrix.matrix_path}}",
+        "serp_overlap_lt": 0.4,
+        "min_unique_facts": 3
+      },
+      "timeoutSec": 120,
+      "out": {
+        "passed": "int",
+        "absorbed": "int",
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "similarity",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Near-duplicate check ($0)",
+        "ru": "Проверка почти-дублей ($0)"
+      },
+      "skip_when": "$inputs.mode != 'bofu_programmatic'",
+      "skip_out": {
+        "near_duplicates": 0,
+        "report_path": ""
+      },
+      "skill": "seo-programmatic-bofu",
+      "script": "offerist_similarity.py",
+      "args": {
+        "matrix": "{{info_gain.report_path}}",
+        "threshold": 0.72
+      },
+      "timeoutSec": 120,
+      "out": {
+        "near_duplicates": "int",
+        "report_path": "string"
+      }
+    },
+    {
       "id": "meta_alt",
       "produces": [
         {
@@ -277,6 +374,11 @@
         "skills": [
           "seo-page-templates"
         ]
+      },
+      "skip_when": "$inputs.mode == 'bofu_programmatic'",
+      "skip_out": {
+        "meta_import_path": "",
+        "release_items": []
       }
     },
     {
@@ -293,7 +395,7 @@
         "en": "Pilot sample verdict",
         "ru": "Вердикт по пилотной выборке"
       },
-      "prompt": "Sample 20 generated pages or meta records per template: uniqueness, geo differentiation, null-variable leaks, protected-page locks. Verdict status pass | rework; findings carry severity critical | high | medium | low | info. Return status, verdict_path, pilot_items.",
+      "prompt": "Sample 20 generated pages or meta records per template: uniqueness, geo differentiation, null-variable leaks, protected-page locks. Verdict status pass | rework; findings carry severity critical | high | medium | low | info. Return status, verdict_path, pilot_items. In bofu_programmatic mode also check: every page passed the information-gain gate ({{info_gain.passed}} passed, {{info_gain.absorbed}} absorbed into parents), near-duplicates are 0 ({{similarity.near_duplicates}}), no doorway or scaled thin content (DrMax canon), and the first wave is at most 15 URLs. Verify modular block-engine pre-flight (references/modular-seo-block-engine-and-60pt-audit.md): DoD D1–D10 green on one URL per page type, shingle overlap of block text < 0.6 (Hero/CTA/Contacts excluded), and express audit score >= 70 with zero critical ERR.",
       "out": {
         "status": "pass|rework",
         "verdict_path": "string",
@@ -353,6 +455,84 @@
         "skills": [
           "seo-release-protocol"
         ]
+      },
+      "skip_when": "$inputs.mode == 'bofu_programmatic'",
+      "skip_out": {
+        "status": "skipped",
+        "release_report_path": ""
+      }
+    },
+    {
+      "id": "cf_handoff",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Build the lp.cf-batch/1 pilot (<= 15 URLs) ($0)",
+        "ru": "Собрать пилот lp.cf-batch/1 (<= 15 URL) ($0)"
+      },
+      "skip_when": "$inputs.mode != 'bofu_programmatic'",
+      "skip_out": {
+        "batch_path": "",
+        "pilot_size": 0,
+        "wave": 0,
+        "orders": []
+      },
+      "skill": "seo-programmatic-bofu",
+      "script": "cf_batch_handoff.py",
+      "args": {
+        "passed": "{{info_gain.report_path}}",
+        "similarity": "{{similarity.report_path}}",
+        "pilot_max": 15,
+        "next_wave_min_indexation_14d": 0.65
+      },
+      "timeoutSec": 60,
+      "out": {
+        "batch_path": "string",
+        "pilot_size": "int",
+        "wave": "int",
+        "orders": "ActionOrder[]"
+      }
+    },
+    {
+      "id": "cf_commit",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Batch order + 21-day indexation lock",
+        "ru": "Приказ на пачку + 21-дневный замок индексации"
+      },
+      "skip_when": "$inputs.mode != 'bofu_programmatic'",
+      "skip_out": {
+        "intents": 0,
+        "batch_id": ""
+      },
+      "phase": "intents",
+      "domain": "seo",
+      "orders": "{{cf_handoff.orders}}",
+      "ownerAnswer": "{{approve.answer_kind}}",
+      "out": {
+        "intents": "int",
+        "batch_id": "string"
+      }
+    },
+    {
+      "id": "cf_drain",
+      "type": "action",
+      "action": "sp.dispatch_tasks",
+      "title": {
+        "en": "Submit to Content Factory (bb cf, idempotent)",
+        "ru": "Отправить в Контент завод (bb cf, идемпотентно)"
+      },
+      "skip_when": "$inputs.mode != 'bofu_programmatic'",
+      "skip_out": {
+        "dispatched_count": 0,
+        "dispatched_ids": []
+      },
+      "domain": "seo",
+      "sourceGraph": "seo-template-scale",
+      "out": {
+        "dispatched_count": "int",
+        "dispatched_ids": "string[]"
       }
     },
     {
@@ -383,7 +563,8 @@
         "geo_specs_path": "service_geo.geo_specs_path",
         "meta_import_path": "meta_alt.meta_import_path",
         "verdict_path": "critic.verdict_path",
-        "release_report_path": "rollout.release_report_path"
+        "release_report_path": "rollout.release_report_path",
+        "cf_batch_id": "cf_commit.batch_id"
       }
     },
     {
@@ -417,11 +598,6 @@
       "pass": "artifact"
     },
     {
-      "from": "proof",
-      "to": "meta_alt",
-      "pass": "artifact"
-    },
-    {
       "from": "meta_alt",
       "to": "critic",
       "pass": "artifact"
@@ -443,13 +619,48 @@
       "pass": "artifact"
     },
     {
-      "from": "rollout",
-      "to": "package",
+      "from": "package",
+      "to": "done",
       "pass": "artifact"
     },
     {
-      "from": "package",
-      "to": "done",
+      "from": "proof",
+      "to": "bofu_matrix",
+      "pass": "artifact"
+    },
+    {
+      "from": "bofu_matrix",
+      "to": "info_gain",
+      "pass": "artifact"
+    },
+    {
+      "from": "info_gain",
+      "to": "similarity",
+      "pass": "artifact"
+    },
+    {
+      "from": "similarity",
+      "to": "meta_alt",
+      "pass": "artifact"
+    },
+    {
+      "from": "rollout",
+      "to": "cf_handoff",
+      "pass": "artifact"
+    },
+    {
+      "from": "cf_handoff",
+      "to": "cf_commit",
+      "pass": "artifact"
+    },
+    {
+      "from": "cf_commit",
+      "to": "cf_drain",
+      "pass": "artifact"
+    },
+    {
+      "from": "cf_drain",
+      "to": "package",
       "pass": "artifact"
     }
   ],
@@ -499,16 +710,103 @@
         "commercial_chain",
         "service_geo",
         "proof",
+        "bofu_matrix",
+        "info_gain",
+        "similarity",
         "meta_alt",
         "critic",
         "approve",
         "rollout",
+        "cf_handoff",
+        "cf_commit",
+        "cf_drain",
         "package",
         "done"
       ],
       "expect_outputs": [
         "status == 'done'"
-      ]
+      ],
+      "human_answers": {
+        "approve": {
+          "answer_kind": "approve",
+          "answer": "approve"
+        }
+      },
+      "expect_output": {
+        "status": "done"
+      },
+      "variant_bofu_pilot": {
+        "input": {
+          "mode": "bofu_programmatic"
+        },
+        "human_answers": {
+          "approve": {
+            "answer_kind": "approve",
+            "answer": "approve"
+          }
+        },
+        "stubs": {
+          "bofu_matrix": {
+            "matrix_path": "bofu-matrix.json",
+            "rows": 48
+          },
+          "info_gain": {
+            "passed": 15,
+            "absorbed": 21,
+            "report_path": "info-gain.json"
+          },
+          "similarity": {
+            "near_duplicates": 0,
+            "report_path": "similarity.json"
+          },
+          "critic": {
+            "status": "pass",
+            "verdict_path": "pilot-verdict.md",
+            "pilot_items": [
+              "bofu-matrix.json"
+            ]
+          },
+          "cf_handoff": {
+            "batch_path": ".agents/seo/batches/cfb_9f1c.json",
+            "pilot_size": 15,
+            "wave": 1,
+            "orders": []
+          },
+          "cf_commit": {
+            "intents": 1,
+            "batch_id": "cfb_9f1c"
+          },
+          "cf_drain": {
+            "dispatched_count": 1,
+            "dispatched_ids": [
+              "cfb_9f1c"
+            ]
+          }
+        },
+        "expect_path": [
+          "passports",
+          "facets_stock",
+          "commercial_chain",
+          "service_geo",
+          "proof",
+          "bofu_matrix",
+          "info_gain",
+          "similarity",
+          "meta_alt",
+          "critic",
+          "approve",
+          "rollout",
+          "cf_handoff",
+          "cf_commit",
+          "cf_drain",
+          "package",
+          "done"
+        ],
+        "expect_output": {
+          "status": "done",
+          "cf_batch_id": "cfb_9f1c"
+        }
+      }
     },
     "live": "спецификации шаблонов по режиму, вердикт критика, go владельца, выкат только через seo-release",
     "note": "Tested on stubs: agents, the human gate and the subworkflow answer from stubs."

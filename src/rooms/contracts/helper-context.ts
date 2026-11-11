@@ -84,7 +84,7 @@ export type HelperRole =
   | "browser-qa" | "errand" | "api-recon" | "council-seat" | "rules-analyzer" | "episode-analyst" | "wall-hunter"
   | "analyst" | "planner" | "auditor" | "debugger"
   | "workspace-provisioner" | "lead" | "workflow-architect" | "harness-editor" | "harness-composer" | "harness-reflection"
-  | "specialist:design-lead" | "specialist:copy-lead" | "specialist:seo-specialist" | "specialist:tavily" | "specialist:video-lead"
+  | "specialist:design-lead" | "specialist:copy-lead" | "specialist:seo-specialist" | "specialist:growth-marketer" | "specialist:tavily" | "specialist:video-lead"
   | "specialist:3d-artist" | "specialist:game-dev" | "specialist:social-manager" | "specialist:billing-assistant" | "specialist:visual-artist" | "specialist:macos-operator"
   | "specialist:lead";
 
@@ -139,6 +139,7 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "specialist:design-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "project-design"], mcpServers: ["metamcp"] },
   "specialist:copy-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "copywriter"], mcpServers: [] },
   "specialist:seo-specialist": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "seo-drmax-orchestrator"], mcpServers: [] },
+  "specialist:growth-marketer": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "mkt-end-to-end-analytics"], mcpServers: [] },
   "specialist:tavily": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "tavily"], mcpServers: [] },
   "specialist:video-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "video-lead-playbook"], mcpServers: [] },
   "specialist:3d-artist": { bbPlugins: [], skills: ["blender-director"], mcpServers: ["blender"] },

@@ -20,6 +20,7 @@ import { registerCheckoutActions } from "./workflow-checkout-actions";
 import { registerProjectActions } from "./workflow-project-actions";
 import { registerTaskBookActions } from "./workflow-task-book";
 import { registerDelegatedActions } from "./workflow-delegated-actions";
+import { registerSpExecutors } from "../../specialist/server";
 
 export { provideLpTaskPipeline, chainRuntimeFor } from "./workflow-chain-runtime";
 export { workflowQuestionKey, humanOptions, humanFields, humanOutput, MACHINE_HUMAN_WAIT_SEC } from "./workflow-human-form";
@@ -99,6 +100,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   registerProjectActions(engine, ctx, { action, planHome, flagOf });
   registerDeliverableAction(action);
   registerTaskBookActions(engine, ctx, { action, planHome, lintTask });
+  registerSpExecutors(engine, ctx, { action });
 
   // ---------------------------------------------------------------- actions that go through a helper thread (skills, MCP, accounts)
   registerDelegatedActions(engine, ctx, agents);

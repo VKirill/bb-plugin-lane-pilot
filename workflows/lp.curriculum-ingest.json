@@ -1,0 +1,654 @@
+{
+  "id": "lp.curriculum-ingest",
+  "name": {
+    "en": "Curriculum ingest",
+    "ru": "Загрузка курсов: из транскриптов в атомы и shadow-вопросы"
+  },
+  "description": {
+    "en": "Turns course transcripts, books and case notes into versioned knowledge atoms: metric formulas, shadow questions for the question bank, anti-pattern checklists and node drafts, with source spans and conflict arbitration.",
+    "ru": "Превращает транскрипты курсов, книги и заметки по кейсам в версионированные атомы знаний: формулы метрик, shadow-вопросы для банка вопросов, чек-листы анти-паттернов и черновики узлов, с привязкой к фрагментам источника и арбитражем конфликтов."
+  },
+  "examples": {
+    "en": [
+      "Ingest the new course transcripts into the question bank",
+      "Distill these 20 videos into formulas and questions",
+      "Add the book chapter as knowledge atoms"
+    ],
+    "ru": [
+      "Загрузи новые транскрипты Осипенкова в маркетолога",
+      "Преврати законченный SEO-курс в атомы и shadow-вопросы",
+      "Выжми новые главы книги и сверь с каноном DrMax",
+      "Обработай новые уроки и переэкзаменуй специалиста"
+    ]
+  },
+  "not_for": [
+    "lp.specialist-eval: the exam itself (this graph only orders it)",
+    "seo-research: researching demand and SERP on the web, not ingesting owned course material",
+    "research-dossier: researching a topic on the web, not ingesting owned course material",
+    "anything a person asks in a chat: the transcription batch end and the schedule start this graph",
+    "insights-post: writing a post from insights"
+  ],
+  "status": "published",
+  "tags": [
+    "lead",
+    "knowledge",
+    "specialist",
+    "schedule-only"
+  ],
+  "triggers": [
+    "manual",
+    "schedule"
+  ],
+  "inputs": {
+    "source_dir": {
+      "type": "string",
+      "required": true,
+      "description": "folder with the new transcripts, book text or slides (read-only)"
+    },
+    "domain": {
+      "type": "seo|marketing",
+      "default": "marketing",
+      "description": "which specialist the material feeds: seo (DrMax canon wins conflicts) or marketing"
+    },
+    "source_kind": {
+      "type": "transcripts|book|slides|mixed",
+      "default": "transcripts",
+      "description": "what the folder holds (changes the attribution format: timestamp, page or slide)"
+    },
+    "run_eval": {
+      "type": "bool",
+      "default": true,
+      "description": "order lp.specialist-eval after the atoms land"
+    },
+    "topic": {
+      "type": "string",
+      "default": "",
+      "note": "free label, e.g. end-to-end analytics"
+    }
+  },
+  "outputs": {
+    "status": "done|nothing_new|held",
+    "atoms_path": "string?",
+    "shadow_questions": "int?",
+    "conflicts": "int?",
+    "dispatched_count": "int?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "lp-agentic-discipline",
+      "seo-evidence-contract",
+      "seo-drmax-orchestrator",
+      "text-insights"
+    ],
+    "secrets": []
+  },
+  "budget": {
+    "max_minutes": 180,
+    "max_usd": 15
+  },
+  "goal_check": "gate",
+  "entry": "load_state",
+  "nodes": [
+    {
+      "id": "load_state",
+      "type": "action",
+      "action": "sp.load_memory",
+      "title": {
+        "en": "Question bank stats, atoms index",
+        "ru": "Статистика банка вопросов, индекс атомов"
+      },
+      "domain": "{{$inputs.domain}}",
+      "graphId": "lp.curriculum-ingest",
+      "acquireTick": false,
+      "out": {
+        "has_charter": "bool",
+        "bank_stats_json": "string",
+        "atoms_index_path": "string"
+      }
+    },
+    {
+      "id": "inventory",
+      "type": "agent",
+      "role": "analyst",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Inventory new sources by hash",
+        "ru": "Инвентаризация новых источников по хэшу"
+      },
+      "prompt": "List every file in {{$inputs.source_dir}} ({{$inputs.source_kind}}) with sha256, title, author, lesson number and length. Skip files whose sha256 is already in the atoms index {{load_state.atoms_index_path}}. Never copy or move the sources. Write .agents/{{$inputs.domain}}/curriculum/inventory.json. Return inventory_path, sources, new_sources.",
+      "out": {
+        "inventory_path": "string",
+        "sources": "int",
+        "new_sources": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "extract",
+      "type": "agent",
+      "role": "analyst",
+      "profile": {
+        "skills": [
+          "lp-agentic-discipline",
+          "text-insights"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Engineering atoms and short attributed quotes",
+        "ru": "Инженерные атомы и короткие атрибутированные цитаты"
+      },
+      "prompt": "From the new sources in {{inventory.inventory_path}} write atoms in your own engineering prose: formulas with variables defined, thresholds with units and conditions, step procedures, anti-patterns, each with the source id and the exact location ([MM:SS] for transcripts, page for books, slide for decks). Verbatim quotes only when the wording matters, at most 25 words each, with speaker or author and location. Never paste paragraphs of the source; strip any watermark or distributor tag. Write .agents/{{$inputs.domain}}/curriculum/atoms.jsonl. Return atoms_path, atoms, quotes.",
+      "out": {
+        "atoms_path": "string",
+        "atoms": "int",
+        "quotes": "int"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 60
+      }
+    },
+    {
+      "id": "questions",
+      "type": "agent",
+      "role": "analyst",
+      "profile": {
+        "skills": [
+          "lp-agentic-discipline"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Shadow native questions",
+        "ru": "Shadow нативные вопросы"
+      },
+      "prompt": "Turn practical atoms from {{extract.atoms_path}} into native questions for the {{$inputs.domain}} specialist: id, graph_id, cadence (every_tick, pre_launch, daily_sweep, weekly_sweep or monthly_ttl_sweep), cooldown_hours, trigger_expr over named deltas (never the literal true), question, check_script (a script of a skill in skills/), auto_followup (an ActionOrder kind and target), source atom id. Every new question starts in status shadow. Current bank: <data>{{load_state.bank_stats_json}}</data>; do not duplicate an existing question. Write shadow-questions.json. Return shadow_path and shadow_questions.",
+      "out": {
+        "shadow_path": "string",
+        "shadow_questions": "int"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "arbitrate",
+      "type": "agent",
+      "role": "analyst",
+      "profile": {
+        "skills": [
+          "seo-evidence-contract",
+          "seo-drmax-orchestrator"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Arbitrate against the canon",
+        "ru": "Арбитраж против канона"
+      },
+      "prompt": "Compare the atoms {{extract.atoms_path}} and questions {{questions.shadow_path}} with the canon of the {{$inputs.domain}} skills (for seo the DrMax canon wins: doorway, scaled-content or link-spam advice is overridden and recorded). For each conflict record both claims, the evidence and the resolution in conflicts.json. canon_changes counts the skill references (skills/<name>/references/*.md) that should change. orders: ActionOrder objects — code_task per changed reference (owns_paths inside skills/<name>/references/, verification: skill-lint of that folder), sub_graph lp.specialist-eval when run_eval is {{$inputs.run_eval}} — each with reason_code, entity_ids, touches_scopes, an interval forecast of exam coverage and risk low | medium | high. Return conflicts, conflicts_path, canon_changes, orders.",
+      "out": {
+        "conflicts": "int",
+        "conflicts_path": "string",
+        "canon_changes": "int",
+        "orders": "ActionOrder[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "lint",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Copy, quote-length, watermark and trigger lint ($0)",
+        "ru": "Линт копирования, длины цитат, водяных знаков и триггеров ($0)"
+      },
+      "skill": "lp-agentic-discipline",
+      "script": "curriculum_lint.py",
+      "args": {
+        "atoms": "{{extract.atoms_path}}",
+        "questions": "{{questions.shadow_path}}",
+        "sources": "{{inventory.inventory_path}}",
+        "max_quote_words": 25,
+        "max_shingle_overlap": 0.2
+      },
+      "timeoutSec": 120,
+      "guards": {
+        "maxVisits": 2
+      },
+      "out": {
+        "violations": "int",
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "audit",
+      "type": "agent",
+      "role": "auditor",
+      "session": "new",
+      "profile": {
+        "skills": [
+          "lp-agentic-discipline",
+          "seo-evidence-contract"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Audit licensing, attribution and canon",
+        "ru": "Ревизия лицензирования, атрибуции и канона"
+      },
+      "prompt": "Audit the ingest: atoms {{extract.atoms_path}} ({{extract.atoms}} atoms, {{extract.quotes}} quotes), questions {{questions.shadow_path}}, conflicts {{arbitrate.conflicts_path}}, lint {{lint.report_path}} ({{lint.violations}} violations). Pass only when lint violations are 0, every quote has an author and an exact location, no atom is copied prose, every question has a non-trivial trigger_expr and an existing check_script, and every canon conflict is resolved. Status pass, rework (what to redo in reasons) or block; findings carry severity critical, high, medium, low or info.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]",
+        "reasons": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "hold",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Quarantine the batch",
+        "ru": "Карантин пачки"
+      },
+      "phase": "hold",
+      "domain": "{{$inputs.domain}}",
+      "artifacts": [
+        "{{extract.atoms_path}}",
+        "{{questions.shadow_path}}"
+      ],
+      "auditReasons": "{{audit.reasons}}",
+      "out": {
+        "held": "int"
+      }
+    },
+    {
+      "id": "owner_go",
+      "type": "human",
+      "role": "owner",
+      "skip_when": "arbitrate.canon_changes == 0",
+      "skip_out": {
+        "answer": "",
+        "answer_kind": "none"
+      },
+      "title": {
+        "en": "Approve changes to the skills canon",
+        "ru": "Утвердить правки канона скиллов"
+      },
+      "prompt": "The ingest proposes changes to skill references in the plugin repository (canon). The conflicts and the diffs are in the report. approve dispatches the writer tasks; decline keeps the atoms and shadow questions only. hold (the default) keeps everything as it is and asks again on the next tick. «Сам реши» or no answer is never an approval: a timeout routes like hold.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approve|decline|hold|timeout|none"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 1440
+      },
+      "options": [
+        "approve",
+        "decline",
+        "hold"
+      ],
+      "defaultOption": "hold"
+    },
+    {
+      "id": "commit_intents",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Atoms index, shadow questions, orders in one transaction",
+        "ru": "Индекс атомов, shadow-вопросы, приказы одной транзакцией"
+      },
+      "phase": "intents",
+      "domain": "{{$inputs.domain}}",
+      "orders": "{{arbitrate.orders}}",
+      "ownerAnswer": "{{owner_go.answer_kind}}",
+      "newShadowQuestions": "{{questions.shadow_path}}",
+      "atoms": "{{extract.atoms_path}}",
+      "inventory": "{{inventory.inventory_path}}",
+      "out": {
+        "intents": "int",
+        "questions_added": "int"
+      }
+    },
+    {
+      "id": "drain_outbox",
+      "type": "action",
+      "action": "sp.dispatch_tasks",
+      "title": {
+        "en": "Reference tasks and the re-exam",
+        "ru": "Задачи на references и переэкзаменовка"
+      },
+      "domain": "{{$inputs.domain}}",
+      "sourceGraph": "lp.curriculum-ingest",
+      "out": {
+        "dispatched_count": "int",
+        "dispatched_ids": "string[]"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "atoms_path": "extract.atoms_path",
+        "shadow_questions": "commit_intents.questions_added",
+        "conflicts": "arbitrate.conflicts",
+        "dispatched_count": "drain_outbox.dispatched_count"
+      }
+    },
+    {
+      "id": "nothing_new",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "nothing_new",
+        "shadow_questions": 0,
+        "dispatched_count": 0
+      }
+    },
+    {
+      "id": "held",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "held",
+        "atoms_path": "extract.atoms_path",
+        "dispatched_count": 0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "load_state",
+      "to": "inventory"
+    },
+    {
+      "from": "inventory",
+      "to": "nothing_new",
+      "when": "inventory.new_sources == 0"
+    },
+    {
+      "from": "inventory",
+      "to": "extract"
+    },
+    {
+      "from": "extract",
+      "to": "questions"
+    },
+    {
+      "from": "questions",
+      "to": "arbitrate"
+    },
+    {
+      "from": "arbitrate",
+      "to": "lint"
+    },
+    {
+      "from": "lint",
+      "to": "audit"
+    },
+    {
+      "from": "audit",
+      "to": "extract",
+      "when": "audit.status == 'rework' && visits('audit') < 2",
+      "label": "redo extraction"
+    },
+    {
+      "from": "audit",
+      "to": "owner_go",
+      "when": "audit.status == 'pass'"
+    },
+    {
+      "from": "audit",
+      "to": "hold"
+    },
+    {
+      "from": "hold",
+      "to": "held"
+    },
+    {
+      "from": "owner_go",
+      "to": "commit_intents"
+    },
+    {
+      "from": "commit_intents",
+      "to": "drain_outbox"
+    },
+    {
+      "from": "drain_outbox",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "lp-ingest-sim-1",
+    "sim": {
+      "input": {
+        "source_dir": "/home/ubuntu/specialist-curriculum/_transcripts/osipenkov-end-to-end-analytics",
+        "domain": "marketing",
+        "source_kind": "transcripts",
+        "run_eval": true,
+        "topic": "end-to-end analytics"
+      },
+      "stubs": {
+        "load_state": {
+          "has_charter": true,
+          "bank_stats_json": "{\"active\":88,\"shadow\":31}",
+          "atoms_index_path": ".agents/marketing/curriculum/atoms-index.json"
+        },
+        "inventory": {
+          "inventory_path": ".agents/marketing/curriculum/inventory.json",
+          "sources": 51,
+          "new_sources": 12
+        },
+        "extract": {
+          "atoms_path": ".agents/marketing/curriculum/atoms.jsonl",
+          "atoms": 164,
+          "quotes": 23
+        },
+        "questions": {
+          "shadow_path": ".agents/marketing/curriculum/shadow-questions.json",
+          "shadow_questions": 19
+        },
+        "arbitrate": {
+          "conflicts": 2,
+          "conflicts_path": ".agents/marketing/curriculum/conflicts.json",
+          "canon_changes": 1,
+          "orders": [
+            {
+              "kind": "code_task",
+              "task": {
+                "id": "T-ref-attribution",
+                "owns_paths": [
+                  "skills/mkt-end-to-end-analytics/references/attribution.md"
+                ]
+              },
+              "reason_code": "canon_reference_update",
+              "entity_ids": [
+                "skill:mkt-end-to-end-analytics"
+              ],
+              "touches_scopes": [
+                "skills_canon"
+              ],
+              "forecast": {
+                "metric": "exam_coverage",
+                "point": 0.88,
+                "lo80": 0.82,
+                "hi80": 0.93,
+                "horizon_days": 14
+              },
+              "risk": "low"
+            },
+            {
+              "kind": "sub_graph",
+              "workflow_id": "lp.specialist-eval",
+              "inputs": {
+                "role": "growth-marketer"
+              },
+              "reason_code": "re_exam_after_ingest",
+              "entity_ids": [
+                "role:growth-marketer"
+              ],
+              "touches_scopes": [
+                "rights"
+              ],
+              "forecast": {
+                "metric": "exam_coverage",
+                "point": 0.88,
+                "lo80": 0.82,
+                "hi80": 0.93,
+                "horizon_days": 14
+              },
+              "risk": "low"
+            }
+          ]
+        },
+        "lint": {
+          "violations": 0,
+          "report_path": ".agents/marketing/curriculum/lint.json"
+        },
+        "audit": {
+          "status": "pass",
+          "findings": [],
+          "reasons": ""
+        },
+        "hold": {
+          "held": 1
+        },
+        "commit_intents": {
+          "intents": 2,
+          "questions_added": 19
+        },
+        "drain_outbox": {
+          "dispatched_count": 2,
+          "dispatched_ids": [
+            "lptask_ref_1",
+            "wfrun_eval_1"
+          ]
+        }
+      },
+      "human_answers": {
+        "owner_go": "approve"
+      },
+      "expect_path": [
+        "load_state",
+        "inventory",
+        "extract",
+        "questions",
+        "arbitrate",
+        "lint",
+        "audit",
+        "owner_go",
+        "commit_intents",
+        "drain_outbox",
+        "done"
+      ],
+      "expect_output": {
+        "status": "done",
+        "shadow_questions": 19,
+        "conflicts": 2,
+        "dispatched_count": 2
+      },
+      "variant_nothing_new": {
+        "stubs": {
+          "inventory": {
+            "inventory_path": ".agents/marketing/curriculum/inventory.json",
+            "sources": 51,
+            "new_sources": 0
+          }
+        },
+        "expect_path": [
+          "load_state",
+          "inventory",
+          "nothing_new"
+        ],
+        "expect_output": {
+          "status": "nothing_new",
+          "dispatched_count": 0
+        }
+      },
+      "variant_lint_fail_twice_hold": {
+        "stubs": {
+          "lint": {
+            "violations": 4,
+            "report_path": ".agents/marketing/curriculum/lint.json"
+          },
+          "audit": {
+            "status": "rework",
+            "findings": [
+              {
+                "severity": "high",
+                "title": "4 quotes over 25 words"
+              }
+            ],
+            "reasons": "shorten or paraphrase quotes"
+          }
+        },
+        "expect_path": [
+          "load_state",
+          "inventory",
+          "extract",
+          "questions",
+          "arbitrate",
+          "lint",
+          "audit",
+          "extract",
+          "questions",
+          "arbitrate",
+          "lint",
+          "audit",
+          "hold",
+          "held"
+        ],
+        "expect_output": {
+          "status": "held",
+          "dispatched_count": 0
+        }
+      }
+    },
+    "live": "по завершении batch_transcribe_all.py: 12 новых транскриптов Осипенкова -> атомы, 19 shadow-вопросов, задача на references и lp.specialist-eval",
+    "note": "Council S-08: trigger_expr 'true' is forbidden, new questions are shadow until a verified-outcome Wilson LB >= 0.70 at >= 20 fires. Licensing: quotes <= 25 words with location, shingle overlap <= 0.2 (curriculum_lint.py). internal: not offered by the router."
+  }
+}

@@ -56,6 +56,20 @@ describe("status of the built-in chains", () => {
     expect(ids).toEqual(expect.arrayContaining(["seo-template-scale", "seo-trust"]));
     // SEO wave 3b: the link program is a chain; outreach and mentions are subworkflows it calls.
     expect(ids).toEqual(expect.arrayContaining(["seo-linkbuilding", "seo-outreach", "seo-mentions"]));
-    expect(ids).toHaveLength(113); // +8 SMA command workflows (milestone-summary, mvp-phase, note-add, phase-assumptions, profile-user, secure-phase, spec-phase, todo-add, +2 d5-phase-2 (backlog-add, plan-import); their cases are in tests/sma/parity-d4-workflows-b-2.test.ts), +1 lp.clarify (clarifying questions before a plan, SMA m_sg_clarify), +1 idea-shootdown (EGM brainstorm-only), +1 lp.episodes (stage 1 R5), +5 seo wave-1, +4 wave-2, +5 wave-3 (template-scale, trust, linkbuilding, outreach, mentions)
+    // Specialist OS (marketing shelf + SEO AI visibility + service daemon/eval/ingest).
+    expect(ids).toEqual(expect.arrayContaining([
+      "sp-specialist-tick",
+      "mkt-project-intake",
+      "mkt-tracking-setup",
+      "mkt-experiment-cycle",
+      "mkt-tg-ads-campaign",
+      "mkt-direct-search-campaign",
+      "mkt-landing-cro-audit",
+      "mkt-pulse-monitor",
+      "seo-ai-visibility",
+      "lp.specialist-eval",
+      "lp.curriculum-ingest",
+    ]));
+    expect(ids).toHaveLength(124); // 113 prior + 11 Specialist OS graphs
   });
 });

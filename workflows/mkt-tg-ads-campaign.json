@@ -1,0 +1,757 @@
+{
+  "id": "mkt-tg-ads-campaign",
+  "name": {
+    "en": "Telegram Ads campaign",
+    "ru": "Кампания в Telegram Ads (пулы, объявления, атрибуция start=)"
+  },
+  "description": {
+    "en": "Builds or extends an official Telegram Ads campaign: channel and bot pools, a one-to-one ad matrix, start= deep-link codes, CPM in TON, owner approval before paid delivery and the ads-sync check on the next tick.",
+    "ru": "Создаёт или расширяет официальную кампанию Telegram Ads: пулы каналов и ботов, матрица объявлений один-к-одному, коды диплинков start=, CPM в TON, одобрение владельца перед платной открутой и проверка синхронизации на следующем тике."
+  },
+  "examples": {
+    "en": [
+      "Launch Telegram Ads for the bot on UK channels",
+      "Build channel pools and ads for TG Ads",
+      "Raise CPM and add a new creative in Telegram Ads"
+    ],
+    "ru": [
+      "Запусти рекламу в Telegram Ads для бота на 3 пула каналов",
+      "Подготовь объявления и пулы Telegram Ads под новый оффер, пока без запуска",
+      "Собери Telegram Ads со start= метками, чтобы видеть, какое объявление приносит оплаты",
+      "Настрой тест TG Ads на родительских каналах для фото-бота"
+    ]
+  },
+  "not_for": [
+    "mkt-direct-search-campaign: Yandex Direct search or ЕПК, not Telegram Ads",
+    "seo-outreach: pitching publishers or admins for links and posts, not paid Telegram Ads",
+    "mkt-experiment-cycle: the statistics of a test (MDE, readout, scale or kill), not building the campaign",
+    "mkt-landing-cro-audit: the landing the ads lead to",
+    "social-post: an organic post in our own channel, not paid ads"
+  ],
+  "status": "published",
+  "tags": [
+    "marketing",
+    "ads",
+    "telegram-ads"
+  ],
+  "triggers": [
+    "manual"
+  ],
+  "inputs": {
+    "offer": {
+      "type": "string",
+      "required": true,
+      "description": "what the ads promise and where they lead (bot, channel or site)"
+    },
+    "objective": {
+      "type": "bot_starts|channel_subs|site_leads",
+      "default": "bot_starts",
+      "description": "the conversion the campaign buys: bot starts, channel subscribers or site leads"
+    },
+    "pool_mode": {
+      "type": "one_to_one|topic_pack|mixed",
+      "default": "topic_pack",
+      "description": "pool architecture: one ad per channel, topic packs of channels, or both"
+    },
+    "launch": {
+      "type": "bool",
+      "default": false,
+      "description": "start paid delivery after owner_go; false prepares a draft only"
+    },
+    "daily_budget_eur": {
+      "type": "number",
+      "default": 25,
+      "note": "requested daily spend; code checks it against the charter caps"
+    }
+  },
+  "outputs": {
+    "status": "drafted|launched|held",
+    "campaign_path": "string?",
+    "ads_count": "int?",
+    "lock_id": "string?",
+    "dispatched_count": "int?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot",
+      "browser-automation"
+    ],
+    "skills": [
+      "mkt-telegram-ads-method",
+      "telegram-ads",
+      "copywriter",
+      "mkt-landing-cro",
+      "mkt-ab-mde-alerts",
+      "lp-agentic-discipline"
+    ],
+    "secrets": [
+      "TG_ADS_SESSION?"
+    ],
+    "browserSession": true
+  },
+  "budget": {
+    "max_minutes": 120,
+    "max_usd": 8
+  },
+  "goal_check": "gate",
+  "entry": "load_state",
+  "nodes": [
+    {
+      "id": "load_state",
+      "type": "action",
+      "action": "sp.load_memory",
+      "title": {
+        "en": "Charter, pools history, locks",
+        "ru": "Устав, история пулов, замки"
+      },
+      "domain": "marketing",
+      "graphId": "mkt-tg-ads-campaign",
+      "acquireTick": false,
+      "out": {
+        "has_charter": "bool",
+        "charter_json": "string",
+        "active_locks_json": "string",
+        "pools_history_json": "string"
+      }
+    },
+    {
+      "id": "preflight",
+      "type": "action",
+      "action": "sp.jev_question_triage",
+      "title": {
+        "en": "Pre-launch questions (moderation, start= tagging, MDE)",
+        "ru": "Предполётные вопросы (модерация, start=, MDE)"
+      },
+      "domain": "marketing",
+      "mode": "pre_launch",
+      "graphFilter": "mkt-tg-ads-campaign",
+      "context": {
+        "offer": "{{$inputs.offer}}",
+        "objective": "{{$inputs.objective}}"
+      },
+      "out": {
+        "due_count": "int",
+        "selected_count": "int",
+        "selected_json": "string",
+        "blocking_count": "int"
+      }
+    },
+    {
+      "id": "pools",
+      "type": "agent",
+      "role": "specialist:growth-marketer",
+      "profile": {
+        "skills": [
+          "mkt-telegram-ads-method",
+          "telegram-ads"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Channel and bot pools with bot-farm screening",
+        "ru": "Пулы каналов и ботов с отсевом ботоводных"
+      },
+      "prompt": "Build Telegram Ads pools for <data>{{$inputs.offer}}</data>, objective {{$inputs.objective}}, pool mode {{$inputs.pool_mode}}. Use past pool results <data>{{load_state.pools_history_json}}</data>. Screen every channel for bot farms (view/subscriber ratio, ER spikes, foreign-bot share) and exclude it with the reason. Write .agents/marketing/campaigns/tg-<slug>/pools.json. Return pools_path, pools_count, excluded_count.",
+      "out": {
+        "pools_path": "string",
+        "pools_count": "int",
+        "excluded_count": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "ads",
+      "type": "agent",
+      "role": "specialist:copy-lead",
+      "profile": {
+        "skills": [
+          "copywriter",
+          "mkt-telegram-ads-method"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Ad texts within Telegram Ads limits",
+        "ru": "Тексты объявлений в лимитах Telegram Ads"
+      },
+      "prompt": "Write Telegram Ads texts (up to 160 characters, one clear promise, no forbidden claims, the price exactly as on the product) for <data>{{$inputs.offer}}</data>, 2-3 variants per pool from {{pools.pools_path}}. Lessons from moderation and the pre-launch answers: <data>{{preflight.selected_json}}</data>. Write ads.json next to the pools. Return ads_path and ads_count.",
+      "out": {
+        "ads_path": "string",
+        "ads_count": "int"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "moderation",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Moderation lint ($0)",
+        "ru": "Линт модерации ($0)"
+      },
+      "skill": "mkt-telegram-ads-method",
+      "script": "tg_moderation_lint.py",
+      "args": {
+        "ads": "{{ads.ads_path}}"
+      },
+      "timeoutSec": 60,
+      "out": {
+        "violations": "int",
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "attribution",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "start= deep link per ad ($0)",
+        "ru": "start= диплинк на каждое объявление ($0)"
+      },
+      "skill": "mkt-telegram-ads-method",
+      "script": "tg_start_attribution.py",
+      "args": {
+        "mode": "plan",
+        "ads": "{{ads.ads_path}}",
+        "pools": "{{pools.pools_path}}"
+      },
+      "timeoutSec": 60,
+      "out": {
+        "start_map_path": "string",
+        "tagged_ads": "int",
+        "untagged": "int"
+      }
+    },
+    {
+      "id": "message_match",
+      "type": "action",
+      "action": "sp.message_match",
+      "title": {
+        "en": "Ad-to-bot/landing message-match guard",
+        "ru": "Проверка соответствия объявления боту/лендингу"
+      },
+      "ads": "{{ads.ads_path}}",
+      "target": "{{$inputs.offer}}",
+      "viewport": "375x812",
+      "minLemmaOverlap": 0.5,
+      "minJevP": 0.75,
+      "out": {
+        "min_score": "number",
+        "mismatches": "int",
+        "price_mismatch": "bool",
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "plan",
+      "type": "agent",
+      "role": "specialist:growth-marketer",
+      "profile": {
+        "skills": [
+          "mkt-telegram-ads-method",
+          "mkt-ab-mde-alerts",
+          "lp-agentic-discipline"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Campaign file, bids, lock and orders",
+        "ru": "Файл кампании, ставки, замок и приказы"
+      },
+      "prompt": "Assemble the campaign from <data>pools {{pools.pools_path}} ({{pools.pools_count}} pools), ads {{ads.ads_path}}, moderation {{moderation.report_path}} ({{moderation.violations}} violations), start map {{attribution.start_map_path}} ({{attribution.untagged}} untagged), message match {{message_match.report_path}} (min score {{message_match.min_score}}, price mismatch {{message_match.price_mismatch}}), charter {{load_state.charter_json}}</data>. Daily budget asked: {{$inputs.daily_budget_eur}} EUR.\nWrite campaign.json: ad x pool matrix, CPM bids (EUR/TON), daily caps, the lock spec (lock_scope ad_creative_pool, n_required from the MDE rule, max_spend_ceiling, zero_event_breaker). launch_plan: the exact steps for the owner's Telegram Ads session. orders: ActionOrder objects (specialist_handoff to visual-artist when a pool needs an image, schedule of the ads-sync check next tick, sub_graph mkt-landing-cro-audit when the message match fails), each with reason_code, entity_ids, touches_scopes, an interval forecast and risk low | medium | high. needs_owner_go is true when launch is {{$inputs.launch}} and true. Return campaign_path, launch_plan, orders, spend_eur, needs_owner_go.",
+      "out": {
+        "campaign_path": "string",
+        "launch_plan": "object[]",
+        "orders": "ActionOrder[]",
+        "spend_eur": "number",
+        "needs_owner_go": "bool"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "audit",
+      "type": "agent",
+      "role": "auditor",
+      "session": "new",
+      "profile": {
+        "skills": [
+          "mkt-telegram-ads-method",
+          "lp-agentic-discipline"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Audit moderation, tagging, match and caps",
+        "ru": "Ревизия модерации, меток, соответствия и лимитов"
+      },
+      "prompt": "Audit the campaign <data>{{plan.campaign_path}}, orders {{plan.orders}}, spend {{plan.spend_eur}} EUR</data>. Pass only when: moderation violations are 0 ({{moderation.violations}}); untagged ads are 0 ({{attribution.untagged}}); the message-match min score is at least 0.6 and there is no price mismatch ({{message_match.price_mismatch}}), or the plan orders a landing fix and does not launch the mismatched ads; spend stays inside the daily cap and the rolling 24h auto cap; the lock carries a spend ceiling and a zero-event breaker. Status pass, rework (what to change in reasons) or block; findings carry severity critical, high, medium, low or info.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]",
+        "reasons": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 10
+      }
+    },
+    {
+      "id": "hold",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Hold the campaign draft",
+        "ru": "Отложить черновик кампании"
+      },
+      "phase": "hold",
+      "domain": "marketing",
+      "orders": "{{plan.orders}}",
+      "auditReasons": "{{audit.reasons}}",
+      "out": {
+        "held": "int"
+      }
+    },
+    {
+      "id": "owner_go",
+      "type": "human",
+      "role": "owner",
+      "skip_when": "$inputs.launch == false || plan.needs_owner_go == false",
+      "skip_out": {
+        "answer": "",
+        "answer_kind": "none"
+      },
+      "title": {
+        "en": "Approve paid delivery",
+        "ru": "Утвердить платную открутку"
+      },
+      "prompt": "Approve paid delivery in Telegram Ads: the ads, pools, bids, daily cap, the MDE lock and the stop rule are in the report. approve launches exactly this campaign; decline keeps it as a draft. hold (the default) keeps everything as it is and asks again on the next tick. «Сам реши» or no answer is never an approval: a timeout routes like hold.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approve|decline|hold|timeout|none"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 1440
+      },
+      "options": [
+        "approve",
+        "decline",
+        "hold"
+      ],
+      "defaultOption": "hold"
+    },
+    {
+      "id": "launch",
+      "type": "agent",
+      "role": "errand",
+      "skip_when": "owner_go.answer_kind != 'approve'",
+      "skip_out": {
+        "launched_ads": 0,
+        "receipt_path": "",
+        "launch_status": "skipped"
+      },
+      "profile": {
+        "skills": [
+          "telegram-ads",
+          "browser-automation"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Launch in the owner's Telegram Ads session",
+        "ru": "Запуск в кабинете Telegram Ads владельца"
+      },
+      "prompt": "In the owner's signed-in Telegram Ads session, create exactly the approved ads from {{plan.campaign_path}} following <data>{{plan.launch_plan}}</data>: same texts, start= links, pools, bids and daily caps; nothing else. Screenshot each created ad. If any step differs from the plan, stop and report launch_status partial. Return launched_ads, receipt_path, launch_status ok | partial | skipped.",
+      "out": {
+        "launched_ads": "int",
+        "receipt_path": "string",
+        "launch_status": "ok|partial|skipped"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "maxAttempts": 1,
+        "timeoutMin": 40
+      }
+    },
+    {
+      "id": "commit_intents",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Campaign record, lock, ledger reserve, sync schedule",
+        "ru": "Запись кампании, замок, резерв леджера, расписание сверки"
+      },
+      "phase": "intents",
+      "domain": "marketing",
+      "orders": "{{plan.orders}}",
+      "ownerAnswer": "{{owner_go.answer_kind}}",
+      "campaign": "{{plan.campaign_path}}",
+      "launched": "{{launch.launched_ads}}",
+      "spendEur": "{{plan.spend_eur}}",
+      "out": {
+        "final_status": "drafted|launched",
+        "lock_id": "string",
+        "intents": "int"
+      }
+    },
+    {
+      "id": "drain_outbox",
+      "type": "action",
+      "action": "sp.dispatch_tasks",
+      "title": {
+        "en": "Dispatch hand-offs and the sync check",
+        "ru": "Поставить поручения и сверку"
+      },
+      "domain": "marketing",
+      "sourceGraph": "mkt-tg-ads-campaign",
+      "out": {
+        "dispatched_count": "int",
+        "dispatched_ids": "string[]"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "commit_intents.final_status",
+        "campaign_path": "plan.campaign_path",
+        "ads_count": "ads.ads_count",
+        "lock_id": "commit_intents.lock_id",
+        "dispatched_count": "drain_outbox.dispatched_count"
+      }
+    },
+    {
+      "id": "held",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "held",
+        "campaign_path": "plan.campaign_path",
+        "dispatched_count": 0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "load_state",
+      "to": "preflight"
+    },
+    {
+      "from": "preflight",
+      "to": "pools"
+    },
+    {
+      "from": "pools",
+      "to": "ads"
+    },
+    {
+      "from": "ads",
+      "to": "moderation"
+    },
+    {
+      "from": "moderation",
+      "to": "attribution"
+    },
+    {
+      "from": "attribution",
+      "to": "message_match"
+    },
+    {
+      "from": "message_match",
+      "to": "plan"
+    },
+    {
+      "from": "plan",
+      "to": "audit"
+    },
+    {
+      "from": "audit",
+      "to": "plan",
+      "when": "audit.status == 'rework' && visits('audit') < 2",
+      "label": "rework plan"
+    },
+    {
+      "from": "audit",
+      "to": "owner_go",
+      "when": "audit.status == 'pass'"
+    },
+    {
+      "from": "audit",
+      "to": "hold"
+    },
+    {
+      "from": "hold",
+      "to": "held"
+    },
+    {
+      "from": "owner_go",
+      "to": "launch"
+    },
+    {
+      "from": "launch",
+      "to": "commit_intents"
+    },
+    {
+      "from": "commit_intents",
+      "to": "drain_outbox"
+    },
+    {
+      "from": "drain_outbox",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "mkt-tg-sim-1",
+    "sim": {
+      "input": {
+        "offer": "Оживи старое фото за 299 ₽ в @photoalive_bot",
+        "objective": "bot_starts",
+        "pool_mode": "topic_pack",
+        "launch": true,
+        "daily_budget_eur": 25
+      },
+      "stubs": {
+        "load_state": {
+          "has_charter": true,
+          "charter_json": "{\"budgets\":{\"daily_media_cap\":65,\"auto_test_cell_cap\":25}}",
+          "active_locks_json": "[]",
+          "pools_history_json": "[]"
+        },
+        "preflight": {
+          "due_count": 3,
+          "selected_count": 3,
+          "selected_json": "[{\"id\":\"Q-TG-002\"}]",
+          "blocking_count": 0
+        },
+        "pools": {
+          "pools_path": ".agents/marketing/campaigns/tg-photo/pools.json",
+          "pools_count": 3,
+          "excluded_count": 7
+        },
+        "ads": {
+          "ads_path": ".agents/marketing/campaigns/tg-photo/ads.json",
+          "ads_count": 8
+        },
+        "moderation": {
+          "violations": 0,
+          "report_path": ".agents/marketing/campaigns/tg-photo/moderation.json"
+        },
+        "attribution": {
+          "start_map_path": ".agents/marketing/campaigns/tg-photo/start-map.json",
+          "tagged_ads": 8,
+          "untagged": 0
+        },
+        "message_match": {
+          "min_score": 0.81,
+          "mismatches": 0,
+          "price_mismatch": false,
+          "report_path": ".agents/marketing/campaigns/tg-photo/match.json"
+        },
+        "plan": {
+          "campaign_path": ".agents/marketing/campaigns/tg-photo/campaign.json",
+          "launch_plan": [
+            {
+              "step": "create ad",
+              "ad": "a1",
+              "pool": "parenting"
+            }
+          ],
+          "orders": [
+            {
+              "kind": "schedule",
+              "graph": "mkt-pulse-monitor",
+              "inputs": {
+                "window": "daily",
+                "scope": "paid"
+              },
+              "reason_code": "ads_sync",
+              "entity_ids": [
+                "campaign:tg-photo"
+              ],
+              "touches_scopes": [
+                "reporting"
+              ],
+              "forecast": {
+                "metric": "cost_per_start_eur",
+                "point": 0.35,
+                "lo80": 0.25,
+                "hi80": 0.5,
+                "horizon_days": 3
+              },
+              "risk": "low"
+            }
+          ],
+          "spend_eur": 25,
+          "needs_owner_go": true
+        },
+        "audit": {
+          "status": "pass",
+          "findings": [],
+          "reasons": ""
+        },
+        "hold": {
+          "held": 1
+        },
+        "launch": {
+          "launched_ads": 8,
+          "receipt_path": ".agents/marketing/campaigns/tg-photo/launch-receipt.md",
+          "launch_status": "ok"
+        },
+        "commit_intents": {
+          "final_status": "launched",
+          "lock_id": "lock_tg_photo",
+          "intents": 1
+        },
+        "drain_outbox": {
+          "dispatched_count": 1,
+          "dispatched_ids": [
+            "sched_sync_1"
+          ]
+        }
+      },
+      "human_answers": {
+        "owner_go": "approve"
+      },
+      "expect_path": [
+        "load_state",
+        "preflight",
+        "pools",
+        "ads",
+        "moderation",
+        "attribution",
+        "message_match",
+        "plan",
+        "audit",
+        "owner_go",
+        "launch",
+        "commit_intents",
+        "drain_outbox",
+        "done"
+      ],
+      "expect_output": {
+        "status": "launched",
+        "ads_count": 8,
+        "lock_id": "lock_tg_photo",
+        "dispatched_count": 1
+      },
+      "variant_draft_only": {
+        "input": {
+          "launch": false
+        },
+        "stubs": {
+          "plan": {
+            "campaign_path": ".agents/marketing/campaigns/tg-photo/campaign.json",
+            "launch_plan": [],
+            "orders": [],
+            "spend_eur": 0,
+            "needs_owner_go": false
+          },
+          "commit_intents": {
+            "final_status": "drafted",
+            "lock_id": "",
+            "intents": 0
+          },
+          "drain_outbox": {
+            "dispatched_count": 0,
+            "dispatched_ids": []
+          }
+        },
+        "expect_path": [
+          "load_state",
+          "preflight",
+          "pools",
+          "ads",
+          "moderation",
+          "attribution",
+          "message_match",
+          "plan",
+          "audit",
+          "owner_go",
+          "launch",
+          "commit_intents",
+          "drain_outbox",
+          "done"
+        ],
+        "expect_output": {
+          "status": "drafted",
+          "dispatched_count": 0
+        }
+      },
+      "variant_message_mismatch": {
+        "stubs": {
+          "message_match": {
+            "min_score": 0.41,
+            "mismatches": 3,
+            "price_mismatch": true,
+            "report_path": ".agents/marketing/campaigns/tg-photo/match.json"
+          },
+          "audit": {
+            "status": "rework",
+            "findings": [
+              {
+                "severity": "high",
+                "title": "ad promises 199 ₽, bot shows 299 ₽"
+              }
+            ],
+            "reasons": "fix the price or order a landing fix"
+          }
+        },
+        "expect_path": [
+          "load_state",
+          "preflight",
+          "pools",
+          "ads",
+          "moderation",
+          "attribution",
+          "message_match",
+          "plan",
+          "audit",
+          "plan",
+          "audit",
+          "hold",
+          "held"
+        ],
+        "expect_output": {
+          "status": "held"
+        }
+      }
+    },
+    "live": "photoalive: 3 пула родительских каналов, 8 объявлений со start=, approve владельца, запуск в его сессии TG Ads, сверка на следующем тике",
+    "note": "Telegram Ads has no ohmy-seo MCP: launch is an errand in the owner's browser session after owner_go. Message-match guard per council §5/§6.5 (375x812, Jev p >= 0.75, lemma overlap >= 0.5, price regex)."
+  }
+}

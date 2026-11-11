@@ -55,7 +55,7 @@ export const ROLE_GROUPS: Array<{ id: RoleGroupId; roles: RoleSpec[] }> = [
     { id: "errand", keys: [] },
     { id: "api-recon", keys: [] },
   ] },
-  { id: "specialists", roles: ["specialist:design-lead", "specialist:copy-lead", "specialist:seo-specialist", "specialist:tavily", "specialist:video-lead", "specialist:3d-artist", "specialist:game-dev", "specialist:social-manager", "specialist:billing-assistant", "specialist:visual-artist", "specialist:macos-operator", "specialist:lead"].map((id) => ({ id, keys: [] })) },
+  { id: "specialists", roles: ["specialist:design-lead", "specialist:copy-lead", "specialist:seo-specialist", "specialist:growth-marketer", "specialist:tavily", "specialist:video-lead", "specialist:3d-artist", "specialist:game-dev", "specialist:social-manager", "specialist:billing-assistant", "specialist:visual-artist", "specialist:macos-operator", "specialist:lead"].map((id) => ({ id, keys: [] })) },
   { id: "workflow", roles: ["analyst", "planner", "auditor", "debugger", "workflow-architect", "lead", "workspace-provisioner", "harness-editor", "harness-composer", "harness-reflection"].map((id) => ({ id, keys: [] })) },
 ];
 

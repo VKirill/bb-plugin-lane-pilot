@@ -1,0 +1,709 @@
+{
+  "id": "mkt-experiment-cycle",
+  "name": {
+    "en": "Marketing experiment cycle",
+    "ru": "Цикл маркетингового эксперимента (A/B с MDE и замком выборки)"
+  },
+  "description": {
+    "en": "One A/B hypothesis from plan to verdict: MDE and sample size, bucketing, budget reservation and sample lock, variants, launch through a channel workflow, and closing the test when its sample lock matures (readiness 1.0): scale the winner or roll back, write learnings.",
+    "ru": "Одна A/B-гипотеза от плана до вердикта: MDE и размер выборки, бакетинг, резерв бюджета и замок выборки, варианты, запуск через граф канала и закрытие теста, когда замок созрел (готовность 1.0): масштабировать победителя или откатить, записать выводы."
+  },
+  "examples": {
+    "en": [
+      "Plan an A/B test of two offers with MDE and sample size",
+      "The sample lock of test H7 matured, readiness 1.0: close it",
+      "Is the test ready to call, scale the winner or roll back?"
+    ],
+    "ru": [
+      "Протестируй новый оффер против текущего с правильным размером выборки",
+      "Спроектируй A/B-тест экрана оплаты бота и повесь замок выборки",
+      "Оцени идущий тест в Telegram Ads и реши, масштабировать ли",
+      "Тест креативов уже значим? Прочитай замок и прими решение"
+    ]
+  },
+  "not_for": [
+    "mkt-tracking-setup",
+    "mkt-landing-cro-audit"
+  ],
+  "status": "published",
+  "tags": [
+    "marketing",
+    "experiment",
+    "analytics"
+  ],
+  "triggers": [
+    "manual"
+  ],
+  "inputs": {
+    "hypothesis": {
+      "type": "string",
+      "required": true,
+      "description": "if we change X for audience Y, metric Z moves by at least N"
+    },
+    "channel": {
+      "type": "tg_ads|yandex_direct|landing|bot_flow|email",
+      "default": "tg_ads",
+      "description": "where the test runs: Telegram Ads, Yandex Direct, a landing variant, the bot flow or email"
+    },
+    "phase": {
+      "type": "design|evaluate",
+      "default": "design",
+      "description": "design registers the hypothesis, MDE, lock and variants; evaluate reads a matured lock and decides"
+    },
+    "lock_id": {
+      "type": "string",
+      "default": "",
+      "note": "the lock to evaluate (phase evaluate)"
+    },
+    "cell_budget_eur": {
+      "type": "number",
+      "default": 25,
+      "note": "proposed spend per cell; code re-checks it against the charter"
+    }
+  },
+  "outputs": {
+    "status": "running|scaled|killed|extended|inconclusive|cell_below_mde|held",
+    "hypothesis_id": "string?",
+    "lock_id": "string?",
+    "required_events": "int?",
+    "dispatched_count": "int?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "mkt-ab-mde-alerts",
+      "lp-agentic-discipline",
+      "mkt-end-to-end-analytics"
+    ],
+    "secrets": [
+      "YANDEX_METRIKA_RO_TOKEN?",
+      "POSTHOG_READ_KEY?"
+    ]
+  },
+  "budget": {
+    "max_minutes": 60,
+    "max_usd": 5
+  },
+  "goal_check": "gate",
+  "entry": "load_state",
+  "nodes": [
+    {
+      "id": "load_state",
+      "type": "action",
+      "action": "sp.load_memory",
+      "title": {
+        "en": "Charter, recent hypotheses, active locks",
+        "ru": "Устав, недавние гипотезы, активные замки"
+      },
+      "domain": "marketing",
+      "graphId": "mkt-experiment-cycle",
+      "acquireTick": false,
+      "lockId": "{{$inputs.lock_id}}",
+      "out": {
+        "has_charter": "bool",
+        "cold_start": "bool",
+        "charter_json": "string",
+        "active_locks_json": "string",
+        "recent_hypotheses_json": "string",
+        "duplicate_of_refuted": "bool"
+      }
+    },
+    {
+      "id": "preflight",
+      "type": "action",
+      "action": "sp.jev_question_triage",
+      "title": {
+        "en": "Pre-launch questions (MDE, ORD erid, moderation, overlap)",
+        "ru": "Предполётные вопросы (MDE, erid ОРД, модерация, пересечения)"
+      },
+      "skip_when": "$inputs.phase == 'evaluate'",
+      "skip_out": {
+        "due_count": 0,
+        "selected_count": 0,
+        "selected_json": "'[]'",
+        "blocking_count": 0
+      },
+      "domain": "marketing",
+      "mode": "pre_launch",
+      "graphFilter": "mkt-experiment-cycle",
+      "context": {
+        "channel": "{{$inputs.channel}}",
+        "hypothesis": "{{$inputs.hypothesis}}"
+      },
+      "out": {
+        "due_count": "int",
+        "selected_count": "int",
+        "selected_json": "string",
+        "blocking_count": "int"
+      }
+    },
+    {
+      "id": "mde",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "MDE, sample size, looks and boundaries ($0)",
+        "ru": "MDE, объём выборки, взгляды и границы ($0)"
+      },
+      "skip_when": "$inputs.phase == 'evaluate'",
+      "skip_out": {
+        "required_events": 0,
+        "days_to_readiness": 0,
+        "min_viable_cell_eur": 0,
+        "feasible": true,
+        "boundary_json": "'{}'",
+        "report_path": ""
+      },
+      "skill": "mkt-ab-mde-alerts",
+      "script": "mde_monte_carlo.py",
+      "args": {
+        "charter": "{{load_state.charter_json}}",
+        "channel": "{{$inputs.channel}}",
+        "cell_budget_eur": "{{$inputs.cell_budget_eur}}",
+        "cold_start_prior": "{{load_state.cold_start}}",
+        "sequential": "msprt",
+        "futility_power": 0.1,
+        "alpha": 0.05,
+        "power": 0.8
+      },
+      "timeoutSec": 120,
+      "out": {
+        "required_events": "int",
+        "days_to_readiness": "number",
+        "min_viable_cell_eur": "number",
+        "feasible": "bool",
+        "boundary_json": "string",
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "readout",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Lock readout: readiness, lift, SRM, boundary ($0)",
+        "ru": "Чтение замка: готовность, прирост, SRM, граница ($0)"
+      },
+      "skip_when": "$inputs.phase == 'design'",
+      "skip_out": {
+        "readiness": 0,
+        "lift": 0,
+        "lo80": 0,
+        "hi80": 0,
+        "srm_ok": true,
+        "boundary_hit": "none",
+        "report_path": ""
+      },
+      "skill": "mkt-ab-mde-alerts",
+      "script": "bucketing_split.py",
+      "args": {
+        "mode": "readout",
+        "lock_id": "{{$inputs.lock_id}}",
+        "exclude_immature_cohorts": true
+      },
+      "secrets": [
+        "YANDEX_METRIKA_RO_TOKEN?",
+        "POSTHOG_READ_KEY?"
+      ],
+      "timeoutSec": 120,
+      "out": {
+        "readiness": "number",
+        "lift": "number",
+        "lo80": "number",
+        "hi80": "number",
+        "srm_ok": "bool",
+        "boundary_hit": "none|efficacy|futility",
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "work",
+      "type": "agent",
+      "role": "specialist:growth-marketer",
+      "profile": {
+        "skills": [
+          "mkt-ab-mde-alerts",
+          "lp-agentic-discipline",
+          "mkt-end-to-end-analytics"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Design the test or decide on the readout",
+        "ru": "Спроектировать тест или решить по результату"
+      },
+      "prompt": "Phase {{$inputs.phase}}, channel {{$inputs.channel}}. Hypothesis: <data>{{$inputs.hypothesis}}</data>. Charter: <data>{{load_state.charter_json}}</data>. Recent hypotheses: <data>{{load_state.recent_hypotheses_json}}</data> (duplicate of a refuted one: {{load_state.duplicate_of_refuted}}). Active locks: <data>{{load_state.active_locks_json}}</data>.\nDesign phase — pre-launch answers <data>{{preflight.selected_json}}</data>; MDE report {{mde.report_path}}: required_events {{mde.required_events}}, days {{mde.days_to_readiness}}, boundary {{mde.boundary_json}}. Write the pre-registration (metric, segments, stop rule from the boundary, max looks), the variants brief, and orders: specialist_handoff to copy-lead and visual-artist for variants, code_task for a landing or bot variant, sub_graph to the channel graph to launch the cells. decision is running.\nEvaluate phase — readout {{readout.report_path}}: readiness {{readout.readiness}}, lift {{readout.lift}} [{{readout.lo80}}, {{readout.hi80}}], SRM ok {{readout.srm_ok}}, boundary {{readout.boundary_hit}}. Decide scale (efficacy boundary or readiness >= 1 with lo80 > 0), kill (futility boundary or readiness >= 1 with hi80 < 0), extend (not ready, no boundary) or inconclusive (ready, interval crosses 0). An SRM failure is never a win. A kill that rests only on a safe default becomes paused_pending_owner_fact. Orders: scale into core, kill via the rollback, a learning line.\nEvery order is an ActionOrder with reason_code, entity_ids, touches_scopes, forecast {point, lo80, hi80, horizon_days}, risk low | medium | high. needs_owner_go is true when spend leaves the auto cell cap or a live campaign is changed. Return decision (running | scaled | killed | extended | inconclusive), hypothesis_id, lock_spec_json, orders, learning, needs_owner_go.",
+      "out": {
+        "decision": "running|scaled|killed|extended|inconclusive",
+        "hypothesis_id": "string",
+        "lock_spec_json": "string",
+        "orders": "ActionOrder[]",
+        "learning": "string",
+        "needs_owner_go": "bool"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "audit",
+      "type": "agent",
+      "role": "auditor",
+      "session": "new",
+      "profile": {
+        "skills": [
+          "mkt-ab-mde-alerts",
+          "lp-agentic-discipline"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Audit statistics, locks and spend",
+        "ru": "Ревизия статистики, замков и трат"
+      },
+      "prompt": "Audit the experiment step: decision {{work.decision}}, orders <data>{{work.orders}}</data>, lock spec <data>{{work.lock_spec_json}}</data>, MDE {{mde.required_events}} events, readout readiness {{readout.readiness}} boundary {{readout.boundary_hit}}. Check: no peeking (a decision before readiness >= 1 needs a recorded boundary hit); SRM respected; immature cohorts excluded; no refuted hypothesis repeated; the cell is at least the minimum viable cell; spend per cell and the rolling 24h auto spend stay inside the charter; every order has an interval forecast. Status pass, rework (what to change in reasons) or block; findings carry severity critical, high, medium, low or info.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]",
+        "reasons": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 10
+      }
+    },
+    {
+      "id": "hold",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Hold the experiment orders",
+        "ru": "Отложить приказы эксперимента"
+      },
+      "phase": "hold",
+      "domain": "marketing",
+      "orders": "{{work.orders}}",
+      "auditReasons": "{{audit.reasons}}",
+      "out": {
+        "held": "int"
+      }
+    },
+    {
+      "id": "owner_go",
+      "type": "human",
+      "role": "owner",
+      "skip_when": "work.needs_owner_go == false",
+      "skip_out": {
+        "answer": "",
+        "answer_kind": "none"
+      },
+      "title": {
+        "en": "Approve test spend or a live change",
+        "ru": "Утвердить трату на тест или боевую правку"
+      },
+      "prompt": "The test needs spend above the auto cell cap or a change to a live campaign. The pre-registration, MDE, boundaries and the rollback are in the report. approve runs it; decline keeps the hypothesis registered without spend. hold (the default) keeps everything as it is and asks again on the next tick. «Сам реши» or no answer is never an approval: a timeout routes like hold.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approve|decline|hold|timeout|none"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 1440
+      },
+      "options": [
+        "approve",
+        "decline",
+        "hold"
+      ],
+      "defaultOption": "hold"
+    },
+    {
+      "id": "commit_intents",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Hypothesis, lock, ledger reserve, journal in one transaction",
+        "ru": "Гипотеза, замок, резерв леджера, журнал одной транзакцией"
+      },
+      "phase": "intents",
+      "domain": "marketing",
+      "orders": "{{work.orders}}",
+      "ownerAnswer": "{{owner_go.answer_kind}}",
+      "hypothesisId": "{{work.hypothesis_id}}",
+      "decision": "{{work.decision}}",
+      "lockSpec": "{{work.lock_spec_json}}",
+      "boundary": "{{mde.boundary_json}}",
+      "requiredEvents": "{{mde.required_events}}",
+      "lockId": "{{$inputs.lock_id}}",
+      "learning": "{{work.learning}}",
+      "out": {
+        "final_status": "running|scaled|killed|extended|inconclusive",
+        "lock_id": "string",
+        "intents": "int"
+      }
+    },
+    {
+      "id": "drain_outbox",
+      "type": "action",
+      "action": "sp.dispatch_tasks",
+      "title": {
+        "en": "Hand-offs, variant tasks, channel graph (idempotent)",
+        "ru": "Поручения, задачи вариантов, канальный граф (идемпотентно)"
+      },
+      "domain": "marketing",
+      "sourceGraph": "mkt-experiment-cycle",
+      "out": {
+        "dispatched_count": "int",
+        "dispatched_ids": "string[]"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "commit_intents.final_status",
+        "hypothesis_id": "work.hypothesis_id",
+        "lock_id": "commit_intents.lock_id",
+        "required_events": "mde.required_events",
+        "dispatched_count": "drain_outbox.dispatched_count"
+      }
+    },
+    {
+      "id": "not_feasible",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "cell_below_mde",
+        "required_events": "mde.required_events",
+        "dispatched_count": 0
+      }
+    },
+    {
+      "id": "held",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "held",
+        "dispatched_count": 0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "load_state",
+      "to": "preflight"
+    },
+    {
+      "from": "preflight",
+      "to": "mde"
+    },
+    {
+      "from": "mde",
+      "to": "not_feasible",
+      "when": "mde.feasible == false",
+      "label": "cell below MDE: do not launch"
+    },
+    {
+      "from": "mde",
+      "to": "readout"
+    },
+    {
+      "from": "readout",
+      "to": "work"
+    },
+    {
+      "from": "work",
+      "to": "audit"
+    },
+    {
+      "from": "audit",
+      "to": "work",
+      "when": "audit.status == 'rework' && visits('audit') < 2",
+      "label": "rework"
+    },
+    {
+      "from": "audit",
+      "to": "owner_go",
+      "when": "audit.status == 'pass'"
+    },
+    {
+      "from": "audit",
+      "to": "hold"
+    },
+    {
+      "from": "hold",
+      "to": "held"
+    },
+    {
+      "from": "owner_go",
+      "to": "commit_intents"
+    },
+    {
+      "from": "commit_intents",
+      "to": "drain_outbox"
+    },
+    {
+      "from": "drain_outbox",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "mkt-exp-sim-1",
+    "sim": {
+      "input": {
+        "hypothesis": "Цена 299 вместо 399 на экране оплаты даст +20% оплат при той же выручке",
+        "channel": "tg_ads",
+        "phase": "design",
+        "lock_id": "",
+        "cell_budget_eur": 25
+      },
+      "stubs": {
+        "load_state": {
+          "has_charter": true,
+          "cold_start": false,
+          "charter_json": "{\"budgets\":{\"auto_test_cell_cap\":25}}",
+          "active_locks_json": "[]",
+          "recent_hypotheses_json": "[]",
+          "duplicate_of_refuted": false
+        },
+        "preflight": {
+          "due_count": 3,
+          "selected_count": 3,
+          "selected_json": "[{\"id\":\"Q-MKT-003\"}]",
+          "blocking_count": 0
+        },
+        "mde": {
+          "required_events": 64,
+          "days_to_readiness": 9,
+          "min_viable_cell_eur": 21,
+          "feasible": true,
+          "boundary_json": "{\"type\":\"msprt\",\"max_looks\":5}",
+          "report_path": ".agents/marketing/experiments/h-12/mde.json"
+        },
+        "readout": {
+          "readiness": 0,
+          "lift": 0,
+          "lo80": 0,
+          "hi80": 0,
+          "srm_ok": true,
+          "boundary_hit": "none",
+          "report_path": ""
+        },
+        "work": {
+          "decision": "running",
+          "hypothesis_id": "h-12",
+          "lock_spec_json": "{\"lock_scope\":\"test_cell\",\"n_required\":64}",
+          "orders": [
+            {
+              "kind": "specialist_handoff",
+              "role": "copy-lead",
+              "task": "2 variants of the price screen",
+              "reason_code": "variant_brief",
+              "entity_ids": [
+                "screen:pay"
+              ],
+              "touches_scopes": [
+                "landing_variant"
+              ],
+              "forecast": {
+                "metric": "pay_cr",
+                "point": 0.2,
+                "lo80": 0.05,
+                "hi80": 0.35,
+                "horizon_days": 9
+              },
+              "risk": "low"
+            }
+          ],
+          "learning": "",
+          "needs_owner_go": false
+        },
+        "audit": {
+          "status": "pass",
+          "findings": [],
+          "reasons": ""
+        },
+        "hold": {
+          "held": 1
+        },
+        "commit_intents": {
+          "final_status": "running",
+          "lock_id": "lock_h12",
+          "intents": 2
+        },
+        "drain_outbox": {
+          "dispatched_count": 2,
+          "dispatched_ids": [
+            "thr_copy_1",
+            "wfrun_tg_1"
+          ]
+        }
+      },
+      "expect_path": [
+        "load_state",
+        "preflight",
+        "mde",
+        "readout",
+        "work",
+        "audit",
+        "owner_go",
+        "commit_intents",
+        "drain_outbox",
+        "done"
+      ],
+      "expect_output": {
+        "status": "running",
+        "hypothesis_id": "h-12",
+        "lock_id": "lock_h12",
+        "required_events": 64,
+        "dispatched_count": 2
+      },
+      "variant_evaluate_scale": {
+        "input": {
+          "phase": "evaluate",
+          "lock_id": "lock_h12"
+        },
+        "stubs": {
+          "readout": {
+            "readiness": 1.1,
+            "lift": 0.18,
+            "lo80": 0.06,
+            "hi80": 0.3,
+            "srm_ok": true,
+            "boundary_hit": "efficacy",
+            "report_path": ".agents/marketing/experiments/h-12/readout.json"
+          },
+          "work": {
+            "decision": "scaled",
+            "hypothesis_id": "h-12",
+            "lock_spec_json": "{}",
+            "orders": [
+              {
+                "kind": "owner_gate",
+                "class": "money_above_cap",
+                "plan": {
+                  "scale_eur_per_day": 60
+                },
+                "reason_code": "scale_winner",
+                "entity_ids": [
+                  "lock:lock_h12"
+                ],
+                "touches_scopes": [
+                  "bid_strategy"
+                ],
+                "forecast": {
+                  "metric": "net_paid_users_30d",
+                  "point": 40,
+                  "lo80": 20,
+                  "hi80": 60,
+                  "horizon_days": 30
+                },
+                "risk": "medium"
+              }
+            ],
+            "learning": "Цена 299 поднимает оплаты на 18% без потери выручки",
+            "needs_owner_go": true
+          },
+          "commit_intents": {
+            "final_status": "scaled",
+            "lock_id": "lock_h12",
+            "intents": 1
+          },
+          "drain_outbox": {
+            "dispatched_count": 1,
+            "dispatched_ids": [
+              "wfrun_tg_scale_1"
+            ]
+          }
+        },
+        "human_answers": {
+          "owner_go": "approve"
+        },
+        "expect_path": [
+          "load_state",
+          "preflight",
+          "mde",
+          "readout",
+          "work",
+          "audit",
+          "owner_go",
+          "commit_intents",
+          "drain_outbox",
+          "done"
+        ],
+        "expect_output": {
+          "status": "scaled",
+          "required_events": 0,
+          "dispatched_count": 1
+        }
+      },
+      "variant_cell_below_mde": {
+        "stubs": {
+          "mde": {
+            "required_events": 410,
+            "days_to_readiness": 60,
+            "min_viable_cell_eur": 140,
+            "feasible": false,
+            "boundary_json": "{}",
+            "report_path": ".agents/marketing/experiments/h-13/mde.json"
+          }
+        },
+        "expect_path": [
+          "load_state",
+          "preflight",
+          "mde",
+          "not_feasible"
+        ],
+        "expect_output": {
+          "status": "cell_below_mde",
+          "required_events": 410
+        }
+      },
+      "variant_audit_fail_twice_hold": {
+        "stubs": {
+          "audit": {
+            "status": "rework",
+            "findings": [
+              {
+                "severity": "high",
+                "title": "decision before readiness without a boundary"
+              }
+            ],
+            "reasons": "peeking"
+          }
+        },
+        "expect_path": [
+          "load_state",
+          "preflight",
+          "mde",
+          "readout",
+          "work",
+          "audit",
+          "work",
+          "audit",
+          "hold",
+          "held"
+        ],
+        "expect_output": {
+          "status": "held"
+        }
+      }
+    },
+    "live": "photoalive: гипотеза о цене экрана оплаты, MDE по истории воронки, поручения copy-lead/visual-artist, запуск ячеек через mkt-tg-ads-campaign",
+    "note": "Council D-01 (mSPRT + futility in boundary_json, fixed at lock creation), D-07 (cell_below_mde exit), S-04 (immature cohorts excluded), S-07 (Beta priors on cold start), S-10 (no kill on a safe default)."
+  }
+}

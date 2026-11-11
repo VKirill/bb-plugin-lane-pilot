@@ -1,0 +1,819 @@
+{
+  "id": "mkt-direct-search-campaign",
+  "name": {
+    "en": "Yandex Direct campaign",
+    "ru": "Кампания в Яндекс Директе: ЕПК v501 RESPONSIVE_AD и мост SEO × PPC"
+  },
+  "description": {
+    "en": "Builds or rebuilds a Yandex Direct unified (EPK) campaign: keyword clusters, cross-negatives, responsive ad texts with ORD marking, autotargeting and placements, offline conversion goals, bids and strategy; owner approval before budget goes live.",
+    "ru": "Создаёт или пересобирает единую перфоманс-кампанию (ЕПК) Яндекс Директа: кластеры ключей, кросс-минусовка, адаптивные объявления с маркировкой ОРД, автотаргетинг и площадки, цели офлайн-конверсий, ставки и стратегия; бюджет включается только после одобрения владельца."
+  },
+  "examples": {
+    "en": [
+      "Collect keywords and build a Direct search campaign",
+      "Clean Direct search queries and add negatives",
+      "Switch the Direct strategy to pay for bookings"
+    ],
+    "ru": [
+      "Собери единую перфоманс-кампанию (ЕПК) в Яндекс Директе для лендинга",
+      "Настрой поисковую рекламу в Директе с кросс-минусовкой и офлайн-конверсиями",
+      "Подготовь адаптивные объявления ЕПК и проверь, по каким запросам мы уже в органике",
+      "Запусти Яндекс Директ на страницы услуг с маркировкой ОРД"
+    ]
+  },
+  "not_for": [
+    "mkt-landing-cro-audit: why the landing behind the ads does not convert",
+    "mkt-tg-ads-campaign: paid ads inside Telegram",
+    "seo-research: demand and SERP research for site pages, not ad groups",
+    "seo-cocoon: a semantic cocoon of site articles; queries here buy clicks",
+    "mkt-experiment-cycle: deciding a test from its readout"
+  ],
+  "status": "published",
+  "tags": [
+    "marketing",
+    "ads",
+    "yandex-direct"
+  ],
+  "triggers": [
+    "manual"
+  ],
+  "inputs": {
+    "landing_url": {
+      "type": "string",
+      "required": true,
+      "description": "the page the ads lead to"
+    },
+    "campaign_type": {
+      "type": "unified_epk|search_only|master",
+      "default": "unified_epk",
+      "description": "Direct campaign kind: ЕПК (unified performance, API v501), search only, or Мастер кампаний"
+    },
+    "strategy": {
+      "type": "manual_low_conv|auto_cpa|auto_clicks",
+      "default": "auto_cpa",
+      "description": "bidding: manual for few conversions, automatic CPA, or automatic clicks"
+    },
+    "launch": {
+      "type": "bool",
+      "default": false,
+      "description": "push the campaign live after owner_go; false keeps the change set as a reviewed draft"
+    },
+    "daily_budget_eur": {
+      "type": "number",
+      "default": 30,
+      "note": "requested daily budget; code checks it against the charter"
+    },
+    "regions": {
+      "type": "string[]",
+      "default": [],
+      "note": "Direct region ids; empty = charter geos"
+    }
+  },
+  "outputs": {
+    "status": "drafted|launched|held",
+    "campaign_path": "string?",
+    "ad_groups": "int?",
+    "overlap_queries": "int?",
+    "dispatched_count": "int?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "mkt-yandex-direct-epk",
+      "yandex",
+      "seo-programmatic-bofu",
+      "mkt-landing-cro",
+      "lp-agentic-discipline"
+    ],
+    "secrets": [
+      "YANDEX_DIRECT_RO_TOKEN?",
+      "XMLSTOCK_KEY?"
+    ]
+  },
+  "budget": {
+    "max_minutes": 120,
+    "max_usd": 9
+  },
+  "goal_check": "gate",
+  "entry": "load_state",
+  "nodes": [
+    {
+      "id": "load_state",
+      "type": "action",
+      "action": "sp.load_memory",
+      "title": {
+        "en": "Charter, shared negatives, locks",
+        "ru": "Устав, общие минус-слова, замки"
+      },
+      "domain": "marketing",
+      "graphId": "mkt-direct-search-campaign",
+      "acquireTick": false,
+      "requireMcp": [
+        "mcp-yandex-seo-ro"
+      ],
+      "out": {
+        "has_charter": "bool",
+        "charter_json": "string",
+        "active_locks_json": "string",
+        "shared_negatives_json": "string"
+      }
+    },
+    {
+      "id": "preflight",
+      "type": "action",
+      "action": "sp.jev_question_triage",
+      "title": {
+        "en": "Pre-launch questions (erid, offline conversions, negatives)",
+        "ru": "Предполётные вопросы (erid, офлайн-конверсии, минусы)"
+      },
+      "domain": "marketing",
+      "mode": "pre_launch",
+      "graphFilter": "mkt-direct-search-campaign",
+      "context": {
+        "landing": "{{$inputs.landing_url}}",
+        "type": "{{$inputs.campaign_type}}"
+      },
+      "out": {
+        "due_count": "int",
+        "selected_count": "int",
+        "selected_json": "string",
+        "blocking_count": "int"
+      }
+    },
+    {
+      "id": "semantics",
+      "type": "agent",
+      "role": "specialist:growth-marketer",
+      "profile": {
+        "skills": [
+          "mkt-yandex-direct-epk",
+          "yandex"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Query clusters and the organic export",
+        "ru": "Кластеры запросов и выгрузка органики"
+      },
+      "prompt": "Collect the semantics for {{$inputs.landing_url}} ({{$inputs.campaign_type}}): Wordstat frequencies and the 28-day SEARCH_QUERY report of existing campaigns (mcp-yandex-seo-ro), competition (mcp-mutagen), the commercial SERP (mcp-xmlstock, cached), and the organic queries with position, CTR and clicks from GSC (mcp-gsc) and Webmaster (mcp-yandex-seo-ro). Cluster by intent; mark brand queries. Shared negatives already in use: <data>{{load_state.shared_negatives_json}}</data>. Write clusters.json and organic.json under .agents/marketing/campaigns/direct-<slug>/. Return clusters_path, organic_path, clusters_count, queries_count.",
+      "out": {
+        "clusters_path": "string",
+        "organic_path": "string",
+        "clusters_count": "int",
+        "queries_count": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "morphology",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Lemmas and cross-negatives ($0)",
+        "ru": "Леммы и кросс-минусовка ($0)"
+      },
+      "skill": "seo-programmatic-bofu",
+      "script": "offerist_morphology.py",
+      "args": {
+        "clusters": "{{semantics.clusters_path}}",
+        "mode": "cross_negatives"
+      },
+      "timeoutSec": 60,
+      "out": {
+        "negatives_count": "int",
+        "cross_minus_path": "string"
+      }
+    },
+    {
+      "id": "query_bridge",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "SEO × PPC query bridge ($0)",
+        "ru": "Мост запросов SEO × PPC ($0)"
+      },
+      "skill": "mkt-yandex-direct-epk",
+      "script": "seo_ppc_bridge.py",
+      "args": {
+        "paid": "{{semantics.clusters_path}}",
+        "organic": "{{semantics.organic_path}}",
+        "window_days": 28,
+        "min_clicks": 30,
+        "top_ctr_negative": 0.3
+      },
+      "timeoutSec": 60,
+      "out": {
+        "overlap_queries": "int",
+        "cannibal_candidates": "int",
+        "seo_from_paid": "int",
+        "negative_candidates": "int",
+        "bridge_path": "string"
+      }
+    },
+    {
+      "id": "ads",
+      "type": "agent",
+      "role": "specialist:growth-marketer",
+      "profile": {
+        "skills": [
+          "mkt-yandex-direct-epk",
+          "yandex",
+          "copywriter"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "RESPONSIVE_AD title/text sets per group",
+        "ru": "Наборы заголовков и текстов RESPONSIVE_AD по группам"
+      },
+      "prompt": "For each cluster in {{semantics.clusters_path}} write a RESPONSIVE_AD set for ЕПК v501: titles and texts within the field limits that mcp-yandex-seo-ro reports for the account (never guess limits), sitelinks and callouts, display URL, the price exactly as on {{$inputs.landing_url}}, the ORD erid token placeholder resolved from the charter. Every title must combine with every text. Respect the SEO × PPC bridge <data>{{query_bridge.bridge_path}}</data>: no group for queries marked negative; cannibal candidates go to an incrementality test group, never into plain bidding. Write ads.json. Return ads_path, ad_groups, combinations, erid_ok.",
+      "out": {
+        "ads_path": "string",
+        "ad_groups": "int",
+        "combinations": "int",
+        "erid_ok": "bool"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "combinatorics",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Pre-mortem: every title x text pair ($0)",
+        "ru": "Пред-мортем: каждая пара заголовок x текст ($0)"
+      },
+      "skill": "mkt-yandex-direct-epk",
+      "script": "epk_combinatorics_lint.py",
+      "args": {
+        "ads": "{{ads.ads_path}}",
+        "tautology_threshold": 0.6,
+        "require_erid": true
+      },
+      "timeoutSec": 60,
+      "out": {
+        "bad_pairs": "int",
+        "pairs_checked": "int",
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "message_match",
+      "type": "action",
+      "action": "sp.message_match",
+      "title": {
+        "en": "Ad-to-landing message-match guard",
+        "ru": "Проверка соответствия объявления посадочной"
+      },
+      "ads": "{{ads.ads_path}}",
+      "target": "{{$inputs.landing_url}}",
+      "viewport": "375x812",
+      "minLemmaOverlap": 0.5,
+      "minJevP": 0.75,
+      "out": {
+        "min_score": "number",
+        "mismatches": "int",
+        "price_mismatch": "bool",
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "plan",
+      "type": "agent",
+      "role": "specialist:growth-marketer",
+      "profile": {
+        "skills": [
+          "mkt-yandex-direct-epk",
+          "lp-agentic-discipline"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Campaign file, v501 change set, orders",
+        "ru": "Файл кампании, набор изменений v501, приказы"
+      },
+      "prompt": "Assemble the Direct campaign from <data>clusters {{semantics.clusters_path}}, negatives {{morphology.cross_minus_path}} ({{morphology.negatives_count}}), bridge {{query_bridge.bridge_path}} (overlap {{query_bridge.overlap_queries}}, cannibal {{query_bridge.cannibal_candidates}}, seo_from_paid {{query_bridge.seo_from_paid}}), ads {{ads.ads_path}}, pre-mortem {{combinatorics.report_path}} ({{combinatorics.bad_pairs}} bad pairs), message match {{message_match.report_path}} (min {{message_match.min_score}}, price mismatch {{message_match.price_mismatch}}), charter {{load_state.charter_json}}</data>. Strategy {{$inputs.strategy}}, daily budget asked {{$inputs.daily_budget_eur}} EUR, regions {{$inputs.regions}}.\nWrite campaign.json and change_set: the exact mcp-yandex-seo v501 calls (campaign in DRAFT/suspended, groups, RESPONSIVE_AD ads, negatives, offline-conversion goal binding, strategy) each with its class (D for draft objects, L for resume, bids and budgets) and rollback. A later strategy edit may move budget or tCPA by at most 15% and not within 120 hours of the previous edit. orders: ActionOrder objects — content_batch or sub_graph seo-brief for seo_from_paid queries (demand proven by money), sub_graph mkt-landing-cro-audit or code_task for a dynamic H1 when the message match fails, schedule of the search-query review in 7 days — each with reason_code, entity_ids, touches_scopes, an interval forecast and risk low | medium | high. needs_owner_go is true when launch is {{$inputs.launch}} and true. Return campaign_path, change_set, orders, spend_eur, needs_owner_go.",
+      "out": {
+        "campaign_path": "string",
+        "change_set": "object[]",
+        "orders": "ActionOrder[]",
+        "spend_eur": "number",
+        "needs_owner_go": "bool"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "audit",
+      "type": "agent",
+      "role": "auditor",
+      "session": "new",
+      "profile": {
+        "skills": [
+          "mkt-yandex-direct-epk",
+          "lp-agentic-discipline"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Audit erid, pairs, match, bridge and caps",
+        "ru": "Ревизия erid, пар, соответствия, моста и лимитов"
+      },
+      "prompt": "Audit the Direct campaign <data>{{plan.campaign_path}}, change set {{plan.change_set}}, orders {{plan.orders}}, spend {{plan.spend_eur}}</data>. Pass only when: erid present on every ad ({{ads.erid_ok}}); bad title x text pairs are 0 ({{combinatorics.bad_pairs}}); message match min score >= 0.6 without a price mismatch, or the mismatched groups are left out and a landing fix is ordered; no group bids on a query the bridge marked negative and cannibal candidates run as an incrementality test; the campaign is created suspended; daily budget stays inside the charter; every class L call has a rollback. Status pass, rework (what to change in reasons) or block; findings carry severity critical, high, medium, low or info.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]",
+        "reasons": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 10
+      }
+    },
+    {
+      "id": "hold",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Hold the Direct draft",
+        "ru": "Отложить черновик Директа"
+      },
+      "phase": "hold",
+      "domain": "marketing",
+      "orders": "{{plan.orders}}",
+      "auditReasons": "{{audit.reasons}}",
+      "out": {
+        "held": "int"
+      }
+    },
+    {
+      "id": "owner_go",
+      "type": "human",
+      "role": "owner",
+      "skip_when": "$inputs.launch == false || plan.needs_owner_go == false",
+      "skip_out": {
+        "answer": "",
+        "answer_kind": "none"
+      },
+      "title": {
+        "en": "Approve the Direct change set",
+        "ru": "Утвердить набор изменений Директа"
+      },
+      "prompt": "Approve pushing the Direct campaign: the v501 change set preview, the pre-mortem, the SEO × PPC bridge decisions, the daily budget and the rollback are in the report. approve lets the code mint a one-time token for exactly this change set; decline keeps the draft. hold (the default) keeps everything as it is and asks again on the next tick. «Сам реши» or no answer is never an approval: a timeout routes like hold.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approve|decline|hold|timeout|none"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 1440
+      },
+      "options": [
+        "approve",
+        "decline",
+        "hold"
+      ],
+      "defaultOption": "hold"
+    },
+    {
+      "id": "push_live",
+      "type": "action",
+      "action": "sp.apply_mutation",
+      "title": {
+        "en": "Push the change set via mcp-yandex-seo (token-gated)",
+        "ru": "Выгрузить изменения через mcp-yandex-seo (по токену)"
+      },
+      "skip_when": "owner_go.answer_kind != 'approve'",
+      "skip_out": {
+        "applied": 0,
+        "failed": 0,
+        "receipt_path": "",
+        "mutation_ids": []
+      },
+      "tier": "L",
+      "plan": "{{plan.change_set}}",
+      "servers": [
+        "mcp-yandex-seo"
+      ],
+      "api": "direct-v501",
+      "approvalStep": "owner_go",
+      "premortem": "{{combinatorics.report_path}}",
+      "strategyGuard": {
+        "max_step": 0.15,
+        "min_hours_between_edits": 120
+      },
+      "out": {
+        "applied": "int",
+        "failed": "int",
+        "receipt_path": "string",
+        "mutation_ids": "string[]"
+      }
+    },
+    {
+      "id": "commit_intents",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Campaign record, bridge verdicts, ledger, orders",
+        "ru": "Запись кампании, вердикты моста, леджер, приказы"
+      },
+      "phase": "intents",
+      "domain": "marketing",
+      "orders": "{{plan.orders}}",
+      "ownerAnswer": "{{owner_go.answer_kind}}",
+      "campaign": "{{plan.campaign_path}}",
+      "bridge": "{{query_bridge.bridge_path}}",
+      "applied": "{{push_live.applied}}",
+      "spendEur": "{{plan.spend_eur}}",
+      "out": {
+        "final_status": "drafted|launched",
+        "intents": "int"
+      }
+    },
+    {
+      "id": "drain_outbox",
+      "type": "action",
+      "action": "sp.dispatch_tasks",
+      "title": {
+        "en": "Dispatch SEO-from-paid briefs, landing fixes, reviews",
+        "ru": "Поставить брифы SEO из платного спроса, правки лендинга, ревью"
+      },
+      "domain": "marketing",
+      "sourceGraph": "mkt-direct-search-campaign",
+      "out": {
+        "dispatched_count": "int",
+        "dispatched_ids": "string[]"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "commit_intents.final_status",
+        "campaign_path": "plan.campaign_path",
+        "ad_groups": "ads.ad_groups",
+        "overlap_queries": "query_bridge.overlap_queries",
+        "dispatched_count": "drain_outbox.dispatched_count"
+      }
+    },
+    {
+      "id": "held",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "held",
+        "campaign_path": "plan.campaign_path",
+        "overlap_queries": "query_bridge.overlap_queries",
+        "dispatched_count": 0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "load_state",
+      "to": "preflight"
+    },
+    {
+      "from": "preflight",
+      "to": "semantics"
+    },
+    {
+      "from": "semantics",
+      "to": "morphology"
+    },
+    {
+      "from": "morphology",
+      "to": "query_bridge"
+    },
+    {
+      "from": "query_bridge",
+      "to": "ads"
+    },
+    {
+      "from": "ads",
+      "to": "combinatorics"
+    },
+    {
+      "from": "combinatorics",
+      "to": "message_match"
+    },
+    {
+      "from": "message_match",
+      "to": "plan"
+    },
+    {
+      "from": "plan",
+      "to": "audit"
+    },
+    {
+      "from": "audit",
+      "to": "plan",
+      "when": "audit.status == 'rework' && visits('audit') < 2",
+      "label": "rework plan"
+    },
+    {
+      "from": "audit",
+      "to": "owner_go",
+      "when": "audit.status == 'pass'"
+    },
+    {
+      "from": "audit",
+      "to": "hold"
+    },
+    {
+      "from": "hold",
+      "to": "held"
+    },
+    {
+      "from": "owner_go",
+      "to": "push_live"
+    },
+    {
+      "from": "push_live",
+      "to": "commit_intents"
+    },
+    {
+      "from": "commit_intents",
+      "to": "drain_outbox"
+    },
+    {
+      "from": "drain_outbox",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "mkt-direct-sim-1",
+    "sim": {
+      "input": {
+        "landing_url": "https://example.ru/uslugi/restavratsiya-foto",
+        "campaign_type": "unified_epk",
+        "strategy": "auto_cpa",
+        "launch": true,
+        "daily_budget_eur": 30,
+        "regions": [
+          "213"
+        ]
+      },
+      "stubs": {
+        "load_state": {
+          "has_charter": true,
+          "charter_json": "{\"budgets\":{\"daily_media_cap\":65}}",
+          "active_locks_json": "[]",
+          "shared_negatives_json": "[\"бесплатно\"]"
+        },
+        "preflight": {
+          "due_count": 2,
+          "selected_count": 2,
+          "selected_json": "[{\"id\":\"Q-DIR-001\"}]",
+          "blocking_count": 0
+        },
+        "semantics": {
+          "clusters_path": ".agents/marketing/campaigns/direct-restore/clusters.json",
+          "organic_path": ".agents/marketing/campaigns/direct-restore/organic.json",
+          "clusters_count": 6,
+          "queries_count": 340
+        },
+        "morphology": {
+          "negatives_count": 58,
+          "cross_minus_path": ".agents/marketing/campaigns/direct-restore/cross-minus.json"
+        },
+        "query_bridge": {
+          "overlap_queries": 41,
+          "cannibal_candidates": 3,
+          "seo_from_paid": 5,
+          "negative_candidates": 12,
+          "bridge_path": ".agents/marketing/campaigns/direct-restore/bridge.json"
+        },
+        "ads": {
+          "ads_path": ".agents/marketing/campaigns/direct-restore/ads.json",
+          "ad_groups": 6,
+          "combinations": 126,
+          "erid_ok": true
+        },
+        "combinatorics": {
+          "bad_pairs": 0,
+          "pairs_checked": 126,
+          "report_path": ".agents/marketing/campaigns/direct-restore/premortem.json"
+        },
+        "message_match": {
+          "min_score": 0.72,
+          "mismatches": 0,
+          "price_mismatch": false,
+          "report_path": ".agents/marketing/campaigns/direct-restore/match.json"
+        },
+        "plan": {
+          "campaign_path": ".agents/marketing/campaigns/direct-restore/campaign.json",
+          "change_set": [
+            {
+              "tool": "campaigns.add",
+              "api": "v501",
+              "class": "D",
+              "rollback": "campaigns.delete"
+            },
+            {
+              "tool": "campaigns.resume",
+              "class": "L",
+              "rollback": "campaigns.suspend"
+            }
+          ],
+          "orders": [
+            {
+              "kind": "sub_graph",
+              "workflow_id": "seo-brief",
+              "inputs": {
+                "queries": 5
+              },
+              "reason_code": "bridge_seo_from_paid",
+              "entity_ids": [
+                "cluster:restore-price"
+              ],
+              "touches_scopes": [
+                "new_urls"
+              ],
+              "forecast": {
+                "metric": "organic_clicks_56d",
+                "point": 120,
+                "lo80": 40,
+                "hi80": 220,
+                "horizon_days": 56
+              },
+              "risk": "low"
+            }
+          ],
+          "spend_eur": 30,
+          "needs_owner_go": true
+        },
+        "audit": {
+          "status": "pass",
+          "findings": [],
+          "reasons": ""
+        },
+        "hold": {
+          "held": 1
+        },
+        "push_live": {
+          "applied": 2,
+          "failed": 0,
+          "receipt_path": ".agents/marketing/rollback/mut_21.json",
+          "mutation_ids": [
+            "mut_21",
+            "mut_22"
+          ]
+        },
+        "commit_intents": {
+          "final_status": "launched",
+          "intents": 2
+        },
+        "drain_outbox": {
+          "dispatched_count": 2,
+          "dispatched_ids": [
+            "wfrun_seo_brief_1",
+            "sched_sq_review_1"
+          ]
+        }
+      },
+      "human_answers": {
+        "owner_go": "approve"
+      },
+      "expect_path": [
+        "load_state",
+        "preflight",
+        "semantics",
+        "morphology",
+        "query_bridge",
+        "ads",
+        "combinatorics",
+        "message_match",
+        "plan",
+        "audit",
+        "owner_go",
+        "push_live",
+        "commit_intents",
+        "drain_outbox",
+        "done"
+      ],
+      "expect_output": {
+        "status": "launched",
+        "ad_groups": 6,
+        "overlap_queries": 41,
+        "dispatched_count": 2
+      },
+      "variant_draft_only": {
+        "input": {
+          "launch": false
+        },
+        "stubs": {
+          "plan": {
+            "campaign_path": ".agents/marketing/campaigns/direct-restore/campaign.json",
+            "change_set": [],
+            "orders": [],
+            "spend_eur": 0,
+            "needs_owner_go": false
+          },
+          "commit_intents": {
+            "final_status": "drafted",
+            "intents": 0
+          },
+          "drain_outbox": {
+            "dispatched_count": 0,
+            "dispatched_ids": []
+          }
+        },
+        "expect_path": [
+          "load_state",
+          "preflight",
+          "semantics",
+          "morphology",
+          "query_bridge",
+          "ads",
+          "combinatorics",
+          "message_match",
+          "plan",
+          "audit",
+          "owner_go",
+          "push_live",
+          "commit_intents",
+          "drain_outbox",
+          "done"
+        ],
+        "expect_output": {
+          "status": "drafted",
+          "dispatched_count": 0
+        }
+      },
+      "variant_message_mismatch": {
+        "stubs": {
+          "message_match": {
+            "min_score": 0.38,
+            "mismatches": 2,
+            "price_mismatch": true,
+            "report_path": ".agents/marketing/campaigns/direct-restore/match.json"
+          },
+          "audit": {
+            "status": "rework",
+            "findings": [
+              {
+                "severity": "high",
+                "title": "ad says from 490 ₽, landing says from 990 ₽"
+              }
+            ],
+            "reasons": "drop the mismatched groups or order a landing fix"
+          }
+        },
+        "expect_path": [
+          "load_state",
+          "preflight",
+          "semantics",
+          "morphology",
+          "query_bridge",
+          "ads",
+          "combinatorics",
+          "message_match",
+          "plan",
+          "audit",
+          "plan",
+          "audit",
+          "hold",
+          "held"
+        ],
+        "expect_output": {
+          "status": "held",
+          "overlap_queries": 41
+        }
+      }
+    },
+    "live": "сервисный лендинг: ЕПК v501 в статусе suspended, мост SEO × PPC по 28 дням GSC/Вебмастера, approve владельца, resume через sp.apply_mutation",
+    "note": "Wired to mcp-yandex-seo through the read twin for every read and through sp.apply_mutation (token, class D/L, S-03 strategy guard) for writes; SEO × PPC bridge per council §3/§6.4; ЕПК pre-mortem per §6.1."
+  }
+}

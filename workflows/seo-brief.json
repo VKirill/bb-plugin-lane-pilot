@@ -19,8 +19,8 @@
     ]
   },
   "not_for": [
-    "seo-cocoon",
-    "seo-page"
+    "designing the cocoon topology itself (seo-cocoon)",
+    "writing and building the page (seo-page)"
   ],
   "status": "published",
   "tags": [

@@ -1,0 +1,82 @@
+{
+  "schema": "lp.ohmy-tool-tiers/1",
+  "version": 1,
+  "default_unknown_tier": "L",
+  "tier_definitions": {
+    "R": "Read-only query / telemetry pull; zero external state mutation, bounded token/API cost.",
+    "D": "Draft-only creation (unpublished drafts, local staging files, preview simulations); reversible with zero live spend.",
+    "L": "Live external mutation (ad bids, budgets, keywords, negative lists, IndexNow push, live CMS publish); requires single-use HMAC approval nonce.",
+    "S": "Sensitive / account-level / destructive / compliance-critical action (account deletion, ORD/erid legal fields, billing, permissions); blocked for automation, owner manual execution only."
+  },
+  "servers": {
+    "mcp-yandex-seo-ro": {
+      "default": "R",
+      "tools": {
+        "direct_get_campaigns": { "tier": "R", "max_cost_usd": 0.01 },
+        "direct_get_campaign_details": { "tier": "R", "max_cost_usd": 0.01 },
+        "direct_get_stats": { "tier": "R", "max_cost_usd": 0.02 },
+        "direct_get_search_terms": { "tier": "R", "max_cost_usd": 0.02 },
+        "metrika_get_stats": { "tier": "R", "max_cost_usd": 0.01 },
+        "metrika_get_goals": { "tier": "R", "max_cost_usd": 0.01 },
+        "webmaster_get_queries": { "tier": "R", "max_cost_usd": 0.01 },
+        "webmaster_get_indexing": { "tier": "R", "max_cost_usd": 0.01 },
+        "wordstat_get_regions": { "tier": "R", "max_cost_usd": 0.02 },
+        "wordstat_get_top_requests": { "tier": "R", "max_cost_usd": 0.05 }
+      }
+    },
+    "mcp-ga4-ro": {
+      "default": "R",
+      "tools": {
+        "run_report": { "tier": "R", "max_cost_usd": 0.02 },
+        "get_metadata": { "tier": "R", "max_cost_usd": 0.01 }
+      }
+    },
+    "mcp-gtm-ro": {
+      "default": "R",
+      "tools": {
+        "list_tags": { "tier": "R", "max_cost_usd": 0.01 },
+        "list_triggers": { "tier": "R", "max_cost_usd": 0.01 },
+        "list_variables": { "tier": "R", "max_cost_usd": 0.01 }
+      }
+    },
+    "mcp-yandex-direct": {
+      "default": "L",
+      "tools": {
+        "get_campaigns": { "tier": "R", "max_cost_usd": 0.01 },
+        "get_ads": { "tier": "R", "max_cost_usd": 0.01 },
+        "create_draft_campaign": { "tier": "D", "max_cost_usd": 0.05 },
+        "create_draft_ad_group": { "tier": "D", "max_cost_usd": 0.05 },
+        "create_draft_ads": { "tier": "D", "max_cost_usd": 0.05 },
+        "update_negative_keywords": { "tier": "L", "max_cost_usd": 0.10 },
+        "update_campaign_budget": { "tier": "L", "max_cost_usd": 0.25 },
+        "update_bidding_strategy": { "tier": "L", "max_cost_usd": 0.25 },
+        "suspend_ads": { "tier": "L", "max_cost_usd": 0.10 },
+        "resume_ads": { "tier": "L", "max_cost_usd": 0.10 },
+        "delete_campaign": { "tier": "S", "max_cost_usd": null },
+        "update_ord_erid": { "tier": "S", "max_cost_usd": null }
+      }
+    },
+    "mcp-telegram-ads": {
+      "default": "L",
+      "tools": {
+        "list_ads": { "tier": "R", "max_cost_usd": 0.01 },
+        "get_ad_stats": { "tier": "R", "max_cost_usd": 0.02 },
+        "create_ad_draft": { "tier": "D", "max_cost_usd": 0.05 },
+        "update_cpm_bid": { "tier": "L", "max_cost_usd": 0.20 },
+        "add_ad_budget": { "tier": "L", "max_cost_usd": 0.50 },
+        "change_ad_status": { "tier": "L", "max_cost_usd": 0.10 },
+        "withdraw_cabinet_funds": { "tier": "S", "max_cost_usd": null }
+      }
+    },
+    "content-factory": {
+      "default": "L",
+      "tools": {
+        "cf_group_add": { "tier": "D", "max_cost_usd": 0.05 },
+        "cf_import_clusters": { "tier": "D", "max_cost_usd": 0.10 },
+        "cf_run_drafts": { "tier": "D", "unit_cost_usd_per_item": 0.18, "max_items": 200 },
+        "cf_run_status": { "tier": "R", "max_cost_usd": 0.01 },
+        "cf_publish_live": { "tier": "L", "unit_cost_usd_per_item": 0.05, "max_items": 100 }
+      }
+    }
+  }
+}

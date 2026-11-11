@@ -21,8 +21,11 @@
     ]
   },
   "not_for": [
-    "seo-project-intake",
-    "seo-release"
+    "seo-drop-diagnosis: the forensic diagnosis of one confirmed drop (the monitor only detects and routes it)",
+    "mkt-pulse-monitor: paid-ads and product-funnel corridors, not search-console cohorts",
+    "seo-project-intake: the first passport of a site",
+    "seo-release: shipping changes to the live site",
+    "seo-ai-visibility: the full AI citation matrix (the monitor runs only a small monthly AI watch)"
   ],
   "status": "published",
   "tags": [
@@ -77,7 +80,11 @@
       "seo-project-life",
       "seo-agent",
       "seo-measurement-loop",
-      "seo-update-forensics"
+      "seo-update-forensics",
+      "seo-ai-visibility"
+    ],
+    "secrets": [
+      "XMLSTOCK_KEY?"
     ],
     "browserSession": true
   },
@@ -173,6 +180,60 @@
       }
     },
     {
+      "id": "pulse_backtest",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Release backtest against control cohorts ($0)",
+        "ru": "Бэктест релизов против контрольных когорт ($0)"
+      },
+      "skill": "seo-measurement-loop",
+      "script": "pulse_02_backtest.py",
+      "args": {
+        "pull": "{{pull.pull_path}}",
+        "change_log": "{{$inputs.change_log_path}}",
+        "method": "diff_in_diff",
+        "mark_confounded": true
+      },
+      "timeoutSec": 120,
+      "out": {
+        "backtest_path": "string",
+        "wins": "int",
+        "losses": "int",
+        "confounded_windows": "int"
+      }
+    },
+    {
+      "id": "pulse_rules",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Drop rules: final days, Poisson z, holidays, demand control ($0)",
+        "ru": "Правила просадки: финальные дни, z Пуассона, праздники, контроль спроса ($0)"
+      },
+      "skill": "seo-measurement-loop",
+      "script": "pulse_rules.py",
+      "args": {
+        "pull": "{{pull.pull_path}}",
+        "window": "today-10d..today-3d",
+        "ratio_lt": 0.82,
+        "min_baseline_clicks_7d": 150,
+        "poisson_z_lt": -2.5,
+        "calendar": "calendar-ru",
+        "demand_control": {
+          "impressions_ratio_lt": 0.82,
+          "abs_pos_delta_lt": 0.5
+        }
+      },
+      "timeoutSec": 60,
+      "out": {
+        "drop_signal": "bool",
+        "seasonality": "bool",
+        "striking_distance": "int",
+        "rules_path": "string"
+      }
+    },
+    {
       "id": "queue",
       "produces": [
         {
@@ -259,6 +320,38 @@
       }
     },
     {
+      "id": "ai_watch",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Monthly AI citation watch ($0 LLM)",
+        "ru": "Месячный надзор за цитированием в AI ($0 LLM)"
+      },
+      "skip_when": "$inputs.period == 'weekly'",
+      "skip_out": {
+        "citation_share": 0,
+        "citation_delta": 0,
+        "watch_path": ""
+      },
+      "skill": "seo-ai-visibility",
+      "script": "ai_vis_collect.py",
+      "args": {
+        "panel": ".agents/seo/ai-visibility/panel.json",
+        "sample": 15,
+        "engines": "alice,google_aio",
+        "mode": "watch"
+      },
+      "secrets": [
+        "XMLSTOCK_KEY?"
+      ],
+      "timeoutSec": 120,
+      "out": {
+        "citation_share": "number",
+        "citation_delta": "number",
+        "watch_path": "string"
+      }
+    },
+    {
       "id": "route",
       "produces": [
         {
@@ -273,7 +366,7 @@
         "en": "Route the signals",
         "ru": "Маршрутизация сигналов"
       },
-      "prompt": "Check the Search Status Dashboard and route each due signal: drop or finished core update -> drop_due; CTR, stalled or stale page -> refresh_due; positions 8-20 -> structure_due; template or tech regression -> tech_due. Wave-3 graphs (seo-trust, seo-linkbuilding, seo-template-scale) stay recommendations in the report. Set release_due only when an index check is due; owner's manual-action signals go to the owner. Status pass | rework | block; severity one of critical, high, medium, low, info.",
+      "prompt": "Check the Search Status Dashboard and route each due signal. drop_due ONLY when pulse_rules.drop_signal is {{pulse_rules.drop_signal}} = true and pulse_rules.seasonality is false (rules in {{pulse_rules.rules_path}}; never from your own reading of GSC). CTR, stalled or stale page -> refresh_due; positions 8-20 ({{pulse_rules.striking_distance}} pages) -> structure_due; template or tech regression -> tech_due; release_due only when an index check is due; ai_visibility_due when ai_watch.citation_delta is below -0.03 ({{ai_watch.citation_delta}}). Backtest {{pulse_backtest.backtest_path}}: a confounded window is no evidence. A seo-template-scale pilot with indexation_rate_14d >= 0.65 and a non-negative backtest becomes the recommendation «next wave allowed». Wave-3 graphs (seo-trust, seo-linkbuilding, seo-template-scale) stay recommendations. Status pass | rework | block; severity one of critical, high, medium, low, info.",
       "out": {
         "status": "pass|rework|block",
         "signals": "string[]",
@@ -282,7 +375,8 @@
         "refresh_due": "bool",
         "structure_due": "bool",
         "tech_due": "bool",
-        "release_due": "bool"
+        "release_due": "bool",
+        "ai_visibility_due": "bool"
       },
       "guards": {
         "maxVisits": 1,
@@ -421,6 +515,32 @@
       }
     },
     {
+      "id": "ai_vis",
+      "type": "subworkflow",
+      "workflow": "seo-ai-visibility",
+      "skip_when": "route.ai_visibility_due != true",
+      "skip_out": {
+        "status": "skipped",
+        "matrix_path": ""
+      },
+      "title": {
+        "en": "AI visibility recheck",
+        "ru": "Перепроверка видимости в AI"
+      },
+      "with": {
+        "site_url": "{{$inputs.site_url}}",
+        "mode": "recheck"
+      },
+      "out": {
+        "status": "string",
+        "matrix_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 120
+      }
+    },
+    {
       "id": "report",
       "type": "action",
       "action": "fs.write",
@@ -431,7 +551,7 @@
         "anomalies.json",
         "recommendations.md"
       ],
-      "note": "weekly-report.md: changes, the scored queue, the follow-up graphs this run started (seo-drop-diagnosis, seo-page-refresh, seo-structure-audit, seo-tech-audit), wave-3 recommendations and the SEO Change Log update",
+      "note": "weekly-report.md: changes, the scored queue, the follow-up graphs this run started (seo-drop-diagnosis, seo-page-refresh, seo-structure-audit, seo-tech-audit), wave-3 recommendations and the SEO Change Log update; backtest wins/losses, AI watch delta",
       "out": {
         "report_path": "string"
       }
@@ -468,11 +588,6 @@
       "pass": "artifact"
     },
     {
-      "from": "anomalies",
-      "to": "queue",
-      "pass": "artifact"
-    },
-    {
       "from": "queue",
       "to": "links_review",
       "pass": "artifact"
@@ -480,11 +595,6 @@
     {
       "from": "links_review",
       "to": "cadence",
-      "pass": "artifact"
-    },
-    {
-      "from": "cadence",
-      "to": "route",
       "pass": "artifact"
     },
     {
@@ -501,11 +611,6 @@
     {
       "from": "tech",
       "to": "release_check",
-      "pass": "artifact"
-    },
-    {
-      "from": "release_check",
-      "to": "report",
       "pass": "artifact"
     },
     {
@@ -526,6 +631,41 @@
     {
       "from": "structure",
       "to": "tech",
+      "pass": "artifact"
+    },
+    {
+      "from": "anomalies",
+      "to": "pulse_backtest",
+      "pass": "artifact"
+    },
+    {
+      "from": "pulse_backtest",
+      "to": "pulse_rules",
+      "pass": "artifact"
+    },
+    {
+      "from": "pulse_rules",
+      "to": "queue",
+      "pass": "artifact"
+    },
+    {
+      "from": "cadence",
+      "to": "ai_watch",
+      "pass": "artifact"
+    },
+    {
+      "from": "ai_watch",
+      "to": "route",
+      "pass": "artifact"
+    },
+    {
+      "from": "release_check",
+      "to": "ai_vis",
+      "pass": "artifact"
+    },
+    {
+      "from": "ai_vis",
+      "to": "report",
       "pass": "artifact"
     }
   ],
@@ -564,32 +704,108 @@
           "refresh_due": false,
           "structure_due": false,
           "tech_due": false,
-          "release_due": false
+          "release_due": false,
+          "ai_visibility_due": false
         },
         "report": {
           "report_path": ".agents/seo/monitor/2026-11-05/weekly-report.md"
+        },
+        "pulse_backtest": {
+          "backtest_path": "backtest.json",
+          "wins": 2,
+          "losses": 0,
+          "confounded_windows": 1
+        },
+        "pulse_rules": {
+          "drop_signal": false,
+          "seasonality": false,
+          "striking_distance": 14,
+          "rules_path": "rules.json"
         }
       },
       "expect_path": [
         "pull",
         "tech_watch",
         "anomalies",
+        "pulse_backtest",
+        "pulse_rules",
         "queue",
         "links_review",
         "cadence",
+        "ai_watch",
         "route",
         "drop",
         "refresh",
         "structure",
         "tech",
         "release_check",
+        "ai_vis",
         "report",
         "done"
       ],
       "expect_outputs": [
         "status == 'done'",
         "report_path != ''"
-      ]
+      ],
+      "expect_output": {
+        "status": "done"
+      },
+      "variant_seasonal_no_drop": {
+        "input": {
+          "period": "monthly"
+        },
+        "stubs": {
+          "pulse_rules": {
+            "drop_signal": false,
+            "seasonality": true,
+            "striking_distance": 9,
+            "rules_path": "rules.json"
+          },
+          "ai_watch": {
+            "citation_share": 0.12,
+            "citation_delta": -0.05,
+            "watch_path": "ai-watch.json"
+          },
+          "route": {
+            "status": "pass",
+            "signals": [],
+            "recommendations": [],
+            "drop_due": false,
+            "refresh_due": false,
+            "structure_due": false,
+            "tech_due": false,
+            "release_due": false,
+            "ai_visibility_due": true
+          },
+          "ai_vis": {
+            "status": "done",
+            "matrix_path": ".agents/seo/ai-visibility-matrix.json"
+          }
+        },
+        "expect_path": [
+          "pull",
+          "tech_watch",
+          "anomalies",
+          "pulse_backtest",
+          "pulse_rules",
+          "queue",
+          "links_review",
+          "cadence",
+          "ai_watch",
+          "route",
+          "drop",
+          "refresh",
+          "structure",
+          "tech",
+          "release_check",
+          "ai_vis",
+          "report",
+          "done"
+        ],
+        "expect_output": {
+          "status": "done"
+        }
+      }
     },
     "live": "еженедельный прогон по живому сайту после seo-project-intake",
     "note": "Tested on stubs. The monitor starts each wave-2 graph only when route marks it due; wave-3 graphs stay recommendations."

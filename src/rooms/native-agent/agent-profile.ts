@@ -180,6 +180,7 @@ const OWNED_PROFILES: Record<string, BundledAgent> = {
   "billing-assistant": ownedEmployee("billing-assistant", "Billing assistant"),
   "visual-artist": ownedEmployee("visual-artist", "Visual artist"),
   "macos-operator": ownedEmployee("macos-operator", "macOS operator"),
+  "growth-marketer": ownedEmployee("growth-marketer", "Growth marketer"),
   [WORKFLOW_ARCHITECT_ID]: {
     displayName: WORKFLOW_ARCHITECT_NAME.en,
     prompt: laneSessionOverlayPrompt(WORKFLOW_ARCHITECT_ID),

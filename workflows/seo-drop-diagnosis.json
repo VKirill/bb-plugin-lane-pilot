@@ -21,9 +21,10 @@
     ]
   },
   "not_for": [
-    "seo-monitor",
-    "seo-tech-audit",
-    "seo-release"
+    "mkt-pulse-monitor: a drop in paid Direct/Telegram clicks, spend or product conversions",
+    "mkt-tracking-setup: «Метрика перестала считать» — a counter or tag outage, not lost rankings",
+    "seo-tech-audit: a full technical audit without a drop",
+    "seo-monitor: the weekly report that detects drops"
   ],
   "status": "published",
   "tags": [
@@ -51,11 +52,12 @@
     }
   },
   "outputs": {
-    "status": "done|partial|frozen|blocked",
+    "status": "done|partial|frozen|blocked|seasonal|handed_off",
     "diagnosis_path": "string?",
     "hypotheses_path": "string?",
     "pilot_path": "string?",
-    "freeze_due": "string?"
+    "freeze_due": "string?",
+    "dispatched_count": "int?"
   },
   "requires": {
     "plugins": [
@@ -67,7 +69,8 @@
       "seo-agent",
       "seo-update-forensics",
       "seo-measurement-loop",
-      "seo-evidence-contract"
+      "seo-evidence-contract",
+      "mkt-end-to-end-analytics"
     ],
     "browserSession": true
   },
@@ -107,6 +110,104 @@
       "guards": {
         "maxVisits": 1,
         "timeoutMin": 20
+      }
+    },
+    {
+      "id": "window_split",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Aligned windows with demand control ($0)",
+        "ru": "Выровненные окна с контролем спроса ($0)"
+      },
+      "skill": "seo-update-forensics",
+      "script": "drop_window_split.py",
+      "args": {
+        "windows": "{{intake.windows_path}}",
+        "affected": "{{$inputs.affected_urls}}",
+        "impressions_ratio_lt": 0.82,
+        "abs_pos_delta_lt": 0.5,
+        "calendar": "calendar-ru"
+      },
+      "timeoutSec": 120,
+      "out": {
+        "drop_confirmed": "bool",
+        "seasonality": "bool",
+        "split_path": "string"
+      }
+    },
+    {
+      "id": "channel_isolation",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Channel isolation: organic, paid, direct, tracking ($0)",
+        "ru": "Изоляция канала: органика, платный, прямой, трекинг ($0)"
+      },
+      "skill": "seo-update-forensics",
+      "script": "channel_isolation.py",
+      "args": {
+        "split": "{{window_split.split_path}}"
+      },
+      "timeoutSec": 120,
+      "out": {
+        "cause_channel": "organic|paid|tracking|mixed",
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "mkt_handoff",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Hand the paid/tracking cause to marketing",
+        "ru": "Передать платную/трекинговую причину маркетингу"
+      },
+      "phase": "intents",
+      "domain": "seo",
+      "ownerAnswer": "none",
+      "orders": [
+        {
+          "kind": "sub_graph",
+          "workflow_id": "mkt-tracking-setup",
+          "inputs": {
+            "site_url": "{{$inputs.site_url}}"
+          },
+          "reason_code": "tracking_gap",
+          "entity_ids": [
+            "site:{{$inputs.site_url}}"
+          ],
+          "touches_scopes": [
+            "tracking_tags"
+          ],
+          "forecast": {
+            "metric": "attributed_sessions_share",
+            "point": 0.95,
+            "lo80": 0.9,
+            "hi80": 0.99,
+            "horizon_days": 7
+          },
+          "risk": "low"
+        }
+      ],
+      "evidence": "{{channel_isolation.report_path}}",
+      "out": {
+        "intents": "int"
+      }
+    },
+    {
+      "id": "mkt_drain",
+      "type": "action",
+      "action": "sp.dispatch_tasks",
+      "domain": "seo",
+      "sourceGraph": "seo-drop-diagnosis",
+      "title": {
+        "en": "Start the marketing graph",
+        "ru": "Запустить маркетинговый граф"
+      },
+      "out": {
+        "dispatched_count": "int",
+        "dispatched_ids": "string[]"
       }
     },
     {
@@ -212,7 +313,7 @@
         ]
       },
       "join": {
-        "policy": "all_or_low_confidence",
+        "policy": "all",
         "out": {
           "findings_paths": "string[]",
           "defects": "Finding[]",
@@ -271,11 +372,12 @@
         "en": "Hypothesis cards and pilot",
         "ru": "Карты гипотез и пилот"
       },
-      "prompt": "Procedures seo-hypothesis-card and post-update-recovery-pilot: hypothesis cards scored with evidence and a falsifier each, then a staged recovery pilot plan. Return hypotheses_path, pilot_path and top_count.",
+      "prompt": "Procedures seo-hypothesis-card and post-update-recovery-pilot: hypothesis cards scored with evidence and a falsifier each, then a staged recovery pilot plan. Then followup_orders by diagnosis: broken code, render or redirect -> code_task (urgent, owns_paths); commercial or E-E-A-T signals -> sub_graph seo-trust; pages lost on intent -> sub_graph seo-page-refresh; each an ActionOrder with reason_code, entity_ids, touches_scopes, an interval forecast and risk low | medium | high. Return hypotheses_path, pilot_path, top_count, followup_orders.",
       "out": {
         "hypotheses_path": "string",
         "pilot_path": "string",
-        "top_count": "int"
+        "top_count": "int",
+        "followup_orders": "ActionOrder[]"
       },
       "guards": {
         "maxVisits": 2,
@@ -341,6 +443,56 @@
       }
     },
     {
+      "id": "followups",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Treatment orders from the approved pilot",
+        "ru": "Приказы лечения по утверждённому пилоту"
+      },
+      "phase": "intents",
+      "domain": "seo",
+      "orders": "{{hypotheses.followup_orders}}",
+      "ownerAnswer": "{{review.answer_kind}}",
+      "out": {
+        "intents": "int"
+      }
+    },
+    {
+      "id": "followups_drain",
+      "type": "action",
+      "action": "sp.dispatch_tasks",
+      "domain": "seo",
+      "sourceGraph": "seo-drop-diagnosis",
+      "title": {
+        "en": "Start treatment graphs and urgent code tasks",
+        "ru": "Запустить лечебные графы и срочные код-задачи"
+      },
+      "out": {
+        "dispatched_count": "int",
+        "dispatched_ids": "string[]"
+      }
+    },
+    {
+      "id": "seasonal",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "seasonal",
+        "diagnosis_path": "window_split.split_path"
+      }
+    },
+    {
+      "id": "handed_off",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "handed_off",
+        "diagnosis_path": "channel_isolation.report_path",
+        "dispatched_count": "mkt_drain.dispatched_count"
+      }
+    },
+    {
       "id": "done",
       "type": "action",
       "action": "emit",
@@ -348,7 +500,8 @@
         "status": "done",
         "diagnosis_path": "package.diagnosis_path",
         "hypotheses_path": "hypotheses.hypotheses_path",
-        "pilot_path": "hypotheses.pilot_path"
+        "pilot_path": "hypotheses.pilot_path",
+        "dispatched_count": "followups_drain.dispatched_count"
       }
     },
     {
@@ -386,7 +539,39 @@
     },
     {
       "from": "intake",
+      "to": "window_split",
+      "pass": "artifact"
+    },
+    {
+      "from": "window_split",
+      "to": "seasonal",
+      "pass": "artifact",
+      "when": "window_split.seasonality == true && window_split.drop_confirmed == false"
+    },
+    {
+      "from": "window_split",
+      "to": "channel_isolation",
+      "pass": "artifact"
+    },
+    {
+      "from": "channel_isolation",
+      "to": "mkt_handoff",
+      "pass": "artifact",
+      "when": "channel_isolation.cause_channel in ['paid', 'tracking']"
+    },
+    {
+      "from": "channel_isolation",
       "to": "mechanism",
+      "pass": "artifact"
+    },
+    {
+      "from": "mkt_handoff",
+      "to": "mkt_drain",
+      "pass": "artifact"
+    },
+    {
+      "from": "mkt_drain",
+      "to": "handed_off",
       "pass": "artifact"
     },
     {
@@ -445,6 +630,16 @@
     },
     {
       "from": "package",
+      "to": "followups",
+      "pass": "artifact"
+    },
+    {
+      "from": "followups",
+      "to": "followups_drain",
+      "pass": "artifact"
+    },
+    {
+      "from": "followups_drain",
       "to": "done",
       "pass": "artifact"
     }
@@ -489,7 +684,8 @@
         "hypotheses": {
           "hypotheses_path": "hypotheses.md",
           "pilot_path": "pilot.md",
-          "top_count": 3
+          "top_count": 3,
+          "followup_orders": []
         },
         "critic": {
           "status": "pass",
@@ -497,16 +693,30 @@
         },
         "package": {
           "diagnosis_path": ".agents/seo/drop-diagnosis/2026-11-06/diagnosis.md"
-        }
-      },
-      "humans": {
-        "review": {
-          "answer": "pilot A",
-          "answer_kind": "approved"
+        },
+        "window_split": {
+          "drop_confirmed": true,
+          "seasonality": false,
+          "split_path": "split.json"
+        },
+        "channel_isolation": {
+          "cause_channel": "organic",
+          "report_path": "channels.json"
+        },
+        "followups": {
+          "intents": 1
+        },
+        "followups_drain": {
+          "dispatched_count": 1,
+          "dispatched_ids": [
+            "wfrun_refresh_7"
+          ]
         }
       },
       "expect_path": [
         "intake",
+        "window_split",
+        "channel_isolation",
         "mechanism",
         "scope",
         "layers",
@@ -515,12 +725,70 @@
         "critic",
         "review",
         "package",
+        "followups",
+        "followups_drain",
         "done"
       ],
       "expect_outputs": [
         "status == 'done'",
         "hypotheses_path != ''"
-      ]
+      ],
+      "human_answers": {
+        "review": {
+          "answer": "pilot A",
+          "answer_kind": "approved"
+        }
+      },
+      "expect_output": {
+        "status": "done",
+        "dispatched_count": 1
+      },
+      "variant_seasonal": {
+        "stubs": {
+          "window_split": {
+            "drop_confirmed": false,
+            "seasonality": true,
+            "split_path": "split.json"
+          }
+        },
+        "expect_path": [
+          "intake",
+          "window_split",
+          "seasonal"
+        ],
+        "expect_output": {
+          "status": "seasonal"
+        }
+      },
+      "variant_paid_cause": {
+        "stubs": {
+          "channel_isolation": {
+            "cause_channel": "tracking",
+            "report_path": "channels.json"
+          },
+          "mkt_handoff": {
+            "intents": 1
+          },
+          "mkt_drain": {
+            "dispatched_count": 1,
+            "dispatched_ids": [
+              "wfrun_tracking_9"
+            ]
+          }
+        },
+        "expect_path": [
+          "intake",
+          "window_split",
+          "channel_isolation",
+          "mkt_handoff",
+          "mkt_drain",
+          "handed_off"
+        ],
+        "expect_output": {
+          "status": "handed_off",
+          "dispatched_count": 1
+        }
+      }
     },
     "live": "прогон диагноза по завершившемуся апдейту или ведру drop из seo-monitor",
     "note": "Tested on stubs. During an active core update the intake freezes the run until T_end+7; fixes run in other graphs."

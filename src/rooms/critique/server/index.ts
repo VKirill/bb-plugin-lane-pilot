@@ -4,4 +4,4 @@ export { candidatePatches, headSides, runCodeCritique, runPlanCritique, runPmRea
 export { ownerLastWroteAt } from "./owner-words";
 export { SPECIALIST_ROLES, mountSpecialists, registerSpecialistActions } from "./specialists";
 export { SPECIALIST_GRAPH, pageReviewByAgent, rememberSpecialistThread } from "./specialist-graph";
-export { recordEmployeeLesson, recordRoleLine, roleLinesKey, specialistMemorySlice } from "./employee-lessons";
+export { recordEmployeeLesson, recordRoleLine, roleLinesKey, snapshotLessonProblem, specialistMemorySlice } from "./employee-lessons";

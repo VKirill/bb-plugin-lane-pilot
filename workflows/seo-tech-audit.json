@@ -21,9 +21,11 @@
     ]
   },
   "not_for": [
-    "seo-monitor",
-    "seo-drop-diagnosis",
-    "seo-release"
+    "seo-ai-visibility: AI citation share and the audience question panel (this audit runs only the 19 AI-bot checks)",
+    "mkt-tracking-setup: analytics counters, goals and UTM — «счётчик не работает» is not a crawl problem",
+    "seo-drop-diagnosis: explaining a confirmed traffic drop",
+    "seo-monitor: the weekly report",
+    "seo-release: shipping the fixes"
   ],
   "status": "published",
   "tags": [
@@ -49,7 +51,9 @@
     "status": "done|partial|blocked",
     "matrix_path": "string?",
     "backlog_path": "string?",
-    "release_items": "string[]?"
+    "release_items": "string[]?",
+    "agent_ready_score": "number?",
+    "dispatched_count": "int?"
   },
   "requires": {
     "plugins": [
@@ -61,6 +65,7 @@
       "yandex",
       "seo-tech-audit-kit",
       "seo-evidence-contract",
+      "seo-ai-visibility",
       "tavily"
     ],
     "browserSession": true
@@ -112,7 +117,7 @@
             "seo-evidence-contract"
           ]
         },
-        "prompt": "Intake {{item}} for {{$inputs.site_url}}: gsc = technical baseline per template; crawl = JS-rendering crawl with crawl-budget leaks (use {{access.crawl_path}} when given); logs = verified Googlebot patterns and phantom URLs (skipped when {{access.logs_path}} is empty). Cross-check with the sitemap. Return findings_paths, defects, skipped and skipped_branches.",
+        "prompt": "Intake {{item}} for {{$inputs.site_url}}: gsc = technical baseline per template; crawl = JS-rendering crawl with crawl-budget leaks (use {{access.crawl_path}} when given); logs = verified Googlebot patterns and phantom URLs (skipped when {{access.logs_path}} is empty). Cross-check with the sitemap. Return findings_paths, defects, skipped and skipped_branches. Before any crawl plan, apply the large-site protocol of references/screaming-frog-llm-embeddings-playbook.md §2: sites over 100k URL get a scouting crawl (≤ 50k URL or 1 h) plus List mode of URLs with impressions; a full crawl is proposed only with a stated reason. JS rendering is enabled per template only after a raw/rendered diff on a sample (§3).",
         "out": {
           "findings_paths": "string[]",
           "defects": "Finding[]",
@@ -127,7 +132,7 @@
         ]
       },
       "join": {
-        "policy": "all_or_low_confidence",
+        "policy": "all",
         "out": {
           "findings_paths": "string[]",
           "defects": "Finding[]",
@@ -135,6 +140,26 @@
         }
       },
       "concurrency": 3
+    },
+    {
+      "id": "agent_ready",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "19 Agent Ready checks ($0)",
+        "ru": "19 проверок Agent Ready ($0)"
+      },
+      "skill": "seo-ai-visibility",
+      "script": "agent_ready_audit.py",
+      "args": {
+        "site": "{{$inputs.site_url}}"
+      },
+      "timeoutSec": 120,
+      "out": {
+        "score": "number",
+        "blockers": "int",
+        "report_path": "string"
+      }
     },
     {
       "id": "specialists",
@@ -182,7 +207,7 @@
         ]
       },
       "join": {
-        "policy": "all_or_low_confidence",
+        "policy": "all",
         "out": {
           "findings_paths": "string[]",
           "defects": "Finding[]",
@@ -211,7 +236,7 @@
         "en": "Master Audit Matrix",
         "ru": "Master Audit Matrix"
       },
-      "prompt": "Procedure master-audit-matrix: join every defect row into the matrix with conflict flags and the three-cohort crawl distribution. Return matrix_path and rows.",
+      "prompt": "Procedure master-audit-matrix: join every defect row into the matrix with conflict flags and the three-cohort crawl distribution. Return matrix_path and rows. Add the Agent Ready rows from {{agent_ready.report_path}} (score {{agent_ready.score}}, blockers {{agent_ready.blockers}}) as their own area. Add an area 'semantic duplicates' from the embeddings report (clean-area vectors only): pairs with cosine ≥ 0.95 are candidates; a pair becomes a ticket only if GSC query×page (byPage) shows shared queries with impressions for both URLs.",
       "out": {
         "matrix_path": "string",
         "rows": "int"
@@ -241,11 +266,12 @@
         "en": "Root-cause backlog",
         "ru": "Бэклог первопричин"
       },
-      "prompt": "Procedure defect-backlog-prioritization: aggregate matrix rows into root-cause tickets with a definition of done and verification method, prioritize and route to teams; each ticket is a release item for seo-release. Return backlog_path, tickets and release_items.",
+      "prompt": "Procedure defect-backlog-prioritization: aggregate matrix rows into root-cause tickets with a definition of done and verification method, prioritize and route to teams; each ticket is a release item for seo-release. Critical and medium tickets also become code_tasks: ActionOrder objects of kind code_task whose task is a TaskV2 contract with exact owns_paths, acceptance and focused verification, reason_code seo_tech_blocker, entity_ids, touches_scopes, an interval forecast and risk low | medium | high, plus one order of kind schedule for seo-release with mode template_cohort after the merges. Return backlog_path, tickets, release_items and code_tasks.",
       "out": {
         "backlog_path": "string",
         "tickets": "int",
-        "release_items": "string[]"
+        "release_items": "string[]",
+        "code_tasks": "ActionOrder[]"
       },
       "guards": {
         "maxVisits": 2,
@@ -278,6 +304,42 @@
       }
     },
     {
+      "id": "commit_intents",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Backlog tickets as writer tasks (one transaction)",
+        "ru": "Тикеты бэклога как задачи писателю (одна транзакция)"
+      },
+      "phase": "intents",
+      "domain": "seo",
+      "orders": "{{backlog.code_tasks}}",
+      "ownerAnswer": "none",
+      "artifacts": [
+        "{{matrix.matrix_path}}",
+        "{{backlog.backlog_path}}",
+        "{{agent_ready.report_path}}"
+      ],
+      "out": {
+        "intents": "int"
+      }
+    },
+    {
+      "id": "drain_outbox",
+      "type": "action",
+      "action": "sp.dispatch_tasks",
+      "title": {
+        "en": "Dispatch writer tasks (idempotent)",
+        "ru": "Поставить задачи писателю (идемпотентно)"
+      },
+      "domain": "seo",
+      "sourceGraph": "seo-tech-audit",
+      "out": {
+        "dispatched_count": "int",
+        "dispatched_ids": "string[]"
+      }
+    },
+    {
       "id": "package",
       "type": "action",
       "action": "fs.write",
@@ -302,7 +364,9 @@
         "status": "done",
         "matrix_path": "matrix.matrix_path",
         "backlog_path": "backlog.backlog_path",
-        "release_items": "backlog.release_items"
+        "release_items": "backlog.release_items",
+        "agent_ready_score": "agent_ready.score",
+        "dispatched_count": "drain_outbox.dispatched_count"
       }
     },
     {
@@ -318,11 +382,6 @@
     {
       "from": "access",
       "to": "intake",
-      "pass": "artifact"
-    },
-    {
-      "from": "intake",
-      "to": "specialists",
       "pass": "artifact"
     },
     {
@@ -349,18 +408,38 @@
     },
     {
       "from": "critic",
-      "to": "package",
-      "pass": "artifact",
-      "when": "critic.status == 'pass'"
-    },
-    {
-      "from": "critic",
       "to": "blocked",
       "pass": "artifact"
     },
     {
       "from": "package",
       "to": "done",
+      "pass": "artifact"
+    },
+    {
+      "from": "intake",
+      "to": "agent_ready",
+      "pass": "artifact"
+    },
+    {
+      "from": "agent_ready",
+      "to": "specialists",
+      "pass": "artifact"
+    },
+    {
+      "from": "critic",
+      "to": "commit_intents",
+      "pass": "artifact",
+      "when": "critic.status == 'pass'"
+    },
+    {
+      "from": "commit_intents",
+      "to": "drain_outbox",
+      "pass": "artifact"
+    },
+    {
+      "from": "drain_outbox",
+      "to": "package",
       "pass": "artifact"
     }
   ],
@@ -398,7 +477,8 @@
           "tickets": 6,
           "release_items": [
             ".agents/seo/release/r1/item.json"
-          ]
+          ],
+          "code_tasks": []
         },
         "critic": {
           "status": "pass",
@@ -406,29 +486,51 @@
         },
         "package": {
           "package_path": ".agents/seo/tech-audit/2026-11-06/"
-        }
-      },
-      "humans": {
-        "access": {
-          "logs_path": "",
-          "crawl_path": "",
-          "answer_kind": "given"
+        },
+        "agent_ready": {
+          "score": 14,
+          "blockers": 2,
+          "report_path": "agent-ready.json"
+        },
+        "commit_intents": {
+          "intents": 1
+        },
+        "drain_outbox": {
+          "dispatched_count": 1,
+          "dispatched_ids": [
+            "lptask_tech_1"
+          ]
         }
       },
       "expect_path": [
         "access",
         "intake",
+        "agent_ready",
         "specialists",
         "matrix",
         "backlog",
         "critic",
+        "commit_intents",
+        "drain_outbox",
         "package",
         "done"
       ],
       "expect_outputs": [
         "status == 'done'",
         "backlog_path != ''"
-      ]
+      ],
+      "human_answers": {
+        "access": {
+          "logs_path": "",
+          "crawl_path": "",
+          "answer_kind": "given"
+        }
+      },
+      "expect_output": {
+        "status": "done",
+        "agent_ready_score": 14,
+        "dispatched_count": 1
+      }
     },
     "live": "полный техаудит по паспорту проекта или по сигналу seo-monitor",
     "note": "Tested on stubs. Log branches skip without the owner's logs; the graph writes a backlog, seo-release ships the fixes."

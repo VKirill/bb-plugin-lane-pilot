@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.533
+
+- **Specialist OS native integration (`marketing` shelf, `growth-marketer` employee, `src/rooms/specialist/`).** Adds the `marketing` workflow category shelf, the `growth-marketer` native specialist session, 11 new built-in graphs (`mkt-project-intake`, `mkt-tracking-setup`, `mkt-direct-search-campaign`, `mkt-tg-ads-campaign`, `mkt-experiment-cycle`, `mkt-landing-cro-audit`, `mkt-pulse-monitor`, `seo-ai-visibility`, `sp-specialist-tick`, `lp.curriculum-ingest`, `lp.specialist-eval`), 5 upgraded SEO graphs (`seo-monitor`, `seo-tech-audit`, `seo-template-scale`, `seo-release`, `seo-drop-diagnosis`), 17 `lane_pilot_sp_*` SQLite tables, 10 `sp.*` action executors, the `lp.cf-batch/1` Content Factory bridge (`G-1..G-W` and `G-O1..G-O5`), the 480-question native bank (`policy/questions-bank-v2.json`), and 18 bundled skills with 33 verified Python scripts. Measured in `tests/specialist/` (27 tests across 5 suites, including 16 end-to-end `WorkflowEngine` runs) and `tests/workflow/` (104 suites).
+
 ## 0.1.532
 
 - **The attempt's progress journal is kept.** `PROGRESS.md` (files touched, commands run, every cut marked) was written into the attempt's own checkout, and a worktree is removed with the attempt: 0 journals stood beside the receipts of 66 accepted tasks in the drill sandbox (2026-11-11). It is now written to the run's own folder, `.agents/runs/<run>/artifacts/<task>/PROGRESS.md`, where the receipts are. Measured in `tests/sma/parity-g6-rest-a.test.ts`: the journal of an attempt that worked in `/wt/a` lands under the run's `/repo`; red on the old code.

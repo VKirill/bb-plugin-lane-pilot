@@ -33,7 +33,7 @@ const TYPE_LABEL: Record<string, string> = {
   parallel: "wmTypeParallel", subworkflow: "wmTypeSubworkflow", join: "wmTypeJoin", "lp-task": "wmTypeLpTask", note: "wmTypeAgent",
 };
 const CAT_LABEL: Record<WorkflowCategory, string> = {
-  seo: "wmCatSeo", code: "wmCatCode", content: "wmCatContent", research: "wmCatResearch",
+  seo: "wmCatSeo", marketing: "wmCatMarketing", code: "wmCatCode", content: "wmCatContent", research: "wmCatResearch",
   games: "wmCatGames", business: "wmCatBusiness", routines: "wmCatRoutines", service: "wmCatService",
 };
 /**
@@ -41,7 +41,7 @@ const CAT_LABEL: Record<WorkflowCategory, string> = {
  * take it, so a category reads as one colour from far out; the step types keep their own colours for the left bar.
  */
 const CAT_HUE: Record<WorkflowCategory, [number, number]> = {
-  seo: [25, 0.17], code: [255, 0.15], content: [160, 0.13], research: [300, 0.15],
+  seo: [25, 0.17], marketing: [340, 0.16], code: [255, 0.15], content: [160, 0.13], research: [300, 0.15],
   games: [200, 0.12], business: [85, 0.14], routines: [55, 0.16], service: [250, 0.03],
 };
 export const catColor = (cat: WorkflowCategory, lightness = 62, alpha = 1): string => {

@@ -1,0 +1,647 @@
+{
+  "id": "lp.specialist-eval",
+  "name": {
+    "en": "Specialist exam",
+    "ru": "Экзамен специалиста: слепые вопросы и исторический реплей"
+  },
+  "description": {
+    "en": "Blind exam of a specialist: golden questions plus historical replay on past project snapshots (decide at T0, score against T+14), writes a scorecard and opens or revokes autonomous decision rights.",
+    "ru": "Слепой экзамен специалиста: золотые вопросы и исторический реплей на прошлых снепшотах проекта (решение в T0, оценка по T+14), пишет табель и открывает или отзывает права автономных решений."
+  },
+  "examples": {
+    "en": [
+      "Run the specialist exam on historical snapshots",
+      "Can the growth marketer get decides rights?",
+      "Replay last month's decisions and score them"
+    ],
+    "ru": [
+      "Проведи экзамен маркетолога на историческом реплее",
+      "Переэкзаменуй SEO-специалиста после загрузки нового курса",
+      "Можно ли маркетологу самому решать бюджеты тестов? Запусти экзамен",
+      "Оцени прогнозы специалиста и обнови его права"
+    ]
+  },
+  "not_for": [
+    "lp.curriculum-ingest: turning course material into atoms and questions (it orders this exam)",
+    "sp-specialist-tick: a working shift of the specialist, not its exam",
+    "lp.model-rebench: benchmarking models for roles, not one specialist's decisions",
+    "anything a person asks in a chat: the curriculum ingest and the schedule start this graph",
+    "eval-review: reviewing an AI feature's evaluation design"
+  ],
+  "status": "published",
+  "tags": [
+    "lead",
+    "eval",
+    "specialist",
+    "schedule-only"
+  ],
+  "triggers": [
+    "manual",
+    "schedule"
+  ],
+  "inputs": {
+    "role": {
+      "type": "growth-marketer|seo-specialist",
+      "default": "growth-marketer",
+      "description": "which specialist sits the exam"
+    },
+    "exam": {
+      "type": "blind_questions|historical_replay|both",
+      "default": "both",
+      "description": "blind gold questions, replay of historical snapshots with the future hidden, or both"
+    },
+    "promote": {
+      "type": "bool",
+      "default": true,
+      "description": "offer promotions to decides for the owner's approval (demotions always apply)"
+    },
+    "class_scope": {
+      "type": "string",
+      "default": "all",
+      "note": "one action class or all"
+    },
+    "t0": {
+      "type": "string",
+      "default": "",
+      "note": "replay cut-off; empty = 28 days ago"
+    }
+  },
+  "outputs": {
+    "status": "promoted|unchanged|demoted|invalid_set|held",
+    "scorecard_path": "string?",
+    "wilson_lb": "number?",
+    "grade": "string?",
+    "dispatched_count": "int?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "lp-agentic-discipline",
+      "mkt-ab-mde-alerts",
+      "seo-measurement-loop",
+      "lane-pilot-ops"
+    ],
+    "secrets": []
+  },
+  "budget": {
+    "max_minutes": 120,
+    "max_usd": 10
+  },
+  "goal_check": "gate",
+  "entry": "load_state",
+  "nodes": [
+    {
+      "id": "load_state",
+      "type": "action",
+      "action": "sp.load_memory",
+      "title": {
+        "en": "Current rights, journal, snapshots index",
+        "ru": "Текущие права, журнал, индекс снимков"
+      },
+      "role": "{{$inputs.role}}",
+      "graphId": "lp.specialist-eval",
+      "acquireTick": false,
+      "out": {
+        "has_charter": "bool",
+        "rights_json": "string",
+        "matured_forecasts": "int",
+        "snapshots_index_path": "string"
+      }
+    },
+    {
+      "id": "prepare",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Freeze the gold set, hide the future after T0 ($0)",
+        "ru": "Заморозить золотой набор, скрыть будущее после T0 ($0)"
+      },
+      "skill": "lp-agentic-discipline",
+      "script": "replay_scorer.py",
+      "args": {
+        "mode": "prepare",
+        "role": "{{$inputs.role}}",
+        "exam": "{{$inputs.exam}}",
+        "t0": "{{$inputs.t0}}",
+        "snapshots": "{{load_state.snapshots_index_path}}",
+        "class_scope": "{{$inputs.class_scope}}"
+      },
+      "timeoutSec": 120,
+      "out": {
+        "set_path": "string",
+        "cases": "int",
+        "leakage_ok": "bool",
+        "gold_sha256": "string"
+      }
+    },
+    {
+      "id": "answer_mkt",
+      "type": "agent",
+      "role": "specialist:growth-marketer",
+      "skip_when": "$inputs.role != 'growth-marketer'",
+      "skip_out": {
+        "answers_path": "",
+        "answered": 0
+      },
+      "profile": {
+        "skills": [
+          "lp-agentic-discipline",
+          "mkt-ab-mde-alerts",
+          "mkt-end-to-end-analytics"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Blind answers (marketing)",
+        "ru": "Слепые ответы (маркетинг)"
+      },
+      "prompt": "Exam set {{prepare.set_path}} ({{prepare.cases}} cases). Each case shows only data up to its T0. For every case answer as on that day: the decision class, the orders you would issue, and an interval forecast {point, lo80, hi80, horizon_days}. Do not search for what happened later; a case that needs missing data is answered with the safe default and the assumption named. Write answers.json next to the set. Return answers_path and answered.",
+      "out": {
+        "answers_path": "string",
+        "answered": "int"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 40
+      }
+    },
+    {
+      "id": "answer_seo",
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "skip_when": "$inputs.role != 'seo-specialist'",
+      "skip_out": {
+        "answers_path": "",
+        "answered": 0
+      },
+      "profile": {
+        "skills": [
+          "lp-agentic-discipline",
+          "seo-measurement-loop",
+          "seo-drmax-orchestrator"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Blind answers (SEO)",
+        "ru": "Слепые ответы (SEO)"
+      },
+      "prompt": "Exam set {{prepare.set_path}} ({{prepare.cases}} cases). Each case shows only search data up to its T0. For every case answer as on that day: the decision class, the orders you would issue, and an interval forecast {point, lo80, hi80, horizon_days}. Windows overlapping a confirmed search update are flagged confounded in the set; answer them but expect them not to count. Write answers.json next to the set. Return answers_path and answered.",
+      "out": {
+        "answers_path": "string",
+        "answered": "int"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 40
+      }
+    },
+    {
+      "id": "score",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Coverage, interval score, Wilson LB per class ($0)",
+        "ru": "Покрытие, interval score, Wilson LB по классам ($0)"
+      },
+      "skill": "lp-agentic-discipline",
+      "script": "replay_scorer.py",
+      "args": {
+        "mode": "score",
+        "set": "{{prepare.set_path}}",
+        "answers": [
+          "{{answer_mkt.answers_path}}",
+          "{{answer_seo.answers_path}}"
+        ],
+        "min_n": 20,
+        "min_lb": 0.8,
+        "gold_sha256": "{{prepare.gold_sha256}}"
+      },
+      "timeoutSec": 120,
+      "guards": {
+        "maxVisits": 2
+      },
+      "out": {
+        "n": "int",
+        "k": "int",
+        "wilson_lb": "number",
+        "coverage": "number",
+        "interval_score": "number",
+        "grade": "g0|g1|g2|g3|g4",
+        "per_class_json": "string",
+        "promotions": "int",
+        "demotions": "int",
+        "followup_orders_json": "string",
+        "scorecard_path": "string"
+      }
+    },
+    {
+      "id": "audit",
+      "type": "agent",
+      "role": "auditor",
+      "session": "new",
+      "profile": {
+        "skills": [
+          "lp-agentic-discipline"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Audit leakage, gold-set integrity, metric honesty",
+        "ru": "Ревизия утечек, целостности набора, честности метрики"
+      },
+      "prompt": "Audit the exam: set {{prepare.set_path}} (gold sha {{prepare.gold_sha256}}, leakage_ok {{prepare.leakage_ok}}), answers {{answer_mkt.answers_path}} {{answer_seo.answers_path}}, scorecard {{score.scorecard_path}} (n {{score.n}}, k {{score.k}}, Wilson LB {{score.wilson_lb}}, coverage {{score.coverage}}, per class {{score.per_class_json}}). Check: no answer cites data after its T0; the gold set hash matches the frozen one; confounded windows are excluded; a promotion needs n >= 20 and LB >= 0.8 in that class; owner_only classes are untouched. Status pass, rework (the answers must be redone: say why in reasons) or block; findings carry severity critical, high, medium, low or info.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]",
+        "reasons": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "hold",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Keep rights unchanged, report the failed exam",
+        "ru": "Права без изменений, отчёт о проваленном экзамене"
+      },
+      "phase": "hold",
+      "role": "{{$inputs.role}}",
+      "scorecard": "{{score.scorecard_path}}",
+      "auditReasons": "{{audit.reasons}}",
+      "out": {
+        "held": "int"
+      }
+    },
+    {
+      "id": "owner_go",
+      "type": "human",
+      "role": "owner",
+      "skip_when": "$inputs.promote == false || score.promotions == 0",
+      "skip_out": {
+        "answer": "",
+        "answer_kind": "none"
+      },
+      "title": {
+        "en": "Approve promotions to decides",
+        "ru": "Утвердить повышения до decides"
+      },
+      "prompt": "The exam supports promoting some action classes from proposes to decides (the specialist would act alone inside the charter caps). The per-class N, Wilson LB and coverage are in the scorecard. approve applies the promotions; decline keeps the current tiers. Demotions already apply. hold (the default) keeps everything as it is and asks again on the next tick. «Сам реши» or no answer is never an approval: a timeout routes like hold.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approve|decline|hold|timeout|none"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 1440
+      },
+      "options": [
+        "approve",
+        "decline",
+        "hold"
+      ],
+      "defaultOption": "hold"
+    },
+    {
+      "id": "commit_intents",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Rights, scorecard, follow-ups in one transaction",
+        "ru": "Права, табель, продолжения одной транзакцией"
+      },
+      "phase": "rights",
+      "role": "{{$inputs.role}}",
+      "perClass": "{{score.per_class_json}}",
+      "ownerAnswer": "{{owner_go.answer_kind}}",
+      "orders": "{{score.followup_orders_json}}",
+      "scorecard": "{{score.scorecard_path}}",
+      "out": {
+        "final_status": "promoted|unchanged|demoted",
+        "intents": "int"
+      }
+    },
+    {
+      "id": "drain_outbox",
+      "type": "action",
+      "action": "sp.dispatch_tasks",
+      "title": {
+        "en": "Miss analysis, shadow questions, next exam",
+        "ru": "Разбор промахов, shadow-вопросы, следующий экзамен"
+      },
+      "role": "{{$inputs.role}}",
+      "sourceGraph": "lp.specialist-eval",
+      "out": {
+        "dispatched_count": "int",
+        "dispatched_ids": "string[]"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "commit_intents.final_status",
+        "scorecard_path": "score.scorecard_path",
+        "wilson_lb": "score.wilson_lb",
+        "grade": "score.grade",
+        "dispatched_count": "drain_outbox.dispatched_count"
+      }
+    },
+    {
+      "id": "invalid",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "invalid_set",
+        "dispatched_count": 0
+      }
+    },
+    {
+      "id": "held",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "held",
+        "scorecard_path": "score.scorecard_path",
+        "wilson_lb": "score.wilson_lb",
+        "dispatched_count": 0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "load_state",
+      "to": "prepare"
+    },
+    {
+      "from": "prepare",
+      "to": "invalid",
+      "when": "prepare.leakage_ok == false || prepare.cases < 20",
+      "label": "leaky or too small set"
+    },
+    {
+      "from": "prepare",
+      "to": "answer_mkt"
+    },
+    {
+      "from": "answer_mkt",
+      "to": "answer_seo"
+    },
+    {
+      "from": "answer_seo",
+      "to": "score"
+    },
+    {
+      "from": "score",
+      "to": "audit"
+    },
+    {
+      "from": "audit",
+      "to": "answer_mkt",
+      "when": "audit.status == 'rework' && visits('audit') < 2 && $inputs.role == 'growth-marketer'",
+      "label": "redo marketing answers"
+    },
+    {
+      "from": "audit",
+      "to": "answer_seo",
+      "when": "audit.status == 'rework' && visits('audit') < 2 && $inputs.role == 'seo-specialist'",
+      "label": "redo seo answers"
+    },
+    {
+      "from": "audit",
+      "to": "owner_go",
+      "when": "audit.status == 'pass'"
+    },
+    {
+      "from": "audit",
+      "to": "hold"
+    },
+    {
+      "from": "hold",
+      "to": "held"
+    },
+    {
+      "from": "owner_go",
+      "to": "commit_intents"
+    },
+    {
+      "from": "commit_intents",
+      "to": "drain_outbox"
+    },
+    {
+      "from": "drain_outbox",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "lp-eval-sim-1",
+    "sim": {
+      "input": {
+        "role": "growth-marketer",
+        "exam": "both",
+        "promote": true,
+        "class_scope": "all",
+        "t0": "2026-10-14"
+      },
+      "stubs": {
+        "load_state": {
+          "has_charter": true,
+          "rights_json": "[{\"class\":\"test_cell_budget\",\"tier\":\"proposes\"}]",
+          "matured_forecasts": 31,
+          "snapshots_index_path": ".agents/marketing/snapshots/index.json"
+        },
+        "prepare": {
+          "set_path": ".agents/marketing/evals/2026-11-11/set.json",
+          "cases": 42,
+          "leakage_ok": true,
+          "gold_sha256": "9f1c"
+        },
+        "answer_mkt": {
+          "answers_path": ".agents/marketing/evals/2026-11-11/answers.json",
+          "answered": 42
+        },
+        "answer_seo": {
+          "answers_path": "",
+          "answered": 0
+        },
+        "score": {
+          "n": 31,
+          "k": 28,
+          "wilson_lb": 0.82,
+          "coverage": 0.9,
+          "interval_score": 0.41,
+          "grade": "g3",
+          "per_class_json": "{\"test_cell_budget\":{\"n\":24,\"lb\":0.83}}",
+          "promotions": 1,
+          "demotions": 0,
+          "followup_orders_json": "[{\"kind\":\"schedule\",\"graph\":\"lp.specialist-eval\",\"after_days\":14}]",
+          "scorecard_path": ".agents/marketing/evals/2026-11-11/scorecard.json"
+        },
+        "audit": {
+          "status": "pass",
+          "findings": [],
+          "reasons": ""
+        },
+        "hold": {
+          "held": 1
+        },
+        "commit_intents": {
+          "final_status": "promoted",
+          "intents": 1
+        },
+        "drain_outbox": {
+          "dispatched_count": 1,
+          "dispatched_ids": [
+            "sched_exam_1"
+          ]
+        }
+      },
+      "human_answers": {
+        "owner_go": "approve"
+      },
+      "expect_path": [
+        "load_state",
+        "prepare",
+        "answer_mkt",
+        "answer_seo",
+        "score",
+        "audit",
+        "owner_go",
+        "commit_intents",
+        "drain_outbox",
+        "done"
+      ],
+      "expect_output": {
+        "status": "promoted",
+        "wilson_lb": 0.82,
+        "grade": "g3",
+        "dispatched_count": 1
+      },
+      "variant_seo_no_promotion": {
+        "input": {
+          "role": "seo-specialist"
+        },
+        "stubs": {
+          "answer_seo": {
+            "answers_path": ".agents/seo/evals/2026-11-11/answers.json",
+            "answered": 40
+          },
+          "score": {
+            "n": 22,
+            "k": 15,
+            "wilson_lb": 0.48,
+            "coverage": 0.68,
+            "interval_score": 0.9,
+            "grade": "g1",
+            "per_class_json": "{\"page_refresh\":{\"n\":22,\"lb\":0.48}}",
+            "promotions": 0,
+            "demotions": 1,
+            "followup_orders_json": "[{\"kind\":\"create_extension\",\"kind_of\":\"shadow_question\"}]",
+            "scorecard_path": ".agents/seo/evals/2026-11-11/scorecard.json"
+          },
+          "commit_intents": {
+            "final_status": "demoted",
+            "intents": 1
+          },
+          "drain_outbox": {
+            "dispatched_count": 1,
+            "dispatched_ids": [
+              "ext_shadow_1"
+            ]
+          }
+        },
+        "expect_path": [
+          "load_state",
+          "prepare",
+          "answer_mkt",
+          "answer_seo",
+          "score",
+          "audit",
+          "owner_go",
+          "commit_intents",
+          "drain_outbox",
+          "done"
+        ],
+        "expect_output": {
+          "status": "demoted",
+          "grade": "g1",
+          "dispatched_count": 1
+        }
+      },
+      "variant_leaky_set": {
+        "stubs": {
+          "prepare": {
+            "set_path": ".agents/marketing/evals/2026-11-11/set.json",
+            "cases": 42,
+            "leakage_ok": false,
+            "gold_sha256": "9f1c"
+          }
+        },
+        "expect_path": [
+          "load_state",
+          "prepare",
+          "invalid"
+        ],
+        "expect_output": {
+          "status": "invalid_set"
+        }
+      },
+      "variant_audit_fail_twice_hold": {
+        "stubs": {
+          "audit": {
+            "status": "rework",
+            "findings": [
+              {
+                "severity": "critical",
+                "title": "answer cites a post-T0 snapshot"
+              }
+            ],
+            "reasons": "leakage in case 17"
+          }
+        },
+        "expect_path": [
+          "load_state",
+          "prepare",
+          "answer_mkt",
+          "answer_seo",
+          "score",
+          "audit",
+          "answer_mkt",
+          "answer_seo",
+          "score",
+          "audit",
+          "hold",
+          "held"
+        ],
+        "expect_output": {
+          "status": "held",
+          "wilson_lb": 0.82
+        }
+      }
+    },
+    "live": "ночной экзамен по расписанию и после lp.curriculum-ingest: реплей снимков photoalive с T0 = -28 дней, повышение test_cell_budget только после approve",
+    "note": "Council Mem-02 (as_of <= T0), D-04 (confounded windows excluded), D-08 (coverage + interval score, Wilson LB >= 0.8 at N >= 20), E-17 (owner_only never examined). internal: started by schedule and by lp.curriculum-ingest orders, never offered by the router."
+  }
+}

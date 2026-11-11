@@ -23,10 +23,10 @@
     ]
   },
   "not_for": [
-    "a full cluster audit without writing (use seo-cocoon)",
-    "publishing to production (use seo-release)",
-    "social-post",
-    "analyze-code"
+    "many pages from one template (seo-template-scale)",
+    "author, expert or trust pages and Person schema (seo-trust)",
+    "publishing to production (seo-release)",
+    "a full cluster audit without writing (seo-cocoon)"
   ],
   "status": "published",
   "tags": [

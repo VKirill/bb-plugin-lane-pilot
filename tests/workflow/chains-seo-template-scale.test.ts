@@ -17,12 +17,12 @@ describe("seo-template-scale", () => {
   it("catalog mode: passports -> facets -> chain -> meta -> critic -> owner approve -> rollout -> done", async () => {
     const r = await runSim("seo-template-scale", { input, stubs: base(), humans: { approve: { answer_kind: "approve", answer: "да" } } });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("passports facets_stock commercial_chain service_geo proof meta_alt critic approve rollout package done");
-    expect(r.skipped).toEqual(expect.arrayContaining(["service_geo", "proof"]));
+    expect(pathOf(r)).toBe("passports facets_stock commercial_chain service_geo proof bofu_matrix info_gain similarity meta_alt critic approve rollout cf_handoff cf_commit cf_drain package done");
+    expect(r.skipped).toEqual(expect.arrayContaining(["service_geo", "proof", "bofu_matrix", "info_gain", "similarity", "cf_handoff", "cf_commit", "cf_drain"]));
     expect(out(r)).toMatchObject({ status: "done", passports_path: "template-passports.md", meta_import_path: "meta-import.json" });
   });
 
-  it("service_geo mode runs the geo and proof nodes and skips the catalog ones", async () => {
+  it("service_geo mode runs the geo and proof nodes and skips the catalog and BOFU ones", async () => {
     const r = await runSim("seo-template-scale", {
       input: { ...input, mode: "service_geo", location_registry_path: "locations.csv", proofs_path: "proofs/" },
       stubs: {
@@ -32,9 +32,30 @@ describe("seo-template-scale", () => {
       },
       humans: { approve: { answer_kind: "approve", answer: "да" } },
     });
-    expect(pathOf(r)).toBe("passports facets_stock commercial_chain service_geo proof meta_alt critic approve rollout package done");
-    expect(r.skipped).toEqual(expect.arrayContaining(["facets_stock", "commercial_chain"]));
+    expect(pathOf(r)).toBe("passports facets_stock commercial_chain service_geo proof bofu_matrix info_gain similarity meta_alt critic approve rollout cf_handoff cf_commit cf_drain package done");
+    expect(r.skipped).toEqual(expect.arrayContaining(["facets_stock", "commercial_chain", "bofu_matrix", "info_gain", "similarity", "cf_handoff", "cf_commit", "cf_drain"]));
     expect(out(r)).toMatchObject({ status: "done", geo_specs_path: "geo-specs.md" });
+  });
+
+  it("bofu_programmatic mode runs BOFU matrix, info_gain, similarity and Content Factory handoff while skipping meta_alt and rollout", async () => {
+    const r = await runSim("seo-template-scale", {
+      input: { ...input, mode: "bofu_programmatic" },
+      stubs: {
+        ...base(),
+        bofu_matrix: { matrix_path: "bofu-matrix.json", rows: 48 },
+        info_gain: { passed: 15, absorbed: 21, report_path: "info-gain.json" },
+        similarity: { near_duplicates: 0, report_path: "similarity.json" },
+        cf_handoff: { batch_path: ".agents/seo/batches/cfb_9f1c.json", pilot_size: 15, wave: 1, orders: [] },
+        cf_commit: { intents: 1, batch_id: "cfb_9f1c" },
+        cf_drain: { dispatched_count: 1, dispatched_ids: ["cfb_9f1c"] },
+      },
+      humans: { approve: { answer_kind: "approve", answer: "да" } },
+    });
+    expect(pathOf(r)).toBe("passports facets_stock commercial_chain service_geo proof bofu_matrix info_gain similarity meta_alt critic approve rollout cf_handoff cf_commit cf_drain package done");
+    expect(r.skipped).toEqual(expect.arrayContaining(["facets_stock", "commercial_chain", "service_geo", "proof", "meta_alt", "rollout"]));
+    expect(r.skipped).not.toContain("bofu_matrix");
+    expect(r.skipped).not.toContain("cf_handoff");
+    expect(out(r)).toMatchObject({ status: "done", cf_batch_id: "cfb_9f1c" });
   });
 
   it("no rollout without the pilot verdict: rollout's only incoming edge is the owner's approve", async () => {
@@ -46,7 +67,7 @@ describe("seo-template-scale", () => {
 
   it("owner decline blocks the run before the rollout", async () => {
     const r = await runSim("seo-template-scale", { input, stubs: base(), humans: { approve: { answer_kind: "decline", answer: "стоп" } } });
-    expect(pathOf(r)).toBe("passports facets_stock commercial_chain service_geo proof meta_alt critic approve blocked");
+    expect(pathOf(r)).toBe("passports facets_stock commercial_chain service_geo proof bofu_matrix info_gain similarity meta_alt critic approve blocked");
     expect(out(r)).toMatchObject({ status: "blocked" });
   });
 });

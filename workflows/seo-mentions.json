@@ -21,8 +21,9 @@
     ]
   },
   "not_for": [
-    "seo-linkbuilding",
-    "seo-outreach"
+    "checking whether AI answers cite our pages (seo-ai-visibility)",
+    "link program planning (seo-linkbuilding)",
+    "outreach pitches to donors (seo-outreach)"
   ],
   "status": "published",
   "tags": [

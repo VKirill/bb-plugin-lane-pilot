@@ -21,8 +21,8 @@
     ]
   },
   "not_for": [
-    "seo-page",
-    "seo-structure-audit",
+    "a new page (seo-page)",
+    "site-wide cannibalization (seo-structure-audit)",
     "seo-release"
   ],
   "status": "published",

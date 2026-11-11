@@ -78,6 +78,8 @@ export function downgradableRole(role: string): boolean {
   return !NO_DOWNGRADE.has(role) && ROLE_IDS.includes(row) && !NO_DOWNGRADE.has(row);
 }
 
+const SP_ENGINE_OWNED = /^\.agents\/(?:seo|marketing)\/(?:charter\.json|questions\.ext\.json|memory(?:\/|$))/;
+
 export function roleSpec(role: string): RoleSpec {
   // Graphs name an employee either as `specialist:game-dev` or as the bare id (`game-dev` in roblox-asset).
   const named = role.startsWith("specialist:") ? role.slice("specialist:".length) : role;
@@ -87,7 +89,7 @@ export function roleSpec(role: string): RoleSpec {
   if (specialist && (isBundledSpecialist(specialist) || (MAIN_AGENT_ID.test(specialist) && isCustomAgentId(specialist)))) {
     // design-lead keeps the design canon: DESIGN.md at the root and in an app's docs (the specialist's own prompt says the same).
     const designCanon = (file: string) => specialist === "design-lead" && (file === "DESIGN.md" || file.endsWith("/DESIGN.md"));
-    return { helper: `specialist:${specialist}` as HelperRole, metadata: "specialist", specialist, readOnly: false, editable: (file) => BASE_ALLOWED(file) || file === ".agents" || file.startsWith(".agents/") || designCanon(file) };
+    return { helper: `specialist:${specialist}` as HelperRole, metadata: "specialist", specialist, readOnly: false, editable: (file) => !SP_ENGINE_OWNED.test(file) && (BASE_ALLOWED(file) || file === ".agents" || file.startsWith(".agents/") || designCanon(file)) };
   }
   const helper = ROLE_MAP[role] ?? "analyst";
   if (helper === "project-life") return { helper, metadata: "project-life", readOnly: false, editable: (file) => BASE_ALLOWED(file) || file.startsWith(".agents/") || file === "CHANGELOG.md" };

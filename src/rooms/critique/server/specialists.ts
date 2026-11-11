@@ -30,12 +30,12 @@ interface Services {
 }
 
 /** The specialists a PM may hand work to; Explore and Plan stay Claude Code subagents inside the PM session. */
-export const SPECIALIST_ROLES = ["design-lead", "copy-lead", "seo-specialist", "tavily", "video-lead"] as const;
+export const SPECIALIST_ROLES = ["design-lead", "copy-lead", "seo-specialist", "growth-marketer", "tavily", "video-lead"] as const;
 
 /** Employee domain → the validator kind `validateDeliverable` knows (deliverable.validate's `validator` param). */
 export const EMPLOYEE_VALIDATORS: Record<string, string> = {
   "3d": "3d", design: "design", video: "video", billing: "invoice", invoice: "invoice",
-  seo: "composite", social: "composite", text: "text", copy: "composite", visual: "composite", games: "artifact", macos: "artifact",
+  seo: "composite", marketing: "composite", social: "composite", text: "text", copy: "composite", visual: "composite", games: "artifact", macos: "artifact",
 };
 const WAIT_STEP_MS = 5_000;
 

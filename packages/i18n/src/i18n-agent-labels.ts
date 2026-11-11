@@ -12,6 +12,7 @@ export const agentLabelEn = {
   agentDisplayNyquistAuditor: "Check auditor",
   agentDisplayUiResearcher: "UI researcher",
   agentDisplayLead: "Shturman (the lead)",
+  agentDisplayGrowthMarketer: "Growth marketer",
 };
 
 export const agentLabelRu: { [K in keyof typeof agentLabelEn]: string } = {
@@ -27,4 +28,5 @@ export const agentLabelRu: { [K in keyof typeof agentLabelEn]: string } = {
   agentDisplayNyquistAuditor: "Аудитор проверок",
   agentDisplayUiResearcher: "Исследователь интерфейса",
   agentDisplayLead: "Штурман",
+  agentDisplayGrowthMarketer: "Маркетолог роста",
 };

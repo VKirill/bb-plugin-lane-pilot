@@ -1,0 +1,782 @@
+{
+  "id": "seo-ai-visibility",
+  "name": {
+    "en": "SEO AI visibility",
+    "ru": "Видимость в AI-поиске (Алиса AI, Google AIO, ChatGPT, Perplexity)"
+  },
+  "description": {
+    "en": "Measures whether the brand and pages are shown and cited inside AI answers (Alice AI, Google AI Overviews, ChatGPT, Perplexity): an audience question panel and a visibility and citation matrix; also checks the case where positions hold and no algorithm update happened, yet clicks fall because an AI answer block now sits above us. Hands refresh, mentions or code tasks.",
+    "ru": "Измеряет, показывают ли и цитируют ли бренд и страницы внутри AI-ответов (Алиса AI, Google AI Overviews, ChatGPT, Perplexity): панель вопросов аудитории и матрица видимости и цитирования; также разбирает случай, когда позиции держатся и апдейта не было, а клики падают, потому что над нами встал блок AI-ответа. Передаёт обновление страниц, упоминания или задачи в код."
+  },
+  "examples": {
+    "en": [
+      "Are we cited in Google AI Overviews and Alice?",
+      "Why do ChatGPT and Perplexity recommend competitors instead of us?",
+      "Positions are stable, no update, but an AI answer block appeared and takes the clicks"
+    ],
+    "ru": [
+      "Проверь, как часто Алиса AI и обзоры Google AI цитируют наш сайт",
+      "Собери матрицу видимости в нейропоиске против трёх конкурентов",
+      "Почему ChatGPT цитирует конкурентов, а не нас?",
+      "Прогони проверки Agent Ready и панель цитирования в AI для сайта"
+    ]
+  },
+  "not_for": [
+    "a traffic or ranking drop after a core update, migration or penalty (seo-drop-diagnosis)",
+    "a technical audit of SSR, schema, robots or crawl errors (seo-tech-audit)",
+    "harvesting brand mentions on third-party sites and reviews (seo-mentions)",
+    "the weekly rankings loop (seo-monitor)"
+  ],
+  "status": "published",
+  "tags": [
+    "seo",
+    "geo",
+    "aeo",
+    "ai-search"
+  ],
+  "triggers": [
+    "manual",
+    "schedule"
+  ],
+  "inputs": {
+    "site_url": {
+      "type": "string",
+      "required": true,
+      "description": "the site whose AI visibility is measured"
+    },
+    "engines": {
+      "type": "all|alice|google_aio|chatgpt|perplexity",
+      "default": "all",
+      "description": "which AI answer engines to query: all, Alice AI, Google AI Overviews, ChatGPT or Perplexity"
+    },
+    "mode": {
+      "type": "baseline|recheck|diagnose",
+      "default": "baseline",
+      "description": "baseline builds the panel and the first matrix; recheck re-collects the same panel; diagnose explains a citation loss"
+    },
+    "agent_ready": {
+      "type": "bool",
+      "default": true,
+      "description": "run the 19 Agent Ready technical checks (llms.txt, SSR, schema, AI bot access)"
+    },
+    "panel_size": {
+      "type": "number",
+      "default": 60,
+      "note": "questions in the panel (cost scales with engines x questions)"
+    },
+    "competitors": {
+      "type": "string[]",
+      "default": [],
+      "note": "competitor domains; empty = top SERP competitors"
+    }
+  },
+  "outputs": {
+    "status": "done|held",
+    "matrix_path": "string?",
+    "citation_share": "number?",
+    "agent_ready_score": "number?",
+    "dispatched_count": "int?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "seo-ai-visibility",
+      "seo-evidence-contract",
+      "seo-trust-eeat",
+      "drmax-brandcore",
+      "lp-agentic-discipline"
+    ],
+    "secrets": [
+      "XMLSTOCK_API?",
+      "XMLSTOCK_KEY?",
+      "XMLRIVER_KEY?"
+    ]
+  },
+  "budget": {
+    "max_minutes": 120,
+    "max_usd": 8
+  },
+  "goal_check": "gate",
+  "entry": "load_state",
+  "nodes": [
+    {
+      "id": "load_state",
+      "type": "action",
+      "action": "sp.load_memory",
+      "title": {
+        "en": "Charter, previous panel, locks, API cap",
+        "ru": "Устав, прошлая панель, замки, лимит API"
+      },
+      "domain": "seo",
+      "graphId": "seo-ai-visibility",
+      "acquireTick": false,
+      "requireMcp": [
+        "mcp-xmlstock"
+      ],
+      "out": {
+        "has_charter": "bool",
+        "charter_json": "string",
+        "previous_panel_path": "string",
+        "active_locks_json": "string",
+        "api_budget_left": "number"
+      }
+    },
+    {
+      "id": "panel_seed",
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "skip_when": "$inputs.mode == 'recheck' && load_state.previous_panel_path != ''",
+      "skip_out": {
+        "seed_path": "",
+        "seed_questions": 0
+      },
+      "profile": {
+        "skills": [
+          "seo-ai-visibility",
+          "drmax-brandcore"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Seed the question panel",
+        "ru": "Затравка панели вопросов"
+      },
+      "prompt": "Seed the AI question panel for {{$inputs.site_url}}: top non-brand informational and commercial queries by impressions (mcp-gsc, mcp-yandex-seo-ro Webmaster), People-Also-Ask and related questions (mcp-xmlstock, cached), and audience questions from .agents/seo/audience-questions.jsonl. Keep at most {{$inputs.panel_size}} questions, balanced across page classes; competitors {{$inputs.competitors}}. Write .agents/seo/ai-visibility/seed.json. Return seed_path and seed_questions.",
+      "out": {
+        "seed_path": "string",
+        "seed_questions": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "panel",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Build the panel ($0)",
+        "ru": "Собрать панель ($0)"
+      },
+      "skill": "seo-ai-visibility",
+      "script": "ai_vis_panel.py",
+      "args": {
+        "seed": "{{panel_seed.seed_path}}",
+        "previous": "{{load_state.previous_panel_path}}",
+        "size": "{{$inputs.panel_size}}"
+      },
+      "timeoutSec": 60,
+      "out": {
+        "panel_path": "string",
+        "questions": "int"
+      }
+    },
+    {
+      "id": "collect",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Collect AI answers (xmlstock/XMLRiver, cached, ledgered)",
+        "ru": "Сбор AI-ответов (xmlstock/XMLRiver, кэш, леджер)"
+      },
+      "skill": "seo-ai-visibility",
+      "script": "ai_vis_collect.py",
+      "args": {
+        "panel": "{{panel.panel_path}}",
+        "engines": "{{$inputs.engines}}",
+        "api_budget": "{{load_state.api_budget_left}}"
+      },
+      "secrets": [
+        "XMLSTOCK_API?",
+        "XMLSTOCK_KEY?",
+        "XMLRIVER_KEY?"
+      ],
+      "timeoutSec": 120,
+      "onError": "output",
+      "out": {
+        "raw_path": "string",
+        "answers": "int",
+        "failed_engines": "string[]",
+        "api_spent": "number"
+      }
+    },
+    {
+      "id": "score",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Citation share and visible-not-cited ($0)",
+        "ru": "Доля цитирования и «видны, но не цитируются» ($0)"
+      },
+      "skill": "seo-ai-visibility",
+      "script": "ai_vis_score.py",
+      "args": {
+        "raw": "{{collect.raw_path}}",
+        "site": "{{$inputs.site_url}}",
+        "competitors": "{{$inputs.competitors}}"
+      },
+      "timeoutSec": 60,
+      "out": {
+        "citation_share": "number",
+        "competitor_share": "number",
+        "visible_not_cited": "int",
+        "third_party_sources": "int",
+        "matrix_path": "string"
+      }
+    },
+    {
+      "id": "agent_ready_check",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "19 Agent Ready checks ($0)",
+        "ru": "19 проверок Agent Ready ($0)"
+      },
+      "skip_when": "$inputs.agent_ready == false",
+      "skip_out": {
+        "score": 0,
+        "blockers": 0,
+        "report_path": ""
+      },
+      "skill": "seo-ai-visibility",
+      "script": "agent_ready_audit.py",
+      "args": {
+        "site": "{{$inputs.site_url}}"
+      },
+      "timeoutSec": 120,
+      "out": {
+        "score": "number",
+        "blockers": "int",
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "diagnose",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Gap diagnosis ($0)",
+        "ru": "Диагноз разрывов ($0)"
+      },
+      "skill": "seo-ai-visibility",
+      "script": "ai_vis_diagnose.py",
+      "args": {
+        "matrix": "{{score.matrix_path}}",
+        "agent_ready": "{{agent_ready_check.report_path}}",
+        "mode": "{{$inputs.mode}}"
+      },
+      "timeoutSec": 60,
+      "out": {
+        "diagnosis_path": "string",
+        "gaps_json": "string"
+      }
+    },
+    {
+      "id": "plan",
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "seo-ai-visibility",
+          "seo-trust-eeat",
+          "seo-evidence-contract",
+          "drmax-brandcore"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Orders from the matrix and the diagnosis",
+        "ru": "Приказы по матрице и диагнозу"
+      },
+      "prompt": "Turn the AI visibility results into orders. <data>Matrix {{score.matrix_path}}: citation share {{score.citation_share}} vs competitors {{score.competitor_share}}, visible-not-cited {{score.visible_not_cited}}, third-party sources {{score.third_party_sources}}; Agent Ready {{agent_ready_check.report_path}} (score {{agent_ready_check.score}}, blockers {{agent_ready_check.blockers}}); diagnosis {{diagnose.diagnosis_path}} gaps {{diagnose.gaps_json}}; failed engines {{collect.failed_engines}}; locks {{load_state.active_locks_json}}</data>.\nRules: AI-bot blockers (llms.txt, SSR, schema, robots for AI bots) -> code_task with owns_paths; pages that rank top-10 but are not cited -> sub_graph seo-page-refresh with citable fact blocks and tables from brandcore (never an FAQ farm, never a doorway); third-party sources the answers rely on -> sub_graph seo-mentions; new audience questions -> append to audience-questions.jsonl. A page under an active seo_meta_copy lock is not refreshed. Every order is an ActionOrder with reason_code, entity_ids, touches_scopes, an interval forecast of citation share and risk low | medium | high. needs_owner_go is true only for outside publication or paid placements. Return summary, orders, needs_owner_go.",
+      "out": {
+        "summary": "string",
+        "orders": "ActionOrder[]",
+        "needs_owner_go": "bool"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "audit",
+      "type": "agent",
+      "role": "auditor",
+      "session": "new",
+      "profile": {
+        "skills": [
+          "seo-evidence-contract",
+          "seo-ai-visibility"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Audit citations against the raw answers",
+        "ru": "Ревизия цитирований по сырым ответам"
+      },
+      "prompt": "Audit the plan <data>{{plan.summary}}; orders {{plan.orders}}</data> against the raw answers {{collect.raw_path}} and the matrix {{score.matrix_path}}. Check: every citation figure is reproducible from raw rows; engines that failed ({{collect.failed_engines}}) are excluded from shares, not counted as zero; no refresh order targets a locked page; no doorway, FAQ farm or scaled thin content (DrMax canon); blockers map to concrete owns_paths. Status pass, rework (what to change in reasons) or block; findings carry severity critical, high, medium, low or info.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]",
+        "reasons": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 10
+      }
+    },
+    {
+      "id": "hold",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Hold the AI visibility orders",
+        "ru": "Отложить приказы видимости в AI"
+      },
+      "phase": "hold",
+      "domain": "seo",
+      "orders": "{{plan.orders}}",
+      "auditReasons": "{{audit.reasons}}",
+      "out": {
+        "held": "int"
+      }
+    },
+    {
+      "id": "owner_go",
+      "type": "human",
+      "role": "owner",
+      "skip_when": "plan.needs_owner_go == false",
+      "skip_out": {
+        "answer": "",
+        "answer_kind": "none"
+      },
+      "title": {
+        "en": "Approve outside publication",
+        "ru": "Утвердить внешнюю публикацию"
+      },
+      "prompt": "Some orders publish outside the site (reviews, PR, paid placements) to win AI citations. The list and the sources are in the report. approve passes them to their graphs (which still gate each send); decline drops them. hold (the default) keeps everything as it is and asks again on the next tick. «Сам реши» or no answer is never an approval: a timeout routes like hold.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approve|decline|hold|timeout|none"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 1440
+      },
+      "options": [
+        "approve",
+        "decline",
+        "hold"
+      ],
+      "defaultOption": "hold"
+    },
+    {
+      "id": "commit_intents",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "Matrix, panel, API ledger, orders in one transaction",
+        "ru": "Матрица, панель, леджер API, приказы одной транзакцией"
+      },
+      "phase": "intents",
+      "domain": "seo",
+      "orders": "{{plan.orders}}",
+      "ownerAnswer": "{{owner_go.answer_kind}}",
+      "artifacts": [
+        "{{score.matrix_path}}",
+        "{{panel.panel_path}}",
+        "{{diagnose.diagnosis_path}}"
+      ],
+      "apiSpent": "{{collect.api_spent}}",
+      "out": {
+        "intents": "int"
+      }
+    },
+    {
+      "id": "drain_outbox",
+      "type": "action",
+      "action": "sp.dispatch_tasks",
+      "title": {
+        "en": "Dispatch tasks and follow-up graphs",
+        "ru": "Поставить задачи и следующие графы"
+      },
+      "domain": "seo",
+      "sourceGraph": "seo-ai-visibility",
+      "out": {
+        "dispatched_count": "int",
+        "dispatched_ids": "string[]"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "matrix_path": "score.matrix_path",
+        "citation_share": "score.citation_share",
+        "agent_ready_score": "agent_ready_check.score",
+        "dispatched_count": "drain_outbox.dispatched_count"
+      }
+    },
+    {
+      "id": "held",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "held",
+        "matrix_path": "score.matrix_path",
+        "citation_share": "score.citation_share",
+        "dispatched_count": 0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "load_state",
+      "to": "panel_seed"
+    },
+    {
+      "from": "panel_seed",
+      "to": "panel"
+    },
+    {
+      "from": "panel",
+      "to": "collect"
+    },
+    {
+      "from": "collect",
+      "to": "score"
+    },
+    {
+      "from": "score",
+      "to": "agent_ready_check"
+    },
+    {
+      "from": "agent_ready_check",
+      "to": "diagnose"
+    },
+    {
+      "from": "diagnose",
+      "to": "plan"
+    },
+    {
+      "from": "plan",
+      "to": "audit"
+    },
+    {
+      "from": "audit",
+      "to": "plan",
+      "when": "audit.status == 'rework' && visits('audit') < 2",
+      "label": "rework plan"
+    },
+    {
+      "from": "audit",
+      "to": "owner_go",
+      "when": "audit.status == 'pass'"
+    },
+    {
+      "from": "audit",
+      "to": "hold"
+    },
+    {
+      "from": "hold",
+      "to": "held"
+    },
+    {
+      "from": "owner_go",
+      "to": "commit_intents"
+    },
+    {
+      "from": "commit_intents",
+      "to": "drain_outbox"
+    },
+    {
+      "from": "drain_outbox",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "seo-aivis-sim-1",
+    "sim": {
+      "input": {
+        "site_url": "https://example.ru",
+        "engines": "all",
+        "mode": "baseline",
+        "agent_ready": true,
+        "panel_size": 60,
+        "competitors": [
+          "rival.ru"
+        ]
+      },
+      "stubs": {
+        "load_state": {
+          "has_charter": true,
+          "charter_json": "{}",
+          "previous_panel_path": "",
+          "active_locks_json": "[]",
+          "api_budget_left": 6
+        },
+        "panel_seed": {
+          "seed_path": ".agents/seo/ai-visibility/seed.json",
+          "seed_questions": 74
+        },
+        "panel": {
+          "panel_path": ".agents/seo/ai-visibility/panel.json",
+          "questions": 60
+        },
+        "collect": {
+          "raw_path": ".agents/seo/ai-visibility/raw-2026-11-11.json",
+          "answers": 236,
+          "failed_engines": [
+            "perplexity"
+          ],
+          "api_spent": 2.4
+        },
+        "score": {
+          "citation_share": 0.11,
+          "competitor_share": 0.27,
+          "visible_not_cited": 9,
+          "third_party_sources": 5,
+          "matrix_path": ".agents/seo/ai-visibility-matrix.json"
+        },
+        "agent_ready_check": {
+          "score": 13,
+          "blockers": 3,
+          "report_path": ".agents/seo/ai-visibility/agent-ready.json"
+        },
+        "diagnose": {
+          "diagnosis_path": ".agents/seo/ai-visibility/diagnosis.md",
+          "gaps_json": "[{\"gap\":\"no llms.txt\"},{\"gap\":\"prices rendered client-side\"}]"
+        },
+        "plan": {
+          "summary": "Цитируемость 11% против 27% у конкурентов; 3 блокера Agent Ready, 9 страниц видны без цитат",
+          "orders": [
+            {
+              "kind": "code_task",
+              "task": {
+                "id": "T-llms-txt",
+                "owns_paths": [
+                  "public/llms.txt"
+                ]
+              },
+              "reason_code": "ai_bot_blocker",
+              "entity_ids": [
+                "site:example.ru"
+              ],
+              "touches_scopes": [
+                "schema_org"
+              ],
+              "forecast": {
+                "metric": "citation_share",
+                "point": 0.14,
+                "lo80": 0.11,
+                "hi80": 0.18,
+                "horizon_days": 28
+              },
+              "risk": "low"
+            },
+            {
+              "kind": "sub_graph",
+              "workflow_id": "seo-page-refresh",
+              "inputs": {
+                "url_list": [
+                  "/prices"
+                ]
+              },
+              "reason_code": "visible_not_cited",
+              "entity_ids": [
+                "url:/prices"
+              ],
+              "touches_scopes": [
+                "seo_meta_copy"
+              ],
+              "forecast": {
+                "metric": "citation_share",
+                "point": 0.16,
+                "lo80": 0.12,
+                "hi80": 0.2,
+                "horizon_days": 42
+              },
+              "risk": "low"
+            }
+          ],
+          "needs_owner_go": false
+        },
+        "audit": {
+          "status": "pass",
+          "findings": [],
+          "reasons": ""
+        },
+        "hold": {
+          "held": 1
+        },
+        "commit_intents": {
+          "intents": 2
+        },
+        "drain_outbox": {
+          "dispatched_count": 2,
+          "dispatched_ids": [
+            "lptask_llms_1",
+            "wfrun_refresh_1"
+          ]
+        }
+      },
+      "expect_path": [
+        "load_state",
+        "panel_seed",
+        "panel",
+        "collect",
+        "score",
+        "agent_ready_check",
+        "diagnose",
+        "plan",
+        "audit",
+        "owner_go",
+        "commit_intents",
+        "drain_outbox",
+        "done"
+      ],
+      "expect_output": {
+        "status": "done",
+        "citation_share": 0.11,
+        "agent_ready_score": 13,
+        "dispatched_count": 2
+      },
+      "variant_recheck_outreach": {
+        "input": {
+          "mode": "recheck",
+          "agent_ready": false
+        },
+        "stubs": {
+          "load_state": {
+            "has_charter": true,
+            "charter_json": "{}",
+            "previous_panel_path": ".agents/seo/ai-visibility/panel.json",
+            "active_locks_json": "[]",
+            "api_budget_left": 6
+          },
+          "score": {
+            "citation_share": 0.15,
+            "competitor_share": 0.25,
+            "visible_not_cited": 6,
+            "third_party_sources": 4,
+            "matrix_path": ".agents/seo/ai-visibility-matrix.json"
+          },
+          "plan": {
+            "summary": "Цитируемость выросла до 15%; ответы опираются на 4 сторонних обзора",
+            "orders": [
+              {
+                "kind": "sub_graph",
+                "workflow_id": "seo-mentions",
+                "inputs": {
+                  "sources": 4
+                },
+                "reason_code": "ai_third_party_source",
+                "entity_ids": [
+                  "source:review-site"
+                ],
+                "touches_scopes": [
+                  "external_publish"
+                ],
+                "forecast": {
+                  "metric": "citation_share",
+                  "point": 0.19,
+                  "lo80": 0.15,
+                  "hi80": 0.24,
+                  "horizon_days": 56
+                },
+                "risk": "medium"
+              }
+            ],
+            "needs_owner_go": true
+          },
+          "drain_outbox": {
+            "dispatched_count": 1,
+            "dispatched_ids": [
+              "wfrun_mentions_1"
+            ]
+          }
+        },
+        "human_answers": {
+          "owner_go": "approve"
+        },
+        "expect_path": [
+          "load_state",
+          "panel_seed",
+          "panel",
+          "collect",
+          "score",
+          "agent_ready_check",
+          "diagnose",
+          "plan",
+          "audit",
+          "owner_go",
+          "commit_intents",
+          "drain_outbox",
+          "done"
+        ],
+        "expect_output": {
+          "status": "done",
+          "citation_share": 0.15,
+          "agent_ready_score": 0,
+          "dispatched_count": 1
+        }
+      },
+      "variant_audit_fail_twice_hold": {
+        "stubs": {
+          "audit": {
+            "status": "rework",
+            "findings": [
+              {
+                "severity": "high",
+                "title": "failed engine counted as zero citations"
+              }
+            ],
+            "reasons": "exclude perplexity from shares"
+          }
+        },
+        "expect_path": [
+          "load_state",
+          "panel_seed",
+          "panel",
+          "collect",
+          "score",
+          "agent_ready_check",
+          "diagnose",
+          "plan",
+          "audit",
+          "plan",
+          "audit",
+          "hold",
+          "held"
+        ],
+        "expect_output": {
+          "status": "held",
+          "citation_share": 0.11
+        }
+      }
+    },
+    "live": "сайт проекта: панель 60 вопросов, сбор через mcp-xmlstock/ai_vis_collect.py по Алисе AI и Google AIO, матрица и приказы",
+    "note": "Wired to mcp-xmlstock (panel seed, collection through the SERP cache and the api ledger, council M-05) and to ai_vis_panel/collect/score/diagnose + agent_ready_audit.py from skills/seo-ai-visibility/scripts/."
+  }
+}

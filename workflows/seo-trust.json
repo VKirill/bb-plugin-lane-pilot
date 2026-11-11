@@ -21,7 +21,7 @@
     ]
   },
   "not_for": [
-    "seo-page",
+    "a regular content page (seo-page)",
     "seo-release",
     "seo-monitor"
   ],

@@ -21,8 +21,10 @@
     ]
   },
   "not_for": [
-    "seo-page",
-    "seo-cocoon"
+    "seo-page: writing a page; this graph only ships what is ready",
+    "seo-cocoon: planning a cocoon",
+    "seo-tech-audit: finding defects",
+    "seo-monitor: the weekly report and the due index checks it starts"
   ],
   "status": "published",
   "tags": [
@@ -58,7 +60,8 @@
     "change_log_path": "string?",
     "release_report_path": "string?",
     "redirect_map_path": "string?",
-    "index_status_path": "string?"
+    "index_status_path": "string?",
+    "indexnow_pushed": "int?"
   },
   "requires": {
     "plugins": [
@@ -71,6 +74,9 @@
       "seo-project-life",
       "seo-release-protocol",
       "seo-measurement-loop"
+    ],
+    "secrets": [
+      "INDEXNOW_KEY?"
     ],
     "browserSession": true
   },
@@ -174,6 +180,36 @@
       }
     },
     {
+      "id": "premortem",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Pre-mortem: redirect and canonical graph before/after ($0)",
+        "ru": "Пред-мортем: граф редиректов и canonical до/после ($0)"
+      },
+      "skip_when": "$inputs.mode == 'index_check'",
+      "skip_out": {
+        "chains_over_1_hop": 0,
+        "loops": 0,
+        "top_url_changes": 0,
+        "report_path": ""
+      },
+      "skill": "seo-release-protocol",
+      "script": "release_graph_sim.py",
+      "args": {
+        "plan": "{{plan.plan_path}}",
+        "redirects": "{{redirects.redirect_map_path}}",
+        "top_urls": 20
+      },
+      "timeoutSec": 120,
+      "out": {
+        "chains_over_1_hop": "int",
+        "loops": "int",
+        "top_url_changes": "int",
+        "report_path": "string"
+      }
+    },
+    {
       "id": "staging_qa",
       "produces": [
         {
@@ -188,7 +224,7 @@
         "en": "Staging QA",
         "ru": "QA на стейджинге"
       },
-      "prompt": "Stages 1-2 of fix verification on staging: the control URL list in list mode, statuses, canonicals, redirects, CWV against the baseline. Status pass | rework | block.",
+      "prompt": "Stages 1-2 of fix verification on staging: the control URL list in list mode, statuses, canonicals, redirects, CWV against the baseline. Status pass | rework | block. The pre-mortem report {{premortem.report_path}} must show 0 loops, 0 chains over one hop and no unplanned top-20 URL change.",
       "out": {
         "status": "pass|rework|block",
         "qa_path": "string"
@@ -215,7 +251,7 @@
         "en": "Go / no-go",
         "ru": "Подтверждение публикации"
       },
-      "prompt": "Approve the publish with the release diff and the rollback plan in front of you. approve publishes exactly the staged items; decline stops the release.",
+      "prompt": "Approve the publish with the release diff and the rollback plan in front of you. approve publishes exactly the staged items; decline stops the release. The pre-mortem (redirect/canonical graph) is attached.",
       "out": {
         "answer": "string",
         "answer_kind": "approve|decline|timeout"
@@ -298,6 +334,56 @@
       }
     },
     {
+      "id": "indexnow",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "IndexNow push (Yandex, Bing) ($0)",
+        "ru": "Отправка IndexNow (Яндекс, Bing) ($0)"
+      },
+      "skill": "seo-release-protocol",
+      "script": "indexnow_push.py",
+      "args": {
+        "items": "{{$inputs.items}}",
+        "engines": "yandex,bing"
+      },
+      "secrets": [
+        "INDEXNOW_KEY?"
+      ],
+      "timeoutSec": 60,
+      "out": {
+        "pushed": "int",
+        "engines": "string[]",
+        "receipt_path": "string"
+      }
+    },
+    {
+      "id": "lock_release",
+      "type": "action",
+      "action": "sp.commit_memory",
+      "title": {
+        "en": "21-day lock + backtest checkpoint for seo-monitor",
+        "ru": "21-дневный замок + точка бэктеста для seo-monitor"
+      },
+      "phase": "intents",
+      "domain": "seo",
+      "orders": [],
+      "ownerAnswer": "{{owner_go.answer_kind}}",
+      "locks": {
+        "items": "{{$inputs.items}}",
+        "lock_scope": "seo_meta_copy",
+        "unlock_days": 21
+      },
+      "checkpoint": {
+        "change_log": "{{baseline.change_log_path}}",
+        "cohort": "{{baseline.cohort}}"
+      },
+      "out": {
+        "intents": "int",
+        "locks_created": "int"
+      }
+    },
+    {
       "id": "index_check",
       "produces": [
         {
@@ -351,7 +437,64 @@
         "change_log_path": "baseline.change_log_path",
         "release_report_path": "package.release_report_path",
         "redirect_map_path": "redirects.redirect_map_path",
-        "index_status_path": "index_check.index_status_path"
+        "index_status_path": "index_check.index_status_path",
+        "indexnow_pushed": "indexnow.pushed"
+      }
+    },
+    {
+      "id": "index_check_only",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "errand-browser",
+      "title": {
+        "en": "Index check (scheduled)",
+        "ru": "Проверка индексации (по сроку)"
+      },
+      "prompt": "mode index_check: URL Inspection in the owner's GSC, a per-level diagnosis of each non-indexed URL, and fix tasks. In other modes re-check the submitted URLs. Return index_status_path and not_indexed.",
+      "out": {
+        "index_status_path": "string",
+        "not_indexed": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      },
+      "profile": {
+        "skills": [
+          "seo-measurement-loop"
+        ]
+      }
+    },
+    {
+      "id": "package_check",
+      "type": "action",
+      "action": "fs.write",
+      "title": {
+        "en": "Write index-check receipt",
+        "ru": "Записать квитанцию проверки индексации"
+      },
+      "path": ".agents/seo/release/{{run_id}}/",
+      "files": [
+        "index-status.json"
+      ],
+      "note": "index-check-only receipt",
+      "out": {
+        "release_report_path": "string"
+      }
+    },
+    {
+      "id": "done_check",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "index_status_path": "index_check_only.index_status_path",
+        "release_report_path": "package_check.release_report_path"
       }
     },
     {
@@ -375,30 +518,8 @@
       "pass": "artifact"
     },
     {
-      "from": "redirects",
-      "to": "staging_qa",
-      "pass": "artifact"
-    },
-    {
       "from": "staging_qa",
       "to": "owner_go",
-      "pass": "artifact"
-    },
-    {
-      "from": "owner_go",
-      "to": "publish",
-      "pass": "artifact",
-      "when": "owner_go.answer_kind == 'approve'"
-    },
-    {
-      "from": "owner_go",
-      "to": "blocked",
-      "pass": "artifact",
-      "when": "owner_go.answer_kind == 'decline'"
-    },
-    {
-      "from": "owner_go",
-      "to": "index_check",
       "pass": "artifact"
     },
     {
@@ -424,11 +545,6 @@
       "pass": "artifact"
     },
     {
-      "from": "submit",
-      "to": "index_check",
-      "pass": "artifact"
-    },
-    {
       "from": "index_check",
       "to": "package",
       "pass": "artifact"
@@ -436,6 +552,64 @@
     {
       "from": "package",
       "to": "done",
+      "pass": "artifact"
+    },
+    {
+      "from": "redirects",
+      "to": "premortem",
+      "pass": "artifact"
+    },
+    {
+      "from": "premortem",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "premortem.loops > 0 || premortem.chains_over_1_hop > 0"
+    },
+    {
+      "from": "premortem",
+      "to": "staging_qa",
+      "pass": "artifact"
+    },
+    {
+      "from": "submit",
+      "to": "indexnow",
+      "pass": "artifact"
+    },
+    {
+      "from": "indexnow",
+      "to": "lock_release",
+      "pass": "artifact"
+    },
+    {
+      "from": "lock_release",
+      "to": "index_check",
+      "pass": "artifact"
+    },
+    {
+      "from": "index_check_only",
+      "to": "package_check",
+      "pass": "artifact"
+    },
+    {
+      "from": "package_check",
+      "to": "done_check",
+      "pass": "artifact"
+    },
+    {
+      "from": "owner_go",
+      "to": "publish",
+      "pass": "artifact",
+      "when": "owner_go.answer_kind == 'approve'"
+    },
+    {
+      "from": "owner_go",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "owner_go.answer_kind == 'decline'"
+    },
+    {
+      "from": "owner_go",
+      "to": "index_check_only",
       "pass": "artifact"
     }
   ],
@@ -478,24 +652,75 @@
         },
         "package": {
           "release_report_path": ".agents/seo/release/r1/release-report.md"
+        },
+        "premortem": {
+          "chains_over_1_hop": 0,
+          "loops": 0,
+          "top_url_changes": 0,
+          "report_path": "premortem.json"
+        },
+        "indexnow": {
+          "pushed": 3,
+          "engines": [
+            "yandex",
+            "bing"
+          ],
+          "receipt_path": "indexnow.json"
+        },
+        "lock_release": {
+          "intents": 0,
+          "locks_created": 3
         }
       },
       "expect_path": [
         "baseline",
         "plan",
         "redirects",
+        "premortem",
         "staging_qa",
         "owner_go",
         "publish",
         "prod_qa",
         "submit",
+        "indexnow",
+        "lock_release",
         "index_check",
         "package",
         "done"
       ],
       "expect_outputs": [
         "status == 'done'"
-      ]
+      ],
+      "human_answers": {
+        "owner_go": {
+          "answer_kind": "approve",
+          "answer": "approve"
+        }
+      },
+      "expect_output": {
+        "status": "done",
+        "indexnow_pushed": 3
+      },
+      "variant_premortem_loop": {
+        "stubs": {
+          "premortem": {
+            "chains_over_1_hop": 2,
+            "loops": 1,
+            "top_url_changes": 0,
+            "report_path": "premortem.json"
+          }
+        },
+        "expect_path": [
+          "baseline",
+          "plan",
+          "redirects",
+          "premortem",
+          "blocked"
+        ],
+        "expect_output": {
+          "status": "blocked"
+        }
+      }
     },
     "live": "батч на стейджинге, go владельца, публикация одним шагом, QA на проде",
     "note": "Tested on stubs: publish is reachable only through owner_go; index_check mode skips the publish path."
