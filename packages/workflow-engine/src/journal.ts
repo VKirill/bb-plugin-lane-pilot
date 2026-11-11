@@ -333,6 +333,13 @@ export function wfRunOutcomeRows(db: WfReadDb, workflowId: string, projectId?: s
     .all(...args) as Array<{ status: string; output_json: string | null; definition_json: string | null; created_at: number }>;
 }
 
+/** The finished runs of a workflow of a project, newest first: the phase's grill gate reads the latest outcome. */
+export function wfFinishedRuns(db: WfReadDb, workflowId: string, projectId: string, since: number, limit = 10): Array<{ id: string; link_run_id: string | null; status: string; inputs_json: string | null; output_json: string | null; created_at: number }> {
+  return db.prepare(`SELECT id, link_run_id, status, inputs_json, output_json, created_at FROM lane_pilot_wf_run
+    WHERE workflow_id=? AND project_id=? AND created_at>=? ORDER BY created_at DESC, rowid DESC LIMIT ?`)
+    .all(workflowId, projectId, since, limit) as Array<{ id: string; link_run_id: string | null; status: string; inputs_json: string | null; output_json: string | null; created_at: number }>;
+}
+
 /** The newest run of a workflow (optionally of a project). */
 export function wfLastRun(db: WfReadDb, workflowId: string, projectId?: string): { id: string; status: string; created_at: number } | undefined {
   const where = projectId ? "workflow_id=? AND project_id=?" : "workflow_id=?";

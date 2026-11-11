@@ -260,7 +260,8 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     return result.status;
   }
 
-  async function runNightlyDocs(opts:{force?:boolean;projectId?:string;path?:string;base?:string;catchUp?:boolean;signal?:AbortSignal}={}):Promise<Array<Record<string,unknown>>> {
+  async function runNightlyDocs(opts:{force?:boolean;projectId?:string;path?:string;base?:string;catchUp?:boolean;signal?:AbortSignal;
+    /** The owner's assignment (SMA k_ag_docwriter): handed to every unit's graph run of this pass. */ assignment?:string}={}):Promise<Array<Record<string,unknown>>> {
     const results:Array<Record<string,unknown>>=[];
     const projects=opts.projectId?[{id:opts.projectId}]:await bestEffort(bb.log, "docs projects", bb.sdk.projects.list({includePersonal:true}), [] as Array<{id:string}>);
     for(const project of projects){
@@ -361,7 +362,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
           const tracing=host.call("docsFlows",{requestedHostId:work.hostId,projectCwd:work.path,workspaces:workspaces.map((workspace)=>({path:workspace.path,name:workspace.name})),
             keep:[...new Set(flowPagesAtStart.map((page)=>/^docs\/flows\/([^/]+)\.md$/.exec(page.path)?.[1]).filter((slug):slug is string=>Boolean(slug)))]},
             {hostId:work.hostId,timeoutMs:1_800_000}).catch((cause)=>{ bb.log.warn(`Lane Pilot docs flows failed for ${place.path}: ${cause instanceof Error?cause.message:String(cause)}`); return null; });
-          const context={projectId:project.id,place:work,basePath:place.path,scopes:place.scopes,localDate:scope.localDate,attempt:opts.force?Date.now():attempts,settings,docs,base:opts.base,roots:units.map((unit)=>unit.docsDir),exclude:own.map((workspace)=>workspace.path),workspaces,prefetch,
+          const context={projectId:project.id,place:work,basePath:place.path,scopes:place.scopes,localDate:scope.localDate,attempt:opts.force?Date.now():attempts,settings,docs,base:opts.base,roots:units.map((unit)=>unit.docsDir),exclude:own.map((workspace)=>workspace.path),workspaces,prefetch,assignment:opts.assignment?.trim().slice(0,2000)||undefined,
             othersWritable:(path:string,self:DocsUnit)=>leftover.has(path)||[...running,...docsUnitsFinishing.values()].some((unit)=>unit!==self&&unitWritable(unit)(path))};
           const run=async(unit:DocsUnit)=>{
             running.add(unit);
@@ -599,7 +600,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
    */
   async function runDocsUnit(c:{projectId:string;place:{hostId:string;path:string};basePath?:string;scopes?:string[];localDate?:string;attempt?:number;settings?:Record<string,unknown>;docs?:ReturnType<typeof parseDocsSettings>;base?:string;
     roots:string[];exclude:string[];workspaces:Array<{path:string;name:string;docsDir:string|null}>;prefetch:Map<string,Promise<unknown>>;
-    othersWritable:(path:string,self:DocsUnit)=>boolean},unit:DocsUnit):Promise<Record<string,unknown>> {
+    othersWritable:(path:string,self:DocsUnit)=>boolean;assignment?:string},unit:DocsUnit):Promise<Record<string,unknown>> {
     const label=unitLabelOf(unit);
     const recordKey=docsUnitRecordKey(c.projectId,c.place.path,label);
     // A unit with saved progress keeps the run that saved it (an older version's record has none: its night is the key).
@@ -607,7 +608,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     const runKey=open?(open.runKey??`docs-night:${recordKey}:${open.localDate}:0`):`docs-night:${recordKey}:${c.localDate??localDateKey(new Date())}:${c.attempt??1}`;
     unitExtras.set(recordKey,{prefetch:c.prefetch,othersWritable:c.othersWritable});
     try{
-      return await startUnitRun({projectId:c.projectId,place:c.place,basePath:c.basePath&&c.basePath!==c.place.path?c.basePath:"",scopes:c.scopes??[],unit,roots:c.roots,exclude:c.exclude,workspaces:c.workspaces,base:c.base??"",runKey},recordKey);
+      return await startUnitRun({projectId:c.projectId,place:c.place,basePath:c.basePath&&c.basePath!==c.place.path?c.basePath:"",scopes:c.scopes??[],unit,roots:c.roots,exclude:c.exclude,workspaces:c.workspaces,base:c.base??"",runKey,...(c.assignment?{assignment:c.assignment}:{})},recordKey);
     }finally{ unitExtras.delete(recordKey); }
   }
 
@@ -616,7 +617,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     const workflow=services.workflowEngine.resolveWorkflow(DOCS_NIGHT);
     if(!workflow) throw new Error(`built-in workflow ${DOCS_NIGHT} is not loaded`);
     const started=engine.start({workflow,key:i.runKey,link:{projectId:i.projectId},inputs:{project_id:i.projectId,host_id:i.place.hostId,path:i.place.path,base_path:i.basePath,scopes:i.scopes,unit:i.unit,
-      roots:i.roots,exclude:i.exclude,workspaces:i.workspaces,base:i.base,run_key:i.runKey}});
+      roots:i.roots,exclude:i.exclude,workspaces:i.workspaces,base:i.base,run_key:i.runKey,...(i.assignment?{assignment:i.assignment}:{})}});
     let summary:Awaited<typeof started.done>;
     try{ summary=await started.done; }
     finally{ docsUnitsFinishing.delete(recordKey); }

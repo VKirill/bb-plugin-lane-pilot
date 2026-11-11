@@ -122,6 +122,8 @@ export type PhaseRecord = {
   /** The project set phase.gray_areas = on when the phase opened (and owner.words is on): the analysis asks the owner which gray areas to settle and
    * starts an adviser per area. Absent = off: the analysis is what it was. */
   grayAreas?: boolean;
+  /** The project set phase.grill_gate = off when the phase opened: a grill that ended `open` does not hold admission. Absent = on. */
+  grillGate?: boolean;
   words?: OwnerWord[];
   /** Goal revisions and withdrawn pieces, each one a decision in the book. */
   scope?: { revisions: number; withdrawn: string[] };
@@ -129,7 +131,8 @@ export type PhaseRecord = {
     /** The plan's goals in one line (SMA p2_record: the plan's shape). */ objective?: string;
     /** Three to five pre-mortem risks: each a likely cause of failure a week after merge (SMA p2_record). */ premortem?: string[];
     /** The planner checked that the repository already does what the goal asks: no pieces, no execution; the goal audit checks the claim. */ alreadyMet?: { evidence: string };
-    /** The one external refinement of this plan sha (SMA k_wp_bounce): ran once, its decision and rounds. */ bounce?: { sha: string; decision: string; rounds?: number; at: number } };
+    /** The one external refinement of this plan sha (SMA k_wp_bounce): ran once, its decision and rounds. */ bounce?: { sha: string; decision: string; rounds?: number; at: number };
+    /** The budget read at admission (SMA k_v_grill): the pre-push plan states the remaining appetite and the money hold it read. */ budget?: string };
   design?: { decision: "needed" | "not_needed"; why: string; drawing?: Drawing; confirmedAt?: number; mode?: "screens" | "system" | "mixed"; motion?: string[]; archived?: Drawing[];
     /** The person's remarks on a returned drawing edition (SMA ts_feedback): kept against that edition's hash, fed to the redraw. */ feedback?: Array<{ drawingSha: string; text: string; by: string; at: number }>;
     /** The sections the drawing's UI-SPEC.md must cover, decided before anything is drawn (SMA p3_requirements). */ requirements?: string[] };

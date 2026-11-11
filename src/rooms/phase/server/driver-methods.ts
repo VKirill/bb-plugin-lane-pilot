@@ -89,7 +89,9 @@ export function installMethods(tools: MethodsTools) {
       ...(switchOn(settings, "phase.draw_material") ? { drawMaterial: "on" as const } : {}),
       ...(String(settings["phase.train"] ?? "on") === "off" ? { train: false } : {}),
       ...(switchOn(settings, "phase.diagnose") ? { diagnose: true } : {}),
-      ...(switchOn(settings, "phase.gray_areas") ? { grayAreas: true } : {}) };
+      ...(switchOn(settings, "phase.gray_areas") ? { grayAreas: true } : {}),
+      // phase.grill_gate is on unless switched off (SMA k_v_grill): absent means the hold stands.
+      ...(String(settings["phase.grill_gate"] ?? "") === "off" ? { grillGate: false } : {}) };
     if (input.legacy) {
       // Legacy mode without signature: a plan written before the phase existed is admitted on its own; the book says so.
       record.context = { docs: [], sha: sha256Hex(`legacy:${id}`), signedAt: now(), legacy: true };
@@ -793,9 +795,27 @@ export function installMethods(tools: MethodsTools) {
     const record: PhaseRecord = { ...phase.record };
     const check = planGateOf(record);
     if (!check.ok || !record.plan) return phase;
-    record.plan = { ...record.plan, admittedSha: record.plan.sha, admittedAt: now() };
+    // SMA k_v_grill: a plan grilled with open challenges waits — the owner's word on this plan, or a plan that answers
+    // them, lifts it (phase.grill_gate=off switches the hold off). A plan never grilled passes as before.
+    const grill = tools.grillBlock(phase);
+    if (grill) {
+      book(phase, "plan", "grill_blocked", `grill ${grill.runId} left open challenges: ${grill.open.join("; ")} — admission waits: the owner's word on this plan (a planning yes) lifts it, or a plan that answers them (phase.grill_gate=off switches the hold off)`);
+      // The caller hears it too, not only the book: the reason and the two ways out.
+      throw new PhaseRefusal(`the plan is not admitted: the grill ${grill.runId} of this plan ended open`, [
+        ...grill.open.map((challenge) => `open grill question: ${challenge}`),
+        "way out 1: answer the open grill questions, then resubmit the plan (lp.plan) so it is checked again",
+        "way out 2: set phase.grill_gate=off for the project to admit over an open grill",
+      ]);
+    }
+    // SMA k_v_grill: the pre-push plan is budget-aware — it states the appetite left in the run's token budget and the
+    // money hold as they read at admission; no cap set reads «no monthly cap», it does not invent one.
+    const snap = phase.runId ? services.runBudgets.get(phase.runId)?.snapshot() : undefined;
+    const tokensLeft = snap?.limits.maxTokens !== undefined ? snap.limits.maxTokens - snap.tokens : null;
+    const money = await bestEffort(ctx.log, "plan budget read", Promise.resolve().then(() => services.money?.status() ?? null), null);
+    const budget = `run tokens left: ${tokensLeft === null ? "no cap" : tokensLeft}; money hold: ${!money || money.capSet !== true ? "no monthly cap" : money.left !== null && money.left <= 0 ? `cap $${money.cap} spent ($${money.monthUsd} this month)` : `cap $${money.cap}, $${money.left} left`}`;
+    record.plan = { ...record.plan, admittedSha: record.plan.sha, admittedAt: now(), budget };
     record.design = record.design?.decision === "needed" ? record.design : designDecision(record.plan.items);
-    book(phase, "plan", "admitted", `plan ${record.plan.sha.slice(0, 12)} admitted; drawing ${record.design.decision === "needed" ? "needed" : "not needed"}: ${record.design.why}`);
+    book(phase, "plan", "admitted", `plan ${record.plan.sha.slice(0, 12)} admitted; drawing ${record.design.decision === "needed" ? "needed" : "not needed"}: ${record.design.why}; budget read: ${budget}`);
     move(phase, record.design.decision === "needed" ? "design" : "execution", record, "the plan is admitted");
     const admitted = mustGet(phase.id);
     // SMA k_wp_commit / k_t_template: with phase.doc_files on, the admitted plan is written (and committed) as PLAN.md.

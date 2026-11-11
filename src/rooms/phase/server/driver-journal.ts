@@ -1,4 +1,4 @@
-import { createJournal, receiptThreadId, wfLatestSucceededStep, wfRunProjectId } from "@lane-pilot/workflow-engine";
+import { createJournal, receiptThreadId, wfFinishedRuns, wfLatestSucceededStep, wfRunProjectId } from "@lane-pilot/workflow-engine";
 import { getRunSettingsScopes } from "../../storage";
 import { sha256Hex, parseJsonOr } from "@lane-pilot/kit";
 import { savePhase } from "../store";
@@ -77,6 +77,29 @@ export function installJournal(tools: JournalTools) {
     return { author, reviewer: receipt.threadId, inputSha: receipt.inputSha256 };
   }
 
+  /**
+   * The unresolved grill of this plan (SMA k_v_grill), or null: the latest finished grill-plan run of the phase's project
+   * and run that was made after the plan was submitted AND was started for this plan (its inputs carry the plan's sha), and
+   * only when it ended with status `open`. A plan that was never grilled is not blocked; a grill of another plan, a grill
+   * with status `done`, and an older grill that recorded no plan sha never hold; the owner's planning yes on this plan given
+   * since the grill lifts it, and a plan submitted after the grill was never grilled at all.
+   */
+  function grillBlock(phase: Phase): { runId: string; open: string[] } | null {
+    const plan = phase.record.plan;
+    if (phase.record.grillGate === false || !plan?.submittedAt) return null;
+    const rows = wfFinishedRuns(db, "grill-plan", phase.projectId, plan.submittedAt);
+    const run = rows.find((row) => (!row.link_run_id || row.link_run_id === phase.runId) && !["running", "waiting"].includes(row.status)
+      && (parseJsonOr(row.inputs_json ?? "{}", {}) as { plan_sha?: unknown }).plan_sha === plan.sha);
+    if (!run) return null;
+    const output = parseJsonOr(run.output_json ?? "{}", {}) as { status?: unknown; open?: unknown };
+    const open = (Array.isArray(output.open) ? output.open : []).map(String).filter(Boolean).slice(0, 8);
+    if (output.status !== "open") return null;
+    const lifted = (phase.record.words ?? []).some((word) => word.turn === "planning" && word.decision === "yes"
+      && (word.key === undefined || word.key === plan.sha) && word.at >= run.created_at);
+    if (lifted) return null;
+    return { runId: run.id, open: open.length ? open : ["the grill ended open without naming the challenge"] };
+  }
+
   /** Lesson written by the pipeline: the analysis goes through the memory door as a note of the project (refused text stays only in the book). */
   function writeLesson(phase: Phase, text: string): string | null {
     try {
@@ -101,5 +124,5 @@ export function installJournal(tools: JournalTools) {
     savePhase(db, phase.id, { record: { ...phase.record, lessons: { ...phase.record.lessons!, draft: next } }, at: now() });
   }
 
-  return { journalSteps, checkerRunBinding, reviewerRead, writeLesson, settleLesson };
+  return { journalSteps, checkerRunBinding, reviewerRead, writeLesson, settleLesson, grillBlock };
 }

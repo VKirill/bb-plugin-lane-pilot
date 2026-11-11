@@ -285,7 +285,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"council-say", summary:"Say something to a running council as the owner, or decide=1 to ask for the decision", usage:"bb lane-pilot council-say <council-id> [text] [decide=1]" },
       { name:"council-status", summary:"A council session and its feed", usage:"bb lane-pilot council-status <council-id> [after-seq]" },
       { name:"council-seats", summary:"Which provider/model pair each seat would get in a project and the pairs the stage selections offer", usage:"bb lane-pilot council-seats <project-id>" },
-      { name:"docs-nightly", summary:"Run the nightly docs pass now for docs-enabled folders of a project", usage:"bb lane-pilot docs-nightly <project-id> [folder-path] [since-commit]" },
+      { name:"docs-nightly", summary:"Run the nightly docs pass now for docs-enabled folders of a project", usage:"bb lane-pilot docs-nightly <project-id> [folder-path] [since-commit] [--assignment \"<text>\"]   (--assignment: a document to create or update this pass, masked, at most 2000 chars)" },
       { name:"finish", summary:"Close a PM run after observing it idle and release activation", usage:"bb lane-pilot finish <project-id> [run-id]" },
       { name:"deactivate", summary:"Alias for finish", usage:"bb lane-pilot deactivate <project-id> [run-id]" },
       { name:"cancel", summary:"Stop a writer and persist canceled after observing idle", usage:"bb lane-pilot cancel <attempt-id>" },
@@ -1396,8 +1396,22 @@ ${ERRANDS_USAGE}` },
             ...(args[4] ? { criticCodeDefault:requireCriticCodeDefault(args[4]) } : {}),
           }), null, 2) };
         }
-        if (command === "docs-nightly" && args.length >= 1 && args.length <= 3) {
-          return { exitCode:0, stdout:JSON.stringify(await services.runNightlyDocs({force:true,projectId:args[0]!,path:args[1],base:args[2]}), null, 2) };
+        if (command === "docs-nightly") {
+          // The owner's assignment (SMA k_ag_docwriter): masked and bounded, it enters the docs prompt as data, never as instructions.
+          const assignAt = args.indexOf("--assignment");
+          if (assignAt >= 0 && !args[assignAt + 1]) return { exitCode:1, stderr:'usage: bb lane-pilot docs-nightly <project-id> [folder-path] [since-commit] [--assignment "<text>"]' };
+          const positional = args.filter((_, index) => assignAt < 0 || (index !== assignAt && index !== assignAt + 1));
+          if (positional.length >= 1 && positional.length <= 3) {
+            // A thread is an agent: it may run the nightly docs pass only for its own project and only as that project's PM; the owner at a terminal and automation (no thread) are unrestricted.
+            if (invocation?.threadId) {
+              const caller = await orMiss(bb.sdk.threads.get({ threadId: invocation.threadId }), null, isNotFound) as { projectId?: unknown } | null;
+              if (!caller || typeof caller.projectId !== "string" || caller.projectId !== positional[0]) return { exitCode:1, stderr:`refused: docs-nightly from a thread reaches only that thread's own project (${typeof caller?.projectId === "string" ? caller.projectId : "unknown"}), not ${positional[0]}` };
+              const metadata = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId: invocation.threadId }), null, isNotFound) as { role?: unknown } | null;
+              if (metadata?.role !== "pm") return { exitCode:1, stderr:`refused: docs-nightly is not for a ${typeof metadata?.role === "string" ? `${metadata.role} thread` : "thread whose role is unknown"}; ask the PM or the owner` };
+            }
+            const assignment = assignAt >= 0 ? maskCredentials(args[assignAt + 1]!).text.slice(0, 2000) : undefined;
+            return { exitCode:0, stdout:JSON.stringify(await services.runNightlyDocs({force:true,projectId:positional[0]!,path:positional[1],base:positional[2],...(assignment?.trim() ? {assignment} : {})}), null, 2) };
+          }
         }
         if (command === "wait-thread" && args.length === 1) {
           const threadId = args[0]!;
