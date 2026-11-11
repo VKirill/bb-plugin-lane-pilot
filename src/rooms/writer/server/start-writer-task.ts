@@ -52,6 +52,7 @@ import { familyFailureRecord, isOwnFailure, lastOwnFailure, verificationFailure 
 import { quarantiningRegression } from "./start-quarantine";
 import { CANCELED_REDO_WAIT_MS, RUN_LIMIT_SETTING, RUN_LIMIT_WORD, SECRET_WAIT_MS, secretPollMs } from "./start-wait-limits";
 import type { Services } from "./start";
+import { noteOwnFailure, type WriterTaskState } from "./start-task-state";
 import { sameArea } from "./start-area";
 
 import type { AttemptState } from "../../contracts/state-machine";
@@ -94,75 +95,92 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
     const key = `${input.runId}:${input.taskId}`;
     if (services.activeWriterTasks.has(key)) return;
     services.activeWriterTasks.add(key);
-    let attemptId = input.firstAttemptId;
-    let writerThreadId = input.writerThreadId;
-    let writerSelection:{providerId:string;model:string;reasoningLevel?:string;serviceTier?:"default"|"fast"|null;selectionSource?:{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;reasoningLevelSource:"explicit"|"client-preference"}}|undefined;
-    const existingTrace=getReasoningTrace(db,attemptId);
-    if(existingTrace) writerSelection={
-      providerId:existingTrace.providerId, model:existingTrace.model,
-      reasoningLevel:existingTrace.effectiveReasoningLevel, serviceTier:existingTrace.serviceTier,
-      selectionSource:existingTrace.selectionSource,
-    };
     // An attempt resumed after a reload arrives bound to its own worktree. Every new attempt starts from the run's
     // workspace instead: that worktree is removed when the attempt fails, and a retry snapshotted inside it failed
     // with «spawnSync /bin/bash ENOENT» (project-folders, 2026-10-02).
-    let { task:freshTask, config:freshConfig } = freshAttemptStart(input.task, input.config, taskBasePath(db, input.runId, input.taskId));
-    let activeConfig = input.config;
-    let activeTask = input.task;
+    const attemptStart = freshAttemptStart(input.task, input.config, taskBasePath(db, input.runId, input.taskId));
     // An attempt that never reached a writer has no baseline: its stored [] is the column's default. Taken as the folder's
     // state, a parked task restarted on a new attempt counted every file of a folder without git as its writer's change
     // (BB-сервис 2026-10-10: 49 434 paths, three tasks failed as Lane Pilot's fault).
     const resumedDirt = getAttempt(db, input.firstAttemptId)?.thread_id ? input.dirtBefore : undefined;
-    let dirtBefore = resumedDirt ?? [];
-    let baselineDirtBefore:DirtSnapshot[]|null=resumedDirt?[...resumedDirt]:null;
-    let baselineWorkspacePath:string|null=resumedDirt?input.task.project_cwd:null;
-    let executionPacketSha256:string|null = null;
-    let last: Record<string, unknown> = {};
-    // The class Jev (J-4, active) or the rules gave the last failure: parking reads the same one, not its own recount.
-    let judged: { status: string; reason: string | null; klass: FailureClass; mast?: string; intervention?: string; streak?: number } | null = null;
-    let primaryFailure:Record<string,unknown>|null=null;
-    /** A red check the same writer already failed the same way: the next attempt is the next writer, not this one again. */
-    let checkEscalation:string|null=null;
-    /** The last failure that was the task's own (a stray file, a red check), not its provider's: a fallback writer avoids it too. */
-    const own:{ failure:Record<string,unknown>|null } = { failure:lastOwnFailure(db, input.runId, input.taskId, input.firstAttemptId) };
-    const noteOwnFailure = (outcome:Record<string,unknown>) => { if (isOwnFailure(outcome)) own.failure = outcome; };
-    // The PM reassigned the task: the next writer continues the stopped one's worktree and starts with the requested model.
-    let pendingReassign:{from:ReturnType<typeof getAttempt>; request:ReassignRequest}|null=null;
-    // The last failed attempt's worktree, kept until the next attempt starts or the fallback chain takes it over.
-    let unremovedWorktree:ReturnType<typeof getAttempt>=undefined;
-    // An earlier task of the same family (a redispatch, a mainfix) that failed the same way stops the next one early.
-    let familyFailure = familyFailureRecord(db, input.runId, input.taskId);
-    let acceptedAttemptId:string|null=null;
-    const pmReadContext=input.pmReadContext ?? stringAt(listStageReceipts(db,input.runId,input.taskId).find((row)=>row.stageId==="pm-read")?.result,"summary") ?? "";
-    let releaseWriterSlot:(()=>void)|undefined;
-    // This start owns the live-writer key until it drops it. A question drops the key before the cleanup
-    // awaits (a worktree remove can hang); the finally still frees the pool slot, and must not delete a key
-    // a later answer's start has taken.
-    let holdsLiveWriter = true;
+    const state: WriterTaskState = {
+      attemptId: input.firstAttemptId,
+      writerThreadId: input.writerThreadId,
+      writerSelection: undefined,
+      freshTask: attemptStart.task,
+      freshConfig: attemptStart.config,
+      activeConfig: input.config,
+      activeTask: input.task,
+      dirtBefore: resumedDirt ?? [],
+      baselineDirtBefore: resumedDirt?[...resumedDirt]:null,
+      baselineWorkspacePath: resumedDirt?input.task.project_cwd:null,
+      executionPacketSha256: null,
+      last: {},
+      // The class Jev (J-4, active) or the rules gave the last failure: parking reads the same one, not its own recount.
+      judged: null,
+      primaryFailure: null,
+      /** A red check the same writer already failed the same way: the next attempt is the next writer, not this one again. */
+      checkEscalation: null,
+      /** The last failure that was the task's own (a stray file, a red check), not its provider's: a fallback writer avoids it too. */
+      own: { failure:lastOwnFailure(db, input.runId, input.taskId, input.firstAttemptId) },
+      // The PM reassigned the task: the next writer continues the stopped one's worktree and starts with the requested model.
+      pendingReassign: null,
+      // The last failed attempt's worktree, kept until the next attempt starts or the fallback chain takes it over.
+      unremovedWorktree: undefined,
+      // An earlier task of the same family (a redispatch, a mainfix) that failed the same way stops the next one early.
+      familyFailure: familyFailureRecord(db, input.runId, input.taskId),
+      acceptedAttemptId: null,
+      pmReadContext: input.pmReadContext ?? stringAt(listStageReceipts(db,input.runId,input.taskId).find((row)=>row.stageId==="pm-read")?.result,"summary") ?? "",
+      key,
+      releaseWriterSlot: undefined,
+      // This start owns the live-writer key until it drops it. A question drops the key before the cleanup
+      // awaits (a worktree remove can hang); the finally still frees the pool slot, and must not delete a key
+      // a later answer's start has taken.
+      holdsLiveWriter: true,
+      // A folder without git: one writer at a time edits its live files, and a failed attempt is rolled back from the
+      // backup its first spawn made (feedback turns in the same thread keep working on the live files, so they keep it).
+      liveFolder: false,
+      liveBackupId: null,
+      // The run's shared state: every step below reads and writes these. The pipeline at the bottom names the order.
+      policy: undefined as never,
+      baseSettings: undefined as never,
+      writerOverlay: undefined as never,
+      runSettings: undefined as never,
+      writerChoice: undefined as never,
+      budget: undefined as never,
+      runFolder: undefined as never,
+      attemptsHere: 0,
+      halfBound: false,
+      inSession: false,
+      sessionStartedAt: Date.now(),
+      previousTurn: null,
+    };
+    const existingTrace=getReasoningTrace(db,state.attemptId);
+    if(existingTrace) state.writerSelection={
+      providerId:existingTrace.providerId, model:existingTrace.model,
+      reasoningLevel:existingTrace.effectiveReasoningLevel, serviceTier:existingTrace.serviceTier,
+      selectionSource:existingTrace.selectionSource,
+    };
     const dropLiveWriterKey = () => {
-      if (!holdsLiveWriter) return;
-      holdsLiveWriter = false;
+      if (!state.holdsLiveWriter) return;
+      state.holdsLiveWriter = false;
       admitted.delete(key);
       services.activeWriterTasks.delete(key);
     };
-    // A folder without git: one writer at a time edits its live files, and a failed attempt is rolled back from the
-    // backup its first spawn made (feedback turns in the same thread keep working on the live files, so they keep it).
-    let liveFolder = false;
-    let liveBackupId:string|null = null;
     /** The backup an attempt works under, kept so an attempt resumed later (the PM's answer, a reload) finds it. */
     const liveBackupKey = (forAttemptId:string) => `live-backup:${forAttemptId}`;
     const bindLiveBackup = async ():Promise<void> => {
-      if (liveBackupId) await bestEffort(ctx.log, "writer live backup bind", bb.storage.kv.set(liveBackupKey(attemptId), liveBackupId as never), undefined);
+      if (state.liveBackupId) await bestEffort(ctx.log, "writer live backup bind", bb.storage.kv.set(liveBackupKey(state.attemptId), state.liveBackupId as never), undefined);
     };
     /** Puts the owned files back after a failed attempt and takes out what the writer created there; once per backup. */
     const rollbackLive = async ():Promise<void> => {
-      const backupId = liveBackupId;
+      const backupId = state.liveBackupId;
       if (!backupId) return;
       // A writer's question is a pause, not a rejection: its answer continues the same attempt on the files as it left them.
-      if (failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null) === "judgment") return;
-      liveBackupId = null;
+      if (failureClass(String(state.last.status), typeof state.last.reason === "string" ? state.last.reason : null) === "judgment") return;
+      state.liveBackupId = null;
       const folder = taskBasePath(db, input.runId, input.taskId) ?? input.task.project_cwd;
-      const rolled = await services.restoreLiveFolder({ hostId:input.config.hostId, folder, backupId, task:freshTask })
+      const rolled = await services.restoreLiveFolder({ hostId:input.config.hostId, folder, backupId, task:state.freshTask })
         .catch((cause:unknown) => ({ ok:false as const, reason:cause instanceof Error ? cause.message : String(cause) }));
       if (rolled.ok && !rolled.failed.length) {
         ctx.log(`writer ${input.taskId}: rolled back ${backupId}: ${rolled.restored.length} restored, ${rolled.removed.length} removed`);
@@ -205,23 +223,23 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
         if (stop) return stop;
         const pending: string[] = [];
         for (const dep of deps) {
-          const state = latestTaskAttemptState(db, input.projectId, dep);
-          if (state === "accepted") continue;
+          const depState = latestTaskAttemptState(db, input.projectId, dep);
+          if (depState === "accepted") continue;
           // A batch may dispatch the dependent before its dependency: give the name two minutes to appear.
-          if (state === null && Date.now() - since > 120_000) return `depends_on ${dep}: no such task was dispatched in this project`;
-          if (state === "canceled" && dep === pilot && !(input.task.depends_on ?? []).includes(dep)) continue;
-          if (state === "blocked" || state === "canceled") {
+          if (depState === null && Date.now() - since > 120_000) return `depends_on ${dep}: no such task was dispatched in this project`;
+          if (depState === "canceled" && dep === pilot && !(input.task.depends_on ?? []).includes(dep)) continue;
+          if (depState === "blocked" || depState === "canceled") {
             // The PM verified this task by hand (lane_pilot_update_task satisfied:true): its dependents go on.
             if (await isTaskSatisfied(bb.storage.kv as never, input.projectId, dep)) continue;
-            if (state === "blocked" && dep === pilot && !(input.task.depends_on ?? []).includes(dep) && pilotGivenUp(dep)) {
+            if (depState === "blocked" && dep === pilot && !(input.task.depends_on ?? []).includes(dep) && pilotGivenUp(dep)) {
               if (!released.has(dep)) { released.add(dep); ctx.log(`writer ${input.taskId} goes on: its pilot ${dep} ended blocked and nothing will redo it soon, or its block is not about the task`); }
               continue;
             }
             // A PM cancels mostly to send the task again with a fixed contract: magicseo T6 (2026-10-30) blocked 32 s after
             // T3.3 was canceled, while T3.4 went out within minutes. A canceled dependency waits CANCELED_REDO_WAIT_MS for it.
             blockedSince.set(dep, blockedSince.get(dep) ?? Date.now());
-            if (state === "canceled" && Date.now() - blockedSince.get(dep)! > CANCELED_REDO_WAIT_MS) return `depends_on ${dep}: that task ended canceled and was not sent again within ${CANCELED_REDO_WAIT_MS / 60_000} minutes`;
-            if (state === "blocked" && Date.now() - blockedSince.get(dep)! > DEPENDENCY_REDO_WAIT_MS) return `depends_on ${dep}: that task ended blocked and was not sent again within 6 hours`;
+            if (depState === "canceled" && Date.now() - blockedSince.get(dep)! > CANCELED_REDO_WAIT_MS) return `depends_on ${dep}: that task ended canceled and was not sent again within ${CANCELED_REDO_WAIT_MS / 60_000} minutes`;
+            if (depState === "blocked" && Date.now() - blockedSince.get(dep)! > DEPENDENCY_REDO_WAIT_MS) return `depends_on ${dep}: that task ended blocked and was not sent again within 6 hours`;
           } else blockedSince.delete(dep);
           pending.push(dep);
         }
@@ -256,7 +274,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
         if (ctx.isDisposed()) return null;
         const stop = shouldStop?.();
         if (stop) return stop;
-        const latest = getAttempt(db, attemptId);
+        const latest = getAttempt(db, state.attemptId);
         if (!latest || ["canceled", "blocked", "accepted"].includes(latest.state)) return null;
         const gate = await ctx.secrets.check({ declared, allowed:allowedSecretNames(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId))) }, { fresh:true });
         const names = secretProblem(gate);
@@ -331,7 +349,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
         const stop = shouldStop?.();
         if (stop) return stop;
         const open = listOpenAttempts(db);
-        const mine = open.findIndex((row) => row.id === attemptId);
+        const mine = open.findIndex((row) => row.id === state.attemptId);
         if (mine < 0) return;
         const ahead = open.slice(0, mine);
         // A task whose writer already started keeps its files through its redos. A redo is a new attempt row, later than the
@@ -372,24 +390,24 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
           // waits only when the two own the same files, read from the outer folder.
           if (base && rowBase !== base) return Boolean(rowBase && parsed.success && checkoutOwnsOverlap(base, input.task.owns_paths, rowBase, parsed.data.owns_paths));
           // One writer at a time per area: the next task of a page continues in its writer's thread once it is free.
-          if (liveFolder) return true;
+          if (state.liveFolder) return true;
           if (parsed.success && sameArea(parsed.data.area, input.task.area)) return true;
           return parsed.success && ownsPathsOverlap(parsed.data.owns_paths, input.task.owns_paths);
         });
         // A writer's question is a pause, not a release: its files are still in the folder without git, and its answer goes on
         // from them, so no other task may start there until the question is answered (or the task is sent again).
-        const asked = !blocker && liveFolder ? await unansweredQuestionHolder() : undefined;
+        const asked = !blocker && state.liveFolder ? await unansweredQuestionHolder() : undefined;
         const holder = blocker ?? asked;
         if (!holder) return;
         const why = asked ? "its writer's question is unanswered and the folder has no git, so it stays locked until lane_pilot_answer_writer answers it"
-          : liveFolder ? "one writer at a time in a folder without git" : "their owns_paths overlap";
+          : state.liveFolder ? "one writer at a time in a folder without git" : "their owns_paths overlap";
         if (noted !== holder.id) {
           noted = holder.id;
           ctx.log(`writer ${input.taskId} waits for ${holder.task_id}: ${why}`);
           const stage = listStageReceipts(db,input.runId,input.taskId).find((row) => row.stageId === "writer-agent");
           if (!stage || stage.state === "pending") {
             recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
-              reason:`waiting for ${holder.task_id} (thread ${holder.thread_id ?? "not started"}): ${liveFolder ? why : `${input.task.area ? "same area or " : ""}owns_paths overlap`}` });
+              reason:`waiting for ${holder.task_id} (thread ${holder.thread_id ?? "not started"}): ${state.liveFolder ? why : `${input.task.area ? "same area or " : ""}owns_paths overlap`}` });
           }
         }
         await new Promise((wake) => setTimeout(wake, 10_000));
@@ -413,91 +431,77 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
         services.rollback?.noteSaved(failed.id,removed?.saved);
       }
     };
-    // The run's shared state: every step below reads and writes these. The pipeline at the bottom names the order.
-    let policy:ReturnType<typeof runPolicyFor>;
-    let baseSettings:Record<string, unknown>;
-    let writerOverlay:Awaited<ReturnType<typeof pickWriter>>;
-    let runSettings:Record<string, unknown>;
-    let writerChoice:Record<string, unknown>;
-    let budget:RunBudget;
-    let runFolder:string;
-    let attemptsHere = 0;
     /** The writers that may take the task after the primary one: its fallbacks in turn, then the PM's model. Read fresh: the owner may change them mid-task. */
     const otherWriters = () => {
       const loadedSettings=loadProjectSettings(db,input.projectId,getRunSettingsScopes(db,input.runId));
-      const settings=writerOverlay ? { ...loadedSettings, ...writerOverlay } : rotatedWriterSettings(loadedSettings, input.taskId);
+      const settings=state.writerOverlay ? { ...loadedSettings, ...state.writerOverlay } : rotatedWriterSettings(loadedSettings, input.taskId);
       const primaryProvider=typeof settings["writer.provider"] === "string" ? settings["writer.provider"] as string : input.config.writerProviderId;
       const primaryModel=typeof settings["writer.model"] === "string" && settings["writer.model"] ? settings["writer.model"] as string : input.config.writerModel;
       const pmSelection={providerId:input.config.pmProviderId,model:input.config.pmModel};
       return { settings, pmSelection, fallbackList:writerFallbackChain({providerId:primaryProvider,model:primaryModel},writerFallbacks(settings),pmSelection) };
     };
-    let halfBound = false;
-    let inSession = false;
-    let sessionStartedAt = Date.now();
-    let previousTurn:{ failure:string; diff:string|null; streamError?:boolean } | null = null;
-
     const STORE_READ_PARK_LIMIT = 5;
     /** A plugin-store read that fails is "state unknown", not a task failure: park the attempt for the wake sweep; after the bound it blocks with an owner item. Shared by prepareRun and the pause-read bound. */
     const parkForStoreRead = (cause: unknown): false => {
       const message = cause instanceof Error ? cause.message : String(cause);
       // Bounded: a store that stays unreadable is not transient. After the park limit the attempt blocks with a
       // clear reason and the owner gets one item per block (the sequence key reopens after the last one was closed).
-      if (trailingQueuedParks(db, attemptId, "store_read:") + 1 >= STORE_READ_PARK_LIMIT) {
+      if (trailingQueuedParks(db, state.attemptId, "store_read:") + 1 >= STORE_READ_PARK_LIMIT) {
         const reason = `store_read: plugin store unreadable after ${STORE_READ_PARK_LIMIT} attempts: ${message.slice(0, 160)}`;
         blockBeforeWriter(reason);
-        postOwnerItem(db, { key: `store-read:${attemptId}:${blockedReasonCount(db, attemptId, "store_read:")}`, source: "writer", kind: "store_read", projectId: input.projectId, wake: true,
+        postOwnerItem(db, { key: `store-read:${state.attemptId}:${blockedReasonCount(db, state.attemptId, "store_read:")}`, source: "writer", kind: "store_read", projectId: input.projectId, wake: true,
           what: "Запись остановлена: хранилище плагина не читается",
           why: `${STORE_READ_PARK_LIMIT} попыток подряд не смогли прочитать настройки перед запуском писателя — это постоянный сбой хранилища, а не разовый.`,
           evidence: [{ kind: "run", ref: input.runId }, { kind: "task", ref: input.taskId }] });
         return false;
       }
       const reason = `store_read: ${message.slice(0, 200)}`;
-      parkAttemptWake(db, attemptId, reason, Date.now() + 30_000);
+      parkAttemptWake(db, state.attemptId, reason, Date.now() + 30_000);
       ctx.log(`writer ${input.taskId}: plugin store unreadable before spawn (${reason}); the attempt retries in 30 s`);
-      last = { status:"queued", reason, attemptId };
+      state.last = { status:"queued", reason, attemptId: state.attemptId };
       return false;
     };
     /** Settings, writer pick, budget, the live-folder flag and its backup: everything a later step needs in place. False = parked for a transient store read. */
     const prepareRun = async ():Promise<boolean> => {
-      policy=runPolicyFor(input.runId);
+      state.policy=runPolicyFor(input.runId);
       // The pick, the pin, the live backup and the settings scopes live in the plugin store: a read that fails is
       // transient — park the attempt for the wake sweep instead of blocking it on a storage hiccup.
       try {
-        baseSettings=(await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values;
-        writerOverlay=await pickWriter(baseSettings, input);
-        runSettings=writerOverlay ? { ...baseSettings, ...writerOverlay } : rotatedWriterSettings(baseSettings, input.taskId);
+        state.baseSettings=(await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values;
+        state.writerOverlay=await pickWriter(state.baseSettings, input);
+        state.runSettings=state.writerOverlay ? { ...state.baseSettings, ...state.writerOverlay } : rotatedWriterSettings(state.baseSettings, input.taskId);
         // The task's writer pair, pinned across restarts and re-dispatches (hive H-01): a kept pin wins over a fresh
         // rotation; the pair moves only on a provider failure or a failure-class intervention, and the move's reason is kept.
-        const pairPin = configuredSetting(runSettings, "writer.pair_pin") === "off" ? null : await loadWriterPin(bb.storage.kv as never, input.runId, input.taskId);
-        if (pairPin) runSettings = { ...runSettings, "writer.provider": pairPin.providerId, "writer.model": pairPin.model };
+        const pairPin = configuredSetting(state.runSettings, "writer.pair_pin") === "off" ? null : await loadWriterPin(bb.storage.kv as never, input.runId, input.taskId);
+        if (pairPin) state.runSettings = { ...state.runSettings, "writer.provider": pairPin.providerId, "writer.model": pairPin.model };
       } catch (cause) { return parkForStoreRead(cause); }
       // Only the writer keys travel to the spawn: the spawn reads the stored settings again, and must see this choice, not the project's.
-      writerChoice=Object.fromEntries(Object.entries(runSettings).filter(([key, value]) => key.startsWith("writer.") && value !== baseSettings[key]));
-      budget=services.runBudgetFor(input.runId,runSettings);
+      state.writerChoice=Object.fromEntries(Object.entries(state.runSettings).filter(([key, value]) => key.startsWith("writer.") && value !== state.baseSettings[key]));
+      state.budget=services.runBudgetFor(input.runId,state.runSettings);
       // Tasks run side by side only when they cannot touch the same files: one whose owns_paths overlap an
       // earlier open task's (in any run on the same checkout) waits for it, instead of conflicting at the merge.
-      runFolder = taskBasePath(db, input.runId, input.taskId) ?? input.task.project_cwd;
-      liveFolder = await services.isLiveFolder(input.runId, input.config.hostId, runFolder);
+      state.runFolder = taskBasePath(db, input.runId, input.taskId) ?? input.task.project_cwd;
+      state.liveFolder = await services.isLiveFolder(input.runId, input.config.hostId, state.runFolder);
       // An attempt resumed on its writer's thread (the PM's answer, a reload) goes on under the backup it began with.
-      if (liveFolder && writerThreadId) {
+      if (state.liveFolder && state.writerThreadId) {
         try {
-          const saved = await bb.storage.kv.get(liveBackupKey(attemptId));
-          if (typeof saved === "string") liveBackupId = saved;
+          const saved = await bb.storage.kv.get(liveBackupKey(state.attemptId));
+          if (typeof saved === "string") state.liveBackupId = saved;
         } catch (cause) { return parkForStoreRead(cause); }
       }
       // A clean read after parks resets the streak: without the marker the journal still ends in store_read rows
       // and one more failure much later would count them all and block a recovered store.
-      if (trailingQueuedParks(db, attemptId, "store_read:") > 0) noteCleanAdmission(db, attemptId);
+      if (trailingQueuedParks(db, state.attemptId, "store_read:") > 0) noteCleanAdmission(db, state.attemptId);
       return true;
     };
-    const wallOrTokenStop = () => runningWriterBudgetStop(budget.check());
+    const wallOrTokenStop = () => runningWriterBudgetStop(state.budget.check());
     /**
      * The permit's money half (SMA ac_permit): with run.max_tokens the task must carry its price (dispatch lints
      * price_unknown; this start is the same refusal for a retry that never saw the lint) and the run's budget must
      * still hold its appetite after the run's other open tasks'.
      */
     const writerPermit = (): string | null => {
-      const snap = budget.snapshot();
+      const snap = state.budget.snapshot();
       if (!snap.limits.maxTokens) return null;
       const appetite = input.task.appetite?.tokens;
       if (!appetite) return `permit_refused:price_unknown: the run has run.max_tokens but task ${input.taskId} names no appetite.tokens`;
@@ -507,8 +511,8 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
       return reserve.ok ? null : `permit_refused:reserve: ${reserve.why}`;
     };
       const blockBeforeWriter = (reason:string) => {
-        transitionAttempt(db, attemptId, "blocked", { reason });
-        last = { status:"blocked", reason, attemptId };
+        transitionAttempt(db, state.attemptId, "blocked", { reason });
+        state.last = { status:"blocked", reason, attemptId: state.attemptId };
         closeWriterStages(db, { runId:input.runId, taskId:input.taskId, plan:input.plan, terminal:"failed",
           attempt:countAttempts(db, input.runId, input.taskId), reason });
         refreshRun(input.runId);
@@ -535,7 +539,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
           const reason = walk.shortest?.hold.reason ?? "writer_provider_unavailable:core_unsupported";
           transitionAttempt(db, forAttemptId, "blocked", { reason });
           for (const held of walk.holds) void noteUnsupportedProvider(ctx, { providerId:held.member.providerId, pmThreadId:input.pmThreadId, taskId:input.taskId });
-          last = { status:"blocked", reason, attemptId:forAttemptId };
+          state.last = { status:"blocked", reason, attemptId:forAttemptId };
           return true;
         }
         const held = walk.shortest!.hold;
@@ -545,7 +549,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
         recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan, reason:text });
         void noteWriterWait(ctx, { attemptId:forAttemptId, pmThreadId:input.pmThreadId, taskId:input.taskId, text });
         ctx.log(`writer ${input.taskId}: every writer is held (${held.reason}); the attempt waits until ${walk.wakeAt ? new Date(walk.wakeAt).toISOString() : "unknown"}`);
-        last = { status:"queued", reason, attemptId:forAttemptId };
+        state.last = { status:"queued", reason, attemptId:forAttemptId };
         return true;
       };
       /** The waits a task passes before its writer gets a turn: depends_on, overlapping tasks, secrets, the breaker and the pools. */
@@ -594,7 +598,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
           if (budgetStop) { blockBeforeWriter(budgetStop); return false; }
           // An attempt canceled while it waits stops waiting: the drill's canceled writers kept polling the full Mac mini disk and
           // logging for half an hour after their cancel (2026-10-27, drill-20261027-023238-memory, drill-pm-20261027-note).
-          const waiting = getAttempt(db, attemptId);
+          const waiting = getAttempt(db, state.attemptId);
           if (!waiting || ["canceled", "blocked", "accepted"].includes(waiting.state)) {
             if (waiting?.state === "canceled") {
               markCanceledWriterStages(waiting, "writer attempt canceled while it waited for room");
@@ -604,8 +608,8 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
           }
           const base = taskBasePath(db, input.runId, input.taskId);
           // Money and the subscription window: a paid lane over the month's cap, or a Claude window at 98%, waits (src/rooms/money).
-          const moneyProvider = typeof runSettings["writer.provider"] === "string" && runSettings["writer.provider"] ? runSettings["writer.provider"] as string : input.config.writerProviderId;
-          const moneyModel = typeof runSettings["writer.model"] === "string" ? runSettings["writer.model"] as string : "";
+          const moneyProvider = typeof state.runSettings["writer.provider"] === "string" && state.runSettings["writer.provider"] ? state.runSettings["writer.provider"] as string : input.config.writerProviderId;
+          const moneyModel = typeof state.runSettings["writer.model"] === "string" ? state.runSettings["writer.model"] as string : "";
           const held = services.stability.breakerHolds(input.projectId)
             ?? (base ? await services.stability.diskHolds(input.config.hostId, base) : null)
             ?? (services.money ? await services.money.holds(moneyProvider, moneyModel, input.config.hostId) : null);
@@ -627,37 +631,37 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
           if (services.runWriterPool.busy?.(key, limit)) recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
             reason:`waiting: all ${limit} writer seats of the ${seats} are busy; starts by itself when one frees` });
         };
-        releaseWriterSlot=liveFolder
-          ? (noteBusy(`live-folder:${input.config.hostId}:${resolve(runFolder)}`, 1, "host"), await services.runWriterPool.acquire(`live-folder:${input.config.hostId}:${resolve(runFolder)}`,1))
-          : (noteBusy(input.runId, policy.pools.provider, "run"), await services.runWriterPool.acquire(input.runId,policy.pools.provider,rank));
+        state.releaseWriterSlot=state.liveFolder
+          ? (noteBusy(`live-folder:${input.config.hostId}:${resolve(state.runFolder)}`, 1, "host"), await services.runWriterPool.acquire(`live-folder:${input.config.hostId}:${resolve(state.runFolder)}`,1))
+          : (noteBusy(input.runId, state.policy.pools.provider, "run"), await services.runWriterPool.acquire(input.runId,state.policy.pools.provider,rank));
         // BB's concurrency-limit plugin caps the threads a host runs at once: writers beyond it would only wait in BB's queue,
         // so they wait here, before their attempt starts (no pool slot is held by a writer that cannot run). No plugin, no cap.
         const hostCap = await services.concurrencyLimit.hostCap(input.config.hostId);
-        if (hostCap !== null && !liveFolder) {
-          const releaseRunSlot = releaseWriterSlot;
+        if (hostCap !== null && !state.liveFolder) {
+          const releaseRunSlot = state.releaseWriterSlot;
           const hostLimit = Math.min(hostCap, 15);
           noteBusy(`concurrency-limit:${input.config.hostId}`, hostLimit, "host");
           const releaseHostSlot = await services.runWriterPool.acquire(`concurrency-limit:${input.config.hostId}`, hostLimit);
-          releaseWriterSlot = () => { releaseHostSlot(); releaseRunSlot?.(); };
+          state.releaseWriterSlot = () => { releaseHostSlot(); releaseRunSlot?.(); };
         }
         // G9: a cap on simultaneous writers of one provider (ops.provider_pool); a task over it waits here, queued, not failed.
         // It counts the task's writer provider; a fallback of the chain is not counted. No entry, no cap.
-        const poolProvider = typeof runSettings["writer.provider"] === "string" && runSettings["writer.provider"] ? runSettings["writer.provider"] as string : input.config.writerProviderId;
-        const providerCap = providerPoolCap(runSettings, poolProvider);
-        if (providerCap !== null && !liveFolder) {
-          const releaseHeld = releaseWriterSlot;
+        const poolProvider = typeof state.runSettings["writer.provider"] === "string" && state.runSettings["writer.provider"] ? state.runSettings["writer.provider"] as string : input.config.writerProviderId;
+        const providerCap = providerPoolCap(state.runSettings, poolProvider);
+        if (providerCap !== null && !state.liveFolder) {
+          const releaseHeld = state.releaseWriterSlot;
           noteBusy(`provider-pool:${poolProvider}`, providerCap, "provider");
           const releaseProviderSlot = await services.runWriterPool.acquire(`provider-pool:${poolProvider}`, providerCap);
-          releaseWriterSlot = () => { releaseProviderSlot(); releaseHeld?.(); };
+          state.releaseWriterSlot = () => { releaseProviderSlot(); releaseHeld?.(); };
         }
         // Four lane queues: writing, checks, docs and research each wait in their own queue when the project caps it (queue.lane_caps).
         const lane = laneQueueOf(input.task.kind);
-        const capOfLane = laneCap(runSettings["queue.lane_caps"], lane);
-        if (capOfLane !== null && !liveFolder) {
-          const releaseHeld = releaseWriterSlot;
+        const capOfLane = laneCap(state.runSettings["queue.lane_caps"], lane);
+        if (capOfLane !== null && !state.liveFolder) {
+          const releaseHeld = state.releaseWriterSlot;
           noteBusy(`lane-queue:${input.projectId}:${lane}`, capOfLane, "lane");
           const releaseLaneSlot = await services.runWriterPool.acquire(`lane-queue:${input.projectId}:${lane}`, capOfLane, rank);
-          releaseWriterSlot = () => { releaseLaneSlot(); releaseHeld?.(); };
+          state.releaseWriterSlot = () => { releaseLaneSlot(); releaseHeld?.(); };
         }
         // The claim is fetch-plus-holds in one step: a hold that arrived while the task waited for a seat (a task hold,
         // a pause, the conveyor, a breaker) is re-checked now, not only before the pool wait — the slots go back and
@@ -668,7 +672,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
         // the owner (pause-read item). Swallowing it here would queue the task again and again with nobody told.
         const latePaused = await isHeld(bb.storage.kv as never, input.runId).catch(() => false);
         if ((lateHold !== null && lateHold > Date.now()) || lateBreaker || latePaused) {
-          releaseWriterSlot?.(); releaseWriterSlot = undefined;
+          state.releaseWriterSlot?.(); state.releaseWriterSlot = undefined;
           const reason = lateHold !== null && lateHold > Date.now()
             ? `waiting: held until ${lateHold >= HOLD_FOREVER ? "released" : new Date(lateHold).toISOString()}`
             : `waiting: ${lateBreaker ?? "the run is paused"}; starts by itself once it clears`;
@@ -679,15 +683,15 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
         // the run's spend reserve are checked again here — a task that no longer fits ends blocked, uncharged.
         const permit = writerPermit();
         if (permit) {
-          releaseWriterSlot?.(); releaseWriterSlot = undefined;
+          state.releaseWriterSlot?.(); state.releaseWriterSlot = undefined;
           blockBeforeWriter(permit);
           return false;
         }
         // Recovery state (SMA ac_recovery): nothing retries an attempt whose recovery is unfinished — a reconcile in
         // flight or a failed rollback settles first; the refusal names the state.
-        const recovery = recoveryState(db, attemptId);
+        const recovery = recoveryState(db, state.attemptId);
         if (recovery === "reconciling" || recovery === "rollback_failed") {
-          releaseWriterSlot?.(); releaseWriterSlot = undefined;
+          state.releaseWriterSlot?.(); state.releaseWriterSlot = undefined;
           blockBeforeWriter(`recovery_unfinished:${recovery}: the attempt's recovery is unfinished; settle it before this work is retried`);
           return false;
         }
@@ -696,7 +700,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
       /** Admission passed: take the live-writer key, reload a corrected contract, open the running stage. */
       const admitTask = async ():Promise<boolean> => {
         admitted.set(key, { runId:input.runId, taskId:input.taskId, projectId:input.projectId });
-        const latestAttempt=getAttempt(db,attemptId);
+        const latestAttempt=getAttempt(db,state.attemptId);
         if(!latestAttempt||["canceled","blocked","accepted"].includes(latestAttempt.state)){
           if(latestAttempt?.state==="canceled"){
             markCanceledWriterStages(latestAttempt,"writer attempt canceled while waiting for provider pool");
@@ -708,11 +712,11 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
         // ones it was dispatched with (live sandbox 2026-10-07: the writer ran the old plan after an update).
         const storedTask=taskV2Schema.safeParse(getTask(db,input.taskId)?.contract);
         const storedPlan=getTaskPlan(db,input.taskId);
-        if(!writerThreadId&&storedTask.success&&storedTask.data.id===input.taskId) {
+        if(!state.writerThreadId&&storedTask.success&&storedTask.data.id===input.taskId) {
           input.task={...storedTask.data,project_cwd:input.task.project_cwd};
           if(storedPlan&&storedPlan.trim()) input.plan=storedPlan;
-          activeTask=input.task;
-          ({ task:freshTask, config:freshConfig } = freshAttemptStart(input.task, input.config, taskBasePath(db, input.runId, input.taskId)));
+          state.activeTask=input.task;
+          ({ task:state.freshTask, config:state.freshConfig } = freshAttemptStart(input.task, input.config, taskBasePath(db, input.runId, input.taskId)));
         }
         recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"running",
           input:input.plan, attempt:countAttempts(db, input.runId, input.taskId) });
@@ -723,19 +727,19 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
       // while attempts burned on the fault before it stay out of the count (BB-сервис 2026-10-05: five fault attempts
       // left the restarted task no attempt at all, and it sat queued with its stages failed).
       const attemptsLeft = () => countChargedAttempts(db, input.runId, input.taskId) <= MAIN_ATTEMPT_LIMIT
-        && attemptsHere < MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT;
+        && state.attemptsHere < MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT;
       // A task is ONE writer session: a failure of the task's own goes back to the same writer as a feedback turn (a new
       // attempt row in its thread, not a new charged attempt) until the checks pass, the turn cap (SESSION_MAX_TURNS) or
       // the wall cap (SESSION_MAX_MS) is reached, or two turns in a row leave both the failure and the diff unchanged.
       // Only a provider or limit fault, or a thread that cannot take the turn, starts another writer.
       /** Another attempt follows this failure: the same conditions the loop checks below before it creates one. */
       const attemptsLeftAfter = (binding:ReturnType<typeof getAttempt>) => Boolean(binding?.thread_id)
-        && RETRY_ELIGIBLE.includes(String(last.status) as AttemptState)
+        && RETRY_ELIGIBLE.includes(String(state.last.status) as AttemptState)
         && countChargedAttempts(db, input.runId, input.taskId) < MAIN_ATTEMPT_LIMIT
-        && attemptsHere + 1 < MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT;
+        && state.attemptsHere + 1 < MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT;
       /** Takes over an existing writer thread for this attempt; false leaves the attempt to a fresh spawn. */
       const continueWith = async (writer:NonNullable<Awaited<ReturnType<typeof sticky.hotWriter>>>, kind:"next-task"|"retry"|"merge", previousAttempt:string, keepDirt?:DirtSnapshot[]):Promise<boolean> => {
-        const bound = retargetTask(freshTask,writer.workspacePath);
+        const bound = retargetTask(state.freshTask,writer.workspacePath);
         // The third turn of this thread gets the digest of what it already did, not the raw trajectory.
         let feedback = previousAttempt;
         if (kind === "retry" && writer.turns >= 2) {
@@ -745,43 +749,43 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
         // The next task of an area is a different contract: its rules come with it (writer-knowledge.ts); a retry or a merge keeps the brief's.
         const memorySettings = parseMemorySettings((await bestEffort(ctx.log, "writer memory settings", effectiveProjectSettings(input.projectId, getRunSettingsScopes(db, input.runId)), null))?.values ?? {});
         const turnPrompt = await stickyTurnPromptWithRules({ db, host, chainForRun:(runId) => services.ruleScan.chainForRun(runId), log:ctx.log },
-          { projectId:input.projectId, runId:input.runId, hostId:freshConfig.hostId, task:bound, memorySettings },
-          { kind, task:bound, previousAttempt:kind === "merge" && !previousAttempt.includes(REPLAY_CHECK_FAILED) ? "" : feedback, liveFolder });
+          { projectId:input.projectId, runId:input.runId, hostId:state.freshConfig.hostId, task:bound, memorySettings },
+          { kind, task:bound, previousAttempt:kind === "merge" && !previousAttempt.includes(REPLAY_CHECK_FAILED) ? "" : feedback, liveFolder: state.liveFolder });
         // A task a person sent back to an earlier stage with a note (src/rooms/stage-return) takes the note into the area writer's next-task turn.
         const returnNotes = kind === "next-task" ? renderReturnNotes(listReturns(db, input.runId, input.taskId)) : "";
-        const turn = await sticky.continueInThread({ runId:input.runId, taskId:input.taskId, attemptId, config:freshConfig, writer, kind, dirtBefore:keepDirt,
+        const turn = await sticky.continueInThread({ runId:input.runId, taskId:input.taskId, attemptId: state.attemptId, config:state.freshConfig, writer, kind, dirtBefore:keepDirt,
           prompt:returnNotes ? (conflicts) => `${turnPrompt(conflicts)}\n\n${returnNotes}` : turnPrompt });
         if (!turn.ok) {
           ctx.log(`writer ${input.taskId}: ${kind} in thread ${writer.threadId} not possible (${turn.reason}); a fresh writer starts`);
           // A half-bound attempt cannot take a fresh spawn: it ends as Lane Pilot's fault and the retry spawns.
           if (turn.bound) {
-            last = { status:endSpawnFailure(db, attemptId, turn.reason), reason:turn.reason, attemptId };
-            halfBound = true;
+            state.last = { status:endSpawnFailure(db, state.attemptId, turn.reason), reason:turn.reason, attemptId: state.attemptId };
+            state.halfBound = true;
           }
           return false;
         }
-        writerThreadId = writer.threadId;
-        const trace = getReasoningTrace(db, attemptId);
-        writerSelection = trace ? { providerId:trace.providerId, model:trace.model, reasoningLevel:trace.effectiveReasoningLevel,
+        state.writerThreadId = writer.threadId;
+        const trace = getReasoningTrace(db, state.attemptId);
+        state.writerSelection = trace ? { providerId:trace.providerId, model:trace.model, reasoningLevel:trace.effectiveReasoningLevel,
           serviceTier:trace.serviceTier, selectionSource:trace.selectionSource } : undefined;
-        activeConfig = freshConfig;
-        activeTask = bound;
-        dirtBefore = turn.dirtBefore;
-        baselineDirtBefore ??= [...turn.dirtBefore];
-        baselineWorkspacePath ??= turn.workspacePath;
-        executionPacketSha256 = null;
+        state.activeConfig = state.freshConfig;
+        state.activeTask = bound;
+        state.dirtBefore = turn.dirtBefore;
+        state.baselineDirtBefore ??= [...turn.dirtBefore];
+        state.baselineWorkspacePath ??= turn.workspacePath;
+        state.executionPacketSha256 = null;
         return true;
       };
       // The baseline (src/rooms/baseline): the task's checks on the base before any writer is asked. «Already built» is told to the PM, or in
       // mode stop ends the task here with the evidence. A mainfix has its own preflight below; a folder without git has no base to run on.
       const baselinePreflight = async ():Promise<boolean> => {
-        if (!writerThreadId && !input.turnSent && !liveFolder && !isMainfixTask(input.task.id)) {
-          const baseline = await services.baseline?.preflight({ projectId:input.projectId, runId:input.runId, taskId:input.taskId, attemptId, pmThreadId:input.pmThreadId, config:freshConfig, task:freshTask });
+        if (!state.writerThreadId && !input.turnSent && !state.liveFolder && !isMainfixTask(input.task.id)) {
+          const baseline = await services.baseline?.preflight({ projectId:input.projectId, runId:input.runId, taskId:input.taskId, attemptId: state.attemptId, pmThreadId:input.pmThreadId, config:state.freshConfig, task:state.freshTask });
           if (baseline?.alreadyDone) {
             ctx.log(`baseline ${input.taskId}: checks already pass on the base; closing accepted without a writer`);
-            transitionAttempt(db, attemptId, "accepted");
-            last = { status:"accepted", attemptId, produced:[], verification:[], alreadyDone:baseline.alreadyDone };
-            acceptedAttemptId = attemptId;
+            transitionAttempt(db, state.attemptId, "accepted");
+            state.last = { status:"accepted", attemptId: state.attemptId, produced:[], verification:[], alreadyDone:baseline.alreadyDone };
+            state.acceptedAttemptId = state.attemptId;
           } else if (baseline?.stop) { blockBeforeWriter(baseline.stop); return false; }
         }
         return true;
@@ -789,10 +793,10 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
       // The area's writer from an earlier task of this run takes this one in its own thread, unless the writer setting now names
       // another provider or model: then this task gets a fresh writer on the current one (the spawn's own selection, below).
       const handoffToHotWriter = async ():Promise<void> => {
-        if (!writerThreadId && input.task.area && !liveFolder) {
+        if (!state.writerThreadId && input.task.area && !state.liveFolder) {
           const wanted = {
-            providerId: typeof runSettings["writer.provider"] === "string" ? runSettings["writer.provider"] as string : freshConfig.writerProviderId,
-            model: typeof runSettings["writer.model"] === "string" && runSettings["writer.model"] ? runSettings["writer.model"] as string : freshConfig.writerModel,
+            providerId: typeof state.runSettings["writer.provider"] === "string" ? state.runSettings["writer.provider"] as string : state.freshConfig.writerProviderId,
+            model: typeof state.runSettings["writer.model"] === "string" && state.runSettings["writer.model"] ? state.runSettings["writer.model"] as string : state.freshConfig.writerModel,
           };
           const hot = await sticky.hotWriter(input.projectId, input.runId, input.task.area, wanted);
           if (hot) await continueWith(hot, "next-task", "");
@@ -805,17 +809,17 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
       // vanished row ends it even while the pause flag itself cannot be read. `queued` stays — the first
       // stage-boundary wait runs before the spawn, while the attempt is still queued by design.
       const pauseWaitShouldStop = () => {
-        const state = getAttempt(db, attemptId)?.state;
-        return state === undefined || state === "cancel_requested" || state === "canceled" || state === "accepted" || state === "blocked";
+        const pauseAttemptState = getAttempt(db, state.attemptId)?.state;
+        return pauseAttemptState === undefined || pauseAttemptState === "cancel_requested" || pauseAttemptState === "canceled" || pauseAttemptState === "accepted" || pauseAttemptState === "blocked";
       };
       while (attemptsLeft()) {
-        if (last.status === "accepted") break;
+        if (state.last.status === "accepted") break;
         // The stage that just ended is the safe boundary of a pause: the next attempt or turn waits for the resume.
         // An unreadable pause flag is never a resume: the writer keeps its slot and waits, and the owner hears once
         // per episode — the sequence key reposts after the last row was closed (resume, reload, next blip).
         const pauseWait = await waitWhileRunPaused(bb.storage.kv as never, input.runId, { isDisposed: ctx.isDisposed, shouldStop: pauseWaitShouldStop, onError: (message) => bb.log.warn(message), onFirstWait: () => ctx.log(`writer ${input.taskId} waits at a stage boundary: run ${input.runId} is paused`), onReadBound: () => {
           if (!pauseReadItemKey) {
-            pauseReadItemKey = `pause-read:${attemptId}:${ownerItemPrefixCount(db, `pause-read:${attemptId}:`)}`;
+            pauseReadItemKey = `pause-read:${state.attemptId}:${ownerItemPrefixCount(db, `pause-read:${state.attemptId}:`)}`;
             postOwnerItem(db, { key: pauseReadItemKey, source: "writer", kind: "pause_read", projectId: input.projectId, wake: true,
               what: "Запись ждёт: состояние паузы не читается",
               why: "Хранилище плагина не отвечает на чтение флага паузы уже много раз подряд; писатель держит слот на границе стадии и ждёт чистого чтения — это не возобновление.",
@@ -825,12 +829,12 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
         } });
         if (pauseReadItemKey) { closeOwnerItem(db, pauseReadItemKey, pauseWait ? "pause state readable again" : "the pause wait ended"); pauseReadItemKey = null; }
         if (!pauseWait) return "stop";
-        if (!inSession) { attemptsHere += 1; sessionStartedAt = Date.now(); previousTurn = null; }
-        const budgetCheck=budget.check();
+        if (!state.inSession) { state.attemptsHere += 1; state.sessionStartedAt = Date.now(); state.previousTurn = null; }
+        const budgetCheck=state.budget.check();
         if (!budgetCheck.ok) {
           const reason=budgetStopReason(budgetCheck.exceeded);
-          transitionAttempt(db, attemptId, "blocked", { reason });
-          last = { status:"blocked", reason, attemptId };
+          transitionAttempt(db, state.attemptId, "blocked", { reason });
+          state.last = { status:"blocked", reason, attemptId: state.attemptId };
           // The run's whole remainder ran out: the owner is asked once per run whether to raise the
           // run.max_* limit or finish the run, instead of the work stopping quietly (sma ac_pocket).
           const limitSetting = RUN_LIMIT_SETTING[budgetCheck.exceeded];
@@ -844,86 +848,86 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
               { id:"raise", label:`Поднять ${limitSetting}`, cli:`bb lane-pilot budget ${input.projectId} ${limitSetting}=<новый лимит>` },
               { id:"finish", label:"Завершить прогон", cli:rpcLine("finish_run", { projectId:input.projectId, runId:input.runId }), rpc:{ method:"finish_run", input:{ projectId:input.projectId, runId:input.runId } } },
             ],
-            evidence:[{ kind:"run", ref:input.runId }, { kind:"task", ref:input.taskId }, { kind:"attempt", ref:attemptId }] });
+            evidence:[{ kind:"run", ref:input.runId }, { kind:"task", ref:input.taskId }, { kind:"attempt", ref:state.attemptId }] });
           break;
         }
         // A mainfix runs only while main is still red: when its failing checks already pass on current main (another
         // task fixed it), it closes as accepted without a writer and the PM hears why.
-        if (attemptsHere === 1 && !writerThreadId && isMainfixTask(input.task.id) && freshTask.verification.length > 0) {
-          const checks = await bestEffort(ctx.log, "writer mainfix checks", services.runVerification(freshConfig, freshTask, input.runId), null);
+        if (state.attemptsHere === 1 && !state.writerThreadId && isMainfixTask(input.task.id) && state.freshTask.verification.length > 0) {
+          const checks = await bestEffort(ctx.log, "writer mainfix checks", services.runVerification(state.freshConfig, state.freshTask, input.runId), null);
           if (checks && checks.length > 0 && checks.every((check) => check.exitCode === 0)) {
             ctx.log(`mainfix ${input.taskId}: its checks already pass on main; closing accepted without a writer`);
-            transitionAttempt(db, attemptId, "accepted");
-            last = { status:"accepted", attemptId, produced:[], verification:checks,
+            transitionAttempt(db, state.attemptId, "accepted");
+            state.last = { status:"accepted", attemptId: state.attemptId, produced:[], verification:checks,
               mainfixPreflight:"the failing checks already pass on current main" };
             if (input.pmThreadId) void bestEffort(ctx.log, "writer mainfix notice", bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active",
               input:[{ type:"text", mentions:[],
                 text:`Lane Pilot: задача ${input.taskId} закрыта принятой без писателя — её проверки уже проходят на текущем main, main починила другая задача. Действий не нужно.` }] } as never), undefined);
           }
         }
-        if (!writerThreadId && !halfBound && last.status !== "accepted") {
-          const reassigned = pendingReassign;
-          const primaryPair = { providerId:typeof runSettings["writer.provider"] === "string" && runSettings["writer.provider"] ? runSettings["writer.provider"] as string : freshConfig.writerProviderId,
-            model:typeof runSettings["writer.model"] === "string" && runSettings["writer.model"] ? runSettings["writer.model"] as string : freshConfig.writerModel };
+        if (!state.writerThreadId && !state.halfBound && state.last.status !== "accepted") {
+          const reassigned = state.pendingReassign;
+          const primaryPair = { providerId:typeof state.runSettings["writer.provider"] === "string" && state.runSettings["writer.provider"] ? state.runSettings["writer.provider"] as string : state.freshConfig.writerProviderId,
+            model:typeof state.runSettings["writer.model"] === "string" && state.runSettings["writer.model"] ? state.runSettings["writer.model"] as string : state.freshConfig.writerModel };
           // H2: the gate's sources answer before the attempt is spent. A free member of the chain (the task's writer,
           // its fallbacks, the PM) spawns in this attempt — the next one when the writer itself is held; nobody free
           // parks the attempt queued until the earliest hold ends, instead of the spawn_rejected loop it used to run.
-          const chainMembers = [{ ...primaryPair, reasoningLevel:typeof runSettings["writer.reasoning_effort"] === "string" ? runSettings["writer.reasoning_effort"] as string : "medium" },
-            ...writerFallbackChain(primaryPair, writerFallbacks(runSettings), { providerId:freshConfig.pmProviderId, model:freshConfig.pmModel })];
+          const chainMembers = [{ ...primaryPair, reasoningLevel:typeof state.runSettings["writer.reasoning_effort"] === "string" ? state.runSettings["writer.reasoning_effort"] as string : "medium" },
+            ...writerFallbackChain(primaryPair, writerFallbacks(state.runSettings), { providerId:state.freshConfig.pmProviderId, model:state.freshConfig.pmModel })];
           // A PM reassignment names its writer: it is tried as ordered (its own refusal is the old path).
           const walked = reassigned?.request.selection
             ? { free:{ member:chainMembers[0]!, index:0 }, allUnsupported:false, allOff:false, off:[], shortest:undefined, wakeAt:null, holds:[] } as ChainWalk
-            : await walkWriterChain(chainMembers, { hostId:freshConfig.hostId, settings:runSettings, appetite:{ tokens:(input.task as { appetite?: { tokens?: number } }).appetite?.tokens } }, holdDeps);
-          if (await parkForWriter(attemptId, walked)) return "stop";
+            : await walkWriterChain(chainMembers, { hostId:state.freshConfig.hostId, settings:state.runSettings, appetite:{ tokens:(input.task as { appetite?: { tokens?: number } }).appetite?.tokens } }, holdDeps);
+          if (await parkForWriter(state.attemptId, walked)) return "stop";
           const spawnSettings = walked.free && walked.free.index > 0
-            ? { ...writerChoice, "writer.provider":walked.free.member.providerId, "writer.model":walked.free.member.model,
+            ? { ...state.writerChoice, "writer.provider":walked.free.member.providerId, "writer.model":walked.free.member.model,
                 ...(walked.free.member.reasoningLevel ? { "writer.reasoning_effort":walked.free.member.reasoningLevel } : {}) }
-            : writerChoice;
+            : state.writerChoice;
           if (walked.free && walked.free.index > 0)
             ctx.log(`writer ${input.taskId}: ${primaryPair.providerId}/${primaryPair.model} is held (${walked.shortest?.hold.reason ?? "unknown"}); spawning ${walked.free.member.providerId}/${walked.free.member.model} in the same attempt`);
           // A pause the last failure's class asks for before the next attempt (writer.class_cooldowns, hive H-14): it
           // doubles with each consecutive attempt that ended in the same class (SMA ae_auto_retry).
-          const lastClass = failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null);
+          const lastClass = failureClass(String(state.last.status), typeof state.last.reason === "string" ? state.last.reason : null);
           let sameClassStreak = 0;
           for (const row of [...listAttemptsForTask(db, input.runId, input.taskId)].reverse()) {
-            if (row.id === attemptId || ["queued","spawn_requested","spawn_unknown","running","cancel_requested"].includes(row.state)) continue;
+            if (row.id === state.attemptId || ["queued","spawn_requested","spawn_unknown","running","cancel_requested"].includes(row.state)) continue;
             if (failureClass(row.state, getAttempt(db, row.id)?.reason) !== lastClass) break;
             sameClassStreak += 1;
           }
-          const classCooldown = failureClassCooldownMs(lastClass, runSettings, Math.max(1, sameClassStreak));
+          const classCooldown = failureClassCooldownMs(lastClass, state.runSettings, Math.max(1, sameClassStreak));
           if (classCooldown > 0) await new Promise((resolve) => setTimeout(resolve, classCooldown));
           // The task's overall budget of writers, kept across reloads and restarts (retry-budget.ts).
           // A reassigned task's new writer spends no attempt of the task's budget (the PM asked for it).
           const spent = reassigned ? null : await spendRetryBudget(bb.storage.kv as never, input.runId, input.taskId, "attempt", Date.now(), TASK_ATTEMPT_BUDGET, ctx.log);
           if (spent && !spent.ok) {
             const reason = retryBudgetReason(input.taskId, spent.record);
-            transitionAttempt(db, attemptId, "blocked", { reason });
-            last = { status:"blocked", reason, attemptId };
+            transitionAttempt(db, state.attemptId, "blocked", { reason });
+            state.last = { status:"blocked", reason, attemptId: state.attemptId };
             break;
           }
-          if (!reassigned) budget.noteAttempt();
-          const afterAttempt=budget.check();
+          if (!reassigned) state.budget.noteAttempt();
+          const afterAttempt=state.budget.check();
           if (!afterAttempt.ok) {
             const reason=budgetStopReason(afterAttempt.exceeded);
-            transitionAttempt(db, attemptId, "blocked", { reason });
-            last = { status:"blocked", reason, attemptId };
+            transitionAttempt(db, state.attemptId, "blocked", { reason });
+            state.last = { status:"blocked", reason, attemptId: state.attemptId };
             break;
           }
-          const carried=reassigned?.from?.thread_id&&reassigned.from.workspace_path&&!liveFolder ? {
+          const carried=reassigned?.from?.thread_id&&reassigned.from.workspace_path&&!state.liveFolder ? {
             workspacePath:reassigned.from.workspace_path, environmentId:reassigned.from.environment_id, dirtBefore:reassigned.from.dirt_before,
             fromThreadId:reassigned.from.thread_id,
             brief:await collectHandoffBrief({ bb, host, hostId:input.config.hostId, threadId:reassigned.from.thread_id, workspacePath:reassigned.from.workspace_path,
               stopReason:`reassigned by the PM: ${reassigned.request.reason}` }),
           } : undefined;
           const requested=reassigned?.request.selection;
-          pendingReassign=null;
+          state.pendingReassign=null;
           // Recursive best-of (arXiv #20, writer.best_of.rounds > 1): a candidate of round 2+ starts with the
           // round seed — the previous round's surviving candidates, their check remarks and diff stats.
-          const bestOf = resolveBestOf(runSettings, resolveQualityMode(freshTask, runSettings[QUALITY_MODE_SETTING]));
+          const bestOf = resolveBestOf(state.runSettings, resolveQualityMode(state.freshTask, state.runSettings[QUALITY_MODE_SETTING]));
           let roundSeed = "";
           if (bestOf.enabled && bestOf.rounds > 1) {
             const finished = listAttemptsForTask(db, input.runId, input.taskId)
-              .filter((row) => row.id !== attemptId && !["queued","spawn_requested","spawn_unknown","running","cancel_requested"].includes(row.state));
+              .filter((row) => row.id !== state.attemptId && !["queued","spawn_requested","spawn_unknown","running","cancel_requested"].includes(row.state));
             const doneRounds = Math.floor(finished.length / bestOf.count);
             if (doneRounds >= 1 && doneRounds < bestOf.rounds) {
               const candidates = await Promise.all(finished.slice(-bestOf.count).map(async (row) => {
@@ -938,10 +942,10 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
               roundSeed = roundSeedBrief(doneRounds + 1, bestOf.rounds, roundSurvivors(candidates));
             }
           }
-          const prevBrief = previousAttemptBrief(await trimCheckLogsIn(jev(), last.status && isOwnFailure(last) ? last : own.failure ?? (last.status ? last : null), freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:runSettings }, ctx.log), freshTask, undefined, liveFolder);
+          const prevBrief = previousAttemptBrief(await trimCheckLogsIn(jev(), state.last.status && isOwnFailure(state.last) ? state.last : state.own.failure ?? (state.last.status ? state.last : null), state.freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:state.runSettings }, ctx.log), state.freshTask, undefined, state.liveFolder);
           // A fresh thread has none of the failed attempt's context: from the second attempt on it gets the
           // digest of that attempt's thread (what it did, what failed), not only the failure line (rank 5).
-          const failedThreadId=(typeof last.attemptId==="string" ? getAttempt(db,last.attemptId)?.thread_id : null) ?? null;
+          const failedThreadId=(typeof state.last.attemptId==="string" ? getAttempt(db,state.last.attemptId)?.thread_id : null) ?? null;
           const listedPrev=failedThreadId&&countAttempts(db,input.runId,input.taskId)>=2&&typeof (bb.sdk.threads as {events?:{list?:unknown}}|undefined)?.events?.list==="function"
             ? await bestEffort(ctx.log, "writer previous attempt events", listThreadEventsRaw(bb,{threadId:failedThreadId,order:"desc",limit:"50"}), null) : null;
           const prevEvents=listedPrev?.ok ? listedPrev.events as Parameters<typeof attemptFeedback>[1] : [];
@@ -949,8 +953,8 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
           // A PM's word the running writer could not take rides this fresh thread's brief, once (sma as_redirect_deferred).
           const pendingWord=await pendingWordTake(bb.storage.kv as never,input.runId,input.taskId).catch(()=>null);
           const spawned = await services.spawnWriterAttempt({
-            projectId:input.projectId, runId:input.runId, taskId:input.taskId, attemptId,
-            config:freshConfig, task:freshTask, plan:input.plan, pmThreadId:input.pmThreadId, pmReadContext, writerSettings:spawnSettings,
+            projectId:input.projectId, runId:input.runId, taskId:input.taskId, attemptId: state.attemptId,
+            config:state.freshConfig, task:state.freshTask, plan:input.plan, pmThreadId:input.pmThreadId, pmReadContext: state.pmReadContext, writerSettings:spawnSettings,
             retryIndex:Math.max(0,countAttempts(db,input.runId,input.taskId)-1),
             // A fresh writer starts from main: of the failures before it, the task's own is the one to avoid, not a provider's cut.
             previousAttempt:[prevFeedback, roundSeed, pendingWord].filter(Boolean).join("\n\n"),
@@ -958,108 +962,108 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
             ...(carried ? { continuation:carried } : {}),
           });
           if (!spawned.ok) {
-            last = { status:spawned.status, reason:spawned.reason, attemptId:spawned.attemptId };
+            state.last = { status:spawned.status, reason:spawned.reason, attemptId:spawned.attemptId };
           } else {
-            writerThreadId = spawned.threadId;
-            if (liveFolder) { liveBackupId = attemptId; await bindLiveBackup(); }
-            writerSelection=spawned.providerId&&spawned.model?{
+            state.writerThreadId = spawned.threadId;
+            if (state.liveFolder) { state.liveBackupId = state.attemptId; await bindLiveBackup(); }
+            state.writerSelection=spawned.providerId&&spawned.model?{
               providerId:spawned.providerId,model:spawned.model,
               reasoningLevel:spawned.reasoningLevel,serviceTier:spawned.serviceTier,selectionSource:spawned.selectionSource,
             }:undefined;
-            if (writerSelection) await noteWriterPair(bb.storage.kv as never, input.runId, input.taskId,
-              { providerId:writerSelection.providerId, model:writerSelection.model }, "initial", bb.log);
-            activeConfig = freshConfig;
-            activeTask = retargetTask(freshTask,spawned.workspacePath);
+            if (state.writerSelection) await noteWriterPair(bb.storage.kv as never, input.runId, input.taskId,
+              { providerId:state.writerSelection.providerId, model:state.writerSelection.model }, "initial", bb.log);
+            state.activeConfig = state.freshConfig;
+            state.activeTask = retargetTask(state.freshTask,spawned.workspacePath);
             // In a folder without git every attempt of the task starts from the same state (the owned files are rolled
             // back), so a file outside owns_paths that an earlier attempt left behind keeps counting as changed until undone.
-            dirtBefore = liveFolder && baselineDirtBefore ? baselineDirtBefore : spawned.dirtBefore;
-            baselineDirtBefore ??=[...spawned.dirtBefore];
-            baselineWorkspacePath ??=spawned.workspacePath;
-            executionPacketSha256 = spawned.executionPacketSha256 ?? null;
+            state.dirtBefore = state.liveFolder && state.baselineDirtBefore ? state.baselineDirtBefore : spawned.dirtBefore;
+            state.baselineDirtBefore ??=[...spawned.dirtBefore];
+            state.baselineWorkspacePath ??=spawned.workspacePath;
+            state.executionPacketSha256 = spawned.executionPacketSha256 ?? null;
           }
         }
-        if (writerThreadId) {
-          last = { ...await services.finishWriterAttempt({
-            projectId:input.projectId, config:activeConfig, task:activeTask, runId:input.runId,
-            taskId:input.taskId, attemptId, pmThreadId:input.pmThreadId, writerThreadId, dirtBefore,
-            releaseSlot:()=>{ releaseWriterSlot?.(); releaseWriterSlot=undefined; },
-          }), ...(executionPacketSha256 ? { executionPacketSha256 } : {}) };
-          const workspaceBinding=getAttempt(db,attemptId);
-          if(workspaceBinding?.workspace_path) last={...last,workspace:{path:workspaceBinding.workspace_path,
+        if (state.writerThreadId) {
+          state.last = { ...await services.finishWriterAttempt({
+            projectId:input.projectId, config:state.activeConfig, task:state.activeTask, runId:input.runId,
+            taskId:input.taskId, attemptId: state.attemptId, pmThreadId:input.pmThreadId, writerThreadId: state.writerThreadId, dirtBefore: state.dirtBefore,
+            releaseSlot:()=>{ state.releaseWriterSlot?.(); state.releaseWriterSlot=undefined; },
+          }), ...(state.executionPacketSha256 ? { executionPacketSha256: state.executionPacketSha256 } : {}) };
+          const workspaceBinding=getAttempt(db,state.attemptId);
+          if(workspaceBinding?.workspace_path) state.last={...state.last,workspace:{path:workspaceBinding.workspace_path,
             environmentId:workspaceBinding.environment_id,decision:workspaceBinding.workspace_decision,
             ...(isLiveDecision(workspaceBinding.workspace_decision)?{mode:LIVE_FOLDER_RECEIPT}:{})}};
           // The question is already on the attempt. Drop the live-writer key before the awaits below (token
           // events, retry lookup, worktree remove): while it stayed until finally, the question sweep skipped
           // this task for the whole wait.
-          if (failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null) === "judgment") dropLiveWriterKey();
-          await noteAttemptOutcome({ budget, writerThreadId, writerSelection, status:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
-          noteOwnFailure(last);
+          if (failureClass(String(state.last.status), typeof state.last.reason === "string" ? state.last.reason : null) === "judgment") dropLiveWriterKey();
+          await noteAttemptOutcome({ budget: state.budget, writerThreadId: state.writerThreadId, writerSelection: state.writerSelection, status:String(state.last.status), reason:typeof state.last.reason === "string" ? state.last.reason : null });
+          noteOwnFailure(state, state.last);
         }
-        if (last.status === "accepted") { acceptedAttemptId = attemptId; break; }
+        if (state.last.status === "accepted") { state.acceptedAttemptId = state.attemptId; break; }
         // The PM moved the task to a fresh writer (lane_pilot_reassign_task): the stop is not a failure, so no attempt is spent.
         // The next iteration starts the writer in the stopped attempt's worktree, with its edits and a handoff brief.
-        const reassign = last.status === "canceled" ? await takeReassignRequest(bb.storage.kv as never, attemptId) : null;
+        const reassign = state.last.status === "canceled" ? await takeReassignRequest(bb.storage.kv as never, state.attemptId) : null;
         if (reassign) {
-          const stopped = getAttempt(db, attemptId);
-          transitionAttempt(db, attemptId, "canceled", { threadId:stopped?.thread_id ?? undefined, reason:reassignedReason(reassign.reason) });
-          pendingReassign={from:stopped, request:reassign};
+          const stopped = getAttempt(db, state.attemptId);
+          transitionAttempt(db, state.attemptId, "canceled", { threadId:stopped?.thread_id ?? undefined, reason:reassignedReason(reassign.reason) });
+          state.pendingReassign={from:stopped, request:reassign};
           // A new session that is not charged: the loop top counts it back, so attemptsHere ends where it was.
-          inSession=false;
-          attemptsHere-=1;
-          attemptId=id("lpattempt");
-          createAttempt(db,{id:attemptId,runId:input.runId,taskId:input.taskId});
-          writerThreadId=undefined;
-          writerSelection=undefined;
-          dirtBefore=[];
-          executionPacketSha256=null;
+          state.inSession=false;
+          state.attemptsHere-=1;
+          state.attemptId=id("lpattempt");
+          createAttempt(db,{id:state.attemptId,runId:input.runId,taskId:input.taskId});
+          state.writerThreadId=undefined;
+          state.writerSelection=undefined;
+          state.dirtBefore=[];
+          state.executionPacketSha256=null;
           continue;
         }
         // A failure the writer can fix itself is redone in its own thread and worktree, with the reason.
-        const failedBinding=getAttempt(db,attemptId);
+        const failedBinding=getAttempt(db,state.attemptId);
         const moreAttempts = attemptsLeftAfter(failedBinding);
-        let sessionEnd = moreAttempts ? sticky.sessionLimit(attemptId) : null;
-        let redo = moreAttempts && !sessionEnd ? await sticky.retryWriter(attemptId, input.runId) : null;
-        const turn = { failure:turnFailureKey(last), diff:typeof last.diffKey === "string" ? last.diffKey : null,
-          streamError:isWriterStreamError(typeof last.reason === "string" ? last.reason : null) };
-        if (redo && Date.now() - sessionStartedAt >= SESSION_MAX_MS) sessionEnd = `wall limit ${SESSION_MAX_MS / 60_000} min reached`;
-        else if (redo && previousTurn && turn.diff && previousTurn.diff === turn.diff && previousTurn.failure === turn.failure) {
+        let sessionEnd = moreAttempts ? sticky.sessionLimit(state.attemptId) : null;
+        let redo = moreAttempts && !sessionEnd ? await sticky.retryWriter(state.attemptId, input.runId) : null;
+        const turn = { failure:turnFailureKey(state.last), diff:typeof state.last.diffKey === "string" ? state.last.diffKey : null,
+          streamError:isWriterStreamError(typeof state.last.reason === "string" ? state.last.reason : null) };
+        if (redo && Date.now() - state.sessionStartedAt >= SESSION_MAX_MS) sessionEnd = `wall limit ${SESSION_MAX_MS / 60_000} min reached`;
+        else if (redo && state.previousTurn && turn.diff && state.previousTurn.diff === turn.diff && state.previousTurn.failure === turn.failure) {
           sessionEnd = "no progress: the same failure and the same diff in two turns in a row";
         }
         if (sessionEnd) redo = null;
         // A provider cut is continued in its thread once. Cut again right away (ck-21 on 2026-10-12, «[unavailable]» twice
         // within 8 s), the provider is down: the writer chain below takes the task over in this worktree, with its edits,
         // instead of up to five empty turns or a «repeated_failure» block.
-        if (redo && turn.streamError && previousTurn?.streamError) redo = null;
+        if (redo && turn.streamError && state.previousTurn?.streamError) redo = null;
         const streamHandOff = turn.streamError && !redo;
-        previousTurn = turn;
+        state.previousTurn = turn;
         // A failed attempt's own worktree is never merged; the next attempt starts from a fresh one.
         const removeFailedWorktree = () => removeWorktreeOf(failedBinding);
         // The worktree waits: the next attempt removes it when it starts, and a fallback writer may continue in it (below).
-        if (!redo) { unremovedWorktree = failedBinding; await rollbackLive(); }
-        if (last.status === "spawn_rejected" && typeof last.reason === "string"
-          && (last.reason.startsWith("execution_packet_failed:") || last.reason.startsWith("attempt_worktree_")
-            || last.reason.startsWith("attempt_workspace_"))) {
-          const rejected = getAttempt(db, attemptId);
-          if (rejected?.state === "spawn_rejected") transitionAttempt(db, attemptId, "blocked", { reason:last.reason });
+        if (!redo) { state.unremovedWorktree = failedBinding; await rollbackLive(); }
+        if (state.last.status === "spawn_rejected" && typeof state.last.reason === "string"
+          && (state.last.reason.startsWith("execution_packet_failed:") || state.last.reason.startsWith("attempt_worktree_")
+            || state.last.reason.startsWith("attempt_workspace_"))) {
+          const rejected = getAttempt(db, state.attemptId);
+          if (rejected?.state === "spawn_rejected") transitionAttempt(db, state.attemptId, "blocked", { reason:state.last.reason });
           // The working copy could not be made for a cause only a person clears (a stale path, a permission,
           // a full disk): parked as now, and the reason is put before the owner once per refusal fingerprint
           // — a machine wait never reaches a human otherwise (sma ap_copy_refusal).
-          if (last.reason.startsWith("attempt_worktree_")) {
-            const detail = last.reason.replace(/^attempt_worktree_(failed|baseline_failed|not_clean|provision_[a-z_]+):?/, "") || last.reason;
-            postOwnerItem(db, { key:`${copyRefusedKeyPrefix(input.runId, input.taskId)}${failureFingerprint(last.reason)}`, source:"writer", kind:"copy_refused", projectId:input.projectId, wake:false,
+          if (state.last.reason.startsWith("attempt_worktree_")) {
+            const detail = state.last.reason.replace(/^attempt_worktree_(failed|baseline_failed|not_clean|provision_[a-z_]+):?/, "") || state.last.reason;
+            postOwnerItem(db, { key:`${copyRefusedKeyPrefix(input.runId, input.taskId)}${failureFingerprint(state.last.reason)}`, source:"writer", kind:"copy_refused", projectId:input.projectId, wake:false,
               what:"Рабочая копия для задачи не создалась",
               why:`Причина: ${detail}. Задача припаркована: сама она не запустится, её нужно отправить снова после устранения причины.`,
-              evidence:[{ kind:"run", ref:input.runId }, { kind:"task", ref:input.taskId }, { kind:"attempt", ref:attemptId }] });
+              evidence:[{ kind:"run", ref:input.runId }, { kind:"task", ref:input.taskId }, { kind:"attempt", ref:state.attemptId }] });
           }
-          last = { ...last, status:"blocked" };
+          state.last = { ...state.last, status:"blocked" };
           break;
         }
-        if (last.status !== "accepted" && last.status !== "blocked") primaryFailure={...last};
-        const failed = String(last.status) as AttemptState;
+        if (state.last.status !== "accepted" && state.last.status !== "blocked") state.primaryFailure={...state.last};
+        const failed = String(state.last.status) as AttemptState;
         if (!RETRY_ELIGIBLE.includes(failed)) break;
-        const attempt = getAttempt(db, attemptId);
+        const attempt = getAttempt(db, state.attemptId);
         if (attempt?.state === "spawn_unknown" || attempt?.state === "spawn_requested") {
-          writerThreadId = await bestEffort(ctx.log, "writer reconcile attempt thread", services.reconcileAttemptThread(input.projectId, attempt), "");
+          state.writerThreadId = await bestEffort(ctx.log, "writer reconcile attempt thread", services.reconcileAttemptThread(input.projectId, attempt), "");
         } else if (attempt && !attempt.thread_id) {
           // An attempt whose writer thread is stored needs no scan; scanning every thread of the project here blocked
           // retries with reconcile_page_cap once SelfyStudio passed 1000 threads (live 2026-10-04).
@@ -1077,30 +1081,30 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
             // Both end the attempt: an error left it «spawn_rejected» with its stages closed, and nothing retried it (found by the
             // fault-injection simulation, tests/simulation). A reconcile_ reason is Lane Pilot's fault: the task is parked.
             transitionAttempt(db, attempt.id, "blocked", { reason:scanned.kind === "blocked" ? `reconcile_${scanned.reason}` : `reconcile_error: ${scanned.message}` });
-            last = { ...last, status:"blocked", reason:scanned.kind === "blocked" ? scanned.reason : scanned.message };
+            state.last = { ...state.last, status:"blocked", reason:scanned.kind === "blocked" ? scanned.reason : scanned.message };
             break;
           }
         }
         // A fault of Lane Pilot or the machine is not redone here: another writer meets the same fault. The task is
         // parked and restarts once a fix ships or the machine recovers.
         // A reason the rules have no confident match for goes to Jev (J-4, shadow by default: recorded, the rules' class used).
-        const failedClass = await judgedFailureClass({ jev, settings:async () => runSettings, projectId:input.projectId, runId:input.runId, db, kv:bb.storage.kv as never },
-          String(last.status), typeof last.reason === "string" ? last.reason : null, input.taskId);
+        const failedClass = await judgedFailureClass({ jev, settings:async () => state.runSettings, projectId:input.projectId, runId:input.runId, db, kv:bb.storage.kv as never },
+          String(state.last.status), typeof state.last.reason === "string" ? state.last.reason : null, input.taskId);
         // C6: a class's own intervention instead of the same retry — the streak of consecutive same-class failures of
         // this task decides. `failure.interventions=off` keeps the old uniform retry (live setting).
-        const priorRows = priorAttemptStates(db, input.runId, input.taskId, attemptId);
+        const priorRows = priorAttemptStates(db, input.runId, input.taskId, state.attemptId);
         let sameClassStreak = 1;
         for (const row of priorRows) { if (failureClass(row.state, row.reason) === failedClass) sameClassStreak++; else break; }
-        const intervention = configuredSetting(runSettings, "failure.interventions") === "off" ? "same_retry_remark" : failureIntervention(failedClass, sameClassStreak);
-        judged = { status: String(last.status), reason: typeof last.reason === "string" ? last.reason : null, klass: failedClass, mast: MAST_OF_FAILURE[failedClass] ?? "external:unknown", intervention, streak: sameClassStreak };
+        const intervention = configuredSetting(state.runSettings, "failure.interventions") === "off" ? "same_retry_remark" : failureIntervention(failedClass, sameClassStreak);
+        state.judged = { status: String(state.last.status), reason: typeof state.last.reason === "string" ? state.last.reason : null, klass: failedClass, mast: MAST_OF_FAILURE[failedClass] ?? "external:unknown", intervention, streak: sameClassStreak };
         // A check the host killed for time is not the task's red code: one retry, then it stops on its own budget.
         if (failedClass === "verification_timeout") {
           const reasons = attemptReasonsForTask(db, input.runId, input.taskId);
           if (verificationTimeoutOverBudget(reasons)) {
             const reason = `verification_timeout_budget: the check timed out again after its ${VERIFICATION_TIMEOUT_RETRIES} retry; this budget is separate from the task's attempts. Raise timeout_sec or narrow the command, then dispatch again`;
-            const latest = getAttempt(db, attemptId);
-            if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason, ...failureFieldsOf(last) });
-            last = { ...last, status:"blocked", reason };
+            const latest = getAttempt(db, state.attemptId);
+            if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason, ...failureFieldsOf(state.last) });
+            state.last = { ...state.last, status:"blocked", reason };
             break;
           }
         }
@@ -1113,95 +1117,95 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
         // A stream cut is not a refusal: the provider cut a turn mid-work, its edits are in the worktree, and the same
         // thread continues them once as before — only a second cut in a row is the provider's (streamHandOff above).
         const providerHandsOff = failedClass === "provider" && !turn.streamError
-          && runSettings["writer.fallback_on_provider_failure"] !== "after_retry"
+          && state.runSettings["writer.fallback_on_provider_failure"] !== "after_retry"
           // No other writer to hand over to: the same model is tried again (free), instead of a block nobody else could lift.
           && otherWriters().fallbackList.length > 0;
-        if (failedClass === "limit" || providerHandsOff || isWriterSilent(typeof last.reason === "string" ? last.reason : null) || streamHandOff) {
-          const latest = getAttempt(db, attemptId);
-          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status), ...failureFieldsOf(last) });
-          last = { ...last, status:"blocked" };
+        if (failedClass === "limit" || providerHandsOff || isWriterSilent(typeof state.last.reason === "string" ? state.last.reason : null) || streamHandOff) {
+          const latest = getAttempt(db, state.attemptId);
+          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(state.last.reason ?? state.last.status), ...failureFieldsOf(state.last) });
+          state.last = { ...state.last, status:"blocked" };
           break;
         }
         // A secret the checks need went away mid-task: the attempt is not charged and the task is parked until it is back.
-        if (PARKED_CLASSES.has(failedClass) || isWaitingSecret(typeof last.reason === "string" ? last.reason : null)) {
-          const latest = getAttempt(db, attemptId);
-          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status), ...failureFieldsOf(last) });
-          last = { ...last, status:"blocked" };
+        if (PARKED_CLASSES.has(failedClass) || isWaitingSecret(typeof state.last.reason === "string" ? state.last.reason : null)) {
+          const latest = getAttempt(db, state.attemptId);
+          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(state.last.reason ?? state.last.status), ...failureFieldsOf(state.last) });
+          state.last = { ...state.last, status:"blocked" };
           break;
         }
         // The retry-safety gate (writer.retry_safety): an automatic retry stops when the failed attempt's work area was
         // touched after it ended (owner edits, rewritten check evidence, a catalog secret in the diff).
-        if (configuredSetting(runSettings, "writer.retry_safety") !== "off") {
-          const safety = await retrySafetyStop({ db, host, hostId:input.config.hostId, task:freshTask, attemptId, liveFolder, log:ctx.log });
+        if (configuredSetting(state.runSettings, "writer.retry_safety") !== "off") {
+          const safety = await retrySafetyStop({ db, host, hostId:input.config.hostId, task:state.freshTask, attemptId: state.attemptId, liveFolder: state.liveFolder, log:ctx.log });
           if (safety) {
-            const latest = getAttempt(db, attemptId);
+            const latest = getAttempt(db, state.attemptId);
             if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:safety });
-            last = { ...last, status:"blocked", reason:safety };
+            state.last = { ...state.last, status:"blocked", reason:safety };
             break;
           }
         }
         // The task-level caps (writer.task_wall_clock_min, writer.verify_max_passes): the session caps above bound one
         // session; these bound the task across sessions, restarts and chain handoffs.
         {
-          const wallClockMin = Number(runSettings["writer.task_wall_clock_min"]) || 0;
-          const verifyMaxPasses = Number(runSettings["writer.verify_max_passes"]) || 0;
+          const wallClockMin = Number(state.runSettings["writer.task_wall_clock_min"]) || 0;
+          const verifyMaxPasses = Number(state.runSettings["writer.verify_max_passes"]) || 0;
           const limitStop = taskLimitStop({ db, runId:input.runId, taskId:input.taskId,
             wallClockMin:wallClockMin > 0 ? wallClockMin : TASK_WALL_CLOCK_MIN, verifyMaxPasses:verifyMaxPasses > 0 ? verifyMaxPasses : VERIFY_MAX_PASSES });
           if (limitStop) {
-            const latest = getAttempt(db, attemptId);
+            const latest = getAttempt(db, state.attemptId);
             if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:limitStop });
-            last = { ...last, status:"blocked", reason:limitStop };
+            state.last = { ...state.last, status:"blocked", reason:limitStop };
             break;
           }
         }
         // The session ended: the turn cap or the wall cap blocks the task. A repeated red check (the same failure and
         // the same diff twice) does not: the next attempt goes to the next writer in the chain, not this one again.
         if (sessionEnd) {
-          const ended = `${sessionEnd}: ${String(last.reason ?? last.status)}`;
-          if (sessionEnd.startsWith("no progress:") && failedClass !== "verification_timeout" && verificationFailure(last)) {
-            checkEscalation = ended;
+          const ended = `${sessionEnd}: ${String(state.last.reason ?? state.last.status)}`;
+          if (sessionEnd.startsWith("no progress:") && failedClass !== "verification_timeout" && verificationFailure(state.last)) {
+            state.checkEscalation = ended;
             break;
           }
-          const latest = getAttempt(db, attemptId);
-          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:ended, ...failureFieldsOf(last) });
-          last = { ...last, status:"blocked", reason:ended };
+          const latest = getAttempt(db, state.attemptId);
+          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:ended, ...failureFieldsOf(state.last) });
+          state.last = { ...state.last, status:"blocked", reason:ended };
           break;
         }
         if (countChargedAttempts(db, input.runId, input.taskId) >= MAIN_ATTEMPT_LIMIT
-          || attemptsHere >= MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT) {
-          const latest = getAttempt(db, attemptId);
+          || state.attemptsHere >= MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT) {
+          const latest = getAttempt(db, state.attemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) {
-            const exhausted = `retry limit 2 exhausted${typeof last.reason === "string" && last.reason ? `: ${last.reason}` : ""}`;
-            transitionAttempt(db, latest.id, "blocked", { reason:exhausted, ...failureFieldsOf(last) });
-            last = { ...last, status:"blocked", reason:exhausted };
+            const exhausted = `retry limit 2 exhausted${typeof state.last.reason === "string" && state.last.reason ? `: ${state.last.reason}` : ""}`;
+            transitionAttempt(db, latest.id, "blocked", { reason:exhausted, ...failureFieldsOf(state.last) });
+            state.last = { ...state.last, status:"blocked", reason:exhausted };
           }
           break;
         }
         // Two attempts of the task family failing the same way stop the task: a third attempt of the same writer
         // would only repeat them. A repeated red check is the exception: the next attempt is the next writer in the
         // chain. A turn in the same thread is not stopped here: the session's own early stop is above.
-        const repeated = redo ? null : repeatedFailureReason(familyFailure, { state:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
-        if (repeated && failedClass !== "verification_timeout" && verificationFailure(last)) {
-          checkEscalation = repeated;
-          primaryFailure = { ...last };
+        const repeated = redo ? null : repeatedFailureReason(state.familyFailure, { state:String(state.last.status), reason:typeof state.last.reason === "string" ? state.last.reason : null });
+        if (repeated && failedClass !== "verification_timeout" && verificationFailure(state.last)) {
+          state.checkEscalation = repeated;
+          state.primaryFailure = { ...state.last };
           break;
         }
         // Cascade retry (arXiv #25/26, writer.retry_escalate): with the setting on, the first red check already goes to
         // the next writer in the fallback chain — a cheaper writer failing the task's check is reason enough to try
         // the next one, inside the same attempt budget. Off by default: a single failure retries the same writer.
-        if (!repeated && failedClass === "task" && verificationFailure(last) && runSettings["writer.retry_escalate"] === true) {
-          checkEscalation = `retry_escalate: ${String(last.reason ?? "")}`;
-          primaryFailure = { ...last };
+        if (!repeated && failedClass === "task" && verificationFailure(state.last) && state.runSettings["writer.retry_escalate"] === true) {
+          state.checkEscalation = `retry_escalate: ${String(state.last.reason ?? "")}`;
+          state.primaryFailure = { ...state.last };
           break;
         }
         if (repeated) {
-          const latest = getAttempt(db, attemptId);
-          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:repeated, ...failureFieldsOf(last) });
-          last = { ...last, status:"blocked", reason:repeated };
-          primaryFailure = { ...last };
+          const latest = getAttempt(db, state.attemptId);
+          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:repeated, ...failureFieldsOf(state.last) });
+          state.last = { ...state.last, status:"blocked", reason:repeated };
+          state.primaryFailure = { ...state.last };
           // The two normal moves are spent: the wall ladder opens (hunters from other sides, then the backlog), see src/rooms/wall.
-          services.wall?.noteTaskStop({ projectId:input.projectId, runId:input.runId, taskId:input.taskId, family:taskFamily(input.taskId), state:familyFailure?.state ?? "validation_failed",
-            reason:repeated.replace(/^repeated_failure:\s*/, ""), failureCode:typeof last.failureCode === "string" ? last.failureCode : null, pmThreadId:input.pmThreadId ?? null, task:input.task, plan:input.plan })
+          services.wall?.noteTaskStop({ projectId:input.projectId, runId:input.runId, taskId:input.taskId, family:taskFamily(input.taskId), state:state.familyFailure?.state ?? "validation_failed",
+            reason:repeated.replace(/^repeated_failure:\s*/, ""), failureCode:typeof state.last.failureCode === "string" ? state.last.failureCode : null, pmThreadId:input.pmThreadId ?? null, task:input.task, plan:input.plan })
             .catch((cause:unknown) => ctx.log(`wall: could not note the stop of ${input.taskId}: ${cause instanceof Error ? cause.message : String(cause)}`));
           break;
         }
@@ -1210,67 +1214,67 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
         // What is left here is only a same-model respawn — the move C6 replaces by class: a task that keeps failing
         // the same way stops with narrow_brief, and a provider's second refusal in a row (or its first, with
         // writer.fallback_on_provider_failure=immediate, decided above) moves the task to the next writer now.
-        if (!redo && intervention === "narrow_brief" && !liveFolder) {
+        if (!redo && intervention === "narrow_brief" && !state.liveFolder) {
           // The original reason stays in the blocked reason: the class and the advice are a prefix, not a replacement —
           // a receipt reader (and the live-folder rollback test) still sees what actually failed.
-          const reason = `narrow_brief: ${String(last.reason ?? last.status)} — ${failedClass} failed ${sameClassStreak} attempts in a row; narrow the brief or change the approach, then dispatch again`;
-          const latest = getAttempt(db, attemptId);
-          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason, ...failureFieldsOf(last) });
-          last = { ...last, status:"blocked", reason };
+          const reason = `narrow_brief: ${String(state.last.reason ?? state.last.status)} — ${failedClass} failed ${sameClassStreak} attempts in a row; narrow the brief or change the approach, then dispatch again`;
+          const latest = getAttempt(db, state.attemptId);
+          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason, ...failureFieldsOf(state.last) });
+          state.last = { ...state.last, status:"blocked", reason };
           break;
         }
         if (!redo && intervention === "next_writer" && failedClass === "provider" && sameClassStreak >= 2) {
-          const latest = getAttempt(db, attemptId);
-          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status), ...failureFieldsOf(last) });
-          last = { ...last, status:"blocked" };
+          const latest = getAttempt(db, state.attemptId);
+          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(state.last.reason ?? state.last.status), ...failureFieldsOf(state.last) });
+          state.last = { ...state.last, status:"blocked" };
           break;
         }
-        familyFailure = { state:String(last.status), reason:typeof last.reason === "string" ? last.reason : null };
-        halfBound = false;
-        const failedLast = last;
-        if (unremovedWorktree) { const stale = unremovedWorktree; unremovedWorktree = undefined; await removeWorktreeOf(stale); }
-        attemptId = id("lpattempt");
-        createAttempt(db, { id:attemptId, runId:input.runId, taskId:input.taskId });
-        writerThreadId = undefined;
-        writerSelection=undefined;
-        activeConfig = freshConfig;
-        activeTask = freshTask;
-        dirtBefore = [];
-        executionPacketSha256 = null;
-        if (redo && !await continueWith(redo, redo.kind, previousAttemptBrief(await trimCheckLogsIn(jev(), { ...failedLast, produced:[] }, freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:runSettings }, ctx.log), freshTask, failedBinding?.dirt_before ?? [], liveFolder), failedBinding?.dirt_before)) {
+        state.familyFailure = { state:String(state.last.status), reason:typeof state.last.reason === "string" ? state.last.reason : null };
+        state.halfBound = false;
+        const failedLast = state.last;
+        if (state.unremovedWorktree) { const stale = state.unremovedWorktree; state.unremovedWorktree = undefined; await removeWorktreeOf(stale); }
+        state.attemptId = id("lpattempt");
+        createAttempt(db, { id:state.attemptId, runId:input.runId, taskId:input.taskId });
+        state.writerThreadId = undefined;
+        state.writerSelection=undefined;
+        state.activeConfig = state.freshConfig;
+        state.activeTask = state.freshTask;
+        state.dirtBefore = [];
+        state.executionPacketSha256 = null;
+        if (redo && !await continueWith(redo, redo.kind, previousAttemptBrief(await trimCheckLogsIn(jev(), { ...failedLast, produced:[] }, state.freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:state.runSettings }, ctx.log), state.freshTask, failedBinding?.dirt_before ?? [], state.liveFolder), failedBinding?.dirt_before)) {
           await removeFailedWorktree();
           await rollbackLive();
         }
-        inSession = Boolean(redo && writerThreadId);
-        if (inSession) await bindLiveBackup();
+        state.inSession = Boolean(redo && state.writerThreadId);
+        if (state.inSession) await bindLiveBackup();
       }
       // No attempt was left for this start: end the queued attempt instead of leaving it queued with failed stages.
-      if (attemptsHere === 0 && getAttempt(db, attemptId)?.state === "queued") {
+      if (state.attemptsHere === 0 && getAttempt(db, state.attemptId)?.state === "queued") {
         const exhausted = "retry limit 2 exhausted: the task's attempts were spent before this start";
-        transitionAttempt(db, attemptId, "blocked", { reason:exhausted });
-        last = { status:"blocked", reason:exhausted, attemptId };
+        transitionAttempt(db, state.attemptId, "blocked", { reason:exhausted });
+        state.last = { status:"blocked", reason:exhausted, attemptId: state.attemptId };
       }
       return "done";
       };
       /** The primary writer exhausted its session: the fallback chain takes the task over, writer by writer. */
       const fallbackChain = async ():Promise<"done"|"stop"> => {
-      if (last.status !== "accepted" && primaryFailure) {
+      if (state.last.status !== "accepted" && state.primaryFailure) {
         const { settings, fallbackList } = otherWriters();
         // The writer's fallbacks in turn, then the PM's model; each takes over only while the failure is the model's, not the task's.
         // A provider, limit or catalog fault walks the chain. A repeated red check takes only the next writer (the same
         // pair is already excluded): another pass of this writer would only repeat the check.
-        const primaryClass = failureClass(String(primaryFailure.status), typeof primaryFailure.reason === "string" ? primaryFailure.reason : null);
-        const escalate = checkEscalation !== null && primaryClass === "task";
+        const primaryClass = failureClass(String(state.primaryFailure.status), typeof state.primaryFailure.reason === "string" ? state.primaryFailure.reason : null);
+        const escalate = state.checkEscalation !== null && primaryClass === "task";
         const routed = primaryClass === "provider" || primaryClass === "limit" || escalate
           ? await chainWithRoom(fallbackList,input.config.hostId,settings,input.taskId)
           : { chain:[] as typeof fallbackList, room:false, nextReset:null };
         const fullChain = routed.chain;
         const chain = escalate ? fullChain.slice(0, 1) : fullChain;
-        let failure:Record<string, unknown>=escalate ? { ...primaryFailure, checkEscalation:true } : primaryFailure;
-        const primaryAttemptId=typeof primaryFailure.attemptId === "string" ? primaryFailure.attemptId : attemptId;
+        let failure:Record<string, unknown>=escalate ? { ...state.primaryFailure, checkEscalation:true } : state.primaryFailure;
+        const primaryAttemptId=typeof state.primaryFailure.attemptId === "string" ? state.primaryFailure.attemptId : state.attemptId;
         // The writer the next fallback continues: the failed attempt that kept its worktree (worktree mode only), then each
         // fallback that started. Its thread and workspace are read when a fallback starts.
-        let continueFrom:ReturnType<typeof getAttempt>=!liveFolder&&unremovedWorktree?.id===primaryAttemptId ? unremovedWorktree : undefined;
+        let continueFrom:ReturnType<typeof getAttempt>=!state.liveFolder&&state.unremovedWorktree?.id===primaryAttemptId ? state.unremovedWorktree : undefined;
         /** The last fallback writer that ran: its failure is the task's result once the chain has ended. */
         let lastFallbackAttemptId:string|null=null;
         // Every writer provider is in a spent window: the task waits for the nearest reset, it is not a task failure.
@@ -1279,17 +1283,17 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
           // so, not «usage windows» — the owner read it as spent limits on 2026-11-01. The prefix keeps the 15-minute recheck.
           const reason = fallbackList.length
             ? `capacity_saturated:${routed.nextReset ?? "unknown"}: every writer provider is over its usage window; the task waits for the nearest reset`
-            : `capacity_saturated:unknown: no other writer can take the task (the writer's fallbacks are off and the PM runs the writer's own model); it retries every 15 minutes until the writer works again. Writer: ${typeof primaryFailure.reason === "string" ? primaryFailure.reason.slice(0, 160) : String(primaryFailure.status)}`;
+            : `capacity_saturated:unknown: no other writer can take the task (the writer's fallbacks are off and the PM runs the writer's own model); it retries every 15 minutes until the writer works again. Writer: ${typeof state.primaryFailure.reason === "string" ? state.primaryFailure.reason.slice(0, 160) : String(state.primaryFailure.status)}`;
           const latest = getAttempt(db, primaryAttemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason });
-          last = { ...last, status:"blocked", reason, emergencyFallback:{ state:"skipped", reason:"capacity_saturated" } };
+          state.last = { ...state.last, status:"blocked", reason, emergencyFallback:{ state:"skipped", reason:"capacity_saturated" } };
         } else if (!chain.length) {
-          if (escalate && checkEscalation) {
-            const stuck = getAttempt(db, typeof primaryFailure.attemptId === "string" ? primaryFailure.attemptId : attemptId);
-            if (stuck && RETRY_ELIGIBLE.includes(stuck.state as AttemptState)) transitionAttempt(db, stuck.id, "blocked", { reason:checkEscalation, ...failureFieldsOf(primaryFailure) });
-            last = { ...last, status:"blocked", reason:checkEscalation };
+          if (escalate && state.checkEscalation) {
+            const stuck = getAttempt(db, typeof state.primaryFailure.attemptId === "string" ? state.primaryFailure.attemptId : state.attemptId);
+            if (stuck && RETRY_ELIGIBLE.includes(stuck.state as AttemptState)) transitionAttempt(db, stuck.id, "blocked", { reason:state.checkEscalation, ...failureFieldsOf(state.primaryFailure) });
+            state.last = { ...state.last, status:"blocked", reason:state.checkEscalation };
           }
-          last={...last,emergencyFallback:{state:"skipped",
+          state.last={...state.last,emergencyFallback:{state:"skipped",
             reason:primaryClass === "provider" || primaryClass === "limit" ? "configured_pm_selection_matches_primary" : escalate ? "no next writer" : `failure is not a provider fault (${primaryClass})`}};
         }
         // H2: a fallback that cannot start costs no attempt — the chain is walked first and held members are skipped.
@@ -1315,7 +1319,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
           // A cancel stops the writer's thread, which reads as a provider failure; the chain must not take it as one
           // and start the next model (2026-10-04: an owner's stop of SelfyStudio was followed by a new fallback writer).
           if (typeof failure.attemptId === "string" && getAttempt(db, failure.attemptId)?.state === "canceled") break;
-          if (getAttempt(db, attemptId)?.state === "canceled") break;
+          if (getAttempt(db, state.attemptId)?.state === "canceled") break;
           // A file the contract expects and the writer did not make is the task's problem, not the model's limit:
           // another model meets the same contract (GLM spent 138 min per such task on 2026-10-03).
           if (typeof failure.reason === "string" && failure.reason.startsWith("missing expected_outputs")) break;
@@ -1340,77 +1344,77 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
             } : undefined;
             const emergencyAttemptId=id("lpattempt");
             createAttempt(db,{id:emergencyAttemptId,runId:input.runId,taskId:input.taskId});
-            writerSelection=undefined;
+            state.writerSelection=undefined;
             const spawned=await services.spawnWriterAttempt({
               projectId:input.projectId,runId:input.runId,taskId:input.taskId,attemptId:emergencyAttemptId,
-              config:freshConfig,task:freshTask,plan:input.plan,pmThreadId:input.pmThreadId,pmReadContext,
+              config:state.freshConfig,task:state.freshTask,plan:input.plan,pmThreadId:input.pmThreadId,pmReadContext: state.pmReadContext,
               emergency:{...emergencySelection,reason:decision.reason,...(fallback.pm?{}:{reasoningLevel:fallback.reasoningLevel})},
               continuation,
               // The handoff names only the provider's stop; a stray file or a red check of an earlier turn would be redone
               // (vf-s4-items 2026-10-24: the fallback rewrote Buffs.luau, which the first turn had been rejected for).
-              ...(own.failure ? { previousAttempt:previousAttemptBrief(await trimCheckLogsIn(jev(), { ...own.failure, produced:[] }, freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:runSettings }, ctx.log), freshTask, undefined, liveFolder) } : {}),
+              ...(state.own.failure ? { previousAttempt:previousAttemptBrief(await trimCheckLogsIn(jev(), { ...state.own.failure, produced:[] }, state.freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:state.runSettings }, ctx.log), state.freshTask, undefined, state.liveFolder) } : {}),
             });
             if (!spawned.ok) {
               // The owner's stop landed while this fallback was being made: its spawn ends canceled (endSpawnFailure), and the task
               // is canceled — not «emergency_fallback_failed», no next fallback, no park (cab-unslop-kit.3, 2026-10-31).
               if (spawned.status === "canceled" || getAttempt(db,emergencyAttemptId)?.state === "canceled") {
-                last={status:"canceled",reason:spawned.reason,attemptId:emergencyAttemptId};
-                writerThreadId=undefined;
+                state.last={status:"canceled",reason:spawned.reason,attemptId:emergencyAttemptId};
+                state.writerThreadId=undefined;
                 break;
               }
               const fallbackFailureReason=`emergency_fallback_failed:${spawned.reason}`;
               transitionAttempt(db,emergencyAttemptId,"blocked",{reason:fallbackFailureReason});
-              last={status:"blocked",reason:fallbackFailureReason,attemptId:emergencyAttemptId,
+              state.last={status:"blocked",reason:fallbackFailureReason,attemptId:emergencyAttemptId,
                 emergencyFallback:{state:"failed",reason:spawned.reason,trigger:decision.reason,attemptId:emergencyAttemptId,providerId:fallback.providerId,model:fallback.model}};
-              writerThreadId=undefined;
+              state.writerThreadId=undefined;
               lastFallbackAttemptId=null;
               // A fallback that cannot start (its own limit, not in this host's catalog) hands over to the next one.
               failure={status:"spawn_rejected",reason:spawned.reason};
               continue;
             } else {
-              writerThreadId=spawned.threadId;
+              state.writerThreadId=spawned.threadId;
               // The fallback owns the continued worktree now; the next fallback, if this one fails, continues from here.
-              if (continuation) unremovedWorktree=undefined;
+              if (continuation) state.unremovedWorktree=undefined;
               continueFrom=getAttempt(db,emergencyAttemptId);
-              if (liveFolder) { liveBackupId=emergencyAttemptId; await bindLiveBackup(); }
-              writerSelection=spawned.providerId&&spawned.model?{
+              if (state.liveFolder) { state.liveBackupId=emergencyAttemptId; await bindLiveBackup(); }
+              state.writerSelection=spawned.providerId&&spawned.model?{
               providerId:spawned.providerId,model:spawned.model,
               reasoningLevel:spawned.reasoningLevel,serviceTier:spawned.serviceTier,selectionSource:spawned.selectionSource,
             }:undefined;
-              if (writerSelection) await noteWriterPair(bb.storage.kv as never, input.runId, input.taskId,
-                { providerId:writerSelection.providerId, model:writerSelection.model }, `failure_class:${primaryClass}`, bb.log);
-              activeConfig=freshConfig;
-              activeTask=retargetTask(freshTask,spawned.workspacePath);
-              executionPacketSha256=spawned.executionPacketSha256 ?? null;
+              if (state.writerSelection) await noteWriterPair(bb.storage.kv as never, input.runId, input.taskId,
+                { providerId:state.writerSelection.providerId, model:state.writerSelection.model }, `failure_class:${primaryClass}`, bb.log);
+              state.activeConfig=state.freshConfig;
+              state.activeTask=retargetTask(state.freshTask,spawned.workspacePath);
+              state.executionPacketSha256=spawned.executionPacketSha256 ?? null;
               const fallbackWorkspace=getAttempt(db,emergencyAttemptId)?.workspace_path;
-              dirtBefore=!continuation&&baselineWorkspacePath&&fallbackWorkspace===baselineWorkspacePath
-                ? baselineDirtBefore??spawned.dirtBefore : spawned.dirtBefore;
+              state.dirtBefore=!continuation&&state.baselineWorkspacePath&&fallbackWorkspace===state.baselineWorkspacePath
+                ? state.baselineDirtBefore??spawned.dirtBefore : spawned.dirtBefore;
               const emergencyFallback={reason:decision.reason,primaryAttemptId,providerId:emergencySelection.providerId,model:emergencySelection.model};
-              last={...await services.finishWriterAttempt({
-                projectId:input.projectId,config:activeConfig,task:activeTask,runId:input.runId,taskId:input.taskId,
-                attemptId:emergencyAttemptId,pmThreadId:input.pmThreadId,writerThreadId,dirtBefore,
-                emergencyFallback,releaseSlot:()=>{ releaseWriterSlot?.(); releaseWriterSlot=undefined; },
+              state.last={...await services.finishWriterAttempt({
+                projectId:input.projectId,config:state.activeConfig,task:state.activeTask,runId:input.runId,taskId:input.taskId,
+                attemptId:emergencyAttemptId,pmThreadId:input.pmThreadId,writerThreadId: state.writerThreadId,dirtBefore: state.dirtBefore,
+                emergencyFallback,releaseSlot:()=>{ state.releaseWriterSlot?.(); state.releaseWriterSlot=undefined; },
               }),emergencyFallback:{state:"completed",...emergencyFallback,attemptId:emergencyAttemptId}};
-              if (failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null) === "judgment") dropLiveWriterKey();
+              if (failureClass(String(state.last.status), typeof state.last.reason === "string" ? state.last.reason : null) === "judgment") dropLiveWriterKey();
               const workspaceBinding=getAttempt(db,emergencyAttemptId);
-              if(workspaceBinding?.workspace_path) last={...last,workspace:{path:workspaceBinding.workspace_path,
+              if(workspaceBinding?.workspace_path) state.last={...state.last,workspace:{path:workspaceBinding.workspace_path,
                 environmentId:workspaceBinding.environment_id,decision:workspaceBinding.workspace_decision,
                 ...(isLiveDecision(workspaceBinding.workspace_decision)?{mode:LIVE_FOLDER_RECEIPT}:{})}};
-              await noteAttemptOutcome({ budget, writerThreadId, writerSelection, status:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
-              noteOwnFailure(last);
-              if (last.status === "accepted") { acceptedAttemptId=emergencyAttemptId; break; }
+              await noteAttemptOutcome({ budget: state.budget, writerThreadId: state.writerThreadId, writerSelection: state.writerSelection, status:String(state.last.status), reason:typeof state.last.reason === "string" ? state.last.reason : null });
+              noteOwnFailure(state, state.last);
+              if (state.last.status === "accepted") { state.acceptedAttemptId=emergencyAttemptId; break; }
               lastFallbackAttemptId=emergencyAttemptId;
-              failure=last;
+              failure=state.last;
             }
         }
         // The chain ended without a writer that got through: the task ends blocked with the last fallback's reason, as
         // every exit of the loop above does. Left «validation_failed» it read as still at work: the PM was never told, and
         // a task that depends on it waited with no limit (SelfyStudio 2026-10-15, chat-free-muse-trial-api: 6.5 hours).
-        const endedFallback=lastFallbackAttemptId && last.status !== "accepted" ? getAttempt(db,lastFallbackAttemptId) : undefined;
+        const endedFallback=lastFallbackAttemptId && state.last.status !== "accepted" ? getAttempt(db,lastFallbackAttemptId) : undefined;
         if (endedFallback && RETRY_ELIGIBLE.includes(endedFallback.state as AttemptState)) {
-          const endedReason=typeof last.reason === "string" && last.reason ? last.reason : String(last.status);
-          transitionAttempt(db,endedFallback.id,"blocked",{reason:endedReason, ...failureFieldsOf(last)});
-          last={...last,status:"blocked",reason:endedReason};
+          const endedReason=typeof state.last.reason === "string" && state.last.reason ? state.last.reason : String(state.last.status);
+          transitionAttempt(db,endedFallback.id,"blocked",{reason:endedReason, ...failureFieldsOf(state.last)});
+          state.last={...state.last,status:"blocked",reason:endedReason};
         }
       }
       return "done";
@@ -1420,35 +1424,35 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
       // A worktree kept for a fallback that did not continue in it (no chain, a guard stopped it) is removed as any failed one.
       // A writer's question keeps its worktree: the answer continues there. Removing it here also hung the live-writer
       // key (the sweep then skipped the question) when the host call did not return.
-      const asked = failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null) === "judgment";
-      const questionWorktree = asked && unremovedWorktree?.id === (typeof last.attemptId === "string" ? last.attemptId : attemptId);
-      if (unremovedWorktree && !questionWorktree) await removeWorktreeOf(unremovedWorktree);
+      const asked = failureClass(String(state.last.status), typeof state.last.reason === "string" ? state.last.reason : null) === "judgment";
+      const questionWorktree = asked && state.unremovedWorktree?.id === (typeof state.last.attemptId === "string" ? state.last.attemptId : state.attemptId);
+      if (state.unremovedWorktree && !questionWorktree) await removeWorktreeOf(state.unremovedWorktree);
       // Whatever the writers left in a folder without git is taken back when no attempt was accepted.
-      if (last.status !== "accepted") await rollbackLive();
+      if (state.last.status !== "accepted") await rollbackLive();
       // The task is over for these writers (a writer's question keeps its thread: its answer goes on there).
-      if (last.status !== "accepted" && failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null) !== "judgment") await releaseFailedThreads();
+      if (state.last.status !== "accepted" && failureClass(String(state.last.status), typeof state.last.reason === "string" ? state.last.reason : null) !== "judgment") await releaseFailedThreads();
       // The writer's turns on this task (its first answer and every feedback turn), kept in the stage receipt.
-      const turns = writerThreadId ? countThreadTurns(db, input.runId, input.taskId, writerThreadId) : 0;
-      if (turns) last = { ...last, turns };
-      const accepted = last.status === "accepted";
-      const reason = accepted ? undefined : String(last.reason ?? last.status ?? "writer_failed");
+      const turns = state.writerThreadId ? countThreadTurns(db, input.runId, input.taskId, state.writerThreadId) : 0;
+      if (turns) state.last = { ...state.last, turns };
+      const accepted = state.last.status === "accepted";
+      const reason = accepted ? undefined : String(state.last.reason ?? state.last.status ?? "writer_failed");
       // A writer's question would wait unseen: writers are quiet children and do not wake the PM.
-      if (!accepted && reason && failureClass(String(last.status), reason) === "judgment" && input.pmThreadId) {
+      if (!accepted && reason && failureClass(String(state.last.status), reason) === "judgment" && input.pmThreadId) {
         noteToldPmDirectly(db, input.pmThreadId, input.taskId);
-        void bestEffort(ctx.log, "writer question notice", sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:writerThreadId || undefined,
-          text:`Lane Pilot: ${input.taskId} stopped with a question from its writer. Answer it with lane_pilot_answer_writer (taskId, answer) — from the code or docs if they settle it, else ask the owner once; the writer continues in its own thread and no attempt is spent. ${WRITER_QUESTION_WAIT_TEXT} Send the task again only when the contract itself must change; tasks that depend on it wait for that.${liveFolder ? " This folder has no git, so the writer's files stay where they are and the folder stays locked: other tasks for it queue until this question is answered (or the task is sent again)." : ""}\n${reason.slice(0, 1200)}` }), undefined);
+        void bestEffort(ctx.log, "writer question notice", sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:state.writerThreadId || undefined,
+          text:`Lane Pilot: ${input.taskId} stopped with a question from its writer. Answer it with lane_pilot_answer_writer (taskId, answer) — from the code or docs if they settle it, else ask the owner once; the writer continues in its own thread and no attempt is spent. ${WRITER_QUESTION_WAIT_TEXT} Send the task again only when the contract itself must change; tasks that depend on it wait for that.${state.liveFolder ? " This folder has no git, so the writer's files stay where they are and the folder stays locked: other tasks for it queue until this question is answered (or the task is sent again)." : ""}\n${reason.slice(0, 1200)}` }), undefined);
       }
       // A failed task is told to stability before the receipts close the run: its record reads the run still running
       // (the harness breaker's noteHarnessFailure skips a run that is already blocked). Accepted work emits after the
       // refresh below — the after-acceptance graph starts on the settled run, as before.
-      if (!accepted && last.status !== "canceled") {
+      if (!accepted && state.last.status !== "canceled") {
         try {
           await emitAttemptFinished(ctx, { scope:"task", projectId:input.projectId, runId:input.runId, taskId:input.taskId,
-            attemptId, pmThreadId:input.pmThreadId, writerThreadId:writerThreadId ?? null, task:input.task, config:activeConfig,
-            status:String(last.status), reason:reason ?? null, result:last,
-            writerSelection:writerSelection ? { providerId:writerSelection.providerId, model:writerSelection.model } : undefined,
-            judged:judged && judged.status === String(last.status) && judged.reason === (typeof last.reason === "string" ? last.reason : null)
-              ? { failureClass:judged.klass, mast:judged.mast ?? null, intervention:judged.intervention ?? null, streak:judged.streak ?? null } : undefined,
+            attemptId: state.attemptId, pmThreadId:input.pmThreadId, writerThreadId:state.writerThreadId ?? null, task:input.task, config:state.activeConfig,
+            status:String(state.last.status), reason:reason ?? null, result:state.last,
+            writerSelection:state.writerSelection ? { providerId:state.writerSelection.providerId, model:state.writerSelection.model } : undefined,
+            judged:state.judged && state.judged.status === String(state.last.status) && state.judged.reason === (typeof state.last.reason === "string" ? state.last.reason : null)
+              ? { failureClass:state.judged.klass, mast:state.judged.mast ?? null, intervention:state.judged.intervention ?? null, streak:state.judged.streak ?? null } : undefined,
             acceptedAttemptId:null });
         } catch (emitCause) {
           ctx.log(`attempt-finished: emit failed for ${input.taskId}: ${emitCause instanceof Error ? emitCause.message : String(emitCause)}`);
@@ -1459,35 +1463,35 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
         if (current?.state === "pending") {
           recordStage(db, { runId:input.runId, taskId:input.taskId, stageId, state:"running", input:input.plan });
         }
-        const terminal = accepted ? "passed" : last.status === "canceled" ? "canceled" : "failed";
+        const terminal = accepted ? "passed" : state.last.status === "canceled" ? "canceled" : "failed";
         recordStage(db, { runId:input.runId, taskId:input.taskId, stageId, state:terminal,
           input:input.plan, attempt:Math.min(countAttempts(db, input.runId, input.taskId),MAIN_ATTEMPT_LIMIT),
-          providerId:stageId==="writer-agent"?writerSelection?.providerId:undefined,
-          model:stageId==="writer-agent"?writerSelection?.model:undefined,threadId:writerThreadId,
+          providerId:stageId==="writer-agent"?state.writerSelection?.providerId:undefined,
+          model:stageId==="writer-agent"?state.writerSelection?.model:undefined,threadId:state.writerThreadId,
           result:stageId === "writer-agent" ? {
-            ...last,
+            ...state.last,
             // #33: the decision this stage made, next to the outcome — failure class, its MAST-14 bucket and the
             // intervention the class's streak got, so receipts read why the retry went this way.
-            ...(judged ? { decision: { failureClass: judged.klass, mast: judged.mast ?? null, intervention: judged.intervention ?? null, streak: judged.streak ?? null } } : {}),
-            execution: writerSelection ? {
-              providerId:writerSelection.providerId,
-              model:writerSelection.model,
-              reasoningLevel:writerSelection.reasoningLevel ?? null,
-              serviceTier:writerSelection.serviceTier ?? null,
-              selectionSource:writerSelection.selectionSource ?? null,
-            } : last,
+            ...(state.judged ? { decision: { failureClass: state.judged.klass, mast: state.judged.mast ?? null, intervention: state.judged.intervention ?? null, streak: state.judged.streak ?? null } } : {}),
+            execution: state.writerSelection ? {
+              providerId:state.writerSelection.providerId,
+              model:state.writerSelection.model,
+              reasoningLevel:state.writerSelection.reasoningLevel ?? null,
+              serviceTier:state.writerSelection.serviceTier ?? null,
+              selectionSource:state.writerSelection.selectionSource ?? null,
+            } : state.last,
           } : accepted ? stageId === "verification"
-            ? { produced:last.produced, verification:last.verification, runV2:last.runV2 }
-            : last : null, reason:accepted ? undefined : reason });
+            ? { produced:state.last.produced, verification:state.last.verification, runV2:state.last.runV2 }
+            : state.last : null, reason:accepted ? undefined : reason });
       }
       refreshRun(input.runId);
       if (accepted) {
         try {
           await emitAttemptFinished(ctx, { scope:"task", projectId:input.projectId, runId:input.runId, taskId:input.taskId,
-            attemptId, pmThreadId:input.pmThreadId, writerThreadId:writerThreadId ?? null, task:input.task, config:activeConfig,
-            status:"accepted", reason:null, result:last,
-            writerSelection:writerSelection ? { providerId:writerSelection.providerId, model:writerSelection.model } : undefined,
-            acceptedAttemptId });
+            attemptId: state.attemptId, pmThreadId:input.pmThreadId, writerThreadId:state.writerThreadId ?? null, task:input.task, config:state.activeConfig,
+            status:"accepted", reason:null, result:state.last,
+            writerSelection:state.writerSelection ? { providerId:state.writerSelection.providerId, model:state.writerSelection.model } : undefined,
+            acceptedAttemptId: state.acceptedAttemptId });
         } catch (emitCause) {
           ctx.log(`attempt-finished: emit failed for ${input.taskId}: ${emitCause instanceof Error ? emitCause.message : String(emitCause)}`);
         }
@@ -1512,26 +1516,26 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
       // After a reload the database is closed: stop quietly, the next load reconciles the attempt.
       if (ctx.state.disposed) return;
       // A failed attempt's worktree that no fallback took is removed here too, as it was before fallbacks could keep it.
-      if (unremovedWorktree) void removeWorktreeOf(unremovedWorktree).catch((removeCause) => bb.log.warn(`Lane Pilot could not remove the worktree of ${input.taskId}: ${removeCause instanceof Error ? removeCause.message : String(removeCause)}`));
+      if (state.unremovedWorktree) void removeWorktreeOf(state.unremovedWorktree).catch((removeCause) => bb.log.warn(`Lane Pilot could not remove the worktree of ${input.taskId}: ${removeCause instanceof Error ? removeCause.message : String(removeCause)}`));
       try {
         const message = cause instanceof Error ? cause.message : String(cause);
         const reason = `internal_error: ${message}`;
-        bb.log.error(`Lane Pilot writer attempt ${attemptId} failed: ${message}`);
+        bb.log.error(`Lane Pilot writer attempt ${state.attemptId} failed: ${message}`);
         // The writer may still be editing, so nothing is rolled back here; the originals wait in the backup.
-        if (liveBackupId) bb.log.warn(`Lane Pilot: the owned files of ${input.taskId} are backed up in ~/.lane-pilot/live-backups/${liveBackupId} (folder without git, no rollback after an internal error)`);
-        const attempt = getAttempt(db, attemptId);
+        if (state.liveBackupId) bb.log.warn(`Lane Pilot: the owned files of ${input.taskId} are backed up in ~/.lane-pilot/live-backups/${state.liveBackupId} (folder without git, no rollback after an internal error)`);
+        const attempt = getAttempt(db, state.attemptId);
         if(attempt?.state==="canceled"){
           markCanceledWriterStages(attempt,"writer attempt canceled before provider dispatch");
           refreshRun(input.runId);
           return;
         }
         if (attempt && ["queued", "spawn_requested", "spawn_unknown", "spawn_rejected", "running", "cancel_requested", "provider_error", "timeout", "empty_output", "validation_failed"].includes(attempt.state)) {
-          transitionAttempt(db, attemptId, "blocked", { threadId:writerThreadId, reason });
+          transitionAttempt(db, state.attemptId, "blocked", { threadId:state.writerThreadId, reason });
         }
         // Stability hears the failure while the run is still running — its record before the receipts, as before.
         await bestEffort(ctx.log, "writer attempt finished emit", emitAttemptFinished(ctx, { scope:"task", projectId:input.projectId, runId:input.runId, taskId:input.taskId,
-          attemptId, pmThreadId:input.pmThreadId, writerThreadId:writerThreadId ?? null, task:input.task, config:activeConfig,
-          status:"blocked", reason, result:last, acceptedAttemptId:null }), undefined);
+          attemptId: state.attemptId, pmThreadId:input.pmThreadId, writerThreadId:state.writerThreadId ?? null, task:input.task, config:state.activeConfig,
+          status:"blocked", reason, result:state.last, acceptedAttemptId:null }), undefined);
         for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
           const current = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === stageId);
           if (!current || current.state === "passed" || current.state === "failed" || current.state === "skipped") continue;
@@ -1539,20 +1543,20 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
           recordStage(db, { runId:input.runId, taskId:input.taskId, stageId,
             state:"failed", input:input.plan,
             attempt:Math.min(countAttempts(db, input.runId, input.taskId),MAIN_ATTEMPT_LIMIT),
-            providerId:stageId==="writer-agent"?writerSelection?.providerId:undefined,
-            model:stageId==="writer-agent"?writerSelection?.model:undefined,threadId:writerThreadId, reason });
+            providerId:stageId==="writer-agent"?state.writerSelection?.providerId:undefined,
+            model:stageId==="writer-agent"?state.writerSelection?.model:undefined,threadId:state.writerThreadId, reason });
         }
         try {
           refreshRun(input.runId);
         } catch (refreshCause) {
-          bb.log.error(`Lane Pilot failed to refresh run ${input.runId} after attempt ${attemptId} error: ${refreshCause instanceof Error ? refreshCause.message : String(refreshCause)}`);
+          bb.log.error(`Lane Pilot failed to refresh run ${input.runId} after attempt ${state.attemptId} error: ${refreshCause instanceof Error ? refreshCause.message : String(refreshCause)}`);
         }
       } catch (inner) {
         // A failure while recording the failure must never escape a detached task and crash BB.
-        try { bb.log.error(`Lane Pilot writer attempt ${attemptId} could not record its failure: ${inner instanceof Error ? inner.message : String(inner)}`); } catch { /* ctx.state.disposed */ }
+        try { bb.log.error(`Lane Pilot writer attempt ${state.attemptId} could not record its failure: ${inner instanceof Error ? inner.message : String(inner)}`); } catch { /* ctx.state.disposed */ }
       }
     }).finally(() => {
-      releaseWriterSlot?.();
+      state.releaseWriterSlot?.();
       dropLiveWriterKey();
     });
   }
