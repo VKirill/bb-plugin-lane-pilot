@@ -60,6 +60,7 @@ import { waitForOverlappingTasks } from "./start-wait-overlap";
 import { bindLiveBackup, dropLiveWriterKey, liveBackupKey, rollbackLive } from "./start-live-folder";
 import { releaseFailedThreads, removeWorktreeOf } from "./start-failed-cleanup";
 import { otherWriters } from "./start-other-writers";
+import { blockBeforeWriter, parkForStoreRead, prepareRun } from "./start-prepare-run";
 import { sameArea } from "./start-area";
 
 import type { AttemptState } from "../../contracts/state-machine";
@@ -168,60 +169,6 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
       reasoningLevel:existingTrace.effectiveReasoningLevel, serviceTier:existingTrace.serviceTier,
       selectionSource:existingTrace.selectionSource,
     };
-    const STORE_READ_PARK_LIMIT = 5;
-    /** A plugin-store read that fails is "state unknown", not a task failure: park the attempt for the wake sweep; after the bound it blocks with an owner item. Shared by prepareRun and the pause-read bound. */
-    const parkForStoreRead = (cause: unknown): false => {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      // Bounded: a store that stays unreadable is not transient. After the park limit the attempt blocks with a
-      // clear reason and the owner gets one item per block (the sequence key reopens after the last one was closed).
-      if (trailingQueuedParks(db, state.attemptId, "store_read:") + 1 >= STORE_READ_PARK_LIMIT) {
-        const reason = `store_read: plugin store unreadable after ${STORE_READ_PARK_LIMIT} attempts: ${message.slice(0, 160)}`;
-        blockBeforeWriter(reason);
-        postOwnerItem(db, { key: `store-read:${state.attemptId}:${blockedReasonCount(db, state.attemptId, "store_read:")}`, source: "writer", kind: "store_read", projectId: input.projectId, wake: true,
-          what: "Запись остановлена: хранилище плагина не читается",
-          why: `${STORE_READ_PARK_LIMIT} попыток подряд не смогли прочитать настройки перед запуском писателя — это постоянный сбой хранилища, а не разовый.`,
-          evidence: [{ kind: "run", ref: input.runId }, { kind: "task", ref: input.taskId }] });
-        return false;
-      }
-      const reason = `store_read: ${message.slice(0, 200)}`;
-      parkAttemptWake(db, state.attemptId, reason, Date.now() + 30_000);
-      ctx.log(`writer ${input.taskId}: plugin store unreadable before spawn (${reason}); the attempt retries in 30 s`);
-      state.last = { status:"queued", reason, attemptId: state.attemptId };
-      return false;
-    };
-    /** Settings, writer pick, budget, the live-folder flag and its backup: everything a later step needs in place. False = parked for a transient store read. */
-    const prepareRun = async ():Promise<boolean> => {
-      state.policy=runPolicyFor(input.runId);
-      // The pick, the pin, the live backup and the settings scopes live in the plugin store: a read that fails is
-      // transient — park the attempt for the wake sweep instead of blocking it on a storage hiccup.
-      try {
-        state.baseSettings=(await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values;
-        state.writerOverlay=await pickWriter(state.baseSettings, input);
-        state.runSettings=state.writerOverlay ? { ...state.baseSettings, ...state.writerOverlay } : rotatedWriterSettings(state.baseSettings, input.taskId);
-        // The task's writer pair, pinned across restarts and re-dispatches (hive H-01): a kept pin wins over a fresh
-        // rotation; the pair moves only on a provider failure or a failure-class intervention, and the move's reason is kept.
-        const pairPin = configuredSetting(state.runSettings, "writer.pair_pin") === "off" ? null : await loadWriterPin(bb.storage.kv as never, input.runId, input.taskId);
-        if (pairPin) state.runSettings = { ...state.runSettings, "writer.provider": pairPin.providerId, "writer.model": pairPin.model };
-      } catch (cause) { return parkForStoreRead(cause); }
-      // Only the writer keys travel to the spawn: the spawn reads the stored settings again, and must see this choice, not the project's.
-      state.writerChoice=Object.fromEntries(Object.entries(state.runSettings).filter(([key, value]) => key.startsWith("writer.") && value !== state.baseSettings[key]));
-      state.budget=services.runBudgetFor(input.runId,state.runSettings);
-      // Tasks run side by side only when they cannot touch the same files: one whose owns_paths overlap an
-      // earlier open task's (in any run on the same checkout) waits for it, instead of conflicting at the merge.
-      state.runFolder = taskBasePath(db, input.runId, input.taskId) ?? input.task.project_cwd;
-      state.liveFolder = await services.isLiveFolder(input.runId, input.config.hostId, state.runFolder);
-      // An attempt resumed on its writer's thread (the PM's answer, a reload) goes on under the backup it began with.
-      if (state.liveFolder && state.writerThreadId) {
-        try {
-          const saved = await bb.storage.kv.get(liveBackupKey(state.attemptId));
-          if (typeof saved === "string") state.liveBackupId = saved;
-        } catch (cause) { return parkForStoreRead(cause); }
-      }
-      // A clean read after parks resets the streak: without the marker the journal still ends in store_read rows
-      // and one more failure much later would count them all and block a recovered store.
-      if (trailingQueuedParks(db, state.attemptId, "store_read:") > 0) noteCleanAdmission(db, state.attemptId);
-      return true;
-    };
     const wallOrTokenStop = () => runningWriterBudgetStop(state.budget.check());
     /**
      * The permit's money half (SMA ac_permit): with run.max_tokens the task must carry its price (dispatch lints
@@ -238,13 +185,6 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
       const reserve = spendReserve({ budgetTokens:snap.limits.maxTokens, spentTokens:snap.tokens, openAppetites, appetite });
       return reserve.ok ? null : `permit_refused:reserve: ${reserve.why}`;
     };
-      const blockBeforeWriter = (reason:string) => {
-        transitionAttempt(db, state.attemptId, "blocked", { reason });
-        state.last = { status:"blocked", reason, attemptId: state.attemptId };
-        closeWriterStages(db, { runId:input.runId, taskId:input.taskId, plan:input.plan, terminal:"failed",
-          attempt:countAttempts(db, input.runId, input.taskId), reason });
-        refreshRun(input.runId);
-      };
       // H2: the spawn gate's availability sources (breaker, owner presence, core allowlist, usage window) answer
       // before an attempt is spent on a writer that cannot start (writer-hold.ts).
       const holdDeps = { breaker:services.providerBreaker, presence:services.ownerPresence, usage:services.providerUsage, money:services.money,
@@ -287,7 +227,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
           ctx.log(`writer ${input.taskId} waits: run ${input.runId} is paused`);
           recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
             reason:"waiting: the run is paused; starts by itself once it is resumed" });
-        }, onReadBound: (cause) => { parkForStoreRead(cause); return false; } })) return false;
+        }, onReadBound: (cause) => { parkForStoreRead(deps, state, input, cause); return false; } })) return false;
         // Held until a date (2999 = until released): the task stays queued and takes no slot (lane_pilot_queue {action:"hold"}).
         for (let noted = false; !ctx.isDisposed();) {
           const held = taskHeldUntil(db, input.taskId);
@@ -301,29 +241,29 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
         }
         const dependency = await waitForDependencies(deps, state, input, wallOrTokenStop);
         if (dependency) {
-          blockBeforeWriter(dependency);
+          blockBeforeWriter(deps, state, input, dependency);
           return false;
         }
         const overlapStop = await waitForOverlappingTasks(deps, state, input, wallOrTokenStop);
         if (overlapStop) {
-          blockBeforeWriter(overlapStop);
+          blockBeforeWriter(deps, state, input, overlapStop);
           return false;
         }
         const quarantineStop = await waitForRegressionQuarantine(deps, state, input, wallOrTokenStop);
         if (quarantineStop) {
-          blockBeforeWriter(quarantineStop);
+          blockBeforeWriter(deps, state, input, quarantineStop);
           return false;
         }
         const secretStop = await waitForSecrets(deps, state, input, wallOrTokenStop);
         if (secretStop) {
-          blockBeforeWriter(secretStop);
+          blockBeforeWriter(deps, state, input, secretStop);
           return false;
         }
         // Several tasks failed on the same Lane Pilot fault just now, or the disk is nearly full: starting more only burns them too.
         for (let noted = ""; ;) {
           if (ctx.isDisposed()) return false;
           const budgetStop = wallOrTokenStop();
-          if (budgetStop) { blockBeforeWriter(budgetStop); return false; }
+          if (budgetStop) { blockBeforeWriter(deps, state, input, budgetStop); return false; }
           // An attempt canceled while it waits stops waiting: the drill's canceled writers kept polling the full Mac mini disk and
           // logging for half an hour after their cancel (2026-10-27, drill-20261027-023238-memory, drill-pm-20261027-note).
           const waiting = getAttempt(db, state.attemptId);
@@ -412,7 +352,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
         const permit = writerPermit();
         if (permit) {
           state.releaseWriterSlot?.(); state.releaseWriterSlot = undefined;
-          blockBeforeWriter(permit);
+          blockBeforeWriter(deps, state, input, permit);
           return false;
         }
         // Recovery state (SMA ac_recovery): nothing retries an attempt whose recovery is unfinished — a reconcile in
@@ -420,7 +360,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
         const recovery = recoveryState(db, state.attemptId);
         if (recovery === "reconciling" || recovery === "rollback_failed") {
           state.releaseWriterSlot?.(); state.releaseWriterSlot = undefined;
-          blockBeforeWriter(`recovery_unfinished:${recovery}: the attempt's recovery is unfinished; settle it before this work is retried`);
+          blockBeforeWriter(deps, state, input, `recovery_unfinished:${recovery}: the attempt's recovery is unfinished; settle it before this work is retried`);
           return false;
         }
         return true;
@@ -514,7 +454,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
             transitionAttempt(db, state.attemptId, "accepted");
             state.last = { status:"accepted", attemptId: state.attemptId, produced:[], verification:[], alreadyDone:baseline.alreadyDone };
             state.acceptedAttemptId = state.attemptId;
-          } else if (baseline?.stop) { blockBeforeWriter(baseline.stop); return false; }
+          } else if (baseline?.stop) { blockBeforeWriter(deps, state, input, baseline.stop); return false; }
         }
         return true;
       };
@@ -1227,7 +1167,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
       };
       void (async () => {
       // The writer pipeline: prepare → admit → baseline → session → fallback chain → record.
-      if (!await prepareRun()) return;
+      if (!await prepareRun(deps, state, input)) return;
       // An attempt the PM reopened (an answer to the writer's question, a contract fix) passed these waits when it first
       // started, and its turn is already in the writer's thread: the writer works whatever Lane Pilot waits for here.
       // Waiting again only held back its checks: a reopened attempt is created as a retry, later than the siblings queued
