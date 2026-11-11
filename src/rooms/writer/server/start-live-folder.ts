@@ -1,6 +1,6 @@
 import { bestEffort } from "@lane-pilot/kit";
 import { taskBasePath } from "../../storage";
-import { failureClass } from "../../contracts/failure-class";
+import { failureClass } from "../../contracts";
 import type { StartWriterTaskDeps } from "./start-writer-task";
 import type { WriterTaskInput, WriterTaskState } from "./start-task-state";
 

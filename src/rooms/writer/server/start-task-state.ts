@@ -1,7 +1,7 @@
 import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import type { RunBudget } from "@lane-pilot/resilience";
-import type { FailureClass } from "../../contracts/failure-class";
+import type { FailureClass } from "../../contracts";
 import type { ReassignRequest } from "./reassign";
 import type { getAttempt } from "../../storage";
 import type { ServerCore } from "../../contracts/server";

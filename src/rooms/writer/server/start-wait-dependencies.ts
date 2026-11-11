@@ -5,7 +5,7 @@ import { pollPause } from "@lane-pilot/kit";
 import { taskFamily } from "@lane-pilot/contracts";
 import { isTaskSatisfied } from "../../runs/server";
 import { recordStage } from "../../runs/server";
-import { MAIN_ATTEMPT_LIMIT } from "../../contracts/state-machine";
+import { MAIN_ATTEMPT_LIMIT } from "../../contracts";
 import { CANCELED_REDO_WAIT_MS } from "./start-wait-limits";
 import type { StartWriterTaskDeps } from "./start-writer-task";
 import type { WriterTaskInput, WriterTaskState } from "./start-task-state";
