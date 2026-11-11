@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.523
+
+- **Found by the live phase on 0.1.522, fixed.** The phase reached execution again and both attempts were blocked in 19 seconds each: the planner's check `git diff --quiet <base> -- drills notes` answered «Not a git repository». The drill project runs checks as the worker user (`worker.strict_user=on`), and git refuses a repository another user owns, so under the strict worker every check that called git was red whatever the writer wrote. The sandbox's own home folder now names the one checkout the check runs in as trusted (`safe.directory`); no other repository is. Measured on the drill repository with a real sandboxed check as `lp-worker`: exit 129 with the old code, exit 0 with this one.
+- **The map.** Unchanged: have 1655, partial 20, void 96, upstream 27, missing 0.
+
 ## 0.1.522
 
 - **The hub stopped once a day since 7 November; the cause was Lane Pilot, fixed.** The daily profile check (04:52 UTC, added on 6 November) opened BB's own database `bb.db` with Node's built-in SQLite inside BB's server process, which holds the same file with another SQLite copy. A second copy in one process sees no foreign lock: it cut the `-shm` file BB had mapped and, on close, dropped BB's file locks; the next process to open the base cut the file again and the server died of SIGBUS (exit status 128, no trace in the log). Five stops: 7, 8, 9, 10 and 11 November. The check now reads the base from a child process, where file locks hold between the two. Proof: the system crash log names signal 7 for all five, the saved core of 7 November faults inside the `bb.db-shm` mapping, and a sandbox with the two copies on one file dies the same way while the control run lives. A test keeps the `-shm` file of a held base intact across the check, and an architecture test keeps `node:sqlite` out of the server code (the owner's own file store excepted).
