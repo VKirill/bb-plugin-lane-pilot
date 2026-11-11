@@ -1,6 +1,9 @@
 export {
   decideThreadCompletion,
   threadFailure,
+  retryRun,
+  RETRY_RUN_MIN,
+  RETRY_RUN_MIN_MS,
   THREAD_WATCH_EVENT_TYPES,
   PROVIDER_START_LIMIT_MS,
   type ThreadCompletionDecision,

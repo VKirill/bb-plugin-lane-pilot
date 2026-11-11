@@ -1,5 +1,5 @@
-import { afterEach, expect, it, vi } from "vitest";
-import { decideThreadCompletion, onThreadFailure, threadFailure, waitThreadIdle } from "@lane-pilot/thread-observe";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { decideThreadCompletion, onThreadFailure, retryRun, threadFailure, waitThreadIdle } from "@lane-pilot/thread-observe";
 import samples from "./fixtures/rules-ask-provider-retries-2026-11-10.json";
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
@@ -97,4 +97,54 @@ it("keeps a terminal provider error when a follow-up was accepted into the runni
     event(4, "provider/error", { message: "HTTP 403 (reset after 2m)" }), event(5, "turn/completed", { status: "failed" })];
   expect(decideThreadCompletion({ threadId, status: "active", events, requestedAfter: sample.events[0]!.createdAt }))
     .toEqual({ ok: false, via: "error", detail: "provider_error:HTTP 403 (reset after 2m)" });
+});
+
+// A caller that has another model to go to (a graph step) names the notices it does not wait out. The live phase of 2026-11-11
+// lost its closing graph to this: the memory step sat on the same router as the recorded sample until its 15 minutes were spent.
+describe("a wait that gives up on a provider that only repeats its limit notice", () => {
+  const isLimit = (notice: string) => /HTTP 403 \(reset after/.test(notice);
+  /** A core that filters by type and returns newest first up to the limit, as the real one does. */
+  const core = (events: Array<{ seq: number; type: string }>) => {
+    const stop = vi.fn(async () => ({}));
+    const bb = { sdk: { threads: { get: async () => ({ status: "active" }), stop, events: { list: async (query: { types?: string[]; limit: string }) =>
+      events.filter((row) => !query.types || query.types.includes(row.type)).sort((a, b) => b.seq - a.seq).slice(0, Number(query.limit)) } } } } as never;
+    return { bb, stop };
+  };
+  // The sample's notices came 6, 127 and 248 s after the request: three in a row over four minutes.
+  const three = sample.events.filter((row) => row.seq <= 12);
+
+  it("reads the run from the recorded sample: three notices in a row over three minutes or more, not two, not a broken row", () => {
+    expect(retryRun(three)).toEqual({ notice: expect.stringContaining("HTTP 403 (reset after 2m). Retrying"), lastSeq: 12 });
+    expect(retryRun(sample.events.filter((row) => row.seq <= 11))).toBeNull();
+    expect(retryRun(three.filter((row) => row.seq !== 11))).toBeNull();
+    expect(retryRun([...three, event(13, "turn/completed", { status: "completed" })])).toBeNull();
+  });
+
+  it("stops the thread and fails with the notice as a provider error, telling the failure listener", async () => {
+    vi.useFakeTimers();
+    const { bb, stop } = core(three);
+    const listener = vi.fn();
+    onThreadFailure(bb, listener);
+    const waiting = waitThreadIdle(bb, threadId, "step", undefined, undefined, undefined, isLimit).catch((cause: Error) => cause.message);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(await waiting).toMatch(/^step:error:provider_error:\[antigravity\/gemini-3\.8-flash-high\] \[403\]: HTTP 403 \(reset after 2m\)\. Retrying/);
+    expect(stop).toHaveBeenCalledWith({ threadId });
+    expect(listener).toHaveBeenCalledWith(threadId, expect.stringContaining("provider_error:"));
+  });
+
+  it.each([
+    ["the caller named no notice (every other waiter)", three, undefined],
+    ["the notice is not one the caller gives up on", three, () => false],
+    ["something happened in the thread after the last notice", [...three, { ...event(13, "item/completed"), createdAt: three[2]!.createdAt }], isLimit],
+    ["only two notices so far", sample.events.filter((row) => row.seq <= 11), isLimit],
+  ] as const)("keeps waiting when %s", async (_name, events, givesUpOn) => {
+    vi.useFakeTimers();
+    const { bb, stop } = core(events as never);
+    const waiting = waitThreadIdle(bb, threadId, "step", 5_000, undefined, undefined, givesUpOn as never).catch((cause: Error) => cause.message);
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(stop).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2_100);
+    await waiting;
+    expect(stop).not.toHaveBeenCalled();
+  });
 });

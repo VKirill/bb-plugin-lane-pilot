@@ -372,7 +372,9 @@ export function createWorkflowAgents() {
 
     const wait = async (since?: number) => {
       try {
-        await waitThreadIdle(bb, threadId!, `workflow_${request.nodeId}`, undefined, since, () => (rt.ctx.isDisposed() ? "plugin_stopped" : request.signal?.aborted ? "aborted" : null));
+        // A step has another model to go to (the limit rerun below), so it does not wait out a provider that only repeats its limit notice.
+        await waitThreadIdle(bb, threadId!, `workflow_${request.nodeId}`, undefined, since, () => (rt.ctx.isDisposed() ? "plugin_stopped" : request.signal?.aborted ? "aborted" : null),
+          request.intoThread ? undefined : (notice) => providerLimitNotice(notice) !== null);
       } catch (cause) {
         if (request.signal?.aborted) await bestEffort(bb.log, "workflow helper thread stop", bb.sdk.threads.stop({ threadId: threadId! }), undefined);
         throw new HelperFailure("thread_failed", cause instanceof Error ? cause.message : String(cause));
@@ -384,11 +386,15 @@ export function createWorkflowAgents() {
     };
 
     // The ZCode app cannot take the work now (busy, text not visible, needs the foreground, signed out): the machine's state, handled below as a limit.
+    // So is a turn the provider ended with its limit notice as an error instead of an answer: opencode2 on a spent Gemini router retried
+    // «HTTP 403 (reset after 2m)» and failed, and the closing graph's memory step failed with it (live phase, 2026-11-11).
     let zcodeRefusal: string | null = null;
     try {
       await wait(sentAt);
     } catch (cause) {
-      zcodeRefusal = isZcodeProvider(request.provider) && !request.intoThread ? zcodeEnvironmentError(cause instanceof Error ? cause.message : String(cause)) : null;
+      const message = cause instanceof Error ? cause.message : String(cause);
+      zcodeRefusal = request.intoThread ? null : (isZcodeProvider(request.provider) ? zcodeEnvironmentError(message) : null)
+        ?? (message.includes("provider_error:") ? providerLimitNotice(message.replace(/^.*?provider_error:/, "").slice(0, 400)) : null);
       if (!zcodeRefusal) throw cause;
     }
     let text = zcodeRefusal ? "" : await read();

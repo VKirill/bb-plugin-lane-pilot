@@ -165,6 +165,30 @@ function failedTurn(events: unknown[]): string | null {
   return message ? `turn_failed:${clip(message)}` : null;
 }
 
+/** This many retry notices in a row, the first and the last at least this far apart, are a provider that is not going to answer soon. */
+export const RETRY_RUN_MIN = 3;
+export const RETRY_RUN_MIN_MS = 3 * 60_000;
+
+/**
+ * The provider's last retry notice when the newest watched events are RETRY_RUN_MIN or more of them in a row — adjacent
+ * sequence numbers, so nothing else happened in the thread between them — spread over RETRY_RUN_MIN_MS or more; null otherwise.
+ * `lastSeq` lets the caller check that the notice is still the thread's newest event of any kind before it gives up.
+ * Live phase 2026-11-11: opencode2 on a spent Gemini router said «HTTP 403 (reset after 2m). Retrying (attempt 7)» every two
+ * minutes, and the closing graph's memory step waited out its 15 minutes on it and failed with no other model tried.
+ */
+export function retryRun(events: unknown[]): { notice: string; lastSeq: number } | null {
+  const rows = events.map(readWatched).filter((row): row is WatchedEvent => row !== null).sort((a, b) => b.seq - a.seq);
+  const run: WatchedEvent[] = [];
+  for (const row of rows) {
+    const retrying = row.type === "provider/error" && Reflect.get(row.data as object ?? {}, "willRetry") === true;
+    if (!retrying || (run.length > 0 && run[run.length - 1]!.seq - row.seq !== 1)) break;
+    run.push(row);
+  }
+  const last = run[0], first = run[run.length - 1];
+  if (run.length < RETRY_RUN_MIN || !last || !first || last.createdAt === null || first.createdAt === null || last.createdAt - first.createdAt < RETRY_RUN_MIN_MS) return null;
+  return { notice: clip(stringField(last.data, "message")), lastSeq: last.seq };
+}
+
 /**
  * Reads BB's own verdict on the latest request instead of a stopwatch: a terminal provider or system
  * error, an interrupted thread, a rejected turn or a failed provisioning ends the wait at once; a

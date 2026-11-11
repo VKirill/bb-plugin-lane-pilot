@@ -1,5 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { decideThreadCompletion, threadFailure, THREAD_WATCH_EVENT_TYPES } from "./completion";
+import { decideThreadCompletion, retryRun, threadFailure, THREAD_WATCH_EVENT_TYPES } from "./completion";
 import { sleepUntilThreadSignal, threadWatchMark } from "./signals";
 
 function stringAt(value: unknown, key: string): string | null {
@@ -88,11 +88,22 @@ export async function startLimitWaiting(bb: BbPluginApi, threadId: string, failu
   return Boolean(failure && failure.startsWith("provider_not_started") && await turnHeldByPlugin(bb, threadId));
 }
 
+/** The newest event of the thread, of any type: what a run of retry notices is compared with before the wait gives up on it. */
+async function newestSeq(bb: BbPluginApi, threadId: string): Promise<number | null> {
+  const listed = await listThreadEventsRaw(bb, { threadId, order:"desc", limit:"1" });
+  if (!listed.ok) return null;
+  const seqs = listed.events.map((event) => (event && typeof event === "object" ? Reflect.get(event, "seq") : null)).filter((seq): seq is number => typeof seq === "number");
+  return seqs.length ? Math.max(...seqs) : null;
+}
+
 /**
  * Waits for a child thread's turn with no overall deadline: BB's events say when it failed (see
  * threadFailure), so a slow but working model is never cut off. `probeMs` bounds a diagnostic probe only.
+ * `givesUpOn`: a caller that has another model to go to names the retry notices it does not wait out (a provider limit).
+ * When such notices are all the thread has said for a while (retryRun) and nothing came after the last one, the thread is
+ * stopped and the wait fails with the notice as a provider error; without it retries are never cut short.
  */
-export async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutMessage: string, probeMs?: number, requestedAfter?: number, shouldStop?: () => string | null): Promise<void> {
+export async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutMessage: string, probeMs?: number, requestedAfter?: number, shouldStop?: () => string | null, givesUpOn?: (notice: string) => boolean): Promise<void> {
   let lastDetail = "status=unknown;queuedWork=unknown;started_seq=none;turn=none";
   let lastEvents: unknown[] = [];
   const deadline = probeMs === undefined ? Infinity : Date.now() + probeMs;
@@ -122,6 +133,14 @@ export async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutM
       throw new Error(`${timeoutMessage}:${decision.via}:${decision.detail}`);
     }
     lastDetail = decision.detail;
+    const stuck = givesUpOn ? retryRun(listed.events) : null;
+    if (stuck && givesUpOn!(stuck.notice) && await newestSeq(bb, threadId) === stuck.lastSeq) {
+      const cause = `provider_error:${stuck.notice}`;
+      // Left running it would retry for many minutes more and might then do the work a second time, beside the caller's next model.
+      await bb.sdk.threads.stop({ threadId }).catch(() => undefined);
+      try { failureListeners.get(bb)?.(threadId, cause); } catch { /* a listener never fails the wait */ }
+      throw new Error(`${timeoutMessage}:error:${cause}`);
+    }
     await sleepUntilThreadSignal(bb, threadId, mark, 1000, undefined, { deadlineAt: deadline, ...(shouldStop ? { maxMs: 1000 } : {}) });
   }
   // Retries remain nonterminal while waiting. At the caller's deadline their cause must survive for its fallback.

@@ -33,7 +33,7 @@ const reply = (body: Row, lead = "Done.") => `${lead}\n\n\`\`\`json\n${JSON.stri
 
 /** What a helper thread of a node spent, as BB reports it: one token-usage event of one turn, on this model. */
 type Spent = { input: number; output: number; model?: string };
-async function setup(script: Script, options: { pmEvents?: () => Row[]; dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; invalidParent?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }> } = {}) {
+async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTurnError?: string; firstTurnRetries?: boolean; dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; invalidParent?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }> } = {}) {
   const checkout = mkdtempSync(join(tmpdir(), "lp-chain-"));
   execFileSync("git", ["init", "-q"], { cwd: checkout });
   writeFileSync(join(checkout, "README.md"), "hello\n");
@@ -59,7 +59,11 @@ async function setup(script: Script, options: { pmEvents?: () => Row[]; dirty?: 
         },
         get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId: PROJECT, environmentId: "env-pm", sourceThreadId: PM, lifecycleOwnerThreadId: PM }),
         // A follow-up sent to a thread shows up as a new requested turn that starts and completes.
-        events: { list: async ({ threadId }) => [...(threadId === PM ? options.pmEvents?.() ?? [] : []), { type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } },
+        // firstTurnError: the first helper's provider ends its turn with this error and no answer; with firstTurnRetries it only announces
+        // a retry with it, three times over four minutes, and never ends the turn.
+        events: { list: async ({ threadId }) => threadId === "helper-1" && options.firstTurnError ? [{ type: "turn/started", threadId, seq: 1 },
+          ...(options.firstTurnRetries ? [0, 1, 2].map((at) => ({ type: "provider/error", threadId, seq: 2 + at, createdAt: 1_000 + at * 120_000, data: { message: `${options.firstTurnError}. Retrying (attempt ${at + 2}).`, willRetry: true } }))
+            : [{ type: "provider/error", threadId, seq: 2, data: { message: options.firstTurnError } }])] : [...(threadId === PM ? options.pmEvents?.() ?? [] : []), { type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } },
           ...(options.spent?.[nodeOf.get(threadId) ?? ""] ? [
             { type: "client/thread/start", threadId, seq: 3, createdAt: 1, data: { request: { params: { execution: { model: options.spent[nodeOf.get(threadId)!]!.model ?? "claude-opus-5-5" } } } } },
             { type: "thread/tokenUsage/updated", threadId, seq: 4, createdAt: 2, data: { turnId: "t1", tokenUsage: { last: { inputTokens: options.spent[nodeOf.get(threadId)!]!.input, outputTokens: options.spent[nodeOf.get(threadId)!]!.output, totalTokens: options.spent[nodeOf.get(threadId)!]!.input + options.spent[nodeOf.get(threadId)!]!.output }, total: { inputTokens: options.spent[nodeOf.get(threadId)!]!.input, outputTokens: options.spent[nodeOf.get(threadId)!]!.output, totalTokens: options.spent[nodeOf.get(threadId)!]!.input + options.spent[nodeOf.get(threadId)!]!.output } } } }] : []),
@@ -243,6 +247,28 @@ describe("the agent step", () => {
     expect(JSON.stringify(t.spawned[0])).toContain("codex");
     expect(JSON.stringify(t.spawned[1])).toContain("claude-code");
     expect(String((t.spawned[1]!.pluginMetadata as Row).spawnId)).toMatch(/:limit$/);
+  });
+
+  it("a step whose provider ends the turn with its limit as an error, not an answer, reruns on the other family too; another error still fails the step (live phase 2026-11-11: the closing graph's memory step on a spent Gemini router)", async () => {
+    const t = await setup({ look: [reply({ count: 3, summary: "three", handoff: "counted" })] }, { firstTurnError: "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m)" });
+    dispose = t.dispose;
+    const summary = await t.start(oneAgent()).done;
+    expect(summary).toMatchObject({ status: "succeeded", output: { count: 3 } });
+    expect(t.spawned).toHaveLength(2);
+    expect(t.spawned[1]!.providerId).not.toBe(t.spawned[0]!.providerId);
+    expect(String((t.spawned[1]!.pluginMetadata as Row).spawnId)).toMatch(/:limit$/);
+    t.dispose();
+    // The same notice only announced, again and again, with the turn never ending: the step does not wait out its time on it.
+    const retrying = await setup({ look: [reply({ count: 3, summary: "three", handoff: "counted" })] }, { firstTurnError: "[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 2m)", firstTurnRetries: true });
+    dispose = retrying.dispose;
+    expect(await retrying.start(oneAgent()).done).toMatchObject({ status: "succeeded", output: { count: 3 } });
+    expect(retrying.spawned).toHaveLength(2);
+    expect(String((retrying.spawned[1]!.pluginMetadata as Row).spawnId)).toMatch(/:limit$/);
+    retrying.dispose();
+    const other = await setup({ look: [reply({ count: 3, summary: "three", handoff: "counted" })] }, { firstTurnError: "[400]: Request contains an invalid argument." });
+    dispose = other.dispose;
+    expect(await other.start(oneAgent()).done).toMatchObject({ status: "failed" });
+    expect(other.spawned).toHaveLength(1);
   });
 
   it("a Claude helper that hits its plan limit reruns once on the other family, as a Codex one reruns on Claude (no asymmetry)", async () => {
