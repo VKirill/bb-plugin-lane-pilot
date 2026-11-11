@@ -14,10 +14,13 @@ import type { NodeExecutor } from "./step-types";
 import type { EngineOptions, RunSummary } from "./engine-types";
 import { registerBuiltins } from "./engine-builtins";
 import { start } from "./engine-start";
-import { idle, summary, unbeat } from "./engine-drive";
+import { idle, unbeat } from "./engine-drive";
+import { summary } from "./run-status";
 import { cancel, poll, resolve, resume } from "./engine-resume";
 import { rerunNode } from "./engine-rerun";
-import { amendGoals, goalJournal, lastAudit, unknownUsageSteps } from "./engine-goals";
+import { amendGoals, goalJournal } from "./engine-goals";
+import { lastAudit } from "./engine-goal-audit";
+import { unknownUsageSteps } from "./engine-step";
 import type { Pins } from "./pins";
 
 export { MissingValueError };

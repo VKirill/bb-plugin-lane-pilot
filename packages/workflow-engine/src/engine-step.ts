@@ -16,7 +16,7 @@ import type { Usage } from "./usage";
 import type { EffectReconcile, NodeExecutor, StepContext, StepDone, StepInput, StepOutcome } from "./step-types";
 import { visitsOf } from "./engine-routing";
 import { failStep } from "./engine-branches";
-import { cancelOpenSteps, failRun } from "./engine-drive";
+import { cancelOpenSteps, failRun } from "./run-status";
 import type { WorkflowEngine } from "./engine";
 
 export function runtimeOf(engine: WorkflowEngine, run: RunRow): unknown {
@@ -329,6 +329,11 @@ export function noteUnknownUsage(engine: WorkflowEngine, runId: string, stepKey:
   const j = engine.journal;
   if (j.db.prepare("SELECT 1 FROM lane_pilot_wf_event WHERE run_id=? AND kind='usage_unknown' LIMIT 1").get(runId)) return;
   j.event(runId, stepKey, "usage_unknown", null, null, `the provider reported no usage for this step: a token or money budget cannot count it; the run is held to ${UNKNOWN_USAGE_MAX_WALL_SECONDS / 60} minutes unless the budget sets its own`);
+}
+
+/** The steps of a run whose spending is not known (the provider reports no usage): its token and cost totals leave them out, and a budget cannot see them. */
+export function unknownUsageSteps(engine: WorkflowEngine, runId: string): string[] {
+  return (engine.journal.db.prepare("SELECT step_key FROM lane_pilot_wf_event WHERE run_id=? AND kind='usage' AND to_state='unknown' ORDER BY seq").all(runId) as Array<{ step_key: string }>).map((row) => row.step_key);
 }
 
 export function checkLimits(engine: WorkflowEngine, run: RunRow, c: Compiled): string | null {

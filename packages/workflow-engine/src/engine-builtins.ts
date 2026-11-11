@@ -7,8 +7,8 @@ import { pinKey } from "./pins";
 import type { Pins } from "./pins";
 import type { StepOutcome } from "./step-types";
 import type { RunSummary } from "./engine-types";
-import { summary } from "./engine-drive";
-import { unknownUsageSteps } from "./engine-goals";
+import { summary } from "./run-status";
+import { unknownUsageSteps } from "./engine-step";
 import type { WorkflowEngine } from "./engine";
 
 /** A human wait without a node timeout still ends: this is its deadline in seconds (72 h). */

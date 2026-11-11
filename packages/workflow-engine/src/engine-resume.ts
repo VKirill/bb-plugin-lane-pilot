@@ -2,14 +2,14 @@ import { sha256 } from "./journal";
 import type { RunRow } from "./journal";
 import { executorKey, outputFields } from "./lower";
 import { LEGACY_BUILD_STAMP } from "./engine-types";
-import type { RunSummary } from "./engine-types";
 import { asObject } from "./step-read";
 import { checkStepOutput } from "./step-output";
 import type { PollResult } from "./step-types";
 import type { Usage } from "./usage";
 import { noteUnknownUsage } from "./engine-step";
 import { failStep } from "./engine-branches";
-import { cancelOpenSteps, claim, drive, release } from "./engine-drive";
+import { cancelOpenSteps } from "./run-status";
+import { claim, drive, kick, release } from "./engine-drive";
 import type { WorkflowEngine } from "./engine";
 
 /** Takes up the runs a reload left: re-runs reentrant steps, interrupts the rest, routes finished steps, goes on. */
@@ -111,17 +111,6 @@ export async function poll(engine: WorkflowEngine): Promise<number> {
 export function resolve(engine: WorkflowEngine, runId: string, stepKey: string, output: Record<string, unknown>): Promise<boolean> {
   const ok = settle(engine, runId, stepKey, { output });
   return ok ? kick(engine, runId).then(() => true) : Promise.resolve(false);
-}
-
-/**
- * Drives a run after something settled one of its steps. A drive that is just ending (it saw the step waiting a moment ago) would
- * be handed back by `drive` and leave the run `running` with nobody driving it, so it is waited for first and the run is driven again.
- */
-export async function kick(engine: WorkflowEngine, runId: string): Promise<RunSummary> {
-  const running = engine.drives.get(runId);
-  // the in-flight drive's own error path already recorded its failure; here we only wait for it to settle
-  if (running) await running.catch(() => undefined);
-  return drive(engine, runId);
 }
 
 export function settle(engine: WorkflowEngine, runId: string, stepKey: string, result: { output: Record<string, unknown>; usage?: Usage; threadId?: string | null } | { error: string }): boolean {

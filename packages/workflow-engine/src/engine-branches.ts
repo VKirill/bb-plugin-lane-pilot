@@ -2,7 +2,7 @@ import type { RunRow, StepRow } from "./journal";
 import type { GraphNode as WorkflowNode } from "./schema";
 import type { Compiled } from "./compiled";
 import { asObject } from "./step-read";
-import { failRun } from "./engine-drive";
+import { failRun } from "./run-status";
 import { tryJoin } from "./engine-routing";
 import type { WorkflowEngine } from "./engine";
 

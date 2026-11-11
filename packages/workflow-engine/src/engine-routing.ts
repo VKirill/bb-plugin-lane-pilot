@@ -7,7 +7,7 @@ import type { Compiled } from "./compiled";
 import { RouteFailure } from "./engine-errors";
 import { asObject, env, mapWith } from "./step-read";
 import type { StepInput } from "./step-types";
-import { failRun } from "./engine-drive";
+import { failRun } from "./run-status";
 import type { WorkflowEngine } from "./engine";
 
 export function routeAll(engine: WorkflowEngine, run: RunRow, c: Compiled): void {

@@ -1,7 +1,7 @@
 import { TERMINAL_RUN } from "./journal";
 import { asObject } from "./step-read";
 import type { StepInput } from "./step-types";
-import { kick } from "./engine-resume";
+import { kick } from "./engine-drive";
 import type { WorkflowEngine } from "./engine";
 
 /**
