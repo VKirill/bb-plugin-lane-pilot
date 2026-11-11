@@ -11,7 +11,7 @@ import { PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceKey, checkerIndepend
 import { archiveDrawing, markUatLine, oneLine, parseState, stateBlockSections, planText, roadmapAnalysis, roadmapNumberingGaps, roadmapSection, specText, stateBlockText, stateHasHeader, STATE_MANUAL, uatState } from "../stages";
 import { bundledAgents } from "../../contracts";
 import { sendServiceMessage } from "../../relay/server";
-import { insertPhase, listParts, listPhases, savePhase } from "../store";
+import { insertPhase, listParts, listPhases, notePoked, savePhase } from "../store";
 import { PhaseRefusal, type DriverBase } from "./driver-tools";
 import type { Docs } from "./driver-docs";
 import type { Journal } from "./driver-journal";
@@ -644,6 +644,9 @@ export function installMethods(tools: MethodsTools) {
       issueErrors: Object.fromEntries(Object.entries(execution.issueErrors ?? {}).filter(([piece]) => piece !== input.piece)) } };
     book(phase, "execution", "retry", `${input.piece} is issued again as a redo by ${input.by ?? "pm"}: ${input.note ?? "decide retry"}`);
     savePhase(db, phase.id, { record, at: now() });
+    // A retry that fails to issue the same way gives the same step key; the PM must hear it again (live ph_f359c7ba19, 2026-11-11:
+    // the lint refused the same contract after the retry and the phase stood 18 minutes without a word).
+    notePoked(db, phase.id, "", now());
     return mustGet(phase.id);
   }
 
