@@ -100,8 +100,8 @@ function PhaseLine({ item, locale }: { item: Item; locale: string }) {
 
 function TaskCardTile({ item, showProject, projectName, locale, onOpen }: { item: Item; showProject: boolean; projectName: string | null; locale: string; onOpen: () => void }) {
   return (
-    <button type="button" onClick={onOpen} data-testid={`board-card-${item.key}`} title={item.techTitle ?? item.taskId ?? item.title}
-      className="block w-full shrink-0 cursor-pointer rounded-lg border border-border bg-card px-2.5 py-2 text-left shadow-2xs hover:border-input">
+    <button type="button" onClick={onOpen} disabled={item.kind === "batch" && !item.pmThreadId} data-testid={`board-card-${item.key}`} title={item.techTitle ?? item.taskId ?? item.title}
+      className="block w-full shrink-0 cursor-pointer rounded-lg disabled:cursor-default border border-border bg-card px-2.5 py-2 text-left shadow-2xs hover:border-input">
       <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
         <span className="shrink-0 tabular-nums">{item.taskId ? shortTaskId(item.taskId) : t("boardChain")}</span>
         <PhaseLine item={item} locale={locale} />
@@ -164,7 +164,7 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
   if (open) return <TaskPage item={open} locale={locale} projectName={projectName(open.projectId)} onBack={() => setOpen(null)} AcceptanceCard={AcceptanceCard} />;
   const showProject = projectId === "all";
   const tile = (item: Item) => <TaskCardTile key={item.key} item={item} showProject={showProject} projectName={projectName(item.projectId)} locale={locale}
-    onOpen={() => item.kind === "phase" ? navigate.toPluginPanel("lane-pilot-cockpit", { subPath: "phases" }) : item.kind === "batch" && item.pmThreadId ? navigate.toThread(item.pmThreadId) : setOpen(item)} />;
+    onOpen={() => item.kind === "phase" ? navigate.toPluginPanel("lane-pilot-cockpit", { subPath: "phases" }) : item.kind === "batch" ? (item.pmThreadId ? navigate.toThread(item.pmThreadId) : undefined) : setOpen(item)} />;
   return (
     <div className="space-y-3" data-testid="task-board">
       <div className="flex flex-wrap items-end justify-between gap-2">
