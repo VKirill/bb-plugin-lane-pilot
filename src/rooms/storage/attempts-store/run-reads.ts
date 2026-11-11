@@ -1,5 +1,6 @@
 import type { LanePilotDatabase } from "../database";
 
+/** Attempt ids that ever ran on a thread (thread-window attribution for usage). */
 export function attemptIdsOfThread(db: LanePilotDatabase, threadId: string): string[] {
   return (db.prepare("SELECT id FROM lane_pilot_attempt WHERE thread_id=?").all(threadId) as Array<{ id: string }>).map((row) => row.id);
 }

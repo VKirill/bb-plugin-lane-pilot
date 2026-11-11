@@ -1,6 +1,7 @@
 import { isOpenAttemptState } from "../../contracts";
 import type { LanePilotDatabase } from "../database";
 
+/** Provider and model of an attempt's reasoning trace, taken in SQL: the whole trace (tens of KB) is never read for two fields. */
 const TRACE_WORKER = `COALESCE(json_extract(t.trace_json,'$.providerId'),'unknown') AS provider_id, COALESCE(json_extract(t.trace_json,'$.model'),'unknown') AS model`;
 const asWorker = (row: { provider_id: unknown; model: unknown }) => ({ providerId: typeof row.provider_id === "string" ? row.provider_id : "unknown", model: typeof row.model === "string" ? row.model : "unknown" });
 
