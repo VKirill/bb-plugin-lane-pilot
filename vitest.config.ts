@@ -39,7 +39,9 @@ const uiTests = ["tests/**/*.test.tsx", "src/rooms/**/tests/**/*.test.tsx"];
 
 export default defineConfig({
   test: {
-    testTimeout: 15000,
+    // 30 s: a deploy shares the machine with the night's writers (load 20 on 16 cores, 2026-11-11), and tests that take 2-5 s alone
+    // crossed 15 s there three times in two days. A real hang still fails.
+    testTimeout: 30000,
     // One queue for all projects, longest file first (tests/sequencer.ts).
     ...(process.env.LP_DEFAULT_ORDER ? {} : { sequence: { sequencer: LongestFirstSequencer } }),
     setupFiles: ["./tests/setup-jsdom.ts"],
