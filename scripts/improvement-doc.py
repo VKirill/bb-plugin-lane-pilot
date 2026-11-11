@@ -42,7 +42,7 @@ sources:
   - src/rooms/wall/service.ts
   - src/rooms/bench/service.ts
   - src/rooms/owner-waiting/push.ts
-  - src/rooms/harness/server/harness.ts
+  - src/rooms/harness/server/config.ts
   - src/rooms/settings/setting-validation.ts
   - scripts/improvement-rows.py
   - tests/improvement/hub.test.ts
@@ -80,7 +80,7 @@ A control is a row of `lane_pilot_project_settings` under project `*` (the globa
 | plugin key-value `wall:config` | `wall.*` | {at("src/rooms/wall/service.ts", "hubFields(db, \"wall\")")} | `wall config key=value`, the screen |
 | plugin key-value `bench:config` | `bench.*` | {at("src/rooms/bench/service.ts", "hubFields(deps.db, \"bench\")")} | `bench config`, the screen |
 | table `lane_pilot_owner_config` | `owner_push.*` | {at("src/rooms/owner-waiting/push.ts", "hubFields(db, \"owner_push\")")} | `waiting config`, `owner_waiting_config`, the screen |
-| per-project `harness:config:<id>` | `harness.adopt_by` (the default of every project) | {at("src/rooms/harness/server/harness.ts", "hubFields(db, \"harness\")")} | `harness configure`, the screen |
+| per-project `harness:config:<id>` | `harness.adopt_by` (the default of every project) | {at("src/rooms/harness/server/config.ts", "hubFields(db, \"harness\")")} | `harness configure`, the screen |
 | project settings, CLI only | `baseline.*`, `checks.require_red_on_base`, `regress.*` in the catalog | {at("src/rooms/baseline/logic.ts", "parseBaselineSettings")} | the screen (default), the project's «Work» tab (own value) |
 
 Rules: a field with a row reads the row; a field without one reads the old store, so nothing set before is lost; a write goes to the row only and leaves the old store alone ({at("src/rooms/wall/service.ts", "writeHubFields(db, \"wall\"")}); the CLI commands keep their syntax and their clamping (a value over the limit is stored as the limit). A write from the CLI moves the setting's version, so a page that read before sees the next save as a conflict and reloads ({at("src/rooms/platform/server/hub.ts", "INSERT INTO lane_pilot_setting_generation")}). A project record of `harness.adopt_by` that was saved before keeps winning over the default.
@@ -96,7 +96,7 @@ for key, needle in rows_wall:
     doc += f"| `{key}` | {cite('src/rooms/wall/config.ts', needle)} |\n"
 for key, path, needle in [
     ("bench.budget_tokens", "src/rooms/bench/runner.ts", "DEFAULT_BUDGET_TOKENS"), ("bench.budget_hours", "src/rooms/bench/runner.ts", "DEFAULT_BUDGET_HOURS"),
-    ("harness.adopt_by", "src/rooms/harness/server/harness.ts", "adoptBy: AdoptBy"),
+    ("harness.adopt_by", "src/rooms/harness/server/config.ts", "adoptBy: AdoptBy"),
     ("owner_push.enabled", "src/rooms/owner-waiting/push.ts", "export type PushConfig"), ("owner_push.quiet", "src/rooms/owner-waiting/push.ts", "const QUIET"),
     ("owner_push.timezone", "src/rooms/owner-waiting/push.ts", "function validTimezone"),
     ("checks.require_red_on_base", "src/rooms/baseline/logic.ts", "requireRed"), ("baseline.already_built", "src/rooms/baseline/logic.ts", "BaselineSettings"), ("baseline.time_cap_sec", "src/rooms/baseline/logic.ts", "timeCapSec: number"),

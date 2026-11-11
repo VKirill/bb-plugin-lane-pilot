@@ -94,7 +94,7 @@ SPECS = [
     row("harness.adopt_by", "Who adopts a new instruction tree", "Кто принимает новое дерево инструкций",
         "bench: a tree taught by the nightly editor is adopted only after it won on the bench set. live: the alternation on real tasks decides. Default bench. A project that set its own value keeps it.",
         "bench: новое дерево инструкций принимается, только если оно выиграло на эталонном наборе. live: решает чередование на живых задачах. По умолчанию bench. Проект со своим значением его сохраняет.",
-        inv="enum", values="bench,live", default="bench", control="select", options=["bench", "live"], cite=("src/rooms/harness/server/harness.ts", "adoptBy: AdoptBy")),
+        inv="enum", values="bench,live", default="bench", control="select", options=["bench", "live"], cite=("src/rooms/harness/server/config.ts", "adoptBy: AdoptBy")),
     # ---- owner push
     row("owner_push.enabled", "Telegram push about what waits for you", "Пуш в Telegram о том, что ждёт вас",
         "One short message when something new needs only you (an overdue deferral, a memory conflict, a night proposal). Nothing waits for an answer. Default: on.",

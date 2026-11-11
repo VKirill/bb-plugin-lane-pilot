@@ -15,7 +15,7 @@ sources:
   - src/rooms/wall/service.ts
   - src/rooms/bench/service.ts
   - src/rooms/owner-waiting/push.ts
-  - src/rooms/harness/server/harness.ts
+  - src/rooms/harness/server/config.ts
   - src/rooms/settings/setting-validation.ts
   - scripts/improvement-rows.py
   - tests/improvement/hub.test.ts
@@ -66,7 +66,7 @@ A control is a row of `lane_pilot_project_settings` under project `*` (the globa
 | plugin key-value `wall:config` | `wall.*` | `src/rooms/wall/service.ts:99` | `wall config key=value`, the screen |
 | plugin key-value `bench:config` | `bench.*` | `src/rooms/bench/service.ts:65` | `bench config`, the screen |
 | table `lane_pilot_owner_config` | `owner_push.*` | `src/rooms/owner-waiting/push.ts:39` | `waiting config`, `owner_waiting_config`, the screen |
-| per-project `harness:config:<id>` | `harness.adopt_by` (the default of every project) | `src/rooms/harness/server/harness.ts:226` | `harness configure`, the screen |
+| per-project `harness:config:<id>` | `harness.adopt_by` (the default of every project) | `src/rooms/harness/server/config.ts:66` | `harness configure`, the screen |
 | project settings, CLI only | `baseline.*`, `checks.require_red_on_base`, `regress.*` in the catalog | `src/rooms/baseline/logic.ts:35` | the screen (default), the project's «Work» tab (own value) |
 
 Rules: a field with a row reads the row; a field without one reads the old store, so nothing set before is lost; a write goes to the row only and leaves the old store alone (`src/rooms/wall/service.ts:105`); the CLI commands keep their syntax and their clamping (a value over the limit is stored as the limit). A write from the CLI moves the setting's version, so a page that read before sees the next save as a conflict and reloads (`src/rooms/platform/server/hub.ts:63`). A project record of `harness.adopt_by` that was saved before keeps winning over the default.
@@ -93,7 +93,7 @@ Every row is in the catalog (`scripts/ui-catalog-hand.json`, written by `scripts
 | `wall.rerun_sandbox_only` | `src/rooms/wall/config.ts:25` | `rerunSandboxOnly: boolean` |
 | `bench.budget_tokens` | `src/rooms/bench/runner.ts:70` | `DEFAULT_BUDGET_TOKENS` |
 | `bench.budget_hours` | `src/rooms/bench/runner.ts:71` | `DEFAULT_BUDGET_HOURS` |
-| `harness.adopt_by` | `src/rooms/harness/server/harness.ts:78` | `adoptBy: AdoptBy` |
+| `harness.adopt_by` | `src/rooms/harness/server/config.ts:28` | `adoptBy: AdoptBy` |
 | `owner_push.enabled` | `src/rooms/owner-waiting/push.ts:18` | `export type PushConfig` |
 | `owner_push.quiet` | `src/rooms/owner-waiting/push.ts:24` | `const QUIET` |
 | `owner_push.timezone` | `src/rooms/owner-waiting/push.ts:26` | `function validTimezone` |

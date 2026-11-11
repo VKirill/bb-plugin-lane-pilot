@@ -39,7 +39,7 @@ const WRAPPERS: Record<string, Wrapper> = {
   "src/rooms/native-agent/server/helper-probe.ts": { via: "exception", note: "a probe asks about exactly the provider/model it checks" },
   "src/rooms/stability/server/probes.ts": { via: "exception", note: "fixed probe threads of the stability drills" },
   "src/rooms/bench/server/plugin-ports.ts": { via: "exception", note: "the benchmark's own fixed writer" },
-  "src/rooms/harness/server/harness.ts": { via: "exception", note: "the nightly harness editor and its trial arms use the harness' own selection (harness config), not a row" },
+  "src/rooms/harness/server/sessions.ts": { via: "exception", note: "the nightly harness editor and its trial arms use the harness' own selection (harness config), not a row" },
   "src/rooms/wall/server/wall.ts": { via: "resolver", roles: ["wall-hunter"], note: "a wall config the owner changed is a pin (pickHunter); otherwise the row" },
 };
 

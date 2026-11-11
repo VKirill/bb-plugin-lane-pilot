@@ -20,7 +20,7 @@ LIVE_MAX_AGE_SEC = 24 * 3600
 NOT_LIVE = ["docs/**", "tests/**", ".agents/**", ".bb/**", "**/*.md", "src/**/ui/**", "src/**/*.tsx", "src/rooms/sma-map/**",
             "src/rooms/world/**", "src/rooms/ui-shell/**", "packages/i18n/**", "packages/ui-kit/**", "packages/pixel-world/**",
             "packages/world-sim/**", "scripts/**", "vitest*", "tsconfig*", ".gitignore", ".gitnexus/**", "CLAUDE.md", "AGENTS.md"]
-FOUNDATION = ["scripts/lp-drill.py", "scripts/lp-drill.sh", "package-lock.json", "src/rooms/core/**", "src/rooms/storage/**", "src/rooms/contracts/**",
+FOUNDATION = ["scripts/lp-drill.py", "scripts/lp_drill/**", "scripts/lp-drill.sh", "package-lock.json", "src/rooms/core/**", "src/rooms/storage/**", "src/rooms/contracts/**",
               "src/rooms/settings/**", "packages/contracts/**", "packages/kit/**", "packages/settings-catalog/**", "packages/host-calls/**", "packages/models/**"]
 # Rooms a writer task's road (dispatch, writer, checks, merge, acceptance) does not pass through.
 PARALLEL3_SKIP = [f"src/rooms/{room}/**" for room in ("phase", "council", "cockpit", "night", "night-graphs", "hypotheses", "bench", "forge", "money",
