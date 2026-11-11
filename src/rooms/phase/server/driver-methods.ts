@@ -800,7 +800,12 @@ export function installMethods(tools: MethodsTools) {
     const grill = tools.grillBlock(phase);
     if (grill) {
       book(phase, "plan", "grill_blocked", `grill ${grill.runId} left open challenges: ${grill.open.join("; ")} — admission waits: the owner's word on this plan (a planning yes) lifts it, or a plan that answers them (phase.grill_gate=off switches the hold off)`);
-      return phase;
+      // The caller hears it too, not only the book: the reason and the two ways out.
+      throw new PhaseRefusal(`the plan is not admitted: the grill ${grill.runId} of this plan ended open`, [
+        ...grill.open.map((challenge) => `open grill question: ${challenge}`),
+        "way out 1: answer the open grill questions, then resubmit the plan (lp.plan) so it is checked again",
+        "way out 2: set phase.grill_gate=off for the project to admit over an open grill",
+      ]);
     }
     // SMA k_v_grill: the pre-push plan is budget-aware — it states the appetite left in the run's token budget and the
     // money hold as they read at admission; no cap set reads «no monthly cap», it does not invent one.

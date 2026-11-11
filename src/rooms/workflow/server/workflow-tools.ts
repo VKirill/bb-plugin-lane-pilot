@@ -12,6 +12,7 @@ import type { WorkflowStore } from "../../storage";
 import { bindGraphStepLookup, fenceOutside, registerObservedTool } from "../../platform/server";
 import { isOpenAttemptState } from "../../contracts/state-machine";
 import { backlogMatches } from "../../backlog";
+import { listPhases } from "../../phase";
 import type { TodoMeta } from "../../backlog";
 import { ToolError } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
@@ -136,7 +137,13 @@ export async function runWorkflowTool(deps: WorkflowToolDeps, params: { workflow
   if (workflow.status !== "published" && !(workflow.status === "tested" && params.liveTrial === true)) {
     return refused(`not_runnable: "${workflow.id}" is ${workflow.status}, only published workflows start.${workflow.status === "tested" ? " It has passed its tests on stubs but has never run for real: when the owner agrees to a first real run (it will really send, post and spend), call again with liveTrial: true; one successful run makes it published." : ""} Published: ${published.join(", ") || "(none)"}`, { workflow: workflow.id });
   }
-  const inputs = params.inputs;
+  // A grill of a phase's plan is recorded against THAT plan (its sha and the phase id), so the phase's admission gate holds only
+  // for a grill of the plan it is admitting; a grill started with no plan at planning carries no sha and never holds anything.
+  let inputs = params.inputs;
+  if (workflow.id === "grill-plan") {
+    const phase = listPhases(deps.db, { pmThreadId: context.threadId, live: true }).find((row) => row.stage === "planning" && row.record.plan?.sha);
+    if (phase) inputs = { ...inputs, plan_sha: phase.record.plan!.sha, phase_id: phase.id };
+  }
   const missing = workflow.inputs.filter((field) => field.required && field.default === undefined && (inputs[field.name] === undefined || inputs[field.name] === null || inputs[field.name] === ""));
   if (missing.length) {
     return refused(`missing_inputs: ${missing.map((field) => field.name).join(", ")}. Ask the owner for them and call again`, {

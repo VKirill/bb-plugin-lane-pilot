@@ -104,10 +104,13 @@ describe("stream i2 graphs", () => {
     db.prepare(`INSERT INTO lane_pilot_wf_step(run_id,step_key,origin,node_id,visit,state,input_json,started_at,ended_at,updated_at,receipt_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
       .run("wfrun_plan", "wfrun_plan:critic", "edge", "critic", 1, "succeeded", "{}", 10, 11, 11, JSON.stringify({ threadId: "thr_critic" }));
     db.prepare(`INSERT INTO lane_pilot_wf_run(id,workflow_id,workflow_version,workflow_sha256,definition_json,project_id,link_run_id,status,inputs_json,output_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run("wfrun_grill", "grill-plan", 1, "s", "{}", "projA", "run1", "succeeded", "{}", JSON.stringify({ status: "open", open: ["which shard migrates first", "rollback window"] }), 20, 20);
+      .run("wfrun_grill", "grill-plan", 1, "s", "{}", "projA", "run1", "succeeded", JSON.stringify({ plan_sha: sha, phase_id: "any" }), JSON.stringify({ status: "open", open: ["which shard migrates first", "rollback window"] }), 20, 20);
 
     // Blocked: admission waits and names the open challenges and the lift.
-    const held = await phases.planCheck({ phaseId: await open(), decision: "approve", by: "t", wfRunId: "wfrun_plan" });
+    const heldId = await open();
+    const refusal = await phases.planCheck({ phaseId: heldId, decision: "approve", by: "t", wfRunId: "wfrun_plan" }).catch((cause: unknown) => cause as Error & { why?: string[] });
+    expect(refusal).toBeInstanceOf(Error);
+    const held = (await phases.status(heldId)).phase;
     expect(held.stage).toBe("planning");
     expect(held.record.plan!.admittedSha).toBeUndefined();
     const book = (await phases.status(held.id)).book;
