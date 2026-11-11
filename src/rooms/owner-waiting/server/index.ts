@@ -13,7 +13,7 @@ import type { LearningItemsReader, OwnerItemSweep } from "../items";
 /** The bell «awaits a decision» (SMA m_ws_notify): every five minutes the new wake items become one browser notification
  * through the push-notifications plugin — a title and a count line, no item text; the announced keys are marked so a repeat
  * never goes out, quiet hours and owner_push.enabled apply, and a missing plugin or a failed send is logged (the next tick asks again).
- * Off unless the owner set owner_push.bell on (`bb lane-pilot waiting push-config bell=on`): nothing new is pushed to an install that asked for nothing. */
+ * On unless the owner stored `bell=off` (`bb lane-pilot waiting push-config bell=off`). An item the Telegram digest announced is skipped, and the first tick after an upgrade only marks what exists. */
 export function mountOwnerBell(ctx: ServerCore, sweeps: readonly OwnerItemSweep[] = [], learningReader?: LearningItemsReader): void {
   scheduleIsolated(ctx.bb, "owner-bell", "*/5 * * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
