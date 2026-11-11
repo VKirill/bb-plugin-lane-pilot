@@ -435,24 +435,22 @@ describe("[sma:k_lib_docaudit] doc-audit called the old way writes no baseline f
 
 describe("[sma:k_lib_spafresh] a source touched after the bundle fails freshness --strict; the old way keeps main's exit", () => {
   it("names the stale file only under --strict", () => {
-    const dist = join(repoRoot, "dist");
-    const made = !existsSync(dist);
-    mkdirSync(dist, { recursive: true });
-    const bundle = join(dist, "app.js");
-    const bundleExisted = existsSync(bundle);
+    // A built tree of its own: the checkout's dist decided this test before (a fresh build's meta file made the bundle young), and the test re-dated the real bundle.
+    const dist = mkdtempSync(join(tmpdir(), "lp-fresh-"));
     try {
-      if (!bundleExisted) writeFileSync(bundle, "// test bundle\n");
+      const bundle = join(dist, "app.js");
+      writeFileSync(bundle, "// test bundle\n");
       const old = new Date("2001-01-01T00:00:00Z");
       utimesSync(bundle, old, old);
-      const strict = spawnSync("npx", ["tsx", ship, "freshness", "--strict"], { encoding: "utf8", timeout: 120_000, cwd: repoRoot });
+      const env = { ...process.env, LP_SHIP_DIST: dist };
+      const strict = spawnSync("npx", ["tsx", ship, "freshness", "--strict"], { encoding: "utf8", timeout: 120_000, cwd: repoRoot, env });
       expect(strict.status).toBe(1);
       expect(strict.stdout).toContain("bundle older than sources");
-      const plain = spawnSync("npx", ["tsx", ship, "freshness"], { encoding: "utf8", timeout: 120_000, cwd: repoRoot });
+      const plain = spawnSync("npx", ["tsx", ship, "freshness"], { encoding: "utf8", timeout: 120_000, cwd: repoRoot, env });
       expect(plain.stdout).not.toContain("bundle older than sources");
       expect([0, 1, 2]).toContain(plain.status);
     } finally {
-      if (!bundleExisted) rmSync(bundle, { force: true });
-      if (made) rmSync(dist, { recursive: true, force: true });
+      rmSync(dist, { recursive: true, force: true });
     }
   });
 });

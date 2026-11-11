@@ -192,6 +192,15 @@ describe("hub watchdog + ship gate parity H1", () => {
     expect(old.stdout).toContain("bundle older than sources");
   }, 300000);
 
+  it("[sma:k_lib_spafresh] the served version is read from bb's real answer ({ plugins: [...] }): a hub on another version fails freshness --strict", () => {
+    const { dir } = tmp();
+    stub(dir, "bb", `echo '{"plugins":[{"id":"lane-pilot","version":"0.0.1"}]}'`);
+    const other = spawnSync("npx", ["tsx", ship, "freshness", "--strict"], { encoding: "utf8", timeout: 120_000, cwd: repoRoot, env: { ...process.env, PATH: `${join(dir, "bin")}:${process.env.PATH}` } });
+    expect(other.stdout).toContain('"served":"0.0.1"');
+    expect(other.stdout).toContain("the hub serves 0.0.1");
+    expect(other.status).toBe(1);
+  }, 300000);
+
   it("[sma:k_v_prepublish] [sma:m_tl_rebrand_wired] [sma:k_lib_pkgcheck] [sma:k_lib_docaudit] [sma:k_lib_spafresh] npm's prepublishOnly runs the gate: build first, freshness with an unreachable hub a warning, then the strict checks", () => {
     const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as { scripts?: Record<string, string> };
     expect(pkg.scripts?.prepublishOnly).toBe("npm run gate");

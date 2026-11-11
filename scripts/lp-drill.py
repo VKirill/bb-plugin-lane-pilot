@@ -182,9 +182,11 @@ def scenario_watchdog(tmp: Path) -> dict:
     rc, out, _ = run(["bash", script, "lift"], env={**env, "LP_WATCH_DOOR": "https://bb.vechkasov.pro/install/version"}, timeout=60)
     if "nothing to do" not in out:
         problems.append(f"a lift with the door answering did something: {out.strip()[:200]}")
-    (state / "outages.jsonl").write_text('{"at":1700000000,"event":"lift","detail":"old"}\n')
+    # Noon UTC, so the line's day is the same in every time zone the drill runs in: the watchdog names a day by the machine's
+    # clock, and the old sample (22:13 UTC) was already the 15th in Moscow, where this check then always failed.
+    (state / "outages.jsonl").write_text('{"at":1700049600,"event":"lift","detail":"old"}\n')
     run(["bash", script, "rotate"], env=env, timeout=30)
-    if not (state / "outages-2023-11-14.jsonl").exists():
+    if not (state / "outages-2023-11-15.jsonl").exists():
         problems.append("an old log did not rotate to its day")
     if os.environ.get("LP_DRILL_WATCHDOG_LIVE") == "1" and shutil.which("systemctl"):
         live_problems, live = _watchdog_live(tmp, with_bot=False, census=True)

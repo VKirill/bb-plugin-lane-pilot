@@ -329,7 +329,8 @@ function freshness(args: string[] = []): number {
   const strict = args.includes("--strict");
   const findings: string[] = [];
   let served: string | null = null;
-  try { served = (JSON.parse(execFileSync("bb", ["plugin", "list", "--json"], { encoding: "utf8", env: { ...process.env, BB_CLI: "" } })) as Array<{ id: string; version?: string }>).find((p) => p.id === "lane-pilot")?.version ?? null; } catch { served = null; }
+  // bb answers { plugins: [...] }; read as a bare list it threw, and every check ended «the hub is unreachable» with the hub answering.
+  try { served = (JSON.parse(execFileSync("bb", ["plugin", "list", "--json"], { encoding: "utf8", env: { ...process.env, BB_CLI: "" } })) as { plugins: Array<{ id: string; version?: string }> }).plugins.find((p) => p.id === "lane-pilot")?.version ?? null; } catch { served = null; }
   const bundle = join(DIST, "app.js");
   const sha = existsSync(bundle) ? createHash("sha256").update(readFileSync(bundle)).digest("hex").slice(0, 16) : null;
   console.log(JSON.stringify({ checkout: pkg.version, served, windowBundle: sha ? `dist/app.js ${sha}` : "not built" }));

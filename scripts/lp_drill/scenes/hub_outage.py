@@ -19,7 +19,7 @@ from lp_drill.report import verdict
 STAND_DOOR = """import http.server, sqlite3, sys, threading, time
 port, db = int(sys.argv[1]), sys.argv[2]
 if db != "-":
-    con = sqlite3.connect(db)
+    con = sqlite3.connect(db, check_same_thread=False)  # the beat thread writes: without this every insert raised and the census counted 0 rows
     con.execute("pragma journal_mode=WAL"); con.execute("create table if not exists beats(n integer)")
     def beat():
         while True:
@@ -117,7 +117,11 @@ def _watchdog_live(tmp: Path, with_bot: bool, census: bool) -> tuple[list[str], 
             return ["the stand-in door never answered"], {}
         _, pid, _ = run(["systemctl", "--user", "show", "-p", "MainPID", "--value", "lp-drill-door"], timeout=15)
         pid = pid.strip()
+        if db:
+            time.sleep(0.5)  # let the stand-in commit some rows, so the census has something to lose
         census_before = _db_census(script, env, db) if db else None
+        if census_before is not None and census_before["rows"] <= 0:
+            problems.append(f"the stand-in database held no rows before the kill ({census_before}): the census would prove nothing")
         if not pid.isdigit() or int(pid) <= 1:  # 0 would signal the drill's own process group, 1 is init
             _stand_down()
             return [f"the stand-in service has no usable main pid (read {pid!r}); nothing was signalled"], {}
