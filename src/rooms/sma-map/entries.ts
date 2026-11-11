@@ -1125,7 +1125,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n1114: ["have", "словарный индекс — виртуальная таблица FTS на хабе", "src/rooms/migrations.ts#migrations"],
   n1115: ["have", "заметок в обход конвейера записи нет: помощники и писатели стартуют с автопамятью выключенной", "src/rooms/native-agent/native-claude-host.ts#MERGE_SETTINGS_PY"],
   n1116: ["have", "журнал выдачи — use_count и last_used_at записи", "src/rooms/migrations.ts#migrations"],
-  n1117: ["have", "Claude Lane removed 2026-10-30 (owner): каталог и пакеты в .cls не хранятся", "lane-stack:hooks/guard_shell.py#_catalog_card"],
+  n1117: ["have", "Claude Lane removed 2026-10-30 (owner): каталог и пакеты в .cls не хранятся", "lane-stack/hooks/guard_shell.py#_catalog_card"],
   n1118: ["have", "книга попыток", "src/rooms/migrations.ts#migrations"],
   n1119: ["have", "отметка версии попытки", "src/rooms/contracts/state-machine.ts#STATE_MACHINE_VERSION"],
   n1120: ["have", "папка запуска попытки", "src/rooms/storage/attempts-store.ts#inspectAttempt"],
