@@ -1,28 +1,37 @@
 import { parseIntegrationGateSettings, type ResolvedGate } from "../../contracts/integration-gate";
 import type { IntegrationGateSettings, GateWhen } from "../../contracts/integration-gate";
 import type { TaskV2, PrototypeConfig } from "../../contracts";
-import type { GateRunRow, GateRunState, LanePilotDatabase, StageReceiptRow } from "../../storage";
-import { finishGateRun, getRun, getRunSettingsScopes, getTask, getTaskContractJson, latestGateRun, latestGateRunForTask, listStageReceipts, listTaskIdsForRun, loadProjectSettings, noteGateRunStart, transitionAttempt } from "../../storage";
+import { finishGateRun, getRun, getRunSettingsScopes, getTaskContractJson, latestGateRun, latestGateRunForTask, listStageReceipts, listTaskIdsForRun, loadProjectSettings, noteGateRunStart, transitionAttempt } from "../../storage";
 import { recordGateEvaluation } from "../../runs/server/stage-records";
-import { bestEffort, stringAt, stripAnsi } from "@lane-pilot/kit";
+import { bestEffort, stringAt } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 
 import { isEnvironmentCheckFailure } from "../../contracts/failure-class";
-import { isMainfixTask, readCheckRun } from "../../tasks";
+import { readCheckRun } from "../../tasks";
 import { gateLabel, gateResolverFor } from "./gate-detect"
-import { continuesEpisode, type GateEpisode } from "./gate-episode";
-import { closeOwnerItemsByPrefix, postOwnerItem } from "../../owner-waiting";
+import type { GateEpisode } from "./gate-episode";
+import { closeOwnerItemsByPrefix } from "../../owner-waiting";
 import type { LeadRoadApi } from "../../contracts";
 import { attributeFailures, testLabel } from "./gate-attribution";
-import { cacheHitsNote, extractCacheHits, extractFailingFiles, extractFailingTests, unhandledErrorBlock, type FailingTest } from "../gate-output";
+import { cacheHitsNote, extractCacheHits, extractFailingFiles, extractFailingTests, unhandledErrorBlock } from "../gate-output";
 import { flakyEvidence, outputTail, readingFrom } from "../machine-pressure";
 import type { GateAttributeResult } from "../integration-gate-host";
 import { join } from "node:path";
 
 import type { DispatchWriter } from "../../platform/server";
+import { bisectCulprit, findCulpritByFiles, type MergedTaskInfo, type ProjectFileReader } from "./gate-culprit";
+import { formatFixTurnPrompt } from "./gate-fix-prompt";
+import { allFailuresAreTimeouts, buildRecheckGateCommand } from "./gate-timeouts";
+import { dispatchRepair } from "./gate-repair";
+import { enterEpisode, fileWithLead, noteRed } from "./gate-red-report";
+
+export { gateRunVerdict } from "./gate-run-verdict";
+export { bisectCulprit, extractStaticImports, findCulpritByFiles, isFileRelatedToTask, type MergedTaskInfo, type ProjectFileReader } from "./gate-culprit";
+export { formatFixTurnPrompt } from "./gate-fix-prompt";
+export { allFailuresAreTimeouts, buildRecheckGateCommand } from "./gate-timeouts";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
-interface Services {
+export interface Services {
   leadRoad: LeadRoadApi;
   dispatchWriter: DispatchWriter;
 }
@@ -39,260 +48,6 @@ export type FailingGateCheck = {
 
 export { extractFailingFiles };
 
-export type MergedTaskInfo = {
-  taskId: string;
-  commitSha: string;
-  threadId: string | null;
-  attemptId: string | null;
-  produced: string[];
-};
-
-/**
- * The durable record of one integration-gate run (lane_pilot_gate_run): «all tasks accepted» alone never said what
- * main's own check did after the merge — still running, red, never ran, or green, and on which commit (Astra F1).
- */
-const GATE_RUN_STALE_MS = 35 * 60_000; // gate timeout (30 min) + slack
-
-/** A run left `running` past the gate's own timeout died with it (a reload kills the in-flight call): it ran no verdict. */
-function gateRunEffective(row: GateRunRow, now = Date.now()): { state: GateRunState; reason: string | null } {
-  if (row.state === "running" && now - row.updatedAt > GATE_RUN_STALE_MS) {
-    return { state: "not_run", reason: "the gate run was interrupted (timeout or reload)" };
-  }
-  return { state: row.state, reason: row.reason };
-}
-
-/**
- * The gate state the PM reads next to an accepted task / in preship, in the brief's words:
- * `green on <short sha>` / `running` / `red: <command>` / `not run: <reason>`. `pending` while the verdict is still out.
- */
-export function gateRunVerdict(row: GateRunRow | undefined): { line: string; pending: boolean; failed: boolean } {
-  if (!row) return { line: "running", pending: true, failed: false };
-  const eff = gateRunEffective(row);
-  if (eff.state === "running") return { line: "running", pending: true, failed: false };
-  if (eff.state === "passed") return { line: `green on ${row.head ? row.head.slice(0, 12) : "unknown commit"}`, pending: false, failed: false };
-  if (eff.state === "failed") return { line: `red: ${row.command}${eff.reason ? ` (${eff.reason.slice(0, 160)})` : ""}`, pending: false, failed: true };
-  return { line: `not run: ${eff.reason ?? "unknown"}`, pending: false, failed: true };
-}
-
-/**
- * Parses static imports from file content to trace dependency to changed files.
- */
-export function extractStaticImports(source: string): string[] {
-  const imported = new Set<string>();
-  const importRegex = /(?:import|export)\s+(?:[\s\S]*?from\s+)?['"]([^'"]+)['"]/g;
-  let match: RegExpExecArray | null;
-  while ((match = importRegex.exec(source)) !== null) {
-    if (match[1]) imported.add(match[1]);
-  }
-  const requireRegex = /require\(['"]([^'"]+)['"]\)/g;
-  while ((match = requireRegex.exec(source)) !== null) {
-    if (match[1]) imported.add(match[1]);
-  }
-  return [...imported];
-}
-
-/**
- * Reads a file of the project checkout, relative to its root, on the machine that holds it; null when it cannot be read.
- * The project may live on another host: the hub never opens its path.
- */
-export type ProjectFileReader = (relativePath: string) => Promise<string | null>;
-
-/**
- * Checks if a failing file is related to a merged task by checking:
- * 1. Did the task touch/produce this file directly?
- * 2. Did the task touch/produce a file imported by this failing file?
- */
-export async function isFileRelatedToTask(
-  failingFile: string,
-  taskProduced: string[],
-  readProjectFile: ProjectFileReader
-): Promise<boolean> {
-  const norm = (p: string) => p.replace(/^\.\//, "").trim();
-  const failingNorm = norm(failingFile);
-  const taskProducedSet = new Set(taskProduced.map(norm));
-
-  if (taskProducedSet.has(failingNorm)) return true;
-
-  // Check imports in failingFile if it can be read
-  try {
-    const content = await readProjectFile(failingNorm);
-    if (content === null) throw new Error("unreadable");
-    const rawImports = extractStaticImports(content);
-    for (const imp of rawImports) {
-      if (imp.startsWith(".")) {
-        // Resolve relative to failingNorm
-        const failingDir = failingNorm.includes("/") ? failingNorm.slice(0, failingNorm.lastIndexOf("/")) : "";
-        const candidateBase = join(failingDir, imp).replace(/^\.\//, "");
-        for (const prod of taskProducedSet) {
-          const prodNoExt = prod.replace(/\.[^/.]+$/, "");
-          if (candidateBase === prod || candidateBase === prodNoExt || prod.startsWith(candidateBase)) {
-            return true;
-          }
-        }
-      } else {
-        for (const prod of taskProducedSet) {
-          if (prod.includes(imp)) return true;
-        }
-      }
-    }
-  } catch {
-    // Cannot read file, check basic substring/basename relation
-    for (const prod of taskProducedSet) {
-      if (prod.includes(failingNorm) || failingNorm.includes(prod)) return true;
-    }
-  }
-
-  return false;
-}
-
-export async function findCulpritByFiles(
-  failingFiles: string[],
-  mergedTasks: MergedTaskInfo[],
-  readProjectFile: ProjectFileReader
-): Promise<MergedTaskInfo | null> {
-  if (mergedTasks.length === 0) return null;
-  if (failingFiles.length === 0) return null;
-
-  const matchingTasks = new Set<MergedTaskInfo>();
-
-  for (const task of mergedTasks) {
-    for (const file of failingFiles) {
-      if (await isFileRelatedToTask(file, task.produced, readProjectFile)) {
-        matchingTasks.add(task);
-        break;
-      }
-    }
-  }
-
-  if (matchingTasks.size === 1) {
-    return [...matchingTasks][0]!;
-  }
-  return null;
-}
-
-/**
- * Fallback: bisect over the commits of mergedTasks with the gate command, as one host job on the project's machine (a
- * scratch worktree there; the checkout itself is not moved). Null when the host cannot name a first bad commit.
- */
-export async function bisectCulprit(
-  host: ServerCore["host"],
-  hostId: string,
-  gateCommand: string,
-  goodSha: string,
-  badSha: string,
-  basePath: string,
-  mergedTasks: MergedTaskInfo[],
-  timeoutMs = 30 * 60_000
-): Promise<MergedTaskInfo | null> {
-  try {
-    const found = await host.call("gateBisect", {
-      requestedHostId: hostId, basePath, command: gateCommand, goodSha, badSha, timeoutSec: Math.ceil(timeoutMs / 1000),
-    }, { hostId, timeoutMs: timeoutMs + 60_000 });
-    if (found.status !== "found" || !found.commit) return null;
-    const badCommit = found.commit;
-    return mergedTasks.find((t) => t.commitSha.startsWith(badCommit) || badCommit.startsWith(t.commitSha)) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-export function formatFixTurnPrompt(input: {
-  taskId: string;
-  gateCommand: string;
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-  logPath: string;
-  /** The failing tests your task's diff can have broken (the host checked they pass on the base and live in a workspace the task touched). */
-  failingTests?: string[];
-  /** Failing tests that also fail on the base commit: not this task's, to be left alone. */
-  preexistingTests?: string[];
-  /** The run's own «Unhandled Errors» block (gate-output.ts `unhandledErrorBlock`): it fails the run with every test green and sits above the 800-char tail. */
-  unhandled?: string | null;
-}): string {
-  const tail = `${input.stderr}\n${input.stdout}`.trim().slice(-800);
-  return `Result: integration gate failed after merging your task ${input.taskId}.
-Full check log: ${input.logPath}
-
-→ The integration gate command \`${input.gateCommand}\` exited with code ${input.exitCode}.${input.failingTests?.length ? `\n→ Failing tests your change can have broken: ${input.failingTests.join(", ")}.` : ""}${input.preexistingTests?.length ? `\n→ Also red, but they fail without your change too (not yours, leave them): ${input.preexistingTests.join(", ")}.` : ""}${input.unhandled ? `\n→ The run reported an unhandled error outside any test (it fails the run even with every test green): ${input.unhandled}` : ""}
-→ Output tail:
-${tail}
-
-Make this pass on main. Change only what your task requires within owns_paths.`;
-}
-
-const TIMEOUT_ERROR_PATTERN = /(?:Test timed out in|Hook timed out in|\bTimeout\b|\btimed out\b)/i;
-
-/**
- * Returns true if every failing test was caused exclusively by a timeout (e.g. machine load).
- * Returns false if there are no failing tests or if any test failed with non-timeout errors (e.g. assertion).
- */
-export function allFailuresAreTimeouts(output: string, failingTests: readonly FailingTest[]): boolean {
-  if (!failingTests.length) return false;
-  const clean = stripAnsi(output);
-  const lines = clean.split("\n");
-
-  // If there are standard assertion / syntax / type errors anywhere in output, it's not all timeouts
-  if (/\bAssertionError\b|\bexpected\s+.+\s+to\b|\berror TS\d+:/.test(clean)) {
-    return false;
-  }
-
-  // Find sections or errors per failing test
-  // Map files to whether a timeout was seen for that file
-  const testFiles = new Set(failingTests.map((t) => t.file));
-  const timeoutsByFile = new Set<string>();
-
-  // In vitest / jest output:
-  // e.g. FAIL tests/foo.test.ts > suite > test
-  // Error: Test timed out in 5000ms.
-  // or ❯ tests/foo.test.ts:24:5
-  // or blocks per file. Let's associate lines with the current failing file being reported.
-  let currentFile: string | null = null;
-
-  for (const line of lines) {
-    for (const file of testFiles) {
-      if (line.includes(file)) {
-        currentFile = file;
-        break;
-      }
-    }
-
-    if (TIMEOUT_ERROR_PATTERN.test(line)) {
-      if (currentFile) {
-        timeoutsByFile.add(currentFile);
-      }
-    }
-  }
-
-  // If not every file was associated via block tracking, check if global output has timeout
-  // and each file is mentioned with a timeout or all errors in output are timeouts.
-  if (timeoutsByFile.size === testFiles.size) {
-    return true;
-  }
-
-  // Also handle case where test headers and errors appear in distinct structures:
-  // If the output contains TIMEOUT_ERROR_PATTERN and no other failure keywords (AssertionError, etc.)
-  const hasTimeout = TIMEOUT_ERROR_PATTERN.test(clean);
-  const hasAssertionOrOtherFail = /\bAssertionError\b|\bExpected:|\bReceived:|\bexpect\(|\bassert\b/i.test(clean);
-
-  if (hasTimeout && !hasAssertionOrOtherFail) {
-    return true;
-  }
-
-  return false;
-}
-
-export function buildRecheckGateCommand(gateCommand: string, failingFiles: readonly string[]): string | null {
-  // A detected `npm test` / `pytest -q` used to re-run the whole suite after an all-timeouts red (grill 2026-10-29 F-007): the files go
-  // after `--` to a package script (vitest, jest, mocha and node --test all take them) and straight to pytest. A runner this cannot
-  // narrow (`make check`, `python3 -I scripts/studio_test.py`) gets no encore at all: null, and the timeouts stand as the verdict.
-  const isVitestOrJest = /(?:^|[;&|]\s*)(?:npx\s+)?(?:vitest|jest)(?:\s+run)?(?:\s+|$)/i.test(gateCommand);
-  const isPytest = /(?:^|[;&|]\s*)(?:python3?\s+-m\s+)?pytest(?:\s|$)/i.test(gateCommand);
-  const isPackageScript = /^(?:npm|pnpm|yarn)\s+(?:run\s+)?test\s*$/i.test(gateCommand.trim());
-  if (!failingFiles.length || !(isVitestOrJest || isPytest || isPackageScript)) return null;
-  const uniqueFiles = [...new Set(failingFiles)];
-  return isPackageScript ? `${gateCommand.trim()} -- ${uniqueFiles.join(" ")}` : `${gateCommand} ${uniqueFiles.join(" ")}`;
-}
 
 /** Which checkout a merge or a gate run belongs to: the gate's queue and green commit are per scope (F-007). */
 type GateScope = { projectId?: string; hostId?: string; basePath?: string };
@@ -493,7 +248,7 @@ export class IntegrationGateRunner {
     if (exitCode === 0) {
       finishGateRun(db, gateRunId, "not_run", { head: ran.head ?? null, reason: `exit 0 but no test ran: ${reading.reason}` });
       this.ctx.log(`integration-gate: \`${gateCommand}\` exited 0 but proved nothing, no culprit searched: ${reading.reason}`);
-      this.noteRed({ runId, projectId }, this.enterEpisode(runId, gateCommand, ["(no test ran)"]), "gate_no_test",
+      noteRed(this.ctx, { runId, projectId }, enterEpisode(this.episodes, runId, gateCommand, ["(no test ran)"]), "gate_no_test",
         `Проверка после слияния (${label}) завершилась без единого теста: ${reading.reason}.`,
         "Зелёной её считать нельзя, но и виноватого коммита нет, поэтому никого не искали. Нужно поправить команду проверки или её тесты; проверка повторится при следующем слиянии.");
       return { ran: true, passed: false, culpritTaskId: null };
@@ -505,7 +260,7 @@ export class IntegrationGateRunner {
       const evidence = `${stderr}\n${stdout}`.split("\n").find((line) => isEnvironmentCheckFailure({ stderr: line }))?.trim().slice(0, 300) ?? "";
       finishGateRun(db, gateRunId, "not_run", { head: ran.head ?? null, reason: `machine: ${evidence.slice(0, 200)}` });
       this.ctx.log(`infra: integration gate \`${gateCommand}\` is red from the environment, no culprit searched: ${evidence}`);
-      this.noteRed({ runId, projectId }, this.enterEpisode(runId, gateCommand, ["(environment)"]), "gate_machine",
+      noteRed(this.ctx, { runId, projectId }, enterEpisode(this.episodes, runId, gateCommand, ["(environment)"]), "gate_machine",
         `Проверка после слияния (${label}) красная из-за машины, а не кода: ${evidence}.`,
         `Виноватого не искали и исправление никому не отправляли. Нужно починить машину (владельцы файлов или права в ${basePath}); проверка повторится при следующем слиянии.`);
       return { ran: true, passed: false, culpritTaskId: null };
@@ -685,11 +440,11 @@ export class IntegrationGateRunner {
         ...(attribution.strict ? { failingTests: attribution.remaining.map(testLabel), preexistingTests: attribution.preexisting.map(testLabel) } : {}),
         unhandled,
       });
-      const dispatched = await this.dispatchRepair(input, culprit.taskId, gateCommand, prompt, logRelativePath);
+      const dispatched = await dispatchRepair(this.ctx, this.services, input, culprit.taskId, gateCommand, prompt, logRelativePath);
       if (dispatched) {
         this.ctx.log(`integration-gate: ${label} failed, traced to ${culprit.taskId}; repair task ${dispatched} dispatched.${preexistingNote} Full log: ${logRelativePath}`);
       } else {
-        this.noteRed({ runId, projectId }, this.enterEpisode(runId, gateCommand, [culprit.taskId]), "gate_red", `После слияния задачи ${culprit.taskId} общая проверка проекта красная`,
+        noteRed(this.ctx, { runId, projectId }, enterEpisode(this.episodes, runId, gateCommand, [culprit.taskId]), "gate_red", `После слияния задачи ${culprit.taskId} общая проверка проекта красная`,
           `Проверка «${gateCommand}» упала после слияния партии, и виновата задача ${culprit.taskId}.${preexistingNote} Задачу починки создать не удалось (запуск закрыт или это уже починка починки): поручите исправление в чате проекта.`, logRelativePath);
       }
       return { ran: true, passed: false, culpritTaskId: culprit.taskId };
@@ -714,97 +469,15 @@ export class IntegrationGateRunner {
       // Every failing test is red on the base too, so no merged task is guilty: this is not the owner's decision, it is work a
       // decides lead can pick up itself. One branch on the lead's road tree (class next_step), the log keeps the rest; no owner row.
       this.ctx.log(`integration-gate: ${label} red, all ${failingTests.length} failing tests fail on the base too; filed to the lead's road for ${projectId}. Full log: ${logRelativePath}`);
-      this.fileWithLead({ runId, projectId }, failingTests, logRelativePath);
+      fileWithLead(this.ctx, this.services, { runId, projectId }, failingTests, logRelativePath);
     } else {
-      this.noteRed({ runId, projectId }, this.enterEpisode(runId, gateCommand, failingFiles), "gate_red",
+      noteRed(this.ctx, { runId, projectId }, enterEpisode(this.episodes, runId, gateCommand, failingFiles), "gate_red",
         `Проверка после слияния (${label}) не прошла (код ${activeExitCode}).${failingList}`, `${why}${cacheSuffix} Полный лог: ${logRelativePath}`, logRelativePath);
     }
 
     return { ran: true, passed: false, culpritTaskId: null };
   }
 
-  /**
-   * A red gate with no writer to fix it is a fact for the log and the owner's list, never a message into the PM chat: the gate runs
-   * after the batch's last merge, when the run is often accepted and its PM done (2026-10-31: a gate note woke a finished PM two
-   * hours later; the owner wants no event of the plugin's own in that chat, and since 2026-10-09 no question «what should the PM
-   * do?» either). One row per red-gate episode: the same red again changes nothing.
-   */
-  /**
-   * The repair task of a red gate traced to one merged task: that task's contract with the gate's command as its check and the fix turn as
-   * its objective, dispatched to the run's PM queue (the same «x-mainfix» id the post-merge check uses, so the redispatch and validation rules
-   * of a repair apply). Returns the task id, or null when nothing could be dispatched: no contract, no PM chat, a refused dispatch, or a
-   * culprit that is itself a repair (main red again after a repair is a person's to read, as checkMainAfterMerge holds).
-   */
-  private async dispatchRepair(input: { runId: string; projectId: string; pmThreadId: string }, taskId: string, gateCommand: string, prompt: string, logPath: string): Promise<string | null> {
-    if (isMainfixTask(taskId) || !input.pmThreadId) return null;
-    const contract = getTask(this.ctx.db as never, taskId)?.contract as TaskV2 | undefined;
-    if (!contract || typeof contract !== "object") return null;
-    const fix: TaskV2 = { ...contract, id: `${taskId}-mainfix`.slice(0, 128), title: `Make main green after ${taskId}`.slice(0, 200),
-      display_title: `Починка main после ${taskId}`.slice(0, 60), kind: "fix", area: contract.area ?? "maintenance", depends_on: [],
-      risk: contract.risk === "low" ? "medium" : contract.risk, expected_outputs: [gateCommand], objective: prompt,
-      // Each of the culprit's items whole: one string cut at 600 characters left a requirement broken mid-word and the plan critic blocked it.
-      acceptance: [`\`${gateCommand}\` passes on main`, ...(contract.acceptance ?? []).map((item) => `${taskId}'s acceptance still holds: ${item}`)] };
-    const plan = `Integration gate repair, dispatched by Lane Pilot. Full gate log: ${logPath}. Read the failure, find what ${taskId} clashes with on main, fix within owns_paths, run \`${gateCommand}\`.`;
-    try {
-      const result = await this.services.dispatchWriter({ threadId: input.pmThreadId, projectId: input.projectId, task: fix, plan });
-      const rejected = (result as { ok?: unknown }).ok === false || (result as { state?: unknown }).state === "rejected";
-      return rejected ? null : (stringAt(result, "taskId") ?? fix.id);
-    } catch (cause) {
-      this.ctx.log(`integration-gate: repair of ${taskId} not dispatched: ${cause instanceof Error ? cause.message : String(cause)}`);
-      return null;
-    }
-  }
-
-  /**
-   * A red the batch did not cause (every failing test is red on the base) becomes a branch of the lead's road tree, class
-   * next_step: «fix the pre-existing red test X in project P». A decides tier of the next tick acts on it without the owner;
-   * a proposes tier still puts it to him as a proposal, which is the right place for it — not a bare «nobody is guilty» row.
-   * One branch per (project, first failing tests): an open, proposed or already-deciding twin is enough.
-   */
-  private fileWithLead(input: { runId: string; projectId: string }, tests: FailingTest[], logPath?: string): void {
-    try {
-      const db = this.ctx.db as never as Parameters<LeadRoadApi["listRoad"]>[0];
-      const names = tests.map(testLabel).slice(0, 3).join(", ");
-      const title = `Починить ранее красный тест: ${names} (проект ${input.projectId})`.slice(0, 300);
-      const alive = this.services.leadRoad.listRoad(db, { projectId: input.projectId, state: ["open", "later", "proposed"], limit: 500 });
-      if (alive.some((row) => row.title === title)) return;
-      const rootId = `dir:${input.projectId}`;
-      const root = this.services.leadRoad.getRoad(db, rootId) ?? this.services.leadRoad.addRoad(db, { id: rootId, projectId: input.projectId, title: `${input.projectId}: directions`, kind: "direction", source: "lead", why: "the root the lead files a project's branches under when a proposal names no parent" });
-      this.services.leadRoad.addRoad(db, {
-        parentId: root.id, projectId: input.projectId, title, kind: "option", source: "lead", class: "next_step",
-        why: `Общая проверка после слияния красная, но все упавшие тесты падают и на базе до этой партии: ни одна слитая задача не виновата. Это работа, а не решение владельца: починить тест, который был сломан раньше.`,
-        evidence: [
-          { kind: "run", ref: input.runId, label: "красная проверка" },
-          ...(logPath ? [{ kind: "file" as const, ref: logPath, label: "полный лог" }] : []),
-          ...tests.slice(0, 5).map((test) => ({ kind: "note" as const, ref: testLabel(test).slice(0, 500), label: "упавший тест" })),
-        ],
-        costEstimate: "one fix",
-      });
-    } catch (cause) {
-      this.ctx.log(`integration-gate: the pre-existing red was not filed to the lead's road: ${cause instanceof Error ? cause.message : String(cause)}`);
-    }
-  }
-
-  private noteRed(input: { runId: string; projectId: string }, episode: GateEpisode, kind: string, what: string, why: string, logPath?: string): void {
-    this.ctx.log(`integration-gate: ${stripAnsi(what)} ${stripAnsi(why)}`);
-    postOwnerItem(this.ctx.db as never, {
-      key: `gate-red:${input.runId}:${episode.startedAt}`, source: "integration-gate", kind, projectId: input.projectId, wake: false,
-      what: stripAnsi(what), why: stripAnsi(why),
-      evidence: [{ kind: "run", ref: input.runId }, ...(logPath ? [{ kind: "file" as const, ref: logPath }] : [])],
-    });
-  }
-
-  /** A red run belongs to the run's current episode, or starts a new one (the owner's list has one row per episode). */
-  private enterEpisode(runId: string, command: string, files: string[]): GateEpisode {
-    const known = this.episodes.get(runId);
-    if (known && continuesEpisode(known, command, files)) {
-      known.files = [...new Set([...known.files, ...files])];
-      return known;
-    }
-    const episode: GateEpisode = { command, files: [...files], startedAt: Date.now() };
-    this.episodes.set(runId, episode);
-    return episode;
-  }
 }
 
 
