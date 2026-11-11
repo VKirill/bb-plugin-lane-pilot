@@ -104,7 +104,8 @@ export function createBacklog(ctx: ServerCore) {
         if (!issuable.has(key.slice(offerKey(projectId, "").length))) closeOwnerItem(db, key, "janitor:not issuable", now);
       }
       const next = current.issuable[0];
-      const planningHome = await homeOf(projectId, loadPrototypeConfig(db, projectId) as never).catch(() => null);
+      const scanConfig = loadPrototypeConfig(db, projectId);
+      const planningHome = scanConfig?.hostId && scanConfig.writerWorkspacePath ? await homeOf(projectId, scanConfig as never).catch(() => null) : null;
       const done = async (offered: string | null) => {
         await bb.storage.kv.set(lastScanKey(projectId), now as never).catch(() => undefined);
         out.push({ projectId, offered, scanned: true, lastScanAt: now, board: counts });

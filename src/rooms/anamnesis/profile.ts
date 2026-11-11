@@ -1,7 +1,9 @@
 import { unsafeReason } from "./model";
 
 /** The eight keys of a project's infra profile (SMA k_pl_infra): the `profile.<key>` project settings, written by `bb lane-pilot profile` and the start's profile writer. */
-export const PROFILE_KEYS = ["stack", "test_command", "release", "hosts", "start", "deploy", "logs", "style"] as const;
+/** The settings themselves, spelled out so a search for a key finds its reader. */
+export const PROFILE_SETTING_KEYS = ["profile.stack", "profile.test_command", "profile.release", "profile.hosts", "profile.start", "profile.deploy", "profile.logs", "profile.style"] as const;
+export const PROFILE_KEYS = PROFILE_SETTING_KEYS.map((key) => key.slice("profile.".length)) as unknown as readonly ["stack", "test_command", "release", "hosts", "start", "deploy", "logs", "style"];
 export const PROFILE_VALUE_MAX = 1000;
 
 /** Key names of a profile that hold a secret: whole words only (api_key, apiKey, DB_PASSWORD), so `monkey` or `keyboard_layout` pass. */
