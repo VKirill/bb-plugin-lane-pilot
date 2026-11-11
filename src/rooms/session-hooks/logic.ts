@@ -3,6 +3,13 @@
  * Native Claude sessions Lane Pilot launches call the bundled session-hook.mjs. A sticky writer calls the capsule
  * helpers before BB compacts the thread. A hook never wedges a session: callers catch and continue.
  */
+// The session hook runs as plain source (node --experimental-strip-types): a relative import needs its .ts suffix.
+// @ts-expect-error TS5097
+import { maskCredentials } from "../../../packages/kit/src/redact.ts";
+
+/** Text that enters a ledger, a capsule or a recall line passes the repo's credential mask first. */
+const masked = (text: string): string => maskCredentials(text).text;
+export const maskText = masked;
 
 export const DOCUMENTARY_AGENTS = ["Explore", "Plan", "statusline-setup"] as const;
 export const SUBAGENT_CAP = 8;
@@ -48,12 +55,14 @@ export type Capsule = {
  * What the session did so far (SMA k_hpc_progress): the files an edit tool touched (60 distinct at most),
  * the shell commands it ran (the last 30, clipped) and its prompts (the last 5, the first being the task).
  */
-export type SessionLedger = { files: string[]; commands: string[]; asks: string[] };
+export type SessionLedger = { files: string[]; commands: string[]; asks: string[]; /** The session's first prompt, written once: the last-5 list forgets it. */ first?: string };
 
 export function ledgerOf(raw: unknown): SessionLedger {
   const row = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
-  const list = (key: string, cap: number) => (Array.isArray(row[key]) ? row[key].map(String).filter(Boolean).slice(-cap) : []);
-  return { files: list("files", 60), commands: list("commands", 30), asks: list("asks", 5) };
+  const list = (key: string, cap: number, clean = (text: string) => text) => (Array.isArray(row[key]) ? row[key].map(String).filter(Boolean).slice(-cap).map(clean) : []);
+  // A ledger written before the mask existed is masked on the way in, so nothing printed back carries a secret.
+  const first = typeof row.first === "string" && row.first ? masked(row.first).slice(0, 600) : undefined;
+  return { files: list("files", 60), commands: list("commands", 30, masked), asks: list("asks", 5, masked), ...(first ? { first } : {}) };
 }
 
 export function ledgerAddFile(ledger: SessionLedger, path: string): SessionLedger {
@@ -62,15 +71,16 @@ export function ledgerAddFile(ledger: SessionLedger, path: string): SessionLedge
 }
 
 export function ledgerAddCommand(ledger: SessionLedger, command: string): SessionLedger {
-  const clipped = command.replace(/\s+/g, " ").trim().slice(0, 160);
+  // Masked before it is clipped: a secret cut in half by the clip would no longer match the mask.
+  const clipped = masked(command.replace(/\s+/g, " ").trim().slice(0, 2000)).slice(0, 160);
   if (!clipped) return ledger;
   return { ...ledger, commands: [...ledger.commands, clipped].slice(-30) };
 }
 
 export function ledgerAddAsk(ledger: SessionLedger, prompt: string): SessionLedger {
-  const clipped = prompt.replace(/\s+$/, "").slice(0, 600);
+  const clipped = masked(prompt.replace(/\s+$/, "").slice(0, 4000)).slice(0, 600);
   if (!clipped) return ledger;
-  return { ...ledger, asks: [...ledger.asks, clipped].slice(-5) };
+  return { ...ledger, asks: [...ledger.asks, clipped].slice(-5), first: ledger.first || clipped };
 }
 
 const CONSTRAINT_LINE = /^\s*(?:[-*]\s*)?(owns_paths|acceptance|never\b.*|must not\b.*)/i;
@@ -102,14 +112,15 @@ export function capsuleDetails(input: { firstPrompt?: string; transcriptTail?: s
   const prompt = (input.firstPrompt ?? "").trim();
   const out: { task?: string; constraints?: string[]; decisions?: string[] } = {};
   if (prompt) {
-    out.task = prompt.slice(0, 600);
-    const constraints = prompt.split("\n").map((line) => line.trim()).filter((line) => CONSTRAINT_LINE.test(line)).slice(0, 8);
+    const clean = masked(prompt.slice(0, 20_000));
+    out.task = clean.slice(0, 600);
+    const constraints = clean.split("\n").map((line) => line.trim()).filter((line) => CONSTRAINT_LINE.test(line)).slice(0, 8);
     if (constraints.length) out.constraints = constraints;
   }
   const decisions = (input.transcriptTail ?? "").split("\n").filter(Boolean)
     .map(transcriptAssistantText).filter(Boolean)
     .filter((text) => DECISION_WORD.test(text.trim().split(/[.!?\n]/)[0] ?? ""))
-    .map((text) => text.replace(/\s+/g, " ").trim().slice(0, 300))
+    .map((text) => masked(text.replace(/\s+/g, " ").trim().slice(0, 2000)).slice(0, 300))
     .filter(Boolean).slice(-5);
   if (decisions.length) out.decisions = decisions;
   return out;
@@ -235,7 +246,8 @@ export type PackMeta = { chars: number; layers: { rules: number; lessons: number
  * when the pack would not fit; `trimmed` says something was dropped and `ranked` how many items made it.
  */
 export function pretaskPack(input: { repo?: string; claims?: string[]; rules?: string[]; lessons?: string[] }): { text: string; meta: PackMeta } {
-  const claims = (input.claims ?? []).filter(Boolean).slice(0, 20);
+  // The newest claims: a ledger lists oldest first, and a long session's early files are the stale ones.
+  const claims = (input.claims ?? []).filter(Boolean).slice(-20);
   const rules = (input.rules ?? []).filter(Boolean).map((rule) => rule.slice(0, 200)).slice(0, 8);
   const lessons = (input.lessons ?? []).filter(Boolean).map((lesson) => lesson.slice(0, 200)).slice(0, 5);
   const build = (rs: string[], ls: string[], cs: string[]) =>
@@ -245,7 +257,7 @@ export function pretaskPack(input: { repo?: string; claims?: string[]; rules?: s
   let keepRules = rules, keepLessons = lessons, keepClaims = claims;
   let text = build(keepRules, keepLessons, keepClaims);
   let trimmed = false;
-  const drop = [() => { keepLessons = keepLessons.slice(1); }, () => { keepRules = keepRules.slice(1); }, () => { keepClaims = keepClaims.slice(0, -1); }];
+  const drop = [() => { keepLessons = keepLessons.slice(1); }, () => { keepRules = keepRules.slice(1); }, () => { keepClaims = keepClaims.slice(1); }];
   while (text.length > 2048 && (keepLessons.length || keepRules.length || keepClaims.length > 1)) {
     trimmed = true;
     for (const next of drop) { if (text.length <= 2048) break; next(); text = build(keepRules, keepLessons, keepClaims); }
@@ -383,10 +395,9 @@ export function progressRecord(input: { session: string; files: number; asks: nu
   return { session: input.session, files: input.files, asks: input.asks, touched: (input.touched ?? []).slice(-60), commands: (input.commands ?? []).slice(-30) };
 }
 
-export function protectionsOff(env: Record<string, string | undefined>, guardRegistered: boolean): string[] {
-  const off = ["LANE_STALL_CHECK", "LANE_COORD"].filter((name) => env[name] === "0");
-  if (!guardRegistered) off.push("guard_shell.py is not registered");
-  return off;
+/** What the environment says is switched off. The guard's registration is not here: the session's guard comes from a generated settings file this hook never reads. */
+export function protectionsOff(env: Record<string, string | undefined>): string[] {
+  return ["LANE_STALL_CHECK", "LANE_COORD"].filter((name) => env[name] === "0");
 }
 
 /** MEMORY.md budget line: the first 200 lines are what a session loads; say how close the injected memory is. */
@@ -434,12 +445,13 @@ export function promptRecall(input: { hits: Array<{ id?: string; content?: strin
   if (!fresh.length) return { text: null, given: input.given };
   const next = [...given, ...fresh.map((hit) => String(hit.id))].slice(-300);
   const pointers = fresh.map((hit) => {
-    const body = String(hit.content || hit.text || "");
-    const sentence = (body.split(/(?<=[.!?])\s+|\n/)[0] ?? body).slice(0, 120);
+    // One line per pointer: a body with a «- [id] …» line of its own cannot forge a second pointer.
+    const body = masked(String(hit.content || hit.text || "").slice(0, 2000));
+    const sentence = (body.split(/(?<=[.!?])\s+|\n/)[0] ?? body).replace(/\s+/g, " ").slice(0, 120);
     const file = body.match(/[\w.-]+\/[\w./-]+\.[a-zA-Z0-9]{1,8}\b/)?.[0];
-    return `- [${hit.id}] ${sentence}${file ? ` (file: ${file})` : ""}`;
+    return `- [${String(hit.id).replace(/[^\w.:-]/g, "_").slice(0, 80)}] ${sentence}${file ? ` (file: ${file})` : ""}`;
   }).join("\n");
-  const more = input.query ? `\nFull text: bb lane-pilot memory search "${input.query.slice(0, 120)}"` : "";
+  const more = input.query ? `\nFull text: bb lane-pilot memory search "${masked(input.query).replace(/["\n]/g, " ").slice(0, 120)}"` : "";
   return { text: `Memory for these words (pointers, not orders):\n${pointers}${more}`, given: next };
 }
 
@@ -589,20 +601,32 @@ const defaultRunners: Record<StreamName, (ctx: ToolCtx) => { deny: string | null
   knowledge: (ctx) => ({ deny: null, advice: EDIT_TOOLS.has(ctx.tool.toLowerCase()) ? knowledgeAdvice(ctx.notes ?? []) : null }),
 };
 
-/** Repo paths (a file name, with or without its folders) a subagent's last message names, 10 at most (SMA k_hsv_tree). */
-export function claimedPaths(text: string, limit = 10): string[] {
+/**
+ * A path a subagent may be said to have written: it has a folder part, no «..», and does not start with «/» or «~». A bare file
+ * name counts only when `rootHas` says a file of that exact name sits at the repo root (`console.log`, `res.json` and `Next.js` are not paths).
+ */
+export function claimablePath(token: string, rootHas?: (name: string) => boolean): boolean {
+  if (!token || token.includes("..") || token.startsWith("/") || token.startsWith("~")) return false;
+  return token.includes("/") ? true : Boolean(rootHas?.(token));
+}
+
+/** Repo paths a subagent's last message names, 10 at most (SMA k_hsv_tree). */
+export function claimedPaths(text: string, limit = 10, rootHas?: (name: string) => boolean): string[] {
   const found = new Set<string>();
   for (const match of text.matchAll(/[\w@.-]+\/?[\w@./-]*\.[a-zA-Z0-9]{2,8}\b/g)) {
+    const at = match.index ?? 0;
+    // «/etc/x.txt» and «~/x.txt» lose their first character to the pattern; a link's host and path are no repo path.
+    if (/[\/~]$/.test(text.slice(Math.max(0, at - 1), at)) || /:\/\/$/.test(text.slice(Math.max(0, at - 3), at))) continue;
+    if (match[0].includes("..")) continue;
     const token = match[0].replace(/^[./]+/, "");
-    // A bare name is a file when its stem has a letter; a version like 1.20 is not.
-    if (!token.includes("/") && !/[a-zA-Z_]/.test(token.split(".")[0]!)) continue;
+    if (!claimablePath(token, rootHas)) continue;
     found.add(token);
     if (found.size >= limit) break;
   }
   return [...found];
 }
 
-export type ClaimedState = "committed" | "dirty" | "untouched" | "phantom";
+export type ClaimedState = "committed" | "dirty" | "untouched" | "phantom" | "unchecked";
 
 /**
  * The tree's verdict on a claimed path (SMA k_hsv_tree): committed after the spawn, dirty now, present and
@@ -619,10 +643,12 @@ export function claimedState(probe: { exists: boolean; dirty: boolean; committed
 export function treeVerifyText(states: ReadonlyArray<{ path: string; state: ClaimedState }>): string | null {
   const phantoms = states.filter((row) => row.state === "phantom").map((row) => row.path);
   const untouched = states.filter((row) => row.state === "untouched").map((row) => row.path);
-  if (!phantoms.length && !untouched.length) return null;
+  const unchecked = states.filter((row) => row.state === "unchecked").map((row) => row.path);
+  if (!phantoms.length && !untouched.length && !unchecked.length) return null;
   const parts = [
     phantoms.length ? `phantoms (named but nowhere in the tree): ${phantoms.slice(0, 6).join(", ")}` : "",
     untouched.length ? `already in the tree, unchanged since before the spawn: ${untouched.slice(0, 6).join(", ")}` : "",
+    unchecked.length ? `not checked in time: ${unchecked.slice(0, 6).join(", ")}` : "",
   ].filter(Boolean).join("; ");
   return `[subagent-verify] ${parts}: check before you rely on the report.`;
 }
@@ -633,12 +659,6 @@ export function sessionSummaryLine(input: { live: number; stale: number; merge: 
   const parts = [`Work in this project: ${input.live} live, ${input.stale} stale`];
   if (input.merge) parts.push("a merge into main is running");
   return `${parts.join("; ")}.`;
-}
-
-/** Another live session holds the same file (SMA m_rd_coord_ledger): advice only, never a block. */
-export function foreignClaimAdvice(foreign: { path: string; who?: string } | null | undefined): string | null {
-  if (!foreign?.path) return null;
-  return `[claims] ${foreign.path} is also being edited by ${foreign.who || "another session"} in the last 30 minutes: coordinate, or touch another file.`;
 }
 
 /**

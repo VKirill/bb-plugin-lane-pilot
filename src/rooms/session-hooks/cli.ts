@@ -3,16 +3,22 @@
  * A hook never wedges a session: failOpen swallows errors and the process exits 0.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { appendFileSync, closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { appendFileSync as appendFileRaw, closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync as writeFileRaw } from "node:fs";
+import type { WriteFileOptions } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, join, resolve, sep } from "node:path";
 // node --experimental-strip-types resolves this file only with a .ts specifier.
 // @ts-expect-error TS5097
-import { buildCapsule, capsuleDetails, claimedPaths, claimedState, codeMapDrift, draftTarget, EDIT_TOOLS, failOpen, foreignClaimAdvice, hookOutput, injectPack, ledgerAddAsk, ledgerAddCommand, ledgerAddFile, ledgerOf, pmSkillUseOf, pretaskDecision, progressRecord, promptRecall, protectionsOff, runStreams, sessionEndDraft, sessionStartText, stallObserve, subagentVerify, subagentVerifyText, treeVerifyText, type Capsule, type PmSkillUse, type SessionLedger, type ToolCtx } from "./logic.ts";
+import { buildCapsule, capsuleDetails, claimablePath, claimedPaths, claimedState, codeMapDrift, draftTarget, EDIT_TOOLS, failOpen, hookOutput, injectPack, ledgerAddAsk, ledgerAddCommand, ledgerAddFile, ledgerOf, maskText, pmSkillUseOf, pretaskDecision, progressRecord, promptRecall, protectionsOff, runStreams, sessionEndDraft, sessionStartText, stallObserve, subagentVerify, subagentVerifyText, treeVerifyText, type Capsule, type ClaimedState, type PmSkillUse, type SessionLedger, type ToolCtx } from "./logic.ts";
 // @ts-expect-error TS5097
-import { appendTouch, buildCatalog, cardNotes, startCatalogBuild } from "../file-cards/index.ts";
+import { appendTouch, buildCatalog, cardNotes, findRepo, startCatalogBuild } from "../file-cards/index.ts";
 
 type Payload = Record<string, unknown>;
+
+// What a session writes can quote the person's prompt: its files are the owner's alone (0600, folders 0700).
+const writeFileSync = (path: string, data: string, options?: WriteFileOptions): void => writeFileRaw(path, data, { mode: 0o600, ...(typeof options === "object" && options ? options : {}) });
+const appendFileSync = (path: string, data: string): void => appendFileRaw(path, data, { mode: 0o600 });
 
 function readStdin(): string {
   try { return readFileSync(0, "utf8"); }
@@ -29,7 +35,7 @@ function stateName(session: string): string {
 
 function stateDir(session: string): string {
   const dir = join(SESSIONS_ROOT(), stateName(session));
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
   return dir;
 }
 
@@ -93,58 +99,54 @@ function ledgerPath(dir: string): string {
   return join(dir, "ledger.json");
 }
 
+/**
+ * The ledger as the file holds it; null when the file is there but does not parse (a read that raced a write): the caller then
+ * skips its update instead of writing a ledger that drops what was there. A file that stays unreadable for 10 s is corrupt, not racing: it counts as empty.
+ */
+function readLedgerFile(dir: string): SessionLedger | null {
+  const file = ledgerPath(dir);
+  let raw: string;
+  try { raw = readFileSync(file, "utf8"); }
+  catch (error) { return (error as NodeJS.ErrnoException).code === "ENOENT" ? ledgerOf(null) : null; }
+  try { return ledgerOf(JSON.parse(raw)); }
+  catch {
+    try { return Date.now() - statSync(file).mtimeMs > 10_000 ? ledgerOf(null) : null; } catch { return null; }
+  }
+}
+
+/** For a reader: an unreadable ledger reads as empty (nothing is written back). */
 function readLedger(dir: string): SessionLedger {
-  return ledgerOf(readJson<unknown>(ledgerPath(dir), null));
+  return readLedgerFile(dir) ?? ledgerOf(null);
+}
+
+/** Read, change, write: an unreadable ledger is left alone. */
+function updateLedger(dir: string, change: (ledger: SessionLedger) => SessionLedger): void {
+  const current = readLedgerFile(dir);
+  if (current) writeLedger(dir, change(current));
 }
 
 function writeLedger(dir: string, ledger: SessionLedger): void {
   // An empty ledger leaves no file: the state folder keeps only what the session did.
   if (!ledger.files.length && !ledger.commands.length && !ledger.asks.length) return;
-  try { writeFileSync(ledgerPath(dir), JSON.stringify(ledger)); } catch { /* the ledger is best effort */ }
+  // Tool calls run in parallel: the file is replaced whole by a rename, a reader never sees half of it.
+  const temp = `${ledgerPath(dir)}.${process.pid}.tmp`;
+  try { writeFileSync(temp, JSON.stringify(ledger)); renameSync(temp, ledgerPath(dir)); }
+  catch { try { unlinkSync(temp); } catch { /* nothing to clean */ } /* the ledger is best effort */ }
 }
 
 /** A lane-pilot verb from the hook, fail-open: stdout on a zero exit inside the budget, "" otherwise. */
 function bbCall(args: string[], timeoutMs: number, cwd?: string): string {
   try {
-    const ran = spawnSync(process.env.BB_CLI || "bb", args, { encoding: "utf8", timeout: timeoutMs, ...(cwd ? { cwd } : {}) });
+    const ran = spawnSync(process.env.BB_CLI || "bb", args, { encoding: "utf8", timeout: timeoutMs, killSignal: "SIGKILL", ...(cwd ? { cwd } : {}) });
     return ran.status === 0 ? (ran.stdout ?? "") : "";
   } catch { return ""; }
 }
 
-const CLAIMS_WINDOW_MS = 30 * 60_000;
-const CLAIMS_FILE = () => join(SESSIONS_ROOT(), "claims.jsonl");
-
-/** The shared claim book (SMA m_rd_coord_ledger): every hook session's edit calls, appended as one line each. */
-function appendClaim(row: { session: string; role: string; cwd: string; path: string; at: number }): void {
-  try { appendFileSync(CLAIMS_FILE(), `${JSON.stringify(row)}\n`); } catch { /* a lost claim never wedges the session */ }
-}
-
-/** The last 100 KB of the claim book: another live session's claim on the same path inside the window. */
-function foreignClaim(path: string, session: string, now: number): { path: string; who?: string } | null {
-  try {
-    const file = CLAIMS_FILE();
-    const size = statSync(file).size;
-    const text = size > 100 * 1024
-      ? readText(file).slice(-100 * 1024)
-      : readText(file);
-    for (const line of text.split("\n").filter(Boolean).reverse()) {
-      try {
-        const row = JSON.parse(line) as { session?: unknown; role?: unknown; path?: unknown; at?: unknown };
-        if (row.session === session || row.path !== path) continue;
-        if (typeof row.at !== "number" || now - row.at > CLAIMS_WINDOW_MS) continue;
-        return { path, who: `${row.session}${row.role ? ` (${String(row.role)})` : ""}` };
-      } catch { /* a torn line is skipped */ }
-    }
-  } catch { /* no claim book yet */ }
-  return null;
-}
-
-
 // Fire and forget: a PM's Skill call lands one row in lane_pilot_pm_skill_use. Never blocks the tool call.
 /** One git call in the workspace, nothing on failure: the hook must answer inside its budget either way. */
-function spawnSyncGit(cwd: string, args: string[]): string {
+function spawnSyncGit(cwd: string, args: string[], timeoutMs = 3000): string {
   try {
-    const ran = spawnSync("git", args, { cwd, encoding: "utf8", timeout: 3000 });
+    const ran = spawnSync("git", args, { cwd, encoding: "utf8", timeout: timeoutMs, killSignal: "SIGKILL" });
     return ran.status === 0 ? (ran.stdout ?? "").trim() : "";
   } catch { return ""; }
 }
@@ -157,6 +159,19 @@ function reportPmSkill(row: PmSkillUse): void {
     child.on("error", () => undefined);
     child.unref();
   } catch { /* a lost row never wedges the session */ }
+}
+
+const SHA = /^[0-9a-f]{7,40}$/;
+
+/** A folder keeps its `keep` newest files; the oldest go. */
+function keepNewest(folder: string, keep: number, pattern: RegExp = /./): void {
+  const files = readdirSync(folder).filter((name) => pattern.test(name)).map((name) => {
+    try { return { name, at: statSync(join(folder, name)).mtimeMs }; } catch { return null; }
+  }).filter((row): row is { name: string; at: number } => row !== null);
+  if (files.length <= keep) return;
+  for (const row of files.sort((a, b) => b.at - a.at).slice(keep)) {
+    try { unlinkSync(join(folder, row.name)); } catch { /* one that cannot go stays */ }
+  }
 }
 
 function handle(payload: Payload): void {
@@ -183,7 +198,8 @@ function handle(payload: Payload): void {
         transcriptTail = buf.toString("utf8");
       } catch { /* no transcript: the capsule keeps its ledger fields */ }
     }
-    const details = capsuleDetails({ firstPrompt: asks[0] ?? "", transcriptTail });
+    // The task is the session's first prompt: the ledger keeps it apart from the last five.
+    const details = capsuleDetails({ firstPrompt: payloadList("asks").length ? asks[0] ?? "" : ledger.first ?? asks[0] ?? "", transcriptTail });
     const capsule = buildCapsule({ asks, files, claims, trigger: "precompact" });
     Object.assign(capsule, details, { commands: ledger.commands });
     writeFileSync(join(dir, "capsule.json"), JSON.stringify(capsule));
@@ -223,31 +239,31 @@ function handle(payload: Payload): void {
         for (const area of (parsed.weak ?? []).slice(0, 5)) changed.push(`weakly calibrated area: ${area}`);
       } catch { /* a brief that is not JSON adds nothing */ }
     }
-    // What moved in this checkout since the last start (SMA k_hss_digest): head.txt per cwd hash.
+    // What moved in this checkout since the last start (SMA k_hss_digest): one head file per repository, not per
+    // folder (every attempt worktree is a folder of its own), the newest 200 kept. The content is a sha or nothing.
     if (cwd) {
       try {
         const headsDir = join(SESSIONS_ROOT(), "heads");
-        mkdirSync(headsDir, { recursive: true });
-        let hash = 0;
-        for (let i = 0; i < cwd.length; i++) hash = Math.imul(hash, 31) + cwd.charCodeAt(i) | 0;
-        const headFile = join(headsDir, `${(hash >>> 0).toString(16)}.txt`);
+        mkdirSync(headsDir, { recursive: true, mode: 0o700 });
+        const repo = findRepo(cwd);
+        let key = repo?.commonDir ?? cwd;
+        try { key = realpathSync(key); } catch { /* an unresolvable path keys as it is */ }
+        const headFile = join(headsDir, `${createHash("sha256").update(key).digest("hex").slice(0, 16)}.txt`);
         const old = readText(headFile);
         const head = spawnSyncGit(cwd, ["rev-parse", "HEAD"]);
-        if (head && old && old !== head) {
-          const log = spawnSyncGit(cwd, ["log", "--oneline", `${old}..HEAD`]);
+        if (SHA.test(head) && SHA.test(old) && old !== head) {
+          const log = spawnSyncGit(cwd, ["log", "--oneline", `${old}..HEAD`, "--"]);
           changed.push(...log.split("\n").filter(Boolean).slice(0, 10));
         }
-        if (head) writeFileSync(headFile, head);
+        if (SHA.test(head)) writeFileSync(headFile, head);
+        keepNewest(headsDir, 200);
       } catch { /* a head that cannot be compared stays silent */ }
     }
-    // Which protections are off (SMA k_h_session_start): the env zeros and a missing guard registration.
-    let guardRegistered = false;
-    for (const file of [join(cwd || ".", ".claude", "settings.json"), join(cwd || ".", ".claude", "settings.local.json")]) {
-      try { if (readFileSync(file, "utf8").includes("guard_shell.py")) guardRegistered = true; } catch { /* not this file */ }
-    }
+    // Which protections are off (SMA k_h_session_start): only what the environment says. The guard comes from the
+    // session's generated settings file, which this hook never reads, so «not registered» is not something it can know.
     const text = sessionStartText({
       summary,
-      protections: protectionsOff(process.env, guardRegistered),
+      protections: protectionsOff(process.env),
       model: typeof payload.model === "string" ? payload.model : undefined,
       lastModel: readText(join(dir, "model.txt")),
       memoryLines,
@@ -263,22 +279,24 @@ function handle(payload: Payload): void {
   }
   if (event === "UserPromptSubmit") {
     const promptText = String(payload.prompt ?? "");
-    writeLedger(dir, ledgerAddAsk(readLedger(dir), promptText));
-    const state = readJson<{ given: string[]; hits: Array<{ id?: string; content?: string }> }>(join(dir, "recall.json"), { given: [], hits: [] });
-    // The prompt's own words search the hub memory (SMA k_h_prompt_recall, k_hpr_find): 3 words or more,
-    // 1.2 s at most, a failure or «nothing relevant» stays silent.
-    const query = promptText.replace(/\s+/g, " ").trim().slice(0, 300);
+    updateLedger(dir, (ledger) => ledgerAddAsk(ledger, promptText));
+    const state = readJson<{ given: string[] }>(join(dir, "recall.json"), { given: [] });
+    // The prompt's own words search the project's confirmed memory (SMA k_h_prompt_recall, k_hpr_find): 3 words
+    // or more, 1.2 s at most, a failure or «nothing relevant» stays silent. The words are masked before they are
+    // an argument; `--recall` is the read-only word search (no embedding, no model, no network) and `--query` takes
+    // the words as its value, so a prompt that starts with a dash is never read as an option. Hits are this prompt's only.
+    const query = maskText(promptText.replace(/\s+/g, " ").trim().slice(0, 300));
+    let hits: Array<{ id: string; content: string }> = [];
     if (query.split(" ").length >= 3) {
-      const found = bbCall(["lane-pilot", "memory", "search", query], 1200, cwd || undefined);
+      const found = bbCall(["lane-pilot", "memory", "search", "--recall", ...(cwd ? ["--cwd", cwd] : []), "--query", query], 1200, cwd || undefined);
       if (found && !found.includes("nothing relevant")) {
-        const hits = found.split("\n").map((line) => /^- \[([^\]]+)\]\s*(.+)$/.exec(line))
+        hits = found.split("\n").map((line) => /^- \[([^\]]+)\]\s*(.+)$/.exec(line))
           .filter((row): row is RegExpExecArray => row !== null)
-          .map((row) => ({ id: row[1], content: row[2] }));
-        state.hits = hits.length ? hits : state.hits;
+          .map((row) => ({ id: row[1]!, content: row[2]! }));
       }
     }
-    const next = promptRecall({ ...state, query });
-    writeFileSync(join(dir, "recall.json"), JSON.stringify({ given: next.given, hits: state.hits }));
+    const next = promptRecall({ hits, given: Array.isArray(state.given) ? state.given.map(String) : [], query });
+    writeFileSync(join(dir, "recall.json"), JSON.stringify({ given: next.given, hits }));
     emit(hookOutput(event, next.text));
     return;
   }
@@ -336,17 +354,9 @@ function handle(payload: Payload): void {
       // A cataloged file card becomes the knowledge stream's note for this edit (k_st_catalog).
       notes: cwd && EDIT_TOOLS.has(name.toLowerCase()) ? cardNotes(cwd, String(input.file_path ?? input.path ?? "")) : [],
     };
-    // The terminal claim book (SMA m_rd_coord_ledger): this edit is claimed, and another live session's claim
-    // on the same path is said — advice only, never a block.
-    let foreign: { path: string; who?: string } | null = null;
-    if (/^(edit|multiedit|write|notebookedit)$/i.test(name) && ctx.path) {
-      const now = Date.now();
-      foreign = foreignClaim(ctx.path, session, now);
-      appendClaim({ session, role: process.env.LANE_PILOT_ROLE ?? "", cwd, path: ctx.path, at: now });
-    }
     const streams = runStreams(ctx, Date.now);
     appendPerf(dir, streams.perf);
-    const text = [...streams.advice, foreignClaimAdvice(foreign)].filter(Boolean).join("\n");
+    const text = streams.advice.filter(Boolean).join("\n");
     if (streams.deny) {
       emit({ hookSpecificOutput: { hookEventName: event, permissionDecision: "deny", permissionDecisionReason: streams.deny } });
       return;
@@ -375,12 +385,12 @@ function handle(payload: Payload): void {
     if (/^(edit|multiedit|write|notebookedit)$/i.test(tool) && touchedPath) {
       appendFileSync(join(dir, "touched.jsonl"), `${JSON.stringify({ at: new Date().toISOString(), tool, path: touchedPath })}\n`);
     }
-    {
-      let ledger = readLedger(dir);
+    updateLedger(dir, (current) => {
+      let ledger = current;
       if (/^(edit|multiedit|write|notebookedit)$/i.test(tool) && touchedPath) ledger = ledgerAddFile(ledger, touchedPath);
       if (/^bash$/i.test(tool)) ledger = ledgerAddCommand(ledger, String(toolInput(payload).command ?? ""));
-      writeLedger(dir, ledger);
-    }
+      return ledger;
+    });
     emit(hookOutput(event, observed.hint || null));
     return;
   }
@@ -389,19 +399,33 @@ function handle(payload: Payload): void {
     // present, win. Each is tested against the real tree: on disk, in git status, in a commit after the spawn.
     const message = typeof payload.last_assistant_message === "string" ? payload.last_assistant_message : "";
     const payloadClaimed = Array.isArray(payload.claimed) ? payload.claimed.map(String) : [];
-    const claimed = payloadClaimed.length ? payloadClaimed : claimedPaths(message);
+    const root = resolve(cwd || ".");
+    // A bare name counts only when a file of that exact name sits at the repo root.
+    const rootHas = (name: string): boolean => { try { return statSync(join(root, name)).isFile(); } catch { return false; } };
+    const claimed = (payloadClaimed.length ? payloadClaimed.filter((path) => claimablePath(path, rootHas)) : claimedPaths(message, 10, rootHas));
+    // A claimed path is probed only when it stays inside the checkout (symlinks resolved).
+    const insideRoot = (path: string): boolean => {
+      const full = resolve(root, path);
+      if (full !== root && !full.startsWith(root + sep)) return false;
+      try { const real = realpathSync(full); const realRoot = realpathSync(root); return real === realRoot || real.startsWith(realRoot + sep); } catch { return true; }
+    };
     const changed = Array.isArray(payload.changed) ? payload.changed.map(String) : [];
-    const checked = subagentVerify({ claimed, changed, exists: (path) => existsSync(path) });
+    const checked = subagentVerify({ claimed, changed, exists: (path) => insideRoot(path) && existsSync(resolve(root, path)) });
     // The spawn time is the last pack record this session wrote (SMA k_hpt_record).
     const lastSpawn = readText(join(dir, "subagents.jsonl")).split("\n").filter(Boolean).pop();
     let spawnSeconds = 0;
     try { spawnSeconds = Math.floor(Date.parse((JSON.parse(lastSpawn ?? "{}") as { at?: string }).at ?? "") / 1000) || 0; } catch { /* no record */ }
-    const states = claimed.map((path: string) => {
-      const resolved = path.startsWith("/") ? path : join(cwd || ".", path);
-      const dirty = cwd ? spawnSyncGit(cwd, ["status", "--porcelain", "--", path]) !== "" : false;
-      const committed = Boolean(cwd && spawnSeconds && spawnSyncGit(cwd, ["log", `--since=@${spawnSeconds}`, "-1", "--", path]));
-      return { path, state: claimedState({ exists: existsSync(resolved), dirty, committed }) };
-    });
+    // The whole tree check has 5 s: a path the time did not reach is «unchecked», never a phantom.
+    const deadline = Date.now() + 5000;
+    const states: Array<{ path: string; state: ClaimedState }> = [];
+    for (const path of claimed) {
+      if (!insideRoot(path)) continue;
+      if (deadline - Date.now() <= 100) { states.push({ path, state: "unchecked" }); continue; }
+      const exists = existsSync(resolve(root, path));
+      const dirty = cwd ? spawnSyncGit(cwd, ["status", "--porcelain", "--", path], Math.min(3000, deadline - Date.now())) !== "" : false;
+      const committed = Boolean(cwd && spawnSeconds && deadline - Date.now() > 100 && spawnSyncGit(cwd, ["log", `--since=@${spawnSeconds}`, "-1", "--", path], Math.min(3000, deadline - Date.now())));
+      states.push({ path, state: Date.now() >= deadline ? "unchecked" : claimedState({ exists, dirty, committed }) });
+    }
     appendFileSync(join(dir, "receipts.jsonl"), `${JSON.stringify({ subagent_receipt: { ...checked.receipt, states } })}\n`);
     emit(hookOutput(event, treeVerifyText(states) ?? subagentVerifyText(checked.missing)));
     return;
@@ -423,13 +447,17 @@ function handle(payload: Payload): void {
     const draft = sessionEndDraft({ files, at: new Date().toISOString(), subagents });
     writeFileSync(join(dir, "farewell.md"), draft);
     // The draft also moves into the project's drafts (SMA m_draft_move), never over an existing one: flag wx,
-    // and when the name is taken the next free -2, -3 name.
+    // and when the name is taken the next free -2, -3 name. A farewell of a session that did nothing leaves no file;
+    // the folder is the project's name plus a short hash of its full path (two projects named «app» stay apart)
+    // and keeps its newest 50 farewells.
+    if (!files.length && !subagents) return;
     try {
-      const slug = (cwd.split("/").filter(Boolean).pop() || "unknown").replace(/[^\w.-]/g, "_");
+      const slug = `${(basename(cwd) || "unknown").replace(/[^\w.-]/g, "_")}-${createHash("sha256").update(cwd).digest("hex").slice(0, 8)}`;
       const draftsDir = join(homedir(), ".lane-pilot", "drafts", slug);
       mkdirSync(draftsDir, { recursive: true });
       const name = draftTarget(readdirSync(draftsDir), `farewell-${stateName(session)}.md`);
       writeFileSync(join(draftsDir, name), draft, { flag: "wx" });
+      keepNewest(draftsDir, 50, /^farewell-.*\.md$/);
     } catch { /* a draft that cannot be placed is lost, the session still ends */ }
     return;
   }
