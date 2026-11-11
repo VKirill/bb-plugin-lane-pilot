@@ -81,7 +81,7 @@ The package maintains `ROLE_TABLE` for role-based model resolution; writer selec
 - Fallback chain deduplication: A candidate matching the primary writer or an earlier fallback in `providerId/model` is discarded from the chain (packages/models/src/writer-fallbacks.ts:45-50).
 - Provider and model consistency: `writerExecutionSelection` passes provider and model through `consistentProvider`, preventing mismatch errors (packages/models/src/jev-reasoning.ts:71-73).
 - Stage writer override order: `resolveStageWriterSelection` checks stage provider/model first, then writer profile settings, then prototype config (packages/models/src/stage-writer-selection.ts:15-31).
-- Worker exclusion: keys in `writer.models_off` are omitted from the candidate pick while their writer configuration remains intact; the exclusion is read when candidates are built (packages/models/src/model-profiles.ts:112-120).
+- Worker exclusion: `writer.models_off` entries match a profile key, a `provider/model` pair, or a bare model ID. A match omits that candidate while leaving its writer configuration intact (packages/models/src/model-profiles.ts:112-129).
 
 ## Public API
 
@@ -89,6 +89,7 @@ The package maintains `ROLE_TABLE` for role-based model resolution; writer selec
 |---|---|---|
 | `WRITER_PROFILES` | Registry of coding models with benchmarks, summaries, and availability | (packages/models/src/model-profiles.ts:24-109) |
 | `writerCandidates` | Filters profiles by availability, `writer.models_off`, and optional `writer.models` allowlist | (packages/models/src/model-profiles.ts:112-120) |
+| `writerSwitchedOff` | Finds a matching worker exclusion by profile key, `provider/model`, or bare model ID | (packages/models/src/model-profiles.ts:121-129) |
 | `resolveJevReasoning` | Reconciles automated Jev reasoning decisions with model capabilities and manual fallbacks | (packages/models/src/jev-reasoning.ts:9-30) |
 | `writerExecutionSelection` | Prepares execution parameters and sources for writer spawns | (packages/models/src/jev-reasoning.ts:64-84) |
 | `writerServiceTier` | Reads `writer.service_tier` and legacy `writer.fast_mode` settings | (packages/models/src/jev-reasoning.ts:40-48) |

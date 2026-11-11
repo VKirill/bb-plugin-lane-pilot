@@ -77,7 +77,7 @@ Import models, helpers, and types from `@lane-pilot/models`:
 | Export area | Core functions and constants | Evidence |
 |---|---|---|
 | Role-to-model table | `ROLE_TABLE`, `ROLE_IDS`, `resolveRoleModel`, `resolveAgentModel`, `judgeAgainstAuthor`, `peerOffSpent`, `roleModelProblem` | (packages/models/src/role-models.ts:102-145; packages/models/src/agent-model.ts:104-187) |
-| Writer execution | `WRITER_PROFILES`, `writerCandidates`, `writerExecutionSelection`, `resolveJevReasoning`, `writerFallbackChain`, `rotatedWriterSettings` | (packages/models/src/model-profiles.ts:24-120; packages/models/src/jev-reasoning.ts:64-84; packages/models/src/writer-fallbacks.ts:44-84) |
+| Writer execution | `WRITER_PROFILES`, `writerCandidates`, `writerSwitchedOff`, `writerExecutionSelection`, `resolveJevReasoning`, `writerFallbackChain`, `rotatedWriterSettings` | (packages/models/src/model-profiles.ts:24-129; packages/models/src/jev-reasoning.ts:64-84; packages/models/src/writer-fallbacks.ts:44-84) |
 | Catalog validation | `findProvider`, `findModel`, `findModelIn`, `offeredOnHost`, `validateChoice`, `nodeEffortsFor`, `costTier` | (packages/models/src/model-catalog.ts:40-107) |
 | Pricing and limits | `MODEL_PRICES`, `priceFor`, `costUsd`, `providerLimitNotice`, `compatibleReasoningLevel`, `compatibleServiceTier` | (packages/models/src/model-prices.ts:6-42; packages/models/src/provider-limit.ts:9-13; packages/models/src/picker-compat.ts:1-21) |
 | ZCode integration | `zcodeBlock`, `zcodeWindowBlock`, `inZcodePromo`, `nextZcodePromoStart`, `zcodeEnvironmentError`, `ZCODE_FREE_ROWS` | (packages/models/src/zcode.ts:31-84) |
@@ -88,7 +88,7 @@ Import models, helpers, and types from `@lane-pilot/models`:
 Settings keys inspected and formatted by this package include:
 - `role_model.<role>`: JSON object `{ provider?, model, reasoning_effort?, pool? }` storing custom role picks (packages/models/src/role-models.ts:146-147, :228-250).
 - `writer.provider`, `writer.model`, `writer.reasoning_effort`, `writer.service_tier`: primary writer settings (packages/models/src/role-specs.ts:20-21).
-- `writer.models_off`: profile keys excluded from the automatic writer pick; the profiles remain configured (packages/models/src/model-profiles.ts:112-120).
+- `writer.models_off`: worker exclusion setting; matching forms are documented in [Writer Selection and Fallbacks](features/writer-selection.md) (packages/models/src/model-profiles.ts:121-129).
 - `writer.fallback<slot>.provider`, `.model`, `.reasoning_effort`: writer fallback chain slots (packages/models/src/writer-fallbacks.ts:21-25).
 - `writer.rotation_share`: percentage of tasks swapped to fallback 1 (packages/models/src/writer-fallbacks.ts:73-75).
 - `zcode.window`: promo hour policy (`promo` or `always`) (packages/models/src/zcode.ts:13-15).
