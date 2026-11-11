@@ -34,6 +34,21 @@ describe("the plan-fact table in the writer's answer", () => {
     expect(PLAN_FACT_BRIEF_LINE).toContain("the strongest first");
   });
 
+  // Live phase 2026-11-11: the planner's check was a 330-character python one-liner, the writer cited it whole, and «<=300 characters» refused the table.
+  it("reads a long contract command cited whole, and proves the item by it; one past the cap is cut, not refused, and still names its command", () => {
+    const long = `python3 -c '${"assert True; ".repeat(40)}'`;
+    expect(long.length).toBeGreaterThan(300);
+    const table = parsePlanFact(fence([{ item: 1, status: "done", evidence: [`cmd:${long}`] }]));
+    expect(table.status).toBe("ok");
+    const check = blindPlanFact(["the file is byte-exact"], table as Extract<typeof table, { status: "ok" }>, facts({ contractCommands: [long], ran: [{ command: long, exitCode: 0 }] }));
+    expect(check.items[0]).toMatchObject({ verdict: "proven" });
+    const huge = `python3 -c '${"assert True; ".repeat(400)}'`;
+    const cut = parsePlanFact(fence([{ item: 1, status: "done", evidence: [`cmd:${huge}`] }]));
+    expect(cut.status).toBe("ok");
+    const cutCheck = blindPlanFact(["the file is byte-exact"], cut as Extract<typeof cut, { status: "ok" }>, facts({ contractCommands: [huge], ran: [{ command: huge, exitCode: 0 }] }));
+    expect(cutCheck.items[0]).toMatchObject({ verdict: "proven" });
+  });
+
   it("is missing without a block, and invalid with a reason for broken JSON, a wrong shape or a repeated item", () => {
     expect(parsePlanFact("All acceptance items are done.")).toEqual({ status: "missing" });
     expect(parsePlanFact(fence([], "json"))).toEqual({ status: "missing" });

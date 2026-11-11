@@ -18,11 +18,16 @@ export const PLAN_FACT_FENCE = "plan-fact";
 /** Pieces of evidence read per item; more are cut, not refused (a writer that cited 15 rebuilt pages lost its whole table to «<=8 items», cab-unslop 2026-10-31). */
 export const PLAN_FACT_EVIDENCE_MAX = 24;
 
+/** One piece of evidence is read up to this length; a longer one is cut and ends «…», which the command check reads as «the command that starts so». */
+export const PLAN_FACT_EVIDENCE_CHARS = 2000;
+
 export const planFactRowSchema = z.object({
   item: z.number().int().min(1).max(200),
   status: z.enum(["done", "not_done"]),
-  evidence: z.preprocess((value) => Array.isArray(value) ? value.slice(0, PLAN_FACT_EVIDENCE_MAX) : value,
-    z.array(z.string().min(1).max(300)).max(PLAN_FACT_EVIDENCE_MAX)).optional(),
+  // A contract command has no length limit and the writer is told to cite it whole (cmd:<command>): one command past 300 characters
+  // lost the whole table, the piece's promise stayed unproved and the phase went back to planning (live 2026-11-11, a python one-liner).
+  evidence: z.preprocess((value) => Array.isArray(value) ? value.slice(0, PLAN_FACT_EVIDENCE_MAX).map((entry) => typeof entry === "string" && entry.length > PLAN_FACT_EVIDENCE_CHARS ? `${entry.slice(0, PLAN_FACT_EVIDENCE_CHARS - 1)}…` : entry) : value,
+    z.array(z.string().min(1).max(PLAN_FACT_EVIDENCE_CHARS)).max(PLAN_FACT_EVIDENCE_MAX)).optional(),
   why: z.string().max(400).optional(),
 }).strict();
 export type PlanFactRow = z.infer<typeof planFactRowSchema>;
