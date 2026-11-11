@@ -66,6 +66,7 @@ export const SESSION_HOOK_SOURCE = [
     "  }), text);",
     "  return { text: out, masked: masked2 };",
     "};",
+    "var CREDENTIAL_SHAPE_PATTERNS = SHAPE_RULES.map((rule) => rule.pattern);",
     "function maskCredentials(text, mask2 = MASK) {",
     "  const found = applyRules(text, [...SHAPE_RULES, ASSIGNMENT_RULE], mask2);",
     "  const known2 = redactKnown(found.text);",
