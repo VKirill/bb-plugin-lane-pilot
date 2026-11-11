@@ -21,7 +21,7 @@ Built by Lane Pilot from page frontmatter.
 | [Workflow Execution Engine](features/execution-engine.md) | component | active | 2026-11-11 |
 | [Workflow Execution Runtime Internals](features/execution-runtime-internals.md) | component | active | 2026-11-11 |
 | [Expression Parsing and Conditions](features/expression-parsing.md) | component | active | 2026-10-24 |
-| [Workflow Quality and Contracts](features/quality-contracts.md) | component | active | 2026-11-08 |
+| [Workflow Quality and Contracts](features/quality-contracts.md) | component | active | 2026-11-11 |
 | [Workflow Routing and Handoff](features/routing-handoff.md) | component | active | 2026-11-11 |
 | [Workflow UI Projections and Schedule Helpers](features/ui-projections.md) | component | active | 2026-11-07 |
 | [Workflow Lowering](features/workflow-lowering.md) | component | active | 2026-10-30 |
