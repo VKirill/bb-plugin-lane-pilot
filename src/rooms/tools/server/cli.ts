@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { listReviewedObservations } from "../../learning";
-import { prototypeConfigSchema, taskV2Schema } from "../../contracts";
+import { prototypeConfigSchema, resolvePlanningHome, taskV2Schema } from "../../contracts";
 import { taskBaselineEntries } from "../../baseline";
 import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, PROTECTIONS, loadPrototypeConfig, markCancelCode, saveProjectSetting, savePrototypeConfig, transitionAttempt, failedTasksAllProjects, listNearMissReceipts, attemptStateCounts } from "../../storage";
 import { outsideWorkSummary } from "../../owner-presence";
@@ -25,7 +25,7 @@ import { SCHEDULE_USAGE, runScheduleCli, scheduleFailureSweep } from "../../sche
 import { answerWorkflowQuestion } from "../../workflow/server";
 import { AGENTS_USAGE, agentRegistry, PM_SKILLS_USAGE, runAgentsCli, runPmSkillsCli, runPmSkillUseCli } from "../../native-agent/server";
 
-import { ANAMNESIS_USAGE, anamnesisFor, collectOwnerMessages, sdkThreadsPort } from "../../anamnesis";
+import { ANAMNESIS_USAGE, PROFILE_KEYS, anamnesisFor, collectOwnerMessages, profilePairProblem, sdkThreadsPort } from "../../anamnesis";
 import { LEARNING_USAGE, learningFor, runLearningCli } from "../../learning";
 import { PM_REPLAY_USAGE, runPmReplayCli, listScenarios } from "../../pm-replay";
 import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
@@ -72,7 +72,7 @@ import { JEV_USAGE, runJevCli } from "../../jev";
 import { ERRANDS_USAGE, runErrandsCli } from "../../errands";
 import { retireAdoptedRule } from "../../self-repair/server";
 import { ROLLBACK_USAGE, runRollbackCli } from "../../rollback/server";
-import { casUpsertSettings, deleteBoundSetting, getSettingVersions, listEvidence, listSettingRows } from "../../storage";
+import { casUpsertSettings, deleteBoundSetting, getSettingVersions, listEvidence, listSettingRows, planningHomeInputs } from "../../storage";
 import { UNLISTED_SWITCHES, switchValue } from "../../settings";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { integrityReport, renewDisarm } from "../../policy";
@@ -333,6 +333,8 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"design-pair-answer", summary:"The owner's pick for a started design pair; closes its waiting item", usage:DESIGN_PAIR_USAGE.split("   |   ")[1]! },
       { name:"sma-map", summary:"The SMA product map node by node: what Lane Pilot has for each of its 1798 nodes, the card text, the proof link, the contract tests that check it, and the shares mapped and checked", usage:SMA_MAP_USAGE },
       { name:"explain", summary:"One word about a verb or a concept: the verb's summary and usage with the doc that names it, or the guide doc whose front matter declares the topic", usage:"bb lane-pilot explain <verb or topic>" },
+      { name:"profile", summary:"The project's infra profile (stack, test command, release, hosts, start, deploy, logs, style): read it, or set a key from the owner's terminal or the project's own PM chat", usage:`bb lane-pilot profile <project-id> [--set key=value …]   (keys: ${PROFILE_KEYS.join(", ")}; the value is split at the first =, at most 1000 characters, an empty value resets the key)` },
+      { name:"plans-health", summary:"The planning indexes against the folders on disk: items missing from INDEX.md and index entries with no folder; --fix repairs the entry lines only and keeps INDEX.md.bak", usage:"bb lane-pilot plans-health [dir] [--fix]   (runs in the directory given, default the current one: the owner's terminal in the checkout; --fix is refused from a thread)" },
       { name:"planning", summary:"The planning verdicts inventory: every spike and sketch under .agents/planning with its question and verdict (open when none)", usage:"bb lane-pilot planning verdicts <projectId>" },
       { name:"rules", summary:"The rules by form (always | skill | check | hook | memory) and the mechanism that enforces each; classify them, generate mechanism tasks for the recurring check rules, retire the text a mechanism now holds", usage:RULES_USAGE },
       { name:"workflow-trigger", summary:"Start a workflow in a project as its schedule trigger does (the automation of a schedule calls this); exit 1 with the reason when it cannot start", usage:"bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]" },
@@ -597,7 +599,9 @@ ${ERRANDS_USAGE}` },
           const config = args[0] === "verdicts" && args[1] ? loadPrototypeConfig(db, args[1]) : null;
           if (args[0] !== "verdicts" || !args[1]) return { exitCode:1, stderr:"usage: bb lane-pilot planning verdicts <projectId>" };
           if (!config?.hostId || !config.pmWorkspacePath) return { exitCode:1, stderr:`project ${args[1]} has no checkout bound in Lane Pilot` };
-          const listed = await host.call("runCommand", { requestedHostId:config.hostId, command:VERDICT_LIST_COMMAND, cwd:config.pmWorkspacePath, timeoutSec:30 }, { hostId:config.hostId, timeoutMs:35_000 });
+          // With a planning home (project.planning_home) the spikes and sketches are listed there; unset, in the checkout.
+          const root = await resolvePlanningHome({ host: host as never, hostId:config.hostId, cwd:config.pmWorkspacePath, inputs:planningHomeInputs(db, args[1]), log:bb.log }) ?? config.pmWorkspacePath;
+          const listed = await host.call("runCommand", { requestedHostId:config.hostId, command:VERDICT_LIST_COMMAND, cwd:root, timeoutSec:30 }, { hostId:config.hostId, timeoutMs:35_000 });
           if (listed.exitCode !== 0) return { exitCode:1, stderr:`the project's machine did not list .agents/planning: ${(listed.stderr || `exit ${listed.exitCode}`).trim().slice(0, 300)}` };
           return { exitCode:0, stdout:renderVerdicts(verdictInventory(verdictFiles(listed.stdout))) };
         }
@@ -986,6 +990,55 @@ ${ERRANDS_USAGE}` },
           if (saved && !saved.ok) return { exitCode:1, stdout:JSON.stringify({ ok:false, error:saved.validation ?? "the setting changed meanwhile: run the command again" }) };
           for (const key of cleared) deleteBoundSetting(db, where, key);
           return { exitCode:0, stdout:JSON.stringify({ ok:true, scope:scope!, set:own() }, null, 2) };
+        }
+        // The one infra-profile writer and reader (SMA k_pl_infra): the eight profile.* settings of a project.
+        if (command === "profile") {
+          const [projectId, ...rest] = args;
+          if (!projectId) return { exitCode:1, stderr:`usage: bb lane-pilot profile <project-id> [--set key=value …]   (keys: ${PROFILE_KEYS.join(", ")}; an empty value resets the key)` };
+          const sets = rest.flatMap((value, index) => value === "--set" && rest[index + 1] !== undefined ? [rest[index + 1]!] : []);
+          if (sets.length) {
+            // The CLI is a door any agent thread can reach: from a thread only the PM chat of THIS project writes the profile; the owner at a terminal always may.
+            if (invocation?.threadId) {
+              const caller = await orMiss(bb.sdk.threads.get({ threadId: invocation.threadId }), null, isNotFound) as { projectId?: unknown } | null;
+              if (!caller || typeof caller.projectId !== "string" || caller.projectId !== projectId) return { exitCode:1, stderr:`refused: the profile of ${projectId} is set from that project's own PM chat or by the owner at a terminal, not from a thread of ${typeof caller?.projectId === "string" ? caller.projectId : "an unknown project"}` };
+              const metadata = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId: invocation.threadId }), null, isNotFound) as { role?: unknown } | null;
+              if (metadata?.role !== "pm") return { exitCode:1, stderr:`refused: the profile is set by the PM chat or the owner, not by a ${typeof metadata?.role === "string" ? `${metadata.role} thread` : "thread whose role is unknown"}` };
+            }
+            // All pairs are judged before any is written: one refused pair stops the call with its reason and nothing changes.
+            const parsed = sets.map((pair) => { const at = pair.indexOf("="); return at < 0 ? { key: pair, value: null as string | null } : { key: pair.slice(0, at), value: pair.slice(at + 1) }; });
+            for (const { key, value } of parsed) {
+              if (value === null) return { exitCode:1, stderr:`write ${key}=<value> (an empty value resets the key)` };
+              const problem = value === "" && (PROFILE_KEYS as readonly string[]).includes(key) ? null : profilePairProblem(key, value);
+              if (problem) return { exitCode:1, stderr:`refused ${key}: ${problem}` };
+            }
+            for (const { key, value } of parsed) { if (value === "") deleteBoundSetting(db, projectId, `profile.${key}`); else saveProjectSetting(db, projectId, `profile.${key}`, value); }
+          }
+          const settings = loadProjectSettings(db, projectId);
+          const values = Object.fromEntries(PROFILE_KEYS.map((key) => [`profile.${key}`, typeof settings[`profile.${key}`] === "string" ? settings[`profile.${key}`] as string : ""]));
+          if (Object.values(values).some((value) => value !== "")) return { exitCode:0, stdout:JSON.stringify(values, null, 2) };
+          // The settings are empty: a profile.json an earlier start left in the planning folder still answers, and says where the values come from.
+          const config = loadPrototypeConfig(db, projectId);
+          if (config?.hostId && config.pmWorkspacePath) {
+            const root = await resolvePlanningHome({ host: host as never, hostId:config.hostId, cwd:config.pmWorkspacePath, inputs:planningHomeInputs(db, projectId), log:bb.log }) ?? config.pmWorkspacePath;
+            const file = await host.call("runCommand", { requestedHostId:config.hostId, command:"cat .agents/planning/profile.json 2>/dev/null", cwd:root, timeoutSec:15 }, { hostId:config.hostId, timeoutMs:20_000 }).catch(() => null);
+            let fromFile: Record<string, unknown> = {};
+            try { const parsedFile: unknown = JSON.parse(file?.stdout ?? ""); if (parsedFile && typeof parsedFile === "object" && !Array.isArray(parsedFile)) fromFile = parsedFile as Record<string, unknown>; } catch { /* no file, or not JSON */ }
+            const shown = Object.fromEntries(PROFILE_KEYS.flatMap((key) => (typeof fromFile[key] === "string" && fromFile[key] ? [[`profile.${key}`, fromFile[key]]] : [])));
+            if (Object.keys(shown).length) return { exitCode:0, stdout:JSON.stringify({ ...values, ...shown, source:`the project settings are empty: these values come from .agents/planning/profile.json (set them with --set to move them into the settings)` }, null, 2) };
+          }
+          return { exitCode:0, stdout:JSON.stringify(values, null, 2) };
+        }
+        // The planning files' integrity (SMA k_c_health): the todos and plans indexes against the folders on disk; --fix repairs the index lines only.
+        if (command === "plans-health") {
+          // --fix rewrites index files on the machine the command runs on: the owner's terminal, never an agent thread.
+          if (args.includes("--fix") && invocation?.threadId) return { exitCode:1, stderr:"refused: plans-health --fix rewrites the index files of the directory it runs in; the owner runs it at a terminal in the checkout" };
+          const { plansHealth, plansFix } = await import("../../project-life");
+          const dir = args.find((arg) => !arg.startsWith("--")) ?? process.cwd();
+          const agentsDir = dir.endsWith(".agents") ? dir : `${dir.replace(/\/$/, "")}/.agents`;
+          const report = plansHealth(agentsDir);
+          const fixed = args.includes("--fix") ? plansFix(agentsDir) : [];
+          const lines = report.flatMap((area) => [...area.missingInIndex.map((id) => `${area.area}: not in INDEX.md: ${id}`), ...area.deadIndexLines.map((line) => `${area.area}: INDEX line with no folder: ${line.trim().slice(0, 120)}`)]);
+          return { exitCode: report.length && !fixed.length ? 1 : 0, stdout: [...lines, ...fixed.map((line) => `fixed ${line}`)].join("\n") || "planning indexes healthy" };
         }
         if (command === "budget" && args.length >= 1) {
           const projectId = args[0]!;

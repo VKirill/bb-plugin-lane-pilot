@@ -501,6 +501,26 @@ export function roadmapAnalysis(text: string, phases: readonly { id: string; row
   };
 }
 
+/** The roadmap's numbering (SMA k_t_validate): duplicated row numbers and integer rows skipped between neighbors. */
+export function roadmapNumberingGaps(text: string): string[] {
+  const seen = new Set<string>();
+  let prev = 0;
+  const findings: string[] = [];
+  for (const line of text.split("\n")) {
+    const found = line.trim().match(ROW);
+    if (!found) continue;
+    const n = found[2]!;
+    if (seen.has(n)) findings.push(`duplicate roadmap row ${n}`);
+    seen.add(n);
+    if (/^\d+$/.test(n)) {
+      const num = Number(n);
+      if (num > prev + 1) findings.push(`skipped roadmap row(s) between ${prev} and ${num}`);
+      if (num > prev) prev = num;
+    }
+  }
+  return findings;
+}
+
 /** Marks in STATE: the header keys phase and stage set, the body kept (lane-plan reads the same header). */
 export function stateText(previous: string | null, marks: Record<string, string>): string {
   const today = new Date().toISOString().slice(0, 10);

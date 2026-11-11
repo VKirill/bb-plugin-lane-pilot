@@ -1,6 +1,6 @@
 import { MACHINE_AFFINITY_ANY } from "@lane-pilot/contracts";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
-import { getRunSettingsScopes } from "../../storage";
+import { getRunSettingsScopes, planningHomeInputs } from "../../storage";
 import {findModelIn, isZcodeProvider, providerLimitNotice, writerExecutionSelection, zcodeEnvironmentError} from "@lane-pilot/models";
 import { jev } from "@lane-pilot/jev";
 import { stepTrivialJudgment } from "@lane-pilot/jev/judgments/step-trivial";
@@ -11,7 +11,7 @@ import { ROLE_PROFILES } from "../../contracts/helper-context"
 import { employeeView, isEmployeeSpecialist } from "../../contracts/employee-manifest";
 import type { ExtraAccess, HelperRole } from "../../contracts/helper-context";
 import { storeNativeSelection } from "../../native-agent/server";
-import { LEAD_ID } from "../../contracts";
+import { LEAD_ID, planningText, resolvePlanningHome } from "../../contracts";
 import {bestEffort, isNotFound, orMiss, outputText, redactKnown} from "@lane-pilot/kit";
 import { READ_ONLY_LINE, agentPrompt, contractProblems, contractRepairPrompt, describeProblems, goalsBlock, hasContractProblems, honestExit, outputContract, outputFields, parseAgentOutput, planPacket, wfRunIdemParent } from "@lane-pilot/workflow-engine";
 import type { ContractNode, ContractProblems } from "@lane-pilot/workflow-engine";
@@ -284,6 +284,12 @@ export function createWorkflowAgents() {
       } else if (place.mode === "fallback") {
         bb.log?.warn(`Lane Pilot employee ${spec.specialist} stays in the current environment: ${place.reason}`);
       }
+    }
+    // The planning home (SMA d_project_planning): a prompt that names `.agents/phases|planning|todos|plans` gets the home's absolute folder, so what
+    // the model writes lands where the driver reads. Unset: the prompt is untouched. `pr-branch` names them as pathspecs to leave out of a cherry-pick.
+    if (checkoutPath && checkoutHostId && asked.workflowId !== "pr-branch") {
+      const home = await resolvePlanningHome({ host, hostId: checkoutHostId, cwd: checkoutPath, inputs: planningHomeInputs(db, rt.projectId), log: bb.log });
+      if (home) request = { ...request, prompt: planningText(request.prompt, home) };
     }
     const watchedFrom = Date.now();
     const before = checkoutPath && checkoutHostId ? await gitRepoStatus(host, checkoutHostId, checkoutPath) : null;

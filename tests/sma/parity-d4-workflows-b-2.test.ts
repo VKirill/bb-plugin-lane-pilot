@@ -442,8 +442,9 @@ describe("parity d4 workflows b-2", () => {
     const out = { refused: "string[]", set: "string[]" };
     const profile = { host: "local", db_password: "hunter2", apiKey: "plain", monkey: "ape", note: `sk-${"a".repeat(24)}`, deploy: "manual" };
     const written = (await t.start(actionChain("lp.profile_write", out, { profile })).done).output as Row;
-    expect(written.refused).toEqual(["db_password", "apiKey", "note"]);
-    expect(written.set).toEqual(["host", "monkey", "deploy"]);
+    // `host` and `monkey` are not among the eight profile keys (k_pl_infra): refused with a reason, the other pairs are kept.
+    expect(written.refused).toEqual(["host", "db_password", "apiKey", "monkey", "note"]);
+    expect(written.set).toEqual(["deploy"]);
     expect(JSON.stringify(written)).not.toMatch(/hunter2|plain|sk-/);
     expect(t.writes.map((w) => w.content).join("\n")).not.toMatch(/hunter2|plain|sk-/);
     // All pairs refused: nothing written, no failure.
@@ -455,7 +456,7 @@ describe("parity d4 workflows b-2", () => {
     const summary = await t.start(wf("project-start.json"), {}).done;
     expect(summary.status).toBe("succeeded");
     expect(executed(t, summary.runId)).toEqual(Object.values(startFlow).filter((id) => id !== "ask"));
-    expect(summary.output).toMatchObject({ status: "done", refused: ["db_password"] });
+    expect(summary.output).toMatchObject({ status: "done", refused: ["host", "db_password"] });
     expect(JSON.stringify(summary.output)).not.toContain("hunter2");
   });
 

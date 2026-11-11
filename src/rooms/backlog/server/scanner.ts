@@ -1,4 +1,4 @@
-import { listCliPmProjects, listCliPmThreads, loadProjectSettings, loadPrototypeConfig } from "../../storage";
+import { listCliPmProjects, listCliPmThreads, loadProjectSettings, loadPrototypeConfig, planningHomeInputs } from "../../storage";
 import { SETTING_BACKLOG_SCAN_MINUTES } from "@lane-pilot/settings-catalog";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
@@ -7,6 +7,7 @@ import { closeOwnerItem, listOpenOwnerItemKeys, postOwnerItem, rpcLine } from ".
 import { backlogIssuedTo } from "../store";
 import { bindBacklogIssued } from "../../tasks/server";
 import { backlogBoard, backlogReadCommand, issueMessage, parseBacklogOutput, type BacklogBoard, type TodoMeta } from "../logic";
+import { planningText, resolvePlanningHome } from "../../contracts";
 
 /**
  * The backlog scanner (SMA D2-9). Every hour, for each project whose owner's PM chat (a run of kind `cli`) was active in the last two weeks,
@@ -44,11 +45,16 @@ export function createBacklog(ctx: ServerCore) {
     return null;
   }
 
+  /** The planning home `.agents/todos` is read under (SMA d_project_planning), checked on the project's host the first time; null: the checkout. */
+  function homeOf(projectId: string, config: { hostId: string; writerWorkspacePath: string }): Promise<string | null> {
+    return resolvePlanningHome({ host: host as never, hostId: config.hostId, cwd: config.writerWorkspacePath, inputs: planningHomeInputs(db, projectId), log: bb.log });
+  }
+
   /** The project's meta.yaml items as they are on its host right now (no fetch; the board fetches first). */
   async function items(projectId: string): Promise<TodoMeta[]> {
     const config = loadPrototypeConfig(db, projectId);
     if (!config?.writerWorkspacePath) return [];
-    const ran = await host.call("gateRun", { requestedHostId: config.hostId, basePath: config.writerWorkspacePath, command: backlogReadCommand, timeoutSec: 30 }, { hostId: config.hostId, timeoutMs: 60_000 })
+    const ran = await host.call("gateRun", { requestedHostId: config.hostId, basePath: (await homeOf(projectId, config as never)) ?? config.writerWorkspacePath, command: backlogReadCommand, timeoutSec: 30 }, { hostId: config.hostId, timeoutMs: 60_000 })
       .catch(() => ({ exitCode: 1, stdout: "", stderr: "" }));
     return parseBacklogOutput(ran.stdout);
   }
@@ -69,7 +75,7 @@ export function createBacklog(ctx: ServerCore) {
     const fetched = freshened.exitCode === 0;
     const behindCount = Number((freshened.stdout ?? "").trim());
     const behind = fetched && Number.isFinite(behindCount) ? behindCount : null;
-    const ran = await host.call("gateRun", { requestedHostId: config.hostId, basePath: config.writerWorkspacePath, command: backlogReadCommand, timeoutSec: 30 }, { hostId: config.hostId, timeoutMs: 60_000 })
+    const ran = await host.call("gateRun", { requestedHostId: config.hostId, basePath: (await homeOf(projectId, config as never)) ?? config.writerWorkspacePath, command: backlogReadCommand, timeoutSec: 30 }, { hostId: config.hostId, timeoutMs: 60_000 })
       .catch((cause: unknown) => ({ exitCode: 1, stdout: "", stderr: cause instanceof Error ? cause.message : String(cause) }));
     const issued = new Set((db.prepare("SELECT todo_id FROM lane_pilot_backlog_issue WHERE project_id=?").all(projectId) as Array<{ todo_id: string }>).map((row) => row.todo_id));
     const result = backlogBoard(parseBacklogOutput(ran.stdout));
@@ -98,6 +104,8 @@ export function createBacklog(ctx: ServerCore) {
         if (!issuable.has(key.slice(offerKey(projectId, "").length))) closeOwnerItem(db, key, "janitor:not issuable", now);
       }
       const next = current.issuable[0];
+      const scanConfig = loadPrototypeConfig(db, projectId);
+      const planningHome = scanConfig?.hostId && scanConfig.writerWorkspacePath ? await homeOf(projectId, scanConfig as never).catch(() => null) : null;
       const done = async (offered: string | null) => {
         await bb.storage.kv.set(lastScanKey(projectId), now as never).catch(() => undefined);
         out.push({ projectId, offered, scanned: true, lastScanAt: now, board: counts });
@@ -121,7 +129,7 @@ export function createBacklog(ctx: ServerCore) {
       const offered = postOwnerItem(db, { key: offerKey(projectId, next.id), source: "backlog", kind: "backlog_ready", projectId, wake: false,
         what: `В бэклоге проекта готова к работе задача «${next.title}»`,
         why: `Оценка ${next.estimate}, приоритет ${next.priority}. По вашему «выдать» она уйдёт в чат проекта как задание; сама система в чат проекта не пишет.${ageLine}`,
-        evidence: [{ kind: "file", ref: `.agents/todos/items/${next.id}/AGENT.md`, label: "описание" }],
+        evidence: [{ kind: "file", ref: planningText(`.agents/todos/items/${next.id}/AGENT.md`, planningHome), label: "описание" }],
         actions: [{ id: "issue", label: "Выдать в работу", cli: rpcLine("backlog_issue", { projectId, todoId: next.id }), rpc: { method: "backlog_issue", input: { projectId, todoId: next.id } } }] }, now).created;
       if (offered) ctx.log(`backlog: ${projectId} offered ${next.id} on the owner's list`);
       await done(offered ? next.id : null);
@@ -135,7 +143,7 @@ export function createBacklog(ctx: ServerCore) {
     if (!pm) return { ok: false, reason: "в проекте нет чата Lane Pilot, который работал за последние две недели" };
     const item = (await board(projectId)).issuable.find((row) => row.id === todoId);
     if (!item) return { ok: false, reason: `в бэклоге проекта нет пункта ${todoId}, готового к работе (уже выдан, закрыт или ждёт оценки)` };
-    await bb.sdk.threads.send({ threadId: pm, mode: "queue-if-active", input: [{ type: "text", text: issueMessage(item), mentions: [] }] } as never);
+    await bb.sdk.threads.send({ threadId: pm, mode: "queue-if-active", input: [{ type: "text", text: issueMessage(item, await homeOf(projectId, loadPrototypeConfig(db, projectId) as never).catch(() => null)), mentions: [] }] } as never);
     db.prepare("INSERT OR IGNORE INTO lane_pilot_backlog_issue(project_id,todo_id,pm_thread_id,estimate,issued_at) VALUES (?,?,?,?,?)").run(projectId, todoId, pm, item.estimate, now);
     closeOwnerItem(db, offerKey(projectId, todoId), "owner", now);
     ctx.log(`backlog: ${projectId} issued ${todoId} to ${pm} on the owner's word`);

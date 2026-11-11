@@ -2,9 +2,10 @@ import type { TaskV2 } from "../../contracts";
 import { noteEngineWrite, gateRunVerdict } from "../../verification/server";
 import { parseIntegrationGateSettings, type VerificationGatePort } from "../../contracts/integration-gate";
 import type { IsTaskSatisfied } from "../../contracts";
-import { getAttempt, getRun, getRunWriterHost, getRunSettingsScopes, getTaskPlan, latestGateRun, listAttemptsForTask, listOpenAttempts, listOpenWorktrees, listTaskIdsForRun, loadProjectSettings, fullGateVerdict } from "../../storage";
+import { getAttempt, getRun, getRunWriterHost, getRunSettingsScopes, getTaskPlan, latestGateRun, listAttemptsForTask, listOpenAttempts, listOpenWorktrees, listTaskIdsForRun, loadProjectSettings, fullGateVerdict, saveProjectSetting, planningHomeInputs } from "../../storage";
+import { isPlanningPath, resolvePlanningHome } from "../../contracts";
 import { getPhase, listPhases } from "../../phase";
-import { unsafeReason } from "../../anamnesis";
+import { PROFILE_KEYS, profilePairProblem, unsafeReason } from "../../anamnesis";
 import { bestEffort, isNotFound, orMiss, redactKnown, sha256Hex, stringAt } from "@lane-pilot/kit";
 import { validateTaskV2 } from "../../tasks/task-v2";
 import { agentPrompt, outputContract, outputFields, parseAgentOutput, resolveTaskQualityMode } from "@lane-pilot/workflow-engine";
@@ -262,12 +263,7 @@ export function withContractDefaults(input: Row): Row {
 type HelperUsage = { tokens: number; costUsd: number; unknown?: true };
 type LpTaskNode = Extract<GraphNode, { type: "lp-task" }>;
 
-/** Key names of a profile that hold a secret: whole words only (api_key, apiKey, DB_PASSWORD), so `monkey` or `keyboard_layout` pass. */
-export function secretKeyName(key: string): boolean {
-  const words = key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-  if (words.some((word) => /^(passwords?|passwd|secrets?|tokens?|credentials?|apikeys?|privatekeys?)$/.test(word))) return true;
-  return words.some((word, at) => word === "key" && (words[at - 1] === "api" || words[at - 1] === "private"));
-}
+export { secretKeyName } from "../../anamnesis";
 
 const QUICK_STATE_PATH = ".agents/planning/STATE.md";
 
@@ -290,6 +286,9 @@ export function debugSessionDoc(slug: string, symptom: unknown): string {
 
 export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, services: Services, agents: WorkflowAgents = createWorkflowAgents()): void {
   const { bb, db, host } = ctx;
+  /** The planning home of a project on the checkout's host (SMA d_project_planning), checked on that host; null: planning lives in the checkout. */
+  const planHome = (projectId: string, checkout: { hostId: string; path: string }): Promise<string | null> =>
+    resolvePlanningHome({ host: ctx.host, hostId: checkout.hostId, cwd: checkout.path, inputs: planningHomeInputs(db, projectId), log: bb.log });
   const lintTask = createTaskLinter(ctx, services);
   const rebuild = chainRuntimeFor(ctx, services);
   const runtimeOf = (c: { runtime: unknown }, runId?: string): ChainRuntime | undefined => {
@@ -645,7 +644,10 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const rel = c.render(str(params.path)).replace(/^\/+/, "");
     if (!rel || rel.includes("..") || rel.includes("\0")) throw new Error(`fs.write: the path "${rel}" is not inside the checkout`);
     const isFolder = rel.endsWith("/");
+    // A planning file (.agents/phases|planning|todos|plans, not a task's own folder) goes to the planning home when the project set one (SMA d_project_planning); unset, the checkout.
+    const home = isPlanningPath(rel) ? await planHome(rt.projectId, checkout) : null;
     const write = async (path: string, content: string) => {
+      if (home) { await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: home, path: `${home}/${path}`, content, contentEncoding: "utf8", createParents: true, expectedSha256: null }); return; }
       // Noted before the write lands, so a helper's status read right after it already sees it as the engine's.
       noteEngineWrite(checkout.path, path);
       await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: checkout.path, path: `${checkout.path}/${path}`, content, contentEncoding: "utf8", createParents: true, expectedSha256: null });
@@ -697,11 +699,19 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     let hasPassport = false, hasUi = false, hasValueMap = false, hasRoadmap = false, hasProfile = false;
     if (checkout) {
       // The planning files of a started project (SMA k_wst_quick): an existing install asks only for what is still missing.
-      const ran = await bestEffort(ctx.log, "workflow state probe", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: `ls .agents/PASSPORT.md .agents/passport.md PROJECT.md 2>/dev/null | head -1; echo ---; ls package.json src/ui app components 2>/dev/null | head -3${switchOf(rt, "project.start_research") === "on" ? "; echo ---; ls .agents/planning/VALUE-MAP.md .agents/planning/ROADMAP.md .agents/planning/PROFILE.md .agents/planning/profile.json 2>/dev/null" : ""}`, timeoutSec: 20, timeoutMs: 30_000 }), null);
-      const [passport = "", ui = "", planning = ""] = (ran?.stdout ?? "").split("---");
+      // With a planning home, the planning part of the probe is asked there; the rest stays in the checkout.
+      const research = switchOf(rt, "project.start_research") === "on";
+      const home = research ? await planHome(rt.projectId, checkout) : null;
+      const planningLs = "ls .agents/planning/VALUE-MAP.md .agents/planning/ROADMAP.md .agents/planning/PROFILE.md .agents/planning/profile.json 2>/dev/null";
+      const ran = await bestEffort(ctx.log, "workflow state probe", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: `ls .agents/PASSPORT.md .agents/passport.md PROJECT.md 2>/dev/null | head -1; echo ---; ls package.json src/ui app components 2>/dev/null | head -3${research && !home ? `; echo ---; ${planningLs}` : ""}`, timeoutSec: 20, timeoutMs: 30_000 }), null);
+      const homeLs = home ? await bestEffort(ctx.log, "workflow state probe (planning home)", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: home, command: planningLs, timeoutSec: 20, timeoutMs: 30_000 }), null) : null;
+      const [passport = "", ui = "", planning = ""] = `${ran?.stdout ?? ""}${home ? `---\n${homeLs?.stdout ?? ""}` : ""}`.split("---");
       const present = new Set(planning.split("\n").map((line) => line.trim().split("/").pop()!.toLowerCase()).filter(Boolean));
       hasPassport = passport.trim().length > 0; hasUi = /app|components|ui/.test(ui);
-      hasValueMap = present.has("value-map.md"); hasRoadmap = present.has("roadmap.md"); hasProfile = present.has("profile.md") || present.has("profile.json");
+      hasValueMap = present.has("value-map.md"); hasRoadmap = present.has("roadmap.md");
+      // The infra profile lives in the project settings (SMA k_pl_infra): a file from before, or any profile.* key, counts as set.
+      const settings = loadProjectSettings(db, rt.projectId);
+      hasProfile = present.has("profile.md") || present.has("profile.json") || PROFILE_KEYS.some((key) => String(settings[`profile.${key}`] ?? "").trim() !== "");
     }
     const open = listOpenAttempts(db).filter((row) => row.project_id === rt.projectId).length;
     return { has_passport: hasPassport, open_tasks: open, plan_exists: open > 0, has_ui: hasUi, has_value_map: hasValueMap, has_roadmap: hasRoadmap, has_profile: hasProfile };
@@ -716,9 +726,11 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const checkout = await pmCheckout(rt);
     const path = ".agents/planning/ROADMAP.md";
     const host = ctx.host as never as { call(m: string, i: unknown, o?: unknown): Promise<Record<string, unknown>> };
+    // The planning home moves the roadmap off the checkout (SMA d_project_planning); unset, it is the checkout.
+    const root = (await planHome(rt.projectId, checkout)) ?? checkout.path;
     let current = "", expected: string | null = null;
     try {
-      const file = await host.call("readBoundedFile", { requestedHostId: checkout.hostId, projectCwd: checkout.path, relativePath: path, offset: 0, maxLines: 2000 }, { hostId: checkout.hostId, timeoutMs: 20_000 });
+      const file = await host.call("readBoundedFile", { requestedHostId: checkout.hostId, projectCwd: root, relativePath: path, offset: 0, maxLines: 2000 }, { hostId: checkout.hostId, timeoutMs: 20_000 });
       if (typeof file.content !== "string") throw new Error("the read returned no text");
       if (file.truncated === true) throw new Error("the file is longer than one read");
       if (typeof file.sha256 === "string" && file.sha256 !== sha256Hex(file.content)) throw new Error("the text read does not match the file's hash");
@@ -732,7 +744,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     if (!name) throw new Error("lp.roadmap_park: the item needs a name");
     const parked = parkRoadmapRow(current, name, str(c.resolve("$inputs.goal")));
     const edits = [{ path, expectedSha256: expected, content: parked.text }];
-    const result = await host.call("writePhaseBook", { requestedHostId: checkout.hostId, projectCwd: checkout.path, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId: checkout.hostId, timeoutMs: 30_000 }) as { status: string; reason?: string | null };
+    const result = await host.call("writePhaseBook", { requestedHostId: checkout.hostId, projectCwd: root, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId: checkout.hostId, timeoutMs: 30_000 }) as { status: string; reason?: string | null };
     if (result.status !== "applied") throw new Error(`lp.roadmap_park: ${result.reason ?? result.status}`);
     return { ok: true, n: parked.n, path };
   });
@@ -758,7 +770,10 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       command: "git ls-files 2>/dev/null || find . -type f -not -path './.git/*' -not -path './node_modules/*' -not -path './dist/*' -not -path './build/*' | sed 's|^\\./||'; echo ===PLAN===; ls .agents/planning 2>/dev/null; echo ===COM===; git rev-list --count HEAD 2>/dev/null || echo 0",
       timeoutSec: 30, timeoutMs: 45_000 }), null);
     const [listing = "", rest = ""] = (ran?.stdout ?? "").split("===PLAN===");
-    const [planningList = "", commitsRaw = ""] = rest.split("===COM===");
+    const [planningHere = "", commitsRaw = ""] = rest.split("===COM===");
+    // With a planning home its artifacts are counted there, not in the checkout.
+    const home = await planHome(rt.projectId, checkout);
+    const planningList = home ? (await bestEffort(ctx.log, "tree counts (planning home)", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: home, command: "ls .agents/planning 2>/dev/null", timeoutSec: 15, timeoutMs: 20_000 }), null))?.stdout ?? "" : planningHere;
     const files = listing.split("\n").map((line) => line.trim()).filter(Boolean);
     const isTest = /(^|\/)(__tests__|tests?|spec)\/|\.(test|spec)\.[a-z0-9]+$/i, isCode = /\.(ts|tsx|js|jsx|mjs|cjs|py|go|rs|java|rb|php|cs|swift|kt|kts|lua|vue|svelte|c|cc|cpp|h|hpp)$/i;
     const counts = { sources: files.filter((file) => isCode.test(file) && !isTest.test(file)).length,
@@ -775,43 +790,30 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   action("lp.post_ship_hooks", async (_c, rt) => {
     const checkout = await bestEffort(ctx.log, "post-ship hooks checkout", pmCheckout(rt), null);
     if (!checkout) return { count: 0, files: [] as string[] };
-    const ran = await bestEffort(ctx.log, "post-ship hooks", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: "ls .agents/planning/hooks/post-ship*.md 2>/dev/null || true", timeoutSec: 15, timeoutMs: 20_000 }), null);
+    const ran = await bestEffort(ctx.log, "post-ship hooks", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: (await planHome(rt.projectId, checkout)) ?? checkout.path, command: "ls .agents/planning/hooks/post-ship*.md 2>/dev/null || true", timeoutSec: 15, timeoutMs: 20_000 }), null);
     const files = (ran?.stdout ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
     return { count: files.length, files };
   });
 
-  // The one profile writer (SMA k_lib_profilewriter): the start's preview hands the profile object over instead of running the
-  // CLI itself. Every key name (password, secret, token, api key, credential, private key) and every value goes through the
-  // anamnesis unsafeReason first; a refused pair is skipped and reported by key name only, never by content. Clean values go to `lane-plan profile --set` on the host, or merge into .agents/planning/profile.json where the
-  // checkout has no lane-plan.
+  // The one profile writer (SMA k_pl_infra): the start's preview hands the profile object over and it lands in the project's
+  // profile.* settings — the same keys `bb lane-pilot profile` reads and sets. Every key name (password, secret, token, api
+  // key, credential, private key), every unknown key and every value goes through the anamnesis unsafeReason first; a refused
+  // pair is skipped and reported by key name only, never by content.
   action("lp.profile_write", async (c, rt) => {
     const params = rec(rec(c.node).params);
     let profile: unknown = params.profile === undefined ? undefined : c.template(params.profile);
     if (typeof profile === "string") { try { profile = JSON.parse(profile); } catch { profile = undefined; } }
     const entries = Object.entries(rec(profile)).filter(([, value]) => ["string", "number", "boolean"].includes(typeof value));
-    // A refused pair is skipped and named by key; the others are written and the start goes on.
-    const refused = entries.filter(([key, value]) => secretKeyName(key) || unsafeReason(String(value)) !== null || unsafeReason(key) !== null).map(([key]) => key);
-    entries.splice(0, entries.length, ...entries.filter(([key]) => !refused.includes(key)));
-    if (!entries.length) return { refused, set: [] as string[] };
-    const checkout = await pmCheckout(rt);
+    // A refused pair is skipped and named by key with its reason (never the value); the others are written and the start goes on.
+    const problems = entries.map(([key, value]) => [key, profilePairProblem(key, String(value))] as const).filter(([, problem]) => problem !== null);
+    const refused = problems.map(([key]) => key);
     const set: string[] = [];
-    const cli = await runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: "command -v lane-plan", timeoutSec: 15, timeoutMs: 20_000 });
-    if (cli.exitCode === 0 && cli.stdout.trim()) {
-      for (const [key, value] of entries) {
-        const ran = await runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: `lane-plan profile --set ${quote(`${key}=${String(value)}`)}`, timeoutSec: 20, timeoutMs: 30_000 });
-        if (ran.exitCode !== 0) throw new Error(`lp.profile_write: lane-plan profile --set ${key} failed: ${ran.stderr.trim().slice(0, 200) || `exit ${ran.exitCode}`}`);
-        set.push(key);
-      }
-    } else if (entries.length) {
-      const path = ".agents/planning/profile.json";
-      const before = (await bestEffort(ctx.log, "profile read", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: `cat ${quote(path)} 2>/dev/null || true`, timeoutSec: 15, timeoutMs: 20_000 }), null))?.stdout ?? "";
-      let merged: Row = {};
-      try { merged = rec(JSON.parse(before)); } catch { /* a broken profile is rebuilt from the values at hand */ }
-      for (const [key, value] of entries) { merged[key] = value; set.push(key); }
-      noteEngineWrite(checkout.path, path);
-      await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: checkout.path, path: `${checkout.path}/${path}`, content: `${JSON.stringify(merged, null, 2)}\n`, contentEncoding: "utf8", createParents: true, expectedSha256: null });
+    for (const [key, value] of entries.filter(([key]) => !refused.includes(key))) {
+      saveProjectSetting(db, rt.projectId, `profile.${key}`, String(value));
+      set.push(key);
     }
-    return { refused, set };
+    for (const [key, problem] of problems) ctx.log(`lp.profile_write: pair «${key.slice(0, 40)}» refused: ${problem}`);
+    return { refused, set, reasons: problems.map(([key, problem]) => `${key.slice(0, 40)}: ${problem}`) };
   });
 
   // A project's switch for a new behaviour (unset = off, as before the change): read when the node runs, so any graph can use it.
@@ -820,7 +822,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   // Ids of REQUIREMENTS.md that no closed phase of the project covers in its plan items (SMA k_c_auditms). Advisory: it never stops a close.
   const requirementCoverage = async (rt: ChainRuntime) => {
     const checkout = await pmCheckout(rt);
-    const text = (await bestEffort(ctx.log, "requirements read", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: "cat .agents/planning/REQUIREMENTS.md 2>/dev/null || true", timeoutSec: 15, timeoutMs: 20_000 }), null))?.stdout ?? "";
+    const text = (await bestEffort(ctx.log, "requirements read", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: (await planHome(rt.projectId, checkout)) ?? checkout.path, command: "cat .agents/planning/REQUIREMENTS.md 2>/dev/null || true", timeoutSec: 15, timeoutMs: 20_000 }), null))?.stdout ?? "";
     const ids = [...new Set([...text.matchAll(/\bREQ-[A-Za-z0-9][\w.-]*/g)].map((hit) => hit[0]))];
     const covered = new Set(listPhases(db, { projectId: rt.projectId }).filter((phase) => phase.stage === "closed" || phase.state === "closed")
       .flatMap((phase) => (phase.record.plan?.items ?? []).flatMap((item) => item.covers ?? [])));
@@ -887,10 +889,11 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     let dir = "";
     try {
       const checkout = await pmCheckout(rt);
-      const read = async (rel: string) => (await bestEffort(ctx.log, "milestone archive read", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: `cat ${quote(rel)} 2>/dev/null || true`, timeoutSec: 15, timeoutMs: 20_000 }), null))?.stdout ?? "";
+      const root = (await planHome(rt.projectId, checkout)) ?? checkout.path;
+      const read = async (rel: string) => (await bestEffort(ctx.log, "milestone archive read", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: root, command: `cat ${quote(rel)} 2>/dev/null || true`, timeoutSec: 15, timeoutMs: 20_000 }), null))?.stdout ?? "";
       const write = async (rel: string, content: string) => {
-        noteEngineWrite(checkout.path, rel);
-        await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: checkout.path, path: `${checkout.path}/${rel}`, content, contentEncoding: "utf8", createParents: true, expectedSha256: null });
+        if (root === checkout.path) noteEngineWrite(checkout.path, rel);
+        await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: root, path: `${root}/${rel}`, content, contentEncoding: "utf8", createParents: true, expectedSha256: null });
       };
       // The closing milestone is named by its goal. new-milestone names none: the previous milestone is the roadmap's own heading when it has one, else the date.
       const params = rec(rec(c.node).params);
@@ -899,7 +902,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const name = (closing ? str(c.render(str(params.name))).trim() || str(c.resolve("$inputs.run_id")) : heading) || new Date().toISOString().slice(0, 10);
       const slug = name.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^[-_]+|[-_]+$/g, "").slice(0, 40).replace(/-+$/, "") || "milestone";
       dir = `.agents/planning/milestones/${slug}-${sha256Hex(name).slice(0, 8)}`;
-      const kept = await runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: `test -f ${quote(`${dir}/ROADMAP.md`)} && echo yes`, timeoutSec: 15, timeoutMs: 20_000 }).then((ran) => ran.stdout.trim() === "yes", () => false);
+      const kept = await runOnHost(ctx.host, { hostId: checkout.hostId, cwd: root, command: `test -f ${quote(`${dir}/ROADMAP.md`)} && echo yes`, timeoutSec: 15, timeoutMs: 20_000 }).then((ran) => ran.stdout.trim() === "yes", () => false);
       const files: string[] = [];
       if (!kept) {
         for (const file of ["ROADMAP.md", "REQUIREMENTS.md"]) {
@@ -1049,7 +1052,9 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const run = getRun(db, rt.runId);
     const hostId = getRunWriterHost(db, rt.runId);
     if (!run?.writer_workspace_path || !hostId) return { ok: false, note: "no writer workspace", comment };
-    const read = await runOnHost(ctx.host, { hostId, cwd: run.writer_workspace_path, command: `if [ -f ${QUICK_STATE_PATH} ]; then cat ${QUICK_STATE_PATH}; else exit 3; fi`, timeoutSec: 20, timeoutMs: 30_000 });
+    // The planning home holds STATE.md when one is set (SMA d_project_planning); its row and its commit go there too.
+    const root = (await planHome(rt.projectId, { hostId, path: run.writer_workspace_path })) ?? run.writer_workspace_path;
+    const read = await runOnHost(ctx.host, { hostId, cwd: root, command: `if [ -f ${QUICK_STATE_PATH} ]; then cat ${QUICK_STATE_PATH}; else exit 3; fi`, timeoutSec: 20, timeoutMs: 30_000 });
     const title = str((c.input.with as Row | undefined)?.title ?? c.resolve("$inputs.title")) || "quick task";
     const commit = list((c.input.with as Row | undefined)?.commits ?? c.resolve("ctx.merged_commits")).map(String)[0] ?? "—";
     const edit = quickStateEdit(read, { date: new Date().toISOString().slice(0, 10), task: title.slice(0, 120), commit });
@@ -1058,9 +1063,9 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const path = QUICK_STATE_PATH;
     try {
       const edits = [{ path, expectedSha256: edit.expectedSha256, content: edit.content }];
-      const written = await host.call("writePhaseBook", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId, timeoutMs: 30_000 });
+      const written = await host.call("writePhaseBook", { requestedHostId: hostId, projectCwd: root, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId, timeoutMs: 30_000 });
       if (!written.writes.some((row) => row.path === path && row.status === "applied")) throw new Error(written.writes.find((row) => row.path === path)?.status ?? "not applied");
-      const committed = await bestEffort(ctx.log, "quick STATE.md commit", host.call("gitCommitDocs", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, paths: [path], message: `state: quick task done — ${title.replace(/\s+/g, " ").trim().slice(0, 60)}` }, { hostId, timeoutMs: 60_000 }), null);
+      const committed = await bestEffort(ctx.log, "quick STATE.md commit", host.call("gitCommitDocs", { requestedHostId: hostId, projectCwd: root, paths: [path], message: `state: quick task done — ${title.replace(/\s+/g, " ").trim().slice(0, 60)}` }, { hostId, timeoutMs: 60_000 }), null);
       return { ok: true, note: committed?.commit ? "" : "row written, not committed", comment };
     } catch (cause) {
       return { ok: false, note: `STATE.md write failed: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 300), comment };
@@ -1074,12 +1079,13 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     if (!slug) return { found: false, path: "" };
     const path = `.agents/planning/debug/${slug}.md`;
     const checkout = await pmCheckout(rt);
-    const read = await runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: `test -f ${quote(path)} && cat ${quote(path)} || true`, timeoutSec: 20, timeoutMs: 30_000 });
+    const root = (await planHome(rt.projectId, checkout)) ?? checkout.path;
+    const read = await runOnHost(ctx.host, { hostId: checkout.hostId, cwd: root, command: `test -f ${quote(path)} && cat ${quote(path)} || true`, timeoutSec: 20, timeoutMs: 30_000 });
     if (read.exitCode === 0 && read.stdout.trim()) return { found: true, path };
     const content = debugSessionDoc(slug, c.resolve("$inputs.symptom"));
     try {
-      noteEngineWrite(checkout.path, path);
-      await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: checkout.path, path: `${checkout.path}/${path}`, content, contentEncoding: "utf8", createParents: true });
+      if (root === checkout.path) noteEngineWrite(checkout.path, path);
+      await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: root, path: `${root}/${path}`, content, contentEncoding: "utf8", createParents: true });
       return { found: false, path };
     } catch {
       return { found: false, path: "" };
