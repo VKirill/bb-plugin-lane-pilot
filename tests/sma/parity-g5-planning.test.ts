@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
@@ -42,6 +43,8 @@ function repo(prefix: string): string {
   git(dir, "commit", "-qm", "init");
   return dir;
 }
+/** On for the tests that need BB's real hash rule on a write; the older tests re-write a file with a null hash. */
+const STRICT_WRITES = { on: false };
 const put = (root: string, path: string, text: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), text); };
 const changedBy = (cwd: string) => git(cwd, "show", "--name-only", "--format=", "HEAD").trim().split("\n").filter(Boolean);
 const config = (projectId: string, checkout: string) => ({ projectId, hostId: "local", pmWorkspacePath: checkout, writerWorkspacePath: checkout, pmProviderId: "claude-code", pmModel: "m", writerProviderId: "claude-code", writerModel: "m" });
@@ -86,7 +89,13 @@ function rig(options: { home?: string; settings?: Record<string, unknown> } = {}
       },
       environments: { get: async () => ({ id: "env-pm", hostId: "local", path: checkout, status: "ready" }) },
       projects: { get: async () => ({ id: PROJECT, name: "Project", sources: [{ hostId: "local", path: checkout }] }), list: async () => [{ id: PROJECT, name: "Project", kind: "standard" }] as never },
-      files: { write: async (args: unknown) => { const input = args as { path: string; content: string }; mkdirSync(dirname(input.path), { recursive: true }); writeFileSync(input.path, input.content); return { ok: true } as never; } },
+      // As BB core's write: a null hash only creates, a given hash must match the file, no hash at all replaces.
+      files: { write: async (args: unknown) => {
+        const input = args as { path: string; content: string; expectedSha256?: string | null };
+        const now = existsSync(input.path) ? createHash("sha256").update(readFileSync(input.path)).digest("hex") : null;
+        if (STRICT_WRITES.on && input.expectedSha256 !== undefined && input.expectedSha256 !== now) return { outcome: "conflict", currentSha256: now } as never;
+        mkdirSync(dirname(input.path), { recursive: true }); writeFileSync(input.path, input.content); return { ok: true } as never;
+      } },
     },
   });
   const db = openDatabase(bb);
@@ -580,5 +589,32 @@ describe("the codebase map's pages", () => {
     expect(ws.missingPages).toEqual([]);
     const full = docsCompletenessGaps([page("overview"), page("architecture"), page("gotchas"), page("conventions"), page("testing")], { tables: [], core: [] });
     expect(full.missingPages).toEqual([]);
+  });
+  it("[sma:k_d_tpl_instructions] the start's profile write creates CLAUDE.md and the Copilot instructions as pointers to PROJECT.md and appends the preferences once; a person's CLAUDE.md is never replaced, and without PROJECT.md nothing is written", async () => {
+    STRICT_WRITES.on = true;
+    try {
+      const r = rig();
+      const engine = new WorkflowEngine({ db: r.db, harnessVersion: "test", runtimeFor: chainRuntimeFor(r.ctx, r.services), resolveWorkflow: () => null });
+      registerPureActions(engine); registerReducers(engine);
+      registerChainExecutors(engine, r.ctx, r.services, createWorkflowAgents());
+      const write = async () => (await engine.start({ workflow: actionWorkflow("lp.profile_write", { params: { profile: { stack: "ts", test_command: "npm test" } } }, { refused: "string[]", set: "string[]", reasons: "string[]" }), inputs: {}, runtime: r.rt, link: { projectId: PROJECT, runId: RUN } }).done).output as Row;
+      const at = (path: string) => join(r.checkout, path);
+      // No PROJECT.md: the pointers would lead nowhere, so no file appears.
+      await write();
+      expect(existsSync(at("CLAUDE.md"))).toBe(false);
+      expect(existsSync(at(".github/copilot-instructions.md"))).toBe(false);
+      // With PROJECT.md and the person's own CLAUDE.md: theirs stays byte for byte, the missing file is created.
+      put(r.checkout, ".agents/planning/PROJECT.md", "# Project\n\nVision.\n");
+      put(r.checkout, "CLAUDE.md", "@AGENTS.md\n");
+      await write();
+      expect(readFileSync(at("CLAUDE.md"), "utf8")).toBe("@AGENTS.md\n");
+      expect(readFileSync(at(".github/copilot-instructions.md"), "utf8")).toContain(".agents/planning/PROJECT.md");
+      const project = readFileSync(at(".agents/planning/PROJECT.md"), "utf8");
+      expect(project.startsWith("# Project\n\nVision.")).toBe(true);
+      expect(project).toMatch(/## Developer preferences[\s\S]*Language: ts[\s\S]*Test command: npm test/);
+      // A second start appends nothing more.
+      await write();
+      expect(readFileSync(at(".agents/planning/PROJECT.md"), "utf8")).toBe(project);
+    } finally { STRICT_WRITES.on = false; }
   });
 });

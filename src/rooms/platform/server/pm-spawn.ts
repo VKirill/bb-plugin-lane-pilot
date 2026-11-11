@@ -148,8 +148,8 @@ export class CapabilityUnproven extends Error {
 export type DocumentaryGate = {
   /** The reason a provider may not run a documentary stage now (`capability_unproven:<provider>:<cell>`), or null when proved. */
   deny(providerId: string, model: string, projectId?: string): Promise<string | null>;
-  /** The providers whose installed adapter version proved every documentary cell: the offer a documentary pick is drawn from. Null where the gate is off. */
-  proved(projectId?: string): Promise<Set<string> | null>;
+  /** The offer a documentary pick is drawn from: `has` is false only for a provider whose installed adapter version has a red documentary receipt. Null where the gate is off or nothing is red. */
+  proved(projectId?: string): Promise<{ has(providerId: string): boolean } | null>;
 };
 const documentaryGateByApi = new WeakMap<BbPluginApi, DocumentaryGate>();
 

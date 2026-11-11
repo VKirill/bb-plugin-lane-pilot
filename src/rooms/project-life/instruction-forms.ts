@@ -6,7 +6,7 @@
 export type InstructionProject = { name: string; test?: string; language?: string; style?: string; forbidden?: readonly string[] };
 export type InstructionForms = { claudeMd: string; copilotInstructions: string; preferences: string };
 
-const POINTER = "PROJECT.md at the repository root is the entry to this project: what it is, how to run and test it, and where the living docs/ map leads. Read it first; this file only tells your tool where the canon is.";
+const POINTER = ".agents/planning/PROJECT.md is the entry to this project: what it is, how to run and test it, and where the living docs/ map leads. Read it first; this file only tells your tool where the canon is.";
 
 export function instructionForms(project: InstructionProject): InstructionForms {
   const claudeMd = [

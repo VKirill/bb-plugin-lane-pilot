@@ -819,26 +819,27 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   });
 
   // The agent-instruction forms go with the start's profile write (SMA k_d_tpl_instructions): CLAUDE.md and the Copilot
-  // instructions are written by the machine, as pointers to PROJECT.md, and the «Developer preferences» section is appended
-  // to it. writePhaseBook with a null hash only creates, so an existing file — or a hand-edited one — is never overwritten.
+  // instructions are pointers to PROJECT.md, and the «Developer preferences» section is appended to it. The pointers are
+  // written only where PROJECT.md exists, and create-only: BB answers `conflict` to a null-hash write over an existing
+  // file, so a person's CLAUDE.md is never replaced. (writePhaseBook cannot do this: it takes phase and planning marks only.)
   async function writeInstructionForms(rt: ChainRuntime, profile: unknown): Promise<void> {
     const checkout = await bestEffort(ctx.log, "instruction forms checkout", pmCheckout(rt), null);
     if (!checkout) return;
-    const prof = rec(profile);
-    const host = ctx.host as never as { call(m: string, i: unknown, o?: unknown): Promise<Record<string, unknown>> };
-    const forms = instructionForms({ name: checkout.path.split("/").filter(Boolean).pop() ?? "project", test: str(prof.test_command), language: str(prof.stack), style: str(prof.style) });
-    const apply = async (cwd: string, edits: Array<{ path: string; expectedSha256: string | null; content: string }>) =>
-      bestEffort(ctx.log, "instruction forms write", host.call("writePhaseBook", { requestedHostId: checkout.hostId, projectCwd: cwd, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId: checkout.hostId, timeoutMs: 30_000 }), null);
-    const checkoutEdits = await apply(checkout.path, [
-      { path: "CLAUDE.md", expectedSha256: null, content: forms.claudeMd },
-      { path: ".github/copilot-instructions.md", expectedSha256: null, content: forms.copilotInstructions },
-    ]);
-    if (checkoutEdits && checkoutEdits.status !== "applied") ctx.log(`lp.profile_write: instruction files not written (${checkoutEdits.reason ?? checkoutEdits.status}) — existing files are never overwritten`);
     const root = (await planHome(rt.projectId, checkout)) ?? checkout.path;
     const projectPath = ".agents/planning/PROJECT.md";
-    const current = await bestEffort(ctx.log, "instruction forms PROJECT.md", host.call("readBoundedFile", { requestedHostId: checkout.hostId, projectCwd: root, relativePath: projectPath, offset: 0, maxLines: 4000 }, { hostId: checkout.hostId, timeoutMs: 20_000 }), null);
-    if (current && typeof current.content === "string" && current.truncated !== true && typeof current.sha256 === "string" && current.sha256 === sha256Hex(current.content) && !current.content.includes("Developer preferences"))
-      await apply(root, [{ path: projectPath, expectedSha256: current.sha256, content: `${current.content.trimEnd()}\n\n${forms.preferences}` }]);
+    const host = ctx.host as never as { call(m: string, i: unknown, o?: unknown): Promise<Record<string, unknown>> };
+    const current = await bestEffort(ctx.log, "instruction forms PROJECT.md", host.call("readBoundedFile", { requestedHostId: checkout.hostId, projectCwd: root, relativePath: projectPath, offset: 0, maxLines: 2000 }, { hostId: checkout.hostId, timeoutMs: 20_000 }), null);
+    if (!current || typeof current.content !== "string" || !current.content.trim()) return;
+    const prof = rec(profile);
+    const forms = instructionForms({ name: checkout.path.split("/").filter(Boolean).pop() ?? "project", test: str(prof.test_command), language: str(prof.stack), style: str(prof.style) });
+    const write = (rootPath: string, path: string, content: string, expectedSha256: string | null) =>
+      bestEffort(ctx.log, `instruction forms ${path}`, bb.sdk.files.write({ hostId: checkout.hostId, rootPath, path: `${rootPath}/${path}`, content, contentEncoding: "utf8", createParents: true, expectedSha256 }), null);
+    for (const [path, content] of [["CLAUDE.md", forms.claudeMd], [".github/copilot-instructions.md", forms.copilotInstructions]] as const) {
+      noteEngineWrite(checkout.path, path);
+      await write(checkout.path, path, content, null);
+    }
+    if (current.truncated !== true && typeof current.sha256 === "string" && current.sha256 === sha256Hex(current.content) && !current.content.includes("Developer preferences"))
+      await write(root, projectPath, `${current.content.trimEnd()}\n\n${forms.preferences}`, current.sha256);
   }
 
   // A project's switch for a new behaviour (unset = off, as before the change): read when the node runs, so any graph can use it.

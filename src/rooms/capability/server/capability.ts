@@ -148,16 +148,20 @@ export function createCapabilities(ctx: ServerCore, services: Services) {
     return value !== "observe" && value !== "off";
   };
   bindDocumentaryGate(bb, {
-    deny: async (providerId, _model, projectId) => holds(projectId) ? documentaryProof(providerId) : null,
-    // The offer a documentary pick is drawn from: the providers in use whose installed key has no red receipt
-    // (an observed, missing or supported receipt counts the same — only red removes a provider).
+    // The gate reads the provider table through BB; when that read fails the answer is «observed», never a failed spawn:
+    // a hold needs a red receipt that was actually read.
+    deny: async (providerId, _model, projectId) => holds(projectId) ? documentaryProof(providerId).catch((cause) => { ctx.log(`documentary gate: the provider table did not answer (${cause instanceof Error ? cause.message : String(cause)}); nothing is held`); return null; }) : null,
+    // The offer a documentary pick is drawn from: every provider except one whose installed key has a red receipt.
+    // A provider with no known version, or with an observed, missing or supported receipt, stays in the offer — the
+    // same rule `deny` applies, so the pick and the spawn never disagree.
     proved: async (projectId) => {
       if (!holds(projectId)) return null;
-      const versions = await cachedVersions();
-      const ok = new Set<string>();
-      for (const [providerId, version] of versions)
-        if (version && !(await documentaryProof(providerId))) ok.add(providerId);
-      return ok;
+      const red = new Set<string>();
+      try {
+        for (const [providerId] of await cachedVersions())
+          if (await documentaryProof(providerId)) red.add(providerId);
+      } catch { return null; }
+      return red.size ? { has: (providerId: string) => !red.has(providerId) } : null;
     },
   });
 

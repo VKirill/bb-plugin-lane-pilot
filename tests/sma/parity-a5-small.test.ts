@@ -167,14 +167,18 @@ describe("spend book, PM prompt and the rule breaker", () => {
     const gate = documentaryGateOf(bb)!;
     // No receipt at all: observed, not held (SMA ap_caps — only red holds).
     expect(await gate.deny("codex", "m", "proj")).toBeNull();
-    expect(await gate.proved("proj")).toEqual(new Set(["codex"]));
+    // Nothing is red, so nothing leaves the offer — a provider with no known version included.
+    expect(await gate.proved("proj")).toBeNull();
     // A red documentary receipt on the installed key holds, naming the cell and the re-probe command.
     const key = receiptKey({ version: "0.1.0", model: "gpt-6-luna", settings: [], hooks: JSON.stringify(NATIVE_HOOK_SOURCES) });
     saveReceipt(db as never, { providerId: "codex", version: key, capability: "documentary.nested", state: "not_supported", model: "m", detail: null, at: 1 } as never);
     const reason = await gate.deny("codex", "m", "proj");
     expect(reason).toMatch(/^capability_unproven:codex:documentary\.nested/);
     expect(reason).toContain("re-probe");
-    expect(await gate.proved("proj")).toEqual(new Set());
+    // The offer drops only the red provider; one the version table does not know stays, as `deny` lets it start.
+    const offer = (await gate.proved("proj"))!;
+    expect([offer.has("codex"), offer.has("claude-code")]).toEqual([false, true]);
+    expect(await gate.deny("claude-code", "m", "proj")).toBeNull();
     // observe logs only; a missing receipt stays observed under any mode.
     saveProjectSetting(db as never, "proj", "capability.documentary_gate", "observe");
     expect(await gate.deny("codex", "m", "proj")).toBeNull();
