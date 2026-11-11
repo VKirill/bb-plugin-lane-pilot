@@ -34,7 +34,7 @@ import { mountToolFamilies } from "./tool-families";
 import { CURRICULUM_KV_KEY, runCurriculumWeekly } from "./self-improve";
 import { createFromDraft, dispatchChecked, getDraft, proposeDraft } from "../../tasks/server";
 import { registerObservedTool, requirePmThread, requirePmThreadRun, scheduleIsolated, workStartRefusal } from "../../platform/server";
-import { selfRepairDeps } from "../../self-repair/server";
+import { lastPmOwnerMessageAt, selfRepairDeps } from "../../self-repair/server";
 import { ToolError } from "../../contracts/server";
 import { compactDispatchReply, compactReceipt, stageDetail } from "../../runs/server";
 import { createWriterAnswer } from "../../writer/server";
@@ -179,7 +179,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
   registerObservedTool(bb.agents, {
     name:"lane_pilot_propose", startsWork: false,
     description:"Propose a task-v2 (or a batch of them) to the owner without starting it: stores a draft, prints its card, and starts nothing until the owner says so.",
-    instructions:"Use only from a Lane Pilot PM thread when the owner asked what you would do, not to do it. Send task for one draft or tasks for a batch; nothing is enqueued. When the owner answers «да», call this tool again with draftId and create:true — that is the same enqueue path as the card's «Создать» button, so a task is never enqueued twice.",
+    instructions:"Use only from a Lane Pilot PM thread when the owner asked what you would do, not to do it. Send task for one draft or tasks for a batch; nothing is enqueued. When the owner answers «да», call this tool again with draftId and create:true — that is the same enqueue path as the card's «Создать» button, so a task is never enqueued twice. It is refused for a draft another chat proposed and for a draft proposed after the owner's last message: wait for the owner's «да» (or the card click) in a new message.",
     parameters:z.object({
       task:taskV2Schema.optional(), tasks:z.array(taskV2Schema).min(1).max(50).optional(), plan:z.string().optional(), objective:z.string().trim().min(1).max(2000).optional(),
       draftId:z.string().optional(), create:z.literal(true).optional(),
@@ -191,8 +191,13 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
         const turnRefusal = await workStartRefusal(context, "lane_pilot_dispatch_writer");
         if (turnRefusal) throw new ToolError(turnRefusal, { code:"not_owner_turn", retryable:false, sideEffects:"none" });
         const draft = getDraft(db, params.draftId);
-        // A draft of another project or another chat is not this PM's to create.
+        // A draft of another project is not this PM's to create (the card's own RPC task_draft_create keeps its project check and is the owner's click).
         if (!draft || draft.projectId !== context.projectId) return JSON.stringify({ error:`draft ${params.draftId} does not exist` });
+        // Nor is a draft another chat proposed: only the chat that proposed it can have shown the owner its card.
+        if (draft.threadId !== context.threadId) return JSON.stringify({ error:`draft ${params.draftId} was proposed by another chat, not this one; propose it here and wait for the owner's «да»` });
+        // Proposing and creating in one owner turn would skip the owner's confirmation: a draft proposed after the owner's last message waits for the next one («да» or the card click).
+        const ownerAt = await lastPmOwnerMessageAt((query) => bb.sdk.threads.events.list(query as never), context.threadId);
+        if (ownerAt !== null && draft.createdAt > ownerAt) return JSON.stringify({ error:`draft ${params.draftId} was proposed after the owner's last message: wait for the owner's «да» or the click on the card's «Создать», then call create:true` });
         return JSON.stringify(await createFromDraft(db, draft.id, async (contract) => compactDispatchReply(await dispatchChecked(
           { dispatchRefusal: (threadId) => services.phaseIntake.dispatchRefusal(threadId), dispatchWriter: services.dispatchWriter as never },
           { threadId: draft.threadId ?? context.threadId, projectId: draft.projectId, task: contract, plan: draft.plan ?? undefined, objective: draft.objective ?? undefined })), { projectId: context.projectId }));
