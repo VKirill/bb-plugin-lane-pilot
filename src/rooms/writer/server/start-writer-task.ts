@@ -61,6 +61,7 @@ import { bindLiveBackup, dropLiveWriterKey, liveBackupKey, rollbackLive } from "
 import { releaseFailedThreads, removeWorktreeOf } from "./start-failed-cleanup";
 import { otherWriters } from "./start-other-writers";
 import { blockBeforeWriter, parkForStoreRead, prepareRun } from "./start-prepare-run";
+import { parkForWriter, writerHoldDeps } from "./start-writer-holds";
 import { sameArea } from "./start-area";
 
 import type { AttemptState } from "../../contracts/state-machine";
@@ -185,41 +186,6 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
       const reserve = spendReserve({ budgetTokens:snap.limits.maxTokens, spentTokens:snap.tokens, openAppetites, appetite });
       return reserve.ok ? null : `permit_refused:reserve: ${reserve.why}`;
     };
-      // H2: the spawn gate's availability sources (breaker, owner presence, core allowlist, usage window) answer
-      // before an attempt is spent on a writer that cannot start (writer-hold.ts).
-      const holdDeps = { breaker:services.providerBreaker, presence:services.ownerPresence, usage:services.providerUsage, money:services.money,
-        coreHosts:(providerId:string) => coreHostsRequiredProvider(bb, providerId), log:ctx.log };
-      /**
-       * Every writer of the chain is held: the attempt stays `queued` with `waiting_writer:` + wake_at, the board
-       * line says what it waits for, and the PM hears it once per attempt. A chain of nothing but
-       * `core_unsupported` ends blocked as before, and the owner hears once per provider, not per task.
-       * Returns true when the caller must stop here (the attempt is parked or blocked).
-       */
-      const parkForWriter = async (forAttemptId:string, walk:ChainWalk):Promise<boolean> => {
-        // The owner's own list (writer.models_off) emptied the chain: not an unsupported provider. The task waits and re-checks, one owner item says how to clear the list, and a start that succeeds closes it.
-        const offItemKey = `writer-all-off:${input.projectId}`;
-        if (walk.free) { closeOwnerItem(db, offItemKey, "janitor:writer-started"); return false; }
-        if (walk.allOff) postOwnerItem(db, { key:offItemKey, source:"writer", kind:"writer_off", projectId:input.projectId, wake:true,
-          what:`Все писатели проекта ${input.projectId} выключены списком writer.models_off: ${walk.off.join(", ")}`,
-          why:`Задача ${input.taskId} ждёт и сама начнётся, когда список очистят. Очистить: bb lane-pilot setting ${input.projectId} writer.models_off=`,
-          actions:[{ id:"clear", label:"Очистить writer.models_off", cli:`bb lane-pilot setting ${input.projectId} writer.models_off=` }] });
-        if (walk.allUnsupported) {
-          const reason = walk.shortest?.hold.reason ?? "writer_provider_unavailable:core_unsupported";
-          transitionAttempt(db, forAttemptId, "blocked", { reason });
-          for (const held of walk.holds) void noteUnsupportedProvider(ctx, { providerId:held.member.providerId, pmThreadId:input.pmThreadId, taskId:input.taskId });
-          state.last = { status:"blocked", reason, attemptId:forAttemptId };
-          return true;
-        }
-        const held = walk.shortest!.hold;
-        const reason = waitingWriterReason(held);
-        const text = waitingWriterText(held, walk.wakeAt);
-        parkAttemptWake(db, forAttemptId, reason, walk.wakeAt);
-        recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan, reason:text });
-        void noteWriterWait(ctx, { attemptId:forAttemptId, pmThreadId:input.pmThreadId, taskId:input.taskId, text });
-        ctx.log(`writer ${input.taskId}: every writer is held (${held.reason}); the attempt waits until ${walk.wakeAt ? new Date(walk.wakeAt).toISOString() : "unknown"}`);
-        state.last = { status:"queued", reason, attemptId:forAttemptId };
-        return true;
-      };
       /** The waits a task passes before its writer gets a turn: depends_on, overlapping tasks, secrets, the breaker and the pools. */
       const waitForAdmission = async (): Promise<boolean> => {
         // A paused run lets nothing new start (bb lane-pilot pause): the task waits here, before it takes any slot, and goes on by itself on resume.
@@ -545,8 +511,8 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
           // A PM reassignment names its writer: it is tried as ordered (its own refusal is the old path).
           const walked = reassigned?.request.selection
             ? { free:{ member:chainMembers[0]!, index:0 }, allUnsupported:false, allOff:false, off:[], shortest:undefined, wakeAt:null, holds:[] } as ChainWalk
-            : await walkWriterChain(chainMembers, { hostId:state.freshConfig.hostId, settings:state.runSettings, appetite:{ tokens:(input.task as { appetite?: { tokens?: number } }).appetite?.tokens } }, holdDeps);
-          if (await parkForWriter(state.attemptId, walked)) return "stop";
+            : await walkWriterChain(chainMembers, { hostId:state.freshConfig.hostId, settings:state.runSettings, appetite:{ tokens:(input.task as { appetite?: { tokens?: number } }).appetite?.tokens } }, writerHoldDeps(deps));
+          if (await parkForWriter(deps, state, input, state.attemptId, walked)) return "stop";
           const spawnSettings = walked.free && walked.free.index > 0
             ? { ...state.writerChoice, "writer.provider":walked.free.member.providerId, "writer.model":walked.free.member.model,
                 ...(walked.free.member.reasoningLevel ? { "writer.reasoning_effort":walked.free.member.reasoningLevel } : {}) }
@@ -967,11 +933,11 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
         // H2: a fallback that cannot start costs no attempt — the chain is walked first and held members are skipped.
         // Nobody free parks one queued attempt until the earliest hold ends (the waker restarts the task); every
         // member unsupported ends the task blocked as before, with one owner item per provider, not per task.
-        const fallbackWalk = chain.length ? await walkWriterChain(chain, { hostId:input.config.hostId, settings, appetite:{ tokens:(input.task as { appetite?: { tokens?: number } }).appetite?.tokens } }, holdDeps) : null;
+        const fallbackWalk = chain.length ? await walkWriterChain(chain, { hostId:input.config.hostId, settings, appetite:{ tokens:(input.task as { appetite?: { tokens?: number } }).appetite?.tokens } }, writerHoldDeps(deps)) : null;
         if (fallbackWalk && !fallbackWalk.free) {
           const parkedAttemptId = id("lpattempt");
           createAttempt(db, { id:parkedAttemptId, runId:input.runId, taskId:input.taskId });
-          await parkForWriter(parkedAttemptId, fallbackWalk);
+          await parkForWriter(deps, state, input, parkedAttemptId, fallbackWalk);
           return "stop";
         }
         const freeChain = fallbackWalk ? chain.filter((member) => !fallbackWalk.holds.some((held) => held.member === member)) : chain;
