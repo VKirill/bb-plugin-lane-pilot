@@ -2,7 +2,7 @@
 title: Kit workspace overview
 type: overview
 created: 2026-11-08
-updated: 2026-11-08
+updated: 2026-11-11
 status: active
 confidence: medium
 tags: [kit, utilities, foundation, workspace]
@@ -56,12 +56,12 @@ Environment configuration:
 The package root aggregates fourteen core utility modules (`packages/kit/src/index.ts:1-14`):
 
 - **[Bounded workspace file reads](features/bounded-reads.md):** Implements the `lane_pilot_read` protocol with workspace boundary enforcement, segment-by-segment symlink blocking, binary null-byte rejection, UTF-8 validation, and file/slice size bounds (`packages/kit/src/bounded-read.ts:6-28`).
-- **[Secret redaction and credential protection](features/redaction.md):** Generates multi-format search needles for sensitive credentials via `secretNeedles`, maintains a process registry via `registerSecrets`, and sanitizes strings via `redactKnown` (`packages/kit/src/redact.ts:15-96`).
-- **[Async process spawning and output handling](features/process-spawning.md):** Executes child processes asynchronously via `spawnAsync` with timeout controls and stream retention (`packages/kit/src/spawn-async.ts:17-56`), and provides check output cleaning via `cleanCheckOutput` and `failureExcerpt` extraction (`packages/kit/src/output-excerpt.ts:20-42`).
+- **[Secret redaction and credential protection](features/redaction.md):** Generates multi-format search needles, remembers fetched secrets, and masks selected credential shapes and registered values (`packages/kit/src/redact.ts:15-32`, `packages/kit/src/redact.ts:60-85`, `packages/kit/src/redact.ts:106-130`).
+- **[Async process spawning and output handling](features/process-spawning.md):** Executes child processes asynchronously with timeout, buffer and optional process-group controls (`packages/kit/src/spawn-async.ts:20-59`), and cleans check output and extracts failure summaries (`packages/kit/src/output-excerpt.ts:20-42`).
 - **[Path ownership and task overlap matching](features/path-ownership.md):** Tests if a file path falls under an ownership or exclusion pattern via `matchOwnsPath` (`packages/kit/src/owns-paths.ts:51-65`), and detects task conflict overlaps via `ownsPathsOverlap` (`packages/kit/src/owns-paths.ts:88-93`).
 - **[Resilience, absence detection, and best effort](features/resilience-and-absence.md):** Distinguishes expected file or RPC entity absence via `isNotFound` (`packages/kit/src/miss.ts:11-100`), and isolates non-critical side effects with warning logging via `bestEffort` (`packages/kit/src/best-effort.ts:8-24`).
 - **[Prompt vocabulary and schema enum coverage](features/prompt-coverage.md):** Validates that prompt instructions contain required literals via `literalCoverage` and extracts schema tokens via `schemaEnums` (`packages/kit/src/prompt-coverage.ts:20-66`).
-- **[System paths, hashing, hooks, and value helpers](features/system-helpers.md):** Centralizes SHA-256 hashing via `sha256Hex` (`packages/kit/src/hash.ts:8-69`), standard directories via `resolveHome` (`packages/kit/src/paths.ts:5-43`), hook command normalization via `hookCommandIdentity` (`packages/kit/src/hook-shape.ts:11-52`), and safe property retrieval via `stringAt` (`packages/kit/src/values.ts:3-22`).
+- **[System paths, hashing, hooks, and value helpers](features/system-helpers.md):** Provides SHA-256 hashing, including verification output hashes and rerun comparisons (`packages/kit/src/hash.ts:8-93`), standard directories via `resolveHome` (`packages/kit/src/paths.ts:5-43`), hook command normalization via `hookCommandIdentity` (`packages/kit/src/hook-shape.ts:11-52`), and safe property retrieval via `stringAt` (`packages/kit/src/values.ts:3-22`).
 
 ## Workspace consumers
 

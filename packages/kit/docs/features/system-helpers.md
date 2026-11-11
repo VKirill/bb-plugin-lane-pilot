@@ -2,7 +2,7 @@
 title: System paths, hashing, hooks, and value helpers
 type: component
 created: 2026-11-08
-updated: 2026-11-08
+updated: 2026-11-11
 status: active
 confidence: high
 tags: [kit, paths, hashing, hooks, utilities]
@@ -19,7 +19,7 @@ sources:
 
 # System paths, hashing, hooks, and value helpers
 
-TL;DR: The system helpers provide centralized SHA-256 hashing, directory tree fingerprinting, path resolution, hook identity normalization, test pace scaling, and safe property extraction (`packages/kit/src/hash.ts:8-69`, `packages/kit/src/paths.ts:5-43`, `packages/kit/src/hook-shape.ts:11-52`, `packages/kit/src/pace.ts:5-8`, `packages/kit/src/values.ts:3-22`).
+TL;DR: The system helpers provide SHA-256 hashing and verification-output comparison, directory tree fingerprinting, path resolution, hook identity normalization, test pace scaling, and safe property extraction (`packages/kit/src/hash.ts:8-93`, `packages/kit/src/paths.ts:5-43`, `packages/kit/src/hook-shape.ts:11-52`, `packages/kit/src/pace.ts:5-8`, `packages/kit/src/values.ts:3-22`).
 
 ## Purpose
 
@@ -34,6 +34,8 @@ These utilities unify foundational system operations across the plugin: ensuring
    - `sha256Tree`: deterministically hashes directory trees by sorting directory entries alphabetically and formatting entries as L, D, or F in `sha256Tree` (`packages/kit/src/hash.ts:25-45`).
    - `hashPath`: inspects a path via `lstat` and returns its entity kind along with its SHA-256 hash in `hashPath` (`packages/kit/src/hash.ts:47-60`).
    - `sha256FileOrNull`: returns the file hash or `null` if the file is absent in `sha256FileOrNull` (`packages/kit/src/hash.ts:62-68`).
+   - `outputHashes`: hashes a command result's stdout and stderr, treating an omitted stream as an empty string (`packages/kit/src/hash.ts:71-74`).
+   - `markOutputChanges`: matches rerun items to recorded stdout hashes by exact command string, sets `expectedStdoutSha256` and `outputChanged` when both a recorded hash and current hash are present, and returns the number marked changed (`packages/kit/src/hash.ts:76-93`). This comparison does not determine the command's pass/fail result (`packages/kit/src/hash.ts:76-78`).
 2. **Directory and path resolution (`paths.ts`):**
    - `resolveHome`: determines home directory precedence: homeDir parameter, environment variable, or operating system directory (`packages/kit/src/paths.ts:5-7`).
    - `expandHomePath`: expands `~` and `$HOME` prefixes (`packages/kit/src/paths.ts:9-14`).
@@ -88,6 +90,8 @@ These utilities unify foundational system operations across the plugin: ensuring
 | `sha256Tree` | `function` | Computes deterministic SHA-256 fingerprint for a directory tree | `packages/kit/src/hash.ts:25-45` |
 | `hashPath` | `function` | Hashes any path according to its filesystem kind | `packages/kit/src/hash.ts:47-60` |
 | `sha256FileOrNull` | `function` | Returns file hash or `null` if absent | `packages/kit/src/hash.ts:62-69` |
+| `outputHashes` | `function` | Computes stdout and stderr SHA-256 fields for a command result | `packages/kit/src/hash.ts:71-74` |
+| `markOutputChanges` | `function` | Adds expected stdout hash and output-change fields to matching rerun items; returns the changed count | `packages/kit/src/hash.ts:76-93` |
 | `resolveHome` | `function` | Resolves home directory path | `packages/kit/src/paths.ts:5-7` |
 | `expandHomePath` | `function` | Expands `~` and `$HOME` in paths | `packages/kit/src/paths.ts:9-14` |
 | `agentsDir` | `function` | Returns `.agents` path | `packages/kit/src/paths.ts:16-18` |

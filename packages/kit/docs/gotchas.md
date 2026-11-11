@@ -2,7 +2,7 @@
 title: Kit gotchas
 type: gotchas
 created: 2026-11-08
-updated: 2026-11-08
+updated: 2026-11-11
 status: active
 confidence: medium
 tags: [kit, gotchas, pitfalls]
@@ -34,11 +34,11 @@ None found in the inspected package code.
 
 ### Default 1 MB stream buffer kills verbose checks
 
-**Problem:** `spawnAsync` imposes a default `maxBuffer` cap of 1 MB (1,048,576 bytes) per stream when `options.keepEnds` is not specified (`packages/kit/src/spawn-async.ts:19`). If a process generates more than 1 MB of stdout or stderr, it is sent `SIGTERM` and terminated with `error.code = "ENOBUFS"` (`packages/kit/src/spawn-async.ts:43`).
+**Problem:** `spawnAsync` imposes a default `maxBuffer` cap of 1 MB (1,048,576 bytes) per stream when `options.keepEnds` is not specified (`packages/kit/src/spawn-async.ts:22`). If a process generates more than 1 MB of stdout or stderr, it is sent `SIGTERM` and terminated with `error.code = "ENOBUFS"` (`packages/kit/src/spawn-async.ts:45-49`).
 
-**Risk:** Test suites or build scripts that log large quantities of debug output are terminated prematurely and reported as failed, even when their underlying test execution would have succeeded (`packages/kit/src/spawn-async.ts:14-15`).
+**Risk:** Test suites or build scripts that log large quantities of debug output are terminated prematurely and reported as failed, even when their underlying test execution would have succeeded (`packages/kit/src/spawn-async.ts:14-15`, `packages/kit/src/spawn-async.ts:45-49`).
 
-**Workaround:** Pass `keepEnds` (such as `keepEnds: 200_000`) for test runs and check executions that produce extensive logs (`packages/kit/src/spawn-async.ts:14-17`). When `keepEnds` is supplied, processes are never killed due to output volume, and `createCapture` retains stream beginnings and ends (`packages/kit/src/output-capture.ts:2-19`).
+**Workaround:** Pass `keepEnds` (such as `keepEnds: 200_000`) for test runs and check executions that produce extensive logs (`packages/kit/src/spawn-async.ts:14-15`, `packages/kit/src/spawn-async.ts:24-25`). When `keepEnds` is supplied, processes are never killed due to output volume, and `createCapture` retains stream beginnings and ends (`packages/kit/src/output-capture.ts:2-19`).
 
 ### Known secret registry silently evicts oldest entries past 2000 items
 
@@ -68,7 +68,7 @@ None found in the inspected package code.
 
 ### Secrets under 4 characters are never masked
 
-**Problem:** `MIN_SECRET_LENGTH` is set to 4 characters (`packages/kit/src/redact.ts:9`). `secretNeedles` and `registerSecrets` ignore any string shorter than 4 characters (`packages/kit/src/redact.ts:19`, `packages/kit/src/redact.ts:68`).
+**Problem:** `MIN_SECRET_LENGTH` is set to 4 characters (`packages/kit/src/redact.ts:9`). `secretNeedles` and `registerSecrets` ignore any string shorter than 4 characters (`packages/kit/src/redact.ts:15-19`, `packages/kit/src/redact.ts:66-68`).
 
 **Risk:** Very short passwords, pin codes, or environment tokens (such as 1 to 3 characters) remain unmasked in outputs and persistent files (`packages/kit/src/redact.ts:9`, `packages/kit/src/redact.ts:19`).
 
@@ -76,11 +76,19 @@ None found in the inspected package code.
 
 ### Lingering background pipes delay process completion by 2 seconds
 
-**Problem:** When a child process starts detached background commands, standard streams remain open after process exit (`packages/kit/src/spawn-async.ts:53-54`). A 2000 ms grace timer is armed on the exit event before resolving (`packages/kit/src/spawn-async.ts:54`).
+**Problem:** When a child process starts background commands that hold its standard streams open after process exit (`packages/kit/src/spawn-async.ts:58-59`), a 2000 ms grace timer is armed before resolving (`packages/kit/src/spawn-async.ts:59`).
 
-**Risk:** Fast commands that start background daemons incur a 2-second delay before resolving (`packages/kit/src/spawn-async.ts:54`).
+**Risk:** Fast commands that start background daemons incur a 2-second delay before resolving (`packages/kit/src/spawn-async.ts:59`).
 
-**Workaround:** Ensure test or check scripts redirect background process output away from inherited file descriptors.
+**Workaround:** Ensure test or check scripts redirect background process output away from inherited file descriptors (`packages/kit/src/spawn-async.ts:58-59`).
+
+### Process groups are signalled only when a run is stopped
+
+**Problem:** With `group: true`, `spawnAsync` sends `SIGTERM` to the process group and schedules `SIGKILL` after 2 seconds only for timeout or `ENOBUFS`; normal child exit does not signal the group (`packages/kit/src/spawn-async.ts:16-18`, `packages/kit/src/spawn-async.ts:39-42`).
+
+**Risk:** A background process started by a command can remain alive after the command exits normally (`packages/kit/src/spawn-async.ts:29`, `packages/kit/src/spawn-async.ts:39-42`).
+
+**Workaround:** Commands that must not leave background processes should manage their child lifecycle (`packages/kit/src/spawn-async.ts:16-18`, `packages/kit/src/spawn-async.ts:39-42`).
 
 ### Strict UTF-8 and null-byte rejection aborts reads on binary content
 

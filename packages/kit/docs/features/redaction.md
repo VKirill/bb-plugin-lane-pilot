@@ -2,7 +2,7 @@
 title: Secret redaction and credential protection
 type: component
 created: 2026-11-08
-updated: 2026-11-08
+updated: 2026-11-11
 status: active
 confidence: high
 tags: [kit, redaction, security, credentials]
@@ -17,13 +17,13 @@ sources:
 
 # Secret redaction and credential protection
 
-TL;DR: The redaction module masks sensitive strings, tokens, and multi-line keys across outputs, logs, and payloads using value-based expansion and an in-memory known secret registry (`packages/kit/src/redact.ts:15-96`).
+TL;DR: The redaction module expands fetched secrets into printable forms for value-based masking, remembers fetched values in process memory, and masks selected credential shapes in text (`packages/kit/src/redact.ts:15-32`, `packages/kit/src/redact.ts:60-85`, `packages/kit/src/redact.ts:106-130`).
 
 ## Purpose
 
 Sensitive configuration values and credentials fetched from environment catalogs must never leak into persistent artifacts or check reports (`packages/kit/src/redact.ts:1-6`).
 
-The redaction module expands known secrets into common serializations via `secretNeedles` (`packages/kit/src/redact.ts:15-34`) and replaces them with a uniform `MASK` (`packages/kit/src/redact.ts:7-14`).
+The value-based helpers expand fetched secrets into common serializations via `secretNeedles` (`packages/kit/src/redact.ts:14-32`) and replace them with `MASK` (`packages/kit/src/redact.ts:7`, `packages/kit/src/redact.ts:39-43`). `maskCredentials` also masks private-key blocks, selected token shapes, Bearer values and uppercase credential assignments; it reports whether it changed the text (`packages/kit/src/redact.ts:106-130`).
 
 ## How it works
 
@@ -41,8 +41,9 @@ The redaction module expands known secrets into common serializations via `secre
 4. **Env catalog extraction:** `secretStrings(record)` inspects catalog records, returning `record.value` and nested `record.access` fields (`password`, `privateKey`, `passphrase`) (`packages/kit/src/redact.ts:46-58`).
 5. **Process-level secret memory:** `registerSecrets` populates an in-memory `Set` of known secrets (`packages/kit/src/redact.ts:61`, `packages/kit/src/redact.ts:66-73`). When registered entries exceed `MAX_KNOWN` (2000), older items are deleted FIFO (`packages/kit/src/redact.ts:10`, `packages/kit/src/redact.ts:71`).
 6. **Global and deep masking:** `redactKnown` redacts text using the cached compiled pattern from all registered secrets, recompiling when dirty (`packages/kit/src/redact.ts:81-85`). `redactKnownDeep` recursively traverses objects and arrays to sanitize string values while leaving dictionary keys unchanged (`packages/kit/src/redact.ts:88-96`).
-7. **Heuristic credential scrubbing:** `withoutCredentials` detects passwords and API keys entered into unformatted owner prompts (matching keywords such as password, token, key, or trailing email strings), replacing them with `CREDENTIAL_MASK` (`packages/kit/src/redact.ts:99-115`).
-8. **Selection token cleanup:** `withoutSelectionMarkers` strips UI session tokens formatted as `[lane-pilot-selection:<uuid>]` (`packages/kit/src/redact.ts:118`).
+7. **Credential-shaped text masking:** `maskCredentials` masks private-key blocks, selected `sk-`, GitHub, Slack and AWS token patterns, Bearer values and uppercase assignments; it then masks remembered secrets (`packages/kit/src/redact.ts:106-130`). It does not apply the keyword or email-adjacent rules used by `withoutCredentials` (`packages/kit/src/redact.ts:114-130`, `packages/kit/src/redact.ts:133-142`).
+8. **Prompt credential scrubbing:** `withoutCredentials` replaces a value after password/token keywords or a credential-shaped word after an email, and masks the shared token shapes with `CREDENTIAL_MASK` (`packages/kit/src/redact.ts:99-104`, `packages/kit/src/redact.ts:133-142`).
+9. **Selection token cleanup:** `withoutSelectionMarkers` strips UI session tokens formatted as `[lane-pilot-selection:<uuid>]` (`packages/kit/src/redact.ts:145-146`).
 
 ### Modes, variants, and thresholds
 
@@ -53,6 +54,7 @@ The redaction module expands known secrets into common serializations via `secre
 | `MAX_KNOWN` | `2000` items | In-memory cap for known process secrets; oldest entries evicted on overflow | `packages/kit/src/redact.ts:10`, `packages/kit/src/redact.ts:71` |
 | Multi-line line threshold | `8` characters | Minimum length for a line inside a multi-line secret to be isolated as an independent needle | `packages/kit/src/redact.ts:29` |
 | `CREDENTIAL_MASK` | `"[password hidden: it is in the owner's message; the PM keeps it in Env Catalog]"` | Placeholder inserted for prompt credentials | `packages/kit/src/redact.ts:99` |
+| `maskCredentials` default mask | `MASK` (`"***"`) | Replaces selected credential shapes and registered secret values; returns `{ text, masked }` | `packages/kit/src/redact.ts:106-130` |
 
 ### Failures
 
@@ -67,7 +69,8 @@ The redaction functions operate defensively without throwing runtime exceptions:
 - **Ordered replacement:** Needles are sorted by descending string length prior to regex construction to ensure longer matching phrases take precedence over substrings (`packages/kit/src/redact.ts:32`).
 - **Memory eviction ceiling:** The in-memory known secret cache is bounded at 2000 entries; additions exceeding 2000 discard the oldest inserted secret (`packages/kit/src/redact.ts:10`, `packages/kit/src/redact.ts:71`).
 - **Deep sanitization key safety:** `redactKnownDeep` inspects and masks string values within nested objects and arrays, but object property keys remain untouched (`packages/kit/src/redact.ts:93`).
-- **Idempotent credential masking:** `withoutCredentials` splits on `CREDENTIAL_MASK` before running regular expressions, ensuring repeated calls do not double-mask text (`packages/kit/src/redact.ts:112-114`).
+- **Idempotent credential masking:** `withoutCredentials` splits on `CREDENTIAL_MASK` before running regular expressions, ensuring repeated calls do not double-mask text (`packages/kit/src/redact.ts:139-142`).
+- **Masking is shape-limited:** `maskCredentials` recognizes private-key blocks, listed token prefixes, Bearer tokens and uppercase assignments, then remembered values; keyword and email-adjacent prompt handling belongs to `withoutCredentials` (`packages/kit/src/redact.ts:106-142`).
 
 ## Public API
 
@@ -83,9 +86,10 @@ The redaction functions operate defensively without throwing runtime exceptions:
 | `knownSecretCount` | `function` | Returns the number of currently remembered secrets | `packages/kit/src/redact.ts:78-80` |
 | `redactKnown` | `function` | Redacts all registered secrets from a text string | `packages/kit/src/redact.ts:81-87` |
 | `redactKnownDeep` | `function` | Recursively redacts registered secrets within structured objects | `packages/kit/src/redact.ts:88-96` |
+| `maskCredentials` | `function` | Masks selected credential shapes and registered secrets; returns text and a changed flag | `packages/kit/src/redact.ts:126-130` |
 | `CREDENTIAL_MASK` | `const string` | Owner credential replacement text | `packages/kit/src/redact.ts:99` |
-| `withoutCredentials` | `function` | Strips plain-text credentials from owner messages | `packages/kit/src/redact.ts:111-115` |
-| `withoutSelectionMarkers` | `function` | Removes UI selection UUID markers from text | `packages/kit/src/redact.ts:118` |
+| `withoutCredentials` | `function` | Strips plain-text credentials from owner messages | `packages/kit/src/redact.ts:139-142` |
+| `withoutSelectionMarkers` | `function` | Removes UI selection UUID markers from text | `packages/kit/src/redact.ts:145-146` |
 
 ## Gotchas
 
