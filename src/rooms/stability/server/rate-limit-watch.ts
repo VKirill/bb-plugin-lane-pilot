@@ -9,7 +9,7 @@ import type { ServerCore } from "../../contracts/server";
 
 export const RATE_LIMIT_PREFIX = "rate-limit-windows:";
 
-export type RateLimitWindow = { label: string | null; status: string; resetsAtMs: number | null };
+export type RateLimitWindow = { label: string | null; providerKey?: string | null; status: string; resetsAtMs: number | null };
 export type RateLimitSnapshot = { at: number; status: string; windows: RateLimitWindow[] };
 
 export async function readRateLimitSnapshot(kv: { get(key: string): Promise<unknown> }, providerId: string): Promise<RateLimitSnapshot | null> {
@@ -23,25 +23,20 @@ export async function readRateLimitSnapshot(kv: { get(key: string): Promise<unkn
   };
 }
 
-/** A blocked window with its reset still ahead holds until the reset; anything else holds nothing. */
-export function windowHold(snap: RateLimitSnapshot | null, now: number): string | null {
-  if (!snap) return null;
-  const blocked = snap.windows.filter((w) => w.status === "blocked" && typeof w.resetsAtMs === "number" && w.resetsAtMs > now);
-  if (!blocked.length) return null;
-  const soonest = Math.min(...blocked.map((w) => w.resetsAtMs!));
-  return `subscription window: ${blocked[0]?.label ?? "window"} is blocked until ${new Date(soonest).toISOString()}`;
+/** What the board shows from a stored event (only a blocked or warning window whose reset is still ahead): 100% / 90%, marked with the event's time. Nothing known, never an old figure. */
+export function snapshotAsBoardWindows(snap: RateLimitSnapshot | null, now: number = Date.now()): { at: string | null; windows: Record<string, { utilization: number; resetsAt: string | null }>; limitEventAt?: string } {
+  const windows: Record<string, { utilization: number; resetsAt: string | null }> = {};
+  for (const w of snap?.windows ?? []) {
+    if ((w.status !== "blocked" && w.status !== "warning") || typeof w.resetsAtMs !== "number" || w.resetsAtMs <= now) continue;
+    windows[w.label?.trim() || "window"] = { utilization: w.status === "blocked" ? 100 : 90, resetsAt: new Date(w.resetsAtMs).toISOString() };
+  }
+  if (!snap || !snap.at || !Object.keys(windows).length) return { at: null, windows: {} };
+  const at = new Date(snap.at).toISOString();
+  return { at, windows, limitEventAt: at };
 }
 
-/** The snapshot shaped as the board's windows (providerUsage's BoardWindows): a blocked window reads as 100%. */
-export function snapshotAsBoardWindows(snap: RateLimitSnapshot | null): { at: string | null; windows: Record<string, { utilization: number; resetsAt: string | null }> } {
-  if (!snap) return { at: null, windows: {} };
-  const windows: Record<string, { utilization: number; resetsAt: string | null }> = {};
-  for (const w of snap.windows) {
-    const name = w.label?.trim() || "window";
-    windows[name] = { utilization: w.status === "blocked" ? 100 : w.status === "warning" ? 90 : 0, resetsAt: typeof w.resetsAtMs === "number" ? new Date(w.resetsAtMs).toISOString() : null };
-  }
-  return { at: snap.at ? new Date(snap.at).toISOString() : null, windows };
-}
+/** One event per provider is stored; it is written only when the value changed or the stored one is over a minute old. */
+export const RATE_LIMIT_REWRITE_MS = 60_000;
 
 /**
  * Wires the watch into bb.events, like the PM turn watch: a subscription-window event of any thread refreshes
@@ -53,7 +48,7 @@ export function mountRateLimitWatch(ctx: ServerCore): void {
   try {
     events.on("experimental_thread.events", async (payload: unknown) => {
       if (ctx.isDisposed()) return;
-      const event = (payload as { event?: { type?: unknown; rateLimits?: { kind?: unknown; status?: unknown; providerId?: unknown; windows?: Array<{ label?: unknown; status?: unknown; resetsAtMs?: unknown }> } } })?.event;
+      const event = (payload as { event?: { type?: unknown; rateLimits?: { kind?: unknown; status?: unknown; providerId?: unknown; windows?: Array<{ label?: unknown; providerKey?: unknown; status?: unknown; resetsAtMs?: unknown }> } } })?.event;
       if (event?.type !== "provider/rateLimits/updated") return;
       const rl = event.rateLimits;
       if (rl?.kind !== "subscription-window" || typeof rl.providerId !== "string" || !rl.providerId) return;
@@ -62,11 +57,16 @@ export function mountRateLimitWatch(ctx: ServerCore): void {
         status: typeof rl.status === "string" ? rl.status : "unknown",
         windows: (rl.windows ?? []).map((w) => ({
           label: typeof w?.label === "string" ? w.label : null,
+          providerKey: typeof w?.providerKey === "string" ? w.providerKey : null,
           status: typeof w?.status === "string" ? w.status : "unknown",
           resetsAtMs: typeof w?.resetsAtMs === "number" ? w.resetsAtMs : null,
         })),
       };
-      await ctx.bb.storage.kv.set(`${RATE_LIMIT_PREFIX}${rl.providerId}`, snap as never).catch(() => undefined);
+      const key = `${RATE_LIMIT_PREFIX}${rl.providerId}`;
+      const stored = await readRateLimitSnapshot(ctx.bb.storage.kv as never, rl.providerId);
+      const same = stored && JSON.stringify({ status: stored.status, windows: stored.windows }) === JSON.stringify({ status: snap.status, windows: snap.windows });
+      if (same && snap.at - stored.at < RATE_LIMIT_REWRITE_MS) return;
+      await ctx.bb.storage.kv.set(key, snap as never).catch(() => undefined);
     });
   } catch (cause) {
     ctx.bb.log.info(`Lane Pilot rate-limit watch does not listen: ${cause instanceof Error ? cause.message : String(cause)}`);

@@ -4,8 +4,6 @@ import { tokenDailyRowsSince, unmeasuredAttempts } from "../usage/server";
 import type { ServerCore } from "../contracts/server";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { capOf, isPaid, moneyCapFrom, moneyHold, priceOf, spendBook, type DailyRow, type Price } from "./logic";
-import { readRateLimitSnapshot, windowHold } from "../stability/server";
-import { USAGE_SKIP_KEY } from "../usage/server";
 
 /** The spend book on the hub's token rows and the money cap of the paid lanes. */
 export function createMoney(ctx: Pick<ServerCore, "db" | "bb">) {
@@ -68,19 +66,10 @@ export function createMoney(ctx: Pick<ServerCore, "db" | "bb">) {
    * Why a writer of this provider and model must wait now: the money cap of a paid lane. A spent subscription window is not asked here:
    * the chain walk holds each member on BB's live figure (src/rooms/usage, `usage.skip_percent`) with the window's own reset time. This
    * used to read the statusline's `last_usage.json` as well, a file nothing has written since the terminal status line was removed (2026-10-30).
-   * What replaces it (SMA k_h_statusline): the provider/rateLimits/updated events the rate-limit watch stores in kv. A blocked window
-   * holds the writer only where `usage.skip_percent` was set — a human-set cap; unset, a session learns nothing new here.
    */
   async function holds(providerId: string, model: string, _hostId: string, input?: { appetiteTokens?: number }): Promise<string | null> {
     const taskUsd = taskEstimateUsd(providerId, model, input?.appetiteTokens);
-    const money = moneyHold(providerId, status().monthUsd, moneyCapFrom(settings()), taskUsd);
-    if (money) return money;
-    if (settings()[USAGE_SKIP_KEY] !== undefined) {
-      const snap = await readRateLimitSnapshot(ctx.bb.storage.kv as never, providerId).catch(() => null);
-      const hold = windowHold(snap, Date.now());
-      if (hold) return hold;
-    }
-    return null;
+    return moneyHold(providerId, status().monthUsd, moneyCapFrom(settings()), taskUsd);
   }
   return { money: { status, holds, capHolds } };
 }

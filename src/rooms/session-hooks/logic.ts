@@ -75,6 +75,23 @@ export function guardInventoryGaps(denyTags: readonly string[] = []): { empty: s
   };
 }
 
+export type SpendWindow = { label?: string; usedPercent: number; resetsAt?: string | null; model?: string | null };
+
+/** A window of a model family (`opus`) applies to a model id that names it; a window of no model applies to all. */
+export function windowAppliesTo(window: { model?: string | null | undefined }, model: string): boolean {
+  const family = window.model?.trim().toLowerCase();
+  return !family || model.toLowerCase().includes(family);
+}
+
+/** The windows at or past the threshold that apply to the model and have not reset yet: the one rule of the writer hold (usageHold) and the Task cap. */
+export function spentWindows<T extends SpendWindow>(windows: readonly T[], input: { model: string; threshold: number; now: number }): T[] {
+  return windows.filter((window) => windowAppliesTo(window, input.model) && window.usedPercent >= input.threshold
+    && !(window.resetsAt && Date.parse(window.resetsAt) <= input.now));
+}
+
+/** A usage snapshot older than this no longer decides a Task; the hub rewrites an unchanged one hourly, so a live machine stays inside it. */
+export const SNAPSHOT_MAX_AGE_MS = 90 * 60_000;
+
 export function pretaskDecision(input: {
   role: string;
   kind: string;
@@ -84,18 +101,10 @@ export function pretaskDecision(input: {
   claims?: string[];
   repo?: string;
   cap?: number;
-  /** The machine's usage snapshot (SMA k_hs_spend): a Task past a human-set window cap is refused with the reset time. */
-  usage?: { skipSetByHuman?: boolean; skipPercent?: number; percent?: number; resetsAt?: string | null; atMs?: number };
+  /** The machine's usage snapshot (SMA k_hs_spend): a Task past a human-set window cap is refused, after every other refusal, with the reset time. */
+  usage?: { skipSetByHuman?: boolean; skipPercent?: number; windows?: SpendWindow[]; model?: string; at?: string; now?: number };
 }): { deny?: string; prompt?: string; spawned: number } {
   const cap = input.cap ?? SUBAGENT_CAP;
-  const usage = input.usage;
-  if (usage?.skipSetByHuman && typeof usage.percent === "number" && typeof usage.skipPercent === "number" && usage.percent >= usage.skipPercent
-    && (!usage.atMs || Date.now() - usage.atMs <= 15 * 60_000)) {
-    return {
-      deny: `[spend-cap] the subscription window is at ${Math.round(usage.percent)}% (cap ${usage.skipPercent}%, set by a person): no subagent until it resets${usage.resetsAt ? ` at ${usage.resetsAt}` : ""}. Finish with what you have.`,
-      spawned: input.spawned,
-    };
-  }
   const kind = input.kind || "general-purpose";
   if (input.role === "writer" && !DOCUMENTARY_AGENTS.includes(kind as typeof DOCUMENTARY_AGENTS[number])) {
     return {
@@ -115,6 +124,21 @@ export function pretaskDecision(input: {
       deny: `[subagent-cap] ${input.spawned} subagents already in this session (cap ${cap}, LANE_SUBAGENT_CAP): finish with what you have or do it yourself.`,
       spawned: input.spawned,
     };
+  }
+  // The spend cap comes last: a call main refused keeps main's reason. 0 means off; a missing or unreadable `at` decides nothing.
+  const usage = input.usage;
+  const now = usage?.now ?? Date.now();
+  const measured = usage?.at ? Date.parse(usage.at) : NaN;
+  if (usage?.skipSetByHuman === true && typeof usage.skipPercent === "number" && usage.skipPercent > 0
+    && Number.isFinite(measured) && now - measured <= SNAPSHOT_MAX_AGE_MS && measured - now <= 5 * 60_000) {
+    const spent = spentWindows(usage.windows ?? [], { model: usage.model ?? "", threshold: usage.skipPercent, now });
+    if (spent.length) {
+      const worst = spent.reduce((a, b) => (b.usedPercent > a.usedPercent ? b : a));
+      return {
+        deny: `[spend-cap] the «${worst.label ?? "usage"}» window is at ${Math.round(worst.usedPercent)}% and the cap is ${usage.skipPercent}% (usage.skip_percent, set by a person): no subagent until it resets${worst.resetsAt ? ` at ${worst.resetsAt}` : " (reset time unknown)"}. Finish with what you have; the owner lifts the cap with: bb lane-pilot setting <project> usage.skip_percent=0`,
+        spawned: input.spawned,
+      };
+    }
   }
   const spawned = input.spawned + 1;
   const claims = (input.claims ?? []).slice(0, 20);

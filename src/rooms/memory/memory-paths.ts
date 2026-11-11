@@ -140,6 +140,9 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
       { file: "src/rooms/native-agent/terminal-parity.ts", primitive: "listMemory", count: 1 },
       { file: "src/rooms/native-agent/terminal-parity.ts", primitive: "pmRulesOf", count: 1 },
     ] },
+  { id: "writer.file_notes", consumer: "the file-note advice of the guard (FILECARDS.md of the task folder, written at dispatch and task update)", carries: [], alwaysOn: [], status: "exempt",
+    reason: "Only trust-confirmed notes of the task's own paths, masked and clipped, reach a file the guard reads at an Edit; the probe asks prompts, not that file (the test drives taskFileCards on a real db).",
+    sites: [{ file: "src/rooms/writer/server/writer-knowledge.ts", primitive: "searchMemoryRecords", count: 1 }] },
 ];
 
 export const pathById = (id: string): MemoryPath | undefined => MEMORY_PATHS.find((entry) => entry.id === id);

@@ -82,7 +82,7 @@ function AcceptedRow({ rpc, row }: { rpc: Rpc; row: FeedRow }) {
 }
 
 type MoneyStatus = { monthUsd: number; estimatedUsd?: number; cap: number | null; left: number | null; byProvider?: Record<string, number>; table?: Array<{ day: string; usd: number; byProvider: Record<string, number> }> };
-type Windows = { at: string | null; windows: Record<string, { utilization: number; resetsAt: string | null }> };
+type Windows = { at: string | null; windows: Record<string, { utilization: number; resetsAt: string | null }>; limitEventAt?: string };
 
 /** Money: what the month cost on paid lanes, the money cap dialog, the subscription window bars, the accounts. */
 export function MoneyScreen({ rpc, hostId }: { rpc: Rpc; hostId: string | null }) {
@@ -130,7 +130,9 @@ export function MoneyScreen({ rpc, hostId }: { rpc: Rpc; hostId: string | null }
       </Panel>
       <Panel title={t("ckWindows")} testId="ck-windows">
         <Loaded state={windows}>{(w) => !Object.keys(w.windows).length ? <p className="text-sm text-muted-foreground">{t("ckEmpty")}</p> : (
-          <div className="space-y-2">{Object.entries(w.windows).map(([name, window]) => (
+          <div className="space-y-2">
+            {w.limitEventAt ? <p className="text-xs text-muted-foreground">{fill("ckWindowsFromEvent", { t: new Date(w.limitEventAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) })}</p> : null}
+            {Object.entries(w.windows).map(([name, window]) => (
             <div key={name} data-testid={`ck-window-${name}`}>
               <div className="flex justify-between text-xs"><span>{name}</span><span className="tabular-nums">{Math.round(window.utilization)}%{window.resetsAt ? ` · ${new Date(window.resetsAt).toLocaleString()}` : ""}</span></div>
               <div className="h-2 overflow-hidden rounded bg-muted"><div className={`h-full ${window.utilization >= 98 ? "bg-destructive" : window.utilization >= 80 ? "bg-amber-500" : "bg-primary"}`} style={{ width: `${Math.min(100, window.utilization)}%` }} /></div>

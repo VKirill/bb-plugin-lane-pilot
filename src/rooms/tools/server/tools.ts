@@ -443,7 +443,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
   mountPmTurnWatch(ctx);
   mountRateLimitWatch(ctx);
   // The session guards' spend facts reach each machine's usage-snapshot.json (SMA k_hs_spend).
-  mountUsageSnapshots(ctx, (services as { providerUsage?: { windows: (input: { providerId: string; hostId: string }) => Promise<unknown> } }).providerUsage as never);
+  mountUsageSnapshots(ctx, (services as { providerUsage?: { readings: (input: { providerId: string; hostId: string }) => Promise<unknown> } }).providerUsage as never);
   mountServiceProjects(ctx);
   mountWorktreeJanitor(ctx, { cleanupStickyLaneWorktrees, cleanupFinishedAttemptEnvironments });
   mountWorkflowArchitect(ctx, services);

@@ -45,7 +45,7 @@ export const machineHostMethods = {
   /** SMA «Stream: spend»: the session guard's spend stream reads ~/.lane-pilot/usage-snapshot.json, written by the hub's scheduled pass. */
   writeUsageSnapshot: {
     input: z.object({ requestedHostId:z.string().min(1),
-      snapshot:z.object({ at:z.string(), windows:z.array(z.object({ label:z.string(), usedPercent:z.number(), resetsAt:z.string().nullable() }).strict()), skipPercent:z.number(), skipSetByHuman:z.boolean() }).strict() }).strict(),
+      snapshot:z.object({ at:z.string(), windows:z.array(z.object({ label:z.string(), usedPercent:z.number(), resetsAt:z.string().nullable(), model:z.string().nullable().optional() }).strict()), skipPercent:z.number(), skipSetByHuman:z.boolean() }).strict() }).strict(),
     output: z.object({ hostId:z.string(), written:z.boolean() }).strict(),
   },
   vpnAddress: {

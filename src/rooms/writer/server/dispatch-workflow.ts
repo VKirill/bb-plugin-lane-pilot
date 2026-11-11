@@ -16,7 +16,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { ServerCore } from "../../contracts/server";
 
 import { runOnHost } from "@lane-pilot/host-calls";
-import { parseJsonOr } from "@lane-pilot/kit";
+import { isNotFound, orMiss, parseJsonOr } from "@lane-pilot/kit";
 import { withUsage } from "../../usage/server";
 import { taskUsage } from "./attempt-usage";
 import { reflexLinesOf, taskFileCards } from "./writer-knowledge";
@@ -229,13 +229,14 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
         taskId: r.taskId, plan: r.plan,
         // The project's accepted WHEN → act rules reach the writer's guard as REFLEXES.md (SMA k_hs_reflex).
         reflexes: reflexLinesOf(writerDiffRules(r.ctx.db as never, r.projectId)),
-        filecards: await taskFileCards(r.ctx.db as never, r.projectId, r.task).catch(() => []),
+        filecards: await taskFileCards(r.ctx.db as never, r.projectId, r.task).catch(() => undefined),
         // The line goes into the repository's real info/exclude, resolved by git on the workspace's own host —
         // never into a stray `.git` of a subfolder workspace (OVH 2026-10-06). PLAN.md is written regardless.
         exclude: live ? undefined : async (line) => {
           const ran = await runOnHost(host, { hostId: r.config.hostId, cwd: r.workspacePath, command: appendExcludeCommand(line), timeoutSec: 30, timeoutMs: 30_000 });
           if (ran.exitCode !== 0) throw new Error(ran.stderr.trim() || `git exited ${ran.exitCode}`);
         },
+        exists: async (rel) => (await orMiss(Promise.resolve().then(() => bb.sdk.files.read({ hostId: r.config.hostId, rootPath: r.workspacePath, path: `${r.workspacePath}/${rel}` })), null, isNotFound)) !== null,
         writeFile: async (rel, content) => {
           await bb.sdk.files.write({ hostId: r.config.hostId, rootPath: r.workspacePath, path: `${r.workspacePath}/${rel}`, content, contentEncoding: "utf8", createParents: true, expectedSha256: null });
         },

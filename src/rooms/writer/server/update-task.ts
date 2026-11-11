@@ -53,6 +53,7 @@ import { closeOwnerItemsByPrefix } from "../../owner-waiting";
 import { planWithOutsideReads, rerootTask } from "../../tasks";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification";
 import { runOnHost } from "@lane-pilot/host-calls";
+import { isNotFound, orMiss } from "@lane-pilot/kit";
 import { dispatchRunOf, rerunDispatchStages } from "./dispatch-workflow";
 import { appendTaskQa, awaitsWriterAnswer, contractFixRecord, contractFixTurnPrompt, createAttemptReopen, writerQuestion } from "./reopen-attempt";
 import { pendingWordPush } from "./writer-task";
@@ -90,12 +91,13 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
         plan,
         // The project's accepted WHEN → act rules reach the writer's guard as REFLEXES.md (SMA k_hs_reflex); the
         // paths' stored notes as FILECARDS.md (SMA k_hs_context).
-        reflexes: extra?.projectId ? reflexLinesOf(writerDiffRules(db as never, extra.projectId)) : [],
-        filecards: extra?.projectId && extra.task ? await taskFileCards(db as never, extra.projectId, extra.task).catch(() => []) : [],
+        reflexes: extra?.projectId ? reflexLinesOf(writerDiffRules(db as never, extra.projectId)) : undefined,
+        filecards: extra?.projectId && extra.task ? await taskFileCards(db as never, extra.projectId, extra.task).catch(() => undefined) : undefined,
         exclude: async (line) => {
           const ran = await runOnHost(host, { hostId, cwd: workspacePath, command: appendExcludeCommand(line), timeoutSec: 30, timeoutMs: 30_000 });
           if (ran.exitCode !== 0) throw new Error(ran.stderr.trim() || `git exited ${ran.exitCode}`);
         },
+        exists: async (rel) => (await orMiss(Promise.resolve().then(() => bb.sdk.files.read({ hostId, rootPath: workspacePath, path: `${workspacePath}/${rel}` })), null, isNotFound)) !== null,
         writeFile: async (rel, content) => {
           await bb.sdk.files.write({
             hostId,

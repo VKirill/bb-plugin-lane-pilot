@@ -11,7 +11,7 @@ import { readTaskApproach } from "../../tasks";
 import type { WriterBriefContext } from "../../brief";
 import type { ServerCore } from "../../contracts/server";
 import { runOnHost } from "@lane-pilot/host-calls";
-import { bestEffort } from "@lane-pilot/kit";
+import { bestEffort, maskCredentials } from "@lane-pilot/kit";
 import { effectiveGroup, parseHelperContextSettings } from "../../contracts/helper-context";
 import { stickyTurnPrompt } from "./writer-task";
 
@@ -67,13 +67,15 @@ export function reflexLinesOf(rules: readonly string[]): string[] {
 
 /**
  * The confirmed notes that concern the paths of one task (SMA k_hs_context): «path -> claim» lines persistTaskFolder
- * writes to FILECARDS.md, so the guard's file-card stream shows them at the act. Bounded: two notes a path, 40 lines.
+ * writes to FILECARDS.md, so the guard's file-note stream shows them at the act. Only trust `confirmed` (an observed note
+ * is a hunch); masked and clipped here because the line enters the model's context. Bounded: two notes a path, 40 lines.
  */
 export async function taskFileCards(db:LanePilotDatabase, projectId:string, task:TaskV2):Promise<string[]> {
   const lines:string[]=[];
   for(const path of [...task.owns_paths,...task.read_first].slice(0,20)){
-    for(const note of searchMemoryRecords(db as never,projectId,path,2,"auto","subagent","").slice(0,2)){
-      lines.push(`${path} -> ${note.content.replace(/\s+/g," ").slice(0,200)}`);
+    const confirmed=searchMemoryRecords(db as never,projectId,path,8,"auto","subagent","").filter((note)=>note.trust==="confirmed");
+    for(const note of confirmed.slice(0,2)){
+      lines.push(maskCredentials(`${path} -> ${note.content.replace(/\s+/g," ").slice(0,200)}`).text);
     }
     if(lines.length>=40) break;
   }

@@ -48,7 +48,7 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
   const liveWindows = async (hostId: string) => {
     const live = (await services.providerUsage?.windows({ providerId: WINDOW_PROVIDER, hostId })) ?? { at: null, windows: {} };
     if (live.at) return live;
-    return snapshotAsBoardWindows(await readRateLimitSnapshot(kv as never, WINDOW_PROVIDER).catch(() => null));
+    return snapshotAsBoardWindows(await readRateLimitSnapshot(kv as never, WINDOW_PROVIDER).catch(() => null), Date.now());
   };
 
   return {
