@@ -187,7 +187,7 @@ function planningHomeSaveError(db: LanePilotDatabase, projectId: string, binding
   const refuse = (problem: string): SettingValidationError => ({ code: "invalid_choice", key: PLANNING_HOME_SETTING, params: [PLANNING_HOME_SETTING, problem] });
   if (projectId === GLOBAL_SETTINGS_PROJECT_ID || bindingId) return refuse("the planning home belongs to one project's own settings, not to the hub or a section");
   if (typeof value !== "string") return refuse("the planning home must be an absolute folder path");
-  const problem = planningHomeProblem(value, { otherCheckouts: planningHomeInputs(db, projectId).otherCheckouts });
+  const problem = planningHomeProblem(value, { otherCheckouts: otherProjectCheckouts(db, projectId) });
   return problem ? refuse(problem) : null;
 }
 
@@ -468,7 +468,11 @@ export function planningHomeInputs(db: LanePilotDatabase, projectId: string): { 
   // No home set (every install that sets nothing): no other query.
   if (own === undefined) return { settings: {}, otherCheckouts: [] };
   let value: unknown; try { value = JSON.parse(own); } catch { value = own; }
+  return { settings: { "project.planning_home": value }, otherCheckouts: otherProjectCheckouts(db, projectId) };
+}
+
+/** The checkouts (PM and writer workspace) of every project but this one: a planning home may not lie inside one. */
+export function otherProjectCheckouts(db: LanePilotDatabase, projectId: string): string[] {
   const rows = db.prepare(`SELECT value FROM lane_pilot_project_settings WHERE binding_id='' AND project_id<>? AND key IN ('writerWorkspacePath','pmWorkspacePath')`).all(projectId) as Array<{ value: string }>;
-  const otherCheckouts = rows.flatMap((row) => { try { const parsed: unknown = JSON.parse(row.value); return typeof parsed === "string" && parsed ? [parsed] : []; } catch { return []; } });
-  return { settings: { "project.planning_home": value }, otherCheckouts };
+  return rows.flatMap((row) => { try { const parsed: unknown = JSON.parse(row.value); return typeof parsed === "string" && parsed ? [parsed] : []; } catch { return []; } });
 }

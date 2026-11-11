@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
@@ -44,6 +44,15 @@ function repo(prefix: string): string {
 const put = (root: string, path: string, text: string) => { mkdirSync(dirname(join(root, path)), { recursive: true }); writeFileSync(join(root, path), text); };
 const changedBy = (cwd: string) => git(cwd, "show", "--name-only", "--format=", "HEAD").trim().split("\n").filter(Boolean);
 const config = (projectId: string, checkout: string) => ({ projectId, hostId: "local", pmWorkspacePath: checkout, writerWorkspacePath: checkout, pmProviderId: "claude-code", pmModel: "m", writerProviderId: "claude-code", writerModel: "m" });
+
+/** One workflow of a single action node, in the format the engine validates: the action's `out` is mapped to the run's outputs. */
+const OUT_TYPES: Record<string, string> = { bool: "boolean", int: "number", string: "string", "string[]": "array" };
+function actionWorkflow(action: string, node: Row, out: Record<string, string>, inputNames: string[] = []) {
+  return parseWorkflow({ schemaVersion: 1, id: "g5-action", name: "G5 action", description: { en: action, ru: action }, inputs: inputNames.map((name) => ({ name, type: "string", required: false })),
+    outputs: Object.entries(out).map(([name, type]) => ({ name, type: OUT_TYPES[type]!, required: false })),
+    nodes: [{ id: "a", type: "action", action, title: { en: action, ru: action }, ...node, out }, { id: "end", type: "action", action: "emit", map: Object.fromEntries(Object.keys(out).map((key) => [key, `a.${key}`])) }],
+    edges: [{ from: "start", to: "a" }, { from: "a", to: "end" }] } as never);
+}
 
 let disposers: Array<() => Promise<void> | void> = [];
 afterEach(async () => { for (const dispose of disposers.splice(0)) await dispose(); resetPlanningHomeChecks(); });
@@ -170,7 +179,7 @@ describe("the planning home is one resolver for every reader and writer of .agen
     expect(existsSync(join(set.checkout, ".agents"))).toBe(false);
     expect(git(set.checkout, "log", "--oneline").trim().split("\n")).toHaveLength(1);
     expect(changedBy(home)).toEqual([".agents/phases/ph_g5plan/PLAN.md", ".agents/planning/STATE.md"]);
-    expect(git(home, "status", "--porcelain").trim().split("\n").sort()).toEqual([" M notes.txt", "?? junk.txt"]);
+    expect(git(home, "status", "--porcelain").split("\n").filter(Boolean).sort()).toEqual([" M notes.txt", "?? junk.txt"]);
     // A read of a planning file goes to the home (the checkout has none); a read of a code file stays in the checkout.
     expect(await set.docs.readText(set.phase(), planPath)).toBe("# plan\n");
     put(set.checkout, "DESIGN.md", "# design\n");
@@ -225,8 +234,12 @@ describe("the planning home is one resolver for every reader and writer of .agen
     expect(nextAction(phase, new Map(), null).text).toBe(plain.text);
     const moved = nextAction(phase, new Map(), home);
     expect(moved.text).toContain("/plans/g5/.agents/phases/ph_g5plan/design/");
-    expect(moved.text).toContain("/plans/g5/.agents/planning/");
     expect(moved.key).toBe(plain.key);
+    // The discussion stage is the one that names the roadmap files (the design stage names only its own folder).
+    const discussion = { ...(phase as object), stage: "discussion" } as never;
+    expect(nextAction(discussion, new Map()).text).toContain("Read first: .agents/planning/ROADMAP.md");
+    expect(nextAction(discussion, new Map(), null).text).toBe(nextAction(discussion, new Map()).text);
+    expect(nextAction(discussion, new Map(), home).text).toContain("Read first: /plans/g5/.agents/planning/ROADMAP.md");
     // The backlog message and the project-life agent.
     const item = { id: "fix-it", title: "Fix it", status: "ready", priority: "normal", estimate: 3, created: "2026-11-01", dependsOn: [] } as never;
     expect(issueMessage(item)).toContain("Описание и подход: .agents/todos/items/fix-it/AGENT.md и README.md.");
@@ -288,11 +301,10 @@ describe("the planning home is one resolver for every reader and writer of .agen
     registerPureActions(engine); registerReducers(engine);
     registerChainExecutors(engine, r.ctx, r.services, createWorkflowAgents());
     registerDispatchExecutors(engine, r.ctx.bb);
-    const action = (id: string, params: Row = {}, inputs: Row = {}) => parseWorkflow({ id: `g5-${id}`, version: 1, title: { en: id, ru: id }, status: "published", inputs: Object.fromEntries(Object.keys(inputs).map((key) => [key, { type: "string", required: false }])),
-      nodes: [{ id: "a", type: "action", action: id, title: { en: id, ru: id }, params, out: {} }, { id: "end", type: "action", action: "emit", map: { done: "a" } }], edges: [{ from: "a", to: "end" }] } as never);
-    const run = async (id: string, params: Row = {}, inputs: Row = {}) => (await engine.start({ workflow: action(id, params, inputs), inputs, runtime: r.rt, link: { projectId: PROJECT, runId: RUN } }).done) as { status: string; output?: Row; error?: unknown };
+    const OUTS: Record<string, Record<string, string>> = { "lp.state_probe": { has_roadmap: "bool", has_profile: "bool" }, "lp.roadmap_park": { n: "string", path: "string" }, "lp.debug_session": { found: "bool", path: "string" } };
+    const run = async (id: string, params: Row = {}, inputs: Row = {}) => (await engine.start({ workflow: actionWorkflow(id, { with: params }, OUTS[id]!, Object.keys(inputs)), inputs, runtime: r.rt, link: { projectId: PROJECT, runId: RUN } }).done) as { status: string; output?: Row; error?: unknown };
     const probe = await run("lp.state_probe");
-    expect(probe.output?.done).toMatchObject({ has_roadmap: true });
+    expect(probe.output).toMatchObject({ has_roadmap: true });
     const parked = await run("lp.roadmap_park", {}, { name: "later" });
     expect(parked.status, JSON.stringify(parked)).toBe("succeeded");
     expect(readFileSync(join(home, ".agents/planning/ROADMAP.md"), "utf8")).toMatch(/999\.1/);
@@ -321,13 +333,17 @@ describe("the planning home is one resolver for every reader and writer of .agen
     expect(bad.stdout).toContain("skipped roadmap row(s) between 2 and 4");
     // A consistent roadmap: nothing to report, exit 0.
     put(home, ".agents/planning/ROADMAP.md", ["- [ ] 1 first", "- [ ] 2 second", "- [ ] 3 third"].join("\n"));
+    // The phase on disk is the roadmap's row 1 (a phase folder whose phase has no roadmap row is a finding, by the card).
+    expect((await runPhaseCli(phases, ["validate", PHASE])).stdout).toContain("phase folder with no roadmap row: ph_g5plan");
+    savePhase(r.db, PHASE, { record: { ...r.phase().record, roadmapRow: "1" }, at: 3 });
     const good = await runPhaseCli(phases, ["validate", PHASE]);
     expect(good).toMatchObject({ exitCode: 0 });
     // A bundled agent that is not installed is a finding too.
     const [anAgent] = Object.keys(bundledAgents);
-    git(r.checkout, "status", "--short");
-    writeFileSync(join(r.checkout, `.claude/agents/${anAgent}.md`), "agent\n");
-    expect(existsSync(join(r.checkout, `.claude/agents/${anAgent}.md`))).toBe(true);
+    unlinkSync(join(r.checkout, `.claude/agents/${anAgent}.md`));
+    const missing = await runPhaseCli(phases, ["validate", PHASE]);
+    expect(missing.exitCode).toBe(1);
+    expect(missing.stdout).toContain(`bundled agent not installed: ${anAgent}`);
   });
 });
 
@@ -388,8 +404,8 @@ describe("the infra profile: one writer, one reader, who may write and what coun
     const engine = new WorkflowEngine({ db: r.db, harnessVersion: "test", runtimeFor: chainRuntimeFor(r.ctx, r.services), resolveWorkflow: () => null });
     registerPureActions(engine); registerReducers(engine);
     registerChainExecutors(engine, r.ctx, r.services, createWorkflowAgents());
-    const call = async (id: string, params: Row = {}) => (await engine.start({ workflow: parseWorkflow({ id: `g5-${id}`, version: 1, title: { en: id, ru: id }, status: "published", inputs: {},
-      nodes: [{ id: "a", type: "action", action: id, title: { en: id, ru: id }, params, out: {} }, { id: "end", type: "action", action: "emit", map: { done: "a" } }], edges: [{ from: "a", to: "end" }] } as never), inputs: {}, runtime: r.rt, link: { projectId: PROJECT, runId: RUN } }).done).output?.done as Row;
+    const OUTS: Record<string, Record<string, string>> = { "lp.state_probe": { has_profile: "bool" }, "lp.profile_write": { refused: "string[]", set: "string[]", reasons: "string[]" } };
+    const call = async (id: string, params: Row = {}) => (await engine.start({ workflow: actionWorkflow(id, { params }, OUTS[id]!), inputs: {}, runtime: r.rt, link: { projectId: PROJECT, runId: RUN } }).done).output as Row;
     const probe = async () => (await call("lp.state_probe")).has_profile;
     expect(await probe()).toBe(false);
     saveProjectSetting(r.db, PROJECT, "profile.stack", "");
@@ -473,7 +489,7 @@ describe("plans-health: the planning indexes against the folders on disk", () =>
 
   it("[sma:k_c_health] --fix removes only the dead entry lines, keeps prose, headings and blank runs byte for byte, backs up INDEX.md first, and adds no README", async () => {
     const run = await mountCli();
-    const root = mkdtempSync(join(tmpdir(), "g5-agents-"));
+    const root = join(mkdtempSync(join(tmpdir(), "g5-project-")), ".agents");
     put(root, "todos/items/real-one/meta.yaml", "status: open\n");
     put(root, "todos/items/unlisted/meta.yaml", "status: open\n");
     put(root, "todos/INDEX.md", INDEX);

@@ -68,6 +68,7 @@ export function switchValue(key: string, text: string): { value: unknown } | { p
   const word = text.trim();
   if (values === "number") return /^\d+(\.\d+)?$/.test(word) ? { value: Number(word) } : { problem: `${key} takes a number, got «${text}»` };
   if (values === "absolute path") {
+    if (/^\/+$/.test(word)) return { problem: `${key} must not be the root folder «/»` };
     const path = word.replace(/\/+$/, "");
     return path.startsWith("/") && !path.includes("\0") && !path.includes("\\") && !path.split("/").includes("..") ? { value: path } : { problem: `${key} takes an absolute path with no «..», got «${text}»` };
   }

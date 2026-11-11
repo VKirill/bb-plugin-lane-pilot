@@ -111,7 +111,7 @@ export function confirmedPlanningHome(hostId: string | null | undefined, inputs:
  */
 export function planningText(text: string, home: string | null | undefined): string {
   if (!home) return text;
-  return text.replace(/(?<![\w/.~-])\.agents\/(phases|planning|todos|plans)(?!\/items\b)(?![\w-])/g, (_all, dir: string) => `${home}/.agents/${dir}`);
+  return text.replace(/(?<![\w/.~-])\.agents\/(phases|planning|todos|plans(?!\/items\b))(?![\w-])/g, (_all, dir: string) => `${home}/.agents/${dir}`);
 }
 
 /** Whether a project-relative path is a planning file the home holds (not `.agents/plans/items/`, the writer's task folders). */
