@@ -541,7 +541,7 @@ describe("the terminal claim ledger and the draft move", () => {
   const advice = (out: { stdout: string }) => ({ additionalContext: out.stdout, permissionDecision: /"(?:decision|permissionDecision)": "deny"/.test(out.stdout) ? "deny" : "allow" });
   const claimsBook = (home: string) => join(home, ".lane-pilot/session-hooks/claims.jsonl");
 
-  it("[sma:m_rd_coord_ledger] the guard, which runs per edit, claims the file and says another session's fresh claim in the same repository once; never a deny", () => {
+  it("[sma:m_rd_coord_ledger] the guard, which runs per edit, claims the file and says another session's fresh claim in the same checkout once; never a deny", () => {
     const home = tmp("g2-claims-home-");
     const repo = newRepo("g2-claims-repo-");
     const other = newRepo("g2-claims-other-");
@@ -557,10 +557,10 @@ describe("the terminal claim ledger and the draft move", () => {
     expect(lines(claimsBook(home)).map((line) => (JSON.parse(line) as { session: string }).session)).toEqual(["sess-A", "sess-B"]);
     // The same relative path in ANOTHER repository is another file.
     expect(advice(edit("sess-C", "src/x.ts", other, home)).additionalContext).not.toContain("[claims]");
-    // A worktree of the same repository is the same repository (its common dir), whatever folder it sits in.
+    // A worktree of the same repository is another checkout: nothing there overwrites this one (a merge settles it), and a Pilot writer in its own worktree is not told to leave its file.
     const tree = join(tmp("g2-claims-tree-"), "wt");
     spawnSync("git", ["worktree", "add", "-q", "-b", "side", tree], { cwd: repo });
-    expect(advice(edit("sess-D", "src/x.ts", tree, home)).additionalContext).toContain("[claims]");
+    expect(advice(edit("sess-D", "src/x.ts", tree, home)).additionalContext).not.toContain("[claims]");
     // A file nobody claimed gets no advice; a claim past 30 minutes says nothing.
     expect(advice(edit("sess-A", "src/free.ts", repo, home)).additionalContext).not.toContain("[claims]");
     const rows = lines(claimsBook(home)).map((line) => JSON.parse(line) as Record<string, unknown>);
