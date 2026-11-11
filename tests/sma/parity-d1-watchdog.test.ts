@@ -693,13 +693,14 @@ echo 000; exit 28`);
     const db = join(dir, "stand.db");
     execFileSync("sqlite3", [db, "pragma journal_mode=WAL; create table beats(n integer);"]);
     const writer = spawn("bash", ["-c", `for i in $(seq 1 200000); do sqlite3 ${JSON.stringify(db)} 'insert into beats values (1);' 2>/dev/null; done`], { stdio: "ignore" });
-    let ready = false;
-    for (let i = 0; i < 60 && !ready; i++) {
+    // The count that passed the wait is the one compared below: a second read beside a busy writer can come back empty
+    // (the full run under load saw 0), and the rows only grow, so the earlier figure is a safe floor.
+    let before = 0;
+    for (let i = 0; i < 60 && before <= 10; i++) {
       execFileSync("sleep", ["0.2"]);
       const count = spawnSync("sqlite3", ["-readonly", db, "select count(*) from beats;"], { encoding: "utf8" });
-      ready = Number(count.stdout.trim()) > 10;
+      before = Number(count.stdout.trim()) || 0;
     }
-    const before = Number(spawnSync("sqlite3", ["-readonly", db, "select count(*) from beats;"], { encoding: "utf8" }).stdout.trim());
     expect(before).toBeGreaterThan(10);
     writer.kill("SIGKILL");
     const check = run(["db-ready"], { ...env, LP_WATCH_DBS: db });

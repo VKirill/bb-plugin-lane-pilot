@@ -1,10 +1,9 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
 import { CAPABILITIES, DOCUMENTARY_CELLS, capabilityTable, dueProbes, isDocumentaryRole, receiptKey, documentaryProved, type CapabilityReceipt } from "../../src/rooms/capability";
-import { createCapabilities } from "../../src/rooms/capability/server";
+import { createCapabilities, receiptFingerprint } from "../../src/rooms/capability/server";
 import { CapabilityUnproven, documentaryGateOf, fullAccessSpawn } from "../../src/rooms/platform/server/pm-spawn";
 import { failureClass } from "../../src/rooms/contracts/failure-class";
-import { NATIVE_HOOK_SOURCES } from "../../src/rooms/contracts";
 import { noteBreakerRound, listTripped, rearmBreaker, breakerRowId, ruleHash, trippedRules } from "../../src/rooms/learning/breaker";
 import { judgeRulesOnDiff } from "../../src/rooms/learning";
 import { parsePlanFact } from "../../src/rooms/tasks/plan-fact";
@@ -197,7 +196,7 @@ describe("spend book, PM prompt and the rule breaker", () => {
     expect(probeRed).toMatch(/^capability_unproven:codex:documentary\.hooks \(receipt/);
     vi.useRealTimers();
     // A red documentary receipt on the installed key holds, naming the cell and the re-probe command.
-    const key = receiptKey({ version: "0.1.0", model: "gpt-6-luna", settings: [], hooks: JSON.stringify(NATIVE_HOOK_SOURCES) });
+    const key = receiptKey({ version: "0.1.0", model: "gpt-6-luna", settings: [], hooks: receiptFingerprint() });
     saveReceipt(db as never, { providerId: "codex", version: key, capability: "documentary.nested", state: "not_supported", model: "m", detail: null, at: 1 } as never);
     const reason = await gate.deny("codex", "m", "proj");
     expect(reason).toMatch(/^capability_unproven:codex:documentary\.nested/);

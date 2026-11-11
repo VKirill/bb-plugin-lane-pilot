@@ -143,11 +143,12 @@ export const PROBES = {
     },
   },
   "documentary.role": {
-    prompt: "Lane Pilot documentary probe. Reply with the role Lane Pilot gave you for this session — the role name only, nothing else.",
-    // The prompt does not name the role, so the answer itself is the proof: the helper can know it only from the session
-    // Lane Pilot gave it. The spawn side is proved too: the thread's plugin metadata must carry the pm-reader role
-    // the probe was launched with. (Weak proof, as metadata is what Lane Pilot stored, not what the session saw.)
-    expect: /pm-reader/,
+    prompt: "Lane Pilot documentary probe. Reply with the single word ROLE and do nothing else: no tools, no files.",
+    // A session is never told the name of its role: no brief carries it, the role acts through the session policy and the guard,
+    // and both key on the thread's spawn metadata. So the proof is that metadata, read back from BB. Until 0.1.521 the probe asked
+    // the model to recite the name; every provider answered «no role was given» and the cell was red on all of them
+    // (live hub, 2026-11-11: claude-code, codex, acp-antigravity), which the documentary gate then held every stage on.
+    expect: /ROLE/,
     check: async ({ bb, threadId }: ProbeCheckArgs) => {
       // Only a read that succeeds and shows another role says the cell is not supported. A missing method, a throw, a timeout or a
       // shape without a role is the probe's own setup failing (probeSetupFailed): unproven, never a red receipt.

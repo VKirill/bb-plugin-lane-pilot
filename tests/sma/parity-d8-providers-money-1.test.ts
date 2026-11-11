@@ -190,8 +190,12 @@ describe("parity d8: capability drills", () => {
     expect(bad.reason).toContain("bb lane-pilot status");
     const good = await nested(args([...words, { type: "item/completed", data: { item: { type: "commandExecution", command: "bb lane-pilot status" } } }]));
     expect(good.ok).toBe(true);
-    // The role probe's prompt must not name the role: the answer is then the proof.
+    // The role probe asks for a word the prompt itself names: a session is never told its role name, so a probe that
+    // wanted the name back was red on every provider (live hub, 0.1.520). The proof of the role is the spawn metadata check.
     expect(PROBES["documentary.role"].prompt).not.toContain("pm-reader");
+    expect(PROBES["documentary.role"].expect.test("ROLE")).toBe(true);
+    expect(PROBES["documentary.role"].prompt).toContain("ROLE");
+    expect(String(PROBES["documentary.role"].expect)).not.toContain("pm-reader");
   });
 
   it("[sma:m_pr_claude_pause] a thread that stops, is confirmed stopped and answers RESUMED on the same id passes pause; one still running fails with the step named", async () => {

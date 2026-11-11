@@ -30,7 +30,12 @@ type Listed = Array<{ id?: unknown; pluginId?: unknown; version?: unknown }>;
 const rowsOf = (value: unknown, key: string): Listed => (Array.isArray(value) ? value : ((value as Record<string, unknown> | null)?.[key] as unknown[] | undefined) ?? []) as Listed;
 
 /** The fingerprint of the hooks installed for helpers: a receipt is void the moment any hook source changes. */
-const hookFingerprint = (): string => JSON.stringify(NATIVE_HOOK_SOURCES);
+/**
+ * Bumped when a probe's question or proof changes: a receipt written by the old probe is void, like one for old hooks. 2 = the
+ * documentary.role probe judges the spawn metadata and no longer asks the model to recite a role name it was never given.
+ */
+const PROBE_REVISION = "2";
+export const receiptFingerprint = (): string => JSON.stringify(NATIVE_HOOK_SOURCES) + PROBE_REVISION;
 
 export function createCapabilities(ctx: ServerCore, services: Services) {
   const { db, bb } = ctx;
@@ -50,7 +55,7 @@ export function createCapabilities(ctx: ServerCore, services: Services) {
       plugins.flatMap((row) => typeof row.id === "string" ? [{ id: row.id, version: typeof row.version === "string" ? row.version : null }] : []));
     // The key a receipt applies to is the adapter version plus the fingerprint of the model, the provider's own settings rows and the
     // installed hook sources (SMA «Receipt applies now»): a change of any of them leaves the cells unproven.
-    const hooks = hookFingerprint();
+    const hooks = receiptFingerprint();
     const versions = new Map<string, string | null>();
     for (const [providerId, model] of inUse) {
       const pluginVersion = pluginVersions.get(providerId) ?? null;

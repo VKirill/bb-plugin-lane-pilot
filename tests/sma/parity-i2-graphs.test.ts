@@ -8,11 +8,10 @@ import { planSignature, type PlanItem } from "../../src/rooms/phase/logic";
 import { savePhase } from "../../src/rooms/phase/store";
 import { createRun, openDatabase, saveProjectSetting, savePrototypeConfig } from "../../src/rooms/plugin-db";
 import { localDateKey } from "../../src/rooms/docs/docs";
-import { createCapabilities } from "../../src/rooms/capability/server";
+import { createCapabilities, receiptFingerprint } from "../../src/rooms/capability/server";
 import { runCapabilityCli } from "../../src/rooms/capability/server/cli";
 import { DOCUMENTARY_CELLS, receiptKey } from "../../src/rooms/capability";
 import { documentaryGateOf } from "../../src/rooms/platform/server/pm-spawn";
-import { NATIVE_HOOK_SOURCES } from "../../src/rooms/contracts";
 import { listReceipts } from "../../src/rooms/capability/store";
 
 let dispose: (() => Promise<void> | void) | null = null;
@@ -144,7 +143,7 @@ describe("stream i2 graphs", () => {
 
 describe("stream i2 graphs: the documentary gate never holds on a probe that could not run", () => {
   type Answer = { ok: boolean; answered?: boolean; reason: string | null };
-  const KEY = receiptKey({ version: "0.1.0", model: "gpt-6-luna", settings: [], hooks: JSON.stringify(NATIVE_HOOK_SOURCES) });
+  const KEY = receiptKey({ version: "0.1.0", model: "gpt-6-luna", settings: [], hooks: receiptFingerprint() });
   const rig = (options: { sandboxRun?: boolean } = {}) => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     dispose = () => harness.lifecycle.dispose();
