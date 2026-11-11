@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
@@ -187,6 +187,27 @@ describe("the check against an owner item", () => {
     api.check(NOW + 2 * HOUR, corePath);
     expect(ownerRow()?.state).toBe("open");
     expect(ownerRow()?.why).toContain("writer");
+  });
+
+  it("reads the core base from another process: the -shm file its holder has mapped keeps its size, and the holder writes on", () => {
+    // The hub died of SIGBUS once a day, 2026-11-07…11: the check opened bb.db with a second SQLite copy inside BB's
+    // process, which truncated the -shm file BB had mapped and dropped BB's locks on close.
+    const { api, corePath } = rig([{ id: "w", role: "writer", policy: writerPolicy() }]);
+    const holder = new Database(corePath);
+    holder.pragma("journal_mode = WAL");
+    holder.pragma("wal_autocheckpoint = 0");
+    holder.exec("create table filler (body text)");
+    const fill = holder.prepare("insert into filler values (?)");
+    for (let row = 0; row < 6000; row += 1) fill.run("x".repeat(3000)); // past 4062 WAL frames: a second region of the -shm file
+    holder.pragma("wal_checkpoint(TRUNCATE)");
+    fill.run("x");
+    const mapped = statSync(`${corePath}-shm`).size;
+    const report = api.check(NOW, corePath);
+    expect(report.unverified ?? null).toBeNull();
+    expect(report.threads).toBe(1);
+    expect(statSync(`${corePath}-shm`).size).toBe(mapped);
+    for (let row = 0; row < 6000; row += 1) fill.run("x".repeat(3000));
+    holder.close();
   });
 
   it("an unreadable core base is «не проверено»: report saved, no owner item", () => {

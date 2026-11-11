@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -23,5 +23,19 @@ describe("foreign-table SQL ratchet", () => {
       actual <= baseline.foreignSqlSites,
       `foreign-table prepare sites grew ${baseline.foreignSqlSites} -> ${actual}: move the query into a named function of the owning room`,
     ).toBe(true);
+  });
+});
+
+/**
+ * BB's server holds its databases with better-sqlite3. A file opened with `node:sqlite` inside the same process is a
+ * second SQLite copy on it: it truncates the `-shm` file the first copy has mapped and drops its locks (the hub's daily
+ * SIGBUS of 2026-11-07…11). A base someone else holds is read from a child process; only the owner's own file store
+ * (anamnesis, a file nothing else opens) uses `node:sqlite` in the plugin.
+ */
+describe("a second SQLite copy in the server process", () => {
+  it("node:sqlite is imported by the anamnesis file store only", () => {
+    const importers = (readdirSync(join(ROOT, "src"), { recursive: true }) as string[])
+      .filter((file) => /\.(ts|tsx)$/.test(file) && /from "node:sqlite"/.test(readFileSync(join(ROOT, "src", file), "utf8")));
+    expect(importers).toEqual(["rooms/anamnesis/store.ts"]);
   });
 });
