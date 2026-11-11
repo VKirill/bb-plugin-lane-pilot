@@ -648,12 +648,17 @@ describe("the pack layers reach only confirmed material", () => {
     return { w, ids, ruleId, siblingId };
   }
 
-  it("[sma:k_h_pretask] the verb's layers are the accepted always-rules of the caller's sections and CONFIRMED notes of its own project; off by default", async () => {
+  it("[sma:k_h_pretask] the verb's layers are the accepted always-rules of the caller's sections and CONFIRMED notes of its own project; on by default, off opts out", async () => {
     const { w, ids, ruleId, siblingId } = await seededWorld();
     expect(ruleId).toBeTruthy();
     expect(siblingId).toBeTruthy();
     const pack = async (args: string[] = [], threadId?: string) => w.harness.behavior.runCli(["subagent-pack", "vitest gate merge", ...args], threadId ? { threadId } : {});
+    // Unset is the default and the default is on; «off» is the opt-out and gives the empty pack; any other word is the default.
+    expect(JSON.parse((await pack(["--project", "proj-p"])).stdout!)).toEqual({ rules: ["Always run the vitest gate before a merge."], lessons: ["The vitest gate runs before every merge of this project."] });
+    saveProjectSetting(w.db, "proj-p", "hook.subagent_pack", "off");
     expect(JSON.parse((await pack(["--project", "proj-p"])).stdout!)).toEqual({ rules: [], lessons: [] });
+    saveProjectSetting(w.db, "proj-p", "hook.subagent_pack", "maybe");
+    expect((JSON.parse((await pack(["--project", "proj-p"])).stdout!) as { rules: string[] }).rules).toHaveLength(1);
     saveProjectSetting(w.db, "proj-p", "hook.subagent_pack", "on");
     const on = JSON.parse((await pack(["--project", "proj-p"])).stdout!) as { rules: string[]; lessons: string[] };
     expect(on.rules).toEqual(["Always run the vitest gate before a merge."]);

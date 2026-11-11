@@ -7,7 +7,7 @@ import { parseDirtSnapshots } from "../cli-outcome";
 import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { HARNESS_VERSION, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, loadProjectSettings, saveReasoningTrace, setAttemptDirtBefore, setAttemptEnvironment, setAttemptHolderThread, setAttemptWorkspace, setReasoningThread, transitionAttempt, taskBasePath } from "../../storage";
-import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier, findModelIn } from "@lane-pilot/models";
+import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier, findModelIn, switchWord } from "@lane-pilot/models";
 import { spawnWithSeam } from "../spawn-seam";
 import { pipelineWriterTag } from "./pipeline-tag";
 import { buildExecutionPacket, renderExecutionPacket } from "../../tasks/execution-packet";
@@ -610,7 +610,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       // Launch profile parity (SMA m_md_parity). Unset writer.launch_parity keeps the old check as it was: a fire-and-forget read of the
       // thread that only logs a warning. With `refuse` it is awaited, and a thread on another PROVIDER than asked is refused (a model
       // alias or a clamped/renamed reasoning effort is only a warning); the refused pair is held so the chain moves on instead of retrying it.
-      if (String(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId))["writer.launch_parity"] ?? "").trim().toLowerCase() !== "refuse") {
+      if (switchWord(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)), "writer.launch_parity") !== "refuse") {
         void bb.sdk.threads.get({ threadId:writerThreadId }).then((thread) => {
           const got = { providerId:stringAt(thread, "providerId"), model:stringAt(thread, "model") };
           if ((got.providerId && got.providerId !== selectedProviderId) || (got.model && selectedModel && got.model !== selectedModel)) {

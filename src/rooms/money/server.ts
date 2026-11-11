@@ -1,4 +1,4 @@
-import { settingOn } from "@lane-pilot/models";
+import { settingOff, settingOn, switchOn } from "@lane-pilot/models";
 import { loadProjectSettings } from "../storage";
 import { tokenDailyRowsSince, unmeasuredAttempts } from "../usage/server";
 import type { ServerCore } from "../contracts/server";
@@ -48,7 +48,7 @@ export function createMoney(ctx: Pick<ServerCore, "db" | "bb">) {
    * tokens (the cautious side of the split) before it starts. Off or unset, a set cap holds as on main: only once it is spent.
    */
   function taskEstimateUsd(providerId: string, model: string, appetiteTokens?: number): number {
-    if (!appetiteTokens || !settingOn(settings()["money.task_ceiling"])) return 0;
+    if (!appetiteTokens || !(settingOn(settings()["money.task_ceiling"]) || (!settingOff(settings()["money.task_ceiling"]) && switchOn(settings(), "money.task_ceiling")))) return 0;
     const price = priceOf(providerId, model, overrides());
     return price ? appetiteTokens * price.outputPerM / 1_000_000 : 0;
   }

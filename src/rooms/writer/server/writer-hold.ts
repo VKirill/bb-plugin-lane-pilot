@@ -1,5 +1,5 @@
 import { breakerKey } from "@lane-pilot/resilience";
-import { settingOn, writerSwitchedOff } from "@lane-pilot/models";
+import { settingOff, settingOn, switchOn, writerSwitchedOff } from "@lane-pilot/models";
 import { bestEffort, BestEffortLog} from "@lane-pilot/kit";
 import { PRESENCE_WINDOW_MS } from "../../owner-presence";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
@@ -126,7 +126,7 @@ export async function walkWriterChain<T extends WriterCandidate>(
   if (!free && holds.length > 0 && holds.every((row) => /usage_window/u.test(row.hold.reason))) free = { member: members[0]!, index: 0 };
   // The money rule (SMA m_mo_rule), only with money.strict on: a paid lane runs only when every subscription member is held, so a free
   // subscription member later in the chain wins over a free paid one before it. No cap is read here: an unset cap means no limit.
-  if (settingOn(input.settings["money.strict"]) && free && isPaid(free.member.providerId)) {
+  if ((settingOn(input.settings["money.strict"]) || (!settingOff(input.settings["money.strict"]) && switchOn(input.settings, "money.strict"))) && free && isPaid(free.member.providerId)) {
     const subscription = members.findIndex((member) => !isPaid(member.providerId) && !holds.some((row) => row.member === member));
     if (subscription >= 0) free = { member: members[subscription]!, index: subscription };
   }

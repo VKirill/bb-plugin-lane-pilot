@@ -14,7 +14,7 @@ import type { RunRow } from "../../storage";
 import { getJudgment, jev } from "@lane-pilot/jev";
 import { citationCheckJudgment } from "@lane-pilot/jev/judgments/citation-check";
 import { postOwnerItem } from "../../owner-waiting";
-import { BUILTIN_PRESETS, switchOn } from "@lane-pilot/models";
+import { BUILTIN_PRESETS, switchOn, switchWord } from "@lane-pilot/models";
 import type { Field, GraphNode } from "@lane-pilot/workflow-engine";
 import { createTaskLinter } from "../../tasks/server";
 import { agentRequest, createWorkflowAgents, stepPacket, withResolvedModel } from "./workflow-agent";
@@ -957,7 +957,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   // limited to the same range. A checkout that is not git, or an empty diff, gives no finding. By default the findings are only notes
   // handed to the reviewers; with review.prepass = strict they join the verdict and a quick review with a critical one is rework without a model.
   action("lp.review_prepass", async (c, rt) => {
-    const strict = switchOf(rt, "review.prepass") === "strict";
+    const strict = switchWord(loadProjectSettings(db, rt.projectId, rt.runId ? getRunSettingsScopes(db, rt.runId) : []), "review.prepass") === "strict";
     const none = { findings: [] as Row[], notes: "", critical_count: 0, rework: false };
     const checkout = await bestEffort(ctx.log, "review prepass checkout", pmCheckout(rt), null);
     const files = list(c.resolve("scope.files") ?? c.resolve("$inputs.files")).map(String).slice(0, 100);
