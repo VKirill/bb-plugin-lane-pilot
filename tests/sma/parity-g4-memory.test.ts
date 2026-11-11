@@ -11,7 +11,7 @@ import {
 } from "../../packages/memory-core/src";
 import type { MemoryCandidate, MemoryDatabase } from "../../packages/memory-core/src";
 import { buildFileCard } from "../../src/rooms/file-cards/card";
-import { appendTouch, cardNotes, catalogDir, findRepo, readCatalog, readMeta, readTouches, repoHead, writeCatalog } from "../../src/rooms/file-cards/store";
+import { appendTouch, cardNotes, catalogDir, findRepo, readCatalog, readMeta, readTouches, repoHead, writeCatalog, writeMeta } from "../../src/rooms/file-cards/store";
 import { buildCatalog, catalogNeedsBuild, collectCards, takeBuildLock } from "../../src/rooms/file-cards/build";
 import { SESSION_HOOK_SOURCE } from "../../src/rooms/contracts/session-hook-source";
 import { workFilePathError } from "../../src/rooms/runs/server/work-file";
@@ -403,7 +403,10 @@ describe("review fixes: the session hook and the file catalog", () => {
       writeFileSync(join(repo, "b.ts"), "export const B = 2;\n");
       git(repo, "add", "-A");
       git(repo, "commit", "-q", "-m", "second");
-      expect(catalogNeedsBuild(repo)).toBe(true);
+      // …but not within the pause: worktrees at different HEADs share the catalog and must not rebuild it on every start.
+      expect(catalogNeedsBuild(repo)).toBe(false);
+      expect(catalogNeedsBuild(repo, Date.now() + 31 * 60_000)).toBe(true);
+      writeMeta(repo, { ...readMeta(repo)!, builtAt: Date.now() - 31 * 60_000 });
       start();
       expect(await waitFor(() => readMeta(repo)!.files === 2), how).toBe(true);
       expect(readMeta(repo)!.head).toBe(git(repo, "rev-parse", "HEAD").trim());
@@ -557,11 +560,15 @@ describe("review fixes: memory-compress and history", () => {
     expect(owner.stdout).toContain("tasks");
   });
 
-  it("[sma:k_v_catalog] `catalog --write` from a thread is allowed and obeys the same key and limits", async () => {
+  it("[sma:k_v_catalog] `catalog --write` is the owner's (it reads folders of the hub machine): a chat is refused, the owner's build obeys the same key and limits", async () => {
     const h = cliHarness({ thr_pm: { projectId: "P", role: "pm" } });
     const repo = makeRepo({ "a.ts": "export const A = 1;\n", ".env": "TOKEN=abcdefgh12345678\n" });
     process.env.HOME = scratch("lp-home-");
-    const out = await h.run(["catalog", "--path", repo, "--write"], "thr_pm");
+    const refused = await h.run(["catalog", "--path", repo, "--write"], "thr_pm");
+    expect(refused.exitCode).toBe(1);
+    expect(refused.stderr).toMatch(/owner at a terminal/);
+    expect(readCatalog(repo)).toEqual([]);
+    const out = await h.run(["catalog", "--path", repo, "--write"]);
     expect(out.exitCode, out.stderr).toBe(0);
     expect(readCatalog(repo).find((card) => card.path === ".env")).toMatchObject({ skipped: "secret", headLine: "" });
   });

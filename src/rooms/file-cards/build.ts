@@ -20,6 +20,8 @@ import type { FileCard } from "./card";
 export const BUILD_MAX_FILES = 5000;
 export const BUILD_WALL_MS = 60_000;
 export const LOCK_EXPIRY_MS = 10 * 60_000;
+/** A catalog younger than this is not rebuilt for a new HEAD: cards are advice, a few commits of lag cost nothing. */
+export const REBUILD_PAUSE_MS = 30 * 60_000;
 
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch (cause) { return (cause as NodeJS.ErrnoException).code === "EPERM"; } };
 
@@ -113,6 +115,8 @@ export function catalogNeedsBuild(cwd: string, now = Date.now()): boolean {
   if (!repo) return false;
   const meta = readMeta(cwd);
   if (meta && meta.head === repoHead(repo)) return false;
+  // Worktrees of one repository sit at different HEADs and share the catalog: without a pause every session start would rebuild it.
+  if (meta && typeof meta.builtAt === "number" && now - meta.builtAt < REBUILD_PAUSE_MS) return false;
   return !lockHeld(join(catalogDir(cwd), "build.lock"), now);
 }
 

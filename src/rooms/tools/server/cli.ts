@@ -1136,6 +1136,8 @@ ${ERRANDS_USAGE}` },
           return runMemoryCompressCli(db as never, compressArgs);
         }
         if (command === "catalog") {
+          // The verb reads files of the machine the hub runs on: a chat on another machine must not read the hub's folders through it.
+          if (invocation?.threadId) return { exitCode:1, stderr:"refused: catalog reads folders of the hub machine and is for the owner at a terminal; a session builds its own catalog at start" };
           return runCatalogCli(args);
         }
         if (command === "start-ambiguous-probe" && args.length === 2) {
