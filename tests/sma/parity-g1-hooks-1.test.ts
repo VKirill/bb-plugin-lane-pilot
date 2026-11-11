@@ -534,6 +534,22 @@ describe("the spend marks and the Task cap", () => {
     expect(run().stdout).not.toContain("[spend]");
   });
 
+  it("[sma:k_hs_spend] an old snapshot, a snapshot with no time and a window that already reset give no spend advice", () => {
+    const run = (home: string) => guard(bashPayload("npm test", home), { LANE_PILOT_ROLE: "writer", HOME: home }).stdout;
+    const hot = [{ label: "five-hour", usedPercent: 95, resetsAt: future, model: null }];
+    expect(run(homeWith(snap({ at: new Date(Date.now() - 3 * 3_600_000).toISOString(), windows: hot })))).not.toContain("[spend]");
+    expect(run(homeWith(snap({ at: undefined, windows: hot })))).not.toContain("[spend]");
+    expect(run(homeWith(snap({ windows: [{ label: "five-hour", usedPercent: 95, resetsAt: new Date(Date.now() - 60_000).toISOString(), model: null }] })))).not.toContain("[spend]");
+    expect(run(homeWith(snap({ windows: hot })))).toContain("[spend] five-hour is at 95%");
+  });
+
+  it("[sma:k_h_pre] a Read in a lane session runs no stream and writes no perf line", () => {
+    const home = homeWith(snap());
+    const out = guard({ tool_name: "Read", tool_input: { file_path: join(home, "a.ts") }, cwd: home, session_id: "sess-read" }, { LANE_PILOT_ROLE: "writer", HOME: home });
+    expect(out.stdout).not.toContain("[spend]");
+    expect(existsSync(join(home, ".lane-pilot/session-hooks/sess-read/perf.jsonl"))).toBe(false);
+  });
+
   it("[sma:n1460] a Task is denied past a human-set cap with the window, its percent, the cap, the reset time and the way to lift it", () => {
     const denied = reason(task(homeWith(snap())));
     expect(denied).toContain("[spend-cap]");
