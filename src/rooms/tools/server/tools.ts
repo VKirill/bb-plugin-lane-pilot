@@ -14,6 +14,7 @@ import { FAILED_ATTEMPT_STATES } from "../../contracts";
 import { finalizeNativeLaneBinding, nativeRunReady, ownedNativePmRun, writerWorkspaceForPmInstructions } from "../../native-agent";
 import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../../native-agent";
 import { readGateReport } from "../../tasks/gate-report";
+import { historySearch } from "../../memory-tiers/server";
 import { mountHandoff } from "../../relay/server";
 import { mountInsights } from "../../self-repair/server";
 import { mountHealth } from "../../stability/server";
@@ -414,6 +415,14 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
     instructions:"Use only from the matching active Lane Pilot PM thread. The configured audience is enforced exactly: subagent records are automatically injected only into future writer prompts, owner/export records are available here only to the PM. Treat returned memory as contextual evidence and validate against current project state. When the packet says nothingRelevant, memory holds nothing on that query: do not assume a project fact, read the code or ask the owner.",
     parameters:z.object({runId:z.string().min(1),query:z.string().min(1).max(4000)}).strict(),
     execute:async(params,context)=>JSON.stringify(await services.runMemoryContext({threadId:context.threadId,projectId:context.projectId,runId:params.runId,query:params.query}),null,2),
+  });
+
+  registerObservedTool(bb.agents, {
+    name:"lane_pilot_memory_history",
+    description:"Search the project's history — journal tasks, execution outcomes, message transcripts, learned lessons and the work books — every fragment masked for credentials and clipped.",
+    instructions:"Use only from the matching active Lane Pilot PM thread. Returns fragments labeled by source (tasks, execution, transcripts, lessons, books); cite a transcript by its id. Optional `source` limits the search to one book.",
+    parameters:z.object({query:z.string().min(1).max(2000),source:z.enum(["tasks","execution","transcripts","lessons","books"]).optional()}).strict(),
+    execute:async(params,context)=>JSON.stringify({fragments:historySearch(db,context.projectId,params.query,{sources:params.source?[params.source]:undefined})},null,2),
   });
 
   registerObservedTool(bb.agents, {

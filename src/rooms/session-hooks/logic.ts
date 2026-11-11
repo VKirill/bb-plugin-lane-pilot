@@ -8,7 +8,7 @@ export const DOCUMENTARY_AGENTS = ["Explore", "Plan", "statusline-setup"] as con
 export const SUBAGENT_CAP = 8;
 export const SOFT_BUDGET_SEC = 1.5;
 
-const EDIT_TOOLS = new Set(["edit", "multiedit", "write", "notebookedit"]);
+export const EDIT_TOOLS = new Set(["edit", "multiedit", "write", "notebookedit"]);
 const READ_TOOLS = new Set(["read", "grep", "glob"]);
 const DESTRUCTIVE_GIT = /\bgit\s+(checkout\s+--|restore\b|reset\b|clean\b|stash\s+(drop|clear)|rebase\b|branch\s+-D)/;
 const DEPENDENCY_FILES = /(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|Cargo\.lock|poetry\.lock|uv\.lock|go\.sum|Gemfile\.lock)$|(^|\/)node_modules\//;

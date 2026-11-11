@@ -1454,3 +1454,10 @@ export function listAcceptedAttemptsSince(db: LanePilotDatabase, projectId: stri
       AND a.attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id AND b.state='accepted')
     ORDER BY a.created_at`).all(projectId, sinceMs) as Array<{ runId: string; taskId: string; attemptId: string; createdAt: number }>;
 }
+
+/** A project's attempt outcome texts for the history search (the execution book), newest first. */
+export function listProjectAttemptReasons(db: LanePilotDatabase, projectId: string, limit = 400): Array<{ taskId: string; state: string; reason: string | null; at: number }> {
+  return db.prepare(`SELECT a.task_id AS taskId, a.state, a.reason, a.updated_at AS at FROM lane_pilot_attempt a
+    JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.project_id=? AND a.reason IS NOT NULL ORDER BY a.updated_at DESC LIMIT ?`)
+    .all(projectId, limit) as Array<{ taskId: string; state: string; reason: string | null; at: number }>;
+}

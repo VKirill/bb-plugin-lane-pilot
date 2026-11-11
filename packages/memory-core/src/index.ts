@@ -29,3 +29,4 @@ export { NOTE_IDLE_MS, OBSERVED_QUARANTINE_MS, hideRecord, memoryUsefulness, not
 export { audienceForSensitivity, exportedFileName, laneMemoryFileToCandidate, parseLaneMemoryFile, renderLaneMemoryFile, sensitivityForAudience, type LaneMemoryFile } from "./files";
 export { findConflicts, conflictId, disagreement, type Conflict, type ConflictKind, type ConflictNote } from "./conflicts";
 export { conflictTableReady, getConflict, heldClause, holdConflict, listConflicts, markSettled, memoryConflictMigrations, setDeferral, type ConflictResolution, type ConflictRow } from "./conflict-store";
+export { HEAVY_NOTE_TOKENS, applyShorter, compressibleRow, heavyNoteRows, proposeShorter, shortenText, type CompressibleRow } from "./compress";

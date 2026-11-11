@@ -8,7 +8,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 // node --experimental-strip-types resolves this file only with a .ts specifier.
 // @ts-expect-error TS5097
-import { buildCapsule, failOpen, hookOutput, injectPack, pmSkillUseOf, pretaskDecision, progressRecord, promptRecall, runStreams, sessionEndDraft, sessionStartText, stallObserve, subagentVerify, subagentVerifyText, type Capsule, type PmSkillUse, type ToolCtx } from "./logic.ts";
+import { buildCapsule, EDIT_TOOLS, failOpen, hookOutput, injectPack, pmSkillUseOf, pretaskDecision, progressRecord, promptRecall, runStreams, sessionEndDraft, sessionStartText, stallObserve, subagentVerify, subagentVerifyText, type Capsule, type PmSkillUse, type ToolCtx } from "./logic.ts";
+// @ts-expect-error TS5097
+import { appendTouch, cardNotes } from "../file-cards/index.ts";
 
 type Payload = Record<string, unknown>;
 
@@ -127,6 +129,8 @@ function handle(payload: Payload): void {
     const ctx: ToolCtx = {
       tool: name, sid: session, cwd, command: String(input.command ?? ""), path: String(input.file_path ?? input.path ?? ""),
       denials: {}, lessons,
+      // A cataloged file card becomes the knowledge stream's note for this edit (k_st_catalog).
+      notes: cwd && EDIT_TOOLS.has(name) ? cardNotes(cwd, String(input.file_path ?? input.path ?? "")) : [],
     };
     const streams = runStreams(ctx, Date.now);
     appendFileSync(join(dir, "perf.jsonl"), `${JSON.stringify(streams.perf)}\n`);
@@ -141,6 +145,11 @@ function handle(payload: Payload): void {
   if (event === "PostToolUse") {
     const pmSkill = pmSkillUseOf(toolName(payload), toolInput(payload), process.env);
     if (pmSkill) reportPmSkill(pmSkill);
+    // The touch journal of the catalog: one line per edit tool call, outside the tracked tree.
+    if (cwd && EDIT_TOOLS.has(toolName(payload))) {
+      const touched = String(toolInput(payload).file_path ?? toolInput(payload).path ?? "");
+      if (touched) appendTouch(cwd, { at: Date.now(), tool: toolName(payload), path: touched });
+    }
     const counts = readJson<Record<string, number>>(join(dir, "stall.json"), {});
     const observed = stallObserve(counts, toolName(payload), toolInput(payload), payload.tool_response ?? payload.toolResponse);
     writeFileSync(join(dir, "stall.json"), JSON.stringify(observed.counts));

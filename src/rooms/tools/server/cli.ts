@@ -28,7 +28,8 @@ import { PM_REPLAY_USAGE, runPmReplayCli, listScenarios } from "../../pm-replay"
 import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
 import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
 import { MEMORY_EVAL_USAGE, runMemoryEvalCommand } from "../../memory-eval/server";
-import { MEMORY_CONFLICT_USAGE, runMemoryConflictCli, sessionMemoryRpc, memorySettingsFor, type WallThreadReader } from "../../memory/server";
+import { MEMORY_COMPRESS_USAGE, MEMORY_CONFLICT_USAGE, runMemoryCompressCli, runMemoryConflictCli, sessionMemoryRpc, memorySettingsFor, type WallThreadReader } from "../../memory/server";
+import { CATALOG_USAGE, runCatalogCli } from "../../file-cards";
 import { dropMemoryIndexes, hideRecord, lintMemory, listMemory, memoryConceptsJson, memoryIndexStatus, memoryRecordExists, memoryTokenStats, rebuildMemoryIndexes, recordMemoryMiss, reviewMemory } from "@lane-pilot/memory-core";
 import { BENCH_USAGE, runBenchCli } from "../../bench/server";
 import { BASELINE_USAGE, runBaselineCli } from "../../baseline/server";
@@ -43,7 +44,7 @@ import { VERDICT_LIST_COMMAND, renderVerdicts, verdictFiles, verdictInventory } 
 import { OUTAGE_USAGE, runOutageCli } from "../../outage/server";
 import { BACKLOG_USAGE, runBacklogCli } from "../../backlog/server";
 import { runHypothesisCli } from "../../hypotheses/server";
-import { tierReport } from "../../memory-tiers/server";
+import { HISTORY_SOURCES, historySearch, tierReport } from "../../memory-tiers/server";
 import { WALL_USAGE, runWallCli } from "../../wall/server";
 import { CHECKERS_USAGE, runCheckersCli } from "../../checkers/server";
 import { POLICY_USAGE, loadLiveExam, runPolicyCli } from "../../policy";
@@ -169,7 +170,7 @@ interface Services {
   workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
 }
 
-const MEMORY_CLI_USAGE = 'bb lane-pilot memory search "<question>" [--project P] | memory write "<fact>" [--project P]   (the project memory on the hub; inside a BB thread the project is the thread\'s own)';
+const MEMORY_CLI_USAGE = 'bb lane-pilot memory search "<question>" [--project P] | memory write "<fact>" [--project P] | memory history "<question>" [--project P] [--source tasks|execution|transcripts|lessons|books]   (the project memory on the hub; inside a BB thread the project is the thread\'s own)';
 
 const OWNER_ITEM_SWEEPS = [writerQuestionSweep, runGoalSweep, phaseWordSweep, scheduleFailureSweep];
 import type { CodeCriticDefault } from "../../contracts/task-enums";
@@ -278,6 +279,8 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"memory-probe", summary:"Plant a token through the memory write door and check that every delivery path (writer brief, PM, critics) hands it to its agent; sandbox project only unless --force", usage:"bb lane-pilot memory-probe <project-id> [--paths a,b] [--keep] [--clean] [--report] [--force]" },
       { name:"memory-eval", summary:"Score memory retrieval at 30, 300 and 3000 notes on real accepted tasks (right answer, nothing relevant, off-topic) against a plain path-and-keyword baseline; reads the hub data, writes nothing", usage:MEMORY_EVAL_USAGE },
       { name:"memory-conflicts", summary:"Memory notes that disagree: held out of every brief until a person settles them; --detect looks for new ones", usage:"bb lane-pilot memory-conflicts [--project P] [--state held|settled] [--detect]" },
+      { name:"memory-compress", summary:"Heavy memory notes and the shorter wording each would get; nothing is applied without --apply <id>", usage:MEMORY_COMPRESS_USAGE },
+      { name:"catalog", summary:"The file catalog: one card line per git-tracked file (path, size, language, last change, first line); --write stores it", usage:CATALOG_USAGE },
       { name:"memory-conflict-settle", summary:"Settle a held memory conflict: keep one note, both, or neither, with the evidence", usage:"bb lane-pilot memory-conflict-settle <mc_id> --keep a|b|both|none --evidence <text>" },
       { name:"start-ambiguous-probe", summary:"Create duplicate metadata and prove reconcile blocks", usage:"bb lane-pilot start-ambiguous-probe <project-id> <pm-thread-id>" },
       { name:"host-detect", summary:"Call the host worker detect method", usage:"bb lane-pilot host-detect <host-id> <workspace-path>" },
@@ -858,6 +861,16 @@ ${ERRANDS_USAGE}` },
             if (!hideRecord(db, projectId, id, "expired", null, unindex, reason)) return { exitCode:1, stderr:`record ${id} is not active` };
             return { exitCode:0, stdout:`${id} ${reason === "dated" ? "expired" : reason}\n` };
           }
+          if (sub === "history") {
+            if (!projectId) return { exitCode:1, stderr:"no project: pass --project <id> outside a BB thread" };
+            const source = value("--source");
+            if (source && !HISTORY_SOURCES.includes(source as never)) return { exitCode:1, stderr:`--source is one of ${HISTORY_SOURCES.join("|")}` };
+            const question = args.slice(1).filter((arg, i) => !arg.startsWith("--") && (flag < 0 || (i + 1 !== flag && i + 1 !== flag + 1)) && args.indexOf(arg) !== args.indexOf("--source") + 1).join(" ").trim();
+            if (!question) return { exitCode:1, stderr:'usage: bb lane-pilot memory history "<question>" [--project P] [--source tasks|execution|transcripts|lessons|books]' };
+            const hits = historySearch(db as never, projectId, question, { sources: source ? [source as never] : undefined });
+            const lines = hits.map((hit) => `${hit.source} ${hit.id} ${new Date(hit.at).toISOString().slice(0, 10)}: ${hit.excerpt}`);
+            return { exitCode:0, stdout:`${lines.join("\n") || "nothing found"}\n` };
+          }
           if (sub === "load") {
             const tags = (value("--tags") ?? "").split(",").map((tag) => tag.trim()).filter(Boolean);
             if (!projectId || !tags.length) return { exitCode:1, stderr:"usage: bb lane-pilot memory load --tags a,b [--project P]" };
@@ -1100,6 +1113,12 @@ ${ERRANDS_USAGE}` },
         }
         if (command === "memory-conflicts" || command === "memory-conflict-settle") {
           return runMemoryConflictCli(services.memoryConflicts, command, args);
+        }
+        if (command === "memory-compress") {
+          return runMemoryCompressCli(db as never, args);
+        }
+        if (command === "catalog") {
+          return runCatalogCli(args);
         }
         if (command === "start-ambiguous-probe" && args.length === 2) {
           return { exitCode:0, stdout:JSON.stringify(await services.startAmbiguousProbe(args[0]!, args[1]!), null, 2) };
