@@ -65,7 +65,7 @@ export function createMoney(ctx: Pick<ServerCore, "db" | "bb">) {
   /**
    * Why a writer of this provider and model must wait now: the money cap of a paid lane. A spent subscription window is not asked here:
    * the chain walk holds each member on BB's live figure (src/rooms/usage, `usage.skip_percent`) with the window's own reset time. This
-   * used to read the statusline's `last_usage.json` as well, a file nothing has written since Claude Lane was removed.
+   * used to read the statusline's `last_usage.json` as well, a file nothing has written since the terminal status line was removed (2026-10-30).
    */
   async function holds(providerId: string, model: string, _hostId: string, input?: { appetiteTokens?: number }): Promise<string | null> {
     const taskUsd = taskEstimateUsd(providerId, model, input?.appetiteTokens);

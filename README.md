@@ -41,7 +41,7 @@ The PM plans and talks; code does the rest. Each step leaves a receipt in the da
 <!-- numbers:start b8ba54f2987a0f0a -->
 | What | Count |
 |---|---:|
-| Version | 0.1.517 |
+| Version | 0.1.518 |
 | Rooms (components in `src/rooms/`) | 73 |
 | Workspace packages (`packages/`) | 18 |
 | Shipped graphs (published / own maintenance `lp.*`) | 113 (103 / 24) |
