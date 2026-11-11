@@ -22,7 +22,6 @@ export const SMA_CONTRACT_GAPS: Readonly<Record<string, readonly string[]>> = {
   k_we_uiqa: ["built and tested; off unless browser_qa.enabled=on (bb lane-pilot setting <project> browser_qa.enabled=on); then ui-audit runs between verdict and goal audit."],
   k_we_verify: ["built and tested; off unless browser_qa.enabled=on (bb lane-pilot setting <project> browser_qa.enabled=on); visible work then owes a passed live check."],
   m_cfg_budget0: ["built and tested; off unless money.cap_unset_zero=on (bb lane-pilot setting money.cap_unset_zero=on); by the owner's decision an unset monthly cap means no limit, so a paid lane is not without money by default"],
-  m_cfg_max_turns: ["built and tested; no ceiling unless writer.max_turns is set (bb lane-pilot setting <project> writer.max_turns=80); the card's default of 80 is not applied"],
   m_cfg_pipeline_off: ["not built: the conveyor still defaults to on for a fresh install; shipping it off waits for the owner's word"],
   m_ck_isolated: ["No project snapshot or throwaway copy: checks run in the live checkout. The roots manifest is taken only for chat checks and only recorded; writer verification takes none and a changed root never fails."],
   m_ck_required: ["Recipe-from-snapshot and throwaway copy are missing (live checkout). Cleared env, closed publication (credential stores masked unless verification.ssh_keys=on) and roots manifest are recorded for chat checks only; manifest never fails."],

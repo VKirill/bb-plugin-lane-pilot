@@ -201,9 +201,11 @@ describe("review fix 1: the turn ceiling is off unless a run froze one", () => {
     }
   });
 
-  it("[sma:m_cfg_max_turns] buildRunPolicy writes no maxTurns for unset, empty and 0, freezes a valid number, and a bad value never blocks the run", () => {
-    for (const value of [undefined, "", 0, "0", null]) expect("maxTurns" in buildRunPolicy({ "writer.max_turns": value })).toBe(false);
-    expect(buildRunPolicy({}).maxTurns).toBeUndefined();
+  it("[sma:m_cfg_max_turns] buildRunPolicy freezes the default ceiling when unset, none for 0 or off, a valid number as given, and a bad value never blocks the run", () => {
+    // Unset is the measured default (300: twice the largest accepted attempt seen on the hub); 0 or off is the opt-out.
+    for (const value of [undefined, "", null]) expect(buildRunPolicy({ "writer.max_turns": value }).maxTurns).toBe(300);
+    expect(buildRunPolicy({}).maxTurns).toBe(300);
+    for (const value of [0, "0", "off"]) expect("maxTurns" in buildRunPolicy({ "writer.max_turns": value })).toBe(false);
     expect(buildRunPolicy({ "writer.max_turns": "25" }).maxTurns).toBe(25);
     const warned: string[] = [];
     for (const bad of ["abc", 9999, -3, 2.5]) {
