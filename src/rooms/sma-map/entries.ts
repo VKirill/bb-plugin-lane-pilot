@@ -74,7 +74,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n63: ["have", "кусок несёт чертёж фазы", "src/rooms/phase/stages.ts#piecePlan"],
   n64: ["have", "кусок ждёт зависимостей", "src/rooms/phase/logic/waves.ts#issuable"],
   n65: ["have", "кусок идёт по графу задачи", "src/rooms/phase/server/driver-steps.ts#drive"],
-  n66: ["have", "план как вложенная партия: запуск фазы", "src/rooms/phase/server/driver-steps.ts#drive"],
+  n66: ["have", "план как вложенная партия: фаза, исполняющая план в партии, закрывается вместе с ней", "src/rooms/phase/server/driver.ts#tick"],
   n67: ["have", "результат куска в книге фазы", "src/rooms/phase/server/driver-steps.ts#drive"],
   n68: ["have", "исполнение ждёт все куски", "src/rooms/phase/logic/waves.ts#executionGate"],
   n69: ["have", "исполнение фазы", "src/rooms/phase/server/driver-steps.ts#drive"],
