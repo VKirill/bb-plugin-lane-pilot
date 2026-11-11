@@ -351,7 +351,7 @@ describe("[sma:k_lib_releaselint] lp-drill.sh calls predict-lint on --series and
   });
 });
 
-describe("[sma:k_v_shiplane] lane called the old way prints main's four fields and writes nothing; --record drafts and keeps one record per base/head", () => {
+describe("[sma:k_v_shiplane] lane drafts and keeps one record per base/head; --no-record prints main's four fields and writes nothing; --record is accepted as a no-op", () => {
   it("a temp repo with two commits", () => {
     const repo = mkdtempSync(join(tmpdir(), "lp-lane-"));
     const git = (...a: string[]) => execFileSync("git", ["-C", repo, ...a], { encoding: "utf8" });
@@ -363,14 +363,16 @@ describe("[sma:k_v_shiplane] lane called the old way prints main's four fields a
     git("add", "."); git("commit", "-qm", "second");
     writeFileSync(join(repo, "c.txt"), "3\n");
     git("add", "."); git("commit", "-qm", "third");
-    const plain = spawnSync("npx", ["tsx", ship, "lane", "v0.1.0", "--cwd", repo], { encoding: "utf8", timeout: 120_000 });
+    const plain = spawnSync("npx", ["tsx", ship, "lane", "v0.1.0", "--cwd", repo, "--no-record"], { encoding: "utf8", timeout: 120_000 });
     expect(plain.status).toBe(0);
     expect(Object.keys(JSON.parse(plain.stdout))).toEqual(["base", "files", "lane", "why"]);
     expect(existsSync(join(repo, ".agents/ship/lanes.jsonl"))).toBe(false);
-    const first = spawnSync("npx", ["tsx", ship, "lane", "v0.1.0", "--cwd", repo, "--record"], { encoding: "utf8", timeout: 120_000 });
+    // Unset (no flag): recording is the default.
+    const first = spawnSync("npx", ["tsx", ship, "lane", "v0.1.0", "--cwd", repo], { encoding: "utf8", timeout: 120_000 });
     expect(first.status).toBe(0);
     const out = JSON.parse(first.stdout) as { changelogDraft: string; record: string };
     expect(out.changelogDraft.split("\n").filter((line) => line.startsWith("- "))).toHaveLength(2);
+    // --record is still accepted and changes nothing.
     const second = spawnSync("npx", ["tsx", ship, "lane", "v0.1.0", "--cwd", repo, "--record"], { encoding: "utf8", timeout: 120_000 });
     expect((JSON.parse(second.stdout) as { record: string }).record).toBe("already recorded");
     expect(readFileSync(join(repo, ".agents/ship/lanes.jsonl"), "utf8").trim().split("\n")).toHaveLength(1);
