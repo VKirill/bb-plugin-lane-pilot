@@ -23,7 +23,8 @@ export const isArmed = (protection: { armed: unknown; alsoArmed?: readonly unkno
 export const disarmKey = (key: string) => `protection.disarm.${key}`;
 export const DISARM_TERM_MS = 7 * 86_400_000;
 
-export type Disarm = { key: string; by: string; at: number; until: number; renewals?: Array<{ at: number; until: number; why: string }> };
+/** `before` is the armed level the setting held when the disarm opened, `to` the value the disarm left it at; both absent on older records. */
+export type Disarm = { key: string; by: string; at: number; until: number; before?: unknown; to?: unknown; renewals?: Array<{ at: number; until: number; why: string }> };
 
 const readJson = (raw: string | undefined): Disarm | null => {
   if (!raw) return null;
@@ -46,13 +47,14 @@ function writeDisarm(db: Db, projectId: string, key: string, record: Disarm | nu
  * Called by saveProjectSetting for every save: leaving a protection's armed value opens a 7-day disarm term,
  * returning to the armed value clears it. A save that only refreshes the same off value keeps the term it has.
  */
-export function noteProtectionDisarm(db: Db, projectId: string, key: string, value: unknown, opts: { by?: string; now?: number } = {}): Disarm | null {
+export function noteProtectionDisarm(db: Db, projectId: string, key: string, value: unknown, opts: { by?: string; now?: number; previous?: unknown } = {}): Disarm | null {
   const protection = PROTECTIONS[key];
   if (!protection) return null;
   const now = opts.now ?? Date.now();
   if (isArmed(protection, value)) { writeDisarm(db, projectId, key, null, now); return null; }
   const existing = readDisarm(db, projectId, key);
-  const record = existing ?? { key, by: opts.by ?? "settings", at: now, until: now + DISARM_TERM_MS };
+  const record: Disarm = existing ?? { key, by: opts.by ?? "settings", at: now, until: now + DISARM_TERM_MS, ...(isArmed(protection, opts.previous) ? { before: opts.previous } : {}) };
+  record.to = value;
   writeDisarm(db, projectId, key, record, now);
   return record;
 }
@@ -73,6 +75,11 @@ export function storedProtectionValue(db: Db, projectId: string, key: string): u
   const row = db.prepare(`SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND binding_id='' AND key=?`).get(projectId, key) as { value: string } | undefined;
   if (!row) return undefined;
   try { return JSON.parse(row.value); } catch { return undefined; }
+}
+
+/** The disarm records whose term ended before `since`: left as they are when the re-arm pass is new, and listed for the owner. */
+export function staleDisarms(db: Db, projectId: string, since: number, now = Date.now()): Disarm[] {
+  return Object.keys(PROTECTIONS).flatMap((key) => { const disarm = readDisarm(db, projectId, key); return disarm && disarm.until <= now && disarm.until < since ? [disarm] : []; });
 }
 
 /** Ends a disarm: with a value, the protection's setting is written to it under a new generation; the disarm record goes either way. */

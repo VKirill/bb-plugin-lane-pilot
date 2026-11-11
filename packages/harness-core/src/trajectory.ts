@@ -85,8 +85,8 @@ function renderItem(item: Record<string, unknown>, lines: string[], o: Required<
     }
     case "contextCompaction": push(lines, "[HARNESS] context compacted"); return;
     case "backgroundTask":
-    // BB's delegation item names the subagent in `label`; keep it ahead of the task text so the frame says who got the work.
-    case "delegation": push(lines, `[HARNESS] ${type}: ${clip(item.label ?? item.description ?? item.summary ?? "", 300)}${item.taskStatus ? ` (${item.taskStatus})` : ""}${item.error ? ` error: ${clip(item.error, 300)}` : ""}`); return;
+    // BB's delegation item names the subagent in `label`: «label: task text», so the frame says who got the work and what it was.
+    case "delegation": push(lines, `[HARNESS] ${type}: ${clip([item.label, item.description ?? item.summary].filter((part) => typeof part === "string" && part.trim()).join(": "), 300)}${item.taskStatus ? ` (${item.taskStatus})` : ""}${item.error ? ` error: ${clip(item.error, 300)}` : ""}`); return;
     default: { const t = text(item); if (t.trim()) push(lines, `[HARNESS] ${type || "item"}: ${clip(t, 600)}`); }
   }
 }
@@ -114,6 +114,14 @@ export function renderThreadEvents(events: readonly ThreadEventLike[], options: 
 
 /** A feedback digest stays inside this. A longer one is cut at the end; the raw observation is never copied. */
 export const ATTEMPT_DIGEST_MAX = 2_000;
+
+/** The most used tool names, at most ten, the rest counted: «shell x3, edit x2, … +4 more». */
+function toolsLine(tools: ReadonlyMap<string, number>): string {
+  const ranked = [...tools].sort((a, b) => b[1] - a[1]);
+  if (!ranked.length) return "(none)";
+  const shown = ranked.slice(0, 10).map(([name, count]) => `${clip(name, 40)} x${count}`);
+  return `${shown.join(", ")}${ranked.length > 10 ? ` +${ranked.length - 10} more` : ""}`;
+}
 
 /**
  * What a later attempt needs of a thread: what was done, what failed, which check, which files.
@@ -156,8 +164,9 @@ export function summarizeThreadEvents(events: readonly ThreadEventLike[], option
     `Did: ${did.slice(0, 8).join("; ") || "(nothing recorded)"}`,
     `Failed: ${failed.slice(0, 4).join("; ") || "(nothing recorded)"}`,
     `Check: ${check || "(none)"}`,
-    `Tools: ${[...tools].map(([name, count]) => `${name} x${count}`).join(", ") || "(none)"}`,
     `Files: ${[...files].slice(0, 12).join(", ") || "(none)"}`,
+    // After Files and capped, so a long tool list can never push Files out of the cut below.
+    `Tools: ${toolsLine(tools)}`,
   ].join("\n");
   const max = options.maxChars ?? ATTEMPT_DIGEST_MAX;
   return text.length <= max ? text : `${text.slice(0, Math.max(0, max - 1))}…`;

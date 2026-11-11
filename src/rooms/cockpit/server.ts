@@ -1,7 +1,7 @@
 import { hostContract, rpcContract } from "../contracts";
 
 import type { ServerCore } from "../contracts/server";
-import { HARNESS_VERSION, activeRunForProject, getRun, getTaskContractJson, latestAttemptRow, listAttemptRowsForProject, setTaskHeldUntil, taskHeldUntil, updateTaskContractJson, workerOutcomesSince, workerPresenceNow } from "../storage";
+import { HARNESS_VERSION, PROTECTIONS, isArmed, activeRunForProject, getRun, getTaskContractJson, latestAttemptRow, listAttemptRowsForProject, setTaskHeldUntil, taskHeldUntil, updateTaskContractJson, workerOutcomesSince, workerPresenceNow } from "../storage";
 import { attemptRecord } from "../tools/server";
 import { listReceipts } from "../capability";
 import { tokenDailySeries, tokenDailyTotal } from "../usage/server";
@@ -15,6 +15,8 @@ import { activeMemoryDigestRows, countActiveMemory, lintMemory, memoryWithoutTra
 import { currentEmbedder, embedPending, memorySettingsFor } from "../memory/server";
 import { loadProjectSettings } from "../storage";
 import { integrityReport } from "../policy";
+import { conveyorState } from "../runs";
+import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 
 import type { FrontApi } from "../front/server/index";
 import type { ReadWriterWorkspaceFile } from "../platform/server";
@@ -52,7 +54,7 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
       const since = Date.now() - DAY_MS;
       // Cross-source digest (SMA k_lib_digest): each source answers alone; a failing one empties its list and names itself in `partial`.
       const failed: string[] = [];
-      const source = async <T>(name: string, read: () => T | Promise<T>, empty: T): Promise<T> => { try { return await read(); } catch { failed.push(name); return empty; } };
+      const source = async <T>(name: string, read: () => T | Promise<T>, empty: T): Promise<T> => { try { return await read(); } catch (cause) { failed.push(name); ctx.log(`Lane Pilot cockpit_today: source ${name} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return empty; } };
       const rows = await source("attempts", () => listAttemptRowsForProject(db, { projectId, updatedSince: since, limit: 300 }), [] as ReturnType<typeof listAttemptRowsForProject>);
       const tokens = await source("tokens", () => tokenDailyTotal(db, projectId, new Date().toISOString().slice(0, 10)), 0);
       const parts = await source("phases", () => listPhasePartsSince(db, projectId, since), [] as ReturnType<typeof listPhasePartsSince>);
@@ -72,9 +74,21 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
      * switches of the run policy — drawn read-only on the Rules screen; edits stay in the settings tabs. */
     cockpit_rules: async ({ projectId }: { projectId: string }) => {
       const settings = loadProjectSettings(db, projectId);
+      // An unset setting shows the value the code applies: the catalog's default (not the protection's "armed" word, which differs for code_critique.mode and plan_fact.mode).
+      const effective = (key: string, fallback: unknown) => settings[key] ?? VISIBLE_CATALOG.find((row) => row.setting === key)?.defaultValue ?? fallback;
+      const rules = integrityReport(db, settings, projectId).map((rule) => {
+        const current = effective(String(rule.key), rule.armed);
+        return { ...rule, current, disarmed: Boolean(rule.term) || !isArmed(PROTECTIONS[String(rule.key)]!, current) };
+      });
+      const conveyor = await conveyorState(bb.storage.kv as never);
+      const fallback = String(effective("writer.fallback_on_provider_failure", "immediate"));
       return {
-        rules: integrityReport(db, settings, projectId),
-        switches: Object.fromEntries(["protection.rearm", "conveyor", "writer.fallback_on_provider_failure"].map((key) => [key, settings[key] ?? null])),
+        rules,
+        switches: [
+          { key: "conveyor", kind: "flag", value: conveyor.on },
+          { key: "protection.rearm", kind: "flag", value: settings["protection.rearm"] !== "off" },
+          { key: "writer.fallback_on_provider_failure", kind: "enum", value: fallback },
+        ],
       };
     },
     /** Workers over 30 days (tokens by provider and model) with their capability cells: the worker cards and their history. */

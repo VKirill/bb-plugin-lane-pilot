@@ -2,7 +2,7 @@ import type { DirtSnapshot } from "../cli-outcome";
 import { isLiveDecision } from "../live-folder";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, loadProjectSettings, saveReasoningTrace, setAttemptDirtBefore, setAttemptWorkspace, transitionAttempt, taskBasePath, countThreadAttempts, countThreadTaskAttempts, getTaskContractJson } from "../../storage";
-import { SESSION_MAX_TURNS, failureClass } from "../../contracts/failure-class";
+import { effectiveTurnCap, failureClass } from "../../contracts/failure-class";
 import { stringAt, orMiss, isNotFound, bestEffort } from "@lane-pilot/kit";
 import { listThreadEventsRaw, sleepUntilThreadSignal, threadWatchMark } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";
@@ -191,8 +191,7 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
     if (maxTurns !== undefined) return maxTurns;
     const failed = getAttempt(db, failedAttemptId);
     const projectId = failed ? getRun(db, failed.run_id)?.project_id : undefined;
-    const raw = projectId ? Number(loadProjectSettings(db, projectId)["writer.session_max_turns"]) : NaN;
-    return Number.isFinite(raw) ? Math.max(1, Math.min(10, Math.round(raw))) : SESSION_MAX_TURNS;
+    return effectiveTurnCap(projectId ? loadProjectSettings(db, projectId)["writer.session_max_turns"] : undefined);
   };
 
   /** Why a failed attempt gets no more feedback turns in its writer's thread (the turn cap); null while it may. */

@@ -3,13 +3,13 @@ import { dirname, join } from "node:path";
 import { listReviewedObservations } from "../../learning";
 import { prototypeConfigSchema, taskV2Schema } from "../../contracts";
 import { taskBaselineEntries } from "../../baseline";
-import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, markCancelCode, saveProjectSetting, savePrototypeConfig, transitionAttempt, failedTasksAllProjects, listNearMissReceipts } from "../../storage";
+import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, PROTECTIONS, loadPrototypeConfig, markCancelCode, saveProjectSetting, savePrototypeConfig, transitionAttempt, failedTasksAllProjects, listNearMissReceipts } from "../../storage";
 import { cancelAttemptById, finishRunSafely, pauseRun } from "../../runs/server";
 import { conveyorState, renderTimeline, setConveyor, taskTimeline, unknownReasons } from "../../runs";
 import { TASK_RECORD_USAGE, blindRecord, readsBlind, renderTaskRecord, taskRecord } from "./task-record";
 import {bestEffort, isNotFound, orMiss, outputText, pluginRootFromModule, spawnAsync, stringAt, valueAt} from "@lane-pilot/kit";
 import { PAIR_ROLE_SPECS } from "@lane-pilot/models";
-import {runSkillsCli, parseSkillHub, SKILLS_USAGE} from "../../platform/server";
+import {listQaHosts, runSkillsCli, parseSkillHub, SKILLS_USAGE} from "../../platform/server";
 import { attemptSessionLayers, terminalParity, terminalSessionLayers } from "../../native-agent";
 import { projectStats } from "./project-stats";
 import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -272,7 +272,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"task", summary:"One task's record for another agent: what it asked for, what the server saw done (changed files, merge), acceptance against fact, what is left", usage:TASK_RECORD_USAGE },
       { name:"changes", summary:"What is on record for a task or an attempt: base, merge, changed files (deletions included) and the reverify / revert receipts", usage:"bb lane-pilot changes <task-id|attempt-id>" },
       { name:"evidence", summary:"The reason and checks stored before each risky operation, newest first", usage:"bb lane-pilot evidence <project-id> [--op permit|revert|janitor] [--days N]" },
-      { name:"integrity", summary:"Each protection with its hazard, armed and current value, disarm term and shadow findings; renew a disarm with a reason", usage:"bb lane-pilot integrity [project-id] [--renew <key> --days N --why <cause>]" },
+      { name:"integrity", summary:"Each protection with its hazard, armed and current value, disarm term and shadow findings; renew a disarm with a reason", usage:"bb lane-pilot integrity [project-id] [--renew <key> --days N --why <cause> | --rearm <key>]" },
       { name:"airbag", summary:"List, prune and probe the return points (refs/lane-airbag/*) of a project's checkout", usage:"bb lane-pilot airbag <project-id> [--prune DAYS] [--probe]" },
       { name:"recover", summary:"Reconcile a known writer identity and emit its validated receipt", usage:"bb lane-pilot recover <attempt-id>" },
       { name:"start-cancel-probe", summary:"Spawn a long-running writer for a live stop observation", usage:"bb lane-pilot start-cancel-probe <project-id> <pm-thread-id>" },
@@ -397,6 +397,14 @@ ${ERRANDS_USAGE}` },
         if (command === "integrity") {
           const [projectId] = args.filter((a) => !a.startsWith("--"));
           const pid = projectId ?? args[0] ?? "";
+          if (args.includes("--rearm")) {
+            // Switching a protection back on is the owner's word, not an agent's.
+            if (invocation?.threadId) return { exitCode:1, stderr:"a protection is re-armed by the owner at a terminal, not from a chat" };
+            const key = args[args.indexOf("--rearm") + 1] ?? "", protection = PROTECTIONS[key];
+            if (!protection) return { exitCode:1, stderr:`${key || "(no key)"} is not a protection: ${Object.keys(PROTECTIONS).join(", ")}` };
+            saveProjectSetting(db, pid, key, protection.armed);
+            return { exitCode:0, stdout:JSON.stringify({ ok:true, key, value:protection.armed }) };
+          }
           if (args.includes("--renew")) {
             const key = args[args.indexOf("--renew") + 1]!, days = Number(args[args.indexOf("--days") + 1] ?? 7), why = args[args.indexOf("--why") + 1] ?? "";
             const result = renewDisarm(db, pid, key, days, why);
@@ -599,6 +607,8 @@ ${ERRANDS_USAGE}` },
         if (command === "statusline") {
           const hostId = args[0];
           if (!hostId) return { exitCode:1, stderr:"usage: bb lane-pilot statusline <host-id>" };
+          const known = await listQaHosts(bb).catch(() => null);
+          if (known && !known.some((row) => row.id === hostId)) return { exitCode:1, stderr:`unknown host ${hostId}: ${known.map((row) => row.id).join(", ") || "no machines connected"}` };
           const live = await services.providerUsage?.windows({ providerId:"claude-code", hostId }).catch(() => null);
           return { exitCode:0, stdout:usageSegment(live?.windows ?? {}, live?.at ?? null, Date.now()) };
         }

@@ -134,6 +134,8 @@ export const removeWorkerHome: ExperimentalHostRpcHandlers<typeof hostContract>[
   const { homedir: home } = await import("node:os");
   const { join: at, resolve, sep } = await import("node:path");
   const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  // The handler is reached by the contract's regex, but it checks the key itself: "." would resolve to the root and remove every home.
+  if (input.key === "" || input.key.startsWith(".") || input.key.includes("/") || input.key.includes("\\")) return { hostId, removed: false };
   const root = at(home(), ".lane-pilot", "codex-homes");
   const target = at(root, input.key);
   const exists = await lstat(target).then(() => true, () => false);
@@ -141,7 +143,7 @@ export const removeWorkerHome: ExperimentalHostRpcHandlers<typeof hostContract>[
   // Confinement: the real path must stay under codex-homes even if the home itself is a link.
   const resolvedRoot = await realpath(root).catch(() => resolve(root));
   const resolvedTarget = await realpath(target).catch(() => resolve(target));
-  if (resolvedTarget !== resolvedRoot && !resolvedTarget.startsWith(resolvedRoot + sep)) return { hostId, removed: false };
+  if (resolvedTarget === resolvedRoot || !resolvedTarget.startsWith(resolvedRoot + sep)) return { hostId, removed: false };
   await rm(target, { recursive: true, force: true });
   return { hostId, removed: true };
 };

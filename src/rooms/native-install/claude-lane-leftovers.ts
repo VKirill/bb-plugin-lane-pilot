@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { chmod, lstat, mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { applyEdits, modify, parse, type ParseError } from "jsonc-parser/lib/esm/main.js";
@@ -67,15 +66,25 @@ function stripHookGroups(groups: unknown[], home: string, removed: string[]): un
   return kept;
 }
 
-/** Drops hook commands under ~/.agents/hooks/ and a statusLine that runs lane-statusline. Other entries stay. When the
- * person's own claude-pulse line still exists (`exists` probe), the wrapper's removal puts it back instead of leaving none (SMA k_rm_statusline). */
-export function stripClaudeLaneSettings(text: string, home: string, exists?: (path: string) => boolean): { text: string; removed: string[] } {
+/** The statusLine the person had before the old installer wired its wrapper: the installer saved it here (merge_claude_settings.py PREV_STATUSLINE). */
+export const PREV_STATUSLINE_FILE = ".agents/state/statusline.prev.json";
+
+const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
+
+/**
+ * Drops hook commands under ~/.agents/hooks/ and a statusLine that runs lane-statusline. Other entries stay. The person's own status
+ * line comes back only from a record: `saved` is what the old installer kept of it, restored exactly. With no record the key is removed and the
+ * claude-pulse command (when `pulse` names the script) is offered in `suggested`, never written. `written` lists what the text now sets.
+ */
+export function stripClaudeLaneSettings(text: string, home: string, options: { saved?: unknown; pulse?: string | null } = {}): { text: string; removed: string[]; written: string[]; suggested: string[] } {
   const errors: ParseError[] = [];
   const parsed = parse(text, errors, { allowTrailingComma: true, disallowComments: false });
-  if (errors.length || !parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { text, removed: [] };
+  if (errors.length || !parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { text, removed: [], written: [], suggested: [] };
   const root = parsed as Record<string, unknown>;
   const removed: string[] = [];
-  const options = { formattingOptions: { insertSpaces: true, tabSize: 2, eol: "\n" as const } };
+  const written: string[] = [];
+  const suggested: string[] = [];
+  const edit = { formattingOptions: { insertSpaces: true, tabSize: 2, eol: "\n" as const } };
   let next = text;
   if (root.hooks && typeof root.hooks === "object" && !Array.isArray(root.hooks)) {
     const hooks: Record<string, unknown> = {};
@@ -84,16 +93,19 @@ export function stripClaudeLaneSettings(text: string, home: string, exists?: (pa
       const kept = stripHookGroups(groups, home, removed);
       if (kept.length) hooks[event] = kept;
     }
-    if (removed.length) next = applyEdits(next, modify(next, ["hooks"], Object.keys(hooks).length ? hooks : undefined, options));
+    if (removed.length) next = applyEdits(next, modify(next, ["hooks"], Object.keys(hooks).length ? hooks : undefined, edit));
   }
   const status = root.statusLine;
   const statusCommand = typeof status === "string" ? status : hookCommand(status) ?? "";
   if (statusCommand && commandPointsAt(statusCommand, home, STATUSLINE_SUFFIX)) {
     removed.push(statusCommand);
-    const pulse = join(home, ".claude-pulse", "claude_status.py");
-    next = applyEdits(next, modify(next, ["statusLine"], exists?.(pulse) ? { type: "command", command: `python3 '${pulse}'` } : undefined, options));
+    const saved = options.saved && typeof options.saved === "object" && !Array.isArray(options.saved) && typeof (options.saved as { command?: unknown }).command === "string"
+      && (options.saved as { command: string }).command.trim() && !commandPointsAt((options.saved as { command: string }).command, home, STATUSLINE_SUFFIX) ? options.saved : null;
+    next = applyEdits(next, modify(next, ["statusLine"], saved ?? undefined, edit));
+    if (saved) written.push(`statusLine = ${JSON.stringify(saved)} (the line saved by the old installer)`);
+    else if (options.pulse) suggested.push(`not written, apply it yourself if you want your claude-pulse line back: "statusLine": ${JSON.stringify({ type: "command", command: `python3 ${shellQuote(options.pulse)}` })}`);
   }
-  return { text: next, removed };
+  return { text: next, removed, written, suggested };
 }
 
 /** Drops the codex-lane plugin table and its hooks.state entries. Other plugins stay. */
@@ -210,13 +222,20 @@ export async function removeClaudeLaneLeftovers(input: { home: string; apply?: b
   const codexPath = join(home, ".codex/config.toml");
   const settingsRaw = await readFile(settingsPath, "utf8").catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return null; throw error; });
   const codexRaw = await readFile(codexPath, "utf8").catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return null; throw error; });
-  const settings = settingsRaw === null ? { text: "", removed: [] as string[] } : stripClaudeLaneSettings(settingsRaw, home, existsSync);
+  // The record of the person's own status line (read only; .agents/state is never written here) and the claude-pulse script, offered as a suggestion.
+  const savedRaw = await readFile(join(home, PREV_STATUSLINE_FILE), "utf8").catch(() => null);
+  let saved: unknown = null;
+  try { saved = savedRaw === null ? null : JSON.parse(savedRaw); } catch { saved = null; }
+  const pulsePath = join(home, ".claude-pulse", "claude_status.py");
+  const settings = settingsRaw === null ? { text: "", removed: [] as string[], written: [] as string[], suggested: [] as string[] } : stripClaudeLaneSettings(settingsRaw, home, { saved, pulse: await present(pulsePath) ? pulsePath : null });
+  // The plan lists what is removed, what is written and what is only suggested, so a dry run shows all of it.
+  const settingsPlan = [...settings.removed, ...settings.written.map((line) => `write ${line}`), ...settings.suggested.map((line) => `suggestion: ${line}`)];
   const codex = codexRaw === null ? { text: "", removed: [] as string[] } : stripCodexLaneConfig(codexRaw);
   const settingsChanged = settingsRaw !== null && settings.text !== settingsRaw;
   const codexChanged = codexRaw !== null && codex.text !== codexRaw;
   const moves = await plannedMoves(home);
   const changed = settingsChanged || codexChanged || moves.length > 0;
-  if (!apply) return { apply: false, changed, settings: settings.removed, codex: codex.removed, moved: moves, backupDir: null };
+  if (!apply) return { apply: false, changed, settings: settingsPlan, codex: codex.removed, moved: moves, backupDir: null };
   if (settingsChanged) await writeText(settingsPath, settings.text);
   if (codexChanged) await writeText(codexPath, codex.text);
   let backupDir: string | null = null;
@@ -235,5 +254,5 @@ export async function removeClaudeLaneLeftovers(input: { home: string; apply?: b
     }
     if (moved.includes(join(home, ".agents/hooks"))) await writeShims(home, shimNames(settings.removed));
   }
-  return { apply: true, changed: settingsChanged || codexChanged || moved.length > 0, settings: settings.removed, codex: codex.removed, moved, backupDir: moved.length ? backupDir : null };
+  return { apply: true, changed: settingsChanged || codexChanged || moved.length > 0, settings: settingsPlan, codex: codex.removed, moved, backupDir: moved.length ? backupDir : null };
 }

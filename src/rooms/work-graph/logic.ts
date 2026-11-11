@@ -27,7 +27,7 @@ export type ExecutorRow = {
 };
 export type StageBlock = { cell: StageCell; rows: ExecutorRow[] };
 export type TaskSummary = { returns: number; seconds: number | null; costUsd: number | null; costState: CostState | null; models: string[] };
-export type TaskGraph = { cells: StageCell[]; stages: StageBlock[]; summary: TaskSummary };
+export type TaskGraph = { cells: StageCell[]; stages: StageBlock[]; summary: TaskSummary; /** The project's session turn ceiling, from the RPC; absent on an older hub. */ turnCeiling?: number };
 
 export type StageEventIn = { stageId: string; state: string; at: number };
 export type ReceiptIn = { stageId: string; state: string; threadId: string | null; providerId: string | null; model: string | null; reason: string | null; updatedAt: number };
@@ -188,7 +188,7 @@ export function graphStats(graphs: readonly TaskGraph[]): GraphStats {
 
 /** The spend line of a work (SMA sc_spend): the writer session's turns against the session ceiling, and the month's
  *  spend against money.monthly_cap_usd when set — hot once past 90% of it. */
-export function ceilingLine(writer: { turns: number | null }, month: { monthUsd: number; cap: number | null }, maxTurns = 5) {
+export function ceilingLine(writer: { turns: number | null }, month: { monthUsd: number; cap: number | null }, maxTurns: number = 5) {
   const hot = month.cap !== null && month.cap > 0 && month.monthUsd >= month.cap * 0.9;
   return { turns: writer.turns === null ? null : { n: writer.turns, max: maxTurns }, monthUsd: month.monthUsd, cap: month.cap, hot };
 }

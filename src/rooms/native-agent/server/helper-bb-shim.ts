@@ -1,5 +1,5 @@
 import { SETTING_WORKER_STRICT_USER } from "@lane-pilot/settings-catalog";
-import { getRun, loadProjectSettings } from "../../storage";
+import { getRun, loadProjectSettings, workerHomeKey } from "../../storage";
 import type { ExperimentalPluginProviderEnvEntry } from "@get-bb/plugin-sdk";
 import { PROVIDER_CAPABILITIES } from "@lane-pilot/models";
 import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
@@ -91,11 +91,13 @@ export function createBbShimEnv(ctx: Pick<ServerCore, "bb" | "host"> & { db?: Se
   /** The task's own codex home when the run's project has worker.strict_user on; null otherwise or when the host cannot make it. */
   async function workerHome(metadata: unknown, hostId: string): Promise<string | null> {
     const runId = stringAt(metadata, "lanePilotRunId");
-    const taskId = stringAt(metadata, "taskId") ?? stringAt(metadata, "attemptId");
+    // The thread's metadata names the task as lanePilotTaskId ("taskId" is never set, so the key used to fall to the attempt id and a task's homes piled up under its attempts).
+    const taskId = stringAt(metadata, "lanePilotTaskId") ?? stringAt(metadata, "taskId") ?? stringAt(metadata, "attemptId");
     if (!runId || !taskId || !ctx.db) return null;
     const projectId = getRun(ctx.db, runId)?.project_id;
     if (!projectId || String(loadProjectSettings(ctx.db as never, projectId)[SETTING_WORKER_STRICT_USER] ?? "off") !== "on") return null;
-    const key = taskId.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120);
+    const key = workerHomeKey(taskId);
+    if (!key) return null;
     const made = await within(CALL_MS, "prepareWorkerHome", Promise.resolve(host.call("prepareWorkerHome", { requestedHostId: hostId, key }, { hostId, timeoutMs: CALL_MS }))).catch((cause: unknown) => { bb.log.warn(`Lane Pilot: prepareWorkerHome on ${hostId} failed (${reasonOf(cause)}); helpers start without a worker home`); return null; });
     return made?.codexHome ?? null;
   }

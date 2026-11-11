@@ -2,7 +2,7 @@ import type { PrototypeConfig } from "@lane-pilot/contracts";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { SettingValidationError } from "../setting-validation";
 import { requireSettingValidator, type LanePilotDatabase } from "./database";
-import { noteProtectionDisarm } from "./protections-store";
+import { noteProtectionDisarm, storedProtectionValue } from "./protections-store";
 
 const CONFIG_KEYS = [
   "hostId", "pmWorkspacePath", "writerWorkspacePath", "pmProviderId",
@@ -123,13 +123,14 @@ export function saveProjectSetting(
 ): void {
   db.transaction(() => {
     const nextVersion = getSettingVersions(db,projectId,[key])[key] + 1;
+    const previous = storedProtectionValue(db, projectId, key);
     db.prepare(`INSERT INTO lane_pilot_project_settings
       (project_id,binding_id,key,value,version,updated_at) VALUES (?,?,?,?,?,?)
       ON CONFLICT(project_id,binding_id,key) DO UPDATE SET
         value=excluded.value, version=excluded.version, updated_at=excluded.updated_at`)
       .run(projectId, "", key, JSON.stringify(value), nextVersion, Date.now());
     bumpSettingGeneration(db,projectId,key,nextVersion);
-    noteProtectionDisarm(db, projectId, key, value);
+    noteProtectionDisarm(db, projectId, key, value, { previous });
   })();
 }
 

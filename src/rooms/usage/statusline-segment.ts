@@ -1,6 +1,6 @@
 /** One status-line segment (SMA k_lib_statusline): a pure function over cached usage windows — never the whole
  * line, never a file or the clock. `windows` is the cache as readUsageWindows/boardWindows return it, `at` its
- * timestamp, `now` injected so the staleness mark is testable. Empty when there is nothing to show. */
+ * timestamp, `now` injected so the staleness mark is testable; a cache without a time is not marked. Empty when there is nothing to show. */
 export function usageSegment(
   windows: Record<string, { utilization: number; resetsAt: string | null }> | null | undefined,
   at: string | null,
@@ -23,6 +23,7 @@ export function usageSegment(
     parts.push(...other);
   }
   if (!parts.length) return "";
-  const stale = !at || !Number.isFinite(Date.parse(at)) || now - Date.parse(at) > 2 * 3_600_000;
+  // The mark comes from the reading's own time; a reading with no time gets no mark rather than a wrong one.
+  const stale = Boolean(at) && Number.isFinite(Date.parse(at!)) && now - Date.parse(at!) > 2 * 3_600_000;
   return `${stale ? "⚠ " : ""}${parts.join(" - ")}`;
 }

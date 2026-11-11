@@ -144,12 +144,4 @@ export function mountWriterTaskFinished(ctx: ServerCore, _services: Services, st
       Array.isArray(event.result?.produced) ? (event.result.produced as unknown[]).filter((path): path is string => typeof path === "string") : [])
       .then(() => undefined, (cause: unknown) => { ctx.log(`area record of ${event.taskId} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return undefined; });
   }, "writer:area-accepted");
-
-  // Throwaway codex home (SMA m_ac_codex_home): the task's last attempt final removes it — whatever the outcome.
-  onAttemptFinished(ctx, async (event) => {
-    if (event.scope !== "task" || !["accepted", "blocked", "canceled"].includes(event.status)) return;
-    const key = event.taskId.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120);
-    await ctx.host.call("removeWorkerHome", { requestedHostId: event.config.hostId, key }, { hostId: event.config.hostId, timeoutMs: 30_000 })
-      .catch((cause: unknown) => { ctx.log(`Lane Pilot: removeWorkerHome for ${event.taskId} failed: ${cause instanceof Error ? cause.message : String(cause)}`); });
-  }, "writer:codex-home-remove");
 }

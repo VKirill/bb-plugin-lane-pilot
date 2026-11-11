@@ -76,7 +76,6 @@ describe("attempt-finished bus", () => {
     expect(attemptFinishedSubscriberNames(startCore as never)).toEqual([
       "stability:task-failed",
       "writer:area-accepted",
-      "writer:codex-home-remove",
       "workflow:after-accept",
     ]);
   });

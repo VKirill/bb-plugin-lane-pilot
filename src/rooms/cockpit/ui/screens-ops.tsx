@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { t } from "@lane-pilot/i18n";
+import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Badge, Button } from "@lane-pilot/ui-kit";
 import { Field, Loaded, Panel, RefreshButton, day, fill, useLoad, type Rpc } from "./kit";
 import { COCKPIT_READS, SCREENS, unusedReads } from "./registry";
@@ -215,10 +215,15 @@ export function SystemScreen({ rpc, projectId }: { rpc: Rpc; projectId: string }
 }
 
 type RuleRow = { key: string; hazard: string; armed: unknown; current: unknown; disarmed: boolean; term: { daysLeft: number } | null };
+type SwitchRow = { key: string; kind: "flag" | "enum"; value: boolean | string };
 
-/** Rules (SMA m_sw_rules): the park policy as written — every protection drawn as a disabled switch with its hazard and current value. Edits stay in the settings tabs. */
+const HAZARD_TEXT: Record<string, I18nKey> = { "plan_critique.mode": "ckHaz_plan_critique_mode", "plan_fact.mode": "ckHaz_plan_fact_mode", "code_critique.mode": "ckHaz_code_critique_mode", "owner.words": "ckHaz_owner_words" };
+const SWITCH_TEXT: Record<string, I18nKey> = { conveyor: "ckSw_conveyor", "protection.rearm": "ckSw_protection_rearm", "writer.fallback_on_provider_failure": "ckSw_writer_fallback" };
+const FALLBACK_TEXT: Record<string, I18nKey> = { immediate: "ckFallback_immediate", after_retry: "ckFallback_after_retry" };
+
+/** Rules (SMA m_sw_rules): the park policy as written — every protection with its hazard and the value in force (the default when unset); a flag is a disabled switch, an enum its value. Edits stay in the settings tabs. */
 export function RulesScreen({ rpc, projectId }: { rpc: Rpc; projectId: string }) {
-  const data = useLoad(() => rpc.call("cockpit_rules", { projectId }) as Promise<{ rules: RuleRow[]; switches: Record<string, unknown> }>, [projectId]);
+  const data = useLoad(() => rpc.call("cockpit_rules", { projectId }) as Promise<{ rules: RuleRow[]; switches: SwitchRow[] }>, [projectId]);
   return (
     <div className="space-y-4">
       <Panel title={t("ckScreen_rules")} testId="ck-rules" actions={<RefreshButton onClick={data.reload} />}>
@@ -228,14 +233,18 @@ export function RulesScreen({ rpc, projectId }: { rpc: Rpc; projectId: string })
             <li key={rule.key} className="flex items-center gap-3 rounded-md border border-border p-2" data-testid={`ck-rule-${rule.key}`}>
               <input type="checkbox" disabled checked={!rule.disarmed} aria-label={rule.key} className="shrink-0" />
               <span className="min-w-0"><span className="font-medium">{rule.key}</span>
-                <span className="block text-xs text-muted-foreground">{t("ckRuleHazard")}: {rule.hazard} · {t("ckRuleCurrent")}: {JSON.stringify(rule.current)}{rule.term ? ` · ${t("ckRuleUntil")} ${rule.term.daysLeft}d` : ""}</span></span>
+                <span className="block text-xs text-muted-foreground">{t("ckRuleHazard")}: {HAZARD_TEXT[rule.key] ? t(HAZARD_TEXT[rule.key]!) : rule.hazard} · {t("ckRuleCurrent")}: {String(rule.current)}{rule.term ? ` · ${t("ckRuleUntil")} ${rule.term.daysLeft} ${t("ckDaysShort")}` : ""}</span></span>
             </li>))}</ul>
         )}</Loaded>
       </Panel>
       <Panel title={t("ckSwitches")} testId="ck-rule-switches">
         <Loaded state={data}>{(result) => (
-          <ul className="space-y-2 text-sm">{Object.entries(result.switches).map(([key, value]) => (
-            <li key={key} className="flex items-center gap-3"><input type="checkbox" disabled checked={value !== null && value !== false && value !== "off"} aria-label={key} className="shrink-0" /><span className="min-w-0"><span className="font-medium">{key}</span><span className="block text-xs text-muted-foreground">{JSON.stringify(value)}</span></span></li>
+          <ul className="space-y-2 text-sm">{result.switches.map((row) => (
+            <li key={row.key} className="flex items-center gap-3" data-testid={`ck-switch-${row.key}`}>
+              {row.kind === "flag" ? <input type="checkbox" disabled checked={row.value === true} aria-label={row.key} className="shrink-0" /> : null}
+              <span className="min-w-0"><span className="font-medium">{SWITCH_TEXT[row.key] ? t(SWITCH_TEXT[row.key]!) : row.key}</span>
+                <span className="block text-xs text-muted-foreground">{row.kind === "flag" ? t(row.value === true ? "ckOn" : "ckOff") : FALLBACK_TEXT[String(row.value)] ? t(FALLBACK_TEXT[String(row.value)]!) : String(row.value)}</span></span>
+            </li>
           ))}</ul>
         )}</Loaded>
       </Panel>

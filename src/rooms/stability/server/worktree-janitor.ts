@@ -1,4 +1,4 @@
-import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
+import { GLOBAL_SETTINGS_PROJECT_ID, SETTING_WORKER_STRICT_USER } from "@lane-pilot/settings-catalog";
 import { attemptWorkspacePaths, finalTaskIdsSince, listOpenWorktrees, loadProjectSettings, recordJanitorSweep, registerWorktree, releaseWorktreeById, writerBaseForWorkspace } from "../../storage";
 import { STICKY_WINDOW_MS, listQaHosts, scheduleIsolated } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
@@ -7,7 +7,10 @@ import { OPEN_ATTEMPT_STATES, RETRY_ELIGIBLE, isOpenAttemptState } from "../../c
 import { DOCS_WORKTREE_PREFIX, docsWorktreeKey, REGRESS_MARKER_TTL_MS, REGRESS_WORKTREE_PREFIX, regressWorktreeKey, regressWorktreePath, SELF_REPAIR_STATE_KEY, selfRepairWorktrees } from "../../contracts";
 import { bestEffort } from "@lane-pilot/kit";
 import { recordEvidence } from "../../storage";
-import { disarmedProjects, rearmExpiredDisarms } from "../../policy";
+import { disarmedProjects, rearmExpiredDisarms, reportStaleDisarms } from "../../policy";
+
+/** When the re-arm pass first ran on this install: a disarm whose term ended before it is listed, not rewritten. */
+export const REARM_SINCE_KEY = "lp.protection.rearm-since";
 
 /**
  * The hourly safety net over ~/.lane-pilot/worktrees on every connected machine (WT1, 2026-10-30): copies of docs,
@@ -73,14 +76,32 @@ export async function runWorktreeJanitor(ctx: Pick<ServerCore, "bb" | "db" | "lo
   const snapshot = async (hostId: string, worktreePath: string, name: string) =>
     (await ctx.host.call("gitWorktreeSnapshot", { requestedHostId: hostId, worktreePath, name }, { hostId, timeoutMs: 120_000 })) as { status: "clean" | "saved" | "missing" | "failed"; path: string | null; reason: string | null };
   const envSwept = await bestEffort(ctx.log, "attempt environment sweep", cleanupFinishedAttemptEnvironments(bb, db, snapshot, now, signal), [] as string[]);
-  // A protection switched off without renewal re-arms to warning when its term ends (SMA k_lib_stpa) — on by default and for
-  // every project with a disarm row, not only the hub's; protection.rearm=off keeps a disarm off (the owner asked for always-off).
-  const rearmed = loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)["protection.rearm"] === "off" ? []
-    : disarmedProjects(db).flatMap((projectId) => rearmExpiredDisarms(db, projectId, now).map((key) => `${projectId}:${key}`));
-  for (const key of rearmed) ctx.log(`Lane Pilot: protection ${key} re-armed to warning after its disarm term`);
-  // Throwaway codex homes of tasks already final (SMA m_ac_codex_home): the attempt-finished removal covers the live
-  // path; this sweeps homes a crash or a restart left behind. Keys derive like helper-bb-shim's workerHome.
-  const codexKeys = finalTaskIdsSince(db, now - 30 * 86_400_000).map((taskId) => taskId.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120));
+  // A protection switched off without renewal comes back when its term ends (SMA k_lib_stpa): on unless protection.rearm=off, for every
+  // project with a disarm row. Disarms already expired when this pass first ran (marker in kv) are not rewritten: one owner item lists them.
+  // Each project is its own try: one bad row never stops the pass or the host sweeps after it.
+  const sinceRaw = await bb.storage.kv.get(REARM_SINCE_KEY).catch(() => null);
+  const since = typeof sinceRaw === "number" ? sinceRaw : now;
+  if (typeof sinceRaw !== "number") await bb.storage.kv.set(REARM_SINCE_KEY, now as never).catch((cause: unknown) => ctx.log(`Lane Pilot: protection re-arm marker not stored: ${cause instanceof Error ? cause.message : String(cause)}`));
+  const rearmed: string[] = [];
+  const projectsToCheck = (): string[] => { try { return loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)["protection.rearm"] === "off" ? [] : disarmedProjects(db); } catch (cause) { ctx.log(`Lane Pilot: protection re-arm could not list projects: ${cause instanceof Error ? cause.message : String(cause)}`); return []; } };
+  for (const projectId of projectsToCheck()) {
+    try {
+      for (const key of rearmExpiredDisarms(db, projectId, now, since)) rearmed.push(`${projectId}:${key}`);
+      reportStaleDisarms(db, projectId, since, now);
+    } catch (cause) { ctx.log(`Lane Pilot: protection re-arm of project ${projectId} failed: ${cause instanceof Error ? cause.message : String(cause)}`); }
+  }
+  for (const key of rearmed) ctx.log(`Lane Pilot: protection ${key} re-armed after its disarm term`);
+  // Throwaway codex homes (SMA m_ac_codex_home) exist only where worker.strict_user is on, so a project without it costs no host call.
+  // Only this sweep removes them: a task whose newest attempt is final and quiet for an hour, with no open attempt. The writer's own
+  // thread may be resumed after any stop (a question to the PM, a feedback turn), so the end of an attempt removes nothing.
+  const strictProjects = new Map<string, boolean>();
+  let codexKeys: string[] = [];
+  try {
+    codexKeys = finalTaskIdsSince(db, now - 30 * 86_400_000, 300, now).flatMap((task) => {
+      if (!strictProjects.has(task.projectId)) strictProjects.set(task.projectId, String(loadProjectSettings(db, task.projectId)[SETTING_WORKER_STRICT_USER] ?? "off") === "on");
+      return strictProjects.get(task.projectId) ? task.keys : [];
+    });
+  } catch (cause) { ctx.log(`Lane Pilot janitor: codex home selection failed: ${cause instanceof Error ? cause.message : String(cause)}`); }
   const hosts = await listQaHosts(bb);
   let removed = 0, freedBytes = 0, kept = 0;
   for (const machine of hosts.filter((row) => row.connected)) {
@@ -94,6 +115,7 @@ export async function runWorktreeJanitor(ctx: Pick<ServerCore, "bb" | "db" | "lo
     recordJanitorSweep(db, { at: now, host: machine.id, removed: out.removed?.length ?? 0, freedBytes: Math.round(out.freedBytes ?? 0), tmpRemoved: out.tmpRemoved?.length ?? 0, tmpFreedBytes: Math.round(out.tmpFreedBytes ?? 0), keptJson: JSON.stringify(keptRows.slice(0, 50).map((row) => `${row.path} (${row.reason})`)) });
     if (keptRows.length) ctx.log(`Lane Pilot janitor kept ${keptRows.length} worktree(s) on ${machine.name ?? machine.id}: ${keptRows.map((row) => `${row.path} (${row.reason})`).join(", ").slice(0, 400)}`);
     for (const key of codexKeys) {
+      if (ctx.isDisposed()) break;
       const gone = await ctx.host.call("removeWorkerHome", { requestedHostId: machine.id, key }, { hostId: machine.id, timeoutMs: 30_000 }).catch(() => null) as { removed?: boolean } | null;
       if (gone?.removed) removed += 1;
     }

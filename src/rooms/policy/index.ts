@@ -9,5 +9,5 @@ export type { DecisionDraft, DecisionJudge, MinedMessage } from "./mine";
 export { composeMorningList } from "./morning";
 export { POLICY, TIERS, classifyChange, explainChange, globMatch } from "./policy";
 export type { ChangeDescriptor, Tier } from "./policy";
-export { integrityReport, rearmExpiredDisarms, renewDisarm } from "./protections";
+export { integrityReport, rearmExpiredDisarms, reportStaleDisarms, renewDisarm } from "./protections";
 export { disarmedProjects } from "../storage";
