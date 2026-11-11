@@ -100,7 +100,7 @@ print(json.dumps({"sent": len(sent), "problems": out["problems"]}))
   });
 });
 
-describe("[sma:m_sd_approve] the press is tied to the drill's own run, and happens only where LP_DRILL_LIVE_PRESS=1", () => {
+describe("[sma:m_sd_approve] the press is tied to the drill's own run, and happens only where a window is named or LP_DRILL_LIVE_PRESS=1", () => {
   const scenario = (live: boolean) => drillPy(`
 import os, tempfile, pathlib
 if ${live ? "True" : "False"}: os.environ["LP_DRILL_LIVE_PRESS"] = "1"

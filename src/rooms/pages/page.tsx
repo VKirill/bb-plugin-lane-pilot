@@ -63,7 +63,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                   {railShown ? t("scopeNavHide") : `☰ ${t("scopeNavShow")}`}
                 </Button>
               ) : null}
-              {activeScope === "workflows" ? <WorkflowsScreen locale={locale} projectId={null} architectProjectId={selectedProjectId ?? routeProjectId ?? (subPath || null)} /> : null}
+              {activeScope === "workflows" ? <WorkflowsScreen locale={locale} projectId={null} architectProjectId={selectedProjectId ?? routeProjectId ?? (page.subPath || null)} /> : null}
               {activeScope === "schedule" ? <ScheduleBoard projectId={null} projects={projects} locale={locale} /> : null}
               {activeScope === "tasks" ? <TaskBoard projects={projects} serviceProjectIds={page.projectGroups.service.map((project) => project.id)} initialProjectId={selectedProjectId ?? null} locale={locale} AcceptanceCard={AcceptanceCard} /> : null}
               {activeScope === "waiting" ? <OwnerWaitingBoard projects={projects} /> : null}

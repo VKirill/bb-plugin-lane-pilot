@@ -6,7 +6,9 @@
 #   systemd says activating               -> still loading, wait
 #   no MainPID                            -> no record: a stop; systemd lifts it itself, wait
 #   same process as our last lift, young  -> false alarm, wait
-#   8 silent knocks in a row (as on main; LP_WATCH_REFUSED_AFTER may shorten the count of refused ones) -> outage: «it fell» to Telegram,
+#   8 silent knocks in a row -> outage; a process that has already answered 200 and now refuses is declared after 3 refused knocks
+#                                            in a row (LP_WATCH_REFUSED_AFTER overrides that count; a process that has not answered
+#                                            yet keeps the 8) -> «it fell» to Telegram,
 #                                            kill the hung one first, start the lift, backoff counted from the log (30, 60, 120 s), at most
 #                                            3 lifts; out of tries -> «lift failed», to the person
 # The HTTP 200 of the version request alone says «the hub answers» (outage count, lift). When a bb is here the window's own board request
@@ -41,7 +43,7 @@ DOOR_PORT="${DOOR#*://}"; DOOR_PORT="${DOOR_PORT%%/*}"; DOOR_PORT="${DOOR_PORT##
 if [ -z "$DOOR_PORT" ] || [ -n "${DOOR_PORT//[0-9]/}" ]; then case "$DOOR" in https:*) DOOR_PORT=443 ;; *) DOOR_PORT=80 ;; esac; fi
 KNOCK_SEC="${LP_WATCH_KNOCK_SEC:-15}"
 SUSPECT_AFTER="${LP_WATCH_SUSPECT_AFTER:-8}"
-REFUSED_AFTER="${LP_WATCH_REFUSED_AFTER:-8}"
+REFUSED_AFTER="${LP_WATCH_REFUSED_AFTER:-3}"  # refused knocks declare at 3, but only for the process that has answered 200 (its pid is in the seen-200 marker); any other process keeps the 8-knock rule, so a slow start is never lifted
 FIRST_SEC="${LP_WATCH_FIRST_SEC:-0}"  # main looks at once; a longer blind start is a setting
 STOP_SEC="${LP_WATCH_STOP_SEC:-}"       # empty: the unit's own TimeoutStopUSec, 90 s when unreadable
 RESTART_SETTLE_SEC="${LP_WATCH_RESTART_SETTLE_SEC:-10}"
@@ -392,6 +394,10 @@ run() {
     rotate >/dev/null
     probe="$(door_probe)"
     if [ "$probe" = "ok" ]; then
+      # which process answered: refused knocks count on the shorter line only for this very process. A new one (a deploy, a restart)
+      # refuses while it loads and has not answered yet, so it keeps the 8-knock rule and is never lifted on a slow start.
+      pid="$(main_pid)"
+      [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$(cat "$STATE_DIR/hub-watchdog.seen-200" 2>/dev/null)" != "$pid" ] && echo "$pid" > "$STATE_DIR/hub-watchdog.seen-200"
       if [ "$down_since" -gt 0 ]; then
         local minutes=$(( ($(date +%s) - down_since + 59) / 60 ))
         if [ -n "$silent_pid" ] && [ "$(main_pid)" = "$silent_pid" ]; then
@@ -421,7 +427,7 @@ run() {
         silent=$((silent + 1))
         if [ "$probe" = "refused" ]; then refused_run=$((refused_run + 1)); else refused_run=0; fi
       fi
-      if [ "$silent" -ge "$SUSPECT_AFTER" ] || { [ "$probe" = "refused" ] && [ "$refused_run" -ge "$REFUSED_AFTER" ]; }; then
+      if [ "$silent" -ge "$SUSPECT_AFTER" ] || { [ "$probe" = "refused" ] && [ "$refused_run" -ge "$REFUSED_AFTER" ] && [ "$(cat "$STATE_DIR/hub-watchdog.seen-200" 2>/dev/null)" = "$pid" ]; }; then
         local count="$silent" kind="timeout"; [ "$probe" = "refused" ] && kind="refused"
         [ "$down_since" -eq 0 ] && rm -f "$STATE_DIR/hub-watchdog.out-tries-said" # a new outage gets its own «lift failed» word
         down_since=$(( $(date +%s) - count * KNOCK_SEC ))

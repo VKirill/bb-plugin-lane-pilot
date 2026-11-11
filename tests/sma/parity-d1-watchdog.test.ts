@@ -395,7 +395,7 @@ describe("hub watchdog parity D1", () => {
     expect(other.tg).toContain("поднялся");
   }, 30000);
 
-  it("[sma:m_w_suspect] main's count is the default: eight silent knocks in a row of any kind declare an outage, seven do not; a shorter count of refused ones is a setting only", async () => {
+  it("[sma:m_w_suspect] eight silent knocks in a row of any kind declare an outage, seven do not; refused ones declare at three once the door has answered 200, another count only by setting", async () => {
     const outageWithin = async (extra: Record<string, string>, seconds: number, curl = CURL_STUB) => {
       const { dir, env } = tmp();
       stub(dir, "curl", curl);
@@ -405,7 +405,7 @@ describe("hub watchdog parity D1", () => {
       proc.kill("SIGTERM");
       return read(join(dir, "outages.jsonl"));
     };
-    expect(functions('echo "$REFUSED_AFTER $SUSPECT_AFTER $FIRST_SEC"', tmp().env).trim()).toBe("8 8 0");
+    expect(functions('echo "$REFUSED_AFTER $SUSPECT_AFTER $FIRST_SEC"', tmp().env).trim()).toBe("3 8 0");
     // seven refused knocks, then the door answers: no outage (a count of three would have declared it)
     const seven = await outageWithin({ CURL_AFTER: "7", CURL_RC: "7" }, 11);
     expect(seven).not.toContain('"event":"outage"');
@@ -415,8 +415,12 @@ describe("hub watchdog parity D1", () => {
     const eight = await outageWithin({ CURL_AFTER: "999999", CURL_RC: "7" }, 11);
     expect(eight).toContain('"event":"outage"');
     expect(eight).toContain("refused");
-    // the shorter count is a setting
-    const short = await outageWithin({ CURL_AFTER: "999999", CURL_RC: "7", LP_WATCH_REFUSED_AFTER: "3" }, 5);
+    // refused knocks declare at three, but only once the door has answered 200 (the seen-200 marker): before it the eight-knock rule stands
+    const seenThenRefused = `n=0; [ -f "$CURL_STATE" ] && n=$(cat "$CURL_STATE"); echo $((n+1)) > "$CURL_STATE"; if [ "$n" -lt 1 ]; then echo 200; exit 0; fi; echo 000; exit 7`;
+    const fast = await outageWithin({}, 6, seenThenRefused);
+    expect(fast).toContain('"event":"outage"');
+    // a longer count is a setting
+    const short = await outageWithin({ LP_WATCH_REFUSED_AFTER: "2" }, 5, seenThenRefused);
     expect(short).toContain('"event":"outage"');
     // eight timeouts
     const timeouts = await outageWithin({ CURL_AFTER: "999999", CURL_RC: "28" }, 11);

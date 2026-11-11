@@ -1,6 +1,6 @@
 import { settingOff, settingOn, switchOn } from "@lane-pilot/models";
 import { loadProjectSettings } from "../storage";
-import { tokenDailyRowsSince, unmeasuredAttempts } from "../usage/server";
+import { measuredAttemptTokens, medianTokens, tokenDailyRowsSince, unmeasuredAttempts } from "../usage/server";
 import type { ServerCore } from "../contracts/server";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { capOf, isPaid, moneyCapFrom, moneyHold, priceOf, spendBook, type DailyRow, type Price } from "./logic";
@@ -12,16 +12,17 @@ export function createMoney(ctx: Pick<ServerCore, "db" | "bb">) {
   const overrides = (): Record<string, Record<string, Price>> => { try { const raw = settings()["money.prices"]; return raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) as Record<string, Record<string, Price>> : {}; } catch { return {}; } };
   /**
    * The estimate of the attempts a paid provider never reported usage for (SMA «Estimate when the vendor is silent»):
-   * each counts its task appetite in tokens, else money.silent_estimate_tokens, priced at the lane's list price, blended
-   * input/output — nobody knows the real split. The estimate is opt-in: it runs only while money.silent_estimate_tokens
-   * is set (unset keeps today's book of reported rows only). It counts toward the cap through monthUsd.
+   * each counts its task appetite in tokens, else money.silent_estimate_tokens, else the median token count of the last
+   * 20 finished attempts of the same provider and model that did report usage (fewer than 5 such attempts: no estimate,
+   * the spend stays unknown, never zero by silence), priced at the lane's list price, blended input/output — nobody
+   * knows the real split. It counts toward the cap through monthUsd, and only while a cap is set does it hold anything.
    */
-  function estimatedUsd(now: number): number {
+  function estimatedUsd(now: number): { usd: number; estimatedAttempts: number; silentAttempts: number } {
     const fallback = capOf(settings()["money.silent_estimate_tokens"]);
-    if (!fallback || !Number.isFinite(fallback)) return 0;
     const priceOverrides = overrides();
     const sinceMs = Date.parse(`${new Date(now).toISOString().slice(0, 7)}-01T00:00:00Z`);
-    let usd = 0;
+    let lanes: Map<string, number[]> | null = null;
+    let usd = 0, estimatedAttempts = 0, silentAttempts = 0;
     // One thread is one session however many attempts reused it: it is priced once.
     const seen = new Set<string>();
     for (const attempt of unmeasuredAttempts(ctx.db, { sinceMs })) {
@@ -30,18 +31,30 @@ export function createMoney(ctx: Pick<ServerCore, "db" | "bb">) {
       if (!attempt.providerId || !isPaid(attempt.providerId)) continue;
       const price = priceOf(attempt.providerId, attempt.model ?? "", priceOverrides);
       if (!price) continue;
-      usd += (attempt.appetiteTokens ?? fallback) * (price.inputPerM + price.outputPerM) / 2 / 1_000_000;
+      silentAttempts += 1;
+      let tokens = attempt.appetiteTokens ?? fallback;
+      if (!tokens || !Number.isFinite(tokens)) {
+        lanes ??= measuredAttemptTokens(ctx.db, { sinceMs: now - 90 * 86_400_000, limit: 20 }); // a bounded read: the last 20 of a lane are not older than a quarter
+        tokens = medianTokens(lanes.get(`${attempt.providerId}${attempt.model ?? ""}`) ?? []) ?? null;
+      }
+      if (!tokens) continue;
+      estimatedAttempts += 1;
+      usd += tokens * (price.inputPerM + price.outputPerM) / 2 / 1_000_000;
     }
-    return Math.round(usd * 100) / 100;
+    return { usd: Math.round(usd * 100) / 100, estimatedAttempts, silentAttempts };
   }
   function status(now = Date.now()) {
     const book = spendBook(rows(), now, overrides());
-    const estimated = estimatedUsd(now);
+    const estimate = estimatedUsd(now);
+    const estimated = estimate.usd;
     const cap = moneyCapFrom(settings());
     const monthUsd = Math.round((book.monthUsd + estimated) * 100) / 100;
     // `unlimited` is no cap on purpose: it reads as «no cap» to the window (Infinity does not survive JSON), and is named apart.
     const limit = cap !== null && Number.isFinite(cap) ? cap : null;
-    return { ...book, monthUsd, estimated, estimatedUsd: estimated, cap: limit, capSet: limit !== null, unlimited: cap === Infinity, left: limit === null ? null : Math.max(0, Math.round((limit - monthUsd) * 100) / 100) };
+    return { ...book, monthUsd, estimated, estimatedUsd: estimated, estimatedAttempts: estimate.estimatedAttempts,
+      // A silent attempt with too little lane history is `unknown`: it is not summed and not zero.
+      silentAttempts: estimate.silentAttempts, silentUnknown: estimate.silentAttempts - estimate.estimatedAttempts,
+      cap: limit, capSet: limit !== null, unlimited: cap === Infinity, left: limit === null ? null : Math.max(0, Math.round((limit - monthUsd) * 100) / 100) };
   }
   /**
    * Per-task ceiling (SMA m_mo_task_ceiling), only where money.task_ceiling is on: the task is priced at its appetite in output

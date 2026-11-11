@@ -97,7 +97,8 @@ describe("parity d8: providers and money", () => {
     expect(silent[0]!.appetiteTokens).toBe(1_000_000);
 
     const money = createMoney({ db: w.db, bb: w.bb }).money;
-    expect(money.status(NOW).estimatedUsd).toBe(0);
+    // The estimate is on without a setting: the task's appetite prices the silent attempt (1M openlux blended = $1).
+    expect(money.status(NOW).estimatedUsd).toBeGreaterThan(0);
     saveProjectSetting(w.db, "*", "money.silent_estimate_tokens", 200_000);
     const status = money.status(NOW);
     expect(status.estimated).toBeGreaterThan(0);

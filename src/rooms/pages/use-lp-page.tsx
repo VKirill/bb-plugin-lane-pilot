@@ -41,8 +41,10 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
   // The plugin's own page (no project in the route, no project link) opens on «General settings», not on the last project (owner's word 2026-11-01).
   const [activeScope, setActiveScope] = useState(scope === "projects" && !subPath && !routeProjectId ? "globals" : scope);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  // The address may carry a tab after the project id (`<project>/<tab>`; «access» is the team's old name), so a link can open a tab of a project.
+  const [routeProject, routeTab] = (() => { const [head, rest] = subPath.replace(/^\/+/, "").split("/", 2); return [head || null, rest || null]; })();
   // «Общие настройки» edit the global level every project inherits, with the same panel as a project.
-  const projectId = activeScope === "globals" ? GLOBAL_SETTINGS_PROJECT_ID : selectedProjectId ?? routeProjectId ?? (subPath || null);
+  const projectId = activeScope === "globals" ? GLOBAL_SETTINGS_PROJECT_ID : selectedProjectId ?? routeProjectId ?? routeProject;
   const isGlobal = projectId === GLOBAL_SETTINGS_PROJECT_ID;
   // The project screen (get_screen and everything it feeds) is what «Projects» and «General settings» show; «Agents», «Tokens» and «Workflows» keep it hidden and must not pay for it.
   const projectScreenActive = activeScope === "projects" || activeScope === "globals";
@@ -65,9 +67,11 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectListError, setProjectListError] = useState(false);
   const providers = useProviders();
-  const [tab, setTab] = useState<TabId>("overview");
+  const routeTarget = resolveTab(routeTab ?? "");
+  const [tab, setTab] = useState<TabId>(routeTarget.tab);
   // The part of a segmented tab that is open (the tabs that have segments: knowledge, automation, runs).
-  const [segments, setSegments] = useState<Record<string, string>>({ knowledge: "memory", automation: "workflows", runs: "board" });
+  const [segments, setSegments] = useState<Record<string, string>>({ knowledge: "memory", automation: "workflows", runs: "board",
+    ...(routeTarget.segment && routeTarget.tab in SEGMENTS ? { [routeTarget.tab]: routeTarget.segment } : {}) });
   const segmentOf = (id: SegmentedTab) => segments[id] ?? SEGMENTS[id][0];
   const setSegment = (id: SegmentedTab, next: string) => setSegments((current) => ({ ...current, [id]: next }));
   /** Opens a tab, and a part of it. Ids of the old ten tabs work too. */
@@ -123,7 +127,7 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
       if (current) {
         setProjects(userVisibleProjects(result.projects));
         setProjectsLoaded(true);
-        if (!routeProjectId && !subPath) {
+        if (!routeProjectId && !routeProject) {
           const visible = userVisibleProjects(result.projects);
           const preferred = visible.find((project) => project.id === result.lastProjectId)?.id ?? visible[0]?.id ?? null;
           if (preferred) setSelectedProjectId((current) => current ?? preferred);
@@ -131,7 +135,7 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
       }
     }).catch(() => { if (current) setProjectListError(true); });
     return () => { current = false; };
-  }, [routeProjectId, subPath, rpc]);
+  }, [routeProjectId, routeProject, rpc]);
 
   useEffect(() => {
     let current = true;
@@ -676,7 +680,7 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
   })();
 
   return {
-    pickers, saveSelection, subPath,
+    pickers, saveSelection, subPath: routeProject,
     activeScope, setActiveScope, rpc, routeProjectId, routeThreadId, selectedProjectId,
     setSelectedProjectId, projectId, isGlobal, projectScreenActive, selectedSectionId, setSelectedSectionId,
     routingStats, setRoutingStats, councilDefaults, setCouncilDefaults, councilSeatsTouched, fallbackTouched,
