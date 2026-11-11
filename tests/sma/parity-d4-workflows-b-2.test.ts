@@ -229,7 +229,11 @@ describe("parity d4 workflows b-2", () => {
     expect(summary.status).toBe("waiting");
     expect(executed(t, summary.runId)).toEqual(["tree", "probe", "value_map", "preview", "profile_write"]);
     expect(calls.map((c) => c.node)).toEqual(["value_map", "preview"]);
-    expect(t.writes).toHaveLength(0);
+    // The fresh start seeds the instruction forms (SMA k_d_tpl_instructions) and nothing else, each write create-only:
+    // a null hash, which BB answers with a conflict over a file that already exists.
+    const seeded = t.writes as Array<{ path: string; expectedSha256?: string | null }>;
+    expect(seeded.map((w) => w.path.slice(t.checkout.length + 1)).sort()).toEqual([".agents/planning/PROJECT.md", ".github/copilot-instructions.md", "CLAUDE.md"]);
+    expect(seeded.every((w) => w.expectedSha256 === null)).toBe(true);
   });
 
   it("[sma:k_c_newproject] with project.start_research on the start researches, writes requirements and the roadmap in one flow; quick mode has neither research nor requirements; the person is asked when there is no profile", async () => {

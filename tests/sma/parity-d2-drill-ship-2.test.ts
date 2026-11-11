@@ -8,6 +8,8 @@ import { describe, expect, it } from "vitest";
 import { kitOfTrees, parseSceneArgs, serveTree, treeAddress, treeBuildError } from "../../scripts/lib/ui-scene.mjs";
 
 const ROOT = join(__dirname, "..", "..");
+// The staged runs are judged with no browser to launch, whatever this machine has installed: Playwright looks in a folder that does not exist.
+const NO_BROWSER = { ...process.env, PLAYWRIGHT_BROWSERS_PATH: join(tmpdir(), "lp-no-browser-here") };
 
 /** A fixture tree: dist/app.js newer than the sources, unless asked otherwise. */
 function makeTree(withBundle = true, stale = false): string {
@@ -76,8 +78,8 @@ describe("[sma:k_v_uistage] --stage raises this tree's built window on its own p
     writeFileSync(scene, JSON.stringify({ url: "http://127.0.0.1:1/", steps: [] }));
     const address = treeAddress(tree);
     try {
-      // No chromium is installed on this machine: the run still opens the staged port, then exits 2 by the exit law.
-      const child = spawn("node", [join(ROOT, "scripts", "lp-ui-drive.mjs"), "--stage", "--tree", tree, scene], { cwd: ROOT });
+      // With no browser to launch the run still opens the staged port, then exits 2 by the exit law.
+      const child = spawn("node", [join(ROOT, "scripts", "lp-ui-drive.mjs"), "--stage", "--tree", tree, scene], { cwd: ROOT, env: NO_BROWSER });
       let served = false, out = "";
       child.stdout.on("data", (chunk) => { out += chunk; });
       child.stderr.on("data", (chunk) => { out += chunk; });
@@ -640,7 +642,7 @@ describe("[sma:k_v_uistage] the staged server refuses what leaves its tree and s
     writeFileSync(scene, JSON.stringify({ url: "http://127.0.0.1:1/", steps: [] }));
     try {
       let out = "";
-      const child = spawn("node", [join(ROOT, "scripts", "lp-ui-drive.mjs"), "--stage", "--trees", `${one},${two}`, scene], { cwd: ROOT });
+      const child = spawn("node", [join(ROOT, "scripts", "lp-ui-drive.mjs"), "--stage", "--trees", `${one},${two}`, scene], { cwd: ROOT, env: NO_BROWSER });
       child.stdout.on("data", (chunk) => { out += chunk; });
       child.stderr.on("data", (chunk) => { out += chunk; });
       const code = await new Promise<number>((ok) => child.on("exit", (c) => ok(c ?? 2)));
