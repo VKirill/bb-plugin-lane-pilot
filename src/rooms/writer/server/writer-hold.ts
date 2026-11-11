@@ -1,5 +1,5 @@
 import { breakerKey } from "@lane-pilot/resilience";
-import { settingOn } from "@lane-pilot/models";
+import { settingOn, writerSwitchedOff } from "@lane-pilot/models";
 import { bestEffort, BestEffortLog} from "@lane-pilot/kit";
 import { PRESENCE_WINDOW_MS } from "../../owner-presence";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
@@ -31,6 +31,8 @@ export type WriterCandidate = { providerId: string; model: string; reasoningLeve
 
 /** Holds a usage window without a named reset only this long before the chain is asked again. */
 const USAGE_UNKNOWN_RESET_MS = 15 * 60_000;
+/** A member the owner switched off (writer.models_off) is asked again after this long: clearing the list lets a parked task start by itself. */
+const OFF_RECHECK_MS = 15 * 60_000;
 /** A breaker opened but no reset was named: half-open is tried after the cool-down (breaker.ts default 5 min). */
 const BREAKER_RECHECK_MS = 5 * 60_000;
 
@@ -45,6 +47,10 @@ export async function writerHold(
 ): Promise<WriterHold | null> {
   try {
   if (!input.providerId) return null;
+  // The worker toggle (SMA m_hs_toggle): an entry of writer.models_off (profile key, provider/model or model id) holds that member wherever the
+  // chain would launch it. It is the owner's switch, not a provider fault: it carries a recheck time (the list may be cleared) and never reads as core_unsupported.
+  const off = writerSwitchedOff(input.settings, input.providerId, input.model);
+  if (off) return { reason: `writer_provider_unavailable:writer_off:${off}`, until: now + OFF_RECHECK_MS };
   // The breaker is asked through its read-only snapshot: `decide` would spend the half-open trial another caller's
   // spawn may need. An open pair frees at its reopen time; a snapshot gives openedAt, so +5 min is the recheck.
   const open = deps.breaker.snapshot(now).find((row) => row.key === breakerKey(input.providerId, input.model) && row.state === "open");
@@ -90,6 +96,10 @@ export type ChainWalk<T extends WriterCandidate = WriterCandidate> = {
   shortest: { member: T; hold: WriterHold } | undefined;
   /** The earliest time a member frees; null only when allUnsupported. */
   wakeAt: number | null;
+  /** Every member is switched off by writer.models_off: the owner's own list parks the task, it is not an unsupported provider. */
+  allOff: boolean;
+  /** The entries of writer.models_off that switched the held members off. */
+  off: string[];
   /** The per-member holds, for receipts and the «which provider to change» item. */
   holds: Array<{ member: T; hold: WriterHold }>;
 };
@@ -126,7 +136,10 @@ export async function walkWriterChain<T extends WriterCandidate>(
     if (b.hold.until === null) return -1;
     return a.hold.until - b.hold.until;
   })[0];
+  const offHolds = holds.filter((row) => /^writer_provider_unavailable:writer_off:/.test(row.hold.reason));
   return { free,
+    allOff: !free && members.length > 0 && offHolds.length === members.length,
+    off: [...new Set(offHolds.map((row) => row.hold.reason.replace(/^writer_provider_unavailable:writer_off:/, "")))],
     allUnsupported: !free && holds.length > 0 && holds.every((row) => row.hold.until === null),
     shortest, wakeAt: timed.length ? Math.min(...timed) : null, holds };
 }
@@ -155,6 +168,8 @@ export function waitingWriterText(hold: WriterHold, wakeAt: number | null, now =
       ? `лимит ${providerDisplayName(/usage_window:([^/\s:]+)/.exec(reason)?.[1] ?? "?")} почти исчерпан`
       : reason.includes("breaker_open")
         ? `провайдер ${providerDisplayName(/breaker_open:([^/\s:]+)/.exec(reason)?.[1] ?? "?")} временно недоступен после сбоев`
+        : reason.includes("writer_off")
+          ? `писатель ${/writer_off:(\S+)/.exec(reason)?.[1] ?? "?"} выключен владельцем (writer.models_off)`
         : reason.includes("core_unsupported")
           ? `${providerDisplayName(/core_unsupported:([^\s:]+)/.exec(reason)?.[1] ?? "?")} не поддерживается этим ядром`
           : "все писатели заняты";

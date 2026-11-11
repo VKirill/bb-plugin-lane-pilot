@@ -39,7 +39,7 @@ export const UNLISTED_SWITCHES: Readonly<Record<string, readonly [scope: SwitchS
   "writer.qa_stop_after": ["project", "number", "after this many failed QA receipts of a task family the advice is to stop, not to follow up"],
   "writer.lesson_from_accepted": ["project", "on|off", "LESSON: lines of an accepted attempt are filed as lesson proposals"],
   "writer.kind_models": ["project", "json", "a map of task kind to the model pool it may use, e.g. {\"docs\":[\"claude-haiku-5-5\"]}"],
-  "writer.models_off": ["project", "json", "a list of model ids no writer is given"],
+  "writer.models_off": ["project", "json", "a list of writer profile keys, provider/model ids or bare model ids no writer is given (the pick and the fallback chain skip them; all off: the task waits, the owner is told)"],
   // money (hub-wide)
   "money.strict": ["global", "on|off", "a free subscription member of the writer chain is taken before a free paid one that stands earlier"],
   "money.task_ceiling": ["global", "on|off", "with a money cap set, a task whose estimate would pass the cap waits for next month"],
@@ -50,7 +50,7 @@ export const UNLISTED_SWITCHES: Readonly<Record<string, readonly [scope: SwitchS
   // hub-wide jobs
   "curriculum.weekly": ["global", "on|off", "every Monday the hub clusters the week's misses into a ten-line brief (bb lane-pilot curriculum --brief)"],
   "task.outcome_file": ["global", "on|off", "a finished task leaves OUTCOME.md beside its PLAN.md where the task folder still exists"],
-  "protection.rearm": ["global", "on|off", "a protection whose disarm expired is switched back on by the daily pass"],
+  "protection.rearm": ["global", "on|off", "off: a protection whose disarm term ended stays off (unset: the daily pass switches it back on, to the level it had before, and tells the owner)"],
 };
 
 /** The text a person typed for a value, as the readers expect it stored: a number, JSON for a map or list, else the word. */

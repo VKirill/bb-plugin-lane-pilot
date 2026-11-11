@@ -3,3 +3,4 @@ export { attemptMetrics } from "./server/attempt-metrics";
 export type { AttemptMetrics, AttemptMetricsReport, CostState } from "./server/attempt-metrics";
 export { billedFrom, parseBreakdown, tokenBreakdown, tokenDelta, type TokenBreakdown } from "./token-math";
 export { projectTokenTotalsSince } from "./server/token-usage";
+export { usageSegment } from "./statusline-segment";

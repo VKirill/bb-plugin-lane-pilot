@@ -140,6 +140,27 @@ export const prepareWorkerHome: ExperimentalHostRpcHandlers<typeof hostContract>
   return { codexHome, seeded };
 };
 
+/** The throwaway half of the per-task codex home (SMA m_ac_codex_home): confined to ~/.lane-pilot/codex-homes/<key>,
+ * key validated by the contract exactly as prepareWorkerHome's; rm -rf removes the auth.json link, never follows it. */
+export const removeWorkerHome: ExperimentalHostRpcHandlers<typeof hostContract>["removeWorkerHome"] = async (input) => {
+  const { rm, realpath } = await import("node:fs/promises");
+  const { homedir: home } = await import("node:os");
+  const { join: at, resolve, sep } = await import("node:path");
+  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  // The handler is reached by the contract's regex, but it checks the key itself: "." would resolve to the root and remove every home.
+  if (input.key === "" || input.key.startsWith(".") || input.key.includes("/") || input.key.includes("\\")) return { hostId, removed: false };
+  const root = at(home(), ".lane-pilot", "codex-homes");
+  const target = at(root, input.key);
+  const exists = await lstat(target).then(() => true, () => false);
+  if (!exists) return { hostId, removed: false };
+  // Confinement: the real path must stay under codex-homes even if the home itself is a link.
+  const resolvedRoot = await realpath(root).catch(() => resolve(root));
+  const resolvedTarget = await realpath(target).catch(() => resolve(target));
+  if (resolvedTarget === resolvedRoot || !resolvedTarget.startsWith(resolvedRoot + sep)) return { hostId, removed: false };
+  await rm(target, { recursive: true, force: true });
+  return { hostId, removed: true };
+};
+
 /**
  * This machine's address in the private WireGuard network (wg*, utun*, tun*, tailscale*): another machine's browser
  * reaches a dev server here at that address, without a public tunnel.

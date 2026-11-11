@@ -48,6 +48,12 @@ export const machineHostMethods = {
       snapshot:z.object({ at:z.string(), windows:z.array(z.object({ label:z.string(), usedPercent:z.number(), resetsAt:z.string().nullable(), model:z.string().nullable().optional() }).strict()), skipPercent:z.number(), skipSetByHuman:z.boolean() }).strict() }).strict(),
     output: z.object({ hostId:z.string(), written:z.boolean() }).strict(),
   },
+  /** The task's codex home is throwaway (SMA m_ac_codex_home): removed under ~/.lane-pilot/codex-homes/<key> only; rm never follows the auth.json link. */
+  removeWorkerHome: {
+    // No leading dot: "." is the codex-homes root itself and ".." its parent, so the key never names more than one home.
+    input: z.object({ requestedHostId: z.string().min(1), key: z.string().regex(/^[A-Za-z0-9_-][A-Za-z0-9._-]{0,119}$/) }).strict(),
+    output: z.object({ hostId: z.string(), removed: z.boolean() }).strict(),
+  },
   vpnAddress: {
     input: z.object({ requestedHostId:z.string().min(1) }).strict(),
     output: z.object({ hostId:z.string(), address:z.string().nullable(), interface:z.string().nullable() }).strict(),

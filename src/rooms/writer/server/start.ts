@@ -718,7 +718,13 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
        * Returns true when the caller must stop here (the attempt is parked or blocked).
        */
       const parkForWriter = async (forAttemptId:string, walk:ChainWalk):Promise<boolean> => {
-        if (walk.free) return false;
+        // The owner's own list (writer.models_off) emptied the chain: not an unsupported provider. The task waits and re-checks, one owner item says how to clear the list, and a start that succeeds closes it.
+        const offItemKey = `writer-all-off:${input.projectId}`;
+        if (walk.free) { closeOwnerItem(db, offItemKey, "janitor:writer-started"); return false; }
+        if (walk.allOff) postOwnerItem(db, { key:offItemKey, source:"writer", kind:"writer_off", projectId:input.projectId, wake:true,
+          what:`Все писатели проекта ${input.projectId} выключены списком writer.models_off: ${walk.off.join(", ")}`,
+          why:`Задача ${input.taskId} ждёт и сама начнётся, когда список очистят. Очистить: bb lane-pilot setting ${input.projectId} writer.models_off=`,
+          actions:[{ id:"clear", label:"Очистить writer.models_off", cli:`bb lane-pilot setting ${input.projectId} writer.models_off=` }] });
         if (walk.allUnsupported) {
           const reason = walk.shortest?.hold.reason ?? "writer_provider_unavailable:core_unsupported";
           transitionAttempt(db, forAttemptId, "blocked", { reason });
@@ -1060,7 +1066,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             ...writerFallbackChain(primaryPair, writerFallbacks(runSettings), { providerId:freshConfig.pmProviderId, model:freshConfig.pmModel })];
           // A PM reassignment names its writer: it is tried as ordered (its own refusal is the old path).
           const walked = reassigned?.request.selection
-            ? { free:{ member:chainMembers[0]!, index:0 }, allUnsupported:false, shortest:undefined, wakeAt:null, holds:[] } as ChainWalk
+            ? { free:{ member:chainMembers[0]!, index:0 }, allUnsupported:false, allOff:false, off:[], shortest:undefined, wakeAt:null, holds:[] } as ChainWalk
             : await walkWriterChain(chainMembers, { hostId:freshConfig.hostId, settings:runSettings, appetite:{ tokens:(input.task as { appetite?: { tokens?: number } }).appetite?.tokens } }, holdDeps);
           if (await parkForWriter(attemptId, walked)) return "stop";
           const spawnSettings = walked.free && walked.free.index > 0

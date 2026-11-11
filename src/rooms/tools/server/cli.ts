@@ -3,14 +3,14 @@ import { dirname, join } from "node:path";
 import { listReviewedObservations } from "../../learning";
 import { prototypeConfigSchema, taskV2Schema } from "../../contracts";
 import { taskBaselineEntries } from "../../baseline";
-import { attemptStateCounts, failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, markCancelCode, saveProjectSetting, savePrototypeConfig, transitionAttempt, failedTasksAllProjects, listNearMissReceipts } from "../../storage";
+import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, PROTECTIONS, loadPrototypeConfig, markCancelCode, saveProjectSetting, savePrototypeConfig, transitionAttempt, failedTasksAllProjects, listNearMissReceipts, attemptStateCounts } from "../../storage";
 import { outsideWorkSummary } from "../../owner-presence";
 import { cancelAttemptById, finishRunSafely, pauseRun } from "../../runs/server";
 import { conveyorState, renderTimeline, setConveyor, taskTimeline, unknownReasons } from "../../runs";
 import { TASK_RECORD_USAGE, blindRecord, readsBlind, renderTaskRecord, taskRecord } from "./task-record";
 import {bestEffort, isNotFound, orMiss, outputText, pluginRootFromModule, spawnAsync, stringAt, valueAt} from "@lane-pilot/kit";
 import { PAIR_ROLE_SPECS } from "@lane-pilot/models";
-import {runSkillsCli, parseSkillHub, SKILLS_USAGE} from "../../platform/server";
+import {listQaHosts, runSkillsCli, parseSkillHub, SKILLS_USAGE} from "../../platform/server";
 import {codeFactsOnHost, CODE_FACTS_REFRESH} from "../../platform";
 import {runOnHost} from "@lane-pilot/host-calls";
 import { attemptSessionLayers, terminalParity, terminalSessionLayers } from "../../native-agent";
@@ -29,6 +29,8 @@ import { ANAMNESIS_USAGE, anamnesisFor, collectOwnerMessages, sdkThreadsPort } f
 import { LEARNING_USAGE, learningFor, runLearningCli } from "../../learning";
 import { PM_REPLAY_USAGE, runPmReplayCli, listScenarios } from "../../pm-replay";
 import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
+import { usageSegment } from "../../usage";
+import type { ProviderUsage } from "../../usage/server";
 import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
 import { MEMORY_EVAL_USAGE, runMemoryEvalCommand } from "../../memory-eval/server";
 import { MEMORY_CONFLICT_USAGE, runMemoryConflictCli, sessionMemoryRpc, memorySettingsFor, type WallThreadReader } from "../../memory/server";
@@ -146,6 +148,7 @@ interface Services {
   phases: PhaseApi;
   pmReplay?: PmReplay;
   providerBreaker: WriterStateApi["providerBreaker"];
+  providerUsage?: Pick<ProviderUsage, "windows">;
   reconcileAttemptThread: ReconcileApi["reconcileAttemptThread"];
   regression: RegressionApi;
   resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
@@ -273,7 +276,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"task", summary:"One task's record for another agent: what it asked for, what the server saw done (changed files, merge), acceptance against fact, what is left", usage:TASK_RECORD_USAGE },
       { name:"changes", summary:"What is on record for a task or an attempt: base, merge, changed files (deletions included) and the reverify / revert receipts", usage:"bb lane-pilot changes <task-id|attempt-id>" },
       { name:"evidence", summary:"The reason and checks stored before each risky operation, newest first", usage:"bb lane-pilot evidence <project-id> [--op permit|revert|janitor] [--days N]" },
-      { name:"integrity", summary:"Each protection with its hazard, armed and current value, disarm term and shadow findings; renew a disarm with a reason", usage:"bb lane-pilot integrity [project-id] [--renew <key> --days N --why <cause>]" },
+      { name:"integrity", summary:"Each protection with its hazard, armed and current value, disarm term and shadow findings; renew a disarm with a reason", usage:"bb lane-pilot integrity [project-id] [--renew <key> --days N --why <cause> | --rearm <key>]" },
       { name:"airbag", summary:"List, prune and probe the return points (refs/lane-airbag/*) of a project's checkout", usage:"bb lane-pilot airbag <project-id> [--prune DAYS] [--probe]" },
       { name:"recover", summary:"Reconcile a known writer identity and emit its validated receipt", usage:"bb lane-pilot recover <attempt-id>" },
       { name:"start-cancel-probe", summary:"Spawn a long-running writer for a live stop observation", usage:"bb lane-pilot start-cancel-probe <project-id> <pm-thread-id>" },
@@ -321,6 +324,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"cost", summary:"Cost per verified result: writer tokens per accepted task, per project, over 30 days", usage:"bb lane-pilot cost [--days 30]" },
       { name:"report", summary:"A local HTML report: the SMA map by region, the spend, the cost per verified result", usage:"bb lane-pilot report > report.html" },
       { name:"money", summary:"Money: spent month to date on paid lanes, the 14-day series, the monthly cap (money.monthly_cap_usd) and what is left", usage:"bb lane-pilot money" },
+      { name:"statusline", summary:"One status-line segment of a machine's subscription windows (5h and 7d), for the person's own statusLine command", usage:"bb lane-pilot statusline <host-id>" },
       { name:"unknown-codes", summary:"Failure reasons no class or rule names yet (the unknown code register), most frequent first, over the last 14 days", usage:"bb lane-pilot unknown-codes [--days 14]" },
       { name:"phase", summary:"Phases on rails: list, show (with the phase book), drive now, return to an earlier stage with a note, pause, resume, close in words", usage:PHASE_USAGE },
       { name:"gates", summary:"Gate firings: mark one a false alarm so it stops counting against the gate", usage:"bb lane-pilot gates ack <event-id> --why \"<reason>\"" },
@@ -399,6 +403,14 @@ ${ERRANDS_USAGE}` },
         if (command === "integrity") {
           const [projectId] = args.filter((a) => !a.startsWith("--"));
           const pid = projectId ?? args[0] ?? "";
+          if (args.includes("--rearm")) {
+            // Switching a protection back on is the owner's word, not an agent's.
+            if (invocation?.threadId) return { exitCode:1, stderr:"a protection is re-armed by the owner at a terminal, not from a chat" };
+            const key = args[args.indexOf("--rearm") + 1] ?? "", protection = PROTECTIONS[key];
+            if (!protection) return { exitCode:1, stderr:`${key || "(no key)"} is not a protection: ${Object.keys(PROTECTIONS).join(", ")}` };
+            saveProjectSetting(db, pid, key, protection.armed);
+            return { exitCode:0, stdout:JSON.stringify({ ok:true, key, value:protection.armed }) };
+          }
           if (args.includes("--renew")) {
             const key = args[args.indexOf("--renew") + 1]!, days = Number(args[args.indexOf("--days") + 1] ?? 7), why = args[args.indexOf("--why") + 1] ?? "";
             const result = renewDisarm(db, pid, key, days, why);
@@ -625,6 +637,14 @@ ${ERRANDS_USAGE}` },
         }
         if (command === "money") {
           return { exitCode:0, stdout:JSON.stringify(services.money.status(), null, 2) };
+        }
+        if (command === "statusline") {
+          const hostId = args[0];
+          if (!hostId) return { exitCode:1, stderr:"usage: bb lane-pilot statusline <host-id>" };
+          const known = await listQaHosts(bb).catch(() => null);
+          if (known && !known.some((row) => row.id === hostId)) return { exitCode:1, stderr:`unknown host ${hostId}: ${known.map((row) => row.id).join(", ") || "no machines connected"}` };
+          const live = await services.providerUsage?.windows({ providerId:"claude-code", hostId }).catch(() => null);
+          return { exitCode:0, stdout:usageSegment(live?.windows ?? {}, live?.at ?? null, Date.now()) };
         }
         if (command === "unknown-codes") {
           const days = args[0] === "--days" && Number(args[1]) > 0 ? Number(args[1]) : 14;
