@@ -13,7 +13,7 @@ function taskFrame(db: LanePilotDatabase, taskId: string, field: string, reason:
   return db.transaction(() => {
     if (!write()) return false;
     db.prepare("INSERT INTO lane_pilot_task_transition(task_id,field,reason,at) VALUES(?,?,?,?)").run(taskId, field, reason, Date.now());
-    db.prepare("UPDATE lane_pilot_task SET world_seq=(SELECT COALESCE(MAX(seq),0)+1 FROM (SELECT world_seq AS seq FROM lane_pilot_attempt UNION ALL SELECT world_seq AS seq FROM lane_pilot_task)) WHERE id=?").run(taskId);
+    db.prepare("UPDATE lane_pilot_task SET world_seq=(SELECT MAX(COALESCE((SELECT MAX(world_seq) FROM lane_pilot_attempt),0), COALESCE((SELECT MAX(world_seq) FROM lane_pilot_task),0))+1) WHERE id=?").run(taskId);
     return true;
   })();
 }

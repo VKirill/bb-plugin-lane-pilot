@@ -535,21 +535,26 @@ export function createRollback(ctx: ServerCore, services: Services) {
     const found = await targetOf(pending.taskId);
     if ("error" in found) return lost(found.error);
     const t = found.target;
-    if (!t.task.verification.length) return write({ suite: "none", head, at: Date.now(), reason: "the task's contract names no checks" });
+    const settings = loadProjectSettings(db, t.projectId, getRunSettingsScopes(db, t.runId));
+    const namedSuite = settings["verification.project_suite"];
+    const suiteCommand = typeof namedSuite === "string" && namedSuite.trim() ? namedSuite.trim() : null;
+    // Nothing to run only when the contract names no checks AND the project names no suite: a named suite runs for every landing.
+    if (!t.task.verification.length && !suiteCommand) return write({ suite: "none", head, at: Date.now(), reason: "the task's contract names no checks" });
     const made = await makeWorktree(t, `suite-${safeName(t.taskId)}-${nonce()}`, head, "rollback");
     if ("error" in made) return lost(made.error);
     try {
-      const items = await runChecks(t, made.path, undefined, { isolated: true });
+      const items = t.task.verification.length ? await runChecks(t, made.path, undefined, { isolated: true }) : [];
       const red = items.filter((item) => !item.ok && !item.hostError).map((item) => item.command).slice(0, 10);
       // A check the host could not run proves nothing: it is `error` (tried again later), never `red`. A real red elsewhere still wins.
       if (!red.length && items.some((item) => item.hostError)) return lost("a check could not run on the host");
       // The project suite (verification.project_suite, a command; unset: none is named, none is guessed) runs in the
       // same throwaway worktree after the task's own checks. A red one is the same owner item as a red check; the
       // merge itself is never blocked, delayed or reverted.
-      const namedSuite = loadProjectSettings(db, t.projectId, getRunSettingsScopes(db, t.runId))["verification.project_suite"];
-      const suiteCommand = typeof namedSuite === "string" && namedSuite.trim() ? namedSuite.trim() : null;
       let projectSuite: LandingSuite["projectSuite"] = { command: suiteCommand, state: suiteCommand ? "error" : "not named" };
       if (suiteCommand) {
+        // The claim is renewed before the suite: the task's checks may have used most of it, and a claim that went
+        // stale mid-suite would let a second pass run the same landing again.
+        write({ suite: "running", head, at: Date.now(), tries: pending.tries });
         try {
           const ran = await host.call("gateRun", { requestedHostId: t.hostId, basePath: made.path, command: suiteCommand, timeoutSec: GATE_TIMEOUT_SEC },
             { hostId: t.hostId, timeoutMs: (GATE_TIMEOUT_SEC + 60) * 1000 });

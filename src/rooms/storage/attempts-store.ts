@@ -395,7 +395,7 @@ export function transitionAttempt(
     if (!wrote && fields.cancelCode) db.prepare("UPDATE lane_pilot_attempt SET cancel_code=COALESCE(cancel_code,?) WHERE id=?").run(fields.cancelCode, attemptId);
     // The world counter (SMA m_wrappers) climbs in the same transaction: a failed write leaves it where it was.
     // Its domain is every framed write, attempts and task rows alike, so a reader sees task and hold changes too.
-    db.prepare("UPDATE lane_pilot_attempt SET world_seq=(SELECT COALESCE(MAX(seq),0)+1 FROM (SELECT world_seq AS seq FROM lane_pilot_attempt UNION ALL SELECT world_seq AS seq FROM lane_pilot_task)) WHERE id=?").run(attemptId);
+    db.prepare("UPDATE lane_pilot_attempt SET world_seq=(SELECT MAX(COALESCE((SELECT MAX(world_seq) FROM lane_pilot_attempt),0), COALESCE((SELECT MAX(world_seq) FROM lane_pilot_task),0))+1) WHERE id=?").run(attemptId);
     return wrote;
   })();
   if (changed && before.state !== state) attemptChanged(db, attemptId, state, fields.reason);
