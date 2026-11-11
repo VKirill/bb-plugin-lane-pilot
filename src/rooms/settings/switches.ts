@@ -53,7 +53,7 @@ export const UNLISTED_SWITCHES: Readonly<Record<string, readonly [scope: SwitchS
   "docs.gitnexus_refresh": ["project", "on|off", "the nightly docs pass refreshes the GitNexus code index (.gitnexus) of a checkout that lacks it or lags HEAD"],
   "docs.review": ["project", "gate|off", "a separate reviewer role reads the docs maintainer's edits before a page is written and committed; a refusal gets one rework round, then an owner item (unset: gate; off: no review)"],
   // capability
-  "capability.documentary_gate": ["project", "hold|observe", "a documentary stage holds on a provider whose adapter version has a red documentary receipt; no receipt or a stale one is probed once, then runs green or holds red (unset: hold; observe: only logs)"],
+  "capability.documentary_gate": ["project", "hold|observe", "a documentary stage holds on a provider whose adapter version has a red documentary receipt; no receipt or a stale one is probed (one cell per stage start, 60 s at most); a probe that could not run is observed and the stage runs, only a probe that answered wrong holds (unset: hold; observe: only logs; lift a hold with bb lane-pilot capabilities --probe)"],
   // the second address (SMA d_project_planning): unset, the checkout's own .agents is the planning home
   "project.planning_home": ["project", "absolute path", "the planning home: .agents/phases, .agents/planning and .agents/todos are read and written under this folder on the project's host instead of the checkout's (unset: the checkout)"],
   // the infra profile (SMA k_pl_infra): free text, one writer — `bb lane-pilot profile` and the start's profile writer
