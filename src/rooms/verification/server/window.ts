@@ -219,8 +219,13 @@ export async function runWindowCli(deps: WindowDeps, args: string[]): Promise<Cl
   const { db, kv, host } = deps;
   const [sub, projectId, ...rest] = args;
   if (!projectId || !["status", "claim", "release", "force-clear"].includes(sub ?? "")) return { exitCode: 1, stderr: `usage: ${WINDOW_USAGE}` };
-  // status is open to all; force-clear is the owner's alone (a thread is an agent); claim and release are a chat's own.
+  // status is the owner's or a chat's own project; force-clear is the owner's alone (a thread is an agent); claim and release are a chat's own.
   if (sub === "force-clear" && deps.threadId) return { exitCode: 1, stderr: "refused: window force-clear is for the owner at a terminal, not from a chat: ask them to run it" };
+  if (sub === "status" && deps.threadId) {
+    // A chat sees the windows of its own project only: status names dirty files and the chats working there.
+    const own = await deps.thread?.(deps.threadId);
+    if (!own || own.projectId !== projectId) return { exitCode: 1, stderr: `refused: window status from a chat shows only that chat's own project, not ${projectId}` };
+  }
   const paths = projectCheckoutPaths(db, projectId);
   if (!paths.length) return { exitCode: 1, stderr: `project ${projectId} has no checkout bound in Lane Pilot` };
   const config = loadPrototypeConfig(db, projectId);

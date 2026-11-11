@@ -237,7 +237,7 @@ describe("parity g3 window review fixes", () => {
     expect(await listClaims(kv as never, PATH)).toEqual([]);
   });
 
-  it("[review 1] a chat claims and releases only for itself and in its own project; status is open to a chat", async () => {
+  it("[review 1] a chat claims and releases only for itself and in its own project; status shows a chat its own project only", async () => {
     const { harness, kv } = cli();
     const other = await harness.behavior.runCli(["window", "claim", "P", "thr_b", "ui", "src/**"], as("thr_a"));
     expect(other.exitCode).toBe(1);
@@ -250,7 +250,10 @@ describe("parity g3 window review fixes", () => {
     const foreignRelease = await harness.behavior.runCli(["window", "release", "P", "thr_a", "ui"], as("thr_b"));
     expect(foreignRelease.exitCode).toBe(1);
     expect(foreignRelease.stderr).toMatch(/only for itself/);
-    expect((await harness.behavior.runCli(["window", "status", "P"], as("thr_other"))).exitCode).toBe(0);
+    const foreignStatus = await harness.behavior.runCli(["window", "status", "P"], as("thr_other"));
+    expect(foreignStatus.exitCode).toBe(1);
+    expect(foreignStatus.stderr).toMatch(/own project/);
+    expect((await harness.behavior.runCli(["window", "status", "P"], as("thr_a"))).exitCode).toBe(0);
     expect((await harness.behavior.runCli(["window", "release", "P", "thr_a", "ui"], as("thr_a"))).exitCode).toBe(0);
   });
 
