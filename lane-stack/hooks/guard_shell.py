@@ -707,6 +707,11 @@ def _is_env_secret_file(name: str) -> bool:
     return False
 
 
+# Lane Pilot bookkeeping files the PM never edits, wherever they live (the checkout and the planning home alike):
+# PROGRESS.md and CHANGELOG.md are owned by project-life / living memory; LESSONS.md is not kept any more (lessons are
+# rules on the hub: lane_pilot_memory action lesson / lane-memory lesson).
+_PM_DENIED_BASENAMES = frozenset({"PROGRESS.md", "CHANGELOG.md", "LESSONS.md"})
+
 # The planning folders of the confirmed planning home the PM may write (SMA d_project_planning): nothing else outside the checkout.
 _PM_HOME_FOLDERS = ("phases", "planning", "todos", "notes")
 
@@ -726,6 +731,8 @@ def _pm_planning_home_allowed(target: Path, suffix: str) -> bool:
     if home == Path.home().resolve():
         return False
     if not any(target.is_relative_to(home / ".agents" / folder) for folder in _PM_HOME_FOLDERS):
+        return False
+    if target.name in _PM_DENIED_BASENAMES:
         return False
     if suffix not in _PM_TEXT_SUFFIXES:
         return False
@@ -769,15 +776,12 @@ def _pm_edit_allowed(path: str, cwd: object) -> bool:
         return _pm_planning_home_allowed(target, suffix)
     relative = target.relative_to(root)
     normalized = relative.as_posix()
-    # LESSONS.md is not kept any more: lessons are rules on the hub (lane_pilot_memory action lesson / lane-memory lesson).
-    if normalized.rsplit("/", 1)[-1] == "LESSONS.md":
+    # Bookkeeping files (PROGRESS.md, CHANGELOG.md, LESSONS.md): Lane Pilot's own, the PM never edits them.
+    if normalized.rsplit("/", 1)[-1] in _PM_DENIED_BASENAMES:
         return False
     # The repository-local git exclude (main repo or a linked worktree's): the PM keeps local ignores there.
     if re.fullmatch(r"\.git/(?:worktrees/[^/]+/)?info/exclude", normalized):
         return True
-    # Lane Pilot bookkeeping files are owned by Lane Pilot project-life / living memory; PM never edits them.
-    if normalized.rsplit("/", 1)[-1] in {"PROGRESS.md", "CHANGELOG.md"}:
-        return False
     if _is_env_secret_file(normalized):
         return True
     if normalized.startswith("docs/plans/"):

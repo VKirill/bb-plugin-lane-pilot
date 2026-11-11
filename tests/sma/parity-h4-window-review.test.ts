@@ -1,4 +1,10 @@
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { hookEnv } from "../hook-env";
+import { useGuardSync } from "../guard-pool";
 import { PROBES } from "../../src/rooms/native-agent/server/helper-probe";
 import { probeSetupFailed } from "../../src/rooms/capability";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
@@ -148,5 +154,43 @@ describe("[review 8] documentary.role: only a successful read of another role is
       expect(timedOut.ok).toBe(false);
       expect(probeSetupFailed(timedOut.reason ?? null)).toBe(true);
     } finally { vi.useRealTimers(); }
+  });
+});
+
+// The real guard process (as tests/sma/parity-h4-window.test.ts drives it): the planning-home branch applies the checkout branch's denials.
+describe("[review 5] the PM's planning-home branch of the guard", () => {
+  const runGuard = useGuardSync(join(process.cwd(), "lane-stack/hooks/guard_shell.py"));
+  const checkout = mkdtempSync(join(tmpdir(), "lp-h4r-checkout-"));
+  const home = mkdtempSync(join(homedir(), "lp-h4r-home-"));
+  const outside = mkdtempSync(join(homedir(), "lp-h4r-out-"));
+  const evil = `${home}-evil`;
+  execFileSync("git", ["-C", home, "init", "-q"]);
+  writeFileSync(join(home, "README.md"), "x\n");
+  execFileSync("git", ["-C", home, "add", "README.md"]);
+  execFileSync("git", ["-C", home, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]);
+  mkdirSync(join(home, ".agents", "planning"), { recursive: true });
+  mkdirSync(join(outside, "planning"), { recursive: true });
+  mkdirSync(join(evil, ".agents", "planning"), { recursive: true });
+  const linked = mkdtempSync(join(homedir(), "lp-h4r-linked-"));
+  execFileSync("git", ["-C", linked, "init", "-q"]);
+  symlinkSync(outside, join(linked, ".agents"));
+
+  const edit = (homeDir: string, path: string, env: Record<string, string> = {}) => runGuard({
+    input: JSON.stringify({ agent_type: "lane-pilot-pm", tool_name: "Edit", tool_input: { file_path: path }, cwd: checkout }),
+    env: hookEnv({ AGENT_HOOK_CLIENT: "claude", LANE_PILOT_PLANNING_HOME: homeDir, ...env }),
+  }).status;
+
+  it("allows an ordinary .md in a planning folder", () => {
+    expect(edit(home, join(home, ".agents", "planning", "x.md"))).toBe(0);
+  });
+  it("refuses the bookkeeping basenames the checkout branch refuses", () => {
+    for (const name of ["PROGRESS.md", "CHANGELOG.md", "LESSONS.md"]) expect(edit(home, join(home, ".agents", "planning", name)), name).toBe(2);
+  });
+  it("refuses a symlinked .agents that points out of the home, a .. in the path, a prefix sibling and a home equal to $HOME", () => {
+    expect(edit(linked, join(linked, ".agents", "planning", "x.md"))).toBe(2);
+    expect(edit(home, join(home, ".agents", "planning", "..", "..", "src", "x.md"))).toBe(2);
+    expect(edit(home, join(home, ".agents", "planning", "..", "..", "..", `${home.split("/").pop()}-evil`, ".agents", "planning", "x.md"))).toBe(2);
+    expect(edit(home, join(evil, ".agents", "planning", "x.md"))).toBe(2);
+    expect(edit(home, join(home, ".agents", "planning", "x.md"), { HOME: home })).toBe(2);
   });
 });
