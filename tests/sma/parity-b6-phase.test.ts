@@ -246,6 +246,13 @@ describe("phase parity b6", () => {
     expect(retried.record.execution?.issuedSha?.p1).toBe("retry");
     const driven = await d.phases.drive(getPhase(d.db, retrying)!);
     expect(driven.record.execution?.issued.p1).toBe("p1.2");
+    // A piece that failed to issue and fails the same way after a retry is said again: the retry clears the last said step.
+    const failing = await opened(d, { plan: record().plan, execution: { issued: {}, issuedSha: {}, issueErrors: { p1: "contract lint: read_first source is missing" } } }, "execution");
+    const said = nextAction(getPhase(d.db, failing)!, new Map());
+    expect(said.text).toContain('to:"planning"');
+    d.db.prepare("UPDATE lane_pilot_phase SET poked_key=? WHERE id=?").run(said.key, failing);
+    await d.phases.decide({ phaseId: failing, piece: "p1", choice: "retry" });
+    expect(getPhase(d.db, failing)!.pokedKey).not.toBe(said.key);
     const canceling = await opened(d, record(), "execution");
     const stopped = await d.phases.decide({ phaseId: canceling, piece: "p1", choice: "cancel", note: "give up" });
     expect(stopped.state).toBe("stopped");
