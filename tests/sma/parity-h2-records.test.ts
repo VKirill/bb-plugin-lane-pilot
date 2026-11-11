@@ -11,7 +11,8 @@ import {
 import { attemptSessionLayers, permissionEntries, terminalParity, terminalSessionLayers } from "../../src/rooms/native-agent/terminal-parity";
 import { buildBubblewrapArgs, buildSeatbeltProfile, credentialMaskPaths, protectedRootsManifest, runSandboxedCommandOnHost } from "../../src/rooms/verification/sandbox";
 import { checkMeasureOf } from "../../src/rooms/tasks/server/conversation-tools";
-import { getAttemptChange, listLandingSuitePending, noteLandingSuite, upsertAttemptChange } from "../../src/rooms/rollback/store";
+import { claimLandingSuite, getAttemptChange, listLandingSuitePending, noteLandingSuite, upsertAttemptChange, type LandingSuite } from "../../src/rooms/rollback/store";
+import { createRollback } from "../../src/rooms/rollback/server";
 
 function db0() {
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
@@ -184,13 +185,13 @@ describe("[sma:k_lib_landing] a merged landing waits for its suite verdict on th
     createTask(db, { id: "t1", runId: "run_p", kind: "bb", contract: {} });
     createAttempt(db, { id: "a1", runId: "run_p", taskId: "t1" });
     upsertAttemptChange(db, { attemptId: "a1", runId: "run_p", taskId: "t1" }, { outcome: "merged", mergeCommit: "f".repeat(40), checksGreen: 2 });
-    const pending = listLandingSuitePending(db);
+    const pending = listLandingSuitePending(db, 0);
     expect(pending).toHaveLength(1);
     expect(pending[0]).toMatchObject({ attemptId: "a1", taskId: "t1", mergeCommit: "f".repeat(40) });
     noteLandingSuite(db, "a1", { suite: "red", head: "f".repeat(40), at: 123, red: ["npm test"] });
     const change = getAttemptChange(db, "a1")!;
     expect(change.suite).toMatchObject({ suite: "red", head: "f".repeat(40), at: 123, red: ["npm test"] });
-    expect(listLandingSuitePending(db)).toHaveLength(0);
+    expect(listLandingSuitePending(db, 0)).toHaveLength(0);
   });
 });
 
@@ -266,5 +267,138 @@ describe("[sma:ar_run_dir] the stored stream excerpt is masked, the sha is over 
       // The raw blob in the table carries no token either.
       expect(JSON.stringify(db.prepare("SELECT trace_json FROM lane_pilot_attempt_reasoning WHERE attempt_id='as1'").get())).not.toContain(token);
     } finally { forgetSecrets(); }
+  });
+});
+
+/** The landing sweep with a stand-in host (worktrees are paths, nothing runs) and a scripted check runner; everything else is the real rollback code and a real database. */
+function sweepWorld(verdict: (task: { verification: Array<{ command: string }> }) => Array<{ command: string; exitCode: number; stdout: string; stderr: string; hostError?: true }>) {
+  const { bb, db } = db0();
+  const calls: string[] = [];
+  const options: unknown[] = [];
+  const logs: string[] = [];
+  const host = { call: async (method: string) => {
+    calls.push(method);
+    if (method === "gitCreateWorktree") return { hostId: "h", status: "ready", path: `/tmp/lp-suite-${calls.length}` };
+    return { hostId: "h" };
+  } };
+  const ctx = { bb, db, host, log: (line: string) => logs.push(line), isDisposed: () => false,
+    configForRun: async (projectId: string) => ({ projectId, hostId: "h", writerWorkspacePath: "/w" }) };
+  const services = { runVerification: async (_config: unknown, task: { verification: Array<{ command: string }> }, _run?: string, _thread?: string, opts?: unknown) => { options.push(opts); return verdict(task); } };
+  const { rollback } = createRollback(ctx as never, services as never);
+  createRun(db, "run_l", "proj_l", "bb", "/w", "none", undefined, "h");
+  let n = 0;
+  /** A merged landing of its own task, recorded at `at`. */
+  const land = (at: number, commands: string[] = ["npm test"]) => {
+    const id = `l${++n}`;
+    createTask(db, { id: `task_${id}`, runId: "run_l", kind: "bb", contract: {
+      schema_version: 2, id: `task_${id}`, title: id, risk: "low", lane: "server", project_cwd: "/w", read_first: [], interfaces: [], invariants: [], out_of_scope: [],
+      expected_outputs: ["x"], owns_paths: ["**"], never_touch: [], depends_on: [], objective: id, acceptance: ["done"], verify: "tests",
+      verification: commands.map((command) => ({ command, cwd: "/w" })) } });
+    createAttempt(db, { id: `att_${id}`, runId: "run_l", taskId: `task_${id}` });
+    upsertAttemptChange(db, { attemptId: `att_${id}`, runId: "run_l", taskId: `task_${id}` }, { outcome: "merged", mergeCommit: id.padEnd(40, "0") }, at);
+    return `att_${id}`;
+  };
+  const suiteOf = (attemptId: string): LandingSuite | null => getAttemptChange(db, attemptId)!.suite;
+  const items = () => (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_owner_item").get() as { n: number }).n;
+  return { bb, db, rollback, calls, options, logs, land, suiteOf, items };
+}
+const GREEN = (task: { verification: Array<{ command: string }> }) => task.verification.map((c) => ({ command: c.command, exitCode: 0, stdout: "ok", stderr: "" }));
+
+describe("[sma:k_lib_landing] the landing sweep takes no backlog, newest first, one pass per row", () => {
+  it("a landing recorded before the sweep first ran is never taken; the watermark is stored once in plugin kv", async () => {
+    const w = sweepWorld(GREEN);
+    const old = w.land(Date.now() - 3_600_000);
+    expect(await w.rollback.landingSuite()).toBe(0);
+    const since = await w.bb.storage.kv.get("lp.landing-suite.since");
+    expect(typeof since).toBe("number");
+    const fresh = w.land(Date.now() + 5_000);
+    expect(await w.rollback.landingSuite()).toBe(1);
+    expect(w.suiteOf(old)).toBeNull();
+    expect(w.suiteOf(fresh)).toMatchObject({ suite: "green" });
+    expect(await w.bb.storage.kv.get("lp.landing-suite.since")).toBe(since);
+    // The worktree it made was removed again, and the run was isolated (own pool, no duration history).
+    expect(w.calls.filter((c) => c === "gitCreateWorktree")).toHaveLength(1);
+    expect(w.calls.filter((c) => c === "gitRemoveWorktree")).toHaveLength(1);
+    expect(w.options).toEqual([{ isolated: true }]);
+  });
+
+  it("takes the newest four first when more are waiting", async () => {
+    const w = sweepWorld(GREEN);
+    await w.rollback.landingSuite();
+    const base = Date.now() + 5_000;
+    const ids = [1, 2, 3, 4, 5].map((i) => w.land(base + i * 1000));
+    expect(await w.rollback.landingSuite()).toBe(4);
+    expect(w.suiteOf(ids[0]!)).toBeNull();
+    for (const id of ids.slice(1)) expect(w.suiteOf(id)).toMatchObject({ suite: "green" });
+    expect(await w.rollback.landingSuite()).toBe(1);
+    expect(w.suiteOf(ids[0]!)).toMatchObject({ suite: "green" });
+  });
+
+  it("a host error is `error` and tried three times, then stays `error`; no owner item is ever posted", async () => {
+    const w = sweepWorld((task) => task.verification.map((c) => ({ command: c.command, exitCode: 1, stdout: "", stderr: "host offline", hostError: true as const })));
+    await w.rollback.landingSuite();
+    const id = w.land(Date.now() + 5_000);
+    for (let pass = 1; pass <= 3; pass++) {
+      expect(await w.rollback.landingSuite()).toBe(1);
+      expect(w.suiteOf(id)).toMatchObject({ suite: "error", tries: pass });
+    }
+    expect(await w.rollback.landingSuite()).toBe(0);
+    expect(w.suiteOf(id)).toMatchObject({ suite: "error", tries: 3 });
+    expect(w.options).toHaveLength(3);
+    expect(w.items()).toBe(0);
+  });
+
+  it("a failed worktree is `error` too, and every worktree it did make is dropped", async () => {
+    const w = sweepWorld(GREEN);
+    await w.rollback.landingSuite();
+    const id = w.land(Date.now() + 5_000);
+    const failing = createRollback({ bb: w.bb, db: w.db, log: () => undefined, isDisposed: () => false,
+      host: { call: async () => ({ hostId: "h", status: "failed", path: null, reason: "disk full" }) },
+      configForRun: async (projectId: string) => ({ projectId, hostId: "h", writerWorkspacePath: "/w" }) } as never,
+      { runVerification: async () => { throw new Error("must not run"); } } as never);
+    expect(await failing.rollback.landingSuite()).toBe(1);
+    expect(w.suiteOf(id)).toMatchObject({ suite: "error", tries: 1 });
+    expect(w.items()).toBe(0);
+  });
+
+  it("a check that ran and exited non-zero is red and posts exactly one owner item, once", async () => {
+    const w = sweepWorld((task) => task.verification.map((c) => ({ command: c.command, exitCode: 1, stdout: "", stderr: "1 failed" })));
+    await w.rollback.landingSuite();
+    const id = w.land(Date.now() + 5_000);
+    await w.rollback.landingSuite();
+    expect(w.suiteOf(id)).toMatchObject({ suite: "red", red: ["npm test"] });
+    expect(w.items()).toBe(1);
+    expect((w.db.prepare("SELECT key FROM lane_pilot_owner_item").get() as { key: string }).key).toBe(`landing-suite:${id}`);
+    await w.rollback.landingSuite();
+    expect(w.items()).toBe(1);
+    expect(w.options).toHaveLength(1);
+  });
+
+  it("at most five owner items a day per project; the sixth red is stored and logged only", async () => {
+    const w = sweepWorld((task) => task.verification.map((c) => ({ command: c.command, exitCode: 1, stdout: "", stderr: "bad" })));
+    await w.rollback.landingSuite();
+    const base = Date.now() + 5_000;
+    const ids = [1, 2, 3, 4, 5, 6].map((i) => w.land(base + i * 1000));
+    await w.rollback.landingSuite();
+    await w.rollback.landingSuite();
+    for (const id of ids) expect(w.suiteOf(id)).toMatchObject({ suite: "red" });
+    expect(w.items()).toBe(5);
+    expect(w.logs.some((line) => line.includes("not posted"))).toBe(true);
+  });
+
+  it("a claimed row is skipped by a second pass; a claim older than 45 minutes is taken again", async () => {
+    const w = sweepWorld(GREEN);
+    await w.rollback.landingSuite();
+    const id = w.land(Date.now() + 5_000);
+    const [row] = listLandingSuitePending(w.db, 0);
+    expect(claimLandingSuite(w.db, row!, Date.now(), row!.mergeCommit)).toBe(true);
+    // A second claim on what the first pass read loses, and a sweep leaves the running row alone.
+    expect(claimLandingSuite(w.db, row!, Date.now(), row!.mergeCommit)).toBe(false);
+    expect(await w.rollback.landingSuite()).toBe(0);
+    expect(w.suiteOf(id)).toMatchObject({ suite: "running" });
+    expect(w.options).toHaveLength(0);
+    w.db.prepare("UPDATE lane_pilot_attempt_change SET suite_json=? WHERE attempt_id=?").run(JSON.stringify({ suite: "running", head: null, at: Date.now() - 46 * 60_000, tries: 0 }), id);
+    expect(await w.rollback.landingSuite()).toBe(1);
+    expect(w.suiteOf(id)).toMatchObject({ suite: "green" });
   });
 });

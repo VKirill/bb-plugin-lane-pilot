@@ -10,7 +10,7 @@ import { parseIntegrationGateSettings, type VerificationGatePort } from "../../c
 
 import type { ServerCore } from "../../contracts/server";
 import {
-  appendTaskReceipt, effectState, getAttemptChange, listLandingSuitePending, listTaskReceipts, noteLandingSuite, recoveryState, upsertAttemptChange,
+  appendTaskReceipt, claimLandingSuite, effectState, getAttemptChange, LANDING_SUITE_TRIES, listLandingSuitePending, listTaskReceipts, noteLandingSuite, recoveryState, upsertAttemptChange,
   type ChangedFile, type LandingSuite, type TaskReceipt, type TaskReceiptKind, type TaskReceiptState,
 } from "../store";
 import { postOwnerItem } from "../../owner-waiting";
@@ -220,10 +220,10 @@ export function createRollback(ctx: ServerCore, services: Services) {
   }
 
   /** The task's verification[] on a tree, item by item. */
-  async function runChecks(t: RollbackTarget, root: string, commands?: TaskV2["verification"]): Promise<RollbackItem[]> {
+  async function runChecks(t: RollbackTarget, root: string, commands?: TaskV2["verification"], options?: { isolated?: boolean }): Promise<RollbackItem[]> {
     const task = retargetTask({ ...t.task, verification: commands ?? t.task.verification }, root);
     if (!task.verification.length) return [];
-    const results = await services.runVerification(t.config, task, t.runId);
+    const results = await services.runVerification(t.config, task, t.runId, undefined, options?.isolated ? { isolated: true } : undefined);
     return results.map((row) => ({
       command: row.command, exitCode: row.exitCode, ok: row.exitCode === 0 && !row.hostError,
       ...(row.hostError ? { hostError: true as const } : {}), tail: row.exitCode === 0 ? "" : tail(`${row.stderr}\n${row.stdout}`),
@@ -483,47 +483,84 @@ export function createRollback(ctx: ServerCore, services: Services) {
 
   /**
    * The landing suite (SMA k_lib_landing): after a green merge the task's own checks run on the merged head in a
-   * throwaway worktree — the merge is never blocked, delayed or reverted, and the project's repository is never
-   * written; the verdict lands on the attempt's change row.
+   * throwaway worktree — the merge is never blocked, delayed or reverted, and no branch or working tree of the project is
+   * touched; the worktree is one entry added to and removed from the project's .git/worktrees. The verdict lands on the
+   * attempt's change row.
+   *
+   * - Only landings recorded after the sweep first ran on this install (the watermark in plugin kv) are taken: no backlog.
+   * - Newest first, at most four a pass. A row is claimed (suite_json written conditionally) before the checks run, so a
+   *   second pass skips it.
+   * - A host error, an offline host or a failed worktree is `error`, not `red`: no owner item, up to three tries on later
+   *   passes, then `error` stays. Only a check that ran and exited non-zero is `red`.
+   * - Owner items: one per landing, at most five a day per project; past that the verdict is stored and logged only.
+   * - The checks run isolated (own pool, one at a time, no check-duration history), so a live run is not slowed.
    */
+  const SUITE_SINCE_KEY = "lp.landing-suite.since";
+  const SUITE_ITEMS_PER_DAY = 5;
+  const kv = () => ctx.bb.storage.kv as unknown as { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<unknown> };
+
   async function landingSuiteSweep(): Promise<number> {
+    let since: number;
+    try {
+      const stored = await kv().get(SUITE_SINCE_KEY);
+      if (typeof stored === "number" && Number.isFinite(stored)) since = stored;
+      else { since = Date.now(); await kv().set(SUITE_SINCE_KEY, since); }
+    } catch (cause) {
+      log(`landing suite: watermark not readable, nothing swept: ${cause instanceof Error ? cause.message : String(cause)}`);
+      return 0;
+    }
     let done = 0;
-    for (const pending of listLandingSuitePending(db)) {
+    for (const pending of listLandingSuitePending(db, since)) {
+      if (!claimLandingSuite(db, pending, Date.now(), pending.mergeCommit)) continue; // another pass has it
+      const lost = (reason: string) => {
+        const tries = pending.tries + 1;
+        log(`landing suite of ${pending.attemptId} could not run (${tries}/${LANDING_SUITE_TRIES}): ${reason}`);
+        try { noteLandingSuite(db, pending.attemptId, { suite: "error", head: pending.mergeCommit, at: Date.now(), reason: reason.slice(0, 300), tries }); } catch { /* a failed record must not stop the sweep */ }
+      };
       try {
-        await landingSuite(pending);
+        await landingSuite(pending, lost);
       } catch (cause) {
-        const reason = cause instanceof Error ? cause.message : String(cause);
-        log(`landing suite of ${pending.attemptId} failed: ${reason}`);
-        try { noteLandingSuite(db, pending.attemptId, { suite: "error", head: pending.mergeCommit, at: Date.now(), reason }); } catch { /* a failed record must not stop the sweep */ }
+        lost(cause instanceof Error ? cause.message : String(cause));
       }
       done++;
     }
     return done;
   }
 
-  async function landingSuite(pending: { attemptId: string; taskId: string; mergeCommit: string | null }): Promise<void> {
+  async function landingSuite(pending: { attemptId: string; taskId: string; mergeCommit: string | null; tries: number }, lost: (reason: string) => void): Promise<void> {
     const head = pending.mergeCommit;
     const write = (suite: LandingSuite) => noteLandingSuite(db, pending.attemptId, suite);
     if (!head) return write({ suite: "none", head: null, at: Date.now(), reason: "no merge commit on record" });
     const found = await targetOf(pending.taskId);
-    if ("error" in found) return write({ suite: "error", head, at: Date.now(), reason: found.error });
+    if ("error" in found) return lost(found.error);
     const t = found.target;
     if (!t.task.verification.length) return write({ suite: "none", head, at: Date.now(), reason: "the task's contract names no checks" });
     const made = await makeWorktree(t, `suite-${safeName(t.taskId)}-${nonce()}`, head, "rollback");
-    if ("error" in made) return write({ suite: "error", head, at: Date.now(), reason: made.error });
+    if ("error" in made) return lost(made.error);
     try {
-      const items = await runChecks(t, made.path);
-      const red = items.filter((item) => !item.ok).map((item) => item.command).slice(0, 10);
-      write({ suite: red.length ? "red" : "green", head, at: Date.now(), ...(red.length ? { red } : {}) });
+      const items = await runChecks(t, made.path, undefined, { isolated: true });
+      const red = items.filter((item) => !item.ok && !item.hostError).map((item) => item.command).slice(0, 10);
+      // A check the host could not run proves nothing: it is `error` (tried again later), never `red`. A real red elsewhere still wins.
+      if (!red.length && items.some((item) => item.hostError)) return lost("a check could not run on the host");
+      write({ suite: red.length ? "red" : "green", head, at: Date.now(), ...(red.length ? { red } : {}), ...(pending.tries ? { tries: pending.tries } : {}) });
       // A red suite never un-lands the merge: one item on the owner's list names the task and the command that went red.
-      if (red.length) postOwnerItem(db as never, { key: `landing-suite:${pending.attemptId}`, source: "landing-suite", kind: "landing_suite_red",
-        projectId: t.projectId, wake: false,
-        what: `Задача ${t.taskId}: после вливания проверка упала — ${red[0]!.slice(0, 200)}`,
-        why: `На голове ${head.slice(0, 12)} не прошли проверки (${red.length}): ${red.slice(0, 3).join("; ").slice(0, 300)}. Вливание не отменялось.`,
-        evidence: [{ kind: "task", ref: t.taskId }] });
+      if (red.length) await postRedItem(t, pending.attemptId, head, red);
     } finally {
       await dropWorktree(t, made.path);
     }
+  }
+
+  /** One owner item per landing (the key), at most five a day per project; over the cap the verdict is stored and logged only. */
+  async function postRedItem(t: RollbackTarget, attemptId: string, head: string, red: string[]): Promise<void> {
+    const dayKey = `lp.landing-suite.items:${t.projectId}:${new Date().toISOString().slice(0, 10)}`;
+    const posted = Number(await kv().get(dayKey).catch(() => 0)) || 0;
+    if (posted >= SUITE_ITEMS_PER_DAY) { log(`landing suite red on ${t.taskId} (${attemptId}): not posted, ${SUITE_ITEMS_PER_DAY} landing items already today for ${t.projectId}: ${red[0]!.slice(0, 200)}`); return; }
+    const result = postOwnerItem(db as never, { key: `landing-suite:${attemptId}`, source: "landing-suite", kind: "landing_suite_red",
+      projectId: t.projectId, wake: false,
+      what: `Задача ${t.taskId}: после вливания проверка упала — ${red[0]!.slice(0, 200)}`,
+      why: `На голове ${head.slice(0, 12)} не прошли проверки (${red.length}): ${red.slice(0, 3).join("; ").slice(0, 300)}. Вливание не отменялось.`,
+      evidence: [{ kind: "task", ref: t.taskId }] });
+    if (result.created) await kv().set(dayKey, posted + 1).catch(() => undefined);
   }
 
   return { rollback: { noteBase, ensureBase, noteMerge, noteWorktree, noteSaved, noteStopped, reverify, revert, status, diff, kit, landingSuite: landingSuiteSweep } };

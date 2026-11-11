@@ -21,7 +21,16 @@ export type AttemptChange = {
 };
 
 /** The landing suite result stored on the change row (SMA k_lib_landing): green/red of the checks on the merged head, or why none ran. */
-export type LandingSuite = { suite: "green" | "red" | "none" | "error"; head: string | null; at: number; red?: string[]; reason?: string };
+export type LandingSuite = {
+  /** `running` is a claim: one pass has taken the row and is running the checks; a second pass skips it until the claim is older than LANDING_CLAIM_STALE_MS. */
+  suite: "green" | "red" | "none" | "error" | "running"; head: string | null; at: number; red?: string[]; reason?: string;
+  /** How many times the run was lost to the machine (host error, offline host, failed worktree, a stale claim); the third `error` is final. */
+  tries?: number;
+};
+/** The most runs a landing gets when the machine, not the code, fails them; after that the verdict stays `error`. */
+export const LANDING_SUITE_TRIES = 3;
+/** A `running` claim older than this was left by a pass that died; the row is free again. */
+export const LANDING_CLAIM_STALE_MS = 45 * 60_000;
 
 type Raw = {
   attempt_id: string; run_id: string; task_id: string; base_sha: string | null; merge_parent: string | null; merge_commit: string | null; outcome: string | null;
@@ -206,12 +215,41 @@ export function attemptChangeJson(db: RollbackDb, attemptId: string): string | u
   return (db.prepare("SELECT changed_json FROM lane_pilot_attempt_change WHERE attempt_id=?").get(attemptId) as { changed_json: string } | undefined)?.changed_json;
 }
 
-/** Merged landings the suite sweep has not checked yet, oldest first (SMA k_lib_landing). */
-export function listLandingSuitePending(db: RollbackDb, limit = 4): Array<{ attemptId: string; runId: string; taskId: string; mergeCommit: string | null }> {
-  return (db.prepare(`SELECT attempt_id, run_id, task_id, merge_commit FROM lane_pilot_attempt_change
-    WHERE outcome='merged' AND suite_json IS NULL ORDER BY recorded_at LIMIT ?`).all(limit) as
-    Array<{ attempt_id: string; run_id: string; task_id: string; merge_commit: string | null }>)
-    .map((row) => ({ attemptId: row.attempt_id, runId: row.run_id, taskId: row.task_id, mergeCommit: row.merge_commit }));
+export type LandingPending = { attemptId: string; runId: string; taskId: string; mergeCommit: string | null; tries: number;
+  /** The suite_json as read (null: never claimed): the claim compares against it, so only one pass wins a row. */
+  raw: string | null };
+
+/**
+ * Merged landings the suite sweep may take now (SMA k_lib_landing): recorded after `since` (the sweep's first pass on this
+ * install — history is never swept), newest first, at most `limit`. A row is free when it has no verdict, when its
+ * `error` verdict has tries left, or when its `running` claim is stale.
+ */
+export function listLandingSuitePending(db: RollbackDb, since: number, limit = 4, now = Date.now()): LandingPending[] {
+  const rows = db.prepare(`SELECT attempt_id, run_id, task_id, merge_commit, suite_json FROM lane_pilot_attempt_change
+    WHERE outcome='merged' AND recorded_at>? AND (suite_json IS NULL OR suite_json LIKE '%"running"%' OR suite_json LIKE '%"error"%')
+    ORDER BY recorded_at DESC LIMIT 200`).all(since) as Array<{ attempt_id: string; run_id: string; task_id: string; merge_commit: string | null; suite_json: string | null }>;
+  const free: LandingPending[] = [];
+  for (const row of rows) {
+    const suite = row.suite_json === null ? null : parseJsonOr<LandingSuite | null>(row.suite_json, null);
+    if (row.suite_json !== null && !suite) continue;
+    const tries = suite?.tries ?? 0;
+    const open = !suite || (suite.suite === "running" && now - suite.at >= LANDING_CLAIM_STALE_MS && tries < LANDING_SUITE_TRIES)
+      || (suite.suite === "error" && typeof suite.tries === "number" && tries < LANDING_SUITE_TRIES);
+    if (!open) continue;
+    free.push({ attemptId: row.attempt_id, runId: row.run_id, taskId: row.task_id, mergeCommit: row.merge_commit,
+      // A lost claim counts as a lost run.
+      tries: suite?.suite === "running" ? tries + 1 : tries, raw: row.suite_json });
+    if (free.length >= limit) break;
+  }
+  return free;
+}
+
+/** Takes a row for one pass: the write succeeds only while suite_json is still what the pass read, so a second pass skips it. */
+export function claimLandingSuite(db: RollbackDb, pending: Pick<LandingPending, "attemptId" | "raw" | "tries">, now = Date.now(), head: string | null = null): boolean {
+  const claim: LandingSuite = { suite: "running", head, at: now, tries: pending.tries };
+  const where = pending.raw === null ? "suite_json IS NULL" : "suite_json=?";
+  const args = pending.raw === null ? [JSON.stringify(claim), now, pending.attemptId] : [JSON.stringify(claim), now, pending.attemptId, pending.raw];
+  return db.prepare(`UPDATE lane_pilot_attempt_change SET suite_json=?, updated_at=? WHERE attempt_id=? AND ${where}`).run(...args).changes === 1;
 }
 
 /** The sweep's verdict on the change row: suite_json, never a write into the project's repository. */

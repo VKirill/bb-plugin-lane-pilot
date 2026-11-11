@@ -150,7 +150,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     }
   }
 
-  async function runVerification(config: PrototypeConfig, task: TaskV2, runId?:string, writerThreadId?:string, options?:{ background?:boolean; jobKey?:string }): Promise<Array<VerifyResult & {
+  async function runVerification(config: PrototypeConfig, task: TaskV2, runId?:string, writerThreadId?:string, options?:{ background?:boolean; jobKey?:string; isolated?:boolean }): Promise<Array<VerifyResult & {
     sandboxBackend:string|null; policySha256:string|null; workspacePath:string; flaky?:true; flakyEvidence?:FlakyEvidence; reran?:true;
     /** The host call itself failed (worker killed, host offline): the command's own verdict is unknown. */
     hostError?:true;
@@ -172,7 +172,10 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     // A probe that read nothing (no git, the host did not answer) names no revision: the row goes without one.
     const revision=await bestEffort(ctx.log, "verification revision probe", Promise.resolve().then(()=>runOnHost(host,{hostId:config.hostId,cwd:task.project_cwd,command:REVISION_PROBE,timeoutSec:15}))
       .then((row)=>parseRevisionProbe(row?.stdout??"")), {head:null,dirty:null});
-    const pool=`verification:${runId??config.projectId}`;
+    // A background sweep (the landing suite) must not slow a live run: its own pool key, one check at a time, and below it no check-duration history is written.
+    const isolated=options?.isolated===true;
+    const pool=isolated?`verification:landing-suite:${config.projectId}`:`verification:${runId??config.projectId}`;
+    const poolLimit=isolated?1:policy.pools.verification;
     // The watcher reads this: the attempt stays «running» with its writer idle while its checks wait or run (self-repair.ts).
     const endChecks=writerThreadId?beginChecks(writerThreadId,pool):()=>undefined;
     // checks.fail_fast (default on): highest expected fail-cost first; after the first non-zero exit nothing new
@@ -181,10 +184,10 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     const entries=failFast?orderChecksForFailFast(db,config.projectId,commands,task.project_cwd):commands.map((check,index)=>({check,index}));
     let halt=false;
     try {
-    const rawResults=await mapBounded(entries,policy.pools.verification,async(entry)=>{
+    const rawResults=await mapBounded(entries,poolLimit,async(entry)=>{
       if(failFast&&halt)return undefined;
       const command=entry.check;
-      const release=await services.runWriterPool.acquire(pool,policy.pools.verification);
+      const release=await services.runWriterPool.acquire(pool,poolLimit);
       checksMoved(pool);
       try {
       // The machine the check runs on, read right before each attempt (never during it): the host that runs it, not this process.
@@ -202,7 +205,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       const recorded=<T extends {exitCode:number;hostError?:true}>(result:T):T=>{
         // A timeout is kept as a censored row (duration_ms = the limit it died at): fail-fast ordering counts it as a
         // failure and the rank-12 escalator raises this check's next timeout; green-only history ignores it.
-        if(!result.hostError) try { recordCheckDuration(db,{projectId:config.projectId,command:command.command,cwd:command.cwd,root:task.project_cwd,durationMs:Date.now()-startedAt,exitCode:result.exitCode}); } catch { /* history is a hint only */ }
+        if(!result.hostError&&!isolated) try { recordCheckDuration(db,{projectId:config.projectId,command:command.command,cwd:command.cwd,root:task.project_cwd,durationMs:Date.now()-startedAt,exitCode:result.exitCode}); } catch { /* history is a hint only */ }
         return result;
       };
       // A check with secrets runs through the host call, not a BB terminal: a terminal's command line and screen would carry the values.

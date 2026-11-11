@@ -141,7 +141,8 @@ export type BuildCliInvocation = (input: {
 }) => { argv: string[]; env: Record<string, string>; applied: string[]; unapplied: Array<{ key: string; value: unknown; channel: "NONE"; reason: string }> };
 
 /** writer/server/verify.ts — a task's verification[] run on a prepared tree, per check. */
-export type RunVerification = (config: PrototypeConfig, task: TaskV2, runId?: string) => Promise<Array<{
+/** `options.isolated`: a background sweep's run (the landing suite) — its own pool, one check at a time, and it writes no check-duration history. */
+export type RunVerification = (config: PrototypeConfig, task: TaskV2, runId?: string, writerThreadId?: string, options?: { isolated?: boolean }) => Promise<Array<{
   command: string; exitCode: number; stdout: string; stderr: string; hostError?: true;
 }>>;
 
