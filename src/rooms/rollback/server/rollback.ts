@@ -223,7 +223,8 @@ export function createRollback(ctx: ServerCore, services: Services) {
   async function runChecks(t: RollbackTarget, root: string, commands?: TaskV2["verification"], options?: { isolated?: boolean }): Promise<RollbackItem[]> {
     const task = retargetTask({ ...t.task, verification: commands ?? t.task.verification }, root);
     if (!task.verification.length) return [];
-    const results = await services.runVerification(t.config, task, t.runId, undefined, options?.isolated ? { isolated: true } : undefined);
+    // A rollback/landing worktree is always a throwaway copy: a changed protected root fails the check on it.
+    const results = await services.runVerification(t.config, task, t.runId, undefined, options?.isolated ? { isolated: true, throwaway: true } : { throwaway: true });
     return results.map((row) => ({
       command: row.command, exitCode: row.exitCode, ok: row.exitCode === 0 && !row.hostError,
       ...(row.hostError ? { hostError: true as const } : {}), tail: row.exitCode === 0 ? "" : tail(`${row.stderr}\n${row.stdout}`),
@@ -534,15 +535,34 @@ export function createRollback(ctx: ServerCore, services: Services) {
     const found = await targetOf(pending.taskId);
     if ("error" in found) return lost(found.error);
     const t = found.target;
-    if (!t.task.verification.length) return write({ suite: "none", head, at: Date.now(), reason: "the task's contract names no checks" });
+    const settings = loadProjectSettings(db, t.projectId, getRunSettingsScopes(db, t.runId));
+    const namedSuite = settings["verification.project_suite"];
+    const suiteCommand = typeof namedSuite === "string" && namedSuite.trim() ? namedSuite.trim() : null;
+    // Nothing to run only when the contract names no checks AND the project names no suite: a named suite runs for every landing.
+    if (!t.task.verification.length && !suiteCommand) return write({ suite: "none", head, at: Date.now(), reason: "the task's contract names no checks" });
     const made = await makeWorktree(t, `suite-${safeName(t.taskId)}-${nonce()}`, head, "rollback");
     if ("error" in made) return lost(made.error);
     try {
-      const items = await runChecks(t, made.path, undefined, { isolated: true });
+      const items = t.task.verification.length ? await runChecks(t, made.path, undefined, { isolated: true }) : [];
       const red = items.filter((item) => !item.ok && !item.hostError).map((item) => item.command).slice(0, 10);
       // A check the host could not run proves nothing: it is `error` (tried again later), never `red`. A real red elsewhere still wins.
       if (!red.length && items.some((item) => item.hostError)) return lost("a check could not run on the host");
-      write({ suite: red.length ? "red" : "green", head, at: Date.now(), ...(red.length ? { red } : {}), ...(pending.tries ? { tries: pending.tries } : {}) });
+      // The project suite (verification.project_suite, a command; unset: none is named, none is guessed) runs in the
+      // same throwaway worktree after the task's own checks. A red one is the same owner item as a red check; the
+      // merge itself is never blocked, delayed or reverted.
+      let projectSuite: LandingSuite["projectSuite"] = { command: suiteCommand, state: suiteCommand ? "error" : "not named" };
+      if (suiteCommand) {
+        // The claim is renewed before the suite: the task's checks may have used most of it, and a claim that went
+        // stale mid-suite would let a second pass run the same landing again.
+        write({ suite: "running", head, at: Date.now(), tries: pending.tries });
+        try {
+          const ran = await host.call("gateRun", { requestedHostId: t.hostId, basePath: made.path, command: suiteCommand, timeoutSec: GATE_TIMEOUT_SEC },
+            { hostId: t.hostId, timeoutMs: (GATE_TIMEOUT_SEC + 60) * 1000 });
+          projectSuite = { command: suiteCommand, state: ran.exitCode === 0 ? "green" : "red", exitCode: ran.exitCode };
+        } catch { /* the machine, not the suite, failed: `error` stays on the record */ }
+      }
+      if (projectSuite.state === "red" && suiteCommand) red.push(suiteCommand);
+      write({ suite: red.length ? "red" : "green", head, at: Date.now(), ...(red.length ? { red } : {}), projectSuite, ...(pending.tries ? { tries: pending.tries } : {}) });
       // A red suite never un-lands the merge: one item on the owner's list names the task and the command that went red.
       if (red.length) await postRedItem(t, pending.attemptId, head, red);
     } finally {

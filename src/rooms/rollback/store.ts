@@ -26,6 +26,8 @@ export type LandingSuite = {
   suite: "green" | "red" | "none" | "error" | "running"; head: string | null; at: number; red?: string[]; reason?: string;
   /** How many times the run was lost to the machine (host error, offline host, failed worktree, a stale claim); the third `error` is final. */
   tries?: number;
+  /** The project's own suite (verification.project_suite, a command), run in the same throwaway worktree after the task's checks. `not named`: the project has none, none is guessed; `error`: the machine could not run it, not a red. */
+  projectSuite?: { command: string | null; state: "green" | "red" | "not named" | "error"; exitCode?: number };
 };
 /** The most runs a landing gets when the machine, not the code, fails them; after that the verdict stays `error`. */
 export const LANDING_SUITE_TRIES = 3;

@@ -4,13 +4,30 @@ import { sha256Hex } from "@lane-pilot/kit";
 import type { LanePilotDatabase } from "./database";
 import { getRun } from "./runs-store";
 
+/**
+ * The frame every lane_pilot_task write goes through (SMA m_wrappers), the same one attempt writes use: the write,
+ * its journal row and the world counter's bump land in one transaction, so a crash never leaves a change with no
+ * journal or a counter a reader missed. The counter's domain is attempts and task rows alike.
+ */
+function taskFrame(db: LanePilotDatabase, taskId: string, field: string, reason: string | null, write: () => boolean): boolean {
+  return db.transaction(() => {
+    if (!write()) return false;
+    db.prepare("INSERT INTO lane_pilot_task_transition(task_id,field,reason,at) VALUES(?,?,?,?)").run(taskId, field, reason, Date.now());
+    db.prepare("UPDATE lane_pilot_task SET world_seq=(SELECT MAX(COALESCE((SELECT MAX(world_seq) FROM lane_pilot_attempt),0), COALESCE((SELECT MAX(world_seq) FROM lane_pilot_task),0))+1) WHERE id=?").run(taskId);
+    return true;
+  })();
+}
+
 export function createTask(
   db: LanePilotDatabase,
   ids: { id:string; runId:string; kind:"bb"|"cli"; contract:unknown; birth?:string },
 ): void {
-  db.prepare("INSERT INTO lane_pilot_task(id,run_id,kind,contract_json,created_at,birth) VALUES (?,?,?,?,?,?)")
-    .run(ids.id, ids.runId, ids.kind, JSON.stringify(ids.contract), Date.now(), ids.birth ?? "pm");
-  recordContractEdition(db, ids.id, ids.contract, null, "created");
+  taskFrame(db, ids.id, "created", null, () => {
+    db.prepare("INSERT INTO lane_pilot_task(id,run_id,kind,contract_json,created_at,birth) VALUES (?,?,?,?,?,?)")
+      .run(ids.id, ids.runId, ids.kind, JSON.stringify(ids.contract), Date.now(), ids.birth ?? "pm");
+    recordContractEdition(db, ids.id, ids.contract, null, "created");
+    return true;
+  });
 }
 
 /** Mints the next numbered, hashed contract edition (SMA tb_contract): the table is append-only, so every word change keeps its history. */
@@ -33,10 +50,12 @@ export function updateTaskContract(
   taskId: string,
   contract: unknown,
 ): boolean {
-  const result = db.prepare("UPDATE lane_pilot_task SET contract_json=? WHERE id=?")
-    .run(JSON.stringify(contract), taskId);
-  if (result.changes > 0) recordContractEdition(db, taskId, contract, getTaskPlan(db, taskId), null);
-  return result.changes > 0;
+  return taskFrame(db, taskId, "contract_json", null, () => {
+    const result = db.prepare("UPDATE lane_pilot_task SET contract_json=? WHERE id=?")
+      .run(JSON.stringify(contract), taskId);
+    if (result.changes > 0) recordContractEdition(db, taskId, contract, getTaskPlan(db, taskId), null);
+    return result.changes > 0;
+  });
 }
 
 export function getTask(db: LanePilotDatabase, taskId: string): {
@@ -121,7 +140,7 @@ export function listTaskKinds(db: LanePilotDatabase, runId: string): Array<"bb"|
 
 /** The PM's closing words on a canceled task (lane_pilot_cancel_task words). */
 export function setTaskClosedWords(db: LanePilotDatabase, taskId: string, words: string): void {
-  db.prepare("UPDATE lane_pilot_task SET closed_words=? WHERE id=?").run(words, taskId);
+  taskFrame(db, taskId, "closed_words", null, () => db.prepare("UPDATE lane_pilot_task SET closed_words=? WHERE id=?").run(words, taskId).changes > 0);
 }
 
 /** The date a queued task is held until (HOLD_FOREVER = until released); null when it is not held. */
@@ -131,7 +150,7 @@ export function taskHeldUntil(db: LanePilotDatabase, taskId: string): number | n
 
 /** Hold or release a task of a run; false when the task is not of this run. */
 export function setTaskHeldUntil(db: LanePilotDatabase, taskId: string, runId: string, until: number | null): boolean {
-  return Boolean(db.prepare("UPDATE lane_pilot_task SET held_until=? WHERE id=? AND run_id=?").run(until, taskId, runId).changes);
+  return taskFrame(db, taskId, "held_until", null, () => db.prepare("UPDATE lane_pilot_task SET held_until=? WHERE id=? AND run_id=?").run(until, taskId, runId).changes > 0);
 }
 
 /** The stored contract JSON of a task, optionally checked against its run. */
@@ -144,7 +163,7 @@ export function getTaskContractJson(db: LanePilotDatabase, taskId: string, runId
 
 /** Rewrite a task's stored contract JSON in place. */
 export function updateTaskContractJson(db: LanePilotDatabase, taskId: string, runId: string, contractJson: string): void {
-  db.prepare("UPDATE lane_pilot_task SET contract_json=? WHERE id=? AND run_id=?").run(contractJson, taskId, runId);
+  taskFrame(db, taskId, "contract_json", null, () => db.prepare("UPDATE lane_pilot_task SET contract_json=? WHERE id=? AND run_id=?").run(contractJson, taskId, runId).changes > 0);
 }
 
 /** A task's row under its run (the PM's dispatch dedupe reads it). */
@@ -188,7 +207,7 @@ export function listBbTaskRowsForRun(db: LanePilotDatabase, runId: string): Arra
 
 /** The PM's closing words go with the cancellation: a revived task shows none. */
 export function clearTaskClosedWords(db: LanePilotDatabase, taskId: string): void {
-  db.prepare("UPDATE lane_pilot_task SET closed_words=NULL WHERE id=?").run(taskId);
+  taskFrame(db, taskId, "closed_words", null, () => db.prepare("UPDATE lane_pilot_task SET closed_words=NULL WHERE id=?").run(taskId).changes > 0);
 }
 
 /** The task's dispatch time (the wall-clock cap measures age from it). */

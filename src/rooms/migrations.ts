@@ -592,4 +592,9 @@ export const migrations = [
   `ALTER TABLE lane_pilot_attempt_change ADD COLUMN suite_json TEXT`,
   // The world counter's MAX(world_seq) read on every transition (SMA m_wrappers) stops scanning the table: an index on it. Appended last, nothing before it moves.
   `CREATE INDEX IF NOT EXISTS lane_pilot_attempt_world_seq ON lane_pilot_attempt(world_seq)`,
+  // Task and hold writes join the frame (SMA m_wrappers): a journal row per task-row write, and the same world counter the attempts use.
+  `CREATE TABLE IF NOT EXISTS lane_pilot_task_transition(task_id TEXT NOT NULL, field TEXT NOT NULL, reason TEXT, at INTEGER NOT NULL)`,
+  `ALTER TABLE lane_pilot_task ADD COLUMN world_seq INTEGER`,
+  // The counter's next value is two MAX reads, one per table, each on its index: no table is scanned on a transition.
+  `CREATE INDEX IF NOT EXISTS lane_pilot_task_world_seq ON lane_pilot_task(world_seq)`,
 ];

@@ -368,7 +368,7 @@ describe("[sma:k_lib_landing] the landing sweep takes no backlog, newest first, 
     // The worktree it made was removed again, and the run was isolated (own pool, no duration history).
     expect(w.calls.filter((c) => c === "gitCreateWorktree")).toHaveLength(1);
     expect(w.calls.filter((c) => c === "gitRemoveWorktree")).toHaveLength(1);
-    expect(w.options).toEqual([{ isolated: true }]);
+    expect(w.options).toEqual([{ isolated: true, throwaway: true }]);
   });
 
   it("takes the newest four first when more are waiting", async () => {

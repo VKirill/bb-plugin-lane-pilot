@@ -6,6 +6,7 @@ import { failureClass } from "../../contracts/failure-class";
 import { getRun, getRunSettingsScopes, getRunWriterHost, listAttemptRowsForProject, listRunTaskSummaries, loadProjectSettings } from "../../storage";
 import { checkRecipe, factKind, type CheckMeasure } from "../rails";
 import { sha256Hex } from "@lane-pilot/kit";
+import { runOnHost } from "@lane-pilot/host-calls";
 import { sshKeysOpen, sshMaskEvidence } from "@lane-pilot/models";
 
 /** A check as an operation (SMA m_ck_answer): one receipt per request hash. A request repeated while the check runs, or within
@@ -149,20 +150,54 @@ export function registerConversationTools(ctx: ServerCore, services: Services): 
         return JSON.stringify({ ...stored, deduplicated: true });
       }
       const workspacePath = run.writer_workspace_path;
+      const settings = loadProjectSettings(db, run.project_id, getRunSettingsScopes(db, runId!));
       // verification.ssh_keys (project, unset = off): ~/.ssh is masked in checks unless the project says on.
-      const sshKeys = sshKeysOpen(loadProjectSettings(db, run.project_id, getRunSettingsScopes(db, runId!)));
+      const sshKeys = sshKeysOpen(settings);
       const checkId = `chk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      // verification.copy (project, unset = on): the check runs in a throwaway worktree of the writer workspace's head,
+      // a check must never reach the live checkout. off, or a copy that cannot be made, runs in the live workspace and
+      // the copy measure says why (SMA m_ck_isolated).
       const receipt: CheckReceipt = { checkId, requestHash, recipe, state: "running", measures: [], startedAt: Date.now(), endedAt: null };
       const writeReceipt = async () => {
         await kv.set(key, receipt as never).catch(() => undefined);
         await kv.set(receiptIdKey(checkId), receipt as never).catch(() => undefined);
       };
+      // The receipt, the running entry and the stop listener exist before the copy is made: making it can take minutes,
+      // and a repeated call or a stopped turn in that window must find the check, not start a second one or miss the stop.
       await writeReceipt();
       const entry = { controller: new AbortController(), threadId: context.threadId ?? null, stopReason: "stopped" as "stopped" | "stopped_by_turn_stop" };
       running.set(checkId, entry);
       if (entry.threadId) byThread.set(entry.threadId, new Set([...(byThread.get(entry.threadId) ?? []), checkId]));
+      const stopByTurn = () => { if (running.has(checkId)) { entry.stopReason = "stopped_by_turn_stop"; entry.controller.abort(new Error("stopped_by_turn_stop")); } };
       // The stopped turn cancels its own tool call: the same stop, without waiting for the thread event.
-      context.signal?.addEventListener("abort", () => { if (running.has(checkId)) { entry.stopReason = "stopped_by_turn_stop"; entry.controller.abort(new Error("stopped_by_turn_stop")); } }, { once: true });
+      if (context.signal?.aborted) stopByTurn();
+      else context.signal?.addEventListener("abort", stopByTurn, { once: true });
+      let checkPath = workspacePath;
+      let copyNote = "none: verification.copy=off";
+      let worktreePath: string | null = null;
+      if (settings["verification.copy"] !== "off" && !entry.controller.signal.aborted) {
+        // A worktree holds committed files only. A workspace with uncommitted changes is checked where it stands, and
+        // the measure says so: a copy of HEAD would test the code before the change and could answer green for it.
+        // A status the host could not give leaves the copy to decide: a folder with no git fails to make one and says so.
+        const status = await runOnHost(host, { hostId, cwd: workspacePath, command: "git status --porcelain -uall", timeoutSec: 30, timeoutMs: 45_000 }).catch(() => null);
+        const dirty = status && status.exitCode === 0 ? status.stdout.split("\n").filter((line) => line.trim()).length : 0;
+        if (dirty > 0) {
+          copyNote = `none: ${dirty} uncommitted file(s) in the workspace, a copy of HEAD would not hold them`;
+        } else {
+          // No commit named: the copy is of the workspace's own HEAD, the candidate being checked.
+          const created = await host.call("gitCreateWorktree", { requestedHostId: hostId, basePath: workspacePath, name: checkId },
+            { hostId, timeoutMs: 120_000, worktreeOwner: { kind: "check", id: checkId } })
+            .catch((cause: unknown) => ({ status: "failed" as const, path: null, reason: cause instanceof Error ? cause.message : String(cause) }));
+          if (created.status === "ready" && created.path) {
+            // Dependencies are linked in from the base checkout. A failed link is named on the measure: a check that
+            // then cannot find node_modules points at its cause.
+            const prepared = await host.call("gitPrepareWorktree", { requestedHostId: hostId, basePath: workspacePath, worktreePath: created.path }, { hostId, timeoutMs: 600_000 })
+              .then(() => null, (cause: unknown) => (cause instanceof Error ? cause.message : String(cause)));
+            worktreePath = created.path; checkPath = created.path;
+            copyNote = prepared === null ? "worktree" : `worktree (dependencies not prepared: ${prepared})`.slice(0, 300);
+          } else copyNote = `none: ${(created as { reason?: string }).reason ?? "the host could not make a worktree"}`.slice(0, 300);
+        }
+      }
       // The commands run as host jobs so a stop reaches their process tree (SMA m_ck_stop): `stop` by id from another
       // call, or the end of the turn that started the check. The call itself waits and answers with the receipt — a PM
       // cannot sleep, so a check it had to poll would either burn turns or die with the turn that went to wait for it.
@@ -173,13 +208,13 @@ export function registerConversationTools(ctx: ServerCore, services: Services): 
           for (const [index, item] of commands.entries()) {
             if (entry.controller.signal.aborted) break;
             const cwdIn = item.cwd ?? ".", timeoutSec = item.timeoutSec ?? 300, expectExit = item.expectExit ?? 0;
-            const cwd = cwdIn === "." ? workspacePath : `${workspacePath}/${cwdIn.replace(/^\.?\//, "")}`;
+            const cwd = cwdIn === "." ? checkPath : `${checkPath}/${cwdIn.replace(/^\.?\//, "")}`;
             current = item.command;
             try {
-              const result = await host.call("runSandboxedCommand", { requestedHostId: hostId, workspacePath, cwd, command: item.command, timeoutSec, protectedRoots: true, ...(sshKeys ? { sshKeys: true } : {}) },
+              const result = await host.call("runSandboxedCommand", { requestedHostId: hostId, workspacePath: checkPath, cwd, command: item.command, timeoutSec, protectedRoots: true, ...(sshKeys ? { sshKeys: true } : {}) },
                 { hostId, timeoutMs: (timeoutSec + 30) * 1000, job: true, jobKey: `${checkId}:${index}`, signal: entry.controller.signal, cancelOnAbort: true });
-              // The run's writer workspace is a live checkout: a change of its protected roots is recorded, never a failure.
-              receipt.measures.push(checkMeasureOf({ command: item.command, cwd, expectExit, timeoutSec, result, throwaway: false, projectId: run.project_id }));
+              // In the throwaway copy a changed protected root fails the measure; a live-checkout fallback records it.
+              receipt.measures.push(checkMeasureOf({ command: item.command, cwd, expectExit, timeoutSec, result, throwaway: worktreePath !== null, projectId: run.project_id, recipe, copy: copyNote }));
             } catch (cause) {
               if (entry.controller.signal.aborted) break;
               receipt.measures.push({ command: item.command, cwd, expectExit, timeoutSec,
@@ -188,6 +223,7 @@ export function registerConversationTools(ctx: ServerCore, services: Services): 
           }
         } finally {
           forget(checkId, entry.threadId);
+          if (worktreePath) await host.call("gitRemoveWorktree", { requestedHostId: hostId, basePath: workspacePath, worktreePath }, { hostId, timeoutMs: 60_000 }).catch(() => undefined);
           receipt.endedAt = Date.now();
           const stopped = entry.controller.signal.aborted;
           receipt.stoppedCommand = stopped ? current : null;
@@ -208,7 +244,7 @@ export function registerConversationTools(ctx: ServerCore, services: Services): 
  * `rootsChanged: true` with a note and never fails the measure.
  */
 export function checkMeasureOf(input: {
-  command: string; cwd: string; expectExit: number; timeoutSec: number; throwaway?: boolean; projectId?: string;
+  command: string; cwd: string; expectExit: number; timeoutSec: number; throwaway?: boolean; projectId?: string; recipe?: string; copy?: string;
   result: { exitCode: number; stdout: string; stderr: string; backend?: string; policySha256?: string; maskedSsh?: boolean;
     rootsManifest?: { before: string; after: string; changed: boolean; partial?: boolean; git?: string } };
 }): CheckMeasure {
@@ -222,6 +258,7 @@ export function checkMeasureOf(input: {
   return { command: input.command, cwd: input.cwd, expectExit: input.expectExit, timeoutSec: input.timeoutSec,
     evidence, exitCode: input.result.exitCode, passed: input.result.exitCode === input.expectExit && !fails,
     backend: input.result.backend, policySha256: input.result.policySha256, env: "cleared", publication: "closed",
+    recipe: input.recipe ?? "quick", copy: input.copy ?? (input.throwaway ? "worktree" : "none: live checkout"),
     rootsSha256: manifest?.after, rootsChanged,
     ...(manifest?.partial ? { rootsPartial: true } : {}), ...(manifest?.git ? { rootsGit: manifest.git } : {}) };
 }

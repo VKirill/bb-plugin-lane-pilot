@@ -394,7 +394,8 @@ export function transitionAttempt(
     // A cancel of an attempt that is already final is refused as a move, but its code is still recorded (as markCancelCode did after the move).
     if (!wrote && fields.cancelCode) db.prepare("UPDATE lane_pilot_attempt SET cancel_code=COALESCE(cancel_code,?) WHERE id=?").run(fields.cancelCode, attemptId);
     // The world counter (SMA m_wrappers) climbs in the same transaction: a failed write leaves it where it was.
-    db.prepare("UPDATE lane_pilot_attempt SET world_seq=(SELECT COALESCE(MAX(w.world_seq),0)+1 FROM lane_pilot_attempt AS w) WHERE id=?").run(attemptId);
+    // Its domain is every framed write, attempts and task rows alike, so a reader sees task and hold changes too.
+    db.prepare("UPDATE lane_pilot_attempt SET world_seq=(SELECT MAX(COALESCE((SELECT MAX(world_seq) FROM lane_pilot_attempt),0), COALESCE((SELECT MAX(world_seq) FROM lane_pilot_task),0))+1) WHERE id=?").run(attemptId);
     return wrote;
   })();
   if (changed && before.state !== state) attemptChanged(db, attemptId, state, fields.reason);
