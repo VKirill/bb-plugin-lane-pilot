@@ -68,6 +68,16 @@ export function forecastReport(db: Database.Database, input: { projectId?: strin
  * `model` names another — can be trusted: its scored tasks, files MAE, first-try hit and the badge the owner reads.
  */
 export type CalibrationPassport = { projectId: string; model: string | null; tasks: number; filesMae: number | null; firstTryHit: number | null; badge: CalibrationBadge };
+/**
+ * The areas whose forecasts are thin or wrong (SMA k_hss_digest): fewer than three scored tasks, or a
+ * first-try hit under half — named for the session-start digest, five at most.
+ */
+export function weakAreas(db: Database.Database, projectId: string, days = 60): string[] {
+  return forecastReport(db, { projectId, days }).calibration.byArea
+    .filter((area) => area.tasks < 3 || area.firstTryHit < 0.5)
+    .map((area) => area.area).slice(0, 5);
+}
+
 export function calibrationPassport(db: Database.Database, projectId: string, model?: string | null): CalibrationPassport {
   const config = loadPrototypeConfig(db, projectId);
   const current = model ?? (config?.pmProviderId && config?.pmModel ? `${config.pmProviderId}/${config.pmModel}` : null);

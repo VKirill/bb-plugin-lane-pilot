@@ -46,5 +46,5 @@ export type { DiffHiddenAuditRow } from "./analytics-store";
 export { latestAcceptedAttemptOfTask, listAttemptRefsSince } from "./attempts-store";
 export { listNearMissReceipts } from "./stages-store";
 export { PROTECTIONS, DISARM_TERM_MS, disarmKey, isArmed, readDisarm, noteProtectionDisarm, renewDisarm, storedProtectionValue, endDisarm, failedStageReceiptsSince, type Disarm } from "./protections-store";
-export { setAttemptBarrier, listUnmovedLiveAttempts, liveAttemptsOfRun, hostActivityToday } from "./attempts-store";
+export { setAttemptBarrier, listUnmovedLiveAttempts, liveAttemptsOfRun, hostActivityToday, projectLiveAttempts, projectIdForWorkspacePath } from "./attempts-store";
 export { listEvidence, recordEvidence, type EvidenceCheck, type EvidenceRecord } from "./evidence-store";

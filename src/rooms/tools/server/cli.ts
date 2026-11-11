@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
-import { listReviewedObservations } from "../../learning";
+import { listReviewedObservations, pmRulesOf } from "../../learning";
 import { prototypeConfigSchema, taskV2Schema } from "../../contracts";
 import { taskBaselineEntries } from "../../baseline";
-import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, markCancelCode, saveProjectSetting, savePrototypeConfig, transitionAttempt, failedTasksAllProjects, listNearMissReceipts } from "../../storage";
+import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, markCancelCode, saveProjectSetting, savePrototypeConfig, transitionAttempt, failedTasksAllProjects, listNearMissReceipts, projectIdForWorkspacePath, projectLiveAttempts } from "../../storage";
 import { cancelAttemptById, finishRunSafely, pauseRun } from "../../runs/server";
 import { conveyorState, renderTimeline, setConveyor, taskTimeline, unknownReasons } from "../../runs";
 import { TASK_RECORD_USAGE, blindRecord, readsBlind, renderTaskRecord, taskRecord } from "./task-record";
@@ -29,12 +29,14 @@ import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
 import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
 import { MEMORY_EVAL_USAGE, runMemoryEvalCommand } from "../../memory-eval/server";
 import { MEMORY_CONFLICT_USAGE, runMemoryConflictCli, sessionMemoryRpc, memorySettingsFor, type WallThreadReader } from "../../memory/server";
-import { dropMemoryIndexes, hideRecord, lintMemory, listMemory, memoryConceptsJson, memoryIndexStatus, memoryRecordExists, memoryTokenStats, rebuildMemoryIndexes, recordMemoryMiss, reviewMemory } from "@lane-pilot/memory-core";
+import { dropMemoryIndexes, hideRecord, lintMemory, listMemory, memoryConceptsJson, memoryIndexStatus, memoryRecordExists, memoryTokenStats, rebuildMemoryIndexes, recordMemoryMiss, reviewMemory, searchMemoryRecords } from "@lane-pilot/memory-core";
 import { BENCH_USAGE, runBenchCli } from "../../bench/server";
 import { BASELINE_USAGE, runBaselineCli } from "../../baseline/server";
 import { RETURN_USAGE, runReturnCli } from "../../stage-return/server";
 import { FORECAST_USAGE, runForecastCli } from "../../forecast/server";
-import { calibrationPassport } from "../../forecast/server";
+import { calibrationPassport, weakAreas } from "../../forecast/server";
+import { sessionSummaryLine } from "../../session-hooks";
+import { MERGE_INTENT_PREFIX } from "../../verification";
 import { RUN_GOAL_USAGE, runGoalSweep, runRunGoalCli } from "../../run-goal/server";
 import { CAPABILITY_USAGE, runCapabilityCli } from "../../capability/server";
 import { workerSecretReach } from "../../verification";
@@ -359,6 +361,8 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"memory", summary:"The project memory on the hub: search it with a question, write one fact; inside a BB thread the project is the thread's own", usage:MEMORY_CLI_USAGE },
       { name:"jev", summary:"Jev judgments: calibration, labels by source, watch", usage:JEV_USAGE },
       { name:"pm-skill-use", summary:"Record that a PM session opened a skill", usage:"bb lane-pilot pm-skill-use <skill> --thread <thread-id> [--project <project-id>]" },
+      { name:"session-brief", summary:"The checkout's coordination brief for a starting session: live and stale windows, a merge in flight, other windows' claims and weakly calibrated areas", usage:"bb lane-pilot session-brief --cwd <path> [--json]" },
+      { name:"subagent-pack", summary:"The rules and confirmed lessons a Task subagent is born with (a project switches it on with hook.subagent_pack)", usage:"bb lane-pilot subagent-pack \"<prompt>\" [--cwd <path>] [--project <id>]" },
       { name:"skill-lint", summary:"Lint a local skill folder against the skill standard (SKILL.md, references/, scripts/): errors and warnings, exit 1 on errors", usage:"bb lane-pilot skill-lint <dir>" },
       { name:"errands", summary:"Errands: backfill episode rows for past runs (repeated processes first); the process-key eval over the gold set", usage:`${EPISODES_USAGE}
 ${ERRANDS_USAGE}` },
@@ -882,6 +886,50 @@ ${ERRANDS_USAGE}` },
           return { exitCode: written.id ? 0 : 1, stdout: `${JSON.stringify(written)}\n` };
           }
           return { exitCode:1, stderr:MEMORY_CLI_USAGE };
+        }
+        if (command === "session-brief") {
+          // The session hook's coordination brief (SMA k_hss_summary, k_hss_digest): live and stale attempts of
+          // the checkout's project, a merge in flight, other windows' claims and the weakly calibrated areas.
+          const val = (name: string) => { const at = args.indexOf(name); return at >= 0 ? args[at + 1] : undefined; };
+          const cwd = val("--cwd") || process.cwd();
+          const thread = !val("--project") && invocation?.threadId ? await orMiss(bb.sdk.threads.get({ threadId: invocation.threadId }), null, isNotFound) as { projectId?: unknown } | null : null;
+          const projectId = val("--project") ?? projectIdForWorkspacePath(db, cwd) ?? (typeof thread?.projectId === "string" ? thread.projectId : null);
+          const cutoff = Date.now() - 180_000;
+          const live = projectId ? projectLiveAttempts(db, projectId) : [];
+          const counts = { live: live.filter((row) => row.updated_at >= cutoff).length, stale: live.filter((row) => row.updated_at < cutoff).length };
+          let merge = false;
+          if (projectId) {
+            const kv = bb.storage.kv as unknown as { list(prefix?: string): Promise<string[]>; get(key: string): Promise<unknown> };
+            for (const key of await kv.list(MERGE_INTENT_PREFIX)) {
+              try {
+                const intent = await kv.get(key) as { projectId?: string } | null;
+                if (intent?.projectId === projectId) { merge = true; break; }
+              } catch { /* an unreadable intent decides nothing */ }
+            }
+          }
+          const foreign = live.slice(0, 5).map((row) => ({
+            taskId: row.task_id,
+            paths: (() => { try { return (JSON.parse(row.owns_paths ?? "[]") as unknown[]).filter((x): x is string => typeof x === "string").slice(0, 10); } catch { return []; } })(),
+          })).filter((row) => row.paths.length);
+          const weak = projectId ? weakAreas(db, projectId) : [];
+          const summary = sessionSummaryLine({ ...counts, merge });
+          if (args.includes("--json")) return { exitCode:0, stdout:JSON.stringify({ project: projectId, ...counts, merge, foreign, weak, summary }, null, 2) };
+          return { exitCode:0, stdout:`${summary || "nothing at work in this project"}\n` };
+        }
+        if (command === "subagent-pack") {
+          // The layers a Task spawn is born with (SMA k_h_pretask): accepted always-rules and confirmed memory
+          // lessons. Memory text enters a subagent's prompt only where the project switched hook.subagent_pack on.
+          const val = (name: string) => { const at = args.indexOf(name); return at >= 0 ? args[at + 1] : undefined; };
+          const cwd = val("--cwd");
+          const thread = !val("--project") && invocation?.threadId ? await orMiss(bb.sdk.threads.get({ threadId: invocation.threadId }), null, isNotFound) as { projectId?: unknown } | null : null;
+          const projectId = val("--project") ?? (cwd ? projectIdForWorkspacePath(db, cwd) : null) ?? (typeof thread?.projectId === "string" ? thread.projectId : null);
+          if (!projectId) return { exitCode:1, stderr:"no project: pass --project <id> or --cwd <checkout> outside a BB thread" };
+          if (loadProjectSettings(db, projectId)["hook.subagent_pack"] !== "on") return { exitCode:0, stdout:JSON.stringify({ rules: [], lessons: [] }) };
+          const prompt = args.filter((arg, i) => !arg.startsWith("--") && args[i - 1] !== "--cwd" && args[i - 1] !== "--project").join(" ").slice(0, 300);
+          const rules = pmRulesOf(db, projectId).filter((rule) => rule.always).map((rule) => rule.rule).slice(0, 8);
+          const lessons = searchMemoryRecords(db, projectId, prompt || "task", 5, "auto", "subagent", "", { includeObserved: false })
+            .map((record) => record.content.replace(/\s+/g, " ").slice(0, 200));
+          return { exitCode:0, stdout:JSON.stringify({ rules, lessons }) };
         }
         if (command === "skill-lint") {
           return runSkillLintCli(args);

@@ -325,7 +325,8 @@ describe("the session's own state folder", () => {
     hook({ hook_event_name: "PostToolUse", session_id: "run.7", tool_name: "Bash", tool_input: { command: "ls" }, tool_response: "ok" }, home);
     const folders = readdirSync(join(home, ".lane-pilot/session-hooks"));
     expect(folders).toEqual(["run.7"]);
-    expect(readdirSync(join(home, ".lane-pilot/session-hooks/run.7")).sort()).toEqual(["perf.jsonl", "stall-trail.json", "stall.json"]);
+    // ledger.json (k_hpc_progress) is the session's touched-files/commands record, new in wave G.
+    expect(readdirSync(join(home, ".lane-pilot/session-hooks/run.7")).sort()).toEqual(["ledger.json", "perf.jsonl", "stall-trail.json", "stall.json"]);
     // A session id that is only dots would climb out of the folder: both sides use the same fixed name.
     guard(bashPayload("ls", home, { session_id: ".." }), { LANE_PILOT_ROLE: "writer", HOME: home });
     hook({ hook_event_name: "PostToolUse", session_id: "..", tool_name: "Bash", tool_input: { command: "ls" }, tool_response: "ok" }, home);
