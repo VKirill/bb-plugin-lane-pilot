@@ -55,6 +55,7 @@ import type { Services } from "./start";
 import { noteOwnFailure, type WriterTaskState } from "./start-task-state";
 import { waitForDependencies } from "./start-wait-dependencies";
 import { waitForSecrets } from "./start-wait-secrets";
+import { waitForRegressionQuarantine } from "./start-wait-quarantine";
 import { sameArea } from "./start-area";
 
 import type { AttemptState } from "../../contracts/state-machine";
@@ -192,41 +193,6 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
       ctx.log(`writer ${input.taskId}: rollback of ${backupId} incomplete: ${why}`);
       if (input.pmThreadId) void bestEffort(ctx.log, "writer rollback notice", bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[],
         text:`Lane Pilot: task ${input.taskId} was not accepted and its files in ${folder} could not be put back automatically (${why.slice(0, 600)}). The originals are in ~/.lane-pilot/live-backups/${backupId}/files on the folder's machine; tell the owner before another task runs there.` }] } as never), undefined);
-    };
-    /** W32 rank 8: a task that would touch the files of an open found regression waits for it to close — writing into
-     * broken ground reruns the red check and blames the wrong task. No attempt is spent; the reason is in the stage receipt. */
-    const waitForRegressionQuarantine = async (shouldStop?:()=>string|null) => {
-      // Narrowed 2026-11-02 (SelfyStudio cab-core-brace waited forever on editor.html it never touches): the files the
-      // check can touch — sharedFiles plus the path literals of the command; the union of all changed files only when
-      // neither is known (a check whose files cannot be read stays cautious).
-      const changed = (taskId: string) => (services.rollback?.status(taskId).attempts ?? [])
-        .filter((a) => a.state === "accepted").flatMap((a) => a.change?.changed.map((f) => f.path) ?? []);
-      const filesOf = (open: RegressionRecord): string[] => quarantineFileSet(open, changed);
-      let noted = "";
-      for (;;) {
-        if (ctx.isDisposed()) return;
-        const stop = shouldStop?.();
-        if (stop) return stop;
-        const blocker = (() => {
-          try {
-            // fixes_regressions is optional in the contract: absent reads as no named rows (the cast keeps typecheck honest until the field ships).
-            return quarantiningRegression(db, { projectId:input.projectId, runId:input.runId, taskId:input.taskId, ownsPaths:input.task.owns_paths,
-              fixesRegressions:(input.task as TaskV2 & { fixes_regressions?: number[] }).fixes_regressions }, filesOf);
-          } catch { return undefined; } // a test database without the baseline migrations quarantines nothing
-        })();
-        if (!blocker) return;
-        if (noted !== `${blocker.id}`) {
-          noted = `${blocker.id}`;
-          const shared = filesOf(blocker).slice(0, 6).join(", ");
-          const reason = `quarantine: regression #${blocker.id} of ${blocker.taskId} (check red since ${blocker.culpritTask ?? "unknown"}); if the change was meant: lane_pilot_regression {action:"settle", id:${blocker.id}, reason:"…"}; if it is a real break: fix it in a task that owns ${shared} with fixes_regressions:[${blocker.id}]`;
-          ctx.log(`writer ${input.taskId} waits: ${reason}`);
-          const stage = listStageReceipts(db,input.runId,input.taskId).find((row) => row.stageId === "writer-agent");
-          if (!stage || stage.state === "pending") {
-            recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan, reason });
-          }
-        }
-        await new Promise((wake) => setTimeout(wake, pollPause(30_000)));
-      }
     };
     const waitForOverlappingTasks = async (shouldStop?:()=>string|null) => {
       // Tasks queue behind each other in the same checkout only: another repository of the same folder is another checkout.
@@ -484,7 +450,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
           blockBeforeWriter(overlapStop);
           return false;
         }
-        const quarantineStop = await waitForRegressionQuarantine(wallOrTokenStop);
+        const quarantineStop = await waitForRegressionQuarantine(deps, state, input, wallOrTokenStop);
         if (quarantineStop) {
           blockBeforeWriter(quarantineStop);
           return false;
