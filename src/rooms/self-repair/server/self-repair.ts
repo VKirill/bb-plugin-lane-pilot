@@ -1,3 +1,4 @@
+import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { stringAt } from "@lane-pilot/kit";
 import { writerReuseStats } from "../writer-reuse-stats";
 import { writerBriefStats } from "../writer-brief-stats";
@@ -33,11 +34,23 @@ const FORGET_MS = 30 * 86_400_000;
 /** Time the repair thread gets to start the turn the owner's «go ahead» queued before its closing line is read again. */
 const CONTINUE_GRACE_MS = 5 * 60_000;
 
+/** The last `bytes` of a file (the plugin log); also the wall journal's reader, since only this file may read the hub's disk. */
+export function readTail(path: string, bytes: number): string {
+  const fd = openSync(path, "r");
+  try {
+    const size = fstatSync(fd).size;
+    const length = Math.min(size, bytes);
+    const buffer = Buffer.alloc(length);
+    readSync(fd, buffer, 0, length, size - length);
+    return buffer.toString("utf8");
+  } finally { closeSync(fd); }
+}
+
 export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: () => WorkflowEngine | undefined) {
   const { bb, db, host } = ctx;
   const { clearSpawnMarker, keyedSpawnSupported } = deps;
   const { config, setConfig, state, fitState, writeState, patchRecord, runIsLive } = createRepairState(ctx);
-  const collect = createCollector({ bb, db });
+  const collect = createCollector({ bb, db, readTail });
   const regroup = createRegrouper(ctx);
 
   const verdictEnv: VerdictEnv = {
@@ -260,7 +273,6 @@ export function mountSelfRepair(ctx: ServerCore, services: { workflowEngine: Wor
 export { VERDICTS, type Verdict, type Incident, type RepairWorktree, type SignatureRecord, type SelfRepairState, type PmLastOwnerAt } from "./types";
 export type { SelfRepairConfig };
 export { SELF_REPAIR_DEFAULTS } from "./repair-state";
-export { readTail } from "./read-tail";
 export { repairPrompt } from "./repair-prompt";
 export { VERSION, LOADED_AT, reasonSignature, repairPriority, logIncidents, writerStrayFiles, writerRedCheck, pointsAtEngine, isDue, lastPmOwnerMessageAt } from "./episodes";
 export { parseVerdict, repairStatus, repairAnswerForThread, readVerdict, labelJevReceipts, askOwnerAboutRepair } from "./verdict";

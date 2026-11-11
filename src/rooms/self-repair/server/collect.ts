@@ -17,7 +17,6 @@ import { FAILED_ATTEMPT_STATES, isOpenAttemptState, OPEN_ATTEMPT_STATES } from "
 import { hasOpenOwnerItem } from "../../owner-waiting";
 import { attemptRunAndThread, listFailedAttemptRows, listRecentFailedAttemptRows, listStaleAttemptsInState, listStaleOpenStages, listStaleQueuedAttempts, runPmThreadId } from "../../storage";
 import { LOG_TAIL_BYTES, VERSION, logIncidents, reasonSignature, writerRedCheck, writerStrayFiles } from "./episodes";
-import { readTail } from "./read-tail";
 import type { Incident, SelfRepairConfig } from "./types";
 
 const SYSTEM_REASON = /internal_error|merge_failed|merge_queue_timeout|ownership run scope invalid|spawn failed|thread_provisioning_failed|EROFS|execution_packet_failed|snapshot_failed|helper_context|workspace path is inside|stale API handle|ownership git base|cannot compare pre-existing/i;
@@ -32,8 +31,8 @@ const FAILED_STATES = FAILED_ATTEMPT_STATES.map((state) => `'${state}'`).join(",
 /** Stops by design: a question for the PM, a dependency that ended blocked, or a turn the provider cut off (writer_stream_error). */
 const NOT_A_FAULT = /needs_human|depends_on|workspace_not_repo_root|writer_stream_error/i;
 
-export function createCollector(env: { bb: BbPluginApi; db: LanePilotDatabase }) {
-  const { bb, db } = env;
+export function createCollector(env: { bb: BbPluginApi; db: LanePilotDatabase; readTail: (path: string, bytes: number) => string }) {
+  const { bb, db, readTail } = env;
 
   /**
    * A queued task that waits for a depends_on: one still queued or at work (checked on its own, so a chain is reported once,
