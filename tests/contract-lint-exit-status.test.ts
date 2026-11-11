@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TaskV2 } from "../src/rooms/contracts";
 import { lintContract } from "../src/rooms/tasks/server/contract-lint";
-import { maskedExitReason, passWithNoTestsReason, pipelinesOf } from "../src/rooms/tasks/server/lint-exit-status";
+import { maskedExitReason, needsCommitReason, passWithNoTestsReason, pipelinesOf } from "../src/rooms/tasks/server/lint-exit-status";
 
 const root = "/tmp/writer";
 const base: TaskV2 = {
@@ -78,5 +78,34 @@ describe("a runner flag that passes when no test ran (rule 45b334)", () => {
     expect(codes(refused.errors)).toEqual(["verification_pass_with_no_tests"]);
     expect(refused.errors[0]!.message).toContain("remove the flag");
     expect(lint("npx vitest run tests/b.test.ts")).toEqual({ errors:[], warnings:[] });
+  });
+});
+
+describe("a check that only a commit can turn green (live phase 2026-11-11: the writer never commits)", () => {
+  const creating = { ...base, expected_outputs:["drills/a.md"], files:[{ path:"drills/a.md", action:"create", target:"whole file", change:"write the heading" }] } as TaskV2;
+  const lintOf = (task:TaskV2, command:string) =>
+    codes(lintContract({ task:{ ...task, verification:[{ command, cwd:root }] }, workspacePath:root, hostId:"h", kinds:null, sandboxUnsafe:[], openTasks:[], deadDependencies:[] }).errors);
+
+  it.each([
+    "git show HEAD:drills/a.md | grep -q phase",
+    "test \"$(git cat-file -p HEAD:./drills/a.md)\" = x",
+    "git ls-tree HEAD -- drills/a.md | grep -q 100644",
+    "git ls-tree -r --name-only HEAD | grep -q drills/a.md",
+    `python3 -I -c 'import subprocess as s;s.run(["git","show","HEAD:"+p]);s.run(["git","ls-tree","HEAD","--",p])'`,
+  ])("refuses %s on a task that creates the file", (command) => expect(lintOf(creating, command)).toContain("verification_needs_commit"));
+
+  it.each([
+    "test \"$(head -n 1 -- drills/a.md)\" = '# phase'",
+    "git show HEAD:package.json | grep -q name",
+    "git diff --quiet HEAD -- package.json",
+    "git status --porcelain -- drills/ | grep -q a.md",
+    "npx vitest run tests/b.test.ts",
+  ])("lets %s through", (command) => expect(lintOf(creating, command)).not.toContain("verification_needs_commit"));
+
+  it("lets a task that creates nothing read its base file and list the tree (Vampirism Fire: the old file's bytes from HEAD)", () => {
+    const editing = { ...base, expected_outputs:[], files:[{ path:"src/b.ts", action:"modify", target:"f", change:"c" }] } as TaskV2;
+    expect(lintOf(editing, "git show HEAD:src/b.ts > /tmp/base.ts && git ls-tree HEAD -- src | wc -l")).not.toContain("verification_needs_commit");
+    expect(needsCommitReason("git show HEAD:src/b.ts", () => false)).toBeNull();
+    expect(needsCommitReason(`s.run(["git","show","HEAD:"+p])`, (path) => path === null)).toMatch(/the writer never commits/);
   });
 });

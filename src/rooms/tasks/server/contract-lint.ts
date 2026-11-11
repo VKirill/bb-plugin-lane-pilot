@@ -5,7 +5,7 @@ import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOve
 import { findSandboxUnsafeMissingExcludes, runnerFilterArgs, runsWholeSuite } from "../../contracts/check-commands";
 import { NO_RED_KINDS } from "../../contracts";
 import { parseReadFirstHints } from "../read-first";
-import { maskedExitReason, passWithNoTestsReason } from "./lint-exit-status";
+import { maskedExitReason, needsCommitReason, passWithNoTestsReason } from "./lint-exit-status";
 import { SUBJECTIVE_WORDS } from "../../contracts/review-vocabulary"
 import { browserQaRequired } from "../../contracts/quality-mode";
 import type { QualityMode } from "../../contracts/quality-mode";
@@ -470,6 +470,8 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
   for (const [index, check] of task.verification.entries()) {
     const masked = maskedExitReason(check.command);
     if (masked) errors.push({ code:"verification_masked_exit", message:`verification[${index}] command "${check.command}" ${masked}; start the command with \`set -o pipefail;\` (checks run in bash) or drop the pipe, so the check fails when the command before it fails` });
+    const committed = needsCommitReason(check.command, (path) => path ? taskCreatesFile(task, path) : (task.files ?? []).some((file) => file.action === "create"));
+    if (committed) errors.push({ code:"verification_needs_commit", message:`verification[${index}] ${committed}: Lane Pilot merges accepted work itself, so this check stays red whatever the writer does; read the working tree instead (cat, head, test, git status --porcelain, git diff), and leave what must be true after the merge to the acceptance` });
     const none = passWithNoTestsReason(check.command);
     if (none) errors.push({ code:"verification_pass_with_no_tests", message:`verification[${index}] command "${check.command}" ${none}; remove the flag and name the test file or folder exactly, so a wrong filter fails the check` });
   }

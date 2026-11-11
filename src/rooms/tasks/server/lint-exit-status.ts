@@ -79,3 +79,17 @@ export function passWithNoTestsReason(command: string): string | null {
   if (!flag) return null;
   return `passes the runner flag ${flag[1]}, which makes a filter that matches no test file (a typo, a moved test) exit 0 with zero tests run`;
 }
+
+/**
+ * Why a check can only pass after a commit, or null: it reads from the last commit a file this task is to create —
+ * `git show HEAD:path`, `git cat-file … HEAD:path`, `git ls-tree HEAD`, also spelled as an argument list inside a script
+ * (`["git","show","HEAD:"+p]`). A writer never commits — Lane Pilot merges accepted work — so such a check stays red whatever
+ * the writer does (live phase 2026-11-11: two attempts stopped with a question, the phase stood at execution). Reading the
+ * base version of a file that already exists stays allowed. `creates(path)` says whether the task creates that file;
+ * `creates(null)` whether it creates any (asked when the path is computed, or the tree is listed).
+ */
+export function needsCommitReason(command: string, creates: (path: string | null) => boolean): string | null {
+  const read = [...command.matchAll(/\bgit\W+(?:show|cat-file)\b[^\n]{0,120}?\bHEAD:([\w./@+-]*)/g)].map((match) => match[1]!.replace(/^\.\//, "") || null);
+  const listed = /\bgit\W+ls-tree\W+(?:-[\w-]+\W+)*HEAD\b/.test(command);
+  return read.some(creates) || (listed && creates(null)) ? "reads from the last commit (HEAD) a file this task creates, and the writer never commits" : null;
+}
