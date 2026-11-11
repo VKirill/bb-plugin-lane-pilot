@@ -79,7 +79,8 @@ export function maskLiterals(text: string, jsx: boolean): string {
   let prev = ""; // previous significant char in code mode
   let word = "", prevWord = ""; // identifier run and the one before it — `return 'x'` opens a string, JSX text `don't` does not
   // In JSX `</` opens a closing tag and `{expr}/text/` puts `/` after `}` — neither is a regex there.
-  const regexAllowed = () => prev === "" || (jsx ? "(,=:[!&|?;+-*%^~>".includes(prev) : "(,=:[!&|?{};+-*%^~<>".includes(prev));
+  // `return /re/.test(x)`: after a keyword the last significant char is a letter, and a `/` still opens a regex.
+  const regexAllowed = () => prev === "" || (/[\w$]/.test(prev) && WORDS.has(prevWord)) || (jsx ? "(,=:[!&|?;+-*%^~>".includes(prev) : "(,=:[!&|?{};+-*%^~<>".includes(prev));
   const WORDS = new Set(["return", "typeof", "case", "throw", "delete", "void", "in", "of", "new", "yield", "await", "do", "else"]);
   const stringAllowed = () => prev === "" || "(,=:[{!&|?;+-*%^~".includes(prev) || WORDS.has(prevWord);
   for (let i = 0; i < text.length; i++) {

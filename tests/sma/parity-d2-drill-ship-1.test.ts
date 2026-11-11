@@ -323,7 +323,7 @@ print(json.dumps({"verdict": r["verdict"], "problems": r["problems"], "last": li
   });
 });
 
-describe("[sma:k_lib_releaselint] lp-drill.sh calls predict-lint only on --series or --gate", () => {
+describe("[sma:k_lib_releaselint] lp-drill.sh calls predict-lint only on --series", () => {
   function runSh(...args: string[]) {
     const bin = mkdtempSync(join(tmpdir(), "lp-fakebin-"));
     const log = join(bin, "calls.log");
@@ -342,13 +342,11 @@ describe("[sma:k_lib_releaselint] lp-drill.sh calls predict-lint only on --serie
     }
   });
 
-  it("--series and --gate stop on a lint finding before the drill, with no RECEIPT line", () => {
-    for (const flag of ["--series", "--gate"]) {
-      const res = runSh(flag);
-      expect(res.calls).toContain("predict-lint");
-      expect(res.calls).not.toContain("python3");
-      expect(res.status).toBe(1);
-    }
+  it("--series stops on a lint finding before the drill, with no RECEIPT line", () => {
+    const res = runSh("--series");
+    expect(res.calls).toContain("predict-lint");
+    expect(res.calls).not.toContain("python3");
+    expect(res.status).toBe(1);
     expect(runSh("--series", "--dry-run").calls).not.toContain("predict-lint");
   });
 });

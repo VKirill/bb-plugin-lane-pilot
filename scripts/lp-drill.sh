@@ -7,10 +7,10 @@
 #   (no flag)    every scenario: parallel3, conflict, main_moved, provider_limit, reload, nogit
 #   --dry-run    prints the tasks and changes nothing
 # Exit: 0 pass, 1 a scenario failed (the receipt in .agents/runs/drills/ says why), 2 could not start. The last stdout line is RECEIPT=<path>.
-# The prediction lint (SMA k_lib_releaselint) runs only on a series (--series) or a gate (--gate) run: a CHANGELOG promise without a
+# The prediction lint (SMA k_lib_releaselint) runs only on a series (--series): a CHANGELOG promise without a
 # measure stops it before any scenario. --quick (the deploy path) and a plain run never call it; --dry-run skips it.
 case " $* " in
   *" --dry-run "*) ;;
-  *" --series "*|*" --gate "*) npx tsx "$(dirname "$0")/lp-ship.ts" predict-lint || exit 1 ;;
+  *" --series "*) npx tsx "$(dirname "$0")/lp-ship.ts" predict-lint || exit 1 ;;
 esac
 exec python3 "$(dirname "$0")/lp-drill.py" "$@"

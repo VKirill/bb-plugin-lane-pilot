@@ -307,7 +307,7 @@ export const SMA_CONTRACT_TESTS: Readonly<Record<string, readonly string[]>> = {
   k_lib_pricing: ["tests/sma/safety-nets-2.test.ts › one price list prices a named model, a provider default, and a subscription at zero"],
   k_lib_profilewriter: ["tests/sma/parity-d4-workflows-b-2.test.ts › key names that hold a secret are refused as whole words; ordinary names pass","tests/sma/parity-d4-workflows-b-2.test.ts › a refused pair is skipped and named by key only, the rest is written, and the start goes on"],
   k_lib_reflex: ["tests/sma/parity-b4-safety.test.ts › a lesson trigger fires on the matching act and tires"],
-  k_lib_releaselint: ["tests/sma/parity-d2-drill-ship-1.test.ts › lp-drill.sh calls predict-lint only on --series or --gate"],
+  k_lib_releaselint: ["tests/sma/parity-d2-drill-ship-1.test.ts › lp-drill.sh calls predict-lint only on --series"],
   k_lib_rollbackmark: ["tests/sma/parity-a6-misc.test.ts › a revert records only a stated cause; without one the status says cause unknown"],
   k_lib_rulesparity: ["tests/sma/parity-b4-safety.test.ts › a helper's merged settings carry the person's deny list only"],
   k_lib_scaffold: ["tests/sma/parity-c2-have.test.ts › the scaffold is the memory table with its concepts and the empty full-text index, seeded with nothing"],
