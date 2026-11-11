@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.525
+
+- **Six big files are split into modules; behaviour is unchanged.** The owner's words: «раскладывать по своим домикам, а не создавать огроменные небоскрёбы». `verification/git-integrate.ts` 1207 → 10 lines (ten modules), `storage/attempts-store.ts` 1555 → 11 (eleven), `workflow-engine/src/engine.ts` 1619 → 233 (twenty), `tools/server/cli.ts` 1488 → 261 (seven), `writer/server/finish.ts` 1241 → 44 (eight), `writer/server/start.ts` 1765 → 226. Each old path still exports every name it exported, so no importer changed. Every stream was checked line by line against the old file: a verbatim move for three of them; for the engine, the CLI and the writer's finish the methods and blocks became functions that take what they used to capture, and what differs after folding that rewrite was read by eye (30, 2 and 27 lines).
+- **Not done yet:** `writer/server/start-writer-task.ts` still holds one function of 1 470 lines (1 561 lines in the file); a second pass is cutting it.
+- **A file-size limit in the architecture tests.** A source file holds at most 500 lines. The 55 files that were over it keep a ceiling (their size rounded up to a hundred) that only goes down; nine generated files and dictionaries are exempt.
+- **What picks behaviour by a file's path follows the split:** the wall's table of head parts (`wall/rerun.ts`), the command list `lp-ship` reads for the doc audit (its output is the same line for line), the drill's scene code list, the memory path registry, the map's proofs (10 links, 30 cards). Four tests that name a file by its path were updated to the new path: the spawn list, the house-word baseline, the memory path registry's test input and the acceptance-proof test, which now reads the landing in its own module.
+- **The map.** Unchanged: have 1655, partial 20, void 96, upstream 27, missing 0.
+
 ## 0.1.524
 
 - **Found by the live phase on 0.1.523, fixed.** The phase stood at planning for the whole run: the plan critic approved the plan, and the plan gate refused it with «every check only tests that a file exists». The planner's checks were `test -f <file> && test ! -L <file> && test "$(head -n 1 <file>)" = '<the expected first line>'` — they read the file. The gate judged a check by its first words, so any check that began with `test -f` counted as an existence test whatever followed. It now reads every clause of the command (`&&`, `||`, `;`, a new line): a check is «existence only» when each clause is one. The second planning pass did not fit into the run's 35 minutes.
