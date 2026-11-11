@@ -391,6 +391,8 @@ export function transitionAttempt(
         now, state, wakeGiven, fields.wakeAt ?? null, fields.cancelCode ?? null, attemptId, ...FINAL_ATTEMPT_STATES, state, reopen).changes === 1;
     db.prepare(`INSERT INTO lane_pilot_attempt_transition(attempt_id,from_state,to_state,reason,refused,at) VALUES(?,?,?,?,?,?)`)
       .run(attemptId, before.state, state, fields.reason ?? null, wrote ? 0 : 1, now);
+    // A cancel of an attempt that is already final is refused as a move, but its code is still recorded (as markCancelCode did after the move).
+    if (!wrote && fields.cancelCode) db.prepare("UPDATE lane_pilot_attempt SET cancel_code=COALESCE(cancel_code,?) WHERE id=?").run(fields.cancelCode, attemptId);
     // The world counter (SMA m_wrappers) climbs in the same transaction: a failed write leaves it where it was.
     db.prepare("UPDATE lane_pilot_attempt SET world_seq=(SELECT COALESCE(MAX(w.world_seq),0)+1 FROM lane_pilot_attempt AS w) WHERE id=?").run(attemptId);
     return wrote;

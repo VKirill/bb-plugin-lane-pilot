@@ -211,3 +211,31 @@ describe("[sma:m_wrappers] parkAttemptWake keeps «not passed» apart from an ex
     expect(wake()).toBeNull();
   });
 });
+
+describe("[sma:m_wrappers] a cancel code is recorded whether or not the cancel move was accepted", () => {
+  it("an already-final attempt refuses the move but keeps the code; an accepted cancel writes it in the same transaction; the first code stays", () => {
+    const { db } = db0();
+    createRun(db, "run_c", "proj_c", "bb", "/w");
+    createTask(db, { id: "tc", runId: "run_c", kind: "bb", contract: {} });
+    createAttempt(db, { id: "ac1", runId: "run_c", taskId: "tc" });
+    createAttempt(db, { id: "ac2", runId: "run_c", taskId: "tc" });
+    const code = (id: string) => (db.prepare("SELECT cancel_code FROM lane_pilot_attempt WHERE id=?").get(id) as { cancel_code: string | null }).cancel_code;
+    // Final first (accepted never leaves), then a cancel with a code: the move is refused, the code is still kept.
+    transitionAttempt(db, "ac1", "spawn_requested", { reason: "work" });
+    transitionAttempt(db, "ac1", "running", {});
+    transitionAttempt(db, "ac1", "accepted", { reason: "done" });
+    expect(transitionAttempt(db, "ac1", "canceled", { reason: "late cancel", cancelCode: "stuck" })).toBe(false);
+    expect(getAttempt(db, "ac1")!.state).toBe("accepted");
+    expect(code("ac1")).toBe("stuck");
+    // The refused move is journaled as refused, in the same write.
+    expect((db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_attempt_transition WHERE attempt_id='ac1' AND refused=1").get() as { n: number }).n).toBe(1);
+    // An accepted cancel writes state and code together; a later code does not overwrite the first.
+    transitionAttempt(db, "ac2", "spawn_requested", { reason: "work" });
+    transitionAttempt(db, "ac2", "running", {});
+    transitionAttempt(db, "ac2", "cancel_requested", { reason: "stop" });
+    expect(transitionAttempt(db, "ac2", "canceled", { reason: "stop", cancelCode: "owner" })).toBe(true);
+    expect(code("ac2")).toBe("owner");
+    transitionAttempt(db, "ac2", "canceled", { reason: "again", cancelCode: "stuck" });
+    expect(code("ac2")).toBe("owner");
+  });
+});
