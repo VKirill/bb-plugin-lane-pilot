@@ -1,26 +1,31 @@
 import { randomUUID } from "node:crypto";
 
 import { MissingValueError } from "./expr";
+import type { EvalEnv } from "./expr";
 import { createJournal } from "./journal";
 import type { Journal, RunRow, StepRow } from "./journal";
 import { executorKey, lowerWorkflow } from "./lower";
 import type { ResolveWorkflow } from "./lower";
-import type { QualityMode, Workflow } from "./schema";
+import type { GraphNode as WorkflowNode, PassMode, QualityMode, Workflow, WorkflowEdge } from "./schema";
 import { validateWorkflow } from "./validate";
 import type { RunGoal } from "./goals";
 import { compile } from "./compiled";
 import type { Compiled } from "./compiled";
-import type { NodeExecutor } from "./step-types";
+import type { EffectReconcile, NodeExecutor, StepContext, StepOutcome } from "./step-types";
+import type { Usage } from "./usage";
 import type { EngineOptions, RunSummary } from "./engine-types";
-import { registerBuiltins } from "./engine-builtins";
+import { childOutcome, registerBuiltins } from "./engine-builtins";
 import { start } from "./engine-start";
-import { idle, unbeat } from "./engine-drive";
-import { summary } from "./run-status";
-import { cancel, poll, resolve, resume } from "./engine-resume";
+import { beat, claim, drive, driveLoop, idle, kick, release, retire, unbeat } from "./engine-drive";
+import { cancelOpenSteps, failRun, summary } from "./run-status";
+import { rescueStale, cancel, poll, resolve, resume, settle } from "./engine-resume";
 import { rerunNode } from "./engine-rerun";
 import { amendGoals, goalJournal } from "./engine-goals";
-import { lastAudit } from "./engine-goal-audit";
-import { unknownUsageSteps } from "./engine-step";
+import { closeAfterAudit, lastAudit, shortPathFacts } from "./engine-goal-audit";
+import { checkLimits, contextFor, execStep, noteUnknownUsage, runEffect, runtimeOf, runVotes, skipFan, skipOutput, skipReason, skipsFree, spawnKeyOf, unknownUsageSteps } from "./engine-step";
+import { arrive, branchOf, failStep, gates, tolerates, withinConcurrency } from "./engine-branches";
+import { deliver, dependencies, forEachItems, routeAll, routeEdges, routeParallel, sessionThread, tryJoin, visitsOf } from "./engine-routing";
+import { env, mapWith, mergedCommits, read, refRequired } from "./step-read";
 import type { Pins } from "./pins";
 
 export { MissingValueError };
@@ -54,7 +59,7 @@ export class WorkflowEngine {
     this.journal = createJournal(options.db, this.now, options.onEvent);
     this.instanceId = options.instanceId ?? `engine-${randomUUID().slice(0, 8)}`;
     this.leaseMs = options.leaseMs ?? 90_000;
-    registerBuiltins(this);
+    this.registerBuiltins();
   }
 
   register<R>(key: string, executor: NodeExecutor<R>): this { this.executors.set(key, executor); return this; }
@@ -153,7 +158,7 @@ export class WorkflowEngine {
     return rerunNode(this, runId, nodeId, runtime, patch);
   }
 
-  get(runId: string): RunSummary | null { return this.journal.getRun(runId) ? summary(this, runId) : null; }
+  get(runId: string): RunSummary | null { return this.journal.getRun(runId) ? this.summary(runId) : null; }
 
   /** Everything a live view needs: the run and its steps, with the node each belongs to. */
   snapshot(runId: string): { run: RunRow; steps: StepRow[]; events: unknown[] } | null {
@@ -163,6 +168,61 @@ export class WorkflowEngine {
   }
 
   inFlight(): string[] { return [...this.drives.keys()]; }
+
+  // ---------------------------------------------------------------- private delegates (moved to the engine-* / step-* / run-status modules)
+
+  private drive(runId: string): Promise<RunSummary> { return drive(this, runId); }
+  private claim(runId: string): boolean { return claim(this, runId); }
+  private retire(runId: string): void { return retire(this, runId); }
+  private release(runId: string): void { return release(this, runId); }
+  private beat(runId: string): void { return beat(this, runId); }
+  private unbeat(runId: string): void { return unbeat(this, runId); }
+  private driveLoop(runId: string): Promise<RunSummary> { return driveLoop(this, runId); }
+  private kick(runId: string): Promise<RunSummary> { return kick(this, runId); }
+  private summary(runId: string): RunSummary { return summary(this, runId); }
+  private failRun(runId: string, reason: string): void { return failRun(this, runId, reason); }
+  private cancelOpenSteps(runId: string): void { return cancelOpenSteps(this, runId); }
+  private shortPathFacts(run: RunRow): { size: unknown; accepted: boolean; acceptance: unknown; alreadyMet: boolean } { return shortPathFacts(this, run); }
+  private closeAfterAudit(run: RunRow): Promise<"closed" | "blocked" | "stop"> { return closeAfterAudit(this, run); }
+  private branchOf(run: RunRow, c: Compiled, step: StepRow): { group: string; branch: number; parallel: Extract<WorkflowNode, { type: "parallel" }>; join: Extract<WorkflowNode, { type: "join" }>; parentScope: string } | null { return branchOf(this, run, c, step); }
+  private tolerates(branch: { parallel: Extract<WorkflowNode, { type: "parallel" }>; join: Extract<WorkflowNode, { type: "join" }> }): boolean { return tolerates(branch); }
+  private arrive(run: RunRow, c: Compiled, branch: { group: string; branch: number; join: Extract<WorkflowNode, { type: "join" }>; parentScope: string }, stepKey: string, data: Record<string, unknown>): void { return arrive(this, run, c, branch, stepKey, data); }
+  private failStep(runId: string, c: Compiled, stepKey: string, reason: string, message: string): void { return failStep(this, runId, c, stepKey, reason, message); }
+  private gates(run: RunRow, c: Compiled, pending: StepRow[]): { ready: StepRow[]; changed: boolean } { return gates(this, run, c, pending); }
+  private withinConcurrency(run: RunRow, c: Compiled, ready: StepRow[]): StepRow[] { return withinConcurrency(this, run, c, ready); }
+  private mergedCommits(runId: string): string[] { return mergedCommits(this, runId); }
+  private env(run: RunRow, step: StepRow | null, item?: { value: unknown; index?: number }): EvalEnv { return env(this, run, step, item); }
+  private read(run: RunRow, step: StepRow | null, text: string): unknown { return read(this, run, step, text); }
+  private refRequired(c: Compiled, text: string): boolean { return refRequired(c, text); }
+  private mapWith(run: RunRow, c: Compiled, from: StepRow | null, edge: WorkflowEdge): Record<string, unknown> { return mapWith(this, run, c, from, edge); }
+  private runtimeOf(run: RunRow): unknown { return runtimeOf(this, run); }
+  private contextFor(run: RunRow, c: Compiled, step: StepRow, node: WorkflowNode, attempt: number, signal: AbortSignal): StepContext { return contextFor(this, run, c, step, node, attempt, signal); }
+  private runEffect<T>(j: Journal, runId: string, stepKey: string, key: string, kind: string, fn: () => Promise<T>, options: { intent?: unknown; reconcile?: EffectReconcile<T> } = {}): Promise<T> { return runEffect(this, j, runId, stepKey, key, kind, fn, options); }
+  private spawnKeyOf(runId: string, step: StepRow, attempt: number): string { return spawnKeyOf(this, runId, step, attempt); }
+  private skipReason(run: RunRow, c: Compiled, step: StepRow, node: WorkflowNode): string | null { return skipReason(this, run, c, step, node); }
+  private skipsFree(run: RunRow, c: Compiled, step: StepRow, node: WorkflowNode): boolean { return skipsFree(this, run, c, step, node); }
+  private skipOutput(run: RunRow, c: Compiled, step: StepRow, node: WorkflowNode): Record<string, unknown> { return skipOutput(this, run, c, step, node); }
+  private execStep(runId: string, stepKey: string): Promise<"done" | "stop" | "skip"> { return execStep(this, runId, stepKey); }
+  private runVotes(executor: NodeExecutor<any>, context: StepContext, c: Compiled, node: WorkflowNode, votes: number): Promise<StepOutcome> { return runVotes(this, executor, context, c, node, votes); }
+  private skipFan(run: RunRow, c: Compiled, fan: StepRow, node: WorkflowNode, output: Record<string, unknown>): void { return skipFan(this, run, c, fan, node, output); }
+  private noteUnknownUsage(runId: string, stepKey: string, usage: Usage): void { return noteUnknownUsage(this, runId, stepKey, usage); }
+  private checkLimits(run: RunRow, c: Compiled): string | null { return checkLimits(this, run, c); }
+  private routeAll(run: RunRow, c: Compiled): void { return routeAll(this, run, c); }
+  private visitsOf(runId: string, nodeId: string, scope: string): number { return visitsOf(this, runId, nodeId, scope); }
+  private routeEdges(run: RunRow, c: Compiled, step: StepRow, node: WorkflowNode): void { return routeEdges(this, run, c, step, node); }
+  private forEachItems(run: RunRow, step: StepRow, node: Extract<WorkflowNode, { type: "parallel" }>): unknown[] { return forEachItems(this, run, step, node); }
+  private dependencies(node: Extract<WorkflowNode, { type: "parallel" }>, items: unknown[]): number[][] { return dependencies(node, items); }
+  private routeParallel(run: RunRow, c: Compiled, step: StepRow, node: Extract<WorkflowNode, { type: "parallel" }>): void { return routeParallel(this, run, c, step, node); }
+  private deliver(run: RunRow, c: Compiled, from: StepRow | null, edge: WorkflowEdge, edgeIndex: number,
+    where: { scope: string; fromScope: string; suffix: string; item?: unknown; index?: number; group?: { key: string; branch: number }; after?: number[] }): void {
+    return deliver(this, run, c, from, edge, edgeIndex, where);
+  }
+  private sessionThread(run: RunRow, from: StepRow | null, targetId: string, pass: PassMode, scope: string): string | null { return sessionThread(this, run, from, targetId, pass, scope); }
+  private tryJoin(run: RunRow, c: Compiled, groupKey: string, join: Extract<WorkflowNode, { type: "join" }>, parentScope: string): void { return tryJoin(this, run, c, groupKey, join, parentScope); }
+  private registerBuiltins(): void { return registerBuiltins(this); }
+  private childOutcome(child: RunSummary, node: Extract<WorkflowNode, { type: "subworkflow" }>): StepOutcome { return childOutcome(this, child, node); }
+  private rescueStale(): string[] { return rescueStale(this); }
+  private settle(runId: string, stepKey: string, result: { output: Record<string, unknown>; usage?: Usage; threadId?: string | null } | { error: string }): boolean { return settle(this, runId, stepKey, result); }
 
   dispose(): void {
     this.disposed = true;
