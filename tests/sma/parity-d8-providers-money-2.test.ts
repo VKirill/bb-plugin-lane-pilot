@@ -402,8 +402,8 @@ describe("review fix 2 and 4: money holds", () => {
     // Off holds as on main: only once the cap is spent, whatever the task's estimate.
     expect(await hold({ "money.task_ceiling": "off", "money.monthly_cap_usd": 10 }, 9, 50_000_000)).toBeNull();
     expect((await hold({ "money.task_ceiling": "off", "money.monthly_cap_usd": 10 }, 11, 1))?.reason).toMatch(/^writer_provider_unavailable:money_cap:/);
-    // Only the word «off» is the opt-out, as for every switch: a hand-written "false" leaves the default, on.
-    expect((await hold({ "money.cap_unset_zero": "false" }, 9, 1_000_000))?.reason).toMatch(/no money cap is set/);
+    // A stored no of any spelling is the opt-out, as for every switch (false, 0, «false», «no», «off»).
+    for (const no of ["false", false, 0, "no"]) expect(await hold({ "money.cap_unset_zero": no }, 9, 1_000_000)).toBeNull();
   });
 
   it("a chain of subscription members with nothing set makes main's host calls and takes main's path: no window read from the money hold, a window hold keeps its reason and reset time", async () => {

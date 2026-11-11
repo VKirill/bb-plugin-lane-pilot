@@ -14,8 +14,6 @@ export const SMA_CONTRACT_GAPS: Readonly<Record<string, readonly string[]>> = {
   k_d_tpl_prompts: ["no ready prompt is stored for the planner or the debugger"],
   k_up_legacy: ["update.md changelog-and-cache workflow is not shipped and has no proof in this tree"],
   k_up_reapply: ["saved person patches are not merged onto a new engine version, and that workflow is not installed as a skill"],
-  k_we_uiqa: ["built and tested; off unless browser_qa.enabled=on (bb lane-pilot setting <project> browser_qa.enabled=on); then ui-audit runs between verdict and goal audit."],
-  k_we_verify: ["built and tested; off unless browser_qa.enabled=on (bb lane-pilot setting <project> browser_qa.enabled=on); visible work then owes a passed live check."],
   m_cfg_pipeline_off: ["not built: the conveyor still defaults to on for a fresh install; shipping it off waits for the owner's word"],
   m_sd_approve: ["built and tested; the Approve press and the red branch run only in a window named in LP_DRILL_UI_URL: the hub's own port refuses a browser navigation (403, a BB core guard), so without that address the word goes through the task_word RPC and the scene says why."],
   m_sd_lift: ["built and tested; the live pass runs only with LP_DRILL_WATCHDOG_LIVE=1 in the environment (python3 scripts/lp-drill.py --scenario watchdog); without it the scene only reports a dry run or skipped"],
