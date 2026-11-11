@@ -493,16 +493,22 @@ describe("review fix 6: QA routing", () => {
     expect(qaRoute([{ state: "failed", updatedAt: 2 }, { state: "blocked", updatedAt: 1 }])).toBe("returnable");
   });
 
-  it("[sma:k_wqa_route] the family stops only at the number writer.qa_stop_after names; without it the failed count never stops", () => {
+  it("[sma:k_wqa_route] the family stops at the number writer.qa_stop_after names, 2 when unset; 0 or off keeps the failed count from ever stopping", () => {
     const three = [{ state: "failed", updatedAt: 1 }, { state: "failed", updatedAt: 2 }, { state: "failed", updatedAt: 3 }];
     expect(qaRoute(three)).toBe("returnable");
     expect(qaRoute(three.slice(0, 1), 2)).toBe("returnable");
     expect(qaRoute(three.slice(0, 2), 2)).toBe("stop");
-    expect(qaStopAfter(undefined)).toBeNull();
-    expect(qaStopAfter("")).toBeNull();
-    expect(qaStopAfter("two")).toBeNull();
+    // Unset (or unreadable) is 2: the second failed receipt stops the family.
+    expect(qaStopAfter(undefined)).toBe(2);
+    expect(qaStopAfter("")).toBe(2);
+    expect(qaStopAfter("two")).toBe(2);
+    expect(qaStopAfter(1.5)).toBe(2);
+    expect(qaRoute(three.slice(0, 2), qaStopAfter(undefined))).toBe("stop");
+    // Explicit off: the old advice, a follow-up however many receipts failed.
     expect(qaStopAfter(0)).toBeNull();
-    expect(qaStopAfter(1.5)).toBeNull();
+    expect(qaStopAfter("0")).toBeNull();
+    expect(qaStopAfter("off")).toBeNull();
+    expect(qaRoute(three, qaStopAfter("off"))).toBe("returnable");
     expect(qaStopAfter("3")).toBe(3);
     expect(qaStopAfter(2)).toBe(2);
   });

@@ -133,16 +133,20 @@ export function critiqueRepeatSkip(input: {
 }
 
 /**
- * QA defect routing (SMA k_wqa_route), used only when writer.qa_stop_after is set: the browser-qa receipts of one task family decide
+ * QA defect routing (SMA k_wqa_route), used unless writer.qa_stop_after is stored 0 or off: the browser-qa receipts of one task family decide
  * where a failed check goes. The newest receipt classifies it (blocked = environment, not returnable; failed = returnable to the
  * builder; an earlier blocked one does not change a later real failure), and once the family has `stopAfter` failed receipts it stops.
  */
 export type QaRoute = "returnable" | "not_returnable" | "stop";
 
-/** The setting writer.qa_stop_after as a whole number >= 1, else null: unset or invalid leaves the advice as it always was (a follow-up). */
+export const QA_STOP_AFTER_DEFAULT = 2;
+
+/** The setting writer.qa_stop_after as a whole number >= 1: unset (or not a number) is 2; `0` or `off` is null, the old advice (always a follow-up). */
 export function qaStopAfter(value: unknown): number | null {
+  if (typeof value === "string" && value.trim().toLowerCase() === "off") return null;
   const parsed = typeof value === "string" && /^\d+$/.test(value.trim()) ? Number(value.trim()) : value;
-  return typeof parsed === "number" && Number.isInteger(parsed) && parsed >= 1 ? parsed : null;
+  if (parsed === 0) return null;
+  return typeof parsed === "number" && Number.isInteger(parsed) && parsed >= 1 ? parsed : QA_STOP_AFTER_DEFAULT;
 }
 
 export function qaRoute(receipts: readonly { state: string; updatedAt?: number }[], stopAfter: number | null = null): QaRoute {
