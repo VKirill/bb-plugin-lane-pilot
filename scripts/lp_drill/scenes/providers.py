@@ -8,8 +8,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from lp_drill.env import BAD_MODEL, POLL_SEC
-from lp_drill.hub import bb, hubsql, put_setting, run, setting_rpc
-from lp_drill.report import summarize, verdict
+from lp_drill.hub import bb, hubsql, log, put_setting, run, setting_rpc
+from lp_drill.report import provider_problems, summarize, verdict
 from lp_drill.tasks import task_limit, task_provider
 
 def providers_in_use(project: str) -> dict[str, str]:

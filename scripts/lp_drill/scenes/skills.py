@@ -2,13 +2,17 @@
 from __future__ import annotations
 
 import json
+import os
 import time
+from pathlib import Path
 
 from lp_drill.env import ROOT, STAMP
 from lp_drill.hub import run, setting_rpc, RPC_MISSING
-from lp_drill.report import verdict
+from lp_drill.report import summarize, verdict
 from lp_drill.scenes.guard import sha256_of
 from lp_drill.scenes.memory import thread_text
+from lp_drill.scenes.owner import window_url
+from lp_drill.tasks import note_task
 
 def skills_screen_problems(report: dict) -> list[str]:
     """Window, door and disk (SMA m_sd_skills): the door lists the skill catalog, the window lists skills or explains the empty

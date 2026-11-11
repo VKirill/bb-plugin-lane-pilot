@@ -5,9 +5,10 @@ import json
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
-from lp_drill.env import PARALLEL3_TIMEOUT_MIN, ROOT, STAMP
-from lp_drill.hub import bb, git, hubsql, run
+from lp_drill.env import OPEN_STATES, PARALLEL3_TIMEOUT_MIN, ROOT, SANDBOX_PROJECTS, STAMP
+from lp_drill.hub import bb, git, hubsql, log, run
 from lp_drill.report import (commit_file, conflict_markers, latest_states, provider_problems, sandbox_sound, summarize, verdict)
 from lp_drill.tasks import (conflict_path, note_task, task, task_moved, task_reload, tasks_conflict, tasks_no_code_exit,
                             tasks_parallel3)
@@ -52,7 +53,7 @@ def scenario_parallel3(ctx: Context) -> dict:
                    dispatch={s["id"]: ctx.dispatches.get(s["id"]) for s in specs})
 def flow_contract_stages() -> set[str]:
     """Stage ids a receipt of the task pipeline may carry: the graph's agent/subworkflow nodes plus the writer node's own stages."""
-    pipeline = json.loads((Path(__file__).parent.parent / "workflows" / "lp-task-pipeline.json").read_text())
+    pipeline = json.loads((ROOT / "workflows" / "lp-task-pipeline.json").read_text())
     allowed: set[str] = set()
     for node in pipeline.get("nodes", []):
         if node.get("stages"):

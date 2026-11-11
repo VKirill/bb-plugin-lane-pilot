@@ -1,7 +1,9 @@
 """The revert scenario: a merged change is judged and reverted in the sandbox."""
 from __future__ import annotations
 
+import json
 import time
+from pathlib import Path
 
 from lp_drill.env import POLL_SEC, SANDBOX_PROJECTS, STAMP
 from lp_drill.hub import bb

@@ -7,7 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from lp_drill.env import POLL_SEC, ROOT, STAMP
-from lp_drill.hub import bb, hubsql, run, setting_rpc
+from lp_drill.hub import bb, hubsql, log, run, setting_rpc
 from lp_drill.report import latest_states, summarize, verdict
 from lp_drill.scenes.memory import thread_text
 from lp_drill.tasks import note_task

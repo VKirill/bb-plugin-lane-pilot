@@ -7,6 +7,7 @@ from pathlib import Path
 
 from lp_drill.env import ROOT, SANDBOX
 from lp_drill.hub import bb, hubsql, run, setting_rpc, RPC_MISSING
+from lp_drill.scenes.providers import PROVIDER_QUOTA
 
 def judge_scenario(scenario: dict) -> dict:
     """Suite report judge: a pass counts only with evidence — the tasks it ran, the events it saw or the details it checked."""
