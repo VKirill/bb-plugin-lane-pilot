@@ -377,6 +377,8 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
     const partial=rootsBefore.partial||after.partial;
     return { before:rootsBefore.sha256, after:after.sha256, changed:!partial&&rootsBefore.sha256!==after.sha256, partial, git:after.git };
   };
+  // An RPC result carries no undefined: a run without protected roots has no manifest key at all.
+  const rootsField=async():Promise<Pick<SandboxedCommandResult,"rootsManifest">>=>{ const manifest=await rootsAfter(); return manifest ? { rootsManifest:manifest } : {}; };
   const credentialMask=await credentialMaskFor(input);
   const maskedSsh=sshMasked(credentialMask,null,input);
   try {
@@ -396,7 +398,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
         throw new Error("sandbox_backend_unavailable: bubblewrap launch was denied or executable is missing");
       }
       return {hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,exitCode:child.status ?? (timedOut(child) ? 124 : 1),
-        policySha256,rootsManifest:await rootsAfter(),maskedSsh,stdout:maskSecrets(child.stdout ?? "",secrets),stderr:maskSecrets(keepEnds(child.stderr ?? child.error?.message ?? "",KEEP_STDERR),secrets)};
+        policySha256,...(await rootsField()),maskedSsh,stdout:maskSecrets(child.stdout ?? "",secrets),stderr:maskSecrets(keepEnds(child.stderr ?? child.error?.message ?? "",KEEP_STDERR),secrets)};
     }
     const profile = buildSeatbeltProfile(workspacePath,tempPath,credentialMask);
     const policySha256 = sha256Hex(profile);
@@ -421,7 +423,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
     }
     return {
       hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,
-      exitCode:child.status ?? (timedOut(child) ? 124 : 1),policySha256,rootsManifest:await rootsAfter(),maskedSsh,
+      exitCode:child.status ?? (timedOut(child) ? 124 : 1),policySha256,...(await rootsField()),maskedSsh,
       stdout:maskSecrets(child.stdout ?? "",seatbeltSecrets),stderr:maskSecrets(keepEnds(child.stderr ?? child.error?.message ?? "",KEEP_STDERR),seatbeltSecrets),
     };
   } finally {
