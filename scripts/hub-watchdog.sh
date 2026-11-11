@@ -382,7 +382,8 @@ run() {
   take_lock
   # A dead watchdog is relaunched by the unit at most five times an hour; a dying word (never on a stop signal or a clean leave,
   # which are 143/130/0) tells the owner, so the cap's give-up is never silent (SMA m_sp_watch_loop).
-  trap 'rc=$?; case "$rc" in 0|130|143) ;; *) record "watchdog_exit" "the watchdog died with exit $rc"; say "Сторож хаба BB упал (код $rc). systemd поднимет его, но не больше 5 раз за час — потом хаб без присмотра: systemctl status lp-hub-watchdog, journalctl -u lp-hub-watchdog -n 100." ;; esac' EXIT
+  # This trap replaces take_lock's, so it also drops the mkdir lock (a no-op where flock holds the lock).
+  trap 'rc=$?; rm -rf "$LOCK.d"; case "$rc" in 0|130|143) ;; *) record "watchdog_exit" "the watchdog died with exit $rc"; say "Сторож хаба BB упал (код $rc). Служба поднимет его снова$(case "$RESTART_CAP" in ""|*[!0-9]*|0) ;; *) echo ", но не больше $RESTART_CAP раз за час — потом хаб без присмотра" ;; esac). Журнал: $STATE_DIR/hub-watchdog.log" ;; esac' EXIT
   record "start" "watchdog up; the first look waits ${FIRST_SEC}s"
   [ "$FIRST_SEC" -gt 0 ] && sleep "$FIRST_SEC"
   local silent=0 refused_run=0 down_since=0 silent_pid="" probe state pid board last_board="" knocks=0

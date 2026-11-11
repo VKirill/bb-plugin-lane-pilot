@@ -93,8 +93,8 @@
     "check:deps": "npx --yes dependency-cruiser@16 --config .dependency-cruiser.cjs --output-type err server.ts host.ts app.tsx src packages",
     "test:layout": "node tests/layout/run.mjs",
     "check": "npm test && npm run typecheck && npm run build && npm run test:layout",
- "gate": "npx tsx scripts/lp-ship.ts gate",
- "prepublishOnly": "npm run gate"
+    "gate": "npx tsx scripts/lp-ship.ts gate",
+    "prepublishOnly": "npm run gate"
   },
   "workspaces": [
     "packages/*"
