@@ -81,6 +81,7 @@ export const NATIVE_LP_BRIDGE_TOOLS = [
 export const NATIVE_LP_BRIDGE_PM_TOOLS = [
   "lane_pilot_read",
   "lane_pilot_dispatch_writer",
+  "lane_pilot_propose",
   "lane_pilot_wait_writer",
   "lane_pilot_answer_writer",
   "lane_pilot_cancel_task",

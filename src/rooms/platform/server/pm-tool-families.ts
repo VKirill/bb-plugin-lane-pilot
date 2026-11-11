@@ -50,6 +50,7 @@ export type PmToolFamilyName = keyof typeof PM_TOOL_FAMILIES;
 export const PM_CORE_TOOLS = [
   "lane_pilot_read",
   "lane_pilot_dispatch_writer",
+  "lane_pilot_propose",
   "lane_pilot_wait_writer",
   "lane_pilot_answer_writer",
   "lane_pilot_cancel_task",

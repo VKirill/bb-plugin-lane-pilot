@@ -10,7 +10,7 @@ import { LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/native-agent-ov
  * registered surface is what the PM reads). The ceiling is the measured total on 2026-11-02 rounded up to 1 000; over it,
  * cut first or raise it on purpose, saying why in the commit. Per tool, BB refuses registration above 4096 instructions.
  */
-const SURFACE_CEILING = 63_000; // +300 on 2026-11-11 (SMA wave 3): ten new ready graphs in the route list (+146), the drawing critique's form and the goal audit's points on the phase tool, the forge draft's body
+const SURFACE_CEILING = 63_600; // +600 on 2026-11-11 (SMA wave H): lane_pilot_propose back on the PM list (+484) so the PM can offer a draft (m_sw_chat_draft/m_sw_batch_draft)
 const TOOL_INSTRUCTIONS_MAX = 4_096;
 
 let dispose: (() => Promise<void> | void) | null = null;

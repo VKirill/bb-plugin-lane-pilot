@@ -402,7 +402,7 @@ describe("PM tool gating", () => {
     } as never);
     // The PM's list is folded (src/rooms/tools/pm-tool-families.ts): the core tools plus the family tools and the search, not one tool per capability.
     expect(pm.tools.map((tool) => tool.name).sort()).toEqual([...NATIVE_LP_BRIDGE_PM_TOOLS].sort());
-    expect(pm.tools.length).toBeLessThanOrEqual(30);
+    expect(pm.tools.length).toBeLessThanOrEqual(31);
     expect(writer.tools).toEqual([]);
     expect(ordinary.tools).toEqual([]);
     createRun(db,"gate-report-run",config.projectId);

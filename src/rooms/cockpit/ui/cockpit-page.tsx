@@ -101,7 +101,7 @@ function ScreenBody({ id, rpc, projectId, runId, hostId, onOpen }: { id: ScreenI
     case "today": return <TodayScreen rpc={rpc} projectId={projectId} />;
     case "tasks": return <TasksScreen rpc={rpc} projectId={projectId} runId={runId} hostId={hostId} />;
     case "money": return <MoneyScreen rpc={rpc} hostId={hostId} />;
-    case "workers": return <WorkersScreen rpc={rpc} projectId={projectId} />;
+    case "workers": return <WorkersScreen rpc={rpc} projectId={projectId} hostId={hostId} />;
     case "forge": return <ForgeScreen rpc={rpc} projectId={projectId} runId={runId} />;
     case "memory": return <MemoryScreen rpc={rpc} runId={runId} projectId={projectId} />;
     case "firstrun": return <FirstRunScreen rpc={rpc} projectId={projectId} />;

@@ -8,6 +8,8 @@ import type { rpcContract } from "../../contracts";
 export type AcceptanceCardView = (props: {
   runId: string; taskId: string; refreshKey: unknown; finished: boolean;
   fallback: { objective: string | null; acceptance: string[] } | null;
+  /** «Stop» on the card (SMA sc_acceptance): cancel the running attempt; null on a finished task, which has nothing to stop. */
+  onStop?: (() => void) | null;
 }) => ReactNode;
 import { StageModelStats, StageStrip, WorkBreakdown, useStageStrips } from "../../work-graph/ui";
 import { useLpRpcQuery } from "../../ui-shell/ui";
@@ -110,7 +112,7 @@ function TaskCardTile({ item, showProject, projectName, locale, onOpen }: { item
       {item.column === "blocked" && item.detail ? <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.detail}</div> : null}
       {item.kind === "phase" && item.detail && item.column !== "blocked" ? <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.detail}</div> : null}
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-        {item.kind === "phase" ? <span className={chip}>{t("boardKindPhase")}</span> : <KindChip kind={item.taskKind} />}
+        {item.kind === "phase" ? <span className={chip}>{t("boardKindPhase")}</span> : item.kind === "batch" ? <span className={chip}>{t("boardKindBatch")}</span> : <KindChip kind={item.taskKind} />}
         {item.wave ? <span className={chip}>{fill("boardWave", { n: item.wave.n, m: item.wave.m })}</span> : null}
         {item.area ? <span className={chip}>{areaLabel(item.area)}</span> : null}
         {showProject && projectName ? <span className={chip}>{projectName}</span> : null}
@@ -162,7 +164,7 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
   if (open) return <TaskPage item={open} locale={locale} projectName={projectName(open.projectId)} onBack={() => setOpen(null)} AcceptanceCard={AcceptanceCard} />;
   const showProject = projectId === "all";
   const tile = (item: Item) => <TaskCardTile key={item.key} item={item} showProject={showProject} projectName={projectName(item.projectId)} locale={locale}
-    onOpen={() => item.kind === "phase" ? navigate.toPluginPanel("lane-pilot-cockpit", { subPath: "phases" }) : setOpen(item)} />;
+    onOpen={() => item.kind === "phase" ? navigate.toPluginPanel("lane-pilot-cockpit", { subPath: "phases" }) : item.kind === "batch" && item.pmThreadId ? navigate.toThread(item.pmThreadId) : setOpen(item)} />;
   return (
     <div className="space-y-3" data-testid="task-board">
       <div className="flex flex-wrap items-end justify-between gap-2">
@@ -415,7 +417,8 @@ function TaskPage({ item, locale, projectName, onBack, AcceptanceCard }: { item:
               {card.reason && !finished(card.state) ? <p className="mt-3 whitespace-pre-wrap break-words rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">{card.reason}</p> : null}
               {card.kind === "task" && item.taskId ? (
                 <AcceptanceCard runId={item.runId} taskId={item.taskId} refreshKey={card} finished={finished(card.state)}
-                  fallback={card.contract ? { objective: card.contract.objective, acceptance: card.contract.acceptance } : null} />
+                  fallback={card.contract ? { objective: card.contract.objective, acceptance: card.contract.acceptance } : null}
+                  onStop={["queued", "running", "checking"].includes(item.column) ? () => act("cancel_attempt") : null} />
               ) : null}
               {card.contract?.dependsOn.length ? (
                 <Section title={t("boardDepends")}>

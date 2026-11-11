@@ -143,8 +143,13 @@ export const PROBES = {
   "documentary.role": {
     prompt: "Lane Pilot documentary probe. Reply with the role Lane Pilot gave you for this session — the role name only, nothing else.",
     // The prompt does not name the role, so the answer itself is the proof: the helper can know it only from the session
-    // Lane Pilot gave it. (A check of the events would be empty: they repeat the model's reply.)
+    // Lane Pilot gave it. The spawn side is proved too: the thread's plugin metadata must carry the pm-reader role
+    // the probe was launched with. (Weak proof, as metadata is what Lane Pilot stored, not what the session saw.)
     expect: /pm-reader/,
+    check: async ({ bb, threadId }: ProbeCheckArgs) => {
+      const metadata = await bb.sdk.threads.getPluginMetadata({ threadId }).catch(() => null) as Record<string, unknown> | null;
+      return metadata?.role === "pm-reader" ? { ok: true } : { ok: false, reason: `documentary.role: the thread's spawn metadata does not carry the pm-reader role (role=${String(metadata?.role ?? "none")})` };
+    },
   },
   "documentary.hooks": {
     prompt: "Lane Pilot documentary probe. Run the shell command `echo probe > .lp-probe-hooks.txt` in the workspace, then say TRIED. Nothing else.",

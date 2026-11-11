@@ -1,5 +1,5 @@
 import { createJournal, receiptThreadId, wfBoardRuns, wfCurrentNodeId } from "@lane-pilot/workflow-engine";
-import { getRun, getRunObjective, getTask, getTaskContractJson, getTaskPlan, laterFamilyAttemptTaskIds, listAttemptHistory, listBoardAttemptRows, listRunAttemptStates, listStageReceipts, taskHeldUntil, type LanePilotDatabase } from "../../storage";
+import { getRun, getRunObjective, getTask, getTaskContractJson, getTaskPlan, laterFamilyAttemptTaskIds, listAttemptHistory, listBatchDraftRows, listBoardAttemptRows, listRunAttemptStates, listStageReceipts, taskHeldUntil, type LanePilotDatabase } from "../../storage";
 import { taskFamily, TASK_KINDS, CARD_STAGE_ORDER, CHECK_STAGE_IDS, PLAN_STAGE_IDS } from "@lane-pilot/contracts";
 import { OPEN_ATTEMPT_STATES } from "../../contracts";
 
@@ -18,7 +18,7 @@ export type TaskKind = (typeof TASK_KINDS)[number];
  */
 export type BoardPhase = "queued" | "planning" | "waiting" | "writing" | "checking" | "retrying" | "blocked" | "stuck" | "closed" | "accepted" | "canceled" | "chain";
 export type BoardItem = {
-  kind: "task" | "workflow" | "phase"; key: string; runId: string; taskId: string | null;
+  kind: "task" | "workflow" | "phase" | "batch"; key: string; runId: string; taskId: string | null;
   /** The owner-facing title (`display_title` of the task standard) or, for older tasks, the technical one. */
   title: string; techTitle: string | null; taskKind: TaskKind | null; area: string | null; objective: string | null;
   projectId: string | null; pmThreadId: string | null; column: BoardColumn; state: string; phase: BoardPhase;
@@ -140,6 +140,22 @@ export function buildTaskBoard(db: LanePilotDatabase, input: { projectId?: strin
   // Phase cards are dealt by the phase room and passed in (SMA m_sw_unit_card): phase→runs is the one allowed
   // direction — runs reaching back for them would close a room cycle.
   items.push(...phases);
+  // A proposed batch is a work unit of its own (SMA m_sw_unit_card): one card for the draft, its member tasks
+  // appearing as their own cards once the owner creates them.
+  for (const draft of listBatchDraftRows(db, { projectId: input.projectId ?? null, since: input.doneSince, limit })) {
+    const contracts = (() => { try { return JSON.parse(draft.contracts_json) as unknown[]; } catch { return []; } })();
+    const failed = (() => { try { return (JSON.parse(draft.results_json ?? "[]") as Array<{ state?: string } | null>).filter((row) => row?.state === "failed").length; } catch { return 0; } })();
+    items.push({
+      kind: "batch", key: `batch:${draft.id}`, runId: draft.run_id ?? draft.id, taskId: null,
+      title: clip(draft.objective, 120) ?? `Пачка из ${contracts.length} задач`, techTitle: draft.id,
+      taskKind: null, area: null, objective: clip(draft.objective, 160), projectId: draft.project_id, pmThreadId: draft.thread_id,
+      column: draft.state === "created" ? "done" : draft.state === "partial" ? "blocked" : "queued",
+      state: draft.state, phase: draft.state === "created" ? "accepted" : draft.state === "partial" ? "blocked" : "queued",
+      stage: null, model: null, since: null, waitingFor: [],
+      detail: draft.state === "partial" ? clip(`не созданы: ${failed} из ${contracts.length}`, 160) : null,
+      attemptNo: 0, threadId: null, attemptId: null, updatedAt: draft.updated_at, held: false, gates: null, wave: null,
+    });
+  }
   return items.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 

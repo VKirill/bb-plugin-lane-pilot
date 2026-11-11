@@ -45,7 +45,7 @@ export const rpcRuns = {
   task_board: {
     input: z.object({ projectId: z.string().min(1).optional(), doneHours: z.number().int().min(1).max(24 * 30).default(24) }).strict(),
     output: z.object({ items: z.array(z.object({
-      kind: z.enum(["task", "workflow", "phase"]), key: z.string(), runId: z.string(), taskId: z.string().nullable(), title: z.string(), techTitle: z.string().nullable(),
+      kind: z.enum(["task", "workflow", "phase", "batch"]), key: z.string(), runId: z.string(), taskId: z.string().nullable(), title: z.string(), techTitle: z.string().nullable(),
       taskKind: z.enum(TASK_KINDS).nullable(), area: z.string().nullable(), objective: z.string().nullable(),
       projectId: z.string().nullable(), pmThreadId: z.string().nullable(), pmThreadTitle: z.string().nullable(),
       column: z.enum(["queued", "running", "checking", "blocked", "done"]), state: z.string(),
