@@ -65,6 +65,9 @@ function waitsFor(reason: string | null): string[] {
   return holder ? [holder[1]!] : [];
 }
 
+/** Drafts already reported as malformed, so the board logs each once. */
+const skippedDrafts = new Set<string>();
+
 export function buildTaskBoard(db: LanePilotDatabase, input: { projectId?: string | null; doneSince: number; limit?: number; runIds?: readonly string[] }, phases: BoardItem[] = []): BoardItem[] {
   const limit = input.limit ?? 400;
   const rawTasks = listBoardAttemptRows(db, { projectId: input.projectId, runIds: input.runIds, doneSince: input.doneSince, limit });
@@ -143,18 +146,27 @@ export function buildTaskBoard(db: LanePilotDatabase, input: { projectId?: strin
   // A proposed batch is a work unit of its own (SMA m_sw_unit_card): one card for the draft, its member tasks
   // appearing as their own cards once the owner creates them.
   for (const draft of listBatchDraftRows(db, { projectId: input.projectId ?? null, since: input.doneSince, limit })) {
-    const contracts = (() => { try { return JSON.parse(draft.contracts_json) as unknown[]; } catch { return []; } })();
-    const failed = (() => { try { return (JSON.parse(draft.results_json ?? "[]") as Array<{ state?: string } | null>).filter((row) => row?.state === "failed").length; } catch { return 0; } })();
-    items.push({
-      kind: "batch", key: `batch:${draft.id}`, runId: draft.run_id ?? draft.id, taskId: null,
-      title: clip(draft.objective, 120) ?? `Пачка из ${contracts.length} задач`, techTitle: draft.id,
-      taskKind: null, area: null, objective: clip(draft.objective, 160), projectId: draft.project_id, pmThreadId: draft.thread_id,
-      column: draft.state === "created" ? "done" : draft.state === "partial" ? "blocked" : "queued",
-      state: draft.state, phase: draft.state === "created" ? "accepted" : draft.state === "partial" ? "blocked" : "queued",
-      stage: null, model: null, since: null, waitingFor: [],
-      detail: draft.state === "partial" ? clip(`не созданы: ${failed} из ${contracts.length}`, 160) : null,
-      attemptNo: 0, threadId: null, attemptId: null, updatedAt: draft.updated_at, held: false, gates: null, wave: null,
-    });
+    // One malformed row (contracts_json is null, an object, a string, broken JSON) must not take the board down: it is skipped and logged once.
+    try {
+      const parsedContracts = (() => { try { return JSON.parse(draft.contracts_json) as unknown; } catch { return []; } })();
+      const contracts = Array.isArray(parsedContracts) ? parsedContracts : [];
+      const failed = (() => { try { const results = JSON.parse(draft.results_json ?? "[]") as unknown; return Array.isArray(results) ? results.filter((row: { state?: string } | null) => row?.state === "failed").length : 0; } catch { return 0; } })();
+      items.push({
+        kind: "batch", key: `batch:${draft.id}`, runId: draft.run_id ?? draft.id, taskId: null,
+        title: clip(draft.objective, 120) ?? `Пачка из ${contracts.length} задач`, techTitle: draft.id,
+        taskKind: null, area: null, objective: clip(draft.objective, 160), projectId: draft.project_id, pmThreadId: draft.thread_id,
+        column: draft.state === "created" ? "done" : draft.state === "partial" ? "blocked" : "queued",
+        state: draft.state, phase: draft.state === "created" ? "accepted" : draft.state === "partial" ? "blocked" : "queued",
+        stage: null, model: null, since: null, waitingFor: [],
+        detail: draft.state === "partial" ? clip(`не созданы: ${failed} из ${contracts.length}`, 160) : null,
+        attemptNo: 0, threadId: null, attemptId: null, updatedAt: draft.updated_at, held: false, gates: null, wave: null,
+      });
+    } catch (cause) {
+      if (!skippedDrafts.has(draft.id)) {
+        skippedDrafts.add(draft.id);
+        console.warn(`lane-pilot: draft ${draft.id} is malformed and is left off the task board: ${cause instanceof Error ? cause.message : String(cause)}`);
+      }
+    }
   }
   return items.sort((a, b) => b.updatedAt - a.updatedAt);
 }

@@ -4,6 +4,7 @@ import { createClaudeGuardEnv } from "../../src/rooms/native-agent/claude-guard-
 import { resetPlanningHomeChecks } from "../../src/rooms/contracts";
 import plugin from "../../server";
 import { createRun, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../../src/rooms/plugin-db";
+import { buildTaskBoard } from "../../src/rooms/runs/server/task-board";
 import { proposeDraft } from "../../src/rooms/tasks/server";
 
 describe("[review 1] the guard env cache never carries the planning home", () => {
@@ -79,4 +80,18 @@ describe("[review 2] lane_pilot_propose create:true", () => {
     expect(text(after)).not.toContain("another chat");
     await harness.lifecycle.dispose();
   }, 30_000);
+});
+
+describe("[review 3] a malformed draft row does not take the board down", () => {
+  it.each(["null", "{}", '"text"', "{broken"])("contracts_json %s reads as an empty list and the other cards stay", (broken) => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const good = proposeDraft(db, { runId: "run-g", projectId: "proj-g", threadId: "pm-g", kind: "batch", contracts: [{ id: "a" }, { id: "b" }] });
+    const bad = proposeDraft(db, { runId: "run-g", projectId: "proj-g", threadId: "pm-g", kind: "batch", contracts: [{ id: "a" }] });
+    db.prepare("UPDATE lane_pilot_task_draft SET contracts_json=?, results_json=? WHERE id=?").run(broken, broken, bad.id);
+    const cards = buildTaskBoard(db, { projectId: "proj-g", doneSince: 0 }, []).filter((item) => item.kind === "batch");
+    expect(cards.map((card) => card.techTitle).sort()).toEqual([good.id, bad.id].sort());
+    expect(cards.find((card) => card.techTitle === bad.id)!.title).toBe("Пачка из 0 задач");
+    db.close();
+  });
 });
