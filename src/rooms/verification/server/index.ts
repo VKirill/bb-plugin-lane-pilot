@@ -2,7 +2,7 @@
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { excludeBookkeeping } from "./bookkeeping-exclude";
 export { gateResolverFor } from "./gate-detect";
-export { attemptMergeMessage, clearMergeIntent, createMergeIntentRecovery, recordMergeIntent } from "./merge-intent";
+export { attemptMergeMessage, clearMergeIntent, createMergeIntentRecovery, recordMergeIntent, MERGE_INTENT_PREFIX } from "./merge-intent";
 export { detectRepoEdits, gitRepoStatus, namedByChat, noteEngineWrite, writtenByEngineSince } from "./repo-edits";
 export { glueReplayCommands } from "./replay-checks"
 export { activeRunFor, allGuests, CLAIMS_MAX, GUEST_LOCK_MS, GUEST_TTL_MS, listGuests, noteCheckoutGuest, saveGuests, trimGuests, withGuestsLock } from "./checkout-guests";

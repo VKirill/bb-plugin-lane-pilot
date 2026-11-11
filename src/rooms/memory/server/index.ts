@@ -3,7 +3,7 @@
 export { mixReviewerMemory, mixWriterMemory, pmMemoryContext, reviewerMemoryFor, snapshotFileRead, taskMemoryContext, writerCandidates, writerMemoryPaths } from "./memory-mix";
 export { createMemoryStage } from "./memory";
 export { dropPackedLists, maintainerMemorySettings, memorySettingsFor } from "./memory-settings";
-export { sessionMemoryRpc } from "./session-memory";
+export { confirmedWordHits, sessionMemoryRpc } from "./session-memory";
 export { mountThreadBlock, threadMemoryBlock, type WallThreadReader } from "./thread-block";
 export { embedPending, embedQuery, mountMemoryEmbeddings, currentEmbedder } from "./embeddings";
 export { MAX_SETTLED_PER_RUN, createMemoryConflicts } from "./memory-conflicts";

@@ -3,4 +3,4 @@ export { FORECAST_USAGE, runForecastCli } from "./cli";
 export { forecastReport } from "./report";
 export type { ForecastReport, ForecastRow } from "./report";
 export { forecastRpc } from "./rpc";
-export { calibrationPassport } from "./report";
+export { calibrationPassport, weakAreas } from "./report";

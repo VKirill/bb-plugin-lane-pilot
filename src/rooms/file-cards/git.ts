@@ -10,7 +10,7 @@ import type { GitFacts } from "./card";
 export function collectGitFacts(cwd: string, paths: readonly string[], warn: (message: string) => void = () => undefined): Map<string, GitFacts> {
   const facts = new Map<string, GitFacts>();
   const wanted = new Set(paths);
-  const log = spawnSync("git", ["log", "--max-count=2000", "--format=commit %H", "--name-only", "--"], { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 30_000 });
+  const log = spawnSync("git", ["log", "--max-count=2000", "--format=commit %H", "--name-only", "--"], { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 30_000, killSignal: "SIGKILL" });
   // A repo with no commits or a git that failed is not an error to stop for, but the cards then carry no commit facts: say so.
   if (log.status !== 0 || !log.stdout) {
     warn(`git log failed (${log.error?.message ?? `status ${log.status}`}${log.stderr ? `: ${String(log.stderr).trim().slice(0, 200)}` : ""}); cards carry no commit facts`);
@@ -31,7 +31,7 @@ export function collectGitFacts(cwd: string, paths: readonly string[], warn: (me
 
 /** The git-tracked paths of a checkout, one `git ls-files` call. */
 export function trackedFiles(cwd: string): string[] {
-  const listed = spawnSync("git", ["ls-files", "-z"], { cwd, encoding: "buffer", maxBuffer: 64 * 1024 * 1024, timeout: 30_000 });
+  const listed = spawnSync("git", ["ls-files", "-z"], { cwd, encoding: "buffer", maxBuffer: 64 * 1024 * 1024, timeout: 30_000, killSignal: "SIGKILL" });
   if (listed.status !== 0 || !listed.stdout) return [];
   return (listed.stdout as Buffer).toString("utf8").split("\0").filter(Boolean);
 }

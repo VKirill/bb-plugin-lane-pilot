@@ -1,14 +1,14 @@
 import { createHash } from "node:crypto";
-import { dirname, join } from "node:path";
-import { listReviewedObservations } from "../../learning";
+import { dirname, join, resolve, sep } from "node:path";
+import { listReviewedObservations, pmRulesOf } from "../../learning";
 import { prototypeConfigSchema, resolvePlanningHome, taskV2Schema } from "../../contracts";
 import { taskBaselineEntries } from "../../baseline";
-import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, PROTECTIONS, loadPrototypeConfig, markCancelCode, saveProjectSetting, savePrototypeConfig, transitionAttempt, failedTasksAllProjects, listNearMissReceipts, attemptStateCounts } from "../../storage";
+import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, PROTECTIONS, loadPrototypeConfig, markCancelCode, saveProjectSetting, savePrototypeConfig, transitionAttempt, failedTasksAllProjects, listNearMissReceipts, projectIdForWorkspacePath, projectLiveAttempts, attemptStateCounts, settingsScopesForWorkspacePath } from "../../storage";
 import { outsideWorkSummary } from "../../owner-presence";
 import { cancelAttemptById, finishRunSafely, pauseRun } from "../../runs/server";
 import { conveyorState, renderTimeline, setConveyor, taskTimeline, unknownReasons } from "../../runs";
 import { TASK_RECORD_USAGE, blindRecord, readsBlind, renderTaskRecord, taskRecord } from "./task-record";
-import {bestEffort, isNotFound, orMiss, outputText, pluginRootFromModule, spawnAsync, stringAt, valueAt} from "@lane-pilot/kit";
+import {bestEffort, isNotFound, maskCredentials, orMiss, outputText, pluginRootFromModule, spawnAsync, stringAt, valueAt} from "@lane-pilot/kit";
 import { PAIR_ROLE_SPECS } from "@lane-pilot/models";
 import {listQaHosts, runSkillsCli, parseSkillHub, SKILLS_USAGE} from "../../platform/server";
 import {codeFactsOnHost, CODE_FACTS_REFRESH} from "../../platform";
@@ -33,14 +33,16 @@ import { usageSegment } from "../../usage";
 import type { ProviderUsage } from "../../usage/server";
 import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
 import { MEMORY_EVAL_USAGE, runMemoryEvalCommand } from "../../memory-eval/server";
-import { MEMORY_COMPRESS_USAGE, MEMORY_CONFLICT_USAGE, memoryCompressChanges, runMemoryCompressCli, runMemoryConflictCli, sessionMemoryRpc, memorySettingsFor, type WallThreadReader } from "../../memory/server";
+import { MEMORY_COMPRESS_USAGE, MEMORY_CONFLICT_USAGE, memoryCompressChanges, runMemoryCompressCli, runMemoryConflictCli, confirmedWordHits, sessionMemoryRpc, memorySettingsFor, type WallThreadReader } from "../../memory/server";
 import { CATALOG_USAGE, runCatalogCli } from "../../file-cards";
 import { dropMemoryIndexes, hideRecord, lintMemory, listMemory, memoryConceptsJson, memoryIndexStatus, memoryRecordExists, memoryTokenStats, rebuildMemoryIndexes, recordMemoryMiss, reviewMemory } from "@lane-pilot/memory-core";
 import { BENCH_USAGE, runBenchCli } from "../../bench/server";
 import { BASELINE_USAGE, runBaselineCli } from "../../baseline/server";
 import { RETURN_USAGE, runReturnCli } from "../../stage-return/server";
 import { FORECAST_USAGE, runForecastCli } from "../../forecast/server";
-import { calibrationPassport } from "../../forecast/server";
+import { calibrationPassport, weakAreas } from "../../forecast/server";
+import { sessionSummaryLine } from "../../session-hooks";
+import { MERGE_INTENT_PREFIX } from "../../verification";
 import { RUN_GOAL_USAGE, runGoalSweep, runRunGoalCli } from "../../run-goal/server";
 import { CAPABILITY_USAGE, runCapabilityCli } from "../../capability/server";
 import { runWindowCli, WINDOW_USAGE, workerSecretReach } from "../../verification";
@@ -176,7 +178,7 @@ interface Services {
   workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
 }
 
-const MEMORY_CLI_USAGE = 'bb lane-pilot memory search "<question>" [--project P] | memory write "<fact>" [--project P] | memory history "<question>" [--project P] [--source tasks|execution|transcripts|lessons|books]   (the project memory on the hub; inside a BB thread the project is the thread\'s own)';
+const MEMORY_CLI_USAGE = 'bb lane-pilot memory search "<question>" [--project P] | memory search --recall --query "<words>" [--cwd <path>] [--project P]   (read-only: confirmed notes by the word index, masked, one per line) | memory write "<fact>" [--project P] | memory history "<question>" [--project P] [--source tasks|execution|transcripts|lessons|books]   (the project memory on the hub; inside a BB thread the project is the thread\'s own)';
 
 const OWNER_ITEM_SWEEPS = [writerQuestionSweep, runGoalSweep, phaseWordSweep, scheduleFailureSweep];
 import type { CodeCriticDefault } from "../../contracts/task-enums";
@@ -196,6 +198,22 @@ export function timelineArgs(args: string[]): { taskId: string | undefined; runI
 
 export function registerCli(ctx: ServerCore, services: Services, migrations: readonly string[]) {
   const { bb, db, effectiveProjectSettings, host } = ctx;
+
+  /**
+   * The project a session-hook verb reaches (session-brief, subagent-pack, memory search --recall), the rule `memory forget` and `memory history`
+   * use: when a thread calls, its own project is the only project, and a --project or a --cwd that names another one is refused with the reason.
+   * With no thread (the owner at a terminal) both flags work.
+   */
+  const hookProject = async (verb: string, invocation: { threadId?: string | null } | undefined, asked: { project?: string; cwd?: string }): Promise<{ projectId: string | null; refused?: undefined } | { refused: string; projectId?: undefined }> => {
+    const byCwd = asked.cwd ? projectIdForWorkspacePath(db, asked.cwd) : null;
+    if (!invocation?.threadId) return { projectId: asked.project ?? byCwd };
+    const caller = await orMiss(bb.sdk.threads.get({ threadId: invocation.threadId }), null, isNotFound) as { projectId?: unknown } | null;
+    const own = typeof caller?.projectId === "string" ? caller.projectId : null;
+    if (!own) return { refused: `refused: ${verb} from a thread reaches only that thread's own project, and the project of this thread is unknown` };
+    const other = [asked.project, byCwd].find((id) => id && id !== own);
+    if (other) return { refused: `refused: ${verb} from a thread reaches only that thread's own project (${own}), not ${other}` };
+    return { projectId: own };
+  };
 
   const usage = [
     "bb lane-pilot configure <json>",
@@ -374,6 +392,8 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"memory", summary:"The project memory on the hub: search it with a question, write one fact; inside a BB thread the project is the thread's own", usage:MEMORY_CLI_USAGE },
       { name:"jev", summary:"Jev judgments: calibration, labels by source, watch", usage:JEV_USAGE },
       { name:"pm-skill-use", summary:"Record that a PM session opened a skill", usage:"bb lane-pilot pm-skill-use <skill> --thread <thread-id> [--project <project-id>]" },
+      { name:"session-brief", summary:"The checkout's coordination brief for a starting session: live and stale windows, a merge in flight, other windows' claims and weakly calibrated areas", usage:"bb lane-pilot session-brief --cwd <path> [--json]" },
+      { name:"subagent-pack", summary:"The rules and confirmed lessons a Task subagent is born with (a project switches it on with hook.subagent_pack)", usage:"bb lane-pilot subagent-pack \"<prompt>\" [--cwd <path>] [--project <id>]" },
       { name:"skill-lint", summary:"Lint a local skill folder against the skill standard (SKILL.md, references/, scripts/): errors and warnings, exit 1 on errors", usage:"bb lane-pilot skill-lint <dir>" },
       { name:"errands", summary:"Errands: backfill episode rows for past runs (repeated processes first); the process-key eval over the gold set", usage:`${EPISODES_USAGE}
 ${ERRANDS_USAGE}` },
@@ -945,6 +965,23 @@ ${ERRANDS_USAGE}` },
             const lines = [...core.map((record) => `- [core ${record.id.slice(0, 12)}] ${record.content}`), ...notes.map((record) => `- [${record.id.slice(0, 12)}] ${record.content}`)];
             return { exitCode:0, stdout:`${lines.join("\n") || "nothing found"}\n` };
           }
+          if (sub === "search" && args.includes("--recall")) {
+            // The prompt recall of the session hook (SMA k_h_prompt_recall): read-only and local. The word index only (no embedding, no rerank, no model or
+            // network call), confirmed notes of the caller's own project, no miss recorded, and the text masked and on one line per record. The query is the
+            // value of --query, so a prompt that starts with a dash is never read as an option. `hook.prompt_recall=off` silences it.
+            const queryAt = args.indexOf("--query");
+            if (queryAt < 0 || !args[queryAt + 1]) return { exitCode:1, stderr:'usage: bb lane-pilot memory search --recall --query "<words>" [--cwd <path>] [--project P]' };
+            const rest = args.filter((_, index) => index !== queryAt && index !== queryAt + 1);
+            const flagValue = (name: string) => { const at = rest.indexOf(name); return at >= 0 ? rest[at + 1] : undefined; };
+            const bound = await hookProject("memory search --recall", invocation, { project: flagValue("--project"), cwd: flagValue("--cwd") });
+            if (bound.refused) return { exitCode:1, stderr:bound.refused };
+            if (!bound.projectId) return { exitCode:1, stderr:"no project: pass --project <id> or --cwd <checkout> outside a BB thread" };
+            const chain = flagValue("--cwd") ? settingsScopesForWorkspacePath(db, flagValue("--cwd")!) : [];
+            if (loadProjectSettings(db, bound.projectId, chain)["hook.prompt_recall"] === "off") return { exitCode:0, stdout:"" };
+            const hits = confirmedWordHits(db, bound.projectId, args[queryAt + 1]!, { chain, limit: 3 });
+            const oneLine = (text: string) => maskCredentials(text.replace(/\s+/g, " ").trim()).text;
+            return { exitCode:0, stdout: hits.length ? `${hits.map((record) => `- [${record.id}] ${oneLine(record.content).slice(0, 400)}`).join("\n")}\n` : "" };
+          }
           if (sub === "search" || sub === "write") {
           // M2's door for any thread or shell: the project is --project or the calling thread's own.
           const rest = args.slice(1);
@@ -960,6 +997,59 @@ ${ERRANDS_USAGE}` },
           return { exitCode: written.id ? 0 : 1, stdout: `${JSON.stringify(written)}\n` };
           }
           return { exitCode:1, stderr:MEMORY_CLI_USAGE };
+        }
+        if (command === "session-brief") {
+          // The session hook's coordination brief (SMA k_hss_summary, k_hss_digest): live and stale attempts of
+          // the checkout's project, a merge in flight, other windows' claims and the weakly calibrated areas.
+          const val = (name: string) => { const at = args.indexOf(name); return at >= 0 ? args[at + 1] : undefined; };
+          const cwd = val("--cwd") || process.cwd();
+          const bound = await hookProject("session-brief", invocation, { project: val("--project"), cwd });
+          if (bound.refused) return { exitCode:1, stderr:bound.refused };
+          const projectId = bound.projectId;
+          const cutoff = Date.now() - 180_000;
+          const live = projectId ? projectLiveAttempts(db, projectId) : [];
+          const counts = { live: live.filter((row) => row.updated_at >= cutoff).length, stale: live.filter((row) => row.updated_at < cutoff).length };
+          let merge = false;
+          if (projectId) {
+            const kv = bb.storage.kv as unknown as { list(prefix?: string): Promise<string[]>; get(key: string): Promise<unknown> };
+            for (const key of await kv.list(MERGE_INTENT_PREFIX)) {
+              try {
+                const intent = await kv.get(key) as { projectId?: string } | null;
+                if (intent?.projectId === projectId) { merge = true; break; }
+              } catch { /* an unreadable intent decides nothing */ }
+            }
+          }
+          // Other windows' claims: attempts that moved inside the same 3 minutes the summary counts as live, and never the starting session's own attempt (its workspace is the cwd or holds it).
+          const here = resolve(cwd);
+          const ownWorkspace = (workspace: string | null) => { if (!workspace) return false; const root = resolve(workspace); return here === root || here.startsWith(`${root}${sep}`); };
+          const foreign = live.filter((row) => row.updated_at >= cutoff && !ownWorkspace(row.workspace_path)).slice(0, 5).map((row) => ({
+            taskId: row.task_id,
+            paths: (() => { try { return (JSON.parse(row.owns_paths ?? "[]") as unknown[]).filter((x): x is string => typeof x === "string").slice(0, 10); } catch { return []; } })(),
+          })).filter((row) => row.paths.length);
+          const weak = projectId ? weakAreas(db, projectId) : [];
+          const summary = sessionSummaryLine({ ...counts, merge });
+          if (args.includes("--json")) return { exitCode:0, stdout:JSON.stringify({ project: projectId, ...counts, merge, foreign, weak, summary }, null, 2) };
+          return { exitCode:0, stdout:`${summary || "nothing at work in this project"}\n` };
+        }
+        if (command === "subagent-pack") {
+          // The layers a Task spawn is born with (SMA k_h_pretask): accepted always-rules and confirmed memory
+          // lessons. Memory text enters a subagent's prompt only where the project switched hook.subagent_pack on.
+          const val = (name: string) => { const at = args.indexOf(name); return at >= 0 ? args[at + 1] : undefined; };
+          const cwd = val("--cwd");
+          const bound = await hookProject("subagent-pack", invocation, { project: val("--project"), cwd });
+          if (bound.refused) return { exitCode:1, stderr:bound.refused };
+          const projectId = bound.projectId;
+          if (!projectId) return { exitCode:1, stderr:"no project: pass --project <id> or --cwd <checkout> outside a BB thread" };
+          // The caller's sections: the rules of a sibling section of an umbrella project stay out of the pack.
+          const chain = cwd ? settingsScopesForWorkspacePath(db, cwd) : [];
+          const settings = loadProjectSettings(db, projectId, chain);
+          if (settings["hook.subagent_pack"] !== "on" || !memorySettingsFor(settings).enabled) return { exitCode:0, stdout:JSON.stringify({ rules: [], lessons: [] }) };
+          const prompt = args.filter((arg, i) => !arg.startsWith("--") && args[i - 1] !== "--cwd" && args[i - 1] !== "--project").join(" ").slice(0, 300);
+          const oneLine = (text: string, max: number) => maskCredentials(text.replace(/\s+/g, " ").trim()).text.slice(0, max);
+          const rules = pmRulesOf(db, projectId, chain).filter((rule) => rule.always).map((rule) => oneLine(rule.rule, 200)).slice(0, 8);
+          // An accepted rule is also a core record: it is said once, in the rules layer, not again as a lesson.
+          const lessons = confirmedWordHits(db, projectId, prompt || "task", { chain, limit: 8 }).filter((record) => !record.concepts.includes("rule")).slice(0, 5).map((record) => oneLine(record.content, 200));
+          return { exitCode:0, stdout:JSON.stringify({ rules, lessons }) };
         }
         if (command === "skill-lint") {
           return runSkillLintCli(args);
