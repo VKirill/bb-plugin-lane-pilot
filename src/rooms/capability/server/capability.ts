@@ -1,4 +1,5 @@
 import { breakerKey } from "@lane-pilot/resilience";
+import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { claimDailySchedule, listProviderSettingRows, listRunsWithPmThread, projectSettingValue } from "../../storage";
 import { scheduleIsolated, bindDocumentaryGate } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
@@ -225,7 +226,9 @@ export function createCapabilities(ctx: ServerCore, services: Services) {
   // Hold by default (SMA ap_caps/ap_caps_held): `capability.documentary_gate` = observe only logs; unset holds —
   // on a red receipt only. A missing or stale one is probed (bounded); a probe that could not run is observed, never held.
   const holds = (projectId: string | undefined): boolean => {
-    const raw = projectId ? projectSettingValue(db, projectId, "capability.documentary_gate") : undefined;
+    // Scope `project` (settings/switches.ts): the project's own row, else the hub-wide one. Until 0.1.531 only the project's row was read,
+    // so `bb lane-pilot setting global capability.documentary_gate=observe` changed nothing.
+    const raw = (projectId ? projectSettingValue(db, projectId, "capability.documentary_gate") : undefined) ?? projectSettingValue(db, GLOBAL_SETTINGS_PROJECT_ID, "capability.documentary_gate");
     let value: unknown = raw;
     try { value = raw !== undefined ? JSON.parse(raw) : undefined; } catch { /* stored as a bare word */ }
     return value !== "observe" && value !== "off";

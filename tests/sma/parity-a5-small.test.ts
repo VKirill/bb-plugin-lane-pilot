@@ -1,3 +1,4 @@
+import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
 import { CAPABILITIES, DOCUMENTARY_CELLS, capabilityTable, dueProbes, isDocumentaryRole, receiptKey, documentaryProved, type CapabilityReceipt } from "../../src/rooms/capability";
@@ -212,6 +213,11 @@ describe("spend book, PM prompt and the rule breaker", () => {
     expect(await gate.proved("proj")).toBeNull();
     saveProjectSetting(db as never, "proj", "capability.documentary_gate", "hold");
     expect(await gate.deny("other", "m", "proj")).toBeNull();
+    // The hub-wide row is what a project without its own row inherits; a project's own row wins over it.
+    saveProjectSetting(db as never, GLOBAL_SETTINGS_PROJECT_ID, "capability.documentary_gate", "observe");
+    expect(await gate.deny("codex", "m", "proj-without-a-row")).toBeNull();
+    expect(await gate.proved("proj-without-a-row")).toBeNull();
+    expect(await gate.deny("codex", "m", "proj")).toMatch(/^capability_unproven:codex/);
     await harness.lifecycle.dispose();
   });
 
