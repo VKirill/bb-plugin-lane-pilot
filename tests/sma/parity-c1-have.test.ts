@@ -125,6 +125,7 @@ describe("providers, models, accounts", () => {
     harness.sdk.stub("threads.output", async () => ({ output: "OK" }));
     harness.sdk.stub("threads.stop", async () => ({}));
     harness.sdk.stub("threads.archive", async () => ({}));
+    harness.sdk.stub("threads.delete", async () => ({}));
     const result = await createHelperProbe({ bb, db } as never).startHelperProbe(SANDBOX_PROJECT_ID, "run_s", "codex", "gpt-6-luna");
     expect(spawned.length, result.reason ?? "spawned").toBe(1);
     expect(spawned[0]).toMatchObject({
