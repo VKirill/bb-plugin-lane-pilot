@@ -15,7 +15,7 @@ import { graphStepMetadata, setAsideOnStartFailure, zcodeBusyPeek } from "../../
 import type { StageHelperSettings } from "../../../platform/server";
 import { QUALITY_MODE_SETTING, applyQualityMode, resolveQualityMode } from "../../../contracts";
 import { helperChildPlacement, recordStage, requireHelperSpawn, requiredPolicyField } from "../../../runs/server";
-import { critiqueSpawn } from "../critique-runs";
+import { fullAccessSpawn } from "../../../platform/server";
 import { bestEffort, stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -166,7 +166,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
         const placement = await helperChildPlacement({
           bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"plan-critic", taskTitle:input.task.title,
         });
-        const spawned = await critiqueSpawn(input.bb, {
+        const spawned = await fullAccessSpawn(input.bb, {
           ...placement,
           ...requiredPolicyField(input.bb, helperPolicy, providerId, "plan-critic"),
           ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),

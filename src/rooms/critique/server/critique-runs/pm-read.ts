@@ -8,7 +8,7 @@ import { configuredSetting } from "../../../contracts/server";
 import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode } from "../../../contracts/quality-mode";
 import { MAIN_ATTEMPT_LIMIT } from "../../../contracts/state-machine";
 import { helperChildPlacement, recordStage, requireHelperSpawn, requiredPolicyField } from "../../../runs/server";
-import { critiqueSpawn } from "../critique-runs";
+import { fullAccessSpawn } from "../../../platform/server";
 import { bestEffort, stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { StageHelperSettings } from "../../../platform/server";
@@ -92,7 +92,7 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
     const placement=await helperChildPlacement({
       bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"pm-reader", taskTitle:input.task.title,
     });
-    const spawned=await critiqueSpawn(input.bb, {
+    const spawned=await fullAccessSpawn(input.bb, {
       ...placement,
       ...requiredPolicyField(input.bb, helperPolicy, providerId, "pm-reader"),
       ...writerExecutionSelection(providerId,modelId,parsedSettings.effort,serviceTier),

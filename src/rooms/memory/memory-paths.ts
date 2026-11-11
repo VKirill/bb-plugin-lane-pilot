@@ -86,7 +86,7 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
   { id: "schedule.agent", consumer: "the first message of a scheduled agent run (kind agent of the schedule board): the project's notes for the standing task", carries: ["note", "core"], alwaysOn: [], status: "probed",
     sites: [{ file: "src/rooms/memory/server/memory-mix.ts", primitive: "pmMemoryContext", count: 1 }] },
   { id: "critic.code", consumer: "the code critic's prompt (critique-runs)", carries: ["note", "core"], alwaysOn: ["core"], status: "probed",
-    sites: [{ file: "src/rooms/critique/server/critique-runs.ts", primitive: "reviewerMemoryFor", count: 1 }] },
+    sites: [{ file: "src/rooms/critique/server/critique-runs/code-critique.ts", primitive: "reviewerMemoryFor", count: 1 }] },
   { id: "night.review", consumer: "the night review's prompt", carries: ["note", "core"], alwaysOn: ["core"], status: "probed",
     sites: [
       { file: "src/rooms/memory/server/memory-mix.ts", primitive: "mixReviewerMemory", count: 1 },

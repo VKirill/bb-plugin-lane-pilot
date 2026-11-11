@@ -23,6 +23,7 @@ const HEAD_FILES: ReadonlyArray<readonly [string, HeadPart]> = [
   ["src/rooms/critique/specialist.ts", "plan_critic"],
   ["src/rooms/critique/critique-coverage.ts", "plan_critic"],
   ["src/rooms/critique/server/critique-runs.ts", "plan_critic"],
+  ["src/rooms/critique/server/critique-runs/**", "plan_critic"],
   ["src/rooms/critique/role-method.ts", "plan_critic"],
   ["src/rooms/critique/role-method.ts", "code_critic"],
   ["src/rooms/tasks/server/lint-task.ts", "lint"],

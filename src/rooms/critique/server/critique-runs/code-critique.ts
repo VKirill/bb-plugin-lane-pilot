@@ -17,7 +17,7 @@ import { clearSpawnMarker, graphStepMetadata, setAsideOnStartFailure, zcodeBusyP
 import type { StageHelperSettings } from "../../../platform/server";
 import { reviewerMemoryFor } from "../../../memory/server";
 import { CRITIC_OUTCOME_UNKNOWN, criticReconcilePort, helperChildPlacement, recordStage, requireHelperSpawn, requiredPolicyField } from "../../../runs/server";
-import { critiqueSpawn } from "../critique-runs";
+import { fullAccessSpawn } from "../../../platform/server";
 import { bestEffort, stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -312,7 +312,7 @@ export async function runCodeCritique(input:{
         const critiques = [];
         const raws: string[] = [];
         for (const persona of personas) {
-          const spawned = await critiqueSpawn(input.bb, {
+          const spawned = await fullAccessSpawn(input.bb, {
             ...placement,
             ...requiredPolicyField(input.bb, helperPolicy, providerId, "code-critic"),
             ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
