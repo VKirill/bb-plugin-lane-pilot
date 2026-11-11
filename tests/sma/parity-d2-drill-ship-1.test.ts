@@ -14,11 +14,13 @@ const ship = fileURLToPath(new URL("../../scripts/lp-ship.ts", import.meta.url))
 const drillSh = fileURLToPath(new URL("../../scripts/lp-drill.sh", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 
-/** The drill script as `main` has it, copied to a temp file: the reference the defaults are held against. */
+/** The drill script as `main` has it, copied to a temp folder with its package (scripts/lp_drill, once main has it): the reference the defaults are held against. */
 function mainDrill(): string {
-  const path = join(mkdtempSync(join(tmpdir(), "lp-main-drill-")), "lp-drill.py");
-  writeFileSync(path, execFileSync("git", ["-C", repoRoot, "show", "main:scripts/lp-drill.py"], { encoding: "utf8", maxBuffer: 20_000_000 }));
-  return path;
+  const dir = mkdtempSync(join(tmpdir(), "lp-main-drill-"));
+  const packaged = execFileSync("git", ["-C", repoRoot, "ls-tree", "-d", "--name-only", "main", "scripts/lp_drill"], { encoding: "utf8" }).trim() !== "";
+  const archive = execFileSync("git", ["-C", repoRoot, "archive", "main", "scripts/lp-drill.py", ...(packaged ? ["scripts/lp_drill"] : [])], { maxBuffer: 50_000_000 });
+  execFileSync("tar", ["-x", "-C", dir], { input: archive });
+  return join(dir, "scripts", "lp-drill.py");
 }
 // Both copies read an empty receipt folder: the list of a dry run leaves out a live scene that passed here lately on a
 // commit whose later changes are not its code, so with this checkout's own receipts the test judged the machine's drill
