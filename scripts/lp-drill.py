@@ -92,8 +92,9 @@ import lp_drill.scenes.checkers
 import lp_drill.scenes.revert
 import lp_drill.scenes.phase
 import lp_drill.scenes.providers
+import lp_drill.scenes.writers
 
-for _mod in (lp_drill.env, lp_drill.hub, lp_drill.report, lp_drill.tasks, lp_drill.context, lp_drill.select, lp_drill.series, lp_drill.preview, lp_drill.scenes.memory, lp_drill.scenes.owner, lp_drill.scenes.skills, lp_drill.scenes.guard, lp_drill.scenes.deferrals, lp_drill.scenes.hub_checks, lp_drill.scenes.checkers, lp_drill.scenes.revert, lp_drill.scenes.phase, lp_drill.scenes.providers,):
+for _mod in (lp_drill.env, lp_drill.hub, lp_drill.report, lp_drill.tasks, lp_drill.context, lp_drill.select, lp_drill.series, lp_drill.preview, lp_drill.scenes.memory, lp_drill.scenes.owner, lp_drill.scenes.skills, lp_drill.scenes.guard, lp_drill.scenes.deferrals, lp_drill.scenes.hub_checks, lp_drill.scenes.checkers, lp_drill.scenes.revert, lp_drill.scenes.phase, lp_drill.scenes.providers, lp_drill.scenes.writers,):
     for _name in dir(_mod):
         if not _name.startswith("__"):
             _value = getattr(_mod, _name)
@@ -155,155 +156,6 @@ STANDALONE = ("guard_hash", "deferrals", "checkers", "watchdog", "outage_live", 
 
 
 # --- scenarios ----------------------------------------------------------------------------------------------------------
-
-
-def verification_ran(ctx: "Context", task_ids: list[str]) -> dict[str, bool]:
-    """task id -> its verification receipt lists at least one command, every one with exit 0."""
-    found = {task_id: False for task_id in task_ids}
-    quoted = ",".join("'" + task_id.replace("'", "''") + "'" for task_id in task_ids)
-    for row in hubsql(f"select task_id, result_json from lane_pilot_stage_receipt where run_id='{ctx.run_id}' and stage_id='verification' and state='passed' and task_id in ({quoted});"):
-        try:
-            checks = json.loads(row.get("result_json") or "{}").get("verification") or []
-        except ValueError:
-            continue
-        found[row["task_id"]] = bool(checks) and all(isinstance(c, dict) and c.get("exitCode") == 0 for c in checks)
-    return found
-
-
-def scenario_parallel3(ctx: Context) -> dict:
-    specs = tasks_parallel3(ctx.cwd)
-    with ThreadPoolExecutor(3) as pool:
-        sent = list(pool.map(ctx.dispatch, specs))
-    problems = ["a dispatch-bb call exited with an error (see receipt dispatch output)"] if not all(sent) else []
-    ids = [s["id"] for s in specs]
-    rows = ctx.wait_ended(ids, PARALLEL3_TIMEOUT_MIN)
-    tasks = [summarize(rows, s["id"], ctx.cwd, s["expected_outputs"][0]) for s in specs]
-    accepted = all(t["state"] == "accepted" for t in tasks)
-    spaces = [t["workspace"] for t in tasks]
-    own = all(spaces) and len(set(spaces)) == len(spaces) and ctx.cwd not in spaces
-    merged = all(t["fileInSandbox"] for t in tasks)
-    if not accepted:
-        problems.append("not every task was accepted")
-    if accepted and not own:
-        problems.append("tasks did not each get a worktree of their own")
-    if accepted and not merged:
-        problems.append("an accepted task's file is not in the sandbox")
-    # The verification stage must have run each task's own check, green (exit 0 in its receipt): «passed» on an empty list proves nothing.
-    ran = verification_ran(ctx, ids)
-    if accepted and not all(ran.values()):
-        problems.append(f"the verification stage did not run the task's check with exit 0: {', '.join(t for t, ok in ran.items() if not ok)}")
-    problems += provider_problems(tasks)
-    return verdict("parallel3", problems, tasks=tasks, checks={"allAccepted": accepted, "eachInOwnWorktree": own, "filesInSandbox": merged, "checksRan": all(ran.values())},
-                   dispatch={s["id"]: ctx.dispatches.get(s["id"]) for s in specs})
-
-
-def flow_contract_stages() -> set[str]:
-    """Stage ids a receipt of the task pipeline may carry: the graph's agent/subworkflow nodes plus the writer node's own stages."""
-    pipeline = json.loads((Path(__file__).parent.parent / "workflows" / "lp-task-pipeline.json").read_text())
-    allowed: set[str] = set()
-    for node in pipeline.get("nodes", []):
-        if node.get("stages"):
-            allowed.update(node["stages"])
-        elif node.get("type") in ("agent", "subworkflow", "lp-task"):
-            allowed.add(node["id"])
-    return allowed
-
-
-def flow_contract_problems(receipts: list[dict], allowed: set[str]) -> list[str]:
-    """Receipt rows must name only stages the graph declares, and the code-decided writer stages must have passed."""
-    problems = [f"receipt of a stage lp-task-pipeline.json does not declare: {row['stage_id']}={row['state']}"
-                for row in receipts if row["stage_id"] not in allowed]
-    states = {row["stage_id"]: row["state"] for row in receipts}
-    for required in ("writer-agent", "verification", "acceptance-receipt"):
-        if states.get(required) != "passed":
-            problems.append(f"{required} was not passed: {states.get(required)!r}")
-    return problems
-
-
-def scenario_flow_contract(ctx: Context) -> dict:
-    """One probe task in the sandbox; its stage receipts must match the nodes of lp-task-pipeline.json (audit 2026-10-30 F19)."""
-    spec = note_task(f"drill-{STAMP}-flow", f"notes/drill/{STAMP}-flow.md", f"Drill {STAMP} flow", ctx.cwd)
-    problems = [] if ctx.dispatch(spec) else ["dispatch-bb exited with an error"]
-    rows = ctx.wait_ended([spec["id"]])
-    row = summarize(rows, spec["id"], ctx.cwd, spec["expected_outputs"][0])
-    if row["state"] != "accepted":
-        problems.append(f"the probe task did not end accepted: {row['states']} {row['reason']}")
-    receipts = hubsql(f"select stage_id, state from lane_pilot_stage_receipt where run_id='{ctx.run_id}' and task_id='{spec['id']}';")
-    problems += flow_contract_problems(receipts, flow_contract_stages())
-    return verdict("flow_contract", problems, stages={r["stage_id"]: r["state"] for r in receipts}, task=row)
-
-
-def scenario_conflict(ctx: Context) -> dict:
-    rel = conflict_path()
-    commit_file(ctx.cwd, rel, f"# Drill {STAMP} conflict\nline: base\nend\n", f"drill {STAMP}: seed for the same-line conflict")
-    specs = tasks_conflict(ctx.cwd)
-    with ThreadPoolExecutor(2) as pool:
-        sent = list(pool.map(ctx.dispatch, specs))
-    problems = [] if all(sent) else ["a dispatch-bb call exited with an error"]
-    rows = ctx.wait_ended([s["id"] for s in specs])
-    tasks = [summarize(rows, s["id"], ctx.cwd) for s in specs]
-    if not all(t["state"] == "accepted" for t in tasks):
-        problems.append("the two tasks on the same line did not both end accepted: " + ", ".join(f"{t['task']}={t['state']}" for t in tasks))
-    if conflict_markers(ctx.cwd, rel):
-        problems.append("conflict markers were left in the file on main")
-    lines = (Path(ctx.cwd) / rel).read_text().splitlines() if (Path(ctx.cwd) / rel).is_file() else []
-    if len(lines) < 2 or lines[1] not in ("line: X", "line: Y"):
-        problems.append(f"line 2 on main is neither task's text: {lines[1] if len(lines) > 1 else None!r}")
-    problems += sandbox_sound(ctx.cwd)
-    return verdict("conflict", problems, tasks=tasks, line2=lines[1] if len(lines) > 1 else None)
-
-
-def scenario_main_moved(ctx: Context) -> dict:
-    moved_rel = f"notes/drill/{STAMP}-main-commit.md"
-    spec = task_moved(ctx.cwd)
-    out = spec["expected_outputs"][0]
-    problems = [] if ctx.dispatch(spec) else ["dispatch-bb exited with an error"]
-    if not ctx.wait_state(spec["id"], "running"):
-        problems.append("the writer never started running")
-        moved = None
-    else:
-        moved = commit_file(ctx.cwd, moved_rel, f"main moved during drill {STAMP}\n", f"drill {STAMP}: main moves while a writer works")
-        log(f"main moved: {moved[:12]}")
-    rows = ctx.wait_ended([spec["id"]])
-    row = summarize(rows, spec["id"], ctx.cwd, out)
-    if row["state"] != "accepted":
-        problems.append(f"the task was not accepted after main moved: {row['state']} {row['reason']}")
-    if not row["fileInSandbox"]:
-        problems.append("the task's file is not on main")
-    if moved:
-        try:
-            git(ctx.cwd, "merge-base", "--is-ancestor", moved, "HEAD")
-        except RuntimeError:
-            problems.append("the commit made on main during the attempt is not in main's history any more")
-        if not (Path(ctx.cwd) / moved_rel).is_file():
-            problems.append("the file of the commit made on main during the attempt is gone")
-    problems += sandbox_sound(ctx.cwd)
-    return verdict("main_moved", problems, tasks=[row], mainCommit=moved)
-
-
-def scenario_reload(ctx: Context) -> dict:
-    placeholders = ",".join(repr(s) for s in OPEN_STATES)
-    foreign = hubsql(f"select r.project_id as p, count(*) as n from lane_pilot_attempt a join lane_pilot_run r on r.id=a.run_id where a.state in ({placeholders}) group by r.project_id;")
-    busy = {row["p"]: row["n"] for row in foreign if row["p"] not in SANDBOX_PROJECTS}
-    if busy:
-        return {"name": "reload", "result": "skipped", "problems": [], "note": f"projects with open attempts would be hit by a reload: {busy}"}
-    spec = task_reload(ctx.cwd)
-    out = spec["expected_outputs"][0]
-    problems = [] if ctx.dispatch(spec) else ["dispatch-bb exited with an error"]
-    if not ctx.wait_state(spec["id"], "running"):
-        problems.append("the writer never started running")
-    else:
-        rc, _, err = bb("plugin", "reload", "lane-pilot", timeout=240)
-        log(f"plugin reloaded (exit {rc})")
-        if rc != 0:
-            problems.append(f"bb plugin reload failed: {err.strip()[:200]}")
-    rows = ctx.wait_ended([spec["id"]])
-    row = summarize(rows, spec["id"], ctx.cwd, out)
-    if row["state"] != "accepted":
-        problems.append(f"the task was not accepted after the reload: {row['states']} {row['reason']}")
-    if not row["fileInSandbox"]:
-        problems.append("the task's file is not on main")
-    return verdict("reload", problems, tasks=[row])
 
 
 STAND_DOOR = """import http.server, sqlite3, sys, threading, time
@@ -500,43 +352,6 @@ def scenario_watchdog(tmp: Path) -> dict:
     else:
         live = {"note": "live pass off (it runs only with LP_DRILL_WATCHDOG_LIVE=1) or no systemd --user here"}
     return verdict("watchdog", problems, events=events, live=live)
-
-
-def scenario_no_code_exit(ctx: "Context") -> dict:
-    """No-code exit drill (SMA): a writer that cannot do the task without the owner ends with NEEDS_HUMAN, changes nothing, and the task is
-    held with its question instead of a forced change. Under --series (LP_DRILL_SERIES=1) edit-free work must also close on its answer
-    the first time and code work must not."""
-    series = os.environ.get("LP_DRILL_SERIES") == "1"
-    specs = tasks_no_code_exit(ctx.cwd, series)
-    with ThreadPoolExecutor(len(specs)) as pool:
-        sent = list(pool.map(ctx.dispatch, specs))
-    problems = [] if all(sent) else ["a dispatch-bb call exited with an error"]
-    rows = ctx.wait_ended([s["id"] for s in specs])
-    path = f"drills/needs-human-{STAMP}.md"
-    tasks = [summarize(rows, s["id"], ctx.cwd, path) if s["id"] == f"drill-human-{STAMP}" else summarize(rows, s["id"], ctx.cwd) for s in specs]
-    by_id = {s["id"]: row for s, row in zip(specs, tasks)}
-    question = by_id[f"drill-human-{STAMP}"]
-    if question["state"] == "accepted":
-        problems.append("a writer that asked a question was accepted")
-    if "needs_human" not in str(question.get("reason") or "").lower() and "needs human" not in str(question.get("reason") or "").lower():
-        problems.append(f"the task did not end with the writer's question: {question['states']} {question['reason']}")
-    if question.get("fileInSandbox"):
-        problems.append("a file was written although the writer had a question")
-    if series:
-        answer = by_id[f"drill-answer-{STAMP}"]
-        if answer["state"] != "accepted":
-            problems.append(f"edit-free answer work did not close on its answer the first time: {answer['states']} {answer['reason']}")
-        else:
-            if answer["attempts"] != 1:
-                problems.append(f"edit-free answer work needed {answer['attempts']} attempts to close on its answer")
-            receipts = hubsql(f"select count(*) as n from lane_pilot_stage_receipt where run_id='{ctx.run_id}' and task_id='{f'drill-answer-{STAMP}'}' and stage_id='writer-agent' and state='passed';")
-            if not receipts or not receipts[0]["n"]:
-                problems.append("the answer task was accepted with no answer on record (no writer-agent receipt)")
-            if list(Path(ctx.cwd).glob(f"drills/answer-{STAMP}*")):
-                problems.append("edit-free answer work left a file in the sandbox")
-        if by_id[f"drill-noedit-{STAMP}"]["state"] == "accepted":
-            problems.append("code work told to change nothing was accepted")
-    return verdict("no_code_exit", problems, tasks=tasks)
 
 
 def ensure_prototype_config(spec: dict) -> bool:
