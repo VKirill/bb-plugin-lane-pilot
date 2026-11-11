@@ -13,6 +13,7 @@ import { peerLine } from "../../src/rooms/front/logic";
 import { createCore } from "../../src/rooms/core/server/core";
 import { registerCli } from "../../src/rooms/tools/server/cli";
 import type { Services } from "../../server";
+import { USAGE_LIST_METHOD, createProviderUsage } from "../../src/rooms/usage/server/provider-usage";
 
 const newHost = () => createFakePluginHost({ pluginId: "lane-pilot" });
 const BUDGETS = { coreBudget: 9_999, noteBudget: 99_999, indexBudget: 999_999 };
@@ -113,9 +114,26 @@ describe("memory parity h3", () => {
     expect(maskCredentials(`key ${KEY}`).masked).toBe(true);
     expect(CREDENTIAL_SHAPE_PATTERNS.length).toBeGreaterThan(0);
     // The mask's own keyed rule masks it, but the refusal leaves ordinary prose and this assignment alone, as before.
-    for (const text of ["GITHUB_TOKEN: needed for release", "We rotate the API key monthly", "secret correcthorse"])
+    for (const text of ["GITHUB_TOKEN: needed for release", "We rotate the API key monthly", "secret correcthorse", "CLIENT_SECRET: rotate monthly"])
       expect(memoryContentIssue(text), text).toBeNull();
     expect(maskCredentials("GITHUB_TOKEN: needed for release").text).toContain("***");
+  });
+
+  it("[sma:m_mc_poll] the live board tells silence from «no windows»: no usage source, a failed list or an unreadable measurement is null; a machine with no subscription answers with none", async () => {
+    const sdkWith = (plugins: unknown) => ({ sdk: { plugins } }) as never;
+    const source = (resources: unknown[], fetch: () => unknown) => ({
+      experimental_discoverRpc: async () => [{ pluginId: "provider-claude-code" }],
+      callRpc: async ({ method }: { method: string }) => method === USAGE_LIST_METHOD ? { resources } : fetch(),
+    });
+    const mine = { id: "r1", accountKey: null, providerId: "claude-code", label: "Claude", scope: { kind: "host", hostId: "h1", hostName: "h" } };
+    const reading = { accountKey: null, observedAt: Date.now(), usage: { status: "ok", accountEmail: null, planLabel: null, plan: null,
+      windows: [{ kind: "five-hour", id: "0:x", label: "5-hour", usedPercent: 42, resetsAt: null, model: null, cost: null }] } };
+    const ask = { providerId: "claude-code", hostId: "h1" };
+    expect(await createProviderUsage({ sdk: {} } as never).peerBoard(ask)).toBeNull();
+    expect(await createProviderUsage(sdkWith({ experimental_discoverRpc: async () => [{ pluginId: "p" }], callRpc: async () => { throw new Error("source down"); } })).peerBoard(ask)).toBeNull();
+    expect(await createProviderUsage(sdkWith(source([mine], () => { throw new Error("unreadable"); }))).peerBoard(ask)).toBeNull();
+    expect(await createProviderUsage(sdkWith(source([{ ...mine, scope: { kind: "host", hostId: "other", hostName: "o" } }], () => reading))).peerBoard(ask)).toEqual({ at: null, windows: {} });
+    expect((await createProviderUsage(sdkWith(source([mine], () => reading))).peerBoard(ask))?.windows.five_hour?.utilization).toBe(42);
   });
 
   it("[sma:m_mc_poll] a peer that answers with no windows reads answered:true and its line says «нет окон»; only a failed call reads answered:false and «доска не ответила»", async () => {

@@ -8,7 +8,9 @@ const REVIEW_CONCEPTS=new Set(["review","pitfall","invariant","security","regres
 const KNOWN_FIELDS=new Set(["kind","content","concepts","supersedes","valid_until","valid_from"]);
 // The refusal shares kit's credential shape table (SMA k_lib_secretsmask); its own keyed and extra forms are what memory
 // refused before the table was shared: `password:`, `api-key:` and friends, a JWT, the rarer xox letters.
-const SECRET_LIKE=/(?:\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|\bxox[rs]-[A-Za-z0-9-]{20,}\b|(?:api[_-]?key|access[_-]?token|secret|password)\s*[:=]\s*\S+)/i;
+// A keyed value written with `=` is refused in any case (`API_KEY=…`, the env form); with `:` only in lower case, as before, so
+// prose that names a variable («CLIENT_SECRET: rotate monthly») still stores.
+const SECRET_LIKE=/(?:\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|\bxox[rs]-[A-Za-z0-9-]{20,}\b|(?:api[_-]?key|access[_-]?token|secret|password)\s*[:=]\s*\S+|(?:API[_-]?KEY|ACCESS[_-]?TOKEN|SECRET|PASSWORD)\s*=\s*\S+)/;
 const secretLike=(text:string):boolean=>CREDENTIAL_SHAPE_PATTERNS.some((pattern)=>{pattern.lastIndex=0;return pattern.test(text);})||SECRET_LIKE.test(text);
 const INSTRUCTION_INJECTION=/(?:ignore (?:all )?(?:previous|prior|above) instructions|forget (?:all )?(?:previous|prior) instructions|disregard (?:all )?(?:previous|prior|above)|you are now\b|^\s*#{0,6}\s*(?:system|assistant)\s*:|<\/?(?:system|instructions)>|забудь(?:те)? (?:все )?(?:прежние |предыдущие )?инструкции|игнорируй (?:все )?(?:прежние |предыдущие )?инструкции)/im;
 

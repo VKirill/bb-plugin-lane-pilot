@@ -184,10 +184,12 @@ export function createProviderUsage(bb: BbPluginApi, now: () => number = Date.no
     return await plugins!.callRpc!({ pluginId, method, input, outputSchema: schema as z.ZodType<unknown>, signal: AbortSignal.timeout(CALL_TIMEOUT_MS) }) as T;
   }
 
+  const listFailed = new Set<string>();
   async function inventory(pluginId: string): Promise<UsageResource[]> {
     const cached = inventories.get(pluginId);
     if (cached && now() - cached.at < INVENTORY_TTL_MS) return cached.resources;
-    const resources = await call(pluginId, USAGE_LIST_METHOD, {}, listSchema).then((row) => row.resources, () => cached?.resources ?? []);
+    // A failed list keeps the last known resources for a hold; the machines list must still know the source did not answer.
+    const resources = await call(pluginId, USAGE_LIST_METHOD, {}, listSchema).then((row) => { listFailed.delete(pluginId); return row.resources; }, () => { listFailed.add(pluginId); return cached?.resources ?? []; });
     inventories.set(pluginId, { at: now(), resources });
     return resources;
   }
@@ -317,7 +319,22 @@ export function createProviderUsage(bb: BbPluginApi, now: () => number = Date.no
     return { measuredAt: read ? new Date(now()).toISOString() : null, windows };
   }
 
-  return { hold, peek, warm, windows, readings };
+  /**
+   * A machine's board for the machines list (SMA m_mc_poll), where silence and «no windows» must read differently: null when the
+   * lookup failed or ran out of time, when the hub has no usage source to ask, or when a subscription listed for the machine gave
+   * no readable measurement; else its windows, none when the machine has no subscription of this provider. Never throws.
+   */
+  async function peerBoard(input: { providerId: string; hostId: string }): Promise<BoardWindows | null> {
+    const rows = await bounded({ ...input, model: "" });
+    if (rows === null) return null;
+    const serving = servingOf(rows, input);
+    if (serving.some(({ measurement }) => measurement?.usage.status === "ok")) return boardWindows(rows, { ...input, now: now() });
+    const sources = await discover();
+    // Nothing readable: silence when a subscription is listed, when there is no source to ask, or when a source's list failed.
+    return serving.length || !sources.length || sources.some((id) => listFailed.has(id)) ? null : boardWindows(rows, { ...input, now: now() });
+  }
+
+  return { hold, peek, warm, windows, readings, peerBoard };
 }
 
 export type ProviderUsage = ReturnType<typeof createProviderUsage>;
