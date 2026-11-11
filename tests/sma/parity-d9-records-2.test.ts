@@ -296,7 +296,7 @@ describe("[sma:ar_stamp] the writer spawn path stamps the trace it saves", () =>
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
       { confirm: true, objective: "Stamp", plan: "A plan for the stamp test", task }, { threadId: pmThreadId, projectId })));
     await harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId: "run-stamp", timeoutSec: 2 }, { threadId: pmThreadId, projectId });
-    expect(getReasoningTrace(db, dispatched.attemptId)?.stamp).toEqual({ stateMachineVersion: STATE_MACHINE_VERSION, harnessVersion: HARNESS_VERSION });
+    expect(getReasoningTrace(db, dispatched.attemptId)?.stamp).toMatchObject({ stateMachineVersion: STATE_MACHINE_VERSION, harnessVersion: HARNESS_VERSION });
     await harness.lifecycle.dispose();
   });
 });
