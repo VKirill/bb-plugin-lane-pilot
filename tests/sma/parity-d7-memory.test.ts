@@ -228,25 +228,30 @@ describe("memory corpus care (parity wave d7)", () => {
     expect(searchMemoryRecords(db, "P", "nightly export exports folder", 10, "auto").map((item) => item.id)).not.toContain(fromFile);
   });
 
-  it("[sma:m_extract] memory.single_claim is off when unset on the maintainer path too: a packed list stays unless the project switched the setting on", () => {
+  it("[sma:m_extract] memory.single_claim is on when unset on the maintainer path too; a stored off keeps a packed list", () => {
     const entries = [{ content: "- one\n- two\n- three" }, { content: "The ledger rounds half to even." }];
-    // Unset: the maintainer's own settings read are off, and nothing is dropped.
-    expect(maintainerMemorySettings({}).singleClaim).toBe(false);
-    expect(dropPackedLists(entries, maintainerMemorySettings({}))).toEqual({ kept: entries, dropped: 0 });
-    // Switched on: the list goes, the plain note stays, and the count is reported (the stage's listDropped).
-    const on = maintainerMemorySettings({ "memory.single_claim": true });
-    expect(on.singleClaim).toBe(true);
-    expect(dropPackedLists(entries, on)).toEqual({ kept: [entries[1]], dropped: 1 });
-    expect(parseMemorySettings({}).singleClaim).toBe(false);
+    // Unset: on, the list goes, the plain note stays, and the count is reported (the stage's listDropped).
+    expect(maintainerMemorySettings({}).singleClaim).toBe(true);
+    expect(dropPackedLists(entries, maintainerMemorySettings({}))).toEqual({ kept: [entries[1]], dropped: 1 });
+    expect(parseMemorySettings({}).singleClaim).toBe(true);
+    // Explicit off: the old path, nothing is dropped.
+    const off = maintainerMemorySettings({ "memory.single_claim": "off" });
+    expect(off.singleClaim).toBe(false);
+    expect(dropPackedLists(entries, off)).toEqual({ kept: entries, dropped: 0 });
+    expect(maintainerMemorySettings({ "memory.single_claim": true }).singleClaim).toBe(true);
   });
 
-  it("[sma:m_extract] a three-line bullet list is refused at the session door only when memory.single_claim is on; plain notes still store", async () => {
+  it("[sma:m_extract] a three-line bullet list is refused at the session door unless memory.single_claim is stored off; plain notes still store", async () => {
     const db = openDatabase(newHost().bb);
     const api = rpc(db);
-    // Unset: today's behaviour, the list is stored.
+    // Unset: on, the list is refused.
     const unset = await api.session_memory_write({ projectId: "P", kind: "note", content: "- one\n- two\n- three", concepts: [] });
-    expect(unset.stored).toBe(true);
-    db.prepare("INSERT INTO lane_pilot_project_settings(project_id,binding_id,key,value,version,updated_at) VALUES('P','','memory.single_claim','true',1,0)").run();
+    expect(unset.stored).toBe(false);
+    // Stored off: the old path, the list is stored.
+    db.prepare("INSERT INTO lane_pilot_project_settings(project_id,binding_id,key,value,version,updated_at) VALUES('P','','memory.single_claim','off',1,0)").run();
+    const offStored = await api.session_memory_write({ projectId: "P", kind: "note", content: "- seven\n- eight\n- nine", concepts: [] });
+    expect(offStored.stored).toBe(true);
+    db.prepare("UPDATE lane_pilot_project_settings SET value='true', version=2 WHERE project_id='P' AND key='memory.single_claim'").run();
     const refused = await api.session_memory_write({ projectId: "P", kind: "note", content: "- four\n- five\n- six", concepts: [] });
     expect(refused.stored).toBe(false);
     expect(refused.reason).toMatch(/one claim/);
@@ -400,7 +405,7 @@ describe("memory corpus care (parity wave d7)", () => {
     expect(h.db.prepare("SELECT query, kind, note_id AS noteId FROM lane_pilot_memory_miss").all()).toEqual([{ query: "what holds the answer?", kind: "reminded", noteId: id }]);
   });
 
-  it("[sma:k_v_load] with memory.tag_notes unset the writer's picks and mix ignore tags; switched on, a note carrying a tag of the task joins between path notes and core", () => {
+  it("[sma:k_v_load] with memory.tag_notes unset (on) a note carrying a tag of the task joins between path notes and core", () => {
     const db = openDatabase(newHost().bb);
     put(db, [
       { kind: "note", content: "Refunds are held for three days before they are paid out.", concepts: ["billing"] },
@@ -408,10 +413,13 @@ describe("memory corpus care (parity wave d7)", () => {
     ]);
     const task = { owns_paths: ["src/billing/ledger.ts"], read_first: [], area: "billing", kind: "feature" as const };
     const base = { projectId: "P", query: "zzzz unrelated words", task, searchEngine: "auto" as const, personalBot: "", ruleMemoryIds: new Set<string>() };
-    const off = mixWriterMemory(db as never, base);
-    const unsetTags = mixWriterMemory(db as never, { ...base, tagNotes: false });
+    const unset = mixWriterMemory(db as never, base);
+    expect(unset.text).toContain("Refunds are held for three days");
+    const off = mixWriterMemory(db as never, { ...base, tagNotes: false });
     expect(off.text).toBe("");
-    expect(unsetTags.ids).toEqual([]);
+    expect(off.ids).toEqual([]);
+    expect(parseMemorySettings({}).tagNotes).toBe(true);
+    expect(parseMemorySettings({ "memory.tag_notes": "off" }).tagNotes).toBe(false);
     const on = mixWriterMemory(db as never, { ...base, tagNotes: true });
     expect(on.text).toContain("Refunds are held for three days");
     expect(on.text).not.toContain("kitchen display");

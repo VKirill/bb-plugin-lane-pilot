@@ -13,7 +13,7 @@ type TaskPaths = Pick<TaskV2, "owns_paths" | "read_first">;
  */
 type WriterMixInput = { projectId: string; query: string; task: TaskPaths & Partial<Pick<TaskV2, "kind" | "area" | "skills">>; searchEngine: MemorySearchEngine; personalBot: string; ruleMemoryIds: ReadonlySet<string>; now?: number; kind?: "auto"|"standalone"|"umbrella";
   /** memory.tag_notes: notes carrying a tag of the task (kind, area words, skills, path folders) join the brief. */
-  tagNotes?: boolean;
+  tagNotes?: boolean; // unset reads as on
   /** The run's sections: notes of a sibling section of a shared project are not this writer's. */
   chain?: readonly string[];
   /** Current bytes of a repo-relative path. A note whose stored file hash no longer matches is left out of the brief. */
@@ -52,12 +52,12 @@ export function mixWriterMemory(db: LanePilotDatabase, input: WriterMixInput): {
   const found = writerCandidates(db, input);
   const kept = input.readFile ? found.filter((record) => !filesDrifted(record.fileFingerprint, pathsNamed(record.content), input.readFile!)) : found;
   const scoped = { chain: input.chain ?? [], umbrella: umbrellaFor(db, input), ...(input.now !== undefined ? { now: input.now } : {}) };
-  const tagged = input.tagNotes
+  const tagged = input.tagNotes !== false
     ? listMemory(db, input.projectId, { concepts: taskMemoryTags(input.task, new Set(activeMemoryDigestRows(db, input.projectId).flatMap((row) => JSON.parse(row.concepts_json || "[]") as string[]))) }, 20, "subagent", input.personalBot, scoped)
       .filter((record) => !input.ruleMemoryIds.has(record.id) && !kept.some((hit) => hit.id === record.id))
     : [];
   const all = [...kept, ...tagged];
-  const tags = input.tagNotes ? taskMemoryTags(input.task, new Set(tagged.flatMap((record) => record.concepts))) : [];
+  const tags = input.tagNotes !== false ? taskMemoryTags(input.task, new Set(tagged.flatMap((record) => record.concepts))) : [];
   return { text: writerMemory(all, input.task, tags), ids: writerMemoryPicks(all, input.task, tags).map((record) => record.id) };
 }
 
