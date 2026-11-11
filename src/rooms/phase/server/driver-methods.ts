@@ -6,7 +6,7 @@ import { latestRunForPmThread, listOpenAttempts } from "../../storage";
 import { isWholeConsent, ownerWordsOn } from "../../tasks";
 import type { DrawingCritique } from "@lane-pilot/contracts";
 import { sha256Hex, bestEffort, isNotFound, orMiss } from "@lane-pilot/kit";
-import { PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceKey, checkerIndependence, contextSignature, designDecision, designGate, discussionGate, executionGate, phaseFolder, planGate, planGate as planGateOf, planSignature, staleAfterReturn, wordKeyOf } from "../logic";
+import { PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceKey, checkerIndependence, contextSignature, designDecision, designGate, discussionGate, executionGate, phaseFolder, planGate, planGate as planGateOf, withdrawProblem, planSignature, staleAfterReturn, wordKeyOf } from "../logic";
 import { archiveDrawing, markUatLine, oneLine, parseState, stateBlockSections, planText, roadmapAnalysis, roadmapNumberingGaps, roadmapSection, specText, stateBlockText, stateHasHeader, STATE_MANUAL, uatState } from "../stages";
 import { bundledAgents } from "../../contracts";
 import { sendServiceMessage } from "../../relay/server";
@@ -37,6 +37,7 @@ export type StopInput = Reported & { words?: string };
 export type StopWaveInput = Reported;
 export type CompensateInput = Reported & { note: string };
 export type UatLineInput = Reported & { line: number; result: "pass" | "fail"; note?: string };
+export type CancelPieceInput = Reported & { piece: string; note?: string };
 export type DecideInput = Reported & { piece: string; choice: "skip" | "retry" | "cancel"; note?: string };
 export type InterruptInput = Reported & { words?: string };
 
@@ -410,13 +411,15 @@ export function installMethods(tools: MethodsTools) {
   }
 
   /** Scope withdrawal agreed: pieces not yet issued leave the plan with a note; the plan is admitted again as it now is. */
-  function withdraw(input: WithdrawInput): Phase {
+  function withdraw(input: WithdrawInput): Phase & { notice: string } {
     const phase = mustGet(input.phaseId);
-    const plan = phase.record.plan;
-    if (!plan) throw new PhaseRefusal("no plan to withdraw from");
-    const issued = phase.record.execution?.issued ?? {};
-    const refused = input.pieces.filter((id) => issued[id]);
-    if (refused.length) throw new PhaseRefusal("issued pieces are canceled, not withdrawn", refused.map((id) => `${id} is issued: lane_pilot_cancel_task, then withdraw`));
+    // Refused before anything changes: a closed or early phase, an unknown piece id and an issued piece leave the plan, the words and the admitted print as they were.
+    const problem = withdrawProblem(phase, input.pieces);
+    if (problem) {
+      const issued = phase.record.execution?.issued ?? {};
+      throw new PhaseRefusal(problem, input.pieces.filter((id) => issued[id]).map((id) => `${id} is issued: lane_pilot_cancel_task, then withdraw`));
+    }
+    const plan = phase.record.plan!;
     const items = plan.items.filter((item) => !input.pieces.includes(item.id));
     if (!items.length) throw new PhaseRefusal("withdrawing every piece closes the phase: use close with the words why");
     const sha = planSignature(items, plan.contextSha);
@@ -426,7 +429,9 @@ export function installMethods(tools: MethodsTools) {
       ...(revoked ? { words: (phase.record.words ?? []).filter((word) => word.turn !== "issue" && word.turn !== "wave") } : {}) };
     book(phase, "decisions", "scope_withdrawn", `${input.pieces.join(", ")} withdrawn by ${input.by ?? "pm"}: ${input.note}${revoked ? "; issue permission revoked" : ""}`);
     savePhase(db, phase.id, { record, at: now() });
-    return mustGet(phase.id);
+    // What the owner does next: the permission to issue was tied to the old scope, so the trimmed plan waits for a new «issue» word.
+    const notice = `${input.pieces.join(", ")}: убрано из плана, план принят заново. ${revoked ? "Прежнее разрешение «выдать» отозвано: чтобы работа пошла дальше, дайте новое слово «выдать»." : "Когда будете готовы, дайте слово «выдать»: разрешение относится к новому плану."}`;
+    return { ...mustGet(phase.id), notice };
   }
 
   /** Phase scope revision: the goal changes in discussion or planning; the plan built on the old goal is checked again. */
@@ -593,6 +598,19 @@ export function installMethods(tools: MethodsTools) {
         savePhase(db, phase.id, { record: { ...mustGet(phase.id).record, uat: { ...mustGet(phase.id).record.uat!, sha256: sha256Hex(marked) } }, at: now() });
       }
     }
+    return mustGet(phase.id);
+  }
+
+  /** One piece at work is stopped by the owner from the card (SMA d_batch_decide): its attempt is canceled and the book says who did it. Decide does not cover a running piece. */
+  async function cancelPiece(input: CancelPieceInput): Promise<Phase> {
+    const phase = mustGet(input.phaseId);
+    if (!phase.record.plan?.items.some((row) => row.id === input.piece)) throw new PhaseRefusal(`no piece ${input.piece} in the plan of phase ${phase.id}`);
+    const fact = facts(phase).get(input.piece);
+    if (!fact?.attemptId || !["queued", "running", "checking"].includes(fact.state ?? "")) throw new PhaseRefusal(`piece ${input.piece} is not at work (it is ${fact?.state ?? (phase.record.execution?.issued[input.piece] ? "issued" : "not issued")}): nothing to cancel`);
+    const result = await cancelAttemptById(ctx, fact.attemptId, services.rollback, `Остановлено владельцем: ${input.note?.trim().slice(0, 380) || "по кнопке на карточке фазы"}`, "unknown")
+      .catch((cause: unknown) => ({ ok: false, state: "error", reason: cause instanceof Error ? cause.message : String(cause) }));
+    book(phase, "execution", "cancel", `${input.piece} (${fact.taskId}) canceled by ${input.by ?? "pm"}: ${input.note?.trim() || "cancel"}${result.ok ? "" : `; the stop was not observed: ${result.reason ?? result.state}`}`);
+    if (!result.ok) throw new PhaseRefusal(`the stop of ${fact.taskId} was not observed: ${result.reason ?? result.state}`);
     return mustGet(phase.id);
   }
 
@@ -781,5 +799,5 @@ export function installMethods(tools: MethodsTools) {
     return mustGet(phase.id);
   }
 
-  return { open, context, plan, planCheck, drawing, goalAudit, lessons, question, answer, word, waveReview, withdraw, revise, correct, returnTo, setState, stop, stopWave, compensate, admitIfReady, uatLine, uatOpen, decide, interrupt, state, roadmap, validate };
+  return { open, context, plan, planCheck, drawing, goalAudit, lessons, question, answer, word, waveReview, withdraw, revise, correct, returnTo, setState, stop, stopWave, compensate, admitIfReady, uatLine, uatOpen, decide, cancelPiece, interrupt, state, roadmap, validate };
 }

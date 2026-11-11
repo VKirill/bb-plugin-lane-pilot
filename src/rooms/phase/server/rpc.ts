@@ -44,7 +44,13 @@ export function phaseRpc(api: PhaseApi) {
       if (action === "withdraw") {
         if (!piece) throw new Error("a withdraw names the piece");
         if (!note?.trim()) throw new Error("a withdraw carries the owner's note: why the piece leaves the plan");
-        return api.status(api.withdraw({ phaseId, pieces: [piece], note: note.trim(), by: "owner" }).id);
+        const withdrawn = api.withdraw({ phaseId, pieces: [piece], note: note.trim(), by: "owner" });
+        return { ...api.status(withdrawn.id), notice: withdrawn.notice };
+      }
+      // One piece at work stopped from the card: the phase cancels its attempt and books who did it (decide covers only a stopped piece).
+      if (action === "cancel_piece") {
+        if (!piece) throw new Error("a cancel names the piece");
+        return api.status((await api.cancelPiece({ phaseId, piece, note: note?.trim() || undefined, by: "owner" })).id);
       }
       if (action === "uat_line") {
         if (!line || !result) throw new Error("a UAT answer names the line's number and pass or fail");

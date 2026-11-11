@@ -1,5 +1,6 @@
 import { sha256Hex } from "@lane-pilot/kit";
 import { NO_CODE_KINDS } from "../tasks";
+import { planningText } from "../contracts";
 import { ANIMATOR_LAW, PLAN_ROUNDS_MAX, ambiguityScore, buildsScreens, coverageGaps, designMode, motionRows, openQuestions, rubricLine, stageInit, threatGap, uiContractGap, validationGaps } from "./stages";
 
 /**
@@ -355,6 +356,22 @@ export const wordKeyOf = (record: PhaseRecord, turn: WordTurn): string | null =>
   : turn === "design" ? record.design?.drawing?.sha256 ?? null : null;
 
 /** Where a phase keeps its own files in the project: the book, and the drawing in design/ (SMA: The phase has a home, Drawing in its own folder). */
+/**
+ * Why a withdraw of these pieces would be refused now, or null when it would go through (SMA d_batch_decide). Asked by the driver before it
+ * changes anything and by the phase card before it shows «Убрать»: the phase is open, at planning or execution, every piece is in the plan, none is issued.
+ */
+export function withdrawProblem(phase: Pick<Phase, "id" | "state" | "stage" | "record">, pieces: readonly string[]): string | null {
+  if (phase.state === "closed" || phase.state === "stopped") return `phase ${phase.id} is ${phase.state}: a piece leaves the plan only while the phase is open`;
+  if (phase.stage !== "planning" && phase.stage !== "execution") return `phase ${phase.id} is at ${phase.stage}: a piece leaves the plan at planning or execution`;
+  const plan = phase.record.plan;
+  if (!plan) return "no plan to withdraw from";
+  const unknown = pieces.filter((id) => !plan.items.some((item) => item.id === id));
+  if (unknown.length) return `no piece ${unknown.join(", ")} in the plan of phase ${phase.id}: nothing is changed`;
+  const issued = pieces.filter((id) => phase.record.execution?.issued[id]);
+  if (issued.length) return "issued pieces are canceled, not withdrawn";
+  return null;
+}
+
 export const phaseFolder = (phaseId: string) => `.agents/phases/${phaseId}`;
 
 /** What the drawing must cover (SMA p3_requirements): the base sections always, c4 and the event chain for system or mixed work. */
@@ -668,7 +685,13 @@ const tool = (action: string, args = "") => `lane_pilot_phase {action:"${action}
  * What the phase needs now, in one instruction for the PM (the driver sends it once per key: «one wait — one message»). `waitsForPm` is
  * false when the driver itself has the next step (issuing a wave, waiting for writers, running the checks).
  */
-export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): NextAction {
+export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>, planningHome?: string | null): NextAction {
+  const action = nextActionRaw(phase, facts);
+  // With a planning home the files this text names are there: the PM gets their absolute folder (unset: the text as it always was).
+  return planningHome ? { ...action, text: planningText(action.text, planningHome) } : action;
+}
+
+function nextActionRaw(phase: Phase, facts: ReadonlyMap<string, TaskFact>): NextAction {
   const id = phase.id;
   const r = phase.record;
   const head = `Phase ${id} «${phase.title}»`;

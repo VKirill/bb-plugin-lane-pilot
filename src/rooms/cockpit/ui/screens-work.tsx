@@ -15,7 +15,7 @@ type PhaseStatus = {
     execution?: { issued: Record<string, string>; waves?: Record<string, { lines: Array<{ id: string; ok: boolean; detail: string }>; review?: { state: string; by: string; summary: string } }> };
     observation?: { outcome: string; reverted: string[]; until: number };
     lessons?: { analysis?: string; draft?: { text: string; state: string } } } };
-  next: { text: string; key?: string }; ownerWord?: { acceptanceKey?: string; designKey?: string }; gates: Record<string, { ok: boolean; why?: string[] }>; book: string; facts: Record<string, { taskId: string; attemptId?: string | null; state: string | null }>;
+  withdrawable?: string[]; next: { text: string; key?: string }; ownerWord?: { acceptanceKey?: string; designKey?: string }; gates: Record<string, { ok: boolean; why?: string[] }>; book: string; facts: Record<string, { taskId: string; attemptId?: string | null; state: string | null }>;
   acceptancePackage?: { key: string; verdict: { state: string; detail: string; mainSha: string | null } | null; diffStat: string | null } | null;
 };
 
@@ -93,11 +93,11 @@ function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId
   const [fbGoal, setFbGoal] = useState("");
   const [fbObstacle, setFbObstacle] = useState("");
   const [fbQuestion, setFbQuestion] = useState("");
-  const control = (action: "pause" | "resume" | "stop_wave" | "stop" | "close" | "word" | "return" | "interrupt" | "decide" | "withdraw" | "uat_line", extra: Record<string, unknown> = {}) =>
-    void rpc.call("phase_control", { phaseId, action, ...extra } as never).then(() => { status.reload(); onChanged(); });
-  // One piece of the batch at a time (SMA d_batch_decide): cancel or retry go to the attempt's own verbs.
-  const pieceAct = (method: "cancel_attempt" | "retry_attempt", attemptId: string, cancelNote?: string) =>
-    void rpc.call(method, { attemptId, ...(method === "cancel_attempt" && cancelNote?.trim() ? { note: cancelNote.trim() } : {}) } as never).then(() => { status.reload(); onChanged(); });
+  // What the last withdraw told the owner to do next (the new «issue» word), shown under the plan.
+  const [notice, setNotice] = useState("");
+  // One piece of the batch at a time (SMA d_batch_decide): withdraw, cancel and retry all go through the phase, so its book records who did what.
+  const control = (action: "pause" | "resume" | "stop_wave" | "stop" | "close" | "word" | "return" | "interrupt" | "decide" | "withdraw" | "cancel_piece" | "uat_line", extra: Record<string, unknown> = {}) =>
+    void (rpc.call("phase_control", { phaseId, action, ...extra } as never) as Promise<{ notice?: string } | undefined>).then((result) => { setNotice(action === "withdraw" ? result?.notice ?? "" : ""); status.reload(); onChanged(); });
   const act = (action: "correct" | "answer", payload: Record<string, unknown>) =>
     void rpc.call("phase_act", { action, projectId, pmThreadId: "screen", phaseId, payload }).then(() => status.reload());
   return (
@@ -124,10 +124,11 @@ function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId
               <ul className="space-y-1">{r.plan.items.map((item) => { const fact = s.facts[item.id]; const working = fact?.state && ["queued", "running", "checking"].includes(fact.state); return (
                 <li key={item.id} data-testid={`ck-plan-${item.id}`} className="flex flex-wrap items-center gap-2">w{item.wave} · {item.title} — {item.promise.then} <span className="text-muted-foreground">{fact ? `${fact.taskId} ${fact.state ?? ""}` : ""}</span>
                   {/* The owner's per-piece decision (SMA d_batch_decide): trim a piece not yet issued (with his note), cancel one at work, retry a blocked one. */}
-                  {!fact ? <Button size="sm" variant="outline" disabled={!note.trim()} onClick={() => control("withdraw", { piece: item.id, note })}>{t("ckPieceWithdraw")}</Button> : null}
-                  {working && fact.attemptId ? <Button size="sm" variant="outline" onClick={() => pieceAct("cancel_attempt", fact.attemptId!, note)}>{t("cancel")}</Button> : null}
-                  {fact?.state === "blocked" && fact.attemptId ? <Button size="sm" variant="outline" onClick={() => pieceAct("retry_attempt", fact.attemptId!)}>{t("retry")}</Button> : null}
+                  {s.withdrawable?.includes(item.id) ? <Button size="sm" variant="outline" disabled={!note.trim()} onClick={() => control("withdraw", { piece: item.id, note })}>{t("ckPieceWithdraw")}</Button> : null}
+                  {working && fact.attemptId ? <Button size="sm" variant="outline" onClick={() => control("cancel_piece", { piece: item.id, ...(note.trim() ? { note: note.trim() } : {}) })}>{t("cancel")}</Button> : null}
+                  {fact?.state === "blocked" && fact.attemptId ? <Button size="sm" variant="outline" onClick={() => control("decide", { piece: item.id, choice: "retry", ...(note.trim() ? { note: note.trim() } : {}) })}>{t("retry")}</Button> : null}
                 </li>); })}</ul>
+              {notice ? <p className="mt-1 text-xs" data-testid="ck-withdraw-notice">{notice}</p> : null}
             </Disclosure>
           ) : null}
           <Disclosure summary={t("ckPhaseDiscussion")} open>
