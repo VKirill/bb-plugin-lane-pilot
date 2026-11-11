@@ -17,14 +17,11 @@ import { quarantineFileSet } from "../../baseline";
 import { emergencyFallbackDecision } from "../emergency-writer";
 ;
 import { resolveBestOf, roundSeedBrief, roundSurvivors } from "../best-of";
-import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../contracts/quality-mode";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { WRITER_PICK_PREFIX, writerPickOverlay, type WriterLoad } from "../writer-model-pick";
 import { loadWriterPin, noteWriterPair } from "../writer-model-pin";
 import { reassignedReason, takeReassignRequest, type ReassignRequest } from "./reassign";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
-import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../contracts/state-machine";
-import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, VERIFICATION_TIMEOUT_RETRIES, failureClassCooldownMs, failureFingerprint, isWaitingSecret, isWriterSilent, repeatedFailureReason, turnFailureKey, verificationTimeoutOverBudget } from "../../contracts/failure-class"
 import { taskFamily } from "@lane-pilot/contracts";
 import { coreHostsRequiredProvider, isTaskSatisfied } from "../../runs/server";
 import { walkWriterChain, waitingWriterReason, waitingWriterText, type ChainWalk } from "./writer-hold";
@@ -39,7 +36,6 @@ import { dependsOnTask } from "../../tasks";
 import { openDatabase } from "../../storage";
 import { createWriterSticky } from "./sticky";
 import { WRITER_QUESTION_WAIT_TEXT } from "./question-default";
-import { failureClass, failureIntervention, MAST_OF_FAILURE, type FailureClass } from "../../contracts/failure-class";
 import { jev } from "@lane-pilot/jev";
 import { judgedFailureClass } from "../../runs";
 import { isHeld, isRunHalted, isRunPaused, waitWhileRunPaused } from "../../runs/server";
@@ -60,10 +56,36 @@ import type { WriterStateApi } from "./state";
 import type { WriterVerifyApi } from "./verify";
 
 import type { HarnessApi } from "../../harness/server/harness";
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+export interface Services {
+  activeWriterTasks: WriterStateApi["activeWriterTasks"];
+  baseline: BaselineApi;
+  concurrencyLimit: WriterStateApi["concurrencyLimit"];
+  finishWriterAttempt: WriterFinishApi["finishWriterAttempt"];
+  harness: HarnessApi;
+  isLiveFolder: WriterSpawnApi["isLiveFolder"];
+  money: MoneyApi;
+  ownerPresence: OwnerPresenceApi;
+  providerBreaker: WriterStateApi["providerBreaker"];
+  providerRetry: WriterStateApi["providerRetry"];
+  providerUsage: WriterStateApi["providerUsage"];
+  reconcileAttemptThread: ReconcileApi["reconcileAttemptThread"];
+  restoreLiveFolder: WriterSpawnApi["restoreLiveFolder"];
+  rollback: RollbackApi;
+  ruleScan: RuleScanApi;
+  runBudgetFor: WriterStateApi["runBudgetFor"];
+  runVerification: WriterVerifyApi["runVerification"];
+  runWriterPool: WriterStateApi["runWriterPool"];
+  spawnWriterAttempt: WriterSpawnApi["spawnWriterAttempt"];
+  stability: StabilityPort;
+  startAfterAcceptance: WorkflowEngineApi["startAfterAcceptance"];
+  wall: WallApi;
+  workspaceDirt: WriterSpawnApi["workspaceDirt"];
+}
+
 import { createStartWriterTask } from "./start-writer-task";
 import { admittedByCore } from "./start-admitted";
 import { copyRefusedKeyPrefix } from "./copy-refused-key";
-import type { Services } from "./start-services";
 
 export { freshAttemptStart } from "./fresh-attempt-start";
 export { quarantiningRegression } from "./start-quarantine";
@@ -72,7 +94,6 @@ export { CANCELED_REDO_WAIT_MS } from "./start-wait-limits";
 export { sameArea } from "./start-area";
 export { copyRefusedKeyPrefix } from "./copy-refused-key";
 
-import type { AttemptState } from "../../contracts/state-machine";
 import { closeWriterStages, recordStage } from "../../runs/server";
 import { id, stringAt } from "@lane-pilot/kit";
 import { configuredSetting } from "../../contracts/server";

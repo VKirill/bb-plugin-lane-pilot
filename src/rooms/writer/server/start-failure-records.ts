@@ -1,5 +1,5 @@
 import { taskFamily } from "@lane-pilot/contracts";
-import { failureClass } from "../../contracts/failure-class";
+import { failureClass } from "../../contracts";
 import { listAttemptsInStates, listTaskAttemptRows, openDatabase } from "../../storage";
 
 /** The latest charged failure of a task's family (its redispatches and mainfixes), to seed the repeated-failure stop. */

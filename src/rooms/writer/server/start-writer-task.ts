@@ -36,7 +36,6 @@ import { stickyTurnPromptWithRules } from "./writer-knowledge";
 import { parseMemorySettings } from "../../memory";
 import { checkoutOwnsOverlap, isMainfixTask, retargetTask , priorityRank, HOLD_FOREVER, laneCap, laneQueueOf, spendReserve } from "../../tasks";
 import { dependsOnTask } from "../../tasks";
-import { openDatabase } from "../../storage";
 import { createWriterSticky } from "./sticky";
 import { WRITER_QUESTION_WAIT_TEXT } from "./question-default";
 import { failureClass, failureIntervention, MAST_OF_FAILURE, type FailureClass } from "../../contracts/failure-class";
@@ -45,27 +44,14 @@ import { judgedFailureClass } from "../../runs";
 import { isHeld, isRunHalted, isRunPaused, waitWhileRunPaused } from "../../runs/server";
 import { allowedSecretNames, secretProblem, waitingSecretNote, waitingSecretReason } from "../../secrets/server";
 
-import type { BaselineApi } from "../../baseline/server/baseline";
-import type { MoneyApi } from "../../money/server";
-import type { OwnerPresenceApi } from "../../owner-presence/server/presence";
-import type { RollbackApi } from "../../rollback/server/rollback";
 import { recoveryState } from "../../rollback";
-import type { RuleScanApi } from "../../self-repair/server/rule-scan";
-import type { ReconcileApi } from "../../stability/server/reconcile";
-import type { StabilityPort } from "../../contracts";
-import type { WallApi } from "../../wall/service";
-import type { WriterFinishApi } from "./finish";
-import type { WriterSpawnApi } from "./spawn";
-import type { WriterStateApi } from "./state";
-import type { WriterVerifyApi } from "./verify";
 
-import type { HarnessApi } from "../../harness/server/harness";
 import { copyRefusedKeyPrefix } from "./copy-refused-key";
 import { freshAttemptStart } from "./fresh-attempt-start";
 import { familyFailureRecord, isOwnFailure, lastOwnFailure, verificationFailure } from "./start-failure-records";
 import { quarantiningRegression } from "./start-quarantine";
 import { CANCELED_REDO_WAIT_MS, RUN_LIMIT_SETTING, RUN_LIMIT_WORD, SECRET_WAIT_MS, secretPollMs } from "./start-wait-limits";
-import type { Services } from "./start-services";
+import type { Services } from "./start";
 import { sameArea } from "./start-area";
 
 import type { AttemptState } from "../../contracts/state-machine";
@@ -82,10 +68,7 @@ import type { ServerCore } from "../../contracts/server";
 
 import { sendServiceMessage } from "../../relay/server";
 import { emitAttemptFinished } from "./attempt-finished";
-import { mountWriterTaskFinished } from "./attempt-reactions";
-import { mountStabilityAttemptFinished } from "./stability";
 
-import type { WorkflowEngineApi } from "../../platform/server";
 
 /** The createWriterStart locals startWriterTask closes over, passed in so the function can live in its own module. */
 export interface StartWriterTaskDeps {
