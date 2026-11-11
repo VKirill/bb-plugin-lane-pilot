@@ -9,7 +9,7 @@ import { setAsideOnStartFailure } from "../../platform/server";
 import { bestEffort, pollPause, stringAt } from "@lane-pilot/kit";
 import { clearFollowUpCancelled, followUpCancelled, loadFollowUp } from "./sticky";
 import { loadWriterNudge } from "./writer-silence";
-import { THREAD_NOT_STARTED_REASON, WRITER_SILENT_REASON } from "../../contracts/failure-class";
+import { THREAD_NOT_STARTED_REASON, WRITER_SILENT_REASON } from "../../contracts";
 
 const FOLLOW_UP_DELETED = "the owner deleted the queued instruction for this writer";
 

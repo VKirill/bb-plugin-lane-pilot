@@ -1,14 +1,14 @@
 import { barrierInputBody } from "./barrier-input";
 import type { ServerCore } from "../../contracts/server";
-import type { HelperPolicySnapshot } from "../../contracts/helper-context";
+import type { HelperPolicySnapshot } from "../../contracts";
 import type { FinishInput, Services } from "./finish-types";
 import { countAttempts, getAttempt, getReasoningTrace, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../storage";
 import { actionableFindings, advisoryFeedback, buildCandidateEvidence, codeCritiqueSource, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "../../critique";
 import type { WriterIdentity } from "../../critique";
 import { candidatePatches, runCodeCritique } from "../../critique/server";
-import type { FrozenCritiquePolicy } from "../../critique/code-critique";
+import type { FrozenCritiquePolicy } from "../../critique";
 import { failureFieldsOf } from "../../storage";
-import { critiqueRepeatSkip, patchChangedLines } from "../../contracts/quality-mode";
+import { critiqueRepeatSkip, patchChangedLines } from "../../contracts";
 import { loadCriticCodeDefault } from "./critic-override";
 import { recordGateEvaluation, recordStage } from "../../runs/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
