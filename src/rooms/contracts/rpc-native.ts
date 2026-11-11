@@ -176,8 +176,9 @@ export const rpcNative = {
       queued: z.array(z.string()).default([]),
       /** The open run's unfinished tasks and what each waits for (src/rooms/runs/server/task-graph.ts). */
       graph: z.object({
-        nodes: z.array(z.object({ id: z.string(), title: z.string(), state: z.enum(["running", "waiting", "queued", "blocked"]), threadId: z.string().nullable() }).strict()),
+        nodes: z.array(z.object({ id: z.string(), title: z.string(), state: z.enum(["running", "waiting", "queued", "blocked"]), threadId: z.string().nullable(), area: z.string().nullable().optional(), attemptId: z.string().nullable().optional(), reason: z.string().nullable().optional() }).strict()),
         edges: z.array(z.object({ from: z.string(), to: z.string(), kind: z.enum(["depends", "files", "folder", "question"]) }).strict()),
+        objective: z.string().nullable().optional(),
       }).strict().optional(),
     }).strict(),
   },

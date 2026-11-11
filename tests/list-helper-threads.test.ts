@@ -3,6 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createCore } from "../src/rooms/core/server/core";
 import { createAttempt, createRun, createTask, openDatabase, saveStageReceipt, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 import { runsRpc } from "../src/rooms/runs/server/rpc/runs";
+import { rpcNative } from "../src/rooms/contracts/rpc-native";
 import type { Services } from "../server";
 
 function setupHost() {
@@ -125,6 +126,22 @@ describe("list_helper_threads RPC", () => {
 
     const result = await handlers.list_helper_threads({ threadId: "thr_pm" });
     expect(result.queued).toEqual(["task_queued_1"]);
+  });
+
+  it("an open run's graph, with a task's area and the run's objective, passes the answer's own contract", async () => {
+    // Live 2026-11-11: the graph gained `area` and `objective` and the contract did not, so every poll of a PM chat with an
+    // open run failed «rpc output validation failed (graph: Unrecognized key: "objective")» and the chat showed no helpers.
+    const { harness, db, handlers } = setupHost();
+    createRun(db, "run_1", "proj_1", "bb");
+    setRunThread(db, "run_1", "thr_pm");
+    createTask(db, { id: "task_area_1", runId: "run_1", kind: "bb", contract: { id: "task_area_1", title: "A task", area: "billing" } });
+    createAttempt(db, { id: "att_a1", runId: "run_1", taskId: "task_area_1" });
+    harness.sdk.stub("threads.list", async () => []);
+
+    const result = await handlers.list_helper_threads({ threadId: "thr_pm" });
+    expect(result.graph?.nodes).toEqual([expect.objectContaining({ id: "task_area_1", area: "billing" })]);
+    expect(result.graph).toHaveProperty("objective");
+    expect(rpcNative.list_helper_threads.output.safeParse(result).error?.message).toBeUndefined();
   });
 
   it("hides workspace-provisioner threads", async () => {
