@@ -4,7 +4,7 @@ type: component
 created: 2026-11-07
 updated: 2026-11-11
 status: active
-confidence: medium
+confidence: high
 tags: [memory, lifecycle, files, import, export, fingerprint, drift]
 sources:
   - packages/memory-core/src/lifecycle.ts
@@ -53,7 +53,8 @@ The lifecycle and file integration subsystem tracks facts over time, expires out
 | Observed trust | Single session or uncorroborated import | Quarantined for 24 hours (`OBSERVED_QUARANTINE_MS`) | Hidden from regular search; visible only with `includeObserved` | `packages/memory-core/src/lifecycle.ts:5`, `packages/memory-core/src/store.ts:289-295, 314-315` |
 | Idle expiration | Note unused for `NOTE_IDLE_MS` (`packages/memory-core/src/lifecycle.ts:7`) via `idleSql` (`packages/memory-core/src/lifecycle.ts:44-46`) | Status changed to `'expired'` by `hideRecord` (`packages/memory-core/src/lifecycle.ts:30-34`) | Excluded from search | Unindexed from search tables |
 | Dated expiration | `valid_until <= now` | Status changed to `'expired'`; reason `'dated'` | Purged from FTS5 and trigram indexes | `packages/memory-core/src/lifecycle.ts:38-41` |
-| Revoked or archived | Owner withdrawal or archival | Stored as `expired_reason` | Revoked rows do not revive from restatement; archived notes are eligible for cold-tier retrieval | `packages/memory-core/src/lifecycle.ts:9-10`, `packages/memory-core/src/store.ts:155-159, 499-513` |
+| Revoked or archived | Owner withdrawal or archival | Stored as `expired_reason` | Revoked rows do not revive from restatement; archived notes are eligible for cold-tier retrieval | `packages/memory-core/src/lifecycle.ts:9-10`, `packages/memory-core/src/store.ts:157-160, 499-513` |
+| Owner forget tombstone | `memory forget --expire` or `--replace` marks the record `expired_reason = 'owner'` | A matching restatement or file re-import does not revive it | Remains expired and is excluded from retrieval | `packages/memory-core/src/lifecycle.ts:9-10`, `packages/memory-core/src/store.ts:154-160` |
 | Check refutation | Check failure output contains 40 chars of note text | Tested by `noteRefutedByCheck` (`packages/memory-core/src/lifecycle.ts:12-17`) | Marked expired | Reason set to `'refuted'` |
 | Sensitivity mapping | `public` -> `export`; `internal` -> `subagent`; `sensitive` / `encrypted-required` -> `owner` | Maps YAML front matter sensitivity to memory audience | Enforces audience filtering in store | `packages/memory-core/src/files.ts:22-27` |
 | Corpus review proposal | Active note pairs share a subject, or a note is idle / past `valid_until` | `reviewMemory` | Returns sorted `supersede` or `expire` proposals without changing rows | `packages/memory-core/src/lint.ts:123-142` |
@@ -81,7 +82,7 @@ The lifecycle and file integration subsystem tracks facts over time, expires out
 - Critic separation: reviewer and critic usage increments `critic_count` rather than `use_count`, preventing reviewer lookups from altering usefulness scores (`packages/memory-core/src/lifecycle.ts:108-112`).
 - Corpus review is advisory: `reviewMemory` returns proposals and performs no writes (`packages/memory-core/src/lint.ts:118-123`, `packages/memory-core/src/lint.ts:137-141`).
 - A shortened note retains its origin, task ID, source file link, and validity dates; its compression verification mark prevents re-import from restoring the old wording (`packages/memory-core/src/compress.ts:127-145`).
-- Expired records marked `revoked` or `archived` are not revived by a normal restatement; only archived notes enter the cold-tier read (`packages/memory-core/src/store.ts:155-159, 499-513`).
+- Expired records marked `owner` or `revoked` do not revive by restatement or file re-import. Archived records also do not revive through those paths; only archived notes enter the cold-tier read (`packages/memory-core/src/store.ts:154-160, 499-513`).
 
 ## Public API or commands
 

@@ -100,7 +100,7 @@ Purpose: canonical storage for project conventions (`kind = 'core'`) and context
 | `origin_task_id` (`packages/memory-core/src/store.ts:19`) | Task identifier from input `originTaskId` (`packages/memory-core/src/store.ts:99`) | Task ID string or null | String | `packages/memory-core/src/store.ts:19` |
 | `verification_json` | Audit list of vouchers | JSON array of `{ by: string, sha: string, at: number }` objects | JSON string | `packages/memory-core/src/store.ts:40-42, 220` |
 | `scope_json` (`packages/memory-core/src/store.ts:19`) | Scope hierarchy array managed via `sharedScope` and `UNASSIGNED_SCOPE` (`packages/memory-core/src/sections.ts:18-20`) | Scopes array | JSON string | `packages/memory-core/src/store.ts:19` |
-| `expired_reason` | Retirement cause typed by `ExpiredReason` (`packages/memory-core/src/lifecycle.ts:9-10`) | `"budget"`, `"idle"`, `"dated"`, `"refuted"`, `"revoked"`, `"archived"`, or null | String | `packages/memory-core/src/lifecycle.ts:9-10` |
+| `expired_reason` | Retirement cause typed by `ExpiredReason` (`packages/memory-core/src/lifecycle.ts:9-10`) | `"budget"`, `"idle"`, `"dated"`, `"refuted"`, `"revoked"`, `"archived"`, `"owner"`, or null | String | `packages/memory-core/src/lifecycle.ts:9-10` |
 | `critic_count` | Number of times inspected by reviewers | Non-negative integer incremented by `recordCriticUse` | Count | `packages/memory-core/src/lifecycle.ts:109-111` |
 
 ### Lifecycle of `status`
@@ -115,8 +115,8 @@ Purpose: canonical storage for project conventions (`kind = 'core'`) and context
 | `"active"` | `"expired"` | `hideRecord` (`packages/memory-core/src/lifecycle.ts:31-35`) | Valid date passed (`valid_until <= now`, `expired_reason = 'dated'`) | `packages/memory-core/src/lifecycle.ts:38-42` |
 | `"active"` | `"expired"` | `hideRecord` (`packages/memory-core/src/lifecycle.ts:31-35`) | Refuted by `noteRefutedByCheck` (`packages/memory-core/src/lifecycle.ts:13-18, 31-34`, `src/rooms/memory/server/attempt-effects.ts:13`) | Reason `"refuted"` |
 | `"active"` | `"expired"` | `expireIdleMemory` (`packages/memory-core/src/store.ts:524-528`) | Promoted note remaining idle past evaluation window (`listIdlePromotions`) | Reason `"idle"` |
-| `"active"` | `"expired"` | `hideRecord` (`packages/memory-core/src/lifecycle.ts:31-34`) | Caller records owner withdrawal (`"revoked"`) or archival (`"archived"`) as the reason | `packages/memory-core/src/lifecycle.ts:9-10, 31-34` |
-| `"expired"` | `"active"` | `storeMemoryRecords` (`packages/memory-core/src/store.ts:155-160, 225-229`) | A restated expired record revives unless its reason is `"revoked"` or `"archived"` | `packages/memory-core/src/store.ts:155-160` |
+| `"active"` | `"expired"` | `hideRecord` (`packages/memory-core/src/lifecycle.ts:31-34`) | Caller records owner withdrawal (`"revoked"`), archival (`"archived"`), or owner forget/replace tombstone (`"owner"`) as the reason | `packages/memory-core/src/lifecycle.ts:9-10, 31-34`; owner tombstone handling: `packages/memory-core/src/store.ts:154-160` |
+| `"expired"` | `"active"` | `storeMemoryRecords` (`packages/memory-core/src/store.ts:154-162, 228-231`) | A restated expired record revives unless its reason is `"owner"`, `"revoked"`, or `"archived"` | `packages/memory-core/src/store.ts:154-162` |
 | `"expired"` | `"active"` | `reactivateColdMemory` (`packages/memory-core/src/store.ts:499-513`) | Cold idle or archived note re-activated during cold-tier retrieval | Resets `last_used_at`; archived rows are cold-tier candidates | `packages/memory-core/src/store.ts:499-513` |
 
 ### Lifecycle of `trust`
@@ -145,7 +145,7 @@ Purpose: canonical storage for project conventions (`kind = 'core'`) and context
   - `recordMemoryMiss` / `listMemoryMisses`: logs and reads search queries with zero hits (`packages/memory-core/src/store.ts:539-548, 693-707`).
   - `recordMemoryProbe` / `pruneMemoryProbeBefore`: logs and prunes probe evaluation results (`packages/memory-core/src/store.ts:595-599, 608-611`).
   - `expireMemory`: scans and expires idle/dated records (`packages/memory-core/src/lifecycle.ts:37-41`).
-  - `hideRecordsOfFile`: marks records superseded/expired when their source file is deleted or modified (`packages/memory-core/src/store.ts:282-285`).
+  - `hideRecordsOfFile`: marks records superseded/expired when their source file is deleted or modified (`packages/memory-core/src/store.ts:286-289`).
   - `recordMemoryMixed` / `recordMemoryAccepted` / `recordCriticUse`: update usage counters and timestamps (`packages/memory-core/src/lifecycle.ts:94-97, 108-117`).
 - Readers:
   - `searchMemoryRecords` / `searchMemoryAllSections`: FTS5 and trigram searches (`packages/memory-core/src/store.ts:319-359`).
