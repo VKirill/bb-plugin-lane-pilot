@@ -59,6 +59,7 @@ import { waitForRegressionQuarantine } from "./start-wait-quarantine";
 import { waitForOverlappingTasks } from "./start-wait-overlap";
 import { bindLiveBackup, dropLiveWriterKey, liveBackupKey, rollbackLive } from "./start-live-folder";
 import { releaseFailedThreads, removeWorktreeOf } from "./start-failed-cleanup";
+import { otherWriters } from "./start-other-writers";
 import { sameArea } from "./start-area";
 
 import type { AttemptState } from "../../contracts/state-machine";
@@ -166,15 +167,6 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
       providerId:existingTrace.providerId, model:existingTrace.model,
       reasoningLevel:existingTrace.effectiveReasoningLevel, serviceTier:existingTrace.serviceTier,
       selectionSource:existingTrace.selectionSource,
-    };
-    /** The writers that may take the task after the primary one: its fallbacks in turn, then the PM's model. Read fresh: the owner may change them mid-task. */
-    const otherWriters = () => {
-      const loadedSettings=loadProjectSettings(db,input.projectId,getRunSettingsScopes(db,input.runId));
-      const settings=state.writerOverlay ? { ...loadedSettings, ...state.writerOverlay } : rotatedWriterSettings(loadedSettings, input.taskId);
-      const primaryProvider=typeof settings["writer.provider"] === "string" ? settings["writer.provider"] as string : input.config.writerProviderId;
-      const primaryModel=typeof settings["writer.model"] === "string" && settings["writer.model"] ? settings["writer.model"] as string : input.config.writerModel;
-      const pmSelection={providerId:input.config.pmProviderId,model:input.config.pmModel};
-      return { settings, pmSelection, fallbackList:writerFallbackChain({providerId:primaryProvider,model:primaryModel},writerFallbacks(settings),pmSelection) };
     };
     const STORE_READ_PARK_LIMIT = 5;
     /** A plugin-store read that fails is "state unknown", not a task failure: park the attempt for the wake sweep; after the bound it blocks with an owner item. Shared by prepareRun and the pause-read bound. */
@@ -855,7 +847,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
         const providerHandsOff = failedClass === "provider" && !turn.streamError
           && state.runSettings["writer.fallback_on_provider_failure"] !== "after_retry"
           // No other writer to hand over to: the same model is tried again (free), instead of a block nobody else could lift.
-          && otherWriters().fallbackList.length > 0;
+          && otherWriters(deps, state, input).fallbackList.length > 0;
         if (failedClass === "limit" || providerHandsOff || isWriterSilent(typeof state.last.reason === "string" ? state.last.reason : null) || streamHandOff) {
           const latest = getAttempt(db, state.attemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(state.last.reason ?? state.last.status), ...failureFieldsOf(state.last) });
@@ -995,7 +987,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
       /** The primary writer exhausted its session: the fallback chain takes the task over, writer by writer. */
       const fallbackChain = async ():Promise<"done"|"stop"> => {
       if (state.last.status !== "accepted" && state.primaryFailure) {
-        const { settings, fallbackList } = otherWriters();
+        const { settings, fallbackList } = otherWriters(deps, state, input);
         // The writer's fallbacks in turn, then the PM's model; each takes over only while the failure is the model's, not the task's.
         // A provider, limit or catalog fault walks the chain. A repeated red check takes only the next writer (the same
         // pair is already excluded): another pass of this writer would only repeat the check.
