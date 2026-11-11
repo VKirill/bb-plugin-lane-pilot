@@ -44,20 +44,7 @@ import type { StageHelperSettings } from "../../platform/server";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";
 import { latestAttemptEnvironmentId } from "../../storage";
-/** Whether a provider's usage window is nearly spent, read from the cache the writers share (a bounded warm-up first); undefined without a usage source. */
-async function limitProbe(bb: BbPluginApi, hostId: string, settings: Record<string, unknown>): Promise<SpentProbe | undefined> {
-  const usage = spawnUsageOf({ bb });
-  // No usage reader on this instance: what this instance saw itself (a limit in an answer, a thread that would not start) still moves the pick.
-  if (!usage) return (providerId, model) => seenProviderLimit(bb, providerId, model);
-  await warmSpawnUsage(usage, hostId);
-  return (providerId, model) => usage.peek({ providerId, model, hostId, settings });
-}
-
-
-/** One log line per limit move of a stage's model. */
-const logLimitMove = (bb: BbPluginApi, what: string, issues: readonly string[] | undefined) => {
-  for (const issue of issues ?? []) bb.log.info(`${what}: ${issue}`);
-};
+import { limitProbe, logLimitMove } from "./critique-runs/limit-probe";
 
 export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;stageHelperSettings:StageHelperSettings;taskId:string;pmThreadId:string;config:PrototypeConfig;task:TaskV2;/** The PM's plan: the scout reports what it leaves open against the code. */plan?:string;workflow?:{runId:string;stepKey:string;nodeId:string}})
   :Promise<{state:"skipped"|"passed"|"failed";summary:string;reason?:string}> {
