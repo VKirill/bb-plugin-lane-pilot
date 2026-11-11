@@ -144,6 +144,37 @@ describe("hub watchdog parity D1", () => {
     expect(functions("board_probe", env).trim()).toBe("none");
   }, 60000);
 
+  it("[sma:m_ctl_probe] the run loop makes the board request on every 20th knock when LP_WATCH_BOARD_EVERY is unset; 0 never; it stays advisory", async () => {
+    expect(functions('echo "$BOARD_EVERY $KILL_HOLDER"', tmp().env).trim()).toBe("20 1");
+    expect(functions('echo "$BOARD_EVERY"', { ...tmp().env, LP_WATCH_BOARD_EVERY: "0" }).trim()).toBe("0");
+    const count = async (more: Record<string, string>) => {
+      const { dir, env } = tmp();
+      stub(dir, "curl", CURL_STUB);
+      stub(dir, "sleep", SLEEP_STUB);
+      const sys = stub(dir, "systemctl", SYSTEMCTL_STUB);
+      const bb = stub(dir, "bb", 'echo x >> "$BB_LOG"; echo "[]"');
+      writeFileSync(join(dir, "mainpid"), "4242\n");
+      writeFileSync(join(dir, "state"), "active\n");
+      const e = { ...process.env, ...env, CURL_AFTER: "0", CURL_STATE: join(dir, "s"), SLEEP_LOG: join(dir, "sleep.log"), BB_LOG: join(dir, "bb.log"), SYS_LOG: join(dir, "sys.log"), MAINPID_FILE: join(dir, "mainpid"), STATE_FILE: join(dir, "state"), LP_WATCH_USER: "1", LP_WATCH_SYSTEMCTL: sys, LP_WATCH_BB: bb, ...more };
+      const proc = spawn("bash", [script, "run"], { env: e, stdio: "ignore" });
+      await until(() => Number(read(join(dir, "s")).trim() || 0) >= 45, 20000);
+      proc.kill("SIGTERM");
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const knocks = Number(read(join(dir, "s")).trim() || 0);
+      const log = read(join(dir, "outages.jsonl"));
+      expect(log).not.toContain('"event":"outage"');
+      expect(log).not.toContain('"event":"lift"');
+      return { knocks, calls: read(join(dir, "bb.log")).split("\n").filter(Boolean).length };
+    };
+    const unset = await count({});
+    expect(unset.knocks).toBeGreaterThanOrEqual(45);
+    expect(unset.calls).toBeGreaterThanOrEqual(Math.floor(unset.knocks / 20) - 1);
+    expect(unset.calls).toBeLessThanOrEqual(Math.floor(unset.knocks / 20) + 1);
+    expect(unset.calls).toBeGreaterThanOrEqual(1);
+    const never = await count({ LP_WATCH_BOARD_EVERY: "0" });
+    expect(never.calls).toBe(0);
+  }, 60000);
+
   it("[sma:m_ctl_unnamed] the door answers but the port holder is proven outside the unit's cgroup: status, stop, restart and lift say 'process unproven' and run no kill; --force goes on; a holder that cannot be read is only 'unknown'", () => {
     const { dir, env } = tmp();
     stub(dir, "curl", CURL_STUB);
@@ -426,13 +457,13 @@ describe("hub watchdog parity D1", () => {
     expect(fives()).toBe(30 / 5);
   }, 30000);
 
-  it("[sma:m_w_lifting] a repeated lift kills a port holder only when the MainPID was read and is not 0 and the holder is proven outside the unit's cgroup; never a holder inside it, never pid 1, the watchdog or its parent; main kills none", () => {
+  it("[sma:m_w_lifting] a repeated lift kills a port holder only when the MainPID was read and is not 0 and the holder is proven outside the unit's cgroup; never a holder inside it, never pid 1, the watchdog or its parent; unset kills, LP_WATCH_KILL_HOLDER=0 only names", () => {
     const { dir, env } = tmp();
     stub(dir, "curl", CURL_STUB);
     stub(dir, "sleep", SLEEP_STUB);
     const sys = stub(dir, "systemctl", SYSTEMCTL_STUB);
     stub(dir, "ss", SS_STUB);
-    const lift = (mainpid: string, ssPids: number[], unitCg: string, more: Record<string, string> = { LP_WATCH_KILL_HOLDER: "1" }) => {
+    const lift = (mainpid: string, ssPids: number[], unitCg: string, more: Record<string, string> = {}) => {
       rmSync(join(dir, "outages.jsonl"), { force: true });
       writeFileSync(join(dir, "mainpid"), `${mainpid}\n`);
       writeFileSync(join(dir, "ss.out"), ssPids.map((pid) => `LISTEN 0 1 127.0.0.1:38886 0.0.0.0:* users:(("node",pid=${pid},fd=1))`).join("\n") + "\n");
@@ -452,13 +483,13 @@ describe("hub watchdog parity D1", () => {
     expect(stranger.alive()).toBe(true);
     // pid 1 and the watchdog's own parent are never signalled (they are outside the stand-in cgroup too)
     expect(lift("4242", [1, process.pid], elsewhere)).not.toContain("port_holder_killed");
-    // nothing set (main kills none): a holder proven outside is named in the record and left alone
-    const named = lift("4242", [stranger.pid], elsewhere, {});
+    // LP_WATCH_KILL_HOLDER=0 (the old way): a holder proven outside is named in the record and left alone
+    const named = lift("4242", [stranger.pid], elsewhere, { LP_WATCH_KILL_HOLDER: "0" });
     expect(named).toContain(`"event":"port_holder_seen"`);
     expect(named).toContain(`held by pid ${stranger.pid}`);
     expect(named).not.toContain("port_holder_killed");
     expect(stranger.alive()).toBe(true);
-    // LP_WATCH_KILL_HOLDER=1, read MainPID, holder proven outside: killed on try 2 only, and recorded
+    // nothing set (default 1), read MainPID, holder proven outside: killed on try 2 only, and recorded
     const log = lift("4242", [stranger.pid], elsewhere);
     expect(log).toContain(`killing port holder ${stranger.pid}`);
     expect(log.match(/port_holder_killed/g)).toHaveLength(1);
