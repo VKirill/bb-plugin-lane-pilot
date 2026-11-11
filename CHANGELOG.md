@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **A waiting subworkflow step closes when its child fails.** On the hub, `seo-cocoon` run `wfrun_e0e076659cbb4b259d5ae42051738314` kept `research#1` waiting after `seo-research` failed on missing GSC access (2026-11-11). The built-in poll let the terminal child's exception escape; the polling loop logged it and left the step waiting on every tick. It now returns that terminal result as a step error, preserving the original cause and the child's once-only spending charge. Journal read errors remain retryable. The regression replays the captured parent/child boundary, including its existing spending receipt, after a reload; it also covers other terminal child states, a first spending charge and a transient database error. Live after deployment: the existing parent must leave `waiting` on its next poll, keep the GSC error and its spending, and stop emitting the repeated poll log. GSC access itself is still missing.
+
 ## 0.1.529
 
 - **A long check command no longer costs a piece its proof.** A contract's verification command has no length limit and the writer is told to cite it whole (`cmd:<command>`); the plan-fact table refused any piece of evidence past 300 characters, and with it the whole table. Live phase `ph_aad5759806` on 0.1.528: the planner's check was a 330-character python one-liner, the stage ended «plan_fact_table_invalid: 2.evidence.0: Too big», the wave line `promises_proved` stayed red with the work accepted and byte-exact, the phase went back to planning (two more plan runs, 2.0 M tokens, 25 minutes) and the hour ended inside the closing graph. A piece of evidence is now read up to 2 000 characters, and a longer one is cut to end «…», which the command check already reads as «the contract command that starts so». Test in `tests/plan-fact.test.ts`: a 500-character command cited whole proves its item (red on the old code), a 5 000-character one is cut and still proves it.
