@@ -16,7 +16,7 @@ import { listTaskFolder } from "./spawn-probe";
 import type { writerKnowledge } from "./writer-knowledge";
 import type { createWriterSkillPick } from "./skill-pick";
 import type { createSkillMaterializer } from "./skill-materialize";
-import type { HarnessApi } from "../../harness/server/harness";
+import type { HarnessApi } from "../../harness/server";
 import type { SpawnInput, WriterEnvironment } from "./spawn-types";
 import { spawnWithSeam } from "../spawn-seam";
 import { fullAccessSpawn } from "../../platform/server";

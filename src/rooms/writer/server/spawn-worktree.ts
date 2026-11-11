@@ -12,8 +12,10 @@ import { fullAccessSpawn, holderSpawnKey } from "../../platform/server";
 import { WriterSelectionError, projectRoleField } from "../../runs/server";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { spawnWithSeam } from "../spawn-seam";
-import type { RollbackApi } from "../../rollback/server/rollback";
-import type { ReconcileApi } from "../../stability/server/reconcile";
+import type { RollbackApi } from "../../rollback/server";
+import type { createReconcile } from "../../stability/server";
+
+type ReconcileApi = ReturnType<typeof createReconcile>;
 import type { createProviderGate } from "../../verification";
 import type { ProviderEnvironment, SpawnInput, WriterEnvironment } from "./spawn-types";
 import { hasOtherRootSource, inPlaceEnvironment, isProjectRootCheckout, providerRefusal, worktreeCreateError } from "./spawn-probe";
