@@ -310,11 +310,18 @@ describe("review fix 2 and 4: money holds", () => {
   const chain = [{ providerId: "openlux", model: "gpt-5-codex" }, { providerId: "claude-code", model: "sonnet" }];
   const everyMoneySetting = { "money.strict": true, "money.cap_unset_zero": false, "money.silent_estimate_tokens": 200_000, "money.prices": "{}" };
 
-  it("[sma:m_mo_rule] no cap and nothing set: a paid lane is never held by the money rule, and no host call is made", async () => {
+  it("[sma:m_mo_rule] no cap and nothing set: a paid lane is never held by the money rule, and no host call is made; money.strict (on by default) only prefers the free subscription lane, off keeps the chain order", async () => {
     const w = moneyWorld({}, {}, 1_000);
     const walk = await walkWriterChain(chain, { hostId: "h1", settings: {}, appetite: { tokens: 5_000_000 } }, depsWith(w.money), T0);
     expect(walk.holds).toEqual([]);
-    expect(walk.free?.member.providerId).toBe("openlux");
+    expect(walk.free?.member.providerId).toBe("claude-code");
+    const off = await walkWriterChain(chain, { hostId: "h1", settings: { "money.strict": "off" }, appetite: { tokens: 5_000_000 } }, depsWith(w.money), T0);
+    expect(off.holds).toEqual([]);
+    expect(off.free?.member.providerId).toBe("openlux");
+    // Only the paid lane in the chain and no cap: strict has nothing to prefer and nothing holds it.
+    const paidOnly = await walkWriterChain([chain[0]!], { hostId: "h1", settings: {}, appetite: { tokens: 5_000_000 } }, depsWith(w.money), T0);
+    expect(paidOnly.holds).toEqual([]);
+    expect(paidOnly.free?.member.providerId).toBe("openlux");
     expect(w.hostCalls).toEqual([]);
   });
 
@@ -331,14 +338,14 @@ describe("review fix 2 and 4: money holds", () => {
     expect(w.hostCalls).toEqual([]);
   });
 
-  it("[sma:m_mo_rule] money.strict reads a boolean properly, and a paid lane runs once every subscription lane is held", async () => {
+  it("[sma:m_mo_rule] money.strict: off, false, 0 are off; unset and anything else is the default, on; a paid lane runs once every subscription lane is held", async () => {
     const w = moneyWorld({});
     const base = { hostId: "h1" };
-    for (const off of ["false", "off", "0", false, undefined]) {
+    for (const off of ["false", "off", "0", false]) {
       const walk = await walkWriterChain(chain, { ...base, settings: { "money.strict": off } }, depsWith(w.money), T0);
       expect(walk.free?.member.providerId).toBe("openlux");
     }
-    for (const on of [true, "true", "on"]) {
+    for (const on of [true, "true", "on", undefined, "maybe"]) {
       const walk = await walkWriterChain(chain, { ...base, settings: { "money.strict": on } }, depsWith(w.money), T0);
       expect(walk.free?.member.providerId).toBe("claude-code");
     }
@@ -369,9 +376,13 @@ describe("review fix 2 and 4: money holds", () => {
     expect(await hold({ ...on, "money.monthly_cap_usd": 10 }, 9)).toBeNull();
     expect(await hold({ ...on }, 9, 50_000_000)).toBeNull();
     expect(await hold({ ...on, "money.monthly_cap_usd": "unlimited" }, 9, 50_000_000)).toBeNull();
-    // Unset, a cap holds as on main: only once it is spent, whatever the task's estimate.
-    expect(await hold({ "money.monthly_cap_usd": 10 }, 9, 50_000_000)).toBeNull();
+    // Unset is the default, on: a set cap holds a task whose estimate (50M output tokens = 75 USD) would cross it, with no cap nothing is held.
+    expect((await hold({ "money.monthly_cap_usd": 10 }, 9, 50_000_000))?.reason).toMatch(/estimate of 75\.00 USD would cross the 10\.00 USD monthly cap/);
+    expect(await hold({ "money.monthly_cap_usd": 10 }, 1, 1_000_000)).toBeNull();
+    expect(await hold({}, 9, 50_000_000)).toBeNull();
+    // Off holds as on main: only once the cap is spent, whatever the task's estimate.
     expect(await hold({ "money.task_ceiling": "off", "money.monthly_cap_usd": 10 }, 9, 50_000_000)).toBeNull();
+    expect((await hold({ "money.task_ceiling": "off", "money.monthly_cap_usd": 10 }, 11, 1))?.reason).toMatch(/^writer_provider_unavailable:money_cap:/);
     // The string "false" does not turn the «unset cap is zero» switch on.
     expect(await hold({ "money.cap_unset_zero": "false" }, 9, 1_000_000)).toBeNull();
   });
@@ -431,12 +442,22 @@ describe("review fix 3: launch parity", () => {
   }
   const swapped = { id: "writer-1", providerId: "claude-code", model: "sonnet" };
 
-  it("[sma:m_md_parity] unset writer.launch_parity keeps main's warning: a swapped provider runs and is only logged", async () => {
-    const run = await launch(undefined, swapped);
+  it("[sma:m_md_parity] writer.launch_parity warn keeps main's warning: a swapped provider runs and is only logged", async () => {
+    const run = await launch("warn", swapped);
     expect(run.result).toMatchObject({ ok: true, threadId: "writer-1" });
     expect(run.warns.some((line) => line.includes("launch profile mismatch"))).toBe(true);
     expect(run.stopped).toEqual([]);
     expect(getAttempt(run.db, "a1")?.state).toBe("running");
+  });
+
+  it("[sma:m_md_parity] unset writer.launch_parity, and a word the switch does not know, is the default refuse: a swapped provider ends the attempt and the thread is stopped", async () => {
+    for (const parity of [undefined, "maybe"]) {
+      const run = await launch(parity, swapped);
+      expect(run.result).toMatchObject({ ok: false, status: "spawn_rejected" });
+      expect(String((run.result as { reason?: string }).reason)).toMatch(/^writer_provider_unavailable:launch_profile_mismatch:codex\/codex-test\/.* vs claude-code\/sonnet/);
+      expect(run.stopped).toEqual(["writer-1"]);
+      expect(getAttempt(run.db, "a1")).toMatchObject({ state: "spawn_rejected" });
+    }
   });
 
   it("[sma:m_md_parity] with refuse a different provider ends the attempt, stops the thread and holds the refused pair so the chain moves on", async () => {
@@ -560,7 +581,7 @@ describe("review fix: tests that proved nothing", () => {
     expect(markOutputChanges([rerun("npm test", "x")], undefined)).toBe(0);
   });
 
-  it("[sma:m_lesson] the reaction files an accepted attempt's LESSON line only where writer.lesson_from_accepted is on, and LESSON: none files nothing", async () => {
+  it("[sma:m_lesson] the reaction files an accepted attempt's LESSON line unless writer.lesson_from_accepted is off (unset and any other word file it), and LESSON: none files nothing", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     let answer = "done.\nLESSON: run the migration before the seed";
     harness.sdk.stub("threads.output", async () => ({ text: answer }));
@@ -573,9 +594,17 @@ describe("review fix: tests that proved nothing", () => {
       task, config, status: "accepted", reason: null, result: null,
     });
     const proposals = () => listRuleProposals(db as never, "proj1", { state: "proposed" });
+    saveProjectSetting(db, "proj1", "writer.lesson_from_accepted", "off");
     await accepted("a-off");
     expect(proposals()).toHaveLength(0);
-    saveProjectSetting(db, "proj1", "writer.lesson_from_accepted", true);
+    // Unset, in a project that never set it, is the default: filed.
+    createRun(db, "run2", "proj2", "bb", "/repo2");
+    await emitAttemptFinished(ctx, {
+      scope: "attempt", projectId: "proj2", runId: "run2", taskId: "t2", attemptId: "a-unset", pmThreadId: "thr_pm", writerThreadId: "thr_w",
+      task, config, status: "accepted", reason: null, result: null,
+    });
+    expect(listRuleProposals(db as never, "proj2", { state: "proposed" }).map((row) => row.rule)).toEqual(["run the migration before the seed"]);
+    saveProjectSetting(db, "proj1", "writer.lesson_from_accepted", true); // a loose value is not «off»: the default applies
     await accepted("a-on");
     expect(proposals().map((row) => row.rule)).toEqual(["run the migration before the seed"]);
     expect(JSON.stringify(proposals()[0])).toContain("accepted attempt a-on");
