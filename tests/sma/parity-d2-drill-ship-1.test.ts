@@ -20,7 +20,11 @@ function mainDrill(): string {
   writeFileSync(path, execFileSync("git", ["-C", repoRoot, "show", "main:scripts/lp-drill.py"], { encoding: "utf8", maxBuffer: 20_000_000 }));
   return path;
 }
-const dry = (script: string, ...args: string[]) => spawnSync("python3", ["-I", script, ...args, "--dry-run"], { encoding: "utf8", timeout: 60_000 }).stdout.replace(/\d{8}-\d{6}/g, "STAMP");
+// Both copies read an empty receipt folder: the list of a dry run leaves out a live scene that passed here lately on a
+// commit whose later changes are not its code, so with this checkout's own receipts the test judged the machine's drill
+// history (red on 2026-11-11 after a green post-deploy drill, with the two scripts byte-equal).
+const NO_RECEIPTS = mkdtempSync(join(tmpdir(), "lp-drill-no-receipts-"));
+const dry = (script: string, ...args: string[]) => spawnSync("python3", ["-I", script, ...args, "--dry-run"], { encoding: "utf8", timeout: 60_000, env: { ...process.env, LP_DRILL_RECEIPT_DIR: NO_RECEIPTS } }).stdout.replace(/\d{8}-\d{6}/g, "STAMP");
 
 /** Runs `body` (python) against the drill module and prints its result as JSON. */
 function drillPy(body: string): unknown {
