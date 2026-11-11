@@ -29,9 +29,17 @@ type Kv = BbPluginApi["storage"]["kv"];
  */
 const guestLocks = new Map<string, Promise<unknown>>();
 
-export function withGuestsLock<T>(path: string, work: () => Promise<T>): Promise<T> {
+/** The locked work gets this long; a kv call that never returns must not block every later note for the folder. */
+export const GUEST_LOCK_MS = 10_000;
+
+export function withGuestsLock<T>(path: string, work: () => Promise<T>, limitMs = GUEST_LOCK_MS): Promise<T> {
   const key = GUESTS(path);
-  const next = (guestLocks.get(key) ?? Promise.resolve()).then(work, work);
+  // After the limit the lock is released and the caller gets an error (the note path is best effort and swallows it).
+  const limited = () => new Promise<T>((done, fail) => {
+    const timer = setTimeout(() => fail(new Error(`checkout guest lock for ${resolve(path)} timed out after ${limitMs} ms`)), limitMs);
+    work().then(done, fail).finally(() => clearTimeout(timer));
+  });
+  const next = (guestLocks.get(key) ?? Promise.resolve()).then(limited, limited);
   guestLocks.set(key, next.catch(() => undefined));
   return next;
 }
@@ -64,10 +72,32 @@ export async function allGuests(kv: Kv, path: string): Promise<Guest[]> {
 
 export { GUEST_TTL_MS };
 
+/** Entries kept per folder before trimming starts, and the most claims a folder may hold (a new claim past it is refused). */
+export const GUESTS_KEPT = 10;
+export const CLAIMS_MAX = 40;
+
+/**
+ * Trim to GUESTS_KEPT: expired entries go first (oldest first), then live entries with no claim (oldest first). A live entry
+ * that holds a claim is never dropped, so the list may stay longer than the cap; CLAIMS_MAX bounds that.
+ */
+export function trimGuests(guests: Guest[], now = Date.now()): Guest[] {
+  const list = [...guests];
+  const oldest = (rows: Guest[]) => rows.reduce<Guest | undefined>((best, row) => (!best || row.at < best.at ? row : best), undefined);
+  while (list.length > GUESTS_KEPT) {
+    const victim = oldest(list.filter((row) => now - row.at >= GUEST_TTL_MS)) ?? oldest(list.filter((row) => !row.claims?.length));
+    if (!victim) break;
+    list.splice(list.indexOf(victim), 1);
+  }
+  return list;
+}
+
 /** Write the folder's guest list back; callers run it inside withGuestsLock so the read-modify-write stays one turn. */
 export async function saveGuests(kv: Kv, path: string, guests: Guest[]): Promise<void> {
-  await kv.set(GUESTS(path), guests.slice(0, 10) as never);
+  await kv.set(GUESTS(path), trimGuests(guests) as never);
 }
+
+/** A thread seen in the folder this recently is not written again: the common message costs one kv read. */
+const NOTE_FRESH_MS = 5 * 60_000;
 
 /**
  * Called for every send of a thread that is not a Lane Pilot chat. When it works in a checkout of a project Lane Pilot
@@ -75,6 +105,8 @@ export async function saveGuests(kv: Kv, path: string, guests: Guest[]): Promise
  */
 export async function noteCheckoutGuest(bb: BbPluginApi, db: LanePilotDatabase, threadId: string, path: string | null | undefined, opts: { providerId?: string; label?: string } = {}): Promise<void> {
   if (!path) return;
+  const seen = await allGuests(bb.storage.kv, path);
+  if (seen.some((row) => row.threadId === threadId && Date.now() - row.at < NOTE_FRESH_MS)) return;
   const run = activeRunFor(db, path);
   const project = run ? { projectId: "", pmThreadId: run.pmThreadId } : checkoutProject(db, path);
   if (!project || project.pmThreadId === threadId) return;
@@ -85,8 +117,8 @@ export async function noteCheckoutGuest(bb: BbPluginApi, db: LanePilotDatabase, 
     const stored = await allGuests(bb.storage.kv, path);
     const previous = stored.find((row) => row.threadId === threadId);
     const entry: Guest = { threadId, at: now, ...(opts.providerId ? { providerId: opts.providerId } : previous?.providerId ? { providerId: previous.providerId } : {}),
-      ...(opts.label ? { label: opts.label } : previous?.label ? { label: previous.label } : {}), ...(previous?.claims?.length ? { claims: previous.claims } : {}) };
-    await bb.storage.kv.set(GUESTS(path), [entry, ...stored.filter((row) => row.threadId !== threadId)].slice(0, 10) as never);
+      ...(opts.label ? { label: opts.label } : previous?.label ? { label: previous.label } : {}), ...(previous?.claims?.length && now - previous.at < GUEST_TTL_MS ? { claims: previous.claims } : {}) };
+    await saveGuests(bb.storage.kv, path, [entry, ...stored.filter((row) => row.threadId !== threadId)]);
   });
   // No up-front notice into the chat: the owner's chats stay clean; a guest is asked only when its edits block a merge.
 }

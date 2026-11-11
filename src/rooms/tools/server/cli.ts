@@ -452,7 +452,8 @@ ${ERRANDS_USAGE}` },
         }
         if (command === "window") {
           // The person's door onto the window leases and claims (SMA window region); advisory, never refuses a merge.
-          return await runWindowCli({ db, kv: bb.storage.kv as never, host }, args);
+          return await runWindowCli({ db, kv: bb.storage.kv as never, host, threadId: invocation?.threadId ?? null,
+            thread: async (threadId) => await orMiss(bb.sdk.threads.get({ threadId }), null, isNotFound) as { projectId?: string | null } | null }, args);
         }
         if (command === "coverage") {
           return runCoverageCli(args);

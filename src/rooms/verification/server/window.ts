@@ -1,6 +1,6 @@
 import { ownsPathsOverlap } from "@lane-pilot/kit";
 import { runOnHost, type RunCommandHost } from "@lane-pilot/host-calls";
-import { allGuests, GUEST_TTL_MS, listGuests, saveGuests, withGuestsLock, type Claim, type Guest } from "./checkout-guests";
+import { allGuests, CLAIMS_MAX, GUEST_TTL_MS, listGuests, saveGuests, withGuestsLock, type Claim, type Guest } from "./checkout-guests";
 import { gitRepoStatus } from "./repo-edits";
 import { listRunWorkspacePaths, loadPrototypeConfig, openProjectTaskOwnsRows, recordEvidence, type LanePilotDatabase } from "../../storage";
 import { resolve } from "node:path";
@@ -30,14 +30,21 @@ export async function listClaims(kv: Kv, path: string, now = Date.now()): Promis
 }
 
 const NAME = /^[\w][\w .:-]{0,79}$/;
+const GLOBS_MAX = 20;
+const GLOB_CHARS = 200;
+/** A commit id as git prints it: it goes into a git command, so nothing else is accepted. */
+const BASE_SHA = /^[0-9a-f]{7,64}$/;
+const WHOLE_TREE = new Set(["**", "*", "**/*", "."]);
 function globProblem(glob: unknown): string | null {
   if (typeof glob !== "string" || !glob.trim()) return "empty";
   const clean = glob.trim();
+  if (clean.length > GLOB_CHARS) return `refused: a glob is at most ${GLOB_CHARS} characters`;
+  if (WHOLE_TREE.has(clean.replace(/^\.\//, "").replace(/\/+$/, "") || ".")) return `refused: ${clean} claims the whole tree; name the folders or files`;
   if (clean.startsWith("/") || /^[A-Za-z]:/.test(clean) || clean.split("/").includes("..")) return `refused: ${clean} (claims are relative paths inside the checkout)`;
   return null;
 }
 
-export type ClaimResult = { ok: true; claim: Claim } | { ok: false; code: "invalid_name" | "invalid_glob" | "claim_taken"; holder?: string; why: string };
+export type ClaimResult = { ok: true; claim: Claim } | { ok: false; code: "invalid_name" | "invalid_glob" | "invalid_base" | "too_many_claims" | "claim_taken"; holder?: string; why: string };
 
 /**
  * Announce a named claim of file globs on the caller's lease (SMA k_lib_claims). One serialized read-modify-write per
@@ -49,14 +56,20 @@ export async function claimScope(kv: Kv, input: { path: string; threadId: string
   if (!NAME.test(input.name)) return { ok: false, code: "invalid_name", why: `claim name '${input.name}' is not a short label` };
   const globs = input.globs.map((glob) => glob.trim());
   const problem = globs.map(globProblem).find((why) => why !== null);
+  if (globs.length > GLOBS_MAX) return { ok: false, code: "invalid_glob", why: `refused: a claim names at most ${GLOBS_MAX} globs` };
+  if (input.base != null && !BASE_SHA.test(input.base)) return { ok: false, code: "invalid_base", why: "refused: base is a commit id (7-64 hex characters)" };
   if (!globs.length || problem) return { ok: false, code: "invalid_glob", why: `invalid glob ${problem ?? "list is empty"}` };
   return withGuestsLock(input.path, async () => {
     const stored = await allGuests(kv as never, input.path);
     const live = stored.filter((row) => now - row.at < GUEST_TTL_MS);
     const holder = live.find((row) => row.threadId !== input.threadId && (row.claims ?? []).some((claim) => claim.name === input.name));
     if (holder) return { ok: false, code: "claim_taken" as const, holder: holder.threadId, why: `claim '${input.name}' is held by ${holder.threadId}` };
+    const mineBefore = stored.find((row) => row.threadId === input.threadId);
+    const held = live.reduce((sum, row) => sum + (row.claims?.length ?? 0), 0);
+    if (held >= CLAIMS_MAX && !mineBefore?.claims?.some((row) => row.name === input.name)) return { ok: false, code: "too_many_claims" as const, why: `refused: ${resolve(input.path)} already holds ${held} live claims (limit ${CLAIMS_MAX}); release one first` };
     const claim: Claim = { name: input.name, globs, description: (input.description ?? "").slice(0, 300), base: input.base ?? null, threadId: input.threadId, at: now };
-    const mine = stored.find((row) => row.threadId === input.threadId) ?? { threadId: input.threadId, at: now };
+    // An expired lease holds nothing: its old claims do not come back with the new one.
+    const mine = mineBefore && now - mineBefore.at < GUEST_TTL_MS ? mineBefore : { ...mineBefore, threadId: input.threadId, at: now, claims: [] as Claim[] };
     mine.at = now;
     mine.claims = [...(mine.claims ?? []).filter((row) => row.name !== input.name), claim];
     await saveGuests(kv as never, input.path, [mine, ...stored.filter((row) => row.threadId !== input.threadId)]);
@@ -142,14 +155,25 @@ export async function workFingerprint(host: RunCommandHost, hostId: string, cwd:
   }
 }
 
-/** The project's checkout paths a window can lease: the configured PM and writer workspaces plus every run's writer path. */
+/** The project's checkout paths a window can lease: the configured PM and writer workspaces plus the 5 newest run writer paths. */
 export function projectCheckoutPaths(db: LanePilotDatabase, projectId: string): string[] {
   const config = loadPrototypeConfig(db, projectId);
-  return [...new Set([config?.pmWorkspacePath, config?.writerWorkspacePath, ...listRunWorkspacePaths(db, projectId)].filter((path): path is string => typeof path === "string" && path.length > 0))].map((path) => resolve(path));
+  return [...new Set([config?.pmWorkspacePath, config?.writerWorkspacePath, ...listRunWorkspacePaths(db, projectId, 5)].filter((path): path is string => typeof path === "string" && path.length > 0))].map((path) => resolve(path));
 }
 
 type CliOut = { exitCode: number; stdout?: string; stderr?: string };
-type WindowDeps = { db: LanePilotDatabase; kv: Kv; host: RunCommandHost };
+/** `threadId` is the invocation's thread (absent: the owner at a terminal); `thread` reads a thread's project, null when it does not exist. */
+type WindowDeps = { db: LanePilotDatabase; kv: Kv; host: RunCommandHost; threadId?: string | null; thread?: (threadId: string) => Promise<{ projectId?: string | null } | null> };
+
+/** Fingerprints run a few at a time: status on a project with many folders must not flood the host. */
+async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) { const at = next++; out[at] = await fn(items[at]!); }
+  }));
+  return out;
+}
 
 function openTaskOwns(db: LanePilotDatabase, projectId: string): Array<{ id: string; globs: string[] }> {
   return openProjectTaskOwnsRows(db, projectId).flatMap((row) => {
@@ -163,7 +187,8 @@ function openTaskOwns(db: LanePilotDatabase, projectId: string): Array<{ id: str
 
 async function headSha(host: RunCommandHost, hostId: string, cwd: string): Promise<string | null> {
   const ran = await runOnHost(host, { hostId, cwd, command: "git rev-parse HEAD", timeoutSec: 15, timeoutMs: 20_000 }).catch(() => null);
-  return ran && ran.exitCode === 0 ? ran.stdout.trim() || null : null;
+  const sha = ran && ran.exitCode === 0 ? ran.stdout.trim() : "";
+  return BASE_SHA.test(sha) ? sha : null;
 }
 
 async function gitList(host: RunCommandHost, hostId: string, cwd: string, command: string): Promise<string[]> {
@@ -174,6 +199,18 @@ async function gitList(host: RunCommandHost, hostId: string, cwd: string, comman
 
 const quoted = (globs: readonly string[]) => globs.map((glob) => `'${glob.replace(/'/g, `'\\''`)}'`).join(" ");
 
+/** Who may claim or release for `threadId`: a chat only for itself and only in its own project; the owner at a terminal for an existing thread (claim). */
+async function callerRefusal(deps: WindowDeps, projectId: string, threadId: string, verb: "claim" | "release"): Promise<string | null> {
+  if (deps.threadId) {
+    if (deps.threadId !== threadId) return `refused: a chat claims and releases only for itself (you are ${deps.threadId}, not ${threadId})`;
+    const own = await deps.thread?.(deps.threadId);
+    if (!own || typeof own.projectId !== "string" || own.projectId !== projectId) return `refused: window ${verb} from a chat reaches only that chat's own project (${typeof own?.projectId === "string" ? own.projectId : "unknown"}), not ${projectId}`;
+    return null;
+  }
+  if (verb === "claim" && deps.thread && !(await deps.thread(threadId))) return `refused: no thread ${threadId}; nothing was stored`;
+  return null;
+}
+
 export const WINDOW_USAGE =
   "bb lane-pilot window status <project-id> [--json] | window claim <project-id> <thread-id> <name> <glob,glob> [description] | window release <project-id> <thread-id> <name> [--outcome committed|abandoned|handed_off] | window force-clear <project-id> <name> --reason <text>";
 
@@ -182,6 +219,8 @@ export async function runWindowCli(deps: WindowDeps, args: string[]): Promise<Cl
   const { db, kv, host } = deps;
   const [sub, projectId, ...rest] = args;
   if (!projectId || !["status", "claim", "release", "force-clear"].includes(sub ?? "")) return { exitCode: 1, stderr: `usage: ${WINDOW_USAGE}` };
+  // status is open to all; force-clear is the owner's alone (a thread is an agent); claim and release are a chat's own.
+  if (sub === "force-clear" && deps.threadId) return { exitCode: 1, stderr: "refused: window force-clear is for the owner at a terminal, not from a chat: ask them to run it" };
   const paths = projectCheckoutPaths(db, projectId);
   if (!paths.length) return { exitCode: 1, stderr: `project ${projectId} has no checkout bound in Lane Pilot` };
   const config = loadPrototypeConfig(db, projectId);
@@ -194,7 +233,7 @@ export async function runWindowCli(deps: WindowDeps, args: string[]): Promise<Cl
     const tasks = openTaskOwns(db, projectId);
     const claims = windows.flatMap((win) => (win.claims ?? []).map((claim) => ({ ...claim, holder: win.threadId })));
     const collisions = windowCollisions(claims.map((claim) => ({ name: `${claim.name} (${claim.holder})`, globs: claim.globs })), tasks);
-    const fingerprints = hostId ? await Promise.all(paths.map(async (path) => ({ path, ...(await workFingerprint(host, hostId, path)) }))) : paths.map((path) => ({ path, branch: null, paths: [] as string[] }));
+    const fingerprints = hostId ? await mapLimit(paths, 3, async (path) => ({ path, ...(await workFingerprint(host, hostId, path)) })) : paths.map((path) => ({ path, branch: null, paths: [] as string[] }));
     // A dirty path that falls under an open task's or a claim's scope is flagged, so a window that never claimed is still seen.
     const owned = (file: string) => {
       const task = tasks.find((row) => ownsPathsOverlap(row.globs, [file]) || row.globs.some((glob) => file === glob || file.startsWith(`${glob.replace(/\/\*\*$/, "")}/`)));
@@ -224,6 +263,8 @@ export async function runWindowCli(deps: WindowDeps, args: string[]): Promise<Cl
   if (sub === "claim") {
     const [threadId, name, globList, ...words] = rest.filter((arg) => !arg.startsWith("--"));
     if (!threadId || !name || !globList) return { exitCode: 1, stderr: `usage: ${WINDOW_USAGE}` };
+    const refused = await callerRefusal(deps, projectId, threadId, "claim");
+    if (refused) return { exitCode: 1, stderr: refused };
     const globs = globList.split(",").map((glob) => glob.trim()).filter(Boolean);
     // The claim lands on the lease the thread already holds; a thread with no noted lease claims the main checkout.
     const leased = (await listLiveWindows(kv, paths)).find((win) => win.threadId === threadId)?.path ?? mainPath;
@@ -240,6 +281,8 @@ export async function runWindowCli(deps: WindowDeps, args: string[]): Promise<Cl
   if (sub === "release") {
     const [threadId, name] = rest.filter((arg) => !arg.startsWith("--"));
     if (!threadId || !name) return { exitCode: 1, stderr: `usage: ${WINDOW_USAGE}` };
+    const refused = await callerRefusal(deps, projectId, threadId, "release");
+    if (refused) return { exitCode: 1, stderr: refused };
     const outcomeAt = rest.indexOf("--outcome");
     const outcome = outcomeAt >= 0 ? rest[outcomeAt + 1] : "committed";
     if (!outcome || !["committed", "abandoned", "handed_off"].includes(outcome)) return { exitCode: 1, stderr: "--outcome is committed|abandoned|handed_off" };
@@ -247,11 +290,9 @@ export async function runWindowCli(deps: WindowDeps, args: string[]): Promise<Cl
     if (!found) return { exitCode: 1, stderr: `no claim '${name}' in this project's checkouts` };
     if (found.claim.threadId !== threadId) return { exitCode: 1, stderr: `refused: claim '${name}' is held by ${found.claim.threadId}, not ${threadId}; use window force-clear --reason` };
     const editsLeft = hostId ? await gitList(host, hostId, found.path, `git status --porcelain -uall -- ${quoted(found.claim.globs)}`) : [];
-    const files = hostId && found.claim.base ? await gitList(host, hostId, found.path, `git diff --name-only ${found.claim.base}`) : [];
-    const released = await releaseClaim(kv, { path: found.path, threadId, name });
-    if (!released.ok) return { exitCode: 1, stderr: released.why };
-    // The attempt trail a worker leaves, for a person's window (SMA k_lib_termattempt): base, files, outcome.
-    await recordEvidence(kv as never, {
+    const files = hostId && found.claim.base && BASE_SHA.test(found.claim.base) ? await gitList(host, hostId, found.path, `git diff --name-only ${quoted([found.claim.base])}`) : [];
+    // The attempt trail a worker leaves, for a person's window (SMA k_lib_termattempt): base, files, outcome. Written first.
+    const written = await recordEvidence(kv as never, {
       op: "window", projectId, target: name, why: `released by ${threadId}`,
       checks: [
         { name: "base", ok: true, detail: found.claim.base ?? "unknown" },
@@ -260,7 +301,9 @@ export async function runWindowCli(deps: WindowDeps, args: string[]): Promise<Cl
       ],
       by: threadId, at: Date.now(),
     });
-    return { exitCode: 0, stdout: [`released ${name} (${outcome})`, `edits_left: ${editsLeft.length ? editsLeft.join(", ") : "none"}`].join("\n") };
+    const released = await releaseClaim(kv, { path: found.path, threadId, name });
+    if (!released.ok) return { exitCode: 1, stderr: released.why };
+    return { exitCode: 0, stdout: [`released ${name} (${outcome})`, `edits_left: ${editsLeft.length ? editsLeft.join(", ") : "none"}`, ...(written ? [] : ["evidence not written; the claim is released anyway"])].join("\n") };
   }
 
   // force-clear: a foreign claim goes only with a reason on record (the evidence discipline of permit, revert, janitor).
@@ -270,7 +313,7 @@ export async function runWindowCli(deps: WindowDeps, args: string[]): Promise<Cl
   if (!name || !reason) return { exitCode: 1, stderr: `refused: window force-clear needs a reason on record — bb lane-pilot window force-clear ${projectId} <name> --reason <text>` };
   const found = await findClaim(kv, paths, name);
   if (!found) return { exitCode: 1, stderr: `no claim '${name}' in this project's checkouts` };
-  await recordEvidence(kv as never, {
+  const written = await recordEvidence(kv as never, {
     op: "window", projectId, target: name, why: reason,
     checks: [
       { name: "holder", ok: true, detail: found.claim.threadId },
@@ -278,6 +321,7 @@ export async function runWindowCli(deps: WindowDeps, args: string[]): Promise<Cl
     ],
     by: "cli", at: Date.now(),
   });
+  if (!written) return { exitCode: 1, stderr: "evidence not written; nothing cleared" };
   await forceClearClaim(kv, { path: found.path, name });
   return { exitCode: 0, stdout: `cleared ${name} (was held by ${found.claim.threadId})` };
 }

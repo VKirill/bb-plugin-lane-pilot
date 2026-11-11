@@ -5,7 +5,7 @@ export { gateResolverFor } from "./gate-detect";
 export { attemptMergeMessage, clearMergeIntent, createMergeIntentRecovery, recordMergeIntent } from "./merge-intent";
 export { detectRepoEdits, gitRepoStatus, namedByChat, noteEngineWrite, writtenByEngineSince } from "./repo-edits";
 export { glueReplayCommands } from "./replay-checks"
-export { activeRunFor, allGuests, GUEST_TTL_MS, listGuests, noteCheckoutGuest, saveGuests, withGuestsLock } from "./checkout-guests";
+export { activeRunFor, allGuests, CLAIMS_MAX, GUEST_LOCK_MS, GUEST_TTL_MS, listGuests, noteCheckoutGuest, saveGuests, trimGuests, withGuestsLock } from "./checkout-guests";
 export type { Claim, Guest } from "./checkout-guests";
 export { WINDOW_USAGE, claimScope, findClaim, forceClearClaim, listClaims, listLiveWindows, projectCheckoutPaths, releaseClaim, runWindowCli, windowCollisions, workFingerprint } from "./window";
 export type { LiveWindow, WindowCollision, WorkFingerprint } from "./window";
