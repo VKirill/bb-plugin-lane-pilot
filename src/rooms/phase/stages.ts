@@ -86,12 +86,18 @@ export function threatGap(record: PhaseRecord): string | null {
 }
 
 const EXISTENCE_ONLY = /^\s*(test\s+-[efsd]|ls\b|stat\b|\[\s+-[efsd])/;
+/** Every clause of the command is an existence test: `test -f a && test "$(head -n 1 a)" = '# a'` reads the file, so it is not
+ *  (live phase 2026-11-11: such a plan was refused and the phase stood at planning). */
+const existenceOnly = (command: string): boolean => {
+  const clauses = command.split(/&&|\|\||;|\n/).map((clause) => clause.trim()).filter(Boolean);
+  return clauses.length > 0 && clauses.every((clause) => EXISTENCE_ONLY.test(clause));
+};
 
 /** Validation strategy: a piece whose every check only tests that something exists proves nothing about its promise. */
 export function validationGaps(items: readonly PlanItem[], liveCheckOff = true): string[] {
   const why = items.filter((item) => {
     const checks = Array.isArray(item.task.verification) ? (item.task.verification as Array<{ command?: unknown }>).map((check) => String(check.command ?? "")) : [];
-    return checks.length > 0 && checks.every((command) => EXISTENCE_ONLY.test(command));
+    return checks.length > 0 && checks.every(existenceOnly);
   }).map((item) => `${item.id}: every check only tests that a file exists — add one that would fail without the work (VALIDATION.md)`);
   // SMA k_we_verify: visible work owes a live check — unless the project switched browser_qa off, where the acceptance line
   // names «visible work, no live check owed» and the owner decides on it there.

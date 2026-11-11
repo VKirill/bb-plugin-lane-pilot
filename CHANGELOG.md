@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.524
+
+- **Found by the live phase on 0.1.523, fixed.** The phase stood at planning for the whole run: the plan critic approved the plan, and the plan gate refused it with «every check only tests that a file exists». The planner's checks were `test -f <file> && test ! -L <file> && test "$(head -n 1 <file>)" = '<the expected first line>'` — they read the file. The gate judged a check by its first words, so any check that began with `test -f` counted as an existence test whatever followed. It now reads every clause of the command (`&&`, `||`, `;`, a new line): a check is «existence only» when each clause is one. The second planning pass did not fit into the run's 35 minutes.
+- **Not exercised live:** the strict-worker fix of 0.1.523 (a check that calls git) — the phase never reached execution in this run.
+- **The map.** Unchanged: have 1655, partial 20, void 96, upstream 27, missing 0.
+
 ## 0.1.523
 
 - **Found by the live phase on 0.1.522, fixed.** The phase reached execution again and both attempts were blocked in 19 seconds each: the planner's check `git diff --quiet <base> -- drills notes` answered «Not a git repository». The drill project runs checks as the worker user (`worker.strict_user=on`), and git refuses a repository another user owns, so under the strict worker every check that called git was red whatever the writer wrote. The sandbox's own home folder now names the one checkout the check runs in as trusted (`safe.directory`); no other repository is. Measured on the drill repository with a real sandboxed check as `lp-worker`: exit 129 with the old code, exit 0 with this one.
