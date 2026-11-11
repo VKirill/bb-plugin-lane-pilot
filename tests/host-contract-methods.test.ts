@@ -8,7 +8,7 @@ const WIRE_METHODS = [
   "anamnesis", "answerPermit", "applyOnboardingPages", "browserGoal", "classifyPlan", "closeBacklogItem",
   "coexistenceInventory", "coexistenceOperation", "connectOpencode", "councilJudge", "detect", "discoverClaudeAgents",
   "diskFree", "docsAnchors", "docsDepth", "docsFlows", "docsLineCounts", "docsStaleness", "docsVerifyCitations",
-  "docsWorthinessFacts", "gateAttribute", "gateBisect", "gateRun", "gitCommitDocs", "gitCreateWorktree",
+  "docsWorthinessFacts", "findBrowserQaTarget", "gateAttribute", "gateBisect", "gateRun", "gitCommitDocs", "gitCreateWorktree",
   "gitDocsScope", "gitIntegrate", "gitMergeInfo", "gitOwnershipBase", "gitOwnershipChanges", "gitPrepareWorktree",
   "gitRemoveWorktree", "gitRevertCommits", "gitRevertPaths", "gitSyncWorktree", "gitUndoCheckWrites",
   "gitWorktreeSnapshot", "gitWorktreeState", "importConfig", "inspectCritiqueCoverage", "install", "jobCancel",
@@ -22,7 +22,7 @@ const WIRE_METHODS = [
 ];
 
 describe("host RPC wire names", () => {
-  it("the contract keeps the same 79 method names", () => {
+  it("the contract keeps the same 80 method names", () => {
     expect(Object.keys(hostContract).sort()).toEqual(WIRE_METHODS);
   });
 

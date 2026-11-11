@@ -5,6 +5,8 @@ export { CRITIQUE_AXES, critiqueProblems, readinessWords, roleLine, trainedCondi
 export type { CritiqueAxis, DesignJournalLine, DrawingCritique } from "./training";
 export { DESIGN_CRITIQUE_CASES_KEY, DESIGN_EVENTS_KEY, DESIGN_JOURNAL_KEY, appendDesignCritiqueCase, appendDesignJournalLine, appendDesignPair, designJournalKey, designJournalLines, designPairOf, noteDesignJournalWord } from "./journal";
 export { pairBasis, pairOrder } from "./pair";
+export { DESIGN_SUITE_VERSION, readDesignCase, writeDesignCase } from "./case";
+export type { DesignCase, ReadDesignCase } from "./case";
 export { pairUrlRefusal } from "./url-guard";
 export type { PairUrlOptions } from "./url-guard";
 export { designPairJudgment, judgeDesigns, DESIGN_PAIR_ID } from "./judge";

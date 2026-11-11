@@ -1,10 +1,12 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { ServerCore } from "../../contracts/server";
-import { laneOwnedMetadata, presenceHold, readPresence, type Presence } from "../logic";
+import { journalAppend, laneOwnedMetadata, presenceHold, readPresence, type JournalRow, type Presence } from "../logic";
 
 const PRESENCE_KV = "owner-presence";
+/** One row per owner's own thread per day, kept ninety days: how much work happens outside the daemon. */
+const JOURNAL_KV = "owner-presence:journal";
 
-type Note = (mark: Presence) => void | Promise<void>;
+type Note = (mark: Presence, extra?: { threadId?: string }) => void | Promise<void>;
 let noteOwner: Note | null = null;
 
 /** The live store. One plugin process holds the marks; a reload reads them back from plugin kv. */
@@ -33,7 +35,7 @@ export async function observeOwnerDispatch(bb: Pick<BbPluginApi, "sdk">, ctx: {
     at: Date.now(),
     hostId: ctx.host?.id || "bb",
     host: ctx.host?.name ?? null,
-  });
+  }, { threadId: ctx.thread.id });
 }
 
 function marksText(rows: readonly Presence[]): string {
@@ -48,13 +50,26 @@ function marksText(rows: readonly Presence[]): string {
  */
 export function createOwnerPresence(ctx: Pick<ServerCore, "bb" | "log">) {
   let presence: Presence[] = [];
+  let journal: JournalRow[] = [];
   const kv = ctx.bb.storage.kv;
 
   function replace(next: Presence[]) {
     presence = next;
   }
 
-  async function note(mark: Presence) {
+  let journalLoad: Promise<void> | null = null;
+  // Once, lazily: the first caller (a message or the sweep) reads the stored rows, the others wait for it; a failed read is tried again next time.
+  function loadJournal(): Promise<void> {
+    journalLoad ??= (async () => {
+      const saved = await kv.get(JOURNAL_KV);
+      if (typeof saved === "string" && saved) {
+        try { const rows = JSON.parse(saved) as unknown; if (Array.isArray(rows)) journal = rows.filter((row): row is JournalRow => !!row && typeof row.day === "string" && typeof row.threadId === "string"); } catch { /* a corrupt journal starts empty */ }
+      }
+    })().catch((cause: unknown) => { journalLoad = null; throw cause; });
+    return journalLoad;
+  }
+
+  async function note(mark: Presence, extra?: { threadId?: string }) {
     const memory = marksText(presence);
     replace(readPresence([
       { hostId: "memory", text: memory },
@@ -63,6 +78,18 @@ export function createOwnerPresence(ctx: Pick<ServerCore, "bb" | "log">) {
     await kv.set(PRESENCE_KV, marksText(presence)).catch((cause: unknown) => {
       ctx.log(`owner presence save failed: ${cause instanceof Error ? cause.message : String(cause)}`);
     });
+    if (extra?.threadId) {
+      try {
+        // The stored journal is read before the first write: a message that beats the startup sweep must not replace ninety days with one row.
+        await loadJournal();
+        const next = journalAppend(journal, { threadId: extra.threadId, providerId: mark.providerId, hostId: mark.hostId, at: mark.at }, Date.now());
+        const added = next.length > 0 && !journal.includes(next[next.length - 1]!);
+        journal = next;
+        if (added) await kv.set(JOURNAL_KV, JSON.stringify(journal));
+      } catch (cause) {
+        ctx.log(`owner presence journal save failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+      }
+    }
   }
 
   bindOwnerPresence(note);
@@ -75,10 +102,11 @@ export function createOwnerPresence(ctx: Pick<ServerCore, "bb" | "log">) {
         { hostId: "bb", text: saved },
       ]));
     }
+    await loadJournal().catch(() => undefined);
     return presence;
   }
 
-  return { ownerPresence: { sweep, holds: (providerId: string, now = Date.now()) => presenceHold(providerId, presence, now), current: () => presence } };
+  return { ownerPresence: { sweep, holds: (providerId: string, now = Date.now()) => presenceHold(providerId, presence, now), current: () => presence, journal: () => journal } };
 }
 export type OwnerPresenceApi = ReturnType<typeof createOwnerPresence>["ownerPresence"];
 

@@ -10,6 +10,7 @@ import { estimateTokens } from "@lane-pilot/memory-core";
 import { readTaskApproach } from "../../tasks";
 import type { WriterBriefContext } from "../../brief";
 import type { ServerCore } from "../../contracts/server";
+import { codeFactsState, CODE_FACTS_PROBE } from "../../platform";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { bestEffort, maskCredentials } from "@lane-pilot/kit";
 import { effectiveGroup, parseHelperContextSettings } from "../../contracts/helper-context";
@@ -119,7 +120,7 @@ export async function writerKnowledge(deps:KnowledgeDeps, input:KnowledgeInput) 
     const mcpGroup=mode==="roles"?effectiveGroup("writer","mcpServers",access):{names:null};
     const gitnexusTools=mcpGroup.names===null||mcpGroup.names.includes("gitnexus");
     const memoryRoot=taskBasePath(deps.db,input.runId,input.task.id)??input.task.project_cwd;
-    const gitnexusIndex=gitnexusTools&&(await bestEffort(deps.log, "writer gitnexus index probe", runOnHost(deps.host,{hostId:input.hostId,cwd:memoryRoot,command:"test -d .gitnexus",timeoutSec:10}), null))?.exitCode===0;
+    const gitnexusIndex=gitnexusTools&&codeFactsState((await bestEffort(deps.log, "writer gitnexus index probe", runOnHost(deps.host,{hostId:input.hostId,cwd:memoryRoot,command:CODE_FACTS_PROBE,timeoutSec:10}), null))?.stdout).state!=="none";
     return {broadSkills:mode!=="roles"||skillsGroup.names===null,gitnexusTools,metamcpTools:mcpGroup.names===null||mcpGroup.names.includes("metamcp"),gitnexusIndex};
   })();
   const { allRules, rules, rulesText }=await writerRules(deps,input);

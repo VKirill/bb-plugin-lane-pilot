@@ -3,13 +3,16 @@ import { dirname, join } from "node:path";
 import { listReviewedObservations } from "../../learning";
 import { prototypeConfigSchema, taskV2Schema } from "../../contracts";
 import { taskBaselineEntries } from "../../baseline";
-import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, markCancelCode, saveProjectSetting, savePrototypeConfig, transitionAttempt, failedTasksAllProjects, listNearMissReceipts } from "../../storage";
+import { attemptStateCounts, failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, markCancelCode, saveProjectSetting, savePrototypeConfig, transitionAttempt, failedTasksAllProjects, listNearMissReceipts } from "../../storage";
+import { outsideWorkSummary } from "../../owner-presence";
 import { cancelAttemptById, finishRunSafely, pauseRun } from "../../runs/server";
 import { conveyorState, renderTimeline, setConveyor, taskTimeline, unknownReasons } from "../../runs";
 import { TASK_RECORD_USAGE, blindRecord, readsBlind, renderTaskRecord, taskRecord } from "./task-record";
 import {bestEffort, isNotFound, orMiss, outputText, pluginRootFromModule, spawnAsync, stringAt, valueAt} from "@lane-pilot/kit";
 import { PAIR_ROLE_SPECS } from "@lane-pilot/models";
 import {runSkillsCli, parseSkillHub, SKILLS_USAGE} from "../../platform/server";
+import {codeFactsOnHost, CODE_FACTS_REFRESH} from "../../platform";
+import {runOnHost} from "@lane-pilot/host-calls";
 import { attemptSessionLayers, terminalParity, terminalSessionLayers } from "../../native-agent";
 import { projectStats } from "./project-stats";
 import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -308,6 +311,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"parity", summary:"Session and terminal parity of one attempt: six lines (hooks, memory, rules, skills, permissions, model) saying whether the BB session and a terminal session got the same layer", usage:"bb lane-pilot parity <attempt-id> [--json]" },
       { name:"passport", summary:"An attempt's passport: provider, model, harness and Lane Pilot versions, the receipts of its stages; --calibration prints the current PM model's calibration badge", usage:"bb lane-pilot passport <attempt-id> | --calibration --project <id>" },
       { name:"manifest", summary:"This build: name, version, its tables", usage:"bb lane-pilot manifest" },
+      { name:"intel", summary:"The code facts of a project: whether the GitNexus index exists, is fresh or lags HEAD, and --refresh re-analyzes it on the project's machine", usage:"bb lane-pilot intel <project-id> [--refresh]  (from a thread: its own project only, --refresh from the PM thread only)" },
       { name:"receipt-chain", summary:"A task's stage receipts hashed in order (tip), or verify a tip recorded earlier", usage:"bb lane-pilot receipt-chain <run-id> <task-id> [--verify <tip>]" },
       { name:"preship", summary:"What is open before a release (unfinished tasks, open regressions, deferrals) and the disposition each needs; exit 1 when not clear", usage:"bb lane-pilot preship [--project <id>]" },
       { name:"pr-passport", summary:"A pull request body assembled from a task's receipts", usage:"bb lane-pilot pr-passport <run-id> <task-id>" },
@@ -333,7 +337,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"defer", summary:"Put a mandatory check off: write it in the register with the reason. It is born with no term (only a date in a message of the owner sets one, --owner-msg) and counts as unproven in its project's phase acceptance until closed with evidence", usage:"bb lane-pilot defer <what> --kind drill_scenario|skipped_test|gate|plan_decision --reason \"…\" [--area A] [--project P]" },
       { name:"defer-close", summary:"Close a deferral with the evidence that settles it", usage:"bb lane-pilot defer-close <dfr_id> --evidence <text>" },
       { name:"deferrals", summary:"The register of deferrals: overdue and open, with their terms", usage:"bb lane-pilot deferrals [--project P] [--state open|overdue|closed]" },
-      { name:"owner-presence", summary:"Where the owner typed in a session of his own in the last minutes: Lane Pilot's writers keep off that provider meanwhile", usage:"bb lane-pilot owner-presence" },
+      { name:"owner-presence", summary:"Where the owner typed in a session of his own in the last minutes: Lane Pilot's writers keep off that provider meanwhile", usage:"bb lane-pilot owner-presence [--journal]" },
       { name:"hypothesis", summary:"Ideas to make the system better (from outside or inside) as the settings that carry them, checked on the bench set: two arms, the verdict, adoption through the night policy", usage:"bb lane-pilot hypothesis list|add|test|verdict|revert" },
       { name:"memory-tiers", summary:"The memory's cold tier (notes unused for 90 days, kept out of briefs) and how many of it a PM needed again, plus the PM queries that found nothing (candidates for memory-eval's golden set)", usage:"bb lane-pilot memory-tiers [--project P]" },
       { name:"backlog", summary:"A project's ready todos sorted for issue: issuable in queue order (estimate at most 13, dependencies done), to estimate, to split, blocked; --scan hands the next ones to the PMs now", usage:BACKLOG_USAGE },
@@ -540,6 +544,26 @@ ${ERRANDS_USAGE}` },
           return result ? { exitCode:0, stdout:JSON.stringify(result, null, 2) } : { exitCode:1, stderr:"bb lane-pilot passport <attempt-id>: no such attempt" };
         }
         if (command === "manifest") return { exitCode:0, stdout:JSON.stringify(manifest(db), null, 2) };
+        if (command === "intel" && args[0]) {
+          // A thread is an agent: it reads and refreshes only its own project, and only a PM thread starts the half-hour indexer; the owner at a terminal is unrestricted.
+          if (invocation?.threadId) {
+            const caller = await orMiss(bb.sdk.threads.get({ threadId: invocation.threadId }), null, isNotFound) as { projectId?: unknown } | null;
+            if (!caller || typeof caller.projectId !== "string" || caller.projectId !== args[0]) return { exitCode:1, stderr:`refused: intel from a thread reaches only that thread's own project (${typeof caller?.projectId === "string" ? caller.projectId : "unknown"}), not ${args[0]}` };
+            if (args.includes("--refresh")) {
+              const metadata = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId: invocation.threadId }), null, isNotFound) as { role?: unknown } | null;
+              if (metadata?.role !== "pm") return { exitCode:1, stderr:`refused: intel --refresh is not for a ${typeof metadata?.role === "string" ? `${metadata.role} thread` : "thread whose role is unknown"}; ask the PM or the owner` };
+            }
+          }
+          const config = loadPrototypeConfig(db, args[0]);
+          const cwd = config?.writerWorkspacePath ?? config?.pmWorkspacePath;
+          if (!config?.hostId || !cwd) return { exitCode:1, stderr:`project ${args[0]} has no checkout bound in Lane Pilot` };
+          const facts = await codeFactsOnHost(host, config.hostId, cwd);
+          // --refresh re-analyzes on the project's own machine; a hand-called verb, no setting needed.
+          const refresh = args.includes("--refresh")
+            ? await runOnHost(host, { hostId:config.hostId, cwd, command:CODE_FACTS_REFRESH, timeoutSec:1800, timeoutMs:1_900_000 }).catch((cause: unknown) => ({ error:cause instanceof Error?cause.message:String(cause) }))
+            : null;
+          return { exitCode:0, stdout:JSON.stringify({ projectId:args[0], hostId:config.hostId, ...facts, ...(refresh ? { refresh } : {}) }, null, 2) };
+        }
         if (command === "receipt-chain" && args[0] && args[1]) {
           if (args[2] === "--verify" && args[3]) { const ok = verifyChain(db, args[0], args[1], args[3]); return { exitCode:ok ? 0 : 1, stdout:ok ? "intact" : "the receipts changed since that tip" }; }
           return { exitCode:0, stdout:JSON.stringify(receiptChain(db, args[0], args[1]), null, 2) };
@@ -588,12 +612,15 @@ ${ERRANDS_USAGE}` },
           return { exitCode:0, stdout:JSON.stringify(excavate(out.stdout ?? ""), null, 2) };
         }
         if (command === "report") {
+          await services.ownerPresence.sweep().catch(() => []);
           const rows = smaRows();
           const regions = [...new Set(rows.map((row) => row.region))].map((region) => { const part = rows.filter((row) => row.region === region); return { region, checked: `${smaCheckedPercent(part)}%`, mapped: `${smaDonePercent(part)}%`, ...smaCounts(part) }; });
           return { exitCode:0, stdout:htmlReport({ title:`Lane Pilot report ${new Date().toISOString().slice(0, 10)}`, sections:[
             { heading:`SMA map: checked by contract tests ${smaCheckedPercent(rows)}%, mapped by proof links ${smaDonePercent(rows)}%`, rows:regions },
             { heading:"Money", rows:[services.money.status() as never] },
             { heading:"Cost per verified result (30 days)", rows:costPerVerified(db) as never },
+            // The last number (SMA m_sp_tjournal_report): how much of the week was worked in the owner's own threads.
+            { heading:"Work outside the daemon (7 days)", rows:[outsideWorkSummary(services.ownerPresence.journal(), Date.now(), attemptStateCounts(db, Date.now() - 7 * 86_400_000).reduce((total, row) => total + row.n, 0)) as never] },
           ] }) };
         }
         if (command === "money") {
@@ -740,6 +767,8 @@ ${ERRANDS_USAGE}` },
         if (command === "hypothesis") return await runHypothesisCli(services.hypotheses, args);
         if (command === "owner-presence") {
           const now = Date.now(), presence = await services.ownerPresence.sweep();
+          // Without --journal the output is main's: the bare array of marks.
+          if (args.includes("--journal")) return { exitCode:0, stdout:JSON.stringify(services.ownerPresence.journal(), null, 2) };
           return { exitCode:0, stdout:JSON.stringify(presence.map((row) => ({ ...row, minutesAgo:Math.round((now - row.at) / 60_000), holdsWriters:services.ownerPresence.holds(row.providerId, now) !== null })), null, 2) };
         }
         if (command === "task") {

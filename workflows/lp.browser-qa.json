@@ -23,7 +23,7 @@
   "inputs": {
     "run_id": { "type": "string", "required": true, "note": "the Lane Pilot run of the PM chat (lprun_...)" },
     "task_id": { "type": "string", "required": true, "note": "the accepted task" },
-    "url": { "type": "string", "required": true },
+    "url": { "type": "string", "required": false, "note": "the app's address; empty: the QA host's default dev ports (3000, 5173, 8080, 4200, 8000) are scanned" },
     "cases": { "type": "string[]", "required": true },
     "env_class": { "type": "local|staging|preview|production|unknown", "required": true },
     "viewports": { "type": "string", "default": "375,768,1280" },

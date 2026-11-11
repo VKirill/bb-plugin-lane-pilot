@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+/** The dev-server ports a browser check looks on when no address is given (SMA k_wqa_find). */
+export const QA_DEFAULT_PORTS = [3000, 5173, 8080, 4200, 8000] as const;
+
 /** The machine's own browser: computer-use goals and browser QA runs against a live target. */
 export const desktopHostMethods = {
   // One goal in the owner's own Chrome on the browser machine through jev-ultrafast (the computer-use runner).
@@ -33,6 +36,14 @@ export const desktopHostMethods = {
       reportText:z.string().nullable(), artifacts:z.array(z.object({path:z.string(),sha256:z.string(),size:z.number().int().nonnegative()}).strict()),
       stdout:z.string(), stderr:z.string(), reason:z.string().nullable(),
       processPid:z.number().int().nullable(), runnerPath:z.string().nullable(),
+    }).strict(),
+  },
+  findBrowserQaTarget: {
+    input: z.object({
+      requestedHostId: z.string().min(1),
+    }).strict(),
+    output: z.object({
+      hostId: z.string(), urls: z.array(z.string()),
     }).strict(),
   },
   probeBrowserQaTarget: {

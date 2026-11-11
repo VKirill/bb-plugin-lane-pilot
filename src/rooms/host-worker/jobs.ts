@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HOST_JOB_KINDS, hostContract, type HostJobKind } from "../contracts";
+import { renameRetry } from "../platform";
 import { bestEffort, isFsAbsent, orMiss, readTextOrNull, sha256Hex, statOrNull } from "@lane-pilot/kit";
 import { HOST_JOB_ARG } from "./job-runner";
 
@@ -59,7 +60,7 @@ async function readJson<T>(path: string): Promise<T | null> {
 
 async function writeJson(path: string, value: unknown): Promise<void> {
   await writeFile(`${path}.tmp`, JSON.stringify(value));
-  await rename(`${path}.tmp`, path);
+  await renameRetry(`${path}.tmp`, path);
 }
 
 function alive(pid: number): boolean {

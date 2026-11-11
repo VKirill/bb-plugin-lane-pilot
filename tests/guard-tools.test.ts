@@ -5,7 +5,7 @@
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { countHouseWordHits, freshHouseWordHits, houseWordHits, internalIds, isGeneratedFile, leaks, parityGaps, sourceWordHits, type HouseWordBaseline } from "./helpers/guard-tools";
+import { countHouseWordHits, freshHouseWordHits, houseWordHits, internalIds, isGeneratedFile, leakFindings, parityGaps, sourceWordHits, type HouseWordBaseline } from "./helpers/guard-tools";
 import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../src/rooms/native-agent/native-session-hooks";
 import { PM_CORE_TOOLS, PM_FAMILY_TOOLS } from "../src/rooms/platform/server/pm-tool-families";
 
@@ -13,9 +13,8 @@ const walk = (dir: string): string[] => readdirSync(dir).flatMap((name) => { con
 
 describe("guard tools", () => {
   it("leak scanner: no secret-shaped string in the sources and docs that ship", () => {
-    const files = [...walk("src"), ...walk("docs"), ...walk("packages/i18n/src")].filter((path) => /\.(ts|tsx|md|json)$/.test(path) && !path.includes("guard-tools"));
-    const found = files.flatMap((path) => leaks(readFileSync(path, "utf8")).map((hit) => `${path}:${hit.line}`));
-    expect(found).toEqual([]);
+    // leakFindings is the same scan lp-ship's publishable runs: a planted secret fails both.
+    expect(leakFindings(".")).toEqual([]);
   });
 
   it("internal ids forbidden in the texts a person reads", async () => {
