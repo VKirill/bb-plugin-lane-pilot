@@ -27,6 +27,8 @@ const WAIT_MS = 150_000;
 
 /** What an after-turn check of a probe verdict needs: the API, the probe thread, the workspace it ran in, its first answer. */
 type ProbeCheckArgs = { bb: BbPluginApi; threadId: string; hostId: string; workspace: string; output: string };
+/** The longest the documentary.role probe waits for the thread's plugin metadata. */
+const METADATA_READ_MS = 5_000;
 type ProbeCheck = (args: ProbeCheckArgs) => Promise<{ ok: boolean; reason?: string }>;
 
 /** The thread's own events as JSON text (newest 200): where a guard refusal shows, not on the model's word. */
@@ -147,8 +149,24 @@ export const PROBES = {
     // the probe was launched with. (Weak proof, as metadata is what Lane Pilot stored, not what the session saw.)
     expect: /pm-reader/,
     check: async ({ bb, threadId }: ProbeCheckArgs) => {
-      const metadata = await bb.sdk.threads.getPluginMetadata({ threadId }).catch(() => null) as Record<string, unknown> | null;
-      return metadata?.role === "pm-reader" ? { ok: true } : { ok: false, reason: `documentary.role: the thread's spawn metadata does not carry the pm-reader role (role=${String(metadata?.role ?? "none")})` };
+      // Only a read that succeeds and shows another role says the cell is not supported. A missing method, a throw, a timeout or a
+      // shape without a role is the probe's own setup failing (probeSetupFailed): unproven, never a red receipt.
+      const unreadable = (why: string) => ({ ok: false, reason: `helper_probe_metadata_unreadable: documentary.role could not read the thread's spawn metadata (${why})` });
+      const read = (bb.sdk?.threads as { getPluginMetadata?: (query: { threadId: string }) => unknown } | undefined)?.getPluginMetadata;
+      if (typeof read !== "function") return unreadable("no getPluginMetadata on this host");
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let metadata: unknown;
+      try {
+        metadata = await Promise.race([
+          Promise.resolve().then(() => read.call(bb.sdk.threads, { threadId })),
+          new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("timed out")), METADATA_READ_MS); }),
+        ]);
+      } catch (cause) {
+        return unreadable((cause instanceof Error ? cause.message : String(cause)).replace(/\s+/g, " ").slice(0, 120));
+      } finally { clearTimeout(timer); }
+      const role = metadata && typeof metadata === "object" ? (metadata as Record<string, unknown>).role : undefined;
+      if (typeof role !== "string" || !role) return unreadable("the answer carries no role");
+      return role === "pm-reader" ? { ok: true } : { ok: false, reason: `documentary.role: the thread's spawn metadata does not carry the pm-reader role (role=${role})` };
     },
   },
   "documentary.hooks": {

@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { PROBES } from "../../src/rooms/native-agent/server/helper-probe";
+import { probeSetupFailed } from "../../src/rooms/capability";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createClaudeGuardEnv } from "../../src/rooms/native-agent/claude-guard-launch";
 import { resetPlanningHomeChecks } from "../../src/rooms/contracts";
@@ -110,5 +112,41 @@ describe("[review 7] the since window spares proposed and partial drafts", () =>
     expect(states).toEqual(["partial", "proposed"]);
     expect(ids).toHaveLength(3);
     db.close();
+  });
+});
+
+describe("[review 8] documentary.role: only a successful read of another role is a red cell", () => {
+  const check = (PROBES["documentary.role"] as { check: (args: never) => Promise<{ ok: boolean; reason?: string }> }).check;
+  const run = (threads: Record<string, unknown>) => check({ bb: { sdk: { threads } }, threadId: "thr", hostId: "h", workspace: "/w", output: "pm-reader" } as never);
+
+  it("a successful read with another role is a real not_supported, not a setup failure", async () => {
+    const wrong = await run({ getPluginMetadata: async () => ({ role: "writer" }) });
+    expect(wrong.ok).toBe(false);
+    expect(wrong.reason).toContain("writer");
+    expect(probeSetupFailed(wrong.reason ?? null)).toBe(false);
+    expect(await run({ getPluginMetadata: async () => ({ role: "pm-reader" }) })).toEqual({ ok: true });
+  });
+
+  it("a missing method, a throw, a timeout and an unreadable shape all end as a probe setup failure", async () => {
+    const outcomes = [
+      await run({}),
+      await run({ getPluginMetadata: async () => { throw new Error("hub down"); } }),
+      await run({ getPluginMetadata: () => { throw new Error("sync throw"); } }),
+      await run({ getPluginMetadata: async () => null }),
+      await run({ getPluginMetadata: async () => "text" }),
+      await run({ getPluginMetadata: async () => ({}) }),
+    ];
+    for (const outcome of outcomes) {
+      expect(outcome.ok).toBe(false);
+      expect(probeSetupFailed(outcome.reason ?? null), outcome.reason).toBe(true);
+    }
+    vi.useFakeTimers();
+    try {
+      const pending = run({ getPluginMetadata: () => new Promise(() => undefined) });
+      await vi.advanceTimersByTimeAsync(6_000);
+      const timedOut = await pending;
+      expect(timedOut.ok).toBe(false);
+      expect(probeSetupFailed(timedOut.reason ?? null)).toBe(true);
+    } finally { vi.useRealTimers(); }
   });
 });
