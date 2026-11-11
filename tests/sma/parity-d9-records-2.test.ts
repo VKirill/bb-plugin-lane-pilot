@@ -27,7 +27,7 @@ function db0() {
 const piece = (id: string, wave: number) => ({ id, title: id, wave, promise: { given: "g", when: "w", then: "t" }, task: { id, owns_paths: [`${id}/**`] } });
 const PLAN: PhaseRecord = { plan: { items: [piece("a", 1), piece("b", 2)], sha: "plan-sha", contextSha: "context-sha" } };
 
-describe("m_sw_unit_card + d_state: phase cards and held on the board", () => {
+describe("[sma:m_sw_unit_card] [sma:d_state] phase cards and held on the board", () => {
   it("a phase is one card with stage column, next action, gates and wave; a task carries held", () => {
     const { db } = db0();
     createRun(db, "run_p", "proj_p", "bb", "/w");
@@ -116,7 +116,7 @@ describe("phase cards: one gate, no crash", () => {
   });
 });
 
-describe("ar_ledger: attempt transitions are append-only", () => {
+describe("[sma:ar_ledger] attempt transitions are append-only", () => {
   it("update and delete on the journal and delete on the attempt are refused", () => {
     const { db } = db0();
     createRun(db, "run_l", "proj_l");
@@ -141,7 +141,7 @@ describe("conveyor default", () => {
   });
 });
 
-describe("d_artifact: bounded work file read", () => {
+describe("[sma:d_artifact] bounded work file read", () => {
   it("refuses escapes and secret names but not ordinary code with «key» in its name", () => {
     for (const bad of ["../x", "/etc/passwd", ".git/config", "a/.git/HEAD", "a/.env", ".env.local", "k.pem", "k.key", "c.p12", "c.pfx", "id_rsa", "x/id_ed25519.pub", ".npmrc", "a/.netrc", ".pgpass",
       "credentials.json", "secrets.yaml", "secret_notes.md", "api-token.txt", "tokens.json", ".ssh/config", "home/.aws/credentials", ".gnupg/pubring.kbx"]) {
@@ -176,7 +176,7 @@ describe("d_artifact: bounded work file read", () => {
   });
 });
 
-describe("m_wrappers: transitionAttempt journals atomically", () => {
+describe("[sma:m_wrappers] transitionAttempt journals atomically", () => {
   it("a refusal is journaled; a failure of the journal row rolls the state write back and tells no listener", () => {
     const { db } = db0();
     createRun(db, "run_t", "proj_t");
@@ -203,7 +203,7 @@ describe("m_wrappers: transitionAttempt journals atomically", () => {
   });
 });
 
-describe("m_sw_worker_history + m_sw_worker_card: outcomes, presence and the worker card", () => {
+describe("[sma:m_sw_worker_history] [sma:m_sw_worker_card] outcomes, presence and the worker card", () => {
   const trace = (attemptId: string, providerId: string, model: string, runId: string) => ({ planSha256: "s", sentPlanSha256: null, sourceLength: 1, sentLength: null, jevStatus: "ok" as const, jevDecision: null,
     requestedReasoningLevel: "m", effectiveReasoningLevel: "m", fallbackReason: null, providerId, model, serviceTier: null, requestedServiceTier: "default" as const, runId, attemptId, threadId: null });
 
@@ -250,7 +250,7 @@ describe("m_sw_worker_history + m_sw_worker_card: outcomes, presence and the wor
   });
 });
 
-describe("ar_stamp: the writer spawn path stamps the trace it saves", () => {
+describe("[sma:ar_stamp] the writer spawn path stamps the trace it saves", () => {
   it("a dispatched writer's reasoning trace carries the state machine version and the harness version", async () => {
     const projectId = "project-stamp";
     const pmThreadId = "pm-stamp";
@@ -301,7 +301,7 @@ describe("ar_stamp: the writer spawn path stamps the trace it saves", () => {
   });
 });
 
-describe("ar_run_dir: the attempt dossier is bounded", () => {
+describe("[sma:ar_run_dir] the attempt dossier is bounded", () => {
   const big = (label: string) => `${label}:`.padEnd(40_000, "x");
   function seed() {
     const { db } = db0();
