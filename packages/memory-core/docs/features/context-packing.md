@@ -2,9 +2,9 @@
 title: Memory context packing
 type: component
 created: 2026-11-07
-updated: 2026-11-07
+updated: 2026-11-11
 status: active
-confidence: medium
+confidence: high
 tags: [memory, context, packing, budgets, roles, prompts]
 sources:
   - packages/memory-core/src/context.ts
@@ -17,6 +17,7 @@ sources:
   - src/rooms/writer/server/writer-knowledge.ts
   - src/rooms/writer/server/spawn.ts
   - packages/memory-core/src/store.ts
+  - packages/memory-core/src/compress.ts
 ---
 
 # Memory context packing
@@ -40,6 +41,7 @@ The context packing subsystem bounds and formats project memory for injection in
 6. Prompt-based packing: `memoryContext` provides a legacy text packing mechanism: ranks memory records by query stem overlap weighted by usefulness and verification bonus, appending lines until budget is reached (`packages/memory-core/src/context.ts:55-64`).
 7. Explaining delivery decisions: `explainMemory` compares candidate records against the output of `memoryContext`, returning delivery verdicts for each record: `"deliver <id> — matched the query"`, `"reject <id> — matched, cut by the context budget"`, or `"reject <id> — no token overlap"` (`packages/memory-core/src/context.ts:70-79`).
 8. Maintenance prompt generation: `memoryMaintenanceBrief` and `memoryMaintenancePrompt` format task descriptions, accepted results, existing core/notes, file excerpts, and wave facts into a zero-tool prompt for the memory maintainer model (`packages/memory-core/src/context.ts:7-45`).
+9. Preparing note shortening: `shortenText` normalizes eligible spacing and removes repeated sentences while preserving structural lines and fenced code; `proposeShorter` returns a candidate only when the result is shorter and fits the requested token ceiling (`packages/memory-core/src/compress.ts:33-82`). Applying or undoing that candidate is documented in [lifecycle and files](lifecycle-and-files.md).
 
 ## Modes, variants and branches
 
@@ -51,6 +53,7 @@ The context packing subsystem bounds and formats project memory for injection in
 | Helper role | Clamped to max 600 tokens | Minimal necessary guidance | Strict token limit | `packages/memory-core/src/context.ts:48-53` |
 | Shadow pack comparison | Evaluated during migration | Compares new pack against previous delivered IDs | Reports kept, added, dropped IDs and exclusion reasons | `packages/memory-core/src/context-pack.ts:72-85` |
 | Maintainer prompt | Not token clamped directly | Formatted XML tags for model ingestion | Model provided zero tools; output must be JSON array | `packages/memory-core/src/context.ts:7-35` |
+| Shortening proposal | A note text and maximum token count | Removes repeated eligible sentences and excess spaces; output must use fewer tokens and fit the limit | Returns shortened text or `null` | `packages/memory-core/src/compress.ts:33-82` |
 
 ## Failure behavior
 
@@ -61,6 +64,7 @@ The context packing subsystem bounds and formats project memory for injection in
 | Stale candidate detected | `candidate.stale === true` (named files drifted) | Excluded from delivery; marked with `reason: "stale:needs_review"` | `packages/memory-core/src/context-pack.ts:35` |
 | Relevance floor drop | Candidate ID listed in `floorDropIds` | Excluded from delivery; marked with `reason: "floor:low-relevance"` | `packages/memory-core/src/context-pack.ts:36` |
 | Scope mismatch | Candidate section scope does not match reader chain | Excluded from delivery; marked with `reason: "scope:not-deliverable"` | `packages/memory-core/src/context-pack.ts:43` |
+| No useful shortening | Text is unchanged, is not shorter, or remains above the token ceiling | `proposeShorter` returns `null` | `packages/memory-core/src/compress.ts:77-82` |
 
 ## Business rules
 
@@ -81,6 +85,8 @@ The context packing subsystem bounds and formats project memory for injection in
 - `memoryMaintenanceBrief(input)`: constructs structured data for memory maintenance models (`packages/memory-core/src/context.ts:13-35`).
 - `memoryMaintenancePrompt(input)`: returns rendered prompt text for memory maintenance (`packages/memory-core/src/context.ts:43-45`).
 - `memoryMaintainerTools()`: returns empty tool array, enforcing zero-tool maintainer execution (`packages/memory-core/src/context.ts:7-9`).
+- `shortenText(content)`: reduces eligible spacing and repeated sentences while leaving structural lines and fenced blocks intact (`packages/memory-core/src/compress.ts:33-76`).
+- `proposeShorter(row, maxTokens)`: returns a shorter note text only when it saves tokens and fits the supplied ceiling (`packages/memory-core/src/compress.ts:77-82`).
 
 ## Gotchas
 
@@ -91,4 +97,5 @@ The context packing subsystem bounds and formats project memory for injection in
 <!-- lane-pilot:backlinks -->
 ## Referenced by
 
+- [Memory lifecycle and file integration](lifecycle-and-files.md)
 - [Memory core workspace overview](../overview.md)
