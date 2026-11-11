@@ -1,5 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import plugin from "../../server";
 import { createCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../server";
@@ -8,6 +8,12 @@ import { planSignature, type PlanItem } from "../../src/rooms/phase/logic";
 import { savePhase } from "../../src/rooms/phase/store";
 import { createRun, openDatabase, saveProjectSetting, savePrototypeConfig } from "../../src/rooms/plugin-db";
 import { localDateKey } from "../../src/rooms/docs/docs";
+import { createCapabilities } from "../../src/rooms/capability/server";
+import { runCapabilityCli } from "../../src/rooms/capability/server/cli";
+import { receiptKey } from "../../src/rooms/capability";
+import { documentaryGateOf } from "../../src/rooms/platform/server/pm-spawn";
+import { NATIVE_HOOK_SOURCES } from "../../src/rooms/contracts";
+import { listReceipts } from "../../src/rooms/capability/store";
 
 let dispose: (() => Promise<void> | void) | null = null;
 afterEach(async () => { await dispose?.(); dispose = null; });
@@ -132,5 +138,216 @@ describe("stream i2 graphs", () => {
     const clean = await phases.planCheck({ phaseId: await open(), decision: "approve", by: "t", wfRunId: "wfrun_plan" });
     expect(clean.stage).not.toBe("planning");
     expect(clean.record.plan!.admittedSha).toBe(sha);
+  });
+});
+
+
+describe("stream i2 graphs: the documentary gate never holds on a probe that could not run", () => {
+  type Answer = { ok: boolean; answered?: boolean; reason: string | null };
+  const KEY = receiptKey({ version: "0.1.0", model: "gpt-6-luna", settings: [], hooks: JSON.stringify(NATIVE_HOOK_SOURCES) });
+  const rig = (options: { sandboxRun?: boolean } = {}) => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    dispose = () => harness.lifecycle.dispose();
+    const db = openDatabase(bb);
+    harness.sdk.stub("providers.list", async () => [{ id: "codex", pluginId: "provider-codex" }]);
+    harness.sdk.stub("plugins.list", async () => [{ id: "provider-codex", version: "0.1.0" }]);
+    harness.sdk.stub("threads.get", async () => ({ id: "thr_pm", status: "idle", archivedAt: null }));
+    if (options.sandboxRun !== false) { createRun(db, "run_s", "proj_3tb652jpsi", "bb", "/s"); db.prepare("UPDATE lane_pilot_run SET pm_thread_id='thr_pm' WHERE id='run_s'").run(); }
+    const probes: string[] = [];
+    const logs: string[] = [];
+    const state: { answer: Answer; hang: boolean; throws: boolean } = { answer: { ok: true, reason: null }, hang: false, throws: false };
+    const caps = createCapabilities({ db, bb, log: (line: string) => logs.push(line), isDisposed: () => false } as never,
+      { providerBreaker: { record: () => undefined },
+        startHelperProbe: (_p: string, _r: string, provider: string, _m: string, cell: string) => { probes.push(`${provider}:${cell}`); return state.hang ? new Promise(() => undefined) : state.throws ? Promise.reject(new Error("socket hang up")) : Promise.resolve(state.answer); } } as never);
+    return { bb, db, probes, logs, state, gate: documentaryGateOf(bb)!, api: caps.capabilities };
+  };
+  const receipts = (db: ReturnType<typeof openDatabase>) => listReceipts(db as never).filter((row) => row.providerId === "codex");
+
+  it("[sma:ap_caps] a rate-limited probe and a timed-out probe write no receipt and the stage is observed, not held", async () => {
+    for (const reason of ["429 rate limit exceeded, retry later", "helper_probe_timeout: the thread never went idle", "helper_probe_provider_unavailable:codex", "helper_probe_output_empty"]) {
+      const { db, state, gate, logs } = rig();
+      state.answer = { ok: false, reason };
+      expect(await gate.deny("codex", "m", "proj")).toBeNull();
+      expect(receipts(db)).toEqual([]);
+      expect(logs.join("\n")).toMatch(/has no proof yet \(the probe could not run/);
+      await dispose?.(); dispose = null;
+    }
+    // A probe that throws is also «could not run».
+    const { db, gate, state } = rig();
+    state.throws = true;
+    expect(await gate.deny("codex", "m", "proj")).toBeNull();
+    expect(receipts(db)).toEqual([]);
+  });
+
+  it("[sma:ap_caps_held] a probe that really answered wrong writes a red receipt and holds with the true lift text", async () => {
+    const { db, state, gate } = rig();
+    state.answer = { ok: false, answered: true, reason: "helper_probe_documentary.nested_unexpected: the answer lacks what the probe asks for" };
+    const held = await gate.deny("codex", "m", "proj");
+    expect(held).toMatch(/^capability_unproven:codex:documentary\.nested /);
+    expect(held).toContain("bb lane-pilot capabilities --probe");
+    expect(held).toContain("capability.documentary_gate=observe");
+    expect(receipts(db)).toEqual([expect.objectContaining({ capability: "documentary.nested", state: "not_supported", version: KEY })]);
+    // The hold is a receipt: it stays until the cell is re-probed.
+    expect(await gate.deny("codex", "m", "proj")).toBe(held);
+  });
+
+  it("[sma:ap_caps_held] capabilities --probe re-probes a red documentary cell, replaces the receipt, and lifts the hold", async () => {
+    const { db, state, gate, api, probes } = rig();
+    state.answer = { ok: false, answered: true, reason: "helper_probe_documentary.nested_unexpected: wrong" };
+    expect(await gate.deny("codex", "m", "proj")).not.toBeNull();
+    probes.length = 0;
+    state.answer = { ok: true, reason: null };
+    // The hourly sweep leaves a red cell alone; the CLI's --probe does not.
+    await api.sweep();
+    expect(probes).not.toContain("codex:documentary.nested");
+    const result = await runCapabilityCli(api, ["--probe"]);
+    expect(probes).toContain("codex:documentary.nested");
+    expect(JSON.parse(result.stdout!).probed.length).toBeGreaterThan(0);
+    expect(receipts(db).find((row) => row.capability === "documentary.nested")).toMatchObject({ state: "supported" });
+    expect(await gate.deny("codex", "m", "proj")).toBeNull();
+    // A re-probe that could not run leaves the red receipt as it was.
+    state.answer = { ok: false, answered: true, reason: "helper_probe_documentary.role_unexpected: wrong" };
+    expect(await gate.deny("codex", "m", "proj")).toBeNull();
+  });
+
+  it("[sma:ap_caps] with no sandbox run to probe in, the stage runs observed and one log line says why", async () => {
+    const { db, probes, gate, logs } = rig({ sandboxRun: false });
+    expect(await gate.deny("codex", "m", "proj")).toBeNull();
+    expect(probes).toEqual([]);
+    expect(receipts(db)).toEqual([]);
+    expect(logs.filter((line) => line.includes("no sandbox run"))).toHaveLength(1);
+  });
+
+  it("[sma:ap_caps] a «could not run» outcome is remembered for ten minutes: the next gate call starts no probe", async () => {
+    const { state, gate, probes } = rig();
+    state.answer = { ok: false, reason: "429 rate limit" };
+    expect(await gate.deny("codex", "m", "proj")).toBeNull();
+    expect(probes).toEqual(["codex:documentary.nested"]);
+    expect(await gate.deny("codex", "m", "proj")).toBeNull();
+    // The cache is per cell: the next unproven cell is tried once, and then it is remembered too.
+    expect(probes).toEqual(["codex:documentary.nested", "codex:documentary.role"]);
+    for (let n = 0; n < 4; n++) await gate.deny("codex", "m", "proj");
+    expect(probes).toHaveLength(4);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(Date.now() + 11 * 60_000);
+      await gate.deny("codex", "m", "proj");
+      expect(probes).toHaveLength(5);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("[sma:ap_caps] at most one cell is probed per gate call, and a probe that never finishes is observed after 60 s", async () => {
+    const { state, gate, probes, db } = rig();
+    expect(await gate.deny("codex", "m", "proj")).toBeNull();
+    expect(probes).toEqual(["codex:documentary.nested"]);
+    state.hang = true;
+    vi.useFakeTimers();
+    try {
+      const pending = gate.deny("codex", "m", "proj");
+      await vi.advanceTimersByTimeAsync(59_000);
+      let settled = false;
+      void pending.then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(await pending).toBeNull();
+    } finally { vi.useRealTimers(); }
+    expect(receipts(db).map((row) => row.capability)).toEqual(["documentary.nested"]);
+  });
+
+  it("[sma:ap_caps] the offer a pick is drawn from (proved) reads receipts only and starts no probe", async () => {
+    const { gate, probes, db } = rig();
+    expect(await gate.proved("proj")).toBeNull();
+    expect(probes).toEqual([]);
+    db.prepare("INSERT INTO lane_pilot_capability(provider_id,version,capability,state,model,detail,at) VALUES (?,?,?,?,?,?,?)").run("codex", KEY, "documentary.hooks", "not_supported", "m", null, 1);
+    const offer = (await gate.proved("proj"))!;
+    expect(offer.has("codex")).toBe(false);
+    expect(probes).toEqual([]);
+  });
+});
+
+describe("stream i2 graphs: the grill gate matches this plan and tells the caller", () => {
+  const rigPhase = async (grill: { inputs: Record<string, unknown>; output: Record<string, unknown> }) => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    dispose = () => harness.lifecycle.dispose();
+    harness.sdk.stub("threads.send", async () => ({}));
+    harness.sdk.stub("threads.get", async () => ({ status: "idle", environmentId: "env_pm" }));
+    harness.sdk.stub("environments.get", async () => ({ path: "/repo", hostId: "h" }));
+    bb.hosts.experimental_client = (() => ({ call: async () => ({}) })) as never;
+    const db = openDatabase(bb);
+    createRun(db, "run1", "projA", "bb", "/repo");
+    db.prepare("UPDATE lane_pilot_run SET writer_host_id='h', pm_thread_id='thr_pm' WHERE id='run1'").run();
+    const services = { runBudgets: { get: () => undefined }, dispatchWriter: async () => ({}), regression: { run: async () => ({}) }, runGoal: { check: async () => ({}) },
+      readWriterWorkspaceFile: async () => null, money: { status: () => ({ capSet: false, cap: null, left: null, monthUsd: 0 }) } } as unknown as Services;
+    const phases = createPhaseDriver(createCore(bb, db), services).phases;
+    const piece: PlanItem = { id: "p1", title: "P1", wave: 1, promise: { given: "g", when: "w", then: "t" },
+      task: { id: "p1", project_cwd: "/repo", owns_paths: ["src/**"], verification: [{ command: "npm test", cwd: "/repo" }], acceptance: ["the goal is met"] } };
+    const sha = planSignature([piece], "ctx");
+    const phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "T", goal: "g" });
+    savePhase(db, phase.id, { stage: "planning", runId: "run1", record: { ...phase.record, context: { docs: [], sha: "ctx", signedAt: 1 },
+      plan: { items: [piece], contextSha: "ctx", sha, submittedAt: 1, objective: "o", premortem: ["a", "b", "c"], critique: { decision: "approve", by: "t", independence: { ok: true, wfRunId: "wfrun_plan" } } } } as never, at: 2 });
+    db.prepare(`INSERT INTO lane_pilot_wf_run(id,workflow_id,workflow_version,workflow_sha256,definition_json,project_id,link_run_id,status,inputs_json,output_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run("wfrun_plan", "lp.plan", 1, "s", JSON.stringify({ nodes: [{ id: "critic", role: "plan-critic" }] }), "projA", "run1", "succeeded", JSON.stringify({ plan_sha: sha }), JSON.stringify({ plan_verdict: "pass", status: "ok" }), 10, 10);
+    db.prepare(`INSERT INTO lane_pilot_wf_step(run_id,step_key,origin,node_id,visit,state,input_json,started_at,ended_at,updated_at,receipt_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+      .run("wfrun_plan", "wfrun_plan:critic", "edge", "critic", 1, "succeeded", "{}", 10, 11, 11, JSON.stringify({ threadId: "thr_critic" }));
+    const inputs = JSON.parse(JSON.stringify(grill.inputs).replace("$SHA", sha));
+    db.prepare(`INSERT INTO lane_pilot_wf_run(id,workflow_id,workflow_version,workflow_sha256,definition_json,project_id,link_run_id,status,inputs_json,output_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run("wfrun_grill", "grill-plan", 1, "s", "{}", "projA", "run1", "succeeded", JSON.stringify(inputs), JSON.stringify(grill.output), 20, 20);
+    return { phases, phaseId: phase.id };
+  };
+  const check = (rig: Awaited<ReturnType<typeof rigPhase>>) => rig.phases.planCheck({ phaseId: rig.phaseId, decision: "approve", by: "t", wfRunId: "wfrun_plan" });
+  const open = { status: "open", open: ["which shard migrates first"] };
+
+  it("[sma:k_v_grill] an open grill of THIS plan refuses the plan-check caller with the reason and the two ways out", async () => {
+    const rig = await rigPhase({ inputs: { plan_sha: "$SHA", phase_id: "x" }, output: open });
+    const refusal = await check(rig).then(() => null, (cause: unknown) => cause as Error & { why: string[] });
+    expect(refusal).not.toBeNull();
+    expect(refusal!.message).toContain("wfrun_grill");
+    expect(refusal!.why.join("\n")).toContain("which shard migrates first");
+    expect(refusal!.why.join("\n")).toMatch(/resubmit the plan/);
+    expect(refusal!.why.join("\n")).toContain("phase.grill_gate=off");
+  });
+
+  it("[sma:k_v_grill] a grill of another plan's sha does not hold", async () => {
+    const rig = await rigPhase({ inputs: { plan_sha: "0".repeat(64), phase_id: "x" }, output: open });
+    expect((await check(rig)).stage).not.toBe("planning");
+  });
+
+  it("[sma:k_v_grill] a grill that ended `done` does not hold, even with a non-empty open list; an older grill with no plan sha never holds", async () => {
+    const done = await rigPhase({ inputs: { plan_sha: "$SHA" }, output: { status: "done", open: ["left over"] } });
+    expect((await check(done)).stage).not.toBe("planning");
+    await dispose?.(); dispose = null;
+    const older = await rigPhase({ inputs: {}, output: open });
+    expect((await check(older)).stage).not.toBe("planning");
+  });
+});
+
+describe("stream i2 graphs: docs-nightly checks who calls it", () => {
+  const caller = async (thread: { projectId: string; role: string }) => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot", sdk: {
+      threads: { get: async () => ({ id: "thr_x", projectId: thread.projectId }), getPluginMetadata: async () => ({ role: thread.role }) } as never,
+      projects: { get: async () => { throw new Error("stop: past the caller check"); }, list: async () => [] } as never,
+    } });
+    await plugin(bb);
+    dispose = () => harness.lifecycle.dispose();
+    return harness;
+  };
+
+  it("[sma:k_ag_docwriter] refused from a thread of another project and from a non-PM thread, each naming the reason", async () => {
+    const foreign = await caller({ projectId: "proj_other", role: "pm" });
+    const a = await foreign.behavior.runCli(["docs-nightly", "proj_docs", "--assignment", "x"], { threadId: "thr_x" } as never) as { exitCode: number; stderr?: string };
+    expect(a.exitCode).toBe(1);
+    expect(a.stderr).toMatch(/refused: docs-nightly from a thread reaches only that thread's own project \(proj_other\), not proj_docs/);
+    await dispose?.(); dispose = null;
+    const writer = await caller({ projectId: "proj_docs", role: "writer" });
+    const b = await writer.behavior.runCli(["docs-nightly", "proj_docs"], { threadId: "thr_x" } as never) as { exitCode: number; stderr?: string };
+    expect(b.exitCode).toBe(1);
+    expect(b.stderr).toMatch(/refused: docs-nightly is not for a writer thread; ask the PM or the owner/);
+  });
+
+  it("[sma:k_ag_docwriter] the project's own PM thread passes the check, and no thread at all is unrestricted (the first test above)", async () => {
+    const pm = await caller({ projectId: "proj_docs", role: "pm" });
+    const result = await pm.behavior.runCli(["docs-nightly", "proj_docs"], { threadId: "thr_x" } as never) as { exitCode: number; stderr?: string };
+    expect(result.stderr ?? "").not.toMatch(/^refused: docs-nightly/);
   });
 });
