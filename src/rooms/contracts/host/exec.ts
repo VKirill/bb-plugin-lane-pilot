@@ -44,10 +44,13 @@ export const execHostMethods = {
       asUser:z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/).optional(),
       /** Hash .git/.agents/.cls before and after the command (the check-measure path only). */
       protectedRoots:z.boolean().optional(),
+      /** Leave ~/.ssh readable for this command (the project's verification.ssh_keys is on). */
+      sshKeys:z.boolean().optional(),
     }).strict(),
     output:z.object({
       hostId:z.string(),backend:z.enum(["macos-seatbelt","linux-bubblewrap"]),workspacePath:z.string(),cwd:z.string(),
       exitCode:z.number().int(),policySha256:z.string().regex(/^[a-f0-9]{64}$/),stdout:z.string(),stderr:z.string(),
+      maskedSsh:z.boolean().optional(),
       rootsManifest:z.object({before:z.string(),after:z.string(),changed:z.boolean(),partial:z.boolean().optional(),git:z.enum(["covered","worktree-gitdir","uncovered","absent"]).optional()}).optional(),
     }).strict(),
   },
@@ -56,10 +59,11 @@ export const execHostMethods = {
       requestedHostId:z.string().min(1),workspacePath:z.string().startsWith("/"),cwd:z.string().startsWith("/"),
       backend:z.enum(["auto","macos-seatbelt","linux-bubblewrap"]).optional(),command:z.string().min(1).max(32_000),
       passEnv:z.array(z.string().max(128)).max(500).optional(),
+      sshKeys:z.boolean().optional(),
     }).strict(),
     output:z.object({
       hostId:z.string(),backend:z.enum(["macos-seatbelt","linux-bubblewrap"]),workspacePath:z.string(),cwd:z.string(),
-      policySha256:z.string().regex(/^[a-f0-9]{64}$/),commandLine:z.string(),
+      policySha256:z.string().regex(/^[a-f0-9]{64}$/),commandLine:z.string(),maskedSsh:z.boolean().optional(),
       cleanup:z.object({tempPath:z.string(),created:z.array(z.string())}).strict(),
     }).strict(),
   },

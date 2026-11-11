@@ -1,4 +1,5 @@
 import { SETTING_WORKER_STRICT_USER, SETTING_WORKER_USER, bookkeepingSetting, filterOwnershipNoise } from "@lane-pilot/settings-catalog";
+import { sshKeysOpen, sshMaskEvidence } from "@lane-pilot/models";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { isAbsolute, relative, resolve } from "node:path";
 import { acceptanceArtifactDir, bbWriterReportMarkdown, buildAcceptanceV2, buildRunExecutionProfile, buildRunPolicy, classifyWriterOutput, isOutputFolder, isOutputPath, mapBounded, sha256, trustedToolingHint, validateAcceptanceV2 } from "../../tasks";
@@ -110,7 +111,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
    * A writer's check runs in a BB terminal of the writer's thread, inside the same sandbox, so the owner can open it
    * and watch; BB reports its output and exit code. Null when terminals are unavailable: the caller falls back.
    */
-  async function runInWriterTerminal(input:{config:PrototypeConfig; writerThreadId:string; workspacePath:string; cwd:string; command:string; backend:"auto"|"macos-seatbelt"|"linux-bubblewrap"; timeoutSec:number}) {
+  async function runInWriterTerminal(input:{config:PrototypeConfig; writerThreadId:string; workspacePath:string; cwd:string; command:string; backend:"auto"|"macos-seatbelt"|"linux-bubblewrap"; timeoutSec:number; sshKeys?:boolean}) {
     const terminals=(bb.sdk as { terminals?: typeof bb.sdk.terminals }).terminals;
     if (!terminals?.create) return null;
     // Every machine variable of the project (BB's global ones and the project's own) reaches the check; BB puts
@@ -118,7 +119,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     const machineEnv=await bestEffort(ctx.log, "verification machine environment", Promise.resolve().then(()=>bb.sdk.projects.machineEnvironment({projectId:input.config.projectId})), null);
     const passEnv=(machineEnv?.variables??[]).map((variable)=>variable.name);
     const prepared=await host.call("sandboxCommandLine",{requestedHostId:input.config.hostId,workspacePath:input.workspacePath,cwd:input.cwd,
-      command:input.command,backend:input.backend,passEnv},{hostId:input.config.hostId,timeoutMs:30_000});
+      command:input.command,backend:input.backend,passEnv,...(input.sshKeys?{sshKeys:true}:{})},{hostId:input.config.hostId,timeoutMs:30_000});
     if (prepared.hostId!==input.config.hostId) throw new Error("sandbox result host did not match the configured host");
     try {
       let session;
@@ -140,11 +141,11 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       if (session.status!=="exited") {
         await bestEffort(ctx.log, "verification terminal close", terminals.close({terminalId:session.id,mode:"force"}), undefined);
         return {exitCode:124,stdout:text,stderr:session.status==="disconnected"?"verification terminal disconnected":`verification timed out after ${input.timeoutSec}s`,
-          backend:prepared.backend,policySha256:prepared.policySha256,workspacePath:prepared.workspacePath,terminalId:session.id};
+          backend:prepared.backend,policySha256:prepared.policySha256,workspacePath:prepared.workspacePath,terminalId:session.id,maskedSsh:prepared.maskedSsh};
       }
       bb.log.info(`verification terminal ${session.id} exited ${session.exitCode}`);
       return {exitCode:session.exitCode??1,stdout:text,stderr:"",backend:prepared.backend,policySha256:prepared.policySha256,
-        workspacePath:prepared.workspacePath,terminalId:session.id};
+        workspacePath:prepared.workspacePath,terminalId:session.id,maskedSsh:prepared.maskedSsh};
     } finally {
       await bestEffort(ctx.log, "verification sandbox release", host.call("sandboxRelease",{requestedHostId:input.config.hostId,...prepared.cleanup},{hostId:input.config.hostId,timeoutMs:30_000}), undefined);
     }
@@ -221,12 +222,18 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       // The strict worker (worker.strict_user on): the check runs as worker.user through the host call, never in the owner's terminal.
       const checkSettings=loadProjectSettings(db,config.projectId,verificationScopes);
       const asUser=String(checkSettings[SETTING_WORKER_STRICT_USER] ?? "off")==="on" ? String(checkSettings[SETTING_WORKER_USER] ?? DEFAULT_WORKER) : null;
+      // verification.ssh_keys (project, unset = off): ~/.ssh is masked in checks unless the project says on.
+      const sshKeys=sshKeysOpen(checkSettings);
+      const sshNote=(exitCode:number,stdout:string,stderr:string,masked:boolean|undefined)=>{
+        const line=sshMaskEvidence({projectId:config.projectId,exitCode,output:`${stdout}\n${stderr}`,masked});
+        return line?`${stderr}\n${line}`.trim():stderr;
+      };
       const inTerminal=writerThreadId&&!hasSecrets&&!asUser ? await runInWriterTerminal({config,writerThreadId,workspacePath:task.project_cwd,cwd:command.cwd,
-        command:command.command,backend,timeoutSec}).catch((cause:unknown)=>{
+        command:command.command,backend,timeoutSec,sshKeys}).catch((cause:unknown)=>{
           bb.log.warn(`verification terminal failed, running on the host: ${cause instanceof Error?cause.message:String(cause)}`);
           return null;
         }) : null;
-      if (inTerminal) return recorded({command:command.command,exitCode:inTerminal.exitCode,stdout:redactKnown(inTerminal.stdout),stderr:redactKnown(inTerminal.stderr),
+      if (inTerminal) return recorded({command:command.command,exitCode:inTerminal.exitCode,stdout:redactKnown(inTerminal.stdout),stderr:sshNote(inTerminal.exitCode,inTerminal.stdout,redactKnown(inTerminal.stderr),inTerminal.maskedSsh),
         sandboxBackend:inTerminal.backend,policySha256:inTerminal.policySha256,workspacePath:inTerminal.workspacePath,timeoutSec});
       const ran = await host.call("runSandboxedCommand", {
         requestedHostId: config.hostId,
@@ -237,6 +244,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
         timeoutSec,
         ...(hasSecrets ? { env } : {}),
         ...(asUser ? { asUser } : {}),
+        ...(sshKeys ? { sshKeys: true } : {}),
         // A background job is kept by the host with its input: a check with secrets runs as a plain call instead.
       }, { hostId:config.hostId, timeoutMs:(timeoutSec + 15) * 1000, ...(options?.background && !hasSecrets ? { job:true, ...(options.jobKey ? { jobKey:options.jobKey } : {}) } : {}) }).catch((cause: unknown) => ({
         hostId: config.hostId,
@@ -255,7 +263,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       // The host masks them already; a second pass here costs nothing and covers an older host.
       // Any check also loses the values this process handed to another run (redactKnown).
       const mask=(text:string)=>redactKnown(hasSecrets?redactSecrets(text,Object.values(env)):text);
-      return recorded({command:command.command,exitCode:ran.exitCode,stdout:typeof ran.stdout==="string"?mask(ran.stdout):"",stderr:typeof ran.stderr==="string"?mask(ran.stderr):"",
+      return recorded({command:command.command,exitCode:ran.exitCode,stdout:typeof ran.stdout==="string"?mask(ran.stdout):"",stderr:typeof ran.stderr==="string"?sshNote(ran.exitCode,typeof ran.stdout==="string"?ran.stdout:"",mask(ran.stderr),"maskedSsh" in ran?ran.maskedSsh:undefined):"",
         sandboxBackend:ran.backend,policySha256:ran.policySha256,workspacePath:ran.workspacePath,timeoutSec,...("hostError" in ran?{hostError:true as const}:{})});
       },(line)=>bb.log.info(line),sampleMachine));
       if(failFast&&outcome.exitCode!==0)halt=true;

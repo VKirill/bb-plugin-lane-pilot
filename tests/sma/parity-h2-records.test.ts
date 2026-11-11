@@ -1,14 +1,16 @@
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { forgetSecrets, registerSecrets, sha256Hex } from "@lane-pilot/kit";
+import { sshKeysOpen, sshMaskEvidence } from "@lane-pilot/models";
 import { describe, expect, it } from "vitest";
 import {
   createAttempt, createRun, createTask, getAttempt, getReasoningTrace, inspectAttempt, noteAttemptStream, onAttemptChanged,
   openDatabase, parkAttemptWake, saveReasoningTrace, transitionAttempt, TRANSITION_KEY,
 } from "../../src/rooms/plugin-db";
 import { attemptSessionLayers, permissionEntries, terminalParity, terminalSessionLayers } from "../../src/rooms/native-agent/terminal-parity";
+import { homeOfUser } from "../../src/rooms/verification/worker-user";
 import { buildBubblewrapArgs, buildSeatbeltProfile, credentialMaskPaths, protectedRootsManifest, runSandboxedCommandOnHost } from "../../src/rooms/verification/sandbox";
 import { checkMeasureOf } from "../../src/rooms/tasks/server/conversation-tools";
 import { claimLandingSuite, getAttemptChange, listLandingSuitePending, noteLandingSuite, upsertAttemptChange, type LandingSuite } from "../../src/rooms/rollback/store";
@@ -447,5 +449,60 @@ describe("[sma:k_lib_landing] the landing sweep takes no backlog, newest first, 
     w.db.prepare("UPDATE lane_pilot_attempt_change SET suite_json=? WHERE attempt_id=?").run(JSON.stringify({ suite: "running", head: null, at: Date.now() - 46 * 60_000, tries: 0 }), id);
     expect(await w.rollback.landingSuite()).toBe(1);
     expect(w.suiteOf(id)).toMatchObject({ suite: "green" });
+  });
+});
+
+describe("[sma:m_ck_required] ~/.ssh stays masked unless the project turns verification.ssh_keys on", () => {
+  it("unset reads off; the mask drops only .ssh when on, and keeps the other credential stores", () => {
+    expect(sshKeysOpen({})).toBe(false);
+    expect(sshKeysOpen({ "verification.ssh_keys": "off" })).toBe(false);
+    expect(sshKeysOpen({ "verification.ssh_keys": "on" })).toBe(true);
+    const home = mkdtempSync(join(tmpdir(), "lp-h2home-"));
+    for (const dir of [".ssh", ".aws", ".gnupg"]) mkdirSync(join(home, dir));
+    writeFileSync(join(home, ".netrc"), "machine x");
+    expect(credentialMaskPaths(home).dirs.map((d) => d.slice(home.length + 1)).sort()).toEqual([".aws", ".gnupg", ".ssh"]);
+    const open = credentialMaskPaths(home, { sshKeys: true });
+    expect(open.dirs.map((d) => d.slice(home.length + 1)).sort()).toEqual([".aws", ".gnupg"]);
+    expect(open.files).toEqual([join(home, ".netrc")]);
+  });
+
+  it("a real sandboxed run cannot read ~/.ssh by default, can with sshKeys, and says which it was", async () => {
+    const home = mkdtempSync(join(tmpdir(), "lp-h2ssh-"));
+    mkdirSync(join(home, ".ssh"));
+    writeFileSync(join(home, ".ssh", "id_test"), "PRIVATE");
+    const ws = mkdtempSync(join(tmpdir(), "lp-h2ws-"));
+    const before = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      const base = { requestedHostId: "h", workspacePath: ws, cwd: ws, command: `cat ${join(home, ".ssh", "id_test")}`, backend: "linux-bubblewrap" as const };
+      const masked = await runSandboxedCommandOnHost(base);
+      expect(masked.exitCode).not.toBe(0);
+      expect(masked.stdout).not.toContain("PRIVATE");
+      expect(masked.maskedSsh).toBe(true);
+      const open = await runSandboxedCommandOnHost({ ...base, sshKeys: true });
+      expect(open.exitCode).toBe(0);
+      expect(open.stdout).toContain("PRIVATE");
+      expect(open.maskedSsh).toBe(false);
+    } finally { if (before === undefined) delete process.env.HOME; else process.env.HOME = before; }
+  });
+
+  it("a failed masked run that printed an ssh refusal gets one evidence line with the exact command; nothing else does", () => {
+    const line = sshMaskEvidence({ projectId: "proj_x", exitCode: 128, masked: true, output: "git@host: Permission denied (publickey).\nfatal: Could not read from remote repository." });
+    expect(line).toContain("bb lane-pilot setting proj_x verification.ssh_keys=on");
+    expect(line).toContain("~/.ssh is masked");
+    for (const output of ["Host key verification failed.", "fatal: Could not read from remote repository."]) expect(sshMaskEvidence({ projectId: "p", exitCode: 1, masked: true, output })).not.toBeNull();
+    expect(sshMaskEvidence({ projectId: "p", exitCode: 0, masked: true, output: "Permission denied (publickey)" })).toBeNull();
+    expect(sshMaskEvidence({ projectId: "p", exitCode: 1, masked: false, output: "Permission denied (publickey)" })).toBeNull();
+    expect(sshMaskEvidence({ projectId: "p", exitCode: 1, masked: true, output: "assertion failed" })).toBeNull();
+    // The same line lands on the check measure of the chat check.
+    const measure = checkMeasureOf({ command: "git fetch", cwd: "/w", expectExit: 0, timeoutSec: 30, projectId: "proj_x",
+      result: { exitCode: 128, stdout: "", stderr: "Host key verification failed.", maskedSsh: true } });
+    expect(measure.evidence).toContain("bb lane-pilot setting proj_x verification.ssh_keys=on");
+  });
+
+  it("with the strict worker the home that is masked is that user's, not the hub process's", async () => {
+    const me = userInfo();
+    expect(await homeOfUser(me.username)).toBe(me.homedir);
+    expect(await homeOfUser("lp-worker-nobody-here")).toBe("/home/lp-worker-nobody-here");
   });
 });
