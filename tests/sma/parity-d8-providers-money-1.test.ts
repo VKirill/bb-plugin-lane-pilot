@@ -39,15 +39,20 @@ describe("parity d8: providers and money", () => {
     expect(keys({ "writer.models_off": [] })).toEqual(all);
   });
 
-  it("[sma:m_cfg_budget0] with money.cap_unset_zero on an unset cap is 0 for a paid lane, a subscription lane is never held, and 'unlimited' lifts it", () => {
-    expect(moneyCapFrom({})).toBeNull();
-    const cap = moneyCapFrom({ "money.cap_unset_zero": true });
+  it("[sma:m_cfg_budget0] an unset cap is 0 for a paid lane (money.cap_unset_zero is on unless off), a subscription lane is never held, and 'unlimited' or off lifts it", () => {
+    const cap = moneyCapFrom({});
     expect(cap).toBe(0);
-    expect(moneyHold("openlux", 0, cap)).toMatch(/money\.monthly_cap_usd/);
+    expect(moneyCapFrom({ "money.cap_unset_zero": "on" })).toBe(0);
+    // Nothing was spent: the reason says the channel is not configured and names both ways out, not «wait for the next month».
+    expect(moneyHold("openlux", 0, cap)).toMatch(/no money cap is set.*monthly cap.*money\.cap_unset_zero=off/);
+    expect(moneyHold("openlux", 0, cap)).not.toMatch(/next month/);
     expect(moneyHold("claude-code", 0, cap)).toBeNull();
+    expect(moneyCapFrom({ "money.cap_unset_zero": "off" })).toBeNull();
+    expect(moneyHold("openlux", 10_000, moneyCapFrom({ "money.cap_unset_zero": "off" }))).toBeNull();
     expect(capOf("unlimited")).toBe(Infinity);
     expect(moneyHold("openlux", 10_000, capOf("unlimited"))).toBeNull();
-    expect(moneyCapFrom({ "money.monthly_cap_usd": "unlimited", "money.cap_unset_zero": true })).toBe(Infinity);
+    expect(moneyCapFrom({ "money.monthly_cap_usd": "unlimited" })).toBe(Infinity);
+    expect(moneyCapFrom({ "money.monthly_cap_usd": 25 })).toBe(25);
   });
 
   it("[sma:m_mo_stop] a paid lane holds when the task's estimate would cross the cap, not only when the month is spent", () => {

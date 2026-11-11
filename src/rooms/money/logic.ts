@@ -1,9 +1,10 @@
-import { settingOn } from "@lane-pilot/models";
+import { switchOn } from "@lane-pilot/models";
 /**
  * Money and spend (SMA map: Providers, models, accounts — Money and spend; Safety nets — The one price list, Spend book and budget window).
  * Subscription lanes (Claude Code, Codex, a coding plan) cost nothing per token on top of the plan; API lanes (OpenLux, an Anthropic or
  * OpenAI key) cost their price list. The money rule: routing takes subscription lanes first and a paid lane only while this month's
- * spend is under the cap (setting money.monthly_cap_usd; no cap set, no limit). Over the cap a paid lane holds, a subscription lane goes on.
+ * spend is under the cap (setting money.monthly_cap_usd). No cap set, a paid lane has no money and stays closed (the word `unlimited` opens it
+ * with no cap; money.cap_unset_zero=off reads an unset cap as no limit). Over the cap a paid lane holds, a subscription lane goes on.
  */
 export type Price = { inputPerM: number; outputPerM: number; cachedPerM: number };
 
@@ -68,17 +69,20 @@ export function capOf(value: unknown): number | null {
 }
 
 /**
- * The cap the settings give a paid lane. money.cap_unset_zero (off by default) switches the SMA «Paid lane has no money»
- * behaviour on: with no monthly cap set the cap is 0 and a paid lane holds until the person sets one.
+ * The cap the settings give a paid lane (SMA «Paid lane has no money», «The money rule»): with no monthly cap set the cap is 0
+ * and a paid lane holds until the person sets one — a key added later cannot spend by itself. money.cap_unset_zero=off is the
+ * opt-out: an unset cap then means no limit. Every lane of the owner's hub is a subscription, which never holds for money.
  */
 export function moneyCapFrom(settings: Record<string, unknown>): number | null {
   const cap = capOf(settings["money.monthly_cap_usd"]);
-  return cap === null && settingOn(settings["money.cap_unset_zero"]) ? 0 : cap;
+  return cap === null && switchOn(settings, "money.cap_unset_zero") ? 0 : cap;
 }
 
 /** Money spent — stop: a paid lane holds once this month's spend reached the cap, or the task's own estimate would cross it; a subscription lane never holds for money. */
 export function moneyHold(providerId: string, monthUsd: number, cap: number | null, taskUsd = 0): string | null {
   if (!isPaid(providerId) || cap === null) return null;
+  // A cap of 0 is only ever the unset one (capOf reads ≤ 0 as not set): nothing was spent, the channel is simply not configured.
+  if (cap === 0) return `no money cap is set: ${providerId} is a paid lane and stays closed until the monthly cap is set in the Lane Pilot window (dollars, or the word unlimited) or bb lane-pilot setting money.cap_unset_zero=off; subscription lanes go on`;
   if (monthUsd >= cap) return `money cap: ${monthUsd.toFixed(2)} of ${cap.toFixed(2)} USD spent this month on paid lanes; ${providerId} waits for the next month or a higher money.monthly_cap_usd, subscription lanes go on`;
   if (taskUsd > 0 && monthUsd + taskUsd > cap) return `money cap: the task's estimate of ${taskUsd.toFixed(2)} USD would cross the ${cap.toFixed(2)} USD monthly cap (${monthUsd.toFixed(2)} spent on paid lanes); ${providerId} waits for the next month or a higher money.monthly_cap_usd`;
   return null;

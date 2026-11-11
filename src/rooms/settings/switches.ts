@@ -44,7 +44,7 @@ export const UNLISTED_SWITCHES: Readonly<Record<string, readonly [scope: SwitchS
   // money (hub-wide)
   "money.strict": ["global", "on|off", "a free subscription member of the writer chain is taken before a free paid one that stands earlier"],
   "money.task_ceiling": ["global", "on|off", "with a money cap set, a task whose estimate would pass the cap waits for next month"],
-  "money.cap_unset_zero": ["global", "on|off", "an unset money cap reads as zero for paid lanes (unset cap: no limit, as the owner decided)"],
+  "money.cap_unset_zero": ["global", "on|off", "an unset money cap reads as zero for paid lanes: a lane paid by the token stays closed until the monthly cap is set, subscription lanes never wait for money (unset: on; off: an unset cap means no limit)"],
   "money.silent_estimate_tokens": ["global", "number", "an attempt whose paid provider reported no usage is priced at this many tokens"],
   // session hooks
   "hook.prompt_recall": ["project", "on|off", "a session's prompt of 3 words or more is answered with pointers to the project's confirmed notes that match its words (word index only, no model call; ON when unset: off silences it)"],

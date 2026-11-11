@@ -47,7 +47,8 @@ export function createMoney(ctx: Pick<ServerCore, "db" | "bb">) {
     const book = spendBook(rows(), now, overrides());
     const estimate = estimatedUsd(now);
     const estimated = estimate.usd;
-    const cap = moneyCapFrom(settings());
+    // The window shows the cap the person set: an unset one reads «not set» here, though it closes a paid lane (moneyCapFrom).
+    const cap = capOf(settings()["money.monthly_cap_usd"]);
     const monthUsd = Math.round((book.monthUsd + estimated) * 100) / 100;
     // `unlimited` is no cap on purpose: it reads as «no cap» to the window (Infinity does not survive JSON), and is named apart.
     const limit = cap !== null && Number.isFinite(cap) ? cap : null;
@@ -84,6 +85,8 @@ export function createMoney(ctx: Pick<ServerCore, "db" | "bb">) {
     const taskUsd = taskEstimateUsd(providerId, model, input?.appetiteTokens);
     return moneyHold(providerId, status().monthUsd, moneyCapFrom(settings()), taskUsd);
   }
-  return { money: { status, holds, capHolds } };
+  /** A paid judge call (Jev) is not a lane: it holds on a cap the person set and spent, never on an unset one — every judgment of the pilot is such a call. */
+  const judgeHolds = async (): Promise<string | null> => moneyHold("api", status().monthUsd, capOf(settings()["money.monthly_cap_usd"]));
+  return { money: { status, holds, capHolds, judgeHolds } };
 }
 export type MoneyApi = ReturnType<typeof createMoney>["money"];

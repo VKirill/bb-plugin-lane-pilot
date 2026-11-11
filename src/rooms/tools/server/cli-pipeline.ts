@@ -54,8 +54,8 @@ export async function cliPipeline(d: CliRunDeps): Promise<PluginCliResult | unde
       },
       phaseProject: (phaseId) => getPhase(db as never, phaseId)?.projectId ?? null,
       jev: () => jev(),
-      // The judge is a paid call on the API lane: the same money cap the writers wait on (no cap set = no hold).
-      moneyHold: async () => services.money.holds("api", "", ""),
+      // The judge is a paid call: it waits on a money cap that is set and spent (no cap set = no hold; only a paid writer lane is closed by an unset cap).
+      moneyHold: async () => services.money.judgeHolds(),
       measure: async (file, scriptArgs) => {
         const ran = await spawnAsync("npx", ["tsx", file, ...scriptArgs], { cwd: dirname(dirname(file)), timeout: 300_000, maxBuffer: 64 * 1024 * 1024 });
         if (ran.error || ran.status !== 0) throw ran.error ?? new Error(`${file} ended with ${ran.status ?? ran.signal}: ${(ran.stderr ?? "").trim().slice(-400)}`);

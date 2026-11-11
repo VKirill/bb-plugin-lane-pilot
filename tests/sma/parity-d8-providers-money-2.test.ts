@@ -310,29 +310,36 @@ describe("review fix 2 and 4: money holds", () => {
   }
   const depsWith = (money: WriterHoldDeps["money"], usage?: WriterHoldDeps["usage"]) => ({ ...holdDeps().deps, money, ...(usage ? { usage } : {}) });
   const chain = [{ providerId: "openlux", model: "gpt-5-codex" }, { providerId: "claude-code", model: "sonnet" }];
-  const everyMoneySetting = { "money.strict": true, "money.cap_unset_zero": false, "money.silent_estimate_tokens": 200_000, "money.prices": "{}" };
+  const everyMoneySetting = { "money.strict": true, "money.cap_unset_zero": "off", "money.silent_estimate_tokens": 200_000, "money.prices": "{}" };
+  const unsetReason = /money_cap:no money cap is set: openlux is a paid lane and stays closed/;
 
-  it("[sma:m_mo_rule] no cap and nothing set: a paid lane is never held by the money rule, and no host call is made; money.strict (on by default) only prefers the free subscription lane, off keeps the chain order", async () => {
-    const w = moneyWorld({}, {}, 1_000);
+  it("[sma:m_mo_rule] [sma:m_mo_unset] no cap and nothing set: the paid channel is not configured — a paid lane is held with that reason, the subscription lane takes the task, and no host call is made", async () => {
+    const w = moneyWorld({}, {}, 0);
     const walk = await walkWriterChain(chain, { hostId: "h1", settings: {}, appetite: { tokens: 5_000_000 } }, depsWith(w.money), T0);
-    expect(walk.holds).toEqual([]);
     expect(walk.free?.member.providerId).toBe("claude-code");
+    // money.strict off keeps the chain order, and the order's first member is the closed paid lane: the walk passes it by.
     const off = await walkWriterChain(chain, { hostId: "h1", settings: { "money.strict": "off" }, appetite: { tokens: 5_000_000 } }, depsWith(w.money), T0);
-    expect(off.holds).toEqual([]);
-    expect(off.free?.member.providerId).toBe("openlux");
-    // Only the paid lane in the chain and no cap: strict has nothing to prefer and nothing holds it.
+    expect(off.free?.member.providerId).toBe("claude-code");
+    expect(off.holds.map((held) => held.hold.reason).join()).toMatch(unsetReason);
+    // Only the paid lane in the chain and no cap: nothing is free, and the reason names the cap, not a month to wait for.
     const paidOnly = await walkWriterChain([chain[0]!], { hostId: "h1", settings: {}, appetite: { tokens: 5_000_000 } }, depsWith(w.money), T0);
-    expect(paidOnly.holds).toEqual([]);
-    expect(paidOnly.free?.member.providerId).toBe("openlux");
+    expect(paidOnly.free).toBeUndefined();
+    expect(paidOnly.shortest?.hold.reason).toMatch(unsetReason);
+    expect(paidOnly.shortest?.hold.reason).not.toMatch(/next month/);
     expect(w.hostCalls).toEqual([]);
+    // The window's figure stays «no cap set»: a zero was never typed by anyone.
+    expect(w.money.status()).toMatchObject({ cap: null, capSet: false, unlimited: false });
   });
 
-  it("[sma:m_mo_rule] no cap with every money setting this branch knows: still never held, with money.strict only preferring a free subscription lane", async () => {
+  it("[sma:m_mo_rule] money.cap_unset_zero=off is the old path: with no cap a paid lane is never held, money.strict only prefers a free subscription lane", async () => {
     const w = moneyWorld(everyMoneySetting, {}, 1_000);
     const strict = await walkWriterChain(chain, { hostId: "h1", settings: everyMoneySetting, appetite: { tokens: 5_000_000 } }, depsWith(w.money), T0);
     expect(strict.holds).toEqual([]);
     expect(strict.free?.member.providerId).toBe("claude-code");
-    // Only the paid lane in the chain: strict has nothing to prefer, and an unset cap holds it nowhere (it used to hold it with until=null).
+    const order = { ...everyMoneySetting, "money.strict": "off" };
+    const kept = await walkWriterChain(chain, { hostId: "h1", settings: order, appetite: { tokens: 5_000_000 } }, depsWith(w.money), T0);
+    expect(kept.free?.member.providerId).toBe("openlux");
+    // Only the paid lane in the chain: strict has nothing to prefer, and an unset cap holds it nowhere.
     const paidOnly = await walkWriterChain([chain[0]!], { hostId: "h1", settings: everyMoneySetting }, depsWith(w.money), T0);
     expect(paidOnly.free?.member.providerId).toBe("openlux");
     expect(paidOnly.holds).toEqual([]);
@@ -340,8 +347,8 @@ describe("review fix 2 and 4: money holds", () => {
     expect(w.hostCalls).toEqual([]);
   });
 
-  it("[sma:m_mo_rule] money.strict: off, false, 0 are off; unset and anything else is the default, on; a paid lane runs once every subscription lane is held", async () => {
-    const w = moneyWorld({});
+  it("[sma:m_mo_rule] the paid channel only when every subscription window is closed and the cap is set and not exceeded; money.strict: off, false, 0 are off, unset and anything else is on", async () => {
+    const w = moneyWorld({ "money.monthly_cap_usd": 100 });
     const base = { hostId: "h1" };
     for (const off of ["false", "off", "0", false]) {
       const walk = await walkWriterChain(chain, { ...base, settings: { "money.strict": off } }, depsWith(w.money), T0);
@@ -351,9 +358,16 @@ describe("review fix 2 and 4: money holds", () => {
       const walk = await walkWriterChain(chain, { ...base, settings: { "money.strict": on } }, depsWith(w.money), T0);
       expect(walk.free?.member.providerId).toBe("claude-code");
     }
-    const windowHeld = depsWith(w.money, { hold: async ({ providerId }) => (providerId === "claude-code" ? { percent: 99, window: "five_hour", resetsAt: new Date(T0 + MIN).toISOString() } as never : null) });
-    const walk = await walkWriterChain(chain, { ...base, settings: { "money.strict": true } }, windowHeld, T0);
-    expect(walk.free?.member.providerId).toBe("openlux");
+    const closed: WriterHoldDeps["usage"] = { hold: async ({ providerId }) => (providerId === "claude-code" ? { percent: 99, window: "five_hour", resetsAt: new Date(T0 + MIN).toISOString() } as never : null) };
+    // Windows closed, cap set and not exceeded: the paid lane runs.
+    expect((await walkWriterChain(chain, { ...base, settings: { "money.strict": true } }, depsWith(w.money, closed), T0)).free?.member.providerId).toBe("openlux");
+    // Windows closed, cap exceeded: nothing runs.
+    const spent = moneyWorld({ "money.monthly_cap_usd": 100 }, {}, 101);
+    expect((await walkWriterChain(chain, { ...base, settings: { "money.strict": true } }, depsWith(spent.money, closed), T0)).free).toBeUndefined();
+    // Windows closed, no cap set: the paid channel is not configured, nothing runs and the reason says so.
+    const unset = await walkWriterChain(chain, { ...base, settings: { "money.strict": true } }, depsWith(moneyWorld({}).money, closed), T0);
+    expect(unset.free).toBeUndefined();
+    expect(unset.holds.map((held) => held.hold.reason).join()).toMatch(unsetReason);
   });
 
   it("[sma:m_mo_fallback] with a cap set, a paid chain member over it is held until the first of next month and a subscription lane is not", async () => {
@@ -366,7 +380,7 @@ describe("review fix 2 and 4: money holds", () => {
     expect(w.hostCalls).toEqual([]);
   });
 
-  it("[sma:m_mo_task_ceiling] the estimate holds a paid lane only when a cap IS set and spent + estimate is over it; unset cap, a fitting estimate and no appetite hold nothing", async () => {
+  it("[sma:m_mo_task_ceiling] the estimate holds a paid lane only when a cap IS set and spent + estimate is over it; a fitting estimate and no appetite hold nothing, an unset cap holds by itself and not by the estimate", async () => {
     const hold = (settings: Record<string, unknown>, spent: number, tokens?: number) => {
       const w = moneyWorld(settings, {}, spent);
       return writerHold({ providerId: "openlux", model: "gpt-5-codex", hostId: "h1", settings: {}, ...(tokens === undefined ? {} : { appetite: { tokens } }) }, depsWith(w.money), T0);
@@ -376,17 +390,20 @@ describe("review fix 2 and 4: money holds", () => {
     expect((await hold({ ...on, "money.monthly_cap_usd": 10 }, 9, 1_000_000))?.reason).toMatch(/estimate of 1\.50 USD/);
     expect(await hold({ ...on, "money.monthly_cap_usd": 10 }, 1, 1_000_000)).toBeNull();
     expect(await hold({ ...on, "money.monthly_cap_usd": 10 }, 9)).toBeNull();
-    expect(await hold({ ...on }, 9, 50_000_000)).toBeNull();
+    // No cap: the estimate has nothing to be measured against. The old path (cap_unset_zero off) holds nothing; the default closes the paid lane for the unset cap itself.
+    expect(await hold({ ...on, "money.cap_unset_zero": "off" }, 9, 50_000_000)).toBeNull();
+    expect((await hold({ ...on }, 9, 50_000_000))?.reason).toMatch(/no money cap is set/);
     expect(await hold({ ...on, "money.monthly_cap_usd": "unlimited" }, 9, 50_000_000)).toBeNull();
-    // Unset is the default, on: a set cap holds a task whose estimate (50M output tokens = 75 USD) would cross it, with no cap nothing is held.
+    // Unset is the default, on: a set cap holds a task whose estimate (50M output tokens = 75 USD) would cross it, with no cap the estimate holds nothing (the unset cap closes the lane by itself, and off opens it).
     expect((await hold({ "money.monthly_cap_usd": 10 }, 9, 50_000_000))?.reason).toMatch(/estimate of 75\.00 USD would cross the 10\.00 USD monthly cap/);
     expect(await hold({ "money.monthly_cap_usd": 10 }, 1, 1_000_000)).toBeNull();
-    expect(await hold({}, 9, 50_000_000)).toBeNull();
+    expect(await hold({ "money.cap_unset_zero": "off" }, 9, 50_000_000)).toBeNull();
+    expect((await hold({}, 9, 50_000_000))?.reason).not.toMatch(/estimate/);
     // Off holds as on main: only once the cap is spent, whatever the task's estimate.
     expect(await hold({ "money.task_ceiling": "off", "money.monthly_cap_usd": 10 }, 9, 50_000_000)).toBeNull();
     expect((await hold({ "money.task_ceiling": "off", "money.monthly_cap_usd": 10 }, 11, 1))?.reason).toMatch(/^writer_provider_unavailable:money_cap:/);
-    // The string "false" does not turn the «unset cap is zero» switch on.
-    expect(await hold({ "money.cap_unset_zero": "false" }, 9, 1_000_000)).toBeNull();
+    // Only the word «off» is the opt-out, as for every switch: a hand-written "false" leaves the default, on.
+    expect((await hold({ "money.cap_unset_zero": "false" }, 9, 1_000_000))?.reason).toMatch(/no money cap is set/);
   });
 
   it("a chain of subscription members with nothing set makes main's host calls and takes main's path: no window read from the money hold, a window hold keeps its reason and reset time", async () => {
