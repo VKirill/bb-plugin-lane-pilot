@@ -71,7 +71,7 @@ describe("the PM's folded tool list", () => {
   it("lists each action's required arguments in the family instructions, generated from the schema", async () => {
     const harness = await start();
     const instructions = (name: string) => harness.registrations.agentTools.find((row) => row.name === name)!.instructions!;
-    expect(instructions("lane_pilot_helpers")).toContain("- browser_qa {runId, taskId, url, cases: array, envClass: local|staging|preview|production|unknown, viewports?");
+    expect(instructions("lane_pilot_helpers")).toContain("- browser_qa {runId, taskId, url?, cases: array, envClass: local|staging|preview|production|unknown, viewports?");
     expect(instructions("lane_pilot_relay")).toContain("- list {");
   });
 

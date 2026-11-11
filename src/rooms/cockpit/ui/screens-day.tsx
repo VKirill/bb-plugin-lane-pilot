@@ -5,7 +5,7 @@ import { Badge, Button, Disclosure } from "@lane-pilot/ui-kit";
 import { Loaded, Panel, RefreshButton, day, fill, useLoad, type Rpc } from "./kit";
 
 type FeedRow = { at: number; kind: string; text: string; runId?: string; taskId?: string; title?: string | null };
-type Today = { kpi: { accepted: number; blocked: number; running: number; tokens: number; actions: number }; feed: FeedRow[] };
+type Today = { kpi: { accepted: number; blocked: number; running: number; tokens: number; actions: number }; feed: FeedRow[]; partial?: string[] };
 
 const FEED_POLL_MS = 8_000;
 const FRESH_MS = 5_000;
@@ -35,6 +35,7 @@ export function TodayScreen({ rpc, projectId }: { rpc: Rpc; projectId: string })
     <Panel title={t("ckScreen_today")} testId="ck-today" actions={<RefreshButton onClick={today.reload} />}>
       <Loaded state={today}>{(data) => (
         <div className="space-y-3">
+          {(data.partial?.length ?? 0) ? <p className="text-xs text-muted-foreground" data-testid="ck-partial">{t("ckPartialNote")}: {data.partial!.join(", ")}</p> : null}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-5" data-testid="ck-kpi">
             {([["ckKpiAccepted", data.kpi.accepted], ["ckKpiBlocked", data.kpi.blocked], ["ckKpiRunning", data.kpi.running], ["ckKpiTokens", data.kpi.tokens.toLocaleString()], ["ckKpiActions", data.kpi.actions]] as const).map(([key, value]) => (
               <div key={key} className="rounded-md border border-border p-2"><div className="text-xs text-muted-foreground">{t(key)}</div><div className="text-lg font-semibold tabular-nums">{value}</div></div>

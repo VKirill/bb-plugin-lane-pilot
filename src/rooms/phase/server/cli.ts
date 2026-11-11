@@ -1,6 +1,6 @@
 import type { PhaseApi } from "./driver";
 
-export const PHASE_USAGE = "bb lane-pilot phase list [--project <id>] | show <phase-id> [--book] | drive | return <phase-id> <discussion|planning|design|execution> <note> | pause|resume <phase-id> | close <phase-id> <words> | uat [--project <id>] | state <phase-id|--project id> [--set k=v] [--decision text] [--blocker text] | roadmap <phase-id|--project id> [row]   (phases on rails: stages, gates, the phase book)";
+export const PHASE_USAGE = "bb lane-pilot phase list [--project <id>] | show <phase-id> [--book] | drive | return <phase-id> <discussion|planning|design|execution> <note> | pause|resume <phase-id> | close <phase-id> <words> | uat [--project <id>] | state <phase-id|--project id> [--set k=v] [--decision text] [--blocker text] | roadmap <phase-id|--project id> [row] | validate <phase-id|--project id>   (phases on rails: stages, gates, the phase book)";
 type Result = { exitCode: number; stdout?: string; stderr?: string };
 
 /** `callerThreadId` is the BB thread the command was typed in (an agent); none is the owner at a shell. */
@@ -38,6 +38,12 @@ export async function runPhaseCli(api: PhaseApi, argv: readonly string[], caller
       if (out.section !== undefined) return { exitCode: out.section === null ? 1 : 0, stdout: out.section ?? `no row ${row}` };
       const a = out.analysis!;
       return { exitCode: 0, stdout: [`ticked without SUMMARY.md: ${a.tickedWithoutSummary.join("; ") || "none"}`, `phase folders with no row: ${a.foldersWithoutRow.join(", ") || "none"}`, `next open row: ${a.next ? `${a.next.n} ${a.next.name}` : "none"}`].join("\n") };
+    }
+    // The planning files' health (SMA k_t_validate): numbering, disk against roadmap, bundled agents installed. Exit 1 on any finding.
+    if (command === "validate") {
+      const project = argv.indexOf("--project") >= 0 ? argv[argv.indexOf("--project") + 1] : undefined;
+      const out = await api.validate({ phaseId: id?.startsWith("ph_") ? id : undefined, projectId: project ?? (id && !id.startsWith("ph_") && !id.startsWith("--") ? id : undefined) });
+      return { exitCode: out.findings.length ? 1 : 0, stdout: out.findings.join("\n") || "planning files healthy" };
     }
     if (command === "return" && id && rest.length >= 2) return { exitCode: 0, stdout: api.status(api.returnTo({ phaseId: id, to: rest[0] as never, note: rest.slice(1).join(" "), by: "owner" }).id).next.text };
     if ((command === "pause" || command === "resume") && id) return { exitCode: 0, stdout: api.status(api.setState({ phaseId: id, state: command, by: "owner" }).id).next.text };

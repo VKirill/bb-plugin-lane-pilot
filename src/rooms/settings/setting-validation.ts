@@ -12,6 +12,7 @@ import { jevSettingProblem } from "@lane-pilot/jev";
 import { HUB_KEYS, PROJECT_DEFAULT_KEYS, hubSettingProblem } from "@lane-pilot/settings-catalog";
 import { UI_CATALOG, WRITER_EFFORT_CHOICES_BY_PROVIDER } from "@lane-pilot/settings-catalog";
 
+import { PLANNING_HOME_SETTING, planningHomeProblem } from "../contracts";
 import type { SettingValidationError } from "../setting-validation";
 
 export type { SettingValidationError } from "../setting-validation";
@@ -44,6 +45,11 @@ const PROJECT_CHECK_KEYS: ReadonlySet<string> = new Set([...PROJECT_DEFAULT_KEYS
 const WORKFLOW_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 
 export function validateSettingValue(key: string, value: unknown): SettingValidationError | null {
+  // The planning home (SMA d_project_planning): the rules that need no database; the storage save adds «not inside another project's checkout».
+  if (key === PLANNING_HOME_SETTING && value !== undefined && value !== null && value !== "") {
+    const problem = typeof value === "string" ? planningHomeProblem(value) : "the planning home must be an absolute folder path";
+    return problem ? { code: "invalid_choice", key, params: [key, problem] } : null;
+  }
   // The lead's settings (src/rooms/lead/settings.ts): the switch, the home project, the zone, the daily budget, the cron, the proposals per tick.
   if (key.startsWith("lead.")) {
     const problem = leadSettingProblem(key, value);

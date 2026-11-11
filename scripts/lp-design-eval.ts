@@ -3,8 +3,9 @@
  *   npx tsx scripts/lp-design-eval.ts <url> [--json]
  *   npx tsx scripts/lp-design-eval.ts <url-a> <url-b>        (paired judgement: which is better, per criterion)
  */
+import { readFileSync, writeFileSync } from "node:fs";
 import { chromium } from "playwright";
-import { compareDesigns, designScore, mergeFrames, MEASURE_SCRIPT, pairBasis, type Measurement } from "../src/rooms/design-eval";
+import { compareDesigns, designScore, mergeFrames, MEASURE_SCRIPT, pairBasis, readDesignCase, writeDesignCase, type Measurement } from "../src/rooms/design-eval";
 import { pairUrlRefusal } from "../src/rooms/design-eval/url-guard";
 import { pairUrlsRefusal } from "../src/rooms/design-eval/server";
 
@@ -43,9 +44,27 @@ async function measure(url: string, shot = false, guard?: { hubPorts: number[] }
 
 const args = process.argv.slice(2).filter((arg) => arg !== "--json" && arg !== "--local");
 const local = process.argv.includes("--local");
+const flagValue = (name: string): string | undefined => { const at = process.argv.indexOf(name); return at >= 0 ? process.argv[at + 1] : undefined; };
+const flagArgs = args.filter((arg, index, all) => all[index - 1] !== "--save" && all[index - 1] !== "--case" && arg !== "--save" && arg !== "--case");
+// --case <file>: re-score a pinned case; its bytes and rubric balance are checked before any score is printed.
+// A value flag with nothing after it would be silently ignored: refuse it.
+for (const flag of ["--save", "--case"]) {
+  if (process.argv.includes(flag) && (process.argv.indexOf(flag) === process.argv.length - 1 || process.argv[process.argv.indexOf(flag) + 1]!.startsWith("--"))) {
+    console.error(`${flag} needs a file\nusage: npx tsx scripts/lp-design-eval.ts <url> [<url-b>] [--json] [--save <case-file>] [--case <case-file>]`); process.exit(1);
+  }
+}
+const caseFile = flagValue("--case");
+if (caseFile) {
+  const result = readDesignCase(readFileSync(caseFile, "utf8"));
+  if (!result.ok) { console.error(result.reason); process.exit(1); }
+  const scored = designScore(result.case.measurements);
+  console.log(process.argv.includes("--json") ? JSON.stringify({ id: result.case.id, suiteVersion: result.case.suiteVersion, ...scored }, null, 2)
+    : [`case ${result.case.id} (${result.case.suiteVersion})`, `score ${scored.score}/100`, ...scored.byWidth.flatMap((row) => row.criteria.map((c) => `  ${row.width}px ${c.id}: ${Math.round(c.score * 100)} (${c.detail})`))].join("\n"));
+  process.exit(0);
+}
 // design-pair: the paired judgement — one basis text (scores + fixed order) for the model and the person, plus a screenshot of each for the judge.
-if (args[0] === "design-pair") {
-  const [urlA, urlB] = args.slice(1);
+if (flagArgs[0] === "design-pair") {
+  const [urlA, urlB] = flagArgs.slice(1);
   if (!urlA || !urlB) { console.error("usage: npx tsx scripts/lp-design-eval.ts design-pair <url-a> <url-b> [--local]"); process.exit(1); }
   // Checked again here, before any browser starts: the screenshots of a refused pair are never taken.
   const fromUrl = (value: string | undefined): number[] => { try { const url = new URL(value ?? ""); return [Number(url.port || (url.protocol === "https:" ? 443 : 80))]; } catch { return []; } };
@@ -58,10 +77,13 @@ if (args[0] === "design-pair") {
   console.log(JSON.stringify({ order, basis, comparison, shots: { a: a.shotPng ?? null, b: b.shotPng ?? null } }, null, 2));
   process.exit(0);
 }
-if (!args.length) { console.error("usage: npx tsx scripts/lp-design-eval.ts <url> [<url-b>] [--json]"); process.exit(1); }
-const a = await measure(args[0]!);
-if (args[1]) {
-  const result = compareDesigns(a.measurements, (await measure(args[1])).measurements);
+if (!flagArgs.length) { console.error("usage: npx tsx scripts/lp-design-eval.ts <url> [<url-b>] [--json] [--save <case-file>] [--case <case-file>]"); process.exit(1); }
+const a = await measure(flagArgs[0]!);
+// --save <file>: pin this measurement set as a case (id, suite version, sha256 of its bytes).
+const saveFile = flagValue("--save");
+if (saveFile) writeFileSync(saveFile, writeDesignCase({ id: flagArgs[0]!, measurements: a.measurements }));
+if (flagArgs[1]) {
+  const result = compareDesigns(a.measurements, (await measure(flagArgs[1])).measurements);
   console.log(JSON.stringify(result, null, 2));
 } else {
   const result = designScore(a.measurements);

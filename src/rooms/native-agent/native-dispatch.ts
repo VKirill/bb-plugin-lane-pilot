@@ -220,7 +220,7 @@ export async function handleNativeDispatch(
     if (!tokens.length && !bound && !inherited) {
       traceNativeDispatch(bb.log, "dispatch.skip", { ...base, reason: "no_token_or_bound" });
       // An ordinary chat in a folder where a Lane Pilot run merges: remembered, and told once to commit as it goes.
-      void bestEffort(bb.log, "checkout guest note", noteCheckoutGuest(bb, db, ctx.thread.id, ctx.environment?.path ?? projectCheckoutIntentPath(ctx.environmentIntent)), undefined);
+      void bestEffort(bb.log, "checkout guest note", noteCheckoutGuest(bb, db, ctx.thread.id, ctx.environment?.path ?? projectCheckoutIntentPath(ctx.environmentIntent), { providerId: ctx.requestedExecution.providerId }), undefined);
       return { action: "proceed" };
     }
     // Another model chosen in the composer turns the profile off for this message instead of refusing it (owner 2026-11-08: a chat

@@ -216,7 +216,7 @@ describe("window parity d6", () => {
     expect(hits[0]).toMatchObject({ kind: "screen", id: "money" });
     const withPhases = searchCockpit("фаза 3", { phases: [{ id: "ph1", title: "фаза 3: окно" }] });
     expect(withPhases[0]).toMatchObject({ kind: "phase", id: "ph1" });
-    expect(searchCockpit("")).toHaveLength(13);
+    expect(searchCockpit("")).toHaveLength(14);
     expect(searchCockpit("")[0]!.kind).toBe("screen");
   });
 

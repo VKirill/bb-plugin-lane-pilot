@@ -14,6 +14,7 @@ import { FAILED_ATTEMPT_STATES } from "../../contracts";
 import { finalizeNativeLaneBinding, nativeRunReady, ownedNativePmRun, writerWorkspaceForPmInstructions } from "../../native-agent";
 import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../../native-agent";
 import { readGateReport } from "../../tasks/gate-report";
+import { historySearch } from "../../memory-tiers/server";
 import { mountHandoff } from "../../relay/server";
 import { mountInsights } from "../../self-repair/server";
 import { mountHealth } from "../../stability/server";
@@ -375,7 +376,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
     description:"Start the `lp.browser-qa` graph on an accepted task: a child thread drives the BB browser on the project's Browser QA machine (the Mac mini) and returns a verdict per case and viewport.",
     instructions:"A task that carries qa_cases and qa_url gets this check from its own graph right after acceptance, so do not call it for such a task. Use it by hand only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. runId is this PM thread's Lane Pilot run id (lprun_…; the dispatch and wait receipts carry it) and taskId the accepted task's id. envClass says what the URL is: local (localhost or a dev server), staging, preview (a per-branch deploy), production (a live site) or unknown; production and unknown need authorized=true. The check runs in a child thread that opens the BB browser on the Browser QA machine (the Mac mini), even when this chat runs elsewhere; a localhost target on another machine is opened at that machine's private VPN address. When the target is a dev server that is not running, pass its start command in devServer (e.g. npm -w @app/web run dev -- --port 5173): the check starts it in a BB terminal of its thread and closes it afterwards. Supply concrete browser-ui cases and the exact target URL; viewports are CSS widths (default 375,768,1280). Production, unknown, or stateful side-effect cases require authorized=true. Authorization follows the owner's goal, as in your instructions. A case that needs a sign-in starts with `login: NAME` (an Env Catalog entry of kind login that the owner allowed in the setting secrets.allow): the check thread then reads only that login. If the login is missing or not allowed, nothing starts and the answer says what to do (env_request for a missing one); call again afterwards. Show the owner the returned @thread link. A verdict is passed only when every case passed on every viewport.",
     parameters:z.object({
-      runId:z.string().min(1), taskId:z.string().min(1), url:z.string().url(),
+      runId:z.string().min(1), taskId:z.string().min(1), url:z.string().url().optional(),
       cases:z.array(z.string().min(1).max(2000)).min(1).max(30),
       envClass:z.enum(["local","staging","preview","production","unknown"]),
       viewports:z.string().regex(/^\d{2,4}(,\d{2,4}){0,2}$/).default("375,768,1280"),
@@ -415,6 +416,14 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
     instructions:"Use only from the matching active Lane Pilot PM thread. The configured audience is enforced exactly: subagent records are automatically injected only into future writer prompts, owner/export records are available here only to the PM. Treat returned memory as contextual evidence and validate against current project state. When the packet says nothingRelevant, memory holds nothing on that query: do not assume a project fact, read the code or ask the owner.",
     parameters:z.object({runId:z.string().min(1),query:z.string().min(1).max(4000)}).strict(),
     execute:async(params,context)=>JSON.stringify(await services.runMemoryContext({threadId:context.threadId,projectId:context.projectId,runId:params.runId,query:params.query}),null,2),
+  });
+
+  registerObservedTool(bb.agents, {
+    name:"lane_pilot_memory_history",
+    description:"Search the project's history — journal tasks, execution outcomes, message transcripts, learned lessons and the work books — every fragment masked for credentials and clipped.",
+    instructions:"Use only from the matching active Lane Pilot PM thread. Returns fragments labeled by source (tasks, execution, transcripts, lessons, books); cite a transcript by its id. Optional `source` limits the search to one book.",
+    parameters:z.object({query:z.string().min(1).max(2000),source:z.enum(["tasks","execution","transcripts","lessons","books"]).optional()}).strict(),
+    execute:async(params,context)=>JSON.stringify({fragments:historySearch(db,context.projectId,params.query,{sources:params.source?[params.source]:undefined})},null,2),
   });
 
   registerObservedTool(bb.agents, {

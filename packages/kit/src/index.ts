@@ -2,6 +2,7 @@ export * from "./hash";
 export * from "./best-effort";
 export * from "./miss";
 export * from "./redact";
+export * from "./secret-files";
 export * from "./spawn-async";
 export * from "./output-capture";
 export * from "./output-excerpt";

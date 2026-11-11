@@ -161,7 +161,7 @@ export function registerPhaseTool(ctx: ServerCore, services: Services): void {
             return json(summary(await api.word({ phaseId: input.phaseId, turn: input.turn, decision: input.decision, text: input.text, wave: input.wave, useful: input.useful, limits: input.limits, key: input.key, by: "owner via pm" })));
           }
           case "wave_review": return json(summary(api.waveReview({ phaseId: input.phaseId, wave: input.wave, state: input.state, by: input.by, summary: input.summary })));
-          case "withdraw": return json(summary(api.withdraw({ phaseId: input.phaseId, pieces: input.pieces, note: input.note, by: "pm" })));
+          case "withdraw": { const withdrawn = api.withdraw({ phaseId: input.phaseId, pieces: input.pieces, note: input.note, by: "pm" }); return json({ ...summary(withdrawn), notice: withdrawn.notice }); }
           case "revise": return json(summary(api.revise({ phaseId: input.phaseId, goal: input.goal, note: input.note, by: "pm" })));
           case "correct": { const out = await api.correct({ phaseId: input.phaseId, note: input.note, pieces: input.pieces }); return json({ ...summary(out.phase), sent: out.sent }); }
           case "return": return json(summary(api.returnTo({ phaseId: input.phaseId, to: input.to, note: input.note, by: "pm" })));

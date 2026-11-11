@@ -10,6 +10,9 @@ import { cadenceAllowsToday, codeDocsVerdict, docsCadence, docsFactsKey, docsWor
 import type { DocsCadence, DocsVerdict, DocsWorthinessFacts } from "../docs-worthiness";
 import { blockingDocsFindings, buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDesignCanon, isDocsIndex, lintCitationClaims, lintDocsPages, oversizedPageFindings, pagesToRefresh, uncataloguedPages, withCitedSources, withVerifiedConfidence } from "../docs-lint";
 import {graphStepMetadata, modelCatalogOf, resolveSpawnModel, spawnUsageOf} from "../../platform/server";
+import {codeFactsOnHost, CODE_FACTS_REFRESH} from "../../platform";
+import {runOnHost} from "@lane-pilot/host-calls";
+import {effectiveGroup, parseHelperContextSettings} from "../../contracts";
 import { configuredSetting } from "../../contracts/server";
 import {fullAccessSpawn} from "../../platform/server";
 import { withUsage } from "../../usage/server";
@@ -283,6 +286,20 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
           if(!place.path.startsWith("/")){
             results.push({projectId:project.id,path:place.path,hostId:place.hostId,state:"skipped",reason:"unsupported_workspace_path"});
             continue;
+          }
+          // docs.gitnexus_refresh=on: the night's pass also keeps the project's GitNexus code index warm — a checkout
+          // without one or behind HEAD gets one `gitnexus analyze` on its own machine. Only where the project's
+          // writer role may use gitnexus tools at all; unset: nothing runs.
+          if(configuredSetting(settings,"docs.gitnexus_refresh")==="on"){
+            const helperCtx=parseHelperContextSettings(settings);
+            const gitnexusAllowed=!helperCtx.ok?false:helperCtx.settings.mode!=="roles"
+              ||(effectiveGroup("writer","mcpServers",helperCtx.settings.roleAccess?.writer).names??["gitnexus"]).includes("gitnexus");
+            if(gitnexusAllowed){
+              const facts=await bestEffort(bb.log,`docs gitnexus facts ${place.path}`,codeFactsOnHost(host,place.hostId,place.path),null);
+              if(facts&&facts.state!=="fresh"){
+                await bestEffort(bb.log,`docs gitnexus refresh ${place.path}`,runOnHost(host,{hostId:place.hostId,cwd:place.path,command:CODE_FACTS_REFRESH,timeoutSec:1800,timeoutMs:1_900_000}),null);
+              }
+            }
           }
           const baseKey=`docs-base:${place.hostId}:${sha256(place.path).slice(0,12)}`;
           const storedBase=await bb.storage.kv.get(baseKey) as {head?:string}|null;

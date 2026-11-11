@@ -426,7 +426,8 @@ export default async function plugin(bb: BbPluginApi) {
     createPhaseDriver(ctx, services, createPhaseReactions(ctx.db, ctx.bb)),
     { phaseCards: ((input: { projectId: string | null; doneSince: number; onError?: (message: string) => void }) => phaseBoardCards(ctx.db, input)) satisfies PhaseBoardCards },
     createMoney(ctx),
-    createFront(ctx),
+    // The peers' board is BB's live usage figure (same source as the Money screen's accounts); the statusline file it used to read is dead.
+    createFront(ctx, { board: (hostId) => services.providerUsage.windows({ providerId: "claude-code", hostId }) }),
     createCapabilities(ctx, services),
     createBacklog(ctx),
     createHypotheses(ctx, services),

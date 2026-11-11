@@ -4,6 +4,7 @@ import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { bestEffort, sha256Hex } from "@lane-pilot/kit";
 import { hostContract } from "../../contracts";
+import { renameRetry } from "../../platform";
 import { casWriteWorkflowFile } from "../../storage";
 
 export const listDocsPages: ExperimentalHostRpcHandlers<typeof hostContract>["listDocsPages"] = async (input) => {
@@ -167,7 +168,7 @@ async function casWriteMarkdown(input:MarkdownWrite, maxTotalBytes:number, inSco
         writes.push({path:target.path,beforeSha256:latestHash,afterSha256:latestHash,status:"conflict",reason:"target changed before atomic replacement"});
         return {hostId:process.env.BB_HOST_ID??input.requestedHostId,previewSha256:input.previewSha256,status:writes.length===1?"conflict":"blocked",writes,reason:"onboarding compare-and-swap changed during apply"};
       }
-      await rename(tempPath,target.fullPath);tempPath=undefined;
+      await renameRetry(tempPath,target.fullPath);tempPath=undefined;
       const afterSha256=sha256Hex(await readFile(target.fullPath));
       if(afterSha256!==sha256Hex(bytes)) throw new Error("onboarding atomic-write readback hash mismatch");
       writes.push({path:target.path,beforeSha256:target.expectedSha256,afterSha256,status:"applied",reason:null});

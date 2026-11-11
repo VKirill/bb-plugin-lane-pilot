@@ -8,6 +8,7 @@ export { anamnesisHandler } from "./host";
 export { scrubQuote, sensitiveReason, unsafeReason } from "./model";
 export { TURN_REQUESTED, isOwnerThread, ownerMessagesOf, collectOwnerMessages, scanOwnerMessages, sdkThreadsPort } from "./owner-messages";
 export type { EventLike, OwnerMessage, OwnerMessageConsumer, OwnerMessageHub, OwnerMessageMeta, ThreadLike } from "./owner-messages";
+export { PROFILE_KEYS, PROFILE_VALUE_MAX, profilePairProblem, secretKeyName } from "./profile";
 export { maskPii } from "./pii";
 export { anamnesisFor, mountAnamnesis } from "./wiring";
 export { fragmentJudgment, matchJudgment } from "./judgment";

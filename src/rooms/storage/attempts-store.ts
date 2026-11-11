@@ -1468,3 +1468,35 @@ export function listAcceptedAttemptsSince(db: LanePilotDatabase, projectId: stri
       AND a.attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id AND b.state='accepted')
     ORDER BY a.created_at`).all(projectId, sinceMs) as Array<{ runId: string; taskId: string; attemptId: string; createdAt: number }>;
 }
+
+/** The key of a task's throwaway codex home (helper-bb-shim's workerHome and the janitor's removal share it); null for a key the host refuses: empty or starting with a dot. */
+export function workerHomeKey(id: string): string | null {
+  const key = id.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120);
+  return key === "" || key.startsWith(".") ? null : key;
+}
+
+/**
+ * Tasks the codex-home sweep may clear (SMA m_ac_codex_home): the NEWEST attempt of the task is final (accepted|blocked|canceled) and ended at
+ * least `quietMs` ago (a day: longer than the worktree grace and the sticky window, inside which the writer's thread may be resumed with its home), and no attempt of any run with that task id is open — a re-queued task that runs now keeps its home. Newest first.
+ * Each row carries the project, and the keys the task's homes may sit under: its id (the key the worker home is made under) and its attempt ids.
+ */
+export function finalTaskIdsSince(db: LanePilotDatabase, since: number, limit = 300, now = Date.now(), quietMs = 24 * 3_600_000): Array<{ taskId: string; projectId: string; keys: string[] }> {
+  const open = OPEN_ATTEMPT_STATES.map((state) => `'${state}'`).join(",");
+  const rows = db.prepare(`SELECT a.task_id AS taskId, r.project_id AS projectId, MAX(a.updated_at) AS endedAt FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+      WHERE a.state IN ('accepted','blocked','canceled') AND a.updated_at >= ? AND a.updated_at <= ?
+        AND a.attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)
+        AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt o WHERE o.task_id=a.task_id AND o.state IN (${open}))
+      GROUP BY a.task_id, r.project_id ORDER BY endedAt DESC LIMIT ?`).all(since, now - quietMs, limit) as Array<{ taskId: string; projectId: string }>;
+  return rows.map((row) => {
+    const attempts = (db.prepare("SELECT id FROM lane_pilot_attempt WHERE task_id=?").all(row.taskId) as Array<{ id: string }>).map((attempt) => attempt.id);
+    const keys = [row.taskId, ...attempts].map(workerHomeKey).filter((key): key is string => key !== null);
+    return { taskId: row.taskId, projectId: row.projectId, keys: [...new Set(keys)] };
+  });
+}
+
+/** A project's attempt outcome texts for the history search (the execution book), newest first. */
+export function listProjectAttemptReasons(db: LanePilotDatabase, projectId: string, limit = 400): Array<{ taskId: string; state: string; reason: string | null; at: number }> {
+  return db.prepare(`SELECT a.task_id AS taskId, a.state, a.reason, a.updated_at AS at FROM lane_pilot_attempt a
+    JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.project_id=? AND a.reason IS NOT NULL ORDER BY a.updated_at DESC LIMIT ?`)
+    .all(projectId, limit) as Array<{ taskId: string; state: string; reason: string | null; at: number }>;
+}

@@ -1,4 +1,4 @@
-import { taskV2Schema } from "../../contracts";
+import { QA_DEFAULT_PORTS, taskV2Schema } from "../../contracts";
 import { claimStageSpawn, countAttempts, recordSecretIssuance, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings, staleStageReceipts } from "../../storage";
 import { QA_HOST_KEY, QA_WORKSPACE_KEY } from "@lane-pilot/settings-catalog";
 import { qaCodexPreflight, qaHostUnreachableReason, resolveBrowserQaTarget, resolveStaleBrowserQaReceipt } from "../qa-host";
@@ -47,7 +47,7 @@ export function createQaStages(ctx: ServerCore) {
     const reasoningSetting = configuredSetting(settings,"browser_qa.reasoning_effort");
     const configuredReasoningValue = typeof reasoningSetting === "string" ? reasoningSetting.trim() : "";
     const configuredReasoning = configuredReasoningValue && configuredReasoningValue !== "provider-specific" ? configuredReasoningValue : undefined;
-    const requestInput = {url:args.url,cases:args.cases,envClass:args.envClass,viewports:args.viewports,authorized:args.authorized};
+    const requestInput = {url:args.url || null,cases:args.cases,envClass:args.envClass,viewports:args.viewports,authorized:args.authorized};
     const backendValue = configuredSetting(settings,"browser_qa.backend");
     const backend = backendValue == null || backendValue === "bb-browser" ? "bb-browser"
       : backendValue === "chrome-qa" || backendValue === "live-chrome" || backendValue === "headless" ? backendValue : null;
@@ -156,6 +156,26 @@ export function createQaStages(ctx: ServerCore) {
       recordStage(db,{...base,state:"blocked",reason});
       return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
     }
+    if (!args.url) {
+      // Find the app (SMA k_wqa_find): no address given, so the QA host's default dev ports are scanned. The hub never starts a
+      // server: with nothing running and a devServer given, the check thread starts it in its own terminal and finds the port.
+      const found = (await bestEffort(ctx.log, `browser qa target scan ${qaTarget.hostId}`, host.call("findBrowserQaTarget", { requestedHostId:qaTarget.hostId }, { hostId:qaTarget.hostId, timeoutMs:30_000 }), null))?.urls ?? [];
+      if (found.length > 1) {
+        const reason = `browser_qa_ambiguous_app:${found.join(" ")} all answer; pass url to say which one to check`;
+        recordStage(db,{...base,state:"blocked",reason});
+        return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
+      }
+      if (found.length === 1) {
+        // The app is already up: the check thread must not start a second copy.
+        args = {...args, url:found[0]!};
+        delete args.devServer;
+        base.input = JSON.stringify({...requestInput, url:found[0]});
+      } else if (!(args.devServer && threadQa)) {
+        const reason = `browser_qa_no_app_found:nothing answered on 127.0.0.1 ports ${QA_DEFAULT_PORTS.join(",")}`;
+        recordStage(db,{...base,state:"blocked",reason});
+        return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
+      }
+    }
     if (provider === "codex" && !threadQa) {
       try {
         const [qaProviders, qaCatalog] = await Promise.all([
@@ -231,7 +251,7 @@ export function createQaStages(ctx: ServerCore) {
             result:{...targetSnapshot,spawnAttempted:true,threadId,link:`@thread:${threadId}`,deadline,timeoutSec,...(logins.length ? { logins } : {})}}),
         });
         const state = verdict.verdict;
-        const snapshot = { ...targetSnapshot, url:args.url, backend:"bb-browser", agent, ...verdict };
+        const snapshot = { ...targetSnapshot, url:args.url || null, backend:"bb-browser", agent, ...verdict };
         const reason = state === "passed" ? undefined : verdict.summary || undefined;
         recordStage(db,{...dispatchedBase,state,result:snapshot,...(reason ? {reason} : {})});
         return {runId:args.runId,taskId:args.taskId,state,link:verdict.link,stage:listStageReceipts(db,args.runId,args.taskId).find((row) => row.stageId === "browser-qa"),result:snapshot,reason};

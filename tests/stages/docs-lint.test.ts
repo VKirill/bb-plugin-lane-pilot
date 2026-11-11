@@ -67,7 +67,7 @@ it("lists missing required pages and core code no citation covers", () => {
     { name:"runChecks", file:"src/check.ts", line:2, endLine:6 },
     { name:"parseArgv", file:"src/cli.ts", line:10, endLine:30 },
   ] });
-  expect(gaps).toEqual({ missingPages:["docs/architecture.md", "docs/gotchas.md", "docs/data-model.md"], uncoveredCore:["parseArgv (src/cli.ts:10-30)"] });
+  expect(gaps).toEqual({ missingPages:["docs/architecture.md", "docs/gotchas.md", "docs/conventions.md", "docs/testing.md", "docs/data-model.md"], uncoveredCore:["parseArgv (src/cli.ts:10-30)"] });
   expect(docsCompletenessGaps(pages, { tables:[], core:[] }).missingPages).not.toContain("docs/data-model.md");
 });
 

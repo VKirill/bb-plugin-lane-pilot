@@ -4,6 +4,7 @@
  * project's PM when it is `ready`, has an estimate of at most 13 points and every item it depends on is done; a ready item without an
  * estimate or above 13 is listed for the PM to estimate or split, never issued. Priority, then size, then age, gives the queue position.
  */
+import { planningText } from "../contracts";
 export type TodoMeta = { id: string; title: string; status: string; priority: string; estimate: number | null; dependsOn: string[]; created: string; ownsPaths?: string[] };
 export const MAX_ESTIMATE = 13;
 const PRIORITY: Record<string, number> = { high: 0, medium: 1, low: 2 };
@@ -77,9 +78,10 @@ export function backlogBoard(items: readonly TodoMeta[]): BacklogBoard {
 }
 
 /** The PM's message for one issued item. */
-export function issueMessage(item: TodoMeta): string {
+export function issueMessage(item: TodoMeta, planningHome?: string | null): string {
   return [`Lane Pilot: из беклога проекта готова к работе задача «${item.title}» (${item.id}, оценка ${item.estimate}, приоритет ${item.priority}).`,
-    `Описание и подход: .agents/todos/items/${item.id}/AGENT.md и README.md. Составь контракт и отправь писателю; в meta.yaml добавь run в related_runs.`].join("\n");
+    // With a planning home (project.planning_home) the items are there, not in the checkout: the PM gets the absolute folder.
+    planningText(`Описание и подход: .agents/todos/items/${item.id}/AGENT.md и README.md. Составь контракт и отправь писателю; в meta.yaml добавь run в related_runs.`, planningHome)].join("\n");
 }
 
 /** Significant word stems of a phrase (≥4 letters, first four characters as the stem). */

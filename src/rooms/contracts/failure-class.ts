@@ -100,7 +100,7 @@ const OWNER_DECISION = /^(?:verdict_block: question_unanswered: (?:product decis
 export const isOwnerDecision = (reason:string | null | undefined):boolean => OWNER_DECISION.test(reason ?? "");
 /** The task spent its overall writer-attempt budget (retry-budget.ts): ends for the PM, never parked or redriven. */
 const RETRY_BUDGET = /^retry_budget_exhausted:/;
-export const LIMIT = /capacity_saturated:|writer_provider_limit:|capability_unproven:|^writer_provider_unavailable:(breaker_open|usage_window|owner_present|core_unsupported|thread_not_started|launch_profile_mismatch|money_cap)/;
+export const LIMIT = /capacity_saturated:|writer_provider_limit:|capability_unproven:|^writer_provider_unavailable:(breaker_open|usage_window|owner_present|writer_off|core_unsupported|thread_not_started|launch_profile_mismatch|money_cap)/;
 /** The core could not start the writer's session (writer/server/finish.ts): the task never ran, so the attempt is free and the chain moves on. */
 export const THREAD_NOT_STARTED_REASON = "writer_provider_unavailable:thread_not_started";
 /** Every writer provider is in a spent usage window (writer.capacity_wait): the task parks and is rechecked, it is not a failure. */
@@ -265,6 +265,12 @@ export function failureFingerprint(reason:string | null | undefined, max = 120):
 
 /** One writer session's feedback turns: the cap, the wall-time cap, and what makes two turns the same. */
 export const SESSION_MAX_TURNS = 5;
+/** The stored writer.session_max_turns as a ceiling: 1-10; an empty, null, zero, negative or non-numeric value means the default (SESSION_MAX_TURNS), not 1. */
+export function effectiveTurnCap(stored: unknown): number {
+  const raw = typeof stored === "number" ? stored : typeof stored === "string" && stored.trim() !== "" ? Number(stored) : NaN;
+  return Number.isFinite(raw) && raw > 0 ? Math.max(1, Math.min(10, Math.round(raw))) : SESSION_MAX_TURNS;
+}
+
 export const SESSION_MAX_MS = 120 * 60_000;
 
 /**

@@ -29,7 +29,7 @@ export const PM_TOOL_FAMILIES = {
   },
   lane_pilot_memory: {
     summary: "Project memory and learning: search memory, routing statistics, repeated lessons, rule proposals, recording a lesson, what was learned from the owner's messages.",
-    actions: { context: "lane_pilot_memory_context", routing_stats: "lane_pilot_routing_stats", lessons_sweep: "lane_pilot_lessons_sweep", rule_propose: "lane_pilot_rule_propose", lesson: "lane_pilot_lesson", learned: "lane_pilot_learned" },
+    actions: { context: "lane_pilot_memory_context", history: "lane_pilot_memory_history", routing_stats: "lane_pilot_routing_stats", lessons_sweep: "lane_pilot_lessons_sweep", rule_propose: "lane_pilot_rule_propose", lesson: "lane_pilot_lesson", learned: "lane_pilot_learned" },
   },
   lane_pilot_regression: {
     summary: "Regression findings after acceptance: the open rows of your project (red check, culprit task, shared files, tasks that wait) and settle for a row whose culprit changed the files on purpose.",

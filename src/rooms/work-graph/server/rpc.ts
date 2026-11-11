@@ -3,7 +3,8 @@ import type { rpcContract } from "../../contracts";
 import { TURN_REQUESTED } from "../../anamnesis";
 import type { ServerCore } from "../../contracts/server";
 import { workGraphStats, workGraphStrips, workGraphTask, type TokenCursorReader } from "./report";
-import { getRun, listAttemptHistory } from "../../storage";
+import { getRun, listAttemptHistory, loadProjectSettings } from "../../storage";
+import { effectiveTurnCap } from "../../contracts";
 import { tailWords } from "../log-tail";
 
 /** BB pages thread events at 100 at most; a thread with more requested turns shows 100. */
@@ -28,7 +29,10 @@ export function workGraphRpc(ctx: Pick<ServerCore, "bb" | "db">, services: { tok
       const first = workGraphTask(db, { runId, taskId }, services.tokenCursorRow);
       const threads = [...new Set(first.stages.flatMap((stage) => stage.rows.flatMap((row) => (row.threadId ? [row.threadId] : []))))];
       const turns = await turnsOf(threads);
-      return workGraphTask(db, { runId, taskId }, services.tokenCursorRow, (threadId) => turns.get(threadId) ?? null);
+      const graph = workGraphTask(db, { runId, taskId }, services.tokenCursorRow, (threadId) => turns.get(threadId) ?? null);
+      // The ceiling the sticky retry applies to this project (writer.session_max_turns), so the turns line shows the real figure.
+      const projectId = getRun(db, runId)?.project_id;
+      return { ...graph, turnCeiling: effectiveTurnCap(projectId ? loadProjectSettings(db, projectId)["writer.session_max_turns"] : undefined) };
     },
     /** The attempt's last lines in words (SMA m_ws_attempt_log): the latest attempt's thread tail as short Russian lines. */
     attempt_log_tail: async ({ runId, taskId, projectId }) => {

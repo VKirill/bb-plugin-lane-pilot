@@ -560,7 +560,7 @@ export function installSteps(tools: StepsTools) {
 
   /** Sends the PM the one instruction the phase needs now, once per instruction key. */
   async function poke(phase: Phase & { pokedKey?: string | null }): Promise<void> {
-    const action = nextAction(phase, facts(phase));
+    const action = nextAction(phase, facts(phase), await tools.planningHome(phase));
     // Call about a waiting decision: a turn that needs the owner's word is also a row on «Ждут владельца» (and its Telegram digest).
     const wordTurn = action.key.match(/:word:([a-z]+)(?::(\d+))?(?::(?:v[\w-]+|[0-9a-f]+))?$/);
     if (wordTurn) reactions.postOwnerItem({ key: phaseWordItemKey(phase.id, wordTurn[1]!, wordTurn[2]), source: "phase", kind: "word", projectId: phase.projectId,

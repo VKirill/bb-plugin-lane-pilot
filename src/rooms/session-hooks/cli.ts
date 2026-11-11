@@ -8,7 +8,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 // node --experimental-strip-types resolves this file only with a .ts specifier.
 // @ts-expect-error TS5097
-import { buildCapsule, capsuleDetails, claimedPaths, claimedState, codeMapDrift, draftTarget, failOpen, foreignClaimAdvice, hookOutput, injectPack, ledgerAddAsk, ledgerAddCommand, ledgerAddFile, ledgerOf, pmSkillUseOf, pretaskDecision, progressRecord, promptRecall, protectionsOff, runStreams, sessionEndDraft, sessionStartText, stallObserve, subagentVerify, subagentVerifyText, treeVerifyText, type Capsule, type PmSkillUse, type SessionLedger, type ToolCtx } from "./logic.ts";
+import { buildCapsule, capsuleDetails, claimedPaths, claimedState, codeMapDrift, draftTarget, EDIT_TOOLS, failOpen, foreignClaimAdvice, hookOutput, injectPack, ledgerAddAsk, ledgerAddCommand, ledgerAddFile, ledgerOf, pmSkillUseOf, pretaskDecision, progressRecord, promptRecall, protectionsOff, runStreams, sessionEndDraft, sessionStartText, stallObserve, subagentVerify, subagentVerifyText, treeVerifyText, type Capsule, type PmSkillUse, type SessionLedger, type ToolCtx } from "./logic.ts";
+// @ts-expect-error TS5097
+import { appendTouch, buildCatalog, cardNotes, startCatalogBuild } from "../file-cards/index.ts";
 
 type Payload = Record<string, unknown>;
 
@@ -254,6 +256,8 @@ function handle(payload: Payload): void {
       codeMapBehind,
     });
     if (typeof payload.model === "string") writeFileSync(join(dir, "model.txt"), payload.model);
+    // A missing or stale file catalog is built in a detached background process; this hook returns at once (k_st_catalog).
+    if (cwd) startCatalogBuild(cwd, process.argv[1] ?? "");
     emit(hookOutput(event, text));
     return;
   }
@@ -329,6 +333,8 @@ function handle(payload: Payload): void {
     const ctx: ToolCtx = {
       tool: name, sid: session, cwd, command: String(input.command ?? ""), path: String(input.file_path ?? input.path ?? ""),
       denials: {}, lessons,
+      // A cataloged file card becomes the knowledge stream's note for this edit (k_st_catalog).
+      notes: cwd && EDIT_TOOLS.has(name.toLowerCase()) ? cardNotes(cwd, String(input.file_path ?? input.path ?? "")) : [],
     };
     // The terminal claim book (SMA m_rd_coord_ledger): this edit is claimed, and another live session's claim
     // on the same path is said — advice only, never a block.
@@ -351,6 +357,12 @@ function handle(payload: Payload): void {
   if (event === "PostToolUse") {
     const pmSkill = pmSkillUseOf(toolName(payload), toolInput(payload), process.env);
     if (pmSkill) reportPmSkill(pmSkill);
+    // The touch journal of the catalog: one line per edit tool call, only where a catalog exists; its own try so the stall bookkeeping below always runs.
+    try {
+      const tool = toolName(payload).toLowerCase();
+      const touched = String(toolInput(payload).file_path ?? toolInput(payload).path ?? "");
+      if (cwd && touched && EDIT_TOOLS.has(tool)) appendTouch(cwd, { at: Date.now(), tool, path: touched });
+    } catch { /* a lost touch line never costs the session anything */ }
     // stall.json stays the counts map; the trail (last calls, read-only run, nudged patterns) is its own file beside it.
     const trail = readJson<Record<string, unknown>>(join(dir, "stall-trail.json"), {});
     const observed = stallObserve({ counts: readJson<Record<string, number>>(join(dir, "stall.json"), {}), recent: trail.recent, readRun: trail.readRun, nudged: trail.nudged } as never, toolName(payload), toolInput(payload), payload.tool_response ?? payload.toolResponse);
@@ -424,6 +436,11 @@ function handle(payload: Payload): void {
   if (event === "Stop") return;
 }
 
+// `<hook file> catalog-build <cwd>`: the detached background build a session start asked for; no stdin, no output.
+if (process.argv[2] === "catalog-build" && process.argv[3]) {
+  failOpen(() => { buildCatalog(process.argv[3]!); });
+  process.exit(0);
+}
 failOpen(() => {
   const raw = readStdin().trim();
   const payload = raw ? JSON.parse(raw) as Payload : {};

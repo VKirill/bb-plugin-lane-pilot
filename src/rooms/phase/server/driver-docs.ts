@@ -1,6 +1,6 @@
-import { getRun, getRunWriterHost, getTask, listRunAttemptStates, listStageReceipts, listTaskIdsForRun } from "../../storage";
+import { getRun, getRunWriterHost, getTask, listAttemptsForTask, listRunAttemptStates, listStageReceipts, listTaskIdsForRun, planningHomeInputs } from "../../storage";
 import { taskFamily } from "@lane-pilot/contracts";
-import { hostContract } from "../../contracts";
+import { confirmedPlanningHome, hostContract, isPlanningPath, resolvePlanningHome } from "../../contracts";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { binaryFileCommand, binaryFileFingerprint } from "../stages";
 import { appendPart, getPhase, listParts, savePhase as savePhaseRow } from "../store";
@@ -86,8 +86,9 @@ export function installDocs(base: DriverBase) {
   }
 
   /** SPEC.md / PLAN.md / VERIFICATION.md (docFiles only): the file is the command's while it is absent, or still carries the
-   *  generated marker and the sha the record kept from the last write. Otherwise the new text goes to `<name>.new.md` and the
-   *  book says so. Unchanged text writes nothing (so commits nothing). */
+   *  generated marker and the sha the record kept from the last write. A file the command once wrote and a person then changed
+   *  keeps its text: the new text goes to `<name>.new.md` and the book says so. A file the command never wrote is left alone and
+   *  committed. Unchanged text writes nothing (so commits nothing). */
   async function writeGenerated(phase: Phase, path: string, body: string, message: string): Promise<void> {
     const content = `${GENERATED}\n${body}`;
     const got = await readDoc(phase, path);
@@ -97,6 +98,9 @@ export function installDocs(base: DriverBase) {
       if (got.text === content) return;
       const mine = got.text.includes(GENERATED) && mustGet(phase.id).record.docShas?.[path] === sha256Hex(got.text);
       if (!mine) {
+        // A file the command never wrote is the stage's own agent's (the planner writes PLAN.md itself) or a person's: it stays as it
+        // is and is only committed. Found on a live phase: every phase got a PLAN.new.md beside the planner's own PLAN.md.
+        if (mustGet(phase.id).record.docShas?.[path] === undefined) { await commitFiles(phase, [path], message); return; }
         target = path.replace(/\.md$/, ".new.md");
         const aside = await readDoc(phase, target);
         if (aside.kind === "failed" || (aside.kind === "ok" && (aside.truncated || !aside.text.includes(GENERATED)))) {
@@ -114,8 +118,28 @@ export function installDocs(base: DriverBase) {
     if (target !== path && done.written.includes(target)) book(phase, "decisions", "note", `${path.split("/").at(-1)} already exists and was changed by hand (or is not the command's): the new text is in ${target.split("/").at(-1)} next to it`);
   }
 
+  /** The planning home (SMA d_project_planning): `project.planning_home` moves `.agents/*` off the checkout onto its own
+   *  folder on the same host, checked once on that host; unset (or refused), every read and write is exactly where it was.
+   *  Only planning paths go there — a path outside `.agents/phases|planning|todos|plans` stays in the tree. */
+  async function planningHome(phase: Phase, path?: string): Promise<string | null> {
+    if (path !== undefined && !isPlanningPath(path)) return null;
+    const run = phase.runId ? getRun(db, phase.runId) : null;
+    return resolvePlanningHome({ host: bb.hosts.experimental_client({ contract: hostContract }), hostId: phase.runId ? getRunWriterHost(db, phase.runId) : null, cwd: run?.writer_workspace_path, inputs: planningHomeInputs(db, phase.projectId), log: bb.log });
+  }
+
+  /** The home as already confirmed (no host call), for the texts of the sync status; a call of `planningHome` confirms it first. */
+  function knownHome(phase: Phase): string | null {
+    return confirmedPlanningHome(phase.runId ? getRunWriterHost(db, phase.runId) : null, planningHomeInputs(db, phase.projectId));
+  }
+
   /** A file of the project as the PM's run sees it (its frozen writer workspace), for the signature of a stage's documents. */
   async function readFile(phase: Phase, path: string): Promise<{ sha256: string; sizeBytes: number }> {
+    const home = await planningHome(phase, path);
+    const hostId = home && phase.runId ? getRunWriterHost(db, phase.runId) : null;
+    if (home && hostId) {
+      const file = await bb.hosts.experimental_client({ contract: hostContract }).call("readBoundedFile", { requestedHostId: hostId, projectCwd: home, relativePath: path, offset: 0, maxLines: 2000 }, { hostId, timeoutMs: 30_000 });
+      return { sha256: file.sha256, sizeBytes: file.sizeBytes };
+    }
     try {
       return await services.readWriterWorkspaceFile({ threadId: phase.pmThreadId, projectId: phase.projectId, path, offset: 0, maxLines: 2000 }) as { sha256: string; sizeBytes: number };
     } catch (cause) {
@@ -133,13 +157,24 @@ export function installDocs(base: DriverBase) {
     const run = phase.runId ? getRun(db, phase.runId) : null;
     const hostId = phase.runId ? getRunWriterHost(db, phase.runId) : null;
     if (!command || !run?.writer_workspace_path || !hostId) return null;
-    const ran = await bestEffort(bb.log, "phase binary fingerprint", runOnHost(bb.hosts.experimental_client({ contract: hostContract }), { hostId, cwd: run.writer_workspace_path, command, timeoutSec: 30 }), null);
+    const ran = await bestEffort(bb.log, "phase binary fingerprint", runOnHost(bb.hosts.experimental_client({ contract: hostContract }), { hostId, cwd: (await planningHome(phase, path)) ?? run.writer_workspace_path, command, timeoutSec: 30 }), null);
     return ran && ran.exitCode === 0 ? binaryFileFingerprint(ran.stdout) : null;
   }
 
   type DocRead = { kind: "ok"; text: string; truncated: boolean } | { kind: "absent" } | { kind: "failed"; why: string };
   /** A project file as the PM's run sees it, told apart: there, not there, or unreadable (a longer file comes back cut: `truncated`). */
   async function readDoc(phase: Phase, path: string): Promise<DocRead> {
+    const home = await planningHome(phase, path);
+    const hostId = home && phase.runId ? getRunWriterHost(db, phase.runId) : null;
+    if (home && hostId) {
+      try {
+        const file = await bb.hosts.experimental_client({ contract: hostContract }).call("readBoundedFile", { requestedHostId: hostId, projectCwd: home, relativePath: path, offset: 0, maxLines: 2000 }, { hostId, timeoutMs: 30_000 }) as { content: string; truncated: boolean };
+        return { kind: "ok", text: file.content, truncated: file.truncated === true };
+      } catch (cause) {
+        const why = cause instanceof Error ? cause.message : String(cause);
+        return /ENOENT|no such file|not found|does not exist/i.test(why) ? { kind: "absent" } : { kind: "failed", why };
+      }
+    }
     try {
       const file = await services.readWriterWorkspaceFile({ threadId: phase.pmThreadId, projectId: phase.projectId, path, offset: 0, maxLines: 2000 }) as { content?: string; truncated?: boolean };
       return typeof file.content === "string" ? { kind: "ok", text: file.content, truncated: file.truncated === true } : { kind: "failed", why: "the read returned no text" };
@@ -171,15 +206,25 @@ export function installDocs(base: DriverBase) {
       edits.push({ path: file.path, expectedSha256: current === null ? null : sha256Hex(current), content: file.content });
     }
     const host = bb.hosts.experimental_client({ contract: hostContract });
-    const result = await host.call("writePhaseBook", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId, timeoutMs: 30_000 });
-    const applied = result.writes.filter((row) => row.status === "applied");
-    const written = applied.map((row) => row.path);
-    const shas = Object.fromEntries(applied.filter((row) => typeof row.afterSha256 === "string").map((row) => [row.path, row.afterSha256 as string]));
-    if (!written.length) return { written, commit: null, shas };
-    // SMA k_wp_commit: the commit happens only where the project allows committing docs (phase.commit_docs, on by default).
-    if (phase.record.commitDocs === false) return { written, commit: null, shas };
-    const committed = await bestEffort(bb.log, "phase docs commit", host.call("gitCommitDocs", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, paths: written, message }, { hostId, timeoutMs: 60_000 }), null);
-    return { written, commit: committed?.commit ?? null, shas };
+    // With a planning home the planning files go to the home's repository and the rest of a mixed batch stays in the checkout: each
+    // folder gets its own write and its own commit, scoped to the files written there.
+    const home = await planningHome(phase);
+    const byRoot = new Map<string, typeof edits>();
+    for (const edit of edits) { const root = home && isPlanningPath(edit.path) ? home : run.writer_workspace_path; byRoot.set(root, [...(byRoot.get(root) ?? []), edit]); }
+    const written: string[] = [], shas: Record<string, string> = {};
+    let commit: string | null = null;
+    for (const [cwd, group] of byRoot) {
+      const result = await host.call("writePhaseBook", { requestedHostId: hostId, projectCwd: cwd, previewSha256: sha256Hex(JSON.stringify(group)), edits: group }, { hostId, timeoutMs: 30_000 });
+      const applied = result.writes.filter((row) => row.status === "applied");
+      const here = applied.map((row) => row.path);
+      written.push(...here);
+      Object.assign(shas, Object.fromEntries(applied.filter((row) => typeof row.afterSha256 === "string").map((row) => [row.path, row.afterSha256 as string])));
+      // SMA k_wp_commit: the commit happens only where the project allows committing docs (phase.commit_docs, on by default).
+      if (!here.length || phase.record.commitDocs === false) continue;
+      const committed = await bestEffort(bb.log, "phase docs commit", host.call("gitCommitDocs", { requestedHostId: hostId, projectCwd: cwd, paths: here, message }, { hostId, timeoutMs: 60_000 }), null);
+      commit = committed?.commit ?? commit;
+    }
+    return { written, commit, shas };
   }
 
   /** Commits files that already exist in the project (the designer's drawing and its contract), by their explicit paths (SMA k_wd_c1). */
@@ -189,8 +234,15 @@ export function installDocs(base: DriverBase) {
     const hostId = getRunWriterHost(db, phase.runId);
     if (!run?.writer_workspace_path || !hostId) return { commit: null };
     const host = bb.hosts.experimental_client({ contract: hostContract });
-    const committed = await bestEffort(bb.log, "phase manifest commit", host.call("gitCommitDocs", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, paths: paths.slice(0, 40), message }, { hostId, timeoutMs: 60_000 }), null);
-    return { commit: committed?.commit ?? null };
+    const home = await planningHome(phase);
+    const byRoot = new Map<string, string[]>();
+    for (const path of paths.slice(0, 40)) { const root = home && isPlanningPath(path) ? home : run.writer_workspace_path; byRoot.set(root, [...(byRoot.get(root) ?? []), path]); }
+    let commit: string | null = null;
+    for (const [cwd, group] of byRoot) {
+      const committed = await bestEffort(bb.log, "phase manifest commit", host.call("gitCommitDocs", { requestedHostId: hostId, projectCwd: cwd, paths: group, message }, { hostId, timeoutMs: 60_000 }), null);
+      commit = committed?.commit ?? commit;
+    }
+    return { commit };
   }
 
   /** The pause handoff (SMA k_c_pause): HANDOFF.json for the machine and PAUSE.md for the person, committed best-effort. */
@@ -198,7 +250,7 @@ export function installDocs(base: DriverBase) {
     if (phase.state !== "paused" || !phase.runId) return;
     const parts = listParts(db, phase.id);
     const last = parts.at(-1);
-    const next = nextAction(phase, facts(phase));
+    const next = nextAction(phase, facts(phase), await planningHome(phase));
     const issued = phase.record.execution?.issued ?? {};
     const f = facts(phase);
     const pieces = (phase.record.plan?.items ?? []).map((item) => ({ id: item.id, taskId: issued[item.id] ?? f.get(item.id)?.taskId ?? null, state: f.get(item.id)?.state ?? "not issued" }));
@@ -240,7 +292,7 @@ export function installDocs(base: DriverBase) {
     const content = renderBook(phase, parts);
     const edits = [{ path, expectedSha256: phase.record.bookWritten?.sha256 ?? null, content }];
     const host = bb.hosts.experimental_client({ contract: hostContract });
-    const result = await host.call("writePhaseBook", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId, timeoutMs: 30_000 });
+    const result = await host.call("writePhaseBook", { requestedHostId: hostId, projectCwd: (await planningHome(phase, path)) ?? run.writer_workspace_path, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId, timeoutMs: 30_000 });
     const written = result?.writes?.find((row) => row.path === path);
     if (result.status === "applied" && written?.afterSha256) savePhaseRow(db, phase.id, { record: { ...phase.record, bookWritten: { seq: last.seq, sha256: written.afterSha256, at: now() } }, at: now() });
     else if (result.status === "conflict") savePhaseRow(db, phase.id, { record: { ...phase.record, bookWritten: { seq: last.seq, sha256: written?.beforeSha256 ?? "", at: now() } }, at: now() });
@@ -261,7 +313,8 @@ export function installDocs(base: DriverBase) {
       const latestTask = mine.at(-1)?.task_id ?? taskId;
       const stage = (id: string) => (receipts.find((row) => row.task_id === latestTask && row.stage_id === id)?.state ?? null) as never;
       const contract = getTask(db, latestTask)?.contract as { qa_cases?: unknown[] } | undefined;
-      out.set(pieceId, { taskId: latestTask, state: mine.at(-1)?.state ?? null, planFact: stage("plan-fact"), verification: stage("verification"), codeCritique: stage("code-critique"), browserQa: stage("browser-qa"),
+      const attemptId = listAttemptsForTask(db, phase.runId, latestTask).at(-1)?.id ?? null;
+      out.set(pieceId, { taskId: latestTask, attemptId, state: mine.at(-1)?.state ?? null, planFact: stage("plan-fact"), verification: stage("verification"), codeCritique: stage("code-critique"), browserQa: stage("browser-qa"),
         qaPlanned: Array.isArray(contract?.qa_cases) && contract.qa_cases.length > 0 });
     }
     return out;
@@ -294,5 +347,5 @@ export function installDocs(base: DriverBase) {
     return hostId ? createCandidates(bb.hosts.experimental_client({ contract: hostContract }) as never, hostId, bb.log) : null;
   }
 
-  return { mustGet, savePhase, book, move, facts, readFile, readText, readDoc, writeStateBlock, writeGenerated, writeDocs, commitFiles, pauseHandoff, writeBook, redoId, pmCheckoutPath, candidates, drawingSha, markState, stateDone };
+  return { mustGet, savePhase, book, move, facts, planningHome, knownHome, readFile, readText, readDoc, writeStateBlock, writeGenerated, writeDocs, commitFiles, pauseHandoff, writeBook, redoId, pmCheckoutPath, candidates, drawingSha, markState, stateDone };
 }
