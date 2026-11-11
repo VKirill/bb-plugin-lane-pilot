@@ -17,7 +17,7 @@ let dispose: (() => Promise<void> | void) | undefined;
 let root: string | undefined;
 afterEach(async () => { await dispose?.(); dispose = undefined; if (root) await rm(root, { recursive: true, force: true }); root = undefined; });
 
-async function replay(incident: typeof fixture.incidents[number], state: "missing" | "ready" | "failed" | "offline" | "create-failed" | "create-offline" = "missing") {
+async function replay(incident: typeof fixture.incidents[number], state: "missing" | "ready" | "failed" | "offline" | "create-failed" | "create-offline" = "missing", gitnexusRefresh: "off" | "unset" = "off") {
   const input = incident.input;
   root = await mkdtemp(join(tmpdir(), "lp-docs-recovery-"));
   const base = join(root, "main", basename(input.basePath));
@@ -76,6 +76,8 @@ async function replay(incident: typeof fixture.incidents[number], state: "missin
   await plugin(bb);
   dispose = () => harness.lifecycle.dispose();
   saveProjectSetting(openDatabase(bb), projectId, "docs.enabled", true);
+  // The GitNexus refresh is on by default and this fake host answers no runCommand: the recovery tests opt out of it with «off».
+  if (gitnexusRefresh === "off") saveProjectSetting(openDatabase(bb), projectId, "docs.gitnexus_refresh", "off");
   const key = `docs-worktree:${input.requestedHostId}:${name}`;
   await bb.storage.kv.set(key, { path: input.worktreePath });
   const result = await harness.behavior.runCli(["docs-nightly", projectId]) as { stdout: string };
@@ -91,6 +93,17 @@ describe("docs worktree recovery from the six MAC Mini merge incidents", () => {
     expect(await bb.storage.kv.get(key)).toBeUndefined();
     expect(await readFile(join(base, "docs/overview.md"), "utf8")).toBe("unmerged docs from the earlier pass\n");
     expect(git(base, "merge-base", "--is-ancestor", earlierHead, "HEAD")).toBe("");
+  });
+
+  it("docs.gitnexus_refresh unset is on: the night's pass asks the project's machine for the code index before the docs pass, and with it off asks nothing", async () => {
+    const unset = await replay(fixture.incidents[0]!, "missing", "unset");
+    expect(unset.calls.some((call) => call.method === "runCommand")).toBe(true);
+    expect(unset.harness.logEntries.filter((entry) => entry.level === "warn" && entry.message.includes("docs gitnexus refresh"))).toHaveLength(1);
+    expect(unset.rows).toEqual([expect.objectContaining({ state: "skipped", reason: "no code changes" })]);
+    await dispose?.(); dispose = undefined;
+    if (root) await rm(root, { recursive: true, force: true });
+    const off = await replay(fixture.incidents[0]!, "missing", "off");
+    expect(off.calls.some((call) => call.method === "runCommand")).toBe(false);
   });
 
   it("still merges an existing leftover before creating the next pass's worktree", async () => {
