@@ -26,7 +26,7 @@ const WRAPPERS: Record<string, Wrapper> = {
 
   "src/rooms/qa/server/qa-thread.ts": { via: "resolver", roles: ["browser-qa"], source: "src/rooms/qa/server/qa.ts", note: "spawns the agent qa.ts resolved (the thread takes it as an input)" },
   "src/rooms/qa/server/errands.ts": { via: "resolver", roles: ["errand"], note: "what the schedule / tool named is a pin; nothing named is the errand row" },
-  "src/rooms/self-repair/server/self-repair.ts": { via: "resolver", roles: ["repairer"], note: "the night plan's or the watcher's pick (which holds the repairer row) goes through as a pin" },
+  "src/rooms/self-repair/server/spawn-repair.ts": { via: "resolver", roles: ["repairer"], note: "the night plan's or the watcher's pick (which holds the repairer row) goes through as a pin" },
   "src/rooms/self-repair/server/rule-scan.ts": { via: "resolver", roles: ["rules-analyzer"], note: "the owner's stored analyzer is a pin; otherwise the row" },
   "src/rooms/critique/server/critique-runs/code-critique.ts": { via: "table", roles: ["pm-reader", "plan-critic", "code-critic", "specialist-reviewer"], note: "roleSelection(): resolveRoleModel + the host catalog's `usable`, then criticAcrossFamilies; a critic left in the writer's family is warned about (same table, the stage's own effort/tier checks)" },
   "src/rooms/critique/server/critique-runs/plan-critique.ts": { via: "table", roles: ["pm-reader", "plan-critic", "code-critic", "specialist-reviewer"], note: "roleSelection(): resolveRoleModel + the host catalog's `usable`, then criticAcrossFamilies; a critic left in the writer's family is warned about (same table, the stage's own effort/tier checks)" },
