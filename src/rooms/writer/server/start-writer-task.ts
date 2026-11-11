@@ -54,6 +54,7 @@ import { CANCELED_REDO_WAIT_MS, RUN_LIMIT_SETTING, RUN_LIMIT_WORD, SECRET_WAIT_M
 import type { Services } from "./start";
 import { noteOwnFailure, type WriterTaskState } from "./start-task-state";
 import { waitForDependencies } from "./start-wait-dependencies";
+import { waitForSecrets } from "./start-wait-secrets";
 import { sameArea } from "./start-area";
 
 import type { AttemptState } from "../../contracts/state-machine";
@@ -191,37 +192,6 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
       ctx.log(`writer ${input.taskId}: rollback of ${backupId} incomplete: ${why}`);
       if (input.pmThreadId) void bestEffort(ctx.log, "writer rollback notice", bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[],
         text:`Lane Pilot: task ${input.taskId} was not accepted and its files in ${folder} could not be put back automatically (${why.slice(0, 600)}). The originals are in ~/.lane-pilot/live-backups/${backupId}/files on the folder's machine; tell the owner before another task runs there.` }] } as never), undefined);
-    };
-    /**
-     * The secrets the task's checks declare must be in Env Catalog and allowed before a writer starts (J6): a writer would
-     * do the work and then fail the checks for want of them. The task waits with the stage reason `waiting_secret:NAME`,
-     * no attempt is spent, the PM is told once what to do (env_request), and the wait ends by itself when the access is
-     * in place. Env Catalog's change event reaches only the app, so the catalog is asked every 20 seconds meanwhile.
-     */
-    const waitForSecrets = async (shouldStop?:()=>string|null): Promise<string | null> => {
-      const declared = [...new Set(input.task.verification.flatMap((check) => check.secrets ?? []))];
-      if (!declared.length) return null;
-      const since = Date.now();
-      let noted = "";
-      for (;;) {
-        if (ctx.isDisposed()) return null;
-        const stop = shouldStop?.();
-        if (stop) return stop;
-        const latest = getAttempt(db, state.attemptId);
-        if (!latest || ["canceled", "blocked", "accepted"].includes(latest.state)) return null;
-        const gate = await ctx.secrets.check({ declared, allowed:allowedSecretNames(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId))) }, { fresh:true });
-        const names = secretProblem(gate);
-        if (!names.length && !gate.unavailable) return null;
-        const reason = waitingSecretReason(names.length ? names : declared);
-        if (noted !== reason) {
-          noted = reason;
-          ctx.log(`writer ${input.taskId} waits: ${reason}`);
-          recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan, reason });
-          if (input.pmThreadId) void bestEffort(ctx.log, "writer secret wait notice", bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[], text:waitingSecretNote(input.taskId, gate) }] } as never), undefined);
-        }
-        if (Date.now() - since > SECRET_WAIT_MS) return `${reason}: not provided within 12 hours; send the task again once it is saved`;
-        await new Promise((wake) => setTimeout(wake, secretPollMs()));
-      }
     };
     /** W32 rank 8: a task that would touch the files of an open found regression waits for it to close — writing into
      * broken ground reruns the red check and blames the wrong task. No attempt is spent; the reason is in the stage receipt. */
@@ -519,7 +489,7 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
           blockBeforeWriter(quarantineStop);
           return false;
         }
-        const secretStop = await waitForSecrets(wallOrTokenStop);
+        const secretStop = await waitForSecrets(deps, state, input, wallOrTokenStop);
         if (secretStop) {
           blockBeforeWriter(secretStop);
           return false;
