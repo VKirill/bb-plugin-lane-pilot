@@ -81,6 +81,6 @@ describe("K1: role texts adapted from Maestro-Flow", () => {
     const notices = readFileSync(new URL("../../THIRD_PARTY_NOTICES.md", import.meta.url), "utf8");
     expect(notices).toContain("catlog22/maestro-flow");
     expect(notices).toContain("Permission is hereby granted, free of charge");
-    for (const file of ["src/rooms/critique/role-method.ts", "src/rooms/critique/critique.ts", "src/rooms/critique/code-critique.ts", "src/rooms/self-repair/server/self-repair.ts", "src/rooms/qa/server/qa-thread.ts"]) expect(notices).toContain(file);
+    for (const file of ["src/rooms/critique/role-method.ts", "src/rooms/critique/critique.ts", "src/rooms/critique/code-critique.ts", "src/rooms/self-repair/server/repair-prompt.ts", "src/rooms/qa/server/qa-thread.ts"]) expect(notices).toContain(file);
   });
 });

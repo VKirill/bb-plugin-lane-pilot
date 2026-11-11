@@ -14,8 +14,8 @@ Adapted from `workflows/plan.md`, `workflows/grill.md`, `workflows/verify.md`, `
 |---|---|---|
 | `read_first` and checkable convergence criteria without subjective words, one feature per task, a question without file:line is not a question | plan.md, grill.md | `src/rooms/critique/role-method.ts` (`PLAN_CRITIC_METHOD`), used by `src/rooms/critique/critique.ts` |
 | Three acceptance layers (exists, substantive, wired), anti-patterns, six review dimensions, BLOCK / WARN / PASS thresholds, majority of 2 of 3 for critical and high findings | verify.md, review.md, wf-review.js | `src/rooms/critique/role-method.ts` (`CODE_CRITIC_METHOD`), used by `src/rooms/critique/code-critique.ts` |
-| Scientific debugging: confirmed root cause, at most 3 hypotheses with evidence, backward tracing, three-strike check | debug.md, ref/scientific-debug.md | `src/rooms/critique/role-method.ts` (`SCIENTIFIC_DEBUG_METHOD`), used by `src/rooms/self-repair/server/self-repair.ts` |
-| Failure classification `test_defect` / `code_defect` / `env_issue` | auto-test.md | `src/rooms/critique/role-method.ts` (`FAILURE_TRIAGE_METHOD`), used by `src/rooms/self-repair/server/self-repair.ts` |
+| Scientific debugging: confirmed root cause, at most 3 hypotheses with evidence, backward tracing, three-strike check | debug.md, ref/scientific-debug.md | `src/rooms/critique/role-method.ts` (`SCIENTIFIC_DEBUG_METHOD`), used by `src/rooms/self-repair/server/repair-prompt.ts` |
+| Failure classification `test_defect` / `code_defect` / `env_issue` | auto-test.md | `src/rooms/critique/role-method.ts` (`FAILURE_TRIAGE_METHOD`), used by `src/rooms/self-repair/server/repair-prompt.ts` |
 | Deterministic three-layer browser acceptance (entry point, write request, DOM result); silence is never a pass | ref/frontend-verify.md | `src/rooms/critique/role-method.ts` (`FRONTEND_VERIFY_METHOD`), used by `src/rooms/qa/server/qa-thread.ts` |
 
 The workflow chains of `workflows/*.json` (W3) take their stage texts, thresholds and the composition of the chains from more
