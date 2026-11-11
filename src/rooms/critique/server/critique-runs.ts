@@ -44,6 +44,10 @@ import type { StageHelperSettings } from "../../platform/server";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";
 import { latestAttemptEnvironmentId } from "../../storage";
+import { readAnswer, readCodeCritique } from "./critique-runs/read-answer";
+export { readAnswer, readCodeCritique } from "./critique-runs/read-answer";
+import { attemptEnvironment } from "./critique-runs/attempt-diffs";
+export { attemptEnvironment, candidatePatches, headSides } from "./critique-runs/attempt-diffs";
 import { dependencyFindings } from "./critique-runs/dependency-findings";
 export { dependencyFindings } from "./critique-runs/dependency-findings";
 import { verdictReasons } from "./critique-runs/verdict-reasons";
@@ -356,114 +360,8 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   }
 }
 
-/**
- * The BB environment the task's attempt works in. BB refuses a thread at a path inside an environment's directory
- * (HTTP 409 «reuse that environment instead»), so a critic of a worktree attempt runs in that environment.
- */
-/**
- * The change of each produced file as BB's own unified diff (the Git plugin's `files` + keyed `patches`, uncommitted) in the
- * attempt's environment, else in the BB environment at the task folder. A path BB cut or could not diff is left out: the packet
- * then shows its file. On an old BB without `plugins.callRpc` the retired `environments.diffPatch` is the fallback.
- */
-export async function candidatePatches(bb:{ sdk:{ environments:{ list:(args:{ hostId:string; path:string }) => Promise<Array<{ id:string }>>; diffPatch?:(args:{ environmentId:string; paths:string[]; target:{ type:"uncommitted" } }) => Promise<unknown> }; plugins?:{ callRpc?:PluginCallRpc } } },
-  db:ReturnType<typeof openDatabase>, input:{ runId:string; taskId:string; hostId:string; cwd:string; paths:string[] }):Promise<Record<string,string>> {
-  if (!input.paths.length) return {};
-  try {
-    const environmentId = attemptEnvironment(db, input.runId, input.taskId, input.cwd)?.environmentId
-      ?? (await bb.sdk.environments.list({ hostId:input.hostId, path:input.cwd }))[0]?.id;
-    if (!environmentId) return {};
-    const wanted = new Set(input.paths);
-    const callRpc = gitCallRpc(bb);
-    if (callRpc) {
-      const target = { type:"uncommitted" } as const;
-      const listing = gitFilesReplySchema.parse(await callRpc({ pluginId:GIT_PLUGIN_ID, method:"files", input:{ environmentId, target, ignoreWhitespace:false }, outputSchema:gitFilesReplySchema }));
-      if (listing.outcome !== "available") return {};
-      const byPath = new Map(listing.initialPatches.map((row) => [row.path, row]));
-      const revision = new Map(listing.files.map((row) => [row.path, row.revision]));
-      const missing = input.paths.filter((path) => !byPath.has(path) && revision.has(path));
-      for (let index = 0; index < missing.length; index += 50) {
-        const keys = missing.slice(index, index + 50).map((path) => gitPatchKey(environmentId, target, false, path, revision.get(path)!));
-        const reply = gitPatchesReplySchema.parse(await callRpc({ pluginId:GIT_PLUGIN_ID, method:"patches", input:{ keys }, outputSchema:gitPatchesReplySchema }));
-        for (const entry of Object.values(reply)) if (entry.outcome === "available") byPath.set(entry.patch.path, entry.patch);
-      }
-      return Object.fromEntries([...byPath.values()].filter((row) => wanted.has(row.path) && !row.truncated && row.patch).map((row) => [row.path, row.patch]));
-    }
-    const result = await bb.sdk.environments.diffPatch?.({ environmentId, paths:input.paths, target:{ type:"uncommitted" } }) as { outcome?:string; patches?:Array<{ path:string; patch:string; truncated:boolean }> } | undefined;
-    if (result?.outcome !== "available") return {};
-    return Object.fromEntries((result.patches ?? []).filter((row) => wanted.has(row.path) && !row.truncated && row.patch).map((row) => [row.path, row.patch]));
-  } catch {
-    return {};
-  }
-}
 
-/**
- * Changed files as git's HEAD has them, for an attempt that worked in the project folder itself (39 of 682 attempts in the week to
- * 2026-11-10; photoalive that day). There the base and the workspace are one folder: a file read from «the base» is the writer's own
- * text, so a test the attempt created «existed before the task» and a weakened test equalled itself. A string is HEAD's text, null says
- * the attempt created the file, and a path left out means git could not say (no git, an old BB, the change already committed, a
- * project_cwd below the repository root): the caller keeps its own reading.
- * ponytail: HEAD, not the folder as the attempt found it. Dirt left by an earlier attempt of the task is compared as this one's change.
- */
-export async function headSides(bb:unknown, db:ReturnType<typeof openDatabase>,
-  input:{ runId:string; taskId:string; hostId:string; cwd:string; paths:string[] }):Promise<Map<string,string|null>> {
-  const sides = new Map<string,string|null>();
-  const callRpc = gitCallRpc(bb);
-  if (!callRpc || !input.paths.length) return sides;
-  try {
-    const list = (bb as { sdk?:{ environments?:{ list?:(args:{ hostId:string; path:string }) => Promise<Array<{ id:string }>> } } }).sdk?.environments?.list;
-    const environmentId = attemptEnvironment(db, input.runId, input.taskId, input.cwd)?.environmentId
-      ?? (await list?.({ hostId:input.hostId, path:input.cwd }))?.[0]?.id;
-    if (!environmentId) return sides;
-    const listing = gitFilesReplySchema.parse(await callRpc({ pluginId:GIT_PLUGIN_ID, method:"files", input:{ environmentId, target:{ type:"uncommitted" }, ignoreWhitespace:false }, outputSchema:gitFilesReplySchema }));
-    if (listing.outcome !== "available") return sides;
-    const kinds = new Map(listing.files.map((row) => [row.path, (row as { changeKind?:unknown }).changeKind]));
-    for (const path of input.paths) {
-      if (!kinds.has(path)) continue;
-      if (kinds.get(path) === "added") { sides.set(path, null); continue; }
-      try {
-        const side = gitFileSideReplySchema.parse(await callRpc({ pluginId:GIT_PLUGIN_ID, method:"fileSide", input:{ environmentId, query:{ target:"uncommitted", path, side:"old" } }, outputSchema:gitFileSideReplySchema }));
-        if (side.outcome === "available" && side.file.contentEncoding === "utf8") sides.set(path, side.file.content);
-      } catch { /* this path stays unknown */ }
-    }
-  } catch { /* git could not say */ }
-  return sides;
-}
 
-/**
- * One reading of a helper's answer for every stage (the hand-off standard, docs/guide/handoff.md). A helper that took the honest
- * exit throws `helper_blocked:…` with what it needs. An answer that cannot be read is sent back once to the same thread with the
- * parse error, so the helper repeats its answer and not its work (selfystudio 2026-10-30: an unescaped quote broke the JSON of a
- * «pass»). A second unreadable answer throws: the stage did not run, which is never the same as a stage with no findings.
- */
-const REASK_WAIT_MS = 10 * 60_000;
-export async function readAnswer<T>(bb:BbPluginApi, threadId:string|null|undefined, raw:string, parse:(text:string)=>T, keys:string, timeoutCode="critique_thread_timeout"):Promise<T> {
-  const exit = helperExit(raw);
-  if (exit) throw new Error(exit);
-  try {
-    return parse(raw);
-  } catch (first) {
-    if (!threadId) throw first;
-    const why = (first instanceof Error ? first.message : String(first)).replace(/\s+/g, " ").slice(0, 600);
-    const askedAt = Date.now();
-    try {
-      await bb.sdk.threads.send({ threadId, mode:"queue-if-active", input:[{ type:"text", mentions:[], text:`Lane Pilot: your answer could not be read (${why}). Do not redo the work: send the same answer again as one valid JSON object with the keys ${keys}, and nothing else; escape every quote inside a string.` }] } as never);
-      // Repeating an answer is one short turn: a re-ask that BB never took in must not hold the stage forever.
-      await waitThreadIdle(bb, threadId, timeoutCode, REASK_WAIT_MS, askedAt);
-    } catch {
-      throw first;
-    }
-    const again = (await bb.sdk.threads.output({ threadId })).output;
-    if (typeof again !== "string" || !again.trim()) throw first;
-    return parse(again);
-  }
-}
-export const readCodeCritique = (bb:BbPluginApi, threadId:string|null|undefined, raw:string, cites:Parameters<typeof parseCodeCritique>[1]) =>
-  readAnswer(bb, threadId, raw, (text) => parseCodeCritique(text, cites), "status, summary, findings and evidence");
-
-export function attemptEnvironment(db:ReturnType<typeof openDatabase>, runId:string, taskId:string, path:string):{ type:"reuse"; environmentId:string } | null {
-  const environmentId = latestAttemptEnvironmentId(db as never, runId, taskId, path);
-  return environmentId ? { type:"reuse", environmentId } : null;
-}
 
 export async function runCodeCritique(input:{
   bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;stageHelperSettings:StageHelperSettings;taskId:string;
