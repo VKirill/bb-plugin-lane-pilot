@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.531
+
+- **A landed or stopped phase gives its folder back.** The removal on the machine took `lane/` branches only, so the phase's own drop answered «not removed» without a word, and every phase kept `.git/lp-phases/<id>` with its dependencies: 11 folders of closed phases stood in the drill sandbox (2026-11-11). A phase's tree now goes (branch `phase/<id>` at that path, both marks asked for); the branch stays as the record. Measured on real git in `tests/orphaned-worktree.test.ts`: the folder is gone, the branch is there, a person's worktree on a branch named `phase/x` elsewhere is untouched; the first case is red on the old code.
+- **The hub-wide `capability.documentary_gate` is read.** The switch's scope is «the project's row, else the hub-wide one», but only the project's row was read, so `bb lane-pilot setting global capability.documentary_gate=observe` changed nothing. Measured in `tests/sma/parity-a5-small.test.ts`: a project without a row inherits the hub's `observe`, a project's own `hold` wins; red on the old code.
+- **A helper probe that answered deletes its chat.** The receipt is the record. 1 299 archived hidden probe chats stood on the hub, about 120 more a day. A probe that did not answer keeps its chat, archived, to be read. Measured in `tests/server/helper-probe.test.ts` (the calls are stop then delete for an answer, stop then archive for silence).
+- **Two tests no longer leave folders in the home folder.** `parity-h4-window` and `parity-h4-window-review` made five folders per run under `~` and removed none: 520 stood there after one day. Measured by counting `~/lp-h4*` before and after a run of both files: 520 and 520, then 0 after the cleanup.
+
 ## 0.1.530
 
 - **A phase passed live from analysis to close.** Live phase 11 on 0.1.529 (drill scenario `phase`, 47 minutes): analysis, plan, execution, wave review, closing graph, acceptance, the landing on main and the close, with nobody touching it. Checked in the phase book, in the sandbox repository's history (the merge commit and both files on main) and in the phase state on the hub. The landing of 0.1.528 met three Lane Pilot records on main and did not send the phase back.
