@@ -9,7 +9,7 @@ import { atomicText, renameRetry } from "../../src/rooms/platform/atomic-text";
 import { QA_DEFAULT_PORTS } from "../../src/rooms/contracts";
 import { findBrowserQaTarget } from "../../src/rooms/host-worker";
 import bundledAgents from "../../src/rooms/contracts/bundled-agents.json";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { parseCodeCritique } from "../../src/rooms/critique/code-critique";
 import { leakFindings } from "../helpers/guard-tools";
@@ -174,19 +174,21 @@ describe("parity wave G7 rest B", () => {
     expect(codeFactsState(`HEAD=${"a".repeat(40)}\nLAST=${"a".repeat(40)}\nBEHIND=0\n`).state).toBe("fresh");
   });
 
-  it("[sma:m_tl_rebrand_wired] a planted secret-shaped string: the plain publishable verb is unchanged, --strict reports the leak", () => {
-    const file = "src/rooms/zz-leak-scan-probe.ts";
+  it("[sma:m_tl_rebrand_wired] a planted secret-shaped string: the plain publishable verb is unchanged, --strict reports the leak", async () => {
+    // The probe lives in a temporary tree, never in the repository: a parallel test run scans the real src/.
+    const root = await mkdtemp(join(tmpdir(), "lp-leak-"));
     const planted = ["sk", "abcdefghijklmnopqrstuvwxyz0123456789"].join("-");
-    writeFileSync(file, `export const planted = "${planted}";\n`);
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", "probe.ts"), `export const planted = "${planted}";\n`);
     const run = (flags: string[]) => {
-      try { return execFileSync("npx", ["tsx", "scripts/lp-ship.ts", "publishable", ...flags], { encoding: "utf8", timeout: 300_000, stdio: ["ignore", "pipe", "pipe"] }); }
+      try { return execFileSync("npx", ["tsx", "scripts/lp-ship.ts", "publishable", ...flags], { encoding: "utf8", timeout: 300_000, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, LP_SHIP_LEAK_ROOT: root } }); }
       catch (cause) { return `${(cause as { stdout?: string }).stdout ?? ""}${(cause as { stderr?: string }).stderr ?? ""}`; }
     };
     try {
-      expect(leakFindings(".").some((hit) => hit.startsWith(file))).toBe(true);
+      expect(leakFindings(root)).toEqual(["src/probe.ts:1"]);
       expect(run([])).not.toContain("leak scan");
-      expect(run(["--strict"])).toContain("leak scan: src/rooms/zz-leak-scan-probe.ts:1");
-    } finally { rmSync(file, { force: true }); }
+      expect(run(["--strict"])).toContain("leak scan: src/probe.ts:1");
+    } finally { await rm(root, { recursive: true, force: true }); }
     expect(leakFindings(".")).toEqual([]);
   }, 600_000);
 
