@@ -232,6 +232,38 @@ export function unmeasuredAttempts(db: Database.Database, input: { sinceMs: numb
   return out;
 }
 
+/**
+ * Token totals of the finished attempts since `sinceMs` that did report usage, per provider+model, newest first (SMA
+ * «Estimate when the vendor is silent»: the silent attempt's estimate is the median of the last 20 of its own lane).
+ */
+export function measuredAttemptTokens(db: Database.Database, input: { sinceMs: number; limit?: number }): Map<string, number[]> {
+  const cursorQuery = db.prepare("SELECT provider_id, last_provider, last_model, total_json FROM lane_pilot_token_cursor WHERE thread_id = ?");
+  const byLane = new Map<string, Array<{ createdAt: number; total: number }>>();
+  for (const row of attemptContractRowsSince(db, input.sinceMs)) {
+    const cursor = cursorQuery.get(row.thread_id) as CursorRow | undefined;
+    const billed = cursor ? billedFrom(parseBreakdown(cursor.total_json)) : null;
+    if (billed === null || !(billed.total > 0)) continue;
+    const receipt = stageReceiptProviderModel(db, row.run_id, row.task_id, "writer-agent") as { provider_id?: string | null; model?: string | null } | undefined;
+    const providerId = (cursor?.last_provider || cursor?.provider_id || receipt?.provider_id) ?? null;
+    const model = (cursor?.last_model || receipt?.model) ?? null;
+    const key = `${providerId ?? ""}${model ?? ""}`;
+    byLane.set(key, [...(byLane.get(key) ?? []), { createdAt: row.created_at, total: billed.total }]);
+  }
+  const limit = input.limit ?? 20;
+  return new Map([...byLane].map(([key, rows]) => [key, rows.sort((a, b) => b.createdAt - a.createdAt).slice(0, limit).map((row) => row.total)]));
+}
+
+/**
+ * The median of `totals`, or null under `minSamples` samples: an estimate needs enough of its own lane's history to be one.
+ * Exported for the money book's silent-spend estimate.
+ */
+export function medianTokens(totals: readonly number[], minSamples = 5): number | null {
+  if (totals.length < minSamples) return null;
+  const sorted = [...totals].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return Math.round(sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2);
+}
+
 /** Tier from the writer profile that picked this provider+model; a model outside the catalog falls back to name matching. */
 export function writerTier(providerId: string | null, model: string | null): ModelTier | null {
   const profile = WRITER_PROFILES.find((row) => row.providerId === providerId && row.model === model);
