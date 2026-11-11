@@ -79,6 +79,17 @@ export function createPhaseDriver(ctx: ServerCore, services: Services, reactions
   /** Idle pass (SMA dt_idle): when the pass takes nothing it says why — nothing to take, all waiting for the PM, or all at work. */
   async function tick(signal?: AbortSignal): Promise<{ moved: number; idle: string | null }> {
     let moved = 0;
+    // The plan is a nested batch (SMA p4_nested_batch): a phase bound to a run ends with it. A run closed on any path
+    // (lp.run_close, finish_run, the sweeps — all refuse while attempts are open) takes every still-open phase bound to
+    // it: it stops issuing and closes with the run named. A closed phase is never reopened by this pass, and the
+    // phase's own close never closes a run, so nothing loops.
+    for (const row of listPhases(db, { limit: 200 }).filter((candidate) => candidate.state !== "closed" && candidate.stage !== "closed" && candidate.runId)) {
+      const run = getRun(db, row.runId!);
+      if (!run || run.closed_at === null) continue;
+      docs.book(row, "decisions", "close", `batch closed: ${row.runId}`);
+      docs.savePhase(row.id, { stage: "closed", state: "closed", record: { ...row.record, closing: { by: "batch", words: `batch closed: ${row.runId}`, at: now() } }, at: now() });
+      moved += 1;
+    }
     // A phase the machine stopped for a gap of its own goes on once a release closes the gap (not one a person stopped).
     for (const row of listPhases(db, { limit: 200 }).filter((candidate) => candidate.state === "stopped")) {
       const back = recoverStopped(row);
