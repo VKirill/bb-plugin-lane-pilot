@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { hookEnv } from "../hook-env";
 import { useGuardSync } from "../guard-pool";
 import { PROBES } from "../../src/rooms/native-agent/server/helper-probe";
@@ -174,6 +174,8 @@ describe("[review 5] the PM's planning-home branch of the guard", () => {
   const linked = mkdtempSync(join(homedir(), "lp-h4r-linked-"));
   execFileSync("git", ["-C", linked, "init", "-q"]);
   symlinkSync(outside, join(linked, ".agents"));
+  // These four live in the real home folder, so the file removes them itself.
+  afterAll(() => { for (const dir of [home, outside, evil, linked]) rmSync(dir, { recursive: true, force: true }); });
 
   const edit = (homeDir: string, path: string, env: Record<string, string> = {}) => runGuard({
     input: JSON.stringify({ agent_type: "lane-pilot-pm", tool_name: "Edit", tool_input: { file_path: path }, cwd: checkout }),

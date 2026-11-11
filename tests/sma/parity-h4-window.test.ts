@@ -1,9 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { PROBES } from "../../src/rooms/native-agent/server/helper-probe";
 import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../../src/rooms/native-agent/native-session-hooks";
@@ -125,6 +125,8 @@ const runGuard = useGuardSync(guard);
 const checkout = mkdtempSync(join(tmpdir(), "lp-h4-checkout-"));
 const home = mkdtempSync(join(homedir(), "lp-h4-home-"));
 const plain = mkdtempSync(join(homedir(), "lp-h4-plain-"));
+// The two folders live in the real home folder, so the file removes them itself (86 runs left 500 folders there, 2026-11-11).
+afterAll(() => { for (const dir of [home, plain]) rmSync(dir, { recursive: true, force: true }); });
 execFileSync("git", ["-C", home, "init", "-q"]);
 writeFileSync(join(home, "README.md"), "x\n");
 execFileSync("git", ["-C", home, "add", "README.md"]);
