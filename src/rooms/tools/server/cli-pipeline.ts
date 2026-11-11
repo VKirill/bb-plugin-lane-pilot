@@ -1,45 +1,8 @@
 import type { PluginCliResult } from "@get-bb/plugin-sdk";
 import { OWNER_ITEM_SWEEPS, type CliRunDeps } from "./cli-deps";
-import { dirname, join, resolve, sep } from "node:path";
-import { taskBaselineEntries } from "../../baseline";
-import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, PROTECTIONS, loadPrototypeConfig, saveProjectSetting, savePrototypeConfig, transitionAttempt, failedTasksAllProjects, listNearMissReceipts, projectIdForWorkspacePath, projectLiveAttempts, attemptStateCounts, settingsScopesForWorkspacePath } from "../../storage";
-import { conveyorState, renderTimeline, setConveyor, taskTimeline, unknownReasons } from "../../runs";
 import { TASK_RECORD_USAGE, blindRecord, readsBlind, renderTaskRecord, taskRecord } from "./task-record";
-import {bestEffort, isNotFound, maskCredentials, orMiss, outputText, pluginRootFromModule, spawnAsync, stringAt, valueAt} from "@lane-pilot/kit";
-import { SCHEDULE_USAGE, runScheduleCli, scheduleFailureSweep } from "../../schedule/server";
-import { answerWorkflowQuestion } from "../../workflow/server";
-import { AGENTS_USAGE, agentRegistry, PM_SKILLS_USAGE, runAgentsCli, runPmSkillsCli, runPmSkillUseCli } from "../../native-agent/server";
-import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
-import { BENCH_USAGE, runBenchCli } from "../../bench/server";
-import { BASELINE_USAGE, runBaselineCli } from "../../baseline/server";
-import { RETURN_USAGE, runReturnCli } from "../../stage-return/server";
-import { FORECAST_USAGE, runForecastCli } from "../../forecast/server";
-import { RUN_GOAL_USAGE, runGoalSweep, runRunGoalCli } from "../../run-goal/server";
-import { CAPABILITY_USAGE, runCapabilityCli } from "../../capability/server";
-import { runWindowCli, WINDOW_USAGE, workerSecretReach } from "../../verification";
-import { OUTAGE_USAGE, runOutageCli } from "../../outage/server";
-import { BACKLOG_USAGE, runBacklogCli } from "../../backlog/server";
-import { runHypothesisCli } from "../../hypotheses/server";
-import { HISTORY_SOURCES, historySearch, tierReport } from "../../memory-tiers/server";
-import { WALL_USAGE, runWallCli } from "../../wall/server";
-import { CHECKERS_USAGE, runCheckersCli } from "../../checkers/server";
-import { WAITING_USAGE, runWaitingCli } from "../../owner-waiting/server";
-import { LEAD_USAGE, runLeadCli } from "../../lead/server";
-import { SMA_MAP_USAGE, runSmaLiveCli, runSmaMapCli, smaCheckedPercent, smaCounts, smaDonePercent, smaRows } from "../../sma-map";
-import { designJournalLines, readinessWords, trainedConditions, trainingRatios } from "../../design-eval";
-import { DESIGN_PAIR_USAGE, runDesignPairCli } from "../../design-eval/server";
-import { closeOwnerItem, postOwnerItem } from "../../owner-waiting";
-import { getPhase } from "../../phase";
-import { jev } from "@lane-pilot/jev";
-import { PHASE_USAGE, phaseWordSweep, runPhaseCli } from "../../phase/server";
 import { attemptRecord, manifest, passport, preship, prPassport, receiptChain, subagentReceipts, verifyChain } from "./receipts";
-import { listTripped, rearmBreaker, breakerRowId } from "../../learning";
-import { RULES_USAGE, runRulesCli } from "../../rule-forms";
-import { JEV_USAGE, runJevCli } from "../../jev";
-import { ERRANDS_USAGE, runErrandsCli } from "../../errands";
-import { retireAdoptedRule } from "../../self-repair/server";
-import { writerQuestionSweep, budgetSpentSweep } from "../../writer/server";
-
+import { agentRegistry, answerWorkflowQuestion, breakerRowId, budgetSpentSweep, closeOwnerItem, conveyorState, designJournalLines, dirname, failedTasksAllProjects, getPhase, isNotFound, jev, join, listNearMissReceipts, listTripped, orMiss, pluginRootFromModule, postOwnerItem, readinessWords, rearmBreaker, renderTimeline, retireAdoptedRule, runAgentsCli, runBacklogCli, runBaselineCli, runBenchCli, runCapabilityCli, runCheckersCli, runDeferralCli, runDesignPairCli, runErrandsCli, runForecastCli, runHypothesisCli, runJevCli, runLeadCli, runOutageCli, runPhaseCli, runReturnCli, runRulesCli, runRunGoalCli, runScheduleCli, runSmaLiveCli, runSmaMapCli, runWaitingCli, runWallCli, saveProjectSetting, setConveyor, spawnAsync, taskBaselineEntries, taskTimeline, tierReport, trainedConditions, trainingRatios, workerSecretReach } from "./cli-imports";
 /** `timeline <task-id> [--run <run-id>] [--json]`: without --run the first bare word is the task (it was skipped until 2026-11-02). */
 export function timelineArgs(args: string[]): { taskId: string | undefined; runId: string | undefined } {
   const runAt = args.indexOf("--run");

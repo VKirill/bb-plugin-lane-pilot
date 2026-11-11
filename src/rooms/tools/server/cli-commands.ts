@@ -1,36 +1,5 @@
-import { ROLLBACK_USAGE } from "../../rollback/server";
-import { MEMORY_EVAL_USAGE } from "../../memory-eval/server";
-import { MEMORY_COMPRESS_USAGE, MEMORY_CONFLICT_USAGE } from "../../memory/server";
-import { SCHEDULE_USAGE } from "../../schedule/server";
-import { AGENTS_USAGE, PM_SKILLS_USAGE } from "../../native-agent/server";
-import { ANAMNESIS_USAGE, PROFILE_KEYS } from "../../anamnesis";
-import { DEFERRAL_USAGE } from "../../deferral/server";
-import { POLICY_USAGE } from "../../policy";
-import { WAITING_USAGE } from "../../owner-waiting/server";
-import { LEAD_USAGE } from "../../lead/server";
-import { COVERAGE_USAGE } from "../../coverage";
-import { SMA_MAP_USAGE } from "../../sma-map";
-import { PHASE_USAGE } from "../../phase/server";
-import { RULES_USAGE } from "../../rule-forms";
-import { JEV_USAGE } from "../../jev";
-import { SKILLS_USAGE } from "../../platform/server";
-import { WINDOW_USAGE } from "../../verification";
-import { EPISODES_USAGE } from "../../errands/server";
-import { ERRANDS_USAGE } from "../../errands";
 import { TASK_RECORD_USAGE } from "./task-record";
-import { BACKLOG_USAGE } from "../../backlog/server";
-import { BASELINE_USAGE } from "../../baseline/server";
-import { BENCH_USAGE } from "../../bench/server";
-import { CAPABILITY_USAGE } from "../../capability/server";
-import { CATALOG_USAGE } from "../../file-cards";
-import { CHECKERS_USAGE } from "../../checkers/server";
-import { DESIGN_PAIR_USAGE } from "../../design-eval/server";
-import { FORECAST_USAGE } from "../../forecast/server";
-import { LEARNING_USAGE } from "../../learning";
-import { OUTAGE_USAGE } from "../../outage/server";
-import { PM_REPLAY_USAGE } from "../../pm-replay";
-import { RUN_GOAL_USAGE } from "../../run-goal/server";
-import { WALL_USAGE } from "../../wall/server";
+import { AGENTS_USAGE, ANAMNESIS_USAGE, BACKLOG_USAGE, BASELINE_USAGE, BENCH_USAGE, CAPABILITY_USAGE, CATALOG_USAGE, CHECKERS_USAGE, COVERAGE_USAGE, DEFERRAL_USAGE, DESIGN_PAIR_USAGE, EPISODES_USAGE, ERRANDS_USAGE, FORECAST_USAGE, JEV_USAGE, LEAD_USAGE, LEARNING_USAGE, MEMORY_COMPRESS_USAGE, MEMORY_CONFLICT_USAGE, MEMORY_EVAL_USAGE, OUTAGE_USAGE, PHASE_USAGE, PM_REPLAY_USAGE, PM_SKILLS_USAGE, POLICY_USAGE, PROFILE_KEYS, ROLLBACK_USAGE, RULES_USAGE, RUN_GOAL_USAGE, SCHEDULE_USAGE, SKILLS_USAGE, SMA_MAP_USAGE, WAITING_USAGE, WALL_USAGE, WINDOW_USAGE, excavate, jev, join, manifest, passport, preship, waitThreadIdle } from "./cli-imports";
 const MEMORY_CLI_USAGE = 'bb lane-pilot memory search "<question>" [--project P] | memory search --recall --query "<words>" [--cwd <path>] [--project P]   (read-only: confirmed notes by the word index, masked, one per line) | memory write "<fact>" [--project P] | memory history "<question>" [--project P] [--source tasks|execution|transcripts|lessons|books]   (the project memory on the hub; inside a BB thread the project is the thread\'s own)';
 
 const usage = [

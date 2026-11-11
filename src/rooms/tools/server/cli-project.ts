@@ -1,24 +1,7 @@
 import type { PluginCliResult } from "@get-bb/plugin-sdk";
 import type { CliRunDeps } from "./cli-deps";
-import { dirname, join, resolve, sep } from "node:path";
-import { prototypeConfigSchema, resolvePlanningHome, taskV2Schema } from "../../contracts";
-import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, PROTECTIONS, loadPrototypeConfig, saveProjectSetting, savePrototypeConfig, transitionAttempt, failedTasksAllProjects, listNearMissReceipts, projectIdForWorkspacePath, projectLiveAttempts, attemptStateCounts, settingsScopesForWorkspacePath } from "../../storage";
-import { cancelAttemptById, finishRunSafely, pauseRun } from "../../runs/server";
-import {bestEffort, isNotFound, maskCredentials, orMiss, outputText, pluginRootFromModule, spawnAsync, stringAt, valueAt} from "@lane-pilot/kit";
-import { PAIR_ROLE_SPECS, switchOn } from "@lane-pilot/models";
-import { RUN_BUDGET_SETTINGS, runHealth } from "../../stability/server";
-import { ERRAND_EPISODE_TRACE_EVENTS, configuredSetting } from "../../contracts/server";
-import { getCouncilSession } from "@lane-pilot/council";
-import { ANAMNESIS_USAGE, PROFILE_KEYS, anamnesisFor, collectOwnerMessages, profilePairProblem, sdkThreadsPort } from "../../anamnesis";
-import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
-import { MEMORY_EVAL_USAGE, runMemoryEvalCommand } from "../../memory-eval/server";
-import { MEMORY_COMPRESS_USAGE, MEMORY_CONFLICT_USAGE, memoryCompressChanges, runMemoryCompressCli, runMemoryConflictCli, confirmedWordHits, sessionMemoryRpc, memorySettingsFor, type WallThreadReader } from "../../memory/server";
-import { CATALOG_USAGE, runCatalogCli } from "../../file-cards";
 import { EXCAVATE_LOG_ARGS, approvalSuggestions, costPerVerified, excavate, htmlReport, missCurriculum } from "./self-improve";
-import { casUpsertSettings, deleteBoundSetting, getSettingVersions, listEvidence, listSettingRows, planningHomeInputs } from "../../storage";
-import { UNLISTED_SWITCHES, switchValue } from "../../settings";
-import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-
+import { GLOBAL_SETTINGS_PROJECT_ID, PAIR_ROLE_SPECS, PROFILE_KEYS, RUN_BUDGET_SETTINGS, UNLISTED_SWITCHES, attemptMetrics, bestEffort, cancelAttemptById, casUpsertSettings, configuredSetting, deleteBoundSetting, failureFieldsOf, finishRunSafely, getActivation, getAttempt, getCouncilSession, getRun, getSettingVersions, getTask, inspectAttempt, inspectState, isNotFound, join, listRunsWithAttempts, listSettingRows, loadProjectSettings, loadPrototypeConfig, memoryCompressChanges, orMiss, planningHomeInputs, profilePairProblem, prototypeConfigSchema, renderAttemptMetrics, resolvePlanningHome, runCatalogCli, runHealth, runMemoryCompressCli, runMemoryConflictCli, runMemoryEvalCommand, saveProjectSetting, savePrototypeConfig, stringAt, switchValue, taskV2Schema, transitionAttempt, valueAt } from "./cli-imports";
 /** Project, council, harness, run and probe commands of `bb lane-pilot`. Returns undefined when `command` is not one of theirs. */
 export async function cliProject(d: CliRunDeps): Promise<PluginCliResult | undefined> {
   const { bb, db, effectiveProjectSettings, host } = d.ctx;

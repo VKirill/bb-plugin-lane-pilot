@@ -1,135 +1,19 @@
-import { createHash } from "node:crypto";
-import { dirname, join, resolve, sep } from "node:path";
-import { listReviewedObservations, pmRulesOf } from "../../learning";
-import { prototypeConfigSchema, resolvePlanningHome, taskV2Schema } from "../../contracts";
-import { taskBaselineEntries } from "../../baseline";
-import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, PROTECTIONS, loadPrototypeConfig, saveProjectSetting, savePrototypeConfig, transitionAttempt, failedTasksAllProjects, listNearMissReceipts, projectIdForWorkspacePath, projectLiveAttempts, attemptStateCounts, settingsScopesForWorkspacePath } from "../../storage";
-import { outsideWorkSummary } from "../../owner-presence";
-import { cancelAttemptById, finishRunSafely, pauseRun } from "../../runs/server";
-import { conveyorState, renderTimeline, setConveyor, taskTimeline, unknownReasons } from "../../runs";
-import { TASK_RECORD_USAGE, blindRecord, readsBlind, renderTaskRecord, taskRecord } from "./task-record";
-import {bestEffort, isNotFound, maskCredentials, orMiss, outputText, pluginRootFromModule, spawnAsync, stringAt, valueAt} from "@lane-pilot/kit";
-import { PAIR_ROLE_SPECS, switchOn } from "@lane-pilot/models";
-import {listQaHosts, runSkillsCli, parseSkillHub, SKILLS_USAGE} from "../../platform/server";
-import {codeFactsOnHost, CODE_FACTS_REFRESH} from "../../platform";
-import {runOnHost} from "@lane-pilot/host-calls";
-import { attemptSessionLayers, terminalParity, terminalSessionLayers } from "../../native-agent";
-import { projectStats } from "./project-stats";
-import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
-import type { InsightsApi, ScheduleAgentApi } from "../../contracts";
-import type { ServerCore } from "../../contracts/server";
-import { RUN_BUDGET_SETTINGS, runHealth } from "../../stability/server";
-import { ERRAND_EPISODE_TRACE_EVENTS, configuredSetting } from "../../contracts/server";
-import { getCouncilSession } from "@lane-pilot/council";
-import { SCHEDULE_USAGE, runScheduleCli, scheduleFailureSweep } from "../../schedule/server";
-import { answerWorkflowQuestion } from "../../workflow/server";
-import { AGENTS_USAGE, agentRegistry, PM_SKILLS_USAGE, runAgentsCli, runPmSkillsCli, runPmSkillUseCli } from "../../native-agent/server";
 
-import { ANAMNESIS_USAGE, PROFILE_KEYS, anamnesisFor, collectOwnerMessages, profilePairProblem, sdkThreadsPort } from "../../anamnesis";
-import { LEARNING_USAGE, learningFor, runLearningCli } from "../../learning";
-import { PM_REPLAY_USAGE, runPmReplayCli, listScenarios } from "../../pm-replay";
-import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
-import { usageSegment } from "../../usage";
-import type { ProviderUsage } from "../../usage/server";
-import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
-import { MEMORY_EVAL_USAGE, runMemoryEvalCommand } from "../../memory-eval/server";
-import { MEMORY_COMPRESS_USAGE, MEMORY_CONFLICT_USAGE, memoryCompressChanges, runMemoryCompressCli, runMemoryConflictCli, confirmedWordHits, sessionMemoryRpc, memorySettingsFor, type WallThreadReader } from "../../memory/server";
-import { CATALOG_USAGE, runCatalogCli } from "../../file-cards";
-import { dropMemoryIndexes, hideRecord, lintMemory, listMemory, memoryConceptsJson, memoryIndexStatus, memoryRecordExists, memoryTokenStats, rebuildMemoryIndexes, recordMemoryMiss, reviewMemory } from "@lane-pilot/memory-core";
-import { BENCH_USAGE, runBenchCli } from "../../bench/server";
-import { BASELINE_USAGE, runBaselineCli } from "../../baseline/server";
-import { RETURN_USAGE, runReturnCli } from "../../stage-return/server";
-import { FORECAST_USAGE, runForecastCli } from "../../forecast/server";
-import { calibrationPassport, weakAreas } from "../../forecast/server";
-import { sessionSummaryLine } from "../../session-hooks";
-import { MERGE_INTENT_PREFIX } from "../../verification";
-import { RUN_GOAL_USAGE, runGoalSweep, runRunGoalCli } from "../../run-goal/server";
-import { CAPABILITY_USAGE, runCapabilityCli } from "../../capability/server";
-import { runWindowCli, WINDOW_USAGE, workerSecretReach } from "../../verification";
-import { explainCatalog, explainWord, guideDocs } from "./explain";
-import { VERDICT_LIST_COMMAND, renderVerdicts, verdictFiles, verdictInventory } from "./verdicts";
-import { OUTAGE_USAGE, runOutageCli } from "../../outage/server";
-import { BACKLOG_USAGE, runBacklogCli } from "../../backlog/server";
-import { runHypothesisCli } from "../../hypotheses/server";
-import { HISTORY_SOURCES, historySearch, tierReport } from "../../memory-tiers/server";
-import { WALL_USAGE, runWallCli } from "../../wall/server";
-import { CHECKERS_USAGE, runCheckersCli } from "../../checkers/server";
-import { POLICY_USAGE, loadLiveExam, runPolicyCli } from "../../policy";
-import { WAITING_USAGE, runWaitingCli } from "../../owner-waiting/server";
-import type { LearningItemsReader } from "../../owner-waiting";
-import { LEAD_USAGE, runLeadCli } from "../../lead/server";
-import { COVERAGE_USAGE, runCoverageCli } from "../../coverage";
-import { mergeFrontmatter, parseFrontmatter, setFrontmatter } from "../../docs";
-import { SMA_MAP_USAGE, runSmaLiveCli, runSmaMapCli, smaCheckedPercent, smaCounts, smaDonePercent, smaRows } from "../../sma-map";
-import { designJournalLines, readinessWords, trainedConditions, trainingRatios } from "../../design-eval";
-import { DESIGN_PAIR_USAGE, runDesignPairCli } from "../../design-eval/server";
-import { closeOwnerItem, postOwnerItem } from "../../owner-waiting";
-import { getPhase } from "../../phase";
-import { jev } from "@lane-pilot/jev";
-import { PHASE_USAGE, phaseWordSweep, runPhaseCli } from "../../phase/server";
-import { attemptRecord, manifest, passport, preship, prPassport, receiptChain, subagentReceipts, verifyChain } from "./receipts";
-import { listTripped, rearmBreaker, breakerRowId } from "../../learning";
-import { EXCAVATE_LOG_ARGS, approvalSuggestions, costPerVerified, excavate, htmlReport, missCurriculum } from "./self-improve";
-import { RULES_USAGE, runRulesCli } from "../../rule-forms";
-import { JEV_USAGE, runJevCli } from "../../jev";
-import { ERRANDS_USAGE, runErrandsCli } from "../../errands";
-import { retireAdoptedRule } from "../../self-repair/server";
-import { ROLLBACK_USAGE, runRollbackCli } from "../../rollback/server";
-import { casUpsertSettings, deleteBoundSetting, getSettingVersions, listEvidence, listSettingRows, planningHomeInputs } from "../../storage";
-import { UNLISTED_SWITCHES, switchValue } from "../../settings";
-import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { integrityReport, renewDisarm } from "../../policy";
-import { isCodeCriticDefault } from "../../contracts/task-enums"
-import { CODE_CRITIC_DEFAULTS } from "../../contracts/task-enums";
-import { runSkillLintCli } from "../../forge";
-import { EPISODES_USAGE, runEpisodesCli } from "../../errands/server";
-import { episodeSweepDeps } from "../../night-graphs/server";
-
-import type { BacklogApi } from "../../backlog/server/scanner";
-import type { BenchApi } from "../../bench/service";
-import type { CapabilitiesApi } from "../../capability/server/capability";
-import type { CheckersApi } from "../../checkers/api";
-import type { CouncilApi } from "../../council/server/council";
-import type { DeferralApi } from "../../deferral/service";
-import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
-import type { HarnessApi } from "../../harness/server/harness";
-import type { HypothesesApi } from "../../hypotheses/server/hypotheses";
-import type { LeadApi } from "../../lead/server/service";
-import type { MemoryProbeApi } from "../../memory-probe/server/memory-probe";
-import type { MemoryConflictsApi } from "../../memory/server/memory-conflicts";
-import type { MoneyApi } from "../../money/server";
-import type { ActivationApi } from "../../contracts/agent-ops";
-import type { OwnerPresenceApi } from "../../owner-presence/server/presence";
-import type { PhaseApi } from "../../phase/server/driver";
-import type { PhaseIntake } from "../../phase/server/intake";
-import type { PmReplay } from "../../pm-replay/service";
-import type { RollbackApi } from "../../rollback/server/rollback";
-import type { RunGoalApi } from "../../run-goal/server/run-goal";
-import type { ProbesApi } from "../../stability/server/probes";
-import type { ReconcileApi } from "../../stability/server/reconcile";
-import type { StageReturnApi } from "../../stage-return/server/stage-return";
-import type { WallApi } from "../../wall/service";
-import { writerQuestionSweep, budgetSpentSweep } from "../../writer/server";
-import type { WriterDispatchApi } from "../../writer/server/dispatch";
-import type { WriterStateApi } from "../../writer/server/state";
-import type { WriterVerifyApi } from "../../writer/server/verify";
-
-import type { BaselineApi } from "../../baseline/server/baseline";
-import type { ScheduleService } from "../../schedule/server/schedule-service";
-import type { RuleScanApi } from "../../self-repair/server/rule-scan";
-
-import type { RegressionApi } from "../../baseline/server/regress";
-import type { WriterSpawnApi } from "../../writer/server/spawn";
-import type { WriterStartApi } from "../../writer/server/start";
-
+import { AGENTS_USAGE, ANAMNESIS_USAGE, BACKLOG_USAGE, BASELINE_USAGE, BENCH_USAGE, CAPABILITY_USAGE, CATALOG_USAGE, CHECKERS_USAGE, CODE_CRITIC_DEFAULTS, CODE_FACTS_REFRESH, COVERAGE_USAGE, DEFERRAL_USAGE, DESIGN_PAIR_USAGE, EPISODES_USAGE, ERRANDS_USAGE, ERRAND_EPISODE_TRACE_EVENTS, EXCAVATE_LOG_ARGS, FORECAST_USAGE, GLOBAL_SETTINGS_PROJECT_ID, HISTORY_SOURCES, JEV_USAGE, LEAD_USAGE, LEARNING_USAGE, MEMORY_COMPRESS_USAGE, MEMORY_CONFLICT_USAGE, MEMORY_EVAL_USAGE, MERGE_INTENT_PREFIX, OUTAGE_USAGE, PAIR_ROLE_SPECS, PHASE_USAGE, PM_REPLAY_USAGE, PM_SKILLS_USAGE, POLICY_USAGE, PROFILE_KEYS, PROTECTIONS, RETURN_USAGE, ROLLBACK_USAGE, RULES_USAGE, RUN_BUDGET_SETTINGS, RUN_GOAL_USAGE, SCHEDULE_USAGE, SKILLS_USAGE, SMA_MAP_USAGE, TASK_RECORD_USAGE, THREAD_WATCH_EVENT_TYPES, UNLISTED_SWITCHES, VERDICT_LIST_COMMAND, WAITING_USAGE, WALL_USAGE, WINDOW_USAGE, agentRegistry, anamnesisFor, answerWorkflowQuestion, approvalSuggestions, attemptMetrics, attemptRecord, attemptSessionLayers, attemptStateCounts, bestEffort, blindRecord, breakerRowId, budgetSpentSweep, calibrationPassport, cancelAttemptById, casUpsertSettings, closeOwnerItem, codeFactsOnHost, collectOwnerMessages, configuredSetting, confirmedWordHits, conveyorState, costPerVerified, createHash, decideThreadCompletion, deleteBoundSetting, designJournalLines, dirname, dropMemoryIndexes, episodeSweepDeps, eventsListQueryLabel, excavate, explainCatalog, explainWord, failedTasksAllProjects, failureFieldsOf, finishRunSafely, getActivation, getAttempt, getCouncilSession, getPhase, getRun, getRunWriterHost, getSettingVersions, getTask, guideDocs, hideRecord, historySearch, htmlReport, importSettingsOnce, inspectAttempt, inspectState, integrityReport, isCodeCriticDefault, isNotFound, jev, join, learningFor, lintMemory, listAttemptReasonsSince, listEvidence, listMemory, listNearMissReceipts, listQaHosts, listReviewedObservations, listRunsWithAttempts, listScenarios, listSettingRows, listThreadEventsRaw, listTripped, loadLiveExam, loadProjectSettings, loadPrototypeConfig, manifest, maskCredentials, memoryCompressChanges, memoryConceptsJson, memoryIndexStatus, memoryRecordExists, memorySettingsFor, memoryTokenStats, mergeFrontmatter, missCurriculum, orMiss, outputText, outsideWorkSummary, parseFrontmatter, parseSkillHub, passport, pauseRun, phaseWordSweep, planningHomeInputs, pluginRootFromModule, pmRulesOf, postOwnerItem, prPassport, preship, profilePairProblem, projectIdForWorkspacePath, projectLiveAttempts, projectStats, prototypeConfigSchema, readinessWords, readsBlind, rearmBreaker, rebuildMemoryIndexes, receiptChain, recordMemoryMiss, renderAttemptMetrics, renderTaskRecord, renderTimeline, renderVerdicts, renewDisarm, resolve, resolvePlanningHome, retireAdoptedRule, reviewMemory, runAgentsCli, runBacklogCli, runBaselineCli, runBenchCli, runCapabilityCli, runCatalogCli, runCheckersCli, runCoverageCli, runDeferralCli, runDesignPairCli, runEpisodesCli, runErrandsCli, runForecastCli, runGoalSweep, runHealth, runHypothesisCli, runJevCli, runLeadCli, runLearningCli, runMemoryCompressCli, runMemoryConflictCli, runMemoryEvalCommand, runOnHost, runOutageCli, runPhaseCli, runPmReplayCli, runPmSkillUseCli, runPmSkillsCli, runPolicyCli, runReturnCli, runRollbackCli, runRulesCli, runRunGoalCli, runScheduleCli, runSkillLintCli, runSkillsCli, runSmaLiveCli, runSmaMapCli, runWaitingCli, runWallCli, runWindowCli, saveProjectSetting, savePrototypeConfig, scheduleFailureSweep, sdkThreadsPort, sep, sessionMemoryRpc, sessionSummaryLine, setConveyor, setFrontmatter, settingsScopesForWorkspacePath, smaCheckedPercent, smaCounts, smaDonePercent, smaRows, spawnAsync, stringAt, subagentReceipts, switchOn, switchValue, taskBaselineEntries, taskRecord, taskTimeline, taskV2Schema, terminalParity, terminalSessionLayers, tierReport, trainedConditions, trainingRatios, transitionAttempt, unknownReasons, usageSegment, valueAt, verdictFiles, verdictInventory, verifyChain, waitThreadIdle, weakAreas, workerSecretReach, writerQuestionSweep } from "./cli-imports";
+import type { ActivationApi, BacklogApi, BaselineApi, BenchApi, CapabilitiesApi, CheckersApi, CodeCriticDefault, CouncilApi, DeferralApi, DocsNightlyApi, HarnessApi, HypothesesApi, InsightsApi, LeadApi, LearningItemsReader, MemoryConflictsApi, MemoryProbeApi, MoneyApi, OwnerPresenceApi, PhaseApi, PhaseIntake, PmReplay, ProbesApi, ProviderUsage, ReconcileApi, RegressionApi, RollbackApi, RuleScanApi, RunGoalApi, ScheduleAgentApi, ScheduleService, ServerCore, StageReturnApi, WallApi, WallThreadReader, WorkflowEngineApi, WorkflowTriggersApi, WriterDispatchApi, WriterHostApi, WriterSpawnApi, WriterStartApi, WriterStateApi, WriterVerifyApi } from "./cli-imports";
 import { MEMORY_CLI_USAGE, cliCommands, cliUsageText } from "./cli-commands";
 import type { Services } from "./cli-deps";
 import { cliInspect } from "./cli-inspect";
 import { cliPipeline, timelineArgs } from "./cli-pipeline";
 import { cliProject } from "./cli-project";
 import { cliHost } from "./cli-host";
+export { timelineArgs } from "./cli-pipeline";
 
-export { timelineArgs };
+
+
+
+
+
 
 
 export function registerCli(ctx: ServerCore, services: Services, migrations: readonly string[]) {
@@ -374,3 +258,4 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
     },
   });
 }
+

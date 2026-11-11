@@ -1,39 +1,11 @@
 import type { PluginCliResult } from "@get-bb/plugin-sdk";
 import { OWNER_ITEM_SWEEPS, type CliRunDeps } from "./cli-deps";
-import { createHash } from "node:crypto";
-import { dirname, join, resolve, sep } from "node:path";
-import { listReviewedObservations, pmRulesOf } from "../../learning";
-import { prototypeConfigSchema, resolvePlanningHome, taskV2Schema } from "../../contracts";
-import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, PROTECTIONS, loadPrototypeConfig, saveProjectSetting, savePrototypeConfig, transitionAttempt, failedTasksAllProjects, listNearMissReceipts, projectIdForWorkspacePath, projectLiveAttempts, attemptStateCounts, settingsScopesForWorkspacePath } from "../../storage";
-import { outsideWorkSummary } from "../../owner-presence";
-import { cancelAttemptById, finishRunSafely, pauseRun } from "../../runs/server";
-import { conveyorState, renderTimeline, setConveyor, taskTimeline, unknownReasons } from "../../runs";
-import {bestEffort, isNotFound, maskCredentials, orMiss, outputText, pluginRootFromModule, spawnAsync, stringAt, valueAt} from "@lane-pilot/kit";
-import {listQaHosts, runSkillsCli, parseSkillHub, SKILLS_USAGE} from "../../platform/server";
-import {codeFactsOnHost, CODE_FACTS_REFRESH} from "../../platform";
-import {runOnHost} from "@lane-pilot/host-calls";
-import { attemptSessionLayers, terminalParity, terminalSessionLayers } from "../../native-agent";
 import { projectStats } from "./project-stats";
-import { AGENTS_USAGE, agentRegistry, PM_SKILLS_USAGE, runAgentsCli, runPmSkillsCli, runPmSkillUseCli } from "../../native-agent/server";
-import { ANAMNESIS_USAGE, PROFILE_KEYS, anamnesisFor, collectOwnerMessages, profilePairProblem, sdkThreadsPort } from "../../anamnesis";
-import { LEARNING_USAGE, learningFor, runLearningCli } from "../../learning";
-import { PM_REPLAY_USAGE, runPmReplayCli, listScenarios } from "../../pm-replay";
-import { usageSegment } from "../../usage";
-import { calibrationPassport, weakAreas } from "../../forecast/server";
-import { runWindowCli, WINDOW_USAGE, workerSecretReach } from "../../verification";
 import { explainCatalog, explainWord, guideDocs } from "./explain";
 import { VERDICT_LIST_COMMAND, renderVerdicts, verdictFiles, verdictInventory } from "./verdicts";
-import { POLICY_USAGE, loadLiveExam, runPolicyCli } from "../../policy";
-import { COVERAGE_USAGE, runCoverageCli } from "../../coverage";
-import { mergeFrontmatter, parseFrontmatter, setFrontmatter } from "../../docs";
-import { SMA_MAP_USAGE, runSmaLiveCli, runSmaMapCli, smaCheckedPercent, smaCounts, smaDonePercent, smaRows } from "../../sma-map";
 import { attemptRecord, manifest, passport, preship, prPassport, receiptChain, subagentReceipts, verifyChain } from "./receipts";
 import { EXCAVATE_LOG_ARGS, approvalSuggestions, costPerVerified, excavate, htmlReport, missCurriculum } from "./self-improve";
-import { ROLLBACK_USAGE, runRollbackCli } from "../../rollback/server";
-import { casUpsertSettings, deleteBoundSetting, getSettingVersions, listEvidence, listSettingRows, planningHomeInputs } from "../../storage";
-import { integrityReport, renewDisarm } from "../../policy";
-import { writerQuestionSweep, budgetSpentSweep } from "../../writer/server";
-
+import { CODE_FACTS_REFRESH, PROTECTIONS, anamnesisFor, attemptSessionLayers, attemptStateCounts, bestEffort, budgetSpentSweep, calibrationPassport, codeFactsOnHost, collectOwnerMessages, createHash, getAttempt, getRun, getRunWriterHost, integrityReport, isNotFound, join, learningFor, listAttemptReasonsSince, listEvidence, listQaHosts, listReviewedObservations, listScenarios, loadLiveExam, loadProjectSettings, loadPrototypeConfig, mergeFrontmatter, orMiss, outsideWorkSummary, parseFrontmatter, parseSkillHub, pauseRun, planningHomeInputs, pluginRootFromModule, renewDisarm, resolvePlanningHome, runCoverageCli, runLearningCli, runOnHost, runPmReplayCli, runPmSkillUseCli, runPmSkillsCli, runPolicyCli, runRollbackCli, runSkillsCli, runWindowCli, saveProjectSetting, sdkThreadsPort, setFrontmatter, smaCheckedPercent, smaCounts, smaDonePercent, smaRows, spawnAsync, terminalParity, terminalSessionLayers, unknownReasons, usageSegment } from "./cli-imports";
 /** Inspection, protection and report commands of `bb lane-pilot`. Returns undefined when `command` is not one of theirs. */
 export async function cliInspect(d: CliRunDeps): Promise<PluginCliResult | undefined> {
   const { bb, db, effectiveProjectSettings, host } = d.ctx;

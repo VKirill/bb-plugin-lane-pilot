@@ -1,14 +1,8 @@
 import type { PluginCliResult } from "@get-bb/plugin-sdk";
 import type { CliRunDeps } from "./cli-deps";
-import { isCodeCriticDefault } from "../../contracts/task-enums"
-import { CODE_CRITIC_DEFAULTS } from "../../contracts/task-enums";
-import type { CodeCriticDefault } from "../../contracts/task-enums";
-import { prototypeConfigSchema, resolvePlanningHome, taskV2Schema } from "../../contracts";
-import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, PROTECTIONS, loadPrototypeConfig, saveProjectSetting, savePrototypeConfig, transitionAttempt, failedTasksAllProjects, listNearMissReceipts, projectIdForWorkspacePath, projectLiveAttempts, attemptStateCounts, settingsScopesForWorkspacePath } from "../../storage";
-import {bestEffort, isNotFound, maskCredentials, orMiss, outputText, pluginRootFromModule, spawnAsync, stringAt, valueAt} from "@lane-pilot/kit";
-import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { attemptRecord, manifest, passport, preship, prPassport, receiptChain, subagentReceipts, verifyChain } from "./receipts";
-
+import { CODE_CRITIC_DEFAULTS, THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, importSettingsOnce, isCodeCriticDefault, isNotFound, join, listThreadEventsRaw, maskCredentials, orMiss, stringAt, taskV2Schema, waitThreadIdle } from "./cli-imports";
+import type { CodeCriticDefault } from "./cli-imports";
 function requireCriticCodeDefault(value: string): CodeCriticDefault {
   if (!isCodeCriticDefault(value)) throw new Error(`critic.code.default_for_risk must be one of ${CODE_CRITIC_DEFAULTS.join(", ")}`);
   return value;
