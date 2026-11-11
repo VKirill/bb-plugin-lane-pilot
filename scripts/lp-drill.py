@@ -95,8 +95,9 @@ import lp_drill.scenes.providers
 import lp_drill.scenes.writers
 import lp_drill.scenes.nogit
 import lp_drill.scenes.hub_outage
+import lp_drill.lock
 
-for _mod in (lp_drill.env, lp_drill.hub, lp_drill.report, lp_drill.tasks, lp_drill.context, lp_drill.select, lp_drill.series, lp_drill.preview, lp_drill.scenes.memory, lp_drill.scenes.owner, lp_drill.scenes.skills, lp_drill.scenes.guard, lp_drill.scenes.deferrals, lp_drill.scenes.hub_checks, lp_drill.scenes.checkers, lp_drill.scenes.revert, lp_drill.scenes.phase, lp_drill.scenes.providers, lp_drill.scenes.writers, lp_drill.scenes.nogit, lp_drill.scenes.hub_outage,):
+for _mod in (lp_drill.env, lp_drill.hub, lp_drill.report, lp_drill.tasks, lp_drill.context, lp_drill.select, lp_drill.series, lp_drill.preview, lp_drill.scenes.memory, lp_drill.scenes.owner, lp_drill.scenes.skills, lp_drill.scenes.guard, lp_drill.scenes.deferrals, lp_drill.scenes.hub_checks, lp_drill.scenes.checkers, lp_drill.scenes.revert, lp_drill.scenes.phase, lp_drill.scenes.providers, lp_drill.scenes.writers, lp_drill.scenes.nogit, lp_drill.scenes.hub_outage, lp_drill.lock,):
     for _name in dir(_mod):
         if not _name.startswith("__"):
             _value = getattr(_mod, _name)
@@ -293,24 +294,6 @@ def write_receipt(path: Path, start: float, scenarios: list[dict], ctx: Context 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
     return result
-
-
-def take_lock(lock: Path) -> bool:
-    """Takes the drill lock; a lock left by a process that no longer exists is stale and is taken over."""
-    for _ in range(2):
-        try:
-            lock.mkdir()
-            (lock / "pid").write_text(str(os.getpid()))
-            return True
-        except FileExistsError:
-            try:
-                os.kill(int((lock / "pid").read_text()), 0)
-                return False
-            except PermissionError:  # the process exists under another user
-                return False
-            except (OSError, ValueError):  # no pid file (a lock from before this check), a dead or unreadable pid
-                shutil.rmtree(lock, ignore_errors=True)
-    return False
 
 
 def main() -> int:
