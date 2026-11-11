@@ -68,9 +68,10 @@ function tmp(): { dir: string; env: Record<string, string> } {
 afterEach(() => { while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true }); });
 const read = (path: string) => (existsSync(path) ? readFileSync(path, "utf8") : "");
 
-async function outageWithin(extra: Record<string, string>, seconds: number, curl = CURL_STUB): Promise<string> {
+async function outageWithin(extra: Record<string, string>, seconds: number, curl = CURL_STUB, plant?: (dir: string) => void): Promise<string> {
   const { dir, env } = tmp();
   stub(dir, "curl", curl);
+  plant?.(dir);
   const e = { ...process.env, ...env, LP_WATCH_DRY: "1", CURL_STATE: join(dir, "s"), LP_WATCH_KNOCK_SEC: "1", ...extra };
   const proc = spawn("bash", [script, "run"], { env: e, stdio: "ignore" });
   await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
@@ -87,13 +88,16 @@ describe("[sma:m_w_suspect] three refused knocks declare after the door's first 
     // refused from the start (the door never answered): no fast declare — a slow start is not lifted
     const blind = await outageWithin({ CURL_AFTER: "999999", CURL_CODE: "000", CURL_RC: "7" }, 5);
     expect(blind).not.toContain('"event":"outage"');
+    // a NEW process after a deploy or a restart: an earlier one answered (its pid is in the marker), this one refuses while it loads — the eight-knock rule, no lift
+    const restarted = await outageWithin({ CURL_AFTER: "999999", CURL_CODE: "000", CURL_RC: "7" }, 5, CURL_STUB, (dir) => writeFileSync(join(dir, "hub-watchdog.seen-200"), "111\n"));
+    expect(restarted).not.toContain('"event":"outage"');
     // the env override still names the refused count: 2 refused after a 200 declare
     const override = await outageWithin({ CURL_RC: "7", LP_WATCH_REFUSED_AFTER: "2" }, 5, OK_THEN_FAIL);
     expect(override).toContain('"event":"outage"');
     // timeouts keep the old count: seven in a row, then the door answers — no outage
     const timeouts = await outageWithin({ CURL_AFTER: "7", CURL_CODE: "000", CURL_RC: "28" }, 11);
     expect(timeouts).not.toContain('"event":"outage"');
-  }, 40000);
+  }, 60000);
 });
 
 const approveScenario = (env: Record<string, string>, rc = 0) => drillPy(`
