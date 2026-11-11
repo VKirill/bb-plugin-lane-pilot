@@ -132,8 +132,10 @@ const planOf = (id: string, covers: string[]) => ({ items: [{ id, title: id, wav
 
 describe("parity d4 workflows b1", () => {
   it("[sma:m_sw_ship] a ship with ship.full_gate on and no green gate run is held with the reason, through the graph", async () => {
-    expect(cockpitEn.ckShipLead).toMatch(/push to the repository yourself/i);
-    expect(cockpitRu.ckShipLead).toContain("Отправляете в репозиторий вы сами");
+    // The screen says what happens: the ship workflow pushes and opens the PR itself (the owner's order of 2026-11-01). It used to
+    // promise «you push yourself, the command shows here» while the open_pr errand pushed.
+    expect(cockpitEn.ckShipLead).toMatch(/pushes the branch and opens the pull request itself/i);
+    expect(cockpitRu.ckShipLead).toContain("сам отправляет ветку в репозиторий");
     expect(pushCommands({ output: { status: "shipped", commands: ["git push -u origin HEAD", "gh pr create"] } })).toEqual(["git push -u origin HEAD", "gh pr create"]);
     // No ship output carries a push line today (the push happens inside the open_pr errand): the block stays empty, nothing is invented.
     expect(pushCommands({ output: { status: "shipped", pr_url: "https://x/pr/1", held_by: [] } })).toEqual([]);

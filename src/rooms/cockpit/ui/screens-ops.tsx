@@ -151,7 +151,7 @@ export function ShipScreen({ rpc, projectId, hostId }: { rpc: Rpc; projectId: st
   const [push, setPush] = useState<string[]>([]);
   const start = (id: "validate-phase" | "pr-branch" | "ship") => void rpc.call("workflow_run", { id, projectId, inputs: { phase_id: phaseId } }).then((result) => {
     setSaid(fill("ckShipStarted", { s: JSON.stringify(result).slice(0, 160) }));
-    // The push stays with a person (SMA m_sw_ship): the ship workflow hands the commands back in its outputs.
+    // The ship workflow pushes itself (the owner's order of 2026-11-01, against SMA m_sw_ship); commands show only if a workflow hands some back.
     setPush(id === "ship" ? pushCommands(result) : []);
   }, (cause: unknown) => setSaid(String(cause)));
   const update = (apply: boolean) => hostId && void rpc.call("cockpit_update", { hostId, apply }).then((result) => setSaid((result as { output: string }).output.slice(0, 600)));
