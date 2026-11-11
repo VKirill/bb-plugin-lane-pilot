@@ -6,7 +6,7 @@ import { writerKnowledge } from "./writer-knowledge";
 import { parseDirtSnapshots } from "../cli-outcome";
 import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { HARNESS_VERSION, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, loadProjectSettings, saveReasoningTrace, setAttemptDirtBefore, setAttemptEnvironment, setAttemptHolderThread, setAttemptWorkspace, setReasoningThread, transitionAttempt, taskBasePath } from "../../storage";
+import { HARNESS_VERSION, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, loadProjectSettings, saveReasoningTrace, setAttemptDirtBefore, setAttemptEnvironment, setAttemptHolderThread, setAttemptWorkspace, setReasoningThread, transitionAttempt, taskBasePath, TRANSITION_KEY } from "../../storage";
 import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier, findModelIn } from "@lane-pilot/models";
 import { spawnWithSeam } from "../spawn-seam";
 import { pipelineWriterTag } from "./pipeline-tag";
@@ -23,11 +23,11 @@ import { createSkillMaterializer } from "./skill-materialize";
 import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, waitManagedWorktreeReady } from "../../verification";
 import { createProviderGate, providerListed, providerSwitchOn, waitProviderEnvironment } from "../../verification";
 import { LANE_WORKTREE_PROVIDER_ID } from "../../native-agent/server";
-import { HELPER_DISALLOWED_TOOLS, WRITER_MAX_TURNS } from "../../native-agent";
+import { HELPER_DISALLOWED_TOOLS, permissionEntries, WRITER_DISALLOWED_TOOLS, WRITER_MAX_TURNS } from "../../native-agent";
 import { fullAccessSpawn } from "../../platform/server";
 import { WriterSelectionError, coreHostsRequiredProvider, helperChildPlacement, projectRoleField, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { holderSpawnKey } from "../../platform/server";
-import { stringAt, bestEffort, isNotFound, orMiss, BestEffortLog} from "@lane-pilot/kit";
+import { stringAt, bestEffort, isNotFound, orMiss, sha256Hex, BestEffortLog} from "@lane-pilot/kit";
 import { configuredSetting } from "../../contracts/server";
 import { planDigest, writerBriefInput, writerBriefSegments, type TaskFolderBrief } from "./writer-task";
 import { areaHistoryText, loadArea } from "./sticky";
@@ -301,7 +301,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         serviceTier:effectiveServiceTier, reasoningLevelSource,
       };
       const trace = {
-        stamp:{stateMachineVersion:STATE_MACHINE_VERSION, harnessVersion:HARNESS_VERSION},
+        stamp:{stateMachineVersion:STATE_MACHINE_VERSION, harnessVersion:HARNESS_VERSION, transitionKey:TRANSITION_KEY},
         planSha256:digest.sha256, sentPlanSha256:jev.sentPlanSha256, sourceLength:digest.length, sentLength:jev.sentLength,
         jevStatus:jev.status, jevDecision, requestedReasoningLevel:requested,
         effectiveReasoningLevel:effective, fallbackReason,
@@ -534,6 +534,10 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       const notesAt = input.continuation ? 2 : 1;
       const briefSegments = returnNotes ? [...handoffSegments.slice(0, notesAt), {text:returnNotes,hidden:true}, ...handoffSegments.slice(notesAt)] : handoffSegments;
       const writerBrief = briefSegments.map(segment=>segment.text).join("\n\n");
+      // The permission list the launch asks for (SMA m_tl_terminal_parity): recorded on the trace beside the brief, so
+      // `bb lane-pilot parity` can compare it with a terminal's own. A provider that cannot carry a policy still gets the launch.
+      const writerPolicyField = (() => { try { return requiredPolicyField(bb, helperSnapshot, writerProviderId, "writer", { skills: [...writerSkills.skills, ...harnessSkills] }); } catch { return {}; } })();
+      const writerPolicy = "experimental_vkRequiredSessionPolicy" in writerPolicyField ? writerPolicyField.experimental_vkRequiredSessionPolicy.policy : null;
       const existingTrace = getReasoningTrace(db, input.attemptId);
       if (existingTrace) {
         // The brief is final: each note in it counts one use; the attempt's acceptance later credits the same ids.
@@ -555,8 +559,10 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
           skillPick:{...writerSkills, skills:[...writerSkills.skills, ...harnessSkills], materialized:[...materialized.linked, ...harnessSkills]},
           writerKey,
           harness:harness ? { id:harness.harnessId, arm:harness.arm, alwaysOnChars:harness.alwaysOn.length, skills:harnessSkills, checks:harnessFiles.written.length?harness.checkNames:[], materialize:harnessFiles.reason } : null,
+          permissions: permissionEntries({ policy: writerPolicy, disallowedTools: `${HELPER_DISALLOWED_TOOLS},${WRITER_DISALLOWED_TOOLS}` }),
         };
-        saveReasoningTrace(db, { ...existingTrace, dispatchContext });
+        saveReasoningTrace(db, { ...existingTrace, dispatchContext,
+          stamp:{ ...(existingTrace.stamp ?? { stateMachineVersion:STATE_MACHINE_VERSION, harnessVersion:HARNESS_VERSION }), transitionKey:TRANSITION_KEY, policySha256:sha256Hex(JSON.stringify(writerPolicy)) } });
       }
       const placement = await helperChildPlacement({
         bb, db, projectId:input.projectId, runId:input.runId,

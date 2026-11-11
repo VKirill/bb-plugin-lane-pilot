@@ -1,4 +1,4 @@
-import { getRun, getRunSettingsScopes, listUnansweredWriterQuestions, loadProjectSettings, markCancelCode, transitionAttempt } from "../../storage";
+import { getRun, getRunSettingsScopes, listUnansweredWriterQuestions, loadProjectSettings, transitionAttempt } from "../../storage";
 import type { StageHelperSettings } from "../../platform/server";
 import { isRunHalted, isRunPaused } from "../../runs/server";
 import type { ServerCore } from "../../contracts/server";
@@ -70,8 +70,7 @@ export function createWriterQuestionTimeout(ctx: ServerCore, services: Services,
     const reason = `superseded by ${by}: ${why}`.slice(0, 500);
     if (!transitionAttempt(db, row.id, "running", row.thread_id ? { threadId: row.thread_id } : {})) return;
     transitionAttempt(db, row.id, "cancel_requested", { reason });
-    transitionAttempt(db, row.id, "canceled", { reason });
-    markCancelCode(db, row.id, "superseded");
+    transitionAttempt(db, row.id, "canceled", { reason, cancelCode: "superseded" });
     if (row.thread_id) await services.providerRetry?.abandon(row.thread_id);
   }
 

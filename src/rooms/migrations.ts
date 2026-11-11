@@ -586,4 +586,8 @@ export const migrations = [
   )`,
   // The landing record (SMA k_lib_landing): how many checks were green when the attempt's merge went in; nullable, beside merge_commit and changed_json.
   `ALTER TABLE lane_pilot_attempt_change ADD COLUMN checks_green INTEGER`,
+  // The world counter (SMA m_wrappers): bumped inside the same transaction as every state write, so a commit order exists.
+  `ALTER TABLE lane_pilot_attempt ADD COLUMN world_seq INTEGER`,
+  // The landing suite verdict (SMA k_lib_landing): {suite, head, at} of the check run on the merged head; the sweep fills it.
+  `ALTER TABLE lane_pilot_attempt_change ADD COLUMN suite_json TEXT`,
 ];

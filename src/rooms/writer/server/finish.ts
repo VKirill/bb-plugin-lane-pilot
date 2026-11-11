@@ -4,7 +4,7 @@ import { checkTimeoutSec } from "../check-timing";
 import { pipelineWriterStep, pipelineWriterTag } from "./pipeline-tag";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { writerLeftWorktree } from "./left-worktree";
-import { countAttempts, countOtherLiveAttemptsInArea, countThreadTurns, firstAttemptAt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, priorAttemptStates, transitionAttempt, taskBasePath, failureFieldsOf } from "../../storage";
+import { countAttempts, countOtherLiveAttemptsInArea, countThreadTurns, firstAttemptAt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, noteAttemptStream, priorAttemptStates, transitionAttempt, taskBasePath, failureFieldsOf } from "../../storage";
 import { saveBlockedBy, type BlockedBy } from "../../runs/server";
 import { relayFor } from "../../relay/server";
 import type { HelperPolicySnapshot } from "../../contracts/helper-context";
@@ -333,6 +333,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       }
       // A writer that stopped to ask the owner is not a failed attempt: no retry, no fallback, the question goes to the PM.
       const answer = outputText(await bb.sdk.threads.output({ threadId:input.writerThreadId }).catch((cause: unknown) => { ctx.log(`writer ${input.taskId}: thread output unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return ""; }));
+      // The run's stream on the attempt dossier (SMA ar_run_dir): hashed and excerpted, kept on the trace.
+      noteAttemptStream(db, input.attemptId, answer);
       // The provider's own limit notice instead of a report: the task never ran, so another model takes it, uncharged.
       const limit = providerLimitNotice(answer);
       if (limit) {
