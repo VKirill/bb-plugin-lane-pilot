@@ -3,7 +3,7 @@ import { taskFamily, taskRedispatchBase } from "@lane-pilot/contracts";
 import { FREE_CLASSES, failureClass, isOwnerDecision, isPreStartStop, isWaitingSecret, isWriterSilent, type FailureCode } from "../contracts/failure-class";
 import { ATTEMPT_STATES, IllegalTransitionError, isLegalMove, isOpenAttemptState, OPEN_ATTEMPT_STATES, OPERATIONAL_MOVES, RETRY_ELIGIBLE, TRANSITION_TABLE } from "../contracts/state-machine";
 import { HARNESS_VERSION, type LanePilotDatabase } from "./database";
-import { sha256Hex } from "@lane-pilot/kit";
+import { maskCredentials, sha256Hex } from "@lane-pilot/kit";
 
 /** One key naming the automaton's rule set (SMA ar_stamp): the states, the transition table and the operational moves, hashed. */
 export const TRANSITION_KEY: string = sha256Hex(JSON.stringify({ states: ATTEMPT_STATES, transitions: TRANSITION_TABLE, operational: OPERATIONAL_MOVES }));
@@ -606,7 +606,10 @@ export const ATTEMPT_STREAM_EXCERPT_CHARS = 4000;
 export function noteAttemptStream(db: LanePilotDatabase, attemptId: string, text: string): void {
   const trace = getReasoningTrace(db, attemptId);
   if (!trace) return;
-  saveReasoningTrace(db, { ...trace, stream: { sha256: sha256Hex(text), chars: text.length, excerpt: text.slice(0, ATTEMPT_STREAM_EXCERPT_CHARS) } });
+  // The sha is over the whole text as it came; the stored excerpt is masked first (credential shapes plus every secret this
+  // server handed out — maskCredentials includes redactKnown), then cut, so a token on the cut line cannot survive half-masked.
+  const excerpt = maskCredentials(text).text.slice(0, ATTEMPT_STREAM_EXCERPT_CHARS);
+  saveReasoningTrace(db, { ...trace, stream: { sha256: sha256Hex(text), chars: text.length, excerpt } });
 }
 
 export function setReasoningThread(db: LanePilotDatabase, attemptId:string, threadId:string): void {

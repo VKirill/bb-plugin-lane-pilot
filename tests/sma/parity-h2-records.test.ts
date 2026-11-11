@@ -2,6 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { forgetSecrets, registerSecrets, sha256Hex } from "@lane-pilot/kit";
 import { describe, expect, it } from "vitest";
 import {
   createAttempt, createRun, createTask, getAttempt, getReasoningTrace, inspectAttempt, noteAttemptStream, onAttemptChanged,
@@ -237,5 +238,33 @@ describe("[sma:m_wrappers] a cancel code is recorded whether or not the cancel m
     expect(code("ac2")).toBe("owner");
     transitionAttempt(db, "ac2", "canceled", { reason: "again", cancelCode: "stuck" });
     expect(code("ac2")).toBe("owner");
+  });
+});
+
+describe("[sma:ar_run_dir] the stored stream excerpt is masked, the sha is over the whole text", () => {
+  it("a planted token never reaches the dossier; the sha and length are those of the unmasked output", () => {
+    const { db } = db0();
+    createRun(db, "run_s", "proj_s", "bb", "/w");
+    createTask(db, { id: "ts", runId: "run_s", kind: "bb", contract: {} });
+    createAttempt(db, { id: "as1", runId: "run_s", taskId: "ts" });
+    saveReasoningTrace(db, { runId: "run_s", attemptId: "as1", threadId: null, planSha256: "p", sentPlanSha256: "p", sourceLength: 1, sentLength: 1,
+      jevStatus: "ok" as const, jevDecision: null, requestedReasoningLevel: "r", effectiveReasoningLevel: "r", fallbackReason: null,
+      providerId: "claude-code", model: "m", serviceTier: null, requestedServiceTier: "default" as const });
+    const token = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8";
+    const known = "zz-handed-out-secret-9917";
+    registerSecrets([known]);
+    try {
+      const text = `done.\nAuthorization: Bearer ${token}\npassword: hunter2hunter2\nenv KEY=${known}\n` + "y".repeat(6000);
+      noteAttemptStream(db, "as1", text);
+      const stream = getReasoningTrace(db, "as1")!.stream!;
+      expect(stream.excerpt).not.toContain(token);
+      expect(stream.excerpt).not.toContain(known);
+      expect(stream.excerpt).not.toContain("hunter2hunter2");
+      expect(stream.excerpt.length).toBeLessThanOrEqual(4000);
+      expect(stream.chars).toBe(text.length);
+      expect(stream.sha256).toBe(sha256Hex(text));
+      // The raw blob in the table carries no token either.
+      expect(JSON.stringify(db.prepare("SELECT trace_json FROM lane_pilot_attempt_reasoning WHERE attempt_id='as1'").get())).not.toContain(token);
+    } finally { forgetSecrets(); }
   });
 });

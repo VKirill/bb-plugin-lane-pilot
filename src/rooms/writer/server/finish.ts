@@ -334,7 +334,9 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       // A writer that stopped to ask the owner is not a failed attempt: no retry, no fallback, the question goes to the PM.
       const answer = outputText(await bb.sdk.threads.output({ threadId:input.writerThreadId }).catch((cause: unknown) => { ctx.log(`writer ${input.taskId}: thread output unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return ""; }));
       // The run's stream on the attempt dossier (SMA ar_run_dir): hashed and excerpted, kept on the trace.
-      noteAttemptStream(db, input.attemptId, answer);
+      // A dossier note is never a reason to fail the finish: a database or parse error is logged and the finish goes on.
+      try { noteAttemptStream(db, input.attemptId, answer); }
+      catch (cause) { ctx.log(`writer ${input.taskId}: stream note not kept: ${cause instanceof Error ? cause.message : String(cause)}`); }
       // The provider's own limit notice instead of a report: the task never ran, so another model takes it, uncharged.
       const limit = providerLimitNotice(answer);
       if (limit) {
