@@ -432,6 +432,24 @@ describe("memory corpus care (parity wave d7)", () => {
     expect(writerMemoryPicks(notes as never, task, ["billing"]).map((item) => item.id)).toEqual(["tag1", "core1"]);
   });
 
+  it("[sma:k_v_load] a task with no tag in the project's cloud gets no tagged notes, and a core record never comes in by its tag", () => {
+    const db = openDatabase(newHost().bb);
+    put(db, [
+      { kind: "note", content: "The kitchen display refreshes every ten seconds.", concepts: ["kitchen"] },
+      { kind: "core", content: "A rule text of another section about billing.", concepts: ["billing"] },
+      { kind: "note", content: "Refunds are held for three days before they are paid out.", concepts: ["billing"] },
+    ]);
+    const base = { projectId: "P", query: "zzzz unrelated words", searchEngine: "auto" as const, personalBot: "", ruleMemoryIds: new Set<string>() };
+    // No tag of this task is in the cloud: an empty tag list must not read as "no filter" and list the shelf.
+    const untagged = mixWriterMemory(db as never, { ...base, task: { owns_paths: ["lib/other.ts"], read_first: [] } });
+    expect(untagged.text).toBe("");
+    expect(untagged.ids).toEqual([]);
+    const tagged = mixWriterMemory(db as never, { ...base, task: { owns_paths: ["lib/other.ts"], read_first: [], area: "billing" } });
+    expect(tagged.text).toContain("Refunds are held for three days");
+    expect(tagged.text).not.toContain("rule text of another section");
+    expect(tagged.text).not.toContain("kitchen display");
+  });
+
   it("[sma:k_v_load] `memory load --tags` lists the core plus the notes carrying the given tags", async () => {
     const h = cliHarness();
     put(h.db, [

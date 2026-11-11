@@ -147,7 +147,8 @@ export function closeOrphanWriterStages(db:ReturnType<typeof openDatabase>, acti
   for (const row of rows) {
     if (active.has(`${row.run_id}:${row.task_id}`)) continue;
     const latest = latestAttemptRow(db, row.run_id, row.task_id);
-    if (!latest || now - latest.updated_at < idleMs) continue;
+    // The first loop may have just ended this attempt a millisecond after `now` was taken: its age is never negative.
+    if (!latest || Math.max(0, now - latest.updated_at) < idleMs) continue;
     // A failed attempt waiting for its retry: the loop that would retry it died with a reload, and start-up recovery
     // resumes only attempts in flight. Nobody retries it, so it ends here and the PM decides.
     // A scan that died mid-page left its cursor. The next process continues it; ending the attempt here drops that retry.

@@ -26,7 +26,7 @@ export function writerCandidates(db: LanePilotDatabase, input: WriterMixInput): 
 
 /** Paths the writer's candidate notes name, so a caller can read them before `mixWriterMemory` drops the ones that drifted. */
 export function writerMemoryPaths(db: LanePilotDatabase, input: WriterMixInput): string[] {
-  return [...new Set(writerCandidates(db, input).flatMap((record) => pathsNamed(record.content)))];
+  return [...new Set([...writerCandidates(db, input), ...taggedCandidates(db, input).notes].flatMap((record) => pathsNamed(record.content)))];
 }
 
 /** Reads each path once. A path the reader throws on is missing. */
@@ -48,16 +48,27 @@ export function taskMemoryTags(task: TaskPaths & Partial<Pick<TaskV2, "kind" | "
   return [...candidates].filter((word) => word.length >= 3 && cloud.has(word));
 }
 
+/**
+ * Notes carrying a tag of the task (memory.tag_notes, on when unset). No tag of the task in the project's cloud means no
+ * notes: an empty concept list is no filter and would list the whole shelf. Core records stay out of this path: they are
+ * conventions and rule texts, and a rule of another section is not this writer's.
+ */
+function taggedCandidates(db: LanePilotDatabase, input: WriterMixInput): { notes: MemoryRecord[]; tags: string[] } {
+  if (input.tagNotes === false) return { notes: [], tags: [] };
+  const tags = taskMemoryTags(input.task, new Set(activeMemoryDigestRows(db, input.projectId).flatMap((row) => JSON.parse(row.concepts_json || "[]") as string[])));
+  if (!tags.length) return { notes: [], tags };
+  const scoped = { chain: input.chain ?? [], umbrella: umbrellaFor(db, input), ...(input.now !== undefined ? { now: input.now } : {}) };
+  return { tags, notes: listMemory(db, input.projectId, { concepts: tags }, 20, "subagent", input.personalBot, scoped)
+    .filter((record) => record.kind !== "core" && !input.ruleMemoryIds.has(record.id)) };
+}
+
 export function mixWriterMemory(db: LanePilotDatabase, input: WriterMixInput): { text: string; ids: string[] } {
   const found = writerCandidates(db, input);
   const kept = input.readFile ? found.filter((record) => !filesDrifted(record.fileFingerprint, pathsNamed(record.content), input.readFile!)) : found;
-  const scoped = { chain: input.chain ?? [], umbrella: umbrellaFor(db, input), ...(input.now !== undefined ? { now: input.now } : {}) };
-  const tagged = input.tagNotes !== false
-    ? listMemory(db, input.projectId, { concepts: taskMemoryTags(input.task, new Set(activeMemoryDigestRows(db, input.projectId).flatMap((row) => JSON.parse(row.concepts_json || "[]") as string[]))) }, 20, "subagent", input.personalBot, scoped)
-      .filter((record) => !input.ruleMemoryIds.has(record.id) && !kept.some((hit) => hit.id === record.id))
-    : [];
+  const { notes, tags: taskTags } = taggedCandidates(db, input);
+  const tagged = notes.filter((record) => !kept.some((hit) => hit.id === record.id) && !(input.readFile && filesDrifted(record.fileFingerprint, pathsNamed(record.content), input.readFile)));
   const all = [...kept, ...tagged];
-  const tags = input.tagNotes !== false ? taskMemoryTags(input.task, new Set(tagged.flatMap((record) => record.concepts))) : [];
+  const tags = taskTags.filter((tag) => tagged.some((record) => record.concepts.includes(tag)));
   return { text: writerMemory(all, input.task, tags), ids: writerMemoryPicks(all, input.task, tags).map((record) => record.id) };
 }
 
