@@ -18,6 +18,8 @@ export {
 export {
   eventsListQueryLabel,
   listThreadEventsRaw,
+  listThreadEventsPaged,
+  THREAD_EVENTS_PAGE,
   waitThreadIdle,
   turnHeldByPlugin,
   startLimitWaiting,

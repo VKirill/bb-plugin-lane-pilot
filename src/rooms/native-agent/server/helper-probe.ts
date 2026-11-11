@@ -1,4 +1,4 @@
-import { waitThreadIdle } from "@lane-pilot/thread-observe";
+import { listThreadEventsPaged, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { getRun, listAttemptRowsForProject, loadPrototypeConfig } from "../../storage";
 import { writerExecutionSelection, findModelIn } from "@lane-pilot/models";
 import { fullAccessSpawn } from "../../platform/server";
@@ -31,7 +31,7 @@ type ProbeCheck = (args: ProbeCheckArgs) => Promise<{ ok: boolean; reason?: stri
 
 /** The thread's own events as JSON text (newest 200): where a guard refusal shows, not on the model's word. */
 async function threadEventsText(bb: BbPluginApi, threadId: string): Promise<string> {
-  const listed = await bb.sdk.threads.events.list({ threadId, order: "desc", limit: "200" } as never).catch(() => [] as unknown[]);
+  const listed = await listThreadEventsPaged(bb, { threadId, order: "desc", limit: "200" }).catch(() => [] as unknown[]);
   return JSON.stringify(Array.isArray(listed) ? listed : []);
 }
 
@@ -136,7 +136,7 @@ export const PROBES = {
     expect: /NESTED/,
     // The cell is proved by the session's trace, not by the model's word: the events must show the tool call itself.
     check: async ({ bb, threadId }: ProbeCheckArgs) => {
-      const listed = await bb.sdk.threads.events.list({ threadId, order: "desc", limit: "200" } as never).catch(() => [] as unknown[]);
+      const listed = await listThreadEventsPaged(bb, { threadId, order: "desc", limit: "200" }).catch(() => [] as unknown[]);
       return toolCallsText(Array.isArray(listed) ? listed : []).includes("lane-pilot status") ? { ok: true } : { ok: false, reason: "documentary.nested: the answer claims NESTED but the thread's events show no `bb lane-pilot status` tool call" };
     },
   },
