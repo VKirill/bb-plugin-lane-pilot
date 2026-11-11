@@ -11,6 +11,7 @@ sources:
   - packages/kit/src/index.ts
   - packages/kit/src/bounded-read.ts
   - packages/kit/src/redact.ts
+  - packages/kit/src/secret-files.ts
   - packages/kit/src/spawn-async.ts
   - packages/kit/src/output-capture.ts
   - packages/kit/src/output-excerpt.ts
@@ -27,13 +28,13 @@ sources:
 
 # Kit workspace overview
 
-TL;DR: `@lane-pilot/kit` aggregates foundational utilities for hashing, secret redaction, process execution, bounded file reading, path ownership matching, resilience, and prompt validation (`packages/kit/src/index.ts:1-14`).
+TL;DR: `@lane-pilot/kit` aggregates foundational utilities for hashing, secret redaction, process execution, bounded file reading, path ownership matching, resilience, and prompt validation (`packages/kit/src/index.ts:1-15`).
 
 ## What it is
 
 The workspace is the lowest shared utility package in the monorepo (`packages/kit/package.json:1-16`). It has no runtime dependencies on other workspace packages or third-party libraries, relying strictly on Node built-in modules for its root entry point while exporting dedicated browser-safe subpaths for client bundles (`packages/kit/package.json:4`, `packages/kit/package.json:11-15`).
 
-Every room in `src/rooms/` and shared packages under `packages/` rely on `@lane-pilot/kit` for consistent cryptographic hashing, safe child process spawning, sensitive credential masking, workspace boundary enforcement, and failure discrimination (`packages/kit/src/index.ts:1-14`).
+Every room in `src/rooms/` and shared packages under `packages/` rely on `@lane-pilot/kit` for consistent cryptographic hashing, safe child process spawning, sensitive credential masking, workspace boundary enforcement, and failure discrimination (`packages/kit/src/index.ts:1-15`).
 
 ## Stack
 
@@ -53,10 +54,10 @@ Environment configuration:
 
 ## Public entry points and capabilities
 
-The package root aggregates fourteen core utility modules (`packages/kit/src/index.ts:1-14`):
+The package root aggregates fifteen core utility modules (`packages/kit/src/index.ts:1-15`):
 
 - **[Bounded workspace file reads](features/bounded-reads.md):** Implements the `lane_pilot_read` protocol with workspace boundary enforcement, segment-by-segment symlink blocking, binary null-byte rejection, UTF-8 validation, and file/slice size bounds (`packages/kit/src/bounded-read.ts:6-28`).
-- **[Secret redaction and credential protection](features/redaction.md):** Generates multi-format search needles, remembers fetched secrets, and masks selected credential shapes and registered values (`packages/kit/src/redact.ts:15-32`, `packages/kit/src/redact.ts:60-85`, `packages/kit/src/redact.ts:106-130`).
+- **[Secret redaction and credential protection](features/redaction.md):** Generates multi-format search needles, remembers fetched secrets, masks selected credential shapes and registered values, and identifies secret-looking repository paths (`packages/kit/src/redact.ts:15-32`, `packages/kit/src/redact.ts:60-85`, `packages/kit/src/redact.ts:106-130`, `packages/kit/src/secret-files.ts:6-16`).
 - **[Async process spawning and output handling](features/process-spawning.md):** Executes child processes asynchronously with timeout, buffer and optional process-group controls (`packages/kit/src/spawn-async.ts:20-59`), and cleans check output and extracts failure summaries (`packages/kit/src/output-excerpt.ts:20-42`).
 - **[Path ownership and task overlap matching](features/path-ownership.md):** Tests if a file path falls under an ownership or exclusion pattern via `matchOwnsPath` (`packages/kit/src/owns-paths.ts:51-65`), and detects task conflict overlaps via `ownsPathsOverlap` (`packages/kit/src/owns-paths.ts:88-93`).
 - **[Resilience, absence detection, and best effort](features/resilience-and-absence.md):** Distinguishes expected file or RPC entity absence via `isNotFound` (`packages/kit/src/miss.ts:11-100`), and isolates non-critical side effects with warning logging via `bestEffort` (`packages/kit/src/best-effort.ts:8-24`).

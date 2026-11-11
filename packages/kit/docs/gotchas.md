@@ -40,9 +40,9 @@ None found in the inspected package code.
 
 **Workaround:** Pass `keepEnds` (such as `keepEnds: 200_000`) for test runs and check executions that produce extensive logs (`packages/kit/src/spawn-async.ts:14-15`, `packages/kit/src/spawn-async.ts:24-25`). When `keepEnds` is supplied, processes are never killed due to output volume, and `createCapture` retains stream beginnings and ends (`packages/kit/src/output-capture.ts:2-19`).
 
-### Known secret registry silently evicts oldest entries past 2000 items
+### Evicted secrets are no longer masked
 
-**Problem:** `registerSecrets` stores sensitive strings in an in-memory `Set` capped at `MAX_KNOWN` (2000) entries (`packages/kit/src/redact.ts:10`, `packages/kit/src/redact.ts:61`). When this limit is exceeded, the oldest secret is deleted without notification (`packages/kit/src/redact.ts:71`).
+**Problem:** When the registry evicts a value, later `redactKnown` calls no longer mask it; the cache limit and eviction rule are documented in [Secret redaction and credential protection](features/redaction.md) (`packages/kit/src/redact.ts:71`, `packages/kit/src/redact.ts:81-85`).
 
 **Risk:** Long-running processes that register secrets continuously will lose older secrets from memory. If an evicted secret subsequently appears in check output, logs, or retry briefs, `redactKnown` will not mask it (`packages/kit/src/redact.ts:81-85`).
 
@@ -80,8 +80,6 @@ None found in the inspected package code.
 
 **Risk:** Fast commands that start background daemons incur a 2-second delay before resolving (`packages/kit/src/spawn-async.ts:59`).
 
-**Workaround:** Ensure test or check scripts redirect background process output away from inherited file descriptors (`packages/kit/src/spawn-async.ts:58-59`).
-
 ### Process groups are signalled only when a run is stopped
 
 **Problem:** With `group: true`, `spawnAsync` sends `SIGTERM` to the process group and schedules `SIGKILL` after 2 seconds only for timeout or `ENOBUFS`; normal child exit does not signal the group (`packages/kit/src/spawn-async.ts:16-18`, `packages/kit/src/spawn-async.ts:39-42`).
@@ -100,7 +98,7 @@ None found in the inspected package code.
 
 ### Root package import pulls Node built-ins into browser bundles
 
-**Problem:** The root entry point of `@lane-pilot/kit` imports Node runtime built-ins from child modules (`packages/kit/src/index.ts:1-14`, `packages/kit/package.json:4`).
+**Problem:** The root entry point of `@lane-pilot/kit` imports Node runtime built-ins from child modules (`packages/kit/src/index.ts:1-15`, `packages/kit/package.json:4`).
 
 **Risk:** Importing `@lane-pilot/kit` from client-side UI code causes bundler failures in browser environments (`packages/kit/package.json:4`, `packages/kit/package.json:11-15`).
 
@@ -114,7 +112,7 @@ None found in the inspected package code.
 
 **Risk:** Attempting to read a directory as a file throws `EISDIR`, and reading files with restricted permissions throws `EACCES` rather than returning `null` (`packages/kit/src/miss.ts:41-43`).
 
-**Workaround:** Callers must ensure target paths reference regular files before reading, or explicitly handle permissions errors (`packages/kit/src/miss.ts:48-54`).
+**Workaround:** Handle non-absence filesystem errors at the call site; `readTextOrNull` rethrows them instead of returning `null` (`packages/kit/src/miss.ts:38-47`).
 
 ### Hook commands with shell metacharacters lose structured shape
 
