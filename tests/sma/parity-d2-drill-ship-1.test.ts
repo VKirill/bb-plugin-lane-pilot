@@ -323,7 +323,7 @@ print(json.dumps({"verdict": r["verdict"], "problems": r["problems"], "last": li
   });
 });
 
-describe("[sma:k_lib_releaselint] lp-drill.sh calls predict-lint only on --series", () => {
+describe("[sma:k_lib_releaselint] lp-drill.sh calls predict-lint on --series and --quick, never on a plain run", () => {
   function runSh(...args: string[]) {
     const bin = mkdtempSync(join(tmpdir(), "lp-fakebin-"));
     const log = join(bin, "calls.log");
@@ -333,20 +333,20 @@ describe("[sma:k_lib_releaselint] lp-drill.sh calls predict-lint only on --serie
     return { status: res.status, calls: existsSync(log) ? readFileSync(log, "utf8") : "" };
   }
 
-  it("--quick (the deploy path) and a plain run go straight to the drill", () => {
-    for (const args of [["--quick"], [], ["--scenario", "parallel3"]]) {
+  it("a plain run goes straight to the drill; --quick and --series lint first and stop on a finding", () => {
+    for (const args of [[], ["--scenario", "parallel3"]]) {
       const res = runSh(...args);
       expect(res.calls).not.toContain("predict-lint");
       expect(res.calls).toContain("python3");
       expect(res.status).toBe(0);
     }
-  });
-
-  it("--series stops on a lint finding before the drill, with no RECEIPT line", () => {
-    const res = runSh("--series");
-    expect(res.calls).toContain("predict-lint");
-    expect(res.calls).not.toContain("python3");
-    expect(res.status).toBe(1);
+    for (const args of [["--quick"], ["--series"]]) {
+      const res = runSh(...args);
+      expect(res.calls).toContain("predict-lint");
+      expect(res.calls).not.toContain("python3");
+      expect(res.status).toBe(1);
+    }
+    expect(runSh("--quick", "--dry-run").calls).not.toContain("predict-lint");
     expect(runSh("--series", "--dry-run").calls).not.toContain("predict-lint");
   });
 });

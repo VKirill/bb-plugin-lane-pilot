@@ -74,12 +74,16 @@ function docAudit(args: string[] = []): number {
   for (const file of docs()) for (const m of read(file).matchAll(/lane-pilot ([a-z][a-z0-9-]+)/g)) documented.add(m[1]!);
   const undocumented = [...commands].filter((name) => !documented.has(name)).sort();
   const baselinePath = join(ROOT, ".agents/ship/doc-coverage-baseline.json");
+  // The baseline file is written only by the explicit --write-baseline flag, never by a check run (the gate writes nothing).
   const baseline = existsSync(baselinePath) ? (JSON.parse(readFileSync(baselinePath, "utf8")) as { undocumented?: number }).undocumented ?? 0 : null;
+  const writeBaseline = args.includes("--write-baseline");
   if (baseline === null) {
-    mkdirSync(join(ROOT, ".agents/ship"), { recursive: true });
-    writeFileSync(baselinePath, JSON.stringify({ undocumented: undocumented.length, verbs: undocumented }, null, 2) + "\n");
+    if (writeBaseline) {
+      mkdirSync(join(ROOT, ".agents/ship"), { recursive: true });
+      writeFileSync(baselinePath, JSON.stringify({ undocumented: undocumented.length, verbs: undocumented }, null, 2) + "\n");
+    }
   } else if (undocumented.length < baseline) {
-    writeFileSync(baselinePath, JSON.stringify({ undocumented: undocumented.length, verbs: undocumented }, null, 2) + "\n");
+    if (writeBaseline) writeFileSync(baselinePath, JSON.stringify({ undocumented: undocumented.length, verbs: undocumented }, null, 2) + "\n");
   } else if (undocumented.length > baseline) {
     findings.push(`undocumented CLI verbs grew ${baseline} -> ${undocumented.length}: ${undocumented.slice(0, 20).join(", ")}`);
   }
@@ -184,11 +188,14 @@ function publishable(args: string[] = []): number {
 
 function predictLint(): number {
   const text = read("CHANGELOG.md");
-  const section = text.split(`## ${pkg.version}`)[1]?.split(/\n## /)[0] ?? "";
   const promise = /\b(faster|fewer|less|no longer|never again|быстрее|меньше|больше не|реже)\b/i;
   const measured = /(\d+\s?(ms|s|%|x|раз|мин)|measured|замер|метрик|drill|учени|bench|test)/i;
-  const findings = section.split("\n").filter((line) => promise.test(line) && !measured.test(line)).map((line) => `CHANGELOG ${pkg.version}: «${line.trim().slice(0, 140)}» promises an effect without saying how it is measured`);
-  return out(findings, `prediction lint: the ${pkg.version} notes measure what they promise`);
+  // Only the newest entry is the release being shipped: its findings fail; the same promise in an older entry is a printed warning.
+  const entries = text.split(/\n(?=## )/).filter((part) => part.trimStart().startsWith("## ")).map((part) => ({ version: /^## ([^\n]+)/.exec(part.trim())?.[1]?.trim() ?? "?", part }));
+  const problems = (part: string, version: string) => part.split("\n").filter((line) => promise.test(line) && !measured.test(line)).map((line) => `CHANGELOG ${version}: «${line.trim().slice(0, 140)}» promises an effect without saying how it is measured`);
+  const findings = entries.length ? problems(entries[0]!.part, entries[0]!.version) : [];
+  for (const warning of entries.slice(1).flatMap((entry) => problems(entry.part, entry.version)).slice(0, 20)) console.log(`warning: ${warning}`);
+  return out(findings, `prediction lint: the ${entries[0]?.version ?? pkg.version} notes measure what they promise`);
 }
 
 function explain(): number {
@@ -266,11 +273,15 @@ function gate(): number {
   // prediction lint, in this order, stopping at the first failure.
   try { execFileSync(process.env.BB_CLI || "bb", ["plugin", "build"], { cwd: ROOT, stdio: "inherit" }); }
   catch { console.log("bb plugin build failed"); return 1; }
+  // freshness --strict right after the build it checks (SMA k_lib_spafresh); a hub that cannot be asked is a warning line, never a failure.
+  const fresh = freshness(["--strict"]);
+  if (fresh === 1) { console.log("gate: freshness failed"); return 1; }
+  if (fresh === 2) console.log("gate: freshness could not check (the hub is unreachable) — warning, not a stop");
   for (const [name, step, flags] of [["publishable", publishable, ["--strict"]], ["licenses", licenses, []], ["doc-audit", docAudit, ["--strict"]], ["predict-lint", predictLint, []]] as const) {
     const rc = step([...flags]);
     if (rc !== 0) { console.log(`gate: ${name} failed`); return rc; }
   }
-  console.log("gate: build, publishable, licenses, doc-audit and predict-lint all clean");
+  console.log("gate: build, freshness, publishable, licenses, doc-audit and predict-lint all clean");
   return 0;
 }
 
