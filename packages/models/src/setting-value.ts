@@ -19,6 +19,8 @@ export const SWITCHES_ON_BY_DEFAULT: ReadonlySet<string> = new Set([
   // The owner's word of 2026-11-11 (the SMA money rule): a paid lane has no money until a cap is set; «off» reads unset as no limit.
   "money.cap_unset_zero",
   "verification.copy",
+  // The browser check runs wherever a browser machine is named; «off»/false opts out (SMA k_we_verify).
+  "browser_qa.enabled",
 ]);
 
 /** What an unset switch that takes a word means; a stored word the switch does not know also falls here. */
@@ -38,11 +40,13 @@ export function switchWord(settings: Readonly<Record<string, unknown>>, key: str
 /**
  * An on|off switch as it acts: the stored word «on» or «off», else the table's default. Only the two words count, as every
  * reader had it: «true», «yes» or 1 are not «on» (the `setting` verb stores nothing else, and a hand-written row stays inert).
+ * A stored off value — false, 0, «false», «0», «no» — reads off even for an on-by-default switch (the settings window stores
+ * booleans where the verb stores words, and an explicit no must win over the default).
  */
 export function switchOn(settings: Readonly<Record<string, unknown>>, key: string): boolean {
   const value = settings[key];
   const word = typeof value === "string" ? value.trim().toLowerCase() : "";
-  return word === "on" || (word !== "off" && SWITCHES_ON_BY_DEFAULT.has(key));
+  return word === "on" || (!settingOff(value) && SWITCHES_ON_BY_DEFAULT.has(key));
 }
 
 /** The on side of `settingOff`: true, 1 or «1», «true», «on», «yes». */

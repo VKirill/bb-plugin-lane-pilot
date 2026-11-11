@@ -156,7 +156,8 @@ export type PhaseRecord = {
   /** The sha of each SPEC.md / PLAN.md / VERIFICATION.md the command last wrote (phase.doc_files): a file that no longer has this
    *  sha was changed by a person, and the new text goes next to it as <name>.new.md. */
   docShas?: Record<string, string>;
-  /** browser_qa.enabled is on for the project: visible work owes a live check (SMA k_we_verify). Unset on phases opened before it and wherever the browser check is off: nothing is owed there, and the acceptance line says so. */
+  /** The browser check is owed (SMA k_we_verify): browser_qa.enabled not off (unset = on) AND a browser machine named
+   *  (browser_qa.host_id, project row else the hub-wide one). Copied at open; absent on older phases = nothing is owed. */
   liveCheck?: boolean;
   /** Research before the plan (setting phase.research, off by default = the daemon's skip answer; SMA k_wp_research). */
   research?: "on";
@@ -192,8 +193,9 @@ export type PhaseRecord = {
   /** The seven-day rollback watch after acceptance (SMA p6_observe): what the machine saw in history; the acceptance is never touched. */
   observation?: PhaseObservation;
   verification?: { verdict?: FrozenVerdict; model?: ModelVerdict;
-    /** The live interface check between the blind verdict and the goal audit (SMA k_we_uiqa): run by the machine, tied to the candidate head. */
-    live?: { state: "passed" | "blocked"; score40?: number; findings?: unknown; reportPath?: string; head?: string | null; at: number };
+    /** The live interface check between the blind verdict and the goal audit (SMA k_we_uiqa): run by the machine, tied to the candidate head.
+     *  "skipped" records a check that could not run (reason says why: no browser machine named) and never holds the phase. */
+    live?: { state: "passed" | "blocked" | "skipped"; score40?: number; findings?: unknown; reportPath?: string; head?: string | null; reason?: string; at: number };
     /** The drawing contract's checkable points (SMA k_wv_design): read from UI-SPEC.md at verification, each an
      *  acceptance line once the goal audit judges it (met only with evidence). */
     points?: Array<{ id: string; text: string; met?: boolean; evidence?: string }>;

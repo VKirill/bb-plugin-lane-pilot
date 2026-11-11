@@ -59,7 +59,7 @@ export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFac
     line("qa_read", qaRed.length === 0 && qaOwed.length === 0 && !staleLive, qaRed.length ? `the browser check failed: ${qaRed.join(", ")}`
       : qaOwed.length ? `the ${qaOwed.every((id) => facts.get(id)?.qaPlanned) ? "planned " : ""}browser check has not passed: ${qaOwed.join(", ")}`
       : staleLive ? `the live check was taken on head ${live!.head!.slice(0, 12)}, the package it decides on is at ${verifiedHead!.slice(0, 12)} — check the same candidate`
-      : `${qaPassed} piece(s) passed their browser check${qaNone ? `; ${qaNone} piece(s) plan none (no qa_cases)` : ""}${noLive ? "; visible work, no live check owed (browser_qa.enabled is not on)" : ""}`),
+      : `${qaPassed} piece(s) passed their browser check${qaNone ? `; ${qaNone} piece(s) plan none (no qa_cases)` : ""}${noLive ? "; visible work, no live check owed (browser_qa off or no browser machine named)" : ""}`),
     line("goal_met", model?.state === "met", model ? `${model.by}: ${model.summary}` : "no goal audit yet"),
     // Batch closure (SMA bc_closure): the calculation is run fresh at close — a withdraw can drop the last piece covering a
     // requirement without the plan gate seeing it, and a broken book chain is no closing record.

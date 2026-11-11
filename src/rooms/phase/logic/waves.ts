@@ -53,7 +53,7 @@ export function pieceLines(item: PlanItem, fact: TaskFact | undefined, issuedSha
     { id: "promises_proved", ok: proved, detail: proved ? "plan-fact proved the promise" : `plan-fact ${fact?.planFact ?? "left no receipt"}` },
     { id: "checks_passed", ok: checks, detail: checks ? "its checks pass" : "its checks failed" },
     { id: "independent_check", ok: critiqued, detail: critiqued ? "the code critic passed it" : `the code critic ${fact?.codeCritique === "blocked" ? "blocks it" : "has not passed it (no critic receipt is no reading)"}` },
-    { id: "qa_read", ok: qa, detail: qa ? (fact?.browserQa === "passed" ? "the browser check passed" : buildsScreens(item) && !liveCheckPossible ? "visible work, no live check owed (browser_qa.enabled is not on)" : "no browser check planned (no qa_cases)")
+    { id: "qa_read", ok: qa, detail: qa ? (fact?.browserQa === "passed" ? "the browser check passed" : buildsScreens(item) && !liveCheckPossible ? "visible work, no live check owed (browser_qa off or no browser machine named)" : "no browser check planned (no qa_cases)")
       : buildsScreens(item) && !fact?.qaPlanned ? `visible work, the browser check ${fact?.browserQa === "failed" ? "failed" : "has not passed"}` : `the browser check ${fact?.browserQa === "failed" ? "failed" : "has not passed"}` },
   ];
 }
