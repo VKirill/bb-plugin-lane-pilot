@@ -289,8 +289,11 @@ export function createRegression(ctx: ServerCore, services: Services) {
     const finish = (): ProjectPass => { report.durationMs = Date.now() - started; return report; };
 
     const mode = options.mode === "full" ? "full" : "cheap";
-    const candidates = (await candidatesOf(projectId, settings, now, report.tasks, options.runId, mode))
-      .filter((c) => !options.basePaths || options.basePaths.includes(c.target.basePath));
+    const picked = await candidatesOf(projectId, settings, now, report.tasks, options.runId, mode);
+    const candidates = picked.filter((c) => !options.basePaths || options.basePaths.includes(c.target.basePath));
+    // A task that landed on a tree this pass was not asked for is no part of it: its checks stayed «planned» and never ran,
+    // so the goal check of a phase whose run held one more task was partial for ever (live phase 2026-11-11).
+    for (const c of picked) if (!candidates.includes(c)) { c.report.skipped = "it landed on a tree this pass was not asked for"; c.report.checks = []; }
     // An open finding for a task that was reverted since is settled by that revert. Beside it the stale sweep (W32 rank 8):
     // rows that could never close by re-running — an unstable check flaky for a week, and a check pinned on the package
     // version — close here instead of rescanning forever.

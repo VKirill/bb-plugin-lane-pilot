@@ -6,6 +6,8 @@
 - **Not done yet:** `writer/server/start-writer-task.ts` still holds one function of 1 470 lines (1 561 lines in the file); a second pass is cutting it.
 - **A file-size limit in the architecture tests.** A source file holds at most 500 lines. The 55 files that were over it keep a ceiling (their size rounded up to a hundred) that only goes down; nine generated files and dictionaries are exempt.
 - **What picks behaviour by a file's path follows the split:** the wall's table of head parts (`wall/rerun.ts`), the command list `lp-ship` reads for the doc audit (its output is the same line for line), the drill's scene code list, the memory path registry, the map's proofs (10 links, 30 cards). Four tests that name a file by its path were updated to the new path: the spawn list, the house-word baseline, the memory path registry's test input and the acceptance-proof test, which now reads the landing in its own module.
+- **Found by the live phase on 0.1.524, fixed.** The phase went through analysis, planning, execution and the wave review for the first time, and its verification failed with «2 of 3 checks ran, 1 not run». The run held one more accepted task, landed on main and not in the phase's tree. The regression pass listed its check as planned, then left the task out because its tree was not asked for, and the check stayed «planned» for ever: the phase's goal check could never be a full pass. Such a task is now set aside with the reason and its checks are not counted.
+- **The drill asks a read again after «HTTP 502».** The same run was lost at the end on one `phase_get` that met the hub in a long pause. A write is not repeated.
 - **The map.** Unchanged: have 1655, partial 20, void 96, upstream 27, missing 0.
 
 ## 0.1.524

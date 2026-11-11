@@ -860,7 +860,13 @@ def setting_rpc(method: str, payload: dict) -> dict:
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
         json.dump(payload, handle)
     try:
-        rc, out, err = run([BB, "plugin", "rpc", "call", "lane-pilot", method, "--input-file", handle.name, "--json"], timeout=60)
+        # A read that meets the hub in a long pause gets «HTTP 502» for a few seconds (live phase 2026-11-11: the run was
+        # lost on one phase_get); it is asked again. A write is not: it may have landed.
+        for attempt in range(3):
+            rc, out, err = run([BB, "plugin", "rpc", "call", "lane-pilot", method, "--input-file", handle.name, "--json"], timeout=60)
+            if rc == 0 or attempt == 2 or not (re.search(r"HTTP 50[234]", err or out) and re.search(r"_(get|list|status|view)$", method)):
+                break
+            time.sleep(10)
     finally:
         os.unlink(handle.name)
     if rc != 0:
