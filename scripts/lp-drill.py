@@ -1320,7 +1320,9 @@ def scenario_phase(ctx: "Context") -> dict:
     opened = act("open", title=f"Drill phase {STAMP}", goal="three notes exist, written in two waves")
     phase_id = opened["phase"]["id"]
     try:
-        act("context", phase_id, docs=[doc], risks={"technical": "none", "product": "none", "operations": "none", "security": "none"})
+        # The discussion gate asks for an appetite and the no-gos besides the risks (SMA p1_confirm): the scene names all three.
+        act("context", phase_id, docs=[doc], risks={"technical": "none", "product": "none", "operations": "none", "security": "none"},
+            appetite="three one-line notes, about twenty minutes", noGos=["none"])
         notes = [note_task(f"drill-ph{n}-{STAMP}", f"drills/phase-{STAMP}-{n}.md", f"phase piece {n}", ctx.cwd) for n in (1, 2, 3)]
         notes[2]["depends_on"] = [notes[0]["id"]]
         items = [{"id": spec["id"], "title": spec["title"], "wave": 1 if n < 2 else 2, "task": spec,
