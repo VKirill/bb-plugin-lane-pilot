@@ -141,12 +141,15 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
     const revive: Array<{ entry: MemoryCandidate; id: string }> = [];
     const corroborate: string[] = [];
     const seen = new Set<string>();
+    // A note shortened by memory-compress stays shortened: its old long wording is not revived by a re-import of the same file.
+    const compressed = new Set(rows.filter((row) => row.status === "active" && row.verification_json?.includes('"by":"compress"')).map((row) => row.id));
     for (const entry of input.entries) {
       const id = memoryRecordId(input.projectId, entry.kind, entry.content, personalBot, input.audience, scope);
       if (seen.has(id)) continue;
       seen.add(id);
       const hit = known.get(id);
       if (!hit) { if (entry.validUntil == null || entry.validUntil > now) pending.push({ entry, id }); continue; }
+      if (hit.status === "superseded" && hit.superseded_by && compressed.has(hit.superseded_by)) continue;
       if (hit.status === "active") { if (hit.trust === "observed" && hit.source_sha256 !== input.sourceSha256) corroborate.push(hit.id); continue; }
       // A hidden record comes back when its fact is stated again, or when the file it came from says so; a replaced one stays replaced otherwise.
       // A revoked one never does, on any path (restated, re-imported from its file): the owner withdrew that fact. An archived one

@@ -1,13 +1,15 @@
 /**
- * `bb lane-pilot catalog` (SMA k_v_catalog): one card line per git-tracked file. `--write` stores
- * them in the catalog; without it nothing leaves the terminal.
+ * `bb lane-pilot catalog` (SMA k_v_catalog): one card line per git-tracked file. `--write` stores them in the
+ * catalog of the repository (same key, same builder and same limits as the session start's background build);
+ * without it nothing leaves the terminal.
  */
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { buildFileCard, type FileCard } from "./card";
-import { collectGitFacts, trackedFiles } from "./git";
-import { writeCatalog } from "./store";
+// Plain-source rule: the hook reaches this file through the index.
+// @ts-expect-error TS5097
+import { buildCatalog, collectCards } from "./build.ts";
+// @ts-expect-error TS5097
+import { findRepo } from "./store.ts";
 
 export const CATALOG_USAGE = "bb lane-pilot catalog [--path DIR] [--write]";
 
@@ -17,19 +19,19 @@ export function runCatalogCli(argv: readonly string[], cwd = process.cwd()): Res
   try {
     const at = argv.indexOf("--path");
     const dir = resolve(at >= 0 && argv[at + 1] ? argv[at + 1]! : cwd);
-    const paths = trackedFiles(dir);
-    if (!paths.length) return { exitCode: 1, stderr: `no git-tracked files under ${dir}` };
-    const facts = collectGitFacts(dir, paths);
-    const cards: FileCard[] = [];
-    for (const path of paths) {
-      let bytes: Buffer;
-      try { bytes = readFileSync(resolve(dir, path)); } catch { continue; }
-      cards.push(buildFileCard({ path, bytes, git: facts.get(path) }));
+    const warnings: string[] = [];
+    let cards;
+    if (argv.includes("--write")) {
+      const built = buildCatalog(dir);
+      if (!built.ok || !built.cards) return { exitCode: 1, stderr: built.message };
+      cards = built.cards;
+    } else {
+      cards = collectCards(findRepo(dir)?.top ?? dir, { warn: (message) => warnings.push(message) }).cards;
     }
-    if (argv.includes("--write")) writeCatalog(dir, cards);
+    if (!cards.length) return { exitCode: 1, stderr: `no git-tracked files under ${dir}` };
     const lines = cards.map((card) =>
       `${card.path} | ${card.lines} lines | ${card.language} | ${card.lastCommit ? card.lastCommit.slice(0, 8) : "-"} | ${card.headLine}`);
-    return { exitCode: 0, stdout: `${lines.join("\n")}\n` };
+    return { exitCode: 0, stdout: `${lines.join("\n")}\n`, ...(warnings.length ? { stderr: `${warnings.join("\n")}\n` } : {}) };
   } catch (cause) {
     return { exitCode: 1, stderr: cause instanceof Error ? cause.message : String(cause) };
   }

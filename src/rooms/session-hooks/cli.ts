@@ -10,7 +10,7 @@ import { join } from "node:path";
 // @ts-expect-error TS5097
 import { buildCapsule, EDIT_TOOLS, failOpen, hookOutput, injectPack, pmSkillUseOf, pretaskDecision, progressRecord, promptRecall, runStreams, sessionEndDraft, sessionStartText, stallObserve, subagentVerify, subagentVerifyText, type Capsule, type PmSkillUse, type ToolCtx } from "./logic.ts";
 // @ts-expect-error TS5097
-import { appendTouch, cardNotes } from "../file-cards/index.ts";
+import { appendTouch, buildCatalog, cardNotes, startCatalogBuild } from "../file-cards/index.ts";
 
 type Payload = Record<string, unknown>;
 
@@ -89,6 +89,8 @@ function handle(payload: Payload): void {
       capsule,
     });
     if (typeof payload.model === "string") writeFileSync(join(dir, "model.txt"), payload.model);
+    // A missing or stale file catalog is built in a detached background process; this hook returns at once (k_st_catalog).
+    if (cwd) startCatalogBuild(cwd, process.argv[1] ?? "");
     emit(hookOutput(event, text));
     return;
   }
@@ -130,7 +132,7 @@ function handle(payload: Payload): void {
       tool: name, sid: session, cwd, command: String(input.command ?? ""), path: String(input.file_path ?? input.path ?? ""),
       denials: {}, lessons,
       // A cataloged file card becomes the knowledge stream's note for this edit (k_st_catalog).
-      notes: cwd && EDIT_TOOLS.has(name) ? cardNotes(cwd, String(input.file_path ?? input.path ?? "")) : [],
+      notes: cwd && EDIT_TOOLS.has(name.toLowerCase()) ? cardNotes(cwd, String(input.file_path ?? input.path ?? "")) : [],
     };
     const streams = runStreams(ctx, Date.now);
     appendFileSync(join(dir, "perf.jsonl"), `${JSON.stringify(streams.perf)}\n`);
@@ -145,11 +147,12 @@ function handle(payload: Payload): void {
   if (event === "PostToolUse") {
     const pmSkill = pmSkillUseOf(toolName(payload), toolInput(payload), process.env);
     if (pmSkill) reportPmSkill(pmSkill);
-    // The touch journal of the catalog: one line per edit tool call, outside the tracked tree.
-    if (cwd && EDIT_TOOLS.has(toolName(payload))) {
+    // The touch journal of the catalog: one line per edit tool call, only where a catalog exists; its own try so the stall bookkeeping below always runs.
+    try {
+      const tool = toolName(payload).toLowerCase();
       const touched = String(toolInput(payload).file_path ?? toolInput(payload).path ?? "");
-      if (touched) appendTouch(cwd, { at: Date.now(), tool: toolName(payload), path: touched });
-    }
+      if (cwd && touched && EDIT_TOOLS.has(tool)) appendTouch(cwd, { at: Date.now(), tool, path: touched });
+    } catch { /* a lost touch line never costs the session anything */ }
     const counts = readJson<Record<string, number>>(join(dir, "stall.json"), {});
     const observed = stallObserve(counts, toolName(payload), toolInput(payload), payload.tool_response ?? payload.toolResponse);
     writeFileSync(join(dir, "stall.json"), JSON.stringify(observed.counts));
@@ -172,6 +175,11 @@ function handle(payload: Payload): void {
   if (event === "Stop") return;
 }
 
+// `<hook file> catalog-build <cwd>`: the detached background build a session start asked for; no stdin, no output.
+if (process.argv[2] === "catalog-build" && process.argv[3]) {
+  failOpen(() => { buildCatalog(process.argv[3]!); });
+  process.exit(0);
+}
 failOpen(() => {
   const raw = readStdin().trim();
   const payload = raw ? JSON.parse(raw) as Payload : {};

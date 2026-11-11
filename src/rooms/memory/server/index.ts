@@ -12,4 +12,4 @@ export { MEMORY_CONFLICT_USAGE, runMemoryConflictCli } from "./memory-conflict-c
 export { MEMORY_IMPORT_SOURCES, MEMORY_IMPORT_USAGE, evalMemoryImport, formatImportEval, formatImportSummary, maskImportContent, pmTopIds, runMemoryImport } from "./import";
 export type { ImportOutcome, ImportReport, MemoryImportOptions, MemoryImportSource } from "./import";
 export { memoryLine, pathAnchors, reviewerMemoryPicks, writerMemory, writerMemoryPicks } from "./memory-picks";
-export { MEMORY_COMPRESS_USAGE, runMemoryCompressCli } from "./memory-compress-cli";
+export { MEMORY_COMPRESS_USAGE, memoryCompressChanges, runMemoryCompressCli } from "./memory-compress-cli";

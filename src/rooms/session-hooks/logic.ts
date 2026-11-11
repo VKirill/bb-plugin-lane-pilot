@@ -354,7 +354,7 @@ const defaultRunners: Record<StreamName, (ctx: ToolCtx) => { deny: string | null
   dependency_store: (ctx) => ({ deny: null, advice: ctx.tool && EDIT_TOOLS.has(ctx.tool) ? dependencyAdvice(ctx.path) : null }),
   reflexes: (ctx) => ({ deny: null, advice: reflexAdvice(ctx.lessons ?? [], `${ctx.tool} ${ctx.command} ${ctx.path}`) }),
   rule_loops: (ctx) => ({ deny: null, advice: ruleLoopAdvice(ctx.denials) }),
-  knowledge: (ctx) => ({ deny: null, advice: EDIT_TOOLS.has(ctx.tool) ? knowledgeAdvice(ctx.notes ?? []) : null }),
+  knowledge: (ctx) => ({ deny: null, advice: EDIT_TOOLS.has(ctx.tool.toLowerCase()) ? knowledgeAdvice(ctx.notes ?? []) : null }),
 };
 
 /** Any hook failure is swallowed; the exit is always zero. */

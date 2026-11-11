@@ -7,11 +7,15 @@ import { spawnSync } from "node:child_process";
 import type { GitFacts } from "./card";
 
 /** Newest commit and commit count per tracked path, in one `git log` pass over the newest 2000 commits. */
-export function collectGitFacts(cwd: string, paths: readonly string[]): Map<string, GitFacts> {
+export function collectGitFacts(cwd: string, paths: readonly string[], warn: (message: string) => void = () => undefined): Map<string, GitFacts> {
   const facts = new Map<string, GitFacts>();
   const wanted = new Set(paths);
-  const log = spawnSync("git", ["log", "--max-count=2000", "--format=commit %H", "--name-only", "--"], { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-  if (log.status !== 0 || !log.stdout) return facts;
+  const log = spawnSync("git", ["log", "--max-count=2000", "--format=commit %H", "--name-only", "--"], { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 30_000 });
+  // A repo with no commits or a git that failed is not an error to stop for, but the cards then carry no commit facts: say so.
+  if (log.status !== 0 || !log.stdout) {
+    warn(`git log failed (${log.error?.message ?? `status ${log.status}`}${log.stderr ? `: ${String(log.stderr).trim().slice(0, 200)}` : ""}); cards carry no commit facts`);
+    return facts;
+  }
   let commit: string | null = null;
   for (const line of (log.stdout as string).split("\n")) {
     const head = /^commit ([0-9a-f]{7,64})$/.exec(line.trim());
@@ -27,7 +31,7 @@ export function collectGitFacts(cwd: string, paths: readonly string[]): Map<stri
 
 /** The git-tracked paths of a checkout, one `git ls-files` call. */
 export function trackedFiles(cwd: string): string[] {
-  const listed = spawnSync("git", ["ls-files", "-z"], { cwd, encoding: "buffer", maxBuffer: 64 * 1024 * 1024 });
+  const listed = spawnSync("git", ["ls-files", "-z"], { cwd, encoding: "buffer", maxBuffer: 64 * 1024 * 1024, timeout: 30_000 });
   if (listed.status !== 0 || !listed.stdout) return [];
   return (listed.stdout as Buffer).toString("utf8").split("\0").filter(Boolean);
 }

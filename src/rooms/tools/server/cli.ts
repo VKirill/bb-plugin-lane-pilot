@@ -28,7 +28,7 @@ import { PM_REPLAY_USAGE, runPmReplayCli, listScenarios } from "../../pm-replay"
 import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
 import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
 import { MEMORY_EVAL_USAGE, runMemoryEvalCommand } from "../../memory-eval/server";
-import { MEMORY_COMPRESS_USAGE, MEMORY_CONFLICT_USAGE, runMemoryCompressCli, runMemoryConflictCli, sessionMemoryRpc, memorySettingsFor, type WallThreadReader } from "../../memory/server";
+import { MEMORY_COMPRESS_USAGE, MEMORY_CONFLICT_USAGE, memoryCompressChanges, runMemoryCompressCli, runMemoryConflictCli, sessionMemoryRpc, memorySettingsFor, type WallThreadReader } from "../../memory/server";
 import { CATALOG_USAGE, runCatalogCli } from "../../file-cards";
 import { dropMemoryIndexes, hideRecord, lintMemory, listMemory, memoryConceptsJson, memoryIndexStatus, memoryRecordExists, memoryTokenStats, rebuildMemoryIndexes, recordMemoryMiss, reviewMemory } from "@lane-pilot/memory-core";
 import { BENCH_USAGE, runBenchCli } from "../../bench/server";
@@ -863,6 +863,11 @@ ${ERRANDS_USAGE}` },
           }
           if (sub === "history") {
             if (!projectId) return { exitCode:1, stderr:"no project: pass --project <id> outside a BB thread" };
+            // History reads transcripts and books: from a thread only the thread's own project (an explicit --project skips the lookup above, so check it here).
+            if (invocation?.threadId) {
+              const caller = await orMiss(bb.sdk.threads.get({ threadId: invocation.threadId }), null, isNotFound) as { projectId?: unknown } | null;
+              if (!caller || typeof caller.projectId !== "string" || caller.projectId !== projectId) return { exitCode:1, stderr:`refused: memory history from a thread reaches only that thread's own project (${typeof caller?.projectId === "string" ? caller.projectId : "unknown"}), not ${projectId}` };
+            }
             const source = value("--source");
             if (source && !HISTORY_SOURCES.includes(source as never)) return { exitCode:1, stderr:`--source is one of ${HISTORY_SOURCES.join("|")}` };
             const question = args.slice(1).filter((arg, i) => !arg.startsWith("--") && (flag < 0 || (i + 1 !== flag && i + 1 !== flag + 1)) && args.indexOf(arg) !== args.indexOf("--source") + 1).join(" ").trim();
@@ -1115,7 +1120,20 @@ ${ERRANDS_USAGE}` },
           return runMemoryConflictCli(services.memoryConflicts, command, args);
         }
         if (command === "memory-compress") {
-          return runMemoryCompressCli(db as never, args);
+          // Listing proposals is for the owner and for a PM chat in its own project. --apply and --undo change the corpus: the owner's alone (no thread).
+          let compressArgs = args;
+          if (invocation?.threadId) {
+            if (memoryCompressChanges(args)) return { exitCode:1, stderr:"refused: memory-compress --apply and --undo change the project's memory and are the owner's alone; run them at a terminal. A thread may only list the proposals" };
+            const caller = await orMiss(bb.sdk.threads.get({ threadId: invocation.threadId }), null, isNotFound) as { projectId?: unknown } | null;
+            const own = typeof caller?.projectId === "string" ? caller.projectId : null;
+            const at = args.indexOf("--project");
+            const asked = at >= 0 ? args[at + 1] : own;
+            if (!own || asked !== own) return { exitCode:1, stderr:`refused: memory-compress from a thread reaches only that thread's own project (${own ?? "unknown"}), not ${asked ?? "none"}` };
+            const metadata = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId: invocation.threadId }), null, isNotFound) as { role?: unknown } | null;
+            if (metadata?.role !== "pm") return { exitCode:1, stderr:`refused: memory-compress is not for a ${typeof metadata?.role === "string" ? `${metadata.role} thread` : "thread whose role is unknown"}; ask the PM or the owner` };
+            if (at < 0) compressArgs = [...args, "--project", own];
+          }
+          return runMemoryCompressCli(db as never, compressArgs);
         }
         if (command === "catalog") {
           return runCatalogCli(args);

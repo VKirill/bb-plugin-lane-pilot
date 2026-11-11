@@ -3,6 +3,15 @@
  * clock. Same inputs, same card.
  */
 import { createHash } from "node:crypto";
+// The session hook runs this file as plain source (node --experimental-strip-types): a relative import needs its .ts suffix.
+// @ts-expect-error TS5097
+import { maskCredentials } from "../../../packages/kit/src/redact.ts";
+// @ts-expect-error TS5097
+import { secretPathHit } from "../../../packages/kit/src/secret-files.ts";
+
+/** A file over this is never read for a card; the first PEEK_BYTES are looked at for a NUL byte (binary). */
+export const CARD_MAX_BYTES = 256 * 1024;
+export const CARD_PEEK_BYTES = 8 * 1024;
 
 export type GitFacts = { lastCommit: string | null; commits: number };
 
@@ -17,6 +26,8 @@ export type FileCard = {
   exports: string[];
   lastCommit: string | null;
   commits: number;
+  /** Set when no text was read: a secret-looking name, a binary or an over-size file. The card then holds name and size only. */
+  skipped?: "secret" | "binary" | "large";
 };
 
 const LANGUAGES: Record<string, string> = {
@@ -60,20 +71,32 @@ function exportsOf(text: string, language: string): string[] {
   return [...names].sort();
 }
 
-/** One card from a file's bytes and its git facts; deterministic in `bytes` and `git` alone. */
-export function buildFileCard(input: { path: string; bytes: Uint8Array | string; git?: GitFacts }): FileCard {
+const mask = (text: string) => maskCredentials(text).text;
+
+/**
+ * One card from a file's bytes and its git facts; deterministic in the inputs alone. `size` is the file's real size when
+ * `bytes` is only its first bytes (an over-size file is never read whole). A secret-looking path, a binary (NUL in the
+ * first 8 KB) and a file over 256 KB get a card of name and size only; every text field of the others passes the
+ * credential mask, so a token on a file's first line never reaches a card.
+ */
+export function buildFileCard(input: { path: string; bytes: Uint8Array | string; git?: GitFacts; size?: number }): FileCard {
   const bytes = typeof input.bytes === "string" ? Buffer.from(input.bytes, "utf8") : Buffer.from(input.bytes);
-  const text = bytes.toString("utf8");
   const extension = input.path.split(".").pop()?.toLowerCase() ?? "";
   const language = LANGUAGES[extension] ?? "text";
+  const size = input.size ?? bytes.length;
+  const skipped = secretPathHit(input.path) ? "secret" : size > CARD_MAX_BYTES ? "large" : bytes.subarray(0, CARD_PEEK_BYTES).includes(0) ? "binary" : undefined;
+  if (skipped) {
+    return { path: input.path, sha256: "", bytes: size, lines: 0, language, headLine: "", exports: [], lastCommit: input.git?.lastCommit ?? null, commits: input.git?.commits ?? 0, skipped };
+  }
+  const text = bytes.toString("utf8");
   return {
     path: input.path,
     sha256: createHash("sha256").update(bytes).digest("hex"),
     bytes: bytes.length,
     lines: text ? text.split("\n").length : 0,
     language,
-    headLine: headLineOf(text),
-    exports: exportsOf(text, language),
+    headLine: mask(headLineOf(text)),
+    exports: exportsOf(text, language).map(mask),
     lastCommit: input.git?.lastCommit ?? null,
     commits: input.git?.commits ?? 0,
   };
