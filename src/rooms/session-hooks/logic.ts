@@ -8,7 +8,7 @@ export const DOCUMENTARY_AGENTS = ["Explore", "Plan", "statusline-setup"] as con
 export const SUBAGENT_CAP = 8;
 export const SOFT_BUDGET_SEC = 1.5;
 
-const EDIT_TOOLS = new Set(["edit", "multiedit", "write", "notebookedit"]);
+export const EDIT_TOOLS = new Set(["edit", "multiedit", "write", "notebookedit"]);
 const READ_TOOLS = new Set(["read", "grep", "glob"]);
 const DESTRUCTIVE_GIT = /\bgit\s+(checkout\s+--|restore\b|reset\b|clean\b|stash\s+(drop|clear)|rebase\b|branch\s+-D)/;
 const DEPENDENCY_FILES = /(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|Cargo\.lock|poetry\.lock|uv\.lock|go\.sum|Gemfile\.lock)$|(^|\/)node_modules\//;
@@ -459,7 +459,7 @@ const defaultRunners: Record<StreamName, (ctx: ToolCtx) => { deny: string | null
   dependency_store: (ctx) => ({ deny: null, advice: ctx.tool && EDIT_TOOLS.has(ctx.tool) ? dependencyAdvice(ctx.path) : null }),
   reflexes: (ctx) => ({ deny: null, advice: reflexAdvice(ctx.lessons ?? [], `${ctx.tool} ${ctx.command} ${ctx.path}`) }),
   rule_loops: (ctx) => ({ deny: null, advice: ruleLoopAdvice(ctx.denials) }),
-  knowledge: (ctx) => ({ deny: null, advice: EDIT_TOOLS.has(ctx.tool) ? knowledgeAdvice(ctx.notes ?? []) : null }),
+  knowledge: (ctx) => ({ deny: null, advice: EDIT_TOOLS.has(ctx.tool.toLowerCase()) ? knowledgeAdvice(ctx.notes ?? []) : null }),
 };
 
 /** Any hook failure is swallowed; the exit is always zero. */

@@ -27,6 +27,7 @@ export const TOOL_PRESENTATION: Record<string, Entry> = {
   lane_pilot_ingest_opencode_telemetry: row("Reading OpenCode telemetry", "Read OpenCode telemetry", "Читаю телеметрию OpenCode", "Телеметрия OpenCode прочитана"),
   lane_pilot_workspace_status: row("Checking the workspace", "Checked the workspace", "Проверяю рабочую папку", "Рабочая папка проверена"),
   lane_pilot_memory_context: row("Reading project memory", "Read project memory", "Читаю память проекта", "Память проекта прочитана"),
+  lane_pilot_memory_history: row("Searching project history", "Searched project history", "Ищу по истории проекта", "История проекта найдена"),
   lane_pilot_gate_report: row("Reading the gate report", "Read the gate report", "Читаю отчёт проверки", "Отчёт проверки прочитан"),
   lane_pilot_council_start: row("Opening a council", "Opened a council", "Открываю совет", "Совет открыт"),
   lane_pilot_council_status: row("Checking the council", "Checked the council", "Смотрю состояние совета", "Состояние совета получено"),
