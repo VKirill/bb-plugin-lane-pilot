@@ -86,8 +86,9 @@ export function installDocs(base: DriverBase) {
   }
 
   /** SPEC.md / PLAN.md / VERIFICATION.md (docFiles only): the file is the command's while it is absent, or still carries the
-   *  generated marker and the sha the record kept from the last write. Otherwise the new text goes to `<name>.new.md` and the
-   *  book says so. Unchanged text writes nothing (so commits nothing). */
+   *  generated marker and the sha the record kept from the last write. A file the command once wrote and a person then changed
+   *  keeps its text: the new text goes to `<name>.new.md` and the book says so. A file the command never wrote is left alone and
+   *  committed. Unchanged text writes nothing (so commits nothing). */
   async function writeGenerated(phase: Phase, path: string, body: string, message: string): Promise<void> {
     const content = `${GENERATED}\n${body}`;
     const got = await readDoc(phase, path);
@@ -97,6 +98,9 @@ export function installDocs(base: DriverBase) {
       if (got.text === content) return;
       const mine = got.text.includes(GENERATED) && mustGet(phase.id).record.docShas?.[path] === sha256Hex(got.text);
       if (!mine) {
+        // A file the command never wrote is the stage's own agent's (the planner writes PLAN.md itself) or a person's: it stays as it
+        // is and is only committed. Found on a live phase: every phase got a PLAN.new.md beside the planner's own PLAN.md.
+        if (mustGet(phase.id).record.docShas?.[path] === undefined) { await commitFiles(phase, [path], message); return; }
         target = path.replace(/\.md$/, ".new.md");
         const aside = await readDoc(phase, target);
         if (aside.kind === "failed" || (aside.kind === "ok" && (aside.truncated || !aside.text.includes(GENERATED)))) {
