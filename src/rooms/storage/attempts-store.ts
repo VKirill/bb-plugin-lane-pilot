@@ -381,12 +381,14 @@ export function transitionAttempt(
   // state with no journal. Listeners fire after the commit, so a screen never sees a state that was rolled back.
   const changed = db.transaction(() => {
     const reopen = settled && before.state !== state && isLegalMove(before.state, state) ? 1 : 0;
+    // «Not passed at all» keeps the wake; an explicit null clears it (parkAttemptWake(…, null)); a number sets it.
+    const wakeGiven = fields.wakeAt !== undefined ? 1 : 0;
     const wrote = db.prepare(`UPDATE lane_pilot_attempt SET state=?, thread_id=COALESCE(?,thread_id), reason=?, failure_code=?, check_name=?, timeout_sec=?, updated_at=?,
-      wake_at=CASE WHEN ?<>'queued' THEN NULL ELSE COALESCE(?,wake_at) END, cancel_code=COALESCE(cancel_code,?)
+      wake_at=CASE WHEN ?<>'queued' THEN NULL WHEN ?=1 THEN ? ELSE wake_at END, cancel_code=COALESCE(cancel_code,?)
       WHERE id=? AND (state NOT IN (${FINAL_ATTEMPT_STATES.map(() => "?").join(",")}) OR state=? OR ?)`)
       .run(state, fields.threadId ?? null, fields.reason ?? null, fields.failureCode ?? null,
         fields.checkName ?? null, fields.timeoutSec ?? null,
-        now, state, fields.wakeAt ?? null, fields.cancelCode ?? null, attemptId, ...FINAL_ATTEMPT_STATES, state, reopen).changes === 1;
+        now, state, wakeGiven, fields.wakeAt ?? null, fields.cancelCode ?? null, attemptId, ...FINAL_ATTEMPT_STATES, state, reopen).changes === 1;
     db.prepare(`INSERT INTO lane_pilot_attempt_transition(attempt_id,from_state,to_state,reason,refused,at) VALUES(?,?,?,?,?,?)`)
       .run(attemptId, before.state, state, fields.reason ?? null, wrote ? 0 : 1, now);
     // The world counter (SMA m_wrappers) climbs in the same transaction: a failed write leaves it where it was.

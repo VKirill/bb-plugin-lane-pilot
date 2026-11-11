@@ -192,3 +192,22 @@ describe("[sma:k_lib_landing] a merged landing waits for its suite verdict on th
     expect(listLandingSuitePending(db)).toHaveLength(0);
   });
 });
+
+describe("[sma:m_wrappers] parkAttemptWake keeps «not passed» apart from an explicit null", () => {
+  it("a park with a time sets wake_at, a park with null clears it again, and a plain queued move keeps it", () => {
+    const { db } = db0();
+    createRun(db, "run_w", "proj_w", "bb", "/w");
+    createTask(db, { id: "tw", runId: "run_w", kind: "bb", contract: {} });
+    createAttempt(db, { id: "aw", runId: "run_w", taskId: "tw" });
+    const wake = () => (db.prepare("SELECT wake_at FROM lane_pilot_attempt WHERE id='aw'").get() as { wake_at: number | null }).wake_at;
+    const at = Date.now() + 90_000;
+    parkAttemptWake(db, "aw", "wait for the night", at);
+    expect(wake()).toBe(at);
+    // queued -> queued without a wakeAt field is not a clear: the wake stays.
+    transitionAttempt(db, "aw", "queued", { reason: "note" });
+    expect(wake()).toBe(at);
+    // An explicit null clears the wake, as parkAttemptWake(…, null) did before the wake moved into the transaction.
+    parkAttemptWake(db, "aw", "released", null);
+    expect(wake()).toBeNull();
+  });
+});
