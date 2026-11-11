@@ -3,7 +3,7 @@ import { bindPhaseDesigns } from "../../tasks/server";
 import { type ServerCore } from "../../contracts/server";
 import { listPhases, listParts, resolvePhaseRef } from "../store";
 import { acceptanceKey, observationDue, candidateOn, designGate, discussionGate, nextAction, openQuestions, phaseFolder, planGate, planSignature, renderBook, withdrawProblem, wordOf, type Phase } from "../logic";
-import { getRun, getRunWriterHost } from "../../storage";
+import { getRun, getRunWriterHost, runClosedBy } from "../../storage";
 import { hostContract } from "../../contracts";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { bestEffort } from "@lane-pilot/kit";
@@ -79,6 +79,18 @@ export function createPhaseDriver(ctx: ServerCore, services: Services, reactions
   /** Idle pass (SMA dt_idle): when the pass takes nothing it says why — nothing to take, all waiting for the PM, or all at work. */
   async function tick(signal?: AbortSignal): Promise<{ moved: number; idle: string | null }> {
     let moved = 0;
+    // The plan is a nested batch (SMA p4_nested_batch): a phase that is executing its plan in a run ends with that run when a
+    // person closes it (run close by CLI or RPC; both refuse while attempts are open). It stops issuing and closes with the
+    // run named. Narrow on purpose: a paused or stopped phase waits for its owner and a phase not yet (or no longer) in
+    // execution has no batch at work, so the hub's own cleaning of idle runs (sweep, ttl) never ends anyone's plan — three
+    // paused phases of the owner stood on closed runs the day this was written. The phase's own close never closes a run.
+    for (const row of listPhases(db, { limit: 200 }).filter((candidate) => candidate.state === "active" && candidate.stage === "execution" && candidate.runId)) {
+      const by = runClosedBy(db, row.runId!);
+      if (by !== "cli" && by !== "rpc") continue;
+      docs.book(row, "decisions", "close", `batch closed: ${row.runId}`);
+      docs.savePhase(row.id, { stage: "closed", state: "closed", record: { ...row.record, closing: { by: "batch", words: `batch closed: ${row.runId}`, at: now() } }, at: now() });
+      moved += 1;
+    }
     // A phase the machine stopped for a gap of its own goes on once a release closes the gap (not one a person stopped).
     for (const row of listPhases(db, { limit: 200 }).filter((candidate) => candidate.state === "stopped")) {
       const back = recoverStopped(row);

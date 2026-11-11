@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 from lp_drill.env import ROOT, SANDBOX
 from lp_drill.hub import bb, hubsql, run, setting_rpc, RPC_MISSING
-from lp_drill.scenes.providers import PROVIDER_QUOTA
+from lp_drill.scenes.providers import PROVIDER_QUOTA, providers_in_use
 
 def judge_scenario(scenario: dict) -> dict:
     """Suite report judge: a pass counts only with evidence — the tasks it ran, the events it saw or the details it checked."""
@@ -78,12 +79,28 @@ def _parses(path: Path) -> bool:
         return False
 
 
-def _browser_probe() -> tuple[bool, str]:
-    """The sandbox project's browser machine answers: the sandbox host must be reachable for a browser_qa step."""
+# Scenes that open a window: skills_screen presses the access page whenever an address is named (LP_DRILL_UI_URL or an
+# LP_DRILL_UI_ACCESS_URL with {project}); live_word presses Approve only where a window is named or LP_DRILL_LIVE_PRESS=1 asks for it.
+BROWSER_SCENES = {"skills_screen"}
+
+
+def _browser_probe(names: list[str] | None = None) -> tuple[bool, str]:
+    """The sandbox project's browser machine answers: the sandbox host must be reachable for a browser_qa step. A series that runs a
+    window scene and has neither a browser machine (browser.hostId) nor a window named (LP_DRILL_UI_URL / LP_DRILL_UI_ACCESS_URL) is
+    refused: the scene would be skipped or press a window that is not there."""
     rows = hubsql(f"select value from lane_pilot_project_settings where project_id='{SANDBOX['project']}' and binding_id='' and key='browser.hostId' limit 1;")
-    if not rows:
-        return True, "no browser machine named: browser checks would run on the writer host"
-    return True, f"browser machine {json.loads(rows[0]['value'])}"
+    if rows:
+        return True, f"browser machine {json.loads(rows[0]['value'])}"
+    if os.environ.get("LP_DRILL_UI_URL", "").strip() or "{project}" in os.environ.get("LP_DRILL_UI_ACCESS_URL", ""):
+        return True, "a window is named (LP_DRILL_UI_URL / LP_DRILL_UI_ACCESS_URL)"
+    asked = set(names or []) & BROWSER_SCENES
+    if names and "live_word" in names and os.environ.get("LP_DRILL_LIVE_PRESS") == "1":
+        asked.add("live_word")
+    if asked:
+        scene = sorted(asked)[0]
+        return False, (f"the series runs {', '.join(sorted(asked))}, which opens a window, and no browser machine is named "
+                       f"(browser.hostId unset, no LP_DRILL_UI_URL): name one, or drop {scene} from the series")
+    return True, "no browser machine named: browser checks would run on the writer host"
 
 
 def _limits_probe() -> tuple[bool, str]:
@@ -108,3 +125,88 @@ def _window_probe() -> tuple[bool, str]:
         return False, f"the host list did not answer: {(err or out).strip()[:160]}"
     host = os.environ.get("LP_DRILL_HOST", "host_7sea4qaad8")
     return (host in out), f"writer host {host} {'connected' if host in out else 'not in the host list'}"
+
+
+# A probe reason that means the account itself is out (over its plan, or signed out), not the probe's setup.
+ACCOUNT_OUT = re.compile(r"unauthorized|\b401\b|sign.?in|log.?in|not authenticated|invalid (api|access) key", re.I)
+
+
+def _capability_table() -> dict[str, dict]:
+    """`bb lane-pilot capabilities` as providerId -> row. Exit 1 still prints the table: it means a red cell exists."""
+    rc, out, err = bb("lane-pilot", "capabilities", timeout=60)
+    if rc not in (0, 1):
+        raise RuntimeError((err or out).strip()[:200] or f"exit {rc}")
+    return {row.get("providerId"): row for row in (json.loads(out).get("table") or []) if isinstance(row, dict)}
+
+
+def _accounts_probe() -> tuple[bool, str]:
+    """Accounts (SMA rl_prep): every provider the series will use (the providers_in_use list the helper-providers scene probes)
+    answers — a supported `answers` capability receipt of the installed adapter, or one cheap probe through
+    `capabilities --probe` (the probe call the provider scene already makes; bounded at one pass, 60 s a provider). A provider whose
+    receipt is red, or whose probe says it is over its plan or signed out, refuses the series and is named; one that could not be
+    probed now (no sandbox run yet) is noted, not refused."""
+    pairs = providers_in_use(SANDBOX["project"])
+    try:
+        table = _capability_table()
+    except Exception as cause:
+        if RPC_MISSING.search(str(cause)):
+            return True, f"the capability table is not deployed: {str(cause)[:120]}"
+        return False, str(cause)[:200]
+    answers = lambda provider: ((table.get(provider) or {}).get("capabilities") or {}).get("answers")
+    unproven = [provider for provider in pairs if answers(provider) in (None, "unproven")]
+    out_of_plan: list[str] = []
+    if unproven:
+        rc, out, err = bb("lane-pilot", "capabilities", "--probe", timeout=max(60, 60 * len(unproven)))
+        if rc not in (0, 1):
+            return False, f"capabilities --probe did not answer: {(err or out).strip()[:160] or f'exit {rc}'}"
+        try:
+            probed = json.loads(out).get("probed") or []
+        except ValueError:
+            probed = []
+        for row in probed:
+            provider, reason = row.get("providerId"), str(row.get("reason") or "")
+            if provider in pairs:
+                if PROVIDER_QUOTA.search(reason):
+                    out_of_plan.append(f"{provider} is over its plan ({reason[:120]})")
+                elif ACCOUNT_OUT.search(reason):
+                    out_of_plan.append(f"{provider} is signed out ({reason[:120]})")
+        table = _capability_table()
+    red = [provider for provider in pairs if answers(provider) == "not_supported"]
+    refused = [f"{provider} (the answers receipt is red: `bb lane-pilot capabilities --probe` re-probes it)" for provider in red] + out_of_plan
+    if refused:
+        return False, "; ".join(refused) + " — sign the provider back in or take it out of the project's providers"
+    still = sorted(provider for provider in pairs if answers(provider) not in ("supported", "not_supported"))
+    note = f"; {', '.join(still)} could not be probed now" if still else ""
+    return True, f"every provider in use answers ({', '.join(sorted(pairs))}){note}"
+
+
+def _person_probe() -> tuple[bool, str]:
+    """Person (SMA rl_prep): the owner is reachable — the hub has seen him in a thread of his own (the presence marks or the
+    90-day journal of `bb lane-pilot owner-presence`), or the «waiting for the owner» push answers. A hub that has never seen
+    the owner and cannot reach him refuses the series."""
+    marks, journal = [], []
+    rc, out, err = bb("lane-pilot", "owner-presence", "--journal", timeout=60)
+    if rc == 0:
+        try:
+            journal = json.loads(out)
+        except ValueError:
+            journal = []
+    elif not RPC_MISSING.search(err or out):
+        return False, f"owner-presence did not answer: {(err or out).strip()[:160]}"
+    rc2, out2, _ = bb("lane-pilot", "owner-presence", timeout=60)
+    if rc2 == 0:
+        try:
+            marks = json.loads(out2)
+        except ValueError:
+            marks = []
+    if marks:
+        return True, f"the owner is in a session of his own now ({len(marks)} mark(s))"
+    if journal:
+        days = sorted(str(row.get("day", "")) for row in journal if isinstance(row, dict) and row.get("day"))
+        return True, f"the hub last saw the owner in a thread of his own on {days[-1] if days else 'an earlier day'}"
+    try:
+        digest = setting_rpc("owner_waiting_digest", {})
+        return True, f"the «waiting for the owner» push answers ({'a send pending' if digest.get('send') else 'nothing pending'})"
+    except Exception as cause:
+        return False, (f"the hub has never seen the owner in a thread of his own and the owner-waiting push does not answer "
+                       f"({str(cause)[:120]}): type in any thread once so the series can reach him")

@@ -225,11 +225,11 @@ def scout() -> dict:
             "empty": [name for name, entries in SUITES.items() if not entries and name != "metrics"]}
 
 
-def series_preparation() -> dict:
+def series_preparation(names: list[str] | None = None) -> dict:
     """Series preparation (SMA rl_prep): what the series runs against — the plugin version and commit, the scout, a clean
-    sandbox — and the parts it refuses to start without: database, receipts, browser, limits, window. The SMA parts «accounts»
-    and «person» are not probed: a login cannot be checked without a real provider call and the owner's presence cannot be read
-    from the hub, so a probe for them could not fail; they are left out rather than kept as checks that always pass."""
+    sandbox — and the parts it refuses to start without: database, receipts, browser, accounts, limits, window, person.
+    Accounts is the capability table plus one cheap probe per unproven provider (60 s each); person is the hub's owner
+    presence and the owner-waiting push. Browser refuses only a series whose scenes open a window when none is named."""
     commit = git(str(ROOT), "rev-parse", "HEAD")
     version = json.loads((ROOT / "package.json").read_text()).get("version")
     dirty = git(SANDBOX["cwd"], "status", "--porcelain")
@@ -252,9 +252,9 @@ def series_preparation() -> dict:
     checks.append({"name": "receipts", "ok": receipts_ok, "detail": f"{receipt_dir} writable, last receipt {'parses' if last and _parses(last[0]) else 'none yet'}"})
     if not receipts_ok:
         problems.append(f"receipts: {receipt_dir} is missing, unwritable or its last receipt does not parse")
-    for name, probe in (("browser", _browser_probe), ("limits", _limits_probe), ("window", _window_probe)):
+    for name, probe in (("browser", _browser_probe), ("accounts", _accounts_probe), ("limits", _limits_probe), ("window", _window_probe), ("person", _person_probe)):
         try:
-            ok, detail = probe()
+            ok, detail = probe(names) if name == "browser" else probe()
         except Exception as cause:
             ok, detail = False, str(cause)[:200]
         checks.append({"name": name, "ok": ok, "detail": detail})
@@ -337,7 +337,7 @@ def main() -> int:
         return 0
     if series:
         # One process per scene: each scenario runs in its own interpreter, so one that wedges or leaks state cannot spoil the next.
-        prep = series_preparation()
+        prep = series_preparation(names)
         log(f"series: {json.dumps(prep)[:300]}")
         if prep["scout"]["unlisted"] or prep["scout"]["undefined"]:
             log(f"scout: {prep['scout']}")
