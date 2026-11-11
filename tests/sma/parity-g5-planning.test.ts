@@ -18,6 +18,7 @@ import { getPhase, insertPhase, listParts, savePhase } from "../../src/rooms/pha
 import { createPhaseDriver } from "../phase-driver";
 import { createRun, getSettingVersions, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../../src/rooms/plugin-db";
 import { planningHomeInputs } from "../../src/rooms/storage";
+import { pmBoardBlock } from "../../src/rooms/learning/pm-rules";
 import { issueMessage } from "../../src/rooms/backlog/logic";
 import { createBacklog } from "../../src/rooms/backlog/server";
 import { projectLifePrompt } from "../../src/rooms/project-life/project-life";
@@ -255,6 +256,18 @@ describe("the planning home is one resolver for every reader and writer of .agen
     expect(lifeMoved).toContain(".agents/plans/items/*/PLAN.md");
   });
 
+  it("[sma:d_project_planning] the PM's board names the home (reads there; its editor writes only in the checkout) once the host confirmed it, and says nothing when none is set", async () => {
+    const plain = rig();
+    expect(pmBoardBlock(plain.db as never, RUN) ?? "").not.toContain("Planning home");
+    const home = repo("g5-home-");
+    const set = rig({ home });
+    expect(pmBoardBlock(set.db as never, RUN) ?? "").not.toContain("Planning home");
+    await set.docs.planningHome(set.phase(), ".agents/planning/STATE.md");
+    const board = pmBoardBlock(set.db as never, RUN) ?? "";
+    expect(board).toContain(`Planning home: ${home}.`);
+    expect(board).toMatch(/editor write only inside the checkout.*todo-add and note-add/);
+  });
+
   it("[sma:d_project_planning] a workflow step's prompt (lp.clarify's, as the real helper spawner sends it) names the home's folders when a home is set and is today's text when none is", async () => {
     const workflow = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "workflows", "lp.clarify.json"), "utf8")) as { nodes: Array<Row & { prompt?: string }> };
     const prompt = workflow.nodes.find((node) => typeof node.prompt === "string" && String(node.prompt).includes(".agents/phases/*/BOOK.md"))!.prompt!;
@@ -313,6 +326,32 @@ describe("the planning home is one resolver for every reader and writer of .agen
     expect(debug.status).toBe("succeeded");
     expect(existsSync(join(home, ".agents/planning/debug/flaky.md"))).toBe(true);
     expect(existsSync(join(r.checkout, ".agents/planning/debug"))).toBe(false);
+    // fs.write (todo-add, note-add, audit-uat): a planning folder goes to the home; the writer's task folder and any other path stay in the checkout.
+    const wrote = async (path: string) => (await engine.start({ workflow: actionWorkflow("fs.write", { params: { path, contents: { "note.md": "hello" } } }, { note_path: "string" }), inputs: {}, runtime: r.rt, link: { projectId: PROJECT, runId: RUN } }).done) as { status: string };
+    expect((await wrote(".agents/todos/notes/n1/")).status).toBe("succeeded");
+    expect(readFileSync(join(home, ".agents/todos/notes/n1/note.md"), "utf8")).toBe("hello");
+    expect(existsSync(join(r.checkout, ".agents/todos"))).toBe(false);
+    expect((await wrote(".agents/plans/items/t1/")).status).toBe("succeeded");
+    expect(readFileSync(join(r.checkout, ".agents/plans/items/t1/note.md"), "utf8")).toBe("hello");
+    expect((await wrote("docs/out/")).status).toBe("succeeded");
+    expect(existsSync(join(r.checkout, "docs/out/note.md"))).toBe(true);
+    // The quick path's STATE.md row and the post-ship hook list: the home's files, not the checkout's.
+    put(home, ".agents/planning/hooks/post-ship-a.md", "hook\n");
+    put(r.checkout, ".agents/planning/hooks/post-ship-b.md", "not mine\n");
+    const hooks = (await engine.start({ workflow: actionWorkflow("lp.post_ship_hooks", {}, { count: "int", files: "string[]" }), inputs: {}, runtime: r.rt, link: { projectId: PROJECT, runId: RUN } }).done) as { output?: Row };
+    expect(hooks.output).toMatchObject({ count: 1, files: [".agents/planning/hooks/post-ship-a.md"] });
+    const quick = (await engine.start({ workflow: actionWorkflow("lp.quick_state", { with: { title: "fix the typo", commits: ["abc1234"], comment: "ok" } }, { ok: "bool", note: "string", comment: "string" }), inputs: {}, runtime: r.rt, link: { projectId: PROJECT, runId: RUN } }).done) as { output?: Row };
+    expect(quick.output).toMatchObject({ ok: true });
+    expect(readFileSync(join(home, ".agents/planning/STATE.md"), "utf8")).toContain("fix the typo");
+    expect(git(home, "log", "--format=%s", "-1")).toMatch(/state: quick task done/);
+    expect(existsSync(join(r.checkout, ".agents/planning/STATE.md"))).toBe(false);
+    // None set: the same write lands in the checkout, as it always did.
+    const plain = rig();
+    const plainEngine = new WorkflowEngine({ db: plain.db, harnessVersion: "test", runtimeFor: chainRuntimeFor(plain.ctx, plain.services), resolveWorkflow: () => null });
+    registerPureActions(plainEngine); registerReducers(plainEngine); registerChainExecutors(plainEngine, plain.ctx, plain.services, createWorkflowAgents());
+    await plainEngine.start({ workflow: actionWorkflow("fs.write", { params: { path: ".agents/todos/notes/n1/", contents: { "note.md": "hello" } } }, { note_path: "string" }), inputs: {}, runtime: plain.rt, link: { projectId: PROJECT, runId: RUN } }).done;
+    expect(readFileSync(join(plain.checkout, ".agents/todos/notes/n1/note.md"), "utf8")).toBe("hello");
+    expect(plain.hostLog.filter((call) => call.method === "runCommand")).toEqual([]);
   });
 
   it("[sma:k_t_validate] `phase validate` reads the roadmap through the planning home and exits 1 with one line per finding, 0 when the planning files agree", async () => {

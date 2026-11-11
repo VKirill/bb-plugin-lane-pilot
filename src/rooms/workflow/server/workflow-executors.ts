@@ -3,7 +3,7 @@ import { noteEngineWrite, gateRunVerdict } from "../../verification/server";
 import { parseIntegrationGateSettings, type VerificationGatePort } from "../../contracts/integration-gate";
 import type { IsTaskSatisfied } from "../../contracts";
 import { getAttempt, getRun, getRunWriterHost, getRunSettingsScopes, getTaskPlan, latestGateRun, listAttemptsForTask, listOpenAttempts, listOpenWorktrees, listTaskIdsForRun, loadProjectSettings, fullGateVerdict, saveProjectSetting, planningHomeInputs } from "../../storage";
-import { resolvePlanningHome } from "../../contracts";
+import { isPlanningPath, resolvePlanningHome } from "../../contracts";
 import { getPhase, listPhases } from "../../phase";
 import { PROFILE_KEYS, profilePairProblem, unsafeReason } from "../../anamnesis";
 import { bestEffort, isNotFound, orMiss, redactKnown, sha256Hex, stringAt } from "@lane-pilot/kit";
@@ -644,7 +644,10 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const rel = c.render(str(params.path)).replace(/^\/+/, "");
     if (!rel || rel.includes("..") || rel.includes("\0")) throw new Error(`fs.write: the path "${rel}" is not inside the checkout`);
     const isFolder = rel.endsWith("/");
+    // A planning file (.agents/phases|planning|todos|plans, not a task's own folder) goes to the planning home when the project set one (SMA d_project_planning); unset, the checkout.
+    const home = isPlanningPath(rel) ? await planHome(rt.projectId, checkout) : null;
     const write = async (path: string, content: string) => {
+      if (home) { await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: home, path: `${home}/${path}`, content, contentEncoding: "utf8", createParents: true, expectedSha256: null }); return; }
       // Noted before the write lands, so a helper's status read right after it already sees it as the engine's.
       noteEngineWrite(checkout.path, path);
       await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: checkout.path, path: `${checkout.path}/${path}`, content, contentEncoding: "utf8", createParents: true, expectedSha256: null });
