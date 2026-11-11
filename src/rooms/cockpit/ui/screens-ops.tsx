@@ -213,3 +213,32 @@ export function SystemScreen({ rpc, projectId }: { rpc: Rpc; projectId: string }
     </div>
   );
 }
+
+type RuleRow = { key: string; hazard: string; armed: unknown; current: unknown; disarmed: boolean; term: { daysLeft: number } | null };
+
+/** Rules (SMA m_sw_rules): the park policy as written — every protection drawn as a disabled switch with its hazard and current value. Edits stay in the settings tabs. */
+export function RulesScreen({ rpc, projectId }: { rpc: Rpc; projectId: string }) {
+  const data = useLoad(() => rpc.call("cockpit_rules", { projectId }) as Promise<{ rules: RuleRow[]; switches: Record<string, unknown> }>, [projectId]);
+  return (
+    <div className="space-y-4">
+      <Panel title={t("ckScreen_rules")} testId="ck-rules" actions={<RefreshButton onClick={data.reload} />}>
+        <p className="text-xs text-muted-foreground">{t("ckRulesNote")}</p>
+        <Loaded state={data}>{(result) => !result.rules.length ? <p className="text-sm text-muted-foreground">{t("ckEmpty")}</p> : (
+          <ul className="space-y-2 text-sm">{result.rules.map((rule) => (
+            <li key={rule.key} className="flex items-center gap-3 rounded-md border border-border p-2" data-testid={`ck-rule-${rule.key}`}>
+              <input type="checkbox" disabled checked={!rule.disarmed} aria-label={rule.key} className="shrink-0" />
+              <span className="min-w-0"><span className="font-medium">{rule.key}</span>
+                <span className="block text-xs text-muted-foreground">{t("ckRuleHazard")}: {rule.hazard} · {t("ckRuleCurrent")}: {JSON.stringify(rule.current)}{rule.term ? ` · ${t("ckRuleUntil")} ${rule.term.daysLeft}d` : ""}</span></span>
+            </li>))}</ul>
+        )}</Loaded>
+      </Panel>
+      <Panel title={t("ckSwitches")} testId="ck-rule-switches">
+        <Loaded state={data}>{(result) => (
+          <ul className="space-y-2 text-sm">{Object.entries(result.switches).map(([key, value]) => (
+            <li key={key} className="flex items-center gap-3"><input type="checkbox" disabled checked={value !== null && value !== false && value !== "off"} aria-label={key} className="shrink-0" /><span className="min-w-0"><span className="font-medium">{key}</span><span className="block text-xs text-muted-foreground">{JSON.stringify(value)}</span></span></li>
+          ))}</ul>
+        )}</Loaded>
+      </Panel>
+    </div>
+  );
+}

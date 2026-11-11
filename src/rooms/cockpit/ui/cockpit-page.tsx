@@ -6,7 +6,7 @@ import { Field, Panel, fill, useCockpitRpc, useLoad, useSeen, type Rpc } from ".
 import { SCREENS, screenFor, searchCockpit, startScreen, type ScreenId } from "./registry";
 import { PhasesScreen, TasksScreen } from "./screens-work";
 import { MoneyScreen, TodayScreen, WorkersScreen } from "./screens-day";
-import { CoordScreen, FirstRunScreen, ForgeScreen, MemoryScreen, ShipScreen, SystemScreen } from "./screens-ops";
+import { CoordScreen, FirstRunScreen, ForgeScreen, MemoryScreen, RulesScreen, ShipScreen, SystemScreen } from "./screens-ops";
 import { useLpRpcQuery } from "../../ui-shell/ui";
 
 const PROJECT_KEY = "lane-pilot:cockpit:project";
@@ -108,6 +108,7 @@ function ScreenBody({ id, rpc, projectId, runId, hostId, onOpen }: { id: ScreenI
     case "coord": return <CoordScreen rpc={rpc} runId={runId} />;
     case "ship": return <ShipScreen rpc={rpc} projectId={projectId} hostId={hostId} />;
     case "system": return <SystemScreen rpc={rpc} projectId={projectId} />;
+    case "rules": return <RulesScreen rpc={rpc} projectId={projectId} />;
     case "registry": return <RegistryScreen onOpen={onOpen} />;
     default: return <Panel title={t("ckBuilding")} testId="ck-building"><p className="text-sm text-muted-foreground">{t("ckBuilding")}</p></Panel>;
   }

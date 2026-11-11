@@ -1,5 +1,5 @@
 import { breakerKey } from "@lane-pilot/resilience";
-import { settingOn } from "@lane-pilot/models";
+import { WRITER_PROFILES, settingOn } from "@lane-pilot/models";
 import { bestEffort, BestEffortLog} from "@lane-pilot/kit";
 import { PRESENCE_WINDOW_MS } from "../../owner-presence";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
@@ -45,6 +45,13 @@ export async function writerHold(
 ): Promise<WriterHold | null> {
   try {
   if (!input.providerId) return null;
+  // The worker toggle (SMA m_hs_toggle): a profile key in writer.models_off holds that provider/model wherever the chain
+  // would launch it — the project's own writer and every fallback alike. Read here, at launch; the toggle is permanent until cleared.
+  const offKeys = Array.isArray(input.settings["writer.models_off"]) ? (input.settings["writer.models_off"] as unknown[]).map(String) : [];
+  if (offKeys.length) {
+    const profile = WRITER_PROFILES.find((row) => row.providerId === input.providerId && row.model === input.model);
+    if (profile && offKeys.includes(profile.key)) return { reason: `writer_provider_unavailable:writer_off:${profile.key}`, until: null };
+  }
   // The breaker is asked through its read-only snapshot: `decide` would spend the half-open trial another caller's
   // spawn may need. An open pair frees at its reopen time; a snapshot gives openedAt, so +5 min is the recheck.
   const open = deps.breaker.snapshot(now).find((row) => row.key === breakerKey(input.providerId, input.model) && row.state === "open");

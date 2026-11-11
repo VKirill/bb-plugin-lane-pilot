@@ -1,5 +1,5 @@
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { attemptWorkspacePaths, listOpenWorktrees, loadProjectSettings, recordJanitorSweep, registerWorktree, releaseWorktreeById, writerBaseForWorkspace } from "../../storage";
+import { attemptWorkspacePaths, finalTaskIdsSince, listOpenWorktrees, loadProjectSettings, recordJanitorSweep, registerWorktree, releaseWorktreeById, writerBaseForWorkspace } from "../../storage";
 import { STICKY_WINDOW_MS, listQaHosts, scheduleIsolated } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
@@ -7,7 +7,7 @@ import { OPEN_ATTEMPT_STATES, RETRY_ELIGIBLE, isOpenAttemptState } from "../../c
 import { DOCS_WORKTREE_PREFIX, docsWorktreeKey, REGRESS_MARKER_TTL_MS, REGRESS_WORKTREE_PREFIX, regressWorktreeKey, regressWorktreePath, SELF_REPAIR_STATE_KEY, selfRepairWorktrees } from "../../contracts";
 import { bestEffort } from "@lane-pilot/kit";
 import { recordEvidence } from "../../storage";
-import { rearmExpiredDisarms } from "../../policy";
+import { disarmedProjects, rearmExpiredDisarms } from "../../policy";
 
 /**
  * The hourly safety net over ~/.lane-pilot/worktrees on every connected machine (WT1, 2026-10-30): copies of docs,
@@ -73,11 +73,14 @@ export async function runWorktreeJanitor(ctx: Pick<ServerCore, "bb" | "db" | "lo
   const snapshot = async (hostId: string, worktreePath: string, name: string) =>
     (await ctx.host.call("gitWorktreeSnapshot", { requestedHostId: hostId, worktreePath, name }, { hostId, timeoutMs: 120_000 })) as { status: "clean" | "saved" | "missing" | "failed"; path: string | null; reason: string | null };
   const envSwept = await bestEffort(ctx.log, "attempt environment sweep", cleanupFinishedAttemptEnvironments(bb, db, snapshot, now, signal), [] as string[]);
-  // A hub-wide protection switched off past its term comes back at warning level (SMA k_lib_stpa) — only where the
-  // owner asked for it (protection.rearm=on): a setting he switched off is his, and nothing turns it back by itself.
-  // Without it the ended term is still shown by `bb lane-pilot integrity`.
-  const rearmed = loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)["protection.rearm"] === "on" ? rearmExpiredDisarms(db, GLOBAL_SETTINGS_PROJECT_ID, now) : [];
+  // A protection switched off without renewal re-arms to warning when its term ends (SMA k_lib_stpa) — on by default and for
+  // every project with a disarm row, not only the hub's; protection.rearm=off keeps a disarm off (the owner asked for always-off).
+  const rearmed = loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)["protection.rearm"] === "off" ? []
+    : disarmedProjects(db).flatMap((projectId) => rearmExpiredDisarms(db, projectId, now).map((key) => `${projectId}:${key}`));
   for (const key of rearmed) ctx.log(`Lane Pilot: protection ${key} re-armed to warning after its disarm term`);
+  // Throwaway codex homes of tasks already final (SMA m_ac_codex_home): the attempt-finished removal covers the live
+  // path; this sweeps homes a crash or a restart left behind. Keys derive like helper-bb-shim's workerHome.
+  const codexKeys = finalTaskIdsSince(db, now - 30 * 86_400_000).map((taskId) => taskId.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120));
   const hosts = await listQaHosts(bb);
   let removed = 0, freedBytes = 0, kept = 0;
   for (const machine of hosts.filter((row) => row.connected)) {
@@ -90,6 +93,10 @@ export async function runWorktreeJanitor(ctx: Pick<ServerCore, "bb" | "db" | "lo
     kept += keptRows.length;
     recordJanitorSweep(db, { at: now, host: machine.id, removed: out.removed?.length ?? 0, freedBytes: Math.round(out.freedBytes ?? 0), tmpRemoved: out.tmpRemoved?.length ?? 0, tmpFreedBytes: Math.round(out.tmpFreedBytes ?? 0), keptJson: JSON.stringify(keptRows.slice(0, 50).map((row) => `${row.path} (${row.reason})`)) });
     if (keptRows.length) ctx.log(`Lane Pilot janitor kept ${keptRows.length} worktree(s) on ${machine.name ?? machine.id}: ${keptRows.map((row) => `${row.path} (${row.reason})`).join(", ").slice(0, 400)}`);
+    for (const key of codexKeys) {
+      const gone = await ctx.host.call("removeWorkerHome", { requestedHostId: machine.id, key }, { hostId: machine.id, timeoutMs: 30_000 }).catch(() => null) as { removed?: boolean } | null;
+      if (gone?.removed) removed += 1;
+    }
   }
   return { removed: removed + swept.length + envSwept.length, freedBytes, kept };
 }

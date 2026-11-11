@@ -14,6 +14,7 @@ import { listPhasePartsSince } from "../phase";
 import { activeMemoryDigestRows, countActiveMemory, lintMemory, memoryWithoutTrace, rebuildMemoryIndexes, reviewMemory } from "@lane-pilot/memory-core";
 import { currentEmbedder, embedPending, memorySettingsFor } from "../memory/server";
 import { loadProjectSettings } from "../storage";
+import { integrityReport } from "../policy";
 
 import type { FrontApi } from "../front/server/index";
 import type { ReadWriterWorkspaceFile } from "../platform/server";
@@ -49,11 +50,15 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
     /** Today: the day's KPI strip and its feed (accepted, blocked, phase parts, actions). */
     cockpit_today: async ({ projectId }: { projectId: string }) => {
       const since = Date.now() - DAY_MS;
-      const rows = listAttemptRowsForProject(db, { projectId, updatedSince: since, limit: 300 });
-      const tokens = tokenDailyTotal(db, projectId, new Date().toISOString().slice(0, 10));
-      const parts = listPhasePartsSince(db, projectId, since);
-      const actions = (await services.front.actions(200)).filter((row) => (row as { at: number }).at >= since);
+      // Cross-source digest (SMA k_lib_digest): each source answers alone; a failing one empties its list and names itself in `partial`.
+      const failed: string[] = [];
+      const source = async <T>(name: string, read: () => T | Promise<T>, empty: T): Promise<T> => { try { return await read(); } catch { failed.push(name); return empty; } };
+      const rows = await source("attempts", () => listAttemptRowsForProject(db, { projectId, updatedSince: since, limit: 300 }), [] as ReturnType<typeof listAttemptRowsForProject>);
+      const tokens = await source("tokens", () => tokenDailyTotal(db, projectId, new Date().toISOString().slice(0, 10)), 0);
+      const parts = await source("phases", () => listPhasePartsSince(db, projectId, since), [] as ReturnType<typeof listPhasePartsSince>);
+      const actions = (await source("actions", () => services.front.actions(200), [] as unknown[])).filter((row) => (row as { at: number }).at >= since);
       return {
+        partial: failed,
         kpi: { accepted: rows.filter((row) => row.state === "accepted").length, blocked: rows.filter((row) => row.state === "blocked").length, running: rows.filter((row) => row.state === "running").length, tokens, actions: actions.length },
         feed: [...rows.map((row) => {
           // An accepted row opens its acceptance card on press (SMA done_unfold): it carries its run and its title for that.
@@ -61,6 +66,15 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
           return { at: row.at, kind: `task_${row.state}`, runId: row.runId, taskId: row.taskId, title, text: `${row.taskId}${row.reason ? ` — ${row.reason.slice(0, 160)}` : ""}` };
         }),
           ...parts.map((part) => ({ at: part.at as number, kind: `phase_${part.kind}`, text: `${part.phaseId}: ${String(part.text).slice(0, 200)}` }))].sort((a, b) => b.at - a.at).slice(0, 150),
+      };
+    },
+    /** The park policy as written (SMA m_sw_rules): every protection with its hazard and current value, plus the hold/breaker
+     * switches of the run policy — drawn read-only on the Rules screen; edits stay in the settings tabs. */
+    cockpit_rules: async ({ projectId }: { projectId: string }) => {
+      const settings = loadProjectSettings(db, projectId);
+      return {
+        rules: integrityReport(db, settings, projectId),
+        switches: Object.fromEntries(["protection.rearm", "conveyor", "writer.fallback_on_provider_failure"].map((key) => [key, settings[key] ?? null])),
       };
     },
     /** Workers over 30 days (tokens by provider and model) with their capability cells: the worker cards and their history. */

@@ -1454,3 +1454,9 @@ export function listAcceptedAttemptsSince(db: LanePilotDatabase, projectId: stri
       AND a.attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id AND b.state='accepted')
     ORDER BY a.created_at`).all(projectId, sinceMs) as Array<{ runId: string; taskId: string; attemptId: string; createdAt: number }>;
 }
+
+/** Task ids whose newest attempt is final (accepted|blocked|canceled): the codex-home sweep keys its removals on them (SMA m_ac_codex_home). */
+export function finalTaskIdsSince(db: LanePilotDatabase, since: number, limit = 300): string[] {
+  return (db.prepare(`SELECT DISTINCT task_id AS taskId FROM lane_pilot_attempt WHERE state IN ('accepted','blocked','canceled') AND updated_at >= ? LIMIT ?`)
+    .all(since, limit) as Array<{ taskId: string }>).map((row) => row.taskId);
+}

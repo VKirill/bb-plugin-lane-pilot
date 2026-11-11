@@ -200,6 +200,7 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "writer.class_cooldowns": { label: "field_s534", help: "reason_s534" },
   "writer.cooldown_max_ms": { label: "field_s535", help: "reason_s535", unit: "fieldUnitSeconds" },
   "writer.task_wall_clock_min": { label: "field_s536", help: "reason_s536", unit: "fieldUnitMinutes" },
+  "writer.session_max_turns": { label: "field_s616", help: "reason_s616", unit: "fieldUnitTimes" },
   "writer.verify_max_passes": { label: "field_s537", help: "reason_s537", unit: "fieldUnitTimes" },
   "writer.retry_safety": { label: "field_s538", help: "reason_s538" },
   "writer.owns_barrier": { label: "field_s540", help: "reason_s540" },

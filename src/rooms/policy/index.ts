@@ -10,3 +10,4 @@ export { composeMorningList } from "./morning";
 export { POLICY, TIERS, classifyChange, explainChange, globMatch } from "./policy";
 export type { ChangeDescriptor, Tier } from "./policy";
 export { integrityReport, rearmExpiredDisarms, renewDisarm } from "./protections";
+export { disarmedProjects } from "../storage";

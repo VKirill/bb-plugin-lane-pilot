@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { chmod, lstat, mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { applyEdits, modify, parse, type ParseError } from "jsonc-parser/lib/esm/main.js";
@@ -66,8 +67,9 @@ function stripHookGroups(groups: unknown[], home: string, removed: string[]): un
   return kept;
 }
 
-/** Drops hook commands under ~/.agents/hooks/ and a statusLine that runs lane-statusline. Other entries stay. */
-export function stripClaudeLaneSettings(text: string, home: string): { text: string; removed: string[] } {
+/** Drops hook commands under ~/.agents/hooks/ and a statusLine that runs lane-statusline. Other entries stay. When the
+ * person's own claude-pulse line still exists (`exists` probe), the wrapper's removal puts it back instead of leaving none (SMA k_rm_statusline). */
+export function stripClaudeLaneSettings(text: string, home: string, exists?: (path: string) => boolean): { text: string; removed: string[] } {
   const errors: ParseError[] = [];
   const parsed = parse(text, errors, { allowTrailingComma: true, disallowComments: false });
   if (errors.length || !parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { text, removed: [] };
@@ -88,7 +90,8 @@ export function stripClaudeLaneSettings(text: string, home: string): { text: str
   const statusCommand = typeof status === "string" ? status : hookCommand(status) ?? "";
   if (statusCommand && commandPointsAt(statusCommand, home, STATUSLINE_SUFFIX)) {
     removed.push(statusCommand);
-    next = applyEdits(next, modify(next, ["statusLine"], undefined, options));
+    const pulse = join(home, ".claude-pulse", "claude_status.py");
+    next = applyEdits(next, modify(next, ["statusLine"], exists?.(pulse) ? { type: "command", command: `python3 '${pulse}'` } : undefined, options));
   }
   return { text: next, removed };
 }
@@ -207,7 +210,7 @@ export async function removeClaudeLaneLeftovers(input: { home: string; apply?: b
   const codexPath = join(home, ".codex/config.toml");
   const settingsRaw = await readFile(settingsPath, "utf8").catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return null; throw error; });
   const codexRaw = await readFile(codexPath, "utf8").catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return null; throw error; });
-  const settings = settingsRaw === null ? { text: "", removed: [] as string[] } : stripClaudeLaneSettings(settingsRaw, home);
+  const settings = settingsRaw === null ? { text: "", removed: [] as string[] } : stripClaudeLaneSettings(settingsRaw, home, existsSync);
   const codex = codexRaw === null ? { text: "", removed: [] as string[] } : stripCodexLaneConfig(codexRaw);
   const settingsChanged = settingsRaw !== null && settings.text !== settingsRaw;
   const codexChanged = codexRaw !== null && codex.text !== codexRaw;

@@ -88,6 +88,11 @@ export function endDisarm(db: Db, projectId: string, key: string, now: number, v
   writeDisarm(db, projectId, key, null, now);
 }
 
+/** Every project that has a disarm record: the daily sweep re-arms each one's expired disarm (SMA k_lib_stpa), not only the hub's. */
+export function disarmedProjects(db: Db): string[] {
+  return (db.prepare(`SELECT DISTINCT project_id FROM lane_pilot_project_settings WHERE binding_id='' AND key LIKE 'protection.disarm.%'`).all() as Array<{ project_id: string }>).map((row) => row.project_id);
+}
+
 /** Stage receipts of the project that failed or blocked since a moment: what a disarmed gate would have stopped. */
 export function failedStageReceiptsSince(db: Db, projectId: string, since: number, limit = 10): Array<{ taskId: string; stageId: string; state: string; at: number }> {
   return db.prepare(`SELECT task_id AS taskId, stage_id AS stageId, state, updated_at AS at FROM lane_pilot_stage_receipt

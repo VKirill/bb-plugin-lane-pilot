@@ -15,7 +15,11 @@ const sha = async (text: string) => (await import("node:crypto")).createHash("sh
  * as forge drafts (a name never overwrites), the peers' last snapshots (polled with the board every five minutes), terminal coordination
  * and who can see the door, read through the machines; and the action journal — one line per call that changes something.
  */
-export function createFront(ctx: ServerCore) {
+export function createFront(ctx: ServerCore, deps?: {
+  /** The peer's ordinary board: BB's live usage windows of the machine's own subscription (the statusline's last_usage.json
+   * is dead since 2026-10-30). Unset keeps the old host readUsageWindows call. Answers carry `at`; null means nothing answered. */
+  board?(hostId: string): Promise<unknown>;
+}) {
   const { db, bb } = ctx;
   const kv = bb.storage.kv;
   // The peers' last snapshots live in memory only: age-labelled, dropped on restart, never stored (SMA m_mc_snapshot).
@@ -82,8 +86,10 @@ export function createFront(ctx: ServerCore) {
       const next: PeerSnapshot = { hostId: row.id, name: row.name ?? null, online, at: now, lastOnlineAt: online ? now : before?.lastOnlineAt ?? null };
       if (online) {
         try {
-          next.windows = await host().call("readUsageWindows", { requestedHostId: row.id }, { hostId: row.id, timeoutMs: 5_000 });
-          next.answered = true;
+          const answer = await (deps?.board ? deps.board(row.id) : host().call("readUsageWindows", { requestedHostId: row.id }, { hostId: row.id, timeoutMs: 5_000 }));
+          next.windows = answer;
+          // The live reader never throws and says at:null when nothing answered; the file reader throws on a dead host.
+          next.answered = deps?.board ? Boolean((answer as { at?: unknown } | null)?.at) : true;
         } catch { next.answered = false; }
       }
       snapshots.set(row.id, next);

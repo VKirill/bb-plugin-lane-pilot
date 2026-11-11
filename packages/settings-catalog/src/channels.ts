@@ -161,6 +161,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"writer.best_of.slot_cap", channel:"OWN", reason:"Native Lane Pilot best-of-3: how many candidates of a task may run at once" },
   { key:"writer.best_of.rounds", channel:"OWN", reason:"Native Lane Pilot best-of-3: refinement rounds; a new round's candidates start with the previous round's surviving attempts, their check remarks and diff stats" },
   { key:"writer.fallback_on_provider_failure", channel:"OWN", reason:"Native Lane Pilot writer fallback chain: a provider refusal hands the task to the next model at once or after one retry of the same model" },
+  { key:"writer.session_max_turns", channel:"OWN", reason:"Native Lane Pilot writer turn ceiling: how many times the writer may return to one task in one conversation (sticky.ts sessionLimit, default 5)" },
   { key:"writer.retry_escalate", channel:"OWN", reason:"Native Lane Pilot writer fallback chain: on sends the first red check of a task-class failure to the next writer inside the same attempt budget" },
   { key:"writer.pair_pin", channel:"OWN", reason:"Native Lane Pilot writer pin: the task's provider+model for its whole life; moves only on provider failure or failure-class intervention, the reason recorded" },
   { key:"writer.route_record", channel:"OWN", reason:"Native Lane Pilot writer route record: the route decision — candidates, exclusions with reasons, the pick — kept in the task KV for the attempt receipt and the task screen" },

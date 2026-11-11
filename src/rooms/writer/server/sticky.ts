@@ -186,23 +186,33 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
   /** Turns the failed attempt's thread took for its task: its first answer and every feedback turn after it. */
   const sessionTurns = (failed: { thread_id: string | null; task_id: string }): number => failed.thread_id ? countThreadTaskAttempts(db, failed.thread_id, failed.task_id) : 0;
 
+  /** The conversation's turn ceiling (SMA m_sw_conv_settings): writer.session_max_turns 1-10, unset = SESSION_MAX_TURNS (5). */
+  const turnCap = (failedAttemptId: string, maxTurns: number | undefined): number => {
+    if (maxTurns !== undefined) return maxTurns;
+    const failed = getAttempt(db, failedAttemptId);
+    const projectId = failed ? getRun(db, failed.run_id)?.project_id : undefined;
+    const raw = projectId ? Number(loadProjectSettings(db, projectId)["writer.session_max_turns"]) : NaN;
+    return Number.isFinite(raw) ? Math.max(1, Math.min(10, Math.round(raw))) : SESSION_MAX_TURNS;
+  };
+
   /** Why a failed attempt gets no more feedback turns in its writer's thread (the turn cap); null while it may. */
-  function sessionLimit(failedAttemptId: string, maxTurns = SESSION_MAX_TURNS): string | null {
+  function sessionLimit(failedAttemptId: string, maxTurns?: number): string | null {
     const failed = getAttempt(db, failedAttemptId);
     if (!failed?.thread_id) return null;
+    const cap = turnCap(failedAttemptId, maxTurns);
     const sameThread = resolveInSameThread(failed.state, failed.reason) || retryInSameThread(failed.state, failed.reason);
-    return sameThread && sessionTurns(failed) >= maxTurns ? `turn limit ${maxTurns} reached` : null;
+    return sameThread && sessionTurns(failed) >= cap ? `turn limit ${cap} reached` : null;
   }
 
   /**
    * The failed attempt's thread, when the same writer can redo the task in place or resolve its merge conflict. A task is
    * one writer session: the failure goes back to the writer as a feedback turn until the checks pass or the turn cap.
    */
-  async function retryWriter(failedAttemptId: string, runId: string, maxTurns = SESSION_MAX_TURNS): Promise<(HotWriter & { kind:"retry"|"merge" }) | null> {
+  async function retryWriter(failedAttemptId: string, runId: string, maxTurns?: number): Promise<(HotWriter & { kind:"retry"|"merge" }) | null> {
     const failed = getAttempt(db, failedAttemptId);
     const kind = resolveInSameThread(failed?.state ?? "", failed?.reason) ? "merge" as const : "retry" as const;
     if (!failed?.thread_id || (kind === "retry" && !retryInSameThread(failed.state, failed.reason))) return null;
-    if (sessionTurns(failed) >= maxTurns) return null;
+    if (sessionTurns(failed) >= turnCap(failedAttemptId, maxTurns)) return null;
     if (!await threadUsable(failed, true)) return null;
     return { threadId:failed.thread_id, attemptId:failed.id, workspacePath:failed.workspace_path!, environmentId:failed.environment_id,
       decision:failed.workspace_decision, turns:threadTurns(failed.thread_id), kind };

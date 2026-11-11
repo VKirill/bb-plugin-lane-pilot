@@ -26,6 +26,8 @@ import { ANAMNESIS_USAGE, anamnesisFor, collectOwnerMessages, sdkThreadsPort } f
 import { LEARNING_USAGE, learningFor, runLearningCli } from "../../learning";
 import { PM_REPLAY_USAGE, runPmReplayCli, listScenarios } from "../../pm-replay";
 import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
+import { usageSegment } from "../../usage";
+import type { ProviderUsage } from "../../usage/server";
 import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
 import { MEMORY_EVAL_USAGE, runMemoryEvalCommand } from "../../memory-eval/server";
 import { MEMORY_CONFLICT_USAGE, runMemoryConflictCli, sessionMemoryRpc, memorySettingsFor, type WallThreadReader } from "../../memory/server";
@@ -143,6 +145,7 @@ interface Services {
   phases: PhaseApi;
   pmReplay?: PmReplay;
   providerBreaker: WriterStateApi["providerBreaker"];
+  providerUsage?: Pick<ProviderUsage, "windows">;
   reconcileAttemptThread: ReconcileApi["reconcileAttemptThread"];
   regression: RegressionApi;
   resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
@@ -315,6 +318,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"cost", summary:"Cost per verified result: writer tokens per accepted task, per project, over 30 days", usage:"bb lane-pilot cost [--days 30]" },
       { name:"report", summary:"A local HTML report: the SMA map by region, the spend, the cost per verified result", usage:"bb lane-pilot report > report.html" },
       { name:"money", summary:"Money: spent month to date on paid lanes, the 14-day series, the monthly cap (money.monthly_cap_usd) and what is left", usage:"bb lane-pilot money" },
+      { name:"statusline", summary:"One status-line segment of a machine's subscription windows (5h and 7d), for the person's own statusLine command", usage:"bb lane-pilot statusline <host-id>" },
       { name:"unknown-codes", summary:"Failure reasons no class or rule names yet (the unknown code register), most frequent first, over the last 14 days", usage:"bb lane-pilot unknown-codes [--days 14]" },
       { name:"phase", summary:"Phases on rails: list, show (with the phase book), drive now, return to an earlier stage with a note, pause, resume, close in words", usage:PHASE_USAGE },
       { name:"gates", summary:"Gate firings: mark one a false alarm so it stops counting against the gate", usage:"bb lane-pilot gates ack <event-id> --why \"<reason>\"" },
@@ -591,6 +595,12 @@ ${ERRANDS_USAGE}` },
         }
         if (command === "money") {
           return { exitCode:0, stdout:JSON.stringify(services.money.status(), null, 2) };
+        }
+        if (command === "statusline") {
+          const hostId = args[0];
+          if (!hostId) return { exitCode:1, stderr:"usage: bb lane-pilot statusline <host-id>" };
+          const live = await services.providerUsage?.windows({ providerId:"claude-code", hostId }).catch(() => null);
+          return { exitCode:0, stdout:usageSegment(live?.windows ?? {}, live?.at ?? null, Date.now()) };
         }
         if (command === "unknown-codes") {
           const days = args[0] === "--days" && Number(args[1]) > 0 ? Number(args[1]) : 14;

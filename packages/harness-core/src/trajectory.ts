@@ -85,7 +85,8 @@ function renderItem(item: Record<string, unknown>, lines: string[], o: Required<
     }
     case "contextCompaction": push(lines, "[HARNESS] context compacted"); return;
     case "backgroundTask":
-    case "delegation": push(lines, `[HARNESS] ${type}: ${clip(item.description ?? item.summary ?? "", 300)}${item.taskStatus ? ` (${item.taskStatus})` : ""}${item.error ? ` error: ${clip(item.error, 300)}` : ""}`); return;
+    // BB's delegation item names the subagent in `label`; keep it ahead of the task text so the frame says who got the work.
+    case "delegation": push(lines, `[HARNESS] ${type}: ${clip(item.label ?? item.description ?? item.summary ?? "", 300)}${item.taskStatus ? ` (${item.taskStatus})` : ""}${item.error ? ` error: ${clip(item.error, 300)}` : ""}`); return;
     default: { const t = text(item); if (t.trim()) push(lines, `[HARNESS] ${type || "item"}: ${clip(t, 600)}`); }
   }
 }
@@ -122,6 +123,7 @@ export function summarizeThreadEvents(events: readonly ThreadEventLike[], option
   const did: string[] = [];
   const failed: string[] = [];
   const files = new Set<string>();
+  const tools = new Map<string, number>();
   let check = "";
   const ordered = [...events].sort((a, b) => Number(a.seq ?? 0) - Number(b.seq ?? 0));
   for (const event of ordered) {
@@ -129,6 +131,10 @@ export function summarizeThreadEvents(events: readonly ThreadEventLike[], option
     if (String(event.type ?? "") !== "item/completed" || !data.item || typeof data.item !== "object") continue;
     const item = data.item as Record<string, unknown>;
     const type = String(item.type ?? "");
+    // The frame in words (SMA m_ss_frame_summary): which tools the session used, counted per call name.
+    const tool = type === "commandExecution" ? "shell" : type === "fileChange" ? "edit" : type === "fileRead" ? "read" : type === "search" ? "search"
+      : type === "toolCall" || type === "mcpToolCall" ? [item.server, item.tool].filter(Boolean).join("/") || "tool" : null;
+    if (tool) tools.set(tool, (tools.get(tool) ?? 0) + 1);
     if (type === "fileChange") {
       const paths = (Array.isArray(item.changes) ? item.changes as Array<Record<string, unknown>> : []).map((change) => String(change.path ?? "")).filter(Boolean);
       for (const path of paths) files.add(path);
@@ -150,6 +156,7 @@ export function summarizeThreadEvents(events: readonly ThreadEventLike[], option
     `Did: ${did.slice(0, 8).join("; ") || "(nothing recorded)"}`,
     `Failed: ${failed.slice(0, 4).join("; ") || "(nothing recorded)"}`,
     `Check: ${check || "(none)"}`,
+    `Tools: ${[...tools].map(([name, count]) => `${name} x${count}`).join(", ") || "(none)"}`,
     `Files: ${[...files].slice(0, 12).join(", ") || "(none)"}`,
   ].join("\n");
   const max = options.maxChars ?? ATTEMPT_DIGEST_MAX;
