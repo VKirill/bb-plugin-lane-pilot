@@ -284,7 +284,8 @@ export function templateFill(kind: "PLAN" | "VERIFICATION", phase: Pick<Phase, "
   const waves = wavesOfPublic(items);
   if (kind === "PLAN") {
     return [`# Plan — phase ${phase.id}: ${phase.title}`, "", `Goal: ${phase.goal}`, "",
-      phase.record.plan?.objective ? `Objective: ${phase.record.plan.objective}` : "", `## Waves`, "",
+      phase.record.plan?.objective ? `Objective: ${phase.record.plan.objective}` : "",
+      phase.record.plan?.budget ? `Budget: ${phase.record.plan.budget}` : "", `## Waves`, "",
       ...waves.flatMap((wave) => [`### Wave ${wave}`, "", ...items.filter((item) => item.wave === wave).map((item) => [
         `- ${item.id}: given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}`,
         `  owns: ${(Array.isArray(item.task.owns_paths) ? item.task.owns_paths : []).map(String).join(", ") || "—"}`,

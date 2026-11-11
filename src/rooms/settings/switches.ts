@@ -19,6 +19,7 @@ export const UNLISTED_SWITCHES: Readonly<Record<string, readonly [scope: SwitchS
   "phase.doc_files": ["project", "on|off", "the phase writes STATE.md (its marked block), SPEC.md, PLAN.md and VERIFICATION.md into the project and commits them"],
   "phase.commit_docs": ["project", "on|off", "off: the phase's documents are written but not committed (unset commits, as before)"],
   "phase.ambiguity_gate": ["project", "on|off", "a plan is not admitted while the share of open planning questions is too high"],
+  "phase.grill_gate": ["project", "on|off", "a plan grilled with open challenges is not admitted until the owner's word or a plan that answers them lifts it (unset: on)"],
   "phase.piece_notes": ["project", "on|off", "a piece's plan carries its predictions, risk and motion lines"],
   "phase.threat_closure": ["project", "on|off", "a passed blind verdict fails while a threat row has no file:line mitigation in the code"],
   "phase.branch": ["project", "none|phase|milestone", "a closed phase leaves a branch: phase/<id>, or milestone/<slug> of its roadmap section"],
@@ -52,7 +53,7 @@ export const UNLISTED_SWITCHES: Readonly<Record<string, readonly [scope: SwitchS
   "docs.gitnexus_refresh": ["project", "on|off", "the nightly docs pass refreshes the GitNexus code index (.gitnexus) of a checkout that lacks it or lags HEAD"],
   "docs.review": ["project", "gate|off", "a separate reviewer role reads the docs maintainer's edits before a page is written and committed; a refusal gets one rework round, then an owner item (unset: gate; off: no review)"],
   // capability
-  "capability.documentary_gate": ["project", "hold|observe", "a documentary stage holds on a provider whose adapter version has a red documentary receipt; no receipt or a stale one is observed, never held (unset: hold; observe: only logs)"],
+  "capability.documentary_gate": ["project", "hold|observe", "a documentary stage holds on a provider whose adapter version has a red documentary receipt; no receipt or a stale one is probed once, then runs green or holds red (unset: hold; observe: only logs)"],
   // the second address (SMA d_project_planning): unset, the checkout's own .agents is the planning home
   "project.planning_home": ["project", "absolute path", "the planning home: .agents/phases, .agents/planning and .agents/todos are read and written under this folder on the project's host instead of the checkout's (unset: the checkout)"],
   // the infra profile (SMA k_pl_infra): free text, one writer — `bb lane-pilot profile` and the start's profile writer

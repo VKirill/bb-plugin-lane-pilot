@@ -590,7 +590,7 @@ describe("the codebase map's pages", () => {
     const full = docsCompletenessGaps([page("overview"), page("architecture"), page("gotchas"), page("conventions"), page("testing")], { tables: [], core: [] });
     expect(full.missingPages).toEqual([]);
   });
-  it("[sma:k_d_tpl_instructions] the start's profile write creates CLAUDE.md and the Copilot instructions as pointers to PROJECT.md and appends the preferences once; a person's CLAUDE.md is never replaced, and without PROJECT.md nothing is written", async () => {
+  it("[sma:k_d_tpl_instructions] the start's profile write creates CLAUDE.md and the Copilot instructions as pointers to PROJECT.md, seeds a minimal canon on a fresh start and appends the preferences once; a person's CLAUDE.md is never replaced", async () => {
     STRICT_WRITES.on = true;
     try {
       const r = rig();
@@ -599,10 +599,11 @@ describe("the codebase map's pages", () => {
       registerChainExecutors(engine, r.ctx, r.services, createWorkflowAgents());
       const write = async () => (await engine.start({ workflow: actionWorkflow("lp.profile_write", { params: { profile: { stack: "ts", test_command: "npm test" } } }, { refused: "string[]", set: "string[]", reasons: "string[]" }), inputs: {}, runtime: r.rt, link: { projectId: PROJECT, runId: RUN } }).done).output as Row;
       const at = (path: string) => join(r.checkout, path);
-      // No PROJECT.md: the pointers would lead nowhere, so no file appears.
+      // A fresh start has no PROJECT.md yet: the pointers still go in, and a minimal PROJECT.md is seeded so they resolve.
       await write();
-      expect(existsSync(at("CLAUDE.md"))).toBe(false);
-      expect(existsSync(at(".github/copilot-instructions.md"))).toBe(false);
+      expect(existsSync(at("CLAUDE.md"))).toBe(true);
+      expect(existsSync(at(".github/copilot-instructions.md"))).toBe(true);
+      expect(readFileSync(at(".agents/planning/PROJECT.md"), "utf8")).toMatch(/## Developer preferences[\s\S]*Language: ts[\s\S]*Test command: npm test/);
       // With PROJECT.md and the person's own CLAUDE.md: theirs stays byte for byte, the missing file is created.
       put(r.checkout, ".agents/planning/PROJECT.md", "# Project\n\nVision.\n");
       put(r.checkout, "CLAUDE.md", "@AGENTS.md\n");

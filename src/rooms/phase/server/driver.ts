@@ -27,9 +27,11 @@ import type { ArchitectApi, DispatchWriter, ReadWriterWorkspaceFile, RecheckPlan
 
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+import type { MoneyApi } from "../../money";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  money?: MoneyApi;
   architect: ArchitectApi;
   dispatchWriter: DispatchWriter;
   docsPlaces: DocsNightlyApi["docsPlaces"];

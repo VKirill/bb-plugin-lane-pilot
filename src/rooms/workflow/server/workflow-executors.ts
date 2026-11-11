@@ -819,9 +819,10 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   });
 
   // The agent-instruction forms go with the start's profile write (SMA k_d_tpl_instructions): CLAUDE.md and the Copilot
-  // instructions are pointers to PROJECT.md, and the «Developer preferences» section is appended to it. The pointers are
-  // written only where PROJECT.md exists, and create-only: BB answers `conflict` to a null-hash write over an existing
-  // file, so a person's CLAUDE.md is never replaced. (writePhaseBook cannot do this: it takes phase and planning marks only.)
+  // instructions are pointers to PROJECT.md, and the «Developer preferences» section is appended to it (or a minimal
+  // PROJECT.md seeded when it is not there yet). Every write is create-only or hash-checked: BB answers `conflict` to
+  // a null-hash write over an existing file, so a person's CLAUDE.md is never replaced. (writePhaseBook cannot do this:
+  // it takes phase and planning marks only.)
   async function writeInstructionForms(rt: ChainRuntime, profile: unknown): Promise<void> {
     const checkout = await bestEffort(ctx.log, "instruction forms checkout", pmCheckout(rt), null);
     if (!checkout) return;
@@ -829,15 +830,27 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const projectPath = ".agents/planning/PROJECT.md";
     const host = ctx.host as never as { call(m: string, i: unknown, o?: unknown): Promise<Record<string, unknown>> };
     const current = await bestEffort(ctx.log, "instruction forms PROJECT.md", host.call("readBoundedFile", { requestedHostId: checkout.hostId, projectCwd: root, relativePath: projectPath, offset: 0, maxLines: 2000 }, { hostId: checkout.hostId, timeoutMs: 20_000 }), null);
-    if (!current || typeof current.content !== "string" || !current.content.trim()) return;
     const prof = rec(profile);
-    const forms = instructionForms({ name: checkout.path.split("/").filter(Boolean).pop() ?? "project", test: str(prof.test_command), language: str(prof.stack), style: str(prof.style) });
+    const name = checkout.path.split("/").filter(Boolean).pop() ?? "project";
+    const forms = instructionForms({ name, test: str(prof.test_command), language: str(prof.stack), style: str(prof.style) });
     const write = (rootPath: string, path: string, content: string, expectedSha256: string | null) =>
       bestEffort(ctx.log, `instruction forms ${path}`, bb.sdk.files.write({ hostId: checkout.hostId, rootPath, path: `${rootPath}/${path}`, content, contentEncoding: "utf8", createParents: true, expectedSha256 }), null);
-    for (const [path, content] of [["CLAUDE.md", forms.claudeMd], [".github/copilot-instructions.md", forms.copilotInstructions]] as const) {
-      noteEngineWrite(checkout.path, path);
-      await write(checkout.path, path, content, null);
+    const writePointers = async () => {
+      for (const [path, content] of [["CLAUDE.md", forms.claudeMd], [".github/copilot-instructions.md", forms.copilotInstructions]] as const) {
+        noteEngineWrite(checkout.path, path);
+        await write(checkout.path, path, content, null);
+      }
+    };
+    // A fresh start has no PROJECT.md yet (the recap writes it later); the forms still go in, and the pointers need
+    // the canon to resolve, so a minimal PROJECT.md is seeded first — create-only: a file that appeared in between
+    // wins and is left for the recap to merge into.
+    if (!current || typeof current.content !== "string" || !current.content.trim()) {
+      noteEngineWrite(root, projectPath);
+      await write(root, projectPath, `# ${name}\n\n${forms.preferences}`, null);
+      await writePointers();
+      return;
     }
+    await writePointers();
     if (current.truncated !== true && typeof current.sha256 === "string" && current.sha256 === sha256Hex(current.content) && !current.content.includes("Developer preferences"))
       await write(root, projectPath, `${current.content.trimEnd()}\n\n${forms.preferences}`, current.sha256);
   }

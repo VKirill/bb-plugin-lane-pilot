@@ -156,19 +156,40 @@ describe("spend book, PM prompt and the rule breaker", () => {
     expect(rows.map((row) => `${row.target}:${row.count}`)).toEqual(["task-a:2"]);
   });
 
-  it("the documentary gate holds by default only on a red receipt; observe mode refuses nothing", async () => {
+  it("[sma:ap_caps] the documentary gate probes a missing or stale receipt once before the stage runs: green runs, red or an unprobeable provider holds like a red receipt; observe mode refuses nothing", async () => {
     const { bb, db, harness } = open();
     const { createCapabilities } = await import("../../src/rooms/capability/server");
     const { saveProjectSetting } = await import("../../src/rooms/storage");
     const { saveReceipt } = await import("../../src/rooms/capability/store");
-    harness.sdk.stub("providers.list", async () => [{ id: "codex", pluginId: "provider-codex" }]);
-    harness.sdk.stub("plugins.list", async () => [{ id: "provider-codex", version: "0.1.0" }]);
-    createCapabilities({ db, bb, log: () => undefined, isDisposed: () => false } as never, {} as never);
+    const { createRun, setRunThread } = await import("../../src/rooms/plugin-db");
+    harness.sdk.stub("providers.list", async () => [{ id: "codex", pluginId: "provider-codex" }, { id: "claude-code", pluginId: "provider-claude-code" }, { id: "opencode2", pluginId: "opencode2" }]);
+    harness.sdk.stub("plugins.list", async () => [{ id: "provider-codex", version: "0.1.0" }, { id: "provider-claude-code", version: "0.2.0" }, { id: "opencode2", version: "1.1.0" }]);
+    harness.sdk.stub("threads.get", async () => ({ id: "thr_pm", status: "idle", archivedAt: null }));
+    // A live sandbox run whose PM chat is there: the gate's probe needs a parent.
+    createRun(db as never, "run_s", "proj_3tb652jpsi", "bb", "/s"); setRunThread(db as never, "run_s", "thr_pm");
+    const probes: string[] = [];
+    let answer: { ok: boolean; reason: string | null } = { ok: true, reason: null };
+    createCapabilities({ db, bb, log: () => undefined, isDisposed: () => false } as never,
+      { startHelperProbe: async (_p: string, _r: string, provider: string, _m: string, cell: string) => { probes.push(`${provider}:${cell}`); return answer; } } as never);
     const gate = documentaryGateOf(bb)!;
-    // No receipt at all: observed, not held (SMA ap_caps — only red holds).
+    // No receipt at all: probed once per documentary cell before the stage runs; green writes the receipts and the stage goes.
     expect(await gate.deny("codex", "m", "proj")).toBeNull();
-    // Nothing is red, so nothing leaves the offer — a provider with no known version included.
+    expect(probes).toEqual(["codex:documentary.nested", "codex:documentary.role", "codex:documentary.hooks", "codex:documentary.session_end"]);
+    // The fresh green proof is reused: nothing is probed again.
+    expect(await gate.deny("codex", "m", "proj")).toBeNull();
+    expect(probes).toHaveLength(4);
     expect(await gate.proved("proj")).toBeNull();
+    // A stale cell (its receipt gone) is probed once more before the stage: a probe that cannot run holds with its
+    // reason and the re-probe command, and writes no receipt.
+    db.prepare("DELETE FROM lane_pilot_capability WHERE provider_id='codex' AND capability='documentary.hooks'").run();
+    answer = { ok: false, reason: "Parent thread is invalid" };
+    const unrunnable = await gate.deny("codex", "m", "proj");
+    expect(unrunnable).toMatch(/^capability_unproven:codex:documentary\.hooks \(the probe could not run:/);
+    expect(unrunnable).toContain("re-probe");
+    // A probe that comes back red holds exactly as a red receipt: the cell's receipt is written by the probe itself.
+    answer = { ok: false, reason: "did not answer" };
+    const probeRed = await gate.deny("codex", "m", "proj");
+    expect(probeRed).toMatch(/^capability_unproven:codex:documentary\.hooks \(receipt/);
     // A red documentary receipt on the installed key holds, naming the cell and the re-probe command.
     const key = receiptKey({ version: "0.1.0", model: "gpt-6-luna", settings: [], hooks: JSON.stringify(NATIVE_HOOK_SOURCES) });
     saveReceipt(db as never, { providerId: "codex", version: key, capability: "documentary.nested", state: "not_supported", model: "m", detail: null, at: 1 } as never);
@@ -176,6 +197,7 @@ describe("spend book, PM prompt and the rule breaker", () => {
     expect(reason).toMatch(/^capability_unproven:codex:documentary\.nested/);
     expect(reason).toContain("re-probe");
     // The offer drops only the red provider; one the version table does not know stays, as `deny` lets it start.
+    answer = { ok: true, reason: null };
     const offer = (await gate.proved("proj"))!;
     expect([offer.has("codex"), offer.has("claude-code")]).toEqual([false, true]);
     expect(await gate.deny("claude-code", "m", "proj")).toBeNull();
