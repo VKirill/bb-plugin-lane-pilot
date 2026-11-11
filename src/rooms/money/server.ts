@@ -1,12 +1,11 @@
-import { hostContract } from "../contracts";
-import { PROVIDER_CAPABILITIES, settingOn } from "@lane-pilot/models";
+import { settingOn } from "@lane-pilot/models";
 import { loadProjectSettings } from "../storage";
 import { tokenDailyRowsSince, unmeasuredAttempts } from "../usage/server";
 import type { ServerCore } from "../contracts/server";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { capOf, isPaid, moneyCapFrom, moneyHold, priceOf, spendBook, windowHold, type DailyRow, type Price, type UsageWindow } from "./logic";
+import { capOf, isPaid, moneyCapFrom, moneyHold, priceOf, spendBook, type DailyRow, type Price } from "./logic";
 
-/** The spend book on the hub's token rows, the money cap, and the subscription windows the writer's machine last saw (its statusline cache). */
+/** The spend book on the hub's token rows and the money cap of the paid lanes. */
 export function createMoney(ctx: Pick<ServerCore, "db" | "bb">) {
   const rows = (): DailyRow[] => tokenDailyRowsSince(ctx.db, new Date(Date.now() - 40 * 86_400_000).toISOString().slice(0, 10));
   const settings = () => loadProjectSettings(ctx.db as never, GLOBAL_SETTINGS_PROJECT_ID);
@@ -63,19 +62,14 @@ export function createMoney(ctx: Pick<ServerCore, "db" | "bb">) {
     const taskUsd = taskEstimateUsd(providerId, model, input?.appetiteTokens);
     return moneyHold(providerId, status().monthUsd, cap, taskUsd);
   }
-  /** Why a writer of this provider and model must wait now: the money cap of a paid lane, or a closed subscription window on its machine. */
-  async function holds(providerId: string, model: string, hostId: string, input?: { appetiteTokens?: number }): Promise<string | null> {
+  /**
+   * Why a writer of this provider and model must wait now: the money cap of a paid lane. A spent subscription window is not asked here:
+   * the chain walk holds each member on BB's live figure (src/rooms/usage, `usage.skip_percent`) with the window's own reset time. This
+   * used to read the statusline's `last_usage.json` as well, a file nothing has written since Claude Lane was removed.
+   */
+  async function holds(providerId: string, model: string, _hostId: string, input?: { appetiteTokens?: number }): Promise<string | null> {
     const taskUsd = taskEstimateUsd(providerId, model, input?.appetiteTokens);
-    const money = moneyHold(providerId, status().monthUsd, moneyCapFrom(settings()), taskUsd);
-    if (money) return money;
-    if (!PROVIDER_CAPABILITIES[providerId]?.publishesUsageWindows) return null;
-    try {
-      const host = ctx.bb.hosts.experimental_client({ contract: hostContract });
-      const answer = await host.call("readUsageWindows", { requestedHostId: hostId }, { hostId, timeoutMs: 5_000 });
-      return windowHold(answer.windows as Partial<Record<"five_hour" | "seven_day" | "seven_day_opus", UsageWindow>>, model, Date.now());
-    } catch {
-      return null;
-    }
+    return moneyHold(providerId, status().monthUsd, moneyCapFrom(settings()), taskUsd);
   }
   return { money: { status, holds, capHolds } };
 }

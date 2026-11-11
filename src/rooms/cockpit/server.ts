@@ -5,6 +5,7 @@ import { HARNESS_VERSION, activeRunForProject, getRun, getTaskContractJson, late
 import { attemptRecord } from "../tools/server";
 import { listReceipts } from "../capability";
 import { tokenDailySeries, tokenDailyTotal } from "../usage/server";
+import type { ProviderUsage } from "../usage/server";
 import { readTaskApproach } from "../tasks";
 import { designJournalLines, readinessWords, trainedConditions, trainingRatios } from "../design-eval";
 import { runOnHost } from "@lane-pilot/host-calls";
@@ -21,7 +22,11 @@ import type { ReadWriterWorkspaceFile } from "../platform/server";
 interface Services {
   front: FrontApi;
   readWriterWorkspaceFile?: ReadWriterWorkspaceFile;
+  providerUsage?: Pick<ProviderUsage, "windows">;
 }
+
+/** The subscription whose windows the Money screen draws: the one BB's usage source publishes five-hour and seven-day windows for. */
+const WINDOW_PROVIDER = "claude-code";
 
 const SEEN = "lp.cockpit.seen";
 const FAULTS = "lp.cockpit.faults";
@@ -38,6 +43,7 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
   const kv = bb.storage.kv;
   const host = () => bb.hosts.experimental_client({ contract: hostContract });
   const activeRun = (projectId: string) => activeRunForProject(db, projectId);
+  const liveWindows = async (hostId: string) => (await services.providerUsage?.windows({ providerId: WINDOW_PROVIDER, hostId })) ?? { at: null, windows: {} };
 
   return {
     /** Today: the day's KPI strip and its feed (accepted, blocked, phase parts, actions). */
@@ -135,8 +141,9 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
       const lines = projectId ? all.filter((line) => line.projectId === projectId) : all;
       return { ratios: trainingRatios(lines), conditions: trainedConditions(lines), readiness: readinessWords(lines), recent: lines.slice(-20).reverse() };
     },
-    /** Subscription window bars: the five-hour and seven-day windows the machine last saw. */
-    cockpit_windows: async ({ hostId }: { hostId: string }) => host().call("readUsageWindows", { requestedHostId: hostId }, { hostId, timeoutMs: 5_000 }),
+    /** Subscription window bars: the five-hour and seven-day windows of the machine's subscription, BB's live figure (the usage room) —
+     * the same one a writer hold reads. No figure reads as empty with `at: null`, never as an old number. */
+    cockpit_windows: async ({ hostId }: { hostId: string }) => ({ hostId, ...(await liveWindows(hostId)) }),
     /** Time the card was visible: how long a screen stayed in view, for the screens nobody opens. */
     cockpit_seen: async ({ screen, ms }: { screen: string; ms: number }) => {
       const seen = ((await kv.get(SEEN)) as Record<string, { views: number; ms: number; last: number }> | null) ?? {};
@@ -232,9 +239,9 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
     cockpit_accounts: async () => {
       const peers = (await services.front.peers()).filter((peer) => peer.online);
       return Promise.all(peers.map(async (peer) => {
-        const answer = await host().call("readUsageWindows", { requestedHostId: peer.hostId }, { hostId: peer.hostId, timeoutMs: 5_000 }).catch((cause: unknown) => null);
-        return { hostId: peer.hostId, name: peer.name, at: answer?.at ?? null,
-          windows: answer ? answer.windows : null, reason: answer ? null : `the machine did not answer: open a terminal on it` };
+        const answer = await liveWindows(peer.hostId);
+        return { hostId: peer.hostId, name: peer.name, at: answer.at,
+          windows: answer.at ? answer.windows : null, reason: answer.at ? null : "no usage figure for this machine: BB's usage source has not answered for it" };
       }));
     },
     /** «Проверить и включить» of a taken draft: the two-step enable goes to the project's PM (lint, request, owner's word, confirm). */

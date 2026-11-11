@@ -6,7 +6,7 @@ import { landingWordGap, ownerWordFindings } from "../src/rooms/tasks";
 import { critiqueProblems, readinessWords, roleLine, trainedConditions, trainingRatios, type DesignJournalLine } from "../src/rooms/design-eval";
 import { answerFirstRun, firstRunNeeded, firstRunSettings, helperDraft, MUTATING_RPC, parseHelper, peerLine } from "../src/rooms/front";
 import { FORBIDDEN_GRANTS, draftFile, enabledPath, lintDraft } from "../src/rooms/forge";
-import { capOf, moneyHold, spendBook, windowHold } from "../src/rooms/money";
+import { capOf, moneyHold, spendBook } from "../src/rooms/money";
 import { approvalSuggestions, excavate, htmlReport } from "../src/rooms/tools/server/self-improve";
 import { taskEventBody } from "../src/rooms/relay/server";
 import { screenFor, unusedReads } from "../src/rooms/cockpit/ui/registry";
@@ -113,13 +113,11 @@ describe("the forge", () => {
 });
 
 describe("money", () => {
-  it("the cap of paid lanes, the subscription window, the spend book", () => {
+  it("the cap of paid lanes, the spend book", () => {
     expect(capOf("50")).toBe(50);
     expect(capOf("")).toBeNull();
     expect(moneyHold("openlux", 60, 50)).toBeTruthy();
     expect(moneyHold("claude-code", 60, 50)).toBeNull();
-    expect(windowHold({ five_hour: { utilization: 99, resetsAt: null } }, "claude-sonnet-5-5", 0)).toContain("five-hour");
-    expect(windowHold({ five_hour: { utilization: 40, resetsAt: null } }, "claude-sonnet-5-5", 0)).toBeNull();
     expect(spendBook([], Date.UTC(2026, 9, 24)).series).toHaveLength(14);
   });
 });

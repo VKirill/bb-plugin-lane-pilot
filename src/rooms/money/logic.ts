@@ -83,17 +83,3 @@ export function moneyHold(providerId: string, monthUsd: number, cap: number | nu
   if (taskUsd > 0 && monthUsd + taskUsd > cap) return `money cap: the task's estimate of ${taskUsd.toFixed(2)} USD would cross the ${cap.toFixed(2)} USD monthly cap (${monthUsd.toFixed(2)} spent on paid lanes); ${providerId} waits for the next month or a higher money.monthly_cap_usd`;
   return null;
 }
-
-/** Subscription window open right now (SMA: Five hours and seven days, Open right now): closed at 98% until it resets. */
-export type UsageWindow = { utilization: number; resetsAt: string | null };
-export function windowHold(windows: Partial<Record<"five_hour" | "seven_day" | "seven_day_opus", UsageWindow>>, model: string, now: number, threshold = 98): string | null {
-  const relevant: Array<["five_hour" | "seven_day" | "seven_day_opus", string]> = [["five_hour", "the five-hour window"], ["seven_day", "the seven-day window"]];
-  if (/opus/i.test(model)) relevant.push(["seven_day_opus", "the seven-day Opus window"]);
-  for (const [key, label] of relevant) {
-    const window = windows[key];
-    if (window && window.utilization >= threshold && (!window.resetsAt || Date.parse(window.resetsAt) > now)) {
-      return `subscription: ${label} is at ${Math.round(window.utilization)}%${window.resetsAt ? `, reset ${window.resetsAt}` : ""}; the writer waits for it`;
-    }
-  }
-  return null;
-}

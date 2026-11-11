@@ -5,6 +5,7 @@ import { createElement } from "react";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { setLocaleOverride } from "@lane-pilot/i18n";
 import { cockpitRpc } from "../../src/rooms/cockpit/server";
+import { boardWindows } from "../../src/rooms/usage/server/provider-usage";
 import { Loaded } from "../../src/rooms/cockpit/ui/kit";
 import { MoneyScreen, TodayScreen } from "../../src/rooms/cockpit/ui/screens-day";
 import { useProjectChoice } from "../../src/rooms/cockpit/ui/cockpit-page";
@@ -82,23 +83,47 @@ describe("window parity d6", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("[sma:m_rd_accounts] cockpit_accounts answers one entry per online machine with its windows, and windows null for one that does not answer", async () => {
+  it("[sma:m_rd_accounts] cockpit_accounts answers one entry per online machine with its live windows, and windows null with a reason for one BB has no usage figure for; no machine file is read", async () => {
     const { bb, db, harness } = open();
-    bb.hosts.experimental_client = (() => ({ call: async (_method: string, input: { requestedHostId: string }) => {
-      if (input.requestedHostId === "h2") throw new Error("offline");
-      return { hostId: input.requestedHostId, at: "now", windows: { five_hour: { utilization: 40, resetsAt: null }, seven_day: { utilization: 12, resetsAt: null } } };
-    } })) as never;
+    const hostCalls: string[] = [];
+    bb.hosts.experimental_client = (() => ({ call: async (method: string) => { hostCalls.push(method); throw new Error("no host call expected"); } })) as never;
+    const providerUsage = { windows: async ({ providerId, hostId }: { providerId: string; hostId: string }) => providerId === "claude-code" && hostId === "h1"
+      ? { at: "2026-11-11T00:00:00.000Z", windows: { five_hour: { utilization: 40, resetsAt: null }, seven_day: { utilization: 12, resetsAt: null } } }
+      : { at: null, windows: {} } };
     const peers = async () => [
       { hostId: "h1", name: "Big", online: true, at: 1, lastOnlineAt: 1, line: "Big" },
       { hostId: "h2", name: "Mini", online: true, at: 1, lastOnlineAt: 1, line: "Mini" },
       { hostId: "h3", name: "Off", online: false, at: 1, lastOnlineAt: 1, line: "Off" },
     ];
-    const rows = await rpcOf(db as never, bb as never, { front: { actions: async () => [], peers } }).cockpit_accounts({} as never) as Array<{ hostId: string; name: string | null; windows: unknown; reason: string | null }>;
+    const rpc = rpcOf(db as never, bb as never, { front: { actions: async () => [], peers }, providerUsage });
+    const rows = await rpc.cockpit_accounts({} as never) as Array<{ hostId: string; name: string | null; windows: unknown; reason: string | null }>;
     expect(rows.map((row) => row.hostId)).toEqual(["h1", "h2"]);
     expect(rows[0]).toMatchObject({ name: "Big", windows: { five_hour: { utilization: 40 } }, reason: null });
     expect(rows[1]!.windows).toBeNull();
     expect(rows[1]!.reason).toBeTruthy();
+    // The bars of the Money screen read the same live figure; with no usage source at all they are empty, never an old number.
+    expect(await rpc.cockpit_windows({ hostId: "h1" } as never)).toMatchObject({ hostId: "h1", at: "2026-11-11T00:00:00.000Z", windows: { seven_day: { utilization: 12 } } });
+    expect(await rpcOf(db as never, bb as never, { front: { actions: async () => [], peers } }).cockpit_windows({ hostId: "h1" } as never)).toEqual({ hostId: "h1", at: null, windows: {} });
+    expect(hostCalls).toEqual([]);
     await harness.lifecycle.dispose();
+  });
+
+  it("[sma:m_wn_two] boardWindows names BB's live windows five_hour, seven_day and seven_day_<family>, takes the machine's own resource before a shared one, and says at:null while nothing was read", () => {
+    const ok = (windows: Array<Record<string, unknown>>) => ({ usage: { status: "ok" as const, windows } }) as never;
+    const own = { resource: { id: "a", providerId: "claude-code", scope: { kind: "host" as const, hostId: "h1" } }, measurement: ok([
+      { kind: "five-hour", label: "5h", usedPercent: 41, resetsAt: "2026-11-11T05:00:00Z", model: null },
+      { kind: "weekly", label: "7d", usedPercent: 12, resetsAt: null, model: null },
+      { kind: "weekly", label: "7d Opus", usedPercent: 77, resetsAt: null, model: "Opus" },
+    ]) };
+    const shared = { resource: { id: "b", providerId: "claude-code", scope: { kind: "shared" as const } }, measurement: ok([{ kind: "five-hour", label: "5h", usedPercent: 99, resetsAt: null, model: null }]) };
+    const other = { resource: { id: "c", providerId: "codex", scope: { kind: "shared" as const } }, measurement: ok([{ kind: "weekly", label: "7d", usedPercent: 5, resetsAt: null, model: null }]) };
+    const now = Date.parse("2026-11-11T00:00:00Z");
+    expect(boardWindows([own, shared, other], { providerId: "claude-code", hostId: "h1", now })).toEqual({ at: "2026-11-11T00:00:00.000Z", windows: {
+      five_hour: { utilization: 41, resetsAt: "2026-11-11T05:00:00Z" }, seven_day: { utilization: 12, resetsAt: null }, seven_day_opus: { utilization: 77, resetsAt: null } } });
+    // Another machine has no resource of its own: the shared one answers.
+    expect(boardWindows([own, shared, other], { providerId: "claude-code", hostId: "h2", now }).windows).toEqual({ five_hour: { utilization: 99, resetsAt: null } });
+    // An unread or signed-out source is «nothing known».
+    expect(boardWindows([{ resource: own.resource, measurement: null }, { resource: shared.resource, measurement: { usage: { status: "unauthenticated" } } as never }], { providerId: "claude-code", hostId: "h1", now })).toEqual({ at: null, windows: {} });
   });
 
   it("[sma:m_sw_terminal_window] the money screen's account list names each line «Ваш терминал» with its percents, and SystemScreen keeps only the how-to footnote", async () => {

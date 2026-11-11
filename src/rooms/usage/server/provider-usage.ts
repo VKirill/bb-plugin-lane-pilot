@@ -35,6 +35,7 @@ const resourceSchema = z.object({
 }).passthrough();
 const listSchema = z.object({ resources: z.array(resourceSchema) }).passthrough();
 const windowSchema = z.object({
+  kind: z.string().optional(),
   label: z.string().optional(),
   usedPercent: z.number(),
   resetsAt: z.string().nullable().optional(),
@@ -96,6 +97,35 @@ export function usageHold(
   const worst = held.reduce((a, b) => (b.percent > a.percent ? b : a));
   return { percent: worst.percent, window: worst.window,
     resetsAt: resets.some((at) => at === null) ? null : resets.map((at) => at!).sort((a, b) => Date.parse(a) - Date.parse(b))[0]! };
+}
+
+export type BoardWindows = { at: string | null; windows: Record<string, { utilization: number; resetsAt: string | null }> };
+
+/**
+ * A provider's subscription windows on a machine under the board's names (`five_hour`, `seven_day`, `seven_day_<family>`), from the
+ * same resources a hold reads: the machine's own, else the shared ones. Several resources: the fullest figure of each window. `at` is
+ * null while no resource has a readable measurement, so a board shows «nothing known», never an old figure.
+ */
+export function boardWindows(
+  resources: ReadonlyArray<{ resource: UsageResource; measurement: UsageMeasurement | null }>,
+  input: { providerId: string; hostId: string; now: number },
+): BoardWindows {
+  const ofProvider = resources.filter((row) => row.resource.providerId === input.providerId);
+  const own = ofProvider.filter((row) => row.resource.scope.kind === "host" && row.resource.scope.hostId === input.hostId);
+  const serving = own.length ? own : ofProvider.filter((row) => row.resource.scope.kind === "shared");
+  const windows: BoardWindows["windows"] = {};
+  let read = false;
+  for (const { measurement } of serving) {
+    if (measurement?.usage.status !== "ok") continue;
+    read = true;
+    for (const window of measurement.usage.windows) {
+      const family = window.model?.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_") || "";
+      const span = window.kind === "five-hour" ? "five_hour" : window.kind === "weekly" ? "seven_day" : window.kind === "daily" ? "one_day" : window.label ?? "window";
+      const name = family ? `${span}_${family}` : span;
+      if (!windows[name] || window.usedPercent > windows[name]!.utilization) windows[name] = { utilization: window.usedPercent, resetsAt: window.resetsAt ?? null };
+    }
+  }
+  return { at: read ? new Date(input.now).toISOString() : null, windows };
 }
 
 /** The reason an attempt carries when its writer pair is skipped; read as a limit by failure-class (uncharged, moves down the chain). */
@@ -245,7 +275,13 @@ export function createProviderUsage(bb: BbPluginApi, now: () => number = Date.no
     }
   }
 
-  return { hold, peek, warm };
+  /** The live windows of a provider on a machine for a board (the Money screen, the accounts, the money hold); empty when nothing answers. Never throws. */
+  async function windows(input: { providerId: string; hostId: string }): Promise<BoardWindows> {
+    const rows = await bounded({ ...input, model: "" });
+    return boardWindows(rows ?? [], { ...input, now: now() });
+  }
+
+  return { hold, peek, warm, windows };
 }
 
 export type ProviderUsage = ReturnType<typeof createProviderUsage>;
