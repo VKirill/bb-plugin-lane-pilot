@@ -22,7 +22,7 @@ const WRAPPERS: Record<string, Wrapper> = {
   "src/rooms/memory/server/memory.ts": { via: "resolver", roles: ["memory"] },
   "src/rooms/project-life/server/project-life.ts": { via: "resolver", roles: ["project-life"] },
   "src/rooms/docs/server/docs.ts": { via: "resolver", roles: ["docs-maintainer"] },
-  "src/rooms/docs/server/docs-spawn.ts": { via: "resolver", roles: ["docs-maintainer"] },
+  "src/rooms/docs/server/docs-spawn.ts": { via: "resolver", roles: ["docs-maintainer"], source: "src/rooms/docs/server/docs-unit-steps.ts" },
 
   "src/rooms/qa/server/qa-thread.ts": { via: "resolver", roles: ["browser-qa"], source: "src/rooms/qa/server/qa.ts", note: "spawns the agent qa.ts resolved (the thread takes it as an input)" },
   "src/rooms/qa/server/errands.ts": { via: "resolver", roles: ["errand"], note: "what the schedule / tool named is a pin; nothing named is the errand row" },

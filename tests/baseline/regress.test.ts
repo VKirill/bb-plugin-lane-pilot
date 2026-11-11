@@ -136,6 +136,17 @@ describe("the regression pass over accepted tasks (D1-2)", () => {
     await w.dispose();
   });
 
+  it("sets aside, with the reason, a task that landed on a tree the pass was not asked for: its checks are not counted as planned", async () => {
+    const w = await world();
+    await history(w);
+    const elsewhere = (await w.services.regression.run({ projectId: "projA", plan: true, runId: "run1", basePaths: ["/another/tree"] })).projects[0]!;
+    expect(elsewhere.tasks).toHaveLength(5);
+    expect(elsewhere.tasks.every((task) => task.checks.length === 0 && /tree this pass was not asked for/.test(task.skipped ?? ""))).toBe(true);
+    const here = (await w.services.regression.run({ projectId: "projA", plan: true, runId: "run1", basePaths: [w.base] })).projects[0]!;
+    expect(here.tasks.flatMap((task) => task.checks).length).toBeGreaterThan(0);
+    await w.dispose();
+  });
+
   it("a check that is red at its own merge commit too is unstable, not a regression, and stays off the morning list", async () => {
     const w = await world();
     await w.acceptedTask("F", async (dir) => { await writeFile(join(dir, "f.txt"), "f\n"); }, ["false"]);
