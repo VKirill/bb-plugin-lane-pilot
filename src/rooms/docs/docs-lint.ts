@@ -7,7 +7,7 @@ import { bestEffort } from "@lane-pilot/kit";
  */
 
 export const DOC_PAGE_TYPES = ["overview", "architecture", "data-model", "decisions", "deployment", "gotchas", "gaps",
-  "active-areas", "active-tasks", "component", "flow", "capabilities", "audience", "index"] as const;
+  "active-areas", "active-tasks", "component", "flow", "capabilities", "audience", "index", "conventions", "testing"] as const;
 /** Page types that describe behaviour and must say how it works, not only what exists. */
 const HOW_IT_WORKS_TYPES = ["component", "flow"];
 const STATUSES = ["draft", "active", "stale", "deprecated"];
@@ -445,7 +445,8 @@ export function docsCompletenessGaps(pages:DocPage[], input:{ tables:string[]; d
   const types = new Set(pages.map((page) => parseFrontmatter(page.content)?.data.type).filter((type):type is string => typeof type === "string"));
   // A workspace inherits architecture, gotchas and deployment from the root docs and needs only its own overview.
   const required:Array<[string, string]> = input.workspace ? [["overview", `${docsDir}/overview.md`]]
-    : [["overview", `${docsDir}/overview.md`], ["architecture", `${docsDir}/architecture.md`], ["gotchas", `${docsDir}/gotchas.md`]];
+    // A project root also owes the codebase map's build and check pages (SMA k_pl_codebase); a workspace inherits them.
+    : [["overview", `${docsDir}/overview.md`], ["architecture", `${docsDir}/architecture.md`], ["gotchas", `${docsDir}/gotchas.md`], ["conventions", `${docsDir}/conventions.md`], ["testing", `${docsDir}/testing.md`]];
   if (input.tables.length) required.push(["data-model", `${docsDir}/data-model.md`]);
   if (input.deploy) required.push(["deployment", `${docsDir}/deployment.md`]);
   if (input.flows?.length) required.push(["capabilities", `${docsDir}/capabilities.md`]);

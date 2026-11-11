@@ -931,6 +931,30 @@ ${ERRANDS_USAGE}` },
           for (const key of cleared) deleteBoundSetting(db, where, key);
           return { exitCode:0, stdout:JSON.stringify({ ok:true, scope:scope!, set:own() }, null, 2) };
         }
+        // The one infra-profile writer and reader (SMA k_pl_infra): the eight profile.* settings of a project.
+        if (command === "profile") {
+          const PROFILE_KEYS = ["stack", "test_command", "release", "hosts", "start", "deploy", "logs", "style"] as const;
+          const [projectId, ...rest] = args;
+          if (!projectId) return { exitCode:1, stderr:"usage: bb lane-pilot profile <project-id> [--set key=value …]" };
+          const sets = rest.flatMap((value, index) => value === "--set" && rest[index + 1] ? [rest[index + 1]!] : []);
+          for (const pair of sets) {
+            const [key, value = ""] = pair.split("=", 2) as [string, string?];
+            if (!(PROFILE_KEYS as readonly string[]).includes(key)) return { exitCode:1, stderr:`unknown profile key ${key}; use ${PROFILE_KEYS.join(", ")}` };
+            saveProjectSetting(db, projectId, `profile.${key}`, value);
+          }
+          const settings = loadProjectSettings(db, projectId);
+          return { exitCode:0, stdout:JSON.stringify(Object.fromEntries(PROFILE_KEYS.map((key) => [`profile.${key}`, settings[`profile.${key}`] ?? ""])), null, 2) };
+        }
+        // The planning files' integrity (SMA k_c_health): the todos and plans indexes against the folders on disk; --fix repairs the index lines only.
+        if (command === "plans-health") {
+          const { plansHealth, plansFix } = await import("../../project-life");
+          const dir = args.find((arg) => !arg.startsWith("--")) ?? process.cwd();
+          const agentsDir = dir.endsWith(".agents") ? dir : `${dir.replace(/\/$/, "")}/.agents`;
+          const report = plansHealth(agentsDir);
+          const fixed = args.includes("--fix") ? plansFix(agentsDir) : [];
+          const lines = report.flatMap((area) => [...area.missingInIndex.map((id) => `${area.area}: not in INDEX.md: ${id}`), ...area.deadIndexLines.map((line) => `${area.area}: INDEX line with no folder: ${line.trim().slice(0, 120)}`)]);
+          return { exitCode: report.length && !fixed.length ? 1 : 0, stdout: [...lines, ...fixed.map((line) => `fixed ${line}`)].join("\n") || "planning indexes healthy" };
+        }
         if (command === "budget" && args.length >= 1) {
           const projectId = args[0]!;
           for (const pair of args.slice(1)) {

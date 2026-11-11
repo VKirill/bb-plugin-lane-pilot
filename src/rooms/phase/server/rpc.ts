@@ -40,6 +40,12 @@ export function phaseRpc(api: PhaseApi) {
         if (!piece || !choice) throw new Error("a decision names the piece and one of skip, retry, cancel");
         return api.status((await api.decide({ phaseId, piece, choice, note, by: "owner" })).id);
       }
+      // The owner's trim (SMA d_batch_decide): a piece not yet issued leaves the plan with his note; an issued one is refused.
+      if (action === "withdraw") {
+        if (!piece) throw new Error("a withdraw names the piece");
+        if (!note?.trim()) throw new Error("a withdraw carries the owner's note: why the piece leaves the plan");
+        return api.status(api.withdraw({ phaseId, pieces: [piece], note: note.trim(), by: "owner" }).id);
+      }
       if (action === "uat_line") {
         if (!line || !result) throw new Error("a UAT answer names the line's number and pass or fail");
         return api.status((await api.uatLine({ phaseId, line, result, note, by: "owner via screen" })).id);

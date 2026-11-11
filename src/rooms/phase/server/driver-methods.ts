@@ -7,7 +7,8 @@ import { isWholeConsent, ownerWordsOn } from "../../tasks";
 import type { DrawingCritique } from "@lane-pilot/contracts";
 import { sha256Hex, bestEffort, isNotFound, orMiss } from "@lane-pilot/kit";
 import { PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceKey, checkerIndependence, contextSignature, designDecision, designGate, discussionGate, executionGate, phaseFolder, planGate, planGate as planGateOf, planSignature, staleAfterReturn, wordKeyOf } from "../logic";
-import { archiveDrawing, markUatLine, oneLine, parseState, stateBlockSections, planText, roadmapAnalysis, roadmapSection, specText, stateBlockText, stateHasHeader, STATE_MANUAL, uatState } from "../stages";
+import { archiveDrawing, markUatLine, oneLine, parseState, stateBlockSections, planText, roadmapAnalysis, roadmapNumberingGaps, roadmapSection, specText, stateBlockText, stateHasHeader, STATE_MANUAL, uatState } from "../stages";
+import { bundledAgents } from "../../contracts";
 import { sendServiceMessage } from "../../relay/server";
 import { insertPhase, listParts, listPhases, savePhase } from "../store";
 import { PhaseRefusal, type DriverBase } from "./driver-tools";
@@ -728,6 +729,28 @@ export function installMethods(tools: MethodsTools) {
     return { text, analysis };
   }
 
+  /** The planning files' health check (SMA k_t_validate): roadmap numbering, disk against roadmap, installed agents.
+   *  Every finding is one line; an empty list means healthy. */
+  async function validate(input: { projectId?: string; phaseId?: string }): Promise<{ findings: string[] }> {
+    const phase = input.phaseId ? mustGet(input.phaseId) : listPhases(db, { projectId: input.projectId, limit: 1 }).at(-1);
+    if (!phase) throw new PhaseRefusal("no phase to read the planning files through");
+    const findings: string[] = [];
+    const text = await readText(phase, ".agents/planning/ROADMAP.md");
+    if (text === null) findings.push("the project has no .agents/planning/ROADMAP.md");
+    else {
+      findings.push(...roadmapNumberingGaps(text));
+      const rows = listPhases(db, { projectId: phase.projectId, limit: 200 });
+      const analysis = roadmapAnalysis(text, await Promise.all(rows.map(async (row) => ({ id: row.id, row: row.record.roadmapRow, hasSummary: !!(await readText(row, `${phaseFolder(row.id)}/SUMMARY.md`)) }))));
+      findings.push(...analysis.tickedWithoutSummary.map((row) => `ticked without SUMMARY.md: ${row}`));
+      findings.push(...analysis.foldersWithoutRow.map((id) => `phase folder with no roadmap row: ${id}`));
+    }
+    for (const id of Object.keys(bundledAgents)) {
+      const got = await readDoc(phase, `.claude/agents/${id}.md`);
+      if (got.kind === "absent") findings.push(`bundled agent not installed: ${id}`);
+    }
+    return { findings };
+  }
+
   /** Compensates the phase's own effects: each accepted piece is reverted (git revert through the merge lock), newest first. */
   async function compensate(input: CompensateInput): Promise<{ phase: Phase; results: Array<{ taskId: string; state: string; detail?: string }> }> {
     const phase = mustGet(input.phaseId);
@@ -758,5 +781,5 @@ export function installMethods(tools: MethodsTools) {
     return mustGet(phase.id);
   }
 
-  return { open, context, plan, planCheck, drawing, goalAudit, lessons, question, answer, word, waveReview, withdraw, revise, correct, returnTo, setState, stop, stopWave, compensate, admitIfReady, uatLine, uatOpen, decide, interrupt, state, roadmap };
+  return { open, context, plan, planCheck, drawing, goalAudit, lessons, question, answer, word, waveReview, withdraw, revise, correct, returnTo, setState, stop, stopWave, compensate, admitIfReady, uatLine, uatOpen, decide, interrupt, state, roadmap, validate };
 }

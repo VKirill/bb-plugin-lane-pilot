@@ -87,6 +87,7 @@ export * from "./docs-nightly-api";
 export * from "./stage-children-api";
 export * from "./merge-intents";
 export * from "./agent-ops";
+export * from "./planning-root";
 export { NO_WAY_OUT, WAY_OUT, wayOut } from "./way-out";
 export { spawnClaimed } from "./spawn-claim";
 export type { IsTaskSatisfied } from "./runs-api";

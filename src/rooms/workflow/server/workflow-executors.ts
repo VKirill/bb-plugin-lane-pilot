@@ -2,7 +2,8 @@ import type { TaskV2 } from "../../contracts";
 import { noteEngineWrite, gateRunVerdict } from "../../verification/server";
 import { parseIntegrationGateSettings, type VerificationGatePort } from "../../contracts/integration-gate";
 import type { IsTaskSatisfied } from "../../contracts";
-import { getAttempt, getRun, getRunWriterHost, getRunSettingsScopes, getTaskPlan, latestGateRun, listAttemptsForTask, listOpenAttempts, listOpenWorktrees, listTaskIdsForRun, loadProjectSettings, fullGateVerdict } from "../../storage";
+import { getAttempt, getRun, getRunWriterHost, getRunSettingsScopes, getTaskPlan, latestGateRun, listAttemptsForTask, listOpenAttempts, listOpenWorktrees, listTaskIdsForRun, loadProjectSettings, fullGateVerdict, saveProjectSetting } from "../../storage";
+import { planningRoot } from "../../contracts";
 import { getPhase, listPhases } from "../../phase";
 import { unsafeReason } from "../../anamnesis";
 import { bestEffort, isNotFound, orMiss, redactKnown, sha256Hex, stringAt } from "@lane-pilot/kit";
@@ -701,7 +702,9 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const [passport = "", ui = "", planning = ""] = (ran?.stdout ?? "").split("---");
       const present = new Set(planning.split("\n").map((line) => line.trim().split("/").pop()!.toLowerCase()).filter(Boolean));
       hasPassport = passport.trim().length > 0; hasUi = /app|components|ui/.test(ui);
-      hasValueMap = present.has("value-map.md"); hasRoadmap = present.has("roadmap.md"); hasProfile = present.has("profile.md") || present.has("profile.json");
+      hasValueMap = present.has("value-map.md"); hasRoadmap = present.has("roadmap.md");
+      // The infra profile lives in the project settings (SMA k_pl_infra): a file from before, or any profile.* key, counts as set.
+      hasProfile = present.has("profile.md") || present.has("profile.json") || Object.keys(loadProjectSettings(db, rt.projectId)).some((key) => key.startsWith("profile."));
     }
     const open = listOpenAttempts(db).filter((row) => row.project_id === rt.projectId).length;
     return { has_passport: hasPassport, open_tasks: open, plan_exists: open > 0, has_ui: hasUi, has_value_map: hasValueMap, has_roadmap: hasRoadmap, has_profile: hasProfile };
@@ -716,9 +719,11 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const checkout = await pmCheckout(rt);
     const path = ".agents/planning/ROADMAP.md";
     const host = ctx.host as never as { call(m: string, i: unknown, o?: unknown): Promise<Record<string, unknown>> };
+    // The planning home moves the roadmap off the checkout (SMA d_project_planning); unset, it is the checkout.
+    const root = planningRoot({ writer_workspace_path: checkout.path }, loadProjectSettings(db, rt.projectId)) ?? checkout.path;
     let current = "", expected: string | null = null;
     try {
-      const file = await host.call("readBoundedFile", { requestedHostId: checkout.hostId, projectCwd: checkout.path, relativePath: path, offset: 0, maxLines: 2000 }, { hostId: checkout.hostId, timeoutMs: 20_000 });
+      const file = await host.call("readBoundedFile", { requestedHostId: checkout.hostId, projectCwd: root, relativePath: path, offset: 0, maxLines: 2000 }, { hostId: checkout.hostId, timeoutMs: 20_000 });
       if (typeof file.content !== "string") throw new Error("the read returned no text");
       if (file.truncated === true) throw new Error("the file is longer than one read");
       if (typeof file.sha256 === "string" && file.sha256 !== sha256Hex(file.content)) throw new Error("the text read does not match the file's hash");
@@ -732,7 +737,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     if (!name) throw new Error("lp.roadmap_park: the item needs a name");
     const parked = parkRoadmapRow(current, name, str(c.resolve("$inputs.goal")));
     const edits = [{ path, expectedSha256: expected, content: parked.text }];
-    const result = await host.call("writePhaseBook", { requestedHostId: checkout.hostId, projectCwd: checkout.path, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId: checkout.hostId, timeoutMs: 30_000 }) as { status: string; reason?: string | null };
+    const result = await host.call("writePhaseBook", { requestedHostId: checkout.hostId, projectCwd: root, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId: checkout.hostId, timeoutMs: 30_000 }) as { status: string; reason?: string | null };
     if (result.status !== "applied") throw new Error(`lp.roadmap_park: ${result.reason ?? result.status}`);
     return { ok: true, n: parked.n, path };
   });
@@ -780,36 +785,22 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     return { count: files.length, files };
   });
 
-  // The one profile writer (SMA k_lib_profilewriter): the start's preview hands the profile object over instead of running the
-  // CLI itself. Every key name (password, secret, token, api key, credential, private key) and every value goes through the
-  // anamnesis unsafeReason first; a refused pair is skipped and reported by key name only, never by content. Clean values go to `lane-plan profile --set` on the host, or merge into .agents/planning/profile.json where the
-  // checkout has no lane-plan.
+  // The one profile writer (SMA k_pl_infra): the start's preview hands the profile object over and it lands in the project's
+  // profile.* settings — the same keys `bb lane-pilot profile` reads and sets. Every key name (password, secret, token, api
+  // key, credential, private key), every unknown key and every value goes through the anamnesis unsafeReason first; a refused
+  // pair is skipped and reported by key name only, never by content.
+  const PROFILE_KEYS = ["stack", "test_command", "release", "hosts", "start", "deploy", "logs", "style"] as const;
   action("lp.profile_write", async (c, rt) => {
     const params = rec(rec(c.node).params);
     let profile: unknown = params.profile === undefined ? undefined : c.template(params.profile);
     if (typeof profile === "string") { try { profile = JSON.parse(profile); } catch { profile = undefined; } }
     const entries = Object.entries(rec(profile)).filter(([, value]) => ["string", "number", "boolean"].includes(typeof value));
     // A refused pair is skipped and named by key; the others are written and the start goes on.
-    const refused = entries.filter(([key, value]) => secretKeyName(key) || unsafeReason(String(value)) !== null || unsafeReason(key) !== null).map(([key]) => key);
-    entries.splice(0, entries.length, ...entries.filter(([key]) => !refused.includes(key)));
-    if (!entries.length) return { refused, set: [] as string[] };
-    const checkout = await pmCheckout(rt);
+    const refused = entries.filter(([key, value]) => !(PROFILE_KEYS as readonly string[]).includes(key) || secretKeyName(key) || unsafeReason(String(value)) !== null || unsafeReason(key) !== null).map(([key]) => key);
     const set: string[] = [];
-    const cli = await runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: "command -v lane-plan", timeoutSec: 15, timeoutMs: 20_000 });
-    if (cli.exitCode === 0 && cli.stdout.trim()) {
-      for (const [key, value] of entries) {
-        const ran = await runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: `lane-plan profile --set ${quote(`${key}=${String(value)}`)}`, timeoutSec: 20, timeoutMs: 30_000 });
-        if (ran.exitCode !== 0) throw new Error(`lp.profile_write: lane-plan profile --set ${key} failed: ${ran.stderr.trim().slice(0, 200) || `exit ${ran.exitCode}`}`);
-        set.push(key);
-      }
-    } else if (entries.length) {
-      const path = ".agents/planning/profile.json";
-      const before = (await bestEffort(ctx.log, "profile read", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: `cat ${quote(path)} 2>/dev/null || true`, timeoutSec: 15, timeoutMs: 20_000 }), null))?.stdout ?? "";
-      let merged: Row = {};
-      try { merged = rec(JSON.parse(before)); } catch { /* a broken profile is rebuilt from the values at hand */ }
-      for (const [key, value] of entries) { merged[key] = value; set.push(key); }
-      noteEngineWrite(checkout.path, path);
-      await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: checkout.path, path: `${checkout.path}/${path}`, content: `${JSON.stringify(merged, null, 2)}\n`, contentEncoding: "utf8", createParents: true, expectedSha256: null });
+    for (const [key, value] of entries.filter(([key]) => !refused.includes(key))) {
+      saveProjectSetting(db, rt.projectId, `profile.${key}`, String(value).slice(0, 1000));
+      set.push(key);
     }
     return { refused, set };
   });

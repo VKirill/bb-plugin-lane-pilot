@@ -1,6 +1,6 @@
-import { getRun, getRunWriterHost, getTask, listRunAttemptStates, listStageReceipts, listTaskIdsForRun } from "../../storage";
+import { getRun, getRunWriterHost, getTask, listAttemptsForTask, listRunAttemptStates, listStageReceipts, listTaskIdsForRun, loadProjectSettings } from "../../storage";
 import { taskFamily } from "@lane-pilot/contracts";
-import { hostContract } from "../../contracts";
+import { hostContract, planningHomeOf } from "../../contracts";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { binaryFileCommand, binaryFileFingerprint } from "../stages";
 import { appendPart, getPhase, listParts, savePhase as savePhaseRow } from "../store";
@@ -114,8 +114,22 @@ export function installDocs(base: DriverBase) {
     if (target !== path && done.written.includes(target)) book(phase, "decisions", "note", `${path.split("/").at(-1)} already exists and was changed by hand (or is not the command's): the new text is in ${target.split("/").at(-1)} next to it`);
   }
 
+  /** The planning home (SMA d_project_planning): `project.planning_home` moves `.agents/*` off the checkout onto its own
+   *  folder on the same host; unset, every read and write is exactly where it was. Only `.agents/` paths go there — a
+   *  drawing or DESIGN.md is code and stays in the tree. */
+  function planningHome(phase: Phase, path?: string): string | null {
+    if (path !== undefined && !path.startsWith(".agents/")) return null;
+    return planningHomeOf(loadProjectSettings(db, phase.projectId));
+  }
+
   /** A file of the project as the PM's run sees it (its frozen writer workspace), for the signature of a stage's documents. */
   async function readFile(phase: Phase, path: string): Promise<{ sha256: string; sizeBytes: number }> {
+    const home = planningHome(phase, path);
+    const hostId = home && phase.runId ? getRunWriterHost(db, phase.runId) : null;
+    if (home && hostId) {
+      const file = await bb.hosts.experimental_client({ contract: hostContract }).call("readBoundedFile", { requestedHostId: hostId, projectCwd: home, relativePath: path, offset: 0, maxLines: 2000 }, { hostId, timeoutMs: 30_000 });
+      return { sha256: file.sha256, sizeBytes: file.sizeBytes };
+    }
     try {
       return await services.readWriterWorkspaceFile({ threadId: phase.pmThreadId, projectId: phase.projectId, path, offset: 0, maxLines: 2000 }) as { sha256: string; sizeBytes: number };
     } catch (cause) {
@@ -133,13 +147,24 @@ export function installDocs(base: DriverBase) {
     const run = phase.runId ? getRun(db, phase.runId) : null;
     const hostId = phase.runId ? getRunWriterHost(db, phase.runId) : null;
     if (!command || !run?.writer_workspace_path || !hostId) return null;
-    const ran = await bestEffort(bb.log, "phase binary fingerprint", runOnHost(bb.hosts.experimental_client({ contract: hostContract }), { hostId, cwd: run.writer_workspace_path, command, timeoutSec: 30 }), null);
+    const ran = await bestEffort(bb.log, "phase binary fingerprint", runOnHost(bb.hosts.experimental_client({ contract: hostContract }), { hostId, cwd: planningHome(phase, path) ?? run.writer_workspace_path, command, timeoutSec: 30 }), null);
     return ran && ran.exitCode === 0 ? binaryFileFingerprint(ran.stdout) : null;
   }
 
   type DocRead = { kind: "ok"; text: string; truncated: boolean } | { kind: "absent" } | { kind: "failed"; why: string };
   /** A project file as the PM's run sees it, told apart: there, not there, or unreadable (a longer file comes back cut: `truncated`). */
   async function readDoc(phase: Phase, path: string): Promise<DocRead> {
+    const home = planningHome(phase, path);
+    const hostId = home && phase.runId ? getRunWriterHost(db, phase.runId) : null;
+    if (home && hostId) {
+      try {
+        const file = await bb.hosts.experimental_client({ contract: hostContract }).call("readBoundedFile", { requestedHostId: hostId, projectCwd: home, relativePath: path, offset: 0, maxLines: 2000 }, { hostId, timeoutMs: 30_000 }) as { content: string; truncated: boolean };
+        return { kind: "ok", text: file.content, truncated: file.truncated === true };
+      } catch (cause) {
+        const why = cause instanceof Error ? cause.message : String(cause);
+        return /ENOENT|no such file|not found|does not exist/i.test(why) ? { kind: "absent" } : { kind: "failed", why };
+      }
+    }
     try {
       const file = await services.readWriterWorkspaceFile({ threadId: phase.pmThreadId, projectId: phase.projectId, path, offset: 0, maxLines: 2000 }) as { content?: string; truncated?: boolean };
       return typeof file.content === "string" ? { kind: "ok", text: file.content, truncated: file.truncated === true } : { kind: "failed", why: "the read returned no text" };
@@ -171,14 +196,16 @@ export function installDocs(base: DriverBase) {
       edits.push({ path: file.path, expectedSha256: current === null ? null : sha256Hex(current), content: file.content });
     }
     const host = bb.hosts.experimental_client({ contract: hostContract });
-    const result = await host.call("writePhaseBook", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId, timeoutMs: 30_000 });
+    // With a planning home, the same .agents confinement holds under it: still only .agents/phases/<id> and the planning marks.
+    const cwd = files.every((file) => file.path.startsWith(".agents/")) ? (planningHome(phase) ?? run.writer_workspace_path) : run.writer_workspace_path;
+    const result = await host.call("writePhaseBook", { requestedHostId: hostId, projectCwd: cwd, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId, timeoutMs: 30_000 });
     const applied = result.writes.filter((row) => row.status === "applied");
     const written = applied.map((row) => row.path);
     const shas = Object.fromEntries(applied.filter((row) => typeof row.afterSha256 === "string").map((row) => [row.path, row.afterSha256 as string]));
     if (!written.length) return { written, commit: null, shas };
     // SMA k_wp_commit: the commit happens only where the project allows committing docs (phase.commit_docs, on by default).
     if (phase.record.commitDocs === false) return { written, commit: null, shas };
-    const committed = await bestEffort(bb.log, "phase docs commit", host.call("gitCommitDocs", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, paths: written, message }, { hostId, timeoutMs: 60_000 }), null);
+    const committed = await bestEffort(bb.log, "phase docs commit", host.call("gitCommitDocs", { requestedHostId: hostId, projectCwd: cwd, paths: written, message }, { hostId, timeoutMs: 60_000 }), null);
     return { written, commit: committed?.commit ?? null, shas };
   }
 
@@ -240,7 +267,7 @@ export function installDocs(base: DriverBase) {
     const content = renderBook(phase, parts);
     const edits = [{ path, expectedSha256: phase.record.bookWritten?.sha256 ?? null, content }];
     const host = bb.hosts.experimental_client({ contract: hostContract });
-    const result = await host.call("writePhaseBook", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId, timeoutMs: 30_000 });
+    const result = await host.call("writePhaseBook", { requestedHostId: hostId, projectCwd: planningHome(phase, path) ?? run.writer_workspace_path, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId, timeoutMs: 30_000 });
     const written = result?.writes?.find((row) => row.path === path);
     if (result.status === "applied" && written?.afterSha256) savePhaseRow(db, phase.id, { record: { ...phase.record, bookWritten: { seq: last.seq, sha256: written.afterSha256, at: now() } }, at: now() });
     else if (result.status === "conflict") savePhaseRow(db, phase.id, { record: { ...phase.record, bookWritten: { seq: last.seq, sha256: written?.beforeSha256 ?? "", at: now() } }, at: now() });
@@ -261,7 +288,8 @@ export function installDocs(base: DriverBase) {
       const latestTask = mine.at(-1)?.task_id ?? taskId;
       const stage = (id: string) => (receipts.find((row) => row.task_id === latestTask && row.stage_id === id)?.state ?? null) as never;
       const contract = getTask(db, latestTask)?.contract as { qa_cases?: unknown[] } | undefined;
-      out.set(pieceId, { taskId: latestTask, state: mine.at(-1)?.state ?? null, planFact: stage("plan-fact"), verification: stage("verification"), codeCritique: stage("code-critique"), browserQa: stage("browser-qa"),
+      const attemptId = listAttemptsForTask(db, phase.runId, latestTask).at(-1)?.id ?? null;
+      out.set(pieceId, { taskId: latestTask, attemptId, state: mine.at(-1)?.state ?? null, planFact: stage("plan-fact"), verification: stage("verification"), codeCritique: stage("code-critique"), browserQa: stage("browser-qa"),
         qaPlanned: Array.isArray(contract?.qa_cases) && contract.qa_cases.length > 0 });
     }
     return out;

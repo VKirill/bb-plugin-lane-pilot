@@ -7,6 +7,7 @@ import { closeOwnerItem, listOpenOwnerItemKeys, postOwnerItem, rpcLine } from ".
 import { backlogIssuedTo } from "../store";
 import { bindBacklogIssued } from "../../tasks/server";
 import { backlogBoard, backlogReadCommand, issueMessage, parseBacklogOutput, type BacklogBoard, type TodoMeta } from "../logic";
+import { planningRoot } from "../../contracts";
 
 /**
  * The backlog scanner (SMA D2-9). Every hour, for each project whose owner's PM chat (a run of kind `cli`) was active in the last two weeks,
@@ -44,11 +45,16 @@ export function createBacklog(ctx: ServerCore) {
     return null;
   }
 
+  /** The root `.agents/todos` is read under (SMA d_project_planning): the planning home when set, else the checkout. */
+  function todosRoot(projectId: string, writerWorkspacePath: string): string {
+    return planningRoot({ writer_workspace_path: writerWorkspacePath }, loadProjectSettings(db, projectId)) ?? writerWorkspacePath;
+  }
+
   /** The project's meta.yaml items as they are on its host right now (no fetch; the board fetches first). */
   async function items(projectId: string): Promise<TodoMeta[]> {
     const config = loadPrototypeConfig(db, projectId);
     if (!config?.writerWorkspacePath) return [];
-    const ran = await host.call("gateRun", { requestedHostId: config.hostId, basePath: config.writerWorkspacePath, command: backlogReadCommand, timeoutSec: 30 }, { hostId: config.hostId, timeoutMs: 60_000 })
+    const ran = await host.call("gateRun", { requestedHostId: config.hostId, basePath: todosRoot(projectId, config.writerWorkspacePath), command: backlogReadCommand, timeoutSec: 30 }, { hostId: config.hostId, timeoutMs: 60_000 })
       .catch(() => ({ exitCode: 1, stdout: "", stderr: "" }));
     return parseBacklogOutput(ran.stdout);
   }
@@ -69,7 +75,7 @@ export function createBacklog(ctx: ServerCore) {
     const fetched = freshened.exitCode === 0;
     const behindCount = Number((freshened.stdout ?? "").trim());
     const behind = fetched && Number.isFinite(behindCount) ? behindCount : null;
-    const ran = await host.call("gateRun", { requestedHostId: config.hostId, basePath: config.writerWorkspacePath, command: backlogReadCommand, timeoutSec: 30 }, { hostId: config.hostId, timeoutMs: 60_000 })
+    const ran = await host.call("gateRun", { requestedHostId: config.hostId, basePath: todosRoot(projectId, config.writerWorkspacePath), command: backlogReadCommand, timeoutSec: 30 }, { hostId: config.hostId, timeoutMs: 60_000 })
       .catch((cause: unknown) => ({ exitCode: 1, stdout: "", stderr: cause instanceof Error ? cause.message : String(cause) }));
     const issued = new Set((db.prepare("SELECT todo_id FROM lane_pilot_backlog_issue WHERE project_id=?").all(projectId) as Array<{ todo_id: string }>).map((row) => row.todo_id));
     const result = backlogBoard(parseBacklogOutput(ran.stdout));

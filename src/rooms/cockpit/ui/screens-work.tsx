@@ -15,7 +15,7 @@ type PhaseStatus = {
     execution?: { issued: Record<string, string>; waves?: Record<string, { lines: Array<{ id: string; ok: boolean; detail: string }>; review?: { state: string; by: string; summary: string } }> };
     observation?: { outcome: string; reverted: string[]; until: number };
     lessons?: { analysis?: string; draft?: { text: string; state: string } } } };
-  next: { text: string; key?: string }; ownerWord?: { acceptanceKey?: string; designKey?: string }; gates: Record<string, { ok: boolean; why?: string[] }>; book: string; facts: Record<string, { taskId: string; state: string | null }>;
+  next: { text: string; key?: string }; ownerWord?: { acceptanceKey?: string; designKey?: string }; gates: Record<string, { ok: boolean; why?: string[] }>; book: string; facts: Record<string, { taskId: string; attemptId?: string | null; state: string | null }>;
   acceptancePackage?: { key: string; verdict: { state: string; detail: string; mainSha: string | null } | null; diffStat: string | null } | null;
 };
 
@@ -93,8 +93,11 @@ function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId
   const [fbGoal, setFbGoal] = useState("");
   const [fbObstacle, setFbObstacle] = useState("");
   const [fbQuestion, setFbQuestion] = useState("");
-  const control = (action: "pause" | "resume" | "stop_wave" | "stop" | "close" | "word" | "return" | "interrupt" | "decide" | "uat_line", extra: Record<string, unknown> = {}) =>
+  const control = (action: "pause" | "resume" | "stop_wave" | "stop" | "close" | "word" | "return" | "interrupt" | "decide" | "withdraw" | "uat_line", extra: Record<string, unknown> = {}) =>
     void rpc.call("phase_control", { phaseId, action, ...extra } as never).then(() => { status.reload(); onChanged(); });
+  // One piece of the batch at a time (SMA d_batch_decide): cancel or retry go to the attempt's own verbs.
+  const pieceAct = (method: "cancel_attempt" | "retry_attempt", attemptId: string, cancelNote?: string) =>
+    void rpc.call(method, { attemptId, ...(method === "cancel_attempt" && cancelNote?.trim() ? { note: cancelNote.trim() } : {}) } as never).then(() => { status.reload(); onChanged(); });
   const act = (action: "correct" | "answer", payload: Record<string, unknown>) =>
     void rpc.call("phase_act", { action, projectId, pmThreadId: "screen", phaseId, payload }).then(() => status.reload());
   return (
@@ -118,7 +121,13 @@ function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId
           {r.plan?.items.length ? (
             <Disclosure summary={t("ckPhasePlan")}>
               {/* Phase plan lines: each piece with its wave, its promise and the task it became. */}
-              <ul className="space-y-1">{r.plan.items.map((item) => <li key={item.id} data-testid={`ck-plan-${item.id}`}>w{item.wave} · {item.title} — {item.promise.then} <span className="text-muted-foreground">{s.facts[item.id] ? `${s.facts[item.id]!.taskId} ${s.facts[item.id]!.state ?? ""}` : ""}</span></li>)}</ul>
+              <ul className="space-y-1">{r.plan.items.map((item) => { const fact = s.facts[item.id]; const working = fact?.state && ["queued", "running", "checking"].includes(fact.state); return (
+                <li key={item.id} data-testid={`ck-plan-${item.id}`} className="flex flex-wrap items-center gap-2">w{item.wave} · {item.title} — {item.promise.then} <span className="text-muted-foreground">{fact ? `${fact.taskId} ${fact.state ?? ""}` : ""}</span>
+                  {/* The owner's per-piece decision (SMA d_batch_decide): trim a piece not yet issued (with his note), cancel one at work, retry a blocked one. */}
+                  {!fact ? <Button size="sm" variant="outline" disabled={!note.trim()} onClick={() => control("withdraw", { piece: item.id, note })}>{t("ckPieceWithdraw")}</Button> : null}
+                  {working && fact.attemptId ? <Button size="sm" variant="outline" onClick={() => pieceAct("cancel_attempt", fact.attemptId!, note)}>{t("cancel")}</Button> : null}
+                  {fact?.state === "blocked" && fact.attemptId ? <Button size="sm" variant="outline" onClick={() => pieceAct("retry_attempt", fact.attemptId!)}>{t("retry")}</Button> : null}
+                </li>); })}</ul>
             </Disclosure>
           ) : null}
           <Disclosure summary={t("ckPhaseDiscussion")} open>
