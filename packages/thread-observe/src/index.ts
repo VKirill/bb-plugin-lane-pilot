@@ -20,6 +20,7 @@ export {
   listThreadEventsRaw,
   listThreadEventsPaged,
   THREAD_EVENTS_PAGE,
+  THREAD_ITEM_EVENT_TYPES,
   waitThreadIdle,
   turnHeldByPlugin,
   startLimitWaiting,

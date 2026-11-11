@@ -20,7 +20,7 @@ import { dropSatellites, findUnownedChanges, findUnownedRunChanges, resolveRunOw
 import type { FlakyEvidence, MachineReading } from "../../contracts/machine-pressure";
 import { hollowRerun, noTestRanReason, testSummaries } from "../../tasks/server";
 import { recordGateEvaluation } from "../../runs/server";
-import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
+import { listThreadEventsRaw, THREAD_ITEM_EVENT_TYPES } from "@lane-pilot/thread-observe";
 import {writerPatchFromOutput} from "./writer-task";
 import type { ServerCore } from "../../contracts/server";
 import type { FailureCode } from "../../contracts/failure-class";
@@ -335,7 +335,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
 
   /** What the writer's own thread did (file edits, commands, tool calls), as one text; null when its events cannot be read. */
   async function writerTrace(threadId:string):Promise<string|null> {
-    const listed = await bestEffort(bb.log, "verification writer trace", listThreadEventsRaw(bb, { threadId, order:"desc", limit:"500" } as never), null);
+    const listed = await bestEffort(bb.log, "verification writer trace", listThreadEventsRaw(bb, { threadId, types:THREAD_ITEM_EVENT_TYPES, order:"desc", limit:"300" } as never), null);
     if (!listed || !listed.ok) return null;
     return listed.events.map((event) => {
       // Only what the writer did: edited paths, command text and tool arguments. A command's output is no touch —

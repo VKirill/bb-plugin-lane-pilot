@@ -20,6 +20,10 @@ export function eventsListQueryLabel(query: Record<string, unknown>): string {
 /** BB serves at most this many thread events per request (THREAD_EVENT_LIST_PAGE_SIZE of the core's server contract): a larger `limit` is refused with 400 «Thread event limit cannot exceed 100». */
 export const THREAD_EVENTS_PAGE = 100;
 
+/** What a session did, without the stream around it: on live writer threads the typed-out deltas, the context counters and
+ * the service events are 75-85 % of the events (measured 2026-11-11), and a reader of `data.item` uses none of them. */
+export const THREAD_ITEM_EVENT_TYPES = ["item/started", "item/completed"] as const;
+
 export type ThreadEventsQuery = { threadId:string; types?: readonly string[]; order:"asc" | "desc"; limit:string; beforeSeq?:string; afterSeq?:string };
 
 /**

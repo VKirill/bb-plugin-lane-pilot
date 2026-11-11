@@ -278,7 +278,7 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
       // Compaction without a summary: the pairs the session no longer needs are dropped, the rest stays verbatim.
       let digest = "";
       if (compacted) {
-        const events = await listThreadEventsRaw(bb, { threadId:writer.threadId, order:"desc", limit:"300" } as never)
+        const events = await listThreadEventsRaw(bb, { threadId:writer.threadId, types:["item/completed"], order:"desc", limit:"100" } as never)
           .then((listed) => (listed?.ok ? listed.events : []), () => [] as never[]);
         digest = await bestEffort(ctx.log, "sticky session digest", judgeSessionDigest(jev(), { goal:input.taskId, events: events as Array<Record<string, unknown>> },
           { projectId:input.config.projectId, runId:input.runId, subject:input.taskId, settings:loadProjectSettings(db, input.config.projectId, getRunSettingsScopes(db, input.runId)) }), null) ?? "";
