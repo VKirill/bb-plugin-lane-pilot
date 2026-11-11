@@ -4,7 +4,7 @@ import { bestEffort, sha256Hex } from "@lane-pilot/kit";
 import { list, rec, str, pmCheckout, quote, needLanePilot } from "./workflow-chain-runtime";
 import type { Row } from "./workflow-chain-runtime";
 import type { TaskV2 } from "../../contracts";
-import { validateTaskV2 } from "../../tasks/task-v2";
+import { validateTaskV2 } from "./workflow-lp-task";
 import type { StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { hostContract } from "../../contracts";

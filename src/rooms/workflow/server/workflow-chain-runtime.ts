@@ -11,7 +11,7 @@ import type { ServerCore } from "../../contracts/server";
 import type { DispatchWriter } from "../../platform/server";
 
 import type { StabilityPort } from "../../contracts";
-import type { VerificationGatePort } from "../../contracts/integration-gate";
+import { parseIntegrationGateSettings, type VerificationGatePort } from "../../contracts/integration-gate";
 import type { TaskUsage } from "../../platform/server";
 import type { WorkflowEngineApi } from "../../platform/server";
 
@@ -87,3 +87,6 @@ export async function pmCheckout(rt: ChainRuntime): Promise<{ hostId: string; pa
 
 export const quote = (text: string) => `'${text.replace(/'/g, "'\\''")}'`;
 export const PRUNE = /(^|\/)(node_modules|vendor|dist|build)\/|\.lock$|\.min\.[a-z]+$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/;
+
+// One deep import into contracts serves the whole room: siblings take it from here, not across the boundary.
+export { parseIntegrationGateSettings };

@@ -1,5 +1,5 @@
 import { noteEngineWrite, gateRunVerdict } from "../../verification/server";
-import { parseIntegrationGateSettings } from "../../contracts/integration-gate";
+import { parseIntegrationGateSettings } from "./workflow-chain-runtime";
 import { getRun, getRunSettingsScopes, latestGateRun, listOpenAttempts, listOpenWorktrees, listTaskIdsForRun, listAttemptsForTask, loadProjectSettings, fullGateVerdict, saveProjectSetting } from "../../storage";
 import { getPhase, listPhases } from "../../phase";
 import { profilePairProblem, unsafeReason } from "../../anamnesis";

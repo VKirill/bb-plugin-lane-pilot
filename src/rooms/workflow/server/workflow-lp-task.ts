@@ -16,6 +16,9 @@ import { leadHanded } from "./workflow-human-form";
 import type { WorkflowAgents } from "./workflow-agent";
 import type { createTaskLinter } from "../../tasks/server";
 
+// One deep import into tasks serves the whole room: siblings take it from here, not across the boundary.
+export { validateTaskV2 };
+
 // ---------------------------------------------------------------- lp-task: one code task through the writer pipeline
 
 /** The `lp-task` executor: a chain's code task dispatched to the writer pipeline, or the per-task pipeline's own attempt step. */
