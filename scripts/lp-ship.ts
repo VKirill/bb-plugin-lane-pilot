@@ -277,7 +277,8 @@ function gate(): number {
   try { execFileSync(process.env.BB_CLI || "bb", ["plugin", "build"], { cwd: ROOT, stdio: "inherit" }); }
   catch { console.log("bb plugin build failed"); return 1; }
   // freshness --strict right after the build it checks (SMA k_lib_spafresh); a hub that cannot be asked is a warning line, never a failure.
-  const fresh = freshness(["--strict"]);
+  // --unpublished: the gate runs before the publish, when the hub by definition still serves the version before this one.
+  const fresh = freshness(["--strict", "--unpublished"]);
   if (fresh === 1) { console.log("gate: freshness failed"); return 1; }
   if (fresh === 2) console.log("gate: freshness could not check (the hub is unreachable) — warning, not a stop");
   for (const [name, step, flags] of [["publishable", publishable, ["--strict"]], ["licenses", licenses, []], ["doc-audit", docAudit, ["--strict"]], ["predict-lint", predictLint, []]] as const) {
@@ -335,7 +336,7 @@ function freshness(args: string[] = []): number {
   const sha = existsSync(bundle) ? createHash("sha256").update(readFileSync(bundle)).digest("hex").slice(0, 16) : null;
   console.log(JSON.stringify({ checkout: pkg.version, served, windowBundle: sha ? `dist/app.js ${sha}` : "not built" }));
   if (!strict) return served === null ? 2 : served === pkg.version ? 0 : 1;
-  if (served !== null && served !== pkg.version) findings.push(`the hub serves ${served}, the checkout is ${pkg.version}`);
+  if (served !== null && served !== pkg.version && !args.includes("--unpublished")) findings.push(`the hub serves ${served}, the checkout is ${pkg.version}`);
   // The one ruler (SMA k_lib_spafresh): is the bundle behind its sources, by mtime or by git's last commit.
   if (existsSync(bundle)) {
     // bb plugin build stamps app.js with a fixed date (reproducible bytes), so the build's own clock is the meta file beside it.
