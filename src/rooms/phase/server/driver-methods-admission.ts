@@ -35,8 +35,11 @@ export function installAdmissionMethods(tools: MethodsTools) {
     const waveReview = String(settings["phase.wave_review"] ?? "on") !== "off";
     const capSetting = Number(settings["phase.issue_cap"] ?? 8);
     const issueCap = Number.isInteger(capSetting) && capSetting >= 1 && capSetting <= 50 ? capSetting : 8;
+    const qaHost = String(settings["browser_qa.host_id"] ?? "").trim();
     let phase = mustGet(id);
     book(phase, "goal", "opened", `phase opened: ${input.title}${ownerWords ? " (the owner's word is asked at the turns: owner.words on)" : ""}`);
+    if (switchOn(settings, "browser_qa.enabled") && !qaHost)
+      book(phase, "verification", "live_check", "live interface check not run: no browser machine named: bb lane-pilot setting browser_qa.host_id=<host>");
     const record: PhaseRecord = { ownerWords, waveReview, issueCap, scope: { revisions: 0, withdrawn: [] },
       autonomous: String(settings["phase.autonomous"] ?? "off") === "on", subagents: String(settings["phase.subagents"] ?? "on") !== "off",
       planBounce: switchOn(settings, "phase.plan_bounce"),
@@ -48,8 +51,13 @@ export function installAdmissionMethods(tools: MethodsTools) {
       ...(switchOn(settings, "phase.doc_files") ? { docFiles: true } : {}),
       ...(switchOn(settings, "phase.ambiguity_gate") ? { ambiguityGate: true } : {}),
       ...(switchOn(settings, "phase.piece_notes") ? { pieceNotes: true } : {}),
-      // Off unless the project switched the browser check on: an unset key keeps visible work as it was before the live check.
-      liveCheck: ["on", "true", "1"].includes(String(settings["browser_qa.enabled"] ?? "").toLowerCase()),
+      // SMA k_we_verify/k_we_uiqa: the browser check is on unless switched off (browser_qa.enabled=off opts out); it owes
+      // work only where a browser machine is named (browser_qa.host_id, project row else the hub-wide one). On with no
+      // machine named, the live check is recorded as not run and the phase goes on — nothing that passes today may hold.
+      liveCheck: switchOn(settings, "browser_qa.enabled") && !!qaHost,
+      ...(switchOn(settings, "browser_qa.enabled") && !qaHost
+        ? { verification: { live: { state: "skipped" as const, reason: "no browser machine named: bb lane-pilot setting browser_qa.host_id=<host>", at: now() } } }
+        : {}),
       branch: switchWord(settings, "phase.branch") as "none" | "phase" | "milestone", ...(input.roadmapRow ? { roadmapRow: input.roadmapRow } : {}), ...(input.rails ? { rails: true } : {}),
       ...(switchOn(settings, "phase.research") ? { research: "on" as const } : {}),
       ...(switchOn(settings, "phase.pattern_map") ? { patternMap: "on" as const } : {}),
