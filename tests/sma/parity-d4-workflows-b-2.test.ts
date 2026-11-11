@@ -132,11 +132,12 @@ describe("parity d4 workflows b-2", () => {
     expect(on.called("summary")).toHaveLength(1);
   });
 
-  it("[sma:k_c_mssummary] lp.run_status exposes milestone.summary: off when unset, on only for the word on", async () => {
+  it("[sma:k_c_mssummary] lp.run_status exposes milestone.summary: only the word off is off; unset and any other word are the default, on", async () => {
     const t = await setup(); dispose = t.dispose;
     const read = async () => ((await t.start(actionChain("lp.run_status", { milestone_summary: "string" })).done).output as Row).milestone_summary;
-    expect(await read()).toBe("off");
-    t.set("milestone.summary", "yes please"); expect(await read()).toBe("off");
+    expect(await read()).toBe("on");
+    t.set("milestone.summary", "off"); expect(await read()).toBe("off");
+    t.set("milestone.summary", "yes please"); expect(await read()).toBe("on");
     t.set("milestone.summary", "on"); expect(await read()).toBe("on");
   });
 
@@ -198,8 +199,9 @@ describe("parity d4 workflows b-2", () => {
     expect(emitted(cancel)).toMatchObject({ status: "cancelled" });
   });
 
-  it("[default] project-start with today's settings runs main's three model nodes with main's prompts, asks nobody, writes nothing and is not sent to resumed", async () => {
+  it("[default] project-start with project.start_research off runs main's three model nodes with main's prompts, asks nobody, writes nothing and is not sent to resumed", async () => {
     const t = await setup(); dispose = t.dispose;
+    t.set("project.start_research", "off");
     const calls = stubModels(t, startStubs);
     const summary = await t.start(wf("project-start.json"), {}).done;
     expect(summary.status).toBe("succeeded");
@@ -218,6 +220,16 @@ describe("parity d4 workflows b-2", () => {
     // The sim of the same graph: the same model nodes, no human.
     const sim = await runSim("project-start", { input: {}, stubs: { "lp.tree_counts": { enabled: "off" }, ...startStubs } });
     expect(costly(sim)).toEqual(["value_map", "preview", "recap"]);
+  });
+
+  it("[default] project-start with project.start_research unset is the research start: with no profile on disk it stops at the question to the owner, after the preview and before any research", async () => {
+    const t = await setup(); dispose = t.dispose;
+    const calls = stubModels(t, { ...startStubs, preview: { stack: {}, memory: {}, profile: {} }, research: { research_notes: "n" }, requirements: { requirements: [] } });
+    const summary = await t.start(wf("project-start.json"), {}).done;
+    expect(summary.status).toBe("waiting");
+    expect(executed(t, summary.runId)).toEqual(["tree", "probe", "value_map", "preview", "profile_write"]);
+    expect(calls.map((c) => c.node)).toEqual(["value_map", "preview"]);
+    expect(t.writes).toHaveLength(0);
   });
 
   it("[sma:k_c_newproject] with project.start_research on the start researches, writes requirements and the roadmap in one flow; quick mode has neither research nor requirements; the person is asked when there is no profile", async () => {
@@ -403,9 +415,10 @@ describe("parity d4 workflows b-2", () => {
     commitFile(t, ".agents/planning/STATE.md", "s\n");
     const outs = { enabled: "string", sources: "int", tests: "int", docs: "int", planning: "int", commits: "int", counts_note: "string" };
     const params = { counts_note: "Open VALUE-MAP.md with these five lines counted from the tree itself, verbatim:" };
+    t.set("project.start_research", "off");
     const off = (await t.start(actionChain("lp.tree_counts", outs, params)).done).output as Row;
     expect(off).toMatchObject({ enabled: "off", sources: 0, counts_note: "" });
-    t.set("project.start_research", "on");
+    t.set("project.start_research", "maybe"); // not a word of the switch: the default, on
     const on = (await t.start(actionChain("lp.tree_counts", outs, params)).done).output as Row;
     expect(on).toMatchObject({ enabled: "on", sources: 3, tests: 2, docs: 2, planning: 1 });
     expect(on.commits).toBeGreaterThanOrEqual(6);
