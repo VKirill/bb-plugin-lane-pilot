@@ -588,13 +588,13 @@ describe("parity g6 rest a", () => {
     const seed = (db: ReturnType<typeof openDatabase>, now: number) => {
       for (const runId of ["rs", "rn"]) createRun(db, runId, runId === "rs" ? "strict" : "plain");
       for (const [id, runId] of [["T-done", "rs"], ["T-requeued", "rs"], ["T-fresh", "rs"], ["T-plain", "rn"]] as const) createTask(db, { id, runId, kind: "bb", contract: {} });
-      attempt(db, "A-done", "rs", "T-done", "accepted", now - 3 * 3_600_000);
-      attempt(db, "A-rq1", "rs", "T-requeued", "blocked", now - 5 * 3_600_000);       // an older final attempt …
+      attempt(db, "A-done", "rs", "T-done", "accepted", now - 3 * DAY);
+      attempt(db, "A-rq1", "rs", "T-requeued", "blocked", now - 5 * DAY);       // an older final attempt …
       attempt(db, "A-rq2", "rs", "T-requeued", "running", now - 60_000);              // … but the task runs again now
-      attempt(db, "A-fresh", "rs", "T-fresh", "accepted", now - 10 * 60_000);          // ended 10 minutes ago: not yet
-      attempt(db, "A-plain", "rn", "T-plain", "accepted", now - 3 * 3_600_000);
+      attempt(db, "A-fresh", "rs", "T-fresh", "accepted", now - 10 * 3_600_000);      // ended 10 hours ago: not yet, its thread may still be resumed
+      attempt(db, "A-plain", "rn", "T-plain", "accepted", now - 3 * DAY);
     };
-    it("the selection takes tasks whose NEWEST attempt is final and ended an hour ago, with no open attempt, newest first with the limit", () => {
+    it("the selection takes tasks whose NEWEST attempt is final and ended a day ago, with no open attempt, newest first with the limit", () => {
       const { db } = open();
       const now = Date.now();
       seed(db, now);
@@ -602,7 +602,7 @@ describe("parity g6 rest a", () => {
       expect(rows.map((row) => row.taskId).sort()).toEqual(["T-done", "T-plain"]);
       expect(rows.find((row) => row.taskId === "T-done")).toMatchObject({ projectId: "strict", keys: ["T-done", "A-done"] });
       createTask(db, { id: "T-older", runId: "rs", kind: "bb", contract: {} });
-      attempt(db, "A-older", "rs", "T-older", "canceled", now - 9 * 3_600_000);
+      attempt(db, "A-older", "rs", "T-older", "canceled", now - 9 * DAY);
       expect(finalTaskIdsSince(db, now - 30 * DAY, 2, now).map((row) => row.taskId).sort()).toEqual(["T-done", "T-plain"]);    // the older one is cut by the limit
       expect(finalTaskIdsSince(db, now - 30 * DAY, 3, now).map((row) => row.taskId)).toContain("T-older");
       expect(workerHomeKey(".")).toBeNull();
@@ -616,7 +616,7 @@ describe("parity g6 rest a", () => {
       seed(env.db, now);
       createRun(env.db, "rd", "strict");
       createTask(env.db, { id: ".", runId: "rd", kind: "bb", contract: {} });
-      attempt(env.db, "A-dot", "rd", ".", "accepted", now - 3 * 3_600_000);
+      attempt(env.db, "A-dot", "rd", ".", "accepted", now - 3 * DAY);
       await env.pass(now);
       expect(env.calls.filter((call) => call.method === "removeWorkerHome")).toEqual([]);      // strict_user unset everywhere
       saveProjectSetting(env.db, "strict", "worker.strict_user", "on");
@@ -665,7 +665,7 @@ describe("parity g6 rest a", () => {
         expect((await removeWorkerHome({ requestedHostId: "h", key: "task_x" }, {} as never)).removed).toBe(false);
       } finally { process.env.HOME = oldHome; }
     });
-    it("the home is made under the task id (the thread's metadata names it lanePilotTaskId), the same key the sweep removes by", async () => {
+    it("the home is made under the attempt that started the thread, as before, one of the keys the sweep removes by", async () => {
       const { createBbShimEnv } = await import("../../src/rooms/native-agent/server/helper-bb-shim");
       const env = open();
       createRun(env.db, "run1", "strict");
@@ -674,8 +674,8 @@ describe("parity g6 rest a", () => {
       const host = { call: async (method: string, input: { key?: string }) => { if (method === "prepareWorkerHome") { made.push(input.key!); return { codexHome: `/h/${input.key}`, seeded: [] }; } return { dir: "/d", path: "/d/bin" }; } };
       const resolver = createBbShimEnv({ bb: env.bb, db: env.db, host } as never);
       const entries = await resolver({ threadId: "thr", hostId: "h1", experimental_vkPluginMetadata: { role: "writer", lanePilotRunId: "run1", lanePilotTaskId: "T-9", attemptId: "A-9" } }, "codex");
-      expect(made).toEqual(["T-9"]);
-      expect(entries.find((entry) => entry.name === "CODEX_HOME")?.value).toBe("/h/T-9");
+      expect(made).toEqual(["A-9"]);
+      expect(entries.find((entry) => entry.name === "CODEX_HOME")?.value).toBe("/h/A-9");
       // A project without worker.strict_user gets no home and no host call for one.
       createRun(env.db, "run2", "plain");
       made.length = 0;

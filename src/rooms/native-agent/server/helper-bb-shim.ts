@@ -91,8 +91,9 @@ export function createBbShimEnv(ctx: Pick<ServerCore, "bb" | "host"> & { db?: Se
   /** The task's own codex home when the run's project has worker.strict_user on; null otherwise or when the host cannot make it. */
   async function workerHome(metadata: unknown, hostId: string): Promise<string | null> {
     const runId = stringAt(metadata, "lanePilotRunId");
-    // The thread's metadata names the task as lanePilotTaskId ("taskId" is never set, so the key used to fall to the attempt id and a task's homes piled up under its attempts).
-    const taskId = stringAt(metadata, "lanePilotTaskId") ?? stringAt(metadata, "taskId") ?? stringAt(metadata, "attemptId");
+    // The key is the attempt that started the thread, as it always was ("taskId" is never set in a thread's metadata): a task id repeats
+    // across runs, and a home shared by them would not be a fresh one. The janitor's sweep removes a task's homes by its attempt ids.
+    const taskId = stringAt(metadata, "taskId") ?? stringAt(metadata, "attemptId");
     if (!runId || !taskId || !ctx.db) return null;
     const projectId = getRun(ctx.db, runId)?.project_id;
     if (!projectId || String(loadProjectSettings(ctx.db as never, projectId)[SETTING_WORKER_STRICT_USER] ?? "off") !== "on") return null;

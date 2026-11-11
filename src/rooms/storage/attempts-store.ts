@@ -1463,10 +1463,10 @@ export function workerHomeKey(id: string): string | null {
 
 /**
  * Tasks the codex-home sweep may clear (SMA m_ac_codex_home): the NEWEST attempt of the task is final (accepted|blocked|canceled) and ended at
- * least `quietMs` ago, and no attempt of any run with that task id is open — a re-queued task that runs now keeps its home. Newest first.
+ * least `quietMs` ago (a day: longer than the worktree grace and the sticky window, inside which the writer's thread may be resumed with its home), and no attempt of any run with that task id is open — a re-queued task that runs now keeps its home. Newest first.
  * Each row carries the project, and the keys the task's homes may sit under: its id (the key the worker home is made under) and its attempt ids.
  */
-export function finalTaskIdsSince(db: LanePilotDatabase, since: number, limit = 300, now = Date.now(), quietMs = 3_600_000): Array<{ taskId: string; projectId: string; keys: string[] }> {
+export function finalTaskIdsSince(db: LanePilotDatabase, since: number, limit = 300, now = Date.now(), quietMs = 24 * 3_600_000): Array<{ taskId: string; projectId: string; keys: string[] }> {
   const open = OPEN_ATTEMPT_STATES.map((state) => `'${state}'`).join(",");
   const rows = db.prepare(`SELECT a.task_id AS taskId, r.project_id AS projectId, MAX(a.updated_at) AS endedAt FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
       WHERE a.state IN ('accepted','blocked','canceled') AND a.updated_at >= ? AND a.updated_at <= ?
