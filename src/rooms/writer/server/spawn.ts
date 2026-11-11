@@ -26,7 +26,7 @@ import { LANE_WORKTREE_PROVIDER_ID } from "../../native-agent/server";
 import { HELPER_DISALLOWED_TOOLS, permissionEntries, WRITER_DISALLOWED_TOOLS, WRITER_MAX_TURNS } from "../../native-agent";
 import { fullAccessSpawn } from "../../platform/server";
 import { WriterSelectionError, coreHostsRequiredProvider, helperChildPlacement, projectRoleField, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
-import { holderSpawnKey } from "../../platform/server";
+import { holderSpawnKey, within } from "../../platform/server";
 import { stringAt, bestEffort, isNotFound, orMiss, sha256Hex, BestEffortLog} from "@lane-pilot/kit";
 import { configuredSetting } from "../../contracts/server";
 import { planDigest, writerBriefInput, writerBriefSegments, type TaskFolderBrief } from "./writer-task";
@@ -143,6 +143,7 @@ const startSteps = new Map<string, string>();
 
 /** How long the pair whose launch was refused for a provider swap is held out of the writer chain. */
 const LAUNCH_PARITY_HOLD_MS = 30 * 60_000;
+const LAUNCH_PARITY_READ_MS = 2_000;
 
 export function createWriterSpawn(ctx: ServerCore, services: Services) {
   const { bb, db, effectiveProjectSettings, host } = ctx;
@@ -624,7 +625,8 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
           }
         }, () => undefined);
       } else {
-        const thread = await bb.sdk.threads.get({ threadId:writerThreadId }).catch(() => null);
+        // Bounded: a thread read that never answers must not hold the start; an unread thread is not a mismatch.
+        const thread = await within(bb.sdk.threads.get({ threadId:writerThreadId }), LAUNCH_PARITY_READ_MS).catch(() => null);
         const got = { providerId:stringAt(thread, "providerId"), model:stringAt(thread, "model"), reasoningLevel:stringAt(thread, "reasoningLevel") ?? stringAt(thread, "reasoningEffort") };
         const asked = `${selectedProviderId}/${selectedModel}/${lastExecution?.reasoningLevel ?? "?"}`;
         const ran = `${got.providerId}/${got.model}/${got.reasoningLevel ?? "?"}`;
