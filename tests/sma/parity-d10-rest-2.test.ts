@@ -121,7 +121,7 @@ describe("parity d10-rest-2", () => {
     expect(explainCatalog(verbs, docs)).toEqual(["flow", "memory", "memory-eval"]);
   });
 
-  it("[sma:k_lib_curriculum + k_v_curriculum] seeded rows: every source is limited to the window and the row bound, the brief is at most ten lines, the weekly job is off by default and writes the kv key once on", async () => {
+  it("[sma:k_lib_curriculum + k_v_curriculum] seeded rows: every source is limited to the window and the row bound, the brief is at most ten lines, the weekly job is on by default (off opts out) and writes the kv key", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
     const now = Date.now();
@@ -165,11 +165,14 @@ describe("parity d10-rest-2", () => {
     expect(weakSpotsBrief(many).split("\n")).toHaveLength(10);
     expect(weakSpotsBrief([])).toBe("");
 
-    // the job: off by default writes nothing; on writes the key
+    // the job: off writes nothing; unset (the default) and on write the key
     const kv = bb.storage.kv as unknown as { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<unknown> };
-    expect(await runCurriculumWeekly(db as never, kv, {}, now)).toBeNull();
+    expect(await runCurriculumWeekly(db as never, kv, { "curriculum.weekly": "off" }, now)).toBeNull();
     expect(await kv.get(CURRICULUM_KV_KEY)).toBeFalsy();
-    expect(await runCurriculumWeekly(db as never, kv, { "curriculum.weekly": "on" }, now)).toBeGreaterThan(0);
+    const unsetRun = await runCurriculumWeekly(db as never, kv, {}, now);
+    expect(unsetRun).toBeGreaterThan(0);
+    expect(await kv.get(CURRICULUM_KV_KEY)).toBeTruthy();
+    expect(await runCurriculumWeekly(db as never, kv, { "curriculum.weekly": "on" }, now)).toBe(unsetRun);
     // the CLI prints what the job stored
     registerCli(createCore(bb, db), {} as Services, migrations);
     const printed = await harness.behavior.runCli(["curriculum", "--brief"]);
@@ -424,10 +427,10 @@ describe("parity d10-rest-2", () => {
 
   // ---- n1616: OUTCOME.md ----
 
-  function outcomeWorld(folderExists: boolean, on = true) {
+  function outcomeWorld(folderExists: boolean, setting: "on" | "off" | "unset" = "on") {
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
-    if (on) saveProjectSetting(db, GLOBAL_SETTINGS_PROJECT_ID, "task.outcome_file", "on");
+    if (setting !== "unset") saveProjectSetting(db, GLOBAL_SETTINGS_PROJECT_ID, "task.outcome_file", setting);
     const workspace = mkdtempSync(join(tmpdir(), "outcome-ws-"));
     if (folderExists) mkdirSync(join(workspace, ".agents/plans/items/t-out"), { recursive: true });
     createRun(db, "run-o", "p", "bb", workspace);
@@ -462,10 +465,15 @@ describe("parity d10-rest-2", () => {
     expect(text).not.toContain(secret);
   });
 
-  it("[sma:k_pl_quick] with the setting unset (the default) the reaction writes nothing even into an existing task folder", async () => {
-    const w = outcomeWorld(true, false);
-    await writeTaskOutcome(w.ctx, w.event("done"));
-    expect(w.writes).toEqual([]);
+  it("[sma:k_pl_quick] task.outcome_file off writes nothing even into an existing task folder; unset (the default) writes OUTCOME.md", async () => {
+    const off = outcomeWorld(true, "off");
+    await writeTaskOutcome(off.ctx, off.event("done"));
+    expect(off.writes).toEqual([]);
+    const unset = outcomeWorld(true, "unset");
+    await writeTaskOutcome(unset.ctx, unset.event("done"));
+    expect(unset.writes).toHaveLength(1);
+    expect(unset.writes[0]!.path).toBe(join(unset.workspace, ".agents/plans/items/t-out/OUTCOME.md"));
+    expect(unset.writes[0]!.content).toContain("state: accepted · done");
   });
 
   it("[sma:k_pl_quick] no task folder means no write: nothing is created, not even the parents, for a canceled task whose folder never existed", async () => {
