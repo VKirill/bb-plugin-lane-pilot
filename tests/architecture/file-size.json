@@ -46,7 +46,6 @@
  "src/rooms/workflow/ui/workflow-map.tsx": 700,
  "src/rooms/writer/server/dispatch.ts": 700,
  "src/rooms/writer/server/spawn.ts": 900,
- "src/rooms/writer/server/start-writer-task.ts": 1600,
  "src/rooms/writer/server/verify.ts": 700,
  "src/rooms/writer/server/writer-task.ts": 600
 }

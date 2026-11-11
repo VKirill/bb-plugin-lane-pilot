@@ -54,7 +54,7 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
     ] },
   { id: "writer.turn", consumer: "the turn that gives a continuing writer thread its next task (stickyTurnPrompt)", carries: ["rule"], alwaysOn: ["rule"], status: "probed",
     sites: [
-      { file: "src/rooms/writer/server/start-writer-task.ts", primitive: "stickyTurnPromptWithRules", count: 1 },
+      { file: "src/rooms/writer/server/start-thread-takeover.ts", primitive: "stickyTurnPromptWithRules", count: 1 },
       { file: "src/rooms/writer/server/writer-knowledge.ts", primitive: "writerRules", count: 1 },
     ] },
   { id: "writer.repair", consumer: "the code-critique repair round (the dispatch context of the first brief, kept in the attempt trace)", carries: ["note", "core", "rule"], alwaysOn: ["core", "rule"], status: "probed",

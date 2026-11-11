@@ -87,7 +87,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | work-graph | AttemptIn, CellState, CostState, ExecutorRow, GRAPH_STAGES, GraphStats, ModelStageStat, ReceiptIn, Role, StageBlock, StageCell, StageEventIn, StageStat, TaskGraph, TaskSummary, Tokens, UsageIn, ceilingLine, graphStats, median, roleOf, stageCells, tailWords, taskGraph | 13 | 701 | tests (2) |
 | workflow | DOCS_MAINTENANCE, DOCS_NIGHT, DraftCheck, DraftOp, DraftScope, DraftTestResult, GOAL_SCREEN_ID, ISSUE_QUICK_SHORT_PATH, LP_TASK_PIPELINE, NodeExecutor, PLAN_CHECK_ID, RawDefinition, Refusal, RunSummary, SELF_REPAIR, StepContext, ValidateOptions, Workflow, WorkflowEngine, WorkflowProblem, builtinWorkflow, builtinWorkflows, goalScreenJudgment, issueQuickModelCalls, issueQuickShortPath, issueQuickWorkflowId, planCheckJudgment, routeWorkflow | 75 | 11400 | tests (5) |
 | world | worldMigrations | 8 | 598 | tests (4) |
-| writer | AGENT_TRASH_RELATIVE, BEST_OF_COUNT, BEST_OF_ROUNDS_DEFAULT, BEST_OF_ROUNDS_MAX, BEST_OF_ROUNDS_SETTING, BEST_OF_SETTING, BEST_OF_SLOT_CAP_SETTING, BEST_OF_TOKEN_BUDGET_SETTING, BEST_OF_VALUES, BestOfCandidate, BestOfPlan, DirtSnapshot, FinishScanDecision, FinishScanInput, LIVE_FOLDER_FILE_CAP, ROUND_SEED_MAX_CHARS, RoundCandidate, SkillSwitchRecord, SkillSwitchStats, WRITER_FINISH_SCAN_ID, WriterPair, attachStreamRetry, attemptProduced, bestOfBudgetAllows, bestOfPicks, buildCliInvocation, calculateSkillSwitches, droppedStreamDetail, getSkillSwitchStats, materializeAgentTrash, ownedAgentTrashPath, parseDirtSnapshots, pickBestAttempt, recordSkillSwitchMetric, reserveAppetite, resolveBestOf, roundSeedBrief, roundSurvivors, runCommandOnHost, skillSwitchMorningLine, writePmSettingsOnHost, writerFinishScanJudgment, writerModelJudgment | 86 | 12934 | drill: parallel3 |
+| writer | AGENT_TRASH_RELATIVE, BEST_OF_COUNT, BEST_OF_ROUNDS_DEFAULT, BEST_OF_ROUNDS_MAX, BEST_OF_ROUNDS_SETTING, BEST_OF_SETTING, BEST_OF_SLOT_CAP_SETTING, BEST_OF_TOKEN_BUDGET_SETTING, BEST_OF_VALUES, BestOfCandidate, BestOfPlan, DirtSnapshot, FinishScanDecision, FinishScanInput, LIVE_FOLDER_FILE_CAP, ROUND_SEED_MAX_CHARS, RoundCandidate, SkillSwitchRecord, SkillSwitchStats, WRITER_FINISH_SCAN_ID, WriterPair, attachStreamRetry, attemptProduced, bestOfBudgetAllows, bestOfPicks, buildCliInvocation, calculateSkillSwitches, droppedStreamDetail, getSkillSwitchStats, materializeAgentTrash, ownedAgentTrashPath, parseDirtSnapshots, pickBestAttempt, recordSkillSwitchMetric, reserveAppetite, resolveBestOf, roundSeedBrief, roundSurvivors, runCommandOnHost, skillSwitchMorningLine, writePmSettingsOnHost, writerFinishScanJudgment, writerModelJudgment | 104 | 13401 | drill: parallel3 |
 
 ## Task stages (20)
 
@@ -472,7 +472,6 @@ First-party install capabilities from `src/rooms/native-install/feature-registry
 | packages/i18n/src/i18n.ts | 2624 |
 | packages/i18n/src/i18n-fields.ts | 2141 |
 | src/rooms/sma-map/entries.ts | 1811 |
-| src/rooms/writer/server/start-writer-task.ts | 1562 |
 | src/rooms/contracts/session-hook-source.ts | 1407 |
 | src/rooms/council/ui/council-office.tsx | 942 |
 | src/rooms/sma-map/contracts.ts | 884 |
@@ -492,3 +491,4 @@ First-party install capabilities from `src/rooms/native-install/feature-registry
 | src/rooms/pages/use-lp-page.tsx | 711 |
 | src/rooms/session-hooks/logic.ts | 707 |
 | src/rooms/council/ui/office-props-b.ts | 703 |
+| src/rooms/phase/server/driver-steps.ts | 696 |
