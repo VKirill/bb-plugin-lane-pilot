@@ -2,7 +2,7 @@
 title: Workflow Routing and Handoff
 type: component
 created: 2026-10-10
-updated: 2026-11-07
+updated: 2026-11-11
 status: active
 confidence: medium
 tags: [workflow-engine, routing, handoff]
@@ -92,18 +92,18 @@ Routing depends on workflow definitions, capability metadata, run statistics, an
 
 ### `stateProblem`
 
-`stateProblem` returns `null` when no `RouterState` is supplied. Otherwise it checks requirements in this order and returns the first known failure (`packages/workflow-engine/src/router.ts:342`):
+`stateProblem` returns `null` when no `RouterState` is supplied. Otherwise it checks requirements in this order and returns the first known failure (`packages/workflow-engine/src/router.ts:343-355`):
 
 1. Normalize each plugin identifier with `pluginId`; exclude on a known `false`. Then check skills by name, also excluding only known `false` (`packages/workflow-engine/src/router.ts:346`).
 2. For each secret, extract its leading uppercase name. Parenthetical, `optional`, or supported Russian optionality text makes it optional; otherwise a known missing secret excludes the workflow (`packages/workflow-engine/src/router.ts:349`).
 3. Check only machine identifiers matching `host_<lowercase letters or digits>`; prose machine requirements are not queried. Then check `requires.project` entries whose value is `true`, excluding when the named project fact is known false (`packages/workflow-engine/src/router.ts:349`).
-4. Return `null` if no check finds an unavailable requirement. `undefined` state answers are not treated as unavailable; requirements outside these checks do not affect this function's result (`packages/workflow-engine/src/router.ts:342`).
+4. Return `null` if no check finds an unavailable requirement. `undefined` state answers are not treated as unavailable; requirements outside these checks do not affect this function's result (`packages/workflow-engine/src/router.ts:343-355`).
 
 | State result | Router behavior |
 |---|---|
 | First checked requirement is known absent | Return its explanatory string immediately; the caller removes that workflow from available candidates and records the reason (`packages/workflow-engine/src/router.ts:324-332`, `packages/workflow-engine/src/router.ts:543-547`). |
 | Requirement checks are absent or return unknown | Continue checking; unknown does not exclude a workflow (`packages/workflow-engine/src/router.ts:321-333`). |
-| Every supported check passes | Return `null` (`packages/workflow-engine/src/router.ts:342`). |
+| Every supported check passes | Return `null` (`packages/workflow-engine/src/router.ts:343-355`). |
 
 ### `scorerOutput` and `deterministicRouterModel`
 
@@ -115,11 +115,11 @@ Routing depends on workflow definitions, capability metadata, run statistics, an
 
 This exported constant is model/authoring reference data, not a runtime validator. Its `nodeTypes` entries describe each node kind; `passModes`, `qualityModes`, `conditions`, and `fieldTypes` enumerate graph syntax; the strings under `guards`, `edges`, `skipping`, `workflowQualityMode`, and `requires` summarize their constraints. Nested sections document roles, model selection, action names, triggers, and example formats (`packages/workflow-engine/src/capabilities.ts:81-139`). The `errand` role reference includes apps on the Mac mini through `computer-use: agent-desktop`, and browser usage instructions distinguish that from the owner's signed-in Chrome path (`packages/workflow-engine/src/capabilities.ts:101-110`, `packages/workflow-engine/src/capabilities.ts:144-152`).
 
-The `models` capability section is separate from that static reference: `modelsSection` returns the selected provider, model, reasoning effort, source, and role rationale for each role, plus whether the selected model is offered on the run host. `collectCapabilities` returns it as unavailable when no model catalog is available (`packages/workflow-engine/src/capabilities.ts:37-55`, `packages/workflow-engine/src/capabilities.ts:155-161`).
+The `models` capability section is separate from that static reference: `modelsSection` returns the selected provider, model, reasoning effort, source, and role rationale for each role, plus whether the selected model is offered on the run host. `collectCapabilities` returns it as unavailable when no model catalog is available (`packages/workflow-engine/src/capabilities.ts:37-55`, `packages/workflow-engine/src/capabilities.ts:131-178`, `packages/workflow-engine/src/capabilities.ts:159-165`).
 
-The action reference includes `schedule.create`: it describes a single deferred workflow run, its `send_at` input and workflow/name options, and `scheduled` or `cannot_delay` outcomes (`packages/workflow-engine/src/capabilities.ts:117-122`).
+The action reference lists pure code actions, plugin state/checkout actions, deferred scheduling, and errand-helper actions. The plugin state/checkout list includes `lp.review_prepass`, `lp.requirement_coverage`, `lp.milestone_archive`, and `lp.retro_living`; it describes the prepass as checks before the model, coverage as uncovered `REQUIREMENTS.md` ids, milestone archives as roadmap/requirements snapshots, and retro updates as INS-id upserts. It also describes `lp.integration_gate_status` as requiring a green full-gate mark for the shipped head within six hours (`packages/workflow-engine/src/capabilities.ts:118-123`). `schedule.create` describes a single deferred workflow run, its `send_at` input and workflow/name options, and `scheduled` or `cannot_delay` outcomes (`packages/workflow-engine/src/capabilities.ts:121`).
 
-`modelsSection` builds a host-ID-to-name map, trims/lowercases the optional query, and filters roles by role ID substring. For each remaining role it calls `resolveRoleModel`, finds that provider/model in the supplied catalog, and returns the chosen pair, effort, source, default rationale, host availability, and matching machine names when catalog host IDs exist (`packages/workflow-engine/src/capabilities.ts:37-47`). It returns `status: "ready"`, all catalog machines' names/connectivity, the roles map, and an instruction note (`packages/workflow-engine/src/capabilities.ts:41`). The function does not catch catalog or resolver exceptions; `collectCapabilities` catches failures while loading the models port, but calls `modelsSection` inside that `try` (`packages/workflow-engine/src/capabilities.ts:155-161`).
+`modelsSection` builds a host-ID-to-name map, trims/lowercases the optional query, and filters roles by role ID substring. For each remaining role it calls `resolveRoleModel`, finds that provider/model in the supplied catalog, and returns the chosen pair, effort, source, default rationale, host availability, and matching machine names when catalog host IDs exist (`packages/workflow-engine/src/capabilities.ts:37-47`). It returns `status: "ready"`, all catalog machines' names/connectivity, the roles map, and an instruction note (`packages/workflow-engine/src/capabilities.ts:41`). The function does not catch catalog or resolver exceptions; `collectCapabilities` catches failures while loading the models port, but calls `modelsSection` inside that `try` (`packages/workflow-engine/src/capabilities.ts:131-178`, `packages/workflow-engine/src/capabilities.ts:159-165`).
 
 | Model lookup branch | Output |
 |---|---|
@@ -135,16 +135,16 @@ The action reference includes `schedule.create`: it describes a single deferred 
 1. Normalize the optional query to lowercase and define section selection: an absent or empty `sections` list includes every section; a nonempty list includes only named sections (`packages/workflow-engine/src/capabilities.ts:127-132`).
 2. For skills, plugins, MCP servers, secrets, and hosts, call the section reader, apply its section-specific text filter, then cap returned items at 120. Skills expose descriptions clipped to 160 characters; secrets expose names and kinds only, never values (`packages/workflow-engine/src/capabilities.ts:30`, `packages/workflow-engine/src/capabilities.ts:57-67`, `packages/workflow-engine/src/capabilities.ts:133-140`).
 3. The browser section returns the browser host setting and usage instructions. It separately queries plugin IDs and skill names; query failures become `null` for those availability fields rather than rejecting the entire result (`packages/workflow-engine/src/capabilities.ts:141-153`).
-4. The models section calls the model port and returns unavailable when it gives no catalog or no providers; thrown read errors become `{status:"error"}`. Otherwise it delegates to `modelsSection` (`packages/workflow-engine/src/capabilities.ts:155-161`).
-5. Specialists may be an array or async reader. The result contains role IDs and instructions; a thrown read returns an error object. The `reference` section returns `WORKFLOW_REFERENCE` directly (`packages/workflow-engine/src/capabilities.ts:175`).
+4. The models section calls the model port and returns unavailable when it gives no catalog or no providers; thrown read errors become `{status:"error"}`. Otherwise it delegates to `modelsSection` (`packages/workflow-engine/src/capabilities.ts:159-165`).
+5. Specialists may be an array or async reader. The result contains role IDs and instructions; a thrown read returns an error object. The `reference` section returns `WORKFLOW_REFERENCE` directly (`packages/workflow-engine/src/capabilities.ts:70-129`, `packages/workflow-engine/src/capabilities.ts:176`).
 
 | Capability branch | Success | Unavailable or failure |
 |---|---|---|
 | Generic port section | `status:"ready"`, filtered items, and `total` only when more than 120 matched (`packages/workflow-engine/src/capabilities.ts:57-63`). | Missing reader or null result gives `status:"unavailable"`; thrown reader gives `status:"error"` and a string error (`packages/workflow-engine/src/capabilities.ts:57-66`). |
 | Browser | Host ID, instructions, and booleans when plugin/skill reads succeed (`packages/workflow-engine/src/capabilities.ts:141-153`). | Failed plugin or skill read is converted to `null`; the browser object still returns (`packages/workflow-engine/src/capabilities.ts:142-153`). |
-| Models | Ready role table when a provider catalog is present (`packages/workflow-engine/src/capabilities.ts:155-159`). | No port, null result, or empty provider list gives unavailable; thrown read gives error (`packages/workflow-engine/src/capabilities.ts:155-161`). |
+| Models | Ready role table when a provider catalog is present (`packages/workflow-engine/src/capabilities.ts:37-55`, `packages/workflow-engine/src/capabilities.ts:159-162`). | No port, null result, or empty provider list gives unavailable; thrown read gives error (`packages/workflow-engine/src/capabilities.ts:159-165`). |
 | Specialists | Returns the supplied or read role IDs (`packages/workflow-engine/src/capabilities.ts:163-168`). | Thrown async reader gives `{status:"error"}` (`packages/workflow-engine/src/capabilities.ts:165-170`). |
-| Reference | Returns static `WORKFLOW_REFERENCE` (`packages/workflow-engine/src/capabilities.ts:175`). | No separate catch or status wrapper is applied (`packages/workflow-engine/src/capabilities.ts:175`). |
+| Reference | Returns static `WORKFLOW_REFERENCE` (`packages/workflow-engine/src/capabilities.ts:70-129`, `packages/workflow-engine/src/capabilities.ts:176`). | No separate catch or status wrapper is applied (`packages/workflow-engine/src/capabilities.ts:70-129`, `packages/workflow-engine/src/capabilities.ts:176`). |
 
 ### `planPacket`
 
