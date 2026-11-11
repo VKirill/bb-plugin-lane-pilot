@@ -473,19 +473,20 @@ describe("parity d4 workflows b-2", () => {
     expect(JSON.stringify(summary.output)).not.toContain("hunter2");
   });
 
-  it("[sma:k_ag_uiauditor] ui-audit: today's inputs run main's audit and write no review file; with review_file the six pillars review is written by its own node", async () => {
+  it("[sma:k_ag_uiauditor] ui-audit: review_file is on when unset and the six pillars review is written by its own node; review_file=false runs main's audit and writes no file", async () => {
     const stubs = { capture: { status: "pass", screenshots: ["a.png"] }, audit: { score_40: 30, score_20: 14, findings: [] } };
-    const r = await runSim("ui-audit", { input: { url: "http://localhost:4173" }, stubs });
-    expect(costly(r)).toEqual(["capture", "audit"]);
-    expect(r.skipped).toEqual(["review_doc"]);
+    const off = await runSim("ui-audit", { input: { url: "http://localhost:4173", review_file: false }, stubs });
+    expect(costly(off)).toEqual(["capture", "audit"]);
+    expect(off.skipped).toEqual(["review_doc"]);
     expect(node("ui-audit.json", "audit").prompt).not.toMatch(/UI-REVIEW/);
-    const on = await runSim("ui-audit", { input: { url: "http://localhost:4173", review_file: true }, stubs: { ...stubs, review_doc: { review_path: ".agents/ui/pricing/UI-REVIEW.md" } } });
+    const on = await runSim("ui-audit", { input: { url: "http://localhost:4173" }, stubs: { ...stubs, review_doc: { review_path: ".agents/ui/pricing/UI-REVIEW.md" } } });
     expect(costly(on)).toEqual(["capture", "audit", "review_doc"]);
     expect(on.called("review_doc")).toHaveLength(1);
     const prompt = node("ui-audit.json", "review_doc").prompt!;
     for (const pillar of ["visual hierarchy", "interaction states", "accessibility", "responsiveness", "micro-interactions", "edge cases"]) expect(prompt).toContain(pillar);
     expect(prompt).toMatch(/0-4/);
     expect(prompt).toContain(".agents/ui/<slug>/UI-REVIEW.md");
-    expect(prompt).toContain("UI-REVIEW.new.md");
+    expect(prompt).not.toContain("UI-REVIEW.new.md");
+    expect(prompt).toMatch(/created or replaced at that exact path/);
   });
 });

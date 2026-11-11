@@ -46,8 +46,8 @@ FIRST_SEC="${LP_WATCH_FIRST_SEC:-0}"  # main looks at once; a longer blind start
 STOP_SEC="${LP_WATCH_STOP_SEC:-}"       # empty: the unit's own TimeoutStopUSec, 90 s when unreadable
 RESTART_SETTLE_SEC="${LP_WATCH_RESTART_SETTLE_SEC:-10}"
 LOCK_HELD_SEC="${LP_WATCH_LOCK_HELD_SEC:-60}"
-KILL_HOLDER="${LP_WATCH_KILL_HOLDER:-0}"   # 1: a repeated lift also kills a port holder proven outside the unit; 0 (main): it is only named
-BOARD_EVERY="${LP_WATCH_BOARD_EVERY:-0}"   # every N-th knock `run` also makes the board request (a CLI start each time); 0 (main): never
+KILL_HOLDER="${LP_WATCH_KILL_HOLDER:-1}"   # 1 (default): a repeated lift also kills a port holder proven outside the unit; 0: it is only named
+BOARD_EVERY="${LP_WATCH_BOARD_EVERY:-20}"   # every 20th knock `run` also makes the board request (a CLI start each time, advisory only); 0: never
 RESTART_CAP="${LP_WATCH_RESTART_CAP-5}"    # the unit's cap on restarts of a fallen watchdog per hour; 0 or empty: no cap (a capped watchdog that stays down warns the owner itself)
 RESTART_WAIT_SEC="${LP_WATCH_RESTART_WAIT_SEC:-120}"
 MAX_LIFTS="${LP_WATCH_MAX_LIFTS:-3}"
@@ -255,13 +255,14 @@ lift() { # kill the hung one first, then start; returns 0 when the door answers 
     record "lift" "try $try, killing pid ${pid:-none}"
     [ -n "$pid" ] && [ "$pid" != "0" ] && service_kill
     if [ "$try" -gt 1 ] && [ -n "$pid" ] && [ "$pid" != "0" ]; then
-      # a repeated lift names a port holder proven outside the unit while the MainPID was read; it is killed only where
-      # LP_WATCH_KILL_HOLDER=1 says so (main kills none, and a process that is not ours is never killed by a guess)
+      # a repeated lift (try 2 or later) kills a port holder only when the MainPID was read and is not 0 and the holder's cgroup is proven
+      # outside the unit's (never pid 1, this shell or its parent; nothing on a Mac or where the cgroup cannot be read); LP_WATCH_KILL_HOLDER=0
+      # only names it
       for h in $(port_holders); do
         never_killed "$h" && continue
         [ "$(holder_place "$h")" = outside ] || continue
         if [ "$KILL_HOLDER" = 1 ]; then record "port_holder_killed" "killing port holder $h"; kill -9 "$h" 2>/dev/null
-        else record "port_holder_seen" "port $DOOR_PORT is held by pid $h outside $SERVICE; not killed (LP_WATCH_KILL_HOLDER=1 would)"; fi
+        else record "port_holder_seen" "port $DOOR_PORT is held by pid $h outside $SERVICE; not killed (LP_WATCH_KILL_HOLDER=0)"; fi
       done
     fi
     sleep 2

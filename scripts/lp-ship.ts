@@ -14,7 +14,8 @@
  *   npx tsx scripts/lp-ship.ts explain          explainers with a coverage tripwire: a doc with `explains: [n…]` in its front matter fails when a
  *                                               node it explains is no longer proven on the SMA map
  *   npx tsx scripts/lp-ship.ts lane [base]      ship lanes: docs (docs only — no drill), batch (small changes, the quick drill), full (core,
- *                                               contracts, migrations — the full suite and the full drill)
+ *                                               contracts, migrations — the full suite and the full drill); it also drafts the changelog entry and
+ *                                               records the lane in .agents/ship/lanes.jsonl; --no-record prints the four fields only
  *   npx tsx scripts/lp-ship.ts freshness        freshness of the served window: the version the hub serves against this checkout's; the window
  *                                               bundle's own hash (window distribution as its own thing)
  * Exit: 0 clean, 1 findings, 2 could not check.
@@ -219,13 +220,13 @@ function explain(): number {
   return out(findings, `explainers: every node they explain is proven (map ${smaDonePercent(smaRows())}%)`);
 }
 
-// Called the old way (`lane [base]`) it prints main's four fields and writes nothing; `--record` (with an optional `--cwd <repo>`)
-// also drafts the changelog entry and keeps one record per (base, head) in .agents/ship/lanes.jsonl (SMA k_v_shiplane).
+// `lane [base]` prints the four fields, drafts the changelog entry and keeps one record per (base, head) in .agents/ship/lanes.jsonl
+// (SMA k_v_shiplane; optional `--cwd <repo>`). `--no-record` is main's old way: the four fields only, nothing written. `--record` is accepted and does nothing.
 function lane(args: string[]): number {
-  const record = args.includes("--record");
+  const record = !args.includes("--no-record");
   const cwd = args.includes("--cwd") ? args[args.indexOf("--cwd") + 1]! : ROOT;
   const gitIn = (...a: string[]) => execFileSync("git", ["-C", cwd, ...a], { encoding: "utf8" }).trim();
-  const positional = args.filter((a, i) => a !== "--cwd" && a !== "--record" && args[i - 1] !== "--cwd");
+  const positional = args.filter((a, i) => a !== "--cwd" && a !== "--record" && a !== "--no-record" && args[i - 1] !== "--cwd");
   const base = positional[0] ?? lastTag() ?? "HEAD~1";
   const files = gitIn("diff", "--name-only", `${base}...HEAD`).split("\n").filter(Boolean);
   const full = files.filter((file) => FULL_LANE_PATHS.test(file));

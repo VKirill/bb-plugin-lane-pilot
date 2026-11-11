@@ -5,8 +5,8 @@
     "ru": "Аудит интерфейса по доказательствам"
   },
   "description": {
-    "en": "Audits a live UI in the browser on six dimensions (visual hierarchy, interaction states, accessibility, responsiveness, micro-interactions, edge cases) and returns scored findings with screenshots. Changes nothing.",
-    "ru": "Аудит живого интерфейса в браузере по шести измерениям (иерархия, состояния, доступность, адаптив, микро-взаимодействия, пограничные случаи); возвращает оценённые находки со скриншотами. Ничего не меняет."
+    "en": "Audits a live UI in the browser on six dimensions (visual hierarchy, interaction states, accessibility, responsiveness, micro-interactions, edge cases) and returns scored findings with screenshots. Changes no project file except its review, .agents/ui/<slug>/UI-REVIEW.md (review_file=false: nothing).",
+    "ru": "Аудит живого интерфейса в браузере по шести измерениям (иерархия, состояния, доступность, адаптив, микро-взаимодействия, пограничные случаи); возвращает оценённые находки со скриншотами. Не меняет файлы проекта, кроме своего ревью .agents/ui/<slug>/UI-REVIEW.md (review_file=false: ничего)."
   },
   "examples": {
     "ru": [
@@ -41,8 +41,8 @@
     },
     "review_file": {
       "type": "bool",
-      "default": false,
-      "note": "also score the six pillars 0-4 and write the review to .agents/ui/<slug>/UI-REVIEW.md"
+      "default": true,
+      "note": "also score the six pillars 0-4 and write the review to .agents/ui/<slug>/UI-REVIEW.md (created or replaced at that exact path; false: no file is written)"
     }
   },
   "outputs": {
@@ -141,7 +141,7 @@
       "skip_out": {
         "review_path": ""
       },
-      "prompt": "From the audit's evidence only, score each of the six dimensions (visual hierarchy, interaction states, accessibility, responsiveness, micro-interactions, edge cases) 0-4 with the evidence for the score, and write the review to .agents/ui/<slug>/UI-REVIEW.md; a file that already exists is never overwritten, the new text goes to UI-REVIEW.new.md next to it. Return the path as review_path. Do not edit anything else.",
+      "prompt": "From the audit's evidence only, score each of the six dimensions (visual hierarchy, interaction states, accessibility, responsiveness, micro-interactions, edge cases) 0-4 with the evidence for the score, and write the review to .agents/ui/<slug>/UI-REVIEW.md; the file is created or replaced at that exact path and nowhere else (no .new copy, no other file). Return the path as review_path. Do not edit anything else.",
       "out": {
         "review_path": "string"
       },
@@ -251,6 +251,9 @@
               "evidence": "focus ring missing"
             }
           ]
+        },
+        "review_doc": {
+          "review_path": ".agents/ui/pricing/UI-REVIEW.md"
         }
       },
       "expect_path": [

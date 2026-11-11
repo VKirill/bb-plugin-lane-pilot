@@ -124,8 +124,8 @@ describe("the owner push", () => {
   it("a row wins over the old table; the command writes rows and still refuses a wrong value", () => {
     const { db } = fresh();
     db.prepare("INSERT INTO lane_pilot_owner_config(key,value,updated_at) VALUES ('enabled','off',1),('quiet','22:00-07:00',1)").run();
-    expect(loadPushConfig(db)).toEqual({ enabled: false, quiet: "22:00-07:00", timezone: "Europe/Madrid" });
-    expect(savePushConfig(db, { enabled: "on" })).toEqual({ enabled: true, quiet: "22:00-07:00", timezone: "Europe/Madrid" });
+    expect(loadPushConfig(db)).toEqual({ enabled: false, quiet: "22:00-07:00", timezone: "Europe/Madrid", bell: true });
+    expect(savePushConfig(db, { enabled: "on" })).toEqual({ enabled: true, quiet: "22:00-07:00", timezone: "Europe/Madrid", bell: true });
     expect(hubFields(db, "owner_push")).toEqual({ enabled: true });
     expect(() => savePushConfig(db, { quiet: "25:00-08:00" })).toThrow(/HH:MM-HH:MM/);
     expect(() => savePushConfig(db, { timezone: "Mars/Base" })).toThrow(/unknown time zone/);

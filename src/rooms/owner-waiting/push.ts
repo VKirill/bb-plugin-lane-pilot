@@ -15,7 +15,7 @@ export { CALL_REASONS, callReason, type CallReason } from "./items";
  */
 type Db = Pick<Database.Database, "prepare" | "transaction">;
 
-/** `bell` is the browser bell (SMA m_ws_notify): off unless the owner turns it on — the Telegram digest was the only push before it. */
+/** `bell` is the browser bell (SMA m_ws_notify): on unless the owner stored `off`. It skips what the Telegram digest already announced. */
 export type PushConfig = { enabled: boolean; quiet: string; timezone: string; bell?: boolean };
 export const DEFAULT_PUSH_CONFIG: PushConfig = { enabled: true, quiet: "23:00-08:00", timezone: "Europe/Madrid" };
 export const PUSH_CONFIG_KEYS = ["enabled", "quiet", "timezone", "bell"] as const;
@@ -38,8 +38,8 @@ export function loadPushConfig(db: Db): PushConfig {
   };
   // A global row (`owner_push.*`, written by the screen and by this command) wins over the old table, which stays as the fallback.
   const own = hubFields(db, "owner_push") as Partial<PushConfig>;
-  // The bell has no global row: it lives in this room's own table, and only an explicit «on» turns it on.
-  return { enabled: own.enabled ?? old.enabled, quiet: own.quiet ?? old.quiet, timezone: own.timezone ?? old.timezone, ...(stored.bell === "on" ? { bell: true } : {}) };
+  // The bell has no global row: it lives in this room's own table; unset is on, only a stored «off» silences it.
+  return { enabled: own.enabled ?? old.enabled, quiet: own.quiet ?? old.quiet, timezone: own.timezone ?? old.timezone, bell: stored.bell !== "off" };
 }
 
 /** `enabled` on|off, `quiet` HH:MM-HH:MM ("" turns quiet hours off as 00:00-00:00), `timezone` an IANA name. A wrong value is refused with what is accepted. */
@@ -120,18 +120,35 @@ export const BELL_PREFIX = "bell:";
 
 export type BellNotice = { send: boolean; reason: "disabled" | "quiet_hours" | "nothing_new" | null; title: string; text: string; keys: string[] };
 
+/** The mark that the bell has been through its first tick on this install (lane_pilot_owner_config). */
+const BELL_SEEDED = "bell_seeded";
+
 /** The browser bell's notice: one count line for the wake items not yet announced, no item text, the same enabled and
- * quiet-hours rules as the Telegram digest. `keys` are the `bell:`-prefixed item keys the caller acknowledges on a sent notice. */
+ * quiet-hours rules as the Telegram digest. `keys` are the `bell:`-prefixed item keys the caller acknowledges on a sent notice.
+ * One item, one push: an item whose key already has a non-bell row in lane_pilot_owner_push was announced by the digest and the bell
+ * skips it. On the first tick of an install (an upgrade) the items that exist are marked announced without a notice: no burst. */
 export function planBellNotice(db: Db, now: number = Date.now(), sweeps: readonly OwnerItemSweep[] = [], learningReader?: LearningItemsReader): BellNotice {
   const config = loadPushConfig(db);
   const none = (reason: BellNotice["reason"]): BellNotice => ({ send: false, reason, title: "", text: "", keys: [] });
-  if (!config.enabled || config.bell !== true) return none("disabled");
+  if (config.bell === false) return none("disabled");
+  const seeded = db.prepare("SELECT 1 FROM lane_pilot_owner_config WHERE key=?").get(BELL_SEEDED) !== undefined;
+  if (!seeded) {
+    // An install that already ran the bell (it holds bell: marks) has nothing to seed; a fresh one learns what is already there.
+    const ran = db.prepare("SELECT 1 FROM lane_pilot_owner_push WHERE key LIKE 'bell:%' LIMIT 1").get() !== undefined;
+    if (!ran) for (const item of collectOwnerWaiting(db, now, sweeps, undefined, learningReader).items.filter((item) => item.wake && item.tier === "now")) {
+      db.prepare("INSERT OR IGNORE INTO lane_pilot_owner_push(key,pushed_at) VALUES (?,?)").run(`${BELL_PREFIX}${item.key}`, now);
+    }
+    db.prepare("INSERT OR IGNORE INTO lane_pilot_owner_config(key,value,updated_at) VALUES (?,?,?)").run(BELL_SEEDED, "1", now);
+    if (!ran) return none("nothing_new");
+  }
+  if (!config.enabled) return none("disabled");
   if (inQuietHours(now, config.quiet, config.timezone)) return none("quiet_hours");
   // The marks of the bell are kept a month: an item that old is no longer «new» to anyone, and the table stays small.
   db.prepare("DELETE FROM lane_pilot_owner_push WHERE key LIKE 'bell:%' AND pushed_at < ?").run(now - 30 * 86_400_000);
-  const announced = new Set((db.prepare("SELECT key FROM lane_pilot_owner_push WHERE key LIKE 'bell:%'").all() as Array<{ key: string }>).map((row) => row.key));
+  const rows = db.prepare("SELECT key FROM lane_pilot_owner_push").all() as Array<{ key: string }>;
+  const announced = new Set(rows.map((row) => row.key));
   const fresh = collectOwnerWaiting(db, now, sweeps, undefined, learningReader).items
-    .filter((item) => item.wake && item.tier === "now" && !announced.has(`${BELL_PREFIX}${item.key}`));
+    .filter((item) => item.wake && item.tier === "now" && !announced.has(`${BELL_PREFIX}${item.key}`) && !announced.has(item.key));
   if (!fresh.length) return none("nothing_new");
   return { send: true, reason: null, title: `Lane Pilot: ждёт решения — ${fresh.length}`, text: `${fresh.length} — на экране «Ждут владельца».`, keys: fresh.map((item) => `${BELL_PREFIX}${item.key}`) };
 }

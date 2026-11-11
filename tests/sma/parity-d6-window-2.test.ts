@@ -11,7 +11,7 @@ import { hostActivityToday, createRun, createTask, createAttempt, transitionAtte
 import { creatorBrief, readForgeReceipts } from "../../src/rooms/forge";
 import { forgeToolParameters } from "../../src/rooms/forge/server";
 import { cockpitRpc } from "../../src/rooms/cockpit/server";
-import { planBellNotice, ackDigest, savePushConfig } from "../../src/rooms/owner-waiting/push";
+import { planBellNotice, ackDigest, savePushConfig, loadPushConfig } from "../../src/rooms/owner-waiting/push";
 import { postOwnerItem } from "../../src/rooms/owner-waiting/items";
 import { discussionLines } from "../../src/rooms/cockpit/ui/screens-work";
 
@@ -202,18 +202,17 @@ describe("window parity d6 wave 2", () => {
     expect(document.querySelector("[data-testid='ck-observation']")).toBeNull();
   });
 
-  it("[sma:m_ws_notify] planBellNotice with two new wake items returns one notice with count 2 and no item text; after ackDigest a second call returns nothing; quiet hours or disabled return nothing", () => {
+  const item = (key: string) => ({ key, source: "inbox", kind: "decision", what: "w", why: "y", actions: [{ id: "a", label: "a", cli: "bb lane-pilot waiting" }] }) as never;
+
+  it("[sma:m_ws_notify] planBellNotice, bell unset (on): two new wake items return one notice with count 2 and no item text; after ackDigest a second call returns nothing; quiet hours or disabled return nothing", () => {
     const { db } = open();
     savePushConfig(db, { quiet: "00:00-00:00" });
-    // Nothing set: the bell is off — an install that asked for nothing gets no new push (the Telegram digest stays its only one).
-    expect(planBellNotice(db, Date.now(), []).reason).toBe("disabled");
-    savePushConfig(db, { bell: "on" });
-    postOwnerItem(db, { key: "k1", source: "inbox", kind: "decision", what: "w", why: "y", actions: [{ id: "a", label: "a", cli: "bb lane-pilot waiting" }] });
-    postOwnerItem(db, { key: "k2", source: "inbox", kind: "decision", what: "w", why: "y", actions: [{ id: "a", label: "a", cli: "bb lane-pilot waiting" }] });
     const sweep: never[] = [];
-    savePushConfig(db, { bell: "off" });
-    expect(planBellNotice(db, Date.now(), sweep).reason).toBe("disabled");
-    savePushConfig(db, { bell: "on" });
+    // Nothing stored: the bell is on. The first tick only learns the empty install; items that arrive later are announced.
+    expect(loadPushConfig(db).bell).toBe(true);
+    expect(planBellNotice(db, Date.now(), sweep).reason).toBe("nothing_new");
+    postOwnerItem(db, item("k1"));
+    postOwnerItem(db, item("k2"));
     const one = planBellNotice(db, Date.now(), sweep);
     expect(one.send).toBe(true);
     expect(one.title).toContain("2");
@@ -229,6 +228,50 @@ describe("window parity d6 wave 2", () => {
     expect(planBellNotice(db, Date.now(), sweep).reason).toBe("quiet_hours");
     savePushConfig(db, { enabled: "off" });
     expect(planBellNotice(db, Date.now(), sweep).reason).toBe("disabled");
+  });
+
+  it("[sma:m_ws_notify] a stored bell=off keeps the bell silent and writes nothing; switching it back on works", () => {
+    const { db } = open();
+    savePushConfig(db, { quiet: "00:00-00:00", bell: "off" });
+    expect(loadPushConfig(db).bell).toBe(false);
+    postOwnerItem(db, item("k1"));
+    expect(planBellNotice(db, Date.now(), []).reason).toBe("disabled");
+    expect(planBellNotice(db, Date.now(), []).send).toBe(false);
+    expect((db.prepare("SELECT count(*) AS n FROM lane_pilot_owner_push").get() as { n: number }).n).toBe(0);
+    // On again: the first tick marks what is there without a notice, the next new item is announced.
+    savePushConfig(db, { bell: "on" });
+    expect(planBellNotice(db, Date.now(), []).send).toBe(false);
+    postOwnerItem(db, item("k2"));
+    expect(planBellNotice(db, Date.now(), []).send).toBe(true);
+  });
+
+  it("[sma:m_ws_notify] no burst on the first tick after an upgrade: items that already exist are marked announced without a notice", () => {
+    const { db } = open();
+    savePushConfig(db, { quiet: "00:00-00:00" });
+    for (const key of ["a1", "a2", "a3"]) postOwnerItem(db, item(key));
+    const first = planBellNotice(db, Date.now(), []);
+    expect(first.send).toBe(false);
+    expect((db.prepare("SELECT count(*) AS n FROM lane_pilot_owner_push WHERE key LIKE 'bell:%'").get() as { n: number }).n).toBe(3);
+    expect(planBellNotice(db, Date.now(), []).send).toBe(false);
+    postOwnerItem(db, item("a4"));
+    const next = planBellNotice(db, Date.now(), []);
+    expect(next.send).toBe(true);
+    expect(next.keys).toEqual(["bell:a4"]);
+  });
+
+  it("[sma:m_ws_notify] no double push: an item the Telegram digest announced (a non-bell row for its key) is skipped by the bell", () => {
+    const { db } = open();
+    savePushConfig(db, { quiet: "00:00-00:00" });
+    planBellNotice(db, Date.now(), []);
+    postOwnerItem(db, item("d1"));
+    postOwnerItem(db, item("d2"));
+    ackDigest(db, ["d1"]);
+    const notice = planBellNotice(db, Date.now(), []);
+    expect(notice.send).toBe(true);
+    expect(notice.keys).toEqual(["bell:d2"]);
+    ackDigest(db, notice.keys);
+    ackDigest(db, ["d2"]);
+    expect(planBellNotice(db, Date.now(), []).send).toBe(false);
   });
 
   it("[sma:d_search] the memory screen calls session_memory_search with the project and query, lists the record kind, text and concepts, and shows the nothing note on nothingRelevant", async () => {

@@ -144,8 +144,10 @@ describe("the Telegram digest", () => {
 
   it("has settings: on/off, quiet hours and time zone, refused when wrong", () => {
     const db = seeded();
-    expect(loadPushConfig(db)).toEqual({ enabled: true, quiet: "23:00-08:00", timezone: "Europe/Madrid" });
-    expect(savePushConfig(db, { quiet: "22:00-07:30", timezone: "Europe/Moscow" }, NOW)).toEqual({ enabled: true, quiet: "22:00-07:30", timezone: "Europe/Moscow" });
+    expect(loadPushConfig(db)).toEqual({ enabled: true, quiet: "23:00-08:00", timezone: "Europe/Madrid", bell: true });
+    expect(savePushConfig(db, { quiet: "22:00-07:30", timezone: "Europe/Moscow" }, NOW)).toEqual({ enabled: true, quiet: "22:00-07:30", timezone: "Europe/Moscow", bell: true });
+    expect(savePushConfig(db, { bell: "off" }, NOW).bell).toBe(false);
+    expect(savePushConfig(db, { bell: "on" }, NOW).bell).toBe(true);
     expect(() => savePushConfig(db, { quiet: "25:00-08:00" })).toThrow(/HH:MM-HH:MM/);
     expect(() => savePushConfig(db, { timezone: "Mars/Base" })).toThrow(/unknown time zone/);
     expect(() => savePushConfig(db, { enabled: "maybe" })).toThrow(/on or off/);

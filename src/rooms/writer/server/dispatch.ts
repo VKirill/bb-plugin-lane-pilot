@@ -554,7 +554,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
           const verdict = listStageReceipts(db, args.runId, attempt.task_id).find((row) => row.stageId === "browser-qa");
           if (verdict?.state === "passed") continue;
           if (taskQaPlan(contract.data)) {
-            // Unset writer.qa_stop_after: the advice is what it always was, a follow-up. Set (SMA k_wqa_route): the family's receipts route it.
+            // writer.qa_stop_after 0 or off: the advice is what it always was, a follow-up. Otherwise (unset: 2; SMA k_wqa_route) the family's receipts route it.
             const stopAfter = qaStopAfter(settings["writer.qa_stop_after"]);
             const failedVerdict = Boolean(verdict && ["failed", "blocked", "skipped"].includes(verdict.state));
             const family = stopAfter === null ? [] : listRunTaskRows(db, args.runId).filter((row) => taskFamily(row.id) === taskFamily(attempt.task_id));

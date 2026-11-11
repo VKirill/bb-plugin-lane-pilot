@@ -12,7 +12,7 @@ export function memorySettingsFor(settings: Record<string, unknown>): MemorySett
   return parseMemorySettings(Object.fromEntries(MEMORY_KEYS.map((key) => [key, configuredSetting(settings, key)])));
 }
 
-/** The maintainer's view of the same settings: it also reads how often it runs. Unset opt-ins (memory.single_claim, memory.tag_notes) are off. */
+/** The maintainer's view of the same settings: it also reads how often it runs. memory.single_claim and memory.tag_notes are on when unset (a stored off opts out). */
 export function maintainerMemorySettings(settings: Record<string, unknown>): MemorySettings {
   return parseMemorySettings(Object.fromEntries([...MEMORY_KEYS, "memory.maintain_every"].map((key) => [key, configuredSetting(settings, key)])));
 }
