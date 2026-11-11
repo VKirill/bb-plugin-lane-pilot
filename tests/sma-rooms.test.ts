@@ -24,6 +24,8 @@ describe("phase stages", () => {
     expect(threatGap(record)).toContain("SECURITY.md");
     expect(threatGap({ ...record, context: { ...record.context!, risks: { security: "none" } } })).toBeNull();
     expect(validationGaps([item("a", {}, { verification: [{ command: "test -f src/a.ts" }] }), item("b")])).toEqual([expect.stringContaining("a:")]);
+    expect(validationGaps([item("a", {}, { verification: [{ command: "test -f a.md && test -s a.md" }] })])).toEqual([expect.stringContaining("a:")]);
+    expect(validationGaps([item("a", {}, { verification: [{ command: "test -f a.md && test ! -L a.md && test \"$(LC_ALL=C head -n 1 a.md)\" = '# a'" }] })])).toEqual([]);
   });
 
   it("design mode, motion rows, the UI contract and the archived drawing", () => {

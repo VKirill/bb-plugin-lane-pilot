@@ -109,8 +109,10 @@ export function collectSystemMap(root: string): SystemMap {
   // CLI commands, by the room whose handler the dispatch calls.
   const cliPath = join(root, "src/rooms/tools/server/cli.ts");
   const cli = readFileSync(cliPath, "utf8");
+  const cliImports = readFileSync(join(root, "src/rooms/tools/server/cli-imports.ts"), "utf8");
+  const cliCommands = readFileSync(join(root, "src/rooms/tools/server/cli-commands.ts"), "utf8");
   const symbolRoom = new Map<string, string>();
-  for (const hit of cli.matchAll(/import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*"([^"]+)"/g)) {
+  for (const hit of cliImports.matchAll(/import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*"([^"]+)"/g)) {
     const owner = ownerOf(resolve(dirname(cliPath), hit[2]!));
     if (owner) for (const name of hit[1]!.split(",")) symbolRoom.set(name.trim().split(/\s+as\s+/).pop()!, owner);
   }
@@ -126,7 +128,7 @@ export function collectSystemMap(root: string): SystemMap {
     const word = command.split("-")[0]!;
     return rooms.includes(command) ? `room:${command}` : rooms.includes(word) ? `room:${word}` : "room:tools";
   };
-  for (const hit of cli.matchAll(/\{ name:"([a-z0-9-]+)", summary:"((?:[^"\\]|\\.)*)"/g)) {
+  for (const hit of cliCommands.matchAll(/\{ name:"([a-z0-9-]+)", summary:"((?:[^"\\]|\\.)*)"/g)) {
     add({ id: `cmd:${hit[1]}`, label: `bb lane-pilot ${hit[1]}`, type: "command", parent: handledBy.get(hit[1]!) ?? prefixRoom(hit[1]!), info: hit[2]!.replace(/\\"/g, '"') });
   }
 

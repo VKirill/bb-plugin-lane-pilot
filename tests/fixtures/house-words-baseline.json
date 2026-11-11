@@ -32,7 +32,7 @@
   "src/rooms/session-hooks/logic.ts": {
     "Claude Lane": 1
   },
-  "src/rooms/tools/server/cli.ts": {
+  "src/rooms/tools/server/cli-commands.ts": {
     "Claude Lane": 1
   },
   "src/rooms/writer/agent-trash.ts": {

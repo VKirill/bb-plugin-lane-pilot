@@ -42,7 +42,7 @@ function docs(): string[] {
 }
 
 function cliCommands(): Set<string> {
-  const text = read("src/rooms/tools/server/cli.ts");
+  const text = read("src/rooms/tools/server/cli-commands.ts");
   return new Set([...text.matchAll(/\{ name:"([a-z0-9-]+)"/g)].map((m) => m[1]!));
 }
 
@@ -215,7 +215,7 @@ function explain(): number {
     }
   }
   // Coverage line (SMA k_lib_explain): CLI verbs no explainer names. Reported, never a finding.
-  const cli = readFileSync(join(ROOT, "src/rooms/tools/server/cli.ts"), "utf8");
+  const cli = readFileSync(join(ROOT, "src/rooms/tools/server/cli-commands.ts"), "utf8");
   const verbs = [...cli.matchAll(/name:\s*"([a-z][a-z0-9-]*)"\s*,\s*summary:/g)].map((m) => m[1]!);
   const uncovered = verbs.filter((verb) => !docs().some((file) => { const text = read(file); return text.includes(`lane-pilot ${verb}`) || text.includes(`\`${verb}\``); }));
   console.log(`explain coverage: ${verbs.length - uncovered.length}/${verbs.length} CLI verbs have an explainer${uncovered.length ? ` (missing: ${uncovered.slice(0, 20).join(", ")}${uncovered.length > 20 ? "…" : ""})` : ""}`);

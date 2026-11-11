@@ -133,7 +133,7 @@ PARALLEL3_SKIP = [f"src/rooms/{room}/**" for room in ("phase", "council", "cockp
                   "forecast", "coverage", "docs", "backlog", "anamnesis", "twins", "outbound", "owner-presence", "memory-eval", "design-eval", "deferral", "checkers")]
 SCENARIO_CODE = {
     "episodes": ["src/rooms/errands/**", "src/rooms/qa/server/errand*", "src/rooms/workflow/server/workflow.ts", "packages/harness-core/src/trajectory.ts"],
-    "helper_providers": ["src/rooms/native-agent/**", "src/rooms/runs/server/run-routing*", "src/rooms/stability/server/probes.ts", "src/rooms/tools/server/cli.ts",
+    "helper_providers": ["src/rooms/native-agent/**", "src/rooms/runs/server/run-routing*", "src/rooms/stability/server/probes.ts", "src/rooms/tools/server/cli*",
                          "src/rooms/critique/pm-read.ts", "packages/thread-observe/**"],
     "memory_paths": ["src/rooms/memory/**", "src/rooms/memory-probe/**", "src/rooms/memory-tiers/**", "packages/memory-core/**", "src/rooms/native-agent/**",
                      "src/rooms/writer/server/writer-task.ts", "src/rooms/writer/server/writer-knowledge.ts", "src/rooms/critique/**", "src/rooms/council/server/**"],
@@ -860,7 +860,13 @@ def setting_rpc(method: str, payload: dict) -> dict:
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
         json.dump(payload, handle)
     try:
-        rc, out, err = run([BB, "plugin", "rpc", "call", "lane-pilot", method, "--input-file", handle.name, "--json"], timeout=60)
+        # A read that meets the hub in a long pause gets «HTTP 502» for a few seconds (live phase 2026-11-11: the run was
+        # lost on one phase_get); it is asked again. A write is not: it may have landed.
+        for attempt in range(3):
+            rc, out, err = run([BB, "plugin", "rpc", "call", "lane-pilot", method, "--input-file", handle.name, "--json"], timeout=60)
+            if rc == 0 or attempt == 2 or not (re.search(r"HTTP 50[234]", err or out) and re.search(r"_(get|list|status|view)$", method)):
+                break
+            time.sleep(10)
     finally:
         os.unlink(handle.name)
     if rc != 0:

@@ -70,10 +70,12 @@ describe("a model's opinion alone never accepts a task", () => {
   it("is checked where acceptance is decided: before the acceptance receipt is written", () => {
     const { text: source } = fileContaining("acceptanceProofGap(provenBy)");
     const guard = source.indexOf("acceptanceProofGap(provenBy)");
-    const accept = source.indexOf("services.persistWriterAcceptance(");
+    // The receipt is written by mergeAcceptedAttempt, the last call of the finish body (the landing has its own module since the 2026-11-11 split).
+    const accept = source.indexOf("await mergeAcceptedAttempt(");
     expect(guard).toBeGreaterThan(0);
     expect(accept).toBeGreaterThan(guard);
     expect(source.slice(guard, accept)).toContain('transitionAttempt(db, input.attemptId, "blocked"');
+    expect(fileContaining("export async function mergeAcceptedAttempt(").text).toContain("services.persistWriterAcceptance(");
   });
 });
 
