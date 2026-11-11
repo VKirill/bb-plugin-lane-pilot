@@ -163,5 +163,10 @@ describe("birth rails, sandbox and a crash that is an honest failure", () => {
     expect(verdictSchema.safeParse({ status: "pass", findings: [] }).success).toBe(false);
     expect(verdictSchema.safeParse({ status: "pass", findings: [], evidence: "read the diff and the vitest output" }).success).toBe(true);
     expect(verdictSchema.safeParse({ status: "shrug", findings: [], evidence: "read the diff" }).success).toBe(false);
+    // The SMA form's context fields are optional: a verdict carrying them parses, a verdict without them is byte-for-byte as before.
+    const withForm = verdictSchema.parse({ status: "pass", findings: [], evidence: "read the diff", promise: "the promise", correctness: "green", regression: "none", tests: "vitest run", out_of_scope: "docs", floor: "opens", class: "minor" });
+    expect(withForm.class).toBe("minor");
+    expect(withForm.out_of_scope).toBe("docs");
+    expect(verdictSchema.parse({ status: "pass", findings: [], evidence: "read the diff" })).not.toHaveProperty("class");
   });
 });

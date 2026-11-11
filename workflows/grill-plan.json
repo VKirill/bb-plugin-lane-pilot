@@ -41,7 +41,7 @@
     }
   },
   "outputs": {
-    "status": "done|blocked",
+    "status": "done|blocked|open",
     "locked": "string[]",
     "open": "string[]",
     "deferred": "string[]",
@@ -126,6 +126,24 @@
       }
     },
     {
+      "id": "open",
+      "type": "action",
+      "action": "emit",
+      "title": {
+        "en": "Open challenges remain",
+        "ru": "Остались открытые вопросы"
+      },
+      "map": {
+        "status": "open",
+        "locked": "synth.locked",
+        "open": "synth.open",
+        "deferred": "synth.deferred",
+        "risk_register": "synth.risk_register",
+        "terminology": "walk.terminology",
+        "branches_walked": "walk.branches_walked"
+      }
+    },
+    {
       "id": "done",
       "type": "action",
       "action": "emit",
@@ -152,6 +170,12 @@
       "from": "walk",
       "to": "synth",
       "pass": "read-prior-session"
+    },
+    {
+      "from": "synth",
+      "to": "open",
+      "pass": "artifact",
+      "when": "synth.open.length > 0"
     },
     {
       "from": "synth",
@@ -190,12 +214,13 @@
       "expect_path": [
         "walk",
         "synth",
-        "done"
+        "open"
       ],
       "expect_outputs": [
-        "status == 'done'",
+        "status == 'open'",
         "branches_walked >= 5",
-        "risk_register.length >= 1"
+        "risk_register.length >= 1",
+        "open.length >= 1"
       ]
     },
     "live": "песочница: план с дырой; допрос возвращает риск с file:line"

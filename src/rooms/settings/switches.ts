@@ -50,6 +50,9 @@ export const UNLISTED_SWITCHES: Readonly<Record<string, readonly [scope: SwitchS
   "hook.subagent_pack": ["project", "on|off", "a Task call's subagent is born with the project's accepted rules and confirmed memory lessons in its context pack (unset: the pack holds the repo and the window's claimed files only)"],
   // docs
   "docs.gitnexus_refresh": ["project", "on|off", "the nightly docs pass refreshes the GitNexus code index (.gitnexus) of a checkout that lacks it or lags HEAD"],
+  "docs.review": ["project", "gate|off", "a separate reviewer role reads the docs maintainer's edits before a page is written and committed; a refusal gets one rework round, then an owner item (unset: gate; off: no review)"],
+  // capability
+  "capability.documentary_gate": ["project", "hold|observe", "a documentary stage holds on a provider whose adapter version has a red documentary receipt; no receipt or a stale one is observed, never held (unset: hold; observe: only logs)"],
   // the second address (SMA d_project_planning): unset, the checkout's own .agents is the planning home
   "project.planning_home": ["project", "absolute path", "the planning home: .agents/phases, .agents/planning and .agents/todos are read and written under this folder on the project's host instead of the checkout's (unset: the checkout)"],
   // the infra profile (SMA k_pl_infra): free text, one writer — `bb lane-pilot profile` and the start's profile writer

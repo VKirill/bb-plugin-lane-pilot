@@ -51,8 +51,12 @@ describe("grill-plan", () => {
   const input = { goal: "Add Redis cache in front of the API", plan: "cache GET by URL for 60s", depth: "standard" };
   it("the spec's case: walk the branches, synthesize locked, open and deferred", async () => {
     const r = await runSim("grill-plan", { input, stubs: { walk: { branches_walked: 5, questions_without_anchor: 0 }, synth: { locked: ["GET only"], open: ["invalidation on write"], risk_register: [{ risk: "stale reads", severity: "high" }] } } });
-    expect(pathOf(r)).toBe("walk synth done");
-    expect(out(r)).toMatchObject({ status: "done", branches_walked: 5, locked: ["GET only"], open: ["invalidation on write"], risk_register: [{ risk: "stale reads", severity: "high" }] });
+    expect(pathOf(r)).toBe("walk synth open");
+    // An unanswered open challenge ends the grill's own verdict open, naming the items (SMA k_v_grill) — nothing else is blocked.
+    expect(out(r)).toMatchObject({ status: "open", branches_walked: 5, locked: ["GET only"], open: ["invalidation on write"], risk_register: [{ risk: "stale reads", severity: "high" }] });
+    const clean = await runSim("grill-plan", { input, stubs: { walk: { branches_walked: 5, questions_without_anchor: 0 }, synth: { locked: ["GET only"], open: [], risk_register: [] } } });
+    expect(pathOf(clean)).toBe("walk synth done");
+    expect(out(clean)).toMatchObject({ status: "done" });
   });
 
   it("questions that cite no code anchor send the walk round once more in the same session", async () => {

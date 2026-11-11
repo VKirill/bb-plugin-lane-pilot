@@ -11,7 +11,8 @@ import { grantCommands } from "../../src/rooms/verification/worker-user";
 import { createHelperProbe } from "../../src/rooms/native-agent/server/helper-probe";
 import { queryTokenUsage, utcDay } from "../../src/rooms/usage/server/token-usage";
 import { moneyHold, spendBook, type DailyRow } from "../../src/rooms/money";
-import { CAPABILITIES, DOCUMENTARY_CELLS, capabilityState, documentaryProved } from "../../src/rooms/capability";
+import { CAPABILITIES, DOCUMENTARY_CELLS, capabilityState, documentaryProved, receiptKey } from "../../src/rooms/capability";
+import { NATIVE_HOOK_SOURCES } from "../../src/rooms/contracts";
 import { createCapabilities, runCapabilityCli } from "../../src/rooms/capability/server";
 import { documentaryGateOf } from "../../src/rooms/platform/server/pm-spawn";
 import { rpcContract } from "../../src/rooms/contracts";
@@ -155,15 +156,19 @@ describe("providers, models, accounts", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("[sma:m_pr_required] with capability.documentary_gate unset an unproven provider is not refused; set to hold it is refused with capability_unproven:<provider>:<cell>", async () => {
+  it("[sma:m_pr_required] with capability.documentary_gate unset a provider without receipts is observed, not refused; a red receipt is refused with capability_unproven:<provider>:<cell>", async () => {
     const { bb, db, harness } = open();
     harness.sdk.stub("providers.list", async () => [{ id: "codex", pluginId: "provider-codex" }]);
     harness.sdk.stub("plugins.list", async () => [{ id: "provider-codex", version: "0.1.0" }]);
     createCapabilities({ db, bb, log: () => undefined, isDisposed: () => false } as never, { startHelperProbe: async () => ({ ok: true }), providerBreaker: { record: () => undefined } } as never);
     const gate = documentaryGateOf(bb)!;
     expect(await gate.deny("codex", "gpt-6-luna", "projA")).toBeNull();
-    saveProjectSetting(db, "projA", "capability.documentary_gate", "hold");
+    const { saveReceipt } = await import("../../src/rooms/capability/store");
+    const key = receiptKey({ version: "0.1.0", model: "gpt-6-luna", settings: [], hooks: JSON.stringify(NATIVE_HOOK_SOURCES) });
+    saveReceipt(db, { providerId: "codex", version: key, capability: "documentary.nested", state: "not_supported", model: "gpt-6-luna", detail: null, at: 1 } as never);
     expect(await gate.deny("codex", "gpt-6-luna", "projA")).toMatch(/^capability_unproven:codex:documentary\./);
+    saveProjectSetting(db, "projA", "capability.documentary_gate", "observe");
+    expect(await gate.deny("codex", "gpt-6-luna", "projA")).toBeNull();
     await harness.lifecycle.dispose();
   });
 

@@ -122,7 +122,7 @@ describe("parity d4 workflows b-2", () => {
     expect(prompt).toMatch(/section headed `## <milestone> — <date>`/);
     expect(prompt).toMatch(/keep every earlier section as it is; never overwrite/);
     const input = { goal: "Stats export", goals: [{ id: "g1", done_when: "d", evidence: "e" }] };
-    const status = { open_tasks: 0, unmerged: 0, gate_ok: true, running_attempts: 0 };
+    const status = { open_tasks: 0, unmerged: 0, gate_ok: true, running_attempts: 0, gate_state: "none", unmerged_seen: 0, uncovered_reqs: [] };
     const stubs = { "lp.close": { status: "closed", staged: 0 }, summary: { summary_path: "s.md" } };
     const off = await runSim("milestone-close", { input, stubs: { ...stubs, "lp.run_status": { ...status, milestone_summary: "off" } } });
     expect(pathOf(off)).not.toContain("summary");
@@ -143,11 +143,11 @@ describe("parity d4 workflows b-2", () => {
 
   it("[default] milestone-close with today's inputs and settings runs main's model and human nodes, and writes no summary", async () => {
     const r = await runSim("milestone-close", { input: { goal: "Stats export", goals: [{ id: "g1", done_when: "d", evidence: "e" }] },
-      stubs: { "lp.run_status": { open_tasks: 0, unmerged: 0, gate_ok: true, running_attempts: 0 }, "lp.close": { status: "closed", staged: 2 } }, humans: { approve_knowledge: { answer_kind: "deferred", approved_ids: [] } } });
+      stubs: { "lp.run_status": { open_tasks: 0, unmerged: 0, gate_ok: true, running_attempts: 0, gate_state: "none", unmerged_seen: 0, uncovered_reqs: [] }, "lp.close": { status: "closed", staged: 2 } }, humans: { approve_knowledge: { answer_kind: "deferred", approved_ids: [] } } });
     expect(costly(r)).toEqual(["retro", "close", "approve_knowledge"]);
     expect(pathOf(r)).toBe("status retro close approve_knowledge archive closed");
     expect(r.skipped).toEqual([]);
-    const open = await runSim("milestone-close", { input: { goal: "Stats export" }, stubs: { "lp.run_status": { open_tasks: 2, unmerged: 0, gate_ok: true, running_attempts: 0 }, "lp.close": { status: "closed", staged: 0 } }, humans: { ask_finish: { answer_kind: "close_anyway" } } });
+    const open = await runSim("milestone-close", { input: { goal: "Stats export" }, stubs: { "lp.run_status": { open_tasks: 2, unmerged: 0, gate_ok: true, running_attempts: 0, gate_state: "none", unmerged_seen: 0, uncovered_reqs: [] }, "lp.close": { status: "closed", staged: 0 } }, humans: { ask_finish: { answer_kind: "close_anyway" } } });
     expect(pathOf(open)).toBe("status ask_finish retro close approve_knowledge archive closed");
     expect(costly(open)).toEqual(["ask_finish", "retro", "close"]);
   });

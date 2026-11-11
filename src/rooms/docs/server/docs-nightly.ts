@@ -922,7 +922,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       let result:Record<string,unknown>={state:"running"};
       try{
         for(let round=0;round<60&&!ctx.isDisposed()&&!c.signal.aborted;round++){
-          result=await services.runDocsMaintenance({threadId,projectId,runId,taskId,timeoutSec:60,workflow:{runId:c.runId,stepKey:c.stepKey,nodeId:c.nodeId}});
+          result=await services.runDocsMaintenance({threadId,projectId,runId,taskId,timeoutSec:60,assignment:text(input(c,"assignment"))||undefined,workflow:{runId:c.runId,stepKey:c.stepKey,nodeId:c.nodeId}});
           if(result.state!=="running") break;
         }
       }catch(cause){

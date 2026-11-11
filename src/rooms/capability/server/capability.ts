@@ -3,7 +3,7 @@ import { claimDailySchedule, listProviderSettingRows, listRunsWithPmThread, proj
 import { scheduleIsolated, bindDocumentaryGate } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { SANDBOX_PROJECT_ID } from "../../contracts";
-import { CAPABILITIES, DOCUMENTARY_CELLS, adapterVersions, capabilityState, capabilityTable, documentaryProved, dueProbes, probeSetupFailed, providersInUse, receiptKey } from "../logic";
+import { CAPABILITIES, DOCUMENTARY_CELLS, adapterVersions, capabilityState, capabilityTable, dueProbes, probeSetupFailed, providersInUse, receiptKey } from "../logic";
 import { listReceipts, saveReceipt } from "../store";
 import { isNotFound, orMiss } from "@lane-pilot/kit";
 import { NATIVE_HOOK_SOURCES } from "../../contracts";
@@ -131,20 +131,38 @@ export function createCapabilities(ctx: ServerCore, services: Services) {
   }
   async function documentaryProof(providerId: string): Promise<string | null> {
     const version = (await cachedVersions()).get(providerId);
-    if (!version) return `capability_unproven:${providerId}:documentary`;
+    if (!version) return null;
     const receipts = listReceipts(db);
-    const missing = DOCUMENTARY_CELLS.find((cell) => capabilityState(receipts, providerId, version, cell) !== "supported");
-    return missing ? `capability_unproven:${providerId}:${missing}` : null;
+    // Only a red receipt holds (SMA ap_caps_held): a missing or stale one is observed, never refused, so a new adapter
+    // version after a deploy stops nothing. The hold names the receipt and the command that re-runs the probe.
+    const red = DOCUMENTARY_CELLS.find((cell) => capabilityState(receipts, providerId, version, cell) === "not_supported");
+    return red ? `capability_unproven:${providerId}:${red} (receipt ${providerId} ${version} ${red}=not_supported; re-probe: bb lane-pilot capabilities --probe)` : null;
   }
 
-  // Off unless the project asks for it (`capability.documentary_gate` = hold): the table is observed first, a refusal is opt-in.
+  // Hold by default (SMA ap_caps/ap_caps_held): `capability.documentary_gate` = observe only logs; unset holds —
+  // but only on a red receipt, so an install without one is exactly as before.
   const holds = (projectId: string | undefined): boolean => {
     const raw = projectId ? projectSettingValue(db, projectId, "capability.documentary_gate") : undefined;
-    try { return raw !== undefined && JSON.parse(raw) === "hold"; } catch { return raw === "hold"; }
+    let value: unknown = raw;
+    try { value = raw !== undefined ? JSON.parse(raw) : undefined; } catch { /* stored as a bare word */ }
+    return value !== "observe" && value !== "off";
   };
   bindDocumentaryGate(bb, {
-    deny: async (providerId, _model, projectId) => holds(projectId) ? documentaryProof(providerId) : null,
-    proved: async (projectId) => holds(projectId) ? documentaryProved(listReceipts(db), await cachedVersions()) : null,
+    // The gate reads the provider table through BB; when that read fails the answer is «observed», never a failed spawn:
+    // a hold needs a red receipt that was actually read.
+    deny: async (providerId, _model, projectId) => holds(projectId) ? documentaryProof(providerId).catch((cause) => { ctx.log(`documentary gate: the provider table did not answer (${cause instanceof Error ? cause.message : String(cause)}); nothing is held`); return null; }) : null,
+    // The offer a documentary pick is drawn from: every provider except one whose installed key has a red receipt.
+    // A provider with no known version, or with an observed, missing or supported receipt, stays in the offer — the
+    // same rule `deny` applies, so the pick and the spawn never disagree.
+    proved: async (projectId) => {
+      if (!holds(projectId)) return null;
+      const red = new Set<string>();
+      try {
+        for (const [providerId] of await cachedVersions())
+          if (await documentaryProof(providerId)) red.add(providerId);
+      } catch { return null; }
+      return red.size ? { has: (providerId: string) => !red.has(providerId) } : null;
+    },
   });
 
   return { capabilities: { sweep, table, documentaryProof } };

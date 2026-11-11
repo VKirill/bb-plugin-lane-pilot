@@ -33,6 +33,7 @@ import { ownerLocale, workflowHumanDetail } from "../../relay/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { hostContract } from "../../contracts";
 import { oneLine, ownsPathProblems, parkRoadmapRow, quickRow } from "../../phase";
+import { instructionForms } from "../../project-life";
 import { pageReviewByAgent } from "../../critique/server";
 
 import type { DispatchWriter } from "../../platform/server";
@@ -813,8 +814,33 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       set.push(key);
     }
     for (const [key, problem] of problems) ctx.log(`lp.profile_write: pair «${key.slice(0, 40)}» refused: ${problem}`);
+    await writeInstructionForms(rt, profile);
     return { refused, set, reasons: problems.map(([key, problem]) => `${key.slice(0, 40)}: ${problem}`) };
   });
+
+  // The agent-instruction forms go with the start's profile write (SMA k_d_tpl_instructions): CLAUDE.md and the Copilot
+  // instructions are pointers to PROJECT.md, and the «Developer preferences» section is appended to it. The pointers are
+  // written only where PROJECT.md exists, and create-only: BB answers `conflict` to a null-hash write over an existing
+  // file, so a person's CLAUDE.md is never replaced. (writePhaseBook cannot do this: it takes phase and planning marks only.)
+  async function writeInstructionForms(rt: ChainRuntime, profile: unknown): Promise<void> {
+    const checkout = await bestEffort(ctx.log, "instruction forms checkout", pmCheckout(rt), null);
+    if (!checkout) return;
+    const root = (await planHome(rt.projectId, checkout)) ?? checkout.path;
+    const projectPath = ".agents/planning/PROJECT.md";
+    const host = ctx.host as never as { call(m: string, i: unknown, o?: unknown): Promise<Record<string, unknown>> };
+    const current = await bestEffort(ctx.log, "instruction forms PROJECT.md", host.call("readBoundedFile", { requestedHostId: checkout.hostId, projectCwd: root, relativePath: projectPath, offset: 0, maxLines: 2000 }, { hostId: checkout.hostId, timeoutMs: 20_000 }), null);
+    if (!current || typeof current.content !== "string" || !current.content.trim()) return;
+    const prof = rec(profile);
+    const forms = instructionForms({ name: checkout.path.split("/").filter(Boolean).pop() ?? "project", test: str(prof.test_command), language: str(prof.stack), style: str(prof.style) });
+    const write = (rootPath: string, path: string, content: string, expectedSha256: string | null) =>
+      bestEffort(ctx.log, `instruction forms ${path}`, bb.sdk.files.write({ hostId: checkout.hostId, rootPath, path: `${rootPath}/${path}`, content, contentEncoding: "utf8", createParents: true, expectedSha256 }), null);
+    for (const [path, content] of [["CLAUDE.md", forms.claudeMd], [".github/copilot-instructions.md", forms.copilotInstructions]] as const) {
+      noteEngineWrite(checkout.path, path);
+      await write(checkout.path, path, content, null);
+    }
+    if (current.truncated !== true && typeof current.sha256 === "string" && current.sha256 === sha256Hex(current.content) && !current.content.includes("Developer preferences"))
+      await write(root, projectPath, `${current.content.trimEnd()}\n\n${forms.preferences}`, current.sha256);
+  }
 
   // A project's switch for a new behaviour (unset = off, as before the change): read when the node runs, so any graph can use it.
   const flagOf = (rt: ChainRuntime, key: string): boolean => switchOn(loadProjectSettings(db, rt.projectId, rt.runId ? getRunSettingsScopes(db, rt.runId) : []), key);
@@ -825,9 +851,12 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const checkout = await pmCheckout(rt);
     const text = (await bestEffort(ctx.log, "requirements read", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: (await planHome(rt.projectId, checkout)) ?? checkout.path, command: "cat .agents/planning/REQUIREMENTS.md 2>/dev/null || true", timeoutSec: 15, timeoutMs: 20_000 }), null))?.stdout ?? "";
     const ids = [...new Set([...text.matchAll(/\bREQ-[A-Za-z0-9][\w.-]*/g)].map((hit) => hit[0]))];
-    const covered = new Set(listPhases(db, { projectId: rt.projectId }).filter((phase) => phase.stage === "closed" || phase.state === "closed")
-      .flatMap((phase) => (phase.record.plan?.items ?? []).flatMap((item) => item.covers ?? [])));
-    return { uncovered: ids.filter((id) => !covered.has(id)), covered: ids.filter((id) => covered.has(id)), total: ids.length };
+    // The coverage matrix (SMA k_c_auditms): every requirement id against the closed phases that cover it.
+    const byPhase = listPhases(db, { projectId: rt.projectId }).filter((phase) => phase.stage === "closed" || phase.state === "closed")
+      .map((phase) => ({ id: phase.id, covers: (phase.record.plan?.items ?? []).flatMap((item) => item.covers ?? []) }));
+    const covered = new Set(byPhase.flatMap((phase) => phase.covers));
+    const matrix = ids.map((id) => `${id}: ${byPhase.filter((phase) => phase.covers.includes(id)).map((phase) => phase.id).join(", ") || "—"}`).join("\n");
+    return { uncovered: ids.filter((id) => !covered.has(id)), covered: ids.filter((id) => covered.has(id)), total: ids.length, matrix };
   };
 
   action("lp.run_status", async (c, lane) => {
@@ -846,9 +875,9 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const unlanded = phases.filter((phase) => !phase.closedAt && phase.record.candidate && !phase.record.candidate.off && Object.keys(phase.record.candidate.trees).length > 0 && !phase.record.candidate.landedAt).length;
     const mine = new Set(phases.map((phase) => phase.id));
     const phaseTrees = listOpenWorktrees(db).filter((tree) => tree.owner_kind === "phase" && !!tree.owner_id && mine.has(tree.owner_id)).length;
-    const coverage = await bestEffort(ctx.log, "requirement coverage", requirementCoverage(rt), { uncovered: [] as string[], covered: [] as string[], total: 0 });
+    const coverage = await bestEffort(ctx.log, "requirement coverage", requirementCoverage(rt), { uncovered: [] as string[], covered: [] as string[], total: 0, matrix: "" });
     return { open_tasks: tasks.length - latest.filter((attempt) => attempt.state === "accepted").length - failed, failed_tasks: failed, unmerged: 0, gate_ok: failed === 0, running_attempts: open.length, merged_commits: list(c.resolve("ctx.merged_commits")).map(String),
-      gate_state: gateState, unmerged_seen: Math.max(unlanded, phaseTrees), uncovered_reqs: coverage.uncovered,
+      gate_state: gateState, unmerged_seen: Math.max(unlanded, phaseTrees), uncovered_reqs: coverage.uncovered, coverage_matrix: coverage.matrix,
       retro_living: flagOf(rt, "retro.living") ? "on" : "off", milestone_archive: flagOf(rt, "milestone.archive") ? "on" : "off", milestone_summary: flagOf(rt, "milestone.summary") ? "on" : "off" };
   });
 

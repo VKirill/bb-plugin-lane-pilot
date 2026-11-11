@@ -4,7 +4,7 @@ import { claimDocsSpawn, getRun, getTask, listStageReceipts } from "../../storag
 import { bbServiceTier, listedServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../tasks";
 import { extractModelJson } from "@lane-pilot/workflow-engine";
-import { docsInputHash, docsMaintenancePrompt, docsReviewPrompt, docsSelection, parseDocsSettings, selectDocsPages, validateDocsEdits } from "../docs";
+import { docsInputHash, docsMaintenancePrompt, docsReviewPrompt, docsSelection, DOCS_NEW_PAGE, parseDocsSettings, selectDocsPages, validateDocsEdits } from "../docs";
 import type { DocsPage } from "../../contracts/docs-page";
 import type { HelperRole } from "../../contracts";
 import { boundedAgentName } from "../../contracts/review-vocabulary";
@@ -17,6 +17,7 @@ import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from ".
 import { recordStage } from "../../runs/server";
 import { bestEffort, stringAt, valueAt } from "@lane-pilot/kit";
 import { observeStageChild } from "@lane-pilot/thread-observe";
+import { postOwnerItem } from "../../owner-waiting";
 import type { ServerCore } from "../../contracts/server";
 
 import type { DocsNightlyApi } from "./docs-nightly";
@@ -33,7 +34,9 @@ interface Services {
 export function createDocsStage(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, host, workspaceExecutionEnvironment } = ctx;
 
-  async function runDocsMaintenance(args:{threadId:string;projectId:string;runId:string;taskId:string;timeoutSec?:number;workflow?:{runId:string;stepKey?:string;nodeId?:string}}):Promise<Record<string,unknown>> {
+  async function runDocsMaintenance(args:{threadId:string;projectId:string;runId:string;taskId:string;timeoutSec?:number;workflow?:{runId:string;stepKey?:string;nodeId?:string};
+    /** The owner's assignment (SMA k_ag_docwriter): a document to create or update, runs even when no page changed. */
+    assignment?:string}):Promise<Record<string,unknown>> {
     const metadata = await bb.sdk.threads.getPluginMetadata({threadId:args.threadId});
     if (valueAt(metadata,"role") !== "pm" || stringAt(metadata,"lanePilotRunId") !== args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
     const run = getRun(db,args.runId), config = await configForRun(args.projectId, run), taskRow = getTask(db,args.taskId);
@@ -141,13 +144,13 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
       }
       const raw=(await bb.sdk.threads.output({threadId:childId})).output; if(typeof raw!=="string"||!raw.trim()) throw new Error("docs_maintainer_output_empty");
       let decoded:unknown; try { decoded=extractModelJson(raw,"array"); } catch { throw new Error("docs_maintainer_output_must_be_json_array"); }
-      const edits=validateDocsEdits(decoded,snapshot.pages,pageCap);
+      const edits=validateDocsEdits(decoded,snapshot.pages,pageCap,{newPages:Boolean(args.assignment?.trim())});
       // The document stage gate (SMA ag_doc_gate): a second role reads the edits before a page is written. The author's
-      // own thread can never be the reviewer; the pages are written and committed only on the review's pass. It runs
-      // where the project set docs.review to gate and there is an edit to read; by default the pass writes as before,
-      // because a refusal has no rework round yet and would only fail the pass.
+      // own thread can never be the reviewer; the pages are written and committed only on the review's pass. Gate by
+      // default; docs.review=off writes without a review. A refusal sends the notes back to the maintainer once (the
+      // rework round the receipt keeps as `rework.round`); a second refusal leaves an owner item and fails the pass.
       let reviewed:{threadId?:string;role?:string;verdict:string}|null=null;
-      if (String(settings["docs.review"]??"off")==="gate"&&edits.length) {
+      if (String(settings["docs.review"]??"gate")==="gate"&&edits.length) {
         const priorReview=(docsResultObject(prior).review ?? null) as {threadId?:string;role?:string}|null;
         if (priorReview?.threadId === childId) {
           recordStage(db,{...base,state:"failed",providerId:docsProviderId,model:docsModelId,threadId:childId,
@@ -173,14 +176,25 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
         let verdict:"pass"|"changes"="changes"; let notes="";
         try { const parsed=extractModelJson(String(reviewRaw),"object") as {verdict?:unknown;notes?:unknown}; verdict=parsed.verdict==="pass"?"pass":"changes"; notes=String(parsed.notes??"").slice(0,1000); } catch { /* an unreadable verdict asks for changes */ }
         if (verdict!=="pass") {
+          const reworkRound=(docsResultObject(prior).rework as {round?:number}|undefined)?.round ?? 0;
+          if (reworkRound<1) {
+            // One rework round: the notes go back to the maintainer as a fresh author child; its edits are reviewed again.
+            const reworkId=await spawnDocsChild("docs-maintainer",docsMaintenancePrompt({since:docsSettings.since,pages:snapshot.pages,pageCap,agent:docsAgent,assignment:args.assignment,reviewNotes:notes||"the review asked for changes"}));
+            persistRunning(reworkId,{...prior,review:{verdict,notes},rework:{round:reworkRound+1}},`docs_review_refused: rework round ${reworkRound+1}`);
+            return {runId:args.runId,taskId:args.taskId,state:"running",threadId:reworkId,reason:"observing",detail:"docs_review_rework"};
+          }
           const reason=`docs_review_refused${notes?`:${notes}`:""}`;
+          postOwnerItem(db,{key:`docs_review_refused:${args.runId}:${args.taskId}`,source:"docs",kind:"docs_review",projectId:args.projectId,wake:false,
+            what:"Проверка документов отклонила правки второй раз — задача ждёт решения.",
+            why:`Ревьюер документов не пропустил правки после одного круга доработки${notes?`: ${notes.slice(0,300)}`:"."}`,
+            evidence:[{kind:"run",ref:args.runId,label:"docs-maintenance"}]});
           recordStage(db,{...base,state:"failed",providerId:docsProviderId,model:docsModelId,threadId:childId,reason,result:{...prior,review:{...priorReview,verdict},error:"the docs review asked for changes"}});
           return {runId:args.runId,taskId:args.taskId,state:"failed",reason};
         }
         reviewed={...priorReview,verdict};
       }
       for (const edit of edits) {
-        await bb.sdk.files.write({hostId:config.hostId,rootPath:task.project_cwd,path:`${task.project_cwd}/${edit.path}`,content:edit.content,contentEncoding:"utf8",createParents:false,expectedSha256:edit.expectedSha256});
+        await bb.sdk.files.write({hostId:config.hostId,rootPath:task.project_cwd,path:`${task.project_cwd}/${edit.path}`,content:edit.content,contentEncoding:"utf8",createParents:true,expectedSha256:edit.expectedSha256===DOCS_NEW_PAGE?null:edit.expectedSha256});
         const readback=await bb.sdk.files.read({hostId:config.hostId,rootPath:task.project_cwd,path:`${task.project_cwd}/${edit.path}`});
         const afterContent=stringAt(readback,"content");
         if (afterContent !== edit.content) throw new Error(`docs_write_readback_mismatch:${edit.path}`);
@@ -219,7 +233,9 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
         if (threadId) return await finishObservation(threadId, snapshot);
         if (!snapshot) {
           const selected = selectDocsPages(inventory.pages as DocsPage[],docsSettings.since,docsSettings.pageCap);
-          if (!selected.pages.length) {
+          // An owner's assignment (SMA k_ag_docwriter) runs even when no page made the selection: the maintainer
+          // updates or creates the page it names.
+          if (!selected.pages.length && !args.assignment?.trim()) {
             const current=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
             if (current && !["pending","running"].includes(current.state)) {
               return {runId:args.runId,taskId:args.taskId,state:current.state,reason:"docs maintenance already has a receipt; create a new task for another run",stage:current};
@@ -244,7 +260,7 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
         if (receipt?.threadId) return await finishObservation(receipt.threadId, snapshot);
         return {runId:args.runId,taskId:args.taskId,state:"running",threadId:receipt?.threadId??null,reason:"observing",detail:"docs_spawn_claimed"};
       }
-      threadId=await spawnDocsChild("docs-maintainer",docsMaintenancePrompt({since:docsSettings.since,pages:snapshot.pages,pageCap:resolvedPageCap,agent:docsAgent}));
+      threadId=await spawnDocsChild("docs-maintainer",docsMaintenancePrompt({since:docsSettings.since,pages:snapshot.pages,pageCap:resolvedPageCap,agent:docsAgent,assignment:args.assignment}));
       persistRunning(threadId, { ...docsResultObject(receipt?.result), snapshot, spawnAttempted:true });
       receipt = listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
       return await finishObservation(threadId, snapshot);

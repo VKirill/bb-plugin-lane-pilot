@@ -137,10 +137,10 @@ async function laneAgentOption(bb: BbPluginApi, args: { providerId?: string; mod
 /**
  * A documentary stage (a helper role that produces documents, `isDocumentaryRole`) may not start on a provider whose
  * adapter version has no documentary receipt (SMA ap_caps / ap_caps_held). The capability service binds the answer
- * here; an unproved provider refuses the spawn with the reason `capability_unproven:<provider>:<cell>`, before a turn
- * is spent, and the caller moves to the stage's next provider. The gate holds only in a project that set
- * `capability.documentary_gate` to `hold`; by default the table is observed and nothing is refused, so a void receipt
- * (a new adapter version, a changed hook) never stops a project's planning or docs.
+ * here; a provider whose adapter version has a red documentary receipt refuses the spawn with the reason
+ * `capability_unproven:<provider>:<cell>`, before a turn is spent, and the caller moves to the stage's next provider.
+ * The gate holds by default; `capability.documentary_gate` = observe only logs. Only a red receipt holds — a missing
+ * or stale one (a new adapter version, a changed hook) is observed and never stops a project's planning or docs.
  */
 export class CapabilityUnproven extends Error {
   constructor(readonly why: string) { super(why); this.name = "CapabilityUnproven"; }
@@ -148,8 +148,8 @@ export class CapabilityUnproven extends Error {
 export type DocumentaryGate = {
   /** The reason a provider may not run a documentary stage now (`capability_unproven:<provider>:<cell>`), or null when proved. */
   deny(providerId: string, model: string, projectId?: string): Promise<string | null>;
-  /** The providers whose installed adapter version proved every documentary cell: the offer a documentary pick is drawn from. Null where the gate is off. */
-  proved(projectId?: string): Promise<Set<string> | null>;
+  /** The offer a documentary pick is drawn from: `has` is false only for a provider whose installed adapter version has a red documentary receipt. Null where the gate is off or nothing is red. */
+  proved(projectId?: string): Promise<{ has(providerId: string): boolean } | null>;
 };
 const documentaryGateByApi = new WeakMap<BbPluginApi, DocumentaryGate>();
 
