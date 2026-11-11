@@ -14,7 +14,7 @@ import type { RunRow } from "../../storage";
 import { getJudgment, jev } from "@lane-pilot/jev";
 import { citationCheckJudgment } from "@lane-pilot/jev/judgments/citation-check";
 import { postOwnerItem } from "../../owner-waiting";
-import { BUILTIN_PRESETS } from "@lane-pilot/models";
+import { BUILTIN_PRESETS, switchOn } from "@lane-pilot/models";
 import type { Field, GraphNode } from "@lane-pilot/workflow-engine";
 import { createTaskLinter } from "../../tasks/server";
 import { agentRequest, createWorkflowAgents, stepPacket, withResolvedModel } from "./workflow-agent";
@@ -700,7 +700,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     if (checkout) {
       // The planning files of a started project (SMA k_wst_quick): an existing install asks only for what is still missing.
       // With a planning home, the planning part of the probe is asked there; the rest stays in the checkout.
-      const research = switchOf(rt, "project.start_research") === "on";
+      const research = flagOf(rt, "project.start_research");
       const home = research ? await planHome(rt.projectId, checkout) : null;
       const planningLs = "ls .agents/planning/VALUE-MAP.md .agents/planning/ROADMAP.md .agents/planning/PROFILE.md .agents/planning/profile.json 2>/dev/null";
       const ran = await bestEffort(ctx.log, "workflow state probe", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: `ls .agents/PASSPORT.md .agents/passport.md PROJECT.md 2>/dev/null | head -1; echo ---; ls package.json src/ui app components 2>/dev/null | head -3${research && !home ? `; echo ---; ${planningLs}` : ""}`, timeoutSec: 20, timeoutMs: 30_000 }), null);
@@ -763,7 +763,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   action("lp.tree_counts", async (c, rt) => {
     const params = rec(rec(c.node).params);
     const none = { enabled: "off", sources: 0, tests: 0, docs: 0, planning: 0, commits: 0, counts_note: "", profile_note: "", recap_note: "" };
-    if (switchOf(rt, "project.start_research") !== "on") return none;
+    if (!flagOf(rt, "project.start_research")) return none;
     const checkout = await bestEffort(ctx.log, "tree counts checkout", pmCheckout(rt), null);
     if (!checkout) return { ...none, enabled: "on", profile_note: str(params.profile_note), recap_note: str(params.recap_note) };
     const ran = await bestEffort(ctx.log, "tree counts", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path,
@@ -817,6 +817,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   });
 
   // A project's switch for a new behaviour (unset = off, as before the change): read when the node runs, so any graph can use it.
+  const flagOf = (rt: ChainRuntime, key: string): boolean => switchOn(loadProjectSettings(db, rt.projectId, rt.runId ? getRunSettingsScopes(db, rt.runId) : []), key);
   const switchOf = (rt: ChainRuntime, key: string): string => String(loadProjectSettings(db, rt.projectId, rt.runId ? getRunSettingsScopes(db, rt.runId) : [])[key] ?? "").trim().toLowerCase();
 
   // Ids of REQUIREMENTS.md that no closed phase of the project covers in its plan items (SMA k_c_auditms). Advisory: it never stops a close.
@@ -848,14 +849,14 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const coverage = await bestEffort(ctx.log, "requirement coverage", requirementCoverage(rt), { uncovered: [] as string[], covered: [] as string[], total: 0 });
     return { open_tasks: tasks.length - latest.filter((attempt) => attempt.state === "accepted").length - failed, failed_tasks: failed, unmerged: 0, gate_ok: failed === 0, running_attempts: open.length, merged_commits: list(c.resolve("ctx.merged_commits")).map(String),
       gate_state: gateState, unmerged_seen: Math.max(unlanded, phaseTrees), uncovered_reqs: coverage.uncovered,
-      retro_living: switchOf(rt, "retro.living") === "on" ? "on" : "off", milestone_archive: switchOf(rt, "milestone.archive") === "on" ? "on" : "off", milestone_summary: switchOf(rt, "milestone.summary") === "on" ? "on" : "off" };
+      retro_living: flagOf(rt, "retro.living") ? "on" : "off", milestone_archive: flagOf(rt, "milestone.archive") ? "on" : "off", milestone_summary: flagOf(rt, "milestone.summary") ? "on" : "off" };
   });
 
   // The full-gate mark (SMA k_ws_fullgate), only where the project set ship.full_gate to on; unset the node answers ok as it always did.
   // On: the ship needs proof the integration gate ran green no more than six hours ago, and on the head being shipped when the run
   // knows it (input head, else the phase candidate's one verified head). A project without a gate passes as before; a configured gate never run does not.
   action("lp.integration_gate_status", async (c, rt) => {
-    if (switchOf(rt, "ship.full_gate") !== "on") return { ok: true, failing: [], skipped: true };
+    if (!flagOf(rt, "ship.full_gate")) return { ok: true, failing: [], skipped: true };
     const gate = latestGateRun(db, rt.projectId);
     const phaseId = str(c.resolve("$inputs.phase_id"));
     const verified = Object.values((phaseId ? getPhase(db, phaseId) : undefined)?.record.candidate?.verified ?? {});
@@ -885,7 +886,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   // with a dot plus the first 8 hex of the sha of the full name, so two long goals with one beginning do not collide. A second archive
   // of the same name keeps the first snapshot. Every write is best effort: a failure is logged and returned, never thrown, so a close goes on.
   action("lp.milestone_archive", async (c, rt) => {
-    if (switchOf(rt, "milestone.archive") !== "on") return { folder: "", files: [] as string[], kept: false, skipped: true };
+    if (!flagOf(rt, "milestone.archive")) return { folder: "", files: [] as string[], kept: false, skipped: true };
     let dir = "";
     try {
       const checkout = await pmCheckout(rt);
@@ -925,7 +926,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   // plain line, an id that is not INS-<8 hex> is dropped, and a failed write is logged, not thrown.
   action("lp.retro_living", async (c, rt) => {
     const path = ".agents/retro/LIVING.md";
-    if (switchOf(rt, "retro.living") !== "on") return { updated: 0, total: 0, path: "", skipped: true };
+    if (!flagOf(rt, "retro.living")) return { updated: 0, total: 0, path: "", skipped: true };
     try {
       const checkout = await pmCheckout(rt);
       const line = (value: unknown, max: number) => str(value).replace(/[<>`\r\n\t]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max);

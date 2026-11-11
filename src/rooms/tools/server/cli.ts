@@ -9,7 +9,7 @@ import { cancelAttemptById, finishRunSafely, pauseRun } from "../../runs/server"
 import { conveyorState, renderTimeline, setConveyor, taskTimeline, unknownReasons } from "../../runs";
 import { TASK_RECORD_USAGE, blindRecord, readsBlind, renderTaskRecord, taskRecord } from "./task-record";
 import {bestEffort, isNotFound, maskCredentials, orMiss, outputText, pluginRootFromModule, spawnAsync, stringAt, valueAt} from "@lane-pilot/kit";
-import { PAIR_ROLE_SPECS } from "@lane-pilot/models";
+import { PAIR_ROLE_SPECS, switchOn } from "@lane-pilot/models";
 import {listQaHosts, runSkillsCli, parseSkillHub, SKILLS_USAGE} from "../../platform/server";
 import {codeFactsOnHost, CODE_FACTS_REFRESH} from "../../platform";
 import {runOnHost} from "@lane-pilot/host-calls";
@@ -977,7 +977,7 @@ ${ERRANDS_USAGE}` },
             if (bound.refused) return { exitCode:1, stderr:bound.refused };
             if (!bound.projectId) return { exitCode:1, stderr:"no project: pass --project <id> or --cwd <checkout> outside a BB thread" };
             const chain = flagValue("--cwd") ? settingsScopesForWorkspacePath(db, flagValue("--cwd")!) : [];
-            if (loadProjectSettings(db, bound.projectId, chain)["hook.prompt_recall"] === "off") return { exitCode:0, stdout:"" };
+            if (!switchOn(loadProjectSettings(db, bound.projectId, chain), "hook.prompt_recall")) return { exitCode:0, stdout:"" };
             const hits = confirmedWordHits(db, bound.projectId, args[queryAt + 1]!, { chain, limit: 3 });
             const oneLine = (text: string) => maskCredentials(text.replace(/\s+/g, " ").trim()).text;
             return { exitCode:0, stdout: hits.length ? `${hits.map((record) => `- [${record.id}] ${oneLine(record.content).slice(0, 400)}`).join("\n")}\n` : "" };
@@ -1043,7 +1043,7 @@ ${ERRANDS_USAGE}` },
           // The caller's sections: the rules of a sibling section of an umbrella project stay out of the pack.
           const chain = cwd ? settingsScopesForWorkspacePath(db, cwd) : [];
           const settings = loadProjectSettings(db, projectId, chain);
-          if (settings["hook.subagent_pack"] !== "on" || !memorySettingsFor(settings).enabled) return { exitCode:0, stdout:JSON.stringify({ rules: [], lessons: [] }) };
+          if (!switchOn(settings, "hook.subagent_pack") || !memorySettingsFor(settings).enabled) return { exitCode:0, stdout:JSON.stringify({ rules: [], lessons: [] }) };
           const prompt = args.filter((arg, i) => !arg.startsWith("--") && args[i - 1] !== "--cwd" && args[i - 1] !== "--project").join(" ").slice(0, 300);
           const oneLine = (text: string, max: number) => maskCredentials(text.replace(/\s+/g, " ").trim()).text.slice(0, max);
           const rules = pmRulesOf(db, projectId, chain).filter((rule) => rule.always).map((rule) => oneLine(rule.rule, 200)).slice(0, 8);

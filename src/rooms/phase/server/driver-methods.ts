@@ -1,3 +1,4 @@
+import { switchOn } from "@lane-pilot/models";
 import { phaseWordItemKey, phaseWordItemPrefix } from "./word-item";
 import { randomUUID } from "node:crypto";
 import { cancelAttemptById } from "../../runs/server";
@@ -70,25 +71,25 @@ export function installMethods(tools: MethodsTools) {
     book(phase, "goal", "opened", `phase opened: ${input.title}${ownerWords ? " (the owner's word is asked at the turns: owner.words on)" : ""}`);
     const record: PhaseRecord = { ownerWords, waveReview, issueCap, scope: { revisions: 0, withdrawn: [] },
       autonomous: String(settings["phase.autonomous"] ?? "off") === "on", subagents: String(settings["phase.subagents"] ?? "on") !== "off",
-      planBounce: String(settings["phase.plan_bounce"] ?? "off") === "on",
+      planBounce: switchOn(settings, "phase.plan_bounce"),
       // The switches below are copied once, here, and each is read from the record as `=== true` (an absent field is off): a phase opened
       // before them, and a project that sets nothing, run exactly as they always did. phase.commit_docs is read as `=== false`.
-      ...(String(settings["phase.commit_docs"] ?? "on") === "off" ? { commitDocs: false } : {}),
-      ...(String(settings["phase.threat_closure"] ?? "off") === "on" ? { threatClosure: true } : {}),
-      ...(String(settings["phase.design_points"] ?? "off") === "on" ? { designPoints: true } : {}),
-      ...(String(settings["phase.doc_files"] ?? "off") === "on" ? { docFiles: true } : {}),
-      ...(String(settings["phase.ambiguity_gate"] ?? "off") === "on" ? { ambiguityGate: true } : {}),
-      ...(String(settings["phase.piece_notes"] ?? "off") === "on" ? { pieceNotes: true } : {}),
+      ...(!switchOn(settings, "phase.commit_docs") ? { commitDocs: false } : {}),
+      ...(switchOn(settings, "phase.threat_closure") ? { threatClosure: true } : {}),
+      ...(switchOn(settings, "phase.design_points") ? { designPoints: true } : {}),
+      ...(switchOn(settings, "phase.doc_files") ? { docFiles: true } : {}),
+      ...(switchOn(settings, "phase.ambiguity_gate") ? { ambiguityGate: true } : {}),
+      ...(switchOn(settings, "phase.piece_notes") ? { pieceNotes: true } : {}),
       // Off unless the project switched the browser check on: an unset key keeps visible work as it was before the live check.
       liveCheck: ["on", "true", "1"].includes(String(settings["browser_qa.enabled"] ?? "").toLowerCase()),
       branch: (() => { const mode = String(settings["phase.branch"] ?? "none"); return mode === "phase" || mode === "milestone" ? mode : "none"; })(), ...(input.roadmapRow ? { roadmapRow: input.roadmapRow } : {}), ...(input.rails ? { rails: true } : {}),
-      ...(String(settings["phase.research"] ?? "off") === "on" ? { research: "on" as const } : {}),
-      ...(String(settings["phase.pattern_map"] ?? "off") === "on" ? { patternMap: "on" as const } : {}),
-      ...(String(settings["phase.validation"] ?? "off") === "on" ? { validation: "on" as const } : {}),
-      ...(String(settings["phase.draw_material"] ?? "off") === "on" ? { drawMaterial: "on" as const } : {}),
+      ...(switchOn(settings, "phase.research") ? { research: "on" as const } : {}),
+      ...(switchOn(settings, "phase.pattern_map") ? { patternMap: "on" as const } : {}),
+      ...(switchOn(settings, "phase.validation") ? { validation: "on" as const } : {}),
+      ...(switchOn(settings, "phase.draw_material") ? { drawMaterial: "on" as const } : {}),
       ...(String(settings["phase.train"] ?? "on") === "off" ? { train: false } : {}),
-      ...(String(settings["phase.diagnose"] ?? "off") === "on" ? { diagnose: true } : {}),
-      ...(String(settings["phase.gray_areas"] ?? "off") === "on" ? { grayAreas: true } : {}) };
+      ...(switchOn(settings, "phase.diagnose") ? { diagnose: true } : {}),
+      ...(switchOn(settings, "phase.gray_areas") ? { grayAreas: true } : {}) };
     if (input.legacy) {
       // Legacy mode without signature: a plan written before the phase existed is admitted on its own; the book says so.
       record.context = { docs: [], sha: sha256Hex(`legacy:${id}`), signedAt: now(), legacy: true };

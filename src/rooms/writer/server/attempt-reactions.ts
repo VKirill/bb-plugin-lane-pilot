@@ -1,7 +1,7 @@
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { getAttempt, getReasoningTrace, getRunSettingsScopes, loadProjectSettings } from "../../storage";
 import { listAttemptChanges } from "../../rollback";
-import { settingOn } from "@lane-pilot/models";
+import { settingOn, switchOn } from "@lane-pilot/models";
 import { recordSkillSwitchMetric } from "../skill-switch";
 import { createSkillMaterializer, recordedMaterializedSkills } from "./skill-materialize";
 import { recordedWriterSkills } from "./skill-pick";
@@ -76,7 +76,9 @@ export function mountWriterAttemptFinished(ctx: ServerCore, services: Services):
     // attempt files nothing and its answer is not read, as before.
     const accepted = event.status === "accepted";
     if (!accepted && !FAILED_LESSON_STATES.has(event.status)) return;
-    if (accepted && !settingOn(loadProjectSettings(db, event.projectId, getRunSettingsScopes(db, event.runId))["writer.lesson_from_accepted"])) return;
+    const lessonSettings = accepted ? loadProjectSettings(db, event.projectId, getRunSettingsScopes(db, event.runId)) : {};
+    // A stored boolean also turns it on, as this reader always had it.
+    if (accepted && !settingOn(lessonSettings["writer.lesson_from_accepted"]) && !switchOn(lessonSettings, "writer.lesson_from_accepted")) return;
     try {
       // The read is best effort: a thread that is gone, or a host without the call, has no lesson to file.
       const threadId = event.writerThreadId;
@@ -105,7 +107,7 @@ export async function writeTaskOutcome(ctx: Pick<ServerCore, "bb" | "db" | "log"
   const { bb, db } = ctx;
   if (event.scope !== "task" || event.status === "running" || !["accepted", "blocked", "canceled"].includes(event.status)) return;
   try {
-    if (String(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)["task.outcome_file"] ?? "off") !== "on") return;
+    if (!switchOn(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID), "task.outcome_file")) return;
     const attempt = getAttempt(db, event.attemptId);
     const workspace = attempt?.workspace_path ?? null;
     const folder = taskFolderRel(event.taskId);

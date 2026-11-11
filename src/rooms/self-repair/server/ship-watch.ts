@@ -1,3 +1,4 @@
+import { switchOn } from "@lane-pilot/models";
 import type Database from "better-sqlite3";
 import { bindingSettingValue, listProjectsWithBindingSettings, loadPrototypeConfig } from "../../storage";
 import { closeOwnerItemsByPrefix, postOwnerItem } from "../../owner-waiting";
@@ -17,8 +18,7 @@ function settingCap(db: Database.Database, projectId: string, key: string, fallb
 /** ship.watch is a switch: the sweep acts on a project only where it is "on"; unset, off or an unreadable value mean off. */
 function watchIsOn(db: Database.Database, projectId: string): boolean {
   const raw = bindingSettingValue(db as never, projectId, "ship.watch");
-  if (!raw) return false;
-  try { return JSON.parse(raw) === "on"; } catch { return false; }
+  try { return switchOn({ "ship.watch": raw ? JSON.parse(raw) : undefined }, "ship.watch"); } catch { return false; }
 }
 
 /** Runs one shell command in a project's checkout on the machine that holds it: the hub never opens a project path itself. */

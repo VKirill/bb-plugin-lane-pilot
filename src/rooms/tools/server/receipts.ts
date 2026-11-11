@@ -1,3 +1,4 @@
+import { switchOn } from "@lane-pilot/models";
 import { createHash } from "node:crypto";
 import { release as osRelease } from "node:os";
 import { unknownReasons } from "../../runs";
@@ -77,7 +78,7 @@ export function preship(db: Db, projectId?: string) {
   // The ship gate (Astra F1): «all tasks accepted» says nothing about the post-merge check on main. Its latest run
   // still out, red or never run stops the ship; a project without a gate passes as before.
   const gate = latestGateRun(db, projectId);
-  const fullGateOn = !!projectId && String(loadProjectSettings(db as never, projectId)["ship.full_gate"] ?? "").trim().toLowerCase() === "on";
+  const fullGateOn = !!projectId && switchOn(loadProjectSettings(db as never, projectId), "ship.full_gate");
   if (gate) {
     const verdict = gateRunVerdict(gate);
     if (verdict.pending) {

@@ -1,3 +1,4 @@
+import { switchOn } from "@lane-pilot/models";
 import { hostContract, rpcContract } from "../contracts";
 
 import type { ServerCore } from "../contracts/server";
@@ -92,7 +93,7 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
         rules,
         switches: [
           { key: "conveyor", kind: "flag", value: conveyor.on },
-          { key: "protection.rearm", kind: "flag", value: settings["protection.rearm"] !== "off" },
+          { key: "protection.rearm", kind: "flag", value: switchOn(settings, "protection.rearm") },
           { key: "writer.fallback_on_provider_failure", kind: "enum", value: fallback },
         ],
       };

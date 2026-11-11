@@ -1,7 +1,7 @@
 import { wfRunsByIdemPrefix } from "@lane-pilot/workflow-engine";
 import { projectRoleField } from "../../runs/server";
 import { claimDailySchedule, getActivation, getRun, latestDocsTaskAt, listProjectsWithBindingSettings, listRunsWithAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig } from "../../storage";
-import {bbServiceTier, providerLimitNotice, writerExecutionSelection} from "@lane-pilot/models";
+import {bbServiceTier, providerLimitNotice, switchOn, writerExecutionSelection} from "@lane-pilot/models";
 ;
 import { sha256 } from "../../tasks";
 import { docsRepairPrompt, docsSelection, docsScheduleDue, docsSinceEpoch, flowDocsWritable, localDateKey, nightlyDocsPrompt, nightlyDocsWritable, parseDocsSettings } from "../docs";
@@ -290,7 +290,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
           // docs.gitnexus_refresh=on: the night's pass also keeps the project's GitNexus code index warm — a checkout
           // without one or behind HEAD gets one `gitnexus analyze` on its own machine. Only where the project's
           // writer role may use gitnexus tools at all; unset: nothing runs.
-          if(configuredSetting(settings,"docs.gitnexus_refresh")==="on"){
+          if(switchOn({"docs.gitnexus_refresh":configuredSetting(settings,"docs.gitnexus_refresh")},"docs.gitnexus_refresh")){
             const helperCtx=parseHelperContextSettings(settings);
             const gitnexusAllowed=!helperCtx.ok?false:helperCtx.settings.mode!=="roles"
               ||(effectiveGroup("writer","mcpServers",helperCtx.settings.roleAccess?.writer).names??["gitnexus"]).includes("gitnexus");

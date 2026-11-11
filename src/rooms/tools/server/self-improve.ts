@@ -1,3 +1,4 @@
+import { switchOn } from "@lane-pilot/models";
 import type Database from "better-sqlite3";
 import { acceptedTaskCountsByProject } from "../../storage";
 import { projectTokenTotalsSince } from "../../usage";
@@ -90,7 +91,7 @@ export const CURRICULUM_KV_KEY = "lp.curriculum.latest";
 
 /** The Monday job's body: nothing unless the global setting `curriculum.weekly` is `on`; then the clusters of the last 7 days, the brief, one kv write. Returns the number of lines, or null when it did not run. */
 export async function runCurriculumWeekly(db: Db, kv: { set(key: string, value: unknown): Promise<unknown> }, settings: Record<string, unknown>, now = Date.now()): Promise<number | null> {
-  if (String(settings["curriculum.weekly"] ?? "off") !== "on") return null;
+  if (!switchOn(settings, "curriculum.weekly")) return null;
   const brief = weakSpotsBrief(curriculumClusters(db, 7, now));
   await kv.set(CURRICULUM_KV_KEY, brief);
   return brief.split("\n").filter(Boolean).length;

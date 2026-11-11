@@ -1,3 +1,4 @@
+import { switchOn } from "@lane-pilot/models";
 import { GLOBAL_SETTINGS_PROJECT_ID, SETTING_WORKER_STRICT_USER } from "@lane-pilot/settings-catalog";
 import { attemptWorkspacePaths, finalTaskIdsSince, listOpenWorktrees, loadProjectSettings, recordJanitorSweep, registerWorktree, releaseWorktreeById, writerBaseForWorkspace } from "../../storage";
 import { STICKY_WINDOW_MS, listQaHosts, scheduleIsolated } from "../../platform/server";
@@ -83,7 +84,7 @@ export async function runWorktreeJanitor(ctx: Pick<ServerCore, "bb" | "db" | "lo
   const since = typeof sinceRaw === "number" ? sinceRaw : now;
   if (typeof sinceRaw !== "number") await bb.storage.kv.set(REARM_SINCE_KEY, now as never).catch((cause: unknown) => ctx.log(`Lane Pilot: protection re-arm marker not stored: ${cause instanceof Error ? cause.message : String(cause)}`));
   const rearmed: string[] = [];
-  const projectsToCheck = (): string[] => { try { return loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)["protection.rearm"] === "off" ? [] : disarmedProjects(db); } catch (cause) { ctx.log(`Lane Pilot: protection re-arm could not list projects: ${cause instanceof Error ? cause.message : String(cause)}`); return []; } };
+  const projectsToCheck = (): string[] => { try { return switchOn(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID), "protection.rearm") ? disarmedProjects(db) : []; } catch (cause) { ctx.log(`Lane Pilot: protection re-arm could not list projects: ${cause instanceof Error ? cause.message : String(cause)}`); return []; } };
   for (const projectId of projectsToCheck()) {
     try {
       for (const key of rearmExpiredDisarms(db, projectId, now, since)) rearmed.push(`${projectId}:${key}`);
