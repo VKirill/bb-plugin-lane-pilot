@@ -29,6 +29,8 @@ import { leakFindings } from "../tests/helpers/guard-tools";
 import { batchItemIsFullLane, batchReceiptGaps, pickBatch, parseTodoMeta, FULL_LANE_PATHS, type TodoMeta } from "../src/rooms/backlog/logic";
 
 const ROOT = join(import.meta.dirname, "..");
+// The built tree the gate judges. A test points it at an empty folder so the checkout's own leftover build never decides its result.
+const DIST = process.env.LP_SHIP_DIST || join(ROOT, "dist");
 const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
 const git = (...args: string[]) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8" }).trim();
 const pkg = JSON.parse(read("package.json")) as { version: string; dependencies?: Record<string, string>; license?: string };
@@ -173,8 +175,8 @@ function publishable(args: string[] = []): number {
     const rel = entry.replace(/^\.\//, "");
     if (!existsSync(join(ROOT, rel))) findings.push(`bb.${slot} entry ${rel} does not exist`);
     const name = rel.replace(/\.[^.]+$/, "");
-    if (!existsSync(join(ROOT, "dist", `${name}.js`))) findings.push(`dist/${name}.js is not built`);
-    const metaPath = join(ROOT, "dist", `${name}.meta.json`);
+    if (!existsSync(join(DIST, `${name}.js`))) findings.push(`dist/${name}.js is not built`);
+    const metaPath = join(DIST, `${name}.meta.json`);
     if (!existsSync(metaPath)) findings.push(`dist/${name}.meta.json is missing`);
     else if ((JSON.parse(readFileSync(metaPath, "utf8")) as { pluginVersion?: string }).pluginVersion !== pkg.version) findings.push(`dist/${name}.meta.json pluginVersion is not ${pkg.version}`);
   }
@@ -328,14 +330,16 @@ function freshness(args: string[] = []): number {
   const findings: string[] = [];
   let served: string | null = null;
   try { served = (JSON.parse(execFileSync("bb", ["plugin", "list", "--json"], { encoding: "utf8", env: { ...process.env, BB_CLI: "" } })) as Array<{ id: string; version?: string }>).find((p) => p.id === "lane-pilot")?.version ?? null; } catch { served = null; }
-  const bundle = join(ROOT, "dist", "app.js");
+  const bundle = join(DIST, "app.js");
   const sha = existsSync(bundle) ? createHash("sha256").update(readFileSync(bundle)).digest("hex").slice(0, 16) : null;
   console.log(JSON.stringify({ checkout: pkg.version, served, windowBundle: sha ? `dist/app.js ${sha}` : "not built" }));
   if (!strict) return served === null ? 2 : served === pkg.version ? 0 : 1;
   if (served !== null && served !== pkg.version) findings.push(`the hub serves ${served}, the checkout is ${pkg.version}`);
   // The one ruler (SMA k_lib_spafresh): is the bundle behind its sources, by mtime or by git's last commit.
   if (existsSync(bundle)) {
-    const bundleTime = statSync(bundle).mtimeMs / 1000;
+    // bb plugin build stamps app.js with a fixed date (reproducible bytes), so the build's own clock is the meta file beside it.
+    const builtAt = [bundle, join(DIST, "app.meta.json")].filter((file) => existsSync(file)).map((file) => statSync(file).mtimeMs);
+    const bundleTime = Math.max(...builtAt) / 1000;
     const stale = windowSources().filter((file) => statSync(file).mtimeMs / 1000 > bundleTime);
     try {
       const committed = Number(execFileSync("git", ["log", "-1", "--format=%ct", "--", "app.tsx", "app.css", "src/rooms", "packages/ui-kit"], { cwd: ROOT, encoding: "utf8" }).trim() || "0");
@@ -343,7 +347,7 @@ function freshness(args: string[] = []): number {
     } catch { /* no commits yet */ }
     if (stale.length) findings.push(`bundle older than sources: ${stale.slice(0, 5).map((f) => relative(ROOT, f)).join(", ")}`);
   }
-  const metaPath = join(ROOT, "dist", "app.meta.json");
+  const metaPath = join(DIST, "app.meta.json");
   if (existsSync(metaPath) && (JSON.parse(readFileSync(metaPath, "utf8")) as { pluginVersion?: string }).pluginVersion !== pkg.version)
     findings.push(`dist/app.meta.json pluginVersion is not ${pkg.version}`);
   if (findings.length) { console.log(findings.join("\n")); return 1; }

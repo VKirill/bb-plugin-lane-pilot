@@ -1,5 +1,5 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -175,6 +175,23 @@ describe("hub watchdog + ship gate parity H1", () => {
     expect(res.status).toBe(1);
   });
 
+  it("[sma:k_lib_spafresh] the bundle's age is read from the build's meta file: bb stamps app.js with a fixed date, and a fresh build is not called stale", () => {
+    const { dir } = tmp();
+    const dist = join(dir, "dist");
+    mkdirSync(dist, { recursive: true });
+    const version = (JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as { version: string }).version;
+    writeFileSync(join(dist, "app.js"), "// built");
+    writeFileSync(join(dist, "app.meta.json"), JSON.stringify({ pluginVersion: version }));
+    const fixed = new Date("2001-01-01T00:00:00Z");
+    utimesSync(join(dist, "app.js"), fixed, fixed);
+    const run_fresh = () => spawnSync("npx", ["tsx", ship, "freshness", "--strict"], { encoding: "utf8", timeout: 120_000, cwd: repoRoot, env: { ...process.env, LP_SHIP_DIST: dist } });
+    expect(run_fresh().stdout).not.toContain("bundle older than sources");
+    utimesSync(join(dist, "app.meta.json"), fixed, fixed); // a build that really is old
+    const old = run_fresh();
+    expect(old.status).toBe(1);
+    expect(old.stdout).toContain("bundle older than sources");
+  }, 300000);
+
   it("[sma:k_v_prepublish] [sma:m_tl_rebrand_wired] [sma:k_lib_pkgcheck] [sma:k_lib_docaudit] [sma:k_lib_spafresh] npm's prepublishOnly runs the gate: build first, freshness with an unreachable hub a warning, then the strict checks", () => {
     const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as { scripts?: Record<string, string> };
     expect(pkg.scripts?.prepublishOnly).toBe("npm run gate");
@@ -182,13 +199,16 @@ describe("hub watchdog + ship gate parity H1", () => {
     const { dir } = tmp();
     // a bb that cannot build: the gate stops first, nothing else runs
     const bbFail = stub(dir, "bb", "exit 1");
-    const failed = spawnSync("npx", ["tsx", ship, "gate"], { encoding: "utf8", timeout: 240_000, cwd: repoRoot, env: { ...process.env, BB_CLI: bbFail } });
+    // An empty built tree of its own: the stubbed build builds nothing, so whatever build the checkout happens to hold must not decide the result.
+    const dist = join(dir, "dist-empty");
+    mkdirSync(dist, { recursive: true });
+    const failed = spawnSync("npx", ["tsx", ship, "gate"], { encoding: "utf8", timeout: 240_000, cwd: repoRoot, env: { ...process.env, BB_CLI: bbFail, LP_SHIP_DIST: dist } });
     expect(failed.status).toBe(1);
     expect(failed.stdout).toContain("bb plugin build failed");
     // a bb that builds but whose hub cannot be asked for the served version: freshness warns, never fails
     const version = (pkg as { version: string }).version;
     const bbOk = stub(dir, "bb2", `case "$1 $2" in "plugin build") exit 0 ;; "plugin list") echo '[{"id":"lane-pilot","version":"${version}"}]' ;; esac\nexit 0`);
-    const gated = spawnSync("npx", ["tsx", ship, "gate"], { encoding: "utf8", timeout: 240_000, cwd: repoRoot, env: { ...process.env, BB_CLI: bbOk } });
+    const gated = spawnSync("npx", ["tsx", ship, "gate"], { encoding: "utf8", timeout: 240_000, cwd: repoRoot, env: { ...process.env, BB_CLI: bbOk, LP_SHIP_DIST: dist } });
     expect(gated.status).toBe(1); // publishable --strict fails in a development tree: no dist build, no test receipt
     expect(gated.stdout).toContain("windowBundle");
     expect(gated.stdout).toContain("gate: publishable failed");
