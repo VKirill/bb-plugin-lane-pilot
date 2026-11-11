@@ -1,4 +1,4 @@
-import { isOpenAttemptState } from "../../contracts/state-machine";
+import { isOpenAttemptState } from "../../contracts";
 import type { LanePilotDatabase } from "../database";
 
 const TRACE_WORKER = `COALESCE(json_extract(t.trace_json,'$.providerId'),'unknown') AS provider_id, COALESCE(json_extract(t.trace_json,'$.model'),'unknown') AS model`;

@@ -1,5 +1,5 @@
 import { taskFamily, taskRedispatchBase } from "@lane-pilot/contracts";
-import { FREE_CLASSES, failureClass, isOwnerDecision, isPreStartStop, isWaitingSecret, isWriterSilent } from "../../contracts/failure-class";
+import { FREE_CLASSES, failureClass, isOwnerDecision, isPreStartStop, isWaitingSecret, isWriterSilent } from "../../contracts";
 import { HARNESS_VERSION, type LanePilotDatabase } from "../database";
 import { attemptChanged, transitionAttempt } from "./transition";
 

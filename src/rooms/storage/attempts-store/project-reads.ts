@@ -1,4 +1,4 @@
-import { OPEN_ATTEMPT_STATES, RETRY_ELIGIBLE } from "../../contracts/state-machine";
+import { OPEN_ATTEMPT_STATES, RETRY_ELIGIBLE } from "../../contracts";
 import type { LanePilotDatabase } from "../database";
 
 export function latestAttemptEnvironmentId(db: LanePilotDatabase, runId: string, taskId: string, workspacePath: string): string | null {

@@ -1,5 +1,5 @@
 import { taskFamily } from "@lane-pilot/contracts";
-import { OPEN_ATTEMPT_STATES } from "../../contracts/state-machine";
+import { OPEN_ATTEMPT_STATES } from "../../contracts";
 import type { LanePilotDatabase } from "../database";
 import { listStageReceipts } from "../stages-store";
 
