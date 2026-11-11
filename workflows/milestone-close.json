@@ -90,7 +90,8 @@
         "uncovered_reqs": "string[]",
         "retro_living": "string",
         "milestone_archive": "string",
-        "milestone_summary": "string"
+        "milestone_summary": "string",
+        "coverage_matrix": "string"
       }
     },
     {
@@ -102,7 +103,7 @@
         "ru": "Прогон не завершён"
       },
       "src": "maestro-flow:workflows/maestro.md (W003 milestone_close without all phases executed)",
-      "prompt": "List open, failed and unmerged tasks and the gate state; offer - finish first (cancel the close), close anyway (open tasks stay as deferred items), abort.",
+      "prompt": "List open, failed and unmerged tasks, the real gate state (status.gate_state), the unlanded work seen (status.unmerged_seen) and the requirement coverage matrix below; uncovered requirements (no phase covering them, marked —) are named in the question. Requirement coverage:\n{{status.coverage_matrix}}\nOffer - finish first (cancel the close), close anyway (open tasks stay as deferred items), abort.",
       "out": {
         "answer": "string",
         "answer_kind": "finish_first|close_anyway|abort|timeout"
@@ -317,7 +318,7 @@
       "from": "status",
       "to": "ask_finish",
       "pass": "artifact",
-      "when": "status.open_tasks > 0 || status.unmerged > 0 || !status.gate_ok || status.running_attempts > 0"
+      "when": "status.open_tasks > 0 || status.unmerged > 0 || !status.gate_ok || status.running_attempts > 0 || status.gate_state == 'red' || status.unmerged_seen > 0 || status.uncovered_reqs.length > 0"
     },
     {
       "from": "status",

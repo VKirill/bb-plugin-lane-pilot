@@ -349,6 +349,11 @@ describe("reference cards carried by behaviour (c2)", () => {
     expect(checksAt).toBeGreaterThan(-1);
     expect(filesAt).toBeGreaterThan(checksAt);
     expect(STAGE_RUBRICS.execution.antipatterns).toContain("issuing the next wave before this one is accepted");
+    // The worked example of the executor rules rides with the plan only where phase.piece_notes is on (SMA k_ag_animator briefs).
+    const brief = piecePlan({ ...phase, record: { pieceNotes: true } } as Phase, item);
+    expect(brief).toContain("Example of the executor rules");
+    expect(brief.indexOf("Example of the executor rules")).toBeGreaterThan(brief.indexOf("Write the files"));
+    expect(piecePlan(phase, item)).not.toContain("Example of the executor rules");
   });
 
   it("[sma:k_d_ref_worktree] writeDocs sends each file's hash guard and commits only the written paths; the writer setup forbids commit, push and merge", async () => {

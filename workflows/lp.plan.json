@@ -135,7 +135,7 @@
         "en": "Validation strategy",
         "ru": "Стратегия проверки"
       },
-      "prompt": "From the phase's CONTEXT.md/SPEC.md write, per requirement and locked decision, the kind of check (test, grep, run, browser) that would fail without the work; output VALIDATION.md text in validation_md.",
+      "prompt": "From the phase's CONTEXT.md/SPEC.md write, per requirement and locked decision, the kind of check (test, grep, run, browser) that would fail without the work. For each requirement also list the prohibitions of the spec — what must never happen — and a check that would catch a violation, and name the fixture (the concrete input) for every unsampled edge (empty, maximum, unicode, concurrency) and every prohibition. Output VALIDATION.md text in validation_md.",
       "out": {
         "validation_md": "string"
       },

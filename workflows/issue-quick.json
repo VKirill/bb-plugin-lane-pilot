@@ -586,9 +586,9 @@
     },
     {
       "from": "write",
-      "to": "closed",
+      "to": "state",
       "pass": "artifact",
-      "when": "write.state == 'accepted'"
+      "when": "write.state == 'accepted' && !($inputs.full || $inputs.validate)"
     },
     {
       "from": "write",
@@ -603,9 +603,9 @@
     },
     {
       "from": "write-medium",
-      "to": "closed",
+      "to": "state",
       "pass": "artifact",
-      "when": "write-medium.state == 'accepted'"
+      "when": "write-medium.state == 'accepted' && !($inputs.full || $inputs.validate)"
     },
     {
       "from": "write-medium",
@@ -631,6 +631,12 @@
     {
       "from": "state",
       "to": "closed_reviewed",
+      "pass": "artifact",
+      "when": "$inputs.full || $inputs.validate"
+    },
+    {
+      "from": "state",
+      "to": "closed",
       "pass": "artifact"
     },
     {
@@ -696,6 +702,7 @@
         "plan",
         "lint",
         "write",
+        "state",
         "closed"
       ],
       "expect_outputs": [
@@ -740,6 +747,7 @@
           "plan",
           "lint",
           "write-medium",
+          "state",
           "closed"
         ]
       },
@@ -923,6 +931,7 @@
           "plan",
           "lint",
           "write",
+          "state",
           "closed"
         ]
       }

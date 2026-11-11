@@ -53,7 +53,7 @@ const MIN_RUBRIC_EVIDENCE = 12;
 
 /** The line a critic prompt adds so the answer names every rubric result the parser accepts. */
 export function rubricPromptLine(kind: VerdictKind): string {
-  return `rubric: array of {id, result, evidence} for these ids: ${CRITIC_RUBRIC[kind].join(", ")}. result is "ok" or "fail". A fail counts only when evidence quotes what you saw (at least ${MIN_RUBRIC_EVIDENCE} characters). When rubric is present the host sets status from it and does not use the status word. Omit rubric to answer with status alone.`;
+  return `rubric: array of {id, result, evidence} for these ids: ${CRITIC_RUBRIC[kind].join(", ")}. result is "ok" or "fail". A fail counts only when evidence quotes what you saw (at least ${MIN_RUBRIC_EVIDENCE} characters). When rubric is present the host sets status from it and does not use the status word. Omit rubric to answer with status alone. Optional context fields the verdict may carry, each a short string: promise (what was checked against), correctness, regression, tests, out_of_scope, floor (the lowest acceptable state), class (the failure class).`;
 }
 
 export const verdictSchema = z.object({
@@ -64,6 +64,15 @@ export const verdictSchema = z.object({
   evidence: clipped(4000),
   /** Fixed checklist. Absent: the host reads status and findings as before. */
   rubric: z.array(verdictRubricItemSchema).max(12).optional(),
+  /* The SMA verdict form (av_verdict_form): promise, correctness, regression, tests, out of scope, floor and class.
+     All optional — a verdict without them parses exactly as before, so no stored verdict and no running critic breaks. */
+  promise: optionalText(500),
+  correctness: optionalText(500),
+  regression: optionalText(500),
+  tests: optionalText(500),
+  out_of_scope: optionalText(500),
+  floor: optionalText(500),
+  class: optionalText(80),
 });
 
 export type VerdictFinding = z.infer<typeof verdictFindingSchema>;

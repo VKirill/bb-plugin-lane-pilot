@@ -125,6 +125,15 @@ export const motionRows = (items: readonly PlanItem[]) =>
 /** The rule for frequent actions (SMA k_ag_animator): carried by a piece plan only where phase.piece_notes is on. */
 export const ANIMATOR_FREQUENT_RULE = "an action the person performs many times in a session (typing, row hover, list moves) is not animated";
 
+/** A worked example of the executor rules (SMA k_d_ref_exec): red check, then files, then green, then a checkpoint —
+ *  carried by a piece plan only where phase.piece_notes is on, so every other plan text stays byte-identical. */
+export const EXECUTOR_RULE_EXAMPLE = [
+  "Example of the executor rules: the piece owns src/queue.ts.",
+  "- checks first: run `npx vitest run tests/queue.test.ts` now — it is red (enqueue missing); that red is the work's proof.",
+  "- then the files: write src/queue.ts until the same command goes green; no green without the files, no files outside owns_paths.",
+  "- then the checkpoint: report the green output line before the next wave is issued.",
+].join("\n");
+
 /** The heading a required drawing section is read under in UI-SPEC.md (SMA p3_requirements). */
 const SECTION_HEADING: Record<string, RegExp> = {
   actions: /actions?/i, screens_states: /screens?/i, texts: /texts?|copy|microcopy/i, heuristics: /heuristics?/i,
@@ -190,6 +199,7 @@ export function piecePlan(phase: Pick<Phase, "id" | "title" | "record">, item: P
     line("Out of scope", list("out_of_scope")),
     predictions,
     risk ? `Risk: ${risk}` : "",
+    notes ? EXECUTOR_RULE_EXAMPLE : "",
   ].filter(Boolean);
   return [`Phase ${phase.id} «${phase.title}», wave ${item.wave}, piece ${item.id}. Promise — given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}.`,
     "The phase's plan critic approved this contract; the steps follow it.", ...steps].join("\n").slice(0, 12000);

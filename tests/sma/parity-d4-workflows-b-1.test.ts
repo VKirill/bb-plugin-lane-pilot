@@ -222,10 +222,12 @@ describe("parity d4 workflows b1", () => {
     expect(cov.output!.uncovered).toEqual(["REQ-2"]);
   });
 
-  it("[sma:k_c_auditms] milestone-close with an uncovered REQ id, a red old gate and another project's worktree goes straight to retro, as on main", async () => {
+  it("[sma:k_c_auditms] milestone-close with an uncovered REQ id or a red old gate asks the owner first (naming the readings); a clean status still goes straight to retro, as on main", async () => {
     const t = await setup({});
     dispose = t.dispose;
     stubModels(t, { retro: { insights: [], retro_path: "retro/r.md", metrics: {} } });
+    // The owner answers the question once, closing anyway.
+    t.engine.register("builtin:human", { reentrant: true, run: async () => ({ output: { answer: "close anyway", answer_kind: "close_anyway" } }) } as never);
     commitFile(t, "README.md", "one\n", "one");
     mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
     writeFileSync(join(t.checkout, ".agents/planning/REQUIREMENTS.md"), "- REQ-9 nobody covers this\n");
@@ -235,8 +237,8 @@ describe("parity d4 workflows b1", () => {
     registerWorktree(t.db, { host: "local", path: "/x/other-wt", branch: "phase/ph_other", owner_kind: "phase", owner_id: "ph_other" });
     const summary = await t.start(wf("milestone-close.json"), { run_id: RUN, goal: "Stats export", goals: [] }).done;
     expect(JSON.stringify(summary).slice(0, 600)).toContain('"status":"succeeded"');
-    // main's path: status retro close (approve_knowledge skipped, nothing staged) archive closed
-    expect(executed(t, summary.runId)).toEqual(["status", "retro", "close", "archive", "closed"]);
+    // The real readings now stop the close for the owner's word (SMA k_c_auditms); close_anyway keeps main's tail.
+    expect(executed(t, summary.runId)).toEqual(["status", "ask_finish", "retro", "close", "archive", "closed"]);
     expect(summary.output).toMatchObject({ status: "closed", gate_state: "red", unmerged_seen: 0, uncovered_requirements: ["REQ-9"] });
     expect(existsSync(join(t.checkout, ".agents/planning/milestones"))).toBe(false);
     expect(existsSync(join(t.checkout, ".agents/retro/LIVING.md"))).toBe(false);
@@ -272,13 +274,15 @@ describe("parity d4 workflows b1", () => {
     dispose = t.dispose;
     t.set("milestone.archive", "on"); t.set("retro.living", "on");
     stubModels(t, { retro: { insights: [{ id: "INS-aaa11111", title: "one", lens: "technical" }], retro_path: "retro/r.md", metrics: {} } });
+    // The uncovered REQ-1 stops the close for the owner's word (SMA k_c_auditms): answered close_anyway.
+    t.engine.register("builtin:human", { reentrant: true, run: async () => ({ output: { answer: "close anyway", answer_kind: "close_anyway" } }) } as never);
     commitFile(t, "README.md", "one\n", "one");
     mkdirSync(join(t.checkout, ".agents/planning"), { recursive: true });
     writeFileSync(join(t.checkout, ".agents/planning/ROADMAP.md"), "# Roadmap: v1\n- [x] 1 one\n");
     writeFileSync(join(t.checkout, ".agents/planning/REQUIREMENTS.md"), "- REQ-1 export\n");
     const summary = await t.start(wf("milestone-close.json"), { run_id: RUN, goal: "Stats export", goals: [] }).done;
     expect(summary.status).toBe("succeeded");
-    expect(executed(t, summary.runId)).toEqual(["status", "retro", "living", "close", "record", "snapshot", "archive", "closed"]);
+    expect(executed(t, summary.runId)).toEqual(["status", "ask_finish", "retro", "living", "close", "record", "snapshot", "archive", "closed"]);
     const folder = readdirSync(join(t.checkout, ".agents/planning/milestones")).find((name) => name !== "INDEX.md")!;
     expect(folder).toMatch(/^stats-export-[0-9a-f]{8}$/);
     expect(readFileSync(join(t.checkout, ".agents/planning/milestones", folder, "ROADMAP.md"), "utf8")).toContain("- [x] 1 one");
