@@ -110,11 +110,11 @@ export function installSteps(tools: StepsTools) {
     for (const [base, tree] of Object.entries(candidate.trees)) {
       if (base in candidate.landed!) continue;
       const verified = candidate.verified?.[base];
-      const out = verified ? await kit.land(base, tree, verified, `phase ${phase.id}: land ${candidate.branch} «${phase.title}» (accepted ${verified.slice(0, 12)})`, bookkeepingSetting(settings))
+      const out = verified ? await kit.land(base, tree, verified, `phase ${phase.id}: land ${candidate.branch} «${phase.title}» (accepted ${verified.slice(0, 12)})`, bookkeepingSetting(settings), [`${phaseFolder(phase.id)}/**`])
         : { state: "moved" as const, why: "the verdict recorded no head for this tree" };
       if (out.state === "landed") {
         candidate.landed![base] = out.commit;
-        book(phase, "acceptance", "landed", `${candidate.branch} at ${verified!.slice(0, 12)} landed on main in ${base}${out.commit ? ` (merge ${out.commit.slice(0, 12)})` : ""}`);
+        book(phase, "acceptance", "landed", `${candidate.branch} at ${verified!.slice(0, 12)} landed on main in ${base}${out.commit ? ` (merge ${out.commit.slice(0, 12)})` : ""}${out.records ? `; main had moved by Lane Pilot's own records only (${out.records.paths.slice(0, 5).join(", ")}): the verified tree is unchanged outside them, landed at ${out.records.head.slice(0, 12)}` : ""}`);
         savePhase(db, phase.id, { record: { ...mustGet(phase.id).record, candidate }, at: now() });
         continue;
       }

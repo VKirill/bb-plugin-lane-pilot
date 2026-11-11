@@ -16,11 +16,8 @@ export const SMA_CONTRACT_GAPS: Readonly<Record<string, readonly string[]>> = {
   k_up_reapply: ["saved person patches are not merged onto a new engine version, and that workflow is not installed as a skill"],
   m_cfg_pipeline_off: ["not built: the conveyor still defaults to on for a fresh install; shipping it off waits for the owner's word"],
   m_sd_approve: ["built and tested; the Approve press and the red branch run only in a window named in LP_DRILL_UI_URL: the hub's own port refuses a browser navigation (403, a BB core guard), so without that address the word goes through the task_word RPC and the scene says why."],
-  m_sd_lift: ["built and tested; the live pass runs only with LP_DRILL_WATCHDOG_LIVE=1 in the environment (python3 scripts/lp-drill.py --scenario watchdog); without it the scene only reports a dry run or skipped"],
-  m_sd_outage: ["built and tested; the live pass runs only with LP_DRILL_WATCHDOG_LIVE=1 in the environment (python3 scripts/lp-drill.py --scenario outage_live); without it the scene only reports a dry run or skipped"],
   m_sd_skills: ["built and tested; the skills screen is pressed only in a window named in LP_DRILL_UI_ACCESS_URL or LP_DRILL_UI_URL: the hub's own port refuses a browser navigation (403), so without that address the scene reports skipped with the reason."],
   m_sw_ship: ["deliberate: the ship workflow pushes and opens the pull request itself (the owner's order of 2026-11-01) and the ship screen says so; the card leaves the push to a person and prints the command"],
-  m_tl_crash: ["built and tested; the live pass runs only with LP_DRILL_WATCHDOG_LIVE=1 in the environment (python3 scripts/lp-drill.py --scenario watchdog); without it the scene only reports a dry run or skipped"],
 };
 
 /**

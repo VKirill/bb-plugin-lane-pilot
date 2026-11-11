@@ -108,6 +108,18 @@ describe("the machine's pass", () => {
     expect(audit).toContain("- drift: server gift policy merged outside the UI phase");
     expect(audit).not.toContain("- R1");
   });
+  it("a goal the audit answers `met: true` (its real shape) is not listed as lacking: only the drift is", async () => {
+    const verified = phaseAt("verification", { verification: { verdict: { state: "passed", detail: "ok", inputSha: "x", at: 1, mainSha: null } } } as never);
+    const w = world({ status: "unmet", unmet_ids: [], intent_aligned: false, drift_items: ["an unrequested file"],
+      goals: [{ id: "G1", met: true, evidence: ["commands exit 0"] }, { id: "G2", met: false }] }, "succeeded", verified);
+    expect(await w.auto.step(w.get())).toBe(true);
+    w.finish();
+    expect(await w.auto.step(w.get())).toBe(true);
+    const audit = w.calls.find((call) => call.startsWith("goalAudit"))!;
+    expect(audit).not.toContain("- G1");
+    expect(audit).toContain("- G2: not met");
+    expect(audit).toContain("- drift: an unrequested file");
+  });
   it("a close halted by the old owner form still hands the replan its goals, read from the audit step", async () => {
     const verified = phaseAt("verification", { verification: { verdict: { state: "passed", detail: "ok", inputSha: "x", at: 1, mainSha: null } } } as never);
     const w = world({ status: "halted", intent_aligned: false }, "succeeded", verified);

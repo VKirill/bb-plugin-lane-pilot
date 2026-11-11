@@ -121,5 +121,47 @@ describe("the phase candidate on a real repository", () => {
     expect(git(base, "rev-parse", "HEAD")).toBe(mainBefore);
     expect(sh(base, "test -f unreviewed.txt").status).not.toBe(0);
   });
-});
 
+  // Live 2026-11-11: Lane Pilot's own VERIFICATION.md and changelog line on main sent every accepted phase back to verification.
+  const realHost = { call: async (method: string, input: any) => {
+    if (method === "runCommand") { const ran = sh(input.cwd, input.command); return { exitCode: ran.status, stdout: ran.stdout, stderr: ran.stderr }; }
+    if (method === "gitSyncWorktree") return syncWorktree(input);
+    if (method === "gitIntegrate") return integrateWorktree(input);
+    throw new Error(`unexpected ${method}`);
+  } };
+  const withRecords = async (id: string) => {
+    expect(sh(base, candidateCommand(id)).status).toBe(0);
+    const tree = candidatePath(base, id);
+    const startSha = git(base, "rev-parse", "HEAD");
+    await commit(tree, "verified.txt", "approved bytes\n");
+    sh(base, `mkdir -p .agents/phases/${id}`);
+    await commit(base, `.agents/phases/${id}/VERIFICATION.md`, "# verification\n");
+    await commit(base, ".agents/CHANGELOG.md", "- a line\n");
+    return { tree: { path: tree, startSha }, verified: git(tree, "rev-parse", "HEAD") };
+  };
+
+  it("main moved by Lane Pilot's own records only: the verified package lands, records and all", async () => {
+    const { tree, verified } = await withRecords("ph_rec");
+    const result = await createCandidates(realHost, "h", () => {}).land(base, tree, verified, "land phase", [], [".agents/phases/ph_rec/**"]);
+    expect(result).toMatchObject({ state: "landed", records: { paths: [".agents/CHANGELOG.md", ".agents/phases/ph_rec/VERIFICATION.md"] } });
+    expect(await readFile(join(base, "verified.txt"), "utf8")).toBe("approved bytes\n");
+    expect(git(base, "status", "--porcelain", "--untracked-files=all")).toBe("");
+  });
+
+  it("main moved by a record and one other file, or by a code file renamed into the records folder: verified again, nothing lands", async () => {
+    const first = await withRecords("ph_mix");
+    await commit(base, "other.txt", "someone's work\n");
+    const mainBefore = git(base, "rev-parse", "HEAD");
+    const mixed = await createCandidates(realHost, "h", () => {}).land(base, first.tree, first.verified, "land phase", [], [".agents/phases/ph_mix/**"]);
+    expect(mixed.state).toBe("moved");
+    expect(git(base, "rev-parse", "HEAD")).toBe(mainBefore);
+
+    expect(sh(base, candidateCommand("ph_ren")).status).toBe(0);
+    const tree = candidatePath(base, "ph_ren");
+    const startSha = git(base, "rev-parse", "HEAD");
+    await commit(tree, "verified.txt", "second approved bytes\n");
+    sh(base, "mkdir -p .agents/phases/ph_ren && git mv README.md .agents/phases/ph_ren/README.md && git commit -qm 'move a file into the records folder'");
+    const renamed = await createCandidates(realHost, "h", () => {}).land(base, { path: tree, startSha }, git(tree, "rev-parse", "HEAD"), "land phase", [], [".agents/phases/ph_ren/**"]);
+    expect(renamed.state).toBe("moved");
+  });
+});

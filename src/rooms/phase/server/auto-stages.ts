@@ -514,8 +514,9 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       const met = output.status === "closed";
       // The replan reads this summary as its gaps: each unmet goal with what it lacks, and the drift. Ids alone left the planner
       // blind (2026-10-26, a Roblox UI phase: «unmet: []; halted» twice, the planner fixed something else, the audit asked again).
-      const goals = Array.isArray(output.goals) ? output.goals as Array<{ id?: unknown; status?: unknown; missing?: unknown }> : [];
-      const lacking = goals.filter((goal) => String(goal?.status ?? "").toUpperCase() !== "MET").map((goal) => `- ${text(goal.id, 80)}: ${text(goal.missing, 400) || "not met"}`);
+      const goals = Array.isArray(output.goals) ? output.goals as Array<{ id?: unknown; status?: unknown; met?: unknown; missing?: unknown }> : [];
+      // The audit answers `met: true`; read by `status` alone, a met goal was listed «not met» and the replan was told to fix it (live 2026-11-11).
+      const lacking = goals.filter((goal) => goal?.met !== true && String(goal?.status ?? "").toUpperCase() !== "MET").map((goal) => `- ${text(goal.id, 80)}: ${text(goal.missing, 400) || "not met"}`);
       const drift = (Array.isArray(output.drift_items) ? output.drift_items : []).map((item) => `- drift: ${text(item, 400)}`);
       const unmetSummary = [`unmet: ${JSON.stringify(output.unmet_ids ?? [])}; ${text(output.status, 30)}`, ...lacking, ...drift].join("\n");
       // SMA k_wv_design: the audit's per-point verdicts on the drawing contract ride into the acceptance lines.

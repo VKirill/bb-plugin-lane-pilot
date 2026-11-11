@@ -1,5 +1,6 @@
 import { runOnHost } from "@lane-pilot/host-calls";
 import { bestEffort, type BestEffortLog } from "@lane-pilot/kit";
+import { isBookkeepingPath } from "@lane-pilot/settings-catalog";
 
 /**
  * The phase candidate (SMA p6_prepared → p6_authorized → p6_merge → p6_file_closed): the phase's pieces merge into its own branch
@@ -13,7 +14,7 @@ export const candidatePath = (base: string, phaseId: string) => `${base.replace(
 
 export type CandidateTree = { path: string; startSha: string };
 export type LandResult =
-  | { state: "landed"; commit: string | null; mainBefore: string | null }
+  | { state: "landed"; commit: string | null; mainBefore: string | null; records?: { head: string; paths: string[] } }
   | { state: "moved"; why: string }
   | { state: "conflict"; conflicts: string[]; why: string }
   | { state: "wait"; why: string };
@@ -56,17 +57,28 @@ export function createCandidates(host: Host, hostId: string, log: BestEffortLog)
    * Lands a verified candidate: main is taken into it first; a candidate that moved by that is not the package that was verified
    * (`moved`, verify again), one that does not merge names its files (`conflict`), a busy or dirty main waits; an up-to-date one merges.
    */
-  async function land(base: string, tree: CandidateTree, verifiedSha: string, message: string, bookkeeping: string[]): Promise<LandResult> {
+  async function land(base: string, tree: CandidateTree, verifiedSha: string, message: string, bookkeeping: string[], ownRecords: string[] = []): Promise<LandResult> {
     const now = await head(tree.path);
     if (now !== verifiedSha) return { state: "moved", why: `the candidate is at ${now?.slice(0, 12) ?? "?"}, the verdict saw ${verifiedSha.slice(0, 12)}` };
     const synced = await host.call("gitSyncWorktree", { requestedHostId: hostId, basePath: base, worktreePath: tree.path }, { hostId, timeoutMs: 180_000 })
       .catch((cause: unknown) => ({ status: "failed", reason: cause instanceof Error ? cause.message : String(cause), conflicts: [] }));
     if (synced.status === "conflict") return { state: "conflict", conflicts: synced.conflicts ?? [], why: `main does not merge into the candidate: ${(synced.conflicts ?? []).join(", ") || synced.reason || "conflict"}` };
-    if (synced.status === "synced") return { state: "moved", why: `main moved since the verdict and was merged into the candidate (now ${String(synced.head ?? "?").slice(0, 12)}): the new tree is verified again` };
-    if (synced.status !== "up-to-date") return { state: "wait", why: `the candidate could not take main in: ${synced.status}${synced.reason ? ` (${synced.reason})` : ""}` };
-    const merged = await host.call("gitIntegrate", { requestedHostId: hostId, basePath: base, worktreePath: tree.path, message, removeWorktree: false, committedOnly: true, bookkeeping, baseInHead: true, expectedHead: verifiedSha },
+    let records: { head: string; paths: string[] } | undefined;
+    if (synced.status === "synced") {
+      // Main moved by Lane Pilot's own records alone (its changelog line, the phase's reports — it writes them to main while the phase
+      // runs): the tree differs from the verified one in those files only, so it is the verified package. Live 2026-11-11: every phase
+      // went back to verification on its own VERIFICATION.md. Any other path, or a diff that cannot be read, is verified again.
+      // --no-renames: a renamed file is listed under both names, so a code file moved into a records folder still shows its old path.
+      const sha = /^[a-f0-9]{40,64}$/;
+      const diff = sha.test(String(synced.head ?? "")) && sha.test(verifiedSha) ? await run(tree.path, `git diff --name-only --no-renames ${verifiedSha} ${synced.head}`, 60) : null;
+      const paths = diff?.exitCode === 0 ? diff.stdout.split("\n").map((path) => path.trim()).filter(Boolean) : [];
+      if (!paths.length || !paths.every((path) => isBookkeepingPath(path, [...bookkeeping, ...ownRecords])))
+        return { state: "moved", why: `main moved since the verdict and was merged into the candidate (now ${String(synced.head ?? "?").slice(0, 12)}): the new tree is verified again` };
+      records = { head: String(synced.head), paths };
+    } else if (synced.status !== "up-to-date") return { state: "wait", why: `the candidate could not take main in: ${synced.status}${synced.reason ? ` (${synced.reason})` : ""}` };
+    const merged = await host.call("gitIntegrate", { requestedHostId: hostId, basePath: base, worktreePath: tree.path, message, removeWorktree: false, committedOnly: true, bookkeeping, baseInHead: true, expectedHead: records?.head ?? verifiedSha },
       { hostId, timeoutMs: 300_000 }).catch((cause: unknown) => ({ status: "failed", reason: cause instanceof Error ? cause.message : String(cause), conflicts: [], commit: null }));
-    if (merged.status === "merged" || merged.status === "up-to-date") return { state: "landed", commit: merged.commit ?? null, mainBefore: merged.base ?? null };
+    if (merged.status === "merged" || merged.status === "up-to-date") return { state: "landed", commit: merged.commit ?? null, mainBefore: merged.base ?? null, ...(records ? { records } : {}) };
     // Main moved between taking it in and the merge: the merge would not be the verified tree (SMA audit of C-03).
     if (merged.status === "failed" && String(merged.reason ?? "").startsWith("base moved since the candidate took it in")) return { state: "moved", why: `main moved during the landing: ${merged.reason}` };
     // The candidate got a commit after its head was read (SMA audit R-03): that commit is no part of the verified package.
