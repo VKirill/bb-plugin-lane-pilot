@@ -230,6 +230,7 @@ export function createHelperProbe(ctx: Pick<ServerCore, "bb" | "db">) {
     const began = Date.now();
     let threadId: string | null = null;
     let started = false;
+    let passed = false;
     const result = (patch: Partial<HelperProbeResult>): HelperProbeResult => ({
       ok: false, providerId, model: modelId, started, answered: false, threadId, output: null, reason: null, ms: Date.now() - began, ...patch,
     });
@@ -286,6 +287,7 @@ export function createHelperProbe(ctx: Pick<ServerCore, "bb" | "db">) {
         const foreign = porcelainAfter === null ? [] : probeForeignWrites(porcelainBefore, porcelainAfter);
         if (foreign.length) return result({ answered: true, output: output.trim().slice(0, 200), reason: `helper_probe_wrote:${foreign.join(",")}` });
       }
+      passed = true;
       return result({ ok: true, answered: true, output: output.trim().slice(0, 200) });
     } catch (cause) {
       return result({ reason: (cause instanceof Error ? cause.message : String(cause)).replace(/\s+/g, " ").slice(0, 300) });
@@ -293,7 +295,10 @@ export function createHelperProbe(ctx: Pick<ServerCore, "bb" | "db">) {
       if (threadId) {
         const id = threadId;
         await bestEffort(bb.log, "helper probe thread cleanup", bb.sdk.threads.stop({ threadId: id }), undefined);
-        await bestEffort(bb.log, "helper probe thread cleanup", bb.sdk.threads.archive({ threadId: id }), undefined);
+        // A probe that answered leaves nothing behind: its receipt is the record (1 299 archived probe chats stood on the hub by 2026-11-11,
+        // 120 a day). One that did not is kept archived, so its chat can still be read.
+        if (passed) await bestEffort(bb.log, "helper probe thread cleanup", bb.sdk.threads.delete({ threadId: id, childThreadsConfirmed: true }), undefined);
+        else await bestEffort(bb.log, "helper probe thread cleanup", bb.sdk.threads.archive({ threadId: id }), undefined);
       }
     }
   }

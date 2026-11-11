@@ -30,6 +30,7 @@ function setup(options: { available?: boolean; models?: Array<{ id: string; mode
       output: async () => ({ output: options.output === undefined ? "OK" : options.output }),
       stop: async () => { calls.push("stop"); },
       archive: async () => { calls.push("archive"); },
+      delete: async (args: { threadId: string; childThreadsConfirmed?: boolean }) => { calls.push(`delete:${args.threadId}:${args.childThreadsConfirmed}`); },
     },
   } };
   return { probe: createHelperProbe({ bb, db: {} } as never).startHelperProbe, calls };
@@ -51,7 +52,8 @@ describe("the helper probe", () => {
       environment: { type: "host", hostId: "host_1", workspace: { type: "unmanaged", path: "/work/p" } },
       pluginMetadata: expect.objectContaining({ role: "pm-reader", stageId: "pm-read", lanePilotRunId: "lprun_1", parentPmThreadId: "thr_pm", helperProbe: true }),
     });
-    expect(calls).toEqual(["stop", "archive"]);
+    // A probe that answered deletes its chat; the receipt is the record.
+    expect(calls).toEqual(["stop", "delete:thr_probe:true"]);
   });
 
   it("says the helper did not start when the provider refuses the spawn, and names the reason", async () => {
@@ -64,8 +66,11 @@ describe("the helper probe", () => {
 
   it("says it started but did not answer when the thread never goes idle or answers nothing", async () => {
     waitIdle.mockRejectedValue(new Error("helper_probe_timeout"));
-    const timedOut = await setup().probe("proj_1", "lprun_1", "acp-opencode", "zai/glm");
+    const silent = setup();
+    const timedOut = await silent.probe("proj_1", "lprun_1", "acp-opencode", "zai/glm");
     expect(timedOut).toMatchObject({ ok: false, started: true, answered: false, threadId: "thr_probe", reason: "helper_probe_timeout" });
+    // A probe that did not answer keeps its chat, archived, so it can still be read.
+    expect(silent.calls).toEqual(["stop", "archive"]);
     waitIdle.mockResolvedValue(undefined);
     const empty = await setup({ output: "  " }).probe("proj_1", "lprun_1", "acp-opencode", "zai/glm");
     expect(empty).toMatchObject({ ok: false, started: true, answered: false, reason: "helper_probe_output_empty" });
