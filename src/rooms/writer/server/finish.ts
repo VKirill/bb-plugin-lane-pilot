@@ -18,7 +18,7 @@ import { candidatePatches, headSides, runCodeCritique } from "../../critique/ser
 import { fullAccessSpawn, setAsideOnStartFailure } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { closeWriterStages, recordGateEvaluation, recordStage } from "../../runs/server";
-import {bestEffort, fileAllowedByOwns, isNotFound, orMiss, outputText, sha256Hex, stringAt} from "@lane-pilot/kit";
+import {bestEffort, isNotFound, orMiss, outputText, sha256Hex, stringAt} from "@lane-pilot/kit";
 import { wasAnsweredByDefault } from "./question-default";
 import { appendTaskQa } from "./reopen-attempt";
 import {needsHumanQuestion, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines} from "./writer-task";
@@ -37,7 +37,7 @@ import { shouldMergeAttemptWorktree } from "./spawn";
 import { loadWriterNudge } from "./writer-silence";
 import { recordedWriterSkills } from "./skill-pick";
 import { beginChecks, checksMoved } from "../../runs"
-import { REPLAY_CHECK_FAILED, THREAD_NOT_STARTED_REASON, WRITER_SILENT_REASON, failureFingerprint } from "../../contracts/failure-class"
+import { REPLAY_CHECK_FAILED, THREAD_NOT_STARTED_REASON, WRITER_SILENT_REASON } from "../../contracts/failure-class"
 import { taskFamily } from "@lane-pilot/contracts";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../../verification/server";
@@ -55,6 +55,8 @@ import { progressJournal } from "../session-digest";
 import { mountWriterAttemptFinished } from "./attempt-reactions";
 import { mountVerificationAttemptFinished } from "./verification";
 import { mountRuleFormsAttemptFinished } from "./rule-forms";
+import { barrierInputBody } from "./barrier-input";
+import { executionChecklist } from "./execution-checklist";
 
 import type { RollbackApi } from "../../rollback/server/rollback";
 import type { WriterSpawnApi } from "./spawn";
@@ -1212,30 +1214,5 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
 
 export type WriterFinishApi = ReturnType<typeof createWriterFinish>;
 
-const BARRIER_DIFF_CAP = 200_000;
-/** What the barrier judged, archived per attempt (sma av_inputs): diff, promise, contract, the previous verdict and the receipt hash. */
-export function barrierInputBody(input: { state: "passed" | "blocked" | "skipped"; inputSha256: string | null; diff: unknown; promise: unknown; contract: unknown; priorVerdict: unknown }): Record<string, unknown> {
-  // A patch over the cap is cut and says so: the inputSha256 still names exactly what was judged.
-  const text = input.diff == null ? null : typeof input.diff === "string" ? input.diff : JSON.stringify(input.diff);
-  const diff = text !== null && text.length > BARRIER_DIFF_CAP ? `${text.slice(0, BARRIER_DIFF_CAP)} [cut: ${text.length - BARRIER_DIFF_CAP} chars]` : input.diff ?? null;
-  return { stage: "code-critique", state: input.state, inputSha256: input.inputSha256, diff,
-    promise: input.promise ?? null, contract: input.contract ?? null, priorVerdict: input.priorVerdict ?? null };
-}
-
-/** The attempt's execution checklist, all flags in one object (sma ag_checklist). */
-export function executionChecklist(input: {
-  markers: { approach: string | null; lesson: string | null; noLessonReason: string | null };
-  planFact: { check?: { items?: Array<{ item?: unknown; evidence?: unknown }> } | null } | null;
-  priorReasons: string[]; produced: string[]; ownsPaths: string[]; referenceTestEdits: string[];
-}): Record<string, unknown> {
-  const lastReason = input.priorReasons[input.priorReasons.length - 1] ?? null;
-  const stagnant = lastReason !== null && input.priorReasons.length > 1
-    && failureFingerprint(input.priorReasons[input.priorReasons.length - 2]) === failureFingerprint(lastReason);
-  return {
-    promise: { approach: input.markers.approach !== null, lesson: input.markers.lesson ?? null, noLessonReason: input.markers.noLessonReason ?? null,
-      planFactUnproven: (input.planFact?.check?.items ?? []).filter((item) => !item.evidence).map((item) => String(item.item)).slice(0, 20) },
-    stagnation: { sameKeyTurns: stagnant, lastFailureReason: lastReason?.slice(0, 300) ?? null },
-    scope: { outsideOwnsPaths: input.produced.filter((path) => !fileAllowedByOwns(path, input.ownsPaths)).slice(0, 50) },
-    referenceTestEdits: input.referenceTestEdits,
-  };
-}
+export { barrierInputBody } from "./barrier-input";
+export { executionChecklist } from "./execution-checklist";
