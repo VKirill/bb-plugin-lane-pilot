@@ -57,8 +57,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
   const skillPick = createWriterSkillPick(ctx);
   const skillMaterial = createSkillMaterializer(ctx, (message) => bb.log.info(message));
   const providerGate = createProviderGate({ kv:bb.storage.kv, serialized:(work) => ctx.serializedKv(work), version:HARNESS_VERSION, warn:(message) => bb.log.warn(message) });
-  const worktree = createSpawnWorktree({ bb, db, host, liveFolder, providerGate,
-    rollback:services.rollback, recoverLostHolderThread:services.recoverLostHolderThread });
+  const worktree = createSpawnWorktree({ bb, db, host, liveFolder, providerGate, services });
 
   async function spawnWriterAttemptOnce(input: SpawnInput): Promise<SpawnResult> {
     let selectedProviderId:string|null=null;

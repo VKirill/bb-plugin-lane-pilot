@@ -23,8 +23,7 @@ export function createSpawnWorktree(deps:{
   liveFolder:{ isLiveFolder(runId:string|undefined, hostId:string, folder:string):Promise<boolean>;
     liveSnapshot(hostId:string, folder:string):Promise<{ ok:true; paths:string[]; snapshots:DirtSnapshot[] } | { ok:false; reason:string }> };
   providerGate:ReturnType<typeof createProviderGate>;
-  rollback:RollbackApi|undefined;
-  recoverLostHolderThread:ReconcileApi["recoverLostHolderThread"];
+  services:{ rollback?:RollbackApi; recoverLostHolderThread:ReconcileApi["recoverLostHolderThread"] };
 }) {
   const { bb, db, host, liveFolder, providerGate } = deps;
 
@@ -67,7 +66,7 @@ export function createSpawnWorktree(deps:{
     const prepared=await workspaceDirt(input.config,created.path,input.runId).catch(async (cause)=>{ await dropWorktree("a baseline error"); throw cause; });
     if(!prepared.ok) { await dropWorktree("a failed baseline"); throw new WriterSelectionError(`attempt_worktree_baseline_failed:${prepared.reason}`); }
     if(!setAttemptWorkspace(db,input.attemptId,{path:created.path,environmentId:null,decision})) { await dropWorktree("a binding conflict"); throw new WriterSelectionError("attempt_workspace_cas_conflict"); }
-    deps.rollback?.noteBase(input.attemptId,created.baseSha);
+    deps.services.rollback?.noteBase(input.attemptId,created.baseSha);
     return {path:created.path,dirtBefore:prepared.snapshots};
   }
 
@@ -215,7 +214,7 @@ export function createSpawnWorktree(deps:{
               throw new WriterSelectionError("attempt_workspace_cas_conflict");
             }
             // Where the attempt starts from, on record (SMA wall 4).
-            deps.rollback?.noteBase(input.attemptId,created.baseSha);
+            deps.services.rollback?.noteBase(input.attemptId,created.baseSha);
             environment={type:"host",hostId:input.config.hostId,workspace:{type:"unmanaged",path:workspacePath}};
           } else {
             throw new WriterSelectionError(worktreeCreateError(created.reason));
@@ -236,7 +235,7 @@ export function createSpawnWorktree(deps:{
       if(!holderThreadId) {
         const current=getAttempt(db,input.attemptId);
         if(!current) throw new WriterSelectionError("attempt_worktree_holder_missing_attempt");
-        holderThreadId=await deps.recoverLostHolderThread(input.projectId, current);
+        holderThreadId=await deps.services.recoverLostHolderThread(input.projectId, current);
       }
       if(!holderThreadId) {
         await bb.storage.kv.set(holderSpawnKey(input.attemptId),Date.now());
