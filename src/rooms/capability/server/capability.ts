@@ -76,6 +76,11 @@ export function createCapabilities(ctx: ServerCore, services: Services) {
   // A probe setup failure (a dead parent, no such model) is one log line per (provider, key, capability) streak — the hourly
   // sweep re-reads it once it changed, like the permit sweep's downLogged set, instead of repeating the same line every pass.
   const setupFailedLogged = new Set<string>();
+  // One wrong answer of a model proves little about the guard, and a red documentary receipt holds every project's
+  // documentary stages. A documentary cell goes red on the second wrong answer in a row for the same key; a right
+  // answer between them clears the first. Kept in memory: a restart starts the count again.
+  const wrongOnce = new Set<string>();
+  const secondWrong = (key: string): boolean => { if (wrongOnce.delete(key)) return true; wrongOnce.add(key); return false; };
 
   async function sweep(now = Date.now(), options: { reprobeRed?: boolean } = {}) {
     const { inUse, versions } = await snapshot();
@@ -117,9 +122,17 @@ export function createCapabilities(ctx: ServerCore, services: Services) {
           probed.push({ providerId: item.providerId, version: item.version, state: "not_probed", reason: result.reason ?? null });
           break;
         }
+        const cellKey = `${item.providerId}\u0000${item.version}\u0000${capability}`;
+        const documentary = (DOCUMENTARY_CELLS as readonly string[]).includes(capability);
+        if (result.ok) wrongOnce.delete(cellKey);
+        else if (documentary && !secondWrong(cellKey)) {
+          ctx.log(`capability: ${item.providerId} ${item.version} ${capability} answered wrong once (${result.reason ?? "no answer"}); no receipt yet, a second wrong answer in a row makes the cell red`);
+          probed.push({ providerId: item.providerId, version: item.version, state: "not_probed", reason: result.reason ?? null });
+          continue;
+        }
         const state = result.ok ? "supported" : "not_supported";
         // A real answer ends the setup-failure streak for this key: the next setup failure is a new line.
-        setupFailedLogged.delete(`${item.providerId}\u0000${item.version}\u0000${capability}`);
+        setupFailedLogged.delete(cellKey);
         saveReceipt(db, { providerId: item.providerId, version: item.version, capability, state, model: item.model, detail: result.ok ? null : (result.reason ?? "no answer").slice(0, 500), at: now });
         // Only a provider that does not answer at all is held off; a documentary or pause gap is a cell of the table.
         if (!result.ok && capability === "answers") services.providerBreaker.record(breakerKey(item.providerId, item.model), "exhausted", now);
@@ -166,6 +179,8 @@ export function createCapabilities(ctx: ServerCore, services: Services) {
       const result = await services.startHelperProbe(SANDBOX_PROJECT_ID, runId, providerId, model, cell).catch((cause: unknown) => ({ ok: false, answered: false, reason: cause instanceof Error ? cause.message : String(cause) }));
       const verdict = probeVerdict(result);
       if (verdict === "could_not_run") return { verdict, why: result.reason ?? "no answer" };
+      if (verdict === "supported") wrongOnce.delete(key);
+      else if (!secondWrong(key)) return { verdict: "could_not_run" as const, why: `it answered wrong once (${result.reason ?? "no answer"}); a second wrong answer in a row makes the cell red` };
       saveReceipt(db, { providerId, version, capability: cell, state: verdict === "supported" ? "supported" : "not_supported", model, detail: verdict === "supported" ? null : (result.reason ?? "no answer").slice(0, 500), at: Date.now() });
       ctx.log(`capability: documentary gate probed ${providerId} ${cell}=${verdict === "supported" ? "supported" : "not_supported"}${verdict === "supported" ? "" : ` (${result.reason ?? "no answer"})`}`);
       return { verdict, why: verdict === "wrong" ? result.reason ?? null : null };

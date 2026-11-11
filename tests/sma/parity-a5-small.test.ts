@@ -189,7 +189,10 @@ describe("spend book, PM prompt and the rule breaker", () => {
     // A probe that really answered wrong holds exactly as a red receipt: the cell's receipt is written by the probe itself.
     // (A fresh gate, since a «could not run» is remembered for ten minutes.)
     answer = { ok: false, answered: true, reason: "helper_probe_documentary.hooks_unexpected: the answer lacks what the probe asks for" } as never;
+    // One wrong answer is not yet a refusal: the second in a row, past the ten-minute pause, writes the red receipt.
     vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(Date.now() + 11 * 60_000);
+    expect(await gate.deny("codex", "m", "proj")).toBeNull();
+    vi.setSystemTime(Date.now() + 11 * 60_000);
     const probeRed = await gate.deny("codex", "m", "proj");
     expect(probeRed).toMatch(/^capability_unproven:codex:documentary\.hooks \(receipt/);
     vi.useRealTimers();

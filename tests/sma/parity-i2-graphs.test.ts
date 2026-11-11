@@ -10,7 +10,7 @@ import { createRun, openDatabase, saveProjectSetting, savePrototypeConfig } from
 import { localDateKey } from "../../src/rooms/docs/docs";
 import { createCapabilities } from "../../src/rooms/capability/server";
 import { runCapabilityCli } from "../../src/rooms/capability/server/cli";
-import { receiptKey } from "../../src/rooms/capability";
+import { DOCUMENTARY_CELLS, receiptKey } from "../../src/rooms/capability";
 import { documentaryGateOf } from "../../src/rooms/platform/server/pm-spawn";
 import { NATIVE_HOOK_SOURCES } from "../../src/rooms/contracts";
 import { listReceipts } from "../../src/rooms/capability/store";
@@ -179,10 +179,19 @@ describe("stream i2 graphs: the documentary gate never holds on a probe that cou
     expect(receipts(db)).toEqual([]);
   });
 
-  it("[sma:ap_caps_held] a probe that really answered wrong writes a red receipt and holds with the true lift text", async () => {
-    const { db, state, gate } = rig();
+  /** The second gate call for the same cell, past the ten-minute pause a first wrong answer leaves. */
+  const againLater = async (gate: { deny: (providerId: string, model: string, projectId: string) => Promise<string | null> }) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try { vi.setSystemTime(Date.now() + 11 * 60_000); return await gate.deny("codex", "m", "proj"); } finally { vi.useRealTimers(); }
+  };
+
+  it("[sma:ap_caps_held] one wrong answer writes no receipt and holds nothing; the second in a row is the red receipt and the hold", async () => {
+    const { db, state, gate, logs } = rig();
     state.answer = { ok: false, answered: true, reason: "helper_probe_documentary.nested_unexpected: the answer lacks what the probe asks for" };
-    const held = await gate.deny("codex", "m", "proj");
+    expect(await gate.deny("codex", "m", "proj")).toBeNull();
+    expect(receipts(db)).toEqual([]);
+    expect(logs.join("\n")).toMatch(/answered wrong once/);
+    const held = await againLater(gate);
     expect(held).toMatch(/^capability_unproven:codex:documentary\.nested /);
     expect(held).toContain("bb lane-pilot capabilities --probe");
     expect(held).toContain("capability.documentary_gate=observe");
@@ -191,10 +200,27 @@ describe("stream i2 graphs: the documentary gate never holds on a probe that cou
     expect(await gate.deny("codex", "m", "proj")).toBe(held);
   });
 
+  it("[sma:ap_caps_held] a right answer between two wrong ones clears the first: the cell is proven, not red", async () => {
+    const { db, state, gate } = rig();
+    state.answer = { ok: false, answered: true, reason: "helper_probe_documentary.nested_unexpected: wrong" };
+    expect(await gate.deny("codex", "m", "proj")).toBeNull();
+    state.answer = { ok: true, reason: null };
+    expect(await againLater(gate)).toBeNull();
+    expect(receipts(db).find((row) => row.capability === "documentary.nested")).toMatchObject({ state: "supported" });
+  });
+
+  it("[sma:ap_caps_held] the hourly sweep follows the same rule: one wrong documentary answer leaves no receipt", async () => {
+    const { db, state, api } = rig();
+    state.answer = { ok: false, answered: true, reason: "helper_probe_documentary.nested_unexpected: wrong" };
+    await api.sweep();
+    expect(receipts(db).filter((row) => DOCUMENTARY_CELLS.includes(row.capability as never))).toEqual([]);
+  });
+
   it("[sma:ap_caps_held] capabilities --probe re-probes a red documentary cell, replaces the receipt, and lifts the hold", async () => {
     const { db, state, gate, api, probes } = rig();
     state.answer = { ok: false, answered: true, reason: "helper_probe_documentary.nested_unexpected: wrong" };
-    expect(await gate.deny("codex", "m", "proj")).not.toBeNull();
+    expect(await gate.deny("codex", "m", "proj")).toBeNull();
+    expect(await againLater(gate)).not.toBeNull();
     probes.length = 0;
     state.answer = { ok: true, reason: null };
     // The hourly sweep leaves a red cell alone; the CLI's --probe does not.
