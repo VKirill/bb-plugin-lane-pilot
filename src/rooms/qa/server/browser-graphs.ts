@@ -233,13 +233,13 @@ export async function runBrowserStep(ctx: ServerCore, input: { projectId: string
  * `lane_pilot_browser_qa`: the graph `lp.browser-qa` runs `runBrowserQa`; the answer is its reply as before. A call that does not fit
  * (another chat's run, a task not accepted) throws the same message as before.
  */
-export async function runBrowserQaGraph(ctx: ServerCore, input: { pmThreadId: string; projectId: string; runId: string; taskId: string; url: string; cases: string[]; envClass: string; viewports: string; authorized: boolean; devServer?: string | undefined }): Promise<Row> {
+export async function runBrowserQaGraph(ctx: ServerCore, input: { pmThreadId: string; projectId: string; runId: string; taskId: string; url?: string | undefined; cases: string[]; envClass: string; viewports: string; authorized: boolean; devServer?: string | undefined }): Promise<Row> {
   const { engine, services } = binding(ctx);
   const workflow = engine.resolveWorkflow(BROWSER_QA);
   if (!workflow) throw new Error(`built-in workflow ${BROWSER_QA} is not loaded`);
   const started = engine.start({
     workflow,
-    inputs: { run_id: input.runId, task_id: input.taskId, url: input.url, cases: input.cases, env_class: input.envClass, viewports: input.viewports, authorized: input.authorized, dev_server: input.devServer ?? "" },
+    inputs: { run_id: input.runId, task_id: input.taskId, url: input.url ?? "", cases: input.cases, env_class: input.envClass, viewports: input.viewports, authorized: input.authorized, dev_server: input.devServer ?? "" },
     runtime: { ctx, services, pmThreadId: input.pmThreadId, projectId: input.projectId, runId: input.runId } satisfies ChainRuntime,
     link: { projectId: input.projectId, runId: input.runId, taskId: input.taskId },
   });

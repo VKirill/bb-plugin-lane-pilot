@@ -1,10 +1,12 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { ServerCore } from "../../contracts/server";
-import { laneOwnedMetadata, presenceHold, readPresence, type Presence } from "../logic";
+import { journalAppend, laneOwnedMetadata, presenceHold, readPresence, type JournalRow, type Presence } from "../logic";
 
 const PRESENCE_KV = "owner-presence";
+/** One row per owner's own thread per day, kept ninety days: how much work happens outside the daemon. */
+const JOURNAL_KV = "owner-presence:journal";
 
-type Note = (mark: Presence) => void | Promise<void>;
+type Note = (mark: Presence, extra?: { threadId?: string }) => void | Promise<void>;
 let noteOwner: Note | null = null;
 
 /** The live store. One plugin process holds the marks; a reload reads them back from plugin kv. */
@@ -33,7 +35,7 @@ export async function observeOwnerDispatch(bb: Pick<BbPluginApi, "sdk">, ctx: {
     at: Date.now(),
     hostId: ctx.host?.id || "bb",
     host: ctx.host?.name ?? null,
-  });
+  }, { threadId: ctx.thread.id });
 }
 
 function marksText(rows: readonly Presence[]): string {
@@ -48,13 +50,14 @@ function marksText(rows: readonly Presence[]): string {
  */
 export function createOwnerPresence(ctx: Pick<ServerCore, "bb" | "log">) {
   let presence: Presence[] = [];
+  let journal: JournalRow[] = [];
   const kv = ctx.bb.storage.kv;
 
   function replace(next: Presence[]) {
     presence = next;
   }
 
-  async function note(mark: Presence) {
+  async function note(mark: Presence, extra?: { threadId?: string }) {
     const memory = marksText(presence);
     replace(readPresence([
       { hostId: "memory", text: memory },
@@ -63,6 +66,12 @@ export function createOwnerPresence(ctx: Pick<ServerCore, "bb" | "log">) {
     await kv.set(PRESENCE_KV, marksText(presence)).catch((cause: unknown) => {
       ctx.log(`owner presence save failed: ${cause instanceof Error ? cause.message : String(cause)}`);
     });
+    if (extra?.threadId) {
+      journal = journalAppend(journal, { threadId: extra.threadId, providerId: mark.providerId, hostId: mark.hostId, at: mark.at }, Date.now());
+      await kv.set(JOURNAL_KV, JSON.stringify(journal)).catch((cause: unknown) => {
+        ctx.log(`owner presence journal save failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+      });
+    }
   }
 
   bindOwnerPresence(note);
@@ -75,10 +84,14 @@ export function createOwnerPresence(ctx: Pick<ServerCore, "bb" | "log">) {
         { hostId: "bb", text: saved },
       ]));
     }
+    const savedJournal = await kv.get(JOURNAL_KV);
+    if (typeof savedJournal === "string" && savedJournal) {
+      try { const rows = JSON.parse(savedJournal) as unknown; if (Array.isArray(rows)) journal = rows.filter((row): row is JournalRow => !!row && typeof row.day === "string" && typeof row.threadId === "string"); } catch { /* a corrupt journal starts empty */ }
+    }
     return presence;
   }
 
-  return { ownerPresence: { sweep, holds: (providerId: string, now = Date.now()) => presenceHold(providerId, presence, now), current: () => presence } };
+  return { ownerPresence: { sweep, holds: (providerId: string, now = Date.now()) => presenceHold(providerId, presence, now), current: () => presence, journal: () => journal } };
 }
 export type OwnerPresenceApi = ReturnType<typeof createOwnerPresence>["ownerPresence"];
 

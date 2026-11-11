@@ -45,6 +45,8 @@ export const UNLISTED_SWITCHES: Readonly<Record<string, readonly [scope: SwitchS
   "money.task_ceiling": ["global", "on|off", "with a money cap set, a task whose estimate would pass the cap waits for next month"],
   "money.cap_unset_zero": ["global", "on|off", "an unset money cap reads as zero for paid lanes (unset cap: no limit, as the owner decided)"],
   "money.silent_estimate_tokens": ["global", "number", "an attempt whose paid provider reported no usage is priced at this many tokens"],
+  // docs
+  "docs.gitnexus_refresh": ["project", "on|off", "the nightly docs pass refreshes the GitNexus code index (.gitnexus) of a checkout that lacks it or lags HEAD"],
   // hub-wide jobs
   "curriculum.weekly": ["global", "on|off", "every Monday the hub clusters the week's misses into a ten-line brief (bb lane-pilot curriculum --brief)"],
   "task.outcome_file": ["global", "on|off", "a finished task leaves OUTCOME.md beside its PLAN.md where the task folder still exists"],

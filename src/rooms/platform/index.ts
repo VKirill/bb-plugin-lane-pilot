@@ -2,3 +2,4 @@
 // in server/, which would close an import cycle back into storage.
 export * from "./server/hub";
 export * from "./atomic-text";
+export * from "./code-facts";

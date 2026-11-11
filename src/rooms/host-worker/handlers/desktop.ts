@@ -5,12 +5,27 @@ import { lstat, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
-import { hostContract } from "../../contracts";
+import { hostContract, QA_DEFAULT_PORTS } from "../../contracts";
 import { runBrowserQaOnHost } from "../../qa";
 
 export const runBrowserQa: ExperimentalHostRpcHandlers<typeof hostContract>["runBrowserQa"] = async (input) => (
   runBrowserQaOnHost(input)
 );
+
+/** The first dev-server port that answers on this host, or null (SMA k_wqa_find: find the app). */
+export const findBrowserQaTarget: ExperimentalHostRpcHandlers<typeof hostContract>["findBrowserQaTarget"] = async (input) => {
+  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  for (const port of QA_DEFAULT_PORTS) {
+    const answers = await new Promise<boolean>((resolve) => {
+      const req = httpRequest({ hostname: "127.0.0.1", port, path: "/", method: "GET", timeout: 2000 }, (res) => { res.resume(); resolve(true); });
+      req.on("timeout", () => { req.destroy(); resolve(false); });
+      req.on("error", () => resolve(false));
+      req.end();
+    });
+    if (answers) return { hostId, url: `http://127.0.0.1:${port}/` };
+  }
+  return { hostId, url: null };
+};
 
 export const probeBrowserQaTarget: ExperimentalHostRpcHandlers<typeof hostContract>["probeBrowserQaTarget"] = async (input) => {
   const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;

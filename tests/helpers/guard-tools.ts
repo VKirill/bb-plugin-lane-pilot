@@ -5,7 +5,20 @@
  * - Explained unshown fields: an RPC field the screens do not show is named with why (the register below).
  * - Permission rules parity and session/terminal parity: the PM's tool allow-list is the same in a BB session and in a terminal session.
  */
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
+
 const SECRET_SHAPES = [/\bsk-[A-Za-z0-9_-]{20,}/, /\bgh[pousr]_[A-Za-z0-9]{24,}/, /\bxox[abpr]-[A-Za-z0-9-]{12,}/, /\bAKIA[0-9A-Z]{16}\b/, /-----BEGIN [A-Z ]*PRIVATE KEY-----/, /\b\d{8,10}:AA[A-Za-z0-9_-]{30,}\b/];
+
+const walk = (dir: string): string[] => readdirSync(dir).flatMap((name) => { const path = join(dir, name); return statSync(path).isDirectory() ? (name === "node_modules" ? [] : walk(path)) : [path]; });
+
+/** The walk-and-scan the test run and the publish gate share (SMA m_tl_rebrand_wired): every leak hit under the
+ * shipped sources as `path:line`. The same list fails `npx vitest` and `lp-ship.ts publishable`. */
+export function leakFindings(root: string): string[] {
+  const dirs = ["src", "docs", "packages/i18n/src"].map((dir) => join(root, dir)).filter(existsSync);
+  const files = dirs.flatMap(walk).filter((path) => /\.(ts|tsx|md|json)$/.test(path) && !path.includes("guard-tools"));
+  return files.flatMap((path) => leaks(readFileSync(path, "utf8")).map((hit) => `${relative(root, path)}:${hit.line}`));
+}
 
 /** Leak scanner: the secret-shaped strings of a text, each with its line number. */
 export function leaks(text: string): Array<{ line: number; shape: string }> {
