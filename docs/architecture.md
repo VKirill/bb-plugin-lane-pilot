@@ -12,7 +12,6 @@ sources:
   - host.ts
   - package.json
   - src/rooms/core/server/core.ts
-  - src/rooms/core/server/services.ts
   - src/rooms/core/server/rpc.ts
   - src/rooms/core/server/native-wiring.ts
   - src/rooms/core/server/lifecycle-events.ts
@@ -103,7 +102,7 @@ The root package declares workspace dependencies and the three BB entries; `serv
 5. The entry schedules run reconciliation, silent-writer checks, and worktree cleanup (`server.ts:111-139`).
 6. On reload or shutdown, the lifecycle handler enables the checkout drain, waits for in-flight calls until its deadline or abort, and stores a drain snapshot in BB KV (`src/rooms/native-install/native-install-lifecycle.ts:15-20`, `src/rooms/stability/server/deploy-drain.ts:59-79`). Startup skips immediate periodic scans only after a clean reload drain (`src/rooms/stability/server/deploy-drain.ts:82-89`, `server.ts:174-188`).
 
-`createCore` wraps the host client with job handling and the active schedule abort signal; calls made inside an isolated schedule run carry that signal (`src/rooms/core/server/core.ts:91-100`). The service bag's shared types are defined in `src/rooms/core/server/services.ts`.
+`createCore` wraps the host client with job handling and the active schedule abort signal; calls made inside an isolated schedule run carry that signal (`src/rooms/core/server/core.ts:91-100`). The service bag's shared type is the `Services` interface of the entry file (`server.ts`).
 
 ## Dependency boundaries
 

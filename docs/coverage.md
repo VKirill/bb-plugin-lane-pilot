@@ -28,10 +28,10 @@ SMA D1-5 («Not covered, with reason», «Graph regression catalogue»). The reg
 | Kind | Listed by | Checked by |
 |---|---|---|
 | stage | `STAGE_IDS` (`packages/contracts`) | `tests/coverage.test.ts` |
-| transition | `TRANSITION_TABLE` (`src/rooms/runs/state-machine.ts`), id `from+event` (`∅` for a new attempt) | the same |
+| transition | `TRANSITION_TABLE` (`src/rooms/contracts/state-machine.ts`), id `from+event` (`∅` for a new attempt) | the same |
 | gate | `GATE_CATEGORIES` (`src/rooms/storage/database.ts`) | the same |
 | memory path | `MEMORY_PATHS`, derived: a probed path is live through `memory_paths`, an exempt one is «not covered» with its own reason | `tests/memory-paths.test.ts` |
-| failure class | the `FailureClass` type (`src/rooms/runs/failure-class.ts`), read by the test | the test |
+| failure class | the `FailureClass` type (`src/rooms/contracts/failure-class.ts`), read by the test | the test |
 | room | the directories of `src/rooms` | the test |
 | mechanism | written by hand in the registry (rollback, deferral register, bench, policy, plan-fact, merge queue, …); the spec's mechanisms are required by name | the test |
 

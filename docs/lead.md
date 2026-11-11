@@ -11,7 +11,7 @@ sources:
   - src/rooms/lead/logic.ts
   - src/rooms/lead/predict.ts
   - src/rooms/lead/settings.ts
-  - src/rooms/lead/lead-agent.ts
+  - src/rooms/contracts/lead-agent.ts
   - src/rooms/lead/server/journal.ts
   - src/rooms/lead/server/surfaces.ts
   - src/rooms/lead/server/backtest.ts
@@ -102,7 +102,7 @@ Maslov's law 9: a process that repeats by hand should become a graph, and nothin
 
 The think step's brief names the rule: a row with `count30d >= 3` deserves a proposal of class `process` titled «Граф для: `<stem>`» with `architectSeed: {kind, stem, threadIds, samples}` on it. The seed is stored on the branch's `payload_json` as `{architectSeed: …}` (the column a `schedule` proposal uses for its schedule); `lp.lead_propose` drops a second seeded proposal whose title a road branch already carries in any state, so the same process is never proposed twice. The waiting card of a seeded proposal carries a fourth button «Собрать с архитектором» (the `prepare_native_session` RPC of `ARCHITECT_LAUNCH`).
 
-«Да» on such a branch — or the act step when the class is open — does not go to the PM intake: the hand-over is a `handed`/`acted` line on «Ждут владельца» carrying the seed and the architect button (`postArchitectHand`). The button opens the Workflow architect in the project's new-chat composer (`src/rooms/workflow/workflow-architect.ts`); the line itself holds the first prompt for it («build a tested graph for this process from what these errand threads did», `architectPrompt`), because a session starts only on the owner's «Send» and the tick cannot start a chat by itself.
+«Да» on such a branch — or the act step when the class is open — does not go to the PM intake: the hand-over is a `handed`/`acted` line on «Ждут владельца» carrying the seed and the architect button (`postArchitectHand`). The button opens the Workflow architect in the project's new-chat composer (`src/rooms/native-agent/workflow-architect.ts`); the line itself holds the first prompt for it («build a tested graph for this process from what these errand threads did», `architectPrompt`), because a session starts only on the owner's «Send» and the tick cannot start a chat by itself.
 
 ## Rights and the exam
 
@@ -118,11 +118,11 @@ The lead never acts in its own session. The tick's agent runs under the role `le
 
 ## Settings
 
-Global rows (`src/rooms/lead/settings.ts`, the «Штурман» segment of Self-improvement or `bb lane-pilot settings`): `lead.enabled` (off), `lead.project` (the project the chat and tick runs live in; empty = the Lane Pilot project of the hub), `lead.projects` (the zone; empty = every project), `lead.priority` (project ids in the owner's order; the brief carries each project's rank, 1 = first, unlisted projects follow, and the lead ranks its proposals by it), `lead.budget_daily_usd` (15), `lead.tick_cron` (`30 6,10,14,18 * * *`, owner's time zone), `lead.max_proposals` (5). The tick's budget is the sum of today's receipts; a tick that finds it spent ends `budget`.
+Global rows (`src/rooms/lead/settings.ts`, the «Штурман» segment of Self-improvement or `bb lane-pilot setting`): `lead.enabled` (off), `lead.project` (the project the chat and tick runs live in; empty = the Lane Pilot project of the hub), `lead.projects` (the zone; empty = every project), `lead.priority` (project ids in the owner's order; the brief carries each project's rank, 1 = first, unlisted projects follow, and the lead ranks its proposals by it), `lead.budget_daily_usd` (15), `lead.tick_cron` (`30 6,10,14,18 * * *`, owner's time zone), `lead.max_proposals` (5). The tick's budget is the sum of today's receipts; a tick that finds it spent ends `budget`.
 
 ## The chat and the tool
 
-The profile `lead` (`src/rooms/lead/lead-agent.ts`, `LEAD_SESSION`) opens from the composer's agent popover and from the panel («Открыть чат Штурмана», RPC `lead_chat_start`: a live chat is returned instead of a second). Its one tool is `lane_pilot_lead`: `status`, `road`, `road_add`, `road_reject`, `road_done`, `journal`, `tick_now`, `decide`; plus reading and the web. It has no dispatch, schedule, errand, browser or workflow tool whatever a saved definition lists (`overlaySessionTools`).
+The profile `lead` (`src/rooms/contracts/lead-agent.ts`, `LEAD_SESSION`) opens from the composer's agent popover and from the panel («Открыть чат Штурмана», RPC `lead_chat_start`: a live chat is returned instead of a second). Its one tool is `lane_pilot_lead`: `status`, `road`, `road_add`, `road_reject`, `road_done`, `journal`, `tick_now`, `decide`; plus reading and the web. It has no dispatch, schedule, errand, browser or workflow tool whatever a saved definition lists (`overlaySessionTools`).
 
 ## RPC and CLI
 

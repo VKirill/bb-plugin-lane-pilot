@@ -184,7 +184,7 @@ The whole suite runs once per batch, not per task. `integration.gate_command` se
 
 ## 13. Release
 
-Shipping is a PM duty, not a graph stage (`docs/ship.md`). When every task of the batch is accepted: (1) `git push origin <branch>` from the checkout (a force-push is refused; a rejected push means fetch, report, dispatch an integrating writer); (2) bring the project up the way it already runs (`PROJECT.md`, package scripts, `scripts/deploy.sh`, compose, systemd); (3) prove it live with a healthcheck, a request or the service log. The PM reports each command, its exit code and the live check.
+Shipping is a PM duty, not a graph stage (`docs/ship.md`). When every task of the batch is accepted: (1) `git push origin <branch>` from the checkout (a force-push is refused; a rejected push means fetch, report, dispatch an integrating writer); (2) bring the project up the way it already runs (`PROJECT.md`, package scripts, a deploy script under its `scripts/` folder, compose, systemd); (3) prove it live with a healthcheck, a request or the service log. The PM reports each command, its exit code and the live check.
 
 - `bb lane-pilot reverify <task>` reruns an accepted task's checks on its merge commit. `bb lane-pilot revert <task> [--dry-run] [--no-gate]` takes the accepted work out in a scratch worktree and merges the revert (`docs/rollback.md`). `pause` and `resume` hold a run at stage boundaries.
 - Heavy goals run as phases on the `lp.*` graphs in their own candidate worktree and branch (`docs/phases.md`). Each stage has 2 tries (6 over the phase's life) and a replan 2 times.

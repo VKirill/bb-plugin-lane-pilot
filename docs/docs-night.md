@@ -29,7 +29,7 @@ TL;DR: `lp.docs-night` rewrites `docs/`, `README.md` and `PROJECT.md` from the c
 3. **Blockers.** Only findings on pages this pass wrote (or links to pages it removed) block it (`blockingDocsFindings`, `docs-lint.ts:198`); oversized pages the agent made oversized block, ones already over the limit are reported (`docs-lint.ts:208-215`).
 4. **Repair.** With findings, the record moves to `repairing` and the docs agent gets one round (`docs-nightly.ts:686-691`).
 5. **Generated pages.** `docs/atlas.md` and `docs/enabled-settings.md` are built by `scripts/generate-atlas.ts` / `scripts/generate-enabled-settings.ts` and pinned by hash markers; `docs/index.md` is built by `buildDocsIndex`.
-6. **Role pages.** Projects with docs flows get `docs/audiences/{copy,seo,design}.md` and `docs/capabilities.md` (`src/rooms/docs/docs.ts:237`, `docs-lint.ts:277`) — a project without flows has no `docs/audiences/`, which is why the path is dead in this repo's own docs.
+6. **Role pages.** Projects with docs flows get `docs/audiences/{copy,seo,design}.md` and `capabilities.md` in the same `docs/` folder (`src/rooms/docs/docs.ts:286`, `docs-lint.ts:452`) — a project without flows has no `docs/audiences/`, which is why the path is dead in this repo's own docs.
 
 ## Limits
 

@@ -35,7 +35,7 @@ The full list, one line per command, is generated from the CLI's own registry in
 | `revert`, `reverify`, `regress`, `return` | Undo an accepted merge, re-run checks, regression bisect, send a task back to a stage. |
 | `docs-nightly`, `coverage`, `skill-lint` | The nightly docs pass now; coverage of rooms by drills and tests; check a skill folder. |
 
-Two commands belong to the opt-in measurements described under [Experimental features](settings.md#experimental-features): `bb lane-pilot checkers diff-hidden` and `bb lane-pilot writer trajectories export`.
+One command belongs to the opt-in measurements described under [Experimental features](settings.md#experimental-features): `bb lane-pilot checkers diff-hidden`.
 
 ## Agent tools
 

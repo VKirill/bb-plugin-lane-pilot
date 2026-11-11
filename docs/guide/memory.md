@@ -105,7 +105,7 @@ Search fuses an FTS5 word index (`bm25`) with an FTS5 trigram index (word forms 
 
 - `bb lane-pilot memory-probe <project-id> [--paths a,b] [--keep] [--clean] [--report] [--force]` plants a note, a core convention and a rule with a unique token and checks that each registered path hands them to its agent (sandbox projects only unless `--force`). A drill scenario `memory_paths` runs it on every deploy.
 - `bb lane-pilot memory-eval [--sizes 30,300,3000] [--seed N] [--scope project|pile] [--shelf] [--source f] [--export f] [--json]` (also `scripts/memory-eval.ts`) scores retrieval on real accepted tasks and on questions whose right answer is nothing, against a plain path-and-keyword baseline, with bootstrap intervals. `--shelf` replays the hub's history through the real write door. It found and fixed a ranking defect (writer hit@3 41 % to 62 %) and moved the default `memory.note_budget` to 24000 (hit@3 69 %).
-- A frozen 40-case gate (`tests/fixtures/memory-gate.json`: namespace, change, no-answer, needed, budget; 8 cases each) must show no leak, no cut rule and no overflow.
+- A frozen 40-case gate (`src/rooms/memory-eval/server/gate-fixture.json`: namespace, change, no-answer, needed, budget; 8 cases each) must show no leak, no cut rule and no overflow.
 - `scripts/memory-unlearning-audit.ts` deletes a seeded fact the way `memory_record_delete` does and sweeps the indexes, searches, cold tier and conflict register for residue; it exits 1 on any leak.
 - `scripts/memory-scope-dry-run.ts` lists scopes the reader cannot place; `--apply` rebinds bare-label scopes to sections with a journal, `--revert` restores them.
 

@@ -133,7 +133,7 @@ The PM may put a `forecast` (files, first-try checks, tokens, minutes) in the ta
 
 ## Measurements that are off by default
 
-Five further measurements feed the morning summary: the diff-hidden audit of the checkers (`checkers.diff_hidden_limit`), the monthly re-bench of Jev's model routing (`bench.model_rebench`), the skill-switch metric, the export of rejected writer trajectories (`writer.trajectory_export`) and the nightly PM `context.md` (`pm.context_file`). Each is described, with how to turn it on, under [Experimental features](settings.md#experimental-features).
+Four further measurements feed the morning summary: the diff-hidden audit of the checkers (`checkers.diff_hidden_limit`), the monthly re-bench of Jev's model routing (`bench.model_rebench`), the skill-switch metric and the nightly PM `context.md` (`pm.context_file`). Each is described, with how to turn it on, under [Experimental features](settings.md#experimental-features).
 
 ## Sources
 
