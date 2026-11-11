@@ -409,3 +409,16 @@ export function latestAreaWriterBinding(db: LanePilotDatabase, projectId: string
 export function listRunIdsForProject(db: LanePilotDatabase, projectId: string): string[] {
   return (db.prepare("SELECT id FROM lane_pilot_run WHERE project_id=?").all(projectId) as Array<{ id: string }>).map((row) => row.id);
 }
+
+/** The project and PM thread of the newest run that used this folder as its writer checkout (a window lease needs no open run). */
+export function checkoutRunProject(db: LanePilotDatabase, path: string): { projectId: string; pmThreadId: string | null } | null {
+  const row = db.prepare("SELECT project_id, pm_thread_id FROM lane_pilot_run WHERE writer_workspace_path=? ORDER BY updated_at DESC LIMIT 1")
+    .get(path) as { project_id: string; pm_thread_id: string | null } | undefined;
+  return row ? { projectId: row.project_id, pmThreadId: row.pm_thread_id } : null;
+}
+
+/** The folders runs of this project used as their writer checkout, newest first, at most `limit` (window status scans them for guests). */
+export function listRunWorkspacePaths(db: LanePilotDatabase, projectId: string, limit = 5): string[] {
+  return (db.prepare("SELECT writer_workspace_path AS p FROM lane_pilot_run WHERE project_id=? AND writer_workspace_path IS NOT NULL GROUP BY writer_workspace_path ORDER BY MAX(updated_at) DESC LIMIT ?")
+    .all(projectId, limit) as Array<{ p: string }>).map((row) => row.p);
+}

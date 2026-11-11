@@ -52,7 +52,7 @@ const capped = (lines: string[]): string[] => (lines.length > PROGRESS_CAP ? [..
  * at 200 rows with a closing «… N more not shown», and each clipped line is marked «[cut: N chars]» — a person can
  * always tell a cut record from a complete one.
  */
-export function progressJournal(input: { attemptId: string; taskId: string; produced: readonly string[]; events: ReadonlyArray<Record<string, unknown>> }): string {
+export function progressJournal(input: { attemptId: string; taskId: string; produced: readonly string[]; events: ReadonlyArray<Record<string, unknown>>; /** The event read hit its limit: later calls are not in this journal (the last silent cut, SMA k_lib_workerprog). */ truncated?: boolean }): string {
   const files = capped(input.produced.map((path) => `- ${path}`));
   const commands = capped(toolPairsOf(input.events).map((pair) => `- ${clipMark(`${pair.tool}: ${pair.call}`)}${pair.result ? `\n  ${clipMark(pair.result)}` : ""}`));
   return [
@@ -65,6 +65,7 @@ export function progressJournal(input: { attemptId: string; taskId: string; prod
     "",
     "## commands and tool calls",
     ...(commands.length ? commands : ["- (none)"]),
+    ...(input.truncated ? ["", "… calls after the first 500 thread events are not shown"] : []),
     "",
   ].join("\n");
 }

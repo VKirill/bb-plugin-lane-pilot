@@ -921,7 +921,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           const journalEvents = await bestEffort(ctx.log, "progress journal events", Promise.resolve().then(() => listThreadEventsRaw(bb, { threadId: input.writerThreadId, order: "asc", limit: "500" } as never)), null);
           await bestEffort(ctx.log, "progress journal write", Promise.resolve().then(() => bb.sdk.files.write({ hostId:input.config.hostId, rootPath:journalWorkspace,
             path:`${acceptanceArtifactDir(journalWorkspace, input.runId, input.taskId)}/PROGRESS.md`,
-            content:progressJournal({ attemptId: input.attemptId, taskId: input.taskId, produced: candidate.produced ?? [], events: (journalEvents as { events?: Array<Record<string, unknown>> } | null)?.events ?? [] }),
+            content:progressJournal({ attemptId: input.attemptId, taskId: input.taskId, produced: candidate.produced ?? [], events: (journalEvents as { events?: Array<Record<string, unknown>> } | null)?.events ?? [],
+              truncated: ((journalEvents as { events?: Array<Record<string, unknown>> } | null)?.events ?? []).length >= 500 }),
             contentEncoding:"utf8", createParents:true, expectedSha256:null })), undefined);
         }
       }

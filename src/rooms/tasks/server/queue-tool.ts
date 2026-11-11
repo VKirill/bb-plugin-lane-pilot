@@ -6,8 +6,8 @@ import { recordTaskWord, waitingAttemptId } from "../words";
 import type { TaskWordPort } from "../../contracts";
 import { wayOut } from "../../contracts"
 import { taskFamily } from "@lane-pilot/contracts";
-import { hostContract } from "../../contracts";
-import { failedTasksAllProjects, getRun, getRunWriterHost, latestAttemptsForProject, latestTaskAttemptState, setTaskHeldUntil } from "../../storage";
+import { hostContract, resolvePlanningHome } from "../../contracts";
+import { failedTasksAllProjects, getRun, getRunWriterHost, latestAttemptsForProject, latestTaskAttemptState, planningHomeInputs, setTaskHeldUntil } from "../../storage";
 
 /**
  * The PM's queue controls (SMA map: Durable queue row): hold a task out of the queue until a date or until released (Held until year 2999),
@@ -78,7 +78,9 @@ export function registerQueueTool(ctx: ServerCore, taskWords: TaskWordPort): voi
         const hostId = getRunWriterHost(db, runId);
         if (!run?.writer_workspace_path || !hostId) throw new ToolError("this run has no checkout to close the backlog item in", { code: "no_checkout", retryable: false, sideEffects: "none" });
         const host = bb.hosts.experimental_client({ contract: hostContract });
-        return JSON.stringify(await host.call("closeBacklogItem", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, id: input.id, ...(input.note ? { note: input.note } : {}) }, { hostId, timeoutMs: 15_000 }));
+        // The todo items live in the planning home when the project set one (SMA d_project_planning), else in the checkout.
+        const root = await resolvePlanningHome({ host, hostId, cwd: run.writer_workspace_path, inputs: planningHomeInputs(db, context.projectId), log: bb.log }) ?? run.writer_workspace_path;
+        return JSON.stringify(await host.call("closeBacklogItem", { requestedHostId: hostId, projectCwd: root, id: input.id, ...(input.note ? { note: input.note } : {}) }, { hostId, timeoutMs: 15_000 }));
       }
       const until = input.action === "release" ? null : input.until ? Date.parse(input.until) : HOLD_FOREVER;
       const changed: string[] = [];

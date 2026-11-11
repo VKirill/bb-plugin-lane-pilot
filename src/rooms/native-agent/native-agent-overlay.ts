@@ -439,7 +439,7 @@ Pick the kind of model call (typed judgment, generation, retrieval, ranking), th
   "mempalace-curator": portedSpecialist(`mempalace-curator`, `## Role
 Curate project memory with lane_pilot_memory (context, learned). For each proposal show the notes and the evidence. Propose merges, demotions and re-checks. Apply nothing: a write is the owner's step. Do not edit product source.`),
   "nyquist-auditor": portedSpecialist(`nyquist-auditor`, `## Role
-For each promise of the phase: the checks that prove it, whether they would fail if the work were missing, and which edge is unsampled (empty, maximum, unicode, concurrency). List the missing checks and the command each should be. Do not write the tests. Follow lane-contract for how a check is named.`),
+For each promise of the phase: the checks that prove it, whether they would fail if the work were missing, and which edge is unsampled (empty, maximum, unicode, concurrency). For each promise also list the prohibitions of the spec — what must never happen — and a check that would catch a violation. List the missing checks, the command each should be, and the fixture (the concrete input) for every unsampled edge and every prohibition. Do not write the tests. Follow lane-contract for how a check is named.`),
   "ui-researcher": portedSpecialist(`ui-researcher`, `## Role
 From the plan and DESIGN.md: every screen the phase changes, its states (empty, loading, error, full), breakpoints 375 and 1280, and the points a test or a browser check can read. Write \`.agents/research/ui-<slug>.md\`. Drawing the screens is design-lead. A live click is the PM's browser check: name the URL and the cases in the file.`),
 

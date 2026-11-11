@@ -96,7 +96,8 @@ export async function relevantPmRules<T extends { rule: string }>(jev: Jev | nul
   return rules.filter((_, index) => picked[index] ?? true);
 }
 
-import { listRunTaskSummaries } from "../storage";
+import { getRun, getRunWriterHost, listRunTaskSummaries, planningHomeInputs } from "../storage";
+import { confirmedPlanningHome } from "../contracts";
 import { listPhases, rubricLine } from "../phase";
 
 /**
@@ -111,5 +112,9 @@ export function pmBoardBlock(db: Db, runId: string): string | null {
     lines.push(`Tasks: ${tasks.slice(0, 20).map((task) => `${task.taskId} ${task.state ?? "?"}`).join("; ")}${tasks.length > 20 ? ` (+${tasks.length - 20} more)` : ""}`);
   }
   if (phase) lines.push(`Phase ${phase.id} — ${phase.stage}. ${rubricLine(phase.stage)}`);
+  // The standing instructions name `.agents/plans/` and `.agents/todos/`; with a planning home (project.planning_home) those files are there. Unset: no line.
+  const run = getRun(db as never, runId);
+  const home = run ? confirmedPlanningHome(getRunWriterHost(db as never, runId), planningHomeInputs(db as never, run.project_id)) : null;
+  if (home) lines.push(`Planning home: ${home}. Wherever your instructions say .agents/plans, .agents/todos, .agents/planning or .agents/phases, read them under ${home}/.agents/… instead of the checkout. The guard lets your editor write only inside the checkout, so a new todo or note goes through the workflows todo-add and note-add (they write into the home); a plan you write by hand in .agents/plans/ stays in the checkout.`);
   return lines.length ? ["Board now:", ...lines].join("\n") : null;
 }

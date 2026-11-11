@@ -1,7 +1,7 @@
 import { hostContract, rpcContract } from "../contracts";
 
 import type { ServerCore } from "../contracts/server";
-import { HARNESS_VERSION, activeRunForProject, getRun, getTaskContractJson, latestAttemptRow, listAttemptRowsForProject, setTaskHeldUntil, taskHeldUntil, updateTaskContractJson, workerOutcomesSince, workerPresenceNow } from "../storage";
+import { HARNESS_VERSION, PROTECTIONS, isArmed, activeRunForProject, getRun, getTaskContractJson, latestAttemptRow, listAttemptRowsForProject, setTaskHeldUntil, taskHeldUntil, updateTaskContractJson, workerOutcomesSince, workerPresenceNow } from "../storage";
 import { attemptRecord } from "../tools/server";
 import { listReceipts } from "../capability";
 import { tokenDailySeries, tokenDailyTotal } from "../usage/server";
@@ -14,6 +14,10 @@ import { listPhasePartsSince } from "../phase";
 import { activeMemoryDigestRows, countActiveMemory, lintMemory, memoryWithoutTrace, rebuildMemoryIndexes, reviewMemory } from "@lane-pilot/memory-core";
 import { currentEmbedder, embedPending, memorySettingsFor } from "../memory/server";
 import { loadProjectSettings } from "../storage";
+import { readRateLimitSnapshot, snapshotAsBoardWindows } from "../stability/server";
+import { integrityReport } from "../policy";
+import { conveyorState } from "../runs";
+import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 
 import type { FrontApi } from "../front/server/index";
 import type { ReadWriterWorkspaceFile } from "../platform/server";
@@ -43,17 +47,26 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
   const kv = bb.storage.kv;
   const host = () => bb.hosts.experimental_client({ contract: hostContract });
   const activeRun = (projectId: string) => activeRunForProject(db, projectId);
-  const liveWindows = async (hostId: string) => (await services.providerUsage?.windows({ providerId: WINDOW_PROVIDER, hostId })) ?? { at: null, windows: {} };
+  // The live figure first; when BB's usage source has not answered, the rate-limit watch's stored event is the fallback (SMA k_h_statusline).
+  const liveWindows = async (hostId: string) => {
+    const live = (await services.providerUsage?.windows({ providerId: WINDOW_PROVIDER, hostId })) ?? { at: null, windows: {} };
+    if (live.at) return live;
+    return snapshotAsBoardWindows(await readRateLimitSnapshot(kv as never, WINDOW_PROVIDER).catch(() => null), Date.now());
+  };
 
   return {
     /** Today: the day's KPI strip and its feed (accepted, blocked, phase parts, actions). */
     cockpit_today: async ({ projectId }: { projectId: string }) => {
       const since = Date.now() - DAY_MS;
-      const rows = listAttemptRowsForProject(db, { projectId, updatedSince: since, limit: 300 });
-      const tokens = tokenDailyTotal(db, projectId, new Date().toISOString().slice(0, 10));
-      const parts = listPhasePartsSince(db, projectId, since);
-      const actions = (await services.front.actions(200)).filter((row) => (row as { at: number }).at >= since);
+      // Cross-source digest (SMA k_lib_digest): each source answers alone; a failing one empties its list and names itself in `partial`.
+      const failed: string[] = [];
+      const source = async <T>(name: string, read: () => T | Promise<T>, empty: T): Promise<T> => { try { return await read(); } catch (cause) { failed.push(name); ctx.log(`Lane Pilot cockpit_today: source ${name} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return empty; } };
+      const rows = await source("attempts", () => listAttemptRowsForProject(db, { projectId, updatedSince: since, limit: 300 }), [] as ReturnType<typeof listAttemptRowsForProject>);
+      const tokens = await source("tokens", () => tokenDailyTotal(db, projectId, new Date().toISOString().slice(0, 10)), 0);
+      const parts = await source("phases", () => listPhasePartsSince(db, projectId, since), [] as ReturnType<typeof listPhasePartsSince>);
+      const actions = (await source("actions", () => services.front.actions(200), [] as unknown[])).filter((row) => (row as { at: number }).at >= since);
       return {
+        partial: failed,
         kpi: { accepted: rows.filter((row) => row.state === "accepted").length, blocked: rows.filter((row) => row.state === "blocked").length, running: rows.filter((row) => row.state === "running").length, tokens, actions: actions.length },
         feed: [...rows.map((row) => {
           // An accepted row opens its acceptance card on press (SMA done_unfold): it carries its run and its title for that.
@@ -61,6 +74,27 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
           return { at: row.at, kind: `task_${row.state}`, runId: row.runId, taskId: row.taskId, title, text: `${row.taskId}${row.reason ? ` — ${row.reason.slice(0, 160)}` : ""}` };
         }),
           ...parts.map((part) => ({ at: part.at as number, kind: `phase_${part.kind}`, text: `${part.phaseId}: ${String(part.text).slice(0, 200)}` }))].sort((a, b) => b.at - a.at).slice(0, 150),
+      };
+    },
+    /** The park policy as written (SMA m_sw_rules): every protection with its hazard and current value, plus the hold/breaker
+     * switches of the run policy — drawn read-only on the Rules screen; edits stay in the settings tabs. */
+    cockpit_rules: async ({ projectId }: { projectId: string }) => {
+      const settings = loadProjectSettings(db, projectId);
+      // An unset setting shows the value the code applies: the catalog's default (not the protection's "armed" word, which differs for code_critique.mode and plan_fact.mode).
+      const effective = (key: string, fallback: unknown) => settings[key] ?? VISIBLE_CATALOG.find((row) => row.setting === key)?.defaultValue ?? fallback;
+      const rules = integrityReport(db, settings, projectId).map((rule) => {
+        const current = effective(String(rule.key), rule.armed);
+        return { ...rule, current, disarmed: Boolean(rule.term) || !isArmed(PROTECTIONS[String(rule.key)]!, current) };
+      });
+      const conveyor = await conveyorState(bb.storage.kv as never);
+      const fallback = String(effective("writer.fallback_on_provider_failure", "immediate"));
+      return {
+        rules,
+        switches: [
+          { key: "conveyor", kind: "flag", value: conveyor.on },
+          { key: "protection.rearm", kind: "flag", value: settings["protection.rearm"] !== "off" },
+          { key: "writer.fallback_on_provider_failure", kind: "enum", value: fallback },
+        ],
       };
     },
     /** Workers over 30 days (tokens by provider and model) with their capability cells: the worker cards and their history. */

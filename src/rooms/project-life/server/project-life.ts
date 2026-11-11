@@ -1,7 +1,7 @@
 import { acceptanceArtifactDir } from "../../tasks";
 import type { StageHelperSettings } from "../../platform/server";
-import { taskV2Schema } from "../../contracts";
-import { claimStageSpawn, getRun, getTask, listStageReceipts } from "../../storage";
+import { resolvePlanningHome, taskV2Schema } from "../../contracts";
+import { claimStageSpawn, getRun, getTask, listStageReceipts, planningHomeInputs } from "../../storage";
 import { bbServiceTier, listedServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { changelogCommand, changelogLine, findOutOfScopeProjectLifeWrites, foldCoveredTaskIds, parseProjectLifeFinalMessage, parseProjectLifeSettings, projectLifePrompt, projectLifeServiceTier } from "../project-life";
 import { ProjectLifeChildSnapshot, childResultObject, projectLifeChildSnapshot, spawnRefused } from "../../runs/server";
@@ -206,11 +206,13 @@ export function createProjectLifeStage(ctx: ServerCore, services: Services) {
       const placement=await helperChildPlacement({
         bb, db, projectId:args.projectId, runId:args.runId, role:"project-life-maintainer",
       });
+      // plans and todos live in the planning home when the project set one (SMA d_project_planning); the prompt names it.
+      const planningHome=await resolvePlanningHome({host:host as never,hostId:config.hostId,cwd:workspace.path,inputs:planningHomeInputs(db,args.projectId),log:bb.log});
       const artifactDirs=coveredTaskIds.map((id)=>acceptanceArtifactDir(workspace.path,args.runId,id));
       spawnCalled=true;
       const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, projectLifeProviderId, "project-life"),
         ...writerExecutionSelection(projectLifeProviderId,projectLifeModel,projectLifeEffort,tier),
-        prompt:projectLifePrompt({workspace:workspace.path,runId:args.runId,artifactDirs,tasks:snapshot.tasks,nowIso:new Date().toISOString()}),
+        prompt:projectLifePrompt({workspace:workspace.path,runId:args.runId,artifactDirs,tasks:snapshot.tasks,nowIso:new Date().toISOString(),planningHome}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"project-life-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,
           stageId:"project-life",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true,...graphStepMetadata(args.workflow)}});

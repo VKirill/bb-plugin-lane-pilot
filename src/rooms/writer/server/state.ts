@@ -3,7 +3,7 @@ import { createProviderBreaker, createRunBudget, parseRunBudgetLimits, type RunB
 import { RunWriterPool } from "../../tasks";
 import { createProviderUsage, usageSkipPercent, parseBreakdown, tokenCursorRow } from "../../usage/server";
 import { listRunWriterThreadIds } from "../../storage";
-import { createProviderRetryGuard } from "../../stability/server";
+import { createProviderRetryGuard, readRateLimitSnapshot } from "../../stability/server";
 import { createConcurrencyLimit } from "./concurrency-limit";
 import { CATALOG_WAIT_MS, modelCatalogOf, noteProviderLimit, registerSpawnUsage, threadModelOf, within, zcodeBusy, zcodeBusyPeek } from "../../platform/server";
 import { onThreadFailure } from "@lane-pilot/thread-observe";
@@ -25,7 +25,7 @@ export function createWriterState(ctx: ServerCore) {
   const providerUsage = createProviderUsage(ctx.bb, Date.now, async ({ hostId, settings }) => zcodeBlock({
     settings, hostId, now: Date.now(), busy: await zcodeBusy(ctx.bb),
     catalog: await bestEffort(ctx.log, "writer model catalog", within(modelCatalogOf(ctx).get(), CATALOG_WAIT_MS), null),
-  }));
+  }), (providerId) => readRateLimitSnapshot(ctx.bb.storage.kv as never, providerId));
   // The helpers' resolver (resolveSpawnModel) reads the same cache, under the same threshold, to move a table pick off a nearly spent provider.
   // A usage source may list a provider's quota under a router's own id (Gemini through 9router on OpenCode v2), so both are read.
   registerSpawnUsage(ctx.bb, {

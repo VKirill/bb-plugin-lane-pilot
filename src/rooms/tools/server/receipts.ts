@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
+import { release as osRelease } from "node:os";
+import { unknownReasons } from "../../runs";
 import { openRegressionBriefs } from "../../baseline";
 import type Database from "better-sqlite3";
 import packageJson from "../../../../package.json";
 import { gateRunVerdict } from "../../verification/server"
 import { parseIntegrationGateSettings } from "../../contracts";
-import { getRun, getAttempt, getReasoningTraceJson, getTaskContractJson, listStageReceipts, loadProjectSettings, openAttemptBriefs, latestGateRun, FULL_GATE_VALID_MS, countLanePilotTables, latestAcceptedAttemptRef, listAttemptRefsSince, listGateEventsForTask } from "../../storage";
+import { getRun, getAttempt, getReasoningTraceJson, getTaskContractJson, listStageReceipts, loadProjectSettings, openAttemptBriefs, latestGateRun, FULL_GATE_VALID_MS, countLanePilotTables, latestAcceptedAttemptRef, listAttemptReasonsSince, listAttemptRefsSince, listGateEventsForTask } from "../../storage";
 import { scoreForecast } from "../../forecast";
 import { calibrationPassport } from "../../forecast/server";
 import { getAttemptChange } from "../../rollback";
@@ -47,7 +49,9 @@ export function passport(db: Db, attemptId: string) {
 
 export function manifest(db: Db) {
   const tables = countLanePilotTables(db);
-  return { name: packageJson.name, version: packageJson.version, tables, builtAt: new Date().toISOString() };
+  // Diagnostics without secrets (SMA m_rd_diag): host facts and the unknown-code count — never env, paths, keys or hostnames.
+  const unknownCodes = unknownReasons(listAttemptReasonsSince(db, Date.now() - 14 * 86_400_000)).reduce((total, row) => total + row.count, 0);
+  return { name: packageJson.name, version: packageJson.version, platform: process.platform, osRelease: osRelease(), node: process.version, unknownCodes, tables, builtAt: new Date().toISOString() };
 }
 
 /** The chain of a task's stage receipts: each link the hash of the previous link and the receipt; the tip names the whole chain. */

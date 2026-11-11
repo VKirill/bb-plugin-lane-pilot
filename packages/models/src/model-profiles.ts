@@ -115,6 +115,16 @@ export const WRITER_PROFILES: readonly WriterProfile[] = [
  */
 export function writerCandidates(settings: Record<string, unknown>): WriterProfile[] {
   const listed = Array.isArray(settings["writer.models"]) ? (settings["writer.models"] as unknown[]).map(String) : null;
-  const off = new Set(Array.isArray(settings["writer.models_off"]) ? (settings["writer.models_off"] as unknown[]).map(String) : []);
-  return WRITER_PROFILES.filter((profile) => profile.available && !off.has(profile.key) && (!listed || listed.includes(profile.key)));
+  return WRITER_PROFILES.filter((profile) => profile.available && !writerSwitchedOff(settings, profile.providerId, profile.model) && (!listed || listed.includes(profile.key)));
+}
+
+/**
+ * The entry of `writer.models_off` that switches this provider/model off, or null: an entry is a profile key, `provider/model`, or
+ * the bare model id, so the toggle works for a model that has no profile too.
+ */
+export function writerSwitchedOff(settings: Record<string, unknown>, providerId: string, model: string): string | null {
+  const off = Array.isArray(settings["writer.models_off"]) ? (settings["writer.models_off"] as unknown[]).map(String) : [];
+  if (!off.length) return null;
+  const key = WRITER_PROFILES.find((row) => row.providerId === providerId && row.model === model)?.key;
+  return off.find((entry) => entry === key || entry === `${providerId}/${model}` || entry === model) ?? null;
 }

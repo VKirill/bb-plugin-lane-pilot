@@ -5,3 +5,4 @@ export type { InstructionForms, InstructionProject } from "./instruction-forms";
 export { acceptedOnboardingEvidence } from "./onboarding";
 export type { OnboardingAcceptedEvidence, OnboardingInputPage } from "./onboarding";
 export { isAllowedProjectLifePath, shouldTriggerProjectLife } from "./project-life";
+export { plansHealth, plansFix } from "./plans-health";

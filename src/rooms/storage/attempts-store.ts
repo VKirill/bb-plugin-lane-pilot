@@ -1429,6 +1429,31 @@ export function listUnmovedLiveAttempts(db: LanePilotDatabase, cutoff: number): 
     .all(cutoff) as Array<{ id: string; run_id: string; task_id: string }>;
 }
 
+/** A project's live attempts with their task's claims, newest movement first (SMA k_hss_summary, k_hss_digest). */
+export function projectLiveAttempts(db: LanePilotDatabase, projectId: string): Array<{ id: string; task_id: string; state: string; updated_at: number; owns_paths: string | null; workspace_path: string | null }> {
+  return db.prepare(`SELECT a.id, a.task_id, a.state, a.updated_at, a.workspace_path, json_extract(t.contract_json,'$.owns_paths') AS owns_paths
+    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id LEFT JOIN lane_pilot_task t ON t.id=a.task_id
+    WHERE r.project_id=? AND a.state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested') ORDER BY a.updated_at DESC`)
+    .all(projectId) as Array<{ id: string; task_id: string; state: string; updated_at: number; owns_paths: string | null; workspace_path: string | null }>;
+}
+
+/** The project a checkout belongs to: a run's own workspace or an attempt's worktree. */
+export function projectIdForWorkspacePath(db: LanePilotDatabase, path: string): string | null {
+  return (db.prepare(`SELECT p FROM (SELECT r.project_id AS p FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.workspace_path=?
+      UNION ALL SELECT project_id FROM lane_pilot_run WHERE writer_workspace_path=?) LIMIT 1`)
+    .get(path, path) as { p?: string } | undefined)?.p ?? null;
+}
+
+/** The section chain of the run a checkout belongs to (its settings scopes, outermost first); empty for a checkout no run owns: the project root. */
+export function settingsScopesForWorkspacePath(db: LanePilotDatabase, path: string): string[] {
+  const row = db.prepare(`SELECT scopes FROM (
+      SELECT r.settings_scopes_json AS scopes, a.updated_at AS at FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.workspace_path=?
+      UNION ALL SELECT r.settings_scopes_json, r.updated_at FROM lane_pilot_run r WHERE r.writer_workspace_path=?) ORDER BY at DESC LIMIT 1`)
+    .get(path, path) as { scopes?: string | null } | undefined;
+  try { const scopes = JSON.parse(row?.scopes ?? "[]"); return Array.isArray(scopes) ? scopes.filter((item): item is string => typeof item === "string") : []; }
+  catch { return []; }
+}
+
 /** The run's attempts still in flight, the one that moved last first. */
 export function liveAttemptsOfRun(db: Pick<LanePilotDatabase, "prepare">, runId: string): Array<{ id: string; task_id: string }> {
   return db.prepare("SELECT id, task_id FROM lane_pilot_attempt WHERE run_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested') ORDER BY updated_at DESC")
@@ -1453,4 +1478,36 @@ export function listAcceptedAttemptsSince(db: LanePilotDatabase, projectId: stri
     WHERE r.project_id=? AND r.created_at>=? AND a.state='accepted'
       AND a.attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id AND b.state='accepted')
     ORDER BY a.created_at`).all(projectId, sinceMs) as Array<{ runId: string; taskId: string; attemptId: string; createdAt: number }>;
+}
+
+/** The key of a task's throwaway codex home (helper-bb-shim's workerHome and the janitor's removal share it); null for a key the host refuses: empty or starting with a dot. */
+export function workerHomeKey(id: string): string | null {
+  const key = id.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120);
+  return key === "" || key.startsWith(".") ? null : key;
+}
+
+/**
+ * Tasks the codex-home sweep may clear (SMA m_ac_codex_home): the NEWEST attempt of the task is final (accepted|blocked|canceled) and ended at
+ * least `quietMs` ago (a day: longer than the worktree grace and the sticky window, inside which the writer's thread may be resumed with its home), and no attempt of any run with that task id is open — a re-queued task that runs now keeps its home. Newest first.
+ * Each row carries the project, and the keys the task's homes may sit under: its id (the key the worker home is made under) and its attempt ids.
+ */
+export function finalTaskIdsSince(db: LanePilotDatabase, since: number, limit = 300, now = Date.now(), quietMs = 24 * 3_600_000): Array<{ taskId: string; projectId: string; keys: string[] }> {
+  const open = OPEN_ATTEMPT_STATES.map((state) => `'${state}'`).join(",");
+  const rows = db.prepare(`SELECT a.task_id AS taskId, r.project_id AS projectId, MAX(a.updated_at) AS endedAt FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+      WHERE a.state IN ('accepted','blocked','canceled') AND a.updated_at >= ? AND a.updated_at <= ?
+        AND a.attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)
+        AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt o WHERE o.task_id=a.task_id AND o.state IN (${open}))
+      GROUP BY a.task_id, r.project_id ORDER BY endedAt DESC LIMIT ?`).all(since, now - quietMs, limit) as Array<{ taskId: string; projectId: string }>;
+  return rows.map((row) => {
+    const attempts = (db.prepare("SELECT id FROM lane_pilot_attempt WHERE task_id=?").all(row.taskId) as Array<{ id: string }>).map((attempt) => attempt.id);
+    const keys = [row.taskId, ...attempts].map(workerHomeKey).filter((key): key is string => key !== null);
+    return { taskId: row.taskId, projectId: row.projectId, keys: [...new Set(keys)] };
+  });
+}
+
+/** A project's attempt outcome texts for the history search (the execution book), newest first. */
+export function listProjectAttemptReasons(db: LanePilotDatabase, projectId: string, limit = 400): Array<{ taskId: string; state: string; reason: string | null; at: number }> {
+  return db.prepare(`SELECT a.task_id AS taskId, a.state, a.reason, a.updated_at AS at FROM lane_pilot_attempt a
+    JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.project_id=? AND a.reason IS NOT NULL ORDER BY a.updated_at DESC LIMIT ?`)
+    .all(projectId, limit) as Array<{ taskId: string; state: string; reason: string | null; at: number }>;
 }

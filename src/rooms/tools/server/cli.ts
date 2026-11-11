@@ -1,15 +1,18 @@
 import { createHash } from "node:crypto";
-import { dirname, join } from "node:path";
-import { listReviewedObservations } from "../../learning";
-import { prototypeConfigSchema, taskV2Schema } from "../../contracts";
+import { dirname, join, resolve, sep } from "node:path";
+import { listReviewedObservations, pmRulesOf } from "../../learning";
+import { prototypeConfigSchema, resolvePlanningHome, taskV2Schema } from "../../contracts";
 import { taskBaselineEntries } from "../../baseline";
-import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, markCancelCode, saveProjectSetting, savePrototypeConfig, transitionAttempt, failedTasksAllProjects, listNearMissReceipts } from "../../storage";
+import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, PROTECTIONS, loadPrototypeConfig, markCancelCode, saveProjectSetting, savePrototypeConfig, transitionAttempt, failedTasksAllProjects, listNearMissReceipts, projectIdForWorkspacePath, projectLiveAttempts, attemptStateCounts, settingsScopesForWorkspacePath } from "../../storage";
+import { outsideWorkSummary } from "../../owner-presence";
 import { cancelAttemptById, finishRunSafely, pauseRun } from "../../runs/server";
 import { conveyorState, renderTimeline, setConveyor, taskTimeline, unknownReasons } from "../../runs";
 import { TASK_RECORD_USAGE, blindRecord, readsBlind, renderTaskRecord, taskRecord } from "./task-record";
-import {bestEffort, isNotFound, orMiss, outputText, pluginRootFromModule, spawnAsync, stringAt, valueAt} from "@lane-pilot/kit";
+import {bestEffort, isNotFound, maskCredentials, orMiss, outputText, pluginRootFromModule, spawnAsync, stringAt, valueAt} from "@lane-pilot/kit";
 import { PAIR_ROLE_SPECS } from "@lane-pilot/models";
-import {runSkillsCli, parseSkillHub, SKILLS_USAGE} from "../../platform/server";
+import {listQaHosts, runSkillsCli, parseSkillHub, SKILLS_USAGE} from "../../platform/server";
+import {codeFactsOnHost, CODE_FACTS_REFRESH} from "../../platform";
+import {runOnHost} from "@lane-pilot/host-calls";
 import { attemptSessionLayers, terminalParity, terminalSessionLayers } from "../../native-agent";
 import { projectStats } from "./project-stats";
 import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -22,28 +25,33 @@ import { SCHEDULE_USAGE, runScheduleCli, scheduleFailureSweep } from "../../sche
 import { answerWorkflowQuestion } from "../../workflow/server";
 import { AGENTS_USAGE, agentRegistry, PM_SKILLS_USAGE, runAgentsCli, runPmSkillsCli, runPmSkillUseCli } from "../../native-agent/server";
 
-import { ANAMNESIS_USAGE, anamnesisFor, collectOwnerMessages, sdkThreadsPort } from "../../anamnesis";
+import { ANAMNESIS_USAGE, PROFILE_KEYS, anamnesisFor, collectOwnerMessages, profilePairProblem, sdkThreadsPort } from "../../anamnesis";
 import { LEARNING_USAGE, learningFor, runLearningCli } from "../../learning";
 import { PM_REPLAY_USAGE, runPmReplayCli, listScenarios } from "../../pm-replay";
 import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
+import { usageSegment } from "../../usage";
+import type { ProviderUsage } from "../../usage/server";
 import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
 import { MEMORY_EVAL_USAGE, runMemoryEvalCommand } from "../../memory-eval/server";
-import { MEMORY_CONFLICT_USAGE, runMemoryConflictCli, sessionMemoryRpc, memorySettingsFor, type WallThreadReader } from "../../memory/server";
+import { MEMORY_COMPRESS_USAGE, MEMORY_CONFLICT_USAGE, memoryCompressChanges, runMemoryCompressCli, runMemoryConflictCli, confirmedWordHits, sessionMemoryRpc, memorySettingsFor, type WallThreadReader } from "../../memory/server";
+import { CATALOG_USAGE, runCatalogCli } from "../../file-cards";
 import { dropMemoryIndexes, hideRecord, lintMemory, listMemory, memoryConceptsJson, memoryIndexStatus, memoryRecordExists, memoryTokenStats, rebuildMemoryIndexes, recordMemoryMiss, reviewMemory } from "@lane-pilot/memory-core";
 import { BENCH_USAGE, runBenchCli } from "../../bench/server";
 import { BASELINE_USAGE, runBaselineCli } from "../../baseline/server";
 import { RETURN_USAGE, runReturnCli } from "../../stage-return/server";
 import { FORECAST_USAGE, runForecastCli } from "../../forecast/server";
-import { calibrationPassport } from "../../forecast/server";
+import { calibrationPassport, weakAreas } from "../../forecast/server";
+import { sessionSummaryLine } from "../../session-hooks";
+import { MERGE_INTENT_PREFIX } from "../../verification";
 import { RUN_GOAL_USAGE, runGoalSweep, runRunGoalCli } from "../../run-goal/server";
 import { CAPABILITY_USAGE, runCapabilityCli } from "../../capability/server";
-import { workerSecretReach } from "../../verification";
+import { runWindowCli, WINDOW_USAGE, workerSecretReach } from "../../verification";
 import { explainCatalog, explainWord, guideDocs } from "./explain";
 import { VERDICT_LIST_COMMAND, renderVerdicts, verdictFiles, verdictInventory } from "./verdicts";
 import { OUTAGE_USAGE, runOutageCli } from "../../outage/server";
 import { BACKLOG_USAGE, runBacklogCli } from "../../backlog/server";
 import { runHypothesisCli } from "../../hypotheses/server";
-import { tierReport } from "../../memory-tiers/server";
+import { HISTORY_SOURCES, historySearch, tierReport } from "../../memory-tiers/server";
 import { WALL_USAGE, runWallCli } from "../../wall/server";
 import { CHECKERS_USAGE, runCheckersCli } from "../../checkers/server";
 import { POLICY_USAGE, loadLiveExam, runPolicyCli } from "../../policy";
@@ -67,7 +75,7 @@ import { JEV_USAGE, runJevCli } from "../../jev";
 import { ERRANDS_USAGE, runErrandsCli } from "../../errands";
 import { retireAdoptedRule } from "../../self-repair/server";
 import { ROLLBACK_USAGE, runRollbackCli } from "../../rollback/server";
-import { casUpsertSettings, deleteBoundSetting, getSettingVersions, listEvidence, listSettingRows } from "../../storage";
+import { casUpsertSettings, deleteBoundSetting, getSettingVersions, listEvidence, listSettingRows, planningHomeInputs } from "../../storage";
 import { UNLISTED_SWITCHES, switchValue } from "../../settings";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { integrityReport, renewDisarm } from "../../policy";
@@ -143,6 +151,7 @@ interface Services {
   phases: PhaseApi;
   pmReplay?: PmReplay;
   providerBreaker: WriterStateApi["providerBreaker"];
+  providerUsage?: Pick<ProviderUsage, "windows">;
   reconcileAttemptThread: ReconcileApi["reconcileAttemptThread"];
   regression: RegressionApi;
   resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
@@ -169,7 +178,7 @@ interface Services {
   workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
 }
 
-const MEMORY_CLI_USAGE = 'bb lane-pilot memory search "<question>" [--project P] | memory write "<fact>" [--project P]   (the project memory on the hub; inside a BB thread the project is the thread\'s own)';
+const MEMORY_CLI_USAGE = 'bb lane-pilot memory search "<question>" [--project P] | memory search --recall --query "<words>" [--cwd <path>] [--project P]   (read-only: confirmed notes by the word index, masked, one per line) | memory write "<fact>" [--project P] | memory history "<question>" [--project P] [--source tasks|execution|transcripts|lessons|books]   (the project memory on the hub; inside a BB thread the project is the thread\'s own)';
 
 const OWNER_ITEM_SWEEPS = [writerQuestionSweep, runGoalSweep, phaseWordSweep, scheduleFailureSweep];
 import type { CodeCriticDefault } from "../../contracts/task-enums";
@@ -189,6 +198,22 @@ export function timelineArgs(args: string[]): { taskId: string | undefined; runI
 
 export function registerCli(ctx: ServerCore, services: Services, migrations: readonly string[]) {
   const { bb, db, effectiveProjectSettings, host } = ctx;
+
+  /**
+   * The project a session-hook verb reaches (session-brief, subagent-pack, memory search --recall), the rule `memory forget` and `memory history`
+   * use: when a thread calls, its own project is the only project, and a --project or a --cwd that names another one is refused with the reason.
+   * With no thread (the owner at a terminal) both flags work.
+   */
+  const hookProject = async (verb: string, invocation: { threadId?: string | null } | undefined, asked: { project?: string; cwd?: string }): Promise<{ projectId: string | null; refused?: undefined } | { refused: string; projectId?: undefined }> => {
+    const byCwd = asked.cwd ? projectIdForWorkspacePath(db, asked.cwd) : null;
+    if (!invocation?.threadId) return { projectId: asked.project ?? byCwd };
+    const caller = await orMiss(bb.sdk.threads.get({ threadId: invocation.threadId }), null, isNotFound) as { projectId?: unknown } | null;
+    const own = typeof caller?.projectId === "string" ? caller.projectId : null;
+    if (!own) return { refused: `refused: ${verb} from a thread reaches only that thread's own project, and the project of this thread is unknown` };
+    const other = [asked.project, byCwd].find((id) => id && id !== own);
+    if (other) return { refused: `refused: ${verb} from a thread reaches only that thread's own project (${own}), not ${other}` };
+    return { projectId: own };
+  };
 
   const usage = [
     "bb lane-pilot configure <json>",
@@ -239,6 +264,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
     JEV_USAGE,
     SKILLS_USAGE,
     PM_SKILLS_USAGE,
+    WINDOW_USAGE,
   ].join("\n");
 
   const commands:Array<{ name:string; summary:string; usage:string }> = [
@@ -269,7 +295,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"task", summary:"One task's record for another agent: what it asked for, what the server saw done (changed files, merge), acceptance against fact, what is left", usage:TASK_RECORD_USAGE },
       { name:"changes", summary:"What is on record for a task or an attempt: base, merge, changed files (deletions included) and the reverify / revert receipts", usage:"bb lane-pilot changes <task-id|attempt-id>" },
       { name:"evidence", summary:"The reason and checks stored before each risky operation, newest first", usage:"bb lane-pilot evidence <project-id> [--op permit|revert|janitor] [--days N]" },
-      { name:"integrity", summary:"Each protection with its hazard, armed and current value, disarm term and shadow findings; renew a disarm with a reason", usage:"bb lane-pilot integrity [project-id] [--renew <key> --days N --why <cause>]" },
+      { name:"integrity", summary:"Each protection with its hazard, armed and current value, disarm term and shadow findings; renew a disarm with a reason", usage:"bb lane-pilot integrity [project-id] [--renew <key> --days N --why <cause> | --rearm <key>]" },
       { name:"airbag", summary:"List, prune and probe the return points (refs/lane-airbag/*) of a project's checkout", usage:"bb lane-pilot airbag <project-id> [--prune DAYS] [--probe]" },
       { name:"recover", summary:"Reconcile a known writer identity and emit its validated receipt", usage:"bb lane-pilot recover <attempt-id>" },
       { name:"start-cancel-probe", summary:"Spawn a long-running writer for a live stop observation", usage:"bb lane-pilot start-cancel-probe <project-id> <pm-thread-id>" },
@@ -278,6 +304,8 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"memory-probe", summary:"Plant a token through the memory write door and check that every delivery path (writer brief, PM, critics) hands it to its agent; sandbox project only unless --force", usage:"bb lane-pilot memory-probe <project-id> [--paths a,b] [--keep] [--clean] [--report] [--force]" },
       { name:"memory-eval", summary:"Score memory retrieval at 30, 300 and 3000 notes on real accepted tasks (right answer, nothing relevant, off-topic) against a plain path-and-keyword baseline; reads the hub data, writes nothing", usage:MEMORY_EVAL_USAGE },
       { name:"memory-conflicts", summary:"Memory notes that disagree: held out of every brief until a person settles them; --detect looks for new ones", usage:"bb lane-pilot memory-conflicts [--project P] [--state held|settled] [--detect]" },
+      { name:"memory-compress", summary:"Heavy memory notes and the shorter wording each would get; nothing is applied without --apply <id>", usage:MEMORY_COMPRESS_USAGE },
+      { name:"catalog", summary:"The file catalog: one card line per git-tracked file (path, size, language, last change, first line); --write stores it", usage:CATALOG_USAGE },
       { name:"memory-conflict-settle", summary:"Settle a held memory conflict: keep one note, both, or neither, with the evidence", usage:"bb lane-pilot memory-conflict-settle <mc_id> --keep a|b|both|none --evidence <text>" },
       { name:"start-ambiguous-probe", summary:"Create duplicate metadata and prove reconcile blocks", usage:"bb lane-pilot start-ambiguous-probe <project-id> <pm-thread-id>" },
       { name:"host-detect", summary:"Call the host worker detect method", usage:"bb lane-pilot host-detect <host-id> <workspace-path>" },
@@ -300,12 +328,14 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"waiting", summary:"Everything only the owner can decide, with why, evidence and the exact action; what went red overnight; the Telegram digest of new items (quiet hours 23:00-08:00 Europe/Madrid by default)", usage:WAITING_USAGE },
       { name:"lead", summary:"Штурман, the lead over the runs: its state and ticks, the road tree, the owner's answers to its proposals, the rights per class, the decision journal with the prediction made before each answer, the exam and the backtest", usage:LEAD_USAGE },
       { name:"coverage", summary:"What proves each pipeline stage, attempt transition, failure class, gate, memory path, room and key mechanism: covered live by a deploy-drill scenario, covered by tests only (and why no drill), or not covered; --receipt checks the live claims against a drill receipt", usage:COVERAGE_USAGE },
+      { name:"window", summary:"The people windows in a project's checkouts: who works there (leases), the file scopes they announced (claims), overlaps with open tasks; claims are advisory and never block", usage:WINDOW_USAGE },
       { name:"frontmatter", summary:"Read, set and merge a file's YAML header; the body is never touched and a file changed under the read is refused", usage:"bb lane-pilot frontmatter <project-id> <path> [--set k=v]... [--merge k=a,b]..." },
       { name:"attempt", summary:"One attempt's whole record: writer thread, stage receipts and gate events of that attempt, dispatch context, verification results, critic input hash, the attempt-change row", usage:"bb lane-pilot attempt <attempt-id>" },
       { name:"stats", summary:"Project report (sma-stats): phases, plans, requirements, git metrics, a timeline and the attempt metrics", usage:"bb lane-pilot stats [project-id] [--days N]" },
       { name:"parity", summary:"Session and terminal parity of one attempt: six lines (hooks, memory, rules, skills, permissions, model) saying whether the BB session and a terminal session got the same layer", usage:"bb lane-pilot parity <attempt-id> [--json]" },
       { name:"passport", summary:"An attempt's passport: provider, model, harness and Lane Pilot versions, the receipts of its stages; --calibration prints the current PM model's calibration badge", usage:"bb lane-pilot passport <attempt-id> | --calibration --project <id>" },
       { name:"manifest", summary:"This build: name, version, its tables", usage:"bb lane-pilot manifest" },
+      { name:"intel", summary:"The code facts of a project: whether the GitNexus index exists, is fresh or lags HEAD, and --refresh re-analyzes it on the project's machine", usage:"bb lane-pilot intel <project-id> [--refresh]  (from a thread: its own project only, --refresh from the PM thread only)" },
       { name:"receipt-chain", summary:"A task's stage receipts hashed in order (tip), or verify a tip recorded earlier", usage:"bb lane-pilot receipt-chain <run-id> <task-id> [--verify <tip>]" },
       { name:"preship", summary:"What is open before a release (unfinished tasks, open regressions, deferrals) and the disposition each needs; exit 1 when not clear", usage:"bb lane-pilot preship [--project <id>]" },
       { name:"pr-passport", summary:"A pull request body assembled from a task's receipts", usage:"bb lane-pilot pr-passport <run-id> <task-id>" },
@@ -315,6 +345,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"cost", summary:"Cost per verified result: writer tokens per accepted task, per project, over 30 days", usage:"bb lane-pilot cost [--days 30]" },
       { name:"report", summary:"A local HTML report: the SMA map by region, the spend, the cost per verified result", usage:"bb lane-pilot report > report.html" },
       { name:"money", summary:"Money: spent month to date on paid lanes, the 14-day series, the monthly cap (money.monthly_cap_usd) and what is left", usage:"bb lane-pilot money" },
+      { name:"statusline", summary:"One status-line segment of a machine's subscription windows (5h and 7d), for the person's own statusLine command", usage:"bb lane-pilot statusline <host-id>" },
       { name:"unknown-codes", summary:"Failure reasons no class or rule names yet (the unknown code register), most frequent first, over the last 14 days", usage:"bb lane-pilot unknown-codes [--days 14]" },
       { name:"phase", summary:"Phases on rails: list, show (with the phase book), drive now, return to an earlier stage with a note, pause, resume, close in words", usage:PHASE_USAGE },
       { name:"gates", summary:"Gate firings: mark one a false alarm so it stops counting against the gate", usage:"bb lane-pilot gates ack <event-id> --why \"<reason>\"" },
@@ -323,6 +354,8 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"design-pair-answer", summary:"The owner's pick for a started design pair; closes its waiting item", usage:DESIGN_PAIR_USAGE.split("   |   ")[1]! },
       { name:"sma-map", summary:"The SMA product map node by node: what Lane Pilot has for each of its 1798 nodes, the card text, the proof link, the contract tests that check it, and the shares mapped and checked", usage:SMA_MAP_USAGE },
       { name:"explain", summary:"One word about a verb or a concept: the verb's summary and usage with the doc that names it, or the guide doc whose front matter declares the topic", usage:"bb lane-pilot explain <verb or topic>" },
+      { name:"profile", summary:"The project's infra profile (stack, test command, release, hosts, start, deploy, logs, style): read it, or set a key from the owner's terminal or the project's own PM chat", usage:`bb lane-pilot profile <project-id> [--set key=value …]   (keys: ${PROFILE_KEYS.join(", ")}; the value is split at the first =, at most 1000 characters, an empty value resets the key)` },
+      { name:"plans-health", summary:"The planning indexes against the folders on disk: items missing from INDEX.md and index entries with no folder; --fix repairs the entry lines only and keeps INDEX.md.bak", usage:"bb lane-pilot plans-health [dir] [--fix]   (runs in the directory given, default the current one: the owner's terminal in the checkout; --fix is refused from a thread)" },
       { name:"planning", summary:"The planning verdicts inventory: every spike and sketch under .agents/planning with its question and verdict (open when none)", usage:"bb lane-pilot planning verdicts <projectId>" },
       { name:"rules", summary:"The rules by form (always | skill | check | hook | memory) and the mechanism that enforces each; classify them, generate mechanism tasks for the recurring check rules, retire the text a mechanism now holds", usage:RULES_USAGE },
       { name:"workflow-trigger", summary:"Start a workflow in a project as its schedule trigger does (the automation of a schedule calls this); exit 1 with the reason when it cannot start", usage:"bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]" },
@@ -331,7 +364,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"defer", summary:"Put a mandatory check off: write it in the register with the reason. It is born with no term (only a date in a message of the owner sets one, --owner-msg) and counts as unproven in its project's phase acceptance until closed with evidence", usage:"bb lane-pilot defer <what> --kind drill_scenario|skipped_test|gate|plan_decision --reason \"…\" [--area A] [--project P]" },
       { name:"defer-close", summary:"Close a deferral with the evidence that settles it", usage:"bb lane-pilot defer-close <dfr_id> --evidence <text>" },
       { name:"deferrals", summary:"The register of deferrals: overdue and open, with their terms", usage:"bb lane-pilot deferrals [--project P] [--state open|overdue|closed]" },
-      { name:"owner-presence", summary:"Where the owner typed in a session of his own in the last minutes: Lane Pilot's writers keep off that provider meanwhile", usage:"bb lane-pilot owner-presence" },
+      { name:"owner-presence", summary:"Where the owner typed in a session of his own in the last minutes: Lane Pilot's writers keep off that provider meanwhile", usage:"bb lane-pilot owner-presence [--journal]" },
       { name:"hypothesis", summary:"Ideas to make the system better (from outside or inside) as the settings that carry them, checked on the bench set: two arms, the verdict, adoption through the night policy", usage:"bb lane-pilot hypothesis list|add|test|verdict|revert" },
       { name:"memory-tiers", summary:"The memory's cold tier (notes unused for 90 days, kept out of briefs) and how many of it a PM needed again, plus the PM queries that found nothing (candidates for memory-eval's golden set)", usage:"bb lane-pilot memory-tiers [--project P]" },
       { name:"backlog", summary:"A project's ready todos sorted for issue: issuable in queue order (estimate at most 13, dependencies done), to estimate, to split, blocked; --scan hands the next ones to the PMs now", usage:BACKLOG_USAGE },
@@ -359,6 +392,8 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"memory", summary:"The project memory on the hub: search it with a question, write one fact; inside a BB thread the project is the thread's own", usage:MEMORY_CLI_USAGE },
       { name:"jev", summary:"Jev judgments: calibration, labels by source, watch", usage:JEV_USAGE },
       { name:"pm-skill-use", summary:"Record that a PM session opened a skill", usage:"bb lane-pilot pm-skill-use <skill> --thread <thread-id> [--project <project-id>]" },
+      { name:"session-brief", summary:"The checkout's coordination brief for a starting session: live and stale windows, a merge in flight, other windows' claims and weakly calibrated areas", usage:"bb lane-pilot session-brief --cwd <path> [--json]" },
+      { name:"subagent-pack", summary:"The rules and confirmed lessons a Task subagent is born with (a project switches it on with hook.subagent_pack)", usage:"bb lane-pilot subagent-pack \"<prompt>\" [--cwd <path>] [--project <id>]" },
       { name:"skill-lint", summary:"Lint a local skill folder against the skill standard (SKILL.md, references/, scripts/): errors and warnings, exit 1 on errors", usage:"bb lane-pilot skill-lint <dir>" },
       { name:"errands", summary:"Errands: backfill episode rows for past runs (repeated processes first); the process-key eval over the gold set", usage:`${EPISODES_USAGE}
 ${ERRANDS_USAGE}` },
@@ -393,6 +428,14 @@ ${ERRANDS_USAGE}` },
         if (command === "integrity") {
           const [projectId] = args.filter((a) => !a.startsWith("--"));
           const pid = projectId ?? args[0] ?? "";
+          if (args.includes("--rearm")) {
+            // Switching a protection back on is the owner's word, not an agent's.
+            if (invocation?.threadId) return { exitCode:1, stderr:"a protection is re-armed by the owner at a terminal, not from a chat" };
+            const key = args[args.indexOf("--rearm") + 1] ?? "", protection = PROTECTIONS[key];
+            if (!protection) return { exitCode:1, stderr:`${key || "(no key)"} is not a protection: ${Object.keys(PROTECTIONS).join(", ")}` };
+            saveProjectSetting(db, pid, key, protection.armed);
+            return { exitCode:0, stdout:JSON.stringify({ ok:true, key, value:protection.armed }) };
+          }
           if (args.includes("--renew")) {
             const key = args[args.indexOf("--renew") + 1]!, days = Number(args[args.indexOf("--days") + 1] ?? 7), why = args[args.indexOf("--why") + 1] ?? "";
             const result = renewDisarm(db, pid, key, days, why);
@@ -447,6 +490,11 @@ ${ERRANDS_USAGE}` },
               return { decision: approve ? "approve" : "refuse", descriptor: { kind: "other", attrs: {} }, expected: "owner_only", why: `the owner ${approve ? "approved" : "refused"} a change in a message` };
             },
           }, command, args);
+        }
+        if (command === "window") {
+          // The person's door onto the window leases and claims (SMA window region); advisory, never refuses a merge.
+          return await runWindowCli({ db, kv: bb.storage.kv as never, host, threadId: invocation?.threadId ?? null,
+            thread: async (threadId) => await orMiss(bb.sdk.threads.get({ threadId }), null, isNotFound) as { projectId?: string | null } | null }, args);
         }
         if (command === "coverage") {
           return runCoverageCli(args);
@@ -533,6 +581,26 @@ ${ERRANDS_USAGE}` },
           return result ? { exitCode:0, stdout:JSON.stringify(result, null, 2) } : { exitCode:1, stderr:"bb lane-pilot passport <attempt-id>: no such attempt" };
         }
         if (command === "manifest") return { exitCode:0, stdout:JSON.stringify(manifest(db), null, 2) };
+        if (command === "intel" && args[0]) {
+          // A thread is an agent: it reads and refreshes only its own project, and only a PM thread starts the half-hour indexer; the owner at a terminal is unrestricted.
+          if (invocation?.threadId) {
+            const caller = await orMiss(bb.sdk.threads.get({ threadId: invocation.threadId }), null, isNotFound) as { projectId?: unknown } | null;
+            if (!caller || typeof caller.projectId !== "string" || caller.projectId !== args[0]) return { exitCode:1, stderr:`refused: intel from a thread reaches only that thread's own project (${typeof caller?.projectId === "string" ? caller.projectId : "unknown"}), not ${args[0]}` };
+            if (args.includes("--refresh")) {
+              const metadata = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId: invocation.threadId }), null, isNotFound) as { role?: unknown } | null;
+              if (metadata?.role !== "pm") return { exitCode:1, stderr:`refused: intel --refresh is not for a ${typeof metadata?.role === "string" ? `${metadata.role} thread` : "thread whose role is unknown"}; ask the PM or the owner` };
+            }
+          }
+          const config = loadPrototypeConfig(db, args[0]);
+          const cwd = config?.writerWorkspacePath ?? config?.pmWorkspacePath;
+          if (!config?.hostId || !cwd) return { exitCode:1, stderr:`project ${args[0]} has no checkout bound in Lane Pilot` };
+          const facts = await codeFactsOnHost(host, config.hostId, cwd);
+          // --refresh re-analyzes on the project's own machine; a hand-called verb, no setting needed.
+          const refresh = args.includes("--refresh")
+            ? await runOnHost(host, { hostId:config.hostId, cwd, command:CODE_FACTS_REFRESH, timeoutSec:1800, timeoutMs:1_900_000 }).catch((cause: unknown) => ({ error:cause instanceof Error?cause.message:String(cause) }))
+            : null;
+          return { exitCode:0, stdout:JSON.stringify({ projectId:args[0], hostId:config.hostId, ...facts, ...(refresh ? { refresh } : {}) }, null, 2) };
+        }
         if (command === "receipt-chain" && args[0] && args[1]) {
           if (args[2] === "--verify" && args[3]) { const ok = verifyChain(db, args[0], args[1], args[3]); return { exitCode:ok ? 0 : 1, stdout:ok ? "intact" : "the receipts changed since that tip" }; }
           return { exitCode:0, stdout:JSON.stringify(receiptChain(db, args[0], args[1]), null, 2) };
@@ -554,7 +622,9 @@ ${ERRANDS_USAGE}` },
           const config = args[0] === "verdicts" && args[1] ? loadPrototypeConfig(db, args[1]) : null;
           if (args[0] !== "verdicts" || !args[1]) return { exitCode:1, stderr:"usage: bb lane-pilot planning verdicts <projectId>" };
           if (!config?.hostId || !config.pmWorkspacePath) return { exitCode:1, stderr:`project ${args[1]} has no checkout bound in Lane Pilot` };
-          const listed = await host.call("runCommand", { requestedHostId:config.hostId, command:VERDICT_LIST_COMMAND, cwd:config.pmWorkspacePath, timeoutSec:30 }, { hostId:config.hostId, timeoutMs:35_000 });
+          // With a planning home (project.planning_home) the spikes and sketches are listed there; unset, in the checkout.
+          const root = await resolvePlanningHome({ host: host as never, hostId:config.hostId, cwd:config.pmWorkspacePath, inputs:planningHomeInputs(db, args[1]), log:bb.log }) ?? config.pmWorkspacePath;
+          const listed = await host.call("runCommand", { requestedHostId:config.hostId, command:VERDICT_LIST_COMMAND, cwd:root, timeoutSec:30 }, { hostId:config.hostId, timeoutMs:35_000 });
           if (listed.exitCode !== 0) return { exitCode:1, stderr:`the project's machine did not list .agents/planning: ${(listed.stderr || `exit ${listed.exitCode}`).trim().slice(0, 300)}` };
           return { exitCode:0, stdout:renderVerdicts(verdictInventory(verdictFiles(listed.stdout))) };
         }
@@ -581,16 +651,27 @@ ${ERRANDS_USAGE}` },
           return { exitCode:0, stdout:JSON.stringify(excavate(out.stdout ?? ""), null, 2) };
         }
         if (command === "report") {
+          await services.ownerPresence.sweep().catch(() => []);
           const rows = smaRows();
           const regions = [...new Set(rows.map((row) => row.region))].map((region) => { const part = rows.filter((row) => row.region === region); return { region, checked: `${smaCheckedPercent(part)}%`, mapped: `${smaDonePercent(part)}%`, ...smaCounts(part) }; });
           return { exitCode:0, stdout:htmlReport({ title:`Lane Pilot report ${new Date().toISOString().slice(0, 10)}`, sections:[
             { heading:`SMA map: checked by contract tests ${smaCheckedPercent(rows)}%, mapped by proof links ${smaDonePercent(rows)}%`, rows:regions },
             { heading:"Money", rows:[services.money.status() as never] },
             { heading:"Cost per verified result (30 days)", rows:costPerVerified(db) as never },
+            // The last number (SMA m_sp_tjournal_report): how much of the week was worked in the owner's own threads.
+            { heading:"Work outside the daemon (7 days)", rows:[outsideWorkSummary(services.ownerPresence.journal(), Date.now(), attemptStateCounts(db, Date.now() - 7 * 86_400_000).reduce((total, row) => total + row.n, 0)) as never] },
           ] }) };
         }
         if (command === "money") {
           return { exitCode:0, stdout:JSON.stringify(services.money.status(), null, 2) };
+        }
+        if (command === "statusline") {
+          const hostId = args[0];
+          if (!hostId) return { exitCode:1, stderr:"usage: bb lane-pilot statusline <host-id>" };
+          const known = await listQaHosts(bb).catch(() => null);
+          if (known && !known.some((row) => row.id === hostId)) return { exitCode:1, stderr:`unknown host ${hostId}: ${known.map((row) => row.id).join(", ") || "no machines connected"}` };
+          const live = await services.providerUsage?.windows({ providerId:"claude-code", hostId }).catch(() => null);
+          return { exitCode:0, stdout:usageSegment(live?.windows ?? {}, live?.at ?? null, Date.now()) };
         }
         if (command === "unknown-codes") {
           const days = args[0] === "--days" && Number(args[1]) > 0 ? Number(args[1]) : 14;
@@ -733,6 +814,8 @@ ${ERRANDS_USAGE}` },
         if (command === "hypothesis") return await runHypothesisCli(services.hypotheses, args);
         if (command === "owner-presence") {
           const now = Date.now(), presence = await services.ownerPresence.sweep();
+          // Without --journal the output is main's: the bare array of marks.
+          if (args.includes("--journal")) return { exitCode:0, stdout:JSON.stringify(services.ownerPresence.journal(), null, 2) };
           return { exitCode:0, stdout:JSON.stringify(presence.map((row) => ({ ...row, minutesAgo:Math.round((now - row.at) / 60_000), holdsWriters:services.ownerPresence.holds(row.providerId, now) !== null })), null, 2) };
         }
         if (command === "task") {
@@ -858,6 +941,21 @@ ${ERRANDS_USAGE}` },
             if (!hideRecord(db, projectId, id, "expired", null, unindex, reason)) return { exitCode:1, stderr:`record ${id} is not active` };
             return { exitCode:0, stdout:`${id} ${reason === "dated" ? "expired" : reason}\n` };
           }
+          if (sub === "history") {
+            if (!projectId) return { exitCode:1, stderr:"no project: pass --project <id> outside a BB thread" };
+            // History reads transcripts and books: from a thread only the thread's own project (an explicit --project skips the lookup above, so check it here).
+            if (invocation?.threadId) {
+              const caller = await orMiss(bb.sdk.threads.get({ threadId: invocation.threadId }), null, isNotFound) as { projectId?: unknown } | null;
+              if (!caller || typeof caller.projectId !== "string" || caller.projectId !== projectId) return { exitCode:1, stderr:`refused: memory history from a thread reaches only that thread's own project (${typeof caller?.projectId === "string" ? caller.projectId : "unknown"}), not ${projectId}` };
+            }
+            const source = value("--source");
+            if (source && !HISTORY_SOURCES.includes(source as never)) return { exitCode:1, stderr:`--source is one of ${HISTORY_SOURCES.join("|")}` };
+            const question = args.slice(1).filter((arg, i) => !arg.startsWith("--") && (flag < 0 || (i + 1 !== flag && i + 1 !== flag + 1)) && args.indexOf(arg) !== args.indexOf("--source") + 1).join(" ").trim();
+            if (!question) return { exitCode:1, stderr:'usage: bb lane-pilot memory history "<question>" [--project P] [--source tasks|execution|transcripts|lessons|books]' };
+            const hits = historySearch(db as never, projectId, question, { sources: source ? [source as never] : undefined });
+            const lines = hits.map((hit) => `${hit.source} ${hit.id} ${new Date(hit.at).toISOString().slice(0, 10)}: ${hit.excerpt}`);
+            return { exitCode:0, stdout:`${lines.join("\n") || "nothing found"}\n` };
+          }
           if (sub === "load") {
             const tags = (value("--tags") ?? "").split(",").map((tag) => tag.trim()).filter(Boolean);
             if (!projectId || !tags.length) return { exitCode:1, stderr:"usage: bb lane-pilot memory load --tags a,b [--project P]" };
@@ -866,6 +964,23 @@ ${ERRANDS_USAGE}` },
             const notes = listMemory(db, projectId, { concepts: tags }, 20, "subagent", "", scoped);
             const lines = [...core.map((record) => `- [core ${record.id.slice(0, 12)}] ${record.content}`), ...notes.map((record) => `- [${record.id.slice(0, 12)}] ${record.content}`)];
             return { exitCode:0, stdout:`${lines.join("\n") || "nothing found"}\n` };
+          }
+          if (sub === "search" && args.includes("--recall")) {
+            // The prompt recall of the session hook (SMA k_h_prompt_recall): read-only and local. The word index only (no embedding, no rerank, no model or
+            // network call), confirmed notes of the caller's own project, no miss recorded, and the text masked and on one line per record. The query is the
+            // value of --query, so a prompt that starts with a dash is never read as an option. `hook.prompt_recall=off` silences it.
+            const queryAt = args.indexOf("--query");
+            if (queryAt < 0 || !args[queryAt + 1]) return { exitCode:1, stderr:'usage: bb lane-pilot memory search --recall --query "<words>" [--cwd <path>] [--project P]' };
+            const rest = args.filter((_, index) => index !== queryAt && index !== queryAt + 1);
+            const flagValue = (name: string) => { const at = rest.indexOf(name); return at >= 0 ? rest[at + 1] : undefined; };
+            const bound = await hookProject("memory search --recall", invocation, { project: flagValue("--project"), cwd: flagValue("--cwd") });
+            if (bound.refused) return { exitCode:1, stderr:bound.refused };
+            if (!bound.projectId) return { exitCode:1, stderr:"no project: pass --project <id> or --cwd <checkout> outside a BB thread" };
+            const chain = flagValue("--cwd") ? settingsScopesForWorkspacePath(db, flagValue("--cwd")!) : [];
+            if (loadProjectSettings(db, bound.projectId, chain)["hook.prompt_recall"] === "off") return { exitCode:0, stdout:"" };
+            const hits = confirmedWordHits(db, bound.projectId, args[queryAt + 1]!, { chain, limit: 3 });
+            const oneLine = (text: string) => maskCredentials(text.replace(/\s+/g, " ").trim()).text;
+            return { exitCode:0, stdout: hits.length ? `${hits.map((record) => `- [${record.id}] ${oneLine(record.content).slice(0, 400)}`).join("\n")}\n` : "" };
           }
           if (sub === "search" || sub === "write") {
           // M2's door for any thread or shell: the project is --project or the calling thread's own.
@@ -882,6 +997,59 @@ ${ERRANDS_USAGE}` },
           return { exitCode: written.id ? 0 : 1, stdout: `${JSON.stringify(written)}\n` };
           }
           return { exitCode:1, stderr:MEMORY_CLI_USAGE };
+        }
+        if (command === "session-brief") {
+          // The session hook's coordination brief (SMA k_hss_summary, k_hss_digest): live and stale attempts of
+          // the checkout's project, a merge in flight, other windows' claims and the weakly calibrated areas.
+          const val = (name: string) => { const at = args.indexOf(name); return at >= 0 ? args[at + 1] : undefined; };
+          const cwd = val("--cwd") || process.cwd();
+          const bound = await hookProject("session-brief", invocation, { project: val("--project"), cwd });
+          if (bound.refused) return { exitCode:1, stderr:bound.refused };
+          const projectId = bound.projectId;
+          const cutoff = Date.now() - 180_000;
+          const live = projectId ? projectLiveAttempts(db, projectId) : [];
+          const counts = { live: live.filter((row) => row.updated_at >= cutoff).length, stale: live.filter((row) => row.updated_at < cutoff).length };
+          let merge = false;
+          if (projectId) {
+            const kv = bb.storage.kv as unknown as { list(prefix?: string): Promise<string[]>; get(key: string): Promise<unknown> };
+            for (const key of await kv.list(MERGE_INTENT_PREFIX)) {
+              try {
+                const intent = await kv.get(key) as { projectId?: string } | null;
+                if (intent?.projectId === projectId) { merge = true; break; }
+              } catch { /* an unreadable intent decides nothing */ }
+            }
+          }
+          // Other windows' claims: attempts that moved inside the same 3 minutes the summary counts as live, and never the starting session's own attempt (its workspace is the cwd or holds it).
+          const here = resolve(cwd);
+          const ownWorkspace = (workspace: string | null) => { if (!workspace) return false; const root = resolve(workspace); return here === root || here.startsWith(`${root}${sep}`); };
+          const foreign = live.filter((row) => row.updated_at >= cutoff && !ownWorkspace(row.workspace_path)).slice(0, 5).map((row) => ({
+            taskId: row.task_id,
+            paths: (() => { try { return (JSON.parse(row.owns_paths ?? "[]") as unknown[]).filter((x): x is string => typeof x === "string").slice(0, 10); } catch { return []; } })(),
+          })).filter((row) => row.paths.length);
+          const weak = projectId ? weakAreas(db, projectId) : [];
+          const summary = sessionSummaryLine({ ...counts, merge });
+          if (args.includes("--json")) return { exitCode:0, stdout:JSON.stringify({ project: projectId, ...counts, merge, foreign, weak, summary }, null, 2) };
+          return { exitCode:0, stdout:`${summary || "nothing at work in this project"}\n` };
+        }
+        if (command === "subagent-pack") {
+          // The layers a Task spawn is born with (SMA k_h_pretask): accepted always-rules and confirmed memory
+          // lessons. Memory text enters a subagent's prompt only where the project switched hook.subagent_pack on.
+          const val = (name: string) => { const at = args.indexOf(name); return at >= 0 ? args[at + 1] : undefined; };
+          const cwd = val("--cwd");
+          const bound = await hookProject("subagent-pack", invocation, { project: val("--project"), cwd });
+          if (bound.refused) return { exitCode:1, stderr:bound.refused };
+          const projectId = bound.projectId;
+          if (!projectId) return { exitCode:1, stderr:"no project: pass --project <id> or --cwd <checkout> outside a BB thread" };
+          // The caller's sections: the rules of a sibling section of an umbrella project stay out of the pack.
+          const chain = cwd ? settingsScopesForWorkspacePath(db, cwd) : [];
+          const settings = loadProjectSettings(db, projectId, chain);
+          if (settings["hook.subagent_pack"] !== "on" || !memorySettingsFor(settings).enabled) return { exitCode:0, stdout:JSON.stringify({ rules: [], lessons: [] }) };
+          const prompt = args.filter((arg, i) => !arg.startsWith("--") && args[i - 1] !== "--cwd" && args[i - 1] !== "--project").join(" ").slice(0, 300);
+          const oneLine = (text: string, max: number) => maskCredentials(text.replace(/\s+/g, " ").trim()).text.slice(0, max);
+          const rules = pmRulesOf(db, projectId, chain).filter((rule) => rule.always).map((rule) => oneLine(rule.rule, 200)).slice(0, 8);
+          // An accepted rule is also a core record: it is said once, in the rules layer, not again as a lesson.
+          const lessons = confirmedWordHits(db, projectId, prompt || "task", { chain, limit: 8 }).filter((record) => !record.concepts.includes("rule")).slice(0, 5).map((record) => oneLine(record.content, 200));
+          return { exitCode:0, stdout:JSON.stringify({ rules, lessons }) };
         }
         if (command === "skill-lint") {
           return runSkillLintCli(args);
@@ -930,6 +1098,55 @@ ${ERRANDS_USAGE}` },
           if (saved && !saved.ok) return { exitCode:1, stdout:JSON.stringify({ ok:false, error:saved.validation ?? "the setting changed meanwhile: run the command again" }) };
           for (const key of cleared) deleteBoundSetting(db, where, key);
           return { exitCode:0, stdout:JSON.stringify({ ok:true, scope:scope!, set:own() }, null, 2) };
+        }
+        // The one infra-profile writer and reader (SMA k_pl_infra): the eight profile.* settings of a project.
+        if (command === "profile") {
+          const [projectId, ...rest] = args;
+          if (!projectId) return { exitCode:1, stderr:`usage: bb lane-pilot profile <project-id> [--set key=value …]   (keys: ${PROFILE_KEYS.join(", ")}; an empty value resets the key)` };
+          const sets = rest.flatMap((value, index) => value === "--set" && rest[index + 1] !== undefined ? [rest[index + 1]!] : []);
+          if (sets.length) {
+            // The CLI is a door any agent thread can reach: from a thread only the PM chat of THIS project writes the profile; the owner at a terminal always may.
+            if (invocation?.threadId) {
+              const caller = await orMiss(bb.sdk.threads.get({ threadId: invocation.threadId }), null, isNotFound) as { projectId?: unknown } | null;
+              if (!caller || typeof caller.projectId !== "string" || caller.projectId !== projectId) return { exitCode:1, stderr:`refused: the profile of ${projectId} is set from that project's own PM chat or by the owner at a terminal, not from a thread of ${typeof caller?.projectId === "string" ? caller.projectId : "an unknown project"}` };
+              const metadata = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId: invocation.threadId }), null, isNotFound) as { role?: unknown } | null;
+              if (metadata?.role !== "pm") return { exitCode:1, stderr:`refused: the profile is set by the PM chat or the owner, not by a ${typeof metadata?.role === "string" ? `${metadata.role} thread` : "thread whose role is unknown"}` };
+            }
+            // All pairs are judged before any is written: one refused pair stops the call with its reason and nothing changes.
+            const parsed = sets.map((pair) => { const at = pair.indexOf("="); return at < 0 ? { key: pair, value: null as string | null } : { key: pair.slice(0, at), value: pair.slice(at + 1) }; });
+            for (const { key, value } of parsed) {
+              if (value === null) return { exitCode:1, stderr:`write ${key}=<value> (an empty value resets the key)` };
+              const problem = value === "" && (PROFILE_KEYS as readonly string[]).includes(key) ? null : profilePairProblem(key, value);
+              if (problem) return { exitCode:1, stderr:`refused ${key}: ${problem}` };
+            }
+            for (const { key, value } of parsed) { if (value === "") deleteBoundSetting(db, projectId, `profile.${key}`); else saveProjectSetting(db, projectId, `profile.${key}`, value); }
+          }
+          const settings = loadProjectSettings(db, projectId);
+          const values = Object.fromEntries(PROFILE_KEYS.map((key) => [`profile.${key}`, typeof settings[`profile.${key}`] === "string" ? settings[`profile.${key}`] as string : ""]));
+          if (Object.values(values).some((value) => value !== "")) return { exitCode:0, stdout:JSON.stringify(values, null, 2) };
+          // The settings are empty: a profile.json an earlier start left in the planning folder still answers, and says where the values come from.
+          const config = loadPrototypeConfig(db, projectId);
+          if (config?.hostId && config.pmWorkspacePath) {
+            const root = await resolvePlanningHome({ host: host as never, hostId:config.hostId, cwd:config.pmWorkspacePath, inputs:planningHomeInputs(db, projectId), log:bb.log }) ?? config.pmWorkspacePath;
+            const file = await host.call("runCommand", { requestedHostId:config.hostId, command:"cat .agents/planning/profile.json 2>/dev/null", cwd:root, timeoutSec:15 }, { hostId:config.hostId, timeoutMs:20_000 }).catch(() => null);
+            let fromFile: Record<string, unknown> = {};
+            try { const parsedFile: unknown = JSON.parse(file?.stdout ?? ""); if (parsedFile && typeof parsedFile === "object" && !Array.isArray(parsedFile)) fromFile = parsedFile as Record<string, unknown>; } catch { /* no file, or not JSON */ }
+            const shown = Object.fromEntries(PROFILE_KEYS.flatMap((key) => (typeof fromFile[key] === "string" && fromFile[key] ? [[`profile.${key}`, fromFile[key]]] : [])));
+            if (Object.keys(shown).length) return { exitCode:0, stdout:JSON.stringify({ ...values, ...shown, source:`the project settings are empty: these values come from .agents/planning/profile.json (set them with --set to move them into the settings)` }, null, 2) };
+          }
+          return { exitCode:0, stdout:JSON.stringify(values, null, 2) };
+        }
+        // The planning files' integrity (SMA k_c_health): the todos and plans indexes against the folders on disk; --fix repairs the index lines only.
+        if (command === "plans-health") {
+          // --fix rewrites index files on the machine the command runs on: the owner's terminal, never an agent thread.
+          if (args.includes("--fix") && invocation?.threadId) return { exitCode:1, stderr:"refused: plans-health --fix rewrites the index files of the directory it runs in; the owner runs it at a terminal in the checkout" };
+          const { plansHealth, plansFix } = await import("../../project-life");
+          const dir = args.find((arg) => !arg.startsWith("--")) ?? process.cwd();
+          const agentsDir = dir.endsWith(".agents") ? dir : `${dir.replace(/\/$/, "")}/.agents`;
+          const report = plansHealth(agentsDir);
+          const fixed = args.includes("--fix") ? plansFix(agentsDir) : [];
+          const lines = report.flatMap((area) => [...area.missingInIndex.map((id) => `${area.area}: not in INDEX.md: ${id}`), ...area.deadIndexLines.map((line) => `${area.area}: INDEX line with no folder: ${line.trim().slice(0, 120)}`)]);
+          return { exitCode: report.length && !fixed.length ? 1 : 0, stdout: [...lines, ...fixed.map((line) => `fixed ${line}`)].join("\n") || "planning indexes healthy" };
         }
         if (command === "budget" && args.length >= 1) {
           const projectId = args[0]!;
@@ -1100,6 +1317,27 @@ ${ERRANDS_USAGE}` },
         }
         if (command === "memory-conflicts" || command === "memory-conflict-settle") {
           return runMemoryConflictCli(services.memoryConflicts, command, args);
+        }
+        if (command === "memory-compress") {
+          // Listing proposals is for the owner and for a PM chat in its own project. --apply and --undo change the corpus: the owner's alone (no thread).
+          let compressArgs = args;
+          if (invocation?.threadId) {
+            if (memoryCompressChanges(args)) return { exitCode:1, stderr:"refused: memory-compress --apply and --undo change the project's memory and are the owner's alone; run them at a terminal. A thread may only list the proposals" };
+            const caller = await orMiss(bb.sdk.threads.get({ threadId: invocation.threadId }), null, isNotFound) as { projectId?: unknown } | null;
+            const own = typeof caller?.projectId === "string" ? caller.projectId : null;
+            const at = args.indexOf("--project");
+            const asked = at >= 0 ? args[at + 1] : own;
+            if (!own || asked !== own) return { exitCode:1, stderr:`refused: memory-compress from a thread reaches only that thread's own project (${own ?? "unknown"}), not ${asked ?? "none"}` };
+            const metadata = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId: invocation.threadId }), null, isNotFound) as { role?: unknown } | null;
+            if (metadata?.role !== "pm") return { exitCode:1, stderr:`refused: memory-compress is not for a ${typeof metadata?.role === "string" ? `${metadata.role} thread` : "thread whose role is unknown"}; ask the PM or the owner` };
+            if (at < 0) compressArgs = [...args, "--project", own];
+          }
+          return runMemoryCompressCli(db as never, compressArgs);
+        }
+        if (command === "catalog") {
+          // The verb reads files of the machine the hub runs on: a chat on another machine must not read the hub's folders through it.
+          if (invocation?.threadId) return { exitCode:1, stderr:"refused: catalog reads folders of the hub machine and is for the owner at a terminal; a session builds its own catalog at start" };
+          return runCatalogCli(args);
         }
         if (command === "start-ambiguous-probe" && args.length === 2) {
           return { exitCode:0, stdout:JSON.stringify(await services.startAmbiguousProbe(args[0]!, args[1]!), null, 2) };

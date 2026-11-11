@@ -17,14 +17,45 @@ export function eventsListQueryLabel(query: Record<string, unknown>): string {
   return `threadId=${String(query.threadId ?? "")};types=${types || "all"};order=${String(query.order ?? "")};limit=${String(query.limit ?? "")}`;
 }
 
-export type ThreadEventsQuery = { threadId:string; types?: typeof THREAD_WATCH_EVENT_TYPES; order:"desc"; limit:"50" | "200"; beforeSeq?:string };
+/** BB serves at most this many thread events per request (THREAD_EVENT_LIST_PAGE_SIZE of the core's server contract): a larger `limit` is refused with 400 «Thread event limit cannot exceed 100». */
+export const THREAD_EVENTS_PAGE = 100;
+
+/** What a session did, without the stream around it: on live writer threads the typed-out deltas, the context counters and
+ * the service events are 75-85 % of the events (measured 2026-11-11), and a reader of `data.item` uses none of them. */
+export const THREAD_ITEM_EVENT_TYPES = ["item/started", "item/completed"] as const;
+
+export type ThreadEventsQuery = { threadId:string; types?: readonly string[]; order:"asc" | "desc"; limit:string; beforeSeq?:string; afterSeq?:string };
+
+/**
+ * `bb.sdk.threads.events.list` for any `limit`: more than one page is read page by page along the sequence numbers
+ * (newest first: below the oldest seen; oldest first: above the newest seen) until `limit` events or a short page.
+ * Answers and throws as the SDK call does; a later page that fails keeps the pages already read.
+ */
+export async function listThreadEventsPaged(bb: BbPluginApi, query: ThreadEventsQuery): Promise<unknown> {
+  const want = Math.max(1, Math.floor(Number(query.limit)) || THREAD_EVENTS_PAGE);
+  const list = (page: Partial<ThreadEventsQuery>): Promise<unknown> => bb.sdk.threads.events.list({ ...query, ...page } as never) as Promise<unknown>;
+  const first = await list({ limit:String(Math.min(want, THREAD_EVENTS_PAGE)) });
+  if (!Array.isArray(first) || want <= THREAD_EVENTS_PAGE) return first;
+  const out: unknown[] = [...first];
+  let page: unknown[] = first;
+  while (out.length < want && page.length >= THREAD_EVENTS_PAGE) {
+    const seqs = page.map((event) => Number((event as { seq?: unknown } | null)?.seq)).filter(Number.isFinite);
+    if (seqs.length === 0) break;
+    const cursor = query.order === "asc" ? { afterSeq:String(Math.max(...seqs)) } : { beforeSeq:String(Math.min(...seqs)) };
+    const next = await list({ ...cursor, limit:String(Math.min(want - out.length, THREAD_EVENTS_PAGE)) }).catch(() => null);
+    if (!Array.isArray(next) || next.length === 0) break;
+    out.push(...next);
+    page = next;
+  }
+  return out;
+}
 
 export async function listThreadEventsRaw(
   bb: BbPluginApi,
   query: ThreadEventsQuery,
 ): Promise<{ ok:true; events:unknown[] } | { ok:false; kind:"error"|"invalid"; detail:string }> {
   try {
-    const listed = await bb.sdk.threads.events.list(query);
+    const listed = await listThreadEventsPaged(bb, query);
     if (!Array.isArray(listed)) {
       return { ok:false, kind:"invalid", detail:`events_list_invalid:${eventsListQueryLabel(query)};result=${listed === null ? "null" : typeof listed}` };
     }

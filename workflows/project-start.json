@@ -72,7 +72,7 @@
       },
       "params": {
         "counts_note": "Open VALUE-MAP.md with these five lines counted from the tree itself, verbatim:",
-        "profile_note": "Exception for this run: do not run the writer yourself. Return the infra profile as the JSON object `profile` (key: value); the next step writes it with the one profile writer, which refuses secrets.",
+        "profile_note": "Exception for this run: do not run the writer yourself, and ignore any instruction above that names `lane-plan profile --set` (there is no lane-plan here). Return the infra profile as the JSON object `profile` (key: value) with only these keys: stack, test_command, release, hosts, start, deploy, logs, style; the next step stores it as the project's profile settings with the one profile writer, which refuses secrets and any other key (the same settings `bb lane-pilot profile` reads and sets).",
         "recap_note": "Also write .agents/planning/PROJECT.md from VALUE-MAP.md: Vision, Value and Limits (the no-gos and the risks the anamnesis names). Read .agents/planning/research/STACK.md, FEATURES.md, ARCHITECTURE.md and PITFALLS.md and the requirements before the roadmap, and build the roadmap skeleton from the requirements. A file that already exists is never overwritten: merge the new text into it keeping what is there, or leave it and write the new text to <name>.new.md next to it (it already exists and was changed by hand, or was not written by the machine: the new text is in <name>.new.md next to it)."
       }
     },
@@ -176,12 +176,14 @@
       },
       "out": {
         "refused": "string[]",
-        "set": "string[]"
+        "set": "string[]",
+        "reasons": "string[]"
       },
       "skip_when": "tree.enabled != 'on'",
       "skip_out": {
         "refused": [],
-        "set": []
+        "set": [],
+        "reasons": []
       }
     },
     {

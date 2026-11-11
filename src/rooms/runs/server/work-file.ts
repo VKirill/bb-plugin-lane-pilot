@@ -1,8 +1,5 @@
+import { secretPathHit } from "@lane-pilot/kit";
 import { getRun, getRunWriterHost, type LanePilotDatabase } from "../../storage";
-
-const SECRET_DIRS = new Set([".git", ".ssh", ".aws", ".gnupg"]);
-// Names only, not a substring of «key»: keyboard.ts and keys.ts are code, id_rsa and credentials.json are not.
-const SECRET_NAMES = [/^\.env/i, /\.(pem|key|p12|pfx)$/i, /^id_(rsa|ed25519|ecdsa|dsa)(\.pub)?$/i, /^\.(npmrc|netrc|pgpass)$/i, /^(credentials|secret)/i, /token.*\.(txt|json)$/i];
 
 /**
  * The window's door to a work file (SMA d_artifact): a bounded read of a file of the run's checkout by its relative
@@ -10,12 +7,11 @@ const SECRET_NAMES = [/^\.env/i, /\.(pem|key|p12|pfx)$/i, /^id_(rsa|ed25519|ecds
  */
 export function workFilePathError(relativePath: string): string | null {
   const parts = relativePath.split("/");
-  const base = parts[parts.length - 1] ?? "";
   if (relativePath.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(relativePath)) return `work file refused: absolute path ${relativePath}`;
   if (parts.some((part) => part === "..")) return `work file refused: ${relativePath} escapes the checkout`;
-  const secretDir = parts.find((part) => SECRET_DIRS.has(part));
-  if (secretDir) return `work file refused: ${relativePath} is inside ${secretDir}`;
-  if (SECRET_NAMES.some((pattern) => pattern.test(base))) return `work file refused: ${relativePath} names a secret`;
+  const secret = secretPathHit(relativePath);
+  if (secret && "dir" in secret) return `work file refused: ${relativePath} is inside ${secret.dir}`;
+  if (secret) return `work file refused: ${relativePath} names a secret`;
   if (parts.some((part) => !part.length || part === ".")) return `work file refused: malformed path ${relativePath}`;
   return null;
 }

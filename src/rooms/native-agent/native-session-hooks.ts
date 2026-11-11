@@ -256,8 +256,8 @@ function uniqueGroups(groups: unknown[]): unknown[] {
   });
 }
 
-/** Session events the ported behaviour actually uses. Not Stop or SessionEnd, and not every PreToolUse. */
-const SESSION_EVENTS = ["SessionStart", "UserPromptSubmit", "PreCompact", "SubagentStop", "PostToolUse"];
+/** Session events the ported behaviour actually uses. Not Stop, and not every PreToolUse. SessionEnd writes the farewell draft (SMA k_hse_farewell). */
+const SESSION_EVENTS = ["SessionStart", "UserPromptSubmit", "PreCompact", "SubagentStop", "PostToolUse", "SessionEnd"];
 
 export async function materializeNativeHookSession(input: {
   cwd?: string | null;

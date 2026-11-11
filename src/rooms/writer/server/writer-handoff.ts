@@ -1,4 +1,4 @@
-import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
+import { listThreadEventsRaw, THREAD_ITEM_EVENT_TYPES } from "@lane-pilot/thread-observe";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { bestEffort } from "@lane-pilot/kit";
 
@@ -88,7 +88,7 @@ export async function collectHandoffBrief(input: {
   bb: Parameters<typeof listThreadEventsRaw>[0]; host: Parameters<typeof runOnHost>[0];
   hostId: string; threadId: string; workspacePath: string; stopReason: string;
 }): Promise<string> {
-  const listed = await bestEffort(input.bb.log, "writer handoff events", listThreadEventsRaw(input.bb, { threadId:input.threadId, order:"desc", limit:"300" } as never), null);
+  const listed = await bestEffort(input.bb.log, "writer handoff events", listThreadEventsRaw(input.bb, { threadId:input.threadId, types:THREAD_ITEM_EVENT_TYPES, order:"desc", limit:"100" } as never), null);
   const ran = await bestEffort(input.bb.log, "writer handoff git status", runOnHost(input.host, { hostId:input.hostId, cwd:input.workspacePath, command:"git status --short; git diff --stat",
     timeoutSec:30, timeoutMs:30_000 }), null);
   const gitStatus = ran && ran.exitCode === 0 ? ran.stdout : `(git status did not answer${ran ? `: exit ${ran.exitCode}` : ""})`;

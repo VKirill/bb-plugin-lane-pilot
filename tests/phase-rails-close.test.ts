@@ -214,6 +214,23 @@ describe("a plan that found the goal already met", () => {
     expect(lines.filter((line) => !line.ok).map((line) => line.id)).toEqual(["goal_met"]);
   });
 
+  it("leaves execution although a wave of the plan it replaced came in red and was never reviewed (live ph_d74a94d3b8)", async () => {
+    const phases = driver();
+    const phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Stats", goal: "stats module" });
+    const risks = { technical: "none", product: "none", operations: "none", security: "none" };
+    const staleWave = { packageSha: "a311d4f33fc3", lines: [{ id: "promises_proved", ok: false, detail: "main gets the branch after acceptance" }], pieces: [], at: 1 };
+    savePhase(phases.db, phase.id, { stage: "planning", record: { waveReview: true, context: { docs: [], sha: contextSignature([]), signedAt: 1, risks, requirements: ["R1"] },
+      execution: { issued: { old: "task_old" }, waves: { "1": staleWave } } } as never, at: 1 });
+    phases.plan({ phaseId: phase.id, items: [], alreadyMet: "the planner checked the repository: both files exist", by: "lp.plan" });
+    submittedPlanSha = phases.status(phase.id).phase.record.plan!.sha;
+    seedPlanRun(phases.db, "wfrun_plan", [["plan", "planner", "thr_planner", 10, 20], ["plan_critic", "plan-critic", "thr_critic", 30, 40]]);
+    const admitted = await phases.planCheck({ phaseId: phase.id, decision: "approve", by: "lp.plan, plan critic", wfRunId: "wfrun_plan" });
+    expect(admitted.stage).toBe("execution");
+    let now = await phases.drive(admitted);
+    now = await phases.drive(now);
+    expect(now.stage).toBe("verification");
+  });
+
   it("an empty plan without already_met is still refused by the plan gate", async () => {
     const phases = driver();
     const phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Stats", goal: "stats module" });

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { access, lstat, open, readFile, readdir, realpath, rename, stat, statfs } from "node:fs/promises";
+import { access, lstat, mkdir, open, readFile, readdir, realpath, rename, stat, statfs } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { delimiter, join, relative } from "node:path";
 import { homedir, networkInterfaces } from "node:os";
@@ -75,6 +75,19 @@ export const readUsageWindows: ExperimentalHostRpcHandlers<typeof hostContract>[
   return { hostId, at: typeof raw?.at === "string" ? raw.at : null, windows };
 };
 
+/** The hub's latest usage snapshot for this machine's session guard (~/.lane-pilot/usage-snapshot.json). */
+export const writeUsageSnapshot: ExperimentalHostRpcHandlers<typeof hostContract>["writeUsageSnapshot"] = async (input) => {
+  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  const dir = join(homedir(), ".lane-pilot");
+  const file = join(dir, "usage-snapshot.json");
+  const temp = `${file}.${randomUUID().slice(0, 8)}`;
+  await mkdir(dir, { recursive: true });
+  const handle = await open(temp, "w");
+  try { await handle.writeFile(JSON.stringify(input.snapshot)); } finally { await handle.close(); }
+  await rename(temp, file);
+  return { hostId, written: true };
+};
+
 /** Close exactly that line: the backlog item's meta.yaml gets `status: done`; a file with no or two status lines is refused, not guessed. */
 export const closeBacklogItem: ExperimentalHostRpcHandlers<typeof hostContract>["closeBacklogItem"] = async (input) => {
   const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
@@ -125,6 +138,27 @@ export const prepareWorkerHome: ExperimentalHostRpcHandlers<typeof hostContract>
   }
   if (await can(at(source, "auth.json")).then(() => true, () => false) && !await can(at(codexHome, "auth.json")).then(() => true, () => false)) { await link(at(source, "auth.json"), at(codexHome, "auth.json")); seeded.push("auth.json"); }
   return { codexHome, seeded };
+};
+
+/** The throwaway half of the per-task codex home (SMA m_ac_codex_home): confined to ~/.lane-pilot/codex-homes/<key>,
+ * key validated by the contract exactly as prepareWorkerHome's; rm -rf removes the auth.json link, never follows it. */
+export const removeWorkerHome: ExperimentalHostRpcHandlers<typeof hostContract>["removeWorkerHome"] = async (input) => {
+  const { rm, realpath } = await import("node:fs/promises");
+  const { homedir: home } = await import("node:os");
+  const { join: at, resolve, sep } = await import("node:path");
+  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  // The handler is reached by the contract's regex, but it checks the key itself: "." would resolve to the root and remove every home.
+  if (input.key === "" || input.key.startsWith(".") || input.key.includes("/") || input.key.includes("\\")) return { hostId, removed: false };
+  const root = at(home(), ".lane-pilot", "codex-homes");
+  const target = at(root, input.key);
+  const exists = await lstat(target).then(() => true, () => false);
+  if (!exists) return { hostId, removed: false };
+  // Confinement: the real path must stay under codex-homes even if the home itself is a link.
+  const resolvedRoot = await realpath(root).catch(() => resolve(root));
+  const resolvedTarget = await realpath(target).catch(() => resolve(target));
+  if (resolvedTarget === resolvedRoot || !resolvedTarget.startsWith(resolvedRoot + sep)) return { hostId, removed: false };
+  await rm(target, { recursive: true, force: true });
+  return { hostId, removed: true };
 };
 
 /**

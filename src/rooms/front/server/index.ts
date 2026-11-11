@@ -10,12 +10,19 @@ const ACTIONS = "lp.front.actions";
 const draftKey = (projectId: string) => `lp.front.first-run:${projectId}`;
 const sha = async (text: string) => (await import("node:crypto")).createHash("sha256").update(text).digest("hex");
 
+/** How long one peer's board call may take before that peer's line says it did not answer. */
+const PEER_BOARD_MS = 5_000;
+
 /**
  * The front's server half: the first-run interview (four steps into a draft, then the one profile writer), the project's own helpers taken
  * as forge drafts (a name never overwrites), the peers' last snapshots (polled with the board every five minutes), terminal coordination
  * and who can see the door, read through the machines; and the action journal — one line per call that changes something.
  */
-export function createFront(ctx: ServerCore) {
+export function createFront(ctx: ServerCore, deps?: {
+  /** The peer's ordinary board: BB's live usage windows of the machine's own subscription (the statusline's last_usage.json
+   * is dead since 2026-10-30). Unset keeps the old host readUsageWindows call. Answers carry `at`; null means nothing answered. */
+  board?(hostId: string): Promise<unknown>;
+}) {
   const { db, bb } = ctx;
   const kv = bb.storage.kv;
   // The peers' last snapshots live in memory only: age-labelled, dropped on restart, never stored (SMA m_mc_snapshot).
@@ -82,8 +89,16 @@ export function createFront(ctx: ServerCore) {
       const next: PeerSnapshot = { hostId: row.id, name: row.name ?? null, online, at: now, lastOnlineAt: online ? now : before?.lastOnlineAt ?? null };
       if (online) {
         try {
-          next.windows = await host().call("readUsageWindows", { requestedHostId: row.id }, { hostId: row.id, timeoutMs: 5_000 });
-          next.answered = true;
+          // Each peer has its own 5 s: a board call that hangs marks only its own line and delays no other peer.
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          const answer = await Promise.race([
+            deps?.board ? deps.board(row.id) : host().call("readUsageWindows", { requestedHostId: row.id }, { hostId: row.id, timeoutMs: 5_000 }),
+            new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("board timeout")), PEER_BOARD_MS); }),
+          ]).finally(() => { if (timer) clearTimeout(timer); });
+          next.windows = answer;
+          // The live reader never throws and says at:null when nothing answered. It says the same for a machine that answered with no
+          // subscription windows, so the two cannot be told apart here: at:null stays answered:false.
+          next.answered = deps?.board ? Boolean((answer as { at?: unknown } | null)?.at) : true;
         } catch { next.answered = false; }
       }
       snapshots.set(row.id, next);

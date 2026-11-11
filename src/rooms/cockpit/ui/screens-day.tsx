@@ -5,7 +5,7 @@ import { Badge, Button, Disclosure } from "@lane-pilot/ui-kit";
 import { Loaded, Panel, RefreshButton, day, fill, useLoad, type Rpc } from "./kit";
 
 type FeedRow = { at: number; kind: string; text: string; runId?: string; taskId?: string; title?: string | null };
-type Today = { kpi: { accepted: number; blocked: number; running: number; tokens: number; actions: number }; feed: FeedRow[] };
+type Today = { kpi: { accepted: number; blocked: number; running: number; tokens: number; actions: number }; feed: FeedRow[]; partial?: string[] };
 
 const FEED_POLL_MS = 8_000;
 const FRESH_MS = 5_000;
@@ -35,6 +35,7 @@ export function TodayScreen({ rpc, projectId }: { rpc: Rpc; projectId: string })
     <Panel title={t("ckScreen_today")} testId="ck-today" actions={<RefreshButton onClick={today.reload} />}>
       <Loaded state={today}>{(data) => (
         <div className="space-y-3">
+          {(data.partial?.length ?? 0) ? <p className="text-xs text-muted-foreground" data-testid="ck-partial">{t("ckPartialNote")}: {data.partial!.join(", ")}</p> : null}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-5" data-testid="ck-kpi">
             {([["ckKpiAccepted", data.kpi.accepted], ["ckKpiBlocked", data.kpi.blocked], ["ckKpiRunning", data.kpi.running], ["ckKpiTokens", data.kpi.tokens.toLocaleString()], ["ckKpiActions", data.kpi.actions]] as const).map(([key, value]) => (
               <div key={key} className="rounded-md border border-border p-2"><div className="text-xs text-muted-foreground">{t(key)}</div><div className="text-lg font-semibold tabular-nums">{value}</div></div>
@@ -82,7 +83,7 @@ function AcceptedRow({ rpc, row }: { rpc: Rpc; row: FeedRow }) {
 }
 
 type MoneyStatus = { monthUsd: number; estimatedUsd?: number; cap: number | null; left: number | null; byProvider?: Record<string, number>; table?: Array<{ day: string; usd: number; byProvider: Record<string, number> }> };
-type Windows = { at: string | null; windows: Record<string, { utilization: number; resetsAt: string | null }> };
+type Windows = { at: string | null; windows: Record<string, { utilization: number; resetsAt: string | null }>; limitEventAt?: string };
 
 /** Money: what the month cost on paid lanes, the money cap dialog, the subscription window bars, the accounts. */
 export function MoneyScreen({ rpc, hostId }: { rpc: Rpc; hostId: string | null }) {
@@ -130,7 +131,9 @@ export function MoneyScreen({ rpc, hostId }: { rpc: Rpc; hostId: string | null }
       </Panel>
       <Panel title={t("ckWindows")} testId="ck-windows">
         <Loaded state={windows}>{(w) => !Object.keys(w.windows).length ? <p className="text-sm text-muted-foreground">{t("ckEmpty")}</p> : (
-          <div className="space-y-2">{Object.entries(w.windows).map(([name, window]) => (
+          <div className="space-y-2">
+            {w.limitEventAt ? <p className="text-xs text-muted-foreground">{fill("ckWindowsFromEvent", { t: new Date(w.limitEventAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) })}</p> : null}
+            {Object.entries(w.windows).map(([name, window]) => (
             <div key={name} data-testid={`ck-window-${name}`}>
               <div className="flex justify-between text-xs"><span>{name}</span><span className="tabular-nums">{Math.round(window.utilization)}%{window.resetsAt ? ` · ${new Date(window.resetsAt).toLocaleString()}` : ""}</span></div>
               <div className="h-2 overflow-hidden rounded bg-muted"><div className={`h-full ${window.utilization >= 98 ? "bg-destructive" : window.utilization >= 80 ? "bg-amber-500" : "bg-primary"}`} style={{ width: `${Math.min(100, window.utilization)}%` }} /></div>

@@ -1,6 +1,6 @@
 import { acceptedRules, pickRelevantRules, ruleRelevanceQuestions, ruleRelevanceState } from "@lane-pilot/run-insights";
 import { embedQuery } from "../../memory/server";
-import { DEFAULT_RELEVANCE_FLOOR, buildContextPack, clearsFloor, filesDrifted, memoryCandidates, pathsNamed, questionWords, recordRelevance, shadowPackCompare, wordFrequencies, type MemorySettings } from "@lane-pilot/memory-core";
+import { DEFAULT_RELEVANCE_FLOOR, buildContextPack, clearsFloor, filesDrifted, memoryCandidates, pathsNamed, questionWords, recordRelevance, searchMemoryRecords, shadowPackCompare, wordFrequencies, type MemorySettings } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
 import { mixWriterMemory, snapshotFileRead, writerCandidates, writerMemoryPaths } from "../../memory/server";
 import { getRunSettingsScopes, loadProjectSettings, taskBasePath, type LanePilotDatabase, latestAcceptedAttemptOfTask } from "../../storage";
@@ -10,8 +10,9 @@ import { estimateTokens } from "@lane-pilot/memory-core";
 import { readTaskApproach } from "../../tasks";
 import type { WriterBriefContext } from "../../brief";
 import type { ServerCore } from "../../contracts/server";
+import { codeFactsState, CODE_FACTS_PROBE } from "../../platform";
 import { runOnHost } from "@lane-pilot/host-calls";
-import { bestEffort } from "@lane-pilot/kit";
+import { bestEffort, maskCredentials } from "@lane-pilot/kit";
 import { effectiveGroup, parseHelperContextSettings } from "../../contracts/helper-context";
 import { stickyTurnPrompt } from "./writer-task";
 
@@ -58,6 +59,31 @@ export async function writerRules(deps:KnowledgeDeps, input:KnowledgeInput) {
 }
 
 /**
+ * The rules worded «WHEN <trigger> -> <act>» (SMA k_hs_reflex): the lines persistTaskFolder writes to REFLEXES.md so
+ * the guard fires a burn lesson at the act it names. A rule in any other form is not a reflex and is left out.
+ */
+export function reflexLinesOf(rules: readonly string[]): string[] {
+  return rules.filter((rule) => /WHEN\s+.+?\s*(?:→|->)\s*.+/.test(rule)).map((rule) => rule.startsWith("-") ? rule : `- ${rule}`).slice(0, 20);
+}
+
+/**
+ * The confirmed notes that concern the paths of one task (SMA k_hs_context): «path -> claim» lines persistTaskFolder
+ * writes to FILECARDS.md, so the guard's file-note stream shows them at the act. Only trust `confirmed` (an observed note
+ * is a hunch); masked and clipped here because the line enters the model's context. Bounded: two notes a path, 40 lines.
+ */
+export async function taskFileCards(db:LanePilotDatabase, projectId:string, task:TaskV2):Promise<string[]> {
+  const lines:string[]=[];
+  for(const path of [...task.owns_paths,...task.read_first].slice(0,20)){
+    const confirmed=searchMemoryRecords(db as never,projectId,path,8,"auto","subagent","").filter((note)=>note.trust==="confirmed");
+    for(const note of confirmed.slice(0,2)){
+      lines.push(maskCredentials(`${path} -> ${note.content.replace(/\s+/g," ").slice(0,200)}`).text);
+    }
+    if(lines.length>=40) break;
+  }
+  return lines.slice(0,40);
+}
+
+/**
  * Up to five accepted past tasks of the project that share the new task's words (SMA ap_similar): the writer reuses
  * what worked. Each line names the task, its approach note and the files its accepted merge changed; the block stays
  * inside a share of the brief's knowledge budget.
@@ -94,7 +120,7 @@ export async function writerKnowledge(deps:KnowledgeDeps, input:KnowledgeInput) 
     const mcpGroup=mode==="roles"?effectiveGroup("writer","mcpServers",access):{names:null};
     const gitnexusTools=mcpGroup.names===null||mcpGroup.names.includes("gitnexus");
     const memoryRoot=taskBasePath(deps.db,input.runId,input.task.id)??input.task.project_cwd;
-    const gitnexusIndex=gitnexusTools&&(await bestEffort(deps.log, "writer gitnexus index probe", runOnHost(deps.host,{hostId:input.hostId,cwd:memoryRoot,command:"test -d .gitnexus",timeoutSec:10}), null))?.exitCode===0;
+    const gitnexusIndex=gitnexusTools&&codeFactsState((await bestEffort(deps.log, "writer gitnexus index probe", runOnHost(deps.host,{hostId:input.hostId,cwd:memoryRoot,command:CODE_FACTS_PROBE,timeoutSec:10}), null))?.stdout).state!=="none";
     return {broadSkills:mode!=="roles"||skillsGroup.names===null,gitnexusTools,metamcpTools:mcpGroup.names===null||mcpGroup.names.includes("metamcp"),gitnexusIndex};
   })();
   const { allRules, rules, rulesText }=await writerRules(deps,input);

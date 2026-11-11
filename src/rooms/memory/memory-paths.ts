@@ -110,6 +110,12 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
       { file: "src/rooms/memory/server/session-memory.ts", primitive: "session_memory_core", count: 1 },
       { file: "src/rooms/memory/server/session-memory.ts", primitive: "searchMemoryRecords", count: 1 },
     ] },
+  { id: "hook.prompt_recall", consumer: "the pointers the session hook prints under a prompt (`bb lane-pilot memory search --recall`, confirmedWordHits)", carries: [], alwaysOn: [], status: "exempt",
+    reason: "Confirmed notes of the caller's own project by the word index only, masked, one line each, three at most; the probe asks the PM and writer prompts, not a hook's context line (tests/sma/parity-g2-hooks-2.test.ts drives the verb on a real database).",
+    sites: [{ file: "src/rooms/memory/server/session-memory.ts", primitive: "searchMemoryRecords", count: 1 }] },
+  { id: "hook.subagent_pack", consumer: "the rules and lessons of a Task subagent's context pack (`bb lane-pilot subagent-pack`, only where hook.subagent_pack is on)", carries: [], alwaysOn: [], status: "exempt",
+    reason: "Accepted always-rules of the caller's sections and confirmed notes, masked, inside the 2 KB pack; it is the subagent's prompt, which the PM and writer probes do not see (tests/sma/parity-g2-hooks-2.test.ts drives the verb on a real database).",
+    sites: [{ file: "src/rooms/tools/server/cli.ts", primitive: "pmRulesOf", count: 1 }] },
   { id: "cli.memory_load", consumer: "`bb lane-pilot memory load --tags a,b`: the core plus the notes carrying the tags, printed for whoever ran the command", carries: [], alwaysOn: [], status: "exempt",
     reason: "A command's printed output (like the session search above), not text injected into a prompt; nothing reaches an agent unless it ran the command itself.",
     sites: [{ file: "src/rooms/tools/server/cli.ts", primitive: "listMemory", count: 2 }] },
@@ -140,6 +146,9 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
       { file: "src/rooms/native-agent/terminal-parity.ts", primitive: "listMemory", count: 1 },
       { file: "src/rooms/native-agent/terminal-parity.ts", primitive: "pmRulesOf", count: 1 },
     ] },
+  { id: "writer.file_notes", consumer: "the file-note advice of the guard (FILECARDS.md of the task folder, written at dispatch and task update)", carries: [], alwaysOn: [], status: "exempt",
+    reason: "Only trust-confirmed notes of the task's own paths, masked and clipped, reach a file the guard reads at an Edit; the probe asks prompts, not that file (the test drives taskFileCards on a real db).",
+    sites: [{ file: "src/rooms/writer/server/writer-knowledge.ts", primitive: "searchMemoryRecords", count: 1 }] },
 ];
 
 export const pathById = (id: string): MemoryPath | undefined => MEMORY_PATHS.find((entry) => entry.id === id);

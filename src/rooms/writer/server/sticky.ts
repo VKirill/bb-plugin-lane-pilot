@@ -2,7 +2,7 @@ import type { DirtSnapshot } from "../cli-outcome";
 import { isLiveDecision } from "../live-folder";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, loadProjectSettings, saveReasoningTrace, setAttemptDirtBefore, setAttemptWorkspace, transitionAttempt, taskBasePath, countThreadAttempts, countThreadTaskAttempts, getTaskContractJson } from "../../storage";
-import { SESSION_MAX_TURNS, failureClass } from "../../contracts/failure-class";
+import { effectiveTurnCap, failureClass } from "../../contracts/failure-class";
 import { stringAt, orMiss, isNotFound, bestEffort } from "@lane-pilot/kit";
 import { listThreadEventsRaw, sleepUntilThreadSignal, threadWatchMark } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";
@@ -186,23 +186,32 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
   /** Turns the failed attempt's thread took for its task: its first answer and every feedback turn after it. */
   const sessionTurns = (failed: { thread_id: string | null; task_id: string }): number => failed.thread_id ? countThreadTaskAttempts(db, failed.thread_id, failed.task_id) : 0;
 
+  /** The conversation's turn ceiling (SMA m_sw_conv_settings): writer.session_max_turns 1-10, unset = SESSION_MAX_TURNS (5). */
+  const turnCap = (failedAttemptId: string, maxTurns: number | undefined): number => {
+    if (maxTurns !== undefined) return maxTurns;
+    const failed = getAttempt(db, failedAttemptId);
+    const projectId = failed ? getRun(db, failed.run_id)?.project_id : undefined;
+    return effectiveTurnCap(projectId ? loadProjectSettings(db, projectId)["writer.session_max_turns"] : undefined);
+  };
+
   /** Why a failed attempt gets no more feedback turns in its writer's thread (the turn cap); null while it may. */
-  function sessionLimit(failedAttemptId: string, maxTurns = SESSION_MAX_TURNS): string | null {
+  function sessionLimit(failedAttemptId: string, maxTurns?: number): string | null {
     const failed = getAttempt(db, failedAttemptId);
     if (!failed?.thread_id) return null;
+    const cap = turnCap(failedAttemptId, maxTurns);
     const sameThread = resolveInSameThread(failed.state, failed.reason) || retryInSameThread(failed.state, failed.reason);
-    return sameThread && sessionTurns(failed) >= maxTurns ? `turn limit ${maxTurns} reached` : null;
+    return sameThread && sessionTurns(failed) >= cap ? `turn limit ${cap} reached` : null;
   }
 
   /**
    * The failed attempt's thread, when the same writer can redo the task in place or resolve its merge conflict. A task is
    * one writer session: the failure goes back to the writer as a feedback turn until the checks pass or the turn cap.
    */
-  async function retryWriter(failedAttemptId: string, runId: string, maxTurns = SESSION_MAX_TURNS): Promise<(HotWriter & { kind:"retry"|"merge" }) | null> {
+  async function retryWriter(failedAttemptId: string, runId: string, maxTurns?: number): Promise<(HotWriter & { kind:"retry"|"merge" }) | null> {
     const failed = getAttempt(db, failedAttemptId);
     const kind = resolveInSameThread(failed?.state ?? "", failed?.reason) ? "merge" as const : "retry" as const;
     if (!failed?.thread_id || (kind === "retry" && !retryInSameThread(failed.state, failed.reason))) return null;
-    if (sessionTurns(failed) >= maxTurns) return null;
+    if (sessionTurns(failed) >= turnCap(failedAttemptId, maxTurns)) return null;
     if (!await threadUsable(failed, true)) return null;
     return { threadId:failed.thread_id, attemptId:failed.id, workspacePath:failed.workspace_path!, environmentId:failed.environment_id,
       decision:failed.workspace_decision, turns:threadTurns(failed.thread_id), kind };
@@ -269,7 +278,7 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
       // Compaction without a summary: the pairs the session no longer needs are dropped, the rest stays verbatim.
       let digest = "";
       if (compacted) {
-        const events = await listThreadEventsRaw(bb, { threadId:writer.threadId, order:"desc", limit:"300" } as never)
+        const events = await listThreadEventsRaw(bb, { threadId:writer.threadId, types:["item/completed"], order:"desc", limit:"100" } as never)
           .then((listed) => (listed?.ok ? listed.events : []), () => [] as never[]);
         digest = await bestEffort(ctx.log, "sticky session digest", judgeSessionDigest(jev(), { goal:input.taskId, events: events as Array<Record<string, unknown>> },
           { projectId:input.config.projectId, runId:input.runId, subject:input.taskId, settings:loadProjectSettings(db, input.config.projectId, getRunSettingsScopes(db, input.runId)) }), null) ?? "";

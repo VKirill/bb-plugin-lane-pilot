@@ -505,7 +505,7 @@ describe("parity d5-phase-2", () => {
     }
   });
 
-  it("[sma:k_wp_commit] SPEC.md / PLAN.md / VERIFICATION.md replace only the command's own file: a changed file keeps its text and the new one goes to <name>.new.md, the book says so; an unchanged text writes and commits nothing", async () => {
+  it("[sma:k_wp_commit] SPEC.md / PLAN.md / VERIFICATION.md replace only the command's own file: a file it wrote and a person changed keeps its text and the new one goes to <name>.new.md, the book says so; a file it never wrote is left and committed; an unchanged text writes and commits nothing", async () => {
     const d = driver({ settings: { "phase.doc_files": "on" } });
     const id = openLegacy(d, { docFiles: true });
     const path = `.agents/phases/${id}/VERIFICATION.md`;
@@ -522,15 +522,20 @@ describe("parity d5-phase-2", () => {
     expect(d.texts.get(path)).toBe(`${GENERATED}\nv2\nmy remark`);
     expect(d.texts.get(path.replace(/\.md$/, ".new.md"))).toBe(`${GENERATED}\nv3`);
     expect(listParts(d.db, id).some((part) => part.text.includes("VERIFICATION.md already exists and was changed by hand") && part.text.includes("VERIFICATION.new.md"))).toBe(true);
-    // A file that has no marker at all is a person's, too; a .new.md that is not the command's is not overwritten.
+    // A .new.md that is not the command's is not overwritten.
+    d.texts.set(path.replace(/\.md$/, ".new.md"), "# somebody's file\n");
+    await d.docs.writeGenerated(live(d), path, "v4", "m4");
+    expect(d.texts.get(path.replace(/\.md$/, ".new.md"))).toBe("# somebody's file\n");
+    // A file the command never wrote (the planner's own PLAN.md, a person's SPEC.md) stays as it is, gets no .new.md beside it and is
+    // committed: a live phase with doc_files on left a PLAN.new.md beside every planner's PLAN.md.
     const other = `.agents/phases/${id}/SPEC.md`;
     d.texts.set(other, "# my own spec\n");
-    await d.docs.writeGenerated(live(d), other, "s1", "m");
+    const before = d.writes.length;
+    await d.docs.writeGenerated(live(d), other, "s1", "spec commit");
     expect(d.texts.get(other)).toBe("# my own spec\n");
-    expect(d.texts.get(other.replace(/\.md$/, ".new.md"))).toBe(`${GENERATED}\ns1`);
-    d.texts.set(other.replace(/\.md$/, ".new.md"), "# somebody's file\n");
-    await d.docs.writeGenerated(live(d), other, "s2", "m");
-    expect(d.texts.get(other.replace(/\.md$/, ".new.md"))).toBe("# somebody's file\n");
+    expect(d.texts.has(other.replace(/\.md$/, ".new.md"))).toBe(false);
+    expect(d.writes.length).toBe(before);
+    expect(d.commits.at(-1)).toEqual({ paths: [other], message: "spec commit" });
     // A failed read writes nothing.
     const broken = driver({ failRead: [path] });
     const id2 = openLegacy(broken, { docFiles: true });

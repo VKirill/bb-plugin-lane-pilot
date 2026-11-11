@@ -246,3 +246,17 @@ export function pendingOwnerLearningItems(db: Db): Array<{ id: string; project_i
   return db.prepare("SELECT id, project_id, kind, text, evidence, created_at FROM lane_pilot_learning_item WHERE state='pending_owner' ORDER BY created_at DESC").all() as
     Array<{ id: string; project_id: string; kind: string; text: string; evidence: string; created_at: number }>;
 }
+
+/* ---- history search (SMA k_lib_history): raw rows the memory-tiers ranker reads ---- */
+
+/** Transcript fragments of a project for the history search; sensitive observations stay out. */
+export function historyObservations(db: Db, projectId: string, limit = 400): Array<{ id: string; excerpt: string | null; body: string | null; at: number }> {
+  return db.prepare("SELECT id, excerpt, body, at FROM lane_pilot_learning_obs WHERE project_id=? AND sensitive=0 ORDER BY at DESC LIMIT ?")
+    .all(projectId, limit) as Array<{ id: string; excerpt: string | null; body: string | null; at: number }>;
+}
+
+/** Learned items of a project for the history search (the lessons book). */
+export function historyItems(db: Db, projectId: string, limit = 400): Array<{ id: string; kind: string; text: string; at: number }> {
+  return db.prepare("SELECT id, kind, text, created_at AS at FROM lane_pilot_learning_item WHERE project_id=? ORDER BY created_at DESC LIMIT ?")
+    .all(projectId, limit) as Array<{ id: string; kind: string; text: string; at: number }>;
+}

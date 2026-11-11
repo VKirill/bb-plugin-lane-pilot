@@ -85,9 +85,9 @@ export function WorkBreakdown({ runId, taskId, locale }: { runId: string; taskId
   const { summary } = graph;
   const off = graph.stages.filter(isOff);
   const cost = summary.costState === null ? "—" : summary.costUsd === null ? t("graphNotMeasured") : `${money(summary.costUsd)}${summary.costState === "partial" ? ` (${t("graphPartial")})` : ""}`;
-  // Turns and money against the ceiling (SMA sc_spend): the latest writer row's turns of SESSION_MAX_TURNS, the month against the cap.
+  // Turns and money against the ceiling (SMA sc_spend): the latest writer row's turns of the project's ceiling (writer.session_max_turns, 5 unset), the month against the cap.
   const writerTurns = graph.stages.filter((block) => block.cell.stageId === "writer-agent").flatMap((block) => block.rows).map((row) => row.turns).filter((n): n is number => n !== null).at(-1) ?? null;
-  const ceil = moneyStatus ? ceilingLine({ turns: writerTurns }, { monthUsd: moneyStatus.monthUsd, cap: moneyStatus.cap }) : null;
+  const ceil = moneyStatus ? ceilingLine({ turns: writerTurns }, { monthUsd: moneyStatus.monthUsd, cap: moneyStatus.cap }, graph.turnCeiling) : null;
   return (
     <div className="space-y-2.5" data-testid="work-breakdown">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">

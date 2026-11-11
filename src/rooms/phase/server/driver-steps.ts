@@ -327,7 +327,10 @@ export function installSteps(tools: StepsTools) {
       if (wrote) { savePhase(db, current.id, { record: { ...current.record, execution: { ...current.record.execution!, waves } }, at: now() }); current = mustGet(current.id); }
       // Every wave is verified by another model before the phase leaves execution, the last one too (Matvey: «волну проверяет другая
       // модель»); the machine's review of the last wave had no pass to start in before the phase moved on.
-      const unreviewed = current.record.waveReview ? Object.entries(current.record.execution?.waves ?? {}).filter(([, done]) => done.review?.state !== "passed").map(([wave]) => wave) : [];
+      // Only the waves of the plan in force: a wave the replan dropped (the planner then found the goal already met, live ph_d74a94d3b8
+      // 2026-11-11) stayed in the record unreviewed, and the phase sat in execution with nothing to issue and nothing said.
+      const planWaves = new Set(wavesOf(items).map(String));
+      const unreviewed = current.record.waveReview ? Object.entries(current.record.execution?.waves ?? {}).filter(([wave, done]) => planWaves.has(wave) && done.review?.state !== "passed").map(([wave]) => wave) : [];
       if (executionGate(items, current.record.execution?.issued ?? {}, facts(current)).ok && !unreviewed.length) {
         // Nothing changed since a verdict failed on these very facts: verifying again would fail the same way, and its poke is the
         // one the PM was already given — the phase stalled silently (live ph_ae0a8de9db). It waits for new work instead.
@@ -560,7 +563,7 @@ export function installSteps(tools: StepsTools) {
 
   /** Sends the PM the one instruction the phase needs now, once per instruction key. */
   async function poke(phase: Phase & { pokedKey?: string | null }): Promise<void> {
-    const action = nextAction(phase, facts(phase));
+    const action = nextAction(phase, facts(phase), await tools.planningHome(phase));
     // Call about a waiting decision: a turn that needs the owner's word is also a row on «Ждут владельца» (and its Telegram digest).
     const wordTurn = action.key.match(/:word:([a-z]+)(?::(\d+))?(?::(?:v[\w-]+|[0-9a-f]+))?$/);
     if (wordTurn) reactions.postOwnerItem({ key: phaseWordItemKey(phase.id, wordTurn[1]!, wordTurn[2]), source: "phase", kind: "word", projectId: phase.projectId,

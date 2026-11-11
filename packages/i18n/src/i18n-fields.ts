@@ -1065,6 +1065,8 @@ export const fieldEn = {
   reason_s614: "Refuses or drops a memory write that packs three or more list lines into one record. Off by default.",
   field_s615: "Memory: notes by the task's tags",
   reason_s615: "Adds notes carrying a tag of the task to the writer's brief. Off by default.",
+  field_s616: "Writer session turn ceiling",
+  reason_s616: "How many times the writer may return to one task in one conversation before it stops with «turn limit reached». Default 5.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -2133,4 +2135,6 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s614: "Отклоняет или отбрасывает запись памяти, где в одну запись сложен список из трёх и более пунктов. По умолчанию выключено.",
   field_s615: "Память: заметки по тегам задачи",
   reason_s615: "Добавляет в бриф исполнителя заметки с тегом задачи. По умолчанию выключено.",
+  field_s616: "Потолок ходов разговора писаря",
+  reason_s616: "Сколько раз писарь может вернуться к одной задаче в одном разговоре, после чего задача останавливается «turn limit reached». По умолчанию 5.",
 };

@@ -18,6 +18,7 @@ export const SCREENS = [
   { id: "coord", title: "ckScreen_coord", wide: true, events: ["claim"] },
   { id: "ship", title: "ckScreen_ship", wide: false, events: ["ship", "release"] },
   { id: "system", title: "ckScreen_system", wide: false, events: ["fault", "peer", "door"] },
+  { id: "rules", title: "ckScreen_rules", wide: false, events: ["rule", "protection"] },
   { id: "registry", title: "ckScreen_registry", wide: false, events: [] },
 ] as const satisfies ReadonlyArray<{ id: string; title: I18nKey; wide: boolean; events: readonly string[] }>;
 export type ScreenId = (typeof SCREENS)[number]["id"];
@@ -65,4 +66,4 @@ export function unusedReads(contractNames: readonly string[], used: readonly str
 
 /** The reads the cockpit's screens call — the registry's side of the «never called» check. */
 export const COCKPIT_READS = ["phase_list", "phase_get", "cockpit_today", "cockpit_workers", "cockpit_designer", "cockpit_windows", "money_status", "owner_waiting", "first_run_get",
-  "helpers_list", "coord_status", "peers_list", "door_audience", "actions_recent", "cockpit_seen_list", "list_projects", "get_screen", "task_card", "cockpit_accounts"] as const;
+  "helpers_list", "coord_status", "peers_list", "door_audience", "actions_recent", "cockpit_seen_list", "list_projects", "get_screen", "task_card", "cockpit_accounts", "cockpit_rules"] as const;

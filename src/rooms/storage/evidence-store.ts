@@ -5,7 +5,7 @@
 
 export type EvidenceCheck = { name: string; ok: boolean; detail?: string };
 export type EvidenceRecord = {
-  op: "permit" | "revert" | "janitor";
+  op: "permit" | "revert" | "janitor" | "window";
   projectId: string;
   target: string;
   why: string;

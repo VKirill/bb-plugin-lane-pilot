@@ -1311,38 +1311,33 @@ def scenario_no_code_exit(ctx: "Context") -> dict:
 
 
 def scenario_phase(ctx: "Context") -> dict:
-    """Three tasks, two batches, a phase (SMA: Graph release series): a phase opened, its context signed, a plan of three pieces in two waves
-    checked and admitted; the driver issues wave 1, then wave 2 after wave 1 is accepted, and the phase reaches verification."""
+    """A phase carried to its verification by the machine's own stages: opened with a goal of two notes and nothing reported by hand —
+    lp.analyze signs the context, lp.plan plans and its critic approves, the driver issues the pieces, and the phase reaches
+    verification. (The plan gate asks for an independent lp.plan run, an objective and a pre-mortem, so a plan reported by the drill
+    under its own name is refused: the scene that did so could no longer pass.) LP_DRILL_PHASE_UNTIL=acceptance waits one stage
+    further, so the verification stage itself runs."""
     problems: list[str] = []
     act = lambda action, phase_id=None, **payload: setting_rpc("phase_act", {"action": action, "projectId": ctx.project, "pmThreadId": ctx.pm, **({"phaseId": phase_id} if phase_id else {}), "payload": payload})
-    doc = f"drills/phase-{STAMP}-CONTEXT.md"
-    commit_file(ctx.cwd, doc, f"# Context\n\nLocked: three notes in two waves (drill {STAMP}).\n", f"drill: phase context {STAMP}")
-    opened = act("open", title=f"Drill phase {STAMP}", goal="three notes exist, written in two waves")
+    stages = ("verification", "acceptance", "lessons", "closed")
+    reached = stages[stages.index(os.environ.get("LP_DRILL_PHASE_UNTIL", "verification")):] if os.environ.get("LP_DRILL_PHASE_UNTIL", "verification") in stages else stages
+    opened = act("open", title=f"Drill phase {STAMP}",
+                 goal=f"Two new files exist in the repository: drills/phase-{STAMP}-1.md whose first line is '# phase {STAMP} 1', and drills/phase-{STAMP}-2.md whose first line is '# phase {STAMP} 2'.")
     phase_id = opened["phase"]["id"]
+    snap: dict = {}
     try:
-        act("context", phase_id, docs=[doc], risks={"technical": "none", "product": "none", "operations": "none", "security": "none"})
-        notes = [note_task(f"drill-ph{n}-{STAMP}", f"drills/phase-{STAMP}-{n}.md", f"phase piece {n}", ctx.cwd) for n in (1, 2, 3)]
-        notes[2]["depends_on"] = [notes[0]["id"]]
-        items = [{"id": spec["id"], "title": spec["title"], "wave": 1 if n < 2 else 2, "task": spec,
-                  "promise": {"given": "the sandbox", "when": "the piece runs", "then": f"{spec['expected_outputs'][0]} holds its two lines"}} for n, spec in enumerate(notes)]
-        act("plan", phase_id, items=items)
-        act("plan_check", phase_id, decision="approve", by="lp-drill", summary="drill plan")
-        # Two waves, each with a writer and an lp.review on the judge's model (GPT-6.1 Sol, ~4 min): 20 minutes left it 7 s short of
-        # verification (live 2026-10-27, ph_b89812541d). The phase gets its own limit.
-        deadline, stage = time.time() + max(TIMEOUT_MIN, PHASE_TIMEOUT_MIN) * 60, ""
-        while time.time() < deadline:
-            stage = setting_rpc("phase_get", {"phaseId": phase_id})["phase"]["stage"]
-            if stage in ("verification", "acceptance", "lessons", "closed"):
-                break
+        # Analysis, plan, the writers and an lp.review per wave: the phase gets its own limit (live 2026-10-27: 20 minutes left it 7 s short).
+        deadline, snap = time.time() + max(TIMEOUT_MIN, PHASE_TIMEOUT_MIN) * 60, route_snapshot(phase_id)
+        while time.time() < deadline and snap["stage"] not in reached:
             time.sleep(POLL_SEC)
-        if stage not in ("verification", "acceptance", "lessons", "closed"):
-            problems.append(f"the phase did not reach verification: it is at {stage}")
-        book = setting_rpc("phase_get", {"phaseId": phase_id}).get("book", "")
-        if "wave 2" not in book or "wave_table" not in book and "| piece |" not in book:
-            problems.append("the book has no wave table for wave 2")
+            snap = route_snapshot(phase_id)
+        problems += route_problems(snap["book"], snap["stage"])
+        if snap["stage"] not in reached:
+            problems.append(f"the phase did not reach {reached[0]}: it is at {snap['stage']} ({snap['state']})")
+        if not any(kind == "admitted" for kind, _ in book_parts(snap["book"])):
+            problems.append("the book has no admitted plan")
     finally:
         setting_rpc("phase_control", {"phaseId": phase_id, "action": "close", "note": "drill done"})
-    return verdict("phase", problems, phaseId=phase_id)
+    return verdict("phase", problems, phaseId=phase_id, stage=snap.get("stage"), autoStarted=snap.get("auto_started"), issued=snap.get("issued"))
 
 
 ROUTE_REACHED = ("execution", "verification", "acceptance", "lessons", "closed")

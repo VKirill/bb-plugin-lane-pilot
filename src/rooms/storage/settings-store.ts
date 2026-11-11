@@ -2,7 +2,8 @@ import type { PrototypeConfig } from "@lane-pilot/contracts";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { SettingValidationError } from "../setting-validation";
 import { requireSettingValidator, type LanePilotDatabase } from "./database";
-import { noteProtectionDisarm } from "./protections-store";
+import { noteProtectionDisarm, storedProtectionValue } from "./protections-store";
+import { PLANNING_HOME_SETTING, planningHomeProblem } from "../contracts";
 
 const CONFIG_KEYS = [
   "hostId", "pmWorkspacePath", "writerWorkspacePath", "pmProviderId",
@@ -123,13 +124,14 @@ export function saveProjectSetting(
 ): void {
   db.transaction(() => {
     const nextVersion = getSettingVersions(db,projectId,[key])[key] + 1;
+    const previous = storedProtectionValue(db, projectId, key);
     db.prepare(`INSERT INTO lane_pilot_project_settings
       (project_id,binding_id,key,value,version,updated_at) VALUES (?,?,?,?,?,?)
       ON CONFLICT(project_id,binding_id,key) DO UPDATE SET
         value=excluded.value, version=excluded.version, updated_at=excluded.updated_at`)
       .run(projectId, "", key, JSON.stringify(value), nextVersion, Date.now());
     bumpSettingGeneration(db,projectId,key,nextVersion);
-    noteProtectionDisarm(db, projectId, key, value);
+    noteProtectionDisarm(db, projectId, key, value, { previous });
   })();
 }
 
@@ -178,6 +180,18 @@ function changeValidationError(
   return validator.validateSettingsObject(settings).find((error) => relevant.has(error.key)) ?? null;
 }
 
+/** The planning home's own rules where it is SET (SMA d_project_planning): one project's own row, an absolute folder, not inside another project's checkout. */
+function planningHomeSaveError(db: LanePilotDatabase, projectId: string, bindingId: string, keys: readonly string[], settings: Record<string, unknown>): SettingValidationError | null {
+  if (!keys.includes(PLANNING_HOME_SETTING)) return null;
+  const value = settings[PLANNING_HOME_SETTING];
+  if (value === undefined || value === null || value === "") return null;
+  const refuse = (problem: string): SettingValidationError => ({ code: "invalid_choice", key: PLANNING_HOME_SETTING, params: [PLANNING_HOME_SETTING, problem] });
+  if (projectId === GLOBAL_SETTINGS_PROJECT_ID || bindingId) return refuse("the planning home belongs to one project's own settings, not to the hub or a section");
+  if (typeof value !== "string") return refuse("the planning home must be an absolute folder path");
+  const problem = planningHomeProblem(value, { otherCheckouts: otherProjectCheckouts(db, projectId) });
+  return problem ? refuse(problem) : null;
+}
+
 export function casUpsertSetting(
   db: LanePilotDatabase,
   args: { projectId:string; key:string; value:unknown; expectedVersion:number; bindingId?:string },
@@ -200,7 +214,7 @@ export function casUpsertSetting(
   settings[args.key] = args.value;
   // Only what this save changes is judged: the key itself and the keys the validator couples to it. An inherited value
   // that an older catalog no longer lists must not refuse every other save of the project.
-  const validation = changeValidationError(requireSettingValidator(db), [args.key], settings);
+  const validation = changeValidationError(requireSettingValidator(db), [args.key], settings) ?? planningHomeSaveError(db, args.projectId, bindingId, [args.key], settings);
   if (validation) {
     let value: unknown = current?.value ?? null;
     if (current) {
@@ -278,7 +292,7 @@ export function casUpsertSettings(
       return { ok:false, conflict:true, ...snapshot() };
     }
     for (const change of args.changes) settings[change.key] = change.value;
-    const validation = changeValidationError(requireSettingValidator(db), keys, settings, options.skipValidationKeys);
+    const validation = changeValidationError(requireSettingValidator(db), keys, settings, options.skipValidationKeys) ?? planningHomeSaveError(db, args.projectId, bindingId, keys, settings);
     if (validation) return { ok:false, conflict:false, ...snapshot(), validation };
 
     const now = Date.now();
@@ -444,4 +458,29 @@ export function deleteBoundSetting(db: LanePilotDatabase, projectId: string, key
 
 export function listProjectsWithGlobalSettings(db: LanePilotDatabase): string[] {
   return (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_project_settings WHERE binding_id=''").all() as Array<{ project_id: string }>).map((row) => row.project_id);
+}
+
+/** The project whose configured checkout (writer or PM workspace path) this folder is; null when no configured project claims it. */
+export function projectIdForCheckoutPath(db: LanePilotDatabase, path: string): string | null {
+  const row = db.prepare(`SELECT project_id FROM lane_pilot_project_settings
+    WHERE binding_id='' AND key IN ('writerWorkspacePath','pmWorkspacePath') AND value=? LIMIT 1`).get(JSON.stringify(path)) as { project_id: string } | undefined;
+  return row?.project_id ?? null;
+}
+
+/**
+ * What the planning-home resolver needs of a project (SMA d_project_planning): the project's OWN `project.planning_home` row (a hub-wide
+ * value would put every project's planning in one folder, so it is not read) and the checkouts of every other project, which a home may not sit in.
+ */
+export function planningHomeInputs(db: LanePilotDatabase, projectId: string): { settings: Record<string, unknown>; otherCheckouts: string[] } {
+  const own = bindingSettingValue(db, projectId, "project.planning_home");
+  // No home set (every install that sets nothing): no other query.
+  if (own === undefined) return { settings: {}, otherCheckouts: [] };
+  let value: unknown; try { value = JSON.parse(own); } catch { value = own; }
+  return { settings: { "project.planning_home": value }, otherCheckouts: otherProjectCheckouts(db, projectId) };
+}
+
+/** The checkouts (PM and writer workspace) of every project but this one: a planning home may not lie inside one. */
+export function otherProjectCheckouts(db: LanePilotDatabase, projectId: string): string[] {
+  const rows = db.prepare(`SELECT value FROM lane_pilot_project_settings WHERE binding_id='' AND project_id<>? AND key IN ('writerWorkspacePath','pmWorkspacePath')`).all(projectId) as Array<{ value: string }>;
+  return rows.flatMap((row) => { try { const parsed: unknown = JSON.parse(row.value); return typeof parsed === "string" && parsed ? [parsed] : []; } catch { return []; } });
 }

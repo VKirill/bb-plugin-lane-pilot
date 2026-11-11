@@ -53,9 +53,12 @@ import { closeOwnerItemsByPrefix } from "../../owner-waiting";
 import { planWithOutsideReads, rerootTask } from "../../tasks";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification";
 import { runOnHost } from "@lane-pilot/host-calls";
+import { isNotFound, orMiss } from "@lane-pilot/kit";
 import { dispatchRunOf, rerunDispatchStages } from "./dispatch-workflow";
 import { appendTaskQa, awaitsWriterAnswer, contractFixRecord, contractFixTurnPrompt, createAttemptReopen, writerQuestion } from "./reopen-attempt";
 import { pendingWordPush } from "./writer-task";
+import { reflexLinesOf, taskFileCards } from "./writer-knowledge";
+import { writerDiffRules } from "../../learning";
 import type { FieldChange } from "./reopen-attempt";
 
 /** How long an update waits for the stages that go again before it answers «queued». */
@@ -81,15 +84,20 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
   const reopen = createAttemptReopen(ctx, services);
 
   /** Writes PLAN.md into the task folder; a failed write is logged and never fails the update. */
-  async function persistPlan(hostId: string, workspacePath: string, taskId: string, plan: string): Promise<void> {
+  async function persistPlan(hostId: string, workspacePath: string, taskId: string, plan: string, extra?: { projectId?: string; task?: TaskV2 }): Promise<void> {
     try {
       await persistTaskFolder({
         taskId,
         plan,
+        // The project's accepted WHEN → act rules reach the writer's guard as REFLEXES.md (SMA k_hs_reflex); the
+        // paths' stored notes as FILECARDS.md (SMA k_hs_context).
+        reflexes: extra?.projectId ? reflexLinesOf(writerDiffRules(db as never, extra.projectId)) : undefined,
+        filecards: extra?.projectId && extra.task ? await taskFileCards(db as never, extra.projectId, extra.task).catch(() => undefined) : undefined,
         exclude: async (line) => {
           const ran = await runOnHost(host, { hostId, cwd: workspacePath, command: appendExcludeCommand(line), timeoutSec: 30, timeoutMs: 30_000 });
           if (ran.exitCode !== 0) throw new Error(ran.stderr.trim() || `git exited ${ran.exitCode}`);
         },
+        exists: async (rel) => (await orMiss(Promise.resolve().then(() => bb.sdk.files.read({ hostId, rootPath: workspacePath, path: `${workspacePath}/${rel}` })), null, isNotFound)) !== null,
         writeFile: async (rel, content) => {
           await bb.sdk.files.write({
             hostId,
@@ -364,7 +372,7 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
       // Stored first, as for a queued task; then the live writer thread is steered with what changed.
       updateTaskContract(db, input.taskId, valid.task);
       saveTaskPlan(db, input.taskId, canonicalPlan);
-      await persistPlan(config.hostId, taskBase, input.taskId, canonicalPlan);
+      await persistPlan(config.hostId, taskBase, input.taskId, canonicalPlan, { projectId: input.projectId, task: valid.task });
       await sendServiceMessage(bb as never, { threadId: running.thread_id!, mode: "steer-if-active", senderThreadId: input.pmThreadId,
         text: contractFixTurnPrompt({ question: "the PM changed the task's words while you work — apply the changed contract from now on", changes }) });
       log(`writer ${input.taskId}: contract steered mid-run (${changes.map((change) => change.field).join(", ")}); attempt ${running.id} continues`);
@@ -380,7 +388,7 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
       // Stored and written before the writer restarts, as for a queued task.
       updateTaskContract(db, input.taskId, valid.task);
       saveTaskPlan(db, input.taskId, canonicalPlan);
-      await persistPlan(config.hostId, taskBase, input.taskId, canonicalPlan);
+      await persistPlan(config.hostId, taskBase, input.taskId, canonicalPlan, { projectId: input.projectId, task: valid.task });
       const reopened = await reopen.reopenAttempt({
         projectId: input.projectId, runId: input.runId, taskId: input.taskId, pmThreadId: input.pmThreadId,
         attempt: blocked, threadId: ready.threadId, workspacePath: ready.workspacePath, config, contract: valid.task,
@@ -392,7 +400,7 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
         // Nothing reached the writer: the stored task and its PLAN.md go back as they were.
         updateTaskContract(db, input.taskId, row.contract);
         saveTaskPlan(db, input.taskId, oldPlan);
-        await persistPlan(config.hostId, taskBase, input.taskId, oldPlan);
+        await persistPlan(config.hostId, taskBase, input.taskId, oldPlan, { projectId: input.projectId, task: row.contract as TaskV2 });
         return { ok: false, error: { code: "not_reopenable", retryable: false, sideEffects: "none", hint: reopened.hint } };
       }
       log(`writer ${input.taskId}: contract fixed in place (${changes.map((change) => change.field).join(", ")}); attempt ${blocked.id} continues`);
@@ -415,7 +423,7 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
     saveTaskPlan(db, input.taskId, canonicalPlan);
 
     // Persist PLAN.md to task folder
-    await persistPlan(config.hostId, taskBase, input.taskId, canonicalPlan);
+    await persistPlan(config.hostId, taskBase, input.taskId, canonicalPlan, { projectId: input.projectId, task: valid.task });
 
     // The stages go again from pm-read through the task's pipeline run; while they do, the attempt says so and a second update waits.
     transitionAttempt(db, latestAttempt.id, "queued", { reason: DISPATCH_STAGES_PENDING });
@@ -433,7 +441,7 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
       ctx.refreshRun?.(input.runId);
       updateTaskContract(db, input.taskId, row.contract);
       saveTaskPlan(db, input.taskId, oldPlan);
-      await persistPlan(config.hostId, taskBase, input.taskId, oldPlan);
+      await persistPlan(config.hostId, taskBase, input.taskId, oldPlan, { projectId: input.projectId, task: row.contract as TaskV2 });
       return { ok: false, error: { code: "rerun_refused", retryable: false, sideEffects: "none", hint: `the task's stages could not go again (${rerun.reason}); the task was not changed. Cancel it and dispatch it again.` } };
     }
     const critique = rerun.critique;

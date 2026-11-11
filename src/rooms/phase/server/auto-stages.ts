@@ -1,6 +1,7 @@
 
 
 import type { ServerCore } from "../../contracts/server";
+import { planningText } from "../../contracts";
 import { threatGap } from "../stages";
 import { bestEffort, parseJsonOr, sha256Hex } from "@lane-pilot/kit";
 import { CRITIQUE_AXES, type DesignJournalLine } from "@lane-pilot/contracts";
@@ -121,7 +122,7 @@ export function replansSpent(phase: Phase): boolean {
 }
 
 /** The inputs of a stage's workflow, from the phase record. */
-export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number }, medianTask?: string, contextExisting?: string | null, ownerCard?: string): Record<string, unknown> {
+export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number }, medianTask?: string, contextExisting?: string | null, ownerCard?: string, planningHome?: string | null): Record<string, unknown> {
   const r = phase.record;
   const contextText = (r.context?.docs ?? []).map((doc) => doc.path).join(", ");
   // CONTEXT.md is written from the analysis before the owner answers its open questions; the answers live only in the record. The magicseo
@@ -180,7 +181,7 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number },
       // A returned drawing's remarks ride the redraw (SMA ts_feedback): only the entries of the archived current edition.
       const lastArchived = r.design?.archived?.at(-1);
       const feedback = lastArchived ? (r.design?.feedback ?? []).filter((row) => row.drawingSha === lastArchived.sha256) : [];
-      return { goal: phase.goal, folder: phaseFolder(phase.id), material: r.drawMaterial === "on",
+      return { goal: phase.goal, folder: planningText(phaseFolder(phase.id), planningHome), material: r.drawMaterial === "on",
         // The drawing's requirements (SMA p3_requirements): one UI-SPEC.md heading per section it must cover.
         requirements: (r.design?.requirements ?? []).join(", "),
         ...(feedback.length ? { owner_feedback: feedback.map((row) => row.text) } : {}),
@@ -311,6 +312,8 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
   writeDocs(phase: Phase, files: Array<{ path: string; content: string }>, message: string): Promise<{ written: string[]; shas?: Record<string, string> }>;
   /** The text of a project file as the writer's checkout has it, null when absent. */
   readText?(phase: Phase, path: string): Promise<string | null>;
+  /** The planning home of the phase's project, checked (SMA d_project_planning); null: the checkout. */
+  planningHome?(phase: Phase): Promise<string | null>;
   runtime(phase: Phase): unknown | null;
   /** Whether the PM chat is idle (no turn running). */
   pmIdle(phase: Phase): Promise<boolean>;
@@ -432,7 +435,9 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       await deps.api.planCheck({ phaseId: phase.id, decision: approved ? "approve" : "changes_requested", by: `${by}, plan critic`, summary: text(output.plan_verdict, 2000), wfRunId: auto.wfRunId });
     } else if (auto.kind === "draw") {
       if (phase.stage !== "design" || phase.record.design?.drawing) return;
-      const paths = Array.isArray(output.paths) ? (output.paths as unknown[]).map(String) : [];
+      // With a planning home the drawer was given the absolute folder and may answer with absolute paths: the phase keeps project-relative ones.
+      const homeDir = deps.planningHome ? await deps.planningHome(phase) : null;
+      const paths = Array.isArray(output.paths) ? (output.paths as unknown[]).map(String).map((path) => (homeDir && path.startsWith(`${homeDir}/`) ? path.slice(homeDir.length + 1) : path)) : [];
       // SMA p3_judge: the checker's rubric scores and remarks are kept in the design journal, pass or rework.
       const scores = output.scores && typeof output.scores === "object"
         ? Object.fromEntries(Object.entries(output.scores as Record<string, unknown>).filter(([axis, score]) => CRITIQUE_AXES.includes(axis as never) && Number.isInteger(score) && (score as number) >= 0 && (score as number) <= 3)) : {};
@@ -649,7 +654,7 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       // An existing CONTEXT.md is handed to the analysis so its decisions are kept (SMA k_wdi_existing); unreadable is no blocker.
       const contextExisting = due.kind === "analyze" && deps.readText ? await deps.readText(phase, `${phaseFolder(phase.id)}/CONTEXT.md`).catch(() => null) : null;
       const ownerCard = due.kind === "analyze" && phase.record.ownerWords === true && phase.record.grayAreas === true && deps.ownerCard ? await bestEffort(ctx.log, "owner card for the analysis", deps.ownerCard(phase), "") : undefined;
-      const started = services.workflowEngine.start({ workflow, inputs: { ...autoInputs(phase, due, deps.medianTask?.(phase) ?? undefined, contextExisting, ownerCard ?? undefined), ...(currency ? { proof_currency: currency } : {}) }, key: `phase:${phase.id}:${due.kind}:${phase.edition}:${deps.now()}`, runtime,
+      const started = services.workflowEngine.start({ workflow, inputs: { ...autoInputs(phase, due, deps.medianTask?.(phase) ?? undefined, contextExisting, ownerCard ?? undefined, deps.planningHome ? await deps.planningHome(phase) : null), ...(currency ? { proof_currency: currency } : {}) }, key: `phase:${phase.id}:${due.kind}:${phase.edition}:${deps.now()}`, runtime,
         ...(due.kind === "plan" ? { mode: "full" as const } : {}),
         link: { projectId: phase.projectId, ...(phase.runId ? { runId: phase.runId } : {}) } });
       started.done.catch((cause: unknown) => ctx.log(`phase ${phase.id}: ${AUTO_WORKFLOWS[due.kind]} stopped: ${cause instanceof Error ? cause.message : String(cause)}`));

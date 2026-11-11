@@ -401,7 +401,8 @@ describe("[sma:k_v_batch/k_lib_batch] the middle lane filters by risk and demand
 
 
 describe("[sma:k_lib_pkgcheck] publishable called the old way does not ask for builds or a test receipt; --strict does", () => {
-  it("the receipt finding appears only with --strict", () => {
+  // Three `lp-ship` processes one after another: 18 s on a loaded machine (the full run, a deploy), 4 s alone.
+  it("the receipt finding appears only with --strict", { timeout: 60_000 }, () => {
     const receipts = mkdtempSync(join(tmpdir(), "lp-receipts-"));
     const env = { ...process.env, LP_TEST_RECEIPTS: receipts };
     const plain = spawnSync("npx", ["tsx", ship, "publishable"], { encoding: "utf8", timeout: 240_000, env, cwd: repoRoot });

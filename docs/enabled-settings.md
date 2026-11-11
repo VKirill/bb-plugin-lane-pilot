@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure da0394a06f4114d9 -->
+<!-- enabled-settings:structure 2ce67764b335b9e7 -->
 
 # Enabled settings (generated)
 
@@ -272,6 +272,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `writer.retry_safety` | `on` | — | retry gate: on stops an automatic retry when the failed attempt's work area was touched after it ended (foreign edits, rewritten evidence, secret residue) |
 | `writer.route_record` | `on` | — | writer route record: the route decision — candidates, exclusions with reasons, the pick — kept in the task KV for the attempt receipt and the task screen |
 | `writer.service_tier` | `fast (lp-defaults.ts; standard unless the provider forces was the adoc CLI default)` | — | writer stage reads this setting |
+| `writer.session_max_turns` | `5` | — | writer turn ceiling: how many times the writer may return to one task in one conversation (sticky.ts sessionLimit, default 5) |
 | `writer.silence_nudge_min` | `20` | — | writer watchdog: minutes of silence before a running writer is nudged |
 | `writer.skill_pick` | `on` | — | writer skill picking: Jev picks task skills before each attempt |
 | `writer.task_wall_clock_min` | `720` | — | retry caps: the most minutes a task may live across attempts and restarts before it ends with task_wall_clock |
