@@ -103,12 +103,12 @@ Configuration values defined in `MEMORY_SETTING_KEYS` (`packages/memory-core/src
 | `memory.index_budget` | integer | `65536` | `1` to `1000000` tokens | `MAX_BUDGET` in `packages/memory-core/src/settings.ts:36`; `packages/memory-core/src/settings.ts:63` |
 | `memory.context_budget` | integer | `2500` | `1` to `1000000` tokens | `MAX_BUDGET` in `packages/memory-core/src/settings.ts:36`; `packages/memory-core/src/settings.ts:63` |
 | `memory.maintain_every` | integer | `3` | `>= 1` tasks | `packages/memory-core/src/settings.ts:63` |
-| `memory.salience_min` | integer | `40` | `0` to `100` | `packages/memory-core/src/settings.ts:63` |
+| `memory.salience_min` | integer | `40` | `1` to `100` | `packages/memory-core/src/settings.ts:49-53, 63` |
 | `memory.pack_mode` | string | `"shadow"` | `"off"`, `"shadow"`, `"adapter"`, `"canary"` | `packages/memory-core/src/settings.ts:63` |
 | `memory.query_floor` | boolean | `true` | `true` (unless `"off"`) | `packages/memory-core/src/settings.ts:63` |
 | `memory.project_kind` | string | `"auto"` | `"auto"`, `"standalone"`, `"umbrella"` | `packages/memory-core/src/settings.ts:63` |
-| `memory.single_claim` | boolean | `false` | `true`, `false` | `packages/memory-core/src/settings.ts:38, 63` |
-| `memory.tag_notes` | boolean | `false` | `true`, `false` | `packages/memory-core/src/settings.ts:38, 63` |
+| `memory.single_claim` | boolean | `true` | `true`, `false` | `packages/memory-core/src/settings.ts:63` |
+| `memory.tag_notes` | boolean | `true` | `true`, `false` | `packages/memory-core/src/settings.ts:63` |
 
 ## Consumers
 
