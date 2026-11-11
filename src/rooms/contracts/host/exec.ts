@@ -60,16 +60,25 @@ export const execHostMethods = {
       backend:z.enum(["auto","macos-seatbelt","linux-bubblewrap"]).optional(),command:z.string().min(1).max(32_000),
       passEnv:z.array(z.string().max(128)).max(500).optional(),
       sshKeys:z.boolean().optional(),
+      /** Hash .git/.agents/.cls before the terminal runs; sandboxRelease returns the after manifest (additive). */
+      protectedRoots:z.boolean().optional(),
     }).strict(),
     output:z.object({
       hostId:z.string(),backend:z.enum(["macos-seatbelt","linux-bubblewrap"]),workspacePath:z.string(),cwd:z.string(),
       policySha256:z.string().regex(/^[a-f0-9]{64}$/),commandLine:z.string(),maskedSsh:z.boolean().optional(),
       cleanup:z.object({tempPath:z.string(),created:z.array(z.string())}).strict(),
+      rootsBefore:z.object({sha256:z.string(),partial:z.boolean(),git:z.enum(["covered","worktree-gitdir","uncovered","absent"]).optional()}).optional(),
     }).strict(),
   },
   sandboxRelease: {
-    input:z.object({requestedHostId:z.string().min(1),tempPath:z.string().startsWith("/"),created:z.array(z.string())}).strict(),
-    output:z.object({hostId:z.string(),released:z.boolean()}).strict(),
+    input:z.object({requestedHostId:z.string().min(1),tempPath:z.string().startsWith("/"),created:z.array(z.string()),
+      /** With rootsBefore: hash the roots again and return the before/after manifest (additive). */
+      workspacePath:z.string().startsWith("/").optional(),
+      rootsBefore:z.object({sha256:z.string(),partial:z.boolean(),git:z.enum(["covered","worktree-gitdir","uncovered","absent"]).optional()}).optional(),
+    }).strict(),
+    output:z.object({hostId:z.string(),released:z.boolean(),
+      rootsManifest:z.object({before:z.string(),after:z.string(),changed:z.boolean(),partial:z.boolean().optional(),git:z.enum(["covered","worktree-gitdir","uncovered","absent"]).optional()}).optional(),
+    }).strict(),
   },
   openCodeLimitProbe: {
     input: z.object({ requestedHostId:z.string().min(1), sessionId:z.string().regex(/^ses_[A-Za-z0-9]{1,80}$/), sinceMs:z.number().int().nonnegative() }).strict(),

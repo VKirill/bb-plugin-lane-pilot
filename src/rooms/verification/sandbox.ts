@@ -439,6 +439,8 @@ export type SandboxedCommandLine = {
   commandLine:string; cleanup:{tempPath:string; created:string[]};
   /** `~/.ssh` is masked in this sandbox. */
   maskedSsh?:boolean;
+  /** The roots manifest taken before the terminal ran (input protectedRoots): pass it to releaseSandboxedCommandLine for the after digest. */
+  rootsBefore?:RootsManifest;
 };
 
 /**
@@ -471,6 +473,9 @@ export async function prepareSandboxedCommandLine(input:SandboxedCommandInput & 
   const hostId=process.env.BB_HOST_ID ?? input.requestedHostId;
   const credentialMask=credentialMaskPaths(homedir(),{sshKeys:input.sshKeys});
   const maskedSsh=sshMasked(credentialMask,null,input);
+  // The before manifest is taken at prepare time, the after one at release: together they are the same
+  // before/after pair runSandboxedCommandOnHost reports (SMA m_ck_isolated).
+  const rootsBefore=input.protectedRoots ? await protectedRootsManifest(workspacePath) : undefined;
   if (backend === "linux-bubblewrap") {
     const {guardPaths,created}=await prepareGuardPaths(workspacePath);
     const args=buildBubblewrapArgs({workspacePath,cwd,tempPath,guardPaths,credentialMask});
@@ -478,20 +483,25 @@ export async function prepareSandboxedCommandLine(input:SandboxedCommandInput & 
     // With variables to pass, `env -i` starts bwrap with only those, instead of bwrap's --clearenv; the sandbox's
     // own PATH, HOME and temp folders are still set by --setenv and win.
     const bwrapLine=[bubblewrapPath!,...(passed.length?args.filter((arg)=>arg!=="--clearenv"):args),input.command].map(shellQuote).join(" ");
-    return {hostId,backend,workspacePath,cwd,policySha256,maskedSsh,cleanup:{tempPath,created},
+    return {hostId,backend,workspacePath,cwd,policySha256,maskedSsh,cleanup:{tempPath,created},...(rootsBefore?{rootsBefore}:{}),
       commandLine:passed.length?`exec /usr/bin/env -i ${passed.join(" ")} ${bwrapLine}`:`exec ${bwrapLine}`};
   }
   const profile = buildSeatbeltProfile(workspacePath,tempPath,credentialMask);
   const policySha256 = sha256Hex(profile);
   const env = [`PATH=${sandboxPath("/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin")}`,`HOME=${tempPath}`,`TMPDIR=${tempPath}`,`TMP=${tempPath}`,`TEMP=${tempPath}`,`BB_DATA_DIR=${bbDataDir()}`,"LANG=C","LC_ALL=C"];
-  return {hostId,backend,workspacePath,cwd,policySha256,maskedSsh,cleanup:{tempPath,created:[]},
+  return {hostId,backend,workspacePath,cwd,policySha256,maskedSsh,cleanup:{tempPath,created:[]},...(rootsBefore?{rootsBefore}:{}),
     // Passed variables come before the sandbox's own, so PATH, HOME and the temp folders always win.
     commandLine:`cd ${shellQuote(cwd)} && exec /usr/bin/env -i ${[...passed,...[...env,SANDBOX_EXEC,"-p",profile,"/bin/bash","--noprofile","--norc","-c",input.command].map(shellQuote)].join(" ")}`};
 }
 
-export async function releaseSandboxedCommandLine(cleanup:{tempPath:string;created:string[]}):Promise<void> {
+export async function releaseSandboxedCommandLine(cleanup:{tempPath:string;created:string[]}, roots?:{workspacePath:string;before:RootsManifest}):Promise<{rootsManifest?:SandboxedCommandResult["rootsManifest"]}> {
   // Only Lane Pilot's own sandbox temp folders are removed.
   if (!/\/lane-pilot-sandbox-[^/]+$/.test(cleanup.tempPath)) throw new Error("sandbox_release_refused");
   await releaseGuardPaths(cleanup.created);
   await rm(cleanup.tempPath,{recursive:true,force:true});
+  if (!roots) return {};
+  const before=roots.before;
+  const after=await protectedRootsManifest(roots.workspacePath);
+  const partial=before.partial||after.partial;
+  return {rootsManifest:{before:before.sha256,after:after.sha256,changed:!partial&&before.sha256!==after.sha256,partial,git:after.git}};
 }

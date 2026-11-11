@@ -16,6 +16,7 @@ export const SWITCHES_ON_BY_DEFAULT: ReadonlySet<string> = new Set([
   "ship.full_gate", "retro.living", "milestone.archive", "milestone.summary", "project.start_research",
   "ship.watch", "writer.lesson_from_accepted", "hook.subagent_pack", "docs.gitnexus_refresh", "curriculum.weekly", "task.outcome_file",
   "money.strict", "money.task_ceiling",
+  "verification.copy",
 ]);
 
 /** What an unset switch that takes a word means; a stored word the switch does not know also falls here. */

@@ -1,7 +1,7 @@
 import type { LanePilotDatabase } from "./database";
 
 /** WT2 registry: one row per Lane Pilot worktree copy, written by the host.call wrapper (server side, one place). */
-export type WorktreeOwnerKind = "attempt" | "docs" | "baseline" | "regress" | "self-repair" | "rollback" | "phase" | "unknown";
+export type WorktreeOwnerKind = "attempt" | "docs" | "baseline" | "regress" | "self-repair" | "rollback" | "phase" | "check" | "unknown";
 export type WorktreeRow = { id: number; host: string; path: string; branch: string | null; owner_kind: WorktreeOwnerKind; owner_id: string | null; created_at: number; released_at: number | null };
 export type WorktreeOwner = { kind: WorktreeOwnerKind; id: string | null };
 

@@ -111,7 +111,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
    * A writer's check runs in a BB terminal of the writer's thread, inside the same sandbox, so the owner can open it
    * and watch; BB reports its output and exit code. Null when terminals are unavailable: the caller falls back.
    */
-  async function runInWriterTerminal(input:{config:PrototypeConfig; writerThreadId:string; workspacePath:string; cwd:string; command:string; backend:"auto"|"macos-seatbelt"|"linux-bubblewrap"; timeoutSec:number; sshKeys?:boolean}) {
+  async function runInWriterTerminal(input:{config:PrototypeConfig; writerThreadId:string; workspacePath:string; cwd:string; command:string; backend:"auto"|"macos-seatbelt"|"linux-bubblewrap"; timeoutSec:number; sshKeys?:boolean; protectedRoots?:boolean}) {
     const terminals=(bb.sdk as { terminals?: typeof bb.sdk.terminals }).terminals;
     if (!terminals?.create) return null;
     // Every machine variable of the project (BB's global ones and the project's own) reaches the check; BB puts
@@ -121,6 +121,8 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     const prepared=await host.call("sandboxCommandLine",{requestedHostId:input.config.hostId,workspacePath:input.workspacePath,cwd:input.cwd,
       command:input.command,backend:input.backend,passEnv,...(input.sshKeys?{sshKeys:true}:{})},{hostId:input.config.hostId,timeoutMs:30_000});
     if (prepared.hostId!==input.config.hostId) throw new Error("sandbox result host did not match the configured host");
+    // The roots manifest (SMA m_ck_isolated): the host hashed .git/.agents/.cls at prepare and hashes them again at release.
+    let rootsManifest:{before:string;after:string;changed:boolean;partial?:boolean;git?:string}|undefined;
     try {
       let session;
       try {
@@ -141,22 +143,29 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       if (session.status!=="exited") {
         await bestEffort(ctx.log, "verification terminal close", terminals.close({terminalId:session.id,mode:"force"}), undefined);
         return {exitCode:124,stdout:text,stderr:session.status==="disconnected"?"verification terminal disconnected":`verification timed out after ${input.timeoutSec}s`,
-          backend:prepared.backend,policySha256:prepared.policySha256,workspacePath:prepared.workspacePath,terminalId:session.id,maskedSsh:prepared.maskedSsh};
+          backend:prepared.backend,policySha256:prepared.policySha256,workspacePath:prepared.workspacePath,terminalId:session.id,maskedSsh:prepared.maskedSsh,rootsManifest};
       }
       bb.log.info(`verification terminal ${session.id} exited ${session.exitCode}`);
       return {exitCode:session.exitCode??1,stdout:text,stderr:"",backend:prepared.backend,policySha256:prepared.policySha256,
-        workspacePath:prepared.workspacePath,terminalId:session.id,maskedSsh:prepared.maskedSsh};
+        workspacePath:prepared.workspacePath,terminalId:session.id,maskedSsh:prepared.maskedSsh,rootsManifest};
     } finally {
-      await bestEffort(ctx.log, "verification sandbox release", host.call("sandboxRelease",{requestedHostId:input.config.hostId,...prepared.cleanup},{hostId:input.config.hostId,timeoutMs:30_000}), undefined);
+      const released=await bestEffort(ctx.log, "verification sandbox release", host.call("sandboxRelease",{requestedHostId:input.config.hostId,...prepared.cleanup,
+        ...(input.protectedRoots&&prepared.rootsBefore?{workspacePath:input.workspacePath,rootsBefore:prepared.rootsBefore}:{})},{hostId:input.config.hostId,timeoutMs:30_000}), null);
+      rootsManifest=released?.rootsManifest;
     }
   }
 
-  async function runVerification(config: PrototypeConfig, task: TaskV2, runId?:string, writerThreadId?:string, options?:{ background?:boolean; jobKey?:string; isolated?:boolean }): Promise<Array<VerifyResult & {
+  async function runVerification(config: PrototypeConfig, task: TaskV2, runId?:string, writerThreadId?:string, options?:{ background?:boolean; jobKey?:string; isolated?:boolean;
+    /** The workspace is a throwaway copy (the attempt's worktree, a landing or revert worktree): a check that changed .git/.agents/.cls fails. */
+    throwaway?:boolean }): Promise<Array<VerifyResult & {
     sandboxBackend:string|null; policySha256:string|null; workspacePath:string; flaky?:true; flakyEvidence?:FlakyEvidence; reran?:true;
     /** The host call itself failed (worker killed, host offline): the command's own verdict is unknown. */
     hostError?:true;
     /** The commit the checks ran on and how many files were not committed then; null when git could not say. */
     revision?:CheckRevision;
+    /** The five required measures (SMA m_ck_required): recipe source, copy, cleared env, closed publication, roots manifest. */
+    recipe?:string; copy?:string; env?:"cleared"; publication?:"closed";
+    rootsSha256?:string; rootsChanged?:boolean; rootsPartial?:boolean; rootsGit?:string;
   }>> {
     const policy=runId?runPolicyFor(runId):buildRunPolicy(loadProjectSettings(db,config.projectId));
     const verificationScopes=runId?getRunSettingsScopes(db,runId):[];
@@ -229,12 +238,12 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
         return line?`${stderr}\n${line}`.trim():stderr;
       };
       const inTerminal=writerThreadId&&!hasSecrets&&!asUser ? await runInWriterTerminal({config,writerThreadId,workspacePath:task.project_cwd,cwd:command.cwd,
-        command:command.command,backend,timeoutSec,sshKeys}).catch((cause:unknown)=>{
+        command:command.command,backend,timeoutSec,sshKeys,protectedRoots:true}).catch((cause:unknown)=>{
           bb.log.warn(`verification terminal failed, running on the host: ${cause instanceof Error?cause.message:String(cause)}`);
           return null;
         }) : null;
       if (inTerminal) return recorded({command:command.command,exitCode:inTerminal.exitCode,stdout:redactKnown(inTerminal.stdout),stderr:sshNote(inTerminal.exitCode,inTerminal.stdout,redactKnown(inTerminal.stderr),inTerminal.maskedSsh),
-        sandboxBackend:inTerminal.backend,policySha256:inTerminal.policySha256,workspacePath:inTerminal.workspacePath,timeoutSec});
+        sandboxBackend:inTerminal.backend,policySha256:inTerminal.policySha256,workspacePath:inTerminal.workspacePath,timeoutSec,...(inTerminal.rootsManifest?{rootsManifest:inTerminal.rootsManifest}:{})});
       const ran = await host.call("runSandboxedCommand", {
         requestedHostId: config.hostId,
         workspacePath:task.project_cwd,
@@ -242,6 +251,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
         command:command.command,
         cwd: command.cwd,
         timeoutSec,
+        protectedRoots:true,
         ...(hasSecrets ? { env } : {}),
         ...(asUser ? { asUser } : {}),
         ...(sshKeys ? { sshKeys: true } : {}),
@@ -264,8 +274,17 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       // Any check also loses the values this process handed to another run (redactKnown).
       const mask=(text:string)=>redactKnown(hasSecrets?redactSecrets(text,Object.values(env)):text);
       return recorded({command:command.command,exitCode:ran.exitCode,stdout:typeof ran.stdout==="string"?mask(ran.stdout):"",stderr:typeof ran.stderr==="string"?sshNote(ran.exitCode,typeof ran.stdout==="string"?ran.stdout:"",mask(ran.stderr),"maskedSsh" in ran?ran.maskedSsh:undefined):"",
-        sandboxBackend:ran.backend,policySha256:ran.policySha256,workspacePath:ran.workspacePath,timeoutSec,...("hostError" in ran?{hostError:true as const}:{})});
+        sandboxBackend:ran.backend,policySha256:ran.policySha256,workspacePath:ran.workspacePath,timeoutSec,...("hostError" in ran?{hostError:true as const}:{}) ,...("rootsManifest" in ran&&ran.rootsManifest?{rootsManifest:ran.rootsManifest}:{})});
       },(line)=>bb.log.info(line),sampleMachine));
+      // The roots manifest (SMA m_ck_isolated): a check that changed .git/.agents/.cls fails when this workspace is
+      // a throwaway copy; a partial manifest is told on the receipt, never a verdict.
+      const roots="rootsManifest" in outcome ? outcome.rootsManifest : undefined;
+      if(roots){
+        const changed=roots.changed===true&&roots.partial!==true;
+        Object.assign(outcome,{rootsSha256:roots.after,rootsChanged:changed,rootsPartial:roots.partial===true?true:undefined,rootsGit:roots.git});
+        if(changed&&options?.throwaway){outcome.exitCode=outcome.exitCode||1;
+          outcome.stderr=`${outcome.stderr??""}\nprotected roots changed (.git/.agents/.cls): a check must not alter them in a throwaway copy`.trim();}
+      }
       if(failFast&&outcome.exitCode!==0)halt=true;
       return outcome;
       } finally { checksMoved(pool); release(); }
@@ -275,7 +294,9 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       .map((result,pos)=>({result,index:entries[pos]!.index}))
       .filter((row):row is {result:NonNullable<typeof row.result>;index:number}=>row.result!==undefined)
       .sort((a,b)=>a.index-b.index)
-      .map((row)=>({...row.result,...outputHashes(row.result),...(revision.head!==null||revision.dirty!==null?{revision}:{})}));
+      // Every check receipt tells the five measures (SMA m_ck_required): recipe source, copy, env, publication, roots.
+      .map((row)=>({...row.result,...outputHashes(row.result),recipe:"from snapshot",copy:options?.throwaway?"worktree":"none: this checkout",env:"cleared" as const,publication:"closed" as const,
+        ...(revision.head!==null||revision.dirty!==null?{revision}:{})}));
     if(skipped){const first=orderedResults.find((row)=>row.exitCode!==0);
       if(first)first.stderr=`${first.stderr??""}\nchecks.fail_fast: ${skipped} check(s) not started after the first non-zero exit`.trim();}
     return orderedResults;
@@ -543,7 +564,9 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       contents[rel] = content;
     }
     let verifies:Awaited<ReturnType<typeof runVerification>>;
-    try { verifies = await runVerification(input.config, input.task, input.runId, input.writerThreadId); }
+    // When this attempt runs in its own managed worktree the checks run on a throwaway copy of the candidate
+    // (SMA m_ck_isolated): a changed protected root fails them, and the receipt's copy measure names the copy.
+    try { verifies = await runVerification(input.config, input.task, input.runId, input.writerThreadId, { throwaway: attemptWorkspaceMatches }); }
     catch (cause) {
       // A secret the checks need went away or was taken off the allow list: the task waits for it, no attempt is spent.
       if (!(cause instanceof SecretsNotReadyError)) throw cause;

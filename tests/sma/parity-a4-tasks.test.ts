@@ -101,7 +101,7 @@ describe("parity a4-tasks", () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     let runs = 0;
     harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
-    const host = { call: async (_method: string, input: { command: string }) => { runs += 1; return { exitCode: 0, stdout: `ok ${input.command}`, stderr: "" }; } };
+    const host = { call: async (_method: string, input: { command: string }) => { if (_method === "runSandboxedCommand") runs += 1; return { exitCode: 0, stdout: `ok ${input.command}`, stderr: "" }; } };
     const db = openDatabase(bb);
     createRun(db, "run1", "proj", "bb", "/ws", "none", { schemaVersion: 1, pools: { provider: 5, verification: 2 } }, "host1");
     registerConversationTools({ db, bb, host } as never, { spendByModel: () => [] });

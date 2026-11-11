@@ -66,6 +66,8 @@ export const UNLISTED_SWITCHES: Readonly<Record<string, readonly [scope: SwitchS
   "profile.style": ["project", "text", "infra profile: the owner's working style"],
   // checks
   "verification.ssh_keys": ["project", "on|off", "on: this project's checks can read ~/.ssh (the owner's ssh keys), so a check that clones or fetches over ssh works, and a check can also push with them; unset or off: ~/.ssh is masked inside checks, with the other credential stores (publication closed)"],
+  "verification.copy": ["project", "on|off", "checks run in a throwaway copy (a git worktree of the commit being checked) instead of the live checkout; off: checks run in the live checkout, as before (unset: on)"],
+  "verification.project_suite": ["project", "text", "the command of the project's own suite; the landing sweep runs it on the merged head in its throwaway worktree and a red one becomes an owner item (unset: the project has none, it is never guessed)"],
   // hub-wide jobs
   "curriculum.weekly": ["global", "on|off", "every Monday the hub clusters the week's misses into a ten-line brief (bb lane-pilot curriculum --brief)"],
   "task.outcome_file": ["global", "on|off", "a finished task leaves OUTCOME.md beside its PLAN.md where the task folder still exists"],

@@ -296,5 +296,7 @@ export type CheckMeasure = { command: string; cwd: string; expectExit: number; t
   /** The rest of the five required measures (SMA m_ck_required): the throwaway sandbox and its cleared environment,
       its closed publication, and the protected-roots manifest before and after. Optional for receipts written before it. */
   backend?: string; policySha256?: string; env?: "cleared"; publication?: "closed"; rootsSha256?: string; rootsChanged?: boolean;
+  /** Where the recipe came from and where the check ran: `worktree` = a throwaway copy of the commit, `none: <why>` = the live checkout. */
+  recipe?: string; copy?: string;
   /** The manifest ran out of time or rows (never counts as changed), and what of git it could cover (a linked worktree's gitdir, or uncovered). */
   rootsPartial?: boolean; rootsGit?: string };

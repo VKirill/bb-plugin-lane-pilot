@@ -23,8 +23,9 @@ export const sandboxCommandLine: ExperimentalHostRpcHandlers<typeof hostContract
 );
 
 export const sandboxRelease: ExperimentalHostRpcHandlers<typeof hostContract>["sandboxRelease"] = async (input) => {
-  await releaseSandboxedCommandLine({ tempPath:input.tempPath, created:input.created });
-  return { hostId:process.env.BB_HOST_ID ?? input.requestedHostId, released:true };
+  const { rootsManifest } = await releaseSandboxedCommandLine({ tempPath:input.tempPath, created:input.created },
+    input.workspacePath && input.rootsBefore ? { workspacePath:input.workspacePath, before:{ sha256:input.rootsBefore.sha256, entries:0, truncated:false, partial:input.rootsBefore.partial, git:input.rootsBefore.git ?? "absent" } } : undefined);
+  return { hostId:process.env.BB_HOST_ID ?? input.requestedHostId, released:true, ...(rootsManifest ? { rootsManifest } : {}) };
 };
 
 /** The writer host asks its OpenCode v2 service about a silent writer's session (writer-silence.ts asks only for opencode2 writers). */

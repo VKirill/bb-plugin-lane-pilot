@@ -102,7 +102,7 @@ describe("conversation gates", () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const ran: Array<{ command: string }> = [];
     harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
-    const host = { call: async (_method: string, input: { command: string }) => { ran.push({ command: input.command }); return { exitCode: 1, stdout: "FAIL boom", stderr: "" }; } };
+    const host = { call: async (_method: string, input: { command: string }) => { if (_method === "runSandboxedCommand") ran.push({ command: input.command }); return { exitCode: 1, stdout: "FAIL boom", stderr: "" }; } };
     const db = openDatabase(bb);
     createRun(db, "run1", "proj", "bb", "/ws", "none", { schemaVersion: 1, pools: { provider: 5, verification: 2 } }, "host1");
     registerConversationTools({ db, bb, host } as never, { spendByModel: (projectId: string, day: string) => tokenDailyByModel(db, projectId, day) });
