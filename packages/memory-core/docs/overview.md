@@ -2,7 +2,7 @@
 title: Memory core workspace overview
 type: overview
 created: 2026-11-07
-updated: 2026-11-08
+updated: 2026-11-11
 status: active
 confidence: medium
 tags: [memory, knowledge, workspace, sqlite]
@@ -12,6 +12,7 @@ sources:
   - packages/memory-core/src/settings.ts
   - packages/memory-core/src/store.ts
   - packages/memory-core/src/candidates.ts
+  - packages/memory-core/src/lint.ts
   - packages/memory-core/src/context.ts
   - packages/memory-core/src/context-pack.ts
   - packages/memory-core/src/floor.ts
@@ -43,43 +44,47 @@ TL;DR: `@lane-pilot/memory-core` provides guarded project memory storage, admiss
 The workspace encapsulates project memory logic for agent sessions (`packages/memory-core/package.json:3-5`). It provides:
 - Parsing and admission screening of model candidates, rejecting credentials and instruction overrides (`packages/memory-core/src/candidates.ts:15-18`).
 - Transactional record storage with automated budget eviction and core overflow demotion (`packages/memory-core/src/store.ts:121-207`, `packages/memory-core/src/store.ts:262-274`).
-- Hybrid search fusing word indexing, trigram substring matching, and 768-dimensional vector cosine similarity (`searchMemoryRecords` in `packages/memory-core/src/store.ts:323-359`, `EMBED_DIM` in `packages/memory-core/src/vectors.ts:13-14`).
+- Hybrid search fusing word indexing, trigram substring matching, and 768-dimensional vector cosine similarity (`searchMemoryRecords` in `packages/memory-core/src/store.ts:329-359`, `EMBED_DIM` in `packages/memory-core/src/vectors.ts:13-14`).
 - Relevance filtering using word frequency log-scaling and dense vector cutoffs (`packages/memory-core/src/floor.ts:31-35`, `packages/memory-core/src/floor.ts:96-120`).
 - Context assembly for prompts and session packets under strict role budgets (`packages/memory-core/src/context.ts:48-64`, `packages/memory-core/src/context-pack.ts:26-67`).
 - Pairwise conflict detection and hold mechanisms (`packages/memory-core/src/conflicts.ts:95-105`, `packages/memory-core/src/conflict-store.ts:62-67, 68-76`).
+- Read-only corpus review proposes same-subject supersession and idle or dated expiration actions (`packages/memory-core/src/lint.ts:118-142`; details in [lifecycle and files](features/lifecycle-and-files.md)).
+- Note shortening can replace a longer record and later restore its predecessor (details in [lifecycle and files](features/lifecycle-and-files.md)).
 - File synchronization with repository `.agents/memory/*.md` markdown files (`packages/memory-core/src/files.ts:46-107`, `packages/memory-core/src/files.ts:119-152`).
 
 ## How it is used
 
 1. The hosting plugin or harness initializes an SQLite database instance implementing `MemoryDatabase` (`packages/memory-core/src/store.ts:11-13`). Table creation scripts for vectors (`vectorsReady` in `packages/memory-core/src/vectors.ts:19-31`) and conflicts (`memoryConflictMigrations` in `packages/memory-core/src/conflict-store.ts:16-36`) run lazily or via migrations.
 2. Raw project settings are validated into a typed `MemorySettings` object (`packages/memory-core/src/settings.ts:56-64`).
-3. An agent or maintainer model emits candidate entries, parsed and validated by `parseMemoryCandidates` against token budgets and admission rules (`packages/memory-core/src/candidates.ts:78-115`).
-4. Validated candidates are written to SQLite via `storeMemoryRecordsKeepingOverflow` or `storeMemoryRecords`, which updates search indexes and handles budget evictions (`packages/memory-core/src/store.ts:121-240`, `packages/memory-core/src/store.ts:262-274`).
-5. Working sessions search memory using `searchMemoryRecords` or `searchMemoryAllSections`, passing an optional section chain to enforce isolation (`packages/memory-core/src/store.ts:319-353`).
+3. An agent or maintainer model emits candidate entries, parsed and validated by `parseMemoryCandidates` against token budgets and admission rules (`packages/memory-core/src/candidates.ts:91-128`).
+4. Validated candidates are written to SQLite via `storeMemoryRecordsKeepingOverflow` or `storeMemoryRecords`, which updates search indexes and handles budget evictions (`packages/memory-core/src/store.ts:121-246`, `packages/memory-core/src/store.ts:262-280`).
+5. Working sessions search memory using `searchMemoryRecords` or `searchMemoryAllSections`, passing an optional section chain to enforce isolation (`packages/memory-core/src/store.ts:324-359`).
 6. Retrieved candidate records pass through `relevantRecords` to filter out records failing the relevance floor (`packages/memory-core/src/floor.ts:112-120`).
 7. Selected records are packaged into prompt text via `memoryContext` or built into an immutable session context pack via `buildContextPack` (`packages/memory-core/src/context.ts:55-64`, `packages/memory-core/src/context-pack.ts:26-67`).
-8. Accepted task attempts report feedback via `recordMemoryAccepted` (`packages/memory-core/src/lifecycle.ts:114-117`) to adjust `memoryUsefulness` scores (`packages/memory-core/src/lifecycle.ts:87-91`).
+8. Accepted task attempts report feedback via `recordMemoryAccepted` (`packages/memory-core/src/lifecycle.ts:114-118`) to adjust `memoryUsefulness` scores (`packages/memory-core/src/lifecycle.ts:88-92`).
 
 ## Public entry points
 
-The package root `packages/memory-core/src/index.ts:1-30` exports all core types, schemas, and utility functions.
+The package root `packages/memory-core/src/index.ts:1-32` exports all core types, schemas, and utility functions.
 
 The workspace does not expose network routes or bot commands directly; it operates as an internal library consumed by parent rooms and packages.
 
 Primary exported functions include:
 - `parseMemorySettings`: parses and validates project settings (`packages/memory-core/src/settings.ts:56-64`).
-- `parseMemoryCandidates`: parses and validates candidate objects from model output (`packages/memory-core/src/candidates.ts:78-115`).
+- `parseMemoryCandidates`: parses and validates candidate objects from model output (`packages/memory-core/src/candidates.ts:91-128`).
 - `storeMemoryRecords`: inserts records, evicts low-utility notes on budget overflow, and indexes entries (`packages/memory-core/src/store.ts:121-240`).
 - `storeMemoryRecordsKeepingOverflow`: writes records, automatically demoting overflowing core entries to notes (`packages/memory-core/src/store.ts:262-274`).
-- `insertMemoryRecord`: direct row insertion for corpus evaluation without admission or indexing side effects (`packages/memory-core/src/store.ts:506-512`).
-- `deleteMemoryRecord`: removes record and purges search indexes (`packages/memory-core/src/store.ts:427-430`).
-- `searchMemoryRecords`: hybrid search combining FTS5 BM25, trigrams, and vector cosine ranking (`packages/memory-core/src/store.ts:323-353`).
-- `coldMemoryRows`: retrieves idle-expired notes for cold-tier search (`packages/memory-core/src/store.ts:453-457`).
-- `reactivateColdMemory`: re-activates an idle-expired note back to active status (`packages/memory-core/src/store.ts:460-462`).
-- `listMemoryMisses`: queries logged searches that returned zero results (`packages/memory-core/src/store.ts:496-503`).
+- `insertMemoryRecord`: direct row insertion for corpus evaluation without admission or indexing side effects (`packages/memory-core/src/store.ts:550-556`).
+- `deleteMemoryRecord`: removes record and purges search indexes (`packages/memory-core/src/store.ts:448-464`).
+- `searchMemoryRecords`: hybrid search combining FTS5 BM25, trigrams, and vector cosine ranking (`packages/memory-core/src/store.ts:329-359`).
+- `coldMemoryRows`: retrieves idle-expired and archived notes for cold-tier search (`packages/memory-core/src/store.ts:499-507`).
+- `reactivateColdMemory`: re-activates an idle-expired or archived note (`packages/memory-core/src/store.ts:508-513`).
+- `listMemoryMisses`: queries logged searches that returned zero results (`packages/memory-core/src/store.ts:539-548`).
 - `relevantRecords`: applies relevance thresholds based on query length and path anchors (`packages/memory-core/src/floor.ts:112-120`).
 - `buildContextPack`: builds deterministic session context packets adhering to role caps (`packages/memory-core/src/context-pack.ts:26-67`).
 - `findConflicts`: detects pairwise disagreements between notes (`packages/memory-core/src/conflicts.ts:95-105`).
+- `reviewMemory`: returns same-subject, idle, and dated review proposals without writing them (`packages/memory-core/src/index.ts:25`, `packages/memory-core/src/lint.ts:123-142`).
+- `applyShorter` / `undoShorter`: replace a note with shorter text and restore its predecessor (`packages/memory-core/src/index.ts:32`; details in [lifecycle and files](features/lifecycle-and-files.md)).
 
 ## Configuration
 
@@ -102,6 +107,8 @@ Configuration values defined in `MEMORY_SETTING_KEYS` (`packages/memory-core/src
 | `memory.pack_mode` | string | `"shadow"` | `"off"`, `"shadow"`, `"adapter"`, `"canary"` | `packages/memory-core/src/settings.ts:63` |
 | `memory.query_floor` | boolean | `true` | `true` (unless `"off"`) | `packages/memory-core/src/settings.ts:63` |
 | `memory.project_kind` | string | `"auto"` | `"auto"`, `"standalone"`, `"umbrella"` | `packages/memory-core/src/settings.ts:63` |
+| `memory.single_claim` | boolean | `false` | `true`, `false` | `packages/memory-core/src/settings.ts:38, 63` |
+| `memory.tag_notes` | boolean | `false` | `true`, `false` | `packages/memory-core/src/settings.ts:38, 63` |
 
 ## Consumers
 
