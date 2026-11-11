@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createWorktree, orphanedWorktree, removeLaneWorktree, snapshotWorktree } from "../src/rooms/verification/git-integrate";
+import { candidateBranch, candidateCommand, candidatePath } from "../src/rooms/phase/server/candidate";
 
 const sh = (cwd: string, ...args: string[]) => {
   const result = spawnSync("git", args, { cwd, encoding: "utf8" });
@@ -70,5 +71,40 @@ describe("orphaned Lane Pilot worktree folders", () => {
     await mkdir(join(fresh, "apps", "deep"), { recursive: true });
     expect(await orphanedWorktree(join(fresh, "apps", "deep"))).toBeNull();
     expect(await orphanedWorktree(base)).toBeNull();
+  });
+});
+
+// The drill sandbox kept the tree of every phase it ever ran (11 on 2026-11-11): the removal took lane/ branches only, and the phase's
+// drop was a silent no. The older test saw the call, not the folder.
+describe("a phase's own tree", () => {
+  async function repo() {
+    const home = await mkdtemp(join(tmpdir(), "lp-phase-tree-"));
+    dirs.push(home);
+    const base = join(home, "repo");
+    await mkdir(base, { recursive: true });
+    await writeFile(join(base, "README.md"), "r\n");
+    sh(base, "init", "-q", "-b", "main");
+    sh(base, "-c", "user.email=t@t", "-c", "user.name=t", "add", "-A");
+    sh(base, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base");
+    return { home, base };
+  }
+
+  it("goes when the phase drops it, and the branch phase/<id> stays as the record", async () => {
+    const { base } = await repo();
+    expect(spawnSync("bash", ["-c", candidateCommand("ph_1")], { cwd: base, encoding: "utf8" }).status).toBe(0);
+    const tree = candidatePath(base, "ph_1");
+    expect(existsSync(tree)).toBe(true);
+    expect((await removeLaneWorktree({ basePath: base, worktreePath: tree })).removed).toBe(true);
+    expect(existsSync(tree)).toBe(false);
+    expect(sh(base, "branch", "--list", candidateBranch("ph_1"))).toContain("phase/ph_1");
+    expect(sh(base, "worktree", "list")).not.toContain("lp-phases");
+  });
+
+  it("a person's worktree on a branch named phase/x somewhere else is left alone", async () => {
+    const { home, base } = await repo();
+    const theirs = join(home, "theirs");
+    sh(base, "worktree", "add", "-q", "-b", "phase/x", theirs, "HEAD");
+    expect((await removeLaneWorktree({ basePath: base, worktreePath: theirs })).removed).toBe(false);
+    expect(existsSync(theirs)).toBe(true);
   });
 });

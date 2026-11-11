@@ -135,16 +135,20 @@ export async function removeLaneWorktree(input:{basePath:string;worktreePath:str
   const orphan=await orphanedWorktree(input.worktreePath);
   if(orphan) return {removed:await retireOrphanedWorktree(orphan)};
   const branch=(await git(input.worktreePath,["rev-parse","--abbrev-ref","HEAD"])).stdout.trim();
-  if(!branch.startsWith("lane/")) return {removed:false};
+  // A phase's own tree (phase/candidate.ts: branch phase/<id> at <base>/.git/lp-phases/<id>) is Lane Pilot's too. Both marks are asked for:
+  // a person's branch named phase/x somewhere else stays. Until 0.1.531 only lane/ passed, so no phase ever gave its tree back (11 left in the drill sandbox, 2026-11-11).
+  const phase=branch.startsWith("phase/")&&/\/\.git\/lp-phases\/[^/]+\/*$/.test(input.worktreePath);
+  if(!branch.startsWith("lane/")&&!phase) return {removed:false};
   let saved:Awaited<ReturnType<typeof snapshotWorktree>>|undefined;
   if(input.releaseDir) {
-    saved=await snapshotWorktree({worktreePath:input.worktreePath,name:branch.slice("lane/".length),dir:input.releaseDir});
+    saved=await snapshotWorktree({worktreePath:input.worktreePath,name:phase?branch.replace("/","-"):branch.slice("lane/".length),dir:input.releaseDir});
     if(saved.status==="failed") return {removed:false,saved};
   }
   await recoverStaleGitLock(input.basePath);
   const top=await worktreeTop(input.worktreePath);
   const removed=(await git(input.basePath,["worktree","remove","--force",top])).ok;
-  if(removed) { await git(input.basePath,["branch","-D",branch]); await removeEmptyWorktreeParent(top); }
+  // The branch phase/<id> stays as the record of the package; a lane/ branch goes with its tree.
+  if(removed) { if(!phase) await git(input.basePath,["branch","-D",branch]); await removeEmptyWorktreeParent(top); }
   return {removed,...(saved?{saved}:{})};
 }
 
