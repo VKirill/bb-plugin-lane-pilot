@@ -12,6 +12,7 @@ import { journalStoreInstall, STORE_JOURNAL } from "../../src/rooms/verification
 import { runRollbackCli } from "../../src/rooms/rollback/server/cli";
 import { createRollback } from "../../src/rooms/rollback/server/rollback";
 import { createDocsStage } from "../../src/rooms/docs/server/docs";
+import { docsMaintenancePrompt } from "../../src/rooms/docs/docs";
 import { attemptRecord } from "../../src/rooms/tools/server/receipts";
 import { similarWorksLines } from "../../src/rooms/writer/server/writer-knowledge";
 import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../../src/rooms/plugin-db";
@@ -266,12 +267,12 @@ describe("parity a6-misc", () => {
     const editsOut = JSON.stringify([{ path: "docs/a.md", expectedSha256: sha("# A"), content: "# A2" }]);
     const services = { stageHelperSettings: async () => ({ "docs.review": "gate" }), docsVerdict: async () => ({ need: true }), reconcileDocsChild: async () => ({ kind: "not_found" }) };
 
-    // Without docs.review = gate the pass writes as before: no reviewer is asked, nothing is committed by the stage.
+    // With docs.review = off the pass writes as before: no reviewer is asked, nothing is committed by the stage.
     {
       const { bb, harness, database } = seed({});
       const writes: string[] = [];
       sdkFor(harness as never, { thr_author: editsOut }, writes);
-      const stage = createDocsStage(ctxOf(bb as never, database as never, {}, writes) as never, { ...services, stageHelperSettings: async () => ({}) } as never);
+      const stage = createDocsStage(ctxOf(bb as never, database as never, {}, writes) as never, { ...services, stageHelperSettings: async () => ({ "docs.review": "off" }) } as never);
       const answer = await stage.runDocsMaintenance({ threadId: "thr_pm", projectId: "p1", runId: "run1", taskId: "t1", timeoutSec: 1 });
       expect(answer.state).toBe("passed");
       expect(writes).toEqual(["/w/docs/a.md"]);
@@ -302,5 +303,19 @@ describe("parity a6-misc", () => {
       expect(result.commit).toBe("abc123");
       expect(result.roles).toEqual({ author: "docs-maintainer", reviewer: "auditor" });
     }
+    // One rework round, then the owner item (SMA ag_doc_gate): a receipt that already holds rework.round 1 gets no
+    // second round — the refusal fails the pass and writes nothing.
+    {
+      const { bb, harness, database } = seed({ review: { threadId: "thr_review", role: "auditor" }, rework: { round: 1 } });
+      const writes: string[] = [];
+      sdkFor(harness as never, { thr_author: editsOut, thr_review: JSON.stringify({ verdict: "changes", notes: "still no citations" }) }, writes);
+      const stage = createDocsStage(ctxOf(bb as never, database as never, {}, writes) as never, services as never);
+      const answer = await stage.runDocsMaintenance({ threadId: "thr_pm", projectId: "p1", runId: "run1", taskId: "t1", timeoutSec: 1 });
+      expect(answer.state).toBe("failed");
+      expect(answer.reason).toMatch(/^docs_review_refused/);
+      expect(writes).toEqual([]);
+    }
+    // The rework round itself: the reviewer's notes go back to the maintainer in the one round there is (prompt level).
+    expect(docsMaintenancePrompt({ since: "yesterday", pages: [], pageCap: 3, reviewNotes: "cite file:line" })).toContain("cite file:line");
   });
 });

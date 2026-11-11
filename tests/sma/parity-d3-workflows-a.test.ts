@@ -17,7 +17,7 @@ import { runSim } from "../workflow/chain-harness";
 import { quickRow } from "../../src/rooms/phase/stages";
 import { debugSessionDoc, debugSessionSlug, quickStateEdit } from "../../src/rooms/workflow/server/workflow-executors";
 import { AUTO_REPLANS, autoDue, autoInputs, contextDoc, createAutoStages } from "../../src/rooms/phase/server/auto-stages";
-import { nightlyDocsPrompt } from "../../src/rooms/docs/docs";
+import { docsMaintenancePrompt, nightlyDocsPrompt } from "../../src/rooms/docs/docs";
 import type { Phase } from "../../src/rooms/phase/logic";
 
 const workflow = (name: string) => JSON.parse(readFileSync(join(process.cwd(), "workflows", `${name}.json`), "utf8")) as Record<string, any>;
@@ -133,8 +133,8 @@ describe("parity d3 workflows a", () => {
     const stubs = { plan: PLAN_OK, write: WRITE_OK, "write-full": WRITE_OK, "lp.review": { critical_count: 0, high_count: 0, findings: [] }, state: { ok: true, note: "", comment: "done" }, validate: { verdict: "ok", notes: "" }, research: { notes: "files a.ts" } };
     expect(pathOf(await runSim("issue-quick", { input: { title: "t", text: "x", validate: true }, stubs }))).toBe("class plan validate lint write review state closed_reviewed");
     expect(pathOf(await runSim("issue-quick", { input: { title: "t", text: "x", full: true }, stubs }))).toBe("class plan validate lint write-full review state closed_reviewed");
-    expect(pathOf(await runSim("issue-quick", { input: { title: "t", text: "x", research: true }, stubs }))).toBe("class research plan lint write closed");
-    expect(pathOf(await runSim("issue-quick", { input: { title: "t", text: "x", discuss: true }, stubs, humans: { discuss: { answer: "the label", answer_kind: "answered" } } }))).toBe("class discuss plan lint write closed");
+    expect(pathOf(await runSim("issue-quick", { input: { title: "t", text: "x", research: true }, stubs }))).toBe("class research plan lint write state closed");
+    expect(pathOf(await runSim("issue-quick", { input: { title: "t", text: "x", discuss: true }, stubs, humans: { discuss: { answer: "the label", answer_kind: "answered" } } }))).toBe("class discuss plan lint write state closed");
   });
 
   it("[sma:k_wq_research] the research flag inserts the research step and the plan sees its notes", async () => {
@@ -156,14 +156,15 @@ describe("parity d3 workflows a", () => {
     expect(node("issue-quick", "review").join.policy).not.toBe("all");
     // Old inputs: node for node what main runs; lp.review is never entered and the comment is main's.
     const old = await runSim("issue-quick", { input: { title: "t", text: "x" }, stubs });
-    expect(pathOf(old)).toBe("class plan lint write closed");
+    expect(pathOf(old)).toBe("class plan lint write state closed");
     expect(old.skipped).toEqual([]);
     expect(old.called("lp.review")).toEqual([]);
     expect(old.called("review")).toEqual([]);
-    expect(old.called("state")).toEqual([]);
+    // The STATE.md row runs for every accepted quick task (SMA k_wq_state), reviewed or not.
+    expect(old.called("state")).toHaveLength(1);
     expect((out(old) as { comment: string }).comment).toBe("quick path: built and verified");
     const medium = await runSim("issue-quick", { input: { title: "t", text: "x" }, stubs: { ...stubs, plan: { ...PLAN_OK, risk: "medium" }, "write-medium": WRITE_OK } });
-    expect(pathOf(medium)).toBe("class plan lint write-medium closed");
+    expect(pathOf(medium)).toBe("class plan lint write-medium state closed");
   });
 
   it("[sma:k_wq_state] a finished quick task leaves one table row in STATE.md, only where STATE.md exists", async () => {
@@ -368,7 +369,9 @@ describe("parity d3 workflows a", () => {
     const without = nightlyDocsPrompt({ since: "yesterday", hasDocs: true, changed: [] });
     expect(without).not.toContain("owner_assignment");
     expect(workflow("lp.docs-night").inputs.assignment.default).toBe("");
-    // lp.docs-maintenance reads no assignment, so it declares none.
-    expect(workflow("lp.docs-maintenance").inputs.assignment).toBeUndefined();
+    // lp.docs-maintenance declares the same input (SMA k_ag_docwriter) and hands it to the stage.
+    expect(workflow("lp.docs-maintenance").inputs.assignment.default).toBe("");
+    expect(docsMaintenancePrompt({ since: "yesterday", pages: [], pageCap: 3, assignment: "write a runbook for deploy" })).toContain("owner_assignment");
+    expect(docsMaintenancePrompt({ since: "yesterday", pages: [], pageCap: 3 })).not.toContain("owner_assignment");
   });
 });

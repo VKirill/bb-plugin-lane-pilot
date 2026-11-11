@@ -4,6 +4,7 @@ import { CAPABILITIES, DOCUMENTARY_CELLS, capabilityTable, dueProbes, isDocument
 import { createCapabilities } from "../../src/rooms/capability/server";
 import { CapabilityUnproven, documentaryGateOf, fullAccessSpawn } from "../../src/rooms/platform/server/pm-spawn";
 import { failureClass } from "../../src/rooms/contracts/failure-class";
+import { NATIVE_HOOK_SOURCES } from "../../src/rooms/contracts";
 import { noteBreakerRound, listTripped, rearmBreaker, breakerRowId, ruleHash, trippedRules } from "../../src/rooms/learning/breaker";
 import { judgeRulesOnDiff } from "../../src/rooms/learning";
 import { parsePlanFact } from "../../src/rooms/tasks/plan-fact";
@@ -155,19 +156,31 @@ describe("spend book, PM prompt and the rule breaker", () => {
     expect(rows.map((row) => `${row.target}:${row.count}`)).toEqual(["task-a:2"]);
   });
 
-  it("the documentary gate refuses nothing until the project sets capability.documentary_gate to hold", async () => {
+  it("the documentary gate holds by default only on a red receipt; observe mode refuses nothing", async () => {
     const { bb, db, harness } = open();
     const { createCapabilities } = await import("../../src/rooms/capability/server");
     const { saveProjectSetting } = await import("../../src/rooms/storage");
-    harness.sdk.stub("providers.list", async () => []);
-    harness.sdk.stub("plugins.list", async () => []);
+    const { saveReceipt } = await import("../../src/rooms/capability/store");
+    harness.sdk.stub("providers.list", async () => [{ id: "codex", pluginId: "provider-codex" }]);
+    harness.sdk.stub("plugins.list", async () => [{ id: "provider-codex", version: "0.1.0" }]);
     createCapabilities({ db, bb, log: () => undefined, isDisposed: () => false } as never, {} as never);
     const gate = documentaryGateOf(bb)!;
+    // No receipt at all: observed, not held (SMA ap_caps — only red holds).
+    expect(await gate.deny("codex", "m", "proj")).toBeNull();
+    expect(await gate.proved("proj")).toEqual(new Set(["codex"]));
+    // A red documentary receipt on the installed key holds, naming the cell and the re-probe command.
+    const key = receiptKey({ version: "0.1.0", model: "gpt-6-luna", settings: [], hooks: JSON.stringify(NATIVE_HOOK_SOURCES) });
+    saveReceipt(db as never, { providerId: "codex", version: key, capability: "documentary.nested", state: "not_supported", model: "m", detail: null, at: 1 } as never);
+    const reason = await gate.deny("codex", "m", "proj");
+    expect(reason).toMatch(/^capability_unproven:codex:documentary\.nested/);
+    expect(reason).toContain("re-probe");
+    expect(await gate.proved("proj")).toEqual(new Set());
+    // observe logs only; a missing receipt stays observed under any mode.
+    saveProjectSetting(db as never, "proj", "capability.documentary_gate", "observe");
     expect(await gate.deny("codex", "m", "proj")).toBeNull();
     expect(await gate.proved("proj")).toBeNull();
     saveProjectSetting(db as never, "proj", "capability.documentary_gate", "hold");
-    expect(await gate.deny("codex", "m", "proj")).toMatch(/^capability_unproven:codex:/);
-    expect(await gate.proved("proj")).toEqual(new Set());
+    expect(await gate.deny("other", "m", "proj")).toBeNull();
     await harness.lifecycle.dispose();
   });
 

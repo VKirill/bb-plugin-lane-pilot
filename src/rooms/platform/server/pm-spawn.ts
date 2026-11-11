@@ -137,10 +137,10 @@ async function laneAgentOption(bb: BbPluginApi, args: { providerId?: string; mod
 /**
  * A documentary stage (a helper role that produces documents, `isDocumentaryRole`) may not start on a provider whose
  * adapter version has no documentary receipt (SMA ap_caps / ap_caps_held). The capability service binds the answer
- * here; an unproved provider refuses the spawn with the reason `capability_unproven:<provider>:<cell>`, before a turn
- * is spent, and the caller moves to the stage's next provider. The gate holds only in a project that set
- * `capability.documentary_gate` to `hold`; by default the table is observed and nothing is refused, so a void receipt
- * (a new adapter version, a changed hook) never stops a project's planning or docs.
+ * here; a provider whose adapter version has a red documentary receipt refuses the spawn with the reason
+ * `capability_unproven:<provider>:<cell>`, before a turn is spent, and the caller moves to the stage's next provider.
+ * The gate holds by default; `capability.documentary_gate` = observe only logs. Only a red receipt holds — a missing
+ * or stale one (a new adapter version, a changed hook) is observed and never stops a project's planning or docs.
  */
 export class CapabilityUnproven extends Error {
   constructor(readonly why: string) { super(why); this.name = "CapabilityUnproven"; }

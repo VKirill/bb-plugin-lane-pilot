@@ -18,7 +18,8 @@
   "inputs": {
     "run_id": { "type": "string", "required": true },
     "task_id": { "type": "string", "required": true },
-    "pm_thread_id": { "type": "string", "required": true }
+    "pm_thread_id": { "type": "string", "required": true },
+    "assignment": { "type": "string", "default": "", "note": "the owner's assignment to the docs agent (a document to create or update); the pass runs for it even when no page is selected by the since window" }
   },
   "outputs": {
     "state": "string"
