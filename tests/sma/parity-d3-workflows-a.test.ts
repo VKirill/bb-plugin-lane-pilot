@@ -138,7 +138,7 @@ describe("parity d3 workflows a", () => {
   });
 
   it("[sma:k_wq_research] the research flag inserts the research step and the plan sees its notes", async () => {
-    expect(node("issue-quick", "plan").prompt).toContain("research.notes");
+    expect(node("issue-quick", "plan").with).toEqual({ research_notes: "{{research.notes}}" }); // a step's own `with` is rendered leniently; in the prompt the same reference failed the plan whenever the research did not run (hub, 2026-11-11)
     const stubs = { plan: PLAN_OK, write: WRITE_OK, research: { notes: "files a.ts" } };
     const withIt = await runSim("issue-quick", { input: { title: "t", text: "x", research: true }, stubs });
     expect(pathOf(withIt)).toContain("research");

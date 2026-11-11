@@ -300,6 +300,13 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
     }
     const texts: unknown[] = [];
     if (node.type === "agent") texts.push(node.prompt);
+    // A prompt is rendered strictly: a node it names that some path from the entry goes around has not run on that path, and the
+    // step fails «has no value yet» (issue-quick 2026-11-11: the plan read research.notes, the research ran only under a flag).
+    if (node.type === "agent" && typeof node.prompt === "string") for (const holder of placeholdersIn(node.prompt)) {
+      const ref = refOf(holder);
+      if (ref.kind === "node" && ref.node && ref.node !== node.id && byId.has(ref.node) && reach(START, ref.node).has(node.id))
+        warn("ref_may_not_run", `${node.id}: the prompt reads "{{${holder}}}", but a path reaches ${node.id} without ${ref.node}: put ${ref.node} on every path and let skip_when with skip_out skip it`, extra);
+    }
     if (node.type === "human") texts.push(node.question);
     if (node.type === "action") texts.push(node.params);
     if (node.type === "lp-task") texts.push(node.contract, node.contract_template, node.quality_mode);

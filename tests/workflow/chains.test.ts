@@ -63,6 +63,23 @@ describe("chains of the spec in JSON", () => {
     expect(Object.keys(sent.with ?? {}).sort()).toEqual(["archive_path", "items_count", "kept_count", "message_id", "status", "summary_md", "thin"]);
   });
 
+  // Hub, 2026-11-11: issue-quick's plan prompt read {{research.notes}} while the research ran only under a flag, and every plain run
+  // failed «has no value yet» at the plan. The simulation never renders a prompt, so only the validator can see it.
+  it("warns when a prompt reads a node a path goes around, and not when the step's own `with` reads it", async () => {
+    const store = await load();
+    const warnings = (change: (workflow: Workflow) => void) => {
+      const copy = JSON.parse(JSON.stringify(store.get("issue-quick")!.workflow)) as Workflow;
+      change(copy);
+      return validateWorkflow(copy, { resolve: store.resolve }).filter((problem) => problem.code === "ref_may_not_run").map((problem) => problem.message);
+    };
+    expect(warnings(() => undefined)).toEqual([]);
+    const asShipped = warnings((workflow) => { (workflow.nodes.find((node) => node.id === "plan") as { prompt: string }).prompt += "\nNotes: {{research.notes}}"; });
+    expect(asShipped).toHaveLength(1);
+    expect(asShipped[0]).toContain("a path reaches plan without research");
+    // class always runs before the plan: reading it in the prompt is fine.
+    expect(warnings((workflow) => { (workflow.nodes.find((node) => node.id === "plan") as { prompt: string }).prompt += "\nSize: {{class.size}}"; })).toEqual([]);
+  });
+
   it("finds the defects of a chain at save time: a skipped node others read, an unknown field, an enum value it can never hold", async () => {
     const store = await load();
     const base = JSON.parse(JSON.stringify(store.get("x-to-telegram-digest")!.workflow)) as Workflow;
