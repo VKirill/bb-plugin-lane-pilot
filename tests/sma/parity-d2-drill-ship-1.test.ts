@@ -259,7 +259,7 @@ def hub(sql):
 m.hubsql = hub
 m.git = lambda cwd, *a: "" if "status" in a else "deadbeef"
 m.run = lambda args, **k: (0, "[]", "")
-m.bb = lambda *a, **k: (0, ${hostListed ? 'json.dumps([{"id": "host_7sea4qaad8"}])' : '"[]"'}, "")
+m.bb = lambda *a, **k: (0, json.dumps({"table": []}) if "capabilities" in a else ${hostListed ? 'json.dumps([{"id": "host_7sea4qaad8"}])' : '"[]"'}, "")
 def rpc(method, payload):
     if ${limitsError ? "True" : "False"}: raise RuntimeError("cockpit down")
     return {}
@@ -273,7 +273,7 @@ print(json.dumps({"checks": {c["name"]: c["ok"] for c in p["checks"]}, "problems
     expect(down.checks.database).toBe(false);
     expect(down.problems.some((line) => line.startsWith("database:"))).toBe(true);
     const unready = prep(false, true, false);
-    expect(Object.keys(unready.checks)).toEqual(["database", "receipts", "browser", "limits", "window"]);
+    expect(Object.keys(unready.checks)).toEqual(["database", "receipts", "browser", "accounts", "limits", "window", "person"]);
     expect(unready.checks.window).toBe(false);
     expect(unready.checks.limits).toBe(false);
     expect(unready.problems.some((line) => line.startsWith("window:"))).toBe(true);

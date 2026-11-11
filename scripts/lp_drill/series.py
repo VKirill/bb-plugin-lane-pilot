@@ -136,7 +136,11 @@ def _capability_table() -> dict[str, dict]:
     rc, out, err = bb("lane-pilot", "capabilities", timeout=60)
     if rc not in (0, 1):
         raise RuntimeError((err or out).strip()[:200] or f"exit {rc}")
-    return {row.get("providerId"): row for row in (json.loads(out).get("table") or []) if isinstance(row, dict)}
+    answer = json.loads(out)
+    # An answer that is not the table (an older hub, another verb's output) is unreadable, not «every provider is fine».
+    if not isinstance(answer, dict):
+        raise RuntimeError("`bb lane-pilot capabilities` did not print its table")
+    return {row.get("providerId"): row for row in (answer.get("table") or []) if isinstance(row, dict)}
 
 
 def _accounts_probe() -> tuple[bool, str]:
