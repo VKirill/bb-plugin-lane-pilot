@@ -94,4 +94,5 @@ For implementation traps regarding Claude profiles, pool ordering, and native pr
 <!-- lane-pilot:backlinks -->
 ## Referenced by
 
+- [Writer Selection and Fallbacks](writer-selection.md)
 - [Models Workspace — Overview](../overview.md)
