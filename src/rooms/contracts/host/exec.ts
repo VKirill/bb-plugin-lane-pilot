@@ -42,11 +42,13 @@ export const execHostMethods = {
       env:z.record(secretNameSchema,z.string().max(65_536)).optional(),
       /** The strict worker: run as this OS user (worker.strict_user on). */
       asUser:z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/).optional(),
+      /** Hash .git/.agents/.cls before and after the command (the check-measure path only). */
+      protectedRoots:z.boolean().optional(),
     }).strict(),
     output:z.object({
       hostId:z.string(),backend:z.enum(["macos-seatbelt","linux-bubblewrap"]),workspacePath:z.string(),cwd:z.string(),
       exitCode:z.number().int(),policySha256:z.string().regex(/^[a-f0-9]{64}$/),stdout:z.string(),stderr:z.string(),
-      rootsManifest:z.object({before:z.string(),after:z.string(),changed:z.boolean()}).optional(),
+      rootsManifest:z.object({before:z.string(),after:z.string(),changed:z.boolean(),partial:z.boolean().optional(),git:z.enum(["covered","worktree-gitdir","uncovered","absent"]).optional()}).optional(),
     }).strict(),
   },
   sandboxCommandLine: {

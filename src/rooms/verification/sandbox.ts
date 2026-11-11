@@ -1,5 +1,5 @@
-import { accessSync, constants as fsConstants, existsSync, lstatSync, readdirSync } from "node:fs";
-import { access, lstat, mkdir, mkdtemp, readdir, realpath, rm, rmdir, symlink } from "node:fs/promises";
+import { accessSync, constants as fsConstants, existsSync } from "node:fs";
+import { access, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, rmdir, symlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { bestEffort, createCapture, lstatOrNull, redactSecrets, sha256Hex } from "@lane-pilot/kit";
@@ -12,44 +12,76 @@ export type SandboxedCommandInput = {
   env?:Record<string,string>;
   /** Run as this OS user (worker.strict_user on): sudo -n -u, rights on the run folder granted and listed (worker-user.ts). */
   asUser?:string;
+  /** Hash .git/.agents/.cls before and after (only the check-measure path asks: the walk costs time and its result is used nowhere else). */
+  protectedRoots?:boolean;
 };
 export type SandboxedCommandResult = {
   hostId:string; backend:"macos-seatbelt"|"linux-bubblewrap"; workspacePath:string; cwd:string; exitCode:number;
   policySha256:string;
   /** .git/.agents/.cls hashed before and after (SMA m_ck_isolated); a change fails the check. */
-  rootsManifest?:{ before:string; after:string; changed:boolean };
+  rootsManifest?:{ before:string; after:string; changed:boolean; partial?:boolean; git?:RootsGit };
   stdout:string; stderr:string;
 };
 
 /**
  * The roots a sandboxed check must leave untouched (SMA m_ck_isolated): .git, .agents, .cls, hashed before and after.
- * One digest over path/size/mtime rows, sorted; bounded — a giant .git truncates deterministically instead of unbounded.
+ * One digest over path/size/mtime rows, sorted. The walk is async and bounded by wall time (PROTECTED_MANIFEST_BUDGET_MS per
+ * manifest) and by row count; past either the manifest is `partial` and a partial manifest never counts as changed.
+ * `.agents/runs` (the run bookkeeping that changes all the time) is skipped. In a linked worktree `.git` is a file that names
+ * the real git directory: that directory is walked (`git:"worktree-gitdir"` — its own HEAD/index/hooks, not the shared refs
+ * and objects of the main repository); a pointer that cannot be followed is `git:"uncovered"`, never a silent nothing.
  */
 export const PROTECTED_ROOTS = [".git",".agents",".cls"] as const;
 export const PROTECTED_MANIFEST_CAP = 50_000;
-export function protectedRootsManifest(workspacePath:string, cap = PROTECTED_MANIFEST_CAP):{sha256:string;entries:number;truncated:boolean} {
+export const PROTECTED_MANIFEST_BUDGET_MS = 2_000;
+export type RootsGit = "covered"|"worktree-gitdir"|"uncovered"|"absent";
+export type RootsManifest = {sha256:string;entries:number;truncated:boolean;partial:boolean;git:RootsGit};
+export async function protectedRootsManifest(workspacePath:string, options:{cap?:number;budgetMs?:number} = {}):Promise<RootsManifest> {
+  const cap=options.cap ?? PROTECTED_MANIFEST_CAP;
+  const deadline=Date.now()+(options.budgetMs ?? PROTECTED_MANIFEST_BUDGET_MS);
+  const skipped=join(workspacePath,".agents","runs");
   const rows:string[]=[];
-  let truncated=false;
+  let truncated=false, timedOut=false, git:RootsGit="absent";
+  const roots:Array<{dir:string;label:string}>=[];
   for (const name of PROTECTED_ROOTS) {
-    const stack=[join(workspacePath,name)];
+    const path=join(workspacePath,name);
+    const info=await lstat(path).catch(()=>null);
+    if (!info) continue;
+    if (name!==".git") { roots.push({dir:path,label:name}); continue; }
+    if (info.isDirectory()) { git="covered"; roots.push({dir:path,label:name}); continue; }
+    // A linked worktree: `.git` is a file, "gitdir: <path>".
+    const pointer=info.isFile() ? /^gitdir:\s*(.+?)\s*$/m.exec(await readFile(path,"utf8").catch(()=>"")) : null;
+    const target=pointer ? resolve(workspacePath,pointer[1]!) : null;
+    const real=target ? await lstat(target).catch(()=>null) : null;
+    if (target && real?.isDirectory()) { git="worktree-gitdir"; roots.push({dir:target,label:".git(worktree)"}); }
+    else git="uncovered";
+  }
+  for (const root of roots) {
+    const stack=[root.dir];
     while (stack.length) {
       if (rows.length>=cap) { truncated=true; break; }
+      if (Date.now()>deadline) { timedOut=true; break; }
       const dir=stack.pop()!;
-      let listing;
-      try { listing=readdirSync(dir,{withFileTypes:true}); } catch { continue; }
+      const listing=await readdir(dir,{withFileTypes:true}).catch(()=>null);
+      if (!listing) continue;
+      const files:Array<{path:string;link:boolean}>=[];
       for (const entry of listing) {
         const path=join(dir,entry.name);
-        if (entry.isDirectory()) { stack.push(path); continue; }
-        try {
-          const st=lstatSync(path);
-          rows.push(`${relative(workspacePath,path)}:${entry.isSymbolicLink()?"l":"f"}:${st.size}:${Math.trunc(st.mtimeMs)}`);
-        } catch { rows.push(`${relative(workspacePath,path)}:?`); }
+        if (path===skipped) continue;
+        if (entry.isDirectory()) stack.push(path);
+        else files.push({path,link:entry.isSymbolicLink()});
       }
+      const stats=await Promise.all(files.map((file)=>lstat(file.path).catch(()=>null)));
+      files.forEach((file,index)=>{
+        const st=stats[index];
+        const name=join(root.label,relative(root.dir,file.path));
+        rows.push(st ? `${name}:${file.link?"l":"f"}:${st.size}:${Math.trunc(st.mtimeMs)}` : `${name}:?`);
+      });
     }
-    if (truncated) break;
+    if (truncated||timedOut) break;
   }
   rows.sort();
-  return { sha256:sha256Hex(rows.join("\n")), entries:rows.length, truncated };
+  return { sha256:sha256Hex(rows.join("\n")), entries:rows.length, truncated, partial:truncated||timedOut, git };
 }
 
 /** Credential stores a publish would reach for (SMA m_ck_required): masked in the sandbox so a check can use the net but not publish. */
@@ -320,8 +352,13 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
   }
   const launch=(program:string,args:string[],keep:string[])=>input.asUser ? asWorker(input.asUser,program,args,keep) : { program, args };
   let releaseGuards=async():Promise<void>=>{};
-  const rootsBefore=protectedRootsManifest(workspacePath).sha256;
-  const rootsAfter=()=>{ const after=protectedRootsManifest(workspacePath).sha256; return { before:rootsBefore, after, changed:rootsBefore!==after }; };
+  const rootsBefore=input.protectedRoots ? await protectedRootsManifest(workspacePath) : null;
+  const rootsAfter=async():Promise<SandboxedCommandResult["rootsManifest"]>=>{
+    if (!rootsBefore) return undefined;
+    const after=await protectedRootsManifest(workspacePath);
+    const partial=rootsBefore.partial||after.partial;
+    return { before:rootsBefore.sha256, after:after.sha256, changed:!partial&&rootsBefore.sha256!==after.sha256, partial, git:after.git };
+  };
   const credentialMask=credentialMaskPaths();
   try {
     if (backend === "linux-bubblewrap") {
@@ -340,7 +377,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
         throw new Error("sandbox_backend_unavailable: bubblewrap launch was denied or executable is missing");
       }
       return {hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,exitCode:child.status ?? (timedOut(child) ? 124 : 1),
-        policySha256,rootsManifest:rootsAfter(),stdout:maskSecrets(child.stdout ?? "",secrets),stderr:maskSecrets(keepEnds(child.stderr ?? child.error?.message ?? "",KEEP_STDERR),secrets)};
+        policySha256,rootsManifest:await rootsAfter(),stdout:maskSecrets(child.stdout ?? "",secrets),stderr:maskSecrets(keepEnds(child.stderr ?? child.error?.message ?? "",KEEP_STDERR),secrets)};
     }
     const profile = buildSeatbeltProfile(workspacePath,tempPath,credentialMask);
     const policySha256 = sha256Hex(profile);
@@ -365,7 +402,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
     }
     return {
       hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,
-      exitCode:child.status ?? (timedOut(child) ? 124 : 1),policySha256,rootsManifest:rootsAfter(),
+      exitCode:child.status ?? (timedOut(child) ? 124 : 1),policySha256,rootsManifest:await rootsAfter(),
       stdout:maskSecrets(child.stdout ?? "",seatbeltSecrets),stderr:maskSecrets(keepEnds(child.stderr ?? child.error?.message ?? "",KEEP_STDERR),seatbeltSecrets),
     };
   } finally {

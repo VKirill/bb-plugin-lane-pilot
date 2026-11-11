@@ -131,22 +131,61 @@ describe("[sma:m_tl_terminal_parity] permissions are a compared layer, never a f
 });
 
 describe("[sma:m_ck_isolated] a sandboxed check proves .git, .agents and .cls untouched", () => {
-  it("the manifest is deterministic and a change inside a protected root changes it", () => {
+  it("the manifest is deterministic and a change inside a protected root changes it", async () => {
     const ws = mkdtempSync(join(tmpdir(), "lp-h2-"));
     mkdirSync(join(ws, ".git"));
     writeFileSync(join(ws, ".git", "HEAD"), "ref: refs/heads/main\n");
-    const before = protectedRootsManifest(ws);
+    const before = await protectedRootsManifest(ws);
     expect(before.entries).toBe(1);
-    expect(protectedRootsManifest(ws).sha256).toBe(before.sha256);
+    expect(before).toMatchObject({ git: "covered", partial: false });
+    expect((await protectedRootsManifest(ws)).sha256).toBe(before.sha256);
     writeFileSync(join(ws, ".git", "config"), "[core]");
-    const after = protectedRootsManifest(ws);
+    const after = await protectedRootsManifest(ws);
     expect(after.sha256).not.toBe(before.sha256);
     expect(after.entries).toBe(2);
   });
 
-  it("a real sandboxed run returns before/after manifests and masks the credential stores", async () => {
+  it("skips .agents/runs, follows a linked worktree's .git file to its gitdir, and records git:uncovered when it cannot", async () => {
+    const ws = mkdtempSync(join(tmpdir(), "lp-h2wt-"));
+    mkdirSync(join(ws, ".agents", "runs"), { recursive: true });
+    writeFileSync(join(ws, ".agents", "keep.md"), "x");
+    writeFileSync(join(ws, ".agents", "runs", "noise.json"), "1");
+    const quiet = await protectedRootsManifest(ws);
+    writeFileSync(join(ws, ".agents", "runs", "noise.json"), "22222");
+    expect((await protectedRootsManifest(ws)).sha256).toBe(quiet.sha256);
+    expect(quiet.entries).toBe(1);
+    // A linked worktree: .git is a file naming the real directory.
+    const gitdir = mkdtempSync(join(tmpdir(), "lp-h2gitdir-"));
+    writeFileSync(join(gitdir, "HEAD"), "ref: refs/heads/x\n");
+    writeFileSync(join(ws, ".git"), `gitdir: ${gitdir}\n`);
+    const linked = await protectedRootsManifest(ws);
+    expect(linked).toMatchObject({ git: "worktree-gitdir", entries: 2 });
+    writeFileSync(join(gitdir, "index"), "i");
+    expect((await protectedRootsManifest(ws)).sha256).not.toBe(linked.sha256);
+    // A pointer to nowhere is not silently nothing.
+    writeFileSync(join(ws, ".git"), "gitdir: /nonexistent/gitdir\n");
+    expect(await protectedRootsManifest(ws)).toMatchObject({ git: "uncovered" });
+  });
+
+  it("past its wall-time budget a manifest is partial, and a partial manifest never counts as changed", async () => {
+    const ws = mkdtempSync(join(tmpdir(), "lp-h2slow-"));
+    mkdirSync(join(ws, ".git"));
+    writeFileSync(join(ws, ".git", "HEAD"), "x");
+    const partial = await protectedRootsManifest(ws, { budgetMs: -1 });
+    expect(partial.partial).toBe(true);
+    const capped = await protectedRootsManifest(ws, { cap: 0 });
+    expect(capped).toMatchObject({ partial: true, truncated: true });
+    const measure = checkMeasureOf({ command: "c", cwd: "/w", expectExit: 0, timeoutSec: 5, throwaway: true,
+      result: { exitCode: 0, stdout: "", stderr: "", rootsManifest: { before: "a", after: "b", changed: false, partial: true } } });
+    expect(measure).toMatchObject({ passed: true, rootsChanged: false, rootsPartial: true });
+  });
+
+  it("a real sandboxed run returns before/after manifests only when asked, and masks the credential stores", async () => {
     const ws = mkdtempSync(join(tmpdir(), "lp-h2run-"));
-    const result = await runSandboxedCommandOnHost({ requestedHostId: "h", workspacePath: ws, cwd: ws, command: "echo ok", backend: "linux-bubblewrap" });
+    const plain = await runSandboxedCommandOnHost({ requestedHostId: "h", workspacePath: ws, cwd: ws, command: "echo ok", backend: "linux-bubblewrap" });
+    expect(plain.exitCode).toBe(0);
+    expect(plain.rootsManifest).toBeUndefined();
+    const result = await runSandboxedCommandOnHost({ requestedHostId: "h", workspacePath: ws, cwd: ws, command: "echo ok", backend: "linux-bubblewrap", protectedRoots: true });
     expect(result.exitCode).toBe(0);
     expect(result.rootsManifest!.changed).toBe(false);
     expect(result.rootsManifest!.before).toMatch(/^[a-f0-9]{64}$/);
@@ -165,16 +204,24 @@ describe("[sma:m_ck_isolated] a sandboxed check proves .git, .agents and .cls un
 });
 
 describe("[sma:m_ck_required] a measure carries the five required facts", () => {
-  it("command record plus sandbox backend, cleared env, closed publication and the roots manifest; a roots change fails it", () => {
+  it("command record plus sandbox backend, cleared env, closed publication and the roots manifest; a roots change fails it only in a throwaway copy", () => {
     const measure = checkMeasureOf({ command: "npm test", cwd: "/w", expectExit: 0, timeoutSec: 60,
       result: { exitCode: 0, stdout: "ok", stderr: "", backend: "linux-bubblewrap", policySha256: "a".repeat(64),
         rootsManifest: { before: "b".repeat(64), after: "b".repeat(64), changed: false } } });
     expect(measure).toMatchObject({ command: "npm test", cwd: "/w", expectExit: 0, timeoutSec: 60, exitCode: 0, passed: true,
       backend: "linux-bubblewrap", policySha256: "a".repeat(64), env: "cleared", publication: "closed", rootsSha256: "b".repeat(64), rootsChanged: false });
-    const touched = checkMeasureOf({ command: "npm test", cwd: "/w", expectExit: 0, timeoutSec: 60,
-      result: { exitCode: 0, stdout: "ok", stderr: "", backend: "linux-bubblewrap", rootsManifest: { before: "b".repeat(64), after: "c".repeat(64), changed: true } } });
+    const result = { exitCode: 0, stdout: "ok", stderr: "", backend: "linux-bubblewrap", rootsManifest: { before: "b".repeat(64), after: "c".repeat(64), changed: true } };
+    const touched = checkMeasureOf({ command: "npm test", cwd: "/w", expectExit: 0, timeoutSec: 60, throwaway: true, result });
     expect(touched.passed).toBe(false);
     expect(touched.evidence).toContain("protected roots");
+    // The same change in a live checkout (the writer workspace, the PM checkout) is recorded, with a note, and never fails.
+    for (const live of [{ throwaway: false }, {}]) {
+      const recorded = checkMeasureOf({ command: "npm test", cwd: "/w", expectExit: 0, timeoutSec: 60, ...live, result });
+      expect(recorded).toMatchObject({ passed: true, rootsChanged: true });
+      expect(recorded.evidence).toContain("recorded, not a failure");
+    }
+    // A command that failed on its own is still failed.
+    expect(checkMeasureOf({ command: "c", cwd: "/w", expectExit: 0, timeoutSec: 5, result: { ...result, exitCode: 1 } }).passed).toBe(false);
   });
 });
 

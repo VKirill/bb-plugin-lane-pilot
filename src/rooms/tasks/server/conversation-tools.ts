@@ -173,9 +173,10 @@ export function registerConversationTools(ctx: ServerCore, services: Services): 
             const cwd = cwdIn === "." ? workspacePath : `${workspacePath}/${cwdIn.replace(/^\.?\//, "")}`;
             current = item.command;
             try {
-              const result = await host.call("runSandboxedCommand", { requestedHostId: hostId, workspacePath, cwd, command: item.command, timeoutSec },
+              const result = await host.call("runSandboxedCommand", { requestedHostId: hostId, workspacePath, cwd, command: item.command, timeoutSec, protectedRoots: true },
                 { hostId, timeoutMs: (timeoutSec + 30) * 1000, job: true, jobKey: `${checkId}:${index}`, signal: entry.controller.signal, cancelOnAbort: true });
-              receipt.measures.push(checkMeasureOf({ command: item.command, cwd, expectExit, timeoutSec, result }));
+              // The run's writer workspace is a live checkout: a change of its protected roots is recorded, never a failure.
+              receipt.measures.push(checkMeasureOf({ command: item.command, cwd, expectExit, timeoutSec, result, throwaway: false }));
             } catch (cause) {
               if (entry.controller.signal.aborted) break;
               receipt.measures.push({ command: item.command, cwd, expectExit, timeoutSec,
@@ -198,17 +199,25 @@ export function registerConversationTools(ctx: ServerCore, services: Services): 
 
 /**
  * One check measure from a sandboxed run (SMA m_ck_required): the command's record plus the sandbox's own
- * measures — throwaway copy, cleared environment, closed publication, the protected-roots manifest. A changed
- * .git/.agents/.cls fails the measure whatever the exit code was.
+ * measures — cleared environment, closed publication, the protected-roots manifest. A changed .git/.agents/.cls fails
+ * the measure only when the command ran in a throwaway copy (`throwaway: true`); in a live checkout (the writer
+ * workspace, the PM checkout) other work legitimately touches those roots, so the change is recorded as
+ * `rootsChanged: true` with a note and never fails the measure.
  */
 export function checkMeasureOf(input: {
-  command: string; cwd: string; expectExit: number; timeoutSec: number;
-  result: { exitCode: number; stdout: string; stderr: string; backend?: string; policySha256?: string; rootsManifest?: { before: string; after: string; changed: boolean } };
+  command: string; cwd: string; expectExit: number; timeoutSec: number; throwaway?: boolean;
+  result: { exitCode: number; stdout: string; stderr: string; backend?: string; policySha256?: string;
+    rootsManifest?: { before: string; after: string; changed: boolean; partial?: boolean; git?: string } };
 }): CheckMeasure {
-  const rootsChanged = input.result.rootsManifest?.changed === true;
-  const evidence = `${input.result.stdout}\n${input.result.stderr}`.trim().slice(-1500) + (rootsChanged ? "\nprotected roots (.git/.agents/.cls) changed during the check" : "");
+  const manifest = input.result.rootsManifest;
+  const rootsChanged = manifest?.changed === true && manifest.partial !== true;
+  const fails = rootsChanged && input.throwaway === true;
+  const note = rootsChanged ? (fails ? "\nprotected roots (.git/.agents/.cls) changed during the check"
+    : "\nprotected roots (.git/.agents/.cls) changed during the check (live checkout: recorded, not a failure)") : "";
+  const evidence = `${input.result.stdout}\n${input.result.stderr}`.trim().slice(-1500) + note;
   return { command: input.command, cwd: input.cwd, expectExit: input.expectExit, timeoutSec: input.timeoutSec,
-    evidence, exitCode: input.result.exitCode, passed: input.result.exitCode === input.expectExit && !rootsChanged,
+    evidence, exitCode: input.result.exitCode, passed: input.result.exitCode === input.expectExit && !fails,
     backend: input.result.backend, policySha256: input.result.policySha256, env: "cleared", publication: "closed",
-    rootsSha256: input.result.rootsManifest?.after, rootsChanged };
+    rootsSha256: manifest?.after, rootsChanged,
+    ...(manifest?.partial ? { rootsPartial: true } : {}), ...(manifest?.git ? { rootsGit: manifest.git } : {}) };
 }
