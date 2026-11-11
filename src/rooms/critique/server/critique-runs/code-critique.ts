@@ -13,10 +13,11 @@ import { sha256 } from "../../../tasks";
 import { candidateCitations } from "../../citations";
 import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode, withReferenceTestCritic } from "../../../contracts/quality-mode";
 import type { CodeCriticDefault } from "../../../contracts/task-enums";
-import { clearSpawnMarker, fullAccessSpawn, graphStepMetadata, setAsideOnStartFailure, zcodeBusyPeek } from "../../../platform/server";
+import { clearSpawnMarker, graphStepMetadata, setAsideOnStartFailure, zcodeBusyPeek } from "../../../platform/server";
 import type { StageHelperSettings } from "../../../platform/server";
 import { reviewerMemoryFor } from "../../../memory/server";
 import { CRITIC_OUTCOME_UNKNOWN, criticReconcilePort, helperChildPlacement, recordStage, requireHelperSpawn, requiredPolicyField } from "../../../runs/server";
+import { critiqueSpawn } from "../critique-runs";
 import { bestEffort, stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -311,7 +312,7 @@ export async function runCodeCritique(input:{
         const critiques = [];
         const raws: string[] = [];
         for (const persona of personas) {
-          const spawned = await fullAccessSpawn(input.bb, {
+          const spawned = await critiqueSpawn(input.bb, {
             ...placement,
             ...requiredPolicyField(input.bb, helperPolicy, providerId, "code-critic"),
             ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),

@@ -4,10 +4,11 @@ import { bbServiceTier, findModelIn, listedServiceTier, resolveStageWriterSelect
 import { sha256 } from "../../../tasks";
 import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt, unreadableAnswer } from "../../specialist";
 import { boundedAgentName } from "../../../contracts";
-import { fullAccessSpawn, graphStepMetadata, setAsideOnStartFailure, zcodeBusyPeek } from "../../../platform/server";
+import { graphStepMetadata, setAsideOnStartFailure, zcodeBusyPeek } from "../../../platform/server";
 import type { StageHelperSettings } from "../../../platform/server";
 import type { PrototypeConfig, TaskV2 } from "../../../contracts";
 import { helperChildPlacement, recordStage, requireHelperSpawn, requiredPolicyField } from "../../../runs/server";
+import { critiqueSpawn } from "../critique-runs";
 import { bestEffort, stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -66,7 +67,7 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
     const placement = await helperChildPlacement({
       bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"specialist-reviewer", taskTitle:input.task.title,
     });
-    const spawned = await fullAccessSpawn(input.bb, {
+    const spawned = await critiqueSpawn(input.bb, {
       ...placement,
       ...requiredPolicyField(input.bb, helperPolicy, providerId, "specialist-reviewer"),
       ...writerExecutionSelection(providerId,modelId,effort,tier),

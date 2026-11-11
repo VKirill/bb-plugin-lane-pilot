@@ -3,11 +3,12 @@ import { roleSelection, sdkCriticCatalog } from "../../critic-pair";
 import { bbServiceTier, listedServiceTier, resolveStageWriterSelection, writerExecutionSelection } from "@lane-pilot/models";
 import { settingOff, settingOn } from "@lane-pilot/models";
 import { sha256 } from "../../../tasks";
-import { fullAccessSpawn, graphStepMetadata, setAsideOnStartFailure, zcodeBusyPeek } from "../../../platform/server";
+import { graphStepMetadata, setAsideOnStartFailure, zcodeBusyPeek } from "../../../platform/server";
 import { configuredSetting } from "../../../contracts/server";
 import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode } from "../../../contracts/quality-mode";
 import { MAIN_ATTEMPT_LIMIT } from "../../../contracts/state-machine";
 import { helperChildPlacement, recordStage, requireHelperSpawn, requiredPolicyField } from "../../../runs/server";
+import { critiqueSpawn } from "../critique-runs";
 import { bestEffort, stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { StageHelperSettings } from "../../../platform/server";
@@ -91,7 +92,7 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
     const placement=await helperChildPlacement({
       bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"pm-reader", taskTitle:input.task.title,
     });
-    const spawned=await fullAccessSpawn(input.bb, {
+    const spawned=await critiqueSpawn(input.bb, {
       ...placement,
       ...requiredPolicyField(input.bb, helperPolicy, providerId, "pm-reader"),
       ...writerExecutionSelection(providerId,modelId,parsedSettings.effort,serviceTier),
