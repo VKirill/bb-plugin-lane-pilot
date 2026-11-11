@@ -2,9 +2,9 @@
 title: Typed judgments
 type: component
 created: 2026-11-05
-updated: 2026-11-08
+updated: 2026-11-11
 status: active
-confidence: medium
+confidence: high
 tags: [jev, judgments, registry]
 sources:
   - packages/jev/src/registry.ts
@@ -55,24 +55,23 @@ TL;DR: A judgment owns its input shaping, typed questions, thresholds, decision 
 `pickWriterSkills` selects appropriate agent skills for a given task (`packages/jev/src/judgments/skill-pick.ts:239-259`):
 1. Filters hints to catalog names via `hintedSkills`, capped at `SKILL_HINT_LIMIT` (8) (`packages/jev/src/judgments/skill-pick.ts:230-233`, `packages/jev/src/judgments/skill-pick.ts:240`).
 2. If disabled (`!input.enabled`), immediately returns hints with 0 kept counts (`packages/jev/src/judgments/skill-pick.ts:242`).
-3. Pre-filters skills by kind using `keptByKind` for domain relevance (`DOMAIN_KIND`) and craft relevance (`CRAFT_KIND`) (`packages/jev/src/judgments/skill-pick.ts:246-247`).
+3. Pre-filters skills by kind using `keptByKind` for domain relevance (`DOMAIN_KIND`) and craft relevance (`CRAFT_KIND`) (`packages/jev/src/judgments/skill-pick.ts:239-247`).
 4. Builds state via `skillPickState` and requests domain and craft skills in parallel chunks of 8 (`packages/jev/src/judgments/skill-pick.ts:248-252`).
 5. Selects top domain picks (`SKILL_PICK_TOP` = 5, threshold 0.7) and top craft picks (`SKILL_CRAFT_TOP` = 3, threshold 0.7), deduplicating craft picks against domain picks (`packages/jev/src/judgments/skill-pick.ts:253-254`).
 6. Combines project folder skills, picks, and hints; failed chunks add nothing and increment `unanswered` (`packages/jev/src/judgments/skill-pick.ts:255-258`).
 
-`keptByKind` pre-filters catalog entries by classification category (`packages/jev/src/judgments/skill-pick.ts:192-213`):
-1. Checks cache for existing kind verdicts; unreadable cache reads catch errors and re-query the skill (`packages/jev/src/judgments/skill-pick.ts:195-201`).
-2. Dispatches unknown entries in chunks of 8 to `answerChunks` (`packages/jev/src/judgments/skill-pick.ts:202`).
-3. Stores returned probabilities in cache, ignoring cache set failures (`packages/jev/src/judgments/skill-pick.ts:204-209`).
-4. Threshold constants are `SKILL_KIND_THRESHOLD` (0.4) for domain and `SKILL_CRAFT_KIND_THRESHOLD` (0.35) for craft (`packages/jev/src/judgments/skill-pick.ts:188-189`).
-The filter keeps skills meeting the verdict threshold (`packages/jev/src/judgments/skill-pick.ts:210`).
+`keptByKind` retains catalog entries whose cached or newly returned probability for the selected criterion reaches its threshold (`packages/jev/src/judgments/skill-pick.ts:192-210`):
+1. Checks the cache by skill text; an unreadable cache entry is asked again (`packages/jev/src/judgments/skill-pick.ts:195-202`).
+2. Asks unknown entries in bounded chunks and reads the selected criterion from each answer (`packages/jev/src/judgments/skill-pick.ts:155-162`, `packages/jev/src/judgments/skill-pick.ts:202-206`).
+3. Stores numeric probabilities in the cache; cache write failures do not remove an answered entry (`packages/jev/src/judgments/skill-pick.ts:204-210`).
+4. The domain and craft thresholds are 0.4 and 0.35 (`packages/jev/src/judgments/skill-pick.ts:187-189`). `pickWriterSkills` applies the domain criterion, then the craft criterion to the domain-kept set (`packages/jev/src/judgments/skill-pick.ts:239-247`).
 
 #### Hierarchical skill navigation with `skillTreePickJudgment`
 
-`skillTreePickJudgment` performs beam search down the skill taxonomy (`packages/jev/src/judgments/skill-tree-pick.ts:16-44`):
+`skillTreePickJudgment` defines one choice at a supplied skill-taxonomy level (`packages/jev/src/judgments/skill-tree-pick.ts:10-11`, `packages/jev/src/judgments/skill-tree-pick.ts:16-32`):
 1. `stateBuilder` clips task (1,200 chars), path (200 chars), and up to 24 options (`packages/jev/src/judgments/skill-tree-pick.ts:21-26`).
 2. `questions` formats a Choice question over candidate options plus `none` (`packages/jev/src/judgments/skill-tree-pick.ts:27-32`).
-3. `decide`: ranks options by probability, filters out `none` and options below `pick_p` (default 0.3), taking at most `take_max` (default 3) options (`packages/jev/src/judgments/skill-tree-pick.ts:34-41`).
+3. `decide`: keeps ranked options other than `none` at or above `pick_p` (default 0.3), up to `take_max` (default 3) options (`packages/jev/src/judgments/skill-tree-pick.ts:33-40`).
 4. Modes and failure: default mode is `shadow`, with 8,000 ms timeout (`packages/jev/src/judgments/skill-tree-pick.ts:19-20`).
 Fallback returns no picks (`packages/jev/src/judgments/skill-tree-pick.ts:42`).
 

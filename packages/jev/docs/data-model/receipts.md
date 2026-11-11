@@ -2,7 +2,7 @@
 title: Judgment receipts
 type: data-model
 created: 2026-11-05
-updated: 2026-11-08
+updated: 2026-11-11
 status: active
 confidence: medium
 tags: [jev, receipts, sqlite]
@@ -104,6 +104,8 @@ The outcome labelers read only successful (`status = 'ok'`) receipts with a deci
 
 Task truth is `accepted` only when there is an accepted attempt with no regression naming the task and no `<task-id>-mainfix` task. A terminal non-accepted attempt, regression, mainfix, or closed/non-running run without acceptance is failed; an open attempt or a still-running run without an attempt is pending (`packages/jev/src/labels-outcome.ts:37-53`).
 
+For a skipped `critique.worth` plan, `subject` is the task ID. Missing run/task IDs stay pending; if no matching attempt exists, an ID absent from the task table also stays pending, so the receipt receives no label (`packages/jev/src/labels-outcome.ts:37-53`, `packages/jev/src/labels-outcome.ts:95-103`). Each sweep clears the legacy `disagree:outcome` label from `critique.worth` rows whose subject is `worth-check`; those rows then enter the regular labeling pass only if they match its eligibility conditions (`packages/jev/src/labels-outcome.ts:27-30`, `packages/jev/src/labels-outcome.ts:174-185`).
+
 ## Invariants
 
 - `mode`, `status` and `decided_by` have SQLite check constraints and enumerated values (`packages/jev/src/receipts.ts:15`, `packages/jev/src/receipts.ts:23-26`).
@@ -140,3 +142,4 @@ Evaluation and reporting readers include `labeledOutcomes` and `countJudgmentRec
 ## Referenced by
 
 - [Jev data model](../data-model.md)
+- [Jev receipts, calibration and monitoring](../features/receipt-calibration.md)
