@@ -77,11 +77,21 @@ export type PeerSnapshot = { hostId: string; name: string | null; online: boolea
   windows?: unknown; answered?: boolean;
   /** What the machine works on and did today: the projects of its runs and the attempts changed in the last day (SMA m_sw_machines). */
   today?: { projects: string[]; accepted: number; blocked: number; running: number } };
+/** The board summary a peer answered with: each subscription window as `name %`, or «нет окон» when the machine answered with none (SMA m_mc_poll). */
+function windowsSummary(answer: unknown): string {
+  const windows = (answer as { windows?: unknown } | null)?.windows;
+  const entries = windows && typeof windows === "object" ? Object.entries(windows as Record<string, { utilization?: unknown }>) : [];
+  if (!entries.length) return "нет окон";
+  return entries.map(([name, window]) => `${name} ${typeof window?.utilization === "number" ? `${window.utilization}%` : "?"}`).join(", ");
+}
+
 export function peerLine(peer: PeerSnapshot, now = Date.now()): string {
   const base = peer.online
     ? `${peer.name ?? peer.hostId}: на связи`
     : `${peer.name ?? peer.hostId}: не отвечает (last seen ${peer.lastOnlineAt ? `${Math.round((now - peer.lastOnlineAt) / 60_000)} min` : "never"} ago)`;
-  if (!peer.today) return base;
+  // An online peer's board: silent (the call failed), answered with windows, or answered with none — the line tells them apart.
+  const board = !peer.online ? "" : peer.answered === false ? " · доска не ответила" : peer.answered ? ` · окна: ${windowsSummary(peer.windows)}` : "";
+  if (!peer.today) return base + board;
   const today = peer.today;
-  return `${base} · проекты: ${today.projects.join(", ") || "—"} · сегодня: принято ${today.accepted}, стоит ${today.blocked}, идёт ${today.running}`;
+  return `${base}${board} · проекты: ${today.projects.join(", ") || "—"} · сегодня: принято ${today.accepted}, стоит ${today.blocked}, идёт ${today.running}`;
 }

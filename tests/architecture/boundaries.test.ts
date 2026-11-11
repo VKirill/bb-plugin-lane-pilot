@@ -29,6 +29,7 @@ const PACKAGE_DEPENDENCIES: Record<string, string[]> = {
   "@workflow-engine": ["@contracts", "@kit", "@models"],
   "@i18n": ["@settings-catalog"],
   "@jev": ["@kit"],
+  "@memory-core": ["@kit"],
   "@run-insights": ["@memory-core"],
   "@settings-catalog": ["@kit"],
 };

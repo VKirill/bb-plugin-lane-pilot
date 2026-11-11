@@ -123,6 +123,10 @@ const applyRules = (text:string, rules:MaskRule[], mask:string):{ text:string; m
   return { text: out, masked };
 };
 
+/** The token/key shapes the shared table knows, without the keyed-assignment rule: a writer that REFUSES (memory-core,
+ * SMA k_lib_secretsmask) refuses a key shape but keeps «GITHUB_TOKEN: needed for release», which only the mask may eat. */
+export const CREDENTIAL_SHAPE_PATTERNS: readonly RegExp[] = SHAPE_RULES.map((rule) => rule.pattern);
+
 /** The one mask: every table hit becomes `mask`, plus every secret the server fetched (redactKnown). */
 export function maskCredentials(text:string, mask:string = MASK):{ text:string; masked:boolean } {
   const found = applyRules(text, [...SHAPE_RULES, ASSIGNMENT_RULE], mask);

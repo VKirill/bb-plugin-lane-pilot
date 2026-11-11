@@ -151,6 +151,9 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
       if (!hit) { if (entry.validUntil == null || entry.validUntil > now) pending.push({ entry, id }); continue; }
       if (hit.status === "superseded" && hit.superseded_by && compressed.has(hit.superseded_by)) continue;
       if (hit.status === "active") { if (hit.trust === "observed" && hit.source_sha256 !== input.sourceSha256) corroborate.push(hit.id); continue; }
+      // An owner tombstone (`memory forget --expire` or `--replace`, both marked `owner`) never revives — a restated fact does not
+      // bring it back, and a re-import of the file it came from does not either (SMA m_lifecycle).
+      if (hit.expired_reason === "owner") continue;
       // A hidden record comes back when its fact is stated again, or when the file it came from says so; a replaced one stays replaced otherwise.
       // A revoked one never does, on any path (restated, re-imported from its file): the owner withdrew that fact. An archived one
       // stays in the cold tier too: the owner moved it there, and only a PM query (reactivateColdMemory) or the owner brings it back.
