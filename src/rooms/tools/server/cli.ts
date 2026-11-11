@@ -67,7 +67,9 @@ import { JEV_USAGE, runJevCli } from "../../jev";
 import { ERRANDS_USAGE, runErrandsCli } from "../../errands";
 import { retireAdoptedRule } from "../../self-repair/server";
 import { ROLLBACK_USAGE, runRollbackCli } from "../../rollback/server";
-import { listEvidence } from "../../storage";
+import { casUpsertSettings, deleteBoundSetting, getSettingVersions, listEvidence, listSettingRows } from "../../storage";
+import { UNLISTED_SWITCHES, switchValue } from "../../settings";
+import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { integrityReport, renewDisarm } from "../../policy";
 import { isCodeCriticDefault } from "../../contracts/task-enums"
 import { CODE_CRITIC_DEFAULTS } from "../../contracts/task-enums";
@@ -245,6 +247,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
       { name:"pm-skills", summary:"Which skills PM sessions opened lately", usage:PM_SKILLS_USAGE },
       { name:"activate", summary:"Spawn a visible isolated PM thread", usage:"bb lane-pilot activate <project-id> <ordinary-source-thread-id>" },
       { name:"state", summary:"Inspect a project's runs and attempts, newest first, one page at a time", usage:"bb lane-pilot state <project-id> [--limit N] [--before <created-at[:id]>] [--attempt <attempt-id> [--reason-offset N]]" },
+      { name:"setting", summary:"The settings that have no row in the settings window: list them with what each does, show a project's or the hub's values, set one (empty value clears). Only the owner at a terminal sets", usage:"bb lane-pilot setting [<project-id>|global [key=value …]]" },
       { name:"budget", summary:"Set or show the run budget of a project (attempts, wall minutes, tokens, child threads; empty value clears)", usage:"bb lane-pilot budget <project-id> [run.max_attempts=N] [run.max_wall_minutes=N] [run.max_tokens=N] [run.max_children=N]" },
       { name:"metrics", summary:"Per attempt: stages passed or failed, seconds per stage, writer tokens and list-price cost; cost shows not measured where the provider reports no usage, never 0", usage:"bb lane-pilot metrics <project-id> [--days N] [--json]" },
       { name:"health", summary:"Provider breaker state and the budgets of open runs", usage:"bb lane-pilot health [run-id]" },
@@ -897,6 +900,36 @@ ${ERRANDS_USAGE}` },
         }
         if (command === "activate" && args.length >= 2) {
           return { exitCode:0, stdout:JSON.stringify(await services.activate(args[0]!, args[1]!, args[2] === "cli" ? "cli" : "bb")) };
+        }
+        if (command === "setting") {
+          const [scope, ...pairs] = args;
+          const where = scope === "global" ? GLOBAL_SETTINGS_PROJECT_ID : scope;
+          if (!where) return { exitCode:0, stdout:Object.entries(UNLISTED_SWITCHES).map(([key, [level, values, what]]) => `${key} (${level}; ${values}): ${what}`).join("\n") };
+          const own = () => Object.fromEntries(listSettingRows(db, where).filter((row) => row.key in UNLISTED_SWITCHES).map((row) => [row.key, row.value]));
+          if (!pairs.length) return { exitCode:0, stdout:JSON.stringify({ scope:scope!, set:own() }, null, 2) };
+          // A switch changes what the machine does by itself, some of them spend money: an agent's shell never flips one.
+          if (invocation?.threadId) return { exitCode:1, stdout:JSON.stringify({ ok:false, error:"a setting is set by the owner at a terminal, not from a chat: ask them to run this command" }) };
+          const changes: Array<{ key:string; value:unknown }> = [];
+          for (const pair of pairs) {
+            const at = pair.indexOf("=");
+            const key = at < 0 ? pair : pair.slice(0, at);
+            const known = UNLISTED_SWITCHES[key];
+            if (at < 0 || !known) throw new Error(known ? `write ${key}=<value>` : `${key} is not on the list; \`bb lane-pilot setting\` prints it (a setting with a row in the settings window is set there)`);
+            if (known[0] === "global" && where !== GLOBAL_SETTINGS_PROJECT_ID) throw new Error(`${key} is read hub-wide only: bb lane-pilot setting global ${pair}`);
+            if (known[0] === "project-only" && where === GLOBAL_SETTINGS_PROJECT_ID) throw new Error(`${key} is read from a project's own row only: name the project`);
+            const text = pair.slice(at + 1);
+            if (text === "") { changes.push({ key, value:undefined }); continue; }
+            const parsed = switchValue(key, text);
+            if ("problem" in parsed) throw new Error(parsed.problem);
+            changes.push({ key, value:parsed.value });
+          }
+          const cleared = changes.filter((change) => change.value === undefined).map((change) => change.key);
+          const kept = changes.filter((change) => change.value !== undefined);
+          const versions = getSettingVersions(db, where, kept.map((change) => change.key));
+          const saved = kept.length ? casUpsertSettings(db, { projectId:where, bindingId:"", changes:kept.map((change) => ({ ...change, expectedVersion:versions[change.key] ?? 0 })) }) : null;
+          if (saved && !saved.ok) return { exitCode:1, stdout:JSON.stringify({ ok:false, error:saved.validation ?? "the setting changed meanwhile: run the command again" }) };
+          for (const key of cleared) deleteBoundSetting(db, where, key);
+          return { exitCode:0, stdout:JSON.stringify({ ok:true, scope:scope!, set:own() }, null, 2) };
         }
         if (command === "budget" && args.length >= 1) {
           const projectId = args[0]!;

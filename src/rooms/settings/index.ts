@@ -3,3 +3,5 @@
 export { readImportConfig } from "./import-config";
 export { argvValidationMap, coupledSettingKeys, validateSettingChanges, validateSettingValue, validateSettingsObject, validationErrorText } from "./setting-validation";
 export type { SettingValidationError } from "./setting-validation";
+export { UNLISTED_SWITCHES, switchValue } from "./switches";
+export type { SwitchScope } from "./switches";
