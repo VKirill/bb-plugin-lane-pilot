@@ -183,9 +183,9 @@ describe("pool readiness and the green word (parity d10-rest-1)", () => {
 
   it("[sma:rl_terms] the command prints the untermed memory paths and exits as on main; --strict exits non-zero for them", () => {
     const untermed = untermedGaps(coverageRows()).map((row) => `${row.kind}:${row.id}`).sort();
-    // Eight on main, three more from the wave's own exempt sites (the analysis' owner card, `memory load`, the parity report): none has a term yet.
-    expect(untermed).toEqual(["memory_path:analyze.owner_card", "memory_path:cli.memory_load", "memory_path:cli.parity_report", "memory_path:hub.memory_import_eval", "memory_path:hub.session_rpc",
-      "memory_path:maintainer.existing", "memory_path:memory.golden_eval", "memory_path:pm.cold", "memory_path:pm.contract", "memory_path:pm.owner_card", "memory_path:pm.replay_arm"]);
+    // Eight on main, three from the third wave's exempt sites (the analysis' owner card, `memory load`, the parity report) and three from the fourth (the prompt recall, the subagent pack, the writer's file notes): none has a term yet.
+    expect(untermed).toEqual(["memory_path:analyze.owner_card", "memory_path:cli.memory_load", "memory_path:cli.parity_report", "memory_path:hook.prompt_recall", "memory_path:hook.subagent_pack", "memory_path:hub.memory_import_eval", "memory_path:hub.session_rpc",
+      "memory_path:maintainer.existing", "memory_path:memory.golden_eval", "memory_path:pm.cold", "memory_path:pm.contract", "memory_path:pm.owner_card", "memory_path:pm.replay_arm", "memory_path:writer.file_notes"]);
     // Nobody wrote the owner's word where the owner said nothing.
     expect(coverageRows().filter((row) => row.status === "none").every((row) => !/owner:/i.test(row.note) || untermed.every((id) => id !== `${row.kind}:${row.id}`))).toBe(true);
     const plain = runCoverageCli([]);

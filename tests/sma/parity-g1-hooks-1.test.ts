@@ -223,7 +223,7 @@ describe("reflexes and file notes reach the task folder", () => {
     await w.harness.lifecycle.dispose();
   });
 
-  it("[sma:n1666] [sma:n1453] a rule retired before the task is updated leaves no line in REFLEXES.md: the update rewrites the file that is there, and writes nothing where there was none", async () => {
+  it("[sma:k_lib_reflex] [sma:k_hs_reflex] a rule retired before the task is updated leaves no line in REFLEXES.md: the update rewrites the file that is there, and writes nothing where there was none", async () => {
     rules.list = ["WHEN prisma migrate -> run it on a copy first"];
     const w = await world();
     await w.run.done;
@@ -551,7 +551,7 @@ describe("the spend marks and the Task cap", () => {
     expect(existsSync(join(home, ".lane-pilot/session-hooks/sess-read/perf.jsonl"))).toBe(false);
   });
 
-  it("[sma:n1460] a Task is denied past a human-set cap with the window, its percent, the cap, the reset time and the way to lift it", () => {
+  it("[sma:k_hs_spend] a Task is denied past a human-set cap with the window, its percent, the cap, the reset time and the way to lift it", () => {
     const denied = reason(task(homeWith(snap())));
     expect(denied).toContain("[spend-cap]");
     expect(denied).toContain("five-hour");
@@ -564,13 +564,13 @@ describe("the spend marks and the Task cap", () => {
     expect(reason(task(homeWith(null)))).toBe("");
   });
 
-  it("[sma:n1460] usage.skip_percent = 0 is off: no Task is denied at 0 >= 0, with windows or without", () => {
+  it("[sma:k_hs_spend] usage.skip_percent = 0 is off: no Task is denied at 0 >= 0, with windows or without", () => {
     expect(reason(task(homeWith(snap({ skipPercent: 0, skipSetByHuman: true }))))).toBe("");
     expect(reason(task(homeWith(snap({ skipPercent: 0, skipSetByHuman: true, windows: [] }))))).toBe("");
     expect(pretaskDecision({ role: "", kind: "Explore", background: false, spawned: 0, usage: { skipSetByHuman: true, skipPercent: 0, windows: [], at: new Date().toISOString() } }).deny).toBeUndefined();
   });
 
-  it("[sma:n1460] a missing, unreadable or old measurement time decides nothing", () => {
+  it("[sma:k_hs_spend] a missing, unreadable or old measurement time decides nothing", () => {
     const home = (over: Record<string, unknown>) => homeWith({ ...snap(), ...over });
     expect(reason(task(home({ at: undefined })))).toBe("");
     expect(reason(task(home({ at: "not a date" })))).toBe("");
@@ -579,7 +579,7 @@ describe("the spend marks and the Task cap", () => {
     expect(reason(task(home({ at: new Date(Date.now() - 30 * 60_000).toISOString() })))).toContain("[spend-cap]");
   });
 
-  it("[sma:n1460] a window that already reset is ignored, and a model window counts only for that model", () => {
+  it("[sma:k_hs_spend] a window that already reset is ignored, and a model window counts only for that model", () => {
     const past = new Date(Date.now() - 60_000).toISOString();
     expect(reason(task(homeWith(snap({ windows: [{ label: "five-hour", usedPercent: 99, resetsAt: past, model: null }] }))))).toBe("");
     const opus = snap({ windows: [{ label: "7d Opus", usedPercent: 97, resetsAt: future, model: "Opus" }] });
@@ -592,7 +592,7 @@ describe("the spend marks and the Task cap", () => {
     expect(spentWindows([{ usedPercent: 91, model: "opus" }], { model: "claude-sonnet", threshold: 90, now: Date.now() })).toEqual([]);
   });
 
-  it("[sma:n1460] the cap is checked after the refusals main gave: a call main refused keeps main's reason", () => {
+  it("[sma:k_hs_spend] the cap is checked after the refusals main gave: a call main refused keeps main's reason", () => {
     const home = homeWith(snap());
     expect(reason(task(home, { run_in_background: true }))).toContain("[subagent-foreground]");
     expect(reason(task(home, { subagent_type: "general-purpose" }, { LANE_PILOT_ROLE: "writer" }))).toContain("[execution-without-agent]");
@@ -635,7 +635,7 @@ describe("the scheduled usage snapshot pass", () => {
   }
   const reading = (percent: number) => ({ measuredAt: "2026-11-11T10:00:00.000Z", windows: [{ label: "five-hour", usedPercent: percent, resetsAt: "2026-11-11T15:00:00.000Z", model: null }] });
 
-  it("[sma:n1460] the pass calls every connected machine at most four at a time, writes the figure's own measurement time, and an unchanged reading makes no host call", async () => {
+  it("[sma:k_hs_spend] the pass calls every connected machine at most four at a time, writes the figure's own measurement time, and an unchanged reading makes no host call", async () => {
     const hosts = ["h1", "h2", "h3", "h4", "h5", "h6"];
     const p = pass(hosts, () => reading(40));
     await p.run();
@@ -649,7 +649,7 @@ describe("the scheduled usage snapshot pass", () => {
     await p.harness.lifecycle.dispose();
   });
 
-  it("[sma:n1460] a changed reading is written again, a reading nothing answered for writes nothing, and a human-set 0 is stored as off", async () => {
+  it("[sma:k_hs_spend] a changed reading is written again, a reading nothing answered for writes nothing, and a human-set 0 is stored as off", async () => {
     let percent = 40;
     const p = pass(["h1", "h2"], (hostId) => (hostId === "h2" ? { measuredAt: null, windows: [] } : reading(percent)), 0);
     await p.run();
@@ -661,7 +661,7 @@ describe("the scheduled usage snapshot pass", () => {
     await p.harness.lifecycle.dispose();
   });
 
-  it("[sma:n1460] a machine that fails costs one log line and does not stop the others or throw; a pass whose host list fails does not throw either", async () => {
+  it("[sma:k_hs_spend] a machine that fails costs one log line and does not stop the others or throw; a pass whose host list fails does not throw either", async () => {
     const p = pass(["h1", "h2", "h3"], () => reading(10));
     p.fail.add("h2");
     await expect(p.run()).resolves.toBeUndefined();
@@ -689,7 +689,7 @@ describe("the stored rate-limit event", () => {
   };
   const limits = (resetsAtMs: number, status = "blocked") => ({ kind: "subscription-window", providerId: "claude-code", status, windows: [{ label: "five-hour", providerKey: "five_hour", status, resetsAtMs }] });
 
-  it("[sma:n1405] a subscription-window event of any thread lands in the store; another kind of limit does not; the same event again inside a minute writes nothing, a changed one or an old store does", async () => {
+  it("[sma:k_h_statusline] a subscription-window event of any thread lands in the store; another kind of limit does not; the same event again inside a minute writes nothing, a changed one or an old store does", async () => {
     const h = harness();
     const reset = Date.now() + 3_600_000;
     await h.send(limits(reset));
@@ -708,7 +708,7 @@ describe("the stored rate-limit event", () => {
     expect(h.sets).toHaveLength(3);
   });
 
-  it("[sma:n1405] the money hold is what main holds: a stored blocked window with a future reset holds nothing there", async () => {
+  it("[sma:k_h_statusline] the money hold is what main holds: a stored blocked window with a future reset holds nothing there", async () => {
     const { bb, harness: fake } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
     await bb.storage.kv.set(`${RATE_LIMIT_PREFIX}claude-code`, { at: Date.now(), status: "blocked", windows: [{ label: "five-hour", status: "blocked", resetsAtMs: Date.now() + 3_600_000 }] } as never);
@@ -722,7 +722,7 @@ describe("the stored rate-limit event", () => {
   const fresh = (windows: Array<Record<string, unknown>>, at = NOW - 60_000) => ({ at, windows }) as never;
   const blocked = (over: Record<string, unknown> = {}) => ({ label: "five-hour", providerKey: null, status: "blocked", resetsAtMs: NOW + 3_600_000, ...over });
 
-  it("[sma:n1405] the stored event holds only while its reset is ahead, it is under six hours old, and usage.skip_percent is stored above 0", () => {
+  it("[sma:k_h_statusline] the stored event holds only while its reset is ahead, it is under six hours old, and usage.skip_percent is stored above 0", () => {
     const settings = { "usage.skip_percent": 90 };
     const hold = (event: unknown, over: Record<string, unknown> = {}) => limitEventHold(event as never, { model: "claude-sonnet-4-5", threshold: 90, now: NOW, settings, ...over } as never);
     expect(hold(fresh([blocked()]))).toMatchObject({ percent: 100, window: "five-hour", resetsAt: new Date(NOW + 3_600_000).toISOString() });
@@ -750,7 +750,7 @@ describe("the stored rate-limit event", () => {
     return { usage: createProviderUsage(wrapped, () => NOW, undefined, async () => event as never), fake };
   }
 
-  it("[sma:n1405] the writer hold falls back to the stored event only where the live reading has no answer; a reading with room, or a spent one, is the live answer", async () => {
+  it("[sma:k_h_statusline] the writer hold falls back to the stored event only where the live reading has no answer; a reading with room, or a spent one, is the live answer", async () => {
     const event = fresh([blocked()]);
     const settings = { "usage.skip_percent": 90 };
     const ask = (u: ReturnType<typeof usageWith>) => u.usage.hold({ providerId: "claude-code", model: "claude-sonnet-4-5", hostId: "h1", threshold: 90, settings });
@@ -766,7 +766,7 @@ describe("the stored rate-limit event", () => {
     await Promise.all([none.fake.lifecycle.dispose(), room.fake.lifecycle.dispose(), full.fake.lifecycle.dispose()]);
   });
 
-  it("[sma:n1405] the cockpit fallback shows a stored event only while its reset is ahead, marked with the event's time; a live figure wins; an expired event shows nothing", async () => {
+  it("[sma:k_h_statusline] the cockpit fallback shows a stored event only while its reset is ahead, marked with the event's time; a live figure wins; an expired event shows nothing", async () => {
     const open = () => createFakePluginHost({ pluginId: "lane-pilot" });
     const { bb, harness: fake } = open();
     const db = openDatabase(bb);
@@ -783,7 +783,7 @@ describe("the stored rate-limit event", () => {
     await fake.lifecycle.dispose();
   });
 
-  it("[sma:n1405] the Money screen prints «по последнему событию лимита, ЧЧ:ММ» when the figure comes from the stored event, and nothing of the kind for a live figure", async () => {
+  it("[sma:k_h_statusline] the Money screen prints «по последнему событию лимита, ЧЧ:ММ» when the figure comes from the stored event, and nothing of the kind for a live figure", async () => {
     setLocaleOverride("ru");
     const at = new Date(2026, 10, 11, 9, 5).toISOString();
     const rpc = (limitEventAt?: string) => ({ call: async (name: string) => name === "money_status" ? { monthUsd: 0, cap: null, left: null }

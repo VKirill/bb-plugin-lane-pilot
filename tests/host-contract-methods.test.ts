@@ -18,12 +18,12 @@ const WIRE_METHODS = [
     "removeWorkerHome",
   "rollback", "runBrowserQa", "runCommand", "runSandboxedCommand", "runScript", "sandboxCommandLine", "sandboxRelease",
   "session_inventory", "snapshot", "snapshotDryRun", "stabilityDrill", "vpnAddress", "whichPrograms",
-  "worktreeJanitor", "writeDocsPages", "writeForgeDraft", "writeForgeEnabled", "writePhaseBook", "writePmSettings",
+  "worktreeJanitor", "writeDocsPages", "writeForgeDraft", "writeForgeEnabled", "writePhaseBook", "writePmSettings", "writeUsageSnapshot",
   "writeWorkflowFile",
 ];
 
 describe("host RPC wire names", () => {
-  it("the contract keeps the same 80 method names", () => {
+  it("the contract keeps the same 81 method names", () => {
     expect(Object.keys(hostContract).sort()).toEqual(WIRE_METHODS);
   });
 

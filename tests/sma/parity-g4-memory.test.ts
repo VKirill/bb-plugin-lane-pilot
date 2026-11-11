@@ -268,6 +268,32 @@ function runHook(payload: Record<string, unknown>, home: string, how: "source" |
 const waitFor = async (ok: () => boolean, ms = 20_000) => { const end = Date.now() + ms; while (!ok() && Date.now() < end) await new Promise((r) => setTimeout(r, 50)); return ok(); };
 
 describe("review fixes: the session hook and the file catalog", () => {
+  it("[sma:k_st_catalog] the guard, which sees every real Edit, prints the catalog card once per session and path, from a worktree too; an uncarded file gets nothing", () => {
+    const home = scratchHome();
+    const repo = mkdtempSync(join(tmpdir(), "lp-repo-"));
+    const tree = `${repo}-wt`;
+    try {
+      execFileSync("git", ["init", "-q", "-b", "main"], { cwd: repo });
+      writeFileSync(join(repo, "a.ts"), "export const A = 1;\n");
+      execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "add", "."], { cwd: repo });
+      execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "a"], { cwd: repo });
+      execFileSync("git", ["worktree", "add", "-q", tree], { cwd: repo });
+      writeCatalog(repo, [buildFileCard({ path: "a.ts", bytes: "export const A = 1;\n", git: { lastCommit: "beef0001", commits: 1 } })]);
+      const guardFile = join(__dirname, "../../lane-stack/hooks/guard_shell.py");
+      const edit = (cwd: string, file: string, session: string) => spawnSync("python3", [guardFile], {
+        input: JSON.stringify({ tool_name: "Edit", tool_input: { file_path: file }, cwd, session_id: session }),
+        encoding: "utf8", env: { ...process.env, HOME: home, LANE_PILOT_ROLE: "writer" },
+      }).stdout ?? "";
+      expect(edit(repo, join(repo, "a.ts"), "s1")).toContain("[file-card] a.ts: 2 lines of typescript");
+      expect(edit(repo, join(repo, "a.ts"), "s1")).not.toContain("[file-card]");
+      expect(edit(tree, "a.ts", "s2")).toContain("last change beef0001");
+      expect(edit(repo, join(repo, "b.ts"), "s3")).not.toContain("[file-card]");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+      rmSync(tree, { recursive: true, force: true });
+    }
+  });
+
   it("[sma:k_st_catalog] the hook runs as plain source and as the bundle, and a Claude Code `Edit` call gets the [file-card] note on PreToolUse and a touch line on PostToolUse", () => {
     const repo = makeRepo();
     for (const how of ["source", "bundle"] as const) {

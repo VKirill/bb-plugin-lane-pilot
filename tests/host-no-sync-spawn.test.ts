@@ -8,7 +8,9 @@ import { buildGraph, runtimeClosure } from "../scripts/refactor/graph";
  * and the daemon SIGKILLs the worker with every call in it (OVH, 2026-10-05). Nothing the host handlers can reach
  * may start a child process synchronously. A file that must, goes here with the one line that says why.
  */
-const ALLOWED: Record<string, string> = {};
+const ALLOWED: Record<string, string> = {
+  "src/rooms/contracts/session-hook-source.ts": "the text of the session hook, written to the session's folder and run by Claude Code as its own short process; the host worker never executes it",
+};
 
 const root = resolve(__dirname, "..");
 const SYNC_SPAWN = /\b(?:spawnSync|execFileSync|execSync)\b/g;
