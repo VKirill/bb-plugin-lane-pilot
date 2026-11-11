@@ -467,7 +467,7 @@ describe("[sma:k_lib_shiplane] watch on 30 commits since the tag exits 1; with 3
   });
 });
 
-describe("[sma:k_lib_shiplane/job] the daily ship-watch acts only where ship.watch is on, skips an untagged checkout, survives a bad value, and closes by exact key", () => {
+describe("[sma:k_lib_shiplane/job] the daily ship-watch acts except where ship.watch is off, skips an untagged checkout, survives a bad value, and closes by exact key", () => {
   const commits = (repo: string, n: number) => { for (let i = 0; i < n; i++) execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--allow-empty", "-qm", `c${i}`]); };
   const checkout = (tagged: boolean) => {
     const repo = mkdtempSync(join(tmpdir(), "lp-sweep-"));
@@ -487,13 +487,15 @@ describe("[sma:k_lib_shiplane/job] the daily ship-watch acts only where ship.wat
     catch (cause) { return { exitCode: (cause as { status?: number }).status ?? 1, stdout: "" }; }
   };
 
-  it("posts nothing without ship.watch; with it, only tagged checkouts over the cap, and proj_1 never closes proj_10", async () => {
+  it("posts nothing with ship.watch off; with it on, only tagged checkouts over the cap, and proj_1 never closes proj_10", async () => {
     const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
     const repos = { proj_1: checkout(true), proj_10: checkout(true), proj_2: checkout(false), proj_3: checkout(true), proj_4: checkout(true) };
     for (const [id, path] of Object.entries(repos)) savePrototypeConfig(db, config(id, path));
     const open = () => (db.prepare("SELECT key FROM lane_pilot_owner_item WHERE state='open' ORDER BY key").all() as Array<{ key: string }>).map((row) => row.key);
 
-    // Nothing switched on: every checkout is over the cap, nothing is posted and no machine is asked.
+    // Switched off everywhere: every checkout is over the cap, nothing is posted and no machine is asked.
+    for (const id of Object.keys(repos)) saveProjectSetting(db as never, id, "ship.watch", "off");
+    calls.length = 0;
     expect(await shipWatchSweep(db as never, run)).toEqual({ checked: 0, flagged: [] });
     expect(open()).toEqual([]);
     expect(calls).toEqual([]);
@@ -514,6 +516,19 @@ describe("[sma:k_lib_shiplane/job] the daily ship-watch acts only where ship.wat
     expect(open()).toEqual(["ship-watch:proj_10:", "ship-watch:proj_4:"]);
   });
 
+  it("ship.watch unset (the default) is on: every tagged checkout over the cap is flagged, an untagged one is skipped", async () => {
+    const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
+    const repos = { proj_1: checkout(true), proj_2: checkout(false), proj_3: checkout(true) };
+    for (const [id, path] of Object.entries(repos)) savePrototypeConfig(db, config(id, path));
+    calls.length = 0;
+    const swept = await shipWatchSweep(db as never, run);
+    expect(swept.checked).toBe(2);
+    expect(swept.flagged.sort()).toEqual(["proj_1", "proj_3"]);
+    expect(calls.map((call) => call.cwd).sort()).toEqual([repos.proj_1, repos.proj_2, repos.proj_3].sort());
+    const open = (db.prepare("SELECT key FROM lane_pilot_owner_item WHERE state='open' ORDER BY key").all() as Array<{ key: string }>).map((row) => row.key);
+    expect(open).toEqual(["ship-watch:proj_1:", "ship-watch:proj_3:"]);
+  });
+
   it("the pile is counted on the project's own machine, in its checkout", async () => {
     const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
     const repo = checkout(true);
@@ -526,13 +541,15 @@ describe("[sma:k_lib_shiplane/job] the daily ship-watch acts only where ship.wat
     expect(await shipWatchSweep(db as never, async () => { throw new Error("host offline"); })).toEqual({ checked: 0, flagged: [] });
   });
 
-  it("any other value of ship.watch is off", async () => {
+  it("only the word off turns ship.watch off; any other value is the default, on", async () => {
     const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
     const repo = checkout(true);
     savePrototypeConfig(db, config("proj_5", repo));
-    for (const value of ["off", "true", 1]) {
+    saveProjectSetting(db as never, "proj_5", "ship.watch", "off");
+    expect((await shipWatchSweep(db as never, run)).flagged).toEqual([]);
+    for (const value of ["true", 1, "maybe"]) {
       saveProjectSetting(db as never, "proj_5", "ship.watch", value);
-      expect((await shipWatchSweep(db as never, run)).flagged).toEqual([]);
+      expect((await shipWatchSweep(db as never, run)).flagged).toEqual(["proj_5"]);
     }
   });
 });
