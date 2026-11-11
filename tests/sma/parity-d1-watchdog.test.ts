@@ -157,11 +157,11 @@ describe("hub watchdog parity D1", () => {
     execFileSync("sqlite3", [db, "create table lane_pilot_attempt(id,task_id,state,thread_id);"]);
     const e = { ...env, CURL_AFTER: "0", SS_OUT: join(dir, "ss.out"), SYS_LOG: join(dir, "sys.log"), MAINPID_FILE: join(dir, "mainpid"), STATE_FILE: join(dir, "state"), LP_WATCH_USER: "1", LP_WATCH_SYSTEMCTL: sys, LP_WATCH_LP_DB: db, UNIT_CG: "/lp-test.slice/bb-server.service", LP_WATCH_STOP_SEC: "1" };
     const status = run(["status"], e);
-    expect(status.status).toBe(1);
+    expect(status.status).toBe(2);
     expect(status.stdout).toContain(`door answers, process unproven: port 38886 is held by pid ${other.pid}, outside bb-server (pid 4242); nothing was touched`);
     for (const verb of ["stop", "restart", "lift"]) {
       const out = run([verb], e);
-      expect(out.status).toBe(1);
+      expect(out.status).toBe(2);
       expect(out.stdout).toContain("door answers, process unproven");
     }
     expect(read(join(dir, "sys.log"))).not.toMatch(/stop --no-block|kill -s|restart bb-server/);
@@ -574,11 +574,14 @@ print(row["result"], row.get("note", ""))`], { encoding: "utf8" });
     expect(readFileSync(log, "utf8")).toContain('"event":"outage"');
     proc.kill("SIGTERM");
     for (const which of ["system", "user"]) {
-      // main's unit has no cap (a capped watchdog that stays down leaves the hub unwatched): the cap is a setting
-      expect(run(["print-unit", which], env).stdout).not.toContain("StartLimit");
-      const out = run(["print-unit", which], { ...env, LP_WATCH_RESTART_CAP: "5" });
+      // the default unit carries the five-restarts cap and the two-minute first look; LP_WATCH_RESTART_CAP=0/empty turns the cap off
+      const out = run(["print-unit", which], env);
       expect(out.stdout).toContain("StartLimitBurst=5");
       expect(out.stdout).toContain("StartLimitIntervalSec=3600");
+      expect(out.stdout).toContain("Environment=LP_WATCH_FIRST_SEC=120");
+      expect(run(["print-unit", which], { ...env, LP_WATCH_RESTART_CAP: "0" }).stdout).not.toContain("StartLimit");
+      const capped = run(["print-unit", which], { ...env, LP_WATCH_RESTART_CAP: "9" });
+      expect(capped.stdout).toContain("StartLimitBurst=9");
     }
   }, 20000);
 
@@ -600,13 +603,13 @@ print(row["result"], row.get("note", ""))`], { encoding: "utf8" });
   it("[sma:m_sp_watch_xml] print-unit system, user and mac state the two-minute delay and the restart cap, and register nothing", () => {
     const { dir, env } = tmp();
     for (const which of ["system", "user"]) {
-      const out = run(["print-unit", which], { ...env, LP_WATCH_RESTART_CAP: "5" });
-      expect(out.stdout).toContain("first look waits 120 s");
+      const out = run(["print-unit", which], env);
+      expect(out.stdout).toContain("Environment=LP_WATCH_FIRST_SEC=120");
       expect(out.stdout).toContain("StartLimitBurst=5");
     }
     const mac = run(["print-unit", "mac"], env);
     expect(mac.stdout).toContain("ThrottleInterval");
-    expect(mac.stdout).toContain("first look waits 120 s");
+    expect(mac.stdout).toContain("<key>LP_WATCH_FIRST_SEC</key><string>120</string>");
     expect(readdirSync(dir).filter((f) => f !== "bin")).toEqual([]);
   });
 

@@ -28,9 +28,11 @@
 # cgroup cannot be read is «unknown»: printed, never a refusal.
 # LP_WATCH_DRY=1 (drills) records instead of acting. LP_WATCH_SYSTEMCTL names the service-manager command (drills point it at a stub or a
 # stand-in unit); LP_WATCH_USER=1 drops the sudo prefix and uses systemctl --user.
-# Exit codes: 0 the machine is as asked, 1 failed or down, 2 a refusal a named flag would lift (--force for live work and the lift limit).
+# Exit codes: 0 the machine is as asked, 1 failed or down, 2 a refusal a named flag would lift (--force for live work, the lift limit
+# and a door answered from a foreign process).
 # One watchdog at a time: a lock file (flock, or an atomic mkdir lock where flock is missing, e.g. a stock Mac); install writes a unit
-# that runs `run` (Restart=always; LP_WATCH_RESTART_CAP=5 at install caps the restarts of a fallen watchdog per hour, off by default). A second watchdog that finds the lock waits LP_WATCH_LOCK_HELD_SEC
+# that runs `run` (Restart=always; the unit caps a fallen watchdog at five restarts an hour unless LP_WATCH_RESTART_CAP says otherwise,
+# and the watchdog's own dying word goes to the owner, so the cap never leaves the hub silently unwatched). A second watchdog that finds the lock waits LP_WATCH_LOCK_HELD_SEC
 # (60 s; not in a dry run) before it exits, so the cap is not spent on it.
 set -uo pipefail
 SERVICE="${LP_WATCH_SERVICE:-bb-server}"
@@ -46,7 +48,7 @@ RESTART_SETTLE_SEC="${LP_WATCH_RESTART_SETTLE_SEC:-10}"
 LOCK_HELD_SEC="${LP_WATCH_LOCK_HELD_SEC:-60}"
 KILL_HOLDER="${LP_WATCH_KILL_HOLDER:-0}"   # 1: a repeated lift also kills a port holder proven outside the unit; 0 (main): it is only named
 BOARD_EVERY="${LP_WATCH_BOARD_EVERY:-0}"   # every N-th knock `run` also makes the board request (a CLI start each time); 0 (main): never
-RESTART_CAP="${LP_WATCH_RESTART_CAP:-}"    # install: restarts of a fallen watchdog per hour before systemd gives up; empty (main): no cap
+RESTART_CAP="${LP_WATCH_RESTART_CAP-5}"    # the unit's cap on restarts of a fallen watchdog per hour; 0 or empty: no cap (a capped watchdog that stays down warns the owner itself)
 RESTART_WAIT_SEC="${LP_WATCH_RESTART_WAIT_SEC:-120}"
 MAX_LIFTS="${LP_WATCH_MAX_LIFTS:-3}"
 STATE_DIR="${LP_WATCH_STATE:-$HOME/.lane-pilot}"
@@ -120,7 +122,7 @@ kill_cmd() {
   if [ "$(platform)" = darwin ]; then echo "launchctl kill SIGKILL gui/$(id -u)/$SERVICE";
   elif have_sudo; then echo "sudo -n $SYSTEMCTL kill -s SIGKILL $SERVICE"; else echo "$SYSTEMCTL --user kill -s SIGKILL $SERVICE"; fi
 }
-service_restart() { [ "$(platform)" = darwin ] && launchctl kickstart -k "gui/$(id -u)/$SERVICE" || { have_sudo && $SUDO $SYSTEMCTL restart "$SERVICE" || $SYSTEMCTL --user restart "$SERVICE"; }; }
+service_restart() { $(lift_cmd); } # the one lift command (SMA m_ctl_lift_cmd): the watchdog's lift and the restart share it
 service_kill()    { [ "$(platform)" = darwin ] && launchctl kill SIGKILL "gui/$(id -u)/$SERVICE" || { have_sudo && $SUDO $SYSTEMCTL kill -s SIGKILL "$SERVICE" || $SYSTEMCTL --user kill -s SIGKILL "$SERVICE"; }; }
 service_stop()    { [ "$(platform)" = darwin ] && launchctl bootout "gui/$(id -u)/$SERVICE" || { have_sudo && $SUDO $SYSTEMCTL stop --no-block "$SERVICE" || $SYSTEMCTL --user stop --no-block "$SERVICE"; }; }
 service_result()  { [ "$(platform)" = linux ] && $SYSTEMCTL $SYSTYPE show -p Result -p ExecMainStatus --value "$SERVICE" 2>/dev/null; }
@@ -236,7 +238,7 @@ EOF
 lift() { # kill the hung one first, then start; returns 0 when the door answers within the backoff
   local wait try pid h
   if door_answers; then
-    foreign_door_refusal && return 1
+    foreign_door_refusal && return 2
     record "lift_skipped" "the door already answers"; echo "nothing to do: the door answers"; return 0
   fi
   if [ "$FORCE" != 1 ] && [ "$(lifts_in_window)" -ge "$MAX_LIFTS_IN_WINDOW" ]; then
@@ -276,7 +278,7 @@ status() {
   local state; state="$(active_state)"
   [ -n "$state" ] || { echo "unknown: systemd does not answer for $SERVICE"; return 1; }
   if door_answers; then
-    foreign_door_refusal && return 1
+    foreign_door_refusal && return 2
     echo "ok: $SERVICE $state, pid $(main_pid), up $(uptime_sec)s, the door answers"
     local board; board="$(board_probe)"; [ "$board" = none ] || echo "board request (advisory): $board"
     return 0
@@ -304,8 +306,8 @@ PY
   echo "$sec"
 }
 
-stop_guard() { # the refusals of stop and restart: a proven foreign door, live work actually read; 0 go on, 1 foreign door, 2 live work
-  if door_answers && foreign_door_refusal; then return 1; fi
+stop_guard() { # the refusals of stop and restart: a proven foreign door, live work actually read; 0 go on, 2 a refusal --force lifts
+  if door_answers && foreign_door_refusal; then return 2; fi
   local workers rc
   workers="$(live_work)"; rc=$?
   if [ "$rc" -ne 0 ]; then
@@ -378,6 +380,9 @@ take_lock() { # one watchdog per machine: flock where it exists, an atomic mkdir
 
 run() {
   take_lock
+  # A dead watchdog is relaunched by the unit at most five times an hour; a dying word (never on a stop signal or a clean leave,
+  # which are 143/130/0) tells the owner, so the cap's give-up is never silent (SMA m_sp_watch_loop).
+  trap 'rc=$?; case "$rc" in 0|130|143) ;; *) record "watchdog_exit" "the watchdog died with exit $rc"; say "Сторож хаба BB упал (код $rc). systemd поднимет его, но не больше 5 раз за час — потом хаб без присмотра: systemctl status lp-hub-watchdog, journalctl -u lp-hub-watchdog -n 100." ;; esac' EXIT
   record "start" "watchdog up; the first look waits ${FIRST_SEC}s"
   [ "$FIRST_SEC" -gt 0 ] && sleep "$FIRST_SEC"
   local silent=0 refused_run=0 down_since=0 silent_pid="" probe state pid board last_board="" knocks=0
@@ -496,7 +501,7 @@ $(restart_cap_lines)
 [Service]
 Type=simple
 User=$USER
-# the first look waits 120 s only with Environment=LP_WATCH_FIRST_SEC=120 added here; the default is 0, as before
+Environment=LP_WATCH_FIRST_SEC=120
 ExecStart=/bin/bash $self run
 Restart=always
 RestartSec=30
@@ -510,7 +515,7 @@ EOF
 Description=Lane Pilot hub watchdog (user)
 $(restart_cap_lines)
 [Service]
-# the first look waits 120 s only with Environment=LP_WATCH_FIRST_SEC=120 added here; the default is 0, as before
+Environment=LP_WATCH_FIRST_SEC=120
 ExecStart=/bin/bash $self run
 Restart=always
 RestartSec=30
@@ -525,9 +530,10 @@ EOF
 <plist version="1.0"><dict>
   <key>Label</key><string>pro.vechkasov.lp-hub-watchdog</string>
   <key>ProgramArguments</key><array><string>/bin/bash</string><string>$self</string><string>run</string></array>
-  <!-- the first look waits 120 s only with LP_WATCH_FIRST_SEC=120 in EnvironmentVariables; the default is 0; launchd keeps the relift at least 30 s away -->
+  <key>EnvironmentVariables</key><dict><key>LP_WATCH_FIRST_SEC</key><string>120</string></dict>
+  <!-- launchd has no hourly burst cap like systemd's; a 720 s throttle is the same ceiling: at most five relifts of a fallen watchdog in an hour -->
   <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
-  <key>ThrottleInterval</key><integer>30</integer>
+  <key>ThrottleInterval</key><integer>720</integer>
   <key>StandardOutPath</key><string>$STATE_DIR/hub-watchdog.log</string><key>StandardErrorPath</key><string>$STATE_DIR/hub-watchdog.log</string>
 </dict></plist>
 EOF
