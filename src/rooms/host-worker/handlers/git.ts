@@ -56,7 +56,7 @@ async function runReplayChecks(requestedHostId:string,checks:NonNullable<Paramet
     // Already settled on this revision: a recorded pass skips the run, a recorded red fails the merge again with its output.
     if(seen&&seen.exitCode===0) continue;
     if(seen) return {ok:false,failed:[{command:check.command,exitCode:seen.exitCode||1,stdout:seen.stdout,stderr:`already run on this revision\n${seen.stderr}`}]};
-    const attempt=():Promise<Ran>=>runSandboxedCommandOnHost({requestedHostId,workspacePath:checks.workspacePath,cwd:check.cwd,backend:checks.backend,command:check.command,timeoutSec:check.timeoutSec})
+    const attempt=():Promise<Ran>=>runSandboxedCommandOnHost({requestedHostId,workspacePath:checks.workspacePath,cwd:check.cwd,backend:checks.backend,command:check.command,timeoutSec:check.timeoutSec,...(checks.sshKeys?{sshKeys:true}:{})})
       .catch((cause:unknown)=>({exitCode:1,stdout:"",stderr:cause instanceof Error?cause.message:String(cause),threw:true as const}));
     const row=(result:Ran,why?:string):ReplayCheck=>({command:check.command,exitCode:result.exitCode||1,stdout:result.stdout,stderr:why?`${why}\n${result.stderr}`:result.stderr});
     const red=(result:Ran,why?:string):ReplayCheckOutcome=>({ok:false,failed:[row(result,why)]});

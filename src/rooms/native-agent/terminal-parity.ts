@@ -1,6 +1,8 @@
 import { listMemory } from "@lane-pilot/memory-core";
 import { pmRulesOf } from "../learning";
-import { getAttempt, getReasoningTrace, HARNESS_VERSION, skillMetricSkillsForAttempt, type LanePilotDatabase } from "../storage";
+import { getAttempt, getReasoningTrace, HARNESS_VERSION, loadProjectSettings, skillMetricSkillsForAttempt, type LanePilotDatabase } from "../storage";
+import type { VkSessionPolicy } from "../contracts";
+import { HELPER_DISALLOWED_TOOLS } from "./claude-guard-launch";
 
 /**
  * Session and terminal parity (SMA m_tl_terminal_parity): for one attempt, six layers — hooks,
@@ -15,7 +17,7 @@ export type ParityLine = { layer: ParityLayer; same: boolean | null; detail: str
 
 /** Why a layer is not compared: the attempt records no permission policy and a terminal's tool list is not readable from here. */
 const NOT_COMPARED: Partial<Record<ParityLayer, string>> = {
-  permissions: "not compared: the attempt records no tool permissions, and a terminal session's tool list is not visible to Lane Pilot",
+  permissions: "not compared: permissions were not recorded on the attempt, or the terminal side could not be computed",
 };
 
 const diff = (a: readonly string[], b: readonly string[]) => {
@@ -52,7 +54,7 @@ export function attemptSessionLayers(db: LanePilotDatabase, attemptId: string): 
     memory: context?.memoryPicked ?? [],
     rules: context?.rulesPicked?.picked ?? [],
     skills: skillMetricSkillsForAttempt(db, attemptId),
-    permissions: null,
+    permissions: context?.permissions ?? null,
     model: trace ? [`${trace.providerId}/${trace.model}`] : [],
   };
 }
@@ -70,7 +72,28 @@ export function terminalSessionLayers(input: {
     memory: listMemory(input.db, input.projectId, {}, 500, "subagent").map((record) => record.id),
     rules: pmRulesOf(input.db, input.projectId).map((rule) => rule.id),
     skills: [...input.skills],
-    permissions: null,
+    // The PM session has no role profile to narrow: its list is the guard's disallowed tools over an open
+    // policy (SMA m_tl_terminal_parity). A writer's recorded list still diffs where its policy is tighter.
+    permissions: permissionEntries({ policy: null, disallowedTools: HELPER_DISALLOWED_TOOLS }),
     model: [input.model],
   };
+}
+
+/** A session's permission list as one sorted set of entries (SMA m_tl_terminal_parity): the guard's disallowed tools plus every narrowed policy group. */
+export function permissionEntries(input: { policy?: VkSessionPolicy | null; disallowedTools?: string | readonly string[] }): string[] {
+  const tools = typeof input.disallowedTools === "string" ? input.disallowedTools : (input.disallowedTools ?? []).join(",");
+  const policy = input.policy ?? {};
+  const group = (key: string, value: { mode?: string; names?: string[] } | undefined): string =>
+    `${key}:${value?.mode ?? "inherit"}${value?.names?.length ? `(${(value.names ?? []).join(",")})` : ""}`;
+  return [
+    `disallowedTools:${tools}`,
+    `required:${policy.required === true}`,
+    group("bbPlugins", policy.bbPlugins),
+    group("skills", policy.skills),
+    group("mcpServers", policy.mcpServers),
+    group("nativePlugins", policy.nativePlugins),
+    `userInstructions:${policy.userInstructions ?? "unset"}`,
+    `projectInstructions:${policy.projectInstructions ?? "unset"}`,
+    `claudeAiSync:${policy.claudeAiSync ?? "unset"}`,
+  ].sort();
 }

@@ -292,4 +292,9 @@ export function checkRecipe(request: string): CheckRecipe {
 }
 
 /** Five required measures of a check (SMA: Five required measures): what ran, where, what was expected, within what time, and the evidence. */
-export type CheckMeasure = { command: string; cwd: string; expectExit: number; timeoutSec: number; evidence: string; exitCode: number; passed: boolean };
+export type CheckMeasure = { command: string; cwd: string; expectExit: number; timeoutSec: number; evidence: string; exitCode: number; passed: boolean;
+  /** The rest of the five required measures (SMA m_ck_required): the throwaway sandbox and its cleared environment,
+      its closed publication, and the protected-roots manifest before and after. Optional for receipts written before it. */
+  backend?: string; policySha256?: string; env?: "cleared"; publication?: "closed"; rootsSha256?: string; rootsChanged?: boolean;
+  /** The manifest ran out of time or rows (never counts as changed), and what of git it could cover (a linked worktree's gitdir, or uncovered). */
+  rootsPartial?: boolean; rootsGit?: string };

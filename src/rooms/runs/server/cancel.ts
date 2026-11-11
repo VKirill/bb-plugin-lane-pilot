@@ -1,4 +1,4 @@
-import { getAttempt, getRun, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, markCancelCode, transitionAttempt, type CancelCode } from "../../storage";
+import { getAttempt, getRun, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, transitionAttempt, type CancelCode } from "../../storage";
 import { FAILED_ATTEMPT_STATES } from "../../contracts";
 export { CANCEL_CODES, markCancelCode, type CancelCode } from "../../storage";
 import { cancelRejection } from "./run-finish";
@@ -23,8 +23,7 @@ export function closeEndedAttempt(db: ServerCore["db"], attempt: { id: string; s
   if (!(FAILED_ATTEMPT_STATES as readonly string[]).includes(attempt.state) || attempt.state === "spawn_rejected") return null;
   if (getRun(db, attempt.run_id)?.closed_at || listAttemptsForTask(db, attempt.run_id, attempt.task_id).at(-1)?.id !== attempt.id) return null;
   const was = attempt.state;
-  transitionAttempt(db, attempt.id, "canceled", { reason: why?.trim() || `canceled: the task had ended ${was}` });
-  markCancelCode(db, attempt.id, code);
+  transitionAttempt(db, attempt.id, "canceled", { reason: why?.trim() || `canceled: the task had ended ${was}`, cancelCode: code });
   return { ok:true, state:"canceled", reason:`it had ended ${was}; it is closed: it leaves the board and holds no task behind it` };
 }
 
@@ -54,8 +53,7 @@ export async function cancelAttemptById(ctx: Pick<ServerCore, "bb" | "db" | "can
   let noted = await record();
   if (!noted.recorded) noted = await record();
   const reason = why?.trim() || "canceled: writer stop observed";
-  transitionAttempt(db, attempt.id, "canceled", { threadId: attempt.thread_id, reason });
-  markCancelCode(db, attempt.id, code);
+  transitionAttempt(db, attempt.id, "canceled", { threadId: attempt.thread_id, reason, cancelCode: code });
   const task = getTask(db, attempt.task_id);
   const plan = getTaskPlan(db, attempt.task_id) ?? (task?.kind === "bb" ? valueAt(task.contract, "objective") : "") as string;
   for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {

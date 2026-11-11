@@ -1,10 +1,10 @@
 import { accessSync, constants as fsConstants, existsSync } from "node:fs";
-import { access, lstat, mkdir, mkdtemp, readdir, realpath, rm, rmdir, symlink } from "node:fs/promises";
+import { access, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, rmdir, symlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { bestEffort, createCapture, lstatOrNull, redactSecrets, sha256Hex } from "@lane-pilot/kit";
 import { spawnAsync } from "@lane-pilot/kit";
-import { asWorker, grantRunFolders, workerReachable } from "./worker-user";
+import { asWorker, existsAsUser, grantRunFolders, homeOfUser, workerReachable } from "./worker-user";
 
 export type SandboxedCommandInput = {
   requestedHostId:string; workspacePath:string; cwd:string; command:string; backend?:"auto"|"macos-seatbelt"|"linux-bubblewrap"; timeoutSec?:number;
@@ -12,11 +12,102 @@ export type SandboxedCommandInput = {
   env?:Record<string,string>;
   /** Run as this OS user (worker.strict_user on): sudo -n -u, rights on the run folder granted and listed (worker-user.ts). */
   asUser?:string;
+  /** Hash .git/.agents/.cls before and after (only the check-measure path asks: the walk costs time and its result is used nowhere else). */
+  protectedRoots?:boolean;
+  /** `~/.ssh` stays readable for this command (the project's verification.ssh_keys is on); unset: masked with the other credential stores. */
+  sshKeys?:boolean;
 };
 export type SandboxedCommandResult = {
   hostId:string; backend:"macos-seatbelt"|"linux-bubblewrap"; workspacePath:string; cwd:string; exitCode:number;
-  policySha256:string; stdout:string; stderr:string;
+  policySha256:string;
+  /** .git/.agents/.cls hashed before and after (SMA m_ck_isolated); a change fails the check. */
+  rootsManifest?:{ before:string; after:string; changed:boolean; partial?:boolean; git?:RootsGit };
+  /** `~/.ssh` was masked for this run (it exists and verification.ssh_keys is off). */
+  maskedSsh?:boolean;
+  stdout:string; stderr:string;
 };
+
+/**
+ * The roots a sandboxed check must leave untouched (SMA m_ck_isolated): .git, .agents, .cls, hashed before and after.
+ * One digest over path/size/mtime rows, sorted. The walk is async and bounded by wall time (PROTECTED_MANIFEST_BUDGET_MS per
+ * manifest) and by row count; past either the manifest is `partial` and a partial manifest never counts as changed.
+ * `.agents/runs` (the run bookkeeping that changes all the time) is skipped. In a linked worktree `.git` is a file that names
+ * the real git directory: that directory is walked (`git:"worktree-gitdir"` — its own HEAD/index/hooks, not the shared refs
+ * and objects of the main repository); a pointer that cannot be followed is `git:"uncovered"`, never a silent nothing.
+ */
+export const PROTECTED_ROOTS = [".git",".agents",".cls"] as const;
+export const PROTECTED_MANIFEST_CAP = 50_000;
+export const PROTECTED_MANIFEST_BUDGET_MS = 2_000;
+export type RootsGit = "covered"|"worktree-gitdir"|"uncovered"|"absent";
+export type RootsManifest = {sha256:string;entries:number;truncated:boolean;partial:boolean;git:RootsGit};
+export async function protectedRootsManifest(workspacePath:string, options:{cap?:number;budgetMs?:number} = {}):Promise<RootsManifest> {
+  const cap=options.cap ?? PROTECTED_MANIFEST_CAP;
+  const deadline=Date.now()+(options.budgetMs ?? PROTECTED_MANIFEST_BUDGET_MS);
+  const skipped=join(workspacePath,".agents","runs");
+  const rows:string[]=[];
+  let truncated=false, timedOut=false, git:RootsGit="absent";
+  const roots:Array<{dir:string;label:string}>=[];
+  for (const name of PROTECTED_ROOTS) {
+    const path=join(workspacePath,name);
+    const info=await lstat(path).catch(()=>null);
+    if (!info) continue;
+    if (name!==".git") { roots.push({dir:path,label:name}); continue; }
+    if (info.isDirectory()) { git="covered"; roots.push({dir:path,label:name}); continue; }
+    // A linked worktree: `.git` is a file, "gitdir: <path>".
+    const pointer=info.isFile() ? /^gitdir:\s*(.+?)\s*$/m.exec(await readFile(path,"utf8").catch(()=>"")) : null;
+    const target=pointer ? resolve(workspacePath,pointer[1]!) : null;
+    const real=target ? await lstat(target).catch(()=>null) : null;
+    if (target && real?.isDirectory()) { git="worktree-gitdir"; roots.push({dir:target,label:".git(worktree)"}); }
+    else git="uncovered";
+  }
+  for (const root of roots) {
+    const stack=[root.dir];
+    while (stack.length) {
+      if (rows.length>=cap) { truncated=true; break; }
+      if (Date.now()>deadline) { timedOut=true; break; }
+      const dir=stack.pop()!;
+      const listing=await readdir(dir,{withFileTypes:true}).catch(()=>null);
+      if (!listing) continue;
+      const files:Array<{path:string;link:boolean}>=[];
+      for (const entry of listing) {
+        const path=join(dir,entry.name);
+        if (path===skipped) continue;
+        if (entry.isDirectory()) stack.push(path);
+        else files.push({path,link:entry.isSymbolicLink()});
+      }
+      const stats=await Promise.all(files.map((file)=>lstat(file.path).catch(()=>null)));
+      files.forEach((file,index)=>{
+        const st=stats[index];
+        const name=join(root.label,relative(root.dir,file.path));
+        rows.push(st ? `${name}:${file.link?"l":"f"}:${st.size}:${Math.trunc(st.mtimeMs)}` : `${name}:?`);
+      });
+    }
+    if (truncated||timedOut) break;
+  }
+  rows.sort();
+  return { sha256:sha256Hex(rows.join("\n")), entries:rows.length, truncated, partial:truncated||timedOut, git };
+}
+
+/** Credential stores a publish would reach for (SMA m_ck_required): masked in the sandbox so a check can use the net but not publish. */
+const CREDENTIAL_DIRS=(sshKeys:boolean)=>[...(sshKeys?[]:[".ssh"]),".gnupg",".aws",".azure",join(".config","gh")];
+const CREDENTIAL_FILES=[".git-credentials",".netrc"];
+/** `sshKeys` (the project's verification.ssh_keys is on) leaves `~/.ssh` out of the mask; the other stores stay masked. */
+export function credentialMaskPaths(home = homedir(), options:{sshKeys?:boolean} = {}):{dirs:string[];files:string[]} {
+  const dirs=CREDENTIAL_DIRS(options.sshKeys===true).map((name)=>join(home,name)).filter((path)=>existsSync(path));
+  const files=CREDENTIAL_FILES.map((name)=>join(home,name)).filter((path)=>existsSync(path));
+  return {dirs,files};
+}
+/**
+ * The mask for one run. With `asUser` (the strict worker) it is the worker's home that is masked, not the hub process's: the
+ * paths are found as the worker sees them. The hub's own home is not the worker's to read.
+ */
+export async function credentialMaskFor(input:{asUser?:string;sshKeys?:boolean}):Promise<{dirs:string[];files:string[]}> {
+  if (!input.asUser) return credentialMaskPaths(homedir(),{sshKeys:input.sshKeys});
+  const home=await homeOfUser(input.asUser);
+  const found=async(names:string[])=>(await Promise.all(names.map(async(name)=>{ const path=join(home,name); return await existsAsUser(input.asUser!,path) ? path : null; }))).filter((path):path is string=>path!==null);
+  return {dirs:await found(CREDENTIAL_DIRS(input.sshKeys===true)),files:await found(CREDENTIAL_FILES)};
+}
+const sshMasked=(mask:{dirs:string[]},home:string|null,input:{sshKeys?:boolean})=>input.sshKeys!==true&&mask.dirs.some((dir)=>dir.endsWith(`${sep}.ssh`)&&(home===null||dir===join(home,".ssh")));
 
 const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
 import { SANDBOX_OWN_ENV } from "../contracts";
@@ -62,10 +153,13 @@ function sbplPath(path:string):string {
   return `"${path}"`;
 }
 
-export function buildSeatbeltProfile(workspacePath:string, tempPath:string):string {
+export function buildSeatbeltProfile(workspacePath:string, tempPath:string, credentialMask?:{dirs?:string[];files?:string[]}):string {
   const workspace = sbplPath(workspacePath);
   const temporary = sbplPath(tempPath);
   const denyWrites = [".git", ".agents", ".cls"].map((name) => `(deny file-write* (subpath ${sbplPath(resolve(workspacePath,name))}))`).join("\n");
+  // Closed publication (SMA m_ck_required): the credential stores a push would reach for are unreadable inside the check.
+  const denyReads = [...(credentialMask?.dirs ?? []).map((dir) => `(deny file-read* (subpath ${sbplPath(dir)}))`),
+    ...(credentialMask?.files ?? []).map((file) => `(deny file-read* (literal ${sbplPath(file)}))`)].join("\n");
   return [
     "(version 1)",
     "(allow default)",
@@ -74,6 +168,7 @@ export function buildSeatbeltProfile(workspacePath:string, tempPath:string):stri
     // studio_test.py: a lock and the run's files in /tmp/vf-tests, read by Roblox Studio; «Operation not permitted», 2026-10-23).
     `(deny file-write* (require-all (require-not (subpath ${workspace})) (require-not (subpath ${temporary})) (require-not (subpath \"/private/tmp\")) (require-not (literal \"/dev/null\"))))`,
     denyWrites,
+    denyReads,
   ].join("\n");
 }
 
@@ -161,13 +256,18 @@ function sandboxPath(base:string):string {
   return [base, ...userToolBins(), ...(bb ? [bb] : [])].join(":");
 }
 
-export function buildBubblewrapArgs(input:{workspacePath:string;cwd:string;tempPath:string;guardPaths:string[]}):string[] {
+export function buildBubblewrapArgs(input:{workspacePath:string;cwd:string;tempPath:string;guardPaths:string[];
+  /** Credential stores masked out of the sandbox (SMA m_ck_required): dirs get an empty tmpfs, files /dev/null. */
+  credentialMask?:{dirs?:string[];files?:string[]};
+}):string[] {
   // --share-net keeps the host network while every other namespace stays private: a check may curl a dev
   // server or an API, but still writes only into the workspace and its temp folder. Before, --unshare-all
   // alone cut the network, so no curl verification could ever pass.
   // The shared /tmp stays writable (see buildSeatbeltProfile); the workspace and the guards are bound after it, so they still win.
   const args=["--die-with-parent","--new-session","--unshare-all","--share-net","--ro-bind","/","/","--bind","/tmp","/tmp","--bind",input.workspacePath,input.workspacePath];
   for (const guardPath of input.guardPaths) args.push("--ro-bind",guardPath,guardPath);
+  for (const dir of input.credentialMask?.dirs ?? []) args.push("--tmpfs",dir);
+  for (const file of input.credentialMask?.files ?? []) args.push("--ro-bind","/dev/null",file);
   args.push("--bind",input.tempPath,input.tempPath,"--proc","/proc","--dev","/dev","--chdir",input.cwd,
     "--clearenv","--setenv","PATH",sandboxPath("/usr/local/bin:/usr/bin:/bin"),"--setenv","HOME",input.tempPath,
     "--setenv","TMPDIR",input.tempPath,"--setenv","TMP",input.tempPath,"--setenv","TEMP",input.tempPath,
@@ -270,6 +370,15 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
   }
   const launch=(program:string,args:string[],keep:string[])=>input.asUser ? asWorker(input.asUser,program,args,keep) : { program, args };
   let releaseGuards=async():Promise<void>=>{};
+  const rootsBefore=input.protectedRoots ? await protectedRootsManifest(workspacePath) : null;
+  const rootsAfter=async():Promise<SandboxedCommandResult["rootsManifest"]>=>{
+    if (!rootsBefore) return undefined;
+    const after=await protectedRootsManifest(workspacePath);
+    const partial=rootsBefore.partial||after.partial;
+    return { before:rootsBefore.sha256, after:after.sha256, changed:!partial&&rootsBefore.sha256!==after.sha256, partial, git:after.git };
+  };
+  const credentialMask=await credentialMaskFor(input);
+  const maskedSsh=sshMasked(credentialMask,null,input);
   try {
     if (backend === "linux-bubblewrap") {
       const {guardPaths,created}=await prepareGuardPaths(workspacePath);
@@ -277,7 +386,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
       // Secrets travel in bwrap's own environment, never in its arguments (a process list shows those); without --clearenv
       // the sandbox keeps exactly them plus the variables --setenv gives it.
       const secrets=sandboxSecretEnv(input.env);
-      const args=buildBubblewrapArgs({workspacePath,cwd,tempPath,guardPaths});
+      const args=buildBubblewrapArgs({workspacePath,cwd,tempPath,guardPaths,credentialMask});
       const policySha256=sha256Hex(JSON.stringify(args));
       const bw=launch(bubblewrapPath!,[...(Object.keys(secrets).length?args.filter((arg)=>arg!=="--clearenv"):args),input.command],Object.keys(secrets));
       const child=await spawnAsync(bw.program,bw.args,{
@@ -287,9 +396,9 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
         throw new Error("sandbox_backend_unavailable: bubblewrap launch was denied or executable is missing");
       }
       return {hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,exitCode:child.status ?? (timedOut(child) ? 124 : 1),
-        policySha256,stdout:maskSecrets(child.stdout ?? "",secrets),stderr:maskSecrets(keepEnds(child.stderr ?? child.error?.message ?? "",KEEP_STDERR),secrets)};
+        policySha256,rootsManifest:await rootsAfter(),maskedSsh,stdout:maskSecrets(child.stdout ?? "",secrets),stderr:maskSecrets(keepEnds(child.stderr ?? child.error?.message ?? "",KEEP_STDERR),secrets)};
     }
-    const profile = buildSeatbeltProfile(workspacePath,tempPath);
+    const profile = buildSeatbeltProfile(workspacePath,tempPath,credentialMask);
     const policySha256 = sha256Hex(profile);
     const seatbeltSecrets=sandboxSecretEnv(input.env);
     const sb=launch(SANDBOX_EXEC,["-p",profile,"/bin/bash","--noprofile","--norc","-c",input.command],[...Object.keys(seatbeltSecrets),"PATH","HOME","TMPDIR","TMP","TEMP","BB_DATA_DIR","LANG","LC_ALL"]);
@@ -312,7 +421,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
     }
     return {
       hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,
-      exitCode:child.status ?? (timedOut(child) ? 124 : 1),policySha256,
+      exitCode:child.status ?? (timedOut(child) ? 124 : 1),policySha256,rootsManifest:await rootsAfter(),maskedSsh,
       stdout:maskSecrets(child.stdout ?? "",seatbeltSecrets),stderr:maskSecrets(keepEnds(child.stderr ?? child.error?.message ?? "",KEEP_STDERR),seatbeltSecrets),
     };
   } finally {
@@ -326,6 +435,8 @@ const shellQuote=(value:string)=>`'${value.replace(/'/g,"'\\''")}'`;
 export type SandboxedCommandLine = {
   hostId:string; backend:"macos-seatbelt"|"linux-bubblewrap"; workspacePath:string; cwd:string; policySha256:string;
   commandLine:string; cleanup:{tempPath:string; created:string[]};
+  /** `~/.ssh` is masked in this sandbox. */
+  maskedSsh?:boolean;
 };
 
 /**
@@ -356,20 +467,22 @@ export async function prepareSandboxedCommandLine(input:SandboxedCommandInput & 
   const tempPath = await realpath(await mkdtemp(resolve(tmpdir(),"lane-pilot-sandbox-")));
   await linkUserToolHomes(tempPath);
   const hostId=process.env.BB_HOST_ID ?? input.requestedHostId;
+  const credentialMask=credentialMaskPaths(homedir(),{sshKeys:input.sshKeys});
+  const maskedSsh=sshMasked(credentialMask,null,input);
   if (backend === "linux-bubblewrap") {
     const {guardPaths,created}=await prepareGuardPaths(workspacePath);
-    const args=buildBubblewrapArgs({workspacePath,cwd,tempPath,guardPaths});
+    const args=buildBubblewrapArgs({workspacePath,cwd,tempPath,guardPaths,credentialMask});
     const policySha256=sha256Hex(JSON.stringify(args));
     // With variables to pass, `env -i` starts bwrap with only those, instead of bwrap's --clearenv; the sandbox's
     // own PATH, HOME and temp folders are still set by --setenv and win.
     const bwrapLine=[bubblewrapPath!,...(passed.length?args.filter((arg)=>arg!=="--clearenv"):args),input.command].map(shellQuote).join(" ");
-    return {hostId,backend,workspacePath,cwd,policySha256,cleanup:{tempPath,created},
+    return {hostId,backend,workspacePath,cwd,policySha256,maskedSsh,cleanup:{tempPath,created},
       commandLine:passed.length?`exec /usr/bin/env -i ${passed.join(" ")} ${bwrapLine}`:`exec ${bwrapLine}`};
   }
-  const profile = buildSeatbeltProfile(workspacePath,tempPath);
+  const profile = buildSeatbeltProfile(workspacePath,tempPath,credentialMask);
   const policySha256 = sha256Hex(profile);
   const env = [`PATH=${sandboxPath("/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin")}`,`HOME=${tempPath}`,`TMPDIR=${tempPath}`,`TMP=${tempPath}`,`TEMP=${tempPath}`,`BB_DATA_DIR=${bbDataDir()}`,"LANG=C","LC_ALL=C"];
-  return {hostId,backend,workspacePath,cwd,policySha256,cleanup:{tempPath,created:[]},
+  return {hostId,backend,workspacePath,cwd,policySha256,maskedSsh,cleanup:{tempPath,created:[]},
     // Passed variables come before the sandbox's own, so PATH, HOME and the temp folders always win.
     commandLine:`cd ${shellQuote(cwd)} && exec /usr/bin/env -i ${[...passed,...[...env,SANDBOX_EXEC,"-p",profile,"/bin/bash","--noprofile","--norc","-c",input.command].map(shellQuote)].join(" ")}`};
 }

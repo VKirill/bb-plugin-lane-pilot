@@ -72,3 +72,23 @@ export async function workerSecretReach(user: string, ownerHome = homedir()): Pr
   }
   return { ok: reachable.length === 0, reachable };
 }
+
+/** The home folder of an OS user, from the passwd database (getent on Linux, dscl on macOS); the usual place when the database does not say. */
+export async function homeOfUser(user: string, platform = process.platform): Promise<string> {
+  if (!WORKER_USER.test(user)) throw new Error(`worker_user_invalid: ${user}`);
+  const usual = platform === "darwin" ? `/Users/${user}` : `/home/${user}`;
+  if (platform === "darwin") {
+    const read = await spawnAsync("/usr/bin/dscl", [".", "-read", `/Users/${user}`, "NFSHomeDirectory"], { timeout: 10_000 });
+    return /NFSHomeDirectory:\s*(\/\S+)/.exec(String(read.stdout ?? ""))?.[1] ?? usual;
+  }
+  const read = await spawnAsync("getent", ["passwd", user], { timeout: 10_000 });
+  const home = String(read.stdout ?? "").trim().split(":")[5];
+  return home?.startsWith("/") ? home : usual;
+}
+
+/** Whether a path exists as seen by the worker (the hub's own user may not be allowed to look into the worker's home). */
+export async function existsAsUser(user: string, path: string): Promise<boolean> {
+  if (!WORKER_USER.test(user)) return false;
+  const probe = await spawnAsync(SUDO, ["-n", "-u", user, "/usr/bin/test", "-e", path], { timeout: 10_000 });
+  return probe.status === 0;
+}

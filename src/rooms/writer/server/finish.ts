@@ -4,11 +4,11 @@ import { checkTimeoutSec } from "../check-timing";
 import { pipelineWriterStep, pipelineWriterTag } from "./pipeline-tag";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { writerLeftWorktree } from "./left-worktree";
-import { countAttempts, countOtherLiveAttemptsInArea, countThreadTurns, firstAttemptAt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, priorAttemptStates, transitionAttempt, taskBasePath, failureFieldsOf } from "../../storage";
+import { countAttempts, countOtherLiveAttemptsInArea, countThreadTurns, firstAttemptAt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, noteAttemptStream, priorAttemptStates, transitionAttempt, taskBasePath, failureFieldsOf } from "../../storage";
 import { saveBlockedBy, type BlockedBy } from "../../runs/server";
 import { relayFor } from "../../relay/server";
 import type { HelperPolicySnapshot } from "../../contracts/helper-context";
-import {providerLimitNotice, writerExecutionSelection} from "@lane-pilot/models";
+import {providerLimitNotice, sshKeysOpen, writerExecutionSelection} from "@lane-pilot/models";
 import { actionableFindings, advisoryFeedback, buildCandidateEvidence, codeCritiqueSource, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "../../critique";
 import type { WriterIdentity } from "../../critique";
 import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, critiqueRepeatSkip, patchChangedLines, resolveCodeCriticDefault, resolveQualityMode, withReferenceTestCritic } from "../../contracts/quality-mode";
@@ -333,6 +333,10 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       }
       // A writer that stopped to ask the owner is not a failed attempt: no retry, no fallback, the question goes to the PM.
       const answer = outputText(await bb.sdk.threads.output({ threadId:input.writerThreadId }).catch((cause: unknown) => { ctx.log(`writer ${input.taskId}: thread output unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return ""; }));
+      // The run's stream on the attempt dossier (SMA ar_run_dir): hashed and excerpted, kept on the trace.
+      // A dossier note is never a reason to fail the finish: a database or parse error is logged and the finish goes on.
+      try { noteAttemptStream(db, input.attemptId, answer); }
+      catch (cause) { ctx.log(`writer ${input.taskId}: stream note not kept: ${cause instanceof Error ? cause.message : String(cause)}`); }
       // The provider's own limit notice instead of a report: the task never ran, so another model takes it, uncharged.
       const limit = providerLimitNotice(answer);
       if (limit) {
@@ -1067,6 +1071,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const replayChecks = input.task.verification.some((command) => !command.secrets?.length) ? {
           workspacePath:input.task.project_cwd,
           backend:(checkSettings["sandbox.backend"] as "auto" | "macos-seatbelt" | "linux-bubblewrap" | undefined) ?? "auto",
+          ...(sshKeysOpen(checkSettings) ? { sshKeys:true } : {}),
           // A check with secrets cannot run on the host's replay (it has no Env Catalog); the post-merge check on main still runs it.
           // The same limit as the writer's own check: its history widens it (a replay at a raw 120 s killed checks the attempt had passed).
           commands:input.task.verification.filter((command) => !command.secrets?.length).slice(0, 20).map((command) => ({ command:command.command, cwd:command.cwd, timeoutSec:checkTimeoutSec(db, input.projectId, { command:command.command, cwd:command.cwd, root:input.task.project_cwd }, command.timeout_sec ?? 120) })),

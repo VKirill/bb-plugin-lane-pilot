@@ -1,8 +1,12 @@
 import { parseDirtSnapshots, type DirtSnapshot } from "../dirt-snapshot";
 import { taskFamily, taskRedispatchBase } from "@lane-pilot/contracts";
 import { FREE_CLASSES, failureClass, isOwnerDecision, isPreStartStop, isWaitingSecret, isWriterSilent, type FailureCode } from "../contracts/failure-class";
-import { IllegalTransitionError, isLegalMove, isOpenAttemptState, OPEN_ATTEMPT_STATES, RETRY_ELIGIBLE } from "../contracts/state-machine";
+import { ATTEMPT_STATES, IllegalTransitionError, isLegalMove, isOpenAttemptState, OPEN_ATTEMPT_STATES, OPERATIONAL_MOVES, RETRY_ELIGIBLE, TRANSITION_TABLE } from "../contracts/state-machine";
 import { HARNESS_VERSION, type LanePilotDatabase } from "./database";
+import { maskCredentials, sha256Hex } from "@lane-pilot/kit";
+
+/** One key naming the automaton's rule set (SMA ar_stamp): the states, the transition table and the operational moves, hashed. */
+export const TRANSITION_KEY: string = sha256Hex(JSON.stringify({ states: ATTEMPT_STATES, transitions: TRANSITION_TABLE, operational: OPERATIONAL_MOVES }));
 import { listStageReceipts } from "./stages-store";
 
 /**
@@ -10,8 +14,8 @@ import { listStageReceipts } from "./stages-store";
  * wait is journaled as a queued→queued note (an operational move), and the board reads its reason + wake_at.
  */
 export function parkAttemptWake(db: LanePilotDatabase, attemptId: string, reason: string, wakeAt: number | null): void {
-  transitionAttempt(db, attemptId, "queued", { reason });
-  db.prepare("UPDATE lane_pilot_attempt SET wake_at=? WHERE id=?").run(wakeAt, attemptId);
+  // The wake lands in the transition's transaction (SMA m_wrappers): a park is one atomic write, not a state plus a note.
+  transitionAttempt(db, attemptId, "queued", { reason, wakeAt });
 }
 
 /** Consecutive `queued` parks of an attempt whose journal reason starts with `reasonPrefix`, counted back until a different row. */
@@ -359,7 +363,7 @@ export function transitionAttempt(
   db: LanePilotDatabase,
   attemptId: string,
   state: string,
-  fields: { threadId?: string; reason?: string } & AttemptFailureFields = {},
+  fields: { threadId?: string; reason?: string; wakeAt?: number | null; cancelCode?: string } & AttemptFailureFields = {},
 ): boolean {
   const now = Date.now();
   const before = db.prepare("SELECT state FROM lane_pilot_attempt WHERE id=?").get(attemptId) as { state: string } | undefined;
@@ -377,14 +381,20 @@ export function transitionAttempt(
   // state with no journal. Listeners fire after the commit, so a screen never sees a state that was rolled back.
   const changed = db.transaction(() => {
     const reopen = settled && before.state !== state && isLegalMove(before.state, state) ? 1 : 0;
+    // «Not passed at all» keeps the wake; an explicit null clears it (parkAttemptWake(…, null)); a number sets it.
+    const wakeGiven = fields.wakeAt !== undefined ? 1 : 0;
     const wrote = db.prepare(`UPDATE lane_pilot_attempt SET state=?, thread_id=COALESCE(?,thread_id), reason=?, failure_code=?, check_name=?, timeout_sec=?, updated_at=?,
-      wake_at=CASE WHEN ?<>'queued' THEN NULL ELSE wake_at END
+      wake_at=CASE WHEN ?<>'queued' THEN NULL WHEN ?=1 THEN ? ELSE wake_at END, cancel_code=COALESCE(cancel_code,?)
       WHERE id=? AND (state NOT IN (${FINAL_ATTEMPT_STATES.map(() => "?").join(",")}) OR state=? OR ?)`)
       .run(state, fields.threadId ?? null, fields.reason ?? null, fields.failureCode ?? null,
         fields.checkName ?? null, fields.timeoutSec ?? null,
-        now, state, attemptId, ...FINAL_ATTEMPT_STATES, state, reopen).changes === 1;
+        now, state, wakeGiven, fields.wakeAt ?? null, fields.cancelCode ?? null, attemptId, ...FINAL_ATTEMPT_STATES, state, reopen).changes === 1;
     db.prepare(`INSERT INTO lane_pilot_attempt_transition(attempt_id,from_state,to_state,reason,refused,at) VALUES(?,?,?,?,?,?)`)
       .run(attemptId, before.state, state, fields.reason ?? null, wrote ? 0 : 1, now);
+    // A cancel of an attempt that is already final is refused as a move, but its code is still recorded (as markCancelCode did after the move).
+    if (!wrote && fields.cancelCode) db.prepare("UPDATE lane_pilot_attempt SET cancel_code=COALESCE(cancel_code,?) WHERE id=?").run(fields.cancelCode, attemptId);
+    // The world counter (SMA m_wrappers) climbs in the same transaction: a failed write leaves it where it was.
+    db.prepare("UPDATE lane_pilot_attempt SET world_seq=(SELECT COALESCE(MAX(w.world_seq),0)+1 FROM lane_pilot_attempt AS w) WHERE id=?").run(attemptId);
     return wrote;
   })();
   if (changed && before.state !== state) attemptChanged(db, attemptId, state, fields.reason);
@@ -487,7 +497,18 @@ function attemptDossier(db: LanePilotDatabase, attempt: { id: string; run_id: st
     "SELECT gate, status, attempt, occurred_at FROM lane_pilot_gate_event WHERE run_id=? AND task_id=? AND occurred_at>=? AND occurred_at<? ORDER BY id", attempt.run_id, attempt.task_id, attempt.created_at, until);
   const trace = getReasoningTrace(db, attempt.id);
   const context = trace?.dispatchContext;
+  // The verifier's input (SMA ar_run_dir): the task's verification commands, hashed, never the whole contract.
+  const verifierCommands = ((): string[] => {
+    try {
+      const json = (db.prepare("SELECT contract_json FROM lane_pilot_task WHERE id=?").get(attempt.task_id) as { contract_json: string | null } | undefined)?.contract_json;
+      const verification = (json ? JSON.parse(json) : null) as { verification?: unknown } | null;
+      return (Array.isArray(verification?.verification) ? verification!.verification : [])
+        .map((row) => String((row as { command?: unknown })?.command ?? "")).filter(Boolean).slice(0, DOSSIER_LIST_LIMIT);
+    } catch { return []; }
+  })();
   return {
+    stream: trace?.stream ?? null,
+    verifierInput: { commands: verifierCommands, sha256: verifierCommands.length ? sha256Hex(JSON.stringify(verifierCommands)) : null },
     threadId: attempt.thread_id ?? null, holderThreadId: attempt.holder_thread_id ?? null,
     transitions, stageReceipts, gateEvents,
     reasoningTrace: trace ? {
@@ -521,7 +542,11 @@ export function getAttempt(db: LanePilotDatabase, attemptId: string): {
 
 export type ReasoningTrace = {
   /** Which machine wrote this trace (SMA ar_stamp): state-machine revision plus the harness version. */
-  stamp?:{stateMachineVersion:number;harnessVersion:string};
+  stamp?:{stateMachineVersion:number;harnessVersion:string;
+    /** The automaton's rule-set key and the run policy's sha; absent in traces written before the stamp grew them. */
+    transitionKey?:string;policySha256?:string|null};
+  /** The run's stream text (SMA ar_run_dir): sha, full length and a bounded excerpt; absent in traces written before it was kept. */
+  stream?:{sha256:string;chars:number;excerpt:string};
   planSha256:string;
   sentPlanSha256:string|null;
   sourceLength:number;
@@ -556,6 +581,8 @@ export type ReasoningTrace = {
     helperRequired:boolean;
     /** Characters of the brief the writer got; absent before 0.1.90. */
     promptChars?:number;
+    /** The writer's permission list as recorded at dispatch (SMA m_tl_terminal_parity); absent in traces written before it was kept. */
+    permissions?:string[];
   };
   selectionSource?:{
     providerId:string;
@@ -569,6 +596,20 @@ export type ReasoningTrace = {
 export function saveReasoningTrace(db: LanePilotDatabase, trace: ReasoningTrace): void {
   db.prepare(`INSERT INTO lane_pilot_attempt_reasoning(attempt_id,trace_json) VALUES(?,?)
     ON CONFLICT(attempt_id) DO UPDATE SET trace_json=excluded.trace_json`).run(trace.attemptId, JSON.stringify(trace));
+}
+
+export const ATTEMPT_STREAM_EXCERPT_CHARS = 4000;
+/**
+ * The run's stream text on the trace (SMA ar_run_dir): the whole text is hashed, its length kept, but only an excerpt
+ * is stored — the dossier stays bounded whatever the writer said.
+ */
+export function noteAttemptStream(db: LanePilotDatabase, attemptId: string, text: string): void {
+  const trace = getReasoningTrace(db, attemptId);
+  if (!trace) return;
+  // The sha is over the whole text as it came; the stored excerpt is masked first (credential shapes plus every secret this
+  // server handed out — maskCredentials includes redactKnown), then cut, so a token on the cut line cannot survive half-masked.
+  const excerpt = maskCredentials(text).text.slice(0, ATTEMPT_STREAM_EXCERPT_CHARS);
+  saveReasoningTrace(db, { ...trace, stream: { sha256: sha256Hex(text), chars: text.length, excerpt } });
 }
 
 export function setReasoningThread(db: LanePilotDatabase, attemptId:string, threadId:string): void {

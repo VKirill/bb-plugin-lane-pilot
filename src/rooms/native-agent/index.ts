@@ -23,7 +23,7 @@ export { pendingSwitch } from "./native-session"
 export { resolveWriterBinding } from "./project-binding";
 export type { ProjectSourceBinding, WriterBindingResolution } from "./project-binding";
 export { sessionInventory } from "./session-inventory";
-export { PARITY_LAYERS, attemptSessionLayers, terminalParity, terminalSessionLayers } from "./terminal-parity";
+export { PARITY_LAYERS, attemptSessionLayers, permissionEntries, terminalParity, terminalSessionLayers } from "./terminal-parity";
 export type { ParityLayer, ParityLayerSet, ParityLine } from "./terminal-parity";
 export { pmSkillName } from "./server/pm-skill-use";
 export { PROFILE_CHECK_WINDOW_MS, buildProfileReport, helperThreads, latestProfileCheck, narrowedByCeiling, profileCheckMorningLine, providerVerdicts, rolePolicyCounts, saveProfileCheck } from "./profile-check";
@@ -31,4 +31,4 @@ export type { HelperThreadRow, ProfileReport, ProviderVerdict, RolePolicyCount }
 export { ARCHITECT_LAUNCH, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_TOOLS } from "./workflow-architect";
 export { requestArchitectLaunch, takeArchitectLaunch } from "./architect-launch";
 export { agentKind } from "./agent-profile";
-export { HELPER_DISALLOWED_TOOLS, WRITER_MAX_TURNS } from "./claude-guard-launch";
+export { HELPER_DISALLOWED_TOOLS, WRITER_DISALLOWED_TOOLS, WRITER_MAX_TURNS } from "./claude-guard-launch";

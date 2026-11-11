@@ -1,6 +1,5 @@
 import { getAttempt, getTask, getRunSettingsScopes, listAttemptsForTask, listOpenAttempts, loadPrototypeConfig, loadProjectSettings, transitionAttempt } from "../../storage";
 import { retireAreaWriter } from "./sticky";
-import { markCancelCode } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
 
 /**
@@ -94,8 +93,7 @@ export function createWriterReassign(ctx: Pick<ServerCore, "bb" | "db">, options
     // The request is saved before the stop: the writer loop that sees the stopped attempt end must find it.
     const note = text(input.reason) ?? "reassigned by the PM";
     await saveReassignRequest(kv, open.id, { reason: note, selection });
-    transitionAttempt(db, open.id, "cancel_requested", { threadId: open.thread_id });
-    markCancelCode(db, open.id, "reassign");
+    transitionAttempt(db, open.id, "cancel_requested", { threadId: open.thread_id, cancelCode: "reassign" });
     await bb.sdk.threads.stop({ threadId: open.thread_id });
 
     const area = (getTask(db, input.taskId)?.contract as { area?: unknown } | undefined)?.area;

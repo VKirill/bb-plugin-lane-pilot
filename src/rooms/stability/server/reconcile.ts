@@ -1,5 +1,4 @@
 import { DISPATCH_STAGES_PENDING } from "../../runs";
-import { markCancelCode } from "../../storage";
 import { taskV2Schema } from "../../contracts";
 import { countAttempts, endSpawnFailure, getAttempt, getRun, getTask, getTaskPlan, attemptUpdatedAt, listOpenAttempts, newestAttemptIdForThread, setAttemptHolderThread, transitionAttempt } from "../../storage";
 import { closeHelperStages, closeWriterStages } from "../../runs/server/stage-records";
@@ -139,8 +138,7 @@ export function createReconcile(ctx: ServerCore, services: Services) {
     if (status !== "idle" && status !== "error") return false;
     if (input.attempt.state === "cancel_requested") {
       await bestEffort(ctx.log, "reconcile stop note", Promise.resolve(services.rollback?.noteStopped(input.attempt.id)), undefined);
-      transitionAttempt(db, input.attempt.id, "canceled", { threadId:input.writerThreadId, reason:"writer stop observed during recovery" });
-      markCancelCode(db, input.attempt.id, "stuck");
+      transitionAttempt(db, input.attempt.id, "canceled", { threadId:input.writerThreadId, reason:"writer stop observed during recovery", cancelCode:"stuck" });
       refreshRun(input.attempt.run_id);
       return true;
     }
@@ -179,8 +177,7 @@ export function createReconcile(ctx: ServerCore, services: Services) {
       if (!await stopSeen(threadId, waitMs) || ctx.isDisposed()) return;
       await bestEffort(ctx.log, "reconcile stop note", Promise.resolve(services.rollback?.noteStopped(attemptId)), undefined);
       if (getAttempt(db, attemptId)?.state !== "cancel_requested") return;
-      transitionAttempt(db, attemptId, "canceled", { threadId, reason:"writer stop observed during recovery" });
-      markCancelCode(db, attemptId, "stuck");
+      transitionAttempt(db, attemptId, "canceled", { threadId, reason:"writer stop observed during recovery", cancelCode:"stuck" });
       refreshRun(runId);
     } catch (cause) {
       ctx.log(`recovery could not finish the cancel of ${attemptId}: ${cause instanceof Error ? cause.message : String(cause)}`);

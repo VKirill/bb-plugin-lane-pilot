@@ -3,9 +3,10 @@ import { callerPluginMetadata, registerObservedTool } from "../../platform/serve
 import { ToolError, type ServerCore } from "../../contracts/server";
 import { wayOut } from "../../contracts"
 import { failureClass } from "../../contracts/failure-class";
-import { getRun, getRunWriterHost, listAttemptRowsForProject, listRunTaskSummaries } from "../../storage";
+import { getRun, getRunSettingsScopes, getRunWriterHost, listAttemptRowsForProject, listRunTaskSummaries, loadProjectSettings } from "../../storage";
 import { checkRecipe, factKind, type CheckMeasure } from "../rails";
 import { sha256Hex } from "@lane-pilot/kit";
+import { sshKeysOpen, sshMaskEvidence } from "@lane-pilot/models";
 
 /** A check as an operation (SMA m_ck_answer): one receipt per request hash. A request repeated while the check runs, or within
  *  half a minute of its end (a retried tool call), gets that receipt; later the same commands are a new check — the code may
@@ -148,6 +149,8 @@ export function registerConversationTools(ctx: ServerCore, services: Services): 
         return JSON.stringify({ ...stored, deduplicated: true });
       }
       const workspacePath = run.writer_workspace_path;
+      // verification.ssh_keys (project, unset = off): ~/.ssh is masked in checks unless the project says on.
+      const sshKeys = sshKeysOpen(loadProjectSettings(db, run.project_id, getRunSettingsScopes(db, runId!)));
       const checkId = `chk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
       const receipt: CheckReceipt = { checkId, requestHash, recipe, state: "running", measures: [], startedAt: Date.now(), endedAt: null };
       const writeReceipt = async () => {
@@ -173,10 +176,10 @@ export function registerConversationTools(ctx: ServerCore, services: Services): 
             const cwd = cwdIn === "." ? workspacePath : `${workspacePath}/${cwdIn.replace(/^\.?\//, "")}`;
             current = item.command;
             try {
-              const result = await host.call("runSandboxedCommand", { requestedHostId: hostId, workspacePath, cwd, command: item.command, timeoutSec },
+              const result = await host.call("runSandboxedCommand", { requestedHostId: hostId, workspacePath, cwd, command: item.command, timeoutSec, protectedRoots: true, ...(sshKeys ? { sshKeys: true } : {}) },
                 { hostId, timeoutMs: (timeoutSec + 30) * 1000, job: true, jobKey: `${checkId}:${index}`, signal: entry.controller.signal, cancelOnAbort: true });
-              const evidence = `${result.stdout}\n${result.stderr}`.trim().slice(-1500);
-              receipt.measures.push({ command: item.command, cwd, expectExit, timeoutSec, evidence, exitCode: result.exitCode, passed: result.exitCode === expectExit });
+              // The run's writer workspace is a live checkout: a change of its protected roots is recorded, never a failure.
+              receipt.measures.push(checkMeasureOf({ command: item.command, cwd, expectExit, timeoutSec, result, throwaway: false, projectId: run.project_id }));
             } catch (cause) {
               if (entry.controller.signal.aborted) break;
               receipt.measures.push({ command: item.command, cwd, expectExit, timeoutSec,
@@ -195,4 +198,30 @@ export function registerConversationTools(ctx: ServerCore, services: Services): 
       return JSON.stringify({ ...receipt, stopped: receipt.state === "stopped" || receipt.state === "stopped_by_turn_stop", passed: receipt.state === "passed" });
     },
   });
+}
+
+/**
+ * One check measure from a sandboxed run (SMA m_ck_required): the command's record plus the sandbox's own
+ * measures — cleared environment, closed publication, the protected-roots manifest. A changed .git/.agents/.cls fails
+ * the measure only when the command ran in a throwaway copy (`throwaway: true`); in a live checkout (the writer
+ * workspace, the PM checkout) other work legitimately touches those roots, so the change is recorded as
+ * `rootsChanged: true` with a note and never fails the measure.
+ */
+export function checkMeasureOf(input: {
+  command: string; cwd: string; expectExit: number; timeoutSec: number; throwaway?: boolean; projectId?: string;
+  result: { exitCode: number; stdout: string; stderr: string; backend?: string; policySha256?: string; maskedSsh?: boolean;
+    rootsManifest?: { before: string; after: string; changed: boolean; partial?: boolean; git?: string } };
+}): CheckMeasure {
+  const manifest = input.result.rootsManifest;
+  const rootsChanged = manifest?.changed === true && manifest.partial !== true;
+  const fails = rootsChanged && input.throwaway === true;
+  const note = rootsChanged ? (fails ? "\nprotected roots (.git/.agents/.cls) changed during the check"
+    : "\nprotected roots (.git/.agents/.cls) changed during the check (live checkout: recorded, not a failure)") : "";
+  const ssh = input.projectId ? sshMaskEvidence({ projectId: input.projectId, exitCode: input.result.exitCode, output: `${input.result.stdout}\n${input.result.stderr}`, masked: input.result.maskedSsh }) : null;
+  const evidence = `${input.result.stdout}\n${input.result.stderr}`.trim().slice(-1500) + note + (ssh ? `\n${ssh}` : "");
+  return { command: input.command, cwd: input.cwd, expectExit: input.expectExit, timeoutSec: input.timeoutSec,
+    evidence, exitCode: input.result.exitCode, passed: input.result.exitCode === input.expectExit && !fails,
+    backend: input.result.backend, policySha256: input.result.policySha256, env: "cleared", publication: "closed",
+    rootsSha256: manifest?.after, rootsChanged,
+    ...(manifest?.partial ? { rootsPartial: true } : {}), ...(manifest?.git ? { rootsGit: manifest.git } : {}) };
 }

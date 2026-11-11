@@ -12,7 +12,7 @@ import { TARGET_SHA } from "../../runs";
 import { hostContract } from "./plugin-contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
-import { getAttempt, getRun, getRunSettingsScopes, declaredWorktreeOwner, registerWorktree, releaseWorktree, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, sectionBindingId, markCancelCode, setIllegalTransitionLog, setRunSettingsScopes, setRunState, transitionAttempt } from "../../storage";
+import { getAttempt, getRun, getRunSettingsScopes, declaredWorktreeOwner, registerWorktree, releaseWorktree, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, sectionBindingId, setIllegalTransitionLog, setRunSettingsScopes, setRunState, transitionAttempt } from "../../storage";
 import type { CancelCode, WorktreeOwner } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, SETTING_JEV_PROVIDER, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { createNativeInstaller } from "../../native-install";
@@ -304,8 +304,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase): ServerCore {
     }
     if(attempt.state!=="queued"||attempt.thread_id)return {ok:false,state:attempt.state,reason:"attempt has no writer thread"};
     const reason = why?.trim() || "canceled while waiting for a writer";
-    transitionAttempt(db,attempt.id,"canceled",{reason});
-    markCancelCode(db, attempt.id, (code ?? "unknown") as CancelCode);
+    transitionAttempt(db,attempt.id,"canceled",{reason, cancelCode:(code ?? "unknown") as CancelCode});
     markCanceledWriterStages(attempt,reason);
     refreshRun(attempt.run_id);
     return {ok:true,state:"canceled",reason:null};

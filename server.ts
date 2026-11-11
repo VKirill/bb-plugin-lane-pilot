@@ -471,6 +471,9 @@ export default async function plugin(bb: BbPluginApi) {
   mountRegress(ctx, services.regression);
   // Once a run is done, every accepted task's checks run together on the final main (every 20 minutes, a verdict per run).
   mountRunGoal(ctx, services.runGoal);
+  // The landing suite (SMA k_lib_landing): every 15 minutes, merged landings still unverdicted get their own checks on
+  // the merged head, in a throwaway worktree — never on the merge path itself.
+  scheduleIsolated(bb, "landing-suite", "*/15 * * * *", async () => { await services.rollback.landingSuite(); }, { timeoutMs: 30 * 60_000 });
   // Once a day: the helper threads of the last 24 h read back for their stored required policies; a loss goes to the owner's list.
   mountProfileCheck(ctx, services.profileCheck);
   // The lead («Штурман»): the code steps of its tick graph go on the engine; its sweep (every 15 min: due tick, stale receipts, ROAD.md) and its nightly exam of the rights (04:40).
