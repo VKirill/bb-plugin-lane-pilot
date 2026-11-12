@@ -9,7 +9,7 @@ export type EmployeePlace =
 
 /** The activation call, implemented by src/rooms/native-agent (createActivation). */
 export interface ActivationApi {
-  activate(projectId: string, sourceThreadId: string | null, kind?: "bb" | "cli", agentId?: string | null, snapshot?: ComposerSelectionSnapshot): Promise<{ threadId:string; runId:string }>;
+  activate(projectId: string, sourceThreadId: string | null, kind?: "bb" | "cli", agentId?: string | null, snapshot?: ComposerSelectionSnapshot, options?: { sectionId?: string | null }): Promise<{ threadId:string; runId:string }>;
 }
 
 /**
