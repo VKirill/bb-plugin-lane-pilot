@@ -9,7 +9,6 @@ tags: [lead, owner, journal, road, exam, rights, jev, roadmap]
 sources:
   - src/rooms/lead/migrations.ts
   - src/rooms/lead/logic.ts
-  - src/rooms/lead/predict.ts
   - src/rooms/lead/settings.ts
   - src/rooms/contracts/lead-agent.ts
   - src/rooms/lead/server/journal.ts
@@ -66,7 +65,7 @@ The owner wants to stop being the loop (`.agents/plans/2026-11-01-lead-agent-roa
 
 ## The journal
 
-`src/rooms/lead/server/journal.ts`. A surface **opens** a row when its question appears (`openDecision`, `INSERT OR IGNORE` by the surface's own id), the lead **predicts** at once (`predictDecision`: the Jev judgment `lead.predict`, a Choice over the options with the owner's last 20 answers to the same surface and class as its memory; in `shadow` the shadow decision is recorded, below `min_p` 0.6 the lead defers, without Jev the row says `predictor: none`), the owner's answer **closes** it (`answerDecision`) and the rule judge scores it: same option `exact`, no prediction `deferred`, else `miss`. A `miss` then goes to the model judge (`refineVerdict`, the Jev judgment `lead.judge` in `src/rooms/lead/predict.ts`, shown the situation, the guess, the answer and the owner's words): `partial` when the guess was the owner's direction with another timing or wording (half a match in the exam), else the miss stands; exact and deferred rows are never asked, without Jev the rule's miss stands. The word surfaces refine in the background, `service.decide` awaits it. Surfaces: `words` (a task's landing word, `src/rooms/writer/server/finish.ts` asks, `lane_pilot_queue word` or the screen answers), `phase` (a phase's turn, the driver asks and answers), `lead` (the lead's own proposals and the switch).
+`src/rooms/lead/server/journal.ts`. A surface **opens** a row when its question appears (`openDecision`, `INSERT OR IGNORE` by the surface's own id), the lead has no predictor since 0.1.538 (the Jev judgments `lead.predict` and `lead.judge` were shadow and are removed): every row records `predictor: none`, the owner's answer **closes** it (`answerDecision`) and the rule judge scores it: same option `exact`, no prediction `deferred`, else `miss`; a `miss` stands.  Surfaces: `words` (a task's landing word, `src/rooms/writer/server/finish.ts` asks, `lane_pilot_queue word` or the screen answers), `phase` (a phase's turn, the driver asks and answers), `lead` (the lead's own proposals and the switch).
 
 The exam (`src/rooms/lead/logic.ts`, roadmap §6) reads only rows answered after they were predicted, split `exam`, judged: N eligible rows, K decided (not `deferred`), M matches (`exact` 1, `partial` 0.5); Wilson lower bound (95 %) of M/K, coverage K/N, Cohen's kappa of the judge against the owner's labels, the count of `miss` on risk `high`. A class earns `decides` at LB ≥ 0.8, coverage ≥ 0.5, N ≥ 20, kappa ≥ 0.6 and no high-risk miss; `revert` when the LB over the last 20 decided rows falls under 0.7 or one of them is a high-risk miss. `bb lane-pilot lead backtest` replays the owner's past words into split `backtest`: a measurement that never enters the exam. The backtest (`backtest.ts`) and the memory exam (`memory-exam.ts`) count `exact` only: neither calls the model judge, because a row that grants no rights is not worth the judge's price, so `partial` appears on live rows only (Gemini F-005.2, a choice).
 
