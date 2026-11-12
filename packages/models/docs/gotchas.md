@@ -2,7 +2,7 @@
 title: Models Workspace — Gotchas
 type: gotchas
 created: 2026-11-08
-updated: 2026-11-09
+updated: 2026-11-12
 status: active
 confidence: medium
 tags: [models, gotchas, edge-cases, validation, providers]
@@ -29,9 +29,9 @@ TL;DR: Critical edge cases, provider mismatches, profile restrictions, and valid
 
 ## Native provider family enforcement
 
-- The native providers `claude-code` and `codex` can only serve models belonging to their native model families (packages/models/src/role-models.ts:191-192).
-- If a caller supplies an invalid pair like `{ provider: "codex", model: "claude-opus-5-5" }`, `rowOption` rejects the option as invalid (`undefined`) (packages/models/src/role-models.ts:191-192).
-- When normalizing providers before execution, `consistentProvider` overrides any mismatched native provider; for example, passing `claude-code` with a GPT model forces provider `codex` (packages/models/src/role-models.ts:286-295).
+- The native providers `claude-code` and `codex` can only serve models belonging to their native model families (packages/models/src/role-models.ts:192-193).
+- If a caller supplies an invalid pair like `{ provider: "codex", model: "claude-opus-5-5" }`, `rowOption` rejects the option as invalid (`undefined`) (packages/models/src/role-models.ts:192-193).
+- When normalizing providers before execution, `consistentProvider` overrides any mismatched native provider; for example, passing `claude-code` with a GPT model forces provider `codex` (packages/models/src/role-models.ts:287-295).
 
 ## ZCode exactOnly matching vs OpenCode GLM
 
@@ -41,7 +41,7 @@ TL;DR: Critical edge cases, provider mismatches, profile restrictions, and valid
 
 ## Claude profile roles cannot switch providers
 
-- Roles in `CLAUDE_PROFILE_ROLES` (`specialist`, `workflow-architect`, `lead`, `copy-lead`, `seo-specialist`, `design-lead`, `video-lead`, `tavily`, `3d-artist`, `game-dev`, `social-manager`, `billing-assistant`, `visual-artist`, `macos-operator`) run as native Claude Code agent profiles (packages/models/src/agent-model.ts:6-10).
+- Roles in `CLAUDE_PROFILE_ROLES` (`specialist`, `workflow-architect`, `lead`, `copy-lead`, `seo-specialist`, `growth-marketer`, `design-lead`, `video-lead`, `tavily`, `3d-artist`, `game-dev`, `social-manager`, `billing-assistant`, `visual-artist`, `macos-operator`) run as native Claude Code agent profiles (packages/models/src/agent-model.ts:6-10).
 - When resolving candidate pools for these roles in `resolveAgentModel`, candidate models on non-Claude providers are stripped (`option.providerId === "claude-code"`) (packages/models/src/agent-model.ts:131-134).
 - When quota limits are reached, `peerOffSpent` is bypassed for all `CLAUDE_PROFILE_ROLES`; moving a Claude profile to another provider causes the BB core spawn to reject with HTTP 409 (`native profile needs Claude Code`) (packages/models/src/agent-model.ts:168-170).
 
@@ -66,14 +66,14 @@ TL;DR: Critical edge cases, provider mismatches, profile restrictions, and valid
 
 ## Host connectivity semantics: Gemini vs native providers
 
-- For Gemini models routed through 9router (`router9/ag/gemini-3.8-flash-high`), `offeredForRole` returns `false` (not `null`) if the machine is connected but lacks the model in its catalog (packages/models/src/role-models.ts:265-271).
-- This explicit `false` allows review roles (`plan-critic`, `code-critic`) to drop to their GPT fallback model (`gpt-6.1-sol`) immediately rather than failing inside the spawn (packages/models/src/role-models.ts:260-264, :274-278).
-- For native providers (`claude-code`, `codex`), missing catalog entries return `null` because native providers are assumed available across connected machines (packages/models/src/role-models.ts:268-270).
+- For Gemini models routed through 9router (`router9/ag/gemini-3.8-flash-high`), `offeredForRole` returns `false` (not `null`) if the machine is connected but lacks the model in its catalog (packages/models/src/role-models.ts:266-271).
+- This explicit `false` allows review roles (`plan-critic`, `code-critic`) to drop to their GPT fallback model (`gpt-6.1-sol`) immediately rather than failing inside the spawn (packages/models/src/role-models.ts:261-264, :274-278).
+- For native providers (`claude-code`, `codex`), missing catalog entries return `null` because native providers are assumed available across connected machines (packages/models/src/role-models.ts:269-271).
 
 ## Inherited legacy escalation vs explicit light configuration
 
 - Deciding roles define a `least` tier requirement in `ROLE_LEAST_TIER` (e.g. `planner` requires `strong`, `code-critic` requires `standard`) (packages/models/src/agent-model.ts:100; packages/models/src/role-models.ts:77-78).
-- If a role inherits a legacy stage setting below its `least` tier, `resolveRoleModel` passes over that setting, promotes the selection to the role default, and records `escalated: true` with issue `escalated_for_role` (packages/models/src/role-models.ts:318-321; packages/models/src/agent-model.ts:119, :161).
+- If a role inherits a legacy stage setting below its `least` tier, `resolveRoleModel` passes over that setting, promotes the selection to the role default, and records `escalated: true` with issue `escalated_for_role` (packages/models/src/role-models.ts:319-321; packages/models/src/agent-model.ts:119, :161).
 - If the owner explicitly picks a light model in `role_model.<role>`, the pick is honored without promotion, and issue `light_model_for_role` is emitted as a diagnostic warning (packages/models/src/agent-model.ts:120, :163).
 
 ## Provider limit notice character count ceiling
