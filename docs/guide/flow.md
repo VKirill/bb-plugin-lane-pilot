@@ -98,17 +98,16 @@ The graph `lp-task-pipeline` runs these steps in order (`docs/flows/task-pipelin
 
 If a run has `run_gate=pre-merge`, dispatch blocks the run with a `run-gate` receipt before any of this.
 
-## 4. Writer picked per task
+## 4. The writer of a task
 
 | Layer | How it works | Settings |
 |---|---|---|
 | Role to model table | Every agent step names a role; `role_model.<role>` names its model and optional pool (least loaded provider first). The writer is not a row of the table. See `docs/role-models.md`. | `role_model.<role>` |
-| Jev pick | Once per task (`writer.model` judgment, active by default, 8 s timeout) Jev reads the task and each candidate's profile and picks one. A strong-tier model only when complexity or risk is high; provider load breaks ties. Below `min_p` 0.45, or with Jev off, the project's own writer stays. | `writer.pick` (off disables), `writer.provider`, `writer.model` |
-| Held candidates | A provider whose usage window is spent (see `usage.skip_percent`) or a ZCode that cannot work now is not offered to Jev. | `usage.skip_percent` 90 |
-| Skills | Jev picks technology skills (bar 0.4) and craft skills for UI or text tasks, with a 45 s deadline. Failure leaves the role skills. PM hints go in the contract `skills` (max 8). | `writer.skill_pick` on |
+| The writer | No model picks it per task: the writer is the project's `writer.provider` / `writer.model` / `writer.reasoning_effort` (global when the project sets none). The effort is clamped to what the live catalog lists. | `writer.provider`, `writer.model`, `writer.reasoning_effort` |
+| Held provider | A provider whose usage window is spent (see `usage.skip_percent`) or a ZCode that cannot work now is skipped on the fallback chain. | `usage.skip_percent` 90 |
+| Skills | By rule, no model: the skills the PM names in the contract `skills` (max 8, only those the BB list has), the skills named like the project folder, and the browser skill for a task checked on a page. A failed skill list leaves the role skills. | contract `skills` |
 | Pinned pair | The task's provider and model stay for its life across restarts and redispatch. The pin moves only on a provider failure or a failure-class intervention, with the reason recorded. | `writer.pair_pin` on |
-| Route record | Candidates, exclusions with reasons and the pick are kept for the attempt receipt and the task screen. | `writer.route_record` on |
-| Fallback chain | The picked writer's old project writer becomes fallback 1; then `writer.fallback1..3.*` (defaults: GLM 5.3 Flash, Gemini 3.8 Flash high, slot 3 off), then the PM model. A provider, limit or catalog fault walks the chain. | `writer.fallback_on_provider_failure` after_retry (or `immediate`) |
+| Fallback chain | After the project writer come `writer.fallback1..3.*` (defaults: GLM 5.3 Flash, Gemini 3.8 Flash high, slot 3 off), then the PM model. A provider, limit or catalog fault walks the chain. | `writer.fallback_on_provider_failure` after_retry (or `immediate`) |
 | Capacity wait | When every offered writer provider is over its window, the attempt ends blocked as `capacity_saturated:<reset>` instead of failing. | `writer.capacity_wait` on |
 
 Sticky area writers: tasks of one `area` run one at a time. The area's writer takes the next task in its own thread for 3 hours after its last accepted task, unless the writer setting changed. After that a fresh writer starts with the area's history. Tasks with overlapping `owns_paths` also queue. Four lane queues (writing, checks, docs, research) can be capped with `queue.lane_caps` (no catalog row).

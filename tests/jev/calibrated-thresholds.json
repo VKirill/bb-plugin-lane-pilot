@@ -1,11 +1,4 @@
 {
-  "failure.class": {
-    "fingerprint": "e0b23e2bfc7e8e6a",
-    "thresholds": {
-      "min_p": 0.7,
-      "min_margin": 0.3
-    }
-  },
   "intake.path_class": {
     "fingerprint": "e82b1ee4ab499336",
     "thresholds": {
@@ -29,12 +22,6 @@
       "broad_clarify": 0.95,
       "min_stated": 0.7,
       "min_input_p": 0.6
-    }
-  },
-  "writer.model": {
-    "fingerprint": "d9575d2eb5c9e78a",
-    "thresholds": {
-      "min_p": 0.45
     }
   }
 }

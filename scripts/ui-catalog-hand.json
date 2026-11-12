@@ -2031,32 +2031,6 @@
    "storageKey": "workflow.preset.ins-digest.reasoning_effort"
   },
   {
-   "id": "s474",
-   "index": 448,
-   "area": "Lane Pilot writer",
-   "setting": "writer.skill_pick",
-   "location": "src/rooms/writer/server/skill-pick.ts",
-   "category": "user",
-   "invType": "enum",
-   "values": "on, off",
-   "defaultValue": "on",
-   "scope": "project",
-   "control": "select",
-   "options": [
-    "on",
-    "off"
-   ],
-   "min": null,
-   "max": null,
-   "section": "writer",
-   "channel": "OWN",
-   "uiStatus": "editable",
-   "rationale": "Before each writer attempt Jev picks up to 5 skills that teach the task's product or technology; off keeps the writer's role skills and the skills the task names (task.skills)",
-   "evidence": "src/rooms/writer/server/skill-pick.ts:115",
-   "matrixStatus": "readonly",
-   "storageKey": "writer.skill_pick"
-  },
-  {
    "id": "s475",
    "index": 449,
    "area": "Lane Pilot Jev judgments",
@@ -3134,32 +3108,6 @@
    "evidence": "src/rooms/writer/writer-model-pin.ts:1",
    "index": 492,
    "storageKey": "writer.pair_pin"
-  },
-  {
-   "id": "s532",
-   "area": "Lane Pilot writer route",
-   "setting": "writer.route_record",
-   "invType": "enum",
-   "values": "on, off",
-   "defaultValue": "on",
-   "control": "select",
-   "options": [
-    "on",
-    "off"
-   ],
-   "section": "stages",
-   "rationale": "Record the writer route decision into the KV (writer-route:<run>:<task>): every considered candidate, exclusions with reasons and the pick, read by the attempt receipt and the task screen (hive H-02).",
-   "location": "src/rooms/writer/writer-model-pick.ts:120",
-   "category": "user",
-   "scope": "project",
-   "channel": "OWN",
-   "uiStatus": "editable",
-   "matrixStatus": "readonly",
-   "min": null,
-   "max": null,
-   "evidence": "src/rooms/writer/writer-model-pick.ts:120",
-   "index": 493,
-   "storageKey": "writer.route_record"
   },
   {
    "id": "s533",

@@ -57,7 +57,6 @@ export interface WriterTaskState {
   liveBackupId: string | null;
   policy: ReturnType<ServerCore["runPolicyFor"]>;
   baseSettings: Record<string, unknown>;
-  writerOverlay: Awaited<ReturnType<StartWriterTaskDeps["pickWriter"]>>;
   runSettings: Record<string, unknown>;
   writerChoice: Record<string, unknown>;
   budget: RunBudget;

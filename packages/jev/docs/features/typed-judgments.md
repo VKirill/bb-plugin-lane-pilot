@@ -9,21 +9,16 @@ tags: [jev, judgments, registry]
 sources:
   - packages/jev/src/registry.ts
   - packages/jev/src/types.ts
-  - packages/jev/src/judgments/accept-composite.ts
   - packages/jev/src/judgments/citation-check.ts
   - packages/jev/src/judgments/employee-remark.ts
   - packages/jev/src/judgments/host-command.ts
   - packages/jev/src/judgments/invoice-check.ts
   - packages/jev/src/judgments/invoice-scan.ts
-  - packages/jev/src/judgments/log-find.ts
   - packages/jev/src/judgments/memory-rerank.ts
   - packages/jev/src/judgments/output-guard.ts
   - packages/jev/src/judgments/render-match.ts
   - packages/jev/src/judgments/repair-group.ts
-  - packages/jev/src/judgments/skill-pick.ts
-  - packages/jev/src/judgments/skill-tree-pick.ts
   - packages/jev/src/judgments/step-trivial.ts
-  - packages/jev/src/judgments/trace-checks.ts
   - packages/jev/src/judgments/ui-shots.ts
   - packages/jev/src/run.ts
   - packages/jev/package.json
@@ -50,31 +45,6 @@ TL;DR: A judgment owns its input shaping, typed questions, thresholds, decision 
 
 ### Execution details of judgment implementations
 
-#### Skill selection with `pickWriterSkills` and `keptByKind`
-
-`pickWriterSkills` selects appropriate agent skills for a given task (`packages/jev/src/judgments/skill-pick.ts:239-259`):
-1. Filters hints to catalog names via `hintedSkills`, capped at `SKILL_HINT_LIMIT` (8) (`packages/jev/src/judgments/skill-pick.ts:230-233`, `packages/jev/src/judgments/skill-pick.ts:240`).
-2. If disabled (`!input.enabled`), immediately returns hints with 0 kept counts (`packages/jev/src/judgments/skill-pick.ts:242`).
-3. Pre-filters skills by kind using `keptByKind` for domain relevance (`DOMAIN_KIND`) and craft relevance (`CRAFT_KIND`) (`packages/jev/src/judgments/skill-pick.ts:239-247`).
-4. Builds state via `skillPickState` and requests domain and craft skills in parallel chunks of 8 (`packages/jev/src/judgments/skill-pick.ts:248-252`).
-5. Selects top domain picks (`SKILL_PICK_TOP` = 5, threshold 0.7) and top craft picks (`SKILL_CRAFT_TOP` = 3, threshold 0.7), deduplicating craft picks against domain picks (`packages/jev/src/judgments/skill-pick.ts:253-254`).
-6. Combines project folder skills, picks, and hints; failed chunks add nothing and increment `unanswered` (`packages/jev/src/judgments/skill-pick.ts:255-258`).
-
-`keptByKind` retains catalog entries whose cached or newly returned probability for the selected criterion reaches its threshold (`packages/jev/src/judgments/skill-pick.ts:192-210`):
-1. Checks the cache by skill text; an unreadable cache entry is asked again (`packages/jev/src/judgments/skill-pick.ts:195-202`).
-2. Asks unknown entries in bounded chunks and reads the selected criterion from each answer (`packages/jev/src/judgments/skill-pick.ts:155-162`, `packages/jev/src/judgments/skill-pick.ts:202-206`).
-3. Stores numeric probabilities in the cache; cache write failures do not remove an answered entry (`packages/jev/src/judgments/skill-pick.ts:204-210`).
-4. The domain and craft thresholds are 0.4 and 0.35 (`packages/jev/src/judgments/skill-pick.ts:187-189`). `pickWriterSkills` applies the domain criterion, then the craft criterion to the domain-kept set (`packages/jev/src/judgments/skill-pick.ts:239-247`).
-
-#### Hierarchical skill navigation with `skillTreePickJudgment`
-
-`skillTreePickJudgment` defines one choice at a supplied skill-taxonomy level (`packages/jev/src/judgments/skill-tree-pick.ts:10-11`, `packages/jev/src/judgments/skill-tree-pick.ts:16-32`):
-1. `stateBuilder` clips task (1,200 chars), path (200 chars), and up to 24 options (`packages/jev/src/judgments/skill-tree-pick.ts:21-26`).
-2. `questions` formats a Choice question over candidate options plus `none` (`packages/jev/src/judgments/skill-tree-pick.ts:27-32`).
-3. `decide`: keeps ranked options other than `none` at or above `pick_p` (default 0.3), up to `take_max` (default 3) options (`packages/jev/src/judgments/skill-tree-pick.ts:33-40`).
-4. Modes and failure: default mode is `shadow`, with 8,000 ms timeout (`packages/jev/src/judgments/skill-tree-pick.ts:19-20`).
-Fallback returns no picks (`packages/jev/src/judgments/skill-tree-pick.ts:42`).
-
 #### Citation support check with `citationCheckJudgment`
 
 `citationCheckJudgment` validates source citations against document excerpts (`packages/jev/src/judgments/citation-check.ts:15-57`):
@@ -83,15 +53,6 @@ Fallback returns no picks (`packages/jev/src/judgments/skill-tree-pick.ts:42`).
 3. `decide`: assigns `supports` if `P(supports) >= keep_p` (default 0.6) and `hallucinated < 0.5`; assigns `partial` if top or probability is partial; assigns `absent` if top or probability is absent; otherwise `unsupported`. Sets `keep: true` for `supports` and `partial` (`packages/jev/src/judgments/citation-check.ts:48-53`).
 4. Modes and failure: default mode is `shadow`, with 8,000 ms timeout (`packages/jev/src/judgments/citation-check.ts:18-19`).
 Fallback returns `{ verdict: "partial", keep: true }` (`packages/jev/src/judgments/citation-check.ts:55`).
-
-#### Composite deliverable grading with `acceptCompositeJudgment`
-
-`acceptCompositeJudgment` scores artifacts across multiple evaluation axes (`packages/jev/src/judgments/accept-composite.ts:29-62`):
-1. `stateBuilder` clips kind (40 chars), brief (2,000 chars), artifact (16,000 chars), and up to 8 axes (`packages/jev/src/judgments/accept-composite.ts:34-39`).
-2. `questions` generates 5-level Score questions (0-4) for each axis (`packages/jev/src/judgments/accept-composite.ts:40-43`).
-3. `decide`: records per-axis scores, tracks the weakest axis, and checks `pass = axes.every(axis => scores[axis] >= t.pass_level)` (default `pass_level = 2`) (`packages/jev/src/judgments/accept-composite.ts:45`, `packages/jev/src/judgments/accept-composite.ts:48-58`).
-4. Modes and failure: default mode is `shadow`, with 12,000 ms timeout (`packages/jev/src/judgments/accept-composite.ts:32-33`).
-Fallback passes with `{ scores: {}, weakest: null, pass: true }` (`packages/jev/src/judgments/accept-composite.ts:60`).
 
 #### Invoice verification with `hardProblems` and `invoiceCheck`
 
@@ -141,15 +102,6 @@ Fallback returns `{ signature: null }` (`packages/jev/src/judgments/repair-group
 3. `decide`: returns `{ matches: matchP >= t.match_p && defectsP < t.defect_p, matchP, defectsP }` (`match_p` default 0.65, `defect_p` default 0.7) (`packages/jev/src/judgments/render-match.ts:38-44`).
 4. Modes and failure: default mode `shadow`, timeout 20,000 ms; fallback returns `{ matches: true, matchP: 1, defectsP: 0 }` (`packages/jev/src/judgments/render-match.ts:20-21`, `packages/jev/src/judgments/render-match.ts:46`).
 
-#### Attempt trace auditing with `traceChecks`
-
-`traceChecks` scores agent task execution traces against safety and quality criteria (`packages/jev/src/judgments/trace-checks.ts:28-78`):
-1. `stateBuilder` clips task metadata (title 300 chars, objective 800 chars, 8 criteria) and trace text up to 60,000 chars (`packages/jev/src/judgments/trace-checks.ts:33-36`).
-2. `questions` asks 7 Noul questions: `tool_choice`, `grounded`, `stayed_in_scope`, `plan_followed`, `honest_report`, `no_secret_leak`, and `indirect_injection` (`packages/jev/src/judgments/trace-checks.ts:37-66`).
-3. `decide`: flags safety checks (`no_secret_leak`, `indirect_injection`) falling below `flag_safety` (default 0.5), and quality checks falling below `flag_below` (default 0.4); returns `{ checks, flags }` (`packages/jev/src/judgments/trace-checks.ts:68-74`).
-4. Modes and failure: default mode is `shadow`, with 10,000 ms timeout (`packages/jev/src/judgments/trace-checks.ts:31-32`).
-Fallback flags all 7 checks with 0 scores (`packages/jev/src/judgments/trace-checks.ts:76`).
-
 #### Screenshot overflow inspection with `uiShotsJudgment`
 
 `uiShotsJudgment` checks rendered screenshots for viewport overflow (`packages/jev/src/judgments/ui-shots.ts:22-60`):
@@ -174,21 +126,16 @@ Registered judgments default to `shadow` unless the mode column says otherwise. 
 
 | ID and capability | Input and output | Branches, bounds and failure behavior | Evidence |
 |---|---|---|---|
-| `accept.composite`: score a deliverable across axes | Kind, brief, artifact, optional axes → per-axis scores, weakest axis and pass | Four default axes; at most eight asked axes; fallback passes | `packages/jev/src/judgments/accept-composite.ts:8-61` |
 | `research.citation`: check claim support | Claim, quote, source metadata and excerpt → supports/partial/unsupported/absent plus keep | Clips fields; hallucination signal blocks `supports`; fallback keeps as partial | `packages/jev/src/judgments/citation-check.ts:8-56` |
 | `employee.remark`: classify owner text for an employee | Text and role → remark boolean | Text capped at 4,000 chars; fallback is `remark: true` | `packages/jev/src/judgments/employee-remark.ts:4-20` |
 | `guard.host_command`: classify a proposed shell command | Command, cwd, workspace roots, task → allow/review/stop and reason | Up to four roots; thresholds separate review from stop; fallback allows with “not judged”; title describes machine command safety | `packages/jev/src/judgments/host-command.ts:9-59` |
 | `invoice.check`: compare invoice text and hard numeric checks | Requested and found invoice data → match/mismatch/unsure | Hard checks validate amounts, INN, BIK and bank-account checksums; only names/services are sent as state; default active; fallback returns mismatch for hard failures, otherwise a lexical match or unsure; title describes invoice work matching | `packages/jev/src/judgments/invoice-check.ts:12-120` |
 | `invoice.scan`: compare supplied invoice fields against page image | Expected INN/BIK/amount/number and image → field probabilities, failed fields, ok | Only supplied fields asked; image-backed; failure fallback is `ok: false` | `packages/jev/src/judgments/invoice-scan.ts:10-47` |
-| `logs.error_find`: point to the log line containing the failure | Task, command and lines → selected index and has-answer flag | At most 48 lines, 400 chars per line; fallback has no pointed line | `packages/jev/src/judgments/log-find.ts:8-42` |
 | `memory.rerank`: filter a lexical memory shortlist | Query and passages → scores and retained indexes | At most eight passages; threshold keep_p defaults to 0.8 (min 0.2, max 0.9); fallback retains every supplied passage | `packages/jev/src/judgments/memory-rerank.ts:8-40` |
 | `output.guard`: classify output for screening | Output kind and text → a guard decision | Capped prompt text and per-kind thresholds; fallback is defined in the judgment | `packages/jev/src/judgments/output-guard.ts:13-56` |
 | `d.render_match`: compare 3D render to concept | Brief and two images → match and defect probabilities | Image-backed; separate match and defect thresholds; fallback matches | `packages/jev/src/judgments/render-match.ts:10-47` |
 | `selfrepair.group`: group an incident with a known cause | Incident kind/reason and candidate groups → known signature or null | At most ten candidates; low probability or margin returns a new group; fallback is null | `packages/jev/src/judgments/repair-group.ts:13-55` |
-| Skill selector helper (not a registry ID): select writer skills | Catalog, task, plan, hints and callbacks → skill set with counts | Chunks of eight, six shared in-flight asks, at most five domain and three craft picks, eight hints; kind-filtered skills are cached by name and description, unreadable cache entries are re-evaluated, unanswered skills are not kept, and failed chunks add no picks | `packages/jev/src/judgments/skill-pick.ts:25-46`, `packages/jev/src/judgments/skill-pick.ts:174-184`, `packages/jev/src/judgments/skill-pick.ts:192-211`, `packages/jev/src/judgments/skill-pick.ts:238-258` |
-| `skills.tree_pick`: one level of hierarchical skill selection | Task, level, path and options → selected names | At most 24 options in state and six picks; `none` ends descent; fallback selects none | `packages/jev/src/judgments/skill-tree-pick.ts:8-43` |
 | `graph.step_trivial`: determine if workflow step is mechanical | Node type, role, input size and optional risk → trivial boolean | Fallback says not trivial; caller owns whether downgrade is allowed | `packages/jev/src/judgments/step-trivial.ts:8-35` |
-| `audit.trace`: score attempt trace checks | Task and trace → seven scores and flags | Safety checks have their own threshold; fallback flags all checks | `packages/jev/src/judgments/trace-checks.ts:12-22`, `packages/jev/src/judgments/trace-checks.ts:28-77` |
 | `ui.page_shots`: detect screenshot overflow | Page and up to four screenshots → clean/uncertain/cut, worst shot and optional box | Each shot adds a Noul and box question; fallback is clean; semantic page correctness is outside this judgment | `packages/jev/src/judgments/ui-shots.ts:11-59` |
 
 ## Modes and failure handling

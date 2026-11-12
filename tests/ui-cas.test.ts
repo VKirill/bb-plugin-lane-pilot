@@ -41,11 +41,11 @@ describe("settings CAS over RPC", () => {
     }) as { ok:boolean; versions:Record<string,number> };
     expect(native.ok).toBe(true);
     const one = await harness.behavior.callRpc("save_setting", {
-      projectId, key:"jev.LANE_JEV_EFFORT", value:"1", expectedVersion:0,
+      projectId, key:"plan_critique.enabled", value:"1", expectedVersion:0,
     }) as { ok:boolean; version:number };
     expect(one).toMatchObject({ ok:true, version:1 });
     expect(await harness.behavior.callRpc("save_setting", {
-      projectId, key:"jev.LANE_JEV_EFFORT", value:"0", expectedVersion:0,
+      projectId, key:"plan_critique.enabled", value:"0", expectedVersion:0,
     })).toMatchObject({ ok:false, conflict:true, version:1, value:"1" });
     expect(await harness.behavior.callRpc("save_setting", {
       projectId, key:"ui.language", value:"invalid-language", expectedVersion:0,

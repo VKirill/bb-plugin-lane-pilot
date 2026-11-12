@@ -1,21 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { failureClassCooldownMs } from "../src/rooms/contracts/failure-class";
 import { loadWriterPin, noteWriterPair, writerPinKey } from "../src/rooms/writer/writer-model-pin";
-import { writerRouteKey } from "../src/rooms/contracts/judgment-ids";
-import type { WriterRouteDecision } from "../src/rooms/writer/writer-model-pick";
 
 const fakeKv = () => {
   const map = new Map<string, unknown>();
   return { get: async (k: string) => map.get(k) ?? null, set: async (k: string, v: unknown) => void map.set(k, v), map };
 };
-
-describe("route decision record (H-02)", () => {
-  it("shapes a route record: considered, excluded with reasons, pick and how", () => {
-    const route: WriterRouteDecision = { at: 1, considered: ["a", "b"], excluded: [{ key: "c", reason: "provider_window_spent" }], picked: "a", by: "jev" };
-    expect(route.excluded[0]?.reason).toBe("provider_window_spent");
-    expect(writerRouteKey("r", "t")).toBe("writer-route:r:t");
-  });
-});
 
 describe("the task's writer pair, pinned for its life (H-01)", () => {
   it("records the first pair, keeps it while the reason is a retry, moves it on a failure-class reason", async () => {

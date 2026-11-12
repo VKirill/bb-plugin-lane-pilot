@@ -405,7 +405,6 @@ describe("parity d10-rest-2", () => {
     savePrototypeConfig(db, { projectId, hostId, pmWorkspacePath: "/tmp/pm", writerWorkspacePath: folder, pmProviderId: "claude-code", pmModel: "claude-test", writerProviderId: "codex", writerModel: "codex-test" });
     saveProjectSetting(db, projectId, "plan_critique.enabled", false);
     saveProjectSetting(db, projectId, "memory.enabled", false);
-    saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     createRun(db, "run-land", projectId, "bb", folder);
     setRunThread(db, "run-land", pmThreadId);
     await plugin(bb);

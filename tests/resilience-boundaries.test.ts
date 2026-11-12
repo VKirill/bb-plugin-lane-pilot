@@ -19,7 +19,7 @@ it("A-034 owner presence refusal releases an unused half-open provider trial", a
     bb: { storage: bb.storage, log: { info() {}, warn() {} }, sdk: { projects: { get: async () => ({ sources: [] }) }, files: { read: async () => ({ content: null }) }, threads: { get: async () => ({ id: "pm", projectId: "P", status: "idle" }) } } },
     db,
     host: { call: async (method: string) => method === "runCommand" ? { hostId: "h", exitCode: 0, stdout: "[]", stderr: "" } : {} },
-    effectiveProjectSettings: async () => ({ values: { "jev.LANE_JEV_EFFORT": false, "memory.enabled": false, "adoc.040": "auto" } }),
+    effectiveProjectSettings: async () => ({ values: { "memory.enabled": false, "adoc.040": "auto" } }),
   };
   const writer = createWriterSpawn(ctx as never, { providerBreaker: breaker, ownerPresence: { holds: () => "owner_present:fixture" }, ruleScan: { chainForRun: async () => [] } } as never);
   try {

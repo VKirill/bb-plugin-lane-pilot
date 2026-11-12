@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
 import { renderThreadEvents, summarizeThreadEvents } from "../../packages/harness-core/src/trajectory";
-import { progressJournal } from "../../src/rooms/writer/session-digest";
+import { progressJournal } from "../../src/rooms/writer/progress-journal";
 import { removeClaudeLaneLeftovers, stripClaudeLaneSettings } from "../../src/rooms/native-install/claude-lane-leftovers";
 import { renewDisarm } from "../../src/rooms/policy/protections";
 import { REARM_SINCE_KEY, runWorktreeJanitor } from "../../src/rooms/stability/server/worktree-janitor";

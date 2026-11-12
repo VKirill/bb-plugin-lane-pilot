@@ -19,7 +19,7 @@ describe("bounded writer retry effort", () => {
     expect(resolveRetryEffort({ current:"xhigh", supportedLevels:supported, retryIndex:1, enabled:true }).after).toBe("high");
   });
 
-  it("does not escalate when the shared LANE_JEV_EFFORT control is disabled", () => {
+  it("does not escalate when escalation is disabled for the call", () => {
     expect(resolveRetryEffort({ current:"medium", supportedLevels:supported, retryIndex:1, enabled:false }))
       .toMatchObject({ after:"medium", changed:false, enabled:false });
   });

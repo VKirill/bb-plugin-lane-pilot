@@ -65,8 +65,8 @@ describe("[sma:ar_stamp] the reasoning stamp names the automaton and the run pol
     createRun(db, "run_p", "proj_p", "bb", "/w");
     createTask(db, { id: "t1", runId: "run_p", kind: "bb", contract: {} });
     createAttempt(db, { id: "a1", runId: "run_p", taskId: "t1" });
-    const base = { runId: "run_p", attemptId: "a1", threadId: null, planSha256: "p", sentPlanSha256: "p", sourceLength: 1, sentLength: 1,
-      jevStatus: "ok" as const, jevDecision: null, requestedReasoningLevel: "r", effectiveReasoningLevel: "r", fallbackReason: null,
+    const base = { runId: "run_p", attemptId: "a1", threadId: null, planSha256: "p", sourceLength: 1,
+      requestedReasoningLevel: "r", effectiveReasoningLevel: "r", fallbackReason: null,
       providerId: "claude-code", model: "m", serviceTier: null, requestedServiceTier: "default" as const };
     saveReasoningTrace(db, { ...base, stamp: { stateMachineVersion: 1, harnessVersion: "h", transitionKey: TRANSITION_KEY, policySha256: "0".repeat(64) } });
     const stamp = getReasoningTrace(db, "a1")!.stamp!;
@@ -89,8 +89,8 @@ describe("[sma:ar_run_dir] the dossier carries the run stream and the verifier's
     createRun(db, "run_p", "proj_p", "bb", "/w");
     createTask(db, { id: "t1", runId: "run_p", kind: "bb", contract: { verification: [{ command: "npm test", expectExit: 0 }] } });
     createAttempt(db, { id: "a1", runId: "run_p", taskId: "t1" });
-    saveReasoningTrace(db, { runId: "run_p", attemptId: "a1", threadId: null, planSha256: "p", sentPlanSha256: "p", sourceLength: 1, sentLength: 1,
-      jevStatus: "ok" as const, jevDecision: null, requestedReasoningLevel: "r", effectiveReasoningLevel: "r", fallbackReason: null,
+    saveReasoningTrace(db, { runId: "run_p", attemptId: "a1", threadId: null, planSha256: "p", sourceLength: 1,
+      requestedReasoningLevel: "r", effectiveReasoningLevel: "r", fallbackReason: null,
       providerId: "claude-code", model: "m", serviceTier: null, requestedServiceTier: "default" as const });
     noteAttemptStream(db, "a1", "x".repeat(9000));
     const dossier = inspectAttempt(db, "proj_p", "a1")!.dossier as {
@@ -112,8 +112,8 @@ describe("[sma:m_tl_terminal_parity] permissions are a compared layer, never a f
     createTask(db, { id: "t1", runId: "run_p", kind: "bb", contract: {} });
     createAttempt(db, { id: "a1", runId: "run_p", taskId: "t1" });
     const entries = permissionEntries({ policy: null, disallowedTools: "Workflow,Bash(git push:*)" });
-    saveReasoningTrace(db, { runId: "run_p", attemptId: "a1", threadId: null, planSha256: "p", sentPlanSha256: "p", sourceLength: 1, sentLength: 1,
-      jevStatus: "ok" as const, jevDecision: null, requestedReasoningLevel: "r", effectiveReasoningLevel: "r", fallbackReason: null,
+    saveReasoningTrace(db, { runId: "run_p", attemptId: "a1", threadId: null, planSha256: "p", sourceLength: 1,
+      requestedReasoningLevel: "r", effectiveReasoningLevel: "r", fallbackReason: null,
       providerId: "claude-code", model: "m", serviceTier: null, requestedServiceTier: "default" as const,
       dispatchContext: { memoryText: "", executionPacket: "", executionPacketSha256: "", pmReadContext: "", agent: "w", helperMode: "inherit", helperRequired: false, permissions: entries } });
     const session = attemptSessionLayers(db, "a1")!;
@@ -297,8 +297,8 @@ describe("[sma:ar_run_dir] the stored stream excerpt is masked, the sha is over 
     createRun(db, "run_s", "proj_s", "bb", "/w");
     createTask(db, { id: "ts", runId: "run_s", kind: "bb", contract: {} });
     createAttempt(db, { id: "as1", runId: "run_s", taskId: "ts" });
-    saveReasoningTrace(db, { runId: "run_s", attemptId: "as1", threadId: null, planSha256: "p", sentPlanSha256: "p", sourceLength: 1, sentLength: 1,
-      jevStatus: "ok" as const, jevDecision: null, requestedReasoningLevel: "r", effectiveReasoningLevel: "r", fallbackReason: null,
+    saveReasoningTrace(db, { runId: "run_s", attemptId: "as1", threadId: null, planSha256: "p", sourceLength: 1,
+      requestedReasoningLevel: "r", effectiveReasoningLevel: "r", fallbackReason: null,
       providerId: "claude-code", model: "m", serviceTier: null, requestedServiceTier: "default" as const });
     const token = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8";
     const known = "zz-handed-out-secret-9917";

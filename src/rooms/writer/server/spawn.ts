@@ -3,7 +3,7 @@ import { normalizeModel, openTokenCursor } from "../../usage/server";
 import { STATE_MACHINE_VERSION } from "../../contracts";
 import { writerKnowledge } from "./writer-knowledge";
 import { HARNESS_VERSION, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, loadProjectSettings, saveReasoningTrace, setAttemptDirtBefore, setReasoningThread, transitionAttempt, taskBasePath, TRANSITION_KEY } from "../../storage";
-import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier, findModelIn, switchWord } from "@lane-pilot/models";
+import { bbServiceTier, resolveWriterReasoning, writerExecutionSelection, writerServiceTier, findModelIn, switchWord } from "@lane-pilot/models";
 import { retargetTask } from "../../tasks";
 import { parseMemorySettings } from "../../memory";
 import { resolveRetryEffort } from "../../critique";
@@ -158,51 +158,25 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         : typeof settings["writer.reasoning_effort"] === "string"
           ? settings["writer.reasoning_effort"] as string : "medium";
       const digest = planDigest(input.plan);
-      const enabled = automaticEffortRoutingEnabled(settings);
-      let jev:Awaited<ReturnType<typeof host.call<"classifyPlan">>>;
-      if (!enabled) {
-        jev = { hostId:input.config.hostId, status:"disabled", effort:null, reason:"jev_disabled_by_project_setting",
-          planSha256:digest.sha256, sentPlanSha256:null, sourceLength:digest.length, sentLength:null };
-      } else {
-        try {
-          jev = await host.call("classifyPlan", { requestedHostId:input.config.hostId, plan:input.plan }, { hostId:input.config.hostId, timeoutMs:35_000 });
-        } catch {
-          // The RPC boundary itself can fail before the host adapter returns its normal fail-open result.
-          jev = { hostId:input.config.hostId, status:"error", effort:null, reason:"host_classify_rpc_failed",
-            planSha256:digest.sha256, sentPlanSha256:null, sourceLength:digest.length, sentLength:null };
-        }
-      }
-      const noSentProof = jev.sentPlanSha256 === null && jev.sentLength === null;
-      const validSentProof = jev.sentPlanSha256 === digest.sha256 && jev.sentLength === digest.length;
-      const allowedWithoutSentProof = jev.status === "disabled" || jev.reason === "host_classify_rpc_failed";
-      if (jev.planSha256 !== digest.sha256 || jev.sourceLength !== digest.length
-        || (noSentProof ? !allowedWithoutSentProof : !validSentProof)) {
-        throw new Error("Jev full-plan transport proof mismatch");
-      }
       const supported = new Set<string>(model.supportedReasoningEfforts.map((item) => item.reasoningEffort));
-      const jevDecision = jev.status === "ok" ? jev.effort : null;
-      const choice = resolveJevReasoning({
-        status:jev.status, jevDecision, manualLevel:manual,
-        supportedLevels:supported,
-      });
+      // The effort is the setting, clamped to the live catalog; a retry escalates it one listed level (bounded at high).
+      const choice = resolveWriterReasoning({ manualLevel:manual, supportedLevels:supported });
       const retryEffort = resolveRetryEffort({current:choice.effective,supportedLevels:supported,
-        retryIndex:input.retryIndex ?? 0,enabled});
+        retryIndex:input.retryIndex ?? 0,enabled:true});
       const fallbackReason = [choice.fallbackReason,
-        jev.status !== "ok" && jev.reason ? `${jev.reason}` : null,
         choice.manualSupported === false ? `manual_fallback_unsupported:${manual}` : null,
         retryEffort.changed ? `retry_effort_escalated:${retryEffort.before}->${retryEffort.after}` : null,
       ].filter(Boolean).join(";") || null;
       const requested = choice.requested;
       const effective = retryEffort.after;
-      const reasoningLevelSource = enabled && jev.status === "ok" && jevDecision ? "client-preference" as const : "explicit" as const;
+      const reasoningLevelSource = "explicit" as const;
       const selectionSource = {
         providerId:writerProviderId, model:writerModel, reasoningLevel:effective,
         serviceTier:effectiveServiceTier, reasoningLevelSource,
       };
       const trace = {
         stamp:{stateMachineVersion:STATE_MACHINE_VERSION, harnessVersion:HARNESS_VERSION, transitionKey:TRANSITION_KEY},
-        planSha256:digest.sha256, sentPlanSha256:jev.sentPlanSha256, sourceLength:digest.length, sentLength:jev.sentLength,
-        jevStatus:jev.status, jevDecision, requestedReasoningLevel:requested,
+        planSha256:digest.sha256, sourceLength:digest.length, requestedReasoningLevel:requested,
         effectiveReasoningLevel:effective, fallbackReason,
         retryEffort,
         providerId:writerProviderId, model:writerModel, serviceTier:effectiveServiceTier,
@@ -210,7 +184,6 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         runId:input.runId, attemptId:input.attemptId, threadId:null,
         // The launch's fixed bounds, next to the chosen model and effort (sma as_build_args).
         maxTurns:WRITER_MAX_TURNS, disallowedTools:HELPER_DISALLOWED_TOOLS,
-        effortMode: enabled ? "automatic" as const : "manual" as const,
         selectionSource,
       } as const;
       saveReasoningTrace(db, trace);
@@ -218,9 +191,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       if (choice.manualSupported === false && !supported.has(effective)) {
         throw new WriterSelectionError(`manual_writer_reasoning_effort_unsupported:${effective}; supported=${[...supported].join(",")}`);
       }
-      const execution = writerExecutionSelection(writerProviderId, writerModel, effective, effectiveServiceTier, {
-        reasoningLevel: reasoningLevelSource,
-      });
+      const execution = writerExecutionSelection(writerProviderId, writerModel, effective, effectiveServiceTier);
       lastExecution = { reasoningLevel:effective, serviceTier:effectiveServiceTier, selectionSource };
       const run = getRun(db, input.runId);
       if (!run?.writer_workspace_path) throw new Error("writer run has no immutable workspace binding");

@@ -10,7 +10,7 @@ import { appendTaskQa } from "../../src/rooms/writer/server/reopen-attempt";
 import { budgetSpentSweep } from "../../src/rooms/writer/server/budget-item";
 import { createWriterState } from "../../src/rooms/writer/server/state";
 import { createWriterSkillPick } from "../../src/rooms/writer/server/skill-pick";
-import { progressJournal, PROGRESS_CAP } from "../../src/rooms/writer/session-digest";
+import { progressJournal, PROGRESS_CAP } from "../../src/rooms/writer/progress-journal";
 import { taskNeedsBrowser, BROWSER_BRIEF_LINE, writerPrompt } from "../../src/rooms/writer/server/writer-task";
 import { createRunBudget } from "@lane-pilot/resilience";
 import { postOwnerItem, listOpenOwnerItemKeys, closeOwnerItemsByPrefix } from "../../src/rooms/owner-waiting";
@@ -227,10 +227,10 @@ describe("owner items and the worker's papers", () => {
     // The pick adds browser-automation even when Jev names nothing.
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     harness.sdk.stub("skills.list", async () => ({ skills: [] }));
-    const pick = createWriterSkillPick({ bb, host: { call: async () => ({ status: "ok", probabilities: null }) } } as never);
-    const chosen = await pick.pick({ attemptId: "a1", projectId: "proj1", hostId: HOST, projectCwd: WS, task: ui, plan: "Plan", settings: {} });
+    const pick = createWriterSkillPick({ bb, host: { call: async () => ({}) } } as never);
+    const chosen = await pick.pick({ attemptId: "a1", projectId: "proj1", hostId: HOST, projectCwd: WS, task: ui, });
     expect(chosen.skills).toContain("browser-automation");
-    const plainChosen = await pick.pick({ attemptId: "a2", projectId: "proj1", hostId: HOST, projectCwd: WS, task: plain, plan: "Plan", settings: {} });
+    const plainChosen = await pick.pick({ attemptId: "a2", projectId: "proj1", hostId: HOST, projectCwd: WS, task: plain, });
     expect(plainChosen.skills).not.toContain("browser-automation");
     await harness.lifecycle.dispose();
   });

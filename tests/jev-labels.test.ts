@@ -8,7 +8,22 @@ import { labelCritiqueScreen, applyOutcomeLabels, judgeAccuracy } from "@lane-pi
 import { sampledInput, INPUT_JSON_CAP } from "@lane-pilot/jev";
 import { planModelLabels, modelLabelPrompt, answersFromModelText, compareModelDecision } from "@lane-pilot/jev";
 import { labelSource, calibrateReceipts } from "@lane-pilot/jev";
-import { failureClassJudgment } from "../src/rooms/runs/failure-class-judgment";
+import { choice, choiceOf, defineJudgment } from "@lane-pilot/jev";
+
+/** A fixture judgment (the calibration machinery is generic): which side an attempt failed on. */
+const failureClassJudgment = defineJudgment<{ state: string; reason: string }, { cls: string }>({
+  id: "test.side", title: "fixture", version: 1, defaultMode: "shadow", timeoutMs: 5_000,
+  stateBuilder: (input) => ({ attempt_state: input.state, reason: input.reason }),
+  questions: () => ({ side: choice("Which side failed?", { task: "the task's own work", infra: "the machine or network" }) }),
+  thresholds: { min_p: { default: 0.7, min: 0.5, max: 0.98, about: "least probability" }, min_margin: { default: 0.3, min: 0.05, max: 0.9, about: "least lead" } },
+  decide(answers, t) {
+    const pick = choiceOf(answers, "side");
+    if (!pick || pick.p < t.min_p! || pick.margin < t.min_margin!) return { decision: { cls: "task" } };
+    return { decision: { cls: pick.top } };
+  },
+  fallback: () => ({ cls: "task" }),
+  describe: (decision) => decision.cls,
+});
 
 const NOW = 1_800_000_000_000;
 const OLD = NOW - 48 * 3_600_000; // older than the 24h truth age

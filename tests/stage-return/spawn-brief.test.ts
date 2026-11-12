@@ -44,7 +44,7 @@ describe("the writer brief of a returned task", () => {
       },
       db,
       host: { call: async (method: string) => (method === "runCommand" ? { hostId: "h", exitCode: 0, stdout: "[]", stderr: "" } : {}) },
-      effectiveProjectSettings: async () => ({ values: { "jev.LANE_JEV_EFFORT": false, "memory.enabled": false, "adoc.040": "auto" } }),
+      effectiveProjectSettings: async () => ({ values: { "memory.enabled": false, "adoc.040": "auto" } }),
     };
     const writer = createWriterSpawn(ctx as never, { providerBreaker: { decide: () => ({ allow: true }) }, ruleScan: { chainForRun: async () => [] } } as never);
     const result = await writer.spawnWriterAttempt({ projectId: "P", runId: "run", taskId: "t1", attemptId: "a1", config, task, plan: "write", pmThreadId: "pm",

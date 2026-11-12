@@ -5,7 +5,7 @@ import hostEntry from "../host";
 // The host RPC wire names are the protocol with machines that run older plugin builds: a rename or a drop
 // breaks every one of them. The list is frozen here so a contract or handler rearrangement cannot change it.
 const WIRE_METHODS = [
-  "anamnesis", "answerPermit", "applyOnboardingPages", "classifyPlan", "closeBacklogItem",
+  "anamnesis", "answerPermit", "applyOnboardingPages", "closeBacklogItem",
   "coexistenceInventory", "coexistenceOperation", "connectOpencode", "councilJudge", "detect", "discoverClaudeAgents",
   "diskFree", "docsAnchors", "docsDepth", "docsFlows", "docsLineCounts", "docsStaleness", "docsVerifyCitations",
   "docsWorthinessFacts", "findBrowserQaTarget", "gateAttribute", "gateBisect", "gateRun", "gitCommitDocs", "gitCreateWorktree",

@@ -2,7 +2,6 @@ import { jev, type JevSettings } from "@lane-pilot/jev";
 import { hardProblems } from "@lane-pilot/jev/judgments/invoice-check";
 import { uiShotsJudgment } from "@lane-pilot/jev/judgments/ui-shots";
 import { invoiceScanJudgment, type ScanField } from "@lane-pilot/jev/judgments/invoice-scan";
-import { acceptCompositeJudgment, type AcceptAxis } from "@lane-pilot/jev/judgments/accept-composite";
 import { renderMatchJudgment } from "@lane-pilot/jev/judgments/render-match";
 import { bestEffort } from "@lane-pilot/kit";
 
@@ -243,24 +242,12 @@ async function judgeInvoiceScan(path: string, deps: ValidatorDeps): Promise<Verd
   return { ok: false, reason: `no text in the PDF${shadow}`, details: { jevAsked: true } };
 }
 
-/* ---- composite: Jev scores the artifact per axis, the caller gets the weakest one to rework (B9) ---- */
+/* ---- composite: a non-empty artifact is accepted; the quality axes are the critic's and the owner's ---- */
 
 async function validateComposite(path: string, deps: ValidatorDeps): Promise<Verdict> {
   const text = await readText(path, deps);
   if (text == null || !text.trim()) return { ok: false, reason: "artifact missing or empty" };
-  const judge = jev();
-  if (!judge) return { ok: true, reason: "artifact exists (jev off)" };
-  const brief = String(deps.brief?.objective ?? deps.brief?.prompt ?? deps.brief?.topic ?? "");
-  const axes = Array.isArray(deps.brief?.axes) ? (deps.brief.axes as AcceptAxis[]) : undefined;
-  const verdict = await bestEffort(console.warn, `validator composite ${path}`, judge.judge(acceptCompositeJudgment, { kind: String(deps.brief?.kind ?? "artifact"), brief, artifact: text, axes }, deps.jevCtx ?? {}), null);
-  if (!verdict || verdict.by !== "jev") {
-    const shadow = verdict?.by === "fallback" && verdict.shadow?.decision ? `; jev shadow: ${acceptCompositeJudgment.describe(verdict.shadow.decision)}` : "";
-    return { ok: true, reason: `artifact exists${shadow}`, details: { jevAsked: Boolean(verdict?.answers) } };
-  }
-  const d = verdict.decision;
-  return d.pass
-    ? { ok: true, reason: `composite pass (${Object.entries(d.scores).map(([k, v]) => `${k}=${v}`).join(", ")})`, details: { jev: d } }
-    : { ok: false, reason: `rework on ${d.weakest}: scores ${Object.entries(d.scores).map(([k, v]) => `${k}=${v}`).join(", ")}`, details: { jev: d } };
+  return { ok: true, reason: "artifact exists" };
 }
 
 /* ---- registry ---- */

@@ -61,8 +61,7 @@ describe("native writer settings against the registered SQLite backend", () => {
     expect(slot.getByTestId("writer-picker")).toBeTruthy();
     expect(slot.getByTestId("memory-picker")).toBeTruthy();
     fireEvent.click(slot.getByTestId("role-open-writer"));
-    expect(slot.getByTestId("jev-settings").querySelectorAll("[role='switch']")).toHaveLength(1);
-    expect(slot.getByTestId("writer-effort-mode")).toBeTruthy();
+    expect(slot.queryByTestId("writer-effort-mode")).toBeNull();
     expect(slot.getByTestId("specialist-settings")).toBeTruthy();
     expect(slot.getByLabelText(en.specialistReview)).toBeTruthy();
     for (const id of ["team", "work"]) expect(slot.getByTestId(`${id}-panel`).textContent).not.toContain("--writer-provider");

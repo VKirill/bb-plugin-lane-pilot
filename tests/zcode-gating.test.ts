@@ -1,11 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {WRITER_FALLBACK_SLOTS, roleModelKey, type ModelCatalog, writerCandidates, zcodeEnvironmentError} from "@lane-pilot/models";
+import {WRITER_FALLBACK_SLOTS, roleModelKey, type ModelCatalog, zcodeEnvironmentError} from "@lane-pilot/models";
 import { resolveSpawnModel, spawnUsageOf } from "../src/rooms/platform/server/spawn-model";
 import { fullAccessSpawn } from "../src/rooms/platform/server/pm-spawn";
 import { noteZcodeThread, zcodeBusy, zcodeBusyPeek } from "../src/rooms/platform/server/zcode-slot";
 import { createWriterState } from "../src/rooms/writer/server/state";
 import { createProviderUsage, usageHoldReason } from "../src/rooms/usage/server/provider-usage";
-import { writerPickOverlay } from "../src/rooms/writer/writer-model-pick";
 import { roleSelection, type CriticCatalog } from "../src/rooms/critique/critic-pair";
 import { failureClass } from "../src/rooms/contracts/failure-class";
 ;
@@ -168,27 +167,6 @@ describe("the writers: a hold on the zcode pair, whatever the usage threshold", 
     threads.set("w1", "active");
     const usage = spawnUsageOf({ bb })!;
     expect(usage.zcodeBusy?.()).toBe(true);
-  });
-});
-
-describe("the writer pick does not offer ZCode where it cannot work", () => {
-  const kv = () => { const map = new Map<string, unknown>(); return { get: async (key: string) => map.get(key), set: async (key: string, value: unknown) => { map.set(key, value); } }; };
-  const input = { projectId: "p", runId: "r", taskId: "t1", task: { title: "Port the docs", objective: "x", owns_paths: ["docs/**"], expected_outputs: ["docs/a.md"], acceptance: ["npm test"] } };
-  const settings = { "writer.provider": "acp-cursor", "writer.model": "composer-2.5", "writer.reasoning_effort": "medium" };
-
-  it("hands Jev the candidates without ZCode when it is held, and with it when it is not", async () => {
-    const seen: string[][] = [];
-    const jev = { enabled: () => true, judge: async (_judgment: unknown, state: { candidates: Array<{ key: string }> }) => { seen.push(state.candidates.map((row) => row.key)); return { by: "jev", decision: { key: "zcode-flash" } }; } } as never;
-    const held = await writerPickOverlay({ kv: kv(), jev, log: () => undefined, held: async (profile) => profile.providerId === "zcode" }, settings, input);
-    expect(seen[0]).not.toContain("zcode-flash");
-    expect(seen[0]).toContain("gpt-terra");
-    // Jev had no ZCode to name: its answer is not a candidate, so the project's writer writes.
-    expect(held).toBeNull();
-    const free = await writerPickOverlay({ kv: kv(), jev, log: () => undefined, held: async () => false }, settings, { ...input, taskId: "t2" });
-    expect(seen[1]).toContain("zcode-flash");
-    expect(free).toMatchObject({ "writer.provider": "zcode", "writer.model": "glm-5.3-flash-free", "writer.reasoning_effort": "high", "writer.picked": "zcode-flash", "writer.fallback1.model": "composer-2.5" });
-    expect(WRITER_FALLBACK_SLOTS).toHaveLength(3);
-    expect(writerCandidates({}).map((row) => row.key)).toContain("zcode-flash");
   });
 });
 

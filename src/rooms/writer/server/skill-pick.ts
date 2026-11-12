@@ -1,29 +1,13 @@
-import { basename, dirname, join } from "node:path";
-import { pickWriterSkills, skillCatalog, type CatalogEntry, type KindCache, type ListedSkill, type SkillAsk, type SkillPick, type PickTaskInput } from "@lane-pilot/jev/judgments/skill-pick";
-import { isNotFound, orMiss } from "@lane-pilot/kit";
-import { candidateNames, readSkillTreeText, skillTreeCached } from "../../platform/server";
+import { basename, dirname } from "node:path";
+import { skillCatalog, type CatalogEntry, type ListedSkill } from "../../platform/server";
 import { taskNeedsBrowser } from "./writer-task";
 import type { TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
 
-/**
- * A writer spawn never waits longer than this for the pick; a pick that runs out gives the writer its role skills only.
- * 45 s, not 15: OpenLux answers a chunk in 0.6 s alone but queues bursts, and the three drill writers that start together on one
- * host (33 chunks each, six in flight across them) ran past 15 s on 2026-10-20 and got no skill. A writer runs for an hour or more;
- * the spawn can wait.
- */
-export const SKILL_PICK_DEADLINE_MS = 45_000;
 /** BB's skill list changes rarely: a list is reused for this long per project. */
 export const SKILL_LIST_TTL_MS = 10 * 60_000;
-/** One chunk's wait at System One (sent to the host), and the host call around it. A request a queue holds for 6 s still answers. */
-const JUDGE_FETCH_TIMEOUT_MS = 12_000;
-const JUDGE_TIMEOUT_MS = 20_000;
-const KIND_KEY_PREFIX = "writer-skill-kind:";
-
-/** `writer.skill_pick` is on unless the owner set it to off, in the same words the other switches read as off. */
-export function skillPickOn(value: unknown): boolean {
-  return !(value === "off" || value === false || value === "false" || value === 0 || value === "0");
-}
+/** The task's declared skills that reach the writer: a name outside the BB list is not added. */
+export const SKILL_HINT_LIMIT = 8;
 
 /** The skills a writer's attempt was given, as its dispatch recorded them: code-repair gives the same ones to its repair thread. */
 export function recordedWriterSkills(dispatchContext: unknown): string[] {
@@ -31,74 +15,67 @@ export function recordedWriterSkills(dispatchContext: unknown): string[] {
   return Array.isArray(skills) ? skills.filter((name): name is string => typeof name === "string") : [];
 }
 
-/** What the writer of one attempt gets: the picked names with their p(yes), kept in the attempt's dispatch for the code-repair. */
+/** What the writer of one attempt gets on top of its role skills, by rule: the project-folder skills, the task's declared skills, the browser skill for a task checked on a page. */
 export type WriterSkillPick = {
-  enabled: boolean; skills: string[]; picked: Array<{ name: string; p: number }>; craft: Array<{ name: string; p: number }>; projectFolder: string[]; hints: string[];
+  skills: string[]; projectFolder: string[]; hints: string[];
   /** The folder of each skill in `skills` the BB list gives one for; a skill without a folder is not materialized. */
   sources: Record<string, string>;
-  /** Why the pick gave no picks: a timeout or an error (the writer keeps its role skills); null when the pick ran. */
+  /** Why the BB list could not be read (the writer keeps its role skills); null when it was. */
   reason: string | null;
 };
 
 export type WriterSkillPickInput = {
-  attemptId: string; projectId: string; hostId: string; projectCwd: string; task: TaskV2; plan: string; settings: Record<string, unknown>;
+  attemptId: string; projectId: string; hostId: string; projectCwd: string; task: TaskV2;
 };
-
-const pickTask = (task: TaskV2): PickTaskInput => ({
-  title: task.title, objective: task.objective, owns_paths: task.owns_paths, expected_outputs: task.expected_outputs,
-  acceptance: task.acceptance, verification_commands: task.verification.map((check) => check.command),
-});
-
-const noPick = (enabled: boolean, reason: string): WriterSkillPick => ({ enabled, skills: [], picked: [], craft: [], projectFolder: [], hints: [], sources: {}, reason });
-
-/** The description of a skill in its SKILL.md frontmatter, for a skill the BB list gives without one. */
-async function frontmatterDescription(bb: ServerCore["bb"], hostId: string, skillFile: string): Promise<string | null> {
-  const file = await orMiss(bb.sdk.files.read({ hostId, rootPath: dirname(skillFile), path: skillFile }), null, isNotFound);
-  const content = file && typeof file === "object" ? (file as { content?: unknown }).content : null;
-  if (typeof content !== "string") return null;
-  const frontmatter = content.split(/^---\s*$/m)[1] ?? "";
-  return /^description:\s*(.+)$/m.exec(frontmatter)?.[1]?.trim().replace(/^["']|["']$/g, "") ?? null;
-}
 
 /** The folder a skill lives in, from the path the BB list gives (its SKILL.md, or the folder itself). */
 export function skillFolder(filePath: string): string {
   return basename(filePath) === "SKILL.md" ? dirname(filePath) : filePath;
 }
 
+/** A plain skill (no `plugin:`) of at least six characters whose name is in the last two folders of the project's path. */
+export function projectFolderSkills(projectCwd: string, catalog: CatalogEntry[]): string[] {
+  const folder = projectCwd.split("/").filter(Boolean).slice(-2).join("/");
+  return catalog
+    .filter((entry) => !entry.name.includes(":") && entry.name.length >= 6 && folder.includes(entry.name))
+    .map((entry) => entry.name);
+}
+
+/** The names the task declares (`skills`) that the catalog lists, at most SKILL_HINT_LIMIT. */
+export function declaredSkills(catalog: CatalogEntry[], hints: readonly string[]): string[] {
+  const names = new Set(catalog.map((entry) => entry.name));
+  return [...new Set(hints)].filter((name) => names.has(name)).slice(0, SKILL_HINT_LIMIT);
+}
+
 type Listing = { catalog: CatalogEntry[]; folders: Map<string, string> };
 
 /**
- * Picks the extra skills of each writer spawn with Jev (see `@lane-pilot/jev/judgments/skill-pick`). The catalog and the kinds are
- * cached, the pick is bounded by SKILL_PICK_DEADLINE_MS, and a failure gives the writer its role skills, never a blocked spawn.
+ * The extra skills of each writer spawn, by rule and without a model: the skills of the project folder, the skills the task declares
+ * (the PM names them in the contract) and the built-in browser skill for a task checked on a page. The BB list is cached; a failed
+ * listing gives the writer its role skills and never blocks a spawn.
  */
-export function createWriterSkillPick(ctx: Pick<ServerCore, "bb" | "host">, options: { deadlineMs?: number; log?: (message: string) => void } = {}) {
-  const { bb, host } = ctx;
-  const deadlineMs = options.deadlineMs ?? SKILL_PICK_DEADLINE_MS;
+export function createWriterSkillPick(ctx: Pick<ServerCore, "bb">, options: { log?: (message: string) => void } = {}) {
+  const { bb } = ctx;
   const log = options.log ?? ((message: string) => bb.log.info(message));
   const lists = new Map<string, { at: number; listing: Promise<Listing> }>();
 
-  async function listCatalog(projectId: string, hostId: string): Promise<Listing> {
+  async function listCatalog(projectId: string): Promise<Listing> {
     const listed = await bb.sdk.skills.list({ projectId, environmentId: null });
-    const rows = await Promise.all(listed.skills.map(async (skill) => {
+    const rows = listed.skills.map((skill) => {
       const row = skill as { name: string; description?: unknown; filePath?: unknown };
       const filePath = typeof row.filePath === "string" && row.filePath ? row.filePath : null;
-      const description = typeof row.description === "string" && row.description.trim() ? row.description
-        : filePath ? await frontmatterDescription(bb, hostId, join(skillFolder(filePath), "SKILL.md")).catch((cause: unknown) => {
-            log(`Lane Pilot skill pick: the description of ${row.name} could not be read (${cause instanceof Error ? cause.message : String(cause)}); the skill keeps its list entry`);
-            return null;
-          }) : null;
-      return { name: row.name, description, filePath };
-    }));
+      return { name: row.name, description: typeof row.description === "string" ? row.description : null, filePath };
+    });
     const folders = new Map(rows.flatMap((row) => (row.filePath ? [[row.name, skillFolder(row.filePath)] as const] : [])));
     return { catalog: skillCatalog(rows as ListedSkill[]), folders };
   }
 
-  /** The catalog of a project, listed again after the TTL; a failed listing is not kept, so the next pick asks BB again. */
+  /** The catalog of a project, listed again after the TTL; a failed listing is not kept, so the next call asks BB again. */
   function listingOf(projectId: string, hostId: string): Promise<Listing> {
     const key = `${hostId}\n${projectId}`;
     const cached = lists.get(key);
     if (cached && Date.now() - cached.at < SKILL_LIST_TTL_MS) return cached.listing;
-    const listing = listCatalog(projectId, hostId).catch((cause: unknown) => {
+    const listing = listCatalog(projectId).catch((cause: unknown) => {
       lists.delete(key);
       throw cause;
     });
@@ -106,64 +83,23 @@ export function createWriterSkillPick(ctx: Pick<ServerCore, "bb" | "host">, opti
     return listing;
   }
 
-  /** One councilJudge call (System One, 8 questions at most); the answers are null when the host did not judge. */
-  const askJev = (hostId: string): SkillAsk => async (state, questions) => {
-    const judged = await host.call("councilJudge", {
-      requestedHostId: hostId, state: JSON.stringify(state).slice(0, 60_000), questions, timeoutMs: JUDGE_FETCH_TIMEOUT_MS,
-    }, { hostId, timeoutMs: JUDGE_TIMEOUT_MS });
-    return judged.status === "ok" ? judged.probabilities ?? null : null;
-  };
-
-  const kindCache: KindCache = {
-    get: async (key) => {
-      const value = await bb.storage.kv.get(`${KIND_KEY_PREFIX}${key}`);
-      return typeof value === "number" ? value : undefined;
-    },
-    set: async (key, domainP) => {
-      await bb.storage.kv.set(`${KIND_KEY_PREFIX}${key}`, domainP);
-    },
-  };
-
   async function pick(input: WriterSkillPickInput): Promise<WriterSkillPick> {
-    const enabled = skillPickOn(input.settings["writer.skill_pick"]);
-    const run = async (): Promise<{ result: SkillPick; folders: Map<string, string> }> => {
-      const listing = await listingOf(input.projectId, input.hostId);
-      const tree = await skillTreeCached(readSkillTreeText);
-      const text = [input.task.title, input.task.objective, input.task.area ?? "", ...input.task.owns_paths].join("\n");
-      const names = tree ? candidateNames(tree, text) : null;
-      const result = await pickWriterSkills({
-        enabled,
-        catalog: listing.catalog,
-        hints: input.task.skills ?? [],
-        task: pickTask(input.task),
-        plan: input.plan,
-        projectCwd: input.projectCwd,
-        ask: askJev(input.hostId),
-        kindCache,
-        candidates: names?.length ? names : null,
-      });
-      return { result, folders: listing.folders };
-    };
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const outcome = await Promise.race([
-      run().then((done) => ({ done }), (cause: unknown) => ({ cause })),
-      new Promise<{ timedOut: true }>((resolve) => { timer = setTimeout(() => resolve({ timedOut: true }), deadlineMs); }),
-    ]).finally(() => clearTimeout(timer));
-    if ("timedOut" in outcome) {
-      log(`Lane Pilot writer skill pick ${input.attemptId}: no answer in ${deadlineMs} ms; the writer gets its role skills only`);
-      return noPick(enabled, "pick_timeout");
+    let listing: Listing | null = null;
+    let reason: string | null = null;
+    try { listing = await listingOf(input.projectId, input.hostId); } catch (cause) {
+      reason = `list_error:${cause instanceof Error ? cause.message : String(cause)}`;
+      log(`Lane Pilot writer skills ${input.attemptId}: the skill list could not be read (${reason}); the writer gets its role skills only`);
     }
-    if ("cause" in outcome) {
-      const reason = outcome.cause instanceof Error ? outcome.cause.message : String(outcome.cause);
-      log(`Lane Pilot writer skill pick ${input.attemptId} not made (${reason}); the writer gets its role skills only`);
-      return noPick(enabled, `pick_error:${reason}`);
-    }
-    const { result, folders } = outcome.done;
-    // The browser skill is built-in, not picked: a task checked on a page gets it even when Jev names nothing (sma ap_skills).
-    const skills = taskNeedsBrowser(input.task) && !result.skills.includes("browser-automation") ? [...result.skills, "browser-automation"] : result.skills;
+    const catalog = listing?.catalog ?? [];
+    const hints = declaredSkills(catalog, input.task.skills ?? []);
+    const projectFolder = projectFolderSkills(input.projectCwd, catalog);
+    // The browser skill is built-in, not chosen: a task checked on a page gets it (sma ap_skills).
+    const named = [...new Set([...projectFolder, ...hints])];
+    const skills = taskNeedsBrowser(input.task) && !named.includes("browser-automation") ? [...named, "browser-automation"] : named;
+    const folders = listing?.folders ?? new Map<string, string>();
     const sources = Object.fromEntries(skills.flatMap((name) => (folders.has(name) ? [[name, folders.get(name)!] as const] : [])));
-    log(`Lane Pilot writer skill pick ${JSON.stringify({ attemptId: input.attemptId, enabled, catalog: result.catalog, kept: result.kept, craftKept: result.craftKept, unanswered: result.unanswered, picked: result.picked, craft: result.craft, projectFolder: result.projectFolder, hints: result.hints })}`);
-    return { enabled, skills, picked: result.picked, craft: result.craft, projectFolder: result.projectFolder, hints: result.hints, sources, reason: null };
+    log(`Lane Pilot writer skills ${JSON.stringify({ attemptId: input.attemptId, catalog: catalog.length, projectFolder, hints, skills })}`);
+    return { skills, projectFolder, hints, sources, reason };
   }
 
   return { pick };

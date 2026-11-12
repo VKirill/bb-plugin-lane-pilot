@@ -91,7 +91,7 @@ function attemptDossier(db: LanePilotDatabase, attempt: { id: string; run_id: st
     threadId: attempt.thread_id ?? null, holderThreadId: attempt.holder_thread_id ?? null,
     transitions, stageReceipts, gateEvents,
     reasoningTrace: trace ? {
-      stamp: trace.stamp ?? null, planSha256: trace.planSha256, sentPlanSha256: trace.sentPlanSha256, sourceLength: trace.sourceLength, sentLength: trace.sentLength,
+      stamp: trace.stamp ?? null, planSha256: trace.planSha256, sourceLength: trace.sourceLength,
       ...(context ? { executionPacketSha256: context.executionPacketSha256, lengths: { executionPacket: context.executionPacket.length, memoryText: context.memoryText.length, rulesText: context.rulesText?.length ?? 0, pmReadContext: context.pmReadContext.length, ...(context.promptChars !== undefined ? { prompt: context.promptChars } : {}) } } : {}),
     } : null,
     verdict: attempt.barrier_json ? (() => { try { return JSON.parse(attempt.barrier_json!) as unknown; } catch { return null; } })() : null,

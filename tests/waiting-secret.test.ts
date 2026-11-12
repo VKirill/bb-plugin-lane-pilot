@@ -151,7 +151,6 @@ describe("dispatch of a task whose check needs a secret", () => {
     savePrototypeConfig(db, config);
     saveProjectSetting(db, projectId, "plan_critique.enabled", false);
     saveProjectSetting(db, projectId, "memory.enabled", false);
-    saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     if (options.allow !== null) saveProjectSetting(db, projectId, "secrets.allow", options.allow);
     createRun(db, "run-s", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-s", pmThreadId);

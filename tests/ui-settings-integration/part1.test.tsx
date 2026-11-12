@@ -150,29 +150,4 @@ describe("native writer settings against the registered SQLite backend", () => {
     });
     await finish(harness,slot);
   });
-
-  it("saves the real Jev switch after native Claude selection through the single-setting RPC", async () => {
-    const { harness, slot, singleSaveCalls } = await mountWithBackend();
-    await choosePickerValue({ providerId:"claude-code", model:"claude-opus-5", reasoningLevel:"medium", serviceTier:undefined });
-    await waitFor(async () => {
-      const current = await harness.behavior.callRpc("get_screen", { projectId }) as { values:Record<string,unknown> };
-      expect(current.values["writer.provider"]).toBe("claude-code");
-    });
-    const before = await harness.behavior.callRpc("get_screen", { projectId }) as { values:Record<string,unknown>; versions:Record<string,number> };
-    const key = "jev.LANE_JEV_EFFORT";
-    const expectedValue = String(before.values[key]) === "1" ? "0" : "1";
-    fireEvent.click(slot.getByTestId("role-open-writer"));
-    fireEvent.click(slot.getByTestId("writer-effort-mode").querySelector("button") as HTMLButtonElement);
-    fireEvent.click(slot.getByText(expectedValue === "1" ? en.writerEffortAutomatic : en.writerEffortManual));
-    await waitFor(() => expect(singleSaveCalls).toContainEqual(expect.objectContaining({ key, value:expectedValue, expectedVersion:before.versions[key] ?? 0 })));
-    await waitFor(async () => {
-      const current = await harness.behavior.callRpc("get_screen", { projectId }) as { values:Record<string,unknown>; versions:Record<string,number> };
-      expect(current.values[key]).toBe(expectedValue);
-      expect(current.versions[key]).toBe((before.versions[key] ?? 0) + 1);
-      expect(current.values["writer.provider"]).toBe("claude-code");
-    });
-    expect(slot.getByTestId("writer-effort-mode").textContent).toContain(expectedValue === "1" ? en.writerEffortAutomatic : en.writerEffortManual);
-    expect(slot.queryByTestId("setting-validation-error")).toBeNull();
-    await finish(harness, slot);
-  });
 });

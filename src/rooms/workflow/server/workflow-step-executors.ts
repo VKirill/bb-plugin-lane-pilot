@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import type { stepExecutorSchema } from "../../contracts";
-import {automaticEffortRoutingEnabled, resolveStageWriterSelection, writerFallbackChain, writerFallbacks, writerServiceTier} from "@lane-pilot/models";
+import {resolveStageWriterSelection, writerFallbackChain, writerFallbacks, writerServiceTier} from "@lane-pilot/models";
 ;
 ;
 import { costTier, isZcodeProvider, modelFamily, offeredForRole, zcodeBlock, peerOffSpent, resolveRoleModel, roleFallbackModel, roleModelKey, roleRowOf, validateChoice, type ModelCatalog, type SpentProbe } from "@lane-pilot/models";
@@ -113,7 +113,6 @@ function codeTask(node: Raw, id: string, settings: Settings, pm: PmPair | null, 
   }
   const issues: string[] = [];
   if (!providerId || !model) issues.push("no_selection");
-  if (automaticEffortRoutingEnabled(settings)) issues.push("effort_auto");
   return {
     nodeId: id, kind: "lp-task", uses: text(node.uses), mode: "chain", agent: { role: "writer", helper: "writer", label: "writer" },
     providerId, model, reasoningEffort: effort, serviceTier: tier, source: providerId || model ? "writer" : "none", sourceKey: "writer.model", inherited: true,

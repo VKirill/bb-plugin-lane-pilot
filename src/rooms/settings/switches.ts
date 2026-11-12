@@ -39,7 +39,6 @@ export const UNLISTED_SWITCHES: Readonly<Record<string, readonly [scope: SwitchS
   "writer.launch_parity": ["project", "refuse|warn", "refuse: a writer that started on another provider than asked is stopped and the pair held for 30 minutes (unset warns)"],
   "writer.qa_stop_after": ["project", "number", "after this many failed QA receipts of a task family the advice is to stop, not to follow up (unset: 2; 0 or off: always a follow-up, as before)"],
   "writer.lesson_from_accepted": ["project", "on|off", "LESSON: lines of an accepted attempt are filed as lesson proposals"],
-  "writer.kind_models": ["project", "json", "a map of task kind to the model pool it may use, e.g. {\"docs\":[\"claude-haiku-5-5\"]}"],
   "writer.models_off": ["project", "json", "a list of writer profile keys, provider/model ids or bare model ids no writer is given (the pick and the fallback chain skip them; all off: the task waits, the owner is told)"],
   // money (hub-wide)
   "money.strict": ["global", "on|off", "a free subscription member of the writer chain is taken before a free paid one that stands earlier"],

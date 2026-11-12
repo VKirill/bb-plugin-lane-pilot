@@ -6,18 +6,15 @@ import { Button } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";
 import { Label } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
-import { Switch } from "@lane-pilot/ui-kit";
-import { AdvancedRows, CatalogField, asBoolean, COUNCIL_SEATS } from "../ui-shell/ui";
+import { AdvancedRows, CatalogField, COUNCIL_SEATS } from "../ui-shell/ui";
 import type { LpPage } from "./use-lp-page";
 import {WRITER_FALLBACK_DEFAULTS, WRITER_FALLBACK_SLOTS, type WriterFallbackSlot, writerFallbackKeys, writerFallbackSeed, writerFallbackSlots} from "@lane-pilot/models";
 
 const FALLBACK_TITLES: Record<WriterFallbackSlot, I18nKey> = { 1: "writerFallback1", 2: "writerFallback2", 3: "writerFallback3" };
 
-/** The writer's own settings: the three fallbacks, how the reasoning effort is picked, the agent profile and what the runs say about the pair. */
+/** The writer's own settings: the three fallbacks, the agent profile and what the runs say about the pair. */
 export function WriterDetail({ page }: { page: LpPage }) {
-  const { data, modelPicker, saveWriterFallback, pickerDrafts, fallbackTouched, writerRejected, saveError, advanced, jevRows, displayedValue, applySetting } = page;
-  const effortRow = jevRows.find((row) => row.storageKey === "jev.LANE_JEV_EFFORT");
-  const automaticEffort = asBoolean(displayedValue("jev.LANE_JEV_EFFORT"), true);
+  const { data, modelPicker, saveWriterFallback, pickerDrafts, fallbackTouched, writerRejected, saveError, advanced } = page;
   const slotRows = writerFallbackSlots(data?.values ?? {});
   return (
     <div className="space-y-3" data-testid="writer-detail">
@@ -55,32 +52,9 @@ export function WriterDetail({ page }: { page: LpPage }) {
         })}
       </div>
       {writerRejected && saveError ? <p className="max-w-xl text-xs text-destructive" data-testid="writer-save-error">{saveError.kind === "cas" ? t("casConflict") : validationMessage(saveError.code, saveError.params)}</p> : null}
-      {effortRow ? (
-        <AdvancedRows show={advanced} testId="writer-effort-mode">
-          <div className="flex items-center justify-between gap-2 pt-2">
-            <Label className="text-sm" htmlFor="writer-effort-mode">{t("writerEffortMode")}</Label>
-            <Select value={automaticEffort ? "automatic" : "manual"} onValueChange={(next) => void applySetting(effortRow, next === "automatic" ? "1" : "0")}>
-              <SelectTrigger id="writer-effort-mode" aria-label={t("writerEffortMode")} className="w-[11rem] min-w-0 max-w-full"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="automatic">{t("writerEffortAutomatic")}</SelectItem>
-                <SelectItem value="manual">{t("writerEffortManual")}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <p className="max-w-xl text-xs text-muted-foreground">{automaticEffort ? t("writerEffortFallbackNote") : t("writerEffortManualNote")}</p>
-          <div className="space-y-2" data-testid="jev-settings">
-            {jevRows.filter((row) => row.storageKey !== "jev.LANE_JEV_EFFORT").map((row) => {
-              const label = t("jevOpencode");
-              return <div key={row.storageKey} className="flex items-center justify-between gap-2">
-                <Label className="text-sm" htmlFor={row.id}>{label}</Label>
-                <Switch id={row.id} checked={asBoolean(displayedValue(row.storageKey), true)} aria-label={label}
-                  onCheckedChange={(next) => void applySetting(row, next ? "1" : "0")} />
-              </div>;
-            })}
-          </div>
-          <CatalogField page={page} keyName="writer.agent" />
-        </AdvancedRows>
-      ) : null}
+      <AdvancedRows show={advanced} testId="writer-agent">
+        <CatalogField page={page} keyName="writer.agent" />
+      </AdvancedRows>
     </div>
   );
 }

@@ -102,7 +102,7 @@ async function setup(writerEdits: (workspace: string) => string) {
   });
   const db = openDatabase(bb);
   savePrototypeConfig(db, config);
-  for (const [key, value] of [["plan_critique.enabled", false], ["memory.enabled", false], ["jev.LANE_JEV_EFFORT", false], ["workspace.provider", false],
+  for (const [key, value] of [["plan_critique.enabled", false], ["memory.enabled", false], ["workspace.provider", false],
     ["integration.gate", "off"], ["docs.enabled", false], ["project_life.enabled", false]] as const) saveProjectSetting(db, projectId, key, value);
   createRun(db, runId, projectId, "bb", folder);
   setRunThread(db, runId, pmThreadId);

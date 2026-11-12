@@ -13,7 +13,7 @@ import { HelpSup } from "@lane-pilot/ui-kit";
 import { presentEnumLabel } from "./enum-labels";
 import { usePanelLayout } from "@lane-pilot/ui-kit";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
-import { HELP_BY_KEY, JEV_KEYS, ScreenPayload, asBoolean, numericUnit, reasonKey } from "./page-kit";
+import { HELP_BY_KEY, ScreenPayload, asBoolean, numericUnit, reasonKey } from "./page-kit";
 
 export function SettingsGroup({ title, testId, help, children }: { title?: string; testId: string; help?: ReactNode; children: ReactNode }) {
   return (
@@ -90,15 +90,15 @@ export function FieldControl({
   onChange: (next: unknown) => void;
   onDraft?: (next: unknown) => void;
 }) {
-  const control = JEV_KEYS.has(row.storageKey) ? "switch" : row.control;
+  const control = row.control;
   const label = settingLabel(row);
   if (control === "switch") {
-    const checked = asBoolean(value, JEV_KEYS.has(row.storageKey) ? true : false);
+    const checked = asBoolean(value, false);
     return (
       <Switch
         checked={checked}
         disabled={disabled}
-        onCheckedChange={(next) => onChange(JEV_KEYS.has(row.storageKey) ? (next ? "1" : "0") : next)}
+        onCheckedChange={(next) => onChange(next)}
         aria-label={label}
       />
     );

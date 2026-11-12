@@ -14,7 +14,7 @@ sources:
   - packages/models/src/model-prices.ts
   - packages/models/src/provider-limit.ts
   - packages/models/src/writer-fallbacks.ts
-  - packages/models/src/jev-reasoning.ts
+  - packages/models/src/writer-reasoning.ts
   - packages/models/src/providers.ts
   - packages/models/src/picker-compat.ts
   - packages/models/tests/role-models.test.ts

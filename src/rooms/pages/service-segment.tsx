@@ -125,7 +125,6 @@ export function ServiceSegment({ page }: { page: LpPage }) {
               <SurfaceBody>
               {data?.lastWriterTrace ? <div className="space-y-1 text-xs">
                 <p data-testid="writer-trace-execution">{data.lastWriterTrace.providerId}/{data.lastWriterTrace.model} · {data.lastWriterTrace.effectiveReasoningLevel} · {data.lastWriterTrace.serviceTier ?? "default"}</p>
-                <p>{t("writerTraceMode")}: {data.lastWriterTrace.effortMode === "manual" ? t("writerEffortManual") : t("writerEffortAutomatic")}</p>
                 <p>{t("writerTraceRequested")}: {data.lastWriterTrace.requestedReasoningLevel}</p>
                 {data.lastWriterTrace.fallbackReason ? <p>{t("writerTraceReason")}: {data.lastWriterTrace.fallbackReason}</p> : null}
                 {data.lastWriterTrace.selectionSource ? <p>{t("writerTraceSource")}: {data.lastWriterTrace.selectionSource.reasoningLevelSource}</p> : null}

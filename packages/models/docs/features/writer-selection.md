@@ -5,10 +5,10 @@ created: 2026-11-08
 updated: 2026-11-11
 status: active
 confidence: medium
-tags: [models, writers, anamnesis, jev-reasoning, fallbacks, rotation]
+tags: [models, writers, table, writer-reasoning, fallbacks, rotation]
 sources:
   - packages/models/src/model-profiles.ts
-  - packages/models/src/jev-reasoning.ts
+  - packages/models/src/writer-reasoning.ts
   - packages/models/src/writer-fallbacks.ts
   - packages/models/src/stage-writer-selection.ts
   - packages/models/src/model-tiers.ts
@@ -32,11 +32,11 @@ The package maintains `ROLE_TABLE` for role-based model resolution; writer selec
 
 ## How it works
 
-1. Filter writer candidates using `writerCandidates`: exclude profiles marked unavailable, exclude keys in `writer.models_off`, and, when `writer.models` is an array, keep only keys in that list (packages/models/src/model-profiles.ts:112-120).
-2. Determine writer service tier via `writerServiceTier`: inspect `writer.service_tier` ("standard" or "fast"), falling back to legacy `writer.fast_mode` ("1", "true", "on") (packages/models/src/jev-reasoning.ts:40-48). Map to BB service tier using `bbServiceTier` ("fast" -> "fast", otherwise "default") (packages/models/src/jev-reasoning.ts:50-52).
-3. Check `listedServiceTier`: strip tier when the provider lacks `supportsServiceTier` capability or when "default" tier is unlisted (packages/models/src/jev-reasoning.ts:58-62).
-4. Resolve Jev reasoning effort using `resolveJevReasoning`: when Jev status is "ok" and its decision is supported by the model, use `jevDecision`; otherwise revert to `manualLevel` with a diagnostic fallback reason (packages/models/src/jev-reasoning.ts:9-30).
-5. Build the final execution payload using `writerExecutionSelection`: ensure provider and model consistency via `consistentProvider` and mark input sources as explicit (packages/models/src/jev-reasoning.ts:64-84).
+1. The writer is the project's `writer.provider`/`writer.model`; a pair listed in `writer.models_off` is skipped (`writerSwitchedOff`, packages/models/src/model-profiles.ts). There is no per-task model pick.
+2. Determine writer service tier via `writerServiceTier`: inspect `writer.service_tier` ("standard" or "fast"), falling back to legacy `writer.fast_mode` ("1", "true", "on") (packages/models/src/writer-reasoning.ts:40-48). Map to BB service tier using `bbServiceTier` ("fast" -> "fast", otherwise "default") (packages/models/src/writer-reasoning.ts:50-52).
+3. Check `listedServiceTier`: strip tier when the provider lacks `supportsServiceTier` capability or when "default" tier is unlisted (packages/models/src/writer-reasoning.ts:58-62).
+4. Resolve the reasoning effort with `resolveWriterReasoning`: `writer.reasoning_effort`, clamped to the model's listed levels, with a diagnostic reason (packages/models/src/writer-reasoning.ts).
+5. Build the final execution payload using `writerExecutionSelection`: ensure provider and model consistency via `consistentProvider` and mark input sources as explicit (packages/models/src/writer-reasoning.ts:64-84).
 6. Fallback defaults are GLM-5.3 Flash (slot 1), Gemini 3.8 Flash high (slot 2), and off (slot 3) (packages/models/src/writer-fallbacks.ts:12-16). `writerFallbackSlots` reads configured slots and uses the matching default when a provider is unset; malformed configured values turn that slot off (packages/models/src/writer-fallbacks.ts:25-35).
 7. Assemble the fallback sequence using `writerFallbackChain`: deduplicate against the primary writer and append the PM model as the emergency fallback (packages/models/src/writer-fallbacks.ts:44-54).
 8. Apply task rotation via `rotatedWriterSettings`: compute an FNV-1a hash bucket of `taskId` via `rotationBucket`; if below `writer.rotation_share` (default 25%), swap the primary writer with fallback 1 and set `writer.rotated = true` (packages/models/src/writer-fallbacks.ts:62-84).
@@ -67,10 +67,8 @@ The package maintains `ROLE_TABLE` for role-based model resolution; writer selec
 
 | Failure condition | Detected trigger | System response | Evidence |
 |---|---|---|---|
-| Jev execution failure | `input.status !== "ok"` (`disabled`, `timeout`, `error`) | Uses `manualLevel`; records `fallbackReason = jev_<status>` | (packages/models/src/jev-reasoning.ts:14-17, :25) |
-| Missing Jev effort | `input.status === "ok"` but `jevDecision` is null | Uses `manualLevel`; records `fallbackReason = jev_missing_effort_answer` | (packages/models/src/jev-reasoning.ts:18, :25) |
-| Model unsupported effort | `jevDecision` not in `input.supportedLevels` | Uses `manualLevel`; records `fallbackReason = jev_unsupported_by_selected_model:<effort>` | (packages/models/src/jev-reasoning.ts:19-20, :24) |
-| Catalog unavailable | `input.supportedLevels === null` | Uses `manualLevel`; records `selected_model_catalog_unavailable` | (packages/models/src/jev-reasoning.ts:23, :25) |
+| Effort the model does not list | `writer.reasoning_effort` not in `supportedLevels` | Uses the nearest listed effort; records `manual_effort_clamped:<from>-><to>` | (packages/models/src/writer-reasoning.ts) |
+| Catalog unavailable | `supportedLevels === null` | Uses the setting; records `selected_model_catalog_unavailable` | (packages/models/src/writer-reasoning.ts) |
 | Provider limit refusal | A short provider response matches a limit form, including `HTTP 403 (reset after …)` | `providerLimitNotice` classifies the response as a provider limit; that provider refusal means the task did not run (packages/models/src/provider-limit.ts:1-3,9-13) |
 | Primary writer failure | Quota exhaustion, network fault, or provider error | Dispatches attempt to next candidate in `writerFallbackChain` | (packages/models/src/writer-fallbacks.ts:44-54) |
 
@@ -79,7 +77,7 @@ The package maintains `ROLE_TABLE` for role-based model resolution; writer selec
 - Stable rotation hash: Writer rotation computes an FNV-1a 32-bit hash on `taskId` modulo 100 via `rotationBucket`; every attempt of a task lands in the same bucket (packages/models/src/writer-fallbacks.ts:65-69).
 - Rotation share bounds: `writer.rotation_share` evaluated with `WRITER_ROTATION_SHARE_DEFAULT` is clamped between 0 and 100 with default 25; a share of 0 disables rotation (packages/models/src/writer-fallbacks.ts:62-74).
 - Fallback chain deduplication: A candidate matching the primary writer or an earlier fallback in `providerId/model` is discarded from the chain (packages/models/src/writer-fallbacks.ts:45-50).
-- Provider and model consistency: `writerExecutionSelection` passes provider and model through `consistentProvider`, preventing mismatch errors (packages/models/src/jev-reasoning.ts:71-73).
+- Provider and model consistency: `writerExecutionSelection` passes provider and model through `consistentProvider`, preventing mismatch errors (packages/models/src/writer-reasoning.ts:71-73).
 - Stage writer override order: `resolveStageWriterSelection` checks stage provider/model first, then writer profile settings, then prototype config (packages/models/src/stage-writer-selection.ts:15-31).
 - Worker exclusion: `writer.models_off` entries match a profile key, a `provider/model` pair, or a bare model ID. A match omits that candidate while leaving its writer configuration intact (packages/models/src/model-profiles.ts:112-129).
 
@@ -88,13 +86,13 @@ The package maintains `ROLE_TABLE` for role-based model resolution; writer selec
 | Export | Purpose | Evidence |
 |---|---|---|
 | `WRITER_PROFILES` | Registry of coding models with benchmarks, summaries, and availability | (packages/models/src/model-profiles.ts:24-109) |
-| `writerCandidates` | Filters profiles by availability, `writer.models_off`, and optional `writer.models` allowlist | (packages/models/src/model-profiles.ts:112-120) |
+| `writerSwitchedOff` | Names the `writer.models_off` entry that switches a provider/model off | (packages/models/src/model-profiles.ts) |
 | `writerSwitchedOff` | Finds a matching worker exclusion by profile key, `provider/model`, or bare model ID | (packages/models/src/model-profiles.ts:121-129) |
-| `resolveJevReasoning` | Reconciles automated Jev reasoning decisions with model capabilities and manual fallbacks | (packages/models/src/jev-reasoning.ts:9-30) |
-| `writerExecutionSelection` | Prepares execution parameters and sources for writer spawns | (packages/models/src/jev-reasoning.ts:64-84) |
-| `writerServiceTier` | Reads `writer.service_tier` and legacy `writer.fast_mode` settings | (packages/models/src/jev-reasoning.ts:40-48) |
-| `bbServiceTier` | Normalizes writer tier to "fast" or "default" | (packages/models/src/jev-reasoning.ts:50-52) |
-| `listedServiceTier` | Filters service tiers according to provider capabilities | (packages/models/src/jev-reasoning.ts:58-62) |
+| `resolveWriterReasoning` | Clamps the configured effort to the model's listed levels | (packages/models/src/writer-reasoning.ts) |
+| `writerExecutionSelection` | Prepares execution parameters and sources for writer spawns | (packages/models/src/writer-reasoning.ts:64-84) |
+| `writerServiceTier` | Reads `writer.service_tier` and legacy `writer.fast_mode` settings | (packages/models/src/writer-reasoning.ts:40-48) |
+| `bbServiceTier` | Normalizes writer tier to "fast" or "default" | (packages/models/src/writer-reasoning.ts:50-52) |
+| `listedServiceTier` | Filters service tiers according to provider capabilities | (packages/models/src/writer-reasoning.ts:58-62) |
 | `writerFallbackSlots` | Extracts the 3 fallback slots from settings with built-in defaults | (packages/models/src/writer-fallbacks.ts:26-36) |
 | `writerFallbackChain` | Builds an ordered, deduplicated fallback list including the PM model | (packages/models/src/writer-fallbacks.ts:44-54) |
 | `rotatedWriterSettings` | Swaps writer and fallback 1 for tasks falling within the rotation share | (packages/models/src/writer-fallbacks.ts:72-84) |

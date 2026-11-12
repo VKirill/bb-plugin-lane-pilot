@@ -5,11 +5,10 @@ import type { GraphNode, NodeExecutor, WorkflowEngine } from "@lane-pilot/workfl
 import { getJudgment, jev } from "@lane-pilot/jev";
 import { citationCheckJudgment } from "@lane-pilot/jev/judgments/citation-check";
 import type { Judgment } from "@lane-pilot/jev";
-import { pickSkillTree, readSkillTreeText, skillTreeCached } from "../../platform/server";
 import type { ChainRuntime } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 
-/** The Jev steps of a chain: the native `jev` node, the citation check, and the skill-tree pick — one cheap judgment call, no helper thread. */
+/** The Jev steps of a chain: the native `jev` node and the citation check — one cheap judgment call, no helper thread. */
 export function registerJevSteps(engine: WorkflowEngine, ctx: ServerCore, deps: {
   runtimeOf: (c: { runtime: unknown }, runId?: string) => ChainRuntime | undefined;
 }): void {
@@ -77,21 +76,5 @@ export function registerJevSteps(engine: WorkflowEngine, ctx: ServerCore, deps: 
       return { index: i, verdict: decision.verdict, keep: decision.keep, by: v.by === "jev" ? "jev" : "fallback" };
     });
     return { output: { checked: verdicts.length, kept: out.filter((v) => v.keep).length, verdicts: out } };
-  } });
-
-  // `skills.jev`: Jev walks the catalog tree for this step (skills.tree_pick, hierarchical) and returns the picked
-  // skill names — a graph passes {task} instead of listing skills in the prompt.
-  engine.register<ChainRuntime>("skills.jev", { reentrant: true, run: async (c) => {
-    const params = rec(rec(c.node).params);
-    const task = str(params.task ?? (c.input.with as Row | undefined)?.task ?? c.inputs.task);
-    const rt = runtimeOf(c, c.runId);
-    const judge = jev();
-    if (!judge) return { output: { skills: [], picked: [], by: "off" } };
-    
-    const tree = await skillTreeCached(readSkillTreeText);
-    if (!tree) return { output: { skills: [], picked: [], by: "off" } };
-    const settings = rt?.projectId ? await bestEffort(ctx.log, "workflow settings", ctx.effectiveProjectSettings(rt.projectId).then((r) => r.values as Record<string, unknown>), {}) : {};
-    const got = await pickSkillTree(judge, tree, { title: task, prompt: "" }, { projectId: rt?.projectId ?? null, runId: rt?.runId ?? null, settings });
-    return { output: { skills: got.skills, picked: got.picked, by: got.by } };
   } });
 }

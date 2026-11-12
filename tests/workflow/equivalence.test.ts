@@ -140,7 +140,7 @@ async function runScenario(scenario: Scenario) {
   const db = openDatabase(bb);
   if (scenario.warn) vi.spyOn(bb.log, "warn").mockImplementation((message: string) => { scenario.warn!.push(String(message)); });
   savePrototypeConfig(db, config);
-  const settings = { "plan_critique.min_score": 0, "plan_critique.min_write_tasks": 1, "jev.LANE_JEV_EFFORT": false, "memory.enabled": false, "project_life.enabled": false, "docs.enabled": false, ...scenario.settings };
+  const settings = { "plan_critique.min_score": 0, "plan_critique.min_write_tasks": 1, "memory.enabled": false, "project_life.enabled": false, "docs.enabled": false, ...scenario.settings };
   for (const [key, value] of Object.entries(settings)) saveProjectSetting(db, projectId, key, value);
   createRun(db, runId, projectId, "bb", config.writerWorkspacePath, scenario.runGate ?? "none");
   setRunThread(db, runId, pmThreadId);

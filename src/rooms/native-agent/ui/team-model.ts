@@ -28,7 +28,7 @@ const selectionIdOf = (accessRole: string): RoleSelectionId | undefined => selec
 export const ROLE_GROUPS: Array<{ id: RoleGroupId; roles: RoleSpec[] }> = [
   { id: "code", roles: [
     { id: "writer", testId: "writer-picker", model: "writer", detail: "writer",
-      keys: [...selectionKeysOf("writer"), "writer.agent", "jev.LANE_JEV_EFFORT", "jev.LANE_OPENCODE_JEV", ...WRITER_FALLBACK_SLOTS.flatMap((slot) => Object.values(writerFallbackKeys(slot)))] },
+      keys: [...selectionKeysOf("writer"), "writer.agent", ...WRITER_FALLBACK_SLOTS.flatMap((slot) => Object.values(writerFallbackKeys(slot)))] },
     { id: "code-repair", keys: [] },
     { id: "night-fixer", keys: [] },
   ] },

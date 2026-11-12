@@ -448,7 +448,6 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
   const db = openDatabase(bb);
   setupDb = db;
   savePrototypeConfig(db, emergencySelection ? {...config,pmProviderId:emergencySelection.providerId,pmModel:emergencySelection.model} : config);
-  saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
   for (const [key,value] of Object.entries({"memory.maintain_every":1,"plan_critique.min_score":0,"plan_critique.min_write_tasks":1,"browser_qa.host_id":qaHostId,"browser_qa.workspace_path":"/tmp/lane-pilot-qa","browser_qa.backend":"chrome-qa","browser_qa.provider":"codex","browser_qa.model":"gpt-6-luna",...projectSettings})) saveProjectSetting(db,projectId,key,value);
   createRun(db, "stage-run", projectId, "bb", environmentId ? null : config.writerWorkspacePath,
     projectSettings["run.gate"] === "pre-merge" ? "pre-merge" : "none",buildRunPolicy(projectSettings));
@@ -1361,7 +1360,7 @@ describe("stage → native writer → receipt", () => {
   });
 
   it("runs the writer's fallbacks in turn: one that cannot start hands over to the next, before the PM's model",async()=>{
-    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"plan_critique.enabled":false,"jev.LANE_JEV_EFFORT":false,
+    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"plan_critique.enabled":false,
       "writer.fallback1.provider":"critic","writer.fallback1.model":"not-in-catalog","writer.fallback1.reasoning_effort":"high",
       "writer.fallback2.provider":"critic","writer.fallback2.model":"critic-model","writer.fallback2.reasoning_effort":"high"},undefined,undefined,undefined,undefined,undefined,undefined,false,2,{providerId:"critic",model:"critic-model"});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});

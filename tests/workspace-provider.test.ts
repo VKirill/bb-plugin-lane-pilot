@@ -341,7 +341,7 @@ function world(options: World = {}) {
         return {};
       },
     },
-    effectiveProjectSettings: async () => ({ values: { "jev.LANE_JEV_EFFORT": false, "memory.enabled": false, "adoc.040": "auto", ...options.settings } }),
+    effectiveProjectSettings: async () => ({ values: { "memory.enabled": false, "adoc.040": "auto", ...options.settings } }),
   };
   const services = { providerBreaker: { decide: () => ({ allow: true }) }, ruleScan: { chainForRun: async () => [] }, reconcileAttemptThread: async () => "writer-recovered", recoverLostHolderThread: async () => null };
   const writer = createWriterSpawn(ctx as never, services as never);

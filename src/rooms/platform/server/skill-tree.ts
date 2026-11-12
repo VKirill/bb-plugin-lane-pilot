@@ -94,46 +94,30 @@ export async function readSkillTreeText(): Promise<string> {
   return out.stdout;
 }
 
+/** The writer role's own skills: the role always has them, so the catalog never lists them. */
+export const WRITER_BASE_SKILLS: readonly string[] = ["writer-practices", "karpathy-guidelines"];
+
+export type ListedSkill = { name: string; description?: string | null };
+export type CatalogEntry = { name: string; description: string };
+
 /**
- * B7: Jev walks the catalog tree for a specialist or a graph step (hierarchical: section → subsection → skill).
- * `judge` is the shared Jev or null; shadow mode records receipts while the caller's own pick stands.
+ * The skills a task may be given from the BB list: a listed skill with a description, without the writer's own skills, and without
+ * a `plugin:name` copy of a plain name that is listed too. A skill with no description is skipped: a name alone ranked top by mistake.
  */
-export async function pickSkillTree(
-  judge: import("@lane-pilot/jev").Jev | null,
-  tree: SkillTree,
-  task: { title: string; prompt: string },
-  ctx: import("@lane-pilot/jev").JudgeContext = {},
-): Promise<{ skills: string[]; picked: string[]; by: "jev" | "shadow" | "off" }> {
-  const { skillTreePickJudgment } = await import("@lane-pilot/jev/judgments/skill-tree-pick");
-  if (!judge || !tree.sections.length) return { skills: [], picked: [], by: "off" };
-  const text = `${task.title}\n${task.prompt}`;
-  const ask = async (level: "section" | "subsection" | "skill", path: string, options: Record<string, string>) => {
-    const verdict = await judge.judge(skillTreePickJudgment, { task: text, level, path, options }, ctx);
-    const picked = verdict.by === "jev" ? verdict.decision.picked : verdict.by === "fallback" && verdict.shadow?.decision ? verdict.shadow.decision.picked : [];
-    return { picked, active: verdict.by === "jev" };
-  };
-  const sections = await ask("section", "/", Object.fromEntries(tree.sections.map((s) => [s.id, s.titleEn ?? s.title])));
-  const skills: string[] = [], picked: string[] = [...sections.picked];
-  let active = sections.active;
-  for (const sectionId of sections.picked) {
-    const section = tree.sections.find((s) => s.id === sectionId);
-    const subs = section?.subsections ?? [];
-    let subIds: string[] = [];
-    if (subs.length) {
-      const sub = await ask("subsection", `/${sectionId}`, Object.fromEntries(subs.map((s) => [s.id, s.titleEn ?? s.title])));
-      active = active || sub.active;
-      subIds = sub.picked;
-      picked.push(...sub.picked.map((id) => `${sectionId}/${id}`));
-    }
-    const pool = tree.skills.filter((sk) => sk.category?.sectionId === sectionId && (!subIds.length || (sk.category.subsectionId && subIds.includes(sk.category.subsectionId))));
-    if (pool.length && pool.length <= 24) {
-      const hit = await ask("skill", `/${sectionId}/${subIds.join(",")}`, Object.fromEntries(pool.map((sk) => [sk.name, sk.name])));
-      active = active || hit.active;
-      skills.push(...hit.picked);
-      picked.push(...hit.picked);
-    } else skills.push(...pool.map((sk) => sk.name));
+export function skillCatalog(listed: ListedSkill[]): CatalogEntry[] {
+  const plain = (name: string) => name.slice(name.lastIndexOf(":") + 1);
+  const plainNames = new Set(listed.map((skill) => skill.name).filter((name) => !name.includes(":")));
+  const seen = new Set<string>();
+  const catalog: CatalogEntry[] = [];
+  for (const skill of listed) {
+    const description = (skill.description ?? "").trim();
+    if (!description || WRITER_BASE_SKILLS.includes(plain(skill.name))) continue;
+    if (skill.name.includes(":") && plainNames.has(plain(skill.name))) continue;
+    if (seen.has(skill.name)) continue;
+    seen.add(skill.name);
+    catalog.push({ name: skill.name, description });
   }
-  return { skills: [...new Set(skills)], picked, by: active ? "jev" : "shadow" };
+  return catalog;
 }
 
 /* --- `bb lane-pilot skills`: the PM's searchable view of the hub catalog -------------------------- */

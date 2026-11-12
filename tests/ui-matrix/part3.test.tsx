@@ -40,7 +40,7 @@ describe("Lane Pilot UI", () => {
       } }),
     });
     await slot.findByTestId("writer-picker");
-    fireEvent.click(openRole(slot, "writer").querySelector("[data-testid='jev-settings'] [role='switch']") as HTMLButtonElement);
+    fireEvent.click(slot.container.querySelector("[role='switch']") as HTMLButtonElement);
     await slot.findByTestId("setting-validation-error");
     expect(slot.getByText(ru.validationInvalidChoice.replace("{key}", "writer.provider").replace("{allowed}", "agy, grok, qwen"))).toBeTruthy();
     expect(slot.queryByTestId("cas-conflict")).toBeNull();

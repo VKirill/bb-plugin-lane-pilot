@@ -36,7 +36,6 @@ import { qaRoute } from "../../src/rooms/contracts/quality-mode";
 import { normalizeModel } from "../../src/rooms/usage/server";
 import { LIMIT } from "../../src/rooms/contracts/failure-class";
 import { walkWriterChain, writerHold, type WriterHoldDeps } from "../../src/rooms/writer/server/writer-hold";
-import { writerPickOverlay } from "../../src/rooms/writer/writer-model-pick";
 import { atlasStructure, capabilitySnapshot } from "../../scripts/atlas";
 import { REQUIRED_CAPABILITIES } from "../../src/rooms/native-install/capabilities";
 import { terminalSessionLayers } from "../../src/rooms/native-agent";
@@ -133,22 +132,6 @@ describe("parity d8-2: stats, lessons, routing, money", () => {
     expect(usage.parts).toEqual({ input: 10, output: 5, cached: 2, total: 15 });
     expect(accountingPartsProblem({ input: 10, output: 5, cached: 2, total: 15 })).toBeNull();
     expect(accountingPartsProblem({ input: 10, output: 5 } as never)).toMatch(/cached/);
-  });
-
-  it("[sma:m_md_role_wanted] writer.kind_models narrows the candidates to the kind's pool, an unlisted kind keeps all, and an empty pool keeps the project's own writer", async () => {
-    const store = new Map<string, unknown>();
-    const kv = { get: async (key: string) => store.get(key) ?? null, set: async (key: string, value: unknown) => { store.set(key, value); } };
-    const deps = { kv, held: async () => false, log: () => undefined, jev: null };
-    const settings = { "writer.models": ["gpt-terra", "sonnet"], "writer.kind_models": { docs: ["gpt-terra"] } };
-    const route = () => [...store.values()].find((value) => value && typeof value === "object" && "considered" in (value as object)) as { considered: string[]; excluded: Array<{ key: string; reason: string }> } | undefined;
-    await writerPickOverlay(deps as never, settings as never, { projectId: "p", runId: "r", taskId: "T1", task: { title: "t", kind: "docs" } } as never);
-    expect(route()?.considered).toEqual(["gpt-terra"]);
-    store.clear();
-    await writerPickOverlay(deps as never, settings as never, { projectId: "p", runId: "r", taskId: "T2", task: { title: "t", kind: "feature" } } as never);
-    expect([...(route()?.considered ?? [])].sort()).toEqual(["gpt-terra", "sonnet"].sort());
-    store.clear();
-    await writerPickOverlay(deps as never, { ...settings, "writer.kind_models": { docs: [] } } as never, { projectId: "p", runId: "r", taskId: "T3", task: { title: "t", kind: "docs" } } as never);
-    expect(route()?.excluded.map((row) => row.reason)).toContain("kind_pool");
   });
 });
 
@@ -445,7 +428,7 @@ describe("review fix 3: launch parity", () => {
           threads: { get: async ({ threadId }: { threadId: string }) => (threadId === "writer-1" ? thread : { id: "pm", projectId: "P", status: "idle" }),
             stop: async ({ threadId }: { threadId: string }) => { stopped.push(threadId); return {}; }, spawn: async () => ({ id: "writer-1" }) } } },
       db, host: { call: async (method: string) => method === "runCommand" ? { hostId: "h", exitCode: 0, stdout: "[]", stderr: "" } : method === "gitCreateWorktree" ? { status: "ready", path: "/wt/a1/repo", branch: "lane/a1", reason: null } : {} },
-      effectiveProjectSettings: async () => ({ values: { "jev.LANE_JEV_EFFORT": false, "memory.enabled": false, "adoc.040": "auto" } }),
+      effectiveProjectSettings: async () => ({ values: { "memory.enabled": false, "adoc.040": "auto" } }),
     };
     // A breaker that was open long enough to be half-open: the spawn reserves the trial.
     const breaker = createProviderBreaker({ cooldownMs: 1 });

@@ -1,14 +1,13 @@
 import { expect, it } from "vitest";
 import { inheritProjectValues } from "@lane-pilot/settings-catalog";
-import { automaticEffortRoutingEnabled, writerServiceTier } from "@lane-pilot/models";
+import { writerServiceTier } from "@lane-pilot/models";
 
-it("gives an unconfigured project Luna high fast with explicit effort routing", () => {
+it("gives an unconfigured project Luna high fast with a fixed effort", () => {
   const result = inheritProjectValues({}, {});
   expect(result.values).toMatchObject({
     "writer.provider": "codex", "writer.model": "gpt-6-luna",
     "writer.reasoning_effort": "high", "writer.service_tier": "fast",
   });
-  expect(automaticEffortRoutingEnabled(result.values)).toBe(false);
   expect(writerServiceTier(result.values)).toBe("fast");
   expect(result.explicitKeys).toEqual([]);
 });
@@ -21,17 +20,14 @@ it("preserves project, global and legacy writer selections", () => {
   ] as const) {
     const { values } = inheritProjectValues(project, defaults);
     expect(values["writer.service_tier"]).toBeUndefined();
-    expect(values["jev.LANE_JEV_EFFORT"]).toBeUndefined();
     expect(values["writer.model"]).not.toBe("gpt-6-luna");
   }
 });
 
-it("respects explicit effort, standard tier and Jev overrides", () => {
+it("respects explicit effort and standard tier", () => {
   const { values } = inheritProjectValues({
     "writer.reasoning_effort": "low", "writer.service_tier": "standard",
-    "jev.LANE_JEV_EFFORT": true,
   }, {});
   expect(values["writer.reasoning_effort"]).toBe("low");
   expect(writerServiceTier(values)).toBe("standard");
-  expect(automaticEffortRoutingEnabled(values)).toBe(true);
 });

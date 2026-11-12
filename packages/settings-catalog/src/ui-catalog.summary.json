@@ -1,7 +1,7 @@
 {
-  "rows": 532,
-  "editable": 272,
-  "readonly": 111,
+  "rows": 530,
+  "editable": 267,
+  "readonly": 110,
   "gap": 0,
   "excluded": 153,
   "from88": {
@@ -59,8 +59,6 @@
     "install.CODEX_HOME",
     "install.LANE_INSTALL_CLAUDE_PLUGIN",
     "install.LANE_INSTALL_LOCAL_MARKETPLACE",
-    "jev.LANE_JEV_EFFORT",
-    "jev.LANE_OPENCODE_JEV",
     "memory.agent",
     "memory.audience",
     "memory.context_budget",

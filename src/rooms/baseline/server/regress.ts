@@ -20,7 +20,6 @@ import {
   closeRegression, getRegression, insertPass, insertRegression, lastPass, listRegressions, openRegression, releaseSettlement, settledByHand, touchRegression,
   type RegressionRecord,
 } from "../store";
-import { judgeMeant } from "../regress-meant";
 
 /**
  * The regression pass after acceptance (SMA atlas delta D1-2: «regression of earlier phases», «seven-day rollback watch»).
@@ -246,38 +245,6 @@ export function createRegression(ctx: ServerCore, services: Services) {
     return finding({ kind, bisect: found.status, culpritCommit: found.commit, culpritTask: found.task, culpritSubject: found.subject, note: stored, id, fresh: true, sharedFiles: shared });
   }
 
-  /**
-   * A meant change settles itself: the stale sweep asks Jev once per culprit whether the culprit task deliberately
-   * removed or changed what the red check pins. At p ≥ 0.9 the row closes with the contract phrase that gives it away;
-   * below, it stays open and the p lands in the note once (evidence.meant keeps the answer, so a pass does not ask
-   * twice). No Jev, a fallback or a failure: the row is left open, never guessed.
-   */
-  async function settleMeantChange(open: RegressionRecord, projectId: string): Promise<boolean> {
-    if (open.kind !== "regression" || !open.culpritTask) return false;
-    // Once per culprit: a note that already carries the verdict of this culprit is not judged again (the pass's
-    // touchRegression rewrites evidence on every red run, so the marker lives in the note, not there).
-    if ((open.note ?? "").includes(`Jev p=`) && (open.note ?? "").includes(open.culpritTask)) return false;
-    const evidence = (open.evidence ?? {}) as { output?: unknown };
-    const text = (value: unknown): string => (typeof value === "string" ? value : Array.isArray(value) ? value.filter((x): x is string => typeof x === "string").join("\n") : "");
-    const original = getTask(db, open.taskId)?.contract as { objective?: unknown } | undefined;
-    const culprit = getTask(db, open.culpritTask)?.contract as { objective?: unknown; acceptance?: unknown } | undefined;
-    if (!culprit) return false;
-    const verdict = await judgeMeant(
-      { objective: text(original?.objective), command: open.command, output: text(evidence.output), culpritContract: [text(culprit.objective), text(culprit.acceptance)].filter(Boolean).join("\n") },
-      { projectId, runId: open.runId, subject: `regression ${open.id}` },
-      log,
-    );
-    if (!verdict) return false;
-    const phrase = ([text(culprit.objective), text(culprit.acceptance)].filter(Boolean).join("\n").split("\n").find((line) => line.trim()) ?? "").trim().slice(0, 120);
-    if (verdict.meant) {
-      return closeRegression(db, open.id, `meant by ${open.culpritTask} (Jev p=${verdict.p.toFixed(2)}): ${phrase}`);
-    }
-    if (!(open.note ?? "").includes("Jev p=")) {
-      db.prepare("UPDATE lane_pilot_regression SET note=? WHERE id=? AND state='open'").run(`${open.note ?? ""}${open.note ? "; " : ""}Jev p=${verdict.p.toFixed(2)} ${open.culpritTask} did not mean it`.slice(0, 500), open.id);
-    }
-    return false;
-  }
-
   async function passFor(projectId: string, options: RegressOptions, deadline: number): Promise<ProjectPass> {
     const started = Date.now();
     const now = options.now ?? started;
@@ -302,7 +269,6 @@ export function createRegression(ctx: ServerCore, services: Services) {
         if (services.rollback.status(open.taskId).receipts.some((r) => r.kind === "revert" && r.state === "merged") && closeRegression(db, open.id, "the task was reverted")) report.closed.push(open.id);
         else if (open.kind === "unstable" && open.foundAt <= now - 7 * DAY && closeRegression(db, open.id, "unstable for a week: flaky or the machine, not later work")) report.closed.push(open.id);
         else if (pinsPackageVersion(open.command) && closeRegression(db, open.id, "the check pins the package version: a later bump is meant, not a regression")) report.closed.push(open.id);
-        else if (await settleMeantChange(open, projectId)) report.closed.push(open.id);
       }
     }
     if (options.plan) return finish();

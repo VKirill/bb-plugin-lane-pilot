@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { en, ru, setLocaleOverride } from "@lane-pilot/i18n";
 import { SECTION_ORDER, VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
-import { JEV_KEYS, compatibilityAliasRows } from "../../src/rooms/ui-shell/ui";
+import { compatibilityAliasRows } from "../../src/rooms/ui-shell/ui";
 import { PICKER_KEYS, extraSettingRows } from "../../src/rooms/pages/page-model";
 import { settingLabel } from "../../src/rooms/ui-shell/ui";
 
@@ -9,8 +9,8 @@ afterEach(() => setLocaleOverride("en"));
 
 describe("the settings copy after the tidy-up", () => {
   const aliases = new Set(compatibilityAliasRows().map((row) => row.id));
-  // The rows the screen labels itself: model pickers carry their own labels, the two Jev environment switches are not shown as rows, the old adoc names are listed as names.
-  const shown = VISIBLE_CATALOG.filter((row) => row.uiStatus === "editable" && !aliases.has(row.id) && !PICKER_KEYS.has(row.storageKey) && !JEV_KEYS.has(row.storageKey) && row.storageKey !== "writer.agent");
+  // The rows the screen labels itself: model pickers carry their own labels, the old adoc names are listed as names.
+  const shown = VISIBLE_CATALOG.filter((row) => row.uiStatus === "editable" && !aliases.has(row.id) && !PICKER_KEYS.has(row.storageKey) && row.storageKey !== "writer.agent");
 
   it("no shown row is labelled with its raw key or with a command-line flag, in either language", () => {
     const bad: string[] = [];

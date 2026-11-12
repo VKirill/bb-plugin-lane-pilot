@@ -13,8 +13,6 @@ import { isWriterStreamError } from "./writer-task";
 import { markAttemptStart } from "./attempt-marker";
 import { writerLeftWorktree } from "./left-worktree";
 import { buildCapsule, capsuleRestored } from "../../session-hooks";
-import { judgeSessionDigest } from "../session-digest";
-import { jev } from "@lane-pilot/jev";
 
 import type { HarnessApi } from "../../harness/server/harness";
 import type { RollbackApi } from "../../rollback/server/rollback";
@@ -275,14 +273,6 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
         dirtBefore = dirt.snapshots;
       }
       const compacted = await compactIfFull(writer.threadId);
-      // Compaction without a summary: the pairs the session no longer needs are dropped, the rest stays verbatim.
-      let digest = "";
-      if (compacted) {
-        const events = await listThreadEventsRaw(bb, { threadId:writer.threadId, types:["item/completed"], order:"desc", limit:"100" } as never)
-          .then((listed) => (listed?.ok ? listed.events : []), () => [] as never[]);
-        digest = await bestEffort(ctx.log, "sticky session digest", judgeSessionDigest(jev(), { goal:input.taskId, events: events as Array<Record<string, unknown>> },
-          { projectId:input.config.projectId, runId:input.runId, subject:input.taskId, settings:loadProjectSettings(db, input.config.projectId, getRunSettingsScopes(db, input.runId)) }), null) ?? "";
-      }
       if (!setAttemptWorkspace(db, input.attemptId, { path:writer.workspacePath, environmentId:writer.environmentId, decision:writer.decision })) {
         return { ok:false, reason:"attempt_workspace_cas_conflict", bound:false };
       }
@@ -315,7 +305,7 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
       try {
         const turn = typeof input.prompt === "function" ? input.prompt(conflicts) : input.prompt;
         const lead = compacted ? capsuleRestored(buildCapsule({ asks: [turn.slice(0, 300)], files: [], claims: [] })) : "";
-        const text = [lead, digest, turn, ...harnessLines].filter(Boolean).join("\n\n");
+        const text = [lead, turn, ...harnessLines].filter(Boolean).join("\n\n");
         await sendServiceMessage(bb, { threadId:writer.threadId, text, senderThreadId:getRun(db, input.runId)?.pm_thread_id });
       } catch (cause) {
         // The task went round on the same thread before (live 2026-10-25: «sticky_send_failed: HTTP 409 … section is archived or moving»).

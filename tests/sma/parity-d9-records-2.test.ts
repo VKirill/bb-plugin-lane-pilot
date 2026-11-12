@@ -204,7 +204,7 @@ describe("[sma:m_wrappers] transitionAttempt journals atomically", () => {
 });
 
 describe("[sma:m_sw_worker_history] [sma:m_sw_worker_card] outcomes, presence and the worker card", () => {
-  const trace = (attemptId: string, providerId: string, model: string, runId: string) => ({ planSha256: "s", sentPlanSha256: null, sourceLength: 1, sentLength: null, jevStatus: "ok" as const, jevDecision: null,
+  const trace = (attemptId: string, providerId: string, model: string, runId: string) => ({ planSha256: "s", sourceLength: 1,
     requestedReasoningLevel: "m", effectiveReasoningLevel: "m", fallbackReason: null, providerId, model, serviceTier: null, requestedServiceTier: "default" as const, runId, attemptId, threadId: null });
 
   function seed() {
@@ -273,11 +273,6 @@ describe("[sma:ar_stamp] the writer spawn path stamps the trace it saves", () =>
       },
       experimental_callHostRpc: (call: { method: string; input: unknown }) => {
         if (call.method === "gitOwnershipBase") return { hostId: "host-test", status: "not-git", branch: null, headSha: null, baseRef: null, baseSha: null, compareCommitted: false, reason: "fixture" };
-        if (call.method === "classifyPlan") {
-          const plan = (call.input as { plan: string }).plan;
-          const sha = createHash("sha256").update(plan, "utf8").digest("hex");
-          return { hostId: "host-test", status: "ok", effort: "medium", reason: null, planSha256: sha, sentPlanSha256: sha, sourceLength: Buffer.byteLength(plan), sentLength: Buffer.byteLength(plan) };
-        }
         if (call.method !== "runCommand") throw new Error(`unexpected ${call.method}`);
         const command = String((call.input as { command?: string }).command ?? "");
         return { hostId: "host-test", exitCode: 0, stdout: command.includes("porcelain") ? JSON.stringify(++snapshots <= 2 ? [] : [{ path: "hello.txt", sha256: "created" }]) : "", stderr: "" };
@@ -319,7 +314,7 @@ describe("[sma:ar_run_dir] the attempt dossier is bounded", () => {
 
   it("keeps the shape of main, adds the stamp, the shas and the lengths of the trace and never its texts", () => {
     const db = seed();
-    saveReasoningTrace(db, { stamp: { stateMachineVersion: STATE_MACHINE_VERSION, harnessVersion: "x" }, planSha256: "plan-sha", sentPlanSha256: null, sourceLength: 1, sentLength: null, jevStatus: "ok", jevDecision: null,
+    saveReasoningTrace(db, { stamp: { stateMachineVersion: STATE_MACHINE_VERSION, harnessVersion: "x" }, planSha256: "plan-sha", sourceLength: 1,
       requestedReasoningLevel: "m", effectiveReasoningLevel: "m", fallbackReason: null, providerId: "p", model: "m", serviceTier: null, requestedServiceTier: "default", runId: "run_d", attemptId: "ad2", threadId: "thr_w",
       dispatchContext: { memoryText: big("memory"), rulesText: big("rules"), executionPacket: big("packet"), executionPacketSha256: "packet-sha", pmReadContext: big("pm"), agent: "a", helperMode: "h", helperRequired: false } });
     transitionAttempt(db, "ad2", "spawn_requested", { reason: "go", threadId: "thr_w" });

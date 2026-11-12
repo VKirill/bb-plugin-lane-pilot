@@ -206,8 +206,6 @@ export const rpcRuns = {
         effectiveReasoningLevel: z.string(),
         serviceTier: z.enum(["default", "fast"]).nullable(),
         fallbackReason: z.string().nullable(),
-        jevStatus: z.enum(["ok", "disabled", "timeout", "error"]),
-        effortMode: z.enum(["automatic", "manual"]).optional(),
         selectionSource: z.object({
           providerId: z.string(),
           model: z.string(),

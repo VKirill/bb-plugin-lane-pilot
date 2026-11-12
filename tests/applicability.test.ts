@@ -62,7 +62,7 @@ describe("adoc applicability catalog", () => {
       gap: summary.gap,
       excluded: summary.excluded,
     });
-    expect(counts.editable + counts.readonly + counts.gap + counts.excluded).toBe(536);
+    expect(counts.editable + counts.readonly + counts.gap + counts.excluded).toBe(530);
     expect(summary.blank).toBe(0);
     expect(summary.tuple_equal).toBe(true);
   });
@@ -171,12 +171,6 @@ describe("adoc applicability catalog", () => {
     expect(UI_CATALOG.find((row)=>row.id==="s272")?.rationale).toContain("global file-path/off switch is intentionally not written or honored");
   });
 
-  it("documents retry LANE_JEV_EFFORT as an alias of the single native control",()=>{
-    expect(UI_CATALOG.find((row)=>row.id==="s273")).toMatchObject({
-      storageKey:"jev.LANE_JEV_EFFORT",uiStatus:"readonly",channel:"NONE",evidence:"server.ts:825",
-    });
-  });
-
   it("keeps legacy fast-mode rows diagnostic and aliases the TUI field to service tier", () => {
     const legacy = UI_CATALOG.filter((row) => ["s024", "s303", "s315"].includes(row.id));
     expect(legacy).toHaveLength(3);
@@ -189,7 +183,7 @@ describe("adoc applicability catalog", () => {
   });
 
   it("keeps all former UI-visible fields on screen", () => {
-    expect(VISIBLE_CATALOG).toHaveLength(383) /* 0.1.461: night_review.* rows reserved */; // +2 owner.words, phase.rails (0.1.459), +1 lead.priority (0.1.452), +1 memory.maintain_every (wave10), +3 wave17 rows (failure.interventions, writer.retry_escalate, memory.maintain_mode), +1 episodes.collect (R3), +1 episodes.process_key (R6)
+    expect(VISIBLE_CATALOG).toHaveLength(377) /* 0.1.461: night_review.* rows reserved */; // +2 owner.words, phase.rails (0.1.459), +1 lead.priority (0.1.452), +1 memory.maintain_every (wave10), +3 wave17 rows (failure.interventions, writer.retry_escalate, memory.maintain_mode), +1 episodes.collect (R3), +1 episodes.process_key (R6)
     expect(VISIBLE_CATALOG.every((row) => row.uiStatus !== "excluded")).toBe(true);
     expect(UI_CATALOG.filter((row) => row.id >= "s355" && row.setting.startsWith("docs.")).every((row) => row.uiStatus === "editable" && row.channel === "OWN")).toBe(true);
     expect(UI_CATALOG.filter((row)=>["night_review.enabled","night_review.provider","night_review.model","night_review.agent"].includes(row.storageKey)&&row.id!=="s290").every((row)=>row.uiStatus==="excluded"&&row.channel==="OWN")).toBe(true); // 0.1.461: reserved rows left the screen with the night-review group

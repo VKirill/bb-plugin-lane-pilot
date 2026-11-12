@@ -84,7 +84,6 @@ describe("parallel low-risk writers in one git folder", () => {
     savePrototypeConfig(db, config);
     saveProjectSetting(db, projectId, "plan_critique.enabled", false);
     saveProjectSetting(db, projectId, "memory.enabled", false);
-    saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     createRun(db, "run-parallel", projectId, "bb", folder);
     setRunThread(db, "run-parallel", pmThreadId);
     await plugin(bb);

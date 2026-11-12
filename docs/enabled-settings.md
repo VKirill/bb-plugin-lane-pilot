@@ -117,8 +117,6 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `integration.gate_command` | — | — | integration gate: the whole-suite command run after a batch of tasks merged |
 | `integration.gate_every` | `5` | — | integration gate: merged tasks between two runs when the gate is every_n |
 | `integration.gate_when` | `queue_drained` | — | integration gate: run when the queue is drained or after every N merged tasks |
-| `jev.LANE_JEV_EFFORT` | `1 (on)` | — | effort routing reads this setting |
-| `jev.LANE_OPENCODE_JEV` | `1 (on)` | — | effort routing reads this setting |
 | `jev.enabled` | `true` | — | Jev judgments (src/jev): false turns every judgment off for the project |
 | `jev.modes` | — | — | Jev judgments: off, shadow or active per judgment |
 | `jev.provider` | `typesafe` | — | Jev provider: openlux or typesafe serves every Jev request |
@@ -264,17 +262,14 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `writer.model` | `per-provider default` | — | writer stage reads this setting |
 | `writer.owns_barrier` | `on` | — | contract barrier: after an attempt's worktree is bound, tracked files outside owns_paths are read-only for it, so an outside write is refused by the OS instead of failing acceptance after the fact |
 | `writer.pair_pin` | `on` | — | writer pin: the task's provider+model for its whole life |
-| `writer.pick_refusal_penalty` | `on` | — | writer pick: on charges a model pair for this project's provider-refusal share over 30 days (from 10 attempts) when Jev spreads the pick |
 | `writer.provider` | `codex (lp-defaults.ts inheritProjectValues; kimi was the adoc CLI default)` | — | writer stage reads this setting |
 | `writer.question_wait_min` | `120` | — | writer question: minutes a question to a human may stand unanswered before the machine acts on it |
 | `writer.reasoning_effort` | `high (lp-defaults.ts; low was the adoc CLI default)` | — | writer stage reads this setting |
 | `writer.retry_escalate` | `false` | — | writer fallback chain: on sends the first red check of a task-class failure to the next writer inside the same attempt budget |
 | `writer.retry_safety` | `on` | — | retry gate: on stops an automatic retry when the failed attempt's work area was touched after it ended (foreign edits, rewritten evidence, secret residue) |
-| `writer.route_record` | `on` | — | writer route record: the route decision — candidates, exclusions with reasons, the pick — kept in the task KV for the attempt receipt and the task screen |
 | `writer.service_tier` | `fast (lp-defaults.ts; standard unless the provider forces was the adoc CLI default)` | — | writer stage reads this setting |
 | `writer.session_max_turns` | `5` | — | writer turn ceiling: how many times the writer may return to one task in one conversation (sticky.ts sessionLimit, default 5) |
 | `writer.silence_nudge_min` | `20` | — | writer watchdog: minutes of silence before a running writer is nudged |
-| `writer.skill_pick` | `on` | — | writer skill picking: Jev picks task skills before each attempt |
 | `writer.task_wall_clock_min` | `720` | — | retry caps: the most minutes a task may live across attempts and restarts before it ends with task_wall_clock |
 | `writer.verify_max_passes` | `10` | — | retry caps: the most failed verification gate evaluations a task may accumulate before it ends with verify_passes_exhausted |
 

@@ -70,9 +70,8 @@ export function executorFor(executors: ReadonlyMap<string, StepExecutor>, view: 
 }
 
 const COST_PILL: Record<StepExecutor["costTier"], string> = { none: "lp-pill-muted", low: "lp-pill-success", medium: "lp-pill-neutral", high: "lp-pill-warning", unknown: "lp-pill-muted" };
-const ISSUE_INFO = new Set(["effort_auto"]);
-/** A note, not a problem: the effort routing, and a move to the other family because the provider's limit is nearly spent (`usage_moved: claude-code weekly 93% → codex/gpt-6.1-sol`). */
-const isInfoIssue = (code: string): boolean => ISSUE_INFO.has(code) || code.startsWith("usage_moved:");
+/** A note, not a problem: a move to the other family because the provider's limit is nearly spent (`usage_moved: claude-code weekly 93% → codex/gpt-6.1-sol`). */
+const isInfoIssue = (code: string): boolean => code.startsWith("usage_moved:");
 export const realIssues = (executor: StepExecutor): string[] => executor.issues.filter((code) => !isInfoIssue(code));
 export const issueText = (code: string): string => {
   const key = `wfModelIssue_${code}` as I18nKey;
