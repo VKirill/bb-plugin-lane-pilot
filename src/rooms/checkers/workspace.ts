@@ -1,5 +1,3 @@
-import { jev, type JevSettings, type JudgeContext } from "@lane-pilot/jev";
-import { hostCommandJudgment } from "@lane-pilot/jev/judgments/host-command";
 import { bestEffort } from "@lane-pilot/kit";
 import { mapVerificationCwd } from "../tasks";
 import type { CommandRun, Subject, VerificationSession } from "./checkers";
@@ -16,28 +14,6 @@ export const quote = (word: string): string => `'${word.replace(/'/g, `'\\''`)}'
 
 const TAIL = 4000;
 const MAX_FILE_BYTES = 200_000;
-
-/**
- * B3: commands the task contract (an agent's YAML) asks to run pass the `guard.host_command` judgment first — protection
- * from mistakes, not a ban on the agent. Shadow by default (the receipt records what Jev would have done); active, a
- * `stop` decision returns exit 78 and a readable reason instead of running. `review` runs and only marks the receipt.
- */
-export function guardShellPort(shell: ShellPort, ctx: () => JudgeContext | undefined, log: (message: string) => void = console.warn): ShellPort {
-  return {
-    async run(cwd, command, timeoutSec) {
-      const judge = jev();
-      if (judge) {
-        const c = ctx() ?? {};
-        const settings = (c as { settings?: JevSettings }).settings;
-        const verdict = await bestEffort(log, `jev host_command ${command.slice(0, 120)}`, judge.judge(hostCommandJudgment, { command, cwd, workspaceRoots: [cwd], task: "" }, c), null);
-        if (verdict?.by === "jev" && verdict.decision.action === "stop") {
-          return { exitCode: 78, stdout: "", stderr: `stopped by jev guard.host_command: ${verdict.decision.reason}` };
-        }
-      }
-      return shell.run(cwd, command, timeoutSec);
-    },
-  };
-}
 
 /**
  * The `node_modules` folders of the live checkout, put into the clone so the checks find their dependencies: a copy-on-write clone on macOS

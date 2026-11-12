@@ -2,7 +2,7 @@
 // to the owner appears and when he answers, the exam math and the predictor's judgment. The journal itself is behind ./server, the CLI behind ./cli.
 export { leadMigrations } from "./migrations";
 export { EXAM_RULES, cohenKappa, examAll, examClass, examEligible, wilsonLower, type ClassExam, type ExamRow, type Verdict } from "./logic";
-export { LEAD_PREDICT_ID, leadPredictJudgment, type PredictDecision, type PredictInput } from "./predict";
+export type { PredictDecision } from "./server/journal";
 export { answerPhaseWord, answerTaskWord, askPhaseWord, askTaskWord, phaseDecisionId, wordDecisionId } from "./server/surfaces";
 export { taskWordItemPrefix } from "../contracts/task-word";
 export { LEAD_DEFAULTS, LEAD_SETTING_KEYS, leadSettingProblem, parseLeadSettings, type LeadSettingKey, type LeadSettings } from "./settings";

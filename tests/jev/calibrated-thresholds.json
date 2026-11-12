@@ -69,13 +69,6 @@
       "min_p": 0.6
     }
   },
-  "output.guard": {
-    "fingerprint": "abdb5523f3aa144a",
-    "thresholds": {
-      "block_secret": 0.85,
-      "block_injection": 0.9
-    }
-  },
   "route.workflow": {
     "fingerprint": "24e1c139eeb9ab61",
     "thresholds": {
@@ -86,13 +79,6 @@
       "broad_clarify": 0.95,
       "min_stated": 0.7,
       "min_input_p": 0.6
-    }
-  },
-  "selfrepair.group": {
-    "fingerprint": "dcd6e1691d6e6eaa",
-    "thresholds": {
-      "min_p": 0.75,
-      "min_margin": 0.3
     }
   },
   "writer.model": {

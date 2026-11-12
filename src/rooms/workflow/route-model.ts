@@ -1,6 +1,6 @@
 import type { RouterModel, RouterModelOutput } from "@lane-pilot/workflow-engine";
 import { filterByPolicy, routePolicyOf } from "./route-policy";
-import { NONE, routeRecheck, routeWorkflow } from "./route-workflow";
+import { NONE, routeWorkflow } from "./route-workflow";
 import { isMachineMessage } from "../phase";
 import { redactKnown, bestEffort } from "@lane-pilot/kit";
 import { looksSensitive } from "@lane-pilot/jev";
@@ -57,32 +57,7 @@ export function createJevRouterModel(deps: RouteModelDeps): RouterModel {
     if (verdict.by === "jev") return rejected.length ? { ...verdict.decision, rejected: [...verdict.decision.rejected, ...rejected] } : verdict.decision;
     if (verdict.by === "fallback" && verdict.status !== "shadow" && verdict.status !== "off") throw new Error(`Jev gave no answer (${verdict.status}); the scorer decides`);
     if (verdict.by === "fallback" && verdict.status === "off") return await escalate();
-    // An unclear case gets one cheaper re-judgement first (route.recheck): a confident recheck decides without a thread;
-    // unsure, or the judgment shadowed/off/unavailable, the helper thread answers as before and the two are compared.
-    if (verdict.by === "escalate") {
-      const pick = choiceOf(verdict.answers, "pick");
-      const top = pick?.top && pick.top !== NONE ? input.candidates.find((card) => card.id === pick.top) : undefined;
-      if (top && pick) {
-        const second = pick.second && pick.second !== NONE ? input.candidates.find((card) => card.id === pick.second) ?? null : null;
-        const recheck = await jev.judge(routeRecheck, {
-          request: input.intent, context: input.context,
-          top: { id: top.id, name: top.name.en, p: pick.p },
-          second: second ? { id: second.id, name: second.name.en, p: pick.ranked.find(([id]) => id === second.id)?.[1] ?? 0 } : null,
-        }, { projectId: deps.projectId, runId: deps.runId, subject: "route-recheck", settings });
-        if (recheck.by === "jev") return rejected.length ? { ...recheck.decision, rejected } : recheck.decision;
-        if (recheck.by === "fallback" && recheck.status !== "shadow" && recheck.status !== "off") {
-          // no answer at all: the thread still decides; the recheck outcome is left unlabeled.
-        } else if (recheck.by === "escalate" || recheck.by === "fallback") {
-          const out = await escalate();
-          const recheckChoice = recheck.answers ? choiceOf(recheck.answers, "pick") : undefined;
-          if (recheckChoice) jev.outcome(recheck.receiptId, `${(recheckChoice.top === NONE ? null : recheckChoice.top) === out.choice ? "agree" : "disagree"}`);
-          const jevChoice = topPick(verdict.answers);
-          if (jevChoice !== undefined) jev.outcome(verdict.receiptId, `${jevChoice === out.choice ? "agree" : "disagree"}`);
-          return out;
-        }
-      }
-    }
-    // Shadow or an unclear case the recheck could not settle: the helper thread answers, and the two are compared.
+    // Shadow or an unclear case: the helper thread answers, and the two are compared.
     const output = await escalate();
     const jevChoice = verdict.by === "escalate" ? topPick(verdict.answers) : verdict.shadow?.decision ? verdict.shadow.decision.choice : topPick(verdict.answers);
     if (jevChoice !== undefined) {

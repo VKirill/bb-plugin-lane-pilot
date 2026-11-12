@@ -6,7 +6,6 @@ import { createCapabilities, receiptFingerprint } from "../../src/rooms/capabili
 import { CapabilityUnproven, documentaryGateOf, fullAccessSpawn } from "../../src/rooms/platform/server/pm-spawn";
 import { failureClass } from "../../src/rooms/contracts/failure-class";
 import { noteBreakerRound, listTripped, rearmBreaker, breakerRowId, ruleHash, trippedRules } from "../../src/rooms/learning/breaker";
-import { judgeRulesOnDiff } from "../../src/rooms/learning";
 import { parsePlanFact } from "../../src/rooms/tasks/plan-fact";
 import { prPassport, preship, subagentReceipts } from "../../src/rooms/tools/server/receipts";
 import { createRun, createTask, createAttempt, openDatabase, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";

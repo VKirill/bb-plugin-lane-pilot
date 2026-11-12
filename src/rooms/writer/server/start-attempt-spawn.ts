@@ -12,10 +12,8 @@ import { failureClassCooldownMs } from "../../contracts";
 import { walkWriterChain, type ChainWalk } from "./writer-hold";
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import { attemptFeedback, pendingWordTake, previousAttemptBrief } from "./writer-task";
-import { trimCheckLogsIn } from "../log-trim";
 import { retargetTask } from "../../tasks";
 import { failureClass } from "../../contracts";
-import { jev } from "@lane-pilot/jev";
 
 
 import { isOwnFailure } from "./start-failure-records";
@@ -112,7 +110,7 @@ export const spawnFreshWriter = async (deps: StartWriterTaskDeps, state: WriterT
               roundSeed = roundSeedBrief(doneRounds + 1, bestOf.rounds, roundSurvivors(candidates));
             }
           }
-          const prevBrief = previousAttemptBrief(await trimCheckLogsIn(jev(), state.last.status && isOwnFailure(state.last) ? state.last : state.own.failure ?? (state.last.status ? state.last : null), state.freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:state.runSettings }, ctx.log), state.freshTask, undefined, state.liveFolder);
+          const prevBrief = previousAttemptBrief(state.last.status && isOwnFailure(state.last) ? state.last : state.own.failure ?? (state.last.status ? state.last : null), state.freshTask, undefined, state.liveFolder);
           // A fresh thread has none of the failed attempt's context: from the second attempt on it gets the
           // digest of that attempt's thread (what it did, what failed), not only the failure line (rank 5).
           const failedThreadId=(typeof state.last.attemptId==="string" ? getAttempt(db,state.last.attemptId)?.thread_id : null) ?? null;

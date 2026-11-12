@@ -7,10 +7,8 @@ import { reassignedReason, takeReassignRequest } from "./reassign";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../contracts";
 import { FREE_RETRY_LIMIT, SESSION_MAX_MS, turnFailureKey } from "../../contracts";
 import { isWriterStreamError, previousAttemptBrief } from "./writer-task";
-import { trimCheckLogsIn } from "../log-trim";
 import { isMainfixTask } from "../../tasks";
 import { failureClass } from "../../contracts";
-import { jev } from "@lane-pilot/jev";
 import { waitWhileRunPaused } from "../../runs/server";
 
 
@@ -180,7 +178,7 @@ import { routeAttemptFailure } from "./start-failure-route";
         state.activeTask = state.freshTask;
         state.dirtBefore = [];
         state.executionPacketSha256 = null;
-        if (redo && !await continueWith(deps, state, input, redo, redo.kind, previousAttemptBrief(await trimCheckLogsIn(jev(), { ...failedLast, produced:[] }, state.freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:state.runSettings }, ctx.log), state.freshTask, failedBinding?.dirt_before ?? [], state.liveFolder), failedBinding?.dirt_before)) {
+        if (redo && !await continueWith(deps, state, input, redo, redo.kind, previousAttemptBrief({ ...failedLast, produced:[] }, state.freshTask, failedBinding?.dirt_before ?? [], state.liveFolder), failedBinding?.dirt_before)) {
           await removeWorktreeOf(deps, state, input, failedBinding);
           await rollbackLive(deps, state, input);
         }

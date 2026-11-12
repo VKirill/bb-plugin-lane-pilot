@@ -8,8 +8,6 @@ import {
 } from "../src/rooms/errands";
 import { ERRAND_EPISODE_TABLE } from "../src/rooms/contracts/server";
 import { runEpisodesCli } from "../src/rooms/errands/server";
-import { applyOutcomeLabels, labelErrandFailure } from "../packages/jev/src/labels-outcome";
-import { errandFailureJudgment, ERRAND_FAILURE_CLASSES, ERRAND_FAILURE_ID } from "../src/rooms/errands";
 
 // maskPii throws only on a marker so the held-state path is reachable; every other test gets the real masker.
 vi.mock("../src/rooms/anamnesis/pii", async (importOriginal) => {
@@ -89,11 +87,9 @@ describe("errand episode sweep", () => {
     addRun(db, { id: "wfrun-1", inputs: { title: "Count open leads", skills: ["browser-qa", "crm-export"], task: "count leads; mail boss@secret-mail.example the number" }, output: { state: "done", verified: "done_checked" } });
     await recorded(db, "wfrun-1");
     const prompts: string[] = [];
-    const judged: unknown[] = [];
     const result = await sweepErrandEpisodes(deps(db, {
       readOutline: async () => "User: count leads, write to boss@secret-mail.example\nAssistant: wrote it",
       runModel: async (prompt) => { prompts.push(prompt); return { text: ANSWER, model: "fake/analyst-1" }; },
-      judge: (input) => { judged.push(input); },
     }));
 
     expect(result).toMatchObject({ picked: 1, enriched: 1 });
@@ -114,7 +110,6 @@ describe("errand episode sweep", () => {
     expect(prompts[0]).not.toContain("boss@secret-mail.example");
     expect(prompts[0]).toContain("reference material");
     expect(String(stored.summary_json)).not.toContain("boss@secret-mail.example");
-    expect(judged).toHaveLength(1);
   });
 
   it("enriches up to three episodes at once; their keys are chosen one at a time and each sees the previous", async () => {
@@ -335,38 +330,5 @@ describe("episodes-backfill", () => {
     const swept = await runEpisodesCli({ db: db2, sweepDeps: () => ({ db: db2 }) }, "episodes-sweep", ["--limit", "5"]);
     expect(swept.exitCode).toBe(0);
     expect(swept.stdout).toMatch(/^episodes: \d+ enriched, \d+ skipped, \d+ failed, \d+ held of 3 picked/);
-  });
-});
-
-describe("errand.failure judgment and labels", () => {
-  it("is a shadow choice judgment over the closed class list", () => {
-    expect(ERRAND_FAILURE_ID).toBe("errand.failure");
-    expect(errandFailureJudgment.id).toBe("errand.failure");
-    expect(errandFailureJudgment.defaultMode).toBe("shadow");
-    expect(ERRAND_FAILURE_CLASSES).toContain("looped");
-    expect(ERRAND_FAILURE_CLASSES).toContain("other");
-    expect(errandFailureJudgment.describe?.({ cls: "timeout" } as never)).toBe("timeout");
-  });
-
-  it("labelErrandFailure grades a receipt against the episode's stored failure_class", async () => {
-    const { db } = world();
-    addRun(db, { id: "wfrun-j", status: "failed", reason: "died", output: { state: "failed" } });
-    await recorded(db, "wfrun-j");
-    await sweepErrandEpisodes(deps(db, {
-      runModel: async () => ({ text: JSON.stringify({ ...JSON.parse(ANSWER), failure_class: "tool_error" }), model: "m" }),
-      judge: undefined,
-    }));
-    expect(row(db, "wfrun-j").failure_class).toBe("tool_error");
-    const at = Date.now() - 25 * 3_600_000;
-    const receipt = db.prepare(`INSERT INTO lane_pilot_jev_receipt
-      (judgment,version,model,mode,project_id,run_id,subject,input_sha256,input_chars,questions,status,answers_json,decision,decided_by,at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
-    receipt.run(ERRAND_FAILURE_ID, 1, "m", "shadow", PROJECT, "wfrun-j", "wfrun-j", "sha", 10, 1, "ok", "{}", "tool_error", "jev", at);
-    receipt.run(ERRAND_FAILURE_ID, 1, "m", "shadow", PROJECT, "wfrun-j", "wfrun-j", "sha", 10, 1, "ok", "{}", "no_skill", "jev", at);
-    const labels = labelErrandFailure(db as never, Date.now());
-    expect(labels).toHaveLength(2);
-    applyOutcomeLabels(db as never, Date.now());
-    const outcomes = db.prepare(`SELECT outcome FROM lane_pilot_jev_receipt WHERE run_id='wfrun-j' ORDER BY id`).all() as Array<{ outcome: string }>;
-    expect(outcomes.map((o) => o.outcome)).toEqual(["agree:outcome", "disagree:outcome"]);
   });
 });

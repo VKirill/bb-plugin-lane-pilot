@@ -1,20 +1,28 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { setJevForTests } from "@lane-pilot/jev";
 import { examAll, isOwnerAnswer } from "../../src/rooms/lead/logic";
 import { runLeadCli } from "../../src/rooms/lead/cli";
-import { answerDecision, askDecision, examRows, getDecision, labelDecision, listDecisions, openDecision, pendingLabelCount, pendingLabels, predictDecision, refineVerdict, ruleVerdict } from "../../src/rooms/lead/server/journal";
+import { answerDecision, askDecision, examRows, getDecision, labelDecision, listDecisions, openDecision, pendingLabelCount, pendingLabels, predictDecision, ruleVerdict } from "../../src/rooms/lead/server/journal";
 import { backtest } from "../../src/rooms/lead/server/backtest";
 import { answerPhaseWord, answerTaskWord, askPhaseWord, askTaskWord, phaseDecisionId, wordDecisionId } from "../../src/rooms/lead/server/surfaces";
 import { insertPhase, savePhase } from "../../src/rooms/phase/store";
 import { createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 import { recordTaskWord } from "../../src/rooms/tasks/words";
 
-const world = () => { const { bb } = createFakePluginHost({ pluginId: "lane-pilot" }); return { bb, db: openDatabase(bb) }; };
-/** A Jev in shadow mode: the verdict is the fallback, the shadow decision is what the lead would have said. */
-const shadowJev = (option: string | null, p = 0.9) => setJevForTests({ enabled: () => true, judge: async () => ({ by: "fallback", status: "shadow", decision: { option: null, p: 0 }, shadow: { decision: { option, p } } }) } as never);
+type TestDb = ReturnType<typeof openDatabase>;
+let currentDb: TestDb | null = null;
+const world = () => { const { bb } = createFakePluginHost({ pluginId: "lane-pilot" }); currentDb = openDatabase(bb); return { bb, db: currentDb }; };
+/** The lead has no predictor any more; a test stages the prediction every new journal row should carry (a trigger stamps it where the journal would predict). */
+const unstage = () => { currentDb?.exec("DROP TRIGGER IF EXISTS stage_prediction"); };
+const shadowJev = (option: string | null, p = 0.9) => {
+  unstage();
+  if (option === null) return;
+  const json = JSON.stringify({ option, p }).replace(/'/g, "''");
+  currentDb!.exec(`CREATE TRIGGER stage_prediction AFTER UPDATE OF predictor ON lane_pilot_decision WHEN NEW.predictor='none' AND NEW.answered_at IS NULL
+    BEGIN UPDATE lane_pilot_decision SET prediction_json='${json}', predictor='staged' WHERE id=NEW.id; END`);
+};
 const question = (id: string, extra: Record<string, unknown> = {}) => ({ id, surface: "words", class: "landing", risk: "low", projectId: "P", runId: "run1", situation: { task: "fix the tests" }, options: ["yes", "no"], ...extra });
-afterEach(() => setJevForTests(null));
+afterEach(() => { unstage(); currentDb = null; });
 
 describe("the decision journal: open, predict before the answer, answer, judge", () => {
   it("records the shadow prediction and scores exact when the owner picks the same option", async () => {
@@ -22,7 +30,7 @@ describe("the decision journal: open, predict before the answer, answer, judge",
     shadowJev("yes");
     await askDecision(db, question("d1"), undefined, 1_000);
     const open = getDecision(db, "d1")!;
-    expect(open).toMatchObject({ prediction_json: JSON.stringify({ option: "yes", p: 0.9 }), predicted_at: 1_000, predictor: "jev-shadow:lead.predict@1", answered_at: null, split: "exam" });
+    expect(open).toMatchObject({ prediction_json: JSON.stringify({ option: "yes", p: 0.9 }), predicted_at: 1_000, predictor: "staged", answered_at: null, split: "exam" });
     const done = answerDecision(db, "d1", { option: "yes", text: "да" }, "owner", 2_000)!;
     expect(done).toMatchObject({ judge_verdict: "exact", judge_model: "rule", answered_by: "owner", answered_at: 2_000 });
     expect(JSON.parse(done.answer_json!)).toEqual({ option: "yes", text: "да" });
@@ -33,13 +41,10 @@ describe("the decision journal: open, predict before the answer, answer, judge",
     shadowJev("yes");
     await askDecision(db, question("miss"), undefined, 1);
     expect(answerDecision(db, "miss", { option: "no" }, "pm", 2)!.judge_verdict).toBe("miss");
-    setJevForTests(null);
+    unstage();
     await askDecision(db, question("cold"), undefined, 1);
     expect(getDecision(db, "cold")).toMatchObject({ prediction_json: JSON.stringify({ option: null, p: 0 }), predictor: "none" });
     expect(answerDecision(db, "cold", { option: "yes" }, "pm", 2)!.judge_verdict).toBe("deferred");
-    shadowJev("maybe");
-    await askDecision(db, question("stray"), undefined, 1);
-    expect(JSON.parse(getDecision(db, "stray")!.prediction_json!)).toEqual({ option: null, p: 0.9 });
     expect(ruleVerdict({ option: "yes", p: 0.7 }, { option: "yes" })).toBe("exact");
   });
 
@@ -163,85 +168,23 @@ describe("bb lane-pilot lead", () => {
   });
 });
 
-/** A Jev whose predictor says `option` (shadow) and whose judge says `verdict` (live); records which judgments were asked. */
-const judgeJev = (option: string, verdict: "partial" | "miss", asked: string[] = []) => { setJevForTests({ enabled: () => true, judge: async (judgment: { id: string }) => { asked.push(judgment.id); return judgment.id === "lead.judge"
-  ? { by: "jev", decision: { verdict }, receiptId: null, answers: {} }
-  : { by: "fallback", status: "shadow", decision: { option: null, p: 0 }, receiptId: null, shadow: { decision: { option, p: 0.9 } } }; } } as never); return asked; };
-
-describe("the model judge and the rows waiting for a label", () => {
-  it("a miss goes to the model judge and «partial» replaces it; exact and deferred rows are never asked; without Jev the miss stands", async () => {
+describe("the rows waiting for a label", () => {
+  it("the rows waiting for a label are judged exam rows without one, never a deferred, proxy-answered or labelled row", async () => {
     const { db } = world();
-    const asked = judgeJev("yes", "partial");
-    for (const id of ["j1", "j2", "j3"]) await askDecision(db, question(id), undefined, 1);
-    answerDecision(db, "j1", { option: "no", text: "потом, после релиза" }, "pm", 2);
-    answerDecision(db, "j2", { option: "yes" }, "pm", 2);
-    answerDecision(db, "j3", { option: "no" }, "pm", 2);
-    asked.length = 0;
-    expect(await refineVerdict(db, "j1", undefined, 3)).toBe("partial");
-    expect(getDecision(db, "j1")).toMatchObject({ judge_verdict: "partial", judge_model: "jev:lead.judge@1", judged_at: 3 });
-    expect(await refineVerdict(db, "j2", undefined, 3)).toBe("exact");
-    expect(asked).toEqual(["lead.judge"]);
-    setJevForTests(null);
-    expect(await refineVerdict(db, "j3", undefined, 3)).toBe("miss");
-    expect(getDecision(db, "j3")).toMatchObject({ judge_verdict: "miss", judge_model: "rule" });
-    await askDecision(db, question("cold"), undefined, 1);
-    answerDecision(db, "cold", { option: "no" }, "pm", 2);
-    judgeJev("yes", "partial");
-    expect(await refineVerdict(db, "cold", undefined, 3)).toBe("deferred");
-    expect(await refineVerdict(db, "ghost", undefined, 3)).toBeNull();
-  });
-
-  it("the judge's own miss leaves the rule's miss; the rows waiting for a label are judged exam rows without one, never a deferred, proxy-answered or labelled row", async () => {
-    const { db } = world();
-    judgeJev("yes", "miss");
+    shadowJev("yes");
     for (const id of ["p1", "p2", "p3", "p4"]) await askDecision(db, question(id), undefined, 1);
     answerDecision(db, "p1", { option: "no" }, "owner", 2);
-    expect(await refineVerdict(db, "p1", undefined, 3)).toBe("miss");
     answerDecision(db, "p2", { option: "no" }, "lead", 2);
     answerDecision(db, "p3", { option: "yes" }, "screen", 2);
     labelDecision(db, "p3", "exact", 3);
     answerDecision(db, "p4", { option: "yes" }, "screen", 2);
-    setJevForTests(null);
+    unstage();
     await askDecision(db, question("cold"), undefined, 1);
     answerDecision(db, "cold", { option: "yes" }, "owner", 2);
     expect(pendingLabels(db).map((row) => row.id).sort()).toEqual(["p1", "p4"]);
     expect(pendingLabels(db, 1)).toHaveLength(1);
     expect(pendingLabelCount(db)).toBe(2);
     expect(pendingLabels(db)[0]).toMatchObject({ class: "landing", surface: "words", judge_verdict: expect.stringMatching(/exact|miss/) });
-  });
-});
-
-/** A Jev that records the history it was shown (the memory-exam pattern). */
-const historyJev = (calls: Array<{ history: number; situations: string[] }>) => setJevForTests({ enabled: () => true, judge: async (_j: unknown, input: { history: Array<{ answer: string; situation: string }> }) => {
-  calls.push({ history: input.history.length, situations: input.history.map((row) => row.situation) });
-  return { by: "jev", decision: { option: "yes", p: 0.9 }, receiptId: null, answers: {} };
-} } as never);
-
-describe("the predictor's history never reads the future", () => {
-  it("a backtest row remembers only answers older than its own birth; a live row sees every answered word", async () => {
-    // Gemini F-005.1 / N-2: the cutoff is the row's `created_at`, not the time of the predict call — otherwise a replayed
-    // backtest row learns answers that came after the moment it replays.
-    const { db } = world();
-    const calls: Array<{ history: number; situations: string[] }> = [];
-    historyJev(calls);
-    openDecision(db, { id: "past", surface: "words", class: "landing", situation: { task: "past-A" }, options: ["yes", "no"], split: "backtest", createdAt: 100 });
-    answerDecision(db, "past", { option: "yes" }, "owner", 120);
-    openDecision(db, { id: "future", surface: "words", class: "landing", situation: { task: "future-B" }, options: ["yes", "no"], split: "backtest", createdAt: 200 });
-    answerDecision(db, "future", { option: "no" }, "owner", 250);
-    // Row C replays the moment t=150: it may remember A (answered 120) and must not see B (answered 250).
-    openDecision(db, { id: "replay", surface: "words", class: "landing", situation: { task: "replay-C" }, options: ["yes", "no"], split: "backtest", createdAt: 150 });
-    await predictDecision(db, "replay", undefined, 9_000);
-    const replayCall = calls.at(-1)!;
-    expect(replayCall.history).toBe(1);
-    expect(replayCall.situations[0]).toContain("past-A");
-    expect(replayCall.situations.some((situation) => situation.includes("future-B"))).toBe(false);
-    // A live row born now sees both.
-    openDecision(db, { id: "live", surface: "words", class: "landing", situation: { task: "live" }, options: ["yes", "no"], split: "exam", createdAt: 300 });
-    await predictDecision(db, "live", undefined, 9_500);
-    const liveCall = calls.at(-1)!;
-    expect(liveCall.history).toBe(2);
-    expect(liveCall.situations.some((situation) => situation.includes("past-A"))).toBe(true);
-    expect(liveCall.situations.some((situation) => situation.includes("future-B"))).toBe(true);
   });
 });
 

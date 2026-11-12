@@ -1,13 +1,11 @@
 import { bestEffort, sha256Hex } from "@lane-pilot/kit";
 import { extractModelJson } from "@lane-pilot/workflow-engine";
-import { jev, type JevSettings } from "@lane-pilot/jev";
 import { hunterPrompt } from "../brief";
 import { judgeHunt, parseFinding, buildClassPack, HUNT_ANGLES, type EvidencePack, type HuntOutcome } from "../pack";
 import type { WallConfig } from "../config";
 import { nightOf } from "../journal";
 import { insertWall, updateWall, updateClassLadder } from "../store";
 import type { WallClass } from "../types";
-import { wallFilterJudgment, type WallFilterDecision, type WallFilterInput } from "../wall-filter-judgment";
 import type { ThreadRun, WallPorts } from "../service";
 import { classWallKey, type WallCtx } from "./context";
 
@@ -25,46 +23,6 @@ export function createHunt(ctx: WallCtx) {
       try { return run.text ? parseFinding(extractModelJson(run.text), run.angle) : null; } catch { return null; }
     });
     return { outcome: judgeHunt(pack, findings), tokens: runs.reduce((sum, row) => sum + row.tokens, 0) };
-  }
-
-  /**
-   * Evaluates the wall failure signature with Jev before spending tokens on 3 hunters.
-   * If Jev in active mode is confident that the failure is purely infrastructure noise
-   * (rate limit, provider outage, network reset, full disk) or duplicate fingerprint,
-   * the expensive hunt is skipped. In shadow mode (the default), the decision is logged
-   * to receipts while hunters run normally.
-   */
-  async function checkHuntFilter(pack: EvidencePack, wallKey: string): Promise<WallFilterDecision> {
-    const getJev = deps.jev ?? jev;
-    const instance = getJev();
-    const fallback = wallFilterJudgment.fallback({ wallKey, subject: pack.subject, kind: pack.kind, facts: [], reasons: [] });
-    if (!instance) return fallback;
-    try {
-      const settings = deps.settings ? await deps.settings() : (await config()) as JevSettings;
-      if (!instance.enabled(settings)) return fallback;
-      const reasons = [
-        ...pack.attempts.map((a) => a.reason),
-        ...pack.receipts.map((r) => r.reason),
-      ].filter((r): r is string => Boolean(r));
-      const input: WallFilterInput = {
-        wallKey,
-        subject: pack.subject,
-        kind: pack.kind,
-        facts: pack.facts,
-        reasons,
-        checkOutputs: pack.checkOutputs,
-      };
-      const verdict = await instance.judge(wallFilterJudgment, input, {
-        projectId: pack.meta?.projectId ?? "",
-        runId: pack.meta?.runId ?? null,
-        subject: wallKey,
-        settings,
-      });
-      return verdict.by === "jev" ? verdict.decision : fallback;
-    } catch (cause) {
-      log(`wall: hunt filter failed (${cause instanceof Error ? cause.message : String(cause)}); falling back to hunt`);
-      return fallback;
-    }
   }
 
   // The pack of a hunt or an analysis is inlined while it fits the wall-hunter budget. A bigger one goes to a file
@@ -103,18 +61,6 @@ export function createHunt(ctx: WallCtx) {
    */
   async function hunt(pack: EvidencePack, cfg: WallConfig, wallKey: string): Promise<{ outcome: HuntOutcome; tokens: number }> {
     const packPath = await packPathFor(pack, `hunt-${wallKey}`, "hunter");
-    const filterDecision = await checkHuntFilter(pack, wallKey);
-    if (filterDecision.action === "skip") {
-      log(`wall: hunt of ${wallKey} skipped by Jev filter (${filterDecision.category}): ${filterDecision.reason}`);
-      const skippedOutcome: HuntOutcome = {
-        state: "unknown",
-        findings: [],
-        usable: [],
-        demoted: 0,
-      };
-      await dropPackFile(pack);
-      return { outcome: skippedOutcome, tokens: 0 };
-    }
     const angles = HUNT_ANGLES.slice(0, cfg.hunters);
     if (ports.graph) {
       const ran = await ports.graph.hunt({ wallKey, pack, angles }).catch((cause: unknown) => { log(`wall: the hunt graph of ${wallKey} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
@@ -172,6 +118,6 @@ export function createHunt(ctx: WallCtx) {
     return { state: outcome.state, tokens };
   }
 
-  return { recordHuntOutcome, judgeRuns, checkHuntFilter, packPathOf, packPathFor, dropPackFile, hunt, graphSteps, readAnalysis, huntBudgetLeft, huntClass };
+  return { recordHuntOutcome, judgeRuns, packPathOf, packPathFor, dropPackFile, hunt, graphSteps, readAnalysis, huntBudgetLeft, huntClass };
 }
 export type HuntApi = ReturnType<typeof createHunt>;

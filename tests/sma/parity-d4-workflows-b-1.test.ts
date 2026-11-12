@@ -194,13 +194,13 @@ describe("parity d4 workflows b1", () => {
     const summary = await t.start(wf("lp.review.json"), reviewInput).done;
     expect(JSON.stringify(summary).slice(0, 700)).toContain('"status":"succeeded"');
     expect(summary.output).toMatchObject({ status: "pass", critical_count: 0, findings: [] });
-    // The nodes main visits (scope spec_check dims screen aggregate result), plus the prepass that only reads the diff.
-    expect(executed(t, summary.runId).filter((id) => id !== "prepass")).toEqual(["scope", "spec_check", "dims", "screen", "aggregate", "result"]);
+    // The nodes main visits (scope spec_check dims aggregate result), plus the prepass that only reads the diff.
+    expect(executed(t, summary.runId).filter((id) => id !== "prepass")).toEqual(["scope", "spec_check", "dims", "aggregate", "result"]);
     const notes = calls.find((call) => call.node.startsWith("dims"))?.prompt ?? "";
     expect(notes).toMatch(/src\/bad\.ts:2 critical/);
     // The same graph on main's stubs (no prepass): main's tests give pass for a clean run; with the prepass stubbed advisory it is the same pass.
     const sim = await runSim("lp.review", { input: { range: "HEAD~1..HEAD", dimensions: ["correctness", "security"] }, mode: "quick", stubs: { prepass: { findings: [], notes: "n", critical_count: 0, rework: false } } });
-    expect(ranOf(sim).filter((id) => id !== "prepass").join(" ")).toBe("scope dims screen aggregate result");
+    expect(ranOf(sim).filter((id) => id !== "prepass").join(" ")).toBe("scope dims aggregate result");
     expect(emitted(sim)).toMatchObject({ status: "pass", warn: false, critical_count: 0 });
   });
 
@@ -413,11 +413,11 @@ describe("parity d4 workflows b1", () => {
   it("[sma:k_wp_research] [sma:k_wp_patterns] [sma:k_wp_validation] lp.plan: default visits main's nodes; with the switches on research, patterns and strategy run and feed the plan", async () => {
     const stubs = { plan: { tasks: tasks("a", "b", "c"), task_count: 3 }, plan_critic: { status: "pass" } };
     const off = await runSim("lp.plan", { input: { goal: "g" }, stubs });
-    expect(ranOf(off)).toEqual(["plan", "lint", "check", "plan_critic", "ok"]);          // main's list: plan lint check plan_critic ok
+    expect(ranOf(off)).toEqual(["plan", "lint", "plan_critic", "ok"]);          // main's list: plan lint plan_critic ok
     expect(off.called("strategy")).toHaveLength(0);
     expect(emitted(off)).toMatchObject({ status: "ok", validation_md: "" });
     const on = await runSim("lp.plan", { input: { goal: "g", skip_research: false, patterns: true, validation: true }, stubs: { ...stubs, research: { research_md: "R" }, patterns: { patterns_md: "P" }, strategy: { validation_md: "V" } } });
-    expect(ranOf(on)).toEqual(["research", "patterns", "strategy", "plan", "lint", "check", "plan_critic", "ok"]);
+    expect(ranOf(on)).toEqual(["research", "patterns", "strategy", "plan", "lint", "plan_critic", "ok"]);
     expect(emitted(on)).toMatchObject({ research_md: "R", patterns_md: "P", validation_md: "V" });
     expect(on.called("plan")[0]!.input).toMatchObject({ research_md: "R", patterns_md: "P", validation_md: "V" });
     // quick mode never runs the strategy, whatever the switch says.

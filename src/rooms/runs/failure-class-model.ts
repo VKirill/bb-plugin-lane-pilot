@@ -2,9 +2,9 @@ import type Database from "better-sqlite3";
 import { classifyFailure, type FailureClass } from "../contracts/failure-class";
 import { failureClassJudgment, FAILURE_CLASS_ID, type FailureClassDecision } from "./failure-class-judgment";
 import { logFindJudgment } from "@lane-pilot/jev/judgments/log-find";
-import { countJudgmentReceipts, labeledOutcomes, recordOutcome, registerOutcomeSweep, type Jev, type JevSettings, unlabeledJevReceipts, unlabeledJevSubjectReceipts, unlabeledRunReceipts, unlabeledSubjectReceipts } from "@lane-pilot/jev";
+import { countJudgmentReceipts, labeledOutcomes, recordOutcome, registerOutcomeSweep, type Jev, type JevSettings, unlabeledJevReceipts, unlabeledJevSubjectReceipts, unlabeledRunReceipts } from "@lane-pilot/jev";
 import { INVOICE_CHECK_ID } from "@lane-pilot/jev/judgments/invoice-check";
-import { PLAN_FACT_JEV_ID, ROUTE_WORKFLOW_ID, WRITER_MODEL_JUDGMENT_ID, writerRouteKey } from "../contracts";
+import { ROUTE_WORKFLOW_ID, WRITER_MODEL_JUDGMENT_ID, writerRouteKey } from "../contracts";
 
 /**
  * The class of a failure with J-4 behind the rules: the rules first, and only a reason they have no confident match for goes to
@@ -22,7 +22,7 @@ export type JudgedFailureDeps = {
   kv?: { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> } | null;
 };
 
-import { getRun, hasAcceptedAttempt, hasLiveAttempt, getStageReceiptResult } from "../storage";
+import { getRun, hasAcceptedAttempt, hasLiveAttempt } from "../storage";
 import { wfEarliestLinkedRun } from "@lane-pilot/workflow-engine";
 
 /**
@@ -77,30 +77,6 @@ export function sweepRouteWorkflowOutcomes(db: Database.Database): number {
   return labeled;
 }
 
-/**
- * The task's accepted attempt is the stronger judge of the shadow `plan.fact` read: the code's plan-fact verdict was right
- * when the task was accepted (and the redo family is what it is). Jev's per-item read (done / not_done; `unseen` stays out)
- * is compared with the code's (proven ⇔ done) and the receipt gets agree/disagree. Runs without an accepted attempt and
- * receipts where the stage stored no jev verdict stay unlabeled.
- */
-export function sweepPlanFactOutcomes(db: Database.Database): number {
-  const receipts = unlabeledSubjectReceipts(db, PLAN_FACT_JEV_ID);
-  let labeled = 0;
-  for (const receipt of receipts) {
-    if (!receipt.run_id || !receipt.subject) continue;
-    const accepted = hasAcceptedAttempt(db, receipt.run_id, receipt.subject);
-    if (!accepted) continue;
-    let result: { items?: Array<{ item: number; verdict: string }>; jev?: Record<string, string> } | null = null;
-    try { result = getStageReceiptResult(db, receipt.run_id, receipt.subject, "plan-fact").result as { items?: Array<{ item: number; verdict: string }>; jev?: Record<string, string> } | null; }
-    catch { /* unreadable result_json: this receipt stays unlabeled */ }
-    if (!result?.jev || !result.items?.length) continue;
-    const code = Object.fromEntries(result.items.map((item) => [String(item.item), item.verdict === "proven" ? "done" : "not_done"]));
-    const agreed = Object.entries(result.jev).filter(([item, verdict]) => verdict !== "unseen" && code[item] !== undefined).every(([item, verdict]) => verdict === code[item]);
-    if (Object.values(code).length) { recordOutcome(db, receipt.id, agreed ? "agree" : "disagree"); labeled += 1; }
-  }
-  return labeled;
-}
-
 export type LabeledOutcome = { receiptId: number; runId: string; taskId: string; outcome: "agree" | "disagree" };
 
 /**
@@ -131,7 +107,6 @@ export function sweepWriterModelOutcomes(db: Database.Database): LabeledOutcome[
 registerOutcomeSweep(FAILURE_CLASS_ID, sweepFailureClassOutcomes);
 registerOutcomeSweep(INVOICE_CHECK_ID, sweepInvoiceCheckOutcomes);
 registerOutcomeSweep(ROUTE_WORKFLOW_ID, sweepRouteWorkflowOutcomes);
-registerOutcomeSweep(PLAN_FACT_JEV_ID, sweepPlanFactOutcomes);
 registerOutcomeSweep(WRITER_MODEL_JUDGMENT_ID, (db) => sweepWriterModelOutcomes(db).length);
 
 let lastSweep = 0;
@@ -148,7 +123,7 @@ export async function judgedFailureClass(deps: JudgedFailureDeps, state: string,
     // At most once a minute: the labels of earlier judgments ride along, so the calibration set fills itself.
     if (deps.db && Date.now() - lastSweep > 60_000) {
       lastSweep = Date.now();
-      sweepFailureClassOutcomes(deps.db); sweepInvoiceCheckOutcomes(deps.db); sweepRouteWorkflowOutcomes(deps.db); sweepPlanFactOutcomes(deps.db);
+      sweepFailureClassOutcomes(deps.db); sweepInvoiceCheckOutcomes(deps.db); sweepRouteWorkflowOutcomes(deps.db);
       const labeled = sweepWriterModelOutcomes(deps.db);
       if (deps.kv) for (const row of labeled) {
         const key = writerRouteKey(row.runId, row.taskId);

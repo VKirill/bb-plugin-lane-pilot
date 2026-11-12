@@ -1,10 +1,5 @@
-import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { afterEach, describe, expect, it } from "vitest";
-import { createJev, setJevForTests, type JevClient } from "@lane-pilot/jev";
-import { openDatabase } from "../src/rooms/plugin-db";
-import { PROCESS_KEY_JUDGMENT_ID, chooseProcessKey, nearestKeys, pairwiseF1, processKeyJudgment } from "../src/rooms/errands";
-import { processKeyEval, runErrandsCli, wordJudge } from "../src/rooms/errands";
-import gold from "./fixtures/errand-gold.json";
+import { describe, expect, it } from "vitest";
+import { chooseProcessKey, nearestKeys, pairwiseF1 } from "../src/rooms/errands";
 
 const KNOWN = [
   { key: "invoice|create-and-send", titles: ["Счёт для ООО Ромашка", "Новый счёт и отправка клиенту"] },
@@ -12,31 +7,6 @@ const KNOWN = [
   { key: "magicseo|api-recon", titles: ["Разведка API MagicSEO", "Карта эндпоинтов MagicSEO"] },
   { key: "bb-plugin|ship-and-check", titles: ["Выложить плагин и проверить CI", "Релиз lane-pilot и проверка сборки"] },
 ];
-
-/** A Jev whose fake client answers every choice question with `top` at 0.9 (the rest share 0.1). */
-function jevPicking(top: string) {
-  const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
-  const db = openDatabase(bb);
-  const client: JevClient = {
-    breaker: () => ({ open: false, failures: 0 }),
-    async call(request) {
-      // judgeMany batches questions as "<index>::<id>"; the pick question is the one ending in ::key.
-      const qid = Object.keys(request.questions).find((id) => id === "key" || id.endsWith("::key"))!;
-      const keys = Object.keys((request.questions[qid] as { criteria: Record<string, unknown> }).criteria);
-      const rest = keys.filter((key) => key !== top);
-      const probabilities = Object.fromEntries([[top, 0.9], ...rest.map((key) => [key, rest.length ? 0.1 / rest.length : 0])]);
-      return { ok: true, model: "jev-test", usage: { input_tokens: 500, output_tokens: 20 }, latencyMs: 50, attempts: 1,
-        answers: Object.fromEntries(Object.keys(request.questions).map((id) => [id, { type: "choice" as const, choice: top, probabilities, confidence: 0.9 }])) };
-    },
-  };
-  const jev = createJev({ client, db });
-  setJevForTests(jev);
-  return { db, jev };
-}
-const receipts = (db: ReturnType<typeof openDatabase>) => db.prepare("SELECT judgment, mode FROM lane_pilot_jev_receipt").all() as Array<{ judgment: string; mode: string }>;
-afterEach(() => setJevForTests(null));
-
-const ACTIVE = { settings: { "episodes.process_key": "active" } };
 
 describe("nearestKeys: the 8 known keys nearest by word stems", () => {
   it("ranks the right key first on three errands", () => {
@@ -58,46 +28,15 @@ describe("nearestKeys: the 8 known keys nearest by word stems", () => {
   });
 });
 
-describe("chooseProcessKey: candidate → Jev pick among the nearest keys", () => {
-  it("is registered in shadow with a min_p threshold and the candidate as its fallback", () => {
-    expect(processKeyJudgment).toMatchObject({ id: PROCESS_KEY_JUDGMENT_ID, version: 1, defaultMode: "shadow" });
-    expect(processKeyJudgment.thresholds.min_p!.default).toBe(0.6);
-    expect(processKeyJudgment.fallback({ candidate: "new|key", title: "t", options: [] })).toEqual({ key: "new|key", how: "fallback" });
+describe("chooseProcessKey: the candidate stands", () => {
+  it("no known keys or nothing similar: the candidate is a new key", async () => {
+    expect(await chooseProcessKey({ candidate: "solo|thing", title: "Разовое дело", known: [] })).toEqual({ key: "solo|thing", how: "new" });
+    expect(await chooseProcessKey({ candidate: "zzz|qqq", title: "абракадабра фыва", known: KNOWN })).toEqual({ key: "zzz|qqq", how: "new" });
   });
 
-  it("no known keys or nothing similar: the candidate is a new key and Jev is not asked", async () => {
-    const { db } = jevPicking("invoice|create-and-send");
-    expect(await chooseProcessKey({ candidate: "solo|thing", title: "Разовое дело", known: [], judge: wordJudge() })).toEqual({ key: "solo|thing", how: "new" });
-    expect(await chooseProcessKey({ candidate: "zzz|qqq", title: "абракадабра фыва", known: KNOWN, judge: wordJudge() })).toEqual({ key: "zzz|qqq", how: "new" });
-    expect(receipts(db)).toEqual([]);
-  });
-
-  it("shadow (the default): the candidate stands and the receipt keeps what Jev would have picked", async () => {
-    const { db } = jevPicking("invoice|create-and-send");
-    const pick = await chooseProcessKey({ candidate: "app|invoices", title: "Составь счёт и отправь клиенту", known: KNOWN });
-    expect(pick).toEqual({ key: "app|invoices", how: "new" });
-    expect(receipts(db)).toEqual([{ judgment: PROCESS_KEY_JUDGMENT_ID, mode: "shadow" }]);
-  });
-
-  it("active: a confident Jev pick sets the key; none_of_these or a pick under min_p leaves the candidate as new", async () => {
-    jevPicking("invoice|create-and-send");
-    expect(await chooseProcessKey({ candidate: "app|invoices", title: "Составь счёт и отправь клиенту", known: KNOWN, ctx: ACTIVE })).toEqual({ key: "invoice|create-and-send", how: "jev" });
-    jevPicking("none_of_these");
-    expect(await chooseProcessKey({ candidate: "app|invoices", title: "Составь счёт и отправь клиенту", known: KNOWN, ctx: ACTIVE })).toEqual({ key: "app|invoices", how: "new" });
-  });
-
-  it("active but the judgment itself is off in jev.modes: the deterministic answer stands", async () => {
-    jevPicking("invoice|create-and-send");
-    const ctx = { settings: { "episodes.process_key": "active", "jev.modes": "errand.process_key=off" } };
-    expect(await chooseProcessKey({ candidate: "app|invoices", title: "Составь счёт и отправь клиенту", known: KNOWN, ctx })).toEqual({ key: "app|invoices", how: "new" });
-  });
-
-  it("Jev down or failing: an exact candidate match counts, else the candidate stands as fallback", async () => {
-    setJevForTests(null);
+  it("something similar is known: the candidate still stands, marked as fallback", async () => {
     expect(await chooseProcessKey({ candidate: "invoice|create-and-send", title: "Счёт клиенту", known: KNOWN })).toEqual({ key: "invoice|create-and-send", how: "fallback" });
     expect(await chooseProcessKey({ candidate: "app|invoices", title: "Счёт клиенту", known: KNOWN })).toEqual({ key: "app|invoices", how: "fallback" });
-    const throwing = { enabled: () => true, judge: async () => { throw new Error("provider down"); } } as never;
-    expect(await chooseProcessKey({ candidate: "app|invoices", title: "Счёт клиенту", known: KNOWN, judge: throwing })).toEqual({ key: "app|invoices", how: "fallback" });
   });
 });
 
@@ -118,31 +57,5 @@ describe("pairwiseF1: pairs of errands sharing a key", () => {
     const rows = [{ id: "a", key: "one-off|0" }, { id: "b", key: "one-off|0" }];
     const score = pairwiseF1(rows, rows);
     expect(score.pairs).toEqual({ gold: 0, predicted: 0, both: 0 });
-  });
-});
-
-describe("process-key eval over the gold set", () => {
-  it("runs chooseProcessKey over errand-gold.json and reports the word-only baseline F1", async () => {
-    const result = await processKeyEval(gold.rows, wordJudge());
-    expect(result.n).toBe(132);
-    expect(result.predicted).toHaveLength(132);
-    expect(Object.values(result.how).reduce((sum, count) => sum + count, 0)).toBe(132);
-    expect(result.f1).toBeGreaterThanOrEqual(0);
-    expect(result.f1).toBeLessThanOrEqual(1);
-  });
-
-  it("the CLI prints the baseline and --json returns the full report", async () => {
-    const text = await runErrandsCli(["process-key-eval"]);
-    expect(text.exitCode).toBe(0);
-    expect(text.stdout).toContain("process-key eval: 132 errands");
-    expect(text.stdout).toContain("pairwise F1");
-    const json = await runErrandsCli(["process-key-eval", "--json"]);
-    const report = JSON.parse(json.stdout!) as { n: number; f1: number };
-    expect(report.n).toBe(132);
-    expect(report.f1).toBeGreaterThanOrEqual(0);
-  });
-
-  it("usage: an unknown errands subcommand exits 1", async () => {
-    expect((await runErrandsCli(["bogus"])).exitCode).toBe(1);
   });
 });

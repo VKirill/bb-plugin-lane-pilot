@@ -1,6 +1,6 @@
 import type { JevSettings } from "@lane-pilot/jev";
 import { closeOwnerItemsByPrefix, decidedOwnerItem } from "../../owner-waiting";
-import { answerDecision, askDecision, refineVerdict, type Db } from "./journal";
+import { answerDecision, askDecision, type Db } from "./journal";
 
 /**
  * The two surfaces of the first release (roadmap §2.4): a task's landing word (the attempt waits in finish.ts, the PM or a screen records
@@ -29,7 +29,7 @@ import { taskWordItemPrefix } from "../../contracts";
 
 /** lane_pilot_queue word, the task_word RPC: the owner's word is recorded, and the question leaves his list. */
 export const answerTaskWord = (db: Db, runId: string, family: string, decision: "yes" | "no", text: string, by: string, now?: number) => {
-  try { answerDecision(db, wordDecisionId(runId, family), { option: decision, text }, by, now); void refineVerdict(db, wordDecisionId(runId, family), undefined, now); } catch { /* journal only */ }
+  try { answerDecision(db, wordDecisionId(runId, family), { option: decision, text }, by, now); } catch { /* journal only */ }
   try { closeOwnerItemsByPrefix(db as never, taskWordItemPrefix(runId, family), `${decision === "yes" ? "approved" : "returned"}:${by}`, now); } catch { /* the janitor takes it later */ }
 };
 
@@ -61,7 +61,7 @@ export const askPhaseWord = (db: Db, phase: WordPhase, turn: string, wave: numbe
     situation: phaseSituation(phase, turn, wave, ask), options: WORD_OPTIONS }, settings, now);
 
 export const answerPhaseWord = (db: Db, phaseId: string, turn: string, wave: number | undefined, decision: "yes" | "no", text: string, by: string, now?: number) => {
-  try { answerDecision(db, phaseDecisionId(phaseId, turn, wave), { option: decision, text }, by, now); void refineVerdict(db, phaseDecisionId(phaseId, turn, wave), undefined, now); } catch { /* journal only */ }
+  try { answerDecision(db, phaseDecisionId(phaseId, turn, wave), { option: decision, text }, by, now); } catch { /* journal only */ }
 };
 
 /** The task-word surface as one object, for the services bag. */

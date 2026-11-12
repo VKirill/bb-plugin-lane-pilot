@@ -1,5 +1,3 @@
-import { jev } from "@lane-pilot/jev";
-import { GUARD_BLOCKED_KEY, type GuardBlock } from "@lane-pilot/jev";
 import { bestEffort, isNotFound, orMiss } from "@lane-pilot/kit";
 import { englishSelfRepairChoice, ownerLocale, selfRepairOwnerForm, type OwnerAnswer, type OwnerAsk } from "../../relay/server";
 import type { VerdictStatus } from "@lane-pilot/workflow-engine";
@@ -33,31 +31,6 @@ export type VerdictEnv = {
   patchRecord: (signature: string, change: (record: SignatureRecord, current: SelfRepairState) => void) => Promise<SignatureRecord | null>;
   ownerAsk?: OwnerAsk;
 };
-
-/**
- * The repair verdict is the stronger judge the Jev receipts waited for: a `guard:` incident confirms or denies the output
- * guard's block (fixed/already-fixed → agree, not-lane-pilot → a false positive), a merge suggestion's target says the
- * shared cause was real (agree), and a signature that needed its own repair proves its merge suggestion wrong (disagree).
- */
-export async function labelJevReceipts(env: VerdictEnv, signature: string, verdict: Verdict, current: SelfRepairState): Promise<void> {
-  const instance = jev();
-  if (!instance) return;
-  const positive = verdict === "fixed" || verdict === "already-fixed";
-  const own = current.mergeSuggestions[signature];
-  if (own) { instance.outcome(own.receiptId, "disagree"); delete current.mergeSuggestions[signature]; }
-  for (const [sig, s] of Object.entries(current.mergeSuggestions)) {
-    if (s.group !== signature) continue;
-    if (positive) instance.outcome(s.receiptId, "agree");
-    delete current.mergeSuggestions[sig];
-  }
-  if (!signature.startsWith("guard:")) return;
-  const blocks = await env.bb.storage.kv.get(GUARD_BLOCKED_KEY);
-  for (const row of (Array.isArray(blocks) ? blocks : []) as GuardBlock[]) {
-    if (row.receiptId == null || reasonSignature("guard", `${row.kind} output withheld by the output guard: ${row.reason}`) !== signature) continue;
-    const label = positive ? "agree" : verdict === "not-lane-pilot" ? "disagree" : null;
-    if (label) instance.outcome(row.receiptId, label);
-  }
-}
 
 /**
  * A repair that ended «needs-owner» put its question in its report, where nobody looks. The owner is asked in the repair
@@ -94,7 +67,6 @@ export async function readVerdict(env: VerdictEnv, signature: string, record: Si
   const report = await orMiss(Promise.resolve().then(() => env.bb.sdk.threads.output({ threadId }))
     .then((result) => { const value = (result as { output?: unknown; text?: unknown }).output ?? (result as { text?: unknown }).text; return typeof value === "string" ? value.slice(-4000) : ""; }), "", isNotFound);
   record.verdict = parseVerdict(report);
-  if (record.verdict && !dryRun && current) await bestEffort(env.log, "jev receipt labels", labelJevReceipts(env, signature, record.verdict, current), undefined);
   if (record.verdict === "needs-owner" && !dryRun) {
     // A graph step stores the verdict first: a step run again after a reload must not ask the owner twice.
     if (record.runId) await env.patchRecord(signature, (stored) => { stored.verdict = record.verdict; });

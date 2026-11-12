@@ -24,7 +24,6 @@ import { suggestTests, testHintLine } from "../../verification";
 import { gateResolverFor, gateRunVerdict } from "../../verification/server"
 import { latestGateRunForTask } from "../../storage"
 import { parseIntegrationGateSettings } from "../../contracts/integration-gate";
-import { jev } from "@lane-pilot/jev";
 import { batchAdviceFor, baselineRedGuard, recoveryGuard, topicLoopGuard } from "./dispatch-guards";
 import { ownerLastWroteAt } from "../../critique/server";
 import { reviveCanceledTask } from "./revive";
@@ -356,7 +355,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
           const file = await bestEffort(ctx.log, "writer test-hint file read", host.call("readBoundedFile", { requestedHostId:config.hostId, projectCwd:task.project_cwd, relativePath:path, offset:0, maxLines:80 }, { hostId:config.hostId, timeoutMs:10_000 }), null);
           return typeof file?.content === "string" ? file.content : null;
         };
-        return testHintLine(await suggestTests(jev(), { changedFiles:task.owns_paths, repoFiles:ls.stdout.split("\n").filter(Boolean), readFile }, { projectId:args.projectId, runId, subject:taskId }));
+        return testHintLine(await suggestTests({ changedFiles:task.owns_paths, repoFiles:ls.stdout.split("\n").filter(Boolean), readFile }));
       } catch (cause) { ctx.log(`writer ${taskId}: test hint skipped: ${cause instanceof Error ? cause.message : String(cause)}`); return ""; }
     })();
     const pendingReply = (): Record<string,unknown> => ({ runId, taskId, attemptId, writerThreadId:null, state:"queued", stagesPending:true, stages:listStageReceipts(db, runId, taskId),

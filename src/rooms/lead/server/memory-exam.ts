@@ -1,8 +1,7 @@
-import { jev, type JevSettings } from "@lane-pilot/jev";
+import type { JevSettings } from "@lane-pilot/jev";
 import { SANDBOX_PROJECT_ID, isDrillTask } from "../../contracts";
 import type { MemoryEvalRunner } from "../../contracts";
 import { OWNER_ANSWERERS } from "../logic";
-import { leadPredictJudgment, type PredictDecision, type PredictHistory } from "../predict";
 import type { Db } from "./journal";
 
 /**
@@ -12,10 +11,7 @@ import type { Db } from "./journal";
  * 1. Recall: the memory-eval room's probes on the hub's own accepted tasks (right answer, nothing relevant, off-topic) at 300 notes,
  *    production retriever: hit rate on the positives, false hits on the negatives. The roadmap asks for at least 36 probes; fewer is
  *    reported as not enough, never rounded up.
- * 2. Decisions with an empty control: the owner's answered rows (exam and backtest) are predicted again twice, with the memory the
- *    live predictor has (his earlier answers to the same kind of question, only those answered before the row) and with no memory at
- *    all. The gain is the matches the memory adds. Neither arm sees a repository: the situation JSON is the whole input, so nothing
- *    of a repo leaks into the control.
+ * 2. Decisions with an empty control: the lead has no predictor, so both arms defer every answered row (decided 0, gain 0).
  *
  * The result is stored under `lead:memory-exam` for the panel, `lead status` and the CLI. Nothing here changes a right or a row.
  */
@@ -32,27 +28,9 @@ export type MemoryExam = {
 
 type Row = { id: string; surface: string; class: string; risk: string | null; project_id: string | null; run_id: string | null; situation_json: string; options_json: string; answer_json: string; answered_at: number };
 
-/** The memory arm's history: the owner's earlier answers to the same kind of question, answered before this one (no peeking forward). */
-/** Whose rows the exam measures and remembers: the owner's own channels and the backtest's replay of his recorded words — never the lead's or an agent's answer (Astra F-011). */
+/** Whose rows the exam measures: the owner's own channels and the backtest's replay of his recorded words — never the lead's or an agent's answer (Astra F-011). */
 const HUMAN = [...OWNER_ANSWERERS, "backtest"];
 const HUMAN_IN = `answered_by IN (${HUMAN.map(() => "?").join(",")})`;
-function historyBefore(db: Db, row: Row): PredictHistory[] {
-  return (db.prepare(`SELECT situation_json, answer_json FROM lane_pilot_decision WHERE surface=? AND class=? AND id<>? AND answer_json IS NOT NULL AND answered_at<? AND split IN ('exam','backtest') AND ${HUMAN_IN} ORDER BY answered_at DESC LIMIT 20`)
-    .all(row.surface, row.class, row.id, row.answered_at, ...HUMAN) as Array<{ situation_json: string; answer_json: string }>)
-    .map((past) => ({ situation: past.situation_json, answer: (JSON.parse(past.answer_json) as { option: string }).option }));
-}
-
-async function predictOnce(row: Row, history: PredictHistory[], settings: JevSettings | undefined): Promise<{ decision: PredictDecision; by: string }> {
-  const options = JSON.parse(row.options_json) as string[];
-  try {
-    const verdict = await jev()?.judge(leadPredictJudgment, {
-      surface: row.surface, class: row.class, risk: row.risk, situation: JSON.parse(row.situation_json) as Record<string, unknown>, options, history,
-    }, { projectId: row.project_id, runId: row.run_id, subject: "lead-memory-exam", settings });
-    if (verdict?.by === "jev") return { decision: verdict.decision, by: "jev" };
-    if (verdict?.by === "fallback" && verdict.shadow?.decision) return { decision: verdict.shadow.decision, by: "jev-shadow" };
-  } catch { /* a failed call is a deferred row of the exam, not a failed exam */ }
-  return { decision: { option: null, p: 0 }, by: "none" };
-}
 
 export async function runMemoryExam(db: Db, options: { limit?: number; settings?: JevSettings; now?: number; recall?: boolean; migrations: readonly string[] }, runEval: MemoryEvalRunner): Promise<MemoryExam> {
   const now = options.now ?? Date.now();
@@ -75,17 +53,9 @@ export async function runMemoryExam(db: Db, options: { limit?: number; settings?
   const limit = Math.max(1, Math.min(options.limit ?? 60, 500));
   const rows = db.prepare(`SELECT id, surface, class, risk, project_id, run_id, situation_json, options_json, answer_json, answered_at FROM lane_pilot_decision WHERE answer_json IS NOT NULL AND split IN ('exam','backtest') AND ${HUMAN_IN} ORDER BY answered_at DESC LIMIT ?`).all(...HUMAN, limit) as Row[];
   const withMemory: MemoryExamArm = { decided: 0, exact: 0 }, control: MemoryExamArm = { decided: 0, exact: 0 };
-  let predictor = "none";
-  for (const row of rows) {
-    const answer = (JSON.parse(row.answer_json) as { option: string }).option;
-    const [memory, empty] = await Promise.all([predictOnce(row, historyBefore(db, row), options.settings), predictOnce(row, [], options.settings)]);
-    if (memory.by !== "none") predictor = memory.by;
-    if (memory.decision.option !== null) { withMemory.decided += 1; if (memory.decision.option === answer) withMemory.exact += 1; }
-    if (empty.decision.option !== null) { control.decided += 1; if (empty.decision.option === answer) control.exact += 1; }
-  }
+  const predictor = "none";
   if (!rows.length) caveats.push("decisions: the journal has no answered rows yet");
-  else if (predictor === "none") caveats.push("decisions: Jev answered nothing (no key, off, or every call failed): both arms deferred everything");
-  else if (rows.length < 20) caveats.push(`decisions: ${rows.length} rows, fewer than 20: the gain is a hint, not a number`);
+  else caveats.push("decisions: the lead has no predictor: both arms deferred everything");
   return { at: now, recall, decisions: { n: rows.length, withMemory, control, gain: withMemory.exact - control.exact, predictor }, caveats };
 }
 

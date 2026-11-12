@@ -69,55 +69,6 @@ describe("task-finished order: the harness breaker hears a failure on a live run
 });
 
 /**
- * Regression 2: the finish-scan is awaited before `stoppedMeanwhile("the finish scan")` and the
- * acceptance receipt. A stop while Jev judges must cancel the attempt — no receipt, no merge.
- * On b50fcb02 the scan ran as a post-finish subscriber: the merge had already happened.
- */
-describe("finish-scan: a stop during it still cancels the merge", () => {
-  it("cancel_requested while the scan judges → canceled, no receipt, no merge", async () => {
-    const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
-    const db = openDatabase(bb);
-    createRun(db, "run", "P", "cli", "/repo");
-    createTask(db, { id:"t1", runId:"run", kind:"bb", contract:task("t1") });
-    createAttempt(db, { id:"a-t1", runId:"run", taskId:"t1" });
-    transitionAttempt(db, "a-t1", "spawn_requested");
-    transitionAttempt(db, "a-t1", "running", { threadId:"writer-t1" });
-    const judgeCall = deferred<void>();
-    const judgeResult = deferred<unknown>();
-    setJevForTests({ judge:() => { judgeCall.resolve(); return judgeResult.promise; } } as never);
-    const acceptance = vi.fn(async () => ({ state:"passed" }));
-    const ctx = {
-      state:{ disposed:false }, db, isDisposed:() => false, log:() => undefined,
-      getThreadBounded:async () => ({ status:"idle" }), host:{ call:async () => ({}) },
-      bb:{ storage:bb.storage, log:{ warn() {}, error() {}, info() {} },
-        sdk:{ threads:{ stop:async () => undefined, events:{ list:async () => [] }, get:async () => ({ status:"idle" }),
-            output:async () => ({ text:"done" }) },
-          files:{ read:async () => ({ content:"note" }) },
-          plugins:{ callRpc:async ({ method }:{ method:string }) => method === "files"
-            ? { outcome:"available", files:[{ path:"note.txt", revision:"r1" }], initialPatches:[{ path:"note.txt", patch:"@@\n+note\n", truncated:false }] }
-            : { outcome:"available", patches:{ "note.txt":{ outcome:"available", patch:{ path:"note.txt", patch:"@@\n+note\n", truncated:false } } } } },
-          environments:{ list:async () => [{ id:"env-1" }] } } },
-    };
-    const finish = createWriterFinish(ctx as never, {
-      validateWriterResult:async () => ({ status:"accepted", output:"done", produced:["note.txt"], verification:[] }),
-      persistWriterAcceptance:acceptance,
-      workspaceDirt:async () => ({ ok:true, snapshots:[] }),
-      runBudgetFor:() => ({ snapshot:() => ({ limits:{} }) }),
-    } as never);
-    const running = finish.finishWriterAttempt({ projectId:"P", config, task:task("t1"), runId:"run", taskId:"t1",
-      attemptId:"a-t1", pmThreadId:"pm", writerThreadId:"writer-t1", dirtBefore:[] });
-    await judgeCall.promise;
-    transitionAttempt(db, "a-t1", "cancel_requested");
-    judgeResult.resolve({ by:"jev", decision:{} });
-    const result = await running;
-    expect(acceptance).not.toHaveBeenCalled();
-    expect(result.status).not.toBe("accepted");
-    expect(result.status).not.toBe("passed");
-    expect(getAttempt(db, "a-t1")?.state).toBe("canceled");
-  });
-});
-
-/**
  * Regression 4: the owner-word check reads the plugin store. A read that fails must surface, not read
  * as "no word yet" and hold a verified task for six hours (or block it on the owner's missing yes).
  */

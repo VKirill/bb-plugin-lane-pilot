@@ -11,7 +11,7 @@ import { collectEnabled, ERRAND_EPISODE_EXTRACTOR_VERSION, ERRAND_EPISODE_TABLE 
 import { errandOutcome } from "../contracts/server";
 import { errandStem, errandTitle } from "./logic";
 import type { KnownProcessKey } from "./process-key";
-import { ERRAND_FAILURE_CLASSES, ERRAND_FAILURE_ID, type ErrandFailureClass, type ErrandFailureInput } from "./failure-judgment";
+import { ERRAND_FAILURE_CLASSES, type ErrandFailureClass } from "./failure-judgment";
 import { listErrandEpisodeStates, listErrandProcessKeys, listPendingErrandEpisodes } from "../storage";
 import { listErrandRuns, listWfRunsByIdsOrdered } from "@lane-pilot/workflow-engine";
 
@@ -21,12 +21,11 @@ import { listErrandRuns, listWfRunsByIdsOrdered } from "@lane-pilot/workflow-eng
  * text (redactKnown → scrubQuote → maskPii; the row sits in `enrichment_state='held'` while unmasked text is in
  * memory), makes exactly one call to the `episode-analyst` role's hidden analyzer thread, parses the strict JSON answer
  * and writes the enrichment columns. The model proposes a candidate into `process_key_proposed`; `deps.chooseKey`
- * (R6: 8 nearest known keys, Jev chooses) writes the final `process_key`.
+ * (R6: the nearest known keys) writes the final `process_key`.
  *
  * Failure classes come from the code first: `timeout`, `looped`, `stopped_early` and `unverified` are computed from the
  * stored trace, status and verdict before the model's word is read, and a code class always wins. The model's class is
- * used only when the code found none; an invalid one becomes `other`. A Jev `errand.failure` shadow judgment rides
- * along for the nightly labels.
+ * used only when the code found none; an invalid one becomes `other`.
  */
 export const EPISODE_SWEEP_LIMIT = 10;
 /** A row whose last attempt is younger than this is not picked again: five minutes (an hour kept 18 rows waiting for no reason, owner 2026-11-06). */
@@ -70,10 +69,8 @@ export type EpisodeEnrichDeps = {
   readEvents?: (threadId: string) => Promise<unknown[]>;
   /** The one model call of the episode (the hidden analyzer thread); returns the answer text and the model that wrote it. */
   runModel?: (prompt: string, projectId: string | null, runId: string) => Promise<{ text: string; model: string }>;
-  /** The `errand.failure` shadow judgment; called after a successful write, never allowed to fail the episode. */
-  judge?: (input: ErrandFailureInput, ctx: { runId: string; projectId: string | null }) => Promise<void> | void;
   /**
-   * R6: the final key for the model's candidate — 8 nearest known keys, Jev chooses (`chooseProcessKey`). Absent → the
+   * R6: the final key for the model's candidate — nearest known keys (`chooseProcessKey`). Absent → the
    * candidate stands. Never allowed to fail the episode: a throw leaves the candidate.
    */
   chooseKey?: (input: { candidate: string; title: string; known: KnownProcessKey[] }, ctx: { runId: string; projectId: string | null }) => Promise<string>;
@@ -294,13 +291,6 @@ export async function enrichEpisode(row: PendingEpisode, deps: EpisodeEnrichDeps
       db.prepare(`UPDATE ${ERRAND_EPISODE_TABLE} SET process_key=? WHERE run_id=?`).run(key, row.runId);
     });
   }
-  const actions = row.traceStats?.actions ?? 0;
-  try {
-    await deps.judge?.({
-      status: row.status, outcome: row.outcome, verified: row.verified, reason: row.reason ?? "",
-      actions, failed: row.traceStats?.failedObservations ?? 0, brief: clip(masked, 1_500),
-    }, { runId: row.runId, projectId: row.projectId });
-  } catch { /* shadow judgment never fails the episode */ }
   return "enriched";
 }
 
@@ -319,7 +309,7 @@ export function knownProcessKeys(db: Db): KnownProcessKey[] {
 export type SweepResult = { picked: number; enriched: number; skipped: number; failed: number; held: number };
 
 // One pass at a time per plugin process: the hourly node and `errands episodes-sweep` overlapped on 2026-11-06 and both
-// enriched the same rows (the analyzer call is shared by key, the Jev calls and the writes were not).
+// enriched the same rows (the analyzer call is shared by key, the writes were not).
 let sweeping = false;
 let keyTurn: Promise<unknown> = Promise.resolve();
 const inKeyTurn = (step: () => Promise<void>): Promise<void> => {
@@ -411,5 +401,3 @@ export async function episodesBackfill(
   }
   return result;
 }
-
-export { ERRAND_FAILURE_ID };

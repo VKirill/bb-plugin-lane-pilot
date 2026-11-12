@@ -53,7 +53,6 @@ export type SelfRepairState = {
   aliases: Record<string, string>;
   /** A merge Jev proposed (active: applied, shadow: only recorded) whose receipt waits for a label: the target group's
    * verdict says whether the shared cause was real (agree), and the signature's own repair says it was not (disagree). */
-  mergeSuggestions: Record<string, { group: string; receiptId: number; at: number }>;
 };
 
 /** Last owner (user-initiated) message time per PM thread; missing or null is unread and treated as live. */

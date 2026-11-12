@@ -6,10 +6,8 @@ import { noteWriterPair } from "../writer-model-pin";
 import { RETRY_ELIGIBLE } from "../../contracts";
 import { walkWriterChain } from "./writer-hold";
 import { previousAttemptBrief } from "./writer-task";
-import { trimCheckLogsIn } from "../log-trim";
 import { retargetTask } from "../../tasks";
 import { failureClass } from "../../contracts";
-import { jev } from "@lane-pilot/jev";
 
 
 import { noteOwnFailure, type WriterTaskState } from "./start-task-state";
@@ -126,7 +124,7 @@ import type { WriterTaskInput } from "./start-task-state";
               continuation,
               // The handoff names only the provider's stop; a stray file or a red check of an earlier turn would be redone
               // (vf-s4-items 2026-10-24: the fallback rewrote Buffs.luau, which the first turn had been rejected for).
-              ...(state.own.failure ? { previousAttempt:previousAttemptBrief(await trimCheckLogsIn(jev(), { ...state.own.failure, produced:[] }, state.freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:state.runSettings }, ctx.log), state.freshTask, undefined, state.liveFolder) } : {}),
+              ...(state.own.failure ? { previousAttempt:previousAttemptBrief({ ...state.own.failure, produced:[] }, state.freshTask, undefined, state.liveFolder) } : {}),
             });
             if (!spawned.ok) {
               // The owner's stop landed while this fallback was being made: its spawn ends canceled (endSpawnFailure), and the task

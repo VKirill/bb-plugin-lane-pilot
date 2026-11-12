@@ -331,7 +331,7 @@ describe("parity d5-phase-2", () => {
     const input = { goals: [{ id: "g1", done_when: "flag works", evidence: "npm test" }], boundary: { in_scope: [], out_of_scope: [] }, goal: "g", merged_commits: ["c1"], summary: "s",
       drawing: { paths: [SPEC_PATH], sha256: "s", ui_spec: SPEC_PATH, points: found.map(({ id, text }) => ({ id, text })) } };
     const closed = await runSim("lp.close", { input, stubs: { goal_audit: audit } });
-    expect(pathOf(closed)).toBe("goal-screen goal_audit memory life report closed");
+    expect(pathOf(closed)).toBe("goal_audit memory life report closed");
     expect(out(closed)).toMatchObject({ status: "closed", points: audit.points });
     const unmet = await runSim("lp.close", { input, stubs: { goal_audit: { ...audit, all_met: false, unmet_ids: ["g1"] } } });
     expect(out(unmet)).toMatchObject({ status: "unmet", points: audit.points });

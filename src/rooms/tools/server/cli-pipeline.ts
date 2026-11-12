@@ -2,7 +2,7 @@ import type { PluginCliResult } from "@get-bb/plugin-sdk";
 import { OWNER_ITEM_SWEEPS, type CliRunDeps } from "./cli-deps";
 import { TASK_RECORD_USAGE, blindRecord, readsBlind, renderTaskRecord, taskRecord } from "./task-record";
 import { attemptRecord, manifest, passport, preship, prPassport, receiptChain, subagentReceipts, verifyChain } from "./receipts";
-import { agentRegistry, answerWorkflowQuestion, breakerRowId, budgetSpentSweep, closeOwnerItem, conveyorState, designJournalLines, dirname, failedTasksAllProjects, getPhase, isNotFound, jev, join, listNearMissReceipts, listTripped, orMiss, pluginRootFromModule, postOwnerItem, readinessWords, rearmBreaker, renderTimeline, retireAdoptedRule, runAgentsCli, runBacklogCli, runBaselineCli, runBenchCli, runCapabilityCli, runCheckersCli, runDeferralCli, runDesignPairCli, runErrandsCli, runForecastCli, runHypothesisCli, runJevCli, runLeadCli, runOutageCli, runPhaseCli, runReturnCli, runRulesCli, runRunGoalCli, runScheduleCli, runSmaLiveCli, runSmaMapCli, runWaitingCli, runWallCli, saveProjectSetting, setConveyor, spawnAsync, taskBaselineEntries, taskTimeline, tierReport, trainedConditions, trainingRatios, workerSecretReach } from "./cli-imports";
+import { agentRegistry, answerWorkflowQuestion, breakerRowId, budgetSpentSweep, closeOwnerItem, conveyorState, designJournalLines, dirname, failedTasksAllProjects, getPhase, isNotFound, jev, join, listNearMissReceipts, listTripped, orMiss, pluginRootFromModule, postOwnerItem, readinessWords, rearmBreaker, renderTimeline, retireAdoptedRule, runAgentsCli, runBacklogCli, runBaselineCli, runBenchCli, runCapabilityCli, runCheckersCli, runDeferralCli, runDesignPairCli, runForecastCli, runHypothesisCli, runJevCli, runLeadCli, runOutageCli, runPhaseCli, runReturnCli, runRulesCli, runRunGoalCli, runScheduleCli, runSmaLiveCli, runSmaMapCli, runWaitingCli, runWallCli, saveProjectSetting, setConveyor, spawnAsync, taskBaselineEntries, taskTimeline, tierReport, trainedConditions, trainingRatios, workerSecretReach } from "./cli-imports";
 /** `timeline <task-id> [--run <run-id>] [--json]`: without --run the first bare word is the task (it was skipped until 2026-11-02). */
 export function timelineArgs(args: string[]): { taskId: string | undefined; runId: string | undefined } {
   const runAt = args.indexOf("--run");
@@ -75,7 +75,6 @@ export async function cliPipeline(d: CliRunDeps): Promise<PluginCliResult | unde
   }
   if (command === "lead") return await runLeadCli({ db, kv: bb.storage.kv as never, lead: services.lead }, args);
   if (command === "jev") return runJevCli({ db, saveProjectSetting: (p, k, v) => saveProjectSetting(db, p, k, v), settings: async (p) => (await effectiveProjectSettings(p)).values as Record<string, unknown> }, args);
-  if (command === "errands" && args[0] === "process-key-eval") return runErrandsCli(args);
   if (command === "rules") {
     const hostAt = args.indexOf("--host");
     const hostId = hostAt >= 0 ? args[hostAt + 1] : undefined;

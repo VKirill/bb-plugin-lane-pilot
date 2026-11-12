@@ -3,13 +3,3 @@ export { listWalls, type WallRow } from "./store";
 export { listClasses } from "./journal";
 export type { WallClass } from "./types";
 export { wallMigrations } from "./migrations";
-export {
-  WALL_FILTER_ID,
-  wallFilterJudgment,
-  buildWallFilterState,
-  type WallFilterInput,
-  type WallFilterDecision,
-  type WallFilterAction,
-  type WallFilterCategory,
-} from "./wall-filter-judgment";
-

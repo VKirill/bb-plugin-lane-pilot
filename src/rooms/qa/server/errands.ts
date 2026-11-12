@@ -288,11 +288,8 @@ function mountErrandCore(ctx: ServerCore) {
       if (edited.length > 0) return { state: "blocked", reason: "repo_edited", files: edited, output: `Helper edited repository files: ${edited.join(", ")}`, verified: "blocked", checks: [] };
     }
     const raw = (await bb.sdk.threads.output({ threadId })).output;
-    // The report is checked (J-11) before anyone sees it; a blocked one is a placeholder, not a verdict from the helper.
     const text = typeof raw === "string" ? raw : outputText(raw);
-    const guarded = ctx.outputGuard ? await ctx.outputGuard({ kind: "errand", text, projectId, subject: threadId }) : null;
-    if (guarded?.blocked) return { state: "blocked", reason: `output_guard_blocked:${guarded.reason}`, output: guarded.text, verified: "blocked", checks: [] };
-    const output = guarded ? guarded.text : redactKnown(text);
+    const output = redactKnown(text);
     const verdict = errandVerdict(output);
     return { ...verdict, output, ...errandCheck(output, verdict.state) };
   }

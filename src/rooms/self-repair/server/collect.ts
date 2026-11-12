@@ -1,7 +1,6 @@
 import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { orMiss, stringAt, isNotFound } from "@lane-pilot/kit";
-import { GUARD_BLOCKED_KEY, type GuardBlock } from "@lane-pilot/jev";
 import { taskFamily } from "@lane-pilot/contracts";
 import { listOkTriageOrigins, listOrchestratorTriages } from "@lane-pilot/run-insights";
 import { checksInFlight } from "../../runs";
@@ -125,14 +124,6 @@ export function createCollector(env: { bb: BbPluginApi; db: LanePilotDatabase; r
       out.push({ signature: reasonSignature("breaker", open.fingerprint), kind: "breaker", projectId, runId: "-", taskId: "-",
         attemptId: `breaker:${projectId}:${open.openedAt}`, pmThreadId: null, writerThreadId: null, version: VERSION,
         reason: `the project's writers have been held ${Math.round((now - open.openedAt) / 60_000)} min: several tasks failed on «${open.fingerprint}»`, at: now });
-    }
-    // J-11: an output the guard withheld (a secret value, instructions for the reader) is raised once, whatever its project.
-    const guarded = await bb.storage.kv.get(GUARD_BLOCKED_KEY);
-    for (const row of (Array.isArray(guarded) ? guarded : []) as GuardBlock[]) {
-      if (row.at <= since || ignored.has(row.projectId)) continue;
-      out.push({ signature: reasonSignature("guard", `${row.kind} output withheld by the output guard: ${row.reason}`), kind: "guard", projectId: row.projectId, runId: row.runId ?? "-", taskId: row.subject ?? "-",
-        attemptId: `guard:${row.at}`, pmThreadId: null, writerThreadId: null, version: VERSION,
-        reason: `a ${row.kind} output was withheld by the output guard (${row.reason}); it was neither stored nor shown. Find where the ${row.reason === "secret" ? "value came from and why it was not masked" : "instructions came from and what let them reach the output"}.`, at: row.at });
     }
     // T6 (src/learning): the owner was clearly frustrated in a chat. The incident carries the thread and what the agent had just said.
     const annoyed = await bb.storage.kv.get(FRUSTRATION_KEY);

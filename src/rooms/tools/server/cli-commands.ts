@@ -1,5 +1,5 @@
 import { TASK_RECORD_USAGE } from "./task-record";
-import { AGENTS_USAGE, ANAMNESIS_USAGE, BACKLOG_USAGE, BASELINE_USAGE, BENCH_USAGE, CAPABILITY_USAGE, CATALOG_USAGE, CHECKERS_USAGE, COVERAGE_USAGE, DEFERRAL_USAGE, DESIGN_PAIR_USAGE, EPISODES_USAGE, ERRANDS_USAGE, FORECAST_USAGE, JEV_USAGE, LEAD_USAGE, LEARNING_USAGE, MEMORY_COMPRESS_USAGE, MEMORY_CONFLICT_USAGE, MEMORY_EVAL_USAGE, OUTAGE_USAGE, PHASE_USAGE, PM_REPLAY_USAGE, PM_SKILLS_USAGE, POLICY_USAGE, PROFILE_KEYS, PROJECT_PASSPORT_USAGE, ROLLBACK_USAGE, RULES_USAGE, RUN_GOAL_USAGE, SCHEDULE_USAGE, SKILLS_USAGE, SMA_MAP_USAGE, WAITING_USAGE, WALL_USAGE, WINDOW_USAGE, excavate, jev, join, manifest, passport, preship, waitThreadIdle } from "./cli-imports";
+import { AGENTS_USAGE, ANAMNESIS_USAGE, BACKLOG_USAGE, BASELINE_USAGE, BENCH_USAGE, CAPABILITY_USAGE, CATALOG_USAGE, CHECKERS_USAGE, COVERAGE_USAGE, DEFERRAL_USAGE, DESIGN_PAIR_USAGE, EPISODES_USAGE, FORECAST_USAGE, JEV_USAGE, LEAD_USAGE, LEARNING_USAGE, MEMORY_COMPRESS_USAGE, MEMORY_CONFLICT_USAGE, MEMORY_EVAL_USAGE, OUTAGE_USAGE, PHASE_USAGE, PM_REPLAY_USAGE, PM_SKILLS_USAGE, POLICY_USAGE, PROFILE_KEYS, PROJECT_PASSPORT_USAGE, ROLLBACK_USAGE, RULES_USAGE, RUN_GOAL_USAGE, SCHEDULE_USAGE, SKILLS_USAGE, SMA_MAP_USAGE, WAITING_USAGE, WALL_USAGE, WINDOW_USAGE, excavate, jev, join, manifest, passport, preship, waitThreadIdle } from "./cli-imports";
 const MEMORY_CLI_USAGE = 'bb lane-pilot memory search "<question>" [--project P] | memory search --recall --query "<words>" [--cwd <path>] [--project P]   (read-only: confirmed notes by the word index, masked, one per line) | memory write "<fact>" [--project P] | memory history "<question>" [--project P] [--source tasks|execution|transcripts|lessons|books]   (the project memory on the hub; inside a BB thread the project is the thread\'s own)';
 
 const usage = [
@@ -184,8 +184,7 @@ const commands:Array<{ name:string; summary:string; usage:string }> = [
       { name:"session-brief", summary:"The checkout's coordination brief for a starting session: live and stale windows, a merge in flight, other windows' claims and weakly calibrated areas", usage:"bb lane-pilot session-brief --cwd <path> [--json]" },
       { name:"subagent-pack", summary:"The rules and confirmed lessons a Task subagent is born with (a project switches it on with hook.subagent_pack)", usage:"bb lane-pilot subagent-pack \"<prompt>\" [--cwd <path>] [--project <id>]" },
       { name:"skill-lint", summary:"Lint a local skill folder against the skill standard (SKILL.md, references/, scripts/): errors and warnings, exit 1 on errors", usage:"bb lane-pilot skill-lint <dir>" },
-      { name:"errands", summary:"Errands: backfill episode rows for past runs (repeated processes first); the process-key eval over the gold set", usage:`${EPISODES_USAGE}
-${ERRANDS_USAGE}` },
+      { name:"errands", summary:"Errands: backfill episode rows for past runs (repeated processes first)", usage:EPISODES_USAGE },
   ];
   // The help is the hand list above plus every registered command it does not name: regress, regressions, regress-close and
   // timeline were missing from it, and a PM told the owner a quarantine could not be lifted (2026-11-02).

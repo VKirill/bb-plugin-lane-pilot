@@ -1,16 +1,17 @@
 import type Database from "better-sqlite3";
-import { jev, type JevSettings } from "@lane-pilot/jev";
+import type { JevSettings } from "@lane-pilot/jev";
 import { OWNER_ANSWERERS, type ExamRow, type Verdict } from "../logic";
-import { LEAD_JUDGE_ID, leadJudgeJudgment, leadPredictJudgment, type PredictDecision } from "../predict";
 
 /**
  * The journal's three moves (roadmap §2.4): a surface OPENS a decision when its question appears (situation and options as the owner
  * will see them), the lead PREDICTS at once and the prediction is stamped with its time, the owner's answer CLOSES the row and the rule
- * judge scores it. The judge here is the rule «same option = exact, no prediction = deferred, else miss»; a model judge that knows
- * `partial` comes with the morning-list labels (WP6). An id is the surface's own key, so opening twice is one row and the backtest
+ * judge scores it. The judge here is the rule «same option = exact, no prediction = deferred, else miss». An id is the surface's own key, so opening twice is one row and the backtest
  * can never overwrite a live decision (INSERT OR IGNORE).
  */
 export type Db = Pick<Database.Database, "prepare" | "transaction">;
+
+/** The lead's prediction of the owner's answer: the option it would pick (null = deferred) and its probability. */
+export type PredictDecision = { option: string | null; p: number };
 
 export type DecisionRow = {
   id: string; project_id: string | null; run_id: string | null; surface: string; class: string; risk: string | null;
@@ -39,42 +40,16 @@ export function openDecision(db: Db, input: OpenDecision, now: number = Date.now
 
 export const getDecision = (db: Db, id: string): DecisionRow | undefined => db.prepare("SELECT * FROM lane_pilot_decision WHERE id=?").get(id) as DecisionRow | undefined;
 
-/** Whose past answers the predictor may remember: the owner's own channels and the backtest's replay of his recorded words. */
-const HISTORY_ANSWERERS = [...OWNER_ANSWERERS, "backtest"];
-function historyOf(db: Db, row: DecisionRow, now: number): Array<{ situation: string; answer: string }> {
-  // Only the owner's answers (never the lead's own «yes» or an agent's relay), only the live and backtest splits (a design switch has
-  // other options), and only what was answered before this row was: a backtest row must not read the future (Gemini F-005, SWE-2 F-002).
-  // The row's birth, not the call: a prediction is made before the answer, so `answered_at` is null here and `now` would show a backtest
-  // row every later word (Gemini F-005.1 verified 2026-11-01: the 0.1.458 filter read the future after all). The backtest stamps
-  // `created_at = word.at`, a live row is born when it is asked.
-  const before = row.created_at;
-  void now;
-  const rows = db.prepare(`SELECT situation_json, answer_json FROM lane_pilot_decision WHERE surface=? AND class=? AND id<>? AND answer_json IS NOT NULL
-    AND answered_at<? AND split IN ('exam','backtest') AND answered_by IN (${HISTORY_ANSWERERS.map(() => "?").join(",")}) ORDER BY answered_at DESC LIMIT 20`)
-    .all(row.surface, row.class, row.id, before, ...HISTORY_ANSWERERS) as Array<{ situation_json: string; answer_json: string }>;
-  return rows.map((past) => ({ situation: past.situation_json, answer: (JSON.parse(past.answer_json) as Answer).option }));
-}
-
 /**
- * Writes the prediction once, before the answer; a row already predicted or already answered is left alone. Shadow mode is the normal one:
- * the verdict's `shadow` decision is the prediction. Without Jev (no key, off, a failure) the lead defers, and the row says so.
+ * Writes the prediction once, before the answer; a row already predicted or already answered is left alone. The lead has
+ * no predictor: it defers, and the row says so.
  */
-export async function predictDecision(db: Db, id: string, settings?: JevSettings, now: number = Date.now()): Promise<PredictDecision | null> {
+export async function predictDecision(db: Db, id: string, _settings?: JevSettings, now: number = Date.now()): Promise<PredictDecision | null> {
   const row = getDecision(db, id);
   if (!row || row.predicted_at !== null || row.answered_at !== null) return null;
-  const options = JSON.parse(row.options_json) as string[];
-  let decision: PredictDecision = { option: null, p: 0 };
-  let predictor = "none";
-  try {
-    const verdict = await jev()?.judge(leadPredictJudgment, {
-      surface: row.surface, class: row.class, risk: row.risk, situation: JSON.parse(row.situation_json) as Record<string, unknown>, options, history: historyOf(db, row, now),
-    }, { projectId: row.project_id, runId: row.run_id, subject: "lead-predict", settings });
-    if (verdict?.by === "jev") { decision = verdict.decision; predictor = `jev:${leadPredictJudgment.id}@${leadPredictJudgment.version}`; }
-    else if (verdict?.by === "fallback" && verdict.shadow?.decision) { decision = verdict.shadow.decision; predictor = `jev-shadow:${leadPredictJudgment.id}@${leadPredictJudgment.version}`; }
-  } catch { /* a prediction never blocks a surface */ }
-  if (decision.option !== null && !options.includes(decision.option)) decision = { option: null, p: decision.p };
+  const decision: PredictDecision = { option: null, p: 0 };
   db.prepare("UPDATE lane_pilot_decision SET prediction_json=?, predicted_at=?, predictor=? WHERE id=? AND predicted_at IS NULL AND answered_at IS NULL")
-    .run(JSON.stringify(decision), now, predictor, id);
+    .run(JSON.stringify(decision), now, "none", id);
   return decision;
 }
 
@@ -101,31 +76,6 @@ export function answerDecision(db: Db, id: string, answer: Answer, by: string, n
   db.prepare("UPDATE lane_pilot_decision SET answer_json=?, answered_at=?, answered_by=?, judge_verdict=?, judge_model='rule', judged_at=? WHERE id=? AND answered_at IS NULL")
     .run(JSON.stringify({ option: answer.option, ...(answer.text ? { text: answer.text.slice(0, 2_000) } : {}) }), now, by.slice(0, 200), verdict, now, id);
   return getDecision(db, id);
-}
-
-/**
- * The model judge over a mismatch (roadmap §6): a row the rule judge scored `miss` is shown to Jev with the owner's words; `partial`
- * (the owner's direction, another timing or wording) replaces the miss and counts half in the exam. Exact and deferred rows are not
- * asked; without Jev the miss stands. Never throws: a surface's answer never fails on its judge.
- */
-export async function refineVerdict(db: Db, id: string, settings?: JevSettings, now: number = Date.now()): Promise<Verdict | null> {
-  const row = getDecision(db, id);
-  if (!row || row.judge_verdict !== "miss" || !row.prediction_json || !row.answer_json) return row?.judge_verdict ?? null;
-  const prediction = JSON.parse(row.prediction_json) as PredictDecision;
-  const answer = JSON.parse(row.answer_json) as Answer;
-  if (prediction.option === null) return row.judge_verdict;
-  try {
-    const verdict = await jev()?.judge(leadJudgeJudgment, {
-      surface: row.surface, class: row.class, situation: JSON.parse(row.situation_json) as Record<string, unknown>, options: JSON.parse(row.options_json) as string[],
-      prediction: { option: prediction.option, p: prediction.p }, answer,
-    }, { projectId: row.project_id, runId: row.run_id, subject: "lead-judge", settings });
-    const decided = verdict?.by === "jev" ? verdict.decision : verdict?.by === "fallback" ? verdict.shadow?.decision : undefined;
-    if (decided?.verdict === "partial") {
-      db.prepare("UPDATE lane_pilot_decision SET judge_verdict='partial', judge_model=?, judged_at=? WHERE id=? AND judge_verdict='miss'").run(`jev:${LEAD_JUDGE_ID}@${leadJudgeJudgment.version}`, now, id);
-      return "partial";
-    }
-  } catch { /* the rule's miss stands */ }
-  return "miss";
 }
 
 export type PendingLabel = { id: string; class: string; surface: string; situation_json: string; prediction_json: string | null; answer_json: string | null; judge_verdict: Verdict; answered_at: number };

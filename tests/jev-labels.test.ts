@@ -4,7 +4,7 @@ import { openDatabase } from "../src/rooms/plugin-db";
 // The worktree's own jev package by relative path: `@lane-pilot/jev` resolves to the main checkout (shared node_modules),
 // and these tests pin what this branch adds to the package (the merge brings the same code to the main checkout).
 import { insertReceipt } from "@lane-pilot/jev";
-import { labelCritiqueScreen, labelCritiqueWorth, labelLeadPredict, applyOutcomeLabels, judgeAccuracy } from "@lane-pilot/jev";
+import { labelCritiqueScreen, applyOutcomeLabels, judgeAccuracy } from "@lane-pilot/jev";
 import { sampledInput, INPUT_JSON_CAP } from "@lane-pilot/jev";
 import { planModelLabels, modelLabelPrompt, answersFromModelText, compareModelDecision } from "@lane-pilot/jev";
 import { labelSource, calibrateReceipts } from "@lane-pilot/jev";
@@ -71,73 +71,7 @@ describe("outcome labels: critique.screen on the task's fate", () => {
     database.prepare("UPDATE lane_pilot_jev_receipt SET outcome='agree:outcome' WHERE id=?").run(id);
     database.prepare("UPDATE lane_pilot_jev_receipt SET at=? WHERE id=?").run(OLD, id);
     expect(labelCritiqueScreen(database, NOW)).toEqual([]);
-    expect(applyOutcomeLabels(database, NOW)).toEqual({ "critique.screen": 0, "critique.worth": 0, "lead.predict": 0, "guard.host_command": 0, "errand.failure": 0 });
-  });
-});
-
-describe("outcome labels: critique.worth", () => {
-  it("agrees with a skipped plan critique on a clean accept and disagrees when the critic would have caught it", () => {
-    const database = db();
-    const skip = receipt(database, { judgment: "critique.worth", decision: "skip pm_read,plan_critique,specialist_review" });
-    task(database, "accepted");
-    expect(labelCritiqueWorth(database, NOW)).toEqual([{ receiptId: skip, outcome: "agree:outcome" }]);
-
-    const database2 = db();
-    const skipBad = receipt(database2, { judgment: "critique.worth", decision: "skip pm_read,plan_critique" });
-    task(database2, "blocked");
-    expect(labelCritiqueWorth(database2, NOW)).toEqual([{ receiptId: skipBad, outcome: "disagree:outcome" }]);
-  });
-
-  it("disagrees with a «run» decision when the critic found nothing, agrees when it found something", () => {
-    const database = db();
-    const run = receipt(database, { judgment: "critique.worth", decision: "all critics" });
-    task(database, "accepted");
-    database.prepare("INSERT INTO lane_pilot_stage_receipt (run_id,task_id,stage_id,contract_version,state,input_sha256,attempt,result_json,updated_at) VALUES (?,?,?,?,?,?,?,?,?)")
-      .run("run1", "task1", "plan-critique", 1, "passed", "x", 0, '{"decision":"approve","status":"pass"}', OLD + 500);
-    expect(labelCritiqueWorth(database, NOW)).toEqual([{ receiptId: run, outcome: "disagree:outcome:critic_found_nothing" }]);
-
-    const database2 = db();
-    const run2 = receipt(database2, { judgment: "critique.worth", decision: "all critics" });
-    task(database2, "accepted");
-    database2.prepare("INSERT INTO lane_pilot_stage_receipt (run_id,task_id,stage_id,contract_version,state,input_sha256,attempt,result_json,updated_at) VALUES (?,?,?,?,?,?,?,?,?)")
-      .run("run1", "task1", "plan-critique", 1, "failed", "x", 0, '{"decision":"changes_requested"}', OLD + 500);
-    expect(labelCritiqueWorth(database2, NOW)).toEqual([{ receiptId: run2, outcome: "agree:outcome" }]);
-  });
-
-  it("a receipt that names a graph step, not a task, gets no label, and the old wrong ones are taken back", () => {
-    const database = db();
-    task(database, "accepted");
-    const step = receipt(database, { judgment: "critique.worth", decision: "all critics", subject: "worth-check" });
-    const real = receipt(database, { judgment: "critique.worth", decision: "skip pm_read,plan_critique", subject: "task1" });
-    expect(labelCritiqueWorth(database, NOW)).toEqual([{ receiptId: real, outcome: "agree:outcome" }]);
-    database.prepare("UPDATE lane_pilot_jev_receipt SET outcome='disagree:outcome' WHERE id=?").run(step);
-    applyOutcomeLabels(database, NOW);
-    expect(database.prepare("SELECT id, outcome FROM lane_pilot_jev_receipt ORDER BY id").all()).toEqual([{ id: step, outcome: null }, { id: real, outcome: "agree:outcome" }]);
-  });
-});
-
-describe("outcome labels: lead.predict copies the journal verdict", () => {
-  it("exact/partial → agree, miss → disagree, deferred stays unlabeled", () => {
-    const database = db();
-    const id = receipt(database, { judgment: "lead.predict", subject: "lead-predict" });
-    database.prepare(`INSERT INTO lane_pilot_decision (id,run_id,surface,class,situation_json,options_json,prediction_json,predicted_at,answer_json,answered_at,judge_verdict,split,created_at)
-      VALUES ('d1','run1','words','landing','{}','[]','{"option":"yes","p":0.9}',?,'{"option":"yes"}',?,'exact','exam',?)`)
-      .run(OLD, OLD + 1000, OLD);
-    expect(labelLeadPredict(database, NOW)).toEqual([{ receiptId: id, outcome: "agree:outcome" }]);
-
-    const database2 = db();
-    const id2 = receipt(database2, { judgment: "lead.predict", subject: "lead-predict" });
-    database2.prepare(`INSERT INTO lane_pilot_decision (id,run_id,surface,class,situation_json,options_json,prediction_json,predicted_at,answer_json,answered_at,judge_verdict,split,created_at)
-      VALUES ('d1','run1','words','landing','{}','[]','{"option":"yes","p":0.9}',?,'{"option":"no"}',?,'miss','exam',?)`)
-      .run(OLD, OLD + 1000, OLD);
-    expect(labelLeadPredict(database2, NOW)).toEqual([{ receiptId: id2, outcome: "disagree:outcome" }]);
-
-    const database3 = db();
-    receipt(database3, { judgment: "lead.predict", subject: "lead-predict" });
-    database3.prepare(`INSERT INTO lane_pilot_decision (id,run_id,surface,class,situation_json,options_json,predicted_at,answer_json,answered_at,judge_verdict,split,created_at)
-      VALUES ('d1','run1','words','landing','{}','[]',?,'{}',?,'deferred','exam',?)`)
-      .run(OLD, OLD + 1000, OLD);
-    expect(labelLeadPredict(database3, NOW)).toEqual([]);
+    expect(applyOutcomeLabels(database, NOW)).toEqual({ "critique.screen": 0 });
   });
 });
 

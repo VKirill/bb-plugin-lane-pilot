@@ -2,7 +2,6 @@ import type { BbPluginApi, ExperimentalHostCallOptions, ExperimentalHostClient, 
 import type Database from "better-sqlite3";
 import type { z } from "zod";
 import type { PrototypeConfig, TaskV2 } from "@lane-pilot/contracts";
-import type { OutputGuard } from "@lane-pilot/jev";
 import type { LpRealtimeKind } from "@lane-pilot/ui-kit/realtime-channel";
 import type { hostContract } from "./host";
 
@@ -20,7 +19,6 @@ export interface ServerCore {
   secrets: Secrets;
   catalogKey: (name: string) => Promise<string | undefined>;
   forgetCatalogKey: (name: string) => void;
-  outputGuard: OutputGuard;
   isDisposed: () => boolean;
   log: (message: string) => void;
   host: ServerHost;

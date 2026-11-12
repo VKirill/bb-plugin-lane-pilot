@@ -2,9 +2,7 @@ import { wfLatestPipelineRunId, wfRunInputsJson } from "@lane-pilot/workflow-eng
 import { countAttempts, getAttempt, getRunSettingsScopes, getTaskGitBase, listAttemptsForTask, listStageReceipts, loadProjectSettings, saveTaskGitBase, setRunState, transitionAttempt } from "../../storage";
 import type {StageHelperSettings} from "../../platform/server";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { worthOutcome } from "../../critique"
 import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../contracts/quality-mode";
-import { jev } from "@lane-pilot/jev";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification";
 import { pmReadBrief } from "../writer-brief";
 import type { NodeExecutor, RunSummary, StepContext, WorkflowEngine } from "../../workflow";
@@ -102,20 +100,6 @@ function blockedReply(r: DispatchRuntime, reason: string | undefined): Record<st
 /** The agent-typed nodes also hand over a line saying what was done: the engine requires a handoff from every agent. */
 const handoffOf = (stage: string, state: string, reason?: string) => `${stage} ${state}${reason ? `: ${reason}` : ""}`;
 
-/**
- * The critic's real verdict goes onto the `critique.worth` receipt of this task's `worth-check` (the judgment runs in shadow
- * until its labels show it safe): only when the critic actually ran — a critique skipped by the project's settings or the
- * quality mode proves nothing about whether it was worth paying for.
- */
-function labelWorth(r: DispatchRuntime, ctx: StepContext<DispatchRuntime>, allowed: boolean): void {
-  let receiptId: unknown, would: unknown;
-  try { receiptId = ctx.resolve("worth-check.receiptId"); would = ctx.resolve("worth-check.would"); } catch { return; }
-  if (typeof receiptId !== "number") return;
-  const stage = listStageReceipts(r.ctx.db, r.runId, r.taskId).find((row) => row.stageId === "plan-critique");
-  if (!stage || (stage.state !== "passed" && stage.state !== "blocked")) return;
-  jev()?.outcome(receiptId, worthOutcome(would, allowed));
-}
-
 /** The graph step a stage function runs for: its helper threads carry these ids in their metadata. */
 const stepRef = (ctx: StepContext<DispatchRuntime>) => ({ runId: ctx.runId, stepKey: ctx.stepKey, nodeId: ctx.nodeId });
 
@@ -149,7 +133,6 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
     if (endedReply(r)) return { allowed: false, reason: "attempt ended before its stages finished", handoff: handoffOf("plan-critique", "skipped", "attempt ended") };
     const critique = await runPlanCritique({ stageHelperSettings: r.services.stageHelperSettings, bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId,
       config: r.runConfig, task: r.task, plan: r.plan, pmReadContext: text(ctx.input.with.pmReadContext) || undefined, workflow: stepRef(ctx) });
-    labelWorth(r, ctx, critique.allowed);
     return { allowed: critique.allowed, ...(critique.reason !== undefined ? { reason: critique.reason } : {}), handoff: handoffOf("plan-critique", critique.allowed ? "allowed" : "blocked", critique.reason) };
   }, {}, "plan-critique");
 
