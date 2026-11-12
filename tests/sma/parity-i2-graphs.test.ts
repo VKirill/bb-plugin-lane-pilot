@@ -44,8 +44,8 @@ describe("stream i2 graphs", () => {
         if (call.method === "gitDocsScope") return { hostId: "ovh", status: "ready", isRepoRoot: true, hasDocs: true, changed: ["src/a.ts"], dirty: ["docs/overview.md"], base: null, workspaces: [], localDate: localDateKey(new Date()), localHour: 4, reason: null };
         if (call.method === "gitCreateWorktree") return { hostId: "ovh", status: "failed", path: null, branch: null, reason: "no worktree in the test" };
         if (call.method === "listDocsPages") return { hostId: "ovh", pages: [], oversized: [] };
-        if (call.method === "docsFlows") return { hostId: "ovh", briefPath: "/tmp/flows.md", jev: "disabled", routes: 0, flows: [] };
-        if (call.method === "docsAnchors") return { hostId: "ovh", briefPath: "/tmp/brief.md", anchors: 0, jev: "disabled", tables: [], deploy: false, core: [], productFiles: [] };
+        if (call.method === "docsFlows") return { hostId: "ovh", briefPath: "/tmp/flows.md", routes: 0, flows: [] };
+        if (call.method === "docsAnchors") return { hostId: "ovh", briefPath: "/tmp/brief.md", anchors: 0, tables: [], deploy: false, core: [], productFiles: [] };
         if (call.method === "docsLineCounts") return { hostId: "ovh", counts: {} };
         if (call.method === "writeDocsPages") return { hostId: "ovh", previewSha256: "a".repeat(64), status: "applied", writes: [], reason: null };
         if (call.method === "gitCommitDocs") return { hostId: "ovh", status: "committed", commit: "abc123", reason: null };

@@ -8,5 +8,5 @@ export type { AcceptanceLine, BookPart, BookSection, ContextDoc, FrozenVerdict, 
 export { getPhase, listParts, listPhases, listPhasePartsSince, resolvePhaseRef } from "./store";
 export { phaseBoardCards } from "./board-cards";
 export type { PhaseBoardItem } from "./board-cards";
-export { intakeJudgment, isMachineMessage, pathClassJudgment } from "./intake";
+export { isMachineMessage } from "./intake";
 export { coverageGaps, oneLine, ownsPathProblems, parkRoadmapRow, quickRow, rubricLine } from "./stages";

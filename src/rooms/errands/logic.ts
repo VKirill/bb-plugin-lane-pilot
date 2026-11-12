@@ -1,7 +1,6 @@
 import { errandOutcome, type ErrandOutcome, type ErrandVerifiedOutcome } from "../contracts/server";
 import { resolveRoleModel } from "@lane-pilot/models";
-import { ERRAND_KINDS, ERRAND_KIND_ID, errandRoleFor, type ErrandKind } from "../schedule";
-import { jevDecisionCounts } from "@lane-pilot/jev";
+import { ERRAND_KINDS, errandRoleFor, type ErrandKind } from "../schedule";
 import { listErrandKindRows, listErrandWfRuns } from "@lane-pilot/workflow-engine";
 import { runPmThreadId } from "../storage";
 import { scheduleNameOf } from "../schedule";
@@ -25,7 +24,7 @@ export type ErrandRow = {
 };
 export type KindSummary = {
   kind: ErrandKindOrNone; role: string; providerId: string; model: string; effort: string; source: string;
-  runs: number; done: number; checked: number; blocked: number; failed: number; costUsd: number; jevWouldPick: number;
+  runs: number; done: number; checked: number; blocked: number; failed: number; costUsd: number;
 };
 
 const DAY_MS = 86_400_000;
@@ -70,19 +69,10 @@ export function listErrands(db: Db, input: { days: number; kind?: string | undef
   });
 }
 
-/** What Jev would have named in the period, by decision (`errand.kind` in shadow writes a receipt per classified brief and runs nothing). */
-function jevShadowCounts(db: Db, since: number): Record<string, number> {
-  try {
-    const rows = jevDecisionCounts(db as never, ERRAND_KIND_ID, since);
-    return Object.fromEntries(rows.map((row) => [row.decision, row.n]));
-  } catch { return {}; }
-}
-
 /** One line per kind: the row of the role table and the model in force at the global level, and the period's runs, outcomes and cost. */
 export function kindsOverview(db: Db, settings: Record<string, unknown>, days: number): KindSummary[] {
   const since = Date.now() - days * DAY_MS;
   const runs = listErrandKindRows(db as never, since);
-  const jev = jevShadowCounts(db, since);
   return ERRAND_KINDS_WITH_NONE.map((kind) => {
     const role = errandRoleFor(kind === "none" ? null : kind, settings);
     const chosen = resolveRoleModel(role, settings);
@@ -92,7 +82,7 @@ export function kindsOverview(db: Db, settings: Record<string, unknown>, days: n
     return {
       kind, role, providerId: chosen.providerId, model: chosen.model, effort: chosen.effort, source: chosen.source,
       runs: mine.length, done: outcomes.filter((o) => o === "done").length, checked: results.filter((row) => row.verified === "done_checked").length, blocked: outcomes.filter((o) => o === "blocked").length, failed: outcomes.filter((o) => o === "failed").length,
-      costUsd: mine.reduce((sum, run) => sum + run.cost_micro_usd, 0) / 1e6, jevWouldPick: jev[kind === "none" ? "errand" : kind] ?? 0,
+      costUsd: mine.reduce((sum, run) => sum + run.cost_micro_usd, 0) / 1e6,
     };
   });
 }

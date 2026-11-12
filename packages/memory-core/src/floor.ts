@@ -101,19 +101,50 @@ export function floorThreshold(floor: RelevanceFloor, words: number): number {
 /**
  * The floor of a meaning search (a record carrying `similarity`, `vectors.ts`): the cosine below which a record is noise. Chosen on the
  * hub copy 2026-11-06 (gemini-embedding-2, 768): 0.65 keeps 99.5% of the wanted records; a question with no answer still mostly finds
- * something above it, so this floor cuts noise and does not decide «nothing» (that is the rerank's job).
+ * something above it, so this floor cuts noise and does not decide «nothing» (that is the answer gate's job, below).
  */
 export const DENSE_FLOOR = 0.65;
+
+/**
+ * The answer gate: «does the memory answer this question at all», decided by arithmetic on the search score. It replaced the model rerank
+ * (Jev `memory.rerank`, 96.7% answered / 96.1% silent on the hub copy of 2026-11-06). A logistic score over five numbers of one search:
+ * the cosine of the best record, the mean cosine of the best ten (a question the memory is about has a crowd of close records), the best record's z-score among the first 40, and the word weight of the best
+ * record and of the strongest record. Fitted on the same 150 questions with an answer and 228 without, validated on held-out folds
+ * (5-fold, repeated): at `ANSWER_GATE.min` it answers 87% of the questions that have an answer and stays silent on 67% of those that do
+ * not. That is clearly worse than the model's pair; it is what a deterministic score reaches. Recalibrate with `bb lane-pilot memory-eval`
+ * on a fresh hub copy when the embedding model changes (the coefficients belong to `gemini-embedding-2`, 768 numbers).
+ */
+export const ANSWER_GATE = { bias: -39.73, top: 9.74, near: 37.06, z: 1.25, topWords: -1.13, maxWords: 1.98, min: 0.25, head: 40, nearN: 10 } as const;
+
+/** The probability that the search holds an answer, or null when it cannot tell (no meaning search, fewer than three records). */
+export function answerProbability(records: readonly MemoryRecord[], relevance: ReadonlyMap<string, RecordRelevance>): number | null {
+  const ranked = records.filter((record) => record.similarity !== undefined).sort((a, b) => b.similarity! - a.similarity!).slice(0, ANSWER_GATE.head);
+  if (ranked.length < 3) return null;
+  const sims = ranked.map((record) => record.similarity!);
+  const mean = sims.reduce((sum, value) => sum + value, 0) / sims.length;
+  const sd = Math.sqrt(sims.reduce((sum, value) => sum + (value - mean) ** 2, 0) / sims.length) + 1e-9;
+  const near = sims.slice(0, ANSWER_GATE.nearN);
+  const top = sims[0]!;
+  const weights = ranked.map((record) => relevance.get(record.id)?.score ?? 0);
+  const g = ANSWER_GATE;
+  const x = g.bias + g.top * top + g.near * (near.reduce((sum, value) => sum + value, 0) / near.length) + g.z * ((top - mean) / sd) + g.topWords * weights[0]! + g.maxWords * Math.max(...weights);
+  return 1 / (1 + Math.exp(-x));
+}
 
 export const clearsFloor = (relevance: RecordRelevance, floor: RelevanceFloor, words: number): boolean =>
   (floor.anchor && relevance.anchor) || relevance.score >= floorThreshold(floor, words);
 
 /** The records that clear the floor, in the order they came; `floor: null` leaves them as they were (the behaviour before the floor). */
-export function relevantRecords(db: MemoryDatabase, projectId: string, query: string, records: readonly MemoryRecord[], opts: { audience?: MemoryAudience; personalBot?: string; floor?: RelevanceFloor | null } = {}): MemoryRecord[] {
+export function relevantRecords(db: MemoryDatabase, projectId: string, query: string, records: readonly MemoryRecord[], opts: { audience?: MemoryAudience; personalBot?: string; floor?: RelevanceFloor | null; gate?: boolean } = {}): MemoryRecord[] {
   const floor = opts.floor === undefined ? DEFAULT_RELEVANCE_FLOOR : opts.floor;
   if (!floor || records.length === 0) return [...records];
   const relevance = recordRelevance(wordFrequencies(db, projectId, opts.audience ?? "subagent", opts.personalBot ?? ""), query, records);
   const words = questionWords(query);
+  // The answer gate (`gate: true`, the PM and session query paths): a search that does not look like an answer yields «nothing», unless a record names a path written in the question.
+  if (opts.gate) {
+    const p = answerProbability(records, relevance);
+    if (p !== null && p < ANSWER_GATE.min && !(floor.anchor && records.some((record) => relevance.get(record.id)?.anchor))) return [];
+  }
   return records.filter((record) => record.similarity !== undefined
     ? (floor.anchor && relevance.get(record.id)!.anchor) || record.similarity >= DENSE_FLOOR
     : clearsFloor(relevance.get(record.id)!, floor, words));

@@ -1,11 +1,10 @@
 import { bestEffort, isNotFound, orMiss, parseJsonOr, stringAt, withoutCredentials, withoutSelectionMarkers } from "@lane-pilot/kit";
-import { choiceOf, jev, resolveThresholds, type JevSettings } from "@lane-pilot/jev";
 import { getRun, getRunSettingsScopes, openIntakeTaskRows, finishedIntakeTaskRows, openIntakeAttemptRows } from "../../storage";
 import { type ServerCore } from "../../contracts/server";
 import { cancelAttemptById, isRunHalted, isRunPaused } from "../../runs/server";
 import { pathClassByRules } from "@lane-pilot/workflow-engine";
 import type { PathRisk, PathSize } from "@lane-pilot/workflow-engine";
-import { intakeByRules, intakeJudgment, intakeTitle, isMachineMessage, pathClassJudgment, processHint, publishedHint, railsRefusal, type IntakeKind, type ServiceKind } from "../intake";
+import { intakeByRules, intakeTitle, isMachineMessage, processHint, publishedHint, railsRefusal, type IntakeKind, type ServiceKind } from "../intake";
 import { OPEN_ATTEMPT_STATES } from "../../contracts/state-machine";
 import { sendServiceMessage } from "../../relay/server";
 import type { Phase } from "../logic";
@@ -62,42 +61,11 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
   const { bb, db } = ctx;
   const pending = new Map<string, Promise<IntakeRecord | null>>();
 
-  /**
-   * One bundled intake call (C1): kind, size and risk ride a single Jev request — the two judgments share one state, so
-   * the bundle is one API call (speculative fan-out: the path questions are asked even when the kind ends up not small;
-   * their answers are only read then). Confident rules skip the call for their side; an unsure verdict keeps the rules'
-   * reading, and Jev down or off keeps the rules' reading of both.
-   */
-  async function classifyBundle(text: string, previous: string | null, projectId: string, runId: string | null, settings: Record<string, unknown>): Promise<{ kind: IntakeKind; path: { size: PathSize; risk: PathRisk }; by: "rules" | "jev" }> {
+  /** The rules' reading of a message: its kind (a consent, a question, a service line, small or heavy by length) and the size and risk of its change. No model is asked. */
+  function classifyBundle(text: string): { kind: IntakeKind; path: { size: PathSize; risk: PathRisk }; by: "rules"; service?: ServiceKind } {
     const kindRules = intakeByRules(text);
     const pathRules = pathClassByRules(text);
-    const path = { size: pathRules.size, risk: pathRules.risk };
-    if (kindRules.confident && (kindRules.kind !== "small" || pathRules.confident)) return { kind: kindRules.kind, path, by: "rules" };
-    const instance = jev();
-    try {
-      if (instance?.enabled(settings as JevSettings)) {
-        const jevCtx = { projectId, runId, subject: "intake", settings: settings as JevSettings };
-        // The bundle is one API call; a Jev without judgeBundle (a test fake, an older runtime) asks the two one by one.
-        const [weight, cls] = typeof instance.judgeBundle === "function"
-          ? await instance.judgeBundle([{ judgment: intakeJudgment, input: { text, previous } }, { judgment: pathClassJudgment, input: { text, previous } }], jevCtx)
-          : await Promise.all([instance.judge(intakeJudgment, { text, previous }, jevCtx), instance.judge(pathClassJudgment, { text, previous }, jevCtx)]);
-        const kind = kindRules.confident ? kindRules.kind : weight.by === "jev" ? weight.decision.kind : kindRules.kind;
-        if (!pathRules.confident && cls.by === "jev") { path.size = cls.decision.size; path.risk = cls.decision.risk; }
-        if (weight.by === "jev") {
-          // Self-consistency on the border zone: a pick that just cleared the bar is re-asked with the options reversed;
-          // a flip means the order carried it, and an unsure message starts nothing.
-          const pick = choiceOf(weight.answers ?? {}, "weight");
-          const minP = resolveThresholds(intakeJudgment, settings as JevSettings, null).min_p!;
-          if (pick && kind !== "reply" && (pick.p < minP + 0.15 || pick.margin < 0.1)) {
-            const again = await bestEffort(ctx.log, "phase intake second judgment", instance.judge(intakeJudgment, { text, previous, reverse: true }, jevCtx), null);
-            const second = again?.by === "jev" ? choiceOf(again.answers, "weight") : undefined;
-            if (second && second.top !== pick.top) return { kind: "reply", path, by: "jev" };
-          }
-        }
-        return { kind, path, by: weight.by === "jev" || cls.by === "jev" ? "jev" : "rules", ...(weight.by === "jev" && weight.decision.service ? { service: weight.decision.service, serviceP: weight.decision.service_p ?? 0 } : {}) };
-      }
-    } catch { /* the rules' reading stands */ }
-    return { kind: kindRules.kind, path, by: "rules" };
+    return { kind: kindRules.kind, path: { size: pathRules.size, risk: pathRules.risk }, by: "rules", ...(kindRules.service ? { service: kindRules.service } : {}) };
   }
 
   /** The PM's last message in the chat, or null: the judgment reads the owner's message against it. */
@@ -129,7 +97,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     if (!requestId || !text || data.initiator === "agent" || isMachineMessage(text)) return null;
     const known = await bb.storage.kv.get(KEY(threadId)) as IntakeRecord | null;
     if (known?.requestId === requestId) return known;
-    const classified = await classifyBundle(text, await lastPmMessage(threadId), run.project_id, run.id, settings);
+    const classified = classifyBundle(text);
     const { kind, by, path } = classified;
     // A run the owner stopped or paused starts nothing on the machine's own (no phase, graph or architect): the PM reads the
     // message instead (live 2026-10-26, Vampirism Fire: work was stopped and issue-quick still built and merged wcebffdb8-T1).
@@ -138,8 +106,8 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     let heavyRunId: string | undefined;
     // №6: a service request is answered from the LP store, the heavy PM stays asleep. Anything ambiguous falls
     // back to `question` — the PM reads the message as before.
-    if (kind === "service" && by === "jev" && !stopped) {
-      const answered = await serviceAnswer({ run, threadId, text, service: (classified as { service?: ServiceKind }).service ?? null });
+    if (kind === "service" && !stopped) {
+      const answered = await serviceAnswer({ run, threadId, text, service: classified.service ?? null });
       if (answered !== null) {
         await bestEffort(ctx.log, "phase intake service answer", bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text: answered, mentions: [] }] } as never), undefined);
         const rec: IntakeRecord = { requestId, kind: "service", by, phaseId: null, at: Date.now() };
@@ -164,32 +132,8 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
         await bestEffort(ctx.log, "phase intake tick", phases.tick(), { moved: 0, idle: null });
       }
     }
-    // A small job goes down the small-task graph (issue-quick), a batch of fixes down issue-batch, started by the machine:
-    // the orchestrator does not choose what runs (Matvey #31782). phase.train off leaves them to the PM as before.
-    let wfRunId: string | undefined;
-    // Only on the judgment's word: the length rule calls any short line «small», and a remark must not start a build.
-    if ((kind === "small" || kind === "batch") && by === "jev" && train && !stopped && String(settings["phase.train"] ?? "on") !== "off") {
-      wfRunId = train.start({ projectId: run.project_id, pmThreadId: threadId, runId: run.id, requestId, text, kind, ...(kind === "small" ? { path } : {}) }) ?? undefined;
-      if (wfRunId) ctx.log(`phase intake: ${threadId} — the owner's request is ${kind} (${by}); ${kind === "batch" ? "issue-batch" : "issue-quick"} ${wfRunId} started`);
-    }
-    // A new process becomes a small graph: the workflow architect builds, tests and publishes it on the owner's words (Matvey #31916).
-    let architectThreadId: string | undefined;
-    // A process the catalog already has is run, not built again: 62 owner requests read as a process and 21 architects started
-    // (hub, 2026-10-24..28) without a look at the published graphs. The PM decides; the hint is a signal (Matvey: the model picks from the registry).
-    let hint: IntakeRecord["hint"];
-    if (kind === "process" && by === "jev" && train?.findPublished && !stopped) {
-      const found = await bestEffort(ctx.log, "phase intake published graph", train.findPublished({ projectId: run.project_id, text }), null);
-      if (found) {
-        hint = { graphId: found.graphId, confidence: found.confidence };
-        ctx.log(`phase intake: ${threadId} — the owner's process matches the published graph ${found.graphId} (${found.confidence}); no architect`);
-        await bestEffort(ctx.log, "phase intake published hint", sendServiceMessage(bb as never, { threadId, mode: "steer-if-active", text: publishedHint(found) }), undefined);
-      }
-    }
-    if (kind === "process" && !hint && by === "jev" && train?.startProcess && !stopped && String(settings["phase.train"] ?? "on") !== "off") {
-      architectThreadId = await bestEffort(ctx.log, "phase intake process architect", train.startProcess({ projectId: run.project_id, pmThreadId: threadId, text }), null) ?? undefined;
-      if (architectThreadId) ctx.log(`phase intake: ${threadId} — the owner's request is a process; the workflow architect builds it in ${architectThreadId}`);
-    }
-    const record: IntakeRecord = { requestId, kind, by, phaseId, at: Date.now(), ...((wfRunId ?? heavyRunId) ? { wfRunId: wfRunId ?? heavyRunId } : {}), ...(architectThreadId ? { architectThreadId } : {}), ...(hint ? { hint, hinted: true } : {}) };
+    // The rules never read a small job, a batch or a process: only the owner's word or the PM starts those graphs.
+    const record: IntakeRecord = { requestId, kind, by, phaseId, at: Date.now(), ...(heavyRunId ? { wfRunId: heavyRunId } : {}) };
     await bb.storage.kv.set(KEY(threadId), record);
     return record;
   }
@@ -256,7 +200,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     if (!run) return { started: false, kind: null, reason: "the PM run is gone" };
     const settings = await ctx.effectiveProjectSettings(run.project_id, getRunSettingsScopes(db, run.id)).then((result) => result.values as Record<string, unknown>, () => ({} as Record<string, unknown>));
     if (await isRunHalted(bb.storage.kv as never, run.id) || await isRunPaused(bb.storage.kv as never, run.id)) return { started: false, kind: null, reason: "the owner stopped or paused the run" };
-    const read = await classifyBundle(withoutCredentials(input.text), null, run.project_id, run.id, settings);
+    const read = classifyBundle(withoutCredentials(input.text));
     const { by, path } = read;
     // A lead branch (key lead:<road>) is work already decided — by the owner's «да» or the lead's own right: read as a reply, question or
     // process («Найти причину…») it started nothing and sat «hand-over blocked» (2026-11-03). Only its size is read. A scheduled
@@ -334,8 +278,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     return railsRefusal(phase, phases.status(phase.id).next.text);
   }
 
-  return { take, dispatchRefusal, launchRefusal, classify: (text: string, projectId: string, runId: string | null, settings: Record<string, unknown>, previous: string | null = null) =>
-    classifyBundle(text, previous, projectId, runId, settings).then(({ kind, by }) => ({ kind, by })), handOver };
+  return { take, dispatchRefusal, launchRefusal, classify: async (text: string) => { const { kind, by } = classifyBundle(text); return { kind, by }; }, handOver };
 }
 export type PhaseIntake = ReturnType<typeof createPhaseIntake>;
 

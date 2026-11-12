@@ -1,9 +1,6 @@
 import { jev, type JevSettings } from "@lane-pilot/jev";
 import { hardProblems } from "@lane-pilot/jev/judgments/invoice-check";
-import { uiShotsJudgment } from "@lane-pilot/jev/judgments/ui-shots";
-import { invoiceScanJudgment, type ScanField } from "@lane-pilot/jev/judgments/invoice-scan";
 import { acceptCompositeJudgment, type AcceptAxis } from "@lane-pilot/jev/judgments/accept-composite";
-import { renderMatchJudgment } from "@lane-pilot/jev/judgments/render-match";
 import { bestEffort } from "@lane-pilot/kit";
 
 /**
@@ -77,7 +74,7 @@ function domProblems(report: DomReport): string[] {
 }
 
 /** Layer 3 hook: a vision-capable agent (design-lead / browser-qa) reviews meaning and design. The caller supplies it. */
-export type PageReview = (request: { url: string; brief: string; shots: string[]; dom: DomReport | null; jev: { verdict: string; worst: number; worstShot: string | null } | null }) => Promise<Verdict | null>;
+export type PageReview = (request: { url: string; brief: string; shots: string[]; dom: DomReport | null; jev: null }) => Promise<Verdict | null>;
 
 async function validatePage(target: string, deps: ValidatorDeps): Promise<Verdict> {
   if (!deps.host || !deps.hostId) return { ok: false, reason: "no host to render the page on" };
@@ -96,39 +93,16 @@ async function validatePage(target: string, deps: ValidatorDeps): Promise<Verdic
   return judgeScreenshots(target, deps, dom, shots);
 }
 
-/** Layer 2: Jev on the screenshots (cut-off only — the live probe showed it misses semantic breakage). Layer 3: deps.review. */
+/** Layer 2: the agent's visual review when the brief is a design (the DOM probe above is the code check; no model reads the screenshots for cut-off). */
 async function judgeScreenshots(target: string, deps: ValidatorDeps, dom: DomReport | null, shotPaths: string[]): Promise<Verdict> {
   const brief = String(deps.brief?.objective ?? deps.brief?.page ?? "");
   const base = { ok: true, reason: "page answers; DOM clean when the probe ran" };
-  const judge = jev();
-  let jevSeen: { verdict: string; worst: number; worstShot: string | null; box?: unknown } | null = null;
-  if (judge && deps.host && deps.hostId) {
-    const shots = await Promise.all(shotPaths.map(async (path, i) => {
-      const out = await bestEffort(console.warn, `validator screenshot ${path}`, deps.host!.run(deps.hostId!, "/", `base64 < ${shq(path)} 2>/dev/null | tr -d '\n'`, 60), null);
-      const data = out?.stdout?.trim();
-      return data && out!.exitCode === 0 ? { name: `${i === 0 ? 375 : 1280}px`, format: "png" as const, data_base64: data.slice(0, 6_000_000) } : null;
-    }));
-    const valid = shots.filter((shot) => shot !== null);
-    if (valid.length) {
-      const verdict = await bestEffort(console.warn, `validator ui shots ${target}`, judge.judge(uiShotsJudgment, { url: target, shots: valid }, deps.jevCtx ?? {}), null);
-      if (verdict?.by === "jev") {
-        jevSeen = verdict.decision;
-        if (verdict.decision.verdict === "cut") {
-          const hint = verdict.decision.box ? `, area [${(Object.values(verdict.decision.box) as number[]).map((v) => v.toFixed(2)).join(",")}]` : "";
-          return { ok: false, reason: `content cut off on ${verdict.decision.worstShot} (jev p=${verdict.decision.worst})${hint}`, details: { dom, jev: verdict.decision } };
-        }
-      } else if (verdict?.by === "fallback" && verdict.shadow?.decision) {
-        jevSeen = verdict.shadow.decision as unknown as typeof jevSeen;
-      }
-    }
+  if (deps.review && Boolean(deps.brief?.design)) {
+    const reviewed = await bestEffort(console.warn, `validator visual review ${target}`, deps.review({ url: target, brief, shots: shotPaths, dom, jev: null }), null);
+    if (reviewed) return { ...reviewed, details: { dom } };
+    return { ...base, reason: `${base.reason}; visual review unavailable`, details: { dom } };
   }
-  const wantsReview = deps.review && (jevSeen?.verdict === "uncertain" || Boolean(deps.brief?.design));
-  if (wantsReview) {
-    const reviewed = await bestEffort(console.warn, `validator visual review ${target}`, deps.review!({ url: target, brief, shots: shotPaths, dom, jev: jevSeen }), null);
-    if (reviewed) return { ...reviewed, details: { dom, jev: jevSeen } };
-    return { ...base, reason: `${base.reason}; visual review unavailable${jevSeen ? `, jev: ${jevSeen.verdict} ${jevSeen.worst}` : ""}`, details: { dom, jev: jevSeen } };
-  }
-  return { ...base, details: { dom, jev: jevSeen } };
+  return { ...base, details: { dom } };
 }
 
 /* ---- 3d: geometry report out of headless Blender ---- */
@@ -157,23 +131,7 @@ async function validate3d(path: string, deps: ValidatorDeps): Promise<Verdict> {
   if (budget && report.tris > budget) problems.push(`${report.tris} tris over the ${budget} budget`);
   if (problems.length) return { ok: false, reason: problems.join("; "), details: report };
   const clean = { ok: true, reason: `geometry clean (${report.tris} tris)`, details: report };
-  // B5: geometry alone does not prove the model is the brief's object — when the brief names a concept and a preview
-  // render, Jev compares them (shadow until calibrated).
-  const conceptPath = String(deps.brief?.concept_path ?? deps.brief?.conceptPath ?? "");
-  const renderPath = String(deps.brief?.render_path ?? deps.brief?.renderPath ?? deps.brief?.preview ?? "");
-  const judge = jev();
-  if (!judge || !conceptPath || !renderPath) return clean;
-  const read64 = async (p: string) => (await bestEffort(console.warn, `validator base64 ${p}`, deps.host!.run(deps.hostId!, "/", `base64 < ${shq(p)} 2>/dev/null | tr -d '\n'`, 60), null))?.stdout?.trim() ?? null;
-  const [concept, render] = await Promise.all([read64(conceptPath), read64(renderPath)]);
-  if (!concept || !render) return clean;
-  const verdict = await bestEffort(console.warn, `validator render match ${renderPath}`, judge.judge(renderMatchJudgment, { brief: String(deps.brief?.objective ?? deps.brief?.prompt ?? ""), concept: { format: "png", data_base64: concept.slice(0, 9_000_000) }, render: { format: "png", data_base64: render.slice(0, 9_000_000) } }, deps.jevCtx ?? {}), null);
-  if (!verdict) return clean;
-  if (verdict.by === "jev" && !verdict.decision.matches) {
-    const d = verdict.decision;
-    return { ok: false, reason: `render does not match the concept (match p=${d.matchP}, defects p=${d.defectsP})`, details: { jev: d } };
-  }
-  const shadow = verdict.by === "fallback" && verdict.shadow?.decision ? `; jev shadow: ${renderMatchJudgment.describe(verdict.shadow.decision)}` : "";
-  return { ...clean, reason: clean.reason + shadow };
+  return clean;
 }
 
 /* ---- video: ffprobe streams + EBU R128 loudness ---- */
@@ -196,7 +154,7 @@ async function validateVideo(path: string, deps: ValidatorDeps): Promise<Verdict
   return { ok: true, reason: `streams ok, ${duration}s${measured ? `, ${measured[1]} LUFS` : ""}` };
 }
 
-/* ---- invoice: PDF text against the request (jev invoice-check hard rules) ---- */
+/* ---- invoice: PDF text against the request (the invoice-check hard rules) ---- */
 
 const digits = (text: string) => text.replace(/\D/g, "");
 
@@ -206,7 +164,7 @@ async function validateInvoice(path: string, deps: ValidatorDeps): Promise<Verdi
     const out = await bestEffort(console.warn, `validator pdf text ${path}`, deps.host.run(deps.hostId, "/", `(pdftotext ${shq(path)} - 2>/dev/null || strings ${shq(path)}) | head -200`, 60), null);
     text = out?.stdout ?? null;
   }
-  if (!text?.trim()) return judgeInvoiceScan(path, deps);
+  if (!text?.trim()) return { ok: false, reason: "no text in the PDF (a scan has to be read by the owner or an agent)" };
   const brief = deps.brief ?? {};
   const inn = /\b\d{10}(?:\d{2})?\b/.exec(text)?.[0] ?? "";
   const bik = /\b04\d{7}\b/.exec(text)?.[0] ?? "";
@@ -219,28 +177,6 @@ async function validateInvoice(path: string, deps: ValidatorDeps): Promise<Verdi
   if (brief.inn && digits(String(brief.inn)) !== digits(inn)) problems.push(`the INN in the PDF is ${inn || "absent"}, the request says ${brief.inn}`);
   if (brief.bik && digits(String(brief.bik)) !== digits(bik)) problems.push(`the BIK in the PDF is ${bik || "absent"}, the request says ${brief.bik}`);
   return problems.length ? { ok: false, reason: problems.join("; ") } : { ok: true, reason: "invoice matches the request" };
-}
-
-/** B4: a scan without a text layer goes to Jev — expected field values are checked on the page image, not OCR'd free-hand. */
-async function judgeInvoiceScan(path: string, deps: ValidatorDeps): Promise<Verdict> {
-  const judge = jev();
-  if (!judge || !deps.host || !deps.hostId) return { ok: false, reason: "no text in the PDF" };
-  const brief = deps.brief ?? {};
-  const expected = Object.fromEntries((["inn", "bik", "amount", "number"] as ScanField[]).filter((f) => brief[f] != null && String(brief[f]).trim() !== "").map((f) => [f, String(brief[f])]));
-  if (!Object.keys(expected).length) return { ok: false, reason: "no text in the PDF and no expected fields in the brief" };
-  const shot = await bestEffort(console.warn, `validator invoice scan ${path}`, deps.host.run(deps.hostId, "/", `(pdftoppm -f 1 -singlefile -png -r 150 ${shq(path)} /tmp/invoice-scan 2>/dev/null || magick -density 150 ${shq(`${path}[0]`)} /tmp/invoice-scan.png 2>/dev/null) && base64 < /tmp/invoice-scan.png | tr -d '\n'`, 120), null);
-  const data = shot?.stdout?.trim();
-  if (!data || shot!.exitCode !== 0) return { ok: false, reason: "no text in the PDF and the page could not be rendered" };
-  const verdict = await bestEffort(console.warn, `validator invoice scan ${path}`, judge.judge(invoiceScanJudgment, { expected, page: { format: "png", data_base64: data.slice(0, 9_000_000) } }, deps.jevCtx ?? {}), null);
-  if (!verdict) return { ok: false, reason: "no text in the PDF" };
-  if (verdict.by === "jev") {
-    const d = verdict.decision;
-    return d.ok
-      ? { ok: true, reason: `scan fields match the request (${Object.entries(d.fields).map(([f, p]) => `${f} p=${p}`).join(", ")})`, details: { jev: d } }
-      : { ok: false, reason: `scan fields off: ${d.failed.join(", ")}`, details: { jev: d } };
-  }
-  const shadow = verdict.by === "fallback" && verdict.shadow?.decision ? `; jev shadow: ${invoiceScanJudgment.describe(verdict.shadow.decision)}` : "";
-  return { ok: false, reason: `no text in the PDF${shadow}`, details: { jevAsked: true } };
 }
 
 /* ---- composite: Jev scores the artifact per axis, the caller gets the weakest one to rework (B9) ---- */

@@ -2,7 +2,6 @@ import { lookup as dnsLookup } from "node:dns/promises";
 import { existsSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import { appendDesignPair, designPairOf } from "../journal";
-import { judgeDesigns } from "../judge";
 import { pairUrlRefusal, type PairUrlOptions } from "../url-guard";
 
 export const DESIGN_PAIR_USAGE = "bb lane-pilot design-pair <phaseId> <url-a> <url-b> [--again] [--local]   |   bb lane-pilot design-pair-answer <phaseId> <a|b|tie>   (owner at a terminal, or the project's PM chat)";
@@ -18,10 +17,6 @@ export type DesignPairCliDeps = {
   thread: (threadId: string) => Promise<{ projectId: string | null; role: string | null } | null>;
   /** The project a phase belongs to, or null when no such phase is stored. */
   phaseProject: (phaseId: string) => string | null;
-  /** The judge, or null when none is configured. */
-  jev: () => unknown;
-  /** Why a paid call must wait now (the money cap), or null. */
-  moneyHold: () => Promise<string | null>;
   /** Runs the measuring script; resolves with its stdout. */
   measure: (script: string, args: string[]) => Promise<string>;
   script: string;
@@ -86,23 +81,14 @@ export async function runDesignPairCli(deps: DesignPairCliDeps, command: "design
   const [urlA, urlB] = rest as [string, string];
   const refused = await pairUrlsRefusal([urlA, urlB], { local, hubPorts: deps.hubPorts, ...(deps.lookup ? { lookup: deps.lookup } : {}), ...(deps.ownAddresses ? { ownAddresses: deps.ownAddresses } : {}) });
   if (refused) return { exitCode: 1, stderr: refused };
-  if ((await designPairOf(deps.kv, phaseId)) && !again) return { exitCode: 1, stderr: `refused: ${phaseId} already has a design pair (each one costs a browser run and a paid judge call); pass --again to ask once more` };
+  if ((await designPairOf(deps.kv, phaseId)) && !again) return { exitCode: 1, stderr: `refused: ${phaseId} already has a design pair (each one costs a browser run); pass --again to ask once more` };
   if (!(deps.scriptExists ?? existsSync)(deps.script)) return { exitCode: 1, stderr: `design-pair cannot run: ${deps.script} is not in this plugin's directory` };
-  const held = await deps.moneyHold();
-  if (held) return { exitCode: 1, stderr: `refused: ${held}` };
 
   let measured: string;
   try { measured = await deps.measure(deps.script, ["design-pair", urlA, urlB, ...(local ? ["--local"] : [])]); }
   catch (cause) { return { exitCode: 1, stderr: `the pair measure failed: ${cause instanceof Error ? cause.message : String(cause)}` }; }
   const pair = JSON.parse(measured) as { order: "ab" | "ba"; basis: string; shots: { a: string | null; b: string | null } };
-  const judge = deps.jev();
-  const verdict = judge && pair.shots.a && pair.shots.b
-    ? await judgeDesigns(judge as never, { grounds: pair.basis, a: { format: "png", data_base64: pair.shots.a }, b: { format: "png", data_base64: pair.shots.b } }).catch(() => null)
-    : null;
-  // A verdict that is only the code fallback (the judge failed, was off or timed out) is no verdict.
-  const model = verdict && verdict.from !== "fallback" ? verdict.winner : null;
-  const modelFrom = model && verdict && verdict.from !== "fallback" ? verdict.from : undefined;
   deps.ownerItem.post({ key: `design-pair:${phaseId}`, projectId: project, what: `Какой дизайн лучше? Ответьте: bb lane-pilot design-pair-answer ${phaseId} a|b|tie`, why: pair.basis.slice(0, 550), basis: pair.basis.slice(0, 300) });
-  await appendDesignPair(deps.kv, { phaseId, order: pair.order, model, person: null, ...(modelFrom ? { modelFrom } : {}) });
-  return { exitCode: 0, stdout: JSON.stringify({ phaseId, order: pair.order, model, ...(modelFrom ? { modelFrom } : {}), asked: true }) };
+  await appendDesignPair(deps.kv, { phaseId, order: pair.order, model: null, person: null });
+  return { exitCode: 0, stdout: JSON.stringify({ phaseId, order: pair.order, model: null, asked: true }) };
 }

@@ -100,23 +100,18 @@ state:"skipped";row:Record<string,unknown>}|{state:"resume"}|{state:"ready";plan
     const core=anchors?.core??flow?.calls??[];
     let refresh=hasDocs?pagesToRefresh(existing,changed):[];
     if(hasDocs){
-      const stale=await bestEffort(bb.log, `docs staleness ${place.path}`, host.call("docsStaleness",{requestedHostId:place.hostId,projectCwd:place.path,base:before.base??"HEAD",
-        changed,pages:[...pageInput,...rootPages]},{hostId:place.hostId,timeoutMs:600_000}), null);
-      if(stale&&stale.jev!=="disabled"){
-        const cited=new Set(existing.flatMap((page)=>citedFiles([page])));
-        const product=new Set(anchors&&anchors.jev!=="disabled"?anchors.productFiles:changed);
-        const uncovered=changed.filter((file)=>product.has(file)&&!cited.has(file));
-        if(!pending&&!decisionDrafts.length&&!i.assignment&&!stale.refresh.length&&!uncovered.length&&!gaps.missingPages.length&&!gaps.uncoveredCore.length) return {state:"skipped",row:report("skipped",{reason:"Jev found no section the changes made wrong, and no changed product file is undocumented"})};
-        refresh=stale.refresh;
-      }
+      const cited=new Set(existing.flatMap((page)=>citedFiles([page])));
+      const product=new Set(anchors?anchors.productFiles:changed);
+      const uncovered=changed.filter((file)=>product.has(file)&&!cited.has(file));
+      if(!pending&&!decisionDrafts.length&&!i.assignment&&!refresh.length&&!uncovered.length&&!gaps.missingPages.length&&!gaps.uncoveredCore.length) return {state:"skipped",row:report("skipped",{reason:"no page cites a changed file, and no changed product file is undocumented"})};
     }
-    // What Jev still doubted after this unit's last pass goes back to the agent to recheck, while the page exists.
+    // What the checks still doubted after this unit's last pass goes back to the agent to recheck, while the page exists.
     const kvKey=`docs-nightly:${i.projectId}:${sha256(`${place.path}\n${label}`).slice(0,12)}`;
     const last=hasDocs?await bb.storage.kv.get(kvKey) as {warnings?:Array<{path:string;rule:string;detail:string}>}|null:null;
     const pagePaths=new Set(existing.map((page)=>page.path));
     const doubts=(last?.warnings??[]).filter((warning)=>(warning.rule==="evidence-check"||warning.rule==="contradiction")&&pagePaths.has(warning.path));
     return {state:"ready",plan:{label,hasDocs,changed,changedCount:changed.length,refresh,gaps,
-      anchors:anchors?{count:anchors.anchors,jev:anchors.jev,...(anchors.briefPath?{briefPath:anchors.briefPath}:{}),deploy:anchors.deploy??false}:null,
+      anchors:anchors?{count:anchors.anchors,...(anchors.briefPath?{briefPath:anchors.briefPath}:{}),deploy:anchors.deploy??false}:null,
       core:core.slice(0,2000),kvKey,doubts,decisionDrafts,beforeDirty:before.dirty,localDate:before.localDate,
       // Pages an earlier failed pass left oversized are this unit's work, not the base's.
       oversizedAtStart:oversized.filter((path)=>!before.dirty.includes(path))}};
@@ -169,7 +164,7 @@ runId:string;stepKey:string;nodeId:string},stop:()=>string|null,retry=""):Promis
       // From here on the unit's progress is saved, so a plugin reload picks the same agent thread up again.
       record={version:1,projectId:i.projectId,place,...(i.basePath&&i.basePath!==place.path?{basePath:i.basePath}:{}),label,unit,threadId,phase:"writing",beforeDirty:plan.beforeDirty,localDate:plan.localDate,
         since:docs.since,roots:i.roots,workspaces:i.workspaces,hasDocs:plan.hasDocs,changedCount:plan.changedCount,refresh:plan.refresh,gaps:plan.gaps,
-        anchors:plan.anchors?{count:plan.anchors.count,jev:plan.anchors.jev}:null,core:plan.core,kvKey:plan.kvKey,oversizedAtStart:plan.oversizedAtStart,runKey:i.runKey};
+        anchors:plan.anchors?{count:plan.anchors.count}:null,core:plan.core,kvKey:plan.kvKey,oversizedAtStart:plan.oversizedAtStart,runKey:i.runKey};
       await saveDocsUnitRecord(n,record);
     }
     // A unit of a night long gone is not waited for: the verify step drops it.
@@ -262,22 +257,6 @@ state:"skipped";row:Record<string,unknown>}|{state:"ok";verified:Verified;thread
           for(const path of uncataloguedPages(catalogue,pages,features)) findings.push({path:catalogue.path,rule:"coverage",detail:`does not link ${path}: add the capability that page describes, with its conditions and where it is available, citing the code that page cites (never the page itself), and link it from ${d}/capabilities.md or an area page it links under ${d}/capabilities/ (operator tools under operator capabilities); keep the links already there`});
         }
         let pageStats:Checked["pageStats"]=[];
-        // Structure first; once it holds, Jev checks each claim against its cited lines on the pages written now,
-        // and pairs of claims across all the docs that cite the same code for contradictions.
-        if(!findings.length){
-          const all=[...pages.filter((page)=>!isDocsIndex(page.path)).map((page)=>({path:page.path,content:page.content})),...await readRootPages()];
-          const written=all.filter((page)=>docsDirty.includes(page.path));
-          const cited=written.length?await bestEffort(bb.log, `docs citations ${place.path}`, host.call("docsVerifyCitations",{requestedHostId:place.hostId,projectCwd:place.path,
-            pages:written.slice(0,500),related:all.filter((page)=>!docsDirty.includes(page.path)).slice(0,500)},{hostId:place.hostId,timeoutMs:1_800_000}), null):null;
-          findings.push(...(cited?.findings??[]));
-          pageStats=cited?.pageStats??[];
-          // And whether the written pages explain the core code well enough that nobody has to open it.
-          // Only pages meant to explain behaviour are held to it; summaries and references link down instead.
-          const explaining=written.filter((page)=>/^type:\s*(component|flow)\s*$/m.test(page.content));
-          const depth=explaining.length&&core.length?await bestEffort(bb.log, `docs depth ${place.path}`, host.call("docsDepth",{requestedHostId:place.hostId,projectCwd:place.path,
-            pages:explaining.slice(0,500),core:core.slice(0,2000)},{hostId:place.hostId,timeoutMs:900_000}), null):null;
-          findings.push(...(depth?.findings??[]));
-        }
         return {touched,docsDirty,pageStats,findings,kept:blockingDocsFindings(sized.kept,docsDirty)};
       };
       let checked=await inspect();
@@ -289,8 +268,7 @@ state:"skipped";row:Record<string,unknown>}|{state:"ok";verified:Verified;thread
         await waitThreadIdle(bb,threadId,"docs_nightly_repair",undefined,sentAt,stop);
         checked=await inspect();
       }
-      // A Jev judgment is a signal, not a verdict: once the agent has rechecked it in the repair round,
-      // what Jev alone still doubts goes to the report as a warning; the deterministic checks keep blocking.
+      // A judged finding is a signal, not a verdict: once the agent has rechecked it in the repair round, it goes to the report as a warning.
       const judged=(finding:{rule:string})=>finding.rule==="evidence-check"||finding.rule==="contradiction"||finding.rule==="depth"||finding.rule==="links-external";
       const warnings=[...checked.findings.filter(judged),...checked.kept];
       checked={...checked,findings:checked.findings.filter((finding)=>!judged(finding))};

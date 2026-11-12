@@ -196,7 +196,6 @@ describe("[sma:k_v_arena] bench arena runs four arms over one set on neutral gro
 
 import { createJev, type JevAnswer, type JevClient, type JevRequest } from "@lane-pilot/jev";
 import { appendDesignJournalLine, appendDesignPair, designJournalLines, noteDesignJournalWord } from "../../src/rooms/design-eval/journal";
-import { designPairJudgment, judgeDesigns } from "../../src/rooms/design-eval/judge";
 import { pairBasis, pairOrder } from "../../src/rooms/design-eval/pair";
 import { trainingRatios } from "../../src/rooms/design-eval/training";
 import { houseWordHits, sourceWordHits, unreadFields, UNSHOWN_FIELDS } from "../helpers/guard-tools";
@@ -237,38 +236,6 @@ describe("[sma:k_lib_dmetrics] the four training ratios", () => {
     expect(coverage.pointCoverage).toBe(0.67);
     const all = trainingRatios([line({ codeScore: 100 }), line({ codeScore: 80 })]);
     expect(all.passedAll).toBe(0.5);
-  });
-});
-
-describe("[sma:m_pr_design_eval] the pair goes to an independent judge with both pictures and the rubric", () => {
-  const input = { grounds: "the brief", a: { format: "png" as const, data_base64: "QQ==" }, b: { format: "png" as const, data_base64: "Qg==" } };
-  it("picks b above the threshold, tie below it, and sends both pictures as assets with the rubric in the state", async () => {
-    let last: JevRequest | null = null;
-    const answers = (p: number): Record<string, JevAnswer> => ({
-      winner: { type: "choice", choice: "b", probabilities: { a: 1 - p, b: p }, confidence: 0.9 },
-    });
-    const client: JevClient = {
-      breaker: () => ({ open: false, failures: 0 }),
-      async call(request: JevRequest) {
-        last = request;
-        const out: Record<string, JevAnswer> = {};
-        for (const id of Object.keys(request.questions)) {
-          out[id] = request.questions[id]!.type === "choice"
-            ? { type: "choice", choice: "b", probabilities: { a: 0.2, b: 0.8 }, confidence: 0.9 }
-            : { type: "score", score: 0, legend: {}, probabilities: { "0": 1 }, confidence: 0.9 };
-        }
-        return { ok: true, answers: out, model: "m", usage: { input_tokens: 1, output_tokens: 1 }, latencyMs: 1, attempts: 1 };
-      },
-    };
-    const jev = createJev({ client, db: null });
-    const decided = await jev.judge(designPairJudgment, input, { settings: { "jev.modes": "design.pair=active" } });
-    expect(decided.by === "jev" && decided.decision.winner).toBe("b");
-    const state = last!.state as { rubric: string[] };
-    expect(state.rubric).toContain("overflow");
-    expect(Object.keys(last!.assets ?? {})).toHaveLength(2);
-    // Below the threshold the same top pick is a tie, decided in code.
-    const tie = designPairJudgment.decide(answers(0.6), { tie_p: 0.9 }, input);
-    expect(tie.decision?.winner).toBe("tie");
   });
 });
 
@@ -398,8 +365,6 @@ describe("[sma:k_lib_djudgement] the design-pair verbs: who may call them, what 
     const deps: DesignPairCliDeps = {
       kv: store, threadId: null, thread: async (id) => id === "pm1" ? PM : id === "pm2" ? { projectId: "p2", role: "pm" } : id === "w1" ? { projectId: "p1", role: "writer" } : null,
       phaseProject: (id) => id === "ph-p1" ? "p1" : null,
-      jev: () => ({ judge: async () => { calls.judge++; return { status: "shadow", decision: { winner: "tie", p: 0, scores: {} }, shadow: { decision: { winner: "b", p: 0.9, scores: {} } } }; } }),
-      moneyHold: async () => null,
       measure: async () => { calls.measure++; return JSON.stringify({ order: "ba", basis: "basis text", shots: { a: shot, b: shot } }); },
       script: "/plugin/scripts/lp-design-eval.ts", scriptExists: () => true,
       ownerItem: { post: (item) => { calls.posted.push(item.key); }, close: (key) => { calls.closed.push(key); } },
@@ -456,21 +421,17 @@ describe("[sma:k_lib_djudgement] the design-pair verbs: who may call them, what 
     expect(f.calls.measure).toBe(1);
     expect((await run(f.deps, ...start, "--again")).exitCode).toBe(0);
     expect(f.calls.measure).toBe(2);
-    const capped = fixture({ moneyHold: async () => "money cap: 10.00 of 10.00 USD spent this month" });
-    const held = await run(capped.deps, ...start);
-    expect(held.stderr).toMatch(/^refused: money cap/);
-    expect(capped.calls.measure + capped.calls.judge).toBe(0);
     const missing = fixture({ scriptExists: () => false });
     const gone = await run(missing.deps, ...start);
     expect(gone.stderr).toMatch(/\/plugin\/scripts\/lp-design-eval\.ts is not in this plugin's directory/);
     expect(missing.calls.measure).toBe(0);
   });
 
-  it("a judge in its default shadow mode: the shadow verdict is recorded and marked as shadow, not a tie", async () => {
+  it("no model picks: the pair is recorded without a model verdict and waits for the person", async () => {
     const f = fixture();
     const result = JSON.parse((await run(f.deps, ...start)).stdout!);
-    expect(result).toMatchObject({ model: "b", modelFrom: "shadow", order: "ba", asked: true });
-    expect(await designPairOf(f.store, "ph-p1")).toEqual({ order: "ba", model: "b", person: null, modelFrom: "shadow" });
+    expect(result).toMatchObject({ model: null, order: "ba", asked: true });
+    expect(await designPairOf(f.store, "ph-p1")).toEqual({ order: "ba", model: null, person: null });
   });
 
   it("the answer keeps the stored order, is refused for an unknown pair, closes the owner item, and is for the PM or the owner only", async () => {
@@ -485,33 +446,9 @@ describe("[sma:k_lib_djudgement] the design-pair verbs: who may call them, what 
     expect((await run(worker.deps, "design-pair-answer", "ph-p1", "b")).stderr).toMatch(/not for a writer thread/);
     const answered = await run(f.deps, "design-pair-answer", "ph-p1", "b");
     expect(JSON.parse(answered.stdout!).recorded).toEqual({ phaseId: "ph-p1", person: "b", order: "ba" });
-    expect(await designPairOf(f.store, "ph-p1")).toMatchObject({ order: "ba", model: "b", person: "b" });
+    expect(await designPairOf(f.store, "ph-p1")).toMatchObject({ order: "ba", person: "b" });
     expect(f.calls.closed).toEqual(["design-pair:ph-p1"]);
     expect((await run(f.deps, "design-pair-answer", "ph-p1", "maybe")).exitCode).toBe(1);
-  });
-});
-
-describe("[sma:m_pr_design_eval] a judge left in its default shadow mode still gives its verdict", () => {
-  const input = { grounds: "the brief", a: { format: "png" as const, data_base64: "QQ==" }, b: { format: "png" as const, data_base64: "Qg==" } };
-  const client = (ok = true): JevClient => ({
-    breaker: () => ({ open: false, failures: 0 }),
-    async call(request: JevRequest) {
-      if (!ok) return { ok: false, status: "timeout", error: "slow", latencyMs: 1, attempts: 1 };
-      const out: Record<string, JevAnswer> = {};
-      for (const id of Object.keys(request.questions)) {
-        out[id] = request.questions[id]!.type === "choice"
-          ? { type: "choice", choice: "b", probabilities: { a: 0.1, b: 0.9 }, confidence: 0.9 }
-          : { type: "score", score: 0, legend: {}, probabilities: { "0": 1 }, confidence: 0.9 };
-      }
-      return { ok: true, answers: out, model: "m", usage: { input_tokens: 1, output_tokens: 1 }, latencyMs: 1, attempts: 1 };
-    },
-  });
-  it("shadow mode (no setting) returns b marked shadow; active returns b marked jev; a failed call is a marked fallback", async () => {
-    const jev = createJev({ client: client(), db: null });
-    expect(await judgeDesigns(jev as never, input)).toMatchObject({ winner: "b", from: "shadow" });
-    expect(await judgeDesigns(jev as never, input, { settings: { "jev.modes": "design.pair=active" } })).toMatchObject({ winner: "b", from: "jev" });
-    const failing = createJev({ client: client(false), db: null });
-    expect(await judgeDesigns(failing as never, input, { settings: { "jev.modes": "design.pair=active" } })).toMatchObject({ winner: "tie", p: 0, from: "fallback" });
   });
 });
 

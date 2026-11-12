@@ -2,8 +2,7 @@
  * The kinds of an errand and the row of the role table each runs on. One errand graph (workflows/errand.json), one errand helper profile;
  * only the model differs: «open the app and record the screen» and «answer the ticket» stopped sharing one row (owner, 2026-11-01: every
  * errand of a session had fallen to the light model of the `errand` row). A kind is the PM's word (`lane_pilot_errand` `kind`, a schedule's
- * `errandKind`), else what the named skills, plugins, MCP servers or the words of the brief point at (`hintedErrandKind`), else the Jev
- * judgment `errand.kind` (errand-kind-judgment.ts, shadow until the owner switches it on). The kind is written into the run (`kind`,
+ * `errandKind`), else what the named skills, plugins, MCP servers or the words of the brief point at (`hintedErrandKind`), else the generic row. The kind is written into the run (`kind`,
  * `kindBy`) and the helper thread (`errandKind`), so the week's receipts say which kind ran on which model with what outcome.
  */
 export const ERRAND_KINDS = ["computer", "devops", "browser", "research", "message"] as const;
@@ -18,7 +17,7 @@ export function errandKindRole(kind: string | null | undefined): string {
 export type ErrandKindHints = { task: string; skills?: readonly string[] | undefined; plugins?: readonly string[] | undefined; mcp?: readonly string[] | undefined };
 
 type Hint = { kind: ErrandKind; names: readonly string[]; words: RegExp };
-// ponytail: word lists in Russian and English only; a brief the regexes miss goes to Jev, and the shadow receipts show which words to add.
+// ponytail: word lists in Russian and English only; a brief the regexes miss runs on the generic errand row, and the PM names the kind when it matters.
 // Order matters within a pass: the first kind with a hit wins, research last because its words are the broadest.
 const HINTS: readonly Hint[] = [
   { kind: "computer", names: ["computer-use", "claude-video", "roblox-build", "roblox-toolkit"], words: /запи(с[ьи]|ши) экран|screen ?record|roblox studio|открой приложение|open the app\b|на рабочем столе|desktop app|xcode\b|\bfinder\b/i },
@@ -34,4 +33,13 @@ export function hintedErrandKind(input: ErrandKindHints): ErrandKind | null {
   for (const hint of HINTS) if (hint.names.some((name) => named.has(name))) return hint.kind;
   for (const hint of HINTS) if (hint.words.test(input.task)) return hint.kind;
   return null;
+}
+
+export type ErrandKindPick = { kind: ErrandKind | "errand"; by: "pm" | "hint" | "none" };
+
+/** The kind of an errand: the PM's word, else a hint from the named skills and the brief, else the generic row. No model is asked. */
+export function classifyErrand(input: ErrandKindHints & { kind?: string | null | undefined }): ErrandKindPick {
+  if (input.kind && isErrandKind(input.kind)) return { kind: input.kind, by: "pm" };
+  const hinted = hintedErrandKind(input);
+  return hinted ? { kind: hinted, by: "hint" } : { kind: "errand", by: "none" };
 }

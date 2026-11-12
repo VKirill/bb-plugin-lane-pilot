@@ -149,12 +149,11 @@ One errand graph and one helper profile, but not one model: an errand has a **ki
 | `message` | `errand` | the errand row | an email, a ticket, a Telegram reply |
 | none | `errand` | the errand row | a script or a check, or a brief that fits no kind |
 
-Who names the kind, first hit wins (`classifyErrand`, `src/rooms/schedule/errand-kind-judgment.ts`): the PM's `kind` in `lane_pilot_errand` (a schedule's
+Who names the kind, first hit wins (`classifyErrand`, `src/rooms/schedule/errand-kinds.ts`): the PM's `kind` in `lane_pilot_errand` (a schedule's
 `errandKind`); else a hint, that is a named skill, plugin or MCP server (`computer-use` → computer, `blender` → devops, `browser-automation` → browser,
-`telegram-user` → message, `tavily` → research) and then the words of the brief (`hintedErrandKind`); else the Jev judgment `errand.kind` (J-12), which
-starts in **shadow**: its receipt in `lane_pilot_jev_receipt` keeps what it would have picked while the generic row runs. `jev.modes = errand.kind=active`
-lets Jev name the kind where no hint did (its top option needs p ≥ 0.6, `jev.thresholds errand.kind.min_p`). A hint always wins over Jev. A pinned model,
-a preset and the Automation default stay above the kind (levels 1–3). The run carries `kind` and `kindBy` (`pm`, `hint`, `jev`, `schedule`) in its inputs
+`telegram-user` → message, `tavily` → research) and then the words of the brief (`hintedErrandKind`); else the generic `errand` row. No model names the
+kind (the Jev judgment `errand.kind` was removed). A pinned model,
+a preset and the Automation default stay above the kind (levels 1–3). The run carries `kind` and `kindBy` (`pm`, `hint`, `schedule`) in its inputs
 and the helper thread `errandKind` in its metadata, so a week of runs says which kind ran on which model with what outcome:
 
 ```sql

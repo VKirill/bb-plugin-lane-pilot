@@ -39,7 +39,7 @@ export async function cliPipeline(d: CliRunDeps): Promise<PluginCliResult | unde
     return { exitCode:0, stdout:args.includes("--json") ? JSON.stringify(report, null, 2) : `${report.readiness}\n\n${JSON.stringify(report.ratios)}\n${report.conditions.map((row) => `${row.ok ? "✓" : "✗"} ${row.id}: ${row.detail}`).join("\n")}` };
   }
   if (command === "design-pair" || command === "design-pair-answer") {
-    // Paired design judgement (SMA k_lib_djudgement): the model and the person see one basis and one order; the pair lands in the journal.
+    // Paired design judgement (SMA k_lib_djudgement): the owner (or the PM) judges both pages on one basis and in one order; no model picks; the pair lands in the journal.
     // The plugin's own scripts/ folder, not the shell's cwd; the caller rules and the URL table live in design-eval/server.
     const script = join(pluginRootFromModule(import.meta.url), "scripts", "lp-design-eval.ts");
     const portOf = (value: string | undefined): number[] => { try { const url = new URL(value ?? ""); return [Number(url.port || (url.protocol === "https:" ? 443 : 80))]; } catch { return []; } };
@@ -53,9 +53,6 @@ export async function cliPipeline(d: CliRunDeps): Promise<PluginCliResult | unde
         return { projectId: typeof thread.projectId === "string" ? thread.projectId : null, role: typeof metadata?.role === "string" ? metadata.role : null };
       },
       phaseProject: (phaseId) => getPhase(db as never, phaseId)?.projectId ?? null,
-      jev: () => jev(),
-      // The judge is a paid call: it waits on a money cap that is set and spent (no cap set = no hold; only a paid writer lane is closed by an unset cap).
-      moneyHold: async () => services.money.judgeHolds(),
       measure: async (file, scriptArgs) => {
         const ran = await spawnAsync("npx", ["tsx", file, ...scriptArgs], { cwd: dirname(dirname(file)), timeout: 300_000, maxBuffer: 64 * 1024 * 1024 });
         if (ran.error || ran.status !== 0) throw ran.error ?? new Error(`${file} ended with ${ran.status ?? ran.signal}: ${(ran.stderr ?? "").trim().slice(-400)}`);

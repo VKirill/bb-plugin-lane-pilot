@@ -227,7 +227,7 @@ export function claimIdentifiers(text:string):string[] {
 export function citationClaims(body:string): Array<{ file:string; start:number; end:number; identifiers:string[]; claimIndex:number }> {
   const expanded = expandCitationLists(body);
   const claims:Array<{ file:string; start:number; end:number; identifiers:string[]; claimIndex:number }> = [];
-  // Like pageClaims in docs-jev: independent sentences on one physical line must not borrow
+  // Like pageClaims in docs-anchors: independent sentences on one physical line must not borrow
   // each other's evidence. Examples introduced by e.g./i.e. stay part of their sentence.
   const blocks = expanded.split(/\n(?=\s*[-*|]|\s*\n)|(?<=[.!?])(?<!\be\.g\.)(?<!\bi\.e\.)\s+/);
   for (const [claimIndex, block] of blocks.entries()) {

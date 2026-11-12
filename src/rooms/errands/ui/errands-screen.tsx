@@ -24,7 +24,7 @@ const OUTCOME: Record<ErrandOutcome, { key: I18nKey; tone: Tone }> = {
   running: { key: "er_out_running", tone: "info" }, done: { key: "er_out_done", tone: "success" }, blocked: { key: "er_out_blocked", tone: "warning" },
   failed: { key: "er_out_failed", tone: "danger" }, canceled: { key: "er_out_canceled", tone: "muted" },
 };
-const BY: Record<string, I18nKey> = { pm: "er_by_pm", hint: "er_by_hint", jev: "er_by_jev", schedule: "er_by_schedule" };
+const BY: Record<string, I18nKey> = { pm: "er_by_pm", hint: "er_by_hint", schedule: "er_by_schedule" };
 const fill = (key: I18nKey, values: Record<string, string | number>) => Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), t(key));
 const usd = (value: number) => (value > 0 ? `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—");
 const when = (ms: number, locale: Locale) => new Date(ms).toLocaleString(locale === "ru" ? "ru-RU" : "en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -115,7 +115,7 @@ export function ErrandsScreen({ projects, locale }: { projects: Array<{ id: stri
               <thead><tr className="border-b text-left text-muted-foreground">
                 <th className={th}>{t("er_col_kind")}</th><th className={th}>{t("er_col_what")}</th><th className={`${th} min-w-[16rem]`}>{t("er_col_model")}</th>
                 <th className={`${th} text-right`}>{t("er_col_runs")}</th><th className={`${th} text-right`}>{t("er_col_done")}</th><th className={`${th} text-right`}>{t("er_col_blocked")}</th><th className={`${th} text-right`}>{t("er_col_failed")}</th>
-                <th className={`${th} text-right`}>{t("er_col_cost")}</th><th className={`${th} text-right`}>{t("er_col_jev")}</th>
+                <th className={`${th} text-right`}>{t("er_col_cost")}</th>
               </tr></thead>
               <tbody>
                 {KINDS.map((id) => {
@@ -145,7 +145,6 @@ export function ErrandsScreen({ projects, locale }: { projects: Array<{ id: stri
                       <td className={`${td} text-right tabular-nums ${quiet}`}>{num(row?.blocked)}</td>
                       <td className={`${td} text-right tabular-nums ${quiet}`}>{num(row?.failed)}</td>
                       <td className={`${td} text-right tabular-nums ${quiet}`}>{num(row?.costUsd, row ? usd(row.costUsd) : undefined)}</td>
-                      <td className={`${td} text-right tabular-nums ${quiet}`}>{num(row?.jevWouldPick)}</td>
                     </tr>
                   );
                 })}

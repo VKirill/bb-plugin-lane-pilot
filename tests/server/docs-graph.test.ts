@@ -129,8 +129,8 @@ describe("the nightly docs of a unit is the graph lp.docs-night", () => {
         if (call.method === "gitDocsScope") return { hostId: "ovh", status: "ready", isRepoRoot: true, hasDocs: false, changed: ["src/a.ts"], dirty: input.docsDir ? ["docs/overview.md"] : [], base: null, workspaces: [], localDate: localDateKey(new Date()), localHour: 4, reason: null };
         if (call.method === "gitCreateWorktree") return { hostId: "ovh", status: "failed", path: null, branch: null, reason: "no worktree in the test" };
         if (call.method === "listDocsPages") return { hostId: "ovh", pages: [], oversized: [] };
-        if (call.method === "docsFlows") return { hostId: "ovh", briefPath: "/tmp/flows.md", jev: "disabled", routes: 0, flows: [] };
-        if (call.method === "docsAnchors") return { hostId: "ovh", briefPath: "/tmp/brief.md", anchors: 0, jev: "disabled", tables: [], deploy: false, core: [], productFiles: [] };
+        if (call.method === "docsFlows") return { hostId: "ovh", briefPath: "/tmp/flows.md", routes: 0, flows: [] };
+        if (call.method === "docsAnchors") return { hostId: "ovh", briefPath: "/tmp/brief.md", anchors: 0, tables: [], deploy: false, core: [], productFiles: [] };
         if (call.method === "docsLineCounts") return { hostId: "ovh", counts: {} };
         if (call.method === "writeDocsPages") return { hostId: "ovh", previewSha256: sha("p"), status: "applied", writes: [], reason: null };
         if (call.method === "gitCommitDocs") return { hostId: "ovh", status: "committed", commit: "abc123", reason: null };
@@ -179,8 +179,8 @@ describe("the nightly docs of a unit is the graph lp.docs-night", () => {
         if (call.method === "gitDocsScope") return { hostId: "ovh", status: "ready", isRepoRoot: true, hasDocs: false, changed: ["src/a.ts"], dirty: input.docsDir ? ["docs/overview.md"] : [], base: null, workspaces: [], localDate: localDateKey(new Date()), localHour: 4, reason: null };
         if (call.method === "gitCreateWorktree") return { hostId: "ovh", status: "failed", path: null, branch: null, reason: "no worktree in the test" };
         if (call.method === "listDocsPages") return { hostId: "ovh", pages: [], oversized: [] };
-        if (call.method === "docsFlows") return { hostId: "ovh", briefPath: "/tmp/flows.md", jev: "disabled", routes: 0, flows: [] };
-        if (call.method === "docsAnchors") return { hostId: "ovh", briefPath: "/tmp/brief.md", anchors: 0, jev: "disabled", tables: [], deploy: false, core: [], productFiles: [] };
+        if (call.method === "docsFlows") return { hostId: "ovh", briefPath: "/tmp/flows.md", routes: 0, flows: [] };
+        if (call.method === "docsAnchors") return { hostId: "ovh", briefPath: "/tmp/brief.md", anchors: 0, tables: [], deploy: false, core: [], productFiles: [] };
         if (call.method === "docsLineCounts") return { hostId: "ovh", counts: {} };
         if (call.method === "writeDocsPages") return { hostId: "ovh", previewSha256: sha("p"), status: "applied", writes: [], reason: null };
         if (call.method === "gitCommitDocs") return { hostId: "ovh", status: "committed", commit: "abc123", reason: null };
@@ -243,8 +243,8 @@ describe("the nightly docs of a unit is the graph lp.docs-night", () => {
         if (call.method === "gitDocsScope") return { hostId: "ovh", status: "ready", isRepoRoot: true, hasDocs: true, changed: [], dirty: [], base: null, workspaces: [], localDate: "2026-10-27", localHour: 4, reason: null };
         if (call.method === "gitCreateWorktree") return { hostId: "ovh", status: "failed", path: null, branch: null, reason: "no worktree in the test" };
         if (call.method === "listDocsPages") return (call.input as { roots?: string[] }).roots?.includes(".agents/decisions") ? { hostId: "ovh", pages: [], oversized: [] } : { hostId: "ovh", pages: [{ path: "docs/index.md", modifiedAt: 1, sha256: sha("x"), content: "---\ntitle: T\n---\n# T\n" }, { path: "docs/overview.md", modifiedAt: 1, sha256: sha("y"), content: "---\ntitle: O\n---\n# O\n" }], oversized: [] };
-        if (call.method === "docsFlows") return { hostId: "ovh", briefPath: "/tmp/flows.md", jev: "disabled", routes: 0, flows: [] };
-        if (call.method === "docsAnchors") return { hostId: "ovh", briefPath: "/tmp/brief.md", anchors: 0, jev: "disabled", tables: [], deploy: false, core: [], productFiles: [] };
+        if (call.method === "docsFlows") return { hostId: "ovh", briefPath: "/tmp/flows.md", routes: 0, flows: [] };
+        if (call.method === "docsAnchors") return { hostId: "ovh", briefPath: "/tmp/brief.md", anchors: 0, tables: [], deploy: false, core: [], productFiles: [] };
         throw new Error(`stop at ${call.method}`);
       },
     });

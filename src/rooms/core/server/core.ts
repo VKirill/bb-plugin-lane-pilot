@@ -56,7 +56,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase): ServerCore {
   // its key lives in BB's Env Catalog (TYPESAFE_API_KEY / OPENLUX_API_KEY). The server reads both and sends the key and the
   // provider id with each Jev call, so machines need no ~/secrets/typesafe.env. Without Env Catalog or the record a machine
   // falls back to its own (TypeSafe). A dead TypeSafe (5xx, timeout) is retried once on OpenLux when that key exists.
-  const JEV_METHODS = new Set(["classifyPlan","councilJudge","docsAnchors","docsFlows","docsDepth","docsVerifyCitations","docsStaleness"]);
+  const JEV_METHODS = new Set(["classifyPlan","councilJudge"]);
   const jevKeyCache = new Map<string, { value: string | undefined; at: number }>();
   async function catalogKey(name: string): Promise<string | undefined> {
     const cached = jevKeyCache.get(name);

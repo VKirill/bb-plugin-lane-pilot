@@ -4,6 +4,6 @@ export { CITATION_SOURCE, expandCitationLists, mergeFrontmatter, parseFrontmatte
 export type { Frontmatter } from "./docs-lint";
 export { DOCS_DEFAULT_SELECTION, parseDocsSettings } from "./docs";
 export { buildDocsFlows } from "./docs-flows";
-export { buildDocsAnchors, docsDepth, docsStaleness, jevApiKey, jevCallFor, verifyDocsCitations } from "./docs-jev";
-export type { Anchor, JevCallAuth, JevCallSource, JevStatus } from "./docs-jev";
+export { buildDocsAnchors } from "./docs-anchors";
+export type { Anchor } from "./docs-anchors";
 export { commitDocs, docsLineCounts, docsWorthinessFacts, gitDocsScope } from "./git-docs";

@@ -9,4 +9,3 @@ export { DESIGN_SUITE_VERSION, readDesignCase, writeDesignCase } from "./case";
 export type { DesignCase, ReadDesignCase } from "./case";
 export { pairUrlRefusal } from "./url-guard";
 export type { PairUrlOptions } from "./url-guard";
-export { designPairJudgment, judgeDesigns, DESIGN_PAIR_ID } from "./judge";

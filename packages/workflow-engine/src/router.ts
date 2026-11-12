@@ -11,7 +11,8 @@ import type { Workflow } from "./schema";
  * The router sees cards, not graphs.
  */
 
-export const TOP_N = 5;
+/** The PM picks among these: the right graph was in the top five for only 16 of 36 real requests, so the shortlist is wider. */
+export const TOP_N = 10;
 export const MIN_CONFIDENCE = 60;
 /**
  * A request longer than this is a brief, not an ask: a rule fires on some word in it, so a route needs a rule of the chosen card and its own text fit.
@@ -396,7 +397,7 @@ export type RouteDecision = {
     /** True when a plugged model failed or named an id outside the candidates and the scorer decided instead. */
     modelFallback?: string;
   };
-  candidates: Array<{ id: string; name: string; score: number; base: number; boost: number; penalty: number; rules: string[]; stat?: number; liveTrial?: true }>;
+  candidates: Array<{ id: string; name: string; purpose: string; needs: string[]; score: number; base: number; boost: number; penalty: number; rules: string[]; stat?: number; liveTrial?: true }>;
   /** The chosen workflow passed its stub tests but never ran for real: ask the owner for a first real run (`liveTrial: true`) before starting it. */
   liveTrial: boolean;
   questions: string[];
@@ -593,7 +594,8 @@ export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
     pattern, rejected: [...rejected, ...excluded.filter((e) => !rejected.some((r) => r.id === e.id))],
     rules: hits.map((hit) => ({ id: hit.id, note: hit.note })), model: usedModel ? "external" : "deterministic", ...(modelFallback ? { modelFallback } : {}),
   });
-  const candidates = top.map((item, i) => ({ id: item.workflow.id, name: item.workflow.name[lang], score: cards[i]!.score, base: round3(item.base), boost: round3(item.boost), penalty: round3(item.penalty), rules: item.rules,
+  const candidates = top.map((item, i) => ({ id: item.workflow.id, name: item.workflow.name[lang], purpose: sentence(item.workflow.description[lang] || item.workflow.description.en, 110),
+    needs: item.workflow.inputs.filter((field) => field.required && field.default === undefined).map((field) => field.name), score: cards[i]!.score, base: round3(item.base), boost: round3(item.boost), penalty: round3(item.penalty), rules: item.rules,
     ...(input.stats ? { stat: round3(trackRecord(input.stats.get(item.workflow.id), input.now ?? Date.now())) } : {}), ...(needsLiveTrial(item.workflow) ? { liveTrial: true as const } : {}) }));
   const chosen = output.choice ? top.find((item) => item.workflow.id === output!.choice)?.workflow ?? null : null;
 

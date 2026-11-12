@@ -3,7 +3,7 @@ import type { Judgment, JudgmentMode, Thresholds } from "./registry";
 
 /**
  * Project settings of the Jev layer, each one string so that adding a judgment adds no setting row:
- *  - `jev.thresholds`: lines or comma-separated `judgment.name=value` pairs (`route.workflow.min_p=0.7`); a value outside the
+ *  - `jev.thresholds`: lines or comma-separated `judgment.name=value` pairs (`failure.class.min_p=0.7`); a value outside the
  *    judgment's range is clamped, an unknown key is ignored (and reported by `thresholdsProblem` when saved).
  *  - `jev.modes`: `judgment=off|shadow|active` pairs; a judgment not listed runs in its default mode.
  *  - `jev.enabled`: false turns every judgment off for the project.
