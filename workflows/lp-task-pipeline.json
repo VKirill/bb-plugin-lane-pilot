@@ -69,62 +69,6 @@
   },
   "nodes": [
     {
-      "id": "worth-check",
-      "type": "jev",
-      "label": "Advisory critics worth it?",
-      "judgment": "critique.worth",
-      "state": {
-        "task_title": "$task.title",
-        "contract": "$task.contract"
-      },
-      "output": [
-        {
-          "name": "decision",
-          "type": "string",
-          "required": false
-        },
-        {
-          "name": "value",
-          "type": "json",
-          "required": false
-        },
-        {
-          "name": "escalated",
-          "type": "boolean",
-          "required": false
-        },
-        {
-          "name": "skip_pm_read",
-          "type": "boolean",
-          "required": false
-        },
-        {
-          "name": "skip_plan_critique",
-          "type": "boolean",
-          "required": false
-        },
-        {
-          "name": "skip_specialist_review",
-          "type": "boolean",
-          "required": false
-        },
-        {
-          "name": "receiptId",
-          "type": "number",
-          "required": false
-        },
-        {
-          "name": "would",
-          "type": "string",
-          "required": false
-        }
-      ],
-      "proof": {
-        "kind": "gate",
-        "check": "the critique.worth judgment answers which advisory critics this task spawns; an unsure or absent answer keeps every critic (the fallback runs all)"
-      }
-    },
-    {
       "id": "pm-read",
       "produces": [
         {
@@ -160,13 +104,7 @@
           "type": "string",
           "required": false
         }
-      ],
-      "skip_when": "worth-check.skip_pm_read == true",
-      "skip_out": {
-        "state": "skipped",
-        "summary": "''",
-        "reason": "'jev advisory read not worth it'"
-      }
+      ]
     },
     {
       "id": "quality-mode",
@@ -216,12 +154,7 @@
           "type": "string",
           "required": false
         }
-      ],
-      "skip_when": "worth-check.skip_plan_critique == true",
-      "skip_out": {
-        "allowed": true,
-        "reason": "'jev plan critique not worth it'"
-      }
+      ]
     },
     {
       "id": "plan-critique-quick",
@@ -250,12 +183,7 @@
           "type": "string",
           "required": false
         }
-      ],
-      "skip_when": "worth-check.skip_plan_critique == true",
-      "skip_out": {
-        "allowed": true,
-        "reason": "'jev plan critique not worth it'"
-      }
+      ]
     },
     {
       "id": "block-plan-critique",
@@ -314,12 +242,7 @@
           "type": "string",
           "required": false
         }
-      ],
-      "skip_when": "worth-check.skip_plan_critique == true || worth-check.skip_specialist_review == true",
-      "skip_out": {
-        "allowed": true,
-        "reason": "'jev specialist review not worth it'"
-      }
+      ]
     },
     {
       "id": "block-specialist",
@@ -577,10 +500,6 @@
   "edges": [
     {
       "from": "start",
-      "to": "worth-check"
-    },
-    {
-      "from": "worth-check",
       "to": "pm-read"
     },
     {

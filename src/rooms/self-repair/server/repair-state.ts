@@ -81,7 +81,7 @@ export function createRepairState(ctx: ServerCore) {
     const raw = await bb.storage.kv.get(STATE_KEY);
     const row = raw && typeof raw === "object" ? raw as Partial<SelfRepairState> : {};
     const signatures = Object.fromEntries(Object.entries(row.signatures ?? {}).map(([key, record]) => [key, { ...record, samples: (record.samples ?? []).map((sample) => ({ ...sample, reason: String(sample.reason ?? "").slice(0, SAMPLE_REASON_CHARS) })) }]));
-    return { cursor: row.cursor ?? Date.now() - 3_600_000, lastTickAt: row.lastTickAt ?? null, signatures, spawned: row.spawned ?? [], aliases: row.aliases ?? {}, mergeSuggestions: row.mergeSuggestions ?? {} };
+    return { cursor: row.cursor ?? Date.now() - 3_600_000, lastTickAt: row.lastTickAt ?? null, signatures, spawned: row.spawned ?? [], aliases: row.aliases ?? {} };
   }
 
   /** Drops the kinds seen longest ago until the state fits STATE_BUDGET_BYTES: first those never repaired, then the rest. */

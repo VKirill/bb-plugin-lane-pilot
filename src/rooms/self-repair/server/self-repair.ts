@@ -275,7 +275,7 @@ export type { SelfRepairConfig };
 export { SELF_REPAIR_DEFAULTS } from "./repair-state";
 export { repairPrompt } from "./repair-prompt";
 export { VERSION, LOADED_AT, reasonSignature, repairPriority, logIncidents, writerStrayFiles, writerRedCheck, pointsAtEngine, isDue, lastPmOwnerMessageAt } from "./episodes";
-export { parseVerdict, repairStatus, repairAnswerForThread, readVerdict, labelJevReceipts, askOwnerAboutRepair } from "./verdict";
+export { parseVerdict, repairStatus, repairAnswerForThread, readVerdict, askOwnerAboutRepair } from "./verdict";
 export { createRepairWorktree, releaseWorktree, placeThread, threadBusy, waitForSpawn, settleWorktree } from "./spawn";
 export { readRepairRecord, selfRepairStatus, STATE_KEY } from "./report";
 export { CONFIG_KEY, lanePilotProjectOrNotice, resolveLanePilotProject } from "./project";

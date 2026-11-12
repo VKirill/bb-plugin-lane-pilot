@@ -19,8 +19,6 @@ import { isLiveDecision } from "../live-folder";
 import { pipelineWriterStep, pipelineWriterTag } from "./pipeline-tag";
 import { recordedWriterSkills } from "./skill-pick";
 import { sendServiceMessage } from "../../relay/server";
-import { judgeRulesOnDiff, ruleViolationRemark } from "../../learning";
-import { jev } from "@lane-pilot/jev";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { bestEffort, isNotFound, orMiss, stringAt } from "@lane-pilot/kit";
 import { acceptanceArtifactDir } from "../../tasks";
@@ -123,12 +121,6 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
       };
       for (;;) {
         const evidence = await captureEvidence();
-        // abide-style: the accepted writer rules against this diff, before the critic. A break is a remark on the
-        // writer's repair turn, never a block; shadow (the default) only records what it would have said.
-        const ruleRemark = ruleViolationRemark(await bestEffort(ctx.log, "writer rules on diff", judgeRulesOnDiff(jev(), db, input.projectId,
-          Object.values(g.lastPatches ?? {}).join("\n"),
-          { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:projectSettings },
-          { kv: bb.storage.kv as never, target: input.taskId }), []));
         const ledger = repairLedgerFromResult(listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === "code-critique")?.result);
         if (ledger?.policy) g.frozenPolicy = ledger.policy;
         if (ledger?.repairRound) g.repairRound = Math.max(g.repairRound, ledger.repairRound);
@@ -341,7 +333,7 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
             transitionAttempt(db, input.attemptId, "blocked", { reason });
             return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId:g.writerThreadId };
           }
-          const repairPrompt = [ruleRemark, codeRepairPrompt({
+          const repairPrompt = [codeRepairPrompt({
             task:input.task, findings:frozenFindings, agent:dispatch.agent,
             setupLines:writerSetupLines(isLiveDecision(bound.workspace_decision)),
             contextBlocks:writerContextBlocks(input.task, dispatch.memoryText, dispatch.executionPacket, dispatch.pmReadContext, dispatch.rulesText ?? ""),

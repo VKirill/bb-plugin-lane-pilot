@@ -1,12 +1,11 @@
 import type { NodeExecutor } from "@lane-pilot/workflow-engine";
-import { jev, type JevSettings } from "@lane-pilot/jev";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { modelCatalogOf, readProviderFolderBlock, resolveSpawnModel, scheduleIsolated, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 
 import type { ChainRuntime } from "../../contracts/server";
 import {
-  chooseProcessKey, errandFailureJudgment, sweepErrandEpisodes,
+  chooseProcessKey, sweepErrandEpisodes,
   type EpisodeEnrichDeps,
 } from "../../errands";
 import { ERRAND_EPISODE_TABLE, ERRAND_EPISODE_TRACE_EVENTS } from "../../contracts/server";
@@ -33,7 +32,7 @@ export const EPISODES_SCHEDULE = "episodes-hourly";
  * thread, masks secrets and PII before the `episode-analyst` role's hidden analyzer thread sees the text, parses the
  * strict JSON answer and writes the enrichment columns. `episodes.collect` off makes the whole pass a no-op.
  */
-/** The sweep's live deps (helper thread, analyzer model, Jev); the hourly node and `errands episodes-sweep` share them. */
+/** The sweep's live deps (helper thread, analyzer model); the hourly node and `errands episodes-sweep` share them. */
 const analystRooms = new Map<string, string>();
 
 /**
@@ -93,17 +92,7 @@ export function episodeSweepDeps(ctx: ServerCore, services: Services, stopped: (
       const text = await services.ruleScan.runAnalyzer(threadProject ?? "*", `episode ${runId}`, prompt, host, analyzer, { episode: runId }, "episode-analyst");
       return { text, model: `${analyzer.providerId}/${analyzer.model}` };
     },
-    chooseKey: async (input, { runId, projectId }) => {
-      const settings = ((await ctx.effectiveProjectSettings(projectId ?? GLOBAL_SETTINGS_PROJECT_ID).catch((cause: unknown) => { ctx.log(`episodes: project settings unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return null; }))?.values ?? {}) as JevSettings;
-      return (await chooseProcessKey({ ...input, ctx: { projectId: projectId ?? "*", runId, subject: runId, settings } })).key;
-    },
-    judge: async (input, { runId, projectId }) => {
-      const instance = jev();
-      if (!instance) return;
-      const settings = ((await ctx.effectiveProjectSettings(projectId ?? GLOBAL_SETTINGS_PROJECT_ID).catch((cause: unknown) => { ctx.log(`episodes: project settings unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return null; }))?.values ?? {}) as JevSettings;
-      if (!instance.enabled(settings)) return;
-      await instance.judge(errandFailureJudgment, input, { projectId: projectId ?? "*", runId, subject: runId, settings });
-    },
+    chooseKey: async (input) => (await chooseProcessKey(input)).key,
   };
 }
 

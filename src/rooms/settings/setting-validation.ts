@@ -2,11 +2,8 @@ import { PROVIDER_POOL_KEY, SETTING_WRITER_SILENCE_NUDGE_MIN, providerPoolProble
 import { leadSettingProblem } from "../lead";
 import { ROLE_MODEL_KEY_PREFIX, ZCODE_BACKGROUND_KEY, ZCODE_WINDOW_KEY, roleModelProblem, zcodeWindowProblem } from "@lane-pilot/models";
 import { SCHEDULE_ERRAND_DEFAULT_KEY, errandDefaultProblem } from "../schedule";
-import { routeWorkflow, routeRecheck } from "../workflow/route-workflow";
-import { repairGroup } from "@lane-pilot/jev/judgments/repair-group";
+import { routeWorkflow } from "../workflow/route-workflow";
 import { failureClassJudgment } from "../runs/failure-class-judgment";
-import { outputGuard } from "@lane-pilot/jev/judgments/output-guard";
-import { wallFilterJudgment } from "../wall";
 import { listJudgments, type Judgment } from "@lane-pilot/jev";
 import { jevSettingProblem } from "@lane-pilot/jev";
 import { HUB_KEYS, PROJECT_DEFAULT_KEYS, hubSettingProblem } from "@lane-pilot/settings-catalog";
@@ -21,7 +18,7 @@ export type { SettingValidationError } from "../setting-validation";
  * The judgments the settings validation names explicitly, so their modules are loaded whatever else the entry point imports: the
  * registry (`listJudgments`) holds only what some module has already registered, and the list must not depend on import order.
  */
-const SETTING_JUDGMENTS = [routeWorkflow, routeRecheck, repairGroup, failureClassJudgment, outputGuard, wallFilterJudgment];
+const SETTING_JUDGMENTS = [routeWorkflow, failureClassJudgment];
 
 function settingJudgments(): ReadonlyArray<Pick<Judgment<unknown, unknown>, "id" | "defaultMode" | "thresholds">> {
   return [...new Map([...listJudgments(), ...SETTING_JUDGMENTS].map((judgment) => [judgment.id, judgment])).values()];

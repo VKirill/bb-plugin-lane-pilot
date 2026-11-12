@@ -26,7 +26,6 @@ import { defaultModelIn } from "@lane-pilot/models";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { JEV_PROVIDERS, installJev, jev, resolveJevProvider, type JevEndpoint } from "@lane-pilot/jev";
-import { createOutputGuard } from "@lane-pilot/jev";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { LanePilotDatabase } from "../../storage";
 import { ownerTurnGate } from "./owner-turn";
@@ -416,10 +415,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase): ServerCore {
     const jevKeys = new Set(Object.values(JEV_PROVIDERS).map((provider) => provider.keyName));
     return entries.some((entry) => jevKeys.has(entry.name));
   });
-  // J-11: a second look (Jev, shadow by default) at what a helper or writer produced, before it is stored or shown.
-  const outputGuard = createOutputGuard({ jev, settings: async (projectId) => (await effectiveProjectSettings(projectId)).values, kv: bb.storage.kv, log: (message) => bb.log.warn(message) });
-
-  return { bb, db, state, realtime, ownerAsk, secrets, catalogKey, forgetCatalogKey, outputGuard, isDisposed: () => state.disposed, log: (message: string) => bb.log.warn(message), host, deployDrain, nativeInstaller, nativeHost, serializedKv, ownedAgents, saveOwnedAgents, knownCustomAgentIds: () => customAgentIds, effectiveProjectSettings, screenWriterBinding, coexistenceInventory, coexistenceOperation, getThreadBounded, acceptedTaskWorkspace, workspaceExecutionEnvironment, refreshRun, markCanceledWriterStages, cancelQueuedAttempt, isRuntimeSettingKey, runPolicyFor, nativeRunConfig, sectionRowSchema, listProjectSections, sectionChain, settingsAbove, scopesForWorkspace, ensureRunScopes, configForRun, writerBindingKey };
+  return { bb, db, state, realtime, ownerAsk, secrets, catalogKey, forgetCatalogKey, isDisposed: () => state.disposed, log: (message: string) => bb.log.warn(message), host, deployDrain, nativeInstaller, nativeHost, serializedKv, ownedAgents, saveOwnedAgents, knownCustomAgentIds: () => customAgentIds, effectiveProjectSettings, screenWriterBinding, coexistenceInventory, coexistenceOperation, getThreadBounded, acceptedTaskWorkspace, workspaceExecutionEnvironment, refreshRun, markCanceledWriterStages, cancelQueuedAttempt, isRuntimeSettingKey, runPolicyFor, nativeRunConfig, sectionRowSchema, listProjectSections, sectionChain, settingsAbove, scopesForWorkspace, ensureRunScopes, configForRun, writerBindingKey };
 }
 
 /** No Jev key at all is the one silent degradation `bb plugin list` can show (B-4): the needs-configuration mark resets on the next load. */

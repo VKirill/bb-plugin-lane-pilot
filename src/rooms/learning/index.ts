@@ -11,7 +11,7 @@ export { pmResumeInstructions, pmRulesBlock, pmRulesOf, pmRulesPromptBlock } fro
 export type { PmRule } from "./pm-rules";
 export { historyItems, historyObservations, judgedCorrectionRows, learningThreadRecorded, listReviewedObservations, pendingOwnerLearningItems, startOfDay } from "./store";
 export type { Db } from "./store";
-export { judgeRulesOnDiff, ruleViolationRemark, writerDiffRules } from "./rule-diff";
+export { writerDiffRules } from "./rule-diff";
 export { ownerMessageJudgment, sameAsJudgment } from "./judgment";
 export { pmRuleRelevance } from "./pm-rules";
 export { unkeptPromise, ownerQuestion, complexity } from "./signals";

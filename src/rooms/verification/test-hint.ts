@@ -1,6 +1,3 @@
-import { defineJudgment, noul, noulOf, type Jev, type JudgeContext } from "@lane-pilot/jev";
-import { bestEffort } from "@lane-pilot/kit";
-
 /**
  * jgrep --tests for the PM: when a task's contract names the files it will change, the test files that cover them are
  * ranked and handed back as a hint («these N test files cover the change»). A hint only — the contract and its
@@ -43,49 +40,19 @@ export async function importLinkedTests(changedFiles: readonly string[], testFil
   return out;
 }
 
-/** Imports plus test/describe names: enough for Jev to know what the file exercises. */
-export function testSignature(text: string): string {
-  const keep = /^\s*(export .+ from |import |from .+ import |const .+ = require\(|require\(|describe\(|it\(|test\(|it\.each|test\.each|context\(|scenario\()/;
-  return text.split("\n").filter((line) => keep.test(line)).map((line) => line.trim().slice(0, 160)).slice(0, 60).join("\n");
-}
-
-export const TEST_PICK_ID = "verify.test_pick";
-export type TestPickInput = { changedFiles: string[]; diffHead: string; tests: Array<{ file: string; signature: string }> };
-
-export const testPickJudgment = defineJudgment<TestPickInput, boolean[]>({
-  id: TEST_PICK_ID,
-  version: 1,
-  defaultMode: "shadow",
-  timeoutMs: 8_000,
-  stateBuilder: (input) => ({ changed_files: input.changedFiles.slice(0, 40), diff_head: input.diffHead.slice(0, 6_000) }),
-  questions: (input) => Object.fromEntries(input.tests.slice(0, 40).map((test, index) => [`t${index + 1}`, noul(
-    "Would the change in `changed_files`/`diff_head` plausibly affect what this test file exercises? Answer yes when it is worth running first.",
-    { true: `relevant: ${test.file}\n${test.signature.slice(0, 400)}`, false: `not affected: ${test.file}` },
-  )])),
-  thresholds: { min_p: { default: 0.4, min: 0.05, max: 0.9, about: "least p(yes) for a test to make the hint; low, a missed test costs more than an extra line" } },
-  decide: (answers, t, input) => ({
-    decision: input.tests.slice(0, 40).map((_, index) => (noulOf(answers, `t${index + 1}`) ?? 0) >= t.min_p!),
-  }),
-  fallback: (input) => input.tests.map(() => false),
-  describe: (decision) => `${decision.filter(Boolean).length}/${decision.length} picked`,
-});
-
-export type TestHint = { file: string; reason: "changed" | "name" | "import" | "jev" };
+export type TestHint = { file: string; reason: "changed" | "name" | "import" };
 
 /**
- * The ranked test hint for a change: directly named and import-linked tests first (found in code), then the files Jev
- * marks relevant. Only the hint — never the contract.
+ * The ranked test hint for a change: directly named and import-linked tests (found in code). Only the hint — never the
+ * contract.
  */
 export async function suggestTests(
-  jev: Jev | null,
   input: {
     changedFiles: string[];
     repoFiles: string[];
-    diffHead?: string;
     readFile?: (path: string) => Promise<string | null>;
     limit?: number;
   },
-  ctx: JudgeContext = {},
 ): Promise<TestHint[]> {
   const tests = input.repoFiles.filter((file) => TEST_FILE_RE.test(file));
   const changed = input.changedFiles.filter((file) => !TEST_FILE_RE.test(file));
@@ -94,15 +61,6 @@ export async function suggestTests(
   for (const file of input.changedFiles) if (TEST_FILE_RE.test(file) && tests.includes(file)) hint.set(file, { file, reason: "changed" });
   for (const file of directTestMatches(input.changedFiles, tests)) if (!hint.has(file)) hint.set(file, { file, reason: "name" });
   if (input.readFile) for (const file of await importLinkedTests(changed, tests.slice(0, 120), input.readFile)) if (!hint.has(file)) hint.set(file, { file, reason: "import" });
-  if (jev && jev.enabled(ctx.settings) && input.readFile) {
-    const picked = tests.filter((file) => !hint.has(file)).slice(0, 40);
-    const candidates = [] as Array<{ file: string; signature: string }>;
-    for (const file of picked) candidates.push({ file, signature: testSignature((await input.readFile(file)) ?? "") });
-    if (candidates.length) {
-      const verdict = await bestEffort(console.warn, `test pick ${input.changedFiles.length}`, jev.judge(testPickJudgment, { changedFiles: changed, diffHead: input.diffHead ?? "", tests: candidates }, ctx), null);
-      if (verdict?.by === "jev") candidates.forEach((test, index) => { if (verdict.decision[index] && !hint.has(test.file)) hint.set(test.file, { file: test.file, reason: "jev" }); });
-    }
-  }
   return [...hint.values()].slice(0, input.limit ?? 10);
 }
 

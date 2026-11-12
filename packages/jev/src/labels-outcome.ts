@@ -7,10 +7,9 @@ import { recordOutcome } from "./receipts";
  * writes them (`agree:outcome` / `disagree:outcome`, plus a short `:<detail>` suffix). A labeled receipt is never touched
  * again (`outcome IS NULL` in every query), so a second run labels nothing new.
  *
- * `failure.class`, `route.workflow`, `plan.fact`, `writer.model` and `invoice.check` already have their sweeps in
+ * `failure.class`, `route.workflow`, `writer.model` and `invoice.check` already have their sweeps in
  * src/rooms/runs/failure-class-model.ts — they are called by the same nightly step and are not duplicated here.
- * Judgments with no later truth (errand.kind, intake.weight, learning.*, graph.step_trivial, guard.host_command until
- * permits reach a decision surface, …) are labeled by the model relabeler instead (labels-model.ts, `agree:model`).
+ * Judgments with no later truth (errand.kind, intake.weight, learning.*, …) are labeled by the model relabeler instead (labels-model.ts, `agree:model`).
  */
 
 export type OutcomeLabel = { receiptId: number; outcome: string };
@@ -53,22 +52,6 @@ export function taskOutcome(db: Db, runId: string | null, taskId: string | null)
   return run.closed_at !== null || run.state !== "running" ? "failed" : "pending";
 }
 
-/** The verdict of the task's plan critique stage, when one ran: `pass` (found nothing) or `changes` (it earned its cost). */
-function planCriticVerdict(db: Db, runId: string, taskId: string): "pass" | "changes" | null {
-  const row = db.prepare("SELECT state, result_json FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND stage_id='plan-critique' ORDER BY updated_at DESC LIMIT 1")
-    .get(runId, taskId) as { state: string; result_json: string | null } | undefined;
-  if (!row) return null;
-  try {
-    const result = row.result_json ? JSON.parse(row.result_json) as Record<string, unknown> : {};
-    const text = `${result["decision"] ?? ""} ${result["status"] ?? ""}`;
-    if (/approve|pass/.test(text)) return "pass";
-    if (/changes|rework|reject|block/.test(text)) return "changes";
-  } catch { /* fall through to the state */ }
-  if (["done", "passed", "completed"].includes(row.state)) return "pass";
-  if (["failed", "blocked", "rework"].includes(row.state)) return "changes";
-  return null;
-}
-
 /**
  * `critique.screen` (the cheap pass/fail before the code critic): the task's fate judges the verdict. A `pass` that was
  * accepted without a regression or a mainfix is agreed; a `pass` whose task failed or regressed is disagreed — and the
@@ -86,102 +69,10 @@ export function labelCritiqueScreen(db: Db, now = Date.now()): OutcomeLabel[] {
   return out;
 }
 
-/**
- * `critique.worth` (which critics a task deserves): a skipped plan critique is right when the task was accepted cleanly,
- * wrong when it failed; a plan critique that ran and found nothing means skipping it would have been right (disagree on
- * the «run» side); one that found something was worth its cost (agree). Tasks with no critic stage and no fate stay
- * unlabeled — a critic that never ran shows nothing.
- */
-export function labelCritiqueWorth(db: Db, now = Date.now()): OutcomeLabel[] {
-  const out: OutcomeLabel[] = [];
-  for (const row of unlabeled(db, "critique.worth", now - TASK_TRUTH_AGE_MS)) {
-    const skippedPlan = /skip[^,]*plan_critique|skip .*plan_critique/.test(row.decision ?? "");
-    const outcome = taskOutcome(db, row.run_id, row.subject);
-    if (skippedPlan) {
-      if (outcome === "pending") continue;
-      out.push({ receiptId: row.id, outcome: `${outcome === "accepted" ? "agree" : "disagree"}:outcome` });
-      continue;
-    }
-    if (!row.run_id || !row.subject) continue;
-    const critic = planCriticVerdict(db, row.run_id, row.subject);
-    if (critic === "pass") out.push({ receiptId: row.id, outcome: "disagree:outcome:critic_found_nothing" });
-    else if (critic === "changes") out.push({ receiptId: row.id, outcome: "agree:outcome" });
-    else if (outcome === "accepted") out.push({ receiptId: row.id, outcome: "agree:outcome" });
-    else if (outcome === "failed") out.push({ receiptId: row.id, outcome: "disagree:outcome" });
-  }
-  return out;
-}
-
-/**
- * `lead.predict`: the decision journal already holds the owner's answer and the verdict — the receipt for a prediction
- * copies it (`exact`/`partial` → agree, `miss` → disagree, `deferred` stays unlabeled: nothing was predicted to grade).
- * The link is the run and the journal row predicted at the receipt's time (the journal writes both in one step).
- */
-export function labelLeadPredict(db: Db, now = Date.now()): OutcomeLabel[] {
-  const out: OutcomeLabel[] = [];
-  for (const row of unlabeled(db, "lead.predict", now - TASK_TRUTH_AGE_MS)) {
-    if (!row.run_id) continue;
-    const decision = db.prepare(`SELECT judge_verdict, owner_label FROM lane_pilot_decision
-      WHERE run_id=? AND predicted_at IS NOT NULL AND ABS(predicted_at - ?) < 120000
-      ORDER BY ABS(predicted_at - ?) LIMIT 1`).get(row.run_id, row.at, row.at) as { judge_verdict: string | null; owner_label: string | null } | undefined;
-    const verdict = decision?.owner_label ?? decision?.judge_verdict;
-    if (verdict === "exact" || verdict === "partial") out.push({ receiptId: row.id, outcome: "agree:outcome" });
-    else if (verdict === "miss") out.push({ receiptId: row.id, outcome: "disagree:outcome" });
-  }
-  return out;
-}
-
-/**
- * `guard.host_command`: the permit the PM (or the owner) decided. Permit answers land as journal decisions of class
- * `permit` once that surface exists; `allow` confirms a safe read (`allow`/`review`), `deny` disagrees with it — and for a
- * `stop` decision the signs flip. No permit row → no truth (the ticket files live on the host, not in this DB).
- */
-export function labelGuardHostCommand(db: Db, now = Date.now()): OutcomeLabel[] {
-  const out: OutcomeLabel[] = [];
-  for (const row of unlabeled(db, "guard.host_command", now - TASK_TRUTH_AGE_MS)) {
-    if (!row.run_id || !row.decision) continue;
-    const decision = db.prepare(`SELECT answer_json FROM lane_pilot_decision
-      WHERE run_id=? AND class='permit' AND answer_json IS NOT NULL
-      ORDER BY answered_at DESC LIMIT 1`).get(row.run_id) as { answer_json: string | null } | undefined;
-    if (!decision?.answer_json) continue;
-    let option = "";
-    try { option = String((JSON.parse(decision.answer_json) as { option?: unknown }).option ?? ""); } catch { continue; }
-    if (option !== "allow" && option !== "deny") continue;
-    const saidStop = row.decision.startsWith("stop");
-    const right = (option === "allow") !== saidStop;
-    out.push({ receiptId: row.id, outcome: `${right ? "agree" : "disagree"}:outcome:permit_${option}` });
-  }
-  return out;
-}
-
-/**
- * `errand.failure` (the episode sweep's shadow judgment, src/rooms/errands/failure-judgment.ts): the episode's own
- * `failure_class` — code-computed first, the analyst's word second — is the later truth the receipt is graded against.
- * An episode not yet enriched, or one with no class (a clean done), stays unlabeled.
- */
-export function labelErrandFailure(db: Db, now = Date.now()): OutcomeLabel[] {
-  const out: OutcomeLabel[] = [];
-  for (const row of unlabeled(db, "errand.failure", now - TASK_TRUTH_AGE_MS)) {
-    if (!row.run_id || !row.decision) continue;
-    const episode = db.prepare("SELECT failure_class, enrichment_state FROM lane_pilot_errand_episode WHERE run_id=? ORDER BY extractor_version DESC LIMIT 1")
-      .get(row.run_id) as { failure_class: string | null; enrichment_state: string } | undefined;
-    if (!episode || episode.enrichment_state !== "enriched" || !episode.failure_class) continue;
-    out.push({ receiptId: row.id, outcome: `${row.decision === episode.failure_class ? "agree" : "disagree"}:outcome` });
-  }
-  return out;
-}
-
 /** Every outcome rule this file covers, run over the unlabeled receipts and written. Returns per-judgment counts. */
 export function applyOutcomeLabels(db: Database.Database, now = Date.now()): Record<string, number> {
-  // Until 0.1.512 a `critique.worth` receipt named its graph step, not its task, and every one in a closed run was labelled
-  // «disagree». Those labels say nothing: they are taken back (the receipts age out with the 30-day window).
-  db.prepare("UPDATE lane_pilot_jev_receipt SET outcome=NULL, outcome_at=NULL WHERE judgment='critique.worth' AND subject='worth-check' AND outcome='disagree:outcome'").run();
   const groups: Array<[string, OutcomeLabel[]]> = [
     ["critique.screen", labelCritiqueScreen(db, now)],
-    ["critique.worth", labelCritiqueWorth(db, now)],
-    ["lead.predict", labelLeadPredict(db, now)],
-    ["guard.host_command", labelGuardHostCommand(db, now)],
-    ["errand.failure", labelErrandFailure(db, now)],
   ];
   const counts: Record<string, number> = {};
   for (const [judgment, labels] of groups) {

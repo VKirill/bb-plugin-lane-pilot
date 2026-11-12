@@ -4,7 +4,6 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { setJevForTests } from "@lane-pilot/jev";
 import { createCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../server";
 import { answerDecision, getDecision, labelDecision, openDecision } from "../../src/rooms/lead/server/journal";
@@ -217,25 +216,11 @@ describe("the switch and the state", () => {
   });
 });
 
-describe("the model judge on an answer and the owner's labels", () => {
-  afterEach(() => setJevForTests(null));
+describe("the owner's labels", () => {
   const seed = (db: ReturnType<typeof openDatabase>, id: string, option: string, at: number) => {
     openDecision(db, { id, surface: "lead", class: "next_step", risk: "low", situation: { title: id }, options: ["yes", "later", "no"] }, at);
     db.prepare("UPDATE lane_pilot_decision SET prediction_json=?, predicted_at=?, predictor='test' WHERE id=?").run(JSON.stringify({ option, p: 0.8 }), at + 1, id);
   };
-
-  it("decide asks the model judge on a mismatch: «yes» to a predicted «later» is a partial when the judge says so", async () => {
-    const { db, lead } = world();
-    setJevForTests({ enabled: () => true, judge: async (judgment: { id: string }) => judgment.id === "lead.judge" ? { by: "jev", decision: { verdict: "partial" }, receiptId: null, answers: {} } : { by: "fallback", status: "off", decision: { option: null, p: 0 }, receiptId: null } } as never);
-    addRoad(db, { id: "d1", title: "Grow", kind: "direction", source: "lead", why: "growth" }, 1);
-    addRoad(db, { id: "o9", parentId: "d1", title: "Paid plans", kind: "option", source: "lead", why: "asked twice", class: "next_step" }, 2);
-    const decisionId = proposalDecisionId("o9");
-    seed(db, decisionId, "later", 3);
-    proposeRoad(db, "o9", decisionId, 5);
-    postOwnerItem(db, { key: proposalItemKey("o9"), source: "lead", kind: "proposal", what: "Paid plans", why: "asked twice" }, 5);
-    expect(await lead.decide("o9", "yes", "да, но после релиза", "owner", 10)).toMatchObject({ ok: true, verdict: "partial" });
-    expect(getDecision(db, decisionId)).toMatchObject({ judge_verdict: "partial", judge_model: "jev:lead.judge@1", judged_at: 10 });
-  });
 
   it("labelsDue posts one line a week with up to 20 unlabelled rows and none when nothing waits; label writes the owner's verdict; state counts the rest", async () => {
     const { db, lead } = world();
@@ -298,23 +283,21 @@ describe("acting through schedules (class schedule, acts_via schedule)", () => {
 });
 
 describe("the memory exam through the service", () => {
-  afterEach(() => setJevForTests(null));
   it("runs on demand, stores the result for the panel and the CLI prints it", async () => {
     const { bb, db, lead } = world();
-    setJevForTests({ enabled: () => true, judge: async (_j: unknown, input: { history: Array<{ answer: string }> }) => ({ by: "jev", decision: { option: input.history.length ? input.history[0]!.answer : null, p: 0.9 }, receiptId: null, answers: {} }) } as never);
     for (let i = 0; i < 4; i += 1) {
       openDecision(db, { id: `m${i}`, surface: "words", class: "landing", situation: { task: i }, options: ["yes", "no"] }, 100 + i);
       answerDecision(db, `m${i}`, { option: "yes" }, "owner", 200 + i);
     }
     expect((await lead.state(500)).memoryExam).toBeNull();
     const exam = await lead.memoryExam({ recall: false }, 1_000);
-    expect(exam.decisions).toMatchObject({ n: 4, withMemory: { decided: 3, exact: 3 }, control: { decided: 0, exact: 0 }, gain: 3 });
+    expect(exam.decisions).toMatchObject({ n: 4, withMemory: { decided: 0, exact: 0 }, control: { decided: 0, exact: 0 }, gain: 0 });
     expect(await bb.storage.kv.get(MEMORY_EXAM_KEY)).toMatchObject({ at: 1_000 });
-    expect((await lead.state(2_000)).memoryExam).toMatchObject({ at: 1_000, decisions: { gain: 3 } });
+    expect((await lead.state(2_000)).memoryExam).toMatchObject({ at: 1_000, decisions: { gain: 0 } });
     const cli = await runLeadCli({ db, kv: bb.storage.kv as never, lead }, ["memory-exam", "--no-recall", "--limit", "2"], 3_000);
     expect(cli.exitCode).toBe(0);
-    expect(cli.stdout).toContain("decisions (jev): with memory: decided 2/2, exact 2 (100 %); empty control: decided 0/2, exact 0; gain +2");
-    expect((await runLeadCli({ db, kv: bb.storage.kv as never, lead }, ["status"], 4_000)).stdout).toContain("memory exam: recall: not measured; decisions (jev)");
+    expect(cli.stdout).toContain("decisions (none): with memory: decided 0/2, exact 0; empty control: decided 0/2, exact 0; gain +0");
+    expect((await runLeadCli({ db, kv: bb.storage.kv as never, lead }, ["status"], 4_000)).stdout).toContain("memory exam: recall: not measured; decisions (none)");
     expect((await runLeadCli({ db, kv: bb.storage.kv as never, lead }, ["memory-exam", "--limit", "zero"], 5_000)).exitCode).toBe(2);
   });
 });

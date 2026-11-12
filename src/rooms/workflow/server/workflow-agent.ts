@@ -3,7 +3,6 @@ import { THREAD_WATCH_EVENT_TYPES, listThreadEventsPaged, listThreadEventsRaw, w
 import { getRunSettingsScopes, planningHomeInputs } from "../../storage";
 import {findModelIn, isZcodeProvider, providerLimitNotice, writerExecutionSelection, zcodeEnvironmentError} from "@lane-pilot/models";
 import { jev } from "@lane-pilot/jev";
-import { stepTrivialJudgment } from "@lane-pilot/jev/judgments/step-trivial";
 ;
 import { MAIN_AGENT_ID, isCustomAgentId } from "../../contracts/server";
 import { compileEffectiveMainAgent, employeeRoleLines, mentionContext, placeEmployeeOn } from "../../native-agent"
@@ -634,21 +633,6 @@ export async function withResolvedModel(request: HelperRequest, options: { avoid
   const chosen = resolveSpawnModel({ role: request.role, pinned, settings, pm, author, catalog: read, hostId, envPath, avoidProvider: avoid, usage, folderBlock, ...(docProved ? { capability: { proved: (providerId) => docProved.has(providerId) } } : {}) });
   if (docProved && !docProved.has(chosen.providerId)) throw new HelperFailure("capability_unproven", `capability_unproven:${chosen.providerId}:documentary: no provider in the stage's chain proved the documentary cells`);
   if (request.provider && providerBlockedForFolder(request.provider, envPath, folderBlock)) rt.ctx.log?.(`Lane Pilot: ${request.role} cannot run on ${request.provider} in ${envPath}: ${providerBlockedForFolder(request.provider, envPath, folderBlock)}; the role's next provider takes the step`);
-  // №9: a trivial step may run one model tier cheaper — only unpinned picks of a downgradable table role (a code
-  // writer is not in the table at all, judges stay their own family, high/critical risk never cheapens).
-  if (!pinned.model) {
-    const judge = jev();
-    if (judge?.enabled(settings as never) && downgradableRole(request.role) && request.risk !== "high" && request.risk !== "critical") {
-      const verdict = await bestEffort(rt.ctx.log, "workflow helper trivial judgment", judge.judge(stepTrivialJudgment, { nodeType: "agent", role: roleRowOf(request.role), inputChars: request.prompt.length, ...(request.risk ? { risk: request.risk } : {}) }, { projectId: rt.projectId, runId: rt.runId, subject: `spawn:${request.nodeId}`, settings: settings as never }), null);
-      if (verdict?.by === "jev" && verdict.decision.trivial) {
-        const cheaper = ROLE_MODEL_OPTIONS.find((o) => o.providerId === chosen.providerId && TIER_RANK[o.tier] === (TIER_RANK[modelTier(chosen.model) ?? "strong"] - 1));
-        if (cheaper && cheaper.id !== chosen.model) {
-          rt.ctx.log?.(`Lane Pilot: ${request.role} step ${request.nodeId} is trivial (jev); it runs on ${cheaper.id} instead of ${chosen.model}`);
-          chosen.providerId = cheaper.providerId; chosen.model = cheaper.id;
-        }
-      }
-    }
-  }
   if (AUTHOR_ROW_IDS.includes(row)) await rememberAuthor(rt, request.workflowRunId, row, chosen);
   const where = `the ${request.role} of ${request.workflowId ?? "a workflow"}/${request.nodeId}`;
   if (chosen.issues.includes("crossed_family")) rt.ctx.log?.(`Lane Pilot: ${where} would have judged work of its own model family; it runs on ${chosen.providerId}/${chosen.model} (the other family)`);

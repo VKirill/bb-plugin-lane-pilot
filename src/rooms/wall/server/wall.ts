@@ -28,7 +28,6 @@ import type { ChainRuntime } from "../../contracts/server";
 import type { CheckersApi } from "../../checkers/server";
 import type { HuntOutcome } from "../pack";
 import { WALL_HUNT_WORKFLOW, createWall, type RepairView, type Scope, type ThreadRun, type WallApi, type WallPorts } from "../service";
-import { jev } from "@lane-pilot/jev";
 import { withoutSelectionMarkers } from "@lane-pilot/kit";
 
 import type { BenchApi } from "../../bench/server";
@@ -322,7 +321,6 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
     log: (line) => ctx.log(line),
     skillSwitchMorningLine: services.skillSwitchMorningLine,
     hubDb: db.name,
-    jev: () => jev(),
     settings: () => ctx.effectiveProjectSettings("*").then((r) => r.values),
     diffHiddenAudit: async (limit: number) => {
       const res = await services.checkers.diffHidden({ limit });

@@ -8,7 +8,6 @@ export { runCommandOnHost, writePmSettingsOnHost } from "./cli-run";
 export { materializeAgentTrash, ownedAgentTrashPath, AGENT_TRASH_RELATIVE } from "./agent-trash";
 ;
 export { attachStreamRetry, droppedStreamDetail } from "./stream-retry";
-export { WRITER_FINISH_SCAN_ID, writerFinishScanJudgment, type FinishScanDecision, type FinishScanInput } from "./finish-scan";
 ;
 ;
 export { BEST_OF_COUNT, BEST_OF_ROUNDS_DEFAULT, BEST_OF_ROUNDS_MAX, BEST_OF_ROUNDS_SETTING, BEST_OF_SETTING, BEST_OF_SLOT_CAP_SETTING, BEST_OF_TOKEN_BUDGET_SETTING, BEST_OF_VALUES, ROUND_SEED_MAX_CHARS, bestOfBudgetAllows, bestOfPicks, pickBestAttempt, reserveAppetite, resolveBestOf, roundSeedBrief, roundSurvivors } from "./best-of";

@@ -46,7 +46,7 @@ describe("lp.plan", () => {
 
   it("standard with 3 tasks: the whole plan is critiqued, a rework goes back to the planner in the same session", async () => {
     const r = await runSim("lp.plan", { input: { goal: "g" }, stubs: { plan: { tasks: [task("a"), task("b"), task("c")], task_count: 3 }, plan_critic: [{ status: "rework" }, { status: "pass" }] } });
-    expect(pathOf(r)).toBe("research patterns strategy plan lint check plan_critic plan lint check plan_critic ok");
+    expect(pathOf(r)).toBe("research patterns strategy plan lint plan_critic plan lint plan_critic ok");
     expect(out(r)).toMatchObject({ status: "ok", plan_verdict: "pass" });
     const second = r.db.prepare("SELECT input_json FROM lane_pilot_wf_step WHERE run_id=? AND step_key='plan#2'").get(r.summary.runId) as { input_json: string };
     expect(JSON.parse(second.input_json).via.mode).toBe("same-session");
@@ -67,13 +67,13 @@ describe("lp.plan", () => {
   it("lint rounds and critique rounds share the plan's four visits: a rework past them goes on as low confidence, not a guard failure (live 2026-10-25)", async () => {
     const lint = [{ ok: false, errors: ["e"] }, { ok: false, errors: ["e"] }, { ok: true, errors: [] }, { ok: true, errors: [] }];
     const r = await runSim("lp.plan", { input: { goal: "g" }, mode: "full", stubs: { plan: { tasks: [task("a")], task_count: 1 }, lint, plan_critic: { status: "rework" } } });
-    expect(pathOf(r)).toBe("research patterns strategy plan lint plan lint plan lint check plan_critic plan lint check plan_critic low");
+    expect(pathOf(r)).toBe("research patterns strategy plan lint plan lint plan lint plan_critic plan lint plan_critic low");
     expect(out(r)).toMatchObject({ status: "low_confidence" });
   });
 
   it("the critique that keeps asking for rework goes on as a low-confidence plan after 3 rounds, without the owner", async () => {
     const r = await runSim("lp.plan", { input: { goal: "g" }, mode: "full", stubs: { plan: { tasks: [task("a")], task_count: 1 }, plan_critic: { status: "rework" } } });
-    expect(pathOf(r)).toBe("research patterns strategy plan lint check plan_critic plan lint check plan_critic plan lint check plan_critic low");
+    expect(pathOf(r)).toBe("research patterns strategy plan lint plan_critic plan lint plan_critic plan lint plan_critic low");
     expect(out(r)).toMatchObject({ status: "low_confidence" });
   });
 });
@@ -118,7 +118,7 @@ describe("lp.review", () => {
 
   it("quick: two dimensions, no spec check, no majority check, a clean pass", async () => {
     const r = await runSim("lp.review", { input: { range: "HEAD~1..HEAD", dimensions: ["correctness", "security"] }, mode: "quick" });
-    expect(pathOf(r)).toBe("scope prepass dims screen confirm aggregate result");
+    expect(pathOf(r)).toBe("scope prepass dims confirm aggregate result");
     expect(r.skipped).toContain("confirm");
     expect(out(r)).toMatchObject({ status: "pass", warn: false, critical_count: 0 });
     expect(r.called("dims:child")).toHaveLength(2);
@@ -126,7 +126,7 @@ describe("lp.review", () => {
 
   it("standard: a critical finding is confirmed by 3 critics, 2 of 3 decide, and the work goes back", async () => {
     const r = await runSim("lp.review", { input: { dimensions: ["correctness", "maintainability"] }, stubs: { "dims:child": dims({ correctness: [finding("critical", "correctness")] }), confirm: { finding_id: "x", confirmed: true } } });
-    expect(pathOf(r)).toBe("scope prepass spec_check dims screen confirm aggregate result");
+    expect(pathOf(r)).toBe("scope prepass spec_check dims confirm aggregate result");
     expect(out(r)).toMatchObject({ status: "rework", critical_count: 1 });
     expect(r.called("confirm:child")).toHaveLength(3);
     const step = r.db.prepare("SELECT receipt_json FROM lane_pilot_wf_step WHERE run_id=? AND node_id='confirm:child'").get(r.summary.runId) as { receipt_json: string };
@@ -153,20 +153,20 @@ describe("lp.review", () => {
 describe("lp.close", () => {
   it("goals met: staged knowledge, project life, report, closed", async () => {
     const r = await runSim("lp.close", { input: { goal: "g", goals: [{ id: "g1" }, { id: "g2" }], merged_commits: ["c1"] }, stubs: { goal_audit: { all_met: true, intent_aligned: true }, memory: { staged: 2, candidate_ids: ["m1", "m2"] } } });
-    expect(pathOf(r)).toBe("goal-screen goal_audit memory life report closed");
+    expect(pathOf(r)).toBe("goal_audit memory life report closed");
     expect(out(r)).toMatchObject({ status: "closed", staged: 2, candidate_ids: ["m1", "m2"] });
   });
 
   it("unmet goals end the fragment as unmet with their ids, before anything is staged", async () => {
     const r = await runSim("lp.close", { input: { goals: [{ id: "g1" }, { id: "g2" }] }, stubs: { goal_audit: { all_met: false, unmet_ids: ["g2"] } } });
-    expect(pathOf(r)).toBe("goal-screen goal_audit unmet");
+    expect(pathOf(r)).toBe("goal_audit unmet");
     expect(out(r)).toMatchObject({ status: "unmet", unmet_ids: ["g2"] });
   });
 
   it("intent drift ends the fragment as unmet with the goals and the drift, without asking the owner", async () => {
     const stubs = { goal_audit: { all_met: true, intent_aligned: false, unmet_ids: [], goals: [{ id: "g1", status: "UNMET", missing: "no current screenshots" }], drift_items: ["scope grew"] } };
     const r = await runSim("lp.close", { input: { goals: [{ id: "g1" }, { id: "g2" }] }, stubs });
-    expect(pathOf(r)).toBe("goal-screen goal_audit unmet");
+    expect(pathOf(r)).toBe("goal_audit unmet");
     expect(out(r)).toMatchObject({ status: "unmet", intent_aligned: false, drift_items: ["scope grew"], goals: [{ id: "g1", missing: "no current screenshots" }] });
   });
 

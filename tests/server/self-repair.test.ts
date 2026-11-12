@@ -3,9 +3,6 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/rooms/plugin-db";
 import { isDue, lastPmOwnerMessageAt, logIncidents, parseVerdict, reasonSignature, repairPriority, repairPrompt, repairStatus, VERSION, writerRedCheck, writerStrayFiles } from "../../src/rooms/self-repair/server/self-repair";
 import { createSelfRepair } from "../helpers/self-repair";
-import { createJev } from "@lane-pilot/jev";
-import { setJevForTests } from "@lane-pilot/jev";
-import type { JevClient } from "@lane-pilot/jev";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 import { beginChecks, checksMoved } from "../../src/rooms/runs";
 import { postOwnerItem, closeOwnerItem } from "../../src/rooms/owner-waiting";
@@ -937,92 +934,3 @@ describe("which due problem is repaired first (audit round 2, #20)", () => {
   });
 });
 
-describe("J-10: a new wording of a known problem (selfrepair.group)", () => {
-  function scriptedJev(db: ReturnType<typeof openDatabase>, pickKnown: boolean) {
-    const requests: Array<{ state: unknown; options: string[] }> = [];
-    const client: JevClient = {
-      breaker: () => ({ open: false, failures: 0 }),
-      async call(request) {
-        const [id, question] = Object.entries(request.questions)[0]!;
-        const options = Object.keys((question as { criteria: Record<string, unknown> }).criteria);
-        requests.push({ state: request.state, options });
-        const probabilities = pickKnown ? { g0: 0.93, new_problem: 0.07 } : { g0: 0.1, new_problem: 0.9 };
-        return { ok: true, model: "jev-test", usage: { input_tokens: 300, output_tokens: 20 }, latencyMs: 90, attempts: 1,
-          answers: { [id]: { type: "choice", choice: pickKnown ? "g0" : "new_problem", probabilities, confidence: 0.8 } } };
-      },
-    };
-    setJevForTests(createJev({ client, db }));
-    return requests;
-  }
-
-  async function twoWordings(mode: "shadow" | "active", pickKnown: boolean) {
-    const env = setup({ thr_repair1: "running" });
-    (env.ctx as unknown as { effectiveProjectSettings: unknown }).effectiveProjectSettings = async () => ({ values: { "jev.modes": `selfrepair.group=${mode}` } });
-    const requests = scriptedJev(env.db, pickKnown);
-    env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
-    const repair = createSelfRepair(env.ctx);
-    await repair.tick({ since: 0 });
-    env.attempt("lpattempt_2", "lprun_a", "blocked", "merge_failed: unable to write new index file");
-    const second = await repair.tick({ since: 0 });
-    return { env, repair, requests, second, state: await repair.state() };
-  }
-
-  it("shadow (the default): asks, records a receipt and changes nothing", async () => {
-    const { env, requests, state } = await twoWordings("shadow", true);
-    expect(requests).toHaveLength(1);
-    expect(requests[0]!.options).toEqual(["g0", "new_problem"]);
-    expect(Object.keys(state.signatures)).toHaveLength(2);
-    expect(state.aliases).toEqual({});
-    const receipt = env.db.prepare("SELECT judgment, mode, decided_by, decision FROM lane_pilot_jev_receipt").get() as Record<string, unknown>;
-    expect(receipt).toMatchObject({ judgment: "selfrepair.group", mode: "shadow", decided_by: "fallback" });
-  });
-
-  it("active: a clear pick files the new wording under the known group and remembers it", async () => {
-    const { requests, state, second, repair } = await twoWordings("active", true);
-    expect(requests).toHaveLength(1);
-    expect(Object.keys(state.signatures)).toHaveLength(1);
-    expect(second.signatures).toHaveLength(1);
-    const [known] = Object.keys(state.signatures);
-    expect(state.signatures[known!]!.count).toBe(2);
-    expect(Object.values(state.aliases)).toEqual([known]);
-    // The next sighting of that wording goes to the group without asking again.
-    await repair.tick({ since: 0 });
-    expect(requests).toHaveLength(1);
-  });
-
-  it("active, but Jev says it is a different problem: a group of its own, as before", async () => {
-    const { state } = await twoWordings("active", false);
-    expect(Object.keys(state.signatures)).toHaveLength(2);
-    expect(state.aliases).toEqual({});
-  });
-
-  it("no Jev (not installed): nothing is asked and nothing changes", async () => {
-    setJevForTests(null);
-    const env = setup({ thr_repair1: "running" });
-    env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
-    const repair = createSelfRepair(env.ctx);
-    await repair.tick({ since: 0 });
-    env.attempt("lpattempt_2", "lprun_a", "blocked", "merge_failed: unable to write new index file");
-    await repair.tick({ since: 0 });
-    expect(Object.keys((await repair.state()).signatures)).toHaveLength(2);
-  });
-});
-
-describe("J-11: an output the guard withheld becomes a self-repair incident", () => {
-  it("raises one incident for it, in the project it came from, and starts a repair", async () => {
-    const env = setup();
-    await env.ctx.bb.storage.kv.set("output-guard:blocked", [{ at: Date.now(), kind: "errand", reason: "secret", projectId: "proj_real", runId: "lprun_a", subject: "thr_errand" }] as never);
-    const repair = createSelfRepair(env.ctx);
-    const result = await repair.tick({ since: 0 });
-    expect(result.incidents).toBe(1);
-    expect(result.signatures[0]).toMatch(/^guard:/);
-    expect(result.spawned).toBe("thr_repair1");
-    expect(String(env.spawns[0]!.prompt)).toContain("withheld by the output guard");
-  });
-
-  it("ignores a block in the sandbox project", async () => {
-    const env = setup();
-    await env.ctx.bb.storage.kv.set("output-guard:blocked", [{ at: Date.now(), kind: "writer", reason: "injection", projectId: "proj_3tb652jpsi", runId: null, subject: null }] as never);
-    expect((await createSelfRepair(env.ctx).tick({ since: 0 })).incidents).toBe(0);
-  });
-});

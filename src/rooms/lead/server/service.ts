@@ -16,7 +16,7 @@ import { LEAD_ID, LEAD_NAME, LEAD_TICK } from "../../contracts/lead-agent";
 import { examAll, type Verdict } from "../logic";
 import { parseLeadSettings, type LeadSettings } from "../settings";
 import { identityBlock, loadIdentity, writeRoadExport } from "./identity";
-import { answerDecision, examRows, getDecision, labelDecision, listDecisions, openDecision, pendingLabelCount, pendingLabels, refineVerdict, type PendingLabel } from "./journal";
+import { answerDecision, examRows, getDecision, labelDecision, listDecisions, openDecision, pendingLabelCount, pendingLabels, type PendingLabel } from "./journal";
 import { createLeadSchedule } from "./lead-schedule";
 import { formatMemoryExam, MEMORY_EXAM_KEY, runMemoryExam, type MemoryExam } from "./memory-exam";
 import { actsVia, applyExam, rightsView, type TierChange } from "./rights";
@@ -220,8 +220,7 @@ export function createLeadService(ctx: ServerCore, services: Services, runEval: 
     decideRoad(db, roadId, decision, text, now);
     const decisionId = row.decision_id ?? proposalDecisionId(roadId);
     answerDecision(db, decisionId, { option: decision, ...(text ? { text } : {}) }, by, now);
-    // A mismatch goes to the model judge at once: «later» to a predicted «yes» is a partial, not a miss.
-    const verdict = await refineVerdict(db, decisionId, loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID) as never, now);
+    const verdict = getDecision(db, decisionId)?.judge_verdict ?? null;
     closeOwnerItem(db, proposalItemKey(decisionId), by, now);
     const handover = decision === "yes" ? await handOverAccepted(row, by, now) : null;
     return { ok: true, road: getRoad(db, roadId)!, verdict, handover };
