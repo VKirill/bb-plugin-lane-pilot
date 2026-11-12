@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ROLE_MODEL_OPTIONS, WRITER_PROFILES, consistentProvider, inZcodePromo, modelFamily, modelTier, nextZcodePromoStart, resolveAgentModel, resolveRoleModel, roleModelKey, roleModelOption,
-  roleModelProblem, tableRowAt, writerCandidates, zcodeBlock, zcodeEnvironmentError, zcodeWindowMode, zcodeWindowProblem, ZCODE_BACKGROUND_KEY, ZCODE_FREE_ROWS, type ModelCatalog,
+  roleModelProblem, tableRowAt, zcodeBlock, zcodeEnvironmentError, zcodeWindowMode, zcodeWindowProblem, ZCODE_BACKGROUND_KEY, ZCODE_FREE_ROWS, type ModelCatalog,
 } from "@lane-pilot/models";
 
 const at = (hour: number, minute = 0) => Date.UTC(2026, 9, 27, hour, minute);
@@ -11,14 +11,9 @@ const catalogWith = (hostIds: string[]): ModelCatalog => ({
     models: [{ id: "glm-5.3-flash-free", model: "glm-5.3-flash-free", displayName: "GLM-5.3-Flash", efforts: ["low", "high", "max"], defaultEffort: "high", isDefault: true, hostIds }] }],
 });
 
-describe("ZCode · GLM-5.3-Flash in the writers' anamnesis", () => {
-  it("is a standard-tier writer candidate on the zcode provider with an honest description and sources, and is no role's default", () => {
-    const profile = WRITER_PROFILES.find((row) => row.key === "zcode-flash")!;
-    expect(profile).toMatchObject({ providerId: "zcode", model: "glm-5.3-flash-free", label: "ZCode · GLM-5.3-Flash · Free", tier: "standard", available: true });
-    expect(profile.sources.length).toBeGreaterThan(0);
-    for (const word of ["large", "three tasks at once", "costs nothing", "Mac mini", "15:00 to 01:00 UTC", "tiny"]) expect(profile.summary.toLowerCase(), word).toContain(word.toLowerCase());
-    expect(writerCandidates({}).map((row) => row.key)).toContain("zcode-flash");
-    expect(writerCandidates({ "writer.models": ["composer"] }).map((row) => row.key)).not.toContain("zcode-flash");
+describe("ZCode · GLM-5.3-Flash in the writers' table", () => {
+  it("is a standard-tier writer on the zcode provider", () => {
+    expect(WRITER_PROFILES.find((row) => row.key === "zcode-flash")).toMatchObject({ providerId: "zcode", model: "glm-5.3-flash-free", label: "ZCode · GLM-5.3-Flash · Free", tier: "standard" });
   });
 });
 

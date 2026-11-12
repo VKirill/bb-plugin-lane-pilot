@@ -103,7 +103,7 @@ describe("parity a6-misc", () => {
     saveStageReceipt(database, { runId: "run1", taskId: "t1", stageId: "code-critique", contractVersion: 1, state: "passed", inputSha256: "critic-hash-1", outputSha256: null, attempt: 1, providerId: null, model: null, threadId: null, result: null, reason: null, updatedAt: 1 });
     appendGateEvaluation(database, { projectId: "p1", runId: "run1", taskId: "t1", gate: "verification", status: "passed", inputSha256: "", outputSha256: "", attempt: 1, occurredAt: 1 });
     appendGateEvaluation(database, { projectId: "p1", runId: "run1", taskId: "t1", gate: "verification", status: "failed", inputSha256: "", outputSha256: "", attempt: 2, occurredAt: 2 });
-    saveReasoningTrace(database, { planSha256: "p", sentPlanSha256: null, sourceLength: 1, sentLength: null, jevStatus: "ok", jevDecision: null,
+    saveReasoningTrace(database, { planSha256: "p", sourceLength: 1,
       requestedReasoningLevel: "medium", effectiveReasoningLevel: "medium", fallbackReason: null, providerId: "x", model: "y", serviceTier: null,
       requestedServiceTier: "default", runId: "run1", attemptId: "a1", threadId: "thr_w1",
       dispatchContext: { memoryText: "", executionPacket: "packet-1", executionPacketSha256: "s", pmReadContext: "", agent: "w", helperMode: "auto", helperRequired: false } });

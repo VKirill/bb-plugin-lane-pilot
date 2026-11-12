@@ -70,7 +70,7 @@ function spawnEnv(options: { bound?: boolean; createReason?: string; kind?: "bb"
         return {};
       },
     },
-    effectiveProjectSettings: async () => ({ values: { "jev.LANE_JEV_EFFORT": false, "memory.enabled": false, "adoc.040": "auto" } }),
+    effectiveProjectSettings: async () => ({ values: { "memory.enabled": false, "adoc.040": "auto" } }),
   };
   const services = { providerBreaker: { decide: () => ({ allow: true }) }, ruleScan: { chainForRun: async () => [] } };
   return { db, hostCalls, spawned, writer: createWriterSpawn(ctx as never, services as never) };

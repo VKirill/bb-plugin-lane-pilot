@@ -10,11 +10,7 @@ export type ReasoningTrace = {
   /** The run's stream text (SMA ar_run_dir): sha, full length and a bounded excerpt; absent in traces written before it was kept. */
   stream?:{sha256:string;chars:number;excerpt:string};
   planSha256:string;
-  sentPlanSha256:string|null;
   sourceLength:number;
-  sentLength:number|null;
-  jevStatus:"ok"|"disabled"|"timeout"|"error";
-  jevDecision:string|null;
   requestedReasoningLevel:string;
   effectiveReasoningLevel:string;
   retryEffort?:{enabled:boolean;retryIndex:number;before:string;after:string;changed:boolean};
@@ -26,7 +22,6 @@ export type ReasoningTrace = {
   runId:string;
   attemptId:string;
   threadId:string|null;
-  effortMode?:"automatic"|"manual";
   dispatchContext?:{
     memoryText:string;
     /** Ids of the memory notes mixed into this brief; an accepted attempt credits each (`accepted_count`). Absent before K8. */

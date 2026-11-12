@@ -1,6 +1,6 @@
 // Public API of ui-shell/ui: the leaf UI kit. What other rooms import. Everything else in this room is private.
 export {
-  CARD_BODY, CARD_HEAD, COEXISTENCE_MANAGER_KEYS, COEXISTENCE_VALUE_KEYS, COUNCIL_SEATS, HELP_BY_KEY, JEV_KEYS,
+  CARD_BODY, CARD_HEAD, COEXISTENCE_MANAGER_KEYS, COEXISTENCE_VALUE_KEYS, COUNCIL_SEATS, HELP_BY_KEY,
   asBoolean, compatibilityAliasRows, isCompatibilityAlias, numericUnit, reasonKey, runTone, sectionKey, stageTitle, uniqueByStorage,
 } from "./page-kit";
 export type { ScreenPayload, StageSummary } from "./page-kit";

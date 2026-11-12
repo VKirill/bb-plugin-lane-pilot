@@ -27,7 +27,7 @@ import { taskWordItemPrefix } from "../../contracts";
 import { closeOwnerItemsByPrefix, postOwnerItem, rpcLine } from "../../owner-waiting";
 import { runOnHost } from "@lane-pilot/host-calls";
 import type { AttemptFinished } from "./attempt-finished";
-import { progressJournal } from "../session-digest";
+import { progressJournal } from "../progress-journal";
 import { mountVerificationAttemptFinished } from "./verification";
 import { executionChecklist } from "./execution-checklist";
 

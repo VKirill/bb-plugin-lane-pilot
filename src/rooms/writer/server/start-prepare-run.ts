@@ -43,17 +43,16 @@ export const parkForStoreRead = (deps: StartWriterTaskDeps, state: WriterTaskSta
   return false;
 };
 
-/** Settings, writer pick, budget, the live-folder flag and its backup: everything a later step needs in place. False = parked for a transient store read. */
+/** Settings, the writer pair, budget, the live-folder flag and its backup: everything a later step needs in place. False = parked for a transient store read. */
 export const prepareRun = async (deps: StartWriterTaskDeps, state: WriterTaskState, input: WriterTaskInput):Promise<boolean> => {
-  const { ctx, services, pickWriter } = deps;
+  const { ctx, services } = deps;
   const { bb, db, effectiveProjectSettings, runPolicyFor } = ctx;
   state.policy=runPolicyFor(input.runId);
   // The pick, the pin, the live backup and the settings scopes live in the plugin store: a read that fails is
   // transient — park the attempt for the wake sweep instead of blocking it on a storage hiccup.
   try {
     state.baseSettings=(await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values;
-    state.writerOverlay=await pickWriter(state.baseSettings, input);
-    state.runSettings=state.writerOverlay ? { ...state.baseSettings, ...state.writerOverlay } : rotatedWriterSettings(state.baseSettings, input.taskId);
+    state.runSettings=rotatedWriterSettings(state.baseSettings, input.taskId);
     // The task's writer pair, pinned across restarts and re-dispatches (hive H-01): a kept pin wins over a fresh
     // rotation; the pair moves only on a provider failure or a failure-class intervention, and the move's reason is kept.
     const pairPin = configuredSetting(state.runSettings, "writer.pair_pin") === "off" ? null : await loadWriterPin(bb.storage.kv as never, input.runId, input.taskId);

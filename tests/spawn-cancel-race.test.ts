@@ -36,7 +36,7 @@ function world(options:{ onBreaker?:boolean; providers?:unknown[]; spawn?:() => 
       if (method === "gitCreateWorktree") return { status:"ready", path:"/wt/a1/repo", branch:"lane/a1", reason:null };
       return {};
     } },
-    effectiveProjectSettings:options.settings ?? (async () => { if (!options.onBreaker) stop(); return { values:{ "jev.LANE_JEV_EFFORT":false, "memory.enabled":false, "adoc.040":"auto" } }; }),
+    effectiveProjectSettings:options.settings ?? (async () => { if (!options.onBreaker) stop(); return { values:{ "memory.enabled":false, "adoc.040":"auto" } }; }),
   };
   const services = { providerBreaker:{ decide:() => { if (options.onBreaker) stop(); return options.onBreaker ? { allow:false, reason:"open" } : { allow:true }; } }, ruleScan:{ chainForRun:async () => [] } };
   const writer = createWriterSpawn(ctx as never, services as never);

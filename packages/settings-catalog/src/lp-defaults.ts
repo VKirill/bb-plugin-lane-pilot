@@ -65,7 +65,6 @@ export function inheritProjectValues(
     apply("writer.model", "gpt-6-luna");
     if (values["writer.reasoning_effort"] === undefined) apply("writer.reasoning_effort", "high");
     apply("writer.service_tier", "fast");
-    apply("jev.LANE_JEV_EFFORT", false);
   }
   apply("helper.placement", defaults.helperPlacement ?? "plugin");
   apply("browser_qa.host_id", defaults.qaHostId);

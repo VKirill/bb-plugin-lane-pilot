@@ -29,13 +29,13 @@ describe("bb lane-pilot setting: the switches with no row in the settings window
     expect(list.exitCode).toBe(0);
     for (const key of Object.keys(UNLISTED_SWITCHES)) expect(String(list.stdout)).toContain(`${key} (`);
 
-    const set = await run(["proj_1", "phase.diagnose=on", "writer.max_turns=120", 'writer.kind_models={"docs":["claude-haiku-5-5"]}']);
+    const set = await run(["proj_1", "phase.diagnose=on", "writer.max_turns=120", 'writer.models_off=["haiku"]']);
     expect(set.exitCode).toBe(0);
-    expect(loadProjectSettings(db, "proj_1")).toMatchObject({ "phase.diagnose": "on", "writer.max_turns": 120, "writer.kind_models": { docs: ["claude-haiku-5-5"] } });
+    expect(loadProjectSettings(db, "proj_1")).toMatchObject({ "phase.diagnose": "on", "writer.max_turns": 120, "writer.models_off": ["haiku"] });
     expect(loadProjectSettings(db, "proj_2")["phase.diagnose"]).toBeUndefined();
     expect((await run(["global", "money.task_ceiling=on"])).exitCode).toBe(0);
     expect(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)["money.task_ceiling"]).toBe("on");
-    expect(JSON.parse(String((await run(["proj_1"])).stdout))).toEqual({ scope: "proj_1", set: { "phase.diagnose": "on", "writer.max_turns": 120, "writer.kind_models": { docs: ["claude-haiku-5-5"] } } });
+    expect(JSON.parse(String((await run(["proj_1"])).stdout))).toEqual({ scope: "proj_1", set: { "phase.diagnose": "on", "writer.max_turns": 120, "writer.models_off": ["haiku"] } });
     // A second write of the same key goes through on its new version; an empty value clears.
     expect((await run(["proj_1", "phase.diagnose=off"])).exitCode).toBe(0);
     expect(loadProjectSettings(db, "proj_1")["phase.diagnose"]).toBe("off");

@@ -14,5 +14,5 @@ export type { OnAttemptFinished } from "./after-accept";
 export { createWorkflowEngine } from "./workflow";
 export { runGraphHelper, sumUsage } from "./graph-helper";
 export type { GraphHelperRun } from "./graph-helper";
-export { registerQualityLoopClassifyExecutor, buildFailureInput } from "./workflow-classify";
+export { registerQualityLoopClassifyExecutor } from "./workflow-classify";
 export { provideLpTaskPipeline } from "./workflow-executors";

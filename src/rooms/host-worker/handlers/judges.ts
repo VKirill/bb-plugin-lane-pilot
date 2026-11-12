@@ -1,64 +1,9 @@
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { hostContract } from "../../contracts";
 import { jevCallFor } from "../../docs";
-import { sha256Hex } from "@lane-pilot/kit";
-import { JEV_PROVIDERS } from "@lane-pilot/jev/provider";
 
 /** The Jev credentials a method carries, when it carries them: every judge and docs builder takes them the same way. */
 export const jevSource = (input: { jevApiKey?: string; jevProvider?: "openlux" | "typesafe" }) => ({ jevApiKey: input.jevApiKey, jevProvider: input.jevProvider });
-
-const PLAN_EFFORT_QUESTION = {
-  type:"choice",
-  instructions:"Reasoning effort this turn needs. Pick the cheapest that still solves the task.",
-  criteria:{
-    low:"obvious, mechanical, follow an existing pattern; extra thinking is waste",
-    medium:"normal implementation with local scope",
-    high:"must think carefully; many tradeoffs or failure modes",
-    xhigh:"deep architecture, concurrency, security, or wide blast radius; cheaper effort will miss it",
-  },
-} as const;
-
-export const classifyPlan: ExperimentalHostRpcHandlers<typeof hostContract>["classifyPlan"] = async (input) => {
-  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
-  const planSha256 = sha256Hex(input.plan);
-  const sourceLength = Buffer.byteLength(input.plan, "utf8");
-  const auth = await jevCallFor(input);
-  const apiKey = auth?.key ?? "";
-  const provider = auth?.provider ?? JEV_PROVIDERS.typesafe;
-  const payload = { model:provider.model, state:{ task:input.plan }, questions:{ effort:PLAN_EFFORT_QUESTION } };
-  const body = JSON.stringify(payload);
-  const decodedPlan = (JSON.parse(body) as { state:{ task:string } }).state.task;
-  const sentPlanSha256 = sha256Hex(decodedPlan);
-  const sentLength = Buffer.byteLength(decodedPlan, "utf8");
-  const transportProof = { planSha256, sentPlanSha256, sourceLength, sentLength };
-  if (sentPlanSha256 !== planSha256 || sentLength !== sourceLength) {
-    return { hostId, status:"error", effort:null, reason:"plan_serialization_mismatch", ...transportProof };
-  }
-  if (!apiKey) return { hostId, status:"disabled", effort:null, reason:"missing_typesafe_api_key",
-    planSha256, sentPlanSha256:null, sourceLength, sentLength:null };
-  try {
-    const response = await fetch(provider.url, {
-      method:"POST",
-      headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
-      body,
-      signal:AbortSignal.timeout(2500 + provider.timeoutPadMs),
-    });
-    if (!response.ok) return { hostId, status:"error", effort:null, reason:`http_${response.status}`, ...transportProof };
-    const value: unknown = await response.json();
-    if (!value || typeof value !== "object" || !("answers" in value)) {
-      return { hostId, status:"error", effort:null, reason:"invalid_response", ...transportProof };
-    }
-    const answers = (value as { answers?: unknown }).answers;
-    const effort = answers && typeof answers === "object"
-      ? (answers as Record<string, { choice?: unknown }>).effort?.choice
-      : undefined;
-    if (typeof effort !== "string") return { hostId, status:"error", effort:null, reason:"missing_effort_answer", ...transportProof };
-    return { hostId, status:"ok", effort, reason:null, ...transportProof };
-  } catch (cause) {
-    const reason = cause instanceof Error && cause.name === "TimeoutError" ? "timeout" : "api_request_failed";
-    return { hostId, status:reason === "timeout" ? "timeout" : "error", effort:null, reason, ...transportProof };
-  }
-};
 
 /** One System One call with several choice questions over a JSON state; the council's moderator and the seats' impulse to speak use it. */
 export const councilJudge: ExperimentalHostRpcHandlers<typeof hostContract>["councilJudge"] = async (input) => {

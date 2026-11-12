@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 import { createCore } from "../../src/rooms/core/server/core";
 
-const CLASSIFIED = { hostId:"h", status:"ok", effort:"low", reason:null, planSha256:"a", sentPlanSha256:"a", sourceLength:1, sentLength:1 };
+const CLASSIFIED = { hostId:"h", status:"ok", answers:{}, reason:null };
 
 /** A core on a fake host whose Env Catalog holds `catalog`; `provider` is the global jev.provider setting, when set. */
 function coreWith(catalog: Record<string, string>, provider?: string) {
@@ -20,7 +20,7 @@ function coreWith(catalog: Record<string, string>, provider?: string) {
     } } } as never,
     experimental_callHostRpc: async (call) => {
       sent.push({ method:call.method, input:call.input as Record<string, unknown> });
-      return call.method === "classifyPlan" ? CLASSIFIED : { hostId:"h", counts:{} };
+      return call.method === "councilJudge" ? CLASSIFIED : { hostId:"h", counts:{} };
     },
   });
   const db = openDatabase(bb);
@@ -31,8 +31,8 @@ function coreWith(catalog: Record<string, string>, provider?: string) {
 describe("Jev key from Env Catalog", () => {
   it("attaches TypeSafe's key and the provider id to Jev host calls only, by default, reading the catalog once", async () => {
     const { core, harness, sent, reads } = coreWith({ OPENLUX_API_KEY:"openlux-key", TYPESAFE_API_KEY:"catalog-key" });
-    await core.host.call("classifyPlan", { requestedHostId:"h", plan:"p" }, { hostId:"h" });
-    await core.host.call("classifyPlan", { requestedHostId:"h", plan:"q" }, { hostId:"h" });
+    await core.host.call("councilJudge", { requestedHostId:"h", state:"p", questions:{ pick:{ instructions:"Pick", criteria:{ a:"first", b:"second" } } } }, { hostId:"h" });
+    await core.host.call("councilJudge", { requestedHostId:"h", state:"q", questions:{ pick:{ instructions:"Pick", criteria:{ a:"first", b:"second" } } } }, { hostId:"h" });
     await core.host.call("docsLineCounts", { requestedHostId:"h", projectCwd:"/p", files:[] }, { hostId:"h" });
     expect(sent.map((call) => call.input.jevApiKey)).toEqual(["catalog-key", "catalog-key", undefined]);
     expect(sent.map((call) => call.input.jevProvider)).toEqual(["typesafe", "typesafe", undefined]);
@@ -43,7 +43,7 @@ describe("Jev key from Env Catalog", () => {
 
   it("sends OpenLux's key when the global setting jev.provider says openlux", async () => {
     const { core, harness, sent, reads } = coreWith({ OPENLUX_API_KEY:"openlux-key", TYPESAFE_API_KEY:"catalog-key" }, "openlux");
-    await core.host.call("classifyPlan", { requestedHostId:"h", plan:"p" }, { hostId:"h" });
+    await core.host.call("councilJudge", { requestedHostId:"h", state:"p", questions:{ pick:{ instructions:"Pick", criteria:{ a:"first", b:"second" } } } }, { hostId:"h" });
     expect(sent[0]!.input).toMatchObject({ jevApiKey:"openlux-key", jevProvider:"openlux" });
     expect(reads).toEqual(["OPENLUX_API_KEY", "TYPESAFE_API_KEY"]);
     await harness.lifecycle.dispose();
@@ -51,23 +51,23 @@ describe("Jev key from Env Catalog", () => {
 
   it("follows a changed setting on the next call", async () => {
     const { core, db, harness, sent } = coreWith({ OPENLUX_API_KEY:"openlux-key", TYPESAFE_API_KEY:"catalog-key" });
-    await core.host.call("classifyPlan", { requestedHostId:"h", plan:"p" }, { hostId:"h" });
+    await core.host.call("councilJudge", { requestedHostId:"h", state:"p", questions:{ pick:{ instructions:"Pick", criteria:{ a:"first", b:"second" } } } }, { hostId:"h" });
     saveProjectSetting(db, GLOBAL_SETTINGS_PROJECT_ID, "jev.provider", "openlux");
-    await core.host.call("classifyPlan", { requestedHostId:"h", plan:"q" }, { hostId:"h" });
+    await core.host.call("councilJudge", { requestedHostId:"h", state:"q", questions:{ pick:{ instructions:"Pick", criteria:{ a:"first", b:"second" } } } }, { hostId:"h" });
     expect(sent.map((call) => call.input.jevProvider)).toEqual(["typesafe", "openlux"]);
     await harness.lifecycle.dispose();
   });
 
   it("falls back to TypeSafe's key when OpenLux has none in the catalog", async () => {
     const { core, harness, sent } = coreWith({ TYPESAFE_API_KEY:"catalog-key" });
-    await core.host.call("classifyPlan", { requestedHostId:"h", plan:"p" }, { hostId:"h" });
+    await core.host.call("councilJudge", { requestedHostId:"h", state:"p", questions:{ pick:{ instructions:"Pick", criteria:{ a:"first", b:"second" } } } }, { hostId:"h" });
     expect(sent[0]!.input).toMatchObject({ jevApiKey:"catalog-key", jevProvider:"typesafe" });
     await harness.lifecycle.dispose();
   });
 
   it("leaves the call alone when Env Catalog has no key, so the machine uses its own", async () => {
     const { core, harness, sent } = coreWith({});
-    await core.host.call("classifyPlan", { requestedHostId:"h", plan:"p" }, { hostId:"h" });
+    await core.host.call("councilJudge", { requestedHostId:"h", state:"p", questions:{ pick:{ instructions:"Pick", criteria:{ a:"first", b:"second" } } } }, { hostId:"h" });
     expect(sent[0]!.input).not.toHaveProperty("jevApiKey");
     expect(sent[0]!.input).not.toHaveProperty("jevProvider");
     await harness.lifecycle.dispose();

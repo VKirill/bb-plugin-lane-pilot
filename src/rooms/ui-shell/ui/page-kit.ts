@@ -72,8 +72,6 @@ export type ScreenPayload = {
     effectiveReasoningLevel: string;
     serviceTier: "default" | "fast" | null;
     fallbackReason: string | null;
-    jevStatus: "ok" | "disabled" | "timeout" | "error";
-    effortMode?: "automatic" | "manual";
     selectionSource?: {
       providerId: string;
       model: string;
@@ -83,8 +81,6 @@ export type ScreenPayload = {
     };
   } | null;
 };
-
-export const JEV_KEYS = new Set(["jev.LANE_JEV_EFFORT", "jev.LANE_OPENCODE_JEV"]);
 
 export const COEXISTENCE_MANAGER_KEYS: Record<string, I18nKey> = {
   "agents-marker":"coexAgentsMarker", "managed-checkout":"coexManagedCheckout", "claude-cache":"coexClaudeCache",

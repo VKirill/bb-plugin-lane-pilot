@@ -8,7 +8,7 @@ export const otherWriters = (deps: StartWriterTaskDeps, state: WriterTaskState, 
   const { ctx } = deps;
   const { db } = ctx;
   const loadedSettings=loadProjectSettings(db,input.projectId,getRunSettingsScopes(db,input.runId));
-  const settings=state.writerOverlay ? { ...loadedSettings, ...state.writerOverlay } : rotatedWriterSettings(loadedSettings, input.taskId);
+  const settings=rotatedWriterSettings(loadedSettings, input.taskId);
   const primaryProvider=typeof settings["writer.provider"] === "string" ? settings["writer.provider"] as string : input.config.writerProviderId;
   const primaryModel=typeof settings["writer.model"] === "string" && settings["writer.model"] ? settings["writer.model"] as string : input.config.writerModel;
   const pmSelection={providerId:input.config.pmProviderId,model:input.config.pmModel};

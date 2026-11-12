@@ -76,7 +76,7 @@ describe("workflow_step_executors", () => {
     expect(result.found).toBe(true);
     // The rules analyzer's row is GPT-6 Luna (Codex has it); the node's own deepseek/v9 is ignored.
     expect(result.executors.map((row) => [row.nodeId, row.model, row.issues])).toEqual([
-      ["a", "gpt-6-luna", []], ["w", "gpt-6-luna", ["effort_auto", "effort_unsupported"]],
+      ["a", "gpt-6-luna", []], ["w", "gpt-6-luna", ["effort_unsupported"]],
     ]);
     expect(result.executors[1]!.fallbacks.at(-1)).toEqual({ providerId: null, model: null, reasoningEffort: null, pm: true });
   });

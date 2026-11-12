@@ -72,7 +72,7 @@ describe("parity b2-session", () => {
     // The spawn reasoning trace records the same bounds beside the chosen model and effort.
     const { db } = base();
     taskAndAttempt(db, "running");
-    saveReasoningTrace(db, { planSha256: "p", sentPlanSha256: null, sourceLength: 1, sentLength: null, jevStatus: "ok", jevDecision: null,
+    saveReasoningTrace(db, { planSha256: "p", sourceLength: 1, jevStatus: "ok", jevDecision: null,
       requestedReasoningLevel: "m", effectiveReasoningLevel: "m", fallbackReason: null, providerId: "p", model: "wm",
       runId: "run1", attemptId: "a1", threadId: null, maxTurns: WRITER_MAX_TURNS, disallowedTools: HELPER_DISALLOWED_TOOLS } as never);
     const trace = getReasoningTrace(db, "a1") as Record<string, unknown> | null;

@@ -24,7 +24,6 @@ sources:
   - src/rooms/writer/server/finish.ts
   - src/rooms/critique/server/critique-runs.ts
   - src/rooms/critique/pm-read.ts
-  - packages/jev/src/judgments/skill-pick.ts
   - src/rooms/writer/server/skill-pick.ts
   - src/rooms/storage/database.ts
   - src/rooms/harness/server/harness.ts

@@ -52,7 +52,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   // The model step of the router's graph `lp.route`.
   registerRouterExecutor(engine, agents);
 
-  // The Jev steps: the native `jev` node, the citation check, the skill-tree pick.
+  // The Jev steps: the native `jev` node and the citation check.
   registerJevSteps(engine, ctx, { runtimeOf });
   // `deliverable.validate` — the three-layer acceptance of a non-code artifact.
   registerDeliverableNode(engine, ctx, services, { runtimeOf });

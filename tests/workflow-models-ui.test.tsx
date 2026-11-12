@@ -30,7 +30,7 @@ const dirs: string[] = [];
 afterEach(async () => { await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))); });
 
 const projectId = "proj_models";
-const settings = { "writer.provider": "codex", "writer.model": "gpt-6-luna", "writer.reasoning_effort": "high", "writer.service_tier": "fast", "jev.LANE_JEV_EFFORT": false };
+const settings = { "writer.provider": "codex", "writer.model": "gpt-6-luna", "writer.reasoning_effort": "high", "writer.service_tier": "fast" };
 
 const info = (id: string, name: string, available = true) => ({ id, displayName: name, available, logoUrl: null, capabilities: { supportsServiceTier: id === "codex" }, ...(id === "codex" ? { serviceTiers: [{ id: "default" }, { id: "fast" }] } : {}) });
 const model = (id: string, name: string, efforts: string[], isDefault = false) => ({ id, model: id, displayName: name, supportedReasoningEfforts: efforts.map((reasoningEffort) => ({ reasoningEffort })), defaultReasoningEffort: efforts[0], isDefault });

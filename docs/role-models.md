@@ -19,7 +19,6 @@ sources:
   - src/rooms/pages/tab-team.tsx
   - src/rooms/pages/role-models.tsx
   - src/rooms/writer/server/start.ts
-  - src/rooms/writer/writer-model-pick.ts
   - packages/models/src/model-tiers.ts
 ---
 
@@ -62,7 +61,7 @@ The `zcode` provider serves one option, `glm-5.3-flash-free` («ZCode · GLM-5.3
 | Row fails validation | `save_setting` refuses with the `roleModelProblem` string; the stored row stays (`packages/models/src/role-models.ts:206-229`). |
 | Pool entry invalid or repeated | Dropped when the pool is read; the row itself still works (`packages/models/src/role-models.ts:190-203`). |
 | A pool provider is spent or busier | It goes last in `rankPool`; another pool model or the row's model takes the run (`packages/models/src/agent-model.ts:69-80`). |
-| ZCode cannot work now | Not offered at pick time (`packages/models/src/agent-model.ts:141-145`); a run-time refusal hands the step to the next writer (`src/rooms/writer/writer-model-pick.ts:100-101`). |
+| ZCode cannot work now | Not offered at pick time (`packages/models/src/agent-model.ts:141-145`); a run-time refusal hands the step to the next writer of the fallback chain. |
 | No usage reading cached | The window percent counts as `null` (0 in the ranking); recent-start counts still order the pool (`src/rooms/core/server/spawn-model.ts:80-83`). |
 
 ## Business rules
@@ -77,7 +76,7 @@ The `zcode` provider serves one option, `glm-5.3-flash-free` («ZCode · GLM-5.3
 - `get_role_models` returns each role's resolved model with its `pool`, source, version and default (`src/rooms/settings/server/rpc/role-models.ts:16-35`, contract at `src/rooms/contracts/rpc-settings.ts:38-50`); `save_setting` stores `role_model.<role>`.
 - `list_model_overrides` lists the places with their own model rows or agents (sandboxes screened out); `reset_model_overrides` removes the given levels' rows and agents (`src/rooms/settings/server/rpc/settings.ts:333-350`).
 - `resolveSpawnModel` (helpers) and `resolveAgentModel` (pure) are the resolution entry points (`src/rooms/core/server/spawn-model.ts:68-100`, `packages/models/src/agent-model.ts:108-150`).
-- The writer keeps its own per-task Jev pick, which now also receives how busy each candidate's provider is and is told to spread the work (`src/rooms/writer/server/start.ts:133-163`, `src/rooms/writer/writer-model-pick.ts:18-45`).
+- The writer has no per-task pick: it is the project's `writer.provider`/`writer.model`/`writer.reasoning_effort` with the fallback chain (`packages/models/src/writer-fallbacks.ts`), and the effort is the setting clamped to the live catalog (`packages/models/src/writer-reasoning.ts`).
 
 ## Gotchas
 

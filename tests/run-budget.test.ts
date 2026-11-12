@@ -122,7 +122,7 @@ describe("run-bound helper spawn", () => {
         if (method === "gitCreateWorktree") return { status: "ready", path: "/wt/a1/repo", branch: "lane/a1", reason: null };
         return {};
       } },
-      effectiveProjectSettings: async () => ({ values: { "jev.LANE_JEV_EFFORT": false, "memory.enabled": false, "adoc.040": "auto" } }),
+      effectiveProjectSettings: async () => ({ values: { "memory.enabled": false, "adoc.040": "auto" } }),
     };
     bindRunChildBudget(ctx.bb as never, () => budget);
     const writer = createWriterSpawn(ctx as never, {
@@ -152,7 +152,7 @@ describe("the owner at the keyboard (SMA D2-6)", () => {
         threads: { get: async () => ({ id: "pm", projectId: "P", status: "idle" }), spawn: async () => { spawned += 1; return { id: "writer-1" }; } } } },
       db,
       host: { call: async (method: string) => (method === "runCommand" ? { hostId: "h", exitCode: 0, stdout: "[]", stderr: "" } : method === "gitCreateWorktree" ? { status: "ready", path: "/wt/a1/repo", branch: "lane/a1", reason: null } : {}) },
-      effectiveProjectSettings: async () => ({ values: { "jev.LANE_JEV_EFFORT": false, "memory.enabled": false, "adoc.040": "auto" } }),
+      effectiveProjectSettings: async () => ({ values: { "memory.enabled": false, "adoc.040": "auto" } }),
     };
     const writer = createWriterSpawn(ctx as never, {
       providerBreaker: { decide: () => ({ allow: true }) },

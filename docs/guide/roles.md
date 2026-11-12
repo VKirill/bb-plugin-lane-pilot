@@ -24,7 +24,7 @@ Every agent step in Lane Pilot names a role, and the role names the model. One t
 | Actor | What it does | How its model is chosen |
 |---|---|---|
 | PM (`dev-orchestrator`, shown as "Development coordinator") | The chat the owner talks to. Plans, dispatches writers, starts workflows, councils, errands and specialists, reads results, ships. Edits no product code. Started from the composer action "Lane Pilot / agent". | The model of the chat. The composer tries Claude Opus 5.5 with the 1M context first, then plain Opus 5.5. |
-| Writers | Implement one task in a git worktree, one attempt per worktree. Run in a BB thread on any provider BB offers. | Not in the role table. A Jev judgment `writer.model` reads the task (files, objective, kind, risk, checks) and the writers' profiles in `packages/models/src/model-profiles.ts`, and picks one. It also sees how busy each provider is. `writer.pick` = off turns it off; `writer.models` limits the candidates; `writer.rotation_share` (25 by default) sends part of the tasks to the first fallback writer. |
+| Writers | Implement one task in a git worktree, one attempt per worktree. Run in a BB thread on any provider BB offers. | Not in the role table. The writer is the project's `writer.provider` / `writer.model` / `writer.reasoning_effort`, with the fallback chain; no model picks it per task. `writer.rotation_share` (25 by default) sends part of the tasks to the first fallback writer. |
 | Sticky area writers | Tasks with the same area go one after another in the same writer thread, so the writer keeps its context. A thread that cannot take a turn is marked and not offered again. | The thread keeps its writer; the next task's turn carries the rules that apply to its contract. |
 | Best-of | With `writer.best_of` = 3 (default off), three writers of the fallback chain run the task at once, each in its own worktree. The task's checks pick the winner, then the code critic's verdict. Losers close as superseded. `writer.best_of.rounds`, `.token_budget` and `.slot_cap` bound the cost. | Writers from the fallback chain. |
 | Plan critic (`plan-critic`) | Judges the planner's plan before work starts. `plan_critique.enabled` defaults to true, mode `gate`. | Role table. |
@@ -151,13 +151,12 @@ Judgments, with the default mode:
 | `learning.owner_message`, `learning.same_as`, `learning.pm_rule_relevance`, `learning.unkept_promise`, `learning.owner_question`, `learning.complexity` | active | Learning from the owner's own messages (own switch `learning:config`). |
 | `learning.rule_diff` | shadow | Checks accepted writer rules against an attempt's diff. |
 | `invoice.check` | active | Does the made invoice say what the owner asked for. |
-| `failure.class` | shadow | Class of a failure when the regular expressions find no confident match (`min_p` 0.7, `min_margin` 0.3). |
 | `selfrepair.group` | shadow | Files a new repair signature under a known group (`min_p` 0.75). |
 | `output.guard` | shadow | Blocks outputs carrying a secret value (0.85) or instructions for the reader (0.9). |
-| `plan.check`, `close.goal_screen`, `accept.composite`, `plan.fact` | shadow | Cheap batteries before the plan critic and the goal auditor; per-axis acceptance of non-code work; a blind read of acceptance items against the diff. |
+| `plan.check`, `close.goal_screen`, `plan.fact` | shadow | Cheap batteries before the plan critic and the goal auditor; a blind read of acceptance items against the diff. |
 | `graph.step_trivial` | shadow | Is a workflow step cheap enough for a lighter model. |
-| `writer.log_trim`, `writer.finish_scan`, `session.tool_pair`, `logs.error_find` | shadow | Trim a failing check's log, scan a finishing attempt for risk, drop stale tool calls on compaction, find the one log line that explains a failure. |
-| `memory.rerank`, `skills.tree_pick` | shadow | Re-rank memory hits; pick skills down the catalog tree. |
+| `writer.log_trim`, `writer.finish_scan`, `session.tool_pair` | shadow | Trim a failing check's log, scan a finishing attempt for risk, drop stale tool calls on compaction. |
+| `memory.rerank` | shadow | Re-rank memory hits. |
 | `audit.trace`, `research.citation`, `ui.page_shots`, `d.render_match`, `invoice.scan`, `employee.remark`, `guard.host_command`, `wall.hunt_filter` | shadow | Trace checks, citation support, screenshot checks, 3D render versus concept, scanned invoices, employee remarks, a guard in front of risky shell commands, filtering wall failures before a hunt. |
 
 ## Sources

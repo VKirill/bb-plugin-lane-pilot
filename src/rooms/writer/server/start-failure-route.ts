@@ -8,8 +8,6 @@ import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../contracts";
 import { FREE_RETRY_LIMIT, PARKED_CLASSES, VERIFICATION_TIMEOUT_RETRIES, failureFingerprint, isWaitingSecret, isWriterSilent, repeatedFailureReason, verificationTimeoutOverBudget } from "../../contracts";
 import { taskFamily } from "@lane-pilot/contracts";
 import { failureClass, failureIntervention, MAST_OF_FAILURE } from "../../contracts";
-import { jev } from "@lane-pilot/jev";
-import { judgedFailureClass } from "../../runs";
 
 
 import { copyRefusedKeyPrefix } from "./copy-refused-key";
@@ -90,9 +88,8 @@ export const routeAttemptFailure = async (deps: StartWriterTaskDeps, state: Writ
         }
         // A fault of Lane Pilot or the machine is not redone here: another writer meets the same fault. The task is
         // parked and restarts once a fix ships or the machine recovers.
-        // A reason the rules have no confident match for goes to Jev (J-4, shadow by default: recorded, the rules' class used).
-        const failedClass = await judgedFailureClass({ jev, settings:async () => state.runSettings, projectId:input.projectId, runId:input.runId, db, kv:bb.storage.kv as never },
-          String(state.last.status), typeof state.last.reason === "string" ? state.last.reason : null, input.taskId);
+        // The class is the dictionary's (classifyFailure, from the attempt's own facts: its state and reason), as SMA's ag_classify does.
+        const failedClass = failureClass(String(state.last.status), typeof state.last.reason === "string" ? state.last.reason : null);
         // C6: a class's own intervention instead of the same retry — the streak of consecutive same-class failures of
         // this task decides. `failure.interventions=off` keeps the old uniform retry (live setting).
         const priorRows = priorAttemptStates(db, input.runId, input.taskId, state.attemptId);

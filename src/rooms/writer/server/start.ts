@@ -6,7 +6,7 @@ import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop,
 import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { providerPoolCap } from "@lane-pilot/settings-catalog";
-import {WRITER_PROFILES, isZcodeProvider, rotatedWriterSettings, type WriterProfile, writerFallbackChain, writerFallbacks} from "@lane-pilot/models";
+import {isZcodeProvider, rotatedWriterSettings, writerFallbackChain, writerFallbacks} from "@lane-pilot/models";
 import { DEPENDENCY_REDO_WAIT_MS, blockedReasonCount, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, failureFieldsOf, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttempt, latestTaskAttemptState, attemptReasonsForTask, canceledLatestTaskIds, listAttemptsForTask, listAttemptsInStates, listOpenAttempts, listStageReceipts, listRunTaskRows, listTaskAttemptRows, listTracedAttemptsSince, listUnansweredWriterQuestions, loadProjectSettings, priorAttemptStates, taskHeldUntil, noteCleanAdmission, noteToldPmDirectly, onAttemptChanged, parkAttemptWake, trailingQueuedParks, transitionAttempt, taskBasePath, taskTimelineRow, listTaskLatestAttemptStates } from "../../storage";
 import { closeOwnerItem, closeOwnerItemsByPrefix, ownerItemPrefixCount, postOwnerItem, rpcLine } from "../../owner-waiting";
 import { taskV2Schema } from "../../contracts";
@@ -18,7 +18,6 @@ import { emergencyFallbackDecision } from "../emergency-writer";
 ;
 import { resolveBestOf, roundSeedBrief, roundSurvivors } from "../best-of";
 import { runOnHost } from "@lane-pilot/host-calls";
-import { WRITER_PICK_PREFIX, writerPickOverlay, type WriterLoad } from "../writer-model-pick";
 import { loadWriterPin, noteWriterPair } from "../writer-model-pin";
 import { reassignedReason, takeReassignRequest, type ReassignRequest } from "./reassign";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
@@ -36,7 +35,6 @@ import { openDatabase } from "../../storage";
 import { createWriterSticky } from "./sticky";
 import { WRITER_QUESTION_WAIT_TEXT } from "./question-default";
 import { jev } from "@lane-pilot/jev";
-import { judgedFailureClass } from "../../runs";
 import { isHeld, isRunHalted, isRunPaused, waitWhileRunPaused } from "../../runs/server";
 import { allowedSecretNames, secretProblem, waitingSecretNote, waitingSecretReason } from "../../secrets/server";
 
@@ -164,60 +162,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     return usable.length ? { chain:usable, room:true, nextReset:resets[0] ?? null } : { chain, room:false, nextReset:resets[0] ?? null };
   }
 
-  /** Jev's writer for a task, once per task (kept in the KV), as the settings it changes; null keeps the project's writer. */
-  const pickWriter = (settings:Record<string, unknown>, input:{ projectId:string; runId:string; taskId:string; task:TaskV2; config:PrototypeConfig }) =>
-    writerPickOverlay({ kv:bb.storage.kv as never, jev:jev(), log:(line) => bb.log.warn(line),
-      // A writer whose provider window is spent (usage.skip_percent) is not offered to Jev; ZCode neither where it cannot work now (no zcode
-      // provider on the task's machine, outside its free hours, or busy).
-      held:async (profile) => Boolean(await services.providerUsage.hold({ providerId:profile.providerId, model:profile.model, hostId:input.config.hostId,
-        threshold:isZcodeProvider(profile.providerId) ? 0 : usageSkipPercent(settings), settings })),
-      load:(profiles) => writerLoad(profiles, input.config.hostId, settings, input.projectId) },
-      settings, input);
-
-  /**
-   * How busy each offered writer's provider is, for Jev to spread the tasks: the spent share of its usage window (from the cached
-   * readings; null when nothing is measured) and the writer tasks running on that provider now (the picks kept for running tasks).
-   */
-  /** Refusals count as a share only from 10 attempts of the pair in this project: below that a single spawn_rejected would skew the pick. */
-  const REFUSAL_WINDOW_MS = 30 * 86_400_000;
-  const REFUSAL_MIN_ATTEMPTS = 10;
-  const refusalShares = (projectId:string):Map<string, { attempts:number; refused:number }> => {
-    const rows = listTracedAttemptsSince(db, projectId, Date.now() - REFUSAL_WINDOW_MS);
-    const out = new Map<string, { attempts:number; refused:number }>();
-    for (const row of rows) {
-      let trace:{ providerId?:string; model?:string } | null = null;
-      trace = parseJsonOr(row.trace_json, null) as { providerId?:string; model?:string } | null;
-      if (!trace?.providerId || !trace.model) continue;
-      const pair = `${trace.providerId}/${trace.model}`;
-      const cell = out.get(pair) ?? { attempts:0, refused:0 };
-      cell.attempts += 1;
-      if (row.state === "provider_error" || row.state === "spawn_rejected") cell.refused += 1;
-      out.set(pair, cell);
-    }
-    return out;
-  };
-
-  async function writerLoad(profiles:readonly WriterProfile[], hostId:string, settings:Record<string, unknown>, projectId:string):Promise<Record<string, WriterLoad>> {
-    // ponytail: counts only tasks whose writer Jev picked (a task on the project's own writer has no kept pick); count attempts by writer pair if that skews the spread.
-    const running = new Map<string, number>();
-    const picks = await Promise.all([...services.activeWriterTasks].map((key) => bb.storage.kv.get(`${WRITER_PICK_PREFIX}${key}`)));
-    for (const picked of picks) {
-      const provider = typeof picked === "string" && picked ? WRITER_PROFILES.find((row) => row.key === picked)?.providerId : undefined;
-      if (provider) running.set(provider, (running.get(provider) ?? 0) + 1);
-    }
-    // W31 rank 3b: a pair whose attempts this project's providers keep refusing pays for it in the pick; writer.pick_refusal_penalty=off keeps the old behaviour.
-    const refusals = settings["writer.pick_refusal_penalty"] === false || settings["writer.pick_refusal_penalty"] === "off" ? new Map<string, { attempts:number; refused:number }>() : refusalShares(projectId);
-    const out:Record<string, WriterLoad> = {};
-    await Promise.all(profiles.map(async (profile) => {
-      const spent = isZcodeProvider(profile.providerId) ? null
-        : await bestEffort(ctx.log, "writer provider usage hold", services.providerUsage.hold({ providerId:profile.providerId, model:profile.model, hostId, threshold:1, settings }), null);
-      const pair = refusals.get(`${profile.providerId}/${profile.model}`);
-      out[profile.key] = { percent:spent?.percent ?? null, running:running.get(profile.providerId) ?? 0,
-        refuseShare: pair && pair.attempts >= REFUSAL_MIN_ATTEMPTS ? pair.refused / pair.attempts : null };
-    }));
-    return out;
-  }
-  const startWriterTask = createStartWriterTask({ ctx, services, sticky, admitted, pickWriter, noteAttemptOutcome, chainWithRoom });
+  const startWriterTask = createStartWriterTask({ ctx, services, sticky, admitted, noteAttemptOutcome, chainWithRoom });
 
   return { startWriterTask };
 }

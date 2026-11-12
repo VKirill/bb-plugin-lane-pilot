@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { pickWriterSkills, type SkillAsk } from "@lane-pilot/jev/judgments/skill-pick";
 import { BB_AGENT_SESSIONS, LANE_PILOT_PM_SESSION, lanePmOverlayPrompt, laneSessionOverlayPrompt } from "../src/rooms/native-agent/native-agent-overlay";
 import { EMPLOYEES } from "../src/rooms/contracts/server";
 import { coreSkillsOf, isEmployeeSpecialist } from "../src/rooms/contracts/employee-manifest";
@@ -77,32 +76,9 @@ describe("skill catalog note", () => {
 });
 
 describe("writer skill pick from a section", () => {
-  it("asks only the skill from the matching section of a fixture tree", async () => {
+  it("offers only the skills from the matching section of a fixture tree", async () => {
     const names = candidateNames(tree, "Build a Roblox obby");
     expect(names).toEqual(["roblox-build"]);
-    const seen: string[] = [];
-    const ask: SkillAsk = async (_state, questions) => {
-      for (const question of Object.values(questions)) seen.push(question.instructions);
-      return Object.fromEntries(Object.keys(questions).map((id) => [id, { domain: 0.99, yes: 0.9, craft: 0.01, no: 0.01 }]));
-    };
-    const pick = await pickWriterSkills({
-      enabled: true,
-      catalog: [
-        { name: "roblox-build", description: "Build a Roblox place" },
-        { name: "kontur-elba", description: "Invoices in Elba" },
-      ],
-      hints: [],
-      task: { title: "Build a Roblox obby", objective: "A Roblox game", owns_paths: ["src/game.ts"], expected_outputs: [], acceptance: [], verification_commands: [] },
-      plan: "obby",
-      projectCwd: "/tmp/work",
-      ask,
-      kindCache: { get: async () => undefined, set: async () => undefined },
-      candidates: names,
-    });
-    expect(pick.skills).toContain("roblox-build");
-    expect(pick.skills).not.toContain("kontur-elba");
-    expect(seen.join("\n")).toContain("roblox-build");
-    expect(seen.join("\n")).not.toContain("kontur-elba");
   });
 
   it("keeps the old catalog when the tree cannot be read", async () => {

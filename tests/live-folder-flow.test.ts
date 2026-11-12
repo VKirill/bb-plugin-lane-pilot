@@ -116,7 +116,6 @@ async function setup(writerEdits: (folder: string) => string, feedback: (folder:
   savePrototypeConfig(db, config);
   saveProjectSetting(db, projectId, "plan_critique.enabled", false);
   saveProjectSetting(db, projectId, "memory.enabled", false);
-  saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
   createRun(db, runId, projectId, "bb", folder);
   setRunThread(db, runId, pmThreadId);
   await plugin(bb);

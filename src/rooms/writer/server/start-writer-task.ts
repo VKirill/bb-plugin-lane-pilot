@@ -6,7 +6,7 @@ import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop,
 import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { providerPoolCap } from "@lane-pilot/settings-catalog";
-import {WRITER_PROFILES, isZcodeProvider, rotatedWriterSettings, type WriterProfile, writerFallbackChain, writerFallbacks} from "@lane-pilot/models";
+import {isZcodeProvider, rotatedWriterSettings, writerFallbackChain, writerFallbacks} from "@lane-pilot/models";
 import { DEPENDENCY_REDO_WAIT_MS, blockedReasonCount, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, failureFieldsOf, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttempt, latestTaskAttemptState, attemptReasonsForTask, canceledLatestTaskIds, listAttemptsForTask, listAttemptsInStates, listOpenAttempts, listStageReceipts, listRunTaskRows, listTaskAttemptRows, listTracedAttemptsSince, listUnansweredWriterQuestions, loadProjectSettings, priorAttemptStates, taskHeldUntil, noteCleanAdmission, noteToldPmDirectly, onAttemptChanged, parkAttemptWake, trailingQueuedParks, transitionAttempt, taskBasePath, taskTimelineRow, listTaskLatestAttemptStates } from "../../storage";
 import { closeOwnerItem, closeOwnerItemsByPrefix, ownerItemPrefixCount, postOwnerItem, rpcLine } from "../../owner-waiting";
 import { taskV2Schema } from "../../contracts";
@@ -19,7 +19,6 @@ import { emergencyFallbackDecision } from "../emergency-writer";
 import { resolveBestOf, roundSeedBrief, roundSurvivors } from "../best-of";
 import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../contracts/quality-mode";
 import { runOnHost } from "@lane-pilot/host-calls";
-import { WRITER_PICK_PREFIX, writerPickOverlay, type WriterLoad } from "../writer-model-pick";
 import { loadWriterPin, noteWriterPair } from "../writer-model-pin";
 import { reassignedReason, takeReassignRequest, type ReassignRequest } from "./reassign";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
@@ -38,7 +37,6 @@ import { dependsOnTask } from "../../tasks";
 import { createWriterSticky } from "./sticky";
 import { WRITER_QUESTION_WAIT_TEXT } from "./question-default";
 import { failureClass, failureIntervention, MAST_OF_FAILURE, type FailureClass } from "../../contracts/failure-class";
-import { judgedFailureClass } from "../../runs";
 import { isHeld, isRunHalted, isRunPaused, waitWhileRunPaused } from "../../runs/server";
 import { allowedSecretNames, secretProblem, waitingSecretNote, waitingSecretReason } from "../../secrets/server";
 
@@ -90,13 +88,12 @@ export interface StartWriterTaskDeps {
   services: Services;
   sticky: ReturnType<typeof createWriterSticky>;
   admitted: Map<string, { runId:string; taskId:string; projectId:string }>;
-  pickWriter: (settings:Record<string, unknown>, input:{ projectId:string; runId:string; taskId:string; task:TaskV2; config:PrototypeConfig }) => ReturnType<typeof writerPickOverlay>;
   noteAttemptOutcome: (input:{ budget:RunBudget; writerThreadId:string; writerSelection?:{providerId:string;model:string}; status:string; reason:string|null }) => Promise<void>;
   chainWithRoom: <T extends { providerId:string; model:string }>(chain:T[], hostId:string, settings:Record<string, unknown>, taskId:string) => Promise<{ chain:T[]; room:boolean; nextReset:string|null }>;
 }
 
 export function createStartWriterTask(deps: StartWriterTaskDeps) {
-  const { ctx, services, sticky, admitted, pickWriter, noteAttemptOutcome, chainWithRoom } = deps;
+  const { ctx, services, sticky, admitted, noteAttemptOutcome, chainWithRoom } = deps;
   const { bb, db, effectiveProjectSettings, host, markCanceledWriterStages, refreshRun, runPolicyFor } = ctx;
 
   function startWriterTask(input:{
@@ -157,7 +154,6 @@ export function createStartWriterTask(deps: StartWriterTaskDeps) {
       // The run's shared state: every step below reads and writes these. The pipeline at the bottom names the order.
       policy: undefined as never,
       baseSettings: undefined as never,
-      writerOverlay: undefined as never,
       runSettings: undefined as never,
       writerChoice: undefined as never,
       budget: undefined as never,

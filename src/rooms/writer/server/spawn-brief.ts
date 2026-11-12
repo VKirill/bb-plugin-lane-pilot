@@ -57,10 +57,10 @@ export async function buildWriterLaunch(deps:{
     throw new WriterSelectionError(`execution_packet_failed:${cause instanceof Error ? cause.message : String(cause)}`);
   }
   const helperSnapshot = requireHelperSpawn({ bb, db, projectId:input.projectId, runId:input.runId });
-  // Jev picks the task's skills before the writer starts; the picks and the PM's hints are the writer's extra access.
+  // The task's skills by rule, before the writer starts: the project folder's, the ones the contract declares, the browser skill.
   at("skills");
   const writerSkills = await skillPick.pick({ attemptId:input.attemptId, projectId:input.projectId, hostId:input.config.hostId,
-    projectCwd:input.task.project_cwd, task:input.task, plan:input.plan, settings });
+    projectCwd:input.task.project_cwd, task:input.task });
   // An OpenCode writer's guard reads its skills from the worktree: the picked ones are linked there before it starts.
   const materialized = await skillMaterial.materialize({ attemptId:input.attemptId, hostId:input.config.hostId, workspacePath, live,
     providerId:writerProviderId, skills:writerSkills.skills, sources:writerSkills.sources });

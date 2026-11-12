@@ -2,14 +2,6 @@ import { z } from "zod";
 
 /** The System One judges (TypeSafe/OpenLux) the hub asks the host to call from its machine. */
 export const judgeHostMethods = {
-  classifyPlan: {
-    input: z.object({ requestedHostId:z.string().min(1), jevApiKey:z.string().max(4096).optional(), jevProvider:z.enum(["openlux","typesafe"]).optional(), plan:z.string().min(1) }).strict(),
-    output: z.object({
-      hostId:z.string(), status:z.enum(["ok","disabled","timeout","error"]),
-      effort:z.string().nullable(), reason:z.string().nullable(), planSha256:z.string(), sentPlanSha256:z.string().nullable(),
-      sourceLength:z.number().int().nonnegative(), sentLength:z.number().int().nonnegative().nullable(),
-    }).strict(),
-  },
   councilJudge: {
     input: z.object({
       requestedHostId: z.string().min(1),

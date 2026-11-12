@@ -2,7 +2,7 @@ import { VISIBLE_CATALOG, type CatalogRow } from "@lane-pilot/settings-catalog";
 import type { I18nKey } from "@lane-pilot/i18n";
 import { HUB_KEYS, PROJECT_DEFAULT_KEYS } from "@lane-pilot/settings-catalog";
 import { COUNCIL_KEYS, PAIR_ROLE_SPECS, roleSpecKey } from "@lane-pilot/models";
-import { JEV_KEYS, isCompatibilityAlias, uniqueByStorage } from "../ui-shell/ui";
+import { isCompatibilityAlias, uniqueByStorage } from "../ui-shell/ui";
 
 const key = (id: string, suffix: "provider" | "model" | "reasoning_effort" | "service_tier") => roleSpecKey(id, suffix);
 
@@ -157,7 +157,6 @@ export function isDiagnosticOnlySetting(row: CatalogRow): boolean {
 export function extraSettingRows(): CatalogRow[] {
   return uniqueByStorage(VISIBLE_CATALOG.filter((row) => (
     row.uiStatus === "editable"
-    && !JEV_KEYS.has(row.storageKey)
     && !PICKER_KEYS.has(row.storageKey)
     && !DEDICATED_KEYS.has(row.storageKey)
     && !row.storageKey.endsWith(".agent")
@@ -171,7 +170,7 @@ export function diagnosticRows(): CatalogRow[] {
   return uniqueByStorage(VISIBLE_CATALOG.filter((row) => {
     if (row.storageKey === "writer.agent") return false;
     if (row.storageKey.endsWith(".agent")) return true;
-    if (row.section === "jev" || JEV_KEYS.has(row.storageKey)) return false;
+    if (row.section === "jev") return false;
     if (PICKER_KEYS.has(row.storageKey) && row.storageKey !== "writer.fast_mode") return false;
     if (DEDICATED_KEYS.has(row.storageKey)) return false;
     if (SECTIONED_SETTING_KEYS.has(row.storageKey)) return false;

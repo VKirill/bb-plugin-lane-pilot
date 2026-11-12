@@ -21,7 +21,6 @@ Three sources:
 | `failure.class` | run terminal state (existing sweep, runs/failure-class-model.ts) | accepted, or a `task` reading on a dead run |
 | `route.workflow` | the routed `lane_pilot_wf_run` (existing sweep) | succeeded and the same graph went |
 | `plan.fact` | accepted attempt + the stage's code verdict (existing sweep) | Jev's per-item read matches the code's |
-| `writer.model` | accepted attempt (existing sweep) | task accepted |
 | `invoice.check` | run terminal state (existing sweep) | accepted ⇔ `match` |
 
 Age bound before a receipt is labeled: 24 h for task-bound judgments (the truth needs time to land).
@@ -30,8 +29,8 @@ Labeled rows are never relabeled — every query carries `outcome IS NULL`.
 ## Judgments with no later truth → source B (model labels)
 
 `errand.kind`, `intake.weight`, `learning.*`, `graph.step_trivial`, `lead.judge`, the package judgments that only rank
-(`skill-pick`, `memory-rerank`, `log-find`, `session-digest`, `log-trim`, `test-hint`, `ui-shots`, `render-match`,
-`accept-composite`, `employee-remark`, `repair-group`, `anamnesis.*`, `wall.filter`, …): nothing downstream records
+(`memory-rerank`, `log-trim`, `test-hint`, `ui-shots`, `render-match`,
+`employee-remark`, `repair-group`, `anamnesis.*`, `wall.filter`, …): nothing downstream records
 whether the pick was right, so the model relabeler is their only label source until a real outcome rule is written.
 `guard.host_command`'s outcome rule returns rows only once permit answers reach `lane_pilot_decision` — today permit
 answers live as files on the host (`~/.agents/permits`), so it is effectively source-B too.

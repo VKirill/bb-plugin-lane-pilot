@@ -158,13 +158,6 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
       inherited.inherited = [...new Set([...inherited.inherited, ...aboveKeys.filter((key) => !own.has(key))])];
       Object.assign(values, inherited.values);
       const writerBinding = await services.resolveProjectWriterHost({ projectId });
-      for (const row of VISIBLE_CATALOG) {
-        if (!(row.storageKey in values)) {
-          if (row.storageKey === "jev.LANE_JEV_EFFORT" || row.storageKey === "jev.LANE_OPENCODE_JEV") {
-            values[row.storageKey] = "1";
-          }
-        }
-      }
       values["plan_critique.enabled"] ??= true;
       values["plan_critique.mode"] ??= "gate";
       values["code_critique.enabled"] ??= false;
@@ -248,8 +241,6 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
                 effectiveReasoningLevel: trace.effectiveReasoningLevel,
                 serviceTier: trace.serviceTier,
                 fallbackReason: trace.fallbackReason,
-                jevStatus: trace.jevStatus,
-                ...(trace.effortMode ? { effortMode: trace.effortMode } : {}),
                 ...(trace.selectionSource ? { selectionSource: trace.selectionSource } : {}),
               };
             }

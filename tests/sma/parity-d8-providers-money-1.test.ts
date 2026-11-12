@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { writerCandidates } from "@lane-pilot/models";
+import { writerSwitchedOff } from "@lane-pilot/models";
 import { capOf, moneyCapFrom, moneyHold, spendBook, type DailyRow } from "../../src/rooms/money";
 import { createMoney } from "../../src/rooms/money/server";
 import { unmeasuredAttempts } from "../../src/rooms/usage/server";
@@ -29,14 +29,11 @@ function world() {
 }
 
 describe("parity d8: providers and money", () => {
-  it("[sma:m_hs_toggle] a writer profile key in writer.models_off drops out of the pick and comes back when the list clears", () => {
-    const keys = (settings: Record<string, unknown>) => writerCandidates(settings).map((profile) => profile.key);
-    const all = keys({});
-    expect(all).toContain("haiku");
-    const without = keys({ "writer.models_off": ["haiku"] });
-    expect(without).not.toContain("haiku");
-    expect(without).toEqual(all.filter((key) => key !== "haiku"));
-    expect(keys({ "writer.models_off": [] })).toEqual(all);
+  it("[sma:m_hs_toggle] a writer profile key in writer.models_off switches that pair off and it comes back when the list clears", () => {
+    expect(writerSwitchedOff({}, "claude-code", "claude-haiku-5-5")).toBeNull();
+    expect(writerSwitchedOff({ "writer.models_off": ["haiku"] }, "claude-code", "claude-haiku-5-5")).toBe("haiku");
+    expect(writerSwitchedOff({ "writer.models_off": ["haiku"] }, "claude-code", "claude-sonnet-5-5")).toBeNull();
+    expect(writerSwitchedOff({ "writer.models_off": [] }, "claude-code", "claude-haiku-5-5")).toBeNull();
   });
 
   it("[sma:m_cfg_budget0] an unset cap is 0 for a paid lane (money.cap_unset_zero is on unless off), a subscription lane is never held, and 'unlimited' or off lifts it", () => {

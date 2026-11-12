@@ -46,7 +46,7 @@ const monthOf = (now: number): string => new Date(now).toISOString().slice(0, 7)
 type Db = Pick<Database.Database, "prepare" | "transaction">;
 
 /**
- * Evaluates Jev model routing choices ('writer.model' and 'route.workflow') against actual task/workflow outcomes
+ * Evaluates Jev model routing choices ('route.workflow') against actual task/workflow outcomes
  * over the past 30 days. Compares whether tasks dispatched with Jev-selected models succeeded, calculates model win rates,
  * and derives routing recommendations.
  */
@@ -60,7 +60,7 @@ export function evaluateModelRouting(
 
   // One receipt is one decision: the task's outcome is its accepted attempt, else its latest, in the receipt's own run. A join on
   // task id alone multiplied a receipt by the task's attempts and by every run that reused the id (Gemini F-011).
-  const query = listJevRebenchReceipts(db as never, ["writer.model", "route.workflow"], since, options.projectId ?? null)
+  const query = listJevRebenchReceipts(db as never, ["route.workflow"], since, options.projectId ?? null)
     .map((row) => ({ ...row, attempt_state: attemptStateForTaskRun(db as never, row.subject ?? "", row.run_id) }));
 
   let evaluated = 0;

@@ -16,7 +16,7 @@ describe("Lane Pilot UI", () => {
       save_setting: () => ({ ok: false, conflict: true, version: 3, value: "other" }),
     });
     await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
-    const sw = openRole(slot, "writer").querySelector("[data-testid='jev-settings'] [role='switch']") as HTMLButtonElement;
+    const sw = slot.container.querySelector("[role='switch']") as HTMLButtonElement;
     fireEvent.click(sw);
     await slot.findByTestId("cas-conflict");
     slot.lifecycle.unmount();
@@ -29,7 +29,7 @@ describe("Lane Pilot UI", () => {
     const team = slot.getByTestId("team-panel");
     const work = slot.getByTestId("work-panel");
     expect(team.querySelector("[data-testid='writer-picker'] [data-testid='bb-provider-model-picker']")).not.toBeNull();
-    expect(openRole(slot, "writer").querySelector("[data-testid='writer-effort-mode']")).not.toBeNull();
+    expect(openRole(slot, "writer").querySelector("[data-testid='writer-effort-mode']")).toBeNull();
     expect(team.querySelector("[data-testid='access-role-writer'] [data-testid='browser-qa-host']")).toBeNull();
     expect(team.querySelector("[data-testid='access-role-browser_qa'] [data-testid='browser-qa-host']")).not.toBeNull();
     expect(team.querySelector("[data-testid='access-role-specialist_reviewer'] [data-testid='specialist-settings']")).not.toBeNull();

@@ -39,7 +39,7 @@ async function setup(options:{ failBase?:boolean } = {}) {
       output: async () => ({ text:"" }),
       list: async () => [] as never,
       stop: async ({ threadId }) => { stopped.push(threadId); return {} as never; },
-    }, providers:{
+    }, environments:{ listProviders: async () => [] as never }, providers:{
       list: async () => [{ id:"codex", available:true, capabilities:{ supportsServiceTier:true }, serviceTiers:[{ id:"default", label:"Default" }] }] as never,
       models: async () => ({ models:[{ id:"codex-test", model:"codex-test",
         supportedReasoningEfforts:["medium", "high", "xhigh"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })) }] as never }),

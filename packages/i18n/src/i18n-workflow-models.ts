@@ -66,7 +66,6 @@ export const modelsEn = {
   wfModelIssue_effort_unsupported: "This model does not support this effort.",
   wfModelIssue_tier_unsupported: "This provider does not support this service tier.",
   wfModelIssue_no_selection: "Nothing is chosen in Settings for this stage.",
-  wfModelIssue_effort_auto: "The effort is chosen for each task automatically.",
   wfModelIssue_no_node: "The step is gone from the draft.",
   wfModelIssue_no_effort: "A step cannot be given this effort.",
 };
@@ -138,7 +137,6 @@ export const modelsRu: { [K in keyof typeof modelsEn]: string } = {
   wfModelIssue_effort_unsupported: "Эта модель не поддерживает такое рассуждение.",
   wfModelIssue_tier_unsupported: "Этот провайдер не поддерживает такой тариф.",
   wfModelIssue_no_selection: "В Настройках для этого этапа ничего не выбрано.",
-  wfModelIssue_effort_auto: "Рассуждение подбирается под каждую задачу автоматически.",
   wfModelIssue_no_node: "Шага уже нет в черновике.",
   wfModelIssue_no_effort: "Шагу нельзя задать такое рассуждение.",
 };

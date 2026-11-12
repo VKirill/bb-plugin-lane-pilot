@@ -5,7 +5,6 @@
   "sideEffects": [
     "./anamnesis/index.ts",
     "./anamnesis/judgment.ts",
-    "./baseline/regress-meant.ts",
     "./critique/critic-screen.ts",
     "./critique/index.ts",
     "./design-eval/index.ts",
@@ -22,7 +21,6 @@
     "./learning/signals.ts",
     "./phase/index.ts",
     "./phase/intake.ts",
-    "./runs/failure-class-judgment.ts",
     "./runs/failure-class-model.ts",
     "./runs/index.ts",
     "./schedule/errand-kind-judgment.ts",
@@ -34,7 +32,6 @@
     "./workflow/route-workflow.ts",
     "./workflow/ui/workflow-graph-parts.tsx",
     "./writer/index.ts",
-    "./writer/session-digest.ts",
-    "./writer/writer-model-pick.ts"
+    "./writer/progress-journal.ts"
   ]
 }
