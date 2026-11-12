@@ -37,7 +37,6 @@ export function internalIds(strings: Readonly<Record<string, string>>): string[]
 
 /** Explained unshown fields: RPC answer fields no screen shows, and why each is there. */
 export const UNSHOWN_FIELDS: Readonly<Record<string, string>> = {
-  "session_memory_search.weakMatch": "read by the terminal session client (lane-memory search), which prints the message above the notes; no screen shows a memory search",
   "canary_status.samples": "for the CLI (scripts/lp-canary.sh) and the PM alert, not for a screen",
   "phase_get.facts": "the raw facts of the pieces for the CLI and the PM; the screen shows the book and the lines",
   "world_version.version": "polled by screens to know when to read the board again; never shown itself",
