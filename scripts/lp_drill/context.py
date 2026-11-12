@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 
 from lp_drill.env import OPEN_STATES, POLL_SEC, SANDBOX, TERMINAL, TIMEOUT_MIN
@@ -34,6 +35,12 @@ class Context:
             raise RuntimeError("source thread did not settle")
         self.free_sandbox()
         rc, out, err = bb("lane-pilot", "activate", self.project, self.source)
+        if rc != 0 and re.search(r"timeout after|HTTP 50[234]", err + out):
+            # The hub busy right after a plugin reload (0.1.483, 0.1.536: «timeout after 180s»; 0.1.413: HTTP 502): one more try.
+            log(f"activate: {(err.strip() or out)[:120]}; trying once more")
+            time.sleep(15)
+            self.free_sandbox()
+            rc, out, err = bb("lane-pilot", "activate", self.project, self.source)
         self.pm, self.run_id = thread_field(out, "threadId"), thread_field(out, "runId")
         if rc != 0 or not self.pm or not self.run_id:
             raise RuntimeError(f"activate failed: {(err.strip() or out)[:300]}")

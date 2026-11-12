@@ -98,6 +98,10 @@ reads = {p: [n for n in d.LIVE if d.live_reads(n, p)] for p in ["src/rooms/phase
   "docs/atlas.md", "src/rooms/storage/database.ts", "src/rooms/native-agent/server/helper-probe.ts", "src/rooms/memory/memory-paths.ts", "bb-plugin.json"]}
 head = d.git(str(d.ROOT), "rev-parse", "HEAD")
 out = {"reads": reads}
+import os
+folder = pathlib.Path(tempfile.mkdtemp())
+out["deploy"] = sorted(d.select_quick(folder)[1])
+os.environ["LP_DRILL_LIVE"] = "1"
 for label, age in (("fresh", 3600), ("stale", 30 * 3600)):
     folder = pathlib.Path(tempfile.mkdtemp())
     (folder / "r.json").write_text(json.dumps({"commit": head, "finishedAt": (time.time() - age) * 1000, "scenarios": [{"name": n, "result": "pass"} for n in d.QUICK]}))
@@ -113,7 +117,9 @@ print(json.dumps(out))
       "src/rooms/storage/database.ts": ["memory_paths", "helper_providers", "parallel3"], "src/rooms/native-agent/server/helper-probe.ts": ["memory_paths", "helper_providers", "parallel3"],
       "src/rooms/memory/memory-paths.ts": ["memory_paths", "parallel3"], "bb-plugin.json": ["memory_paths", "helper_providers", "parallel3"],
     });
-    // Nothing changed since HEAD passed an hour ago: only the scenarios without models run; a day later all of them do.
+    // A deploy (no LP_DRILL_LIVE) runs no live scenario even with no receipt at all: they run nightly.
+    expect(out.deploy).toEqual(["helper_providers", "memory_paths", "parallel3"]);
+    // LP_DRILL_LIVE=1: nothing changed since HEAD passed an hour ago: only the scenarios without models run; a day later all of them do.
     expect(out.fresh).toEqual({ names: ["guard_hash", "deferrals", "checkers", "lead_shadow", "episodes"], skipped: ["helper_providers", "memory_paths", "parallel3"] });
     expect(out.stale).toEqual({ names: ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3", "lead_shadow", "episodes"], skipped: [] });
   });

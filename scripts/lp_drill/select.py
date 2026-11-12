@@ -103,6 +103,12 @@ def select_quick(receipt_dir: Path, now: float | None = None) -> tuple[list[str]
         if name not in LIVE:
             names.append(name)
             continue
+        # The deploy keeps to the checks without models (about 35 s): the live ones run in the nightly drill (LP_DRILL_SELECT=0, cron on
+        # OVH), which reports a red run to the thread like a deploy does. Of 19 red deploy drills to 2026-11-12, 14 were the hub or a provider
+        # (HTTP 502, activate timeout, quota), not the change (owner 2026-11-12: a deploy in one or two minutes). LP_DRILL_LIVE=1 selects as before.
+        if os.environ.get("LP_DRILL_LIVE") != "1":
+            skipped[name] = "live: runs in the nightly drill (LP_DRILL_LIVE=1 runs it here)"
+            continue
         last = last_passed(name, receipt_dir)
         if not last or now - last[1] > LIVE_MAX_AGE_SEC:
             names.append(name)
