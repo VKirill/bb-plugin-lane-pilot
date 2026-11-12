@@ -181,7 +181,7 @@ describe("the writer pick does not offer ZCode where it cannot work", () => {
     const jev = { enabled: () => true, judge: async (_judgment: unknown, state: { candidates: Array<{ key: string }> }) => { seen.push(state.candidates.map((row) => row.key)); return { by: "jev", decision: { key: "zcode-flash" } }; } } as never;
     const held = await writerPickOverlay({ kv: kv(), jev, log: () => undefined, held: async (profile) => profile.providerId === "zcode" }, settings, input);
     expect(seen[0]).not.toContain("zcode-flash");
-    expect(seen[0]).toContain("composer");
+    expect(seen[0]).toContain("gpt-terra");
     // Jev had no ZCode to name: its answer is not a candidate, so the project's writer writes.
     expect(held).toBeNull();
     const free = await writerPickOverlay({ kv: kv(), jev, log: () => undefined, held: async () => false }, settings, { ...input, taskId: "t2" });

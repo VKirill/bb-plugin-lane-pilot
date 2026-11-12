@@ -11,11 +11,11 @@ const profile = (key: string) => WRITER_PROFILES.find((row) => row.key === key)!
 const task = { title: "Fix the jump button", objective: "the jump button sits under the thumb", kind: "fix", area: "ui", risk: "low", owns_paths: ["src/Hud.luau"], expected_outputs: ["src/Hud.luau"], acceptance: ["lune run tests passes"] };
 
 describe("the writers' anamnesis", () => {
-  it("offers only the models the subscriptions have and the owner keeps: no Gemini Pro, Argon or MiniMax", () => {
+  it("offers only the models the subscriptions have and the owner keeps: no Gemini Pro, Argon, MiniMax or Cursor", () => {
     const keys = writerCandidates({}).map((row) => row.key);
-    expect(keys).toEqual(expect.arrayContaining(["composer", "grok", "gemini-flash", "gpt-sol", "gpt-terra", "gpt-luna", "fable", "gpt-astra", "sonnet", "opus", "glm-flash", "haiku"]));
-    for (const off of ["gemini-pro", "gemini-argon", "minimax-flash"]) expect(keys).not.toContain(off);
-    expect(writerCandidates({ "writer.models": ["composer", "gemini-flash"] }).map((row) => row.key)).toEqual(["composer", "gemini-flash"]);
+    expect(keys).toEqual(expect.arrayContaining(["gemini-flash", "gpt-sol", "gpt-terra", "gpt-luna", "fable", "gpt-astra", "sonnet", "opus", "glm-flash", "haiku"]));
+    for (const off of ["gemini-pro", "gemini-argon", "minimax-flash", "composer", "grok"]) expect(keys).not.toContain(off);
+    expect(writerCandidates({ "writer.models": ["gpt-terra", "gemini-flash"] }).map((row) => row.key)).toEqual(["gemini-flash", "gpt-terra"]);
     for (const row of WRITER_PROFILES.filter((item) => item.available)) expect(row.sources.length).toBeGreaterThan(0);
   });
 });
@@ -24,23 +24,23 @@ describe("the writer pick", () => {
   it("asks Jev to choose among the candidates by their anamnesis, and keeps the project's writer when unsure", () => {
     const candidates = writerCandidates({});
     const questions = writerModelJudgment.questions({ task, candidates }) as Record<string, { options?: Record<string, string> } & Record<string, unknown>>;
-    expect(JSON.stringify(questions)).toContain("Composer 2.5");
+    expect(JSON.stringify(questions)).toContain("GPT-6.1 Terra");
     const score = (name: string, level: string) => ({ [name]: { type: "score", score: 0, legend: {}, probabilities: { [level]: 1 } } });
     const thresholds = { min_p: 0.45, near: 0.12, hard_at: 0.66 };
-    const decide = (top: string, p: number, scores: Record<string, unknown> = {}) => writerModelJudgment.decide({ writer: { type: "choice", probabilities: { [top]: p, composer: 1 - p } }, ...scores } as never, thresholds, { task, candidates });
+    const decide = (top: string, p: number, scores: Record<string, unknown> = {}) => writerModelJudgment.decide({ writer: { type: "choice", probabilities: { [top]: p, "gpt-terra": 1 - p } }, ...scores } as never, thresholds, { task, candidates });
     expect(decide("gemini-flash", 0.7).decision).toEqual({ key: "gemini-flash" });
-    const unsure = writerModelJudgment.decide({ writer: { type: "choice", probabilities: { "gemini-flash": 0.35, composer: 0.33, sonnet: 0.32 } } } as never, thresholds, { task, candidates });
+    const unsure = writerModelJudgment.decide({ writer: { type: "choice", probabilities: { "gemini-flash": 0.35, "gpt-terra": 0.33, sonnet: 0.32 } } } as never, thresholds, { task, candidates });
     expect(unsure.decision).toEqual({ key: null });
     // Composite scoring: a strong-tier model loses the near band to a cheaper fit unless the task scores hard or risky.
     const answers = (probs: Record<string, number>, scores: Record<string, unknown>) => ({ writer: { type: "choice", probabilities: probs }, ...scores } as never);
     const easy = { ...score("complexity", "routine"), ...score("risk", "ordinary") };
-    const band = { "gpt-sol": 0.5, composer: 0.44, "gemini-flash": 0.06 };
-    expect(writerModelJudgment.decide(answers(band, easy), thresholds, { task, candidates }).decision).toEqual({ key: "composer" });
+    const band = { "gpt-sol": 0.5, "gpt-terra": 0.44, "gemini-flash": 0.06 };
+    expect(writerModelJudgment.decide(answers(band, easy), thresholds, { task, candidates }).decision).toEqual({ key: "gpt-terra" });
     const hard = { ...score("complexity", "frontier"), ...score("risk", "ordinary") };
     expect(writerModelJudgment.decide(answers(band, hard), thresholds, { task, candidates }).decision).toEqual({ key: "gpt-sol" });
     // Provider load is weighed in code: a busier provider inside the band yields to the freer one.
     const loaded = { load: { "gpt-sol": { percent: 95, running: 5 }, "gpt-astra": { percent: 0, running: 0 } } };
-    expect(writerModelJudgment.decide(answers({ "gpt-sol": 0.5, "gpt-astra": 0.44, composer: 0.06 }, hard), thresholds, { task, candidates, ...loaded }).decision).toEqual({ key: "gpt-astra" });
+    expect(writerModelJudgment.decide(answers({ "gpt-sol": 0.5, "gpt-astra": 0.44, "gpt-terra": 0.06 }, hard), thresholds, { task, candidates, ...loaded }).decision).toEqual({ key: "gpt-astra" });
   });
   it("puts the picked model first and the project's writer and fallbacks behind it", () => {
     const overlay = pickedWriterOverlay(settings, profile("gpt-sol"))!;

@@ -23,14 +23,14 @@ export type WriterProfile = {
 
 export const WRITER_PROFILES: readonly WriterProfile[] = [
   {
-    key: "composer", providerId: "acp-cursor", model: "composer-2.5", reasoning: "medium", label: "Composer 2.5 (Cursor)", tier: "standard", available: true,
+    key: "composer", providerId: "acp-cursor", model: "composer-2.5", reasoning: "medium", label: "Composer 2.5 (Cursor)", tier: "standard", available: false,
     summary: "Cursor's own coding model (on Kimi K2.5): near the frontier on multi-language repository fixes (SWE-Bench Multilingual 79.8%, Terminal-Bench 2.0 69%) at about a tenth of Opus's cost per task, and fast. Fits everyday multi-file features, fixes and refactors in mainstream stacks (TypeScript, Vue/React, Node, Python). Behind the top models on the hardest design and architecture problems and on long autonomous terminal work; most of its strong numbers are Cursor's own.",
-    sources: ["https://www.datacamp.com/blog/composer-2-5", "https://chatforest.com/reviews/cursor-composer-2-5-coding-model-review/", "https://www.techtimes.com/articles/316917/20260520/cursor-composer-25-matches-claude-opus-47-coding-benchmarks-one-tenth-cost.htm"],
+    note: "the owner dropped the Cursor subscription on 2026-11-12: kept out of the pick", sources: ["https://www.datacamp.com/blog/composer-2-5", "https://chatforest.com/reviews/cursor-composer-2-5-coding-model-review/", "https://www.techtimes.com/articles/316917/20260520/cursor-composer-25-matches-claude-opus-47-coding-benchmarks-one-tenth-cost.htm"],
   },
   {
-    key: "grok", providerId: "acp-cursor", model: "grok-4.6", reasoning: "medium", label: "Grok 4.6 (Cursor)", tier: "standard", available: true,
+    key: "grok", providerId: "acp-cursor", model: "grok-4.6", reasoning: "medium", label: "Grok 4.6 (Cursor)", tier: "standard", available: false,
     summary: "xAI's coding model through the Cursor subscription: on our hub it was accepted on 90% of its tasks (Composer 91%, GPT-6 Luna 63%, 2026-10-13..27), and practitioners use it to implement a written plan, noting it does not degrade on long tasks. Fits routine features and fixes that follow a clear plan, multi-file changes in mainstream stacks, and long well-specified implementation runs; it spends a provider other than Claude and Codex. Not for open-ended design, architecture or review; Grok 4.7 doubled the output tokens and tested worse, so the pick stays on 4.6.",
-    sources: ["https://t.me/ai_chat_cutcode/26401", "https://t.me/ai_chat_cutcode/26985", "https://daily.dev/posts/grok-4-7-fully-tested-this-is-actually-sad-worst-than-glm-5-3-flash--zu0g0lmcu"],
+    note: "the owner dropped the Cursor subscription on 2026-11-12: kept out of the pick", sources: ["https://t.me/ai_chat_cutcode/26401", "https://t.me/ai_chat_cutcode/26985", "https://daily.dev/posts/grok-4-7-fully-tested-this-is-actually-sad-worst-than-glm-5-3-flash--zu0g0lmcu"],
   },
   {
     key: "gemini-flash", providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoning: "medium", label: "Gemini 3.8 Flash high (9router)", tier: "standard", available: true,

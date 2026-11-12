@@ -139,13 +139,13 @@ describe("parity d8-2: stats, lessons, routing, money", () => {
     const store = new Map<string, unknown>();
     const kv = { get: async (key: string) => store.get(key) ?? null, set: async (key: string, value: unknown) => { store.set(key, value); } };
     const deps = { kv, held: async () => false, log: () => undefined, jev: null };
-    const settings = { "writer.models": ["composer", "grok"], "writer.kind_models": { docs: ["composer"] } };
+    const settings = { "writer.models": ["gpt-terra", "sonnet"], "writer.kind_models": { docs: ["gpt-terra"] } };
     const route = () => [...store.values()].find((value) => value && typeof value === "object" && "considered" in (value as object)) as { considered: string[]; excluded: Array<{ key: string; reason: string }> } | undefined;
     await writerPickOverlay(deps as never, settings as never, { projectId: "p", runId: "r", taskId: "T1", task: { title: "t", kind: "docs" } } as never);
-    expect(route()?.considered).toEqual(["composer"]);
+    expect(route()?.considered).toEqual(["gpt-terra"]);
     store.clear();
     await writerPickOverlay(deps as never, settings as never, { projectId: "p", runId: "r", taskId: "T2", task: { title: "t", kind: "feature" } } as never);
-    expect([...(route()?.considered ?? [])].sort()).toEqual(["composer", "grok"].sort());
+    expect([...(route()?.considered ?? [])].sort()).toEqual(["gpt-terra", "sonnet"].sort());
     store.clear();
     await writerPickOverlay(deps as never, { ...settings, "writer.kind_models": { docs: [] } } as never, { projectId: "p", runId: "r", taskId: "T3", task: { title: "t", kind: "docs" } } as never);
     expect(route()?.excluded.map((row) => row.reason)).toContain("kind_pool");

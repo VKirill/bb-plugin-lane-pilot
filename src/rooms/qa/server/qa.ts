@@ -44,7 +44,9 @@ export function createQaStages(ctx: ServerCore) {
       : providerValue === "claude" ? "claude" : "unsupported";
     const modelSetting = configuredSetting(settings,"browser_qa.model");
     const configuredModelValue = typeof modelSetting === "string" ? modelSetting.trim() : "";
-    const configuredModel = configuredModelValue && configuredModelValue !== "provider-specific" ? configuredModelValue : undefined;
+    // Unset on codex: gpt-6.1-terra, OpenAI's fast pick for visual understanding and computer use (owner's choice, 2026-11-12).
+    const configuredModel = configuredModelValue && configuredModelValue !== "provider-specific" ? configuredModelValue
+      : provider === "codex" ? "gpt-6.1-terra" : undefined;
     const reasoningSetting = configuredSetting(settings,"browser_qa.reasoning_effort");
     const configuredReasoningValue = typeof reasoningSetting === "string" ? reasoningSetting.trim() : "";
     const configuredReasoning = configuredReasoningValue && configuredReasoningValue !== "provider-specific" ? configuredReasoningValue : undefined;
