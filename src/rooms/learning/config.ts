@@ -5,32 +5,24 @@ import { z } from "zod";
  * settings: the owner's messages belong to the owner, not to a project, and nothing here needs a settings screen. They are changed
  * with `bb lane-pilot learning config key=value …` or by the PM through `lane_pilot_memory {action:"learned", op:"config", …}`.
  *
- * `mode` is the switch between watching and acting. In `observe` (the start) every message is judged and recorded and nothing else
- * happens: no model extracts, no rule is written, no one is told. Learning switches itself to `active` once a model has checked
- * enough of the recorded judgments and found them right (autonomy.ts; `op:"status"` shows the evidence); the owner takes no part.
+ * No model judges a message as it comes. The observer keeps the owner's own messages as raw candidates after a rule-based pre-filter,
+ * and one night run of the extractor reads the day's candidates in batches (see extract.ts and service.ts). A record stored by an
+ * older version (with `mode`, `sample`, the second opinion's keys) is read without those keys.
  */
 export const CONFIG_KEY = "learning:config";
 
 export const configSchema = z.object({
   /** Off: the hook ignores every message. */
   enabled: z.boolean().default(true),
-  mode: z.enum(["observe", "active"]).default("observe"),
-  /** The share of eligible messages that are judged (a ceiling on cost besides the daily cap); chosen by a hash of the message id. */
-  sample: z.number().min(0).max(1).default(1),
-  /** The most messages Jev judges in a day (UTC). The rest are recorded as skipped. */
-  dailyJudgeCap: z.number().int().min(0).max(5000).default(300),
-  /** OpenAI Decisions as the second opinion: for contested messages, and instead of Jev when Jev cannot answer. */
-  secondOpinion: z.boolean().default(true),
-  secondOpinionDailyCap: z.number().int().min(0).max(1000).default(60),
-  /** Of the messages Jev is sure about, this share also goes to the second opinion, for the agreement report. */
-  agreeSample: z.number().min(0).max(1).default(0.1),
-  /** Extractor runs (one hidden model thread each) a day, and the messages one run reads. */
-  extractorRunsPerDay: z.number().int().min(0).max(48).default(6),
-  extractorBatch: z.number().int().min(1).max(40).default(12),
+  /** The most candidates kept in a day (UTC); the rest are recorded as skipped. A ceiling on what the night run reads. */
+  dailyCandidateCap: z.number().int().min(0).max(5000).default(400),
+  /** Extractor runs (one hidden model thread each) in the night pass, and the messages one run reads. */
+  nightRuns: z.number().int().min(0).max(48).default(12),
+  nightBatch: z.number().int().min(1).max(40).default(25),
   /** Token budgets of the rules in force (replaces the old limit of 12 rules): rules for the PM, rules for writers. */
   pmRulesTokens: z.number().int().min(200).max(8000).default(1600),
   writerRulesTokens: z.number().int().min(200).max(8000).default(1600),
-}).strict();
+});
 export type LearningConfig = z.infer<typeof configSchema>;
 
 export const DEFAULT_CONFIG: LearningConfig = configSchema.parse({});

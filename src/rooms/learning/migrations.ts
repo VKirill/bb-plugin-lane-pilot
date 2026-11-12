@@ -1,7 +1,7 @@
 /**
  * Tables of the learning room (src/learning). Appended to the plugin's migrations, append only.
  *
- * - `lane_pilot_learning_obs`: one row per owner message the hook saw. It keeps the judgments (Jev, the second opinion), never the
+ * - `lane_pilot_learning_obs`: one row per owner message the hook saw. Old rows keep the judgments of the former judges (Jev, the second opinion; their columns are no longer written); it never keeps the
  *   message: `excerpt` is the first 280 characters after personal data was masked, and `body`/`prev` hold the masked text only while a
  *   message waits for the extractor (cleared when it has been read, or after a day). A sensitive message keeps neither.
  * - `lane_pilot_learning_item`: what the extractor drew out of a message and where it went. Every row names its message in `evidence`.

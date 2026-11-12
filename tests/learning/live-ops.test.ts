@@ -4,8 +4,8 @@ import { DEFAULT_CONFIG, loadConfig, parseConfigWords, saveConfig } from "../../
 import { FIRST_LOOK_MS, THROTTLE_MS, createLiveFeed } from "../../src/rooms/learning/live";
 import { createObserver } from "../../src/rooms/learning/observe";
 import { createOps, type Kv } from "../../src/rooms/learning/ops";
-import { DAY_MS, agreementReport, getItem, insertItem, labelObservation, reviewStats } from "../../src/rooms/learning/store";
-import { NOW, config, database, jevWith, message } from "./helpers";
+import { DAY_MS, getItem, insertItem } from "../../src/rooms/learning/store";
+import { NOW, config, database, message } from "./helpers";
 
 const thread = (over: Partial<ThreadLike> = {}): ThreadLike => ({ id: "thr_pm", projectId: "proj_1", createdAt: NOW - 10 * DAY_MS, visibility: "visible", ...over });
 const turn = (seq: number, text: string, over: Partial<EventLike["data"]> = {}, at = NOW - 1_000): EventLike =>
@@ -62,9 +62,8 @@ describe("the live feed of owner messages (T1)", () => {
 
   it("reaches the observer through the shared hub", async () => {
     const db = database();
-    const { jev } = jevWith(db, []);
     const hub = createOwnerMessageHub();
-    hub.subscribe(createObserver({ db, jev: () => jev, decisions: null, config: async () => config() }).consumer);
+    hub.subscribe(createObserver({ db, config: async () => config() }).consumer);
     const live = createLiveFeed({ hub, now: () => NOW, readEvents: async () => [turn(7, "Запусти тесты и покажи результат прогона")] });
     await live.heard(thread(), { force: true });
     expect(db.prepare("SELECT id, project_id, source FROM lane_pilot_learning_obs").all()).toEqual([{ id: "thr_pm:7:0", project_id: "proj_1", source: "live" }]);
@@ -74,78 +73,47 @@ describe("the live feed of owner messages (T1)", () => {
 describe("the configuration", () => {
   const store = () => { const map = new Map<string, unknown>(); return { map, kv: { get: async <T>(key: string) => map.get(key) as T | undefined, set: async (key: string, value: unknown) => { map.set(key, value); } } as unknown as Kv }; };
 
-  it("starts in observe mode with every cost cap set", async () => {
+  it("starts on with the caps set", async () => {
     expect(await loadConfig(store().kv)).toEqual(DEFAULT_CONFIG);
-    expect(DEFAULT_CONFIG).toMatchObject({ mode: "observe", enabled: true, sample: 1, dailyJudgeCap: 300, secondOpinionDailyCap: 60, agreeSample: 0.1, extractorRunsPerDay: 6, extractorBatch: 12 });
+    expect(DEFAULT_CONFIG).toMatchObject({ enabled: true, dailyCandidateCap: 400, nightRuns: 12, nightBatch: 25 });
   });
 
-  it("changes by key=value words and refuses an unknown key or a value out of range", async () => {
+  it("changes by key=value words and refuses an unknown key (also a removed one) or a value out of range", async () => {
     const s = store();
-    expect(parseConfigWords(["mode=active", "sample=0.5", "secondOpinion=false"])).toEqual({ mode: "active", sample: 0.5, secondOpinion: false });
-    await saveConfig(s.kv, parseConfigWords(["mode=active", "dailyJudgeCap=100"]));
-    expect(await loadConfig(s.kv)).toMatchObject({ mode: "active", dailyJudgeCap: 100, sample: 1 });
+    expect(parseConfigWords(["nightBatch=10", "enabled=false"])).toEqual({ nightBatch: 10, enabled: false });
+    await saveConfig(s.kv, parseConfigWords(["dailyCandidateCap=100"]));
+    expect(await loadConfig(s.kv)).toMatchObject({ dailyCandidateCap: 100, nightBatch: 25 });
     expect(() => parseConfigWords(["nope=1"])).toThrow(/unknown setting/);
-    expect(() => parseConfigWords(["sample=3"])).toThrow();
+    expect(() => parseConfigWords(["secondOpinion=false"])).toThrow(/unknown setting/);
+    expect(() => parseConfigWords(["nightBatch=300"])).toThrow();
+  });
+
+  it("reads a record an older version saved (with mode and the second opinion's keys) without losing the rest", async () => {
+    const s = store();
+    s.map.set("learning:config", { enabled: true, mode: "observe", sample: 1, secondOpinion: false, dailyJudgeCap: 300, pmRulesTokens: 900 });
+    expect(await loadConfig(s.kv)).toMatchObject({ enabled: true, pmRulesTokens: 900, nightBatch: 25 });
   });
 });
 
-describe("status, review and the agreement report (T1, T2)", () => {
+describe("status (T1)", () => {
   async function seeded() {
     const db = database();
-    const { jev } = jevWith(db, [[/убери/i, { kind: ["correction", 0.85], durable: 0.8 }], [/может быть/i, { kind: ["correction", 0.4], durable: 0.5 }]]);
-    let routeOfSecond: "learn" | "none" = "learn";
-    const observer = createObserver({
-      db, jev: () => jev, config: async () => config({ agreeSample: 1 }), now: () => NOW,
-      decisions: { ask: async () => ({ ok: true as const, signals: { kind: "correction", kindP: 0.8, learnP: routeOfSecond === "learn" ? 0.9 : 0.1, durable: 0.5, scope: "project", scopeP: 0.6, deadline: 0, frustration: 0, mild: 0 }, route: routeOfSecond, tokensIn: 1_000_000, latencyMs: 100 + (db.prepare("SELECT count(*) AS n FROM lane_pilot_learning_obs").get() as { n: number }).n * 100, model: "gpt-6-luna" }) },
-    });
-    for (const [text, second] of [["Убери это окно, пожалуйста", "learn"], ["Убери и это тоже, не надо так", "none"], ["Может быть, стоит писать короче?", "learn"], ["Запусти тесты и покажи результат", "learn"]] as const) {
-      routeOfSecond = second;
-      await observer.observe(message(text), { live: true });
-    }
-    const kv = { get: async () => undefined, set: async () => undefined } as unknown as Kv;
-    return { db, ops: createOps({ db, kv, now: () => NOW }) };
+    const observer = createObserver({ db, config: async () => config(), now: () => NOW });
+    for (const text of ["Убери это окно, пожалуйста", "Убери и это тоже, не надо так", "ок", "[Lane Pilot] фаза перешла в ревью", "Запусти тесты и покажи результат"]) await observer.observe(message(text), { live: true });
+    const map = new Map<string, unknown>();
+    const kv = { get: async (key: string) => map.get(key), set: async (key: string, value: unknown) => { map.set(key, value); } } as unknown as Kv;
+    return { db, map, ops: createOps({ db, kv, now: () => NOW }) };
   }
 
-  it("counts how the two judges agree, what the second opinion cost and how fast it was", async () => {
-    const { db } = await seeded();
-    const report = agreementReport(db, NOW - DAY_MS, 0.1);
-    expect(report).toMatchObject({ judged: 4, jevAnswered: 4, secondAnswered: 4, bothAnswered: 4, sameRoute: 1, routeAgreement: 0.25, disagreements: 2, contested: 1, contestedResolvedLearn: 1 });
-    expect(report.secondTokens).toBe(4_000_000);
-    expect(report.secondUsd).toBe(0.4);
-    expect(report.secondP50Ms).toBeGreaterThan(0);
-  });
-
-  it("is not ready to act before a week of observation and fifty checked cases, and says what is missing", async () => {
-    const { ops } = await seeded();
-    const status = await ops.status();
-    expect(status).toMatchObject({ mode: "observe", readyForActive: false, observations: { observed: 4 }, today: { judged: 4, judgeCap: 300 } });
-    expect(status.missing.join(" ")).toMatch(/day\(s\) of observation/);
-    expect(status.missing.join(" ")).toMatch(/50 more reviewed case/);
-  });
-
-  it("lists cases to mark and keeps the accuracy of the marks", async () => {
-    const { db, ops } = await seeded();
-    const cases = ops.review(10);
-    expect(cases).toHaveLength(4);
-    expect(cases[0]).toHaveProperty("text");
-    expect(JSON.stringify(cases)).not.toContain("body");
-    for (const [index, row] of cases.entries()) ops.label(row.id, index < 3);
-    expect(reviewStats(db)).toEqual({ reviewed: 4, correct: 3, accuracy: 0.75 });
-    expect(ops.review(10)).toHaveLength(0);
-    expect(() => ops.label("thr_x:9:9", true)).toThrow(/not found/);
-    expect(labelObservation(db, cases[0]!.id, false, NOW)).toBe(true);
-  });
-
-  it("is ready once a week has passed and fifty cases were marked right at 80 percent", async () => {
-    const { db } = await seeded();
-    db.prepare("UPDATE lane_pilot_learning_obs SET judged_at=?").run(NOW - 8 * DAY_MS);
-    for (let i = 0; i < 50; i++) {
-      db.prepare("INSERT INTO lane_pilot_learning_obs (id,thread_id,project_id,at,judged_at,source,chars,state,jev_status,review,reviewed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
-        .run(`thr_r:${i}:0`, "thr_r", "proj_1", NOW, NOW - 8 * DAY_MS, "live", 40, "observed", "ok", i < 42 ? "ok" : "wrong", NOW);
-    }
-    const kv = { get: async () => undefined, set: async () => undefined } as unknown as Kv;
-    const status = await createOps({ db, kv, now: () => NOW }).status();
-    expect(status).toMatchObject({ readyForActive: true, missing: [], review: { reviewed: 50, accuracy: 0.84 } });
+  it("says what is waiting for the night run, what the filter dropped, and what the last night did", async () => {
+    const { map, ops } = await seeded();
+    const before = await ops.status();
+    expect(before).toMatchObject({ enabled: true, candidatesWaiting: 3, observations: { candidate: 3, skipped: 2 }, skippedLast7Days: { short: 1, machine: 1 }, today: { candidates: 3, candidateCap: 400 }, lastNightRun: null });
+    expect(before).not.toHaveProperty("mode");
+    expect(before).not.toHaveProperty("readyForActive");
+    const night = { at: NOW, projects: 1, batches: 1, read: 3, items: 1, adopted: 1, waiting: 0, duplicates: 0, noted: 0, dropped: 0 };
+    map.set("learning:last-night", night);
+    expect((await ops.status()).lastNightRun).toEqual(night);
   });
 
   it("reads items, and an item without evidence cannot be stored", async () => {

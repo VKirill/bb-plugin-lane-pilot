@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { collectSources } from "../../src/rooms/anamnesis/collect";
-import { fragmentJudgment } from "../../src/rooms/anamnesis/judgment";
 import { openStore, type Store } from "../../src/rooms/anamnesis/store";
 import { discoverRepos, spread } from "../../src/rooms/anamnesis/sources/common";
 import { parseRegistry, scanJournals, scanRegistry } from "../../src/rooms/anamnesis/sources/docs";
@@ -213,25 +212,5 @@ describe("collect: plan against run", () => {
     store.setSource("journal", true);   // the project data is off until the owner switches it on
     const mixed = await collectSources({ ...request, sources: ["claude-memory", "journal"] }, store, { ...seams(1), scans: { ...seams(1).scans, journal: async () => { throw new Error("disk gone"); } } });
     expect(mixed.sources.map((s) => [s.source, s.records, s.error])).toEqual([["claude-memory", 1, undefined], ["journal", 0, "disk gone"]]);
-  });
-});
-
-describe("the fragment judgment", () => {
-  const answers = (kind: Record<string, number>, about: number, sensitive: number) => ({
-    kind: { type: "choice" as const, choice: Object.entries(kind).sort((a, b) => b[1] - a[1])[0]![0], probabilities: kind, confidence: 0.9 },
-    about_owner: { type: "noul" as const, noul: about }, sensitive: { type: "noul" as const, noul: sensitive },
-  });
-  const t = Object.fromEntries(Object.entries(fragmentJudgment.thresholds).map(([k, v]) => [k, v.default]));
-  const decide = (a: ReturnType<typeof answers>) => (fragmentJudgment.decide(a, t, { text: "x" }) as { decision: { kind: string } }).decision;
-
-  it("keeps a clear kind about the owner and drops tasks, questions and unclear fragments", () => {
-    expect(decide(answers({ preference: 0.8, nothing: 0.1, fact: 0.1 }, 0.9, 0.1)).kind).toBe("preference");
-    expect(decide(answers({ nothing: 0.9, fact: 0.1 }, 0.1, 0))).toMatchObject({ kind: "nothing" });
-    expect(decide(answers({ skill: 0.8, nothing: 0.2 }, 0.2, 0)).kind).toBe("nothing");
-    expect(decide(answers({ skill: 0.4, project: 0.38, nothing: 0.22 }, 0.9, 0)).kind).toBe("nothing");
-  });
-  it("falls back to nothing and sends only the fragment text", () => {
-    expect(fragmentJudgment.fallback({ text: "x" }).kind).toBe("nothing");
-    expect(fragmentJudgment.stateBuilder({ text: "hello" })).toEqual({ fragment: "hello" });
   });
 });

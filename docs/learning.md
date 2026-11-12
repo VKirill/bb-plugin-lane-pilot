@@ -2,10 +2,10 @@
 title: Learning from the owner's messages
 type: component
 created: 2026-10-08
-updated: 2026-10-29
+updated: 2026-11-13
 status: active
 confidence: medium
-tags: [learning, rules, jev, owner-messages, lessons]
+tags: [learning, rules, owner-messages, lessons, nightly]
 sources:
   - src/rooms/anamnesis/owner-messages.ts
   - src/rooms/learning/observe.ts
@@ -20,79 +20,83 @@ sources:
 
 # Learning from the owner's messages
 
-Design of 2026-10-08 (T1-T8), code in `src/rooms/learning`. The owner's own messages to his agents are judged where he says them; what
-teaches something becomes a rule, a decision, a preference or a reminder, with the message it came from.
+Design of 2026-10-08 (T1-T8), reworked 2026-11-13 to use no Jev and no outside classifier. Code in `src/rooms/learning`. The owner's own
+messages to his agents are collected as they are said; one night run reads the day's messages with a model and what teaches something
+becomes a rule, a decision, a preference or a reminder, with the message it came from.
 
 ```
-owner message (a person's request in a visible top-level thread: the one collector of src/anamnesis/owner-messages.ts)
+owner message (a person's request in a visible top-level thread: the one collector of src/rooms/anamnesis/owner-messages.ts)
   -> live feed (thread.active / thread.idle / experimental_thread.events -> read the new client/turn/requested)
-  -> observer: skip acknowledgements, the sample, the daily cap; mask personal data; sensitive text stays with Jev
-  -> Jev learning.owner_message (kind, worth remembering, reach, annoyance, date)          -> route learn / none / contested
-  -> OpenAI Decisions gpt-6-luna for contested, for Jev's failures, for a sample           -> final route
-  observe mode stops here (a row in lane_pilot_learning_obs)
-  active mode:  learn -> masked text kept -> extractor (JSON) -> compare with what is in force (Jev learning.same_as)
+  -> observer, a rule-based pre-filter (observe.ts, no model):
+       machine text (isMachineMessage of phase/intake.ts)  -> skipped «machine»
+       an acknowledgement or under 12 characters          -> skipped «short»
+       over 12 000 characters (a pasted log)               -> skipped «pasted»
+       over the day's cap                                  -> skipped «cap»
+       sensitive words (health, family, money, ...)        -> recorded, no text kept, never read
+       the rest                                            -> `candidate`: masked text + masked tail of the agent's reply
+  -> night run (03:11, `learning-extract`): per project, all waiting candidates in batches of 25, one hidden model thread per batch
+       the prompt lists what is in force (rules, learned items, the owner's global preferences) with ids k1..kN
+       the model answers JSON per message: `nothing`, or one rule | preference | decision | deadline | fact, plus `same_as` / `contradicts`
         rule/preference, project   -> Lane Pilot rule on trial (audience pm|writer|both)
-        rule/preference, owner     -> accepted by itself -> the PM runs `bb memory add --scope global --kind preference`
+        rule/preference, owner     -> accepted by itself -> `bb memory add --scope global --kind preference`
         decision                   -> note in the project's memory
         date                       -> accepted by itself -> reminder in the thread
         fact                       -> recorded only (the anamnesis owns facts about the owner)
         same as one in force       -> confirmation; opposite -> replaces the old one, the new rule on trial
-        annoyance                  -> kv record -> self-repair incident of kind `owner`
-  every extractor tick (autonomy.ts): what waited for a yes is accepted; daily 18:20: one report per project to the PM chat
+  -> afterwards what waited for a yes is accepted; daily 18:20: one report per project to the PM chat
 ```
 
 ## How it works
 
 1. The collector hands the owner's messages of a visible top-level thread to the observer (`src/rooms/anamnesis/owner-messages.ts`).
-2. The observer applies the skip rules, the sample and the daily Jev cap, masks personal data, and inserts the observation with its state: a policy skip becomes `skipped`, an active learn route becomes `candidate`, the rest stay `observed` (`src/rooms/learning/observe.ts:80-95`, `:113-126`). A sensitive message keeps neither excerpt nor text (`src/rooms/learning/migrations.ts:4-6`).
-3. In `active` mode the extractor proposes the item and `route` compares it with what is in force, choosing the initial state — `rule`, `preference`, `decision`, `deadline` or `fact`, as `adopted`, `proposed`, `pending_owner`, `duplicate`, `dropped` or `noted` (`src/rooms/learning/extract.ts:175-208`, kinds and states at `src/rooms/learning/migrations.ts:49-68`).
-4. Owner decisions settle the waiting items: `accept` stores the reminder or memory or adopts the rule; `reject` and `drop` end them (`src/rooms/learning/decide.ts:45-80`, `:84-91`). The autonomy reviewer does the same without the owner once its accuracy bar holds (`src/rooms/learning/autonomy.ts`).
-5. A read candidate is cleared of body text; an unread candidate turns `ignored` after the retention window (`src/rooms/learning/store.ts:71-80`).
+2. The observer applies `prefilterReason` (machine text, short acknowledgement, pasted wall of text), the daily cap (`dailyCandidateCap`),
+   masks personal data and stores the observation: `skipped` with the reason, or `candidate` with the masked text. A sensitive message keeps
+   neither excerpt nor text (`src/rooms/learning/observe.ts`).
+3. The night run (`nightRun` in `service.ts`, cron `11 3 * * *`) takes every project with waiting candidates and runs the extractor on
+   batches of `nightBatch` messages until none is left or `nightRuns` runs are spent. The extractor model is the project's rules analyzer
+   (the model the owner chose for rules); the same pass dedups against what is in force. `route` then chooses the item's state: `adopted`,
+   `proposed`, `pending_owner`, `duplicate`, `dropped` or `noted` (`src/rooms/learning/extract.ts`).
+4. Owner decisions settle the waiting items: `accept` stores the reminder or memory or adopts the rule; `reject` and `drop` end them
+   (`src/rooms/learning/decide.ts`). The night run also accepts what waited for a yes, unless the project asks for the owner's word.
+5. A read candidate is cleared of body text; a candidate unread after 36 hours turns `ignored` with reason `unread`.
+6. Rules for the PM are picked for a text by rule, with no model: `relevantPmRules` keeps a rule marked `always`, a general rule (too few
+   distinctive words) and any rule that shares a word stem with the text, its words and its `cue` (`src/rooms/learning/pm-rules.ts`).
 
-| Mode or state | What happens | Failure |
+| State | What happens | Failure |
 |---|---|---|
-| `observe` | Judged and recorded, nothing acts. | A Jev error or timeout records the message within the daily cap; receipts keep hash and size only. |
-| `active` | Learn-routed messages are extracted, compared and routed to a rule on trial, a preference, a decision, a reminder or a recorded fact. | A rule on trial stays on trial until adopted; `same_as` confirms or replaces what is in force. |
-| Lessons from runs | `collectLessonSources` gathers night findings, stage rejections and attempt failures, newest first (`packages/run-insights/src/lessons.ts:30-51`); the sweep counts candidates and advances its cursor (`src/rooms/self-repair/server/insights.ts:232-243`), and repeating lessons become rule proposals (`src/rooms/self-repair/server/insights.ts:39-43`). | Drill tasks and noise reasons are excluded (`packages/run-insights/src/lessons.ts:14`, `:34`, `:38`). |
+| `candidate` | Waits for the night run with its masked text. | No analyzer model: the run stops, the candidates stay until the retention window ends. |
+| `extracted` / `ignored` | Read by the night run: it gave an item, or nothing. | The text is cleared either way. |
+| Lessons from runs | `collectLessonSources` gathers night findings, stage rejections and attempt failures, newest first (`packages/run-insights/src/lessons.ts`); the sweep counts candidates and advances its cursor, and repeating lessons become rule proposals (`src/rooms/self-repair/server/insights.ts`). | Drill tasks and noise reasons are excluded. |
 
-## Switching on
-
-It starts in `observe`: judged and recorded, nothing else. The owner takes no part in switching it on (owner out of the loop,
-2026-10-23): every three hours (`learning-review`, at most four runs a day) a strong model of its own — the project's rules analyzer,
-not Jev and not the second opinion — checks a batch of 25 judged messages and labels each decision right or wrong
-(`src/rooms/learning/autonomy.ts`). `bb lane-pilot learning status` (or the PM: `lane_pilot_memory {action:"learned", op:"status"}`)
-lists what is missing for `active`: seven days of observation and 50 checked cases at 80 % or better. When both hold, learning
-switches itself to `active` and logs why; below 80 % it keeps observing, because the judges need fixing, not a person.
-`label <id> ok|wrong` still adds a mark by hand, and `config mode=observe` stops acting.
+`bb lane-pilot learning status` (or the PM: `lane_pilot_memory {action:"learned", op:"status"}`) shows what is waiting, what the filter
+dropped in the last 7 days by reason, today's count against the cap, what the last night run did (`learning:last-night`), and the items.
+There is no mode to switch and nothing to review by hand: the old observe/active switch and the check of the judges went with the judges.
+`bb lane-pilot learning extract <projectId>` reads one project's candidates at once.
 
 ## Settings (`learning:config`, changed with `learning config key=value`)
 
 | Setting | Default | |
 |---|---|---|
 | `enabled` | true | off: the hook ignores every message |
-| `mode` | observe | `observe` or `active` |
-| `sample` | 1 | share of eligible messages that are judged (stable by message id) |
-| `dailyJudgeCap` | 300 | Jev judgments a day (UTC); the rest are recorded as skipped |
-| `secondOpinion` | true | OpenAI Decisions at all |
-| `secondOpinionDailyCap` | 60 | second opinions a day |
-| `agreeSample` | 0.1 | share of sure messages that also get a second opinion, for the agreement report |
-| `extractorRunsPerDay` / `extractorBatch` | 6 / 12 | runs of the short model a day, messages a run |
+| `dailyCandidateCap` | 400 | candidates kept a day (UTC); the rest are recorded as skipped «cap» |
+| `nightRuns` / `nightBatch` | 12 / 25 | runs of the model in a day, messages a run |
 | `pmRulesTokens` / `writerRulesTokens` | 1600 / 1600 | token budget of the rules in force (was: 12 rules a pool) |
+
+A record saved by an older version (with `mode`, `sample`, `dailyJudgeCap`, `secondOpinion`, ...) is read without those keys.
 
 ## Cost
 
-Jev about 1.1k input tokens a message. The second opinion: 200 ms median, $0.10 per million input tokens, so a hundred cost about one
-cent. The extractor is one hidden model thread per project per run (at most 6 a day). A message too short, an acknowledgement or a
-pasted log (over 12 000 characters) is never sent. Receipts: the shared `lane_pilot_jev_receipt` (hash and size, never the text) and
-the observation row's second-opinion tokens and latency.
+One hidden model thread per batch of 25 messages per project, at night. About 200 tokens a message (masked text, the agent's reply tail,
+JSON answer) plus about 1.5k for the instructions and the list of statements in force: a day of 100 candidates is four batches, about
+30k input tokens, on the rules analyzer model. No per-message request and no outside service. A message too short, an acknowledgement,
+machine text or a pasted log (over 12 000 characters) is never sent.
 
 ## Privacy
 
-Sent outside: the masked message (`maskPii`: e-mail, phone, card, IBAN, passport, INN, SNILS, addresses) and the masked tail of the
-agent's reply before it. A message that matches the sensitive words (health, family, money, documents, clients) goes to Jev only, keeps no
-excerpt and no text, and nothing is extracted from it. The observation keeps a 280-character masked excerpt (for the hand review);
-the masked text waits for the extractor at most a day. The key `OPENAI_API_KEY` is read from the Env Catalog by name, held in memory ten
-minutes, never logged.
+Sent to the rules analyzer model, by the night run only: the masked message (`maskPii`: e-mail, phone, card, IBAN, passport, INN, SNILS,
+addresses) and the masked tail of the agent's reply before it. A message that matches the sensitive words (health, family, money,
+documents, clients) is never sent, keeps no excerpt and no text, and nothing is extracted from it. The observation keeps a 280-character
+masked excerpt; the masked text waits for the night run at most 36 hours. No key of an outside vendor is used.
 
 ## Lessons from runs (`collectLessonSources`)
 

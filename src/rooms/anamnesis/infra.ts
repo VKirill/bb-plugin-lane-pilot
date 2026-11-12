@@ -1,7 +1,7 @@
 /**
  * Text that is about infrastructure and never about the owner as a person: addresses, ssh and key paths, secret files, hosts with a
  * port, environment variable names. Such a line comes from a work note (a Claude memory about the hub, a message with a command) and
- * is never stored as a fact about the owner, never sent to Jev and never written to the portrait. Pure, no node imports.
+ * is never stored as a fact about the owner, never sent to a model and never written to the portrait. Pure, no node imports.
  */
 const PATTERNS: Array<[RegExp, string]> = [
   [/(?<![\d.])(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}(?![\d.])/, "an IP address"],

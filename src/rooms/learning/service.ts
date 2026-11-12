@@ -4,7 +4,6 @@ import { projectPassportBlock } from "../passport";
 import { TURN_REQUESTED, type EventLike, type OwnerMessage } from "../anamnesis";
 import { getRunSettingsScopes, loadProjectSettings } from "../storage";
 import { ownerWordsOn } from "../tasks";
-import { jev } from "@lane-pilot/jev";
 import { explicitOwnerLocale, relayFor } from "../relay/server";
 import { scheduleIsolated } from "../platform/server";
 import { listMemoryByOrigin, type MemorySettings } from "@lane-pilot/memory-core";
@@ -19,24 +18,19 @@ import { createDecisions } from "./decide";
 import { postOwnerItem } from "../owner-waiting";
 import { createDigest } from "./digest";
 import { createExtractor, type ExtractResult } from "./extract";
-import { recordFrustration } from "./frustration";
 import { memoryFill } from "./housekeeping";
-import { envCatalogKey } from "./keys";
 import { createLiveFeed } from "./live";
 import { createObserver } from "./observe";
-import { createOps, type Kv } from "./ops";
-import { KEY_NAME, createDecisionsClient } from "./opinion";
+import { LAST_NIGHT_KEY, createOps, type Kv, type NightReport } from "./ops";
 import { pmBoardBlock, pmResumeInstructions, pmRulesOf, relevantPmRules } from "./pm-rules";
 import { setRuleBudgets } from "./rule-budget";
 import { lpNotesPort, lpRulesPort } from "./rules-port";
-import { complexityReport, noteOwnerQuestion, scanComplexity, scanPromises } from "./signals";
-import { DAY_MS, projectsWithCandidates, purgeStaleBodies, startOfDay, type ItemKind, type ItemState } from "./store";
+import { projectsWithCandidates, purgeStaleBodies, startOfDay, type ItemKind, type ItemState } from "./store";
 import { isNotFound, orMiss } from "@lane-pilot/kit";
 
 import type { PromotionServiceApi } from "../rule-forms/promotion-service";
 import type { WriterHostApi } from "../platform/server";
-import { bestEffort } from "@lane-pilot/kit";
-import { latestOpenPmThreadForProject, runIdForPmThread, latestRunIdForPmThread, openRunIdForPmThread, projectIdForPmThread } from "../storage";
+import { latestOpenPmThreadForProject, latestRunIdForPmThread, openRunIdForPmThread } from "../storage";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -50,14 +44,14 @@ interface Services {
 /**
  * The learning room, wired (src/learning). `createLearning` builds the pieces on the plugin's database and key-value store;
  * `mountLearning` connects them: the observer subscribes to the owner-message hub of the anamnesis room, the live feed listens to
- * BB's thread events, the PM gets its rules, the schedules run the extractor, the model review of the judges (autonomy.ts: it also
- * switches learning on and settles what waited for the owner), the daily report and the signal scans, and the one
+ * BB's thread events, the PM gets its rules, the night schedule runs the extractor over the day's candidates (and settles what
+ * waited for the owner, autonomy.ts), the daily report goes out, and the one
  * PM tool (an action of `lane_pilot_memory`) and the CLI `bb lane-pilot learning` reach the same operations.
  */
-const EXTRACT_AFTER_MS = 10 * 60_000;
-const EXTRACT_AT_COUNT = 5;
+/** The night run of the extractor: once a day, off the quarter-hours (BB starts at most 8 isolated runs at once). */
+export const NIGHT_CRON = "11 3 * * *";
 
-export const OPS = ["status", "review", "label", "items", "accept", "reject", "drop", "digest", "rules", "promotion", "agreement", "signals", "config", "extract", "lessons"] as const;
+export const OPS = ["status", "items", "accept", "reject", "drop", "digest", "rules", "promotion", "config", "extract", "lessons"] as const;
 export type LearningOp = (typeof OPS)[number];
 
 export function createLearning(ctx: ServerCore, services: Services) {
@@ -67,7 +61,6 @@ export function createLearning(ctx: ServerCore, services: Services) {
   const refresh = async (): Promise<LearningConfig> => { config = await loadConfig(kv); setRuleBudgets({ pm: config.pmRulesTokens, writer: config.writerRulesTokens }); return config; };
   void refresh();
 
-  const decisionsClient = createDecisionsClient({ apiKey: envCatalogKey(bb, KEY_NAME) });
   const rules = lpRulesPort(db, services.insights, services.memorySettings), notes = lpNotesPort(db, services.insights, services.memorySettings);
   const log = (line: string) => ctx.log(line);
 
@@ -86,11 +79,7 @@ export function createLearning(ctx: ServerCore, services: Services) {
   }
 
   const observer = createObserver({
-    db, config: async () => config, jev, decisions: decisionsClient, prevReply, log,
-    onFrustration: async ({ observation, message, quote, agentSaid }) => {
-      const run = { id: runIdForPmThread(db, message.threadId) };
-      await recordFrustration(kv, { at: Date.now(), projectId: message.projectId, threadId: message.threadId, messageId: message.id, p: observation.frustration ?? 0, quote, agentSaid, pmThreadId: run.id ? message.threadId : null, runId: run.id });
-    },
+    db, config: async () => config, prevReply, log,
   });
 
   const live = createLiveFeed({
@@ -127,7 +116,7 @@ export function createLearning(ctx: ServerCore, services: Services) {
   }
 
   const extractor = createExtractor({
-    db, jev, rules, notes, globalPreferences, runModel, scopeOf,
+    db, rules, notes, globalPreferences, runModel, scopeOf,
     locale: async (projectId) => {
       const stored = await bb.storage.kv.get<string>(`rules-locale:${projectId}`);
       return stored === "ru" || stored === "en" ? stored : (await explicitOwnerLocale(bb) ?? "en");
@@ -165,45 +154,50 @@ export function createLearning(ctx: ServerCore, services: Services) {
     memoryFill: () => memoryFill(db, (projectId) => { const s = services.memorySettings(loadProjectSettings(db, projectId)); return { noteBudget: s.noteBudget, coreBudget: s.coreBudget }; }).slice(0, 12),
   });
 
-  const sendToPm = async (threadId: string, text: string) => { await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never); };
   const autonomy = createAutonomy({
-    db, kv, config: () => config, status: () => ops.status(), configure: (words) => ops.configure(words), runModel, decisions, pmThread, sendToPm, log,
+    db, decisions, log,
     ownerWords: (projectId) => ownerWordsOn(loadProjectSettings(db, projectId)),
   });
-
-  const signalDeps = {
-    db, jev, log,
-    finalAnswer: async (threadId: string) => {
-      const output = await bb.sdk.threads.output({ threadId });
-      const text = output && typeof output === "object" ? (output as { text?: unknown; lastAssistantText?: unknown }).text ?? (output as { lastAssistantText?: unknown }).lastAssistantText : null;
-      return typeof text === "string" ? text : null;
-    },
-  };
 
   /* ---- extraction ---- */
 
   const runsKey = () => `learning:extractor-runs:${new Date(startOfDay(Date.now())).toISOString().slice(0, 10)}`;
-  async function extractNow(projectId: string): Promise<ExtractResult> {
-    const empty: ExtractResult = { state: "nothing", read: 0, items: 0, adopted: 0, waiting: 0, duplicates: 0, dropped: 0, noted: 0 };
-    if (config.mode !== "active") return { ...empty, state: "observe_mode" };
-    const runs = (await kv.get<number>(runsKey())) ?? 0;
-    if (runs >= config.extractorRunsPerDay) return { ...empty, reason: `the cap of ${config.extractorRunsPerDay} extractor runs a day is spent` };
-    const result = await extractor.run(projectId, { batch: config.extractorBatch, active: true });
-    if (result.state === "ran" || result.state === "no_model") await kv.set(runsKey(), (runs + 1) as never);
-    if (result.items) ctx.realtime?.notify(projectId, "rules");
-    return result;
+
+  /** Reads every waiting candidate of one project, batch after batch, until none is left or the day's runs are spent. */
+  async function extractNow(projectId: string, total?: ExtractResult): Promise<ExtractResult> {
+    const sum: ExtractResult = total ?? { state: "nothing", read: 0, items: 0, adopted: 0, waiting: 0, duplicates: 0, dropped: 0, noted: 0 };
+    for (;;) {
+      if (ctx.isDisposed()) return sum;
+      const runs = (await kv.get<number>(runsKey())) ?? 0;
+      if (runs >= config.nightRuns) return { ...sum, reason: `the cap of ${config.nightRuns} extractor runs a day is spent` };
+      const result = await extractor.run(projectId, { batch: config.nightBatch });
+      if (result.state === "nothing") return sum;
+      await kv.set(runsKey(), (runs + 1) as never);
+      if (result.state === "no_model") return { ...sum, state: "no_model", ...(result.reason ? { reason: result.reason } : {}) };
+      for (const key of ["read", "items", "adopted", "waiting", "duplicates", "dropped", "noted"] as const) sum[key] += result[key];
+      sum.state = "ran";
+      if (result.items) ctx.realtime?.notify(projectId, "rules");
+    }
   }
 
-  async function extractTick(): Promise<void> {
+  /** The night run: every project with waiting candidates, all of the day's candidates in batches; then the owner's waiting items are settled. */
+  async function nightRun(): Promise<NightReport> {
     purgeStaleBodies(db, Date.now());
-    if (config.mode !== "active") return;
+    const report: NightReport = { at: Date.now(), projects: 0, batches: 0, read: 0, items: 0, adopted: 0, waiting: 0, duplicates: 0, noted: 0, dropped: 0 };
+    if (!config.enabled) return { ...report, stopped: "learning is switched off" };
     for (const waiting of projectsWithCandidates(db)) {
-      if (ctx.isDisposed()) return;
-      if (Date.now() - waiting.oldest < EXTRACT_AFTER_MS && waiting.waiting < EXTRACT_AT_COUNT) continue;
-      const result = await extractNow(waiting.projectId).catch((cause: unknown) => ({ state: "error", reason: cause instanceof Error ? cause.message : String(cause) }));
-      if (result.state !== "nothing") log(`learning: extraction for ${waiting.projectId}: ${JSON.stringify(result)}`);
+      if (ctx.isDisposed()) break;
+      const runsBefore = (await kv.get<number>(runsKey())) ?? 0;
+      const result = await extractNow(waiting.projectId).catch((cause: unknown): ExtractResult => ({ state: "no_model", read: 0, items: 0, adopted: 0, waiting: 0, duplicates: 0, dropped: 0, noted: 0, reason: cause instanceof Error ? cause.message : String(cause) }));
+      report.projects += 1;
+      report.batches += ((await kv.get<number>(runsKey())) ?? 0) - runsBefore;
+      for (const key of ["read", "items", "adopted", "waiting", "duplicates", "dropped", "noted"] as const) report[key] += result[key];
+      if (result.reason) report.stopped = result.reason;
+      log(`learning: night extraction for ${waiting.projectId}: ${JSON.stringify(result)}`);
     }
     if (!ctx.isDisposed()) await autonomy.settleWaiting();
+    await kv.set(LAST_NIGHT_KEY, report as never);
+    return report;
   }
 
   /* ---- operations (the PM's action and the CLI) ---- */
@@ -212,8 +206,6 @@ export function createLearning(ctx: ServerCore, services: Services) {
     const needId = () => { if (!args.id) throw new Error(`op "${op}" needs the id of a learned item`); return args.id; };
     switch (op) {
       case "status": return await ops.status();
-      case "review": return { cases: ops.review(args.limit ?? 10), how: 'A model checks these by itself (autonomy.ts); op "label" with id and correct true or false adds a mark of your own.' };
-      case "label": if (!args.id || args.correct === undefined) throw new Error('op "label" needs id and correct'); return ops.label(args.id, args.correct);
       case "items": return ops.items({ ...(args.projectId ? { projectId: args.projectId } : {}), ...(args.state ? { states: [args.state as ItemState] } : {}), ...(args.kind ? { kinds: [args.kind as ItemKind] } : {}), limit: args.limit ?? 30 });
       case "accept": return await decisions.accept(needId());
       case "reject": return await decisions.reject(needId());
@@ -222,7 +214,7 @@ export function createLearning(ctx: ServerCore, services: Services) {
       case "rules": {
         if (!args.projectId) throw new Error('op "rules" needs a project');
         const all = pmRulesOf(db, args.projectId);
-        const picked = args.text ? await relevantPmRules(jev(), all, args.text) : all;
+        const picked = args.text ? relevantPmRules(all, args.text) : all;
         return { projectId: args.projectId, rules: picked.map((rule) => ({ id: rule.id, rule: rule.rule })), of: all.length };
       }
       case "promotion": {
@@ -232,8 +224,6 @@ export function createLearning(ctx: ServerCore, services: Services) {
         if (args.state === "dismiss") return services.promotions.dismiss(args.projectId, needId()) ?? { ok: false, reason: `no candidate ${args.id}` };
         return { projectId: args.projectId, open: (await import("../rule-forms")).listPromotions(db, args.projectId).filter((row) => row.state === "proposed" || row.state === "owner_only").map((row) => ({ id: row.ruleId, mechanism: row.mechanism, tier: row.tier, title: row.task.title })) };
       }
-      case "agreement": return ops.agreement(args.days ?? 7);
-      case "signals": return { counts: ops.signals(args.kind, args.limit ?? 30), complexity: complexityReport(db, Date.now() - 30 * DAY_MS) };
       case "config": return await ops.configure(args.settings ?? []);
       case "extract": { if (!args.projectId) throw new Error('op "extract" needs a project'); return await extractNow(args.projectId); }
       // Phase learnings of every project in the user-wide store (SMA k_t_learnings): each names the project it came from.
@@ -241,7 +231,7 @@ export function createLearning(ctx: ServerCore, services: Services) {
     }
   }
 
-  return { observer, live, extractor, decisions, digest, ops, run, extractNow, extractTick, reviewTick: autonomy.reviewTick, refresh, signalDeps, config: () => config, pmThread, noteQuestion: (input: { projectId: string; threadId: string; question: string; detail?: string | undefined }) => noteOwnerQuestion(signalDeps, input) };
+  return { observer, live, extractor, decisions, digest, ops, run, extractNow, nightRun, runModel, refresh, config: () => config, pmThread };
 }
 export type Learning = ReturnType<typeof createLearning>;
 
@@ -253,7 +243,7 @@ export function mountLearning(ctx: ServerCore, services: Services): Learning | n
   registerObservedTool(bb.agents, {
     name: "lane_pilot_learned",
     description: "What Lane Pilot learned from the owner's own messages: status and evidence, cases to check, learned items, the owner's yes or no, PM rules for a text, settings.",
-    instructions: `op: status (is it ready to act, cost, agreement), review (cases to mark), label {id, correct}, items {state?, kind?, projectId?}, accept/reject/drop {id}, digest {send?}, rules {projectId, text?}, promotion {projectId?, id?, state?}, agreement {days?}, signals {kind?}, config {settings:["key=value"]}, extract {projectId}. Learning switches itself on once a model has checked enough of the judges' decisions; do not ask the owner. Items are accepted by themselves; items are saved by the server itself.`,
+    instructions: `op: status (candidates waiting, last night run, items), items {state?, kind?, projectId?}, accept/reject/drop {id}, digest {send?}, rules {projectId, text?}, promotion {projectId?, id?, state?}, config {settings:["key=value"]}, extract {projectId}. Lessons are drawn from the owner's messages by one night run; do not ask the owner. Items are accepted by themselves; items are saved by the server itself.`,
     parameters: z.object({
       op: z.enum(OPS), id: z.string().min(1).optional(), correct: z.boolean().optional(), state: z.string().optional(), kind: z.string().optional(),
       projectId: z.string().min(1).optional(), limit: z.number().int().min(1).max(100).optional(), days: z.number().int().min(1).max(90).optional(),
@@ -273,6 +263,12 @@ export function mountLearning(ctx: ServerCore, services: Services): Learning | n
   try {
     const room = createLearning(ctx, services);
     learning = room;
+
+    // The anamnesis room reads fragments of the owner's messages in its own batch (its daily pass) with the same analyzer model.
+    anamnesisFor(ctx).setFragmentModel(async (prompt, projectId) => {
+      if (!projectId) throw new Error("no_project");
+      return await room.runModel(prompt, projectId, "fragments of the owner's messages");
+    });
 
     // One collector of the owner's messages: this is a subscriber to the hub of the anamnesis room, and the live feed is what fills it.
     bb.onDispose(anamnesisFor(ctx).ownerMessages.subscribe(room.observer.consumer));
@@ -299,31 +295,13 @@ export function mountLearning(ctx: ServerCore, services: Services): Learning | n
       });
     } catch (cause) { bb.log.info(`Lane Pilot learning cannot contribute instructions: ${cause instanceof Error ? cause.message : String(cause)}`); }
 
-    // A question an agent puts to the owner is read once for the routing signal (observation only); the question itself is not touched.
-    const asking = ctx.ownerAsk as unknown as { ask: (threadId: string, request: { source?: string; question: string; detail?: string }, options?: unknown) => Promise<unknown> };
-    const originalAsk = asking.ask.bind(ctx.ownerAsk);
-    asking.ask = (threadId, request, options) => {
-      if (request.source === "pm" && room.config().enabled) {
-        const project = projectIdForPmThread(db, threadId);
-        if (project) void bestEffort(ctx.log, "learning question note", room.noteQuestion({ projectId: project, threadId, question: request.question, detail: request.detail }), undefined);
-      }
-      return originalAsk(threadId, request, options);
-    };
-
     // Cron, off the quarter-hours (BB starts at most 8 isolated runs at once).
-    scheduleIsolated(bb, "learning-extract", "11,41 * * * *", async () => { if (!ctx.isDisposed()) await room.extractTick(); }, { timeoutMs: 30 * 60_000 });
-    scheduleIsolated(bb, "learning-review", "26 */3 * * *", async () => { if (!ctx.isDisposed()) await room.reviewTick(); }, { timeoutMs: 20 * 60_000 });
+    scheduleIsolated(bb, "learning-extract", NIGHT_CRON, async () => { if (!ctx.isDisposed()) await room.nightRun(); }, { timeoutMs: 60 * 60_000 });
     scheduleIsolated(bb, "learning-digest", "20 18 * * *", async () => {
-      if (ctx.isDisposed() || room.config().mode !== "active") return;
+      if (ctx.isDisposed() || !room.config().enabled) return;
       const sent = await room.digest.run();
       if (sent.length) bb.log.info(`Lane Pilot learning report sent for ${sent.filter((row) => row.sent).length} project(s)`);
     }, { timeoutMs: 10 * 60_000 });
-    scheduleIsolated(bb, "learning-signals", "40 4 * * *", async () => {
-      if (ctx.isDisposed() || !room.config().enabled) return;
-      const promises = await bestEffort(ctx.log, "learning promise scan", scanPromises(room.signalDeps, 20), { read: 0, found: 0 });
-      const sizes = await bestEffort(ctx.log, "learning complexity scan", scanComplexity(room.signalDeps, 20), { read: 0 });
-      if (promises.read || sizes.read) bb.log.info(`Lane Pilot learning signals: ${promises.read} answers read (${promises.found} with an unkept promise), ${sizes.read} contracts sized`);
-    }, { timeoutMs: 20 * 60_000 });
     mounted.set(ctx, room);
     return room;
   } catch (cause) {

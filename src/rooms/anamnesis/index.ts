@@ -11,4 +11,5 @@ export type { EventLike, OwnerMessage, OwnerMessageConsumer, OwnerMessageHub, Ow
 export { PROFILE_KEYS, PROFILE_VALUE_MAX, profilePairProblem, secretKeyName } from "./profile";
 export { maskPii } from "./pii";
 export { anamnesisFor, mountAnamnesis } from "./wiring";
-export { fragmentJudgment, matchJudgment } from "./judgment";
+export { fragmentJudgeVia } from "./fragments";
+export type { FragmentModel } from "./fragments";

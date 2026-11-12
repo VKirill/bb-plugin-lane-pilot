@@ -106,7 +106,7 @@ A defect found by writing the registry: `stickyTurnPrompt` had a `rulesText` par
 2. Removes what an earlier run left, then plants through the write door (`storeMemoryRecords`, the function the maintainer and the session RPC use; `:153`) a note that names the folder `lp-probe/memory`, a core convention, and through the lesson door (`upsertLessonProposal` + `adoptRuleProposal`) an always-on rule for both audiences. Every record carries a unique token (`lpprobe<8 hex><n|c|r>`), `trust: confirmed`, `origin: probe` and `valid_until` one day ahead (`:33`).
 3. For every probed path builds what the agent receives and looks for the tokens (`PROBES`, `:68`): the brief text from `writerKnowledge` + `writerBriefSegments` (writer.brief), the next-task turn (writer.turn), `codeRepairPrompt` with the dispatch context (writer.repair), `pmRulesPromptBlock` (pm.start), `pmResumeInstructions` (pm.resume), `pmRulesOf` (pm.rules_tool), `pmMemoryContext` (pm.memory_tool), `codeCritiquePrompt` and `nightReviewPrompt` over `reviewerMemoryFor` (critic.code, night.review), `councilMemoryBlock` (council.evidence). A path passes when every kind it carries is in the text (`judge`, `:206`).
 4. Negative case: the same path for a task in an unrelated folder, and for a gibberish query. A kind the path does not hand to every task (`alwaysOn`) must not show up, and the gibberish query must pull no record.
-5. Writes one row per path into `lane_pilot_memory_probe` (path, found, negative_ok, latency_ms, lp_version, at, detail, token; `src/rooms/storage/database.ts:357`, the last migration when it was added) and removes its records unless `--keep`. Exit 1 when any path is red. `--report` prints the last run and `memoryUnanswered` (`src/rooms/learning/unanswered.ts:17`).
+5. Writes one row per path into `lane_pilot_memory_probe` (path, found, negative_ok, latency_ms, lp_version, at, detail, token; `src/rooms/storage/database.ts:357`, the last migration when it was added) and removes its records unless `--keep`. Exit 1 when any path is red. `--report` prints the last run and `memoryUnanswered` (`src/rooms/learning/unanswered.ts`).
 
 Observed (single-session) records wait a day for writers (`OBSERVED_QUARANTINE_MS`, `packages/memory-core/src/lifecycle.ts:5`), so the probe writes trusted records; a session-written note is visible to `lane-memory` at once and to a writer after a day or a second source, by design.
 
@@ -116,7 +116,7 @@ Observed (single-session) records wait a day for writers (`OBSERVED_QUARANTINE_M
 
 ### The metric: a question memory did not answer
 
-`memoryUnanswered` (`src/rooms/learning/unanswered.ts:17`) counts, per project over 30 days, learning items in state `duplicate` (the owner said again what was already in force; `confirmations` counted) and `owner_question` signals with p >= 0.6 (an agent asked the owner what another agent or the memory could have answered). Items are written only while the learning room is `active`; on the hub it is still observing, so the first number is 0 and the second is the signal (27 `owner_question` rows on 2026-10-22).
+`memoryUnanswered` (`src/rooms/learning/unanswered.ts`) counts, per project over 30 days, learning items in state `duplicate` (the owner said again what was already in force; `confirmations` counted). The second number it used to carry, `owner_question` signals read by Jev, is gone with that judgment.
 
 ### Why 1532 expired notes were almost never used
 

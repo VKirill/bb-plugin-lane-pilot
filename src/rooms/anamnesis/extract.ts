@@ -1,4 +1,4 @@
-import { SENSITIVE_FROM, type FragmentDecision, type MatchDecision, type MatchInput } from "./judgment";
+import { FRAGMENT_BATCH, SENSITIVE_FROM, batchesByProject, type FragmentDecision, type FragmentJudge } from "./fragments";
 import type { Hub } from "./hub";
 import { infrastructureReason } from "./infra";
 import { scrubQuote, sensitiveReason, type AnamnesisRecord, type Kind } from "./model";
@@ -8,37 +8,36 @@ import { messageEvidence, type OwnerMessage, type OwnerMessageConsumer, type Own
 import { sha256Hex } from "@lane-pilot/kit";
 
 /**
- * Learning from the owner's messages as they come (A4): the at-message path and the daily pass use this one function.
+ * Learning from the owner's messages (A4): the daily pass (the night batch) uses this function; a message that arrives live only waits
+ * for it (no model is called per message).
  *
  * A message passes four gates, each cheaper than the next: long enough, not about infrastructure (an address, an ssh command, a key
  * path, an environment variable: never about the owner as a person), not seen before, and inside the day's ceiling. What is left is
- * masked (keys by `scrubQuote`, personal data by `maskPii`) and goes to Jev: «is this about the owner, and what kind of fact». Messages
- * about family, health or money go too, masked; what comes of them is stored as `sensitive`. A kept fragment is compared with the
- * nearest record of the same kind (in code first, then Jev): a restatement adds evidence to that record, a contradiction becomes a
- * candidate marked `contradicts` that the owner sees (the old record is never changed), anything else is a new record.
- * Sensitive fragments are stored as sensitive candidates and are never compared with the known records.
+ * masked (keys by `scrubQuote`, personal data by `maskPii`) and goes in batches of one project to a model that says «is this about the
+ * owner, and what kind of fact» (fragments.ts). Messages about family, health or money go too, masked; what comes of them is stored as
+ * `sensitive`. A kept fragment is compared with the nearest record of the same kind by words alone: a close restatement adds evidence
+ * to that record, anything else is a new record. Sensitive fragments are stored as sensitive candidates and are never compared with
+ * the known records.
  */
 export const MIN_FRAGMENT_CHARS = 30;
 export const MAX_FRAGMENT_CHARS = 1_500;
-/** The most fragments one Madrid day may send to Jev, both paths together, unless the setting (`maxClassify`) says otherwise. */
+/** The most fragments one Madrid day may send to the model, both paths together, unless the setting (`maxClassify`) says otherwise. */
 export const DEFAULT_DAILY_FRAGMENTS = 200;
 export const HARD_DAILY_FRAGMENTS = 2_000;
-const BATCH = 20;
 const SEEN_KEEP = 5_000;
 export const SEEN_KEY = "anamnesis:seen";
 export const BUDGET_KEY = "anamnesis:budget";
-/** A fragment this close in words to a record is shown to Jev as that record's possible restatement. */
+/** A fragment this close in words to a record of the same kind is its restatement. */
+const RESTATES = 0.6;
 const MIN_OVERLAP = 0.25;
 const DUPLICATE_OVERLAP = 0.8;
-/** A record Jev is this sure about starts as a draft; anything less waits as a candidate until a second message agrees. */
+/** A record the model is this sure about starts as a draft; anything less waits as a candidate until a second message agrees. */
 const DRAFT_FROM = 0.8;
 
 export type ExtractDeps = {
   hub: Pick<Hub, "ask" | "config" | "kv">;
-  /** Jev's fragment judgment over masked texts; null for one it could not judge. Absent: nothing can be classified. */
-  judge?: ((texts: string[], signal?: AbortSignal) => Promise<Array<FragmentDecision | null>>) | undefined;
-  /** Jev's restatement/contradiction judgment; absent or null means «new». */
-  match?: ((pairs: MatchInput[], signal?: AbortSignal) => Promise<Array<MatchDecision | null>>) | undefined;
+  /** The model reading masked fragments in a batch; null for one it could not read. Absent: nothing can be classified. */
+  judge?: FragmentJudge | undefined;
   now(): number;
 };
 
@@ -65,12 +64,12 @@ export function candidateRecord(message: OwnerMessage, decision: FragmentDecisio
   return {
     kind: decision.kind, key: `msg-${sha256Hex(message.id).slice(0, 12)}`, title: text.slice(0, 80), statement: text, status,
     ...(isSensitive(decision, text) ? { sensitivity: "sensitive" } : {}),
-    attributes: { origin: "jev-fragment", kindP: Math.round(decision.kindP * 100) / 100, aboutOwner: Math.round(decision.aboutOwner * 100) / 100, sensitiveP: Math.round(decision.sensitive * 100) / 100, ...extraAttributes },
+    attributes: { origin: "llm-fragment", kindP: Math.round(decision.kindP * 100) / 100, aboutOwner: Math.round(decision.aboutOwner * 100) / 100, sensitiveP: Math.round(decision.sensitive * 100) / 100, ...extraAttributes },
     confidence: Math.min(decision.kindP, decision.aboutOwner), evidence: [messageEvidence(message, text)],
   };
 }
 
-/** A fragment is sensitive when Jev says so or when the local word rules (family, health, money, documents) do. */
+/** A fragment is sensitive when the model says so or when the local word rules (family, health, money, documents) do. */
 const isSensitive = (decision: FragmentDecision, text: string): boolean => decision.sensitive >= SENSITIVE_FROM || sensitiveReason(text) !== null;
 
 const stem = (word: string): string => word.slice(0, 5);
@@ -129,7 +128,7 @@ async function extractNow(deps: ExtractDeps, messages: readonly OwnerMessage[], 
     eligible.push(message);
   }
   if (!eligible.length) return report;
-  if (!deps.judge) { report.note = "Jev is not available (no key or switched off)"; report.complete = false; return report; }
+  if (!deps.judge) { report.note = "no model is available for reading fragments"; report.complete = false; return report; }
 
   // The newest go first when the day's ceiling cuts the rest; the rest is read again by the next pass.
   eligible.sort((a, b) => b.at - a.at);
@@ -140,12 +139,11 @@ async function extractNow(deps: ExtractDeps, messages: readonly OwnerMessage[], 
 
   const kept: Kept[] = [];
   const settled: string[] = [];
-  for (let i = 0; i < chosen.length; i += BATCH) {
+  for (const batch of batchesByProject(chosen, FRAGMENT_BATCH)) {
     options.signal?.throwIfAborted();
-    const batch = chosen.slice(i, i + BATCH);
     const outgoing = batch.map((message) => maskPii(scrubQuote(message.text, MAX_FRAGMENT_CHARS)));
     report.masked += outgoing.filter((item) => item.count > 0).length;
-    const decisions = await deps.judge(outgoing.map((item) => item.text), options.signal);
+    const decisions = await deps.judge(outgoing.map((item) => item.text), options.signal, batch[0]!.projectId);
     batch.forEach((message, j) => {
       report.asked += 1;
       const decision = decisions[j];
@@ -178,15 +176,13 @@ async function extractNow(deps: ExtractDeps, messages: readonly OwnerMessage[], 
     }
     if (best) nearest.set(item, best);
   }
-  const pairs = [...nearest].map(([item, record]) => ({ item, input: { fragment: item.masked, known: maskPii(scrubQuote(`${record.title}. ${record.statement}`, 600)).text } }));
-  const answers = pairs.length && deps.match ? await deps.match(pairs.map((pair) => pair.input), options.signal) : [];
-  const relationOf = new Map<Kept, MatchDecision | null>(pairs.map((pair, index) => [pair.item, answers[index] ?? null]));
+  const restates = (item: Kept, record: AnamnesisRecord | undefined): record is AnamnesisRecord => record !== undefined && overlap(item.masked, `${record.title} ${record.statement}`) >= RESTATES;
 
   const upserts: Array<Record<string, unknown>> = [];
   const targetOf = new Map<Kept, Target>();
   for (const item of firsts) {
-    const record = nearest.get(item), relation = relationOf.get(item);
-    if (record && relation?.relation === "same") {
+    const record = nearest.get(item);
+    if (restates(item, record)) {
       // A restatement: one more piece of evidence on the record that already says it. A candidate that two messages agree on becomes a draft.
       targetOf.set(item, { kind: record.kind, key: keyOf(record), title: record.title });
       upserts.push({ ...targetOf.get(item), ...(record.status === "candidate" ? { status: "draft" } : {}), evidence: [messageEvidence(item.message, scrubQuote(item.message.text, 240))] });
@@ -195,17 +191,15 @@ async function extractNow(deps: ExtractDeps, messages: readonly OwnerMessage[], 
     }
     // A sensitive fragment always waits as a candidate: the owner looks at it before it becomes a draft.
     const confident = Math.min(item.decision.kindP, item.decision.aboutOwner) >= DRAFT_FROM && !isSensitive(item.decision, item.masked);
-    const created = record && relation?.relation === "contradicts"
-      ? candidateRecord(item.message, item.decision, "candidate", { contradicts: [record.id] })
-      : candidateRecord(item.message, item.decision, confident ? "draft" : "candidate");
+    const created = candidateRecord(item.message, item.decision, confident ? "draft" : "candidate");
     targetOf.set(item, { kind: item.decision.kind, key: String(created.key), title: String(created.title) });
     upserts.push(created);
-    if (record && relation?.relation === "contradicts") report.contradictions += 1; else report.created += 1;
+    report.created += 1;
   }
   for (const [item, twin] of twins) upserts.push({ ...targetOf.get(twin)!, evidence: [messageEvidence(item.message, scrubQuote(item.message.text, 240))] });
 
-  if (upserts.length) report.stored = await hub.ask({ op: "upsert", actor: "auto:jev-fragment", reason: options.live ? "at-message extraction" : "daily extraction", records: upserts });
-  // Judged messages are not read again, whatever came of them; the ones Jev could not judge stay open.
+  if (upserts.length) report.stored = await hub.ask({ op: "upsert", actor: "auto:llm-fragment", reason: options.live ? "at-message extraction" : "daily extraction", records: upserts });
+  // Judged messages are not read again, whatever came of them; the ones the model could not read stay open.
   if (settled.length) await hub.kv.set(SEEN_KEY, [...seen, ...settled].slice(-SEEN_KEEP) as never);
   return report;
 }
@@ -216,6 +210,8 @@ export function createExtractConsumer(deps: ExtractDeps): OwnerMessageConsumer &
   return {
     name: "anamnesis",
     async handle(batch: OwnerMessage[], meta: OwnerMessageMeta) {
+      // A message that arrives live is not read at once: the night pass takes it from the window since the last checkpoint.
+      if (meta.live) { last = { ...emptyReport(true), considered: batch.length, complete: false, note: "waits for the night pass" }; return; }
       if ((await deps.hub.config()).extract !== true) { last = { ...emptyReport(meta.live), considered: batch.length, complete: false, note: "extraction is switched off" }; return; }
       last = await extractMessages(deps, batch, { live: meta.live });
     },

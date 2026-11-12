@@ -1,5 +1,5 @@
 import { candidateRecord } from "./extract";
-import type { FragmentDecision } from "./judgment";
+import { FRAGMENT_BATCH, batchesByProject, type FragmentDecision, type FragmentJudge } from "./fragments";
 import type { Hub } from "./hub";
 import { infrastructureReason } from "./infra";
 import { scrubQuote, type Kind, type Source } from "./model";
@@ -14,18 +14,17 @@ import { bestEffort } from "@lane-pilot/kit";
  * The first load (A3). It reads everything the owner's machines and BB already hold, makes a draft anamnesis and shows the owner
  * what it found. Nothing is mixed into any agent's context: records stay `draft` or `candidate` until the owner confirms them.
  *
- * `plan` (the default) changes nothing and sends nothing outside: it counts, and prices the optional Jev pass.
- * `run` stores drafts. Classifying messages with Jev is a separate switch (`classify`), because that is the only step that
+ * `plan` (the default) changes nothing and sends nothing outside: it counts, and prices the optional classifying pass.
+ * `run` stores drafts. Classifying messages with a model (the rules analyzer of the message's project) is a separate switch (`classify`), because that is the only step that
  * sends message text to a third party. What is sent is masked (keys and personal data); messages about family, health or money go
  * too and become sensitive records; a message about infrastructure (addresses, ssh, key paths, variable names) is never sent.
  */
-export const JEV_TOKENS_PER_MESSAGE = 1_100;
+export const MODEL_TOKENS_PER_MESSAGE = 1_100;
 export const MIN_CLASSIFY_CHARS = 30;
 export const MAX_CLASSIFY_CHARS = 1_500;
-/** The most fragments one Jev pass sends unless the setting or `--max-classify` says otherwise (about 220k tokens), and the most it ever sends. */
+/** The most fragments one classifying pass sends unless the setting or `--max-classify` says otherwise (about 220k tokens), and the most it ever sends. */
 export const DEFAULT_MAX_CLASSIFY = 200;
 export const HARD_MAX_CLASSIFY = 2_000;
-const JEV_BATCH = 20;
 const DAY = 86_400_000;
 export const DEFAULT_LOOKBACK_DAYS = 365;
 
@@ -36,8 +35,8 @@ export type LoadDeps = {
   projectNames(): Promise<Map<string, string>>;
   /** Lane Pilot runs, for a project's activity. */
   lpRuns(): Array<{ id: string; projectId: string; createdAt: number }>;
-  /** Asks Jev about masked fragments; null for one it could not judge. Absent: no classification possible. */
-  judge?(texts: string[], signal?: AbortSignal): Promise<Array<FragmentDecision | null>>;
+  /** Asks the model about masked fragments; null for one it could not read. Absent: no classification possible. */
+  judge?: FragmentJudge | undefined;
   now(): number;
   /** Where a swallowed best-effort failure lands; absent in tests. */
   log?: (message: string) => void;
@@ -54,12 +53,12 @@ export type LoadReport = {
   hostSources: CollectResponse["sources"];
   messages: null | {
     enabled: boolean; threads: number; total: number; characters: number; projects: number; byMonth: Record<string, number>;
-    tooShort: number; infrastructure: number; eligibleForJev: number;
+    tooShort: number; infrastructure: number; eligibleForModel: number;
   };
   lpRuns: null | { enabled: boolean; runs: number; projects: number };
   hubRecords: null | { records: number; stored: UpsertSummary | null };
   classify: null | { requested: boolean; asked: number; masked: number; kept: number; nothing: number; unavailable: number; stored: UpsertSummary | null; note?: string };
-  cost: { jevMessages: number; estimatedTokens: number; perMessage: number; note: string };
+  cost: { modelMessages: number; estimatedTokens: number; perMessage: number; note: string };
   review: string;
 };
 
@@ -78,7 +77,7 @@ export async function loadAnamnesis(deps: LoadDeps, options: LoadOptions): Promi
     : [];
 
   const report: LoadReport = { mode: options.mode, window: { from, to: until }, hostSources, messages: null, lpRuns: null, hubRecords: null, classify: null,
-    cost: { jevMessages: 0, estimatedTokens: 0, perMessage: JEV_TOKENS_PER_MESSAGE, note: "" }, review: "" };
+    cost: { modelMessages: 0, estimatedTokens: 0, perMessage: MODEL_TOKENS_PER_MESSAGE, note: "" }, review: "" };
 
   const hubRecords: Array<Record<string, unknown>> = [];
   const names = await bestEffort(log, "anamnesis project names", deps.projectNames(), new Map<string, string>());
@@ -104,7 +103,7 @@ export async function loadAnamnesis(deps: LoadDeps, options: LoadOptions): Promi
       if (classify) candidates.push(message);
     } });
     const eligible = total - tooShort - infrastructure;
-    report.messages = { enabled: true, threads, total, characters, projects: perProject.size, byMonth, tooShort, infrastructure, eligibleForJev: eligible };
+    report.messages = { enabled: true, threads, total, characters, projects: perProject.size, byMonth, tooShort, infrastructure, eligibleForModel: eligible };
   }
 
   /* ---- Lane Pilot runs ---- */
@@ -114,32 +113,31 @@ export async function loadAnamnesis(deps: LoadDeps, options: LoadOptions): Promi
     hubRecords.push(...records);
   }
 
-  /* ---- cost of the optional Jev pass ---- */
-  const eligibleAll = report.messages?.eligibleForJev ?? 0;
+  /* ---- cost of the optional classifying pass ---- */
+  const eligibleAll = report.messages?.eligibleForModel ?? 0;
   // A pass always has a ceiling (audit 2026-10-08 round 4, item 19): the number asked for, else the setting (`config --max-classify`), else the default;
   // never above the hard limit, whatever was asked for.
   const asked = options.maxClassify !== undefined && Number.isInteger(options.maxClassify) && options.maxClassify >= 1 ? options.maxClassify : config.maxClassify ?? DEFAULT_MAX_CLASSIFY;
   const cap = Math.min(asked, HARD_MAX_CLASSIFY);
-  const jevMessages = Math.min(eligibleAll, cap);
-  const leftOut = eligibleAll - jevMessages;
-  report.cost = { jevMessages, estimatedTokens: jevMessages * JEV_TOKENS_PER_MESSAGE, perMessage: JEV_TOKENS_PER_MESSAGE,
-    note: `Classifying ${jevMessages} message fragments with Jev costs about ${(jevMessages * JEV_TOKENS_PER_MESSAGE / 1000).toFixed(0)}k tokens (${JEV_TOKENS_PER_MESSAGE} per message). Nothing is sent unless you pass --classify.${leftOut > 0 ? ` A ceiling of ${cap} fragments per pass applies (the newest go first; change it with: bb lane-pilot anamnesis config --max-classify N, at most ${HARD_MAX_CLASSIFY}); ${leftOut} more eligible fragments are left out.` : ""}` };
+  const modelMessages = Math.min(eligibleAll, cap);
+  const leftOut = eligibleAll - modelMessages;
+  report.cost = { modelMessages, estimatedTokens: modelMessages * MODEL_TOKENS_PER_MESSAGE, perMessage: MODEL_TOKENS_PER_MESSAGE,
+    note: `Classifying ${modelMessages} message fragments with a model costs about ${(modelMessages * MODEL_TOKENS_PER_MESSAGE / 1000).toFixed(0)}k tokens (${MODEL_TOKENS_PER_MESSAGE} per message). Nothing is sent unless you pass --classify.${leftOut > 0 ? ` A ceiling of ${cap} fragments per pass applies (the newest go first; change it with: bb lane-pilot anamnesis config --max-classify N, at most ${HARD_MAX_CLASSIFY}); ${leftOut} more eligible fragments are left out.` : ""}` };
 
   /* ---- classification (the only step that sends message text outside) ---- */
   const candidateRecords: Array<Record<string, unknown>> = [];
   if (options.classify) {
     const cls = { requested: true, asked: 0, masked: 0, kept: 0, nothing: 0, unavailable: 0, stored: null as UpsertSummary | null, note: undefined as string | undefined };
     if (options.mode === "plan") cls.note = "plan mode: no fragment is sent; run with --run --classify to classify";
-    else if (!deps.judge) cls.note = "Jev is not available (no key or switched off)";
+    else if (!deps.judge) cls.note = "no model is available for reading fragments";
     else {
       const chosen = [...candidates].sort((a, b) => b.at - a.at).slice(0, cap).sort((a, b) => a.at - b.at);
-      for (let i = 0; i < chosen.length; i += JEV_BATCH) {
+      for (const batch of batchesByProject(chosen, FRAGMENT_BATCH)) {
         options.signal?.throwIfAborted();
-        const batch = chosen.slice(i, i + JEV_BATCH);
         // Keys are masked by `scrubQuote`, personal data (e-mails, phones, cards, documents, addresses) by `maskPii`: only the masked text leaves.
         const outgoing = batch.map((m) => maskPii(scrubQuote(m.text, MAX_CLASSIFY_CHARS)));
         cls.masked += outgoing.filter((item) => item.count > 0).length;
-        const decisions = await deps.judge(outgoing.map((item) => item.text), options.signal);
+        const decisions = await deps.judge(outgoing.map((item) => item.text), options.signal, batch[0]!.projectId);
         batch.forEach((message, j) => {
           cls.asked += 1;
           const decision = decisions[j];
@@ -161,7 +159,7 @@ export async function loadAnamnesis(deps: LoadDeps, options: LoadOptions): Promi
     if (wanted("bb-message")) stored.push(await deps.hub.ask({ op: "upsert", actor: "auto:bb-message", reason: "initial load of BB history", records: [], checkpoint: { source: "bb-message", at: until } }));
     if (wanted("lp-runs")) stored.push(await deps.hub.ask({ op: "upsert", actor: "auto:lp-runs", reason: "initial load of Lane Pilot runs", records: runRecords, checkpoint: { source: "lp-runs", at: until } }));
     report.hubRecords.stored = merge(stored);
-    if (report.classify && candidateRecords.length) report.classify.stored = await deps.hub.ask({ op: "upsert", actor: "auto:jev-fragment", reason: "classified fragments of owner messages", records: candidateRecords });
+    if (report.classify && candidateRecords.length) report.classify.stored = await deps.hub.ask({ op: "upsert", actor: "auto:llm-fragment", reason: "classified fragments of owner messages", records: candidateRecords });
   }
   report.review = options.mode === "plan"
     ? "Plan only: nothing was stored. Run with --run to store drafts, then review with: bb lane-pilot anamnesis review"
@@ -205,10 +203,10 @@ export function formatReport(report: LoadReport): string {
   for (const s of report.hostSources) {
     lines.push(`- ${s.source}: ${s.enabled ? `${s.items} items, ${s.records} records (${Object.entries(s.outcome).map(([k, v]) => `${k} ${v}`).join(", ") || "none"})` : "off"}${s.error ? ` ERROR ${s.error}` : ""}${s.note ? ` [${s.note}]` : ""}`);
   }
-  if (report.messages) lines.push(`- bb-message: ${report.messages.total} messages in ${report.messages.threads} threads of ${report.messages.projects} projects; ${report.messages.characters} characters; ${report.messages.tooShort} too short, ${report.messages.infrastructure} about infrastructure (never sent), ${report.messages.eligibleForJev} eligible for Jev`);
+  if (report.messages) lines.push(`- bb-message: ${report.messages.total} messages in ${report.messages.threads} threads of ${report.messages.projects} projects; ${report.messages.characters} characters; ${report.messages.tooShort} too short, ${report.messages.infrastructure} about infrastructure (never sent), ${report.messages.eligibleForModel} eligible for the model`);
   if (report.lpRuns) lines.push(`- lp-runs: ${report.lpRuns.runs} runs in ${report.lpRuns.projects} projects`);
   if (report.hubRecords) lines.push(`- project records from BB and runs: ${report.hubRecords.records}${report.hubRecords.stored ? ` (${Object.entries(report.hubRecords.stored.counts).map(([k, v]) => `${k} ${v}`).join(", ")})` : ""}`);
-  if (report.classify) lines.push(`- jev classification: asked ${report.classify.asked}, kept ${report.classify.kept}, nothing ${report.classify.nothing}, unavailable ${report.classify.unavailable}${report.classify.note ? ` [${report.classify.note}]` : ""}`);
+  if (report.classify) lines.push(`- classification: asked ${report.classify.asked}, kept ${report.classify.kept}, nothing ${report.classify.nothing}, unavailable ${report.classify.unavailable}${report.classify.note ? ` [${report.classify.note}]` : ""}`);
   lines.push(`cost: ${report.cost.note}`, report.review);
   return lines.join("\n");
 }

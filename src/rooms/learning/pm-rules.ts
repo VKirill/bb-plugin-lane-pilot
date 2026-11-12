@@ -1,6 +1,4 @@
-import { listRuleProposals, logRulesShown, scopeApplies, RULE_RELEVANCE_THRESHOLD, type RuleProposal } from "@lane-pilot/run-insights";
-import type { Jev } from "@lane-pilot/jev";
-import { defineJudgment, noul, noulOf } from "@lane-pilot/jev";
+import { listRuleProposals, logRulesShown, scopeApplies, type RuleProposal } from "@lane-pilot/run-insights";
 import type { Db } from "./store";
 import { ruleBudget, ruleTokens } from "./rule-budget";
 
@@ -11,9 +9,9 @@ import { ruleBudget, ruleTokens } from "./rule-budget";
  * through `contributeInstructions`, see service.ts), within a token budget:
  *   1. rules marked `always`, 2. rules the owner decided or the trial confirmed, 3. rules on trial, newest first,
  * a rule never cut in the middle. What does not fit is counted, and `lane_pilot_memory {action:"learned", op:"rules", text}` picks the
- * relevant ones for a text with Jev, as the writers' rules are picked for a task.
+ * relevant ones for a text by rule (no model), as the writers' rules are picked for a task.
  */
-export type PmRule = Pick<RuleProposal, "id" | "rule" | "always" | "trialState" | "decidedBy" | "decidedAt" | "scope" | "audience">;
+export type PmRule = Pick<RuleProposal, "id" | "rule" | "cue" | "always" | "trialState" | "decidedBy" | "decidedAt" | "scope" | "audience">;
 
 const priority = (rule: PmRule): number => (rule.always ? 0 : rule.trialState !== "trial" ? 1 : 2);
 
@@ -69,31 +67,24 @@ export function pmResumeInstructions(db: Db, projectId: string, chain: readonly 
 
 /* ---- picking the rules that apply to a text ---- */
 
-export const PM_RULE_RELEVANCE_ID = "learning.pm_rule_relevance";
-export type RelevanceInput = { text: string; rules: string[] };
+const STOP = new Set(["that", "this", "with", "from", "must", "should", "always", "never", "when", "before", "after", "have", "will", "your", "into", "than", "then", "они", "это", "для", "что", "как", "или", "если", "надо", "нужно", "всегда", "никогда"]);
+const stems = (text: string): Set<string> => new Set((text.toLowerCase().match(/[\p{L}\p{N}_-]{4,}/gu) ?? []).filter((word) => !STOP.has(word)).map((word) => word.slice(0, 5)));
 
-export const pmRuleRelevance = defineJudgment<RelevanceInput, boolean[]>({
-  id: PM_RULE_RELEVANCE_ID,
-  version: 1,
-  defaultMode: "active",
-  timeoutMs: 8_000,
-  stateBuilder: (input) => ({ situation: input.text }),
-  questions: (input) => Object.fromEntries(input.rules.slice(0, 48).map((rule, index) => [`r${index + 1}`, noul(
-    "Should the project manager agent be reminded of the rule given here while it handles `situation`? Answer yes when what it is about to do touches what the rule is about.",
-    { true: `the rule applies: ${rule.slice(0, 500)}`, false: "the rule is about something else" },
-  )])),
-  thresholds: { min_p: { default: RULE_RELEVANCE_THRESHOLD, min: 0.01, max: 0.9, about: "least p(yes) for a rule to be shown; low on purpose, a missed rule costs more than an extra line" } },
-  decide: (answers, t, input) => ({ decision: input.rules.slice(0, 48).map((_, index) => (noulOf(answers, `r${index + 1}`) ?? 1) >= t.min_p!) }),
-  fallback: (input) => input.rules.map(() => true),
-  describe: (decision) => `${decision.filter(Boolean).length}/${decision.length}`,
-});
-
-/** The rules among `rules` that apply to `text`; every rule when Jev cannot be asked (a missed rule costs more than an extra line). */
-export async function relevantPmRules<T extends { rule: string }>(jev: Jev | null, rules: readonly T[], text: string): Promise<T[]> {
-  if (!jev || !jev.enabled() || rules.length === 0 || !text.trim()) return [...rules];
-  const verdict = await jev.judge(pmRuleRelevance, { text: text.slice(0, 4000), rules: rules.map((rule) => rule.rule) }, { subject: "pm-rules" });
-  const picked = verdict.by === "jev" ? verdict.decision : rules.map(() => true);
-  return rules.filter((_, index) => picked[index] ?? true);
+/**
+ * The rules among `rules` that apply to `text`, by rule and without a model. The scope (sections) was already applied by `pmRulesOf`.
+ * A rule is kept when it is marked `always`, when it has too few distinctive words to compare (a general rule), or when its words
+ * (the rule, its cue) share a stem with the text. A missed rule costs more than an extra line, so the test is one shared stem.
+ */
+export function relevantPmRules<T extends { rule: string; always?: boolean; cue?: string | null }>(rules: readonly T[], text: string): T[] {
+  const wanted = stems(text);
+  if (!wanted.size) return [...rules];
+  return rules.filter((rule) => {
+    if (rule.always) return true;
+    const own = stems(`${rule.rule} ${rule.cue ?? ""}`);
+    if (own.size < 3) return true;
+    for (const stem of own) if (wanted.has(stem)) return true;
+    return false;
+  });
 }
 
 import { getRun, getRunWriterHost, listRunTaskSummaries, planningHomeInputs } from "../storage";

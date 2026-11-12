@@ -38,9 +38,9 @@ export const configSchema = z.object({
   authors: z.array(z.string().min(1).max(200)).max(20).optional(),
   /** Folders searched for the owner's repositories and project journals (A3). */
   roots: z.array(z.string().startsWith("/")).max(20).optional(),
-  /** The most message fragments one Jev pass may send (a ceiling on cost, F-5); the pass default is `DEFAULT_MAX_CLASSIFY` in load.ts. */
+  /** The most message fragments one classifying pass may send (a ceiling on cost, F-5); the pass default is `DEFAULT_MAX_CLASSIFY` in load.ts. */
   maxClassify: z.number().int().min(1).max(2000).optional(),
-  /** The daily pass and the at-message extraction (A4) send masked fragments of the owner's messages to Jev; they run only while this is on. Off until the owner switches it on. */
+  /** The daily pass and the at-message extraction (A4) send masked fragments of the owner's messages to a model; they run only while this is on. Off until the owner switches it on. */
   extract: z.boolean().optional(),
   /** The owner's own Telegram channels (`@name` or a t.me link) that the Telegram source reads (A10), when that source is switched on. */
   telegramChannels: z.array(z.string().trim().min(2).max(200)).max(10).optional(),

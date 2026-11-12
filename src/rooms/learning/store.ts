@@ -1,5 +1,4 @@
 import type Database from "better-sqlite3";
-import type { Route } from "./judgment";
 import { sha256Hex } from "@lane-pilot/kit";
 
 export type Db = Pick<Database.Database, "prepare">;
@@ -7,40 +6,31 @@ export const DAY_MS = 86_400_000;
 export const startOfDay = (now: number): number => Math.floor(now / DAY_MS) * DAY_MS;
 
 export type ObsState = "skipped" | "observed" | "candidate" | "extracted" | "ignored";
+/**
+ * One owner message the hook saw. The table also has the columns of the old judges (Jev, the second opinion, the review marks); they
+ * stay in old rows and are never written now, since migrations are append only.
+ */
 export type Observation = {
   id: string; threadId: string; projectId: string; at: number; judgedAt: number; source: "live" | "catchup"; chars: number;
   excerpt: string | null; state: ObsState; skipReason: string | null; sensitive: boolean;
-  jevStatus: string | null; receiptId: number | null;
-  kind: string | null; kindP: number | null; learnP: number | null; durable: number | null; scope: string | null; frustration: number | null; deadline: number | null; route: Route | null;
-  secondStatus: string | null; secondKind: string | null; secondLearnP: number | null; secondDurable: number | null; secondRoute: Route | null; secondMs: number | null; secondTokens: number | null;
-  finalRoute: "none" | "learn" | null; body: string | null; prev: string | null; review: string | null; reviewedAt: number | null;
+  body: string | null; prev: string | null;
 };
 
 type Row = Record<string, unknown>;
-const COLUMNS = ["id", "thread_id", "project_id", "at", "judged_at", "source", "chars", "excerpt", "state", "skip_reason", "sensitive", "jev_status", "receipt_id",
-  "kind", "kind_p", "learn_p", "durable", "scope", "frustration", "deadline", "route", "second_status", "second_kind", "second_learn_p", "second_durable", "second_route",
-  "second_ms", "second_tokens", "final_route", "body", "prev", "review", "reviewed_at"] as const;
+const COLUMNS = ["id", "thread_id", "project_id", "at", "judged_at", "source", "chars", "excerpt", "state", "skip_reason", "sensitive", "body", "prev"] as const;
 
 const fromRow = (row: Row): Observation => ({
   id: row.id as string, threadId: row.thread_id as string, projectId: row.project_id as string, at: row.at as number, judgedAt: row.judged_at as number,
   source: row.source as "live" | "catchup", chars: row.chars as number, excerpt: (row.excerpt as string | null) ?? null, state: row.state as ObsState,
-  skipReason: (row.skip_reason as string | null) ?? null, sensitive: row.sensitive === 1, jevStatus: (row.jev_status as string | null) ?? null, receiptId: (row.receipt_id as number | null) ?? null,
-  kind: (row.kind as string | null) ?? null, kindP: (row.kind_p as number | null) ?? null, learnP: (row.learn_p as number | null) ?? null, durable: (row.durable as number | null) ?? null,
-  scope: (row.scope as string | null) ?? null, frustration: (row.frustration as number | null) ?? null, deadline: (row.deadline as number | null) ?? null, route: (row.route as Route | null) ?? null,
-  secondStatus: (row.second_status as string | null) ?? null, secondKind: (row.second_kind as string | null) ?? null, secondLearnP: (row.second_learn_p as number | null) ?? null,
-  secondDurable: (row.second_durable as number | null) ?? null, secondRoute: (row.second_route as Route | null) ?? null, secondMs: (row.second_ms as number | null) ?? null,
-  secondTokens: (row.second_tokens as number | null) ?? null, finalRoute: (row.final_route as "none" | "learn" | null) ?? null, body: (row.body as string | null) ?? null,
-  prev: (row.prev as string | null) ?? null, review: (row.review as string | null) ?? null, reviewedAt: (row.reviewed_at as number | null) ?? null,
+  skipReason: (row.skip_reason as string | null) ?? null, sensitive: row.sensitive === 1,
+  body: (row.body as string | null) ?? null, prev: (row.prev as string | null) ?? null,
 });
 
 /** Stores one observation; false when the message was already seen (a message reaches the hook more than once). */
 export function insertObservation(db: Db, o: Observation): boolean {
   const values: Record<string, unknown> = {
     id: o.id, thread_id: o.threadId, project_id: o.projectId, at: o.at, judged_at: o.judgedAt, source: o.source, chars: o.chars, excerpt: o.excerpt, state: o.state,
-    skip_reason: o.skipReason, sensitive: o.sensitive ? 1 : 0, jev_status: o.jevStatus, receipt_id: o.receiptId, kind: o.kind, kind_p: o.kindP, learn_p: o.learnP,
-    durable: o.durable, scope: o.scope, frustration: o.frustration, deadline: o.deadline, route: o.route, second_status: o.secondStatus, second_kind: o.secondKind,
-    second_learn_p: o.secondLearnP, second_durable: o.secondDurable, second_route: o.secondRoute, second_ms: o.secondMs, second_tokens: o.secondTokens,
-    final_route: o.finalRoute, body: o.body, prev: o.prev, review: o.review, reviewed_at: o.reviewedAt,
+    skip_reason: o.skipReason, sensitive: o.sensitive ? 1 : 0, body: o.body, prev: o.prev,
   };
   return db.prepare(`INSERT OR IGNORE INTO lane_pilot_learning_obs (${COLUMNS.join(",")}) VALUES (${COLUMNS.map((c) => `@${c}`).join(",")})`).run(values).changes === 1;
 }
@@ -51,12 +41,10 @@ export const getObservation = (db: Db, id: string): Observation | null => {
   return row ? fromRow(row) : null;
 };
 
-/** How many messages Jev was asked about today, and how many second opinions were asked for (UTC day). */
-export function usageToday(db: Db, now: number): { judged: number; second: number } {
-  const since = startOfDay(now);
-  const row = db.prepare(`SELECT sum(CASE WHEN jev_status='ok' THEN 1 ELSE 0 END) AS judged, sum(CASE WHEN second_status IS NOT NULL AND second_status<>'disabled' THEN 1 ELSE 0 END) AS second
-    FROM lane_pilot_learning_obs WHERE judged_at>=?`).get(since) as { judged: number | null; second: number | null };
-  return { judged: row.judged ?? 0, second: row.second ?? 0 };
+/** How many candidates were kept today (UTC day), against the daily cap. */
+export function usageToday(db: Db, now: number): { candidates: number } {
+  const row = db.prepare("SELECT count(*) AS n FROM lane_pilot_learning_obs WHERE judged_at>=? AND state IN ('candidate','extracted','ignored')").get(startOfDay(now)) as { n: number };
+  return { candidates: row.n };
 }
 
 export function candidatesOf(db: Db, projectId: string, limit: number): Observation[] {
@@ -74,26 +62,9 @@ export function finishCandidates(db: Db, ids: readonly string[], state: "extract
   for (const id of ids) update.run(state, id);
 }
 
-/** Texts that waited a day without being read are dropped; the observation (its judgments) stays. */
-export function purgeStaleBodies(db: Db, now: number, keepMs = DAY_MS): number {
+/** Texts that waited a day and a half (the night pass reads a whole day) without being read are dropped; the observation (its judgments) stays. */
+export function purgeStaleBodies(db: Db, now: number, keepMs = 36 * 3_600_000): number {
   return db.prepare("UPDATE lane_pilot_learning_obs SET body=NULL, prev=NULL, state=CASE WHEN state='candidate' THEN 'ignored' ELSE state END, skip_reason=CASE WHEN state='candidate' THEN 'unread' ELSE skip_reason END WHERE (body IS NOT NULL OR prev IS NOT NULL) AND judged_at<?").run(now - keepMs).changes;
-}
-
-/* ---- the review of judgments (T1 acceptance) ---- */
-
-export function reviewSample(db: Db, limit: number): Observation[] {
-  return (db.prepare("SELECT * FROM lane_pilot_learning_obs WHERE review IS NULL AND excerpt IS NOT NULL AND jev_status='ok' AND state<>'skipped' ORDER BY RANDOM() LIMIT ?").all(limit) as Row[]).map(fromRow);
-}
-
-export function labelObservation(db: Db, id: string, correct: boolean, now: number): boolean {
-  return db.prepare("UPDATE lane_pilot_learning_obs SET review=?, reviewed_at=? WHERE id=?").run(correct ? "ok" : "wrong", now, id).changes === 1;
-}
-
-export type ReviewStats = { reviewed: number; correct: number; accuracy: number | null };
-export function reviewStats(db: Db): ReviewStats {
-  const row = db.prepare("SELECT count(*) AS reviewed, sum(CASE WHEN review='ok' THEN 1 ELSE 0 END) AS correct FROM lane_pilot_learning_obs WHERE review IS NOT NULL").get() as { reviewed: number; correct: number | null };
-  const correct = row.correct ?? 0;
-  return { reviewed: row.reviewed, correct, accuracy: row.reviewed ? Math.round((correct / row.reviewed) * 1000) / 1000 : null };
 }
 
 /* ---- items ---- */
@@ -147,77 +118,6 @@ export const markAnnounced = (db: Db, ids: readonly string[], now: number): void
 };
 
 export const bumpItem = (db: Db, id: string): void => { db.prepare("UPDATE lane_pilot_learning_item SET confirmations=confirmations+1 WHERE id=?").run(id); };
-
-/* ---- agreement of the two judges (T2) ---- */
-
-export type AgreementReport = {
-  since: number; judged: number; jevAnswered: number; withSecond: number; secondAnswered: number;
-  /** Over messages both judges answered. */
-  bothAnswered: number; sameRoute: number; routeAgreement: number | null; sameKind: number; kindAgreement: number | null;
-  contested: number; contestedResolvedLearn: number; contestedResolvedNone: number;
-  /** Jev none, second learn and the other way: the cases the extractor reads. */
-  disagreements: number; jevOnly: number; secondOnly: number;
-  secondTokens: number; secondUsd: number; secondP50Ms: number | null; secondP90Ms: number | null; secondFailures: number;
-};
-
-const percentile = (values: number[], p: number): number | null => {
-  if (!values.length) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))]!;
-};
-
-export function agreementReport(db: Db, since: number, usdPerMillion: number): AgreementReport {
-  const rows = db.prepare("SELECT route, kind, jev_status, second_status, second_route, second_kind, second_ms, second_tokens, final_route FROM lane_pilot_learning_obs WHERE judged_at>=? AND state<>'skipped'").all(since) as Array<{
-    route: string | null; kind: string | null; jev_status: string | null; second_status: string | null; second_route: string | null; second_kind: string | null; second_ms: number | null; second_tokens: number | null; final_route: string | null }>;
-  const report: AgreementReport = { since, judged: rows.length, jevAnswered: 0, withSecond: 0, secondAnswered: 0, bothAnswered: 0, sameRoute: 0, routeAgreement: null, sameKind: 0, kindAgreement: null,
-    contested: 0, contestedResolvedLearn: 0, contestedResolvedNone: 0, disagreements: 0, jevOnly: 0, secondOnly: 0, secondTokens: 0, secondUsd: 0, secondP50Ms: null, secondP90Ms: null, secondFailures: 0 };
-  const latencies: number[] = [];
-  for (const row of rows) {
-    const jev = row.jev_status === "ok" && row.route !== null, second = row.second_status === "ok" && row.second_route !== null;
-    if (jev) report.jevAnswered += 1;
-    if (row.second_status !== null && row.second_status !== "disabled") report.withSecond += 1;
-    if (row.second_status !== null && row.second_status !== "ok" && row.second_status !== "disabled") report.secondFailures += 1;
-    if (second) { report.secondAnswered += 1; report.secondTokens += row.second_tokens ?? 0; if (row.second_ms !== null) latencies.push(row.second_ms); }
-    if (jev && second) {
-      report.bothAnswered += 1;
-      if (row.route === row.second_route) report.sameRoute += 1;
-      if (row.kind === row.second_kind) report.sameKind += 1;
-      if ((row.route === "learn" && row.second_route === "none") || (row.route === "none" && row.second_route === "learn")) report.disagreements += 1;
-    }
-    if (jev && row.route === "contested") {
-      report.contested += 1;
-      if (row.final_route === "learn") report.contestedResolvedLearn += 1; else if (row.final_route === "none") report.contestedResolvedNone += 1;
-    }
-    if (!jev && second) report.secondOnly += 1;
-    if (jev && !second && row.second_status !== null && row.second_status !== "disabled") report.jevOnly += 1;
-  }
-  report.routeAgreement = report.bothAnswered ? Math.round((report.sameRoute / report.bothAnswered) * 1000) / 1000 : null;
-  report.kindAgreement = report.bothAnswered ? Math.round((report.sameKind / report.bothAnswered) * 1000) / 1000 : null;
-  report.secondUsd = Math.round((report.secondTokens / 1_000_000) * usdPerMillion * 10_000) / 10_000;
-  report.secondP50Ms = percentile(latencies, 0.5);
-  report.secondP90Ms = percentile(latencies, 0.9);
-  return report;
-}
-
-/* ---- other signals (T8) ---- */
-
-export type Signal = { id: number; kind: string; projectId: string | null; ref: string; p: number | null; detail: string | null; state: string; at: number };
-
-export function insertSignal(db: Db, signal: { kind: string; projectId?: string | null; ref: string; p?: number | null; detail?: string | null; at: number }): boolean {
-  return db.prepare("INSERT OR IGNORE INTO lane_pilot_learning_signal (kind,project_id,ref,p,detail,at) VALUES (?,?,?,?,?,?)")
-    .run(signal.kind, signal.projectId ?? null, signal.ref, signal.p ?? null, signal.detail ?? null, signal.at).changes === 1;
-}
-
-export function listSignals(db: Db, filter: { kind?: string; since?: number; limit?: number } = {}): Signal[] {
-  const where: string[] = [], args: unknown[] = [];
-  if (filter.kind) { where.push("kind=?"); args.push(filter.kind); }
-  if (filter.since !== undefined) { where.push("at>=?"); args.push(filter.since); }
-  return (db.prepare(`SELECT id,kind,project_id AS projectId,ref,p,detail,state,at FROM lane_pilot_learning_signal ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY at DESC LIMIT ?`).all(...args, Math.min(filter.limit ?? 50, 500)) as Signal[]);
-}
-
-export function signalCounts(db: Db, since: number): Array<{ kind: string; n: number }> {
-  return db.prepare("SELECT kind, count(*) AS n FROM lane_pilot_learning_signal WHERE at>=? GROUP BY kind ORDER BY kind").all(since) as Array<{ kind: string; n: number }>;
-}
 
 /** Reviewed non-sensitive observations of a window (the policy live exam's labeled rows). */
 export function listReviewedObservations(db: Db, since: number): Array<{ id: string; review: "ok" | "wrong"; reviewed_at: number; kind: string | null; final_route: string | null; excerpt: string | null }> {

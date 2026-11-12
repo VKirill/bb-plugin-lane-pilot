@@ -7,8 +7,7 @@ import { runAnamnesisCli, type CliResult } from "./cli";
 import { createHub, type Hub } from "./hub";
 import { OWNER_KEY_NAME, parseOwnerKey } from "./crypto";
 import { openOwnerStore, type StoreDb } from "./store";
-import { jev } from "@lane-pilot/jev";
-import { fragmentJudgment, matchJudgment } from "./judgment";
+import { fragmentJudgeVia, type FragmentJudge, type FragmentModel } from "./fragments";
 import { loadAnamnesis, type LoadDeps, type LoadOptions } from "./load";
 import { createOwnerMessageHub, isOwnerThread, sdkThreadsPort, type ThreadLike } from "./owner-messages";
 import { createExtractConsumer, type ExtractDeps } from "./extract";
@@ -68,21 +67,12 @@ function build(ctx: ServerCore) {
   };
 
   const ownerMessages = createOwnerMessageHub(), threads = sdkThreadsPort(bb as never);
-  /** Jev's two judgments over masked texts; null for a text it could not judge. */
-  const judgeFragments = async (texts: string[], signal?: AbortSignal) => {
-    const verdicts = await jev()!.judgeMany(fragmentJudgment, texts.map((text) => ({ text })), { subject: "anamnesis", signal });
-    return verdicts.map((verdict) => (verdict.by === "jev" ? verdict.decision : null));
-  };
-  const judgeMatches = async (pairs: Array<{ fragment: string; known: string }>, signal?: AbortSignal) => {
-    const verdicts = await jev()!.judgeMany(matchJudgment, pairs, { subject: "anamnesis", signal });
-    return verdicts.map((verdict) => (verdict.by === "jev" ? verdict.decision : null));
-  };
-  /** Read when used: Jev is installed after this module is built. Absent while Jev is off, which nothing here works around. */
-  const extractDeps: ExtractDeps = {
-    hub, now: Date.now,
-    get judge() { const instance = jev(); return instance && instance.enabled() ? judgeFragments : undefined; },
-    get match() { const instance = jev(); return instance && instance.enabled() ? judgeMatches : undefined; },
-  };
+  /**
+   * The model that reads masked fragments in batches. It is the rules analyzer of a project, so it is wired by the learning room (which
+   * owns the way to reach it) through `setFragmentModel`; until then, and while it is absent, nothing is classified.
+   */
+  let fragmentJudge: FragmentJudge | undefined;
+  const extractDeps: ExtractDeps = { hub, now: Date.now, get judge() { return fragmentJudge; } };
   const consumer = createExtractConsumer(extractDeps);
   ownerMessages.subscribe(consumer);
 
@@ -113,12 +103,11 @@ function build(ctx: ServerCore) {
   }
 
   const loadDeps = (): LoadDeps => {
-    const instance = jev();
     return {
       hub, threads, now: Date.now, log: (message) => bb.log.warn(message),
       projectNames: async () => new Map(((await bb.sdk.projects.list({ includePersonal: true } as never)) as unknown as Array<{ id: string; name?: string }>).map((project) => [project.id, project.name ?? project.id])),
       lpRuns: () => listAllRunRefs(db).map((row) => ({ id: row.id, projectId: row.project_id, createdAt: row.created_at })),
-      ...(instance && instance.enabled() ? { judge: judgeFragments } : {}),
+      ...(fragmentJudge ? { judge: fragmentJudge } : {}),
     };
   };
 
@@ -127,6 +116,8 @@ function build(ctx: ServerCore) {
     /** The one collector of the owner's messages: layers subscribe to `ownerMessages`; T1 and the daily pass (A4) are the next subscribers. */
     ownerMessages,
     threads,
+    /** Gives the fragment reader a model to call (the night pass, `anamnesis load --classify`). */
+    setFragmentModel(run: FragmentModel): void { fragmentJudge = fragmentJudgeVia(run); },
     liveMessages,
     runPass,
     /** The hourly tick: the pass runs once a Madrid day, after 04:00, and only while automatic learning is on. */

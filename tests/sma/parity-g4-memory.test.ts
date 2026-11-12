@@ -174,10 +174,7 @@ describe("memory corpus care (parity wave g4)", () => {
     insertObservation(db, {
       id: "obs1", threadId: "thr1", projectId: "P", at: 1, judgedAt: 1, source: "live", chars: 40,
       excerpt: `the owner asked about ${word}`, state: "extracted", skipReason: null, sensitive: false,
-      jevStatus: "ok", receiptId: null, kind: null, kindP: null, learnP: null, durable: null, scope: null,
-      frustration: null, deadline: null, route: null, secondStatus: null, secondKind: null, secondLearnP: null,
-      secondDurable: null, secondRoute: null, secondMs: null, secondTokens: null, finalRoute: "learn",
-      body: null, prev: null, review: null, reviewedAt: null,
+      body: null, prev: null,
     });
     insertItem(db, {
       id: itemId("obs1", "fact", `${word} rounds half to even, key ${secret}`), obsId: "obs1", projectId: "P", threadId: "thr1",

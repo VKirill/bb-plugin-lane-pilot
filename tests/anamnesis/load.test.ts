@@ -7,8 +7,8 @@ import { hostContract } from "../../src/rooms/core/server/plugin-contracts";
 import { anamnesisHandler } from "../../src/rooms/anamnesis/host";
 import { createHub } from "../../src/rooms/anamnesis/hub";
 import { openStore } from "../../src/rooms/anamnesis/store";
-import type { FragmentDecision } from "../../src/rooms/anamnesis/judgment";
-import { DEFAULT_MAX_CLASSIFY, HARD_MAX_CLASSIFY, JEV_TOKENS_PER_MESSAGE, formatReport, loadAnamnesis, type LoadDeps } from "../../src/rooms/anamnesis/load";
+import type { FragmentDecision } from "../../src/rooms/anamnesis/fragments";
+import { DEFAULT_MAX_CLASSIFY, HARD_MAX_CLASSIFY, MODEL_TOKENS_PER_MESSAGE, formatReport, loadAnamnesis, type LoadDeps } from "../../src/rooms/anamnesis/load";
 import type { EventLike, ThreadLike, ThreadsPort } from "../../src/rooms/anamnesis/owner-messages";
 
 const DAY = 86_400_000;
@@ -65,15 +65,15 @@ const SOURCES = ["git", "journal", "registry", "bb-message", "lp-runs"] as const
 const withProjectData = async (deps: LoadDeps) => { for (const source of ["journal", "lp-runs"] as const) await deps.hub.ask({ op: "sources", set: { source, enabled: true } }); };
 
 describe("the first load", () => {
-  it("a plan counts the messages, prices the Jev pass, sends nothing and leaves no file on the machine; project data is off by default", async () => {
+  it("a plan counts the messages, prices the classifying pass, sends nothing and leaves no file on the machine; project data is off by default", async () => {
     const judge = vi.fn();
     const report = await loadAnamnesis(makeDeps(EVENTS(), judge), { mode: "plan", sources: SOURCES, classify: true });
     expect(judge).not.toHaveBeenCalled();
     // The message about the son is eligible now: family and health messages are no longer held back (they go masked).
-    expect(report.messages).toMatchObject({ total: 5, threads: 2, projects: 2, tooShort: 1, infrastructure: 0, eligibleForJev: 4 });
+    expect(report.messages).toMatchObject({ total: 5, threads: 2, projects: 2, tooShort: 1, infrastructure: 0, eligibleForModel: 4 });
     expect(report.lpRuns).toBeNull();
     expect(report.hostSources.map((s) => s.source)).not.toContain("journal");
-    expect(report.cost).toMatchObject({ jevMessages: 4, estimatedTokens: 4 * JEV_TOKENS_PER_MESSAGE });
+    expect(report.cost).toMatchObject({ modelMessages: 4, estimatedTokens: 4 * MODEL_TOKENS_PER_MESSAGE });
     expect(report.classify?.note).toMatch(/no fragment is sent/);
     expect(existsSync(join(dir, "store"))).toBe(false);
     expect(formatReport(report)).not.toMatch(/отчёты|агентство|сын/);
@@ -119,24 +119,24 @@ describe("the first load", () => {
     expect((await deps.hub.ask({ op: "list", statuses: ["candidate"] })).records.map((r) => r.id)).not.toContain(agency.id);
     const full = (await deps.hub.ask({ op: "get", id: agency.id, includeSensitive: true })).record!;
     expect(full.evidence[0]).toMatchObject({ source: "bb-message", quote: expect.stringContaining("агентство") });
-    expect(full.attributes).toMatchObject({ origin: "jev-fragment" });
+    expect(full.attributes).toMatchObject({ origin: "llm-fragment" });
   });
 
-  it("counts a fragment Jev could not judge", async () => {
+  it("counts a fragment the model could not read", async () => {
     const judge: LoadDeps["judge"] = async (texts) => texts.map(() => null);
     const deps = makeDeps(EVENTS(), judge);
     const report = await loadAnamnesis(deps, { mode: "run", sources: ["bb-message"], classify: true });
     expect(report.classify).toMatchObject({ asked: 4, unavailable: 4, kept: 0 });
     const noJev = await loadAnamnesis(makeDeps(EVENTS()), { mode: "run", sources: ["bb-message"], classify: true });
-    expect(noJev.classify?.note).toMatch(/Jev is not available/);
+    expect(noJev.classify?.note).toMatch(/no model is available/);
   });
 
-  it("caps the Jev pass at the newest messages and prices the cap", async () => {
+  it("caps the classifying pass at the newest messages and prices the cap", async () => {
     const sent: string[] = [];
     const report = await loadAnamnesis(makeDeps(EVENTS(), async (texts) => { sent.push(...texts); return texts.map(() => null); }), { mode: "run", sources: ["bb-message"], classify: true, maxClassify: 1 });
     expect(sent).toHaveLength(1);
     expect(sent[0]).toContain("сын");
-    expect(report.cost.jevMessages).toBe(1);
+    expect(report.cost.modelMessages).toBe(1);
   });
 
   it("respects switched-off sources and a narrower window", async () => {
@@ -153,7 +153,7 @@ describe("the first load", () => {
 describe("bb lane-pilot anamnesis load, review, config", () => {
   const cli = (deps: LoadDeps, argv: string[]) => runAnamnesisCli(argv, { hub: deps.hub, load: (options) => loadAnamnesis(deps, options) });
 
-  it("plans by default, and sending to Jev needs --yes", async () => {
+  it("plans by default, and sending to the model needs --yes", async () => {
     const deps = makeDeps(EVENTS(), async (texts) => texts.map(() => null));
     const plan = await cli(deps, ["load", "--sources", "bb-message,lp-runs", "--classify"]);
     expect(plan.exitCode).toBe(0);
@@ -185,7 +185,7 @@ describe("bb lane-pilot anamnesis load, review, config", () => {
 });
 
 // Audit 2026-10-08 round 4, item 19 (F-5): PII went to Jev unmasked, and one `--classify --yes` had no ceiling.
-describe("what leaves for Jev", () => {
+describe("what leaves for the model", () => {
   const many = (count: number) => ({ thr_bb1: Array.from({ length: count }, (_, i) => turn(`Сообщение номер ${i} про наши рабочие планы на следующую неделю`, 1 + (i % 200))) });
   const sentTo = async (events: Record<string, EventLike[]>, options: Partial<Parameters<typeof loadAnamnesis>[1]> = {}) => {
     const sent: string[] = [];
@@ -205,8 +205,8 @@ describe("what leaves for Jev", () => {
   it("stops a pass at the ceiling by default, prices the ceiling and says how many were left out", async () => {
     const { sent, report } = await sentTo(many(450));
     expect(sent).toHaveLength(DEFAULT_MAX_CLASSIFY);
-    expect(report.cost.jevMessages).toBe(DEFAULT_MAX_CLASSIFY);
-    expect(report.cost.estimatedTokens).toBe(DEFAULT_MAX_CLASSIFY * JEV_TOKENS_PER_MESSAGE);
+    expect(report.cost.modelMessages).toBe(DEFAULT_MAX_CLASSIFY);
+    expect(report.cost.estimatedTokens).toBe(DEFAULT_MAX_CLASSIFY * MODEL_TOKENS_PER_MESSAGE);
     expect(report.cost.note).toContain(`ceiling of ${DEFAULT_MAX_CLASSIFY}`);
     expect(report.cost.note).toContain(`${450 - DEFAULT_MAX_CLASSIFY} more`);
     expect(formatReport(report)).toContain("ceiling");
@@ -222,7 +222,7 @@ describe("what leaves for Jev", () => {
 
   it("the plan prices the same ceiling that a run would apply", async () => {
     const plan = await loadAnamnesis(makeDeps(many(450)), { mode: "plan", sources: ["bb-message"], classify: true });
-    expect(plan.cost.jevMessages).toBe(DEFAULT_MAX_CLASSIFY);
+    expect(plan.cost.modelMessages).toBe(DEFAULT_MAX_CLASSIFY);
   });
 
   it("config --max-classify sets the ceiling", async () => {

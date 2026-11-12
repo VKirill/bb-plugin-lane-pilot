@@ -1,8 +1,8 @@
 import type { Kv } from "./ops";
 
 /**
- * Annoyance becomes an incident for the self-repair watcher (T6). When Jev reads a clearly frustrated owner message (`frustration` at
- * least 0.5 on the «clearly frustrated» level), the room writes one record here, in the plugin's key-value store, and the watcher
+ * Annoyance becomes an incident for the self-repair watcher (T6). A record here is written in the plugin's key-value store (no judge
+ * writes one now: the per-message reading of annoyance went with Jev), and the watcher
  * (`collect` in server/self-repair.ts, the same way it reads the output guard's blocked list) turns it into an incident of kind `owner`
  * with the thread and what the agent had just said. The record holds a masked quote of at most 240 characters and the tail of the
  * agent's reply; never the whole message. Nothing here is a verdict that the owner is right: the repair thread decides whether it is

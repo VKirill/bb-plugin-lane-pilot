@@ -1,7 +1,7 @@
 import { validInn } from "@lane-pilot/jev/judgments/invoice-check";
 
 /**
- * Personal data masked in a message before any of it is sent to Jev (audit 2026-10-08 round 4, item 19, F-5). The word filter
+ * Personal data masked in a message before any of it is sent to a model (audit 2026-10-08 round 4, item 19, F-5). The word filter
  * (`sensitiveReason`) holds back messages about health, money or family; it never saw an e-mail, a phone, a card or an address.
  * Here the numbers and addresses themselves are replaced by a tag (`[email]`, `[phone]`, `[card]`, `[iban]`, `[account]`,
  * `[inn]`, `[snils]`, `[passport]`, `[address]`), so the model reads the sentence and never the value.

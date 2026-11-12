@@ -165,7 +165,7 @@ async function core(command: string, { values, positionals }: Parsed, deps: CliD
       const authors = csv(values.authors), roots = csv(values.roots), telegramChannels = csv(values["telegram-channels"]);
       const maxClassify = values["max-classify"] ? Number(values["max-classify"]) : undefined;
       if (maxClassify !== undefined && !(Number.isInteger(maxClassify) && maxClassify >= 1)) throw new Error("--max-classify must be a whole number of at least 1");
-      if (values.extract !== undefined && values.extract !== "on" && values.extract !== "off") throw new Error("--extract on|off: automatic learning sends masked fragments of your messages to Jev every day and as they come");
+      if (values.extract !== undefined && values.extract !== "on" && values.extract !== "off") throw new Error("--extract on|off: automatic learning sends masked fragments of your messages, in one batch a night, to the model of the project's rules analyzer");
       const extract = values.extract === undefined ? undefined : values.extract === "on";
       const next = authors || roots || telegramChannels || maxClassify !== undefined || extract !== undefined
         ? await hub.setConfig({ ...(authors ? { authors } : {}), ...(roots ? { roots } : {}), ...(telegramChannels ? { telegramChannels } : {}), ...(maxClassify !== undefined ? { maxClassify } : {}), ...(extract !== undefined ? { extract } : {}) }) : await hub.config();
@@ -174,7 +174,7 @@ async function core(command: string, { values, positionals }: Parsed, deps: CliD
     case "load": {
       if (!deps.load) throw new Error("load is not available here");
       const mode = values.run ? "run" : "plan";
-      if (values.classify && mode === "run" && !values.yes) throw new Error("--classify sends masked message fragments to Jev (TypeSafe), the only outside service used; add --yes to allow it. Plan first: without --run it prices the pass and sends nothing.");
+      if (values.classify && mode === "run" && !values.yes) throw new Error("--classify sends masked message fragments to the model of the project's rules analyzer; add --yes to allow it. Plan first: without --run it prices the pass and sends nothing.");
       let since: number | undefined;
       if (values.since) { since = Date.parse(`${values.since}T00:00:00Z`); if (!Number.isFinite(since)) throw new Error("--since must be YYYY-MM-DD"); }
       const sources = values.sources ? values.sources.split(",").map((name) => oneOf(name.trim(), SOURCES.filter((source) => source !== "manual"), "source") as Source) : undefined;

@@ -147,8 +147,6 @@ Judgments, with the default mode:
 | `critique.screen` | active | Cheap first pass before the code critic; a close call escalates to the critic. |
 | `critique.worth` | shadow | Which advisory critics a task is worth spawning. |
 | `review.confirm_screen` | shadow | Cheap first pass over the `lp.review` confirm swarm. |
-| `anamnesis.fragment`, `anamnesis.match` | active | What a fragment of the owner's message says about the owner; matching it to a stored record. |
-| `learning.owner_message`, `learning.same_as`, `learning.pm_rule_relevance`, `learning.unkept_promise`, `learning.owner_question`, `learning.complexity` | active | Learning from the owner's own messages (own switch `learning:config`). |
 | `learning.rule_diff` | shadow | Checks accepted writer rules against an attempt's diff. |
 | `invoice.check` | active | Does the made invoice say what the owner asked for. |
 | `failure.class` | shadow | Class of a failure when the regular expressions find no confident match (`min_p` 0.7, `min_margin` 0.3). |

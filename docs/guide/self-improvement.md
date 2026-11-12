@@ -30,7 +30,7 @@ Lane Pilot learns from its own failures and from the owner's messages, and tests
 | `rules-nightly` | 03:30 | Rule scan, then classifies new rules by form |
 | `harness-nightly` | 04:10 | Judges trials, starts writer-harness editors |
 | `critic-edit-monthly` | 05:20, day 1 | Critic calibration and prompt proposal |
-| `learning-review`, `learning-extract`, `learning-digest` | every 3 h, twice an hour, 18:20 | Owner-message learning |
+| `learning-extract`, `learning-digest` | 03:11, 18:20 | Owner-message learning (the night batch, the day's report) |
 
 ## Crystallization: repeated work becomes a rule, skill, script or graph
 
@@ -90,7 +90,7 @@ A recurring `check` or `hook` rule can be promoted: `rules promote` stores a tas
 
 ## Learning from the owner's messages
 
-Owner messages in visible top-level threads are judged by Jev, masked for personal data and, in `active` mode, extracted into a rule on trial, a preference, a decision note, a reminder or a recorded fact. It starts in `observe`. Every three hours a strong model labels judged cases; with seven days of observation and 50 checked cases at 80 % or better it switches to `active` itself. Settings live in the `learning:config` store (`bb lane-pilot learning config key=value`): `mode` `observe`, `sample` `1`, `dailyJudgeCap` `300`, `secondOpinionDailyCap` `60`, `pmRulesTokens` and `writerRulesTokens` `1600`. A message that matches sensitive words goes to Jev only and keeps no text.
+Owner messages in visible top-level threads are filtered by rule (machine text, acknowledgements and pasted logs are dropped, personal data is masked) and kept as candidates; one night run (03:11) reads the day's candidates in batches with the rules analyzer model and extracts a rule on trial, a preference, a decision note, a reminder or a recorded fact, deduplicating against what is in force in the same pass. No Jev and no outside classifier is involved. Settings live in the `learning:config` store (`bb lane-pilot learning config key=value`): `dailyCandidateCap` `400`, `nightRuns` `12`, `nightBatch` `25`, `pmRulesTokens` and `writerRulesTokens` `1600`. A message that matches sensitive words is never sent and keeps no text.
 
 ## The writer harness and the critic edit
 

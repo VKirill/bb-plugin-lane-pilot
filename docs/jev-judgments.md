@@ -71,10 +71,10 @@ judgment's own default, which is `shadow` for these three.
 The judgments need the TypeSafe key in the Env Catalog; without it every judgment answers with its deterministic fallback and the
 receipt status says why (`disabled`, `timeout`, `error`, `breaker_open`, `budget`).
 
-## Judgments of the learning room
+## The learning and anamnesis rooms use no judgment
 
-Seven more, all `active` from the start because the room has its own switch (`learning:config` `mode`, see `docs/learning.md`):
-`learning.owner_message` (route of an owner message: learn, none, contested), `learning.same_as` (a new statement against the ones in
-force: same, opposite, different), `learning.pm_rule_relevance` (which PM rules apply to a text), `learning.unkept_promise`,
-`learning.owner_question`, `learning.complexity` (observations, T8). Their receipts are in `lane_pilot_jev_receipt` like the others;
-`subject` is the owner message id, never its text.
+Since 2026-11-13 the learning room (`learning.owner_message`, `learning.same_as`, `learning.pm_rule_relevance`, `learning.unkept_promise`,
+`learning.owner_question`, `learning.complexity`) and the anamnesis room (`anamnesis.fragment`, `anamnesis.match`) have no Jev
+judgment. The owner's messages are filtered by rule and read in one nightly batch by the rules analyzer model (`docs/learning.md`); PM rules
+are picked by rule. Their old receipts stay in `lane_pilot_jev_receipt`.
+

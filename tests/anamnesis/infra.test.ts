@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { infrastructureReason } from "../../src/rooms/anamnesis/infra";
 import { openStore } from "../../src/rooms/anamnesis/store";
-import { fragmentJudgment, FRAGMENT_KINDS } from "../../src/rooms/anamnesis/judgment";
+import { FRAGMENT_KINDS, parseFragments } from "../../src/rooms/anamnesis/fragments";
 
 describe("the infrastructure filter: such text is never about the owner as a person", () => {
   it.each([
@@ -36,15 +36,10 @@ describe("the infrastructure filter: such text is never about the owner as a per
   });
 });
 
-describe("what Jev is asked to find", () => {
+describe("what the model is asked to find", () => {
   it("covers who I am, knowledge, skills, close people, hobbies, interests, life events and preferences, and not projects or tools", () => {
     expect([...FRAGMENT_KINDS].sort()).toEqual(["event", "fact", "hobby", "interest", "knowledge", "person", "preference", "self", "skill"]);
-    const t = Object.fromEntries(Object.entries(fragmentJudgment.thresholds).map(([k, v]) => [k, v.default]));
-    const answers = (top: string) => ({
-      kind: { type: "choice" as const, choice: top, probabilities: { [top]: 0.9, nothing: 0.1 }, confidence: 0.9 },
-      about_owner: { type: "noul" as const, noul: 0.9 }, sensitive: { type: "noul" as const, noul: 0.1 },
-    });
-    const decide = (top: string) => (fragmentJudgment.decide(answers(top) as never, t, { text: "x" }) as { decision: { kind: string } }).decision.kind;
+    const decide = (top: string) => parseFragments(JSON.stringify({ fragments: [{ id: "f1", kind: top, about_owner: true, sensitive: false, confidence: "high" }] }), 1)[0]!.kind;
     for (const kind of ["self", "knowledge", "hobby", "person"]) expect(decide(kind)).toBe(kind);
     for (const kind of ["project", "tool"]) expect(decide(kind)).toBe("nothing");
   });

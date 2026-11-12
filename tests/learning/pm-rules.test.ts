@@ -8,7 +8,7 @@ import { DEFAULT_RULE_TOKENS, RULE_COUNT_CEILING } from "../../src/rooms/contrac
 import { poolHasRoom, poolTokens, ruleBudget, ruleTokens, setRuleBudgets } from "../../src/rooms/learning";
 import { pmResumeInstructions, pmRulesBlock, pmRulesOf, pmRulesPromptBlock, relevantPmRules } from "../../src/rooms/learning/pm-rules";
 import { adoptRuleProposal, rewordAdoptedRule } from "../../src/rooms/self-repair/server/insights";
-import { NOW, database, jevWith } from "./helpers";
+import { NOW, database } from "./helpers";
 
 const DAY = 86_400_000;
 afterEach(() => setRuleBudgets({ ...DEFAULT_RULE_TOKENS }));
@@ -181,16 +181,20 @@ describe("the PM's rules block (T4)", () => {
     expect(pmResumeInstructions(db, "proj_1", ["section:a"]) ?? "").not.toContain("verification room");
   });
 
-  it("picks the rules that apply to a text with Jev, and keeps them all when Jev cannot be asked", async () => {
-    const db = database();
-    const rules = [{ rule: "Before deploying run the drill." }, { rule: "Reports are written in Russian." }];
-    const answers = jevWith(db, []);
-    // The scripted Jev answers the relevance Noul with 0.5 for every rule: all are kept at the low threshold.
-    expect(await relevantPmRules(answers.jev, rules, "deploy the new version")).toHaveLength(2);
-    expect(answers.calls[0]!.state.situation).toBe("deploy the new version");
-    expect(await relevantPmRules(null, rules, "anything")).toHaveLength(2);
-    expect(await relevantPmRules(answers.jev, rules, "  ")).toHaveLength(2);
-    expect(await relevantPmRules(jevWith(db, [], { fail: true }).jev, rules, "deploy")).toHaveLength(2);
+  it("picks the rules that apply to a text by rule, with no model: always-rules, general rules and shared words stay", () => {
+    const rules = [
+      { rule: "Before deploying the service run the deploy drill and read its report." },
+      { rule: "Reports to the owner are written in Russian, short, without filler words." },
+      { rule: "Be careful." },
+      { rule: "Keep invoices out of the dashboard exports.", always: true },
+      { rule: "Translation files stay sorted alphabetically by key.", cue: "i18n locale" },
+    ];
+    const picked = relevantPmRules(rules, "deploy the new version of the service").map((rule) => rule.rule);
+    expect(picked).toEqual(["Before deploying the service run the deploy drill and read its report.", "Be careful.", "Keep invoices out of the dashboard exports."]);
+    expect(relevantPmRules(rules, "add a locale file for German").map((rule) => rule.rule)).toContain("Translation files stay sorted alphabetically by key.");
+    // nothing to compare with: every rule is kept (a missed rule costs more than an extra line)
+    expect(relevantPmRules(rules, "  ")).toHaveLength(5);
+    expect(relevantPmRules(rules, "ok")).toHaveLength(5);
   });
 });
 

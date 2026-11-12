@@ -144,6 +144,6 @@ describe("questions the memory did not answer", () => {
     signal.run("owner_question", "P", "q1", 0.9, now - 1000);
     signal.run("owner_question", "P", "q2", 0.3, now - 1000);
     signal.run("owner_question", "Q", "q3", 0.9, now - 1000);
-    expect(memoryUnanswered(db, "P", 30, now)).toEqual({ windowDays: 30, ownerRepeats: 1, repeatConfirmations: 2, routableQuestions: 1 });
+    expect(memoryUnanswered(db, "P", 30, now)).toEqual({ windowDays: 30, ownerRepeats: 1, repeatConfirmations: 2 });
   });
 });
