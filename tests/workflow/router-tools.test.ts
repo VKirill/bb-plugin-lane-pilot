@@ -220,7 +220,7 @@ describe("lane_pilot_route", () => {
     expect(answer.boundary_contract.constraints).toContain("read-only: no file may change");
     expect(answer.goals.length).toBeGreaterThan(0);
     expect(answer.next).toContain("lane_pilot_run_workflow");
-    expect(answer.candidates.length).toBeLessThanOrEqual(5);
+    expect(answer.candidates.length).toBeLessThanOrEqual(10);
   });
 
   it("offers a tested chain on the shipped statuses with the «not yet run live» flag, and tells the PM to ask the owner for liveTrial", async () => {

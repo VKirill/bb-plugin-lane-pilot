@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { boundJevState, jevAsk, pageClaims, renderAnchorBrief, scanDeclarations, spreadAnchors, verifyDocsCitations, type Anchor } from "../../src/rooms/docs/docs-jev";
+import { pageClaims, renderAnchorBrief, scanDeclarations, spreadAnchors, type Anchor } from "../../src/rooms/docs/docs-anchors";
 import { docsLineCounts } from "../../src/rooms/docs/git-docs";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
@@ -29,13 +29,6 @@ it("maps Vue components and Prisma models, and spreads a capped map across files
   expect(picked.map((item) => item.name)).toEqual(["T", "a1", "b2", "a2"]);
 });
 
-it("shrinks the longest text so a state fits Jev's window", () => {
-  const bounded = boundJevState({ task:"a".repeat(150_000), note:"short" }, 100_000);
-  expect(JSON.stringify(bounded).length).toBeLessThanOrEqual(100_000);
-  expect(bounded.note).toBe("short");
-  expect(bounded.task).toContain("characters omitted");
-});
-
 it("takes the sentence around each citation as its claim", () => {
   const claims = pageClaims("Checks run every minute (src/checker.ts:10-12). Monitors are validated and stored (src/db.ts:5-9, src/db.ts:20).\n");
   expect(claims.map((claim) => claim.refs)).toEqual([[{ file:"src/checker.ts", start:10, end:12 }],
@@ -46,62 +39,12 @@ it("takes the sentence around each citation as its claim", () => {
   expect(claims[1]!.claim).toBe("Monitors are validated and stored (src/db.ts:5-9, src/db.ts:20).");
 });
 
-it("lists only product code as rule and entry-point candidates", () => {
+it("lists the declarations by file with no model marks", () => {
   const anchor = (name:string, fields:Partial<Anchor>):Anchor => ({ name, kind:"function", exported:true, file:"a.ts", line:1, endLine:2, snippet:"", ...fields });
-  const brief = renderAnchorBrief([
-    anchor("dueMonitors", { businessRule:0.9, projectSpecific:0.9, userFacing:0.2 }),
-    anchor("overlayHelper", { businessRule:0.9, projectSpecific:0.1, userFacing:0.9 }),
-    anchor("weakRule", { businessRule:0.55, projectSpecific:0.9 }),
-    anchor("runCli", { userFacing:0.9, projectSpecific:0.9 }),
-  ], [], ["zod@4"], "ok");
-  const section = (title:string) => brief.split(`## ${title}\n`)[1]!.split("\n\n")[0]!;
-  expect(section("Business rule candidates")).toBe("- `dueMonitors` a.ts:1-2 (rule 90%)");
-  expect(section("Entry points")).toBe("- `runCli` a.ts:1-2 (function)");
-  expect(brief).toContain("`overlayHelper` a.ts:1-2 (exported, function, generic)");
-  expect(brief).toContain("- zod@4");
-});
-
-it("turns a citation Jev finds unsupported into a lint finding, and does nothing without a key", async () => {
-  const root = await mkdtemp(join(tmpdir(), "lane-jev-"));
-  try {
-    await writeFile(join(root, "a.ts"), "export const LIMIT = 5;\nexport const OTHER = 1;\n");
-    const pages = [{ path:"docs/a.md", content:"---\ntitle: A\n---\n# A\n\nThe limit is 5 (a.ts:1). The other is 9 (a.ts:2).\n" }];
-    vi.stubEnv("TYPESAFE_API_KEY", "test-key");
-    vi.stubGlobal("fetch", vi.fn(async (_url:string, init:{ body:string }) => {
-      const body = JSON.parse(init.body);
-      if (body.questions.relation) {
-        const both = `${body.state.first.statement} ${body.state.second.statement}`;
-        const contradict = both.includes("is 5") && both.includes("is 7");
-        return new Response(JSON.stringify({ answers:{ relation:{ type:"choice", choice:contradict ? "contradict" : "consistent",
-          probabilities:{ consistent:contradict ? 0.1 : 0.9, contradict:contradict ? 0.9 : 0.1 } } } }));
-      }
-      const claim = body.questions.support.instructions.claim as string;
-      expect(JSON.parse(init.body).state.excerpts.length).toBe(1);
-      const unsupported = claim.includes("9");
-      return new Response(JSON.stringify({ answers:{ support:{ type:"choice", choice:unsupported ? "unsupported" : "supported",
-        probabilities:{ supported:unsupported ? 0.1 : 0.9, partial:0, unsupported:unsupported ? 0.9 : 0.1 } } } }));
-    }));
-    const result = await verifyDocsCitations({ projectCwd:root, pages });
-    expect(result).toMatchObject({ jev:"ok", checked:2, pageStats:[{ path:"docs/a.md", checked:2, supported:1, partial:0 }] });
-    expect(result.findings).toEqual([{ path:"docs/a.md", rule:"evidence-check", detail:expect.stringContaining("a.ts:2 do not back") }]);
-    const conflict = await verifyDocsCitations({ projectCwd:root, pages:[{ path:"docs/b.md", content:"# B\n\nThe limit is 7 (a.ts:1).\n" }], related:pages });
-    expect(conflict.findings.filter((f) => f.rule === "contradiction")).toEqual([{ path:"docs/b.md", rule:"contradiction", detail:expect.stringContaining("contradicts docs/a.md") }]);
-    vi.stubEnv("TYPESAFE_API_KEY", ""); vi.stubEnv("JEV_API_KEY", ""); vi.stubEnv("HOME", root);
-    expect((await verifyDocsCitations({ projectCwd:root, pages })).jev).toBe("disabled");
-  } finally { await rm(root, { recursive:true, force:true }); }
-});
-
-it("keeps at most 48 Jev requests in flight on the machine", async () => {
-  let open = 0, peak = 0;
-  vi.stubGlobal("fetch", vi.fn(async () => {
-    open++; peak = Math.max(peak, open);
-    await new Promise((done) => setTimeout(done, 5));
-    open--;
-    return new Response(JSON.stringify({ answers:{ q:{ noul:1 } } }));
-  }));
-  const answers = await Promise.all(Array.from({ length:100 }, () => jevAsk("k", {}, { q:{ type:"noul", instructions:"?" } })));
-  expect(answers.every((answer) => answer?.q?.noul === 1)).toBe(true);
-  expect(peak).toBe(48);
+  const brief = renderAnchorBrief([anchor("dueMonitors", {}), anchor("helper", { exported:false })], [], ["zod@4"]);
+  expect(brief).toContain("`dueMonitors` a.ts:1-2 (exported, function)");
+  expect(brief).toContain("`helper` a.ts:1-2 (internal, function)");
+  expect(brief).not.toMatch(/Jev|importance|rule \d+%/);
 });
 
 it("ends the last declaration of a file on its last line, not on the empty element after its final newline", async () => {

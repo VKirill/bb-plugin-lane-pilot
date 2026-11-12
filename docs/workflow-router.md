@@ -46,15 +46,9 @@ Only `published`, not `internal` workflows, and never `lp-task-pipeline` (how La
 
 `tests/workflow/router-eval.test.ts` runs the 30 phrases of spec 6.2 (expected workflow, or `clarify` for no workflow) on the real catalog with every non-internal workflow set to `published`, deterministic scorer; it requires 27 of 30 (90 percent), recall at 5 with at most one miss, and that phrase 30 returns `clarify` with confidence under 60. It also routes the 8 reserve phrases and a set of paraphrases. A miss is a catalog gap (add an example, a tag or a `not_for`; never an example equal to an eval phrase), not a test to loosen. Run it again whenever a chain is added to the catalog.
 
-## The model step: Jev first, a thread for the unclear case
+## The PM picks: the tool returns a ranked shortlist
 
-`createJevRouterModel` (`src/rooms/workflow/route-model.ts`, the judgment `route.workflow` in `src/rooms/workflow/route-workflow.ts`) is the model of `lane_pilot_route`. One request to Jev (TypeSafe `systemone`, about 0.3 s and 2.6k input tokens) carries the top candidates and asks a Choice over them plus «none of these», a «too broad» question, and, for each candidate input that is an enum or a switch, a closed question; the chosen workflow's stated inputs fill `inputs`. Jev's answers are probabilities and code decides:
-
-- A clear pick (`min_p` 0.6, `min_margin` 0.25 over the runner-up, «none of these» under `max_none` 0.3, «too broad» under `max_broad` 0.9) is the answer. A very broad request (`broad_clarify` 0.95) is a `clarify` at once.
-- Anything else is **escalated to the helper thread** that decided every route before Jev (an Opus thread in the PM's run, tens of seconds). Its answer is stored next to Jev's as an `agree` / `disagree` label in `lane_pilot_jev_receipt`, the instrument for calibrating the thresholds. A chat without a run has no thread to escalate to: the scorer answers.
-- No key (`TYPESAFE_API_KEY` in Env Catalog), a failed call or an open breaker: the model throws and the router's scorer decides, with the reason in `evidence.modelFallback`.
-
-Mode per project in the `jev.modes` setting, `route.workflow=` `active` (the default, above), `shadow` (the thread decides, Jev is recorded) or `off` (the thread alone, as before Jev); `jev.enabled=false` turns every judgment off; `jev.thresholds` sets the numbers above (`route.workflow.min_p=0.7`, clamped to their ranges). If routing misbehaves, raise `max_broad` / `broad_clarify` first, not `min_p`. `scripts/jev-router-eval.ts` runs the evaluation phrases against the live Jev; numbers and the way to read the receipts are in the 0.1.191 notes of CHANGELOG.md.
+`lane_pilot_route` asks no model. The deterministic scorer (`packages/workflow-engine/src/router.ts`, `routeIntent`) ranks the published workflows and the tool returns the top `TOP_N` (10) as `candidates`: `id`, `purpose` (one line), `needs` (the required inputs with no default), `score` and the `rules` that fired. The PM, which is an LLM already in the loop, reads the purposes and picks; the scorer's own best is only `decision`. The scorer alone found the right graph in its top five for 16 of 36 real requests, which is why the list is wider and the pick is the PM's. A workflow the project's route policy forbids (`route.max_risk`, `secrets.allow`, `src/rooms/workflow/route-policy.ts`) is not offered and is named in `warnings`.
 
 ## What is not here
 

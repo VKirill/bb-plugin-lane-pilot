@@ -1,6 +1,6 @@
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { hostContract } from "../../contracts";
-import { jevCallFor } from "../../docs";
+import { jevCallFor } from "../jev-call";
 
 /** The Jev credentials a method carries, when it carries them: every judge and docs builder takes them the same way. */
 export const jevSource = (input: { jevApiKey?: string; jevProvider?: "openlux" | "typesafe" }) => ({ jevApiKey: input.jevApiKey, jevProvider: input.jevProvider });

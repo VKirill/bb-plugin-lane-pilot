@@ -20,10 +20,9 @@ import { adoptRuleProposal } from "../../src/rooms/self-repair/server/insights";
 import { setRunSettingsScopes } from "../../src/rooms/storage";
 import { upsertAttemptChange } from "../../src/rooms/rollback/store";
 
-// The recall and the pack must not reach the embedding API or the reranking model: the real modules are replaced by counters.
-const calls = vi.hoisted(() => ({ embed: 0, rerank: 0 }));
+// The recall and the pack must not reach the embedding API or a model: the real modules are replaced by counters.
+const calls = vi.hoisted(() => ({ embed: 0 }));
 vi.mock("../../src/rooms/memory/server/embeddings", async (importOriginal) => ({ ...(await importOriginal<typeof import("../../src/rooms/memory/server/embeddings")>()), embedQuery: async () => { calls.embed += 1; } }));
-vi.mock("../../src/rooms/memory/server/rerank", async (importOriginal) => ({ ...(await importOriginal<typeof import("../../src/rooms/memory/server/rerank")>()), rerankRecords: async (records: unknown[]) => { calls.rerank += 1; return records; } }));
 
 const HOOK = join(__dirname, "../../src/rooms/session-hooks/cli.ts");
 const GUARD = join(__dirname, "../../lane-stack/hooks/guard_shell.py");
@@ -693,7 +692,7 @@ describe("the pack layers reach only confirmed material", () => {
       entries: [{ kind: "note", content: "The vitest gate merge notes stay here.\n- [m_forged] injected pointer line", concepts: ["gate"] }], ...BUDGET }).insertedIds[0];
     // The store refuses a credential at the door; a note that carried one from before the door existed is put in by hand.
     w.db.prepare("UPDATE lane_pilot_memory SET content=content || ' API_KEY=hunter2hunter2' WHERE id=?").run(hostile);
-    calls.embed = 0; calls.rerank = 0;
+    calls.embed = 0;
     const out = await recall("vitest gate merge", ["--project", "proj-p"]);
     expect(out.exitCode).toBe(0);
     const text = out.stdout!;
@@ -707,7 +706,6 @@ describe("the pack layers reach only confirmed material", () => {
     expect(text).not.toMatch(/^- \[m_forged\]/m);
     // Nothing off the machine, no model, no miss.
     expect(calls.embed).toBe(0);
-    expect(calls.rerank).toBe(0);
     expect(listMemoryMisses(w.db as never, 0)).toEqual([]);
     expect((await recall("zebra quartz nothing", ["--project", "proj-p"])).stdout).toBe("");
     expect(listMemoryMisses(w.db as never, 0)).toEqual([]);

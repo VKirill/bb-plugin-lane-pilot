@@ -1,4 +1,4 @@
-import { DEFAULT_RELEVANCE_FLOOR, MEMORY_SETTING_KEYS, projectUsesSections, relevantRecords, resolveProjectKind, REVIEWER_CONCEPTS, activeMemoryDigestRows, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, recordCriticUse, roleContextBudget, searchMemoryRecords, type MemoryRecord, type MemorySearchEngine, type MemorySettings, type RelevanceFloor } from "@lane-pilot/memory-core";
+import { DEFAULT_RELEVANCE_FLOOR, MEMORY_SETTING_KEYS, projectUsesSections, relevantRecords, resolveProjectKind, WEAK_MATCH, weakAnswer, REVIEWER_CONCEPTS, activeMemoryDigestRows, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, recordCriticUse, roleContextBudget, searchMemoryRecords, type MemoryRecord, type MemorySearchEngine, type MemorySettings, type RelevanceFloor } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
 import { getRunSettingsScopes, loadProjectSettings, projectHasScopedRun, type LanePilotDatabase } from "../../storage";
 import { memoryLine, pathAnchors, reviewerMemoryPicks, writerMemory, writerMemoryPicks } from "./memory-picks";
@@ -125,17 +125,24 @@ export function taskMemoryContext(db: LanePilotDatabase, projectId: string, runI
   }
 }
 
-/** The PM path's ranked records after the relevance floor, before packing: what the M4 rerank judges. */
-export function pmShortlist(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[], floor: RelevanceFloor | null = memory.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR): MemoryRecord[] {
+/** The PM path's search and its records after the relevance floor, before packing. With `gate` it also says whether the answer gate doubts the search (memory-core `weakAnswer`). */
+function pmSearch(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain: readonly string[] | undefined, floor: RelevanceFloor | null, gate: boolean) {
   const records = searchMemoryRecords(db, projectId, query, 100, memory.searchEngine, memory.audience, memory.personalBot, { chain: chain ?? [] });
-  return relevantRecords(db, projectId, query, records, { audience: memory.audience, personalBot: memory.personalBot, floor });
+  const opts = { audience: memory.audience, personalBot: memory.personalBot, floor };
+  return { records: relevantRecords(db, projectId, query, records, opts), weak: gate && weakAnswer(db, projectId, query, records, opts) };
+}
+
+/** The PM path's ranked records after the relevance floor, before packing. */
+export function pmShortlist(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[], floor: RelevanceFloor | null = memory.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR): MemoryRecord[] {
+  return pmSearch(db, projectId, memory, query, chain, floor, false).records;
 }
 
 /** What the PM tool `lane_pilot_memory {action:"context"}` returns for a query: the project's records ranked for it, within the context budget. Also what the memory probe reads. */
-export function pmMemoryContext(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[], role = "pm", floor: RelevanceFloor | null = memory.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR, keep?: (records: MemoryRecord[]) => MemoryRecord[]) {
+export function pmMemoryContext(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[], role = "pm", floor: RelevanceFloor | null = memory.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR, gate = false) {
   // The relevance floor (a query path only): a question the notes cannot answer gets an explicit «nothing». `floor: null` is the old behaviour.
-  // `keep` is the M4 rerank's verdict (pmShortlist + rerankRecords): only what it kept is packed.
-  const floored = pmShortlist(db, projectId, memory, query, chain, floor);
-  const packed = memoryContext(keep ? keep(floored) : floored, query, roleContextBudget(role,memory.contextBudget));
-  return { ...packed, nothingRelevant: packed.records.length === 0 };
+  // `gate` (the PM `context` action): when the answer gate doubts the search the notes still go out, under WEAK_MATCH, and the PM decides.
+  const found = pmSearch(db, projectId, memory, query, chain, floor, gate);
+  const packed = memoryContext(found.records, query, roleContextBudget(role,memory.contextBudget));
+  const weakMatch = found.weak && packed.records.length > 0;
+  return { ...packed, ...(weakMatch ? { text: `${WEAK_MATCH}\n\n${packed.text}`, weakMatch } : {}), nothingRelevant: packed.records.length === 0 };
 }

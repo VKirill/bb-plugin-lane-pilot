@@ -11,11 +11,6 @@
     ".": "./src/index.ts",
     "./provider": "./src/provider.ts",
     "./judgments/invoice-check": "./src/judgments/invoice-check.ts",
-    "./judgments/ui-shots": "./src/judgments/ui-shots.ts",
-    "./judgments/citation-check": "./src/judgments/citation-check.ts",
-    "./judgments/memory-rerank": "./src/judgments/memory-rerank.ts",
-    "./judgments/invoice-scan": "./src/judgments/invoice-scan.ts",
-    "./judgments/render-match": "./src/judgments/render-match.ts",
     "./judgments/employee-remark": "./src/judgments/employee-remark.ts"
   }
 }

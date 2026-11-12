@@ -5,7 +5,6 @@ import type { GraphNode, NodeExecutor, StepContext, WorkflowEngine } from "@lane
 import { createTaskLinter } from "../../tasks/server";
 import { agentRequest, createWorkflowAgents, stepPacket, withResolvedModel } from "./workflow-agent";
 import type { WorkflowAgents } from "./workflow-agent";
-import { registerRouterExecutor } from "./workflow-router-model";
 import { registerQualityLoopClassifyExecutor } from "./workflow-classify";
 import { keyedSpawnSupported } from "../../platform/server";
 import type { ChainRuntime } from "../../contracts/server";
@@ -49,10 +48,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   // A project's switch for a new behaviour (unset = off, as before the change): read when the node runs, so any graph can use it.
   const flagOf = (rt: ChainRuntime, key: string): boolean => switchOn(loadProjectSettings(db, rt.projectId, rt.runId ? getRunSettingsScopes(db, rt.runId) : []), key);
 
-  // The model step of the router's graph `lp.route`.
-  registerRouterExecutor(engine, agents);
-
-  // The Jev steps: the native `jev` node and the citation check.
+  // The Jev steps: the native `jev` node.
   registerJevSteps(engine, ctx, { runtimeOf });
   // `deliverable.validate` — the three-layer acceptance of a non-code artifact.
   registerDeliverableNode(engine, ctx, services, { runtimeOf });

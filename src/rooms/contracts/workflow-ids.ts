@@ -9,7 +9,6 @@ export const DOCS_MAINTENANCE = "lp.docs-maintenance";
 /** The graph of one self-repair (worktree, repair thread, verdict and merge), started by the self-repair watcher. */
 export const SELF_REPAIR = "lp.self-repair";
 /** The graph of the router's model step (`lane_pilot_route` escalates a request System One cannot decide alone): one read-only helper thread, a real run of its own. */
-export const ROUTE_WORKFLOW = "lp.route";
 /** The outer chain of the chains spec: analyze, plan, build, check, close. */
 export const ANALYZE_PLAN_EXECUTE = "analyze-plan-execute";
 

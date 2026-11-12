@@ -26,7 +26,6 @@ Workflow chain executors provide the execution layer for multi-step declarative 
 
 1. `registerChainExecutors` registers node executors and action delegates on the shared `WorkflowEngine` instance (`src/rooms/workflow/server/workflow-executors.ts:250-259`).
 2. The `builtin:jev` executor resolves the registered judgment, prepares whitelisted state properties, and returns either a direct decision or an escalation to a model step (`src/rooms/workflow/server/workflow-executors.ts:266-304`).
-3. For research citations, `citations.jev` executes `citationCheckJudgment` over claim-source-excerpt inputs and records pass or fallback status (`src/rooms/workflow/server/workflow-executors.ts:307-324`).
 4. Artifact validation executes through `deliverable.validate`, inspecting target paths or URLs with domain validators, host commands, and agent visual reviews (`src/rooms/workflow/server/workflow-executors.ts:329-351`).
 5. Skill discovery executes via `skills.jev`, traversing the cached catalog skill tree for task requirements (`src/rooms/workflow/server/workflow-executors.ts:355-367`).
 6. The `agent` executor writes large input packets to the workspace and invokes the assigned agent model role (`src/rooms/workflow/server/workflow-executors.ts:372-397`).
@@ -42,7 +41,6 @@ Workflow chain executors provide the execution layer for multi-step declarative 
 |---|---|---|---|
 | `lp-task` | Task contract, quality mode, timeout | Attempt state, merge commit, changed files, usage | Contract lint failure yields `failed`; rejection yields `blocked` (`src/rooms/workflow/server/workflow-executors.ts:524-530`). |
 | `builtin:jev` | Judgment id, whitelisted state | Decision, handoff string, receipt id | Jev service offline falls back to judgment default with escalation (`src/rooms/workflow/server/workflow-executors.ts:289-302`). |
-| `citations.jev` | Array of citation claims, sources, quotes | Checked count, kept count, verdicts array | Missing input returns zero checked and retains input items (`src/rooms/workflow/server/workflow-executors.ts:311-312`). |
 | `deliverable.validate` | Validator name, target path, brief, host id | Verdict (`pass` or `rework`), reason, issue details | Target absence throws; validator issues return `rework` (`src/rooms/workflow/server/workflow-executors.ts:335-350`). |
 | `skills.jev` | Task prompt or title string | Skills array, picked skills, selection source | Unreadable tree or absent judge returns empty skills array (`src/rooms/workflow/server/workflow-executors.ts:355-366`). |
 | `builtin:human` | Instruction prompt, timeout, options | Form response or owner item answer | Missing PM thread posts to owner list with CLI and RPC actions (`src/rooms/workflow/server/workflow-executors.ts:433-444`). |

@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { HEAVY_WITHOUT_JEV, intakeByRules, intakeRunGoals, isMachineMessage } from "../src/rooms/phase/intake";
+import { HEAVY_LENGTH, intakeByRules, intakeRunGoals, isMachineMessage } from "../src/rooms/phase/intake";
 import { createPhaseIntake, type IntakePhases, type IntakeTrain } from "../src/rooms/phase/server/intake";
 import type { Phase } from "../src/rooms/phase/logic";
 import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
@@ -42,11 +42,11 @@ function world(options: { settings?: Record<string, unknown>; role?: string; tra
 }
 
 describe("phase intake rules", () => {
-  it("settles a consent and a short message in code, and leaves a long one to the judgment", () => {
+  it("settles a consent and a short message in code, and reads a long one as heavy", () => {
     expect(intakeByRules("да")).toEqual({ kind: "consent", confident: true });
     expect(intakeByRules("поправь опечатку в футере")).toEqual({ kind: "small", confident: false });
     expect(intakeByRules("почему не грузится каталог?")).toEqual({ kind: "question", confident: true });
-    expect(intakeByRules("x".repeat(HEAVY_WITHOUT_JEV + 1))).toEqual({ kind: "heavy", confident: false });
+    expect(intakeByRules("x".repeat(HEAVY_LENGTH + 1))).toEqual({ kind: "heavy", confident: false });
     expect(intakeByRules(`a\n${"b".repeat(200)}`)).toEqual({ kind: "small", confident: false });
   });
   it("F-006: a user intake names one goal from the request", () => {
@@ -167,24 +167,6 @@ describe("rails by default", () => {
   });
 });
 
-describe("a new process", () => {
-  it("is pointed at the forge once, then the PM may dispatch", async () => {
-    const { createPhaseIntake: create } = await import("../src/rooms/phase/server/intake");
-    const { createFakePluginHost: host } = await import("@get-bb/plugin-sdk/testing");
-    const { bb, harness } = host({ pluginId: "lane-pilot" });
-    harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
-    harness.sdk.stub("threads.events.list", async () => [{ type: "client/turn/requested", data: { requestId: "creq_p", initiator: "user", input: [{ type: "text", text: "x".repeat(300) }] } }]);
-    const db = openDatabase(bb);
-    createRun(db, "run1", "projA");
-    const phases = { open: async () => { throw new Error("no phase for a process"); }, tick: async () => ({ moved: 0, idle: null }), list: () => [], status: () => ({ next: { text: "" } }) };
-    const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never, phases as never);
-    // The newest request was read earlier as a process (the record the reader keeps).
-    await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_p", kind: "process", by: "jev", phaseId: null, at: 1 });
-    expect(await intake.dispatchRefusal("thr_pm")).toMatch(/lane_pilot_forge/);
-    expect(await intake.dispatchRefusal("thr_pm")).toBeNull();
-  });
-});
-
 describe("the small-task graph", () => {
   it("is started by the machine on the judgment's word, and the PM does not dispatch that request by hand", async () => {
     const { createPhaseIntake: create } = await import("../src/rooms/phase/server/intake");
@@ -212,43 +194,15 @@ describe("the small-task graph", () => {
   });
 });
 
-describe("a stopped or paused run", () => {
-  it("starts no build on the judgment's word: the PM reads the message instead (live 2026-10-26, Vampirism Fire)", async () => {
-    const { createPhaseIntake: create } = await import("../src/rooms/phase/server/intake");
-    const { createFakePluginHost: host } = await import("@get-bb/plugin-sdk/testing");
-    const { setJevForTests } = await import("@lane-pilot/jev");
-    const { setRunPaused } = await import("../src/rooms/runs/server/runs-halt");
-    const { bb, harness } = host({ pluginId: "lane-pilot" });
-    harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
-    harness.sdk.stub("threads.events.list", async () => [{ type: "client/turn/requested", data: { requestId: "creq_x", initiator: "user", input: [{ type: "text", text: "проверь скриптами, что осталось" }] } }]);
-    const db = openDatabase(bb);
-    createRun(db, "run1", "projA");
-    const started: string[] = [];
-    const phases = { open: async () => { throw new Error("no phase"); }, tick: async () => ({ moved: 0, idle: null }), list: () => [], status: () => ({ next: { text: "" } }) };
-    setJevForTests({ enabled: () => true, judge: async () => ({ by: "jev", decision: { kind: "small" } }) } as never);
-    try {
-      const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never, phases as never,
-        { start: (input) => { started.push(input.text); return "wfrun_1"; }, status: () => "running" });
-      await setRunPaused(bb.storage.kv as never, "run1", true);
-      expect(await intake.take("thr_pm")).toMatchObject({ kind: "small", by: "jev" });
-      expect(started).toEqual([]);
-    } finally { setJevForTests(null); }
-  });
-});
-
 describe("the service answers", () => {
   it("a cancel_requested attempt still counts as open work (OPEN_ATTEMPT_STATES, not the old four-state list)", async () => {
-    const { setJevForTests } = await import("@lane-pilot/jev");
     const { intake, db, sent, say } = world();
     createTask(db, { id: "T1", runId: "run1", kind: "bb", contract: { title: "Fix the hero" } });
     createAttempt(db, { id: "a1", runId: "run1", taskId: "T1" });
     transitionAttempt(db, "a1", "cancel_requested", { reason: "owner asked to stop" });
-    setJevForTests({ enabled: () => true, judge: async () => ({ by: "jev", decision: { kind: "service", service: "status" } }) } as never);
-    try {
-      say("x".repeat(HEAVY_WITHOUT_JEV + 1), "creq_svc");
-      expect(await intake.take(PM)).toMatchObject({ kind: "service" });
-      expect(sent.some((s) => s.includes("Fix the hero"))).toBe(true);
-    } finally { setJevForTests(null); }
+    say("что сейчас идёт?", "creq_svc");
+    expect(await intake.take(PM)).toMatchObject({ kind: "service", by: "rules" });
+    expect(sent.some((s) => s.includes("Fix the hero"))).toBe(true);
   });
 });
 
@@ -257,7 +211,6 @@ describe("one stop check guards every machine start in the intake", () => {
   async function stage(kind: keyof typeof texts, mode: "paused" | "halted" | "running") {
     const { createPhaseIntake: create } = await import("../src/rooms/phase/server/intake");
     const { createFakePluginHost: host } = await import("@get-bb/plugin-sdk/testing");
-    const { setJevForTests } = await import("@lane-pilot/jev");
     const { setRunPaused, setRunHalted } = await import("../src/rooms/runs/server/runs-halt");
     const { bb, harness } = host({ pluginId: "lane-pilot" });
     let request = { requestId: "creq_1", initiator: "user", input: [{ type: "text", text: texts[kind] }] } as Record<string, unknown>;
@@ -267,15 +220,14 @@ describe("one stop check guards every machine start in the intake", () => {
     createRun(db, "run1", "projA");
     const starts: string[] = [];
     const phases = { open: async () => { starts.push("phase"); return { id: "ph_1" }; }, tick: async () => { starts.push("tick"); return 0; }, list: () => [], status: () => ({ next: { text: "" } }) };
-    setJevForTests({ enabled: () => true, judge: async () => ({ by: "jev", decision: { kind } }) } as never);
     const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never, phases as never,
       { start: (input) => { starts.push(input.kind); return "wfrun_1"; }, status: () => "running", startProcess: async () => { starts.push("architect"); return "thr_arch"; } });
     if (mode === "paused") await setRunPaused(bb.storage.kv as never, "run1", true);
     if (mode === "halted") await setRunHalted(bb.storage.kv as never, "run1", true);
-    return { intake, starts, bb, resume: async () => { await setRunPaused(bb.storage.kv as never, "run1", false); await setRunHalted(bb.storage.kv as never, "run1", false); request = { requestId: "creq_2", initiator: "user", input: [{ type: "text", text: texts[kind] }] }; }, done: () => setJevForTests(null) };
+    return { intake, starts, bb, resume: async () => { await setRunPaused(bb.storage.kv as never, "run1", false); await setRunHalted(bb.storage.kv as never, "run1", false); request = { requestId: "creq_2", initiator: "user", input: [{ type: "text", text: texts[kind] }] }; }, done: () => undefined };
   }
   for (const mode of ["paused", "halted"] as const) {
-    for (const kind of ["heavy", "small", "batch", "process"] as const) {
+    for (const kind of ["heavy"] as const) {
       it(`${kind} while the run is ${mode}: nothing starts, and a new request after resume does`, async () => {
         const w = await stage(kind, mode);
         try {
@@ -288,38 +240,6 @@ describe("one stop check guards every machine start in the intake", () => {
       });
     }
   }
-});
-
-describe("a process the catalog already has", () => {
-  it("is not built again: the PM is told the published graph and no architect starts; an unknown process still gets one (hub: 62 processes, 21 architects, no catalog look)", async () => {
-    const { createPhaseIntake: create } = await import("../src/rooms/phase/server/intake");
-    const { createFakePluginHost: host } = await import("@get-bb/plugin-sdk/testing");
-    const { setJevForTests } = await import("@lane-pilot/jev");
-    const { bb, harness } = host({ pluginId: "lane-pilot" });
-    harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
-    harness.sdk.stub("threads.events.list", async () => [{ type: "client/turn/requested", data: { requestId: "creq_1", initiator: "user", input: [{ type: "text", text: "каждую неделю собирай список изменённых файлов и присылай" }] } }]);
-    const sent: string[] = [];
-    harness.sdk.stub("threads.send", async (input: { input: Array<{ text: string }> }) => { sent.push(input.input[0]!.text); return {}; });
-    const db = openDatabase(bb);
-    createRun(db, "run1", "projA");
-    setJevForTests({ enabled: () => true, judge: async () => ({ by: "jev", decision: { kind: "process" } }) } as never);
-    const phases = { open: async () => ({ id: "ph_1" }), tick: async () => ({ moved: 0, idle: null }), list: () => [], status: () => ({ next: { text: "" } }) };
-    try {
-      const architects: string[] = [];
-      const train = (found: { graphId: string; name: string; confidence: number } | null) => ({ start: () => null, status: () => null,
-        startProcess: async () => { architects.push("architect"); return "thr_arch"; }, findPublished: async () => found });
-      const known = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never, phases as never,
-        train({ graphId: "weekly-changed-files", name: "Weekly changed files", confidence: 92 }));
-      expect(await known.take("thr_pm")).toMatchObject({ kind: "process", hint: { graphId: "weekly-changed-files", confidence: 92 } });
-      expect(architects).toEqual([]);
-      expect(sent.join("\n")).toMatch(/published graph weekly-changed-files[\s\S]*lane_pilot_run_workflow/);
-
-      await bb.storage.kv.delete("phase-intake:thr_pm");
-      const unknown = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never, phases as never, train(null));
-      expect(await unknown.take("thr_pm")).toMatchObject({ kind: "process", architectThreadId: "thr_arch" });
-      expect(architects).toEqual(["architect"]);
-    } finally { setJevForTests(null); }
-  });
 });
 
 describe("the PM is the door: no other system for a request the machine took", () => {
@@ -347,33 +267,6 @@ describe("the PM is the door: no other system for a request the machine took", (
     await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_p", kind: "process", by: "jev", phaseId: null, at: 1 });
     expect(await intake.launchRefusal("thr_pm")).toBeNull();
     expect(await intake.dispatchRefusal("thr_pm")).toMatch(/lane_pilot_forge/);
-  });
-});
-
-describe("a reply about work under way", () => {
-  it("is a kind of its own the judgment can choose, read against the PM's last message, and starts nothing", async () => {
-    const { intakeJudgment } = await import("../src/rooms/phase/intake");
-    const state = intakeJudgment.stateBuilder({ text: "так сам авторизовывайся, нажми sign in", previous: "Studio вышла из аккаунта. Войти через Chrome?" }) as Record<string, string>;
-    expect(state.pm_last_message).toMatch(/Studio/);
-    expect(JSON.stringify(intakeJudgment.questions({ text: "x" }))).toContain("reply");
-    const decided = intakeJudgment.decide({ weight: { type: "choice", probabilities: { reply: 0.8, small: 0.2 } } } as never, { min_p: 0.55 }, { text: "x" });
-    expect(decided.decision).toEqual({ kind: "reply" });
-  });
-  it("an unsure judgment starts nothing: a remark it cannot place is a reply, not a small job", async () => {
-    const { intakeJudgment } = await import("../src/rooms/phase/intake");
-    const unsure = intakeJudgment.decide({ weight: { type: "choice", probabilities: { small: 0.4, reply: 0.35, question: 0.25 } } } as never, { min_p: 0.55 }, { text: "а меня зачем спрашиваешь?" });
-    expect(unsure.decision).toEqual({ kind: "reply" });
-    expect(JSON.stringify(intakeJudgment.questions({ text: "x" }))).toMatch(/complaint or feedback on how the work goes/);
-  });
-  it("a request for suggestions is a question, not a build (ph_82dfc9db78: ten hours of a phase for one)", async () => {
-    const { intakeJudgment } = await import("../src/rooms/phase/intake");
-    const asked = "Есть предложения как можно улучшить дизайн архитектуру нашего плагина на телефонах? А то как-то не очень компактно UI смотрится чтоли?";
-    expect(intakeByRules(asked)).toEqual({ kind: "question", confident: true });
-    const live = intakeJudgment.decide({ weight: { type: "choice", probabilities: { heavy: 0.74, question: 0.25, small: 0.01 } } } as never, { min_p: 0.55 }, { text: asked });
-    expect(live.decision).toEqual({ kind: "question" });
-    const order = intakeJudgment.decide({ weight: { type: "choice", probabilities: { heavy: 0.9, question: 0.05, small: 0.05 } } } as never, { min_p: 0.55 }, { text: "сделай раздел блога" });
-    expect(order.decision).toEqual({ kind: "heavy" });
-    expect(JSON.stringify(intakeJudgment.questions({ text: "x" }))).toMatch(/request for suggestions/);
   });
 });
 
@@ -452,12 +345,16 @@ describe("a hand-over is approved work, whatever it reads like (lead «да», 2
   });
 });
 
-describe("intake self-consistency", () => {
-  it("the re-ask reads the same question with the criteria in the reverse order", async () => {
-    const { intakeJudgment } = await import("../src/rooms/phase/intake");
-    const plain = (intakeJudgment.questions({ text: "x" }).weight as { criteria: Record<string, unknown> }).criteria;
-    const flipped = (intakeJudgment.questions({ text: "x", reverse: true }).weight as { criteria: Record<string, unknown> }).criteria;
-    expect(Object.keys(flipped)).toEqual([...Object.keys(plain)].reverse());
-    expect(flipped).toEqual(plain);
+describe("the rules read a request for suggestions as a question and a status line as a service request", () => {
+  it("a request for suggestions that ends with a question mark is a question, not a build (ph_82dfc9db78)", () => {
+    const asked = "Есть предложения как можно улучшить дизайн и архитектуру раздела на телефонах?";
+    expect(intakeByRules(asked)).toEqual({ kind: "question", confident: true });
+  });
+  it("a one-line status, current, results or cancel request is a service request; a long message that mentions one is not", () => {
+    expect(intakeByRules("статус")).toEqual({ kind: "service", confident: true, service: "status" });
+    expect(intakeByRules("что сейчас идёт?")).toMatchObject({ kind: "service", service: "current" });
+    expect(intakeByRules("покажи результаты")).toMatchObject({ kind: "service", service: "results" });
+    expect(intakeByRules("отмени задачу LP-T3")).toMatchObject({ kind: "service", service: "cancel" });
+    expect(intakeByRules("статус страницы заказов нужно переделать целиком, добавить фильтры")).toMatchObject({ kind: "small" });
   });
 });

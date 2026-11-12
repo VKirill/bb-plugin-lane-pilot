@@ -1,11 +1,20 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { migrations, openDatabase } from "../../src/rooms/plugin-db";
-import { routeWorkflow } from "../../src/rooms/workflow/route-workflow";
-import { listJudgments } from "@lane-pilot/jev";
+import { defineJudgment, listJudgments } from "@lane-pilot/jev";
 import { jevMigrations } from "@lane-pilot/jev";
 import { jevEnabled, jevSettingProblem, resolveMode, resolveThresholds } from "@lane-pilot/jev";
 import { validateSettingValue } from "../../src/rooms/settings/setting-validation";
+
+// A sample judgment with the thresholds the removed `route.workflow` had: the settings code is generic.
+const routeWorkflow = defineJudgment<{ q: string }, { choice: string | null }>({
+  id: "route.workflow", version: 1, defaultMode: "active", timeoutMs: 1_000, stateBuilder: (i) => i, questions: () => ({}),
+  thresholds: {
+    min_p: { default: 0.6, min: 0.6, max: 0.95, about: "least probability" },
+    min_margin: { default: 0.25, min: 0.05, max: 0.9, about: "least lead" },
+  },
+  decide: () => ({ decision: { choice: null } }), fallback: () => ({ choice: null }), describe: () => "none",
+});
 
 describe("jev settings", () => {
   it("starts from the registry defaults and clamps a project's values to the allowed range", () => {
@@ -34,8 +43,8 @@ describe("jev settings", () => {
     expect(jevSettingProblem("jev.thresholds", "nothing.here=1", listJudgments())).toContain("unknown threshold");
     expect(jevSettingProblem("jev.modes", "route.workflow=maybe", listJudgments())).toContain("off, shadow or active");
     expect(jevSettingProblem("jev.modes", "no.such=active", listJudgments())).toContain("unknown judgment");
-    expect(validateSettingValue("jev.thresholds", "route.workflow.min_p=0.99")).toMatchObject({ code: "invalid_choice", key: "jev.thresholds" });
-    expect(validateSettingValue("jev.modes", "route.workflow=active")).toBeNull();
+    expect(validateSettingValue("jev.thresholds", "failure.class.min_p=0.99")).toMatchObject({ code: "invalid_choice", key: "jev.thresholds" });
+    expect(validateSettingValue("jev.modes", "failure.class=active")).toBeNull();
     expect(validateSettingValue("jev.thresholds", "")).toBeNull();
     expect(validateSettingValue("jev.enabled", true)).toBeNull();
   });

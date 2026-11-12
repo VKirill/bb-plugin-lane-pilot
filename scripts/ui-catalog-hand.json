@@ -1519,7 +1519,7 @@
    "section": "jev",
    "channel": "OWN",
    "uiStatus": "editable",
-   "rationale": "Thresholds of the Jev judgments, one pair each (for example route.workflow.min_p=0.7); the receipts table lane_pilot_jev_receipt holds the data to tune them on",
+   "rationale": "Thresholds of the Jev judgments, one pair each (for example failure.class.min_p=0.7); the receipts table lane_pilot_jev_receipt holds the data to tune them on",
    "evidence": "src/jev/thresholds.ts:13",
    "matrixStatus": "readonly",
    "storageKey": "jev.thresholds"
@@ -4036,8 +4036,8 @@
    ],
    [
     "reason_s441",
-    "Thresholds of the Jev judgments as judgment.name=number pairs, for example route.workflow.min_p=0.7 (probability, 0.6 to 0.95). A value outside the allowed range is clamped; empty means the defaults",
-    "Пороги решений Jev парами решение.имя=число, например route.workflow.min_p=0.7 (вероятность, от 0.6 до 0.95). Значение вне допустимого диапазона обрезается; пусто означает значения по умолчанию"
+    "Thresholds of the Jev judgments as judgment.name=number pairs, for example failure.class.min_p=0.7 (probability, 0.6 to 0.95). A value outside the allowed range is clamped; empty means the defaults",
+    "Пороги решений Jev парами решение.имя=число, например failure.class.min_p=0.7 (вероятность, от 0.6 до 0.95). Значение вне допустимого диапазона обрезается; пусто означает значения по умолчанию"
    ],
    [
     "field_s442",
@@ -4046,8 +4046,8 @@
    ],
    [
     "reason_s442",
-    "The mode of a Jev judgment as judgment=off|shadow|active pairs, for example route.workflow=active. off keeps the old behaviour, shadow asks Jev and only records its answer next to the old decision, active lets Jev decide the clear cases and hands the unclear ones to the old judge",
-    "Режим решения Jev парами решение=off|shadow|active, например route.workflow=active. off оставляет прежнее поведение, shadow спрашивает Jev и только записывает ответ рядом со старым решением, active отдаёт Jev ясные случаи, а неясные передаёт прежнему судье"
+    "The mode of a Jev judgment as judgment=off|shadow|active pairs, for example failure.class=shadow. off keeps the old behaviour, shadow asks Jev and only records its answer next to the old decision, active lets Jev decide the clear cases and hands the unclear ones to the old judge",
+    "Режим решения Jev парами решение=off|shadow|active, например failure.class=shadow. off оставляет прежнее поведение, shadow спрашивает Jev и только записывает ответ рядом со старым решением, active отдаёт Jev ясные случаи, а неясные передаёт прежнему судье"
    ],
    [
     "field_s453",

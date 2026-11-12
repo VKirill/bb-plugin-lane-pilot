@@ -7,7 +7,7 @@ import hostEntry from "../host";
 const WIRE_METHODS = [
   "anamnesis", "answerPermit", "applyOnboardingPages", "closeBacklogItem",
   "coexistenceInventory", "coexistenceOperation", "connectOpencode", "councilJudge", "detect", "discoverClaudeAgents",
-  "diskFree", "docsAnchors", "docsDepth", "docsFlows", "docsLineCounts", "docsStaleness", "docsVerifyCitations",
+  "diskFree", "docsAnchors", "docsFlows", "docsLineCounts",
   "docsWorthinessFacts", "findBrowserQaTarget", "gateAttribute", "gateBisect", "gateRun", "gitCommitDocs", "gitCreateWorktree",
   "gitDocsScope", "gitIntegrate", "gitMergeInfo", "gitOwnershipBase", "gitOwnershipChanges", "gitPrepareWorktree",
   "gitRemoveWorktree", "gitRevertCommits", "gitRevertPaths", "gitSyncWorktree", "gitUndoCheckWrites",

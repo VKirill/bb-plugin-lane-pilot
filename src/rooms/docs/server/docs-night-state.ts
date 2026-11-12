@@ -19,7 +19,7 @@ export interface Services {
     /** The project checkout when the unit works in the docs worktree (place); its commits are merged there. */
     basePath?:string;label:string;unit:DocsUnit;threadId:string;phase:"writing"|"repairing";sentAt?:number;
     beforeDirty:string[];localDate:string;since:ReturnType<typeof parseDocsSettings>["since"];roots:string[];workspaces:Array<{path:string;name:string;docsDir:string|null}>;
-    hasDocs:boolean;changedCount:number;refresh:string[];gaps:{missingPages:string[];uncoveredCore:string[]};anchors:{count:number;jev:string}|null;
+    hasDocs:boolean;changedCount:number;refresh:string[];gaps:{missingPages:string[];uncoveredCore:string[]};anchors:{count:number;jev?:string}|null;
     core:Array<{name:string;file:string;line:number;endLine:number}>;kvKey:string;
     /** Pages of the place already over the size limit when the agent started (absent in records saved by older versions). */
     oversizedAtStart?:string[];
@@ -31,7 +31,7 @@ export interface Services {
     workspaces:Array<{path:string;name:string;docsDir:string|null}>;base:string;runKey:string;assignment?:string};
   /** What the prepare step found for a unit with work to do, handed to the write step (the unit record is made once the agent has a thread). */
   export type UnitPlan={label:string;hasDocs:boolean;changed:string[];changedCount:number;refresh:string[];gaps:{missingPages:string[];uncoveredCore:string[]};
-    anchors:{count:number;jev:string;briefPath?:string;deploy:boolean}|null;core:Array<{name:string;file:string;line:number;endLine:number}>;kvKey:string;
+    anchors:{count:number;jev?:string;briefPath?:string;deploy:boolean}|null;core:Array<{name:string;file:string;line:number;endLine:number}>;kvKey:string;
     doubts:Array<{path:string;rule:string;detail:string}>;decisionDrafts:string[];beforeDirty:string[];localDate:string;oversizedAtStart:string[]};
 
   /** The checks of a unit's pages: what the agent touched, what is dirty in its docs, per-page citation stats, the findings that block and the ones left as warnings. */

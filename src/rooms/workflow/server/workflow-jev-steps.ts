@@ -3,12 +3,11 @@ import type { Row } from "./workflow-chain-runtime";
 import { bestEffort } from "@lane-pilot/kit";
 import type { GraphNode, NodeExecutor, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { getJudgment, jev } from "@lane-pilot/jev";
-import { citationCheckJudgment } from "@lane-pilot/jev/judgments/citation-check";
 import type { Judgment } from "@lane-pilot/jev";
 import type { ChainRuntime } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 
-/** The Jev steps of a chain: the native `jev` node and the citation check — one cheap judgment call, no helper thread. */
+/** The Jev steps of a chain: the native `jev` node — one cheap judgment call, no helper thread. */
 export function registerJevSteps(engine: WorkflowEngine, ctx: ServerCore, deps: {
   runtimeOf: (c: { runtime: unknown }, runId?: string) => ChainRuntime | undefined;
 }): void {
@@ -57,24 +56,4 @@ export function registerJevSteps(engine: WorkflowEngine, ctx: ServerCore, deps: 
       return { output: { decision: judgment.describe(verdict.decision), handoff: handoff(verdict.decision), value: verdict.decision, ...flat(verdict.decision), escalated: false, fallback: true, status: verdict.status, ...receipt, would: judgment.describe(would) } };
     },
   } as NodeExecutor<ChainRuntime>);
-  // `citations.jev`: for each {claim, source, excerpt} triple Jev decides whether the source supports the claim
-  // (research.citation, shadow by default — verdicts go to receipts and to `citation_check` in the output).
-  engine.register<ChainRuntime>("citations.jev", { reentrant: true, run: async (c) => {
-    const params = rec(rec(c.node).params);
-    const items = list((c.input.with as Row | undefined)?.[str(params.items ?? "citations")] ?? c.inputs[str(params.items ?? "citations")]);
-    const rt = runtimeOf(c, c.runId);
-    const judge = jev();
-    if (!judge || !items.length) return { output: { checked: 0, kept: items.length, verdicts: [] } };
-    const inputs = items.map((item) => {
-      const row = rec(item);
-      return { claim: str(row.claim), quote: str(row.quote), sourceTitle: str(row.title ?? row.source_title), sourceUrl: str(row.url ?? row.source_url), excerpt: str(row.excerpt ?? row.text), question: str(row.question) };
-    });
-    const settings = rt?.projectId ? await bestEffort(ctx.log, "workflow settings", ctx.effectiveProjectSettings(rt.projectId).then((r) => r.values as Record<string, unknown>), {}) : {};
-    const verdicts = await judge.judgeMany(citationCheckJudgment, inputs, { projectId: rt?.projectId ?? null, runId: rt?.runId ?? null, settings });
-    const out = verdicts.map((v, i) => {
-      const decision = v.by === "jev" ? v.decision : v.by === "fallback" && v.shadow?.decision ? v.shadow.decision : citationCheckJudgment.fallback(inputs[i]!);
-      return { index: i, verdict: decision.verdict, keep: decision.keep, by: v.by === "jev" ? "jev" : "fallback" };
-    });
-    return { output: { checked: verdicts.length, kept: out.filter((v) => v.keep).length, verdicts: out } };
-  } });
 }

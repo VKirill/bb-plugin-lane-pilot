@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 962711caef6d1406 -->
+<!-- enabled-settings:structure 1e82a29202f497e3 -->
 
 # Enabled settings (generated)
 

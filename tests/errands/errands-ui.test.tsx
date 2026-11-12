@@ -12,7 +12,7 @@ beforeAll(() => { setLocaleOverride("en"); });
 afterEach(() => { cleanup(); setLocaleOverride("en"); });
 
 const NOW = 1_800_000_000_000;
-const kind = (id: string, role: string, extra: Record<string, unknown> = {}) => ({ kind: id, role, providerId: "claude-code", model: "claude-opus-5-5", effort: "high", source: "default", runs: 0, done: 0, blocked: 0, failed: 0, costUsd: 0, jevWouldPick: 0, ...extra });
+const kind = (id: string, role: string, extra: Record<string, unknown> = {}) => ({ kind: id, role, providerId: "claude-code", model: "claude-opus-5-5", effort: "high", source: "default", runs: 0, done: 0, blocked: 0, failed: 0, costUsd: 0, ...extra });
 const payload = () => ({
   days: 7,
   kinds: [kind("computer", "errand-computer", { runs: 2, done: 1, blocked: 1, costUsd: 0.75, source: "table" }), kind("devops", "errand-devops"), kind("browser", "errand-browser"), kind("research", "errand-research"), kind("message", "errand", { model: "glm-5.3-flash", providerId: "opencode2" }), kind("none", "errand", { runs: 1, failed: 1, model: "glm-5.3-flash", providerId: "opencode2" })],

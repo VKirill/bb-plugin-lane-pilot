@@ -7,7 +7,6 @@
     "./critique/critic-screen.ts",
     "./critique/index.ts",
     "./design-eval/index.ts",
-    "./design-eval/judge.ts",
     "./errands/failure-judgment.ts",
     "./errands/process-key.ts",
     "./jev/index.ts",
@@ -18,15 +17,12 @@
     "./learning/rule-diff.ts",
     "./phase/index.ts",
     "./phase/intake.ts",
-    "./runs/failure-class-model.ts",
     "./runs/index.ts",
-    "./schedule/errand-kind-judgment.ts",
     "./session-hooks/cli.ts",
     "./tasks/index.ts",
     "./verification/test-hint.ts",
     "./wall/index.ts",
     "./workflow/index.ts",
-    "./workflow/route-workflow.ts",
     "./workflow/ui/workflow-graph-parts.tsx",
     "./writer/index.ts"
   ]

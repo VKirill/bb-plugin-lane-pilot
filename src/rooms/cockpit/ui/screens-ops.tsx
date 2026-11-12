@@ -64,7 +64,7 @@ export function ForgeScreen({ rpc, projectId, runId }: { rpc: Rpc; projectId: st
 export function MemoryScreen({ rpc, runId, projectId }: { rpc: Rpc; runId: string | null; projectId: string }) {
   const [out, setOut] = useState<{ action: string; output: string; tags?: Array<{ tag: string; count: number }> } | null>(null);
   const [query, setQuery] = useState("");
-  const [found, setFound] = useState<{ records: Array<{ id: string; kind: string; content: string; concepts: string[] }>; nothingRelevant?: boolean; message?: string } | null>(null);
+  const [found, setFound] = useState<{ records: Array<{ id: string; kind: string; content: string; concepts: string[] }>; nothingRelevant?: boolean; weakMatch?: boolean; message?: string } | null>(null);
   const run = (action: "lint" | "index" | "tags" | "consolidate") => runId && void rpc.call("cockpit_memory", { runId, action }).then((result) => setOut({ action, ...(result as { output: string; tags?: Array<{ tag: string; count: number }> }) }), (cause: unknown) => setOut({ action, output: String(cause) }));
   const search = () => void rpc.call("session_memory_search", { projectId, query: query.trim(), limit: 8 }).then((result) => setFound(result as typeof found), (cause: unknown) => setFound({ records: [], message: String(cause) }));
   return (
@@ -72,6 +72,7 @@ export function MemoryScreen({ rpc, runId, projectId }: { rpc: Rpc; runId: strin
       <div className="space-y-2">
         <div className="flex gap-2"><input className="min-w-0 flex-1 rounded border border-border bg-background px-2 text-base sm:text-sm" placeholder={t("ckMemorySearch")} value={query} onChange={(e) => setQuery(e.target.value)} />
           <Button size="sm" disabled={!query.trim()} onClick={search}>{t("ckMemorySearchGo")}</Button></div>
+        {found?.weakMatch && found.records.length ? <p className="text-sm text-muted-foreground" data-testid="ck-memory-weak">{t("ckMemoryWeak")}</p> : null}
         {found ? (found.records.length ? (
           <ul className="space-y-1 text-sm" data-testid="ck-memory-found">{found.records.map((row) => (
             <li key={row.id}><Badge variant="outline">{row.kind}</Badge> {row.content}{row.concepts.length ? <span className="text-xs text-muted-foreground"> · {row.concepts.join(", ")}</span> : null}</li>))}</ul>

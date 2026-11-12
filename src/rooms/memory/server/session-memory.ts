@@ -3,7 +3,7 @@ import { embedQuery } from "./embeddings";
 import { resolve } from "node:path";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, upsertLessonProposal } from "@lane-pilot/run-insights";
-import { DEFAULT_RELEVANCE_FLOOR, NOTHING_RELEVANT, listMemoryReceipts, projectUsesSections, resolveProjectKind, sharedScope, UNASSIGNED_SCOPE, memoryClaimIssue, memoryVisibilitySql, parseMemoryCandidates, relevantRecords, searchMemoryRecords, storeMemoryRecordsKeepingOverflow, type MemoryRecord } from "@lane-pilot/memory-core";
+import { DEFAULT_RELEVANCE_FLOOR, NOTHING_RELEVANT, listMemoryReceipts, projectUsesSections, resolveProjectKind, sharedScope, UNASSIGNED_SCOPE, memoryClaimIssue, memoryVisibilitySql, parseMemoryCandidates, relevantRecords, searchMemoryRecords, WEAK_MATCH, weakAnswer, storeMemoryRecordsKeepingOverflow, type MemoryRecord } from "@lane-pilot/memory-core";
 import type { rpcContract } from "../../contracts";
 import { memorySettingsFor } from "./memory-settings";
 import type { InsightsApi } from "../../contracts/server";
@@ -11,7 +11,6 @@ import type { ServerCore } from "../../contracts/server";
 
 import {sha256Hex, bestEffort} from "@lane-pilot/kit";
 import { threadMemoryBlock, type WallThreadReader } from "./thread-block";
-import { rerankRecords } from "./rerank";
 import { loadProjectSettings, projectHasScopedRun, type LanePilotDatabase } from "../../storage";
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
@@ -28,7 +27,7 @@ interface Services {
 /**
  * The notes a session may be reminded of without asking anyone (the prompt recall and the subagent pack): confirmed, active, in
  * date, of the project's own root and the caller's sections, found by the word index alone (the "fts5" engine: no embedding call,
- * no rerank, no model or network call, and no miss recorded). A note only one session vouches for, or one waiting out its 24 h
+ * no answer gate, no model or network call, and no miss recorded). A note only one session vouches for, or one waiting out its 24 h
  * quarantine, never comes out; neither does anything while `memory.enabled` is off.
  */
 export function confirmedWordHits(db: LanePilotDatabase, projectId: string, query: string, input: { chain?: readonly string[]; limit: number }): MemoryRecord[] {
@@ -104,10 +103,13 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       // The floor drops records, so the search looks further than the limit to fill it; a query nothing clears gets the explicit «nothing» next to the empty list.
       await embedQuery(query);
       const found = searchMemoryRecords(db, projectId, query, Math.min(100, Math.max(40, wanted * 4)), settings.searchEngine, "subagent", settings.personalBot, { includeObserved: true, chain: chain ?? [], umbrella: resolveProjectKind(settings.projectKind, projectUsesSections(db, projectId, projectHasScopedRun)) === "umbrella" });
-      const floored = relevantRecords(db, projectId, query, found, { audience: "subagent", personalBot: settings.personalBot, floor: settings.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR });
-      const records = (await rerankRecords(floored, query, { projectId, settings: loadProjectSettings(db, projectId, chain ?? []) })).slice(0, wanted)
+      const floorOpts = { audience: "subagent" as const, personalBot: settings.personalBot, floor: settings.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR };
+      const floored = relevantRecords(db, projectId, query, found, floorOpts);
+      const records = floored.slice(0, wanted)
         .map((record) => ({ id: record.id, kind: record.kind, content: record.content, concepts: record.concepts }));
-      return records.length ? { records } : { records, nothingRelevant: true, message: NOTHING_RELEVANT };
+      // The answer gate only warns: the notes go out under WEAK_MATCH and the session decides whether they answer.
+      if (!records.length) return { records, nothingRelevant: true, message: NOTHING_RELEVANT };
+      return weakAnswer(db, projectId, query, found, floorOpts) ? { records, weakMatch: true, message: WEAK_MATCH } : { records };
     },
     // Proven facts first (accepted, then used, then newest). A missing chain is the project root. Observed notes still in quarantine stay out.
     session_memory_core: async ({ projectId, chain }) => {

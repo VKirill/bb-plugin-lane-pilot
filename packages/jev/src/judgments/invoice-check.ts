@@ -1,16 +1,10 @@
-import { defineJudgment, noul, noulOf } from "../registry";
-
 /**
- * J-invoice: does the invoice that was made in the accounting service say what the owner asked for? Numbers and bank details are
- * checked by code (an amount is equal or it is not; an INN, a BIK and an account have check digits); only the two questions that
- * need reading go to Jev: is the client the same company, and does the service line describe the same work. The bank details
- * and the amount never leave the machine: the state Jev sees is the two names and the two service lines.
- *
- * The verdict is `match` (everything agrees), `mismatch` (a hard check failed, or Jev is sure something differs) or `unsure`.
- * The workflow sends a match to the owner's approval and everything else to a review first; nothing is sent without the owner.
+ * The rules behind the action `invoice.check`: does the invoice made in the accounting service say what the owner asked for? Numbers and
+ * bank details are checked by code (an amount is equal or it is not; an INN, a BIK and an account have check digits); the client and the
+ * service line are compared by the words they share. No model reads them. Anything the words cannot settle is `unsure` and goes to the
+ * owner's review; nothing is sent without the owner.
+ * (Kept in the jev package only because the PII scan shares the INN check digits; nothing here asks a model.)
  */
-export const INVOICE_CHECK_ID = "invoice.check";
-
 export type InvoiceRequest = { company: string; amount: number; service: string; inn: string };
 export type InvoiceFound = {
   number: string; client_name: string; client_inn: string; amount: number; service: string;
@@ -70,51 +64,11 @@ export function overlap(a: string, b: string): number {
   return shared / Math.min(left.size, right.size);
 }
 
-const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
-
-export const invoiceCheck = defineJudgment<InvoiceCheckInput, InvoiceCheckDecision>({
-  id: INVOICE_CHECK_ID,
-  title: "Совпадает ли счёт с работой",
-  version: 1,
-  // Active: a wrong answer here costs a review, never a send. The deterministic fallback answers when Jev cannot be asked.
-  defaultMode: "active",
-  timeoutMs: 6_000,
-  stateBuilder: ({ request, invoice }) => ({
-    request: { company: clip(request.company, 300), service: clip(request.service, 600) },
-    invoice: { client_name: clip(invoice.client_name, 300), service: clip(invoice.service, 600) },
-  }),
-  questions: () => ({
-    company: noul(
-      "Is the client named in `invoice.client_name` the same company or person as the one in `request.company`? Legal forms, quotation marks, capitals and transliteration may differ (ООО «Ромашка», Romashka LLC and ромашка are one company); a different name is a different client.",
-      { true: "The same company or person, written differently at most", false: "A different company or person" },
-    ),
-    service: noul(
-      "Does the service line in `invoice.service` describe the same work as `request.service`? Different wording, order or detail of the same work is fine; a different kind of work, a different period or an extra item is not.",
-      { true: "The same work", false: "Different work, period or scope" },
-    ),
-  }),
-  thresholds: {
-    min_same: { default: 0.8, min: 0.6, max: 0.97, about: "least probability of «same» for the client and the service before the invoice counts as matching" },
-    max_different: { default: 0.25, min: 0.03, max: 0.5, about: "most probability of «same» at which the client or the service counts as different" },
-  },
-  decide(answers, t, input) {
-    const hard = hardProblems(input);
-    if (hard.length) return { decision: { verdict: "mismatch", reasons: hard } };
-    const company = noulOf(answers, "company"), service = noulOf(answers, "service");
-    if (company === undefined || service === undefined) return { escalate: "owner" };
-    const reasons: string[] = [];
-    if (company <= t.max_different!) reasons.push(`the client in the invoice looks like a different company (p same ${company.toFixed(2)})`);
-    if (service <= t.max_different!) reasons.push(`the service line looks like different work (p same ${service.toFixed(2)})`);
-    if (reasons.length) return { decision: { verdict: "mismatch", reasons } };
-    if (company >= t.min_same! && service >= t.min_same!) return { decision: { verdict: "match", reasons: [`amount, INN and bank details are in order; client p ${company.toFixed(2)}, service p ${service.toFixed(2)}`] } };
-    return { decision: { verdict: "unsure", reasons: [`numbers and bank details are in order, but Jev is not sure of the client (p ${company.toFixed(2)}) or the service line (p ${service.toFixed(2)})`] } };
-  },
-  fallback(input) {
-    const hard = hardProblems(input);
-    if (hard.length) return { verdict: "mismatch", reasons: hard };
-    const company = overlap(input.request.company, input.invoice.client_name), service = overlap(input.request.service, input.invoice.service);
-    if (company >= 0.6 && service >= 0.5) return { verdict: "match", reasons: [`amount, INN and bank details are in order; the names share ${Math.round(company * 100)}% and the service lines ${Math.round(service * 100)}% of their words (no model was asked)`] };
-    return { verdict: "unsure", reasons: ["amount, INN and bank details are in order; the client name or the service line cannot be compared by words alone (no model was asked)"] };
-  },
-  describe: (decision) => decision.verdict,
-});
+/** The verdict: `match` (everything agrees), `mismatch` (a hard check failed) or `unsure` (the words alone cannot tell). */
+export function invoiceVerdict(input: InvoiceCheckInput): InvoiceCheckDecision {
+  const hard = hardProblems(input);
+  if (hard.length) return { verdict: "mismatch", reasons: hard };
+  const company = overlap(input.request.company, input.invoice.client_name), service = overlap(input.request.service, input.invoice.service);
+  if (company >= 0.6 && service >= 0.5) return { verdict: "match", reasons: [`amount, INN and bank details are in order; the names share ${Math.round(company * 100)}% and the service lines ${Math.round(service * 100)}% of their words`] };
+  return { verdict: "unsure", reasons: ["amount, INN and bank details are in order; the client name or the service line cannot be compared by words alone"] };
+}

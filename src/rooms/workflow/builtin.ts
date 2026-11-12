@@ -51,7 +51,6 @@ import lpJevLabels from "../../../workflows/lp.jev-labels.json";
 import lpEpisodes from "../../../workflows/lp.episodes.json";
 import lpPmReplay from "../../../workflows/lp.pm-replay.json";
 import lpWallHunt from "../../../workflows/lp.wall-hunt.json";
-import lpRoute from "../../../workflows/lp.route.json";
 import lpRulesAsk from "../../../workflows/lp.rules-ask.json";
 import lpRulesScan from "../../../workflows/lp.rules-scan.json";
 import lpSelfRepair from "../../../workflows/lp.self-repair.json";
@@ -188,7 +187,6 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "lp.episodes.json", value: lpEpisodes },
   { name: "lp.pm-replay.json", value: lpPmReplay },
   { name: "lp.wall-hunt.json", value: lpWallHunt },
-  { name: "lp.route.json", value: lpRoute },
   { name: "lp.rules-ask.json", value: lpRulesAsk },
   { name: "lp.rules-scan.json", value: lpRulesScan },
   { name: "lp.self-repair.json", value: lpSelfRepair },
@@ -262,7 +260,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "project-passport.json", value: projectPassport },
 ];
 
-export { LP_TASK_PIPELINE, AFTER_ACCEPT, DOCS_NIGHT, DOCS_MAINTENANCE, SELF_REPAIR, ROUTE_WORKFLOW, ANALYZE_PLAN_EXECUTE } from "../contracts";
+export { LP_TASK_PIPELINE, AFTER_ACCEPT, DOCS_NIGHT, DOCS_MAINTENANCE, SELF_REPAIR, ANALYZE_PLAN_EXECUTE } from "../contracts";
 
 const parsed = new Map<string, Workflow>();
 // Pass 1: parse every built-in workflow structure without cross-workflow lookup.

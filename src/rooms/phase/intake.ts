@@ -1,12 +1,10 @@
-import { choice, choiceOf, defineJudgment } from "@lane-pilot/jev";
-import { pathClassByRules, type PathRisk, type PathSize } from "@lane-pilot/workflow-engine";
 import { isWholeConsent } from "../tasks";
 
 /**
  * Rails by default (SMA: the one-turn engine and «every heavy request goes through the phase graph»). Matvey's machine reads the
  * owner's message before any model does: a whole-message «yes», a question, a small job and a heavy goal take different roads,
  * and a heavy goal is driven by the daemon through the phase, the orchestrator only switched on at its turns. Here the code
- * settles what it can (a consent, a short message) and Jev the rest; without Jev a long message is heavy.
+ * settles it by rules alone (a consent, a question, a service line, the length); no model reads the message.
  */
 export const INTAKE_KINDS = ["heavy", "small", "batch", "process", "question", "consent", "reply", "service"] as const;
 export const SERVICE_KINDS = ["status", "current", "cancel", "results"] as const;
@@ -23,121 +21,37 @@ const MACHINE_TEXT = [/^\s*\[?lane pilot\b/i, /^\s*\[bb message from/i, /^\s*<ta
 export const isMachineMessage = (text: string) => MACHINE_TEXT.some((pattern) => pattern.test(text));
 
 const CONSENT = /^(да|ага|угу|ок|окей|ok|okay|yes|yep|го|гоу|давай|делай|согласен|согласна|принято|подтверждаю|поехали|\+|\+\+)[\s.!)]*$/i;
-/** Above this many characters a message the judgment could not read is taken as heavy: a goal, not a fix. */
-export const HEAVY_WITHOUT_JEV = 700;
+/** Above this many characters a message the rules cannot place is taken as heavy: a goal, not a fix. */
+export const HEAVY_LENGTH = 700;
 
-/** What the code settles alone; `confident: false` goes to Jev. */
-export function intakeByRules(text: string): { kind: IntakeKind; confident: boolean } {
+/**
+ * A one-line request the LP database alone can answer: the status, what runs now, the latest results, a cancel. Short lines only:
+ * a long message that mentions «status» is a task.
+ */
+const SERVICE_RULES: Array<[ServiceKind, RegExp]> = [
+  ["cancel", /^(?:отмени|останови|cancel|stop)\s+(?:задач[а-яё]*|task)\s+\S+[\s.!]*$/i],
+  ["current", /^(?:что (?:сейчас )?(?:идёт|идет|выполняется|в работе)|what(?:'s| is) (?:running|in progress)(?: now)?)[\s?.!]*$/i],
+  ["results", /^(?:покажи (?:последние )?результаты|что (?:уже )?(?:готово|сделано)|show (?:the )?(?:latest |last )?results)[\s?.!]*$/i],
+  ["status", /^(?:статус|status|как дела|как успехи|how(?:'s| is) it going)[\s?.!]*$/i],
+];
+export function serviceByRules(text: string): ServiceKind | null {
   const clean = text.trim();
-  if (isWholeConsent(clean) || CONSENT.test(clean)) return { kind: "consent", confident: true };
-  // One line that ends with «?» is a question at any length (ph_82dfc9db78, 2026-10-31: «Есть предложения как улучшить дизайн… на
-  // телефонах?», 135 characters, went to the judgment, was read as heavy and opened a phase for ten hours); a short request goes to the judgment.
-  if (!clean.includes("\n") && clean.endsWith("?")) return { kind: "question", confident: true };
-  if (clean.length <= 80 && !clean.includes("\n")) return { kind: "small", confident: false };
-  return { kind: clean.length > HEAVY_WITHOUT_JEV ? "heavy" : "small", confident: false };
+  if (clean.includes("\n") || clean.length > 80) return null;
+  return SERVICE_RULES.find(([, pattern]) => pattern.test(clean))?.[0] ?? null;
 }
 
-export const INTAKE_JUDGMENT_ID = "intake.weight";
-/** A heavy reading with «question» this likely or more is taken as a question. */
-export const QUESTION_RUNNER_UP = 0.2;
-const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
-
-export const intakeJudgment = defineJudgment<{ text: string; previous?: string | null; /** Ask the same question with the options in the reverse order (self-consistency on the border zone). */ reverse?: boolean }, { kind: IntakeKind; service?: ServiceKind; service_p?: number }>({
-  id: INTAKE_JUDGMENT_ID,
-  title: "Насколько весома запись для обучения",
-  version: 2,
-  defaultMode: "active",
-  timeoutMs: 8_000,
-  // The PM's last words in the chat: «sign in yourself» is a reply to the PM's question about a sign-in, not a new task (live 2026-10-25).
-  stateBuilder: (input) => ({ owner_message: clip(input.text, 4_000), ...(input.previous ? { pm_last_message: clip(input.previous, 1_500) } : {}) }),
-  questions: (input) => {
-    // Option order biases the answer toward the first option (TypeSafe jaggedness #8): a border-zone pick is re-asked
-    // with the criteria reversed before it counts.
-    const criteria = {
-      heavy: "An order to do a goal that needs several tasks that depend on each other, a design or architecture decision, a new feature or section, a redesign, a migration, or work whose result has to be planned and accepted as a whole. It orders the work done; asking for ideas about such work is a question.",
-      small: "One concrete change a single task can make: a fix, a tweak, a copy or style edit, one page or one endpoint.",
-      batch: "A list of several independent small fixes or edits, each one task, none needing a plan.",
-      process: "A new recurring routine or way of working the system itself should run again and again: a pipeline, a regular job, a checklist to repeat for every new item, «each time X do Y», «every week …».",
-      question: "A question or a request for information, a report or a status, or a request for suggestions, ideas, options or an assessment («есть предложения?», «как можно улучшить?», «что думаешь?»): it consults the PM and orders no change to the project.",
-      consent: "Agreement, a yes, an approval of what was proposed, or a short go-ahead.",
-      reply: "A reply about work already under way in this chat (`pm_last_message` shows what): an answer to the PM's question, a permission or an instruction for a helper or task that is running, a correction of how it does it, or a remark, complaint or feedback on how the work goes («why do you ask me?», «it takes too long»). It asks for no new piece of work.",
-      service: "A one-line service request the LP database alone can answer, needing no judgment: 'what is the status', 'what is running now', 'cancel task X' (X named plainly), 'show the last results'.",
-    };
-    const entries = Object.entries(criteria);
-    return {
-      weight: choice(
-        "The owner wrote `owner_message` to the project manager of a software project. What kind of request is it? Judge by the work it asks for, not by its length or tone.",
-        Object.fromEntries(input?.reverse ? entries.reverse() : entries),
-      ),
-      service: choice(
-        "If `owner_message` is a service request, which? Answer \'none\' when it is not one.",
-        { none: "not a service request", status: "overall status of the run or phase", current: "what is running right now", cancel: "cancel a task", results: "the latest results or report" },
-      ),
-    };
-  },
-  thresholds: {
-    min_p: { default: 0.55, min: 0.4, max: 0.95, about: "least probability of the chosen kind" },
-  },
-  decide(answers, t) {
-    const pick = choiceOf(answers, "weight");
-    // Unsure is not a job: «small» here started a build on remarks the judgment could not place (live 2026-10-26: 8 of 13 issue-quick
-    // runs of one chat ended «too vague»). A reply starts nothing; the PM reads the message in its turn.
-    if (!pick || pick.p < t.min_p!) return { decision: { kind: "reply" } };
-    // A build is not started on a message that reads as a question too: heavy 0.74 with question 0.25 was a request for suggestions
-    // (ph_82dfc9db78). The PM reads it and talks first.
-    if (pick.top === "heavy" && (pick.ranked.find(([option]) => option === "question")?.[1] ?? 0) >= QUESTION_RUNNER_UP) return { decision: { kind: "question" } };
-    const kind: IntakeKind = (INTAKE_KINDS as readonly string[]).includes(pick.top) ? (pick.top as IntakeKind) : "small";
-    // The service sub-question names which service; `cancel` needs an unambiguous task, judged in serviceAnswer.
-    const svc = choiceOf(answers, "service");
-    const service = kind === "service" && svc && svc.top !== "none" ? (svc.top as ServiceKind) : undefined;
-    return { decision: { kind: kind === "service" && !service ? "question" : kind, ...(service ? { service, service_p: svc?.p ?? 0 } : {}) } };
-  },
-  fallback: () => ({ kind: "small" }),
-  describe: (decision) => decision.kind,
-});
-
-export const PATH_CLASS_JUDGMENT_ID = "intake.path_class";
-
-/** Size and risk of one request. Unsure on either question keeps the rules' reading of that question. */
-export const pathClassJudgment = defineJudgment<{ text: string; previous?: string | null }, { size: PathSize; risk: PathRisk }>({
-  id: PATH_CLASS_JUDGMENT_ID,
-  // v2: the state is the intake judgment's (owner_message + pm_last_message), so both judgments ride one bundled request.
-  version: 2,
-  defaultMode: "active",
-  timeoutMs: 8_000,
-  stateBuilder: (input) => ({ owner_message: clip(input.text, 4_000), ...(input.previous ? { pm_last_message: clip(input.previous, 1_500) } : {}) }),
-  questions: () => ({
-    size: choice(
-      "How big is the change `owner_message` asks for? Judge the work, not the length or the tone.",
-      {
-        tiny: "One obvious tweak in one place: a typo, a color, a label, a rename, a hint. No design and no second task.",
-        small: "One concrete task a single writer can finish: a fix or a small change, not a list of them.",
-        large: "Several tasks, a new feature, a redesign, a migration, or work that has to be planned and accepted as a whole.",
-      },
-    ),
-    risk: choice(
-      "What breaks if this change is wrong?",
-      {
-        low: "A label, a color, copy or a layout tweak. No money, access or stored data.",
-        medium: "Behavior people rely on, but not money, access, secrets or stored data.",
-        high: "Sign-in, payments, secrets, a migration, deleting data, or security.",
-      },
-    ),
-  }),
-  thresholds: {
-    min_p: { default: 0.55, min: 0.4, max: 0.95, about: "least probability of the chosen size and of the chosen risk" },
-  },
-  decide(answers, t, input) {
-    const rules = pathClassByRules(input?.text ?? "");
-    const size = choiceOf(answers, "size");
-    const risk = choiceOf(answers, "risk");
-    const sizeOk = size && size.p >= t.min_p! && (["tiny", "small", "large"] as readonly string[]).includes(size.top);
-    const riskOk = risk && risk.p >= t.min_p! && (["low", "medium", "high"] as readonly string[]).includes(risk.top);
-    return { decision: { size: (sizeOk ? size.top : rules.size) as PathSize, risk: (riskOk ? risk.top : rules.risk) as PathRisk } };
-  },
-  fallback: (input) => { const rules = pathClassByRules(input.text); return { size: rules.size, risk: rules.risk }; },
-  describe: (decision) => `${decision.size}/${decision.risk}`,
-});
+/** What the code settles alone; `confident: false` means the length rule only guessed and no machine start follows. */
+export function intakeByRules(text: string): { kind: IntakeKind; confident: boolean; service?: ServiceKind } {
+  const clean = text.trim();
+  if (isWholeConsent(clean) || CONSENT.test(clean)) return { kind: "consent", confident: true };
+  const service = serviceByRules(clean);
+  if (service) return { kind: "service", confident: true, service };
+  // One line that ends with «?» is a question at any length (ph_82dfc9db78, 2026-10-31: «Есть предложения как улучшить дизайн… на
+  // телефонах?», 135 characters, went to the judgment, was read as heavy and opened a phase for ten hours); a short request is small.
+  if (!clean.includes("\n") && clean.endsWith("?")) return { kind: "question", confident: true };
+  if (clean.length <= 80 && !clean.includes("\n")) return { kind: "small", confident: false };
+  return { kind: clean.length > HEAVY_LENGTH ? "heavy" : "small", confident: false };
+}
 
 /** The one goal a user intake run is for: the owner's request, guessed from the message. A user workflow will not close verified without it. */
 export function intakeRunGoals(text: string): Array<{ id: "request"; done_when: string; evidence: string; guess: true }> {

@@ -1,16 +1,8 @@
-import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { afterEach, describe, expect, it } from "vitest";
-import { openDatabase } from "../../src/rooms/plugin-db";
-import type { JevClient } from "@lane-pilot/jev";
-import { hardProblems, invoiceCheck, overlap, validAccount, validCorrAccount, validInn, type InvoiceCheckInput } from "@lane-pilot/jev/judgments/invoice-check";
-import { createJev } from "@lane-pilot/jev";
-import { setJevForTests } from "@lane-pilot/jev";
-import type { JevAnswer, JevQuestion } from "@lane-pilot/jev";
+import { describe, expect, it } from "vitest";
+import { hardProblems, invoiceVerdict, overlap, validAccount, validCorrAccount, validInn, type InvoiceCheckInput } from "@lane-pilot/jev/judgments/invoice-check";
 import { invoiceInput, registerInvoiceActions } from "../../src/rooms/workflow/server/workflow-invoice";
 import { engineOn, journalDb } from "../workflow/engine-helpers";
 import { parseWorkflow } from "@lane-pilot/workflow-engine";
-
-afterEach(() => setJevForTests(null));
 
 const clean = (): InvoiceCheckInput => ({
   request: { company: "ООО «Ромашка»", amount: 50000, service: "SEO-сопровождение за октябрь", inn: "7707083893" },
@@ -66,32 +58,11 @@ describe("what code settles", () => {
   });
 });
 
-describe("the judgment", () => {
-  const at = (company: number, service: number) => ({ company: { type: "noul", noul: company }, service: { type: "noul", noul: service } }) as Record<string, JevAnswer>;
-  const t = { min_same: 0.8, max_different: 0.25 };
-
-  it("match only when both answers are sure and the numbers are in order", () => {
-    expect(invoiceCheck.decide(at(0.95, 0.9), t, clean())).toMatchObject({ decision: { verdict: "match" } });
-    expect(invoiceCheck.decide(at(0.95, 0.5), t, clean())).toMatchObject({ decision: { verdict: "unsure" } });
-    expect(invoiceCheck.decide(at(0.1, 0.9), t, clean())).toMatchObject({ decision: { verdict: "mismatch", reasons: [expect.stringContaining("different company")] } });
-    expect(invoiceCheck.decide(at(0.9, 0.1), t, clean())).toMatchObject({ decision: { verdict: "mismatch", reasons: [expect.stringContaining("different work")] } });
-    expect(invoiceCheck.decide({}, t, clean())).toEqual({ escalate: "owner" });
-  });
-
-  it("a hard problem is a mismatch whatever Jev says", () => {
-    expect(invoiceCheck.decide(at(0.99, 0.99), t, changed({ amount: 55000 }))).toMatchObject({ decision: { verdict: "mismatch" } });
-  });
-
-  it("the fallback is deterministic: a match needs the words to agree, a doubt is unsure, a hard problem is a mismatch", () => {
-    expect(invoiceCheck.fallback(clean())).toMatchObject({ verdict: "match" });
-    expect(invoiceCheck.fallback(changed({ client_name: "Василёк" }))).toMatchObject({ verdict: "unsure" });
-    expect(invoiceCheck.fallback(changed({ amount: 1 }))).toMatchObject({ verdict: "mismatch" });
-  });
-
-  it("sends Jev the names and the service lines only, never the amount or the bank details", () => {
-    const state = JSON.stringify(invoiceCheck.stateBuilder(clean()));
-    expect(state).toContain("Ромашка");
-    for (const secret of ["40702810200000012345", "30101810400000000225", "044525225", "7707083893", "500100732259", "50000"]) expect(state).not.toContain(secret);
+describe("the verdict", () => {
+  it("a match needs the words to agree, a doubt is unsure, a hard problem is a mismatch", () => {
+    expect(invoiceVerdict(clean())).toMatchObject({ verdict: "match" });
+    expect(invoiceVerdict(changed({ client_name: "Василёк" }))).toMatchObject({ verdict: "unsure" });
+    expect(invoiceVerdict(changed({ amount: 1 }))).toMatchObject({ verdict: "mismatch" });
   });
 });
 
@@ -102,7 +73,7 @@ describe("the chain action invoice.check", () => {
       number: "{{$inputs.number}}", client_name: "{{$inputs.client_name}}", client_inn: "{{$inputs.client_inn}}", invoice_amount: "{{$inputs.invoice_amount}}", invoice_service: "{{$inputs.invoice_service}}",
       pay_bik: "{{$inputs.pay_bik}}", pay_account: "{{$inputs.pay_account}}", pay_corr_account: "{{$inputs.pay_corr_account}}", payee_inn: "{{$inputs.payee_inn}}",
       ...(withPdf ? { pdf_path: "{{$inputs.pdf_path}}", pdf_host: "{{$inputs.pdf_host}}" } : {}),
-      out: { verdict: "match|mismatch|unsure", reasons: "string[]", by: "jev|rules" } }],
+      out: { verdict: "match|mismatch|unsure", reasons: "string[]", by: "rules" } }],
     inputs: Object.fromEntries(["company", "amount", "service", "inn", "number", "client_name", "client_inn", "invoice_amount", "invoice_service", "pay_bik", "pay_account", "pay_corr_account", "payee_inn", ...(withPdf ? ["pdf_path", "pdf_host"] : [])].map((name) => [name, { type: name.includes("amount") ? "number" : "string", default: name.includes("amount") ? 0 : "" }])),
     outputs: { verdict: "string", reasons: "string[]", by: "string" },
     edges: [{ from: "start", to: "check" }, { from: "check", to: "end", with: { verdict: "check.verdict", reasons: "check.reasons", by: "check.by" } }],
@@ -117,21 +88,6 @@ describe("the chain action invoice.check", () => {
     const started = engine.start({ workflow, inputs: inputs(value) });
     return (await started.done);
   };
-  const jevWith = (answerFor: (id: string, question: JevQuestion) => JevAnswer) => {
-    const requests: unknown[] = [];
-    const client: JevClient = {
-      breaker: () => ({ open: false, failures: 0 }),
-      async call(request) {
-        requests.push(request.state);
-        return { ok: true, model: "jev-1", usage: { input_tokens: 10, output_tokens: 1 }, latencyMs: 5, attempts: 1,
-          answers: Object.fromEntries(Object.entries(request.questions).map(([id, question]) => [id, answerFor(id, question)])) };
-      },
-    };
-    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
-    setJevForTests(createJev({ client, db: openDatabase(bb) }));
-    return requests;
-  };
-
   // Audit 2026-10-08 round 4, item 20: the PDF is opened by code, on the named machine, before anything is compared.
   it("a node that names the PDF opens it first: a wrong file is a mismatch, a machine that does not answer is a review, a good file goes on to the comparison", async () => {
     const run = async (call: (method: string, input: Record<string, unknown>) => Promise<unknown>, value: InvoiceCheckInput = clean()) => {
@@ -158,7 +114,7 @@ describe("the chain action invoice.check", () => {
     const params = { company: "ООО «Ромашка»", amount: "1,500.50", service: "SEO", inn: "7707083893", number: "142", client_name: "Ромашка", client_inn: "7707083893", invoice_amount: 99999,
       pay_bik: "044525225", pay_account: "40702810200000012345", pay_corr_account: "30101810400000000225", payee_inn: "500100732259" };
     expect(hardProblems(invoiceInput(params))).toEqual([expect.stringMatching(/request.*amount/)]);
-    expect(invoiceCheck.fallback(invoiceInput(params)).verdict).toBe("mismatch");
+    expect(invoiceVerdict(invoiceInput(params)).verdict).toBe("mismatch");
   });
 
   it("without Jev it answers by the rule", async () => {
@@ -166,13 +122,5 @@ describe("the chain action invoice.check", () => {
     expect(summary.status).toBe("succeeded");
     expect(summary.output).toMatchObject({ verdict: "match", by: "rules" });
     expect(await runCheck(changed({ amount: 55000 }))).toMatchObject({ output: { verdict: "mismatch", by: "rules" } });
-  });
-
-  it("with Jev the two answered questions decide, and the request carries no number", async () => {
-    const requests = jevWith(() => ({ type: "noul", noul: 0.95 }));
-    expect(await runCheck(clean())).toMatchObject({ output: { verdict: "match", by: "jev" } });
-    expect(JSON.stringify(requests)).not.toContain("40702810200000012345");
-    jevWith((id) => ({ type: "noul", noul: id.endsWith("company") ? 0.05 : 0.95 }));
-    expect(await runCheck(clean())).toMatchObject({ output: { verdict: "mismatch", by: "jev" } });
   });
 });

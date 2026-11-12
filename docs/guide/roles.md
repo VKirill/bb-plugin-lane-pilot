@@ -141,9 +141,7 @@ Judgments, with the default mode:
 | Judgment | Default | Purpose |
 |---|---|---|
 | `writer.model` | active | Picks the model that writes a task. |
-| `route.workflow` | active | Matches an owner request to a ready workflow. |
 | `route.recheck` | shadow | Second look at that match. |
-| `intake.weight`, `intake.path_class` | active | Weigh the owner's message and classify its paths for the phase rails. |
 | `critique.screen` | active | Cheap first pass before the code critic; a close call escalates to the critic. |
 | `critique.worth` | shadow | Which advisory critics a task is worth spawning. |
 | `review.confirm_screen` | shadow | Cheap first pass over the `lp.review` confirm swarm. |
@@ -154,8 +152,7 @@ Judgments, with the default mode:
 | `plan.check`, `close.goal_screen`, `plan.fact` | shadow | Cheap batteries before the plan critic and the goal auditor; a blind read of acceptance items against the diff. |
 | `graph.step_trivial` | shadow | Is a workflow step cheap enough for a lighter model. |
 | `writer.log_trim`, `writer.finish_scan`, `session.tool_pair` | shadow | Trim a failing check's log, scan a finishing attempt for risk, drop stale tool calls on compaction. |
-| `memory.rerank` | shadow | Re-rank memory hits. |
-| `audit.trace`, `research.citation`, `ui.page_shots`, `d.render_match`, `invoice.scan`, `employee.remark`, `guard.host_command`, `wall.hunt_filter` | shadow | Trace checks, citation support, screenshot checks, 3D render versus concept, scanned invoices, employee remarks, a guard in front of risky shell commands, filtering wall failures before a hunt. |
+| `audit.trace`, `employee.remark`, `guard.host_command`, `wall.hunt_filter` | shadow | Trace checks, employee remarks, a guard in front of risky shell commands, filtering wall failures before a hunt. |
 
 ## Sources
 

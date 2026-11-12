@@ -260,9 +260,8 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
         return JSON.stringify({ workflowRunId: run.runId, state: "running", workflow: workflow.id, confidence,
           note: `this errand matched the graph ${workflow.id} (confidence ${confidence}): it runs as that graph; wait on it with lane_pilot_workflow_status; what the brief asks beyond the graph's result you do after it, nothing twice` }, null, 2);
       }
-      // The kind decides the row of the role table (a pinned model still wins): the PM's word, the skills and the brief, or Jev (shadow until switched on).
-      const picked = await classifyErrand({ task: params.task, skills: params.skills, plugins: params.plugins, mcp: params.mcp, kind: params.kind },
-        { projectId: context.projectId, runId, settings: loadProjectSettings(ctx.db, context.projectId) });
+      // The kind decides the row of the role table (a pinned model still wins): the PM's word, the skills and the brief, else the generic row.
+      const picked = classifyErrand({ task: params.task, skills: params.skills, plugins: params.plugins, mcp: params.mcp, kind: params.kind });
       const started = startRun({
         projectId: context.projectId, pmThreadId: context.threadId, runId, key: `errand:${runId}:${spawnTextId(params.task)}`,
         task: params.task, title: params.title, authorized: params.authorized, accounts: params.accounts ?? [],

@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
 import { createRunBudget } from "@lane-pilot/resilience";
-import { setJevForTests } from "@lane-pilot/jev";
 import { noOptionalPlugins } from "../optional-plugin-stubs";
 import { createCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../server";
@@ -556,19 +555,11 @@ describe("conversation and intake", () => {
     expect(three).toEqual({ started: true, via: "issue-quick", id: "wf_1" });
   });
 
-  it("[sma:m_ce_batch] a message the intake judgment reads as batch starts issue-batch once for the request", async () => {
-    setJevForTests({
-      enabled: () => true,
-      judgeBundle: async () => [
-        { by: "jev", decision: { kind: "batch" }, answers: {} },
-        { by: "jev", decision: { size: "small", risk: "low" }, answers: {} },
-      ],
-      judge: async () => ({ by: "jev", decision: { kind: "batch" }, answers: {} }),
-    } as never);
-    try {
+  it("[sma:m_ce_batch] a batch-shaped message is read as batch by rules, starts issue-batch once for the request", async () => {
+    {
       const { intake, calls } = intakeHarness("пачка мелких правок по списку");
-      const verdict = await intake.classify("пачка мелких правок по списку", "projA", "run1", {});
-      if (verdict.by === "jev") expect(verdict.kind).toBe("batch");
+      const verdict = await intake.classify("пачка мелких правок по списку");
+      expect(verdict.by).toBe("rules");
       await intake.take("thr_pm");
       if (calls.length) expect(calls).toEqual(["batch:r1"]);
       const batch = workflow("issue-batch");
@@ -577,8 +568,6 @@ describe("conversation and intake", () => {
       expect(batchNodes.some((node) => node.workflow === "lp.plan")).toBe(true);
       expect(batchNodes.some((node) => node.workflow === "lp.build")).toBe(true);
       expect(batchNodes.every((node) => node.role !== "verifier")).toBe(true);
-    } finally {
-      setJevForTests(null);
     }
   });
 

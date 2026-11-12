@@ -3,7 +3,7 @@ import { readFile, realpath, stat } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { promisify } from "node:util";
 import { bestEffort, readTextOrNull } from "@lane-pilot/kit";
-import { CODE_FILE, TEST_PATH } from "./docs-jev";
+import { CODE_FILE, TEST_PATH } from "./docs-anchors";
 import { withBaseLock } from "../verification";
 
 const run = promisify(execFile);

@@ -1,6 +1,4 @@
-import { hardProblems, invoiceCheck, type InvoiceCheckDecision, type InvoiceCheckInput } from "@lane-pilot/jev/judgments/invoice-check";
-import { jev } from "@lane-pilot/jev";
-import { bestEffort } from "@lane-pilot/kit";
+import { hardProblems, invoiceVerdict, type InvoiceCheckInput } from "@lane-pilot/jev/judgments/invoice-check";
 import type { NodeExecutor, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { ServerCore } from "../../contracts/server";
 import { checkInvoicePdf } from "./invoice-pdf";
@@ -8,8 +6,8 @@ import type { ChainRuntime } from "../../contracts/server";
 
 /**
  * The action `invoice.check` of the chain `invoice-send`: the invoice that was made is compared with the request. The amount, the INN
- * and the bank details are checked by code; whether the client and the service line are the ones asked for is a Jev judgment
- * (`invoice.check`, src/jev/judgments/invoice-check.ts), answered by the deterministic rule when Jev is off or cannot be asked.
+ * and the bank details are checked by code; whether the client and the service line are the ones asked for is the share of words they have in common
+ * (packages/jev/src/judgments/invoice-check.ts); what the words cannot settle goes to the owner's review. No model is asked.
  * When the node names the PDF (`pdf_path`, on the machine `pdf_host`), code opens it first (src/server/invoice-pdf.ts): a missing, empty,
  * cut or not-a-PDF file is a failed check, and so is a machine that cannot be asked.
  * It decides only where the chain goes next: a match goes to the owner's approval, anything else to a review first.
@@ -44,15 +42,8 @@ export function registerInvoiceActions(engine: WorkflowEngine, ctx: ServerCore):
           return { output: { verdict: pdf.unreachable && !hard.length ? "unsure" : "mismatch", reasons: [...pdf.problems, ...hard], by: "rules" } };
         }
       }
-      const instance = jev();
-      const project = c.runtime?.projectId;
-      const settings = project ? (await bestEffort(ctx.log, "invoice settings", ctx.effectiveProjectSettings(project), null))?.values : undefined;
-      const verdict = instance
-        ? await instance.judge(invoiceCheck, input, { projectId: project ?? null, runId: c.runId, subject: "invoice", settings, signal: c.signal })
-        : { by: "fallback" as const, decision: invoiceCheck.fallback(input), status: "off" as const, receiptId: null };
-      // «escalate» means Jev's answers were missing or unclear: the owner looks (unsure), as for any doubt.
-      const decision: InvoiceCheckDecision = verdict.by === "escalate" ? { verdict: "unsure", reasons: ["the check could not be completed automatically"] } : verdict.decision;
-      return { output: { verdict: decision.verdict, reasons: decision.reasons, by: verdict.by === "jev" ? "jev" : "rules" } };
+      const decision = invoiceVerdict(input);
+      return { output: { verdict: decision.verdict, reasons: decision.reasons, by: "rules" } };
     },
   } as NodeExecutor<ChainRuntime>);
 }

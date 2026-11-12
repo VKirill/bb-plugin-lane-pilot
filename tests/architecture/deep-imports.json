@@ -98,7 +98,6 @@
  "settings > contracts": 6,
  "settings > native-agent": 1,
  "settings > runs": 1,
- "settings > workflow": 1,
  "stability > contracts": 4,
  "stability > native-agent": 1,
  "stability > rollback": 1,

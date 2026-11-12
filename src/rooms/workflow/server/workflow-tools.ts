@@ -4,7 +4,7 @@ import type { LanePilotDatabase } from "../../storage";
 import { redactKnown, sha256Hex, parseJsonOr } from "@lane-pilot/kit";
 import type { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { goalsSchema, isOffered, isPipeline, preflightRefusal, routeIntent, runRecords, wfRunExists, wfStepExists } from "@lane-pilot/workflow-engine";
-import type { RouteDecision, RouterModel, RouterState, RunRecord } from "@lane-pilot/workflow-engine";
+import type { RouteDecision, RouterCard, RouterState, RunRecord } from "@lane-pilot/workflow-engine";
 import type { RunGoal } from "@lane-pilot/workflow-engine";
 import type { PreflightResult } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
@@ -18,10 +18,7 @@ import type { TodoMeta } from "../../backlog";
 import { ToolError } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 
-import { jev } from "@lane-pilot/jev";
-import { createJevRouterModel } from "../route-model";
-import { createRouterModel } from "./workflow-router-model";
-;
+import { policyProblem, routePolicyOf, type RoutePolicy } from "../route-policy";
 import { realDeps } from "./workflow-architect";
 import { createWorkflowLibrary } from "./workflow-library";
 import { createWorkflowPreflight } from "./workflow-preflight";
@@ -62,8 +59,8 @@ export type WorkflowToolDeps = {
   stats?(): ReadonlyMap<string, RunRecord>;
   /** The check of what the workflow needs (skills, plugins, MCP servers, secrets, commands, logins) before a live run; without it nothing is checked. */
   preflight?(workflow: Workflow, input: { projectId: string; threadId: string }): Promise<PreflightResult>;
-  /** The model step of the router for this PM chat (Jev, then a helper thread); without it the deterministic scorer decides. */
-  model?(input: { pmThreadId: string; projectId: string; runId: string | null }): RouterModel | undefined;
+  /** The project's route policy (`route.max_risk`, `secrets.allow`): a workflow it forbids is not offered. */
+  routePolicy?(projectId: string): Promise<RoutePolicy>;
   /** The project's open backlog items (SMA m_sg_breakdown): a request matching one is asked about instead of duplicated. */
   backlogItems?(projectId: string): Promise<TodoMeta[]>;
   warn(message: string): void;
@@ -99,10 +96,17 @@ export async function routeTool(deps: WorkflowToolDeps, params: { intent: string
   const store = await deps.store(context.projectId);
   const runId = pmRunId(deps.db, context.projectId, context.threadId);
   const state = deps.state?.({ projectId: context.projectId, runId });
-  const model = deps.model?.({ pmThreadId: context.threadId, projectId: context.projectId, runId });
   const passportCtx = projectPassportBlock(deps.db, { projectId: context.projectId, role: "pm", maxChars: 1200 });
   const mergedContext = [params.context, passportCtx].filter(Boolean).join("\n\n");
-  const decision: RouteDecision = await routeIntent({ intent: params.intent, ...(mergedContext ? { context: mergedContext } : {}), workflows: store.list().map((item) => item.workflow), ...(state ? { state } : {}), ...(model ? { model } : {}), ...(deps.stats ? { stats: deps.stats() } : {}) });
+  // The project's route policy cuts a candidate before the scorer ranks it; the PM picks among what remains.
+  const policy = deps.routePolicy ? await deps.routePolicy(context.projectId).catch((): RoutePolicy => ({})) : {};
+  const forbidden: string[] = [];
+  const offered = store.list().map((item) => item.workflow).filter((workflow) => {
+    const problem = policyProblem({ requires: workflow.requires } as RouterCard, policy);
+    if (problem) forbidden.push(`${workflow.id}: ${problem}`);
+    return !problem;
+  });
+  const decision: RouteDecision = await routeIntent({ intent: params.intent, ...(mergedContext ? { context: mergedContext } : {}), workflows: offered, ...(state ? { state } : {}), model: null, ...(deps.stats ? { stats: deps.stats() } : {}) });
   const noWorkflow = decision.candidates.length === 0;
   // The phrase is compared with the backlog before anything else: a request that repeats a written-down item is asked
   // about («продвинь его, а не новую задачу»), never silently made into a duplicate task.
@@ -116,8 +120,8 @@ export async function routeTool(deps: WorkflowToolDeps, params: { intent: string
     ...(decision.boundary_contract ? { boundary_contract: decision.boundary_contract, goals: decision.goals, inputs: decision.inputs, missingInputs: decision.missingInputs, guessedInputs: decision.guessedInputs } : {}),
     ...(matches.length ? { backlogMatches: matches.map((item) => ({ id: item.id, title: item.title })) } : {}),
     ...([...decision.questions, ...matchQuestions].length ? { questions: [...decision.questions, ...matchQuestions] } : {}),
-    ...(decision.warnings.length ? { warnings: decision.warnings } : {}),
-    candidates: decision.candidates.map((candidate) => ({ id: candidate.id, name: candidate.name, score: candidate.score, rules: candidate.rules, ...(candidate.liveTrial ? { notYetRunLive: true } : {}), ...(candidate.stat !== undefined ? { runRecord: candidate.stat } : {}) })),
+    ...(decision.warnings.length || forbidden.length ? { warnings: [...decision.warnings, ...forbidden.map((line) => `not offered by the route policy: ${line}`)] } : {}),
+    candidates: decision.candidates.map((candidate) => ({ id: candidate.id, purpose: candidate.purpose, ...(candidate.needs.length ? { needs: candidate.needs } : {}), score: candidate.score, ...(candidate.rules.length ? { rules: candidate.rules } : {}), ...(candidate.liveTrial ? { notYetRunLive: true } : {}), ...(candidate.stat !== undefined ? { runRecord: candidate.stat } : {}) })),
     next: noWorkflow ? "No published workflow fits or exists here. For project discovery / ICP / BrandCore onboarding start `project-passport`; for SEO audits & growth start `seo-*` workflows; for marketing analytics, paid ads, CRO or organic packs start `mkt-*` workflows; for web research start `web-research` with lane_pilot_run_workflow, not a bare tavily specialist (pass liveTrial: true if tested and the owner agrees). Otherwise start the fitting tool: lane_pilot_dispatch_writer for code changes (graph lp-task-pipeline), lane_pilot_errand (graph errand) for consoles/accounts, lane_pilot_helpers with action specialist (graph specialist) for design-lead, copy-lead, seo-specialist, growth-marketer."
       : decision.stateContinue ? "«Continue» is no workflow: read the run state (lane_pilot_run_health) and propose the next step from it; never guess."
       : decision.decision === "route" ? (decision.liveTrial ? ROUTE_NEXT_LIVE_TRIAL : ROUTE_NEXT_ROUTE) : ROUTE_NEXT_CLARIFY,
@@ -308,20 +312,16 @@ export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
     preflight: (workflow, input) => preflight.check(workflow, input),
     stats: () => runRecords(db),
     backlogItems: (projectId) => services.backlog.items(projectId),
-    // Jev decides a clear case; the helper thread (needs a run) is the escalation. A chat without a run and without Jev has no model.
-    model: ({ pmThreadId, projectId, runId }) => (runId || jev()
-      ? createJevRouterModel({ jev, settings: async () => (await ctx.effectiveProjectSettings(projectId)).values, projectId, runId, log: ctx.log,
-        legacy: runId ? createRouterModel({ ctx, services, pmThreadId, projectId, runId }, services.workflowEngine) : null })
-      : undefined),
+    routePolicy: async (projectId) => routePolicyOf((await ctx.effectiveProjectSettings(projectId)).values as Record<string, unknown>),
     warn: (message) => bb.log.warn(message),
   };
 
   registerObservedTool(bb.agents, {
     name: "lane_pilot_route",
-    description: "Match a request to a ready Lane Pilot workflow: the workflow, how sure the match is, a boundary contract and goals, or up to three questions.",
+    description: "Rank the ready Lane Pilot workflows for a request (up to 10 candidates with purpose, required inputs and score) and suggest one; you choose.",
     // The visible registry (Matvey: «the model picks graphs from a list it sees»): the shipped graphs the router offers, by id.
     instructions: `Ready graphs shipped with Lane Pilot: ${builtinWorkflows().filter(isOffered).map((w) => w.id).join(", ")}; the project's own published graphs are found by this call too. ` +
-      "Use from a Lane Pilot PM chat when the owner asks for multi-step work (a feature end to end, a review and fix, a release, research, a post) before you plan it yourself. Pass `intent` (the owner's request, in their words) and `context` (what you know that the request does not say: the project, files, the state of the run). Returns `decision`: `route` with `workflowId`, `confidence` (0-100), `evidence` (pattern, rejected workflows and why, rules that fired), `boundary_contract` (in scope, out of scope, constraints; `guesses` lists what is inferred), `goals`, `inputs` and `missingInputs`; or `clarify` with at most three `questions` and no workflow. Published workflows are offered, and so are tested ones (`notYetRunLive`: passed their stub tests but never ran for real — one starts with `liveTrial: true` in the same turn, the request is the agreement; say it is the graph's first real run, its only test); of candidates that match alike the one that has run well and lately comes first (`runRecord` 0 to 1 shows it). Nothing is started by this call. Show the owner the choice and the goals in your message, then start the graph in the same turn. When no workflow fits, start the fallback graph with its tool (the answer's `next` names them).",
+      "Use from a Lane Pilot PM chat when the owner asks for multi-step work (a feature end to end, a review and fix, a release, research, a post) before you plan it yourself. Pass `intent` (the owner's request, in their words) and `context` (what you know that the request does not say: the project, files, the state of the run). No model is asked: a text search and rules rank up to 10 `candidates` (`id`, `purpose`, `needs` = required inputs, `score`, `rules`, `runRecord` 0 to 1 for how well and lately it ran; `notYetRunLive`: passed its stub tests, never ran for real, start it with `liveTrial: true` in the same turn and say it is its first real run). YOU choose: read the purposes and take the one whose job the request needs, not the one that shares words; the scorer's own pick is only `decision` (`route` with `workflowId`, `confidence` 0-100, `evidence`, `boundary_contract`, `goals`, `inputs`, `missingInputs` for that pick; or `clarify` with `questions`). If you pick another candidate, give its `needs` yourself. Nothing is started by this call. Show the owner the choice and the goals, then start the graph in the same turn. When no candidate fits, start the fallback graph with its tool (the answer's `next` names them).",
     parameters: z.object({ intent: z.string().min(3).max(4000), context: z.string().max(8000).optional() }).strict(),
     execute: async (params, context) => {
       // The train: a request the machine took (a phase, the small-task graph, the architect) is not routed to another system by the PM.

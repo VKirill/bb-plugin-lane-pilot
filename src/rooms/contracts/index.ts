@@ -62,7 +62,6 @@ export type { LeadRoadApi, RoadDb, RoadEvidence, RoadKind, RoadRow, RoadSource, 
 export type { SqlDb } from "./sql-db";
 export { asJsonText } from "./as-json-text";
 export * from "./state-machine";
-export * from "./judgment-ids";
 export * from "./hub-deny";
 export * from "./failure-class";
 export * from "./helper-context";

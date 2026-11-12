@@ -3,13 +3,13 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, posix } from "node:path";
 import { promisify } from "node:util";
 import { readTextOrNull } from "@lane-pilot/kit";
-import { CODE_FILE, TEST_PATH, jevAsk, jevCallFor, jevPool, jevStatus, scanDeclarations, type JevCallSource, type JevStatus } from "./docs-jev";
+import { CODE_FILE, TEST_PATH, scanDeclarations } from "./docs-anchors";
 import { extractRoutes, type RouteRef } from "./docs-routes";
 
 /**
  * End-to-end flows for the root docs, found before the docs agent writes: code builds the import graph,
  * finds entry points (HTTP routes, bot commands, jobs, pages) and the business modules of the shared
- * packages, and traces each entry to the modules it reaches. Jev only judges the candidates: which
+ * packages, and traces each entry to the modules it reaches. The code only ranks the candidates: which
  * modules are business processes, how central each is, and which entries really drive a process.
  */
 
@@ -115,7 +115,7 @@ function head(text:string, lines:number):string {
   return text.split("\n").slice(0, lines).join("\n").slice(0, 4000);
 }
 
-export async function buildDocsFlows(input:{ projectCwd:string; workspaces:FlowWorkspace[]; keep?:string[] } & JevCallSource):Promise<{ briefPath:string; jev:JevStatus;
+export async function buildDocsFlows(input:{ projectCwd:string; workspaces:FlowWorkspace[]; keep?:string[] }):Promise<{ briefPath:string;
   flows:Array<{ name:string; slug:string; entries:number; modules:string[]; briefPath:string; files:string[];
     calls:Array<{ name:string; file:string; line:number; endLine:number }> }>; routes:number }> {
   const listed = (await run("git", ["-c", "core.quotePath=false", "-C", input.projectCwd, "ls-files"], { maxBuffer:64 << 20 })).stdout.split("\n");
@@ -177,19 +177,8 @@ export async function buildDocsFlows(input:{ projectCwd:string; workspaces:FlowW
   // A module nearly every entry reaches is plumbing, whatever its name.
   const common = [...candidates.values()].filter((candidate) => candidate.entries.size > 0 && candidate.entries.size <= Math.max(3, entries.length * 0.6));
 
-  const auth = await jevCallFor(input);
-  let asked = 0, answered = 0;
-  const judged = await jevPool(common, async (candidate) => {
-    if (!auth) return { candidate, business:1, importance:candidate.entries.size };
-    asked++;
-    const sample = candidate.files.slice(0, 3).map((file) => ({ file, code:head(files.get(file) ?? "", 60) }));
-    const answers = await jevAsk(auth.key, { process:candidate.name, modules:candidate.modules, files:candidate.files.slice(0, 40), sample }, {
-      business:{ type:"noul", instructions:"Is `process` a business process that users or operators of the product go through - such as paying, generating content, signing in or moderating - rather than shared plumbing, configuration or a technical utility?" },
-      importance:{ type:"score", instructions:"How central is `process` to what the product does for its users?", criteria:["A minor or supporting process", "A regular product process", "A core process the product exists for"] },
-    }, 20_000, auth.provider);
-    if (answers) answered++;
-    return { candidate, business:answers?.business?.noul ?? 0.5, importance:answers?.importance?.score ?? 1 };
-  });
+  // Every module several entries reach is a process candidate; the most-entered come first (no model judges whether it is a business process).
+  const judged = common.map((candidate) => ({ candidate, business:1, importance:candidate.entries.size }));
   const slug = (name:string) => name.replace(/([a-z])([A-Z])/g, "$1-$2").replace(/[^A-Za-z0-9]+/g, "-").toLowerCase().replace(/^-|-$/g, "");
   // A flow that already has a page stays a flow, so its page keeps an owner that refreshes it; new ones fill the rest by importance.
   const kept = new Set(input.keep ?? []);
@@ -212,7 +201,7 @@ export async function buildDocsFlows(input:{ projectCwd:string; workspaces:FlowW
     return via ? `(${via}) ${file}` : file;
   }).join(" -> ");
 
-  // Jev keeps the entries that drive the process, not those that only import a helper from it; each app gets its turn.
+  // Entries are taken by shortest chain, each app gets its turn.
   const flows = await Promise.all(chosen.map(async ({ candidate, importance }) => {
     const byApp = new Map<string, Array<[string, string[]]>>();
     for (const item of [...candidate.entries].sort((a, b) => a[1].length - b[1].length)) byApp.set(workspaceName(item[0]), [...(byApp.get(workspaceName(item[0])) ?? []), item]);
@@ -220,21 +209,12 @@ export async function buildDocsFlows(input:{ projectCwd:string; workspaces:FlowW
     for (let round = 0; ranked.length < MAX_ENTRIES_JUDGED && [...byApp.values()].some((list) => list.length > round); round++) {
       for (const list of byApp.values()) if (list[round] && ranked.length < MAX_ENTRIES_JUDGED) ranked.push(list[round]!);
     }
-    const kept = await jevPool(ranked, async ([entry, chain]) => {
-      if (!auth) return { entry, chain, drives:1 };
-      asked++;
-      const answers = await jevAsk(auth.key, { process:candidate.name, processModules:candidate.modules, entry, routes:(routeFiles.get(entry) ?? []).map((route) => `${route.method} ${route.path}`),
-        code:head(files.get(entry) ?? "", 50), importChain:describe(chain), calls:uses(candidate, chain).map((item) => item.name) }, {
-        drives:{ type:"noul", instructions:"Does `entry` start or drive the `process` for a user or operator (it handles a request, command, job or page that runs this process), rather than only importing a shared helper or type from it?" },
-      }, 20_000, auth.provider);
-      if (answers) answered++;
-      return { entry, chain, drives:answers?.drives?.noul ?? 0.5 };
-    });
+    const kept = ranked.map(([entry, chain]) => ({ entry, chain, drives:1 }));
     return { candidate, importance, entries:kept.filter((item) => item.drives >= 0.5) };
   }));
   const documented = flows.filter((flow) => flow.entries.length);
 
-  const header = [`Built by Lane Pilot from the import graph; Jev judgments: ${auth ? jevStatus(asked, answered) : "disabled"}.`,
+  const header = ["Built by Lane Pilot from the import graph; no model judged the candidates.",
     "The flow is a business process found in the shared modules, with the entry points in the apps that drive it, one import chain",
     "from each entry into the process and what the entry calls there. Confirm every step in the code before you describe it; an entry listed here is a candidate, not a fact.", ""];
   const sections = documented.map((flow) => {
@@ -274,5 +254,5 @@ export async function buildDocsFlows(input:{ projectCwd:string; workspaces:FlowW
     flowsOut.push({ name:section.flow.candidate.name, slug:name, entries:section.flow.entries.length, modules:section.flow.candidate.modules,
       briefPath:path, files:section.files.slice(0, 2000), calls:section.calls.slice(0, 200) });
   }
-  return { briefPath, jev:auth ? jevStatus(asked, answered) : "disabled", routes:routes.length, flows:flowsOut };
+  return { briefPath, routes:routes.length, flows:flowsOut };
 }

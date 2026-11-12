@@ -2,10 +2,7 @@ import { resolve } from "node:path";
 import type { StageHelperSettings } from "../../platform/server";
 import { embedQuery } from "./embeddings";
 import { taskV2Schema } from "../../contracts";
-import { jev } from "@lane-pilot/jev";
-import { memoryRerankJudgment } from "@lane-pilot/jev/judgments/memory-rerank";
-import { rerankRecords } from "./rerank";
-import { demoteUnusedPromotions, enrichMemoryContext, episodeCandidates } from "../../memory-tiers/server";
+import { demoteUnusedPromotions, enrichMemoryContext } from "../../memory-tiers/server";
 import { appendAcceptedFact, claimStageSpawn, countStageReceiptsSince, getRun, getRunSettingsScopes, getTask, lastStageReceiptAt, listAcceptedFacts, listOpenAttempts, listPendingAcceptedFacts, listStageReceipts, markAcceptedFactsSummarized, projectHasScopedRun } from "../../storage";
 import { wireMemoryAttemptEffects } from "./attempt-effects";
 import { shouldTriggerProjectLife } from "../../project-life";
@@ -18,7 +15,7 @@ import { sha256 } from "../../tasks";
 import { checkBrief, renderBrief } from "../../brief";
 import { memoryMaintenanceBrief, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../memory";
 import { NOTHING_RELEVANT } from "@lane-pilot/memory-core";
-import { pmMemoryContext, pmShortlist, snapshotFileRead } from "./memory-mix";
+import { pmMemoryContext, snapshotFileRead } from "./memory-mix";
 import { boundedAgentName } from "../../contracts/review-vocabulary";
 import { MemoryChildSnapshot, childResultObject, memoryChildSnapshot, spawnRefused } from "../../runs/server";
 import { compactAcceptedResult } from "../../tasks/server";
@@ -323,23 +320,11 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     const demoted = demoteUnusedPromotions(db);
     const chain=getRunSettingsScopes(db,args.runId);
     await embedQuery(args.query);
-    // M4: Jev keeps only what helps with the question (active); shadow/off leaves the word order as it was.
-    const kept=new Set((await rerankRecords(pmShortlist(db,args.projectId,memorySettings,args.query,chain),args.query,{projectId:args.projectId,runId:args.runId,settings:settings as Record<string,unknown>})).map((record)=>record.id));
-    const selected=pmMemoryContext(db,args.projectId,memorySettings,args.query,chain,"pm",undefined,(records)=>records.filter((record)=>kept.has(record.id)));
+    // The answer gate (memory-core floor.ts): a search that does not look like an answer is «nothing».
+    const selected=pmMemoryContext(db,args.projectId,memorySettings,args.query,chain,"pm",undefined,true);
     // The cold tier, past tasks like this one and the misses (src/rooms/memory-tiers): never fails the query. Candidates stay expired.
     let tiers:{text:string;promoted:string[];episodes:number;miss:boolean;addedTokens:number}={text:"",promoted:[],episodes:0,miss:false,addedTokens:0};
-    // B6: Jev re-ranks the lexical episode shortlist (shadow first; active delivers only the ones it keeps).
-    let episodesList: import("../../memory-tiers").Episode[] | undefined;
-    const judge=jev();
-    if(judge){
-      const candidates=episodeCandidates(db,args.projectId,args.query,8,{chain});
-      if(candidates.length){
-        // the rerank judge is advisory; null keeps the unranked order
-        const verdict=await judge.judge(memoryRerankJudgment,{query:args.query,passages:candidates.map((e)=>`${e.title}: ${e.state}${e.reason?` — ${e.reason}`:""}`)},{projectId:args.projectId,runId:args.runId,settings:settings as Record<string,unknown>}).catch(()=>null);
-        if(verdict?.by==="jev") episodesList=verdict.decision.keep.slice(0,3).map((i)=>candidates[i]!);
-      }
-    }
-    try { tiers=enrichMemoryContext(db,{projectId:args.projectId,query:args.query,activeCount:selected.records.length,chain,audience:memorySettings.audience,personalBot:memorySettings.personalBot,role:"pm",budget:memorySettings.contextBudget,activeTokens:selected.estimatedTokens,episodesList}); } catch (cause) { ctx.log(`memory tiers skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
+    try { tiers=enrichMemoryContext(db,{projectId:args.projectId,query:args.query,activeCount:selected.records.length,chain,audience:memorySettings.audience,personalBot:memorySettings.personalBot,role:"pm",budget:memorySettings.contextBudget,activeTokens:selected.estimatedTokens}); } catch (cause) { ctx.log(`memory tiers skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
     return {runId:args.runId,state:"passed",audience:memorySettings.audience,personalBot:memorySettings.personalBot,querySha256:sha256(args.query),
       recordIds:[...selected.records.map((item)=>item.id),...tiers.promoted],estimatedTokens:selected.estimatedTokens+tiers.addedTokens,context:[selected.nothingRelevant?NOTHING_RELEVANT:selected.text,tiers.text].filter(Boolean).join("\n\n"),nothingRelevant:selected.nothingRelevant&&tiers.promoted.length===0&&tiers.episodes===0,
       ...(tiers.promoted.length?{promotedFromCold:tiers.promoted.length}:{}),...(tiers.episodes?{episodes:tiers.episodes}:{})};

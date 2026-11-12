@@ -35,15 +35,13 @@ Mail is not offered: there is no mail skill. The send itself is the shared fragm
 node that hands it the chat, the PDF path, the caption line and `send_at`. The result: `status` (`sent`, `scheduled`, `aborted`, `blocked`, `send_failed`,
 `send_unconfirmed`, `cannot_delay`), `invoice_number`, `invoice_url`, `pdf_path` (on the Mini), `message_id`, `schedule_id`, `run_at`, `send_at`, `check_verdict`, `reason`.
 
-## The check (`invoice.check`, src/jev/judgments/invoice-check.ts)
+## The check (`invoice.check`, the rules in packages/jev/src/judgments/invoice-check.ts)
 
 Code decides what code can: the invoice has a number and an amount, the amount equals the request (to half a kopeck), the client's INN has valid control
-digits and equals the request's `inn`, the BIK is a Russian one, the payment and correspondent accounts have valid control digits for that BIK. Jev is
-asked two questions about names only (the state it sees is the two client names and the two service lines, never an amount or a bank detail): is the
-client the same company, is the service line the same work. Both sure: `match`; one clearly different or a hard check failed: `mismatch`; otherwise `unsure`.
-Thresholds `invoice.check.min_same` (0.8) and `invoice.check.max_different` (0.25) in the project setting `jev.thresholds`; the mode (`active`) in `jev.modes`.
-With Jev off or unreachable the deterministic rule answers (a match needs the words of the names and of the service lines to agree). Receipts:
-`lane_pilot_jev_receipt` where `judgment='invoice.check'`.
+digits and equals the request's `inn`, the BIK is a Russian one, the payment and correspondent accounts have valid control digits for that BIK. The client
+and the service line are compared by the words they share (the share of the shorter text's words the other has, legal forms ignored). Both agree
+(0.6 for the client, 0.5 for the service line): `match`; a hard check failed: `mismatch`; otherwise `unsure`. No model is asked; `unsure` goes to the owner's review.
+The step's output carries `by: "rules"`.
 
 ## Live run: the exact steps (needs the owner's real test invoice; do not do this from an agent)
 
