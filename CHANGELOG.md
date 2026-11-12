@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.536
+
+- **A writer effort the live catalog does not list takes the nearest listed one instead of refusing the task (`packages/models/src/jev-reasoning.ts`, `src/rooms/writer/server/spawn.ts`).** The drill after 0.1.535 went red: right after the hub restart the Devin catalog listed only `medium` for `swe-2-flash-medium`, the hub's writer is set to `high`, and `manual_writer_reasoning_effort_unsupported:high; supported=medium` refused all three parallel tasks (a minute later the same catalog listed `medium, high, max` again). `resolveJevReasoning` now clamps such a setting to the nearest listed effort (a higher one on a tie) and records `manual_effort_clamped:<from>-><to>` in the attempt's reasoning trace; only an effort the SDK does not know at all is still refused. Measured by the quick drill (`parallel3`: all three tasks accepted) and `tests/jev-plan.test.ts`.
+
 ## 0.1.535
 
 - **A contested owner message goes to the extractor when no second opinion settles it (`src/rooms/learning/observe.ts`).** The owner switched the OpenAI Decisions second opinion off (`bb lane-pilot learning config secondOpinion=false`, 2026-11-12) on the way to running Lane Pilot without small classifiers. `finalRouteOf` then routed every message Jev called `contested` to `none`, so it was dropped: in the week before, the second opinion turned 12 of 74 contested messages into lessons. A contested message now always becomes a `candidate` and the LLM extractor decides; the test that already said «goes to the extractor» asserted `none` and now asserts it. Measured by `bb lane-pilot learning status`: `observations.candidate` and `learnRoutesLast7Days.learn`.

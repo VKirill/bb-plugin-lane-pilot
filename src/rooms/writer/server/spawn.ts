@@ -215,7 +215,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       } as const;
       saveReasoningTrace(db, trace);
       bb.log.info(`Lane Pilot writer reasoning trace ${JSON.stringify(trace)}`);
-      if (choice.manualSupported === false) {
+      if (choice.manualSupported === false && !supported.has(effective)) {
         throw new WriterSelectionError(`manual_writer_reasoning_effort_unsupported:${effective}; supported=${[...supported].join(",")}`);
       }
       const execution = writerExecutionSelection(writerProviderId, writerModel, effective, effectiveServiceTier, {

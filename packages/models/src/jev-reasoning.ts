@@ -26,6 +26,17 @@ export function resolveJevReasoning(input:{
   const manualSupported = !SDK_REASONING_LEVELS.has(input.manualLevel)
     ? false
     : input.supportedLevels === null ? null : input.supportedLevels.has(input.manualLevel);
+  // A live catalog that lists fewer efforts than the setting (Devin right after a hub restart, 2026-11-12: «supported=medium»
+  // for a high writer blocked every task) takes the nearest listed effort, a higher one on a tie; the reason records it.
+  if (manualSupported === false && SDK_REASONING_LEVELS.has(input.manualLevel) && effective === input.manualLevel && input.supportedLevels?.size) {
+    const at = (level:string) => REASONING_LEVELS.indexOf(level as typeof REASONING_LEVELS[number]);
+    const nearest = [...input.supportedLevels].filter((level) => at(level) >= 0)
+      .sort((a, b) => Math.abs(at(a) - at(input.manualLevel)) - Math.abs(at(b) - at(input.manualLevel)) || at(b) - at(a))[0];
+    if (nearest) {
+      effective = nearest;
+      fallbackReason = [fallbackReason, `manual_effort_clamped:${input.manualLevel}->${nearest}`].filter(Boolean).join(";");
+    }
+  }
   return { requested, effective, fallbackReason, manualSupported };
 }
 

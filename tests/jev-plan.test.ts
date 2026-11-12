@@ -55,6 +55,15 @@ describe("Lane Pilot Jev complete-plan adapter", () => {
     expect(resolveJevReasoning({ status:"error", jevDecision:null, manualLevel:"xhigh", supportedLevels:supported }).manualSupported).toBe(false);
   });
 
+  it("clamps a manual effort the live catalog does not list to the nearest listed one", () => {
+    // Drill 2026-11-12: devin/swe-2-flash-medium listed only medium for a high writer, and every task was refused.
+    expect(resolveJevReasoning({ status:"disabled", jevDecision:null, manualLevel:"high", supportedLevels:new Set(["medium"]) }))
+      .toMatchObject({ effective:"medium", fallbackReason:"jev_disabled;manual_effort_clamped:high->medium", manualSupported:false });
+    expect(resolveJevReasoning({ status:"disabled", jevDecision:null, manualLevel:"medium", supportedLevels:new Set(["low", "high"]) }).effective).toBe("high");
+    expect(resolveJevReasoning({ status:"disabled", jevDecision:null, manualLevel:"turbo", supportedLevels:new Set(["medium"]) }))
+      .toMatchObject({ effective:"turbo", manualSupported:false });
+  });
+
   it("sends the complete canonical plan as the only state and keeps classifier questions separate", async () => {
     process.env.TYPESAFE_API_KEY = "test-key";
     const bodies:string[] = [];
