@@ -1,7 +1,7 @@
 import type { PluginCliResult } from "@get-bb/plugin-sdk";
 import type { CliRunDeps } from "./cli-deps";
 import { attemptRecord, manifest, passport, preship, prPassport, receiptChain, subagentReceipts, verifyChain } from "./receipts";
-import { CODE_CRITIC_DEFAULTS, THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, importSettingsOnce, isCodeCriticDefault, isNotFound, join, listThreadEventsRaw, maskCredentials, orMiss, stringAt, taskV2Schema, waitThreadIdle } from "./cli-imports";
+import { CODE_CRITIC_DEFAULTS, THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, isCodeCriticDefault, isNotFound, join, listThreadEventsRaw, maskCredentials, orMiss, stringAt, taskV2Schema, waitThreadIdle } from "./cli-imports";
 import type { CodeCriticDefault } from "./cli-imports";
 function requireCriticCodeDefault(value: string): CodeCriticDefault {
   if (!isCodeCriticDefault(value)) throw new Error(`critic.code.default_for_risk must be one of ${CODE_CRITIC_DEFAULTS.join(", ")}`);
@@ -139,15 +139,6 @@ export async function cliHost(d: CliRunDeps): Promise<PluginCliResult | undefine
         ? { ok:true, query:eventsListQueryLabel(unfilteredQuery), n:unfiltered.events.length, rows:summarize(unfiltered.events) }
         : { ok:false, kind:unfiltered.kind, detail:unfiltered.detail },
     }, null, 2) };
-  }
-  if (command === "host-import-config" && args.length >= 2) {
-    const imported = await host.call("importConfig", {
-      requestedHostId:args[0]!,
-      projectId:args[1]!,
-      workspacePath:args[2],
-    }, { hostId:args[0]!, timeoutMs:30_000 });
-    const persisted = importSettingsOnce(db, args[1]!, imported.imported);
-    return { exitCode:0, stdout:JSON.stringify({ ...imported, persisted }, null, 2) };
   }
   return undefined;
 }

@@ -628,7 +628,6 @@ describe("conversation and intake", () => {
     const ctx = createCore(bb, openDatabase(bb));
     (ctx.host as { call: unknown }).call = async (method: string) => {
       if (method === "detect") return { workspace: { path: WORKSPACE, present: true } };
-      if (method === "importConfig") return { imported: { routingProfile: null, nightShift: null } };
       return {};
     };
     savePrototypeConfig(ctx.db, config);

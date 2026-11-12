@@ -216,7 +216,6 @@ describe("the PM's starting prompt carries the rules", () => {
       experimental_callHostRpc: ((call: { method: string }) => {
         if (call.method === "detect") return { hostId: "host-test", laneStack: { present: true, version: "1.39.0", sourceSha: "sha" }, openCode: { present: false, version: null }, workspace: { path: "/tmp/pm", present: true }, targetSha: TARGET_SHA, matchesTarget: true, scenario: "S2" };
         if (call.method === "coexistenceInventory") return { schemaVersion: 1, hostId: "host-test", targetSha: TARGET_SHA, managers: [{ manager: "agents-marker", path: "/tmp/install.json", installed: true, configured: true, loaded: null, compatible: true, modified: null, version: "1", sourceSha: "sha", sha256: "a".repeat(64), owner: "user", decision: "reuse", capabilities: ["threads.spawn"], missingCapabilities: [], evidence: [] }] };
-        if (call.method === "importConfig") return { schemaVersion: 1, action: "import-config", scenario: "S7", status: "ok", filesChanged: [], externalOpsBefore: {}, externalOpsAfter: {}, skippedExternalOps: [], warning: null, exitCode: 0, receiptPath: null, snapshotPath: null, sourceSha: null, notes: [], imported: { routingProfile: null, nightShift: null } };
         throw new Error("host offline");
       }) as never,
     });

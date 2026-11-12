@@ -94,7 +94,6 @@ describe("activation reports the excluded paths", () => {
       experimental_callHostRpc: ((call:{ method:string; input:never }) => {
         if (call.method === "detect") return { hostId: "host-test", laneStack: { present: true, version: "1.39.0", sourceSha: "x" }, openCode: { present: false, version: null }, workspace: { path: "/tmp/pm", present: true }, targetSha: TARGET_SHA, matchesTarget: false, scenario: "S2" };
         if (call.method === "coexistenceInventory") return { schemaVersion: 1, hostId: "host-test", targetSha: TARGET_SHA, managers: [{ manager: "agents-marker", path: "/p", installed: true, configured: true, loaded: null, compatible: true, modified: null, version: "c", sourceSha: "x", sha256: "a".repeat(64), owner: "user", decision: "reuse", capabilities: [], missingCapabilities: [], evidence: [] }] };
-        if (call.method === "importConfig") return { schemaVersion: 1, action: "import-config", scenario: "S7", status: "ok", filesChanged: [], externalOpsBefore: {}, externalOpsAfter: {}, skippedExternalOps: [], warning: null, exitCode: 0, receiptPath: null, snapshotPath: null, sourceSha: null, notes: [], imported: { routingProfile: null, nightShift: null } };
         if (call.method === "runCommand") { calls.push(call.input); return runCommand(call.input); }
         throw new Error(`unexpected ${call.method}`);
       }) as never,

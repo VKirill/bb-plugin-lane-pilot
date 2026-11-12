@@ -121,7 +121,6 @@ describe("workspace routing", () => {
           compatible:true,modified:null,version:"custom",sourceSha:"custom",sha256:"a".repeat(64),owner:"user",decision:"reuse",
           capabilities:["threads.spawn"],missingCapabilities:[],evidence:[],
         }] };
-        if (call.method === "importConfig") return { schemaVersion:1,action:"import-config",scenario:"S1",status:"ok",filesChanged:[],externalOpsBefore:{},externalOpsAfter:{},skippedExternalOps:[],warning:null,exitCode:0,receiptPath:null,snapshotPath:null,sourceSha:null,notes:[],imported:{routingProfile:null,nightShift:null} };
         if (call.method === "writePmSettings") return { hostId:"workspace-host",settingsPath:"/tmp/lane-pm/.claude/settings.json",guardPath:"/tmp/guard_shell.py" };
         throw new Error(`unexpected ${call.method}`);
       },

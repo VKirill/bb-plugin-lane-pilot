@@ -7,7 +7,6 @@ import { prepareBbShim } from "../../native-agent";
 import {
   connectOpencodeStack,
   detectStack,
-  importConfigStack,
   installStack,
   rollbackStack,
   snapshotStack,
@@ -70,10 +69,6 @@ export const install: ExperimentalHostRpcHandlers<typeof hostContract>["install"
 
 export const rollback: ExperimentalHostRpcHandlers<typeof hostContract>["rollback"] = async (input) => (
   rollbackStack(ctx(input))
-);
-
-export const importConfig: ExperimentalHostRpcHandlers<typeof hostContract>["importConfig"] = async (input) => (
-  importConfigStack(ctx(input))
 );
 
 export const connectOpencode: ExperimentalHostRpcHandlers<typeof hostContract>["connectOpencode"] = async (input) => (

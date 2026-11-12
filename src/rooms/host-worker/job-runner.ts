@@ -2,7 +2,7 @@ import { readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import type { hostContract, HostJobKind } from "../contracts";
-import { coexistenceInventory, coexistenceOperation, connectOpencode, detect, importConfig, install, rollback, snapshot } from "./handlers/stack";
+import { coexistenceInventory, coexistenceOperation, connectOpencode, detect, install, rollback, snapshot } from "./handlers/stack";
 import { gateAttribute, gateBisect, gateRun, gitIntegrate, gitPrepareWorktree } from "./handlers/git";
 import { runSandboxedCommand, runScript } from "./handlers/exec";
 import { runBrowserQa } from "./handlers/desktop";
@@ -24,7 +24,6 @@ export const HOST_JOB_HANDLERS: HostJobHandlers = {
   install,
   rollback,
   snapshot,
-  importConfig,
   connectOpencode,
   coexistenceOperation,
   coexistenceInventory,

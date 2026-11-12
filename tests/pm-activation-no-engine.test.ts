@@ -27,7 +27,6 @@ describe("PM activation without a Claude Lane engine", () => {
         asked.push(call.method);
         if (call.method === "detect") return { hostId: "host-test", laneStack: { present: false, version: null, sourceSha: null }, openCode: { present: false, version: null }, workspace: { path: "/tmp/pm", present: true }, targetSha: TARGET_SHA, matchesTarget: false, scenario: "S1" };
         if (call.method === "coexistenceInventory") return { schemaVersion: 1, hostId: "host-test", targetSha: TARGET_SHA, managers: [] };
-        if (call.method === "importConfig") return { schemaVersion: 1, action: "import-config", scenario: "S7", status: "ok", filesChanged: [], externalOpsBefore: {}, externalOpsAfter: {}, skippedExternalOps: [], warning: null, exitCode: 0, receiptPath: null, snapshotPath: null, sourceSha: null, notes: [], imported: { routingProfile: null, nightShift: null } };
         if (call.method === "anamnesis") return { hostId: "host-test", response: { text: "", chars: 0, records: 0 } };
         throw new Error(`unexpected ${call.method}`);
       }) as never,

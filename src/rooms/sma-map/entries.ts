@@ -238,7 +238,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n227: ["have", "точка возврата записана", "src/rooms/rollback/server/rollback.ts#noteBase"],
   n228: ["have", "копия записана сразу", "src/rooms/storage/attempts-store.ts#setAttemptWorkspace"],
   n229: ["have", "что было красным до", "src/rooms/baseline/index.ts#getBaseline"],
-  n230: ["have", "личный слой основателя: настройки владельца в сессиях писателей", "src/rooms/host-worker/handlers/stack.ts#importConfig"],
+  n230: ["void", "нет предмета: личный слой основателя из старого Claude Lane Stack не переносится; Lane Pilot — плагин BB и не читает настройки старого стека (решение владельца, 2026-11)"],
   n231: ["have", "подключения работника: MCP и плагины по роли", "src/rooms/contracts/helper-context.ts#MANDATORY_MCP_SERVERS"],
   n232: ["have", "работник не выключен? breaker и конвейер", "src/rooms/runs/conveyor.ts#conveyorState"],
   n233: ["have", "папка попытки", "src/rooms/verification/git-integrate/task-folder.ts#persistTaskFolder"],

@@ -17,7 +17,6 @@ export function screenFixture() {
     explicitKeys: ["writer.provider", "writer.model", "writer.reasoning_effort"],
     values,
     versions: Object.fromEntries(VISIBLE_CATALOG.map((row) => [row.storageKey, 1])),
-    importSource: { completed: true, at: 1, routingPath: "/tmp/routing.profile.yaml", nightPath: "/tmp/night-shift.yaml" },
     runs: [{
       id: "lprun_1",
       state: "running",

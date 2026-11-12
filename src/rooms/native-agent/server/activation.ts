@@ -2,7 +2,7 @@ import { compiledMainAgentSpawnBinding, detectCompiledMainAgentCapability, resol
 import type { CompiledMainAgent } from "../agent-profile";
 import { readyComposerSnapshot, spawnEnvironmentFromSelection } from "../../contracts/composer-selection";
 import type { ComposerSelectionSnapshot } from "../../contracts/composer-selection";
-import { claimActivation, createRun, freezeRunBinding, getActivation, getRunSettingsScopes, importSettingsOnce, loadPrototypeConfig, releaseActivation, setRunState, setRunThread, setRunWorkspace } from "../../storage";
+import { claimActivation, createRun, freezeRunBinding, getActivation, getRunSettingsScopes, loadPrototypeConfig, releaseActivation, setRunState, setRunThread, setRunWorkspace } from "../../storage";
 import { ownerCardBlock } from "../../anamnesis";
 import { anamnesisFor } from "../../anamnesis";
 import { projectPassportBlock } from "../../passport";
@@ -88,12 +88,6 @@ export function createActivation(ctx: ServerCore, services: Services) {
       }
       // No Claude Lane engine is required any more: Lane Pilot starts its agents and guard itself (2026-10-29), and the cleanup moved
       // the engine aside. The gate stopped every activation outside the composer (drill parallel3, 2026-10-30).
-      const imported = await host.call("importConfig", {
-        requestedHostId: config.hostId,
-        workspacePath: config.pmWorkspacePath,
-        projectId,
-      }, { hostId: config.hostId, timeoutMs: 30_000 });
-      importSettingsOnce(db, projectId, imported.imported);
     }
     const existing = getActivation(db, projectId);
     if (existing) refreshRun(existing.run_id);

@@ -93,3 +93,16 @@ describe("hub migration lineage", () => {
     expect(migrations.slice(0, HUB_APPLIED_0142.length).map((statement) => createHash("sha256").update(statement).digest("hex").slice(0, 16))).toEqual(HUB_APPLIED_0142);
   });
 });
+
+describe("the retired YAML import rows", () => {
+  it("are deleted from lane_pilot_project_settings and nothing else is touched", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = bb.storage.database();
+    bb.storage.migrate(db, migrations.slice(0, migrations.length - 1));
+    const insert = db.prepare(`INSERT INTO lane_pilot_project_settings (project_id,binding_id,key,value,version,updated_at) VALUES (?,?,?,?,?,?)`);
+    for (const key of ["import.routing_profile", "import.night_shift", "import.completed", "writer.provider"]) insert.run("p1", "", key, '"x"', 1, 1);
+    openDatabase(bb);
+    expect(db.prepare("SELECT key FROM lane_pilot_project_settings WHERE project_id='p1'").all()).toEqual([{ key: "writer.provider" }]);
+    await harness.lifecycle.dispose();
+  });
+});

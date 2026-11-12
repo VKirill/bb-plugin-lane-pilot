@@ -24,7 +24,6 @@ export type ScreenPayload = {
   values: Record<string, unknown>;
   versions: Record<string, number>;
   explicitKeys: string[];
-  importSource: { completed: boolean; at: number | null; routingPath: string | null; nightPath: string | null };
   /** All runs of the project; `runs` holds the newest few and every open one. */
   runsTotal?: number;
   runsLimit?: number;

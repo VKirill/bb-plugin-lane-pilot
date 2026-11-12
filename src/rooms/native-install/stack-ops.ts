@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { EXTERNAL_OPS, TARGET_SHA } from "../runs";
 import { observeExternalOps, type ExternalOpsSnapshot } from "./external-ops";
 import { applyInstalledGuard, isOwnedPmGuardApplied, ownedPmGuardPath } from "./guard-apply";
-import { readImportConfig } from "../settings";
 import type { InstallPhase } from "./install-runner";
 import { connectOpencode } from "./opencode-connect";
 import { inventoryCoexistenceAtHome, runCoexistenceOperationAtHome } from "./coexistence";
@@ -404,43 +403,6 @@ export async function rollbackStack(ctx: HostContext): Promise<InstallReceipt> {
     ],
   }, await receiptDirOf(ctx));
 }
-
-export async function importConfigStack(ctx: HostContext): Promise<InstallReceipt & {
-  imported: ImportedPayload;
-}> {
-  const imported = await readImportConfig({
-    homeDir: ctx.homeDir,
-    workspacePath: ctx.workspacePath,
-  });
-  return {
-    ...(await writeReceipt({
-      action: "importConfig",
-      scenario: "S7",
-      filesChanged: [
-        ...(imported.routingProfile ? [{
-          path: imported.routingProfile.path,
-          sha256Before: imported.routingProfile.sha256,
-          sha256After: imported.routingProfile.sha256,
-        }] : []),
-        ...(imported.nightShift ? [{
-          path: imported.nightShift.path,
-          sha256Before: imported.nightShift.sha256,
-          sha256After: imported.nightShift.sha256,
-        }] : []),
-      ],
-      externalOpsBefore: {},
-      externalOpsAfter: {},
-      ...skippedOpsReceipt([]),
-      exitCode: 0,
-      snapshotPath: null,
-      sourceSha: (await readInstallJson(ctx.homeDir)).sourceSha,
-      notes: ["S7 read-only; persistence is a server one-shot insert"],
-    }, await receiptDirOf(ctx))),
-    imported,
-  };
-}
-
-type ImportedPayload = Awaited<ReturnType<typeof readImportConfig>>;
 
 export async function connectOpencodeStack(ctx: HostContext): Promise<InstallReceipt> {
   const home = resolveHome(ctx.homeDir);
