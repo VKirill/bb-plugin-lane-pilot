@@ -2,7 +2,7 @@
 title: Locale resolution and translation
 type: component
 created: 2026-10-24
-updated: 2026-11-11
+updated: 2026-11-12
 status: active
 confidence: high
 tags: [i18n, locale, translations]
@@ -41,6 +41,7 @@ sources:
   - src/rooms/acceptance/ui/acceptance-card.tsx
   - src/rooms/work-graph/ui/work-breakdown.tsx
   - src/rooms/cockpit/ui/screens-day.tsx
+  - src/rooms/cockpit/ui/screens-ops.tsx
   - src/rooms/pages/tab-team.tsx
   - src/rooms/pages/role-models.tsx
   - src/rooms/ui-shell/ui/model-overrides.tsx
@@ -58,15 +59,15 @@ TL;DR: This component merges English and Russian UI catalogs, selects a locale f
 
 ## Purpose
 
-The component provides shared text for the plugin UI. `I18nKey` combines the English dictionary keys with the agent-label keys, `Locale` is `"en" | "ru"`, and `LocalePreference` is `"auto" | Locale`; `ru` is constrained to the keys of `en` (`packages/i18n/src/i18n.ts:2496`, `packages/i18n/src/i18n.ts:2499-2501`).
+The component provides shared text for the plugin UI. `I18nKey` combines the English dictionary keys with the agent-label keys, `Locale` is `"en" | "ru"`, and `LocalePreference` is `"auto" | Locale`; `ru` is constrained to the keys of `en` (`packages/i18n/src/i18n.ts:2503-2505`, `packages/i18n/src/i18n.ts:2500`).
 
-The agent-label keys are added to `I18nKey` explicitly (`packages/i18n/src/i18n.ts:2499`).
+The agent-label keys are added to `I18nKey` explicitly (`packages/i18n/src/i18n.ts:2503`).
 
 The separate `agentLabelEn` catalog defines those keys (`packages/i18n/src/i18n-agent-labels.ts:2`).
 
-Feature catalogs partition strings by workflow screens, library filters and views, export dialog, graph map, editor, operations, model view, canvas, task board, schedules, tabs, self-improvement, errands, role models, fields, cockpit, and agent picker names (`packages/i18n/src/i18n-workflows.ts:2`, `packages/i18n/src/i18n-workflow-library.ts:1-20`, `packages/i18n/src/i18n-workflow-export.ts:1-26`, `packages/i18n/src/i18n-workflow-map.ts:1-41`, `packages/i18n/src/i18n-workflow-editor.ts:2`, `packages/i18n/src/i18n-workflow-ops.ts:2`, `packages/i18n/src/i18n-workflow-models.ts:2`, `packages/i18n/src/i18n-workflow-canvas.ts:2`, `packages/i18n/src/i18n-board.ts:2`, `packages/i18n/src/i18n-schedule.ts:2`, `packages/i18n/src/i18n-tabs.ts:2`, `packages/i18n/src/i18n-improvement.ts:2`, `packages/i18n/src/i18n-errands.ts:1-2`, `packages/i18n/src/i18n-role-models.ts:5`, `packages/i18n/src/i18n-fields.ts:1`, `packages/i18n/src/i18n-cockpit.ts:2`, `packages/i18n/src/i18n-agent-labels.ts:2`).
+Feature catalogs partition strings by workflow screens, library filters and views, export dialog, graph map, editor, operations, model view, canvas, task board, schedules, tabs, self-improvement, errands, role models, fields, cockpit, and agent picker names. The library, export, and map catalogs each define a Marketing category in English and Russian (`packages/i18n/src/i18n-workflow-library.ts:2-6`, `packages/i18n/src/i18n-workflow-library.ts:23-27`, `packages/i18n/src/i18n-workflow-export.ts:18-20`, `packages/i18n/src/i18n-workflow-export.ts:45-47`, `packages/i18n/src/i18n-workflow-map.ts:6-10`, `packages/i18n/src/i18n-workflow-map.ts:48-52`). The base dictionary adds the bilingual access name and purpose for the Growth marketer specialist (`packages/i18n/src/i18n.ts:1228-1229`, `packages/i18n/src/i18n.ts:2465-2466`). Catalog declarations include `packages/i18n/src/i18n-workflows.ts:2`, `packages/i18n/src/i18n-workflow-library.ts:1-20`, `packages/i18n/src/i18n-workflow-export.ts:1-26`, `packages/i18n/src/i18n-workflow-map.ts:1-41`, `packages/i18n/src/i18n-workflow-editor.ts:2`, `packages/i18n/src/i18n-workflow-ops.ts:2`, `packages/i18n/src/i18n-workflow-models.ts:2`, `packages/i18n/src/i18n-workflow-canvas.ts:2`, `packages/i18n/src/i18n-board.ts:2`, `packages/i18n/src/i18n-schedule.ts:2`, `packages/i18n/src/i18n-tabs.ts:2`, `packages/i18n/src/i18n-improvement.ts:2`, `packages/i18n/src/i18n-errands.ts:1-2`, `packages/i18n/src/i18n-role-models.ts:5`, `packages/i18n/src/i18n-fields.ts:1`, `packages/i18n/src/i18n-cockpit.ts:2`, `packages/i18n/src/i18n-agent-labels.ts:2`).
 
-The role-model catalog contains the API reconnaissance role name and rationale, plus the episode analyst and night wall hunter names and rationales, in English and Russian (`packages/i18n/src/i18n-role-models.ts:38-44`, `packages/i18n/src/i18n-role-models.ts:88-95`, `packages/i18n/src/i18n-role-models.ts:145-151`, `packages/i18n/src/i18n-role-models.ts:195-202`). It also contains the lead role and four errand-kind rows in both languages (`packages/i18n/src/i18n-role-models.ts:27`, `packages/i18n/src/i18n-role-models.ts:64`, `packages/i18n/src/i18n-role-models.ts:43-48`, `packages/i18n/src/i18n-role-models.ts:150-155`).
+The role-model catalog contains Growth marketer's name and rationale in both languages (`packages/i18n/src/i18n-role-models.ts:53-55`, `packages/i18n/src/i18n-role-models.ts:70-72`, `packages/i18n/src/i18n-role-models.ts:163-165`, `packages/i18n/src/i18n-role-models.ts:179-181`). It also contains the API reconnaissance role name and rationale, plus the episode analyst and night wall hunter names and rationales, in English and Russian (`packages/i18n/src/i18n-role-models.ts:38-44`, `packages/i18n/src/i18n-role-models.ts:88-95`, `packages/i18n/src/i18n-role-models.ts:145-151`, `packages/i18n/src/i18n-role-models.ts:195-202`). It also contains the lead role and four errand-kind rows in both languages (`packages/i18n/src/i18n-role-models.ts:27`, `packages/i18n/src/i18n-role-models.ts:64`, `packages/i18n/src/i18n-role-models.ts:43-48`, `packages/i18n/src/i18n-role-models.ts:150-155`).
 
 The fields catalog includes labels and descriptions for errand episode collection, the `shadow`/`active` process-key modes, and the writer session turn ceiling with a five-turn default in its description (`packages/i18n/src/i18n-fields.ts:1058-1069`, `packages/i18n/src/i18n-fields.ts:2128-2139`). The base dictionary defines the `enumEpisodesProcessKeyShadow` and `enumEpisodesProcessKeyActive` enum labels (`packages/i18n/src/i18n.ts:990-991`, `packages/i18n/src/i18n.ts:2225-2226`).
 
@@ -76,11 +77,11 @@ The errands catalog includes labels for checked and unchecked outcomes in both l
 
 1. The package entry point re-exports `i18n.ts` (`packages/i18n/src/index.ts:1`).
 2. `i18n.ts` imports `UNAPPLIED_REASON` from `settings-catalog` (`packages/i18n/src/i18n.ts:1`).
-3. `en` and `ru` merge their corresponding catalogs in the same order. `export` and `map` are spread after `agentLabel`; `ru` uses the English dictionary's keys as its type (`packages/i18n/src/i18n.ts:2495-2496`).
+3. `en` and `ru` merge their corresponding catalogs in the same order. `export` and `map` are spread after `agentLabel`; `ru` uses the English dictionary's keys as its type (`packages/i18n/src/i18n.ts:2499-2500`).
 4. `detectLocale` checks the global override shared across bundles, then the module-local override, then calls `detectLocaleHint` (`packages/i18n/src/i18n.ts:2523-2530`).
 5. `detectLocaleHint` recognizes the Russianizer only when its footer marker exists; local storage value `"off"` disables that hint, while other values leave it enabled. Storage access exceptions are caught (`packages/i18n/src/i18n.ts:2530-2542`).
 6. `localeFromSources` chooses Russianizer hint first, then a non-empty navigator language, then a non-default document language, and otherwise English. A recognized language prefix `ru` maps to Russian; other supplied languages map to English (`packages/i18n/src/i18n.ts:2513-2521`).
-7. `t` returns the key's value from the selected dictionary; `agentLabel` keys are real keys of both dictionaries, so `t` reads them like any other key. `subscribeToLocaleHintChanges` watches document mutations and matching storage events, notifies only when its detected hint changes, and returns a disposer that disconnects both listeners (`packages/i18n/src/i18n.ts:2495-2496`, `packages/i18n/src/i18n.ts:2544-2568`).
+7. `t` returns the key's value from the selected dictionary; `agentLabel` keys are real keys of both dictionaries, so `t` reads them like any other key. `subscribeToLocaleHintChanges` watches document mutations and matching storage events, notifies only when its detected hint changes, and returns a disposer that disconnects both listeners (`packages/i18n/src/i18n.ts:2499-2500`, `packages/i18n/src/i18n.ts:2544-2568`).
 8. Specialized helpers map validation codes, state names, and unapplied reasons to translated strings; unknown state names and unknown reason formats are returned unchanged (`packages/i18n/src/i18n.ts:2570-2614`).
 
 ### Locale modes
@@ -96,7 +97,7 @@ The errands catalog includes labels for checked and unchecked outcomes in both l
 | Helper | Accepted input | Result and fallback |
 |---|---|---|
 | `validationMessage` | Six literal codes and a `string[]` parameter list | Four setup codes return fixed translations; `invalid_choice` substitutes `params[0..1]`; remaining code path uses `params[0..3]` for the incompatible-setting message (`packages/i18n/src/i18n.ts:2570-2583`) |
-| `stateLabel` | Any string | Translates `state_<value>` if that key exists in English; otherwise returns the input (`packages/i18n/src/i18n.ts:2585-2588`) |
+| `stateLabel` | Any string | Translates `state_<value>` if that key exists in English; otherwise returns the input (`packages/i18n/src/i18n.ts:2589-2592`) |
 | `unappliedReason` | Any string | Maps known catalog reason constants and a recognized invalid-flag format; unknown reasons pass through unchanged (`packages/i18n/src/i18n.ts:2590-2614`) |
 | `currentStrings` | No arguments | Returns the current translations for enable, enabling, failed, and already active (`packages/i18n/src/i18n.ts:2616-2623`) |
 
@@ -120,8 +121,9 @@ The run card selects labels by attempt state and maps background-stage labels be
 | `roleModelsPool*`, `teamPoolNone` | `packages/i18n/src/i18n.ts:194-198`, `packages/i18n/src/i18n.ts:1422-1426` | Fallback list labels in settings, its no-fallback hint, and add/remove button labels with `{role}` and `{model}` (`src/rooms/pages/role-models.tsx:116-131`) |
 | `wfSuccessRate`, `wfOutcomeCounts` | `packages/i18n/src/i18n-workflows.ts:27-28`, `packages/i18n/src/i18n-workflows.ts:169-170` | The catalog defines the work-done percentage and outcome-count labels; the workflow library renders `wfSuccessRate` only when `stats.successRate` is non-null (`src/rooms/workflow/ui/workflow-library-parts.tsx:56`) |
 | `wfRunStatus_not_verified` | `packages/i18n/src/i18n-workflows.ts:56`, `packages/i18n/src/i18n-workflows.ts:198` | A run closed as not verified gets its own label ("Not verified"); the run detail status map includes it (`src/rooms/workflow/ui/workflow-detail.tsx:35`) |
-| `agentDisplay*` | `packages/i18n/src/i18n-agent-labels.ts:2-15`, `packages/i18n/src/i18n-agent-labels.ts:17-30` | The agent picker shows the translated name for a stock agent only while its stored description still equals the bundled one; otherwise it shows the description (`src/rooms/contracts/agent-display.ts:91-105`). Twelve agents have keys here — the eleven ported from Claude Lane (advisor, AI researcher, animator, doc classifier, domain researcher, eval auditor, eval planner, model selector, memory curator, check auditor, UI researcher) and the lead, Shturman — and the picker maps each stock id to its key (`packages/i18n/src/i18n-agent-labels.ts:3-14`, `src/rooms/contracts/agent-display.ts:61-88`) |
+| `agentDisplay*` | `packages/i18n/src/i18n-agent-labels.ts:2-16`, `packages/i18n/src/i18n-agent-labels.ts:18-32` | The agent picker shows the translated name for a stock agent only while its stored description still equals the bundled one; otherwise it shows the description (`src/rooms/contracts/agent-display.ts:100-108`). Thirteen agent names have keys here: eleven ported from Claude Lane, the lead, and Growth marketer. The picker maps the Growth marketer stock id to its key (`packages/i18n/src/i18n-agent-labels.ts:3-15`, `src/rooms/contracts/agent-display.ts:63-68`) |
 | `ckScreen_rules`, `ckSwitches`, `ckHaz_*`, `ckSw_*`, `ckDaysShort`, `ckOn`, `ckOff`, `ckFallback_*` | `packages/i18n/src/i18n-cockpit.ts:21-34`, `packages/i18n/src/i18n-cockpit.ts:229-248` | The Rules-screen catalog supplies bilingual text for the screen name, hazard descriptions, switch labels, on/off values, disarm duration unit, and fallback timing labels |
+| `ckShipLead` | `packages/i18n/src/i18n-cockpit.ts:144`, `packages/i18n/src/i18n-cockpit.ts:352` | The Ship screen copy says the ship workflow validates the phase, opens a clean PR branch, then pushes the branch and opens the pull request itself; the Ship screen renders this text above its workflow buttons (`src/rooms/cockpit/ui/screens-ops.tsx:147-162`) |
 | `ckStopPhase`, `ckUseful`, `ckLimits`, `ckLessonDraft` | `packages/i18n/src/i18n-cockpit.ts:70-79`, `packages/i18n/src/i18n-cockpit.ts:278-287` | Cockpit work screen: the stop-the-phase button, the two acceptance checkboxes (result is useful, limits and way back are accepted) and the lesson draft line, each shown at the matching owner-word turn (`src/rooms/cockpit/ui/screens-work.tsx:166`, `src/rooms/cockpit/ui/screens-work.tsx:182`, `src/rooms/cockpit/ui/screens-work.tsx:193-194`, `src/rooms/cockpit/ui/screens-work.tsx:239`) |
 | `ckWorkerRunning` | `packages/i18n/src/i18n-cockpit.ts:121`, `packages/i18n/src/i18n-cockpit.ts:329` | The day screen displays a worker's running count and task names while that worker has running work (`src/rooms/cockpit/ui/screens-day.tsx:193`) |
 | `graphTurnsCeil`, `graphMonthCeil`, `graphMonthCeilOf` | `packages/i18n/src/i18n-graph.ts:5-7`, `packages/i18n/src/i18n-graph.ts:65-67` | The work breakdown labels a turn ceiling and monthly spend, with a separate label when a monthly cap is present (`src/rooms/work-graph/ui/work-breakdown.tsx:98-99`) |
@@ -132,7 +134,7 @@ The run card selects labels by attempt state and maps background-stage labels be
 
 ## Business rules
 
-- Only English and Russian are supported by the `Locale` type (`packages/i18n/src/i18n.ts:2500`).
+- Only English and Russian are supported by the `Locale` type (`packages/i18n/src/i18n.ts:2504`).
 - The Russianizer hint wins over navigator and document language; the navigator value wins over the document value when present (`packages/i18n/src/i18n.ts:2513-2521`).
 - Only an explicit local-storage value of `"off"` disables the Russianizer hint, and the hint is read only when the plugin footer marker exists (`packages/i18n/src/i18n.ts:2530-2542`).
 - `detectLocale` checks a valid global override before module-local state and automatic hints (`packages/i18n/src/i18n.ts:2523-2528`).
@@ -146,7 +148,7 @@ All declarations below are exported from `i18n.ts` and re-exported by the packag
 | Import | Source | Purpose |
 |---|---|---|
 | `en`, `ru` | `packages/i18n/src/i18n.ts:2495-2496` | Complete English and Russian dictionaries |
-| `I18nKey`, `Locale`, `LocalePreference` | `packages/i18n/src/i18n.ts:2499-2501` | Translation key and locale types |
+| `I18nKey`, `Locale`, `LocalePreference` | `packages/i18n/src/i18n.ts:2503-2505` | Translation key and locale types |
 | `setLocaleOverride(next)` | `packages/i18n/src/i18n.ts:2506-2511` | Set or clear explicit shared locale override |
 | `localeFromSources(documentLanguage?, navigatorLanguage?, russianizerHint?)` | `packages/i18n/src/i18n.ts:2513-2521` | Resolve a locale from supplied hints |
 | `detectLocale()` | `packages/i18n/src/i18n.ts:2523-2528` | Read override or browser hints |
@@ -154,7 +156,7 @@ All declarations below are exported from `i18n.ts` and re-exported by the packag
 | `subscribeToLocaleHintChanges(listener)` | `packages/i18n/src/i18n.ts:2544-2564` | Listen for automatic hint changes; returns cleanup function |
 | `t(key)` | `packages/i18n/src/i18n.ts:2566-2568` | Return translated string for a typed key |
 | `validationMessage(code, params)` | `packages/i18n/src/i18n.ts:2570-2583` | Translate supported validation errors |
-| `stateLabel(state)` | `packages/i18n/src/i18n.ts:2585-2588` | Translate known state key or preserve input |
+| `stateLabel(state)` | `packages/i18n/src/i18n.ts:2589-2592` | Translate known state key or preserve input |
 | `unappliedReason(reason)` | `packages/i18n/src/i18n.ts:2590-2614` | Translate known setting-application reason or preserve input |
 | `currentStrings()` | `packages/i18n/src/i18n.ts:2616-2623` | Return four current activation strings |
 
@@ -166,7 +168,7 @@ All declarations below are exported from `i18n.ts` and re-exported by the packag
 
 ## Internal model
 
-Catalogs are plain objects. `I18nKey` combines the English dictionary keys with `agentLabelEn` keys, and the Russian dictionary is assigned the mapped type `{ [K in keyof typeof en]: string }` (`packages/i18n/src/i18n.ts:2496`, `packages/i18n/src/i18n.ts:2499`). Runtime translation performs a direct lookup in the selected dictionary (`packages/i18n/src/i18n.ts:2566-2568`). `validationMessage` performs placeholder replacement for validation errors (`packages/i18n/src/i18n.ts:2570-2583`).
+Catalogs are plain objects. `I18nKey` combines the English dictionary keys with `agentLabelEn` keys, and the Russian dictionary is assigned the mapped type `{ [K in keyof typeof en]: string }` (`packages/i18n/src/i18n.ts:2500`, `packages/i18n/src/i18n.ts:2503`). Runtime translation performs a direct lookup in the selected dictionary (`packages/i18n/src/i18n.ts:2566-2568`). `validationMessage` performs placeholder replacement for validation errors (`packages/i18n/src/i18n.ts:2570-2583`).
 
 ## Dependencies
 
