@@ -11,7 +11,7 @@ const WIRE_METHODS = [
   "docsWorthinessFacts", "findBrowserQaTarget", "gateAttribute", "gateBisect", "gateRun", "gitCommitDocs", "gitCreateWorktree",
   "gitDocsScope", "gitIntegrate", "gitMergeInfo", "gitOwnershipBase", "gitOwnershipChanges", "gitPrepareWorktree",
   "gitRemoveWorktree", "gitRevertCommits", "gitRevertPaths", "gitSyncWorktree", "gitUndoCheckWrites",
-  "gitWorktreeSnapshot", "gitWorktreeState", "importConfig", "inspectCritiqueCoverage", "install", "jobCancel",
+  "gitWorktreeSnapshot", "gitWorktreeState", "inspectCritiqueCoverage", "install", "jobCancel",
   "jobStart", "jobStatus", "listDocsPages", "listFolders", "listPermitTickets", "listWorkflowFiles", "nativeInstall",
   "openCodeLimitProbe", "prepareBbShim", "prepareClaudeGuard", "prepareNativeClaude", "prepareWorkerHome",
   "probeBrowserQaTarget", "readBoundedFile", "readOpenCodeTelemetry", "readUsageWindows", "removeClaudeLaneLeftovers",

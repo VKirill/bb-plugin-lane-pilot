@@ -178,12 +178,6 @@ export const rpcRuns = {
       }).strict().optional(),
       values: z.record(z.string(), z.unknown()),
       versions: z.record(z.string(), z.number()),
-      importSource: z.object({
-        completed: z.boolean(),
-        at: z.number().nullable(),
-        routingPath: z.string().nullable(),
-        nightPath: z.string().nullable(),
-      }).strict(),
       runs: z.array(runViewSchema),
       /** All runs of the project; `runs` carries the newest few and every open one, `list_runs` the rest. */
       runsTotal: z.number().int().nonnegative().optional(),

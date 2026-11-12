@@ -113,12 +113,8 @@ export function ServiceSegment({ page }: { page: LpPage }) {
               <div className="space-y-5" data-testid="diagnostics-panel">
             <p className="text-xs text-muted-foreground">{t("diagnosticsIntro")}</p>
             <Card>
-              <CardHeader className={CARD_HEAD}><CardTitle className="text-sm font-medium">{t("importDetails")}</CardTitle></CardHeader>
+              <CardHeader className={CARD_HEAD}><CardTitle className="text-sm font-medium">{t("detectWorkspace")}</CardTitle></CardHeader>
               <CardContent className={`${CARD_BODY} space-y-1 text-xs text-muted-foreground`} data-testid="import-diagnostics">
-                {data?.importSource.completed ? <>
-                  <p>{t("importRouting")}: {data.importSource.routingPath ?? "—"}</p>
-                  <p>{t("importNight")}: {data.importSource.nightPath ?? "—"}</p>
-                </> : <p>{t("importNone")}</p>}
                 <p>{t("detectWorkspace")}: {data?.workspacePath ?? "—"}</p>
                 {data?.lastSnapshotPath ? <p>{t("snapshotBackupFolder")}: {data.lastSnapshotPath}</p> : null}
               </CardContent>

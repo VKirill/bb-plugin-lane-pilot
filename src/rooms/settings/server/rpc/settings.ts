@@ -183,9 +183,6 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
       }
       values["memory.reasoning_effort"] ??= settings["memory.reasoning_effort"] ?? values["writer.reasoning_effort"];
       values["memory.service_tier"] ??= settings["memory.service_tier"] ?? writerServiceTier(settings);
-      const completed = values["import.completed"];
-      const routing = values["import.routing_profile"];
-      const night = values["import.night_shift"];
       const invocation = services.buildCliInvocation({
         binary: "run-controller",
         subcommand: "run",
@@ -212,18 +209,6 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
         writerBinding: screenWriterBinding(writerBinding),
         values,
         versions,
-        importSource: {
-          completed: Boolean(completed),
-          at: completed && typeof completed === "object" && completed && "at" in completed
-            ? Number((completed as { at?: number }).at ?? null)
-            : null,
-          routingPath: routing && typeof routing === "object" && routing && "path" in routing
-            ? String((routing as { path?: string }).path ?? "") || null
-            : null,
-          nightPath: night && typeof night === "object" && night && "path" in night
-            ? String((night as { path?: string }).path ?? "") || null
-            : null,
-        },
         runs: listed,
         runsTotal: page.total,
         runsLimit: runsWindow,

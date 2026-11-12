@@ -16,7 +16,6 @@ function screenFixture() {
     projectId: "proj_ui", hostId: "host_ui", workspacePath: "/tmp/lane-pilot-ui",
     explicitKeys: ["writer.provider", "writer.model", "writer.reasoning_effort"], values,
     versions: Object.fromEntries(VISIBLE_CATALOG.map((row) => [row.storageKey, 1])),
-    importSource: { completed: true, at: 1, routingPath: "/tmp/routing.profile.yaml", nightPath: "/tmp/night-shift.yaml" },
     runs: [], unapplied: [], cliPreview: { argv: ["run"], env: {}, applied: [], unapplied: [] }, legacyStack: true,
     lastSnapshotPath: "/tmp/snapshot", lastReceiptJson: null, writerResultJson: null, writerResultPatch: null, cliReceiptJson: null, qaHosts: [], lastWriterTrace: null,
   };

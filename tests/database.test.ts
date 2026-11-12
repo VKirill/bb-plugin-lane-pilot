@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { inspectAttempt, inspectState, setRunObjective, appendGateEvaluation, casSetting, claimDailySchedule, claimDocsSpawn, claimStageSpawn, closeRun, createAttempt, createRun, createTask, freezeRunBinding, getAttempt, getRunWriterHost, getTaskGitBase, importSettingsOnce, listGateEvents, listStageEvents, listStageReceipts, listUnfinishedStages, migrations, openDatabase, saveStageReceipt, saveTaskGitBase, setAttemptHolderThread, setAttemptWorkspace, setRunWorkspace, getRun, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
+import { inspectAttempt, inspectState, setRunObjective, appendGateEvaluation, casSetting, claimDailySchedule, claimDocsSpawn, claimStageSpawn, closeRun, createAttempt, createRun, createTask, freezeRunBinding, getAttempt, getRunWriterHost, getTaskGitBase, listGateEvents, listStageEvents, listStageReceipts, listUnfinishedStages, migrations, openDatabase, saveStageReceipt, saveTaskGitBase, setAttemptHolderThread, setAttemptWorkspace, setRunWorkspace, getRun, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 
 describe("section 9 storage.database DDL", () => {
   it("migrates an existing populated database without losing rows and expands the run state check", async () => {
@@ -44,12 +44,6 @@ describe("section 9 storage.database DDL", () => {
     expect((db.prepare("SELECT COUNT(*) count FROM lane_pilot_project_settings WHERE project_id='B'").get() as {count:number}).count).toBe(0);
     const winners = [2,2].map((version) => casSetting(db,{projectId:"A",key:"writer.provider",value:"race",expectedVersion:version}));
     expect(winners.filter(Boolean)).toHaveLength(1);
-    const payload = {
-      routingProfile: { path: "/tmp/r.yaml", text: "a: 1\n", sha256: "aa" },
-      nightShift: { path: "/tmp/n.yaml", text: "b: 2\n", sha256: "bb" },
-    };
-    expect(importSettingsOnce(db, "A", payload).imported).toBe(true);
-    expect(importSettingsOnce(db, "A", payload).imported).toBe(false);
     createRun(db, "run-close", "A");
     expect(closeRun(db, "run-close", "cli")).toBe(true);
     expect(closeRun(db, "run-close", "cli")).toBe(true);

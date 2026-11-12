@@ -1,15 +1,12 @@
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterAll, describe, expect, it } from "vitest";
 import { NO_UPSTREAM, upstreamPath, offlineUpstream } from "./upstream-fixture";
-import { importSettingsOnce, openDatabase } from "../src/rooms/plugin-db";
 import { sha256FileOrNull } from "@lane-pilot/kit";
 import {
   connectOpencodeStack,
   detectStack,
-  importConfigStack,
   installStack,
 } from "../src/rooms/native-install/stack-ops";
 import { isolatedTestPath, linkSafeTools, snapshotGlobalOpenCursor } from "./npm-isolation";
@@ -142,16 +139,6 @@ describe.skipIf(NO_UPSTREAM)("S1–S8 isolated HOME", () => {
     } finally {
       rmSync(empty, { recursive: true, force: true });
     }
-  });
-
-  it("S7 imports YAML once and never again", async () => {
-    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
-    const db = openDatabase(bb);
-    const payload = await importConfigStack(ctx);
-    expect(payload.imported.routingProfile?.text).toContain("schema_version");
-    expect(importSettingsOnce(db, "proj_s7", payload.imported).imported).toBe(true);
-    expect(importSettingsOnce(db, "proj_s7", payload.imported).imported).toBe(false);
-    await harness.lifecycle.dispose();
   });
 
   it("S3 detect reports missing install.json", async () => {

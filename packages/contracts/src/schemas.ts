@@ -215,7 +215,7 @@ export const TASK_V2_OPTIONAL = ["skills", "area", "display_title", "kind", "qua
  * Host calls that run as background jobs: a separate process the host daemon's deadline cannot cut off (B4). A kind is
  * the name of the ordinary host method whose handler the job runs; its input is that method's own input.
  */
-export const HOST_JOB_KINDS = ["detect", "install", "rollback", "snapshot", "importConfig", "connectOpencode", "coexistenceOperation", "coexistenceInventory", "gitIntegrate", "gitPrepareWorktree", "runSandboxedCommand", "runBrowserQa", "gateRun", "gateBisect", "gateAttribute", "runScript"] as const;
+export const HOST_JOB_KINDS = ["detect", "install", "rollback", "snapshot", "connectOpencode", "coexistenceOperation", "coexistenceInventory", "gitIntegrate", "gitPrepareWorktree", "runSandboxedCommand", "runBrowserQa", "gateRun", "gateBisect", "gateAttribute", "runScript"] as const;
 export type HostJobKind = (typeof HOST_JOB_KINDS)[number];
 /** The longest a host job may live (jobStart's `timeoutSec`): a caller that would wait longer is waited for this long. */
 export const HOST_JOB_MAX_SEC = 10_800;

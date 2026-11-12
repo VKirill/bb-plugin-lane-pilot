@@ -22,7 +22,7 @@ describe("the host job process (job-runner.ts)", () => {
   it("the explicit table answers every job kind the wire accepts", () => {
     expect(Object.keys(HOST_JOB_HANDLERS).sort()).toEqual([
       "coexistenceInventory", "coexistenceOperation", "connectOpencode", "detect", "gateAttribute", "gateBisect",
-      "gateRun", "gitIntegrate", "gitPrepareWorktree", "importConfig", "install", "rollback", "runBrowserQa",
+      "gateRun", "gitIntegrate", "gitPrepareWorktree", "install", "rollback", "runBrowserQa",
       "runSandboxedCommand", "runScript", "snapshot",
     ]);
   });

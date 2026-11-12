@@ -37,13 +37,6 @@ function hostRpc(calls: string[]) {
         }],
       };
     }
-    if (call.method === "importConfig") {
-      return {
-        schemaVersion: 1, action: "import-config", scenario: "S7", status: "ok", filesChanged: [],
-        externalOpsBefore: {}, externalOpsAfter: {}, skippedExternalOps: [], warning: null, exitCode: 0,
-        receiptPath: null, snapshotPath: null, sourceSha: null, notes: [], imported: { routingProfile: null, nightShift: null },
-      };
-    }
     throw new Error(`unexpected ${call.method}`);
   };
 }

@@ -57,15 +57,6 @@ export const stackHostMethods = {
     input: z.object({ ...hostBaseFields, snapshotPath: z.string().startsWith("/") }).strict(),
     output: installReceiptSchema,
   },
-  importConfig: {
-    input: hostBaseInput,
-    output: installReceiptSchema.extend({
-      imported: z.object({
-        routingProfile: z.object({ path: z.string(), text: z.string(), sha256: z.string() }).nullable(),
-        nightShift: z.object({ path: z.string(), text: z.string(), sha256: z.string() }).nullable(),
-      }).strict(),
-    }).strict(),
-  },
   connectOpencode: {
     input: hostBaseInput,
     output: installReceiptSchema,

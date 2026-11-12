@@ -52,13 +52,6 @@ function hostRpc() {
         }],
       };
     }
-    if (call.method === "importConfig") {
-      return {
-        schemaVersion: 1, action: "import-config", scenario: "S7", status: "ok", filesChanged: [],
-        externalOpsBefore: {}, externalOpsAfter: {}, skippedExternalOps: [], warning: null, exitCode: 0,
-        receiptPath: null, snapshotPath: null, sourceSha: null, notes: [], imported: { routingProfile: null, nightShift: null },
-      };
-    }
     if (call.method === "writePmSettings") {
       return { hostId: "host-test", settingsPath: "/tmp/pm/.claude/settings.json", guardPath: "/tmp/guard_shell.py" };
     }

@@ -3,7 +3,7 @@
 export { inventoryCoexistence, runCoexistenceOperation } from "./coexistence";
 export { createNativeInstaller, experimental_vkLifecycle } from "./native-install-lifecycle";
 
-export { connectOpencodeStack, detectStack, importConfigStack, installStack, rollbackStack, snapshotStack } from "./stack-ops";
+export { connectOpencodeStack, detectStack, installStack, rollbackStack, snapshotStack } from "./stack-ops";
 export type { HostContext } from "./stack-ops";
 export { featureRegistry, featureRegistryGaps } from "./feature-registry";
 export type { FeatureCapability, FeatureRuntime } from "./feature-registry";
