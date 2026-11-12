@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ANSWER_GATE, answerProbability, relevantRecords } from "../packages/memory-core/src";
+import { ANSWER_GATE, answerProbability, relevantRecords, weakAnswer } from "../packages/memory-core/src";
 import type { MemoryRecord } from "../packages/memory-core/src";
 
 /** The answer gate replaced the model rerank: arithmetic on the search score, no model call. */
@@ -18,11 +18,13 @@ describe("answer gate", () => {
     expect(sure).toBeGreaterThan(ANSWER_GATE.min);
     expect(flat).toBeLessThan(ANSWER_GATE.min);
   });
-  it("the gate empties the list only when asked to and the search looks like no answer", () => {
-    const records = spread(0.7, 0.69);
+  it("the gate only warns: a doubtful search keeps its records and is marked weak", () => {
     const db = { prepare: () => ({ get: () => ({ n: 0, last: 0, size: 0 }), iterate: () => [] }) } as never;
-    expect(relevantRecords(db, "P", "what shoe size", records, { gate: true }).length).toBe(0);
-    expect(relevantRecords(db, "P", "what shoe size", records).length).toBeGreaterThan(0);
-    expect(relevantRecords(db, "P", "what shoe size", records, { gate: true, floor: null }).length).toBe(records.length);
+    const flat = spread(0.7, 0.69);
+    expect(relevantRecords(db, "P", "what shoe size", flat).length).toBeGreaterThan(0);
+    expect(weakAnswer(db, "P", "what shoe size", flat)).toBe(true);
+    expect(weakAnswer(db, "P", "what shoe size", flat, { floor: null })).toBe(false);
+    expect(weakAnswer(db, "P", "what shoe size", spread(0.86, 0.8))).toBe(false);
+    expect(weakAnswer(db, "P", "what shoe size", [])).toBe(false);
   });
 });
