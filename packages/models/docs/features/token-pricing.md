@@ -2,9 +2,9 @@
 title: Token Pricing and Compatibility
 type: component
 created: 2026-11-08
-updated: 2026-11-11
+updated: 2026-11-12
 status: active
-confidence: high
+confidence: medium
 tags: [models, pricing, token-costs, provider-limits, picker-compatibility]
 sources:
   - packages/models/src/model-prices.ts
@@ -32,7 +32,7 @@ It standardizes per-token rates across providers, catches provider refusals from
 4. Parse raw process output with `providerLimitNotice`: trim whitespace, verify length <= 400 characters, match against `PROVIDER_LIMIT` regex, and return a normalized 200-character notice (packages/models/src/provider-limit.ts:9-13). The regex recognizes provider responses such as `unavailable (reset after …)` and `http 403 (reset after …)` (packages/models/src/provider-limit.ts:3).
 5. Adjust reasoning levels via `compatibleReasoningLevel`: retain requested level when in `supported`, otherwise fall back to `defaultReasoningEffort` if supported, else return null (packages/models/src/picker-compat.ts:1-11).
 6. Adjust service tiers via `compatibleServiceTier`: map requested tier ("default", "fast", or null) against `supported` tiers, ensuring standard speed defaults on providers advertising only "fast" (packages/models/src/picker-compat.ts:13-21).
-7. Read setting values with `settingOff` (false, 0, "0", "off", "false", "no") and `settingOn` (true, 1, "1", "true", "on", "yes") (packages/models/src/setting-value.ts:2-5, :46-49). Read an `on|off` switch with `switchOn`: explicit `on` enables it, explicit `off` disables it, and any other or unset value uses membership in `SWITCHES_ON_BY_DEFAULT` (packages/models/src/setting-value.ts:11-19, :39-43). Read a word switch with `switchWord`: trim and lowercase the stored word, accept only its listed words, and use that key's fallback otherwise (packages/models/src/setting-value.ts:22-33).
+7. Read setting values with `settingOff` (false, 0, "0", "off", "false", "no") and `settingOn` (true, 1, "1", "true", "on", "yes") (packages/models/src/setting-value.ts:2-5, :46-49). Read an `on|off` switch with `switchOn`: explicit `on` enables it, explicit `off` disables it, and any other or unset value uses membership in `SWITCHES_ON_BY_DEFAULT` (packages/models/src/setting-value.ts:11-19, :46-50). Read a word switch with `switchWord`: trim and lowercase the stored word, accept only its listed words, and use that key's fallback otherwise (packages/models/src/setting-value.ts:34-37).
 
 ### Model list prices (USD per 1M tokens)
 
@@ -71,7 +71,7 @@ It standardizes per-token rates across providers, catches provider refusals from
 - Rate limit false-positive protection: Legitimate reports that mention rate-limit files or tests exceed 400 characters; `providerLimitNotice` requires <= 400 characters to treat the output as a provider refusal (packages/models/src/provider-limit.ts:9-12).
 - Fast-only provider normal speed: Providers that only list "fast" still run models at normal speed ("default") (packages/models/src/picker-compat.ts:17-18).
 - Boolean value parsing: `settingOff` considers false, 0, "0", "off", "false", and "no" disabled; `settingOn` considers true, 1, "1", "true", "on", and "yes" enabled (packages/models/src/setting-value.ts:2-5, :46-54).
-- Switch defaults: `switchOn` recognizes only the trimmed, lowercased words "on" and "off" as explicit values; all other values use the shared default-on key set (packages/models/src/setting-value.ts:39-43), whose keys are listed in `SWITCHES_ON_BY_DEFAULT` (packages/models/src/setting-value.ts:11-19). `switchWord` recognizes only the words listed for its key and falls back for an unset or unrecognized value (packages/models/src/setting-value.ts:26-38).
+- Switch defaults: `switchOn` recognizes only the trimmed, lowercased words "on" and "off" as explicit values; all other values use the shared default-on key set (packages/models/src/setting-value.ts:46-50), whose keys are listed in `SWITCHES_ON_BY_DEFAULT` (packages/models/src/setting-value.ts:11-19). `switchWord` recognizes only the words listed for its key and falls back for an unset or unrecognized value (packages/models/src/setting-value.ts:26-38).
 
 ## Public API
 
@@ -85,9 +85,9 @@ It standardizes per-token rates across providers, catches provider refusals from
 | `compatibleReasoningLevel` | Maps requested reasoning effort to supported model efforts | (packages/models/src/picker-compat.ts:1-11) |
 | `compatibleServiceTier` | Maps requested service tier to supported provider tiers | (packages/models/src/picker-compat.ts:13-21) |
 | `SWITCHES_ON_BY_DEFAULT` | Keys whose unset or unrecognized on/off switch value resolves to on | (packages/models/src/setting-value.ts:11-19) |
-| `SWITCH_WORD_DEFAULTS` | Fallback word and accepted words for each word switch | (packages/models/src/setting-value.ts:22-26) |
-| `switchOn` | Resolves an on/off switch from its stored word or shared default set | (packages/models/src/setting-value.ts:39-43) |
-| `switchWord` | Resolves a word switch from its accepted words or configured fallback | (packages/models/src/setting-value.ts:28-33) |
+| `SWITCH_WORD_DEFAULTS` | Fallback word and accepted words for each word switch | (packages/models/src/setting-value.ts:27-31) |
+| `switchOn` | Resolves an on/off switch from its stored word or shared default set | (packages/models/src/setting-value.ts:46-50) |
+| `switchWord` | Resolves a word switch from its accepted words or configured fallback | (packages/models/src/setting-value.ts:34-37) |
 | `settingOff` | Evaluates whether a configuration value represents off | (packages/models/src/setting-value.ts:2-5) |
 | `settingOn` | Evaluates whether a configuration value represents on | (packages/models/src/setting-value.ts:46-54) |
 
