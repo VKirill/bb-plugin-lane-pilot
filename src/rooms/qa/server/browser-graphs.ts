@@ -21,7 +21,7 @@ interface Services {
 
 /**
  * Browser work as graphs (graph unification S4). Two built-in starter graphs, both started by a PM tool:
- * - `browser-step` (`lane_pilot_browser`): the action `browser.goal` (host `browserGoal`, jev-ultrafast in the owner's Chrome), usable in any graph.
+ * - `browser-step` (`lane_pilot_browser`): one agent step (role errand-browser) that drives the owner's Chrome on the browser machine with agent-desktop (`ad`); no code step, no Jev.
  * - `lp.browser-qa` (`lane_pilot_browser_qa`): the action `lp.browser-qa` wraps `runBrowserQa` (qa.ts), so the `browser-qa` stage receipts are
  *   the ones the stage always wrote. A check still running after a plugin reload is read back from its receipt (`poll`).
  *   A task that carries qa_cases and qa_url runs it as a step of its own pipeline (`lp-task-pipeline`: the step `lp.qa-gate`, then the subworkflow).
@@ -50,34 +50,10 @@ function refusal(input: BrowserGoalInput, hostId: string | null): string | null 
 
 const bindings = new WeakMap<object, { engine: WorkflowEngine; services: Services }>();
 
-/** The action `browser.goal` and the step `lp.browser-qa`; the tools reach the engine through `ctx` (set here). */
+/** The steps `lp.qa-gate`, `lp.browser-qa.verdict` and `lp.browser-qa`; the tools reach the engine through `ctx` (set here). */
 export function registerBrowserExecutors(engine: WorkflowEngine, ctx: ServerCore, services: Services): void {
   bindings.set(ctx, { engine, services });
-  const { db, host, bb } = ctx;
-
-  engine.register<ChainRuntime>("browser.goal", {
-    // A goal that changes something is never repeated by a reload (the effect then reads «unknown»); a read-only one may be.
-    reentrant: true,
-    run: async (c: StepContext<ChainRuntime>) => {
-      const rt = c.runtime;
-      if (!rt) throw new Error("this workflow run has no project to work in (the plugin lost it); start it again");
-      const node = c.node as Extract<typeof c.node, { type: "action" }>;
-      const params = c.template(node.params) as Row;
-      const input: BrowserGoalInput = {
-        url: str(params.url), goal: str(params.goal), changes: params.changes === true, authorized: params.authorized === true,
-        timeoutSec: typeof params.timeout_sec === "number" ? params.timeout_sec : 180,
-      };
-      const hostId = browserHostId(ctx, rt.projectId, rt.runId);
-      const refused = refusal(input, hostId);
-      if (refused) return { output: { status: "refused", reason: refused } };
-      const goal = input.changes ? input.goal : `${input.goal}\nRead-only: do not submit, change, delete, pay or publish anything.`;
-      const result = await c.effect("goal", "browser.goal", () => host.call("browserGoal", { requestedHostId: hostId!, url: input.url, goal, timeoutSec: input.timeoutSec },
-        { hostId: hostId!, timeoutMs: (input.timeoutSec + 30) * 1000 }), { intent: { url: input.url, changes: input.changes }, reconcile: async () => (input.changes ? null : { happened: false }) });
-      bb.log.info(`browser goal on ${hostId}: ${result.status} ${result.url ?? ""} (${result.actions ?? "?"} actions)`);
-      // null fields are left out (the graph's fields are optional); the tool puts them back.
-      return { output: { hostId: result.hostId, exitCode: result.exitCode, status: result.status, url: result.url, actions: result.actions, title: result.title, text: result.text, log: result.log } };
-    },
-  } as NodeExecutor<ChainRuntime>);
+  const { db } = ctx;
 
   // ---------------------------------------------------------------- browser check of an accepted task
   /** How long the gate looks at the acceptance receipt of an attempt that already reads accepted before it parks the step (the writer records the two a moment apart). */
@@ -206,25 +182,26 @@ function stopped(summary: RunSummary): Row {
 }
 
 /**
- * `lane_pilot_browser`: one goal in the owner's Chrome, as the graph `browser-step`; waits for the run (the host call has its own limit of
- * timeoutSec + 30) and answers with the text the tool always gave.
+ * `lane_pilot_browser`: one goal in the owner's Chrome, as the graph `browser-step`; waits for the run (the agent step has its own limit of
+ * 12 minutes and the time it is told) and answers with the text the tool always gave.
  */
 export async function runBrowserStep(ctx: ServerCore, input: { projectId: string; runId: string | null; pmThreadId: string | null } & BrowserGoalInput): Promise<string> {
-  const refused = refusal(input, browserHostId(ctx, input.projectId, input.runId));
+  const hostId = browserHostId(ctx, input.projectId, input.runId);
+  const refused = refusal(input, hostId);
   if (refused) return JSON.stringify({ status: "refused", reason: refused });
   const { engine, services } = binding(ctx);
   const workflow = engine.resolveWorkflow(BROWSER_STEP);
   if (!workflow) throw new Error(`built-in workflow ${BROWSER_STEP} is not loaded`);
   const started = engine.start({
-    workflow, inputs: { url: input.url, goal: input.goal, changes: input.changes, authorized: input.authorized, timeout_sec: input.timeoutSec },
+    workflow, inputs: { url: input.url, goal: input.goal, changes: input.changes, authorized: input.authorized, timeout_sec: input.timeoutSec, host: hostId },
     runtime: { ctx, services, pmThreadId: input.pmThreadId, projectId: input.projectId, runId: input.runId } satisfies ChainRuntime,
     link: { projectId: input.projectId, ...(input.runId ? { runId: input.runId } : {}) },
   });
   const out = stopped(await started.done);
   const text = out.text;
   return JSON.stringify({
-    hostId: out.hostId ?? null, exitCode: out.exitCode ?? null, status: out.status, url: out.url ?? null, actions: out.actions ?? null, title: out.title ?? null, log: out.log ?? "",
-    ...(out.status === "refused" ? { reason: out.reason } : {}),
+    hostId: out.hostId ?? hostId, exitCode: out.exitCode ?? null, status: out.status, url: out.url ?? null, actions: out.actions ?? null, title: out.title ?? null, log: out.log ?? "",
+    ...(out.status === "refused" || out.reason ? { reason: out.reason } : {}),
     text: typeof text === "string" ? fenceOutside("browser", text) : text ?? null,
   }, null, 2);
 }

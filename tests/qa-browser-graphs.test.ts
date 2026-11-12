@@ -12,12 +12,13 @@ import { registerPureActions } from "@lane-pilot/workflow-engine";
 type Call = { method: string; input: Record<string, unknown> };
 
 /** A plugin context with only what the browser executors read: the database, the host, the log. */
-function setup(hostReply: (call: Call) => unknown = () => ({ hostId: "host_mini", exitCode: 0, status: "done", url: "https://x.test/after", actions: 3, title: "After", text: "page text", log: "ok" })) {
+function setup(agentReply: (node: Record<string, unknown>) => unknown = () => ({ status: "done", url: "https://x.test/after", actions: 3, title: "After", text: "page text", handoff: "done" })) {
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
   const db = openDatabase(bb);
   const calls: Call[] = [];
   const infos: string[] = [];
-  const host = { call: async (method: string, input: Record<string, unknown>) => { const call = { method, input }; calls.push(call); return hostReply(call); } };
+  const host = { call: async (method: string, input: Record<string, unknown>) => { const call = { method, input }; calls.push(call); throw new Error(`browser work makes no host call: ${method}`); } };
+  const agentNodes: Array<Record<string, unknown>> = [];
   const ctx = { db, host, bb: { log: { info: (message: string) => infos.push(message) } }, isDisposed: () => false } as never;
   const qaCalls: Array<Record<string, unknown>> = [];
   const services = { runBrowserQa: async (args: Record<string, unknown>) => { qaCalls.push(args); return qaReply(args); } } as { runBrowserQa: (args: Record<string, unknown>) => Promise<Record<string, unknown>> };
@@ -25,72 +26,71 @@ function setup(hostReply: (call: Call) => unknown = () => ({ hostId: "host_mini"
   const newEngine = () => {
     const engine = new WorkflowEngine({ db, harnessVersion: HARNESS_VERSION, resolveWorkflow: (id, version) => builtinWorkflow(id, version) });
     registerPureActions(engine);
+    // The browser-step graph's agent step (an LLM helper driving `ad`): the test answers for it and keeps the node it was given.
+    engine.register("agent", { reentrant: true, run: async (c: { node: Record<string, unknown>; template: (value: unknown) => unknown }) => { const node = c.template(c.node) as Record<string, unknown>; agentNodes.push(node); const reply = agentReply(node); if (reply instanceof Error) throw reply; return { output: reply as Record<string, unknown> }; } } as never);
     registerBrowserExecutors(engine, ctx, services as never);
     return engine;
   };
   const engine = newEngine();
   saveProjectSetting(db, "proj", QA_HOST_KEY, "host_mini");
-  return { db, ctx, calls, infos, engine, newEngine, qaCalls, services, setQa: (fn: typeof qaReply) => { qaReply = fn; } };
+  return { db, ctx, calls, agentNodes, infos, engine, newEngine, qaCalls, services, setQa: (fn: typeof qaReply) => { qaReply = fn; } };
 }
 
 const stepInput = { projectId: "proj", runId: null, pmThreadId: null, url: "https://x.test/", goal: "Read the title", changes: false, authorized: false, timeoutSec: 60 };
 
-describe("browser.goal and the graph browser-step", () => {
+describe("the graph browser-step", () => {
   it("both graphs are starter graphs: the router never offers them and run_workflow refuses them", () => {
     expect(builtinWorkflow("browser-step")).toMatchObject({ startedBy: "lane_pilot_browser", status: "published" });
     expect(builtinWorkflow("lp.browser-qa")).toMatchObject({ startedBy: "lane_pilot_browser_qa", status: "published" });
+  });
+
+  it("is one agent step on the browser machine that uses agent-desktop and names no Jev", () => {
+    const graph = builtinWorkflow("browser-step")!;
+    const step = graph.nodes.find((node) => node.id === "goal") as unknown as { type: string; role: string; prompt: string };
+    expect(step).toMatchObject({ type: "agent", role: "errand-browser" });
+    expect(step.prompt).toContain("ad snapshot -i --compact");
+    expect(step.prompt).toContain("delivered_unverified");
+    expect(JSON.stringify(graph)).not.toMatch(/jev-ultrafast|JEV_RUNNER/i);
   });
 
   it("answers with the shape lane_pilot_browser always had: host fields, then the fenced text last", async () => {
     const t = setup();
     const reply = JSON.parse(await runBrowserStep(t.ctx, stepInput)) as Record<string, unknown>;
     expect(Object.keys(reply)).toEqual(["hostId", "exitCode", "status", "url", "actions", "title", "log", "text"]);
-    expect(reply).toMatchObject({ hostId: "host_mini", exitCode: 0, status: "done", url: "https://x.test/after", actions: 3, title: "After", log: "ok" });
+    expect(reply).toMatchObject({ hostId: "host_mini", exitCode: null, status: "done", url: "https://x.test/after", actions: 3, title: "After", log: "" });
     expect(String(reply.text)).toContain('<outside_data source="browser">');
     expect(String(reply.text)).toContain("page text");
-    // The host got the call as before: a read-only goal carries the suffix, the timeout is timeoutSec + 30.
-    expect(t.calls).toHaveLength(1);
-    expect(t.calls[0]).toEqual({ method: "browserGoal", input: { requestedHostId: "host_mini", url: "https://x.test/", goal: "Read the title\nRead-only: do not submit, change, delete, pay or publish anything.", timeoutSec: 60 } });
+    // The agent got the goal, the page, the machine and the read-only rule; the plugin itself made no host call.
+    expect(t.calls).toEqual([]);
+    expect(t.agentNodes).toHaveLength(1);
+    const prompt = String(t.agentNodes[0]!.prompt);
+    expect(prompt).toContain("Goal: Read the title");
+    expect(prompt).toContain("Start page: https://x.test/");
+    expect(prompt).toContain("machine host_mini");
+    expect(prompt).toContain("Time limit: 60 seconds");
+    expect(prompt).toContain("Changes allowed: false");
     expect(t.db.prepare("SELECT workflow_id, status FROM lane_pilot_wf_run").all()).toEqual([{ workflow_id: "browser-step", status: "succeeded" }]);
   });
 
-  it("keeps nulls from an older launcher as null, and a changing goal goes to the host as written", async () => {
-    const t = setup(() => ({ hostId: "host_mini", exitCode: 0, status: "blocked", url: null, actions: null, title: null, text: null, log: "" }));
+  it("keeps missing fields as null, passes the reason of a blocked goal, and tells the agent when changes are allowed", async () => {
+    const t = setup(() => ({ status: "blocked", reason: "login wall", handoff: "done" }));
     const reply = JSON.parse(await runBrowserStep(t.ctx, { ...stepInput, changes: true, authorized: true, goal: "Press Save" })) as Record<string, unknown>;
-    expect(reply).toEqual({ hostId: "host_mini", exitCode: 0, status: "blocked", url: null, actions: null, title: null, log: "", text: null });
-    expect(t.calls[0]!.input.goal).toBe("Press Save");
+    expect(reply).toEqual({ hostId: "host_mini", exitCode: null, status: "blocked", url: null, actions: null, title: null, log: "", reason: "login wall", text: null });
+    expect(String(t.agentNodes[0]!.prompt)).toContain("Changes allowed: true");
   });
 
   it("refuses a change without the owner's word and a project with no browser machine, and starts no run", async () => {
     const t = setup();
     expect(JSON.parse(await runBrowserStep(t.ctx, { ...stepInput, changes: true }))).toEqual({ status: "refused", reason: "changes_need_owner_authorization: ask the owner, then pass authorized=true" });
     expect(JSON.parse(await runBrowserStep(t.ctx, { ...stepInput, projectId: "other" }))).toMatchObject({ status: "refused", reason: expect.stringContaining("no_browser_machine") });
-    expect(t.calls).toEqual([]);
+    expect(t.agentNodes).toEqual([]);
     expect(t.db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_wf_run").get()).toEqual({ n: 0 });
   });
 
-  it("a failing host call fails the run and the tool throws the host's message", async () => {
-    const t = setup(() => { throw new Error("host_mini is unreachable"); });
+  it("a failing agent step fails the run and the tool throws its message", async () => {
+    const t = setup(() => new Error("host_mini is unreachable"));
     await expect(runBrowserStep(t.ctx, stepInput)).rejects.toThrow("host_mini is unreachable");
     expect(t.db.prepare("SELECT status FROM lane_pilot_wf_run").all()).toEqual([{ status: "failed" }]);
-  });
-
-  it("browser.goal works as a node of any graph", async () => {
-    const t = setup();
-    const graph = parseWorkflow({
-      id: "my-check", name: "My check", description: { en: "reads a page", ru: "читает страницу" }, status: "published",
-      inputs: { page: { type: "string", required: true } }, outputs: { title: "string?", status: "string" },
-      nodes: [
-        { id: "look", type: "action", action: "browser.goal", rule: "code: one browser goal", url: "{{$inputs.page}}", goal: "Read the title", changes: false, authorized: false, timeout_sec: 30,
-          out: { status: "string", title: "string?", text: "string?", url: "string?", actions: "int?", hostId: "string?", exitCode: "int?", log: "string?", reason: "string?" } },
-        { id: "done", type: "action", action: "emit", map: { title: "look.title", status: "look.status" } },
-      ],
-      edges: [{ from: "start", to: "look" }, { from: "look", to: "done" }],
-    });
-    const started = t.engine.start({ workflow: graph, inputs: { page: "https://a.test/" }, runtime: { ctx: t.ctx, services: t.services, pmThreadId: null, projectId: "proj", runId: null } as never });
-    const summary = await started.done;
-    expect(summary).toMatchObject({ status: "succeeded", output: { title: "After", status: "done" } });
-    expect(t.calls[0]!.input).toMatchObject({ url: "https://a.test/", timeoutSec: 30 });
   });
 });
 

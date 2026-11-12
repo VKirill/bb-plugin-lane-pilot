@@ -9,12 +9,12 @@ describe("browser QA host stage contract", () => {
     expect(browserQaInputSchema.safeParse({
       requestedHostId:"host-test", projectCwd:"/tmp/project", url:"http://127.0.0.1:5173/", slug:"lp-qa-test",
       cases:["Open the home page and verify its title"], envClass:"local", viewports:"375,1280", authorized:false,
-      provider:"jev", backend:"chrome-qa", timeoutSec:900,
+      provider:"codex", backend:"chrome-qa", timeoutSec:900,
     }).success).toBe(true);
     expect(browserQaInputSchema.safeParse({
       requestedHostId:"host-test", projectCwd:"/tmp/project", url:"file:///etc/passwd", slug:"../unsafe",
       cases:[], envClass:"production", viewports:"375,1280", authorized:false,
-      provider:"jev", backend:"chrome-qa", timeoutSec:900,
+      provider:"codex", backend:"chrome-qa", timeoutSec:900,
     }).success).toBe(false);
   });
 
@@ -34,7 +34,7 @@ describe("browser QA host stage contract", () => {
       await expect(runBrowserQaOnHost({
         requestedHostId:"host-test", projectCwd, url:"http://127.0.0.1:5173/", slug:"lp-qa-test",
         cases:["Удалить тестовую запись"], envClass:"local", viewports:"375,1280", authorized:false,
-        provider:"jev", backend:"chrome-qa", timeoutSec:900,
+        provider:"codex", backend:"chrome-qa", timeoutSec:900,
       })).rejects.toThrow("browser_qa_requires_explicit_authorization_for_target_or_side_effect");
     } finally {
       await rm(projectCwd,{recursive:true,force:true});

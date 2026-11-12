@@ -8,7 +8,7 @@ export const browserQaInputSchema = z.object({
   requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), url:z.string().url(),
   slug:z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/), cases:z.array(z.string().min(1).max(2000)).min(1).max(30),
   envClass:z.enum(["local","staging","preview","production","unknown"]), viewports:z.string().regex(/^\d{2,4}(,\d{2,4}){0,2}$/),
-  authorized:z.boolean(), provider:z.enum(["jev","codex"]), model:z.string().max(120).optional(),
+  authorized:z.boolean(), provider:z.enum(["codex"]), model:z.string().max(120).optional(),
   reasoningEffort:z.enum(["low","medium","high","xhigh","max"]).optional(),
   backend:z.enum(["live-chrome","chrome-qa","headless"]), timeoutSec:z.number().int().min(30).max(1800),
 }).strict();
@@ -16,7 +16,7 @@ export const browserQaInputSchema = z.object({
 export type BrowserQaInput = z.infer<typeof browserQaInputSchema>;
 
 export type BrowserQaResult = {
-  hostId:string; provider:"jev"|"codex"; runner:string; exitCode:number; verdict:"passed"|"failed"|"blocked";
+  hostId:string; provider:"codex"; runner:string; exitCode:number; verdict:"passed"|"failed"|"blocked";
   actualModel:string|null; actualReasoningEffort:string|null; actualBackend:string|null;
   reportPath:string|null; reportSha256:string|null; reportText:string|null;
   artifacts:Array<{path:string; sha256:string; size:number}>; stdout:string; stderr:string; reason:string|null;
@@ -100,7 +100,7 @@ export async function runBrowserQaOnHost(raw:BrowserQaInput):Promise<BrowserQaRe
     if (path === outputDir) throw new Error("browser_qa_slug_already_exists");
     if (!info.isDirectory()) throw new Error("browser_qa_output_parent_not_directory");
   }
-  const runner = input.provider === "jev" ? "browser-qa-jev" : "browser-qa-codex";
+  const runner = "browser-qa-codex";
   const binary = join(homedir(), ".agents", "bin", runner);
   if (!await orMiss(access(binary).then(() => true), false, isFsAbsent)) throw new Error(`browser_qa_runner_unavailable:${runner}`);
   const argv = ["--project-cwd", project, "--url", input.url, "--slug", input.slug,
@@ -128,7 +128,7 @@ export async function runBrowserQaOnHost(raw:BrowserQaInput):Promise<BrowserQaRe
     const rel = relative(rootReal, outputReal);
     if (!rel || rel.startsWith("..") || isAbsolute(rel)) throw new Error("browser_qa_output_escaped_project");
     artifacts = await collectArtifacts(project, outputReal);
-    const receiptName = input.provider === "jev" ? "jev-run.json" : "codex-run.json";
+    const receiptName = "codex-run.json";
     const runnerReceipt = artifacts.find((item) => item.path === `.agents/qa/${input.slug}/${receiptName}`);
     if (runnerReceipt) {
       const rawReceipt:unknown = JSON.parse((await readFile(join(outputReal,receiptName))).toString("utf8"));

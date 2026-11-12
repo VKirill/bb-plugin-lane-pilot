@@ -39,8 +39,9 @@ export function createQaStages(ctx: ServerCore) {
     const routing = freezeRunRouting(db, args.runId, settings);
     const enabled = configuredSetting(settings,"browser_qa.enabled");
     const providerValue = configuredSetting(settings,"browser_qa.provider");
-    const provider = providerValue == null || providerValue === "jev" ? "jev"
-      : providerValue === "codex" ? "codex" : providerValue === "claude" ? "claude" : "unsupported";
+    // Codex is the only runner. A saved `jev` (the removed TypeSafe runner) and an unset value both mean codex.
+    const provider = providerValue == null || providerValue === "jev" || providerValue === "codex" ? "codex"
+      : providerValue === "claude" ? "claude" : "unsupported";
     const modelSetting = configuredSetting(settings,"browser_qa.model");
     const configuredModelValue = typeof modelSetting === "string" ? modelSetting.trim() : "";
     const configuredModel = configuredModelValue && configuredModelValue !== "provider-specific" ? configuredModelValue : undefined;
@@ -121,16 +122,6 @@ export function createQaStages(ctx: ServerCore) {
     if (provider === "claude" && !threadQa) {
       recordStage(db,{...base,state:"blocked",reason:"claude browser QA requires the configured chrome-devtools MCP RPC; no schema-verified RPC is available"});
       return {runId:args.runId,taskId:args.taskId,state:"blocked",reason:"claude browser QA requires the configured chrome-devtools MCP RPC; no schema-verified RPC is available",stages:listStageReceipts(db,args.runId,args.taskId)};
-    }
-    if (provider === "jev" && !threadQa && configuredModel && configuredModel !== "typesafe/jev-1.13") {
-      const reason = "jev_runner_model_is_fixed: choose browser_qa.provider=codex to apply a custom model";
-      recordStage(db,{...base,state:"blocked",reason});
-      return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
-    }
-    if (provider === "jev" && !threadQa && configuredReasoning) {
-      const reason = "jev_runner_does_not_accept_reasoning_effort; clear that setting or select codex";
-      recordStage(db,{...base,state:"blocked",reason});
-      return {runId:args.runId,taskId:args.taskId,state:"blocked",reason,stages:listStageReceipts(db,args.runId,args.taskId)};
     }
     const model = configuredModel;
     let reasoning = configuredReasoning as "low"|"medium"|"high"|"xhigh"|"max"|undefined;
@@ -273,7 +264,7 @@ export function createQaStages(ctx: ServerCore) {
         requestedHostId:qaTarget.hostId, projectCwd:qaTarget.workspacePath, url:args.url,
         slug:`lp-qa-${args.runId.replace(/[^a-z0-9-]/gi,"").slice(-12)}-${args.taskId.replace(/[^a-z0-9-]/gi,"").slice(-12)}-${Date.now()}`.toLowerCase(),
         cases:args.cases, envClass:args.envClass, viewports:args.viewports, authorized:args.authorized,
-        provider:provider as "jev"|"codex", ...(model ? {model} : {}), ...(reasoning ? {reasoningEffort:reasoning} : {}), backend:backend as "live-chrome"|"chrome-qa"|"headless", timeoutSec,
+        provider:"codex" as const, ...(model ? {model} : {}), ...(reasoning ? {reasoningEffort:reasoning} : {}), backend:backend as "live-chrome"|"chrome-qa"|"headless", timeoutSec,
       },{hostId:qaTarget.hostId,timeoutMs:(timeoutSec+30)*1000});
       if (result.hostId !== qaTarget.hostId) throw new Error("browser QA result came from a different host");
       const mismatches = [

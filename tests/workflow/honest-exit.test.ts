@@ -26,7 +26,7 @@ describe("the agent's own outcome", () => {
     expect(names(flow([{ name: "status", type: "enum", values: ["pass", "rework", "block"] }]))).toEqual(["status", "handoff", "outcome", "blocker"]);
   });
 
-  it("the shipped graphs: 24 agent nodes route on a blocked status of their own, every other one gets the engine's outcome", () => {
+  it("the shipped graphs: 25 agent nodes route on a blocked status of their own, every other one gets the engine's outcome", () => {
     let own = 0, engine = 0;
     for (const file of readdirSync(join(__dirname, "../../workflows")).filter((name) => name.endsWith(".json"))) {
       const workflow = parseWorkflow(JSON.parse(readFileSync(join(__dirname, "../../workflows", file), "utf8")));
@@ -35,7 +35,7 @@ describe("the agent's own outcome", () => {
         if ((outputFields(workflow, node) as Array<{ name: string }>).some((field) => field.name === "outcome" && engineOwnsOutcome(node))) engine += 1; else own += 1;
       }
     }
-    expect({ own, engine }).toEqual({ own: 24, engine: 285 });
+    expect({ own, engine }).toEqual({ own: 25, engine: 285 });
   });
 
   it("done, partial and no outcome at all (an executor that builds its output in code) leave the step succeeded", async () => {
