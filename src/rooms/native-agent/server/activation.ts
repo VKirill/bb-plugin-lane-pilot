@@ -67,7 +67,7 @@ export function createActivation(ctx: ServerCore, services: Services) {
     }
   }
 
-  async function activate(projectId: string, sourceThreadId: string | null, kind: "bb"|"cli" = "bb", agentId?: string | null, snapshot?: ComposerSelectionSnapshot): Promise<{threadId:string; runId:string}> {
+  async function activate(projectId: string, sourceThreadId: string | null, kind: "bb"|"cli" = "bb", agentId?: string | null, snapshot?: ComposerSelectionSnapshot, options?: { sectionId?: string | null }): Promise<{threadId:string; runId:string}> {
     if (sourceThreadId) {
       const sourceMetadata = await bb.sdk.threads.getPluginMetadata({ threadId:sourceThreadId });
       if (valueAt(sourceMetadata, "role") === "writer") {
@@ -158,6 +158,8 @@ export function createActivation(ctx: ServerCore, services: Services) {
           ? { type:"host", hostId:config.hostId, workspace:{ type:"managed-worktree", baseBranch:{ kind:"default" } } }
           : { type:"host", hostId:config.hostId, workspace:{ type:"unmanaged", path:config.pmWorkspacePath } })) as never,
         visibility:"visible",
+        // A PM chat opened for another project's handoff lands in the section the caller named.
+        ...(options?.sectionId ? { sectionId: options.sectionId } : {}),
         pluginMetadata:{ role:"pm", lanePilotRunId:runId },
         ...mainAgentBinding,
         ...requiredPolicyField(bb, requireHelperSpawn({ bb, db, projectId, runId }), spawnProviderId),

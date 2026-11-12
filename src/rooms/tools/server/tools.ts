@@ -9,6 +9,7 @@ import { registerBrowserExecutors, runBrowserQaGraph } from "../../qa/server";
 import { cancelAttemptById, cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeEndedAttempt } from "../../runs/server";
 import { bestEffort, LANE_PILOT_READ_NAME } from "@lane-pilot/kit";
 import { taskV2Schema, TASK_KINDS } from "../../contracts";
+import type { ActivationApi } from "../../contracts/agent-ops";
 import { getRun, getRunSettingsScopes, listAttemptsForTask, listEndedTaskIds, listOpenAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig, noteToldPmDirectly, setTaskClosedWords, transitionAttempt } from "../../storage";
 import { FAILED_ATTEMPT_STATES } from "../../contracts";
 import { finalizeNativeLaneBinding, nativeRunReady, ownedNativePmRun, writerWorkspaceForPmInstructions } from "../../native-agent";
@@ -64,6 +65,7 @@ import type { WriterStartApi } from "../../writer/server/start";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  activate: ActivationApi["activate"];
   backlog: BacklogApi;
   stageHelperSettings: StageHelperSettings;
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
@@ -440,7 +442,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
   });
 
   // Modules register their tools after the core ones so the PM tool order follows NATIVE_LP_BRIDGE_TOOLS.
-  mountHandoff(ctx);
+  mountHandoff(ctx, { activate: services.activate });
   mountInsights(ctx, selfRepairDeps());
   mountHealth(ctx, services);
   mountCouncilTools(ctx, services.council, (threadId) => services.phaseIntake.launchRefusal(threadId));

@@ -58,7 +58,7 @@ describe("the PM's folded tool list", () => {
       expect(schema.oneOf, name).toBeUndefined();
       expect(schema.anyOf, name).toBeUndefined();
       expect(schema.properties.action.enum, name).toEqual(
-        name === "lane_pilot_relay" ? ["ask", "reply", "list", "remind"] : Object.keys(family.actions),
+        name === "lane_pilot_relay" ? ["ask", "reply", "list", "handoff", "remind"] : Object.keys(family.actions),
       );
     }
     const helpers = harness.registrations.agentTools.find((row) => row.name === "lane_pilot_helpers")!.inputSchema as Record<string, any>;
