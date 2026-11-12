@@ -97,7 +97,7 @@ A workflow is a JSON file (`workflows/*.json`): inputs, outputs, `requires` (ski
 | `specialist` | One specialist (design-lead, copy-lead, seo-specialist, tavily, video-lead or an owner-created agent) does a task as a child thread of the PM chat. |
 | `agent-routine` | What a schedule of kind `agent` runs: a named agent does its standing task with its own prompt, skills and memory of earlier runs. |
 | `errand` | A non-code job done end to end by one helper: a browser, a mailbox, a cloud console, a deploy with Env Catalog accounts. Accounts are checked first. |
-| `browser-step` | One goal in the owner's signed-in Chrome on the browser machine through jev-ultrafast, then the page it ends on. |
+| `browser-step` | One goal in the owner's signed-in Chrome on the browser machine with agent-desktop (an LLM agent drives it through the accessibility tree), then the page it ends on. |
 | `lp.browser-qa` | The browser check of an accepted task: a verdict per case and viewport. |
 | `lp.route` | The model step of `lane_pilot_route` when Jev cannot decide a request alone. |
 | `council` | A council of directors: a chair, role-bound seats each on its own model, a written decision. |

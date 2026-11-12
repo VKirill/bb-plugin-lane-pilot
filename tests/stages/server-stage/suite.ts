@@ -406,14 +406,14 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
       }
       if (call.method === "runBrowserQa" && typeof browserQaResult === "function") return browserQaResult(call.input);
       if (call.method === "runBrowserQa") return browserQaResult ?? {
-        hostId:call.hostId, provider:"jev", runner:"browser-qa-jev", exitCode:0, verdict:"passed",
-        actualModel:"typesafe/jev-1.13", actualReasoningEffort:null, actualBackend:"chrome-qa",
+        hostId:call.hostId, provider:"codex", runner:"browser-qa-codex", exitCode:0, verdict:"passed",
+        actualModel:"gpt-6-luna", actualReasoningEffort:"medium", actualBackend:"chrome-qa",
         reportPath:".agents/qa/lp-qa-test/REPORT.md", reportSha256:"a".repeat(64),
         reportText:"Total / Passed / Failed / Blocked / Pending: 1 / 1 / 0 / 0 / 0",
         artifacts:[{path:".agents/qa/lp-qa-test/REPORT.md",sha256:"a".repeat(64),size:80},
           {path:".agents/qa/lp-qa-test/shots/TC-001-375.png",sha256:"b".repeat(64),size:32}],
-        stdout:"browser-qa-jev: verdict=passed", stderr:"", reason:null,
-        processPid:4242, runnerPath:"/tmp/browser-qa-jev",
+        stdout:"browser-qa-codex: verdict=passed", stderr:"", reason:null,
+        processPid:4242, runnerPath:"/tmp/browser-qa-codex",
       };
       if (call.method === "runSandboxedCommand") {
         sandboxRequests.push(call.input as Record<string,unknown>);
@@ -449,7 +449,7 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
   setupDb = db;
   savePrototypeConfig(db, emergencySelection ? {...config,pmProviderId:emergencySelection.providerId,pmModel:emergencySelection.model} : config);
   saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
-  for (const [key,value] of Object.entries({"memory.maintain_every":1,"plan_critique.min_score":0,"plan_critique.min_write_tasks":1,"browser_qa.host_id":qaHostId,"browser_qa.workspace_path":"/tmp/lane-pilot-qa","browser_qa.backend":"chrome-qa",...projectSettings})) saveProjectSetting(db,projectId,key,value);
+  for (const [key,value] of Object.entries({"memory.maintain_every":1,"plan_critique.min_score":0,"plan_critique.min_write_tasks":1,"browser_qa.host_id":qaHostId,"browser_qa.workspace_path":"/tmp/lane-pilot-qa","browser_qa.backend":"chrome-qa","browser_qa.provider":"codex","browser_qa.model":"gpt-6-luna",...projectSettings})) saveProjectSetting(db,projectId,key,value);
   createRun(db, "stage-run", projectId, "bb", environmentId ? null : config.writerWorkspacePath,
     projectSettings["run.gate"] === "pre-merge" ? "pre-merge" : "none",buildRunPolicy(projectSettings));
   if (environmentId) setRunWorkspace(db,"stage-run",config.writerWorkspacePath,environmentId);
@@ -1871,7 +1871,7 @@ describe("stage → native writer → receipt", () => {
       envClass:"local", viewports:"375,1280", authorized:false,
     }, { threadId:pmThreadId, projectId })));
     expect(qa.state).toBe("passed");
-    expect(qa.result.actualModel).toBe("typesafe/jev-1.13");
+    expect(qa.result.actualModel).toBe("gpt-6-luna");
     expect(qa.result.configuredHostId).toBe(qaHostId);
     expect(qa.result.writerHostId).toBe(config.hostId);
     expect(qa.result.workspacePath).toBe("/tmp/lane-pilot-qa");
@@ -1899,10 +1899,10 @@ describe("stage → native writer → receipt", () => {
       cases:["Click Run local check and verify status Check complete"], envClass:"local", viewports:"375", authorized:false,
     }, { threadId:pmThreadId, projectId })));
     expect(qa.state).toBe("passed");
-    expect(qa.result).toMatchObject({provider:"jev",runner:"browser-qa-jev",actualBackend:"chrome-qa",verdict:"passed"});
+    expect(qa.result).toMatchObject({provider:"codex",runner:"browser-qa-codex",actualBackend:"chrome-qa",verdict:"passed"});
     const receipt = listStageReceipts(db,"stage-run",task.id).find((row) => row.stageId === "browser-qa");
     expect(receipt?.state).toBe("passed");
-    expect(receipt?.result).toMatchObject({runner:"browser-qa-jev",verdict:"passed",actualBackend:"chrome-qa"});
+    expect(receipt?.result).toMatchObject({runner:"browser-qa-codex",verdict:"passed",actualBackend:"chrome-qa"});
     expect((receipt?.result as {artifacts:Array<{path:string;sha256:string}>}).artifacts)
       .toEqual(expect.arrayContaining([expect.objectContaining({path:expect.stringMatching(/\.agents\/qa\/.+\/shots\/TC-001-375\.png/),sha256:expect.stringMatching(/^[a-f0-9]{64}$/)})]));
     process.stdout.write(`LANE_PILOT_LIVE_BROWSER_STAGE_RECEIPT=${JSON.stringify(receipt)}\n`);
@@ -1910,11 +1910,11 @@ describe("stage → native writer → receipt", () => {
   });
 
   it("blocks browser QA when the selected backend did not run", async () => {
-    const mismatched = { hostId:"host-qa-mini", provider:"jev", runner:"browser-qa-jev", exitCode:0, verdict:"passed",
-      actualModel:"typesafe/jev-1.13", actualReasoningEffort:null, actualBackend:"chrome-qa",
+    const mismatched = { hostId:"host-qa-mini", provider:"codex", runner:"browser-qa-codex", exitCode:0, verdict:"passed",
+      actualModel:"gpt-6-luna", actualReasoningEffort:"medium", actualBackend:"chrome-qa",
       reportPath:".agents/qa/lp-qa-test/REPORT.md", reportSha256:"a".repeat(64),
       reportText:"Total / Passed / Failed / Blocked / Pending: 1 / 1 / 0 / 0 / 0", artifacts:[], stdout:"", stderr:"", reason:null,
-      processPid:1, runnerPath:"/tmp/browser-qa-jev" };
+      processPid:1, runnerPath:"/tmp/browser-qa-codex" };
     const { db, harness } = await setup('{"decision":"approve","summary":"Checked","findings":[]}',mismatched,{"browser_qa.backend":"headless"});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer", {confirm:true,objective:"Проверка диспетча",plan:"Write the fixture", task }, { threadId:pmThreadId, projectId });
     await harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId:"stage-run", timeoutSec:3 }, { threadId:pmThreadId, projectId });
@@ -2056,7 +2056,7 @@ describe("stage → native writer → receipt", () => {
     saveStageReceipt(db, {
       runId:"stage-run", taskId:task.id, stageId:"browser-qa", contractVersion:1, state:"running",
       inputSha256:createHash("sha256").update("stale-qa").digest("hex"), outputSha256:createHash("sha256").update(JSON.stringify(frozen)).digest("hex"),
-      attempt:1, providerId:"browser-qa-jev", model:null, threadId:null, result:frozen, reason:null,
+      attempt:1, providerId:"browser-qa-codex", model:null, threadId:null, result:frozen, reason:null,
       updatedAt:Date.now() - 61_000,
     });
     const qa = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_browser_qa", {

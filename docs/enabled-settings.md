@@ -54,7 +54,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `browser_qa.backend` | `bb-browser` | — | stage Browser QA backend setting |
 | `browser_qa.enabled` | `false` | — | stage Browser QA enabled setting |
 | `browser_qa.model` | — | — | stage Browser QA model setting |
-| `browser_qa.provider` | `jev` | — | stage Browser QA provider setting |
+| `browser_qa.provider` | `codex` | — | stage Browser QA provider setting |
 | `browser_qa.reasoning_effort` | `medium` | — | stage Browser QA effort setting |
 | `checkers.diff_hidden_limit` | `3` | — | checkers: task limit for nightly diff-hidden audit, default 0 |
 | `checks.fail_fast` | `on` | — | verification: order checks by expected fail cost and stop starting new checks after the first non-zero exit |

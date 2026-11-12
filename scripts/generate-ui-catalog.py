@@ -27,7 +27,6 @@ BINARIES_LANE_PILOT_INVOKES = {
     "install.sh",
     "night-shift",
     "browser-qa-codex",
-    "browser-qa-jev",
     "check-owns-paths",
     "gate-report",
     "gate-triage",
@@ -749,7 +748,7 @@ def audit_readonly(row: dict, inv: dict) -> dict:
     if "plan_critique" in setting_l or "plan-critique" in setting_l:
         extra_search.append("bin/plan-critique")
     if "browser_qa" in setting_l or "browser-qa" in setting_l:
-        extra_search += ["bin/browser-qa-codex", "bin/browser-qa-jev"]
+        extra_search += ["bin/browser-qa-codex"]
     if "pm_read" in setting_l:
         extra_search.append("bin/pm_read.py")
     if any(k in setting_l for k in ("workspace", "worktree", "session_max")):
@@ -1134,7 +1133,7 @@ def main() -> None:
             if storage_key == "browser_qa.enabled":
                 options, default_value = ["true", "false"], "false"
             elif storage_key == "browser_qa.provider":
-                options, default_value = ["jev", "codex"], "jev"
+                options, default_value = ["codex"], "codex"
             elif storage_key == "browser_qa.model":
                 options, default_value = [], ""
             elif storage_key == "browser_qa.reasoning_effort":

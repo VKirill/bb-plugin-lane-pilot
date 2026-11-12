@@ -6,7 +6,7 @@ import { runSim } from "./chain-harness";
 
 describe("browser-step", () => {
   it("one goal, then the page it ends on", async () => {
-    const r = await runSim("browser-step", { input: { url: "https://example.com/", goal: "Read the page title", changes: false }, stubs: { goal: { status: "done", hostId: "host_mini", url: "https://example.com/", actions: 1, title: "Example", text: "Example Domain" } } });
+    const r = await runSim("browser-step", { input: { url: "https://example.com/", goal: "Read the page title", changes: false, host: "host_mini" }, stubs: { goal: { status: "done", url: "https://example.com/", actions: 1, title: "Example", text: "Example Domain" } } });
     expect(pathOf(r)).toBe("goal done");
     expect(out(r)).toMatchObject({ status: "done", url: "https://example.com/", actions: 1, text: "Example Domain" });
   });
