@@ -127,17 +127,22 @@ describe("the second opinion (T2)", () => {
 
   it("is skipped when the cap for the day is spent, and a contested message then goes to the extractor", async () => {
     const o = observer({ cfg: { secondOpinionDailyCap: 0 } });
-    expect(await handle(o, "Может быть, стоит писать короче? Не знаю")).toMatchObject({ route: "contested", secondStatus: null, finalRoute: "none" });
+    expect(await handle(o, "Может быть, стоит писать короче? Не знаю")).toMatchObject({ route: "contested", secondStatus: null, finalRoute: "learn" });
+  });
+
+  it("sends a contested message to the extractor when the second opinion is off", async () => {
+    const o = observer({ cfg: { secondOpinion: false } });
+    expect(await handle(o, "Может быть, стоит писать короче? Не знаю")).toMatchObject({ route: "contested", secondStatus: null, finalRoute: "learn" });
   });
 
   it("is sampled for the agreement report, and a disagreement sends the message on", async () => {
     const o = observer({ cfg: { agreeSample: 1 }, second: SECOND_OK(0.9) });
     const row = (await handle(o, "Запусти тесты и покажи результат прогона"))!;
     expect(row).toMatchObject({ route: "none", secondRoute: "learn", finalRoute: "learn" });
-    expect(finalRouteOf("none", "learn", true)).toBe("learn");
-    expect(finalRouteOf("contested", undefined, false)).toBe("none");
-    expect(finalRouteOf("contested", undefined, true)).toBe("learn");
-    expect(finalRouteOf(undefined, undefined, true)).toBeNull();
+    expect(finalRouteOf("none", "learn")).toBe("learn");
+    expect(finalRouteOf("contested", undefined)).toBe("learn");
+    expect(finalRouteOf("none", undefined)).toBe("none");
+    expect(finalRouteOf(undefined, undefined)).toBeNull();
   });
 
   it("never leaves the machine for a sensitive message", async () => {

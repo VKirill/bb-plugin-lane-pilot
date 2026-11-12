@@ -51,15 +51,15 @@ const empty = (message: OwnerMessage, at: number, source: "live" | "catchup", pa
   finalRoute: null, body: null, prev: null, review: null, reviewedAt: null, ...patch,
 });
 
-/** The route the two judges give together; `null` when neither answered. */
-export function finalRouteOf(jev: Route | undefined, second: Route | undefined, secondAskable: boolean): "learn" | "none" | null {
+/** The route the two judges give together; `null` when neither answered. A contested message nobody settled goes to the extractor (an LLM reads it). */
+export function finalRouteOf(jev: Route | undefined, second: Route | undefined): "learn" | "none" | null {
   if (jev && second) {
     if (jev === second) return jev === "learn" ? "learn" : "none";
     if (jev === "contested") return second === "learn" ? "learn" : "none";
     if (second === "contested") return jev === "learn" ? "learn" : "none";
     return "learn"; // one says learn, the other none: the extractor reads it
   }
-  if (jev) return jev === "learn" ? "learn" : jev === "contested" ? (secondAskable ? "learn" : "none") : "none";
+  if (jev) return jev === "none" ? "none" : "learn";
   if (second) return second === "learn" ? "learn" : "none";
   return null;
 }
@@ -108,9 +108,7 @@ export function createObserver(deps: ObserveDeps) {
     let second: SecondOpinion | null = null;
     if (wantSecond && secondBudget) second = await deps.decisions!.ask({ text, prev });
     const secondSignals: MessageSignals | null = second?.ok ? second.signals : null;
-    const secondAskable = !sensitive && config.secondOpinion && deps.decisions !== null && secondBudget && second?.ok !== false;
-
-    const finalRoute = finalRouteOf(jevRoute, second?.ok ? second.route : undefined, secondAskable);
+    const finalRoute = finalRouteOf(jevRoute, second?.ok ? second.route : undefined);
     const learns = finalRoute === "learn" && !sensitive;
     const row = empty(message, at, source, {
       excerpt: sensitive ? null : text.slice(0, EXCERPT_CHARS),
