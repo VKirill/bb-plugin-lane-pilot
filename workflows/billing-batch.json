@@ -43,6 +43,11 @@
       "type": "string",
       "default": "",
       "note": "чат для отчёта"
+    },
+    "send_to_clients": {
+      "type": "bool",
+      "default": false,
+      "note": "после approve предложить отправку счетов клиентам"
     }
   },
   "outputs": {
@@ -50,7 +55,8 @@
     "summary_md": "string",
     "total_amount": "number",
     "invoices_count": "int",
-    "owner_decision": "string"
+    "owner_decision": "string",
+    "proposed_workflow": "string?"
   },
   "requires": {
     "plugins": [
@@ -58,8 +64,7 @@
       "browser-automation"
     ],
     "skills": [
-      "kontur-elba",
-      "browser-automation"
+      "kontur-elba"
     ],
     "machines": [
       "Mac mini host_7sea4qaad8 with signed-in Elba session"
@@ -91,7 +96,7 @@
           "kontur-elba"
         ]
       },
-      "prompt": "Проверь входной список клиентов и услуг ({{$inputs.items}}). Раздел каталога: «Документы и бухгалтерия». Убедись, что для каждой позиции указаны компания или ИНН, сумма и строка услуги. Установи recipient 'me' для безопасной проверки владельцем. Сформируй нормализованный массив batch_items. Если список пуст или некорректен, верни статус blocked. При успехе верни статус done.",
+      "prompt": "Проверь входной список клиентов и услуг ({{$inputs.items}}). Раздел каталога: «Документы и бухгалтерия». Убедись, что для каждой позиции указаны компания или ИНН, сумма и строка услуги. Сохрани переданный recipient для каждой позиции (по умолчанию 'me', если чат клиента не указан); на шаге выставления счетов черновики всё равно уходят владельцу ('me'). Сформируй нормализованный массив batch_items. Если список пуст или некорректен, верни статус blocked. При успехе верни статус done.",
       "out": {
         "ok": "bool",
         "batch_items": "json",
@@ -220,6 +225,28 @@
         "reason": "string",
         "details": "object"
       }
+    },
+    {
+      "id": "offer_dispatch",
+      "type": "parallel",
+      "for_each": "prepare.batch_items",
+      "concurrency": 1,
+      "child": {
+        "type": "action",
+        "action": "lp.propose_workflow",
+        "workflow": "invoice-send",
+        "inputs": {
+          "company": "{{item.company}}",
+          "inn": "{{item.inn}}",
+          "amount": "{{item.amount}}",
+          "service": "{{item.service}}",
+          "recipient": "{{item.recipient}}",
+          "report_chat": "{{$inputs.report_chat}}"
+        }
+      },
+      "join": {
+        "policy": "all"
+      }
     }
   ],
   "edges": [
@@ -260,6 +287,15 @@
       "from": "preview",
       "to": "blocked",
       "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "offer_dispatch",
+      "when": "goal_check.ok != false && $inputs.send_to_clients == true"
+    },
+    {
+      "from": "offer_dispatch",
+      "to": "done"
     },
     {
       "from": "goal_check",

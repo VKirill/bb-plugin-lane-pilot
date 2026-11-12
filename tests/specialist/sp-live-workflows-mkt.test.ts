@@ -34,6 +34,7 @@ const SAMPLE_SUBGRAPH_ORDER = {
   reason_code: "low_message_match",
   action_class: "analysis_propose",
   workflow_id: "mkt-landing-cro-audit",
+  inputs: { landing_url: "https://crm-example.ru/sales-crm" },
   is_stop_or_kill: false,
   requires_owner_go: false,
   tariff_known: true,

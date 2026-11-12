@@ -1,6 +1,7 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { hostMethods, rpcMethods } from "../../contracts";
 import { anamnesisHostMethods, anamnesisRpcMethods } from "../../anamnesis/contract";
+import { passportRpcMethods } from "../../passport";
 import { scheduleRpcContract } from "../../schedule/contract";
 
 // The plugin's wire contracts, assembled inside the composition root (core): the contracts room holds only
@@ -11,6 +12,7 @@ export const rpcContract = defineRpcContract({
   ...scheduleRpcContract,
   ...rpcMethods,
   ...anamnesisRpcMethods,
+  ...passportRpcMethods,
 });
 
 export const hostContract = defineRpcContract({

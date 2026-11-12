@@ -279,12 +279,14 @@
         {
           "kind": "gate-decision",
           "version": 1,
-          "from": "plan-critique-quick"
+          "from": "plan-critique-quick",
+          "required": false
         },
         {
           "kind": "gate-decision",
           "version": 1,
-          "from": "plan-critique"
+          "from": "plan-critique",
+          "required": false
         }
       ],
       "produces": [

@@ -169,7 +169,17 @@ describe("Live E2E: SEO shelf (6/6 graphs) & Service shelf (3/3 graphs)", () => 
     const t = await setupLiveSpecialistEnv({
       baseline: { change_log_path: ".agents/seo/release/changelog.json", cohort: "bofu-2026-11" },
       plan: { plan_path: ".agents/seo/release/plan.json" },
-      redirects: { redirect_map_path: ".agents/seo/release/redirects.json" },
+      redirects: () => {
+        const p = ".agents/seo/release/redirects.json";
+        t.writeCheckoutJson(p, {
+          before: { "https://example.ru/old": { status: 200, canonical: "https://example.ru/old" } },
+          after: {
+            "https://example.ru/old": { status: 301, location: "https://example.ru/vs/comp-a" },
+            "https://example.ru/vs/comp-a": { status: 200, canonical: "https://example.ru/vs/comp-a" },
+          },
+        });
+        return { redirect_map_path: p };
+      },
       staging_qa: { status: "pass", qa_path: ".agents/seo/release/staging-qa.md" },
       publish: { publish_status: "ok" },
       prod_qa: { status: "pass" },

@@ -1,6 +1,7 @@
 ---
 name: mkt-yandex-direct-epk
-description: "Method for Yandex Direct unified performance campaigns (ЕПК, API v501): keyword clusters and cross-negatives, RESPONSIVE_AD headline × text combinatorics pre-mortem, ORD erid marking, autotargeting control, offline conversion goals, strategy choice, the ≤15 % / 120 h learning guard, and the SEO × PPC query bridge. Use when: Яндекс Директ, ЕПК, поисковая кампания, минус-слова, автотаргетинг, стратегия «оплата за конверсии», ОРД, мост SEO × Директ. SKIP: Telegram Ads (mkt-telegram-ads-method); landing conversion audit (mkt-landing-cro); campaign-level A/B statistics (mkt-ab-mde-alerts)."
+description: >-
+  Method for Yandex Direct unified performance campaigns (ЕПК, API v501): keyword clusters and cross-negatives, RESPONSIVE_AD headline × text combinatorics pre-mortem, Ogilvy/Bly/Sugarman ad copy gates, ORD erid marking, autotargeting control, offline conversion goals, strategy choice, the ≤15 % / 120 h learning guard, and the SEO × PPC query bridge. Use when: Яндекс Директ, ЕПК, поисковая кампания, минус-слова, автотаргетинг, стратегия «оплата за конверсии», ОРД, мост SEO × Директ. SKIP: Telegram Ads (mkt-telegram-ads-method); landing conversion audit (mkt-landing-cro); campaign-level A/B statistics (mkt-ab-mde-alerts).
 ---
 
 # Yandex Direct ЕПК
@@ -24,7 +25,10 @@ Any create, edit or budget change is a change set for `owner_go` → `sp.apply_m
 3. **Negatives.** Cross-negatives between groups; terms with spend and 0 conversions over 30 d; competitor addresses.
 4. **Bridge.** `python3 scripts/seo_ppc_bridge.py --input bridge_in.json` → queries where organic is top-3 with CTR ≥ 0.3
    (paid bid down or negative), paid converters missing in SEO (handed to the SEO specialist), shared negatives.
-5. **Ads.** 3–7 headlines × 2–3 texts per group, erid on every ad, price and geo equal to the landing.
+5. **Ads (*Ogilvy + Bly + Sugarman Copy Gate*).** 3–7 headlines (`<=56` chars) × 2–3 texts (`<=81` chars) per group, erid on every ad, price and geo equal to the landing:
+   - *Ogilvy Factual Specificity*: pack headlines with concrete numbers, SLA deadlines, or price floor (`от X ₽`) — zero empty epithets («высокое качество», «лучшие условия»);
+   - *Bly `Feature -> Benefit`*: every text translates technical capability into tangible buyer payoff (hours/money saved or risk removed; split B2B `payer` ROI vs `user` speed);
+   - *Sugarman Curiosity / Slippery-Slide Bridge*: close texts with a concrete low-friction hook (e.g., «Смета по VIN за 5 минут на сайте») matching the landing's first sentence.
 6. **Pre-mortem.** `python3 scripts/epk_combinatorics_lint.py --input ads.json` → every headline × text pair checked for
    tautology, contradiction, length, missing erid; the ad–landing message match runs in `sp.message_match`.
 7. **Change set.** A v501 diff with the daily budget, strategy, goals, rollback; it waits for `owner_go`.

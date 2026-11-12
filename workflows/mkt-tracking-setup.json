@@ -68,12 +68,12 @@
   },
   "requires": {
     "plugins": [
-      "lane-pilot"
+      "lane-pilot",
+      "browser-automation"
     ],
     "skills": [
       "mkt-end-to-end-analytics",
-      "lp-agentic-discipline",
-      "browser-automation"
+      "lp-agentic-discipline"
     ],
     "secrets": [
       "YANDEX_METRIKA_RO_TOKEN?",

@@ -33,6 +33,7 @@ import { writerQuestionSweep, budgetSpentSweep } from "../../writer/server";
 import { runGoalSweep } from "../../run-goal/server";
 import { phaseWordSweep } from "../../phase/server";
 import { scheduleFailureSweep } from "../../schedule/server";
+import { specialistItemSweep, specialistOverview } from "../../specialist/server";
 import { backlogRpc } from "../../backlog/server";
 import { leadRpc } from "../../lead/server";
 import { errandsRpc } from "../../errands/server";
@@ -55,6 +56,7 @@ import { architectStartRpc } from "../../workflow/server";
 import { selfRepairDeps } from "../../self-repair/server";
 import { journalRpcHandlers, timeRpcHandlers } from "./rpc-timing";
 import { anamnesisFor } from "../../anamnesis";
+import { passportRpc } from "../../passport/server";
 import { learningFor } from "../../learning";
 import { worldRpc } from "../../world/server";
 
@@ -146,7 +148,7 @@ interface Services {
 }
 
 /** One handler object from the five groups; each group carries the exact contract keys it implements. */
-const OWNER_ITEM_SWEEPS = [writerQuestionSweep, runGoalSweep, phaseWordSweep, scheduleFailureSweep];
+const OWNER_ITEM_SWEEPS = [writerQuestionSweep, runGoalSweep, phaseWordSweep, scheduleFailureSweep, specialistItemSweep];
 
 /** The sweeps «waiting for the owner» collects over: shared by the RPC read and the five-minute bell (SMA m_ws_notify). */
 export const ownerItemSweeps = (services: Services) => [...OWNER_ITEM_SWEEPS, budgetSpentSweep(services)];
@@ -231,6 +233,8 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
     ...createWorkflowArchitect(ctx, services).rpc,
     ...architectStartRpc(ctx, services),
     ...anamnesisFor(ctx).rpc,
+    ...passportRpc(ctx),
+    specialist_overview: async ({ projectId }: { projectId?: string }) => specialistOverview(ctx.db, projectId),
     ...worldRpc(services.world),
   }, (message) => ctx.bb.log.debug(message)), (name, input) => services.front?.journal(name, input), (message) => ctx.log(message)));
 }

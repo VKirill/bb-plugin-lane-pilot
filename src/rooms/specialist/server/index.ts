@@ -1,6 +1,14 @@
 export { registerSpExecutors } from "./sp-executors";
+export type { SpBacklogPort, SpSchedulePort, SpServicesDeps } from "./sp-dispatch-runner";
+export {
+  type SpecialistOverviewPayload,
+  specialistOverview,
+  specialistSnapshot,
+  specialistItemSweep,
+} from "./sp-overview";
 export {
   type CharterRow,
+  type BreakerRow,
   getCharter,
   upsertCharter,
   acquireTick,
@@ -11,6 +19,10 @@ export {
   advanceCursor,
   listCursors,
   spSweep,
+  getBreakerState,
+  upsertBreakerState,
+  recordSpecialistLedgerUsage,
+  specialistLedgerSummary,
 } from "./sp-store";
 export {
   type LockRow,
@@ -25,6 +37,7 @@ export {
   type ApprovalNonce,
   type StrategyGuardResult,
   type MutationItem,
+  type MutationExecutorFn,
   mintApprovalNonce,
   consumeApprovalNonce,
   checkStrategyGuard,

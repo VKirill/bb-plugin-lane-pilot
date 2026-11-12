@@ -1,21 +1,19 @@
-import { bestEffort, isNotFound, orMiss, stringAt } from "@lane-pilot/kit";
+import { bestEffort, isNotFound, orMiss, sha256Hex, stringAt } from "@lane-pilot/kit";
 import type { GraphNode, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { ChainRuntime, ServerCore } from "../../contracts/server";
+import { postOwnerItem } from "../../owner-waiting";
+import { getPassport, patchPassportHypothesis } from "../../passport";
+import { syncPassportCoreMemory } from "../../passport/server";
+import { renderArtifactsManifestJson, upsertProjectArtifact, writeCasCheckoutFile } from "../../storage";
 import { noteEngineWrite } from "../../verification/server";
 import type { ToolTier } from "../tool-tiers";
 import { registerSpCommitAndDispatchExecutors } from "./sp-commit-dispatch";
-import { listActiveLocks } from "./sp-locks-intents";
+import type { SpServicesDeps } from "./sp-dispatch-runner";
+import { loadSpecialistMemory } from "./sp-memory-loader";
 import { applyMutationsBatch, mintApprovalNonce, type MutationItem } from "./sp-mutation";
-import { loadQuestionBank, triageQuestions } from "./sp-questions";
+import { triageQuestions } from "./sp-questions";
 import { mapScriptOutputToDeclaredFields, runVerifiedSkillScript } from "./sp-script-runner";
-import {
-  acquireTick,
-  getBudgetRemainingUsd,
-  getCharter,
-  listCursors,
-  spSweep,
-  upsertCharter,
-} from "./sp-store";
+import { upsertBreakerState, upsertCharter } from "./sp-store";
 
 type Row = Record<string, unknown>;
 type ActionReg = (key: string, run: (c: StepContext<ChainRuntime>, rt: ChainRuntime) => Promise<Row>) => void;
@@ -104,6 +102,8 @@ async function collectScriptCheckoutFiles(
     args.questions,
     args.dir,
     args.file,
+    args.passport,
+    args.passport_json,
     ...(Array.isArray(args.answers) ? args.answers : args.answers ? [args.answers] : []),
   ];
   for (const cand of candidates) {
@@ -125,98 +125,54 @@ async function writeCheckoutFile(
   content: string,
 ): Promise<string> {
   const cleanRel = relPath.replace(/^\/+/, "");
-  if (!checkout || cleanRel.includes("..")) return cleanRel;
+  if (!checkout || cleanRel.split("/").includes("..")) return cleanRel;
   noteEngineWrite(checkout.path, cleanRel);
-  await ctx.bb.sdk.files.write({
+  const cas = await writeCasCheckoutFile(ctx.bb.sdk.files as never, {
     hostId: checkout.hostId,
     rootPath: checkout.path,
-    path: `${checkout.path}/${cleanRel}`,
+    relPath: cleanRel,
     content,
-    contentEncoding: "utf8",
-    createParents: true,
-    expectedSha256: null,
   });
+  if (!cas.ok) throw new Error(`sp.writeCheckoutFile: CAS conflict on "${cleanRel}" (${cas.outcome})`);
   return cleanRel;
 }
 
 /**
  * Registers all 10 deterministic Specialist OS (`sp.*`) action executors onto a `WorkflowEngine`.
+ * `resolveServices` is evaluated lazily at step execution time so `server.ts` services attached later in startup (`schedules`, `backlog`) are visible.
  */
 export function registerSpExecutors(
-  _engine: WorkflowEngine,
+  engine: WorkflowEngine,
   ctx: ServerCore,
-  deps: { action: ActionReg },
+  deps: { action: ActionReg; resolveServices?: () => SpServicesDeps } & SpServicesDeps,
 ): void {
   const { db } = ctx;
-  const { action } = deps;
+  const { action, resolveServices } = deps;
+  const getSpDeps = (): SpServicesDeps => {
+    const live = resolveServices ? resolveServices() : {};
+    return {
+      ...deps,
+      ...live,
+      engine: live.engine ?? deps.engine ?? engine,
+    };
+  };
 
   action("sp.load_memory", async (c, rt) => {
     const node = c.node as Extract<GraphNode, { type: "action" }>;
     const params = c.template(node.params) as Row;
     const role = asStr(params.role);
     const domain = asDomain(params.domain || (role === "seo-specialist" ? "seo" : "marketing"));
-    spSweep(db);
-
-    const charterRow = getCharter(db, rt.projectId, domain);
-    const activeLocks = listActiveLocks(db, rt.projectId, domain);
-    const cursors = listCursors(db, rt.projectId, domain);
-    const budgetLeft = getBudgetRemainingUsd(db, rt.projectId, domain);
-
-    let leaseOk = true;
-    let tickId = `tick_${c.runId.slice(0, 12)}`;
-    if (params.acquireTick === true) {
-      const slot = asStr(params.slot, new Date().toISOString().slice(0, 13));
-      const scopeId = asStr(params.scopeId, "default");
-      const lease = acquireTick(db, { projectId: rt.projectId, domain, scopeId, slotKey: slot, holderRunId: c.runId });
-      leaseOk = lease.ok;
-      tickId = lease.tickId;
-    }
-
-    const rightsRows = db.prepare("SELECT * FROM lane_pilot_sp_autonomy WHERE project_id = ? AND domain = ?").all(rt.projectId, domain);
-    const bankStats = loadQuestionBank().stats;
-    const recentCommits = db
-      .prepare("SELECT summary_json FROM lane_pilot_sp_memory_commit WHERE project_id = ? AND domain = ? ORDER BY created_at DESC LIMIT 5")
-      .all(rt.projectId, domain) as Array<{ summary_json: string }>;
-
-    const baseOut: Row = {
-      has_charter: Boolean(charterRow),
-      lease_ok: leaseOk,
-      over_llm_budget: budgetLeft <= 0,
-      cold_start: !charterRow,
-      tick_id: tickId,
-      charter_json: charterRow?.charter_json ?? "{}",
-      budget_left_usd: budgetLeft,
-      api_budget_left: budgetLeft,
-      active_locks_json: JSON.stringify(activeLocks),
-      cursors_json: JSON.stringify(cursors),
-      open_assumptions_json: "[]",
-      recent_hypotheses_json: JSON.stringify(recentCommits.map((r) => parseJsonSafe(r.summary_json, {}))),
-      duplicate_of_refuted: false,
-      shared_negatives_json: "[]",
-      brandcore_json: "{}",
-      pools_history_json: "[]",
-      telemetry_map_json: "{}",
-      previous_panel_path: `.agents/${domain}/memory/panel-latest.json`,
-      bank_stats_json: JSON.stringify(bankStats),
-      atoms_index_path: `.agents/${domain}/memory/atoms-index.json`,
-      rights_json: JSON.stringify(rightsRows),
-      matured_forecasts: 20,
-      snapshots_index_path: `.agents/${domain}/memory/snapshots-index.json`,
-    };
-    const out: Row = {};
-    for (const f of node.out) {
-      out[f.name] =
-        baseOut[f.name] !== undefined
-          ? baseOut[f.name]
-          : f.type === "boolean"
-            ? false
-            : f.type === "number"
-              ? 0
-              : f.type === "array"
-                ? []
-                : "";
-    }
-    return out;
+    const checkout = await resolveCheckout(ctx, rt);
+    return await loadSpecialistMemory({
+      ctx,
+      projectId: rt.projectId,
+      runId: c.runId,
+      domain,
+      params,
+      outFields: node.out,
+      checkout,
+      readCheckoutFileText,
+    });
   });
 
   action("sp.run_script", async (c, rt) => {
@@ -227,12 +183,36 @@ export function registerSpExecutors(
     const args = (params.args && typeof params.args === "object" ? params.args : {}) as Row;
     const timeoutSec = typeof node.timeoutSec === "number" ? node.timeoutSec : typeof params.timeoutSec === "number" ? params.timeoutSec : 90;
     const checkout = await resolveCheckout(ctx, rt);
-    const domain = skill.startsWith("seo-") ? "seo" : "marketing";
+    const domain = skill === "project-discovery-grill" ? "passport" : skill.startsWith("seo-") ? "seo" : "marketing";
     const checkoutFiles = await collectScriptCheckoutFiles(ctx, checkout, args);
+    const spDeps = getSpDeps();
 
-    const res = await runVerifiedSkillScript({ skill, script, args, timeoutSec, checkoutFiles });
+    const res = await runVerifiedSkillScript({
+      skill,
+      script,
+      args,
+      timeoutSec,
+      mode: String(c.mode) === "sim" ? "sim" : "live",
+      ...(spDeps.allowScriptFixtureFallback !== undefined ? { allowFixtureFallback: spDeps.allowScriptFixtureFallback } : {}),
+      checkoutFiles,
+    });
     const reportRel = `.agents/${domain}/reports/${c.workflow.id}-${node.id}.json`;
-    await writeCheckoutFile(ctx, checkout, reportRel, JSON.stringify(res.raw, null, 2));
+    const reportText = JSON.stringify(res.raw, null, 2);
+    await writeCheckoutFile(ctx, checkout, reportRel, reportText);
+    if (checkout && rt.projectId) {
+      upsertProjectArtifact(db, {
+        projectId: rt.projectId,
+        artifactId: `${domain}.report.${c.workflow.id}.${node.id}`,
+        domain,
+        kind: "script_report",
+        relPath: reportRel,
+        sha256: sha256Hex(reportText),
+        summary: `${skill}/${script} report`,
+        producerWf: c.workflow.id,
+        producerRunId: c.runId,
+      });
+      await writeCheckoutFile(ctx, checkout, ".agents/manifest.json", renderArtifactsManifestJson(db, rt.projectId));
+    }
     return mapScriptOutputToDeclaredFields(script, res.raw, node.out, reportRel);
   });
 
@@ -278,17 +258,18 @@ export function registerSpExecutors(
     }
 
     const fired = triggerCodes.length > 0;
-    const now = Date.now();
-    db.prepare(
-      `INSERT INTO lane_pilot_sp_breaker
-        (project_id, domain, breaker_key, state, trigger_codes_json, failure_count, opened_at, cooldown_until, updated_at)
-       VALUES (?, ?, 'primary', ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(project_id, domain, breaker_key) DO UPDATE SET
-        state = excluded.state,
-        trigger_codes_json = excluded.trigger_codes_json,
-        opened_at = excluded.opened_at,
-        updated_at = excluded.updated_at`,
-    ).run(rt.projectId, domain, fired ? "open" : "closed", JSON.stringify(triggerCodes), fired ? triggerCodes.length : 0, fired ? now : null, fired ? now + 3_600_000 : null, now);
+    const row = upsertBreakerState(db, { projectId: rt.projectId, domain, fired, triggerCodes });
+    if (fired) {
+      postOwnerItem(db, {
+        key: `sp:breaker:${rt.projectId}:${domain}`,
+        source: "specialist",
+        kind: "question",
+        projectId: rt.projectId,
+        what: `Сработал предохранитель (${domain}): ${triggerCodes.join(", ")}`,
+        why: `failure_count=${row.failure_count}, новые мутации заблокированы до проверки владельцем`,
+        wake: true,
+      });
+    }
 
     const stopPlan = fired ? [{ entity_id: `${domain}_active_spend`, mutation_kind: "emergency_pause", exempt_auto_cutoff: true }] : [];
     return {
@@ -306,13 +287,77 @@ export function registerSpExecutors(
     const charterObj = parseJsonSafe<Row>(params.charter, { domain, goal: "growth" });
     const approvedBy = asStr(params.approvedBy, "owner");
     const saved = upsertCharter(db, { projectId: rt.projectId, domain, charter: charterObj, approvedBy });
+
+    if (rt.projectId) {
+      let touchedPassport = false;
+      const guardrails = (charterObj.guardrails && typeof charterObj.guardrails === "object" ? charterObj.guardrails : {}) as Row;
+      const ownerApproved = Boolean(approvedBy && approvedBy !== "draft");
+      const maxCac = guardrails.max_cac ?? charterObj.max_cac ?? charterObj.max_cac_usd ?? charterObj.max_cac_eur;
+      if (maxCac !== undefined && String(maxCac).trim() !== "") {
+        patchPassportHypothesis(db, {
+          projectId: rt.projectId,
+          fieldPath: "economics_funnel.max_cac",
+          nextStatus: ownerApproved ? "confirmed" : "hypothesis",
+          value: String(maxCac),
+          evidenceRef: `sp.charter_set:${domain}:v${saved.version}`,
+          allowOverrideConfirmed: ownerApproved,
+        });
+        touchedPassport = true;
+      }
+      const matDays = guardrails.maturity_window_days ?? charterObj.maturity_window_days;
+      if (typeof matDays === "number" && matDays > 0) {
+        patchPassportHypothesis(db, {
+          projectId: rt.projectId,
+          fieldPath: "economics_funnel.maturity_window_days",
+          nextStatus: ownerApproved ? "confirmed" : "hypothesis",
+          value: matDays,
+          evidenceRef: `sp.charter_set:${domain}:v${saved.version}`,
+          allowOverrideConfirmed: ownerApproved,
+        });
+        touchedPassport = true;
+      }
+      const countriesRaw = Array.isArray(charterObj.primary_countries)
+        ? charterObj.primary_countries
+        : Array.isArray(charterObj.markets)
+          ? charterObj.markets
+          : [];
+      if (countriesRaw.length > 0) {
+        patchPassportHypothesis(db, {
+          projectId: rt.projectId,
+          fieldPath: "market_rails.primary_countries",
+          nextStatus: ownerApproved ? "confirmed" : "hypothesis",
+          value: countriesRaw.map((country) => String(country).toUpperCase()),
+          evidenceRef: `sp.charter_set:${domain}:v${saved.version}`,
+          allowOverrideConfirmed: ownerApproved,
+        });
+        touchedPassport = true;
+      }
+      if (touchedPassport) {
+        const latest = getPassport(db, rt.projectId);
+        if (latest) syncPassportCoreMemory(db, rt.projectId, latest.passport);
+      }
+    }
+
     const checkout = await resolveCheckout(ctx, rt);
-    await writeCheckoutFile(
-      ctx,
-      checkout,
-      `.agents/${domain}/charter.json`,
-      JSON.stringify({ ...charterObj, _version: saved.version, _sha256: saved.sha256 }, null, 2),
-    );
+    const charterRel = `.agents/${domain}/charter.json`;
+    const charterText = JSON.stringify({ ...charterObj, _version: saved.version, _sha256: saved.sha256 }, null, 2);
+    await writeCheckoutFile(ctx, checkout, charterRel, charterText);
+    if (rt.projectId) {
+      upsertProjectArtifact(db, {
+        projectId: rt.projectId,
+        artifactId: `${domain}.charter`,
+        domain,
+        kind: "charter_json",
+        relPath: charterRel,
+        sha256: sha256Hex(charterText),
+        summary: `${domain} charter v${saved.version}`,
+        producerWf: c.workflow.id,
+        producerRunId: c.runId,
+      });
+      if (checkout) {
+        await writeCheckoutFile(ctx, checkout, ".agents/manifest.json", renderArtifactsManifestJson(db, rt.projectId));
+      }
+    }
     return { version: saved.version, sha256: saved.sha256 };
   });
 
@@ -327,11 +372,14 @@ export function registerSpExecutors(
       threshold,
     };
     const checkoutFiles = await collectScriptCheckoutFiles(ctx, checkout, mmArgs);
+    const spDeps = getSpDeps();
     const res = await runVerifiedSkillScript({
       skill: "mkt-landing-cro",
       script: "message_match.py",
       args: mmArgs,
       timeoutSec: 60,
+      mode: String(c.mode) === "sim" ? "sim" : "live",
+      ...(spDeps.allowScriptFixtureFallback !== undefined ? { allowFixtureFallback: spDeps.allowScriptFixtureFallback } : {}),
       checkoutFiles,
     });
     const reportRel = `.agents/marketing/reports/${c.workflow.id}-${node.id}.json`;
@@ -366,6 +414,7 @@ export function registerSpExecutors(
       }
     }
 
+    const spDeps = getSpDeps();
     const emergencyAuthorised = tier === "S" && asStr(params.authorisation) === "charter.emergency_actions";
     const sg = (params.strategyGuard && typeof params.strategyGuard === "object" ? params.strategyGuard : {}) as Row;
     const batchRes = applyMutationsBatch(db, {
@@ -377,19 +426,65 @@ export function registerSpExecutors(
       emergencyAuthorised,
       ...(typeof sg.max_step === "number" ? { maxStep: sg.max_step } : {}),
       ...(typeof sg.min_hours_between_edits === "number" ? { minHoursBetweenEdits: sg.min_hours_between_edits } : {}),
+      ...(spDeps.executeMutation ? { executeMutation: spDeps.executeMutation } : {}),
       runId: c.runId,
     });
 
     const checkout = await resolveCheckout(ctx, rt);
     const receiptRel = `.agents/${domain}/receipts/${c.workflow.id}-${node.id}.json`;
-    await writeCheckoutFile(ctx, checkout, receiptRel, JSON.stringify(batchRes, null, 2));
+    const receiptText = JSON.stringify(batchRes, null, 2);
+    await writeCheckoutFile(ctx, checkout, receiptRel, receiptText);
+
+    if (batchRes.mode === "staged_manual" && batchRes.staged > 0) {
+      const manualRel = `.agents/${domain}/manual-mutations/${c.runId}-${node.id}.json`;
+      const manualText = JSON.stringify({ workflow: c.workflow.id, runId: c.runId, domain, tier, items, mutationIds: batchRes.mutationIds }, null, 2);
+      await writeCheckoutFile(ctx, checkout, manualRel, manualText);
+      if (checkout && rt.projectId) {
+        upsertProjectArtifact(db, {
+          projectId: rt.projectId,
+          artifactId: `${domain}.manual_mutation.${c.runId}.${node.id}`,
+          domain,
+          kind: "manual_mutation_plan",
+          relPath: manualRel,
+          sha256: sha256Hex(manualText),
+          summary: `Staged manual mutations (${batchRes.staged} item(s))`,
+          producerWf: c.workflow.id,
+          producerRunId: c.runId,
+        });
+        await writeCheckoutFile(ctx, checkout, ".agents/manifest.json", renderArtifactsManifestJson(db, rt.projectId));
+      }
+      postOwnerItem(db, {
+        key: `sp:mut:${c.runId}:${node.id}`,
+        source: "specialist",
+        kind: "question",
+        projectId: rt.projectId,
+        what: `План мутаций (${domain}, tier=${tier}) подготовлен вручную (${batchRes.staged} шт.)`,
+        why: `Прямой внешний адаптер не подключён; проверьте и примените план из ${manualRel}`,
+        wake: tier === "S",
+      });
+    }
+
     return {
       applied: batchRes.applied,
+      staged: batchRes.staged,
       failed: batchRes.failed,
+      mode: batchRes.mode,
       receipt_path: receiptRel,
       mutation_ids: batchRes.mutationIds,
     };
   });
 
-  registerSpCommitAndDispatchExecutors(ctx, { action, resolveCheckout, writeCheckoutFile });
+  const proxyDeps: SpServicesDeps = new Proxy({} as SpServicesDeps, {
+    get(_target, prop: keyof SpServicesDeps) {
+      return getSpDeps()[prop];
+    },
+  });
+
+  registerSpCommitAndDispatchExecutors(ctx, {
+    action,
+    spDeps: proxyDeps,
+    resolveCheckout,
+    readCheckoutFileText,
+    writeCheckoutFile,
+  });
 }

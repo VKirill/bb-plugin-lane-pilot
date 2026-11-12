@@ -126,14 +126,26 @@ export function completeTick(
   input: { projectId: string; domain: string; scopeId?: string; tickId: string; markSlotCompleted?: boolean; nowMs?: number },
 ): void {
   const now = input.nowMs ?? Date.now();
-  const scopeId = input.scopeId || "default";
+  const markCompleted = (input.markSlotCompleted ?? true) ? 1 : 0;
+  const explicitScope = typeof input.scopeId === "string" && input.scopeId.trim() ? input.scopeId.trim() : null;
+  if (explicitScope) {
+    db.prepare(
+      `UPDATE lane_pilot_sp_tick_lease
+       SET expires_at = ?,
+           last_completed_slot = CASE WHEN ? = 1 THEN slot_key ELSE last_completed_slot END
+       WHERE project_id = ? AND domain = ? AND scope_id = ? AND tick_id = ?`,
+    ).run(now, markCompleted, input.projectId, input.domain, explicitScope, input.tickId);
+    return;
+  }
   db.prepare(
     `UPDATE lane_pilot_sp_tick_lease
      SET expires_at = ?,
          last_completed_slot = CASE WHEN ? = 1 THEN slot_key ELSE last_completed_slot END
-     WHERE project_id = ? AND domain = ? AND scope_id = ? AND tick_id = ?`,
-  ).run(now, input.markSlotCompleted ? 1 : 0, input.projectId, input.domain, scopeId, input.tickId);
+     WHERE project_id = ? AND domain = ? AND tick_id = ?`,
+  ).run(now, markCompleted, input.projectId, input.domain, input.tickId);
 }
+
+const MONETARY_ONLY_SQL = "AND COALESCE(reason, '') NOT LIKE 'api_units:%'";
 
 export function reserveBudget(
   db: LanePilotDatabase,
@@ -145,9 +157,10 @@ export function reserveBudget(
     isAuto: boolean;
     runId?: string;
     reason?: string;
+    reuseExistingReason?: boolean;
     nowMs?: number;
   },
-): { ok: boolean; ledgerId?: string; remainingDailyUsd: number; reason?: string } {
+): { ok: boolean; ledgerId?: string; remainingDailyUsd: number; reused?: boolean; reason?: string } {
   const now = input.nowMs ?? Date.now();
   const dayUtc = new Date(now).toISOString().slice(0, 10);
   const policy = loadSpPolicy();
@@ -164,17 +177,40 @@ export function reserveBudget(
     const daySpent =
       (
         db
-          .prepare("SELECT COALESCE(SUM(amount_usd), 0) AS s FROM lane_pilot_sp_ledger WHERE project_id = ? AND day_utc = ? AND mode IN ('reserved','settled')")
-          .get(input.projectId, dayUtc) as { s: number }
+          .prepare(
+            `SELECT COALESCE(SUM(amount_usd), 0) AS s FROM lane_pilot_sp_ledger
+             WHERE project_id = ? AND domain = ? AND day_utc = ? AND mode IN ('reserved','settled') ${MONETARY_ONLY_SQL}`,
+          )
+          .get(input.projectId, input.domain, dayUtc) as { s: number }
       ).s ?? 0;
+
+    if (input.reuseExistingReason && input.reason) {
+      const existing = db
+        .prepare(
+          "SELECT id FROM lane_pilot_sp_ledger WHERE project_id = ? AND domain = ? AND reason = ? AND mode = 'reserved' LIMIT 1",
+        )
+        .get(input.projectId, input.domain, input.reason) as { id: string } | undefined;
+      if (existing) {
+        return {
+          ok: true,
+          ledgerId: existing.id,
+          reused: true,
+          remainingDailyUsd: Number(Math.max(0, dailyCap - daySpent).toFixed(4)),
+        };
+      }
+    }
+
     if (daySpent + input.amountUsd > dailyCap + 1e-9) {
       return { ok: false, remainingDailyUsd: Math.max(0, dailyCap - daySpent), reason: "daily_cap_exceeded" };
     }
     const cellSpent =
       (
         db
-          .prepare("SELECT COALESCE(SUM(amount_usd), 0) AS s FROM lane_pilot_sp_ledger WHERE project_id = ? AND cell_key = ? AND day_utc = ? AND mode IN ('reserved','settled')")
-          .get(input.projectId, input.cellKey, dayUtc) as { s: number }
+          .prepare(
+            `SELECT COALESCE(SUM(amount_usd), 0) AS s FROM lane_pilot_sp_ledger
+             WHERE project_id = ? AND domain = ? AND cell_key = ? AND day_utc = ? AND mode IN ('reserved','settled') ${MONETARY_ONLY_SQL}`,
+          )
+          .get(input.projectId, input.domain, input.cellKey, dayUtc) as { s: number }
       ).s ?? 0;
     if (cellSpent + input.amountUsd > cellCap + 1e-9) {
       return { ok: false, remainingDailyUsd: Math.max(0, dailyCap - daySpent), reason: "cell_cap_exceeded" };
@@ -183,19 +219,27 @@ export function reserveBudget(
       const rollingSpent =
         (
           db
-            .prepare("SELECT COALESCE(SUM(amount_usd), 0) AS s FROM lane_pilot_sp_ledger WHERE project_id = ? AND is_auto = 1 AND created_at >= ? AND mode IN ('reserved','settled')")
-            .get(input.projectId, now - 86_400_000) as { s: number }
+            .prepare(
+              `SELECT COALESCE(SUM(amount_usd), 0) AS s FROM lane_pilot_sp_ledger
+               WHERE project_id = ? AND domain = ? AND is_auto = 1 AND created_at >= ? AND mode IN ('reserved','settled') ${MONETARY_ONLY_SQL}`,
+            )
+            .get(input.projectId, input.domain, now - 86_400_000) as { s: number }
         ).s ?? 0;
       if (rollingSpent + input.amountUsd > auto24hCap + 1e-9) {
         return { ok: false, remainingDailyUsd: Math.max(0, dailyCap - daySpent), reason: "rolling_24h_auto_cap_exceeded" };
       }
     }
-    const activeCells = db
-      .prepare("SELECT DISTINCT cell_key FROM lane_pilot_sp_ledger WHERE project_id = ? AND day_utc = ? AND mode = 'reserved'")
-      .all(input.projectId, dayUtc) as Array<{ cell_key: string }>;
-    const cellSet = new Set(activeCells.map((r) => r.cell_key));
-    if (!cellSet.has(input.cellKey) && cellSet.size >= maxActiveCells) {
-      return { ok: false, remainingDailyUsd: Math.max(0, dailyCap - daySpent), reason: "max_concurrent_cells_exceeded" };
+    if (input.amountUsd > 0) {
+      const activeCells = db
+        .prepare(
+          `SELECT DISTINCT cell_key FROM lane_pilot_sp_ledger
+           WHERE project_id = ? AND domain = ? AND day_utc = ? AND mode = 'reserved' AND amount_usd > 0 ${MONETARY_ONLY_SQL}`,
+        )
+        .all(input.projectId, input.domain, dayUtc) as Array<{ cell_key: string }>;
+      const cellSet = new Set(activeCells.map((r) => r.cell_key));
+      if (!cellSet.has(input.cellKey) && cellSet.size >= maxActiveCells) {
+        return { ok: false, remainingDailyUsd: Math.max(0, dailyCap - daySpent), reason: "max_concurrent_cells_exceeded" };
+      }
     }
     const ledgerId = `led_${randomUUID()}`;
     db.prepare(
@@ -224,8 +268,11 @@ export function getBudgetRemainingUsd(db: LanePilotDatabase, projectId: string, 
   const spent =
     (
       db
-        .prepare("SELECT COALESCE(SUM(amount_usd), 0) AS s FROM lane_pilot_sp_ledger WHERE project_id = ? AND day_utc = ? AND mode IN ('reserved','settled')")
-        .get(projectId, dayUtc) as { s: number }
+        .prepare(
+          `SELECT COALESCE(SUM(amount_usd), 0) AS s FROM lane_pilot_sp_ledger
+           WHERE project_id = ? AND domain = ? AND day_utc = ? AND mode IN ('reserved','settled') ${MONETARY_ONLY_SQL}`,
+        )
+        .get(projectId, domain, dayUtc) as { s: number }
     ).s ?? 0;
   return Number(Math.max(0, dailyCap - spent).toFixed(4));
 }
@@ -277,4 +324,170 @@ export function spSweep(db: LanePilotDatabase, nowMs = Date.now()): { expiredLoc
     .prepare("DELETE FROM lane_pilot_sp_nonce WHERE expires_at <= ? AND consumed_at IS NULL")
     .run(nowMs - 86_400_000).changes;
   return { expiredLocks: locks, purgedNonces: nonces };
+}
+
+export interface BreakerRow {
+  project_id: string;
+  domain: string;
+  breaker_key: string;
+  state: "closed" | "open" | "half_open";
+  trigger_codes_json: string;
+  failure_count: number;
+  opened_at: number | null;
+  cooldown_until: number | null;
+  updated_at: number;
+}
+
+export function getBreakerState(
+  db: LanePilotDatabase,
+  projectId: string,
+  domain: string,
+  breakerKey = "primary",
+): BreakerRow | null {
+  const row = db
+    .prepare("SELECT * FROM lane_pilot_sp_breaker WHERE project_id = ? AND domain = ? AND breaker_key = ?")
+    .get(projectId, domain, breakerKey) as BreakerRow | undefined;
+  return row ?? null;
+}
+
+/**
+ * Upserts circuit breaker state (`G-23`): updates `cooldown_until` & `failure_count` on conflict,
+ * and preserves `opened_at` while the breaker remains open across repeated trips.
+ */
+export function upsertBreakerState(
+  db: LanePilotDatabase,
+  input: {
+    projectId: string;
+    domain: string;
+    breakerKey?: string;
+    fired: boolean;
+    triggerCodes: string[];
+    cooldownMs?: number;
+    nowMs?: number;
+  },
+): BreakerRow {
+  const now = input.nowMs ?? Date.now();
+  const key = input.breakerKey ?? "primary";
+  const cooldownMs = input.cooldownMs ?? 3_600_000;
+  const prior = getBreakerState(db, input.projectId, input.domain, key);
+  const nextState: "open" | "closed" = input.fired ? "open" : "closed";
+  const nextFailures = input.fired ? (prior?.failure_count ?? 0) + Math.max(1, input.triggerCodes.length) : 0;
+  const nextOpenedAt = input.fired ? (prior?.state === "open" && prior.opened_at ? prior.opened_at : now) : null;
+  const nextCooldownUntil = input.fired ? now + cooldownMs : null;
+
+  db.prepare(
+    `INSERT INTO lane_pilot_sp_breaker
+      (project_id, domain, breaker_key, state, trigger_codes_json, failure_count, opened_at, cooldown_until, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(project_id, domain, breaker_key) DO UPDATE SET
+      state = excluded.state,
+      trigger_codes_json = excluded.trigger_codes_json,
+      failure_count = excluded.failure_count,
+      opened_at = excluded.opened_at,
+      cooldown_until = excluded.cooldown_until,
+      updated_at = excluded.updated_at`,
+  ).run(
+    input.projectId,
+    input.domain,
+    key,
+    nextState,
+    JSON.stringify(input.triggerCodes),
+    nextFailures,
+    nextOpenedAt,
+    nextCooldownUntil,
+    now,
+  );
+  return getBreakerState(db, input.projectId, input.domain, key)!;
+}
+
+export function recordSpecialistLedgerUsage(
+  db: LanePilotDatabase,
+  input: {
+    projectId: string;
+    domain: string;
+    kind: "llm_usd" | "api_units";
+    amountUsd: number;
+    cellKey?: string | null;
+    runId?: string | null;
+    reason: string;
+    nowMs?: number;
+  },
+): string | null {
+  if (!Number.isFinite(input.amountUsd) || input.amountUsd <= 0) return null;
+  const now = input.nowMs ?? Date.now();
+  const ledgerId = `led_${randomUUID()}`;
+  const dayUtc = new Date(now).toISOString().slice(0, 10);
+  const taggedReason = input.reason.startsWith(`${input.kind}:`) ? input.reason : `${input.kind}:${input.reason}`;
+  db.prepare(
+    `INSERT INTO lane_pilot_sp_ledger
+      (id, project_id, domain, cell_key, day_utc, mode, is_auto, amount_usd, run_id, reason, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 'settled', 0, ?, ?, ?, ?, ?)`,
+  ).run(
+    ledgerId,
+    input.projectId,
+    input.domain,
+    input.cellKey || `${input.domain}:usage`,
+    dayUtc,
+    Number(input.amountUsd.toFixed(6)),
+    input.runId ?? null,
+    taggedReason,
+    now,
+    now,
+  );
+  return ledgerId;
+}
+
+export function specialistLedgerSummary(
+  db: LanePilotDatabase,
+  nowMs = Date.now(),
+  projectId?: string,
+): {
+  spend24hUsd: number;
+  spend30dUsd: number;
+  llm30dUsd: number;
+  apiUnits30d: number;
+  byDomain: Record<string, number>;
+} {
+  const since24h = nowMs - 86_400_000;
+  const since30d = nowMs - 30 * 86_400_000;
+  const projClause = projectId ? "AND project_id = ?" : "";
+  const args24 = projectId ? [since24h, projectId] : [since24h];
+  const args30 = projectId ? [since30d, projectId] : [since30d];
+
+  const row24 = db
+    .prepare(
+      `SELECT COALESCE(SUM(amount_usd), 0) AS s
+         FROM lane_pilot_sp_ledger
+        WHERE mode IN ('reserved','settled') AND COALESCE(reason, '') NOT LIKE 'api_units:%' AND created_at >= ? ${projClause}`,
+    )
+    .get(...args24) as { s: number };
+
+  const rows30 = db
+    .prepare(
+      `SELECT domain, COALESCE(reason, '') AS reason, amount_usd
+         FROM lane_pilot_sp_ledger
+        WHERE mode IN ('reserved','settled') AND created_at >= ? ${projClause}`,
+    )
+    .all(...args30) as Array<{ domain: string; reason: string; amount_usd: number }>;
+
+  let spend30dUsd = 0;
+  let llm30dUsd = 0;
+  let apiUnits30d = 0;
+  const byDomain: Record<string, number> = {};
+  for (const r of rows30) {
+    if (r.reason.startsWith("api_units:")) {
+      apiUnits30d += r.amount_usd;
+    } else {
+      spend30dUsd += r.amount_usd;
+      if (r.reason.startsWith("llm_usd:")) llm30dUsd += r.amount_usd;
+      byDomain[r.domain] = Number(((byDomain[r.domain] ?? 0) + r.amount_usd).toFixed(4));
+    }
+  }
+  return {
+    spend24hUsd: Number((row24?.s ?? 0).toFixed(4)),
+    spend30dUsd: Number(spend30dUsd.toFixed(4)),
+    llm30dUsd: Number(llm30dUsd.toFixed(4)),
+    apiUnits30d: Number(apiUnits30d.toFixed(4)),
+    byDomain,
+  };
 }

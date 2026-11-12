@@ -379,10 +379,12 @@
         "receipt_path": "",
         "launch_status": "skipped"
       },
+      "plugins": [
+        "browser-automation"
+      ],
       "profile": {
         "skills": [
-          "telegram-ads",
-          "browser-automation"
+          "telegram-ads"
         ]
       },
       "produces": [

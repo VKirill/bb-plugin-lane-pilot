@@ -82,7 +82,8 @@
         {
           "kind": "analysis",
           "version": 1,
-          "from": "assess"
+          "from": "assess",
+          "required": false
         }
       ],
       "produces": [

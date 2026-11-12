@@ -1,6 +1,7 @@
 ---
 name: seo-ai-visibility
-description: "Measure whether a brand and its pages are shown and cited inside AI answers (Alice AI, Google AI Overviews, ChatGPT, Perplexity): a question panel, paid SERP/AI collection under a budget, a citation matrix against competitors, 19 Agent Ready checks (llms.txt, SSR, schema, bot access) and a ranked diagnosis with orders. Use when: AI visibility, нейровыдача, цитирование в AI-ответах, Алиса AI, AIO, GEO/AEO аудит, llms.txt, «позиции стоят, а клики падают из-за AI-блока». SKIP: traffic drop after a core update (seo-update-forensics); full crawl/indexation audit (seo-tech-audit-kit); building third-party mentions (seo-linkbuilding-method)."
+description: >-
+  Measure whether a brand and its pages are shown and cited inside AI answers (Alice AI, Google AI Overviews, ChatGPT, Perplexity): a question panel, paid SERP/AI collection under a budget, a citation matrix against competitors, 19 Agent Ready checks (llms.txt, SSR, schema, bot access) and a ranked diagnosis with orders. Use when: AI visibility, нейровыдача, цитирование в AI-ответах, Алиса AI, AIO, GEO/AEO аудит, llms.txt, «позиции стоят, а клики падают из-за AI-блока». SKIP: traffic drop after a core update (seo-update-forensics); full crawl/indexation audit (seo-tech-audit-kit); building third-party mentions (seo-linkbuilding-method).
 ---
 
 # SEO AI visibility (GEO / AEO)
@@ -28,7 +29,7 @@ The method behind the `seo-ai-visibility` workflow. You measure, you do not rewr
 5. **Agent Ready.** `python3 scripts/agent_ready_audit.py --input site_snapshot.json --strict` (or `--url` read-only GET):
    19 checks — llms.txt, robots for AI bots, SSR text parity, JSON-LD validity, canonical, speed of the first byte.
 6. **Diagnose.** `python3 scripts/ai_vis_diagnose.py --input scored.json --top 10` → ranked tasks with the evidence row each.
-   Turn them into orders: blocker → `code_task`; missing fact blocks → `seo-page-refresh`; sources the answers trust → `seo-mentions`.
+   Turn them into orders: blocker → `code_task`; missing fact blocks / hub-spoke links → `seo-page-refresh`; sources the answers trust → `seo-mentions`.
 
 ## Deterministic gates
 
@@ -65,10 +66,12 @@ Every script prints one JSON object; a non-zero exit carries a JSON error. Run `
 - `references/technical-geo-agent-ready.md` — llms.txt, JS rendering, schema, share of voice in AI answers.
 - `references/external-citations-serm.md` — third-party sources the answers rely on, adversarial defence.
 - `references/agent-readiness-signals.md` — content signals that make a page citable.
+- `references/06-internal-linking-and-geo-rag-evidence.md` — contextual hub-spoke internal linking (Book 1 Ch.9) and GEO/RAG passage extractability, EAV clarity, and epistemic limits (Book 2 Ch.6).
 
 ## Never
 
-- Never report a visibility change from one collection run.
+- Never report a visibility change from one collection run or promise deterministic LLM rank scores.
+- Never treat leaked warehouse names (`Goldmine`, `siteRadius`) as exposed public metrics.
 - Never call a paid collector without `--go` **and** a ledger reservation.
 - Never rewrite a page from this skill; order it.
 - Never quote a competitor's or a course's text longer than 25 words.

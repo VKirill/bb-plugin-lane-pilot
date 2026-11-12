@@ -27,6 +27,7 @@ import { configuredSetting } from "../../contracts/server";
 
 import type { ServerCore } from "../../contracts/server";
 import { councilOwnerForm, ownerLocale } from "../../relay/server";
+import { projectPassportBlock } from "../../passport";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 ;
 import { councilDecisionText, sendCouncilNotice } from "./pm-notice";
@@ -172,6 +173,8 @@ export function mountCouncilGraph(ctx: ServerCore, services: Services, council: 
       const body = await readBounded(place, path, MATERIAL_CHARS);
       parts.push(body ? `## Material: ${path}\n${body}` : `## Material: ${path}\n(unreadable)`);
     }
+    const passport = projectPassportBlock(db, { projectId: session.projectId, role: "council", maxChars: 1800 });
+    if (passport) parts.unshift(passport);
     const memory = councilMemoryBlock(db, session.projectId, session.question, getRunSettingsScopes(db, session.runId));
     if (memory) parts.push(memory);
     const pack = parts.length ? parts.join("\n\n") : "(no project files or materials could be read; say so and reason from the question alone)";

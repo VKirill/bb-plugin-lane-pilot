@@ -1,8 +1,8 @@
 ---
 title: "Entity trust, experience and local proof"
-status: draft
+status: active
 owner: drmax-books-finish
-target_skill: seo-entity-trust
+target_skill: seo-trust-eeat
 source_pages: "Доказательное SEO 2026, book 1 ch.11–14 pp.144–187; ch.17 pp.209–215"
 tags: [seo, engineering-reference, synthesized, private]
 ---
@@ -30,4 +30,4 @@ Produce a trust-defect register with the unsupported statement, affected pages, 
 
 ## Source and integration
 
-Source: Доказательное SEO 2026, book 1 ch.11–14 pp.144–187; ch.17 pp.209–215. Resolve physical PDF page N to `/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/raw_pages/page_NNN.txt`. Cross-check the named procedures in [the registry](/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/procedures-registry.json). This reference is ready for review and placement in `seo-entity-trust`; no skill installation or live changes were performed.
+Source: Доказательное SEO 2026, book 1 ch.11–14 pp.144–187; ch.17 pp.209–215. Resolve physical PDF page N to `/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/raw_pages/page_NNN.txt`. Cross-check the named procedures in [the registry](/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/procedures-registry.json). Active reference installed in `seo-trust-eeat`.

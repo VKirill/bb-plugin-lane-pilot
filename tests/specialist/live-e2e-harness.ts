@@ -77,6 +77,8 @@ export async function setupLiveSpecialistEnv(
   const spawned: Row[] = [];
   const writes: Array<{ path: string; content: string }> = [];
   const dispatchedWriters: Row[] = [];
+  const savedSchedules: Row[] = [];
+  const backlogScans: string[] = [];
   let seq = 0;
 
   const findLoweredAgentNode = (workflowId: string, nodeId: string): Extract<GraphNode, { type: "agent" }> | null => {
@@ -198,6 +200,30 @@ export async function setupLiveSpecialistEnv(
   registerChainExecutors(engine, ctx, services, createWorkflowAgents());
   registerDispatchExecutors(engine, ctx.bb);
 
+  // Mirror server.ts initialization order: schedules and backlog attach AFTER registerChainExecutors!
+  (services as unknown as Record<string, unknown>).workflowEngine = engine;
+  (services as unknown as Record<string, unknown>).workflowCatalog = {
+    resolve: (id: string, ver?: number) => store.resolve(id, ver),
+  };
+  (services as unknown as Record<string, unknown>).schedules = {
+    save: vi.fn(async (raw: Row) => {
+      const id = `sched_${savedSchedules.length + 1}`;
+      savedSchedules.push({ id, ...raw });
+      return { ok: true, schedule: { id } };
+    }),
+  };
+  (services as unknown as Record<string, unknown>).backlog = {
+    scan: vi.fn(async (pid?: string | number) => {
+      backlogScans.push(typeof pid === "string" ? pid : PROJECT);
+      return { ok: true };
+    }),
+  };
+  (services as unknown as Record<string, unknown>).executeMutation = vi.fn((item: Row) => ({
+    ok: true,
+    externalReceipt: { adapter: "e2e_mock", entityId: item.entity_id ?? "entity" },
+  }));
+  (services as unknown as Record<string, unknown>).allowScriptFixtureFallback = true;
+
   const rt: ChainRuntime = { ctx, services, pmThreadId: PM, projectId: PROJECT, runId: RUN };
 
   const runWorkflowLive = async (workflowId: string, inputs: Row = {}) => {
@@ -212,7 +238,10 @@ export async function setupLiveSpecialistEnv(
         answeredForms.add(item.id);
         const payload = (item.payload ?? {}) as { options?: Array<{ id: string; label: string }> };
         const opts = payload.options ?? [];
-        const matchedKey = Object.keys(humanChoices).find((k) => item.id.includes(k) || String(item.title ?? "").includes(k));
+        const payloadStr = JSON.stringify(item.payload ?? {});
+        const matchedKey = Object.keys(humanChoices).find(
+          (k) => item.id.includes(k) || String(item.title ?? "").includes(k) || payloadStr.includes(k),
+        );
         const spec = (matchedKey ? humanChoices[matchedKey] : humanChoices["*"]) ?? {};
         if (opts.length > 0) {
           const byLabel = spec.choice ? opts.find((o) => o.label === spec.choice || o.id === spec.choice) : opts[0];
@@ -260,6 +289,11 @@ export async function setupLiveSpecialistEnv(
     spawned,
     writes,
     dispatchedWriters,
+    savedSchedules,
+    backlogScans,
+    ctx,
+    services,
+    rt,
     runWorkflowLive,
     writeCheckoutJson,
     dispose: () => harness.lifecycle.dispose(),

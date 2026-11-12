@@ -122,8 +122,9 @@ import cleanup from "../../../workflows/cleanup.json";
 import newMilestone from "../../../workflows/new-milestone.json";
 import planReviewConvergence from "../../../workflows/plan-review-convergence.json";
 import projectStart from "../../../workflows/project-start.json";
+import projectPassport from "../../../workflows/project-passport.json";
 import type { Workflow } from "@lane-pilot/workflow-engine";
-import { parseWorkflow } from "@lane-pilot/workflow-engine";
+import { parseWorkflow, validateWorkflow, WorkflowError } from "@lane-pilot/workflow-engine";
 import { gateVocabularyLines } from "../contracts";
 
 /** The planner's instructions with the gate vocabulary: the plan's acceptance items are judged by those words (tasks/gate-vocabulary.ts). */
@@ -258,20 +259,25 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "new-milestone.json", value: newMilestone },
   { name: "plan-review-convergence.json", value: planReviewConvergence },
   { name: "project-start.json", value: projectStart },
+  { name: "project-passport.json", value: projectPassport },
 ];
 
 export { LP_TASK_PIPELINE, AFTER_ACCEPT, DOCS_NIGHT, DOCS_MAINTENANCE, SELF_REPAIR, ROUTE_WORKFLOW, ANALYZE_PLAN_EXECUTE } from "../contracts";
 
 const parsed = new Map<string, Workflow>();
-// A fragment is parsed before the chains that call it, so the files are loaded in rounds until every reference resolves.
-let pending = BUILTIN_SOURCES.map((source) => source.value);
-for (let round = 0; pending.length && round < 5; round += 1) {
-  const failed: unknown[] = [];
-  for (const value of pending) {
-    try { const workflow = parseWorkflow(value, { resolve: (id) => parsed.get(id) ?? null }); parsed.set(workflow.id, workflow); }
-    catch (cause) { if (round === 4) throw cause; failed.push(value); }
-  }
-  pending = failed;
+// Pass 1: parse every built-in workflow structure without cross-workflow lookup.
+for (const source of BUILTIN_SOURCES) {
+  const workflow = parseWorkflow(source.value);
+  parsed.set(workflow.id, workflow);
+}
+// Pass 2: validate subworkflows, output fields, and lp.propose_workflow bridges against the complete set.
+const resolveBuiltin = (id: string, version?: number): Workflow | null => {
+  const found = parsed.get(id) ?? null;
+  return found && (version === undefined || found.version === version) ? found : null;
+};
+for (const workflow of parsed.values()) {
+  const errs = validateWorkflow(workflow, { resolve: resolveBuiltin }).filter((problem) => problem.level === "error");
+  if (errs.length) throw new WorkflowError(errs);
 }
 
 const order = BUILTIN_SOURCES.map((source) => (source.value as { id: string }).id);

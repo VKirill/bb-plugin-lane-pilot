@@ -161,7 +161,8 @@
         {
           "kind": "report",
           "version": 1,
-          "from": "verify_cause"
+          "from": "verify_cause",
+          "required": false
         }
       ],
       "produces": [

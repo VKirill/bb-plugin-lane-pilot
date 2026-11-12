@@ -116,3 +116,64 @@ export function recordMemoryAccepted(db: MemoryDatabase, projectId: string, ids:
   const update = db.prepare("UPDATE lane_pilot_memory SET accepted_count=accepted_count+1 WHERE project_id=? AND id=?");
   for (const id of new Set(ids)) update.run(projectId, id);
 }
+
+export interface MemoryReceiptRow {
+  id: string;
+  project_id: string;
+  role: string;
+  returned_ids: string[];
+  packed_ids: string[];
+  tokens: number;
+  created_at: number;
+}
+
+/** Reads recent retrieval receipts (`lane_pilot_memory_receipt`) for telemetry and diagnostics. */
+export function listMemoryReceipts(db: MemoryDatabase, projectId?: string, limit = 50): MemoryReceiptRow[] {
+  const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+  const rows = (
+    projectId
+      ? db
+          .prepare(
+            "SELECT id, project_id, role, returned_ids, packed_ids, tokens, created_at FROM lane_pilot_memory_receipt WHERE project_id = ? ORDER BY created_at DESC LIMIT ?",
+          )
+          .all(projectId, safeLimit)
+      : db
+          .prepare(
+            "SELECT id, project_id, role, returned_ids, packed_ids, tokens, created_at FROM lane_pilot_memory_receipt ORDER BY created_at DESC LIMIT ?",
+          )
+          .all(safeLimit)
+  ) as Array<{
+    id: string;
+    project_id: string;
+    role: string;
+    returned_ids: string;
+    packed_ids: string;
+    tokens: number;
+    created_at: number;
+  }>;
+  return rows.map((r) => {
+    let returned: string[] = [];
+    let packed: string[] = [];
+    try {
+      const p = JSON.parse(r.returned_ids);
+      if (Array.isArray(p)) returned = p.map(String);
+    } catch {
+      // ignore malformed historical row
+    }
+    try {
+      const p = JSON.parse(r.packed_ids);
+      if (Array.isArray(p)) packed = p.map(String);
+    } catch {
+      // ignore malformed historical row
+    }
+    return {
+      id: r.id,
+      project_id: r.project_id,
+      role: r.role,
+      returned_ids: returned,
+      packed_ids: packed,
+      tokens: r.tokens,
+      created_at: r.created_at,
+    };
+  });
+}

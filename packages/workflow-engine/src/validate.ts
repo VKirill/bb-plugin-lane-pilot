@@ -475,7 +475,27 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
       }
     }
     if (node.type === "subworkflow") {
-      const given = new Set([...Object.keys(node.inputs), ...Object.keys(node.with ?? {})]);
+      const mergedInputs: Record<string, unknown> = { ...node.inputs, ...(node.with ?? {}) };
+      const given = new Set(Object.keys(mergedInputs));
+      const checkNoBareWithRefs = (val: unknown, pathLabel: string): void => {
+        if (typeof val === "string") {
+          const trimmed = val.trim();
+          if (/^\$[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)*$/.test(trimmed)) {
+            error("subworkflow_input", `${node.id}: ${pathLabel} passes bare "${trimmed}" without "{{...}}" template braces`, extra);
+          }
+          return;
+        }
+        if (Array.isArray(val)) {
+          val.forEach((item, idx) => checkNoBareWithRefs(item, `${pathLabel}[${idx}]`));
+          return;
+        }
+        if (isRecord(val)) {
+          for (const [k, v] of Object.entries(val)) {
+            checkNoBareWithRefs(v, `${pathLabel}.${k}`);
+          }
+        }
+      };
+      if (node.with) checkNoBareWithRefs(node.with, "with");
       const child = options.resolve?.(node.workflow, node.version);
       if (options.resolve && !child) error("subworkflow_missing", `${node.id}: workflow "${node.workflow}" was not found`, extra);
       if (child) {
@@ -487,6 +507,30 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
           const there = child.outputs.find((candidate) => candidate.name === field.name);
           const fits = there && (there.type === field.type || field.type === "json" || there.type === "json" || (field.type === "string" && there.type === "enum"));
           if (!fits) error("subworkflow_output", `${node.id}: "${child.id}" declares no output "${field.name}" of type ${field.type}`, extra);
+        }
+      }
+    }
+    if (node.type === "action" && (node.action === "lp.propose_workflow" || node.uses === "lp.propose_workflow") && options.resolve) {
+      const targetId = typeof node.params.workflow === "string" ? node.params.workflow.trim() : "";
+      if (!targetId) {
+        error("propose_workflow_missing", `${node.id}: lp.propose_workflow requires a target "workflow" id`, extra);
+      } else if (!targetId.includes("{{")) {
+        const target = options.resolve(targetId);
+        if (!target) {
+          error("propose_workflow_missing", `${node.id}: proposed workflow "${targetId}" was not found`, extra);
+        } else {
+          const rawInputs = isRecord(node.params.inputs) ? node.params.inputs : {};
+          const given = new Set(Object.keys(rawInputs));
+          for (const field of target.inputs) {
+            if (field.required && field.default === undefined && !given.has(field.name) && field.name !== "quality_mode") {
+              warn("propose_workflow_input", `${node.id}: required input "${field.name}" of proposed workflow "${target.id}" is not mapped`, extra);
+            }
+          }
+          for (const name of given) {
+            if (!target.inputs.some((field) => field.name === name)) {
+              warn("propose_workflow_input", `${node.id}: proposed workflow "${target.id}" has no input "${name}"`, extra);
+            }
+          }
         }
       }
     }

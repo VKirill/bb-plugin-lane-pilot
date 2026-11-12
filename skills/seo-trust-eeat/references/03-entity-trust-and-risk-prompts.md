@@ -1,8 +1,8 @@
 ---
 title: "Prompting for E-E-A-T, entity trust and claim risk"
-status: draft
+status: active
 owner: drmax-books-finish
-target_skill: seo-entity-trust
+target_skill: seo-trust-eeat
 source_pages: "modules 17–19 pp.126–137; module 25 pp.158–161; validation pp.180–182"
 tags: [seo, prompt-architecture, synthesized, private]
 ---
@@ -34,4 +34,4 @@ Citation readiness means clear attributable facts and accessible sources. It doe
 
 ## Sources and placement
 
-Source: DrMax, Промптоведение для SEO-стратегов 2026 v1.5, modules 17–19 pp.126–137; module 25 pp.158–161; validation pp.180–182. Physical page N maps to `/home/ubuntu/specialist-curriculum/_distilled/drmax-promptovedenie-2026/raw_pages/page_NNN.txt`. Use [the catalog](/home/ubuntu/specialist-curriculum/_distilled/drmax-promptovedenie-2026/prompts-catalog.json) for actual file provenance, variants and required inputs. Ready for review and placement in `seo-entity-trust`; no skills were installed.
+Source: DrMax, Промптоведение для SEO-стратегов 2026 v1.5, modules 17–19 pp.126–137; module 25 pp.158–161; validation pp.180–182. Physical page N maps to `/home/ubuntu/specialist-curriculum/_distilled/drmax-promptovedenie-2026/raw_pages/page_NNN.txt`. Use [the catalog](/home/ubuntu/specialist-curriculum/_distilled/drmax-promptovedenie-2026/prompts-catalog.json) for actual file provenance, variants and required inputs. Active reference installed in `seo-trust-eeat`.

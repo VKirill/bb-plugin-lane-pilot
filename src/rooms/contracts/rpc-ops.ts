@@ -444,4 +444,6 @@ export const rpcOps = {
   lead_set_enabled: { input: z.object({ on: z.boolean() }).strict(), output: z.unknown() },
   /** «Открыть чат Штурмана»: a chat thread with the lead profile active in its home project; a live one is returned instead of a second (`reused`). */
   lead_chat_start: { input: z.object({ sectionId: z.string().min(1).optional() }).strict(), output: z.object({ threadId: z.string(), projectId: z.string(), reused: z.boolean() }).strict() },
+  /** Specialist OS (src/rooms/specialist): project or hub snapshot of active intents, locks, questions, evals, PDAS artifacts and ledger spend. */
+  specialist_overview: { input: z.object({ projectId: z.string().min(1).max(200).optional() }).strict(), output: z.unknown() },
 };

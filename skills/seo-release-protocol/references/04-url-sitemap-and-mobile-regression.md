@@ -1,8 +1,8 @@
 ---
 title: "URL, sitemap and mobile release invariants"
-status: draft
+status: active
 owner: drmax-books-finish
-target_skill: seo-tech-diagnostics
+target_skill: seo-release-protocol
 source_pages: "Доказательное SEO 2026, book 1 ch.3–5 pp.36–88; ch.15 pp.188–200"
 tags: [seo, engineering-reference, synthesized, private]
 ---
@@ -34,4 +34,4 @@ The matrix contains explicit expected results and sample receipts; important rou
 
 ## Source and integration
 
-Source: Доказательное SEO 2026, book 1 ch.3–5 pp.36–88; ch.15 pp.188–200. Resolve physical PDF page N to `/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/raw_pages/page_NNN.txt`. Cross-check the named procedures in [the registry](/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/procedures-registry.json). This reference is ready for review and placement in `seo-tech-diagnostics`; no skill installation or live changes were performed.
+Source: Доказательное SEO 2026, book 1 ch.3–5 pp.36–88; ch.15 pp.188–200. Resolve physical PDF page N to `/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/raw_pages/page_NNN.txt`. Cross-check the named procedures in [the registry](/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/procedures-registry.json). Active reference installed in `seo-release-protocol`.

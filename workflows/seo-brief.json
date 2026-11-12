@@ -75,7 +75,8 @@
       "alphaxiv",
       "drmax-brandcore",
       "seo-page-templates",
-      "seo-evidence-contract"
+      "seo-evidence-contract",
+      "mkt-organic-content"
     ],
     "secrets": [
       "TAVILY_API_KEY"
@@ -152,14 +153,15 @@
       "profile": {
         "skills": [
           "gist-content-logic",
-          "topical-graph-architect"
+          "topical-graph-architect",
+          "mkt-organic-content"
         ]
       },
       "title": {
         "en": "GIST core",
         "ru": "Ядро GIST"
       },
-      "prompt": "GIST content logic: the user job, the minimum core, block roles, the decision map and the missing decision nodes; score each block's value and split what a competitor could replicate; escalate structural conflicts to TGA notes. Return core_path, job and decision_nodes.",
+      "prompt": "GIST content logic: check .agents/seo/ppc-bridge-latest.json and .agents/marketing/campaigns/direct-*/bridge.json (if present) for paid-proven converting queries lacking top-5 organic rank, plus .agents/research/INDEX.md for prior dossiers. Map the user job, the minimum core, block roles, Minto Answer-First + MECE section hierarchy, the decision map and the missing decision nodes; score each block's value and split what a competitor could replicate; escalate structural conflicts to TGA notes. Return core_path, job and decision_nodes.",
       "out": {
         "core_path": "string",
         "job": "string",

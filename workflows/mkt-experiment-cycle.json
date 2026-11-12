@@ -41,9 +41,9 @@
       "description": "if we change X for audience Y, metric Z moves by at least N"
     },
     "channel": {
-      "type": "tg_ads|yandex_direct|landing|bot_flow|email",
+      "type": "tg_ads|yandex_direct|landing|bot_flow|email|dzen|pinterest|reels_organic",
       "default": "tg_ads",
-      "description": "where the test runs: Telegram Ads, Yandex Direct, a landing variant, the bot flow or email"
+      "description": "where the test runs: Telegram Ads, Yandex Direct, a landing variant, the bot flow, email, or organic content channels (Dzen, Pinterest, Reels)"
     },
     "phase": {
       "type": "design|evaluate",
@@ -75,7 +75,8 @@
     "skills": [
       "mkt-ab-mde-alerts",
       "lp-agentic-discipline",
-      "mkt-end-to-end-analytics"
+      "mkt-end-to-end-analytics",
+      "mkt-organic-content"
     ],
     "secrets": [
       "YANDEX_METRIKA_RO_TOKEN?",
@@ -226,7 +227,8 @@
         "skills": [
           "mkt-ab-mde-alerts",
           "lp-agentic-discipline",
-          "mkt-end-to-end-analytics"
+          "mkt-end-to-end-analytics",
+          "mkt-organic-content"
         ]
       },
       "produces": [

@@ -164,7 +164,8 @@
         "extra_rules": [
           "every task: acceptance includes 'all tests that passed in the baseline still pass'",
           "no behavior change; useful side ideas go to recommendations, not into tasks",
-          "scope is locked after approval; one task per module boundary"
+          "scope is locked after approval; one task per module boundary",
+          "preserve or deepen module interfaces (Ousterhout: hide internal representation, eliminate shallow pass-through wrappers)"
         ]
       },
       "guards": {

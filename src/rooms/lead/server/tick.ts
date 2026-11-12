@@ -11,12 +11,14 @@ import { writerQuestionSweep, budgetSpentSweep } from "../../writer/server";
 import { runGoalSweep } from "../../run-goal/server";
 import { phaseWordSweep } from "../../phase/server";
 import { scheduleFailureSweep } from "../../schedule/server";
+import { specialistItemSweep, specialistSnapshot } from "../../specialist/server";
 import { errandStem, errandTitle, routeConfidence } from "../../errands";
 import { WORKFLOW_ARCHITECT_ID } from "../../contracts/server";
 import { ARCHITECT_LAUNCH } from "../../native-agent";
 import { listPhases } from "../../phase";
 import { loadProjectSettings, type LanePilotDatabase } from "../../storage";
 import { taskMemoryContext } from "../../memory/server";
+import { projectPassportBlock } from "../../passport";
 import { examAll } from "../logic";
 import { parseLeadSettings, type LeadSettings } from "../settings";
 import { identityBlock, loadIdentity } from "./identity";
@@ -37,7 +39,7 @@ import { errandEpisodeColumns, listErrandEpisodeFacts, listErrandEpisodeTraces, 
 import { listGraphlessErrandRows, wfRunUsage } from "@lane-pilot/workflow-engine";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
-const OWNER_ITEM_SWEEPS = [writerQuestionSweep, runGoalSweep, phaseWordSweep, scheduleFailureSweep];
+const OWNER_ITEM_SWEEPS = [writerQuestionSweep, runGoalSweep, phaseWordSweep, scheduleFailureSweep, specialistItemSweep];
 
 interface Services {
   phaseIntake: PhaseIntake;
@@ -366,6 +368,7 @@ export type HubSnapshot = {
   waiting: Array<{ key: string; source: string; kind: string; projectId: string | null; what: string }>;
   lastTicks: Array<{ id: string; startedAt: number; status: string; proposed: number; acted: number; costUsd: number }>;
   graphless: GraphlessRow[];
+  specialists?: ReturnType<typeof specialistSnapshot>;
 };
 
 /** Every project of the hub; a host without the call (a test harness, an old core) is an empty hub, not a failed tick. */
@@ -398,7 +401,8 @@ export async function hubSnapshot(ctx: Pick<ServerCore, "db" | "bb">, settings: 
     const tasks30d = countProjectTasksSince(db, project.id, since30);
     const accepted30d = countAcceptedForProject(db, project.id, since30);
     const livePhases = listPhases(db, { projectId: project.id, live: true, limit: 5 }).map((phase) => ({ id: phase.id, title: clip(phase.title, 120), stage: phase.stage }));
-    const memory = clip(taskMemoryContext(db, project.id, null, "what the project should do next; open problems; the owner's priorities"), 1_500);
+    const passport = projectPassportBlock(db, { projectId: project.id, role: "lead", maxChars: 900 });
+    const memory = clip([passport, taskMemoryContext(db, project.id, null, "what the project should do next; open problems; the owner's priorities")].filter(Boolean).join("\n\n"), 1_800);
     return { id: project.id, name: project.name, priority: rankOf(project.id), runs, tasks30d, accepted30d, livePhases, memory };
   });
   // The tree and the open proposals are read within the zone too: a branch of a project outside it is not the lead's business this tick (Astra F-010).
@@ -423,7 +427,7 @@ export async function hubSnapshot(ctx: Pick<ServerCore, "db" | "bb">, settings: 
     projects, omitted, zone: settings.projects.length ? [...zoneIds] : null, road: { counts: roadCounts(db), open },
     proposalsOpen: waiting.filter((item) => item.source === "lead" && item.kind === "proposal" && (item.projectId === null || zoneIds.has(item.projectId))).length,
     rights: rightsView(db).map((row) => ({ class: row.class, tier: row.tier })), exam: examAll(examRows(db)), waiting, lastTicks,
-    graphless,
+    graphless, specialists: specialistSnapshot(db, undefined, now),
   };
 }
 
@@ -450,7 +454,7 @@ export function tickBrief(snapshot: HubSnapshot, identityText: string): string {
         "The owner's order of projects is projects[].priority (1 = first; null = unranked, listed after the ranked): rank the proposals by it, and a branch of a lower-ranked project needs stronger evidence to take a place from a higher one. The map of the projects (names, runs, phases, memory) is the hub's data above, not the identity file: do not expect it there.",
       ].join("\n"),
     ],
-    data: [{ tag: "hub_state", text: JSON.stringify({ projects: snapshot.projects, road: snapshot.road, proposalsOpen: snapshot.proposalsOpen, rights: snapshot.rights, exam: snapshot.exam, waiting: snapshot.waiting, lastTicks: snapshot.lastTicks, graphless: snapshot.graphless }, null, 1) }],
+    data: [{ tag: "hub_state", text: JSON.stringify({ projects: snapshot.projects, road: snapshot.road, proposalsOpen: snapshot.proposalsOpen, rights: snapshot.rights, exam: snapshot.exam, waiting: snapshot.waiting, lastTicks: snapshot.lastTicks, graphless: snapshot.graphless, specialists: snapshot.specialists }, null, 1) }],
     restate: `update the road tree, pick at most ${settings.maxProposals} proposals for the owner, and answer with the tick JSON`,
   });
   checkBrief("lead", brief.text, { instructionsLength: brief.instructionsLength });

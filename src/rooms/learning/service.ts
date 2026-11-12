@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { anamnesisFor } from "../anamnesis";
+import { projectPassportBlock } from "../passport";
 import { TURN_REQUESTED, type EventLike, type OwnerMessage } from "../anamnesis";
 import { getRunSettingsScopes, loadProjectSettings } from "../storage";
 import { ownerWordsOn } from "../tasks";
@@ -290,10 +291,11 @@ export function mountLearning(ctx: ServerCore, services: Services): Learning | n
         const runId = openRunIdForPmThread(db, threadId);
         if (!runId) return null;
         const rules = pmResumeInstructions(db, projectId, getRunSettingsScopes(db, runId), `pm:${runId}`);
+        const passport = projectPassportBlock(db, { projectId, role: "pm", maxChars: 1400 });
         // The orchestrator answers knowing its live board and the open phase's rubric, not stale recollection (SMA m_cf_prompt):
         // the run's task snapshot (id + state, capped, then a count) and the phase's stage and rubric join the rules.
         const board = pmBoardBlock(db, runId);
-        return rules || board ? [rules, board].filter(Boolean).join("\n\n") : null;
+        return rules || passport || board ? [rules, passport, board].filter(Boolean).join("\n\n") : null;
       });
     } catch (cause) { bb.log.info(`Lane Pilot learning cannot contribute instructions: ${cause instanceof Error ? cause.message : String(cause)}`); }
 

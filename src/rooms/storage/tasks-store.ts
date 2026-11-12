@@ -316,3 +316,43 @@ export function openProjectTaskOwnsRows(db: LanePilotDatabase, projectId: string
         IN (${OPEN_ATTEMPT_STATES.map(() => "?").join(",")})`)
     .all(projectId, ...OPEN_ATTEMPT_STATES) as Array<{ task_id: string; run_id: string; contract_json: string }>;
 }
+
+/** Reads recorded task-row transitions (`lane_pilot_task_transition`), scoped to a run (or all runs when `runId` is empty) and optional `taskId`. */
+export function listTaskTransitions(
+  db: LanePilotDatabase,
+  runId?: string | null,
+  taskId?: string | null,
+  limit = 100,
+): Array<{ task_id: string; field: string; reason: string | null; at: number }> {
+  const cap = Math.max(1, Math.min(500, limit));
+  if (runId && taskId) {
+    return db
+      .prepare(
+        `SELECT tr.task_id, tr.field, tr.reason, tr.at
+         FROM lane_pilot_task_transition tr
+         JOIN lane_pilot_task t ON t.id = tr.task_id
+         WHERE t.run_id = ? AND tr.task_id = ?
+         ORDER BY tr.at DESC LIMIT ?`,
+      )
+      .all(runId, taskId, cap) as Array<{ task_id: string; field: string; reason: string | null; at: number }>;
+  }
+  if (runId) {
+    return db
+      .prepare(
+        `SELECT tr.task_id, tr.field, tr.reason, tr.at
+         FROM lane_pilot_task_transition tr
+         JOIN lane_pilot_task t ON t.id = tr.task_id
+         WHERE t.run_id = ?
+         ORDER BY tr.at DESC LIMIT ?`,
+      )
+      .all(runId, cap) as Array<{ task_id: string; field: string; reason: string | null; at: number }>;
+  }
+  if (taskId) {
+    return db
+      .prepare("SELECT task_id, field, reason, at FROM lane_pilot_task_transition WHERE task_id = ? ORDER BY at DESC LIMIT ?")
+      .all(taskId, cap) as Array<{ task_id: string; field: string; reason: string | null; at: number }>;
+  }
+  return db
+    .prepare("SELECT task_id, field, reason, at FROM lane_pilot_task_transition ORDER BY at DESC LIMIT ?")
+    .all(cap) as Array<{ task_id: string; field: string; reason: string | null; at: number }>;
+}

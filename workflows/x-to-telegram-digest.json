@@ -118,7 +118,7 @@
   "nodes": [
     {
       "id": "collect",
-      "consumes": [{"kind": "report", "version": 1, "from": "widen"}],
+      "consumes": [{"kind": "report", "version": 1, "from": "widen", "required": false}],
       "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "errand",

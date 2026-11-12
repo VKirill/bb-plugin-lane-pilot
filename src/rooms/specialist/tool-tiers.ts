@@ -171,8 +171,9 @@ export function estimateActionOrderCost(order: ActionOrder): CostEstimate {
     }
     return { ok: false, upperBoundUsd: 0, tier: "D", reason: "unknown_batch_size_upper_bound" };
   }
-  const fallback = typeof order.estimated_cost_usd === "number" ? order.estimated_cost_usd : order.kind === "owner_escalate" ? 0 : 0.25;
-  return { ok: true, upperBoundUsd: fallback, tier: order.kind === "owner_escalate" ? "R" : "D" };
+  const zeroCostKind = order.kind === "owner_escalate" || order.kind === "owner_gate" || order.kind === "schedule";
+  const fallback = typeof order.estimated_cost_usd === "number" ? order.estimated_cost_usd : zeroCostKind ? 0 : 0.25;
+  return { ok: true, upperBoundUsd: fallback, tier: order.kind === "owner_escalate" || order.kind === "owner_gate" ? "R" : "D" };
 }
 
 /** Wilson 95% score interval lower bound (`z = 1.96`). */

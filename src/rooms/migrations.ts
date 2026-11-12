@@ -31,6 +31,7 @@ import { wallMigrations } from "./wall";
 import { checkerMigrations } from "./checkers";
 import { memoryConflictMigrations } from "@lane-pilot/memory-core";
 import { spMigrations } from "./specialist";
+import { passportMigrations } from "./passport";
 export const migrations = [
   `CREATE TABLE lane_pilot_project_settings (
     project_id TEXT NOT NULL,
@@ -599,4 +600,23 @@ export const migrations = [
   // The counter's next value is two MAX reads, one per table, each on its index: no table is scanned on a transition.
   `CREATE INDEX IF NOT EXISTS lane_pilot_task_world_seq ON lane_pilot_task(world_seq)`,
   ...spMigrations,
+  ...passportMigrations,
+  `CREATE TABLE IF NOT EXISTS lane_pilot_artifact (
+    project_id TEXT NOT NULL,
+    artifact_id TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    rel_path TEXT NOT NULL,
+    location TEXT NOT NULL DEFAULT 'checkout',
+    schema_version INTEGER NOT NULL DEFAULT 1,
+    revision INTEGER NOT NULL DEFAULT 1,
+    sha256 TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    summary TEXT NOT NULL DEFAULT '',
+    producer_wf TEXT,
+    producer_run_id TEXT,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (project_id, artifact_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_lp_artifact_domain_kind ON lane_pilot_artifact(project_id, domain, kind, status)`,
 ];

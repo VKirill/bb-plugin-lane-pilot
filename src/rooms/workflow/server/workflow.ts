@@ -53,6 +53,20 @@ interface Services {
   leadRoad: LeadRoadApi;
   errandEpisodes: ErrandEpisodesApi;
   onAttemptFinished: OnAttemptFinished;
+  schedules?: {
+    save: (
+      raw: {
+        projectId: string;
+        name: string;
+        description?: string;
+        task: { kind: "workflow"; workflowId: string; inputs?: Record<string, unknown>; liveTrial?: boolean };
+        when: { type: "cron"; cron: string; timezone?: string };
+      },
+      by: string,
+    ) => unknown;
+  };
+  backlog?: { scan: (now?: number) => Promise<unknown> };
+  phaseIntake?: unknown;
 }
 
 /**

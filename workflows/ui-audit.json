@@ -51,7 +51,8 @@
     "score_20": "int",
     "findings": "Finding[]",
     "screenshots": "string[]",
-    "report_path": "string"
+    "report_path": "string",
+    "proposed_workflow": "string?"
   },
   "quality_mode": {
     "default": "standard",
@@ -192,6 +193,30 @@
         "reason": "string",
         "details": "object"
       }
+    },
+    {
+      "id": "offer",
+      "type": "action",
+      "action": "lp.propose_workflow",
+      "workflow": "review-fix",
+      "inputs": {
+        "goal": "Fix UI audit findings",
+        "findings": "{{audit.findings}}"
+      }
+    },
+    {
+      "id": "done_offer",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "score_40": "audit.score_40",
+        "score_20": "audit.score_20",
+        "findings": "audit.findings",
+        "screenshots": "capture.screenshots",
+        "report_path": "audit.report_path",
+        "proposed_workflow": "'review-fix'"
+      }
     }
   ],
   "edges": [
@@ -215,6 +240,15 @@
       "from": "review_doc",
       "to": "goal_check",
       "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "offer",
+      "when": "goal_check.ok != false && audit.score_40 > 0 && audit.score_40 < 24"
+    },
+    {
+      "from": "offer",
+      "to": "done_offer"
     },
     {
       "from": "goal_check",

@@ -1,6 +1,7 @@
 ---
 name: mkt-telegram-ads-method
-description: "Method for official Telegram Ads campaigns run by the growth marketer: channel and bot pools screened for bot farms, one-to-one ad matrix, start= deep-link attribution, moderation lint, CPM in TON, a sample lock from the MDE and the stop rule. Use when: Telegram Ads, TG Ads, реклама в Телеграм, пулы каналов, start= метки, CPM в TON, модерация объявлений, «объявление даёт клики, но нет оплат». SKIP: executing in the cabinet (telegram-ads / telegram-ads-assistant); paid posts bought from channel admins (seo-linkbuilding-method or outreach); Yandex Direct (mkt-yandex-direct-epk)."
+description: >-
+  Method for official Telegram Ads campaigns run by the growth marketer: channel and bot pools screened for bot farms, one-to-one ad matrix, Sugarman/Ogilvy/Bly 160-char copy gates, start= deep-link attribution, moderation lint, CPM in TON, a sample lock from the MDE and the stop rule. Use when: Telegram Ads, TG Ads, реклама в Телеграм, пулы каналов, start= метки, CPM в TON, модерация объявлений, «объявление даёт клики, но нет оплат». SKIP: executing in the cabinet (telegram-ads / telegram-ads-assistant); paid posts bought from channel admins (seo-linkbuilding-method or outreach); Yandex Direct (mkt-yandex-direct-epk).
 ---
 
 # Telegram Ads method
@@ -20,7 +21,10 @@ Used by `mkt-tg-ads-campaign`. This skill plans and checks; the cabinet is drive
 
 1. **Pools.** Channels by topic and audience; screen each for bot farms (views/subscribers, post reach curve, comment quality);
    bots for bot-targeted ads. One-to-one: an ad per channel when the channel is large enough for its own sample.
-2. **Ads.** Text within moderation rules (length, no forbidden claims, no external-ad formatting); one promise per ad.
+2. **Ads (*Sugarman + Ogilvy + Bly 160-Char Gate*).** Text `<= 160` chars within strict moderation rules (no imperatives, no CAPS, `<= 1` emoji, single line), one promise per ad:
+   - *Sugarman Curiosity Hook*: open the first 45–60 chars with a sharp recognizable pain/question or contrast that slides the reader into the second sentence;
+   - *Ogilvy Factual Specificity*: anchor with 1–2 concrete numbers (seconds to result, named segment, free 1-item preview) instead of vague adjectives;
+   - *Bly `Feature -> Benefit`*: state the tangible user payoff («чистая прибыль селлера с учётом штрафов за 2 минуты»), never naked bot mechanics («удобный AI-бот»).
 3. **Lint.** `python3 scripts/tg_moderation_lint.py --input ads.json` → rule violations per ad.
 4. **Attribution.** Every ad gets its own `start=` code; `python3 scripts/tg_start_attribution.py --input funnel.json`
    → per-ad funnel, junk-start share, cost per payer.

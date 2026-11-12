@@ -37,7 +37,8 @@
   "outputs": {
     "status": "sound|flawed",
     "findings": "Finding[]",
-    "review_path": "string"
+    "review_path": "string",
+    "proposed_workflow": "string?"
   },
   "quality_mode": {
     "default": "standard"
@@ -89,13 +90,24 @@
       }
     },
     {
+      "id": "offer",
+      "type": "action",
+      "action": "lp.propose_workflow",
+      "workflow": "todo-add",
+      "inputs": {
+        "title": "Fix AI eval flaws ({{$inputs.phase_id}})",
+        "thought": "Resolve flawed evaluation findings in {{review.review_path}}"
+      }
+    },
+    {
       "id": "flawed",
       "type": "action",
       "action": "emit",
       "map": {
         "status": "flawed",
         "findings": "review.findings",
-        "review_path": "review.review_path"
+        "review_path": "review.review_path",
+        "proposed_workflow": "'todo-add'"
       }
     },
     {
@@ -118,9 +130,14 @@
   "edges": [
     {
       "from": "review",
-      "to": "flawed",
+      "to": "offer",
       "pass": "artifact",
       "when": "review.flawed"
+    },
+    {
+      "from": "offer",
+      "to": "flawed",
+      "pass": "artifact"
     },
     {
       "from": "review",

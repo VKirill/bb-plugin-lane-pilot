@@ -1,8 +1,8 @@
 ---
 title: "Evidence-led on-page and draft quality gates"
-status: draft
+status: active
 owner: drmax-books-finish
-target_skill: seo-onpage-audit
+target_skill: seo-page-templates
 source_pages: "Доказательное SEO 2026, book 1 ch.6–8 pp.89–120; ch.16 pp.201–206; book 2 ch.10 pp.443–452"
 tags: [seo, engineering-reference, synthesized, private]
 ---
@@ -34,4 +34,4 @@ For a material title or template change, use the controlled-experiment reference
 
 ## Source and integration
 
-Source: Доказательное SEO 2026, book 1 ch.6–8 pp.89–120; ch.16 pp.201–206; book 2 ch.10 pp.443–452. Resolve physical PDF page N to `/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/raw_pages/page_NNN.txt`. Cross-check the named procedures in [the registry](/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/procedures-registry.json). This reference is ready for review and placement in `seo-onpage-audit`; no skill installation or live changes were performed.
+Source: Доказательное SEO 2026, book 1 ch.6–8 pp.89–120; ch.16 pp.201–206; book 2 ch.10 pp.443–452. Resolve physical PDF page N to `/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/raw_pages/page_NNN.txt`. Cross-check the named procedures in [the registry](/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/procedures-registry.json). Active reference installed in `seo-page-templates`.

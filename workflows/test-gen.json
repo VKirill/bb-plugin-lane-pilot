@@ -202,7 +202,14 @@
       "guards": {
         "maxVisits": 3,
         "timeoutMin": 20
-      }
+      },
+      "consumes": [
+        {
+          "kind": "task-result",
+          "version": 1,
+          "from": "write_tests"
+        }
+      ]
     },
     {
       "id": "fix_tests",

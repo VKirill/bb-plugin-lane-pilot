@@ -12,6 +12,7 @@ import type { WorkflowStore } from "../../storage";
 import { bindGraphStepLookup, fenceOutside, registerObservedTool } from "../../platform/server";
 import { isOpenAttemptState } from "../../contracts/state-machine";
 import { backlogMatches } from "../../backlog";
+import { checkPassportMarketRail, projectPassportBlock } from "../../passport";
 import { listPhases } from "../../phase";
 import type { TodoMeta } from "../../backlog";
 import { ToolError } from "../../contracts/server";
@@ -99,7 +100,9 @@ export async function routeTool(deps: WorkflowToolDeps, params: { intent: string
   const runId = pmRunId(deps.db, context.projectId, context.threadId);
   const state = deps.state?.({ projectId: context.projectId, runId });
   const model = deps.model?.({ pmThreadId: context.threadId, projectId: context.projectId, runId });
-  const decision: RouteDecision = await routeIntent({ intent: params.intent, ...(params.context ? { context: params.context } : {}), workflows: store.list().map((item) => item.workflow), ...(state ? { state } : {}), ...(model ? { model } : {}), ...(deps.stats ? { stats: deps.stats() } : {}) });
+  const passportCtx = projectPassportBlock(deps.db, { projectId: context.projectId, role: "pm", maxChars: 1200 });
+  const mergedContext = [params.context, passportCtx].filter(Boolean).join("\n\n");
+  const decision: RouteDecision = await routeIntent({ intent: params.intent, ...(mergedContext ? { context: mergedContext } : {}), workflows: store.list().map((item) => item.workflow), ...(state ? { state } : {}), ...(model ? { model } : {}), ...(deps.stats ? { stats: deps.stats() } : {}) });
   const noWorkflow = decision.candidates.length === 0;
   // The phrase is compared with the backlog before anything else: a request that repeats a written-down item is asked
   // about («продвинь его, а не новую задачу»), never silently made into a duplicate task.
@@ -115,7 +118,7 @@ export async function routeTool(deps: WorkflowToolDeps, params: { intent: string
     ...([...decision.questions, ...matchQuestions].length ? { questions: [...decision.questions, ...matchQuestions] } : {}),
     ...(decision.warnings.length ? { warnings: decision.warnings } : {}),
     candidates: decision.candidates.map((candidate) => ({ id: candidate.id, name: candidate.name, score: candidate.score, rules: candidate.rules, ...(candidate.liveTrial ? { notYetRunLive: true } : {}), ...(candidate.stat !== undefined ? { runRecord: candidate.stat } : {}) })),
-    next: noWorkflow ? "No published workflow fits or exists here. A web search or research with sources: start `web-research` (inputs: question; depth quick, standard or deep) with lane_pilot_run_workflow, not a bare tavily specialist (pass liveTrial: true if it answers that it is still only tested and the owner agrees). Anything else is also a graph; start the one that fits with its tool: lane_pilot_dispatch_writer for a change to the code (graph lp-task-pipeline), lane_pilot_errand (graph errand) for a console, mail or an account, lane_pilot_helpers with action specialist (graph specialist) for design, copy or SEO."
+    next: noWorkflow ? "No published workflow fits or exists here. For project discovery / ICP / BrandCore onboarding start `project-passport`; for SEO audits & growth start `seo-*` workflows; for marketing analytics, paid ads, CRO or organic packs start `mkt-*` workflows; for web research start `web-research`, not a bare tavily specialist (pass liveTrial: true if tested and the owner agrees). Otherwise start the fitting tool: lane_pilot_dispatch_writer for code changes (lp-task-pipeline), graph errand (lane_pilot_errand) for consoles/accounts, graph specialist (lane_pilot_specialist) for design-lead, copy-lead, seo-specialist, growth-marketer."
       : decision.stateContinue ? "«Continue» is no workflow: read the run state (lane_pilot_run_health) and propose the next step from it; never guess."
       : decision.decision === "route" ? (decision.liveTrial ? ROUTE_NEXT_LIVE_TRIAL : ROUTE_NEXT_ROUTE) : ROUTE_NEXT_CLARIFY,
   }, null, 2);
@@ -136,6 +139,37 @@ export async function runWorkflowTool(deps: WorkflowToolDeps, params: { workflow
   // A tested workflow has passed its stub tests but never run for real: it starts only on the owner's word (liveTrial), and its first successful run makes it published.
   if (workflow.status !== "published" && !(workflow.status === "tested" && params.liveTrial === true)) {
     return refused(`not_runnable: "${workflow.id}" is ${workflow.status}, only published workflows start.${workflow.status === "tested" ? " It has passed its tests on stubs but has never run for real: when the owner agrees to a first real run (it will really send, post and spend), call again with liveTrial: true; one successful run makes it published." : ""} Published: ${published.join(", ") || "(none)"}`, { workflow: workflow.id });
+  }
+  if (params.liveTrial !== true) {
+    const seenSub = new Set<string>([workflow.id]);
+    const checkTransitiveSubworkflows = (wf: typeof workflow): { id: string; status: string } | null => {
+      for (const n of wf.nodes) {
+        if (n.type !== "subworkflow") continue;
+        const subId = (n as { workflow?: string }).workflow;
+        if (!subId || seenSub.has(subId)) continue;
+        seenSub.add(subId);
+        const subStored = store.get(subId);
+        if (subStored && subStored.workflow.status !== "published") return { id: subId, status: subStored.workflow.status };
+        if (subStored) {
+          const deeper = checkTransitiveSubworkflows(subStored.workflow);
+          if (deeper) return deeper;
+        }
+      }
+      return null;
+    };
+    const unpubSub = checkTransitiveSubworkflows(workflow);
+    if (unpubSub) {
+      return refused(
+        `not_runnable: "${workflow.id}" calls subworkflow "${unpubSub.id}" (${unpubSub.status}); pass liveTrial: true when the owner agrees to run tested subworkflows.`,
+        { workflow: workflow.id, subworkflow: unpubSub.id },
+      );
+    }
+  }
+  if (params.inputs.allowCrossMarket !== true) {
+    const rail = checkPassportMarketRail(deps.db, context.projectId, workflow.id);
+    if (!rail.ok) {
+      return refused(rail.reason, { workflow: workflow.id });
+    }
   }
   // A grill of a phase's plan is recorded against THAT plan (its sha and the phase id), so the phase's admission gate holds only
   // for a grill of the plan it is admitting; a grill started with no plan at planning carries no sha and never holds anything.

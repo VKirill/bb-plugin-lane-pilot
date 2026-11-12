@@ -75,7 +75,8 @@
     "skills": [
       "mkt-ab-mde-alerts",
       "mkt-end-to-end-analytics",
-      "lp-agentic-discipline"
+      "lp-agentic-discipline",
+      "mkt-organic-content"
     ],
     "secrets": [
       "YANDEX_METRIKA_RO_TOKEN?",
@@ -266,7 +267,8 @@
         "skills": [
           "mkt-ab-mde-alerts",
           "mkt-end-to-end-analytics",
-          "lp-agentic-discipline"
+          "lp-agentic-discipline",
+          "mkt-organic-content"
         ]
       },
       "produces": [

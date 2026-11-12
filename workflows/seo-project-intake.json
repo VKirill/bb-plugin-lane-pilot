@@ -21,6 +21,7 @@
     ]
   },
   "not_for": [
+    "project-passport: cross-domain Living Project Passport interview (market rails, ICP, JTBD, positioning) across all roles",
     "seo-cocoon",
     "seo-monitor"
   ],
@@ -127,7 +128,7 @@
         "en": "Verified fact base",
         "ru": "База проверенных фактов"
       },
-      "prompt": "BrandCore: build the verified company fact base from the site {{$inputs.site_url}} and the owner's answers. A fact that can't be confirmed stays open and is never filled in by guessing. Return brandcore_path and open_facts.",
+      "prompt": "BrandCore: build the verified company fact base from any existing Living Project Passport (.agents/passport/PASSPORT.json and .agents/passport/BRANDCORE.projection.md), the site {{$inputs.site_url}}, and the owner's answers. Inherit confirmed facts and taboo claims from the Living Project Passport without re-asking them; a fact that can't be confirmed stays open and is never filled in by guessing. Respect market rails (if RU is excluded, skip Yandex-only assumptions). Return brandcore_path and open_facts.",
       "out": {
         "brandcore_path": "string",
         "open_facts": "int"

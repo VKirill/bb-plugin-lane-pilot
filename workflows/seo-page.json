@@ -259,7 +259,7 @@
         "en": "Media brief",
         "ru": "Медиабриф"
       },
-      "prompt": "Shot list, alt and figcaption, hero spec, and diagrams rendered from code (SVG/Mermaid); optional original visuals via nano-banana with the product locked. Return media_path.",
+      "prompt": "Shot list, alt and benefit-explicit figcaption (Ogilvy rule: captions receive 2x body readership — state the concrete user takeaway under every visual), hero spec, and diagrams rendered from code (SVG/Mermaid); optional original visuals via nano-banana with the product locked. Return media_path.",
       "out": {
         "media_path": "string"
       },
@@ -283,7 +283,7 @@
         "en": "Quality audit",
         "ru": "Аудит качества"
       },
-      "prompt": "Fresh rater-emulation audit of the draft {{write.raw_page_path}}: main-content value, then spam patterns; which blocks survive summarisation, the role minimum, and link context against the link map. Status pass | rework | block; findings cite the passage, severity one of critical, high, medium, low, info.",
+      "prompt": "Fresh rater-emulation audit of the draft {{write.raw_page_path}}: main-content value, Minto Answer-First + MECE section discipline, then spam patterns; enforce DrMax 2026 stop-rules (zero fabricated first-person 'we tested' claims without verifiable proof, zero leaked Google internal attributes treated as live API scores); check which blocks survive RAG/AI summarisation, the role minimum, and link context against the link map. Status pass | rework | block; findings cite the passage, severity one of critical, high, medium, low, info.",
       "out": {
         "status": "pass|rework|block",
         "findings": "Finding[]"
@@ -302,9 +302,10 @@
         }
       ],
       "type": "agent",
-      "role": "auditor",
+      "role": "specialist:copy-lead",
       "profile": {
         "skills": [
+          "copywriter",
           "ru-check",
           "ru-text",
           "ai-detect"
@@ -314,7 +315,7 @@
         "en": "Edit and language pass",
         "ru": "Редактура и язык"
       },
-      "prompt": "Compress the draft without losing constraints, finalise the block set, then ru-check language diagnosis and controlled humanisation (drmax-text-humanization); check high-risk token classes against the source and make fragments self-contained and citable. Return clean_page_path, ru_score, status pass | rework.",
+      "prompt": "Cross-department editorial pass (copy-lead): apply Zinsser clutter cut and active verbs without losing factual constraints, finalise the block set, then ru-check language diagnosis and controlled humanisation (drmax-text-humanization); check high-risk token classes against the source and make fragments self-contained and citable. Return clean_page_path, ru_score, status pass | rework.",
       "out": {
         "status": "pass|rework",
         "clean_page_path": "string",

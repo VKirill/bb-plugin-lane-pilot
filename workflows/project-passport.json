@@ -1,0 +1,716 @@
+{
+  "id": "project-passport",
+  "name": {
+    "en": "Living Project Passport (founder interview)",
+    "ru": "Живой паспорт проекта (интервью с основателем)"
+  },
+  "description": {
+    "en": "Adaptive founder interview that builds and updates the Living Project Passport once for every role and graph: markets, languages, currency, strict regional taboos (for example US/EN with zero RU/Yandex leaks), ICP, JTBD four forces, positioning, awareness stage, proof facts, voice and unit-economics rails. Stores verbatim owner words alongside typed claims (confirmed, hypothesis, unknown, taboo), never re-asks confirmed facts, and projects BrandCore and charter defaults downstream.",
+    "ru": "Адаптивное интервью с основателем, которое собирает и обновляет Живой паспорт проекта один раз для всех ролей и графов: рынки, языки, валюта, жёсткие региональные табу (например англоязычный проект под США без утечек РФ/Яндекса/erid), ЦА, 4 силы JTBD, позиционирование, ступень осведомлённости, база доказательств, тон и рамки экономики. Хранит дословную речь владельца рядом с типизированными утверждениями (подтверждено, гипотеза, неизвестно, табу), не переспрашивает известное и отдаёт проекции во все графы."
+  },
+  "examples": {
+    "ru": [
+      "Проведи брифование нового проекта с нуля: ЦА, рынок, позиционирование",
+      "Собери живой паспорт проекта под рынок США на английском языке",
+      "Обнови паспорт проекта: допроси меня про аудиторию, боли и оффер",
+      "Зафиксируй бриф проекта, чтобы все агенты знали контекст и ограничения"
+    ],
+    "en": [
+      "Interview me to build the Living Project Passport from scratch",
+      "Create a project brief and passport for an English-only US SaaS product",
+      "Update the project passport: grill me on ICP, JTBD pains and positioning",
+      "Record our project passport so every specialist agent shares one brief"
+    ]
+  },
+  "not_for": [
+    "profile-user: personal profile of the human owner across all projects, not a specific product's market, ICP and offer",
+    "seo-cocoon: building a semantic keyword core once the passport already exists",
+    "mkt-pulse-monitor: daily paid-traffic anomaly monitoring"
+  ],
+  "status": "published",
+  "tags": [
+    "passport",
+    "intake",
+    "discovery"
+  ],
+  "triggers": [
+    "chat",
+    "manual"
+  ],
+  "inputs": {
+    "mode": {
+      "type": "express|deep_grill|domain_delta",
+      "default": "deep_grill",
+      "description": "interview depth: express (1 round, top blockers), deep_grill (2 adaptive rounds), or domain_delta (fill gaps for one specialist domain)"
+    },
+    "target_domain": {
+      "type": "string",
+      "default": "",
+      "description": "optional focus domain when mode is domain_delta (seo, marketing, copy, design, product)"
+    },
+    "seed_brief": {
+      "type": "string",
+      "default": "",
+      "description": "optional initial founder pitch, URL, or raw notes in the owner's own words"
+    },
+    "scope_key": {
+      "type": "string",
+      "default": "",
+      "description": "optional sub-product or section scope key (empty = whole project)"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|cancelled",
+    "version": "int?",
+    "completeness_score": "int?",
+    "passport_path": "string?",
+    "brandcore_projection_path": "string?",
+    "recommended_workflows": "string[]?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "project-discovery-grill"
+    ]
+  },
+  "budget": {
+    "max_minutes": 120,
+    "max_usd": 6
+  },
+  "goal_check": "artifact",
+  "entry": "probe",
+  "nodes": [
+    {
+      "id": "probe",
+      "type": "action",
+      "action": "passport.probe",
+      "title": {
+        "en": "Read existing passport and repo signals",
+        "ru": "Прочитать текущий паспорт и сигналы репозитория"
+      },
+      "mode": "{{$inputs.mode}}",
+      "targetDomain": "{{$inputs.target_domain}}",
+      "scopeKey": "{{$inputs.scope_key}}",
+      "out": {
+        "has_passport": "bool",
+        "completeness_score": "int",
+        "confirmed_count": "int",
+        "unknown_count": "int",
+        "passport_json": "string",
+        "recon_summary": "string",
+        "contradictions_json": "string",
+        "fluff_warnings_json": "string",
+        "next_questions_json": "string",
+        "should_continue": "bool"
+      }
+    },
+    {
+      "id": "grill_plan",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Score completeness and rank discovery questions ($0)",
+        "ru": "Оценить полноту и ранжировать вопросы интервью ($0)"
+      },
+      "skill": "project-discovery-grill",
+      "script": "passport_grill_engine.py",
+      "args": {
+        "passport_json": "{{probe.passport_json}}",
+        "mode": "{{$inputs.mode}}",
+        "target_domain": "{{$inputs.target_domain}}",
+        "max_questions": 4
+      },
+      "timeoutSec": 45,
+      "out": {
+        "completeness_score": "int",
+        "verdict": "ready|needs_discovery|critical",
+        "contradictions_count": "int",
+        "fluff_count": "int",
+        "next_questions_json": "string",
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "round_1_questions",
+      "type": "agent",
+      "role": "analyst",
+      "profile": {
+        "skills": [
+          "project-discovery-grill"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Craft Round 1 founder interview questions",
+        "ru": "Сформулировать вопросы 1-го раунда интервью"
+      },
+      "prompt": "You are the Senior Product & Go-To-Market Discovery Interviewer building the Living Project Passport.\nInput context:\n- Mode: {{$inputs.mode}} (target domain: {{$inputs.target_domain}})\n- Owner seed brief (raw words, if given): <data>{{$inputs.seed_brief}}</data>\n- Repo recon snippets: <data>{{probe.recon_summary}}</data>\n- Current passport JSON: <data>{{probe.passport_json}}</data>\n- Deterministic ranked missing questions: <data>{{grill_plan.next_questions_json}}</data>\n- Active contradictions / fluff warnings: <data>{{probe.contradictions_json}}</data> / <data>{{probe.fluff_warnings_json}}</data>\n\nRules (Mom Test + Dunford + JTBD + Market Rails):\n1. NEVER re-ask facts already marked `confirmed` in the passport or clearly stated in `seed_brief`. Briefly acknowledge what you already understood so the owner feels heard.\n2. Ask at most 3-4 sharp, concrete questions in one warm, direct message (in Russian if the owner/chat is Russian, even when the product itself targets an English/US market!).\n3. Always nail down Market & Language Rails first if unknown (countries, UI/content locales, currency, payment rails, explicit excluded markets like 'no RU / no Yandex / no erid'), then ICP + real-world alternative (Dunford), then JTBD trigger/pain.\n4. Give concrete examples of strong vs vague answers so the owner can reply in plain conversational words.\nReturn `interview_prompt` (the exact text to show the owner) and `focus_areas` (field paths targeted).",
+      "out": {
+        "interview_prompt": "string",
+        "focus_areas": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "owner_round_1",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Founder interview — Round 1",
+        "ru": "Интервью с основателем — Раунд 1"
+      },
+      "prompt": "{{round_1_questions.interview_prompt}}\n\nОтветьте своими словами в свободной форме (как на созвоне с продакт-директором) — просто напишите сообщение в чат! Ваша прямая речь сохранится дословно, а подтверждённые факты отделятся от гипотез. Также можно выбрать `answered` (ответить и продолжить), `enough` (сохранить текущие ответы без второго раунда) или `cancel`.",
+      "options": [
+        "answered",
+        "enough",
+        "cancel"
+      ],
+      "defaultOption": "enough",
+      "out": {
+        "answer": "string",
+        "answer_kind": "answered|enough|cancel|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 1440
+      }
+    },
+    {
+      "id": "extract_round_1",
+      "type": "agent",
+      "role": "analyst",
+      "profile": {
+        "skills": [
+          "project-discovery-grill"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Extract typed claims from Round 1",
+        "ru": "Извлечь типизированные факты и гипотезы (Раунд 1)"
+      },
+      "prompt": "Extract a structured `PassportV1` partial JSON patch from:\n- Owner seed brief: <data>{{$inputs.seed_brief}}</data>\n- Repo recon: <data>{{probe.recon_summary}}</data>\n- Questions asked: <data>{{round_1_questions.interview_prompt}}</data>\n- Owner Round 1 verbatim answer (`{{owner_round_1.answer_kind}}`): <data>{{owner_round_1.answer}}</data>\n- Current passport JSON: <data>{{probe.passport_json}}</data>\n\nRules:\n1. Return `patch_json` as a valid JSON object matching the exact 8 sections of `PassportV1`:\n   - `identity`: `project_name`, `one_liner`, `stage` (`idea_zero|mvp_pre_revenue|early_traction|scaling`), `product_kind`, `primary_url`, `repo_summary`, `non_goals`\n   - `market_rails`: `ui_locales`, `content_locales`, `primary_countries`, `excluded_countries`, `currency`, `payment_rails`, `compliance_regimes`, `cultural_trust_code`, `allowed_channels`, `forbidden_channels`\n   - `positioning`: `status_quo_alternatives`, `unique_attributes`, `core_value`, `best_fit_icp`, `market_category`, `market_sophistication`, `relevant_trend`\n   - `audience_jtbd`: `payer_vs_user`, `trigger_event`, `four_forces` (`push`, `pull`, `anxiety`, `habit`), `decision_criteria`, `awareness_level`, `anti_audience`\n   - `messaging_voice`: `hero_internal_problem`, `guide_empathy_authority`, `three_step_plan`, `grunt_test`, `tone_of_voice`, `owner_lexicon`, `banned_words`\n   - `economics_funnel`: `pricing_model`, `price_point`, `sales_motion`, `max_cac`, `ltv_estimate`, `maturity_window_days`, `funnel_steps`\n   - `proof_brandcore`: `pre_launch_zero_proof`, `verified_facts`, `credentials_eeat`, `case_patterns`, `forbidden_claims`\n   - `product_design_rails`: `core_jobs`, `devices`, `visual_references`, `anti_references`, `domain_glossary`, `constraints`\n2. Every updated leaf must be `{ \"value\": ..., \"status\": \"confirmed\" | \"hypothesis\" | \"unknown\" | \"taboo\", \"note\": \"...\" }`.\n3. NEVER invent facts not stated by the owner or repo. If an answer is vague fluff ('everyone', 'worldwide', 'high quality'), keep `status: \"hypothesis\"` with a note explaining what remains unverified.\n4. When the owner states a non-Russian market (e.g. US/EU/global English-only) and says not for Russia/CIS, explicitly set `market_rails.excluded_countries` (`[\"RU\"]` with `status: \"taboo\"`) and `market_rails.forbidden_channels` (`[\"yandex_direct\", \"vk_ads\"]` with `status: \"taboo\"`) so no downstream agent leaks RU/Yandex/erid.\n5. Preserve raw customer/owner vocabulary inside `messaging_voice.owner_lexicon`.\nReturn `patch_json` (JSON string) and `extracted_notes`.",
+      "out": {
+        "patch_json": "string",
+        "extracted_notes": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "commit_round_1",
+      "type": "action",
+      "action": "passport.commit",
+      "title": {
+        "en": "Save Round 1 verbatim and update passport",
+        "ru": "Сохранить дословный ответ Раунда 1 и обновить паспорт"
+      },
+      "scopeKey": "{{$inputs.scope_key}}",
+      "mode": "{{$inputs.mode}}",
+      "targetDomain": "{{$inputs.target_domain}}",
+      "source": "project-passport:round_1",
+      "questionAsked": "{{round_1_questions.interview_prompt}}",
+      "ownerVerbatim": "{{owner_round_1.answer}}",
+      "patch": "{{extract_round_1.patch_json}}",
+      "out": {
+        "version": "int",
+        "completeness_score": "int",
+        "passport_json": "string",
+        "passport_path": "string",
+        "brandcore_projection_path": "string",
+        "contradictions_json": "string",
+        "fluff_warnings_json": "string",
+        "next_questions_json": "string",
+        "ready_to_finish": "bool"
+      }
+    },
+    {
+      "id": "round_2_questions",
+      "type": "agent",
+      "role": "analyst",
+      "skip_when": "$inputs.mode == 'express' || commit_round_1.ready_to_finish == true || owner_round_1.answer_kind != 'answered'",
+      "skip_out": {
+        "interview_prompt": "",
+        "focus_areas": []
+      },
+      "profile": {
+        "skills": [
+          "project-discovery-grill"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Craft Round 2 stress-test & depth questions",
+        "ru": "Сформулировать уточняющие вопросы 2-го раунда"
+      },
+      "prompt": "Round 1 of the Living Project Passport interview is saved (completeness: {{commit_round_1.completeness_score}}%).\n- Updated passport JSON: <data>{{commit_round_1.passport_json}}</data>\n- Contradictions detected: <data>{{commit_round_1.contradictions_json}}</data>\n- Vague / fluff claims to sharpen: <data>{{commit_round_1.fluff_warnings_json}}</data>\n- Next highest-leverage questions: <data>{{commit_round_1.next_questions_json}}</data>\n\nCraft Round 2 (at most 3 targeted follow-up questions):\n1. First resolve any contradiction or vague fluff from Round 1 using Mom-Test specificity ('who specifically lost money/time last week because of this?').\n2. Fill the remaining high-leverage gaps: JTBD buyer anxieties & inertia habits, verifiable proof vs forbidden claims (BrandCore), StoryBrand one-liner, tone of voice, and North Star / CAC / appetite guardrails.\n3. Keep the tone sharp, respectful, and concise. Return `interview_prompt` and `focus_areas`.",
+      "out": {
+        "interview_prompt": "string",
+        "focus_areas": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "owner_round_2",
+      "type": "human",
+      "role": "owner",
+      "skip_when": "$inputs.mode == 'express' || commit_round_1.ready_to_finish == true || owner_round_1.answer_kind != 'answered'",
+      "skip_out": {
+        "answer": "",
+        "answer_kind": "enough"
+      },
+      "title": {
+        "en": "Founder interview — Round 2 (depth & proof)",
+        "ru": "Интервью с основателем — Раунд 2 (глубина и доказательства)"
+      },
+      "prompt": "{{round_2_questions.interview_prompt}}\n\nОтветьте своими словами прямо в чат (`answered`) или выберите `enough`, чтобы сохранить уже собранный паспорт как есть (оставшиеся пробелы будут честно помечены как открытые гипотезы).",
+      "options": [
+        "answered",
+        "enough"
+      ],
+      "defaultOption": "enough",
+      "out": {
+        "answer": "string",
+        "answer_kind": "answered|enough|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 1440
+      }
+    },
+    {
+      "id": "extract_round_2",
+      "type": "agent",
+      "role": "analyst",
+      "skip_when": "$inputs.mode == 'express' || commit_round_1.ready_to_finish == true || owner_round_1.answer_kind != 'answered' || owner_round_2.answer_kind != 'answered'",
+      "skip_out": {
+        "patch_json": "'{}'",
+        "extracted_notes": ""
+      },
+      "profile": {
+        "skills": [
+          "project-discovery-grill"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Extract typed claims from Round 2",
+        "ru": "Извлечь типизированные факты и гипотезы (Раунд 2)"
+      },
+      "prompt": "Extract the Round 2 `PassportV1` JSON delta patch from:\n- Questions asked: <data>{{round_2_questions.interview_prompt}}</data>\n- Owner Round 2 verbatim answer: <data>{{owner_round_2.answer}}</data>\n- Current passport JSON: <data>{{commit_round_1.passport_json}}</data>\n\nUse the exact `PassportV1` sections (`identity`, `market_rails`, `positioning`, `audience_jtbd`, `messaging_voice`, `economics_funnel`, `proof_brandcore`, `product_design_rails`). Separate `confirmed` owner facts from `hypothesis` guesses and `taboo` boundaries, never invent numbers or testimonials, and preserve exact customer wording in `messaging_voice.owner_lexicon`. Return `patch_json` (JSON string) and `extracted_notes`.",
+      "out": {
+        "patch_json": "string",
+        "extracted_notes": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "commit_round_2",
+      "type": "action",
+      "action": "passport.commit",
+      "skip_when": "$inputs.mode == 'express' || commit_round_1.ready_to_finish == true || owner_round_1.answer_kind != 'answered' || owner_round_2.answer_kind != 'answered'",
+      "skip_out": {
+        "version": "commit_round_1.version",
+        "completeness_score": "commit_round_1.completeness_score",
+        "passport_json": "commit_round_1.passport_json",
+        "passport_path": "commit_round_1.passport_path",
+        "brandcore_projection_path": "commit_round_1.brandcore_projection_path",
+        "contradictions_json": "commit_round_1.contradictions_json",
+        "fluff_warnings_json": "commit_round_1.fluff_warnings_json",
+        "next_questions_json": "commit_round_1.next_questions_json"
+      },
+      "title": {
+        "en": "Save Round 2 verbatim and finalize passport",
+        "ru": "Сохранить дословный ответ Раунда 2 и финализировать паспорт"
+      },
+      "scopeKey": "{{$inputs.scope_key}}",
+      "mode": "{{$inputs.mode}}",
+      "targetDomain": "{{$inputs.target_domain}}",
+      "source": "project-passport:round_2",
+      "questionAsked": "{{round_2_questions.interview_prompt}}",
+      "ownerVerbatim": "{{owner_round_2.answer}}",
+      "patch": "{{extract_round_2.patch_json}}",
+      "out": {
+        "version": "int",
+        "completeness_score": "int",
+        "passport_json": "string",
+        "passport_path": "string",
+        "brandcore_projection_path": "string",
+        "contradictions_json": "string",
+        "fluff_warnings_json": "string",
+        "next_questions_json": "string"
+      }
+    },
+    {
+      "id": "grill_audit",
+      "type": "action",
+      "action": "sp.run_script",
+      "title": {
+        "en": "Final deterministic passport audit ($0)",
+        "ru": "Финальный детерминированный аудит паспорта ($0)"
+      },
+      "skill": "project-discovery-grill",
+      "script": "passport_grill_engine.py",
+      "args": {
+        "passport_json": "{{commit_round_2.passport_json}}",
+        "mode": "{{$inputs.mode}}",
+        "target_domain": "{{$inputs.target_domain}}",
+        "max_questions": 4
+      },
+      "timeoutSec": 45,
+      "out": {
+        "completeness_score": "int",
+        "verdict": "ready|needs_discovery|critical",
+        "contradictions_count": "int",
+        "fluff_count": "int",
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "synthesize",
+      "type": "agent",
+      "role": "analyst",
+      "profile": {
+        "skills": [
+          "project-discovery-grill"
+        ]
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "title": {
+        "en": "Passport briefing & downstream graph routing",
+        "ru": "Сводка паспорта и маршрут следующих графов"
+      },
+      "prompt": "Summarize the committed Living Project Passport (v{{commit_round_2.version}}, completeness {{commit_round_2.completeness_score}}%, audit verdict {{grill_audit.verdict}}, report {{grill_audit.report_path}}):\n- Passport JSON: <data>{{commit_round_2.passport_json}}</data>\n- Remaining contradictions: <data>{{commit_round_2.contradictions_json}}</data>\n- Remaining open questions: <data>{{commit_round_2.next_questions_json}}</data>\n\nDeliver a clear, structured summary for the owner:\n1. **Confirmed Rails** (market, language, ICP, core value, proof, hard taboos — now automatically injected as role lenses into PM, Writer, Copy, Design, SEO, Marketing, Council and Lead).\n2. **Active Hypotheses to Test** (claims still marked `hypothesis` so downstream graphs test rather than assume them).\n3. **Recommended Next Workflows** (`recommended_workflows`): pick 2-4 exact workflow IDs that fit the project's stage and market rails (e.g. `project-start`, `research-dossier`, `seo-project-intake`, `mkt-project-intake`, `mkt-landing-cro-audit`). NEVER recommend RU-only workflows (`mkt-direct-search-campaign`, `invoice-send`, `billing-batch`) when the passport excludes Russia (`RU`).\nReturn `briefing_md` and `recommended_workflows`.",
+      "out": {
+        "briefing_md": "string",
+        "recommended_workflows": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "version": "commit_round_2.version",
+        "completeness_score": "commit_round_2.completeness_score",
+        "passport_path": "commit_round_2.passport_path",
+        "brandcore_projection_path": "commit_round_2.brandcore_projection_path",
+        "recommended_workflows": "synthesize.recommended_workflows"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "version": "commit_round_2.version",
+        "completeness_score": "commit_round_2.completeness_score",
+        "passport_path": "commit_round_2.passport_path",
+        "brandcore_projection_path": "commit_round_2.brandcore_projection_path",
+        "recommended_workflows": "synthesize.recommended_workflows"
+      }
+    },
+    {
+      "id": "cancelled",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "cancelled"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "probe",
+      "to": "grill_plan"
+    },
+    {
+      "from": "grill_plan",
+      "to": "round_1_questions"
+    },
+    {
+      "from": "round_1_questions",
+      "to": "owner_round_1"
+    },
+    {
+      "from": "owner_round_1",
+      "to": "cancelled",
+      "when": "owner_round_1.answer_kind == 'cancel' || (owner_round_1.answer_kind == 'timeout' && $inputs.seed_brief == '')"
+    },
+    {
+      "from": "owner_round_1",
+      "to": "extract_round_1"
+    },
+    {
+      "from": "extract_round_1",
+      "to": "commit_round_1"
+    },
+    {
+      "from": "commit_round_1",
+      "to": "round_2_questions"
+    },
+    {
+      "from": "round_2_questions",
+      "to": "owner_round_2"
+    },
+    {
+      "from": "owner_round_2",
+      "to": "extract_round_2"
+    },
+    {
+      "from": "extract_round_2",
+      "to": "commit_round_2"
+    },
+    {
+      "from": "commit_round_2",
+      "to": "grill_audit"
+    },
+    {
+      "from": "grill_audit",
+      "to": "synthesize"
+    },
+    {
+      "from": "synthesize",
+      "to": "done",
+      "when": "commit_round_2.completeness_score >= 45"
+    },
+    {
+      "from": "synthesize",
+      "to": "partial"
+    }
+  ],
+  "test": {
+    "id": "project-passport-sim-1",
+    "sim": {
+      "input": {
+        "mode": "deep_grill",
+        "target_domain": "",
+        "seed_brief": "We are launching PulseForge, an English-only B2B SaaS for US independent dental clinics ($199/mo via Stripe), strictly not for Russia.",
+        "scope_key": ""
+      },
+      "stubs": {
+        "probe": {
+          "has_passport": false,
+          "completeness_score": 0,
+          "confirmed_count": 0,
+          "unknown_count": 32,
+          "passport_json": "{}",
+          "recon_summary": "",
+          "contradictions_json": "[]",
+          "fluff_warnings_json": "[]",
+          "next_questions_json": "[{\"id\":\"Q_MARKET_RAILS\"}]",
+          "should_continue": true
+        },
+        "grill_plan": {
+          "completeness_score": 0,
+          "verdict": "needs_discovery",
+          "contradictions_count": 0,
+          "fluff_count": 0,
+          "next_questions_json": "[{\"id\":\"Q_MARKET_RAILS\"},{\"id\":\"Q_ICP_ALTERNATIVE\"}]",
+          "report_path": ".agents/passport/reports/project-passport-grill_plan.json"
+        },
+        "round_1_questions": {
+          "interview_prompt": "1) Who in the US dental clinic signs off on $199/mo, and what do they use today instead? 2) What trigger makes them switch?",
+          "focus_areas": [
+            "positioning.best_fit_icp",
+            "positioning.status_quo_alternatives",
+            "audience_jtbd.trigger_event"
+          ]
+        },
+        "extract_round_1": {
+          "patch_json": "{\"identity\":{\"project_name\":{\"value\":\"PulseForge\",\"status\":\"confirmed\"}},\"market_rails\":{\"primary_countries\":{\"value\":[\"US\"],\"status\":\"confirmed\"},\"excluded_countries\":{\"value\":[\"RU\"],\"status\":\"taboo\"}}}",
+          "extracted_notes": "US dental clinics confirmed; RU explicitly excluded."
+        },
+        "commit_round_1": {
+          "version": 1,
+          "completeness_score": 56,
+          "passport_json": "{\"version\":1}",
+          "passport_path": ".agents/passport/PASSPORT.json",
+          "brandcore_projection_path": ".agents/passport/BRANDCORE.projection.md",
+          "contradictions_json": "[]",
+          "fluff_warnings_json": "[]",
+          "next_questions_json": "[{\"id\":\"Q_PROOF_FACTS\"}]",
+          "ready_to_finish": false
+        },
+        "round_2_questions": {
+          "interview_prompt": "1) What anxieties stop a clinic owner from connecting PMS data (HIPAA, staff friction)? 2) What verified proof exists today vs taboo claims?",
+          "focus_areas": [
+            "audience_jtbd.four_forces.anxiety",
+            "proof_brandcore.verified_facts",
+            "proof_brandcore.forbidden_claims"
+          ]
+        },
+        "extract_round_2": {
+          "patch_json": "{\"proof_brandcore\":{\"forbidden_claims\":{\"value\":[\"Never invent HIPAA certifications or fake clinic reviews\"],\"status\":\"taboo\"}}}",
+          "extracted_notes": "HIPAA anxieties and zero-fabrication guardrails recorded."
+        },
+        "commit_round_2": {
+          "version": 2,
+          "completeness_score": 84,
+          "passport_json": "{\"version\":2}",
+          "passport_path": ".agents/passport/PASSPORT.json",
+          "brandcore_projection_path": ".agents/passport/BRANDCORE.projection.md",
+          "contradictions_json": "[]",
+          "fluff_warnings_json": "[]",
+          "next_questions_json": "[]"
+        },
+        "grill_audit": {
+          "completeness_score": 84,
+          "verdict": "ready",
+          "contradictions_count": 0,
+          "fluff_count": 0,
+          "report_path": ".agents/passport/reports/project-passport-grill_audit.json"
+        },
+        "synthesize": {
+          "briefing_md": "Passport v2 ready (84%): US-only EN B2B SaaS, Stripe USD, RU/Yandex strictly excluded.",
+          "recommended_workflows": [
+            "research-dossier",
+            "seo-project-intake",
+            "mkt-project-intake"
+          ]
+        }
+      },
+      "human_answers": {
+        "owner_round_1": "answered",
+        "owner_round_2": "answered"
+      },
+      "expect_path": [
+        "probe",
+        "grill_plan",
+        "round_1_questions",
+        "owner_round_1",
+        "extract_round_1",
+        "commit_round_1",
+        "round_2_questions",
+        "owner_round_2",
+        "extract_round_2",
+        "commit_round_2",
+        "grill_audit",
+        "synthesize",
+        "done"
+      ],
+      "expect_output": {
+        "status": "done",
+        "version": 2,
+        "completeness_score": 84,
+        "passport_path": ".agents/passport/PASSPORT.json",
+        "brandcore_projection_path": ".agents/passport/BRANDCORE.projection.md"
+      },
+      "variant_express_single_round": {
+        "input": {
+          "mode": "express"
+        },
+        "expect_path": [
+          "probe",
+          "grill_plan",
+          "round_1_questions",
+          "owner_round_1",
+          "extract_round_1",
+          "commit_round_1",
+          "round_2_questions",
+          "owner_round_2",
+          "extract_round_2",
+          "commit_round_2",
+          "grill_audit",
+          "synthesize",
+          "done"
+        ],
+        "expect_output": {
+          "status": "done",
+          "version": 1,
+          "completeness_score": 56
+        }
+      },
+      "variant_partial_seed": {
+        "input": {
+          "mode": "express"
+        },
+        "stubs": {
+          "commit_round_1": {
+            "version": 1,
+            "completeness_score": 32,
+            "passport_json": "{\"version\":1}",
+            "passport_path": ".agents/passport/PASSPORT.json",
+            "brandcore_projection_path": ".agents/passport/BRANDCORE.projection.md",
+            "contradictions_json": "[]",
+            "fluff_warnings_json": "[]",
+            "next_questions_json": "[{\"id\":\"Q_ICP_ALTERNATIVE\"}]",
+            "ready_to_finish": false
+          }
+        },
+        "human_answers": {
+          "owner_round_1": "enough"
+        },
+        "expect_output": {
+          "status": "partial",
+          "version": 1,
+          "completeness_score": 32
+        }
+      },
+      "variant_cancelled": {
+        "input": {
+          "seed_brief": ""
+        },
+        "human_answers": {
+          "owner_round_1": "cancel"
+        },
+        "expect_path": [
+          "probe",
+          "grill_plan",
+          "round_1_questions",
+          "owner_round_1",
+          "cancelled"
+        ],
+        "expect_output": {
+          "status": "cancelled"
+        }
+      }
+    },
+    "live": "холодный старт англоязычного SaaS под США: 2 раунда адаптивного допроса владельца, запись VERBATIM.jsonl + PASSPORT.json + BRANDCORE.projection.md и раздача ролевых линз",
+    "note": "Grounded in Mom Test, Obviously Awesome, Buyer Personas, JTBD Four Forces, StoryBrand 2.0, Breakthrough Advertising and Software Requirements."
+  }
+}

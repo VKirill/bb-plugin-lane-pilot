@@ -85,7 +85,14 @@ export const rpcKnowledge = {
   },
   session_memory_core: {
     input: z.object({ projectId: z.string().min(1), chain: z.array(z.string()).max(16).optional() }).strict(),
-    output: z.object({ records: z.array(z.object({ id: z.string(), content: z.string() }).strict()) }).strict(),
+    output: z.object({
+      records: z.array(z.object({ id: z.string(), content: z.string() }).strict()),
+      receipts: z.array(z.object({
+        id: z.string(), project_id: z.string(), role: z.string(),
+        returned_ids: z.array(z.string()), packed_ids: z.array(z.string()),
+        tokens: z.number().int(), created_at: z.number().int(),
+      }).strict()).optional(),
+    }).strict(),
   },
   // The L1 showcase an ordinary BB thread gets from contributeInstructions (M2); null for a PM or plugin thread.
   memory_thread_block: {

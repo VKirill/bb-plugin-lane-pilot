@@ -426,7 +426,8 @@
         {
           "kind": "report",
           "version": 1,
-          "from": "verify_film"
+          "from": "verify_film",
+          "required": false
         }
       ],
       "produces": [

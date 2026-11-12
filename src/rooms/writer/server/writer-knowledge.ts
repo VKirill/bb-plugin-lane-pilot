@@ -15,6 +15,7 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import { bestEffort, maskCredentials } from "@lane-pilot/kit";
 import { effectiveGroup, parseHelperContextSettings } from "../../contracts/helper-context";
 import { stickyTurnPrompt } from "./writer-task";
+import { projectPassportBlock } from "../../passport";
 
 /**
  * System One picks the accepted rules this task needs, so a writer's prompt does not carry every rule of the
@@ -147,7 +148,9 @@ export async function writerKnowledge(deps:KnowledgeDeps, input:KnowledgeInput) 
     } catch(cause) { deps.log(`context-pack shadow failed: ${cause instanceof Error?cause.message:String(cause)}`); }
   }
   const similar=memoryOn?await similarWorksLines(deps,input).catch(()=>""):"";
-  return { allRules, rules, rulesText, mixed, briefContext, similar };
+  const passport=memoryOn?projectPassportBlock(deps.db,{projectId:input.projectId,role:"writer",maxChars:1400}):"";
+  const mixedWithPassport=passport?{...mixed,text:mixed.text?`${mixed.text}\n\n${passport}`:passport}:mixed;
+  return { allRules, rules, rulesText, mixed:mixedWithPassport, briefContext, similar };
 }
 
 /**

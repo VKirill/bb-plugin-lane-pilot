@@ -1,6 +1,7 @@
 ---
 name: seo-page-templates
-description: "Page-type build procedures and verification checklists from «SEO Монстр 2027» ch.3-5: homepage, category, product card, service, article, local landing, online tool, selections/brand/comparison, YMYL operational layout; semantic tables, extractable snippet units, JSON-LD @graph and media markup. Use when: тип страницы, шаблон страницы, page template, карточка товара, категория, посадочная, YMYL, JSON-LD, сниппет. SKIP: site-level hierarchy (→topical-graph-architect); rollout mechanics (→seo-release-protocol)."
+description: >-
+  Page-type build procedures and verification checklists from «SEO Монстр 2027» ch.3-5: homepage, category, product card, service, article, local landing, online tool, selections/brand/comparison, YMYL operational layout; semantic tables, extractable snippet units, JSON-LD @graph and media markup. Use when: тип страницы, шаблон страницы, page template, карточка товара, категория, посадочная, YMYL, JSON-LD, сниппет. SKIP: site-level hierarchy (→topical-graph-architect); rollout mechanics (→seo-release-protocol).
 ---
 
 # SEO Page Templates
@@ -65,5 +66,6 @@ The node returns: the filled page spec for its type (zones, blocks, markup), the
 
 - `references/rag-chunking-semantic-search-and-landing-ecom.md` — operational playbook and thresholds.
 - `references/agent-readiness-and-content-signals.md` — operational playbook and thresholds.
-- `references/05-onpage-evidence-and-title-contract.md` — operational playbook and thresholds.
-- `references/04-brief-draft-and-qc-gates.md` — operational playbook and thresholds.
+- `references/05-onpage-evidence-and-title-contract.md` — evidence-led on-page, title/SERP alignment, and draft verification contract.
+- `references/04-brief-draft-and-qc-gates.md` — brief/draft QC gates, Barbara Minto (*Pyramid Principle*: `SCQA`, `Answer-First` H2 leads, `MECE`), and William Zinsser (*On Writing Well*: clutter stripping, active verbs, 4 Unities).
+- Cross-skill internal linking & GEO/RAG evidence: open `seo-ai-visibility` (`06-internal-linking-and-geo-rag-evidence.md`) for contextual hub-spoke anchor rules, EAV tables, and self-contained RAG passage blocks.

@@ -36,7 +36,7 @@ export type MemoryPath = {
 /** The functions that put memory, rules or owner facts in front of an agent (or fetch them for one). The scan in the test counts their calls. */
 export const MEMORY_PRIMITIVES = [
   "writerKnowledge", "writerRules", "stickyTurnPromptWithRules", "mixWriterMemory", "mixReviewerMemory", "reviewerMemoryFor", "writerContextBlocks",
-  "pmRulesPromptBlock", "pmRulesBlock", "pmRulesOf", "pmResumeInstructions", "contributeInstructions", "ownerCardBlock",
+  "pmRulesPromptBlock", "pmRulesBlock", "pmRulesOf", "pmResumeInstructions", "contributeInstructions", "ownerCardBlock", "projectPassportBlock",
   "pmMemoryContext", "councilMemoryBlock", "searchMemoryRecords", "listMemory", "memoryContext", "acceptedRules",
   "session_memory_search", "session_memory_core", "enrichMemoryContext",
 ] as const;
@@ -149,6 +149,18 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
   { id: "writer.file_notes", consumer: "the file-note advice of the guard (FILECARDS.md of the task folder, written at dispatch and task update)", carries: [], alwaysOn: [], status: "exempt",
     reason: "Only trust-confirmed notes of the task's own paths, masked and clipped, reach a file the guard reads at an Edit; the probe asks prompts, not that file (the test drives taskFileCards on a real db).",
     sites: [{ file: "src/rooms/writer/server/writer-knowledge.ts", primitive: "searchMemoryRecords", count: 1 }] },
+  { id: "passport.role_lenses", consumer: "the role-sliced Living Project Passport block delivered to PM, workflow agents, specialists, writers, Council and Штурман", carries: [], alwaysOn: [], status: "exempt",
+    reason: "Structured PassportV1 claims and market rails from the passport room (not generic memory notes); verified directly by `bb lane-pilot project-passport probe` and tests/passport/ (deferral:passport-live-drill).",
+    sites: [
+      { file: "src/rooms/workflow/server/workflow-agent.ts", primitive: "projectPassportBlock", count: 1 },
+      { file: "src/rooms/workflow/server/workflow-tools.ts", primitive: "projectPassportBlock", count: 1 },
+      { file: "src/rooms/critique/server/specialists.ts", primitive: "projectPassportBlock", count: 1 },
+      { file: "src/rooms/writer/server/writer-knowledge.ts", primitive: "projectPassportBlock", count: 1 },
+      { file: "src/rooms/native-agent/server/activation.ts", primitive: "projectPassportBlock", count: 1 },
+      { file: "src/rooms/learning/service.ts", primitive: "projectPassportBlock", count: 1 },
+      { file: "src/rooms/council/server/council-graph.ts", primitive: "projectPassportBlock", count: 1 },
+      { file: "src/rooms/lead/server/tick.ts", primitive: "projectPassportBlock", count: 1 },
+    ] },
 ];
 
 export const pathById = (id: string): MemoryPath | undefined => MEMORY_PATHS.find((entry) => entry.id === id);

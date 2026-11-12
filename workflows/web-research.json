@@ -194,7 +194,13 @@
       "guards": {
         "maxVisits": 2,
         "timeoutMin": 20
-      }
+      },
+      "consumes": [
+        {
+          "kind": "search-results",
+          "version": 1
+        }
+      ]
     },
     {
       "id": "report",
@@ -251,7 +257,10 @@
       "id": "deliver",
       "type": "action",
       "action": "fs.write",
-      "path": "reports/research-{{date}}-{{slug}}.md",
+      "path": ".agents/research/research-{{date}}-{{slug}}.md",
+      "contents": {
+        "content": "{{report.report_md}}"
+      },
       "out": {
         "report_path": "string"
       }

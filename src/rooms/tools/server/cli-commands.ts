@@ -1,5 +1,5 @@
 import { TASK_RECORD_USAGE } from "./task-record";
-import { AGENTS_USAGE, ANAMNESIS_USAGE, BACKLOG_USAGE, BASELINE_USAGE, BENCH_USAGE, CAPABILITY_USAGE, CATALOG_USAGE, CHECKERS_USAGE, COVERAGE_USAGE, DEFERRAL_USAGE, DESIGN_PAIR_USAGE, EPISODES_USAGE, ERRANDS_USAGE, FORECAST_USAGE, JEV_USAGE, LEAD_USAGE, LEARNING_USAGE, MEMORY_COMPRESS_USAGE, MEMORY_CONFLICT_USAGE, MEMORY_EVAL_USAGE, OUTAGE_USAGE, PHASE_USAGE, PM_REPLAY_USAGE, PM_SKILLS_USAGE, POLICY_USAGE, PROFILE_KEYS, ROLLBACK_USAGE, RULES_USAGE, RUN_GOAL_USAGE, SCHEDULE_USAGE, SKILLS_USAGE, SMA_MAP_USAGE, WAITING_USAGE, WALL_USAGE, WINDOW_USAGE, excavate, jev, join, manifest, passport, preship, waitThreadIdle } from "./cli-imports";
+import { AGENTS_USAGE, ANAMNESIS_USAGE, BACKLOG_USAGE, BASELINE_USAGE, BENCH_USAGE, CAPABILITY_USAGE, CATALOG_USAGE, CHECKERS_USAGE, COVERAGE_USAGE, DEFERRAL_USAGE, DESIGN_PAIR_USAGE, EPISODES_USAGE, ERRANDS_USAGE, FORECAST_USAGE, JEV_USAGE, LEAD_USAGE, LEARNING_USAGE, MEMORY_COMPRESS_USAGE, MEMORY_CONFLICT_USAGE, MEMORY_EVAL_USAGE, OUTAGE_USAGE, PHASE_USAGE, PM_REPLAY_USAGE, PM_SKILLS_USAGE, POLICY_USAGE, PROFILE_KEYS, PROJECT_PASSPORT_USAGE, ROLLBACK_USAGE, RULES_USAGE, RUN_GOAL_USAGE, SCHEDULE_USAGE, SKILLS_USAGE, SMA_MAP_USAGE, WAITING_USAGE, WALL_USAGE, WINDOW_USAGE, excavate, jev, join, manifest, passport, preship, waitThreadIdle } from "./cli-imports";
 const MEMORY_CLI_USAGE = 'bb lane-pilot memory search "<question>" [--project P] | memory search --recall --query "<words>" [--cwd <path>] [--project P]   (read-only: confirmed notes by the word index, masked, one per line) | memory write "<fact>" [--project P] | memory history "<question>" [--project P] [--source tasks|execution|transcripts|lessons|books]   (the project memory on the hub; inside a BB thread the project is the thread\'s own)';
 
 const usage = [
@@ -40,6 +40,7 @@ const usage = [
     SCHEDULE_USAGE,
     AGENTS_USAGE,
     ANAMNESIS_USAGE,
+    PROJECT_PASSPORT_USAGE,
     DEFERRAL_USAGE,
     POLICY_USAGE,
     WAITING_USAGE,
@@ -108,6 +109,7 @@ const commands:Array<{ name:string; summary:string; usage:string }> = [
       { name:"events-list", summary:"Read-only SDK events.list probe", usage:"bb lane-pilot events-list <thread-id>" },
       { name:"wait-thread", summary:"Read-only waitThreadIdle probe", usage:"bb lane-pilot wait-thread <thread-id>" },
       { name:"anamnesis", summary:"What Lane Pilot knows about its owner (records on the owner's machine); sensitive ones only on explicit request", usage:"bb lane-pilot anamnesis status|list|show|history|add|edit|confirm|reject|forget|sources|host" },
+      { name:"project-passport", summary:"The Living Project Passport: canonical project identity, market/language/currency/legal rails, positioning, JTBD, messaging, proof and founder verbatim log; role-sliced lenses via probe", usage:PROJECT_PASSPORT_USAGE },
       { name:"learning", summary:"What Lane Pilot learned from the owner's own messages: status, review, learned items, yes or no, settings", usage:LEARNING_USAGE },
       { name:"pm-replay", summary:"The PM replay set: scenarios grown from the owner's corrections, replayed on the PM surface to prove PM rules", usage:PM_REPLAY_USAGE },
       { name:"policy-exam", summary:"Score the night policy on the newest unseen split (owner decisions made after its freeze) and store the result; a failed or short exam is a measurement and does not change what the night may decide", usage:"bb lane-pilot policy-exam" },

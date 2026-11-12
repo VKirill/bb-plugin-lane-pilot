@@ -1,5 +1,6 @@
 import { MAIN_AGENT_ID, isCustomAgentId } from "../../contracts/server";
 import { employeeRoleLines } from "../../native-agent";
+import { projectPassportBlock } from "../../passport";
 import { EMPLOYEES } from "../../contracts/server";
 import { bestEffort } from "@lane-pilot/kit";
 import { jev } from "@lane-pilot/jev";
@@ -30,7 +31,10 @@ interface Services {
 }
 
 /** The specialists a PM may hand work to; Explore and Plan stay Claude Code subagents inside the PM session. */
-export const SPECIALIST_ROLES = ["design-lead", "copy-lead", "seo-specialist", "growth-marketer", "tavily", "video-lead"] as const;
+export const SPECIALIST_ROLES = [
+  "design-lead", "copy-lead", "seo-specialist", "growth-marketer", "tavily", "video-lead",
+  "3d-artist", "game-dev", "social-manager", "billing-assistant", "visual-artist", "macos-operator",
+] as const;
 
 /** Employee domain → the validator kind `validateDeliverable` knows (deliverable.validate's `validator` param). */
 export const EMPLOYEE_VALIDATORS: Record<string, string> = {
@@ -59,10 +63,13 @@ export function registerSpecialistActions(engine: WorkflowEngine, ctx: ServerCor
     reentrant: true,
     run: async (c: StepContext<ChainRuntime>) => {
       const role = String(c.resolve("$inputs.role") ?? ""), task = String(c.resolve("$inputs.task") ?? "");
-      const lines = await employeeRoleLines(ctx.bb, c.runtime?.projectId ?? "", role);
+      const projectId = c.runtime?.projectId ?? "";
+      const lines = await employeeRoleLines(ctx.bb, projectId, role);
+      const passport = projectId ? projectPassportBlock(ctx.db, { projectId, role }) : "";
+      const enrichedTask = passport ? `${task}\n\n${passport}` : task;
       // The step's own <task> wraps this text, so the PM's task stands in <request>.
       const answer = "In this run your final message ends with the JSON block described below: its report field carries your whole answer to the PM (what you produced, the paths, open questions).";
-      return { output: { text: `${specialistPrompt("", role, task, lines, "request").replace(/^\n+/, "")}\n\n${answer}` } };
+      return { output: { text: `${specialistPrompt("", role, enrichedTask, lines, "request").replace(/^\n+/, "")}\n\n${answer}` } };
     },
   } as never);
 }
@@ -108,7 +115,7 @@ export function mountSpecialists(ctx: ServerCore, services: Services): void {
 
   registerObservedTool(bb.agents, {
     name: "lane_pilot_specialist", startsWork: true,
-    description: "Start the `specialist` graph: work for a specialist (design-lead, copy-lead, seo-specialist, tavily, video-lead, or an agent the owner created) as a child thread of this PM chat that the owner can open.",
+    description: "Start the `specialist` graph: work for a specialist (design-lead, copy-lead, seo-specialist, growth-marketer, tavily, video-lead, 3d-artist, game-dev, social-manager, billing-assistant, visual-artist, macos-operator, or an agent the owner created) as a child thread of this PM chat that the owner can open.",
     instructions: "Use from a Lane Pilot PM chat instead of the Agent tool for these roles; an agent the owner created is named by its id. Give the whole task: goal, context, files to read, the deliverable and where to write it. Returns at once with the thread; then call lane_pilot_wait_specialist with that threadId, again while it reports running. Show the owner the returned @thread link. Specialists never change product code; implementation still goes through lane_pilot_dispatch_writer.",
     parameters: z.object({
       role: z.string().regex(MAIN_AGENT_ID),

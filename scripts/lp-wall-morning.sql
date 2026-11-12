@@ -23,6 +23,8 @@ with dark(name) as (
   union all
   select 'lane_pilot_activation' as name where (select count(*) from lane_pilot_activation where claimed_at >= (select since from lp_morning_30)) = 0
   union all
+  select 'lane_pilot_artifact' as name where (select count(*) from lane_pilot_artifact where updated_at >= (select since from lp_morning_30)) = 0
+  union all
   select 'lane_pilot_attempt' as name where (select count(*) from lane_pilot_attempt where created_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_attempt_change' as name where (select count(*) from lane_pilot_attempt_change where updated_at >= (select since from lp_morning_30)) = 0
@@ -145,6 +147,12 @@ with dark(name) as (
   union all
   select 'lane_pilot_owner_tombstones' as name where (select count(*) from lane_pilot_owner_tombstones where cutoff >= (select since from lp_morning_30)) = 0
   union all
+  select 'lane_pilot_passport' as name where (select count(*) from lane_pilot_passport where updated_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_passport_pending' as name where (select count(*) from lane_pilot_passport_pending where created_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_passport_verbatim' as name where (select count(*) from lane_pilot_passport_verbatim where created_at >= (select since from lp_morning_30)) = 0
+  union all
   select 'lane_pilot_phase' as name where (select count(*) from lane_pilot_phase where created_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_phase_part' as name where (select count(*) from lane_pilot_phase_part where at >= (select since from lp_morning_30)) = 0
@@ -186,6 +194,40 @@ with dark(name) as (
   select 'lane_pilot_setting_generation' as name where (select count(*) from lane_pilot_setting_generation) = 0
   union all
   select 'lane_pilot_skill_metric' as name where (select count(*) from lane_pilot_skill_metric where recorded_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_sp_autonomy' as name where (select count(*) from lane_pilot_sp_autonomy where updated_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_sp_breaker' as name where (select count(*) from lane_pilot_sp_breaker where updated_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_sp_cf_batch' as name where (select count(*) from lane_pilot_sp_cf_batch where created_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_sp_charter' as name where (select count(*) from lane_pilot_sp_charter where updated_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_sp_cohort' as name where (select count(*) from lane_pilot_sp_cohort where updated_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_sp_cursor' as name where (select count(*) from lane_pilot_sp_cursor where updated_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_sp_dispatch' as name where (select count(*) from lane_pilot_sp_dispatch where created_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_sp_eval_run' as name where (select count(*) from lane_pilot_sp_eval_run where created_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_sp_intent' as name where (select count(*) from lane_pilot_sp_intent where created_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_sp_ledger' as name where (select count(*) from lane_pilot_sp_ledger where created_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_sp_lock' as name where (select count(*) from lane_pilot_sp_lock) = 0
+  union all
+  select 'lane_pilot_sp_memory_commit' as name where (select count(*) from lane_pilot_sp_memory_commit where created_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_sp_mutation_log' as name where (select count(*) from lane_pilot_sp_mutation_log) = 0
+  union all
+  select 'lane_pilot_sp_nonce' as name where (select count(*) from lane_pilot_sp_nonce where issued_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_sp_organic_unit' as name where (select count(*) from lane_pilot_sp_organic_unit where created_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_sp_question_state' as name where (select count(*) from lane_pilot_sp_question_state) = 0
+  union all
+  select 'lane_pilot_sp_tick_lease' as name where (select count(*) from lane_pilot_sp_tick_lease) = 0
   union all
   select 'lane_pilot_stage_event' as name where (select count(*) from lane_pilot_stage_event where occurred_at >= (select since from lp_morning_30)) = 0
   union all

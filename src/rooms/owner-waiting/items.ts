@@ -216,6 +216,30 @@ export function listOpenOwnerItemKeys(db: Db, filter: OpenOwnerItemFilter): stri
   return (db.prepare(`SELECT key FROM lane_pilot_owner_item WHERE ${where}`).all(...params) as Array<{ key: string }>).map((row) => row.key);
 }
 
+export function listOpenOwnerItems(
+  db: Db,
+  filter: OpenOwnerItemFilter,
+): Array<{ key: string; source: string; kind: string; projectId: string | null; what: string; why: string; createdAt: number }> {
+  if (!tableExists(db, "lane_pilot_owner_item")) return [];
+  const { where, params } = openOwnerItemWhere(filter);
+  return db
+    .prepare(
+      `SELECT key, source, kind, project_id AS projectId, what, why, created_at AS createdAt
+         FROM lane_pilot_owner_item
+        WHERE ${where}
+        ORDER BY created_at DESC`,
+    )
+    .all(...params) as Array<{
+    key: string;
+    source: string;
+    kind: string;
+    projectId: string | null;
+    what: string;
+    why: string;
+    createdAt: number;
+  }>;
+}
+
 /** How long a row that asks nothing (no actions: a fact, a notice) stays on the list before the janitor takes it. */
 export const OWNER_FACT_TTL_MS = 3 * 24 * 60 * 60_000;
 /** How long a row without buttons that still describes something to do (a writer's question, a red gate) stays. */

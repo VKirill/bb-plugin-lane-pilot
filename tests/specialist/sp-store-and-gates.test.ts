@@ -303,7 +303,28 @@ describe("Specialist OS SQLite store, safety gates, and role protections", () =>
     });
     expect(mismatch).toEqual({ ok: false, reason: "payload_mismatch" });
 
-    // Valid apply succeeds (+12% <= 15%)
+    // Honest staging without external adapter (`G-02` / `G-25`): records simulated + staged_manual without claiming live applied
+    const stagedNonce = mintApprovalNonce(db, { projectId: "p1", actionId: "mkt-direct:stage_only", payload: items, nowMs: now });
+    const stagedOnly = applyMutationsBatch(db, {
+      projectId: "p1",
+      domain: "marketing",
+      tier: "L",
+      items: [{ entity_id: "camp_stage", mutation_kind: "goal_upsert" }],
+      actionId: "mkt-direct:stage_only",
+      nonceToken: mintApprovalNonce(db, {
+        projectId: "p1",
+        actionId: "mkt-direct:stage_only",
+        payload: [{ entity_id: "camp_stage", mutation_kind: "goal_upsert" }],
+        nowMs: now,
+      }).token,
+      nowMs: now + 1_500,
+    });
+    expect(stagedNonce.token.length).toBeGreaterThan(10);
+    expect(stagedOnly.applied).toBe(0);
+    expect(stagedOnly.staged).toBe(1);
+    expect(stagedOnly.mode).toBe("staged_manual");
+
+    // Valid apply succeeds (+12% <= 15%) when external mutation adapter executes
     const okApply = applyMutationsBatch(db, {
       projectId: "p1",
       domain: "marketing",
@@ -311,9 +332,11 @@ describe("Specialist OS SQLite store, safety gates, and role protections", () =>
       items,
       actionId: "mkt-direct:push_live",
       nonceToken: nonce.token,
+      executeMutation: () => ({ ok: true, externalReceipt: { adapter: "test_direct_api" } }),
       nowMs: now + 2_000,
     });
     expect(okApply.applied).toBe(1);
+    expect(okApply.mode).toBe("live");
 
     // Replay with the same nonce fails immediately
     const replay = applyMutationsBatch(db, {

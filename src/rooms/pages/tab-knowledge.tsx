@@ -2,6 +2,7 @@ import { t } from "@lane-pilot/i18n";
 import { AnamnesisTab } from "../anamnesis/ui";
 import { DocsPlaces } from "../docs/ui";
 import { MemoryRecords } from "../memory/ui";
+import { PassportPanel } from "../passport/ui";
 import { HarnessCard } from "../harness/ui";
 import { RuleProposals } from "../self-repair/ui";
 import { asBoolean } from "../ui-shell/ui";
@@ -37,6 +38,9 @@ export function KnowledgeTab({ page }: { page: LpPage }) {
             </AdvancedRows>
           </section>
         </SettingsGroup>
+      ) : null}
+      {segment === "passport" && !isGlobal && projectId ? (
+        <PassportPanel projectId={projectId} scopeKey={page.selectedSectionId ?? ""} />
       ) : null}
       {segment === "docs" ? (
         <SettingsGroup testId="settings-docs" title={t("groupDocs")} help={<HelpSup label={t("docsPickerTechnical")}><p>{t("docsPickerTechnical")}</p></HelpSup>}>

@@ -17,10 +17,10 @@ export type SystemMap = { nodes: Node[]; edges: Edge[] };
 /** Rooms by the part of the system they serve; a room not listed lands in «Other». */
 const AREAS: Record<string, string[]> = {
   "Task pipeline": ["writer", "runs", "tasks", "acceptance", "baseline", "verification", "validators", "critique", "qa", "stage-return", "phase", "run-goal", "rollback", "backlog", "work-graph"],
-  "Graphs and schedule": ["workflow", "night-graphs", "schedule", "relay", "forge"],
+  "Graphs and schedule": ["workflow", "specialist", "night-graphs", "schedule", "relay", "forge"],
   "PM, agents and doors": ["native-agent", "native-install", "session-hooks", "secrets", "tools", "front", "cockpit", "council", "host-worker", "project-life"],
   "Models, Jev, money": ["jev", "capability", "usage", "money"],
-  "Memory and the owner": ["memory", "memory-eval", "memory-probe", "memory-tiers", "anamnesis", "learning", "rule-forms", "docs"],
+  "Memory and the owner": ["memory", "memory-eval", "memory-probe", "memory-tiers", "passport", "anamnesis", "learning", "rule-forms", "docs"],
   "Self-improvement": ["wall", "night", "bench", "harness", "hypotheses", "improvement", "self-repair", "lead", "errands", "policy", "checkers", "coverage", "forecast", "design-eval", "pm-replay", "sma-map", "wires"],
   "Stability and the owner's list": ["stability", "outage", "deferral", "owner-waiting", "owner-presence"],
   "Platform": ["core", "storage", "contracts", "settings", "ui-shell"],

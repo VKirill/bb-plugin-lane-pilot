@@ -271,7 +271,7 @@
         "en": "Page architecture",
         "ru": "Архитектура страниц"
       },
-      "prompt": "TGA v4: entity to intent to pages, not keyword silos. For each intent pick the page type from the SERP and resolve H2 vs its own URL through the granularity, absorption and new-URL gates; assign roles, one structural home and action-based links. Output the three registries (Page Inventory, Link & Context Graph, Entity Consistency Map) plus fact_registry and link acceptors; at most max_pages pages, the rest phase 2.",
+      "prompt": "TGA v4: entity to intent to pages, not keyword silos. Read .agents/seo/ppc-bridge-latest.json, .agents/marketing/campaigns/direct-*/bridge.json (if present) for paid-converting queries lacking organic top-5, and .agents/research/INDEX.md. Pick page types from SERP, resolve H2 vs URL via granularity/absorption/new-URL gates; set roles, structural home, hub-and-spoke links (diverse anchors, zero exact-match spam), and hreflang parity if >1 locale. Output Page Inventory, Link Graph, Entity Map, fact_registry and acceptors (<= max_pages; rest phase 2).",
       "out": {
         "clusters": "Cluster[]",
         "pages": "Page[]",

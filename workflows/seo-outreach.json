@@ -137,12 +137,12 @@
         }
       ],
       "type": "agent",
-      "role": "auditor",
+      "role": "specialist:copy-lead",
       "title": {
         "en": "Humanise and proofread",
         "ru": "Очеловечить и вычитать"
       },
-      "prompt": "Humanise and proofread every draft; facts checked against BrandCore. Return clean_paths and ready (count of send-ready messages).",
+      "prompt": "Humanise and proofread every outreach draft (copy-lead: Zinsser clutter removal, recipient-first specificity, zero AI boilerplate); facts checked strictly against BrandCore. Return clean_paths and ready (count of send-ready messages).",
       "out": {
         "clean_paths": "string[]",
         "ready": "int"
@@ -153,6 +153,8 @@
       },
       "profile": {
         "skills": [
+          "copywriter",
+          "ru-text",
           "drmax-text-humanization",
           "ru-check"
         ]

@@ -1,6 +1,7 @@
 ---
 name: seo-drmax-orchestrator
-description: "SEO harness router for current DrMax: X4 cocoons, BrandCore, Humanization, ai-detect 3.9.4, SignalForge, Latent Intent, Market-Scoped. Phases + artifacts in .agents/seo/, seo-dispatch workers. Use when: SEO проект, оркестратор, паспорт, кокон, контент-конвейер, seo-resume. SKIP: one isolated skill (open that thin skill); paid ads (→ads-specialist)."
+description: >-
+  SEO harness router for current DrMax: X4 cocoons, BrandCore, Humanization, ai-detect 3.9.4, SignalForge, Latent Intent, Market-Scoped. Phases + artifacts in .agents/seo/, seo-dispatch workers. Use when: SEO проект, оркестратор, паспорт, кокон, контент-конвейер, seo-resume. SKIP: one isolated skill (open that thin skill); paid ads (→ads-specialist).
 ---
 
 # SEO DrMax Orchestrator
@@ -106,4 +107,5 @@ seo-board . && seo-handoff-write .
 ## Wave-2 Distilled References
 
 - `references/seo-unit-economics-and-ai-semantics-scoring.md` — operational playbook and thresholds.
-- `references/01-experiment-charter-and-causal-verdict.md` — operational playbook and thresholds.
+- `references/01-experiment-charter-and-causal-verdict.md` — controlled SEO experiments, DiD contract, and causal verdict gates.
+- Cross-skill internal linking & GEO/RAG evidence: open `seo-ai-visibility` (`06-internal-linking-and-geo-rag-evidence.md`) for contextual hub-spoke weight routing, anchor information scent, and RAG passage extractability.

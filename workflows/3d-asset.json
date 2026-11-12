@@ -59,6 +59,11 @@
       "type": "string",
       "default": "",
       "note": "путь или ссылка на готовый концепт (если есть)"
+    },
+    "target_engine": {
+      "type": "blender|roblox",
+      "default": "blender",
+      "note": "целевой движок: blender (экспорт GLB/FBX/OBJ) или roblox (предложит roblox-asset после экспорта)"
     }
   },
   "outputs": {
@@ -66,7 +71,8 @@
     "asset_path": "string",
     "preview_path": "string",
     "poly_count": "int",
-    "report_path": "string"
+    "report_path": "string",
+    "proposed_workflow": "string?"
   },
   "requires": {
     "plugins": [
@@ -248,6 +254,29 @@
       }
     },
     {
+      "id": "offer_roblox",
+      "type": "action",
+      "action": "lp.propose_workflow",
+      "workflow": "roblox-asset",
+      "inputs": {
+        "asset_name": "{{$inputs.prompt}}",
+        "source_file": "{{export.asset_path}}"
+      }
+    },
+    {
+      "id": "done_roblox",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "asset_path": "export.asset_path",
+        "preview_path": "verify.preview_path",
+        "poly_count": "verify.poly_count",
+        "report_path": "verify.report_path",
+        "proposed_workflow": "'roblox-asset'"
+      }
+    },
+    {
       "id": "done",
       "type": "action",
       "action": "emit",
@@ -346,6 +375,15 @@
       "from": "export",
       "to": "blocked",
       "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "offer_roblox",
+      "when": "goal_check.ok != false && $inputs.target_engine == 'roblox'"
+    },
+    {
+      "from": "offer_roblox",
+      "to": "done_roblox"
     },
     {
       "from": "goal_check",

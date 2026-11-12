@@ -23,11 +23,18 @@
     "audit",
     "uat"
   ],
-  "inputs": {},
+  "inputs": {
+    "propose_followup": {
+      "type": "bool",
+      "default": false,
+      "note": "propose fix-findings when open acceptance items remain"
+    }
+  },
   "outputs": {
     "status": "done",
     "open_count": "int",
-    "audit_path": "string"
+    "audit_path": "string",
+    "proposed_workflow": "string?"
   },
   "requires": {
     "plugins": [
@@ -107,6 +114,15 @@
         "open_count": "audit.open_count",
         "audit_path": "write.audit_path"
       }
+    },
+    {
+      "id": "offer",
+      "type": "action",
+      "action": "lp.propose_workflow",
+      "workflow": "analyze-plan-execute",
+      "inputs": {
+        "goal": "Fix open UAT findings from {{write.audit_path}}"
+      }
     }
   ],
   "edges": [
@@ -118,6 +134,17 @@
     {
       "from": "write",
       "to": "goal_check",
+      "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "offer",
+      "pass": "artifact",
+      "when": "$inputs.propose_followup == true && audit.open_count > 0"
+    },
+    {
+      "from": "offer",
+      "to": "done",
       "pass": "artifact"
     },
     {

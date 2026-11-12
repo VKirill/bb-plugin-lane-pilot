@@ -25,7 +25,7 @@ export { MEMORY_SCHEMA, addToIndexes, coreShelf, deleteMemoryRecord, dropMemoryI
 export { LINT_CHECKS, lintMemory, reviewMemory, type LintCheck, type LintContext, type LintFinding, type LintTier, type ReviewProposal } from "./lint";
 export { memoryStem, memoryTokens } from "./terms";
 export { EMBED_DIM, EMBED_MODEL, denseRank, documentText, pendingVectors, queryText, queryVectorFor, rememberQueryVector, storeVectors, vectorsReady } from "./vectors";
-export { NOTE_IDLE_MS, OBSERVED_QUARANTINE_MS, hideRecord, memoryUsefulness, noteRefutedByCheck, recordCriticUse, recordMemoryAccepted, recordMemoryMixed, recordMemoryReceipt, retireStaleCuratorClaims, sameSubject, type ExpiredReason } from "./lifecycle";
+export { NOTE_IDLE_MS, OBSERVED_QUARANTINE_MS, hideRecord, listMemoryReceipts, memoryUsefulness, noteRefutedByCheck, recordCriticUse, recordMemoryAccepted, recordMemoryMixed, recordMemoryReceipt, retireStaleCuratorClaims, sameSubject, type ExpiredReason, type MemoryReceiptRow } from "./lifecycle";
 export { audienceForSensitivity, exportedFileName, laneMemoryFileToCandidate, parseLaneMemoryFile, renderLaneMemoryFile, sensitivityForAudience, type LaneMemoryFile } from "./files";
 export { findConflicts, conflictId, disagreement, type Conflict, type ConflictKind, type ConflictNote } from "./conflicts";
 export { conflictTableReady, getConflict, heldClause, holdConflict, listConflicts, markSettled, memoryConflictMigrations, setDeferral, type ConflictResolution, type ConflictRow } from "./conflict-store";

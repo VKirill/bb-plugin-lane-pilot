@@ -180,9 +180,11 @@
         }
       ],
       "type": "agent",
-      "role": "specialist:seo-specialist",
+      "role": "specialist:copy-lead",
       "profile": {
         "skills": [
+          "copywriter",
+          "ru-text",
           "seo-measurement-loop",
           "seo-prompt-kit"
         ]
@@ -191,7 +193,7 @@
         "en": "CTR snippet fix",
         "ru": "Правка сниппета под CTR"
       },
-      "prompt": "Procedure gsc-snippet-ctr-audit on {{route.url}}: positions 2-10 with CTR below the norm — rewrite the snippet and the markup, log before and after. Return fix_path and release_item.",
+      "prompt": "Procedure gsc-snippet-ctr-audit on {{route.url}} (copy-lead + SEO): positions 2-10 with CTR below the norm — rewrite the title/snippet with concrete factual specificity (Ogilvy/Bly 4U) and matching markup, log before and after. Return fix_path and release_item.",
       "out": {
         "fix_path": "string",
         "release_item": "string"

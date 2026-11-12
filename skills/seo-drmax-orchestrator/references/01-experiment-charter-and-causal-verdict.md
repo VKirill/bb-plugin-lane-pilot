@@ -1,8 +1,8 @@
 ---
 title: "Controlled SEO experiments and factor verification"
-status: draft
+status: active
 owner: drmax-books-finish
-target_skill: seo-measurement-loop
+target_skill: seo-drmax-orchestrator
 source_pages: "Доказательное SEO 2026, book 2 ch.5 pp.390–397; ch.7 pp.420–425"
 tags: [seo, engineering-reference, synthesized, private]
 ---
@@ -42,4 +42,4 @@ Save a charter, immutable cohort membership, release receipt, analysis table, ef
 
 ## Source and integration
 
-Source: Доказательное SEO 2026, book 2 ch.5 pp.390–397; ch.7 pp.420–425. Resolve physical PDF page N to `/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/raw_pages/page_NNN.txt`. Cross-check the named procedures in [the registry](/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/procedures-registry.json). This reference is ready for review and placement in `seo-measurement-loop`; no skill installation or live changes were performed.
+Source: Доказательное SEO 2026, book 2 ch.5 pp.390–397; ch.7 pp.420–425. Resolve physical PDF page N to `/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/raw_pages/page_NNN.txt`. Cross-check the named procedures in [the registry](/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/procedures-registry.json). Active reference installed in `seo-drmax-orchestrator`.

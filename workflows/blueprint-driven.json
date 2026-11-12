@@ -198,7 +198,7 @@
     },
     {
       "id": "readiness",
-      "consumes": [{"kind": "report", "version": 1, "from": "epics"}, {"kind": "report", "version": 1, "from": "autofix"}],
+      "consumes": [{"kind": "report", "version": 1, "from": "epics"}, {"kind": "report", "version": 1, "from": "autofix", "required": false}],
       "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "plan-critic",

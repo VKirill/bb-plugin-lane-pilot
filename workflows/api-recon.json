@@ -61,6 +61,11 @@
       "type": "string",
       "default": "",
       "note": "the Env Catalog name of the account; empty when the service needs none"
+    },
+    "propose_followup": {
+      "type": "bool",
+      "default": false,
+      "note": "propose implementation task after recon"
     }
   },
   "outputs": {
@@ -71,7 +76,17 @@
     "endpoints": "string",
     "observed": "int",
     "bundle_only": "int",
-    "official_api": "bool"
+    "official_api": "bool",
+    "proposed_workflow": "string?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot",
+      "browser-automation"
+    ],
+    "skills": [
+      "env-catalog"
+    ]
   },
   "budget": {
     "max_minutes": 90,
@@ -86,8 +101,10 @@
         "en": "Map the service's API",
         "ru": "Снять карту API сервиса"
       },
+      "plugins": [
+        "browser-automation"
+      ],
       "skills": [
-        "browser-automation",
         "env-catalog"
       ],
       "proof": {
@@ -132,12 +149,30 @@
         "bundle_only": "crawl.bundle_only",
         "official_api": "crawl.official_api"
       }
+    },
+    {
+      "id": "offer",
+      "type": "action",
+      "action": "lp.propose_workflow",
+      "workflow": "analyze-plan-execute",
+      "inputs": {
+        "goal": "{{$inputs.goal}} (API map: {{crawl.api_map}}, endpoints: {{crawl.endpoints}})"
+      }
     }
   ],
   "edges": [
     {
       "from": "start",
       "to": "crawl"
+    },
+    {
+      "from": "crawl",
+      "to": "offer",
+      "when": "$inputs.propose_followup == true && crawl.status == 'done'"
+    },
+    {
+      "from": "offer",
+      "to": "done"
     },
     {
       "from": "crawl",

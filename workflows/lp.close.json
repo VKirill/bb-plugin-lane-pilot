@@ -169,12 +169,14 @@
         {
           "kind": "report",
           "version": 1,
-          "from": "goal-screen"
+          "from": "goal-screen",
+          "required": false
         },
         {
           "kind": "report",
           "version": 1,
-          "from": "goal_audit"
+          "from": "goal_audit",
+          "required": false
         }
       ],
       "produces": [

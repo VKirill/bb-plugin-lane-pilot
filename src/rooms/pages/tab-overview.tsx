@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { stateLabel, t } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
@@ -80,6 +81,7 @@ export function OverviewTab({ page }: { page: LpPage }) {
         </SurfaceBody>
       </Surface>
       {page.projectId ? <BacklogBoardPanel projectId={page.projectId} /> : null}
+      {page.projectId ? <SpecialistStatusCard page={page} projectId={page.projectId} /> : null}
       <Surface testId="setup-status">
         <SurfaceHeader><h2 className="text-sm font-medium">{t("overviewSetup")}</h2></SurfaceHeader>
         <SurfaceBody className="space-y-3">
@@ -138,6 +140,62 @@ function MachineAndFolder({ page }: { page: LpPage }) {
         {binding.status === "offline" ? <p>{t("bindingOffline")}</p> : null}
         {binding.status === "catalog_unavailable" ? <p>{t("writerCatalogUnavailable")}</p> : null}
         {(data.inheritedKeys ?? []).length ? <p className="text-xs text-muted-foreground">{t("inheritedFromGlobal")}</p> : null}
+      </SurfaceBody>
+    </Surface>
+  );
+}
+
+type SpecialistOverviewView = {
+  breakers?: Array<{ domain: string; state: string }>;
+  pendingIntents?: number;
+  dispatchedCount?: number;
+  openQuestionsCount?: number;
+  artifactsCount?: number;
+  spend30dUsd?: number;
+};
+
+function SpecialistStatusCard({ page, projectId }: { page: LpPage; projectId: string }) {
+  const [ov, setOv] = useState<SpecialistOverviewView | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void Promise.resolve(page.rpc.call("specialist_overview", { projectId }))
+      .then((res) => {
+        if (alive && res && typeof res === "object") setOv(res as SpecialistOverviewView);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [page.rpc, projectId]);
+  const artifacts = ov?.artifactsCount ?? 0;
+  const dispatched = ov?.dispatchedCount ?? 0;
+  const intents = ov?.pendingIntents ?? 0;
+  const questions = ov?.openQuestionsCount ?? 0;
+  const spend = (ov?.spend30dUsd ?? 0).toFixed(2);
+  const openBreakers = (ov?.breakers ?? []).filter((b) => b.state === "open").map((b) => b.domain);
+  const empty = artifacts === 0 && dispatched === 0 && intents === 0 && questions === 0 && openBreakers.length === 0;
+  return (
+    <Surface testId="specialist-overview">
+      <SurfaceHeader className="justify-between">
+        <h2 className="text-sm font-medium">{t("spOverviewTitle")}</h2>
+        <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => page.goTo("knowledge", "passport")}>{t("spOverviewOpenPassport")}</Button>
+      </SurfaceHeader>
+      <SurfaceBody className="space-y-1.5 text-sm">
+        {empty ? (
+          <p className="text-xs text-muted-foreground">{t("spOverviewEmpty")}</p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            {t("spOverviewStats")
+              .replace("{artifacts}", String(artifacts))
+              .replace("{dispatched}", String(dispatched))
+              .replace("{intents}", String(intents))
+              .replace("{questions}", String(questions))
+              .replace("{spend}", spend)}
+          </p>
+        )}
+        {openBreakers.length > 0 ? (
+          <p className="text-xs text-destructive">{t("spOverviewBreakerWarn").replace("{domains}", openBreakers.join(", "))}</p>
+        ) : null}
       </SurfaceBody>
     </Surface>
   );

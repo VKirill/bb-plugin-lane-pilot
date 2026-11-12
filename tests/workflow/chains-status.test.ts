@@ -69,7 +69,8 @@ describe("status of the built-in chains", () => {
       "seo-ai-visibility",
       "lp.specialist-eval",
       "lp.curriculum-ingest",
+      "project-passport",
     ]));
-    expect(ids).toHaveLength(124); // 113 prior + 11 Specialist OS graphs
+    expect(ids).toHaveLength(125); // 113 prior + 11 Specialist OS graphs + project-passport
   });
 });

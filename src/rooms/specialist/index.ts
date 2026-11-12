@@ -6,6 +6,8 @@ export {
   type IntervalForecast,
   actionOrderKindSchema,
   type ActionOrderKind,
+  type DbOrderKind,
+  dbOrderKindOf,
   actionOrderSchema,
   type ActionOrder,
   canonicalJson,

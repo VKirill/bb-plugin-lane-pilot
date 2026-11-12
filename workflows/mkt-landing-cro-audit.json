@@ -137,10 +137,11 @@
       "id": "capture",
       "type": "agent",
       "role": "browser-qa",
+      "plugins": [
+        "browser-automation"
+      ],
       "profile": {
-        "skills": [
-          "browser-automation"
-        ]
+        "skills": []
       },
       "produces": [
         {

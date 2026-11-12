@@ -3,6 +3,7 @@ import { loadProjectSettings } from "../storage";
 import { measuredAttemptTokens, medianTokens, tokenDailyRowsSince, unmeasuredAttempts } from "../usage/server";
 import type { ServerCore } from "../contracts/server";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
+import { specialistLedgerSummary } from "../specialist/server";
 import { capOf, isPaid, moneyCapFrom, moneyHold, priceOf, spendBook, type DailyRow, type Price } from "./logic";
 
 /** The spend book on the hub's token rows and the money cap of the paid lanes. */
@@ -55,7 +56,8 @@ export function createMoney(ctx: Pick<ServerCore, "db" | "bb">) {
     return { ...book, monthUsd, estimated, estimatedUsd: estimated, estimatedAttempts: estimate.estimatedAttempts,
       // A silent attempt with too little lane history is `unknown`: it is not summed and not zero.
       silentAttempts: estimate.silentAttempts, silentUnknown: estimate.silentAttempts - estimate.estimatedAttempts,
-      cap: limit, capSet: limit !== null, unlimited: cap === Infinity, left: limit === null ? null : Math.max(0, Math.round((limit - monthUsd) * 100) / 100) };
+      cap: limit, capSet: limit !== null, unlimited: cap === Infinity, left: limit === null ? null : Math.max(0, Math.round((limit - monthUsd) * 100) / 100),
+      specialistLedger: specialistLedgerSummary(ctx.db, now) };
   }
   /**
    * Per-task ceiling (SMA m_mo_task_ceiling), only where money.task_ceiling is on: the task is priced at its appetite in output

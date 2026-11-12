@@ -22,6 +22,7 @@
     ]
   },
   "not_for": [
+    "project-passport: the cross-domain Living Project Passport interview before any channel charter",
     "mkt-pulse-monitor: the daily corridor check once a charter exists",
     "seo-project-intake: the SEO passport of a site (brandcore, technical route), not ad budgets and CAC",
     "mkt-tracking-setup: fixing counters, goals and UTM once the charter exists",
@@ -79,7 +80,8 @@
       "mkt-end-to-end-analytics",
       "lp-agentic-discipline",
       "drmax-brandcore",
-      "mkt-ab-mde-alerts"
+      "mkt-ab-mde-alerts",
+      "mkt-organic-content"
     ],
     "secrets": [
       "YANDEX_METRIKA_RO_TOKEN?",
@@ -108,6 +110,8 @@
         "has_charter": "bool",
         "cold_start": "bool",
         "charter_json": "string",
+        "brandcore_json": "string",
+        "market_rails_json": "string",
         "open_assumptions_json": "string"
       }
     },
@@ -119,7 +123,8 @@
         "skills": [
           "mkt-end-to-end-analytics",
           "drmax-brandcore",
-          "lp-agentic-discipline"
+          "lp-agentic-discipline",
+          "mkt-organic-content"
         ]
       },
       "produces": [
@@ -132,7 +137,7 @@
         "en": "Product, funnel and counters inventory (read-only)",
         "ru": "Инвентаризация продукта, воронки и счётчиков (только чтение)"
       },
-      "prompt": "Inventory {{$inputs.project_url}} ({{$inputs.product_kind}}, stack {{$inputs.analytics_stack}}). Read-only: the offer and prices from the site, the funnel steps from visit to payment (for a bot: /start deep links, activation, payment webhook), Metrika counters and goals (mcp-yandex-seo-ro), GA4 properties and key events (mcp-ga4-ro), GTM containers (mcp-gtm-ro), and where payments are recorded. Existing charter, if any: <data>{{load_state.charter_json}}</data>. Never change an account. Write .agents/marketing/intake/brief.md. Return brief_path, funnel_steps, counters_found, payment_source and facts_missing (facts only the owner knows: margin, refunds, forbidden topics, geos).",
+      "prompt": "Inventory {{$inputs.project_url}} ({{$inputs.product_kind}}, stack {{$inputs.analytics_stack}}). First check .agents/research/INDEX.md when present to reuse existing market/competitor dossiers before running new queries. Read-only: the offer and prices from the site, the funnel steps from visit to payment (for a bot: /start deep links, activation, payment webhook), Metrika counters and goals (mcp-yandex-seo-ro), GA4 properties and key events (mcp-ga4-ro), GTM containers (mcp-gtm-ro), and where payments are recorded. Existing charter / passport defaults: <data>{{load_state.charter_json}}</data>; Living Project Passport BrandCore & market rails: <data>{{load_state.brandcore_json}}</data> / <data>{{load_state.market_rails_json}}</data>. Inherit confirmed facts and strict market rails (never propose RU/Yandex/erid on non-RU projects that exclude RU) without re-asking the owner. Never change an account. Write .agents/marketing/intake/brief.md. Return brief_path, funnel_steps, counters_found, payment_source and facts_missing (facts only the owner knows and has not already confirmed in the passport: margin, refunds, forbidden topics, geos).",
       "out": {
         "brief_path": "string",
         "funnel_steps": "string[]",
@@ -212,7 +217,8 @@
         "skills": [
           "mkt-end-to-end-analytics",
           "lp-agentic-discipline",
-          "mkt-ab-mde-alerts"
+          "mkt-ab-mde-alerts",
+          "mkt-organic-content"
         ]
       },
       "produces": [
@@ -470,6 +476,8 @@
           "has_charter": false,
           "cold_start": true,
           "charter_json": "",
+          "brandcore_json": "{}",
+          "market_rails_json": "{}",
           "open_assumptions_json": "[]"
         },
         "discover": {
@@ -597,6 +605,8 @@
             "has_charter": false,
             "cold_start": false,
             "charter_json": "",
+            "brandcore_json": "{}",
+            "market_rails_json": "{}",
             "open_assumptions_json": "[]"
           },
           "commit_intents": {

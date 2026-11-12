@@ -139,11 +139,11 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "specialist:design-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "project-design"], mcpServers: ["metamcp"] },
   "specialist:copy-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "copywriter"], mcpServers: [] },
   "specialist:seo-specialist": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "seo-drmax-orchestrator"], mcpServers: [] },
-  "specialist:growth-marketer": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "mkt-end-to-end-analytics"], mcpServers: [] },
+  "specialist:growth-marketer": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "mkt-end-to-end-analytics", "mkt-organic-content"], mcpServers: [] },
   "specialist:tavily": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "tavily"], mcpServers: [] },
   "specialist:video-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "video-lead-playbook"], mcpServers: [] },
   "specialist:3d-artist": { bbPlugins: [], skills: ["blender-director"], mcpServers: ["blender"] },
-  "specialist:game-dev": { bbPlugins: [], skills: [], mcpServers: [] },
+  "specialist:game-dev": { bbPlugins: [], skills: ["roblox-toolkit"], mcpServers: [] },
   "specialist:social-manager": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "telegram-user"], mcpServers: [] },
   "specialist:billing-assistant": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "kontur-elba"], mcpServers: [] },
   "specialist:visual-artist": { bbPlugins: ["image-studio"], skills: ["image-prompting"], mcpServers: [] },
@@ -224,8 +224,11 @@ export function effectiveGroup(role: HelperRole, group: AccessGroup, access: Rol
   return { names: withMandatory(base, mandatory), source: "role" };
 }
 
-/** A role whose profile holds no plugin, skill or MCP server answers from the prompt itself: project instructions are files it cannot usefully read. */
+const CHAIN_CHECKOUT_READERS = new Set<HelperRole>(["analyst", "planner", "auditor"]);
+
+/** A role whose profile holds no plugin, skill or MCP server answers from the prompt itself: project instructions are files it cannot usefully read, except workflow chain readers that inspect the checkout with file tools. */
 function promptOnlyRole(role: HelperRole): boolean {
+  if (CHAIN_CHECKOUT_READERS.has(role)) return false;
   const profile = ROLE_PROFILES[role] ?? CUSTOM_SPECIALIST_PROFILE;
   return profile.bbPlugins.length === 0 && profile.skills.length === 0 && profile.mcpServers.length === 0;
 }

@@ -111,7 +111,7 @@
         "ru": "Бриф поверхности и контракт направления"
       },
       "src": "impeccable (Apache-2.0): reference/new-work, shape",
-      "prompt": "Read PRODUCT.md and DESIGN.md if present (a brownfield without DESIGN.md gets one derived from the code first). Choose the surface mode - Persuade, Operate, Read or Experience.\nWrite the Direction contract in six blocks of at most 150 words (audience and job, content hierarchy, colour strategy, typography, motion, constraints) and the open questions that block the design. A brief beats taste; polish keeps the look, redesign replaces it.\nNothing is built before the contract exists. Do not write into the repository; the pack goes to the run artifacts.\n",
+      "prompt": "Read PRODUCT.md and DESIGN.md if present (a brownfield without DESIGN.md gets one derived from the code first). Choose the surface mode - Persuade, Operate, Read or Experience.\nWrite the Direction contract in six blocks of at most 150 words (audience and job, content hierarchy, colour strategy, typography, motion, constraints) and the open questions that block the design. A brief beats taste; polish keeps the look, redesign replaces it.\nNothing is built before the contract exists. Do not write into the repository; the pack goes to the run artifacts.\nEnforce Krug's Trunk Test (5-second clarity of what/for whom/primary action, zero Happy Talk, protect user goodwill) and, in Persuade mode, Sugarman's slippery-slide lead, Bly's feature->benefit translation, and Cialdini's honest proof without fake urgency.\n",
       "out": {
         "surface_mode": "string",
         "contract": "string",

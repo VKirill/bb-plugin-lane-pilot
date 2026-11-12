@@ -1,6 +1,7 @@
 ---
 name: mkt-landing-cro
-description: "Read-only conversion audit of a paid landing, paywall or bot first screen: speed signals, first-screen capture at 375×812 and desktop, offer clarity, friction and trust gaps, the form, and the ad-to-landing message match (stems, price, erid); ranked A/B hypotheses become design, copy and code-task hand-offs. Use when: CRO, конверсия лендинга, первый экран, отказы с рекламы, форма записи, message match, «трафик идёт, а заявок нет». SKIP: ranking/snippet refresh of a search page (seo-page-templates); test statistics (mkt-ab-mde-alerts); a general product UI review (ui-review)."
+description: >-
+  Read-only conversion audit of a paid landing, paywall or bot first screen: speed signals, first-screen capture at 375×812 and desktop, Krug Trunk Test & Happy Talk removal, Sugarman/Bly/Ogilvy copy & caption gates, Cialdini ethical trust checks, form friction, and ad-to-landing message match (stems, price, erid); ranked A/B hypotheses become design, copy and code-task hand-offs. Use when: CRO, конверсия лендинга, первый экран, отказы с рекламы, форма записи, message match, «трафик идёт, а заявок нет». SKIP: ranking/snippet refresh of a search page (seo-page-templates); test statistics (mkt-ab-mde-alerts); a general product UI review (ui-review).
 ---
 
 # Landing CRO and message match
@@ -20,8 +21,8 @@ The audit never edits the page. A variant is a writer task in a branch; it goes 
 
 1. **Speed.** `python3 scripts/cro_speed_signals.py --input lab.json` → LCP, CLS, INP, TTFB, weight per device.
 2. **Capture.** First screen at 375×812 and 1440×900 (browser-automation); what is visible without scrolling.
-3. **Clarity.** Five-second read: what is offered, for whom, price, next step. Missing item = a loss row.
-4. **Friction and trust.** Form fields, steps, proof (reviews, licences, cases) checked against brandcore claims.
+3. **Clarity & Copy Momentum (*Krug + Ogilvy + Sugarman + Bly*).** Five-second Trunk Test (what is offered, for whom, factual price/time promise, primary CTA), Ogilvy factual headline + benefit captions under every screenshot, Sugarman *Slippery Slide* (`H1 -> subhead -> short first sentence` + cure over prevention + price vs status-quo cost), Bly `Feature -> Benefit` test (`payer` ROI vs `user` workflow), and ruthless removal of Krug *Happy Talk* & redundant form instructions.
+4. **Friction & Ethical Persuasion (*Krug Goodwill + Cialdini 7 Principles*).** Protect the *Reservoir of Goodwill* (transparent price, `1–2` form fields, upfront reciprocity preview); check peer-matched proof (disabled when `pre_launch_zero_proof == true`), Cialdini authority + **honest limitation admission** (`anti_audience`), and real capacity scarcity (hard ban on fake resetting countdown timers!).
 5. **Message match.** `python3 scripts/message_match.py --ads ads.json --capture capture.json --require-erid` → per-ad score,
    price mismatch, missing erid. Passed ads go to the Jev first-screen check in `sp.message_match`.
 6. **Loss map.** Rank hypotheses by (traffic share × loss × confidence); top 3 become hand-offs: copy, design, one code task.
@@ -54,10 +55,11 @@ One JSON object per run, non-zero exit with a JSON error. `--help` first.
 
 ## References
 
-- `references/offer-friction-trust.md` — offer, friction, trust scoring and A/B hypothesis ranking.
+- `references/offer-friction-trust.md` — offer hierarchy, Sugarman/Bly/Ogilvy copy gates, Cialdini 7 ethical persuasion principles, Krug Trunk Test & Reservoir of Goodwill, micro-funnel friction, and MDE/PXL A/B ranking.
 
 ## Never
 
 - Never edit the live landing from the audit.
+- Never recommend fake resetting countdown timers, fabricated scarcity, or invented reviews (`pre_launch_zero_proof`).
 - Never let a variant change a price or a promise of an active ad without the joint plan.
 - Never count «route» or «call» clicks as bounces.

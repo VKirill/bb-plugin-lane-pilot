@@ -1,6 +1,6 @@
 ---
 title: "Cohort measurement and anomaly diagnosis"
-status: draft
+status: active
 owner: drmax-books-finish
 target_skill: seo-update-forensics
 source_pages: "Доказательное SEO 2026, book 1 ch.1 pp.18–23; book 2 ch.7 pp.405–420"
@@ -36,4 +36,4 @@ Return an anomaly card with observed deltas, source windows, affected cohort, da
 
 ## Source and integration
 
-Source: Доказательное SEO 2026, book 1 ch.1 pp.18–23; book 2 ch.7 pp.405–420. Resolve physical PDF page N to `/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/raw_pages/page_NNN.txt`. Cross-check the named procedures in [the registry](/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/procedures-registry.json). This reference is ready for review and placement in `seo-update-forensics`; no skill installation or live changes were performed.
+Source: Доказательное SEO 2026, book 1 ch.1 pp.18–23; book 2 ch.7 pp.405–420. Resolve physical PDF page N to `/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/raw_pages/page_NNN.txt`. Cross-check the named procedures in [the registry](/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/procedures-registry.json). Active reference installed in `seo-update-forensics`.

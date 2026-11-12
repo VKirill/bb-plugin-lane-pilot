@@ -6,8 +6,8 @@
     "ru": "Задача специалиста"
   },
   "description": {
-    "en": "What the PM's lane_pilot_helpers (action specialist) starts: one specialist (design-lead, copy-lead, seo-specialist, tavily, video-lead, or an agent the owner created) does the task it was handed, as itself, with its own prompt, skills and MCP servers and the lines added to its role in this project. It writes only its deliverable (under .agents/, and DESIGN.md files for design-lead); its answer goes back to the PM.",
-    "ru": "То, что запускает lane_pilot_helpers (action specialist) у PM: один специалист (design-lead, copy-lead, seo-specialist, tavily, video-lead или агент, созданный владельцем) выполняет полученное поручение как он сам, со своим промптом, навыками и MCP-серверами и строками, добавленными к его роли в этом проекте. Пишет только свой результат (в .agents/, а design-lead ещё и файлы DESIGN.md); ответ уходит PM."
+    "en": "What the PM's lane_pilot_helpers (action specialist) starts: one specialist (design-lead, copy-lead, seo-specialist, growth-marketer, tavily, video-lead, social-manager, billing-assistant, visual-artist, 3d-artist, game-dev, macos-operator, or an agent the owner created) does the task it was handed, as itself, with its own prompt, skills and MCP servers and the lines added to its role in this project. It writes only its deliverable (under .agents/, and DESIGN.md files for design-lead); its answer goes back to the PM.",
+    "ru": "То, что запускает lane_pilot_helpers (action specialist) у PM: один специалист (design-lead, copy-lead, seo-specialist, growth-marketer, tavily, video-lead, social-manager, billing-assistant, visual-artist, 3d-artist, game-dev, macos-operator или агент, созданный владельцем) выполняет полученное поручение как он сам, со своим промптом, навыками и MCP-серверами и строками, добавленными к его роли в этом проекте. Пишет только свой результат (в .agents/, а design-lead ещё и файлы DESIGN.md); ответ уходит PM."
   },
   "not_for": [
     "anything the owner asks for in a chat: the PM starts this graph with lane_pilot_helpers (action specialist), not with lane_pilot_run_workflow"
@@ -23,7 +23,7 @@
     "role": {
       "type": "string",
       "required": true,
-      "note": "the specialist: a bundled one (design-lead, copy-lead, seo-specialist, tavily, video-lead) or an agent the owner created"
+      "note": "the specialist: a bundled one (design-lead, copy-lead, seo-specialist, growth-marketer, tavily, video-lead, social-manager, billing-assistant, visual-artist, 3d-artist, game-dev, macos-operator) or an agent the owner created"
     },
     "task": {
       "type": "string",

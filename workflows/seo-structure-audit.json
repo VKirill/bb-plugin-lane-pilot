@@ -58,7 +58,8 @@
     "status": "done|partial|blocked",
     "registry_path": "string?",
     "report_path": "string?",
-    "release_status": "string?"
+    "release_status": "string?",
+    "proposed_workflow": "string?"
   },
   "requires": {
     "plugins": [
@@ -383,7 +384,9 @@
       },
       "with": {
         "mode": "restructure_wave",
-        "items": "{{inventory.registry_path}}",
+        "items": [
+          "{{inventory.registry_path}}"
+        ],
         "url_changes": true
       },
       "out": {
@@ -429,7 +432,8 @@
       "map": {
         "status": "partial",
         "registry_path": "inventory.registry_path",
-        "report_path": "package.report_path"
+        "report_path": "package.report_path",
+        "proposed_workflow": "'seo-release'"
       }
     },
     {
@@ -438,6 +442,19 @@
       "action": "emit",
       "map": {
         "status": "blocked"
+      }
+    },
+    {
+      "id": "offer",
+      "type": "action",
+      "action": "lp.propose_workflow",
+      "workflow": "seo-release",
+      "inputs": {
+        "mode": "restructure_wave",
+        "items": [
+          "{{inventory.registry_path}}"
+        ],
+        "url_changes": true
       }
     }
   ],
@@ -513,6 +530,11 @@
     },
     {
       "from": "package",
+      "to": "offer",
+      "pass": "artifact"
+    },
+    {
+      "from": "offer",
       "to": "partial",
       "pass": "artifact"
     }

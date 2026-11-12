@@ -4,6 +4,7 @@ import type { LanePilotDatabase } from "../../storage";
 import { canonicalJson } from "../action-order";
 import { classifyToolTier, loadSpPolicy, type ToolTier } from "../tool-tiers";
 import { checkCohortMaturity, checkLockCollisions } from "./sp-locks-intents";
+import { getBreakerState } from "./sp-store";
 
 /**
  * Specialist OS live mutation guards (`plugin-db-and-sp-executors-spec.md` §3.2 `sp.apply_mutation`):
@@ -196,6 +197,12 @@ export interface MutationItem {
   scope_value?: string;
 }
 
+export type MutationExecutorFn = (item: MutationItem, ctx: { projectId: string; domain: string; tier: ToolTier }) => {
+  ok: boolean;
+  error?: string;
+  externalReceipt?: Record<string, unknown>;
+};
+
 export function applyMutationsBatch(
   db: LanePilotDatabase,
   input: {
@@ -208,22 +215,67 @@ export function applyMutationsBatch(
     emergencyAuthorised?: boolean;
     maxStep?: number;
     minHoursBetweenEdits?: number;
+    executeMutation?: MutationExecutorFn;
     runId?: string;
     nowMs?: number;
   },
-): { applied: number; failed: number; mutationIds: string[]; errors: string[] } {
+): {
+  applied: number;
+  staged: number;
+  failed: number;
+  mode: "live" | "staged_manual";
+  mutationIds: string[];
+  errors: string[];
+} {
   const now = input.nowMs ?? Date.now();
+  const mode: "live" | "staged_manual" = input.executeMutation ? "live" : "staged_manual";
   const errors: string[] = [];
   const mutationIds: string[] = [];
 
-  if (input.tier === "S" && !input.emergencyAuthorised) {
-    return { applied: 0, failed: Math.max(1, input.items.length), mutationIds: [], errors: ["tier_S_forbidden_without_emergency_charter"] };
+  // Circuit breaker enforcement (`G-23`): refuse non-emergency mutations while breaker is open and inside cooldown.
+  const breaker = getBreakerState(db, input.projectId, input.domain);
+  if (breaker && breaker.state === "open" && (breaker.cooldown_until === null || breaker.cooldown_until > now) && !input.emergencyAuthorised) {
+    return {
+      applied: 0,
+      staged: 0,
+      failed: Math.max(1, input.items.length),
+      mode,
+      mutationIds: [],
+      errors: ["breaker_open"],
+    };
+  }
+
+  const tierRank = (t: ToolTier): number => (t === "S" ? 4 : t === "L" ? 3 : t === "D" ? 2 : 1);
+  let effectiveTier: ToolTier = input.tier;
+  for (const item of input.items) {
+    const itemTier = item.server || item.tool ? classifyToolTier(item.server, item.tool) : input.tier;
+    if (tierRank(itemTier) > tierRank(effectiveTier)) {
+      effectiveTier = itemTier;
+    }
+  }
+
+  if (effectiveTier === "S" && !input.emergencyAuthorised) {
+    return {
+      applied: 0,
+      staged: 0,
+      failed: Math.max(1, input.items.length),
+      mode,
+      mutationIds: [],
+      errors: ["tier_S_forbidden_without_emergency_charter"],
+    };
   }
 
   let verifiedNonceId: string | null = null;
-  if (input.tier === "L") {
+  if (effectiveTier === "L") {
     if (!input.nonceToken || !input.actionId) {
-      return { applied: 0, failed: Math.max(1, input.items.length), mutationIds: [], errors: ["missing_approval_nonce"] };
+      return {
+        applied: 0,
+        staged: 0,
+        failed: Math.max(1, input.items.length),
+        mode,
+        mutationIds: [],
+        errors: ["missing_approval_nonce"],
+      };
     }
     const consumed = consumeApprovalNonce(db, {
       projectId: input.projectId,
@@ -234,12 +286,20 @@ export function applyMutationsBatch(
       nowMs: now,
     });
     if (!consumed.ok) {
-      return { applied: 0, failed: Math.max(1, input.items.length), mutationIds: [], errors: [`nonce_${consumed.reason}`] };
+      return {
+        applied: 0,
+        staged: 0,
+        failed: Math.max(1, input.items.length),
+        mode,
+        mutationIds: [],
+        errors: [`nonce_${consumed.reason}`],
+      };
     }
     verifiedNonceId = consumed.nonceId ?? null;
   }
 
   let applied = 0;
+  let staged = 0;
   let failed = 0;
 
   for (const item of input.items) {
@@ -254,7 +314,7 @@ export function applyMutationsBatch(
     }
 
     if (item.is_stop && item.cohort_key) {
-      const mat = checkCohortMaturity(db, input.projectId, input.domain, item.cohort_key);
+      const mat = checkCohortMaturity(db, input.projectId, input.domain, item.cohort_key, now);
       if (!mat.mature) {
         failed++;
         errors.push(`${entityId}:immature_cohort`);
@@ -300,14 +360,50 @@ export function applyMutationsBatch(
     }
 
     const mutId = `mut_${randomUUID()}`;
+    if (!input.executeMutation) {
+      // Honest staging (`G-02`): without a live external mutation adapter, record `simulated` in SQLite and report `staged_manual`.
+      db.prepare(
+        `INSERT INTO lane_pilot_sp_mutation_log
+          (mutation_id, project_id, domain, entity_id, mutation_kind, tier, delta_ratio, nonce_id, status, detail_json, applied_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'simulated', ?, ?)`,
+      ).run(mutId, input.projectId, input.domain, entityId, mKind, resolvedTier, sg.deltaRatio, verifiedNonceId, canonicalJson({ ...item, mode: "staged_manual" }), now);
+      mutationIds.push(mutId);
+      staged++;
+      continue;
+    }
+
+    const execRes = input.executeMutation(item, { projectId: input.projectId, domain: input.domain, tier: resolvedTier });
+    if (!execRes.ok) {
+      failed++;
+      const errDetail = execRes.error || "external_mutation_failed";
+      errors.push(`${entityId}:${errDetail}`);
+      db.prepare(
+        `INSERT INTO lane_pilot_sp_mutation_log
+          (mutation_id, project_id, domain, entity_id, mutation_kind, tier, delta_ratio, nonce_id, status, detail_json, applied_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'failed', ?, ?)`,
+      ).run(mutId, input.projectId, input.domain, entityId, mKind, resolvedTier, sg.deltaRatio, verifiedNonceId, canonicalJson({ ...item, error: errDetail }), now);
+      continue;
+    }
+
     db.prepare(
       `INSERT INTO lane_pilot_sp_mutation_log
         (mutation_id, project_id, domain, entity_id, mutation_kind, tier, delta_ratio, nonce_id, status, detail_json, applied_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'applied', ?, ?)`,
-    ).run(mutId, input.projectId, input.domain, entityId, mKind, resolvedTier, sg.deltaRatio, verifiedNonceId, canonicalJson(item), now);
+    ).run(
+      mutId,
+      input.projectId,
+      input.domain,
+      entityId,
+      mKind,
+      resolvedTier,
+      sg.deltaRatio,
+      verifiedNonceId,
+      canonicalJson({ ...item, ...(execRes.externalReceipt ? { receipt: execRes.externalReceipt } : {}) }),
+      now,
+    );
     mutationIds.push(mutId);
     applied++;
   }
 
-  return { applied, failed, mutationIds, errors };
+  return { applied, staged, failed, mode, mutationIds, errors };
 }

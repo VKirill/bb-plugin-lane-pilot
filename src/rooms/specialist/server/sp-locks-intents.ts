@@ -5,6 +5,7 @@ import {
   canonicalJson,
   computeIdemKey,
   computeSemanticKey,
+  dbOrderKindOf,
 } from "../action-order";
 import { estimateActionOrderCost } from "../tool-tiers";
 
@@ -162,13 +163,48 @@ export function checkCohortMaturity(
   projectId: string,
   domain: string,
   cohortKey: string,
-): { mature: boolean; cdfPay: number; reasonCode?: "immature_cohort" } {
+  nowMs = Date.now(),
+): { mature: boolean; cdfPay: number; unknownCohort?: boolean; reasonCode?: "immature_cohort" } {
   const row = db
-    .prepare("SELECT cdf_pay FROM lane_pilot_sp_cohort WHERE project_id = ? AND domain = ? AND cohort_key = ?")
-    .get(projectId, domain, cohortKey) as { cdf_pay: number } | undefined;
-  if (!row) return { mature: true, cdfPay: 1.0 };
-  if (row.cdf_pay < 0.6) return { mature: false, cdfPay: row.cdf_pay, reasonCode: "immature_cohort" };
-  return { mature: true, cdfPay: row.cdf_pay };
+    .prepare(
+      "SELECT cdf_pay, cohort_date, maturity_window_days FROM lane_pilot_sp_cohort WHERE project_id = ? AND domain = ? AND cohort_key = ?",
+    )
+    .get(projectId, domain, cohortKey) as
+    | { cdf_pay: number; cohort_date: string; maturity_window_days: number }
+    | undefined;
+  if (!row) return { mature: false, cdfPay: 0, unknownCohort: true, reasonCode: "immature_cohort" };
+  const cdfPay = Number.isFinite(row.cdf_pay) ? row.cdf_pay : 0;
+  const dateStr = typeof row.cohort_date === "string" ? row.cohort_date.trim() : "";
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](.*))?$/.exec(dateStr);
+  if (!dateMatch) {
+    return { mature: false, cdfPay, reasonCode: "immature_cohort" };
+  }
+  const y = Number(dateMatch[1]);
+  const m = Number(dateMatch[2]);
+  const d = Number(dateMatch[3]);
+  const calCheck = new Date(Date.UTC(y, m - 1, d));
+  if (
+    calCheck.getUTCFullYear() !== y ||
+    calCheck.getUTCMonth() !== m - 1 ||
+    calCheck.getUTCDate() !== d
+  ) {
+    return { mature: false, cdfPay, reasonCode: "immature_cohort" };
+  }
+  const cohortTs = dateMatch[4] ? Date.parse(dateStr) : calCheck.getTime();
+  if (!Number.isFinite(cohortTs)) {
+    return { mature: false, cdfPay, reasonCode: "immature_cohort" };
+  }
+  const ageDays = (nowMs - cohortTs) / 86_400_000;
+  if (ageDays < 0) {
+    return { mature: false, cdfPay, reasonCode: "immature_cohort" };
+  }
+  if (row.maturity_window_days > 0 && ageDays < row.maturity_window_days) {
+    return { mature: false, cdfPay, reasonCode: "immature_cohort" };
+  }
+  if (cdfPay < 0.6) {
+    return { mature: false, cdfPay, reasonCode: "immature_cohort" };
+  }
+  return { mature: true, cdfPay };
 }
 
 export function stageIntent(
@@ -195,9 +231,17 @@ export function stageIntent(
     return { status: "dropped", intentId: existing.intent_id, dropReason: "duplicate_idem_key" };
   }
 
+  // ASTRA-R3-002: Unfinished or un-reconciled intents always block semantic duplicates regardless of age;
+  // completed 'dispatched' intents enforce the 24h cooldown window.
   const semDup = db
     .prepare(
-      "SELECT intent_id FROM lane_pilot_sp_intent WHERE project_id = ? AND domain = ? AND semantic_key = ? AND status IN ('staged','queued_conflict') AND created_at >= ?",
+      `SELECT intent_id FROM lane_pilot_sp_intent
+       WHERE project_id = ? AND domain = ? AND semantic_key = ?
+         AND (
+           status IN ('staged','held','queued_conflict')
+           OR (status = 'failed' AND drop_reason = 'reconcile_required')
+           OR (status = 'dispatched' AND created_at >= ?)
+         )`,
     )
     .get(input.projectId, input.domain, sem, now - 86_400_000) as { intent_id: string } | undefined;
   if (semDup) {
@@ -245,7 +289,7 @@ export function stageIntent(
     input.tickId ?? null,
     idem,
     sem,
-    input.order.kind,
+    dbOrderKindOf(input.order.kind),
     input.order.reason_code,
     status,
     cost.upperBoundUsd,

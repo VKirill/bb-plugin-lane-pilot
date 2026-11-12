@@ -1,7 +1,15 @@
 import { noteEngineWrite } from "../../verification/server";
-import { listOpenAttempts, loadProjectSettings } from "../../storage";
+import {
+  inferArtifactMetaFromRelPath,
+  listOpenAttempts,
+  loadProjectSettings,
+  renderArtifactsManifestJson,
+  upsertProjectArtifact,
+  writeCasCheckoutFile,
+} from "../../storage";
 import { isPlanningPath } from "../../contracts";
 import { PROFILE_KEYS } from "../../anamnesis";
+import { hasPassportRecord } from "../../passport";
 import { bestEffort, sha256Hex } from "@lane-pilot/kit";
 import { list, rec, str, pmCheckout, quote, PRUNE } from "./workflow-chain-runtime";
 import type { Row } from "./workflow-chain-runtime";
@@ -31,28 +39,152 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
     const params = node.params as Row;
     const checkout = await pmCheckout(rt);
     const rel = c.render(str(params.path)).replace(/^\/+/, "");
-    if (!rel || rel.includes("..") || rel.includes("\0")) throw new Error(`fs.write: the path "${rel}" is not inside the checkout`);
-    const isFolder = rel.endsWith("/");
+    if (!rel || rel.split("/").includes("..") || rel.includes("\0")) throw new Error(`fs.write: the path "${rel}" is not inside the checkout`);
+    const rawKind = str(params.kind ?? rec(c.node).kind).trim().toLowerCase();
+    const isFolder = rawKind === "folder" || rawKind === "dir" || rawKind === "directory" || rel.endsWith("/");
+    const folderPrefix = isFolder ? (rel.endsWith("/") ? rel : `${rel}/`) : "";
     // A planning file (.agents/phases|planning|todos|plans, not a task's own folder) goes to the planning home when the project set one (SMA d_project_planning); unset, the checkout.
-    const home = isPlanningPath(rel) ? await planHome(rt.projectId, checkout) : null;
+    const home = isPlanningPath(isFolder ? folderPrefix : rel) ? await planHome(rt.projectId, checkout) : null;
+    const writtenCheckoutPaths: Array<{ path: string; content: string; sha256: string }> = [];
+    let writtenFileCount = 0;
     const write = async (path: string, content: string) => {
-      if (home) { await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: home, path: `${home}/${path}`, content, contentEncoding: "utf8", createParents: true, expectedSha256: null }); return; }
+      const cleanPath = path.replace(/^\/+/, "");
+      if (!cleanPath || cleanPath.endsWith("/") || cleanPath.split("/").includes("..") || cleanPath.includes("\0")) {
+        throw new Error(`fs.write: invalid target file path "${cleanPath}"`);
+      }
+      if (home) {
+        const homeRes = await writeCasCheckoutFile(bb.sdk.files as never, {
+          hostId: checkout.hostId,
+          rootPath: home,
+          relPath: cleanPath,
+          content,
+        });
+        if (!homeRes.ok) {
+          throw new Error(`fs.write: CAS write rejected for "${cleanPath}" (${homeRes.outcome})`);
+        }
+        writtenFileCount += 1;
+        return;
+      }
       // Noted before the write lands, so a helper's status read right after it already sees it as the engine's.
-      noteEngineWrite(checkout.path, path);
-      await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: checkout.path, path: `${checkout.path}/${path}`, content, contentEncoding: "utf8", createParents: true, expectedSha256: null });
+      noteEngineWrite(checkout.path, cleanPath);
+      const casRes = await writeCasCheckoutFile(bb.sdk.files as never, {
+        hostId: checkout.hostId,
+        rootPath: checkout.path,
+        relPath: cleanPath,
+        content,
+      });
+      if (!casRes.ok) {
+        throw new Error(`fs.write: CAS write rejected for "${cleanPath}" (${casRes.outcome})`);
+      }
+      writtenFileCount += 1;
+      writtenCheckoutPaths.push({ path: cleanPath, content, sha256: casRes.sha256 });
     };
     const asText = (value: unknown) => (typeof value === "string" ? value : JSON.stringify(value, null, 2));
-    let first = rel;
-    if (params.contents && typeof params.contents === "object") {
-      for (const [name, template] of Object.entries(params.contents as Row)) { const value = c.template(template); await write(`${rel}${name}`, asText(value ?? "")); first = first === rel ? `${rel}${name}` : first; }
+    const resolveTargetPath = (entryName: string): string => {
+      const cleanEntry = entryName.replace(/^\/+/, "");
+      if (!isFolder) return rel;
+      if (!cleanEntry) throw new Error(`fs.write: empty file entry inside folder "${folderPrefix}"`);
+      return cleanEntry.startsWith(folderPrefix) ? cleanEntry : `${folderPrefix}${cleanEntry}`;
+    };
+    let first = isFolder ? folderPrefix : rel;
+    let wroteHandoff = false;
+    if (params.contents && typeof params.contents === "object" && !Array.isArray(params.contents)) {
+      for (const [name, template] of Object.entries(params.contents as Row)) {
+        const value = c.template(template);
+        const target = resolveTargetPath(name);
+        await write(target, asText(value ?? ""));
+        if (target.endsWith("/handoff.md") || target === "handoff.md") wroteHandoff = true;
+        first = first === (isFolder ? folderPrefix : rel) ? target : first;
+      }
+    } else if (params.files !== undefined && params.files !== null) {
+      const resolvedFiles = c.template(params.files);
+      if (Array.isArray(resolvedFiles)) {
+        for (const item of resolvedFiles) {
+          if (typeof item === "string" && item.trim()) {
+            const name = item.trim();
+            const base = name.split("/").pop() ?? name;
+            const stem = base.replace(/\.[^.]+$/, "");
+            const candidate =
+              params[name] ??
+              params[base] ??
+              params[stem] ??
+              (c.inputs as Row | undefined)?.[name] ??
+              (c.inputs as Row | undefined)?.[stem] ??
+              reportBody(c, params);
+            const target = resolveTargetPath(name);
+            await write(target, asText(candidate ?? ""));
+            if (target.endsWith("/handoff.md") || target === "handoff.md") wroteHandoff = true;
+            first = first === (isFolder ? folderPrefix : rel) ? target : first;
+          } else if (item && typeof item === "object") {
+            const recItem = item as Row;
+            const rawName = String(recItem.path ?? recItem.name ?? recItem.file ?? "").trim();
+            if (!rawName) continue;
+            const body = recItem.content ?? recItem.body ?? recItem.text ?? recItem.value ?? reportBody(c, params);
+            const target = resolveTargetPath(rawName);
+            await write(target, asText(body ?? ""));
+            if (target.endsWith("/handoff.md") || target === "handoff.md") wroteHandoff = true;
+            first = first === (isFolder ? folderPrefix : rel) ? target : first;
+          }
+        }
+      } else if (typeof resolvedFiles === "object") {
+        for (const [name, body] of Object.entries(resolvedFiles as Row)) {
+          const target = resolveTargetPath(name);
+          await write(target, asText(body ?? ""));
+          if (target.endsWith("/handoff.md") || target === "handoff.md") wroteHandoff = true;
+          first = first === (isFolder ? folderPrefix : rel) ? target : first;
+        }
+      }
     } else if (!isFolder) {
       await write(rel, asText(reportBody(c, params)));
     }
+    if (
+      isFolder &&
+      !wroteHandoff &&
+      (writtenFileCount === 0 || c.node.out.some((f) => f.name === "handoff_path")) &&
+      c.node.out.some((f) => f.name === "handoff_path" || f.name.endsWith("_path"))
+    ) {
+      const handoffTarget = `${folderPrefix}handoff.md`;
+      await write(handoffTarget, asText(reportBody(c, params)));
+      first = first === folderPrefix ? handoffTarget : first;
+    }
+    if (!home && rt?.projectId && writtenCheckoutPaths.length > 0) {
+      let touchedAgentsArtifact = false;
+      for (const item of writtenCheckoutPaths) {
+        if (!item.path.startsWith(".agents/") || item.path === ".agents/manifest.json") continue;
+        const meta = inferArtifactMetaFromRelPath(item.path);
+        if (!meta) continue;
+        upsertProjectArtifact(db, {
+          projectId: rt.projectId,
+          artifactId: meta.artifactId,
+          domain: meta.domain,
+          kind: meta.kind,
+          relPath: item.path,
+          sha256: item.sha256,
+          summary: `${meta.domain}/${meta.kind} (${item.path})`,
+          producerWf: c.workflow.id,
+          producerRunId: c.runId,
+        });
+        touchedAgentsArtifact = true;
+      }
+      if (touchedAgentsArtifact) {
+        const manifestJson = renderArtifactsManifestJson(db, rt.projectId);
+        noteEngineWrite(checkout.path, ".agents/manifest.json");
+        const manifestRes = await writeCasCheckoutFile(bb.sdk.files as never, {
+          hostId: checkout.hostId,
+          rootPath: checkout.path,
+          relPath: ".agents/manifest.json",
+          content: manifestJson,
+        });
+        if (!manifestRes.ok) {
+          throw new Error(`fs.write conflict on ".agents/manifest.json" (${manifestRes.outcome})`);
+        }
+      }
+    }
     const out: Row = {};
     for (const field of c.node.out) {
-      if (field.name === "folder") out.folder = isFolder ? rel : rel.slice(0, rel.lastIndexOf("/") + 1) || "./";
-      else if (field.name === "handoff_path") out.handoff_path = isFolder ? `${rel}handoff.md` : rel;
-      else if (field.name.endsWith("_path")) out[field.name] = isFolder && !params.contents ? rel : first;
+      if (field.name === "folder") out.folder = isFolder ? folderPrefix : rel.slice(0, rel.lastIndexOf("/") + 1) || "./";
+      else if (field.name === "handoff_path") out.handoff_path = isFolder ? `${folderPrefix}handoff.md` : rel;
+      else if (field.name.endsWith("_path")) out[field.name] = isFolder ? (writtenFileCount === 1 ? first : folderPrefix) : first;
     }
     return out;
   });
@@ -92,7 +224,7 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
       const research = flagOf(rt, "project.start_research");
       const home = research ? await planHome(rt.projectId, checkout) : null;
       const planningLs = "ls .agents/planning/VALUE-MAP.md .agents/planning/ROADMAP.md .agents/planning/PROFILE.md .agents/planning/profile.json 2>/dev/null";
-      const ran = await bestEffort(ctx.log, "workflow state probe", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: `ls .agents/PASSPORT.md .agents/passport.md PROJECT.md 2>/dev/null | head -1; echo ---; ls package.json src/ui app components 2>/dev/null | head -3${research && !home ? `; echo ---; ${planningLs}` : ""}`, timeoutSec: 20, timeoutMs: 30_000 }), null);
+      const ran = await bestEffort(ctx.log, "workflow state probe", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: `ls .agents/passport/PASSPORT.md .agents/PASSPORT.md .agents/passport.md PROJECT.md 2>/dev/null | head -1; echo ---; ls package.json src/ui app components 2>/dev/null | head -3${research && !home ? `; echo ---; ${planningLs}` : ""}`, timeoutSec: 20, timeoutMs: 30_000 }), null);
       const homeLs = home ? await bestEffort(ctx.log, "workflow state probe (planning home)", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: home, command: planningLs, timeoutSec: 20, timeoutMs: 30_000 }), null) : null;
       const [passport = "", ui = "", planning = ""] = `${ran?.stdout ?? ""}${home ? `---\n${homeLs?.stdout ?? ""}` : ""}`.split("---");
       const present = new Set(planning.split("\n").map((line) => line.trim().split("/").pop()!.toLowerCase()).filter(Boolean));
@@ -102,6 +234,7 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
       const settings = loadProjectSettings(db, rt.projectId);
       hasProfile = present.has("profile.md") || present.has("profile.json") || PROFILE_KEYS.some((key) => String(settings[`profile.${key}`] ?? "").trim() !== "");
     }
+    if (!hasPassport && rt.projectId) hasPassport = hasPassportRecord(db, rt.projectId);
     const open = listOpenAttempts(db).filter((row) => row.project_id === rt.projectId).length;
     return { has_passport: hasPassport, open_tasks: open, plan_exists: open > 0, has_ui: hasUi, has_value_map: hasValueMap, has_roadmap: hasRoadmap, has_profile: hasProfile };
   });

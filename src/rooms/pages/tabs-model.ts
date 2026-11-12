@@ -18,7 +18,7 @@ export const DEPTH_TABS = new Set<TabId>(["team", "work", "knowledge", "automati
 
 /** The parts of a tab that switch inside it (a segment control under the tab bar). */
 export const SEGMENTS = {
-  knowledge: ["memory", "docs", "rules", "anamnesis"],
+  knowledge: ["memory", "passport", "docs", "rules", "anamnesis"],
   automation: ["workflows", "schedule"],
   runs: ["board", "analytics", "council", "service"],
 } as const;
@@ -27,6 +27,7 @@ export type SegmentId<T extends SegmentedTab> = (typeof SEGMENTS)[T][number];
 
 export const SEGMENT_LABELS: Record<string, I18nKey> = {
   memory: "segMemory",
+  passport: "segPassport",
   docs: "segDocs",
   rules: "segRules",
   anamnesis: "segAnamnesis",
@@ -45,6 +46,7 @@ export const LEGACY_TABS: Record<string, { tab: TabId; segment?: string }> = {
   council: { tab: "team" },
   access: { tab: "team" },
   memory: { tab: "knowledge", segment: "memory" },
+  passport: { tab: "knowledge", segment: "passport" },
   rules: { tab: "knowledge", segment: "rules" },
   anamnesis: { tab: "knowledge", segment: "anamnesis" },
   workflows: { tab: "automation", segment: "workflows" },
@@ -62,5 +64,5 @@ export function resolveTab(id: string): { tab: TabId; segment?: string } {
 export function segmentsFor(tab: SegmentedTab, level: "system" | "project" | "section"): string[] {
   const all: readonly string[] = SEGMENTS[tab];
   if (tab !== "knowledge") return [...all];
-  return all.filter((id) => (id === "anamnesis" ? level === "system" : id === "rules" ? level !== "system" : true));
+  return all.filter((id) => (id === "anamnesis" ? level === "system" : id === "rules" || id === "passport" ? level !== "system" : true));
 }

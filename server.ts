@@ -63,6 +63,7 @@ import { pluginStopped } from "./src/rooms/contracts/errors";
 import { registerRpc, ownerItemSweeps } from "./src/rooms/core/server/rpc";
 import { mountOwnerBell } from "./src/rooms/owner-waiting/server";
 import { mountAnamnesis } from "./src/rooms/anamnesis";
+import { mountPassportObserver } from "./src/rooms/passport/server";
 import { mountWorldAssets } from "./src/rooms/world/server";
 import { registerLaneWorktreeProvider } from "./src/rooms/native-agent/server";
 import { checkTickDeps, scheduleIsolated } from "./src/rooms/platform/server";
@@ -532,6 +533,7 @@ export default async function plugin(bb: BbPluginApi) {
   mountWorldAssets(bb);
   // What Lane Pilot learns about its owner by itself (the daily pass and new messages); inert until the owner switches it on.
   mountAnamnesis(ctx);
+  mountPassportObserver(ctx);
   // Writer attempts get BB environments of this provider unless workspace.provider is off; a BB without the API
   // registers nothing and every attempt keeps the old worktree path.
   registerLaneWorktreeProvider(ctx);

@@ -1,8 +1,8 @@
 ---
 title: "Verified log analysis and crawl/index policy"
-status: draft
+status: active
 owner: drmax-books-finish
-target_skill: seo-tech-diagnostics
+target_skill: seo-tech-audit-kit
 source_pages: "Доказательное SEO 2026, book 1 ch.3 pp.30–61; book 2 ch.5 pp.343–345"
 tags: [seo, engineering-reference, synthesized, private]
 ---
@@ -34,4 +34,4 @@ Produce a pattern-level diagnosis table with counts, joined evidence, chosen pol
 
 ## Source and integration
 
-Source: Доказательное SEO 2026, book 1 ch.3 pp.30–61; book 2 ch.5 pp.343–345. Resolve physical PDF page N to `/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/raw_pages/page_NNN.txt`. Cross-check the named procedures in [the registry](/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/procedures-registry.json). This reference is ready for review and placement in `seo-tech-diagnostics`; no skill installation or live changes were performed.
+Source: Доказательное SEO 2026, book 1 ch.3 pp.30–61; book 2 ch.5 pp.343–345. Resolve physical PDF page N to `/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/raw_pages/page_NNN.txt`. Cross-check the named procedures in [the registry](/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/procedures-registry.json). Active reference installed in `seo-tech-audit-kit`.

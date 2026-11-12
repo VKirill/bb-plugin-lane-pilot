@@ -177,7 +177,10 @@
       "workflow": "roadmap-driven",
       "inputs": {
         "goal": "{{$inputs.goal}}",
-        "findings": "{{analyze}}"
+        "scope": "{{$inputs.scope}}",
+        "goals": "{{contract.goals}}",
+        "boundary": "{{contract.boundary}}",
+        "requirements": "{{$inputs.goal}} (scope={{analyze.scope_verdict}}, recommendation={{analyze.recommendation}})"
       }
     },
     {

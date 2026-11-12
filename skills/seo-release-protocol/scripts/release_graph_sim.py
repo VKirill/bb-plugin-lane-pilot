@@ -142,7 +142,9 @@ def check(g):
 
 
 def compute(data, args):
-    before, after = load_graph(data.get("before") or {}), load_graph(data["after"])
+    if not isinstance(data, dict) or not data.get("before") or not data.get("after"):
+        raise KeyError("non-empty 'before' and 'after' URL graphs are required")
+    before, after = load_graph(data["before"]), load_graph(data["after"])
     if data.get("top20"):
         top = [norm(u) for u in data["top20"]][:20]
     else:

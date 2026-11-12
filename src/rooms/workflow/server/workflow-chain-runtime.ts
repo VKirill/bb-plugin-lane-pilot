@@ -14,6 +14,7 @@ import type { StabilityPort } from "../../contracts";
 import { parseIntegrationGateSettings, type VerificationGatePort } from "../../contracts/integration-gate";
 import type { TaskUsage } from "../../platform/server";
 import type { WorkflowEngineApi } from "../../platform/server";
+import type { MutationExecutorFn } from "../../specialist/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 export interface Services {
@@ -23,6 +24,22 @@ export interface Services {
   stability: StabilityPort;
   resolveIntegrationGate: VerificationGatePort;
   workflowEngine: WorkflowEngineApi["workflowEngine"];
+  schedules?: {
+    save: (
+      raw: {
+        projectId: string;
+        name: string;
+        description?: string;
+        task: { kind: "workflow"; workflowId: string; inputs?: Record<string, unknown>; liveTrial?: boolean };
+        when: { type: "cron"; cron: string; timezone?: string };
+      },
+      by: string,
+    ) => unknown;
+  };
+  backlog?: { scan: (now?: number) => Promise<unknown> };
+  phaseIntake?: unknown;
+  executeMutation?: MutationExecutorFn;
+  allowScriptFixtureFallback?: boolean;
 }
 
 export type LpTaskRuntime = { attemptId: string };

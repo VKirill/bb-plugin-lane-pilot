@@ -5,6 +5,7 @@ import type { ComposerSelectionSnapshot } from "../../contracts/composer-selecti
 import { claimActivation, createRun, freezeRunBinding, getActivation, getRunSettingsScopes, importSettingsOnce, loadPrototypeConfig, releaseActivation, setRunState, setRunThread, setRunWorkspace } from "../../storage";
 import { ownerCardBlock } from "../../anamnesis";
 import { anamnesisFor } from "../../anamnesis";
+import { projectPassportBlock } from "../../passport";
 import { pmRulesPromptBlock } from "../../learning/pm-rules";
 import { ruleBudget } from "../../learning";
 import { writerExecutionSelection } from "@lane-pilot/models";
@@ -150,6 +151,7 @@ export function createActivation(ctx: ServerCore, services: Services) {
           : { providerId: spawnProviderId, model: spawnModel, serviceTier: spawnTier, executionInputSources:{ providerId:"explicit" as const, model:"explicit" as const, serviceTier:"explicit" as const } }),
         // The owner's confirmed, non-sensitive facts (anamnesis A5), within 1800 characters; nothing when there are none or the store is out of reach.
         prompt: pmPrompt(runId, config, !native && managedWorkspace, Boolean(native), pmHasGuard(settings["main.agent"])) + await ownerCardBlock(anamnesisFor(ctx).hub)
+          + (() => { const pp = projectPassportBlock(db, { projectId, role: "pm", maxChars: 1600 }); return pp ? `\n\n${pp}` : ""; })()
           // The rules the owner's corrections produced for the PM, within a token budget (src/learning/pm-rules.ts).
           + pmRulesPromptBlock(db, projectId, getRunSettingsScopes(db, runId), ruleBudget("pm"), `pm:${runId}`),
         environment: (snapshotEnv ?? (managedWorkspace

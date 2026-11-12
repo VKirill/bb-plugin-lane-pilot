@@ -6,7 +6,7 @@ import { jev } from "@lane-pilot/jev";
 import { stepTrivialJudgment } from "@lane-pilot/jev/judgments/step-trivial";
 ;
 import { MAIN_AGENT_ID, isCustomAgentId } from "../../contracts/server";
-import { compileEffectiveMainAgent, mentionContext, placeEmployeeOn } from "../../native-agent"
+import { compileEffectiveMainAgent, employeeRoleLines, mentionContext, placeEmployeeOn } from "../../native-agent"
 import { ROLE_PROFILES } from "../../contracts/helper-context"
 import { employeeView, isEmployeeSpecialist } from "../../contracts/employee-manifest";
 import type { ExtraAccess, HelperRole } from "../../contracts/helper-context";
@@ -28,6 +28,8 @@ import { detectRepoEdits, gitRepoStatus, namedByChat, writtenByEngineSince } fro
 import { SPECIALIST_GRAPH, SPECIALIST_ROLES, rememberSpecialistThread } from "../../critique/server";
 import { modelTier, ROLE_IDS, ROLE_MODEL_OPTIONS, roleRowOf } from "@lane-pilot/models";
 import { isDocumentaryRole } from "../../contracts";
+import { confirmedWordHits } from "../../memory/server";
+import { projectPassportBlock } from "../../passport";
 import { threadUsage } from "../../usage/server";
 import { stringAt } from "@lane-pilot/kit";
 import { AUTHOR_ROWS, AUTHOR_ROW_IDS, DEFAULT_MODEL, pmAuthorOf, DEFAULT_PROVIDER, DEFAULT_REASONING } from "./workflow-agent-model";
@@ -49,7 +51,13 @@ export type RoleSpec = { helper: HelperRole; metadata: string; specialist?: stri
 const BASE_ALLOWED = (file: string) => file.startsWith(".bb/chats/") || file.startsWith(".lane-pilot/harness/") || file.startsWith(".lane-pilot/harness-edit/");
 const ROLE_MAP: Record<string, HelperRole> = {
   analyst: "analyst", planner: "planner", auditor: "auditor", debugger: "debugger", "plan-critic": "plan-critic", "code-critic": "code-critic",
-  triager: "gate-triage", memory: "memory-maintainer", "browser-qa": "browser-qa", errand: "errand", "errand-computer": "errand", "errand-devops": "errand", "errand-research": "errand", "errand-browser": "errand", "api-recon": "api-recon", council: "council-seat", "project-life": "project-life", "pm-reader": "pm-reader",
+  triager: "gate-triage", "gate-triage": "gate-triage", memory: "memory-maintainer", "memory-maintainer": "memory-maintainer",
+  "browser-qa": "browser-qa", errand: "errand", "errand-computer": "errand", "errand-devops": "errand", "errand-research": "errand", "errand-browser": "errand",
+  "api-recon": "api-recon", council: "council-seat", "council-seat": "council-seat", "project-life": "project-life", "pm-reader": "pm-reader",
+  writer: "writer", "code-repair": "code-repair", "night-fixer": "night-fixer", "specialist-reviewer": "specialist-reviewer",
+  "docs-maintainer": "docs-maintainer", onboarder: "onboarder", "rules-analyzer": "rules-analyzer", "episode-analyst": "episode-analyst",
+  "wall-hunter": "wall-hunter", "workspace-provisioner": "workspace-provisioner", lead: "lead", "workflow-architect": "workflow-architect",
+  "harness-editor": "harness-editor", "harness-composer": "harness-composer", "harness-reflection": "harness-reflection",
 };
 
 /** A bundled specialist; any other `specialist:<id>` names an agent the owner created, which must exist when the step runs (`ownSpecialist`). */
@@ -78,7 +86,7 @@ export function downgradableRole(role: string): boolean {
   return !NO_DOWNGRADE.has(role) && ROLE_IDS.includes(row) && !NO_DOWNGRADE.has(row);
 }
 
-const SP_ENGINE_OWNED = /^\.agents\/(?:seo|marketing)\/(?:charter\.json|questions\.ext\.json|memory(?:\/|$))/;
+const SP_ENGINE_OWNED = /^\.agents\/(?:passport(?:\/|$)|(?:seo|marketing)\/(?:charter\.json|questions\.ext\.json|memory(?:\/|$)))/;
 
 export function roleSpec(role: string): RoleSpec {
   // Graphs name an employee either as `specialist:game-dev` or as the bare id (`game-dev` in roblox-asset).
@@ -92,7 +100,7 @@ export function roleSpec(role: string): RoleSpec {
     return { helper: `specialist:${specialist}` as HelperRole, metadata: "specialist", specialist, readOnly: false, editable: (file) => !SP_ENGINE_OWNED.test(file) && (BASE_ALLOWED(file) || file === ".agents" || file.startsWith(".agents/") || designCanon(file)) };
   }
   const helper = ROLE_MAP[role] ?? "analyst";
-  if (helper === "project-life") return { helper, metadata: "project-life", readOnly: false, editable: (file) => BASE_ALLOWED(file) || file.startsWith(".agents/") || file === "CHANGELOG.md" };
+  if (helper === "project-life") return { helper, metadata: "project-life", readOnly: false, editable: (file) => !SP_ENGINE_OWNED.test(file) && (BASE_ALLOWED(file) || file.startsWith(".agents/") || file === "CHANGELOG.md") };
   return { helper, metadata: helper, readOnly: true, editable: BASE_ALLOWED };
 }
 
@@ -200,8 +208,7 @@ export async function ownSpecialist(rt: ChainRuntime, id: string): Promise<{ mar
   const row = (await rt.ctx.ownedAgents())[id];
   if (!isBundledSpecialist(id) && (!row || row.compiledCorrupt)) throw new HelperFailure("unknown_specialist", `there is no agent "${id}" (deleted or renamed?): a node with role specialist:${id} needs a bundled specialist or an agent you created (bb lane-pilot agents list --custom)`);
   const { selection } = await storeNativeSelection(rt.ctx, { projectId: rt.projectId, agentId: id, ...(rt.runId ? { parentRunId: rt.runId } : {}) });
-  // A bundled specialist's skills and servers come from its role profile; an agent of the owner brings its own.
-  const profile = row && !isBundledSpecialist(id) ? compileEffectiveMainAgent(id, row) : { skills: [], mcpServers: [] };
+  const profile = row && !row.compiledCorrupt ? compileEffectiveMainAgent(id, row) : { skills: [], mcpServers: [] };
   return { marker: mentionContext(selection), access: { ...(profile.skills?.length ? { skills: [...profile.skills] } : {}), ...(profile.mcpServers?.length ? { mcpServers: [...profile.mcpServers] } : {}) } };
 }
 
@@ -251,12 +258,18 @@ export function createWorkflowAgents() {
     const spec = roleSpec(asked.role);
     // A `specialist:` role that names no specialist (a role taken from an input, a reserved id) must not quietly run as an analyst.
     if (asked.role.startsWith("specialist:") && !spec.specialist) throw new HelperFailure("unknown_specialist", `"${asked.role.slice("specialist:".length)}" is neither a bundled specialist nor an agent you created (bb lane-pilot agents list)`);
-    // An agent the owner created runs with its own profile: its marker leads the first message, its skills and MCP servers join the session's.
-    // A scheduled agent's routine runs a bundled specialist as itself too (its stored profile selection, as a chat started with it gets).
-    const own = spec.specialist && (!isBundledSpecialist(spec.specialist) || asked.workflowId === AGENT_ROUTINE || asked.workflowId === SPECIALIST_GRAPH) ? await ownSpecialist(rt, spec.specialist) : null;
+    const own = spec.specialist
+      ? (!isBundledSpecialist(spec.specialist) || asked.workflowId === AGENT_ROUTINE || asked.workflowId === SPECIALIST_GRAPH
+          ? await ownSpecialist(rt, spec.specialist)
+          : await bestEffort(rt.ctx.log, "bundled specialist profile", Promise.resolve().then(() => ownSpecialist(rt, spec.specialist!)), null))
+      : null;
+    const roleLines = spec.specialist && asked.workflowId !== SPECIALIST_GRAPH && !asked.intoThread
+      ? await bestEffort(bb.log, "specialist role lines", employeeRoleLines(bb, rt.projectId, spec.specialist), [] as string[])
+      : [];
+    const roleLessonsBlock = roleLines.length ? `Lines added to your role in this project (one dated line per review lesson):\n${roleLines.map((l) => `- ${l}`).join("\n")}\n\n` : "";
     // A phase stage writes its documents: its helper is told which folders it may write, the same ones the check below allows.
     const phaseId = spec.readOnly && isPhaseAuthor(spec.helper) ? phaseOfWorkflowRun(db, asked.workflowRunId) : null;
-    const noted = phaseId ? phaseWriteNote(asked.prompt, phaseId, spec.helper) : asked.prompt;
+    const noted = `${roleLessonsBlock}${phaseId ? phaseWriteNote(asked.prompt, phaseId, spec.helper) : asked.prompt}`;
     let request = { ...asked, prompt: own && !asked.intoThread ? `${own.marker}\n\n${noted}` : noted };
     // With a PM chat the helper reuses the chat's environment; with none, it works in the project's own first folder.
     let environment: ReturnType<typeof folderEnvironment> | { type: "reuse"; environmentId: string };
@@ -405,7 +418,7 @@ export function createWorkflowAgents() {
     // Any provider, Claude included: the resolver answers with the failed provider taken out of the offer (the peer of the other family).
     const limit = zcodeRefusal ?? providerLimitNotice(text) ?? (isZcodeProvider(request.provider) ? zcodeEnvironmentError(text.length <= 400 ? text : null) : null);
     // A specialist or the architect runs as a Claude Code agent profile: another provider would refuse it (409), so its limit fails the step.
-    if (limit && !request.intoThread && (request.role.startsWith("specialist") || request.role === "workflow-architect")) throw new HelperFailure("provider_limit", `the ${request.role} helper hit Claude's limit (${limit}); a specialist runs only on Claude Code, so it waits for the window to reset`);
+    if (limit && !request.intoThread && (Boolean(spec.specialist) || request.role.startsWith("specialist") || request.role === "workflow-architect")) throw new HelperFailure("provider_limit", `the ${request.role} helper hit Claude's limit (${limit}); a specialist runs only on Claude Code, so it waits for the window to reset`);
     if (limit && !request.intoThread) {
       const failed = request.provider ?? DEFAULT_PROVIDER;
       noteProviderLimit(bb, failed, request.model ?? null, limit);
@@ -517,9 +530,18 @@ export function agentRequest(ctx: StepContext<ChainRuntime>, node: Extract<Graph
   const inputs = routine || ctx.workflow.id === SPECIALIST_GRAPH ? {} : { ...(intoThread ? {} : ctx.inputs), ...ctx.input.with };
   // K7: the first step and every third remind the helper what the whole run is for.
   const goals = ctx.reground ? goalsBlock(ctx.goals) : undefined;
+  const passportLens = !intoThread && ctx.workflow.id !== SPECIALIST_GRAPH && rt?.ctx?.db && rt.projectId
+    ? projectPassportBlock(rt.ctx.db, { projectId: rt.projectId, role, workflowId: ctx.workflow.id })
+    : "";
+  const recallHits = !intoThread && rt?.ctx?.db && rt.projectId
+    ? (() => { try { return confirmedWordHits(rt.ctx.db, rt.projectId, `${title} ${task}`.slice(0, 400), { limit: 4 }); } catch { return []; } })()
+    : [];
+  const recallBlock = recallHits.length ? `<project_memory>\n${recallHits.map((r) => `- [${r.kind}] ${r.content.slice(0, 260)}`).join("\n")}\n</project_memory>` : "";
+  const memoryBlock = [passportLens, recallBlock].filter(Boolean).join("\n\n");
+  const taskWithPassport = memoryBlock ? `${task}\n\n${memoryBlock}` : task;
   const body = intoThread
     ? `Continue the workflow step "${node.id}". New material for you:\n\n${packet ?? JSON.stringify(inputs, null, 1).slice(0, 20_000)}\n\n${task}${goals ? `\n\n${goals}` : ""}\n\n${outputContract(fields)}`
-    : agentPrompt({ workflow: ctx.workflow.id, node: node.id, title, role, mode: ctx.mode, ...(method.length ? { method: method.join("\n") } : {}), task, inputs,
+    : agentPrompt({ workflow: ctx.workflow.id, node: node.id, title, role, mode: ctx.mode, ...(method.length ? { method: method.join("\n") } : {}), task: taskWithPassport, inputs,
       ...(ctx.input.item !== undefined ? { item: ctx.input.item } : {}), handoff: via.handoff ?? null, ...(prior ? { prior } : {}), contract: outputContract(fields),
       readOnly: spec.readOnly, skills: [...(node.skills ?? []), ...(node.profile?.skills ?? [])], ...(goals ? { goals } : {}), ...(packet ? { packet } : {}), ...(node.authorized !== undefined ? { authorized: node.authorized } : {}) });
   return {
@@ -593,7 +615,8 @@ export async function withResolvedModel(request: HelperRequest, options: { avoid
   const read = (() => { try { return modelCatalogOf(rt.ctx).peek(); } catch { return null; } })();
   // An agent the owner created may name its own model and effort: they pin the run unless the schedule named one.
   const specialist = request.role.startsWith("specialist:") ? request.role.slice("specialist:".length) : "";
-  const agentMeta = !avoid && specialist && !isBundledSpecialist(specialist) ? (await bestEffort(rt.ctx.log, "workflow helper owned agents", Promise.resolve().then(() => rt.ctx.ownedAgents()), {} as Awaited<ReturnType<typeof rt.ctx.ownedAgents>>))[specialist]?.meta : undefined;
+  const ownedEntry = !avoid && specialist ? (await bestEffort(rt.ctx.log, "workflow helper owned agents", Promise.resolve().then(() => rt.ctx.ownedAgents()), {} as Awaited<ReturnType<typeof rt.ctx.ownedAgents>>))[specialist] : undefined;
+  const agentMeta = ownedEntry && !ownedEntry.compiledCorrupt ? ownedEntry.meta : undefined;
   // The only models a run may pin: the one a scheduled agent names, and the one an owner-created agent names. The graph's node names none.
   const pinned = { provider: request.provider, model: request.model ?? agentMeta?.model, reasoning: request.reasoning ?? agentMeta?.effort, service_tier: request.serviceTier };
   const row = roleRowOf(request.role);

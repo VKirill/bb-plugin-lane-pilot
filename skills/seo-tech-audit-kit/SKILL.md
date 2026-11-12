@@ -1,6 +1,7 @@
 ---
 name: seo-tech-audit-kit
-description: "Technical SEO audit playbooks and thresholds from «SEO Монстр 2027» ch.2: index-control directive choice, crawl budget protocol, Googlebot log analysis, spider traps, canonical sync, sitemaps, parameters/filters, pagination, infinite scroll, rendering and mobile parity, DOM diff, CWV per template, hreflang, Master Audit Matrix and defect prioritization; plus the robots.txt quick check by site type. Use when: технический аудит, tech audit, crawl budget, краулинговый бюджет, robots.txt, canonical, sitemap, hreflang, CWV, пагинация, не индексируется. SKIP: release execution and migrations (→seo-release-protocol); page content rules (→seo-page-templates)."
+description: >-
+  Technical SEO audit playbooks and thresholds from «SEO Монстр 2027» ch.2 and «The Art of SEO» 4th ed.: index-control directive choice, crawl budget protocol, verified Googlebot rDNS/fDNS log analysis, ETag/304 & Vary headers, spider traps, canonical sync, sitemaps, enterprise faceted crawl matrix, pagination, rendering parity, CWV, international URL topologies & hreflang, and Master Audit Matrix. Use when: технический аудит, tech audit, crawl budget, краулинговый бюджет, robots.txt, canonical, sitemap, hreflang, CWV, пагинация, не индексируется, фасетные фильтры. SKIP: release execution and migrations (→seo-release-protocol); page content rules (→seo-page-templates).
 ---
 
 # SEO Tech Audit Kit
@@ -23,7 +24,7 @@ The technical gate and audit toolbox for an existing site. Knowledge only — it
 2. **Index control.** Pick the directive per URL → [index-control-and-canonical](references/index-control-and-canonical.md). Includes the 5-contour canonical sync, the 9 override causes, the 5-level non-indexed triage, robots.txt lifecycle and the Appendix-2 quick check.
 3. **Inventory hygiene.** Sitemap segmentation and governance, parameter registry, filter whitelist, duplicate audit, content pruning → [sitemaps-parameters](references/sitemaps-parameters.md).
 4. **Lists and rendering.** Pagination 7-point audit, SEO-safe infinite scroll, raw-vs-rendered and mobile-vs-desktop DOM diff → [listings-rendering](references/listings-rendering.md).
-5. **Speed and languages.** Template-level CWV (LCP/CLS/INP), hreflang architecture and cluster audit → [cwv-hreflang](references/cwv-hreflang.md).
+5. **Speed, international topologies and faceted scale.** Template-level CWV (LCP/CLS/INP) & hreflang audit → [cwv-hreflang](references/cwv-hreflang.md); ccTLD/subfolder/subdomain trade-offs, self-canonical + reciprocal hreflang + zero GeoIP redirects, rDNS/fDNS bot verification, `ETag`/`304` + `Vary: User-Agent`, and 4-tier faceted crawl-budget matrix → [international-and-faceted-crawl-architecture](references/international-and-faceted-crawl-architecture.md).
 6. **Aggregate.** Join crawler + GSC + log data into the Master Audit Matrix and prioritize defects (4 factors, P1-P4 routing) → [audit-matrix](references/audit-matrix.md).
 
 ## Core decision rules
@@ -53,4 +54,5 @@ The node returns: `tech-audit/{matrix.csv, backlog.md, robots.diff, sitemap-plan
 - `references/screaming-frog-llm-embeddings-playbook.md` — operational playbook and thresholds.
 - `references/technical-geo-llms-txt-js-schema-share.md` — operational playbook and thresholds.
 - `references/indexing-gsc-and-indexnow-loop.md` — operational playbook and thresholds.
-- `references/03-verified-logs-and-index-control.md` — operational playbook and thresholds.
+- `references/03-verified-logs-and-index-control.md` — verified log aggregation and crawl/index policy gates.
+- `references/international-and-faceted-crawl-architecture.md` — *The Art of SEO* 4th ed. international URL topologies, `hreflang` + self-canonical + no-GeoIP-redirect invariant, verified rDNS/fDNS bot checks, `304 Not Modified` / `Vary`, and enterprise faceted crawl matrix.

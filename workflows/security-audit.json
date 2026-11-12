@@ -191,7 +191,14 @@
       },
       "guards": {
         "maxVisits": 1
-      }
+      },
+      "consumes": [
+        {
+          "kind": "findings",
+          "version": 1,
+          "from": "threat_model"
+        }
+      ]
     },
     {
       "id": "offer",

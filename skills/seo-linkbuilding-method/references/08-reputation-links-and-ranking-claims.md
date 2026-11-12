@@ -1,8 +1,8 @@
 ---
 title: "Link and reputation evidence without causal overclaim"
-status: draft
+status: active
 owner: drmax-books-finish
-target_skill: seo-update-forensics
+target_skill: seo-linkbuilding-method
 source_pages: "Доказательное SEO 2026, book 1 ch.10–12 pp.132–166; ch.18 pp.219–227; book 2 ch.5 pp.349–366; ch.10 pp.453–458"
 tags: [seo, engineering-reference, synthesized, private]
 ---
@@ -34,4 +34,4 @@ Return observed facts, plausible mechanisms, counterevidence and the next check.
 
 ## Source and integration
 
-Source: Доказательное SEO 2026, book 1 ch.10–12 pp.132–166; ch.18 pp.219–227; book 2 ch.5 pp.349–366; ch.10 pp.453–458. Resolve physical PDF page N to `/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/raw_pages/page_NNN.txt`. Cross-check the named procedures in [the registry](/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/procedures-registry.json). This reference is ready for review and placement in `seo-update-forensics`; no skill installation or live changes were performed.
+Source: Доказательное SEO 2026, book 1 ch.10–12 pp.132–166; ch.18 pp.219–227; book 2 ch.5 pp.349–366; ch.10 pp.453–458. Resolve physical PDF page N to `/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/raw_pages/page_NNN.txt`. Cross-check the named procedures in [the registry](/home/ubuntu/specialist-curriculum/_distilled/drmax-dokazatelnoe-seo-2026/procedures-registry.json). Active reference installed in `seo-linkbuilding-method`.

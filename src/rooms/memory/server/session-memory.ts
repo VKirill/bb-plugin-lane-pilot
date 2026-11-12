@@ -3,7 +3,7 @@ import { embedQuery } from "./embeddings";
 import { resolve } from "node:path";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, upsertLessonProposal } from "@lane-pilot/run-insights";
-import { DEFAULT_RELEVANCE_FLOOR, NOTHING_RELEVANT, projectUsesSections, resolveProjectKind, sharedScope, UNASSIGNED_SCOPE, memoryClaimIssue, memoryVisibilitySql, parseMemoryCandidates, relevantRecords, searchMemoryRecords, storeMemoryRecordsKeepingOverflow, type MemoryRecord } from "@lane-pilot/memory-core";
+import { DEFAULT_RELEVANCE_FLOOR, NOTHING_RELEVANT, listMemoryReceipts, projectUsesSections, resolveProjectKind, sharedScope, UNASSIGNED_SCOPE, memoryClaimIssue, memoryVisibilitySql, parseMemoryCandidates, relevantRecords, searchMemoryRecords, storeMemoryRecordsKeepingOverflow, type MemoryRecord } from "@lane-pilot/memory-core";
 import type { rpcContract } from "../../contracts";
 import { memorySettingsFor } from "./memory-settings";
 import type { InsightsApi } from "../../contracts/server";
@@ -114,7 +114,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       const settings = memorySettingsFor(loadProjectSettings(db, projectId));
       const rows = db.prepare(`SELECT id, content FROM lane_pilot_memory m WHERE m.project_id=? AND m.kind='core' AND m.audience='subagent' AND m.personal_bot=? AND ${memoryVisibilitySql(db, "m", { chain: chain ?? [] })} ORDER BY m.accepted_count DESC, m.use_count DESC, m.created_at DESC`)
         .all(projectId, settings.personalBot) as Array<{ id: string; content: string }>;
-      return { records: rows };
+      return { records: rows, receipts: listMemoryReceipts(db as never, projectId, 10) };
     },
     // The same block contributeInstructions gives an ordinary thread (M2); the drill reads it for a thread id.
     memory_thread_block: async ({ projectId, threadId }) => ({ block: threadMemoryBlock(db, { projectId, threadId }, services.wallThreadReader) }),

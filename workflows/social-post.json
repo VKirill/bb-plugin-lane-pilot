@@ -94,10 +94,10 @@
         "ru": "Сбор инсайтов аудитории"
       },
       "with": {
-        "topic": "$inputs.topic",
-        "platform": "$inputs.platform",
-        "posts_count": "$inputs.posts_count",
-        "post_urls": "$inputs.post_urls",
+        "topic": "{{$inputs.topic}}",
+        "platform": "{{$inputs.platform}}",
+        "posts_count": "{{$inputs.posts_count}}",
+        "post_urls": "{{$inputs.post_urls}}",
         "draft": false
       },
       "out": {
@@ -130,7 +130,7 @@
           "ru-text"
         ]
       },
-      "prompt": "Изучи собранный пакет инсайтов ({{insights.writing_pack_path}}) и досье ({{insights.dossier_path}}). Напиши пост по теме '{{$inputs.topic}}' в голосе автора Кирилла Вечкасова. Разделы навыков каталога: «Тексты и редактура». Стиль: плотный, честный, с реальными болями и языком аудитории, без корпоративных штампов и нейрослопа. Проверь текст по ru-check. Сохрани черновик в .agents/social/post.md. Верни статус done или blocked.",
+      "prompt": "Изучи собранный пакет инсайтов ({{insights.writing_pack_path}}) и досье ({{insights.dossier_path}}). Напиши пост по теме '{{$inputs.topic}}' в голосе автора Кирилла Вечкасова. Разделы навыков каталога: «Тексты и редактура». Стиль: плотный, честный, с реальными болями и языком аудитории, без корпоративных штампов и нейрослопа. Проверь текст по ru-check. Сохрани черновик в .agents/social/post.md. Верни статус done или blocked. Правило первого предложения (Sugarman): короткий вход в боль с первой строки, который тянет ко второй; вычисти словесный мусор и канцелярит (Zinsser / Ильяхов).",
       "out": {
         "status": "done|blocked",
         "post_text": "string",

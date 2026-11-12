@@ -5,7 +5,7 @@ import { explainCatalog, explainWord, guideDocs } from "./explain";
 import { VERDICT_LIST_COMMAND, renderVerdicts, verdictFiles, verdictInventory } from "./verdicts";
 import { attemptRecord, manifest, passport, preship, prPassport, receiptChain, subagentReceipts, verifyChain } from "./receipts";
 import { EXCAVATE_LOG_ARGS, approvalSuggestions, costPerVerified, excavate, htmlReport, missCurriculum } from "./self-improve";
-import { CODE_FACTS_REFRESH, PROTECTIONS, anamnesisFor, attemptSessionLayers, attemptStateCounts, bestEffort, budgetSpentSweep, calibrationPassport, codeFactsOnHost, collectOwnerMessages, createHash, getAttempt, getRun, getRunWriterHost, integrityReport, isNotFound, join, learningFor, listAttemptReasonsSince, listEvidence, listQaHosts, listReviewedObservations, listScenarios, loadLiveExam, loadProjectSettings, loadPrototypeConfig, mergeFrontmatter, orMiss, outsideWorkSummary, parseFrontmatter, parseSkillHub, pauseRun, planningHomeInputs, pluginRootFromModule, renewDisarm, resolvePlanningHome, runCoverageCli, runLearningCli, runOnHost, runPmReplayCli, runPmSkillUseCli, runPmSkillsCli, runPolicyCli, runRollbackCli, runSkillsCli, runWindowCli, saveProjectSetting, sdkThreadsPort, setFrontmatter, smaCheckedPercent, smaCounts, smaDonePercent, smaRows, spawnAsync, terminalParity, terminalSessionLayers, unknownReasons, usageSegment } from "./cli-imports";
+import { CODE_FACTS_REFRESH, PROTECTIONS, anamnesisFor, attemptSessionLayers, attemptStateCounts, bestEffort, budgetSpentSweep, calibrationPassport, codeFactsOnHost, collectOwnerMessages, createHash, getAttempt, getRun, getRunWriterHost, integrityReport, isNotFound, join, learningFor, listAttemptReasonsSince, listEvidence, listQaHosts, listReviewedObservations, listScenarios, loadLiveExam, loadProjectSettings, loadPrototypeConfig, mergeFrontmatter, orMiss, outsideWorkSummary, parseFrontmatter, parseSkillHub, pauseRun, planningHomeInputs, pluginRootFromModule, renewDisarm, resolvePlanningHome, runCoverageCli, runLearningCli, runOnHost, runPmReplayCli, runPmSkillUseCli, runPmSkillsCli, runPolicyCli, runProjectPassportCli, runRollbackCli, runSkillsCli, runWindowCli, saveProjectSetting, sdkThreadsPort, setFrontmatter, smaCheckedPercent, smaCounts, smaDonePercent, smaRows, spawnAsync, terminalParity, terminalSessionLayers, unknownReasons, usageSegment } from "./cli-imports";
 /** Inspection, protection and report commands of `bb lane-pilot`. Returns undefined when `command` is not one of theirs. */
 export async function cliInspect(d: CliRunDeps): Promise<PluginCliResult | undefined> {
   const { bb, db, effectiveProjectSettings, host } = d.ctx;
@@ -166,7 +166,13 @@ export async function cliInspect(d: CliRunDeps): Promise<PluginCliResult | undef
     const stats = projectStats(db as never, args[0] && !args[0].startsWith("--") ? args[0] : "", days);
     return { exitCode:0, stdout:JSON.stringify(stats, null, 2) };
   }
+  if (command === "project-passport") {
+    return runProjectPassportCli(db, args);
+  }
   if (command === "passport") {
+    if (["show", "probe", "set", "verbatim", "pending", "decide"].includes(args[0] ?? "")) {
+      return runProjectPassportCli(db, args);
+    }
     // --calibration: the badge of the current PM model's forecasts (SMA k_v_passport); it resets when the model changes.
     if (args[0] === "--calibration") {
       const at = args.indexOf("--project");

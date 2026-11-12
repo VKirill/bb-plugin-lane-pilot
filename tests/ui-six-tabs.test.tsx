@@ -97,8 +97,8 @@ describe("six tabs", () => {
 
   it("shows no segments that a level cannot use", () => {
     expect(segmentsFor("knowledge", "system")).toEqual(["memory", "docs", "anamnesis"]);
-    expect(segmentsFor("knowledge", "project")).toEqual(["memory", "docs", "rules"]);
-    expect(segmentsFor("knowledge", "section")).toEqual(["memory", "docs", "rules"]);
+    expect(segmentsFor("knowledge", "project")).toEqual(["memory", "passport", "docs", "rules"]);
+    expect(segmentsFor("knowledge", "section")).toEqual(["memory", "passport", "docs", "rules"]);
   });
 
   it("lists every helper role in the team table once", () => {

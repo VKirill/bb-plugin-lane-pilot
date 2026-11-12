@@ -30,7 +30,19 @@ export { listActiveProjectIds, runPmThreadId, runProjectId, runClosedAt, latestO
 export { ATTEMPT_TABLE, acceptedAttemptTaskRefs, acceptedAttemptProjectIds, acceptedTaskCountsByProject, hasAcceptedAttempt, hasLiveAttempt, latestAttemptByRowid, stemAttemptRows, adoptableBlockedAttempts, attemptTimelineRows, attemptTransitionsForTask, acceptanceAttemptRows, canaryAttemptRows, previousHarnessVersion, attemptWorkspacePaths, writerBaseForWorkspace, openAttemptIdsOfRun, openAttemptsForPause, latestAttemptsPerTask, runEnvironmentIds, attemptEnvironmentRows, stickyWorktreeAttemptRows, attemptIdsOfThread, attemptThreadsOfRun, runAttemptOutcomeRows, acceptedTaskIdsOfRun, attemptWorkspaceRow, otherAttemptsOfRun, attemptedTaskIdsOfRun, latestTaskAttemptRow, countThreadAttempts, countThreadTaskAttempts, finalTaskIdsSince, workerHomeKey } from "./attempts-store";
 export { listAcceptedJoinRows, listCandidateTaskRows, listAttemptTracesForRun, listAttemptIdsInStates, countHarnessArmAttempts, attemptHarnessTreeId, latestAttemptIdForThread, listAttemptEvidenceRows, listTeachingKeys, assignAttemptHarness, listHarnessTrialAttempts, latestAttemptEnvironmentId, listAttemptsForProjectOrdered, countAcceptedForProject, listCheckFailureRows, listFailedAttemptRows, listStaleAttemptsInState, listStaleQueuedAttempts, listRecentFailedAttemptRows, listJournalAttemptRows, listFinishedAttemptRows, listFailedAttemptsSinceDesc, listHarnessVersionTimeline, listAttemptBriefRows, listTaskAcceptanceRows, listWriterThreadTurns, cancelCodeCounts, attemptRowWithProject, listFamilyAttemptRows, listAttemptReasonsLike, acceptedFamilyAttemptId, acceptedAttemptCiting, listVersionedAttemptRows, listAcceptedAttemptsWithThread, listComplexTaskRows, attemptStateCounts, failedAttemptStateCounts, listAcceptedAttemptsForTask, listAttemptStatesForTask, attemptRunAndThread, attemptStateForTaskRun, latestAttemptStateCreated, failedTasksAllProjects, listAcceptedAttemptsSince } from "./attempts-store";
 export { taskTimelineRow, listBbTaskRowsForRun, clearTaskClosedWords, taskCreatedAt, runTaskCardRows, taskGraphRows, openIntakeTaskRows, finishedIntakeTaskRows, openIntakeAttemptRows } from "./tasks-store";
-export { hasTask, listProjectTasks, countProjectTasksSince } from "./tasks-store";
+export { hasTask, listProjectTasks, countProjectTasksSince, listTaskTransitions } from "./tasks-store";
+export {
+  type ProjectArtifactRow,
+  type UpsertProjectArtifactInput,
+  type CasFilesLike,
+  getProjectArtifact,
+  countActiveProjectArtifacts,
+  upsertProjectArtifact,
+  listProjectArtifacts,
+  renderArtifactsManifestJson,
+  inferArtifactMetaFromRelPath,
+  writeCasCheckoutFile,
+} from "./artifacts-store";
 export { insertTaskDraftRow, getTaskDraftRow, saveDraftResults, pruneTaskDraftRows, listBatchDraftRows, type TaskDraftRow } from "./task-draft-store";
 export { staleStageReceipts, taskCheckLogRows, failedBackgroundStageRows, stageEventsForTimeline, gateEventsForTask, stageReceiptsForTimeline, countVerificationGateFailures, stageReceiptStates, stageReceiptAttemptState } from "./stages-store";
 export { latestStageResultJson, listStageReceiptsForProject, listReviewStageRows, listFailedStageReceipts, listStageReceiptStates, listStaleOpenStages, listProjectsWithCriticReceipts, gateEventFailureCounts, failedStageCounts } from "./stages-store";
