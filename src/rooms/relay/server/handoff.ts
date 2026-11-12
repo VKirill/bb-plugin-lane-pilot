@@ -26,7 +26,7 @@ import { requirePmRun, type ServerContext } from "../../platform/server";
 import { registerObservedTool } from "../../platform/server";
 import { scheduleIsolated } from "../../platform/server";
 import { getActivation, getRun, loadPrototypeConfig } from "../../storage";
-import type { ActivationApi } from "../../contracts/agent-ops";
+import type { ActivationApi } from "../../contracts";
 import { sendServiceMessage } from "./service-message";
 
 type BundledAgent = { displayName?: string; prompt?: string; skills?: string[]; tools?: string[] };

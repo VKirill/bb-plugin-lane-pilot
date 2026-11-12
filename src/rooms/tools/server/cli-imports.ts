@@ -97,7 +97,7 @@ import type { LeadApi } from "../../lead/server/service";
 import type { MemoryProbeApi } from "../../memory-probe/server/memory-probe";
 import type { MemoryConflictsApi } from "../../memory/server/memory-conflicts";
 import type { MoneyApi } from "../../money/server";
-import type { ActivationApi } from "../../contracts/agent-ops";
+import type { ActivationApi } from "../../contracts";
 import type { OwnerPresenceApi } from "../../owner-presence/server/presence";
 import type { PhaseApi } from "../../phase/server/driver";
 import type { PhaseIntake } from "../../phase/server/intake";
