@@ -242,7 +242,7 @@ const METHODOLOGY = [
 
 /**
  * The nightly docs agent works in the project folder with file access, like claude-lane's
- * docs-maintain: no docs/ yet means onboarding, otherwise only pages about changed code.
+ * lp-docs: no docs/ yet means onboarding, otherwise only pages about changed code.
  */
 export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; changed:string[]; refresh?:string[]; anchorsPath?:string; deploy?:boolean;
   missingPages?:string[]; uncoveredCore?:string[]; agent?:string; unit?:DocsUnit;

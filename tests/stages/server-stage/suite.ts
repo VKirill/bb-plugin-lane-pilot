@@ -670,7 +670,7 @@ describe("stage → native writer → receipt", () => {
   });
   it("refuses helper spawn when selected isolation is stored and the required API is absent",async()=>{
     const {db,harness,spawned}=await setup('should not run',undefined,{
-      "helper.context_mode":"selected","helper.skills":"lane-contract",
+      "helper.context_mode":"selected","helper.skills":"lane-pilot",
       "pm_read.enabled":true,"pm_read.min_lines":50,"pm_read.provider":"critic","pm_read.model":"critic-model","pm_read.reasoning_effort":"medium",
     });
     const longReadTask={...task,id:"stage-task-helper-selected",read_first:["README.md L1-L80"]};

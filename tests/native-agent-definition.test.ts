@@ -22,7 +22,7 @@ it("forwards every CLI AgentDefinition resource on an edited profile", () => {
     prompt: "Edited prompt",
     tools: ["Read"],
     disallowedTools: ["Bash"],
-    skills: ["lane-contract"],
+    skills: ["lane-pilot"],
     mcpServers: ["gitnexus"],
   });
   expect(JSON.parse(sessionOverrideAgentsJson({
@@ -35,7 +35,7 @@ it("forwards every CLI AgentDefinition resource on an edited profile", () => {
       prompt: "Edited prompt",
       tools: ["Read"],
       disallowedTools: ["Bash"],
-      skills: ["lane-contract"],
+      skills: ["lane-pilot"],
       mcpServers: ["gitnexus"],
     },
   });

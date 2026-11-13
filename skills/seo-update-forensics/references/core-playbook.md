@@ -2,7 +2,7 @@
 
 ## Step 5 — layer checklist (Appendix 1, checks 1-15)
 
-Full per-layer list: [references/appendix-1-checks.md](references/appendix-1-checks.md). Layers: drop confirmation, segmentation, top losers, SERP layout, index/canonical, crawl/access, index bloat, content vs winners, trust, post-click, CWV, architecture, freshness → then checks 14-15: hypothesis cards + pilot.
+Full per-layer list: `appendix-1-checks.md` (a sibling file in the SKILL.md table). Layers: drop confirmation, segmentation, top losers, SERP layout, index/canonical, crawl/access, index bloat, content vs winners, trust, post-click, CWV, architecture, freshness → then checks 14-15: hypothesis cards + pilot.
 
 Decision rules: no shared pattern among top losers → diagnose page by page, no site-wide fixes. One locale/folder/template → document-class problem. Rule out a canonical switch or split signals before blaming quality. Many weak pages → site-wide trust problem. CWV amplifies a problem; it is not the whole explanation. Fix crawl alongside quality — weak crawling slows recovery.
 

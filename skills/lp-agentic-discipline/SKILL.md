@@ -1,6 +1,6 @@
 ---
 name: lp-agentic-discipline
-description: "Working discipline for autonomous Lane Pilot specialists: every decision states its assumptions with a TTL, data from outside is fenced, money and live changes wait for the owner gate, forecasts carry an interval, and knowledge from courses enters only as attributed atoms that pass a copy and watermark lint. Use when: specialist shift, self-doubting plan, assumptions TTL, historical replay exam, curriculum ingest lint, «почему специалист решил сам», prompt-injection hygiene. SKIP: building a workflow graph (lane-pilot-workflows); a PM runbook for stuck tasks (lane-pilot-ops); the domain method itself (mkt-*, seo-* skills)."
+description: "Working discipline for autonomous Lane Pilot specialists: every decision states its assumptions with a TTL, data from outside is fenced, money and live changes wait for the owner gate, forecasts carry an interval, and knowledge from courses enters only as attributed atoms that pass a copy and watermark lint. Use when: specialist shift, self-doubting plan, assumptions TTL, historical replay exam, curriculum ingest lint, «почему специалист решил сам», prompt-injection hygiene. SKIP: building a workflow graph (lane-pilot); a PM runbook for stuck tasks (lane-pilot); the domain method itself (mkt-*, seo-* skills)."
 ---
 
 # Agentic discipline for specialists

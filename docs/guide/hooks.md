@@ -90,7 +90,7 @@ What a helper no longer inherits on OVH, with the reason (rule 6: removed with a
 How an answer is shaped for the owner and how code is built (the ADHD rules and the Ponytail ladder) are not hook output any more.
 They are one file, `~/.bb/AGENTS.md` on the hub: BB core reads it as the user's instructions into every thread of every provider on
 every machine (delivery checked 2026-11-10 on Codex, Claude Code, Devin, Cursor and OpenCode on OVH and on Codex on the Mac mini). A helper does not get it: `userInstructions` is off in a
-role's default context (`helper-context.ts`), and a writer has the ladder in the hub skill `writer-practices`.
+role's default context (`helper-context.ts`), and a writer has the ladder in the hub skill `lp-writer`.
 
 The two plugins stay installed for their on-demand skills, with the automatic start text off on all four machines: the ADHD flag
 `~/.claude/.i-have-adhd-always` is removed and Ponytail's `~/.config/ponytail/config.json` says `{"defaultMode":"off"}`. Before this

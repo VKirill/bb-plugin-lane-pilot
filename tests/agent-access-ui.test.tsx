@@ -58,7 +58,7 @@ async function mount(options: { mode?: string; modeOrigin?: Origin | null; prese
       }),
       catalog: {
         bbPlugins: [{ id: "browser-automation", name: "Browser Automation" }, { id: "image-studio", name: "Image Studio" }],
-        skills: [{ name: "ru-text", description: "Russian text quality" }, { name: "tavily", description: "Web search" }, { name: "writer-practices", description: "Writing habits" }],
+        skills: [{ name: "ru-text", description: "Russian text quality" }, { name: "tavily", description: "Web search" }, { name: "lp-writer", description: "Writing habits" }],
       },
       mandatory: { bbPlugins: [...MANDATORY_BB_PLUGINS], mcpServers: [...MANDATORY_MCP_SERVERS] },
       providers: Object.fromEntries(Object.entries(CORE_PROVIDER_GROUPS).filter(([id]) => id !== "acp-opencode").map(([id, groups]) => [id, [...groups]])),
@@ -155,7 +155,7 @@ describe("Agent access tab", () => {
       expect(within(slot.getByTestId("role-drawer-writer")).getByTestId("access-body-writer")).toBeTruthy();
       expect(slot.getByTestId("access-badge-open-writer").textContent).toBe(en.accessOrigin_role);
       for (const group of ["bbPlugins", "skills", "mcpServers", "nativePlugins", "userInstructions", "projectInstructions"]) expect(slot.getByTestId(`access-writer-${group}`)).toBeTruthy();
-      expect(slot.getByTestId("access-writer-skills-effective").textContent).toBe("writer-practices, karpathy-guidelines · role default");
+      expect(slot.getByTestId("access-writer-skills-effective").textContent).toBe("lp-writer, karpathy-guidelines · role default");
       expect(slot.getByTestId("access-writer-bbPlugins-effective").textContent).toBe("environment-project-checkout, project-folders · role default");
       expect(slot.getByTestId("access-writer-nativePlugins-effective").textContent).toBe("none · role default");
       expect(slot.getByTestId("access-writer-userInstructions-effective").textContent).toBe("left out · role default");
@@ -172,9 +172,9 @@ describe("Agent access tab", () => {
       await openRole(slot, "writer");
       await choose(slot, "access-writer-skills-mode", en.accessModeAllow);
       await waitFor(() => expect(saves).toHaveLength(1));
-      expect(saves[0]).toEqual({ projectId, key: "helper.access.writer", expectedVersion: 0, value: { skills: { mode: "allow", names: ["writer-practices", "karpathy-guidelines"] } } });
+      expect(saves[0]).toEqual({ projectId, key: "helper.access.writer", expectedVersion: 0, value: { skills: { mode: "allow", names: ["lp-writer", "karpathy-guidelines"] } } });
       const editor = await slot.findByTestId("access-writer-skills-editor");
-      expect(within(editor).getAllByText("writer-practices").length).toBe(1);
+      expect(within(editor).getAllByText("lp-writer").length).toBe(1);
       expect(slot.getByTestId("access-badge-writer").textContent).toBe(en.accessOrigin_project);
       const search = within(editor).getByLabelText(en.accessAddSearchSkills);
       fireEvent.focus(search);
@@ -183,13 +183,13 @@ describe("Agent access tab", () => {
       expect(option.getAttribute("title")).toBe("Russian text quality");
       fireEvent.click(option);
       await waitFor(() => expect(saves).toHaveLength(2));
-      expect(saves[1]).toEqual({ projectId, key: "helper.access.writer", expectedVersion: 1, value: { skills: { mode: "allow", names: ["writer-practices", "karpathy-guidelines", "ru-text"] } } });
+      expect(saves[1]).toEqual({ projectId, key: "helper.access.writer", expectedVersion: 1, value: { skills: { mode: "allow", names: ["lp-writer", "karpathy-guidelines", "ru-text"] } } });
       await waitFor(() => expect(slot.getByTestId("access-summary-writer").textContent).toBe("3 skills · 2 MCP"));
-      expect(slot.getByTestId("access-writer-skills-effective").textContent).toBe("writer-practices, karpathy-guidelines, ru-text · project");
+      expect(slot.getByTestId("access-writer-skills-effective").textContent).toBe("lp-writer, karpathy-guidelines, ru-text · project");
       // The always-on BB plugins stay as locked chips and cannot be removed.
       await choose(slot, "access-writer-bbPlugins-mode", en.accessModeAllow);
       await waitFor(() => expect(saves).toHaveLength(3));
-      expect(saves[2]!.value).toEqual({ skills: { mode: "allow", names: ["writer-practices", "karpathy-guidelines", "ru-text"] }, bbPlugins: { mode: "allow", names: [] } });
+      expect(saves[2]!.value).toEqual({ skills: { mode: "allow", names: ["lp-writer", "karpathy-guidelines", "ru-text"] }, bbPlugins: { mode: "allow", names: [] } });
       const plugins = await slot.findByTestId("access-writer-bbPlugins-editor");
       expect(plugins.querySelectorAll("[data-chip=locked]")).toHaveLength(2);
       expect(within(plugins).queryByRole("button", { name: /Remove/ })).toBeNull();
@@ -305,7 +305,7 @@ describe("Agent access tab", () => {
       expect(slot.queryByRole("button", { name: en.accessResetTo_role })).toBeNull();
       await choose(slot, "access-writer-skills-mode", en.accessModeAllow);
       await waitFor(() => expect(saves).toHaveLength(1));
-      expect(saves[0]).toEqual({ projectId: "*", key: "helper.access.writer", expectedVersion: 0, value: { skills: { mode: "allow", names: ["writer-practices", "karpathy-guidelines"] } } });
+      expect(saves[0]).toEqual({ projectId: "*", key: "helper.access.writer", expectedVersion: 0, value: { skills: { mode: "allow", names: ["lp-writer", "karpathy-guidelines"] } } });
       await waitFor(() => expect(slot.getByTestId("access-badge-writer").textContent).toBe(en.accessOrigin_global));
       expect(slot.getByTestId("access-writer-skills-origin").textContent).toBe(en.accessOrigin_global);
       expect(slot.getByTestId("access-writer-bbPlugins-origin").textContent).toBe(en.accessOrigin_role);
@@ -319,7 +319,7 @@ describe("Agent access tab", () => {
       // Overriding in the project keeps what the global level changed for the other groups and takes over the whole role.
       await choose(slot, "access-writer-userInstructions-mode", en.accessInclude);
       await waitFor(() => expect(saves).toHaveLength(2));
-      expect(saves[1]).toEqual({ projectId, key: "helper.access.writer", expectedVersion: 0, value: { skills: { mode: "allow", names: ["writer-practices", "karpathy-guidelines"] }, userInstructions: "include" } });
+      expect(saves[1]).toEqual({ projectId, key: "helper.access.writer", expectedVersion: 0, value: { skills: { mode: "allow", names: ["lp-writer", "karpathy-guidelines"] }, userInstructions: "include" } });
       await waitFor(() => expect(slot.getByTestId("access-badge-writer").textContent).toBe(en.accessOrigin_project));
       expect(slot.getByTestId("access-writer-userInstructions-origin").textContent).toBe(en.accessOrigin_project);
       fireEvent.click(await slot.findByRole("button", { name: en.accessResetTo_global }));

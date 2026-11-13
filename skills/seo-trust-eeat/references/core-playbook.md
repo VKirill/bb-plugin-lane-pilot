@@ -16,7 +16,7 @@
 10. Verify cart, calculators, filters, booking, account on mobile+desktop; snippet promise matches first-screen price/stock; remove intrusive popups and disguised ads.
 11. Connect Organization, Person and Article/TechArticle in one JSON-LD @graph via @id: publishingPrinciples, correctionsPolicy, hasCredential, knowsAbout, sameAs, reviewedBy, citation.
 
-Post-click trust killers are fixed **before** any author or markup work. Vertical mandatory-element checklists: [references/trust-infrastructure.md](references/trust-infrastructure.md).
+Post-click trust killers are fixed **before** any author or markup work. Vertical mandatory-element checklists: `trust-infrastructure.md` (a sibling file in the SKILL.md table).
 
 ### 2. Build the author hub (pp. 428–431)
 
@@ -46,7 +46,7 @@ Rules: on-site-only confirmation carries no weight; a claimed specialty missing 
 9. Walk the post-click path: no blocking banners, snippet promise = first screen, forms work.
 10. Score imitation vs real on six axes: expertise inside text, author footprint, business proof, transparency, YMYL responsibility, post-click experience.
 
-Judge by three data sets together: what the site says, what independent sources say, how well the page does its task. Factual errors, unsafe advice or hidden terms override credentials and fame. Five gate questions and audit detail: [references/eeat-audit-and-recovery.md](references/eeat-audit-and-recovery.md).
+Judge by three data sets together: what the site says, what independent sources say, how well the page does its task. Factual errors, unsafe advice or hidden terms override credentials and fame. Five gate questions and audit detail: `eeat-audit-and-recovery.md` (a sibling file in the SKILL.md table).
 
 ### 4. Recover trust bottom-up (pp. 415–417, 422–426)
 

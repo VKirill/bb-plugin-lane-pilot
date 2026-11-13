@@ -89,7 +89,7 @@ export type HelperRole =
   | "specialist:lead";
 
 type RoleProfile = { bbPlugins: string[]; skills: string[]; mcpServers: string[] };
-const CODER: RoleProfile = { bbPlugins: [], skills: ["writer-practices", "karpathy-guidelines"], mcpServers: ["gitnexus", "metamcp"] };
+const CODER: RoleProfile = { bbPlugins: [], skills: ["lp-writer", "karpathy-guidelines"], mcpServers: ["gitnexus", "metamcp"] };
 const READER: RoleProfile = { bbPlugins: [], skills: [], mcpServers: ["gitnexus"] };
 // One answer, no MCP servers: the plan critic and the task scout (pm-reader) read the checkout with the provider's own file tools.
 // Measured on the hub: they made no code-graph call in 419 of 419 runs, yet the gitnexus schemas cost ~8k tokens a turn.
@@ -111,7 +111,7 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   // It judges check counters from its message (NO_TOOLS_LINE); 0 of 12 threads called the code graph in the week to 2026-11-10.
   "gate-triage": ONE_SHOT,
   "pm-reader": ONE_SHOT,
-  "docs-maintainer": { bbPlugins: [], skills: ["docs-maintain", "docs-methodology"], mcpServers: ["gitnexus"] },
+  "docs-maintainer": { bbPlugins: [], skills: ["lp-docs", "docs-methodology"], mcpServers: ["gitnexus"] },
   "onboarder": { bbPlugins: [], skills: ["project-life"], mcpServers: ["gitnexus"] },
   // It returns one JSON array and runs no tools; the memory skills told it to call CLIs (instructions audit 2026-10-03).
   "memory-maintainer": { bbPlugins: [], skills: [], mcpServers: [] },
@@ -154,13 +154,25 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "workspace-provisioner": { bbPlugins: [], skills: [], mcpServers: [] },
   // The lead's own chat: it answers from its brief and the lane_pilot_* tools, so the plugin stays allowed.
   "lead": { bbPlugins: ["lane-pilot"], skills: [], mcpServers: [] },
-  // The Workflow architect builds chains with the lane_pilot_workflow_* tools; its method is the lane-pilot-workflows skill.
-  "workflow-architect": { bbPlugins: ["lane-pilot"], skills: ["lane-pilot-workflows"], mcpServers: [] },
+  // The Workflow architect builds chains with the lane_pilot_workflow_* tools; its method is the lane-pilot skill (references/workflows.md).
+  "workflow-architect": { bbPlugins: ["lane-pilot"], skills: ["lane-pilot"], mcpServers: [] },
   // A harness session edits files in a throwaway folder (.lane-pilot/harness-edit): the mission on disk is the whole brief.
   "harness-editor": { bbPlugins: [], skills: [], mcpServers: [] },
   "harness-composer": { bbPlugins: [], skills: [], mcpServers: [] },
   "harness-reflection": { bbPlugins: [], skills: [], mcpServers: [] },
 };
+
+/**
+ * Skills renamed by the skill standard (docs/skill-standard.md, step 4). An owner setting saved with the old name (`helper.skills`,
+ * `helper.access.<role>`) is read as the new one for one release, so a role does not start without its skill; the old names stay as stubs.
+ * Remove the rows with the stubs (step 6).
+ */
+export const SKILL_ALIASES: Readonly<Record<string, string>> = {
+  "writer-practices": "lp-writer",
+  "docs-maintain": "lp-docs",
+  "resume-project": "project-resume",
+};
+export const canonicalSkillName = (name: string): string => SKILL_ALIASES[name] ?? name;
 
 /** The profile of a specialist the owner defined: it has no entry above, so it starts with Env Catalog; its own skills and MCP servers come in as `extra` on the spawn. */
 const CUSTOM_SPECIALIST_PROFILE: RoleProfile = { bbPlugins: ["env-catalog"], skills: ["env-catalog"], mcpServers: [] };
@@ -191,7 +203,7 @@ export function parseRoleAccess(raw: unknown): RoleAccess {
     if (mode !== "role" && mode !== "all" && mode !== "allow") continue;
     const names = (g as { names?: unknown }).names;
     out[group] = mode === "allow"
-      ? { mode, names: Array.isArray(names) ? [...new Set(names.filter((n): n is string => typeof n === "string" && n.trim().length > 0).map((n) => n.trim()))].slice(0, 300) : [] }
+      ? { mode, names: Array.isArray(names) ? [...new Set(names.filter((n): n is string => typeof n === "string" && n.trim().length > 0).map((n) => (group === "skills" ? canonicalSkillName(n.trim()) : n.trim())))].slice(0, 300) : [] }
       : { mode };
   }
   for (const sw of ACCESS_SWITCHES) {
@@ -302,7 +314,7 @@ export function parseHelperContextSettings(input: Record<string, unknown>):
     ok: true,
     settings: {
       mode: raw,
-      skills: csvNames(input["helper.skills"]),
+      skills: csvNames(input["helper.skills"]).map(canonicalSkillName),
       mcpServers: csvNames(input["helper.mcp_servers"]),
       bbPlugins: csvNames(input["helper.bb_plugins"]),
       nativePlugins: csvNames(input["helper.native_plugins"]),

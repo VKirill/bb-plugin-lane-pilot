@@ -229,12 +229,12 @@ describe("daemon front and the window", () => {
 
   it("[sma:m_sw_assign_dialog] a role's saved access with skills allow [x] resolves that list for that role only; other roles keep their own", async () => {
     const { bb, db, harness, ctx } = (() => { const o = open(); return { ...o, ctx: createCore(o.bb, o.db) }; })();
-    saveProjectSetting(db, "projA", roleAccessKey("docs-maintainer"), { skills: { mode: "allow", names: ["docs-maintain"] } });
+    saveProjectSetting(db, "projA", roleAccessKey("docs-maintainer"), { skills: { mode: "allow", names: ["lp-docs"] } });
     for (const method of ["plugins.list", "skills.list", "projects.list", "environments.list"]) harness.sdk.stub(method as never, async () => []);
     const api = settingsRpc(ctx, {} as never);
     const view = await api.helper_access_view({ projectId: "projA" });
     const row = (view.roles as Array<{ role: string; groups: { skills: { names: string[] | null } } }>).find((r) => r.role === "docs-maintainer")!;
-    expect(row.groups.skills.names).toContain("docs-maintain");
+    expect(row.groups.skills.names).toContain("lp-docs");
     const other = (view.roles as Array<{ role: string; groups: { skills: { names: string[] | null } } }>).find((r) => r.role === "onboarder")!;
     expect(other.groups.skills.names).toEqual(expect.arrayContaining(ROLE_PROFILES["onboarder"].skills));
     await harness.lifecycle.dispose();
@@ -242,10 +242,10 @@ describe("daemon front and the window", () => {
 
   it("[sma:m_sw_connections] a role's access group saved through the panel is what the next brief resolves; the owner-push switch saved on the board is read back", async () => {
     const { db, harness } = open();
-    saveProjectSetting(db, "projA", roleAccessKey("writer"), { skills: { mode: "allow", names: ["writer-practices"] } });
-    const settings = { [roleAccessKey("writer")]: { skills: { mode: "allow", names: ["writer-practices"] } } };
+    saveProjectSetting(db, "projA", roleAccessKey("writer"), { skills: { mode: "allow", names: ["lp-writer"] } });
+    const settings = { [roleAccessKey("writer")]: { skills: { mode: "allow", names: ["lp-writer"] } } };
     const access = roleAccessFromSettings(settings).writer!;
-    expect(effectiveGroup("writer", "skills", access).names).toEqual(["writer-practices"]);
+    expect(effectiveGroup("writer", "skills", access).names).toEqual(["lp-writer"]);
     const saved = savePushConfig(db, { enabled: "off", quiet: "23:00-08:00" });
     expect(saved.enabled).toBe(false);
     expect(loadPushConfig(db)).toMatchObject({ enabled: false, quiet: "23:00-08:00" });

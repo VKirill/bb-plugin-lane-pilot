@@ -24,7 +24,7 @@ Ignore pages under 100 impressions. LLM-classifies each URL by real funnel role 
 - **C**: clicks up >15% with flat/falling conversions → broken on-page commercial route.
 - **D**: position 8.0–18.0, high impressions, good historical conversion → reinforce with internal links.
 
-Also check: brand skew hiding non-brand decline; mobile-only ~30% drops; main page losing ~70% while an info article absorbs impressions. Tag every claim as *fact from data* or *cause hypothesis*. Details: [references/cohorts-and-anomalies.md](references/cohorts-and-anomalies.md).
+Also check: brand skew hiding non-brand decline; mobile-only ~30% drops; main page losing ~70% while an info article absorbs impressions. Tag every claim as *fact from data* or *cause hypothesis*. Details: `cohorts-and-anomalies.md` (a sibling file in the SKILL.md table).
 
 ### 3. Score the hypothesis 0–18 (pp. 47–49)
 
@@ -62,7 +62,7 @@ Score 1–3 on four criteria (max 12): Revenue (info=1, Mixed L2=2, Target L1/br
 5. Read the cascade in order: impressions & query breadth → cluster position → snippet CTR → on-page micro-conversions → CRM leads/orders.
 6. Roll out to the whole section only after a positive delta vs control over the pilot window (2 weeks or 1 month).
 
-Full Change Log schema and interpretation rules: [references/experiment-and-cadence.md](references/experiment-and-cadence.md).
+Full Change Log schema and interpretation rules: `experiment-and-cadence.md` (a sibling file in the SKILL.md table).
 
 ### 7. Route into the three-queue backlog (pp. 47, 49–51)
 

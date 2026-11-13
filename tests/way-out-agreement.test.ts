@@ -3,12 +3,12 @@ import { readFileSync } from "node:fs";
 import { WAY_OUT } from "../src/rooms/contracts/way-out";
 
 /**
- * WAY_OUT is the one source for «what to do when the reason is X»; the lane-pilot-ops runbook quotes it
+ * WAY_OUT is the one source for «what to do when the reason is X»; the lane-pilot skill runbook (references/ops*.md) quotes it
  * row for row. Every WAY_OUT row carries a key (the reason prefix); the runbook keeps that key in the
  * first cell of its row in backticks. This test refuses the drift the 2026-11-02 audit caught: the same
  * advice living twice and disagreeing (plan_critique_blocked, question_unanswered).
  */
-const SKILL = readFileSync("skills/lane-pilot-ops/SKILL.md", "utf8");
+const SKILL = ["ops.md", "ops-blocked.md", "ops-graphs.md"].map((file) => readFileSync(`skills/lane-pilot/references/${file}`, "utf8")).join("\n");
 
 const PM_TOOL = /lane_pilot_[a-z_]+/g;
 const toolsOf = (text: string) => new Set([...text.matchAll(PM_TOOL)].map((m) => m[0]));

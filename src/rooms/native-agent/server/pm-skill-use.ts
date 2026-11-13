@@ -3,7 +3,7 @@ import { listPmSkillUsesSince, recordPmSkillUse as recordPmSkillUseRow, type Lan
 /**
  * Which skills a PM session opens (audit Fable 5.1, finding 8). The bundled PostToolUse hook sees the
  * Skill tool and fires `bb lane-pilot pm-skill-use` detached; `bb lane-pilot pm-skills` reads the counts.
- * The name is stored exactly as the session shows it (`bb-global-skills:lane-pilot-ops` included);
+ * The name is stored exactly as the session shows it (`bb-global-skills:lane-pilot` included);
  * the read side folds the scoped spelling into the bare one.
  */
 export const PM_SKILLS_USAGE = "bb lane-pilot pm-skills [--days N] [--json]";
@@ -14,7 +14,7 @@ export function recordPmSkillUse(db: LanePilotDatabase, row: { threadId: string;
 
 export type PmSkillCount = { skill: string; uses: number; threads: number };
 
-/** The bare name the CLI counts: `bb-global-skills:lane-pilot-ops` and `lane-pilot-ops` are one skill. */
+/** The bare name the CLI counts: `bb-global-skills:lane-pilot` and `lane-pilot` are one skill. */
 export function pmSkillName(name: string): string {
   const at = name.lastIndexOf(":");
   return (at >= 0 ? name.slice(at + 1) : name).trim();

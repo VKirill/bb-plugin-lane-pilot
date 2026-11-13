@@ -442,7 +442,7 @@ describe("parity d4 workflows b-2", () => {
     const calls = stubModels(t, startStubs);
     const resumed = await t.start(wf("project-start.json"), {}).done;
     expect(executed(t, resumed.runId)).toEqual(["tree", "probe", "resumed"]);
-    expect((resumed.output!.next_steps as string[])[0]).toMatch(/resume-project/);
+    expect((resumed.output!.next_steps as string[])[0]).toMatch(/project-resume/);
     expect(calls).toHaveLength(0);
     const missing = await runSim("project-start", { input: {}, stubs: { "lp.tree_counts": { enabled: "on" }, "lp.state_probe": { has_value_map: true, has_roadmap: false, has_profile: true }, "lp.profile_write": { refused: [], set: [] }, research: { research_notes: "n" }, requirements: { requirements: [] }, recap: { next_steps: ["a"] } } });
     expect(missing.skipped).toEqual(expect.arrayContaining(["value_map", "ask"]));

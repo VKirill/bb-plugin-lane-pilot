@@ -66,7 +66,7 @@ describe("role profiles carried on the spawn", () => {
     expect((lead.bbPlugins as { names: string[] }).names).toContain("lane-pilot");
     const architect = boundPolicy("claude-code", "workflow-architect")!;
     expect((architect.bbPlugins as { names: string[] }).names).toContain("lane-pilot");
-    expect((architect.skills as { names: string[] }).names).toEqual(["lane-pilot-workflows"]);
+    expect((architect.skills as { names: string[] }).names).toEqual(["lane-pilot"]);
     for (const role of ["lead", "workflow-architect"] as const) expect(ROLE_PROFILES[role].mcpServers).toEqual([]);
   });
 

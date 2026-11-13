@@ -5,7 +5,7 @@
  * A reason nothing names returns null and the line stays as today; a reason that only ever means «give up»
  * is listed in NO_WAY_OUT below so the register is complete on purpose, not by accident.
  *
- * This table is the source for «what to do when the reason is X»: the lane-pilot-ops runbook quotes it row for row
+ * This table is the source for «what to do when the reason is X»: the lane-pilot skill runbook (references/ops*.md) quotes it row for row
  * (each row's first cell keeps the reason code in backticks) and `tests/way-out-agreement.test.ts` refuses a drift.
  * Each row carries its `key` — the reason prefix the runbook names the row by.
  *

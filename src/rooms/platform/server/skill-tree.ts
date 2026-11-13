@@ -95,7 +95,7 @@ export async function readSkillTreeText(): Promise<string> {
 }
 
 /** The writer role's own skills: the role always has them, so the catalog never lists them. */
-export const WRITER_BASE_SKILLS: readonly string[] = ["writer-practices", "karpathy-guidelines"];
+export const WRITER_BASE_SKILLS: readonly string[] = ["lp-writer", "writer-practices", "karpathy-guidelines"]; // writer-practices: the old name, a stub for one release
 
 export type ListedSkill = { name: string; description?: string | null };
 export type CatalogEntry = { name: string; description: string };
