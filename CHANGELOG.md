@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Concurrent native launcher refreshes no longer reject each other's installation status reads (`src/rooms/native-install/native-install-host.ts`).** `status` reads the last atomically published manifest without creating or removing the exclusive mutation lock; install, enable, disable and remove still take it. The hub's 2026-11-13 overlapping `contributeEnv` log records are captured in `tests/fixtures/native-refresh-lock-2026-11-13.json`; `tests/native-install.test.ts` reproduces the exact warning without the fix and verifies both launchers refresh with it, while a live lock still rejects a mutation. After deployment: run `scripts/lp-drill.sh --quick`, trigger overlapping native sends on one host and confirm both refreshes complete without `native launcher refresh failed` warnings.
+
 ## 0.1.548
 
 - **The memory judge runs through the Antigravity CLI on the hub (`src/rooms/memory/agy-chat.ts`, `src/rooms/memory/server/memory-judge.ts`).** Default `memory.judge.model` is `agy/gemini-3.8-flash-low`: an `agy/<id>` name runs `agy -p … --model <id> --output-format json --sandbox` on this machine with the owner's Antigravity sign-in (no key, no money), at most 3 at once; each turn's conversation is deleted after the answer. The route counts as missing when no `agy` binary is found (`LANE_PILOT_AGY_BIN` names it; empty turns it off, which the tests do). A quota error or a hang locks it for two minutes and OpenLux `gemini-3.8-flash` answers. Measured on the 378-question set (2026-11-14): low 96.7% delivered / 99.6% silent, p50 4.8 s; medium and high are no better and slower. `router9/<id>` still routes to 9router.
