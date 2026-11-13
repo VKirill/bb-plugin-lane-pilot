@@ -6,6 +6,7 @@ import { expect, it } from "vitest";
 import { BACKLINKS_MARK, blockingDocsFindings, parseFrontmatter, buildBacklinks, expandCitationLists, pageCitations, uncataloguedPages, unlinkedPages, buildDocsIndex, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "../../src/rooms/docs/docs-lint";
 import { commitDocs } from "../../src/rooms/docs/git-docs";
 import citationLineEvidence from "../fixtures/docs-citation-line-evidence.json";
+import citationPathEvidence from "../fixtures/docs-citation-path-evidence.json";
 
 const page = (fields: Record<string, string>, body: string) => [
   "---",
@@ -363,4 +364,38 @@ it("checks a claim's cited ranges together, without borrowing support from anoth
     const content = `\`resolveAgentModel\` builds candidates (${abbreviation} \`fallback\`) (packages/models/src/agent-model.ts:104).`;
     expect(await lintCitationClaims([{ path:"docs/features/checks.md", content }], read)).toEqual([]);
   }
+});
+
+it("does not treat citation paths or component filenames as identifiers a claim must prove", async () => {
+  const { lintCitationClaims } = await import("../../src/rooms/docs/docs-lint");
+  // SelfyStudio, 2026-11-13: __tests__ and the other cited Vue filename became
+  // the only identifiers on otherwise supported conversion and preview claims.
+  const ranges: Record<string, string> = citationPathEvidence.ranges;
+  const read = async (file: string, start: number, end: number) => ranges[`${file}:${start}-${end}`] ?? null;
+  expect(await lintCitationClaims(citationPathEvidence.pages, read)).toEqual([]);
+
+  // A named component beside the citation must not hide a real drift.
+  for (const symbol of ["parseThing", "reader.parseThing"]) {
+    const drifted = `\`${symbol}\` runs in \`Widget.vue\` (src/__tests__/widget.test.ts:1).`;
+    expect(await lintCitationClaims([{ path:"docs/features/widget.md", content:drifted }], async () => "export const other = 1;"))
+      .toEqual([expect.objectContaining({ rule:"evidence", detail:expect.stringContaining(symbol) })]);
+  }
+});
+
+it("does not infer code identifiers from protocol acronyms in real API claims", async () => {
+  const { claimIdentifiers, lintCitationClaims } = await import("../../src/rooms/docs/docs-lint");
+  const ranges: Record<string, string> = citationPathEvidence.acronyms.ranges;
+  expect(await lintCitationClaims(citationPathEvidence.acronyms.pages,
+    async (file, start, end) => ranges[`${file}:${start}-${end}`] ?? null)).toEqual([]);
+  expect(claimIdentifiers("POST HTTPS JSON UUID LIMIT TASK_LIMIT `LIMIT` camelCase"))
+    .toEqual(["LIMIT", "TASK_LIMIT", "camelCase"]);
+});
+
+it("reports an unresolved wildcard re-export as a doubt rather than disproving its exported symbols", async () => {
+  const { lintCitationClaims } = await import("../../src/rooms/docs/docs-lint");
+  const ranges: Record<string, string> = citationPathEvidence.exports.ranges;
+  const findings = await lintCitationClaims(citationPathEvidence.exports.pages,
+    async (file, start, end) => ranges[`${file}:${start}-${end}`] ?? null);
+  expect(findings).toHaveLength(2);
+  expect(findings).toEqual([expect.objectContaining({ rule:"evidence-check" }), expect.objectContaining({ rule:"evidence-check" })]);
 });
