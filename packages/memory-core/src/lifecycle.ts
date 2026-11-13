@@ -6,7 +6,7 @@ export const OBSERVED_QUARANTINE_MS = 24 * 3_600_000;
 /** A note nobody was given for this long stops being mixed; a note is not eternal just because nobody deleted it. Core, rules and file imports (their file decides) are exempt. */
 export const NOTE_IDLE_MS = 90 * 24 * 3_600_000;
 
-/** budget: eviction for room; idle: 90 days given to nobody; dated: its date passed; refuted: a check quoted it; revoked: the owner withdrew it; archived: the owner moved it to the cold tier; owner: `memory forget --expire|--replace`, a tombstone no restatement or re-import revives (SMA m_lifecycle). */
+/** budget: moved off the shelf for room, kept in the archive and still searchable (never deleted); idle: 90 days given to nobody; dated: its date passed; refuted: a check quoted it; revoked: the owner withdrew it; archived: the owner moved it to the cold tier; owner: `memory forget --expire|--replace`, a tombstone no restatement or re-import revives (SMA m_lifecycle). */
 export type ExpiredReason = "budget" | "idle" | "dated" | "refuted" | "revoked" | "archived" | "owner";
 
 /** A failed check refutes a note only when the failure quotes a long stretch of that note. A generic red check does not. */

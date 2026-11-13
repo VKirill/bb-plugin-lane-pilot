@@ -24,8 +24,20 @@
     "H6": {
       "n": 6,
       "pass": 5
+    },
+    "H8": {
+      "n": 4,
+      "pass": 4
+    },
+    "H9": {
+      "n": 3,
+      "pass": 3
+    },
+    "H10": {
+      "n": 3,
+      "pass": 3
     }
   },
-  "meanTokens": 66,
+  "meanTokens": 89,
   "note": "recorded 2026-11-13 with the stand-in embedding"
 }

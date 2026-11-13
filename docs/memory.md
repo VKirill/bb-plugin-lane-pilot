@@ -2,7 +2,7 @@
 title: Project memory
 type: component
 created: 2026-10-10
-updated: 2026-10-30
+updated: 2026-11-13
 status: active
 confidence: medium
 tags: [memory, knowledge, maintenance]
@@ -165,6 +165,38 @@ What it says, honestly:
 - **A cap per task lowers recall** (62 % to 53-56 % at the old budget): the notes it drops are chosen by how many files they name, and that is a weak guess at which note a later task needs (48 % of all the hub's notes were later the answer of some task). Not implemented. The prompt option (ask for facts that outlive the task) cannot be replayed on history and was not tried.
 - **A larger budget raises it** (62 % to 69 %), and costs no brief space: a writer reads at most three notes whatever the shelf holds, the PM context has its own `memory.context_budget`. `memory.note_budget` now defaults to **24000** tokens (`packages/memory-core/src/settings.ts`, the catalog default in `packages/settings-catalog/src/ui-catalog.ts`); the hub's projects set none, so they take the new default at the next deploy. The total index budget (65536) is unchanged.
 - The shelf is still a window: with 2.5 notes per task and about 400 notes a project holds a few days of busy work, not weeks. The gap that remains (92 % on the shelf, 69 % picked) is retrieval, not supply.
+
+## The budget limits the shelf, not the memory (archive, 2026-11-13)
+
+Until this change a note the note budget evicted (1515 of the hub's 1532 expired notes) left every index and no search could find it again; a full budget also made `bb lane-pilot memory import` refuse (58 notes waiting to be imported would have pushed out 66). Now the budget limits only what a brief may inject, the **shelf** (`status='active'`).
+
+- **Archive.** A note the budget moves off the shelf keeps `status='expired'`, `expired_reason='budget'` (no new column, no migration) and **keeps its word indexes and its vector**. Nothing is deleted by the budget. `searchMemoryRecords(..., { includeArchive: true })` reads shelf and archive together and ranks them by the same cosine or word rule; without the option it reads the shelf only. The PM `context` action (`pmSearch`), `session_memory_search` and the import check ask for the archive; a writer brief, the reviewers, the council, the maintainer's duplicate check and the prompt recall do not (the archive is never injected).
+- **Old rows.** The 1515 notes archived before this change lost their word indexes; the first archive search of a process puts back what an index lacks (`indexArchive`), `bb lane-pilot memory index` does the same, and the embedding schedule (`pendingVectors`) gives them vectors. The idle rule does not hide an archived note.
+- **Import.** `origin: import` never displaces the shelf: a note of the file that does not fit the budget is stored straight in the archive (`archivedIds` in the report), the stored notes stay. The «would evict» refusal and `refused.noteTokensNeeded` are gone.
+- **Restating** an archived fact brings it back to the shelf (and may move a less used note to the archive). `valid_until`, `idle`, `refuted`, `revoked`, `owner` and `archived` (the owner's cold tier) are unchanged and stay out of search.
+
+## Dates in the pack and history questions (2026-11-13)
+
+- **Every line carries its date.** A pack line is `- [note; 2026-11-05; concepts=...] text`: the day is the record's `valid_from`, else `created_at` (`memoryContextLine`, `packages/memory-core/src/context.ts`). A writer's brief line is `- [2026-11-05] text` (`memoryLine`). The date is inside the line the budget counts, so the context budget is unchanged; the offline suite's mean pack grew from 66 to 70 tokens.
+- **Same-topic records read oldest first.** `memoryContext` still spends the budget in relevance order, then writes records of one subject (a replaced version and its successor, or two notes `sameSubject` calls alike) oldest first; a group sits where its best record ranked.
+- **Replaced versions only on a history question.** A superseded record is not indexed (it leaves search when it is replaced), so an ordinary question never meets it (suite family H4). When the question asks for the past (`isHistoryQuery`: «before the change», «previously», «used to», «раньше», «до миграции», «история», ...), the PM `context` action adds, after each found record, the records it replaced (`withHistory`, up to five steps back), each printed `[note; replaced; <from>..<until>; ...]` with `until` the day its successor began to hold. `session_memory_search` is unchanged: its output schema is fixed.
+
+## Long records are embedded by chunks (2026-11-13)
+
+`documentText` embeds the first 6000 characters of a record, so a fact in a later paragraph was invisible to the meaning search (the LongMemEval run: 22 % of the answerable questions scored under `DENSE_FLOOR`, 0.65, on whole sessions, and the by-round variant gave 100 % Recall@5 against 98 %).
+
+- **Chunks.** A record longer than `DOC_CHARS` (6000) is also cut by `contentChunks` into paragraph-aligned chunks of about `CHUNK_CHARS` (1500; a longer paragraph is cut at a space; at most 64 chunks) and each chunk is embedded as `title: <first line> | text: <chunk>`. The vectors live in `lane_pilot_memory_vec_chunk (id, chunk, project_id, model, content_sha, vec, created_at)`, made on first use like the main vector table (no migration). A shorter record has no chunks and is scored exactly as before. The embedding schedule (`embedPending`) fills them through `pendingChunks` / `storeChunkVectors`: one call per record, again when its text changes.
+- **Scoring.** `denseRank` scores a long record by the better of its whole-record vector and its best chunk and returns which chunk (`bestChunk`). The floor, the gate and the ranking read the same `similarity`; `floor.ts` is untouched.
+- **Pack.** `memoryContext` and the writer's `memoryLine` show the best chunk, marked `part i/n`, instead of the whole record (the PM pack) or its cut head (the writer, 1500 characters). A word search with no vectors picks the chunk sharing most word stems with the question. Erasing a record erases its chunk vectors (`deleteMemoryRecord`, `eraseLeftovers`).
+- **Cost.** Only records over 6000 characters, a few on the hub; one extra embedding call per such record.
+
+## Do the use counters belong in ranking? Checked 2026-11-13 (Carbon review, item 3)
+
+The claim: `use_count` / `accepted_count` (`memoryUsefulness`) cut the writer's hit@3 from 62 % to 41 %, so they must leave the score. Checked against the code and the one measurement there is:
+
+- **The 41 % is real and is already fixed.** It is the «legacy order» row of the shelf replay above (569 real tasks, `memory-eval --shelf`): the writer's three notes ordered by the counters. `writerMemoryPicks` has ignored the counters since then (the search's order is kept; `tests/server/memory-usefulness.test.ts` pins it), and nothing in the writer path reads `use_count`, `accepted_count` or `memoryUsefulness` now. Carbon read the historical row as the current state.
+- **Where the counters still count:** the PM / council / terminal context (`memoryContext`: relevance times `0.5 + usefulness + verification bonus`, only among records that already share words with the question), the reviewers' tiers (`reviewerMemoryPicks`) and the pack candidates' `relevance` (`memoryCandidates`). **No measurement says they hurt there:** the replay scores the writer's hit@3 only, and the static suites (`memory-eval`, `--suite`) have all counters at zero, so they cannot see the effect either way. The mechanism (richer get richer) is plausible, but a plausible mechanism with no number is not grounds to change what the PM reads.
+- **Decision: left as is, logging kept.** To decide it, replay the hub's PM questions (the `memory_miss` and `reminded` rows are the cheapest labelled set) with and without the factor, as the shelf replay did for the writer. The counters no longer touch eviction as a loss: the note budget now moves the least used notes to the archive, where search still finds them.
 
 ## Contradictions: two notes that disagree are held until a person settles it
 

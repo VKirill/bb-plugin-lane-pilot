@@ -13,7 +13,23 @@ export type SuiteNote = {
   scope?: string[] | "shared";
   /** Key of the older note this one replaces (planted after it, named in `supersedes`). */
   supersedes?: string;
+  /** Planted, then moved off the shelf by the note budget: archived (`expired_reason: budget`), still indexed and embedded, so a PM search finds it and a brief does not. */
+  archived?: boolean;
 };
+
+/** Nature words that appear in no other fixture note: filler whose stems do not overlap any question. */
+const BANK = ["amber", "basalt", "cobalt", "dunes", "ember", "fjord", "garnet", "harbor", "indigo", "jasper", "kelp", "lagoon", "marble", "nectar", "onyx", "prairie", "quartz", "ridge", "saffron", "tundra",
+  "umber", "velvet", "willow", "xenon", "yarrow", "zephyr", "alpine", "bamboo", "cinder", "delta", "estuary", "falcon", "glacier", "heron", "island", "juniper", "koala", "lichen", "meadow", "nebula",
+  "orchid", "pebble", "quail", "reef", "sequoia", "thistle", "uplands", "violet", "walnut", "yucca", "zenith", "aurora", "boulder", "canyon", "dolphin", "eclipse", "fern", "grove", "horizon", "iceberg"];
+/** About 1400 characters: a lead line and filler cycled from the first `width` words of the bank, so a paragraph adds a controlled amount of vocabulary of its own. */
+const padding = (lead: string, width: number) => `${lead} ${Array.from({ length: 220 }, (_, index) => BANK[index % width]).join(" ")}`.slice(0, 1400);
+/** H10: a runbook of about ten thousand characters; the facts sit in the sixth to the eighth paragraph, far beyond the 6000 characters one embedding reads. */
+const RUNBOOK = [
+  ...Array.from({ length: 5 }, (_, index) => padding(`Runbook part ${index + 1}.`, 60)),
+  padding("Depot failover: when the Lisbon depot scanner mesh drops for more than ten minutes, switch the dispatcher to the manual queue and page the dispatch lead.", 20),
+  padding("Manifest typeface fallback: if the Calibri bundle fails to load, the manifest service falls back to Courier and logs a warning in services/manifest/fallback.ts.", 20),
+  padding("Quarantine retention: quarantined pallets are purged after 400 days by the job in services/quarantine/purge.ts.", 20),
+].join("\n\n");
 
 export const SUITE_NOTES: SuiteNote[] = [
   { key: "retry", content: "The invoice export job retries three times with a 40 second pause in services/invoicer/retry.ts, then parks the job in the failed list.", concepts: ["billing", "invoicing"] },
@@ -61,10 +77,17 @@ export const SUITE_NOTES: SuiteNote[] = [
   { key: "web-cart", scope: ["web", "cart"], content: "Cart section: a cart is kept for 7 days for signed-in customers and for 1 day for guests (apps/web/cart/keep.ts).", concepts: ["cart"] },
   { key: "release", scope: "shared", content: "Project-wide: every section releases on the second Thursday of the month, with a freeze on the Monday before.", concepts: ["release"] },
   { key: "owner-floor", audience: "owner", content: "Owner only: the enterprise plan price may be negotiated down to 70 percent of the list price, never lower.", concepts: ["pricing"] },
+  // H8: notes the budget moved off the shelf. They are archived, not deleted: a PM search finds them, a writer's brief does not carry them.
+  { key: "vpn", archived: true, content: "The staging VPN gateway rotates its certificate every 90 days with the script services/infra/vpn-cert.ts and the on-call engineer renews it by hand.", concepts: ["infra", "vpn"] },
+  { key: "bucket", archived: true, content: "Customer exports are written to the object bucket named in config/exports.yaml and expire after 30 days under the lifecycle rule of that bucket.", concepts: ["exports"] },
+  { key: "pager", archived: true, content: "The overnight pager rota rotates every Monday at 09:00 and the schedule lives in ops/pager/rota.yaml.", concepts: ["ops", "pager"] },
+
+  // H10: one long record (about 10,000 characters) whose answers lie in its later paragraphs.
+  { key: "runbook", content: RUNBOOK, concepts: ["runbook"] },
   { key: "export-faq", audience: "export", content: "Export copy: customers can track a parcel with the number on the label, without signing in.", concepts: ["faq"] },
 ];
 
-export type SuiteFamily = "H1" | "H2" | "H3" | "H4" | "H5" | "H6";
+export type SuiteFamily = "H1" | "H2" | "H3" | "H4" | "H5" | "H6" | "H8" | "H9" | "H10";
 export type SuiteCase = {
   id: string; family: SuiteFamily;
   /** What the case exercises, for the table. */
@@ -78,6 +101,8 @@ export type SuiteCase = {
   expect: string[] | "nothing";
   /** Keys of notes that must not reach the reader: a leak across sections or audiences, or a replaced version of a fact. */
   forbid?: string[];
+  /** Text the reader's context must carry: a date interval of a replaced version, or the paragraph of a long record that answers. */
+  contains?: string[];
 };
 
 const pm = (id: string, family: SuiteFamily, kind: string, question: string, expect: SuiteCase["expect"], more: Partial<SuiteCase> = {}): SuiteCase => ({ id, family, kind, question, surface: "pm", expect, ...more });
@@ -153,4 +178,20 @@ export const SUITE_CASES: SuiteCase[] = [
   pm("h6-yes-hook", "H6", "grey-yes", "When does the signing secret of the callbacks change?", ["hook"]),
   pm("h6-yes-page", "H6", "grey-yes", "What is the biggest page of rows a listing request may return?", ["page"]),
   pm("h6-yes-sms", "H6", "grey-yes", "From which hour may text messages about a delivery go out?", ["sms"]),
+
+  // H8: archived records. A PM search still finds what the budget moved off the shelf; the writer's brief carries the shelf only.
+  pm("h8-vpn", "H8", "archived", "How often does the staging VPN gateway rotate its certificate?", ["vpn"]),
+  pm("h8-bucket", "H8", "archived", "After how many days do customer exports in the object bucket expire?", ["bucket"]),
+  pm("h8-pager", "H8", "archived", "When does the overnight pager rota rotate?", ["pager"]),
+  writer("h8-writer-shelf-only", "Renew the staging VPN certificate script", ["services/infra/vpn-cert.ts"], [], { family: "H8", kind: "brief", forbid: ["vpn"] }),
+
+  // H9: history questions. The question asks for the past, so the replaced version comes back with its dates; the current one comes too.
+  pm("h9-weight", "H9", "history", "What was the heaviest parcel the label service accepted before the change?", ["weight-new", "weight-old"], { contains: ["replaced; 20", "25 kilograms", "30 kilograms"] }),
+  pm("h9-refresh", "H9", "history", "How often did the operations dashboard refresh its tiles previously?", ["refresh-new", "refresh-old"], { contains: ["replaced; 20", "every 30 seconds", "every 10 seconds"] }),
+  pm("h9-holdback", "H9", "history", "How many hours was a shipment held back after payment before the change?", ["holdback-new", "holdback-old"], { contains: ["replaced; 20", "6 hours", "2 hours"] }),
+
+  // H10: a long record found by a later paragraph; the pack shows the paragraph that answers, not the cut head.
+  pm("h10-carrier", "H10", "long record", "What do we do when the Lisbon depot scanner mesh is down for ten minutes?", ["runbook"], { contains: ["manual queue", "part 6/"] }),
+  pm("h10-font", "H10", "long record", "Which typeface does the manifest service use when the Calibri bundle fails to load?", ["runbook"], { contains: ["Courier"] }),
+  pm("h10-customs", "H10", "long record", "How long are quarantined pallets kept before the purge job removes them?", ["runbook"], { contains: ["400 days"] }),
 ];

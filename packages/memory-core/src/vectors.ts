@@ -23,6 +23,9 @@ export function vectorsReady(db: MemoryDatabase): boolean {
   try {
     db.prepare(`CREATE TABLE IF NOT EXISTS lane_pilot_memory_vec (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, model TEXT NOT NULL,
       content_sha TEXT NOT NULL, vec BLOB NOT NULL, created_at INTEGER NOT NULL)`).run();
+    // A record longer than the embedding window also has one vector per chunk (`contentChunks`); the record scores by its best one.
+    db.prepare(`CREATE TABLE IF NOT EXISTS lane_pilot_memory_vec_chunk (id TEXT NOT NULL, chunk INTEGER NOT NULL, project_id TEXT NOT NULL, model TEXT NOT NULL,
+      content_sha TEXT NOT NULL, vec BLOB NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (id, chunk))`).run();
     db.prepare("DROP INDEX IF EXISTS lane_pilot_memory_vec_project").run();
     db.prepare("CREATE INDEX IF NOT EXISTS memory_vec_project ON lane_pilot_memory_vec(project_id, model)").run();
     ok = true;
@@ -33,15 +36,51 @@ export function vectorsReady(db: MemoryDatabase): boolean {
 
 export const contentSha = (content: string): string => createHash("sha256").update(content).digest("hex").slice(0, 32);
 
-/** The text a record is embedded from: its first line as the title, the whole record as the text (the format the model documents). */
-export const documentText = (content: string): string => `title: ${content.split("\n")[0]!.slice(0, 80)} | text: ${content.slice(0, 6000)}`;
+/** The most of a record one embedding reads; what lies beyond is embedded by chunks (`contentChunks`). */
+export const DOC_CHARS = 6000;
+/** The text a record is embedded from: its first line as the title, the record (up to `DOC_CHARS`) as the text (the format the model documents). */
+export const documentText = (content: string): string => `title: ${content.split("\n")[0]!.slice(0, 80)} | text: ${content.slice(0, DOC_CHARS)}`;
+
+/** About this many characters per chunk, cut at paragraph borders; a paragraph longer than that is cut by length. */
+export const CHUNK_CHARS = 1500;
+const MAX_CHUNKS = 64;
+/**
+ * The chunks of a record longer than the embedding window, or none for a shorter one (it is embedded whole, as before). The same cut is used
+ * to embed and to show the chunk a question matched, so an index names the same text on both sides.
+ */
+/** A paragraph longer than a chunk, cut at the last space within the length (or exactly there, when it has none). */
+function cutByLength(paragraph: string): string[] {
+  const out: string[] = [];
+  let rest = paragraph;
+  while (rest.length > CHUNK_CHARS) {
+    const space = rest.lastIndexOf(" ", CHUNK_CHARS);
+    const at = space > 0 ? space : CHUNK_CHARS;
+    out.push(rest.slice(0, at));
+    rest = rest.slice(at).trimStart();
+  }
+  return out.concat(rest);
+}
+export function contentChunks(content: string): string[] {
+  if (content.length <= DOC_CHARS) return [];
+  const pieces = content.split(/\n\s*\n/).flatMap(cutByLength);
+  const chunks: string[] = [];
+  let current = "";
+  for (const piece of pieces) {
+    if (current && current.length + piece.length + 2 > CHUNK_CHARS) { chunks.push(current.trim()); current = ""; }
+    current = current ? `${current}\n\n${piece}` : piece;
+  }
+  if (current.trim()) chunks.push(current.trim());
+  return chunks.filter(Boolean).slice(0, MAX_CHUNKS);
+}
+/** The text one chunk is embedded from: the record's title line and the chunk. */
+export const chunkDocumentText = (content: string, chunk: string): string => `title: ${content.split("\n")[0]!.slice(0, 80)} | text: ${chunk}`;
 export const queryText = (query: string): string => `task: search result | query: ${query.slice(0, 2000)}`;
 
-/** Active records with no vector of the current model, or one made from an older text; newest first. */
+/** Active and archived records with no vector of the current model, or one made from an older text; newest first. */
 export function pendingVectors(db: MemoryDatabase, limit: number): Array<{ id: string; projectId: string; content: string }> {
   if (!vectorsReady(db) || limit <= 0) return [];
   const rows = db.prepare(`SELECT m.id, m.project_id, m.content, v.content_sha AS sha, v.model AS model FROM lane_pilot_memory m
-    LEFT JOIN lane_pilot_memory_vec v ON v.id=m.id WHERE m.status='active' ORDER BY m.created_at DESC`)
+    LEFT JOIN lane_pilot_memory_vec v ON v.id=m.id WHERE (m.status='active' OR (m.status='expired' AND m.expired_reason='budget')) ORDER BY m.created_at DESC`)
     .all() as Array<{ id: string; project_id: string; content: string; sha: string | null; model: string | null }>;
   return rows.filter((row) => row.model !== EMBED_MODEL || row.sha !== contentSha(row.content)).slice(0, limit)
     .map((row) => ({ id: row.id, projectId: row.project_id, content: row.content }));
@@ -53,6 +92,31 @@ export function storeVectors(db: MemoryDatabase, rows: ReadonlyArray<{ id: strin
   db.transaction(() => { for (const row of rows) put.run(row.id, row.projectId, EMBED_MODEL, contentSha(row.content), Buffer.from(unit(row.vector).buffer), now); })();
 }
 
+/** Records longer than the window whose chunks have no current vectors (none yet, a changed text, or another model); newest first. */
+export function pendingChunks(db: MemoryDatabase, limit: number): Array<{ id: string; projectId: string; content: string; chunks: string[] }> {
+  if (!vectorsReady(db) || limit <= 0) return [];
+  const have = new Map((db.prepare("SELECT id, content_sha AS sha, count(*) AS n FROM lane_pilot_memory_vec_chunk WHERE model=? GROUP BY id, content_sha").all(EMBED_MODEL) as Array<{ id: string; sha: string; n: number }>).map((row) => [`${row.id}|${row.sha}`, row.n]));
+  const rows = db.prepare(`SELECT id, project_id, content FROM lane_pilot_memory WHERE (status='active' OR (status='expired' AND expired_reason='budget')) AND length(content)>? ORDER BY created_at DESC`)
+    .all(DOC_CHARS) as Array<{ id: string; project_id: string; content: string }>;
+  const out: Array<{ id: string; projectId: string; content: string; chunks: string[] }> = [];
+  for (const row of rows) {
+    const chunks = contentChunks(row.content);
+    if (chunks.length && have.get(`${row.id}|${contentSha(row.content)}`) !== chunks.length) out.push({ id: row.id, projectId: row.project_id, content: row.content, chunks });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/** Replaces the chunk vectors of each record (`vectors[i]` is the vector of `contentChunks(content)[i]`). */
+export function storeChunkVectors(db: MemoryDatabase, rows: ReadonlyArray<{ id: string; projectId: string; content: string; vectors: readonly Float32Array[] }>, now = Date.now()): void {
+  if (!rows.length || !vectorsReady(db)) return;
+  const drop = db.prepare("DELETE FROM lane_pilot_memory_vec_chunk WHERE id=?");
+  const put = db.prepare("INSERT INTO lane_pilot_memory_vec_chunk (id,chunk,project_id,model,content_sha,vec,created_at) VALUES(?,?,?,?,?,?,?)");
+  db.transaction(() => {
+    for (const row of rows) { drop.run(row.id); row.vectors.forEach((vector, chunk) => put.run(row.id, chunk, row.projectId, EMBED_MODEL, contentSha(row.content), Buffer.from(unit(vector).buffer), now)); }
+  })();
+}
+
 const unit = (vector: Float32Array): Float32Array => {
   let norm = 0;
   for (const value of vector) norm += value * value;
@@ -60,40 +124,51 @@ const unit = (vector: Float32Array): Float32Array => {
   return Float32Array.from(vector, (value) => value / norm);
 };
 
-type Matrix = { key: string; ids: string[]; data: Float32Array; dim: number };
+type Matrix = { key: string; ids: string[]; data: Float32Array; dim: number; chunks: number[] };
 const matrices = new WeakMap<object, Map<string, Matrix>>();
 
 /** The project's vectors in one array, kept until a vector of the project is added or replaced. */
-function projectMatrix(db: MemoryDatabase, projectId: string): Matrix | null {
-  const stamp = db.prepare("SELECT count(*) AS n, COALESCE(max(created_at),0) AS last FROM lane_pilot_memory_vec WHERE project_id=? AND model=?").get(projectId, EMBED_MODEL) as { n: number; last: number };
+function projectMatrix(db: MemoryDatabase, projectId: string, table: "lane_pilot_memory_vec" | "lane_pilot_memory_vec_chunk" = "lane_pilot_memory_vec"): Matrix | null {
+  const stamp = db.prepare(`SELECT count(*) AS n, COALESCE(max(created_at),0) AS last FROM ${table} WHERE project_id=? AND model=?`).get(projectId, EMBED_MODEL) as { n: number; last: number };
   if (!stamp.n) return null;
   const key = `${stamp.n}|${stamp.last}`;
   const byProject = matrices.get(db) ?? new Map<string, Matrix>();
   matrices.set(db, byProject);
-  const known = byProject.get(projectId);
+  const known = byProject.get(`${table}|${projectId}`);
   if (known?.key === key) return known;
-  const rows = db.prepare("SELECT id, vec FROM lane_pilot_memory_vec WHERE project_id=? AND model=?").all(projectId, EMBED_MODEL) as Array<{ id: string; vec: Buffer }>;
+  const rows = db.prepare(`SELECT id, ${table === "lane_pilot_memory_vec" ? "0" : "chunk"} AS chunk, vec FROM ${table} WHERE project_id=? AND model=?`).all(projectId, EMBED_MODEL) as Array<{ id: string; chunk: number; vec: Buffer }>;
   const dim = rows[0]!.vec.byteLength / 4;
   const data = new Float32Array(rows.length * dim);
   rows.forEach((row, index) => data.set(new Float32Array(row.vec.buffer.slice(row.vec.byteOffset, row.vec.byteOffset + dim * 4)), index * dim));
-  const matrix = { key, ids: rows.map((row) => row.id), data, dim };
-  byProject.set(projectId, matrix);
+  const matrix = { key, ids: rows.map((row) => row.id), data, dim, chunks: rows.map((row) => row.chunk) };
+  byProject.set(`${table}|${projectId}`, matrix);
   return matrix;
 }
 
-/** Every vectored record of the project with its cosine to the question, best first; null when the project has no vectors yet. */
-export function denseRank(db: MemoryDatabase, projectId: string, query: Float32Array): Array<{ id: string; similarity: number }> | null {
+/**
+ * Every vectored record of the project with its cosine to the question, best first; null when the project has no vectors yet. A record
+ * longer than the embedding window scores by its best chunk when that beats the whole-record vector, and says which chunk (`chunk`, the
+ * index into `contentChunks`) so the pack can show it.
+ */
+export function denseRank(db: MemoryDatabase, projectId: string, query: Float32Array): Array<{ id: string; similarity: number; chunk?: number }> | null {
   if (!vectorsReady(db)) return null;
   const matrix = projectMatrix(db, projectId);
   if (!matrix || matrix.dim !== query.length) return null;
   const q = unit(query);
-  const out = matrix.ids.map((id, row) => {
+  const cosines = (m: Matrix) => m.ids.map((id, row) => {
     let dot = 0;
-    const base = row * matrix.dim;
-    for (let i = 0; i < matrix.dim; i++) dot += matrix.data[base + i]! * q[i]!;
-    return { id, similarity: dot };
+    const base = row * m.dim;
+    for (let i = 0; i < m.dim; i++) dot += m.data[base + i]! * q[i]!;
+    return { id, chunk: m.chunks[row]!, dot };
   });
-  return out.sort((a, b) => b.similarity - a.similarity);
+  const best = new Map<string, { id: string; similarity: number; chunk?: number }>(cosines(matrix).map((row) => [row.id, { id: row.id, similarity: row.dot }]));
+  const chunked = projectMatrix(db, projectId, "lane_pilot_memory_vec_chunk");
+  if (chunked && chunked.dim === query.length) {
+    const top = new Map<string, { chunk: number; dot: number }>();
+    for (const row of cosines(chunked)) if (!top.has(row.id) || row.dot > top.get(row.id)!.dot) top.set(row.id, { chunk: row.chunk, dot: row.dot });
+    for (const [id, hit] of top) { const known = best.get(id); best.set(id, { id, similarity: Math.max(known?.similarity ?? -1, hit.dot), chunk: hit.chunk }); }
+  }
+  return [...best.values()].sort((a, b) => b.similarity - a.similarity);
 }
 
 /**

@@ -1,4 +1,4 @@
-import { DEFAULT_RELEVANCE_FLOOR, MEMORY_SETTING_KEYS, projectUsesSections, relevantRecords, resolveProjectKind, WEAK_MATCH, weakAnswer, REVIEWER_CONCEPTS, activeMemoryDigestRows, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, recordCriticUse, roleContextBudget, searchMemoryRecords, type MemoryRecord, type MemorySearchEngine, type MemorySettings, type RelevanceFloor } from "@lane-pilot/memory-core";
+import { DEFAULT_RELEVANCE_FLOOR, MEMORY_SETTING_KEYS, projectUsesSections, relevantRecords, resolveProjectKind, WEAK_MATCH, weakAnswer, isHistoryQuery, withHistory, REVIEWER_CONCEPTS, activeMemoryDigestRows, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, recordCriticUse, roleContextBudget, searchMemoryRecords, type MemoryRecord, type MemorySearchEngine, type MemorySettings, type RelevanceFloor } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
 import { getRunSettingsScopes, loadProjectSettings, projectHasScopedRun, type LanePilotDatabase } from "../../storage";
 import { memoryLine, pathAnchors, reviewerMemoryPicks, writerMemory, writerMemoryPicks } from "./memory-picks";
@@ -127,9 +127,11 @@ export function taskMemoryContext(db: LanePilotDatabase, projectId: string, runI
 
 /** The PM path's search and its records after the relevance floor, before packing. With `gate` it also says whether the answer gate doubts the search (memory-core `weakAnswer`). */
 function pmSearch(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain: readonly string[] | undefined, floor: RelevanceFloor | null, gate: boolean) {
-  const records = searchMemoryRecords(db, projectId, query, 100, memory.searchEngine, memory.audience, memory.personalBot, { chain: chain ?? [] });
+  const records = searchMemoryRecords(db, projectId, query, 100, memory.searchEngine, memory.audience, memory.personalBot, { chain: chain ?? [], includeArchive: true });
   const opts = { audience: memory.audience, personalBot: memory.personalBot, floor };
-  return { records: relevantRecords(db, projectId, query, records, opts), weak: gate && weakAnswer(db, projectId, query, records, opts) };
+  const found = relevantRecords(db, projectId, query, records, opts);
+  // A question about the past also gets the versions a newer note replaced, with their dates; any other question gets the current facts alone.
+  return { records: isHistoryQuery(query) ? withHistory(db, projectId, found) : found, weak: gate && weakAnswer(db, projectId, query, records, opts) };
 }
 
 /** The PM path's ranked records after the relevance floor, before packing. */

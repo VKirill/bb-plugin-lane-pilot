@@ -1,6 +1,7 @@
 import { estimateTokens } from "./candidates";
-import { memoryUsefulness } from "./lifecycle";
+import { memoryUsefulness, sameSubject } from "./lifecycle";
 import { memoryStem, memoryTokens } from "./terms";
+import { contentChunks } from "./vectors";
 import type { MemoryRecord, MemorySettings } from "./settings";
 
 /** The maintainer answers from this prompt. It is not given a tool or the model catalog. */
@@ -57,9 +58,12 @@ export function memoryContext(records:MemoryRecord[],taskText:string,budget:numb
   // Relevance first; a note that served accepted attempts counts for more than one that did not, and each extra independent source adds a small bonus (arXiv #21).
   const ranked=records.map((record)=>({record,score:tokens(`${record.content} ${record.concepts.join(" ")}`).reduce((sum,token)=>sum+(terms.has(token)?1:0),0)*(0.5+memoryUsefulness(record)+Math.min(0.3,0.1*((record.verification?.length??1)-1)))}))
     .filter((item)=>item.score>0).sort((a,b)=>b.score-a.score||b.record.createdAt-a.record.createdAt||a.record.id.localeCompare(b.record.id));
-  const selected:MemoryRecord[]=[];const cut:MemoryRecord[]=[];let text="";
+  const picked:MemoryRecord[]=[];const cut:MemoryRecord[]=[];let text="";
   // The header is part of the line the budget pays for: counting content alone let a long concepts list overshoot (F10-4).
-  for(const item of ranked){const line=memoryContextLine(item.record);const next=text?`${text}\n${line}`:line;if(estimateTokens(next)>budget){cut.push(item.record);continue;}text=next;selected.push(item.record);}
+  for(const item of ranked){const line=memoryContextLine(item.record,chunkFor(item.record,terms));const next=text?`${text}\n${line}`:line;if(estimateTokens(next)>budget){cut.push(item.record);continue;}text=next;picked.push(item.record);}
+  // Records of one topic read oldest first, so a changed fact shows its sequence; the budget was spent in relevance order above, on the same lines.
+  const selected=chronologicalByTopic(picked);
+  text=selected.map((record)=>memoryContextLine(record,chunkFor(record,terms))).join("\n");
   return {text,records:selected,estimatedTokens:estimateTokens(text),cut};
 }
 
@@ -81,6 +85,46 @@ export function explainMemory(records:MemoryRecord[],taskText:string,budget:numb
 /** Stems, so `ошибки` in the task finds `ошибка` in a note. */
 function tokens(text:string):string[] { return memoryTokens(text).map(memoryStem); }
 
-export function memoryContextLine(record:MemoryRecord):string {
-  return `- [${record.kind}; concepts=${record.concepts.join(", ")}] ${record.content}`;
+/** The day a record began to hold: its own `valid_from`, else when it was written. */
+const startOf=(record:Pick<MemoryRecord,"validFrom"|"createdAt">):number=>record.validFrom??record.createdAt;
+export const isoDay=(ms:number):string=>Number.isFinite(ms)?new Date(ms).toISOString().slice(0,10):"undated";
+
+/** Records about one subject (a replaced version and its successor, or two notes `sameSubject` calls alike) sit together, oldest first; groups keep the order of their best record. */
+function chronologicalByTopic(records:MemoryRecord[]):MemoryRecord[] {
+  const groups:MemoryRecord[][]=[];
+  for(const record of records){
+    const group=groups.find((items)=>items.some((other)=>record.supersededBy===other.id||other.supersededBy===record.id||sameSubject(record,other)));
+    if(group)group.push(record);else groups.push([record]);
+  }
+  return groups.flatMap((items)=>items.length>1?[...items].sort((a,b)=>startOf(a)-startOf(b)):items);
+}
+
+/**
+ * Which chunk of a record longer than the embedding window the pack shows: the one the meaning search matched best, else (a word search) the one
+ * sharing most word stems with the question. Undefined for a record the window holds whole.
+ */
+function chunkFor(record:MemoryRecord,terms:ReadonlySet<string>):number|undefined {
+  const chunks=contentChunks(record.content);
+  if(!chunks.length)return undefined;
+  if(record.bestChunk!=null&&record.bestChunk<chunks.length)return record.bestChunk;
+  let best=0,top=-1;
+  chunks.forEach((chunk,index)=>{const score=tokens(chunk).reduce((sum,token)=>sum+(terms.has(token)?1:0),0);if(score>top){best=index;top=score;}});
+  return best;
+}
+
+/** A line of the pack: kind, the date the fact began to hold (a replaced version: its interval, from..until), tags, text. A long record shows the chunk that matched, marked `part i/n`. */
+export function memoryContextLine(record:MemoryRecord,chunk:number|undefined=record.bestChunk):string {
+  const from=isoDay(startOf(record));
+  const when=record.status==="superseded"&&record.supersededAt!=null?`replaced; ${from}..${isoDay(record.supersededAt)}`:from;
+  const chunks=chunk==null?[]:contentChunks(record.content);
+  const part=chunks[chunk??-1];
+  return `- [${record.kind}; ${when};${part===undefined?"":` part ${(chunk??0)+1}/${chunks.length};`} concepts=${record.concepts.join(", ")}] ${part??record.content}`;
+}
+
+/**
+ * A question that asks for the past of a fact («what was it before», «раньше», «history of»). Only such a query is shown the versions a newer
+ * record replaced; any other question gets the current fact alone, so a replaced number never answers for the new one.
+ */
+export function isHistoryQuery(query:string):boolean {
+  return /\b(?:history of|previous(?:ly)?|used? to|formerly|earlier version|old(?:er)? version|before (?:the |it |we )?(?:change|changed|migration|migrated|switch|switched|update|updated|rewrite)|was (?:changed|replaced)|changed from)\b|(?:^|[^\p{L}])(?:раньше|ранее|прежн\p{L}*|предыдущ\p{L}*|истори\p{L}*|стар(?:ая|ое|ый|ую|ые) (?:версия|значение)|до (?:изменения|миграции|перехода|обновления)|что было|как было|как раньше)(?=$|[^\p{L}])/iu.test(query);
 }

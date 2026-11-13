@@ -53,7 +53,7 @@ describe("K8 usefulness: how often a note was mixed into a brief, and how often 
   it("keeps the search's order among the notes about the task's paths: the best match first, whatever the counters say", () => {
     const notes = ["one", "two", "three", "four"].map((word, index) => rec(`id${index}`, `The ${word} fact about components/greeting-cards`, index === 3 ? { useCount: 6, acceptedCount: 6 } : index === 0 ? { useCount: 6, acceptedCount: 0 } : {}));
     const text = writerMemory(notes, task);
-    expect(text.split("\n").map((line) => line.replace(/^- The (\w+) fact.*/, "$1"))).toEqual(["one", "two", "three"]);
+    expect(text.split("\n").map((line) => line.replace(/^- \[[\d-]+\] The (\w+) fact.*/, "$1"))).toEqual(["one", "two", "three"]);
   });
 
   it("ranks the PM and council context the same way", () => {

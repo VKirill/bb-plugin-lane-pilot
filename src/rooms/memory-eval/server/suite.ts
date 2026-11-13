@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { EMBED_DIM, estimateTokens, memoryStem, memoryTokens, parseMemorySettings, pendingVectors, recordRelevance, rememberQueryVector, searchMemoryRecords, sharedScope, storeMemoryRecords, storeVectors, answerProbability, wordFrequencies, type MemoryAudience, type MemoryRecord, type MemorySettings } from "@lane-pilot/memory-core";
+import { DOC_CHARS, EMBED_DIM, estimateTokens, hideRecord, memoryStem, memoryTokens, parseMemorySettings, pendingChunks, pendingVectors, storeChunkVectors, recordRelevance, rememberQueryVector, searchMemoryRecords, sharedScope, storeMemoryRecords, storeVectors, answerProbability, wordFrequencies, type MemoryAudience, type MemoryRecord, type MemorySettings } from "@lane-pilot/memory-core";
 import type { LanePilotDatabase } from "../../storage";
 import { mixWriterMemory, pmMemoryContext } from "../../memory/server";
 import { SUITE_CASES, SUITE_NOTES, SUITE_PROJECT, type SuiteCase, type SuiteFamily, type SuiteNote } from "./suite-fixture";
@@ -56,9 +56,13 @@ export function plantSuite(migrations: readonly string[], notes: readonly SuiteN
     if (!id) throw new Error(`suite note ${note.key} was not stored`);
     ids.set(note.key, id); keys.set(id, note.key);
   });
+  // What the budget would do to a note: move it off the shelf, keep its indexes and give it a vector like any other.
+  for (const note of notes) if (note.archived) hideRecord(db as never, SUITE_PROJECT, ids.get(note.key)!, "expired", null, () => {}, "budget");
   const active = pendingVectors(db as never, 100_000);
-  for (const note of notes) if (!/-old$/.test(note.key) && !active.some((row) => row.id === ids.get(note.key))) throw new Error(`suite note ${note.key} is not active after planting`);
-  storeVectors(db as never, active.map((row) => ({ ...row, vector: standInEmbedding(row.content) })));
+  for (const note of notes) if (!/-old$/.test(note.key) && !active.some((row) => row.id === ids.get(note.key))) throw new Error(`suite note ${note.key} is not embeddable after planting`);
+  // The real model reads the first DOC_CHARS of a record; a longer one also gets a vector per chunk (`pendingChunks`).
+  storeVectors(db as never, active.map((row) => ({ ...row, vector: standInEmbedding(row.content.slice(0, DOC_CHARS)) })));
+  storeChunkVectors(db as never, pendingChunks(db as never, 100_000).map((row) => ({ ...row, vectors: row.chunks.map((chunk) => standInEmbedding(chunk)) })));
   return { db, ids, keys };
 }
 
@@ -96,7 +100,7 @@ export function runCase(plant: SuitePlant, item: SuiteCase): CaseResult {
   const ms = performance.now() - started;
   const returned = returnedIds.map((id) => keys.get(id) ?? id);
   const wanted = item.expect === "nothing" ? [] : item.expect;
-  const missing = wanted.filter((key) => !returned.includes(key));
+  const missing = [...wanted.filter((key) => !returned.includes(key)), ...(item.contains ?? []).filter((snippet) => !text.includes(snippet)).map((snippet) => `text «${snippet}»`)];
   const leaked = (item.forbid ?? []).filter((key) => returned.includes(key));
   const abstained = nothingRelevant || weakMatch;
   // H5 is about leaks: a question with no answer in the reader's reach may still get other, allowed notes.
@@ -115,7 +119,7 @@ export type FamilyScore = { family: SuiteFamily | "H7"; title: string; n: number
 export type SuiteCost = { meanTokens: number; p95Ms: number; maxTokens: number; cases: number };
 export type SuiteReport = { cases: CaseResult[]; families: FamilyScore[]; cost: SuiteCost; leaks: string[] };
 
-const TITLES: Record<SuiteFamily, string> = { H1: "writer brief recall", H2: "PM question on a past decision", H3: "no answer (incl. near-miss)", H4: "updated fact returns the new version", H5: "cross-section leakage", H6: "grey band of the gate" };
+const TITLES: Record<SuiteFamily, string> = { H1: "writer brief recall", H2: "PM question on a past decision", H3: "no answer (incl. near-miss)", H4: "updated fact returns the new version", H5: "cross-section leakage", H6: "grey band of the gate", H8: "archived record found by PM search", H9: "history question shows the old version", H10: "long record found by a later paragraph" };
 const pct = (value: number) => `${(value * 100).toFixed(0)}%`;
 
 export function scoreSuite(cases: readonly CaseResult[]): SuiteReport {

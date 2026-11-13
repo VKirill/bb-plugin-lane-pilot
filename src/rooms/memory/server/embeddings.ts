@@ -1,4 +1,4 @@
-import { EMBED_DIM, EMBED_MODEL, documentText, pendingVectors, queryText, queryVectorFor, rememberQueryVector, storeVectors, type MemoryDatabase } from "@lane-pilot/memory-core";
+import { EMBED_DIM, EMBED_MODEL, chunkDocumentText, documentText, pendingChunks, pendingVectors, queryText, queryVectorFor, rememberQueryVector, storeChunkVectors, storeVectors, type MemoryDatabase } from "@lane-pilot/memory-core";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { envCatalogKey } from "../../learning";
@@ -62,6 +62,13 @@ export async function embedPending(db: MemoryDatabase, embedder: Embedder, limit
     if (!vectors) break;
     storeVectors(db, chunk.map((row, at) => ({ ...row, vector: vectors[at]! })));
     stored += chunk.length;
+  }
+  // A record longer than the window is also embedded by chunks and scores by its best one (`denseRank`); a record's chunks go in one call.
+  for (const row of pendingChunks(db, limit)) {
+    const vectors = await embedder(row.chunks.map((text) => chunkDocumentText(row.content, text)), BATCH_TIMEOUT_MS);
+    if (!vectors) break;
+    storeChunkVectors(db, [{ ...row, vectors }]);
+    stored += 1;
   }
   return stored;
 }

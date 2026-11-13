@@ -223,7 +223,7 @@ describe("memory corpus care (parity wave g4)", () => {
     createRun(db, "run1", "P");
     const [live, hidden] = put(db, [note("The alpha ledger fact stays searchable."), note("The omega ledger fact was hidden.")]);
     const unindex = (p: string, id: string) => dropMemoryIndexes(db, p, id);
-    hideRecord(db, "P", hidden!, "expired", null, unindex, "budget");
+    hideRecord(db, "P", hidden!, "expired", null, unindex, "dated");
     dropMemoryIndexes(db, "P", live!);
     expect(searchMemoryRecords(db, "P", "alpha ledger", 10, "auto").map((item) => item.id)).not.toContain(live);
     const cockpit = cockpitRpc({ db, bb: host.bb } as never, {} as never) as unknown as Record<string, (input: unknown) => Promise<{ exitCode: number; output: string }>>;

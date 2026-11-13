@@ -31,7 +31,11 @@ export type MemoryRecord=MemoryCore & {id:string;projectId:string;personalBot:st
   /** Who vouched for the fact: one entry per independent source (arXiv #21). */
   verification?:Array<{by:string;sha:string;at:number}>;
   /** Cosine to the question when the search ranked by meaning (`vectors.ts`); absent on a word search. */
-  similarity?:number};
+  similarity?:number;
+  /** On a replaced version shown by a history query: when the record that replaced it began to hold (epoch ms). */
+  supersededAt?:number;
+  /** The chunk of a record longer than the embedding window that matched the question best (an index into `contentChunks`); the pack shows that chunk, not the head. */
+  bestChunk?:number};
 
 export const MAX_BUDGET=1_000_000;
 /** The settings keys `parseMemorySettings` reads. */

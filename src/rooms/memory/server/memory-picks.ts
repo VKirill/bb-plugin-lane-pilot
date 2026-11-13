@@ -1,4 +1,4 @@
-import { REVIEWER_CONCEPTS, memoryUsefulness, sameSubject } from "@lane-pilot/memory-core";
+import { REVIEWER_CONCEPTS, contentChunks, isoDay, memoryUsefulness, sameSubject } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
 
 /**
@@ -7,7 +7,7 @@ import type { TaskV2 } from "../../contracts";
  * the same writer did the task as well from 1110 tokens as from 4130. Live run notes: `.bb/chats/thr_tev4nistgf/artifacts/tz-diet/REPORT.md`.
  */
 
-type MemoryNote = { content:string; concepts:string[]; kind?:string; id?:string; useCount?:number; acceptedCount?:number; createdAt?:number };
+type MemoryNote = { content:string; concepts:string[]; kind?:string; id?:string; useCount?:number; acceptedCount?:number; createdAt?:number; validFrom?:number|null; bestChunk?:number };
 
 const MEMORY_LIMIT = 3;
 /** Folders that say nothing about a task: tool caches a contract sometimes lists. */
@@ -39,10 +39,16 @@ export function writerMemory(notes:readonly MemoryNote[], task:Pick<TaskV2, "own
 }
 
 /** One bullet per note, on one line, without the wrapper tags of the block it goes into: a note cannot close the block or forge a heading. */
-export function memoryLine(note:Pick<MemoryNote, "content">):string {
-  const text = note.content.replace(/<\/?project_memory>/gi, "").replace(/\s+/g, " ").trim();
+export function memoryLine(note:Pick<MemoryNote, "content" | "createdAt" | "validFrom" | "bestChunk">):string {
+  // The day the fact began to hold, so a writer can tell an old note from a new one.
+  const day = note.validFrom ?? note.createdAt;
+  const date = day == null ? "" : `[${isoDay(day)}] `;
+  // A record longer than the embedding window: the chunk the search matched, not the head.
+  const chunks = note.bestChunk === undefined ? [] : contentChunks(note.content);
+  const chunk = note.bestChunk === undefined ? undefined : chunks[note.bestChunk];
+  const text = (chunk === undefined ? note.content : `(part ${note.bestChunk! + 1}/${chunks.length}) ${chunk}`).replace(/<\/?project_memory>/gi, "").replace(/\s+/g, " ").trim();
   // A brief carries the head of a long note, not a document: one 35,000-character note once made a writer brief five times its size.
-  return `- ${text.length > MEMORY_LINE_CHARS ? `${text.slice(0, MEMORY_LINE_CHARS)}… [cut ${text.length - MEMORY_LINE_CHARS} chars; the whole note: bb lane-pilot memory search]` : text}`;
+  return `- ${date}${chunk === undefined && text.length > MEMORY_LINE_CHARS ? `${text.slice(0, MEMORY_LINE_CHARS)}… [cut ${text.length - MEMORY_LINE_CHARS} chars; the whole note: bb lane-pilot memory search]` : text}`;
 }
 /** The most of one note a brief line carries; 82 % of the hub's notes are shorter. */
 export const MEMORY_LINE_CHARS = 1_500;
