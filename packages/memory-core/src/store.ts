@@ -371,6 +371,25 @@ function indexArchive(db: MemoryDatabase): void {
 }
 const parseConcepts = (json: string): string[] => { try { const value = JSON.parse(json) as unknown; return Array.isArray(value) ? value.map(String) : []; } catch { return []; } };
 
+/**
+ * The versions a newer record replaced, for a history query: after each found record come the records it replaced (and those they replaced),
+ * each carrying `supersededAt`, the day its successor began to hold. A replaced version is never found by a search of its own: it is not indexed, so a question that is not about the past never meets it.
+ */
+export function withHistory(db: MemoryDatabase, projectId: string, records: readonly MemoryRecord[]): MemoryRecord[] {
+  const older = db.prepare(`SELECT ${cols()} FROM lane_pilot_memory WHERE project_id=? AND superseded_by=? AND status='superseded' ORDER BY created_at DESC`);
+  const out: MemoryRecord[] = [], seen = new Set<string>();
+  const add = (record: MemoryRecord, depth: number) => {
+    if (seen.has(record.id)) return;
+    seen.add(record.id);
+    out.push(record);
+    if (depth >= 5) return;
+    const began = record.validFrom ?? record.createdAt;
+    for (const row of older.all(projectId, record.id) as Row[]) add({ ...toRecord(row), supersededAt: began }, depth + 1);
+  };
+  for (const record of records) add(record, 0);
+  return out;
+}
+
 /** Admin search: every section of the project. Working readers use `searchMemoryRecords` and pass their chain. */
 export function searchMemoryAllSections(db: MemoryDatabase, projectId: string, query: string, limit: number, engine: MemorySearchEngine, audience: MemoryAudience = "subagent", personalBot = "", options: Omit<SearchOptions, "allSections" | "chain"> = {}): MemoryRecord[] {
   return searchMemoryRecords(db, projectId, query, limit, engine, audience, personalBot, { ...options, allSections: true });
