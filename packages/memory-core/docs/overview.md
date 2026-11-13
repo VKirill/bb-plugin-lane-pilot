@@ -112,7 +112,7 @@ Configuration values defined in `MEMORY_SETTING_KEYS` (`packages/memory-core/src
 | `memory.single_claim` | boolean | `true` | `true`, `false` | `packages/memory-core/src/settings.ts:63` |
 | `memory.tag_notes` | boolean | `true` | `true`, `false` | `packages/memory-core/src/settings.ts:63` |
 | `memory.judge.enabled` | boolean | `true` | `true`, `false` | `packages/memory-core/src/settings.ts` |
-| `memory.judge.model` | string | `"router9/ag/gemini-3.8-flash-low"` | a model id (`router9/` → 9router) | `packages/memory-core/src/settings.ts` |
+| `memory.judge.model` | string | `"agy/gemini-3.8-flash-low"` | a model id (`agy/` → local Antigravity CLI, `router9/` → 9router) | `packages/memory-core/src/settings.ts` |
 | `memory.judge.fallback_model` | string | `"gemini-3.8-flash"` | a model id (OpenLux) | `packages/memory-core/src/settings.ts` |
 | `memory.judge.timeout_ms` | integer | `12000` | `>= 1` ms | `packages/memory-core/src/settings.ts` |
 | `memory.judge.candidates` | integer | `12` | `1` to `50` | `packages/memory-core/src/settings.ts` |

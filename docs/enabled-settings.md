@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 538c5284a6d7bdc6 -->
+<!-- enabled-settings:structure 7d2dfb1a87033c99 -->
 
 # Enabled settings (generated)
 
@@ -132,7 +132,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `memory.judge.candidates` | `12` | — | stage setting: how many of the vector's best notes the judge reads (default 12) |
 | `memory.judge.enabled` | `true` | — | stage setting: last-stage judge of explicit memory searches and the writer brief (on by default, a stored off opts out) |
 | `memory.judge.fallback_model` | `gemini-3.8-flash` | — | stage setting: the model tried once when the judge model answers with an HTTP error (default gemini-3.8-flash on OpenLux) |
-| `memory.judge.model` | `router9/ag/gemini-3.8-flash-low` | — | stage setting: the judge model: router9/<id> on 9router, else OpenLux (default router9/ag/gemini-3.8-flash-low) |
+| `memory.judge.model` | `agy/gemini-3.8-flash-low` | — | stage setting: the judge model: agy/<id> through the local Antigravity CLI, router9/<id> on 9router, else OpenLux (default agy/gemini-3.8-flash-low) |
 | `memory.judge.timeout_ms` | `12000` | — | stage setting: time before the judge gives up and the search returns the vector's first five (default 12000 ms) |
 | `memory.maintain_every` | `3` | — | stage setting: run the memory maintainer on every Nth accepted task |
 | `memory.maintain_mode` | `wave` | — | stage setting: a free fact per accepted task and one maintainer run per idle wave, or a helper per task |

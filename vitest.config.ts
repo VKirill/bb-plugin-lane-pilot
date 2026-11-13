@@ -48,6 +48,8 @@ export default defineConfig({
     // One queue for all projects, longest file first (tests/sequencer.ts).
     ...(process.env.LP_DEFAULT_ORDER ? {} : { sequence: { sequencer: LongestFirstSequencer } }),
     setupFiles: ["./tests/setup-jsdom.ts"],
+    // No test runs the real Antigravity CLI (the memory judge's agy/ route): an empty LANE_PILOT_AGY_BIN turns it off.
+    env: { LANE_PILOT_AGY_BIN: "" },
     // One temp directory per run (TMPDIR for every worker of every project), removed after it: see tests/global-setup.ts.
     globalSetup: ["./tests/global-setup.ts"],
     projects: [

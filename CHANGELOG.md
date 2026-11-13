@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.548
+
+- **The memory judge runs through the Antigravity CLI on the hub (`src/rooms/memory/agy-chat.ts`, `src/rooms/memory/server/memory-judge.ts`).** Default `memory.judge.model` is `agy/gemini-3.8-flash-low`: an `agy/<id>` name runs `agy -p … --model <id> --output-format json --sandbox` on this machine with the owner's Antigravity sign-in (no key, no money), at most 3 at once; each turn's conversation is deleted after the answer. The route counts as missing when no `agy` binary is found (`LANE_PILOT_AGY_BIN` names it; empty turns it off, which the tests do). A quota error or a hang locks it for two minutes and OpenLux `gemini-3.8-flash` answers. Measured on the 378-question set (2026-11-14): low 96.7% delivered / 99.6% silent, p50 4.8 s; medium and high are no better and slower. `router9/<id>` still routes to 9router.
+
 ## 0.1.547
 
 - **The memory judge runs on the owner's 9router first (`src/rooms/memory/server/memory-judge.ts`).** Default `memory.judge.model` is `router9/ag/gemini-3.8-flash-low`: a `router9/<id>` name goes to `https://9router.vechkasov.pro/v1` with Env Catalog `NINEROUTER_API_KEY` (Gemini on the Antigravity subscription); any other id goes to OpenLux. Default fallback is `gemini-3.8-flash` on OpenLux (the measured judge; `gpt-6-luna` was unstable at staying silent). A 403/429 or a hang on 9router locks that route for two minutes and asks OpenLux at once with a fresh window; receipts show `retriedWith` when the fallback answered. At release time every Gemini 3.8 Flash variant on 9router answered 403 «reset after 2m» (or 429 after 54 s), so until the Antigravity window frees the judge answers through OpenLux.

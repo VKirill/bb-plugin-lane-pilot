@@ -2,6 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { EMBED_DIM, JUDGE_DEFAULTS, judgeUserPrompt, maskSecretsForJudge, memoryJudgeStats, parseJudgeReply, parseMemorySettings, rememberQueryVector, shuffledBy, storeMemoryRecords, storeVectors, listMemoryReceipts, type MemoryRecord } from "../packages/memory-core/src";
 import { judgeFound, judgeRoutes, openLuxJudge, setMemoryJudge } from "../src/rooms/memory/server/memory-judge";
+import { AgyFailure } from "../src/rooms/memory/agy-chat";
 import { judgeWriterMemory, mixWriterMemory, pmMemoryContext, pmMemoryContextJudged } from "../src/rooms/memory/server/memory-mix";
 import { openDatabase } from "../src/rooms/plugin-db";
 
@@ -128,6 +129,39 @@ describe("the judge call", () => {
     expect(calls).toHaveLength(2);
     expect(out.chosen).toHaveLength(1);
     expect(out.receipt.fallback).toBeUndefined();
+  });
+
+  it("agy/<id> runs the local Antigravity CLI; a quota error locks it and OpenLux answers", async () => {
+    let clock = 1_000_000;
+    const agyCalls: string[] = [];
+    let agyReply: "ok" | "quota" | "hang" = "ok";
+    const agy = async (model: string, _system: string, user: string) => {
+      agyCalls.push(model);
+      expect(user).toContain("q");
+      if (agyReply === "quota") throw new AgyFailure("RESOURCE_EXHAUSTED quota", 429);
+      if (agyReply === "hang") throw new AgyFailure("killed", 0, true);
+      return { content: "1", tokensIn: 10, tokensOut: 1 };
+    };
+    const http: string[] = [];
+    const fetchImpl = (async (url: string) => { http.push(url); return new Response(JSON.stringify({ choices: [{ message: { content: "none" } }] }), { status: 200 }); }) as unknown as typeof fetch;
+    const judge = openLuxJudge(async () => "lux", fetchImpl, () => clock, undefined, judgeRoutes(async () => "lux", async () => undefined, agy, async () => "local"));
+    const routed = { model: "agy/gemini-3.8-flash-low", fallbackModel: "gemini-3.8-flash", timeoutMs: 12_000 };
+    const first = await judge({ query: "q1", candidates, settings: routed });
+    expect(agyCalls).toEqual(["gemini-3.8-flash-low"]);
+    expect(http).toEqual([]);
+    expect(first.chosen).toHaveLength(1);
+    agyReply = "quota";
+    const second = await judge({ query: "q2", candidates, settings: routed });
+    expect(http).toEqual(["https://api.openlux.ai/v1/chat/completions"]);
+    expect(second.receipt.retriedWith).toBe("gemini-3.8-flash");
+    clock += 60_000;
+    await judge({ query: "q3", candidates, settings: routed });
+    expect(agyCalls).toHaveLength(2);
+    clock += 2 * 60_000;
+    agyReply = "hang";
+    const fourth = await judge({ query: "q4", candidates, settings: routed });
+    expect(agyCalls).toHaveLength(3);
+    expect(fourth.chosen).toEqual([]);
   });
 
   it("none is an answer: no notes, no fallback", async () => {

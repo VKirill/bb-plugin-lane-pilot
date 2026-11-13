@@ -291,7 +291,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"memory.context_budget", channel:"OWN", reason:"Native Lane Pilot stage setting: cap injected memory context tokens" },
   { key:"memory.single_claim", channel:"OWN", reason:"Native Lane Pilot stage setting: refuse a list packed into one memory record (on by default, a stored off opts out)" },
   { key:"memory.judge.enabled", channel:"OWN", reason:"Native Lane Pilot stage setting: last-stage judge of explicit memory searches and the writer brief (on by default, a stored off opts out)" },
-  { key:"memory.judge.model", channel:"OWN", reason:"Native Lane Pilot stage setting: the judge model: router9/<id> on 9router, else OpenLux (default router9/ag/gemini-3.8-flash-low)" },
+  { key:"memory.judge.model", channel:"OWN", reason:"Native Lane Pilot stage setting: the judge model: agy/<id> through the local Antigravity CLI, router9/<id> on 9router, else OpenLux (default agy/gemini-3.8-flash-low)" },
   { key:"memory.judge.fallback_model", channel:"OWN", reason:"Native Lane Pilot stage setting: the model tried once when the judge model answers with an HTTP error (default gemini-3.8-flash on OpenLux)" },
   { key:"memory.judge.timeout_ms", channel:"OWN", reason:"Native Lane Pilot stage setting: time before the judge gives up and the search returns the vector's first five (default 12000 ms)" },
   { key:"memory.judge.candidates", channel:"OWN", reason:"Native Lane Pilot stage setting: how many of the vector's best notes the judge reads (default 12)" },

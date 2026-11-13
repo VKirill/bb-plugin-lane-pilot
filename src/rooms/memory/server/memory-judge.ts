@@ -2,10 +2,11 @@ import { JUDGE_DEFAULTS, JUDGE_FALLBACK_TOP, JUDGE_SYSTEM, gateScore, judgeUserP
 import type { ServerCore } from "../../contracts/server";
 import { envCatalogKey } from "../../learning";
 import type { LanePilotDatabase } from "../../storage";
+import { AgyFailure, agyBinary, agyChat } from "../agy-chat";
 
 /**
  * The last stage of the explicit memory searches (the PM memory tool, `session_memory_search` and so `bb lane-pilot memory search`, the
- * writer's brief): a small model (OpenAI-compatible chat completions: 9router for `router9/…` names, else OpenLux) names the notes that help answer the question, or none.
+ * writer's brief): a small model (the local Antigravity CLI for `agy/…` names, 9router for `router9/…`, else OpenLux chat completions) names the notes that help answer the question, or none.
  * The per-turn automatic context of the PM does not come here (4.7 s median, and the PM reads well enough alone).
  *
  * The key is Env Catalog `OPENLUX_MEMORY_API_KEY`, read the way the embeddings read theirs (`envCatalogKey`: the `env-catalog` plugin's
@@ -22,8 +23,11 @@ export const ROUTER9_BASE_URL = "https://9router.vechkasov.pro/v1";
 const ROUTE_LOCK_MS = 2 * 60_000;
 const CACHE_TTL_MS = 10 * 60_000, CACHE_MAX = 500, MAX_TOKENS = 1500;
 
-/** Where a model name is sent: the base URL, the key, and the model id that endpoint knows. */
-export type JudgeRoute = { name: string; baseUrl: string; key: () => Promise<string | undefined>; model: string };
+/** A model named `agy/<id>` runs through the Antigravity CLI on this machine (the owner's sign-in, no key); `<id>` is an `agy models` id. */
+export const AGY_PREFIX = "agy/";
+
+/** Where a model name is sent: the base URL, the key, and the model id that endpoint knows; `chat` replaces the HTTP call (the `agy` route). */
+export type JudgeRoute = { name: string; baseUrl: string; key: () => Promise<string | undefined>; model: string; chat?: (model: string, system: string, user: string, timeoutMs: number) => Promise<Chat> };
 export type JudgeRoutes = (model: string) => JudgeRoute;
 
 export type JudgeSettings = { model: string; fallbackModel: string; timeoutMs: number };
@@ -44,7 +48,15 @@ export function openLuxJudge(key: () => Promise<string | undefined>, fetchImpl: 
   const routeOf: JudgeRoutes = routes ?? ((model) => ({ name: "openlux", baseUrl, key, model }));
   const lockedUntil = new Map<string, number>();
 
-  async function chat(apiKey: string, routeBase: string, model: string, system: string, user: string, timeoutMs: number): Promise<Chat> {
+  async function chat(route: JudgeRoute, apiKey: string, system: string, user: string, timeoutMs: number): Promise<Chat> {
+    if (route.chat) {
+      try { return await route.chat(route.model, system, user, timeoutMs); }
+      catch (cause) {
+        if (cause instanceof AgyFailure && cause.timedOut) throw new JudgeTimeout("timeout");
+        throw new HttpFailure(cause instanceof Error ? cause.message : String(cause), cause instanceof AgyFailure ? cause.status : 0);
+      }
+    }
+    const routeBase = route.baseUrl, model = route.model;
     let response: Response;
     try {
       response = await fetchImpl(`${routeBase}/chat/completions`, {
@@ -107,7 +119,7 @@ export function openLuxJudge(key: () => Promise<string | undefined>, fetchImpl: 
       const secondKey = await keyOf(secondary);
       if (!secondKey) return failed("no_key");
       try {
-        const second = await chat(secondKey, secondary.baseUrl, secondary.model, JUDGE_SYSTEM, user, left);
+        const second = await chat(secondary, secondKey, JUDGE_SYSTEM, user, left);
         const chosen = answer(second.content);
         return chosen ? done(chosen, second, { retriedWith: settings.fallbackModel }) : failed("retry_failed", { retriedWith: settings.fallbackModel, tokensIn: second.tokensIn, tokensOut: second.tokensOut });
       } catch { return failed("retry_failed", { retriedWith: settings.fallbackModel }); }
@@ -116,7 +128,7 @@ export function openLuxJudge(key: () => Promise<string | undefined>, fetchImpl: 
     if (!primaryKey || (primaryLocked && otherRoute)) return retry(false);
 
     let first: Chat;
-    try { first = await chat(primaryKey, primary.baseUrl, primary.model, JUDGE_SYSTEM, user, settings.timeoutMs); }
+    try { first = await chat(primary, primaryKey, JUDGE_SYSTEM, user, settings.timeoutMs); }
     catch (cause) {
       const locking = cause instanceof JudgeTimeout || (cause instanceof HttpFailure && (cause.status === 403 || cause.status === 429));
       if (locking && otherRoute && secondary) lockedUntil.set(primary.name, now() + ROUTE_LOCK_MS);
@@ -141,9 +153,11 @@ export function mountMemoryJudge(ctx: ServerCore): void {
   setMemoryJudge(openLuxJudge(openLuxKey, fetch, Date.now, JUDGE_BASE_URL, judgeRoutes(openLuxKey, router9Key)));
 }
 
-/** `router9/<id>` → 9router with its key; anything else → OpenLux. */
-export function judgeRoutes(openLuxKey: () => Promise<string | undefined>, router9Key: () => Promise<string | undefined>): JudgeRoutes {
-  return (model) => model.startsWith(ROUTER9_PREFIX)
+/** `agy/<id>` → the local Antigravity CLI; `router9/<id>` → 9router with its key; anything else → OpenLux. */
+export function judgeRoutes(openLuxKey: () => Promise<string | undefined>, router9Key: () => Promise<string | undefined>, agy: JudgeRoute["chat"] = agyChat, agyReady: () => Promise<string | undefined> = async () => (agyBinary() ? "local" : undefined)): JudgeRoutes {
+  return (model) => model.startsWith(AGY_PREFIX)
+    ? { name: "agy", baseUrl: "", key: agyReady, model: model.slice(AGY_PREFIX.length), chat: agy }
+    : model.startsWith(ROUTER9_PREFIX)
     ? { name: "router9", baseUrl: ROUTER9_BASE_URL, key: router9Key, model: model.slice(ROUTER9_PREFIX.length) }
     : { name: "openlux", baseUrl: JUDGE_BASE_URL, key: openLuxKey, model };
 }
