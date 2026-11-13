@@ -121,6 +121,34 @@ export const whichPrograms: ExperimentalHostRpcHandlers<typeof hostContract>["wh
 };
 
 /**
+ * Codex keeps its own memory store (`~/.codex/memories`); Lane Pilot memory lives in one place, the hub DB. A task's config.toml gets
+ * `[features] memories = false` and `[memories] generate_memories = false`, whatever the owner's file said. Other keys stay as they were.
+ */
+export function disableCodexMemories(toml: string): string {
+  const want: Record<string, string> = { features: "memories", memories: "generate_memories" };
+  const done = new Set<string>();
+  const out: string[] = [];
+  let table = "";
+  let headerAt = -1;
+  // End of a wanted table without its key: add the key right after the header.
+  const flush = () => {
+    if (!want[table] || done.has(table)) return;
+    out.splice(headerAt + 1, 0, `${want[table]} = false`);
+    done.add(table);
+  };
+  for (const line of toml.split("\n")) {
+    const header = /^\s*\[([^[\]]+)\]\s*(#.*)?$/.exec(line);
+    if (header) { flush(); table = header[1]!.trim(); headerAt = out.length; }
+    else if (want[table] && new RegExp(`^\\s*${want[table]}\\s*=`).test(line)) { out.push(`${want[table]} = false`); done.add(table); continue; }
+    out.push(line);
+  }
+  flush();
+  const base = out.join("\n");
+  const missing = Object.keys(want).filter((t) => !done.has(t));
+  return missing.length ? `${base}${base === "" || base.endsWith("\n") ? "" : "\n"}${missing.map((t) => `\n[${t}]\n${want[t]} = false\n`).join("")}` : base;
+}
+
+/**
  * Fresh codex home per task, seeded (SMA: Fresh codex home per task, Seed the codex home): a writer of the strict worker mode gets its own
  * CODEX_HOME, so no task reads another task's sessions and history; config.toml and AGENTS.md are copied, auth.json is linked (one login
  * that refreshes in one place).
@@ -136,6 +164,10 @@ export const prepareWorkerHome: ExperimentalHostRpcHandlers<typeof hostContract>
   for (const name of ["config.toml", "AGENTS.md"]) {
     if (await can(at(source, name)).then(() => true, () => false) && !await can(at(codexHome, name)).then(() => true, () => false)) { await copyFile(at(source, name), at(codexHome, name)); seeded.push(name); }
   }
+  // One memory place (the hub DB): the task's config turns Codex's own memory store off, whatever the owner's file says.
+  const { writeFile } = await import("node:fs/promises");
+  const cfg = at(codexHome, "config.toml");
+  await writeFile(cfg, disableCodexMemories(await readFile(cfg, "utf8").catch(() => "")), "utf8");
   if (await can(at(source, "auth.json")).then(() => true, () => false) && !await can(at(codexHome, "auth.json")).then(() => true, () => false)) { await link(at(source, "auth.json"), at(codexHome, "auth.json")); seeded.push("auth.json"); }
   return { codexHome, seeded };
 };

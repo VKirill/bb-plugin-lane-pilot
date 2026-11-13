@@ -252,9 +252,9 @@ export function nativeLauncherScript(input: {
  * and core's flags: the same on every machine (docs/guide/hooks.md, rule 6). MCP servers still connect (live probe). A PM chat keeps
  * the person's layer: it is the owner's own conversation.
  *
- * A helper also runs with Claude Code's auto-memory off: core passes `autoMemoryEnabled: true`, and in a main checkout the folder's
- * `MEMORY.md` (the owner's notes to his own chats, 5 KB on selfystudio) loaded into every helper. The guard layer is merged last, so
- * the switch is set here and needs no core release.
+ * Every session (PM, writer, critic, errand, helper) runs with Claude Code's auto-memory off: core passes `autoMemoryEnabled: true`,
+ * and its per-folder `MEMORY.md` is a second memory store next to the hub (one place only: the hub DB). The layer is always merged and
+ * the switch is set last here, so it needs no core release and no role check.
  */
 const MERGE_SETTINGS_PY = [
   "import json,os,sys,hashlib,tempfile,shlex",
@@ -278,12 +278,12 @@ const MERGE_SETTINGS_PY = [
   "    else: a[k]=v",
   "helper=os.environ.get(\"LANE_PILOT_ROLE\",\"pm\")!=\"pm\"",
   "final=guard",
-  "if vals or helper:",
+  "if True:",
   "  try:",
   "    m={}",
   "    for v in vals+[guard]: merge(m,load(v))",
+  "    m[\"autoMemoryEnabled\"]=False",
   "    if helper:",
-  "      m[\"autoMemoryEnabled\"]=False",
   // SMA m_pl_unreadable: a hook whose program file is missing or unreadable fails inside every helper session; here it goes, with a named reason on stderr.
   // Own try: any failure keeps the merged layer exactly as built above (core layer with its denies and denied servers, plus the guard).
   "      try:",

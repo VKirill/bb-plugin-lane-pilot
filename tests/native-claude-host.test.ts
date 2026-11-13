@@ -62,7 +62,10 @@ it("hands claude one --settings: the core flag layer merged with the guard file,
   expect(merged.enabledPlugins).toEqual({ "i-have-adhd@i-have-adhd": false });
   expect(merged.hooks.PreToolUse.map((h: { hooks: { command: string }[] }) => h.hooks[0].command)).toEqual(["core", "guard"]);
   const plain = spawnSync(launcher, ["-p", "hi"], { encoding: "utf8" }).stdout.trim().split("\n");
-  expect(plain[plain.indexOf("--settings") + 1]).toBe(settingsPath);
+  // No core layer: the guard file still goes through the merge, so auto-memory is off here too.
+  const plainSettings = JSON.parse(readFileSync(plain[plain.indexOf("--settings") + 1], "utf8"));
+  expect(plainSettings.autoMemoryEnabled).toBe(false);
+  expect(plainSettings.hooks.PreToolUse.map((h: { hooks: { command: string }[] }) => h.hooks[0].command)).toEqual(["guard"]);
 });
 
 it("a helper launcher denies the orchestration built-ins, a PM launcher keeps them", async () => {
@@ -92,11 +95,11 @@ it("a helper launcher denies the orchestration built-ins, a PM launcher keeps th
   expect(await run("pm")).toContain("--setting-sources=user,project,local");
   extra = ["--setting-sources", "user,project"];
   expect((await run("code-critic")).join(" ")).toContain("--setting-sources project");
-  // Auto-memory is the owner's notes to his own chats: off for a helper whatever core passes, left as core set it for a PM.
+  // Auto-memory is the owner's notes to his own chats: off for a helper whatever core passes, off for a PM too (one memory place: the hub).
   extra = ["--settings", JSON.stringify({ autoMemoryEnabled: true, fastMode: false })];
   const settingsOf = (args: string[]) => JSON.parse(readFileSync(args[args.indexOf("--settings") + 1], "utf8"));
   expect(settingsOf(await run("writer"))).toMatchObject({ autoMemoryEnabled: false, fastMode: false });
-  expect(settingsOf(await run("pm"))).toMatchObject({ autoMemoryEnabled: true });
+  expect(settingsOf(await run("pm"))).toMatchObject({ autoMemoryEnabled: false });
   extra = [];
   expect(settingsOf(await run("errand")).autoMemoryEnabled).toBe(false);
   expect(await run("errand")).toContain("--setting-sources=project,local");

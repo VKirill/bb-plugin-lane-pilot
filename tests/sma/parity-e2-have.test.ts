@@ -148,7 +148,7 @@ describe("the worker's merged layer and the permit gate", () => {
     const errand = await launcherFixture("errand", extra, home);
     expect(errand.settings.autoMemoryEnabled).toBe(false);
     const pm = await launcherFixture("pm", extra, home);
-    expect(pm.settings.autoMemoryEnabled).toBe(true);
+    expect(pm.settings.autoMemoryEnabled).toBe(false);
   });
 
   it("[sma:m_pl_merge] a helper launch merges core flags with the guard file and mirrors only the person's deny list", async () => {
