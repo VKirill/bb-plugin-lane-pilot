@@ -1,7 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.1.552
 
+- **Night learning no longer loses a project without a writer host (`src/rooms/learning/service.ts`, `ops.ts`).** The analyzer only reads its prompt, so a project with no machine of its own borrows the host of the project with the latest observations (as episode analysis already did); if none fits, the project goes to `lastNightRun.skipped[]` with its name, reason and waiting count, and `stopped` now means only a stop of the whole run (daily limit). Before, `proj_personal` showed `stopped:"no_host"` and its 37 candidates expired after 36 h (`tests/learning/night-skip.test.ts`).
+- **A bare `HTTP 403` / `[403]` counts as a provider limit (`packages/models/src/provider-limit.ts`, `src/rooms/host-worker/opencode-limit.ts`).** 9router answered 403 without `(reset after …)`, the role waited up to 18 minutes instead of moving to its pool. Short replies only; long reports still do not match.
+- **One map of agent names (`packages/i18n/src/role-names.ts`, `docs/agents.md`).** Every role id has one Russian and English name used by the UI, `bb lane-pilot agents list` and `council-seats`: `writer` is «Исполнитель кода», `errand` «Порученец», `memory` «Хранитель памяти», `project-life` «Летописец проекта», Codex profiles are marked as profiles, not agents. `tests/agents-doc.test.ts` fails when a role id has no unique name or no row in `docs/agents.md`.
+- **The old external memory store is gone from code and docs.** Its one-time import source, collector script, origin guard and test fixtures are removed; the prompt says the hub DB is the only memory store and agents use no other.
 - **Concurrent native launcher refreshes no longer reject each other's installation status reads (`src/rooms/native-install/native-install-host.ts`).** `status` reads the last atomically published manifest without creating or removing the exclusive mutation lock; install, enable, disable and remove still take it. The hub's 2026-11-13 overlapping `contributeEnv` log records are captured in `tests/fixtures/native-refresh-lock-2026-11-13.json`; `tests/native-install.test.ts` reproduces the exact warning without the fix and verifies both launchers refresh with it, while a live lock still rejects a mutation. After deployment: run `scripts/lp-drill.sh --quick`, trigger overlapping native sends on one host and confirm both refreshes complete without `native launcher refresh failed` warnings.
 
 ## 0.1.551
