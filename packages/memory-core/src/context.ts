@@ -87,7 +87,7 @@ function tokens(text:string):string[] { return memoryTokens(text).map(memoryStem
 
 /** The day a record began to hold: its own `valid_from`, else when it was written. */
 const startOf=(record:Pick<MemoryRecord,"validFrom"|"createdAt">):number=>record.validFrom??record.createdAt;
-export const isoDay=(ms:number):string=>new Date(ms).toISOString().slice(0,10);
+export const isoDay=(ms:number):string=>Number.isFinite(ms)?new Date(ms).toISOString().slice(0,10):"undated";
 
 /** Records about one subject (a replaced version and its successor, or two notes `sameSubject` calls alike) sit together, oldest first; groups keep the order of their best record. */
 function chronologicalByTopic(records:MemoryRecord[]):MemoryRecord[] {

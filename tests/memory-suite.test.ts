@@ -46,7 +46,7 @@ describe("memory suite: retrieval scores", () => {
 
   it("prints the score table", () => {
     process.stdout.write(`\n${formatSuite(report, baseline as SuiteBaseline)}\n\n`);
-    expect(report.families.map((row) => row.family)).toEqual(["H1", "H2", "H3", "H4", "H5", "H6", "H7"]);
+    expect(report.families.map((row) => row.family)).toEqual(["H1", "H2", "H3", "H4", "H5", "H6", "H8", "H9", "H10", "H7"]);
   });
 
   it("H5: no note of another section or audience reaches a reader, and the controls still arrive", () => {
@@ -73,7 +73,7 @@ describe("memory suite: end to end with a stub model", () => {
   it("takes the PM questions round-robin over the families so a small limit touches each", () => {
     const some = e2eCases(10);
     expect(some).toHaveLength(10);
-    expect(new Set(some.map((item) => item.family))).toEqual(new Set(["H2", "H3", "H4", "H5", "H6"]));
+    expect(new Set(some.map((item) => item.family))).toEqual(new Set(["H2", "H3", "H4", "H5", "H6", "H8", "H9", "H10"]));
     expect(e2eCases().every((item) => item.surface === "pm")).toBe(true);
   });
 
