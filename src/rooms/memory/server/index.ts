@@ -1,6 +1,7 @@
 // Public API of memory/server: what other rooms import. Everything else in this room is private.
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
-export { mixReviewerMemory, mixWriterMemory, pmMemoryContext, reviewerMemoryFor, snapshotFileRead, taskMemoryContext, writerCandidates, writerMemoryPaths } from "./memory-mix";
+export { judgeWriterMemory, mixReviewerMemory, mixWriterMemory, pmMemoryContext, pmMemoryContextJudged, reviewerMemoryFor, snapshotFileRead, taskMemoryContext, writerCandidates, writerMemoryPaths } from "./memory-mix";
+export { JUDGE_BASE_URL, JUDGE_KEY_NAME, currentMemoryJudge, judgeFound, openLuxJudge, setMemoryJudge, type MemoryJudge } from "./memory-judge";
 export { createMemoryStage } from "./memory";
 export { dropPackedLists, maintainerMemorySettings, memorySettingsFor } from "./memory-settings";
 export { confirmedWordHits, sessionMemoryRpc } from "./session-memory";

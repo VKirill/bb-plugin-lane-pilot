@@ -3,9 +3,10 @@ import { embedQuery } from "./embeddings";
 import { resolve } from "node:path";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, upsertLessonProposal } from "@lane-pilot/run-insights";
-import { DEFAULT_RELEVANCE_FLOOR, NOTHING_RELEVANT, listMemoryReceipts, projectUsesSections, resolveProjectKind, sharedScope, UNASSIGNED_SCOPE, memoryClaimIssue, memoryVisibilitySql, parseMemoryCandidates, relevantRecords, searchMemoryRecords, WEAK_MATCH, weakAnswer, storeMemoryRecordsKeepingOverflow, type MemoryRecord } from "@lane-pilot/memory-core";
+import { DEFAULT_RELEVANCE_FLOOR, NOTHING_RELEVANT, listMemoryReceipts, projectUsesSections, resolveProjectKind, sharedScope, UNASSIGNED_SCOPE, memoryClaimIssue, memoryVisibilitySql, parseMemoryCandidates, relevantRecords, searchMemoryRecords, storeMemoryRecordsKeepingOverflow, type MemoryRecord } from "@lane-pilot/memory-core";
 import type { rpcContract } from "../../contracts";
 import { memorySettingsFor } from "./memory-settings";
+import { judgeFound } from "./memory-judge";
 import type { InsightsApi } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 
@@ -105,11 +106,12 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       const found = searchMemoryRecords(db, projectId, query, Math.min(100, Math.max(40, wanted * 4)), settings.searchEngine, "subagent", settings.personalBot, { includeObserved: true, chain: chain ?? [], umbrella: resolveProjectKind(settings.projectKind, projectUsesSections(db, projectId, projectHasScopedRun)) === "umbrella" });
       const floorOpts = { audience: "subagent" as const, personalBot: settings.personalBot, floor: settings.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR };
       const floored = relevantRecords(db, projectId, query, found, floorOpts);
-      const records = floored.slice(0, wanted)
+      // The last stage (memory-judge.ts): a model names the notes that help, or none. Nothing is said about how sure the search was.
+      const judged = await judgeFound(db, { projectId, query, found: floored, memory: settings, surface: "search" });
+      const records = judged.records.slice(0, wanted)
         .map((record) => ({ id: record.id, kind: record.kind, content: record.content, concepts: record.concepts }));
-      // The answer gate only warns: the notes go out under WEAK_MATCH and the session decides whether they answer.
       if (!records.length) return { records, nothingRelevant: true, message: NOTHING_RELEVANT };
-      return weakAnswer(db, projectId, query, found, floorOpts) ? { records, weakMatch: true, message: WEAK_MATCH } : { records };
+      return { records };
     },
     // Proven facts first (accepted, then used, then newest). A missing chain is the project root. Observed notes still in quarantine stay out.
     session_memory_core: async ({ projectId, chain }) => {

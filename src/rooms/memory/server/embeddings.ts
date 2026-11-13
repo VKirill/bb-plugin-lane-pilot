@@ -2,6 +2,7 @@ import { EMBED_DIM, EMBED_MODEL, documentText, pendingVectors, queryText, queryV
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { envCatalogKey } from "../../learning";
+import { mountMemoryJudge } from "./memory-judge";
 
 /**
  * The vectors of the meaning search (`packages/memory-core/src/vectors.ts`), made by Google's embedding API. One key from the Env
@@ -69,6 +70,7 @@ export async function embedPending(db: MemoryDatabase, embedder: Embedder, limit
 export function mountMemoryEmbeddings(ctx: ServerCore): void {
   const embedder = googleEmbedder(envCatalogKey(ctx.bb, EMBED_KEY_NAME));
   setEmbedder(embedder);
+  mountMemoryJudge(ctx);
   // Every five minutes: new and changed records get their vector; a record waits at most that long before the meaning search sees it
   // (the word search finds it at once).
   scheduleIsolated(ctx.bb, EMBED_SCHEDULE, "*/5 * * * *", async (signal) => {

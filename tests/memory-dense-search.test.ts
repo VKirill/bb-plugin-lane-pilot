@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { EMBED_DIM, DENSE_FLOOR, pendingVectors, rememberQueryVector, relevantRecords, searchMemoryRecords, storeMemoryRecords, storeVectors } from "../packages/memory-core/src";
+import { EMBED_DIM, DENSE_PREFILTER, pendingVectors, rememberQueryVector, relevantRecords, searchMemoryRecords, storeMemoryRecords, storeVectors } from "../packages/memory-core/src";
 import { openDatabase } from "../src/rooms/plugin-db";
 import { embedPending, embedQuery, setEmbedder } from "../src/rooms/memory/server/embeddings";
 
@@ -24,10 +24,10 @@ describe("meaning search", () => {
     const found = searchMemoryRecords(db, "P", query, 5, "auto", "subagent", "", { includeObserved: true });
     expect(found.map((record) => record.id)).toEqual([backup, web]);
     expect(found[0]!.similarity).toBeGreaterThan(found[1]!.similarity!);
-    // The floor drops the record whose cosine is below DENSE_FLOOR.
+    // The floor drops the record whose cosine is below DENSE_PREFILTER.
     const kept = relevantRecords(db, "P", query, found);
     expect(kept.map((record) => record.id)).toEqual([backup]);
-    expect(found[1]!.similarity!).toBeLessThan(DENSE_FLOOR);
+    expect(found[1]!.similarity!).toBeLessThan(DENSE_PREFILTER);
   });
 
   it("embeds the records that have no vector, and a failed embedder leaves the search on words", async () => {

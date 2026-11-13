@@ -99,11 +99,12 @@ export function floorThreshold(floor: RelevanceFloor, words: number): number {
 }
 
 /**
- * The floor of a meaning search (a record carrying `similarity`, `vectors.ts`): the cosine below which a record is noise. Chosen on the
- * hub copy 2026-11-06 (gemini-embedding-2, 768): 0.65 keeps 99.5% of the wanted records; a question with no answer still mostly finds
- * something above it, so this floor cuts noise and does not decide «nothing» (that is the answer gate's job, below).
+ * The safety pre-filter of a meaning search (a record carrying `similarity`, `vectors.ts`): the cosine below which a record is noise whatever
+ * the question. It replaced `DENSE_FLOOR` 0.65 (2026-11-13, docs/memory.md): on LongMemEval 0.65 dropped 21.6% of the sessions that held the
+ * answer and cut nothing useful on the hub set. At 0.50 it loses nothing on either set and cuts nothing either; whether the memory
+ * answers is the judge's decision (`judge.ts`), not a cosine's.
  */
-export const DENSE_FLOOR = 0.65;
+export const DENSE_PREFILTER = 0.5;
 
 /**
  * The answer gate: «does the memory answer this question at all», decided by arithmetic on the search score. It replaced the model rerank
@@ -111,7 +112,7 @@ export const DENSE_FLOOR = 0.65;
  * the cosine of the best record, the mean cosine of the best ten (a question the memory is about has a crowd of close records), the best record's z-score among the first 40, and the word weight of the best
  * record and of the strongest record. Fitted on the same 150 questions with an answer and 228 without, validated on held-out folds
  * (5-fold, repeated): at `ANSWER_GATE.min` it passes 87% of the questions that have an answer and doubts 67% of those that do
- * not. Too weak to silence the memory (`WEAK_MATCH` below), strong enough to warn the model that reads it. Recalibrate with `bb lane-pilot memory-eval`
+ * not. Since 2026-11-13 nobody reads it: the line that warned the reader cost 4.9 points of answer accuracy and is gone. The score is kept for the receipts of the judge (analysis only). Recalibrate with `bb lane-pilot memory-eval`
  * on a fresh hub copy when the embedding model changes (the coefficients belong to `gemini-embedding-2`, 768 numbers).
  */
 export const ANSWER_GATE = { bias: -39.73, top: 9.74, near: 37.06, z: 1.25, topWords: -1.13, maxWords: 1.98, min: 0.25, head: 40, nearN: 10 } as const;
@@ -134,14 +135,13 @@ export function answerProbability(records: readonly MemoryRecord[], relevance: R
 export const clearsFloor = (relevance: RecordRelevance, floor: RelevanceFloor, words: number): boolean =>
   (floor.anchor && relevance.anchor) || relevance.score >= floorThreshold(floor, words);
 
-/**
- * What the reader is told when the answer gate doubts the search. The gate does not empty the list: at its threshold it would drop 13% of
- * the questions that have an answer. The notes still go out under this line, and the reader (the PM or a session, both models) decides
- * whether they answer. On the hub copy the line marks 67% of the questions without an answer and 13% of those with one.
- */
-export const WEAK_MATCH = "Memory has no confident answer to this query: the notes below only look related. Rely on a note only if it clearly answers the question; otherwise read the code or ask the owner.";
-
 type FloorOpts = { audience?: MemoryAudience; personalBot?: string; floor?: RelevanceFloor | null };
+
+/** The gate's probability for a search, for the judge's receipt (analysis only; null when it cannot tell). Nothing shown to a reader depends on it. */
+export function gateScore(db: MemoryDatabase, projectId: string, query: string, records: readonly MemoryRecord[], opts: FloorOpts = {}): number | null {
+  if (records.length === 0) return null;
+  return answerProbability(records, recordRelevance(wordFrequencies(db, projectId, opts.audience ?? "subagent", opts.personalBot ?? ""), query, records));
+}
 
 /** True when the search (the records as it returned them, before the floor) does not look like an answer and no record names a path written in the question. */
 export function weakAnswer(db: MemoryDatabase, projectId: string, query: string, records: readonly MemoryRecord[], opts: FloorOpts = {}): boolean {
@@ -160,6 +160,6 @@ export function relevantRecords(db: MemoryDatabase, projectId: string, query: st
   const relevance = recordRelevance(wordFrequencies(db, projectId, opts.audience ?? "subagent", opts.personalBot ?? ""), query, records);
   const words = questionWords(query);
   return records.filter((record) => record.similarity !== undefined
-    ? (floor.anchor && relevance.get(record.id)!.anchor) || record.similarity >= DENSE_FLOOR
+    ? (floor.anchor && relevance.get(record.id)!.anchor) || record.similarity >= DENSE_PREFILTER
     : clearsFloor(relevance.get(record.id)!, floor, words));
 }

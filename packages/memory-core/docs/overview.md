@@ -81,7 +81,7 @@ Primary exported functions include:
 - `reactivateColdMemory`: re-activates an idle-expired or archived note (`packages/memory-core/src/store.ts:508-513`).
 - `listMemoryMisses`: queries logged searches that returned zero results (`packages/memory-core/src/store.ts:539-548`).
 - `relevantRecords`: applies relevance thresholds based on query length and path anchors (`packages/memory-core/src/floor.ts:156-164`).
-- `weakAnswer`: flags low-confidence meaning search results without removing them; `WEAK_MATCH` provides the warning text (`packages/memory-core/src/floor.ts:137-153`, `packages/memory-core/src/index.ts:20`).
+- `weakAnswer` / `gateScore`: the answer gate's verdict and probability; kept for the judge's receipts and the offline suite, no warning reaches a reader (`packages/memory-core/src/floor.ts`). `judge.ts` holds the pure part of the last-stage judge: prompt, secret mask, reply parser, receipt shape.
 - `listMemoryReceipts`: reads recent retrieval receipts, optionally for one project (`packages/memory-core/src/lifecycle.ts:120-153`).
 - `buildContextPack`: builds deterministic session context packets adhering to role caps (`packages/memory-core/src/context-pack.ts:26-67`).
 - `findConflicts`: detects pairwise disagreements between notes (`packages/memory-core/src/conflicts.ts:95-105`).
@@ -111,6 +111,11 @@ Configuration values defined in `MEMORY_SETTING_KEYS` (`packages/memory-core/src
 | `memory.project_kind` | string | `"auto"` | `"auto"`, `"standalone"`, `"umbrella"` | `packages/memory-core/src/settings.ts:63` |
 | `memory.single_claim` | boolean | `true` | `true`, `false` | `packages/memory-core/src/settings.ts:63` |
 | `memory.tag_notes` | boolean | `true` | `true`, `false` | `packages/memory-core/src/settings.ts:63` |
+| `memory.judge.enabled` | boolean | `true` | `true`, `false` | `packages/memory-core/src/settings.ts` |
+| `memory.judge.model` | string | `"gemini-3.8-flash"` | a model id | `packages/memory-core/src/settings.ts` |
+| `memory.judge.fallback_model` | string | `"gpt-6-luna"` | a model id | `packages/memory-core/src/settings.ts` |
+| `memory.judge.timeout_ms` | integer | `12000` | `>= 1` ms | `packages/memory-core/src/settings.ts` |
+| `memory.judge.candidates` | integer | `12` | `1` to `50` | `packages/memory-core/src/settings.ts` |
 
 ## Consumers
 

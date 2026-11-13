@@ -6,7 +6,7 @@ import { plantSuite, runCase, type CaseResult } from "./suite";
 /**
  * The end-to-end mode of the suite (`bb lane-pilot memory-eval --e2e`, never in CI): the retrieved context and the question go to a model as the
  * PM would get them, and an LLM judge scores what the model did with them: answered correctly, abstained correctly, or made something up.
- * It measures the last step the retrieval score cannot see: whether the reader obeys `weakMatch` and the empty list (research of 2026-11-13, item 1).
+ * It measures the last step the retrieval score cannot see: whether the reader obeys the empty list (research of 2026-11-13, item 1; the `weakMatch` warning it once also tested is gone, it cost 4.9 points of accuracy).
  *
  * The model is injected (`ModelCall`): the command hands in the plugin's one-shot analyzer path, a test hands in the stub below.
  */
@@ -18,7 +18,7 @@ export type E2eVerdict = (typeof E2E_VERDICTS)[number];
 /** The words the reader must say when memory does not answer; the judge and the stub look for them. */
 export const ABSTAIN_PHRASE = "NOT IN MEMORY";
 
-export type E2eRow = { id: string; family: SuiteFamily; kind: string; verdict: E2eVerdict | "unparsed"; answer: string; weakMatch: boolean; nothingRelevant: boolean };
+export type E2eRow = { id: string; family: SuiteFamily; kind: string; verdict: E2eVerdict | "unparsed"; answer: string; judgeNone: boolean; nothingRelevant: boolean };
 export type E2eReport = {
   rows: E2eRow[];
   counts: Record<E2eVerdict | "unparsed", number>;
@@ -34,7 +34,6 @@ export function answerPrompt(question: string, context: string, nothingRelevant:
   return [
     "You are the project manager of a software project. Answer the owner's question using only the project memory below.",
     `If the memory does not answer the question, reply with exactly "${ABSTAIN_PHRASE}" and nothing else. Do not guess and do not fill the gap from general knowledge.`,
-    "A warning line at the top of the memory means the notes only look related: rely on a note only if it clearly answers the question.",
     "",
     "MEMORY:",
     nothingRelevant ? NOTHING_RELEVANT : context,
@@ -102,7 +101,7 @@ export async function runE2e(migrations: readonly string[], call: ModelCall, opt
       const expected = item.expect === "nothing" ? [] : item.expect.map(contentOf);
       const verdict = parseVerdict(await ask(judgePrompt(item.question, expected, (item.forbid ?? []).map(contentOf), answer), "judge", item.id));
       counts[verdict]++;
-      rows.push({ id: item.id, family: item.family, kind: item.kind, verdict, answer, weakMatch: got.weakMatch, nothingRelevant: got.nothingRelevant });
+      rows.push({ id: item.id, family: item.family, kind: item.kind, verdict, answer, judgeNone: got.judgeNone, nothingRelevant: got.nothingRelevant });
     }
   } finally { (plant.db as unknown as Database.Database).close(); }
   const withAnswer = rows.filter((row) => caseOf(row, options.cases).expect !== "nothing"), without = rows.filter((row) => caseOf(row, options.cases).expect === "nothing");
@@ -118,7 +117,7 @@ export function formatE2e(report: E2eReport): string {
   const byFamily = new Map<string, E2eRow[]>();
   for (const row of report.rows) byFamily.set(row.family, [...(byFamily.get(row.family) ?? []), row]);
   const lines = [...byFamily].map(([family, rows]) => `${family}  ${E2E_VERDICTS.map((verdict) => `${verdict} ${rows.filter((row) => row.verdict === verdict).length}`).join(", ")}${rows.some((row) => row.verdict === "unparsed") ? `, unparsed ${rows.filter((row) => row.verdict === "unparsed").length}` : ""}`);
-  const bad = report.rows.filter((row) => row.verdict === "hallucinated" || row.verdict === "abstained-wrong" || row.verdict === "unparsed").map((row) => `  ${row.id}: ${row.verdict}${row.weakMatch ? " (warned)" : ""}${row.nothingRelevant ? " (empty list)" : ""}: ${row.answer.replace(/\s+/g, " ").slice(0, 140)}`);
+  const bad = report.rows.filter((row) => row.verdict === "hallucinated" || row.verdict === "abstained-wrong" || row.verdict === "unparsed").map((row) => `  ${row.id}: ${row.verdict}${row.judgeNone ? " (stub judge: none)" : ""}${row.nothingRelevant ? " (empty list)" : ""}: ${row.answer.replace(/\s+/g, " ").slice(0, 140)}`);
   return [`memory e2e: ${report.rows.length} questions, ${report.calls} model calls`,
     `answered correctly   ${rate(report.answeredCorrect)}`, `abstained correctly  ${rate(report.abstainedCorrect)}`, `hallucinated         ${rate(report.hallucinated)}`,
     ...lines, `cost: ~${report.tokensIn} tokens in, ~${report.tokensOut} tokens out (estimated, 4 characters a token)`, ...(bad.length ? ["to look at:", ...bad] : [])].join("\n");

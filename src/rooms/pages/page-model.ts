@@ -107,7 +107,7 @@ export const DEDICATED_KEYS = new Set([
 
 export const SECTIONED_SETTING_KEYS = new Set([
   "memory.enabled", "memory.maintain", "memory.inject", "memory.audience", "memory.search_engine",
-  "memory.personal_bot", "memory.maintain_every", "memory.maintain_mode", "memory.salience_min", "memory.pack_mode", "memory.query_floor", "memory.project_kind", "memory.core_budget", "memory.note_budget", "memory.index_budget", "memory.context_budget", "memory.single_claim", "memory.tag_notes",
+  "memory.personal_bot", "memory.maintain_every", "memory.maintain_mode", "memory.salience_min", "memory.pack_mode", "memory.query_floor", "memory.project_kind", "memory.core_budget", "memory.note_budget", "memory.index_budget", "memory.context_budget", "memory.single_claim", "memory.tag_notes", "memory.judge.enabled", "memory.judge.model", "memory.judge.fallback_model", "memory.judge.timeout_ms", "memory.judge.candidates",
   "specialist.enabled", "specialist.when",
   "onboarding.depth", "adoc.040", "workspace.provider", "sandbox.backend", "verification.sandbox_unsafe", "secrets.allow", "quality_mode", "critic.code.default_for_risk", "plan_fact.mode",
   "checkers.diff_hidden_limit",

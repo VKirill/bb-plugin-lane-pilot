@@ -23,9 +23,9 @@
     },
     "H6": {
       "n": 6,
-      "pass": 5
+      "pass": 6
     }
   },
-  "meanTokens": 66,
-  "note": "recorded 2026-11-13 with the stand-in embedding"
+  "meanTokens": 640,
+  "note": "re-recorded 2026-11-13 (round 2) with the stand-in embedding: no family dropped (H6 5/6 to 6/6); meanTokens 66 to 640 because the 0.65 cosine floor no longer empties the context (pre-filter 0.50)"
 }

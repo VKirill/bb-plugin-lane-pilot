@@ -1045,6 +1045,16 @@ export const fieldEn = {
   reason_s615: "Adds notes carrying a tag of the task to the writer's brief. Off by default.",
   field_s616: "Writer session turn ceiling",
   reason_s616: "How many times the writer may return to one task in one conversation before it stops with «turn limit reached». Default 5.",
+  field_s617: "Memory: judge of the search",
+  reason_s617: "A small model reads the best notes of an explicit search and names the ones that help answer; the rest are left out. On by default.",
+  field_s618: "Memory judge: model",
+  reason_s618: "The model that judges which notes help. Default gemini-3.8-flash.",
+  field_s619: "Memory judge: fallback model",
+  reason_s619: "Tried once when the first model answers with an error. Default gpt-6-luna.",
+  field_s620: "Memory judge: time limit",
+  reason_s620: "After this many milliseconds the search gives the five nearest notes without the judge. Default 12000.",
+  field_s621: "Memory judge: notes read",
+  reason_s621: "How many of the nearest notes the judge reads. Default 12.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -2093,4 +2103,14 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s615: "Добавляет в бриф исполнителя заметки с тегом задачи. По умолчанию выключено.",
   field_s616: "Потолок ходов разговора писаря",
   reason_s616: "Сколько раз писарь может вернуться к одной задаче в одном разговоре, после чего задача останавливается «turn limit reached». По умолчанию 5.",
+  field_s617: "Память: судья поиска",
+  reason_s617: "Небольшая модель читает лучшие заметки явного поиска и называет те, что помогают ответить; остальные не выдаются. По умолчанию включено.",
+  field_s618: "Судья памяти: модель",
+  reason_s618: "Модель, которая решает, какие заметки помогают. По умолчанию gemini-3.8-flash.",
+  field_s619: "Судья памяти: запасная модель",
+  reason_s619: "Пробуется один раз, если первая модель ответила ошибкой. По умолчанию gpt-6-luna.",
+  field_s620: "Судья памяти: лимит времени",
+  reason_s620: "Через столько миллисекунд поиск отдаёт пять ближайших заметок без судьи. По умолчанию 12000.",
+  field_s621: "Судья памяти: сколько заметок читает",
+  reason_s621: "Сколько ближайших заметок видит судья. По умолчанию 12.",
 };

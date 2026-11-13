@@ -1,5 +1,6 @@
 import type { MemoryDatabase } from "./store";
 import type { MemoryRecord } from "./settings";
+import type { JudgeReceipt } from "./judge";
 
 /** A session or an import is one voice: its notes wait this long for a second source before a writer reads them. */
 export const OBSERVED_QUARANTINE_MS = 24 * 3_600_000;
@@ -98,11 +99,39 @@ export function recordMemoryMixed(db: MemoryDatabase, projectId: string, ids: re
 }
 
 /** Ids and token count of one retrieval. No note text. */
-export function recordMemoryReceipt(db: MemoryDatabase, input: { projectId: string; role: string; returnedIds: readonly string[]; packedIds: readonly string[]; tokens: number; now?: number }): void {
+export function recordMemoryReceipt(db: MemoryDatabase, input: { projectId: string; role: string; returnedIds: readonly string[]; packedIds: readonly string[]; tokens: number; now?: number; judge?: JudgeReceipt }): void {
   const now = input.now ?? Date.now();
-  const id = `mr_${now}_${input.role}_${input.packedIds.join(",")}`;
-  db.prepare("INSERT INTO lane_pilot_memory_receipt(id,project_id,role,returned_ids,packed_ids,tokens,created_at) VALUES(?,?,?,?,?,?,?)")
-    .run(id, input.projectId, input.role, JSON.stringify(input.returnedIds), JSON.stringify(input.packedIds), input.tokens, now);
+  // A judge call is its own row (the same ids can be judged twice in a millisecond), the column holds model, candidates, chosen ids, latency, tokens and the fallback reason.
+  const id = `mr_${now}_${input.role}_${input.packedIds.join(",")}${input.judge ? `_j${Math.random().toString(36).slice(2, 8)}` : ""}`;
+  db.prepare("INSERT INTO lane_pilot_memory_receipt(id,project_id,role,returned_ids,packed_ids,tokens,created_at,judge_json) VALUES(?,?,?,?,?,?,?,?)")
+    .run(id, input.projectId, input.role, JSON.stringify(input.returnedIds), JSON.stringify(input.packedIds), input.tokens, now, input.judge ? JSON.stringify(input.judge) : null);
+}
+
+export type JudgeStats = { calls: number; cached: number; fallbacks: Record<string, number>; none: number; chosenAvg: number; latencyP50: number; latencyP95: number; tokensIn: number; tokensOut: number; bySurface: Record<string, number>; models: Record<string, number> };
+
+/** What the judge did since a time (`bb lane-pilot memory judge-stats`): calls, fallbacks by reason, how often it said none, latency and tokens. */
+export function memoryJudgeStats(db: MemoryDatabase, sinceMs: number, projectId?: string): JudgeStats {
+  const rows = (projectId
+    ? db.prepare("SELECT judge_json FROM lane_pilot_memory_receipt WHERE judge_json IS NOT NULL AND created_at>=? AND project_id=?").all(sinceMs, projectId)
+    : db.prepare("SELECT judge_json FROM lane_pilot_memory_receipt WHERE judge_json IS NOT NULL AND created_at>=?").all(sinceMs)) as Array<{ judge_json: string }>;
+  const stats: JudgeStats = { calls: 0, cached: 0, fallbacks: {}, none: 0, chosenAvg: 0, latencyP50: 0, latencyP95: 0, tokensIn: 0, tokensOut: 0, bySurface: {}, models: {} };
+  const latencies: number[] = [];
+  let chosen = 0, answered = 0;
+  for (const row of rows) {
+    let receipt: JudgeReceipt;
+    try { receipt = JSON.parse(row.judge_json) as JudgeReceipt; } catch { continue; }
+    stats.calls++;
+    stats.bySurface[receipt.surface] = (stats.bySurface[receipt.surface] ?? 0) + 1;
+    stats.models[receipt.retriedWith ?? receipt.model] = (stats.models[receipt.retriedWith ?? receipt.model] ?? 0) + 1;
+    stats.tokensIn += receipt.tokensIn ?? 0; stats.tokensOut += receipt.tokensOut ?? 0;
+    if (receipt.cached) { stats.cached++; continue; }
+    if (receipt.fallback) { stats.fallbacks[receipt.fallback] = (stats.fallbacks[receipt.fallback] ?? 0) + 1; continue; }
+    latencies.push(receipt.latencyMs); answered++; chosen += receipt.chosen.length;
+    if (!receipt.chosen.length) stats.none++;
+  }
+  latencies.sort((a, b) => a - b);
+  const at = (q: number) => latencies.length ? latencies[Math.min(latencies.length - 1, Math.floor(q * latencies.length))]! : 0;
+  return { ...stats, chosenAvg: answered ? chosen / answered : 0, latencyP50: at(0.5), latencyP95: at(0.95) };
 }
 
 /** A critic or reviewer mix. Separate from use_count so it cannot move usefulness. */

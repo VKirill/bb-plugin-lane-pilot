@@ -15,7 +15,7 @@ import { sha256 } from "../../tasks";
 import { checkBrief, renderBrief } from "../../brief";
 import { memoryMaintenanceBrief, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../memory";
 import { NOTHING_RELEVANT } from "@lane-pilot/memory-core";
-import { pmMemoryContext, snapshotFileRead } from "./memory-mix";
+import { pmMemoryContextJudged, snapshotFileRead } from "./memory-mix";
 import { boundedAgentName } from "../../contracts/review-vocabulary";
 import { MemoryChildSnapshot, childResultObject, memoryChildSnapshot, spawnRefused } from "../../runs/server";
 import { compactAcceptedResult } from "../../tasks/server";
@@ -315,13 +315,14 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     const memorySettings=parseMemorySettings(Object.fromEntries([
       "memory.enabled","memory.maintain","memory.inject","memory.audience","memory.personal_bot","memory.search_engine",
       "memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget","memory.maintain_every",
+      "memory.judge.enabled","memory.judge.model","memory.judge.fallback_model","memory.judge.timeout_ms","memory.judge.candidates",
     ].map((key)=>[key,configuredSetting(settings,key)])));
     if(!memorySettings.enabled) return {runId:args.runId,state:"skipped",reason:"memory_disabled"};
     const demoted = demoteUnusedPromotions(db);
     const chain=getRunSettingsScopes(db,args.runId);
     await embedQuery(args.query);
-    // The answer gate (memory-core floor.ts): a search that does not look like an answer is «nothing».
-    const selected=pmMemoryContext(db,args.projectId,memorySettings,args.query,chain,"pm",undefined,true);
+    // An explicit search: the vector's best notes, then the judge (memory-judge.ts) names the ones that help, or none.
+    const selected=await pmMemoryContextJudged(db,args.projectId,memorySettings,args.query,chain,"pm");
     // The cold tier, past tasks like this one and the misses (src/rooms/memory-tiers): never fails the query. Candidates stay expired.
     let tiers:{text:string;promoted:string[];episodes:number;miss:boolean;addedTokens:number}={text:"",promoted:[],episodes:0,miss:false,addedTokens:0};
     try { tiers=enrichMemoryContext(db,{projectId:args.projectId,query:args.query,activeCount:selected.records.length,chain,audience:memorySettings.audience,personalBot:memorySettings.personalBot,role:"pm",budget:memorySettings.contextBudget,activeTokens:selected.estimatedTokens}); } catch (cause) { ctx.log(`memory tiers skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }

@@ -2,7 +2,7 @@ import { acceptedRules } from "@lane-pilot/run-insights";
 import { embedQuery } from "../../memory/server";
 import { DEFAULT_RELEVANCE_FLOOR, buildContextPack, clearsFloor, filesDrifted, memoryCandidates, pathsNamed, questionWords, recordRelevance, searchMemoryRecords, shadowPackCompare, wordFrequencies, type MemorySettings } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
-import { mixWriterMemory, snapshotFileRead, writerCandidates, writerMemoryPaths } from "../../memory/server";
+import { judgeWriterMemory, mixWriterMemory, snapshotFileRead, writerCandidates, writerMemoryPaths } from "../../memory/server";
 import { getRunSettingsScopes, loadProjectSettings, taskBasePath, type LanePilotDatabase, latestAcceptedAttemptOfTask } from "../../storage";
 import { getAttemptChange } from "../../rollback";
 import { episodes } from "../../memory-tiers/server";
@@ -118,7 +118,9 @@ export async function writerKnowledge(deps:KnowledgeDeps, input:KnowledgeInput) 
   const mixInput={projectId:input.projectId,query:taskMemoryQuery,task:input.task,searchEngine:input.memorySettings.searchEngine,personalBot:input.memorySettings.personalBot,ruleMemoryIds,kind:input.memorySettings.projectKind,tagNotes:input.memorySettings.tagNotes,chain:await deps.chainForRun(input.runId)};
   if(memoryOn) await embedQuery(taskMemoryQuery);
   const readFile=memoryOn&&input.readBytes?await snapshotFileRead(writerMemoryPaths(deps.db,mixInput),input.readBytes):undefined;
-  const mixed=memoryOn?mixWriterMemory(deps.db,{...mixInput,readFile}):{text:"",ids:[] as string[]};
+  // The judge (memory-judge.ts) answers once per task text: the cache keeps it ten minutes. A judge that fails leaves the vector's first five.
+  const allowedIds=memoryOn?await judgeWriterMemory(deps.db,mixInput,input.memorySettings):null;
+  const mixed=memoryOn?mixWriterMemory(deps.db,{...mixInput,readFile,allowedIds}):{text:"",ids:[] as string[]};
   // M4 shadow: one pack is compiled from the same sources next to the legacy mix and compared; nothing it builds is delivered.
   if(memoryOn&&input.memorySettings.packMode!=="off"){
     try {

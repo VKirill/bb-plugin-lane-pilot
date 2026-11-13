@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { addToIndexes, insertMemoryRecord, memoryRecordId, parseMemorySettings, pendingVectors, rememberQueryVector, storeMemoryRecords, storeVectors, trigramReady } from "@lane-pilot/memory-core";
+import { addToIndexes, insertMemoryRecord, memoryRecordId, parseMemorySettings, pendingVectors, rememberQueryVector, searchMemoryRecords, storeMemoryRecords, storeVectors, trigramReady, weakAnswer } from "@lane-pilot/memory-core";
 import type { LanePilotDatabase } from "../../storage";
 import { pmMemoryContext } from "../../memory/server";
 import { standInEmbedding } from "./suite";
@@ -77,7 +77,7 @@ const PROJECT = "public-set";
 const scratch = (migrations: readonly string[]) => { const db = new Database(":memory:"); for (const statement of migrations) db.exec(statement); trigramReady(db); return db; };
 const settings = parseMemorySettings({});
 
-/** Rounds as notes, the question to the PM context: of the abstention questions, how many got the empty list or the weak-match warning. */
+/** Rounds as notes, the question to the PM context: of the abstention questions, how many the stub judge (the answer gate's verdict, as in suite.ts) or the empty list abstains on. The reader is no longer warned; the real judge is measured with the bench. */
 export function runLongMemEvalAbstention(migrations: readonly string[], cases: readonly LongMemEvalCase[]): PublicReport {
   let abstained = 0, tokens = 0;
   for (const item of cases) {
@@ -89,8 +89,8 @@ export function runLongMemEvalAbstention(migrations: readonly string[], cases: r
     }))();
     storeVectors(db as never, pendingVectors(db as never, 100_000).map((row) => ({ ...row, vector: standInEmbedding(row.content) })));
     rememberQueryVector(item.question, standInEmbedding(item.question));
-    const packed = pmMemoryContext(db as unknown as LanePilotDatabase, PROJECT, settings, item.question, [], "pm", undefined, true);
-    if (packed.nothingRelevant || ("weakMatch" in packed && packed.weakMatch)) abstained++;
+    const packed = pmMemoryContext(db as unknown as LanePilotDatabase, PROJECT, settings, item.question, [], "pm");
+    if (packed.nothingRelevant || weakAnswer(db as never, PROJECT, item.question, searchMemoryRecords(db as never, PROJECT, item.question, 100, "auto", "subagent", "", { chain: [] }), { audience: "subagent", personalBot: "" })) abstained++;
     tokens += packed.estimatedTokens;
     db.close();
   }
@@ -111,7 +111,7 @@ export function runFactConsolidation(migrations: readonly string[], cases: reado
     storeVectors(db as never, pendingVectors(db as never, 100_000).map((row) => ({ ...row, vector: standInEmbedding(row.content) })));
     for (const item of group) {
       rememberQueryVector(item.question, standInEmbedding(item.question));
-      const packed = pmMemoryContext(db as unknown as LanePilotDatabase, PROJECT, settings, item.question, [], "pm", undefined, true);
+      const packed = pmMemoryContext(db as unknown as LanePilotDatabase, PROJECT, settings, item.question, [], "pm");
       if (item.answers.some((answer) => answer && packed.text.toLowerCase().includes(answer.toLowerCase()))) hit++;
       tokens += packed.estimatedTokens;
     }
@@ -122,5 +122,5 @@ export function runFactConsolidation(migrations: readonly string[], cases: reado
 
 export function formatPublic(report: PublicReport): string {
   const part = (label: string, value?: { n: number; of: number }) => value ? `, ${label} ${value.n}/${value.of}` : "";
-  return `${report.name}: ${report.questions} questions${part("abstained or warned", report.abstained)}${part("answer in context", report.answerInContext)}, ${report.meanTokens} tokens per context (stand-in embedding)`;
+  return `${report.name}: ${report.questions} questions${part("abstained", report.abstained)}${part("answer in context", report.answerInContext)}, ${report.meanTokens} tokens per context (stand-in embedding)`;
 }

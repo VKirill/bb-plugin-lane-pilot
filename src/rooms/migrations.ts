@@ -648,4 +648,6 @@ export const migrations = [
   `CREATE INDEX IF NOT EXISTS idx_lp_artifact_domain_kind ON lane_pilot_artifact(project_id, domain, kind, status)`,
   // Lane Pilot no longer imports the old stack's routing profile or night-shift file: the rows that import left behind go.
   `DELETE FROM lane_pilot_project_settings WHERE key IN ('import.routing_profile','import.night_shift','import.completed')`,
+  // The memory judge's call as a receipt (model, candidates, chosen ids, latency, tokens, fallback reason; no note text). Append only.
+  `ALTER TABLE lane_pilot_memory_receipt ADD COLUMN judge_json TEXT`,
 ];
