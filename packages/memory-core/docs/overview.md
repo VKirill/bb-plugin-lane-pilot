@@ -116,6 +116,7 @@ Configuration values defined in `MEMORY_SETTING_KEYS` (`packages/memory-core/src
 | `memory.judge.fallback_model` | string | `"gemini-3.8-flash"` | a model id (OpenLux) | `packages/memory-core/src/settings.ts` |
 | `memory.judge.timeout_ms` | integer | `12000` | `>= 1` ms | `packages/memory-core/src/settings.ts` |
 | `memory.judge.candidates` | integer | `12` | `1` to `50` | `packages/memory-core/src/settings.ts` |
+| `memory.scope` | string | `"section"` | `"section"`, `"project"` (project: section scopes do not hide notes; the asking section ranks `SECTION_RANK_BOOST` = 3 places higher) | `packages/memory-core/src/settings.ts` |
 
 ## Consumers
 

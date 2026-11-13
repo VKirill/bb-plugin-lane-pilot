@@ -124,6 +124,7 @@ These switches are off, in shadow, or at their neutral value by default. Each on
 | `memory.judge.fallback_model` | `gemini-3.8-flash` | Tried once after an HTTP error of the first model (on another endpoint also after its timeout, with a fresh window). | Then the vector's first five notes. | |
 | `memory.judge.timeout_ms` | `12000` | How long the judge may take. | After it the search returns the vector's first five without a warning. | |
 | `memory.judge.candidates` | `12` | How many of the nearest notes the judge reads. | Only notes with a cosine of at least 0.50. | |
+| `memory.scope` | `section` (values `section`, `project`) | Let the sections of one project share one memory. | `project` makes every note of the project visible to every section on every memory read path (PM context, explicit search, the writer brief, reviewers, the council, the recall hook, the cold tier, the thread block); the note keeps its section as a tag and a note of the asking section ranks 3 places higher. Rules keep their own scope. | `section` reads the project root, the ancestors and the own section only. |
 
 ## Other switches that default to the conservative side
 

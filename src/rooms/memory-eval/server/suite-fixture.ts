@@ -90,6 +90,10 @@ export const SUITE_NOTES: SuiteNote[] = [
   { key: "web-cart", scope: ["web", "cart"], content: "Cart section: a cart is kept for 7 days for signed-in customers and for 1 day for guests (apps/web/cart/keep.ts).", concepts: ["cart"] },
   { key: "release", scope: "shared", content: "Project-wide: every section releases on the second Thursday of the month, with a freeze on the Monday before.", concepts: ["release"] },
   { key: "owner-floor", audience: "owner", content: "Owner only: the enterprise plan price may be negotiated down to 70 percent of the list price, never lower.", concepts: ["pricing"] },
+  // H18 (`memory.scope`): the same words written in two sections. With `section` a note of the other section is out of reach; with `project` both are, and the asking section's note comes first.
+  { key: "lantern-alpha", scope: ["alpha"], content: "Docking bay lanterns are swapped every Sunday by the alpha crew, who log it in ops/bay/lantern-alpha.ts.", concepts: ["bay", "lantern"] },
+  { key: "lantern-beta", scope: ["beta"], content: "Docking bay lanterns are swapped every Sunday by the beta crew, who log it in ops/bay/lantern-beta.ts.", concepts: ["bay", "lantern"] },
+  { key: "gantry-alpha", scope: ["alpha"], content: "Alpha section: the gantry crane at pier nine is greased on the first Friday of the month (ops/pier/gantry-grease.ts).", concepts: ["pier", "gantry"] },
   // H8: notes the budget moved off the shelf. They are archived, not deleted: a PM search finds them, a writer's brief does not carry them.
   { key: "vpn", archived: true, content: "The staging VPN gateway rotates its certificate every 90 days with the script services/infra/vpn-cert.ts and the on-call engineer renews it by hand.", concepts: ["infra", "vpn"] },
   { key: "bucket", archived: true, content: "Customer exports are written to the object bucket named in config/exports.yaml and expire after 30 days under the lifecycle rule of that bucket.", concepts: ["exports"] },
@@ -143,7 +147,7 @@ export const SUITE_PACK_NOTES: Record<"heads" | "chunks" | "dups" | "maslov", Su
   ],
 };
 
-export type SuiteFamily = "H1" | "H2" | "H3" | "H4" | "H5" | "H6" | "H8" | "H9" | "H10" | "H11" | "H12" | "H13" | "H14" | "H15" | "H16" | "H17";
+export type SuiteFamily = "H1" | "H2" | "H3" | "H4" | "H5" | "H6" | "H8" | "H9" | "H10" | "H11" | "H12" | "H13" | "H14" | "H15" | "H16" | "H17" | "H18";
 export type SuiteCase = {
   id: string; family: SuiteFamily;
   /** What the case exercises, for the table. */
@@ -159,6 +163,8 @@ export type SuiteCase = {
   forbid?: string[];
   /** Text the reader's context must carry: a date interval of a replaced version, or the paragraph of a long record that answers. */
   contains?: string[];
+  /** Key of the note that must come first among the notes that reached the reader (the rank boost of `memory.scope = project`). */
+  first?: string;
   /** the case runs against its own set of `SUITE_PACK_NOTES` (H11, H12). */
   notes?: "heads" | "chunks" | "dups" | "maslov";
   /** `memory.*` settings of the case (the forks of the recipe: `memory.vector_mode`, `memory.door_lock`, `memory.pinned`). */
@@ -279,5 +285,13 @@ export const SUITE_CASES: SuiteCase[] = [
   pm("h17-rule-answerable", "H17", "pinned rule", "Where does the ZX-7741 manifest get uploaded?", ["manifest", "rule"], { notes: "maslov", settings: { "memory.pinned": true } }),
   pm("h17-rule-locked", "H17", "pinned rule behind a closed door", "Which font does the marketing website use for headings?", ["rule"], { notes: "maslov", settings: { "memory.pinned": true, "memory.vector_mode": "bridge", "memory.door_lock": "literal" } }),
   pm("h17-rule-off", "H17", "no pin, rule not asked for", "Where does the ZX-7741 manifest get uploaded?", ["manifest"], { notes: "maslov", forbid: ["rule"] }),
+  // H18: section keeps a sibling section's note out; project shows it; the asking section's twin comes first.
+  pm("h18-section-sibling", "H18", "section: sibling hidden", "When is the gantry crane at pier nine greased?", "nothing", { chain: ["beta"], forbid: ["gantry-alpha"] }),
+  pm("h18-section-own", "H18", "section: own note", "When is the gantry crane at pier nine greased?", ["gantry-alpha"], { chain: ["alpha"] }),
+  pm("h18-project-sibling", "H18", "project: sibling visible", "When is the gantry crane at pier nine greased?", ["gantry-alpha"], { chain: ["beta"], settings: { "memory.scope": "project" } }),
+  pm("h18-project-root", "H18", "project: root reader sees a section's note", "When is the gantry crane at pier nine greased?", ["gantry-alpha"], { chain: [], settings: { "memory.scope": "project" } }),
+  pm("h18-rank-alpha", "H18", "project: asking section first", "Who swaps the docking bay lanterns every Sunday?", ["lantern-alpha", "lantern-beta"], { chain: ["alpha"], first: "lantern-alpha", settings: { "memory.scope": "project" } }),
+  pm("h18-rank-beta", "H18", "project: asking section first", "Who swaps the docking bay lanterns every Sunday?", ["lantern-alpha", "lantern-beta"], { chain: ["beta"], first: "lantern-beta", settings: { "memory.scope": "project" } }),
+  pm("h18-section-twin", "H18", "section: only the own twin", "Who swaps the docking bay lanterns every Sunday?", ["lantern-beta"], { chain: ["beta"], forbid: ["lantern-alpha"] }),
   pm("h12-customs", "H12", "neighbour chunk", "What clears a Porto customs hold on a pallet?", ["ledger"], { notes: "chunks", contains: ["PX-9913", "part 5\u20137/"] }),
 ];

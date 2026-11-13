@@ -36,7 +36,7 @@ export function confirmedWordHits(db: LanePilotDatabase, projectId: string, quer
   const settings = memorySettingsFor(loadProjectSettings(db, projectId, [...chain]));
   if (!settings.enabled) return [];
   const found = searchMemoryRecords(db, projectId, query, Math.min(100, Math.max(40, input.limit * 4)), "fts5", "subagent", settings.personalBot,
-    { includeObserved: false, chain, umbrella: resolveProjectKind(settings.projectKind, projectUsesSections(db, projectId, projectHasScopedRun)) === "umbrella" });
+    { includeObserved: false, chain, scopeMode: settings.scope ?? "section", umbrella: resolveProjectKind(settings.projectKind, projectUsesSections(db, projectId, projectHasScopedRun)) === "umbrella" });
   const floored = relevantRecords(db, projectId, query, found.filter((record) => record.trust === "confirmed"), { audience: "subagent", personalBot: settings.personalBot, floor: settings.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR });
   return floored.slice(0, input.limit);
 }
@@ -112,7 +112,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
     // Proven facts first (accepted, then used, then newest). A missing chain is the project root. Observed notes still in quarantine stay out.
     session_memory_core: async ({ projectId, chain }) => {
       const settings = memorySettingsFor(loadProjectSettings(db, projectId));
-      const rows = db.prepare(`SELECT id, content FROM lane_pilot_memory m WHERE m.project_id=? AND m.kind='core' AND m.audience='subagent' AND m.personal_bot=? AND ${memoryVisibilitySql(db, "m", { chain: chain ?? [] })} ORDER BY m.accepted_count DESC, m.use_count DESC, m.created_at DESC`)
+      const rows = db.prepare(`SELECT id, content FROM lane_pilot_memory m WHERE m.project_id=? AND m.kind='core' AND m.audience='subagent' AND m.personal_bot=? AND ${memoryVisibilitySql(db, "m", { chain: chain ?? [], scopeMode: settings.scope ?? "section" })} ORDER BY m.accepted_count DESC, m.use_count DESC, m.created_at DESC`)
         .all(projectId, settings.personalBot) as Array<{ id: string; content: string }>;
       return { records: rows, receipts: listMemoryReceipts(db as never, projectId, 10) };
     },

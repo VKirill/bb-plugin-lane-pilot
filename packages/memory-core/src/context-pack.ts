@@ -28,6 +28,8 @@ export function buildContextPack(input: {
   sourceRevision?: string; budget: number; candidates: readonly PackCandidate[]; rootWhitelist?: ReadonlySet<string>;
   /** Candidates the relevance floor rejects for this query (the caller computes them; M6). */
   floorDropIds?: ReadonlySet<string>;
+  /** memory.scope = project: a note of any section is deliverable (a rule stays with its section chain). */
+  scopeMode?: "section" | "project";
 }): ContextPack {
   const budget = roleContextBudget(input.role, input.budget);
   const chain = [...(input.sectionChain ?? [])];
@@ -36,7 +38,7 @@ export function buildContextPack(input: {
     if (input.floorDropIds?.has(candidate.id)) return { ...candidate, packed: false, reason: "floor:low-relevance" } as PackSource;
     const scope = candidate.scope;
     // No chain: only an explicitly root-whitelisted candidate packs; project-wide is never assumed.
-    const allowed = isSharedScope(scope ?? []) ? true
+    const allowed = isSharedScope(scope ?? []) || (input.scopeMode === "project" && candidate.kind !== "rule") ? true
       : !chain.length ? (input.rootWhitelist?.has(candidate.id) ?? false)
       : scope === undefined || !scope.length ? true
       : chain.slice(0, scope.length).join("\0") === scope.join("\0");

@@ -121,20 +121,23 @@ export function runCase(plant: SuitePlant, item: SuiteCase, options: PackOptions
   const leaked = (item.forbid ?? []).filter((key) => returned.includes(key));
   const abstained = nothingRelevant || judgeNone;
   // H5 is about leaks: a question with no answer in the reader's reach may still get other, allowed notes.
-  const needsAbstain = item.expect === "nothing" && item.family !== "H5";
-  const pass = missing.length === 0 && leaked.length === 0 && (!needsAbstain || abstained);
+  const needsAbstain = item.expect === "nothing" && item.family !== "H5" && item.family !== "H18";
+  // The rank boost is the search's order (the pack reads a topic oldest first, so the printed order is not the rank).
+  const ranked = item.first === undefined ? [] : searchMemoryRecords(db as never, SUITE_PROJECT, item.question, 100, "auto", audience, "", { chain: item.chain ?? [], scopeMode: SETTINGS(audience, item.settings).scope ?? "section" }).map((record) => keys.get(record.id) ?? record.id);
+  const outOfOrder = item.first !== undefined && ranked[0] !== item.first;
+  const pass = missing.length === 0 && leaked.length === 0 && !outOfOrder && (!needsAbstain || abstained);
   return { id: item.id, family: item.family, kind: item.kind, pass, expect: item.expect, returned, missing, leaked, judgeNone, nothingRelevant, p: gateProbability(db, item, audience), tokens: estimateTokens(text), ms, context: text };
 }
 
 /** The stub judge: «none» where the answer gate doubts the search and no record names a path written in the question. */
 function stubJudgeNone(db: LanePilotDatabase, item: SuiteCase, audience: MemoryAudience): boolean {
-  const records: MemoryRecord[] = searchMemoryRecords(db as never, SUITE_PROJECT, item.question, 100, "auto", audience, "", { chain: item.chain ?? [] });
+  const records: MemoryRecord[] = searchMemoryRecords(db as never, SUITE_PROJECT, item.question, 100, "auto", audience, "", { chain: item.chain ?? [], scopeMode: SETTINGS(audience, item.settings).scope ?? "section" });
   return weakAnswer(db as never, SUITE_PROJECT, item.question, records, { audience, personalBot: "" });
 }
 
 function gateProbability(db: LanePilotDatabase, item: SuiteCase, audience: MemoryAudience): number | null {
   if (item.surface === "writer") return null;
-  const records: MemoryRecord[] = searchMemoryRecords(db as never, SUITE_PROJECT, item.question, 100, "auto", audience, "", { chain: item.chain ?? [] });
+  const records: MemoryRecord[] = searchMemoryRecords(db as never, SUITE_PROJECT, item.question, 100, "auto", audience, "", { chain: item.chain ?? [], scopeMode: SETTINGS(audience, item.settings).scope ?? "section" });
   return answerProbability(records, recordRelevance(wordFrequencies(db as never, SUITE_PROJECT, audience, ""), item.question, records));
 }
 
@@ -142,7 +145,7 @@ export type FamilyScore = { family: SuiteFamily | "H7"; title: string; n: number
 export type SuiteCost = { meanTokens: number; p95Ms: number; maxTokens: number; cases: number };
 export type SuiteReport = { cases: CaseResult[]; families: FamilyScore[]; cost: SuiteCost; leaks: string[] };
 
-const TITLES: Record<SuiteFamily, string> = { H1: "writer brief recall", H2: "PM question on a past decision", H3: "no answer (incl. near-miss)", H4: "updated fact returns the new version", H5: "cross-section leakage", H6: "grey band of the gate", H8: "archived record found by PM search", H9: "history question shows the old version", H10: "long record found by a later paragraph", H11: "record over budget shown as a head line", H12: "answer in a neighbour chunk of the best one", H13: "copy of a stored fact makes no second note", H14: "words find an exact identifier", H15: "russian question reaches an english note (bridge)", H16: "no answer stays silent behind the door lock", H17: "pinned rule always arrives" };
+const TITLES: Record<SuiteFamily, string> = { H1: "writer brief recall", H2: "PM question on a past decision", H3: "no answer (incl. near-miss)", H4: "updated fact returns the new version", H5: "cross-section leakage", H6: "grey band of the gate", H8: "archived record found by PM search", H9: "history question shows the old version", H10: "long record found by a later paragraph", H11: "record over budget shown as a head line", H12: "answer in a neighbour chunk of the best one", H13: "copy of a stored fact makes no second note", H14: "words find an exact identifier", H15: "russian question reaches an english note (bridge)", H16: "no answer stays silent behind the door lock", H17: "pinned rule always arrives", H18: "project scope shows every section's notes, the asking section first" };
 const pct = (value: number) => `${(value * 100).toFixed(0)}%`;
 
 export function scoreSuite(cases: readonly CaseResult[]): SuiteReport {

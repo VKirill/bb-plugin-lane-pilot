@@ -2,6 +2,7 @@ import { estimateTokens } from "./candidates";
 import { memoryUsefulness, sameSubject } from "./lifecycle";
 import { memoryStem, memoryTokens } from "./terms";
 import { contentChunks } from "./vectors";
+import { liftPreferred } from "./section-boost";
 import type { MemoryRecord, MemorySettings } from "./settings";
 
 /** The maintainer answers from this prompt. It is not given a tool or the model catalog. */
@@ -76,6 +77,7 @@ export function memoryContext(records:MemoryRecord[],taskText:string,budget:numb
   // Relevance first; a note that served accepted attempts counts for more than one that did not, and each extra independent source adds a small bonus (arXiv #21).
   const ranked=records.map((record)=>({record,score:ordered?1:tokens(`${record.content} ${record.concepts.join(" ")}`).reduce((sum,token)=>sum+(terms.has(token)?1:0),0)*(0.5+memoryUsefulness(record)+Math.min(0.3,0.1*((record.verification?.length??1)-1)))}))
     .filter((item)=>ordered||item.score>0||pinned?.has(item.record.id)===true).sort((a,b)=>ordered?0:b.score-a.score||b.record.createdAt-a.record.createdAt||a.record.id.localeCompare(b.record.id));
+  if(!ordered&&ranked.some((item)=>item.record.askingSection)){const lifted=liftPreferred(ranked,(item)=>item.record.askingSection===true);ranked.splice(0,ranked.length,...lifted);}
   if(pinned?.size)ranked.sort((a,b)=>Number(pinned.has(b.record.id))-Number(pinned.has(a.record.id)));
   const lines=new Map<string,string>();const picked:MemoryRecord[]=[];const over:MemoryRecord[]=[];
   const render=(replace?:{id:string;line:string}):string=>[...lines].map(([id,line])=>replace&&replace.id===id?replace.line:line).join("\n");

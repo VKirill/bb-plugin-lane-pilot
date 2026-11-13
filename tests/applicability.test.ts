@@ -62,7 +62,7 @@ describe("adoc applicability catalog", () => {
       gap: summary.gap,
       excluded: summary.excluded,
     });
-    expect(counts.editable + counts.readonly + counts.gap + counts.excluded).toBe(528);
+    expect(counts.editable + counts.readonly + counts.gap + counts.excluded).toBe(529);
     expect(summary.blank).toBe(0);
     expect(summary.tuple_equal).toBe(true);
   });
@@ -183,7 +183,7 @@ describe("adoc applicability catalog", () => {
   });
 
   it("keeps all former UI-visible fields on screen", () => {
-    expect(VISIBLE_CATALOG).toHaveLength(376) /* 6 Jev rows removed in stage 3; 0.1.461: night_review.* rows reserved */; // +2 owner.words, phase.rails (0.1.459), +1 lead.priority (0.1.452), +1 memory.maintain_every (wave10), +3 wave17 rows (failure.interventions, writer.retry_escalate, memory.maintain_mode), +1 episodes.collect (R3), +1 episodes.process_key (R6)
+    expect(VISIBLE_CATALOG).toHaveLength(377) /* 6 Jev rows removed in stage 3; 0.1.461: night_review.* rows reserved */; // +2 owner.words, phase.rails (0.1.459), +1 lead.priority (0.1.452), +1 memory.maintain_every (wave10), +3 wave17 rows (failure.interventions, writer.retry_escalate, memory.maintain_mode), +1 episodes.collect (R3), +1 episodes.process_key (R6)
     expect(VISIBLE_CATALOG.every((row) => row.uiStatus !== "excluded")).toBe(true);
     expect(UI_CATALOG.filter((row) => row.id >= "s355" && row.setting.startsWith("docs.")).every((row) => row.uiStatus === "editable" && row.channel === "OWN")).toBe(true);
     expect(UI_CATALOG.filter((row)=>["night_review.enabled","night_review.provider","night_review.model","night_review.agent"].includes(row.storageKey)&&row.id!=="s290").every((row)=>row.uiStatus==="excluded"&&row.channel==="OWN")).toBe(true); // 0.1.461: reserved rows left the screen with the night-review group

@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 7d2dfb1a87033c99 -->
+<!-- enabled-settings:structure 563505bf422a4629 -->
 
 # Enabled settings (generated)
 
@@ -144,6 +144,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `memory.provider` | `codex / DEFAULT_ONBOARD_MODEL / DEFAULT_ONBOARD_EFFORT / standard` | — | stage uses the BB provider/model selection for project memory maintenance |
 | `memory.query_floor` | `on` | — | stage setting: relevance floor on the query paths (on by default) |
 | `memory.salience_min` | `40` | — | stage setting: admission floor for maintainer memory notes |
+| `memory.scope` | `section` | — | stage setting: section (default) keeps a note inside its section chain |
 | `memory.search_engine` | `auto` | — | stage setting: choose FTS5 or BM25 retrieval |
 | `memory.single_claim` | `true` | — | stage setting: refuse a list packed into one memory record (on by default, a stored off opts out) |
 | `memory.tag_notes` | `true` | — | stage setting: add notes carrying the task's tags to the writer brief (on by default, a stored off opts out) |

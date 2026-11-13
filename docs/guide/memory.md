@@ -76,8 +76,17 @@ After an accepted task a stage `memory-maintenance` distils durable facts with a
 | `memory.core_budget` / `note_budget` / `index_budget` | `3072` / `24000` / `65536` | Token caps (bytes / 4); over a note or index cap the whole batch is rejected |
 | `memory.context_budget` | `2500` | Injected context cap; role caps apply on top |
 | `memory.pack_mode` | `shadow` | ContextPack compiler stage (below) |
+| `memory.scope` | `section` | `project`: every note of the project is visible to every section (see Scope below) |
 | `memory.personal_bot` | empty | Isolates bot-scoped memory (`claude`, `codex`, `grok`, `qwen`, `kimi`, `agy`, `cursor`) |
 | `memory.agent`, `memory.provider` | `memory-maintainer`, `codex` with the onboarding model default | Role label and model of the maintainer |
+
+## Scope: section or project
+
+`memory.scope` (default `section`) decides who reads a note written in a section. With `section` a reader sees the notes of the project root, of the sections above it and of its own section, never a sibling's. With `project` the section scopes stop hiding anything: a note written in any section of the project is visible to every reader of the project, on every read path (the PM tool, `memory search`, the writer's brief, reviewers and critics, the council, the prompt recall, the cold tier and episodes, the thread block). Writes are unchanged: a note still records the section it was written in, and that section is only a tag then. A note of the asking section (or of a section above it) moves 3 places up the ranked list (`SECTION_RANK_BOOST`, packages/memory-core/src/section-boost.ts), so the local fact beats an equally relevant one from elsewhere but never beats a clearly better one. Rules (`rule` notes and the rule proposals) keep their own scope. Set it per project when the sections of a project are one subject (the games of one studio), keep `section` where they are separate clients. The offline suite family H18 pins both modes.
+
+## Moving a section to another project
+
+`bb lane-pilot memory move-section --from-project P --section <folderId>[,<child folderIds>] --to-project Q [--to-section <folderId> | --root] [--section-name <name>] [--thread-ids t1,t2] [--apply]` follows a BB section that moved to another project. A dry run prints the rows per table; `--apply` is the owner's alone (refused from a thread), writes a JSON backup of every changed row (`~/.bb/plugins/lane-pilot/backups/`, or `LANE_PILOT_BACKUP_DIR`) and moves everything in one transaction. It moves the notes whose scope holds the section (every status, with vectors and indexes), its rules, learning items and observations that point at them, the section's settings and the accepted-task facts of its runs; it leaves the notes of ancestor sections and of the root (it counts the root notes that mention `--section-name`), the runs and the passport. A note that duplicates a note of Q moves already expired as a duplicate and the kept note records it. A second run changes nothing.
 
 ## Relevance floor
 

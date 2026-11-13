@@ -1,6 +1,6 @@
 {
-  "rows": 528,
-  "editable": 266,
+  "rows": 529,
+  "editable": 267,
   "readonly": 110,
   "gap": 0,
   "excluded": 152,
@@ -76,6 +76,7 @@
     "memory.note_budget",
     "memory.personal_bot",
     "memory.provider",
+    "memory.scope",
     "memory.search_engine",
     "memory.single_claim",
     "memory.tag_notes",

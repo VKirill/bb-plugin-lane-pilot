@@ -24,7 +24,7 @@ export async function explicitMemorySearch(db: LanePilotDatabase, input: Explici
   const scoped = { includeObserved: true, includeArchive: true, chain: input.chain ?? [], umbrella: input.umbrella ?? false, ...(input.allSections ? { allSections: true } : {}) };
   const found = searchMemoryRecords(db, projectId, query, Math.min(100, Math.max(40, wanted * 4)), memory.searchEngine, "subagent", memory.personalBot, { ...scoped, ...searchModeOptions(memory) });
   const floored = relevantRecords(db, projectId, query, found, { audience: "subagent", personalBot: memory.personalBot, floor: memory.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR });
-  const pins = pinnedRecords(db, projectId, memory, query, found, scoped);
+  const pins = pinnedRecords(db, projectId, memory, query, found, { ...scoped, scopeMode: memory.scope ?? "section" });
   const pinnedIds = new Set(pins.map((record) => record.id));
   const merged = pins.length ? [...pins, ...floored.filter((record) => !pinnedIds.has(record.id))] : floored;
   // The last stage (memory-judge.ts): a model names the notes that help, or only reorders them. Nothing is said about how sure the search was.

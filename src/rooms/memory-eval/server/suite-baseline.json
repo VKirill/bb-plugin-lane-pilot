@@ -64,8 +64,12 @@
     "H17": {
       "n": 3,
       "pass": 3
+    },
+    "H18": {
+      "n": 7,
+      "pass": 7
     }
   },
-  "meanTokens": 962,
-  "note": "recorded 2026-11-13 with the stand-in embedding"
+  "meanTokens": 1003,
+  "note": "recorded 2026-11-13 with the stand-in embedding; H18 (memory.scope) added"
 }

@@ -48,12 +48,13 @@ const parseScope = (json: string | null): string[] => {
 /**
  * The project's L1 for a thread that names no section: the core shelf of the project-wide scopes (the root and the
  * shared `project:*` marks), newest first, at most FACT_LIMIT one-line facts of FACT_CHARS each.
+ * Under `memory.scope = project` every core scope of the project counts, not only the project-wide ones.
  */
-function l1Facts(db: LanePilotDatabase, projectId: string, personalBot: string): string[] {
+function l1Facts(db: LanePilotDatabase, projectId: string, personalBot: string, scopeMode: "section" | "project" = "section"): string[] {
   const rows = db.prepare(`SELECT DISTINCT scope_json FROM lane_pilot_memory
     WHERE project_id=? AND personal_bot=? AND kind='core' AND audience='subagent' AND status='active'`).all(projectId, personalBot) as Array<{ scope_json: string | null }>;
   const scopes = rows.map((row) => parseScope(row.scope_json))
-    .filter((scope) => scope.length === 0 || isSharedScope(scope))
+    .filter((scope) => scopeMode === "project" || scope.length === 0 || isSharedScope(scope))
     .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
   const seen = new Set<string>();
   const facts: string[] = [];
@@ -100,7 +101,7 @@ export function threadMemoryBlock(db: LanePilotDatabase, input: { projectId: str
   const settings = memorySettingsFor(loadProjectSettings(db, input.projectId));
   if (!settings.enabled) return null;
   if (pluginThread(db, input.threadId, wallReader)) return THREAD_MEMORY_RULE.join("\n");
-  return renderBlock(l1Facts(db, input.projectId, settings.personalBot));
+  return renderBlock(l1Facts(db, input.projectId, settings.personalBot, settings.scope ?? "section"));
 }
 
 /** The second contributeInstructions contributor: the memory rule (and for an ordinary thread the facts) on every machine. */

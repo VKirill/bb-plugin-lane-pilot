@@ -1,4 +1,4 @@
-import { DEFAULT_RELEVANCE_FLOOR, MEMORY_SETTING_KEYS, pathAnchorsOf, type SearchOptions, projectUsesSections, DENSE_PREFILTER, relevantRecords, resolveProjectKind, isHistoryQuery, withHistory, REVIEWER_CONCEPTS, activeMemoryDigestRows, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, recordCriticUse, roleContextBudget, searchMemoryRecords, type MemoryRecord, type PackOptions, type MemorySearchEngine, type MemorySettings, type RelevanceFloor } from "@lane-pilot/memory-core";
+import { DEFAULT_RELEVANCE_FLOOR, MEMORY_SETTING_KEYS, pathAnchorsOf, type SearchOptions, type MemoryScopeMode, projectUsesSections, DENSE_PREFILTER, relevantRecords, resolveProjectKind, isHistoryQuery, withHistory, REVIEWER_CONCEPTS, activeMemoryDigestRows, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, recordCriticUse, roleContextBudget, searchMemoryRecords, type MemoryRecord, type PackOptions, type MemorySearchEngine, type MemorySettings, type RelevanceFloor } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
 import { getRunSettingsScopes, loadProjectSettings, projectHasScopedRun, type LanePilotDatabase } from "../../storage";
 import { memoryLine, pathAnchors, reviewerMemoryPicks, writerMemory, writerMemoryPicks } from "./memory-picks";
@@ -15,6 +15,8 @@ type TaskPaths = Pick<TaskV2, "owns_paths" | "read_first">;
 type WriterMixInput = { projectId: string; query: string; task: TaskPaths & Partial<Pick<TaskV2, "kind" | "area" | "skills">>; searchEngine: MemorySearchEngine; personalBot: string; ruleMemoryIds: ReadonlySet<string>; now?: number; kind?: "auto"|"standalone"|"umbrella";
   /** memory.tag_notes: notes carrying a tag of the task (kind, area words, skills, path folders) join the brief. */
   tagNotes?: boolean; // unset reads as on
+  /** memory.scope: `project` shows the notes of every section of the project (the chain only ranks). Unset reads as `section`. */
+  scopeMode?: MemoryScopeMode;
   /** The run's sections: notes of a sibling section of a shared project are not this writer's. */
   chain?: readonly string[];
   /** Current bytes of a repo-relative path. A note whose stored file hash no longer matches is left out of the brief. */
@@ -24,7 +26,7 @@ type WriterMixInput = { projectId: string; query: string; task: TaskPaths & Part
 
 const umbrellaFor = (db: LanePilotDatabase, input: { projectId: string; kind?: "auto"|"standalone"|"umbrella" }) => resolveProjectKind(input.kind, projectUsesSections(db, input.projectId, projectHasScopedRun)) === "umbrella";
 export function writerCandidates(db: LanePilotDatabase, input: WriterMixInput): MemoryRecord[] {
-  return searchMemoryRecords(db, input.projectId, input.query, 100, input.searchEngine, "subagent", input.personalBot, { chain: input.chain ?? [], umbrella: umbrellaFor(db, input), ...(input.now !== undefined ? { now: input.now } : {}) }).filter((record) => !input.ruleMemoryIds.has(record.id));
+  return searchMemoryRecords(db, input.projectId, input.query, 100, input.searchEngine, "subagent", input.personalBot, { chain: input.chain ?? [], umbrella: umbrellaFor(db, input), ...(input.scopeMode ? { scopeMode: input.scopeMode } : {}), ...(input.now !== undefined ? { now: input.now } : {}) }).filter((record) => !input.ruleMemoryIds.has(record.id));
 }
 
 /** Paths the writer's candidate notes name, so a caller can read them before `mixWriterMemory` drops the ones that drifted. */
@@ -60,7 +62,7 @@ function taggedCandidates(db: LanePilotDatabase, input: WriterMixInput): { notes
   if (input.tagNotes === false) return { notes: [], tags: [] };
   const tags = taskMemoryTags(input.task, new Set(activeMemoryDigestRows(db, input.projectId).flatMap((row) => JSON.parse(row.concepts_json || "[]") as string[])));
   if (!tags.length) return { notes: [], tags };
-  const scoped = { chain: input.chain ?? [], umbrella: umbrellaFor(db, input), ...(input.now !== undefined ? { now: input.now } : {}) };
+  const scoped = { chain: input.chain ?? [], umbrella: umbrellaFor(db, input), ...(input.scopeMode ? { scopeMode: input.scopeMode } : {}), ...(input.now !== undefined ? { now: input.now } : {}) };
   return { tags, notes: listMemory(db, input.projectId, { concepts: tags }, 20, "subagent", input.personalBot, scoped)
     .filter((record) => record.kind !== "core" && !input.ruleMemoryIds.has(record.id)) };
 }
@@ -95,8 +97,8 @@ type ReviewTask = TaskPaths & Partial<Pick<TaskV2, "title" | "objective" | "acce
  * The notes a reviewer or critic gets (role `reviewer`): up to five, within the token budget, chosen for review rather
  * than for writing (`reviewerMemoryPicks`). Not counted as uses of a brief: the usefulness counters follow writers.
  */
-export function mixReviewerMemory(db: LanePilotDatabase, input: { projectId: string; task: ReviewTask; searchEngine: MemorySearchEngine; personalBot: string; ruleMemoryIds: ReadonlySet<string>; budget: number; chain?: readonly string[]; now?: number; /** When the caller can read the workspace: a note whose file fingerprint drifted is kept but marked needs_review. */ readFile?: (path: string) => Uint8Array | null }): { text: string; ids: string[] } {
-  const scoped = { chain: input.chain ?? [], umbrella: umbrellaFor(db, input), ...(input.now !== undefined ? { now: input.now } : {}) };
+export function mixReviewerMemory(db: LanePilotDatabase, input: { projectId: string; task: ReviewTask; searchEngine: MemorySearchEngine; personalBot: string; ruleMemoryIds: ReadonlySet<string>; budget: number; chain?: readonly string[]; scopeMode?: MemoryScopeMode; now?: number; /** When the caller can read the workspace: a note whose file fingerprint drifted is kept but marked needs_review. */ readFile?: (path: string) => Uint8Array | null }): { text: string; ids: string[] } {
+  const scoped = { chain: input.chain ?? [], umbrella: umbrellaFor(db, input), ...(input.scopeMode ? { scopeMode: input.scopeMode } : {}), ...(input.now !== undefined ? { now: input.now } : {}) };
   const query = [input.task.title, input.task.objective, ...(input.task.acceptance ?? []), ...input.task.owns_paths, ...input.task.read_first].filter(Boolean).join("\n");
   const found = searchMemoryRecords(db, input.projectId, query, 100, input.searchEngine, "subagent", input.personalBot, scoped).filter((record) => !input.ruleMemoryIds.has(record.id));
   // Not only what the task's words find: the review-tagged notes and the core conventions a reviewer judges against.
@@ -122,7 +124,7 @@ export function reviewerMemoryFor(db: LanePilotDatabase, projectId: string, runI
     const settings = loadProjectSettings(db, projectId, runId ? getRunSettingsScopes(db, runId) : undefined);
     const memory = parseMemorySettings(Object.fromEntries(MEMORY_SETTING_KEYS.map((key) => [key, configuredSetting(settings, key)])));
     if (!memory.enabled || !memory.inject) return "";
-    return mixReviewerMemory(db, { projectId, task, searchEngine: memory.searchEngine, personalBot: memory.personalBot, ruleMemoryIds: new Set(), budget: roleContextBudget("critic",memory.contextBudget),
+    return mixReviewerMemory(db, { projectId, task, searchEngine: memory.searchEngine, personalBot: memory.personalBot, ruleMemoryIds: new Set(), budget: roleContextBudget("critic",memory.contextBudget), scopeMode: memory.scope ?? "section",
       ...(runId ? { chain: getRunSettingsScopes(db, runId) } : {}) }).text;
   } catch {
     return "";
@@ -142,8 +144,8 @@ export function taskMemoryContext(db: LanePilotDatabase, projectId: string, runI
   }
 }
 
-/** The search forks of the Maslov recipe (`memory.vector_mode`, `memory.door_lock`) as the store takes them; the defaults are today's search. */
-export const searchModeOptions = (memory: MemorySettings): Pick<SearchOptions, "vectorMode" | "doorLock"> => ({ vectorMode: memory.vectorMode ?? "all", doorLock: memory.doorLock ?? "off" });
+/** The search forks of the Maslov recipe (`memory.vector_mode`, `memory.door_lock`) and the scope (`memory.scope`) as the store takes them; the defaults are today's search. */
+export const searchModeOptions = (memory: MemorySettings): Pick<SearchOptions, "vectorMode" | "doorLock" | "scopeMode"> => ({ vectorMode: memory.vectorMode ?? "all", doorLock: memory.doorLock ?? "off", scopeMode: memory.scope ?? "section" });
 
 /**
  * The pinned records of a question (`memory.pinned`, off unless set): what a reranker must not push out and a lock must not close. The project's core
@@ -162,7 +164,7 @@ function pmSearchPinned(db: LanePilotDatabase, projectId: string, memory: Memory
   const scoped = { chain: chain ?? [], includeArchive: true, ...searchModeOptions(memory) };
   const records = searchMemoryRecords(db, projectId, query, 100, memory.searchEngine, memory.audience, memory.personalBot, scoped);
   const floored = relevantRecords(db, projectId, query, records, { audience: memory.audience, personalBot: memory.personalBot, floor });
-  const pins = pinnedRecords(db, projectId, memory, query, records, { chain: chain ?? [] });
+  const pins = pinnedRecords(db, projectId, memory, query, records, { chain: chain ?? [], scopeMode: memory.scope ?? "section" });
   const pinnedIds = new Set(pins.map((record) => record.id));
   const merged = pins.length ? [...pins, ...floored.filter((record) => !pinnedIds.has(record.id))] : floored;
   return { found: isHistoryQuery(query) ? withHistory(db, projectId, merged) : merged, pinned: pinnedIds };

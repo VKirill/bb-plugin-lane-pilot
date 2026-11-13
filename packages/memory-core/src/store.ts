@@ -8,6 +8,7 @@ import { denseRank, queryVectorFor } from "./vectors";
 import { duplicateDoor, withoutShadowedDuplicates } from "./duplicates";
 import { pathAnchorsOf } from "./floor";
 import { crossesLanguage, languageOf } from "./language";
+import { boostAskingSection, type MemoryScopeMode } from "./section-boost"; export type { MemoryScopeMode };
 import { doorOpens, lockQueryText, type DoorLock } from "./door-lock";
 import type { MemoryAudience, MemoryCandidate, MemoryKind, MemoryRecord, MemorySearchEngine, MemoryStatus, MemoryTrust } from "./settings";
 
@@ -324,7 +325,7 @@ export type SearchOptions = { /** M7: umbrella project — bare scopes are not p
   /** `bridge`: the word layer is the base and the vectors add only notes in another language than the question (`language.ts`); `all` (unset): vectors rank every note, as before. */
   vectorMode?: "bridge" | "all";
   /** The door lock (`door-lock.ts`): with `literal` or `translated` a question the word layer left closed gets an empty list, whatever the vectors say. Unset reads as `off`. */
-  doorLock?: DoorLock };
+  doorLock?: DoorLock; /** `memory.scope` (`section-boost.ts`): unset reads as `section`; `project` ignores section scopes for visibility and only ranks the asking section's notes up. */ scopeMode?: MemoryScopeMode };
 
 /** The archive: a note the note budget moved off the shelf. Not deleted and not hidden from search, only not injected. Its word indexes and vector stay. */
 const ARCHIVE_SQL = "status='expired' AND expired_reason IN ('budget','duplicate')";
@@ -350,7 +351,7 @@ function visibility(db: MemoryDatabase, alias: string, options: SearchOptions): 
   // The idle rule retires an active note; an archived one is old by definition and stays searchable.
   return `(${alias}.status='active'${archive}) AND (${alias}.valid_from IS NULL OR ${alias}.valid_from<=${now}) AND (${alias}.valid_until IS NULL OR ${alias}.valid_until>${now}) AND (${alias}.status<>'active' OR NOT (${idleSql(alias, now)}))`
     + (options.includeObserved ? "" : ` AND (${alias}.trust='confirmed' OR ${alias}.created_at<=${now - OBSERVED_QUARANTINE_MS})`) + heldClause(db, alias)
-    + (options.allSections ? "" : ` AND (${alias}.scope_json IN (${scopeValuesFor(options.chain ?? []).map(sqlString).join(",")}) OR ${alias}.scope_json LIKE '%"project%')`);
+    + (options.allSections || options.scopeMode === "project" ? "" : ` AND (${alias}.scope_json IN (${scopeValuesFor(options.chain ?? []).map(sqlString).join(",")}) OR ${alias}.scope_json LIKE '%"project%')`);
 }
 
 /** The visibility clause working readers share. A missing chain is the project root, not every section. */
@@ -423,7 +424,7 @@ export function searchMemoryRecords(db: MemoryDatabase, projectId: string, query
     const score = (text: string) => tokens.reduce((sum, token) => sum + (text.toLowerCase().split(token).length - 1), 0);
     rows = all.map((row) => ({ ...row, _score: score(`${row.content} ${row.concepts_json}`) })).filter((row) => row._score > 0).sort((a, b) => b._score - a._score || b.created_at - a.created_at).slice(0, limit);
   }
-  const records = rows.map((row) => { const record = toRecord(row); const { similarity, bestChunk } = row as Row & { similarity?: number; bestChunk?: number }; return { ...record, ...(similarity === undefined ? {} : { similarity }), ...(bestChunk === undefined ? {} : { bestChunk }) }; });
+  const boosted = boostAskingSection(db, projectId, rows, options.scopeMode, scopeValuesFor(options.chain ?? []).slice(1)); rows = boosted.rows; const records = rows.map((row) => { const record = { ...toRecord(row), ...(boosted.own.has(row.id) ? { askingSection: true } : {}) }; const { similarity, bestChunk } = row as Row & { similarity?: number; bestChunk?: number }; return { ...record, ...(similarity === undefined ? {} : { similarity }), ...(bestChunk === undefined ? {} : { bestChunk }) }; });
   // M7 receipt: a pre-M7 root row delivered inside an umbrella reads with the legacy_scope flag.
   if (options.umbrella) rows.forEach((row, index) => { if (!parseScopeJson((row as Row & { scope_json: string | null }).scope_json).length) (records[index] as MemoryRecord & { legacyScope?: boolean }).legacyScope = true; });
   return options.includeArchive ? withoutShadowedDuplicates(db, projectId, records) : records;
@@ -639,9 +640,8 @@ export function memoryConceptsJson(db: Database.Database, projectId: string, id:
 /** Idle-expired note rows for one project's cold-tier read (memory-tiers). An owner-archived note is cold too: a PM query can bring it back. */
 const COLD_TIER = "status='expired' AND kind='note' AND valid_until IS NULL AND superseded_by IS NULL AND (expired_reason IN ('idle','archived') OR expired_reason IS NULL)";
 
-export function coldMemoryRows(db: MemoryDatabase, input: { projectId: string; audience: MemoryAudience; personalBot: string; chain: readonly string[]; includeObserved: boolean; now: number }): Array<{ id: string; content: string; concepts_json: string }> {
-  const trust = input.includeObserved ? "" : ` AND (trust='confirmed' OR created_at<=${Math.floor(input.now) - OBSERVED_QUARANTINE_MS})`;
-  return db.prepare(`SELECT id, content, concepts_json FROM lane_pilot_memory WHERE project_id=? AND audience=? AND personal_bot=? AND ${COLD_TIER} AND scope_json IN (${scopeValuesFor(input.chain).map(sqlString).join(",")})${trust}${heldClause(db, "lane_pilot_memory")}`)
+export function coldMemoryRows(db: MemoryDatabase, input: { projectId: string; audience: MemoryAudience; personalBot: string; chain: readonly string[]; includeObserved: boolean; now: number; scopeMode?: MemoryScopeMode }): Array<{ id: string; content: string; concepts_json: string }> {
+  return db.prepare(`SELECT id, content, concepts_json FROM lane_pilot_memory WHERE project_id=? AND audience=? AND personal_bot=? AND ${COLD_TIER}${input.scopeMode === "project" ? "" : ` AND scope_json IN (${scopeValuesFor(input.chain).map(sqlString).join(",")})`}${input.includeObserved ? "" : ` AND (trust='confirmed' OR created_at<=${Math.floor(input.now) - OBSERVED_QUARANTINE_MS})`}${heldClause(db, "lane_pilot_memory")}`)
     .all(input.projectId, input.audience, input.personalBot) as Array<{ id: string; content: string; concepts_json: string }>;
 }
 

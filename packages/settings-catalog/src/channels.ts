@@ -295,6 +295,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"memory.judge.fallback_model", channel:"OWN", reason:"Native Lane Pilot stage setting: the model tried once when the judge model answers with an HTTP error (default gemini-3.8-flash on OpenLux)" },
   { key:"memory.judge.timeout_ms", channel:"OWN", reason:"Native Lane Pilot stage setting: time before the judge gives up and the search returns the vector's first five (default 12000 ms)" },
   { key:"memory.judge.candidates", channel:"OWN", reason:"Native Lane Pilot stage setting: how many of the vector's best notes the judge reads (default 12)" },
+  { key:"memory.scope", channel:"OWN", reason:"Native Lane Pilot stage setting: section (default) keeps a note inside its section chain; project makes every note of the project visible to every section, the asking section's notes ranked 3 places higher" },
   { key:"memory.tag_notes", channel:"OWN", reason:"Native Lane Pilot stage setting: add notes carrying the task's tags to the writer brief (on by default, a stored off opts out)" },
   { key:"memory.agent", channel:"OWN", reason:"Native Lane Pilot memory role label included in its prompt" },
   { key:"night_review.enabled", channel:"OWN", reason:"Native Lane Pilot stage setting, reserved: no stage reads it yet — the after-accept graph (workflows/lp.after-accept.json) has no night reviewer; the night's checks are the wall, the rules scan and the run goal" },

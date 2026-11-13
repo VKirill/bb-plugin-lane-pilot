@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { addToIndexes, coldMemoryRows, countColdMemories, countMemoryPromotions, dropMemoryIndexes, estimateTokens, expireIdleMemory, listIdlePromotions, listMemoryMisses, reactivateColdMemory, recordMemoryMiss, recordMemoryPromotion, scopeValuesFor, type MemoryAudience } from "@lane-pilot/memory-core";
+import { addToIndexes, coldMemoryRows, countColdMemories, countMemoryPromotions, dropMemoryIndexes, estimateTokens, expireIdleMemory, listIdlePromotions, listMemoryMisses, reactivateColdMemory, recordMemoryMiss, recordMemoryPromotion, scopeValuesFor, type MemoryAudience, type MemoryScopeMode } from "@lane-pilot/memory-core";
 import { listProjectEpisodeTaskRows } from "../../storage";
 import { episodeLines, minHits, queryWords, wordHits, type Episode } from "../logic";
 
@@ -19,6 +19,8 @@ const sqlString = (value: string) => `'${value.replace(/'/g, "''")}'`;
 export type TierRead = {
   projectId: string;
   chain?: readonly string[];
+  /** memory.scope: `project` reads the cold notes of every section. */
+  scopeMode?: MemoryScopeMode;
   audience?: MemoryAudience;
   personalBot?: string;
   role?: string;
@@ -38,7 +40,7 @@ export function coldMatches(db: Db, projectId: string, query: string, limit = 3,
   const now = Math.floor(read.now ?? Date.now());
   const audience = read.audience ?? "subagent";
   const personalBot = read.personalBot ?? "";
-  const rows = coldMemoryRows(db, { projectId, audience, personalBot, chain: read.chain ?? [], includeObserved: read.includeObserved ?? false, now });
+  const rows = coldMemoryRows(db, { projectId, audience, personalBot, chain: read.chain ?? [], includeObserved: read.includeObserved ?? false, now, ...(read.scopeMode ? { scopeMode: read.scopeMode } : {}) });
   return rows.map((row) => ({ id: row.id, content: row.content, concepts: JSON.parse(row.concepts_json) as string[], hits: wordHits(`${row.content} ${row.concepts_json}`, words) }))
     .filter((row) => row.hits >= minHits(words)).sort((a, b) => b.hits - a.hits || a.id.localeCompare(b.id)).slice(0, limit);
 }
@@ -80,7 +82,7 @@ export function episodes(db: Db, projectId: string, query: string, limit = 3, re
 export function episodeCandidates(db: Db, projectId: string, query: string, limit = 3, read: Omit<TierRead, "projectId"> = {}): Episode[] {
   const words = queryWords(query);
   if (!words.length) return [];
-  const rows = listProjectEpisodeTaskRows(db, projectId, scopeIn("r.settings_scopes_json", read.chain ?? []));
+  const rows = listProjectEpisodeTaskRows(db, projectId, read.scopeMode === "project" ? "1=1" : scopeIn("r.settings_scopes_json", read.chain ?? []));
   return rows.flatMap((row) => {
     let contract: { title?: unknown; display_title?: unknown; objective?: unknown } = {};
     try { contract = JSON.parse(row.contract_json) as typeof contract; } catch { return []; }
@@ -106,9 +108,9 @@ function fitLines(header: string, lines: readonly string[], room: number): { tex
 }
 
 /** What the PM gets on top of the active notes: cold candidates and past tasks, inside the same token budget. A miss is recorded when nothing at all was found. Status is not changed. */
-export function enrichMemoryContext(db: Db, input: { projectId: string; query: string; activeCount: number; now?: number; chain?: readonly string[]; audience?: MemoryAudience; personalBot?: string; role?: string; includeObserved?: boolean; budget?: number; activeTokens?: number; episodesList?: Episode[] }): { text: string; promoted: string[]; episodes: number; miss: boolean; addedTokens: number } {
+export function enrichMemoryContext(db: Db, input: { projectId: string; query: string; activeCount: number; now?: number; chain?: readonly string[]; scopeMode?: MemoryScopeMode; audience?: MemoryAudience; personalBot?: string; role?: string; includeObserved?: boolean; budget?: number; activeTokens?: number; episodesList?: Episode[] }): { text: string; promoted: string[]; episodes: number; miss: boolean; addedTokens: number } {
   const now = input.now ?? Date.now();
-  const read: Omit<TierRead, "projectId"> = { chain: input.chain, audience: input.audience, personalBot: input.personalBot, role: input.role, includeObserved: input.includeObserved, now };
+  const read: Omit<TierRead, "projectId"> = { chain: input.chain, scopeMode: input.scopeMode, audience: input.audience, personalBot: input.personalBot, role: input.role, includeObserved: input.includeObserved, now };
   const cold = input.activeCount < 3 ? coldMatches(db, input.projectId, input.query, 3, read) : [];
   const past = input.episodesList ?? episodes(db, input.projectId, input.query, 3, read);
   const room = input.budget == null ? Number.POSITIVE_INFINITY : Math.max(0, input.budget - (input.activeTokens ?? 0));

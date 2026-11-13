@@ -79,7 +79,7 @@ export async function taskFileCards(db:LanePilotDatabase, projectId:string, task
  */
 export async function similarWorksLines(deps:KnowledgeDeps, input:KnowledgeInput, readApproach?:(runId:string,taskId:string)=>Promise<unknown>):Promise<string> {
   const query=`${input.task.title} ${input.task.objective}`;
-  const past=episodes(deps.db,input.projectId,query,5,{state:"accepted",chain:await deps.chainForRun(input.runId)});
+  const past=episodes(deps.db,input.projectId,query,5,{state:"accepted",chain:await deps.chainForRun(input.runId),scopeMode:input.memorySettings.scope??"section"});
   if(!past.length) return "";
   const approach=readApproach??(deps.kv?(runId:string,taskId:string)=>readTaskApproach(deps.kv!,runId,taskId):undefined);
   const lines:string[]=[];
@@ -115,7 +115,7 @@ export async function writerKnowledge(deps:KnowledgeDeps, input:KnowledgeInput) 
   const { allRules, rules, rulesText }=await writerRules(deps,input);
   const ruleMemoryIds=new Set(allRules.map((rule)=>rule.memoryId));
   // The writer gets at most three notes that name a path of this task; other helpers keep the budgeted context.
-  const mixInput={projectId:input.projectId,query:taskMemoryQuery,task:input.task,searchEngine:input.memorySettings.searchEngine,personalBot:input.memorySettings.personalBot,ruleMemoryIds,kind:input.memorySettings.projectKind,tagNotes:input.memorySettings.tagNotes,chain:await deps.chainForRun(input.runId)};
+  const mixInput={projectId:input.projectId,query:taskMemoryQuery,task:input.task,searchEngine:input.memorySettings.searchEngine,personalBot:input.memorySettings.personalBot,ruleMemoryIds,kind:input.memorySettings.projectKind,tagNotes:input.memorySettings.tagNotes,scopeMode:input.memorySettings.scope??"section",chain:await deps.chainForRun(input.runId)};
   if(memoryOn) await embedQuery(taskMemoryQuery);
   const readFile=memoryOn&&input.readBytes?await snapshotFileRead(writerMemoryPaths(deps.db,mixInput),input.readBytes):undefined;
   // The judge (memory-judge.ts) answers once per task text: the cache keeps it ten minutes. A judge that fails leaves the vector's first five.
@@ -131,7 +131,7 @@ export async function writerKnowledge(deps:KnowledgeDeps, input:KnowledgeInput) 
       const relevance=recordRelevance(wordFrequencies(deps.db,input.projectId,"subagent",input.memorySettings.personalBot),taskMemoryQuery,records);
       const words=questionWords(taskMemoryQuery);
       const floorDropIds=input.memorySettings.queryFloor===false?undefined:new Set(records.filter((record)=>!clearsFloor(relevance.get(record.id)!,DEFAULT_RELEVANCE_FLOOR,words)).map((record)=>record.id));
-      const pack=buildContextPack({projectId:input.projectId,sectionChain:mixInput.chain,role:"writer",audience:input.memorySettings.audience,bot:input.memorySettings.personalBot,budget:input.memorySettings.contextBudget,floorDropIds,
+      const pack=buildContextPack({projectId:input.projectId,sectionChain:mixInput.chain,role:"writer",scopeMode:input.memorySettings.scope??"section",audience:input.memorySettings.audience,bot:input.memorySettings.personalBot,budget:input.memorySettings.contextBudget,floorDropIds,
         candidates:[...rules.map((rule)=>({id:rule.id,kind:"rule" as const,content:`- ${rule.rule}`,required:true,relevance:1})),...memoryCandidates(records,staleIds)]});
       const diff=shadowPackCompare([...mixed.ids,...rules.map((rule)=>rule.id)],mixed.text.length,pack);
       deps.log(`context-pack shadow ${pack.packId}: kept=${diff.kept.length} added=${diff.added.length} dropped=${diff.dropped.length} bytes ${diff.oldBytes}->${diff.packedBytes}`);

@@ -15,4 +15,6 @@ export { MEMORY_IMPORT_SOURCES, MEMORY_IMPORT_USAGE, evalMemoryImport, formatImp
 export type { ImportOutcome, ImportReport, MemoryImportOptions, MemoryImportSource } from "./import";
 export { memoryLine, pathAnchors, reviewerMemoryPicks, writerMemory, writerMemoryPicks } from "./memory-picks";
 export { MEMORY_DUPLICATES_USAGE, memoryDedupeChanges, runMemoryDuplicatesCli } from "./memory-duplicates-cli";
+export { MEMORY_MOVE_SECTION_USAGE, memoryMoveSectionChanges, runMemoryMoveSectionCli } from "./memory-move-section";
+export { writeMoveSectionBackup } from "./move-section-backup";
 export { MEMORY_COMPRESS_USAGE, memoryCompressChanges, runMemoryCompressCli } from "./memory-compress-cli";

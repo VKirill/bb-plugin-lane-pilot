@@ -315,7 +315,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     const memorySettings=parseMemorySettings(Object.fromEntries([
       "memory.enabled","memory.maintain","memory.inject","memory.audience","memory.personal_bot","memory.search_engine",
       "memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget","memory.maintain_every",
-      "memory.judge.enabled","memory.judge.model","memory.judge.fallback_model","memory.judge.timeout_ms","memory.judge.candidates","memory.vector_mode","memory.door_lock","memory.judge.mode","memory.pinned",
+      "memory.judge.enabled","memory.judge.model","memory.judge.fallback_model","memory.judge.timeout_ms","memory.judge.candidates","memory.vector_mode","memory.door_lock","memory.judge.mode","memory.pinned","memory.scope",
     ].map((key)=>[key,configuredSetting(settings,key)])));
     if(!memorySettings.enabled) return {runId:args.runId,state:"skipped",reason:"memory_disabled"};
     const demoted = demoteUnusedPromotions(db);
@@ -325,7 +325,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     const selected=await pmMemoryContextJudged(db,args.projectId,memorySettings,args.query,chain,"pm");
     // The cold tier, past tasks like this one and the misses (src/rooms/memory-tiers): never fails the query. Candidates stay expired.
     let tiers:{text:string;promoted:string[];episodes:number;miss:boolean;addedTokens:number}={text:"",promoted:[],episodes:0,miss:false,addedTokens:0};
-    try { tiers=enrichMemoryContext(db,{projectId:args.projectId,query:args.query,activeCount:selected.records.length,chain,audience:memorySettings.audience,personalBot:memorySettings.personalBot,role:"pm",budget:memorySettings.contextBudget,activeTokens:selected.estimatedTokens}); } catch (cause) { ctx.log(`memory tiers skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
+    try { tiers=enrichMemoryContext(db,{projectId:args.projectId,query:args.query,activeCount:selected.records.length,chain,scopeMode:memorySettings.scope??"section",audience:memorySettings.audience,personalBot:memorySettings.personalBot,role:"pm",budget:memorySettings.contextBudget,activeTokens:selected.estimatedTokens}); } catch (cause) { ctx.log(`memory tiers skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
     return {runId:args.runId,state:"passed",audience:memorySettings.audience,personalBot:memorySettings.personalBot,querySha256:sha256(args.query),
       recordIds:[...selected.records.map((item)=>item.id),...tiers.promoted],estimatedTokens:selected.estimatedTokens+tiers.addedTokens,context:[selected.nothingRelevant?NOTHING_RELEVANT:selected.text,tiers.text].filter(Boolean).join("\n\n"),nothingRelevant:selected.nothingRelevant&&tiers.promoted.length===0&&tiers.episodes===0,
       ...(tiers.promoted.length?{promotedFromCold:tiers.promoted.length}:{}),...(tiers.episodes?{episodes:tiers.episodes}:{})};

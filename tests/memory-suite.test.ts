@@ -46,7 +46,7 @@ describe("memory suite: retrieval scores", () => {
 
   it("prints the score table", () => {
     process.stdout.write(`\n${formatSuite(report, baseline as SuiteBaseline)}\n\n`);
-    expect(report.families.map((row) => row.family)).toEqual(["H1", "H2", "H3", "H4", "H5", "H6", "H8", "H9", "H10", "H11", "H12", "H13", "H14", "H15", "H16", "H17", "H7"]);
+    expect(report.families.map((row) => row.family)).toEqual(["H1", "H2", "H3", "H4", "H5", "H6", "H8", "H9", "H10", "H11", "H12", "H13", "H14", "H15", "H16", "H17", "H18", "H7"]);
   });
 
   it("H5: no note of another section or audience reaches a reader, and the controls still arrive", () => {
@@ -78,6 +78,18 @@ describe("memory suite: retrieval scores", () => {
     expect(report.cases.find((item) => item.id === "h17-rule-off")!.returned).not.toContain("rule");
   });
 
+  it("H18: with section scope a sibling section's note stays out, with project scope it arrives and the asking section's twin is first", () => {
+    const rows = report.cases.filter((item) => item.family === "H18");
+    expect(rows.length).toBe(7);
+    for (const item of rows) expect(item.pass, `${item.id}: missing ${item.missing} leaked ${item.leaked} returned ${item.returned}`).toBe(true);
+    const by = (id: string) => report.cases.find((item) => item.id === id)!;
+    expect(by("h18-section-sibling").returned).not.toContain("gantry-alpha");
+    expect(by("h18-project-sibling").returned).toContain("gantry-alpha");
+    // the boost puts the asking section's twin first (checked on the search order inside runCase, `first`); both twins still arrive
+    expect(by("h18-rank-alpha").returned).toEqual(expect.arrayContaining(["lantern-alpha", "lantern-beta"]));
+    expect(by("h18-rank-beta").returned).toEqual(expect.arrayContaining(["lantern-alpha", "lantern-beta"]));
+  });
+
   it("fails only on a regression below the recorded baseline", () => {
     expect(regressions(report, baseline as SuiteBaseline)).toEqual([]);
   });
@@ -95,7 +107,7 @@ describe("memory suite: end to end with a stub model", () => {
   it("takes the PM questions round-robin over the families so a small limit touches each", () => {
     const some = e2eCases(10);
     expect(some).toHaveLength(10);
-    expect(new Set(some.map((item) => item.family))).toEqual(new Set(["H2", "H3", "H4", "H5", "H6", "H8", "H9", "H10"]));
+    expect(new Set(some.map((item) => item.family))).toEqual(new Set(["H2", "H3", "H4", "H5", "H6", "H8", "H9", "H10", "H18"]));
     expect(e2eCases().every((item) => item.surface === "pm")).toBe(true);
   });
 
