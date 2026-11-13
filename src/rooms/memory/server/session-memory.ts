@@ -1,12 +1,12 @@
 import { evalMemoryImport, formatImportEval, formatImportSummary, maskImportContent, pmTopIds, runMemoryImport, type ImportReport } from "./import";
-import { embedForDoor, embedQuery } from "./embeddings";
+import { embedForDoor } from "./embeddings";
 import { resolve } from "node:path";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, upsertLessonProposal } from "@lane-pilot/run-insights";
 import { DEFAULT_RELEVANCE_FLOOR, NOTHING_RELEVANT, listMemoryReceipts, projectUsesSections, resolveProjectKind, sharedScope, UNASSIGNED_SCOPE, memoryClaimIssue, memoryVisibilitySql, parseMemoryCandidates, relevantRecords, searchMemoryRecords, storeMemoryRecordsKeepingOverflow, type MemoryRecord } from "@lane-pilot/memory-core";
 import type { rpcContract } from "../../contracts";
 import { memorySettingsFor } from "./memory-settings";
-import { judgeFound } from "./memory-judge";
+import { explicitMemorySearch } from "./memory-search";
 import type { InsightsApi } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 
@@ -104,16 +104,8 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
     session_memory_search: async ({ projectId, query, limit, chain }) => {
       const settings = memorySettingsFor(loadProjectSettings(db, projectId));
       // The session sees its own fresh notes. A missing chain is the project root, not every section.
-      const wanted = limit ?? 8;
-      // The floor drops records, so the search looks further than the limit to fill it; a query nothing clears gets the explicit «nothing» next to the empty list.
-      await embedQuery(query);
-      const found = searchMemoryRecords(db, projectId, query, Math.min(100, Math.max(40, wanted * 4)), settings.searchEngine, "subagent", settings.personalBot, { includeObserved: true, includeArchive: true, chain: chain ?? [], umbrella: resolveProjectKind(settings.projectKind, projectUsesSections(db, projectId, projectHasScopedRun)) === "umbrella" });
-      const floorOpts = { audience: "subagent" as const, personalBot: settings.personalBot, floor: settings.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR };
-      const floored = relevantRecords(db, projectId, query, found, floorOpts);
-      // The last stage (memory-judge.ts): a model names the notes that help, or none. Nothing is said about how sure the search was.
-      const judged = await judgeFound(db, { projectId, query, found: floored, memory: settings, surface: "search" });
-      const records = judged.records.slice(0, wanted)
-        .map((record) => ({ id: record.id, kind: record.kind, content: record.content, concepts: record.concepts }));
+      const result = await explicitMemorySearch(db, { projectId, query, limit: limit ?? 8, memory: settings, chain: chain ?? [], umbrella: resolveProjectKind(settings.projectKind, projectUsesSections(db, projectId, projectHasScopedRun)) === "umbrella" });
+      const records = result.records.map((record) => ({ id: record.id, kind: record.kind, content: record.content, concepts: record.concepts }));
       if (!records.length) return { records, nothingRelevant: true, message: NOTHING_RELEVANT };
       return { records };
     },

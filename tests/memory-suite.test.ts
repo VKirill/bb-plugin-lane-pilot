@@ -14,7 +14,7 @@ import baseline from "../src/rooms/memory-eval/server/suite-baseline.json";
 //   npx tsx scripts/memory-eval.ts --suite --write-baseline src/rooms/memory-eval/server/suite-baseline.json
 describe("memory suite: the fixture", () => {
   it("names only notes it plants, and plants each note once", () => {
-    const keys = [...SUITE_NOTES, ...SUITE_PACK_NOTES.heads, ...SUITE_PACK_NOTES.chunks, ...SUITE_PACK_NOTES.dups].map((note) => note.key);
+    const keys = [...SUITE_NOTES, ...SUITE_PACK_NOTES.heads, ...SUITE_PACK_NOTES.chunks, ...SUITE_PACK_NOTES.dups, ...SUITE_PACK_NOTES.maslov].map((note) => note.key);
     expect(new Set(keys).size).toBe(keys.length);
     expect(new Set(SUITE_CASES.map((item) => item.id)).size).toBe(SUITE_CASES.length);
     for (const item of SUITE_CASES) for (const key of [...(item.expect === "nothing" ? [] : item.expect), ...(item.forbid ?? [])]) expect(keys, `${item.id} names ${key}`).toContain(key);
@@ -46,7 +46,7 @@ describe("memory suite: retrieval scores", () => {
 
   it("prints the score table", () => {
     process.stdout.write(`\n${formatSuite(report, baseline as SuiteBaseline)}\n\n`);
-    expect(report.families.map((row) => row.family)).toEqual(["H1", "H2", "H3", "H4", "H5", "H6", "H8", "H9", "H10", "H11", "H12", "H13", "H7"]);
+    expect(report.families.map((row) => row.family)).toEqual(["H1", "H2", "H3", "H4", "H5", "H6", "H8", "H9", "H10", "H11", "H12", "H13", "H14", "H15", "H16", "H17", "H7"]);
   });
 
   it("H5: no note of another section or audience reaches a reader, and the controls still arrive", () => {
@@ -65,6 +65,17 @@ describe("memory suite: retrieval scores", () => {
     expect(failing).toEqual(["h13-copy", "h13-longer"]);
     // nothing else in the suite depends on the door
     expect(off.cases.filter((item) => item.family !== "H13" && !item.pass).map((item) => item.id)).toEqual(report.cases.filter((item) => item.family !== "H13" && !item.pass).map((item) => item.id));
+  });
+
+  it("H14-H17: the recipe's cases pass at 3000 notes, the closed door is silent by itself (not by the stand-in judge), and the pinned rule stands alone behind it", () => {
+    for (const family of ["H14", "H15", "H16", "H17"]) {
+      const rows = report.cases.filter((item) => item.family === family);
+      expect(rows.length, family).toBeGreaterThan(1);
+      for (const item of rows) expect(item.pass, `${item.id}: missing ${item.missing} leaked ${item.leaked}`).toBe(true);
+    }
+    for (const id of ["h16-en-none", "h16-ru-none", "h16-ru-none-translated"]) expect(report.cases.find((item) => item.id === id)!.nothingRelevant, id).toBe(true);
+    expect(report.cases.find((item) => item.id === "h17-rule-locked")!.returned).toEqual(["rule"]);
+    expect(report.cases.find((item) => item.id === "h17-rule-off")!.returned).not.toContain("rule");
   });
 
   it("fails only on a regression below the recorded baseline", () => {

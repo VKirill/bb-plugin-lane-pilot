@@ -107,14 +107,15 @@ export function recordMemoryReceipt(db: MemoryDatabase, input: { projectId: stri
     .run(id, input.projectId, input.role, JSON.stringify(input.returnedIds), JSON.stringify(input.packedIds), input.tokens, now, input.judge ? JSON.stringify(input.judge) : null);
 }
 
-export type JudgeStats = { calls: number; cached: number; fallbacks: Record<string, number>; none: number; chosenAvg: number; latencyP50: number; latencyP95: number; tokensIn: number; tokensOut: number; bySurface: Record<string, number>; models: Record<string, number> };
+export type JudgeStats = { calls: number; cached: number; fallbacks: Record<string, number>; none: number; chosenAvg: number; latencyP50: number; latencyP95: number; tokensIn: number; tokensOut: number; bySurface: Record<string, number>; models: Record<string, number>;
+  /** Calls whose reply lost answers: nothing readable, or numbers outside the list. */unparsed: number; /** Calls made as a reranker. */rerank: number };
 
 /** What the judge did since a time (`bb lane-pilot memory judge-stats`): calls, fallbacks by reason, how often it said none, latency and tokens. */
 export function memoryJudgeStats(db: MemoryDatabase, sinceMs: number, projectId?: string): JudgeStats {
   const rows = (projectId
     ? db.prepare("SELECT judge_json FROM lane_pilot_memory_receipt WHERE judge_json IS NOT NULL AND created_at>=? AND project_id=?").all(sinceMs, projectId)
     : db.prepare("SELECT judge_json FROM lane_pilot_memory_receipt WHERE judge_json IS NOT NULL AND created_at>=?").all(sinceMs)) as Array<{ judge_json: string }>;
-  const stats: JudgeStats = { calls: 0, cached: 0, fallbacks: {}, none: 0, chosenAvg: 0, latencyP50: 0, latencyP95: 0, tokensIn: 0, tokensOut: 0, bySurface: {}, models: {} };
+  const stats: JudgeStats = { calls: 0, cached: 0, fallbacks: {}, none: 0, chosenAvg: 0, latencyP50: 0, latencyP95: 0, tokensIn: 0, tokensOut: 0, bySurface: {}, models: {}, unparsed: 0, rerank: 0 };
   const latencies: number[] = [];
   let chosen = 0, answered = 0;
   for (const row of rows) {
@@ -124,6 +125,8 @@ export function memoryJudgeStats(db: MemoryDatabase, sinceMs: number, projectId?
     stats.bySurface[receipt.surface] = (stats.bySurface[receipt.surface] ?? 0) + 1;
     stats.models[receipt.retriedWith ?? receipt.model] = (stats.models[receipt.retriedWith ?? receipt.model] ?? 0) + 1;
     stats.tokensIn += receipt.tokensIn ?? 0; stats.tokensOut += receipt.tokensOut ?? 0;
+    if (receipt.mode === "rerank") stats.rerank++;
+    if ((receipt.unparsed ?? 0) > 0 || receipt.fallback === "unparsed") stats.unparsed++;
     if (receipt.cached) { stats.cached++; continue; }
     if (receipt.fallback) { stats.fallbacks[receipt.fallback] = (stats.fallbacks[receipt.fallback] ?? 0) + 1; continue; }
     latencies.push(receipt.latencyMs); answered++; chosen += receipt.chosen.length;

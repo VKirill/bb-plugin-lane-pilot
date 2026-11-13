@@ -17,6 +17,8 @@ export type SuiteNote = {
   archived?: boolean;
   /** Planted through the import door (`origin: import`), the way a note arrives from another memory store. */
   imported?: boolean;
+  /** Planted straight into the table and its indexes, not through the write door: filler of a big shelf (the door costs about ten milliseconds a note). */
+  bulk?: boolean;
 };
 
 /** Nature words that appear in no other fixture note: filler whose stems do not overlap any question. */
@@ -103,7 +105,27 @@ export const SUITE_NOTES: SuiteNote[] = [
  * grey band of H3 and H6) and would compete for one budget, so a case names its set with `notes`. H11: two notes that match one question and do not fit the PM
  * budget together. H12: a long ledger whose answer sits next to the paragraph the question names.
  */
-export const SUITE_PACK_NOTES: Record<"heads" | "chunks" | "dups", SuiteNote[]> = {
+/**
+ * H14-H17 (the Maslov recipe, round 5): a shelf of `MASLOV_FILLER` invented depot-log notes with five planted ones among them, so the cases run at the size
+ * where a lock and a pin matter (the research measured 300 and 3000 notes). The filler uses nature words and «cargo gate» vocabulary no question shares.
+ */
+export const MASLOV_FILLER = 3000;
+const maslovShelf = (): SuiteNote[] => {
+  const filler = Array.from({ length: MASLOV_FILLER }, (_, index): SuiteNote => ({ key: `fill-${index}`,
+    content: `Depot log ${index}: ${BANK[index % BANK.length]} ${BANK[(index * 7 + 3) % BANK.length]} ${BANK[(index * 13 + 5) % BANK.length]} cargo moved through gate ${index % 40} in batch ${index}.`, concepts: ["depot"], bulk: true }));
+  return [
+    ...filler,
+    // exact identifier: only the words find it
+    { key: "manifest", content: "The ledger export job writes the file ZX-7741-manifest.csv at 02:10 UTC and uploads it to the finance bucket.", concepts: ["ledger"] },
+    // an English note a Russian question can reach only through the vectors
+    { key: "ferry", content: "The ferry booking connector gives up a request after 14 seconds of silence and retries twice with exponential backoff.", concepts: ["ferry"] },
+    // the rule: nothing in it overlaps any question of H17
+    { key: "rule", kind: "core", content: "Rule: a customer parcel record is never deleted; it is archived with its history instead.", concepts: ["convention"] },
+  ];
+};
+
+export const SUITE_PACK_NOTES: Record<"heads" | "chunks" | "dups" | "maslov", SuiteNote[]> = {
+  maslov: maslovShelf(),
   heads: [
     { key: "kestrel-a", content: bigNote("Kestrel tallow lanyard rule A: pallets of the Kestrel depot are held 45 days before release."), concepts: ["kestrel"] },
     { key: "kestrel-b", content: bigNote("Kestrel tallow lanyard rule B: the tallow seal on a Kestrel lanyard is renewed every 8 days."), concepts: ["kestrel"] },
@@ -121,7 +143,7 @@ export const SUITE_PACK_NOTES: Record<"heads" | "chunks" | "dups", SuiteNote[]> 
   ],
 };
 
-export type SuiteFamily = "H1" | "H2" | "H3" | "H4" | "H5" | "H6" | "H8" | "H9" | "H10" | "H11" | "H12" | "H13";
+export type SuiteFamily = "H1" | "H2" | "H3" | "H4" | "H5" | "H6" | "H8" | "H9" | "H10" | "H11" | "H12" | "H13" | "H14" | "H15" | "H16" | "H17";
 export type SuiteCase = {
   id: string; family: SuiteFamily;
   /** What the case exercises, for the table. */
@@ -138,7 +160,11 @@ export type SuiteCase = {
   /** Text the reader's context must carry: a date interval of a replaced version, or the paragraph of a long record that answers. */
   contains?: string[];
   /** the case runs against its own set of `SUITE_PACK_NOTES` (H11, H12). */
-  notes?: "heads" | "chunks" | "dups";
+  notes?: "heads" | "chunks" | "dups" | "maslov";
+  /** `memory.*` settings of the case (the forks of the recipe: `memory.vector_mode`, `memory.door_lock`, `memory.pinned`). */
+  settings?: Record<string, unknown>;
+  /** The English keywords the door lock `translated` would get from its model call (the suite makes no call). */
+  lockTerms?: string[];
 };
 
 const pm = (id: string, family: SuiteFamily, kind: string, question: string, expect: SuiteCase["expect"], more: Partial<SuiteCase> = {}): SuiteCase => ({ id, family, kind, question, surface: "pm", expect, ...more });
@@ -237,5 +263,21 @@ export const SUITE_CASES: SuiteCase[] = [
   // H13: an imported copy of a stored fact makes no second note; a longer restatement is the next version of the first. Search returns one.
   pm("h13-copy", "H13", "imported copy", "How does the Muse relay connector sign requests and how often does it retry?", ["relay"], { notes: "dups", forbid: ["relay-copy"] }),
   pm("h13-longer", "H13", "longer restatement", "How are quarantined pallets tagged at bay twelve and what happens to a torn sticker?", ["pallet-long"], { notes: "dups", forbid: ["pallet-old"] }),
+  // H14: the word layer finds an exact identifier by itself (the bridge adds nothing for a question in the notes' own language).
+  pm("h14-exact", "H14", "exact identifier", "Where does the ZX-7741 manifest get uploaded?", ["manifest"], { notes: "maslov", settings: { "memory.vector_mode": "bridge" } }),
+  pm("h14-exact-words", "H14", "exact identifier", "At what time is ZX-7741-manifest.csv written?", ["manifest"], { notes: "maslov", settings: { "memory.vector_mode": "bridge" } }),
+  // H15: a Russian question reaches an English note through the vector bridge (the stand-in embedding knows a few Russian stems, like a multilingual model).
+  pm("h15-ru-en", "H15", "russian question", "Через сколько секунд коннектор бронирования паромов обрывает запрос?", ["ferry"], { notes: "maslov", settings: { "memory.vector_mode": "bridge" } }),
+  pm("h15-ru-en-retry", "H15", "russian question", "Сколько раз коннектор бронирования паромов повторяет запрос?", ["ferry"], { notes: "maslov", settings: { "memory.vector_mode": "bridge" } }),
+  // H16: a question the word layer leaves closed gets silence at the size of 3000 notes; one that opens the door still gets its note.
+  pm("h16-en-none", "H16", "no answer, literal lock", "Which font does the marketing website use for headings?", "nothing", { notes: "maslov", settings: { "memory.vector_mode": "bridge", "memory.door_lock": "literal" } }),
+  pm("h16-ru-none", "H16", "no answer, literal lock", "Какой шрифт используется в заголовках сайта?", "nothing", { notes: "maslov", settings: { "memory.vector_mode": "bridge", "memory.door_lock": "literal" } }),
+  pm("h16-ru-none-translated", "H16", "no answer, translated lock", "Какой шрифт используется в заголовках сайта?", "nothing", { notes: "maslov", lockTerms: ["font", "website", "headings"], settings: { "memory.vector_mode": "bridge", "memory.door_lock": "translated" } }),
+  pm("h16-en-open", "H16", "answer, literal lock", "Where does the ZX-7741 manifest get uploaded?", ["manifest"], { notes: "maslov", settings: { "memory.vector_mode": "bridge", "memory.door_lock": "literal" } }),
+  pm("h16-ru-open-translated", "H16", "answer, translated lock", "Через сколько секунд коннектор бронирования паромов обрывает запрос?", ["ferry"], { notes: "maslov", lockTerms: ["ferry", "booking", "connector", "request"], settings: { "memory.vector_mode": "bridge", "memory.door_lock": "translated" } }),
+  // H17: the rule reaches the reader at 3000 notes whatever the question says (it shares no word with it) and whatever the lock says.
+  pm("h17-rule-answerable", "H17", "pinned rule", "Where does the ZX-7741 manifest get uploaded?", ["manifest", "rule"], { notes: "maslov", settings: { "memory.pinned": true } }),
+  pm("h17-rule-locked", "H17", "pinned rule behind a closed door", "Which font does the marketing website use for headings?", ["rule"], { notes: "maslov", settings: { "memory.pinned": true, "memory.vector_mode": "bridge", "memory.door_lock": "literal" } }),
+  pm("h17-rule-off", "H17", "no pin, rule not asked for", "Where does the ZX-7741 manifest get uploaded?", ["manifest"], { notes: "maslov", forbid: ["rule"] }),
   pm("h12-customs", "H12", "neighbour chunk", "What clears a Porto customs hold on a pallet?", ["ledger"], { notes: "chunks", contains: ["PX-9913", "part 5\u20137/"] }),
 ];

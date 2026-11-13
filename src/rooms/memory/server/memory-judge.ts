@@ -1,4 +1,4 @@
-import { JUDGE_DEFAULTS, JUDGE_FALLBACK_TOP, JUDGE_SYSTEM, gateScore, judgeUserPrompt, parseJudgeReply, pathAnchorsOf, queryHash, recordMemoryReceipt, shuffledBy, type JudgeFallback, type JudgeReceipt, type MemoryRecord, type MemorySettings } from "@lane-pilot/memory-core";
+import { JUDGE_DEFAULTS, JUDGE_FALLBACK_TOP, JUDGE_SYSTEM, RERANK_SYSTEM, TRANSLATE_SYSTEM, gateScore, judgeUserPrompt, lockTermsFor, parseKeywords, pathAnchorsOf, permutationOf, queryHash, readJudgeReply, recordMemoryReceipt, rememberLockTerms, rerankUserPrompt, shuffledBy, translateUserPrompt, type JudgeFallback, type JudgeReceipt, type MemoryRecord, type MemorySettings } from "@lane-pilot/memory-core";
 import type { ServerCore } from "../../contracts/server";
 import { envCatalogKey } from "../../learning";
 import type { LanePilotDatabase } from "../../storage";
@@ -30,13 +30,17 @@ export const AGY_PREFIX = "agy/";
 export type JudgeRoute = { name: string; baseUrl: string; key: () => Promise<string | undefined>; model: string; chat?: (model: string, system: string, user: string, timeoutMs: number) => Promise<Chat> };
 export type JudgeRoutes = (model: string) => JudgeRoute;
 
-export type JudgeSettings = { model: string; fallbackModel: string; timeoutMs: number };
+export type JudgeSettings = { model: string; fallbackModel: string; timeoutMs: number;
+  /** `rerank`: the judge returns every candidate in a new order and never none; `filter` (unset) names the helpful ones. */
+  mode?: "filter" | "rerank" };
 export type JudgeOutcome = {
   /** The notes named, in the order of the candidates; `null` when the judge gave no usable answer (the caller falls back). */
   chosen: MemoryRecord[] | null;
   receipt: Omit<JudgeReceipt, "surface" | "gate">;
 };
-export type MemoryJudge = (input: { query: string; candidates: readonly MemoryRecord[]; settings: JudgeSettings }) => Promise<JudgeOutcome>;
+export type JudgeInput = { query: string; candidates: readonly MemoryRecord[]; settings: JudgeSettings };
+/** The judge call; `translate` (set by `openLuxJudge`) makes the English keywords of a question for the door lock, cached per question, null when the call failed. */
+export type MemoryJudge = ((input: JudgeInput) => Promise<JudgeOutcome>) & { translate?: (query: string, settings: JudgeSettings) => Promise<string[] | null> };
 
 class HttpFailure extends Error { constructor(message: string, readonly status = 0) { super(message); } }
 class JudgeTimeout extends Error {}
@@ -78,11 +82,34 @@ export function openLuxJudge(key: () => Promise<string | undefined>, fetchImpl: 
     }
   }
 
-  return async ({ query, candidates, settings }) => {
+  const translations = new Map<string, string[]>();
+  const translate = async (query: string, settings: JudgeSettings): Promise<string[] | null> => {
+    const key = queryHash(query);
+    const known = translations.get(key);
+    if (known) return known;
+    for (const model of [settings.model, settings.fallbackModel]) {
+      if (!model) continue;
+      const route = routeOf(model);
+      const apiKey = await route.key().catch(() => undefined);
+      if (!apiKey) continue;
+      try {
+        const terms = parseKeywords((await chat(route, apiKey, TRANSLATE_SYSTEM, translateUserPrompt(query), settings.timeoutMs)).content);
+        if (!terms.length) continue;
+        translations.set(key, terms);
+        if (translations.size > CACHE_MAX) translations.delete(translations.keys().next().value!);
+        return terms;
+      } catch { /* the next model, then the literal lock */ }
+    }
+    return null;
+  };
+
+  const judge = async ({ query, candidates, settings }: JudgeInput): Promise<JudgeOutcome> => {
     const started = now();
     const ids = candidates.map((record) => record.id);
-    const base = { model: settings.model, candidates: ids, chosen: [] as string[], tokensIn: 0, tokensOut: 0 };
-    const failed = (fallback: JudgeFallback, extra: Partial<JudgeReceipt> = {}): JudgeOutcome => ({ chosen: null, receipt: { ...base, ...extra, latencyMs: now() - started, fallback } });
+    const rerank = settings.mode === "rerank";
+    let unparsed = 0;
+    const base = { model: settings.model, candidates: ids, chosen: [] as string[], tokensIn: 0, tokensOut: 0, ...(rerank ? { mode: "rerank" as const } : {}) };
+    const failed = (fallback: JudgeFallback, extra: Partial<JudgeReceipt> = {}): JudgeOutcome => ({ chosen: null, receipt: { ...base, ...extra, ...(unparsed ? { unparsed } : {}), latencyMs: now() - started, fallback } });
     const primary = routeOf(settings.model);
     const secondary = settings.fallbackModel && settings.fallbackModel !== settings.model ? routeOf(settings.fallbackModel) : null;
     const keyOf = async (route: JudgeRoute) => route.key().catch(() => undefined);
@@ -90,25 +117,34 @@ export function openLuxJudge(key: () => Promise<string | undefined>, fetchImpl: 
     const primaryLocked = (lockedUntil.get(primary.name) ?? 0) > started;
     if (!primaryKey && !secondary) return failed("no_key");
 
-    const cacheKey = `${queryHash(query)}|${[...ids].sort().join(",")}`;
+    const cacheKey = `${rerank ? "r" : "f"}|${queryHash(query)}|${[...ids].sort().join(",")}`;
     const hit = cache.get(cacheKey);
     if (hit && started - hit.at < CACHE_TTL_MS) {
-      const chosen = candidates.filter((record) => hit.ids.includes(record.id));
+      const byId = new Map(candidates.map((record) => [record.id, record]));
+      const chosen = rerank ? hit.ids.map((id) => byId.get(id)!).filter(Boolean) : candidates.filter((record) => hit.ids.includes(record.id));
       return { chosen, receipt: { ...base, chosen: chosen.map((record) => record.id), latencyMs: 0, cached: true } };
     }
 
-    const shuffled = shuffledBy(candidates, query);
-    const user = judgeUserPrompt(query, shuffled);
+    // The filter shows the notes in a seeded shuffle (the order is no hint); the reranker shows them in the order the search gave, which is the «previous order» it falls back to.
+    const shuffled = rerank ? [...candidates] : shuffledBy(candidates, query);
+    const user = rerank ? rerankUserPrompt(query, shuffled) : judgeUserPrompt(query, shuffled);
+    const system = rerank ? RERANK_SYSTEM : JUDGE_SYSTEM;
     const answer = (reply: string): MemoryRecord[] | null => {
-      const numbers = parseJudgeReply(reply, shuffled.length);
-      if (!numbers) return null;
-      const named = new Set(numbers.map((number) => shuffled[number - 1]!.id));
+      const read = readJudgeReply(reply, shuffled.length);
+      if (!read) { unparsed = 1; return null; }
+      unparsed = read.dropped;
+      if (rerank) {
+        // «None» is not an answer of a reranker: no number read is an unparsed reply, and the caller keeps the previous order.
+        if (!read.numbers.length) { unparsed = Math.max(1, read.dropped); return null; }
+        return permutationOf(read.numbers, shuffled.length).map((number) => shuffled[number - 1]!);
+      }
+      const named = new Set(read.numbers.map((number) => shuffled[number - 1]!.id));
       return candidates.filter((record) => named.has(record.id));
     };
     const done = (chosen: MemoryRecord[], used: Chat, extra: Partial<JudgeReceipt> = {}): JudgeOutcome => {
       cache.set(cacheKey, { at: started, ids: chosen.map((record) => record.id) });
       if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);
-      return { chosen, receipt: { ...base, ...extra, chosen: chosen.map((record) => record.id), latencyMs: now() - started, tokensIn: used.tokensIn, tokensOut: used.tokensOut } };
+      return { chosen, receipt: { ...base, ...extra, ...(unparsed ? { unparsed } : {}), chosen: chosen.map((record) => record.id), latencyMs: now() - started, tokensIn: used.tokensIn, tokensOut: used.tokensOut } };
     };
 
     // The fallback: the same window when it is on the same endpoint (one budget), a fresh one on another endpoint (the first may have
@@ -119,7 +155,7 @@ export function openLuxJudge(key: () => Promise<string | undefined>, fetchImpl: 
       const secondKey = await keyOf(secondary);
       if (!secondKey) return failed("no_key");
       try {
-        const second = await chat(secondary, secondKey, JUDGE_SYSTEM, user, left);
+        const second = await chat(secondary, secondKey, system, user, left);
         const chosen = answer(second.content);
         return chosen ? done(chosen, second, { retriedWith: settings.fallbackModel }) : failed("retry_failed", { retriedWith: settings.fallbackModel, tokensIn: second.tokensIn, tokensOut: second.tokensOut });
       } catch { return failed("retry_failed", { retriedWith: settings.fallbackModel }); }
@@ -128,7 +164,7 @@ export function openLuxJudge(key: () => Promise<string | undefined>, fetchImpl: 
     if (!primaryKey || (primaryLocked && otherRoute)) return retry(false);
 
     let first: Chat;
-    try { first = await chat(primary, primaryKey, JUDGE_SYSTEM, user, settings.timeoutMs); }
+    try { first = await chat(primary, primaryKey, system, user, settings.timeoutMs); }
     catch (cause) {
       const locking = cause instanceof JudgeTimeout || (cause instanceof HttpFailure && (cause.status === 403 || cause.status === 429));
       if (locking && otherRoute && secondary) lockedUntil.set(primary.name, now() + ROUTE_LOCK_MS);
@@ -140,6 +176,7 @@ export function openLuxJudge(key: () => Promise<string | undefined>, fetchImpl: 
     const chosen = answer(first.content);
     return chosen ? done(chosen, first) : failed("unparsed", { tokensIn: first.tokensIn, tokensOut: first.tokensOut });
   };
+  return Object.assign(judge, { translate });
 }
 
 let shared: MemoryJudge | null = null;
@@ -165,28 +202,57 @@ export function judgeRoutes(openLuxKey: () => Promise<string | undefined>, route
 export type JudgeSurface = JudgeReceipt["surface"];
 
 /**
- * The notes of an explicit search after the judge. `found` is the search after the relevance floor, best first. The judge reads the first
- * `memory.judge.candidates` of them; a note that names a path written in the question is kept whatever the judge says (the path override).
- * `kept` is how many notes the caller wants at most. Without a judge (off, no embedder) the list is `found` as it came.
- * A judge that fails gives the first five by cosine and no warning.
+ * The English keywords of a question for the door lock, made before the (synchronous) search and kept for it (`rememberLockTerms`): one call of the
+ * judge's own route, cached per question. A no-op unless `memory.door_lock = translated`; a failed call leaves no terms, and the lock is the literal one.
  */
-export async function judgeFound(db: LanePilotDatabase, input: { projectId: string; query: string; found: readonly MemoryRecord[]; memory: MemorySettings; surface: JudgeSurface; audience?: "subagent" | "owner" | "export" }): Promise<{ records: MemoryRecord[]; judged: boolean }> {
+export async function translateForLock(query: string, memory: MemorySettings): Promise<string[] | null> {
+  if (memory.doorLock !== "translated") return null;
+  const known = lockTermsFor(query);
+  if (known) return known;
+  const judge = currentMemoryJudge();
+  if (!judge?.translate) return null;
+  try {
+    const terms = await judge.translate(query, { model: memory.judgeModel ?? JUDGE_DEFAULTS.model, fallbackModel: memory.judgeFallbackModel ?? JUDGE_DEFAULTS.fallbackModel, timeoutMs: memory.judgeTimeoutMs ?? JUDGE_DEFAULTS.timeoutMs });
+    if (terms?.length) rememberLockTerms(query, terms);
+    return terms;
+  } catch { return null; }
+}
+
+/**
+ * The notes of an explicit search after the judge. `found` is the search after the relevance floor, best first. The judge reads the first
+ * `memory.judge.candidates` of them; a note that names a path written in the question is kept whatever the judge says (the path override),
+ * and so is every `pinned` id (`memory.pinned`: outside the judge's reach, always delivered, first).
+ * `memory.judge.mode`: `filter` (default) keeps the notes the judge names, or none; `rerank` gives back every note, the judged candidates in the
+ * judge's order and the rest as they came, so the answer is never shorter than `found` and never empty (a timeout, an error or an unreadable
+ * reply leaves the previous order). Without a judge (off, no embedder) the list is `found` as it came.
+ * A filter judge that fails gives the first five by cosine and no warning.
+ */
+export async function judgeFound(db: LanePilotDatabase, input: { projectId: string; query: string; found: readonly MemoryRecord[]; memory: MemorySettings; surface: JudgeSurface; audience?: "subagent" | "owner" | "export"; pinned?: ReadonlySet<string> }): Promise<{ records: MemoryRecord[]; judged: boolean }> {
   const { found, memory, query } = input;
   const judge = currentMemoryJudge();
   if (!judge || memory.judgeEnabled === false || !found.length) return { records: [...found], judged: false };
+  const rerank = memory.judgeMode === "rerank";
+  const pinned = input.pinned ?? new Set<string>();
   const anchors = pathAnchorsOf(query);
   const anchored = new Set(anchors.length ? found.filter((record) => anchors.some((anchor) => record.content.includes(anchor))).map((record) => record.id) : []);
-  const candidates = found.filter((record) => !anchored.has(record.id)).slice(0, memory.judgeCandidates ?? JUDGE_DEFAULTS.candidates);
+  const candidates = found.filter((record) => !anchored.has(record.id) && !pinned.has(record.id)).slice(0, memory.judgeCandidates ?? JUDGE_DEFAULTS.candidates);
   let outcome: JudgeOutcome;
   if (!candidates.length) return { records: [...found], judged: false };
   try {
-    outcome = await judge({ query, candidates, settings: { model: memory.judgeModel ?? JUDGE_DEFAULTS.model, fallbackModel: memory.judgeFallbackModel ?? JUDGE_DEFAULTS.fallbackModel, timeoutMs: memory.judgeTimeoutMs ?? JUDGE_DEFAULTS.timeoutMs } });
+    outcome = await judge({ query, candidates, settings: { model: memory.judgeModel ?? JUDGE_DEFAULTS.model, fallbackModel: memory.judgeFallbackModel ?? JUDGE_DEFAULTS.fallbackModel, timeoutMs: memory.judgeTimeoutMs ?? JUDGE_DEFAULTS.timeoutMs, ...(rerank ? { mode: "rerank" as const } : {}) } });
   } catch {
-    outcome = { chosen: null, receipt: { model: memory.judgeModel ?? JUDGE_DEFAULTS.model, candidates: candidates.map((record) => record.id), chosen: [], latencyMs: 0, tokensIn: 0, tokensOut: 0, fallback: "http_error" } };
+    outcome = { chosen: null, receipt: { model: memory.judgeModel ?? JUDGE_DEFAULTS.model, candidates: candidates.map((record) => record.id), chosen: [], latencyMs: 0, tokensIn: 0, tokensOut: 0, fallback: "http_error", ...(rerank ? { mode: "rerank" as const } : {}) } };
   }
-  const picked = outcome.chosen ?? candidates.slice(0, JUDGE_FALLBACK_TOP);
-  const keep = new Set([...anchored, ...picked.map((record) => record.id)]);
-  const records = found.filter((record) => keep.has(record.id));
+  let records: MemoryRecord[];
+  if (rerank) {
+    const order = outcome.chosen ?? candidates;
+    const placed = new Set(order.map((record) => record.id));
+    records = [...found.filter((record) => pinned.has(record.id)), ...found.filter((record) => anchored.has(record.id) && !pinned.has(record.id)), ...order, ...found.filter((record) => !placed.has(record.id) && !anchored.has(record.id) && !pinned.has(record.id))];
+  } else {
+    const picked = outcome.chosen ?? candidates.slice(0, JUDGE_FALLBACK_TOP);
+    const keep = new Set([...anchored, ...pinned, ...picked.map((record) => record.id)]);
+    records = found.filter((record) => keep.has(record.id));
+  }
   try {
     const gate = gateScore(db, input.projectId, query, found, { audience: input.audience ?? "subagent", personalBot: memory.personalBot });
     recordMemoryReceipt(db, { projectId: input.projectId, role: `judge:${input.surface}`, returnedIds: candidates.map((record) => record.id), packedIds: records.map((record) => record.id), tokens: outcome.receipt.tokensIn + outcome.receipt.tokensOut,

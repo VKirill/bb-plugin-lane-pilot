@@ -315,7 +315,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     const memorySettings=parseMemorySettings(Object.fromEntries([
       "memory.enabled","memory.maintain","memory.inject","memory.audience","memory.personal_bot","memory.search_engine",
       "memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget","memory.maintain_every",
-      "memory.judge.enabled","memory.judge.model","memory.judge.fallback_model","memory.judge.timeout_ms","memory.judge.candidates",
+      "memory.judge.enabled","memory.judge.model","memory.judge.fallback_model","memory.judge.timeout_ms","memory.judge.candidates","memory.vector_mode","memory.door_lock","memory.judge.mode","memory.pinned",
     ].map((key)=>[key,configuredSetting(settings,key)])));
     if(!memorySettings.enabled) return {runId:args.runId,state:"skipped",reason:"memory_disabled"};
     const demoted = demoteUnusedPromotions(db);
