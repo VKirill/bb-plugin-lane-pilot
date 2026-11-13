@@ -6,8 +6,7 @@ describe("knowledge owners", () => {
     const prompt = memoryMaintenancePrompt({ task: {}, acceptedResult: {}, settings: parseMemorySettings({}) });
     expect(prompt).toContain("Anamnesis owns owner facts");
     expect(prompt).toContain("Lane Pilot memory owns project technical facts and rules");
-    expect(prompt).toContain("BB memory is the preference index");
-    expect(prompt).toContain("Agentmemory is an observation archive");
+    expect(prompt).toContain("The hub DB is the only memory store");
     expect(prompt).toContain("Code and docs stay the source of behavior");
   });
 });

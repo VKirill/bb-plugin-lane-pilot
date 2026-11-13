@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.541
+
+- **Memory lives in one place: the hub DB.** Every session the plugin launches (PM, writer, critic, errand, helper) runs Claude Code with `autoMemoryEnabled: false`, and the per-task Codex home turns `memories` off (`native-claude-host.ts`, `host-worker/handlers/machine.ts`). `tests/memory-single-store.test.ts` fails if a skill, prompt or seeded profile sends an agent to `memory_save`/agentmemory or a launcher leaves built-in memory on. The maintainer prompt and `docs/memory.md` say the hub DB is the only store. Outside the repo: the agentmemory skills were removed from the hub canon and agentmemory MCP entries and built-in memories were switched off on OVH and the Mac mini.
+- **One standard for Lane Pilot skills (`docs/skill-standard.md`, `tests/skills-shipped.test.ts`).** New router skill `lane-pilot` holds ops, contracts and workflows in `references/`; `writer-practices` → `lp-writer`, `docs-maintain` → `lp-docs`, `resume-project` → `project-resume`; the old names stay one release as stubs and through `SKILL_ALIASES`. The test checks every shipped skill's front matter (strict YAML scalars, as the hub publisher parses them), size, one-level references and that every skill name a graph, role or specialist loads exists. All changed skills are published to the hub, `project-discovery-grill` included (it never reached sessions because plugin skills are blocked for most roles).
+- **Memory eval suite H1–H7 (`scripts/memory-eval.ts --suite`, `--e2e`, `--longmemeval`, `--factcons`).**
+
 ## 0.1.540
 
 - **Lane Pilot no longer uses TypeSafe Jev at all (`packages/jev` removed).** The last judgment (`employee.remark`, whose fallback was a no-op), the council's judge (the council's own rules decide who speaks and when to stop), the `builtin:jev` workflow node (no shipped graph used it), the nightly Jev labels and calibration, the monthly model rebench, the «Судьи» screen, the `jev.*` settings, the provider and key screens and the `bb lane-pilot jev` CLI are gone. Check: `grep -rn "@lane-pilot/jev\|systemone" src packages workflows` finds nothing; the full suite is green. The invoice rules (`validInn`, `hardProblems`, `invoiceVerdict`) moved to `@lane-pilot/kit`; the old Jev migrations still run in order and the `lane_pilot_jev_receipt` table keeps its rows.

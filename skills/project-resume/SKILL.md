@@ -1,6 +1,6 @@
 ---
 name: project-resume
-description: Cold-start project context for orchestrator or human. Use when user says resume, продолж, where were we, cold start, /lane-stack:resume-project, or starting a new orchestrator session on an existing repo. Inside Lane Pilot read PROGRESS/ROADMAP and the Lane Pilot run tools instead of the CLI. Slash /lane-stack:resume-project runs the CLI. Info card only when args are exactly info. SKIP: todos and plans (project-life).
+description: "Cold-start project context for orchestrator or human. Use when user says resume, продолж, where were we, cold start, /lane-stack:resume-project, or starting a new orchestrator session on an existing repo. Inside Lane Pilot read PROGRESS/ROADMAP and the Lane Pilot run tools instead of the CLI. Slash /lane-stack:resume-project runs the CLI. Info card only when args are exactly info. SKIP: todos and plans (project-life)."
 argument-hint: "[path|--compact|info]"
 user-invocable: false
 ---

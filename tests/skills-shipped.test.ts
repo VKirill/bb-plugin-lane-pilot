@@ -40,6 +40,19 @@ describe("shipped skills", () => {
         expect(description).toMatch(/use when/i);
       });
 
+      it("front matter values are valid YAML scalars (the hub publisher parses them strictly)", () => {
+        const head = skill!.text.split("\n---")[0]!.split("\n").slice(1);
+        for (const line of head) {
+          const match = /^([a-z][\w-]*):\s(.+)$/.exec(line);
+          if (!match) continue;
+          const value = match[2]!.trim();
+          if (/^[>|][-+]?$/.test(value)) continue; // block scalar: the text follows on indented lines
+          if (value.startsWith('"')) expect(() => JSON.parse(value), `${match[1]} is a double-quoted YAML string`).not.toThrow();
+          else if (value.startsWith("'")) expect(value.endsWith("'") && !/[^']'[^']/.test(value.slice(1, -1)), `${match[1]} single-quoted`).toBe(true);
+          else expect(/: | #|^[[{&*!|>%@`]/.test(value), `${match[1]} needs quotes: plain YAML cannot hold ": "`).toBe(false);
+        }
+      });
+
       it("keeps SKILL.md within the size limits", () => {
         expect(Buffer.byteLength(skill!.text, "utf8")).toBeLessThan(SKILL_MD_MAX_BYTES);
         expect(skill!.text.split("\n").length).toBeLessThanOrEqual(SKILL_MD_MAX_LINES);
