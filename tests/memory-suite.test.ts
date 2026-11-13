@@ -14,7 +14,7 @@ import baseline from "../src/rooms/memory-eval/server/suite-baseline.json";
 //   npx tsx scripts/memory-eval.ts --suite --write-baseline src/rooms/memory-eval/server/suite-baseline.json
 describe("memory suite: the fixture", () => {
   it("names only notes it plants, and plants each note once", () => {
-    const keys = [...SUITE_NOTES, ...SUITE_PACK_NOTES.heads, ...SUITE_PACK_NOTES.chunks].map((note) => note.key);
+    const keys = [...SUITE_NOTES, ...SUITE_PACK_NOTES.heads, ...SUITE_PACK_NOTES.chunks, ...SUITE_PACK_NOTES.dups].map((note) => note.key);
     expect(new Set(keys).size).toBe(keys.length);
     expect(new Set(SUITE_CASES.map((item) => item.id)).size).toBe(SUITE_CASES.length);
     for (const item of SUITE_CASES) for (const key of [...(item.expect === "nothing" ? [] : item.expect), ...(item.forbid ?? [])]) expect(keys, `${item.id} names ${key}`).toContain(key);
@@ -46,7 +46,7 @@ describe("memory suite: retrieval scores", () => {
 
   it("prints the score table", () => {
     process.stdout.write(`\n${formatSuite(report, baseline as SuiteBaseline)}\n\n`);
-    expect(report.families.map((row) => row.family)).toEqual(["H1", "H2", "H3", "H4", "H5", "H6", "H8", "H9", "H10", "H11", "H12", "H7"]);
+    expect(report.families.map((row) => row.family)).toEqual(["H1", "H2", "H3", "H4", "H5", "H6", "H8", "H9", "H10", "H11", "H12", "H13", "H7"]);
   });
 
   it("H5: no note of another section or audience reaches a reader, and the controls still arrive", () => {
@@ -54,6 +54,17 @@ describe("memory suite: retrieval scores", () => {
     const controls = report.cases.filter((item) => item.kind === "control" || item.kind === "shared");
     expect(controls.length).toBeGreaterThan(4);
     for (const item of controls) expect(item.missing, item.id).toEqual([]);
+  });
+
+  it("H13: an imported copy of a stored fact makes no second note and search returns one; with the check off the copy is a second note", () => {
+    const rows = report.cases.filter((item) => item.family === "H13");
+    expect(rows.length).toBe(2);
+    for (const item of rows) expect(item.pass, `${item.id}: missing ${item.missing} leaked ${item.leaked}`).toBe(true);
+    const off = runSuite(migrations, SUITE_CASES, {}, { nearDuplicates: false });
+    const failing = off.cases.filter((item) => item.family === "H13" && !item.pass).map((item) => item.id);
+    expect(failing).toEqual(["h13-copy", "h13-longer"]);
+    // nothing else in the suite depends on the door
+    expect(off.cases.filter((item) => item.family !== "H13" && !item.pass).map((item) => item.id)).toEqual(report.cases.filter((item) => item.family !== "H13" && !item.pass).map((item) => item.id));
   });
 
   it("fails only on a regression below the recorded baseline", () => {

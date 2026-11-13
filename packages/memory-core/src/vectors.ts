@@ -80,7 +80,7 @@ export const queryText = (query: string): string => `task: search result | query
 export function pendingVectors(db: MemoryDatabase, limit: number): Array<{ id: string; projectId: string; content: string }> {
   if (!vectorsReady(db) || limit <= 0) return [];
   const rows = db.prepare(`SELECT m.id, m.project_id, m.content, v.content_sha AS sha, v.model AS model FROM lane_pilot_memory m
-    LEFT JOIN lane_pilot_memory_vec v ON v.id=m.id WHERE (m.status='active' OR (m.status='expired' AND m.expired_reason='budget')) ORDER BY m.created_at DESC`)
+    LEFT JOIN lane_pilot_memory_vec v ON v.id=m.id WHERE (m.status='active' OR (m.status='expired' AND m.expired_reason IN ('budget','duplicate'))) ORDER BY m.created_at DESC`)
     .all() as Array<{ id: string; project_id: string; content: string; sha: string | null; model: string | null }>;
   return rows.filter((row) => row.model !== EMBED_MODEL || row.sha !== contentSha(row.content)).slice(0, limit)
     .map((row) => ({ id: row.id, projectId: row.project_id, content: row.content }));
@@ -96,7 +96,7 @@ export function storeVectors(db: MemoryDatabase, rows: ReadonlyArray<{ id: strin
 export function pendingChunks(db: MemoryDatabase, limit: number): Array<{ id: string; projectId: string; content: string; chunks: string[] }> {
   if (!vectorsReady(db) || limit <= 0) return [];
   const have = new Map((db.prepare("SELECT id, content_sha AS sha, count(*) AS n FROM lane_pilot_memory_vec_chunk WHERE model=? GROUP BY id, content_sha").all(EMBED_MODEL) as Array<{ id: string; sha: string; n: number }>).map((row) => [`${row.id}|${row.sha}`, row.n]));
-  const rows = db.prepare(`SELECT id, project_id, content FROM lane_pilot_memory WHERE (status='active' OR (status='expired' AND expired_reason='budget')) AND length(content)>? ORDER BY created_at DESC`)
+  const rows = db.prepare(`SELECT id, project_id, content FROM lane_pilot_memory WHERE (status='active' OR (status='expired' AND expired_reason IN ('budget','duplicate'))) AND length(content)>? ORDER BY created_at DESC`)
     .all(DOC_CHARS) as Array<{ id: string; project_id: string; content: string }>;
   const out: Array<{ id: string; projectId: string; content: string; chunks: string[] }> = [];
   for (const row of rows) {

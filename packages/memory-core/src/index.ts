@@ -31,3 +31,5 @@ export { findConflicts, conflictId, disagreement, type Conflict, type ConflictKi
 export { conflictTableReady, getConflict, heldClause, holdConflict, listConflicts, markSettled, memoryConflictMigrations, setDeferral, type ConflictResolution, type ConflictRow } from "./conflict-store";
 export { HEAVY_NOTE_TOKENS, applyShorter, compressibleRow, heavyNoteRows, proposeShorter, resolveCompressible, shortenText, undoShorter, type CompressibleRow } from "./compress";
 export { JUDGE_DEFAULTS, JUDGE_FALLBACK_TOP, JUDGE_MASK, JUDGE_NOTE_CHARS, JUDGE_SYSTEM, judgeUserPrompt, maskSecretsForJudge, parseJudgeReply, queryHash, shuffledBy, type JudgeFallback, type JudgeReceipt } from "./judge";
+
+export { DUP_CONTAINMENT, DUP_COSINE, addOrigin, dedupeProject, duplicatePairs, duplicateWords, factsAgree, nearDuplicate, duplicateDoor, withoutShadowedDuplicates, storedVectors, textRelation, type DedupeResult, type DuplicateHit, type DuplicatePair } from "./duplicates";

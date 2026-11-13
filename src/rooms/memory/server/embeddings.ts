@@ -86,3 +86,21 @@ export function mountMemoryEmbeddings(ctx: ServerCore): void {
     if (stored) ctx.log(`memory embeddings: ${stored} records`);
   }, { timeoutMs: 10 * 60_000 });
 }
+
+/**
+ * The vectors of texts about to be written, by text, for the write door's near-duplicate test (cosine against the stored notes). Best effort: no embedder,
+ * a timeout or an error give an empty map and the door falls back to the text test alone. At most `limit` texts are embedded.
+ */
+export async function embedForDoor(texts: readonly string[], limit = 300): Promise<Map<string, Float32Array>> {
+  const out = new Map<string, Float32Array>();
+  const embedder = shared;
+  const unique = [...new Set(texts.filter((text) => text.trim()))].slice(0, limit);
+  if (!embedder || !unique.length) return out;
+  for (let index = 0; index < unique.length; index += BATCH) {
+    const chunk = unique.slice(index, index + BATCH);
+    const vectors = await embedder(chunk.map(documentText), BATCH_TIMEOUT_MS);
+    if (!vectors) break;
+    chunk.forEach((text, at) => out.set(text, vectors[at]!));
+  }
+  return out;
+}

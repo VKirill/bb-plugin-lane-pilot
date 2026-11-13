@@ -100,6 +100,8 @@ export type MemoryImportOptions = {
   db: MemoryDatabase; projectId: string; source: MemoryImportSource; jsonl: string;
   settings: MemorySettings;
   dryRun?: boolean; now?: number;
+  /** Vectors of the masked texts (`embedForDoor`), for the write door's cosine test against stored notes; absent: text test only. */
+  vectors?: ReadonlyMap<string, Float32Array>;
 };
 
 /**
@@ -143,7 +145,7 @@ export function runMemoryImport(options: MemoryImportOptions): ImportReport {
     try {
       const result = storeMemoryRecords(db, { projectId, personalBot, audience: "subagent",
         sourceSha256: sha256Hex(`import:${source}:${sourceId}`), entries: [entry], scope: [],
-        trust: "confirmed", origin: "import", now, ...budgets });
+        trust: "confirmed", origin: "import", now, ...budgets, vectorOf: options.vectors ? (content) => options.vectors!.get(content) : undefined });
       evictedIds.push(...result.evictedIds);
       archivedIds.push(...result.archivedIds);
       heldIds.push(...result.heldIds);
@@ -151,6 +153,8 @@ export function runMemoryImport(options: MemoryImportOptions): ImportReport {
       if (result.insertedIds.length) return { ...base, ...shared, outcome: "added" as const, id: result.insertedIds[0],
         ...(result.supersededIds.length ? { superseded: result.supersededIds } : {}) };
       if (result.corroboratedIds.length) return { ...base, ...shared, outcome: "merged_with" as const, id: result.corroboratedIds[0]! };
+      // A copy of a stored note: no new row; its source is one more origin of the stored note.
+      if (result.duplicateIds.length) return { ...base, ...shared, outcome: "merged_with" as const, id: result.duplicateIds[0]!, reason: "duplicate_origin" };
       return { ...base, ...shared, outcome: "dropped" as const, reason: "duplicate" };
     } catch (cause) {
       return { ...base, outcome: "dropped" as const, reason: dropReason(cause), ...kindOf, concepts, content: masked };

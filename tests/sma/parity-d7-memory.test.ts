@@ -27,7 +27,7 @@ import type { Services } from "../../server";
 const newHost = () => createFakePluginHost({ pluginId: "lane-pilot" });
 const BUDGETS = { coreBudget: 9_999, noteBudget: 99_999, indexBudget: 999_999 };
 const put = (db: MemoryDatabase, entries: MemoryCandidate[], projectId = "P") =>
-  storeMemoryRecords(db, { projectId, sourceSha256: "a".repeat(64), audience: "subagent", trust: "confirmed", entries, ...BUDGETS }).insertedIds;
+  storeMemoryRecords(db, { projectId, sourceSha256: "a".repeat(64), audience: "subagent", trust: "confirmed", entries, nearDuplicates: false, ...BUDGETS }).insertedIds;
 const note = (content: string, concepts: string[] = ["area"]): MemoryCandidate => ({ kind: "note", content, concepts });
 
 function rpc(db: MemoryDatabase) {

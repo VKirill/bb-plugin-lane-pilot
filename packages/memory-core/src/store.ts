@@ -5,6 +5,7 @@ import { OBSERVED_QUARANTINE_MS, expireMemory, hideRecord, idleSql, sameSubject 
 import { memoryStem, memoryTokens } from "./terms";
 import { conflictTableReady, heldClause, holdConflict } from "./conflict-store";
 import { denseRank, queryVectorFor } from "./vectors";
+import { duplicateDoor, withoutShadowedDuplicates } from "./duplicates";
 import { pathAnchorsOf } from "./floor";
 import type { MemoryAudience, MemoryCandidate, MemoryKind, MemoryRecord, MemorySearchEngine, MemoryStatus, MemoryTrust } from "./settings";
 
@@ -98,7 +99,8 @@ export type StoreMemoryInput = { projectId: string; personalBot?: string; audien
   /** The task these records came from: every stored row keeps it for the audit trail. */
   originTaskId?: string;
   /** Reads a repo-relative path. When set, a note that names files stores `file_fingerprint` of those bytes. */
-  readFile?: (path: string) => Uint8Array | null };
+  readFile?: (path: string) => Uint8Array | null;
+  /** Near-duplicate door (`duplicates.ts`), default on; `vectorOf` is the embedding of a new text when the caller made one. */ nearDuplicates?: boolean; vectorOf?: (content: string) => Float32Array | null | undefined };
 export type StoreMemoryResult = { records: MemoryRecord[]; insertedIds: string[];
   /** Notes moved off the shelf to the archive to make room under a budget, least useful first. They stay searchable. */
   evictedIds: string[];
@@ -111,7 +113,8 @@ export type StoreMemoryResult = { records: MemoryRecord[]; insertedIds: string[]
   /** Observed records a second independent source confirmed. */
   corroboratedIds: string[];
   /** Recently used notes whose replacement is held as a conflict for a person (arXiv #15). */
-  heldIds: string[] };
+  heldIds: string[];
+  /** Stored notes that absorbed a copy of themselves (no new row; the copy's source is one more origin). */ duplicateIds: string[] };
 
 const HEDGED = /(?:^|[^\p{L}\p{N}])(?:maybe|perhaps|might|seems|appears|possibly|кажется|возможно|похоже)(?=$|[^\p{L}\p{N}])/iu;
 
@@ -142,7 +145,7 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
     const pending: Array<{ entry: MemoryCandidate; id: string }> = [];
     const revive: Array<{ entry: MemoryCandidate; id: string }> = [];
     const corroborate: string[] = [];
-    const seen = new Set<string>();
+    const seen = new Set<string>(); const door = duplicateDoor(db, { ...input, rows, origin, trust, now, corroborate, namespace: (row) => row.audience === input.audience && scopeKey(parseScopeJson(row.scope_json)) === scopeKey(scope) });
     // A note shortened by memory-compress stays shortened: its old long wording is not revived by a re-import of the same file.
     const compressed = new Set(rows.filter((row) => row.status === "active" && row.verification_json?.includes('"by":"compress"')).map((row) => row.id));
     for (const entry of input.entries) {
@@ -150,7 +153,7 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
       if (seen.has(id)) continue;
       seen.add(id);
       const hit = known.get(id);
-      if (!hit) { if (entry.validUntil == null || entry.validUntil > now) pending.push({ entry, id }); continue; }
+      if (!hit) { if ((entry.validUntil == null || entry.validUntil > now) && !door.absorbs(entry, id)) pending.push({ entry, id }); continue; }
       if (hit.status === "superseded" && hit.superseded_by && compressed.has(hit.superseded_by)) continue;
       if (hit.status === "active") { if (hit.trust === "observed" && hit.source_sha256 !== input.sourceSha256) corroborate.push(hit.id); continue; }
       // An owner tombstone (`memory forget --expire` or `--replace`, both marked `owner`) never revives — a restated fact does not
@@ -159,7 +162,7 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
       // A hidden record comes back when its fact is stated again, or when the file it came from says so; a replaced one stays replaced otherwise.
       // A revoked one never does, on any path (restated, re-imported from its file): the owner withdrew that fact. An archived one
       // stays in the cold tier too: the owner moved it there, and only a PM query (reactivateColdMemory) or the owner brings it back.
-      if (hit.status === "expired" && (hit.expired_reason === "revoked" || hit.expired_reason === "archived")) continue;
+      if (hit.status === "expired" && (hit.expired_reason === "revoked" || hit.expired_reason === "archived" || hit.expired_reason === "duplicate")) continue;
       const wanted = hit.status === "expired" || (entry.sourceFileId != null && entry.sourceFileId === hit.source_file_id);
       if (wanted && (entry.validUntil == null || entry.validUntil > now)) revive.push({ entry, id: hit.id });
     }
@@ -188,6 +191,8 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
       if (entry.sourceFileId) for (const row of rows) if (row.status === "active" && row.source_file_id === entry.sourceFileId && row.id !== id && sameNamespace(row)) replace(row.id, id, row);
       // One session's word does not retire what the maintainer or a file established.
       if (trust !== "confirmed") continue;
+      const extended = door.extendsOf.get(id); // a strict superset of a stored note is its next version
+      if (extended && !gone.has(extended)) replace(extended, id, door.rows.get(extended) as Row | undefined);
       // Replacement stays inside project + section + audience + bot. A fact already stored is not given a wider scope.
       const replaceable = rows.filter((row) => row.status === "active" && !gone.has(row.id) && row.id !== id && sameNamespace(row) && !isRule(row));
       for (const prefix of entry.supersedes ?? []) {
@@ -260,7 +265,7 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
     const mine = new Set(input.entries.map((entry) => memoryRecordId(input.projectId, entry.kind, entry.content, personalBot, input.audience, scope)));
     const records = (db.prepare(`SELECT ${cols()} FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? ORDER BY created_at DESC`).all(input.projectId, personalBot) as Row[])
       .filter((row) => row.status === "active" || mine.has(row.id)).map(toRecord);
-    return { records, insertedIds, evictedIds, archivedIds: [...archiveIds].filter((id) => pending.some((item) => item.id === id)), supersededIds, expiredIds, corroboratedIds: corroborate, heldIds };
+    return { records, insertedIds, evictedIds, archivedIds: [...archiveIds].filter((id) => pending.some((item) => item.id === id)), supersededIds, expiredIds, corroboratedIds: corroborate, heldIds, duplicateIds: door.duplicateIds };
   }).immediate();
 }
 
@@ -316,7 +321,7 @@ export type SearchOptions = { /** M7: umbrella project — bare scopes are not p
   includeArchive?: boolean };
 
 /** The archive: a note the note budget moved off the shelf. Not deleted and not hidden from search, only not injected. Its word indexes and vector stay. */
-const ARCHIVE_SQL = "status='expired' AND expired_reason='budget'";
+const ARCHIVE_SQL = "status='expired' AND expired_reason IN ('budget','duplicate')";
 
 /** The scope values a reader with this chain sees: the whole project and every prefix of its chain. */
 export function scopeValuesFor(chain: readonly string[]): string[] {
@@ -335,7 +340,7 @@ const sqlString = (value: string) => `'${value.replace(/'/g, "''")}'`;
 function visibility(db: MemoryDatabase, alias: string, options: SearchOptions): string {
   const now = Math.floor(options.now ?? Date.now());
   // A note of a held conflict (two notes that disagree, waiting for a person) is read by nobody: `conflict-store.ts`.
-  const archive = options.includeArchive ? ` OR (${alias}.status='expired' AND ${alias}.expired_reason='budget')` : "";
+  const archive = options.includeArchive ? ` OR (${alias}.status='expired' AND ${alias}.expired_reason IN ('budget','duplicate'))` : "";
   // The idle rule retires an active note; an archived one is old by definition and stays searchable.
   return `(${alias}.status='active'${archive}) AND (${alias}.valid_from IS NULL OR ${alias}.valid_from<=${now}) AND (${alias}.valid_until IS NULL OR ${alias}.valid_until>${now}) AND (${alias}.status<>'active' OR NOT (${idleSql(alias, now)}))`
     + (options.includeObserved ? "" : ` AND (${alias}.trust='confirmed' OR ${alias}.created_at<=${now - OBSERVED_QUARANTINE_MS})`) + heldClause(db, alias)
@@ -425,7 +430,7 @@ export function searchMemoryRecords(db: MemoryDatabase, projectId: string, query
   const records = rows.map((row) => { const record = toRecord(row); const { similarity, bestChunk } = row as Row & { similarity?: number; bestChunk?: number }; return { ...record, ...(similarity === undefined ? {} : { similarity }), ...(bestChunk === undefined ? {} : { bestChunk }) }; });
   // M7 receipt: a pre-M7 root row delivered inside an umbrella reads with the legacy_scope flag.
   if (options.umbrella) rows.forEach((row, index) => { if (!parseScopeJson((row as Row & { scope_json: string | null }).scope_json).length) (records[index] as MemoryRecord & { legacyScope?: boolean }).legacyScope = true; });
-  return records;
+  return options.includeArchive ? withoutShadowedDuplicates(db, projectId, records) : records;
 }
 
 /**

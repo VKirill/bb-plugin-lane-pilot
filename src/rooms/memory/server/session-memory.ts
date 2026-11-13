@@ -1,5 +1,5 @@
-import { evalMemoryImport, formatImportEval, formatImportSummary, pmTopIds, runMemoryImport, type ImportReport } from "./import";
-import { embedQuery } from "./embeddings";
+import { evalMemoryImport, formatImportEval, formatImportSummary, maskImportContent, pmTopIds, runMemoryImport, type ImportReport } from "./import";
+import { embedForDoor, embedQuery } from "./embeddings";
 import { resolve } from "node:path";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, upsertLessonProposal } from "@lane-pilot/run-insights";
@@ -62,7 +62,10 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       return best ? { projectId: best.projectId, scopes: best.scopes } : { projectId: null, scopes: [] };
     },
     memory_import: async ({ source, projectId, jsonl, dryRun }) => {
-      const report = runMemoryImport({ db, projectId, source, jsonl, settings: memorySettingsFor(loadProjectSettings(db, projectId)), dryRun: dryRun === true });
+      const texts: string[] = [];
+      for (const raw of jsonl.split("\n")) { try { const line = JSON.parse(raw) as { content?: unknown }; if (typeof line.content === "string") texts.push(maskImportContent(line.content)); } catch { /* the import reports the bad line */ } }
+      const vectors = await embedForDoor(texts);
+      const report = runMemoryImport({ db, projectId, source, jsonl, settings: memorySettingsFor(loadProjectSettings(db, projectId)), dryRun: dryRun === true, vectors });
       return { ...report, summary: formatImportSummary(report) };
     },
     memory_import_eval: async ({ report }) => {
@@ -79,8 +82,9 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       catch (cause) { return { stored: false, id: null, reason: cause instanceof Error ? cause.message : String(cause) }; }
       // A list packed into one record is refused at the door (memory.single_claim): one record carries one claim.
       if (settings.singleClaim) for (const entry of entries) { const issue = memoryClaimIssue(entry.content); if (issue) return { stored: false, id: null, reason: issue }; }
+      const vectors = await embedForDoor(entries.map((entry) => entry.content));
       try {
-        const result = storeMemoryRecordsKeepingOverflow(db, { projectId, personalBot: settings.personalBot, audience: "subagent",
+        const result = storeMemoryRecordsKeepingOverflow(db, { vectorOf: (content) => vectors.get(content), projectId, personalBot: settings.personalBot, audience: "subagent",
           sourceSha256: sha256Hex(`session:${source ?? ""}`), entries, scope: chain?.length ? chain
             : resolveProjectKind(settings.projectKind, projectUsesSections(db, projectId, projectHasScopedRun)) === "umbrella"
               // Root work of an umbrella is project work: shared as project:root; only an undefined source is unassigned.
@@ -91,7 +95,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
           trust: "observed", origin: "session",
           coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget });
         try { services.memoryConflicts.detect(projectId, new Set(result.insertedIds)); } catch { /* the write stands; the conflict check is retried by the next write */ }
-        const id = result.insertedIds[0] ?? result.corroboratedIds[0] ?? null;
+        const id = result.insertedIds[0] ?? result.corroboratedIds[0] ?? result.duplicateIds[0] ?? null;
         return { stored: result.insertedIds.length > 0, id, reason: result.insertedIds.length ? null : result.corroboratedIds.length ? "corroborated" : "duplicate" };
       } catch (cause) {
         return { stored: false, id: null, reason: cause instanceof Error ? cause.message : String(cause) };

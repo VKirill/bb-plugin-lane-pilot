@@ -15,6 +15,8 @@ export type SuiteNote = {
   supersedes?: string;
   /** Planted, then moved off the shelf by the note budget: archived (`expired_reason: budget`), still indexed and embedded, so a PM search finds it and a brief does not. */
   archived?: boolean;
+  /** Planted through the import door (`origin: import`), the way a note arrives from another memory store. */
+  imported?: boolean;
 };
 
 /** Nature words that appear in no other fixture note: filler whose stems do not overlap any question. */
@@ -101,7 +103,7 @@ export const SUITE_NOTES: SuiteNote[] = [
  * grey band of H3 and H6) and would compete for one budget, so a case names its set with `notes`. H11: two notes that match one question and do not fit the PM
  * budget together. H12: a long ledger whose answer sits next to the paragraph the question names.
  */
-export const SUITE_PACK_NOTES: Record<"heads" | "chunks", SuiteNote[]> = {
+export const SUITE_PACK_NOTES: Record<"heads" | "chunks" | "dups", SuiteNote[]> = {
   heads: [
     { key: "kestrel-a", content: bigNote("Kestrel tallow lanyard rule A: pallets of the Kestrel depot are held 45 days before release."), concepts: ["kestrel"] },
     { key: "kestrel-b", content: bigNote("Kestrel tallow lanyard rule B: the tallow seal on a Kestrel lanyard is renewed every 8 days."), concepts: ["kestrel"] },
@@ -109,9 +111,17 @@ export const SUITE_PACK_NOTES: Record<"heads" | "chunks", SuiteNote[]> = {
   chunks: [
     { key: "ledger", content: LEDGER, concepts: ["ledger"] },
   ],
+  // H13: a fact and its copy imported from another store (a source mark in front), and a fact and a longer restatement of it. Planted by the write
+  // door: with the near-duplicate check on, the copy is not stored and the longer wording replaces the shorter one.
+  dups: [
+    { key: "relay", content: "The Muse relay connector signs every outbound request with a rotating token and retries three times before it parks the job (services/muse/relay.ts).", concepts: ["muse"] },
+    { key: "relay-copy", imported: true, content: "[из авто-памяти Claude Code, project memory] The Muse relay connector signs every outbound request with a rotating token and retries three times before it parks the job (services/muse/relay.ts).", concepts: ["muse", "kind:fact"] },
+    { key: "pallet-old", content: "Quarantined pallets are scanned at bay twelve by the night crew and tagged with a violet sticker (services/quarantine/scan.ts).", concepts: ["quarantine"] },
+    { key: "pallet-long", content: "Quarantined pallets are scanned at bay twelve by the night crew and tagged with a violet sticker (services/quarantine/scan.ts); a pallet with a torn sticker is rescanned by the shift lead before dispatch.", concepts: ["quarantine"] },
+  ],
 };
 
-export type SuiteFamily = "H1" | "H2" | "H3" | "H4" | "H5" | "H6" | "H8" | "H9" | "H10" | "H11" | "H12";
+export type SuiteFamily = "H1" | "H2" | "H3" | "H4" | "H5" | "H6" | "H8" | "H9" | "H10" | "H11" | "H12" | "H13";
 export type SuiteCase = {
   id: string; family: SuiteFamily;
   /** What the case exercises, for the table. */
@@ -128,7 +138,7 @@ export type SuiteCase = {
   /** Text the reader's context must carry: a date interval of a replaced version, or the paragraph of a long record that answers. */
   contains?: string[];
   /** the case runs against its own set of `SUITE_PACK_NOTES` (H11, H12). */
-  notes?: "heads" | "chunks";
+  notes?: "heads" | "chunks" | "dups";
 };
 
 const pm = (id: string, family: SuiteFamily, kind: string, question: string, expect: SuiteCase["expect"], more: Partial<SuiteCase> = {}): SuiteCase => ({ id, family, kind, question, surface: "pm", expect, ...more });
@@ -224,5 +234,8 @@ export const SUITE_CASES: SuiteCase[] = [
   // H11: a record over the budget appears as a head line (date, id, start of the text) instead of vanishing from the pack.
   pm("h11-kestrel", "H11", "head line", "What do the Kestrel tallow lanyard rules say about seals and audits?", ["kestrel-b"], { notes: "heads", contains: ["head; id=", "Kestrel tallow lanyard rule A: pallets of the Kestrel depot are held 45 days"] }),
   // H12: the best chunk is the one the question names; the answer stands in its neighbour, which the pack delivers with it.
+  // H13: an imported copy of a stored fact makes no second note; a longer restatement is the next version of the first. Search returns one.
+  pm("h13-copy", "H13", "imported copy", "How does the Muse relay connector sign requests and how often does it retry?", ["relay"], { notes: "dups", forbid: ["relay-copy"] }),
+  pm("h13-longer", "H13", "longer restatement", "How are quarantined pallets tagged at bay twelve and what happens to a torn sticker?", ["pallet-long"], { notes: "dups", forbid: ["pallet-old"] }),
   pm("h12-customs", "H12", "neighbour chunk", "What clears a Porto customs hold on a pallet?", ["ledger"], { notes: "chunks", contains: ["PX-9913", "part 5\u20137/"] }),
 ];

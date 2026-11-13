@@ -43,7 +43,7 @@ export type SuitePlant = { db: LanePilotDatabase; ids: Map<string, string>; keys
 const LIMITS = { coreBudget: 9_999, noteBudget: 99_999, indexBudget: 99_999 };
 
 /** Plants the fixture through the write door (so supersede and scopes work as in production) and gives every active note a stand-in vector. */
-export function plantSuite(migrations: readonly string[], notes: readonly SuiteNote[] = SUITE_NOTES): SuitePlant {
+export function plantSuite(migrations: readonly string[], notes: readonly SuiteNote[] = SUITE_NOTES, door: { nearDuplicates?: boolean } = {}): SuitePlant {
   const raw = new Database(":memory:");
   for (const statement of migrations) raw.exec(statement);
   const db = raw as unknown as LanePilotDatabase;
@@ -53,8 +53,10 @@ export function plantSuite(migrations: readonly string[], notes: readonly SuiteN
     const oldId = note.supersedes ? ids.get(note.supersedes) : undefined;
     if (note.supersedes && !oldId) throw new Error(`suite note ${note.key} replaces ${note.supersedes}, which is not planted before it`);
     const scope = note.scope === "shared" ? sharedScope() : note.scope ?? [];
-    const stored = storeMemoryRecords(db as never, { ...LIMITS, projectId: SUITE_PROJECT, audience: note.audience ?? "subagent", sourceSha256: "s".repeat(64), now: now - (notes.length - index) * 1000, scope, origin: "maintainer",
+    const stored = storeMemoryRecords(db as never, { ...LIMITS, projectId: SUITE_PROJECT, audience: note.audience ?? "subagent", sourceSha256: "s".repeat(64), now: now - (notes.length - index) * 1000, scope, origin: note.imported ? "import" : "maintainer", ...door,
       entries: [{ kind: note.kind ?? "note", content: note.content, concepts: note.concepts ?? ["suite"], ...(oldId ? { supersedes: [oldId.slice(0, 12)] } : {}) }] });
+    // A copy the door absorbed has no row of its own: it maps to the note that took it, which keeps its own key.
+    if (!stored.insertedIds[0] && stored.duplicateIds[0]) { ids.set(note.key, stored.duplicateIds[0]); return; }
     const id = stored.insertedIds[0] ?? stored.records.find((record) => record.content === note.content)?.id;
     if (!id) throw new Error(`suite note ${note.key} was not stored`);
     ids.set(note.key, id); keys.set(id, note.key);
@@ -130,7 +132,7 @@ export type FamilyScore = { family: SuiteFamily | "H7"; title: string; n: number
 export type SuiteCost = { meanTokens: number; p95Ms: number; maxTokens: number; cases: number };
 export type SuiteReport = { cases: CaseResult[]; families: FamilyScore[]; cost: SuiteCost; leaks: string[] };
 
-const TITLES: Record<SuiteFamily, string> = { H1: "writer brief recall", H2: "PM question on a past decision", H3: "no answer (incl. near-miss)", H4: "updated fact returns the new version", H5: "cross-section leakage", H6: "grey band of the gate", H8: "archived record found by PM search", H9: "history question shows the old version", H10: "long record found by a later paragraph", H11: "record over budget shown as a head line", H12: "answer in a neighbour chunk of the best one" };
+const TITLES: Record<SuiteFamily, string> = { H1: "writer brief recall", H2: "PM question on a past decision", H3: "no answer (incl. near-miss)", H4: "updated fact returns the new version", H5: "cross-section leakage", H6: "grey band of the gate", H8: "archived record found by PM search", H9: "history question shows the old version", H10: "long record found by a later paragraph", H11: "record over budget shown as a head line", H12: "answer in a neighbour chunk of the best one", H13: "copy of a stored fact makes no second note" };
 const pct = (value: number) => `${(value * 100).toFixed(0)}%`;
 
 export function scoreSuite(cases: readonly CaseResult[]): SuiteReport {
@@ -160,9 +162,9 @@ export function scoreSuite(cases: readonly CaseResult[]): SuiteReport {
 }
 
 /** The whole offline suite on fresh scratch databases: the main fixture, and one for each set of the packing cases (H11, H12). */
-export function runSuite(migrations: readonly string[], cases: readonly SuiteCase[] = SUITE_CASES, options: PackOptions = {}): SuiteReport {
-  const plants = new Map<string, SuitePlant>([["main", plantSuite(migrations)]]);
-  for (const item of cases) if (item.notes && !plants.has(item.notes)) plants.set(item.notes, plantSuite(migrations, SUITE_PACK_NOTES[item.notes]));
+export function runSuite(migrations: readonly string[], cases: readonly SuiteCase[] = SUITE_CASES, options: PackOptions = {}, door: { nearDuplicates?: boolean } = {}): SuiteReport {
+  const plants = new Map<string, SuitePlant>([["main", plantSuite(migrations, SUITE_NOTES, door)]]);
+  for (const item of cases) if (item.notes && !plants.has(item.notes)) plants.set(item.notes, plantSuite(migrations, SUITE_PACK_NOTES[item.notes], door));
   try { return scoreSuite(cases.map((item) => runCase(plants.get(item.notes ?? "main")!, item, options))); }
   finally { for (const plant of plants.values()) (plant.db as unknown as Database.Database).close(); }
 }
