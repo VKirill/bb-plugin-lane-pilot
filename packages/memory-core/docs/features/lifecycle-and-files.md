@@ -2,9 +2,9 @@
 title: Memory lifecycle and file integration
 type: component
 created: 2026-11-07
-updated: 2026-11-11
+updated: 2026-11-13
 status: active
-confidence: high
+confidence: medium
 tags: [memory, lifecycle, files, import, export, fingerprint, drift]
 sources:
   - packages/memory-core/src/lifecycle.ts
@@ -94,6 +94,7 @@ The lifecycle and file integration subsystem tracks facts over time, expires out
 - `memoryUsefulness(record)`: calculates smoothed utility score (`packages/memory-core/src/lifecycle.ts:88-92`).
 - `recordMemoryMixed(db, projectId, ids, now?)`: records brief usage for an array of record IDs (`packages/memory-core/src/lifecycle.ts:94-98`).
 - `recordMemoryReceipt(db, input)`: inserts retrieval receipt into `lane_pilot_memory_receipt` (`packages/memory-core/src/lifecycle.ts:100-106`).
+- `listMemoryReceipts(db, projectId?, limit?)`: reads newest receipts globally or for one project, clamping the limit to 1–500 rows (`packages/memory-core/src/lifecycle.ts:130-153`).
 - `recordMemoryAccepted(db, projectId, ids)`: increments accepted attempt counter (`packages/memory-core/src/lifecycle.ts:114-118`).
 - `recordCriticUse(db, projectId, ids)`: increments critic usage counter (`packages/memory-core/src/lifecycle.ts:108-112`).
 - `reviewMemory(db, projectId?, now?)`: returns sorted same-subject, idle, and dated review proposals without mutating the corpus (`packages/memory-core/src/lint.ts:123-142`).

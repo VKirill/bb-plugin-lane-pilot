@@ -2,7 +2,7 @@
 title: Memory records and receipts data model
 type: data-model
 created: 2026-11-07
-updated: 2026-11-11
+updated: 2026-11-13
 status: active
 confidence: medium
 tags: [memory, data-model, records, receipts, sqlite, lifecycle]
@@ -78,7 +78,7 @@ Purpose: canonical storage for project conventions (`kind = 'core'`) and context
 
 | Field | Meaning | Allowed values and source | Units / Format | Evidence |
 |---|---|---|---|---|
-| `id` | Unique record identity hash | 64-character SHA-256 hex string computed by `memoryRecordId` | Hex string | `packages/memory-core/src/candidates.ts:70-78` |
+| `id` | Unique record identity hash | 64-character SHA-256 hex string computed by `memoryRecordId` | Hex string | `packages/memory-core/src/candidates.ts:76-81` |
 | `project_id` | Project identifier owning the record | Non-empty project string from environment or settings | UTF-8 string | `packages/memory-core/src/store.ts:26` |
 | `personal_bot` (`packages/memory-core/src/store.ts:18`) | Bot namespace from `MEMORY_PERSONAL_BOTS` (`packages/memory-core/src/settings.ts:3`) parsed as `personalBot` (`packages/memory-core/src/settings.ts:58`) | Allowed bot names | String | `packages/memory-core/src/store.ts:18` |
 | `kind` (`packages/memory-core/src/store.ts:18`) | Storage category typed by `MemoryKind` (`packages/memory-core/src/settings.ts:6`) | `"core"` or `"note"` | String | `packages/memory-core/src/store.ts:18` |
@@ -108,7 +108,7 @@ Purpose: canonical storage for project conventions (`kind = 'core'`) and context
 | Initial state | Next state | Function | Trigger condition | Evidence |
 |---|---|---|---|---|
 | (new) | `"active"` | `storeMemoryRecords` (`packages/memory-core/src/store.ts:214-224`) | Candidate passes admission checks and budgets | `packages/memory-core/src/store.ts:214-224` |
-| (new) | `"active"` | `insertMemoryRecord` (`packages/memory-core/src/store.ts:550-556`) | Evaluation corpus seed row inserted directly | `packages/memory-core/src/store.ts:550-556` |
+| (new) | `"active"` | `insertMemoryRecord` (`packages/memory-core/src/store.ts:552-556`) | Evaluation corpus seed row is inserted directly; the schema default supplies its active status | `packages/memory-core/src/store.ts:552-556`, `src/rooms/migrations.ts:286` |
 | `"active"` | `"superseded"` | `hideRecord` (`packages/memory-core/src/lifecycle.ts:31-35`) | Replaced by newer record via `supersedes` (`packages/memory-core/src/store.ts:188-193`), `sourceFileId` (`packages/memory-core/src/store.ts:181-183`), or `sameSubject` (`packages/memory-core/src/store.ts:192-193`) | `packages/memory-core/src/store.ts:176-179` |
 | `"active"` | `"expired"` | `hideRecord` (`packages/memory-core/src/lifecycle.ts:31-34`) | Evicted for budget (`expired_reason = 'budget'`) | `packages/memory-core/src/store.ts:201-212` |
 | `"active"` | `"expired"` | `hideRecord` (`packages/memory-core/src/lifecycle.ts:31-35`) | Not used for 90 days (`expired_reason = 'idle'`) | `packages/memory-core/src/lifecycle.ts:38-42` |
@@ -161,6 +161,7 @@ Purpose: canonical storage for project conventions (`kind = 'core'`) and context
   - `memoryFillRows` / `memoryHiddenRows`: calculates shelf fill and hidden counts by status (`packages/memory-core/src/store.ts:415-419, 429-431`).
   - `firstUnusedCoreRecordId`: finds oldest unaccepted maintainer core record (`packages/memory-core/src/store.ts:434-439`).
   - `memoryRecordExists`: verifies whether record exists in project (`packages/memory-core/src/store.ts:618-635`).
+  - `listMemoryReceipts`: reads recent retrieval receipts, globally or by project, with a limit clamped to 1–500 (`packages/memory-core/src/lifecycle.ts:130-153`).
 
 ## Table: `lane_pilot_memory_receipt`
 
