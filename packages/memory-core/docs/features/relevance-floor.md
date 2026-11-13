@@ -38,7 +38,7 @@ The relevance floor filters retrieved search results by lexical weight, path anc
    where $N$ is total active records and $n_{\text{stem}}$ is the number of records containing that stem (`packages/memory-core/src/floor.ts:75-90`).
 6. Threshold interpolation: `floorThreshold` computes the score target based on question distinct word count, interpolating between `minScoreShort` and `minScore` (`packages/memory-core/src/floor.ts:96-99`).
 7. Evaluating lexical clearance: `clearsFloor` grants admission if `floor.anchor` is enabled and the record text matches a query path anchor, or if total shared stem weight reaches `floorThreshold` (`packages/memory-core/src/floor.ts:134-135`).
-8. Evaluating dense vector clearance: for records carrying a vector cosine similarity score, `relevantRecords` checks if `similarity >= DENSE_FLOOR` (0.65) or if the record matches a path anchor (`packages/memory-core/src/floor.ts:106, 162-164`).
+8. Evaluating dense vector clearance: for records carrying a vector cosine similarity score, `relevantRecords` checks if `similarity >= DENSE_PREFILTER` (0.50) or if the record matches a path anchor (`packages/memory-core/src/floor.ts:106, 162-164`).
 9. Answer confidence: `weakAnswer` evaluates the search results before floor filtering. It returns `false` when the floor is disabled, the list is empty, an enabled path anchor matches, or the answer probability cannot be calculated; it returns `true` below `ANSWER_GATE.min` (`packages/memory-core/src/floor.ts:119-153`).
 10. Returning floor matches: `relevantRecords` preserves input order for records passing the lexical or vector floor. The answer check does not change that list (`packages/memory-core/src/floor.ts:156-164`).
 
@@ -50,7 +50,7 @@ The relevance floor filters retrieved search results by lexical weight, path anc
 | Long query (>= 17 distinct stems) | Full task description or bug report | Threshold capped at `minScore = 2.0` | Higher cumulative weight required to avoid accidental overlap | `packages/memory-core/src/floor.ts:31, 96-99` |
 | Intermediate query (12 to 17 stems) | Medium length query | Linear interpolation between 0 and 2.0 | Proportional threshold | `packages/memory-core/src/floor.ts:96-99` |
 | Path anchor match | Query and record both contain identical `dir/file.ts` segment | `anchor = true` | Clears floor unconditionally regardless of score | `packages/memory-core/src/floor.ts:27, 90, 134-135` |
-| Dense vector record | Record carries `.similarity` from `vectors.ts` | Checked against `DENSE_FLOOR = 0.65` | `similarity >= 0.65` or path anchor match | `packages/memory-core/src/floor.ts:106, 162-164` |
+| Dense vector record | Record carries `.similarity` from `vectors.ts` | Checked against `DENSE_PREFILTER = 0.50` | `similarity >= 0.50` or path anchor match | `packages/memory-core/src/floor.ts:106, 162-164` |
 | Floor bypassed | `floor: null` passed in options | Bypasses calculations | Returns all candidate records unchanged | `packages/memory-core/src/floor.ts:157-159` |
 | Weak answer check | At least three meaning-ranked records, enabled floor, no matching path anchor | Logistic probability over similarity and lexical weights | Returns a boolean; does not filter records | `packages/memory-core/src/floor.ts:117-153` |
 
@@ -66,17 +66,17 @@ The relevance floor filters retrieved search results by lexical weight, path anc
 ## Business rules
 
 - Default parameters: `DEFAULT_RELEVANCE_FLOOR` defines `minScore: 2`, `minScoreShort: 0`, `shortWords: 12`, `longWords: 17`, and `anchor: true` (`packages/memory-core/src/floor.ts:31`).
-- Dense vector cutoff: `DENSE_FLOOR` is fixed at `0.65` cosine similarity for 768-dimensional embeddings (`packages/memory-core/src/floor.ts:106`).
+- Dense vector cutoff: `DENSE_PREFILTER` is fixed at `0.50` cosine similarity for 768-dimensional embeddings (a safety pre-filter; the former 0.65 floor lost 21.6% of the answering sessions on LongMemEval) (`packages/memory-core/src/floor.ts:106`).
 - Stem length requirement: tokens under 4 characters are excluded from word frequency and relevance calculations to prevent stop-word noise (`packages/memory-core/src/floor.ts:38`).
 - Path anchor specificity: path anchors require at least two path segments (`parts.length >= 2`), matching `sub/file.ts` rather than bare file names or root directories (`packages/memory-core/src/floor.ts:44-52`).
-- Weak answer signal: `weakAnswer` returns whether the unfiltered search probability is below `ANSWER_GATE.min` (`0.25`); it leaves the result list untouched. `WEAK_MATCH` is the warning text exported for callers (`packages/memory-core/src/floor.ts:117-153`).
+- Weak answer signal: `weakAnswer` returns whether the unfiltered search probability is below `ANSWER_GATE.min` (`0.25`); it leaves the result list untouched. Nothing shown to a reader depends on it since 2026-11-13 (the `WEAK_MATCH` line is gone); `gateScore` keeps the probability for the judge's receipt (`packages/memory-core/src/floor.ts`).
 
 ## Public API or commands
 
 - `relevantRecords(db, projectId, query, records, opts?)`: filters an array of records using the configured relevance floor (`packages/memory-core/src/floor.ts:156-164`).
 - `weakAnswer(db, projectId, query, records, opts?)`: flags a low-confidence meaning search without filtering its records (`packages/memory-core/src/floor.ts:144-154`).
 - `answerProbability(records, relevance)`: calculates the answer probability for up to 40 similarity-ranked records, or returns `null` when fewer than three have similarity scores (`packages/memory-core/src/floor.ts:119-132`).
-- `WEAK_MATCH`: warning text for a doubtful search, exported through the package root (`packages/memory-core/src/floor.ts:137-142`, `packages/memory-core/src/index.ts:20`).
+- `gateScore(db, projectId, query, records, opts?)`: the gate's probability, for receipts only (`packages/memory-core/src/floor.ts`).
 - `clearsFloor(relevance, floor, words)`: checks if a single record's relevance score satisfies the floor (`packages/memory-core/src/floor.ts:134-135`).
 - `floorThreshold(floor, words)`: computes dynamic score threshold for a given query word count (`packages/memory-core/src/floor.ts:96-99`).
 - `recordRelevance(frequencies, query, records)`: calculates shared words, cumulative weight, and anchor flags for each record (`packages/memory-core/src/floor.ts:75-93`).

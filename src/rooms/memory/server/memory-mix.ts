@@ -1,8 +1,9 @@
-import { DEFAULT_RELEVANCE_FLOOR, MEMORY_SETTING_KEYS, projectUsesSections, relevantRecords, resolveProjectKind, WEAK_MATCH, weakAnswer, isHistoryQuery, withHistory, REVIEWER_CONCEPTS, activeMemoryDigestRows, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, recordCriticUse, roleContextBudget, searchMemoryRecords, type MemoryRecord, type MemorySearchEngine, type MemorySettings, type RelevanceFloor } from "@lane-pilot/memory-core";
+import { DEFAULT_RELEVANCE_FLOOR, MEMORY_SETTING_KEYS, projectUsesSections, DENSE_PREFILTER, relevantRecords, resolveProjectKind, isHistoryQuery, withHistory, REVIEWER_CONCEPTS, activeMemoryDigestRows, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, recordCriticUse, roleContextBudget, searchMemoryRecords, type MemoryRecord, type MemorySearchEngine, type MemorySettings, type RelevanceFloor } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
 import { getRunSettingsScopes, loadProjectSettings, projectHasScopedRun, type LanePilotDatabase } from "../../storage";
 import { memoryLine, pathAnchors, reviewerMemoryPicks, writerMemory, writerMemoryPicks } from "./memory-picks";
 import { configuredSetting } from "../../contracts/server";
+import { judgeFound } from "./memory-judge";
 
 type TaskPaths = Pick<TaskV2, "owns_paths" | "read_first">;
 
@@ -17,7 +18,9 @@ type WriterMixInput = { projectId: string; query: string; task: TaskPaths & Part
   /** The run's sections: notes of a sibling section of a shared project are not this writer's. */
   chain?: readonly string[];
   /** Current bytes of a repo-relative path. A note whose stored file hash no longer matches is left out of the brief. */
-  readFile?: (path: string) => Uint8Array | null };
+  readFile?: (path: string) => Uint8Array | null;
+  /** The notes the judge let through (`judgeWriterMemory`); a search hit outside it is dropped. Unset: every hit stays. */
+  allowedIds?: ReadonlySet<string> | null };
 
 const umbrellaFor = (db: LanePilotDatabase, input: { projectId: string; kind?: "auto"|"standalone"|"umbrella" }) => resolveProjectKind(input.kind, projectUsesSections(db, input.projectId, projectHasScopedRun)) === "umbrella";
 export function writerCandidates(db: LanePilotDatabase, input: WriterMixInput): MemoryRecord[] {
@@ -62,8 +65,22 @@ function taggedCandidates(db: LanePilotDatabase, input: WriterMixInput): { notes
     .filter((record) => record.kind !== "core" && !input.ruleMemoryIds.has(record.id)) };
 }
 
-export function mixWriterMemory(db: LanePilotDatabase, input: WriterMixInput): { text: string; ids: string[] } {
+/**
+ * The writer's brief asks the judge once (the cache holds the answer for ten minutes, so a second brief of the same task does not ask again):
+ * the search hits that name a path of the task stay, the others go to the judge, which keeps the ones that help. The ids that may reach
+ * `mixWriterMemory`, or null when no judge ran (off, no hits): then the brief is what it was.
+ */
+export async function judgeWriterMemory(db: LanePilotDatabase, input: WriterMixInput, memory: MemorySettings): Promise<ReadonlySet<string> | null> {
   const found = writerCandidates(db, input);
+  const anchors = pathAnchors(input.task);
+  const named = found.filter((record) => anchors.some((anchor) => record.content.includes(anchor)));
+  const rest = found.filter((record) => !named.includes(record) && (record.similarity === undefined || record.similarity >= DENSE_PREFILTER));
+  const judged = await judgeFound(db, { projectId: input.projectId, query: input.query, found: rest, memory, surface: "writer" });
+  return judged.judged ? new Set([...named, ...judged.records].map((record) => record.id)) : null;
+}
+
+export function mixWriterMemory(db: LanePilotDatabase, input: WriterMixInput): { text: string; ids: string[] } {
+  const found = writerCandidates(db, input).filter((record) => !input.allowedIds || input.allowedIds.has(record.id));
   const kept = input.readFile ? found.filter((record) => !filesDrifted(record.fileFingerprint, pathsNamed(record.content), input.readFile!)) : found;
   const { notes, tags: taskTags } = taggedCandidates(db, input);
   const tagged = notes.filter((record) => !kept.some((hit) => hit.id === record.id) && !(input.readFile && filesDrifted(record.fileFingerprint, pathsNamed(record.content), input.readFile)));
@@ -125,26 +142,30 @@ export function taskMemoryContext(db: LanePilotDatabase, projectId: string, runI
   }
 }
 
-/** The PM path's search and its records after the relevance floor, before packing. With `gate` it also says whether the answer gate doubts the search (memory-core `weakAnswer`). */
-function pmSearch(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain: readonly string[] | undefined, floor: RelevanceFloor | null, gate: boolean) {
+/** The PM path's search and its records after the relevance floor (the cosine pre-filter, a path named in the question, or enough rare words), before packing. The archive is searched too; a question about the past also gets the versions a newer note replaced, with their dates. */
+function pmSearch(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain: readonly string[] | undefined, floor: RelevanceFloor | null) {
   const records = searchMemoryRecords(db, projectId, query, 100, memory.searchEngine, memory.audience, memory.personalBot, { chain: chain ?? [], includeArchive: true });
-  const opts = { audience: memory.audience, personalBot: memory.personalBot, floor };
-  const found = relevantRecords(db, projectId, query, records, opts);
-  // A question about the past also gets the versions a newer note replaced, with their dates; any other question gets the current facts alone.
-  return { records: isHistoryQuery(query) ? withHistory(db, projectId, found) : found, weak: gate && weakAnswer(db, projectId, query, records, opts) };
+  const found = relevantRecords(db, projectId, query, records, { audience: memory.audience, personalBot: memory.personalBot, floor });
+  return isHistoryQuery(query) ? withHistory(db, projectId, found) : found;
 }
 
 /** The PM path's ranked records after the relevance floor, before packing. */
 export function pmShortlist(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[], floor: RelevanceFloor | null = memory.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR): MemoryRecord[] {
-  return pmSearch(db, projectId, memory, query, chain, floor, false).records;
+  return pmSearch(db, projectId, memory, query, chain, floor);
 }
 
-/** What the PM tool `lane_pilot_memory {action:"context"}` returns for a query: the project's records ranked for it, within the context budget. Also what the memory probe reads. */
-export function pmMemoryContext(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[], role = "pm", floor: RelevanceFloor | null = memory.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR, gate = false) {
-  // The relevance floor (a query path only): a question the notes cannot answer gets an explicit «nothing». `floor: null` is the old behaviour.
-  // `gate` (the PM `context` action): when the answer gate doubts the search the notes still go out, under WEAK_MATCH, and the PM decides.
-  const found = pmSearch(db, projectId, memory, query, chain, floor, gate);
-  const packed = memoryContext(found.records, query, roleContextBudget(role,memory.contextBudget));
-  const weakMatch = found.weak && packed.records.length > 0;
-  return { ...packed, ...(weakMatch ? { text: `${WEAK_MATCH}\n\n${packed.text}`, weakMatch } : {}), nothingRelevant: packed.records.length === 0 };
+/**
+ * The PM's automatic per-turn context and the helpers': the vector's best notes without a judge (the judge costs seconds, and the PM reads
+ * a list well alone), packed by the role's budget. No warning line: a search the notes cannot answer shows the empty-list «nothing».
+ */
+export function pmMemoryContext(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[], role = "pm", floor: RelevanceFloor | null = memory.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR) {
+  const packed = memoryContext(pmSearch(db, projectId, memory, query, chain, floor), query, roleContextBudget(role, memory.contextBudget));
+  return { ...packed, nothingRelevant: packed.records.length === 0 };
+}
+
+/** What the PM tool `lane_pilot_memory {action:"context"}` returns for a query (an explicit search): the same search, then the judge, then the packing. */
+export async function pmMemoryContextJudged(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[], role = "pm", floor: RelevanceFloor | null = memory.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR) {
+  const judged = await judgeFound(db, { projectId, query, found: pmSearch(db, projectId, memory, query, chain, floor), memory, surface: "pm_tool", audience: memory.audience });
+  const packed = memoryContext(judged.records, query, roleContextBudget(role, memory.contextBudget));
+  return { ...packed, nothingRelevant: packed.records.length === 0 };
 }

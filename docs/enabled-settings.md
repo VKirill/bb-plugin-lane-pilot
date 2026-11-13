@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure c4484f7035baa804 -->
+<!-- enabled-settings:structure b1bc3965dd1ab253 -->
 
 # Enabled settings (generated)
 
@@ -129,6 +129,11 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `memory.enabled` | `true` | — | stage setting: enable isolated project memory maintenance and injection |
 | `memory.index_budget` | `65536` | — | stage setting: cap total project index tokens |
 | `memory.inject` | `true` | — | stage setting: retrieve bounded relevant project memory for a writer |
+| `memory.judge.candidates` | `12` | — | stage setting: how many of the vector's best notes the judge reads (default 12) |
+| `memory.judge.enabled` | `true` | — | stage setting: last-stage judge of explicit memory searches and the writer brief (on by default, a stored off opts out) |
+| `memory.judge.fallback_model` | `gpt-6-luna` | — | stage setting: the model tried once when the judge model answers with an HTTP error (default gpt-6-luna) |
+| `memory.judge.model` | `gemini-3.8-flash` | — | stage setting: the judge model on OpenLux (default gemini-3.8-flash) |
+| `memory.judge.timeout_ms` | `12000` | — | stage setting: time before the judge gives up and the search returns the vector's first five (default 12000 ms) |
 | `memory.maintain_every` | `3` | — | stage setting: run the memory maintainer on every Nth accepted task |
 | `memory.maintain_mode` | `wave` | — | stage setting: a free fact per accepted task and one maintainer run per idle wave, or a helper per task |
 | `memory.maintain` | `true` | — | stage setting: maintain durable project memory after accepted work |

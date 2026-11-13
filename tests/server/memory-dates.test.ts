@@ -49,7 +49,7 @@ describe("a history query shows the replaced version, any other question does no
     storeMemoryRecords(db, { ...limits, now: day("2026-11-05"), entries: [{ kind: "note", content: "Parcels over 30 kilograms are rejected by the label service in services/labels/limits.ts.", concepts: ["labels", "limits"], supersedes: [old!.slice(0, 12)] }] });
     return db;
   };
-  const ask = (db: ReturnType<typeof seed>, query: string) => pmMemoryContext(db, "P", parseMemorySettings({}), query, [], "pm", undefined, true).text;
+  const ask = (db: ReturnType<typeof seed>, query: string) => pmMemoryContext(db, "P", parseMemorySettings({}), query, [], "pm").text;
 
   it("the history question carries both versions, dated, oldest first", () => {
     const text = ask(seed(), "What was the parcel weight limit of the label service before the change?");

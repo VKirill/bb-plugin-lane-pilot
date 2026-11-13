@@ -37,7 +37,7 @@ export type MemoryPath = {
 export const MEMORY_PRIMITIVES = [
   "writerKnowledge", "writerRules", "stickyTurnPromptWithRules", "mixWriterMemory", "mixReviewerMemory", "reviewerMemoryFor", "writerContextBlocks",
   "pmRulesPromptBlock", "pmRulesBlock", "pmRulesOf", "pmResumeInstructions", "contributeInstructions", "ownerCardBlock", "projectPassportBlock",
-  "pmMemoryContext", "councilMemoryBlock", "searchMemoryRecords", "listMemory", "memoryContext", "acceptedRules",
+  "pmMemoryContext", "pmMemoryContextJudged", "councilMemoryBlock", "searchMemoryRecords", "listMemory", "memoryContext", "acceptedRules",
   "session_memory_search", "session_memory_core", "enrichMemoryContext",
 ] as const;
 export type MemoryPrimitive = (typeof MEMORY_PRIMITIVES)[number];
@@ -79,8 +79,8 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
     sites: [{ file: "src/rooms/writer/server/dispatch.ts", primitive: "pmRulesOf", count: 1 }] },
   { id: "pm.memory_tool", consumer: "the PM tool lane_pilot_memory {action:\"context\"}", carries: ["note", "core"], alwaysOn: [], status: "probed",
     sites: [
-      { file: "src/rooms/memory/server/memory.ts", primitive: "pmMemoryContext", count: 1 },
-      { file: "src/rooms/memory/server/memory-mix.ts", primitive: "memoryContext", count: 1 },
+      { file: "src/rooms/memory/server/memory.ts", primitive: "pmMemoryContextJudged", count: 1 },
+      { file: "src/rooms/memory/server/memory-mix.ts", primitive: "memoryContext", count: 2 },
       { file: "src/rooms/memory/server/memory-mix.ts", primitive: "searchMemoryRecords", count: 1 },
     ] },
   { id: "schedule.agent", consumer: "the first message of a scheduled agent run (kind agent of the schedule board): the project's notes for the standing task", carries: ["note", "core"], alwaysOn: [], status: "probed",

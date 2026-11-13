@@ -98,7 +98,8 @@ describe("the retired YAML import rows", () => {
   it("are deleted from lane_pilot_project_settings and nothing else is touched", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = bb.storage.database();
-    bb.storage.migrate(db, migrations.slice(0, migrations.length - 1));
+    // The DELETE is not the last statement any more (later ones are appended after it).
+    bb.storage.migrate(db, migrations.slice(0, migrations.findIndex((statement) => statement.includes("DELETE FROM lane_pilot_project_settings WHERE key IN ('import.routing_profile'"))));
     const insert = db.prepare(`INSERT INTO lane_pilot_project_settings (project_id,binding_id,key,value,version,updated_at) VALUES (?,?,?,?,?,?)`);
     for (const key of ["import.routing_profile", "import.night_shift", "import.completed", "writer.provider"]) insert.run("p1", "", key, '"x"', 1, 1);
     openDatabase(bb);

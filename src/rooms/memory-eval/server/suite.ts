@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { DOC_CHARS, EMBED_DIM, estimateTokens, hideRecord, memoryStem, memoryTokens, parseMemorySettings, pendingChunks, pendingVectors, storeChunkVectors, recordRelevance, rememberQueryVector, searchMemoryRecords, sharedScope, storeMemoryRecords, storeVectors, answerProbability, wordFrequencies, type MemoryAudience, type MemoryRecord, type MemorySettings } from "@lane-pilot/memory-core";
+import { DOC_CHARS, EMBED_DIM, estimateTokens, hideRecord, memoryStem, memoryTokens, parseMemorySettings, pendingChunks, pendingVectors, storeChunkVectors, recordRelevance, rememberQueryVector, searchMemoryRecords, sharedScope, storeMemoryRecords, storeVectors, answerProbability, weakAnswer, wordFrequencies, type MemoryAudience, type MemoryRecord, type MemorySettings } from "@lane-pilot/memory-core";
 import type { LanePilotDatabase } from "../../storage";
 import { mixWriterMemory, pmMemoryContext } from "../../memory/server";
 import { SUITE_CASES, SUITE_NOTES, SUITE_PROJECT, type SuiteCase, type SuiteFamily, type SuiteNote } from "./suite-fixture";
@@ -7,7 +7,10 @@ import { SUITE_CASES, SUITE_NOTES, SUITE_PROJECT, type SuiteCase, type SuiteFami
 /**
  * The offline memory suite: the cases H1-H7 of the memory research run against synthetic notes in a scratch database, no network and no model.
  * It scores retrieval, the part of memory a change can break without a model in the loop: which records reach the PM context or the writer's
- * brief, and whether the answer gate warns (`weakMatch`) or the floor empties the list (`nothingRelevant`). `e2e.ts` adds the model on top.
+ * brief, and whether the judge would say «none» (`judgeNone`) or the floor empties the list (`nothingRelevant`). `e2e.ts` adds the model on top.
+ * Since round 2 (2026-11-13) the reader is no longer warned: the line is gone. The judge is a model call, so the offline suite stands in for it with the
+ * answer gate's verdict (`weakAnswer`): where the gate doubts the search the stub judge says none. The records of such a case still count as
+ * delivered (the stub only decides the abstention score), which is how the baseline keeps meaning the same thing.
  *
  * The embedding is a stand-in: words hashed into the 768 numbers the real model makes, plus one shared direction so unrelated texts sit near
  * 0.6 like the real model's. The cosines therefore are not the production ones. The suite measures that the path (search, floor, gate, packing,
@@ -71,7 +74,8 @@ export type CaseResult = {
   expect: string[] | "nothing";
   /** Keys of the notes that reached the reader, in the order of the context. */
   returned: string[]; missing: string[]; leaked: string[];
-  weakMatch: boolean; nothingRelevant: boolean;
+  /** The stub judge (the answer gate's verdict) says none. The real judge is `memory-judge.ts`; it needs a model and the network. */
+  judgeNone: boolean; nothingRelevant: boolean;
   /** The answer gate's probability that the search holds an answer; null where it cannot tell. */
   p: number | null;
   tokens: number; ms: number;
@@ -87,26 +91,33 @@ export function runCase(plant: SuitePlant, item: SuiteCase): CaseResult {
   rememberQueryVector(item.question, standInEmbedding(item.question));
   const audience = item.audience ?? "subagent";
   const started = performance.now();
-  let text: string, returnedIds: string[], weakMatch = false, nothingRelevant = false;
+  let text: string, returnedIds: string[], judgeNone = false, nothingRelevant = false;
   if (item.surface === "writer") {
     const mixed = mixWriterMemory(db, { projectId: SUITE_PROJECT, query: item.question, task: { owns_paths: item.paths ?? [], read_first: [] }, searchEngine: "auto", personalBot: "", ruleMemoryIds: new Set(), chain: item.chain ?? [] });
     text = mixed.text; returnedIds = mixed.ids;
     nothingRelevant = returnedIds.length === 0;
   } else {
-    const packed = pmMemoryContext(db, SUITE_PROJECT, SETTINGS(audience), item.question, item.chain ?? [], "pm", undefined, true);
+    const packed = pmMemoryContext(db, SUITE_PROJECT, SETTINGS(audience), item.question, item.chain ?? [], "pm");
     text = packed.text; returnedIds = packed.records.map((record) => record.id);
-    weakMatch = "weakMatch" in packed && packed.weakMatch === true; nothingRelevant = packed.nothingRelevant;
+    nothingRelevant = packed.nothingRelevant;
+    judgeNone = !nothingRelevant && stubJudgeNone(db, item, audience);
   }
   const ms = performance.now() - started;
   const returned = returnedIds.map((id) => keys.get(id) ?? id);
   const wanted = item.expect === "nothing" ? [] : item.expect;
   const missing = [...wanted.filter((key) => !returned.includes(key)), ...(item.contains ?? []).filter((snippet) => !text.includes(snippet)).map((snippet) => `text «${snippet}»`)];
   const leaked = (item.forbid ?? []).filter((key) => returned.includes(key));
-  const abstained = nothingRelevant || weakMatch;
+  const abstained = nothingRelevant || judgeNone;
   // H5 is about leaks: a question with no answer in the reader's reach may still get other, allowed notes.
   const needsAbstain = item.expect === "nothing" && item.family !== "H5";
   const pass = missing.length === 0 && leaked.length === 0 && (!needsAbstain || abstained);
-  return { id: item.id, family: item.family, kind: item.kind, pass, expect: item.expect, returned, missing, leaked, weakMatch, nothingRelevant, p: gateProbability(db, item, audience), tokens: estimateTokens(text), ms, context: text };
+  return { id: item.id, family: item.family, kind: item.kind, pass, expect: item.expect, returned, missing, leaked, judgeNone, nothingRelevant, p: gateProbability(db, item, audience), tokens: estimateTokens(text), ms, context: text };
+}
+
+/** The stub judge: «none» where the answer gate doubts the search and no record names a path written in the question. */
+function stubJudgeNone(db: LanePilotDatabase, item: SuiteCase, audience: MemoryAudience): boolean {
+  const records: MemoryRecord[] = searchMemoryRecords(db as never, SUITE_PROJECT, item.question, 100, "auto", audience, "", { chain: item.chain ?? [] });
+  return weakAnswer(db as never, SUITE_PROJECT, item.question, records, { audience, personalBot: "" });
 }
 
 function gateProbability(db: LanePilotDatabase, item: SuiteCase, audience: MemoryAudience): number | null {
@@ -129,10 +140,10 @@ export function scoreSuite(cases: readonly CaseResult[]): SuiteReport {
     let detail = "";
     if (family === "H3" || family === "H6") {
       const nothing = mine.filter((item) => item.expect === "nothing");
-      const silent = nothing.filter((item) => item.nothingRelevant).length, warned = nothing.filter((item) => !item.nothingRelevant && item.weakMatch).length;
-      detail = `of ${nothing.length} without answer: ${silent} silent, ${warned} warned, ${nothing.length - silent - warned} answered falsely`;
+      const silent = nothing.filter((item) => item.nothingRelevant).length, warned = nothing.filter((item) => !item.nothingRelevant && item.judgeNone).length;
+      detail = `of ${nothing.length} without answer: ${silent} silent, ${warned} judged none, ${nothing.length - silent - warned} answered falsely`;
       const yes = mine.filter((item) => item.expect !== "nothing");
-      if (yes.length) detail += `; ${yes.filter((item) => item.weakMatch).length}/${yes.length} answerable ones warned`;
+      if (yes.length) detail += `; ${yes.filter((item) => item.judgeNone).length}/${yes.length} answerable ones judged none`;
     } else if (family === "H5") {
       detail = `${mine.reduce((sum, item) => sum + item.leaked.length, 0)} leaks`;
     } else if (family === "H4") {
@@ -181,6 +192,6 @@ export function formatSuite(report: SuiteReport, baseline?: SuiteBaseline): stri
     const against = was ? ` (baseline ${was.pass}/${was.n})` : "";
     return `${row.family.padEnd(3)} ${row.title.padEnd(38)} ${row.family === "H7" ? "" : `${String(row.pass).padStart(3)}/${String(row.n).padEnd(3)} ${pct(row.rate).padStart(4)}`}  ${row.detail}${against}`;
   });
-  const failing = report.cases.filter((item) => !item.pass).map((item) => `  ${item.id}: ${item.missing.length ? `missing ${item.missing.join(",")}; ` : ""}${item.leaked.length ? `leaked ${item.leaked.join(",")}; ` : ""}${item.expect === "nothing" && !item.weakMatch && !item.nothingRelevant ? "answered with notes and no warning; " : ""}p=${item.p === null ? "n/a" : item.p.toFixed(3)}`);
+  const failing = report.cases.filter((item) => !item.pass).map((item) => `  ${item.id}: ${item.missing.length ? `missing ${item.missing.join(",")}; ` : ""}${item.leaked.length ? `leaked ${item.leaked.join(",")}; ` : ""}${item.expect === "nothing" && !item.judgeNone && !item.nothingRelevant ? "answered with notes where the judge says none; " : ""}p=${item.p === null ? "n/a" : item.p.toFixed(3)}`);
   return [`memory suite: ${report.cases.length} cases, stand-in embedding (offline)`, ...rows, ...(failing.length ? ["failing cases:", ...failing] : [])].join("\n");
 }
