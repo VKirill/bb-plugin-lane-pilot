@@ -30,6 +30,16 @@ The bar every skill meets, forged or published: `SKILL.md` plus the `references/
 
 `lintSkillDir(files)` (`src/rooms/forge/skill-lint.ts:88`) returns `{ errors, warnings }`; errors block, warnings advise. Frontmatter is read by `parseFrontmatter` (`src/rooms/docs/docs-lint.ts:48`), which folds a multi-line `description: >`. The CLI walks the folder, keeps text files, and exits 1 when any error stands.
 
+## Delivery: which layer wins, and why a plugin-only skill does not arrive
+
+BB builds the skill catalog of a session in `resolveSkillCatalogEntries` (core, `apps/server/src/services/skills/injected-skills.ts`). Priority, highest first: project skills, then the owner's skills (the hub copy in `~/.bb/skills`, scope `bb-user`), then plugin skills (`skills/` of an installed plugin, scope `plugin`). On a name clash the higher layer wins and the lower one is dropped silently (`excludeOverriddenLowerPriorityUserSources`): a skill that lives in the repository and on the hub is delivered from the hub, so a repository edit changes nothing for agents until it is published.
+
+A Lane Pilot role starts with a session policy (`ROLE_PROFILES`, `src/rooms/contracts/helper-context.ts`). Its `bbPlugins` list is empty for almost every role, and `lane-pilot` is not a mandatory plugin, so the core puts every skill whose provenance is the plugin `lane-pilot` into `bbSkillsDenied` (`buildVkRuntimeSessionPolicy`, `apps/server/src/services/threads/vk-session-policy.ts`). A hub skill has no plugin and passes the plugin filter; it then has to be on the role's `skills` allow-list (a graph node adds its own `skills` to it). Consequences:
+
+- `project-discovery-grill` exists only in the plugin, so no policy-bound Lane Pilot session (writer, graph node, PM helper) receives it. Only `workflow-architect` and `lead` allow the plugin, and they have no use for it.
+- Fix, no code change: publish it to the hub (`bb tools skills-publish`, see the publish list in the skills-standard work), so it arrives as an owner skill. `project-passport` nodes name it in `skills`, which puts it on the node's allow-list.
+- Rule for new skills: a skill that a graph node, a role or an overlay loads by name must be on the hub when the plugin is released; the plugin folder is the source, the hub copy is what agents read. `tests/skills-shipped.test.ts` checks that every name referenced exists in `skills/` or in `policy/external-skills.json`; it cannot see the hub.
+
 <!-- lane-pilot:backlinks -->
 ## Referenced by
 
