@@ -7,8 +7,12 @@ import { exportEvalExtract, loadEvalData } from "./source";
 import { runMemoryGate, type MemoryGate } from "./gate";
 // Imported, not read from disk: the plugin ships as one bundle and the JSON would not sit next to it.
 import gateFixture from "./gate-fixture.json";
+import suiteBaseline from "./suite-baseline.json";
+import { baselineOf, formatSuite, regressions, runSuite, type SuiteBaseline } from "./suite";
+import { formatE2e, runE2e, stubModel, type ModelCall } from "./e2e";
+import { formatPublic, loadFactConsolidation, loadLongMemEvalAbstention, runFactConsolidation, runLongMemEvalAbstention } from "./public-sets";
 
-export const MEMORY_EVAL_USAGE = "bb lane-pilot memory-eval [--sizes 30,300,3000] [--seed N] [--scope project|pile] [--shelf] [--floor] [--no-floor] [--north-star] [--gate] [--source <extract.db>] [--export <extract.db>] [--json]";
+export const MEMORY_EVAL_USAGE = "bb lane-pilot memory-eval [--sizes 30,300,3000] [--seed N] [--scope project|pile] [--shelf] [--floor] [--no-floor] [--north-star] [--gate] [--suite [--write-baseline <file>]] [--e2e [--limit N] [--project <id>] [--stub]] [--longmemeval <file>] [--factcons <file>] [--source <extract.db>] [--export <extract.db>] [--json]";
 
 type Result = { exitCode: number; stdout?: string; stderr?: string };
 
@@ -18,15 +22,16 @@ type Result = { exitCode: number; stdout?: string; stderr?: string };
  * `--north-star` adds the cost per verified result (tokens per accepted task); `--gate` runs the frozen 40-case gate on a scratch
  * database and exits 1 on any leak, overflow, cut rule, miss or error.
  */
-export async function runMemoryEvalCommand(live: Pick<Database.Database, "prepare"> | null, argv: readonly string[], migrations: readonly string[], extras: { northStar?: () => unknown } = {}): Promise<Result> {
+export async function runMemoryEvalCommand(live: Pick<Database.Database, "prepare"> | null, argv: readonly string[], migrations: readonly string[], extras: { northStar?: () => unknown; /** The plugin's one-shot analyzer path for `--e2e`, for the project whose host runs it. */ model?: (projectId: string) => ModelCall;
+  /** File access for `--write-baseline`, `--longmemeval` and `--factcons`: a room reads no files itself, the script passes `node:fs`. */ io?: { read(path: string): string; write(path: string, text: string): void } } = {}): Promise<Result> {
   try {
     const flags: Record<string, string> = {};
     for (let index = 0; index < argv.length; index++) {
-      const hit = /^--([a-z-]+)(?:=(.*))?$/s.exec(argv[index]!);
+      const hit = /^--([a-z0-9-]+)(?:=(.*))?$/s.exec(argv[index]!);
       if (!hit) throw new Error(`unexpected argument ${argv[index]}\n${MEMORY_EVAL_USAGE}`);
-      flags[hit[1]!] = hit[2] ?? (["json", "shelf", "floor", "no-floor", "north-star", "gate"].includes(hit[1]!) ? "1" : argv[++index] ?? "");
+      flags[hit[1]!] = hit[2] ?? (["json", "shelf", "floor", "no-floor", "north-star", "gate", "suite", "e2e", "stub"].includes(hit[1]!) ? "1" : argv[++index] ?? "");
     }
-    for (const name of Object.keys(flags)) if (!["sizes", "seed", "scope", "shelf", "floor", "no-floor", "north-star", "gate", "source", "export", "json"].includes(name)) throw new Error(`unknown flag --${name}\n${MEMORY_EVAL_USAGE}`);
+    for (const name of Object.keys(flags)) if (!["sizes", "seed", "scope", "shelf", "floor", "no-floor", "north-star", "gate", "source", "export", "json", "suite", "write-baseline", "e2e", "limit", "project", "stub", "longmemeval", "factcons"].includes(name)) throw new Error(`unknown flag --${name}\n${MEMORY_EVAL_USAGE}`);
     if (flags.gate) {
       const scratch = new Database(":memory:");
       try {
@@ -37,6 +42,40 @@ export async function runMemoryEvalCommand(live: Pick<Database.Database, "prepar
         const stdout = `memory gate: ${report.cases} cases, ${report.leaks.length} leaks, ${report.overflows.length} overflows, ${report.cutRules.length} cut rules, ${report.misses.length} misses, ${report.errors.length} errors${bad ? `\n${JSON.stringify({ leaks: report.leaks, overflows: report.overflows, cutRules: report.cutRules, misses: report.misses, errors: report.errors }, null, 2)}` : ""}`;
         return { exitCode: bad ? 1 : 0, stdout: flags.json ? JSON.stringify(report, null, 2) : stdout };
       } finally { scratch.close(); }
+    }
+    if (flags.suite) {
+      const report = runSuite(migrations);
+      if (flags["write-baseline"]) {
+        if (!extras.io) throw new Error("--write-baseline writes a file: run it with scripts/memory-eval.ts");
+        extras.io.write(flags["write-baseline"], `${JSON.stringify(baselineOf(report, `recorded ${new Date().toISOString().slice(0, 10)} with the stand-in embedding`), null, 2)}\n`);
+        return { exitCode: 0, stdout: `${formatSuite(report)}\nbaseline written to ${flags["write-baseline"]}` };
+      }
+      const baseline = suiteBaseline as SuiteBaseline;
+      const bad = regressions(report, baseline);
+      if (flags.json) return { exitCode: bad.length ? 1 : 0, stdout: JSON.stringify({ report: { ...report, cases: report.cases.map(({ context: _context, ...rest }) => rest) }, regressions: bad }, null, 2) };
+      return { exitCode: bad.length ? 1 : 0, stdout: `${formatSuite(report, baseline)}${bad.length ? `\nREGRESSION:\n${bad.map((line) => `- ${line}`).join("\n")}` : "\nno regression against the baseline"}` };
+    }
+    if (flags.e2e) {
+      // Not in CI: it spends model calls. `--stub` is the dry run with a stand-in model.
+      const limit = flags.limit ? Number(flags.limit) : undefined;
+      if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) throw new Error("--limit is a whole number from 1");
+      let call: ModelCall;
+      if (flags.stub) call = stubModel;
+      else {
+        if (!extras.model) throw new Error("--e2e calls a model: run it as `bb lane-pilot memory-eval --e2e --project <id>` where the plugin runs, or add --stub for a dry run with a stand-in model");
+        if (!flags.project) throw new Error("--e2e needs --project <id>: the project whose machine and analyzer model run the questions");
+        call = extras.model(flags.project);
+      }
+      const report = await runE2e(migrations, call, { ...(limit ? { limit } : {}) });
+      return { exitCode: 0, stdout: flags.json ? JSON.stringify(report, null, 2) : formatE2e(report) };
+    }
+    if (flags.longmemeval || flags.factcons) {
+      if (!extras.io) throw new Error("--longmemeval and --factcons read a downloaded file: run them with scripts/memory-eval.ts");
+      const { read } = extras.io;
+      const lines: string[] = [];
+      if (flags.longmemeval) lines.push(formatPublic(runLongMemEvalAbstention(migrations, loadLongMemEvalAbstention(flags.longmemeval, read))));
+      if (flags.factcons) lines.push(formatPublic(runFactConsolidation(migrations, loadFactConsolidation(flags.factcons, read))));
+      return { exitCode: 0, stdout: lines.join("\n") };
     }
     if (flags.export) {
       if (!live) throw new Error("--export reads the live database; run it where the plugin runs");
