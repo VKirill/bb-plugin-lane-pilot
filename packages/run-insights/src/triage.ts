@@ -201,6 +201,11 @@ export function triageOriginCounts(db: TriageDatabase, since: number): Array<{ o
 }
 
 /** Marks a triage row model-not-writer (the scan's post-answer correction). */
+/** The rule a writer failure repeated, as the rules analyzer named it (the rule trial counts these to revise or retire a rule). */
+export function markTriageSameRule(db: TriageDatabase, projectId: string, attemptId: string, ruleId: string): void {
+  db.prepare("UPDATE lane_pilot_failure_triage SET same_rule_id=? WHERE project_id=? AND attempt_id=? AND status='ok'").run(ruleId, projectId, attemptId);
+}
+
 export function markTriageDetail(db: TriageDatabase, projectId: string, attemptId: string, detail: string): void {
   db.prepare("UPDATE lane_pilot_failure_triage SET detail=? WHERE project_id=? AND attempt_id=?").run(detail, projectId, attemptId);
 }

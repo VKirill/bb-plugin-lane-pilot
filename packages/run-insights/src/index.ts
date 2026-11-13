@@ -105,6 +105,7 @@ export {
   listOkTriageOrigins,
   listOrchestratorTriages,
   markTriageDetail,
+  markTriageSameRule,
   triageOriginCounts,
 } from "./triage";
 export {

@@ -4,7 +4,7 @@ import { createRuleScan } from "../../src/rooms/self-repair/server/rule-scan";
 import { selfRepairDeps } from "../../src/rooms/self-repair/server";
 import { mountNightGraphs } from "../../src/rooms/night-graphs/server";
 import {builtinWorkflow} from "../../src/rooms/workflow/builtin";
-import { listRuleProposals } from "@lane-pilot/run-insights";
+import { listRuleProposals, saveTriage } from "@lane-pilot/run-insights";
 import { nightWorld } from "./world";
 import { createWriterHost } from "../../src/rooms/writer/server/writer-host";
 import { savePrototypeConfig } from "../../src/rooms/plugin-db";
@@ -78,6 +78,19 @@ describe("the rules scan graph", () => {
     expect(await scan.scanState(PROJECT)).toMatchObject({ state: "done", proposals: 1, adopted: 0 });
     const row = w.db.prepare("SELECT what, state FROM lane_pilot_owner_item WHERE key LIKE ?").get(`rules-proposed:${PROJECT}:%`) as { what: string; state: string } | undefined;
     expect(row).toMatchObject({ state: "open", what: "Ночной разбор предложил правила для исполнителей: 1" });
+  });
+
+  it("a failure the analyzer names as a repeat of an existing rule is recorded against that rule for its trial", async () => {
+    const answer = JSON.stringify({ rules: [], not_writer: [], repeats: [{ taskId: "t1", rule: "r1" }, { taskId: "t2", rule: "r7" }] });
+    const { w, scan, plan, settle } = setup([answer]);
+    for (const [attemptId, taskId] of [["att-1", "t1"], ["att-2", "t2"]] as const)
+      saveTriage(w.db as never, PROJECT, { attemptId, runId: "run-1", taskId, state: "failed", reason: "spec not run", contractJson: "{}", threadId: null, failedAt: 1_000 }, { status: "ok", origin: "writer", originConfidence: 0.9 });
+    plan([job("analyze:r", { ruleIds: ["rule-9"] })]);
+    await scan.startScan(PROJECT, "ru", { night: "2026-10-28" });
+    await settle();
+    const same = (attemptId: string) => (w.db.prepare("SELECT same_rule_id AS id FROM lane_pilot_failure_triage WHERE attempt_id=?").get(attemptId) as { id: string | null }).id;
+    // r1 is the job's first rule; r7 names no rule of this job and records nothing.
+    expect([same("att-1"), same("att-2")]).toEqual(["rule-9", null]);
   });
 
   it("an analyzer call that fails does not corrupt the scan: the other answers are applied, the scan and the run end failed", async () => {
