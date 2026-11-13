@@ -21,17 +21,20 @@ const manifestSchema = z.object({
 
 export async function nativeInstallOperation(input: { root: string; home: string; action: "install" | "enable" | "disable" | "remove" | "status"; signal?: AbortSignal }) {
   const { root, home, action, signal } = input;
-  const lock = `${root}.lock`;
-  await mkdir(root, { recursive: true });
-  await mkdir(lock).catch(async (error: NodeJS.ErrnoException) => {
-    if (error.code !== "EEXIST") throw error;
-    const pid = Number((await readTextOrNull(join(lock, "pid"))) ?? "");
-    let stale = false;
-    if (Number.isInteger(pid) && pid > 0) try { process.kill(pid, 0); } catch (error) { stale = (error as NodeJS.ErrnoException).code === "ESRCH"; }
-    if (!stale) throw new Error("Native installation is already being changed. Retry when it finishes.");
-    await rm(lock, { recursive: true }); await mkdir(lock);
-  });
-  await writeFile(join(lock, "pid"), String(process.pid));
+  // Status reads the last atomically published manifest; concurrent launcher refreshes must not lock each other out.
+  const lock = action === "status" ? null : `${root}.lock`;
+  if (lock) {
+    await mkdir(root, { recursive: true });
+    await mkdir(lock).catch(async (error: NodeJS.ErrnoException) => {
+      if (error.code !== "EEXIST") throw error;
+      const pid = Number((await readTextOrNull(join(lock, "pid"))) ?? "");
+      let stale = false;
+      if (Number.isInteger(pid) && pid > 0) try { process.kill(pid, 0); } catch (error) { stale = (error as NodeJS.ErrnoException).code === "ESRCH"; }
+      if (!stale) throw new Error("Native installation is already being changed. Retry when it finishes.");
+      await rm(lock, { recursive: true }); await mkdir(lock);
+    });
+    await writeFile(join(lock, "pid"), String(process.pid));
+  }
   try {
     const raw = await readFile(join(root, "manifest.json"), "utf8").catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return null; throw error; });
     let manifest = raw ? manifestSchema.parse(JSON.parse(raw)) : null;
@@ -52,7 +55,7 @@ export async function nativeInstallOperation(input: { root: string; home: string
       if (action === "remove") await rm(root, { recursive: true, force: true });
     }
     return { status: action === "remove" || !manifest ? "absent" as const : manifest.state, sourceSha: manifest?.sourceSha ?? null, ownedFiles: manifest?.files.length ?? 0, preservedFiles: manifest?.preserved.length ?? 0 };
-  } finally { await rm(lock, { recursive: true, force: true }); }
+  } finally { if (lock) await rm(lock, { recursive: true, force: true }); }
 }
 
 export const nativeInstallHost: ExperimentalHostRpcHandlers<typeof hostContract>["nativeInstall"] = async (input, context) => {

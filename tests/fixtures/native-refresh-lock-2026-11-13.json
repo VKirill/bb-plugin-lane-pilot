@@ -1,0 +1,17 @@
+[
+  {
+    "ts": 1794592756210,
+    "level": "debug",
+    "message": "native-trace host.call thread=thr_dg9dareg5j token=ddb68b5d-9bf9-4fc2-b8e3-0976d63b7d1a reason=prepareNativeClaude host=host_7sea4qaad8 phase=contributeEnv"
+  },
+  {
+    "ts": 1794592756216,
+    "level": "debug",
+    "message": "native-trace host.call thread=thr_dg9dareg5j token=ddb68b5d-9bf9-4fc2-b8e3-0976d63b7d1a reason=prepareNativeClaude host=host_7sea4qaad8 phase=contributeEnv"
+  },
+  {
+    "ts": 1794592756245,
+    "level": "warn",
+    "message": "Lane Pilot: native launcher refresh failed: Native installation is already being changed. Retry when it finishes."
+  }
+]

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { hashBytes, planJson, transitionOwned, type NativeInstallManifest } from "../src/rooms/native-install/native-install-owned";
@@ -8,6 +8,9 @@ import { detectOwnInstall, lanePilotEnv } from "../src/rooms/native-install/nati
 import { setLocaleOverride } from "@lane-pilot/i18n";
 import { reconcileClaudeLane } from "../src/rooms/native-agent/native-lane-reconcile";
 import { createNativeInstaller, experimental_vkLifecycle, registerNativeInstallHost } from "../src/rooms/native-install/native-install-lifecycle";
+import { nativeContributedEnv } from "../src/rooms/native-agent/native-dispatch";
+import { nativeEnvKey, nativeThreadKey } from "../src/rooms/contracts";
+import refreshIncident from "./fixtures/native-refresh-lock-2026-11-13.json";
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
 async function fixture() {
@@ -23,6 +26,42 @@ function kvFixture() {
   return { get: async <T>(key: string) => rows.get(key) as T | undefined, set: async (key: string, value: unknown) => { rows.set(key, value); }, delete: async (key: string) => { rows.delete(key); }, list: async (prefix = "") => [...rows.keys()].filter(key => key.startsWith(prefix)) };
 }
 describe("native installation ownership", () => {
+  it("reads status without touching an active installation lock", async () => {
+    const { home, managed, m } = await fixture();
+    await transitionOwned(managed, m, "enable");
+    await mkdir(`${managed}.lock`);
+    await writeFile(join(`${managed}.lock`, "pid"), String(process.pid));
+    await expect(nativeInstallOperation({ root: managed, home, action: "status" })).resolves.toMatchObject({ status: "enabled" });
+    expect(await readFile(join(`${managed}.lock`, "pid"), "utf8")).toBe(String(process.pid));
+    await expect(nativeInstallOperation({ root: managed, home, action: "disable" })).rejects.toThrow("Native installation is already being changed");
+  });
+  it("refreshes both launchers from the hub's overlapping contributeEnv calls", async () => {
+    const { home, managed, m } = await fixture();
+    await transitionOwned(managed, m, "enable");
+    const kv = kvFixture();
+    const calls = refreshIncident.filter((row) => row.message.includes("phase=contributeEnv"));
+    expect(calls).toHaveLength(2);
+    const threadId = /thread=(\S+)/.exec(calls[0]!.message)![1]!;
+    const hostId = /host=(\S+)/.exec(calls[0]!.message)![1]!;
+    await kv.set(nativeThreadKey(threadId), { agentId: "dev-orchestrator", agentsJson: null });
+    const cached = [{ name: "BB_CLAUDE_CODE_EXECUTABLE", value: "/cached", reason: "cached" }];
+    const fresh = [{ ...cached[0]!, value: "/fresh" }];
+    await kv.set(nativeEnvKey(threadId), cached);
+    const warn = vi.fn();
+    const status = vi.fn(async (_hostId: string, action: "install" | "status") => nativeInstallOperation({ root: managed, home, action }));
+    const installer = createNativeInstaller({ supported: true, kv, call: status, log: warn });
+    const prepared = vi.fn(async () => ({ env: fresh, agentId: "dev-orchestrator" }));
+    const bb = {
+      storage: { kv }, log: { warn, debug: () => {} },
+      sdk: { threads: { get: async () => ({ environmentId: "env" }) }, environments: { get: async () => ({ path: home, hostId }) } },
+    } as unknown as Parameters<typeof nativeContributedEnv>[0];
+    const host = { call: async () => { await installer.ensure(hostId); return prepared(); } };
+    const results = await Promise.all(calls.map(() => nativeContributedEnv(bb, host, { threadId, hostId })));
+    expect(warn).not.toHaveBeenCalled();
+    expect(results).toEqual([fresh, fresh]);
+    expect(prepared).toHaveBeenCalledTimes(2);
+    expect(status.mock.calls.map(([, action]) => action)).toEqual(["status", "status"]);
+  });
   it("disables, restores and removes owned files while preserving JSONC user changes", async () => {
     const { home, managed, m } = await fixture();
     await writeFile(join(home, "settings.jsonc"), '// keep comment\n{"foreign": true}\n');
@@ -159,5 +198,6 @@ describe("Lane Pilot pieces on the host", () => {
   it("reports a machine without Lane Pilot's guard as absent", async () => {
     const { root, home } = await laneHome();
     expect(await nativeInstallOperation({ root, home, action: "status" })).toMatchObject({ status: "absent" });
+    await expect(lstat(root)).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
