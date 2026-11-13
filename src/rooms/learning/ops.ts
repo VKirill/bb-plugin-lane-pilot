@@ -10,7 +10,9 @@ export type Kv = { get<T>(key: string): Promise<T | null | undefined>; set(key: 
 
 /** What the last night run did, kept in the key-value store for `status`. */
 export const LAST_NIGHT_KEY = "learning:last-night";
-export type NightReport = { at: number; projects: number; batches: number; read: number; items: number; adopted: number; waiting: number; duplicates: number; noted: number; dropped: number; stopped?: string };
+export type NightReport = { at: number; projects: number; batches: number; read: number; items: number; adopted: number; waiting: number; duplicates: number; noted: number; dropped: number; stopped?: string;
+  /** Projects the run could not read this night (no machine, no analyzer model), named with the reason and how many candidates keep waiting; the others ran. */
+  skipped?: Array<{ projectId: string; name?: string; reason: string; waiting: number }> };
 
 export type OpsDeps = {
   db: Db; kv: Kv; now?(): number;

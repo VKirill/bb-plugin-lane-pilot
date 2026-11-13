@@ -25,7 +25,7 @@ export type OpenCodeAssistantMessage = {
 
 /** The error types OpenCode v2 gives a spent limit; a provider that reports it only as a plain error is caught by its text. */
 const LIMIT_TYPES = new Set(["provider.rate-limit", "provider.quota", "provider.free-limit"]);
-const LIMIT_TEXT = /\[429\]|\b429\b|quota|rate[ -]?limit|usage limit|insufficient credits|credit balance|RESOURCE_EXHAUSTED|too many requests|(?:Unavailable|HTTP 403) \(reset after/i;
+const LIMIT_TEXT = /\[429\]|\b429\b|quota|rate[ -]?limit|usage limit|insufficient credits|credit balance|RESOURCE_EXHAUSTED|too many requests|Unavailable \(reset after|\[403\]|HTTP 403\b/i;
 const RESET_STAMP = /quotaResetTimeStamp\\?"\s*:\s*\\?"([^"\\\s]+)/;
 const RESET_AFTER = /(?:reset after |[Rr]esets in )((?:\d+(?:\.\d+)?[hms] ?)+)/;
 const MODEL_IN_ERROR = /\[([^\]\s]+\/[^\]\s]+)\]/;
