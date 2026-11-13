@@ -73,6 +73,12 @@ describe("the pipeline stages take their model from the role table", () => {
     expect(await roleSelection({ catalog: hostCatalog, settings: {}, role: "code-critic", fallback })).toEqual({ providerId: "opencode2", model: GEMINI, effort: "medium", source: "default" });
     for (const role of ["plan-critic", "specialist-reviewer"]) expect(await roleSelection({ catalog: hostCatalog, settings: {}, role, fallback }), role).toMatchObject({ providerId: "opencode2", model: GEMINI, effort: "medium" });
     expect(await roleSelection({ catalog: hostCatalog, settings: {}, role: "auditor", fallback })).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", effort: "high" });
+    // The light plan critic: Gemini 4 Hydrogen on Antigravity when offered, else GPT-6.1 Terra; the owner's own row wins.
+    const light = catalog({ "acp-antigravity": { "gemini-4-hydrogen": ["medium"] }, codex: { "gpt-6.1-terra": ["medium"] } });
+    expect(await roleSelection({ catalog: light, settings: {}, role: "plan-critic-light", fallback })).toEqual({ providerId: "acp-antigravity", model: "gemini-4-hydrogen", effort: "medium", source: "default" });
+    expect(await roleSelection({ catalog: catalog({ codex: { "gpt-6.1-terra": ["medium"] } }), settings: {}, role: "plan-critic-light", fallback })).toEqual({ providerId: "codex", model: "gpt-6.1-terra", effort: "medium", source: "default" });
+    expect(await roleSelection({ catalog: light, settings: { "role_model.plan-critic-light": { provider: "acp-antigravity", model: "gemini-4-hydrogen", reasoning_effort: "medium", pool: [{ provider: "codex", model: "gpt-6.1-terra", reasoning_effort: "medium" }] } }, role: "plan-critic-light", fallback }))
+      .toMatchObject({ providerId: "acp-antigravity", model: "gemini-4-hydrogen", source: "table" });
     expect(await roleSelection({ catalog: hostCatalog, settings: { "role_model.code-critic": { model: "claude-opus-5-5" } }, role: "code-critic", fallback }))
       .toEqual({ providerId: "claude-code", model: "claude-opus-5-5", effort: "high", source: "table" });
     expect(await roleSelection({ catalog: hostCatalog, settings: { "code_critique.provider": "codex", "code_critique.model": "gpt-6-luna", "code_critique.reasoning_effort": "high" }, role: "code-critic", fallback }))

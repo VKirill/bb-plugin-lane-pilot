@@ -8,7 +8,7 @@ import { settingOff } from "@lane-pilot/models";
 import { sha256 } from "../../../tasks";
 import { critiquePrompt, parseCritique, shouldRunPlanCritique } from "../../critique";
 import { ownerWordsOfRun } from "../owner-words";
-import { binaryOutputs, dropIntendedGaps, findTaskPlaceholderPaths } from "../../critique-coverage";
+import { binaryOutputs, dropIntendedGaps, dropNoisyGaps, findTaskPlaceholderPaths } from "../../critique-coverage";
 import type { CoverageFinding } from "../../critique-coverage";
 import { boundedAgentName } from "../../../contracts";
 import { graphStepMetadata, setAsideOnStartFailure, zcodeBusyPeek } from "../../../platform/server";
@@ -41,7 +41,10 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
     return { allowed:true };
   }
   const legacy=resolveStageWriterSelection({settings,config:input.config,stageProviderKey:"plan_critique.provider",stageModelKey:"plan_critique.model"});
-  const selection=await roleSelection({zcodeBusy:zcodeBusyPeek(input.bb),catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:"plan-critic",fallback:{providerId:legacy.providerId,model:legacy.model},spent:await limitProbe(input.bb,input.config.hostId,settings)});
+  // The strong critic judges high and critical risk and quality_mode full; every other task goes to the light row (hub, 30 days to 2026-11-14:
+  // serious defects in 10 of 13 returns at high/critical risk, 4 of 25 below it). The tier is kept in the receipt (critic_tier).
+  const criticTier:"strong"|"light"=input.task.risk==="high"||input.task.risk==="critical"||qualityMode==="full"?"strong":"light";
+  const selection=await roleSelection({zcodeBusy:zcodeBusyPeek(input.bb),catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:criticTier==="strong"?"plan-critic":"plan-critic-light",fallback:{providerId:legacy.providerId,model:legacy.model},spent:await limitProbe(input.bb,input.config.hostId,settings)});
   logLimitMove(input.bb,`plan critic for ${input.taskId}`,selection.issues);
   let providerId=selection.providerId;
   let modelId=selection.model;
@@ -70,7 +73,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
       plan:input.plan,tasks:runTasks.map((task)=>({id:task.id,lane:task.lane??"write",ownsPaths:task.owns_paths??[],hasVerification:task.verify==="none"||!!task.verification?.length,
         verification:(task.verification??[]).map((command)=>({command:command.command,timeoutSec:command.timeout_sec??undefined}))}))},{hostId:input.config.hostId,timeoutMs:30_000});
     coverageStatus=scan.status;coveragePathCount=scan.pathCount;// A bad command of a task already running must not block an unrelated dispatch of the run.
-    structuralFindings=[...structuralFindings,...dropIntendedGaps(scan.findings,input.task.never_touch??[]).map((finding)=>finding.code==="verify_filter_ignored"&&finding.path!==`tasks/${input.task.id}`?{...finding,severity:"warning" as const}:finding)].slice(0,10);
+    structuralFindings=[...structuralFindings,...dropNoisyGaps(dropIntendedGaps(scan.findings,input.task.never_touch??[])).map((finding)=>finding.code==="verify_filter_ignored"&&finding.path!==`tasks/${input.task.id}`?{...finding,severity:"warning" as const}:finding)].slice(0,10);
   } catch {
     coverageStatus="unavailable";
   }
@@ -187,7 +190,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
         // the path, so only file, line and quoted evidence are required (settleVerdict). A host-side path check if invented paths show up.
         const critique = await readAnswer(input.bb, threadId, raw, parseCritique, "status, summary, findings and evidence");
         const blocked = critique.decision === "changes_requested" && mode === "gate";
-        const result = { ...critique, mode, ...(qualityMode !== "standard" ? { qualityMode } : {}), structuralCoverage:{status:coverageStatus,pathCount:coveragePathCount}, structuralFindings, rawOutput:raw.slice(0, 12_000) };
+        const result = { ...critique, mode, critic_tier:criticTier, ...(qualityMode !== "standard" ? { qualityMode } : {}), structuralCoverage:{status:coverageStatus,pathCount:coveragePathCount}, structuralFindings, rawOutput:raw.slice(0, 12_000) };
         const why = verdictReasons(critique, "plan-critique");
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
           threadId, result, reason:blocked ? why.receipt : undefined });
@@ -211,7 +214,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
       }
     }
     const infraReason = `failed_infra:${lastError ?? "critic pool exhausted"}`;
-    recordStage(input.db, { ...base, state:"failed", providerId, model:modelId, reason:infraReason, result:{ error:infraReason, criticPairs:pairs } });
+    recordStage(input.db, { ...base, state:"failed", providerId, model:modelId, reason:infraReason, result:{ error:infraReason, criticPairs:pairs, critic_tier:criticTier } });
     return { allowed:true, reason:infraReason };
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);

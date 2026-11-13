@@ -47,6 +47,12 @@ describe("a writer that changed a test which existed before the task", () => {
     expect(prompt).not.toContain("host-read files");
   });
 
+  it("counts package.json only when a command runs a package script, not npx, bunx, pnpm dlx or pnpm exec", () => {
+    const pkg = ["platform/packages/sdk/package.json"];
+    for (const command of ["npm test", "npm run lint", "cd x && pnpm test", "pnpm run build", "yarn lint", "bun run check"]) expect(checkScriptEdits(pkg, [command]), command).toEqual(pkg);
+    for (const command of ["npx vitest run tests/a.test.ts", "npx tsc --noEmit", "bunx vitest", "pnpm dlx tsc", "pnpm exec vitest", "npm install"]) expect(checkScriptEdits(pkg, [command]), command).toEqual([]);
+  });
+
   it("counts a check script the task's commands run as part of the yardstick: a script named in a command, a package.json behind npm; not a test, not other code", () => {
     const produced = ["scripts/check.sh", "./package.json", "src/a.ts", "tests/a.test.ts", "docs/x.md"];
     expect(checkScriptEdits(produced, ["bash scripts/check.sh", "npm test"])).toEqual(["scripts/check.sh", "./package.json"]);

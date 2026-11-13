@@ -107,17 +107,28 @@ function ownerWordsSection(words: readonly string[]): string {
   return kept.map((text) => `> ${text.replace(/\n/g, "\n> ")}`).join("\n");
 }
 
+/** What the plan critic looks at first, and what it must not stop a plan for (hub, 30 days to 2026-11-14: 10 of 13 returns on high or critical risk were serious defects; the rest were paperwork a writer copes with). */
+export const PLAN_CRITIC_PRIORITY: readonly string[] = [
+  "PRIORITY. First look for defects that change the outcome: the plan contradicts the contract, the code, or itself; a required behaviour has no step; data, money, credentials or other users' data can be lost, leaked or double-spent; the plan depends on something that does not exist yet (an unmerged dependency, a missing file or function); the contract cannot be satisfied; the plan has no actionable steps. Only these justify rework or block.",
+  "Contract hygiene (read_first missing a file the writer can open itself, expected_outputs not listing a file already in owns_paths, wording that could be sharper) is severity low and never on its own a reason for rework. One exception: read_first lacks the single source-of-truth file the plan says to follow and that file is outside the repository, so the writer cannot discover it: medium.",
+  "Example, rework: step 4 turns autolaunch off but never calls stopJob(id): the paid MagicSEO job keeps running after the concert -> high, rework.",
+  "Example, pass: src/store/db.test.ts is in owns_paths but not in read_first; the writer can open it -> low, pass.",
+];
+
 export function critiquePrompt(input: { plan:string; task:unknown; agent?:string; pmReadContext?:string; structuralFindings?:readonly CoverageFinding[]; ownerWords?:readonly string[] }): string {
+  // The scan's own «partial coverage» line is kept in the receipt, not sent: critics repeated it as a finding.
+  const modelFindings = (input.structuralFindings ?? []).filter((finding) => finding.code !== "coverage_scan_truncated");
   return [
     `You are ${input.agent?.trim() || "the independent plan-critique stage"} for a bounded software task.`,
     `Review the plan against the task contract and the code. ${PLAN_CRITIC_READ_LINE}`,
+    ...PLAN_CRITIC_PRIORITY,
     ...PLAN_CRITIC_METHOD,
     ANSWER_FORM_LINE + " Keys: status (\"pass\", \"rework\" or \"block\"), summary (string, at most 2000 characters), findings (at most 30 objects, each with file, line, severity \"critical\", \"high\", \"medium\", \"low\" or \"info\", evidence (at most 2000 characters: the quoted line or the contract field you looked at), and optionally finding (at most 1000: what is wrong and the fix), criterion (at most 500: the acceptance line or rule it breaks)), evidence (string, what you examined and how, at most 4000 characters). Other keys are ignored.",
     rubricPromptLine("plan"),
-    "pass: the plan can go to a writer. rework: a concrete missing, contradictory, unsafe, or unverifiable requirement that the PM fixes by editing the plan or the contract and sending it again; its findings are critical or high. block: the task cannot be saved by editing, because it asks for something destructive or unsafe that the owner must decide, or contradicts its own objective; use it only then. Do not invent criteria. A critical or high finding counts only with a file, a line and quoted evidence; without them it is read as medium.",
-    "A verification command that is not focused on this task (a whole-suite run) or that runs a suite the project marks sandbox-unsafe is an unverifiable requirement: rework, severity high, with the focused command as the fix.",
+    "pass: the plan can go to a writer. rework: a defect of the PRIORITY list above that the PM fixes by editing the plan or the contract and sending it again; its findings are critical or high. block: the task cannot be saved by editing, because it asks for something destructive or unsafe that the owner must decide, or contradicts its own objective; use it only then. Do not invent criteria. A critical or high finding counts only with a file, a line and quoted evidence; without them it is read as medium.",
+    "A verification command that is not focused on this task (a whole-suite run) is a medium finding with the focused command as the fix, never a reason for rework alone. Only a suite the project marks sandbox-unsafe makes it an unverifiable requirement: rework, severity high.",
     "Verification commands run in a check sandbox that mounts the workspace writable except .git/, .agents/ and .cls/ (read-only for every check): a build, a page regeneration or any command that writes there is a plan step the writer runs in its session, never a verification command, and must not be demanded as one; a verification command that would write there is an unverifiable requirement (rework, with a check that writes nothing there as the fix).",
-    ...(input.structuralFindings?.length ? ["Deterministic structural findings (independently assess each; info findings are non-blocking):",JSON.stringify(input.structuralFindings)] : []),
+    ...(modelFindings.length ? ["Deterministic structural findings (independently assess each; info findings are non-blocking):",JSON.stringify(modelFindings)] : []),
     "TASK BRIEF:", taskBrief(input.task, { fields: ["title", "objective", "risk", "acceptance", "invariants", "out_of_scope", "read_first", "expected_outputs", "owns_paths", "never_touch", "depends_on", "test_removals", "verification"] }),
     ...(openQuestions(input.pmReadContext).length ? ["Questions the PM's reader of the code left open; answer each from the code before the verdict:", openQuestions(input.pmReadContext).map((q) => `- ${q}`).join("\n")] : []),
     ...(input.ownerWords?.length ? [

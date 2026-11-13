@@ -80,7 +80,7 @@ export function rankPool<T extends { providerId: string; model: string }>(rows: 
 
 /** The author rows each judge row is judged against, in order: the first one whose model is known is the author. Other roles judge no one. */
 export const AUTHOR_ROWS: Record<string, readonly string[]> = {
-  "plan-critic": ["planner"], "specialist-reviewer": ["planner"], auditor: ["planner", "analyst"],
+  "plan-critic": ["planner"], "plan-critic-light": ["planner"], "specialist-reviewer": ["planner"], auditor: ["planner", "analyst"],
   /** The council chair judges the seats: their models are not kept per run, the council passes them as the author. */
   council: [],
 };
@@ -89,7 +89,7 @@ export const AUTHOR_ROWS: Record<string, readonly string[]> = {
  * run's planner); the executor tries the recorded planner first. Null for the auditor (its authors are the phase's, not the PM's) and non-judges.
  */
 export const pmAuthorOf = (role: string, pm: { providerId: string; model: string } | null): { providerId: string; model: string } | null =>
-  roleRow(role).id === "plan-critic" || roleRow(role).id === "specialist-reviewer" ? pm : null;
+  roleRow(role).id === "plan-critic" || roleRow(role).id === "plan-critic-light" || roleRow(role).id === "specialist-reviewer" ? pm : null;
 /** The rows whose model is kept per run, for the judges above to read. */
 export const AUTHOR_ROW_IDS: readonly string[] = [...new Set(Object.values(AUTHOR_ROWS).flat())];
 

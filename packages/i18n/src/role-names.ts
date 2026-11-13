@@ -40,6 +40,7 @@ export const ROLE_NAMES = {
   "repairer": agent("coders", "Инженер самолечения", "Self-repair engineer"),
   // Проверяющие
   "plan-critic": agent("checkers", "Критик плана", "Plan critic"),
+  "plan-critic-light": agent("checkers", "Быстрый критик плана", "Quick plan critic"),
   "code-critic": agent("checkers", "Критик кода", "Code critic"),
   "specialist-reviewer": agent("checkers", "Рецензент-специалист", "Specialist reviewer"),
   "critic-tiebreak": agent("checkers", "Третий голос критиков", "Critic tiebreak"),
