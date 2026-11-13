@@ -1,4 +1,4 @@
-import { DEFAULT_RELEVANCE_FLOOR, MEMORY_SETTING_KEYS, projectUsesSections, DENSE_PREFILTER, relevantRecords, resolveProjectKind, isHistoryQuery, withHistory, REVIEWER_CONCEPTS, activeMemoryDigestRows, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, recordCriticUse, roleContextBudget, searchMemoryRecords, type MemoryRecord, type MemorySearchEngine, type MemorySettings, type RelevanceFloor } from "@lane-pilot/memory-core";
+import { DEFAULT_RELEVANCE_FLOOR, MEMORY_SETTING_KEYS, projectUsesSections, DENSE_PREFILTER, relevantRecords, resolveProjectKind, isHistoryQuery, withHistory, REVIEWER_CONCEPTS, activeMemoryDigestRows, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, recordCriticUse, roleContextBudget, searchMemoryRecords, type MemoryRecord, type PackOptions, type MemorySearchEngine, type MemorySettings, type RelevanceFloor } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
 import { getRunSettingsScopes, loadProjectSettings, projectHasScopedRun, type LanePilotDatabase } from "../../storage";
 import { memoryLine, pathAnchors, reviewerMemoryPicks, writerMemory, writerMemoryPicks } from "./memory-picks";
@@ -158,14 +158,14 @@ export function pmShortlist(db: LanePilotDatabase, projectId: string, memory: Me
  * The PM's automatic per-turn context and the helpers': the vector's best notes without a judge (the judge costs seconds, and the PM reads
  * a list well alone), packed by the role's budget. No warning line: a search the notes cannot answer shows the empty-list «nothing».
  */
-export function pmMemoryContext(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[], role = "pm", floor: RelevanceFloor | null = memory.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR) {
-  const packed = memoryContext(pmSearch(db, projectId, memory, query, chain, floor), query, roleContextBudget(role, memory.contextBudget));
-  return { ...packed, nothingRelevant: packed.records.length === 0 };
+export function pmMemoryContext(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[], role = "pm", floor: RelevanceFloor | null = memory.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR, pack?: PackOptions) {
+  const packed = memoryContext(pmSearch(db, projectId, memory, query, chain, floor), query, roleContextBudget(role, memory.contextBudget), pack);
+  return { ...packed, nothingRelevant: packed.text === "" };
 }
 
 /** What the PM tool `lane_pilot_memory {action:"context"}` returns for a query (an explicit search): the same search, then the judge, then the packing. */
 export async function pmMemoryContextJudged(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[], role = "pm", floor: RelevanceFloor | null = memory.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR) {
   const judged = await judgeFound(db, { projectId, query, found: pmSearch(db, projectId, memory, query, chain, floor), memory, surface: "pm_tool", audience: memory.audience });
   const packed = memoryContext(judged.records, query, roleContextBudget(role, memory.contextBudget));
-  return { ...packed, nothingRelevant: packed.records.length === 0 };
+  return { ...packed, nothingRelevant: packed.text === "" };
 }

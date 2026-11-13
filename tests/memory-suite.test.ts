@@ -7,14 +7,14 @@ import { runMemoryEvalCommand } from "../src/rooms/memory-eval/server/command";
 import { E2E_VERDICTS, ABSTAIN_PHRASE, e2eCases, formatE2e, parseVerdict, runE2e, stubModel, type ModelCall } from "../src/rooms/memory-eval/server/e2e";
 import { formatPublic, loadFactConsolidation, loadLongMemEvalAbstention, runFactConsolidation, runLongMemEvalAbstention } from "../src/rooms/memory-eval/server/public-sets";
 import { formatSuite, plantSuite, regressions, runSuite, scoreSuite, standInEmbedding, type SuiteBaseline } from "../src/rooms/memory-eval/server/suite";
-import { SUITE_CASES, SUITE_NOTES } from "../src/rooms/memory-eval/server/suite-fixture";
+import { SUITE_CASES, SUITE_NOTES, SUITE_PACK_NOTES } from "../src/rooms/memory-eval/server/suite-fixture";
 import baseline from "../src/rooms/memory-eval/server/suite-baseline.json";
 
 // The offline memory suite (H1-H7 of the memory research, 2026-11-13). Update the baseline on purpose:
 //   npx tsx scripts/memory-eval.ts --suite --write-baseline src/rooms/memory-eval/server/suite-baseline.json
 describe("memory suite: the fixture", () => {
   it("names only notes it plants, and plants each note once", () => {
-    const keys = SUITE_NOTES.map((note) => note.key);
+    const keys = [...SUITE_NOTES, ...SUITE_PACK_NOTES.heads, ...SUITE_PACK_NOTES.chunks].map((note) => note.key);
     expect(new Set(keys).size).toBe(keys.length);
     expect(new Set(SUITE_CASES.map((item) => item.id)).size).toBe(SUITE_CASES.length);
     for (const item of SUITE_CASES) for (const key of [...(item.expect === "nothing" ? [] : item.expect), ...(item.forbid ?? [])]) expect(keys, `${item.id} names ${key}`).toContain(key);
@@ -46,7 +46,7 @@ describe("memory suite: retrieval scores", () => {
 
   it("prints the score table", () => {
     process.stdout.write(`\n${formatSuite(report, baseline as SuiteBaseline)}\n\n`);
-    expect(report.families.map((row) => row.family)).toEqual(["H1", "H2", "H3", "H4", "H5", "H6", "H8", "H9", "H10", "H7"]);
+    expect(report.families.map((row) => row.family)).toEqual(["H1", "H2", "H3", "H4", "H5", "H6", "H8", "H9", "H10", "H11", "H12", "H7"]);
   });
 
   it("H5: no note of another section or audience reaches a reader, and the controls still arrive", () => {
