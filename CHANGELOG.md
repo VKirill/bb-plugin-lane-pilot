@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.542
+
+- **A note the budget evicts stays searchable (`packages/memory-core/src/store.ts`).** The note budget now limits only what is injected; an evicted note keeps `expired_reason=budget`, its word indexes and its vector, and PM search, `session_memory_search` and the import check read it with `includeArchive`. An import never evicts: notes past the budget land in the archive (`archivedIds` in the report). On the hub 1515 of 1532 evictions had dropped notes from search.
+- **Dates and history in the memory pack (`context.ts`).** Every line the PM and the writer see carries its day (`valid_from`, else `created_at`), same-topic notes read oldest first, and a history question adds replaced versions as `replaced; from..until`.
+- **Long notes are embedded in chunks (`vectors.ts`, table `lane_pilot_memory_vec_chunk`).** A note over 6000 characters gets ~1500-character paragraph chunks, is scored by its best chunk and shows that chunk («part i/n») instead of the cut head.
+- Memory suite cases H8 (archived note found), H9 (history with dates), H10 (long note found by a later paragraph); `bb`-free run: `npx tsx scripts/memory-eval.ts --suite`.
+
 ## 0.1.541
 
 - **Memory lives in one place: the hub DB.** Every session the plugin launches (PM, writer, critic, errand, helper) runs Claude Code with `autoMemoryEnabled: false`, and the per-task Codex home turns `memories` off (`native-claude-host.ts`, `host-worker/handlers/machine.ts`). `tests/memory-single-store.test.ts` fails if a skill, prompt or seeded profile sends an agent to `memory_save`/agentmemory or a launcher leaves built-in memory on. The maintainer prompt and `docs/memory.md` say the hub DB is the only store. Outside the repo: the agentmemory skills were removed from the hub canon and agentmemory MCP entries and built-in memories were switched off on OVH and the Mac mini.
