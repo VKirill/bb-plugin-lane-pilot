@@ -211,14 +211,15 @@ export function claimIdentifiers(text:string):string[] {
   const ids = new Set<string>();
   const keep = (raw:string) => {
     const token = raw.replace(/\(\)$/, "");
-    if (token.length < 3 || /\//.test(token) || /\.(md|ts|tsx|json|sql|py|sh|css|html)$/i.test(token)) return;
+    if (token.length < 3 || /\//.test(token) || /\.(md|[cm]?[jt]sx?|vue|svelte|prisma|json|sql|py|sh|css|html)$/i.test(token)) return;
     ids.add(token);
   };
   for (const match of text.matchAll(/`([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*(?:\(\))?)`/g)) keep(match[1]!);
-  // A bare PascalCase word can be a product name (OpenCode, TypeScript); explicit backticks still name types.
+  // Bare PascalCase and all-caps words can be product names or protocols (OpenCode, POST, HTTPS).
+  // Explicit backticks still name types and single-word constants.
   for (const match of text.matchAll(/\b([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*(?:\(\))?)\b/g)) {
     const token = match[1]!;
-    if (/\(\)$|_|\.|^[A-Z][A-Z0-9_]{3,}$/.test(token) || (/^[a-z_$]/.test(token) && /[a-z][A-Z]/.test(token))) keep(token);
+    if (/\(\)$|_|\./.test(token) || (/^[a-z_$]/.test(token) && /[a-z][A-Z]/.test(token))) keep(token);
   }
   return [...ids];
 }
@@ -231,9 +232,11 @@ export function citationClaims(body:string): Array<{ file:string; start:number; 
   // each other's evidence. Examples introduced by e.g./i.e. stay part of their sentence.
   const blocks = expanded.split(/\n(?=\s*[-*|]|\s*\n)|(?<=[.!?])(?<!\be\.g\.)(?<!\bi\.e\.)\s+/);
   for (const [claimIndex, block] of blocks.entries()) {
+    // Paths locate evidence; their directory and component names are not code claims.
+    const text = block.replace(CITATION, "").replace(new RegExp(CITATION_PATH, "g"), (path) => path.includes("/") ? "" : path);
     for (const match of block.matchAll(CITATION)) {
       const file = match[1]!.replace(/^\.\//, "");
-      const identifiers = claimIdentifiers(block).filter((id) => !file.includes(id) && !id.includes(file.split("/").pop()!.replace(/\.[^.]+$/, "")));
+      const identifiers = claimIdentifiers(text).filter((id) => !file.includes(id) && !id.includes(file.split("/").pop()!.replace(/\.[^.]+$/, "")));
       claims.push({ file, start:Number(match[2]), end:match[3] ? Number(match[3]) : Number(match[2]), identifiers, claimIndex });
     }
   }
@@ -265,8 +268,10 @@ export async function lintCitationClaims(pages:DocPage[], readRange:(file:string
       const text = await read(claim.file, claim.start, claim.end);
       if (text === null) continue;
       if (!claim.identifiers.some((id) => text.includes(id) || text.includes(id.split(".").pop()!))) {
-        pending.push({ claimIndex:claim.claimIndex, finding:{ path:page.path, rule:"evidence",
-          detail:`cites ${claim.file}:${claim.start}${claim.end !== claim.start ? `-${claim.end}` : ""}, but none of the identifiers it names (${claim.identifiers.slice(0, 5).join(", ")}) appears in that range` } });
+        // A barrel can export these names without spelling them: this read cannot disprove them.
+        const reexports = /(?:^|\n)\s*export\s+(?:type\s+)?\*\s+from\s*["']/.test(text);
+        pending.push({ claimIndex:claim.claimIndex, finding:{ path:page.path, rule:reexports?"evidence-check":"evidence",
+          detail:`cites ${claim.file}:${claim.start}${claim.end !== claim.start ? `-${claim.end}` : ""}, but none of the identifiers it names (${claim.identifiers.slice(0, 5).join(", ")}) appears in that range${reexports?"; check the wildcard re-export's source module":""}` } });
       } else supported.add(claim.claimIndex);
     }
     findings.push(...pending.filter((row) => !supported.has(row.claimIndex)).map((row) => row.finding));
