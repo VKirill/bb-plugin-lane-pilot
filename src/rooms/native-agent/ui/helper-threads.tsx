@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { ThreadChat, useBbContext, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { useLpRealtime, useLpRpcQuery, useOpenThreadPanel } from "../../ui-shell/ui";
 import type { rpcContract } from "../../contracts";
-import { t, type I18nKey } from "@lane-pilot/i18n";
+import { canonicalRoleId, roleName, t, type I18nKey } from "@lane-pilot/i18n";
 import { Icon, type IconName } from "@lane-pilot/ui-kit";
 import { TaskGraphView, type TaskGraphData } from "./task-graph-view";
 
@@ -25,11 +25,11 @@ export type HelperThreadsResult = {
 
 const ROLES: Record<string, { icon: IconName; label: I18nKey }> = {
   writer: { icon: "Code", label: "helperRole_writer" },
-  "emergency-writer": { icon: "Code", label: "helperRole_writer" },
+  "emergency-writer": { icon: "Code", label: "helperRole_emergencyWriter" as I18nKey },
   specialist: { icon: "UserRoundPlus", label: "helperRole_specialist" },
   "browser-qa": { icon: "Target", label: "helperRole_browserQa" },
   "errand": { icon: "Send", label: "helperRole_errand" },
-  "api-recon": { icon: "Search", label: "helperRole_errand" },
+  "api-recon": { icon: "Search", label: "helperRole_apiRecon" as I18nKey },
   "council-seat": { icon: "MessageSquare", label: "helperRole_council" },
   "plan-critic": { icon: "ListTodo", label: "helperRole_planCritic" },
   "code-critic": { icon: "Bug", label: "helperRole_codeCritic" },
@@ -44,12 +44,19 @@ const ROLES: Record<string, { icon: IconName; label: I18nKey }> = {
   debugger: { icon: "Bug", label: "helperRole_debugger" },
 };
 
+/** The words for a thread role: the fixed label of the common ones, else the name from the one map (a lead, a repairer, a specialist employee), else «Helper». */
+function roleText(role: string): string {
+  const fixed = ROLES[role];
+  if (fixed) return t(fixed.label);
+  return canonicalRoleId(role) ? roleName(role) : t("helperRole_other");
+}
+
 function roleOf(row: HelperThread) {
   return ROLES[row.role] ?? { icon: "Bot" as IconName, label: "helperRole_other" as I18nKey };
 }
 
 export function helperHint(row: HelperThread): string {
-  const role = t(roleOf(row).label);
+  const role = roleText(row.role);
   const base = `${row.detail ? `${role} · ${row.detail}` : role}: ${row.title}`;
   return row.phase ? `${base} (${row.phase})` : base;
 }
@@ -185,7 +192,7 @@ export function useHelperThreadIndex(threadIds: readonly string[]): Map<string, 
   return useMemo(() => {
     const index = new Map<string, string>();
     for (const [id, role] of Object.entries((query.data as { labels?: Record<string, string> } | undefined)?.labels ?? {})) {
-      index.set(id, t((ROLES[role] ?? { label: "helperRole_other" as I18nKey }).label));
+      index.set(id, roleText(role));
     }
     return index;
   }, [query.data]);

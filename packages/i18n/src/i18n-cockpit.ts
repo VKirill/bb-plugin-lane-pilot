@@ -241,7 +241,7 @@ export const cockpitRu: { [K in keyof typeof cockpitEn]: string } = {
   ckHaz_owner_words: "рискованные шаги идут без слова владельца",
   ckSw_conveyor: "Конвейер (выдача новой работы)",
   ckSw_protection_rearm: "Защита сама возвращается, когда срок отключения вышел",
-  ckSw_writer_fallback: "Переход на запасного писателя",
+  ckSw_writer_fallback: "Переход на запасного исполнителя кода",
   ckDaysShort: "дн.",
   ckOn: "включено",
   ckOff: "выключено",

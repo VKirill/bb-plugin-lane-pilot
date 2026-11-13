@@ -122,10 +122,10 @@ describe("Enable Lane Pilot composer action", () => {
 
   it("shows the switch and the dropdown in an existing chat with the chat's current agent selected", async () => {
     const slot = await existingChat({ current: { agentId: "copy-lead", description: "Lane Pilot copy lead", pending: false } });
-    fireEvent.click(await slot.findByRole("button", { name: "Copy editor" }));
+    fireEvent.click(await slot.findByRole("button", { name: "Copywriter" }));
     await slot.findByTestId("activation-popover");
     expect(slot.getByRole("switch", { name: "Lane Pilot" }).getAttribute("aria-checked")).toBe("false");
-    expect(slot.getByRole("combobox", { name: "Agent" }).textContent).toBe("Copy editor");
+    expect(slot.getByRole("combobox", { name: "Agent" }).textContent).toBe("Copywriter");
     expect(slot.getByText(/from your next message/i)).toBeTruthy();
     slot.lifecycle.unmount();
   });
@@ -153,8 +153,8 @@ describe("Enable Lane Pilot composer action", () => {
     await slot.findByTestId("activation-popover");
     const laneSwitch = () => slot.getByRole("switch", { name: "Lane Pilot" });
     expect(laneSwitch().getAttribute("aria-checked")).toBe("true");
-    pickAgent(slot, "Copy editor");
-    await waitFor(() => expect(slot.getByRole("combobox", { name: "Agent" }).textContent).toBe("Copy editor"));
+    pickAgent(slot, "Copywriter");
+    await waitFor(() => expect(slot.getByRole("combobox", { name: "Agent" }).textContent).toBe("Copywriter"));
     expect(laneSwitch().getAttribute("aria-checked")).toBe("false");
     pickAgent(slot, "No agent");
     await waitFor(() => expect(switches.at(-1)).toEqual({ threadId: "thr_existing", agentId: null }));
@@ -354,7 +354,7 @@ describe("Enable Lane Pilot composer action", () => {
     fireEvent.click(await slot.findByRole("button", { name: "Lane Pilot / agent" }));
     await slot.findByTestId("activation-popover");
     fireEvent.click(slot.getByRole("combobox", { name: "Agent" }));
-    expect(slot.getAllByRole("option").map((row) => row.textContent)).toEqual(["No agent", "Copy editor", "Video agent"]);
+    expect(slot.getAllByRole("option").map((row) => row.textContent)).toEqual(["No agent", "Copywriter", "Video agent"]);
     expect(slot.queryByText("Development coordinator")).toBeNull();
     expect(slot.queryByText("Project onboarding")).toBeNull();
     expect(slot.queryByText("Lane Pilot development orchestrator")).toBeNull();
@@ -385,7 +385,7 @@ describe("Enable Lane Pilot composer action", () => {
     fireEvent.click(slot.getByRole("combobox", { name: "Agent" }));
     // Section label first, then its agents; design and copy share «Content», SEO and research share «Marketing and research».
     expect(slot.getAllByRole("group").map((group) => group.textContent)).toEqual([
-      "ContentMy designerCopy editor",
+      "ContentMy designerCopywriter",
       "Marketing and researchMy SEOAdviser",
       "Lane PilotMemory helper",
       "GeneralVideo agent",
@@ -451,8 +451,8 @@ describe("Enable Lane Pilot composer action", () => {
     });
     fireEvent.click(await slot.findByRole("button", { name: "Lane Pilot / agent" }));
     await slot.findByTestId("activation-popover");
-    pickAgent(slot, "Copy editor");
-    await slot.findByRole("button", { name: "Copy editor" });
+    pickAgent(slot, "Copywriter");
+    await slot.findByRole("button", { name: "Copywriter" });
     fireEvent.click(slot.getByRole("switch", { name: "Lane Pilot" }));
     await waitFor(() => expect(slot.getByRole("button", { name: "Lane Pilot" })).toBeTruthy());
     slot.lifecycle.unmount();

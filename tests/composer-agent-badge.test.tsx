@@ -79,7 +79,7 @@ describe("Lane Pilot composer agent badge", () => {
       },
     });
     await waitFor(() => expect(slot.getByLabelText("Агент Lane Pilot")).toBeTruthy());
-    expect(slot.getByText("Редактор текстов")).toBeTruthy();
+    expect(slot.getByText("Копирайтер")).toBeTruthy();
     expect(slot.getByLabelText("Агент Lane Pilot").querySelector("[data-chart]")).toBeNull();
     slot.lifecycle.unmount();
   });
@@ -89,7 +89,7 @@ describe("Lane Pilot composer agent badge", () => {
     const slot = await mountBadge({
       scope: { kind: "new-thread", projectId: "proj_a" },
     });
-    expect(slot.getByText("Copy editor")).toBeTruthy();
+    expect(slot.getByText("Copywriter")).toBeTruthy();
     expect(slot.getByLabelText("Lane Pilot agent").querySelector("[data-chart]")).toBeNull();
     slot.lifecycle.unmount();
   });
@@ -166,7 +166,7 @@ describe("Lane Pilot composer agent badge", () => {
     root.parentElement?.insertBefore(shell, root);
     shell.append(root, box);
     await waitFor(() => expect(box.querySelector("[aria-label='Lane Pilot agent']")).toBeTruthy());
-    expect(box.textContent).toContain("Copy editor");
+    expect(box.textContent).toContain("Copywriter");
     const label = box.querySelector("[aria-label='Lane Pilot agent']") as HTMLElement;
     // The wrapper sits on the border and also carries the working helpers' squares.
     const wrapper = label.parentElement as HTMLElement;
@@ -231,7 +231,7 @@ describe("Lane Pilot composer agent badge", () => {
       openThreadPanel: (options) => { opened.push(options); return true; },
     });
     const writer = await slot.findByTestId("helper-chip-thr_writer");
-    expect(writer.getAttribute("title")).toBe("Writer: Blog look-card chooser modal");
+    expect(writer.getAttribute("title")).toBe("Code writer: Blog look-card chooser modal");
     expect(slot.getByTestId("helper-chip-thr_design").getAttribute("title")).toBe("Specialist · design-lead: Wizard mockup");
     fireEvent.click(writer);
     expect(opened).toEqual([{ actionId: "lane-helper-thread", title: "Blog look-card chooser modal", params: { threadId: "thr_writer" } }]);

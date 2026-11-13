@@ -1,5 +1,6 @@
 import type { PluginCliResult } from "@get-bb/plugin-sdk";
 import type { CliRunDeps } from "./cli-deps";
+import { roleDisplayName } from "@lane-pilot/i18n";
 import { EXCAVATE_LOG_ARGS, approvalSuggestions, costPerVerified, excavate, htmlReport, missCurriculum } from "./self-improve";
 import { GLOBAL_SETTINGS_PROJECT_ID, PAIR_ROLE_SPECS, PROFILE_KEYS, RUN_BUDGET_SETTINGS, UNLISTED_SWITCHES, attemptMetrics, bestEffort, cancelAttemptById, casUpsertSettings, configuredSetting, deleteBoundSetting, failureFieldsOf, finishRunSafely, getActivation, getAttempt, getCouncilSession, getRun, getSettingVersions, getTask, inspectAttempt, inspectState, isNotFound, join, listRunsWithAttempts, listSettingRows, loadProjectSettings, loadPrototypeConfig, memoryCompressChanges, orMiss, planningHomeInputs, profilePairProblem, prototypeConfigSchema, renderAttemptMetrics, resolvePlanningHome, runCatalogCli, runHealth, runMemoryCompressCli, runMemoryConflictCli, runMemoryEvalCommand, saveProjectSetting, savePrototypeConfig, stringAt, switchValue, taskV2Schema, transitionAttempt, valueAt } from "./cli-imports";
 /** Project, council, harness, run and probe commands of `bb lane-pilot`. Returns undefined when `command` is not one of theirs. */
@@ -127,7 +128,10 @@ export async function cliProject(d: CliRunDeps): Promise<PluginCliResult | undef
   if (command === "council-seats" && args.length === 1) {
     const settings = (await effectiveProjectSettings(args[0]!)).values;
     const keys = PAIR_ROLE_SPECS.flatMap((spec) => [spec.keys[0], spec.keys[1]]);
-    return { exitCode:0, stdout:JSON.stringify({ ...await services.council.seatDefaults(args[0]!), settings: Object.fromEntries(keys.map((key) => [key, configuredSetting(settings, key) ?? null])) }, null, 2) };
+    const defaults = await services.council.seatDefaults(args[0]!);
+    // `name` is the Russian display name from the one map of role names (docs/agents.md); `id` stays the settings key part.
+    const seats = defaults.seats.map((seat) => ({ ...seat, name: roleDisplayName(`council.${seat.id}`) }));
+    return { exitCode:0, stdout:JSON.stringify({ ...defaults, seats, settings: Object.fromEntries(keys.map((key) => [key, configuredSetting(settings, key) ?? null])) }, null, 2) };
   }
   if (command === "council-status" && args.length >= 1) {
     const found = getCouncilSession(db, args[0]!);

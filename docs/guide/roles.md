@@ -15,6 +15,8 @@ sources:
 
 > Part of the [Lane Pilot guide](../../README.md#the-guide). Moved out of the root README on 2026-11-06.
 
+Every name below has one Russian display name and one place in the table [Agents: who is who](../agents.md).
+
 Every agent step in Lane Pilot names a role, and the role names the model. One table, `role_model.<role>`, applies to every graph, at the global, project or section level. There is no per-step model override. Two things sit outside the table: the writer of a task (picked per task by a Jev judgment) and the PM chat (the model the owner started the chat on).
 
 ## Who does what
