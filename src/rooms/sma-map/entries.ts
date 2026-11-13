@@ -1654,7 +1654,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n1643: ["have", "граница недоверенного ввода", "packages/memory-core/src/context.ts#joinMaintenanceBrief"],
   n1644: ["have", "профили моделей", "src/rooms/contracts/helper-context.ts#ROLE_PROFILES"],
   n1645: ["void", "нет предмета: справка про схему профиля релиза и порядок обучения убрана 2026-10-30; project-start собирает стек, тесты и стиль, а релиз плагина ведёт BB"],
-  n1646: ["have", "как называть проверку — скилл lane-contract у PM и у nyquist", "src/rooms/contracts/bundled-agents.json#lane-contract"],
+  n1646: ["have", "как называть проверку — скилл lane-pilot у PM и у nyquist", "src/rooms/contracts/bundled-agents.json#lane-pilot"],
   n1647: ["void", "нет предмета: формы SUMMARY.md были шаблонами, убранными 2026-10-30; пишется один короткий SUMMARY.md по записи, выбор шаблона ничего не защищает"],
   n1648: ["void", "нет предмета: шаблоны project-onboard убраны 2026-10-30, страницы по коду пишет ночной граф docs; читателя фиксированных семи форм карты кода нет"],
   n1649: ["void", "нет предмета: шаблоны форм исследования убраны 2026-10-30; анализ пишет lp.analyze, а стек, возможности и подводные камни отдельной формой не держатся"],

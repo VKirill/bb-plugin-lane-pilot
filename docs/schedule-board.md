@@ -208,7 +208,7 @@ re-read `schedule_list`. The usual slow poll covers a missed signal.
   a scheduled errand's thread carries `pluginMetadata.origin = "schedule"` and so does anything below it (the check walks the parent chain, four hops).
   The tool is one tool, not nine, because a compiled agent profile holds at most 64 tools and the PM's list had room for two.
 
-## Skill section (for the canon `lane-pilot-workflows`, `references/schedule.md`)
+## Skill section (for the canon `lane-pilot`, `references/workflows-lifecycle.md`)
 
 > **Scheduling a graph.** A graph with a `schedule` trigger gets its BB automation as before (`docs/workflow-triggers.md`). For a one-off or
 > anything that is not such a graph, use the schedule board: `lane_pilot_schedule` (PM) with `action: list` to see what exists, `create` with

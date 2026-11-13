@@ -28,7 +28,7 @@ effort: high
 color: pink
 maxTurns: 120
 skills:
-  - lane-contract
+  - lane-pilot
 initialPrompt: |
   Boot now.
 ---
@@ -68,7 +68,7 @@ it("overlays plugin stock from the installed file without activating ignored or 
   expect(body.tools).not.toContain("mcp__bb-bridge__lane_pilot_dispatch_cli");
   expect(body.tools).not.toContain("mcp__bb-bridge__lane_pilot_night_review");
   expect(body.tools).not.toContain("*");
-  expect(body.skills).toEqual(["lane-contract"]);
+  expect(body.skills).toEqual(["lane-pilot"]);
   expect(body.maxTurns).toBe(120);
   expect(body).not.toHaveProperty("permissionMode");
   expect(body).not.toHaveProperty("initialPrompt");

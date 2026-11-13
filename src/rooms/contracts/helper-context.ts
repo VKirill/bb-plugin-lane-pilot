@@ -154,8 +154,8 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "workspace-provisioner": { bbPlugins: [], skills: [], mcpServers: [] },
   // The lead's own chat: it answers from its brief and the lane_pilot_* tools, so the plugin stays allowed.
   "lead": { bbPlugins: ["lane-pilot"], skills: [], mcpServers: [] },
-  // The Workflow architect builds chains with the lane_pilot_workflow_* tools; its method is the lane-pilot-workflows skill.
-  "workflow-architect": { bbPlugins: ["lane-pilot"], skills: ["lane-pilot-workflows"], mcpServers: [] },
+  // The Workflow architect builds chains with the lane_pilot_workflow_* tools; its method is the lane-pilot skill (references/workflows.md).
+  "workflow-architect": { bbPlugins: ["lane-pilot"], skills: ["lane-pilot"], mcpServers: [] },
   // A harness session edits files in a throwaway folder (.lane-pilot/harness-edit): the mission on disk is the whole brief.
   "harness-editor": { bbPlugins: [], skills: [], mcpServers: [] },
   "harness-composer": { bbPlugins: [], skills: [], mcpServers: [] },

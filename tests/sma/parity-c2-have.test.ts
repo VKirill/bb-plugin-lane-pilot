@@ -399,7 +399,7 @@ describe("reference cards carried by behaviour (c2)", () => {
     expect(picked?.option.providerId).toBe("codex");
   });
 
-  it("[sma:k_d_ref_verify] a red check of another run's commit passes the goal listed aside, and the PM and nyquist-auditor carry lane-contract", () => {
+  it("[sma:k_d_ref_verify] a red check of another run's commit passes the goal listed aside, and the PM and nyquist-auditor carry lane-pilot", () => {
     const verdict = goalVerdict({
       tasks: [{ taskId: "t1", checks: [{ command: "npm test", state: "green" }, { command: "npm lint", state: "red" }] }],
       findings: [{ taskId: "t1", command: "npm lint", culpritCommit: "deadbeefcafe", culpritTask: "other-run-task" }],
@@ -408,7 +408,7 @@ describe("reference cards carried by behaviour (c2)", () => {
     expect(verdict.red).toEqual([]);
     expect(verdict.aside).toEqual([expect.objectContaining({ taskId: "t1", command: "npm lint", why: "outside" })]);
     const agents = JSON.parse(readFileSync(join(process.cwd(), "src/rooms/contracts/bundled-agents.json"), "utf8")) as Record<string, { skills?: string[] }>;
-    expect(agents["dev-orchestrator"]!.skills).toContain("lane-contract");
-    expect(agents["nyquist-auditor"]!.skills).toContain("lane-contract");
+    expect(agents["dev-orchestrator"]!.skills).toContain("lane-pilot");
+    expect(agents["nyquist-auditor"]!.skills).toContain("lane-pilot");
   });
 });

@@ -61,31 +61,31 @@ describe("pm skill list filter", () => {
 describe("pm skill use", () => {
   it("maps a Skill hook payload to a row and refuses every other tool", () => {
     const env = { LANE_PILOT_PM_THREAD_ID: "thr_pm", LANE_PILOT_PM_PROJECT_ID: "proj" };
-    expect(pmSkillUseOf("Skill", { skill: "lane-pilot-ops" }, env)).toEqual({ skill: "lane-pilot-ops", thread: "thr_pm", project: "proj" });
-    expect(pmSkillUseOf("Read", { skill: "lane-pilot-ops" }, env)).toBeNull();
-    expect(pmSkillUseOf("Skill", { skill: "lane-pilot-ops" }, {})).toBeNull();
+    expect(pmSkillUseOf("Skill", { skill: "lane-pilot" }, env)).toEqual({ skill: "lane-pilot", thread: "thr_pm", project: "proj" });
+    expect(pmSkillUseOf("Read", { skill: "lane-pilot" }, env)).toBeNull();
+    expect(pmSkillUseOf("Skill", { skill: "lane-pilot" }, {})).toBeNull();
     expect(pmSkillUseOf("Skill", {}, env)).toBeNull();
   });
 
   it("folds the scoped spelling bb-global-skills:name into name", () => {
-    expect(pmSkillName("bb-global-skills:lane-pilot-ops")).toBe("lane-pilot-ops");
-    expect(pmSkillName("lane-pilot-ops")).toBe("lane-pilot-ops");
+    expect(pmSkillName("bb-global-skills:lane-pilot")).toBe("lane-pilot");
+    expect(pmSkillName("lane-pilot")).toBe("lane-pilot");
   });
 
   it("records one row per Skill call and counts both spellings as one skill", () => {
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
     const realNow = Date.now();
-    recordPmSkillUse(db, { threadId: "thr_a", projectId: "proj", skill: "bb-global-skills:lane-pilot-ops", at: realNow - 1000 });
-    recordPmSkillUse(db, { threadId: "thr_b", projectId: "proj", skill: "lane-pilot-ops", at: realNow - 2000 });
+    recordPmSkillUse(db, { threadId: "thr_a", projectId: "proj", skill: "bb-global-skills:lane-pilot", at: realNow - 1000 });
+    recordPmSkillUse(db, { threadId: "thr_b", projectId: "proj", skill: "lane-pilot", at: realNow - 2000 });
     recordPmSkillUse(db, { threadId: "thr_a", projectId: "proj", skill: "ru-check", at: realNow - 20 * 86_400_000 });
     const counts = pmSkillUseCounts(db, { days: 14, now: realNow });
-    expect(counts).toEqual([{ skill: "lane-pilot-ops", uses: 2, threads: 2 }]);
-    const viaWrite = runPmSkillUseCli(db, ["lane-pilot-ops", "--thread", "thr_a", "--project", "proj"]);
+    expect(counts).toEqual([{ skill: "lane-pilot", uses: 2, threads: 2 }]);
+    const viaWrite = runPmSkillUseCli(db, ["lane-pilot", "--thread", "thr_a", "--project", "proj"]);
     expect(viaWrite.exitCode).toBe(0);
     expect(runPmSkillUseCli(db, ["--thread", "thr_a"]).exitCode).toBe(1);
     const viaRead = runPmSkillsCli(db, ["--days", "14"]);
-    expect(viaRead.stdout).toContain("lane-pilot-ops — 3 (2 threads)");
+    expect(viaRead.stdout).toContain("lane-pilot — 3 (2 threads)");
   });
 });
 

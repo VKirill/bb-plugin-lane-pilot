@@ -7,8 +7,8 @@ import { registerCli } from "../src/rooms/tools/server/cli";
 import { LANE_PILOT_TOOL_SEARCH_NAME, PM_CORE_TOOLS, PM_FAMILY_TOOLS } from "../src/rooms/platform/server/pm-tool-families";
 import type { Services } from "../server";
 
-// The runbook a stuck PM loads (skills/lane-pilot-ops): every command and tool it names must exist, or it sends a PM nowhere.
-const SKILL = ["SKILL.md", "references/blocked.md", "references/graphs-and-review.md"].map((file) => readFileSync(`skills/lane-pilot-ops/${file}`, "utf8")).join("\n");
+// The runbook a stuck PM loads (skills/lane-pilot/references/ops*.md): every command and tool it names must exist, or it sends a PM nowhere.
+const SKILL = ["ops.md", "ops-blocked.md", "ops-graphs.md"].map((file) => readFileSync(`skills/lane-pilot/references/${file}`, "utf8")).join("\n");
 
 // The tools the PM can actually call: the registered lists, not a text scan of the sources.
 const KNOWN_TOOLS = new Set([...PM_CORE_TOOLS, ...PM_FAMILY_TOOLS, LANE_PILOT_TOOL_SEARCH_NAME]);

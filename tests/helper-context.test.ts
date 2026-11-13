@@ -60,7 +60,7 @@ describe("helper session filter", () => {
     const parsed = parseHelperContextSettings({ "helper.context_mode": "inherit" });
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    const parent = { skills: { mode: "allow" as const, names: ["lane-contract"] }, required: true };
+    const parent = { skills: { mode: "allow" as const, names: ["lane-pilot"] }, required: true };
     expect(decideHelperDispatch({ settings: parsed.settings, capability: "dynamic", parentPolicy: parent, parentRequired: true })).toEqual({
       ok: false, reason: "helper_context_parent_ceiling_unenforced",
     });
@@ -119,7 +119,7 @@ describe("helper session filter", () => {
     };
     expect(requiredSessionPolicySpawnBinding({ capability: "none", snapshot: inherit })).toEqual({});
     const selected = decideHelperDispatch({
-      settings: { mode: "selected", skills: ["lane-contract"], mcpServers: [], bbPlugins: [], nativePlugins: [] },
+      settings: { mode: "selected", skills: ["lane-pilot"], mcpServers: [], bbPlugins: [], nativePlugins: [] },
       capability: "required",
     });
     expect(selected.ok).toBe(true);
@@ -135,7 +135,7 @@ describe("helper session filter", () => {
     expect(field.experimental_vkRequiredSessionPolicy).toEqual({
       version: 1,
       policy: {
-        skills: { mode: "allow", names: ["lane-contract"] },
+        skills: { mode: "allow", names: ["lane-pilot"] },
         mcpServers: { mode: "allow", names: [...MANDATORY_MCP_SERVERS] },
         bbPlugins: { mode: "allow", names: [...MANDATORY_BB_PLUGINS] },
         nativePlugins: { mode: "allow", names: [] },
