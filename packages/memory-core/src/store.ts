@@ -422,7 +422,7 @@ export function searchMemoryRecords(db: MemoryDatabase, projectId: string, query
     const score = (text: string) => tokens.reduce((sum, token) => sum + (text.toLowerCase().split(token).length - 1), 0);
     rows = all.map((row) => ({ ...row, _score: score(`${row.content} ${row.concepts_json}`) })).filter((row) => row._score > 0).sort((a, b) => b._score - a._score || b.created_at - a.created_at).slice(0, limit);
   }
-  const records = rows.map((row) => { const record = toRecord(row); const similarity = (row as Row & { similarity?: number }).similarity; return similarity === undefined ? record : { ...record, similarity }; });
+  const records = rows.map((row) => { const record = toRecord(row); const { similarity, bestChunk } = row as Row & { similarity?: number; bestChunk?: number }; return { ...record, ...(similarity === undefined ? {} : { similarity }), ...(bestChunk === undefined ? {} : { bestChunk }) }; });
   // M7 receipt: a pre-M7 root row delivered inside an umbrella reads with the legacy_scope flag.
   if (options.umbrella) rows.forEach((row, index) => { if (!parseScopeJson((row as Row & { scope_json: string | null }).scope_json).length) (records[index] as MemoryRecord & { legacyScope?: boolean }).legacyScope = true; });
   return records;
@@ -433,17 +433,18 @@ export function searchMemoryRecords(db: MemoryDatabase, projectId: string, query
  * each carrying its `similarity` for the floor. Words only add the records that name a path written in the question, first — an exact
  * path is the one thing a word match knows better. A record with no vector yet is not lost: the word hits follow the ranked ones.
  */
-function denseRows(db: MemoryDatabase, projectId: string, query: string, audience: MemoryAudience, personalBot: string, options: SearchOptions, wordRows: Row[]): Array<Row & { similarity?: number }> | null {
+function denseRows(db: MemoryDatabase, projectId: string, query: string, audience: MemoryAudience, personalBot: string, options: SearchOptions, wordRows: Row[]): Array<Row & { similarity?: number; bestChunk?: number }> | null {
   const vector = queryVectorFor(query);
   const ranked = vector ? denseRank(db, projectId, vector) : null;
   if (!ranked) return null;
   const visible = new Map((db.prepare(`SELECT ${cols("m.")} FROM lane_pilot_memory m WHERE m.project_id=? AND m.audience=? AND m.personal_bot=? AND ${visibility(db, "m", options)}`)
     .all(projectId, audience, personalBot) as Row[]).map((row) => [row.id, row]));
   const similarity = new Map(ranked.map((item) => [item.id, item.similarity]));
+  const chunkOf = new Map(ranked.filter((item) => item.chunk !== undefined).map((item) => [item.id, item.chunk!]));
   const anchors = pathAnchorsOf(query);
   const anchored = anchors.length ? wordRows.filter((row) => anchors.some((anchor) => row.content.includes(anchor))) : [];
-  const out: Array<Row & { similarity?: number }> = [], seen = new Set<string>();
-  const add = (row: Row | undefined) => { if (row && !seen.has(row.id)) { seen.add(row.id); out.push({ ...row, ...(similarity.has(row.id) ? { similarity: similarity.get(row.id)! } : {}) }); } };
+  const out: Array<Row & { similarity?: number; bestChunk?: number }> = [], seen = new Set<string>();
+  const add = (row: Row | undefined) => { if (row && !seen.has(row.id)) { seen.add(row.id); out.push({ ...row, ...(similarity.has(row.id) ? { similarity: similarity.get(row.id)! } : {}), ...(chunkOf.has(row.id) ? { bestChunk: chunkOf.get(row.id)! } : {}) }); } };
   anchored.forEach(add);
   for (const item of ranked) add(visible.get(item.id));
   wordRows.filter((row) => !similarity.has(row.id)).forEach(add);
@@ -525,6 +526,7 @@ export function deleteMemoryRecord(db: Database.Database, projectId: string, id:
       .all(projectId, id, id) as Array<{ deferral_id: string }>).map((row) => row.deferral_id);
     dropMemoryIndexes(db, projectId, id);
     if (hasTable(db, "lane_pilot_memory_vec")) db.prepare("DELETE FROM lane_pilot_memory_vec WHERE project_id=? AND id=?").run(projectId, id);
+    if (hasTable(db, "lane_pilot_memory_vec_chunk")) db.prepare("DELETE FROM lane_pilot_memory_vec_chunk WHERE project_id=? AND id=?").run(projectId, id);
     if (hasTable(db, "lane_pilot_memory_promotion")) db.prepare("DELETE FROM lane_pilot_memory_promotion WHERE project_id=? AND memory_id=?").run(projectId, id);
     if (hasTable(db, "lane_pilot_memory_conflict")) db.prepare("DELETE FROM lane_pilot_memory_conflict WHERE project_id=? AND (note_a=? OR note_b=?)").run(projectId, id, id);
     db.prepare("DELETE FROM lane_pilot_memory WHERE project_id=? AND id=?").run(projectId, id);
@@ -543,6 +545,7 @@ export function eraseLeftovers(db: MemoryDatabase, projectId: string, id: string
   holds("lane_pilot_memory_fts", "project_id=? AND id=?", [projectId, id]);
   holds("lane_pilot_memory_trgm", "project_id=? AND id=?", [projectId, id]);
   holds("lane_pilot_memory_vec", "project_id=? AND id=?", [projectId, id]);
+  holds("lane_pilot_memory_vec_chunk", "project_id=? AND id=?", [projectId, id]);
   holds("lane_pilot_memory_promotion", "project_id=? AND memory_id=?", [projectId, id]);
   holds("lane_pilot_memory_conflict", "project_id=? AND (note_a=? OR note_b=?)", [projectId, id, id]);
   return left;
