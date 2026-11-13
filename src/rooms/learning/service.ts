@@ -95,13 +95,32 @@ export function createLearning(ctx: ServerCore, services: Services) {
     return (answer?.memories ?? []).filter((row) => row.scope === "global" && row.kind === "preference").map((row) => ({ id: row.name, text: row.summary }));
   }
 
+  /**
+   * The machine a project's analyzer thread starts on: the project's own writer host, else (a project with no writer host, `Personal`
+   * on the hub 2026-11-14: its candidates waited every night) the host of the project whose owner messages were judged last. The
+   * analyzer reads the prompt it is given, not the project's folder, so it needs a machine, not this project's checkout; the hidden
+   * thread is opened in that donor project (as the episode analyst does, analystPlace in night-graphs). Null when no project has a host.
+   */
+  async function analyzerPlace(projectId: string): Promise<{ threadProjectId: string; hostId: string; path: string } | null> {
+    const resolved = (place: unknown): place is { status: "resolved"; hostId: string; path: string } => (place as { status?: string } | null)?.status === "resolved" && Boolean((place as { hostId?: string }).hostId);
+    const read = (id: string) => Promise.resolve(services.resolveProjectWriterHost({ projectId: id })).catch((cause: unknown) => { log(`learning: writer host of ${id} unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
+    const own = await read(projectId);
+    if (resolved(own)) return { threadProjectId: projectId, hostId: own.hostId, path: own.path };
+    const donors = db.prepare("SELECT project_id AS id FROM lane_pilot_learning_obs WHERE project_id IS NOT ? GROUP BY project_id ORDER BY MAX(judged_at) DESC LIMIT 6").all(projectId) as Array<{ id: string }>;
+    for (const donor of donors) {
+      const place = await read(donor.id);
+      if (resolved(place)) return { threadProjectId: donor.id, hostId: place.hostId, path: place.path };
+    }
+    return null;
+  }
+
   /** One run of the short model on a prompt: the project's rule analyzer (a hidden thread of the model the owner chose for rules). */
   async function runModel(prompt: string, projectId: string, label: string): Promise<string> {
-    const place = await services.resolveProjectWriterHost({ projectId });
-    if (!place || place.status !== "resolved" || !place.hostId) throw new Error("no_host");
+    const place = await analyzerPlace(projectId);
+    if (!place) throw new Error("no_host");
     const analyzer = await services.ruleScan.analyzerFor(projectId, { hostId: place.hostId, path: place.path });
     if (!analyzer) throw new Error("no_analyzer_model");
-    return await services.ruleScan.runAnalyzer(projectId, `Learning from owner messages · ${label}`.slice(0, 160), prompt, { hostId: place.hostId, path: place.path }, analyzer, { learning: true });
+    return await services.ruleScan.runAnalyzer(place.threadProjectId, `Learning from owner messages · ${label}`.slice(0, 160), prompt, { hostId: place.hostId, path: place.path }, analyzer, { learning: true });
   }
 
   /** The sections of the chat a message was said in: a PM chat's run scopes, else the folder its workspace sits in. */
@@ -192,7 +211,12 @@ export function createLearning(ctx: ServerCore, services: Services) {
       report.projects += 1;
       report.batches += ((await kv.get<number>(runsKey())) ?? 0) - runsBefore;
       for (const key of ["read", "items", "adopted", "waiting", "duplicates", "dropped", "noted"] as const) report[key] += result[key];
-      if (result.reason) report.stopped = result.reason;
+      // `stopped` is the whole run's stop (the day's cap); one project's own failure (no machine, no analyzer model) is its entry in
+      // `skipped`: the others ran, and its candidates keep waiting for the next night.
+      if (result.reason && result.state === "no_model") {
+        const project = await Promise.resolve(orMiss(bb.sdk.projects.get({ projectId: waiting.projectId }), null, isNotFound)).catch(() => null) as { name?: unknown } | null;
+        (report.skipped ??= []).push({ projectId: waiting.projectId, ...(typeof project?.name === "string" ? { name: project.name } : {}), reason: result.reason, waiting: waiting.waiting });
+      } else if (result.reason) report.stopped = result.reason;
       log(`learning: night extraction for ${waiting.projectId}: ${JSON.stringify(result)}`);
     }
     if (!ctx.isDisposed()) await autonomy.settleWaiting();

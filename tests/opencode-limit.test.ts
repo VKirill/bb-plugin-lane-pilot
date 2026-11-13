@@ -35,6 +35,14 @@ describe("limitOfError", () => {
     expect(providerLimitNotice("provider_error:[antigravity/gemini-3.8-flash-high] [403]: HTTP 403 (reset after 34s)")).not.toBeNull();
   });
 
+  it("counts a bare HTTP 403 from the router as a limit too, so a dead route is set aside and the role's pool answers (2026-11-14: every ag/gemini-3.8-flash-* 403)", () => {
+    const bare = { type:"provider.error", message:"[antigravity/gemini-3.8-flash-high] [403]: HTTP 403" };
+    expect(limitOfError(bare, T, MODEL)).toMatchObject({ resetAt:null });
+    expect(providerLimitNotice("provider_error:[antigravity/gemini-3.8-flash-high] [403]: HTTP 403")).not.toBeNull();
+    expect(providerLimitNotice("HTTP 403")).not.toBeNull();
+    expect(providerLimitNotice("The route /admin answers HTTP 4031 for guests and the report lists every file")).toBeNull();
+  });
+
   it("takes OpenCode's own type and retryAfterMs, and the session's model when the text names none", () => {
     expect(limitOfError(rateLimit, T, MODEL)).toEqual({ providerId:"router9", model:"router9/ag/gemini-3.8-flash-high", resetAt:T + 90_000, reason:"Too many requests" });
     expect(limitOfError({ type:"provider.quota", message:"" }, T, MODEL)).toMatchObject({ reason:"provider.quota", resetAt:null });
