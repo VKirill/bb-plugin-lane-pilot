@@ -49,7 +49,7 @@ describe("Helper chips & panel phase rendering", () => {
     expect(chip).toBeTruthy();
     expect(slot.getByTestId("active-dot")).toBeTruthy();
     expect(slot.queryByTestId("verifying-dot")).toBeNull();
-    expect(chip.getAttribute("title")).toBe("Writer: Task 1 (работает)");
+    expect(chip.getAttribute("title")).toBe("Code writer: Task 1 (работает)");
     slot.lifecycle.unmount();
   });
 
@@ -81,7 +81,7 @@ describe("Helper chips & panel phase rendering", () => {
     expect(chip).toBeTruthy();
     expect(slot.getByTestId("verifying-dot")).toBeTruthy();
     expect(slot.queryByTestId("active-dot")).toBeNull();
-    expect(chip.getAttribute("title")).toBe("Writer: Task 2 (проверка)");
+    expect(chip.getAttribute("title")).toBe("Code writer: Task 2 (проверка)");
     slot.lifecycle.unmount();
   });
 
@@ -115,7 +115,7 @@ describe("Helper chips & panel phase rendering", () => {
     });
 
     await waitFor(() => expect(slot.getByTestId("helper-panel-list")).toBeTruthy());
-    await waitFor(() => expect(slot.getByText("Writer: Task 1 (приёмка)")).toBeTruthy());
+    await waitFor(() => expect(slot.getByText("Code writer: Task 1 (приёмка)")).toBeTruthy());
     expect(slot.getByTestId("helper-panel-queue").textContent).toContain("task-queued-1");
     slot.lifecycle.unmount();
   });

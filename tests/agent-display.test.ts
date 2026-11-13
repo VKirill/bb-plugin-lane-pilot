@@ -17,7 +17,7 @@ describe("agent picker display labels", () => {
     expect(agentPickerLabel({ id: "dev-orchestrator", description: "Development coordinator" }, t))
       .toBe("Development coordinator");
     expect(agentPickerLabel({ id: "tavily", description: "Lane Pilot Tavily research agent" }, t))
-      .toBe("Researcher");
+      .toBe("Web researcher");
     expect(agentPickerLabel({ id: "copy-lead", description: "My desk editor" }, t)).toBe("My desk editor");
     expect(agentPickerLabel({ id: "custom-writer", description: "Lane Pilot development orchestrator" }, t))
       .toBe("Lane Pilot development orchestrator");
@@ -47,7 +47,7 @@ describe("agent picker display labels", () => {
 
   it("names the coordinator Lane Pilot on the composer and keeps other labels", () => {
     expect(composerAgentLabel({ id: "dev-orchestrator", description: "Development coordinator" }, t)).toBe("Lane Pilot");
-    expect(composerAgentLabel({ id: "copy-lead", description: "Copy editor" }, t)).toBe("Copy editor");
+    expect(composerAgentLabel({ id: "copy-lead", description: "Copy editor" }, t)).toBe("Copywriter");
     expect(composerAgentLabel({ id: "my-lead", description: "Mine", kind: "coordinator" }, t)).toBe("Lane Pilot");
   });
 });

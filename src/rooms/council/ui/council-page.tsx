@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Markdown, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../contracts";
-import { t } from "@lane-pilot/i18n";
+import { canonicalRoleId, roleName, t } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";
 import { Disclosure } from "@lane-pilot/ui-kit";
@@ -40,11 +40,17 @@ const SELECT_CLASS = "h-9 rounded-none border-2 border-slate-900 bg-[var(--lp-ca
 const MARKDOWN_CLASS = "min-w-0 text-sm font-sans [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto";
 const PIXEL_CARD = "border-2 border-slate-900 bg-[var(--lp-card)] shadow-[4px_4px_0_#0f172a]";
 
+/** A seat of the stock council is shown by its name from the one map; a seat the map does not know keeps the title it was started with. */
+function seatName(seat: { id: string; title: string }): string {
+  return canonicalRoleId(`council.${seat.id}`) ? roleName(`council.${seat.id}`) : seat.title;
+}
+
 function speakerName(detail: CouncilDetail, seatId: string): string {
   if (seatId === "owner") return t("councilOwner");
   if (seatId === "chair") return t("councilChair");
   if (seatId === "moderator") return t("councilModerator");
-  return detail.seats.find((seat) => seat.id === seatId)?.title ?? seatId;
+  const found = detail.seats.find((seat) => seat.id === seatId);
+  return found ? seatName(found) : seatId;
 }
 
 function useWindowWidth(): number {
@@ -310,7 +316,7 @@ export function CouncilPage() {
                 className={`flex w-full min-w-0 items-center gap-2 border p-1 text-left ${highlightSeatId === seat.id ? "border-slate-900 bg-blue-50" : "border-transparent hover:border-slate-400"}`}
               >
                 <span className="h-3 w-3 shrink-0 border border-slate-900" style={{ backgroundColor: seatColor(seat.id, detail.seats) }} />
-                <span className="min-w-0 truncate">{seat.title}</span>
+                <span className="min-w-0 truncate">{seatName(seat)}</span>
                 {seat.providerId && seat.model ? <span className="min-w-0 truncate text-muted-foreground">{seat.providerId}/{seat.model}</span> : null}
               </button>
             </li>

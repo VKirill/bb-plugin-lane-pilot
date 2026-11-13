@@ -158,7 +158,7 @@ export const tabsRu: { [K in keyof typeof tabsEn]: string } = {
   hiddenProjectsTitle: "Скрытые проекты",
   hiddenProjectsEmpty: "Скрытых проектов нет. «Скрыть проект» в меню ⋯ проекта убирает его в «Служебные»; тестовые проекты попадают туда сами.",
   chipRunning: "Идёт {n}",
-  chipNoModel: "Модель писателя не выбрана",
+  chipNoModel: "Модель исполнителя кода не выбрана",
   chipNoMachine: "Нет машины",
   howTitle: "Как это работает",
   howInheritTitle: "Откуда берётся значение",
