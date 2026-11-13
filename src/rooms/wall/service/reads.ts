@@ -1,8 +1,6 @@
-import { watchMorningLine } from "@lane-pilot/jev";
 import { diffHiddenMorningLine } from "../../checkers/server";
 import { errandsDiagnosisMorningLine } from "../../errands";
 import { profileCheckMorningLine } from "../../native-agent";
-import { modelRebenchMorningLine } from "../../night-graphs";
 import { promotionMorningLine } from "../../rule-forms";
 import { statsEpochLine } from "../../storage";
 import { composeWallMorning, cancelParetoLine } from "../morning";
@@ -24,11 +22,9 @@ export function createReads(ctx: WallCtx) {
       morning: [
         `${statsEpochLine(statsEpoch(db))}.`,
         ...composeWallMorning(db, ports.now()),
-        watchMorningLine(db, ports.now()),
         ...(cancelParetoLine(db, ports.now()) ? [cancelParetoLine(db, ports.now())!] : []),
         ...(promotionMorningLine(db) ? [promotionMorningLine(db)!] : []),
         ...(diffHiddenMorningLine(db as never, ports.now()) ? [diffHiddenMorningLine(db as never, ports.now())!] : []),
-        ...(modelRebenchMorningLine(db as never, ports.now()) ? [modelRebenchMorningLine(db as never, ports.now())!] : []),
         ...(deps.skillSwitchMorningLine(db, ports.now()) ? [deps.skillSwitchMorningLine(db, ports.now())!] : []),
         ...(errandsDiagnosisMorningLine(db as never) ? [errandsDiagnosisMorningLine(db as never)!] : []),
         ...(profileCheckMorningLine(db as never) ? [profileCheckMorningLine(db as never)!] : []),
@@ -54,11 +50,9 @@ export function createReads(ctx: WallCtx) {
   const morning = (now?: number) => [
       `${statsEpochLine(statsEpoch(db))}.`,
       ...composeWallMorning(db, now ?? ports.now()),
-      watchMorningLine(db, now ?? ports.now()),
       ...(cancelParetoLine(db, now ?? ports.now()) ? [cancelParetoLine(db, now ?? ports.now())!] : []),
       ...(promotionMorningLine(db) ? [promotionMorningLine(db)!] : []),
       ...(diffHiddenMorningLine(db as never, now ?? ports.now()) ? [diffHiddenMorningLine(db as never, now ?? ports.now())!] : []),
-      ...(modelRebenchMorningLine(db as never, now ?? ports.now()) ? [modelRebenchMorningLine(db as never, now ?? ports.now())!] : []),
       ...(deps.skillSwitchMorningLine(db, now ?? ports.now()) ? [deps.skillSwitchMorningLine(db, now ?? ports.now())!] : []),
       ...(errandsDiagnosisMorningLine(db as never) ? [errandsDiagnosisMorningLine(db as never)!] : []),
       ...(profileCheckMorningLine(db as never) ? [profileCheckMorningLine(db as never)!] : []),

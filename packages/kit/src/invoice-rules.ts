@@ -3,7 +3,7 @@
  * bank details are checked by code (an amount is equal or it is not; an INN, a BIK and an account have check digits); the client and the
  * service line are compared by the words they share. No model reads them. Anything the words cannot settle is `unsure` and goes to the
  * owner's review; nothing is sent without the owner.
- * (Kept in the jev package only because the PII scan shares the INN check digits; nothing here asks a model.)
+ * (The PII scan shares the INN check digits.)
  */
 export type InvoiceRequest = { company: string; amount: number; service: string; inn: string };
 export type InvoiceFound = {

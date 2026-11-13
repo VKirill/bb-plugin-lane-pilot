@@ -8,7 +8,7 @@ import {
 import { taskV2Schema, type TaskV2 } from "../src/rooms/contracts";
 import { lintContract, type PathKind } from "../src/rooms/tasks/server/contract-lint";
 import { ROLE_PROFILES } from "../src/rooms/contracts/helper-context";
-import { MECHANISMS, applyJevForms, buildMechanismTask, jevPickForms, lintBlockedCommand, lintMigrationOrder, lintPathRule, lintVerificationRule, listPromotions, mechanismFor, promotionRoute, promotionWhy, proposePromotions, ruleMechanismPlan, runRulesCli } from "../src/rooms/rule-forms";
+import { MECHANISMS, buildMechanismTask, lintBlockedCommand, lintMigrationOrder, lintPathRule, lintVerificationRule, listPromotions, mechanismFor, promotionRoute, promotionWhy, proposePromotions, ruleMechanismPlan, runRulesCli } from "../src/rooms/rule-forms";
 
 const repo = "/tmp/lane-pilot-repo";
 const hub = JSON.parse(readFileSync(new URL("./fixtures/hub-rules-2026-10-22.json", import.meta.url), "utf8")) as Array<{ id: string; state: string; occurrences: number; rule: string; gold: string }>;
@@ -253,25 +253,6 @@ describe("bb lane-pilot rules", () => {
     expect((await runRulesCli(deps(db), ["promote", "p", "--list"])).stdout).toMatch(/proposed +night_proposes/);
     expect((await runRulesCli(deps(db), ["promote"])).exitCode).toBe(1);
     expect((await runRulesCli(deps(db), ["nope"])).stderr).toMatch(/unknown rules operation/);
-  });
-
-  it("asks System One only for the undecided rules and takes a form only above 0.5", async () => {
-    const db = openDb();
-    const vague = upsertLessonProposal(db, "p", { rule: "Be careful with the thing near the other thing, always, in every case where it comes up." }, 1).id;
-    const calls: string[][] = [];
-    const ask = async (_state: string, questions: Record<string, { instructions: string; criteria: Record<string, string> }>) => {
-      calls.push(Object.keys(questions));
-      return { q0: { check: 0.1, hook: 0.05, skill: 0.7, memory: 0.1, always: 0.05 } };
-    };
-    const result = JSON.parse((await runRulesCli(deps(db, { ask }), ["classify", "p", "--jev"])).stdout!);
-    expect(result).toMatchObject({ undecided: 1, jev: { asked: 1, moved: 1 } });
-    expect(calls).toEqual([["q0"]]);
-    expect(getRuleProposal(db, "p", vague)).toMatchObject({ form: "skill", formBy: "jev", formReason: "jev: p=0.70 skill" });
-    const unsure = await jevPickForms([{ id: "x", rule: "r" }], async () => ({ q0: { check: 0.3, hook: 0.2, skill: 0.2, memory: 0.2, always: 0.1 } }));
-    expect(unsure).toEqual([{ id: "x", form: null, p: 0.3 }]);
-    const failed = await jevPickForms([{ id: "x", rule: "r" }], async () => null);
-    expect(failed).toEqual([{ id: "x", form: null, p: null }]);
-    expect(await applyJevForms(db, [{ id: vague, projectId: "p", rule: "r" }], async () => null)).toEqual({ asked: 1, moved: 0 });
   });
 });
 

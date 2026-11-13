@@ -23,7 +23,7 @@ sources:
 |---|---|
 | `server.ts`, `host.ts`, `app.tsx` | The three BB entries. They only assemble: server wiring and RPC in `server.ts`, host handlers in `host.ts`, the React app in `app.tsx`. |
 | `src/rooms/<room>/` | One folder per subsystem (writer, runs, critique, memory, wall, bench, harness, council, workflow, settings, ui-shell and many more). A room exposes three public files: `index.ts` (domain), `server/index.ts` and `ui/index.ts`. Everything else in the room is private. |
-| `packages/*` | npm workspaces under the `@lane-pilot/` scope: `contracts`, `council`, `handoff`, `harness-core`, `host-calls`, `i18n`, `jev`, `kit`, `memory-core`, `models`, `pixel-world`, `resilience`, `run-insights`, `settings-catalog`, `thread-observe`, `ui-kit`, `workflow-engine`, `world-sim`. Four of them have their own `docs/` (`i18n`, `ui-kit`, `workflow-engine`, `world-sim`). |
+| `packages/*` | npm workspaces under the `@lane-pilot/` scope: `contracts`, `council`, `handoff`, `harness-core`, `host-calls`, `i18n`, `kit`, `memory-core`, `models`, `pixel-world`, `resilience`, `run-insights`, `settings-catalog`, `thread-observe`, `ui-kit`, `workflow-engine`, `world-sim`. Four of them have their own `docs/` (`i18n`, `ui-kit`, `workflow-engine`, `world-sim`). |
 | `workflows/` | The shipped graphs (JSON). |
 | `lane-stack/` | Guard hooks, the OpenCode `opencode-lane` plugin, bin helpers and schemas installed on hosts for writer and helper sessions. |
 | `policy/`, `bench/` | The night policy and its exam; the bench task sources (`known-bugs-v1.json`, `real-prs-v1.json`). |

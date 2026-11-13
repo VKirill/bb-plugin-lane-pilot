@@ -24,7 +24,7 @@ export async function backtest(db: LanePilotDatabase, kv: Kv, now: number = Date
   const replay = async (id: string, open: () => { created: boolean }, decision: "yes" | "no", text: string, at: number) => {
     if (!open().created) return;
     created += 1;
-    await predictDecision(db, id, undefined, now); // ponytail: one Jev call per row; judgeMany when the history is thousands, not dozens
+    await predictDecision(db, id, undefined, now);
     answerDecision(db, id, { option: decision, text }, "backtest", at);
   };
   const words = ((await kv.get(TASK_WORDS_KEY)) as Record<string, TaskWord[]> | null) ?? {};

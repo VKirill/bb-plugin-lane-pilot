@@ -1,6 +1,4 @@
-import { jev, type JevSettings } from "@lane-pilot/jev";
-import { hardProblems } from "@lane-pilot/jev/judgments/invoice-check";
-import { bestEffort } from "@lane-pilot/kit";
+import { hardProblems, bestEffort } from "@lane-pilot/kit";
 
 /**
  * Non-code QA (agents-design 3.5): the artifact checker a specialist's deliverable passes instead of a test run.
@@ -14,9 +12,7 @@ export type ValidatorDeps = {
   /** Runs a shell command on the machine that holds the artifact (bench: placed host; tests: a stub). */
   host?: { run(hostId: string, cwd: string, command: string, timeoutSec: number): Promise<RunResult> };
   hostId?: string;
-  /** Project/run Jev context (settings select off|shadow|active; receipts get the ids). Absent = registry defaults. */
-  jevCtx?: { projectId?: string | null; runId?: string | null; settings?: JevSettings };
-  /** Layer-3 visual review for pages (design tasks, or Jev/DOM uncertain). The caller wires design-lead / browser-qa. */
+  /** Layer-3 visual review for pages (design tasks, or DOM uncertain). The caller wires design-lead / browser-qa. */
   review?: PageReview;
   /** Local read fallback where the file is on this machine already. */
   readFile?: (path: string) => string | null;
@@ -50,7 +46,7 @@ async function validateText(path: string, deps: ValidatorDeps): Promise<Verdict>
   return hits.length ? { ok: false, reason: `typographic slop markers: ${hits.join(", ")}`, details: { markers: hits } } : { ok: true, reason: "no slop markers" };
 }
 
-/* ---- design/page: three layers — DOM probe, Jev on screenshots, vision-agent review ---- */
+/* ---- design/page: two layers — DOM probe, vision-agent review ---- */
 
 /** Layer 1 (the gate): geometry facts from the live DOM, printed as `REPORT {json}` — horizontal scroll, elements past
  * the right edge, overlapping visible blocks, empty images. */
@@ -73,7 +69,7 @@ function domProblems(report: DomReport): string[] {
 }
 
 /** Layer 3 hook: a vision-capable agent (design-lead / browser-qa) reviews meaning and design. The caller supplies it. */
-export type PageReview = (request: { url: string; brief: string; shots: string[]; dom: DomReport | null; jev: null }) => Promise<Verdict | null>;
+export type PageReview = (request: { url: string; brief: string; shots: string[]; dom: DomReport | null }) => Promise<Verdict | null>;
 
 async function validatePage(target: string, deps: ValidatorDeps): Promise<Verdict> {
   if (!deps.host || !deps.hostId) return { ok: false, reason: "no host to render the page on" };
@@ -97,7 +93,7 @@ async function judgeScreenshots(target: string, deps: ValidatorDeps, dom: DomRep
   const brief = String(deps.brief?.objective ?? deps.brief?.page ?? "");
   const base = { ok: true, reason: "page answers; DOM clean when the probe ran" };
   if (deps.review && Boolean(deps.brief?.design)) {
-    const reviewed = await bestEffort(console.warn, `validator visual review ${target}`, deps.review({ url: target, brief, shots: shotPaths, dom, jev: null }), null);
+    const reviewed = await bestEffort(console.warn, `validator visual review ${target}`, deps.review({ url: target, brief, shots: shotPaths, dom }), null);
     if (reviewed) return { ...reviewed, details: { dom } };
     return { ...base, reason: `${base.reason}; visual review unavailable`, details: { dom } };
   }

@@ -5,7 +5,6 @@ import { seenProviderLimit } from "../src/rooms/platform/server";
 import { buildCandidateEvidence } from "../src/rooms/critique/code-critique";
 import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
 import { recordStage, resetHelperStages } from "../src/rooms/runs/server/stage-records";
-import { createJev, setJevForTests, type JevClient } from "@lane-pilot/jev";
 import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting } from "../src/rooms/plugin-db";
 
 // 2026-10-29 audit (lane-pilot-roast F-001, F-003): quick paid the catalog and the coverage scan for a critic it skipped; pm-read

@@ -2,7 +2,7 @@ import { resolve, basename } from "node:path";
 import { bestEffort, orMiss, isNotFound } from "@lane-pilot/kit";
 import { sha256 } from "../../tasks";
 import { latestDocsTaskAt } from "../../storage";
-import { codeDocsVerdict, docsCadence, docsFactsKey, docsWorthinessState, DOCS_WORTHINESS_QUESTION, fallbackDocsVerdict } from "../docs-worthiness";
+import { codeDocsVerdict, docsCadence, docsFactsKey, fallbackDocsVerdict } from "../docs-worthiness";
 import type { DocsCadence, DocsVerdict, DocsWorthinessFacts } from "../docs-worthiness";
 import type { NightlyShared } from "./docs-night-state";
 
@@ -27,16 +27,7 @@ force?:boolean;now?:number}={}):Promise<StoredDocsVerdict|null> {
     const factsKey=docsFactsKey(facts);
     const docsSince=stored?.docsSince??(facts.docsPages>0?now:null);
     if(stored&&!opts.force&&stored.factsKey===factsKey&&now-stored.at<VERDICT_TTL_MS) return {...stored,facts,docsSince};
-    let verdict=codeDocsVerdict(facts);
-    if(!verdict){
-      const judged=await bestEffort(bb.log, `docs worthiness judge ${place.path}`, host.call("councilJudge",{requestedHostId:place.hostId,state:JSON.stringify(docsWorthinessState(facts,place)),
-        questions:{worth:{instructions:DOCS_WORTHINESS_QUESTION.instructions,criteria:{...DOCS_WORTHINESS_QUESTION.criteria}}}},{hostId:place.hostId,timeoutMs:10_000}), null);
-      const choice=judged?.status==="ok"?judged.answers.worth:undefined;
-      const sure=judged?.confidence?.worth??0.5;
-      verdict=choice==="needed"||choice==="not_needed"
-        ? {need:(choice==="needed"?sure:1-sure)>=0.5,reason:(choice==="needed"?sure:1-sure)>=0.5?"jev_needed":"jev_not_needed",confidence:sure}
-        : fallbackDocsVerdict(facts);
-    }
+    const verdict=codeDocsVerdict(facts)??fallbackDocsVerdict(facts);
     const next:StoredDocsVerdict={...verdict,projectId,hostId:place.hostId,path:place.path,factsKey,facts,at:now,docsSince};
     await bb.storage.kv.set(WORTH_KEY(place),next);
     return next;

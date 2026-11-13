@@ -11,6 +11,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./owns-paths": "./src/owns-paths.ts",
-    "./prompt-coverage": "./src/prompt-coverage.ts"
+    "./prompt-coverage": "./src/prompt-coverage.ts",
+    "./invoice-rules": "./src/invoice-rules.ts"
   }
 }

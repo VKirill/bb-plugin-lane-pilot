@@ -201,14 +201,13 @@ export function mountCouncilTools(ctx: ServerCore, council: CouncilApi, launchRe
       materials: z.array(z.string().min(1).max(400)).max(10).optional(),
       maxRounds: z.number().int().min(1).max(6).optional(),
       mode: z.enum(["room", "rounds"]).optional(),
-      judge: z.boolean().optional(),
     }).strict(),
     execute: async (params, context) => {
       requirePmRun(db, { runId: params.runId, threadId: context.threadId, projectId: context.projectId });
       // The train: a request the machine works gets no council of the PM's choosing.
       const refusal = await launchRefusal(context.threadId);
       if (refusal) throw new ToolError(refusal, { code: "phase_rails", retryable: false, sideEffects: "none" });
-      const session = await council.startCouncil({ projectId: context.projectId, runId: params.runId, pmThreadId: context.threadId, question: params.question, roles: params.roles, materials: params.materials, maxRounds: params.maxRounds, mode: params.mode, judge: params.judge });
+      const session = await council.startCouncil({ projectId: context.projectId, runId: params.runId, pmThreadId: context.threadId, question: params.question, roles: params.roles, materials: params.materials, maxRounds: params.maxRounds, mode: params.mode });
       return JSON.stringify(fenceView(council.councilView(session)), null, 2);
     },
   });

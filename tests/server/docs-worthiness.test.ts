@@ -14,8 +14,7 @@ let dispose: (() => Promise<void> | void) | null = null;
 afterEach(async () => { await dispose?.(); dispose = null; });
 
 describe("docs in auto mode", () => {
-  it("judges each folder on each machine: content gets no docs, a codebase does, System One settles the borderline one", async () => {
-    const judged: string[] = [];
+  it("judges each folder on each machine: content gets no docs, a codebase does, the plain size of the code settles the borderline one", async () => {
     const scoped: string[] = [];
     let factsCalls = 0;
     const { bb, harness } = createFakePluginHost({
@@ -33,7 +32,6 @@ describe("docs in auto mode", () => {
       experimental_callHostRpc: (call) => {
         const input = call.input as { projectCwd?: string; state?: string };
         if (call.method === "docsWorthinessFacts") { factsCalls++; return { hostId: "h", ...factsFor(input.projectCwd!) }; }
-        if (call.method === "councilJudge") { judged.push(input.state!); return { hostId: "h", status: "ok", answers: { worth: "needed" }, confidence: { worth: 0.82 }, reason: null }; }
         if (call.method === "gitDocsScope") {
           scoped.push(input.projectCwd!);
           return { hostId: "h", status: "ready", isRepoRoot: true, hasDocs: false, changed: [], dirty: [], base: null, workspaces: [], localDate: "2026-10-05", localHour: 5, reason: null };
@@ -50,12 +48,8 @@ describe("docs in auto mode", () => {
     const byPath = Object.fromEntries(overview.places.map((place) => [place.path, place]));
     expect(byPath["/Users/me/project/ads"]).toMatchObject({ hostId: "mac-mini", mode: "auto", verdict: { need: false, reason: "no_code" } });
     expect(byPath["/home/ubuntu/project"]).toMatchObject({ hostId: "ovh", mode: "auto", verdict: { need: true, reason: "code_project" }, cadence: "nightly", lastReadAt: null });
-    expect(byPath["/home/ubuntu/scripts"]).toMatchObject({ verdict: { need: true, reason: "jev_needed", confidence: 0.82 } });
-    expect(judged).toHaveLength(1);
-    expect(JSON.parse(judged[0]!)).toMatchObject({ code_files: 15, content_files: 68 });
-    // A stored verdict is reused while the folder looks the same: no second question.
-    await harness.behavior.callRpc("docs_overview", { projectId });
-    expect(judged).toHaveLength(1);
+    expect(byPath["/home/ubuntu/scripts"]).toMatchObject({ verdict: { need: true, reason: "fallback" } });
+    // A stored verdict is reused while the folder looks the same: no second look.
     // The tab reuses the machines' answers for a few minutes; «Recheck» asks them again.
     const asked = factsCalls;
     await harness.behavior.callRpc("docs_overview", { projectId });

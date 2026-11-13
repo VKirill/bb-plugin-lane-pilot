@@ -6,7 +6,7 @@
 export type SettingTab = "team" | "work" | "knowledge" | "automation" | "runs";
 
 export function extraSettingTab(storageKey: string): SettingTab {
-  if (storageKey === "council.judge" || storageKey.startsWith("browser_qa.")) return "team";
+  if (storageKey.startsWith("browser_qa.")) return "team";
   if (storageKey.startsWith("workflow.")) return "automation";
   return "work";
 }

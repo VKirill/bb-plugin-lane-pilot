@@ -10,9 +10,6 @@ export type ModeratorState = {
   seats: number;
 };
 
-/** An outside judge (Jev) that may answer instead of the rule; null means "no opinion". */
-export type Moderator = (state: ModeratorState) => Promise<ModeratorVerdict | null>;
-
 function tokens(text: string): Set<string> {
   return new Set(text.toLowerCase().match(/[\p{L}\p{N}_-]{4,}/gu) ?? []);
 }
@@ -37,14 +34,6 @@ export function moderatorDecision(state: ModeratorState): ModeratorVerdict {
   return "continue";
 }
 
-export async function moderate(state: ModeratorState, moderator?: Moderator): Promise<{ verdict: ModeratorVerdict; by: "moderator" | "rule" }> {
-  if (moderator) {
-    try {
-      const answer = await moderator(state);
-      if (answer) return { verdict: answer, by: "moderator" };
-    } catch {
-      // The rule below is the answer when the judge is unavailable.
-    }
-  }
+export async function moderate(state: ModeratorState): Promise<{ verdict: ModeratorVerdict; by: "rule" }> {
   return { verdict: moderatorDecision(state), by: "rule" };
 }

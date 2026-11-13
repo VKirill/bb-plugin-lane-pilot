@@ -24,7 +24,7 @@ flowchart LR
   O["Owner"] --> PM["PM chat"]
   PM -->|"task-v2 contract"| L["Contract lint"]
   L --> S["Baseline, PM read, plan critique, specialist review"]
-  S --> P["Writer pick: Jev, role table, pinned pair, fallback chain, capacity wait"]
+  S --> P["Writer pick: rules, role table, pinned pair, fallback chain, capacity wait"]
   P --> W["Writer attempt in its own worktree"]
   W -->|"feedback turn"| W
   W --> V["Checks in the sandbox"]
@@ -89,12 +89,11 @@ Dispatch also does the following.
 
 The graph `lp-task-pipeline` runs these steps in order (`docs/flows/task-pipeline.md`):
 
-1. `worth-check`: the Jev judgment `critique.worth` (shadow by default) may skip critics. In shadow, or when unsure, every critic runs.
-2. `pm-read`: a scout reads the task's `read_first` files itself, in the project checkout and read-only, and reports how that code works today and what the plan leaves open. Its brief names the task, the plan and where to start; it carries no file contents. Off by default (`pm_read.enabled` false, `pm_read.min_lines` 350). A failed read stops nothing.
-3. `plan-critique`: by `quality_mode`. In `standard` it runs for risk high or critical, or when the run has 3 or more write tasks (`plan_critique.min_score` 7, `min_write_tasks` 3, `on_high_risk` true). In `plan_critique.mode` gate (default) a refusal stops the attempt before any writer starts.
-4. `specialist-review`: off by default (`specialist.enabled` false; `specialist.when` high_risk).
-5. `ownership-base`: records the ownership base commit; if it cannot be taken, the task is blocked with the reason.
-6. `task-folder`, then the `writer` step (sections 4 to 9).
+1. `pm-read`: a scout reads the task's `read_first` files itself, in the project checkout and read-only, and reports how that code works today and what the plan leaves open. Its brief names the task, the plan and where to start; it carries no file contents. Off by default (`pm_read.enabled` false, `pm_read.min_lines` 350). A failed read stops nothing.
+2. `plan-critique`: by `quality_mode`. In `standard` it runs for risk high or critical, or when the run has 3 or more write tasks (`plan_critique.min_score` 7, `min_write_tasks` 3, `on_high_risk` true). In `plan_critique.mode` gate (default) a refusal stops the attempt before any writer starts.
+3. `specialist-review`: off by default (`specialist.enabled` false; `specialist.when` high_risk).
+4. `ownership-base`: records the ownership base commit; if it cannot be taken, the task is blocked with the reason.
+5. `task-folder`, then the `writer` step (sections 4 to 9).
 
 If a run has `run_gate=pre-merge`, dispatch blocks the run with a `run-gate` receipt before any of this.
 

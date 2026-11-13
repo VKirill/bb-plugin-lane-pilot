@@ -1,4 +1,3 @@
-import type { JevSettings } from "@lane-pilot/jev";
 import { closeOwnerItemsByPrefix, decidedOwnerItem } from "../../owner-waiting";
 import { answerDecision, askDecision, type Db } from "./journal";
 
@@ -20,7 +19,7 @@ export function wordSituation(task: WordTask, family: string): Record<string, un
 }
 
 /** finish.ts: the attempt starts waiting for the word. */
-export const askTaskWord = (db: Db, input: { runId: string; projectId: string; family: string; task: WordTask }, settings?: JevSettings, now?: number) =>
+export const askTaskWord = (db: Db, input: { runId: string; projectId: string; family: string; task: WordTask }, settings?: Record<string, unknown>, now?: number) =>
   askDecision(db, { id: wordDecisionId(input.runId, input.family), surface: "words", class: "landing", risk: input.task.risk ?? null, projectId: input.projectId, runId: input.runId,
     situation: wordSituation(input.task, input.family), options: WORD_OPTIONS }, settings, now);
 
@@ -56,7 +55,7 @@ export function phaseSituation(phase: WordPhase, turn: string, wave: number | un
 }
 
 /** The phase driver: a turn asks for the word (the same moment it posts on «Ждут владельца»). */
-export const askPhaseWord = (db: Db, phase: WordPhase, turn: string, wave: number | undefined, ask: string, settings?: JevSettings, now?: number) =>
+export const askPhaseWord = (db: Db, phase: WordPhase, turn: string, wave: number | undefined, ask: string, settings?: Record<string, unknown>, now?: number) =>
   askDecision(db, { id: phaseDecisionId(phase.id, turn, wave), surface: "phase", class: "process", projectId: phase.projectId, runId: phase.runId,
     situation: phaseSituation(phase, turn, wave, ask), options: WORD_OPTIONS }, settings, now);
 

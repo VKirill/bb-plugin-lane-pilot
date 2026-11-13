@@ -7,7 +7,7 @@ import { settingsRpc } from "../../settings/server";
 import { selectionsRpc, roleModelsRpc } from "../../settings/server";
 import { stackRpc } from "../../native-install/server";
 import { insightsRpc } from "../../self-repair/server";
-import { jevProviderRpc, secretsRpc } from "../../secrets/server";
+import { secretsRpc } from "../../secrets/server";
 import { workspaceProviderRpc } from "../../native-agent/server";
 import { chatAgentRpc } from "./rpc-chat-agent";
 import { tokenUsageRpc } from "../../usage/server";
@@ -166,7 +166,6 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
     ...insightsRpc(ctx, services),
     ...tokenUsageRpc(ctx),
     ...secretsRpc(ctx),
-    ...jevProviderRpc(ctx),
     ...workspaceProviderRpc(ctx),
     ...chatAgentRpc(ctx),
     ...workflowsRpc(ctx, services),

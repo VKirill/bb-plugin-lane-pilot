@@ -91,8 +91,8 @@ Every row is in the catalog (`scripts/ui-catalog-hand.json`, written by `scripts
 | `wall.assumed_repair_tokens` | `src/rooms/wall/config.ts:17` | `assumedRepairTokens: number` |
 | `wall.bench_subset` | `src/rooms/wall/config.ts:23` | `benchSubset: number` |
 | `wall.rerun_sandbox_only` | `src/rooms/wall/config.ts:25` | `rerunSandboxOnly: boolean` |
-| `bench.budget_tokens` | `src/rooms/bench/runner.ts:70` | `DEFAULT_BUDGET_TOKENS` |
-| `bench.budget_hours` | `src/rooms/bench/runner.ts:71` | `DEFAULT_BUDGET_HOURS` |
+| `bench.budget_tokens` | `src/rooms/bench/runner.ts:66` | `DEFAULT_BUDGET_TOKENS` |
+| `bench.budget_hours` | `src/rooms/bench/runner.ts:67` | `DEFAULT_BUDGET_HOURS` |
 | `harness.adopt_by` | `src/rooms/harness/server/config.ts:28` | `adoptBy: AdoptBy` |
 | `owner_push.enabled` | `src/rooms/owner-waiting/push.ts:18` | `export type PushConfig` |
 | `owner_push.quiet` | `src/rooms/owner-waiting/push.ts:24` | `const QUIET` |

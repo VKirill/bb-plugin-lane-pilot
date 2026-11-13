@@ -6,7 +6,6 @@ import { cycleScoresOf } from "./select";
 import type { RepairFile } from "./acceptance";
 import { listClasses, type WallDb } from "./journal";
 import { listRepairs } from "./store";
-import type { JevSettings } from "@lane-pilot/jev";
 import { createHunt } from "./service/hunt";
 import { createBacklog } from "./service/backlog";
 import { createTaskWalls } from "./service/task-walls";
@@ -85,7 +84,7 @@ export type WallDeps = {
   ports: WallPorts;
   log(line: string): void;
   hubDb?: string;
-  settings?: () => Promise<JevSettings>;
+  settings?: () => Promise<Record<string, unknown>>;
   diffHiddenAudit?: (limit: number) => Promise<unknown>;
   /** The writer's skill-switch morning line (src/rooms/writer/skill-switch.ts), injected so the wall does not import the writer room. */
   skillSwitchMorningLine: (db: WallDb, now: number) => string | null;

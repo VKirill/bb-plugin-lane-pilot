@@ -1,13 +1,13 @@
 # invoice-send: an invoice in Kontur.Elba, checked, approved and sent
 
-`workflows/invoice-send.json`, status **tested** (on stubs: `tests/workflow/chains-invoice.test.ts`, `tests/jev/invoice-check.test.ts`). It becomes
+`workflows/invoice-send.json`, status **tested** (on stubs: `tests/workflow/chains-invoice.test.ts`, `tests/invoice-rules.test.ts`). It becomes
 published after one successful live run. Nothing is sent without the owner's «send».
 
 ```mermaid
 flowchart LR
   I["inputs: company, inn?, amount, service, recipient, report_chat?"] --> C["create (errand, Mac mini browser)\nkontur-elba skill: find the client, make or find the invoice, read it back, download the PDF"]
   C -->|"client_not_found / blocked"| B["emit blocked + reason"]
-  C -->|done| K{"check (code + Jev)\namount, INN, BIK, accounts; client and service line"}
+  C -->|done| K{"check (rules)\namount, INN, BIK, accounts; client and service line"}
   K -->|match| A["approve (owner): send invoice N for X to chat Y?"]
   K -->|"mismatch / unsure"| R["review (owner): continue or stop"]
   R -->|continue| A
@@ -35,7 +35,7 @@ Mail is not offered: there is no mail skill. The send itself is the shared fragm
 node that hands it the chat, the PDF path, the caption line and `send_at`. The result: `status` (`sent`, `scheduled`, `aborted`, `blocked`, `send_failed`,
 `send_unconfirmed`, `cannot_delay`), `invoice_number`, `invoice_url`, `pdf_path` (on the Mini), `message_id`, `schedule_id`, `run_at`, `send_at`, `check_verdict`, `reason`.
 
-## The check (`invoice.check`, the rules in packages/jev/src/judgments/invoice-check.ts)
+## The check (`invoice.check`, the rules in packages/kit, `invoiceVerdict`)
 
 Code decides what code can: the invoice has a number and an amount, the amount equals the request (to half a kopeck), the client's INN has valid control
 digits and equals the request's `inn`, the BIK is a Russian one, the payment and correspondent accounts have valid control digits for that BIK. The client
@@ -58,7 +58,6 @@ is logged in; there is a test client in Elba whose invoices the owner is happy t
 5. Check the result against the sources: the PDF arrived in Saved Messages with the caption; open the invoice in Elba and compare number, total, service line, client and the payment details with the PDF and with the run's output (`invoice_number`, `invoice_url`, `pdf_path`).
 6. Run it a second time with the same inputs and answer **abort**: the Elba step must find the invoice of the first run (same client, same amount, same day) and not make a duplicate, and nothing is sent (`status: aborted`). The review path (a check that is not clean) is covered on stubs only; it cannot be provoked live, because the Elba step makes the invoice with the requested amount.
 7. A success makes the chain **published** (status in the Workflows tab). Cancel or delete the test invoice in Elba (do not mark it paid or signed).
-8. Look at what Jev did: `SELECT mode, status, decided_by, decision, answers_json FROM lane_pilot_jev_receipt WHERE judgment='invoice.check' ORDER BY id DESC LIMIT 5` on the hub's plugin database.
 
 If a step fails: `create` blocked with a login wall means the Mini session expired (sync the cookies again, no password is asked or stored); `client_not_found` means the
 search did not give exactly one client; `send_unconfirmed` means read the chat before anything is sent again.

@@ -31,7 +31,6 @@ sources:
   - src/rooms/contracts/rpc-knowledge.ts
   - src/rooms/contracts/rpc-workflow.ts
   - src/rooms/contracts/rpc-ops.ts
-  - src/rooms/secrets/server/rpc/jev.ts
   - src/rooms/memory/server/session-memory.ts
   - packages/host-calls/src/run-on-host.ts
   - packages/handoff/src/messages.ts
@@ -58,23 +57,23 @@ Keep BB app-to-server calls and plugin-server-to-host calls typed independently.
 ## How it works
 
 1. `rpcContract` imports the shell, native, runs, settings, operations, knowledge, workflow, and world maps, spreads them into one `defineRpcContract` call, and exports that value as the room's public RPC contract (`src/rooms/contracts/index.ts:1-27`). Composition is unconditional; optional inputs, enums, bounds, and nullable results are declared on each method. For example, shell methods and run-list requests use strict input objects, so undeclared keys and values outside those schemas fail contract validation (`src/rooms/contracts/rpc-shell.ts:8-18`, `src/rooms/contracts/rpc-runs.ts:55-70`).
-2. `registerRpc` calls each handler factory with its declared dependencies: most receive `ctx` and `services`; `stackRpc`, `secretsRpc`, `jevProviderRpc`, `workspaceProviderRpc`, `tokenUsageRpc`, and `selfRepairRpc` receive only `ctx`; council receives `ctx.db` and `services.council`; canary and world receive their respective service; harness receives `services.harness` (`src/rooms/core/server/rpc.ts:28-55`).
+2. `registerRpc` calls each handler factory with its declared dependencies: most receive `ctx` and `services`; `stackRpc`, `secretsRpc`, `workspaceProviderRpc`, `tokenUsageRpc`, and `selfRepairRpc` receive only `ctx`; council receives `ctx.db` and `services.council`; canary and world receive their respective service; harness receives `services.harness` (`src/rooms/core/server/rpc.ts:28-55`).
 3. It spreads those maps into one handler object, wraps every handler with `timeRpcHandlers`, and calls `ctx.bb.rpc.register(rpcContract, ...)` once (`src/rooms/core/server/rpc.ts:27-52`). It has no feature-gate branch or local catch around registration; a registration error propagates to the caller (`src/rooms/core/server/rpc.ts:28-52`).
 4. The timing wrapper awaits each handler and returns its answer unchanged. Rejections are rethrown; `finally` logs elapsed time and distinguishes a refused error from other failures. For successful calls lasting at least 250 ms it also attempts to log serialized answer size; serialization and logging errors are swallowed so they do not change the RPC result (`src/rooms/core/server/rpc-timing.ts:1-2`, `:12-40`).
 ### Route-family behavior
 
 - [RPC contract composition and route families](rpc-callers/contract-map.md) explains `rpcShell` and `rpcOps`, including their validation, handler branches and failure results (`src/rooms/contracts/rpc-shell.ts:1-109`, `src/rooms/contracts/rpc-ops.ts:5-64`).
 - [Run RPC contract](rpc-callers/rpc-runs.md) describes `rpcRuns` request validation, handler steps, missing-record outcomes and failures (`src/rooms/contracts/rpc-runs.ts:30-102`).
-- `rpcKnowledge` includes council, routing, rule, memory, documentation, usage, secret, Jev and workspace-provider routes, plus Anamnesis; see [Session memory RPC](rpc-callers/session-memory-rpc.md) for `rpcKnowledge` composition and session-memory handling, and [RPC route details](rpc-details.md) for the other execution details (`src/rooms/contracts/rpc-knowledge.ts:16-210`).
+- `rpcKnowledge` includes council, routing, rule, memory, documentation, usage, secret and workspace-provider routes, plus Anamnesis; see [Session memory RPC](rpc-callers/session-memory-rpc.md) for `rpcKnowledge` composition and session-memory handling, and [RPC route details](rpc-details.md) for the other execution details (`src/rooms/contracts/rpc-knowledge.ts:16-210`).
 - [Workflow RPC contract](rpc-callers/rpc-workflow.md) describes workflow routes; [RPC route details](rpc-details.md) records the contract execution modes and result branches (`src/rooms/contracts/rpc-workflow.ts:5-64`).
 - [Native session and activation RPC](rpc-callers/native-session-rpc.md) explains `rpcNative`, `storeNativeSelection`, their branches and failures (`src/rooms/contracts/rpc-native.ts:4-63`, `src/rooms/native-agent/server/native-profile.ts:12-30`). The Tasks board and detail card are described in [Tasks board](task-board.md).
 - [Server core construction](rpc-callers/create-core.md) owns the construction sequence and host/credential execution modes for `createCore` (`src/rooms/core/server/core.ts:31-90`).
 
 ### `rpcKnowledge` contract flow
 
-1. `rpcKnowledge` declares council reads/actions, routing hints, rule proposal and scan operations, then spreads the Anamnesis methods and declares session-memory, lesson, memory-record, documentation, usage, secret, Jev-provider, and workspace-provider routes (`src/rooms/contracts/rpc-knowledge.ts:15-62`, `:63-131`, `:133-250`).
+1. `rpcKnowledge` declares council reads/actions, routing hints, rule proposal and scan operations, then spreads the Anamnesis methods and declares session-memory, lesson, memory-record, documentation, usage, secret, and workspace-provider routes (`src/rooms/contracts/rpc-knowledge.ts:15-62`, `:63-131`, `:133-250`).
 2. Each route uses a strict input schema; its output is structured, a declared union, or `z.unknown()` for handler-defined results. Bounds include text lengths, enum selections, list sizes, date/range formats, and optional filters (`src/rooms/contracts/rpc-knowledge.ts:16-236`).
-3. `registerRpc` combines handlers from the corresponding domain factories, including session memory, insights, token usage, secrets, Jev providers, and workspace providers, then registers the complete app contract (`src/rooms/core/server/rpc.ts:48-65`).
+3. `registerRpc` combines handlers from the corresponding domain factories, including session memory, insights, token usage, secrets, and workspace providers, then registers the complete app contract (`src/rooms/core/server/rpc.ts:48-65`).
 4. Contract validation rejects malformed payloads before handlers run. Valid calls can return route-specific empty, nullable, or status results; handler throws propagate through the timing wrapper (`src/rooms/contracts/rpc-knowledge.ts:16-236`, `src/rooms/core/server/rpc-timing.ts:12-40`).
 
 | Route group | Branches and outputs | Failure behavior |
@@ -82,7 +81,7 @@ Keep BB app-to-server calls and plugin-server-to-host calls typed independently.
 | Council, routing, rules | Council list/detail/defaults/say/stop; routing stats; rule proposal, scan, analyzer and audience routes (`src/rooms/contracts/rpc-knowledge.ts:16-61`, `:86-89`, `:116-131`). | Invalid ids, bounds or enums fail strict schema validation. |
 | Session memory | Project lookup, bounded writes/search, core/list reads, lesson proposal and record deletion (`src/rooms/contracts/rpc-knowledge.ts:63-101`). | Storage/handler failures reject; route-specific not-found or stored flags come from handlers. |
 | Docs and usage | Docs overview/recheck, token usage range/month/project filters, attempt metrics and sync/rebuild (`src/rooms/contracts/rpc-knowledge.ts:103-204`). | Invalid ranges/dates reject validation; rebuild can return `started:false` while a sync is active. |
-| Provider/security | Secret issuance journal, Jev provider status/save/test, workspace provider status/reset (`src/rooms/contracts/rpc-knowledge.ts:204-236`). | Key material is not in route output; provider availability is represented by result fields. |
+| Provider/security | Secret issuance journal, workspace provider status/reset (`src/rooms/contracts/rpc-knowledge.ts:204-236`). | Key material is not in route output; provider availability is represented by result fields. |
 
 ### `rpcShell` contract flow
 
@@ -146,11 +145,10 @@ The cockpit RPC group is assembled from `cockpitRpc`; it serves the project's co
 | Contract | Inputs and result | Failure handling |
 |---|---|---|
 | App RPC | Strict Zod schemas; method input and output shape are declared in each `rpc-*` module (`src/rooms/contracts/rpc-shell.ts:8-18`, `src/rooms/contracts/rpc-runs.ts:55-70`, `src/rooms/contracts/rpc-ops.ts:5-129`). | Invalid payloads fail contract validation before the handler result reaches the UI. |
-| Jev provider settings | Status by provider, save a key, and test the configured provider (`src/rooms/contracts/rpc-knowledge.ts:215-226`). | Status returns key presence only; saving rejects empty or whitespace-containing keys and test returns a structured failure when no key is available (`src/rooms/secrets/server/rpc/jev.ts:19-48`). |
 
 ## Business rules
 
-RPC schemas use strict object validation at method boundaries (`src/rooms/contracts/rpc-shell.ts:8-18`, `src/rooms/contracts/rpc-runs.ts:7-43`, `src/rooms/contracts/rpc-ops.ts:5-129`). The run card's stage and task state values are summarized for UI display; receipt details are fetched through a separate method (`src/rooms/contracts/rpc-runs.ts:7-70`). Jev provider configuration is global, and saving a new key clears the core's cached key so the next Jev call can use it immediately (`src/rooms/secrets/server/rpc/jev.ts:31-38`, `src/rooms/core/server/core.ts:71-72`).
+RPC schemas use strict object validation at method boundaries (`src/rooms/contracts/rpc-shell.ts:8-18`, `src/rooms/contracts/rpc-runs.ts:7-43`, `src/rooms/contracts/rpc-ops.ts:5-129`). The run card's stage and task state values are summarized for UI display; receipt details are fetched through a separate method (`src/rooms/contracts/rpc-runs.ts:7-70`).
 
 ## Public API or commands
 

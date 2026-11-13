@@ -6,7 +6,7 @@ import hostEntry from "../host";
 // breaks every one of them. The list is frozen here so a contract or handler rearrangement cannot change it.
 const WIRE_METHODS = [
   "anamnesis", "answerPermit", "applyOnboardingPages", "closeBacklogItem",
-  "coexistenceInventory", "coexistenceOperation", "connectOpencode", "councilJudge", "detect", "discoverClaudeAgents",
+  "coexistenceInventory", "coexistenceOperation", "connectOpencode", "detect", "discoverClaudeAgents",
   "diskFree", "docsAnchors", "docsFlows", "docsLineCounts",
   "docsWorthinessFacts", "findBrowserQaTarget", "gateAttribute", "gateBisect", "gateRun", "gitCommitDocs", "gitCreateWorktree",
   "gitDocsScope", "gitIntegrate", "gitMergeInfo", "gitOwnershipBase", "gitOwnershipChanges", "gitPrepareWorktree",
@@ -23,7 +23,7 @@ const WIRE_METHODS = [
 ];
 
 describe("host RPC wire names", () => {
-  it("the contract keeps the same 81 method names", () => {
+  it("the contract keeps the same 80 method names", () => {
     expect(Object.keys(hostContract).sort()).toEqual(WIRE_METHODS);
   });
 

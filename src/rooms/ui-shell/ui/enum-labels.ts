@@ -1,4 +1,4 @@
-import { SETTING_EPISODES_PROCESS_KEY, SETTING_JEV_PROVIDER } from "@lane-pilot/settings-catalog";
+import { SETTING_EPISODES_PROCESS_KEY } from "@lane-pilot/settings-catalog";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 
 const BRANDS = new Set([
@@ -31,7 +31,6 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   },
   "checks.require_red_on_base": { off: "enumRequireRedOff", medium: "enumRequireRedMedium", high: "enumRequireRedHigh" },
   "writer.fallback_on_provider_failure": { immediate: "enumFallbackImmediate", after_retry: "enumFallbackAfterRetry" },
-  "bench.model_rebench": { on: "enumModelRebenchOn", off: "enumModelRebenchOff" },
   "failure.interventions": { on: "enumInterventionsOn", off: "enumInterventionsOff" },
   "writer.pair_pin": { on: "enumPairPinOn", off: "enumPairPinOff" },
   "writer.auto_return": { on: "enumAutoReturnOn", off: "enumAutoReturnOff" },
@@ -54,7 +53,6 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "bench.weekly": { on: "enumBenchWeeklyOn", off: "enumBenchWeeklyOff" },
   "bench.nightly": { on: "enumBenchNightlyOn", off: "enumBenchNightlyOff" },
   "memory.project_kind": { auto: "enumProjectKindAuto", standalone: "enumProjectKindStandalone", umbrella: "enumProjectKindUmbrella" },
-  [SETTING_JEV_PROVIDER]: { openlux: "enumJevProviderOpenlux", typesafe: "enumJevProviderTypesafe" },
   "sandbox.backend": {
     auto: "enumSandboxAuto",
     "macos-seatbelt": "enumSandboxSeatbelt",

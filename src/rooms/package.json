@@ -8,8 +8,6 @@
     "./design-eval/index.ts",
     "./errands/failure-judgment.ts",
     "./errands/process-key.ts",
-    "./jev/index.ts",
-    "./jev/judgments.ts",
     "./lead/index.ts",
     "./learning/index.ts",
     "./learning/pm-rules.ts",

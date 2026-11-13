@@ -6,10 +6,10 @@ import { InheritanceContext, SettingField, SettingsGroup } from "../../ui-shell/
 import { useImprovement, type DryRun, type Improvement, type ImprovementView } from "./use-improvement";
 import { LEAD_SETTING_KEYS, LeadSection } from "../../lead/ui";
 
-const SECTIONS = ["night", "bench", "policy", "checks", "waiting", "memory", "lead", "judges"] as const;
+const SECTIONS = ["night", "bench", "policy", "checks", "waiting", "memory", "lead"] as const;
 type Section = (typeof SECTIONS)[number];
-const SECTION_LABEL: Record<Section, I18nKey | null> = {
-  night: "imp_seg_night", bench: "imp_seg_bench", policy: "imp_seg_policy", checks: "imp_seg_checks", waiting: "imp_seg_waiting", memory: "imp_seg_memory", lead: "imp_seg_lead", judges: null,
+const SECTION_LABEL: Record<Section, I18nKey> = {
+  night: "imp_seg_night", bench: "imp_seg_bench", policy: "imp_seg_policy", checks: "imp_seg_checks", waiting: "imp_seg_waiting", memory: "imp_seg_memory", lead: "imp_seg_lead",
 };
 
 const fill = (key: I18nKey, values: Record<string, string | number>) => Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), t(key));
@@ -215,35 +215,6 @@ function MemorySection({ ctl }: { ctl: Improvement }) {
   );
 }
 
-const JUDGE_FIT: Record<string, string> = { gate: "может решать", "sort-only": "только ранжирует", dead: "не работает или не спрашивали" };
-
-/** «Судьи» (H1): every Jev judgment in plain words — how many of its decisions were already checked against the truth and how often it was right. */
-function JudgesSection({ view }: { view: ImprovementView }) {
-  const judges = view.judges ?? [];
-  return (
-    <div className="space-y-6" data-testid="improvement-judges">
-      <p className={small}>Небольшие судьи, которые решают за Lane Pilot мелкие вопросы (нужен ли критик, какого вида сбой, какой граф запустить). «Точность» — доля случаев, где позже выяснилось, что судья был прав: по исходу задачи или по ответу второго, более сильного судьи.</p>
-      <Block title="Судьи" testId="judges-table-block">
-        {judges.length === 0 ? <p className="text-sm">Пока нет ни одной проверенной квитанции — метки ставит ночной граф.</p> : (
-          <table className="w-full text-left text-sm" data-testid="judges-table">
-            <thead><tr className="text-xs text-muted-foreground"><th className="pb-1 font-normal">Судья</th><th className="pb-1 font-normal">Проверено</th><th className="pb-1 font-normal">Точность</th><th className="pb-1 font-normal">Пригодность</th></tr></thead>
-            <tbody>
-              {judges.map((judge) => (
-                <tr key={judge.id} data-testid={`judge-${judge.id}`}>
-                  <td className="py-1 pr-2 align-top"><div className="break-words">{judge.name}</div><div className="text-xs text-muted-foreground">{judge.id}</div></td>
-                  <td className="py-1 pr-2 align-top">{judge.labeled}</td>
-                  <td className="py-1 pr-2 align-top">{judge.accuracy === null ? "—" : `${Math.round(judge.accuracy * 100)}%`}</td>
-                  <td className="py-1 align-top">{JUDGE_FIT[judge.verdict] ?? judge.verdict}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Block>
-    </div>
-  );
-}
-
 const COMMANDS: Array<{ help: I18nKey; command: string }> = [
   { help: "imp_cmd_wall", command: "bb lane-pilot wall night" },
   { help: "imp_cmd_bench", command: "bb lane-pilot bench build | run | compare" },
@@ -297,7 +268,7 @@ export function ImprovementScreen({ locale }: { locale: Locale }) {
               </Alert>
             ) : null}
             <Segments testId="improvement" label={t("imp_seg_label")} compact={compactChrome} value={section} onChange={(next) => setSection(next as Section)}
-              items={SECTIONS.map((id) => ({ id, label: SECTION_LABEL[id] ? t(SECTION_LABEL[id]!) : "Судьи" }))} />
+              items={SECTIONS.map((id) => ({ id, label: t(SECTION_LABEL[id]) }))} />
             {section === "night" ? <NightSection ctl={ctl} /> : null}
             {section === "bench" ? <BenchSection ctl={ctl} view={view} locale={locale} /> : null}
             {section === "policy" ? <PolicySection view={view} locale={locale} /> : null}
@@ -305,7 +276,6 @@ export function ImprovementScreen({ locale }: { locale: Locale }) {
             {section === "waiting" ? <WaitingSection ctl={ctl} view={view} /> : null}
             {section === "memory" ? <MemorySection ctl={ctl} /> : null}
             {section === "lead" ? <LeadSection locale={locale} fields={<Fields ctl={ctl} names={LEAD_SETTING_KEYS} />} /> : null}
-            {section === "judges" ? <JudgesSection view={view} /> : null}
             <Commands />
           </>
         ) : null}

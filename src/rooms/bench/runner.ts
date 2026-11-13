@@ -57,9 +57,7 @@ export type RunnerDeps = {
   log?: (line: string) => void;
   /** The «LP bench …» project name for a manifest task (default: benchProjectName(project, repo)). */
   projectNameFor?: (task: ManifestTask) => string;
-  /** Per-task Jev context for the validators (settings, ids for the receipts). Absent: registry defaults. */
-  jevCtx?: (task: ManifestTask) => Promise<import("../validators").ValidatorDeps["jevCtx"]>;
-  /** Layer-3 page review (the specialist helper), bound per task. Absent: pages keep the DOM+Jev verdict. */
+  /** Layer-3 page review (the specialist helper), bound per task. Absent: pages keep the DOM verdict. */
   pageReview?: (task: ManifestTask, request: Parameters<import("../validators").PageReview>[0]) => ReturnType<import("../validators").PageReview>;
   /** The critic-eval stratum: one real code-critique call on the task's patch (known-bugs set, wave 3). */
   criticRun?: (task: ManifestTask, runId: string) => Promise<{ ok: boolean; reason: string; model?: string; costUsd?: number | null; tokens?: number | null }>;
@@ -261,7 +259,6 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
             host: deps.host, hostId: placed.hostId,
             brief: (task as { brief?: Record<string, unknown> }).brief,
             expectedFindings: (task.contract as { expected_findings?: import("./critique-set").ExpectedFinding[] }).expected_findings,
-            ...(deps.jevCtx ? { jevCtx: await deps.jevCtx(task) } : {}),
             ...(deps.pageReview ? { review: (req: Parameters<import("../validators").PageReview>[0]) => deps.pageReview!(task, req) } : {}),
           });
           saveResult(deps.db, { runId: run.id, taskId: task.taskId, position: task.position, state: verdict.ok ? "accepted" : "not_accepted", accepted: verdict.ok, benchTaskId: null, lpRunId: lp?.runId ?? null, attempts: 0, stagesPassed: 0, stagesFailed: 0, tokens: null, costUsd: null, costState: "not_measured", seconds: 0, reason: verdict.reason, recordedAt: clock.now() });

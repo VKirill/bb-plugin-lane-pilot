@@ -4,7 +4,6 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { setJevForTests } from "@lane-pilot/jev";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../server";
@@ -21,7 +20,7 @@ import { migrations, openDatabase, saveProjectSetting } from "../src/rooms/plugi
 const NOW = Date.now();
 let dir = "";
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "lead-gl-")); process.env.LANE_PILOT_LEAD_DIR = dir; });
-afterEach(() => { rmSync(dir, { recursive: true, force: true }); delete process.env.LANE_PILOT_LEAD_DIR; setJevForTests(null); });
+afterEach(() => { rmSync(dir, { recursive: true, force: true }); delete process.env.LANE_PILOT_LEAD_DIR; });
 
 /** Five errand runs: three sharing one stem, one routed at 95 confidence, one 40 days old. */
 function world(projects: Array<{ id: string; name: string }> = [{ id: "p_a", name: "Alpha" }]) {
@@ -105,7 +104,6 @@ const seedProposal = (over: Record<string, unknown> = {}) => ({
 describe("a process proposal with architectSeed", () => {
   it("lands on the road branch with the seed intact in payload_json; the same stem is never proposed twice", async () => {
     const { db, run } = steps([{ id: "p_a", name: "Alpha" }]);
-    setJevForTests({ enabled: () => true, judge: async () => ({ by: "fallback", status: "shadow", decision: { option: null, p: 0 }, shadow: { decision: { option: "yes", p: 0.9 } } }) } as never);
     // risk high never acts even on a decides class (mayAct's guard), so the seed proposal still reaches the owner as a card.
     const out = await run("lp.lead_propose", { "$inputs.tickId": "tick_a", "think.proposals": [seedProposal({ risk: "high" })], "think.branches": [] });
     expect(out.output.proposed).toBe(1);
@@ -189,7 +187,6 @@ describe("the five forms (stream G/R8)", () => {
 
   it("the dedupe key is form + stem: «Скрипт для: X» does not swallow «Навык для: X», the same pair twice does", async () => {
     const { db, run } = steps([{ id: "p_a", name: "Alpha" }]);
-    setJevForTests({ enabled: () => true, judge: async () => ({ by: "fallback", status: "shadow", decision: { option: null, p: 0 }, shadow: { decision: { option: "yes", p: 0.9 } } }) } as never);
     const script = seedProposal({ title: "Скрипт для: партия моделей арендованной gpu", architectSeed: { form: "script", kind: "computer", stem: "партия моделей арендованной gpu", threadIds: ["thr_1"], samples: ["Партия"] } });
     const skill = seedProposal({ title: "Навык для: партия моделей арендованной gpu", architectSeed: { form: "skill", kind: "computer", stem: "партия моделей арендованной gpu", threadIds: ["thr_1"], samples: ["Партия"] } });
     const first = await run("lp.lead_propose", { "$inputs.tickId": "tick_s1", "think.proposals": [script, skill], "think.branches": [] });

@@ -5,7 +5,6 @@ import { execHostMethods } from "./host/exec";
 import { fileHostMethods } from "./host/files";
 import { gitHostMethods } from "./host/git";
 import { jobHostMethods } from "./host/jobs";
-import { judgeHostMethods } from "./host/judges";
 import { machineHostMethods } from "./host/machine";
 import { stackHostMethods } from "./host/stack";
 
@@ -18,7 +17,6 @@ export const hostMethods = {
   ...fileHostMethods,
   ...machineHostMethods,
   ...jobHostMethods,
-  ...judgeHostMethods,
   ...execHostMethods,
   ...desktopHostMethods,
 };

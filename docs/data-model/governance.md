@@ -1,26 +1,24 @@
 ---
-title: Council, handoff, Jev and run-insight data
+title: Council, handoff and run-insight data
 type: data-model
 created: 2026-10-10
 updated: 2026-10-19
 status: active
 confidence: medium
-tags: [data-model, council, handoff, jev]
+tags: [data-model, council, handoff]
 sources:
   - packages/council/src/store.ts
   - packages/handoff/src/store.ts
-  - packages/jev/src/receipts.ts
   - packages/run-insights/src/rules.ts
   - packages/run-insights/src/triage.ts
   - packages/harness-core/src/experience.ts
   - packages/council/src/contract.ts
   - packages/handoff/src/contract.ts
-  - packages/jev/src/run.ts
 ---
 
-# Council, handoff, Jev and run-insight data
+# Council, handoff and run-insight data
 
-TL;DR: Domain stores keep council discussions, agent handoffs, Jev decision receipts, and failure-learning records in plugin SQLite.
+TL;DR: Domain stores keep council discussions, agent handoffs and failure-learning records in plugin SQLite.
 
 ## Relations
 
@@ -58,14 +56,6 @@ erDiagram
 |---|---|
 | Handoff state | Contract transition rules validate moves; terminal completion releases the lease, and expired deadlines are handled by the store (`packages/handoff/src/contract.ts:1-30`, `packages/handoff/src/store.ts:14-42`). |
 
-## Jev receipt
-
-`lane_pilot_jev_receipt` stores judgment/version/model/mode, optional project/run/subject, input hash and character count, question/batch counts, status, summarized answers, decision source, escalation target, thresholds, latency milliseconds, token counts and outcome labels (`packages/jev/src/receipts.ts:9-39`). It deliberately stores a hash and size instead of the state text (`packages/jev/src/receipts.ts:5-7`). Status values are `ok`, `disabled`, `timeout`, `error`, `breaker_open`, `budget`, and `invalid`; decision source is `jev`, `fallback`, or `escalated` (`packages/jev/src/receipts.ts:21-27`).
-
-| Table | Meaning |
-|---|---|
-| `lane_pilot_jev_receipt` | `id` identifies the receipt; `judgment` and `version` identify the rule; `model` may be absent; `mode` is `shadow` or `active`; project/run/subject are optional scope; `input_sha256` and `input_chars` identify input without storing it; `questions` and `batch_size` count judgment work; `status` and `decided_by` use the values above; answer, threshold, decision, and escalation fields capture the verdict; `latency_ms` is milliseconds and token fields count tokens; `outcome` and `outcome_at` record later evaluation; `at` is epoch milliseconds. |
-
 ## Failure triage and rule proposals
 
 | Table | Meaning | Lifecycle |
@@ -77,4 +67,4 @@ erDiagram
 
 ## Writers, readers and retention
 
-Council and handoff stores are written by their respective domain services and read by their UI/agent services (`packages/council/src/store.ts:53-57`, `packages/handoff/src/store.ts:68-75`). Jev creates receipts per judgment when a database is supplied (`packages/jev/src/run.ts:66-79`). Rule and triage services write rows from task failures and the lessons sweep reads them (`packages/run-insights/src/rules.ts:5-8`, `packages/run-insights/src/triage.ts:5-8`). Jev retains a bounded receipt set of 50,000 rows (`packages/jev/src/receipts.ts:50`).
+Council and handoff stores are written by their respective domain services and read by their UI/agent services (`packages/council/src/store.ts:53-57`, `packages/handoff/src/store.ts:68-75`). Rule and triage services write rows from task failures and the lessons sweep reads them (`packages/run-insights/src/rules.ts:5-8`, `packages/run-insights/src/triage.ts:5-8`).

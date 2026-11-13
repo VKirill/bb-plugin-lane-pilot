@@ -16,33 +16,29 @@ sources:
 
 # Workflow chain executors
 
-TL;DR: Node executors registered on the workflow engine to run chain tasks, Jev judgments, agent turns, owner interactions, and artifact validations.
+TL;DR: Node executors registered on the workflow engine to run chain tasks, agent turns, owner interactions, and artifact validations.
 
 ## Purpose
 
-Workflow chain executors provide the execution layer for multi-step declarative workflows in Lane Pilot. They connect workflow nodes to underlying subsystems: dispatching writer tasks, running Jev judgments, collecting owner decisions, validating non-code deliverables, and invoking delegated helper commands.
+Workflow chain executors provide the execution layer for multi-step declarative workflows in Lane Pilot. They connect workflow nodes to underlying subsystems: dispatching writer tasks, collecting owner decisions, validating non-code deliverables, and invoking delegated helper commands.
 
 ## How it works
 
 1. `registerChainExecutors` registers node executors and action delegates on the shared `WorkflowEngine` instance (`src/rooms/workflow/server/workflow-executors.ts:250-259`).
-2. The `builtin:jev` executor resolves the registered judgment, prepares whitelisted state properties, and returns either a direct decision or an escalation to a model step (`src/rooms/workflow/server/workflow-executors.ts:266-304`).
-4. Artifact validation executes through `deliverable.validate`, inspecting target paths or URLs with domain validators, host commands, and agent visual reviews (`src/rooms/workflow/server/workflow-executors.ts:329-351`).
-5. Skill discovery executes via `skills.jev`, traversing the cached catalog skill tree for task requirements (`src/rooms/workflow/server/workflow-executors.ts:355-367`).
-6. The `agent` executor writes large input packets to the workspace and invokes the assigned agent model role (`src/rooms/workflow/server/workflow-executors.ts:372-397`).
-7. Human interaction in `builtin:human` composes an owner-facing question in the owner's language or records an inbox item on the owner list when no PM thread is active (`src/rooms/workflow/server/workflow-executors.ts:399-444`).
-8. The `lp-task` executor resolves the contract and quality mode, lints the task, prepares the canonical plan, and calls `dispatchWriter` (`src/rooms/workflow/server/workflow-executors.ts:508-536`).
-9. When constructing the canonical plan for a workflow task, concrete planner steps from `task.files[]` are appended to `task.objective` with their action, path, target, and change, while reentrant dispatches reuse `getTaskPlan` from storage (`src/rooms/workflow/server/workflow-executors.ts:526-530`).
-10. The `lp-task` poller monitors attempt progress, resolves terminal attempt states, extracts merge commit facts from git trailers, and tallies token and dollar usage (`src/rooms/workflow/server/workflow-executors.ts:537-554`).
-11. Workspace file operations execute through `fs.write`, formatting JSON or Markdown reports into the active checkout (`src/rooms/workflow/server/workflow-executors.ts:599-623`).
-12. Diff inspection in `git.diff_files` collects changed paths from ranges, PR references, or explicit file arrays on the host (`src/rooms/workflow/server/workflow-executors.ts:633-649`).
-13. Contract linting in `lp.lint_contract` validates tasks and verifies that concurrent tasks within the same wave do not claim overlapping owned paths (`src/rooms/workflow/server/workflow-executors.ts:703-732`).
+2. Artifact validation executes through `deliverable.validate`, inspecting target paths or URLs with domain validators, host commands, and agent visual reviews (`src/rooms/workflow/server/workflow-executors.ts:329-351`).
+3. The `agent` executor writes large input packets to the workspace and invokes the assigned agent model role (`src/rooms/workflow/server/workflow-executors.ts:372-397`).
+4. Human interaction in `builtin:human` composes an owner-facing question in the owner's language or records an inbox item on the owner list when no PM thread is active (`src/rooms/workflow/server/workflow-executors.ts:399-444`).
+5. The `lp-task` executor resolves the contract and quality mode, lints the task, prepares the canonical plan, and calls `dispatchWriter` (`src/rooms/workflow/server/workflow-executors.ts:508-536`).
+6. When constructing the canonical plan for a workflow task, concrete planner steps from `task.files[]` are appended to `task.objective` with their action, path, target, and change, while reentrant dispatches reuse `getTaskPlan` from storage (`src/rooms/workflow/server/workflow-executors.ts:526-530`).
+7. The `lp-task` poller monitors attempt progress, resolves terminal attempt states, extracts merge commit facts from git trailers, and tallies token and dollar usage (`src/rooms/workflow/server/workflow-executors.ts:537-554`).
+8. Workspace file operations execute through `fs.write`, formatting JSON or Markdown reports into the active checkout (`src/rooms/workflow/server/workflow-executors.ts:599-623`).
+9. Diff inspection in `git.diff_files` collects changed paths from ranges, PR references, or explicit file arrays on the host (`src/rooms/workflow/server/workflow-executors.ts:633-649`).
+10. Contract linting in `lp.lint_contract` validates tasks and verifies that concurrent tasks within the same wave do not claim overlapping owned paths (`src/rooms/workflow/server/workflow-executors.ts:703-732`).
 
 | Executor | Input | Output | Failure mode |
 |---|---|---|---|
 | `lp-task` | Task contract, quality mode, timeout | Attempt state, merge commit, changed files, usage | Contract lint failure yields `failed`; rejection yields `blocked` (`src/rooms/workflow/server/workflow-executors.ts:524-530`). |
-| `builtin:jev` | Judgment id, whitelisted state | Decision, handoff string, receipt id | Jev service offline falls back to judgment default with escalation (`src/rooms/workflow/server/workflow-executors.ts:289-302`). |
 | `deliverable.validate` | Validator name, target path, brief, host id | Verdict (`pass` or `rework`), reason, issue details | Target absence throws; validator issues return `rework` (`src/rooms/workflow/server/workflow-executors.ts:335-350`). |
-| `skills.jev` | Task prompt or title string | Skills array, picked skills, selection source | Unreadable tree or absent judge returns empty skills array (`src/rooms/workflow/server/workflow-executors.ts:355-366`). |
 | `builtin:human` | Instruction prompt, timeout, options | Form response or owner item answer | Missing PM thread posts to owner list with CLI and RPC actions (`src/rooms/workflow/server/workflow-executors.ts:433-444`). |
 | `fs.write` | File path, contents template or reads list | Folder path, handoff path, written file paths | Paths traversing outside checkout throw an error (`src/rooms/workflow/server/workflow-executors.ts:604`). |
 | `git.diff_files` | Commit range, PR number, or files array | Kept files list, count, level (`quick`/`standard`/`deep`) | Host git failure throws clipped stderr message (`src/rooms/workflow/server/workflow-executors.ts:643`). |
@@ -58,7 +54,7 @@ Workflow chain executors provide the execution layer for multi-step declarative 
 ## Public API or commands
 
 `registerChainExecutors` registers the following executors on `WorkflowEngine`:
-- Node executors: `builtin:jev`, `citations.jev`, `deliverable.validate`, `skills.jev`, `agent`, `builtin:human`, `lp-task` (`src/rooms/workflow/server/workflow-executors.ts:266-587`).
+- Node executors: `deliverable.validate`, `agent`, `builtin:human`, `lp-task` (`src/rooms/workflow/server/workflow-executors.ts:266-587`).
 - State and checkout actions: `fs.write`, `git.diff_files`, `lp.state_probe`, `lp.run_status`, `lp.integration_gate_status`, `lp.run_close`, `lp.lint_contract` (`src/rooms/workflow/server/workflow-executors.ts:599-732`).
 - Delegated errand actions: `telegram.send_rich`, `shell.skill_script`, `shell.repo_script`, `deploy.post_check`, `lp.preflight`, `lp.project_checks` (`src/rooms/workflow/server/workflow-executors.ts:735-742`).
 

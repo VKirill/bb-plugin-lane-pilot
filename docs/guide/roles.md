@@ -8,8 +8,6 @@ confidence: medium
 tags: [guide, roles]
 updated: 2026-11-10
 sources:
-  - packages/jev/src/client.ts
-  - packages/jev/src/registry.ts
   - packages/models/src/role-models.ts
 ---
 
@@ -125,38 +123,9 @@ Lane Pilot does not hard-code a provider list. It reads the provider and model c
 
 The writer profiles also list MiniMax M3.1 Flash, Gemini Pro and Gemini 4 Argon, all marked unavailable and kept out of the pick. An hourly capability sweep (`bb lane-pilot capabilities [--probe]`, RPC `capability_table`) probes each provider adapter version once; a failed probe opens that provider's breaker and writers fall back to another provider.
 
-## Jev (TypeSafe and OpenLux)
-
-Jev is TypeSafe's System One model: it answers typed questions (a Noul probability, a Choice, a Score) that code combines. Each use is a named judgment in a registry with a version, questions, thresholds, a pure decision rule and a deterministic fallback. Lane Pilot never takes a Jev answer without a threshold, and a failed call returns the fallback.
-
-- Providers: `typesafe` (`api.typesafe.ai`, model `jev-1.14.0`, key `TYPESAFE_API_KEY`) and `openlux` (`api.openlux.ai`, `jev-1.14.0:stable`, key `OPENLUX_API_KEY`). The owner picks one in the Jev panel on the global Work settings (setting `jev.provider`). If the chosen provider has no key, the TypeSafe key is tried. When OpenLux answers 429 (overloaded), a server error or a timeout, the call goes to TypeSafe (since 0.1.479; OpenLux answered 429 to every call on 2026-11-06, so the hub runs on TypeSafe). RPCs `jev_provider_status`, `jev_provider_save_key`, `jev_provider_test`.
-- Modes per judgment: `off` (not asked, fallback), `shadow` (asked and recorded in `lane_pilot_jev_receipt`, but the fallback is returned), `active` (the decision is used; a close call can escalate to a stronger judge). `jev.modes` takes `judgment=mode` pairs; `jev.thresholds` takes `judgment.name=number` pairs, clamped to the allowed range; `jev.enabled` = false turns every judgment off; `jev.calibrated_thresholds` is written by `bb lane-pilot jev calibrate --save` and applies only while the judgment's fingerprint matches.
-- Writer effort: for writers, Jev classifies the task plan and its effort is used only if the chosen model advertises that level; otherwise the manual effort applies.
-- CLI: `bb lane-pilot jev calibrate|planfact|watch|failure|autoresearch`.
-- Labels: every judgment gets labelled receipts from two sources, outcome rules that read what the pipeline learned later and a nightly relabel by a model of another family on one receipt in five (graph `lp.jev-labels`, 03:45 UTC). `bb lane-pilot jev calibrate --by-source` and the «Судьи» table on the Self-improvement page show each judge's accuracy. Details: [Jev labels](../jev-labels.md).
-- Safety of the output guard in `shadow`: about 1 output in 10 is sampled, at most 2000 characters, never text that touched a secret. In `active` every output is asked about, up to 6000 characters. Receipts keep a hash and size of the state, not the text.
-
-Judgments, with the default mode:
-
-| Judgment | Default | Purpose |
-|---|---|---|
-| `writer.model` | active | Picks the model that writes a task. |
-| `route.recheck` | shadow | Second look at that match. |
-| `critique.screen` | active | Cheap first pass before the code critic; a close call escalates to the critic. |
-| `critique.worth` | shadow | Which advisory critics a task is worth spawning. |
-| `review.confirm_screen` | shadow | Cheap first pass over the `lp.review` confirm swarm. |
-| `learning.rule_diff` | shadow | Checks accepted writer rules against an attempt's diff. |
-| `invoice.check` | active | Does the made invoice say what the owner asked for. |
-| `selfrepair.group` | shadow | Files a new repair signature under a known group (`min_p` 0.75). |
-| `output.guard` | shadow | Blocks outputs carrying a secret value (0.85) or instructions for the reader (0.9). |
-| `plan.check`, `close.goal_screen`, `plan.fact` | shadow | Cheap batteries before the plan critic and the goal auditor; a blind read of acceptance items against the diff. |
-| `graph.step_trivial` | shadow | Is a workflow step cheap enough for a lighter model. |
-| `writer.log_trim`, `writer.finish_scan`, `session.tool_pair` | shadow | Trim a failing check's log, scan a finishing attempt for risk, drop stale tool calls on compaction. |
-| `audit.trace`, `employee.remark`, `guard.host_command`, `wall.hunt_filter` | shadow | Trace checks, employee remarks, a guard in front of risky shell commands, filtering wall failures before a hunt. |
-
 ## Sources
 
-Where this page's claims start in the code: `packages/jev/src/client.ts:12-32`, `packages/jev/src/registry.ts:11-31`, `packages/models/src/role-models.ts:29-49`. The deep pages linked above cite the rest.
+Where this page's claims start in the code: `packages/models/src/role-models.ts:29-49`. The deep pages linked above cite the rest.
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by

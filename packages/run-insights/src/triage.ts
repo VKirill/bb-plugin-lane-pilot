@@ -29,55 +29,10 @@ export const TRIAGE_ORIGINS = ["writer", "orchestrator", "environment", "task", 
 export const TRIAGE_CATEGORIES = ["missing_output", "broke_checks", "outside_scope", "skipped_checks", "acceptance_unmet", "other"] as const;
 export type TriageOrigin = (typeof TRIAGE_ORIGINS)[number];
 
-/** A typed question in the shape the host's System One call takes. */
-export type JudgeQuestion = { instructions: string; criteria: Record<string, string> };
-
-/**
- * Wording calibrated on 35 labelled hub failures (2026-10-01): writer-or-not 35/35 in two runs,
- * category 7/7 on the writer ones. Change it only together with a new calibration run.
- */
-const ORIGIN_QUESTION: JudgeQuestion = {
-  instructions: "Who caused this failed writer attempt? Decide from the failure reason and the facts computed by code.",
-  criteria: {
-    writer: "the writer agent's own work was wrong or incomplete: it did not create an expected file, its code failed the project's tests or build, it edited files it should not",
-    orchestrator: "Lane Pilot's own machinery failed: bookkeeping files counted against the writer, internal error codes, worktree or reconcile or merge problems, gate bugs",
-    environment: "the machine or provider: sandbox restrictions, no network, missing binaries, not a git repository, provider or thread crashed",
-    task: "the PM's task contract was wrong: nonexistent or invalid read_first paths, expected outputs written as prose sentences (see expected_outputs_written_as_prose_not_paths) so no file can match them, verification commands that cannot pass as written",
-    unclear: "the evidence is not enough to tell",
-  },
-};
-
-const CATEGORY_QUESTION: JudgeQuestion = {
-  instructions: "If the writer is at fault, what kind of mistake is this?",
-  criteria: {
-    missing_output: "the writer did not create or update a file the task expected",
-    broke_checks: "the project's tests, typecheck or build failed after the writer's change",
-    outside_scope: "the writer edited files outside the paths it owns or inside never_touch",
-    skipped_checks: "the writer did not run the verification commands or claimed success without evidence",
-    acceptance_unmet: "the change exists but does not meet an acceptance criterion or a reviewer finding",
-    other: "none of the above",
-  },
-};
-
-/** Option keys are `r1`…`rN` in the order of `rules`; `none` when no rule covers the failure. */
-export function triageQuestions(rules: ReadonlyArray<{ rule: string }>): Record<string, JudgeQuestion> {
-  const questions: Record<string, JudgeQuestion> = { origin: ORIGIN_QUESTION, category: CATEGORY_QUESTION };
-  if (rules.length > 0) {
-    questions.same_rule = {
-      instructions: "Is this failure the same mistake that one of these project rules is about?",
-      criteria: {
-        ...Object.fromEntries(rules.map((row, index) => [`r${index + 1}`, row.rule.slice(0, 480)])),
-        none: "no rule above is about this mistake",
-      },
-    };
-  }
-  return questions;
-}
-
 /** Files Lane Pilot, its hooks and sibling agents write on their own; a writer never owns them. */
 const BOOKKEEPING = /^(\.agents\/|\.bb\/|\.claude\/|PROGRESS\.md$)/;
 
-/** Bump when the facts, the questions or the code verdicts change: every stored answer is asked again. */
+/** Bump when the rules or the code verdicts change: every stored answer is made again. */
 export const TRIAGE_VERSION = "2";
 
 /** Paths an ownership rejection names. */
@@ -112,33 +67,20 @@ export type FailedAttempt = {
   attemptId: string; runId: string; taskId: string; state: string; reason: string; contractJson: string; threadId: string | null; failedAt: number;
 };
 
-/** What System One reads: the failure, the task, and the facts code can settle on its own (jevals' split). */
-export function triageState(attempt: FailedAttempt, split: RejectedPathSplit = { owned: [], bookkeeping: [], outside: rejectedPaths(attempt.reason) }): Record<string, unknown> {
-  let contract: Record<string, unknown> = {};
-  try { contract = JSON.parse(attempt.contractJson) as Record<string, unknown>; } catch { /* reason alone */ }
-  const list = (key: string) => (Array.isArray(contract[key]) ? contract[key] as unknown[] : []).filter((item): item is string => typeof item === "string");
+/**
+ * The verdict for an attempt code did not clear to the orchestrator. Every attempt in `untriagedAttempts` is already in one of
+ * the three writer-fault states, so without a model it counts as the writer's own (the analyzer, a model step, can still move
+ * a group's failure to `model:not_writer`). The category comes from the words of the reason.
+ */
+export function ruleTriage(attempt: FailedAttempt): { origin: "writer"; originConfidence: number; category: (typeof TRIAGE_CATEGORIES)[number]; detail: string } {
   const reason = attempt.reason;
-  const rejected = rejectedPaths(reason);
-  const outputs = list("expected_outputs");
-  return {
-    attempt_state: attempt.state,
-    failure_reason: reason.slice(0, 1500),
-    task: {
-      title: contract.title ?? null,
-      objective: typeof contract.objective === "string" ? contract.objective.slice(0, 600) : null,
-      owns_paths: list("owns_paths"),
-      expected_outputs: outputs,
-      verification_commands: (Array.isArray(contract.verification) ? contract.verification as Array<{ command?: unknown }> : []).map((row) => row.command).filter((command) => typeof command === "string"),
-    },
-    facts_computed_by_code: {
-      paths_rejected_by_ownership_gate: rejected.slice(0, 40),
-      all_rejected_paths_are_lane_pilot_bookkeeping: rejected.length > 0 ? rejected.every((path) => BOOKKEEPING.test(path)) : null,
-      rejected_paths_outside_this_task_scope: split.outside.slice(0, 40),
-      reason_is_an_internal_error_code_of_the_orchestrator: /^[a-z][a-z0-9_]+(:|$)/.test(reason) && !reason.startsWith("owns_paths"),
-      expected_outputs_written_as_prose_not_paths: outputs.some((output) => /\s/.test(output.trim())),
-    },
-    background: "Lane Pilot is the orchestrator: it spawns writer agents, runs gates (ownership, verification commands in a sandbox, expected outputs), provisions git worktrees and reconciles threads. Its hooks write .agents/** and .bb/** bookkeeping files on their own. A PM agent writes the task contract.",
-  };
+  const category: (typeof TRIAGE_CATEGORIES)[number] =
+    /owns_paths|never_touch/.test(reason) ? "outside_scope"
+      : /expected_outputs|missing|empty_output/.test(reason) ? "missing_output"
+        : /verification|check|test|build|typecheck|lint/i.test(reason) ? "broke_checks"
+          : /acceptance|finding/i.test(reason) ? "acceptance_unmet"
+            : "other";
+  return { origin: "writer", originConfidence: 0.6, category, detail: "rule:writer_fault_state" };
 }
 
 const sha = (text: string) => createHash("sha256").update(`${TRIAGE_VERSION}\n${text}`).digest("hex");

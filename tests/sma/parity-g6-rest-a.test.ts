@@ -96,8 +96,6 @@ describe("parity g6 rest a", () => {
       transitionAttempt(db, "a-t1", "running", { threadId: "writer-t1" });
       const writes: Array<{ rootPath?: string; path: string; content: string }> = [];
       const events = Array.from({ length: count }, (_, n) => ({ seq: n, type: "item/completed", data: { item: { type: "toolCall", tool: "x" } } }));
-      const { setJevForTests } = await import("@lane-pilot/jev");
-      setJevForTests({ judge: async () => ({ by: "jev", decision: {} }) } as never);
       const { createWriterFinish } = await import("../../src/rooms/writer/server/finish");
       const ctx = {
         state: { disposed: false }, db, isDisposed: () => false, log: () => undefined, getThreadBounded: async () => ({ status: "idle" }), host: { call: async () => ({}) },
@@ -115,7 +113,6 @@ describe("parity g6 rest a", () => {
         workspaceDirt: async () => ({ ok: true, snapshots: [] }), runBudgetFor: () => ({ snapshot: () => ({ limits: {} }) }),
       } as never);
       await finish.finishWriterAttempt({ projectId: "P", config, task, runId: "run", taskId: "t1", attemptId: "a-t1", pmThreadId: "pm", writerThreadId: "writer-t1", dirtBefore: [] }).catch(() => undefined);
-      setJevForTests(null);
       const journal = writes.find((write) => write.path.endsWith("PROGRESS.md"));
       expect(journal, `PROGRESS.md written for ${count} events`).toBeDefined();
       // A worktree attempt's journal lands in the run's own folder, where the receipts are: the worktree goes with the attempt.

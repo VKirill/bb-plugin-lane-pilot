@@ -28,5 +28,5 @@ Which external (arXiv and audit) ideas Lane Pilot adopted, and which it declined
 | Judge-survey mitigations (#12) | structured findings with `criterion` = acceptance line (`code-critique.ts`) |
 | CFT critique framing (#14) | `role-method.ts` — findings with evidence, not rewrites |
 | Recursive parallel scaling (#20) | fallback continuation: failed attempt's worktree + handoff brief |
-| SWE-Compass harness-conditional profiles (#32) | `WRITER_PROFILES` describe models inside LP's harness; the Jev pick reads task kind/risk |
+| SWE-Compass harness-conditional profiles (#32) | `WRITER_PROFILES` describe models inside LP's harness; the writer pick reads task kind/risk |
 | Bias-in-the-Loop audit (#13) | `gilded_defect` class in `checkers/mutators.ts` — defect under cosmetic polish, the scorecard reports the critic's miss rate |

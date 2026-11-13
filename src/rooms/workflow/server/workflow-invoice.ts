@@ -1,4 +1,4 @@
-import { hardProblems, invoiceVerdict, type InvoiceCheckInput } from "@lane-pilot/jev/judgments/invoice-check";
+import { hardProblems, invoiceVerdict, type InvoiceCheckInput } from "@lane-pilot/kit";
 import type { NodeExecutor, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { ServerCore } from "../../contracts/server";
 import { checkInvoicePdf } from "./invoice-pdf";

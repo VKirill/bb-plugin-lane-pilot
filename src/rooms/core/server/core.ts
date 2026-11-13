@@ -14,7 +14,7 @@ import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
 import { getAttempt, getRun, getRunSettingsScopes, declaredWorktreeOwner, registerWorktree, releaseWorktree, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, sectionBindingId, setIllegalTransitionLog, setRunSettingsScopes, setRunState, transitionAttempt } from "../../storage";
 import type { CancelCode, WorktreeOwner } from "../../storage";
-import { GLOBAL_SETTINGS_PROJECT_ID, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, SETTING_JEV_PROVIDER, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
+import { GLOBAL_SETTINGS_PROJECT_ID, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { createNativeInstaller } from "../../native-install";
 import type { WriterBindingResolution } from "../../native-agent";
 import { isTaskBase, parseRunPolicy, retargetTask } from "../../tasks";
@@ -25,7 +25,6 @@ import { stringAt, valueAt } from "@lane-pilot/kit";
 import { defaultModelIn } from "@lane-pilot/models";
 import { resolve } from "node:path";
 import { z } from "zod";
-import { JEV_PROVIDERS, installJev, jev, resolveJevProvider, type JevEndpoint } from "@lane-pilot/jev";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { LanePilotDatabase } from "../../storage";
 import { ownerTurnGate } from "./owner-turn";
@@ -52,55 +51,6 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase): ServerCore {
 
   const rawHost = bb.hosts.experimental_client({ contract:hostContract });
 
-  // Jev's provider is the global setting jev.provider (TypeSafe by default — the official one; OpenLux the cheaper reseller);
-  // its key lives in BB's Env Catalog (TYPESAFE_API_KEY / OPENLUX_API_KEY). The server reads both and sends the key and the
-  // provider id with each Jev call, so machines need no ~/secrets/typesafe.env. Without Env Catalog or the record a machine
-  // falls back to its own (TypeSafe). A dead TypeSafe (5xx, timeout) is retried once on OpenLux when that key exists.
-  const JEV_METHODS = new Set(["councilJudge"]);
-  const jevKeyCache = new Map<string, { value: string | undefined; at: number }>();
-  async function catalogKey(name: string): Promise<string | undefined> {
-    const cached = jevKeyCache.get(name);
-    if (cached && Date.now() - cached.at < 10 * 60_000) return cached.value;
-    const plugins = (bb.sdk as { plugins?: { callRpc?: (args:{pluginId:string;method:string;input?:unknown;outputSchema:z.ZodType<unknown>}) => Promise<unknown> } }).plugins;
-    let value: string | undefined;
-    try {
-      const record = await plugins?.callRpc?.({ pluginId:"env-catalog", method:"env_get_value", input:{ name },
-        outputSchema:z.object({ value:z.string().nullable() }).passthrough() }) as { value:string | null } | undefined;
-      value = record?.value?.trim() || undefined;
-    } catch { value = undefined; }
-    if (Boolean(value) !== Boolean(cached?.value)) {
-      bb.log.info(value ? `jev key: from Env Catalog (${name})` : `jev key: ${name} not in Env Catalog`);
-    }
-    jevKeyCache.set(name, { value, at: Date.now() });
-    return value;
-  }
-  /** A key saved or changed from the settings page counts at once, not after the cache's ten minutes. */
-  const forgetCatalogKey = (name: string): void => { jevKeyCache.delete(name); };
-  let jevServing = "";
-  // The provider the owner chose and its key; TypeSafe's own key when the chosen provider has none, so Jev does not go dark over a missing record.
-  async function jevEndpoint(): Promise<JevEndpoint> {
-    const wanted = resolveJevProvider(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)[SETTING_JEV_PROVIDER]);
-    let endpoint: JevEndpoint = { provider: wanted, apiKey: await catalogKey(wanted.keyName) };
-    if (!endpoint.apiKey) {
-      const other = JEV_PROVIDERS[wanted.id === "typesafe" ? "openlux" : "typesafe"];
-      const apiKey = await catalogKey(other.keyName);
-      if (apiKey) endpoint = { provider: other, apiKey };
-    }
-    // The chosen TypeSafe gets OpenLux as the one-retry standby when that key exists (and back for OpenLux's own choice).
-    if (endpoint.apiKey) {
-      const other = JEV_PROVIDERS[endpoint.provider.id === "typesafe" ? "openlux" : "typesafe"];
-      const spareKey = await catalogKey(other.keyName);
-      if (spareKey) endpoint = { ...endpoint, fallback: { provider: other, apiKey: spareKey } };
-    }
-    const serving = `${endpoint.provider.id}:${Boolean(endpoint.apiKey)}`;
-    if (serving !== jevServing) {
-      jevServing = serving;
-      bb.log.info(endpoint.provider.id === wanted.id ? `jev provider: ${wanted.id}` : `jev provider: ${wanted.id} has no key in Env Catalog, using ${endpoint.provider.id}`);
-    }
-    return endpoint;
-  }
-  // The Jev layer (src/jev): one client with this key reader, receipts in the plugin database; dropped on reload.
-  bb.onDispose(installJev({ endpoint: jevEndpoint, db, log: (message) => bb.log.warn(message) }));
   const deployDrain = createDeployDrain(() => state.disposed);
   bb.onDispose(bindDrainTarget({ drain: deployDrain, log: (line) => bb.log.info(line) }, bb.vk?.instanceId));
   const rawCall = rawHost.call as (method: string, input: unknown, options: unknown) => Promise<unknown>;
@@ -122,8 +72,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase): ServerCore {
       // `worktreeOwner` is the creating pass's name for the registry; the host never sees either of these.
       const { job, jobKey, worktreeOwner, cancelOnAbort, ...hostOptions } = withSignal as typeof withSignal & { jobKey?: string; worktreeOwner?: WorktreeOwner; cancelOnAbort?: boolean };
       const direct = async () => {
-        const endpoint = JEV_METHODS.has(method) ? await jevEndpoint() : undefined;
-        const result = await rawCall(method, endpoint?.apiKey ? { ...(input as Record<string, unknown>), jevApiKey:endpoint.apiKey, jevProvider:endpoint.provider.id } : input, hostOptions);
+        const result = await rawCall(method, input, hostOptions);
         noteWorktreeRegistry(method, input, result, options, worktreeOwner);
         return result;
       };
@@ -408,21 +357,5 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase): ServerCore {
   const writerBindingKey = (projectId: string) => `writer-binding:${projectId}`;
 
   const secrets = createSecrets({ bb });
-  // No Jev key at all is the one silent degradation `bb plugin list` can show; names only — no key value is read for the mark (B-4).
-  void flagMissingJevKey(bb, async () => {
-    const entries = await secrets.list();
-    if (entries === null) return null;
-    const jevKeys = new Set(Object.values(JEV_PROVIDERS).map((provider) => provider.keyName));
-    return entries.some((entry) => jevKeys.has(entry.name));
-  });
-  return { bb, db, state, realtime, ownerAsk, secrets, catalogKey, forgetCatalogKey, isDisposed: () => state.disposed, log: (message: string) => bb.log.warn(message), host, deployDrain, nativeInstaller, nativeHost, serializedKv, ownedAgents, saveOwnedAgents, knownCustomAgentIds: () => customAgentIds, effectiveProjectSettings, screenWriterBinding, coexistenceInventory, coexistenceOperation, getThreadBounded, acceptedTaskWorkspace, workspaceExecutionEnvironment, refreshRun, markCanceledWriterStages, cancelQueuedAttempt, isRuntimeSettingKey, runPolicyFor, nativeRunConfig, sectionRowSchema, listProjectSections, sectionChain, settingsAbove, scopesForWorkspace, ensureRunScopes, configForRun, writerBindingKey };
-}
-
-/** No Jev key at all is the one silent degradation `bb plugin list` can show (B-4): the needs-configuration mark resets on the next load. */
-export async function flagMissingJevKey(bb: { status?: { needsConfiguration?: (message: string) => void } }, hasJevKey: () => Promise<boolean | null>): Promise<void> {
-  const mark = bb.status?.needsConfiguration;
-  if (typeof mark !== "function") return;
-  try {
-    if ((await hasJevKey()) === false) mark.call(bb.status, "Lane Pilot: no Jev key in Env Catalog (TYPESAFE_API_KEY or OPENLUX_API_KEY); judgments run degraded");
-  } catch { /* the marker is informational only */ }
+  return { bb, db, state, realtime, ownerAsk, secrets, isDisposed: () => state.disposed, log: (message: string) => bb.log.warn(message), host, deployDrain, nativeInstaller, nativeHost, serializedKv, ownedAgents, saveOwnedAgents, knownCustomAgentIds: () => customAgentIds, effectiveProjectSettings, screenWriterBinding, coexistenceInventory, coexistenceOperation, getThreadBounded, acceptedTaskWorkspace, workspaceExecutionEnvironment, refreshRun, markCanceledWriterStages, cancelQueuedAttempt, isRuntimeSettingKey, runPolicyFor, nativeRunConfig, sectionRowSchema, listProjectSections, sectionChain, settingsAbove, scopesForWorkspace, ensureRunScopes, configForRun, writerBindingKey };
 }

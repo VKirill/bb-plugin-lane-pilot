@@ -8,7 +8,7 @@ import {
   addCouncilMessage, agendaBrief, chairBrief, chooseSpeaker, createCouncilSession, decideRequestedIn, decisionFileName, decisionMarkdown, getCouncilSession,
   lastSeqOf, listCouncilMessages, listLiveCouncilIds, maxTurnsOf, moderate, parseAgenda, parseDecisionRecord, roomPlan, roundNovelty, roundsPlan, ruleImpulse, seatBrief, seenBySeat,
   setCouncilAgenda, setCouncilRun, setCouncilState, verdictWritten,
-  type CouncilMessage, type CouncilMessageKind, type CouncilSeat, type CouncilSession, type Impulse, type Moderator,
+  type CouncilMessage, type CouncilMessageKind, type CouncilSeat, type CouncilSession, type Impulse,
 } from "@lane-pilot/council";
 
 
@@ -38,7 +38,7 @@ import type { WorkflowEngineApi } from "../../platform/server";
 
 /**
  * The council as a graph (workflows/council.json): `open` (the session, its seats, the chair, the project place) -> `agenda` (the chair's agenda)
- * -> loop `next` (code: the owner's words, the stop and decide requests, the judge or the round order pick the next seat or end the talk) <-> `speak`
+ * -> loop `next` (code: the owner's words, the stop and decide requests, the rule or the round order picks the next seat or end the talk) <-> `speak`
  * (the seat's thread, on the model the seat was given) -> `chair` (the decision record) -> `decide` (docs/decisions page, handoffs, the state, the PM notice) -> emit.
  * The PM tools lane_pilot_council_{start,status,say,stop} keep their names and replies; `start` starts this graph, `stop` cancels it. The talk itself
  * stays in `lane_pilot_council` and `lane_pilot_council_message` (the Council office reads them), and every step reads it from there: a plugin reload
@@ -57,7 +57,7 @@ const isEnded = (session: Pick<CouncilSession, "state">) => TERMINAL.includes(se
 
 export type CouncilStart = {
   projectId: string; runId: string; pmThreadId: string | null; question: string;
-  roles?: string[] | undefined; materials?: string[] | undefined; maxRounds?: number | undefined; mode?: "room" | "rounds" | undefined; judge?: boolean | undefined;
+  roles?: string[] | undefined; materials?: string[] | undefined; maxRounds?: number | undefined; mode?: "room" | "rounds" | undefined;
 };
 
 export type CouncilGraph = {
@@ -80,7 +80,6 @@ export function mountCouncilGraph(ctx: ServerCore, services: Services, council: 
   };
   const input = (c: StepContext<ChainRuntime>, name: string) => c.resolve(`$inputs.${name}`);
   const modeOf = (c: StepContext<ChainRuntime>): "room" | "rounds" => (input(c, "mode") === "rounds" ? "rounds" : "room");
-  const judgeOn = (c: StepContext<ChainRuntime>): boolean => input(c, "judge") !== false;
   const sessionOf = (id: string): CouncilSession => {
     const found = getCouncilSession(db, id);
     if (!found) throw new Error(`council ${id} is gone`);
@@ -137,13 +136,12 @@ export function mountCouncilGraph(ctx: ServerCore, services: Services, council: 
       const workflow = services.workflowEngine.resolveWorkflow(COUNCIL_WORKFLOW);
       if (!workflow) throw new Error(`built-in workflow ${COUNCIL_WORKFLOW} is not loaded`);
       const settings = (await ctx.effectiveProjectSettings(args.projectId)).values;
-      const judgeSetting = configuredSetting(settings, "council.judge");
       const runtime: ChainRuntime = { ctx, services, pmThreadId: args.pmThreadId, projectId: args.projectId, runId: args.runId };
       const started = engine.start({
         workflow, key: `council:${id}`, runtime, link: { projectId: args.projectId, runId: args.runId },
         inputs: {
           council_id: id, question: args.question, roles: args.roles ?? [], materials: args.materials ?? [], max_rounds: session.maxRounds,
-          mode: args.mode ?? "room", judge: args.judge ?? !(judgeSetting === false || judgeSetting === "false" || judgeSetting === "0"),
+          mode: args.mode ?? "room",
         },
       });
       setCouncilRun(db, id, started.runId);
@@ -153,7 +151,7 @@ export function mountCouncilGraph(ctx: ServerCore, services: Services, council: 
     })();
   }
 
-  // ---------------------------------------------------------------- evidence, judge, owner
+  // ---------------------------------------------------------------- evidence, owner
 
   async function readBounded(place: Place, path: string, max: number): Promise<string | null> {
     const read = await bb.sdk.files.read({ hostId: place.hostId, rootPath: place.workspace, path: `${place.workspace}/${path}` }).catch(() => null);
@@ -180,44 +178,6 @@ export function mountCouncilGraph(ctx: ServerCore, services: Services, council: 
     const pack = parts.length ? parts.join("\n\n") : "(no project files or materials could be read; say so and reason from the question alone)";
     evidenceCache.set(session.id, pack);
     return pack;
-  }
-
-  /** One System One call through the run's host; null when the judge is off or fails, so the rule answers. */
-  async function judge(hostId: string, state: unknown, questions: Record<string, { instructions: string; criteria: Record<string, string> }>): Promise<{ answers: Record<string, string>; confidence: Record<string, number> } | null> {
-    try {
-      const result = await host.call("councilJudge", { requestedHostId: hostId, state: JSON.stringify(state).slice(0, 60_000), questions }, { hostId, timeoutMs: 10_000 });
-      return result.status === "ok" ? { answers: result.answers, confidence: result.confidence ?? {} } : null;
-    } catch {
-      return null;
-    }
-  }
-
-  const jevModerator = (hostId: string, session: CouncilSession): Moderator => async (state) => {
-    const answers = await judge(hostId, { question: session.question, agenda: session.agenda, ...state }, {
-      verdict: { instructions: "Should the council keep discussing or is it time for the chair to decide?", criteria: { continue: "the last messages still add new arguments, evidence or unresolved disagreement", synthesize: "the room repeats itself, agrees, or the remaining questions need data nobody has" } },
-    });
-    const verdict = answers?.answers.verdict;
-    return verdict === "continue" || verdict === "synthesize" ? verdict : null;
-  };
-
-  async function jevImpulse(hostId: string, session: CouncilSession, seat: CouncilSeat, last: CouncilMessage, own: readonly CouncilMessage[]): Promise<Impulse | null> {
-    if (last.seatId === seat.id) return { seatId: seat.id, score: 0, reason: "none" };
-    const answers = await judge(hostId, {
-      question: session.question, seat: { title: seat.title, role: seat.role, instruction: seat.instruction },
-      lastMessage: { from: last.seatId, kind: last.kind, text: last.text.slice(0, 4000) },
-      ownLastStatement: own.at(-1)?.text.slice(0, 2000) ?? null,
-    }, {
-      wants: { instructions: "Does this seat have something worth saying right now in reply to the last message?", criteria: {
-        addressed: "the last message asks this seat a question or names its role", disagreement: "this seat would object to a claim in the last message", evidence: "this seat can add a fact or example the room lacks",
-        turn: "this seat has been silent while the topic moved into its area", none: "this seat would only repeat itself or agree" } },
-    });
-    const reason = answers?.answers.wants as Impulse["reason"] | undefined;
-    if (!reason || !(reason in IMPULSE_SCORES)) return null;
-    // A hesitant judge should not hand out the floor: the score carries its confidence, so a weak
-    // "evidence" (0.75 x 0.4) stays under the floor threshold while a sure "addressed" passes.
-    const confidence = answers?.confidence.wants;
-    const weight = typeof confidence === "number" ? Math.max(0.3, Math.min(1, confidence)) : 1;
-    return { seatId: seat.id, score: IMPULSE_SCORES[reason] * weight, reason };
   }
 
   /** The last few things said in the room, for the owner's form. */
@@ -275,7 +235,7 @@ export function mountCouncilGraph(ctx: ServerCore, services: Services, council: 
       let verdict = verdictWritten(feed, plan.round);
       if (!verdict) {
         const novelty = plan.round === 1 ? 1 : roundNovelty(plan.earlier, plan.said);
-        const weighed = await moderate({ round: plan.round, maxRounds: session.maxRounds, novelty, passed: plan.passed, seats: session.seats.length }, judgeOn(c) ? jevModerator(hostId, session) : undefined);
+        const weighed = await moderate({ round: plan.round, maxRounds: session.maxRounds, novelty, passed: plan.passed, seats: session.seats.length });
         note(session, MODERATOR_SEAT_ID, plan.round, "status", `${weighed.verdict === "continue" ? "Another round" : "Time to decide"} (${weighed.by}; novelty ${pct(novelty)}%, passed ${plan.passed}/${session.seats.length})`);
         verdict = weighed.verdict;
       }
@@ -300,7 +260,7 @@ export function mountCouncilGraph(ctx: ServerCore, services: Services, council: 
         let verdict = verdictWritten(feed, plan.lap);
         if (!verdict) {
           const novelty = roundNovelty(plan.earlier, plan.replies.map((message) => message.text));
-          const weighed = await moderate({ round: plan.lap, maxRounds: session.maxRounds, novelty, passed: 0, seats: session.seats.length }, judgeOn(c) ? jevModerator(hostId, session) : undefined);
+          const weighed = await moderate({ round: plan.lap, maxRounds: session.maxRounds, novelty, passed: 0, seats: session.seats.length });
           note(session, MODERATOR_SEAT_ID, plan.lap, "status", `${weighed.verdict === "continue" ? "The room still adds something" : "Time to decide"} (${weighed.by}; novelty ${pct(novelty)}%)`);
           verdict = weighed.verdict;
         }
@@ -312,13 +272,7 @@ export function mountCouncilGraph(ctx: ServerCore, services: Services, council: 
       if (plan.turns >= maxTurnsOf(session)) return finished("turn_cap");
       const last = feed.at(-1)!;
       const impulses: Impulse[] = [];
-      const judgedBy = new Map<string, "judge" | "rule">();
-      for (const seat of session.seats) {
-        let impulse: Impulse | null = null;
-        if (judgeOn(c)) { try { impulse = await jevImpulse(hostId, session, seat, last, feed.filter((message) => message.seatId === seat.id)); } catch { impulse = null; } }
-        judgedBy.set(seat.id, impulse ? "judge" : "rule");
-        impulses.push(impulse ?? ruleImpulse({ session, seat, feed, last }));
-      }
+      for (const seat of session.seats) impulses.push(ruleImpulse({ session, seat, feed, last }));
       const speaker = chooseSpeaker(impulses, feed);
       if (!speaker) {
         note(session, MODERATOR_SEAT_ID, plan.lap, "status", "Nobody asked for the floor; waiting for the owner.");
@@ -330,7 +284,7 @@ export function mountCouncilGraph(ctx: ServerCore, services: Services, council: 
         continue;
       }
       const seat = session.seats.find((item) => item.id === speaker.seatId)!;
-      note(session, MODERATOR_SEAT_ID, plan.lap, "status", `Floor: ${seat.title} (${speaker.reason}, ${judgedBy.get(seat.id) ?? "rule"}; ${impulses.map((item) => `${item.seatId} ${pct(item.score)}%`).join(", ")})`);
+      note(session, MODERATOR_SEAT_ID, plan.lap, "status", `Floor: ${seat.title} (${speaker.reason}; ${impulses.map((item) => `${item.seatId} ${pct(item.score)}%`).join(", ")})`);
       return pickSeat(seat, plan.lap, speaker.reason);
     }
   }

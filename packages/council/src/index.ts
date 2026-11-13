@@ -16,7 +16,7 @@ export {
 export { DEFAULT_ROLES, resolveRoles, type CouncilRole } from "./roles";
 export { agendaBrief, agendaPrompt, chairBrief, chairPrompt, seatBrief, seatPrompt, workspaceRules } from "./prompts";
 export type { CouncilBrief } from "./prompts";
-export { NOVELTY_FLOOR, moderate, moderatorDecision, roundNovelty, type Moderator, type ModeratorState, type ModeratorVerdict } from "./moderator";
+export { NOVELTY_FLOOR, moderate, moderatorDecision, roundNovelty, type ModeratorState, type ModeratorVerdict } from "./moderator";
 export {
   addCouncilMessage,
   councilMigrations,
@@ -38,4 +38,4 @@ export {
   decideRequestedIn, lastSeqOf, maxTurnsOf, roomPlan, roundsPlan, seenBySeat, verdictWritten,
   type RoomPlan, type RoundsPlan,
 } from "./step";
-export { FLOOR_THRESHOLD, IMPULSE_SCORES, chooseSpeaker, ruleImpulse, type Impulse, type ImpulseJudge, type ImpulseReason } from "./room";
+export { FLOOR_THRESHOLD, IMPULSE_SCORES, chooseSpeaker, ruleImpulse, type Impulse, type ImpulseReason } from "./room";

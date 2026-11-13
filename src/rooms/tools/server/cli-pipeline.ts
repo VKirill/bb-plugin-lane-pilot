@@ -2,7 +2,7 @@ import type { PluginCliResult } from "@get-bb/plugin-sdk";
 import { OWNER_ITEM_SWEEPS, type CliRunDeps } from "./cli-deps";
 import { TASK_RECORD_USAGE, blindRecord, readsBlind, renderTaskRecord, taskRecord } from "./task-record";
 import { attemptRecord, manifest, passport, preship, prPassport, receiptChain, subagentReceipts, verifyChain } from "./receipts";
-import { agentRegistry, answerWorkflowQuestion, breakerRowId, budgetSpentSweep, closeOwnerItem, conveyorState, designJournalLines, dirname, failedTasksAllProjects, getPhase, isNotFound, jev, join, listNearMissReceipts, listTripped, orMiss, pluginRootFromModule, postOwnerItem, readinessWords, rearmBreaker, renderTimeline, retireAdoptedRule, runAgentsCli, runBacklogCli, runBaselineCli, runBenchCli, runCapabilityCli, runCheckersCli, runDeferralCli, runDesignPairCli, runForecastCli, runHypothesisCli, runJevCli, runLeadCli, runOutageCli, runPhaseCli, runReturnCli, runRulesCli, runRunGoalCli, runScheduleCli, runSmaLiveCli, runSmaMapCli, runWaitingCli, runWallCli, saveProjectSetting, setConveyor, spawnAsync, taskBaselineEntries, taskTimeline, tierReport, trainedConditions, trainingRatios, workerSecretReach } from "./cli-imports";
+import { agentRegistry, answerWorkflowQuestion, breakerRowId, budgetSpentSweep, closeOwnerItem, conveyorState, designJournalLines, dirname, failedTasksAllProjects, getPhase, isNotFound, join, listNearMissReceipts, listTripped, orMiss, pluginRootFromModule, postOwnerItem, readinessWords, rearmBreaker, renderTimeline, retireAdoptedRule, runAgentsCli, runBacklogCli, runBaselineCli, runBenchCli, runCapabilityCli, runCheckersCli, runDeferralCli, runDesignPairCli, runForecastCli, runHypothesisCli, runLeadCli, runOutageCli, runPhaseCli, runReturnCli, runRulesCli, runRunGoalCli, runScheduleCli, runSmaLiveCli, runSmaMapCli, runWaitingCli, runWallCli, saveProjectSetting, setConveyor, spawnAsync, taskBaselineEntries, taskTimeline, tierReport, trainedConditions, trainingRatios, workerSecretReach } from "./cli-imports";
 /** `timeline <task-id> [--run <run-id>] [--json]`: without --run the first bare word is the task (it was skipped until 2026-11-02). */
 export function timelineArgs(args: string[]): { taskId: string | undefined; runId: string | undefined } {
   const runAt = args.indexOf("--run");
@@ -71,15 +71,8 @@ export async function cliPipeline(d: CliRunDeps): Promise<PluginCliResult | unde
     return runWaitingCli(db, args, Date.now(), [...OWNER_ITEM_SWEEPS, budgetSpentSweep(services)], services.ownerLearningItems);
   }
   if (command === "lead") return await runLeadCli({ db, kv: bb.storage.kv as never, lead: services.lead }, args);
-  if (command === "jev") return runJevCli({ db, saveProjectSetting: (p, k, v) => saveProjectSetting(db, p, k, v), settings: async (p) => (await effectiveProjectSettings(p)).values as Record<string, unknown> }, args);
   if (command === "rules") {
-    const hostAt = args.indexOf("--host");
-    const hostId = hostAt >= 0 ? args[hostAt + 1] : undefined;
-    const ask = hostId ? async (state:string, questions:Record<string, { instructions:string; criteria:Record<string, string> }>) => {
-      const judged = await host.call("councilJudge", { requestedHostId:hostId, state, questions }, { hostId, timeoutMs:20_000 });
-      return judged.status === "ok" ? judged.probabilities ?? null : null;
-    } : null;
-    return await runRulesCli({ db, ask, repoPath:process.cwd(), retire:(projectId, ruleId, reason) => retireAdoptedRule(db, projectId, ruleId, reason) }, args.filter((arg, index, all) => arg !== "--host" && all[index - 1] !== "--host"));
+    return await runRulesCli({ db, repoPath:process.cwd(), retire:(projectId, ruleId, reason) => retireAdoptedRule(db, projectId, ruleId, reason) }, args);
   }
   if (command === "workflow-trigger" && args.length >= 2 && args.length <= 4) {
     const parsed: unknown = args[2] ? JSON.parse(args[2]) : {};

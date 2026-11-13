@@ -31,7 +31,7 @@ The full list, one line per command, is generated from the CLI's own registry in
 | `memory search\|write`, `anamnesis`, `rules` | The project memory, the owner profile, rules by form. |
 | `errands diagnose\|episodes-sweep\|process-key-eval` | Repeated errands and their cost; the episode pass; the process-key score. |
 | `schedule`, `workflow-trigger`, `workflow-answer` | The schedule board; start a graph; answer a graph's question. |
-| `jev calibrate\|watch`, `capabilities`, `health` | Jev accuracy; provider capability table; breakers and budgets. |
+| `capabilities`, `health` | Provider capability table; breakers and budgets. |
 | `revert`, `reverify`, `regress`, `return` | Undo an accepted merge, re-run checks, regression bisect, send a task back to a stage. |
 | `docs-nightly`, `coverage`, `skill-lint` | The nightly docs pass now; coverage of rooms by drills and tests; check a skill folder. |
 
@@ -77,7 +77,7 @@ Tools are registered in the rooms and exposed to agents through the `bb-bridge` 
 |---|---|
 | Workflow architect | `lane_pilot_read`, `lane_pilot_ask_owner`, `lane_pilot_workflow_draft`, `lane_pilot_relay`, `lane_pilot_tool_search`, plus read-only Read, Glob, Grep, WebFetch, WebSearch. |
 | Specialists and custom agents | `lane_pilot_schedule` only, so "every Monday collect..." can be said in the specialist's own chat. Internal sessions (`project-onboarder`, `browser-qa`) get none. |
-| Employees' lessons | `lane_pilot_employee_lesson`, `lane_pilot_employee_remark` (record or judge an owner remark about an employee). |
+| Employees' lessons | `lane_pilot_employee_lesson` (record an owner remark about an employee). |
 | Handoff | `lane_pilot_handoff_create`, `_receipt`, `_list`: a typed card (objective, acceptance, inputs, budget, deadline) with a receipt. |
 | Diagnostics | `lane_pilot_gate_report`, `lane_pilot_ingest_opencode_telemetry`, `lane_pilot_memory_golden`. |
 
@@ -101,7 +101,7 @@ Lane Pilot adds three pages to the BB sidebar and several panels to threads.
 |---|---|
 | Overview | Project status and how to start. |
 | Team | The role roster with each role's model and pool, plus "Agent access". |
-| Work | Writer, critics, Jev provider panel (global only) and the other work settings. |
+| Work | Writer, critics and the other work settings. |
 | Knowledge | Segments Memory, Documents, Rules, Anamnesis. Rules need a project or section; Anamnesis belongs to the system level. |
 | Automation | Segments Workflows, Schedule. |
 | Runs | Segments Active, History, Analytics, Council, Service. |

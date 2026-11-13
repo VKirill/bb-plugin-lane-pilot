@@ -7,6 +7,5 @@ export * from "./handlers/writes";
 export * from "./handlers/fs";
 export * from "./handlers/machine";
 export * from "./handlers/jobs";
-export * from "./handlers/judges";
 export * from "./handlers/exec";
 export * from "./handlers/desktop";

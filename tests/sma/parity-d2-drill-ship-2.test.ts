@@ -194,7 +194,6 @@ describe("[sma:k_v_arena] bench arena runs four arms over one set on neutral gro
   });
 });
 
-import { createJev, type JevAnswer, type JevClient, type JevRequest } from "@lane-pilot/jev";
 import { appendDesignJournalLine, appendDesignPair, designJournalLines, noteDesignJournalWord } from "../../src/rooms/design-eval/journal";
 import { pairBasis, pairOrder } from "../../src/rooms/design-eval/pair";
 import { trainingRatios } from "../../src/rooms/design-eval/training";

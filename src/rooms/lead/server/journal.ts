@@ -1,5 +1,4 @@
 import type Database from "better-sqlite3";
-import type { JevSettings } from "@lane-pilot/jev";
 import { OWNER_ANSWERERS, type ExamRow, type Verdict } from "../logic";
 
 /**
@@ -44,7 +43,7 @@ export const getDecision = (db: Db, id: string): DecisionRow | undefined => db.p
  * Writes the prediction once, before the answer; a row already predicted or already answered is left alone. The lead has
  * no predictor: it defers, and the row says so.
  */
-export async function predictDecision(db: Db, id: string, _settings?: JevSettings, now: number = Date.now()): Promise<PredictDecision | null> {
+export async function predictDecision(db: Db, id: string, _settings?: Record<string, unknown>, now: number = Date.now()): Promise<PredictDecision | null> {
   const row = getDecision(db, id);
   if (!row || row.predicted_at !== null || row.answered_at !== null) return null;
   const decision: PredictDecision = { option: null, p: 0 };
@@ -54,7 +53,7 @@ export async function predictDecision(db: Db, id: string, _settings?: JevSetting
 }
 
 /** Open and predict in one call: what every surface does when its question appears. Errors stay here: a surface never fails on its journal. */
-export async function askDecision(db: Db, input: OpenDecision, settings?: JevSettings, now: number = Date.now()): Promise<void> {
+export async function askDecision(db: Db, input: OpenDecision, settings?: Record<string, unknown>, now: number = Date.now()): Promise<void> {
   try {
     openDecision(db, input, now);
     await predictDecision(db, input.id, settings, now);

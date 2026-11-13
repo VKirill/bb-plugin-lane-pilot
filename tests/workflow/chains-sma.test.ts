@@ -18,9 +18,9 @@ describe("SMA command workflows", () => {
   });
 
   it("ai-integration-phase: select, research, spec", async () => {
-    const r = await runSim("ai-integration-phase", { input: { goal: "rank photos" }, stubs: { select: { framework: "typesafe", options: [] }, research: { notes: "ok" }, spec: { spec_path: "AI-SPEC.md" } } });
+    const r = await runSim("ai-integration-phase", { input: { goal: "rank photos" }, stubs: { select: { framework: "langchain", options: [] }, research: { notes: "ok" }, spec: { spec_path: "AI-SPEC.md" } } });
     expect(pathOf(r)).toBe("select research eval_plan spec check done");
-    expect(out(r)).toMatchObject({ status: "done", framework: "typesafe", spec_path: "AI-SPEC.md" });
+    expect(out(r)).toMatchObject({ status: "done", framework: "langchain", spec_path: "AI-SPEC.md" });
   });
 
   it("audit-uat: open items across phases go to UAT-AUDIT.md", async () => {

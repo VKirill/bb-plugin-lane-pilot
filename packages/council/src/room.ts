@@ -5,9 +5,6 @@ import { MODERATOR_SEAT_ID } from "./step";
 export type ImpulseReason = "addressed" | "disagreement" | "evidence" | "turn" | "none";
 export type Impulse = { seatId: string; score: number; reason: ImpulseReason };
 
-/** An outside judge (Jev) asked, per seat, whether it has something to add to the last message; null means "no opinion". */
-export type ImpulseJudge = (input: { session: CouncilSession; seat: CouncilSeat; last: CouncilMessage; ownStatements: readonly CouncilMessage[] }) => Promise<Impulse | null>;
-
 export const IMPULSE_SCORES: Record<ImpulseReason, number> = { addressed: 1, disagreement: 0.85, evidence: 0.75, turn: 0.6, none: 0.1 };
 export const FLOOR_THRESHOLD = 0.5;
 
@@ -17,7 +14,7 @@ function mentions(text: string, seat: CouncilSeat): boolean {
 }
 
 /**
- * The rule that stands in for the judge: a seat that is addressed must speak; after the owner speaks
+ * The rule that decides who speaks: a seat that is addressed must speak; after the owner speaks
  * everyone considers it; a seat that has been quiet for a full lap gets the floor; the last speaker waits.
  */
 export function ruleImpulse(input: { session: CouncilSession; seat: CouncilSeat; feed: readonly CouncilMessage[]; last: CouncilMessage }): Impulse {

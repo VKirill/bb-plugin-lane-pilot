@@ -80,7 +80,6 @@ export const COVERAGE: readonly CoverageEntry[] = [
   { kind: "room", ids: ["stability"], live: ["reload"], via: "a plugin reload while a writer works: the task still ends accepted", tests: ["tests/reconcile.test.ts"] },
   { kind: "room", ids: ["settings"], live: ["provider_limit"], via: "the scenario sets writer.model through the settings RPC and puts it back", tests: ["tests/owned-settings.test.ts"] },
   { kind: "room", ids: ["errands"], reason: "the «Errands» page is a read model over the errand runs of the workflow journal; the errand graph itself is covered by the schedule room", tests: ["tests/errands/errands-logic.test.ts", "tests/errands/errands-ui.test.tsx"] },
-  { kind: "room", ids: ["jev"], tests: ["tests/jev/calibration.test.ts", "tests/jev/failure-class.test.ts"], reason: "the judgment evaluator's files sit under tests/jev; no drill drives it" },
   { kind: "room", ids: ["validators"], tests: ["tests/validators.test.ts"], reason: "shared validators are exercised through the rooms that call them; no drill step calls them alone" },
   { kind: "room", ids: ["project-life"], live: ["parallel3"], via: "the project-life stage runs after each accepted drill task", tests: ["tests/stages/project-life.test.ts"] },
   { kind: "room", ids: ["acceptance"], tests: ["tests/plan-fact.test.ts", "tests/acceptance-card-ui.test.tsx"], reason: "the acceptance card is a screen read; no drill opens a screen" },

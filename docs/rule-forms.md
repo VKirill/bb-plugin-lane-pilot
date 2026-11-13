@@ -11,7 +11,6 @@ sources:
   - packages/run-insights/tests/rule-forms.test.ts
   - src/rooms/rule-forms/mechanisms.ts
   - src/rooms/rule-forms/promotion.ts
-  - src/rooms/rule-forms/jev-forms.ts
   - src/rooms/rule-forms/cli.ts
   - src/rooms/tasks/server/lint-exit-status.ts
   - src/rooms/tasks/server/contract-lint.ts
@@ -43,11 +42,9 @@ On 2026-10-22 the hub held 167 rules, none with a form: 76 accepted (59 on trial
 | `memory` | A fact about the project, a machine or the owner | «the owner does not…», «not on the sandbox PATH», product facts |
 | `always` | A stance no mechanism can hold | «never end a turn by asking the owner», «take facts from code» |
 
-Every verdict stores `form_reason` (the signals that decided it) and `form_by` (`heuristic | jev | owner | reflection`). The heuristic and Jev never overwrite an owner's or the reflection's form (`setRuleForm`).
+Every verdict stores `form_reason` (the signals that decided it) and `form_by` (`heuristic | owner | reflection`). The heuristic never overwrite an owner's or the reflection's form (`setRuleForm`).
 
 Measured on the 118 live hub rules (2026-10-22), against the form a reader chose for each (the fixture `tests/fixtures/hub-rules-2026-10-22.json`): 100 right (85%), 8 undecided. Distribution: check 59, skill 28, always 15 (7 decided, 8 undecided), memory 12, hook 4; of the 76 accepted: check 42, skill 14, always 9, memory 9, hook 2. A test keeps the floor at 80%.
-
-The undecided rest can go to System One (`--jev --host <host-id>`): one choice question per rule (eight per call), a form is taken only at p ≥ 0.5, anything less keeps the rule as text (`jev-forms.ts`).
 
 New rules get a form the night they appear: the `rules-nightly` job runs `classifyUnformed` after the scan.
 The scan itself ends quietly where it used to be a failed run (the 2026-10-30 sweep: four causes behind seven failures): a project
@@ -82,7 +79,7 @@ Already enforced before (now recorded): `filter_folder_slash`, `test_unowned`, `
 
 ```
 bb lane-pilot rules forms [project] [--form check] [--state accepted|proposed|all] [--json]
-bb lane-pilot rules classify [project] [--all] [--jev --host <host-id>] [--dry]
+bb lane-pilot rules classify [project] [--all] [--dry]
 bb lane-pilot rules promote <project> [--repo <path>] [--list] [--json]
 bb lane-pilot rules mechanize [project] [--apply]
 ```

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const bilingualSchema = z.object({ en: z.string(), ru: z.string() }).strict();
-const nodeType = z.enum(["agent", "lp-task", "action", "decision", "jev", "human", "parallel", "join", "subworkflow", "note"]);
+const nodeType = z.enum(["agent", "lp-task", "action", "decision", "human", "parallel", "join", "subworkflow", "note"]);
 
 /** The «Карта графов» read: every workflow of the library, its steps and edges, and which graph calls which (subworkflow nodes). */
 export const rpcWorkflowMap = {

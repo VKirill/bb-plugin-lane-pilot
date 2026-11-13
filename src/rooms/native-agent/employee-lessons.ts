@@ -19,7 +19,7 @@ export async function recordRoleLine(kv: BbPluginApi["storage"]["kv"], projectId
 
 /**
  * The role's lessons for a directly called employee: the same `lp.role.lines:<project>:<role>` list the
- * `lp.specialist_brief` step renders (written by employee.remark / recordEmployeeLesson), so a chat the owner
+ * `lp.specialist_brief` step renders (written by recordEmployeeLesson), so a chat the owner
  * opens with an employee carries the same rules a PM-delegated run does.
  */
 export async function employeeRoleLines(bb: Pick<BbPluginApi, "storage">, projectId: string, agentId: string): Promise<string[]> {

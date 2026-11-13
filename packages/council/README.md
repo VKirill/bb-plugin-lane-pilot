@@ -19,9 +19,9 @@ question ─► chair sets the agenda ─► round 1: every seat's position
 | `DEFAULT_ROLES`, `resolveRoles(names)` | Product, demand, audience, skeptic (plus growth and ux on request), each with its instruction |
 | `agendaPrompt`, `seatPrompt`, `chairPrompt` | The three prompts; seats receive the evidence pack and only the feed since their last turn |
 | `parseAgenda`, `parseDecisionRecord` | Strict JSON parsing of the chair's answers, fenced or not |
-| `moderatorDecision`, `roundNovelty` | Continue while a round still adds new terms and rounds remain; otherwise synthesize. A `Moderator` (Jev) may override |
+| `moderatorDecision`, `roundNovelty` | Continue while a round still adds new terms and rounds remain; otherwise synthesize. |
 | `roundsPlan(session, feed)`, `roomPlan(session, feed)`, `verdictWritten`, `decideRequestedIn`, `maxTurnsOf` | What the next step is, read from the stored feed alone: the seat due in a fixed round, the opening lap, the lap and its replies of the boardroom, the verdict already written, a request for the decision |
-| `chooseSpeaker`, `ruleImpulse` | The floor of the boardroom: a seat's impulse to speak (a judge's, else the rule's) and who gets it |
+| `chooseSpeaker`, `ruleImpulse` | The floor of the boardroom: a seat's impulse to speak (by rule) and who gets it |
 | `councilMigrations`, `councilRunMigrations`, `createCouncilSession`, `setCouncilRun`, `addCouncilMessage`, `listCouncilMessages`, `setCouncilState`, `getCouncilSession`, `listCouncilSessions` | SQLite storage of sessions, seats and the feed |
 | `decisionMarkdown` | The decision page for `docs/decisions/` |
 

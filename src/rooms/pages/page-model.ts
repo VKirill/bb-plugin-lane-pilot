@@ -111,7 +111,6 @@ export const SECTIONED_SETTING_KEYS = new Set([
   "specialist.enabled", "specialist.when",
   "onboarding.depth", "adoc.040", "workspace.provider", "sandbox.backend", "verification.sandbox_unsafe", "secrets.allow", "quality_mode", "critic.code.default_for_risk", "plan_fact.mode",
   "checkers.diff_hidden_limit",
-  "bench.model_rebench",
   "browser_qa.enabled", "browser_qa.provider", "browser_qa.model", "browser_qa.backend",
   "browser_qa.approve", "browser_qa.reasoning_effort",
   // The self-improvement controls have their own page (src/rooms/improvement/ui); the project-level checks also sit in «Work».
@@ -170,7 +169,6 @@ export function diagnosticRows(): CatalogRow[] {
   return uniqueByStorage(VISIBLE_CATALOG.filter((row) => {
     if (row.storageKey === "writer.agent") return false;
     if (row.storageKey.endsWith(".agent")) return true;
-    if (row.section === "jev") return false;
     if (PICKER_KEYS.has(row.storageKey) && row.storageKey !== "writer.fast_mode") return false;
     if (DEDICATED_KEYS.has(row.storageKey)) return false;
     if (SECTIONED_SETTING_KEYS.has(row.storageKey)) return false;

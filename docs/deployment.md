@@ -15,7 +15,6 @@ sources:
   - packages/harness-core/package.json
   - packages/host-calls/package.json
   - packages/i18n/package.json
-  - packages/jev/package.json
   - packages/kit/package.json
   - packages/memory-core/package.json
   - packages/models/package.json

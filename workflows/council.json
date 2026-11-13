@@ -49,11 +49,6 @@
       "type": "string",
       "default": "room",
       "note": "room (seats speak when they have something to add) or rounds (a fixed order)"
-    },
-    "judge": {
-      "type": "bool",
-      "default": true,
-      "note": "a System One judge picks the speaker and weighs the room; off: the built-in rule"
     }
   },
   "outputs": {
@@ -131,7 +126,7 @@
         "en": "Pick the next speaker",
         "ru": "Выбрать следующего"
       },
-      "rule": "code: the decision request, then the order of the round or the room (the judge's impulse, else the rule); waits up to 10 minutes for the owner when nobody asks for the floor; ends the talk at the round or turn cap",
+      "rule": "code: the decision request, then the order of the round or the room (the rule's impulse); waits up to 10 minutes for the owner when nobody asks for the floor; ends the talk at the round or turn cap",
       "out": {
         "done": "bool",
         "seat": "string",

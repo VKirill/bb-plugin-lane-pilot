@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * A key by name from BB's Env Catalog (the same record call `core.ts` makes for TYPESAFE_API_KEY). The value is kept in memory for ten
+ * A key by name from BB's Env Catalog. The value is kept in memory for ten
  * minutes, never logged, never stored; a failed read gives `undefined` and is not cached for long, so a record added later is found.
  */
 type CallRpc = (args: { pluginId: string; method: string; input?: unknown; outputSchema: z.ZodType<unknown> }) => Promise<unknown>;

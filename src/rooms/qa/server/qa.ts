@@ -39,7 +39,7 @@ export function createQaStages(ctx: ServerCore) {
     const routing = freezeRunRouting(db, args.runId, settings);
     const enabled = configuredSetting(settings,"browser_qa.enabled");
     const providerValue = configuredSetting(settings,"browser_qa.provider");
-    // Codex is the only runner. A saved `jev` (the removed TypeSafe runner) and an unset value both mean codex.
+    // Codex is the only runner. A saved `jev` (a removed runner) and an unset value both mean codex.
     const provider = providerValue == null || providerValue === "jev" || providerValue === "codex" ? "codex"
       : providerValue === "claude" ? "claude" : "unsupported";
     const modelSetting = configuredSetting(settings,"browser_qa.model");

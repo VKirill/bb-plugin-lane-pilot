@@ -361,12 +361,10 @@ describe("BB writer validation on the server path", () => {
     await harness.lifecycle.dispose();
   });
 
-  it.each([
-    { jev:"ok" as const, expected:["Run every npm verification command before answering."], skipped:["Check the site healthcheck after every deploy."] },
-    { jev:"down" as const, expected:["Run every npm verification command before answering.", "Check the site healthcheck after every deploy."], skipped:[] },
-  ])("puts only the accepted rules System One picks for the task into the writer prompt (jev $jev)", async ({ jev, expected, skipped }) => {
+  it("puts every accepted rule meant for a writer into the writer prompt and keeps the PM-only rules out", async () => {
+    const expected = ["Run every npm verification command before answering.", "Check the site healthcheck after every deploy."];
+    const jev = "none";
     let spawnedPrompt = "";
-    const judged: Array<Record<string, unknown>> = [];
     const { bb, harness } = worktreeHost({
       pluginId:"lane-pilot",
       sdk:{
@@ -384,12 +382,6 @@ describe("BB writer validation on the server path", () => {
       experimental_callHostRpc:(call) => {
         const gitBase=noGitOwnershipBase(call.method); if(gitBase) return gitBase;
         if (call.method === "classifyPlan") throw new Error("RPC transport failed");
-        if (call.method === "councilJudge") {
-          judged.push(call.input as Record<string, unknown>);
-          if (jev === "down") return { hostId:"host-test", status:"disabled", answers:{}, reason:"missing_typesafe_api_key" };
-          return { hostId:"host-test", status:"ok", reason:null, answers:{ r1:"yes", r2:"no" }, confidence:{ r1:0.95, r2:0.9 },
-            probabilities:{ r1:{ yes:0.95, no:0.05 }, r2:{ yes:0.02, no:0.98 } } };
-        }
         if (call.method !== "runCommand") throw new Error(`unexpected host method ${call.method}`);
         const command = String((call.input as { command?:string }).command ?? "");
         if (command.includes("porcelain")) return { hostId:"host-test", exitCode:0, stdout:"[]", stderr:"" };
@@ -428,14 +420,11 @@ describe("BB writer validation on the server path", () => {
       { threadId:pmThreadId, projectId },
     )));
     await harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId:"run-rules", timeoutSec:2 }, { threadId:pmThreadId, projectId });
-    expect(judged).toHaveLength(1);
-    expect(Object.keys(judged[0]!.questions as object)).toEqual(["r1", "r2"]);
     for (const rule of expected) expect(spawnedPrompt).toContain(rule);
-    for (const rule of skipped) expect(spawnedPrompt).not.toContain(rule);
     expect(spawnedPrompt).not.toContain("Other client rule.");
     expect(spawnedPrompt).not.toContain("Write owns_paths with every sibling test.");
     expect(spawnedPrompt).toContain("Never read the exit code after a pipe.");
-    expect(getReasoningTrace(db, dispatched.attemptId)?.dispatchContext?.rulesPicked).toEqual({ total:4, picked:jev === "ok" ? ["rule-0", "rule-always"] : ["rule-0", "rule-1", "rule-always"] });
+    expect(getReasoningTrace(db, dispatched.attemptId)?.dispatchContext?.rulesPicked).toEqual({ total:4, picked:["rule-0", "rule-1", "rule-always"] });
     await harness.lifecycle.dispose();
   });
 

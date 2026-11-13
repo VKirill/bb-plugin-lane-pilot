@@ -6,7 +6,6 @@ import { ruleAudienceMigrations, ruleFormMigrations, ruleMechanismMigrations, ru
 import { workflowMigrations } from "@lane-pilot/workflow-engine";
 import { workflowNotVerifiedMigrations, workflowOpsMigrations } from "@lane-pilot/workflow-engine";
 import { draftMigrations } from "@lane-pilot/workflow-engine";
-import { jevMigrations } from "@lane-pilot/jev";
 import { anamnesisOwnerMigrations } from "./anamnesis/server";
 import { learningMigrations } from "./learning/migrations";
 import { pmReplayMigrations } from "./pm-replay";
@@ -300,8 +299,36 @@ export const migrations = [
   ...draftMigrations,
   // Receipts of workflow test runs (W7), goals of a run (K7), the automations of schedule triggers (W9).
   ...workflowOpsMigrations,
-  // Jev judgments: one receipt per judgment asked (src/jev).
-  ...jevMigrations,
+  // Receipts of the removed Jev judgments: the table stays for its old rows; these statements keep their place in the list (index-locked).
+  `CREATE TABLE lane_pilot_jev_receipt (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    judgment TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    model TEXT,
+    mode TEXT NOT NULL CHECK(mode IN ('shadow','active')),
+    project_id TEXT,
+    run_id TEXT,
+    subject TEXT,
+    input_sha256 TEXT NOT NULL,
+    input_chars INTEGER NOT NULL,
+    questions INTEGER NOT NULL,
+    batch_size INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL CHECK(status IN ('ok','disabled','timeout','error','breaker_open','budget','invalid')),
+    answers_json TEXT,
+    decision TEXT,
+    decided_by TEXT NOT NULL CHECK(decided_by IN ('jev','fallback','escalated')),
+    escalated_to TEXT,
+    thresholds_json TEXT,
+    latency_ms INTEGER,
+    tokens_in INTEGER,
+    tokens_out INTEGER,
+    outcome TEXT,
+    outcome_at INTEGER,
+    at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX lane_pilot_jev_receipt_j ON lane_pilot_jev_receipt(judgment, at)`,
+  `CREATE INDEX lane_pilot_jev_receipt_p ON lane_pilot_jev_receipt(project_id, at)`,
+  `CREATE INDEX lane_pilot_jev_receipt_r ON lane_pilot_jev_receipt(run_id)`,
   // Audit 2026-10-08 S1: who was given which Env Catalog name, for which task and check, when and where. Never the value.
   `CREATE TABLE lane_pilot_secret_issuance (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

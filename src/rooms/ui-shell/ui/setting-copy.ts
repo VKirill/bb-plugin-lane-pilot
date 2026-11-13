@@ -1,4 +1,4 @@
-import { SETTING_EPISODES_PROCESS_KEY, SETTING_JEV_PROVIDER, SETTING_WRITER_CAPACITY_WAIT_MAX_MIN, SETTING_WRITER_SILENCE_NUDGE_MIN } from "@lane-pilot/settings-catalog";
+import { SETTING_EPISODES_PROCESS_KEY, SETTING_WRITER_CAPACITY_WAIT_MAX_MIN, SETTING_WRITER_SILENCE_NUDGE_MIN } from "@lane-pilot/settings-catalog";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import type { CatalogRow } from "@lane-pilot/settings-catalog";
 
@@ -75,7 +75,6 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "council.chair.provider": { label: "settingCouncilSeat_chair", help: "settingCouncilSeatHelp" },
   "council.chair.model": { label: "settingCouncilSeat_chair", help: "settingCouncilSeatHelp" },
   "council.chair.reasoning_effort": { label: "settingCouncilSeat_chair", help: "settingCouncilSeatHelp" },
-  "council.judge": { label: "settingCouncilJudge", help: "settingCouncilJudgeHelp" },
   "council.max_rounds": { label: "settingCouncilMaxRounds", help: "settingCouncilMaxRoundsHelp", unit: "fieldUnitRounds" },
   "night_review.enabled": { label: "nightReviewEnabled", help: "nightReviewEnabled" },
   "night_review.auto_merge": { label: "nightReviewAutoMerge", help: "nightReviewAutoMergeHelp" },
@@ -129,8 +128,6 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "usage.skip_percent": { label: "field_s420", help: "reason_s420", unit: "fieldUnitPercent" },
   "secrets.allow": { label: "field_s422", help: "reason_s422" },
   "ops.provider_pool": { label: "field_s430", help: "reason_s430" },
-  "jev.enabled": { label: "field_s440", help: "reason_s440" },
-  "jev.thresholds": { label: "field_s441", help: "reason_s441" },
   "workflow.debugger.provider": { label: "field_s453", help: "reason_s453" },
   "workflow.debugger.model": { label: "field_s454", help: "reason_s454" },
   "workflow.debugger.reasoning_effort": { label: "field_s455", help: "reason_s455" },
@@ -152,8 +149,6 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "workflow.preset.ins-digest.provider": { label: "field_s471", help: "reason_s471" },
   "workflow.preset.ins-digest.model": { label: "field_s472", help: "reason_s472" },
   "workflow.preset.ins-digest.reasoning_effort": { label: "field_s473", help: "reason_s473" },
-  "jev.modes": { label: "field_s442", help: "reason_s442" },
-  [SETTING_JEV_PROVIDER]: { label: "field_s475", help: "reason_s475" },
   "quality_mode": { label: "field_s423", help: "reason_s423" },
   "critic.code.default_for_risk": { label: "field_s476", help: "reason_s476" },
   "plan_fact.mode": { label: "field_s477", help: "reason_s477" },
@@ -230,7 +225,6 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "regress.budget_sec": { label: "field_s504", help: "reason_s504", unit: "fieldUnitSeconds" },
   "regress.bisect_steps": { label: "field_s505", help: "reason_s505", unit: "fieldUnitSteps" },
   "checkers.diff_hidden_limit": { label: "field_s526", help: "reason_s526", unit: "fieldUnitTasks" },
-  "bench.model_rebench": { label: "field_s527", help: "reason_s527" },
   "episodes.collect": { label: "field_s611", help: "reason_s611" },
   [SETTING_EPISODES_PROCESS_KEY]: { label: "field_s612", help: "reason_s612" },
 };

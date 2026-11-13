@@ -258,7 +258,7 @@ describe("parity d3 workflows a", () => {
 
   it("[sma:k_c_aiphase] four roles write AI-SPEC.md and a check gate stands before done", async () => {
     const clean = await runSim("ai-integration-phase", { input: { goal: "rank" },
-      stubs: { select: { framework: "typesafe", options: [] }, research: { notes: "", quick_reference: "q", implementation_notes: "i", domain_notes: "d" }, eval_plan: { eval_plan: "e" }, spec: { spec_path: "x/AI-SPEC.md" }, check: { ok: true, gaps: [] } } });
+      stubs: { select: { framework: "langchain", options: [] }, research: { notes: "", quick_reference: "q", implementation_notes: "i", domain_notes: "d" }, eval_plan: { eval_plan: "e" }, spec: { spec_path: "x/AI-SPEC.md" }, check: { ok: true, gaps: [] } } });
     expect(pathOf(clean)).toBe("select research eval_plan spec check done");
     const rework = await runSim("ai-integration-phase", { input: { goal: "rank" },
       stubs: { select: { framework: "t", options: [] }, research: { notes: "" }, eval_plan: { eval_plan: "e" }, spec: { spec_path: "x" }, check: [{ ok: false, gaps: ["no eval"] }, { ok: true, gaps: [] }] } });

@@ -281,7 +281,7 @@
       },
       "stubs": {
         "select": {
-          "framework": "typesafe",
+          "framework": "langchain",
           "options": []
         },
         "research": {

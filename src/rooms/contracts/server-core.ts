@@ -17,8 +17,6 @@ export interface ServerCore {
   realtime: Realtime;
   ownerAsk: OwnerAsk;
   secrets: Secrets;
-  catalogKey: (name: string) => Promise<string | undefined>;
-  forgetCatalogKey: (name: string) => void;
   isDisposed: () => boolean;
   log: (message: string) => void;
   host: ServerHost;

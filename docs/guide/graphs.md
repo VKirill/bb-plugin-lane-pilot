@@ -17,10 +17,10 @@ sources:
 
 > Part of the [Lane Pilot guide](../../README.md#the-guide). Moved out of the root README on 2026-11-06.
 
-A workflow is a JSON file (`workflows/*.json`): inputs, outputs, `requires` (skills, plugins, secrets, machines), guards, triggers, nodes and edges. The shared engine (`packages/workflow-engine`) validates it, runs it as a resumable graph, journals every step in SQLite and resolves subworkflows. Node types in the shipped graphs: `agent` (a model step with a role), `action` (code), `jev` (a small judgment), `decision`, `human` (a form to the owner), `parallel`/`join`, `subworkflow` and `lp-task` (the writer task pipeline). The model of a step belongs to its **role**, never to the node (see [Roles, agents and models](roles.md)).
+A workflow is a JSON file (`workflows/*.json`): inputs, outputs, `requires` (skills, plugins, secrets, machines), guards, triggers, nodes and edges. The shared engine (`packages/workflow-engine`) validates it, runs it as a resumable graph, journals every step in SQLite and resolves subworkflows. Node types in the shipped graphs: `agent` (a model step with a role), `action` (code), `decision`, `human` (a form to the owner), `parallel`/`join`, `subworkflow` and `lp-task` (the writer task pipeline). The model of a step belongs to its **role**, never to the node (see [Roles, agents and models](roles.md)).
 
 - **Catalog.** 79 graphs ship with the plugin (69 `published`, 10 `tested`). A `tested` graph shows **Run for real** in the Workflows tab; one success makes it published. Owners can add graphs in the global or a project workflow folder.
-- **Router.** `lane_pilot_route` matches a request to a published graph: BM25 plus trigram match against names, tags and examples, priority rules in code, `not_for` and `requires` checks, then a Jev choice (an Opus helper thread decides the unclear cases). Under 60 percent confidence it returns up to three questions instead of a guess. `lane_pilot_run_workflow` starts the choice with the inputs and goals the owner confirmed.
+- **Router.** `lane_pilot_route` matches a request to a published graph: BM25 plus trigram match against names, tags and examples, priority rules in code, `not_for` and `requires` checks, then, for unclear cases, an Opus helper thread. Under 60 percent confidence it returns up to three questions instead of a guess. `lane_pilot_run_workflow` starts the choice with the inputs and goals the owner confirmed.
 - **Triggers.** A graph starts from the PM chat (`chat`), by hand from the Workflows tab (`manual`), from a schedule, or from another plugin (`telegram`). All four go through the same checks.
 - **Authoring.** The Workflow architect agent drafts, patches and tests a graph on stubs (nothing is touched); publishing waits for the owner's yes. A published graph can run on a schedule.
 - **Runs audit their goals.** A run is checked against the goals the owner confirmed before it closes; a run blocked on unmet goals is fixed or amended with a reason in its journal.
@@ -99,7 +99,7 @@ A workflow is a JSON file (`workflows/*.json`): inputs, outputs, `requires` (ski
 | `errand` | A non-code job done end to end by one helper: a browser, a mailbox, a cloud console, a deploy with Env Catalog accounts. Accounts are checked first. |
 | `browser-step` | One goal in the owner's signed-in Chrome on the browser machine with agent-desktop (an LLM agent drives it through the accessibility tree), then the page it ends on. |
 | `lp.browser-qa` | The browser check of an accepted task: a verdict per case and viewport. |
-| `lp.route` | The model step of `lane_pilot_route` when Jev cannot decide a request alone. |
+| `lp.route` | The model step of `lane_pilot_route` when the rules cannot decide a request alone. |
 | `council` | A council of directors: a chair, role-bound seats each on its own model, a written decision. |
 
 **Research, content and media**
@@ -118,7 +118,7 @@ A workflow is a JSON file (`workflows/*.json`): inputs, outputs, `requires` (ski
 | `3d-asset` | Brief, concept images, modeling in Blender, geometry QA, export. |
 | `roblox-asset` | A Roblox model or accessory, scale and collision checked, deployed via Rojo or Studio. |
 | `macos-routine` | Operational routines on the Mac mini with screenshot evidence. |
-| `invoice-send` (tested) | An invoice in Kontur.Elba made, checked in code and by a Jev judgment, approved by the owner, then sent. |
+| `invoice-send` (tested) | An invoice in Kontur.Elba made, checked by code rules, approved by the owner, then sent. |
 | `billing-batch` | A list of clients and services invoiced through `invoice-send`, with a summary registry and owner approval before dispatch. |
 
 **Owner profile (Anamnesis)**
@@ -141,7 +141,7 @@ A workflow is a JSON file (`workflows/*.json`): inputs, outputs, `requires` (ski
 | `lp.harness-reflect` | After a decided harness trial: a reflection session and at most one lesson that transfers. |
 | `lp.critic-edit` | Monthly: reads each critic's verdict accuracy and writes a prompt proposal when it is under half on four or more verdicts. |
 | `lp.docs-maintenance` | The docs maintainer of one accepted task: edits returned as JSON, validated by code, written. |
-| `lp.docs-night` | One docs folder brought up to date overnight, with Jev anchors and gap finding. |
+| `lp.docs-night` | One docs folder brought up to date overnight, with anchors and gap finding. |
 
 ## Sources
 

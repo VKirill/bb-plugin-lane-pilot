@@ -204,7 +204,7 @@ describe("council start reports the decision to the PM chat", () => {
     createRun(db, runId, projectId);
     setRunThread(db, runId, pmThreadId);
     const call = async (name: string, params: Record<string, unknown>) => JSON.parse(String(await harness.behavior.callAgentTool(name, params, { threadId: pmThreadId, projectId }))) as Record<string, any>;
-    const started = await call("lane_pilot_council_start", { runId, question: "Как поднять повторные покупки в кабинете?", roles: ["product", "skeptic"], maxRounds: 2, mode: "rounds", judge: false });
+    const started = await call("lane_pilot_council_start", { runId, question: "Как поднять повторные покупки в кабинете?", roles: ["product", "skeptic"], maxRounds: 2, mode: "rounds" });
     let view: Record<string, any> = started;
     for (let i = 0; i < 100 && !["done", "failed", "stopped"].includes(view.state); i++) {
       await new Promise((resolve) => setTimeout(resolve, 100));

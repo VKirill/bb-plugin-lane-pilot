@@ -83,7 +83,7 @@ describe("council tools", () => {
     setRunThread(db, runId, pmThreadId);
     const call = async (name: string, params: Record<string, unknown>) => JSON.parse(String(await harness.behavior.callAgentTool(name, params, { threadId: pmThreadId, projectId }))) as Record<string, any>;
 
-    const started = await call("lane_pilot_council_start", { runId, question: "Как поднять повторные покупки в кабинете?", roles: ["product", "skeptic"], materials: ["materials/direct.csv"], maxRounds: 3, mode: "rounds", judge: false });
+    const started = await call("lane_pilot_council_start", { runId, question: "Как поднять повторные покупки в кабинете?", roles: ["product", "skeptic"], materials: ["materials/direct.csv"], maxRounds: 3, mode: "rounds" });
     expect(started.state).toBe("agenda");
     expect(started.seats.map((seat: { id: string; model: string }) => `${seat.id}:${seat.model}`)).toEqual(["product:m2", "skeptic:deepseek/deepseek-r2"]);
 
@@ -156,12 +156,12 @@ describe("council tools", () => {
     setRunThread(db, runId, pmThreadId);
     const call = async (name: string, params: Record<string, unknown>) => JSON.parse(String(await harness.behavior.callAgentTool(name, params, { threadId: pmThreadId, projectId }))) as Record<string, any>;
 
-    const started = await call("lane_pilot_council_start", { runId, question: "Как поднять повторные покупки?", roles: ["product", "skeptic"], maxRounds: 3, judge: false });
+    const started = await call("lane_pilot_council_start", { runId, question: "Как поднять повторные покупки?", roles: ["product", "skeptic"], maxRounds: 3 });
     const status = async () => call("lane_pilot_council_status", { runId, councilId: started.id });
     let view: Record<string, any> = started;
     for (let i = 0; i < 100 && !(view.messages ?? []).some((m: { seatId: string; kind: string }) => m.seatId === "product" && m.kind === "reply"); i++) { await new Promise((r) => setTimeout(r, 50)); view = await status(); }
     expect(view.messages.map((m: { seatId: string; kind: string }) => `${m.seatId}:${m.kind}`).slice(0, 6)).toEqual(["owner:owner", "chair:agenda", "product:position", "skeptic:position", "moderator:status", "product:reply"]);
-    expect(view.messages[4].text).toContain("Floor: Product director (addressed, rule");
+    expect(view.messages[4].text).toContain("Floor: Product director (addressed;");
 
     // The room goes quiet and waits for the owner; the owner names the skeptic.
     for (let i = 0; i < 100 && !(view.messages ?? []).some((m: { text: string }) => m.text.includes("waiting for the owner")); i++) { await new Promise((r) => setTimeout(r, 50)); view = await status(); }

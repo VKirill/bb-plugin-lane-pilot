@@ -34,7 +34,6 @@ describe("the hand-off standard in the source", () => {
     // One-shot analysers written before the standard; each still parses its own strict form.
     expect(using(/JSON (object|array)? ?(and nothing else|only)|Answer with JSON only|no text before or after it/)).toEqual([
       "packages/council/src/prompts.ts",
-      "packages/jev/src/labels-model.ts",
       "packages/memory-core/src/context.ts",
       "src/rooms/docs/docs.ts",
       "src/rooms/learning/extract.ts",

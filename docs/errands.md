@@ -18,12 +18,12 @@ grow over time: the «Errands» page of the scope rail (`src/rooms/errands`).
 1. *Kinds and their models*: one line per kind (`computer`, `devops`, `browser`, `research`, `message`, no kind), what it is, BB's own model
    window (`NativeModelPicker`) seeded with the row of the role table at the global level (`get_role_models` for `GLOBAL_SETTINGS_PROJECT_ID`),
    «your choice» or «built-in default» under it and «Back to default» when the owner set the row, and the period's runs, done, stopped, failed,
-   cost, and how often Jev in shadow would have named the kind. A choice is saved as `role_model.<role>` at the global level with the row's
+   cost. A choice is saved as `role_model.<role>` at the global level with the row's
    version and its pool kept, exactly as the role table of General settings → Team saves it (0.1.469, the owner: «the native BB picker here»).
    Two kinds on one row (`message` and no kind, both `errand`) get one window; the second line says whose model it shares. A kind with no runs
    in the period shows dashes instead of a row of zeros.
 2. *Errands of the last N days* (7, 30, 90; a kind filter): when, project, the errand's title (the title it was given, else the first line of its
-   brief), its kind and who named it (PM, the brief, Jev, the schedule), the model by its display name, the outcome with the helper's reason
+   brief), its kind and who named it (PM, the brief, the schedule), the model by its display name, the outcome with the helper's reason
    in plain words (`plainReason`: «you stopped the helper», «the helper did not finish the job», «the system failed at the step …», «no
    connected machine»; anything else as written), who asked (the PM chat; the schedule by name, or just «schedule» when it is named after
    the errand; «deleted» when the schedule is gone), the cost, and «Open the chat» for the helper's thread (the same side panel every helper opens in).

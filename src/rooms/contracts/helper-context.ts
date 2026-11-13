@@ -118,7 +118,7 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "project-life": { bbPlugins: [], skills: ["project-life"], mcpServers: ["gitnexus"] },
   "browser-qa": { bbPlugins: ["browser-automation"], skills: ["browser-automation"], mcpServers: [] },
   // A PM's errand outside the code: a console, a mailbox, a recording. The browser on the browser machine, the fast
-  // owner's signed-in Chrome and the apps on the Mac mini through agent-desktop (computer-use; the accessibility tree, no TypeSafe Jev), the headless browser through the browser-automation plugin, and Env Catalog for the accounts it needs; no code skills.
+  // owner's signed-in Chrome and the apps on the Mac mini through agent-desktop (computer-use; the accessibility tree), the headless browser through the browser-automation plugin, and Env Catalog for the accounts it needs; no code skills.
   "errand": { bbPlugins: ["browser-automation", "env-catalog"], skills: ["browser-automation", "computer-use", "env-catalog"], mcpServers: [] },
   // The API map of a web service (workflows/api-recon.json): the browser and the login, nothing else.
   "api-recon": { bbPlugins: ["browser-automation", "env-catalog"], skills: ["browser-automation", "env-catalog"], mcpServers: [] },

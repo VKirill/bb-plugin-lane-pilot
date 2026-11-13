@@ -27,15 +27,15 @@ The host contract is the typed boundary between the plugin server and a BB-conne
 ## How it works
 
 1. The contract declares each host procedure using strict Zod input and output objects. Requests identify the target with `requestedHostId`; BB call options separately carry `hostId` (`src/rooms/contracts/host.ts:6-15`, `packages/host-calls/src/run-on-host.ts:1-14`).
-2. The root host entry registers method handlers against the same contract. Jev-sensitive handlers are wrapped to take the provider and key from the request before calling the implementation (`host.ts:72-87`).
+2. The root host entry registers method handlers against the same contract (`host.ts`).
 3. `createCore` creates the typed host client and wraps its `call` method. It adds the current schedule abort signal when the caller supplied none, then runs the call inside deploy-drain tracking (`src/rooms/core/server/core.ts:98-117`).
-4. Core removes its private `job` and `jobKey` options before sending the request. It attaches cached Jev provider credentials only for methods in `JEV_METHODS`; a missing credential leaves the input unchanged (`src/rooms/core/server/core.ts:50-53`, `:109-116`).
+4. Core removes its private `job` and `jobKey` options before sending the request (`src/rooms/core/server/core.ts`).
 5. Core chooses background-job mode when `LANE_PILOT_HOST_JOBS` is not `0` and the method is a declared host job kind. `runSandboxedCommand` is an exception: it uses a job only when the caller sets `job: true`; all other calls use the direct host call (`src/rooms/core/server/core.ts:114-117`).
 6. The job wrapper reuses a stored job that is still running, or a recent succeeded/failed result where the method permits reusing completed work. Otherwise it removes the old key and starts a job, then polls until the host returns a terminal state (`packages/host-calls/src/host-jobs.ts:40-69`, `:76-91`).
 
 | Branch | Inputs and condition | Outcome |
 |---|---|---|
-| Direct call | Host jobs disabled, method not a job kind, or `runSandboxedCommand` without `job: true`. | The contract method is called directly; for Jev methods core may add `jevApiKey` and `jevProvider` (`src/rooms/core/server/core.ts:109-117`). |
+| Direct call | Host jobs disabled, method not a job kind, or `runSandboxedCommand` without `job: true`. | The contract method is called directly. |
 | Background job | Jobs enabled and method is a job kind; sandboxed command additionally requires `job: true`. | `jobStart` gives a job id, then polling returns the result on `succeeded` (`src/rooms/contracts/host.ts:31-46`, `packages/host-calls/src/host-jobs.ts:59-82`). |
 | Older host | `jobStart` rejects with an “unknown host method” error. | Wrapper falls back to the direct call; other `jobStart` errors propagate (`packages/host-calls/src/host-jobs.ts:59-66`). |
 | Job not reusable | Stored job is no longer running and is not a recent reusable completed result. | The wrapper deletes its KV key and starts a new job (`packages/host-calls/src/host-jobs.ts:50-68`). |

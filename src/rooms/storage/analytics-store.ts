@@ -50,30 +50,6 @@ export function diffHiddenAuditSummary(db: LanePilotDatabase, sinceMs: number, u
   `).get(sinceMs, untilMs) as { candidates: number; total: number; blind_passes: number; phantoms: number; sensitive: number };
 }
 
-/** One monthly model-rebench row. */
-export function saveModelRebench(db: LanePilotDatabase, input: { runId: string; projectId: string; month: string; evaluatedCount: number; accuracy: number | null; winRate: number | null; report: unknown; recordedAt: number }): void {
-  db.prepare(`
-    INSERT OR REPLACE INTO lane_pilot_model_rebench
-      (id, project_id, month, evaluated_count, accuracy, win_rate, report_json, recorded_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(input.runId, input.projectId, input.month, input.evaluatedCount, input.accuracy, input.winRate, JSON.stringify(input.report), input.recordedAt);
-}
-
-/** The window's model-rebench totals (the checker drill's report). */
-export function modelRebenchSummary(db: LanePilotDatabase, sinceMs: number, untilMs: number): {
-  count: number; evaluated: number; avg_accuracy: number | null; avg_win_rate: number | null;
-} | undefined {
-  return db.prepare(`
-    SELECT
-      COUNT(*) as count,
-      COALESCE(SUM(evaluated_count), 0) as evaluated,
-      AVG(accuracy) as avg_accuracy,
-      AVG(win_rate) as avg_win_rate
-    FROM lane_pilot_model_rebench
-    WHERE recorded_at >= ? AND recorded_at <= ?
-  `).get(sinceMs, untilMs) as { count: number; evaluated: number; avg_accuracy: number | null; avg_win_rate: number | null } | undefined;
-}
-
 /** The episode table's columns on this database (older bases lack the enrichment fields). */
 export function errandEpisodeColumns(db: LanePilotDatabase): Set<string> {
   return new Set((db.prepare("PRAGMA table_info(lane_pilot_errand_episode)").all() as Array<{ name: string }>).map((column) => column.name));

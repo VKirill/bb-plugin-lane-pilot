@@ -33,7 +33,7 @@ describe("the settings copy after the tidy-up", () => {
   });
 
   it("the extra settings of the Work tab sit under headings that exist, and the three new headings have a Russian and an English title", () => {
-    for (const section of ["limits", "gate", "files", "jev", "improvement"]) {
+    for (const section of ["limits", "gate", "files", "improvement"]) {
       expect(SECTION_ORDER).toContain(section);
       expect(en[`section_${section}` as keyof typeof en]).toBeTruthy();
       expect(ru[`section_${section}` as keyof typeof ru]).toBeTruthy();
@@ -42,7 +42,6 @@ describe("the settings copy after the tidy-up", () => {
     expect(sectionOf.get("run.max_attempts")).toBe("limits");
     expect(sectionOf.get("integration.gate_command")).toBe("gate");
     expect(sectionOf.get("bookkeeping.paths")).toBe("files");
-    expect(sectionOf.get("jev.enabled")).toBe("jev");
     // Nothing is left under «Run operations» in the Work tab: it holds only the command-line flags of the old runner, which are diagnostics.
     expect([...sectionOf.values()]).not.toContain("ops");
   });

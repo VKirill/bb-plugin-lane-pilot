@@ -6,8 +6,8 @@
     "ru": "Шаг в браузере"
   },
   "description": {
-    "en": "One goal in the owner's real signed-in Chrome on the browser machine, then the page it ends on: its address, a status, the number of actions and the visible text. An LLM agent drives Chrome through agent-desktop (`ad`, the accessibility tree: snapshot, act, verify), with no TypeSafe Jev. Lane Pilot starts it from lane_pilot_helpers (action browser); headless jobs belong to the BB browser-automation plugin.",
-    "ru": "Одна цель в настоящем Chrome владельца (с его входами) на браузерной машине и страница, на которой всё закончилось: адрес, статус, число действий и видимый текст. Chrome ведёт LLM-агент через agent-desktop (`ad`, дерево Accessibility: снимок, действие, проверка), без TypeSafe Jev. Запускается инструментом lane_pilot_helpers (action browser); безголовые задачи отдаются плагину BB browser-automation."
+    "en": "One goal in the owner's real signed-in Chrome on the browser machine, then the page it ends on: its address, a status, the number of actions and the visible text. An LLM agent drives Chrome through agent-desktop (`ad`, the accessibility tree: snapshot, act, verify). Lane Pilot starts it from lane_pilot_helpers (action browser); headless jobs belong to the BB browser-automation plugin.",
+    "ru": "Одна цель в настоящем Chrome владельца (с его входами) на браузерной машине и страница, на которой всё закончилось: адрес, статус, число действий и видимый текст. Chrome ведёт LLM-агент через agent-desktop (`ad`, дерево Accessibility: снимок, действие, проверка). Запускается инструментом lane_pilot_helpers (action browser); безголовые задачи отдаются плагину BB browser-automation."
   },
   "not_for": [
     "anything a person asks in a chat: the PM starts it with lane_pilot_helpers (action browser)"

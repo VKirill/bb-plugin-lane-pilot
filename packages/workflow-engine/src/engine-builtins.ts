@@ -19,9 +19,6 @@ class ChildRunError extends Error {}
 
 export function registerBuiltins(engine: WorkflowEngine): void {
   engine.register("builtin:parallel", { reentrant: true, run: async () => ({ output: {} }) });
-  // `type:"jev"` outside a runtime that provides Jev (a simulation, a bare engine): the verdict is «escalated to model»,
-  // so the graph's model edge takes it exactly as an unsure judgment would. Lane Pilot's executors register the real one.
-  engine.register("builtin:jev", { reentrant: true, run: async () => ({ output: { decision: "jev_unavailable", handoff: "jev unavailable", value: {}, escalated: true, to: "model" } }) });
   engine.register("builtin:join", { reentrant: true, run: async (ctx) => {
     const results = (ctx.input.with.results as Array<Record<string, unknown>>) ?? [];
     const output: Record<string, unknown> = { results, count: results.length, failed_count: ((ctx.input.with.failed as unknown[] | undefined) ?? []).length };

@@ -33,7 +33,6 @@ sources:
   - src/rooms/harness/index.ts
   - src/rooms/harness/server/harness.ts
   - src/rooms/harness/migrations.ts
-  - packages/jev/src/run.ts
   - packages/host-calls/src/run-on-host.ts
   - packages/harness-core/src/index.ts
   - packages/harness-core/package.json
@@ -80,7 +79,7 @@ flowchart LR
   rooms[Room UI and server modules]
   ui[ui-kit]
   shared[contracts, i18n, models, kit]
-  domains[council, handoff, harness-core, host-calls, Jev, memory-core, resilience, run-insights, settings-catalog, thread-observe]
+  domains[council, handoff, harness-core, host-calls, memory-core, resilience, run-insights, settings-catalog, thread-observe]
   engines[workflow-engine, world-sim, pixel-world]
   app --> rooms
   host --> rooms
@@ -128,13 +127,12 @@ Writer sessions run on each host's shared OpenCode v2 service under agent ids pr
 
 ## Data ownership
 
-The shared SQLite migration array includes stores exported by Jev, council, handoff, run-insights, workflow engine, schedule, learning, world, and the harness room (`src/rooms/storage/database.ts:4-24`, `:47-426`). The [data model overview](data-model.md) links to domain tables and owns the append-only rule of that array. Workspace-specific tables belong to their owning package documentation, including [workflow engine](../packages/workflow-engine/docs/overview.md).
+The shared SQLite migration array includes stores exported by council, handoff, run-insights, workflow engine, schedule, learning, world, and the harness room (`src/rooms/storage/database.ts:4-24`, `:47-426`). The [data model overview](data-model.md) links to domain tables and owns the append-only rule of that array. Workspace-specific tables belong to their owning package documentation, including [workflow engine](../packages/workflow-engine/docs/overview.md).
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by
 
 - [Lane Pilot overview](overview.md)
 - [i18n workspace overview](../packages/i18n/docs/overview.md)
-- [Jev workspace overview](../packages/jev/docs/overview.md)
 - [Kit workspace overview](../packages/kit/docs/overview.md)
 - [World simulation overview](../packages/world-sim/docs/overview.md)

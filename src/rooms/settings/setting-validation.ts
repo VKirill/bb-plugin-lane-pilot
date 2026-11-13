@@ -2,8 +2,6 @@ import { PROVIDER_POOL_KEY, SETTING_WRITER_SILENCE_NUDGE_MIN, providerPoolProble
 import { leadSettingProblem } from "../lead";
 import { ROLE_MODEL_KEY_PREFIX, ZCODE_BACKGROUND_KEY, ZCODE_WINDOW_KEY, roleModelProblem, zcodeWindowProblem } from "@lane-pilot/models";
 import { SCHEDULE_ERRAND_DEFAULT_KEY, errandDefaultProblem } from "../schedule";
-import { listJudgments, type Judgment } from "@lane-pilot/jev";
-import { jevSettingProblem } from "@lane-pilot/jev";
 import { HUB_KEYS, PROJECT_DEFAULT_KEYS, hubSettingProblem } from "@lane-pilot/settings-catalog";
 import { UI_CATALOG, WRITER_EFFORT_CHOICES_BY_PROVIDER } from "@lane-pilot/settings-catalog";
 
@@ -11,16 +9,6 @@ import { PLANNING_HOME_SETTING, planningHomeProblem } from "../contracts";
 import type { SettingValidationError } from "../setting-validation";
 
 export type { SettingValidationError } from "../setting-validation";
-
-/**
- * The judgments the settings validation names explicitly, so their modules are loaded whatever else the entry point imports: the
- * registry (`listJudgments`) holds only what some module has already registered, and the list must not depend on import order.
- */
-const SETTING_JUDGMENTS: never[] = [];
-
-function settingJudgments(): ReadonlyArray<Pick<Judgment<unknown, unknown>, "id" | "defaultMode" | "thresholds">> {
-  return [...new Map([...listJudgments(), ...SETTING_JUDGMENTS].map((judgment) => [judgment.id, judgment])).values()];
-}
 
 /** Choices generated from the pinned upstream consumers and shared by every row for a storage key. */
 export function allowedSettingChoices(key: string): string[] | null {
@@ -84,10 +72,6 @@ export function validateSettingValue(key: string, value: unknown): SettingValida
   }
   if (key === PROVIDER_POOL_KEY) {
     const problem = providerPoolProblem(value);
-    return problem ? { code:"invalid_choice", key, params:[key, problem] } : null;
-  }
-  if (key === "jev.thresholds" || key === "jev.modes") {
-    const problem = jevSettingProblem(key, value, settingJudgments());
     return problem ? { code:"invalid_choice", key, params:[key, problem] } : null;
   }
   // When the ZCode app may be used: only in its free hours (promo, the default) or at any hour (always).

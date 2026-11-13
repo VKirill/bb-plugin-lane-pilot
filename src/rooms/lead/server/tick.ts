@@ -1,7 +1,6 @@
 import { checkBrief, renderBrief } from "../../brief";
 import type { NodeExecutor, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { ThreadToolTraceEntry } from "@lane-pilot/harness-core";
-import type { JevSettings } from "@lane-pilot/jev";
 import { GLOBAL_SETTINGS_PROJECT_ID, SETTING_EPISODES_PROCESS_KEY } from "@lane-pilot/settings-catalog";
 import type { ChainRuntime } from "../../contracts/server";
 
@@ -464,7 +463,6 @@ export function tickBrief(snapshot: HubSnapshot, identityText: string): string {
 export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore, services: Services): void {
   const { db, bb } = ctx;
   const settingsOf = () => parseLeadSettings(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID));
-  const jevSettings = () => loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID) as JevSettings;
   const tickIdOf = (c: StepContext<ChainRuntime>) => text(c.resolve("$inputs.tickId")) || `tick_${c.runId.slice(-8)}`;
 
   engine.register<ChainRuntime>("lp.lead_state", {
@@ -556,7 +554,7 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
           const decisionId = row.decision_id && getDecision(db, row.decision_id)?.answered_at ? proposalDecisionId(row.id, tickId) : proposalDecisionId(row.id);
           openDecision(db, { id: decisionId, surface: "lead", class: proposal.class!, risk, projectId, runId: null,
             situation: { question: "act on this branch of the road tree?", title: row.title, why: clip(proposal.why!, 1_000), evidence: proposal.evidence, cost: proposal.cost_estimate, project: projectId, tick: tickId }, options: PROPOSAL_OPTIONS }, now);
-          await predictDecision(db, decisionId, jevSettings(), now);
+          await predictDecision(db, decisionId, undefined, now);
           proposeRoad(db, row.id, decisionId, now);
           const card: ProposalCard = { roadId: row.id, decisionId, class: proposal.class!, risk, projectId, title: row.title, why: proposal.why!, cost: proposal.cost_estimate!, evidence: proposal.evidence ?? [], tickId,
             architectProjectId: seed !== undefined && seedForm(seed) === "graph" ? (projectId ?? (settings.project || null)) : null };

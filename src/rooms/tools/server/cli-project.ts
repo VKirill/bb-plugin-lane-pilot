@@ -112,7 +112,7 @@ export async function cliProject(d: CliRunDeps): Promise<PluginCliResult | undef
     const session = await services.council.startCouncil({
       projectId: run.project_id, runId: run.id, pmThreadId: run.pm_thread_id, question: args[1]!,
       roles: options.roles ? options.roles.split(",") : undefined, maxRounds: options.rounds ? Number(options.rounds) : undefined,
-      mode: options.mode === "rounds" ? "rounds" : options.mode === "room" ? "room" : undefined, judge: options.judge === "off" ? false : options.judge === "on" ? true : undefined,
+      mode: options.mode === "rounds" ? "rounds" : options.mode === "room" ? "room" : undefined,
       materials: options.materials ? options.materials.split(",") : undefined,
     });
     return { exitCode:0, stdout:JSON.stringify({ id: session.id, state: session.state, seats: session.seats.map((seat) => `${seat.id}:${seat.providerId}/${seat.model}`) }, null, 2) };

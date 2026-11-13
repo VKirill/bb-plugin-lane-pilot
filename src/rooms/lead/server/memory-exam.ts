@@ -1,4 +1,3 @@
-import type { JevSettings } from "@lane-pilot/jev";
 import { SANDBOX_PROJECT_ID, isDrillTask } from "../../contracts";
 import type { MemoryEvalRunner } from "../../contracts";
 import { OWNER_ANSWERERS } from "../logic";
@@ -32,7 +31,7 @@ type Row = { id: string; surface: string; class: string; risk: string | null; pr
 const HUMAN = [...OWNER_ANSWERERS, "backtest"];
 const HUMAN_IN = `answered_by IN (${HUMAN.map(() => "?").join(",")})`;
 
-export async function runMemoryExam(db: Db, options: { limit?: number; settings?: JevSettings; now?: number; recall?: boolean; migrations: readonly string[] }, runEval: MemoryEvalRunner): Promise<MemoryExam> {
+export async function runMemoryExam(db: Db, options: { limit?: number; settings?: Record<string, unknown>; now?: number; recall?: boolean; migrations: readonly string[] }, runEval: MemoryEvalRunner): Promise<MemoryExam> {
   const now = options.now ?? Date.now();
   const caveats: string[] = [];
   let recall: MemoryExam["recall"] = null;

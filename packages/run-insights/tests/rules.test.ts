@@ -99,29 +99,7 @@ describe("rule proposals", () => {
   });
 });
 
-describe("rule relevance", () => {
-  it("asks one yes/no question per rule and keeps a rule from the threshold up or when unanswered", async () => {
-    const { pickRelevantRules, ruleRelevanceQuestions, ruleRelevanceState } = await import("../src/index");
-    const rules = [{ rule: "Run every verification command." }, { rule: "Check the healthcheck after a deploy." }, { rule: "Unanswered" }, { rule: "Unsure no" }];
-    expect(Object.keys(ruleRelevanceQuestions(rules))).toEqual(["r1", "r2", "r3", "r4"]);
-    expect(ruleRelevanceQuestions(rules).r2!.criteria.yes).toContain("healthcheck");
-    const picked = pickRelevantRules(rules, { r1: "yes", r2: "no", r4: "no" }, { r1: 0.9, r2: 0.95, r4: 0.65 });
-    expect(picked.map((row) => row.rule)).toEqual(["Run every verification command.", "Unanswered", "Unsure no"]);
-    const state = ruleRelevanceState({ title: "Release", invariants: ["rollback-safe"], interfaces: ["scripts/deploy.sh"], verification: [{ command: "npm test" }] });
-    expect(state.task).toMatchObject({ invariants: ["rollback-safe"], interfaces: ["scripts/deploy.sh"], verification_commands: ["npm test"] });
-  });
-});
-
 describe("rule audience", () => {
-  it("decides by System One's probability of yes when the host returns it, not by its confidence", async () => {
-    const { pickRelevantRules, RULE_RELEVANCE_THRESHOLD } = await import("../src/index");
-    const rules = [{ rule: "a" }, { rule: "b" }, { rule: "c" }];
-    // Live answer of 2026-10-03: choice no, confidence 0.97, probabilities.yes 0.51 — the rule is relevant.
-    const picked = pickRelevantRules(rules, { r1: "no", r2: "no", r3: "yes" }, { r1: 0.97, r2: 0.5, r3: 0.9 }, RULE_RELEVANCE_THRESHOLD,
-      { r1: { yes: 0.51, no: 0.49 }, r2: { yes: 0.02, no: 0.98 } });
-    expect(picked.map((row) => row.rule)).toEqual(["a", "c"]);
-  });
-
   it("stores who a lesson is for and lets the owner change it on a live rule", () => {
     const db = openDb();
     const pm = upsertLessonProposal(db, "p", { rule: "Write owns_paths to cover sibling tests and snapshots.", audience: "pm" }, 1);

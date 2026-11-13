@@ -89,13 +89,11 @@ export async function waitSpecialistRun(ctx: ServerCore, services: Services, inp
           const { validateDeliverable } = await import("../../validators");
           const hostId = typeof inputs.hostId === "string" ? inputs.hostId : "";
           const brief = inputs.brief as Record<string, unknown> | undefined;
-          const settings = (await bestEffort(ctx.log, "specialist deliverable settings", ctx.effectiveProjectSettings(owner), { values: {}, inherited: [], explicitKeys: [] })).values as Record<string, unknown>;
           const run = getRun(ctx.db, input.runId);
           const verdict = await validateDeliverable(validator, deliverable, {
             host: { run: (id, cwd, command, timeoutSec) => runOnHost(ctx.host, { hostId: id, cwd, command, timeoutSec }) as never },
             hostId,
             brief,
-            jevCtx: { projectId: owner, runId: input.runId, settings },
             review: async (req) => pageReviewByAgent(ctx, services, { pmThreadId: run?.pm_thread_id ?? threadId, projectId: owner, parentRunId: input.runId, design: Boolean(brief?.design), request: req }),
           });
           if (!verdict.ok) {
@@ -121,7 +119,7 @@ export async function waitSpecialistRun(ctx: ServerCore, services: Services, inp
 }
 
 /**
- * Layer 3 of the page validator: a vision-capable helper reviews what the DOM probe and Jev could not settle. A
+ * Layer 3 of the page validator: a vision-capable helper reviews what the DOM probe could not settle. A
  * `specialist` run (role `design-lead` for design tasks, `browser-qa` otherwise) gets the brief, the screenshot paths on
  * the employee's machine and the layers' findings, and answers with one typed line `VERDICT: pass|rework|fail` plus
  * per-issue `ISSUE <selector>: <what>` lines. The answer window is bounded; a timeout yields no verdict and the page
@@ -131,7 +129,7 @@ export const PAGE_REVIEW_TIMEOUT_MS = 240_000;
 export async function pageReviewByAgent(
   ctx: ServerCore,
   services: Services,
-  input: { pmThreadId: string; projectId: string; parentRunId: string; design: boolean; request: { url: string; brief: string; shots: string[]; dom: unknown; jev: { verdict: string; worst: number; worstShot: string | null } | null } },
+  input: { pmThreadId: string; projectId: string; parentRunId: string; design: boolean; request: { url: string; brief: string; shots: string[]; dom: unknown } },
 ): Promise<{ ok: boolean; reason: string; details?: Record<string, unknown> } | null> {
   const role = input.design ? "design-lead" : "browser-qa";
   const task = [
@@ -139,8 +137,7 @@ export async function pageReviewByAgent(
     `Brief: ${input.request.brief || "(none given)"}`,
     `Screenshots on your machine: ${input.request.shots.join(", ")} — open them and look.`,
     `DOM probe findings: ${JSON.stringify(input.request.dom) ?? "not run"}`,
-    `Jev cut-off check: ${input.request.jev ? `${input.request.jev.verdict} (worst p=${input.request.jev.worst}${input.request.jev.worstShot ? ` on ${input.request.jev.worstShot}` : ""})` : "not run"}`,
-    `Decide whether the page delivers what the brief asks (right content present, nothing hidden or missing, layout usable). Judge semantics: Jev and the DOM probe only checked geometry.`,
+    `Decide whether the page delivers what the brief asks (right content present, nothing hidden or missing, layout usable). Judge semantics: the DOM probe only checked geometry.`,
     `Answer exactly: first line "VERDICT: pass" or "VERDICT: rework"; then one line per issue "ISSUE <css-selector-or-area>: <what is wrong>".`,
   ].join("\n");
   try {

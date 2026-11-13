@@ -1,4 +1,3 @@
-import { SETTING_JEV_PROVIDER } from "@lane-pilot/settings-catalog";
 import type { ReactNode } from "react";
 import { t } from "@lane-pilot/i18n";
 import { Label } from "@lane-pilot/ui-kit";
@@ -6,7 +5,6 @@ import { Switch } from "@lane-pilot/ui-kit";
 import { asBoolean, sectionKey } from "../ui-shell/ui";
 import { extraSettingTab } from "./placement";
 import { AdvancedRows, CatalogField, CatalogFields, SettingsGroup } from "../ui-shell/ui";
-import { JevProviderNote, JevProviderPanel } from "./jev-provider";
 import { HelpSup } from "@lane-pilot/ui-kit";
 import { Pill } from "../ui-shell/ui";
 import type { LpPage } from "./use-lp-page";
@@ -34,7 +32,6 @@ export function WorkTab({ page }: { page: LpPage }) {
   );
   return (
     <div className="space-y-6" data-testid="work-panel-body">
-      {isGlobal ? <JevProviderPanel page={page} /> : null}
       <SettingsGroup testId="settings-execution" title={t("workGroupExecution")}>
         <section className="space-y-2" data-testid="settings-group-workspace">
           <CatalogField page={page} keyName="adoc.040" />
@@ -42,7 +39,7 @@ export function WorkTab({ page }: { page: LpPage }) {
         </section>
         <section className="space-y-2" data-testid="settings-group-quality">
           <CatalogField page={page} keyName="quality_mode" />
-          <AdvancedRows show={advanced}><CatalogFields page={page} keys={["sandbox.backend", "verification.sandbox_unsafe", "secrets.allow", "plan_fact.mode", "checkers.diff_hidden_limit", "bench.model_rebench"]} /></AdvancedRows>
+          <AdvancedRows show={advanced}><CatalogFields page={page} keys={["sandbox.backend", "verification.sandbox_unsafe", "secrets.allow", "plan_fact.mode", "checkers.diff_hidden_limit"]} /></AdvancedRows>
         </section>
       </SettingsGroup>
 
@@ -81,7 +78,6 @@ export function WorkTab({ page }: { page: LpPage }) {
       </SettingsGroup>
 
       <SettingsGroup testId="settings-council" title={t("councilSettingsTitle")} help={<HelpSup label={t("councilSettingsTitle")}><p>{t("councilSettingsHelp")}</p></HelpSup>}>
-        <RoleState page={page} enabledKey="council.judge" fallback={true} teamLabel={where} />
         <CatalogField page={page} keyName="council.max_rounds" />
       </SettingsGroup>
 
@@ -90,9 +86,7 @@ export function WorkTab({ page }: { page: LpPage }) {
         .map(({ section, rows }) => (
           <section key={section} className="space-y-2" data-testid={`settings-group-${section}`}>
             <h3 className="text-sm font-medium">{t(sectionKey(section))}</h3>
-            <div className="space-y-2">{rows.map((row) => row.storageKey === SETTING_JEV_PROVIDER
-              ? (isGlobal ? null : <JevProviderNote key={row.storageKey} page={page} />)
-              : <CatalogField key={row.storageKey} page={page} keyName={row.storageKey} />)}</div>
+            <div className="space-y-2">{rows.map((row) => <CatalogField key={row.storageKey} page={page} keyName={row.storageKey} />)}</div>
           </section>
         ))}
     </div>

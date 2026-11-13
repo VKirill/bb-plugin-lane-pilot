@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
-import { codeVerdict, ruleMigrations, ruleTrialMigrations, saveTriage, splitRejectedPaths, triageQuestions, triageState, triageSummary, untriagedAttempts, writerGroups, type FailedAttempt } from "../src/index";
+import { codeVerdict, ruleMigrations, ruleTrialMigrations, saveTriage, splitRejectedPaths, ruleTriage, triageSummary, untriagedAttempts, writerGroups, type FailedAttempt } from "../src/index";
 import { triageMigrations } from "../src/triage";
 
 function openDb() {
@@ -23,13 +23,12 @@ function seed(db: Database.Database, task: string, state: string, reason: string
 const attempt = (reason: string, contract: Record<string, unknown> = {}): FailedAttempt =>
   ({ attemptId: "a", runId: "r1", taskId: "t", state: "validation_failed", reason, contractJson: JSON.stringify(contract), threadId: null, failedAt: 1 });
 
-describe("triage state", () => {
-  it("settles in code what code can: bookkeeping paths, internal codes, prose outputs", () => {
-    const bookkeeping = triageState(attempt("writer changed paths outside owns_paths or inside never_touch: .agents/PROGRESS.md, .bb/chats/x/README.md"));
-    expect(bookkeeping.facts_computed_by_code).toMatchObject({ all_rejected_paths_are_lane_pilot_bookkeeping: true, reason_is_an_internal_error_code_of_the_orchestrator: false });
-    expect((triageState(attempt("owns_paths rejected apps/api/a.ts")).facts_computed_by_code as Record<string, unknown>).all_rejected_paths_are_lane_pilot_bookkeeping).toBe(false);
-    expect((triageState(attempt("attempt_worktree_provision_timeout:provisioning")).facts_computed_by_code as Record<string, unknown>).reason_is_an_internal_error_code_of_the_orchestrator).toBe(true);
-    expect((triageState(attempt("missing expected_outputs: x", { expected_outputs: ["The page shows a keyword"] })).facts_computed_by_code as Record<string, unknown>).expected_outputs_written_as_prose_not_paths).toBe(true);
+describe("triage rules", () => {
+  it("counts an attempt in a writer-fault state as the writer's and sorts it by the words of the reason", () => {
+    expect(ruleTriage(attempt("owns_paths rejected apps/api/a.ts"))).toMatchObject({ origin: "writer", category: "outside_scope" });
+    expect(ruleTriage(attempt("missing expected_outputs: x"))).toMatchObject({ origin: "writer", category: "missing_output" });
+    expect(ruleTriage(attempt("verification command failed: npm test"))).toMatchObject({ origin: "writer", category: "broke_checks" });
+    expect(ruleTriage(attempt("something else"))).toMatchObject({ origin: "writer", category: "other" });
   });
 
   it("lets code decide when the gate rejected the task's own files or only bookkeeping files", () => {
@@ -40,14 +39,7 @@ describe("triage state", () => {
     expect(codeVerdict(splitRejectedPaths("owns_paths rejected .agents/PROGRESS.md", owns))).toEqual({ origin: "orchestrator", detail: "code:bookkeeping_only" });
     const outside = splitRejectedPaths("writer changed paths outside owns_paths or inside never_touch: .agents/x.md, apps/web/b.ts", owns);
     expect(codeVerdict(outside)).toBeNull();
-    expect((triageState(attempt("x"), outside).facts_computed_by_code as Record<string, unknown>).rejected_paths_outside_this_task_scope).toEqual(["apps/web/b.ts"]);
     expect(codeVerdict(splitRejectedPaths("missing expected_outputs: a.md", owns))).toBeNull();
-  });
-
-  it("asks about known rules only when there are some", () => {
-    expect(Object.keys(triageQuestions([]))).toEqual(["origin", "category"]);
-    const questions = triageQuestions([{ rule: "No network in verification." }, { rule: "Create every expected file." }]);
-    expect(Object.keys(questions.same_rule!.criteria)).toEqual(["r1", "r2", "none"]);
   });
 });
 

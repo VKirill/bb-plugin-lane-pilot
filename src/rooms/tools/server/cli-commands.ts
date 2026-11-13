@@ -1,5 +1,5 @@
 import { TASK_RECORD_USAGE } from "./task-record";
-import { AGENTS_USAGE, ANAMNESIS_USAGE, BACKLOG_USAGE, BASELINE_USAGE, BENCH_USAGE, CAPABILITY_USAGE, CATALOG_USAGE, CHECKERS_USAGE, COVERAGE_USAGE, DEFERRAL_USAGE, DESIGN_PAIR_USAGE, EPISODES_USAGE, FORECAST_USAGE, JEV_USAGE, LEAD_USAGE, LEARNING_USAGE, MEMORY_COMPRESS_USAGE, MEMORY_CONFLICT_USAGE, MEMORY_EVAL_USAGE, OUTAGE_USAGE, PHASE_USAGE, PM_REPLAY_USAGE, PM_SKILLS_USAGE, POLICY_USAGE, PROFILE_KEYS, PROJECT_PASSPORT_USAGE, ROLLBACK_USAGE, RULES_USAGE, RUN_GOAL_USAGE, SCHEDULE_USAGE, SKILLS_USAGE, SMA_MAP_USAGE, WAITING_USAGE, WALL_USAGE, WINDOW_USAGE, excavate, jev, join, manifest, passport, preship, waitThreadIdle } from "./cli-imports";
+import { AGENTS_USAGE, ANAMNESIS_USAGE, BACKLOG_USAGE, BASELINE_USAGE, BENCH_USAGE, CAPABILITY_USAGE, CATALOG_USAGE, CHECKERS_USAGE, COVERAGE_USAGE, DEFERRAL_USAGE, DESIGN_PAIR_USAGE, EPISODES_USAGE, FORECAST_USAGE, LEAD_USAGE, LEARNING_USAGE, MEMORY_COMPRESS_USAGE, MEMORY_CONFLICT_USAGE, MEMORY_EVAL_USAGE, OUTAGE_USAGE, PHASE_USAGE, PM_REPLAY_USAGE, PM_SKILLS_USAGE, POLICY_USAGE, PROFILE_KEYS, PROJECT_PASSPORT_USAGE, ROLLBACK_USAGE, RULES_USAGE, RUN_GOAL_USAGE, SCHEDULE_USAGE, SKILLS_USAGE, SMA_MAP_USAGE, WAITING_USAGE, WALL_USAGE, WINDOW_USAGE, excavate, join, manifest, passport, preship, waitThreadIdle } from "./cli-imports";
 const MEMORY_CLI_USAGE = 'bb lane-pilot memory search "<question>" [--project P] | memory search --recall --query "<words>" [--cwd <path>] [--project P]   (read-only: confirmed notes by the word index, masked, one per line) | memory write "<fact>" [--project P] | memory history "<question>" [--project P] [--source tasks|execution|transcripts|lessons|books]   (the project memory on the hub; inside a BB thread the project is the thread\'s own)';
 
 const usage = [
@@ -48,7 +48,6 @@ const usage = [
     SMA_MAP_USAGE,
     PHASE_USAGE,
     RULES_USAGE,
-    JEV_USAGE,
     SKILLS_USAGE,
     PM_SKILLS_USAGE,
     WINDOW_USAGE,
@@ -177,7 +176,6 @@ const commands:Array<{ name:string; summary:string; usage:string }> = [
       { name:"schedule", summary:"The schedule board: scheduled workflows, errands and scripts (list, show, history, preview, create, update, pause, resume, run-now, delete)", usage:SCHEDULE_USAGE },
       { name:"agents", summary:"The agents the owner can pick: list and show the bundled ones, create, update and delete his own (a JSON or a markdown file with frontmatter)", usage:AGENTS_USAGE },
       { name:"memory", summary:"The project memory on the hub: search it with a question, write one fact; inside a BB thread the project is the thread's own", usage:MEMORY_CLI_USAGE },
-      { name:"jev", summary:"Jev judgments: calibration, labels by source, watch", usage:JEV_USAGE },
       { name:"pm-skill-use", summary:"Record that a PM session opened a skill", usage:"bb lane-pilot pm-skill-use <skill> --thread <thread-id> [--project <project-id>]" },
       { name:"session-brief", summary:"The checkout's coordination brief for a starting session: live and stale windows, a merge in flight, other windows' claims and weakly calibrated areas", usage:"bb lane-pilot session-brief --cwd <path> [--json]" },
       { name:"subagent-pack", summary:"The rules and confirmed lessons a Task subagent is born with (a project switches it on with hook.subagent_pack)", usage:"bb lane-pilot subagent-pack \"<prompt>\" [--cwd <path>] [--project <id>]" },

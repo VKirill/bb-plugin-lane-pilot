@@ -5,7 +5,7 @@ created: 2026-10-29
 updated: 2026-10-29
 status: active
 confidence: medium
-tags: [models, roles, providers, settings, jev]
+tags: [models, roles, providers, settings]
 sources:
   - packages/models/src/role-models.ts
   - packages/models/src/agent-model.ts
@@ -28,7 +28,7 @@ TL;DR: One setting per role names the model that works it — now any provider's
 
 ## Purpose
 
-Every agent step of every graph names a role, and the role names the model: one table «role -> model» for the whole plugin, on the global, project or section level (`packages/models/src/role-models.ts:1-13`). The writer of a task is not a row of the table: it is picked per task by Jev from the writers' anamnesis (`packages/models/src/model-profiles.ts:24-83`). See [Jev adapter](jev-adapter.md) for the writer pick.
+Every agent step of every graph names a role, and the role names the model: one table «role -> model» for the whole plugin, on the global, project or section level (`packages/models/src/role-models.ts:1-13`). The writer of a task is not a row of the table: it is picked per task by rules from the writers\' anamnesis (`packages/models/src/model-profiles.ts:24-83`). for the writer pick.
 
 ## How it works
 

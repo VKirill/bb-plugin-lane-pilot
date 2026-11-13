@@ -5,7 +5,7 @@ created: 2026-11-01
 updated: 2026-11-01
 status: active
 confidence: medium
-tags: [lead, owner, journal, road, exam, rights, jev, roadmap]
+tags: [lead, owner, journal, road, exam, rights, roadmap]
 sources:
   - src/rooms/lead/migrations.ts
   - src/rooms/lead/logic.ts

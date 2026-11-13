@@ -21,10 +21,6 @@ sources:
   - packages/i18n/src/index.ts
   - packages/i18n/src/i18n.ts
   - packages/i18n/src/i18n-board.ts
-  - packages/jev/src/index.ts
-  - packages/jev/src/runtime.ts
-  - packages/jev/src/registry.ts
-  - packages/jev/src/judgments/output-guard.ts
   - packages/kit/src/index.ts
   - packages/memory-core/src/index.ts
   - packages/models/src/index.ts
@@ -40,10 +36,6 @@ sources:
   - packages/pixel-world/src/nav.ts
   - packages/handoff/src/messages.ts
   - packages/host-calls/src/run-on-host.ts
-  - packages/jev/src/run.ts
-  - packages/jev/src/client.ts
-  - packages/jev/src/registry.ts
-  - packages/jev/src/thresholds.ts
   - packages/kit/package.json
   - packages/thread-observe/src/signals.ts
   - src/rooms/storage/database.ts
@@ -82,10 +74,9 @@ TL;DR: Small workspaces hold reusable contracts and services shared by Lane Pilo
 | `@lane-pilot/harness-core` | Writer-harness tree validation, fingerprinting and diff summaries; writer-event trajectory rendering; editor prompt construction; and parsing/rendering of edit verdicts and transferable experience (`packages/harness-core/src/index.ts:1-14`). | Harness server uses it to validate candidate trees, render attempt evidence and parse editor/reflection replies; writer attempts receive its materialized tree through the harness room (`src/rooms/harness/server/harness.ts:1-8`, `:211-250`, `:281-313`). See [writer harness](harness.md) for the end-to-end capability. |
 | `@lane-pilot/host-calls` | Host job client plus `runOnHost`, a typed `runCommand` wrapper. See timeout selection, forwarded fields and rejection behavior under [Package operation details](package-operations.md#runonhost). | Writer, verification, scheduling and host-worker rooms. |
 | `@lane-pilot/i18n` | Locale selection, `t()`, and typed English and Russian dictionaries, including Harness model and role labels (`packages/i18n/src/i18n.ts:331-345`, `:1397-1411`, `:2153-2158`) and Tasks board strings (`packages/i18n/src/i18n-board.ts:1-4`). | Room UI and plugin app. |
-| `@lane-pilot/jev` | The package-root `jev()` accessor returns the installed runner or `null`; see its installation, disposal and no-instance branches under [Package operation details](package-operations.md#jev-runtime). Judgment execution, modes and fallback behavior are covered in [createJev](package-operations.md#createjev). Judgment definitions register themselves through `defineJudgment` when their modules evaluate (`packages/jev/src/registry.ts:41-48`, `packages/jev/src/judgments/output-guard.ts:22-28`, `packages/jev/src/index.ts:1-9`). | Core and judgment-owning rooms. See [Jev adapter](jev-adapter.md). |
 | `@lane-pilot/kit` | Node helpers for hashing, redaction, process spawning, bounded reads and JSONC patching, with a browser-safe `owns-paths` subpath (`packages/kit/src/index.ts:1-9`, `packages/kit/package.json:1-15`). | Server rooms and selected UI modules. |
 | `@lane-pilot/memory-core` | Project memory records, audiences, retrieval, budgets, file import/export and SQLite helpers; its candidate parser and overflow-aware write helper are exported at the package root (`packages/memory-core/src/index.ts:1-23`, `packages/memory-core/src/store.ts:211-223`). | Memory, writer context and run-insights. |
-| `@lane-pilot/models` | Provider/model catalog normalization, reasoning compatibility, presets and model pricing (`packages/models/src/index.ts:1-5`); the role→model table the helpers run on — one row per role with its model, effort and a pool of extra models whose runs go to the least loaded provider (`packages/models/src/role-models.ts:99-118`, `:184-198`, `packages/models/src/agent-model.ts:72-83`) — and the writer profiles a task's writer is picked from (`packages/models/src/model-profiles.ts:10-31`). | Native-agent, core spawn, settings, Jev selection and usage rooms. |
+| `@lane-pilot/models` | Provider/model catalog normalization, reasoning compatibility, presets and model pricing (`packages/models/src/index.ts:1-5`); the role→model table the helpers run on — one row per role with its model, effort and a pool of extra models whose runs go to the least loaded provider (`packages/models/src/role-models.ts:99-118`, `:184-198`, `packages/models/src/agent-model.ts:72-83`) — and the writer profiles a task's writer is picked from (`packages/models/src/model-profiles.ts:10-31`). | Native-agent, core spawn, settings, writer selection and usage rooms. |
 | `@lane-pilot/pixel-world` | Three.js scene primitives, assets, people, vehicles, navigation and static mesh batching. See ordered `batchStatic` and [createNavGrid](package-operations.md#createnavgrid) steps, branch outcomes and failures under [Package operation details](package-operations.md). | World UI. |
 | `@lane-pilot/resilience` | Provider/model circuit breaker and per-run token, time and attempt budgets (`packages/resilience/src/index.ts:1-25`). | Writer dispatch and stability. |
 | `@lane-pilot/run-insights` | Acceptance statistics, failure triage, rule proposals with writer/PM audience and always-on options, typed lesson forms, lesson sourcing and golden memory cases (`packages/run-insights/src/index.ts:1-2`, `:11-42`). | Runs, learning, memory and self-repair rooms. |
@@ -99,7 +90,7 @@ The small packages provide reusable contracts and utilities to root rooms; the w
 ## How it works
 
 1. Room modules import package APIs by their workspace specifiers; for example, the runs contract imports `@lane-pilot/contracts` and session memory imports `@lane-pilot/memory-core` (`src/rooms/contracts/rpc-runs.ts:1-2`, `src/rooms/memory/server/session-memory.ts:1-10`).
-2. The package exposes domain functions and types; the consuming room supplies BB, SQLite, or host dependencies where required (`packages/jev/src/run.ts:56-63`, `packages/host-calls/src/run-on-host.ts:8-31`). Harness-core itself is pure parsing, rendering and tree logic; `src/rooms/harness` owns host, thread, KV and SQLite effects (`packages/harness-core/src/index.ts:1-14`, `src/rooms/harness/server/harness.ts:161-179`, `:211-250`).
+2. The package exposes domain functions and types; the consuming room supplies BB, SQLite, or host dependencies where required (`packages/host-calls/src/run-on-host.ts:8-31`). Harness-core itself is pure parsing, rendering and tree logic; `src/rooms/harness` owns host, thread, KV and SQLite effects (`packages/harness-core/src/index.ts:1-14`, `src/rooms/harness/server/harness.ts:161-179`, `:211-250`).
 3. The room composes those exports into server RPCs, UI behavior, and scheduled work (`src/rooms/core/server/rpc.ts:27-51`, `src/rooms/storage/database.ts:47-426`).
 
 ## Modes and package variants
@@ -107,9 +98,8 @@ The small packages provide reusable contracts and utilities to root rooms; the w
 | Variant | What differs | Failure or boundary |
 |---|---|---|
 | Node-oriented helpers | `@lane-pilot/kit` root includes Node-based helpers; `owns-paths` is a browser-safe subpath (`packages/kit/package.json:1-15`, `packages/kit/src/index.ts:1-9`). | UI code that reaches Node imports cannot use the root entry. |
-| Judgment registration | Each judgment module calls `defineJudgment`; the registry stores it by id and rejects a different judgment with the same id (`packages/jev/src/registry.ts:41-48`, `packages/jev/src/judgments/output-guard.ts:22-28`). | A judgment is absent from the registry until its defining module is imported; the package root does not import the judgment catalog (`packages/jev/src/index.ts:1-9`). |
 | Server and UI package entries | UI kit exposes its component entry and a realtime-channel subpath, while workflow engine exposes a separate `./ui` entry (`packages/ui-kit/package.json:14-17`, `packages/ui-kit/src/index.ts:1-32`, `packages/workflow-engine/package.json:7-13`, `packages/workflow-engine/src/ui.ts:1-4`). See the [UI kit overview](../packages/ui-kit/docs/overview.md) and [workflow engine overview](../packages/workflow-engine/docs/overview.md) for package-owned details. | Workspace-specific APIs and gotchas are owned by those linked docs. |
-| Domain package with database migrations | Council, handoff, Jev, and run-insights export migrations consumed by the root storage migration list (`packages/council/src/index.ts:19-30`, `packages/handoff/src/index.ts:21-38`, `src/rooms/storage/database.ts:47-426`). | Migration ownership stays with the package that defines each table. |
+| Domain package with database migrations | Council, handoff, and run-insights export migrations consumed by the root storage migration list (`packages/council/src/index.ts:19-30`, `packages/handoff/src/index.ts:21-38`, `src/rooms/storage/database.ts:47-426`). | Migration ownership stays with the package that defines each table. |
 
 ## Business rules
 
@@ -121,21 +111,6 @@ The small packages provide reusable contracts and utilities to root rooms; the w
 See [RPC contract composition and route families](rpc-callers/contract-map.md) for `rpcContract` composition, and [rpcOps and cockpit handlers](rpc-callers.md#rpcops-and-cockpit-handlers) for its route schemas, handler sequence and result branches (`src/rooms/contracts/index.ts:18-27`, `src/rooms/contracts/rpc-ops.ts:5-64`).
 
 ## Package operations
-
-See [Jev runtime accessor](package-operations.md#jev-runtime) for the `jev()` call, installation lifecycle, and null/failure branches (`packages/jev/src/runtime.ts:5-21`).
-
-### `createJev`
-
-1. For each judgment, it redacts built state, gets questions, resolves mode and thresholds, and throws if the judgment exceeds the 48-question cap (`packages/jev/src/run.ts:59-64`, `packages/jev/src/registry.ts:11-12`, `packages/jev/src/thresholds.ts:42-46`).
-2. It skips receipt writes without a database or in off mode; otherwise it records call, decision and usage details, with insert errors logged and converted to a null receipt id (`packages/jev/src/run.ts:66-80`).
-3. It returns fallback for off mode; batches other entries that share model and serialized state, splitting when a batch would exceed the question count or the serialized-question character bound; then sends namespaced questions to the client with the maximum member timeout and shared budget/signal (`packages/jev/src/run.ts:99-129`, `packages/jev/src/client.ts:21-24`).
-4. A failed call, missing answers, or thrown decision function returns fallback; shadow mode returns fallback plus the shadow decision; an escalation decision returns its target; otherwise the Jev decision and answers are returned (`packages/jev/src/run.ts:82-97`).
-
-| Mode or failure | Outcome |
-|---|---|
-| `off` / `shadow` / `active` | Off calls no client and returns fallback; shadow calls Jev but keeps fallback as the decision; active uses the Jev decision or declared escalation (`packages/jev/src/run.ts:94-105`, `packages/jev/src/registry.ts:12`). |
-| Preparation or rejected client promise | Question overflow throws before execution; rejected `client.call` rejects the batch promise (`packages/jev/src/run.ts:59-64`, `:118-129`). |
-| Jev call or decision failure | Returns deterministic judgment fallback, with failure status recorded when a database is available (`packages/jev/src/run.ts:82-92`). |
 
 ### `batchStatic`
 
@@ -193,7 +168,7 @@ The first table is the package API index; its package rows link to entry modules
 
 ## Gotchas
 
-The Jev package registers judgments on import, the UI bundle cannot import Node modules, and the package boundary is enforced by dependency rules (`packages/jev/src/run.ts:56-63`, `packages/kit/src/index.ts:1-9`, `src/rooms/package.json:1-14`). Consult the package-owned pages before changing their internals.
+The UI bundle cannot import Node modules, and the package boundary is enforced by dependency rules (`packages/kit/src/index.ts:1-9`, `src/rooms/package.json:1-14`). Consult the package-owned pages before changing their internals.
 
 ## Workspace-owned references
 

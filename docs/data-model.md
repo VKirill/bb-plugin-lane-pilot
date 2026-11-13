@@ -16,7 +16,6 @@ sources:
   - src/rooms/world/migrations.ts
   - packages/council/src/store.ts
   - packages/handoff/src/store.ts
-  - packages/jev/src/receipts.ts
   - packages/run-insights/src/rules.ts
   - packages/run-insights/src/triage.ts
   - packages/workflow-engine/src/ops-store.ts
@@ -60,7 +59,7 @@ Workspace packages document their own schema tables and columns:
 - [Workflow engine data model](../packages/workflow-engine/docs/data-model.md) — journal, draft, test and trigger stores.
 - [World simulation data model](../packages/world-sim/docs/data-model.md) — simulation entities, not BB plugin persistence.
 
-The plugin's shared migration array includes stores exported by Jev, council, handoff, run-insights, workflow engine, schedule, learning and world packages, plus the harness room migration (`src/rooms/storage/database.ts:47-426`). Their data does not imply foreign-key ownership where the table definition contains no foreign key.
+The plugin's shared migration array includes stores exported by council, handoff, run-insights, workflow engine, schedule, learning and world packages, plus the harness room migration (`src/rooms/storage/database.ts:47-426`). Their data does not imply foreign-key ownership where the table definition contains no foreign key.
 
 The array is positional: the hub records every applied statement by index and refuses a plugin whose statement at an index differs, so a new statement is appended at the end of the array, never inside a package's list spread in the middle (`src/rooms/storage/database.ts:422-425`). A workflow-engine migration is therefore exported as its own appended list instead of extending the middle-spread ops list (`packages/workflow-engine/src/ops-store.ts:43-45`). The hash lock `tests/fixtures/migrations.lock.json` pins every statement's index — one hash per statement, 251 entries — and `tests/migration-lineage.test.ts:34-43` fails the suite when a locked statement moved or a new one is missing from the lock.
 

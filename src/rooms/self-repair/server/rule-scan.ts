@@ -3,7 +3,7 @@ import { checkBrief, renderBrief } from "../../brief";
 import { projectRoleField } from "../../runs/server";
 import { HELPER_ROLES, type HelperRole } from "../../contracts/helper-context";
 import {
-  classifyUnformed, codeVerdict, decideRuleTrial, scopeApplies, getRuleProposal, listRuleProposals, logRuleEvent, ruleLadderStep, ruleTierState, ruleTrialStats, saveTriage, setRuleTrial, splitRejectedPaths, triageQuestions, triageState, triageSummary, untriagedAttempts, upsertModelProposal, writerGroups,
+  classifyUnformed, codeVerdict, decideRuleTrial, scopeApplies, getRuleProposal, listRuleProposals, logRuleEvent, ruleLadderStep, ruleTierState, ruleTrialStats, saveTriage, setRuleTrial, splitRejectedPaths, ruleTriage, triageSummary, untriagedAttempts, upsertModelProposal, writerGroups,
   type FailedAttempt, type RuleEvidence, type TriageSummary, type WriterGroup,
 } from "@lane-pilot/run-insights";
 
@@ -269,50 +269,19 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
   }
 
   /**
-   * Asks System One about every failed attempt that has no answer for its current reason. Answers are kept, so
-   * a rescan pays only for new failures. Stops early when the project's machine has no Jev access.
+   * Gives every failed attempt that has no answer for its current reason a verdict by rule: the ownership gate rejecting the task's own
+   * files or only bookkeeping is the orchestrator's (code), anything else is the writer's with a category from the reason's words.
+   * Answers are kept, so a rescan pays only for new failures. No model is asked.
    */
-  async function triageNew(projectId: string, options: { now?: number; limit?: number } = {}): Promise<{ state: "ok" | "no_host" | "jev_unavailable"; triaged: number; reason?: string }> {
+  async function triageNew(projectId: string, options: { now?: number; limit?: number } = {}): Promise<{ state: "ok"; triaged: number; reason?: string }> {
     const now = options.now ?? Date.now();
     const pending = untriagedAttempts(db, projectId, now - RULE_SCAN_WINDOW_MS, options.limit ?? 300);
-    if (pending.length === 0) return { state: "ok", triaged: 0 };
-    const place = await projectPlace(projectId);
-    if (!place) return { state: "no_host", triaged: 0 };
-    const known = [...listRuleProposals(db, projectId, { state: "accepted", limit: 50 }), ...listRuleProposals(db, projectId, { state: "rejected", limit: 50 })];
-    const chains = await projectChains(projectId);
-    let triaged = 0;
-    let unavailable: string | null = null;
-    const queue = [...pending];
-    const worker = async () => {
-      for (let attempt = queue.shift(); attempt && !unavailable && !ctx.isDisposed(); attempt = queue.shift()) {
-        const split = splitOwnership(attempt);
-        const verdict = codeVerdict(split);
-        if (verdict) {
-          saveTriage(db, projectId, attempt, { status: "ok", origin: verdict.origin, originConfidence: 1, detail: verdict.detail }, now);
-          triaged++;
-          continue;
-        }
-        // Only rules of the attempt's own sections can be the mistake it repeats.
-        const rules = known.filter((rule) => scopeApplies(rule.scope, chains.get(attempt.runId) ?? [], attemptPaths(attempt))).slice(0, 8);
-        const questions = triageQuestions(rules);
-        const judged = await host.call("councilJudge", {
-          requestedHostId: place.hostId, state: JSON.stringify(triageState(attempt, split)).slice(0, 60_000), questions,
-        }, { hostId: place.hostId, timeoutMs: 10_000 }).catch((cause: unknown) => ({ status: "error" as const, answers: {}, confidence: {}, reason: cause instanceof Error ? cause.message : String(cause) }));
-        if (judged.status === "disabled") { unavailable = judged.reason ?? "jev_disabled"; return; }
-        if (judged.status !== "ok") { saveTriage(db, projectId, attempt, { status: "error", detail: judged.reason ?? judged.status }, now); continue; }
-        const answers = judged.answers;
-        const confidence = judged.confidence ?? {};
-        const ruleIndex = /^r(\d+)$/.exec(answers.same_rule ?? "")?.[1];
-        saveTriage(db, projectId, attempt, {
-          status: "ok", origin: answers.origin ?? null, originConfidence: confidence.origin ?? null,
-          category: answers.category ?? null, categoryConfidence: confidence.category ?? null,
-          sameRuleId: ruleIndex ? rules[Number(ruleIndex) - 1]?.id ?? null : null,
-        }, now);
-        triaged++;
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(TRIAGE_CONCURRENCY, pending.length) }, worker));
-    return unavailable ? { state: "jev_unavailable", triaged, reason: unavailable } : { state: "ok", triaged };
+    for (const attempt of pending) {
+      const verdict = codeVerdict(splitOwnership(attempt));
+      if (verdict) saveTriage(db, projectId, attempt, { status: "ok", origin: verdict.origin, originConfidence: 1, detail: verdict.detail }, now);
+      else { const ruled = ruleTriage(attempt); saveTriage(db, projectId, attempt, { status: "ok", origin: ruled.origin, originConfidence: ruled.originConfidence, category: ruled.category, categoryConfidence: ruled.originConfidence, detail: ruled.detail }, now); }
+    }
+    return { state: "ok", triaged: pending.length };
   }
 
   /** The pack the analyzer reads for one failure: task contract, reason, critiques, and the tail of the writer's own answer. */
@@ -463,14 +432,8 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
     const empty: ScanPlan = { state: "ok", triaged: 0, groups: 0, jobs: [], hostId: "", path: "", analyzer: null };
     try {
       const triage = await triageNew(projectId);
-      if (triage.state === "jev_unavailable") {
-        // Without System One the masked-text grouping is the fallback; it cannot tell whose fault a failure is.
-        const fallback = refreshRuleProposals(db, projectId);
-        await setScan(projectId, { state: "done", finishedAt: Date.now(), triaged: triage.triaged, proposals: fallback.created, reason: `jev_unavailable:${triage.reason ?? ""}` });
-        return { ...empty, state: "fallback", triaged: triage.triaged };
-      }
       if (triage.state !== "ok") throw new Error(triage.reason ?? triage.state);
-      // With System One answering, the text-grouping drafts of the fallback are noise; decided ones stay.
+      // The text-grouping drafts of the old fallback are noise now; decided ones stay.
       deleteSweepProposals(db, projectId);
       await setScan(projectId, { triaged: triage.triaged });
       const since = Date.now() - RULE_SCAN_WINDOW_MS;

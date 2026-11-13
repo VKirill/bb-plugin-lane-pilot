@@ -5,64 +5,27 @@ created: 2026-10-14
 updated: 2026-10-28
 status: active
 confidence: high
-tags: [jev, pixel-world, batching, navigation]
+tags: [pixel-world, batching, navigation]
 sources:
-  - packages/jev/src/run.ts
-  - packages/jev/src/registry.ts
-  - packages/jev/src/client.ts
-  - packages/jev/src/types.ts
-  - packages/jev/src/thresholds.ts
-  - packages/jev/src/receipts.ts
   - packages/contracts/src/index.ts
   - packages/pixel-world/src/batch.ts
   - packages/pixel-world/src/nav.ts
   - packages/pixel-world/src/index.ts
   - src/rooms/contracts/index.ts
   - src/rooms/core/server/rpc-timing.ts
-  - packages/jev/src/index.ts
-  - packages/jev/src/runtime.ts
   - packages/host-calls/src/run-on-host.ts
   - packages/handoff/src/messages.ts
 ---
 
 # Package operation details
 
-TL;DR: `createJev` batches judgment requests and resolves fallback/shadow/escalation modes; the pixel-world helpers merge eligible static geometry and find paths across a captured obstacle grid.
+TL;DR: the pixel-world helpers merge eligible static geometry and find paths across a captured obstacle grid.
 
 ## Purpose
 
 Describe the execution and failure behavior of selected package APIs summarized in [Packages](packages.md).
 
 ## How it works
-
-### Jev runtime accessor
-
-1. `jev()` reads a module-level installed value and returns either the current `Jev` instance or `null`; it performs no initialization (`packages/jev/src/runtime.ts:5-12`).
-2. `installJev({endpoint, db, log})` creates a Jev client whose endpoint is resolved when needed, passes it with the database and optional logger to `createJev`, stores that instance, and returns a disposer (`packages/jev/src/runtime.ts:14-17`).
-3. The disposer clears the singleton only if that same instance is still installed, so disposing an older installation does not clear a replacement. `setJevForTests` directly installs or clears the test instance (`packages/jev/src/runtime.ts:14-21`).
-
-| State or failure | Result |
-|---|---|
-| No installation | `jev()` returns `null`; the accessor has no failure branch (`packages/jev/src/runtime.ts:10-12`). |
-| Installed instance | `jev()` returns the instance until replacement or its matching disposer (`packages/jev/src/runtime.ts:10-17`). |
-| Endpoint/client failure | The accessor does not catch failures; the later judgment call owns client and fallback behavior (`packages/jev/src/runtime.ts:14-17`, `packages/jev/src/run.ts:82-97`). |
-
-### `createJev`
-
-1. `createJev` receives a client and optional database/logger. Before a request it runs the judgment state builder through deep redaction, gets its questions, rejects judgments over the question cap, resolves mode and thresholds from context settings, and serializes state (`packages/jev/src/run.ts:56-64`).
-2. Receipt writing is skipped when there is no database or the mode is `off`. Otherwise it records judgment/version, hashed state, question/batch counts, call status, token/latency data, decision and thresholds; insertion errors are logged and become a null receipt id (`packages/jev/src/run.ts:66-80`).
-3. A client failure or missing/invalid answer set calls the judgment fallback. A decision exception is logged and also falls back with `invalid` status. In shadow mode the production fallback remains the decision while the Jev decision is attached as `shadow`; explicit escalation returns `by:"escalate"`; otherwise the Jev decision is returned (`packages/jev/src/run.ts:82-97`).
-4. `run` immediately returns fallback verdicts for `off` entries. Other entries with identical model and serialized state are grouped, then split when adding an entry would exceed 48 questions or the 80,000-character bound applied to serialized questions (`packages/jev/src/run.ts:99-117`, `packages/jev/src/registry.ts:11`, `packages/jev/src/client.ts:22`).
-5. Each request namespaces question ids with the original entry index, calls the client with the shared state, selected model, maximum member timeout, and context budget/signal, then extracts each judgment's answer subset and resolves its verdict (`packages/jev/src/run.ts:118-129`).
-6. The returned API supports one judgment, many inputs for one judgment, and a bundle of different judgments. `outcome` ignores null receipts/no database and swallows receipt-labeling errors (`packages/jev/src/run.ts:132-140`).
-
-| Mode or condition | Inputs and output | Failure behavior |
-|---|---|---|
-| `off` | Uses the judgment fallback without a client call. | No receipt is attempted. |
-| Normal | Returns `by:"jev"` with decision and answers when call and decision succeed. | Client failure, invalid answers, or decision exception return fallback with failure status. |
-| `shadow` | Returns fallback as production decision and attaches the Jev result under `shadow`. | Jev failure follows the same fallback path; receipt insertion failure only removes receipt id. |
-| Escalation | A successful decision with `escalate` returns `by:"escalate"`, destination, and answers. | This is a declared judgment outcome, not a transport failure. |
-| Preparation/client rejection | State/question preparation happens before run; a rejected `client.call` rejects the run promise. | Too many questions throws during preparation; batch request rejection propagates through `Promise.all`. |
 
 ### `rpcContract`
 
@@ -135,7 +98,7 @@ The pixel-world batcher is intended for completed static scene geometry before d
 
 ## Public API or commands
 
-`@lane-pilot/jev` exports `createJev` through its package root; `@lane-pilot/pixel-world` exports `batchStatic` and `createNavGrid` plus navigation types (`packages/jev/src/index.ts:1-9`, `packages/pixel-world/src/index.ts:1-8`). `rpcContract` is exported by the contracts room after the route maps are composed (`src/rooms/contracts/index.ts:18-27`).
+`@lane-pilot/pixel-world` exports `batchStatic` and `createNavGrid` plus navigation types (`packages/pixel-world/src/index.ts:1-8`). `rpcContract` is exported by the contracts room after the route maps are composed (`src/rooms/contracts/index.ts:18-27`).
 
 ## Gotchas
 

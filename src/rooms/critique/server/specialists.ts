@@ -2,9 +2,7 @@ import { MAIN_AGENT_ID, isCustomAgentId } from "../../contracts/server";
 import { employeeRoleLines } from "../../native-agent";
 import { projectPassportBlock } from "../../passport";
 import { EMPLOYEES } from "../../contracts/server";
-import { bestEffort } from "@lane-pilot/kit";
-import { jev } from "@lane-pilot/jev";
-import { judgeEmployeeRemark, recordEmployeeLesson } from "./employee-lessons";
+import { recordEmployeeLesson } from "./employee-lessons";
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { z } from "zod";
 import { findOpenNativeRun, getRun } from "../../storage";
@@ -139,29 +137,12 @@ export function mountSpecialists(ctx: ServerCore, services: Services): void {
   registerObservedTool(bb.agents, {
     name: "lane_pilot_employee_lesson",
     description: "Record a lesson for an employee (the owner's remark about how they should work): a dated rule line added to every future brief of that role in this project, plus a rule proposal with audience specialist:<role>.",
-    instructions: "Call when the owner corrects an employee and the correction should persist: lane_pilot_employee_lesson { role: '3d-artist', line: 'always triangulate on export' }. For deciding whether an owner remark is a lesson, use lane_pilot_employee_remark first.",
+    instructions: "Call when the owner corrects an employee and the correction should persist: lane_pilot_employee_lesson { role: '3d-artist', line: 'always triangulate on export' }.",
     parameters: z.object({ role: z.string().regex(MAIN_AGENT_ID), line: z.string().min(1).max(500), evidence: z.string().max(1000).optional() }).strict(),
     execute: async (params, context) => {
       if (!context.projectId) throw new Error("employee_lesson_needs_pm_thread");
       const out = await recordEmployeeLesson(bb.storage.kv, db as never, { projectId: context.projectId, role: params.role, line: params.line, evidence: params.evidence });
       return JSON.stringify({ role: params.role, ...out, adopted: true }, null, 2);
-    },
-  });
-
-  // «Это замечание к сотруднику?» — Jev employee.remark, shadow by default (receipt only); active writes the lesson itself.
-  registerObservedTool(bb.agents, {
-    name: "lane_pilot_employee_remark",
-    description: "Judge whether an owner text is a remark for an employee (Jev employee.remark); in active mode a 'remark' verdict also records the lesson.",
-    parameters: z.object({ role: z.string().regex(MAIN_AGENT_ID), text: z.string().min(1).max(4000) }).strict(),
-    execute: async (params, context) => {
-      if (!context.projectId) throw new Error("employee_remark_needs_pm_thread");
-      const settings = (await bestEffort(ctx.log, "employee remark settings", ctx.effectiveProjectSettings(context.projectId), { values: {}, inherited: [], explicitKeys: [] })).values as Record<string, unknown>;
-      const verdict = await judgeEmployeeRemark({ settings }, { projectId: context.projectId, role: params.role, text: params.text });
-      let recorded: { line: string; proposalId: string } | null = null;
-      if (verdict.by === "jev" && verdict.remark) {
-        recorded = await recordEmployeeLesson(bb.storage.kv, db as never, { projectId: context.projectId, role: params.role, line: params.text });
-      }
-      return JSON.stringify({ role: params.role, remark: verdict.remark, by: verdict.by, ...(recorded ? { line: recorded.line } : {}) }, null, 2);
     },
   });
 

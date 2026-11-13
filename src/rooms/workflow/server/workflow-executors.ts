@@ -12,7 +12,6 @@ import type { ServerCore } from "../../contracts/server";
 import { chainRuntimeFor, need, pmCheckout } from "./workflow-chain-runtime";
 import type { Row, Services } from "./workflow-chain-runtime";
 import { registerHumanForm } from "./workflow-human-form";
-import { registerJevSteps } from "./workflow-jev-steps";
 import { registerDeliverableAction, registerDeliverableNode } from "./workflow-deliverable";
 import { registerLpTask } from "./workflow-lp-task";
 import { registerCheckoutActions } from "./workflow-checkout-actions";
@@ -49,7 +48,6 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   const flagOf = (rt: ChainRuntime, key: string): boolean => switchOn(loadProjectSettings(db, rt.projectId, rt.runId ? getRunSettingsScopes(db, rt.runId) : []), key);
 
   // The Jev steps: the native `jev` node.
-  registerJevSteps(engine, ctx, { runtimeOf });
   // `deliverable.validate` — the three-layer acceptance of a non-code artifact.
   registerDeliverableNode(engine, ctx, services, { runtimeOf });
   // The failure classification step of `quality-loop`.

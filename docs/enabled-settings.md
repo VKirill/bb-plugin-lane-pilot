@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 1e82a29202f497e3 -->
+<!-- enabled-settings:structure c4484f7035baa804 -->
 
 # Enabled settings (generated)
 
@@ -43,7 +43,6 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `bench.disk_start_gb` | `25` | — | bench disk: free GB a host needs before a series starts |
 | `bench.disk_stop_gb` | `12` | — | bench disk: free-GB floor for a running series |
 | `bench.live_pm` | `defer` | — | bench activation: defer or close when the bench project holds a live PM |
-| `bench.model_rebench` | `on` | — | monthly model routing rebench switch |
 | `bench.nightly_sets` | `all` | — | nightly bench: which sets the night runs (all, or a comma list of versions) |
 | `bench.nightly` | `on` | — | nightly bench switch (weekly.ts:120) |
 | `bench.noise_auto` | `on` | — | bench noise: a noise row is written whenever a series finishes two or more repeats |
@@ -82,7 +81,6 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `council.growth.model` | — | — | council seat setting |
 | `council.growth.provider` | — | — | council seat setting |
 | `council.growth.reasoning_effort` | `high` | — | council seat setting |
-| `council.judge` | `true` | — | council seat setting |
 | `council.max_rounds` | `3` | — | council seat setting |
 | `council.product.model` | — | — | council seat setting |
 | `council.product.provider` | — | — | council seat setting |
@@ -117,10 +115,6 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `integration.gate_command` | — | — | integration gate: the whole-suite command run after a batch of tasks merged |
 | `integration.gate_every` | `5` | — | integration gate: merged tasks between two runs when the gate is every_n |
 | `integration.gate_when` | `queue_drained` | — | integration gate: run when the queue is drained or after every N merged tasks |
-| `jev.enabled` | `true` | — | Jev judgments (src/jev): false turns every judgment off for the project |
-| `jev.modes` | — | — | Jev judgments: off, shadow or active per judgment |
-| `jev.provider` | `typesafe` | — | Jev provider: openlux or typesafe serves every Jev request |
-| `jev.thresholds` | — | — | Jev judgments: thresholds as judgment.name=number pairs |
 | `lead.budget_daily_usd` | `15` | — | lead: the dollars its ticks may spend in one day |
 | `lead.enabled` | `off` | — | lead («Штурман», src/rooms/lead/settings.ts): the switch of its ticks |
 | `lead.max_proposals` | `5` | — | lead: how many proposals one tick may put on the owner's list |

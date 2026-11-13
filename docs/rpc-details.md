@@ -35,11 +35,11 @@ Explain how the route families described in [RPC and host-call contracts](rpc-ca
 
 ### `rpcKnowledge`
 
-1. `rpcKnowledge` builds the knowledge method map. It includes council methods, routing hints, rule proposal reads and writes, memory routes, documentation status, token usage, secret issuance, Jev provider settings, and worktree-provider status; it spreads in `anamnesisRpcMethods` at composition time (`src/rooms/contracts/rpc-knowledge.ts:15-16`, `:17-62`).
+1. `rpcKnowledge` builds the knowledge method map. It includes council methods, routing hints, rule proposal reads and writes, memory routes, documentation status, token usage, secret issuance, and worktree-provider status; it spreads in `anamnesisRpcMethods` at composition time (`src/rooms/contracts/rpc-knowledge.ts:15-16`, `:17-62`).
 2. Each declared route uses a strict input and output object. Council methods use project or council ids, optional council text up to 4,000 characters, and optional decision requests; routing hints accept an optional 1–365 day window (`src/rooms/contracts/rpc-knowledge.ts:17-49`).
 3. Rule and memory methods validate proposal actions, audiences, rule length, memory content and concepts, then declare collections, records, nullable values, and booleans as their outputs (`src/rooms/contracts/rpc-knowledge.ts:51-101`, `:116-131`). Session-memory handler behavior is detailed below.
 4. Documentation status returns place mode `auto|on|off`, cadence `nightly|weekly|paused`, a nullable verdict, and nullable last-read time (`src/rooms/contracts/rpc-knowledge.ts:103-114`). Token usage accepts `7d|14d|30d|month`; rebuild returns started metadata or `{started:false}` when it does not start (`src/rooms/contracts/rpc-knowledge.ts:133-177`).
-5. Secret issuance reports names and consumer metadata, never secret values. Jev status reports chosen/effective provider and key presence; provider test has structured `ok`, latency, and nullable error fields. Worktree-provider methods report or clear per-host breaker state (`src/rooms/contracts/rpc-knowledge.ts:179-210`).
+5. Secret issuance reports names and consumer metadata, never secret values. Worktree-provider methods report or clear per-host breaker state (`src/rooms/contracts/rpc-knowledge.ts:179-210`).
 
 | Branch | Outcome | Failure or absence |
 |---|---|---|

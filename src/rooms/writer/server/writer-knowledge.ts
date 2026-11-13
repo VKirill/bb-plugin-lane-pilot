@@ -1,4 +1,4 @@
-import { acceptedRules, pickRelevantRules, ruleRelevanceQuestions, ruleRelevanceState } from "@lane-pilot/run-insights";
+import { acceptedRules } from "@lane-pilot/run-insights";
 import { embedQuery } from "../../memory/server";
 import { DEFAULT_RELEVANCE_FLOOR, buildContextPack, clearsFloor, filesDrifted, memoryCandidates, pathsNamed, questionWords, recordRelevance, searchMemoryRecords, shadowPackCompare, wordFrequencies, type MemorySettings } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
@@ -18,23 +18,11 @@ import { stickyTurnPrompt } from "./writer-task";
 import { projectPassportBlock } from "../../passport";
 
 /**
- * System One picks the accepted rules this task needs, so a writer's prompt does not carry every rule of the
- * project. Rules for the PM never reach a writer; rules marked for every task skip the question. Without an
- * answer every rule of that chunk goes in: a missing rule costs more than an extra one.
+ * The accepted rules that go to a writer: rules for the PM never reach a writer; every other rule goes in (a missing rule
+ * costs more than an extra one, and no model narrows the list).
  */
-export async function relevantWriterRules<T extends { rule:string; audience:string; always:boolean }>(host:ServerCore["host"], rules:T[], task:Record<string,unknown>, hostId:string, log: (line:string)=>void):Promise<T[]> {
-  const forWriter=rules.filter((rule)=>rule.audience!=="pm");
-  const asked=forWriter.filter((rule)=>!rule.always);
-  const chunks:T[][]=[];
-  for(let start=0;start<asked.length;start+=8) chunks.push(asked.slice(start,start+8));
-  const state=JSON.stringify(ruleRelevanceState(task)).slice(0,60_000);
-  // Chunks are independent questions; asking them together keeps the wait at one answer (~0.5–1 s).
-  const answered=await Promise.all(chunks.map(async(chunk)=>{
-    const judged=await bestEffort(log, "writer rule relevance", host.call("councilJudge",{requestedHostId:hostId,state,questions:ruleRelevanceQuestions(chunk)},{hostId,timeoutMs:10_000}), null);
-    return judged?.status==="ok"?pickRelevantRules(chunk,judged.answers,judged.confidence??{},undefined,judged.probabilities??{}):chunk;
-  }));
-  const picked=new Set([...forWriter.filter((rule)=>rule.always),...answered.flat()]);
-  return forWriter.filter((rule)=>picked.has(rule));
+export function relevantWriterRules<T extends { audience:string }>(rules:T[]):T[] {
+  return rules.filter((rule)=>rule.audience!=="pm");
 }
 
 /**
@@ -55,7 +43,7 @@ export async function writerRules(deps:KnowledgeDeps, input:KnowledgeInput) {
   const memoryOn=input.memorySettings.enabled&&input.memorySettings.inject;
   // Confirmed rules reach every writer; retrieval skips their records so they are not repeated as memory.
   const allRules=memoryOn?acceptedRules(deps.db,input.projectId,await deps.chainForRun(input.runId),[...input.task.owns_paths,...input.task.read_first]):[];
-  const rules=await relevantWriterRules(deps.host,allRules,input.task as unknown as Record<string,unknown>,input.hostId,deps.log);
+  const rules=relevantWriterRules(allRules);
   return { allRules, rules, rulesText:rules.map((rule)=>`- ${rule.rule}`).join("\n") };
 }
 

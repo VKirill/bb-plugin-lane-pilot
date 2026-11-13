@@ -1,11 +1,10 @@
 import { classifyUnformed, listRuleForms, markMechanized, RULE_FORMS, RULE_TIERS, ruleLadderStep, ruleTierState, ruleTrialStats, type RuleFormRow, type RulesDatabase } from "@lane-pilot/run-insights";
-import { applyJevForms, type FormAsk } from "./jev-forms";
 import { MECHANISMS, mechanismFor } from "./mechanisms";
 import { acceptPromotion, dismissPromotion, listPromotions, proposePromotions } from "./promotion";
 
 export const RULES_USAGE = [
   "bb lane-pilot rules forms [project] [--form check|hook|skill|memory|always] [--state accepted|proposed|all] [--json]   the rules by form, with the mechanism that enforces each",
-  "bb lane-pilot rules classify [project] [--all] [--jev --host <host-id>] [--dry]   give every rule without a form one (heuristics first, System One for the undecided rest); --dry writes nothing",
+  "bb lane-pilot rules classify [project] [--all] [--dry]   give every rule without a form one (by heuristics; what they cannot place stays text); --dry writes nothing",
   "bb lane-pilot rules promote <project> [--repo <path>] [--list] [--json]   task contracts for the recurring check/hook rules (stored for the night loop, nothing dispatched)",
   "bb lane-pilot rules promote accept|dismiss <project> <rule-id>   one command: the candidate leaves (or enters) the dispatched list; the contract comes back for the handoff",
   "bb lane-pilot rules mechanize [project] [--apply]   rules that a mechanism of this repository fully refuses: record it and retire their text from the brief (dry without --apply)",
@@ -18,8 +17,6 @@ export type RulesCliDeps = {
   now?(): number;
   /** Takes a rule out of force with the reason on its journal (self-repair/server retireAdoptedRule). */
   retire(projectId: string, ruleId: string, reason: string): void;
-  /** One System One call; absent when no host can be asked. */
-  ask?: FormAsk | null;
   /** The checkout the promotion contracts are written against. */
   repoPath: string;
 };
@@ -86,14 +83,10 @@ export async function runRulesCli(deps: RulesCliDeps, args: string[]): Promise<O
     if (op === "classify") {
       const dry = flags.has("dry");
       const results = classifyUnformed(deps.db, projectId, { all: flags.has("all"), dry }, now);
-      let jev: { asked: number; moved: number } | null = null;
       const undecided = results.filter((result) => !result.verdict.decided).map((result) => result.row);
-      if (flags.has("jev") && !dry && undecided.length) {
-        jev = deps.ask ? await applyJevForms(deps.db, undecided, deps.ask, now) : { asked: 0, moved: 0 };
-      }
       const counts: Record<string, number> = {};
       for (const result of results) counts[result.verdict.form] = (counts[result.verdict.form] ?? 0) + 1;
-      return { exitCode: 0, stdout: json({ dry, classified: results.length, byForm: counts, decided: results.length - undecided.length, undecided: undecided.length, jev: flags.has("jev") ? jev ?? "skipped (dry)" : "not asked",
+      return { exitCode: 0, stdout: json({ dry, classified: results.length, byForm: counts, decided: results.length - undecided.length, undecided: undecided.length,
         undecidedRules: undecided.slice(0, 20).map((row) => ({ id: row.id, rule: clip(row.rule, 120) })) }) };
     }
     if (op === "promote" && (rest[0] === "accept" || rest[0] === "dismiss")) {

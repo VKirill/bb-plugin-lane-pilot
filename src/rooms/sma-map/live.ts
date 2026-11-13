@@ -11,7 +11,6 @@ const wf = (...ids: string[]): LiveSource => t("lane_pilot_wf_run", "created_at"
 const part = (where: string): LiveSource => t("lane_pilot_phase_part", "at", where);
 const stage = (...ids: string[]): LiveSource => t("lane_pilot_stage_event", "occurred_at", `stage_id IN (${ids.map((id) => `'${id}'`).join(",")})`);
 const gate = (...ids: string[]): LiveSource => t("lane_pilot_gate_event", "occurred_at", `gate IN (${ids.map((id) => `'${id}'`).join(",")})`);
-const jevOf = (...ids: string[]): LiveSource => t("lane_pilot_jev_receipt", "at", `judgment IN (${ids.map((id) => `'${id}'`).join(",")})`);
 const outside = (where: string): LiveSource => ({ outside: where });
 
 /** Keyed by `region | group` as the map names them (SMA_NODES); a region without groups has the key `region | `. */

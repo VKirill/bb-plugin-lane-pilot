@@ -73,7 +73,7 @@ export function useRulesAnalyzer(projectId: string | null): {
 }
 
 /**
- * Repeated writer failures the owner turns into project rules, and the rules already in force. Jev's sorting of
+ * Repeated writer failures the owner turns into project rules, and the rules already in force. The sorting of
  * failed attempts is summarised on top; «Rescan» runs the sorting and the analyzer model on demand.
  */
 export function RuleProposals({ projectId }: { projectId: string }) {
@@ -218,7 +218,6 @@ export function RuleProposals({ projectId }: { projectId: string }) {
             </span>
           ) : null}
         </div>
-        {scan?.reason?.startsWith("jev_unavailable") ? <p className="text-xs lp-text-warning">{t("rulesScanJevOff")}</p> : null}
       </div>
 
       {!memoryOn && (pending.length > 0 || accepted.length > 0) ? <p className="max-w-xl text-xs lp-text-warning" data-testid="rules-memory-off">{t("rulesMemoryOff")}</p> : null}

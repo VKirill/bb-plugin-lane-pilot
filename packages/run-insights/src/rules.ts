@@ -8,7 +8,6 @@ export {
   ruleProposalId, upsertRuleProposals, upsertModelProposal, LESSON_SAME_RULE, LESSON_PROPOSALS_MAX, upsertLessonProposal,
   listRuleProposals, getRuleProposal, setRuleAudience, reviseRuleProposal, decideRuleProposal, acceptedRules,
 } from "./rule-proposals";
-export { RULE_RELEVANCE_THRESHOLD, ruleRelevanceState, ruleRelevanceQuestions, pickRelevantRules } from "./rule-relevance";
 export type { RuleEventAction, RuleEvent, RuleTrialStats, RuleTrialDecision } from "./rule-trial";
 export {
   logRuleEvent, logRulesShown, listRuleEvents, setRuleTrial, reviseAdoptedRule, ruleTrialStats, ruleTrialStatsMany,

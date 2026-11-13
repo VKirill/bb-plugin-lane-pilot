@@ -1,9 +1,9 @@
 {
-  "rows": 530,
-  "editable": 267,
+  "rows": 523,
+  "editable": 261,
   "readonly": 110,
   "gap": 0,
-  "excluded": 153,
+  "excluded": 152,
   "from88": {
     "b": 50,
     "c": 33
@@ -30,7 +30,6 @@
     "bench.disk_start_gb",
     "bench.disk_stop_gb",
     "bench.live_pm",
-    "bench.model_rebench",
     "bench.noise_auto",
     "browser_qa.approve",
     "browser_qa.backend",

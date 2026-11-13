@@ -2,7 +2,7 @@ import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
 import { hostContract } from "./src/rooms/core/server/plugin-contracts";
 import {
   connectOpencode,
-  councilJudge,
+ 
   docsWorthinessFacts,
   coexistenceInventory,
   coexistenceOperation,
@@ -92,7 +92,7 @@ export default experimental_defineHostEntry({
     removeClaudeLaneLeftovers: removeClaudeLaneLeftoversHost,
     anamnesis: anamnesisHandler,
     detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, gitDocsScope, docsWorthinessFacts, docsLineCounts, gitCommitDocs, gitRevertPaths, gitUndoCheckWrites, docsAnchors, docsFlows, gitIntegrate, gateRun, gateBisect, gateAttribute, jobStart, jobStatus, jobCancel, gitPrepareWorktree, gitCreateWorktree, gitRemoveWorktree, gitSyncWorktree, diskFree, stabilityDrill, gitWorktreeSnapshot, gitWorktreeState, gitMergeInfo, gitRevertCommits, worktreeJanitor, openCodeLimitProbe, readOpenCodeTelemetry, readBoundedFile, listDocsPages, listWorkflowFiles, applyOnboardingPages, writeDocsPages, writePhaseBook, writeForgeEnabled, writeForgeDraft, prepareWorkerHome, removeWorkerHome, whichPrograms, listFolders, closeBacklogItem, readUsageWindows, writeUsageSnapshot, listPermitTickets, answerPermit, writeWorkflowFile, snapshotDryRun, snapshot, install, rollback, connectOpencode, inspectCritiqueCoverage,
-    councilJudge, runCommand, runScript, runSandboxedCommand, sandboxCommandLine, sandboxRelease, vpnAddress, runBrowserQa, probeBrowserQaTarget, findBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
+    runCommand, runScript, runSandboxedCommand, sandboxCommandLine, sandboxRelease, vpnAddress, runBrowserQa, probeBrowserQaTarget, findBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
     discoverClaudeAgents: discoverClaudeAgentsHost, prepareNativeClaude: prepareNativeClaudeHost,
     prepareClaudeGuard: prepareClaudeGuardHost,
     prepareBbShim: prepareBbShimHost,

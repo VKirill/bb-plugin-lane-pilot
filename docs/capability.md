@@ -10,7 +10,6 @@ sources:
   - src/rooms/capability/logic.ts
   - src/rooms/capability/server/capability.ts
   - packages/handoff/src/registry.ts
-  - packages/jev/src/provider.ts
 ---
 
 # Capability table of providers
@@ -25,7 +24,7 @@ version and capability (`answers` today): supported or not_supported; a version 
   again (the breaker's own half-open retry).
 - `bb lane-pilot capabilities [--probe]` (exit 1 while any is not_supported), RPC `capability_table`.
 
-The handoff capability registry derives each recipient's summary from its description or first prompt paragraph, retains its skills, and tokenizes its id, display name, summary, and skills for matching (`packages/handoff/src/registry.ts:21-46`). Jev provider metadata is centralized in `JEV_PROVIDERS`; project settings resolve unknown values to OpenLux, while a missing or unknown provider in a host call resolves to TypeSafe (`packages/jev/src/provider.ts:13-27`).
+The handoff capability registry derives each recipient's summary from its description or first prompt paragraph, retains its skills, and tokenizes its id, display name, summary, and skills for matching (`packages/handoff/src/registry.ts:21-46`).
 
 ## How it works
 

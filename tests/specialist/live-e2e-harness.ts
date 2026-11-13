@@ -24,7 +24,6 @@ import { BUILTIN_SOURCES } from "../../src/rooms/workflow/builtin";
 import { createWorkflowAgents } from "../../src/rooms/workflow/server/workflow-agent";
 import { chainRuntimeFor, registerChainExecutors } from "../../src/rooms/workflow/server/workflow-executors";
 import { registerDispatchExecutors, taskUsage } from "../../src/rooms/writer/server";
-import "../../src/rooms/jev/judgments";
 
 export type Row = Record<string, unknown>;
 export type AgentReplyCtx = { checkout: string; workflowId: string; nodeId: string; visit: number };

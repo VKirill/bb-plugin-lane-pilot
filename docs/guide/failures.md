@@ -100,10 +100,6 @@ Before an attempt exists, `writerHold` asks whether the writer's provider can wo
 - Run budgets `run.max_attempts`, `run.max_wall_minutes`, `run.max_tokens`, `run.max_children` are unset by default. A running writer is stopped at the wall or token limit; attempt and child limits refuse the next spawn. The reason `run_budget_exceeded:` is class `budget`: free, not retried. A task `appetite.minutes` stops a writer past it; `appetite.tokens` is a forecast.
 - Owner waiting (`docs/owner-waiting.md`): one screen and `bb lane-pilot waiting` hold what the owner's own words started and what callers post. The Telegram push (`owner_push.enabled` true; `owner_push.quiet` 23:00-08:00; `owner_push.timezone` Europe/Madrid) sends one message per waiting item, never again after an acknowledgement.
 
-## Jev failure-class judgment
-
-When the rules have no confident match for a reason (`confident` false), the writer loop asks the Jev judgment `failure.class` once. It chooses among task, provider, harness, infra, merge and contract. It starts in `shadow`: the rules' class is used and Jev's answer is recorded. Jev's class is accepted only if its top probability is at least 0.7 (`min_p`) and its lead over the runner-up at least 0.3 (`min_margin`). Receipts are labeled by the run's end state. Once at least 10 labeled outcomes exist and at least 75% agree (checked once a minute), the recorded shadow class is used as if the judgment were active. `jev.modes` can set `failure.class=active` or `off`; `jev.thresholds` overrides the numbers.
-
 ## Sources
 
 Where this page's claims start in the code: `src/rooms/writer/server/writer-hold.ts:27-47`, `src/rooms/stability/server/deploy-drain.ts:2-22`, `src/rooms/runs/state-machine.ts:1-21`. The deep pages linked above cite the rest.

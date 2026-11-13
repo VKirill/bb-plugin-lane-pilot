@@ -150,7 +150,7 @@ describe("the council graph", () => {
   it("a fixed-round council is a run of the graph: seats keep their models, the chair takes the council row of the role table, the page and handoffs are written", async () => {
     const w = world();
     await boot(w, { "plan_critique.provider": "codex", "plan_critique.model": "m2", "council.skeptic.provider": "openrouter", "council.skeptic.model": "deepseek/deepseek-r2", "council.skeptic.reasoning_effort": "medium" });
-    const started = await w.view.call("lane_pilot_council_start", { runId, question: QUESTION, roles: ["product", "skeptic"], materials: ["materials/direct.csv"], maxRounds: 3, mode: "rounds", judge: false });
+    const started = await w.view.call("lane_pilot_council_start", { runId, question: QUESTION, roles: ["product", "skeptic"], materials: ["materials/direct.csv"], maxRounds: 3, mode: "rounds" });
     expect(started).toMatchObject({ state: "agenda", wfRunId: expect.stringMatching(/^wfrun_/) });
     expect(started.seats.map((seat: { id: string; model: string }) => `${seat.id}:${seat.model}`)).toEqual(["product:m2", "skeptic:deepseek/deepseek-r2"]);
 
@@ -190,7 +190,7 @@ describe("the council graph", () => {
     const chairModel = async (settings: Record<string, string>) => {
       const w = world();
       await boot(w, settings);
-      const started = await w.view.call("lane_pilot_council_start", { runId, question: QUESTION, roles: ["product", "skeptic"], maxRounds: 2, mode: "rounds", judge: false });
+      const started = await w.view.call("lane_pilot_council_start", { runId, question: QUESTION, roles: ["product", "skeptic"], maxRounds: 2, mode: "rounds" });
       await until(() => w.state.spawned.some((request) => request.pluginMetadata.seatId === "chair"), "the chair's first turn");
       const chair = w.state.spawned.find((request) => request.pluginMetadata.seatId === "chair")!;
       await until(async () => ended((await w.view.rpc("get_council", { councilId: started.id })).state), "the end");
@@ -209,7 +209,7 @@ describe("the council graph", () => {
   it("the Council office reads the same shape: get_council, list_councils, defaults", async () => {
     const w = world();
     await boot(w);
-    const started = await w.view.call("lane_pilot_council_start", { runId, question: QUESTION, roles: ["product", "skeptic"], maxRounds: 2, mode: "rounds", judge: false });
+    const started = await w.view.call("lane_pilot_council_start", { runId, question: QUESTION, roles: ["product", "skeptic"], maxRounds: 2, mode: "rounds" });
     await until(async () => ended((await w.view.rpc("get_council", { councilId: started.id })).state), "the end");
     const detail = await w.view.rpc("get_council", { councilId: started.id });
     expect(Object.keys(detail).sort()).toEqual(["agenda", "criteria", "decisionPath", "id", "maxRounds", "messages", "question", "reason", "recommendation", "round", "seats", "speaking", "speakingSince", "state"]);
@@ -232,7 +232,7 @@ describe("the council graph", () => {
       return "PASS";
     } });
     await boot(w);
-    const started = await w.view.call("lane_pilot_council_start", { runId, question: QUESTION, roles: ["product", "skeptic"], maxRounds: 3, judge: false });
+    const started = await w.view.call("lane_pilot_council_start", { runId, question: QUESTION, roles: ["product", "skeptic"], maxRounds: 3 });
     const status = () => w.view.call("lane_pilot_council_status", { runId, councilId: started.id });
     await until(async () => feedOf(await status()).some((m) => m.text.includes("waiting for the owner")), "the room to wait for the owner");
     const said = await w.view.call("lane_pilot_council_say", { runId, councilId: started.id, text: "Что с ценами? Скептик, ответь." });
@@ -247,7 +247,7 @@ describe("the council graph", () => {
   it("a request for the decision ends the talk after the turn; the chair decides and the council is done", async () => {
     const w = world();
     await boot(w);
-    const started = await w.view.call("lane_pilot_council_start", { runId, question: QUESTION, roles: ["product", "skeptic"], maxRounds: 3, judge: false });
+    const started = await w.view.call("lane_pilot_council_start", { runId, question: QUESTION, roles: ["product", "skeptic"], maxRounds: 3 });
     const status = () => w.view.call("lane_pilot_council_status", { runId, councilId: started.id });
     await until(async () => feedOf(await status()).some((m) => m.text.includes("waiting for the owner") || m.kind === "reply"), "a turn in the room");
     expect(await w.view.rpc("council_say", { councilId: started.id, decide: true })).toMatchObject({ decideRequested: true });
@@ -261,7 +261,7 @@ describe("the council graph", () => {
   it("stopping cancels the graph run, stops the seat on the floor and ends the session as stopped with no decision", async () => {
     const w = world({ hold: (meta) => meta.seatId === "skeptic" && meta.round === 1 });
     await boot(w);
-    const started = await w.view.call("lane_pilot_council_start", { runId, question: QUESTION, roles: ["product", "skeptic"], maxRounds: 3, mode: "rounds", judge: false });
+    const started = await w.view.call("lane_pilot_council_start", { runId, question: QUESTION, roles: ["product", "skeptic"], maxRounds: 3, mode: "rounds" });
     await until(() => w.state.held.size === 1, "the skeptic on the floor");
     const stopped = await w.view.call("lane_pilot_council_stop", { runId, councilId: started.id });
     expect(stopped).toMatchObject({ stopRequested: true });
@@ -279,7 +279,7 @@ describe("the council graph", () => {
   it("a plugin reload in the middle of a council resumes it: no second thread for the turn on the floor, and it ends with the decision", async () => {
     const w = world({ hold: (meta) => meta.seatId === "skeptic" && meta.round === 1 });
     await boot(w);
-    const started = await w.view.call("lane_pilot_council_start", { runId, question: QUESTION, roles: ["product", "skeptic"], maxRounds: 2, mode: "rounds", judge: false });
+    const started = await w.view.call("lane_pilot_council_start", { runId, question: QUESTION, roles: ["product", "skeptic"], maxRounds: 2, mode: "rounds" });
     await until(() => w.state.held.size === 1, "the skeptic on the floor");
     const spawnedBefore = w.state.spawned.length;
     expect(feedOf(await w.view.call("lane_pilot_council_status", { runId, councilId: started.id })).map((m) => `${m.seatId}:${m.kind}`)).toEqual(["owner:owner", "chair:agenda", "product:position"]);
@@ -312,7 +312,7 @@ describe("the council graph", () => {
   it("an unusable agenda fails the council with the reason in the feed, and the PM is told by the run's end notice", async () => {
     const w = world({ answer: () => "no agenda here" });
     await boot(w);
-    const started = await w.view.call("lane_pilot_council_start", { runId, question: QUESTION, roles: ["product", "skeptic"], maxRounds: 2, mode: "rounds", judge: false });
+    const started = await w.view.call("lane_pilot_council_start", { runId, question: QUESTION, roles: ["product", "skeptic"], maxRounds: 2, mode: "rounds" });
     let view: Record<string, any> = {};
     await until(async () => { view = await w.view.call("lane_pilot_council_status", { runId, councilId: started.id }); return view.state === "failed"; }, "the failure");
     expect(view.reason).toContain("no JSON object");

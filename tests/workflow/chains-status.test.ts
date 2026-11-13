@@ -71,6 +71,6 @@ describe("status of the built-in chains", () => {
       "lp.curriculum-ingest",
       "project-passport",
     ]));
-    expect(ids).toHaveLength(124); // 113 prior + 11 Specialist OS graphs + project-passport
+    expect(ids).toHaveLength(122); // minus lp.jev-labels and lp.model-rebench (Jev removal); 113 prior + 11 Specialist OS graphs + project-passport
   });
 });

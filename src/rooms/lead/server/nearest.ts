@@ -36,7 +36,7 @@ const SCHEDULE_WORDS = /cron|расписан|ежеднев|еженедель�
 const GATE_WORDS = /оплат|плат[её]ж|деньг|publish|публикац|отправ|send|delete|удал|письм|email|invoice|счёт|счет|договор|money/iu;
 
 /** ponytail: gate/schedule words are a regex over the sample titles plus provider diversity — a ceiling (a process can
- * hide its gate in the task text, not the title); upgrade path is a Jev judgment on the group's episodes when one lands. */
+ * hide its gate in the task text, not the title). */
 export function graphSignalsOf(row: { samples: string[]; signals: GroupSignals }): boolean {
   if (row.signals.providers >= 2) return true;
   const text = row.samples.join("\n");

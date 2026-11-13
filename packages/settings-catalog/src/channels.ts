@@ -30,7 +30,7 @@ export const UNAPPLIED_REASON = {
   legacyFastModeMigrated: "legacy writer.fast_mode is diagnostic only; its value migrates to writer.service_tier",
 } as const;
 
-import { SETTING_EPISODES_PROCESS_KEY, SETTING_JEV_PROVIDER, SETTING_WRITER_CAPACITY_WAIT_MAX_MIN, SETTING_WRITER_SILENCE_NUDGE_MIN } from "./keys";
+import { SETTING_EPISODES_PROCESS_KEY, SETTING_WRITER_CAPACITY_WAIT_MAX_MIN, SETTING_WRITER_SILENCE_NUDGE_MIN } from "./keys";
 
 export function unappliedNotValidReason(spec: SettingSpec, binary: CliBinary, subcommand: string): string {
   return `${spec.channel} flag ${spec.flag ?? spec.env} is not valid on ${binary} ${subcommand}`;
@@ -73,7 +73,6 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"critic.code.default_for_risk", channel:"OWN", reason:"Native Lane Pilot code critic by task risk: off, medium or high; the dispatch can carry its own value for one task (the bench arm)" },
   { key:"plan_fact.mode", channel:"OWN", reason:"Native Lane Pilot plan against fact: record shows the blind check of the writer's table, gate sends an acceptance item with no evidence back to the writer" },
   { key:"checks.require_red_on_base", channel:"OWN", reason:"Native Lane Pilot baseline gate: a task of medium risk or more whose every check is green on the base does not start; off, medium or high" },
-  { key:SETTING_JEV_PROVIDER, channel:"OWN", reason:"Native Lane Pilot Jev provider: openlux or typesafe serves every Jev request; the server picks the Env Catalog key and the host workers get the provider id" },
   { key:"sandbox.backend", channel:"OWN", reason:"Native Lane Pilot verification selects Seatbelt on macOS or bubblewrap on Linux and fails closed when unavailable" },
   { key:"pm_read.enabled", channel:"OWN", reason:"Native Lane Pilot PM-read stage enable switch" },
   { key:"pm_read.min_lines", channel:"OWN", reason:"Native Lane Pilot PM-read minimum input size" },
@@ -193,9 +192,6 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"bench.noise_auto", channel:"OWN", reason:"Native Lane Pilot bench noise: a noise row is written whenever a series finishes two or more repeats" },
   { key:"secrets.allow", channel:"OWN", reason:"Native Lane Pilot least privilege: the Env Catalog names a task's checks may receive" },
   { key:"ops.provider_pool", channel:"OWN", reason:"Native Lane Pilot writer pools: a cap on simultaneous writers per provider, as provider=limit pairs" },
-  { key:"jev.enabled", channel:"OWN", reason:"Native Lane Pilot Jev judgments (src/jev): false turns every judgment off for the project" },
-  { key:"jev.thresholds", channel:"OWN", reason:"Native Lane Pilot Jev judgments: thresholds as judgment.name=number pairs" },
-  { key:"jev.modes", channel:"OWN", reason:"Native Lane Pilot Jev judgments: off, shadow or active per judgment" },
   { key:"workflow.debugger.provider", channel:"OWN", reason:"Native Lane Pilot workflow model: the model of workflow agent steps with no model of their own" },
   { key:"workflow.debugger.model", channel:"OWN", reason:"Native Lane Pilot workflow model: the model of workflow agent steps with no model of their own" },
   { key:"workflow.debugger.reasoning_effort", channel:"OWN", reason:"Native Lane Pilot workflow model: the model of workflow agent steps with no model of their own" },
@@ -238,7 +234,6 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"council.chair.provider", channel:"OWN", reason:"Native Lane Pilot council seat setting" },
   { key:"council.chair.model", channel:"OWN", reason:"Native Lane Pilot council seat setting" },
   { key:"council.chair.reasoning_effort", channel:"OWN", reason:"Native Lane Pilot council seat setting" },
-  { key:"council.judge", channel:"OWN", reason:"Native Lane Pilot council seat setting" },
   { key:"council.max_rounds", channel:"OWN", reason:"Native Lane Pilot council seat setting" },
   { key:"browser_qa.enabled", channel:"OWN", reason:"Native Lane Pilot stage Browser QA enabled setting; not sent to an upstream CLI" },
   { key:"browser_qa.provider", channel:"OWN", reason:"Native Lane Pilot stage Browser QA provider setting; not sent to an upstream CLI" },
@@ -304,7 +299,6 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"night_review.model", channel:"OWN", reason:"Native Lane Pilot stage uses the BB ProviderModelPicker for night review" },
   { key:"night_review.agent", channel:"OWN", reason:"Native Lane Pilot stage setting, reserved with night_review.enabled: no stage reads the role label today" },
   { key:"checkers.diff_hidden_limit", channel:"OWN", reason:"Native Lane Pilot checkers: task limit for nightly diff-hidden audit, default 0" },
-  { key:"bench.model_rebench", channel:"OWN", reason:"Native Lane Pilot monthly model routing rebench switch" },
   { key:"backlog.scan_minutes", channel:"OWN", reason:"Native Lane Pilot backlog scanner: project scan interval in minutes, read in src/rooms/backlog/server/scanner.ts" },
 ];
 

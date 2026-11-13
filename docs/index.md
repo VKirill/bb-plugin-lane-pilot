@@ -20,7 +20,7 @@ Built by Lane Pilot from page frontmatter.
 | [Coverage registry, graph and drill](coverage.md) | component | active | 2026-10-22 |
 | [Lane Pilot data model overview](data-model.md) | data-model | active | 2026-10-30 |
 | [Schedules and Pixel World persistence](data-model/automation.md) | data-model | active | 2026-10-10 |
-| [Council, handoff, Jev and run-insight data](data-model/governance.md) | data-model | active | 2026-10-19 |
+| [Council, handoff and run-insight data](data-model/governance.md) | data-model | active | 2026-10-19 |
 | [Owner profile and learning data](data-model/knowledge.md) | data-model | active | 2026-10-29 |
 | [Orchestration and execution data](data-model/orchestration.md) | data-model | active | 2026-10-27 |
 | [Architectural decisions](decisions.md) | decisions | active | 2026-10-29 |
@@ -50,9 +50,6 @@ Built by Lane Pilot from page frontmatter.
 | [Writer harness](harness.md) | component | active | 2026-10-29 |
 | [Hypotheses checked on the bench](hypotheses.md) | component | active | 2026-10-23 |
 | [docs/invoice-send.md](invoice-send.md) | — | — | — |
-| [Jev adapter for native writer reasoning](jev-adapter.md) | component | active | 2026-10-13 |
-| [docs/jev-judgments.md](jev-judgments.md) | — | — | — |
-| [docs/jev-labels.md](jev-labels.md) | — | — | — |
 | [The lead («Штурман»)](lead.md) | component | active | 2026-11-01 |
 | [Learning from the owner's messages](learning.md) | component | active | 2026-10-29 |
 | [LP-Bench, the fixed task set](lp-bench.md) | component | active | 2026-10-30 |
@@ -110,7 +107,6 @@ Built by Lane Pilot from page frontmatter.
 | Workspace | Docs |
 |---|---|
 | @lane-pilot/i18n | [packages/i18n/docs/](../packages/i18n/docs/index.md) |
-| @lane-pilot/jev | [packages/jev/docs/](../packages/jev/docs/index.md) |
 | @lane-pilot/kit | [packages/kit/docs/](../packages/kit/docs/index.md) |
 | @lane-pilot/memory-core | [packages/memory-core/docs/](../packages/memory-core/docs/index.md) |
 | @lane-pilot/models | [packages/models/docs/](../packages/models/docs/index.md) |

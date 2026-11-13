@@ -15,7 +15,6 @@ import { tabsEn, tabsRu } from "./i18n-tabs";
 import { graphEn, graphRu } from "./i18n-graph";
 import { cockpitEn, cockpitRu } from "./i18n-cockpit";
 import { ownedEn, ownedRu } from "./i18n-owned";
-import { jevEn, jevRu } from "./i18n-jev";
 import { improvementEn, improvementRu } from "./i18n-improvement";
 import { errandsEn, errandsRu } from "./i18n-errands";
 import { agentLabelEn, agentLabelRu } from "./i18n-agent-labels";
@@ -310,8 +309,6 @@ const chromeEn = {
   settingCouncilSeat_ux: "UX director",
   settingCouncilSeat_chair: "Chair",
   settingCouncilSeatHelp: "Provider, model and reasoning of this seat. Empty seats take distinct pairs from the stage selections.",
-  settingCouncilJudge: "Jev judges the council",
-  settingCouncilJudgeHelp: "Jev decides whether a seat wants the floor and whether the room is done; off means the built-in rule.",
   settingCouncilMaxRounds: "Council laps",
   settingCouncilMaxRoundsHelp: "Laps of discussion before the chair decides.",
   councilSettingsTitle: "Council of directors",
@@ -361,7 +358,6 @@ const chromeEn = {
   rulesScan: "Rescan",
   rulesScanRunning: "Scanning…",
   rulesScanFailed: "Scan failed",
-  rulesScanJevOff: "Jev is not available on the project's machine: proposals were grouped by failure text without sorting.",
   rulesScanLast: "Last scan",
   rulesScanTriaged: "newly sorted",
   rulesScanGroups: "groups",
@@ -918,14 +914,8 @@ const chromeEn = {
   enumIntegrationGateEveryN: "After every N merged tasks",
   enumWorkspaceProviderAuto: "Automatic (own worktree provider)",
   enumWorkspaceProviderOff: "Off (old worktree path)",
-  enumModelRebenchOn: "On (monthly re-bench)",
-  enumModelRebenchOff: "Off (no re-bench)",
   field_s474: "Skill pick for writers",
   reason_s474: "on: before each writer attempt Jev picks up to 5 skills that teach this task's product or technology, on top of the writer's role skills and the skills the task names (task.skills). off: only the role skills and the task's named skills. A pick that is slow or fails never holds an attempt longer than 15 s.",
-  enumJevProviderOpenlux: "OpenLux (reseller, about 60% cheaper)",
-  enumJevProviderTypesafe: "TypeSafe (official)",
-  field_s475: "Jev provider",
-  reason_s475: "Who serves every Jev request. OpenLux (default): a reseller with the same requests and answers at about 60% of the price, a call takes ~0.6 s longer, so Jev timeouts get 1.5 s of headroom; key OPENLUX_API_KEY in the Env Catalog. TypeSafe: the official service, key TYPESAFE_API_KEY. One choice for the whole plugin (set it in the global settings). If the chosen provider has no key in the Env Catalog, Jev uses TypeSafe's key when there is one.",
   enumCriticCodeOff: "Off unless switched on elsewhere",
   enumCriticCodeMedium: "From medium risk",
   enumCriticCodeHigh: "From high risk",
@@ -1527,8 +1517,6 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   settingCouncilSeat_ux: "UX-директор",
   settingCouncilSeat_chair: "Председатель",
   settingCouncilSeatHelp: "Провайдер, модель и рассуждение этого места. Пустые места берут свободные пары из настроек стадий.",
-  settingCouncilJudge: "Jev судит совет",
-  settingCouncilJudgeHelp: "Jev решает, хочет ли место говорить и закончено ли обсуждение; выкл означает встроенное правило.",
   settingCouncilMaxRounds: "Кругов совета",
   settingCouncilMaxRoundsHelp: "Кругов обсуждения до решения председателя.",
   councilSettingsTitle: "Совет директоров",
@@ -1578,7 +1566,6 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   rulesScan: "Пересканировать",
   rulesScanRunning: "Идёт скан…",
   rulesScanFailed: "Скан не удался",
-  rulesScanJevOff: "Jev недоступен на машине проекта: предложения собраны по тексту ошибок, без разбора.",
   rulesScanLast: "Последний скан",
   rulesScanTriaged: "разобрано новых",
   rulesScanGroups: "групп",
@@ -2135,14 +2122,8 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   enumIntegrationGateEveryN: "После каждых N слитых задач",
   enumWorkspaceProviderAuto: "Автоматически (свой провайдер worktree)",
   enumWorkspaceProviderOff: "Выключено (старый путь worktree)",
-  enumModelRebenchOn: "Вкл. (месячный ре-бенч)",
-  enumModelRebenchOff: "Выкл. (без ре-бенча)",
   field_s474: "Подбор навыков для исполнителя",
   reason_s474: "on: перед каждой попыткой исполнителя Jev выбирает до 5 навыков, которые описывают продукт или технологию этой задачи, поверх навыков роли исполнителя и навыков, названных в задаче (task.skills). off: только навыки роли и названные в задаче. Медленный или упавший подбор не задерживает попытку дольше 15 с.",
-  enumJevProviderOpenlux: "OpenLux (реселлер, примерно на 60% дешевле)",
-  enumJevProviderTypesafe: "TypeSafe (официальный)",
-  field_s475: "Поставщик Jev",
-  reason_s475: "Кто обслуживает все запросы к Jev. OpenLux (по умолчанию): реселлер с теми же запросами и ответами примерно за 60% цены, вызов занимает на ~0,6 с дольше, поэтому ко всем таймаутам Jev добавлено 1,5 с запаса; ключ OPENLUX_API_KEY в Env Catalog. TypeSafe: официальный сервис, ключ TYPESAFE_API_KEY. Один выбор на весь плагин (задаётся в общих настройках). Если у выбранного поставщика нет ключа в Env Catalog, Jev берёт ключ TypeSafe, когда он есть.",
   enumCriticCodeOff: "Выключено, если не включено отдельно",
   enumCriticCodeMedium: "От среднего риска",
   enumCriticCodeHigh: "От высокого риска",
@@ -2456,8 +2437,8 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   accessPurpose_specialist_lead: "Штурман в своём тике: читает состояние хаба из брифа и предлагает; ничего не правит.",
 };
 
-export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...libraryEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...boardEn, ...ownerEn, ...anamnesisEn, ...tabsEn, ...ownedEn, ...jevEn, ...improvementEn, ...errandsEn, ...graphEn, ...cockpitEn, ...roleModelsEn, ...agentLabelEn, ...exportEn, ...mapEn };
-export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...libraryRu, ...editorRu, ...opsRu, ...modelsRu, ...canvasRu, ...scheduleRu, ...boardRu, ...ownerRu, ...anamnesisRu, ...tabsRu, ...ownedRu, ...jevRu, ...improvementRu, ...errandsRu, ...graphRu, ...cockpitRu, ...roleModelsRu, ...agentLabelRu, ...exportRu, ...mapRu };
+export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...libraryEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...boardEn, ...ownerEn, ...anamnesisEn, ...tabsEn, ...ownedEn, ...improvementEn, ...errandsEn, ...graphEn, ...cockpitEn, ...roleModelsEn, ...agentLabelEn, ...exportEn, ...mapEn };
+export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...libraryRu, ...editorRu, ...opsRu, ...modelsRu, ...canvasRu, ...scheduleRu, ...boardRu, ...ownerRu, ...anamnesisRu, ...tabsRu, ...ownedRu, ...improvementRu, ...errandsRu, ...graphRu, ...cockpitRu, ...roleModelsRu, ...agentLabelRu, ...exportRu, ...mapRu };
 
 // keyof typeof en drops keys once the spread is large enough to export (2026-10-29 lane-stack port). The small module stays intact.
 export type I18nKey = keyof typeof en | keyof typeof agentLabelEn;

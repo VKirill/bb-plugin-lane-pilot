@@ -16,7 +16,6 @@ import type { BenchProjectRef, HostPort, PipelinePort } from "../ports";
 import { createBench, type BenchApi } from "../service";
 import { pageReviewByAgent } from "../../critique/server";
 import { ensureSealedSets } from "../critique-set";
-import { jev } from "@lane-pilot/jev";
 
 import type { ActivationApi } from "../../contracts/agent-ops";
 import type { WorkflowEngineApi, WriterDispatchApi, WriterHostApi } from "../../platform/server";
@@ -156,11 +155,6 @@ export function createPluginBench(ctx: ServerCore, services: Services): BenchApi
     db: db as never, kv: bb.storage.kv as never, host: hostPort, pipeline: benchPipeline(ctx, services),
     projectNames: async () => new Map((await listProjects(bb)).map((row) => [row.id, row.name])),
     isSandboxName: isSandboxProjectName, log: ctx.log,
-    jevCtx: async (task) => ({
-      projectId: task.projectId ?? null,
-      runId: null,
-      settings: task.projectId ? await bestEffort(ctx.log, "bench jev settings", ctx.effectiveProjectSettings(task.projectId).then((r) => r.values as Record<string, unknown>), {} as Record<string, unknown>) : {},
-    }),
     pageReview: async (task, req) => pageReviewByAgent(ctx, services, {
       pmThreadId: "", projectId: task.projectId ?? "", parentRunId: "",
       design: Boolean((task as { brief?: { design?: unknown } }).brief?.design), request: req,

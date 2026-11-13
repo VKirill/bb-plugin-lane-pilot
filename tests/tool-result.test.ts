@@ -145,7 +145,7 @@ describe("observed lane_pilot tools", () => {
     createRun(db, runId, projectId);
     setRunThread(db, runId, pmThreadId);
     const started = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_council_start", {
-      runId, question: "Should we ship guest checkout first?", roles: ["product"], maxRounds: 1, judge: false,
+      runId, question: "Should we ship guest checkout first?", roles: ["product"], maxRounds: 1,
     }, { threadId: pmThreadId, projectId }))) as { id: string; state: string; messages: Array<{ kind: string; text: string }> };
     expect(JSON.stringify({ id: started.id, state: started.state })).not.toContain("outside_data");
     const owner = started.messages.find((message) => message.kind === "owner");

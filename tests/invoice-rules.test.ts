@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { hardProblems, invoiceVerdict, overlap, validAccount, validCorrAccount, validInn, type InvoiceCheckInput } from "@lane-pilot/jev/judgments/invoice-check";
-import { invoiceInput, registerInvoiceActions } from "../../src/rooms/workflow/server/workflow-invoice";
-import { engineOn, journalDb } from "../workflow/engine-helpers";
+import { hardProblems, invoiceVerdict, overlap, validAccount, validCorrAccount, validInn, type InvoiceCheckInput } from "@lane-pilot/kit";
+import { invoiceInput, registerInvoiceActions } from "../src/rooms/workflow/server/workflow-invoice";
+import { engineOn, journalDb } from "./workflow/engine-helpers";
 import { parseWorkflow } from "@lane-pilot/workflow-engine";
 
 const clean = (): InvoiceCheckInput => ({

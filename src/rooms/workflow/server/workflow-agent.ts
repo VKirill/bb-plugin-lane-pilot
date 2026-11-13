@@ -2,7 +2,6 @@ import { MACHINE_AFFINITY_ANY } from "@lane-pilot/contracts";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsPaged, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { getRunSettingsScopes, planningHomeInputs } from "../../storage";
 import {findModelIn, isZcodeProvider, providerLimitNotice, writerExecutionSelection, zcodeEnvironmentError} from "@lane-pilot/models";
-import { jev } from "@lane-pilot/jev";
 ;
 import { MAIN_AGENT_ID, isCustomAgentId } from "../../contracts/server";
 import { compileEffectiveMainAgent, employeeRoleLines, mentionContext, placeEmployeeOn } from "../../native-agent"

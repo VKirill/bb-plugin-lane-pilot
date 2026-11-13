@@ -22,7 +22,6 @@ import type { ServerCore } from "../../contracts/server";
 
 import { taskFamily } from "@lane-pilot/contracts";
 import { sendServiceMessage } from "../../relay/server";
-import type { JevSettings } from "@lane-pilot/jev";
 import { taskWordItemPrefix } from "../../contracts";
 import { closeOwnerItemsByPrefix, postOwnerItem, rpcLine } from "../../owner-waiting";
 import { runOnHost } from "@lane-pilot/host-calls";
@@ -378,7 +377,7 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
       let wordGap = landingWordGap(ownerWords, await wordsOf(), input.attemptId);
       if (wordGap && !wordGap.includes("said no")) {
         // The lead's journal: the question opens here and the prediction is written before the owner answers (src/rooms/lead).
-        void services.taskWords.ask(db, { runId:input.runId, projectId:input.projectId, family:taskFamily(input.taskId), task:input.task }, loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)) as JevSettings);
+        void services.taskWords.ask(db, { runId:input.runId, projectId:input.projectId, family:taskFamily(input.taskId), task:input.task }, loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)) as Record<string, unknown>);
         // The wait is a row on «Ждут владельца» with да / нет (Astra F-004, Gemini F-008: the screen that promises to show what waits did not
         // show this); the word closes it (answerTaskWord), the end of the wait below closes it too.
         try {

@@ -1,7 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { setJevForTests } from "@lane-pilot/jev";
 import { setSandboxProjects } from "../../src/rooms/owner-waiting";
 import { answerDecision, getDecision, listDecisions } from "../../src/rooms/lead/server/journal";
 import { addRoad, decideRoad, getRoad, listRoad, proposeRoad, rejectRoad } from "../../src/rooms/lead/server/road";
@@ -36,7 +35,6 @@ const world = (projects: Array<{ id: string; name: string }> = []) => {
   return { bb, db, run, zone, ownerItems, calls };
 };
 
-const shadowJev = (option: string | null = "yes", p = 0.9) => setJevForTests({ enabled: () => true, judge: async () => ({ by: "fallback", status: "shadow", decision: { option: null, p: 0 }, shadow: { decision: { option, p } } }) } as never);
 const proposal = (over: Record<string, unknown> = {}) => ({
   title: "Close the stale branch", class: "next_step", risk: "low",
   why: "nothing moved for two weeks", evidence: [{ kind: "run", ref: "lprun_1" }], cost_estimate: "2h", ...over,
@@ -45,14 +43,13 @@ const propose = (run: ReturnType<typeof world>["run"], refs: Record<string, unkn
   run("lp.lead_propose", { "$inputs.tickId": tick, "think.proposals": [], "think.branches": [], ...refs });
 const dropped = async (out: Promise<{ output: Record<string, unknown> }>) => JSON.parse((await out).output.dropped_json as string) as Array<{ title: string; reason: string }>;
 
-afterEach(() => setJevForTests(null));
+
 
 describe("lp.lead_propose keeps a proposal inside the lead's zone", () => {
   it("drops a proposal whose project_id is outside lead.projects: no road row, no decision, no owner item", async () => {
     // Astra F-010a: the zone check must run before anything is written.
     const { db, run, zone, ownerItems } = world([{ id: "p_a", name: "A" }, { id: "p_out", name: "Out" }]);
     zone(["p_a"]);
-    shadowJev();
     const list = await dropped(propose(run, { "think.proposals": [proposal({ project_id: "p_out" })] }));
     expect(list).toHaveLength(1);
     expect(list[0]!.reason).toContain("outside lead.projects");
@@ -65,7 +62,6 @@ describe("lp.lead_propose keeps a proposal inside the lead's zone", () => {
     // 0.1.460: a sandbox or bench project's rows never reach the owner, so its card would be invisible.
     setSandboxProjects(["p_bench"]);
     const { db, run, ownerItems } = world([{ id: "p_bench", name: "LP bench" }]);
-    shadowJev();
     const list = await dropped(propose(run, { "think.proposals": [proposal({ project_id: "p_bench" })] }));
     expect(list).toHaveLength(1);
     expect(list[0]!.reason).toContain("sandbox");
@@ -80,7 +76,6 @@ describe("lp.lead_propose keeps a proposal inside the lead's zone", () => {
     setSandboxProjects(["p_bench"]);
     const { db, run, zone, ownerItems } = world([{ id: "p_bench", name: "LP bench" }]);
     zone(["p_bench"]);
-    shadowJev();
     const list = await dropped(propose(run, { "think.proposals": [proposal({ project_id: "p_bench", risk: "high" })] }));
     expect(list).toHaveLength(1);
     expect(list[0]!.reason).toContain("refused the card");
@@ -97,7 +92,6 @@ describe("lp.lead_propose keeps a proposal inside the lead's zone", () => {
     // `lead:<road>:<tick>` so the old «later» never swallows the new question.
     const { db, run, zone, ownerItems } = world([{ id: "p_a", name: "A" }]);
     zone(["p_a"]);
-    shadowJev();
     // risk high never acts (mayAct's guard), so the proposal still goes to the owner as a card.
     await propose(run, { "think.proposals": [proposal({ project_id: "p_a", risk: "high" })] }, "tick_a");
     const road = listRoad(db).find((row) => row.kind === "option")!;
@@ -118,7 +112,6 @@ describe("lp.lead_propose keeps a proposal inside the lead's zone", () => {
     for (const claimed of [null, "p_other"] as Array<string | null>) {
       const { db, run, zone, ownerItems } = world([{ id: "p_a", name: "A" }, { id: "p_other", name: "Other" }]);
       zone(["p_a", "p_other"]);
-      shadowJev();
       const branch = addRoad(db, { title: "An open direction", kind: "direction", source: "lead", why: "the owner wants it kept", projectId: "p_a" });
       await propose(run, { "think.proposals": [proposal({ road_id: branch.id, project_id: claimed, risk: "high" })] });
       expect(getDecision(db, `lead:${branch.id}`)).toMatchObject({ project_id: "p_a" });

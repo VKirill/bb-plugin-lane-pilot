@@ -2,7 +2,7 @@ import { storeMemoryRecords } from "../../packages/memory-core/src/store";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
-import { acceptedRules } from "@lane-pilot/run-insights";
+import { acceptedRules, saveTriage } from "@lane-pilot/run-insights";
 import { searchMemoryRecords } from "@lane-pilot/memory-core";
 import { createRun, createTask, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, setRunThread } from "../../src/rooms/plugin-db";
 import { adoptRuleProposal, sweepLessons } from "../../src/rooms/self-repair/server/insights";
@@ -80,8 +80,7 @@ describe("insights tools", () => {
     expect(golden).toMatchObject({ cases: 2, hits: 1, hitRate: 0.5, misses: [{ query: "unrelated seo query", missing: ["nope"] }] });
   });
 
-  it("Jev sorts failures, the analyzer writes a rule with evidence, a rescan pays nothing, the owner accepts and revokes", async () => {
-    const judged: string[] = [];
+  it("the rules sort failures, the analyzer writes a rule with evidence, a rescan pays nothing, the owner accepts and revokes", async () => {
     const spawned: Array<Record<string, any>> = [];
     const { bb, harness } = createFakePluginHost({
       pluginId: "lane-pilot",
@@ -99,14 +98,6 @@ describe("insights tools", () => {
         },
         projects: { get: async () => ({ id: projectId, sources: [{ hostId: "host-1", path: "/tmp/rules-ws", isDefault: true }] }) as never, list: async () => [] as never },
       },
-      experimental_callHostRpc: (call) => {
-        if (call.method !== "councilJudge") throw new Error(`unexpected host method ${call.method}`);
-        const state = JSON.parse((call.input as { state: string }).state) as { failure_reason: string };
-        judged.push(state.failure_reason);
-        const bookkeeping = state.failure_reason.includes(".agents/");
-        return { hostId: "host-1", status: "ok", reason: null,
-          answers: { origin: bookkeeping ? "orchestrator" : "writer", category: "missing_output" }, confidence: { origin: 0.9, category: 0.95 } };
-      },
     });
     await plugin(bb);
     dispose = () => harness.lifecycle.dispose();
@@ -123,7 +114,7 @@ describe("insights tools", () => {
     };
     for (const task of ["w1", "w2", "w3"]) seed(task, `missing expected_outputs: docs/${task}.md`);
     for (const task of ["o1", "o2"]) seed(task, "owns_paths rejected .agents/PROGRESS.md");
-    // A text-grouping draft left from the fallback is dropped once Jev answers; a decided one stays.
+    // A text-grouping draft left from the fallback is dropped by the first scan; a decided one stays.
     db.prepare(`INSERT INTO lane_pilot_rule_proposal (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,first_seen_at,last_seen_at,updated_at)
       VALUES ('rule_old','${projectId}','x','Repeated in 40 tasks: .agents noise','sweep','proposed',40,40,'[]',1,1,1), ('rule_kept','${projectId}','y','Decided long ago','sweep','rejected',3,3,'[]',1,1,1)`).run();
     const list = async () => await harness.behavior.callRpc("list_rule_proposals", { projectId }) as Record<string, any>;
@@ -162,9 +153,6 @@ describe("insights tools", () => {
     await harness.behavior.callRpc("start_rule_scan", { projectId, locale: "ru" });
     const second = await scanDone();
     expect(second.scan).toMatchObject({ state: "done", triaged: 0, groups: 0, adopted: 0 });
-    // The two bookkeeping-only rejections are decided in code; Jev is asked about the three others, once.
-    expect(judged).toHaveLength(3);
-    expect(judged.some((reason) => reason.includes(".agents/"))).toBe(false);
     expect(spawned).toHaveLength(1);
 
     // The owner path still works next to the system's: the PM rewords a proposal, the owner accepts it.
@@ -194,11 +182,9 @@ describe("insights tools", () => {
   });
 
   it("decides in code when the gate rejected the task's own files, and reports a scan cut off by a restart", async () => {
-    const judged: string[] = [];
     const { bb, harness } = createFakePluginHost({
       pluginId: "lane-pilot",
       sdk: { projects: { get: async () => ({ id: projectId, sources: [{ hostId: "host-1", path: "/tmp/rules-ws", isDefault: true }] }) as never, list: async () => [] as never } },
-      experimental_callHostRpc: (call) => { judged.push(String((call.input as { state: string }).state)); return { hostId: "host-1", status: "ok", reason: null, answers: { origin: "writer", category: "outside_scope" }, confidence: { origin: 0.9 } }; },
     });
     await plugin(bb);
     dispose = () => harness.lifecycle.dispose();
@@ -216,7 +202,6 @@ describe("insights tools", () => {
       if (listed.scan.state !== "running") break;
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    expect(judged).toEqual([]);
     expect(listed.triage.byOrigin).toEqual({ orchestrator: 1 });
     expect(db.prepare("SELECT detail FROM lane_pilot_failure_triage").all()).toEqual([{ detail: "code:gate_rejected_owned_paths" }]);
 
@@ -242,10 +227,6 @@ describe("insights tools", () => {
         },
         projects: { get: async () => ({ id: projectId, sources: [{ hostId: "host-1", path: "/tmp/rules-ws", isDefault: true }] }) as never, list: async () => [] as never },
       },
-      experimental_callHostRpc: (call) => {
-        const questions = (call.input as { questions: Record<string, unknown> }).questions;
-        return { hostId: "host-1", status: "ok", reason: null, answers: { origin: "writer", category: "missing_output", ...(questions.same_rule ? { same_rule: "r1" } : {}) }, confidence: { origin: 0.9 } };
-      },
     });
     await plugin(bb);
     dispose = () => harness.lifecycle.dispose();
@@ -268,6 +249,8 @@ describe("insights tools", () => {
       db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,reason,created_at,updated_at,attempt_no,dirt_before_json) VALUES(?,?,?,?,?,?,?,?,?)")
         .run(`att-${n}`, runId, task, state, reason, at, at, 1, "[]");
       db.prepare("INSERT INTO lane_pilot_attempt_reasoning(attempt_id,trace_json) VALUES(?,?)").run(`att-${n}`, JSON.stringify({ attemptId: `att-${n}`, dispatchContext: { rulesPicked: { total: 2, picked: [rule] } } }));
+      // Which rule a failure repeats is not decided by the scan (no model): the answer is stored beforehand, as the analyzer's group or the owner records it.
+      if (state !== "accepted") saveTriage(db, projectId, { attemptId: `att-${n}`, runId, taskId: task, state, reason: reason ?? "", contractJson: "{}", threadId: null, failedAt: at }, { status: "ok", origin: "writer", originConfidence: 0.9, category: "missing_output", sameRuleId: rule }, at);
     };
     for (let i = 0; i < 5; i++) give("rule-clean", "accepted", null, t0 + 1_000 + i);
     give("rule-broken", "validation_failed", "missing expected_outputs: a.md", t0 + 2_000);
@@ -323,10 +306,6 @@ describe("insights tools", () => {
         },
         projects: { get: async () => ({ id: projectId, sources: [{ hostId: "host-1", path: "/tmp/rules-ws", isDefault: true }] }) as never, list: async () => [] as never },
       },
-      experimental_callHostRpc: (call) => {
-        const questions = (call.input as { questions: Record<string, unknown> }).questions;
-        return { hostId: "host-1", status: "ok", reason: null, answers: { origin: "writer", category: "broke_checks", ...(questions.same_rule ? { same_rule: "r1" } : {}) }, confidence: { origin: 0.9 } };
-      },
     });
     await plugin(bb);
     dispose = () => harness.lifecycle.dispose();
@@ -341,6 +320,7 @@ describe("insights tools", () => {
       createTask(db, { id: `task-${n}`, runId, kind: "bb", contract: { risk: "low" } });
       db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,reason,created_at,updated_at,attempt_no,dirt_before_json) VALUES(?,?,?,?,?,?,?,?,?)")
         .run(`att-${n}`, runId, `task-${n}`, "validation_failed", `verification failed (npm test): foreign spec ${n} failed`, t0 + n, t0 + n, 1, "[]");
+      saveTriage(db, projectId, { attemptId: `att-${n}`, runId, taskId: `task-${n}`, state: "validation_failed", reason: `verification failed (npm test): foreign spec ${n} failed`, contractJson: "{}", threadId: null, failedAt: t0 + n }, { status: "ok", origin: "writer", originConfidence: 0.9, category: "broke_checks", sameRuleId: "rule-foreign" }, t0 + n);
       db.prepare("INSERT INTO lane_pilot_attempt_reasoning(attempt_id,trace_json) VALUES(?,?)").run(`att-${n}`, JSON.stringify({ dispatchContext: { rulesPicked: { total: 1, picked: ["rule-foreign"] } } }));
     }
     await harness.behavior.callRpc("start_rule_scan", { projectId, locale: "en" });
@@ -353,47 +333,5 @@ describe("insights tools", () => {
     expect(listed.scan).toMatchObject({ state: "done", retired: 1, revised: 0 });
     expect(listed.proposals.find((row: { id: string }) => row.id === "rule-foreign")).toMatchObject({ state: "revoked", retiredReason: "analyzer: no rule would prevent these failures" });
     expect(acceptedRules(db, projectId)).toEqual([]);
-  });
-
-  it("falls back to masked-text grouping when the project's machine has no Jev key", async () => {
-    const { bb, harness } = createFakePluginHost({
-      pluginId: "lane-pilot",
-      sdk: { projects: { get: async () => ({ id: projectId, sources: [{ hostId: "host-1", path: "/tmp/rules-ws", isDefault: true }] }) as never, list: async () => [] as never } },
-      experimental_callHostRpc: () => ({ hostId: "host-1", status: "disabled", answers: {}, reason: "missing_typesafe_api_key" }),
-    });
-    await plugin(bb);
-    dispose = () => harness.lifecycle.dispose();
-    const db = openDatabase(bb);
-    savePrototypeConfig(db, { projectId, hostId: "host-1", pmWorkspacePath: "/tmp/rules-ws", writerWorkspacePath: "/tmp/rules-ws", pmProviderId: "codex", pmModel: "m", writerProviderId: "codex", writerModel: "m" });
-    createRun(db, runId, projectId);
-    const now = Date.now();
-    // A rule already on trial is still judged on a night without Jev (Gemini F-012: the fallback used to return before evaluateRules).
-    saveProjectSetting(db, projectId, "memory.enabled", "true");
-    db.prepare(`INSERT INTO lane_pilot_rule_proposal (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,first_seen_at,last_seen_at,updated_at)
-      VALUES ('rule-clean',?,'rule-clean','Quote the passing test line.','model','proposed',3,3,'[]',1,1,1)`).run(projectId);
-    expect(adoptRuleProposal(db, projectId, "rule-clean", now - 60_000)).toMatchObject({ trialState: "trial" });
-    for (let i = 0; i < 5; i++) {
-      createTask(db, { id: `clean-${i}`, runId, kind: "bb", contract: { risk: "low" } });
-      db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,reason,created_at,updated_at,attempt_no,dirt_before_json) VALUES(?,?,?,?,?,?,?,?,?)")
-        .run(`clean-att-${i}`, runId, `clean-${i}`, "accepted", null, now - 50_000 + i, now - 50_000 + i, 1, "[]");
-      db.prepare("INSERT INTO lane_pilot_attempt_reasoning(attempt_id,trace_json) VALUES(?,?)").run(`clean-att-${i}`, JSON.stringify({ attemptId: `clean-att-${i}`, dispatchContext: { rulesPicked: { total: 1, picked: ["rule-clean"] } } }));
-    }
-    for (const [index, task] of ["t1", "t2", "t3"].entries()) {
-      createTask(db, { id: task, runId, kind: "bb", contract: { risk: "low" } });
-      db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,reason,created_at,updated_at,attempt_no,dirt_before_json) VALUES(?,?,?,?,?,?,?,?,?)")
-        .run(`a-${task}`, runId, task, "validation_failed", `curl: (6) Could not resolve host: site${index}.example`, now, now, 1, "[]");
-      db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,reason,created_at,updated_at,attempt_no,dirt_before_json) VALUES(?,?,?,?,?,?,?,?,?)")
-        .run(`b-${task}`, runId, task, "validation_failed", "owns_paths rejected .agents/memory/episodes/1.md", now, now, 2, "[]");
-    }
-    await harness.behavior.callRpc("start_rule_scan", { projectId, locale: "en" });
-    let listed: Record<string, any> = {};
-    for (let i = 0; i < 100; i++) {
-      listed = await harness.behavior.callRpc("list_rule_proposals", { projectId }) as Record<string, any>;
-      if (listed.scan.state !== "running") break;
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    expect(listed.scan).toMatchObject({ state: "done", reason: "jev_unavailable:missing_typesafe_api_key", proposals: 1, confirmed: 1 });
-    expect(listed.proposals.filter((row: { author: string }) => row.author === "sweep")).toEqual([expect.objectContaining({ rule: expect.stringContaining("Could not resolve host") })]);
-    expect(listed.proposals.find((row: { id: string }) => row.id === "rule-clean")).toMatchObject({ trialState: "confirmed" });
   });
 });
