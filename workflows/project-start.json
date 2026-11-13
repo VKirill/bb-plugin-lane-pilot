@@ -330,7 +330,7 @@
       "map": {
         "status": "resumed",
         "value_map": "''",
-        "next_steps": "['the project is already started — continue with resume-project']",
+        "next_steps": "['the project is already started — continue with project-resume']",
         "refused": "[]"
       }
     }

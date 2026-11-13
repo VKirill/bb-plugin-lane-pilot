@@ -45,8 +45,8 @@ const policy = (over: { skills?: string[]; mcpServers?: string[]; bbPlugins?: st
 const agents = (advertised: RequiredSessionAdvertisement | null) =>
   advertised === null ? {} : { experimental_vkRequiredSessionPolicy: () => advertised };
 
-/** A writer profile: skills writer-practices + karpathy-guidelines, mcpServers gitnexus + metamcp. */
-const writerPolicy = () => policy({ skills: ["writer-practices", "karpathy-guidelines"], mcpServers: ["gitnexus", "metamcp"] });
+/** A writer profile: skills lp-writer + karpathy-guidelines, mcpServers gitnexus + metamcp. */
+const writerPolicy = () => policy({ skills: ["lp-writer", "karpathy-guidelines"], mcpServers: ["gitnexus", "metamcp"] });
 
 function pluginDb() {
   const db = new Database(":memory:");

@@ -1,6 +1,6 @@
 ---
 name: lane-pilot
-description: "How Lane Pilot works for a PM, a graph architect or an auditor: why a task waits or is blocked, how a task contract is written, how a workflow graph is built and run. Use when: задача стоит, заблокирована, карантин, граф упал, owner спрашивает почему ничего не движется, контракт задачи, owns_paths, verification, собрать граф, lane_pilot_workflow_draft, requires, расписание графа. SKIP: project memory and lessons (lane-memory), a writer's code style (writer-practices), project life files (project-life)."
+description: "How Lane Pilot works for a PM, a graph architect or an auditor: why a task waits or is blocked, how a task contract is written, how a workflow graph is built and run. Use when: задача стоит, заблокирована, карантин, граф упал, owner спрашивает почему ничего не движется, контракт задачи, owns_paths, verification, собрать граф, lane_pilot_workflow_draft, requires, расписание графа. SKIP: project memory and lessons (lane-memory), a writer's code style (lp-writer), project life files (project-life)."
 ---
 
 # Lane Pilot

@@ -224,7 +224,7 @@ describe("role profiles", () => {
 
   it("gives a writer two coding skills, gitnexus, metamcp, and mandatory plugins and MCP", () => {
     const policy = (bind("writer", "codex") as unknown as { experimental_vkRequiredSessionPolicy: { policy: Record<string, { names: string[] }> } }).experimental_vkRequiredSessionPolicy.policy;
-    expect(policy.skills.names).toEqual(["writer-practices", "karpathy-guidelines"]);
+    expect(policy.skills.names).toEqual(["lp-writer", "karpathy-guidelines"]);
     expect(policy.bbPlugins.names).toEqual(["environment-project-checkout", "project-folders"]);
     expect(policy.mcpServers.names).toEqual(["bb-bridge", "gitnexus", "metamcp"]);
     expect(policy.nativePlugins.names).toEqual([]);
@@ -233,7 +233,7 @@ describe("role profiles", () => {
   it("gives the docs maintainer docs skills, gitnexus, and the browser check the browser plugin", () => {
     const docs = (bind("docs-maintainer", "claude-code") as unknown as { experimental_vkRequiredSessionPolicy: { policy: Record<string, { names: string[] }> } }).experimental_vkRequiredSessionPolicy.policy;
     expect(docs.bbPlugins.names).toEqual(["environment-project-checkout", "project-folders"]);
-    expect(docs.skills.names).toContain("docs-maintain");
+    expect(docs.skills.names).toContain("lp-docs");
     expect(docs.mcpServers.names).toEqual(["bb-bridge", "gitnexus"]);
     const qa = (bind("browser-qa", "claude-code") as unknown as { experimental_vkRequiredSessionPolicy: { policy: Record<string, { names: string[] }> } }).experimental_vkRequiredSessionPolicy.policy;
     expect(qa.bbPlugins.names).toContain("browser-automation");
@@ -280,8 +280,21 @@ describe("owner changes per role", () => {
     expect(writer.userInstructions).toBeUndefined();
     const docs = roleProfilePolicy("docs-maintainer", parsed.settings.roleAccess?.["docs-maintainer"]);
     expect(docs.mcpServers?.names).toEqual(["bb-bridge", "context7"]);
-    expect(docs.skills?.names).toContain("docs-maintain");
+    expect(docs.skills?.names).toContain("lp-docs");
     expect(effectiveGroup("writer", "bbPlugins", parsed.settings.roleAccess?.writer)).toEqual({ names: null, source: "owner" });
     expect(effectiveSwitch("projectInstructions")).toEqual({ include: true, source: "role" });
+  });
+});
+
+describe("renamed skills (docs/skill-standard.md, step 4)", () => {
+  it("reads an old skill name in a saved setting as the new one, and keeps other names", async () => {
+    const { parseHelperContextSettings, parseRoleAccess, canonicalSkillName } = await import("../src/rooms/contracts/helper-context");
+    expect(canonicalSkillName("writer-practices")).toBe("lp-writer");
+    expect(canonicalSkillName("docs-maintain")).toBe("lp-docs");
+    expect(canonicalSkillName("resume-project")).toBe("project-resume");
+    expect(canonicalSkillName("ru-text")).toBe("ru-text");
+    expect(parseRoleAccess({ skills: { mode: "allow", names: ["writer-practices", "lp-writer", "ru-text"] } }).skills?.names).toEqual(["lp-writer", "ru-text"]);
+    const selected = parseHelperContextSettings({ "helper.context_mode": "selected", "helper.skills": "docs-maintain,tavily" });
+    expect(selected.ok && selected.settings.skills).toEqual(["lp-docs", "tavily"]);
   });
 });

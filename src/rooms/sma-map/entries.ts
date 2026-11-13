@@ -1258,7 +1258,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n1247: ["have", "строка в STATE и коммит", "src/rooms/phase/stages.ts#quickRow"],
   n1248: ["have", "справка CLI печатает список команд с одной строкой и примером, проект для неё не нужен", "src/rooms/tools/server/cli.ts#registerCli"],
   n1249: ["have", "где проект: PROGRESS после принятых задач", "src/rooms/project-life/project-life.ts#projectLifePrompt"],
-  n1250: ["have", "продолжение проекта грузит скилл resume-project", "src/rooms/contracts/bundled-agents.json#resume-project"],
+  n1250: ["have", "продолжение проекта грузит скилл project-resume", "src/rooms/contracts/bundled-agents.json#project-resume"],
   n1251: ["have", "/sma-pause-work", "src/rooms/phase/server/driver-docs.ts#pauseHandoff"],
   n1252: ["have", "/sma-plan-phase", "src/rooms/phase/logic/gates.ts#planGate"],
   n1253: ["void", "нет предмета: ultraplan — облачная функция Claude Code одного провайдера, и доступа к ней из Lane Pilot нет; планирование идёт через lp.plan на любом провайдере, импортировать нечего"],

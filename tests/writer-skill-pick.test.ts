@@ -4,7 +4,7 @@ import { roleProfilePolicy } from "../src/rooms/contracts/helper-context";
 import { createWriterSkillPick, recordedWriterSkills } from "../src/rooms/writer/server/skill-pick";
 
 const LISTED = [
-  { name: "writer-practices", description: "Lane-writer code style" },
+  { name: "lp-writer", description: "Lane-writer code style" },
   { name: "tavily", description: "Web search through the Tavily API" },
   { name: "three-js", description: "three.js scenes, cameras and materials" },
   { name: "ru-text", description: "Russian text quality" },
@@ -38,7 +38,7 @@ describe("writer skill pick, by rule", () => {
     expect(pick.hints).toEqual(["tavily"]);
     expect(pick.skills).toEqual(["ru-text", "tavily"]);
     const policy = roleProfilePolicy("writer", {}, { skills: pick.skills });
-    expect(policy.skills).toEqual({ mode: "allow", names: ["writer-practices", "karpathy-guidelines", "ru-text", "tavily"] });
+    expect(policy.skills).toEqual({ mode: "allow", names: ["lp-writer", "karpathy-guidelines", "ru-text", "tavily"] });
     expect(pick.reason).toBeNull();
   });
 
