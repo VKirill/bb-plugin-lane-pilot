@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.546
+
+- **Near-duplicate notes are merged every night with no owner step (`src/rooms/memory/server/embeddings.ts`, schedule `memory-dedupe`, 03:40).** The write door misses a meaning copy when the text could not be embedded at write time; the nightly pass runs `dedupeProject` with apply over every project with active notes (copies go to the archive with `expired_reason='duplicate'`, nothing is deleted) and logs the merged count. `memory dedupe --apply` stays for an immediate run.
+
 ## 0.1.545
 
 - **The memory write door stops near-duplicate notes (`packages/memory-core/src/duplicates.ts`).** `memory write`, the import and the maintainer compare a new note with stored notes of the same section (vector cosine ≥ 0.92 when the caller embeds, or normalised-text containment ≥ 0.9). A copy creates no new row — its source is added as an extra origin on the stored note (import reports `merged_with`); a strictly longer restatement replaces the stored note as a new version; a changed number or flipped negation is an update, not a copy. Found live after 0.1.544: a Claude Code auto-memory import had re-stored an existing Muse fact under a new id. New read-only `bb lane-pilot memory duplicates [--project P] [--json]` and `bb lane-pilot memory dedupe --project P [--apply]` (dry run by default, `--apply` refused from a thread; a copy is expired with `expired_reason='duplicate'` and stays in the archive). Suite case H13 fails with the check off.

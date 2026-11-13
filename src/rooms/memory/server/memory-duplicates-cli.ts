@@ -1,7 +1,7 @@
 import type { MemoryDatabase } from "@lane-pilot/memory-core";
 import { dedupeProject, dropMemoryIndexes, duplicatePairs } from "@lane-pilot/memory-core";
 
-export const MEMORY_DUPLICATES_USAGE = "bb lane-pilot memory duplicates [--project P] [--json]   (read-only: near-duplicate active notes, cosine >= 0.92 or text containment >= 0.9) | memory dedupe --project P [--apply]   (dry run unless --apply; --apply is the owner's, at a terminal)";
+export const MEMORY_DUPLICATES_USAGE = "bb lane-pilot memory duplicates [--project P] [--json]   (read-only: near-duplicate active notes, cosine >= 0.92 or text containment >= 0.9) | memory dedupe --project P [--apply]   (dry run unless --apply; --apply is the owner's, at a terminal; the plugin also merges duplicates itself every night at 03:40)";
 
 type Result = { exitCode: number; stdout?: string; stderr?: string };
 
@@ -11,7 +11,7 @@ const clip = (text: string) => text.replace(/\s+/g, " ").trim().slice(0, 120);
 export const memoryDedupeChanges = (argv: readonly string[]): boolean => argv.includes("--apply");
 
 /** Projects that have active notes: the audit without `--project` reads all of them. */
-function projectsWithNotes(db: MemoryDatabase): string[] {
+export function projectsWithNotes(db: MemoryDatabase): string[] {
   return (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_memory WHERE kind='note' AND status='active' ORDER BY project_id").all() as Array<{ project_id: string }>).map((row) => row.project_id);
 }
 
@@ -41,4 +41,17 @@ export function runMemoryDuplicatesCli(db: MemoryDatabase, sub: "duplicates" | "
   } catch (cause) {
     return { exitCode: 1, stderr: cause instanceof Error ? cause.message : String(cause) };
   }
+}
+
+/**
+ * The nightly pass: merges every project's near-duplicate notes with no owner step (the write door misses a meaning copy when the text could not be
+ * embedded at write time). Nothing is deleted: a copy goes to the archive, which the search still reads. Returns the merged count per project.
+ */
+export function dedupeAllProjects(db: MemoryDatabase, now = Date.now()): Array<{ projectId: string; merged: number }> {
+  const out: Array<{ projectId: string; merged: number }> = [];
+  for (const projectId of projectsWithNotes(db)) {
+    const done = dedupeProject(db, projectId, { apply: true, now, unindex: (p, id) => dropMemoryIndexes(db, p, id) });
+    if (done.merged.length) out.push({ projectId, merged: done.merged.length });
+  }
+  return out;
 }

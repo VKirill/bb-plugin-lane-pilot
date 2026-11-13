@@ -1,5 +1,6 @@
 import { EMBED_DIM, EMBED_MODEL, chunkDocumentText, documentText, pendingChunks, pendingVectors, queryText, queryVectorFor, rememberQueryVector, storeChunkVectors, storeVectors, type MemoryDatabase } from "@lane-pilot/memory-core";
 import { scheduleIsolated } from "../../platform/server";
+import { dedupeAllProjects } from "./memory-duplicates-cli";
 import { type ServerCore } from "../../contracts/server";
 import { envCatalogKey } from "../../learning";
 import { mountMemoryJudge } from "./memory-judge";
@@ -11,6 +12,7 @@ import { mountMemoryJudge } from "./memory-judge";
  */
 export const EMBED_KEY_NAME = "GEMINI_API_KEY_AISTUDIO";
 export const EMBED_SCHEDULE = "memory-embed";
+export const DEDUPE_SCHEDULE = "memory-dedupe";
 const URL = `https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:batchEmbedContents`;
 const BATCH = 50, QUERY_TIMEOUT_MS = 4000, BATCH_TIMEOUT_MS = 60_000;
 
@@ -84,6 +86,12 @@ export function mountMemoryEmbeddings(ctx: ServerCore): void {
     if (ctx.isDisposed() || signal?.aborted) return;
     const stored = await embedPending(ctx.db, embedder);
     if (stored) ctx.log(`memory embeddings: ${stored} records`);
+  }, { timeoutMs: 10 * 60_000 });
+  // Nightly, after the five-minute embedder has had the day's notes: near-duplicate notes are merged with no owner step (copies go to the archive).
+  scheduleIsolated(ctx.bb, DEDUPE_SCHEDULE, "40 3 * * *", async (signal) => {
+    if (ctx.isDisposed() || signal?.aborted) return;
+    const merged = dedupeAllProjects(ctx.db);
+    if (merged.length) ctx.log(`memory dedupe: ${merged.map((item) => `${item.projectId} ${item.merged}`).join(", ")}`);
   }, { timeoutMs: 10 * 60_000 });
 }
 

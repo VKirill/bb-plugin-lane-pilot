@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { EMBED_DIM, dedupeProject, dropMemoryIndexes, duplicatePairs, duplicateWords, factsAgree, parseMemorySettings, searchMemoryRecords, storeMemoryRecords, storeVectors, textRelation, type MemoryCandidate } from "@lane-pilot/memory-core";
 import { migrations } from "../src/rooms/plugin-db";
 import { runMemoryImport } from "../src/rooms/memory/server/import";
-import { runMemoryDuplicatesCli } from "../src/rooms/memory/server/memory-duplicates-cli";
+import { dedupeAllProjects, runMemoryDuplicatesCli } from "../src/rooms/memory/server/memory-duplicates-cli";
 
 const LIMITS = { coreBudget: 9_999, noteBudget: 99_999, indexBudget: 99_999 };
 const fresh = () => { const db = new Database(":memory:"); for (const m of migrations) db.exec(m); return db; };
@@ -85,6 +85,14 @@ describe("memory duplicates and dedupe", () => {
     write(db, "Quarantined pallets are scanned at bay twelve by the night crew and tagged with a violet sticker.", { now: Date.now() - 1000 });
     return { db, a, b };
   };
+
+  it("the nightly pass merges every project's copies with no owner step and is a no-op the second night", () => {
+    const { db, a, b } = seed();
+    expect(dedupeAllProjects(db as never)).toEqual([{ projectId: "p", merged: 1 }]);
+    expect(status(db, b)).toEqual({ status: "expired", expired_reason: "duplicate", superseded_by: a });
+    expect(status(db, a).status).toBe("active");
+    expect(dedupeAllProjects(db as never)).toEqual([]);
+  });
 
   it("lists the pairs read-only", () => {
     const { db, a, b } = seed();
