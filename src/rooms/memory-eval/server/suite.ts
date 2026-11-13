@@ -1,8 +1,8 @@
 import Database from "better-sqlite3";
-import { DOC_CHARS, EMBED_DIM, estimateTokens, hideRecord, memoryStem, memoryTokens, parseMemorySettings, pendingChunks, pendingVectors, storeChunkVectors, recordRelevance, rememberQueryVector, searchMemoryRecords, sharedScope, storeMemoryRecords, storeVectors, answerProbability, weakAnswer, wordFrequencies, type MemoryAudience, type MemoryRecord, type MemorySettings } from "@lane-pilot/memory-core";
+import { DOC_CHARS, EMBED_DIM, estimateTokens, hideRecord, memoryStem, memoryTokens, parseMemorySettings, pendingChunks, pendingVectors, storeChunkVectors, recordRelevance, rememberQueryVector, searchMemoryRecords, sharedScope, storeMemoryRecords, storeVectors, answerProbability, weakAnswer, wordFrequencies, type MemoryAudience, type MemoryRecord, type MemorySettings, type PackOptions } from "@lane-pilot/memory-core";
 import type { LanePilotDatabase } from "../../storage";
 import { mixWriterMemory, pmMemoryContext } from "../../memory/server";
-import { SUITE_CASES, SUITE_NOTES, SUITE_PROJECT, type SuiteCase, type SuiteFamily, type SuiteNote } from "./suite-fixture";
+import { SUITE_CASES, SUITE_NOTES, SUITE_PACK_NOTES, SUITE_PROJECT, type SuiteCase, type SuiteFamily, type SuiteNote } from "./suite-fixture";
 
 /**
  * The offline memory suite: the cases H1-H7 of the memory research run against synthetic notes in a scratch database, no network and no model.
@@ -86,7 +86,7 @@ export type CaseResult = {
 const SETTINGS = (audience: MemoryAudience): MemorySettings => parseMemorySettings({ "memory.audience": audience });
 
 /** One case: embeds the question (stand-in), reads the context like the PM tool or the writer's brief does, and judges it against what the case expects. */
-export function runCase(plant: SuitePlant, item: SuiteCase): CaseResult {
+export function runCase(plant: SuitePlant, item: SuiteCase, options: PackOptions = {}): CaseResult {
   const { db, ids, keys } = plant;
   rememberQueryVector(item.question, standInEmbedding(item.question));
   const audience = item.audience ?? "subagent";
@@ -97,7 +97,7 @@ export function runCase(plant: SuitePlant, item: SuiteCase): CaseResult {
     text = mixed.text; returnedIds = mixed.ids;
     nothingRelevant = returnedIds.length === 0;
   } else {
-    const packed = pmMemoryContext(db, SUITE_PROJECT, SETTINGS(audience), item.question, item.chain ?? [], "pm");
+    const packed = pmMemoryContext(db, SUITE_PROJECT, SETTINGS(audience), item.question, item.chain ?? [], "pm", undefined, options);
     text = packed.text; returnedIds = packed.records.map((record) => record.id);
     nothingRelevant = packed.nothingRelevant;
     judgeNone = !nothingRelevant && stubJudgeNone(db, item, audience);
@@ -130,7 +130,7 @@ export type FamilyScore = { family: SuiteFamily | "H7"; title: string; n: number
 export type SuiteCost = { meanTokens: number; p95Ms: number; maxTokens: number; cases: number };
 export type SuiteReport = { cases: CaseResult[]; families: FamilyScore[]; cost: SuiteCost; leaks: string[] };
 
-const TITLES: Record<SuiteFamily, string> = { H1: "writer brief recall", H2: "PM question on a past decision", H3: "no answer (incl. near-miss)", H4: "updated fact returns the new version", H5: "cross-section leakage", H6: "grey band of the gate", H8: "archived record found by PM search", H9: "history question shows the old version", H10: "long record found by a later paragraph" };
+const TITLES: Record<SuiteFamily, string> = { H1: "writer brief recall", H2: "PM question on a past decision", H3: "no answer (incl. near-miss)", H4: "updated fact returns the new version", H5: "cross-section leakage", H6: "grey band of the gate", H8: "archived record found by PM search", H9: "history question shows the old version", H10: "long record found by a later paragraph", H11: "record over budget shown as a head line", H12: "answer in a neighbour chunk of the best one" };
 const pct = (value: number) => `${(value * 100).toFixed(0)}%`;
 
 export function scoreSuite(cases: readonly CaseResult[]): SuiteReport {
@@ -159,11 +159,12 @@ export function scoreSuite(cases: readonly CaseResult[]): SuiteReport {
   return { cases: [...cases], families, cost, leaks };
 }
 
-/** The whole offline suite on a fresh scratch database. */
-export function runSuite(migrations: readonly string[], cases: readonly SuiteCase[] = SUITE_CASES): SuiteReport {
-  const plant = plantSuite(migrations);
-  try { return scoreSuite(cases.map((item) => runCase(plant, item))); }
-  finally { (plant.db as unknown as Database.Database).close(); }
+/** The whole offline suite on fresh scratch databases: the main fixture, and one for each set of the packing cases (H11, H12). */
+export function runSuite(migrations: readonly string[], cases: readonly SuiteCase[] = SUITE_CASES, options: PackOptions = {}): SuiteReport {
+  const plants = new Map<string, SuitePlant>([["main", plantSuite(migrations)]]);
+  for (const item of cases) if (item.notes && !plants.has(item.notes)) plants.set(item.notes, plantSuite(migrations, SUITE_PACK_NOTES[item.notes]));
+  try { return scoreSuite(cases.map((item) => runCase(plants.get(item.notes ?? "main")!, item, options))); }
+  finally { for (const plant of plants.values()) (plant.db as unknown as Database.Database).close(); }
 }
 
 export type SuiteBaseline = { version: number; families: Record<string, { n: number; pass: number }>; meanTokens: number; note?: string };

@@ -71,7 +71,7 @@ const contentOf = (key: string): string => SUITE_NOTES.find((note) => note.key =
 
 /** The cases a `--limit` keeps: PM questions only (a writer's brief is not asked a question), taken round-robin over the families so a small limit still touches each. */
 export function e2eCases(limit?: number, cases: readonly SuiteCase[] = SUITE_CASES): SuiteCase[] {
-  const asked = cases.filter((item) => item.surface === "pm");
+  const asked = cases.filter((item) => item.surface === "pm" && !item.notes);
   if (!limit || limit >= asked.length) return asked;
   const lanes = new Map<string, SuiteCase[]>();
   for (const item of asked) lanes.set(item.family, [...(lanes.get(item.family) ?? []), item]);

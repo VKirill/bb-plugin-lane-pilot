@@ -36,8 +36,16 @@
     "H10": {
       "n": 3,
       "pass": 3
+    },
+    "H11": {
+      "n": 1,
+      "pass": 1
+    },
+    "H12": {
+      "n": 1,
+      "pass": 1
     }
   },
-  "meanTokens": 1106,
+  "meanTokens": 1131,
   "note": "recorded 2026-11-13 with the stand-in embedding"
 }

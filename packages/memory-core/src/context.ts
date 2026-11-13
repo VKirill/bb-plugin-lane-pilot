@@ -53,18 +53,47 @@ export function roleContextBudget(role:string,configured:number):number {
   return Math.min(configured,ROLE_CONTEXT_BUDGET[role]??configured);
 }
 
-export function memoryContext(records:MemoryRecord[],taskText:string,budget:number):{text:string;records:MemoryRecord[];estimatedTokens:number;cut:MemoryRecord[]} {
+/** The packing layers added by memory bench round 4 (R4.5): a head line for a record that does not fit, and neighbour chunks around the best one. Off only for tests and the suite's before/after run. */
+export type PackOptions = { heads?: boolean; neighbours?: boolean };
+/** A head line shows the first this many characters of a record, and at most this many heads are added to one pack. */
+const HEAD_CHARS = 120, MAX_HEADS = 10;
+
+/** One short line for a record the budget could not hold whole: kind, date, id and the start of the text, so the reader knows the record exists. */
+export function memoryHeadLine(record:MemoryRecord):string {
+  const from=isoDay(startOf(record));
+  const when=record.status==="superseded"&&record.supersededAt!=null?`replaced; ${from}..${isoDay(record.supersededAt)}`:from;
+  const text=record.content.replace(/\s+/g," ").trim();
+  return `- [${record.kind}; ${when}; head; id=${record.id.slice(0,12)}] ${text.length>HEAD_CHARS?`${text.slice(0,HEAD_CHARS).trimEnd()}…`:text}`;
+}
+
+export function memoryContext(records:MemoryRecord[],taskText:string,budget:number,options:PackOptions={}):{text:string;records:MemoryRecord[];estimatedTokens:number;cut:MemoryRecord[];heads:MemoryRecord[]} {
+  const {heads:withHeads=true,neighbours:withNeighbours=true}=options;
   const terms=new Set(tokens(taskText));
   // Relevance first; a note that served accepted attempts counts for more than one that did not, and each extra independent source adds a small bonus (arXiv #21).
   const ranked=records.map((record)=>({record,score:tokens(`${record.content} ${record.concepts.join(" ")}`).reduce((sum,token)=>sum+(terms.has(token)?1:0),0)*(0.5+memoryUsefulness(record)+Math.min(0.3,0.1*((record.verification?.length??1)-1)))}))
     .filter((item)=>item.score>0).sort((a,b)=>b.score-a.score||b.record.createdAt-a.record.createdAt||a.record.id.localeCompare(b.record.id));
-  const picked:MemoryRecord[]=[];const cut:MemoryRecord[]=[];let text="";
+  const lines=new Map<string,string>();const picked:MemoryRecord[]=[];const over:MemoryRecord[]=[];
+  const render=(replace?:{id:string;line:string}):string=>[...lines].map(([id,line])=>replace&&replace.id===id?replace.line:line).join("\n");
   // The header is part of the line the budget pays for: counting content alone let a long concepts list overshoot (F10-4).
-  for(const item of ranked){const line=memoryContextLine(item.record,chunkFor(item.record,terms));const next=text?`${text}\n${line}`:line;if(estimateTokens(next)>budget){cut.push(item.record);continue;}text=next;picked.push(item.record);}
+  for(const item of ranked){const line=memoryContextLine(item.record,chunkFor(item.record,terms));lines.set(item.record.id,line);if(estimateTokens(render())>budget){lines.delete(item.record.id);over.push(item.record);continue;}picked.push(item.record);}
+  // A record that does not fit whole still shows as a head line while head lines fit, so the reader knows it exists (a search can fetch it).
+  const cut:MemoryRecord[]=[];const headed:MemoryRecord[]=[];
+  for(const record of over){
+    if(withHeads&&headed.length<MAX_HEADS){const line=memoryHeadLine(record);lines.set(record.id,line);if(estimateTokens(render())<=budget){headed.push(record);continue;}lines.delete(record.id);}
+    cut.push(record);
+  }
+  // With the budget left, a long record shows the chunks next to the best one too, in chunk order, in relevance order of the records.
+  if(withNeighbours)for(const record of picked){
+    const chunks=contentChunks(record.content);const best=chunkFor(record,terms);
+    if(best==null||chunks.length<2)continue;
+    const line=memoryContextLine(record,[Math.max(0,best-1),Math.min(chunks.length-1,best+1)]);
+    if(estimateTokens(render({id:record.id,line}))<=budget)lines.set(record.id,line);
+  }
   // Records of one topic read oldest first, so a changed fact shows its sequence; the budget was spent in relevance order above, on the same lines.
-  const selected=chronologicalByTopic(picked);
-  text=selected.map((record)=>memoryContextLine(record,chunkFor(record,terms))).join("\n");
-  return {text,records:selected,estimatedTokens:estimateTokens(text),cut};
+  const selected=chronologicalByTopic([...picked,...headed]);
+  const text=selected.map((record)=>lines.get(record.id)!).join("\n");
+  const headIds=new Set(headed.map((record)=>record.id));
+  return {text,records:selected.filter((record)=>!headIds.has(record.id)),estimatedTokens:estimateTokens(text),cut,heads:headed};
 }
 
 /**
@@ -75,7 +104,9 @@ export function explainMemory(records:MemoryRecord[],taskText:string,budget:numb
   const packed=memoryContext(records,taskText,budget);
   const kept=new Set(packed.records.map((record)=>record.id));
   const dropped=new Set(packed.cut.map((record)=>record.id));
+  const headed=new Set(packed.heads.map((record)=>record.id));
   return records.map((record)=>{
+    if(headed.has(record.id))return `deliver ${record.id} — matched, over the context budget: shown as a head line`;
     if(kept.has(record.id))return `deliver ${record.id} — matched the query`;
     if(dropped.has(record.id))return `reject ${record.id} — matched, cut by the context budget`;
     return `reject ${record.id} — no token overlap`;
@@ -112,13 +143,19 @@ function chunkFor(record:MemoryRecord,terms:ReadonlySet<string>):number|undefine
   return best;
 }
 
-/** A line of the pack: kind, the date the fact began to hold (a replaced version: its interval, from..until), tags, text. A long record shows the chunk that matched, marked `part i/n`. */
-export function memoryContextLine(record:MemoryRecord,chunk:number|undefined=record.bestChunk):string {
+/**
+ * A line of the pack: kind, the date the fact began to hold (a replaced version: its interval, from..until), tags, text. A long record shows the chunk that matched,
+ * marked `part i/n`, or a run of chunks `[from, to]` (the best one and its neighbours, in chunk order) marked `part i–j/n`.
+ */
+export function memoryContextLine(record:MemoryRecord,chunk:number|readonly [number,number]|undefined=record.bestChunk):string {
   const from=isoDay(startOf(record));
   const when=record.status==="superseded"&&record.supersededAt!=null?`replaced; ${from}..${isoDay(record.supersededAt)}`:from;
   const chunks=chunk==null?[]:contentChunks(record.content);
-  const part=chunks[chunk??-1];
-  return `- [${record.kind}; ${when};${part===undefined?"":` part ${(chunk??0)+1}/${chunks.length};`} concepts=${record.concepts.join(", ")}] ${part??record.content}`;
+  const [first,last]=typeof chunk==="number"?[chunk,chunk]:chunk??[0,0];
+  const shown=chunks.slice(first,last+1);
+  const part=shown.length?shown.join("\n\n"):undefined;
+  const mark=part===undefined?"":` part ${first+1}${last>first?`–${last+1}`:""}/${chunks.length};`;
+  return `- [${record.kind}; ${when};${mark} concepts=${record.concepts.join(", ")}] ${part??record.content}`;
 }
 
 /**

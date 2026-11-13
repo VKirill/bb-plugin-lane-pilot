@@ -24,6 +24,15 @@ const BANK = ["amber", "basalt", "cobalt", "dunes", "ember", "fjord", "garnet", 
 /** About 1400 characters: a lead line and filler cycled from the first `width` words of the bank, so a paragraph adds a controlled amount of vocabulary of its own. */
 const padding = (lead: string, width: number) => `${lead} ${Array.from({ length: 220 }, (_, index) => BANK[index % width]).join(" ")}`.slice(0, 1400);
 /** H10: a runbook of about ten thousand characters; the facts sit in the sixth to the eighth paragraph, far beyond the 6000 characters one embedding reads. */
+/** H11: a note of about 5,700 characters (under the embedding window); two of them match one question and together overrun the PM's 1,600-token budget. */
+const bigNote = (lead: string) => [padding(lead, 20), ...Array.from({ length: 3 }, (_, index) => padding(`Continued ${index + 1}.`, 20))].join(" ");
+/** H12: a ledger of nine paragraphs; the paragraph the question names is the sixth, the stamp that answers it stands in the seventh and shares no word with the question. */
+const LEDGER = [
+  ...Array.from({ length: 5 }, (_, index) => padding(`Ledger part ${index + 1}.`, 60)),
+  padding("Porto customs hold: a pallet flagged by Porto customs is parked in bay nine until the hold ticket is closed; the closing procedure follows.", 20),
+  padding("Closing procedure: the stamped form PX-9913 signed by the inspector clears the pallet, and the dispatcher files the form in services/dispatch/forms.ts.", 20),
+  ...Array.from({ length: 2 }, (_, index) => padding(`Ledger part ${index + 8}.`, 60)),
+].join("\n\n");
 const RUNBOOK = [
   ...Array.from({ length: 5 }, (_, index) => padding(`Runbook part ${index + 1}.`, 60)),
   padding("Depot failover: when the Lisbon depot scanner mesh drops for more than ten minutes, switch the dispatcher to the manual queue and page the dispatch lead.", 20),
@@ -87,7 +96,22 @@ export const SUITE_NOTES: SuiteNote[] = [
   { key: "export-faq", audience: "export", content: "Export copy: customers can track a parcel with the number on the label, without signing in.", concepts: ["faq"] },
 ];
 
-export type SuiteFamily = "H1" | "H2" | "H3" | "H4" | "H5" | "H6" | "H8" | "H9" | "H10";
+/**
+ * The notes of H11 and H12, each set planted in a database of its own: big notes and a long ledger shift the answer gate's length statistics (and with them the
+ * grey band of H3 and H6) and would compete for one budget, so a case names its set with `notes`. H11: two notes that match one question and do not fit the PM
+ * budget together. H12: a long ledger whose answer sits next to the paragraph the question names.
+ */
+export const SUITE_PACK_NOTES: Record<"heads" | "chunks", SuiteNote[]> = {
+  heads: [
+    { key: "kestrel-a", content: bigNote("Kestrel tallow lanyard rule A: pallets of the Kestrel depot are held 45 days before release."), concepts: ["kestrel"] },
+    { key: "kestrel-b", content: bigNote("Kestrel tallow lanyard rule B: the tallow seal on a Kestrel lanyard is renewed every 8 days."), concepts: ["kestrel"] },
+  ],
+  chunks: [
+    { key: "ledger", content: LEDGER, concepts: ["ledger"] },
+  ],
+};
+
+export type SuiteFamily = "H1" | "H2" | "H3" | "H4" | "H5" | "H6" | "H8" | "H9" | "H10" | "H11" | "H12";
 export type SuiteCase = {
   id: string; family: SuiteFamily;
   /** What the case exercises, for the table. */
@@ -103,6 +127,8 @@ export type SuiteCase = {
   forbid?: string[];
   /** Text the reader's context must carry: a date interval of a replaced version, or the paragraph of a long record that answers. */
   contains?: string[];
+  /** the case runs against its own set of `SUITE_PACK_NOTES` (H11, H12). */
+  notes?: "heads" | "chunks";
 };
 
 const pm = (id: string, family: SuiteFamily, kind: string, question: string, expect: SuiteCase["expect"], more: Partial<SuiteCase> = {}): SuiteCase => ({ id, family, kind, question, surface: "pm", expect, ...more });
@@ -194,4 +220,9 @@ export const SUITE_CASES: SuiteCase[] = [
   pm("h10-carrier", "H10", "long record", "What do we do when the Lisbon depot scanner mesh is down for ten minutes?", ["runbook"], { contains: ["manual queue", "part 6/"] }),
   pm("h10-font", "H10", "long record", "Which typeface does the manifest service use when the Calibri bundle fails to load?", ["runbook"], { contains: ["Courier"] }),
   pm("h10-customs", "H10", "long record", "How long are quarantined pallets kept before the purge job removes them?", ["runbook"], { contains: ["400 days"] }),
+
+  // H11: a record over the budget appears as a head line (date, id, start of the text) instead of vanishing from the pack.
+  pm("h11-kestrel", "H11", "head line", "What do the Kestrel tallow lanyard rules say about seals and audits?", ["kestrel-b"], { notes: "heads", contains: ["head; id=", "Kestrel tallow lanyard rule A: pallets of the Kestrel depot are held 45 days"] }),
+  // H12: the best chunk is the one the question names; the answer stands in its neighbour, which the pack delivers with it.
+  pm("h12-customs", "H12", "neighbour chunk", "What clears a Porto customs hold on a pallet?", ["ledger"], { notes: "chunks", contains: ["PX-9913", "part 5\u20137/"] }),
 ];

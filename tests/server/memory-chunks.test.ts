@@ -57,7 +57,7 @@ describe("a long record is found by a later paragraph", () => {
     rememberQueryVector(query, axis(5));
     const found = searchMemoryRecords(db, "P", query, 5, "auto", "subagent", "", { includeObserved: true });
     const packed = memoryContext(found, "zebra crossing job runs", 1600);
-    expect(packed.text).toMatch(/part \d+\/\d+;/);
+    expect(packed.text).toMatch(/part \d+(?:–\d+)?\/\d+;/);
     expect(packed.text).toContain("zebra crossing job runs at 03:10");
     expect(packed.text).not.toContain("alpha section 0");
     expect(packed.estimatedTokens).toBeLessThanOrEqual(1600);
