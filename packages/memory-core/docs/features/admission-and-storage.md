@@ -2,7 +2,7 @@
 title: Memory admission and storage
 type: component
 created: 2026-11-07
-updated: 2026-11-11
+updated: 2026-11-13
 status: active
 confidence: medium
 tags: [memory, admission, storage, budgets, eviction]
@@ -16,6 +16,7 @@ sources:
   - packages/memory-core/src/conflict-store.ts
   - packages/memory-core/src/index.ts
   - src/rooms/memory/server/memory.ts
+  - src/rooms/migrations.ts
   - src/rooms/memory/server/session-memory.ts
 ---
 
@@ -52,7 +53,7 @@ The admission and storage subsystem ensures that candidate facts are screened fo
 |---|---|---|---|---|
 | Direct write (`storeMemoryRecords`) | Direct invocation by rules engine or tests | Fixed `coreBudget`, `noteBudget`, `indexBudget` | Inserts records; throws if core exceeds `coreBudget` | `packages/memory-core/src/store.ts:89-91, 200-215` |
 | Overflow write (`storeMemoryRecordsKeepingOverflow`) | Maintainer write path | Same budgets | `demoted` tracks excess core records demoted to note kind (`packages/memory-core/src/store.ts:271-283`) | Demoted to note shelf |
-| Direct corpus seed (`insertMemoryRecord`) | Evaluation corpus input | Bypasses admission filters, budgets, and indexing | Directly inserts active row with `trust='confirmed'` and `audience='subagent'` | `packages/memory-core/src/store.ts:550-554` |
+| Direct corpus seed (`insertMemoryRecord`) | Evaluation corpus input | Bypasses admission filters, budgets, and indexing | Directly inserts with `trust='confirmed'` and `audience='subagent'`; the schema default sets `status='active'` | `packages/memory-core/src/store.ts:552-556`, `src/rooms/migrations.ts:286` |
 | Hedged claim | Note containing words like "maybe", "perhaps", "кажется", "возможно" | `claimIsHedged(content)` matches regex | Forces `trust='observed'` even if input requested `confirmed` | `packages/memory-core/src/store.ts:114-119`, `packages/memory-core/src/store.ts:125` |
 | Candidate salience | Maintainer candidate before the write door | `memoryEntrySalience` score (`packages/memory-core/src/candidates.ts:60-66`) vs `memory.salience_min` (default 40, effective range 1–100) (`packages/memory-core/src/settings.ts:49-53, 63`) | Maintainer path drops entries below the floor; the parser does not apply this gate | `src/rooms/memory/server/memory.ts:177-180` |
 | Rule origin | Input with `origin: "rule"` | Restricted to rules pipeline | Allowed to attach `"rule"` concept tag | `packages/memory-core/src/store.ts:131-132` |
@@ -66,8 +67,8 @@ The admission and storage subsystem ensures that candidate facts are screened fo
 | Instruction injection | Instruction override pattern matched in content | Throws `"memory content addresses the assistant with an instruction override; no memory was saved"` | `packages/memory-core/src/candidates.ts:15, 21-24` |
 | Oversize candidate content | Content > 64,000 bytes or empty | Throws `"memory content is empty or exceeds the 64000 byte limit"` | `packages/memory-core/src/candidates.ts:115` |
 | Unsupported fields (`KNOWN_FIELDS`) | Unknown property with a non-empty value, except a recognized reviewer concept set to `true` when `concepts` is an array | Throws `"memory entry contains unsupported fields"`; empty extras are discarded and reviewer booleans become concept tags | `packages/memory-core/src/candidates.ts:99-107` |
-| Invalid concepts | Concept count > 24 or string > 100 chars | Throws `"memory concepts must be up to 24 short strings"` | `packages/memory-core/src/candidates.ts:112` |
-| Invalid supersedes | More than 5 IDs or invalid hex format | Throws `"memory supersedes must be up to 5 record ids (12 to 64 hex characters)"` | `packages/memory-core/src/candidates.ts:113` |
+| Invalid concepts | Concept count > 24, non-string or blank item, or string > 100 chars | Throws `"memory concepts must be up to 24 short strings"` | `packages/memory-core/src/candidates.ts:118` |
+| Invalid supersedes | More than 5 IDs or ID outside the 12–64 lowercase hex format | Throws `"memory supersedes must be up to 5 record ids (12 to 64 hex characters)"` | `packages/memory-core/src/candidates.ts:119` |
 | Core budget exceeded | Core tokens > `coreBudget` in `storeMemoryRecords` | Throws `"memory core budget exceeded: <core>/<budget> tokens"` | `packages/memory-core/src/store.ts:200-203` |
 | Note budget exceeded after eviction | Even after evicting all eligible notes, batch does not fit | Throws `"memory note budget exceeded: <left>/<budget> tokens"` | `packages/memory-core/src/store.ts:203-212` |
 | Index budget exceeded after eviction | Even after evicting all eligible notes, combined tokens exceed budget | Throws `"memory index budget exceeded: <total>/<budget> tokens"` | `packages/memory-core/src/store.ts:203-212` |
@@ -93,8 +94,8 @@ The admission and storage subsystem ensures that candidate facts are screened fo
 - `parseMemoryCandidates(raw: unknown, settings: MemorySettings): MemoryCandidate[]`: parses and validates candidate entries (`packages/memory-core/src/candidates.ts:97-135`).
 - `storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput): StoreMemoryResult`: writes records within budgets in a transaction (`packages/memory-core/src/store.ts:121-240`).
 - `storeMemoryRecordsKeepingOverflow(db: MemoryDatabase, input: StoreMemoryInput): StoreMemoryResult & { entries: MemoryCandidate[]; demoted: number }`: writes records, demoting core overflows to notes (`packages/memory-core/src/store.ts:262-274`).
-- `insertMemoryRecord(db: MemoryDatabase, input: { id: string; projectId: string; kind: string; content: string; conceptsJson: string; sourceSha256: string; createdAt: number; origin: string }): void`: directly inserts a record for eval corpus seeding without admission or indexing side effects (`packages/memory-core/src/store.ts:550-556`).
-- `deleteMemoryRecord(db: Database.Database, projectId: string, id: string): void`: removes a record and purges its search indexes (`packages/memory-core/src/store.ts:448-464`).
+- `insertMemoryRecord(db: MemoryDatabase, input: { id: string; projectId: string; kind: string; content: string; conceptsJson: string; sourceSha256: string; createdAt: number; origin: string }): void`: directly inserts an eval corpus row without admission or indexing side effects (`packages/memory-core/src/store.ts:552-556`).
+- `deleteMemoryRecord(db: Database.Database, projectId: string, id: string): string[]`: removes a record and its indexes, embedding, promotion, and conflict rows; returns deferral IDs for held conflicts so callers can close them (`packages/memory-core/src/store.ts:445-465`).
 - `coreShelf(db: MemoryDatabase, projectId: string, personalBot: string, audience: MemoryAudience, scope?: readonly string[])`: returns active core token counts and replaceable records (`packages/memory-core/src/store.ts:255-260`).
 
 ## Gotchas

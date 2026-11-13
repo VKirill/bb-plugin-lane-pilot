@@ -2,9 +2,9 @@
 title: Memory core workspace overview
 type: overview
 created: 2026-11-07
-updated: 2026-11-11
+updated: 2026-11-13
 status: active
-confidence: medium
+confidence: high
 tags: [memory, knowledge, workspace, sqlite]
 sources:
   - packages/memory-core/package.json
@@ -45,7 +45,7 @@ The workspace encapsulates project memory logic for agent sessions (`packages/me
 - Parsing and admission screening of model candidates, rejecting credentials and instruction overrides (`packages/memory-core/src/candidates.ts:15-18`).
 - Transactional record storage with automated budget eviction and core overflow demotion (`packages/memory-core/src/store.ts:121-207`, `packages/memory-core/src/store.ts:262-274`).
 - Hybrid search fusing word indexing, trigram substring matching, and 768-dimensional vector cosine similarity (`searchMemoryRecords` in `packages/memory-core/src/store.ts:329-359`, `EMBED_DIM` in `packages/memory-core/src/vectors.ts:13-14`).
-- Relevance filtering using word frequency log-scaling and dense vector cutoffs (`packages/memory-core/src/floor.ts:31-35`, `packages/memory-core/src/floor.ts:96-120`).
+- Relevance filtering using word frequency log-scaling and dense vector cutoffs, with a separate low-confidence answer signal that leaves retrieved notes available (`packages/memory-core/src/floor.ts:31-35, 96-164`).
 - Context assembly for prompts and session packets under strict role budgets (`packages/memory-core/src/context.ts:48-64`, `packages/memory-core/src/context-pack.ts:26-67`).
 - Pairwise conflict detection and hold mechanisms (`packages/memory-core/src/conflicts.ts:95-105`, `packages/memory-core/src/conflict-store.ts:62-67, 68-76`).
 - Read-only corpus review proposes same-subject supersession and idle or dated expiration actions (`packages/memory-core/src/lint.ts:118-142`; details in [lifecycle and files](features/lifecycle-and-files.md)).
@@ -59,7 +59,7 @@ The workspace encapsulates project memory logic for agent sessions (`packages/me
 3. An agent or maintainer model emits candidate entries, parsed and validated by `parseMemoryCandidates` against token budgets and admission rules (`packages/memory-core/src/candidates.ts:91-128`).
 4. Validated candidates are written to SQLite via `storeMemoryRecordsKeepingOverflow` or `storeMemoryRecords`, which updates search indexes and handles budget evictions (`packages/memory-core/src/store.ts:121-246`, `packages/memory-core/src/store.ts:262-280`).
 5. Working sessions search memory using `searchMemoryRecords` or `searchMemoryAllSections`, passing an optional section chain to enforce isolation (`packages/memory-core/src/store.ts:324-359`).
-6. Retrieved candidate records pass through `relevantRecords` to filter out records failing the relevance floor (`packages/memory-core/src/floor.ts:112-120`).
+6. Retrieved candidate records pass through `relevantRecords` to filter out records failing the lexical or vector relevance floor (`packages/memory-core/src/floor.ts:156-164`). Meaning searches can also be flagged by `weakAnswer`; that signal does not remove records (`packages/memory-core/src/floor.ts:144-153`).
 7. Selected records are packaged into prompt text via `memoryContext` or built into an immutable session context pack via `buildContextPack` (`packages/memory-core/src/context.ts:55-64`, `packages/memory-core/src/context-pack.ts:26-67`).
 8. Accepted task attempts report feedback via `recordMemoryAccepted` (`packages/memory-core/src/lifecycle.ts:114-118`) to adjust `memoryUsefulness` scores (`packages/memory-core/src/lifecycle.ts:88-92`).
 
@@ -80,7 +80,9 @@ Primary exported functions include:
 - `coldMemoryRows`: retrieves idle-expired and archived notes for cold-tier search (`packages/memory-core/src/store.ts:499-507`).
 - `reactivateColdMemory`: re-activates an idle-expired or archived note (`packages/memory-core/src/store.ts:508-513`).
 - `listMemoryMisses`: queries logged searches that returned zero results (`packages/memory-core/src/store.ts:539-548`).
-- `relevantRecords`: applies relevance thresholds based on query length and path anchors (`packages/memory-core/src/floor.ts:112-120`).
+- `relevantRecords`: applies relevance thresholds based on query length and path anchors (`packages/memory-core/src/floor.ts:156-164`).
+- `weakAnswer`: flags low-confidence meaning search results without removing them; `WEAK_MATCH` provides the warning text (`packages/memory-core/src/floor.ts:137-153`, `packages/memory-core/src/index.ts:20`).
+- `listMemoryReceipts`: reads recent retrieval receipts, optionally for one project (`packages/memory-core/src/lifecycle.ts:120-153`).
 - `buildContextPack`: builds deterministic session context packets adhering to role caps (`packages/memory-core/src/context-pack.ts:26-67`).
 - `findConflicts`: detects pairwise disagreements between notes (`packages/memory-core/src/conflicts.ts:95-105`).
 - `reviewMemory`: returns same-subject, idle, and dated review proposals without writing them (`packages/memory-core/src/index.ts:25`, `packages/memory-core/src/lint.ts:123-142`).
