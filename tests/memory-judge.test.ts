@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { EMBED_DIM, JUDGE_DEFAULTS, judgeUserPrompt, maskSecretsForJudge, memoryJudgeStats, parseJudgeReply, parseMemorySettings, rememberQueryVector, shuffledBy, storeMemoryRecords, storeVectors, listMemoryReceipts, type MemoryRecord } from "../packages/memory-core/src";
-import { judgeFound, openLuxJudge, setMemoryJudge } from "../src/rooms/memory/server/memory-judge";
+import { judgeFound, judgeRoutes, openLuxJudge, setMemoryJudge } from "../src/rooms/memory/server/memory-judge";
 import { judgeWriterMemory, mixWriterMemory, pmMemoryContext, pmMemoryContextJudged } from "../src/rooms/memory/server/memory-mix";
 import { openDatabase } from "../src/rooms/plugin-db";
 
@@ -83,6 +83,51 @@ describe("the judge call", () => {
     expect(user.endsWith("Which of these notes contain facts that help answer the question? Reply with only the numbers of ALL notes that help, separated by commas, or the word none if no note helps.")).toBe(true);
     expect(user).not.toContain("sk-abcdefghijklmnopqrstuvwx");
     expect(user).toContain("[REDACTED]");
+  });
+
+  it("router9/ names go to 9router with its key; a 403 there asks OpenLux at once and skips 9router for two minutes", async () => {
+    let clock = 1_000;
+    const calls: Array<{ url: string; model: string; auth: string | null }> = [];
+    const replies: Array<string | number> = [403, "none", "1", "1"];
+    const fetchImpl = (async (url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      calls.push({ url, model: body.model, auth: (init.headers as Record<string, string>).Authorization ?? null });
+      const next = replies[calls.length - 1] ?? 500;
+      if (typeof next === "number") return new Response("{}", { status: next });
+      return new Response(JSON.stringify({ choices: [{ message: { content: next } }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const routes = judgeRoutes(async () => "lux-key", async () => "r9-key");
+    const judge = openLuxJudge(async () => "lux-key", fetchImpl, () => clock, undefined, routes);
+    const routed = { model: "router9/ag/gemini-3.8-flash-low", fallbackModel: "gemini-3.8-flash", timeoutMs: 12_000 };
+    const first = await judge({ query: "q1", candidates, settings: routed });
+    expect(calls.map((call) => [call.url, call.model, call.auth])).toEqual([
+      ["https://9router.vechkasov.pro/v1/chat/completions", "ag/gemini-3.8-flash-low", "Bearer r9-key"],
+      ["https://api.openlux.ai/v1/chat/completions", "gemini-3.8-flash", "Bearer lux-key"],
+    ]);
+    expect(first.chosen).toEqual([]);
+    expect(first.receipt.retriedWith).toBe("gemini-3.8-flash");
+    // within the lock: straight to OpenLux
+    clock += 60_000;
+    await judge({ query: "q2", candidates, settings: routed });
+    expect(calls[2]!.url).toBe("https://api.openlux.ai/v1/chat/completions");
+    // after the lock: 9router again
+    clock += 2 * 60_000;
+    await judge({ query: "q3", candidates, settings: routed });
+    expect(calls[3]!.url).toBe("https://9router.vechkasov.pro/v1/chat/completions");
+  });
+
+  it("a hang on 9router is not the end: OpenLux gets a fresh window", async () => {
+    const calls: string[] = [];
+    const fetchImpl = (async (url: string) => {
+      calls.push(url);
+      if (url.includes("9router")) throw Object.assign(new Error("timed out"), { name: "TimeoutError" });
+      return new Response(JSON.stringify({ choices: [{ message: { content: "2" } }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const judge = openLuxJudge(async () => "k", fetchImpl, Date.now, undefined, judgeRoutes(async () => "k", async () => "k"));
+    const out = await judge({ query: "q", candidates, settings: { model: "router9/ag/gemini-3.8-flash-low", fallbackModel: "gemini-3.8-flash", timeoutMs: 12_000 } });
+    expect(calls).toHaveLength(2);
+    expect(out.chosen).toHaveLength(1);
+    expect(out.receipt.fallback).toBeUndefined();
   });
 
   it("none is an answer: no notes, no fallback", async () => {
@@ -225,7 +270,7 @@ describe("judging a search", () => {
 
 describe("defaults", () => {
   it("the five settings read their defaults and a bad model id does not take memory down", () => {
-    expect(parseMemorySettings({})).toMatchObject({ judgeEnabled: true, judgeModel: JUDGE_DEFAULTS.model, judgeFallbackModel: "gpt-6-luna", judgeTimeoutMs: 12_000, judgeCandidates: 12 });
-    expect(parseMemorySettings({ "memory.judge.model": "has spaces", "memory.judge.candidates": 7 })).toMatchObject({ judgeModel: "gemini-3.8-flash", judgeCandidates: 7 });
+    expect(parseMemorySettings({})).toMatchObject({ judgeEnabled: true, judgeModel: JUDGE_DEFAULTS.model, judgeFallbackModel: JUDGE_DEFAULTS.fallbackModel, judgeTimeoutMs: 12_000, judgeCandidates: 12 });
+    expect(parseMemorySettings({ "memory.judge.model": "has spaces", "memory.judge.candidates": 7 })).toMatchObject({ judgeModel: JUDGE_DEFAULTS.model, judgeCandidates: 7 });
   });
 });

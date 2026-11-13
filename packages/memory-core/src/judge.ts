@@ -11,7 +11,7 @@ import type { MemoryRecord } from "./settings";
  * secrets masked rather than dropped: 96.7% of the wanted notes delivered, 99.1% silence on questions the notes cannot answer.
  */
 
-export const JUDGE_DEFAULTS = { enabled: true, model: "gemini-3.8-flash", fallbackModel: "gpt-6-luna", timeoutMs: 12_000, candidates: 12 } as const;
+export const JUDGE_DEFAULTS = { enabled: true, model: "router9/ag/gemini-3.8-flash-low", fallbackModel: "gemini-3.8-flash", timeoutMs: 12_000, candidates: 12 } as const;
 /** How much of one note the judge reads. */
 export const JUDGE_NOTE_CHARS = 1200;
 /** What a failed judge falls back to: the vector's first five, no warning (the reader is a strong model and decides). */

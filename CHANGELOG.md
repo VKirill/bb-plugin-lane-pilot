@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.547
+
+- **The memory judge runs on the owner's 9router first (`src/rooms/memory/server/memory-judge.ts`).** Default `memory.judge.model` is `router9/ag/gemini-3.8-flash-low`: a `router9/<id>` name goes to `https://9router.vechkasov.pro/v1` with Env Catalog `NINEROUTER_API_KEY` (Gemini on the Antigravity subscription); any other id goes to OpenLux. Default fallback is `gemini-3.8-flash` on OpenLux (the measured judge; `gpt-6-luna` was unstable at staying silent). A 403/429 or a hang on 9router locks that route for two minutes and asks OpenLux at once with a fresh window; receipts show `retriedWith` when the fallback answered. At release time every Gemini 3.8 Flash variant on 9router answered 403 «reset after 2m» (or 429 after 54 s), so until the Antigravity window frees the judge answers through OpenLux.
+
 ## 0.1.546
 
 - **Near-duplicate notes are merged every night with no owner step (`src/rooms/memory/server/embeddings.ts`, schedule `memory-dedupe`, 03:40).** The write door misses a meaning copy when the text could not be embedded at write time; the nightly pass runs `dedupeProject` with apply over every project with active notes (copies go to the archive with `expired_reason='duplicate'`, nothing is deleted) and logs the merged count. `memory dedupe --apply` stays for an immediate run.
