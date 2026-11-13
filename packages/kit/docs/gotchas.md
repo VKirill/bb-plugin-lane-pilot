@@ -2,7 +2,7 @@
 title: Kit gotchas
 type: gotchas
 created: 2026-11-08
-updated: 2026-11-11
+updated: 2026-11-13
 status: active
 confidence: medium
 tags: [kit, gotchas, pitfalls]
@@ -98,11 +98,11 @@ None found in the inspected package code.
 
 ### Root package import pulls Node built-ins into browser bundles
 
-**Problem:** The root entry point of `@lane-pilot/kit` imports Node runtime built-ins from child modules (`packages/kit/src/index.ts:1-15`, `packages/kit/package.json:4`).
+**Problem:** The root entry point of `@lane-pilot/kit` imports Node runtime built-ins from child modules (`packages/kit/src/index.ts:1-16`, `packages/kit/package.json:4`).
 
 **Risk:** Importing `@lane-pilot/kit` from client-side UI code causes bundler failures in browser environments (`packages/kit/package.json:4`, `packages/kit/package.json:11-15`).
 
-**Workaround:** UI code must import browser-safe subpaths directly: `@lane-pilot/kit/owns-paths` for path matching and `@lane-pilot/kit/prompt-coverage` for schema validation (`packages/kit/package.json:13-14`).
+**Workaround:** UI code must import browser-safe subpaths directly: `@lane-pilot/kit/owns-paths` for path matching, `@lane-pilot/kit/prompt-coverage` for schema validation, and `@lane-pilot/kit/invoice-rules` for invoice checks (`packages/kit/package.json:13-15`).
 
 ## Low
 

@@ -2,9 +2,9 @@
 title: Kit workspace overview
 type: overview
 created: 2026-11-08
-updated: 2026-11-11
+updated: 2026-11-13
 status: active
-confidence: medium
+confidence: high
 tags: [kit, utilities, foundation, workspace]
 sources:
   - packages/kit/package.json
@@ -24,17 +24,18 @@ sources:
   - packages/kit/src/hook-shape.ts
   - packages/kit/src/pace.ts
   - packages/kit/src/values.ts
+  - packages/kit/src/invoice-rules.ts
 ---
 
 # Kit workspace overview
 
-TL;DR: `@lane-pilot/kit` aggregates foundational utilities for hashing, secret redaction, process execution, bounded file reading, path ownership matching, resilience, and prompt validation (`packages/kit/src/index.ts:1-15`).
+TL;DR: `@lane-pilot/kit` aggregates foundational utilities for hashing, secret redaction, process execution, bounded file reading, path ownership matching, resilience, prompt validation, and invoice rules (`packages/kit/src/index.ts:1-16`).
 
 ## What it is
 
 The workspace is the lowest shared utility package in the monorepo (`packages/kit/package.json:1-16`). It has no runtime dependencies on other workspace packages or third-party libraries, relying strictly on Node built-in modules for its root entry point while exporting dedicated browser-safe subpaths for client bundles (`packages/kit/package.json:4`, `packages/kit/package.json:11-15`).
 
-Every room in `src/rooms/` and shared packages under `packages/` rely on `@lane-pilot/kit` for consistent cryptographic hashing, safe child process spawning, sensitive credential masking, workspace boundary enforcement, and failure discrimination (`packages/kit/src/index.ts:1-15`).
+Every room in `src/rooms/` and shared packages under `packages/` rely on `@lane-pilot/kit` for consistent cryptographic hashing, safe child process spawning, sensitive credential masking, workspace boundary enforcement, and failure discrimination (`packages/kit/src/index.ts:1-16`).
 
 ## Stack
 
@@ -44,17 +45,18 @@ Every room in `src/rooms/` and shared packages under `packages/` rely on `@lane-
 
 ## Configuration
 
-The package manifest exposes three entry points (`packages/kit/package.json:11-15`):
+The package manifest exposes four entry points (`packages/kit/package.json:11-16`):
 - `.` maps to `./src/index.ts` for Node runtime consumers (`packages/kit/package.json:12`).
 - `./owns-paths` maps to `./src/owns-paths.ts` for browser-safe path matching and task collision checks (`packages/kit/package.json:13`).
 - `./prompt-coverage` maps to `./src/prompt-coverage.ts` for browser-safe schema enum verification (`packages/kit/package.json:14`).
+- `./invoice-rules` maps to `./src/invoice-rules.ts` for invoice checks and INN validation (`packages/kit/package.json:15`, `packages/kit/src/invoice-rules.ts:20-26`).
 
 Environment configuration:
 - `LANE_PILOT_POLL_SCALE`: Optional numeric environment variable read by `pollPause` to accelerate polling intervals during testing (`packages/kit/src/pace.ts:6-7`).
 
 ## Public entry points and capabilities
 
-The package root aggregates fifteen core utility modules (`packages/kit/src/index.ts:1-15`):
+The package root aggregates sixteen core utility modules (`packages/kit/src/index.ts:1-16`):
 
 - **[Bounded workspace file reads](features/bounded-reads.md):** Implements the `lane_pilot_read` protocol with workspace boundary enforcement, segment-by-segment symlink blocking, binary null-byte rejection, UTF-8 validation, and file/slice size bounds (`packages/kit/src/bounded-read.ts:6-28`).
 - **[Secret redaction and credential protection](features/redaction.md):** Generates multi-format search needles, remembers fetched secrets, masks selected credential shapes and registered values, and identifies secret-looking repository paths (`packages/kit/src/redact.ts:15-32`, `packages/kit/src/redact.ts:60-85`, `packages/kit/src/redact.ts:106-130`, `packages/kit/src/secret-files.ts:6-16`).
@@ -63,6 +65,7 @@ The package root aggregates fifteen core utility modules (`packages/kit/src/inde
 - **[Resilience, absence detection, and best effort](features/resilience-and-absence.md):** Distinguishes expected file or RPC entity absence via `isNotFound` (`packages/kit/src/miss.ts:11-100`), and isolates non-critical side effects with warning logging via `bestEffort` (`packages/kit/src/best-effort.ts:8-24`).
 - **[Prompt vocabulary and schema enum coverage](features/prompt-coverage.md):** Validates that prompt instructions contain required literals via `literalCoverage` and extracts schema tokens via `schemaEnums` (`packages/kit/src/prompt-coverage.ts:20-66`).
 - **[System paths, hashing, hooks, and value helpers](features/system-helpers.md):** Provides SHA-256 hashing, including verification output hashes and rerun comparisons (`packages/kit/src/hash.ts:8-93`), standard directories via `resolveHome` (`packages/kit/src/paths.ts:5-43`), hook command normalization via `hookCommandIdentity` (`packages/kit/src/hook-shape.ts:11-52`), and safe property retrieval via `stringAt` (`packages/kit/src/values.ts:3-22`).
+- **[Invoice rules](features/invoice-rules.md):** Validates invoice amounts, tax identifiers and bank account checksums, then classifies client and service name overlap (`packages/kit/src/invoice-rules.ts:20-74`).
 
 ## Workspace consumers
 
@@ -92,5 +95,6 @@ The package root aggregates fifteen core utility modules (`packages/kit/src/inde
 - [Resilience, absence detection, and best effort](features/resilience-and-absence.md) — absence predicates and logged error boundaries.
 - [Prompt vocabulary and schema enum coverage](features/prompt-coverage.md) — schema enum extraction and prompt literal audits.
 - [System paths, hashing, hooks, and value helpers](features/system-helpers.md) — directory conventions, hashing, and hook normalization.
+- [Invoice rules](features/invoice-rules.md) — invoice field checks, name overlap and verdicts.
 - [Kit gotchas](gotchas.md) — known traps, buffer limits, and subpath import requirements.
 - [Monorepo architecture](../../../docs/architecture.md) — system-wide workspace layout and dependency structure.
