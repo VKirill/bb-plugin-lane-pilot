@@ -10,5 +10,6 @@ describe("failureClass: which reasons the rules are sure of", () => {
     expect(classifyFailure("validation_failed", "writer changed paths outside owns_paths: src/a.ts")).toEqual({ cls: "task", confident: true });
     expect(classifyFailure("timeout", "wait timeout")).toEqual({ cls: "provider", confident: true });
     expect(classifyFailure("validation_failed", UNKNOWN)).toEqual({ cls: "task", confident: false });
+    expect(classifyFailure("blocked", "needs_human: which account pays")).toEqual({ cls: "judgment", confident: true });
   });
 });

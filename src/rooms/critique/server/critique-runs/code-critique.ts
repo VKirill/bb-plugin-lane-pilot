@@ -7,7 +7,7 @@ import type { PrototypeConfig, TaskV2 } from "../../../contracts";
 import { reconcileCritic } from "../../../stability";
 import { MAX_FILE_EXCERPT_BYTES } from "../../code-critique";
 import { codeCritiquePrompt, codeCritiqueSource, codeCritiqueStops, criticPersonas, critiqueFromStageResult, critiquePolicyFromResult, freezeCritiquePolicy, parseCodeCritique, parseCodeCritiqueSettings, persistLedgerFields, settingsFromFrozenPolicy, unionCriticFails } from "../../code-critique";
-import { critiqueFromScreen, screenCodeCritique } from "../../critic-screen";
+import { criticLevel } from "../../critic-level";
 import type { CandidateEvidence, FrozenCritiquePolicy } from "../../code-critique";
 import { sha256 } from "../../../tasks";
 import { candidateCitations } from "../../citations";
@@ -38,7 +38,14 @@ export async function runCodeCritique(input:{
   const cites = candidateCitations(input.evidence.files, MAX_FILE_EXCERPT_BYTES);
   const projectSettings = await input.stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
   const qualityMode = resolveQualityMode(input.task,projectSettings[QUALITY_MODE_SETTING]);
-  const settings = withReferenceTestCritic(applyCodeCriticDefault(applyQualityMode(projectSettings,qualityMode),qualityMode,input.task.risk,resolveCodeCriticDefault(projectSettings[CODE_CRITIC_DEFAULT_SETTING],input.criticDefault)), input.evidence.referenceTestEdits);
+  const riskSettings = withReferenceTestCritic(applyCodeCriticDefault(applyQualityMode(projectSettings,qualityMode),qualityMode,input.task.risk,resolveCodeCriticDefault(projectSettings[CODE_CRITIC_DEFAULT_SETTING],input.criticDefault)), input.evidence.referenceTestEdits);
+  // The critic's level by rule (critic-level.ts): strict runs it in gate mode, skip leaves a named receipt, normal is the settings above.
+  // A project that turned the critic off itself keeps that; quality_mode full or a project that turned it on never skips.
+  const level = criticLevel({ taskId:input.taskId, kind:input.task.kind, risk:input.task.risk, paths:input.evidence.files.map((file) => file.path),
+    checks:input.evidence.verification, referenceTestEdits:input.evidence.referenceTestEdits,
+    pinned:qualityMode === "full" || projectSettings["code_critique.enabled"] === true });
+  const settings = level.tier === "strict" && projectSettings["code_critique.enabled"] !== false
+    ? { ...riskSettings, "code_critique.enabled":true, "code_critique.mode":"gate" } : riskSettings;
   const existing = listStageReceipts(input.db, input.runId, input.taskId).find((row) => row.stageId === "code-critique");
   const frozen = input.frozenPolicy ?? critiquePolicyFromResult(existing?.result);
   let parsed:ReturnType<typeof parseCodeCritiqueSettings>;
@@ -202,17 +209,10 @@ export async function runCodeCritique(input:{
     recordStage(input.db, { ...base, state:"skipped", reason, result:{ ...ledgerCarry, ...hashFields, truncated:true, policy } });
     return { allowed:true, reason, review:"not_required", settings:parsed, policy };
   }
-  const screened = await screenCodeCritique(settings, { projectId: input.projectId, runId: input.runId, taskId: input.taskId, task: input.task, evidence: input.evidence });
-  if (screened) {
-    const critique = critiqueFromScreen(screened);
-    const blocked = codeCritiqueStops(parsed.mode, critique);
-    const result = { ...ledgerCarry, ...hashFields, ...critique, mode: parsed.mode, by: "jev", policy };
-    // pending -> passed is refused: the screen's verdict goes through running (muse-release-030 parked as internal_error, 2026-11-03).
-    recordStage(input.db, { ...base, state: "running", result });
-    recordStage(input.db, { ...base, state: blocked ? "blocked" : "passed", result, reason: blocked ? verdictReasons(critique, "code-critique").receipt : undefined });
-    return blocked
-      ? { allowed: false, reason: verdictReasons(critique, "code-critique").returned, critique: result, parsed: critique, settings: parsed, review: "not_required", policy }
-      : { allowed: true, critique: result, parsed: critique, settings: parsed, review: "passed", policy };
+  if (level.tier === "skip" && !frozen) {
+    const reason = `critic_level_skip:${level.reason}`;
+    recordStage(input.db, { ...base, state:"skipped", reason, result:{ ...ledgerCarry, ...hashFields, criticLevel:level, policy } });
+    return { allowed:true, reason, review:"not_required", settings:parsed, policy };
   }
   const snapshot = {
     ...ledgerCarry,
@@ -222,6 +222,7 @@ export async function runCodeCritique(input:{
     ...hashFields,
     mode:parsed.mode, autoFix:parsed.autoFix, maxRounds:parsed.maxRounds,
     reviewer:{ providerId, model:modelId },
+    criticLevel:level,
     policy,
   };
   recordStage(input.db, { ...base, state:"running", providerId, model:modelId, result:snapshot });

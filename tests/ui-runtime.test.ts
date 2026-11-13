@@ -15,8 +15,8 @@ function representativeValues(row: CatalogRow, spec: SettingSpec): unknown[] {
   if (spec.key === "plan_critique.min_score") return [0, 10];
   if (spec.key === "plan_critique.min_write_tasks") return [1, 3];
   if (spec.key === "ops.provider_pool") return ["codex=2, claude-code=3"];
-  if (spec.key === "jev.thresholds") return ["failure.class.min_p=0.7"];
-  if (spec.key === "jev.modes") return ["failure.class=shadow"];
+  if (spec.key === "jev.thresholds") return ["employee.remark.remark_p=0.7"];
+  if (spec.key === "jev.modes") return ["employee.remark=shadow"];
   if (spec.key === "jev.provider") return ["openlux", "typesafe"];
   if (spec.booleanFlag || spec.key.startsWith("jev.")) return [true, false];
   if (spec.key === "install.LANE_INSTALL_LOCAL_MARKETPLACE" || spec.key === "install.LANE_INSTALL_CLAUDE_PLUGIN") {

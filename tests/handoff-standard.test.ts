@@ -37,7 +37,6 @@ describe("the hand-off standard in the source", () => {
       "packages/jev/src/labels-model.ts",
       "packages/memory-core/src/context.ts",
       "src/rooms/docs/docs.ts",
-      "src/rooms/learning/autonomy.ts",
       "src/rooms/learning/extract.ts",
       "src/rooms/pm-replay/harvest.ts",
       "src/rooms/project-life/onboarding.ts",

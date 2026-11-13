@@ -119,30 +119,20 @@ describe("helper stages decide before they prepare, and reuse only a receipt of 
     expect(listStageReceipts(w.db, "r", "t1").find((row) => row.stageId === "code-critique")?.state).toBe("skipped");
   });
 
-  it("a clear Jev screen settles the code critique without an illegal pending -> passed (muse-release-030, 2026-11-03)", async () => {
+  it("a small green change skips the code critic by rule and the receipt names why (critic-level.ts)", async () => {
     const w = world();
-    saveProjectSetting(w.db, "P", "code_critique.enabled", true);
     const hash = "b".repeat(64);
     const evidence = {
       truncated: false, artifactRevisionSha256: hash, evidenceSha256: hash, revisionSha256: hash,
       produced: ["note.txt"], hashes: {}, baselineHashes: {}, verification: [{ command: "npm test", exitCode: 0 }], files: [{ path: "note.txt", diff: "+ok", content: "ok" }],
       packetSha256: hash, outputSha256: hash, ownsPaths: ["note.txt"], neverTouch: [],
     };
-    const client = {
-      breaker: () => ({ open: false, failures: 0 }),
-      async call(request: { questions: Record<string, unknown> }) {
-        const answers = Object.fromEntries(Object.keys(request.questions).map((id) => [id, { type: "choice" as const, choice: "pass", probabilities: { pass: 0.97, fail: 0.01, unsure: 0.02 }, confidence: 0.9 }]));
-        return { ok: true as const, answers, model: "t", usage: { input_tokens: 1, output_tokens: 1 }, latencyMs: 1, attempts: 1 };
-      },
-    } as unknown as JevClient;
-    setJevForTests(createJev({ client, db: null }));
-    try {
-      const result = await runCodeCritique({ stageHelperSettings, ...w, projectId: "P", runId: "r", taskId: "t1", config, task, evidence } as never);
-      expect(result).toMatchObject({ allowed: true, review: "passed" });
-      const receipt = listStageReceipts(w.db, "r", "t1").find((row) => row.stageId === "code-critique")!;
-      expect(receipt).toMatchObject({ state: "passed" });
-      expect((receipt.result as { by: string }).by).toBe("jev");
-    } finally { setJevForTests(null); }
+    // Risk medium turns the critic on by the project default; a one-file text change is still below the critic's level.
+    const result = await runCodeCritique({ stageHelperSettings, ...w, projectId: "P", runId: "r", taskId: "t1", config, task: { ...(task as object), risk: "medium", kind: "fix" }, evidence } as never);
+    expect(result).toMatchObject({ allowed: true, review: "not_required", reason: "critic_level_skip:docs_tests_only" });
+    const receipt = listStageReceipts(w.db, "r", "t1").find((row) => row.stageId === "code-critique")!;
+    expect(receipt).toMatchObject({ state: "skipped" });
+    expect((receipt.result as { criticLevel: { tier: string } }).criticLevel.tier).toBe("skip");
   });
 
   it("resetHelperStages keeps a passed plan critique and specialist review and drops the rest", async () => {

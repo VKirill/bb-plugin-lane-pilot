@@ -38,13 +38,13 @@ describe("jev settings", () => {
   });
 
   it("rejects a saved value with an unknown judgment or an out-of-range number", () => {
-    expect(jevSettingProblem("jev.thresholds", "route.workflow.min_p=0.7", listJudgments())).toBeNull();
-    expect(jevSettingProblem("jev.thresholds", "route.workflow.min_p=0.2", listJudgments())).toContain("from 0.6 to 0.95");
-    expect(jevSettingProblem("jev.thresholds", "nothing.here=1", listJudgments())).toContain("unknown threshold");
-    expect(jevSettingProblem("jev.modes", "route.workflow=maybe", listJudgments())).toContain("off, shadow or active");
-    expect(jevSettingProblem("jev.modes", "no.such=active", listJudgments())).toContain("unknown judgment");
-    expect(validateSettingValue("jev.thresholds", "failure.class.min_p=0.99")).toMatchObject({ code: "invalid_choice", key: "jev.thresholds" });
-    expect(validateSettingValue("jev.modes", "failure.class=active")).toBeNull();
+    expect(jevSettingProblem("jev.thresholds", "route.workflow.min_p=0.7", [routeWorkflow])).toBeNull();
+    expect(jevSettingProblem("jev.thresholds", "route.workflow.min_p=0.2", [routeWorkflow])).toContain("from 0.6 to 0.95");
+    expect(jevSettingProblem("jev.thresholds", "nothing.here=1", [routeWorkflow])).toContain("unknown threshold");
+    expect(jevSettingProblem("jev.modes", "route.workflow=maybe", [routeWorkflow])).toContain("off, shadow or active");
+    expect(jevSettingProblem("jev.modes", "no.such=active", [routeWorkflow])).toContain("unknown judgment");
+    expect(validateSettingValue("jev.thresholds", "route.workflow.min_p=0.99")).toMatchObject({ code: "invalid_choice", key: "jev.thresholds" });
+    expect(validateSettingValue("jev.modes", "route.workflow=active")).toBeNull();
     expect(validateSettingValue("jev.thresholds", "")).toBeNull();
     expect(validateSettingValue("jev.enabled", true)).toBeNull();
   });

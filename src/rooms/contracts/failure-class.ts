@@ -123,8 +123,7 @@ const TASK_REASON = /owns_paths|outside|ownership|changed no files|no files|code
 
 /**
  * The class and whether a rule decided it. `confident: false` is the default `task` that nothing matched: the reasons Lane
- * Pilot writes itself are all rules, so this is a reason from a tool, a provider or a check the rules have not seen, and the
- * one the Jev judgment `failure.class` (J-4, src/jev/judgments/failure-class.ts) may be asked about.
+ * Pilot writes itself are all rules, so this is a reason from a tool, a provider or a check the rules have not seen; it stays `task`.
  */
 export function classifyFailure(state:string, reason:string | null | undefined):{ cls:FailureClass; confident:boolean } {
   const text = (reason ?? "").replace(RETRY_LIMIT_WRAPPER, "");
