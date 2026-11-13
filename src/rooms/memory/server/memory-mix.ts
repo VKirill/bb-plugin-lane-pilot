@@ -127,7 +127,7 @@ export function taskMemoryContext(db: LanePilotDatabase, projectId: string, runI
 
 /** The PM path's search and its records after the relevance floor, before packing. With `gate` it also says whether the answer gate doubts the search (memory-core `weakAnswer`). */
 function pmSearch(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain: readonly string[] | undefined, floor: RelevanceFloor | null, gate: boolean) {
-  const records = searchMemoryRecords(db, projectId, query, 100, memory.searchEngine, memory.audience, memory.personalBot, { chain: chain ?? [] });
+  const records = searchMemoryRecords(db, projectId, query, 100, memory.searchEngine, memory.audience, memory.personalBot, { chain: chain ?? [], includeArchive: true });
   const opts = { audience: memory.audience, personalBot: memory.personalBot, floor };
   return { records: relevantRecords(db, projectId, query, records, opts), weak: gate && weakAnswer(db, projectId, query, records, opts) };
 }

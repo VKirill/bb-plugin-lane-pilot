@@ -100,8 +100,10 @@ export type StoreMemoryInput = { projectId: string; personalBot?: string; audien
   /** Reads a repo-relative path. When set, a note that names files stores `file_fingerprint` of those bytes. */
   readFile?: (path: string) => Uint8Array | null };
 export type StoreMemoryResult = { records: MemoryRecord[]; insertedIds: string[];
-  /** Notes hidden to make room under a budget, least useful first. */
+  /** Notes moved off the shelf to the archive to make room under a budget, least useful first. They stay searchable. */
   evictedIds: string[];
+  /** New notes of an import that did not fit the shelf and were stored straight in the archive. */
+  archivedIds: string[];
   /** Records a newer one replaced (same file edited, same subject, or named by the maintainer). */
   supersededIds: string[];
   /** Records whose date passed or that nobody was given for 90 days; hidden before this write. */
@@ -198,21 +200,30 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
     const active = rows.filter((row) => row.status === "active" && !gone.has(row.id));
     const sum = (list: Array<{ content: string }>) => list.reduce((total, row) => total + estimate(row.content), 0);
     const core = sum(active.filter((row) => row.kind === "core")) + sum(adds.map((item) => item.entry).filter((entry) => entry.kind === "core"));
-    const note = sum(active.filter((row) => row.kind === "note")) + sum(adds.map((item) => item.entry).filter((entry) => entry.kind === "note"));
+    const shelf = sum(active.filter((row) => row.kind === "note"));
     // Core is curated and never evicted; a corpus already over a lowered core budget still takes notes.
     if (adds.some((item) => item.entry.kind === "core") && core > input.coreBudget) throw new Error(`memory core budget exceeded: ${core}/${input.coreBudget} tokens`);
     let evictedIds: string[] = [];
     const over = (noteTokens: number) => noteTokens > input.noteBudget || core + noteTokens > input.indexBudget;
-    if (over(note)) {
-      // Make room instead of refusing: the notes that served briefs least go first (never core, never a rule). Nothing is hidden when even
-      // an empty note shelf could not take the entry, so one oversize candidate cannot wipe the corpus.
+    // The budget limits the shelf (what a brief may inject), not the memory: what does not fit goes to the archive, still searchable, never deleted.
+    // An import never displaces the shelf: the notes of a file that do not fit arrive in the archive.
+    const archiveIds = new Set<string>();
+    let note = shelf + sum(adds.map((item) => item.entry).filter((entry) => entry.kind === "note"));
+    if (origin === "import") {
+      note = shelf;
+      for (const { entry, id } of adds) if (entry.kind === "note") { const cost = estimate(entry.content); if (over(note + cost)) archiveIds.add(id); else note += cost; }
+    }
+    if (origin !== "import" && over(note)) {
+      // Make room instead of refusing: the notes that served briefs least go to the archive first (never core, never a rule). Nothing moves when even
+      // an empty note shelf could not take the entry, so one oversize candidate cannot empty the shelf.
       const victims = active.filter((row) => row.kind === "note" && !isRule(row))
         .sort((a, b) => a.accepted_count - b.accepted_count || a.use_count - b.use_count || (a.last_used_at ?? a.created_at) - (b.last_used_at ?? b.created_at) || a.created_at - b.created_at || a.id.localeCompare(b.id));
       let left = note;
       const picked: Row[] = [];
       for (const victim of victims) { if (!over(left)) break; left -= estimate(victim.content); picked.push(victim); }
       if (over(left)) throw new Error(left > input.noteBudget ? `memory note budget exceeded: ${left}/${input.noteBudget} tokens` : `memory index budget exceeded: ${core + left}/${input.indexBudget} tokens`);
-      evictedIds = picked.filter((row) => hideRecord(db, input.projectId, row.id, "expired", null, unindex, "budget")).map((row) => row.id);
+      // The word indexes and the vector of an archived note stay: `searchMemoryRecords` with `includeArchive` finds it.
+      evictedIds = picked.filter((row) => hideRecord(db, input.projectId, row.id, "expired", null, () => {}, "budget")).map((row) => row.id);
     }
     const insert = db.prepare(`INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at,trust,origin,valid_until,valid_from,source_file_id,file_fingerprint,origin_task_id,verification_json)
       VALUES(@id,@projectId,@personalBot,@kind,@audience,@content,@conceptsJson,@sourceSha256,@createdAt,@trust,@origin,@validUntil,@validFrom,@sourceFileId,@fileFingerprint,@originTaskId,@verificationJson)
@@ -223,11 +234,16 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
         sourceSha256: input.sourceSha256, createdAt: now, trust: trustOf(entry), origin, validUntil: entry.validUntil ?? null, validFrom: entry.validFrom ?? now, sourceFileId: entry.sourceFileId ?? null, fileFingerprint: storedFingerprint(entry.content, input.readFile), originTaskId: input.originTaskId ?? null, verificationJson: JSON.stringify([{ by: origin, sha: input.sourceSha256, at: now }]) });
       if (input.scope?.length) db.prepare("UPDATE lane_pilot_memory SET scope_json=? WHERE project_id=? AND id=?").run(JSON.stringify(input.scope), input.projectId, id);
       addToIndexes(db, input.projectId, id, entry.content, entry.concepts);
+      if (archiveIds.has(id)) db.prepare("UPDATE lane_pilot_memory SET status='expired', expired_reason='budget' WHERE project_id=? AND id=?").run(input.projectId, id);
       insertedIds.push(id);
     }
     for (const { entry, id } of revive) {
+      // A revived note that does not fit an import stays where it is.
+      if (archiveIds.has(id)) continue;
       db.prepare("UPDATE lane_pilot_memory SET status='active', superseded_by=NULL, valid_until=?, source_sha256=?, trust=?, last_used_at=?, file_fingerprint=COALESCE(?, file_fingerprint) WHERE project_id=? AND id=?")
         .run(entry.validUntil ?? null, input.sourceSha256, trustOf(entry), now, storedFingerprint(entry.content, input.readFile), input.projectId, id);
+      // An archived note kept its index rows; a hidden one lost them.
+      dropMemoryIndexes(db, input.projectId, id);
       addToIndexes(db, input.projectId, id, entry.content, entry.concepts);
       insertedIds.push(id);
     }
@@ -244,7 +260,7 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
     const mine = new Set(input.entries.map((entry) => memoryRecordId(input.projectId, entry.kind, entry.content, personalBot, input.audience, scope)));
     const records = (db.prepare(`SELECT ${cols()} FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? ORDER BY created_at DESC`).all(input.projectId, personalBot) as Row[])
       .filter((row) => row.status === "active" || mine.has(row.id)).map(toRecord);
-    return { records, insertedIds, evictedIds, supersededIds, expiredIds, corroboratedIds: corroborate, heldIds };
+    return { records, insertedIds, evictedIds, archivedIds: [...archiveIds].filter((id) => pending.some((item) => item.id === id)), supersededIds, expiredIds, corroboratedIds: corroborate, heldIds };
   }).immediate();
 }
 
@@ -295,7 +311,12 @@ export type SearchOptions = { /** M7: umbrella project — bare scopes are not p
    * its chain does not see every section. `allSections` is the named admin search.
    */
   chain?: readonly string[];
-  allSections?: boolean };
+  allSections?: boolean;
+  /** Also read the archive: notes the budget moved off the shelf (`ARCHIVE_SQL`). They are searchable, never injected; the PM search and explicit queries ask for them, a brief does not. */
+  includeArchive?: boolean };
+
+/** The archive: a note the note budget moved off the shelf. Not deleted and not hidden from search, only not injected. Its word indexes and vector stay. */
+const ARCHIVE_SQL = "status='expired' AND expired_reason='budget'";
 
 /** The scope values a reader with this chain sees: the whole project and every prefix of its chain. */
 export function scopeValuesFor(chain: readonly string[]): string[] {
@@ -314,7 +335,9 @@ const sqlString = (value: string) => `'${value.replace(/'/g, "''")}'`;
 function visibility(db: MemoryDatabase, alias: string, options: SearchOptions): string {
   const now = Math.floor(options.now ?? Date.now());
   // A note of a held conflict (two notes that disagree, waiting for a person) is read by nobody: `conflict-store.ts`.
-  return `${alias}.status='active' AND (${alias}.valid_from IS NULL OR ${alias}.valid_from<=${now}) AND (${alias}.valid_until IS NULL OR ${alias}.valid_until>${now}) AND NOT (${idleSql(alias, now)})`
+  const archive = options.includeArchive ? ` OR (${alias}.status='expired' AND ${alias}.expired_reason='budget')` : "";
+  // The idle rule retires an active note; an archived one is old by definition and stays searchable.
+  return `(${alias}.status='active'${archive}) AND (${alias}.valid_from IS NULL OR ${alias}.valid_from<=${now}) AND (${alias}.valid_until IS NULL OR ${alias}.valid_until>${now}) AND (${alias}.status<>'active' OR NOT (${idleSql(alias, now)}))`
     + (options.includeObserved ? "" : ` AND (${alias}.trust='confirmed' OR ${alias}.created_at<=${now - OBSERVED_QUARANTINE_MS})`) + heldClause(db, alias)
     + (options.allSections ? "" : ` AND (${alias}.scope_json IN (${scopeValuesFor(options.chain ?? []).map(sqlString).join(",")}) OR ${alias}.scope_json LIKE '%"project%')`);
 }
@@ -324,12 +347,37 @@ export function memoryVisibilitySql(db: MemoryDatabase, alias: string, options: 
   return visibility(db, alias, options);
 }
 
+const archiveIndexed = new WeakSet<object>();
+/**
+ * Notes the budget archived before the archive was searchable lost their word indexes. Once per process, the first search that reads the archive
+ * puts back what an index lacks (a note archived since keeps its rows, so this finds nothing to do).
+ */
+function indexArchive(db: MemoryDatabase): void {
+  if (archiveIndexed.has(db)) return;
+  archiveIndexed.add(db);
+  try {
+    const rows = db.prepare(`SELECT id, project_id, content, concepts_json FROM lane_pilot_memory WHERE ${ARCHIVE_SQL}`).all() as Array<{ id: string; project_id: string; content: string; concepts_json: string }>;
+    if (!rows.length) return;
+    const fts = indexIds(db, "lane_pilot_memory_fts");
+    const trgm = trigramReady(db) ? indexIds(db, "lane_pilot_memory_trgm") : null;
+    db.transaction(() => {
+      for (const row of rows) {
+        const concepts = parseConcepts(row.concepts_json).join(" ");
+        if (!fts.has(row.id)) db.prepare("INSERT INTO lane_pilot_memory_fts(id,project_id,content,concepts) VALUES(?,?,?,?)").run(row.id, row.project_id, row.content, concepts);
+        if (trgm && !trgm.has(row.id)) db.prepare("INSERT INTO lane_pilot_memory_trgm(id,project_id,content,concepts) VALUES(?,?,?,?)").run(row.id, row.project_id, row.content, concepts);
+      }
+    })();
+  } catch { /* the archive stays unsearched by words; the next process tries again */ }
+}
+const parseConcepts = (json: string): string[] => { try { const value = JSON.parse(json) as unknown; return Array.isArray(value) ? value.map(String) : []; } catch { return []; } };
+
 /** Admin search: every section of the project. Working readers use `searchMemoryRecords` and pass their chain. */
 export function searchMemoryAllSections(db: MemoryDatabase, projectId: string, query: string, limit: number, engine: MemorySearchEngine, audience: MemoryAudience = "subagent", personalBot = "", options: Omit<SearchOptions, "allSections" | "chain"> = {}): MemoryRecord[] {
   return searchMemoryRecords(db, projectId, query, limit, engine, audience, personalBot, { ...options, allSections: true });
 }
 
 export function searchMemoryRecords(db: MemoryDatabase, projectId: string, query: string, limit: number, engine: MemorySearchEngine, audience: MemoryAudience = "subagent", personalBot = "", options: SearchOptions = {}): MemoryRecord[] {
+  if (options.includeArchive) indexArchive(db);
   const tokens = [...new Set(memoryTokens(query))].slice(0, 32);
   if (tokens.length === 0 || limit <= 0) return [];
   let rows: Row[];
@@ -629,11 +677,11 @@ const indexIds = (db: MemoryDatabase, table: string, projectId?: string): Set<st
   new Set((db.prepare(`SELECT id FROM ${table}${projectId ? " WHERE project_id=?" : ""}`).all(...(projectId ? [projectId] : [])) as Array<{ id: string }>).map((row) => row.id));
 
 const activeRowsForIndex = (db: MemoryDatabase, projectId?: string): Array<{ id: string; project_id: string; content: string; concepts_json: string }> =>
-  db.prepare(`SELECT id, project_id, content, concepts_json FROM lane_pilot_memory WHERE status='active'${projectId ? " AND project_id=?" : ""}`)
+  db.prepare(`SELECT id, project_id, content, concepts_json FROM lane_pilot_memory WHERE (status='active' OR (${ARCHIVE_SQL}))${projectId ? " AND project_id=?" : ""}`)
     .all(...(projectId ? [projectId] : [])) as Array<{ id: string; project_id: string; content: string; concepts_json: string }>;
 
 /**
- * Drift between the active records and the derived word indexes (fts, trigram, vectors): `missing` are active ids an
+ * Drift between the indexed records (active and archived) and the derived word indexes (fts, trigram, vectors): `missing` are ids an
  * index lost (a failed write, a hand edit), `orphaned` are ids an index still serves though the record is hidden or gone.
  */
 export function memoryIndexStatus(db: MemoryDatabase, projectId?: string): {
@@ -655,7 +703,7 @@ export function memoryIndexStatus(db: MemoryDatabase, projectId?: string): {
 
 /**
  * Rebuilds the derived word indexes from the active records in one transaction: the project's fts and trigram rows are
- * dropped and every active record goes back through `addToIndexes`. `check` only counts the drift. Returns how many
+ * dropped and every active or archived record goes back through `addToIndexes`. `check` only counts the drift. Returns how many
  * index rows were missing (`added`) and how many stale ones were removed (`stale`).
  */
 export function rebuildMemoryIndexes(db: MemoryDatabase, projectId?: string, options: { check?: boolean } = {}): { active: number; added: number; stale: number } {

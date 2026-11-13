@@ -2,7 +2,7 @@
 title: Project memory
 type: component
 created: 2026-10-10
-updated: 2026-10-30
+updated: 2026-11-13
 status: active
 confidence: medium
 tags: [memory, knowledge, maintenance]
@@ -165,6 +165,15 @@ What it says, honestly:
 - **A cap per task lowers recall** (62 % to 53-56 % at the old budget): the notes it drops are chosen by how many files they name, and that is a weak guess at which note a later task needs (48 % of all the hub's notes were later the answer of some task). Not implemented. The prompt option (ask for facts that outlive the task) cannot be replayed on history and was not tried.
 - **A larger budget raises it** (62 % to 69 %), and costs no brief space: a writer reads at most three notes whatever the shelf holds, the PM context has its own `memory.context_budget`. `memory.note_budget` now defaults to **24000** tokens (`packages/memory-core/src/settings.ts`, the catalog default in `packages/settings-catalog/src/ui-catalog.ts`); the hub's projects set none, so they take the new default at the next deploy. The total index budget (65536) is unchanged.
 - The shelf is still a window: with 2.5 notes per task and about 400 notes a project holds a few days of busy work, not weeks. The gap that remains (92 % on the shelf, 69 % picked) is retrieval, not supply.
+
+## The budget limits the shelf, not the memory (archive, 2026-11-13)
+
+Until this change a note the note budget evicted (1515 of the hub's 1532 expired notes) left every index and no search could find it again; a full budget also made `bb lane-pilot memory import` refuse (58 notes waiting to be imported would have pushed out 66). Now the budget limits only what a brief may inject, the **shelf** (`status='active'`).
+
+- **Archive.** A note the budget moves off the shelf keeps `status='expired'`, `expired_reason='budget'` (no new column, no migration) and **keeps its word indexes and its vector**. Nothing is deleted by the budget. `searchMemoryRecords(..., { includeArchive: true })` reads shelf and archive together and ranks them by the same cosine or word rule; without the option it reads the shelf only. The PM `context` action (`pmSearch`), `session_memory_search` and the import check ask for the archive; a writer brief, the reviewers, the council, the maintainer's duplicate check and the prompt recall do not (the archive is never injected).
+- **Old rows.** The 1515 notes archived before this change lost their word indexes; the first archive search of a process puts back what an index lacks (`indexArchive`), `bb lane-pilot memory index` does the same, and the embedding schedule (`pendingVectors`) gives them vectors. The idle rule does not hide an archived note.
+- **Import.** `origin: import` never displaces the shelf: a note of the file that does not fit the budget is stored straight in the archive (`archivedIds` in the report), the stored notes stay. The «would evict» refusal and `refused.noteTokensNeeded` are gone.
+- **Restating** an archived fact brings it back to the shelf (and may move a less used note to the archive). `valid_until`, `idle`, `refuted`, `revoked`, `owner` and `archived` (the owner's cold tier) are unchanged and stay out of search.
 
 ## Contradictions: two notes that disagree are held until a person settles it
 

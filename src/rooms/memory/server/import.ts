@@ -67,10 +67,8 @@ export type ImportReport = {
   source: MemoryImportSource; projectId: string; generatedAt: number; dryRun: boolean;
   counts: { added: number; merged_with: number; dropped: number };
   byReason: Record<string, number>;
-  /** Set when the run would have evicted stored notes: nothing was written; raise memory.note_budget to at least noteTokensNeeded. */
-  refused?: { reason: "would_evict"; evicted: number; noteBudget: number; noteTokensNeeded: number };
-  /** Existing notes the budget made room for, and replacements held for a person — the store's own receipts. */
-  evictedIds: string[]; heldIds: string[];
+  /** The store's own receipts: shelf notes the budget moved to the archive (an import never does), notes of this file that did not fit the shelf and arrived in the archive, and replacements held for a person. */
+  evictedIds: string[]; archivedIds: string[]; heldIds: string[];
   outcomes: ImportOutcome[];
 };
 
@@ -108,22 +106,13 @@ export type MemoryImportOptions = {
  * Import one JSONL file of `{source_id, content, kind?, concepts?, created_at?, origin?}` lines.
  * Exactly one outcome per line; the whole run is one transaction, so `--dry-run` computes the real outcomes and rolls every write back.
  */
-const BUDGET_REFUSED = Symbol("memory-import-budget-refused");
-
-/** Active note tokens of the project plus what this run would add: the note budget that holds the import without an eviction. */
-function noteTokensAfter(db: MemoryDatabase, projectId: string, personalBot: string, outcomes: readonly ImportOutcome[]): number {
-  const row = db.prepare("SELECT COALESCE(sum(length(CAST(content AS BLOB))),0) AS bytes FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? AND kind='note' AND status='active'")
-    .get(projectId, personalBot) as { bytes: number };
-  const added = outcomes.filter((o) => o.outcome === "added" && o.content).reduce((sum, o) => sum + Buffer.byteLength(o.content!, "utf8"), 0);
-  return Math.ceil((row.bytes + added) / 4);
-}
-
 export function runMemoryImport(options: MemoryImportOptions): ImportReport {
   const { db, projectId, source, settings } = options;
   const now = options.now ?? Date.now();
   const personalBot = settings.personalBot;
   const outcomes: ImportOutcome[] = [];
   const evictedIds: string[] = [];
+  const archivedIds: string[] = [];
   const heldIds: string[] = [];
   const budgets = { coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget };
   const lineOrigin = (line: Record<string, unknown>) => typeof line.origin === "string" && line.origin.trim() ? line.origin.trim() : undefined;
@@ -156,6 +145,7 @@ export function runMemoryImport(options: MemoryImportOptions): ImportReport {
         sourceSha256: sha256Hex(`import:${source}:${sourceId}`), entries: [entry], scope: [],
         trust: "confirmed", origin: "import", now, ...budgets });
       evictedIds.push(...result.evictedIds);
+      archivedIds.push(...result.archivedIds);
       heldIds.push(...result.heldIds);
       const shared = { ...kindOf, concepts, content: masked };
       if (result.insertedIds.length) return { ...base, ...shared, outcome: "added" as const, id: result.insertedIds[0],
@@ -176,18 +166,11 @@ export function runMemoryImport(options: MemoryImportOptions): ImportReport {
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) { outcomes.push({ line: index + 1, source_id: `line-${index + 1}`, outcome: "dropped", reason: "invalid" }); continue; }
       outcomes.push(importLine(parsed as Record<string, unknown>, index));
     }
-    // The import must never cost a stored fact: a run that pushed records out of the note shelf is rolled back whole and says
-    // which budget would hold it (a dry run reports the same without writing).
-    if (evictedIds.length) throw BUDGET_REFUSED;
     if (options.dryRun) throw DRY_RUN;
   };
 
-  let refused = false;
   try { db.transaction(work).immediate(); }
-  catch (cause) {
-    if (cause === BUDGET_REFUSED) refused = true;
-    else if (cause !== DRY_RUN) throw cause;
-  }
+  catch (cause) { if (cause !== DRY_RUN) throw cause; }
 
   const counts = { added: 0, merged_with: 0, dropped: 0 };
   const byReason: Record<string, number> = {};
@@ -195,20 +178,15 @@ export function runMemoryImport(options: MemoryImportOptions): ImportReport {
     counts[outcome.outcome]++;
     if (outcome.reason) byReason[outcome.reason] = (byReason[outcome.reason] ?? 0) + 1;
   }
-  if (refused) {
-    const need = noteTokensAfter(db, projectId, personalBot, outcomes);
-    return { source, projectId, generatedAt: now, dryRun: true, counts, byReason, evictedIds, heldIds, outcomes,
-      refused: { reason: "would_evict", evicted: evictedIds.length, noteBudget: settings.noteBudget, noteTokensNeeded: need } };
-  }
-  return { source, projectId, generatedAt: now, dryRun: options.dryRun === true, counts, byReason, evictedIds, heldIds, outcomes };
+  return { source, projectId, generatedAt: now, dryRun: options.dryRun === true, counts, byReason, evictedIds, archivedIds, heldIds, outcomes };
 }
 
 /** Plain-Russian one-line summary for the owner; reasons stay English `word` tokens for the log. */
 export function formatImportSummary(report: ImportReport): string {
   const reasons = Object.entries(report.byReason).sort((a, b) => b[1] - a[1]).map(([reason, n]) => `${reason} ${n}`).join(", ");
-  if (report.refused) return `Импорт ${report.source} не выполнен: он вытеснил бы ${report.refused.evicted} записей. Ничего не записано. Поднимите memory.note_budget с ${report.refused.noteBudget} до ${report.refused.noteTokensNeeded} или больше.`;
   const dry = report.dryRun ? " (прогон всухую, ничего не записано)" : "";
-  return `Импорт ${report.source}${dry}: добавлено ${report.counts.added}, объединено ${report.counts.merged_with}, пропущено ${report.counts.dropped}${reasons ? ` (${reasons})` : ""}.`;
+  const archived = report.archivedIds.length ? ` (из них в архив, где их находит поиск: ${report.archivedIds.length})` : "";
+  return `Импорт ${report.source}${dry}: добавлено ${report.counts.added}${archived}, объединено ${report.counts.merged_with}, пропущено ${report.counts.dropped}${reasons ? ` (${reasons})` : ""}.`;
 }
 
 /* ---- import-eval: the 30+10 gate set (§6 gate 3) ---- */
@@ -222,7 +200,7 @@ export type ImportEvalResult = {
 
 /** The PM path's search, exactly as pmMemoryContext runs it: ranked records, then the relevance floor, top 5. */
 export function pmTopIds(db: MemoryDatabase, projectId: string, query: string, settings: MemorySettings): string[] {
-  const records = searchMemoryRecords(db, projectId, query, 100, settings.searchEngine, settings.audience, settings.personalBot, { chain: [] });
+  const records = searchMemoryRecords(db, projectId, query, 100, settings.searchEngine, settings.audience, settings.personalBot, { chain: [], includeArchive: true });
   return relevantRecords(db, projectId, query, records, { audience: settings.audience, personalBot: settings.personalBot, floor: settings.queryFloor === false ? null : undefined }).slice(0, 5).map((record) => record.id);
 }
 

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { storeMemoryRecords, type MemorySettings } from "../packages/memory-core/src";
+import { searchMemoryRecords, storeMemoryRecords, type MemorySettings } from "../packages/memory-core/src";
 import { openDatabase } from "../src/rooms/plugin-db";
 import { evalMemoryImport, formatImportSummary, maskImportContent, pmTopIds, runMemoryImport, type ImportReport } from "../src/rooms/memory/server/import";
 
@@ -105,24 +105,22 @@ describe("memory import: one door, one outcome per line", () => {
     expect(fresh.outcomes[0]!.superseded).toHaveLength(1);
   });
 
-  it("never evicts: a run that would push stored notes out of the shelf writes nothing and names the budget it needs", () => {
+  it("never evicts: what does not fit the shelf arrives in the archive, searchable, and the shelf keeps its notes", () => {
     const database = db();
     const small = { ...settings, noteBudget: 30 };
     expect(importJsonl(database, `${line()}\n`, { settings: small }).counts.added).toBe(1);
-    const before = memoryCount(database);
     const other = line({ source_id: "s2", content: "The nightly invoice export writes CSV files into the reports bucket of the finance account.", concepts: ["invoice"] });
     const report = importJsonl(database, `${other}\n`, { settings: small });
-    expect(report.refused).toMatchObject({ reason: "would_evict", evicted: 1, noteBudget: 30 });
-    expect(report.refused!.noteTokensNeeded).toBeGreaterThan(30);
-    expect(report.dryRun).toBe(true);
-    expect(memoryCount(database)).toBe(before);
+    expect(report.counts.added).toBe(1);
+    expect(report.evictedIds).toEqual([]);
+    expect(report.archivedIds).toHaveLength(1);
+    expect(formatImportSummary(report)).toContain("в архив");
     expect((database.prepare("SELECT count(*) n FROM lane_pilot_memory WHERE status='active'").get() as { n: number }).n).toBe(1);
-    expect(formatImportSummary(report)).toContain("memory.note_budget");
-    // With the budget it names, the same run goes through and keeps the old note.
-    const ok = importJsonl(database, `${other}\n`, { settings: { ...small, noteBudget: report.refused!.noteTokensNeeded } });
-    expect(ok.refused).toBeUndefined();
-    expect(ok.counts.added).toBe(1);
-    expect((database.prepare("SELECT count(*) n FROM lane_pilot_memory WHERE status='active'").get() as { n: number }).n).toBe(2);
+    expect((database.prepare("SELECT count(*) n FROM lane_pilot_memory WHERE status='expired' AND expired_reason='budget'").get() as { n: number }).n).toBe(1);
+    // The archived note is found by the PM search, ranked like any other.
+    const found = searchMemoryRecords(database, PROJECT, "invoice export CSV reports bucket", 5, "auto", "subagent", "", { includeArchive: true });
+    expect(found[0]!.id).toBe(report.archivedIds[0]);
+    expect(searchMemoryRecords(database, PROJECT, "invoice export CSV reports bucket", 5, "auto", "subagent", "")).toEqual([]);
   });
 
   it("reports invalid lines and computes real outcomes on dry-run without writing", () => {
@@ -191,7 +189,7 @@ fi
 describe("memory import-eval", () => {
   const report = (over: Partial<ImportReport> = {}): ImportReport => ({
     source: "bb-memory", projectId: PROJECT, generatedAt: Date.now(), dryRun: false,
-    counts: { added: 2, merged_with: 0, dropped: 0 }, byReason: {}, evictedIds: [], heldIds: [],
+    counts: { added: 2, merged_with: 0, dropped: 0 }, byReason: {}, evictedIds: [], archivedIds: [], heldIds: [],
     outcomes: [
       { line: 1, source_id: "s1", outcome: "added", id: "rec-deploy", kind: "fact", concepts: ["deployment", "kind:fact"], content: "Deploys go through port 4000 on staging." },
       { line: 2, source_id: "s2", outcome: "added", id: "rec-cache", kind: "fact", concepts: ["cache", "kind:fact"], content: "Cache entries expire after ninety minutes." },

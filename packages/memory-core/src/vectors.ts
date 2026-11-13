@@ -37,11 +37,11 @@ export const contentSha = (content: string): string => createHash("sha256").upda
 export const documentText = (content: string): string => `title: ${content.split("\n")[0]!.slice(0, 80)} | text: ${content.slice(0, 6000)}`;
 export const queryText = (query: string): string => `task: search result | query: ${query.slice(0, 2000)}`;
 
-/** Active records with no vector of the current model, or one made from an older text; newest first. */
+/** Active and archived records with no vector of the current model, or one made from an older text; newest first. */
 export function pendingVectors(db: MemoryDatabase, limit: number): Array<{ id: string; projectId: string; content: string }> {
   if (!vectorsReady(db) || limit <= 0) return [];
   const rows = db.prepare(`SELECT m.id, m.project_id, m.content, v.content_sha AS sha, v.model AS model FROM lane_pilot_memory m
-    LEFT JOIN lane_pilot_memory_vec v ON v.id=m.id WHERE m.status='active' ORDER BY m.created_at DESC`)
+    LEFT JOIN lane_pilot_memory_vec v ON v.id=m.id WHERE (m.status='active' OR (m.status='expired' AND m.expired_reason='budget')) ORDER BY m.created_at DESC`)
     .all() as Array<{ id: string; project_id: string; content: string; sha: string | null; model: string | null }>;
   return rows.filter((row) => row.model !== EMBED_MODEL || row.sha !== contentSha(row.content)).slice(0, limit)
     .map((row) => ({ id: row.id, projectId: row.project_id, content: row.content }));
