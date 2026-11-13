@@ -14,7 +14,7 @@ import { join } from "node:path";
 export type AgyTurn = { content: string; tokensIn: number; tokensOut: number };
 export class AgyFailure extends Error { constructor(message: string, readonly status: number, readonly timedOut = false) { super(message); } }
 
-const MAX_PARALLEL = 3;
+const MAX_PARALLEL = 6;
 /** Linux keeps one argv string under 128 KiB; a longer prompt goes to the fallback instead. */
 const MAX_PROMPT_BYTES = 100_000;
 let running = 0;
