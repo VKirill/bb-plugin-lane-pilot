@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.553
+
+- **The plan critic is tiered by risk (`src/rooms/critique/server/critique-runs/plan-critique.ts`, role `plan-critic-light`).** Risk high/critical or quality_mode full keeps `plan-critic` (hub: Gemini 4 Carbon); every other plan goes to «Быстрый критик плана» (default Antigravity Gemini 4 Hydrogen medium, fallback GPT-6.1 Terra). The receipt carries `critic_tier: strong|light`. Hub, 30 days to 2026-11-14, 38 plan returns labelled by hand: high risk 10 of 13 serious, medium 3 of 14, low 1 of 11.
+- **The plan critic looks for outcome defects first (`critiquePrompt`).** A PRIORITY section: contradiction with the contract, code or itself, a missing behaviour, loss or leak of data, money or credentials, an unmerged dependency, an unsatisfiable contract or a plan without steps justify rework; read_first and expected_outputs hygiene and sharper wording are low and never a reason on their own; a whole-suite verification command is medium unless the suite is sandbox-unsafe. `read_first` left the plan rubric. Two one-line calibration examples.
+- **No code critic on a red check (`critic-level.ts`).** A failed check now gives `skip/check_failed` (strict reasons still win): the attempt goes back to the writer anyway; 2 of the 7 code-critic stops in 30 days only repeated failing tests. A strict level adds a «Focus first: <reason>» line to the code critic's prompt.
+- **Less noise in structural findings (`critique-coverage.ts`).** References from generated or index dirs (`.gitnexus`, `.nuxt`, `.next`, `.cache`, dist, build) and from docs (`*.md`, `*.mdx`, `docs/`) are no longer ownership gaps; `coverage_scan_truncated` stays in the receipt and no longer goes to the model.
+- **`package.json` is a check script only when a command runs a package script (`checkScriptEdits`).** `npx`, `bunx`, `pnpm dlx/exec` and installs no longer send a version bump to the gate critic as a changed check script.
+
 ## 0.1.552
 
 - **Night learning no longer loses a project without a writer host (`src/rooms/learning/service.ts`, `ops.ts`).** The analyzer only reads its prompt, so a project with no machine of its own borrows the host of the project with the latest observations (as episode analysis already did); if none fits, the project goes to `lastNightRun.skipped[]` with its name, reason and waiting count, and `stopped` now means only a stop of the whole run (daily limit). Before, `proj_personal` showed `stopped:"no_host"` and its 37 candidates expired after 36 h (`tests/learning/night-skip.test.ts`).
