@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.545
+
+- **The memory write door stops near-duplicate notes (`packages/memory-core/src/duplicates.ts`).** `memory write`, the import and the maintainer compare a new note with stored notes of the same section (vector cosine ≥ 0.92 when the caller embeds, or normalised-text containment ≥ 0.9). A copy creates no new row — its source is added as an extra origin on the stored note (import reports `merged_with`); a strictly longer restatement replaces the stored note as a new version; a changed number or flipped negation is an update, not a copy. Found live after 0.1.544: a Claude Code auto-memory import had re-stored an existing Muse fact under a new id. New read-only `bb lane-pilot memory duplicates [--project P] [--json]` and `bb lane-pilot memory dedupe --project P [--apply]` (dry run by default, `--apply` refused from a thread; a copy is expired with `expired_reason='duplicate'` and stays in the archive). Suite case H13 fails with the check off.
+
 ## 0.1.544
 
 - **Memory packing keeps what does not fit and shows a long record's neighbourhood (`packages/memory-core/src/context.ts`).** A record that no longer fits the pack budget now appears as a one-line head (kind, date, id, first 120 characters; at most 10 per pack) instead of being dropped, and a long record shows its best chunk with the ±1 neighbour chunks (`part i–j/n`) when the budget allows. Dates, same-topic order, the judge, the floor and the prompts are unchanged. Benchmark basis (untouched ids): packing the best rounds with neighbours kept LongMemEval-S at 93.8 % vs 94.0 % (n.s.) at half the context, and raised LoCoMo J from 80.2 to 83.7 (p < 0.001). Suite cases H11 and H12 cover both layers and fail with them switched off.
