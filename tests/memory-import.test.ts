@@ -151,21 +151,6 @@ describe("memory import collectors", () => {
     expect(typeof records[1]!.created_at).toBe("number");
   });
 
-  it("memory-collect-agentmemory.py keeps text bodies and reports the skipped", () => {
-    const dir = mkdtempSync(join(tmpdir(), "amem-"));
-    writeFileSync(join(dir, "obs.jsonl"), `${JSON.stringify({ id: "o1", content: "Session used port 4000.", createdAt: 1700000000000 })}\n${JSON.stringify({ id: "o2", kind: "tool" })}\n42\nnot json\n`);
-    writeFileSync(join(dir, "bulk.json"), JSON.stringify({ observations: [{ text: "Archive note about deploys." }, { summary: "" }] }));
-    const run = spawnSync("python3", ["scripts/memory-collect-agentmemory.py", dir], { encoding: "utf8" });
-    expect(run.status).toBe(0);
-    const records = run.stdout.trim().split("\n").map((row) => JSON.parse(row) as Record<string, unknown>);
-    expect(records.map((record) => record.source_id).sort()).toEqual(["bulk.json", "o1"]);
-    expect(records.find((record) => record.source_id === "o1")).toMatchObject({ content: "Session used port 4000.", created_at: 1700000000000 });
-    expect(records.find((record) => record.source_id === "bulk.json")).toMatchObject({ content: "Archive note about deploys." });
-    expect(run.stderr).toContain("skipped no-text-body");
-    expect(run.stderr).toContain("skipped not-an-observation");
-    expect(run.stderr).toContain("bad json");
-  });
-
   it("memory-collect-bb.sh maps catalog entries through bb memory get", () => {
     const bin = mkdtempSync(join(tmpdir(), "fake-bb-"));
     writeFileSync(join(bin, "bb"), `#!/usr/bin/env bash

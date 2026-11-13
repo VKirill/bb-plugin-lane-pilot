@@ -29,7 +29,6 @@ One owner per kind of knowledge (`docs/memory.md`, decision X-2, and the maintai
 | Lane Pilot memory | Project technical facts, project rules, and since 2026-11-06 everything the other stores held (imported, see below) |
 | Anamnesis | Facts about the owner, on the hub; a record marked `sensitive` is stored encrypted |
 | BB memory, Claude Code auto-memory | Retired: imported into the Lane Pilot memory, the week of parallel running is over (done); switched off |
-| agentmemory | Off on every machine since 2026-11-03; its data was imported. The write door refuses core records from origin `agentmemory`. |
 | Code and docs | Behaviour |
 
 A fact does not get a second author by being copied into another store. A rule that comes from a mistake is not memory: the rules pipeline owns it (see Self-improvement).
@@ -40,7 +39,7 @@ Every ordinary BB thread of a project, on any machine, gets a short memory block
 
 ## Importing other memories
 
-`scripts/memory-import.sh <bb-memory|claude-files|agentmemory> <jsonl> <project-id> [--dry-run]` (RPC `memory_import`) brings records from another store through the normal write door, so the same checks, duplicates and conflicts apply. The collectors `scripts/memory-collect-bb.sh`, `memory-collect-claude.py` and `memory-collect-agentmemory.py` write the JSONL. An import never evicts: when the records would push older notes off the shelf it writes nothing and says which budget it needs. `scripts/memory-import.sh eval <report.json>` (RPC `memory_import_eval`) asks the imported store questions and counts the answers. On 2026-11-06 the hub took 141 Claude Code records and 149 BB memory records with nothing evicted, and its note shelf (`memory.note_budget`) was raised to 200000 for it.
+`scripts/memory-import.sh <bb-memory|claude-files> <jsonl> <project-id> [--dry-run]` (RPC `memory_import`) brings records from another store through the normal write door, so the same checks, duplicates and conflicts apply. The collectors `scripts/memory-collect-bb.sh` and `memory-collect-claude.py` write the JSONL. An import never evicts: when the records would push older notes off the shelf it writes nothing and says which budget it needs. `scripts/memory-import.sh eval <report.json>` (RPC `memory_import_eval`) asks the imported store questions and counts the answers. On 2026-11-06 the hub took 141 Claude Code records and 149 BB memory records with nothing evicted, and its note shelf (`memory.note_budget`) was raised to 200000 for it.
 
 ## Records
 

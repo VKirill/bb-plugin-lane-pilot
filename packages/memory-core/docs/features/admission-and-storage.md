@@ -37,7 +37,6 @@ The admission and storage subsystem ensures that candidate facts are screened fo
 5. Identity generation: `memoryRecordId` generates a SHA-256 hash identifying the record based on project ID, personal bot, kind, normalized content, audience, and scope chain (`packages/memory-core/src/candidates.ts:70-82`).
 6. Storage transaction: `storeMemoryRecords` initiates an immediate SQLite transaction (`packages/memory-core/src/store.ts:121-127`):
    - Validates that non-rule origins do not specify the concept `"rule"` (`packages/memory-core/src/store.ts:131-132`).
-   - Prevents the `"agentmemory"` origin from creating `"core"` records (`packages/memory-core/src/store.ts:134`).
    - Runs `expireMemory` to mark dated and 90-day idle records as expired (`packages/memory-core/src/store.ts:135`).
    - Classifies existing records: revives expired records if restated, corroborates observed records if confirmed by another source, or marks them as pending insertion (`packages/memory-core/src/store.ts:144-154`).
    - Evaluates note replacement: checks `supersedes` prefixes, matching `sourceFileId`, and `sameSubject` similarity (`packages/memory-core/src/store.ts:174-188`).
@@ -57,7 +56,6 @@ The admission and storage subsystem ensures that candidate facts are screened fo
 | Hedged claim | Note containing words like "maybe", "perhaps", "кажется", "возможно" | `claimIsHedged(content)` matches regex | Forces `trust='observed'` even if input requested `confirmed` | `packages/memory-core/src/store.ts:114-119`, `packages/memory-core/src/store.ts:125` |
 | Candidate salience | Maintainer candidate before the write door | `memoryEntrySalience` score (`packages/memory-core/src/candidates.ts:60-66`) vs `memory.salience_min` (default 40, effective range 1–100) (`packages/memory-core/src/settings.ts:49-53, 63`) | Maintainer path drops entries below the floor; the parser does not apply this gate | `src/rooms/memory/server/memory.ts:177-180` |
 | Rule origin | Input with `origin: "rule"` | Restricted to rules pipeline | Allowed to attach `"rule"` concept tag | `packages/memory-core/src/store.ts:131-132` |
-| Agentmemory origin | Input with `origin: "agentmemory"` | Cannot author core | Restricted to note records only | `packages/memory-core/src/store.ts:133-134` |
 
 ## Failure behavior
 

@@ -69,8 +69,6 @@ describe("bundled BB session profiles", () => {
     expect(orchestrator.prompt).toContain("lane_pilot_dispatch_writer");
     expect(orchestrator.prompt).not.toContain("Boot solo dev-orchestrator");
     expect(compileMainAgentProfile("seo-specialist").mcpServers).toHaveLength(8);
-    expect(JSON.stringify(compileMainAgentProfile("seo-specialist"))).not.toContain("agentmemory");
-    expect(JSON.stringify(orchestrator.tools ?? [])).not.toContain("agentmemory");
     for (const id of ["advisor-researcher", "ai-researcher", "animator", "doc-classifier", "domain-researcher", "eval-auditor", "eval-planner", "framework-selector", "mempalace-curator", "nyquist-auditor", "ui-researcher"]) {
       const compiled = compileMainAgentProfile(id);
       expect(compiled.prompt, id).not.toMatch(/lane-ctl|run-controller|run-supervisor|SendMessage|docs-maintain-project/);
