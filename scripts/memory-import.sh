@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Client side of the one-door memory import (M1): reads the JSONL here, sends it to the hub's RPC memory_import, keeps the receipt here.
-# Usage: memory-import.sh <bb-memory|claude-files|agentmemory> <file.jsonl> <project-id> [--dry-run]
+# Usage: memory-import.sh <bb-memory|claude-files> <file.jsonl> <project-id> [--dry-run]
 #        memory-import.sh eval <report.json>
 set -euo pipefail
 tmp=$(mktemp); trap 'rm -f "$tmp"' EXIT

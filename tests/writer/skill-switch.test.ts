@@ -14,12 +14,12 @@ describe("skill-switch metric (Item 3)", () => {
     const events = [
       { data: { item: { type: "toolCall", name: "skill", input: { id: "gitnexus" } } } },
       { data: { item: { type: "toolCall", name: "skill", arguments: { id: "gitnexus" } } } },
-      { data: { item: { type: "toolCall", name: "skill", input: { name: "agentmemory" } } } },
+      { data: { item: { type: "toolCall", name: "skill", input: { name: "blender2" } } } },
       { data: { item: { type: "toolCall", name: "blender:render" } } },
     ];
 
     const seq = extractSkillSequence(events);
-    expect(seq).toEqual(["gitnexus", "gitnexus", "agentmemory", "blender"]);
+    expect(seq).toEqual(["gitnexus", "gitnexus", "blender2", "blender"]);
 
     const fallback = extractSkillSequence([], ["test-skill", "other-skill"]);
     expect(fallback).toEqual(["test-skill", "other-skill"]);
@@ -55,7 +55,7 @@ describe("skill-switch metric (Item 3)", () => {
       attemptId: "att_2",
       taskId: "task_2",
       projectId: "proj_1",
-      skills: ["gitnexus", "agentmemory"],
+      skills: ["gitnexus", "blender2"],
       outcome: "accepted",
       now: now - 4000,
     });
@@ -65,7 +65,7 @@ describe("skill-switch metric (Item 3)", () => {
       attemptId: "att_3",
       taskId: "task_3",
       projectId: "proj_1",
-      skills: ["gitnexus", "agentmemory", "blender", "gitnexus"],
+      skills: ["gitnexus", "blender2", "blender", "gitnexus"],
       outcome: "failed",
       now: now - 3000,
     });

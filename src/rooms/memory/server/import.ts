@@ -4,15 +4,15 @@ import { memoryTokens, relevantRecords, sameSubject, searchMemoryRecords, storeM
   type MemoryCandidate, type MemoryDatabase, type MemorySettings } from "@lane-pilot/memory-core";
 
 /**
- * M1: one door for the old memory stores (BB memory, Claude Code auto-memory, the agentmemory archive).
+ * M1: one door for the old memory stores (BB memory, Claude Code auto-memory).
  * Every JSONL line passes the same mask and the same store write path as an agent write; the report is the receipt.
  */
 
-export const MEMORY_IMPORT_SOURCES = ["bb-memory", "claude-files", "agentmemory"] as const;
+export const MEMORY_IMPORT_SOURCES = ["bb-memory", "claude-files"] as const;
 export type MemoryImportSource = (typeof MEMORY_IMPORT_SOURCES)[number];
 
 export const MEMORY_IMPORT_USAGE = [
-  "scripts/memory-import.sh <bb-memory|claude-files|agentmemory> <jsonl> <project-id> [--dry-run]   (RPC memory_import; the report lands next to the jsonl)",
+  "scripts/memory-import.sh <bb-memory|claude-files> <jsonl> <project-id> [--dry-run]   (RPC memory_import; the report lands next to the jsonl)",
   "scripts/memory-import.sh eval <report.json>   (RPC memory_import_eval)",
 ].join("\n");
 

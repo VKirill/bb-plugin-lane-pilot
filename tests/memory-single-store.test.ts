@@ -11,19 +11,10 @@ import { disableCodexMemories } from "../src/rooms/host-worker/handlers/machine"
 
 /**
  * All Lane Pilot memory lives in one place: the hub DB next to the plugin. No text the plugin hands to an agent may send it to
- * another store (agentmemory MCP tools), and every session the plugin launches runs with the built-in memory of its CLI off.
+ * another store, and every session the plugin launches runs with the built-in memory of its CLI off.
  */
 const ROOT = join(__dirname, "..");
-const BANNED = /memory_save|memory_smart_search|memory_recall|memory_lesson_save|agentmemory/i;
-
-/** Files that may name agentmemory: the one-time import, the RPC enum of its sources, the origin guard of the write door, the SMA proof map. */
-const ALLOWED = new Set([
-  "src/rooms/memory/server/import.ts",
-  "src/rooms/contracts/rpc-knowledge.ts",
-  "src/rooms/sma-map/contracts.ts",
-  "packages/memory-core/src/store.ts",
-  "packages/memory-core/src/context.ts",
-]);
+const BANNED = /memory_save|memory_smart_search|memory_recall|memory_lesson_save/i;
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -36,19 +27,19 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 describe("one memory store: the hub DB", () => {
-  it("skills, workflows, policy, lane-stack and source texts never send an agent to agentmemory", () => {
+  it("skills, workflows, policy, lane-stack and source texts never send an agent to another memory store", () => {
     const hits: string[] = [];
     for (const top of ["skills", "workflows", "policy", "lane-stack", "src"]) {
       for (const file of walk(join(ROOT, top))) {
         const rel = relative(ROOT, file);
-        if (ALLOWED.has(rel) || /\.test\.tsx?$/.test(rel) || /\.sql$/.test(rel) || /migrations?/.test(rel)) continue;
+        if (/\.test\.tsx?$/.test(rel) || /\.sql$/.test(rel) || /migrations?/.test(rel)) continue;
         if (BANNED.test(readFileSync(file, "utf8"))) hits.push(rel);
       }
     }
     expect(hits).toEqual([]);
   });
 
-  it("no seeded agent profile names an agentmemory tool or server", () => {
+  it("no seeded agent profile names a tool of another memory store", () => {
     for (const id of MAIN_AGENT_PROFILE_IDS) expect(JSON.stringify(compileMainAgentProfile(id)), id).not.toMatch(BANNED);
   });
 

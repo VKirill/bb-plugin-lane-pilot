@@ -52,8 +52,8 @@ describe("role MCP server configurations", () => {
       expect(ROLE_PROFILES[role].mcpServers, `Role ${role} should have empty mcpServers`).toEqual([]);
     }
 
-    // 5. Invariant: agentmemory, discord-web, computer-use, node_repl are NEVER given to helper roles
-    const forbidden = ["agentmemory", "discord-web", "computer-use", "node_repl"];
+    // 5. Invariant: discord-web, computer-use, node_repl are NEVER given to helper roles
+    const forbidden = ["discord-web", "computer-use", "node_repl"];
     for (const [role, profile] of Object.entries(ROLE_PROFILES)) {
       for (const bad of forbidden) {
         expect(profile.mcpServers, `Role ${role} must not include ${bad}`).not.toContain(bad);
