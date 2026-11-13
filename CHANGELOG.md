@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.543
+
+- **Memory's last stage is an LLM judge instead of a cosine floor (`packages/memory-core/src/judge.ts`, `src/rooms/memory/server/memory-judge.ts`).** Explicit memory searches (`session_memory_search`, the PM memory tool, `bb lane-pilot memory search`) and the writer brief ask `gemini-3.8-flash` on OpenLux «which of these notes help — ids, or none» over the vector top-12 (pre-filter cosine 0.50; secret-looking spans masked as `[REDACTED]`). A 12 s timeout or a second failure (after one retry on `gpt-6-luna`) falls back to the cosine top-5. Measured on the 378-question hub set: 96.7 % of targets delivered and 99.1 % silent on questions with no answer (Jev was 96.3 / 97.7), about $0.37 per 1000 searches. Settings `memory.judge.*`; receipts in `lane_pilot_memory_receipt.judge_json`; `bb lane-pilot memory judge-stats`.
+- **No 0.65 cosine floor and no `WEAK_MATCH` line.** On LongMemEval-S the floor dropped 21.6 % of answerable questions (answer accuracy 67.6 % with it, 95.1 % without, equal to reading the full history), and the warning line cost 4.9 points. The PM's per-turn context stays judge-free (vector top-k under the 0.50 pre-filter, packed by the budget).
+
 ## 0.1.542
 
 - **A note the budget evicts stays searchable (`packages/memory-core/src/store.ts`).** The note budget now limits only what is injected; an evicted note keeps `expired_reason=budget`, its word indexes and its vector, and PM search, `session_memory_search` and the import check read it with `includeArchive`. An import never evicts: notes past the budget land in the archive (`archivedIds` in the report). On the hub 1515 of 1532 evictions had dropped notes from search.
