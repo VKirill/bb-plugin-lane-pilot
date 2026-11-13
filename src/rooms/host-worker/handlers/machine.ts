@@ -6,6 +6,7 @@ import { homedir, networkInterfaces } from "node:os";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { isFsAbsent, orMiss, readTextOrNull } from "@lane-pilot/kit";
 import { hostContract } from "../../contracts";
+import { leanCodexConfig } from "../../contracts";
 import { readMachineFacts, userToolBins } from "../../verification";
 import { runStabilityDrill } from "../../stability";
 import { writePmSettingsOnHost } from "../../writer";
@@ -151,7 +152,7 @@ export function disableCodexMemories(toml: string): string {
 /**
  * Fresh codex home per task, seeded (SMA: Fresh codex home per task, Seed the codex home): a writer of the strict worker mode gets its own
  * CODEX_HOME, so no task reads another task's sessions and history; config.toml and AGENTS.md are copied, auth.json is linked (one login
- * that refreshes in one place).
+ * that refreshes in one place). The config is trimmed to the role's profile (CODEX_LEAN_*, contracts/codex-lean.ts); `profile` defaults to the writer's.
  */
 export const prepareWorkerHome: ExperimentalHostRpcHandlers<typeof hostContract>["prepareWorkerHome"] = async (input) => {
   const { mkdir: mk, copyFile, symlink: link, access: can } = await import("node:fs/promises");
@@ -161,13 +162,14 @@ export const prepareWorkerHome: ExperimentalHostRpcHandlers<typeof hostContract>
   const codexHome = at(home(), ".lane-pilot", "codex-homes", input.key);
   await mk(codexHome, { recursive: true });
   const seeded: string[] = [];
-  for (const name of ["config.toml", "AGENTS.md"]) {
+  // The owner's AGENTS.md stays out: a worker's role policy leaves the user's personal instructions out (effectiveSwitch), and the file is ~2k tokens a request.
+  for (const name of ["config.toml"]) {
     if (await can(at(source, name)).then(() => true, () => false) && !await can(at(codexHome, name)).then(() => true, () => false)) { await copyFile(at(source, name), at(codexHome, name)); seeded.push(name); }
   }
   // One memory place (the hub DB): the task's config turns Codex's own memory store off, whatever the owner's file says.
   const { writeFile } = await import("node:fs/promises");
   const cfg = at(codexHome, "config.toml");
-  await writeFile(cfg, disableCodexMemories(await readFile(cfg, "utf8").catch(() => "")), "utf8");
+  await writeFile(cfg, leanCodexConfig(disableCodexMemories(await readFile(cfg, "utf8").catch(() => "")), input.profile ?? "code"), "utf8");
   if (await can(at(source, "auth.json")).then(() => true, () => false) && !await can(at(codexHome, "auth.json")).then(() => true, () => false)) { await link(at(source, "auth.json"), at(codexHome, "auth.json")); seeded.push("auth.json"); }
   return { codexHome, seeded };
 };

@@ -39,7 +39,7 @@ export const machineHostMethods = {
   },
   /** A fresh codex home per task (worker.strict_user on): ~/.lane-pilot/codex-homes/<key>/ seeded with the machine's codex config and login. */
   prepareWorkerHome: {
-    input: z.object({ requestedHostId: z.string().min(1), key: z.string().regex(/^[A-Za-z0-9._-]{1,120}$/) }).strict(),
+    input: z.object({ requestedHostId: z.string().min(1), key: z.string().regex(/^[A-Za-z0-9._-]{1,120}$/), profile: z.enum(["code", "quiet", "open"]).optional() }).strict(),
     output: z.object({ codexHome: z.string(), seeded: z.array(z.string()) }).strict(),
   },
   /** SMA «Stream: spend»: the session guard's spend stream reads ~/.lane-pilot/usage-snapshot.json, written by the hub's scheduled pass. */

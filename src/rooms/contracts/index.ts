@@ -65,6 +65,7 @@ export * from "./state-machine";
 export * from "./hub-deny";
 export * from "./failure-class";
 export * from "./helper-context";
+export * from "./codex-lean";
 export * from "./helper-placement";
 export * from "./agent-display";
 export * from "./native-agent-id";

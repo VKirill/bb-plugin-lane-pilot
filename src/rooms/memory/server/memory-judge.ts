@@ -3,10 +3,11 @@ import type { ServerCore } from "../../contracts/server";
 import { envCatalogKey } from "../../learning";
 import type { LanePilotDatabase } from "../../storage";
 import { AgyFailure, agyBinary, agyChat } from "../agy-chat";
+import { CodexFailure, codexBinary, codexChat } from "../codex-chat";
 
 /**
  * The last stage of the explicit memory searches (the PM memory tool, `session_memory_search` and so `bb lane-pilot memory search`, the
- * writer's brief): a small model (the local Antigravity CLI for `agy/…` names, 9router for `router9/…`, else OpenLux chat completions) names the notes that help answer the question, or none.
+ * writer's brief): a small model (the local Antigravity CLI for `agy/…` names, local `codex exec` for `codex/…`, 9router for `router9/…`, else OpenLux chat completions) names the notes that help answer the question, or none.
  * The per-turn automatic context of the PM does not come here (4.7 s median, and the PM reads well enough alone).
  *
  * The key is Env Catalog `OPENLUX_MEMORY_API_KEY`, read the way the embeddings read theirs (`envCatalogKey`: the `env-catalog` plugin's
@@ -25,6 +26,8 @@ const CACHE_TTL_MS = 10 * 60_000, CACHE_MAX = 500, MAX_TOKENS = 1500;
 
 /** A model named `agy/<id>` runs through the Antigravity CLI on this machine (the owner's sign-in, no key); `<id>` is an `agy models` id. */
 export const AGY_PREFIX = "agy/";
+/** A model named `codex/<id>` runs through `codex exec` on this machine, stripped to the bone (codex-chat.ts); `<id>` is a Codex model id such as `gpt-6-luna`. */
+export const CODEX_PREFIX = "codex/";
 
 /** Where a model name is sent: the base URL, the key, and the model id that endpoint knows; `chat` replaces the HTTP call (the `agy` route). */
 export type JudgeRoute = { name: string; baseUrl: string; key: () => Promise<string | undefined>; model: string; chat?: (model: string, system: string, user: string, timeoutMs: number) => Promise<Chat> };
@@ -56,8 +59,8 @@ export function openLuxJudge(key: () => Promise<string | undefined>, fetchImpl: 
     if (route.chat) {
       try { return await route.chat(route.model, system, user, timeoutMs); }
       catch (cause) {
-        if (cause instanceof AgyFailure && cause.timedOut) throw new JudgeTimeout("timeout");
-        throw new HttpFailure(cause instanceof Error ? cause.message : String(cause), cause instanceof AgyFailure ? cause.status : 0);
+        if ((cause instanceof AgyFailure || cause instanceof CodexFailure) && cause.timedOut) throw new JudgeTimeout("timeout");
+        throw new HttpFailure(cause instanceof Error ? cause.message : String(cause), cause instanceof AgyFailure || cause instanceof CodexFailure ? cause.status : 0);
       }
     }
     const routeBase = route.baseUrl, model = route.model;
@@ -191,9 +194,11 @@ export function mountMemoryJudge(ctx: ServerCore): void {
 }
 
 /** `agy/<id>` → the local Antigravity CLI; `router9/<id>` → 9router with its key; anything else → OpenLux. */
-export function judgeRoutes(openLuxKey: () => Promise<string | undefined>, router9Key: () => Promise<string | undefined>, agy: JudgeRoute["chat"] = agyChat, agyReady: () => Promise<string | undefined> = async () => (agyBinary() ? "local" : undefined)): JudgeRoutes {
+export function judgeRoutes(openLuxKey: () => Promise<string | undefined>, router9Key: () => Promise<string | undefined>, agy: JudgeRoute["chat"] = agyChat, agyReady: () => Promise<string | undefined> = async () => (agyBinary() ? "local" : undefined), codex: JudgeRoute["chat"] = codexChat, codexReady: () => Promise<string | undefined> = async () => (codexBinary() ? "local" : undefined)): JudgeRoutes {
   return (model) => model.startsWith(AGY_PREFIX)
     ? { name: "agy", baseUrl: "", key: agyReady, model: model.slice(AGY_PREFIX.length), chat: agy }
+    : model.startsWith(CODEX_PREFIX)
+    ? { name: "codex", baseUrl: "", key: codexReady, model: model.slice(CODEX_PREFIX.length), chat: codex }
     : model.startsWith(ROUTER9_PREFIX)
     ? { name: "router9", baseUrl: ROUTER9_BASE_URL, key: router9Key, model: model.slice(ROUTER9_PREFIX.length) }
     : { name: "openlux", baseUrl: JUDGE_BASE_URL, key: openLuxKey, model };
