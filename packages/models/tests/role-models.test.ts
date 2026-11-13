@@ -8,9 +8,13 @@ describe("the table «role -> model»", () => {
   it("offers only the Claude, GPT, Gemini Flash (9router), Gemini 4 Argon (Antigravity) and ZCode GLM-5.3-Flash models, with the provider ids the machines use, and each is a model the writers' anamnesis knows", () => {
     expect(ROLE_MODEL_OPTIONS.map((option) => `${option.providerId}/${option.id}`)).toEqual([
       "claude-code/claude-fable-5-1", "claude-code/claude-opus-5-5", "claude-code/claude-sonnet-5-5", "claude-code/claude-haiku-5-5", "codex/gpt-6.1-sol", "codex/gpt-6.1-terra", "codex/gpt-6-astra", "codex/gpt-6-luna",
-      "opencode2/router9/ag/gemini-3.8-flash-high", "acp-antigravity/gemini-4-argon", "zcode/glm-5.3-flash-free",
+      "opencode2/router9/ag/gemini-3.8-flash-high", "acp-antigravity/gemini-4-hydrogen", "acp-antigravity/gemini-4-argon", "zcode/glm-5.3-flash-free",
     ]);
     for (const option of ROLE_MODEL_OPTIONS) {
+      expect(modelTier(option.id), option.id).toBe(option.tier);
+      expect(modelFamily(option.id)).toBe(option.family);
+      // Hydrogen is a judge's model only (plan-critic-light): it has no writer profile, so no writer is ever picked on it.
+      if (option.id === "gemini-4-hydrogen") continue;
       const profile = WRITER_PROFILES.find((row) => row.model === option.id);
       expect(profile, option.id).toMatchObject({ providerId: option.providerId });
       expect(modelTier(option.id), option.id).toBe(option.tier);

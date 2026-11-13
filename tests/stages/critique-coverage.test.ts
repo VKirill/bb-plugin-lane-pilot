@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { dependencyFindings } from "../../src/rooms/critique/server/critique-runs";
-import { binaryOutputs,collectGitNexusCallerPaths, dropIntendedGaps, filteredScriptRun, findTaskPlaceholderPaths, ignoresTrailingFilter, scanCritiqueCoverage } from "../../src/rooms/critique/critique-coverage";
+import type { CoverageFinding } from "../../src/rooms/critique/critique-coverage";
+import { binaryOutputs,collectGitNexusCallerPaths, dropIntendedGaps, dropNoisyGaps, noisyCoveragePath, filteredScriptRun, findTaskPlaceholderPaths, ignoresTrailingFilter, scanCritiqueCoverage } from "../../src/rooms/critique/critique-coverage";
 
 const roots:string[]=[];
 async function workspace():Promise<string>{const path=await mkdtemp(join(tmpdir(),"lane-pilot-critique-"));roots.push(path);return path;}
@@ -225,5 +226,30 @@ describe("structural findings without the noise",()=>{
     ];
     expect(dropIntendedGaps(findings,["tests/server/**"]).map((finding)=>finding.code)).toEqual(["caller_unowned","verify_heavy"]);
     expect(dropIntendedGaps(findings,[])).toHaveLength(3);
+  });
+});
+
+describe("coverage noise filter",()=>{
+  it("ignores generated dirs and documentation that mention an owned target, and keeps real referrers",async()=>{
+    const root=await workspace();
+    for(const dir of ["src",".nuxt/types","docs",".cache","build"])await mkdir(join(root,dir),{recursive:true});
+    await writeFile(join(root,"src/widget.ts"),"export const widgetValue = 1;\n");
+    await writeFile(join(root,"src/user.ts"),"import './widget';\n");
+    await writeFile(join(root,".nuxt/types/widget.d.ts"),"// src/widget.ts\n");
+    await writeFile(join(root,".cache/index.json"),"{\"f\":\"src/widget.ts\"}\n");
+    await writeFile(join(root,"build/out.js"),"// src/widget.ts\n");
+    await writeFile(join(root,"PROJECT.md"),"see src/widget.ts\n");
+    await writeFile(join(root,"docs/ARCHITECTURE.md"),"see src/widget.ts\n");
+    const result=await scanCritiqueCoverage({workspacePath:root,plan:"Edit it",tasks:[{id:"w",lane:"writer",owns_paths:["src/widget.ts"],has_verification:true}]});
+    const gaps=result.findings.filter((finding)=>finding.code==="owns_gap").map((finding)=>finding.path);
+    expect(gaps).toEqual(["src/user.ts"]);
+  });
+
+  it("drops a noisy gap a host scan still returns, and keeps the plan's own mention",()=>{
+    const row=(code:CoverageFinding["code"],path:string):CoverageFinding=>({code,path,severity:"warning",finding:"x"});
+    const kept=dropNoisyGaps([row("owns_gap",".gitnexus/meta.json"),row("owns_gap",".nuxt/types/a.d.ts"),row("owns_gap","docs/x.ts"),row("caller_unowned","README.md"),row("owns_gap","src/a.ts"),row("plan_path_unowned","docs/guide.md")]);
+    expect(kept.map((finding)=>finding.path)).toEqual(["src/a.ts","docs/guide.md"]);
+    expect(noisyCoveragePath("platform/node_modules/x.js")).toBe(true);
+    expect(noisyCoveragePath("src/dist.ts")).toBe(false);
   });
 });

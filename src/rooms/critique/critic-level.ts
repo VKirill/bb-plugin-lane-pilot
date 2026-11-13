@@ -6,13 +6,14 @@ import { createHash } from "node:crypto";
  *
  * - `strict`: the critic runs in gate mode (its rework stops acceptance). A change to a sensitive path (auth, secrets, money, migrations,
  *   permissions, deploy), risk high or critical, a writer that edited a test which existed before the task, or no check at all on a change that is more than docs and tests.
- * - `skip`: no critic, the receipt names why. Only when every check passed and the change is docs, tests or lock files only, a chore,
- *   refactor or docs task of up to 8 files, or a non-feature change of up to 3 files.
+ * - `skip`: no critic, the receipt names why. When a check failed (`check_failed`: the attempt goes back to the writer, so a critic would
+ *   only repeat the failure; this holds for a pinned task too, but not over a strict reason above), or when every check passed and the
+ *   change is docs, tests or lock files only, a chore, refactor or docs task of up to 8 files, or a non-feature change of up to 3 files.
  * - `normal`: everything else, as the project's settings say.
  *
  * On 401 critic runs of the hub (60 days to 2026-11-13) the skip rules would have cut 29% of the runs and lost 1 of the 18 that changed
  * the outcome. One skip in ten still goes to the critic (`skip_sampled`), so a finding the rule loses shows up in the receipts.
- * A task with quality_mode full, or a project that turned the critic on itself, never skips; that is how the PM raises the level.
+ * A task with quality_mode full, or a project that turned the critic on itself, never skips for size or kind; that is how the PM raises the level.
  */
 export type CriticLevel = { tier: "strict" | "normal" | "skip"; reason: string };
 
@@ -39,8 +40,10 @@ export function criticLevel(input: {
   if (sensitive) return { tier: "strict", reason: `sensitive_path:${sensitive}` };
   const docsOnly = input.paths.length > 0 && input.paths.every((path) => DOCS_OR_TESTS.test(path));
   if (input.checks.length === 0 && !docsOnly) return { tier: "strict", reason: "no_checks" };
+  // A red check sends the attempt back to the writer whatever else holds, pinned or not: a critic would repeat what the check already says
+  // (hub, 30 days to 2026-11-14: 2 of the 7 code-critic stops only repeated failing tests).
+  if (input.checks.some((check) => check.exitCode !== 0)) return { tier: "skip", reason: "check_failed" };
   if (input.pinned) return { tier: "normal", reason: "pinned" };
-  if (input.checks.some((check) => check.exitCode !== 0)) return { tier: "normal", reason: "check_failed" };
   const skip = docsOnly ? "docs_tests_only"
     : SMALL_KINDS.has(input.kind ?? "") && input.paths.length <= 8 ? `small_${input.kind}`
     : input.kind !== "feature" && input.paths.length <= 3 ? "small_change"

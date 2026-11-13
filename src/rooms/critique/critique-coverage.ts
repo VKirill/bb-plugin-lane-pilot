@@ -5,7 +5,7 @@ import { basename, extname, isAbsolute, join, relative, sep } from "node:path";
 
 export type CoverageFinding={code:"plan_path_unowned"|"owns_gap"|"coverage_scan_truncated"|"owns_overlap"|"verify_missing"|"verify_heavy"|"owns_empty"|"plan_missing"|"no_tasks"|"caller_unowned"|"task_placeholder"|"output_unowned"|"output_binary"|"verify_filter_ignored"|"depends_cycle"|"depends_self";path:string;severity:"error"|"warning"|"info";finding:string};
 export type CoverageScan={status:"complete"|"truncated";pathCount:number;findings:CoverageFinding[]};
-const SKIP=new Set([".git",".gitnexus","node_modules",".agents",".bb",".claude",".lane-pilot","dist","build","vendor","__pycache__",".venv",".tox","coverage"]);
+const SKIP=new Set([".git",".gitnexus","node_modules",".agents",".bb",".claude",".lane-pilot","dist","build","vendor","__pycache__",".venv",".tox","coverage",".nuxt",".next",".cache"]);
 const TEXT=new Set([".ts",".tsx",".js",".jsx",".mjs",".cjs",".py",".md",".json",".yaml",".yml",".sh",".go",".rs"]);
 const CODE=new Set([".ts",".tsx",".js",".jsx",".mjs",".cjs",".py",".go",".rs"]);
 const GENERIC=new Set(["index","main","app","utils","util","types","type","const","constants","config","settings","style","styles","test","spec","init"]);
@@ -23,6 +23,10 @@ export function covered(pattern:string,path:string):boolean {
   }
   return a.length===b.length;
 }
+/** Generated or index output and documentation: a file there that mentions an owned target is not a missing owner (hub 2026-11: index json, .nuxt/types, PROJECT.md, docs/** filled the critic's prompt). */
+const GENERATED_DIR=/(^|\/)(\.gitnexus|\.nuxt|\.next|node_modules|dist|build|coverage|\.cache)\//;
+const DOC_FILE=/\.(md|mdx)$|(^|\/)docs\//i;
+export function noisyCoveragePath(path:string):boolean {const clean=path.replace(/\\/g,"/").replace(/^\.\//,"");return GENERATED_DIR.test(clean)||DOC_FILE.test(clean);}
 function noise(path:string):boolean{return /^(?:wiki|TODO|docs)\//.test(path)||path.includes("/docs/");}
 function add(findings:CoverageFinding[],code:CoverageFinding["code"],path:string,message:string,severity?:CoverageFinding["severity"]):void {
   if(findings.some((row)=>row.path===path&&row.code===code))return;
@@ -262,7 +266,7 @@ export async function scanCritiqueCoverage(input:{workspacePath:string;plan:stri
     const needles=[normalized,basename(normalized),stem];
     for(const path of files) {
       if(findings.length>=10)break;
-      if(path===normalized||owns.some((pattern)=>covered(pattern,path))||!TEXT.has(extname(path).toLowerCase()))continue;
+      if(path===normalized||noisyCoveragePath(path)||owns.some((pattern)=>covered(pattern,path))||!TEXT.has(extname(path).toLowerCase()))continue;
       const absolute=join(root,...path.split("/"));
       // One unreadable file (EACCES, a locked file) is a named skip, not a dead scan: it is listed once in the result.
       let handle;
@@ -296,4 +300,8 @@ const GAP_CODES=new Set<CoverageFinding["code"]>(["owns_gap","caller_unowned","p
 /** «Nobody owns X» is no gap when the task forbids X on purpose (never_touch): the critic got these as noise (audit 2026-11-08). */
 export function dropIntendedGaps(findings:readonly CoverageFinding[],neverTouch:readonly string[]):CoverageFinding[] {
   return findings.filter((finding)=>!(GAP_CODES.has(finding.code)&&neverTouch.some((pattern)=>covered(pattern,finding.path))));
+}
+/** A host that scans with older code may still list a generated or documentation file as an unowned referrer: drop those here. A plan's own mention (plan_path_unowned) stays. */
+export function dropNoisyGaps(findings:readonly CoverageFinding[]):CoverageFinding[] {
+  return findings.filter((finding)=>!((finding.code==="owns_gap"||finding.code==="caller_unowned")&&noisyCoveragePath(finding.path)));
 }

@@ -22,10 +22,18 @@ describe("critic level", () => {
     expect(level({ paths: ["src/a.ts", "src/b.ts"] })).toEqual({ tier: "skip", reason: "small_change" });
     expect(level({ paths: ["src/styles/tokens.css"] }).tier).toBe("skip");
   });
-  it("keeps the critic for features, bigger changes, red checks and pinned tasks", () => {
+  it("skips a red attempt, pinned or not, but never over a strict reason", () => {
+    const red = [{ exitCode: 1 }];
+    expect(level({ checks: red })).toEqual({ tier: "skip", reason: "check_failed" });
+    expect(level({ checks: red, pinned: true })).toEqual({ tier: "skip", reason: "check_failed" });
+    expect(level({ checks: red, kind: "feature", paths: ["a.ts", "b.ts", "c.ts", "d.ts"] }).tier).toBe("skip");
+    expect(level({ checks: red, risk: "high" }).reason).toBe("risk_high");
+    expect(level({ checks: red, paths: ["src/billing.ts"] }).tier).toBe("strict");
+    expect(level({ checks: red, referenceTestEdits: ["tests/a.test.ts"] }).reason).toBe("reference_tests_edited");
+  });
+  it("keeps the critic for features, bigger changes and pinned tasks", () => {
     expect(level({ kind: "feature" }).tier).toBe("normal");
     expect(level({ paths: ["a.ts", "b.ts", "c.ts", "d.ts"] }).tier).toBe("normal");
-    expect(level({ checks: [{ exitCode: 1 }] }).reason).toBe("check_failed");
     expect(level({ pinned: true }).reason).toBe("pinned");
   });
   it("sends one skip in ten to the critic, the same way every time", () => {

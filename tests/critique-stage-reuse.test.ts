@@ -134,6 +134,19 @@ describe("helper stages decide before they prepare, and reuse only a receipt of 
     expect((receipt.result as { criticLevel: { tier: string } }).criticLevel.tier).toBe("skip");
   });
 
+  it("a red check skips the code critic and the receipt names check_failed", async () => {
+    const w = world();
+    const hash = "c".repeat(64);
+    const evidence = {
+      truncated: false, artifactRevisionSha256: hash, evidenceSha256: hash, revisionSha256: hash,
+      produced: ["note.txt"], hashes: {}, baselineHashes: {}, verification: [{ command: "npm test", exitCode: 1 }], files: [{ path: "note.txt", diff: "+ok", content: "ok" }],
+      packetSha256: hash, outputSha256: hash, ownsPaths: ["note.txt"], neverTouch: [],
+    };
+    const result = await runCodeCritique({ stageHelperSettings, ...w, projectId: "P", runId: "r", taskId: "t1", config, task: { ...(task as object), risk: "medium", kind: "feature" }, evidence } as never);
+    expect(result).toMatchObject({ allowed: true, review: "not_required", reason: "critic_level_skip:check_failed" });
+    expect(listStageReceipts(w.db, "r", "t1").find((row) => row.stageId === "code-critique")).toMatchObject({ state: "skipped" });
+  });
+
   it("resetHelperStages keeps a passed plan critique and specialist review and drops the rest", async () => {
     const w = world();
     for (const stageId of ["plan-critique", "specialist-review", "pm-read"] as const) {

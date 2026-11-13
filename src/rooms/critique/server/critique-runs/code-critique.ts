@@ -317,7 +317,7 @@ export async function runCodeCritique(input:{
             ...placement,
             ...requiredPolicyField(input.bb, helperPolicy, providerId, "code-critic"),
             ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
-            prompt:codeCritiquePrompt({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes, memoryText:reviewerMemoryFor(input.db, input.projectId, input.runId, input.task), persona }),
+            prompt:codeCritiquePrompt({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes, memoryText:reviewerMemoryFor(input.db, input.projectId, input.runId, input.task), persona, ...(level.tier === "strict" ? { focus:level.reason } : {}) }),
             environment:attemptEnvironment(input.db, input.runId, input.taskId, input.task.project_cwd)
               ?? { type:"host", hostId:input.config.hostId, workspace:{ type:"unmanaged", path:input.task.project_cwd } },
             pluginMetadata:{ role:"code-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,

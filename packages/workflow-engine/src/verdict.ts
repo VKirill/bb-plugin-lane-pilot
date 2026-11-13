@@ -44,7 +44,8 @@ export type VerdictRubricItem = z.infer<typeof verdictRubricItemSchema>;
 
 /** The ids each critic fills in. An id outside its list does not count. */
 export const CRITIC_RUBRIC = {
-  plan: ["acceptance", "dependencies", "scope", "read_first"],
+  // read_first is not here: a missing read_first entry is contract hygiene the writer copes with, and a rubric fail would gate the status.
+  plan: ["acceptance", "dependencies", "scope"],
   code: ["acceptance", "checks", "tests", "substance"],
   specialist: ["risk", "mitigation"],
 } as const satisfies Record<VerdictKind, readonly string[]>;
@@ -83,7 +84,7 @@ export type VerdictKind = "plan" | "code" | "specialist";
 
 /** Which rubric id is the result and which is the way the work was done. */
 export const RUBRIC_AXIS: Record<VerdictKind, Readonly<Record<string, "outcome" | "process">>> = {
-  plan: { acceptance: "outcome", dependencies: "outcome", scope: "process", read_first: "process" },
+  plan: { acceptance: "outcome", dependencies: "outcome", scope: "process" },
   code: { acceptance: "outcome", checks: "outcome", tests: "process", substance: "process" },
   specialist: { risk: "outcome", mitigation: "process" },
 };

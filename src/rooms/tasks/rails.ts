@@ -123,8 +123,11 @@ export function referenceTestEdits(changes: ReadonlyArray<{ path: string; status
  * output, tests untouched, changed the yardstick as much as one that edits a test. A file the command only reads (`grep -q hello src/hello.ts`)
  * is the work under check, not the check: 0.1.414 counted it and sent every such task to the gate critic (tests/nested-repo-flow.test.ts).
  */
+// package.json is a check script only when a command runs one of its scripts: `npm test`, `npm run x`, `pnpm x`, `yarn x`, `bun run x`.
+// `npx`, `bunx`, `pnpm dlx|exec` and installs run no script, so a version bump or a new dependency is not a changed check.
+const PACKAGE_SCRIPT_RUN = /(^|[\s;&|(])(npm\s+(test|t|tst|start|run|run-script)\b|(pnpm|yarn)\s+(?!(dlx|exec|install|add|i|remove|rm|up|upgrade|why|ls|list|create|init|config|set|info|cache|link|unlink|publish|pack|audit|outdated|store|dedupe|prune|rebuild|patch|licenses|-)(\s|$))[\w:.@-]+|bun\s+run\b)/;
 export function checkScriptEdits(produced: readonly string[], commands: readonly string[]): string[] {
-  const viaPackage = commands.some((command) => /(^|[\s;&|(])(npm|pnpm|yarn|bun|npx)\s/.test(command));
+  const viaPackage = commands.some((command) => PACKAGE_SCRIPT_RUN.test(command));
   const run = new Set(commands.flatMap(scriptsRun));
   return produced.filter((path) => {
     const bare = path.replace(/^\.\//, "");

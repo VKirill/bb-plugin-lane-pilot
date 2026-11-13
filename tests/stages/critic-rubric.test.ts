@@ -80,7 +80,7 @@ describe("a critic verdict comes from the rubric", () => {
   it("the prompts name the rubric ids and the ok and fail results", () => {
     const packet = buildCandidateEvidence({ produced: [], hashes: {}, verification: [], output: "", ownsPaths: [], neverTouch: [], dirtOk: true });
     expect(codeCritiquePrompt({ evidence: packet, task: {} })).toContain('"ok" or "fail"');
-    expect(critiquePrompt({ plan: "p", task: {} })).toContain("acceptance, dependencies, scope, read_first");
+    expect(critiquePrompt({ plan: "p", task: {} })).toContain("acceptance, dependencies, scope. result");
     expect(specialistPrompt({ task: {}, plan: "p" })).toContain("risk, mitigation");
   });
 });
