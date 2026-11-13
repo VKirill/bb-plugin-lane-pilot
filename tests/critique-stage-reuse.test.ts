@@ -127,9 +127,9 @@ describe("helper stages decide before they prepare, and reuse only a receipt of 
       produced: ["note.txt"], hashes: {}, baselineHashes: {}, verification: [{ command: "npm test", exitCode: 0 }], files: [{ path: "note.txt", diff: "+ok", content: "ok" }],
       packetSha256: hash, outputSha256: hash, ownsPaths: ["note.txt"], neverTouch: [],
     };
-    // Risk medium turns the critic on by the project default; a one-file text change is still below the critic's level.
+    // Risk medium turns the critic on by the project default; a one-file fix is still below the critic's level.
     const result = await runCodeCritique({ stageHelperSettings, ...w, projectId: "P", runId: "r", taskId: "t1", config, task: { ...(task as object), risk: "medium", kind: "fix" }, evidence } as never);
-    expect(result).toMatchObject({ allowed: true, review: "not_required", reason: "critic_level_skip:docs_tests_only" });
+    expect(result).toMatchObject({ allowed: true, review: "not_required", reason: "critic_level_skip:small_change" });
     const receipt = listStageReceipts(w.db, "r", "t1").find((row) => row.stageId === "code-critique")!;
     expect(receipt).toMatchObject({ state: "skipped" });
     expect((receipt.result as { criticLevel: { tier: string } }).criticLevel.tier).toBe("skip");

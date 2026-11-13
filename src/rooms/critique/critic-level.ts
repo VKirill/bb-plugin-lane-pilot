@@ -17,7 +17,7 @@ import { createHash } from "node:crypto";
 export type CriticLevel = { tier: "strict" | "normal" | "skip"; reason: string };
 
 const SENSITIVE = /(^|[/._-])(auth|oauth|login|secret|secrets|password|credential|credentials|crypto|payment|payments|billing|invoice|invoices|checkout|refund|stripe|yookassa|cloudpayments|wallet|money|price|pricing|migration|migrations|permission|permissions|acl|rbac|deploy|deployment|dockerfile|docker-compose|ecosystem\.config|nginx|angie|systemd)([/._-]|$)|\.sql$|(^|\/)\.github\/workflows\/|(^|\/)infra\//i;
-const DOCS_OR_TESTS = /\.(md|mdx|txt|rst)$|(^|\/)docs\/|(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|Cargo\.lock|poetry\.lock|uv\.lock)$/i;
+const DOCS_OR_TESTS = /\.(md|mdx|rst)$|(^|\/)docs\/|(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|Cargo\.lock|poetry\.lock|uv\.lock)$/i;
 const SMALL_KINDS = new Set(["chore", "refactor", "docs"]);
 
 /** One skip in ten by the task id: the same task always lands the same way, so a retry does not flip the decision. */
