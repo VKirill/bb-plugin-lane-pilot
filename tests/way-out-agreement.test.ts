@@ -8,7 +8,7 @@ import { WAY_OUT } from "../src/rooms/contracts/way-out";
  * first cell of its row in backticks. This test refuses the drift the 2026-11-02 audit caught: the same
  * advice living twice and disagreeing (plan_critique_blocked, question_unanswered).
  */
-const SKILL = readFileSync("skills/lane-pilot-ops/SKILL.md", "utf8");
+const SKILL = ["SKILL.md", "references/blocked.md", "references/graphs-and-review.md"].map((file) => readFileSync(`skills/lane-pilot-ops/${file}`, "utf8")).join("\n");
 
 const PM_TOOL = /lane_pilot_[a-z_]+/g;
 const toolsOf = (text: string) => new Set([...text.matchAll(PM_TOOL)].map((m) => m[0]));

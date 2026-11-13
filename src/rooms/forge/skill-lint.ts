@@ -102,7 +102,7 @@ export function lintSkillDir(files: SkillFile[]): { errors: string[]; warnings: 
 
 const TEXT_FILE = /\.(md|markdown|sh|bash|py|js|mjs|cjs|ts|json|txt|yaml|yml)$/;
 
-function readSkillDir(dir: string): SkillFile[] {
+export function readSkillDir(dir: string): SkillFile[] {
   const walk = (current: string): string[] => readdirSync(current).flatMap((name) => {
     const full = join(current, name);
     // Bundled and installed code is not the skill's text: vendor/ and node_modules/ are skipped.
