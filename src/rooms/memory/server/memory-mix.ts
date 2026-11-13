@@ -1,9 +1,9 @@
-import { DEFAULT_RELEVANCE_FLOOR, MEMORY_SETTING_KEYS, projectUsesSections, DENSE_PREFILTER, relevantRecords, resolveProjectKind, isHistoryQuery, withHistory, REVIEWER_CONCEPTS, activeMemoryDigestRows, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, recordCriticUse, roleContextBudget, searchMemoryRecords, type MemoryRecord, type PackOptions, type MemorySearchEngine, type MemorySettings, type RelevanceFloor } from "@lane-pilot/memory-core";
+import { DEFAULT_RELEVANCE_FLOOR, MEMORY_SETTING_KEYS, pathAnchorsOf, type SearchOptions, projectUsesSections, DENSE_PREFILTER, relevantRecords, resolveProjectKind, isHistoryQuery, withHistory, REVIEWER_CONCEPTS, activeMemoryDigestRows, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, recordCriticUse, roleContextBudget, searchMemoryRecords, type MemoryRecord, type PackOptions, type MemorySearchEngine, type MemorySettings, type RelevanceFloor } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
 import { getRunSettingsScopes, loadProjectSettings, projectHasScopedRun, type LanePilotDatabase } from "../../storage";
 import { memoryLine, pathAnchors, reviewerMemoryPicks, writerMemory, writerMemoryPicks } from "./memory-picks";
 import { configuredSetting } from "../../contracts/server";
-import { judgeFound } from "./memory-judge";
+import { judgeFound, translateForLock } from "./memory-judge";
 
 type TaskPaths = Pick<TaskV2, "owns_paths" | "read_first">;
 
@@ -142,11 +142,33 @@ export function taskMemoryContext(db: LanePilotDatabase, projectId: string, runI
   }
 }
 
-/** The PM path's search and its records after the relevance floor (the cosine pre-filter, a path named in the question, or enough rare words), before packing. The archive is searched too; a question about the past also gets the versions a newer note replaced, with their dates. */
+/** The search forks of the Maslov recipe (`memory.vector_mode`, `memory.door_lock`) as the store takes them; the defaults are today's search. */
+export const searchModeOptions = (memory: MemorySettings): Pick<SearchOptions, "vectorMode" | "doorLock"> => ({ vectorMode: memory.vectorMode ?? "all", doorLock: memory.doorLock ?? "off" });
+
+/**
+ * The pinned records of a question (`memory.pinned`, off unless set): what a reranker must not push out and a lock must not close. The project's core
+ * conventions (a rule lives there; the rules block of the brief is a separate channel) and the notes that name a path written in the question. Empty when off.
+ */
+export function pinnedRecords(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, found: readonly MemoryRecord[], scoped: SearchOptions = {}): MemoryRecord[] {
+  if (!memory.pinned) return [];
+  const anchors = pathAnchorsOf(query);
+  const named = anchors.length ? found.filter((record) => anchors.some((anchor) => record.content.includes(anchor))) : [];
+  const core = listMemory(db, projectId, { kind: "core" }, 20, memory.audience, memory.personalBot, scoped);
+  return [...new Map([...core, ...named].map((record) => [record.id, record])).values()];
+}
+
+/** The PM path's search and its records after the relevance floor (the cosine pre-filter, a path named in the question, or enough rare words), before packing. The archive is searched too; a question about the past also gets the versions a newer note replaced, with their dates. Pinned records (if on) come first and skip the floor and the lock. */
+function pmSearchPinned(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain: readonly string[] | undefined, floor: RelevanceFloor | null) {
+  const scoped = { chain: chain ?? [], includeArchive: true, ...searchModeOptions(memory) };
+  const records = searchMemoryRecords(db, projectId, query, 100, memory.searchEngine, memory.audience, memory.personalBot, scoped);
+  const floored = relevantRecords(db, projectId, query, records, { audience: memory.audience, personalBot: memory.personalBot, floor });
+  const pins = pinnedRecords(db, projectId, memory, query, records, { chain: chain ?? [] });
+  const pinnedIds = new Set(pins.map((record) => record.id));
+  const merged = pins.length ? [...pins, ...floored.filter((record) => !pinnedIds.has(record.id))] : floored;
+  return { found: isHistoryQuery(query) ? withHistory(db, projectId, merged) : merged, pinned: pinnedIds };
+}
 function pmSearch(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain: readonly string[] | undefined, floor: RelevanceFloor | null) {
-  const records = searchMemoryRecords(db, projectId, query, 100, memory.searchEngine, memory.audience, memory.personalBot, { chain: chain ?? [], includeArchive: true });
-  const found = relevantRecords(db, projectId, query, records, { audience: memory.audience, personalBot: memory.personalBot, floor });
-  return isHistoryQuery(query) ? withHistory(db, projectId, found) : found;
+  return pmSearchPinned(db, projectId, memory, query, chain, floor).found;
 }
 
 /** The PM path's ranked records after the relevance floor, before packing. */
@@ -157,15 +179,21 @@ export function pmShortlist(db: LanePilotDatabase, projectId: string, memory: Me
 /**
  * The PM's automatic per-turn context and the helpers': the vector's best notes without a judge (the judge costs seconds, and the PM reads
  * a list well alone), packed by the role's budget. No warning line: a search the notes cannot answer shows the empty-list «nothing».
+ * Under `vector_mode = bridge` the pack keeps the search order and does not drop a note for sharing no word with the question (a Russian question and an English note share none by design).
+ * The word layer, the lock and the pinned records of `memory.*` apply here (no model); the lock's translation does not (no model call per turn: the lock is the literal one).
  */
 export function pmMemoryContext(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[], role = "pm", floor: RelevanceFloor | null = memory.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR, pack?: PackOptions) {
-  const packed = memoryContext(pmSearch(db, projectId, memory, query, chain, floor), query, roleContextBudget(role, memory.contextBudget), pack);
+  const searched = pmSearchPinned(db, projectId, memory, query, chain, floor);
+  const packed = memoryContext(searched.found, query, roleContextBudget(role, memory.contextBudget), { ...pack, ...(searched.pinned.size ? { pinned: searched.pinned } : {}), ...(memory.vectorMode === "bridge" ? { ordered: true } : {}) });
   return { ...packed, nothingRelevant: packed.text === "" };
 }
 
 /** What the PM tool `lane_pilot_memory {action:"context"}` returns for a query (an explicit search): the same search, then the judge, then the packing. */
 export async function pmMemoryContextJudged(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[], role = "pm", floor: RelevanceFloor | null = memory.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR) {
-  const judged = await judgeFound(db, { projectId, query, found: pmSearch(db, projectId, memory, query, chain, floor), memory, surface: "pm_tool", audience: memory.audience });
-  const packed = memoryContext(judged.records, query, roleContextBudget(role, memory.contextBudget));
+  await translateForLock(query, memory);
+  const searched = pmSearchPinned(db, projectId, memory, query, chain, floor);
+  const judged = await judgeFound(db, { projectId, query, found: searched.found, memory, surface: "pm_tool", audience: memory.audience, pinned: searched.pinned });
+  // A reranker's order is the point: the pack keeps it (and cuts from the tail) instead of re-ranking by word overlap.
+  const packed = memoryContext(judged.records, query, roleContextBudget(role, memory.contextBudget), { ...(searched.pinned.size ? { pinned: searched.pinned } : {}), ...((judged.judged && memory.judgeMode === "rerank") || memory.vectorMode === "bridge" ? { ordered: true } : {}) });
   return { ...packed, nothingRelevant: packed.text === "" };
 }

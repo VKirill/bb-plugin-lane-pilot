@@ -90,7 +90,7 @@ export function registerCli(ctx: ServerCore, services: Services, migrations: rea
             const stats = memoryJudgeStats(db, Date.now() - days * 86_400_000, projectId);
             if (args.includes("--json")) return { exitCode:0, stdout:`${JSON.stringify(stats, null, 2)}\n` };
             const fallbacks = Object.entries(stats.fallbacks).map(([reason, n]) => `${reason} ${n}`).join(", ") || "none";
-            return { exitCode:0, stdout:`memory judge, last ${days} days${projectId ? "" : " (all projects)"}: ${stats.calls} calls (${stats.cached} cached), said none ${stats.none}, ${stats.chosenAvg.toFixed(2)} notes chosen on average; fallbacks: ${fallbacks}; latency p50 ${stats.latencyP50} ms, p95 ${stats.latencyP95} ms; tokens ${stats.tokensIn} in / ${stats.tokensOut} out; surfaces ${JSON.stringify(stats.bySurface)}; models ${JSON.stringify(stats.models)}\n` };
+            return { exitCode:0, stdout:`memory judge, last ${days} days${projectId ? "" : " (all projects)"}: ${stats.calls} calls (${stats.cached} cached), said none ${stats.none}, unparsed ${stats.unparsed}, reranked ${stats.rerank}, ${stats.chosenAvg.toFixed(2)} notes chosen on average; fallbacks: ${fallbacks}; latency p50 ${stats.latencyP50} ms, p95 ${stats.latencyP95} ms; tokens ${stats.tokensIn} in / ${stats.tokensOut} out; surfaces ${JSON.stringify(stats.bySurface)}; models ${JSON.stringify(stats.models)}\n` };
           }
           if (sub === "miss") {
             const noteId = value("--note");

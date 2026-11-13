@@ -7,6 +7,8 @@ import { conflictTableReady, heldClause, holdConflict } from "./conflict-store";
 import { denseRank, queryVectorFor } from "./vectors";
 import { duplicateDoor, withoutShadowedDuplicates } from "./duplicates";
 import { pathAnchorsOf } from "./floor";
+import { crossesLanguage, languageOf } from "./language";
+import { doorOpens, lockQueryText, type DoorLock } from "./door-lock";
 import type { MemoryAudience, MemoryCandidate, MemoryKind, MemoryRecord, MemorySearchEngine, MemoryStatus, MemoryTrust } from "./settings";
 
 /** The better-sqlite3 surface this package needs; BB's `bb.storage.database()` satisfies it. */
@@ -318,7 +320,11 @@ export type SearchOptions = { /** M7: umbrella project — bare scopes are not p
   chain?: readonly string[];
   allSections?: boolean;
   /** Also read the archive: notes the budget moved off the shelf (`ARCHIVE_SQL`). They are searchable, never injected; the PM search and explicit queries ask for them, a brief does not. */
-  includeArchive?: boolean };
+  includeArchive?: boolean;
+  /** `bridge`: the word layer is the base and the vectors add only notes in another language than the question (`language.ts`); `all` (unset): vectors rank every note, as before. */
+  vectorMode?: "bridge" | "all";
+  /** The door lock (`door-lock.ts`): with `literal` or `translated` a question the word layer left closed gets an empty list, whatever the vectors say. Unset reads as `off`. */
+  doorLock?: DoorLock };
 
 /** The archive: a note the note budget moved off the shelf. Not deleted and not hidden from search, only not injected. Its word indexes and vector stay. */
 const ARCHIVE_SQL = "status='expired' AND expired_reason IN ('budget','duplicate')";
@@ -406,21 +412,11 @@ export function searchMemoryRecords(db: MemoryDatabase, projectId: string, query
   if (tokens.length === 0 || limit <= 0) return [];
   let rows: Row[];
   if (engine !== "bm25") {
-    const match = tokens.map((word) => `"${word.replaceAll('"', "")}"`).join(" OR ");
-    const words = db.prepare(`SELECT ${cols("m.")}
-      FROM lane_pilot_memory_fts f JOIN lane_pilot_memory m ON m.id=f.id AND m.project_id=f.project_id
-      WHERE lane_pilot_memory_fts MATCH ? AND f.project_id=? AND m.audience=? AND m.personal_bot=? AND ${visibility(db, "m", options)}
-      ORDER BY bm25(lane_pilot_memory_fts) LIMIT ?`).all(match, projectId, audience, personalBot, limit) as Row[];
-    // Word forms and substrings the whole-word index misses: the trigram index, or a scan where SQLite has none.
-    const stems = [...new Set(tokens.map(memoryStem))];
-    const parts = trigramReady(db)
-      ? db.prepare(`SELECT ${cols("m.")}
-        FROM lane_pilot_memory_trgm t JOIN lane_pilot_memory m ON m.id=t.id AND m.project_id=t.project_id
-        WHERE lane_pilot_memory_trgm MATCH ? AND t.project_id=? AND m.audience=? AND m.personal_bot=? AND ${visibility(db, "m", options)}
-        ORDER BY bm25(lane_pilot_memory_trgm) LIMIT ?`).all(stems.map((stem) => `"${stem.replaceAll('"', "")}"`).join(" OR "), projectId, audience, personalBot, limit) as Row[]
-      : scanRows(db, projectId, audience, personalBot, stems, options, limit);
-    rows = fuse([words, parts], limit);
-    const dense = denseRows(db, projectId, query, audience, personalBot, options, rows);
+    const lock = options.doorLock ?? "off";
+    const searchTokens = lock === "translated" ? [...new Set(memoryTokens(lockQueryText(query, lock)))].slice(0, 32) : tokens;
+    rows = wordRows(db, projectId, searchTokens, audience, personalBot, options, limit);
+    if (lock !== "off" && !doorOpens(db, projectId, query, lock, rows.length, audience, personalBot)) return [];
+    const dense = options.vectorMode === "bridge" ? bridgeRows(db, projectId, query, audience, personalBot, options, rows, limit) : denseRows(db, projectId, query, audience, personalBot, options, rows);
     if (dense) rows = dense.slice(0, limit);
   } else {
     const all = db.prepare(`SELECT ${cols("m.")} FROM lane_pilot_memory m WHERE m.project_id=? AND m.audience=? AND m.personal_bot=? AND ${visibility(db, "m", options)}`).all(projectId, audience, personalBot) as Row[];
@@ -431,6 +427,72 @@ export function searchMemoryRecords(db: MemoryDatabase, projectId: string, query
   // M7 receipt: a pre-M7 root row delivered inside an umbrella reads with the legacy_scope flag.
   if (options.umbrella) rows.forEach((row, index) => { if (!parseScopeJson((row as Row & { scope_json: string | null }).scope_json).length) (records[index] as MemoryRecord & { legacyScope?: boolean }).legacyScope = true; });
   return options.includeArchive ? withoutShadowedDuplicates(db, projectId, records) : records;
+}
+
+/**
+ * The word layer: whole words (FTS5) and word forms (trigram), fused by rank, each row carrying the BM25 score of the whole-word hit (`_bm25`, lower is
+ * better in SQLite; `wordCandidates` turns it into a score where higher is better). The base of the search under `vector_mode = bridge`.
+ */
+function wordRows(db: MemoryDatabase, projectId: string, tokens: string[], audience: MemoryAudience, personalBot: string, options: SearchOptions, limit: number): Array<Row & { _bm25?: number }> {
+  if (!tokens.length) return [];
+  const match = tokens.map((word) => `"${word.replaceAll('"', "")}"`).join(" OR ");
+  const words = db.prepare(`SELECT ${cols("m.")}, bm25(lane_pilot_memory_fts) AS _bm25
+    FROM lane_pilot_memory_fts f JOIN lane_pilot_memory m ON m.id=f.id AND m.project_id=f.project_id
+    WHERE lane_pilot_memory_fts MATCH ? AND f.project_id=? AND m.audience=? AND m.personal_bot=? AND ${visibility(db, "m", options)}
+    ORDER BY bm25(lane_pilot_memory_fts) LIMIT ?`).all(match, projectId, audience, personalBot, limit) as Array<Row & { _bm25?: number }>;
+  // Word forms and substrings the whole-word index misses: the trigram index, or a scan where SQLite has none.
+  const stems = [...new Set(tokens.map(memoryStem))];
+  const parts = trigramReady(db)
+    ? db.prepare(`SELECT ${cols("m.")}
+      FROM lane_pilot_memory_trgm t JOIN lane_pilot_memory m ON m.id=t.id AND m.project_id=t.project_id
+      WHERE lane_pilot_memory_trgm MATCH ? AND t.project_id=? AND m.audience=? AND m.personal_bot=? AND ${visibility(db, "m", options)}
+      ORDER BY bm25(lane_pilot_memory_trgm) LIMIT ?`).all(stems.map((stem) => `"${stem.replaceAll('"', "")}"`).join(" OR "), projectId, audience, personalBot, limit) as Row[]
+    : scanRows(db, projectId, audience, personalBot, stems, options, limit);
+  const bm25 = new Map(words.map((row) => [row.id, row._bm25]));
+  return fuse([words, parts], limit).map((row) => bm25.has(row.id) ? { ...row, _bm25: bm25.get(row.id)! } : row);
+}
+
+/**
+ * The candidates of the word layer alone, best first, each with a score where higher is better (the BM25 of its whole-word hit; a note only the
+ * trigram index found scores 0). No vectors, no lock: this is the layer `vector_mode = bridge` builds on, and what answers when no embedding is available.
+ */
+export function wordCandidates(db: MemoryDatabase, projectId: string, query: string, limit: number, audience: MemoryAudience = "subagent", personalBot = "", options: SearchOptions = {}): Array<{ record: MemoryRecord; score: number }> {
+  if (options.includeArchive) indexArchive(db);
+  const tokens = [...new Set(memoryTokens(query))].slice(0, 32);
+  if (!tokens.length || limit <= 0) return [];
+  return wordRows(db, projectId, tokens, audience, personalBot, options, limit).map((row) => ({ record: toRecord(row), score: row._bm25 === undefined ? 0 : -row._bm25 }));
+}
+
+/**
+ * The vector bridge: the word layer's rows stay the base; the vectors add only the notes in another language than the question (the words cannot
+ * reach them), the best `BRIDGE_TOP` of those, fused with the words by rank. A path written in the question still comes first. No question
+ * vector or no project vectors: null, and the caller keeps the word rows.
+ */
+export const BRIDGE_TOP = 10;
+function bridgeRows(db: MemoryDatabase, projectId: string, query: string, audience: MemoryAudience, personalBot: string, options: SearchOptions, wordList: Row[], limit: number): Array<Row & { similarity?: number; bestChunk?: number }> | null {
+  const vector = queryVectorFor(query);
+  const ranked = vector ? denseRank(db, projectId, vector) : null;
+  if (!ranked) return null;
+  const visible = new Map((db.prepare(`SELECT ${cols("m.")} FROM lane_pilot_memory m WHERE m.project_id=? AND m.audience=? AND m.personal_bot=? AND ${visibility(db, "m", options)}`)
+    .all(projectId, audience, personalBot) as Row[]).map((row) => [row.id, row]));
+  const asked = languageOf(query);
+  const across: Array<Row & { similarity: number; bestChunk?: number }> = [];
+  for (const item of ranked) {
+    const row = visible.get(item.id);
+    if (!row || !crossesLanguage(asked, languageOf(row.content))) continue;
+    across.push({ ...row, similarity: item.similarity, ...(item.chunk !== undefined ? { bestChunk: item.chunk } : {}) });
+    if (across.length >= BRIDGE_TOP) break;
+  }
+  const anchors = pathAnchorsOf(query);
+  const anchored = anchors.length ? wordList.filter((row) => anchors.some((anchor) => row.content.includes(anchor))) : [];
+  const out: Array<Row & { similarity?: number; bestChunk?: number }> = [], seen = new Set<string>();
+  for (const row of anchored) { seen.add(row.id); out.push(row); }
+  for (const row of fuse([wordList, across], limit * 2)) {
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+    out.push(across.find((item) => item.id === row.id) ?? row);
+  }
+  return out;
 }
 
 /**

@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { DOC_CHARS, EMBED_DIM, estimateTokens, hideRecord, memoryStem, memoryTokens, parseMemorySettings, pendingChunks, pendingVectors, storeChunkVectors, recordRelevance, rememberQueryVector, searchMemoryRecords, sharedScope, storeMemoryRecords, storeVectors, answerProbability, weakAnswer, wordFrequencies, type MemoryAudience, type MemoryRecord, type MemorySettings, type PackOptions } from "@lane-pilot/memory-core";
+import { addToIndexes, insertMemoryRecord, memoryRecordId, DOC_CHARS, EMBED_DIM, estimateTokens, hideRecord, memoryStem, memoryTokens, parseMemorySettings, pendingChunks, pendingVectors, storeChunkVectors, recordRelevance, rememberLockTerms, rememberQueryVector, searchMemoryRecords, sharedScope, storeMemoryRecords, storeVectors, answerProbability, weakAnswer, wordFrequencies, type MemoryAudience, type MemoryRecord, type MemorySettings, type PackOptions } from "@lane-pilot/memory-core";
 import type { LanePilotDatabase } from "../../storage";
 import { mixWriterMemory, pmMemoryContext } from "../../memory/server";
 import { SUITE_CASES, SUITE_NOTES, SUITE_PACK_NOTES, SUITE_PROJECT, type SuiteCase, type SuiteFamily, type SuiteNote } from "./suite-fixture";
@@ -22,10 +22,12 @@ const hashOf = (text: string, seed: number): number => {
   for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
   return h >>> 0;
 };
+/** The few Russian words H15-H16 use, mapped to the English words of the notes they ask about: what a multilingual embedding model does and a hash cannot. */
+const CROSS_LINGUAL: Record<string, string> = { "коннектор": "connector", "бронирования": "booking", "паромов": "ferry", "запрос": "request", "секунд": "seconds", "повторяет": "retries" };
 /** Deterministic stand-in for the embedding model: hashed word stems (length 4+, like the floor counts them) around a shared direction. */
 export function standInEmbedding(text: string): Float32Array {
   const out = new Float32Array(EMBED_DIM);
-  const stems = new Set(memoryTokens(text).filter((token) => token.length >= 4).map(memoryStem));
+  const stems = new Set(memoryTokens(text).map((token) => CROSS_LINGUAL[token] ?? token).filter((token) => token.length >= 4).map(memoryStem));
   for (const stem of stems) {
     const at = hashOf(stem, 1) % EMBED_DIM;
     out[at] = out[at]! + (hashOf(stem, 2) & 1 ? 1 : -1);
@@ -50,6 +52,13 @@ export function plantSuite(migrations: readonly string[], notes: readonly SuiteN
   const ids = new Map<string, string>(), keys = new Map<string, string>();
   const now = Date.now();
   notes.forEach((note, index) => {
+    if (note.bulk) {
+      const id = memoryRecordId(SUITE_PROJECT, "note", note.content, "", note.audience ?? "subagent");
+      insertMemoryRecord(db as never, { id, projectId: SUITE_PROJECT, kind: "note", content: note.content, conceptsJson: JSON.stringify(note.concepts ?? ["suite"]), sourceSha256: "s".repeat(64), createdAt: now - (notes.length - index) * 1000, origin: "maintainer" });
+      addToIndexes(db as never, SUITE_PROJECT, id, note.content, note.concepts ?? ["suite"]);
+      ids.set(note.key, id); keys.set(id, note.key);
+      return;
+    }
     const oldId = note.supersedes ? ids.get(note.supersedes) : undefined;
     if (note.supersedes && !oldId) throw new Error(`suite note ${note.key} replaces ${note.supersedes}, which is not planted before it`);
     const scope = note.scope === "shared" ? sharedScope() : note.scope ?? [];
@@ -85,7 +94,7 @@ export type CaseResult = {
   context: string;
 };
 
-const SETTINGS = (audience: MemoryAudience): MemorySettings => parseMemorySettings({ "memory.audience": audience });
+const SETTINGS = (audience: MemoryAudience, more: Record<string, unknown> = {}): MemorySettings => parseMemorySettings({ "memory.audience": audience, ...more });
 
 /** One case: embeds the question (stand-in), reads the context like the PM tool or the writer's brief does, and judges it against what the case expects. */
 export function runCase(plant: SuitePlant, item: SuiteCase, options: PackOptions = {}): CaseResult {
@@ -99,7 +108,8 @@ export function runCase(plant: SuitePlant, item: SuiteCase, options: PackOptions
     text = mixed.text; returnedIds = mixed.ids;
     nothingRelevant = returnedIds.length === 0;
   } else {
-    const packed = pmMemoryContext(db, SUITE_PROJECT, SETTINGS(audience), item.question, item.chain ?? [], "pm", undefined, options);
+    if (item.lockTerms) rememberLockTerms(item.question, item.lockTerms);
+    const packed = pmMemoryContext(db, SUITE_PROJECT, SETTINGS(audience, item.settings), item.question, item.chain ?? [], "pm", undefined, options);
     text = packed.text; returnedIds = packed.records.map((record) => record.id);
     nothingRelevant = packed.nothingRelevant;
     judgeNone = !nothingRelevant && stubJudgeNone(db, item, audience);
@@ -132,7 +142,7 @@ export type FamilyScore = { family: SuiteFamily | "H7"; title: string; n: number
 export type SuiteCost = { meanTokens: number; p95Ms: number; maxTokens: number; cases: number };
 export type SuiteReport = { cases: CaseResult[]; families: FamilyScore[]; cost: SuiteCost; leaks: string[] };
 
-const TITLES: Record<SuiteFamily, string> = { H1: "writer brief recall", H2: "PM question on a past decision", H3: "no answer (incl. near-miss)", H4: "updated fact returns the new version", H5: "cross-section leakage", H6: "grey band of the gate", H8: "archived record found by PM search", H9: "history question shows the old version", H10: "long record found by a later paragraph", H11: "record over budget shown as a head line", H12: "answer in a neighbour chunk of the best one", H13: "copy of a stored fact makes no second note" };
+const TITLES: Record<SuiteFamily, string> = { H1: "writer brief recall", H2: "PM question on a past decision", H3: "no answer (incl. near-miss)", H4: "updated fact returns the new version", H5: "cross-section leakage", H6: "grey band of the gate", H8: "archived record found by PM search", H9: "history question shows the old version", H10: "long record found by a later paragraph", H11: "record over budget shown as a head line", H12: "answer in a neighbour chunk of the best one", H13: "copy of a stored fact makes no second note", H14: "words find an exact identifier", H15: "russian question reaches an english note (bridge)", H16: "no answer stays silent behind the door lock", H17: "pinned rule always arrives" };
 const pct = (value: number) => `${(value * 100).toFixed(0)}%`;
 
 export function scoreSuite(cases: readonly CaseResult[]): SuiteReport {

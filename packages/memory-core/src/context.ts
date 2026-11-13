@@ -54,7 +54,11 @@ export function roleContextBudget(role:string,configured:number):number {
 }
 
 /** The packing layers added by memory bench round 4 (R4.5): a head line for a record that does not fit, and neighbour chunks around the best one. Off only for tests and the suite's before/after run. */
-export type PackOptions = { heads?: boolean; neighbours?: boolean };
+export type PackOptions = { heads?: boolean; neighbours?: boolean;
+  /** The records come in the order a reranker made: keep it (no overlap score, no overlap filter), so the budget cuts from the tail. */
+  ordered?: boolean;
+  /** Pinned records (`memory.pinned`: core conventions, notes naming a path of the question) are packed first and need no word overlap with the question. */
+  pinned?: ReadonlySet<string> };
 /** A head line shows the first this many characters of a record, and at most this many heads are added to one pack. */
 const HEAD_CHARS = 120, MAX_HEADS = 10;
 
@@ -67,11 +71,12 @@ export function memoryHeadLine(record:MemoryRecord):string {
 }
 
 export function memoryContext(records:MemoryRecord[],taskText:string,budget:number,options:PackOptions={}):{text:string;records:MemoryRecord[];estimatedTokens:number;cut:MemoryRecord[];heads:MemoryRecord[]} {
-  const {heads:withHeads=true,neighbours:withNeighbours=true}=options;
+  const {heads:withHeads=true,neighbours:withNeighbours=true,ordered=false,pinned}=options;
   const terms=new Set(tokens(taskText));
   // Relevance first; a note that served accepted attempts counts for more than one that did not, and each extra independent source adds a small bonus (arXiv #21).
-  const ranked=records.map((record)=>({record,score:tokens(`${record.content} ${record.concepts.join(" ")}`).reduce((sum,token)=>sum+(terms.has(token)?1:0),0)*(0.5+memoryUsefulness(record)+Math.min(0.3,0.1*((record.verification?.length??1)-1)))}))
-    .filter((item)=>item.score>0).sort((a,b)=>b.score-a.score||b.record.createdAt-a.record.createdAt||a.record.id.localeCompare(b.record.id));
+  const ranked=records.map((record)=>({record,score:ordered?1:tokens(`${record.content} ${record.concepts.join(" ")}`).reduce((sum,token)=>sum+(terms.has(token)?1:0),0)*(0.5+memoryUsefulness(record)+Math.min(0.3,0.1*((record.verification?.length??1)-1)))}))
+    .filter((item)=>ordered||item.score>0||pinned?.has(item.record.id)===true).sort((a,b)=>ordered?0:b.score-a.score||b.record.createdAt-a.record.createdAt||a.record.id.localeCompare(b.record.id));
+  if(pinned?.size)ranked.sort((a,b)=>Number(pinned.has(b.record.id))-Number(pinned.has(a.record.id)));
   const lines=new Map<string,string>();const picked:MemoryRecord[]=[];const over:MemoryRecord[]=[];
   const render=(replace?:{id:string;line:string}):string=>[...lines].map(([id,line])=>replace&&replace.id===id?replace.line:line).join("\n");
   // The header is part of the line the budget pays for: counting content alone let a long concepts list overshoot (F10-4).

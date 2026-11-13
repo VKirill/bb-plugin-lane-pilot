@@ -53,17 +53,81 @@ export function judgeUserPrompt(query: string, notes: ReadonlyArray<Pick<MemoryR
   return `Question: ${query}\n\nNotes:\n\n${blocks.join("\n\n")}\n\nWhich of these notes contain facts that help answer the question? Reply with only the numbers of ALL notes that help, separated by commas, or the word none if no note helps.`;
 }
 
+/** What was read from a reply: the notes named in order, how many number-like answers fell outside the list (lost, counted), and whether it said none. */
+export type ReadReply = { numbers: number[]; dropped: number; none: boolean };
+
+const BARE_LIST = /^[\s,;"'`\[\]()\d.-]*$/;
+const ARRAY_SPAN = /\[[\s,"'`\[\]\d]*\]/g;
+
+/**
+ * Reads a reply that names notes by number, in any of the shapes models answer in: `[1,2]`, `["1","2"]`, `["[1]","[2]"]` (also over several lines or
+ * inside a code fence), `1, 2`, `1 2`, a numbered list («1. note 3»), or prose that thinks aloud and puts the answer on its last line. Numbers outside
+ * 1..count are not used but counted (`dropped`), so a reply that lost answers does not do it silently. `null`: nothing readable and not «none».
+ */
+export function readJudgeReply(reply: string, count: number): ReadReply | null {
+  const text = reply.replace(/```[a-z]*/gi, "").trim();
+  if (!text) return null;
+  const ints = (part: string) => [...part.matchAll(/\d+/g)].map((hit) => Number(hit[0]));
+  let found: number[] | null = null;
+  if (BARE_LIST.test(text)) found = ints(text);
+  if (!found) {
+    // A JSON-looking array anywhere in the text: the one that names the most numbers (the last on a tie).
+    let best: number[] = [];
+    for (const span of text.match(ARRAY_SPAN) ?? []) { const got = ints(span); if (got.length >= best.length) best = got; }
+    if (best.length) found = best;
+  }
+  const lines = text.split(/\r?\n/).map((part) => part.trim()).filter(Boolean);
+  const last = lines.at(-1) ?? "";
+  if (!found && text.length <= 60) found = ints(text);
+  if (!found) {
+    // A numbered list: «1. [3]», «2) note 1»: the number after the ordinal is the note.
+    const listed = lines.map((line) => /^\s*\d+\s*[.):]\s*(?:note\s*|#)?\[?(\d+)\]?/i.exec(line)?.[1]).filter((value): value is string => value !== undefined).map(Number);
+    if (listed.length >= 2) found = listed;
+  }
+  if (!found) found = ints(last);
+  const numbers = [...new Set(found.filter((n) => Number.isInteger(n) && n >= 1 && n <= count))];
+  const dropped = found.filter((n) => !(Number.isInteger(n) && n >= 1 && n <= count)).length;
+  if (numbers.length) return { numbers, dropped, none: false };
+  if (/\bnone\b/i.test(last) || /\bnone\b/i.test(text.length <= 60 ? text : "")) return { numbers, dropped, none: true };
+  return null;
+}
+
 /**
  * The numbers the judge named (1-based, in the order it gave them), `[]` for none, `null` for a reply that is neither (an error of the judge,
- * handled like a timeout). A reply longer than 40 characters is read by its last line: a model that thinks aloud puts the answer last.
+ * handled like a timeout). The reading is `readJudgeReply`.
  */
 export function parseJudgeReply(reply: string, count: number): number[] | null {
-  const text = reply.trim();
-  if (!text) return null;
-  const line = text.length > 40 ? text.split(/\r?\n/).map((part) => part.trim()).filter(Boolean).pop() ?? "" : text;
-  const numbers = [...new Set([...line.matchAll(/\d+/g)].map((hit) => Number(hit[0])).filter((n) => Number.isInteger(n) && n >= 1 && n <= count))];
-  if (numbers.length) return numbers;
-  return /\bnone\b/i.test(line) ? [] : null;
+  const read = readJudgeReply(reply, count);
+  return read ? read.numbers : null;
+}
+
+/** The reranker's system prompt: it only orders, it never drops a note and never says none. */
+export const RERANK_SYSTEM = "You order a project's memory notes by how useful they are for answering a question. Every note stays in the list; you only change the order.";
+
+/** The reranker's user message: the question, then every note by number and text only (no ids, no file names), in the order the search gave them. */
+export function rerankUserPrompt(query: string, notes: ReadonlyArray<Pick<MemoryRecord, "content">>): string {
+  const blocks = notes.map((note, index) => `[${index + 1}]\n${maskSecretsForJudge(note.content).slice(0, JUDGE_NOTE_CHARS)}`);
+  return `Question: ${query}\n\nNotes:\n\n${blocks.join("\n\n")}\n\nReorder ALL ${notes.length} notes from the most useful for answering the question to the least useful. Reply with only the numbers of all ${notes.length} notes in the new order, separated by commas. Do not leave any note out and do not answer none.`;
+}
+
+/**
+ * The full order a rerank reply makes: the numbers it gave (valid, once each, in its order), then every number it left out in the previous order.
+ * No reply (`null`: a timeout, an error, an unreadable answer) is the previous order. The result always has `count` numbers.
+ */
+export function permutationOf(named: readonly number[] | null, count: number): number[] {
+  const out: number[] = [], seen = new Set<number>();
+  for (const n of named ?? []) if (Number.isInteger(n) && n >= 1 && n <= count && !seen.has(n)) { seen.add(n); out.push(n); }
+  for (let n = 1; n <= count; n++) if (!seen.has(n)) out.push(n);
+  return out;
+}
+
+/** The keyword translation of a question for the door lock (`memory.door_lock = translated`): one cheap call, English keywords only. */
+export const TRANSLATE_SYSTEM = "You turn a question about a software project into English search keywords for the project's notes, which are mostly in English.";
+export const translateUserPrompt = (query: string): string => `Question: ${maskSecretsForJudge(query).slice(0, 1500)}\n\nWrite 3 to 8 English keywords or short technical terms that notes answering this question would contain (translate Russian words into English; keep identifiers, file names and product names as written). Reply with only the keywords, separated by commas.`;
+/** The keywords of a reply: words of three letters or more, lower case, at most twelve. */
+export function parseKeywords(reply: string): string[] {
+  const words = reply.replace(/```[a-z]*/gi, " ").toLowerCase().match(/[\p{L}\p{N}_./-]{3,}/gu) ?? [];
+  return [...new Set(words.filter((word) => !/^(?:keywords?|english|terms?)$/.test(word)))].slice(0, 12);
 }
 
 /** Why the judge's answer was not used; absent on a clean call. */
@@ -82,6 +146,10 @@ export type JudgeReceipt = {
   tokensOut: number;
   cached?: boolean;
   fallback?: JudgeFallback;
+  /** `rerank`: the judge only reordered the candidates; absent or `filter`: it named the helpful ones. */
+  mode?: "filter" | "rerank";
+  /** Answers in the reply that could not be used (a number outside the list), or 1 for a reply nothing could be read from. Absent on a clean read. */
+  unparsed?: number;
   /** The answer gate's probability for the same search, kept for analysis. Nothing shown to a reader depends on it. */
   gate?: number | null;
 };
