@@ -259,7 +259,15 @@ export async function cliProject(d: CliRunDeps): Promise<PluginCliResult | undef
     return { exitCode:probe.ok ? 0 : 1, stdout:JSON.stringify(probe, null, 2) };
   }
   if (command === "memory-eval") {
-    return await runMemoryEvalCommand(db, args, migrations, { northStar: () => costPerVerified(db) });
+    // `--e2e` asks a model one question at a time the way the learning review does: the project's rules analyzer, a hidden thread on the project's machine.
+    const model = (projectId: string) => async (prompt: string, label: "answer" | "judge", caseId: string): Promise<string> => {
+      const place = await services.resolveProjectWriterHost({ projectId } as never).catch(() => null) as { status?: string; hostId?: string; path?: string } | null;
+      if (!place || place.status !== "resolved" || !place.hostId || !place.path) throw new Error("no_host");
+      const analyzer = await services.ruleScan.analyzerFor(projectId, { hostId: place.hostId, path: place.path });
+      if (!analyzer) throw new Error("no_analyzer_model");
+      return await services.ruleScan.runAnalyzer(projectId, `Memory eval · ${label} · ${caseId}`.slice(0, 160), prompt, { hostId: place.hostId, path: place.path }, analyzer, { learning: true });
+    };
+    return await runMemoryEvalCommand(db, args, migrations, { northStar: () => costPerVerified(db), model });
   }
   if (command === "memory-conflicts" || command === "memory-conflict-settle") {
     return runMemoryConflictCli(services.memoryConflicts, command, args);
