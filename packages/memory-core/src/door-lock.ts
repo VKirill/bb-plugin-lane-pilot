@@ -16,6 +16,10 @@ export const DOOR_LOCKS = ["off", "literal", "translated"] as const;
 export type DoorLock = (typeof DOOR_LOCKS)[number];
 export const DOOR_MIN_WEIGHT = 0.35;
 
+/** Function words never open the door: in a small shelf a word like «the» is held by few notes and would weigh as much as a name. */
+const LOCK_STOP = new Set(["the", "and", "for", "with", "that", "this", "from", "when", "are", "was", "were", "has", "have", "had", "into", "its", "can", "all", "any", "but", "then", "than", "there", "which", "what", "where", "who", "why", "how", "does", "did", "use", "used", "get", "gets", "our", "your", "not", "you", "about", "should", "would", "could",
+  "что", "как", "это", "для", "при", "или", "если", "все", "так", "они", "где", "когда", "какой", "какая", "какие", "почему", "сколько", "через", "кто"]);
+
 const lockTerms = new Map<string, string[]>();
 /** English keywords of a question, made by the caller (`memory-translate.ts`); kept for the last 256 questions. */
 export function rememberLockTerms(query: string, terms: readonly string[]): void {
@@ -54,7 +58,7 @@ export function doorOpens(db: MemoryDatabase, projectId: string, query: string, 
   const total = Math.max(1, wordFrequencies(db, projectId, audience, personalBot).total);
   const scale = Math.log(1 + total);
   let weight = 0;
-  for (const word of [...new Set(memoryTokens(lockQueryText(query, mode)))].slice(0, 32)) {
+  for (const word of [...new Set(memoryTokens(lockQueryText(query, mode)))].filter((token) => !LOCK_STOP.has(token)).slice(0, 32)) {
     let held = wordCount(db, projectId, audience, personalBot, word);
     if (!held) held = trigramCount(db, projectId, audience, personalBot, memoryStem(word));
     if (held > 0) weight += Math.log(1 + total / held) / scale;

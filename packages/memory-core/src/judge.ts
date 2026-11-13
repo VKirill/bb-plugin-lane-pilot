@@ -78,12 +78,12 @@ export function readJudgeReply(reply: string, count: number): ReadReply | null {
   }
   const lines = text.split(/\r?\n/).map((part) => part.trim()).filter(Boolean);
   const last = lines.at(-1) ?? "";
-  if (!found && text.length <= 60) found = ints(text);
   if (!found) {
     // A numbered list: «1. [3]», «2) note 1»: the number after the ordinal is the note.
     const listed = lines.map((line) => /^\s*\d+\s*[.):]\s*(?:note\s*|#)?\[?(\d+)\]?/i.exec(line)?.[1]).filter((value): value is string => value !== undefined).map(Number);
     if (listed.length >= 2) found = listed;
   }
+  if (!found && text.length <= 60) found = ints(text);
   if (!found) found = ints(last);
   const numbers = [...new Set(found.filter((n) => Number.isInteger(n) && n >= 1 && n <= count))];
   const dropped = found.filter((n) => !(Number.isInteger(n) && n >= 1 && n <= count)).length;
@@ -127,7 +127,7 @@ export const translateUserPrompt = (query: string): string => `Question: ${maskS
 /** The keywords of a reply: words of three letters or more, lower case, at most twelve. */
 export function parseKeywords(reply: string): string[] {
   const words = reply.replace(/```[a-z]*/gi, " ").toLowerCase().match(/[\p{L}\p{N}_./-]{3,}/gu) ?? [];
-  return [...new Set(words.filter((word) => !/^(?:keywords?|english|terms?)$/.test(word)))].slice(0, 12);
+  return [...new Set(words.map((word) => word.replace(/^[./-]+|[./-]+$/g, "")).filter((word) => word.length >= 3 && !/^(?:keywords?|english|terms?)$/.test(word)))].slice(0, 12);
 }
 
 /** Why the judge's answer was not used; absent on a clean call. */

@@ -10,9 +10,11 @@ import gateFixture from "./gate-fixture.json";
 import suiteBaseline from "./suite-baseline.json";
 import { baselineOf, formatSuite, regressions, runSuite, type SuiteBaseline } from "./suite";
 import { formatE2e, runE2e, stubModel, type ModelCall } from "./e2e";
+import { copyOfDatabase, formatRuler, parseRuler, runRuler, type RulerOptions } from "./ruler";
+import type { Embedder, MemoryJudge } from "../../memory/server";
 import { formatPublic, loadFactConsolidation, loadLongMemEvalAbstention, runFactConsolidation, runLongMemEvalAbstention } from "./public-sets";
 
-export const MEMORY_EVAL_USAGE = "bb lane-pilot memory-eval [--sizes 30,300,3000] [--seed N] [--scope project|pile] [--shelf] [--floor] [--no-floor] [--north-star] [--gate] [--suite [--write-baseline <file>]] [--e2e [--limit N] [--project <id>] [--stub]] [--longmemeval <file>] [--factcons <file>] [--source <extract.db>] [--export <extract.db>] [--json]";
+export const MEMORY_EVAL_USAGE = "bb lane-pilot memory-eval [--sizes 30,300,3000] [--seed N] [--scope project|pile] [--shelf] [--floor] [--no-floor] [--north-star] [--gate] [--suite [--write-baseline <file>]] [--e2e [--limit N] [--project <id>] [--stub]] [--longmemeval <file>] [--factcons <file>] [--ruler <working.jsonl> --db <hub copy> [--vector-mode all|bridge] [--door-lock off|literal|translated] [--judge-mode filter|rerank] [--pinned] [--judge on|off] [--judge-model <id>] [--candidates N] [--limit N] [--runs N] [--scope project|hub|both] [--parallel N] [--max-questions N] [--raw-query]] [--source <extract.db>] [--export <extract.db>] [--json]";
 
 type Result = { exitCode: number; stdout?: string; stderr?: string };
 
@@ -23,15 +25,16 @@ type Result = { exitCode: number; stdout?: string; stderr?: string };
  * database and exits 1 on any leak, overflow, cut rule, miss or error.
  */
 export async function runMemoryEvalCommand(live: Pick<Database.Database, "prepare"> | null, argv: readonly string[], migrations: readonly string[], extras: { northStar?: () => unknown; /** The plugin's one-shot analyzer path for `--e2e`, for the project whose host runs it. */ model?: (projectId: string) => ModelCall;
+  /** `--ruler`: a fresh judge for each run, and the embedder of the questions; without them the search runs on words, with no judge. */ ruler?: { makeJudge?: () => MemoryJudge | null; embedder?: Embedder | null };
   /** File access for `--write-baseline`, `--longmemeval` and `--factcons`: a room reads no files itself, the script passes `node:fs`. */ io?: { read(path: string): string; write(path: string, text: string): void } } = {}): Promise<Result> {
   try {
     const flags: Record<string, string> = {};
     for (let index = 0; index < argv.length; index++) {
       const hit = /^--([a-z0-9-]+)(?:=(.*))?$/s.exec(argv[index]!);
       if (!hit) throw new Error(`unexpected argument ${argv[index]}\n${MEMORY_EVAL_USAGE}`);
-      flags[hit[1]!] = hit[2] ?? (["json", "shelf", "floor", "no-floor", "north-star", "gate", "suite", "e2e", "stub"].includes(hit[1]!) ? "1" : argv[++index] ?? "");
+      flags[hit[1]!] = hit[2] ?? (["json", "shelf", "floor", "no-floor", "north-star", "gate", "suite", "e2e", "stub", "pinned", "raw-query"].includes(hit[1]!) ? "1" : argv[++index] ?? "");
     }
-    for (const name of Object.keys(flags)) if (!["sizes", "seed", "scope", "shelf", "floor", "no-floor", "north-star", "gate", "source", "export", "json", "suite", "write-baseline", "e2e", "limit", "project", "stub", "longmemeval", "factcons"].includes(name)) throw new Error(`unknown flag --${name}\n${MEMORY_EVAL_USAGE}`);
+    for (const name of Object.keys(flags)) if (!["sizes", "seed", "scope", "shelf", "floor", "no-floor", "north-star", "gate", "source", "export", "json", "suite", "write-baseline", "e2e", "limit", "project", "stub", "longmemeval", "factcons", "ruler", "db", "vector-mode", "door-lock", "judge-mode", "pinned", "judge", "judge-model", "candidates", "runs", "parallel", "max-questions", "raw-query"].includes(name)) throw new Error(`unknown flag --${name}\n${MEMORY_EVAL_USAGE}`);
     if (flags.gate) {
       const scratch = new Database(":memory:");
       try {
@@ -68,6 +71,27 @@ export async function runMemoryEvalCommand(live: Pick<Database.Database, "prepar
       }
       const report = await runE2e(migrations, call, { ...(limit ? { limit } : {}) });
       return { exitCode: 0, stdout: flags.json ? JSON.stringify(report, null, 2) : formatE2e(report) };
+    }
+    if (flags.ruler) {
+      if (!extras.io) throw new Error("--ruler reads the ruler file: run it with scripts/memory-eval.ts");
+      if (!flags.db) throw new Error("--ruler needs --db <a copy of the hub database file>: the ruler never touches the live database");
+      const pick = <T extends string>(name: string, allowed: readonly T[], fallback: T): T => {
+        const value = flags[name] ?? fallback;
+        if (!(allowed as readonly string[]).includes(value)) throw new Error(`--${name} is one of ${allowed.join(", ")}`);
+        return value as T;
+      };
+      const whole = (name: string, fallback: number, max = 1000): number => {
+        const value = flags[name] === undefined ? fallback : Number(flags[name]);
+        if (!Number.isInteger(value) || value < 1 || value > max) throw new Error(`--${name} is a whole number from 1 to ${max}`);
+        return value;
+      };
+      const options: RulerOptions = { vectorMode: pick("vector-mode", ["all", "bridge"], "all"), doorLock: pick("door-lock", ["off", "literal", "translated"], "off"), judgeMode: pick("judge-mode", ["filter", "rerank"], "filter"),
+        pinned: Boolean(flags.pinned), judge: pick("judge", ["on", "off"], "on"), scope: pick("scope", ["project", "hub", "both"], "both"), runs: whole("runs", 3, 20), limit: whole("limit", 8, 100), parallel: whole("parallel", 1, 8),
+        ...(flags["max-questions"] ? { maxQuestions: whole("max-questions", 1, 100_000) } : {}), ...(flags["judge-model"] ? { judgeModel: flags["judge-model"] } : {}), ...(flags.candidates ? { candidates: whole("candidates", 12, 50) } : {}),
+        ...(extras.ruler?.makeJudge ? { makeJudge: extras.ruler.makeJudge } : {}), ...(extras.ruler && "embedder" in extras.ruler ? { embedder: extras.ruler.embedder ?? null } : {}) };
+      const questions = parseRuler(extras.io.read(flags.ruler), Boolean(flags["raw-query"]));
+      const report = await runRuler(() => copyOfDatabase(flags.db!), questions, options);
+      return { exitCode: 0, stdout: flags.json ? JSON.stringify(report, null, 2) : formatRuler(report) };
     }
     if (flags.longmemeval || flags.factcons) {
       if (!extras.io) throw new Error("--longmemeval and --factcons read a downloaded file: run them with scripts/memory-eval.ts");
