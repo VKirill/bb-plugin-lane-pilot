@@ -28,7 +28,7 @@ One owner per kind of knowledge (`docs/memory.md`, decision X-2, and the maintai
 |---|---|
 | Lane Pilot memory | Project technical facts, project rules, and since 2026-11-06 everything the other stores held (imported, see below) |
 | Anamnesis | Facts about the owner, on the hub; a record marked `sensitive` is stored encrypted |
-| BB memory, Claude Code auto-memory | Retired: imported into the Lane Pilot memory, kept read-only for one week of parallel running, then switched off |
+| BB memory, Claude Code auto-memory | Retired: imported into the Lane Pilot memory, the week of parallel running is over (done); switched off |
 | agentmemory | Off on every machine since 2026-11-03; its data was imported. The write door refuses core records from origin `agentmemory`. |
 | Code and docs | Behaviour |
 
