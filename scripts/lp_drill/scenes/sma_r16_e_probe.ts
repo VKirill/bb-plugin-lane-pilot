@@ -1,7 +1,10 @@
 // Probe of scenes/sma_r16_e.py (region 16 batch e, slash commands and workflows): runs the REAL code of THIS checkout (the commit under drill) — the real workflow engine with fake
 // executors on the real graph files, the phase driver on a scratch database and a fake host, the PM tool, the phase gates — and
 // prints what it returned as one JSON line. It judges nothing: the scene compares each value with the card's expected result and prove()s it. No model, no hub write.
-import { observeE as observe } from "../../../tests/sma/r16-world-e";
+import { observeE } from "../../../tests/sma/r16-world-e";
+import { observeE2 } from "../../../tests/sma/r16-world-e2";
+
+const observe = { ...observeE, ...observeE2 };
 
 async function main() {
   const wanted = process.argv.slice(2);
