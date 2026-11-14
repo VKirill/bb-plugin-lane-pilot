@@ -772,6 +772,7 @@ export const SMA_CONTRACT_TESTS: Readonly<Record<string, readonly string[]>> = {
   m_lint: ["tests/sma/four-proofs-r14-a.test.ts › a record with no way back to its pipeline run is flagged exactly once as a warning; a record with a task or a voucher is not","tests/sma/parity-d7-memory.test.ts › the lint reports a stored credential as an error finding and the same corpus gives the same ordered report twice","tests/sma/parity-d7-memory.test.ts › no_trace is a warning that names exactly the records memoryWithoutTrace names, and `memory lint` still exits 0 on it"],
   m_listen: ["tests/sma/four-proofs-r05-a.test.ts › the door is open before the start-up recovery sweeps the worker's copies"],
   m_ln_api: ["tests/sma/four-proofs-r07-a.test.ts › a token-paid lane is told from a subscription one, only a paid lane has a price, and with money.strict on the free subscription member wins over a free paid one"],
+  m_ln_bin_present: ["core:packages/provider-bridge-protocol/src/bridge-kit/provider-maintenance-kit.sma.test.ts › the provider program is found by resolving its name on the machine's PATH, and a name that is not there resolves to nothing"],
   m_ln_claude: ["tests/sma/four-proofs-r07-a.test.ts › the Claude lane serves the claude family only, forwards agent-only parts, reads hook settings and publishes its subscription windows; Codex does not publish windows"],
   m_ln_codex: ["core:plugins/provider-codex/src/bridge/bridge.sma.test.ts › every Codex turn carries its own sandbox and approval policy: a workspace-scoped turn is sandboxed to the workspace, a full-access turn after it is not"],
   m_ln_default_routing: ["tests/sma/four-proofs-r07-a.test.ts › the built-in vendor of a role: authors on Claude, the judges and the paperwork on GPT, a model of Gemini through 9router for the reviews; an unknown row falls back to the first row"],
@@ -1141,4 +1142,4 @@ export const SMA_CONTRACT_TESTS: Readonly<Record<string, readonly string[]>> = {
   wr_vendors: ["tests/sma/parity-j2-series-prep.test.ts › an api lane is its own paid vendor group while the subscription lanes are not paid","tests/sma/parity-j2-series-prep.test.ts › an install with no setting resolves a writer to claude-code","tests/sma/worker-lane-1.test.ts › claude and codex are vendor groups, and claude is one of the cores"],
   wr_windows: ["tests/sma/worker-gates-1.test.ts › an exhausted window is a limit: it spends no attempt and the next step is to wait"],
 };
-export const SMA_SIBLING_TESTS_AT: Readonly<Partial<Record<"core" | "telegram", string>>> = {"core":"d511c8d7ba77","telegram":"923e5db6f8df"};
+export const SMA_SIBLING_TESTS_AT: Readonly<Partial<Record<"core" | "telegram", string>>> = {"core":"4742b6edbdbd","telegram":"923e5db6f8df"};
