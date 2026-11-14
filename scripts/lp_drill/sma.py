@@ -1,5 +1,5 @@
-"""Region scenes of the SMA-parity proof (docs/sma-evidence.md): `scripts/lp_drill/scenes/sma_rNN.py` (NN = two-digit region) is found by
-its file name, so adding one edits no shared list. Each defines `NODES` (the map nodes it proves) and `scenario_sma_rNN(tmp) -> dict`.
+"""Region scenes of the SMA-parity proof (docs/sma-evidence.md): `scripts/lp_drill/scenes/sma_rNN.py` (NN = two-digit region) and `sma_core.py` (the bb-core
+nodes' live trace) are found by their file names, so adding one edits no shared list. Each defines `NODES` (the map nodes it proves) and `scenario_sma_rNN(tmp) -> dict`.
 They are not in ALL, EXTRA, QUICK or any suite: `--scenario sma_r13` runs one, `--suite sma` runs every one that exists."""
 from __future__ import annotations
 
@@ -7,13 +7,13 @@ import importlib
 import re
 from pathlib import Path
 
-SMA_FILE = re.compile(r"^sma_r\d\d$")
+SMA_FILE = re.compile(r"^sma_(r\d\d|core)$")
 
 
 def discover() -> dict[str, dict]:
     """name -> {"run": scenario function, "nodes": [node ids]} for every scenes/sma_rNN.py, sorted by name."""
     found: dict[str, dict] = {}
-    for path in sorted((Path(__file__).resolve().parent / "scenes").glob("sma_r[0-9][0-9].py")):
+    for path in sorted((Path(__file__).resolve().parent / "scenes").glob("sma_*.py")):
         if not SMA_FILE.match(path.stem):
             continue
         module = importlib.import_module(f"lp_drill.scenes.{path.stem}")
