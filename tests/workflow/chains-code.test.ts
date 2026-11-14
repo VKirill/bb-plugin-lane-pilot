@@ -116,7 +116,7 @@ describe("review-fix", () => {
 
   it("a re-review that still finds problems goes round once more, then the owner decides what remains", async () => {
     const r = await runSim("review-fix", { input: spec, stubs: { ...stubs(), "lp.review": { status: "rework", findings: [finding("critical")] }, plan_fix2: { status: "ok", tasks: [task("f2")] }, classify: { remaining: [finding("critical")] } }, humans: { ask: { answer_kind: "accept" } } });
-    expect(pathOf(r)).toBe("first_review plan_fix build_fix re_review plan_fix2 build_fix re_review classify ask partial");
+    expect(pathOf(r)).toBe("first_review plan_fix build_fix re_review plan_fix2 build_fix2 re_review classify ask partial");
     expect(out(r)).toMatchObject({ status: "partial", remaining: [expect.objectContaining({ severity: "critical" })] });
   });
 
