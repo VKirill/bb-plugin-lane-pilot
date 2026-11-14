@@ -28,7 +28,7 @@ export default {
     trace: drill("sma_r01"),
   },
   // The accepted attempt's receipts are written once into the task home in the base, so they outlive the worktree's removal (T13).
-  n294: { mutation: wrongTarget(TASK_HOME, 'kind: "acceptance", name: "acceptance.json",', 'kind: "acceptance", name: `attempts/${input.attemptId}/acceptance.json`,'), trace: drill("task_home") },
+  n294: { mutation: wrongTarget("src/rooms/writer/server/task-home.ts", 'kind: "acceptance", name: "acceptance.json",', 'kind: "acceptance", name: `attempts/${input.attemptId}/acceptance.json`,'), trace: drill("task_home") },
   n295: {
     mutation: flip("src/rooms/workflow/server/after-accept.ts", 'if (event.scope !== "task" || event.status !== "accepted") return;', 'if (event.scope !== "task" || event.status === "accepted") return;'),
     trace: drill("sma_r01"),
