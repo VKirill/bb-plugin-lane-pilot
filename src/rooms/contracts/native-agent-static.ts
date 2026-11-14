@@ -123,7 +123,7 @@ export const EMPLOYEES: Record<string, EmployeeManifest> = {
     machineAffinity: "any",
     deliverables: [".agents/design/"],
     validator: RESULT_EXISTS,
-    coreSkills: ["project-design"],
+    coreSkills: ["project-design", "modern-web-guidance"],
     skillSections: ["Дизайн/UI/UX и дизайн-системы"],
   },
   "copy-lead": {

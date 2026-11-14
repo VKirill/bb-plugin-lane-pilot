@@ -141,7 +141,7 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   // Both read masked text in a hidden analyzer thread and answer in JSON: no plugin, skill or MCP access.
   "episode-analyst": { bbPlugins: [], skills: [], mcpServers: [] },
   "wall-hunter": { bbPlugins: [], skills: [], mcpServers: [] },
-  "specialist:design-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "project-design"], mcpServers: ["metamcp"] },
+  "specialist:design-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "project-design", "modern-web-guidance"], mcpServers: ["metamcp"] },
   "specialist:copy-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "copywriter"], mcpServers: [] },
   "specialist:seo-specialist": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "seo-drmax-orchestrator"], mcpServers: [] },
   "specialist:growth-marketer": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "mkt-end-to-end-analytics", "mkt-organic-content"], mcpServers: [] },
