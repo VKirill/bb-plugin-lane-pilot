@@ -46,7 +46,7 @@ export const ROLE_GROUPS: Array<{ id: RoleGroupId; roles: RoleSpec[] }> = [
   { id: "project", roles: [
     { id: "docs-maintainer", testId: "docs-picker", model: selectionIdOf("docs-maintainer"), enabled: { key: "docs.enabled", mode: true, label: "groupDocs" }, keys: ["docs.enabled", ...selectionKeysOf("docs-maintainer")] },
     { id: "onboarder", testId: "onboarding-picker", model: selectionIdOf("onboarder"), keys: [...selectionKeysOf("onboarder")] },
-    { id: "memory-maintainer", testId: "memory-picker", model: selectionIdOf("memory-maintainer"), enabled: { key: "memory.enabled", fallback: false, label: "settingMemoryEnabled" }, keys: ["memory.enabled", ...selectionKeysOf("memory-maintainer")] },
+    { id: "memory-maintainer", testId: "memory-picker", model: selectionIdOf("memory-maintainer"), enabled: { key: "memory.enabled", fallback: true, label: "settingMemoryEnabled" }, keys: ["memory.enabled", ...selectionKeysOf("memory-maintainer")] },
     { id: "project-life", testId: "project-life-picker", model: selectionIdOf("project-life"), enabled: { key: "project_life.enabled", fallback: true, label: "groupProjectLife" }, keys: ["project_life.enabled", ...selectionKeysOf("project-life")] },
   ] },
   { id: "browser", roles: [

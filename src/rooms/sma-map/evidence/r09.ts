@@ -1,39 +1,47 @@
 // Region 9 · Person and window — per-node evidence of the four proofs (docs/sma-evidence.md).
 // One line per node, sorted by node number; a batch agent edits only its nodes' lines. Lines with seedEntry or a lone
 // wfRun/wfStep trace were derived mechanically by scripts/sma-seed-evidence.ts (2026-11-14), not authored.
-import { type RegionEvidence, seedEntry, voidIsHave } from "./types";
+import { distort, drill, entry, flip, type RegionEvidence, seedEntry, voidIsHave, wrongTarget } from "./types";
+
+const SCENE = drill("sma_r09");
+const AC = "src/rooms/acceptance/ui/acceptance-card.tsx";
+const RS = "src/rooms/stage-return/ui/return-stage.tsx";
+const SW = "src/rooms/cockpit/ui/screens-work.tsx";
+const SD = "src/rooms/cockpit/ui/screens-day.tsx";
+const TB = "src/rooms/runs/ui/task-board.tsx";
+const RP = "src/rooms/self-repair/ui/rule-proposals.tsx";
 
 export default {
-  n755: { reach: seedEntry("the owner presses the door in the window") },
-  n756: { reach: seedEntry("the owner presses the door in the window") },
-  n757: { reach: seedEntry("the owner presses the door in the window") },
-  n758: { reach: seedEntry("the owner presses the door in the window") },
-  n759: { reach: seedEntry("the owner presses the door in the window") },
-  n760: { reach: seedEntry("the owner presses the door in the window") },
-  n761: { reach: seedEntry("the owner presses the door in the window") },
-  n762: { reach: seedEntry("the owner presses the door in the window") },
-  n763: { reach: seedEntry("the owner presses the door in the window") },
-  n764: { reach: seedEntry("the owner presses the door in the window") },
-  n765: { reach: seedEntry("the owner presses the door in the window") },
-  n766: { reach: seedEntry("the owner presses the door in the window") },
-  n767: { reach: seedEntry("the owner presses the door in the window") },
-  n768: { reach: seedEntry("the owner presses the door in the window") },
-  n769: { reach: seedEntry("the owner presses the door in the window") },
-  n770: { reach: seedEntry("the owner presses the door in the window") },
-  n771: { reach: seedEntry("the owner presses the door in the window") },
-  n772: { reach: seedEntry("the owner presses the door in the window") },
-  n773: { reach: seedEntry("the owner presses the door in the window") },
-  n774: { reach: seedEntry("the owner presses the door in the window") },
+  n755: { mutation: distort(AC, 'decision: "yes", text: "да"', 'decision: "no", text: "да"'), reach: entry("a task finishes its checks and the owner opens its acceptance card to give the word"), trace: SCENE },
+  n756: { mutation: distort(RS, 'to, note: words, by: "owner" }', 'to, note: words, by: "pm" }'), reach: entry("the owner opens a task card and presses «Return to a stage…» with the words the stage did not know"), trace: SCENE },
+  n757: { mutation: wrongTarget(SW, 'rpc.call("cockpit_request", { projectId, kind, text })', 'rpc.call("cockpit_request", { projectId, kind: "task", text })'), reach: entry("the owner types a batch of tasks in the window and presses Send"), trace: SCENE },
+  n758: { mutation: distort(SW, "match(/^([^:]{2,30}):/)", "match(/^([^:]{3,30}):/)"), reach: entry("the owner types the lines of a batch in the window"), trace: SCENE },
+  n759: { mutation: flip("src/rooms/phase/logic/design.ts", "const issued = pieces.filter((id) => phase.record.execution?.issued[id]);", "const issued = pieces.filter((id) => !phase.record.execution?.issued[id]);"), reach: entry("the owner trims, cancels or retries one piece of a batch on the phase card"), trace: SCENE },
+  n760: { mutation: wrongTarget(SW, 'onClick={() => control("stop_wave")}', 'onClick={() => control("stop")}'), reach: entry("the owner presses «Dequeue the wave» or answers the wave's question on the phase card"), trace: SCENE },
+  n761: { mutation: flip(SW, 'control(s.phase.state === "paused" ? "resume" : "pause")', 'control(s.phase.state !== "paused" ? "resume" : "pause")'), reach: entry("the owner writes a correction or presses Pause on the phase card while work runs"), trace: SCENE },
+  n762: { mutation: wrongTarget(TB, 'onClick={() => act("cancel_attempt")}>{t("cancel")}', 'onClick={() => act("retry_attempt")}>{t("cancel")}'), reach: entry("the owner opens a task at work on the board and presses Cancel"), trace: SCENE },
+  n763: { mutation: wrongTarget(SW, 'onClick={() => control("close", { note })}', 'onClick={() => control("stop", { note })}'), reach: entry("the owner writes why and presses «Close in words» on the phase card"), trace: SCENE },
+  n764: { mutation: flip("src/rooms/core/server/rpc.ts", 'await setConveyor(ctx.bb.storage.kv as never, set === "on", reason)', 'await setConveyor(ctx.bb.storage.kv as never, set === "off", reason)'), reach: entry("the owner or a PM switches the conveyor from the window or from bb lane-pilot conveyor"), trace: SCENE },
+  n765: { mutation: flip("src/rooms/native-agent/ui/team-model.ts", 'enabled: { key: "plan_critique.enabled", fallback: true, label: "stagePlanCritique" }', 'enabled: { key: "plan_critique.enabled", fallback: false, label: "stagePlanCritique" }'), reach: entry("the owner opens the team table in settings and flips a worker's switch"), trace: SCENE },
+  n766: { mutation: distort(SD, 'key: "money.monthly_cap_usd", value:', 'key: "money.monthly_cap", value:'), reach: entry("the owner types the month's cap on the Money screen and saves it"), trace: SCENE },
+  n767: { mutation: flip(RP, 'const pending = proposals.filter((row) => row.state === "proposed");', 'const pending = proposals.filter((row) => row.state === "accepted");'), reach: entry("the nightly scan proposes a rule and the owner opens the rules page"), trace: SCENE },
+  n768: { mutation: flip(RP, '...(action === "accept" ? { rule } : {})', '...(action === "reject" ? { rule } : {})'), reach: entry("the owner presses Accept on a proposed rule"), trace: SCENE },
+  n769: { mutation: distort("packages/memory-core/src/store.ts", "added: status.missingIds.length, stale: status.orphanedIds.length };", "added: status.orphanedIds.length, stale: status.orphanedIds.length };"), reach: entry("the owner presses the index button on the Memory screen"), trace: SCENE },
+  n770: { mutation: flip("packages/memory-core/src/store.ts", "AND COALESCE(origin,'') NOT IN ('owner','import')", "AND COALESCE(origin,'') NOT IN ('import')"), reach: entry("the owner presses the lint button on the Memory screen"), trace: SCENE },
+  n771: { mutation: distort("src/rooms/phase/server/rpc.ts", 'answer: p.answer, by: "owner via screen" })', 'answer: p.answer, by: "owner" })'), reach: entry("a PM or the owner moves a phase on to its next stage (context, plan, design, audit, lessons)"), trace: SCENE },
+  n772: { mutation: distort("src/rooms/phase/stages.ts", '`- [${ok ? "x" : "!"}] ${row[2]}', '`- [${ok ? "!" : "x"}] ${row[2]}'), reach: entry("the owner answers yes or no on a UAT line of a phase in acceptance"), trace: SCENE },
+  n773: { mutation: distort(SW, 'answer: answers[question.id] ?? "" }', 'answer: question.text }'), reach: entry("the owner types an answer to an open question of a phase and presses Answer"), trace: SCENE },
+  n774: { mutation: distort("app.tsx", 'path: "lane-pilot-cockpit",', 'path: "lane-pilot-cockpit-x",'), reach: entry("the owner opens Lane Pilot from BB's navigation"), trace: SCENE },
   n775: { reach: seedEntry("the owner presses the door in the window") },
-  n776: { reach: seedEntry("the owner presses the door in the window") },
-  n777: { reach: seedEntry("the owner presses the door in the window") },
-  n778: { reach: seedEntry("the owner presses the door in the window") },
-  n779: { reach: seedEntry("the owner presses the door in the window") },
-  n780: { reach: seedEntry("the owner presses the door in the window") },
-  n781: { reach: seedEntry("the owner presses the door in the window") },
-  n782: { reach: seedEntry("the owner presses the door in the window") },
-  n783: { reach: seedEntry("the owner presses the door in the window") },
-  n784: { reach: seedEntry("the owner presses the door in the window") },
+  n776: { mutation: flip("src/rooms/runs/server/task-board.ts", "(taskHeldUntil(db, row.task_id) ?? 0) > now", "(taskHeldUntil(db, row.task_id) ?? 0) < now"), reach: entry("the owner opens the tasks board"), trace: SCENE },
+  n777: { mutation: distort(TB, "const [doneHours, setDoneHours] = useState(24);", "const [doneHours, setDoneHours] = useState(48);"), reach: entry("the owner opens the tasks board and reads the done column"), trace: SCENE },
+  n778: { mutation: distort("src/rooms/runs/server/task-board.ts", ".sort((a, b) => stageOrder(a.id) - stageOrder(b.id));", ".sort((a, b) => stageOrder(b.id) - stageOrder(a.id));"), reach: entry("the owner opens a task card from the board"), trace: SCENE },
+  n779: { mutation: distort("src/rooms/rollback/server/rollback.ts", "\\n… показано начало (diff обрезан)`, truncated: true }", "\\n… показано начало (diff обрезан)`, truncated: false }"), reach: entry("the owner opens «what changed» in the card of an accepted task"), trace: SCENE },
+  n780: { mutation: flip("src/rooms/runs/ui/thread-live.tsx", 'const now = item.column !== "done";', 'const now = item.column === "done";'), reach: entry("the owner opens the thread's info panel in a PM chat that has work"), trace: SCENE },
+  n781: { mutation: flip(SD, 'cell.state === "supported" ? "✓" : "✗"', 'cell.state !== "supported" ? "✓" : "✗"'), reach: entry("the owner opens the Workers screen"), trace: SCENE },
+  n782: { mutation: flip(SW, '{result.ok ? "✓" : "✗"} {gate}{result.why?.length', '{!result.ok ? "✓" : "✗"} {gate}{result.why?.length'), reach: entry("the owner opens a phase from the Phases screen"), trace: SCENE },
+  n783: { mutation: flip("src/rooms/phase/server/driver.ts", 'path.includes("..") ||', 'path.includes("...") ||'), reach: entry("the owner opens the phase folder on the phase card and reads one file"), trace: SCENE },
+  n784: { mutation: distort("src/rooms/runs/server/work-file.ts", 'parts.some((part) => part === "..")', 'parts.some((part) => part === "...")'), reach: entry("the owner presses a file of the contract on a task card"), trace: SCENE },
   n785: { reach: seedEntry("the owner presses the door in the window") },
   n786: { reach: seedEntry("the owner presses the door in the window") },
   n787: { reach: seedEntry("the owner presses the door in the window") },
