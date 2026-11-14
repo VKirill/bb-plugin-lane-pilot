@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { createCore } from "../src/rooms/core/server/core";
 import { openDatabase } from "../src/rooms/plugin-db";
 import { sweepWorktreeClasses } from "../src/rooms/verification/worktree-sweep";
 import { integrateWorktree, removeLaneWorktree } from "../src/rooms/verification/git-integrate";
@@ -89,6 +90,27 @@ describe("worktree layout", () => {
 });
 
 describe("the merge removes what it merged", () => {
+  it("closes the worktree registry row when gitIntegrate succeeds through a host job", async () => {
+    vi.stubEnv("LANE_PILOT_HOST_JOBS", "1");
+    const calls: string[] = [];
+    const merged = { hostId:"h1", status:"merged", commit:"a".repeat(40), conflicts:[], reason:null, worktreeRemoved:true };
+    const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot", experimental_callHostRpc: (call) => {
+      calls.push(call.method);
+      if (call.method === "jobStart") return { hostId:"h1", jobId:"job_abcdefghij1" };
+      if (call.method === "jobStatus") return { hostId:"h1", jobId:(call.input as { jobId:string }).jobId, state:"succeeded", error:null, progress:{ startedAt:1, updatedAt:Date.now(), elapsedSec:1, lastLine:"" }, result:merged };
+      throw new Error(`unexpected host call ${call.method}`);
+    } });
+    const db = openDatabase(bb);
+    const ctx = createCore(bb, db);
+    const path = "/lane/worktrees/lpattempt_job";
+    registerWorktree(db, { host:"h1", path, branch:"lane/lpattempt_job", owner_kind:"attempt", owner_id:"lpattempt_job" });
+    try {
+      await expect(ctx.host.call("gitIntegrate", { requestedHostId:"h1", basePath:"/repo", worktreePath:path, message:"merge job", removeWorktree:true }, { hostId:"h1", timeoutMs:1_000 } as never)).resolves.toMatchObject({ status:"merged", worktreeRemoved:true });
+      expect((db.prepare("SELECT released_at FROM lane_pilot_worktree WHERE host=? AND path=?").get("h1", path) as { released_at:number | null }).released_at).not.toBeNull();
+      expect(calls).toEqual(["jobStart", "jobStatus"]);
+    } finally { await harness.lifecycle.dispose(); }
+  });
+
   it("[sma:ta_cleanup] integrateWorktree of an attempt that ran in a BB environment removes its worktree and branch", async () => {
     const { dir, base, add } = await project();
     const env = add(join(dir, "bb-envs", "env1"), "bb/lpattempt_env1");

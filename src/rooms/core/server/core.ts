@@ -71,14 +71,13 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase): ServerCore {
       // is taken again only under the same key, never by another call with the same input.
       // `worktreeOwner` is the creating pass's name for the registry; the host never sees either of these.
       const { job, jobKey, worktreeOwner, cancelOnAbort, ...hostOptions } = withSignal as typeof withSignal & { jobKey?: string; worktreeOwner?: WorktreeOwner; cancelOnAbort?: boolean };
-      const direct = async () => {
-        const result = await rawCall(method, input, hostOptions);
-        noteWorktreeRegistry(method, input, result, options, worktreeOwner);
-        return result;
-      };
+      const direct = async () => await rawCall(method, input, hostOptions);
       // LANE_PILOT_HOST_JOBS=0 runs every call directly, as before jobs: a switch for a host where they misbehave.
-      if (process.env.LANE_PILOT_HOST_JOBS !== "0" && isHostJobKind(method) && (method !== "runSandboxedCommand" || job === true)) return await hostJobs.run(method, input, { ...hostOptions, cancelOnAbort }, direct, jobKey);
-      return await direct();
+      const result = process.env.LANE_PILOT_HOST_JOBS !== "0" && isHostJobKind(method) && (method !== "runSandboxedCommand" || job === true)
+        ? await hostJobs.run(method, input, { ...hostOptions, cancelOnAbort }, direct, jobKey)
+        : await direct();
+      noteWorktreeRegistry(method, input, result, options, worktreeOwner);
+      return result;
       }, withSignal.signal);
     }) as typeof rawHost.call,
   } as typeof rawHost;
