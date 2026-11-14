@@ -30,7 +30,7 @@ export default {
   n1638: { mutation: distort(STAGES, "draw by the shared drawing rules into the phase's design folder — ${DRAWING_RULES}`", "draw by the shared drawing rules into the phase's design folder`"), trace: drill("sma_r23") },
   n1639: { mutation: flip("workflows/ai-integration-phase.json", "\"when\": \"!check.ok && visits('check') < 2\"", "\"when\": \"!check.ok && visits('check') < 1\""), trace: drill("sma_r23") },
   n1640: { mutation: flip("workflows/debug.json", "investigate.confidence >= 40", "investigate.confidence < 40"), trace: [wfRun("debug"), drill("sma_r23")] },
-  n1641: { mutation: flip("workflows/lp.plan.json", "\"skip_when\": \"!$inputs.validation || $mode == 'quick'\"", "\"skip_when\": \"!$inputs.validation && $mode == 'quick'\""), trace: [wfStep("lp.plan", "strategy"), drill("sma_r23")] },
+  n1641: { reach: { needs: { "phase.validation": "on" } }, mutation: flip("workflows/lp.plan.json", "\"skip_when\": \"!$inputs.validation || $mode == 'quick'\"", "\"skip_when\": \"!$inputs.validation && $mode == 'quick'\""), trace: [wfStep("lp.plan", "strategy"), drill("sma_r23")] },
   n1642: { mutation: flip("src/rooms/tasks/rails.ts", "return words.length > 0 && words.every((word) => CONSENT_WORDS.has(word));", "return words.length > 0 && words.some((word) => CONSENT_WORDS.has(word));"), trace: drill("sma_r23") },
   n1643: { mutation: flip("packages/memory-core/src/candidates.ts", "if(INSTRUCTION_INJECTION.test(content))return", "if(!INSTRUCTION_INJECTION.test(content))return"), trace: drill("sma_r23") },
   n1644: { mutation: wrongTarget("packages/models/src/role-models.ts", "const own = tableRowAt(settings, row.id);", "const own = tableRowAt(settings, \"errand\");"), trace: drill("sma_r23") },

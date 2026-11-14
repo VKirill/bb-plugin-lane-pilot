@@ -17,6 +17,7 @@ from pathlib import Path
 
 from lp_drill.env import ROOT
 from lp_drill.prove import Proofs
+from lp_drill.scenes.sma_phase_traces import NODES as PHASE_NODES, prove_phase_traces
 
 NODES = ["n346", "n354", "n355", "n358", "n362", "n363", "n364", "n365", "n366", "n369", "n370", "n373", "n377", "n378", "n380"]
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r02_probe.ts"
@@ -68,4 +69,5 @@ def scenario_sma_r02(tmp: Path) -> dict:
     # n380 Person accepts the wave: cleared only with the lines holding and the owner's yes.
     v = seen["wave"]
     proofs.prove("n380", v["yes"] is True and v["no"] is False and v["lineRed"] is False, f"owner yes {v['yes']}, owner no {v['no']}, a red line {v['lineRed']}")
-    return proofs.verdict("sma_r02", checked=len(NODES))
+    prove_phase_traces(proofs, tmp)
+    return proofs.verdict("sma_r02", checked=len(NODES) + len(PHASE_NODES))

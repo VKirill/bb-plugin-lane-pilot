@@ -20,6 +20,8 @@ def prove_tail_traces(proofs: Proofs, tmp: Path) -> None:
         return
     try:
         seen = json.loads(done.stdout.strip().splitlines()[-1])
+        if not isinstance(seen, dict):
+            raise ValueError("probe result must be an object")
     except (ValueError, IndexError):
         for node in NODES:
             proofs.prove(node, False, f"tail-traces probe printed no result (exit {done.returncode}): {(done.stderr or done.stdout).strip()[-300:]}")

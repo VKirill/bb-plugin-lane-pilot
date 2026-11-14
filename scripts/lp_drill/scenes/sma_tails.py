@@ -17,9 +17,10 @@ from pathlib import Path
 from lp_drill.env import ROOT
 from lp_drill.prove import Proofs
 from lp_drill.scenes.sma_tails_last import NODES_LAST, prove_last
+from lp_drill.scenes.sma_tail_traces import NODES as NODES_TRACES, prove_tail_traces
 
-NODES = ["n480", "n557", "n564", "n751", "n835", "n993", "n1224", "n1604", "n1615", "n1675"]
-NODES += NODES_LAST
+NODES_BASE = ["n480", "n557", "n564", "n751", "n835", "n993", "n1224", "n1604", "n1615", "n1675"]
+NODES = NODES_BASE + NODES_LAST + NODES_TRACES
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_tails_probe.ts"
 UI_TEST = "tests/sma/four-proofs-tails.test.tsx"
 
@@ -45,7 +46,7 @@ def scenario_sma_tails(tmp: Path) -> dict:
     try:
         seen = json.loads(done.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):
-        for node in NODES:
+        for node in NODES_BASE:
             if node != "n835":
                 proofs.prove(node, False, f"the tails probe printed no result (exit {done.returncode}): {(done.stderr or done.stdout).strip()[-200:]}")
         seen = {}
@@ -84,4 +85,5 @@ def scenario_sma_tails(tmp: Path) -> dict:
     proofs.prove("n835", bool(mine) and all(case.get("status") == "passed" for case in mine),
                  f"{len(mine)} case(s) tagged [sma:m_sw_check_run] rendered in jsdom on this commit (the check's stage steps, Cancel on a checking task, none on a done one): {[case.get('status') for case in mine]}" if mine else (why or "no case tagged [sma:m_sw_check_run] was reported"))
     prove_last(proofs, tmp)
+    prove_tail_traces(proofs, tmp)
     return proofs.verdict("sma_tails")

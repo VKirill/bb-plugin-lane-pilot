@@ -29,7 +29,7 @@ export default {
   n429: { mutation: flip(STEPS, '${lines.map((line) => `${line.ok ? "✓" : "✗"} ${line.id}`)', '${lines.map((line) => `${line.ok ? "✗" : "✓"} ${line.id}`)'), trace: drill("sma_r04") },
   n430: { mutation: distort(CONTROL, 'savePhase(db, phase.id, { state: "paused", at: now() });\n    return { phase: mustGet(phase.id), canceled };', 'savePhase(db, phase.id, { state: "stopped", at: now() });\n    return { phase: mustGet(phase.id), canceled };'), trace: drill("sma_r04") },
   n431: { mutation: flip(CONTROL, 'issued.has(taskFamily(row.task_id)) && row.state === "running" && row.thread_id)) {', 'issued.has(taskFamily(row.task_id)) && row.state === "queued" && row.thread_id)) {'), trace: drill("sma_r04") },
-  n432: { mutation: flip("src/rooms/writer/server/writer-hold.ts", "else if (!free) free = { member, index };", "else if (free) free = { member, index };"), trace: drill("sma_r04") },
+  n432: { reach: { notGatedBy: {"money.strict":"The chain walk runs while this switch is off; it only changes the final preference among available members."} }, mutation: flip("src/rooms/writer/server/writer-hold.ts", "else if (!free) free = { member, index };", "else if (free) free = { member, index };"), trace: drill("sma_r04") },
   n433: { mutation: distort(STEPS, "for (const item of next.slice(0, seats)) {", "for (const item of next.slice(0, seats + 1)) {"), trace: drill("sma_r04") },
   n434: { mutation: flip(STEPS, "phase.record.issueCap ?? 8) - atWork);", "phase.record.issueCap ?? 8) + atWork);"), trace: drill("sma_r04") },
   n435: { mutation: flip("src/rooms/tasks/run-policy.ts", "if(count<limit)this.active.set(runId,count+1);", "if(count<=limit)this.active.set(runId,count+1);"), trace: drill("sma_r04") },

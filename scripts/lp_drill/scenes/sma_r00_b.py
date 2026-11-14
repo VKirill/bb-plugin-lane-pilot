@@ -12,11 +12,12 @@ import subprocess
 
 from lp_drill.env import ROOT
 
-NODES_B = ["n36", "n37", "n38", "n44", "n46", "n48", "n49", "n51", "n54", "n55", "n1768"]
+NODES_B = ["n30", "n33", "n34", "n35", "n36", "n37", "n38", "n39", "n40", "n41", "n42", "n43", "n44", "n45", "n46", "n47", "n48", "n49", "n50", "n51", "n52", "n53", "n54", "n55", "n56", "n57", "n58", "n67", "n1768"]
 PROBE_B = ROOT / "scripts/lp_drill/scenes/sma_r00_b_probe.ts"
 BASE = ["actions", "screens_states", "texts", "heuristics", "accessibility"]
 AWAITS = "the drawing awaits the owner's word for this drawing: owner.words was on when the phase opened"
 NO_DRAWING = "no drawing: the designer draws the screens into the phase's design folder and names the files"
+DRAWING_FOLDER = "the drawing lives in its own folder .agents/phases/<id>/design/"
 NOT_REVIEWED = "the drawing is not reviewed by a separate role"
 SAME_ROLE = "the reviewer of the drawing is its designer: it must be a separate role"
 NO_FEASIBILITY = "no feasibility answer: feasible, or the contradiction with the plan"
@@ -26,16 +27,91 @@ NO_CONTRACT = "the drawing has no contract: add UI-SPEC.md with the checkable po
 def prove_b(proofs, tmp) -> None:
     # vite-node, not tsx: the probe loads the plugin's barrel files, which tsx cannot link.
     done = subprocess.run(["npx", "--yes", "vite-node", str(PROBE_B)], cwd=ROOT, capture_output=True, text=True, timeout=420)
+    if done.returncode != 0:
+        for node in NODES_B:
+            proofs.prove(node, False, f"the probe exited {done.returncode}: {(done.stderr or done.stdout).strip()[-200:]}")
+        return
     try:
         s = json.loads(done.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):
         for node in NODES_B:
             proofs.prove(node, False, f"the probe printed no result (exit {done.returncode}): {(done.stderr or done.stdout).strip()[-200:]}")
         return
+    if not isinstance(s, dict):
+        for node in NODES_B:
+            proofs.prove(node, False, f"the probe printed a non-object result: {s!r}")
+        return
 
     def seen(name: str) -> dict:
         value = s.get(name)
         return {} if not isinstance(value, dict) or "threw" in value else value
+
+    def prove(node: str, name: str, check, detail) -> None:
+        value = seen(name)
+        try:
+            ok = bool(value) and bool(check(value))
+        except (KeyError, IndexError, TypeError):
+            ok = False
+        try:
+            explanation = detail(value) if value else f"observation {name} did not run: {s.get(name)}"
+        except (AttributeError, KeyError, IndexError, TypeError):
+            explanation = f"observation {name} was malformed: {value!r}"
+        proofs.prove(node, ok, explanation)
+
+    # These nodes have real observations in the SMA worlds and the task-home transition harness. The scene checks returned values,
+    # not merely that an observation function exists.
+    prove("n30", "question", lambda d: d.get("stored") == [["q1", "planning", True, "Which total?"], ["q2", "planning", False, "Which colour?"]]
+          and d.get("book") == [["plan", "q1 (blocking): Which total?"], ["plan", "q2: Which colour?"]]
+          and d.get("whileOpen") == ["open question q1: Which total?"] and d.get("afterAnswer") == [],
+          lambda d: f"questions {d.get('stored')}, plan gate while open {d.get('whileOpen')}, after answer {d.get('afterAnswer')}")
+    prove("n33", "ownerWordPlanning", lambda d: d.get("heldStage") == "planning" and d.get("planningAsked") is True
+          and d.get("gate") == ["the plan awaits the owner's word: owner.words is on"] and d.get("afterStage") == "execution"
+          and d.get("admitted") is True and d.get("planningWord") is True,
+          lambda d: f"held stage {d.get('heldStage')}, planning word asked {d.get('planningAsked')}, gate {d.get('gate')}, after word {d.get('afterStage')}, admitted {d.get('admitted')}")
+    prove("n34", "drawStart", lambda d: d.get("due") == {"kind": "draw"} and d.get("withDrawing") is None and d.get("openQuestion") is None,
+          lambda d: f"draw due {d.get('due')}, with drawing {d.get('withDrawing')}, open question {d.get('openQuestion')}")
+    prove("n35", "admission", lambda d: d.get("atPlanning", {}).get("parts") == 0 and d.get("afterAdmit", {}).get("stage") == "design" and d.get("afterDrawing") == "execution",
+          lambda d: f"planning parts {d.get('atPlanning', {}).get('parts')}, admitted stage {d.get('afterAdmit', {}).get('stage')}, after drawing {d.get('afterDrawing')}")
+    prove("n39", "drawStart", lambda d: d.get("homeFolder") == "/abs/home/.agents/phases/ph_1" and d.get("inputs", {}).get("folder") == ".agents/phases/ph_1",
+          lambda d: f"draw folder {d.get('inputs', {}).get('folder')}, planning-home folder {d.get('homeFolder')}")
+    prove("n40", "designWord", lambda d: d.get("afterReport", {}).get("stage") == "design" and d.get("afterReport", {}).get("confirmedAt") is None
+          and d.get("waiting") == {"stage": "design", "words": 0},
+          lambda d: f"report remains at {d.get('afterReport', {}).get('stage')}, waiting {d.get('waiting')}")
+    prove("n41", "drawingFolder", lambda d: d.get("refused") == {
+              "docs/fig.png": DRAWING_FOLDER,
+              ".agents/phases/<id>/SPEC.md": DRAWING_FOLDER,
+              ".agents/phases/<id>/design/../SECRET.md": DRAWING_FOLDER,
+              "/etc/passwd": DRAWING_FOLDER,
+          } and d.get("beforeGood") == {"stage": "design", "drawing": None, "parts": 0}
+          and d.get("good", {}).get("kept") == [".agents/phases/<id>/design/UI-SPEC.md", ".agents/phases/<id>/design/kit.html"],
+          lambda d: f"refused paths {list(d.get('refused', {}))}, before good {d.get('beforeGood')}, kept {d.get('good', {}).get('kept')}")
+    prove("n42", "drawStage", lambda d: d.get("designer") == "lp.draw: specialist design-lead" and d.get("roles", {}).get("draw") == "specialist:design-lead" and d.get("calls") == 1,
+          lambda d: f"designer {d.get('designer')}, draw role {d.get('roles', {}).get('draw')}, calls {d.get('calls')}")
+    prove("n43", "drawStage", lambda d: d.get("reviewer") == "lp.draw: plan-critic" and d.get("roles", {}).get("check") == "plan-critic"
+          and d.get("reviewer") != d.get("designer"),
+          lambda d: f"reviewer {d.get('reviewer')}, check role {d.get('roles', {}).get('check')}, designer {d.get('designer')}")
+    prove("n45", "edition", lambda d: d == {"yes": 1, "stage": "design", "redrawn": True, "archived": [True], "designWords": 0, "asksAgain": True, "book": [True]},
+          lambda d: f"redrawn {d.get('redrawn')}, archived {d.get('archived')}, prior design words {d.get('designWords')}, asks again {d.get('asksAgain')}")
+    prove("n47", "feasibility", lambda d: d.get("gate") == ["the drawing contradicts the plan: no empty state — return the phase to planning"]
+          and d.get("back", {}).get("stage") == "planning" and d.get("feasible", {}).get("stage") == "execution",
+          lambda d: f"feasibility gate {d.get('gate')}, contradiction stage {d.get('back', {}).get('stage')}, feasible stage {d.get('feasible', {}).get('stage')}")
+    prove("n50", "designWord", lambda d: "names the hash of the drawing" in str(d.get("noKey")) and "names the hash of the drawing" in str(d.get("wrongKey"))
+          and d.get("word", {}).get("key") is True and d.get("afterWord", {}).get("confirmed") is True,
+          lambda d: f"missing key {d.get('noKey')}, wrong key {d.get('wrongKey')}, stored key {d.get('word', {}).get('key')}")
+    prove("n52", "feasibility", lambda d: d.get("back", {}).get("stage") == "planning" and d.get("back", {}).get("admittedSha") is None
+          and d.get("back", {}).get("design") is None and d.get("book", [None, None])[1] == ["return", "design → planning by design-lead: the drawing contradicts the plan: the screen has no empty state"],
+          lambda d: f"returned stage {d.get('back', {}).get('stage')}, admitted sha {d.get('back', {}).get('admittedSha')}, book return {d.get('book')}")
+    prove("n53", "execution", lambda d: d.get("atDesign") == {"stage": "design", "dispatched": 0, "issued": []}
+          and d.get("atPlanning") == {"stage": "planning", "dispatched": 0, "issued": []} and d.get("first", {}).get("stage") == "execution",
+          lambda d: f"design {d.get('atDesign')}, planning {d.get('atPlanning')}, first stage {d.get('first', {}).get('stage')}")
+    prove("n56", "phaseRow", lambda d: d.get("base") == "1" * 40 and d.get("firstPieceBase") is True,
+          lambda d: f"first base {d.get('base')}, first piece base matches {d.get('firstPieceBase')}")
+    prove("n57", "phaseRow", lambda d: d.get("row", {}).get("runId") == "run9" and d.get("row", {}).get("stage") == "execution",
+          lambda d: f"phase row run {d.get('row', {}).get('runId')}, stage {d.get('row', {}).get('stage')}")
+    prove("n58", "execution", lambda d: d.get("first", {}).get("issued") == {"a": "task-a"} and d.get("first", {}).get("ownTaskId") == "a",
+          lambda d: f"issued {d.get('first', {}).get('issued')}, own task id {d.get('first', {}).get('ownTaskId')}")
+    prove("n67", "taskHomeParent", lambda d: d.get("phaseId") == "ph_abc" and d.get("parent") == {"kind": "phase", "id": "ph_abc", "manifest": ".agents/phases/ph_abc/manifest.json"},
+          lambda d: f"task home phase {d.get('phaseId')}, parent {d.get('parent')}")
 
     dd = seen("designDecisions")
     req = dd.get("requirements", {})

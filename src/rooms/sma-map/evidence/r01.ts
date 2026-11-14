@@ -23,7 +23,7 @@ export default {
   },
   n160: {
     mutation: distort("src/rooms/writer/server/spawn.ts", '"spawn_unknown", { reason:cause instanceof Error ? cause.message : String(cause) });', '"spawn_unknown", { reason:"spawn failed" });'),
-    trace: transition({ from: "spawn_requested", to: "spawn_unknown" }),
+    trace: [transition({ from: "spawn_requested", to: "spawn_unknown" }), drill("sma_r01")],
   },
   n161: {
     mutation: flip("src/rooms/writer/server/start-admission.ts", "return reserve.ok ? null : `permit_refused:reserve: ${reserve.why}`;", "return !reserve.ok ? null : `permit_refused:reserve: ${reserve.why}`;"),
@@ -80,7 +80,7 @@ export default {
   },
   n172: {
     mutation: distort("src/rooms/storage/attempts-store/transition.ts", ".run(state, fields.threadId ?? null, fields.reason ?? null, fields.failureCode ?? null,", ".run(state, fields.threadId ?? null, fields.reason ?? null, null,"),
-    trace: rows("lane_pilot_attempt", "updated_at", "failure_code IS NOT NULL"),
+    trace: [rows("lane_pilot_attempt", "updated_at", "failure_code IS NOT NULL"), drill("sma_r01")],
   },
   n173: {
     mutation: distort("src/rooms/contracts/failure-class.ts", '|| PERMIT_REFUSED.test(text)) return sure("budget");', '|| PERMIT_REFUSED.test(text)) return sure("limit");'),
@@ -92,7 +92,7 @@ export default {
   },
   n175: {
     mutation: flip("src/rooms/contracts/failure-class.ts", "if (cls !== \"task\" && cls !== \"contract\") return null;", "if (cls !== \"task\" || cls !== \"contract\") return null;"),
-    trace: transition({ to: "blocked", reason: "repeated_failure:" }),
+    trace: [transition({ to: "blocked", reason: "repeated_failure:" }), drill("sma_r01")],
   },
   n176: {
     mutation: distort("src/rooms/contracts/failure-class.ts", "2 ** Math.max(0, sameClassStreak - 1)", "2 ** Math.max(0, sameClassStreak - 2)"),
@@ -111,7 +111,7 @@ export default {
     reach: entry("a writer's thread ends in error or answers nothing"),
     trace: transition({ to: "provider_error" }),
   },
-  n180: {
+  n180: { reach: { notGatedBy: {"writer.lesson_from_accepted":"The failed-attempt lesson branch runs without reading the accepted-attempt switch."} },
     mutation: flip("src/rooms/writer/server/attempt-reactions.ts", "if (!accepted && !FAILED_LESSON_STATES.has(event.status)) return;", "if (!accepted && FAILED_LESSON_STATES.has(event.status)) return;"),
     trace: rows("lane_pilot_rule_proposal", "updated_at", "signature LIKE 'lesson::%' AND examples_json LIKE '%failed attempt %'"),
   },
@@ -133,7 +133,7 @@ export default {
   },
   n185: {
     mutation: distort("src/rooms/writer/server/reassign.ts", 'cancelCode: "reassign" });', 'cancelCode: "stopped" });'),
-    trace: rows("lane_pilot_attempt", "updated_at", "cancel_code = 'reassign'"),
+    trace: [rows("lane_pilot_attempt", "updated_at", "cancel_code = 'reassign'"), drill("sma_r01")],
   },
   n186: {
     mutation: flip("src/rooms/verification/git-integrate/merge.ts", "if(dirty.stdout.trim()) {", "if(!dirty.stdout.trim()) {"),
@@ -197,7 +197,7 @@ export default {
   },
   n201: {
     mutation: flip("src/rooms/contracts/failure-class.ts", "return ENVIRONMENT_LINE.test(output) && !TEST_REPORT_RED.test(report);", "return ENVIRONMENT_LINE.test(output) && TEST_REPORT_RED.test(report);"),
-    trace: rows("lane_pilot_attempt", "updated_at", "reason LIKE '%environment: %'"),
+    trace: [rows("lane_pilot_attempt", "updated_at", "reason LIKE '%environment: %'"), drill("sma_r01")],
   },
   n202: {
     mutation: distort("src/rooms/contracts/failure-class.ts", "if (MERGE.test(text)) return sure(\"merge\");", "if (MERGE.test(text)) return sure(\"task\");"),
@@ -215,17 +215,17 @@ export default {
     mutation: flip("packages/models/src/writer-fallbacks.ts", "if (!item.providerId || !item.model || seen.has(key)) continue;", "if (!item.providerId || !item.model) continue;"),
     trace: drill("sma_r01"),
   },
-  n206: {
+  n206: { reach: { notGatedBy: {"money.strict":"The chain is selected with either value; this switch changes the paid-versus-subscription preference after the normal hold checks."} },
     mutation: wrongTarget("src/rooms/writer/server/writer-hold.ts", "else if (!free) free = { member, index };", "else free = { member, index };"),
     trace: drill("sma_r01"),
   },
   n207: {
     mutation: flip("src/rooms/contracts/failure-class.ts", "usage_window|owner_present|writer_off", "usage_window|writer_off"),
-    trace: transition({ to: "spawn_rejected", reason: "writer_provider_unavailable:" }),
+    trace: [transition({ to: "spawn_rejected", reason: "writer_provider_unavailable:" }), drill("sma_r01")],
   },
   n208: {
     mutation: wrongTarget("src/rooms/writer/server/start-writer-holds.ts", "const held = walk.shortest!.hold;", "const held = walk.holds[walk.holds.length - 1]!.hold;"),
-    trace: transition({ from: "queued", to: "queued", reason: "waiting_writer:" }),
+    trace: [transition({ from: "queued", to: "queued", reason: "waiting_writer:" }), drill("sma_r01")],
   },
   n209: {
     mutation: flip("src/rooms/storage/attempts-store/lifecycle.ts", "WHERE id=? AND holder_thread_id IS NULL AND thread_id IS NULL", "WHERE id=? AND thread_id IS NULL"),
@@ -261,7 +261,7 @@ export default {
   },
   n217: {
     mutation: flip("src/rooms/writer/server/start-writer-holds.ts", "if (walk.allUnsupported) {", "if (!walk.allUnsupported) {"),
-    trace: transition({ to: "blocked", reason: "core_unsupported" }),
+    trace: [transition({ to: "blocked", reason: "core_unsupported" }), drill("sma_r01")],
   },
   n218: {
     mutation: distort("packages/contracts/src/schemas.ts", "owns_paths: z.array(z.string().min(1)).min(1),", "owns_paths: z.array(z.string().min(1)).min(0),"),
@@ -397,11 +397,11 @@ export default {
   },
   n251: {
     mutation: wrongTarget("src/rooms/tasks/rails.ts", "return { approach: line(\"APPROACH\")", "return { approach: line(\"LESSON\")"),
-    trace: outside("the markers are read off the writer's answer in finish-attempt-body; only their warnings reach the BB thread"),
+    trace: drill("sma_r01"),
   },
   n252: {
     mutation: distort("src/rooms/tasks/rails.ts", "|| \"no reason given\" : null;", "|| \"none\" : null;"),
-    trace: outside("a lesson is filed as a writer proposal from the answer text; the plugin database keeps no per-answer marker row"),
+    trace: drill("sma_r01"),
   },
   n253: {
     mutation: distort("src/rooms/usage/server/token-usage.ts", "INSERT OR IGNORE INTO lane_pilot_token_cursor", "INSERT OR REPLACE INTO lane_pilot_token_cursor"),
@@ -429,16 +429,16 @@ export default {
   n321: { mutation: distort("src/rooms/storage/cancel-code.ts", "COALESCE(cancel_code, ?)", "COALESCE(?, cancel_code)"), trace: transition({ to: "canceled" }), },
   n322: { mutation: distort("src/rooms/storage/tasks-store.ts", ".run(words, taskId).changes > 0);", ".run(words.toUpperCase(), taskId).changes > 0);"), trace: drill("sma_r01"), },
   n323: { mutation: distort("src/rooms/owner-waiting/items.ts", 'prefix === "approved" || prefix === "returned" || prefix === "stopped" ? prefix : "closed";', 'prefix === "approved" || prefix === "returned" ? prefix : "closed";'), trace: rows("lane_pilot_owner_item", "closed_at", "kind='task_word'"), },
-  n324: { mutation: flip("src/rooms/lead/server/surfaces.ts", "decided.key === `${taskWordItemPrefix(runId, family)}${waitingAttemptId}`) return", "decided.key !== `${taskWordItemPrefix(runId, family)}${waitingAttemptId}`) return"), trace: rows("lane_pilot_owner_item", "closed_at", "kind='task_word' AND state='closed'"), },
+  n324: { mutation: flip("src/rooms/lead/server/surfaces.ts", "decided.key === `${taskWordItemPrefix(runId, family)}${waitingAttemptId}`) return", "decided.key !== `${taskWordItemPrefix(runId, family)}${waitingAttemptId}`) return"), trace: [rows("lane_pilot_owner_item", "closed_at", "kind='task_word' AND state='closed'"), drill("sma_r02")], },
   n325: { mutation: flip("src/rooms/stage-return/server/stage-return.ts", "if (!queued) return fail(", "if (queued) return fail("), trace: rows("lane_pilot_stage_return", "at", "state='restarted'"), },
   n326: { mutation: distort("src/rooms/tasks/rails.ts", 'if (kind === "docs") return "docs";', 'if (kind === "docs") return "write";'), trace: drill("sma_r01"), },
-  n327: { mutation: distort("src/rooms/phase/server/driver-methods-control.ts", 'input.state === "resume" ? "active"', 'input.state === "resume" ? "paused"'), trace: part({ kind: ["pause", "resume"] }), },
+  n327: { mutation: distort("src/rooms/phase/server/driver-methods-control.ts", 'input.state === "resume" ? "active"', 'input.state === "resume" ? "paused"'), trace: [part({ kind: ["pause", "resume"] }), drill("sma_r02")], },
   n328: { mutation: flip("src/rooms/tasks/rails.ts", "now - row.updatedAt >= graceMs);", "now - row.updatedAt > graceMs);"), trace: drill("sma_r01"), },
   n329: {
     mutation: flip("src/rooms/tasks/rails.ts", "|| a.queuedAt - b.queuedAt);", "|| b.queuedAt - a.queuedAt);"),
     trace: transition({ from: "queued", to: "spawn_requested" }),
   },
-  n330: { mutation: flip("src/rooms/writer/server/dispatch.ts", "if (!row || Date.now() - row.created_at > DISPATCH_IDEMPOTENT_WINDOW_MS) return null;", "if (!row || Date.now() - row.created_at < DISPATCH_IDEMPOTENT_WINDOW_MS) return null;"), reach: entry("a PM sends the same task contract and plan again while the first is open"), trace: outside("a repeated dispatch answers deduplicated and writes no row of its own; a live scene needs the workflow engine that runs the first dispatch's stages"), },
+  n330: { mutation: flip("src/rooms/writer/server/dispatch.ts", "if (!row || Date.now() - row.created_at > DISPATCH_IDEMPOTENT_WINDOW_MS) return null;", "if (!row || Date.now() - row.created_at < DISPATCH_IDEMPOTENT_WINDOW_MS) return null;"), reach: entry("a PM sends the same task contract and plan again while the first is open"), trace: drill("sma_r01"), },
   n331: { mutation: distort("src/rooms/storage/attempts-store/lifecycle.ts", '"queued", used + 1, now, now, HARNESS_VERSION);', '"queued", used + 2, now, now, HARNESS_VERSION);'), reach: entry("a PM dispatches a task, or sends it again after an attempt ended"), trace: rows("lane_pilot_attempt", "created_at", "attempt_no > 1"), },
   n332: { mutation: flip("src/rooms/storage/attempts-store/transition.ts", "isLegalMove(before.state, state) ? 1 : 0;", "isLegalMove(before.state, state) ? 0 : 1;"), trace: rows("lane_pilot_attempt_transition", "at", "refused=1"), },
   n333: { mutation: flip("src/rooms/writer/server/pilot/logic.ts", "if (!own || own.dependsOn.length) return null;", "if (!own || !own.dependsOn.length) return null;"), reach: entry("a PM dispatches a third sibling task of one area and kind in one run"), trace: drill("sma_r01"), },

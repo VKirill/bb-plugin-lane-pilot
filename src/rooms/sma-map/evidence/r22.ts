@@ -9,7 +9,7 @@ const STAGES = "src/rooms/phase/stages.ts";
 const PROJECT_ACTIONS = "src/rooms/workflow/server/workflow-project-actions.ts";
 
 export default {
-  n1590: { mutation: flip(PROJECT_ACTIONS, '&& !current.content.includes("Developer preferences"))', '&& current.content.includes("Developer preferences"))'), trace: wfStep("project-start", "recap") },
+  n1590: { mutation: flip(PROJECT_ACTIONS, '&& !current.content.includes("Developer preferences"))', '&& current.content.includes("Developer preferences"))'), trace: [wfStep("project-start", "recap"), drill("sma_r02")] },
   n1591: { mutation: flip(STAGES, 'return found && found[2] === row ? line.replace("- [ ]", "- [x]") : line;', 'return found && found[2] !== row ? line.replace("- [ ]", "- [x]") : line;'), trace: part({ section: "lessons", kind: "concluded" }) },
   n1592: { mutation: flip("src/rooms/phase/server/driver-docs.ts", "if (sameStateIgnoringTime(previous, next.text)) return;", "if (!sameStateIgnoringTime(previous, next.text)) return;"), trace: drill("sma_r22") },
   n1593: { mutation: distort(STAGES, 'case "discussion": return [".agents/planning/ROADMAP.md", ".agents/planning/REQUIREMENTS.md",', 'case "discussion": return [".agents/planning/ROADMAP.md", ".agents/planning/REQUIREMENT.md",'), trace: drill("sma_r22") },
@@ -25,8 +25,8 @@ export default {
   n1603: { mutation: flip(STAGES, '`- [${ok ? "x" : "!"}] ${row[2]}', '`- [${ok ? "!" : "x"}] ${row[2]}'), trace: drill("sma_r22") },
   n1604: { mutation: flip("src/rooms/qa/server/qa-thread.ts", 'const verdict = parsed.verdict === "passed" && !allPassed ? "blocked" : parsed.verdict;', 'const verdict = parsed.verdict === "passed" && allPassed ? "blocked" : parsed.verdict;'), trace: drill("sma_tails") },
   n1605: { mutation: flip(STAGES, '...(findings.length ? findings : ["- no findings"])', '...(findings.length ? ["- no findings"] : findings)'), trace: [wfRun("lp.review"), drill("sma_r22")] },
-  n1606: { mutation: flip("src/rooms/phase/logic/design.ts", "else if (drawing.reviewer === drawing.designer)", "else if (drawing.reviewer !== drawing.designer)"), trace: part({ section: "design", kind: "drawing" }) },
-  n1607: { mutation: flip(STAGES, "filter((section) => ![...headings].some(", "filter((section) => [...headings].some("), trace: part({ section: "design", kind: "drawing" }) },
+  n1606: { mutation: flip("src/rooms/phase/logic/design.ts", "else if (drawing.reviewer === drawing.designer)", "else if (drawing.reviewer !== drawing.designer)"), trace: [part({ section: "design", kind: "drawing" }), drill("sma_r02")] },
+  n1607: { mutation: flip(STAGES, "filter((section) => ![...headings].some(", "filter((section) => [...headings].some("), trace: [part({ section: "design", kind: "drawing" }), drill("sma_r02")] },
   n1608: { mutation: distort("workflows/ai-integration-phase.json", `"status": "'blocked'"`, `"status": "'done'"`), trace: drill("sma_r22") },
   n1609: { mutation: flip(STAGES, "|| /^(none|нет|no)(?![\\p{L}\\p{N}_])/u.test(risk)", "|| !/^(none|нет|no)(?![\\p{L}\\p{N}_])/u.test(risk)"), trace: drill("sma_r22") },
   n1610: { mutation: flip(STAGES, "clauses.length > 0 && clauses.every((clause) => EXISTENCE_ONLY.test(clause))", "clauses.length > 0 && clauses.some((clause) => EXISTENCE_ONLY.test(clause))"), trace: drill("sma_r22") },
@@ -42,8 +42,8 @@ export default {
   n1618: { mutation: flip("src/rooms/backlog/logic.ts", "item.estimate <= MAX_ESTIMATE && item.dependsOn.every((id) => done.has(id))),", "item.estimate <= MAX_ESTIMATE && item.dependsOn.some((id) => done.has(id))),"), trace: drill("sma_r22") },
   n1619: { mutation: distort("packages/handoff/src/store.ts", "export const HANDOFF_DEFAULT_DEADLINE_MS = 48 * 3_600_000;", "export const HANDOFF_DEFAULT_DEADLINE_MS = 24 * 3_600_000;"), trace: rows("lane_pilot_handoff", "created_at") },
   n1620: { mutation: flip("src/rooms/phase/server/driver-methods-design.ts", "} else tools.writeLesson(phase, text);", "} else if (!text) tools.writeLesson(phase, text);"), trace: drill("sma_r22") },
-  n1621: { mutation: flip(PROJECT_ACTIONS, "if (!kept) {", "if (kept) {"), trace: wfStep("milestone-close", "snapshot") },
+  n1621: { mutation: flip(PROJECT_ACTIONS, "if (!kept) {", "if (kept) {"), trace: [wfStep("milestone-close", "snapshot"), drill("sma_tails")] },
   n1622: { mutation: distort("src/rooms/tools/server/verdicts.ts", 'verdict: frontValue(head, "verdict") ?? "open",', 'verdict: frontValue(head, "verdict") ?? "closed",'), trace: drill("sma_r22") },
   n1623: { mutation: flip("src/rooms/anamnesis/fragments.ts", "includes(kind) && about > 0 && confidence >= MIN_KIND_P;", "includes(kind) && about >= 0 && confidence >= MIN_KIND_P;"), trace: drill("sma_r22") },
-  n1624: { mutation: distort(PROJECT_ACTIONS, "saveProjectSetting(db, rt.projectId, `profile.${key}`, String(value));", "saveProjectSetting(db, rt.projectId, `profile.${key}x`, String(value));"), trace: wfStep("project-start", "profile_write") },
+  n1624: { mutation: distort(PROJECT_ACTIONS, "saveProjectSetting(db, rt.projectId, `profile.${key}`, String(value));", "saveProjectSetting(db, rt.projectId, `profile.${key}x`, String(value));"), trace: [wfStep("project-start", "profile_write"), drill("sma_r02")] },
 } satisfies RegionEvidence;

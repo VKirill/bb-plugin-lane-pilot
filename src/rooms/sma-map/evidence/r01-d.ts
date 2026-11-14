@@ -17,11 +17,11 @@ export default {
   },
   n259: {
     mutation: flip("src/rooms/contracts/failure-class.ts", "if (failureFingerprint(previous.reason) !== failureFingerprint(current.reason)) return null;", "if (failureFingerprint(previous.reason) === failureFingerprint(current.reason)) return null;"),
-    trace: transition({ to: "blocked", reason: "repeated_failure" }),
+    trace: [transition({ to: "blocked", reason: "repeated_failure" }), drill("sma_r01")],
   },
   n260: {
     mutation: flip("src/rooms/writer/server/finish-attempt-body.ts", "if (heldHits.length && !holdForOwner) {", "if (heldHits.length && holdForOwner) {"),
-    trace: transition({ to: "blocked", reason: "test_edit_hold" }),
+    trace: [transition({ to: "blocked", reason: "test_edit_hold" }), drill("sma_r01")],
   },
   n261: {
     mutation: distort("src/rooms/runs/server/stage-records.ts", "attempt:Math.min(input.attempt ?? 0, 2)", "attempt:Math.min(input.attempt ?? 0, 3)"),
@@ -37,7 +37,7 @@ export default {
   },
   n264: {
     mutation: distort("src/rooms/critique/server/critique-runs/attempt-diffs.ts", "return environmentId ? { type:\"reuse\", environmentId } : null;", "return environmentId ? { type:\"reuse\", environmentId:taskId } : null;"),
-    trace: receipt("code-critique", ["passed", "blocked"]),
+    trace: [receipt("code-critique", ["passed", "blocked"]), drill("sma_r02")],
   },
   n265: {
     mutation: distort("packages/workflow-engine/src/verdict.ts", "  class: optionalText(80),", "  class: optionalText(4),"),
@@ -53,7 +53,7 @@ export default {
   },
   n270: {
     mutation: flip("src/rooms/critique/server/critique-runs/verdict-reasons.ts", "if (result.status !== \"block\") return rework;", "if (result.status === \"block\") return rework;"),
-    trace: transition({ to: "blocked", reason: "verdict_block:code-critique" }),
+    trace: [transition({ to: "blocked", reason: "verdict_block:code-critique" }), drill("sma_r01")],
   },
   n271: {
     mutation: distort("src/rooms/writer/server/verify.ts", "return { status:\"accepted\", output:outputText(output), produced:checkedPaths,", "return { status:\"accepted\", output:outputText(output), produced:checkedPaths.slice(1),"),
