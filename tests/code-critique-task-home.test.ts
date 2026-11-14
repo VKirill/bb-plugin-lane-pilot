@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { runCodeCritique } from "../src/rooms/critique/server/critique-runs";
 import { codeCritiquePrompt, codeCritiqueSource } from "../src/rooms/critique/code-critique";
 import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
-import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, openTaskHome, recordTaskFile, saveProjectSetting, setRunThread } from "../src/rooms/storage";
+import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, setRunThread } from "../src/rooms/plugin-db";
+import { openTaskHome, recordTaskFile } from "../src/rooms/storage";
 import { writeDispatchHome } from "../src/rooms/writer/server/task-home";
 import type { TaskFileIo } from "../src/rooms/storage";
 
