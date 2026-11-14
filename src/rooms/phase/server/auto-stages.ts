@@ -2,7 +2,7 @@
 
 import type { ServerCore } from "../../contracts/server";
 import { planningText } from "../../contracts";
-import { threatGap } from "../stages";
+import { reviewDoc, threatGap } from "../stages";
 import { bestEffort, parseJsonOr, sha256Hex } from "@lane-pilot/kit";
 import { CRITIQUE_AXES, type DesignJournalLine } from "@lane-pilot/contracts";
 import { isPlanWordGap, wordAsked, INDEPENDENCE_GAP, openQuestions, phaseFolder, planGate, type Phase, type PhaseRecord, type PlanItem, type RiskKey, candidateOn } from "../logic";
@@ -465,17 +465,8 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       // (a later wave's section replaces an earlier attempt's for the same wave, keeps the rest).
       const wave = auto.wave ?? 1;
       const path = `${phaseFolder(phase.id)}/REVIEW.md`;
-      const findings = Array.isArray(output.findings) ? (output.findings as unknown[]).map((finding) => {
-        const row = finding as { file?: unknown; line?: unknown; path?: unknown; severity?: unknown; title?: unknown; text?: unknown; message?: unknown };
-        const where = row?.file ?? row?.path ? `${row.file ?? row.path}${row.line ? `:${row.line}` : ""} ` : "";
-        return `- ${where}${text(row?.title ?? row?.text ?? row?.message ?? finding, 300)}`;
-      }) : [];
-      const section = [`## Wave ${wave} — ${passed ? "passed" : "failed"}`, "",
-        `status ${text(output.status, 40) || "?"}; critical ${text(output.critical_count, 6) || "0"}, high ${text(output.high_count, 6) || "0"}; reviewer ${by}`, "",
-        ...(findings.length ? findings : ["- no findings"]), ""].join("\n");
       const before = (await deps.readText?.(phase, path).catch(() => null)) ?? null;
-      const stripped = (before ?? `# Review — phase ${phase.id}\n`).replace(new RegExp(`\\n*## Wave ${wave} — [\\s\\S]*?(?=\\n## Wave \\d+ — |$)`), "");
-      await deps.writeDocs(phase, [{ path, content: `${stripped.trimEnd()}\n\n${section}` }], `phase ${phase.id}: REVIEW.md wave ${wave}`).catch((cause: unknown) => ctx.log(`phase ${phase.id}: REVIEW.md not written: ${cause instanceof Error ? cause.message : String(cause)}`));
+      await deps.writeDocs(phase, [{ path, content: reviewDoc(phase.id, before, wave, passed, output, by, text) }], `phase ${phase.id}: REVIEW.md wave ${wave}`).catch((cause: unknown) => ctx.log(`phase ${phase.id}: REVIEW.md not written: ${cause instanceof Error ? cause.message : String(cause)}`));
     } else if (auto.kind === "live") {
       // SMA k_we_uiqa: the live check's result is stored on the phase, tied to the candidate head it was taken on; a blocked
       // check fails the verdict like a failed piece, so the machine plans the fix (replan path).
