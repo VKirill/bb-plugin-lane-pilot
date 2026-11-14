@@ -4,9 +4,12 @@
 // (attest/r01.json) and each trace was run on the hub snapshot of the same day.
 import { distort, drill, entry, flip, gate, isSet, outside, receipt, type RegionEvidence, rows, settingRow, transition, via, voidIsHave, wrongTarget } from "./types";
 
+import evidenceD from "./r01-d";
+
 const TASK_HOME = "src/rooms/writer/server/task-home.ts";
 
 export default {
+  ...evidenceD,
   n158: {
     mutation: distort("src/rooms/storage/attempts-store/lifecycle.ts", '"queued", used + 1, now, now, HARNESS_VERSION);', '"queued", used + 2, now, now, HARNESS_VERSION);'),
     trace: rows("lane_pilot_attempt", "created_at"),
