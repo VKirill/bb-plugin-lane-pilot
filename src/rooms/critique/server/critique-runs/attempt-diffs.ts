@@ -33,7 +33,7 @@ export async function candidatePatches(bb:{ sdk:{ environments:{ list:(args:{ ho
     const gitBase = getTaskGitBase(db as never, input.taskId);
     const committedBase = gitBase?.compare_committed ? gitBase.base_sha : null;
     if (callRpc) {
-      const target = committedBase ? { type:"all", mergeBaseBranch:committedBase } : { type:"uncommitted" } as const;
+      const target: { type:"all"; mergeBaseBranch:string } | { type:"uncommitted" } = committedBase ? { type:"all", mergeBaseBranch:committedBase } : { type:"uncommitted" };
       const listing = gitFilesReplySchema.parse(await callRpc({ pluginId:GIT_PLUGIN_ID, method:"files", input:{ environmentId, target, ignoreWhitespace:false }, outputSchema:gitFilesReplySchema }));
       if (listing.outcome !== "available") return {};
       const byPath = new Map(listing.initialPatches.map((row) => [row.path, row]));

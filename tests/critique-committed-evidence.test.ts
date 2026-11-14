@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { sha256Hex } from "@lane-pilot/kit";
 import { describe, expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
-import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, saveTaskGitBase, transitionAttempt } from "../src/rooms/plugin-db";
+import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, saveTaskGitBase, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 import { createWriterFinish } from "../src/rooms/writer/server/finish";
 import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
 
@@ -38,6 +38,7 @@ function world(opts: {
   const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
   const db = openDatabase(bb);
   createRun(db, "run", "P", "cli", "/repo");
+  setRunThread(db, "run", "pm");
   createTask(db, { id:"t1", runId:"run", kind:"bb", contract:task() });
   createAttempt(db, { id:"a-t1", runId:"run", taskId:"t1" });
   transitionAttempt(db, "a-t1", "spawn_requested");
@@ -57,7 +58,7 @@ function world(opts: {
         { type:"turn/started", threadId, seq:1 },
         { type:"turn/completed", threadId, seq:2, data:{ status:"completed" } },
       ] },
-      get:async () => ({ status:"idle" }),
+      get:async ({ threadId }: { threadId?: string } = {}) => ({ id:threadId ?? "pm", projectId:"P", status:"idle" }),
       output:async () => ({ output:APPROVE }),
       spawn:async (input: Record<string, unknown>) => { spawns.push(input); return { id:`crit${spawns.length}` }; },
       send:async () => ({}),
