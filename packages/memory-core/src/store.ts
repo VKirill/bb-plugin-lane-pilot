@@ -74,7 +74,8 @@ export function trigramReady(db: MemoryDatabase): boolean {
     })();
     ok = true;
   } catch { ok = false; }
-  trigramState.set(db, ok);
+  // A table made inside a transaction that later rolls back (a dry-run import on a fresh database) goes with it: only a call outside one is remembered.
+  if (!(db as { inTransaction?: boolean }).inTransaction) trigramState.set(db, ok);
   return ok;
 }
 

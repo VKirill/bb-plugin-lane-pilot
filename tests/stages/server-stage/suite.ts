@@ -13,8 +13,8 @@ import type { TaskV2 } from "../../../src/rooms/contracts";
 import { buildRunPolicy } from "../../../src/rooms/tasks/run-policy";
 import { docsInputHash } from "../../../src/rooms/docs/docs";
 
-const projectId = "stage-project";
-const pmThreadId = "stage-pm";
+export const projectId = "stage-project";
+export const pmThreadId = "stage-pm";
 const config = {
   projectId, hostId:"stage-host", pmWorkspacePath:"/tmp/stage-pm", writerWorkspacePath:"/tmp/stage-writer",
   pmProviderId:"codex", pmModel:"gpt-6-luna", writerProviderId:"codex", writerModel:"gpt-6-luna",
@@ -65,12 +65,12 @@ const queueLog:string[]=[];
 /** BB's concurrency-limit plugin: the effective limit of the stage host; null is a hub without it. */
 let concurrencyPlugin:{limit:number}|null=null;
 const concurrencyCalls:string[]=[];
-function holdEvents(threadId:string):()=>void {
+export function holdEvents(threadId:string):()=>void {
   let release=()=>{};
   heldEvents.set(threadId,new Promise<void>((resolve)=>{release=()=>{heldEvents.delete(threadId);resolve();};}));
   return release;
 }
-async function until<T>(what:string, read:()=>T|null|undefined|false, timeoutMs=8000):Promise<T> {
+export async function until<T>(what:string, read:()=>T|null|undefined|false, timeoutMs=8000):Promise<T> {
   const deadline=Date.now()+timeoutMs;
   for(;;){
     const value=read();
@@ -81,7 +81,7 @@ async function until<T>(what:string, read:()=>T|null|undefined|false, timeoutMs=
 }
 // Lane Pilot starts these itself after an accepted task (fa996c1, project-life), so they come and go while a test reads receipts.
 const backgroundStages=new Set(["memory-maintenance","project-life"]);
-const stageReceipt=(db:ReturnType<typeof openDatabase>,taskId:string,stageId:string)=>listStageReceipts(db,"stage-run",taskId).find((row)=>row.stageId===stageId);
+export const stageReceipt=(db:ReturnType<typeof openDatabase>,taskId:string,stageId:string)=>listStageReceipts(db,"stage-run",taskId).find((row)=>row.stageId===stageId);
 const docsReceiptOf=(db:ReturnType<typeof openDatabase>,taskId:string)=>stageReceipt(db,taskId,"docs-maintenance");
 
 const noteContent = "reviewed output\n";
@@ -94,7 +94,7 @@ const noteMutated = "mutated output\n";
 const noteMutatedSha = createHash("sha256").update(noteMutated, "utf8").digest("hex");
 const noteBySha:Record<string,string> = { [noteSha]:noteContent, [noteASha]:noteA, [noteBSha]:noteB, [noteMutatedSha]:noteMutated };
 
-const task:TaskV2 = {
+export const task:TaskV2 = {
   schema_version:2, display_title: "Тестовая задача", kind: "feature", area: "feature:stage-task", id:"stage-task", title:"Write a fixture", risk:"low", lane:"writer",
   project_cwd:config.writerWorkspacePath, read_first:["README.md L1-L2"], interfaces:["note.txt exists"],
   invariants:["Only write note.txt"], out_of_scope:["Plugin source"], expected_outputs:["note.txt"],
@@ -108,7 +108,7 @@ let writerAnswerOverride:string|null=null;
 
 /** Threads the fake BB answers "Thread not found" for, like a deleted chat. */
 const goneThreads=new Set<string>();
-async function setup(critiqueOutput:string, browserQaResult?:Record<string,unknown>|((input:unknown)=>Promise<Record<string,unknown>>), projectSettings:Record<string,unknown>={}, specialistOutput='{"decision":"approve","summary":"No unmitigated critical risk","risks":[]}', environmentId?:string, memoryOutput='[{"kind":"core","content":"Durable deployment convention uses managed workspaces","concepts":["deployment","workspace"]}]', nightOutput='{"decision":"clear","summary":"No actionable findings","findings":[]}', nightFixOutput="bounded fix applied", snapshotOverrides?:Array<Array<Record<string,string>>>, readFirstUnavailable=false, writerFailures=0, emergencySelection?:{providerId:string;model:string}, pmReadOutput='{"summary":"README notes the managed workspace contract.","keyFacts":["Managed workspaces isolate task edits."],"openQuestions":[]}', onboardingOutput?:string, writerControl:{hold:boolean;snapshots?:Array<Array<Record<string,string>>>;states:Map<string,"active"|"idle">}={hold:false,states:new Map()}, idleWaitThrowThreadId?:string, startingTurnCompletedThreadId?:string, eventsListThrowThreadId?:string, docsHoldEvents=false, docsControl:{inventoryGate?:Promise<void>;pages?:()=>Array<{path:string;modifiedAt:number;sha256:string;content:string}>;output?:string}={}, holdEventThreadIds:string[]=[], codeCritiqueOutputs?:string[], codeRepairOutput?:string) {
+export async function setup(critiqueOutput:string, browserQaResult?:Record<string,unknown>|((input:unknown)=>Promise<Record<string,unknown>>), projectSettings:Record<string,unknown>={}, specialistOutput='{"decision":"approve","summary":"No unmitigated critical risk","risks":[]}', environmentId?:string, memoryOutput='[{"kind":"core","content":"Durable deployment convention uses managed workspaces","concepts":["deployment","workspace"]}]', nightOutput='{"decision":"clear","summary":"No actionable findings","findings":[]}', nightFixOutput="bounded fix applied", snapshotOverrides?:Array<Array<Record<string,string>>>, readFirstUnavailable=false, writerFailures=0, emergencySelection?:{providerId:string;model:string}, pmReadOutput='{"summary":"README notes the managed workspace contract.","keyFacts":["Managed workspaces isolate task edits."],"openQuestions":[]}', onboardingOutput?:string, writerControl:{hold:boolean;snapshots?:Array<Array<Record<string,string>>>;states:Map<string,"active"|"idle">}={hold:false,states:new Map()}, idleWaitThrowThreadId?:string, startingTurnCompletedThreadId?:string, eventsListThrowThreadId?:string, docsHoldEvents=false, docsControl:{inventoryGate?:Promise<void>;pages?:()=>Array<{path:string;modifiedAt:number;sha256:string;content:string}>;output?:string}={}, holdEventThreadIds:string[]=[], codeCritiqueOutputs?:string[], codeRepairOutput?:string) {
   // A held child (docs, onboarding, night review) answers its second event read only after the first poll pause: those tests need the pause at its production length.
   if(docsHoldEvents||holdEventThreadIds.length) process.env.LANE_PILOT_POLL_SCALE="1"; else process.env.LANE_PILOT_POLL_SCALE="0.05";
   docsEventsHeld=false;
