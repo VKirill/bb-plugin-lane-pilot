@@ -285,5 +285,12 @@ async function batchB() {
   return out;
 }
 
-const result = { ...door(), compare: compare(), indexLifecycle: indexAndLifecycle(), loader: loader(), lint: lintAndReview(), tiers: tiers(), erase: eraseAndEconomy(), learning: await learning(), imports: importAndDrafts(), b: await batchB() };
+// Batch c (n1089 .. n1117): the observations of tests/sma/r14-world-c.ts, the same real code the behaviour tests run.
+import { observe as observeC } from "../../../tests/sma/r14-world-c";
+async function batchC() {
+  return { block: await observeC.block(), consolidate: observeC.consolidate(), pack: observeC.pack(), history: observeC.history(), secrets: observeC.secretShapes(), mask: observeC.mask(),
+    card: observeC.card(), lexindex: observeC.lexindex(), usage: observeC.usage(), autoMemory: observeC.autoMemory(), guardCard: observeC.guardCard() };
+}
+
+const result = { ...door(), compare: compare(), indexLifecycle: indexAndLifecycle(), loader: loader(), lint: lintAndReview(), tiers: tiers(), erase: eraseAndEconomy(), learning: await learning(), imports: importAndDrafts(), b: await batchB(), c: await batchC() };
 process.stdout.write(`${JSON.stringify(result)}\n`); // the probe's one result line
