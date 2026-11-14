@@ -405,7 +405,7 @@
       "id": "package",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/seo/{{slug}}/",
+      "path": ".agents/seo/{{slug}}/{{run_id}}/",
       "files": [
         "research.md",
         "architecture.json",

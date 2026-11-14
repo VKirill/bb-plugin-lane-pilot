@@ -262,7 +262,7 @@
       "id": "package",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/seo/briefs/{{$inputs.slug}}/",
+      "path": ".agents/seo/briefs/{{$inputs.slug}}/{{run_id}}/",
       "files": [
         "brief.md",
         "evidence-cards.json"

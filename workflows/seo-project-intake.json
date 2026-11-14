@@ -253,7 +253,7 @@
       "id": "package",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/seo/{{slug}}/",
+      "path": ".agents/seo/{{slug}}/{{run_id}}/",
       "files": [
         "project-passport.json",
         "brandcore.md",

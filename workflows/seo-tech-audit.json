@@ -343,7 +343,7 @@
       "id": "package",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/seo/tech-audit/{{date}}/",
+      "path": ".agents/seo/tech-audit/{{date}}-{{run_id}}/",
       "files": [
         "matrix.csv",
         "backlog.md",

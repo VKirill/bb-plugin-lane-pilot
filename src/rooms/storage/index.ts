@@ -50,6 +50,11 @@ export {
   currentTaskFilePaths, countTaskFiles, taskFileAttempts, latestTaskAttemptId, openTaskAttemptWorkspace, taskContractEditionNumber,
 } from "./task-manifest";
 export type { TaskFileKind, TaskHomeRow, TaskFileRow, TaskFileProducer, ResolvedTaskFile, TaskFileIo, ReadTaskFile } from "./task-manifest";
+export {
+  RUN_MANIFEST_SCHEMA, RUN_HOME_ROOT, RUN_FILE_KINDS, isRunFileKind, runHomeRel, runHomeOf, openRunHome, listRunFiles, recordRunFileRow, resolveRunFile, resolveLatestPointer,
+  noteRunFileRead, renderRunManifest, renderRunManifestJson, writeRunManifest, recordRunFile, readRunFile,
+} from "./run-manifest";
+export type { RunFileKind, RunHomeRow, RunFileRow, ResolvedRunFile, ReadRunFile } from "./run-manifest";
 export { insertTaskDraftRow, getTaskDraftRow, saveDraftResults, pruneTaskDraftRows, listBatchDraftRows, type TaskDraftRow } from "./task-draft-store";
 export { staleStageReceipts, taskCheckLogRows, failedBackgroundStageRows, stageEventsForTimeline, gateEventsForTask, stageReceiptsForTimeline, countVerificationGateFailures, stageReceiptStates, stageReceiptAttemptState } from "./stages-store";
 export { latestStageResultJson, listStageReceiptsForProject, listReviewStageRows, listFailedStageReceipts, listStageReceiptStates, listStaleOpenStages, listProjectsWithCriticReceipts, gateEventFailureCounts, failedStageCounts } from "./stages-store";

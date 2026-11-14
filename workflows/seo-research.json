@@ -371,7 +371,7 @@
       "id": "package",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/seo/research/{{slug}}/",
+      "path": ".agents/seo/research/{{slug}}/{{run_id}}/",
       "files": [
         "charter.md",
         "corpus.json",

@@ -8,6 +8,13 @@ confidence: medium
 tags: [sma, tasks, writer, handoff, manifest]
 sources:
   - src/rooms/storage/task-manifest.ts
+  - src/rooms/storage/run-manifest.ts
+  - src/rooms/workflow/server/workflow-run-home.ts
+  - src/rooms/workflow/server/workflow-checkout-actions.ts
+  - src/rooms/workflow/server/workflow-executors.ts
+  - packages/workflow-engine/src/handoff.ts
+  - tests/workflow/run-home.test.ts
+  - scripts/lp_drill/scenes/run_home.py
   - src/rooms/writer/server/task-home.ts
   - src/rooms/writer/server/dispatch.ts
   - src/rooms/writer/server/dispatch-workflow.ts
@@ -34,8 +41,8 @@ home holds the contract, the plan text, the plan critic's verdicts, every attemp
 and notes, the acceptance receipts, the outcome and the lessons. A `manifest.json` in the home lists every file. Nodes of
 the main path pass each other `{task_id, kind}` and find the file through the manifest. Nothing searches a folder.
 
-This is the owner's rule 4б (`sma-parity-tz.md`) and step 1 of the handoff audit (`handoff-map.md` §5.2). Step 2 (the
-workflow engine's step packets, `consumes`, `fs.write` and the other graphs) is still open.
+This is the owner's rule 4б (`sma-parity-tz.md`) and step 1 of the handoff audit (`handoff-map.md` §5.2). Step 2, the same
+idea for a workflow-graph run, is «The run folder» below.
 
 ## Where the home is (one root rule)
 
@@ -159,3 +166,68 @@ The drill scene `task_home` (`python3 scripts/lp-drill.py --scenario task_home`,
 two note tasks through the main path. It passes only if each home's manifest lists every expected kind, the files are
 there after the worktrees went, and nothing new appeared in `.agents/plans/`, `.agents/planning/`,
 `.agents/runs/<run>/artifacts/` or `.bb/chats/` for those tasks.
+
+## The run folder (step 2: a workflow-graph run, `lp.run-manifest/1`)
+
+A graph run's nodes hand each other values by the engine's journal (`lane_pilot_wf_step.output_json`), not by folders. What they write
+into the checkout, and what the engine spills for a long input, is listed in the run's own manifest, `.agents/runs/<run-id>/manifest.json`
+in the checkout its nodes write to (`wfrun_<32 hex>`; the task pipeline's `lprun_*` folders are the task's old attempt artifacts and stay
+as they were). The folder is made by the run's first file: a run that writes nothing gets none.
+
+The source of truth is three additive tables (`lane_pilot_run_home`, `lane_pilot_run_file`, `lane_pilot_run_file_read`); the file is their
+rendering. The module (`src/rooms/storage/run-manifest.ts`) is the sibling of the task manifest and reuses its `TaskFileIo` and producer
+shape; the tables are separate because a run has no contract, attempts or `supersedes` chain, and its key is the engine's run id.
+
+```json
+{ "schema": "lp.run-manifest/1", "run_id": "wfrun_…", "project_id": "proj_x", "workflow_id": "web-research", "parent": null,
+  "files": [ { "path": ".agents/research/research-2026-11-14-tides-wfrun_….md", "root": "checkout", "kind": "output",
+               "produced_by": { "node": "deliver", "graph": "web-research", "run_id": "wfrun_…", "wf_step_key": "…" },
+               "plugin_version": "0.1.568", "sha256": "…", "bytes": 4120, "created_at": 1763100000000,
+               "replaces": "wfrun_old:.agents/research/…", "readers": ["done"], "read_by": [] } ] }
+```
+
+Kinds (`RUN_FILE_KINDS`): `output` (a file an `fs.write` node wrote, in the checkout or the planning home, per the row's `root`),
+`step-input` (the engine's spill of a long step input), `latest-pointer` (a file at a fixed path that every run replaces on purpose).
+`readers` are the nodes the writing node's edges lead to (declared); `read_by` is what `readRunFile` recorded. A reader asks
+`resolveRunFile(db, runId, {kind, nodeId | repoPath})` or `readRunFile(...)`; two files that fit the question mean no answer, never
+«the newest». Recording a file is best effort for the node (the file is already written): a failed manifest write is logged, and the
+next record renders it again.
+
+### Where a graph's files go now
+
+- **`fs.write`** registers every file it wrote (checkout and planning home alike) in the run's manifest. 15 graphs wrote by `{{date}}`
+  or `{{slug}}` alone (`about-site`, `reels`, `resume`, `seo-brief`, `seo-cocoon`, `seo-drop-diagnosis`, `seo-monitor`,
+  `seo-page-refresh`, `seo-project-intake`, `seo-research`, `seo-structure-audit`, `seo-tech-audit`, `web-research`,
+  `x-to-telegram-digest`, `year-review`); their path now carries `{{run_id}}`, so two runs of one day or one topic never share a
+  folder, and the consumer is handed its own run's folder by the node's output. A test (`R8`) fails any shipped graph whose `fs.write`
+  path has `{{date}}` or `{{slug}}` and no `{{run_id}}`.
+- **What a rerun does.** `fs.write` reads the file first and writes with its hash: a rerun on the same path **replaces** it (it never
+  keeps yesterday's file, and it never fails on `conflict`). When the path was last written by another run, the new row says so
+  (`replaces: <run>:<path>`) and the log says it. Re-running the same run (`wfrun_…` unchanged) replaces its own file.
+- **The step-input spill** stays where the PM chat reads it, `.bb/chats/<pm-chat>/artifacts/wf-<run>/<name>.<sha8>.*`, and the run's
+  manifest names it (`step-input`, with the step that was given it as reader). A run with no PM chat (a scheduled graph) now spills into
+  its own folder, `.agents/runs/<run-id>/inputs/`, not into a shared `.bb/chats/chat/` pseudo-chat.
+- **`consumes`** without `from` is satisfied only by an upstream step of this run that produced the artifact. The old fallback, «any
+  artifact of that kind anywhere in the project», is gone: a consumer that wants something from elsewhere says `from: "$inputs"` or an
+  earlier node.
+- **«Latest» files.** `sp.run_script` writes its report at `.agents/<domain>/reports/<graph>-<node>.json` and, when its `args` carry
+  `latest_out`, the pointer file there (the script's output plus `produced_by: {run_id, workflow_id, node_id}`). Both are `latest-pointer`
+  rows: a daily job's file that the next run replaces by design. `resolveLatestPointer(db, project, path)` names the run that wrote the
+  current one; the specialist memory loader reads the PPC bridge through it, records the read and returns `ppc_bridge_run_id` (empty when
+  the file no longer matches the record).
+- **Write contracts that are create-only on purpose** are unchanged (the agent-instruction pointers, forge drafts). `lp.retro_living`
+  and `lp.milestone_archive` wrote with `expectedSha256: null`, which BB answers with `conflict` over an existing file without throwing:
+  the second milestone's retro or index line was silently dropped. They now replace through the same read-then-hash write.
+
+### Old files and what is not done
+
+Nothing is deleted or moved. Files of earlier runs stay where they are; a graph's old `{{date}}` folders are still readable, and no reader
+searches them. Not done: handing a consumer graph the producing run's id as an input (`seo-brief` and `seo-cocoon` still read the
+bridge by the prompt's path and mask, which the `latest-pointer` now makes traceable but does not replace); recording `read_by` for what
+an agent reads (it needs hooks in every provider; only plugin code reads go through the resolver); the plan critic's batch (dispatch has
+no batch id; the draft id of a proposed batch is the real one and would have to travel through `dispatchWriter` and the task home).
+
+The drill scene `run_home` (`python3 scripts/lp-drill.py --scenario run_home`, also in the `--series` suite `task`) starts `note-add`
+twice through `bb lane-pilot workflow-trigger`, and passes only if each run's manifest lists its file in a folder keyed by that run, the
+files are on disk, the two runs share no path, and a `find` of `.agents/plans`, `.agents/planning`, `.agents/todos`, `.agents/runs`
+and `.bb/chats` before and after shows nothing new but the two manifests, the files they list and the documented spill.

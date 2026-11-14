@@ -544,7 +544,7 @@
       "id": "report",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/seo/monitor/{{date}}/",
+      "path": ".agents/seo/monitor/{{date}}-{{run_id}}/",
       "files": [
         "weekly-report.md",
         "queue.json",

@@ -199,6 +199,16 @@ export function registerSpExecutors(
     const reportRel = `.agents/${domain}/reports/${c.workflow.id}-${node.id}.json`;
     const reportText = JSON.stringify(res.raw, null, 2);
     await writeCheckoutFile(ctx, checkout, reportRel, reportText);
+    // Both files below sit at a fixed path that EVERY run of this graph replaces, by design (a daily job's «latest»). The run's manifest names the run
+    // that wrote the current one, and the pointer file says it too, so a reader can tell whose bridge it took.
+    const latestRel = asStr(args.latest_out).replace(/^\/+/, "");
+    const pointed: Array<{ repoPath: string; content: string; kind: "latest-pointer" }> = [{ repoPath: reportRel, content: reportText, kind: "latest-pointer" }];
+    if (checkout && latestRel.startsWith(".agents/") && !latestRel.split("/").includes("..")) {
+      const latestText = JSON.stringify({ ...res.raw, produced_by: { run_id: c.runId, workflow_id: c.workflow.id, node_id: node.id, report: reportRel } }, null, 2);
+      await writeCheckoutFile(ctx, checkout, latestRel, latestText);
+      pointed.push({ repoPath: latestRel, content: latestText, kind: "latest-pointer" });
+    }
+    if (checkout) await spDeps.noteRunFiles?.(c, rt, checkout, pointed);
     if (checkout && rt.projectId) {
       upsertProjectArtifact(db, {
         projectId: rt.projectId,

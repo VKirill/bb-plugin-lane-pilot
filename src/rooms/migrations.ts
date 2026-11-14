@@ -699,4 +699,40 @@ export const migrations = [
     at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS idx_lp_task_file_read_task ON lane_pilot_task_file_read(task_id, legacy)`,
+  // One home per workflow-graph run (docs/task-folder.md, «The run folder»): .agents/runs/<run-id>/manifest.json lists every file a run's nodes
+  // wrote or spilled, in whatever folder they are. The tables are the truth, the file their rendering. Additive only.
+  `CREATE TABLE IF NOT EXISTS lane_pilot_run_home (
+    run_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    workflow_id TEXT NOT NULL,
+    base_path TEXT NOT NULL,
+    host_id TEXT NOT NULL,
+    parent_run_id TEXT,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS lane_pilot_run_file (
+    run_id TEXT NOT NULL,
+    repo_path TEXT NOT NULL,
+    root TEXT NOT NULL DEFAULT 'checkout',
+    kind TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    sha256 TEXT NOT NULL,
+    bytes INTEGER NOT NULL,
+    producer_json TEXT NOT NULL,
+    plugin_version TEXT NOT NULL,
+    readers_json TEXT NOT NULL DEFAULT '[]',
+    replaces TEXT,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (run_id, repo_path)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_lp_run_file_path ON lane_pilot_run_file(repo_path, kind, created_at)`,
+  `CREATE TABLE IF NOT EXISTS lane_pilot_run_file_read (
+    run_id TEXT NOT NULL,
+    repo_path TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    reader TEXT NOT NULL,
+    sha256 TEXT,
+    at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_lp_run_file_read_run ON lane_pilot_run_file_read(run_id)`,
 ];

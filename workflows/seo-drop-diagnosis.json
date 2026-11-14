@@ -431,7 +431,7 @@
       "id": "package",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/seo/drop-diagnosis/{{date}}/",
+      "path": ".agents/seo/drop-diagnosis/{{date}}-{{run_id}}/",
       "files": [
         "diagnosis.md",
         "hypotheses.md",

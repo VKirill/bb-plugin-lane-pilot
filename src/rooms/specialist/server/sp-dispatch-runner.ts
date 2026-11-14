@@ -47,6 +47,8 @@ export interface SpServicesDeps {
   planHome?: (projectId: string, checkout: { hostId: string; path: string }) => Promise<string | null>;
   executeMutation?: MutationExecutorFn;
   allowScriptFixtureFallback?: boolean;
+  /** Tells the run's manifest (.agents/runs/RUN/manifest.json) about files a node wrote; given by the workflow room, which owns the run folder. */
+  noteRunFiles?: (c: StepContext<ChainRuntime>, rt: ChainRuntime, checkout: { hostId: string; path: string }, files: Array<{ repoPath: string; content: string; kind: "latest-pointer" }>) => Promise<void>;
 }
 
 const asStr = (v: unknown, fallback = ""): string =>

@@ -21,10 +21,14 @@ export const isBig = (value: unknown): boolean => textOf(value).length > INLINE_
 const sha8 = (text: string): string => sha256Hex(text).slice(0, 8);
 const safeName = (name: string): string => name.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "input";
 
-/** Where an input is kept, relative to the repository root: the chat's folder, the run, and a name from the input and its content. */
+/**
+ * Where an input is kept, relative to the repository root: the PM chat's folder, the run, and a name from the input and its content. A run with no PM
+ * chat (`chatId` empty: a scheduled graph) keeps its inputs in its own run folder, `.agents/runs/<run>/inputs/`, not in a chat folder nobody owns.
+ */
 export function refPath(chatId: string, runId: string, name: string, value: unknown): string {
   const text = textOf(value);
-  return `.bb/chats/${chatId}/artifacts/wf-${runId.slice(0, 24)}/${safeName(name)}.${sha8(text)}.${typeof value === "string" ? "txt" : "json"}`;
+  const file = `${safeName(name)}.${sha8(text)}.${typeof value === "string" ? "txt" : "json"}`;
+  return chatId ? `.bb/chats/${chatId}/artifacts/wf-${runId.slice(0, 24)}/${file}` : `.agents/runs/${runId}/inputs/${file}`;
 }
 
 export function refOf(chatId: string, runId: string, input: PacketInput): InputRef {
