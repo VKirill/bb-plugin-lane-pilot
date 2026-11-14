@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.560
+
+- **Read-only helpers start in the provider's read-only mode (VK core `launch-tuning`, off with `LANE_PILOT_LAUNCH_TUNING=off`).** ACP providers took no mode and no tool limits, so every critic ran full access. The spawn now carries `experimental_vkLaunchTuning` for the plan critic, specialist reviewer, PM reader and gate triage: Cursor and Devin start in `ask` (no edits, no shell; Read and grep stay), Antigravity in `plan` with `--sandbox`; on Claude Code these roles and the code critic lose `Edit`, `Write`, `MultiEdit` and `NotebookEdit` (the critic keeps Bash for `git`). Measured by writing a file in each mode: Devin `plan` writes and `DEVIN_SANDBOX` does nothing under `devin acp`, so neither is used. The code critic stays unrestricted on ACP (its packet falls back to `git log -p`), the auditor and triager keep their scratch-file rights, writers are never touched. A core without the function stores the key and ignores it.
+
 ## 0.1.559
 
 - **The writer gets the project's core conventions again (`judgeWriterMemory`).** Once the memory judge ran for real (agy/codex routes instead of the dead router9), it cut core records as off-topic, and the writer brief and the repair prompt lost the core layer: the nightly drill's `memory_paths` went red on 0.1.555 with «MISSING core», and `bb lane-pilot memory-probe` reproduced it on 0.1.558. Core records now pass the judge like notes that name a task path. Measured by `memory_paths` in the next drill; `tests/memory-judge.test.ts` checks that core reaches the writer whatever the judge picks.
