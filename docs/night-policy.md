@@ -2,16 +2,39 @@
 title: Night policy: what the night may decide without the owner
 type: component
 created: 2026-10-22
-updated: 2026-10-22
+updated: 2026-11-14
 status: active
 confidence: high
 tags: [policy, night, exam, owner]
+sources:
+  - policy/night-policy.json
+  - policy/exam.json
+  - policy/exam-v2.json
+  - policy/exam-result.json
+  - scripts/policy-exam.ts
+  - scripts/lp-morning.sql
+  - src/rooms/policy/policy.ts
+  - src/rooms/policy/exam.ts
+  - src/rooms/policy/live-exam.ts
+  - src/rooms/policy/growth.ts
+  - src/rooms/policy/cycle.ts
+  - src/rooms/policy/morning.ts
+  - src/rooms/policy/cli.ts
+  - src/rooms/tools/server/cli.ts
+  - src/rooms/wall/server/wall.ts
+  - src/rooms/wall/acceptance.ts
+  - src/rooms/wall/select.ts
+  - src/rooms/reports/server/daily.ts
+  - tests/policy/classify.test.ts
+  - tests/policy/growth.test.ts
+  - tests/policy/exam.test.ts
+  - tests/policy/morning.test.ts
 ---
 
 > [!important] Since 2026-10-22 the owner takes no part in the loop
 > `authorize` reads only the classification and the proofs of its entry. The exam below is a **measurement** of how close the policy is to the owner's own past decisions; it no longer degrades `night_decides`. A `night_proposes` repair is held on its branch and logged; nothing is sent to the owner. `owner_only` means the night never does it.
 
-# Night policy
+# Night policy: what the night may decide without the owner
 
 SMA block 5 («a clone of the owner's judgment, examined before it may decide») and Maslov's #31448 («graph changes only through your yes»).
 The night loop (P1-1) asks one question of every change it wants to make: may I do this alone? This room answers it from a file. The exam
@@ -19,6 +42,13 @@ measures how close that file is to the owner's later decisions; it does not deci
 
 Version 2 (frozen 2026-10-22T11:26:00Z) adds standing prohibitions, moves rules to proposals, and replaces the one-off exam with a growing one.
 Today it has no unseen decisions, so the measurement cannot pass yet. That does not turn night_decides into night_proposes.
+
+## How it works
+
+1. **Describe the change**: A caller passes a `ChangeDescriptor` carrying optional `kind`, `files`, `settings`, `tables`, and proof `attrs` (`src/rooms/policy/policy.ts:16-27`).
+2. **Match tiers and standing prohibitions**: `explainChange` normalizes paths and checks every entry in `night_decides`, `night_proposes`, and `owner_only`, then evaluates `standing_prohibitions` as `owner_only` (`src/rooms/policy/policy.ts:105-161`). Each matcher uses `matcherMatches`, which ANDs its present fields (`src/rooms/policy/policy.ts:136-145`).
+3. **Resolve tier and proofs**: `explainChange` picks the most restrictive matched tier (`owner_only` > `night_proposes` > `night_decides`); if nothing matches, or a `night_decides` entry lacks required `attrs`, the outcome defaults to `night_proposes` (`src/rooms/policy/policy.ts:136-164`).
+4. **Authorize and measure**: `authorize` returns the classification tier directly without reading exam results (`src/rooms/policy/exam.ts:175-178`). Separately, `runLiveExam` filters decisions strictly newer than `frozen_at` via `unseenItems` and computes `passed` only when `unseen.length >= needed` and accuracy meets `min_accuracy`; missing or failing exam measurements never downgrade `night_decides` (`src/rooms/policy/exam.ts:131-158`, `:160-178`).
 
 ## Files
 
@@ -68,16 +98,16 @@ A `standing_prohibition` is an owner-stated «never do X». It is matched agains
 `owner_only`, and carries `source`: type (`memory_file`, `bb_memory`, `owner_message`), file, line, date, the quote, and `cited_by_v1_exam`.
 Sources are design-side material only: the memory directory read as a whole and BB memory, never an exam item. Provenance:
 
-| Id | Source (file:line, date) | Words |
+| Id | Source (entry in policy/night-policy.json, date) | Words |
 |---|---|---|
-| `never_acp_opencode` | `opencode-v2-migration.md:21`, 2026-10-21 | «never reintroduce acp-opencode paths» |
-| `never_jev_routes_session_turns` | `lane-markers-plain-sessions.md:13`, 2026-10-13 | «Jev routes ONLY subagents a lane session spawns … never the session's own turns/owner messages» |
-| `never_lane_rules_on_plain_sessions` | `lane-markers-plain-sessions.md:15`, 2026-10-13 | «lane rules must never touch sessions unrelated to Lane Pilot» |
-| `never_fast_tier_default` | `bb-fast-mode-remembered-default.md:15`, 2026-10-09 | «the owner wants Claude never in fast mode unless he turns it on in that chat» |
-| `never_bb_connect_expose` | `bb-no-getbb-vpn-only.md:13`, 2026-10-02 | «never suggest `bb connect expose` or getbb links» |
-| `never_flat_access_ban` | `security-keep-legit-paths.md:13`, 2026-10-08 | «never a flat ban» |
-| `never_full_suite_per_parallel_agent` | `one-full-suite-per-batch.md:11`, 2026-10-07 | «none of them runs the full test suite» |
-| `never_block_env_catalog_reads` | `env-catalog-open-access.md:11`, 2026-10-08 | «don't block `bb env-catalog get/set` in the LP guard/shim/OpenCode lists» |
+| `never_acp_opencode` | `opencode-v2-migration` (`policy/night-policy.json:202-207`), 2026-10-21 | «never reintroduce acp-opencode paths» |
+| `never_jev_routes_session_turns` | `lane-markers-plain-sessions` (`policy/night-policy.json:209-214`), 2026-10-13 | «Jev routes ONLY subagents a lane session spawns … never the session's own turns/owner messages» |
+| `never_lane_rules_on_plain_sessions` | `lane-markers-plain-sessions` (`policy/night-policy.json:216-221`), 2026-10-13 | «lane rules must never touch sessions unrelated to Lane Pilot» |
+| `never_fast_tier_default` | `bb-fast-mode-remembered-default` (`policy/night-policy.json:223-228`), 2026-10-09 | «the owner wants Claude never in fast mode unless he turns it on in that chat» |
+| `never_bb_connect_expose` | `bb-no-getbb-vpn-only` (`policy/night-policy.json:230-235`), 2026-10-02 | «never suggest `bb connect expose` or getbb links» |
+| `never_flat_access_ban` | `security-keep-legit-paths` (`policy/night-policy.json:237-242`), 2026-10-08 | «never a flat ban» |
+| `never_full_suite_per_parallel_agent` | `one-full-suite-per-batch` (`policy/night-policy.json:244-249`), 2026-10-07 | «none of them runs the full test suite» |
+| `never_block_env_catalog_reads` | `env-catalog-open-access` (`policy/night-policy.json:251-256`), 2026-10-08 | «don't block `bb env-catalog get/set` in the LP guard/shim/OpenCode lists» |
 
 The first four sources are memory files that v1 exam items also cite (`cited_by_v1_exam: true`); the v1 miss analysis named exactly these
 prohibitions. Their text is the owner's standing words and exists independent of the exam, but the corresponding v1 items are now
@@ -96,7 +126,7 @@ still misses, because their descriptors use other words.
 
 `rule_trial_apply` moved from `night_decides` to `night_proposes` in version 2. The evidence is design-side, not the exam result:
 
-- d10: an accepted rule is `core` subagent memory injected into every writer prompt (`lane-pilot-rules-from-lessons.md:11`), and core memory
+- d10: an accepted rule is `core` subagent memory injected into every writer prompt (`policy/night-policy.json:41`, `:96-100`), and core memory
   edits were already proposals (`memory_core_edit`). A rule on trial is a core memory edit; version 1 contradicted itself.
 - d7: the owner took back the first five trial rules himself in the first week of trials (2026-10-01/03).
 - d11: «память единая, на хабе; правила не должны копиться» (owner, 2026-10-03).
@@ -178,9 +208,7 @@ Fewer than `patience` + 1 entries never stop. Nothing calls it yet (no night loo
 ## Morning list
 
 Three lines (`composeMorningList`): decisions waiting for the owner (rule proposals, learning items), what went red in the
-last 24 hours, what was accepted. `scripts/lp-morning.sql` is the same list in SQL; `scripts/lp-metrics-daily.sh` appends it to the
-daily Telegram report (the hub copy of `daily.sh` is installed by hand, so `lp-morning.sql` must be copied to
-`~/.config/lp-metrics/morning.sql`; without the file the report is unchanged). `tests/policy/morning.test.ts` pins both to the same output.
+last 24 hours, what was accepted. `scripts/lp-morning.sql` is the same list in SQL; the plugin schedule `daily-report` (`src/rooms/reports/server/daily.ts`) reads `scripts/lp-morning.sql` from the plugin directory and appends it to the daily Telegram report (when missing, only that block is omitted). `tests/policy/morning.test.ts` pins both to the same output.
 `bb lane-pilot policy morning` prints it.
 
 ## Not wired yet

@@ -123,3 +123,8 @@ The idea of reading the task from one shared place is Multica's (the agent gets 
 | Most multi-agent failures are specification and misalignment, not parsing (44.2% and 32.3% of 1,642 traces) | Cemri et al., «Why Do Multi-Agent LLM Systems Fail?», arXiv 2503.13657 |
 
 The reports with every quote are in the thread storage of the session that wrote this page (`.bb/chats/thr_iv28gegftm/artifacts/handoff-research/`).
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Roles, agents and models](roles.md)

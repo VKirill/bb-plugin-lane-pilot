@@ -72,7 +72,7 @@ Lane Pilot is one plugin with three entries declared in `package.json`: a server
 
 | Requirement | Detail |
 |---|---|
-| BB | A BB server `>= 0.43.3` with plugin SDK `>= 0.4.104` and the experimental `vk` core APIs. Required: `experimental_vkSetDispatchData`, `experimental_vkPluginLifecycle`. Optional (the plugin degrades without them): session policy, compiled main agent, quiet child threads, keyed spawn, schedule, hook timeouts, plugin metadata, last turn. The list is in `vk-requires.json`. |
+| BB | A BB server `>= 0.43.3` with plugin SDK `>= 0.4.104` and the experimental `vk` core APIs. Required: `experimental_vkSetDispatchData`, `experimental_vkPluginLifecycle`. Optional (the plugin degrades without them): session policy, compiled main agent, quiet child threads, keyed spawn, schedule, hook timeouts, plugin metadata, last turn, launch tuning. The list is in `vk-requires.json`. |
 | Runtime | Node `^22.19.0 \|\| ^24.0.0 \|\| ^26.0.0`. |
 | Hosts | The project must be bound to an enrolled BB host. Writer worktrees, checks and merges run there through host calls. A folder without git runs in live-folder mode (one writer at a time, rollback from a backup of the task's `owns_paths`, no merge). |
 | Providers | The PM runs as a Claude Code agent. Writers and helpers run on the providers you connect in BB (Claude Code, Codex, OpenCode v2 and others, see [Roles, agents and models](docs/guide/roles.md)). The small Jev judgments (routing, writer pick, skill pick, failure class and others) need a Jev key in the BB Env Catalog: `TYPESAFE_API_KEY` for the official TypeSafe service (the default) or `OPENLUX_API_KEY` for the OpenLux reseller (setting `jev.provider`). Without a key every judgment falls back to its code rule. |
@@ -130,6 +130,6 @@ The full generated list is [docs/index.md](docs/index.md). Pages by topic:
 | Self-improvement | [wall and the night loop](docs/wall.md), [LP-Bench](docs/lp-bench.md), [hypotheses](docs/hypotheses.md), [writer harness](docs/harness.md), [rule forms](docs/rule-forms.md), [night policy](docs/night-policy.md), [Self-improvement settings](docs/self-improvement-settings.md), [research adoption](docs/research-adoption.md), [SMA self-check](docs/sma-self-check.md), [design evaluation](docs/design-eval.md), [forecast](docs/forecast.md), [docs night](docs/docs-night.md) |
 | Observability and owner | [Tasks board](docs/task-board.md), [work graph](docs/work-graph.md), [schedule board](docs/schedule-board.md), [errands](docs/errands.md), [waiting for the owner](docs/owner-waiting.md), [owner presence](docs/owner-presence.md), [deferrals](docs/deferrals.md) |
 | Settings | [enabled settings (generated)](docs/enabled-settings.md), [adoc applicability](docs/adoc-applicability.md) |
-| Workspaces | [i18n](packages/i18n/docs/index.md), [ui-kit](packages/ui-kit/docs/index.md), [workflow-engine](packages/workflow-engine/docs/index.md), [world-sim](packages/world-sim/docs/index.md) |
+| Workspaces | [i18n](packages/i18n/docs/index.md), [kit](packages/kit/docs/index.md), [memory-core](packages/memory-core/docs/index.md), [models](packages/models/docs/index.md), [ui-kit](packages/ui-kit/docs/index.md), [workflow-engine](packages/workflow-engine/docs/index.md), [world-sim](packages/world-sim/docs/index.md) |
 | Specific flows | [invoice-send](docs/invoice-send.md) |
 
