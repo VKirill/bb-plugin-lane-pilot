@@ -9,7 +9,7 @@ Every node is checked with TWO actors against one scratch state (the second is r
 release). The probe sma_r20_probe.ts drives the REAL code of the commit under drill on the fake plugin host, temporary git repositories and a stand-in
 fetch: no model turn, no hub write. Run: scripts/lp-drill.sh --scenario sma_r20.
 
-n1533 (sma open) is core-resident (core:apps/server/src/services/plugins/vk-owner-auth.ts#mintVkOwnerSessionCookie) and is not proved here.
+n1533 (sma open) and n1550 (fleet window entry link) are core-resident (core:apps/server/src/services/plugins/vk-owner-auth.ts#mintVkOwnerSessionCookie) and are not proved here.
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from lp_drill.env import ROOT
 from lp_drill.prove import Proofs
 
 NODES = ["n1517", "n1518", "n1519", "n1520", "n1523", "n1524", "n1525", "n1526", "n1528", "n1529", "n1532", "n1534", "n1535", "n1536", "n1537",
-         "n1538", "n1539", "n1540", "n1542", "n1544", "n1545", "n1547", "n1548"]
+         "n1538", "n1539", "n1540", "n1542", "n1544", "n1545", "n1547", "n1548", "n1549", "n1551", "n1552", "n1553", "n1554", "n1555", "n1556", "n1558", "n1559"]
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r20_probe.ts"
 NINE = ["event", "projectId", "runId", "taskId", "title", "kind", "state", "attempt", "at"]
 
@@ -109,4 +109,33 @@ def scenario_sma_r20(tmp: Path) -> dict:
     # n1548 Window reporter outward: exactly the nine fields, the long title clipped to 200, nothing the caller adds.
     b = s["body"]
     proofs.prove("n1548", b["keys"] == NINE and b["title"] == 200 and b["attempt"] == 3 and b["extra"] == [], f"keys {b['keys']}, title length {b['title']}, extra keys {b['extra']}")
+    # n1549 Pulse and waiting webhook: one https post per event, the call's project beats a foreign one, the caller's time is kept, none is invented when absent.
+    nt = s["notify"]
+    proofs.prove("n1549", nt["events"] == ["owner.waiting", "pulse"] and nt["projects"] == ["P", "P"] and nt["at0"] == 123 and nt["at1Recent"] and nt["keys"] == NINE,
+                 f"events {nt['events']}, projects {nt['projects']}, caller's time {nt['at0']}, default time recent {nt['at1Recent']}")
+    # n1551 Cross-terminal digest: each source counts alone, a failing one is named and the rest stay; protection.rearm does not change the digest.
+    dg = s["digest"]
+    ok = (dg["kpi"] == {"accepted": 2, "blocked": 1, "running": 0, "tokens": 0, "actions": 1} and dg["partial"] == [] and dg["rearmSame"] and dg["downPartial"] == ["actions"]
+          and dg["downKpi"]["accepted"] == 2 and dg["downKpi"]["actions"] == 0 and dg["downFeed"] == 3 and "source actions failed: front down" in dg["logged"])
+    proofs.prove("n1551", ok, f"kpi {dg['kpi']}, partial {dg['partial']}; actions down: partial {dg['downPartial']}, kpi {dg['downKpi']}, feed {dg['downFeed']}; rearm changes nothing {dg['rearmSame']}")
+    # n1552 Test impact analysis: of 18 tests importing a wide file only the two that name the changed export are selected.
+    proofs.prove("n1552", s["wide"] == ["tests/t0.test.ts", "tests/t1.test.ts"], f"test:changed --list on a changed betaTwo, 18 importers: {s['wide']}")
+    # n1553 Description into a machine name: given id wins, English is slugged, Russian takes six hash digits and two Russian criteria differ, no file gives «finding».
+    tr = s["translit"]
+    ok = (tr["given"] == "F-7" and tr["english"] == "src/a.ts:missing-null-check" and tr["russian"][0] == f"src/a.ts:{tr['hash']}" and tr["russian"][0] != tr["russian"][1]
+          and re.fullmatch(r"src/a\.ts:[0-9a-f]{6}", tr["russian"][0]) is not None and tr["noFile"] == "finding:slow-path")
+    proofs.prove("n1553", ok, f"ids {tr['given']}, {tr['english']}, {tr['russian']}, {tr['noFile']}")
+    # n1554 Windows-aware atomic write: a locked rename is tried 5 times then thrown, a missing file once, a lock that lets go is written through.
+    at = s["atomic"]
+    proofs.prove("n1554", at["locked"] == [5, "denied"] and at["missing"] == [1, "gone"] and at["flaky"] == [3, "ok"], f"locked {at['locked']}, missing {at['missing']}, flaky {at['flaky']}")
+    # n1555 Sessions: the lease entry keeps provider, label and its claim across a later message and takes a new time.
+    ls = s["lease"]
+    proofs.prove("n1555", ls["provider"] == "claude-code" and ls["label"] == "mine" and [c[0] for c in ls["claims"]] == ["ui"] and ls["refreshed"], f"entry after the second message: provider {ls['provider']}, label {ls['label']}, claims {ls['claims']}, refreshed {ls['refreshed']}")
+    # n1556 Claims: the record keeps name, globs, a description cut at 300, base and holder; after the lease ends nothing is listed and the new claim stands alone.
+    proofs.prove("n1556", ls["claims"] == [["ui", "src/**", 300, "deadbeef", "thr_a"]] and ls["afterExpiry"] == [0, ["fresh"]], f"claim {ls['claims']}, after 7 h {ls['afterExpiry']}")
+    # n1558 Window attempts: one record per release, under the holder's name, base, files and outcome; unknown and none when the claim had neither.
+    proofs.prove("n1558", s["trail"] == ["bare:thr_b:base=unknown|files=none|outcome=handed_off", "ui:thr_a:base=ba5e123|files=src/a.ts, src/b.ts|outcome=committed"], f"records {s['trail']}")
+    # n1559 Capsules: 30 files and 30 claims survive, the restore text names the task and stays within its budget.
+    fl = s["flight"]
+    proofs.prove("n1559", fl["files"] == 30 and fl["last"] == "src/f29.ts" and fl["claims"] == 30 and fl["restoredHead"] == "Capsule restored after compaction:" and fl["task"] and fl["capped"], f"capsule {fl}")
     return proofs.verdict("sma_r20", checked=len(NODES))

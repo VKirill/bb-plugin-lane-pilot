@@ -7,7 +7,9 @@ import { lintCitationClaims } from "../../../src/rooms/docs/docs-lint";
 import { buildAcceptanceCard } from "../../../src/rooms/acceptance/card";
 import { getBaseline } from "../../../src/rooms/baseline";
 import { fragmentJudgeVia } from "../../../src/rooms/anamnesis/fragments";
-import { roleProfilePolicy } from "../../../src/rooms/contracts/helper-context";
+import { effectiveGroup, roleProfilePolicy } from "../../../src/rooms/contracts/helper-context";
+import { resolveSpawnModel } from "../../../src/rooms/platform/server/spawn-model";
+import { roleDefaultModel } from "@lane-pilot/models";
 import { compileMainAgentProfile } from "../../../src/rooms/native-agent/agent-profile";
 import { sessionOverrideAgentsJson } from "../../../src/rooms/native-agent/native-agent-definition";
 import { withoutCodeWritingSubagents } from "../../../src/rooms/native-agent/native-agent-overlay";
@@ -140,6 +142,17 @@ const judge = fragmentJudgeVia(async () => JSON.stringify({ fragments: [{ id: "f
 s.fragments = await judge(["I write TypeScript every day", "maybe I like chess", "my daughter has asthma"]);
 s.pmTools = { narrowed: withoutCodeWritingSubagents("dev-orchestrator", ["Agent", "Task", "Read"]), listed: withoutCodeWritingSubagents("dev-orchestrator", ["Agent(Explore, general-purpose, Plan)"]), other: withoutCodeWritingSubagents("copy-lead", ["Agent"]) };
 s.hook = { refused: pretaskDecision({ role: "writer", kind: "general-purpose", background: false, spawned: 0 }), documentary: DOCUMENTARY_AGENTS.map((kind) => pretaskDecision({ role: "writer", kind, background: false, spawned: 0 }).deny ?? null) };
+
+// ---- batch b: n1400 n1401 ----
+const fgCall = (role: string, background: boolean, spawned: number) => { const d = pretaskDecision({ role, kind: "Explore", background, spawned }); return { deny: d.deny ?? null, spawned: d.spawned }; };
+s.foreground = { pmBackground: fgCall("pm", true, 2), writerBackground: fgCall("writer", true, 2), pmForeground: fgCall("pm", false, 2), writerForeground: fgCall("writer", false, 2) };
+const modelOf = (role: string, over: Record<string, unknown> = {}) => resolveSpawnModel({ role, settings: {}, pm: null, catalog: null, ...over } as never);
+s.resolve = {
+  skills: Object.fromEntries((["writer", "docs-maintainer", "browser-qa", "plan-critic"] as const).map((role) => [role, effectiveGroup(role, "skills")])),
+  owner: effectiveGroup("writer", "skills", { skills: { mode: "allow", names: ["only-this"] } }),
+  models: Object.fromEntries((["writer", "docs-maintainer", "plan-critic"] as const).map((role) => [role, { got: [modelOf(role).providerId, modelOf(role).model], row: [roleDefaultModel(role as never).providerId, roleDefaultModel(role as never).model] }])),
+  pinned: [modelOf("docs-maintainer", { pinned: { provider: "codex", model: "gpt-x" } }).model, modelOf("docs-maintainer", { pinned: { provider: "codex", model: "gpt-x" } }).source],
+};
 
 process.stdout.write(`${JSON.stringify(s)}\n`);
 process.exit(0);
