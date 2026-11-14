@@ -127,6 +127,6 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
         confirmedDrawings.push({ paths: drawing.paths, sha256: drawing.sha256, changed });
       }
     }
-    return lintContract({ task, workspacePath, hostId, kinds, listings, sandboxUnsafe, gate, openTasks, deadDependencies, programs, ownerWords, qualityMode, checkHistory, birth, redoneBirth, confirmedDrawings,...(secrets ? { secrets } : {}) });
+    return lintContract({ task, workspacePath, hostId, kinds, listings, sandboxUnsafe, gate, openTasks, deadDependencies, programs, ownerWords, qualityMode, checkHistory, birth, redoneBirth, confirmedDrawings,...(secrets ? { secrets } : {}), chatId: getRun(db, runId)?.pm_thread_id ?? null });
   };
 }

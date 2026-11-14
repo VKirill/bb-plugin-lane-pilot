@@ -1,5 +1,6 @@
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { getAttempt, getReasoningTrace, getRunSettingsScopes, loadProjectSettings } from "../../storage";
+import { getAttempt, getReasoningTrace, getRunSettingsScopes, hasTaskHome, loadProjectSettings } from "../../storage";
+import { recordTaskClose } from "./task-home";
 import { listAttemptChanges } from "../../rollback";
 import { settingOn, switchOn } from "@lane-pilot/models";
 import { recordSkillSwitchMetric } from "../skill-switch";
@@ -106,6 +107,16 @@ export function mountWriterAttemptFinished(ctx: ServerCore, services: Services):
 export async function writeTaskOutcome(ctx: Pick<ServerCore, "bb" | "db" | "log">, event: AttemptFinished): Promise<void> {
   const { bb, db } = ctx;
   if (event.scope !== "task" || event.status === "running" || !["accepted", "blocked", "canceled"].includes(event.status)) return;
+  // A task with a home (docs/task-folder.md): OUTCOME.md and lessons.md always go into the home in the base checkout, which survives the merge
+  // and is git-excluded bookkeeping, so the old reason to keep this off (a file in a worktree about to go) does not apply.
+  if (hasTaskHome(db, event.taskId)) {
+    const change = listAttemptChanges(db, event.taskId).find((row) => row.attemptId === event.attemptId) ?? listAttemptChanges(db, event.taskId).at(-1);
+    const reason = event.reason ? scrubQuote(redactKnown(String(event.reason)), 200) : "";
+    await recordTaskClose(ctx, { taskId: event.taskId, runId: event.runId, attemptId: event.attemptId, status: event.status, reason,
+      mergeCommit: change?.mergeCommit ?? null, changed: change?.changed ?? [], lessonOf: (text) => writerMarkers(text).lesson ?? null })
+      .catch((cause: unknown) => ctx.log(`task OUTCOME.md/lessons.md record for ${event.taskId} failed: ${cause instanceof Error ? cause.message : String(cause)}`));
+    return;
+  }
   try {
     if (!switchOn(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID), "task.outcome_file")) return;
     const attempt = getAttempt(db, event.attemptId);

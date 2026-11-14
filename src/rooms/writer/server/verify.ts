@@ -23,6 +23,8 @@ import { hollowRerun, noTestRanReason, testSummaries } from "../../tasks/server"
 import { recordGateEvaluation } from "../../runs/server";
 import { listThreadEventsRaw, THREAD_ITEM_EVENT_TYPES } from "@lane-pilot/thread-observe";
 import {writerPatchFromOutput} from "./writer-task";
+import { hasTaskHome } from "../../storage";
+import { recordAcceptanceFiles, recordCheckFiles } from "./task-home";
 import type { ServerCore } from "../../contracts/server";
 import type { FailureCode } from "../../contracts/failure-class";
 
@@ -334,7 +336,11 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       ...(input.warnings?.length ? { warnings:input.warnings } : {}),
       ...(input.turns ? { turns:input.turns } : {}),
     };
-    for (const [name, content] of [
+    // A task with a home (docs/task-folder.md, SMA ap_run_dir): acceptance.json and receipt.json once, in the home in the base checkout, so the
+    // acceptancePath the PM is shown still exists after the merge removes the worktree. The writer's real output is its attempt's report.md.
+    const homed = await recordAcceptanceFiles({ bb, db, log:ctx.log }, { taskId:input.taskId, runId:input.runId, attemptId:input.attemptId, output:input.output,
+      acceptance:`${JSON.stringify(acceptance, null, 2)}\n`, receipt:`${JSON.stringify(internalReceipt, null, 2)}\n` });
+    for (const [name, content] of homed ? [] : [
       ["report.md", reportText],
       ["acceptance.json", `${JSON.stringify(acceptance, null, 2)}\n`],
       ["lane-pilot-receipt.json", `${JSON.stringify(internalReceipt, null, 2)}\n`],
@@ -355,7 +361,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     }
     const stored = {
       ...internalReceipt,
-      acceptancePath: `${artifactDir}/acceptance.json`,
+      acceptancePath: homed?.acceptancePath ?? `${artifactDir}/acceptance.json`,
       acceptance,
     };
     saveProjectSetting(db, input.config.projectId, "writer.lastResult", stored);
@@ -585,7 +591,15 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     // A failing check's full output goes under the task folder logs/, so the retry reads it instead of rerunning blind.
     const failedVerify = verifies.find((row) => row.exitCode !== 0);
     let checkLogPath:string|undefined;
-    if (failedVerify) {
+    // A task with a home (docs/task-folder.md): checks.json and the failed check's log in the attempt's folder there, in the base checkout,
+    // so the next attempt finds the log by the manifest (kind check-log) after this worktree is gone.
+    if (hasTaskHome(db, input.taskId)) {
+      if (verifies.length) {
+        const recorded = await recordCheckFiles({ bb, db }, { taskId:input.taskId, runId:input.runId, attemptId:input.attemptId, verifies, cleanOutput:cleanCheckOutput })
+          .catch((cause:unknown) => { ctx.log(`Lane Pilot: the checks of ${input.taskId} were not recorded in its home: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
+        checkLogPath = recorded?.checkLog ?? undefined;
+      }
+    } else if (failedVerify) {
       const slug = failedVerify.command.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "check";
       checkLogPath = `.agents/plans/items/${input.taskId}/logs/${slug}.log`;
       const saved = await bestEffort(ctx.log, "verification check log write", bb.sdk.files.write({ hostId:input.config.hostId, rootPath:input.task.project_cwd, path:`${input.task.project_cwd}/${checkLogPath}`,

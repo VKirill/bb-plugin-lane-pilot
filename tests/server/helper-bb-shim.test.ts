@@ -24,7 +24,7 @@ describe("the bb guard wrappers of a Codex, OpenCode or Cursor thread", () => {
     for (const role of ["writer", "pm-reader", "plan-critic", "code-critic", "specialist", "self-repair", "docs-nightly"]) {
       const { contribute, host } = setup(undefined, { role });
       const entries = await contribute({ threadId: "thr_1", hostId: "ovh" });
-      expect(entries).toEqual([expect.objectContaining({ name: "LANE_PILOT_ROLE", value: role }), expect.objectContaining({ name: "PATH", value: SHIM.path })]);
+      expect(entries).toEqual([expect.objectContaining({ name: "LANE_PILOT_ROLE", value: role }), expect.objectContaining({ name: "PATH", value: SHIM.path }), expect.objectContaining({ name: "LANE_PILOT_CHATS", value: "thr_1" })]);
       expect(entries[1]!.reason).toContain(role);
       expect(host.call).toHaveBeenCalledWith("prepareBbShim", { requestedHostId: "ovh" }, expect.objectContaining({ hostId: "ovh" }));
     }
@@ -63,7 +63,7 @@ describe("the bb guard wrappers of a Codex, OpenCode or Cursor thread", () => {
   it("lets a thread on a host that does not know the call yet start, and logs it", async () => {
     const { contribute, warns } = setup(async () => { throw new Error("unknown host method prepareBbShim"); });
     // The lane marker still goes out: the machine's lane plugins must know it is a Lane Pilot thread.
-    expect(await contribute({ threadId: "thr_1", hostId: "old" })).toEqual([expect.objectContaining({ name: "LANE_PILOT_ROLE", value: "writer" })]);
+    expect(await contribute({ threadId: "thr_1", hostId: "old" })).toEqual([expect.objectContaining({ name: "LANE_PILOT_ROLE", value: "writer" }), expect.objectContaining({ name: "LANE_PILOT_CHATS", value: "thr_1" })]);
     expect(warns.join("\n")).toContain("does not know prepareBbShim");
   });
 
@@ -126,17 +126,34 @@ describe("which providers get the wrappers", () => {
     const { registered } = mounted(mountBbShim);
     expect([...registered.keys()].sort()).toEqual([...BB_SHIM_PROVIDER_IDS].sort());
     expect(BB_SHIM_PROVIDER_IDS).toEqual(expect.arrayContaining(["codex", "opencode2", "acp-cursor", "devin"]));
-    expect(await registered.get("codex")!({ threadId: "thr_1", hostId: "ovh" })).toEqual([expect.objectContaining({ name: "LANE_PILOT_ROLE", value: "writer" }), expect.objectContaining({ name: "PATH", value: SHIM.path })]);
+    expect(await registered.get("codex")!({ threadId: "thr_1", hostId: "ovh" })).toEqual([expect.objectContaining({ name: "LANE_PILOT_ROLE", value: "writer" }), expect.objectContaining({ name: "PATH", value: SHIM.path }), expect.objectContaining({ name: "LANE_PILOT_CHATS", value: "thr_1" })]);
   });
 
   it("a Claude Code thread Lane Pilot started gets the lane marker alone, no PATH shim; the PM and the owner's chats get nothing", async () => {
     const marker = (role: string | null) => createRoleMarkerEnv({ bb: { sdk: { threads: { getPluginMetadata: async () => (role ? { role } : {}) } } } } as never);
     const critic = await marker("code-critic")({ threadId: "thr_2", hostId: "mini" });
-    expect(critic.map((entry) => entry.name)).toEqual(["LANE_PILOT_ROLE", "CLAUDE_CODE_DISABLE_CRON", "CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS", "CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS"]);
+    expect(critic.map((entry) => entry.name)).toEqual(["LANE_PILOT_ROLE", "CLAUDE_CODE_DISABLE_CRON", "CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS", "CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS", "LANE_PILOT_CHATS"]);
     expect(critic[0]).toMatchObject({ value: "code-critic" });
     // The roles that may commit keep Claude Code's commit protocol text.
     expect((await marker("writer")({ threadId: "thr_2", hostId: "mini" })).map((entry) => entry.name)).not.toContain("CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS");
     expect(await marker("pm")({ threadId: "thr_3", hostId: "mini" })).toEqual([]);
     expect(await marker(null)({ threadId: "thr_4", hostId: "mini" })).toEqual([]);
+  });
+});
+
+// docs/task-folder.md: the spawn names the writer's own home in its metadata (laneTaskDir); both resolvers pass it as LANE_TASK_DIR, and the
+// chats a helper may write as LANE_PILOT_CHATS. Mutation that breaks it: a resolver dropping the entry, or passing a dir outside .agents/tasks/<id>.
+describe("the task dir and chat folders a Lane Pilot thread is given", () => {
+  const meta = { role: "writer", parentPmThreadId: "thr_pm", laneTaskDir: "/wt/a/.agents/tasks/t-1" };
+  it("[sma:wi_grant] both resolvers pass LANE_TASK_DIR and LANE_PILOT_CHATS from the thread's metadata, and refuse a dir that is no task home", async () => {
+    const marker = createRoleMarkerEnv({ bb: { sdk: { threads: { getPluginMetadata: async () => meta } } } } as never);
+    const claude = await marker({ threadId: "thr_w", hostId: "mini" });
+    expect(claude).toEqual(expect.arrayContaining([expect.objectContaining({ name: "LANE_TASK_DIR", value: "/wt/a/.agents/tasks/t-1" }), expect.objectContaining({ name: "LANE_PILOT_CHATS", value: "thr_w,thr_pm" })]));
+    const shim = createBbShimEnv({ bb: { log: { warn: () => undefined }, sdk: { threads: { getPluginMetadata: async () => meta } } }, host: { call: async () => SHIM } } as never);
+    expect(await shim({ threadId: "thr_w", hostId: "ovh" }, "codex")).toEqual(expect.arrayContaining([expect.objectContaining({ name: "LANE_TASK_DIR", value: "/wt/a/.agents/tasks/t-1" })]));
+    for (const bad of ["/wt/a/.agents/plans/items/t-1", "/wt/a/.agents/tasks/../x", "relative/.agents/tasks/t-1"]) {
+      const env = await createRoleMarkerEnv({ bb: { sdk: { threads: { getPluginMetadata: async () => ({ ...meta, laneTaskDir: bad }) } } } } as never)({ threadId: "thr_w", hostId: "mini" });
+      expect(env.map((entry) => entry.name), bad).not.toContain("LANE_TASK_DIR");
+    }
   });
 });

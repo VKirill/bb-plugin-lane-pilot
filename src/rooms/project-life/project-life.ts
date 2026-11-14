@@ -75,6 +75,8 @@ export function projectLifePrompt(input: {
   workspace: string;
   runId: string;
   artifactDirs: string[];
+  /** Each accepted task's own folder, repository-relative: `.agents/tasks/<id>/` (docs/task-folder.md) or, for a task on the old layout, `.agents/plans/items/<id>/`. */
+  taskFolders?: string[];
   tasks: ProjectLifeTaskSummary[];
   nowIso: string;
   /** The planning home of the project (project.planning_home), already checked; absent: plans and todos are in the checkout, as always. */
@@ -90,7 +92,7 @@ export function projectLifePrompt(input: {
         "1. .agents/PROGRESS.md (create it if missing): at most 40 lines, sections Now/Blocked/Next/Last verify/Pointers. It is a snapshot of the whole project, not of this run. Now lists 3-5 bullets of what the product can do today, by capability (read the code and README for it), not a list of recent tasks; documentation-only work is one short bullet at most.",
         "   Start from the current file and keep every line that is still true; change only what this work changed, and drop a line only when it is closed or no longer true. Pointers is rebuilt from the files every time: open todos from .agents/todos/INDEX.md (id and title), active plans from .agents/plans/, and .agents/CHANGELOG.md. Keep the <!-- auto:session-ledger --> block untouched.",
         `2. Append exactly one line to .agents/CHANGELOG.md (create it with a "# Changelog" heading if missing; never edit older lines): - ${input.nowIso.slice(0, 10)} ${input.runId}: <what changed, one sentence> (<task ids>; commit: see git log)`,
-        "3. Tick the matching tasks in .agents/plans/items/*/PLAN.md and refresh .agents/plans/ROADMAP.md, only if those already exist.",
+        "3. Read the accepted tasks' own folders named in the inputs (Task folders: OUTCOME.md, lessons.md) and refresh .agents/plans/ROADMAP.md, only if it already exists. Never write inside .agents/tasks/ (Lane Pilot keeps those). For a listed older folder .agents/plans/items/<id>/, tick that task's PLAN.md there, only if it exists. Open no other task's folder.",
         "4. Add this run id to related_runs of an .agents/todos meta.yaml item only when this work clearly implements it, and refresh .agents/todos/INDEX.md statuses.",
       ].join("\n") + (home ? `\n5. The plan and todo files live in ${home}/.agents, which is its own git repository: commit what you changed there with git -C ${home} (add only those paths), apart from the commit in the workspace. The final JSON line below reports the workspace commit and files only (commit null, files [] when you changed nothing in the workspace).` : "")),
     ],
@@ -99,6 +101,7 @@ export function projectLifePrompt(input: {
       `Workspace: ${input.workspace}`,
       `Lane Pilot run: ${input.runId}`,
       `Run artifact dirs (writer reports for the accepted tasks): ${input.artifactDirs.join(", ") || "none"}`,
+      `Task folders: ${input.taskFolders?.join(", ") || "none"}`,
       `Current UTC time: ${input.nowIso}`,
       at("Planning notes live in .agents/plans/ and .agents/todos/; read the ones that mention this Lane Pilot run id or the task ids below. When the project-life skill is among your skills, its references/memory.md, plans.md and todos.md describe the formats."),
     ].join("\n"),

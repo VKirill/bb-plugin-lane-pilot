@@ -5,7 +5,7 @@ import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../contracts/quality-mode";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification";
 import { hasTaskHome, TASK_HOME_EXCLUDE } from "../../storage";
-import { recordTaskHomeFile, stagePlanText } from "./task-home";
+import { recordPlanCritique, recordTaskHomeFile, stagePlanText } from "./task-home";
 import { pmReadBrief } from "../writer-brief";
 import type { NodeExecutor, RunSummary, StepContext, WorkflowEngine } from "../../workflow";
 import { provideLpTaskPipeline } from "../../workflow/server";
@@ -138,6 +138,9 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
     const plan = await stagePlanText(r.ctx, r.taskId, "plan-critique", r.plan);
     const critique = await runPlanCritique({ stageHelperSettings: r.services.stageHelperSettings, bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId,
       config: r.runConfig, task: r.task, plan, pmReadContext: text(ctx.input.with.pmReadContext) || undefined, workflow: stepRef(ctx) });
+    // The verdict as critique/plan.r<K>.json in the task home (docs/task-folder.md); a failed record never changes the verdict.
+    await recordPlanCritique(r.ctx, { taskId: r.taskId, runId: r.runId, allowed: critique.allowed, reason: critique.reason, wfStepKey: ctx.stepKey })
+      .catch((cause: unknown) => r.ctx.bb.log.warn(`Lane Pilot: the plan critique of ${r.taskId} was not recorded in its home: ${cause instanceof Error ? cause.message : String(cause)}`));
     return { allowed: critique.allowed, ...(critique.reason !== undefined ? { reason: critique.reason } : {}), handoff: handoffOf("plan-critique", critique.allowed ? "allowed" : "blocked", critique.reason) };
   }, {}, "plan-critique");
 

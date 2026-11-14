@@ -89,7 +89,7 @@ export function createBbShimEnv(ctx: Pick<ServerCore, "bb" | "host"> & { db?: Se
     // the role starts in a shared trimmed home of its profile instead of the owner's own ~/.codex.
     const lean = !strict && codex && codexLeanEnabled(role, leanRolesSetting(metadata), process.env.LANE_PILOT_CODEX_LEAN_HOME) ? await leanHome(role, context.hostId) : null;
     const home = strict ?? lean;
-    const extra = [...(home ? [{ name: "CODEX_HOME", value: home, reason: strict ? "Lane Pilot strict worker: a fresh codex home for this task (worker.strict_user on)" : "Lane Pilot: a trimmed codex home for this role (no app, browser, plugin or subagent tools)" }] : []), ...taskDirEnv(metadata)];
+    const extra = [...(home ? [{ name: "CODEX_HOME", value: home, reason: strict ? "Lane Pilot strict worker: a fresh codex home for this task (worker.strict_user on)" : "Lane Pilot: a trimmed codex home for this role (no app, browser, plugin or subagent tools)" }] : []), ...taskDirEnv(metadata), ...chatFoldersEnv(context.threadId, metadata)];
     if (!shim) return [mark, ...extra];
     return [mark, { name: "PATH", value: shim.path, reason: `Lane Pilot: ${role} thread runs bb, ssh, scp and sftp through the guard wrappers in ${shim.dir}`.slice(0, 500) }, ...extra];
   };
@@ -143,7 +143,7 @@ export function createRoleMarkerEnv(ctx: Pick<ServerCore, "bb">) {
     try { metadata = context.experimental_vkPluginMetadata !== undefined ? context.experimental_vkPluginMetadata : await within(CALL_MS, "getPluginMetadata", Promise.resolve(bb.sdk.threads.getPluginMetadata({ threadId: context.threadId }))); } catch { return []; }
     const role = stringAt(metadata, "role");
     if (!role || role === "pm") return [];
-    return [{ name: "LANE_PILOT_ROLE", value: role, reason: `Lane Pilot: ${role} thread; lane plugins and hooks on the machine act only where this is set`.slice(0, 500) }, ...claudeTrimEnv(role), ...taskDirEnv(metadata)];
+    return [{ name: "LANE_PILOT_ROLE", value: role, reason: `Lane Pilot: ${role} thread; lane plugins and hooks on the machine act only where this is set`.slice(0, 500) }, ...claudeTrimEnv(role), ...taskDirEnv(metadata), ...chatFoldersEnv(context.threadId, metadata)];
   };
 }
 
@@ -151,6 +151,12 @@ export function createRoleMarkerEnv(ctx: Pick<ServerCore, "bb">) {
  * `LANE_TASK_DIR`: the writer's own task home in its worktree, as the spawn put it in the thread's metadata (`laneTaskDir`). The guard hook reads
  * REFLEXES.md and FILECARDS.md only there (docs/task-folder.md); a value that is not `<abs>/.agents/tasks/<id>` is not passed on.
  */
+export function chatFoldersEnv(threadId: string | null, metadata: unknown): ExperimentalPluginProviderEnvEntry[] {
+  // The helper write guard allows only these chats' .bb/chats/<id>/: the thread's own and the PM chat it works for (audit d8).
+  const ids = [...new Set([threadId, stringAt(metadata, "parentPmThreadId")].filter((id): id is string => typeof id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(id)))];
+  return ids.length ? [{ name: "LANE_PILOT_CHATS", value: ids.join(","), reason: "Lane Pilot: the chat folders this thread may write (its own and its PM chat's)" }] : [];
+}
+
 export function taskDirEnv(metadata: unknown): ExperimentalPluginProviderEnvEntry[] {
   const dir = stringAt(metadata, "laneTaskDir");
   if (!dir || !/^\/(?:[^\0]*\/)?\.agents\/tasks\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(dir) || dir.split("/").includes("..")) return [];

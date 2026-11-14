@@ -219,7 +219,7 @@ def _lane_pilot_edit_tail(path: str) -> str:
     name = normalized.rsplit("/", 1)[-1]
     if name in {"PROGRESS.md", "CHANGELOG.md"}:
         return ("Lane Pilot keeps PROGRESS.md and CHANGELOG.md; the PM records decisions in .agents/decisions/ "
-                "and plans in .agents/plans/.")
+                "and plans in .agents/plans/; a task's plan goes to lane_pilot_dispatch_writer as text and Lane Pilot keeps it in .agents/tasks/<id>/.")
     if name == "LESSONS.md":
         return "Lessons are rules on the hub now: call lane_pilot_memory with action lesson (runId, rule, audience pm, writer or both)."
     if name == "DESIGN.md":
@@ -1544,8 +1544,15 @@ def is_helper_role(key: str | None) -> bool:
     return False
 
 
+def _helper_chat_folders() -> list[str]:
+    """The chat folders a helper owns: its own thread's and the PM chat it works for (LANE_PILOT_CHATS, set by Lane Pilot's env resolver from
+    the thread's id and metadata), else the BB thread's own (BB_THREAD_ID). None known: no chat folder, never «any .bb/chats/» (audit d8)."""
+    raw = os.environ.get("LANE_PILOT_CHATS") or os.environ.get("BB_THREAD_ID") or ""
+    return [f".bb/chats/{part}/" for part in raw.split(",") if re.fullmatch(r"[A-Za-z0-9_-]{1,128}", part)]
+
+
 def _helper_edit_allowed(path: str, cwd: object, role: str) -> bool:
-    """Helper write permissions: /tmp, its own .bb/chats/<thread>/, and (.agents/ for specialists only)."""
+    """Helper write permissions: /tmp, its own .bb/chats/<thread>/ (and its PM chat's), and (.agents/ for specialists only)."""
     if not isinstance(cwd, str) or not cwd:
         return False
     root = Path(cwd).resolve()
@@ -1560,7 +1567,7 @@ def _helper_edit_allowed(path: str, cwd: object, role: str) -> bool:
     relative = target.relative_to(root)
     normalized = relative.as_posix()
     if normalized.startswith(".bb/chats/") and "/history/" not in normalized and not normalized.endswith("/thread.json"):
-        return True
+        return any(normalized.startswith(folder) for folder in _helper_chat_folders())
     is_specialist = role == "specialist" or role.startswith("specialist:") or role in {"design-lead", "copy-lead", "seo-specialist", "tavily"}
     if is_specialist:
         if normalized == ".agents" or normalized.startswith(".agents/"):

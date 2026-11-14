@@ -262,7 +262,12 @@ describe("the planning home is one resolver for every reader and writer of .agen
     expect(lifeMoved).toContain("/plans/g5/.agents/plans/**");
     expect(lifeMoved).toContain("/plans/g5/.agents/todos/INDEX.md");
     expect(lifeMoved).toContain("git -C /plans/g5");
-    expect(lifeMoved).toContain(".agents/plans/items/*/PLAN.md");
+    // The task folders are never part of the planning home, and the prompt names each by id, never by a mask (docs/task-folder.md).
+    expect(lifeMoved).toContain("older folder .agents/plans/items/<id>/");
+    expect(lifeMoved).not.toContain("items/*");
+    const named = projectLifePrompt({ ...lifeInput, planningHome: home, taskFolders: [".agents/tasks/t-1/", ".agents/plans/items/t-0/"] });
+    expect(named).toContain("Task folders: .agents/tasks/t-1/, .agents/plans/items/t-0/");
+    expect(named).not.toContain(`${home}/.agents/tasks`);
   });
 
   it("[sma:d_project_planning] the PM's board names the home (reads there; its editor writes only in the checkout) once the host confirmed it, and says nothing when none is set", async () => {

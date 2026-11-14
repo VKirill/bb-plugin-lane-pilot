@@ -218,7 +218,8 @@ describe("production spawn_unknown reconciliation", () => {
           list:async () => [{ id:"codex", available:true, capabilities:{ supportsServiceTier:false }, serviceTiers:[] }] as never,
           models:async () => ({ models:[{ id:"codex-test", model:"codex-test", supportedReasoningEfforts:["medium", "high", "xhigh"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })) }] as never }),
         },
-        files:{ read:async ({path})=>path.endsWith("README.md")?{content:"reconciliation task fixture\n"}:{content:null} },
+        // The dispatch writes the task's home (docs/task-folder.md); a host that cannot write it refuses the dispatch.
+        files:{ read:async ({path})=>path.endsWith("README.md")?{content:"reconciliation task fixture\n"}:{content:null}, write:async () => ({ ok:true }) as never },
       },
       experimental_callHostRpc: (call) => {
         if(call.method==="gitOwnershipBase") return {hostId:"host-test",status:"not-git",branch:null,headSha:null,baseRef:null,baseSha:null,compareCommitted:false,reason:"synthetic fixture is not a git worktree"};

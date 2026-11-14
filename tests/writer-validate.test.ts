@@ -592,14 +592,19 @@ describe("BB writer validation on the server path", () => {
     )));
     expect(result.state).toBe("accepted");
 
-    // The files are written in the attempt's own worktree, and reach the run folder with its merge.
-    const artifactDir = ".agents/runs/run-accepted/artifacts/accepted-task";
-    const acceptancePath = [...written.keys()].find((path) => path.endsWith(`/${artifactDir}/acceptance.json`)) ?? "";
-    expect(acceptancePath).toMatch(/^\/tmp\/lane-pilot-test-worktrees\//);
+    // docs/task-folder.md (SMA ap_run_dir): the receipts are written once, into the task's home in the base checkout, never into the attempt's
+    // worktree that the merge removes. Mutation that breaks it: writing them in the worktree or the run's artifacts again.
+    const homeDir = `${config.writerWorkspacePath}/.agents/tasks/accepted-task`;
+    const acceptancePath = `${homeDir}/acceptance.json`;
+    expect(written.has(acceptancePath)).toBe(true);
     const acceptance = JSON.parse(written.get(acceptancePath) ?? "null") as unknown;
     expect(validateAcceptanceV2(acceptance)).toEqual({ ok:true });
-    expect(written.has(acceptancePath.replace("acceptance.json", "lane-pilot-receipt.json"))).toBe(true);
-    expect([...written.keys()].some((path) => path.endsWith("/acceptance.json") && !path.includes(artifactDir))).toBe(false);
+    expect(written.has(`${homeDir}/receipt.json`)).toBe(true);
+    expect([...written.keys()].filter((path) => path.endsWith("/acceptance.json"))).toEqual([acceptancePath]);
+    expect([...written.keys()].some((path) => path.includes("/.agents/runs/run-accepted/artifacts/accepted-task/"))).toBe(false);
+    // The manifest lists them, from the database.
+    const manifest = JSON.parse(written.get(`${homeDir}/manifest.json`) ?? "{}") as { files?: Array<{ path:string; kind:string }> };
+    expect(manifest.files?.filter((file) => file.kind === "acceptance" || file.kind === "receipt").map((file) => file.path).sort()).toEqual(["acceptance.json", "receipt.json"]);
 
     // A second task in the same run must not replace the first task's receipt in the PM's answer.
     await harness.behavior.callAgentTool(
