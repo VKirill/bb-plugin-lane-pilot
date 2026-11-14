@@ -121,7 +121,7 @@ describe("parity d10-rest-2", () => {
     expect(explainCatalog(verbs, docs)).toEqual(["flow", "memory", "memory-eval"]);
   });
 
-  it("[sma:k_lib_curriculum + k_v_curriculum] seeded rows: every source is limited to the window and the row bound, the brief is at most ten lines, the weekly job is on by default (off opts out) and writes the kv key", async () => {
+  it("[sma:k_lib_curriculum] [sma:k_v_curriculum] seeded rows: every source is limited to the window and the row bound, the brief is at most ten lines, the weekly job is on by default (off opts out) and writes the kv key", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
     const now = Date.now();

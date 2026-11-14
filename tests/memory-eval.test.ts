@@ -117,7 +117,7 @@ describe("scoring", () => {
       paths: { owns_paths: [], read_first: [] }, produced: [], gold: item.gold ?? [], area: item.area ?? [] }, ids: item.ids, ms: 1 }));
   const kindOf = (id: string) => id.startsWith("core") ? "core" as const : "note" as const;
 
-  it("counts hits, precision, recall within k, nearby notes and false hits apart from core", () => {
+  it("[sma:k_lib_memeval] counts hits, precision, recall within k, nearby notes and false hits apart from core", () => {
     const result = score({ id: "x", production: true, group: "writer", k: 3 }, rows([
       { kind: "positive", gold: ["g1", "g2"], area: ["n1"], ids: ["g1", "n1", "z", "g2"] },
       { kind: "positive", gold: ["g3"], ids: ["z"] },
