@@ -2,7 +2,7 @@
 // One line per node, sorted by node number; a batch agent edits only its nodes' lines. The lines below are the
 // framework's worked examples (2026-11-14): each mutation was killed by a real `npm run sma:mutate` run
 // (attest/r01.json) and each trace was run on the hub snapshot of the same day.
-import { distort, drill, entry, flip, gate, isSet, outside, receipt, type RegionEvidence, rows, settingRow, transition, via, voidIsHave, wrongTarget } from "./types";
+import { distort, drill, entry, flip, gate, isSet, outside, part, receipt, type RegionEvidence, rows, settingRow, transition, via, voidIsHave, wrongTarget } from "./types";
 
 const TASK_HOME = "src/rooms/writer/server/task-home.ts";
 
@@ -428,8 +428,58 @@ export default {
     trace: transition({ to: "blocked", reason: "depends_on" }),
   },
   n317: { voidReview: voidIsHave("состояние «заявлена» = попытка spawn_requested/running с живым циклом в activeWriterTasks; без живого цикла её забирает периодический проход (аренда = живой цикл)") },
+  n320: {
+    mutation: distort("src/rooms/contracts/state-machine.ts", 'state !== "accepted" && state !== "canceled");', 'state !== "accepted" && state !== "blocked");'),
+    trace: transition({ to: "validation_failed" }),
+  },
+  n321: {
+    mutation: distort("src/rooms/storage/cancel-code.ts", "COALESCE(cancel_code, ?)", "COALESCE(?, cancel_code)"),
+    trace: transition({ to: "canceled" }),
+  },
+  n322: {
+    mutation: distort("src/rooms/storage/tasks-store.ts", ".run(words, taskId).changes > 0);", ".run(words.toUpperCase(), taskId).changes > 0);"),
+    trace: drill("sma_r01"),
+  },
+  n323: {
+    mutation: distort("src/rooms/owner-waiting/items.ts", 'prefix === "approved" || prefix === "returned" || prefix === "stopped" ? prefix : "closed";', 'prefix === "approved" || prefix === "returned" ? prefix : "closed";'),
+    trace: rows("lane_pilot_owner_item", "closed_at", "kind='task_word'"),
+  },
+  n324: {
+    mutation: flip("src/rooms/lead/server/surfaces.ts", "decided.key === `${taskWordItemPrefix(runId, family)}${waitingAttemptId}`) return", "decided.key !== `${taskWordItemPrefix(runId, family)}${waitingAttemptId}`) return"),
+    trace: rows("lane_pilot_owner_item", "closed_at", "kind='task_word' AND state='closed'"),
+  },
+  n325: {
+    mutation: flip("src/rooms/stage-return/server/stage-return.ts", "if (!queued) return fail(", "if (queued) return fail("),
+    trace: rows("lane_pilot_stage_return", "at", "state='restarted'"),
+  },
+  n326: {
+    mutation: distort("src/rooms/tasks/rails.ts", 'if (kind === "docs") return "docs";', 'if (kind === "docs") return "write";'),
+    trace: drill("sma_r01"),
+  },
+  n327: {
+    mutation: distort("src/rooms/phase/server/driver-methods-control.ts", 'input.state === "resume" ? "active"', 'input.state === "resume" ? "paused"'),
+    trace: part({ kind: ["pause", "resume"] }),
+  },
+  n328: {
+    mutation: flip("src/rooms/tasks/rails.ts", "now - row.updatedAt >= graceMs);", "now - row.updatedAt > graceMs);"),
+    trace: drill("sma_r01"),
+  },
   n329: {
     mutation: flip("src/rooms/tasks/rails.ts", "|| a.queuedAt - b.queuedAt);", "|| b.queuedAt - a.queuedAt);"),
     trace: transition({ from: "queued", to: "spawn_requested" }),
+  },
+  n330: {
+    mutation: flip("src/rooms/writer/server/dispatch.ts", "if (!row || Date.now() - row.created_at > DISPATCH_IDEMPOTENT_WINDOW_MS) return null;", "if (!row || Date.now() - row.created_at < DISPATCH_IDEMPOTENT_WINDOW_MS) return null;"),
+    reach: entry("a PM sends the same task contract and plan again while the first is open"),
+    trace: drill("sma_r01"),
+  },
+  n331: {
+    mutation: distort("src/rooms/storage/attempts-store/lifecycle.ts", '"queued", used + 1, now, now, HARNESS_VERSION);', '"queued", used + 2, now, now, HARNESS_VERSION);'),
+    reach: entry("a PM dispatches a task, or sends it again after an attempt ended"),
+    trace: rows("lane_pilot_attempt", "created_at", "attempt_no > 1"),
+  },
+  n332: {
+    mutation: flip("src/rooms/storage/attempts-store/transition.ts", "isLegalMove(before.state, state) ? 1 : 0;", "isLegalMove(before.state, state) ? 0 : 1;"),
+    trace: rows("lane_pilot_attempt_transition", "at", "refused=1"),
   },
 } satisfies RegionEvidence;
