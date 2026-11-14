@@ -90,6 +90,7 @@ Built by Lane Pilot from page frontmatter.
 | [Самопроверка SMA (20 вопросов), batch3](sma-self-check.md) | audit | — | — |
 | [Return a task to an earlier stage with added context](stage-return.md) | component | active | 2026-10-22 |
 | [Tasks board and work graph](task-board.md) | component | active | 2026-10-29 |
+| [The task folder (one home per task, lp.task-manifest/1)](task-folder.md) | component | active | 2026-11-14 |
 | [docs/telegram-send.md](telegram-send.md) | — | — | — |
 | [Twins against the real thing](twins.md) | component | active | 2026-10-23 |
 | [Writer validation decisions](validator-decisions.md) | decisions | active | 2026-10-20 |
