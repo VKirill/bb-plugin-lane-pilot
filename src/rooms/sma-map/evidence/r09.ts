@@ -75,7 +75,7 @@ export default {
   n815: { reach: seedEntry("the owner presses the door in the window") },
   n816: { reach: seedEntry("the owner presses the door in the window") },
   n817: { reach: seedEntry("the owner presses the door in the window") },
-  n818: { reach: seedEntry("the owner presses the door in the window") },
+  n818: { mutation: distort("telegram:server.ts", "if (owner) return { owner, code: null, link: null };", "if (owner) return { owner, code: pairCode(), link: null };"), reach: seedEntry("the owner presses the door in the window"), trace: drill("sma_r10") },
   n819: { reach: seedEntry("the owner presses the door in the window") },
   n820: { reach: seedEntry("the owner presses the door in the window") },
   n821: { reach: seedEntry("the owner presses the door in the window") },
