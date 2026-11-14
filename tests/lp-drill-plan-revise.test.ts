@@ -62,16 +62,58 @@ describe("the plan loop scenes are in the full set only", () => {
 });
 
 describe("the tasks the scenes dispatch", () => {
-  it("plan_revise: every expected output is owned, the check asks for both, the plan names a step for one only", () => {
-    const { out } = py(`out = m.plan_revise_task(ctx)`);
-    expect(out.expected_outputs).toHaveLength(2);
-    for (const path of out.expected_outputs) expect(out.owns_paths).toContain(path);
-    expect(out.risk).toBe("high");
-    const [first, second] = out.expected_outputs as string[];
-    expect(out.objective).toContain(first);
-    expect(out.objective).not.toContain(second);
-    expect(out.acceptance.join(" ")).toContain(second);
-    expect(out.verification[0].command).toContain(second);
+  it("plan_revise: the objective states the whole job, only the plan sent with --plan misses the second file", () => {
+    const { out } = py(`spec = m.plan_revise_task(ctx)\nout = {"spec": spec, "plan": m.plan_revise_plan(spec)}`);
+    const { spec, plan } = out as { spec: Record<string, any>; plan: string }; // guardian: allow (JSON out of the python body)
+    expect(spec.expected_outputs).toHaveLength(2);
+    for (const path of spec.expected_outputs) expect(spec.owns_paths).toContain(path);
+    expect(spec.risk).toBe("high");
+    const [first, second] = spec.expected_outputs as string[];
+    // The PM's fields ask for both files, each with its heading: nothing in them for the planner to send back to the PM.
+    for (const [path, heading] of [[first, "# alpha.md"], [second, "# beta.md"]]) {
+      expect(spec.objective).toContain(path);
+      expect(spec.objective).toContain(heading);
+      expect(spec.acceptance.join(" ")).toContain(path);
+      expect(spec.verification[0].command).toContain(path);
+    }
+    // The plan is the deficient one: a step for the first file only.
+    expect(plan).toContain(first);
+    expect(plan).not.toContain(second);
+    expect(plan).not.toBe(spec.objective);
+  });
+
+  it("plan_revise dispatches with its plan; the other two scenes dispatch without one", () => {
+    const { out } = py(`
+sent = []
+class Run(Ctx):
+    def dispatch(self, spec, plan=None): sent.append([spec["id"], plan]); return True
+    def wait_ended(self, ids): return [{"id": "a", "task_id": ids[0], "state": "accepted", "reason": "", "created_at": 1, "thread_id": None, "workspace_path": None}]
+m.plan_loop_evidence = lambda c, t: {"editions": [], "steps": [], "receipts": [{"state": "passed"}]}
+run_ctx = Run()
+for scene in (m.scenario_plan_revise, m.scenario_plan_revise_cap, m.scenario_plan_l):
+    scene(run_ctx)
+out = sent`);
+    const [revise, cap, l] = out as Array<[string, string | null]>;
+    expect(revise[0]).toContain("plan-revise");
+    expect(revise[1]).toContain("alpha.md");
+    expect(revise[1]).not.toContain("beta.md");
+    expect(cap[1]).toBeNull();
+    expect(l[1]).toBeNull();
+  });
+
+  it("ctx.dispatch passes the plan as --plan after the contract, and nothing without one", () => {
+    const { out } = py(`
+import lp_drill.context as context_module
+seen = []
+fake = lambda *args, **kw: (seen.append(list(args)) or (0, "{}", ""))
+m.bb = context_module.bb = fake
+c = m.Context.__new__(m.Context)
+c.project, c.pm, c.dispatches = "proj_x", "thr_pm", {}
+c.dispatch({"id": "t1"}, "1. Create a.md")
+c.dispatch({"id": "t2"})
+out = seen`);
+    expect(out[0]).toEqual(["lane-pilot", "dispatch-bb", "proj_x", "thr_pm", '{"id": "t1"}', "--plan", "1. Create a.md"]);
+    expect(out[1]).toEqual(["lane-pilot", "dispatch-bb", "proj_x", "thr_pm", '{"id": "t2"}']);
   });
 
   it("plan_revise_cap: the dispatch lint lets it through, the plan critique finds a structural error the planner may not fix", async () => {

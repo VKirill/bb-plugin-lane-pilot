@@ -6,7 +6,7 @@ import { settingOn, switchOn } from "@lane-pilot/models";
 import { recordSkillSwitchMetric } from "../skill-switch";
 import { createSkillMaterializer, recordedMaterializedSkills } from "./skill-materialize";
 import { recordedWriterSkills } from "./skill-pick";
-import { isNotFound, orMiss, outputText, redactKnown } from "@lane-pilot/kit";
+import { outputText, redactKnown } from "@lane-pilot/kit";
 import { scrubQuote } from "../../anamnesis";
 import { upsertLessonProposal } from "@lane-pilot/run-insights";
 import { writerMarkers } from "../../tasks";
@@ -104,7 +104,7 @@ export function mountWriterAttemptFinished(ctx: ServerCore, services: Services):
  * with the folder inside it, so after a merge the file survives only where the task worked in place. The reason is one
  * line of at most 200 characters through `scrubQuote` (the mask the anamnesis quotes use) after the known-secret mask.
  */
-export async function writeTaskOutcome(ctx: Pick<ServerCore, "bb" | "db" | "log">, event: AttemptFinished): Promise<void> {
+export async function writeTaskOutcome(ctx: Pick<ServerCore, "bb" | "db" | "log" | "host">, event: AttemptFinished): Promise<void> {
   const { bb, db } = ctx;
   if (event.scope !== "task" || event.status === "running" || !["accepted", "blocked", "canceled"].includes(event.status)) return;
   // A task with a home (docs/task-folder.md): OUTCOME.md and lessons.md always go into the home in the base checkout, which survives the merge
@@ -123,8 +123,10 @@ export async function writeTaskOutcome(ctx: Pick<ServerCore, "bb" | "db" | "log"
     const workspace = attempt?.workspace_path ?? null;
     const folder = taskFolderRel(event.taskId);
     if (!workspace || !folder) return;
-    const listed = await orMiss(bb.sdk.files.listPaths({ hostId: event.config.hostId, path: `${workspace}/${folder}`, includeFiles: true, includeDirectories: true, includeHidden: true, limit: 1 }), null, isNotFound);
-    if (!listed) return;
+    // listPaths returns an empty successful listing for both a missing root and an empty directory.
+    const folderPath = `${workspace}/${folder}`;
+    const snapshot = await ctx.host.call("snapshotDryRun", { requestedHostId: event.config.hostId, paths: [folderPath] }, { hostId: event.config.hostId });
+    if (!snapshot.entries.some((entry) => entry.path === folderPath && entry.kind === "directory")) return;
     const change = listAttemptChanges(db, event.taskId).find((row) => row.attemptId === event.attemptId) ?? listAttemptChanges(db, event.taskId).at(-1);
     const reason = event.reason ? scrubQuote(redactKnown(String(event.reason)), 200) : "";
     const markdown = [

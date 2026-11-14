@@ -47,12 +47,14 @@ describe("sma-map --states / --gaps / --hollow (sma-parity-tz.md §4)", () => {
 
   it("with --live it reads the hub's settings, node-level traces and the live signs from the database", () => {
     const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb) as never;
-    const json = JSON.parse(runSmaLiveCli(db, ["--live", "--states", "--json"]).stdout!);
+    // An empty root: this checkout's own drill receipts carry per-node proofs and would count as traces.
+    const bare = mkdtempSync(join(tmpdir(), "sma-bare-"));
+    const json = JSON.parse(runSmaLiveCli(db, ["--live", "--states", "--json"], Date.now(), bare, bare).stdout!);
     expect(json.live).toBe(true);
     expect(json.states.observed).toBe(0);
     expect(json.states.outcomeVerified).toBe(0);
     expect(json.states.groupObserved).toBe(0);
-    const hollow = JSON.parse(runSmaLiveCli(db, ["--live", "--hollow", "--json"]).stdout!);
+    const hollow = JSON.parse(runSmaLiveCli(db, ["--live", "--hollow", "--json"], Date.now(), bare, bare).stdout!);
     expect(hollow.live).toBe(true);
     expect(hollow.findings.some((finding: { sign: number }) => finding.sign === 2)).toBe(true);
   });

@@ -31,6 +31,12 @@ import { checkerMigrations } from "./checkers";
 import { memoryConflictMigrations } from "@lane-pilot/memory-core";
 import { spMigrations } from "./specialist";
 import { passportMigrations } from "./passport";
+/** The attempt ledger's append-only guards (SMA ar_ledger): a transition row is never rewritten or removed, an attempt row is never deleted. */
+export const ATTEMPT_LEDGER_TRIGGERS = [
+  `CREATE TRIGGER lane_pilot_attempt_transition_no_update BEFORE UPDATE ON lane_pilot_attempt_transition BEGIN SELECT RAISE(ABORT,'attempt transitions are append-only'); END`,
+  `CREATE TRIGGER lane_pilot_attempt_transition_no_delete BEFORE DELETE ON lane_pilot_attempt_transition BEGIN SELECT RAISE(ABORT,'attempt transitions are append-only'); END`,
+  `CREATE TRIGGER lane_pilot_attempt_no_delete BEFORE DELETE ON lane_pilot_attempt BEGIN SELECT RAISE(ABORT,'attempts are append-only'); END`,
+];
 export const migrations = [
   `CREATE TABLE lane_pilot_project_settings (
     project_id TEXT NOT NULL,
@@ -592,9 +598,7 @@ export const migrations = [
   `ALTER TABLE lane_pilot_memory_miss ADD COLUMN note_id TEXT`,
   // The attempt ledger (SMA ar_ledger): the attempt row is the current state; its transition log is the ledger —
   // appended, never rewritten or removed, like the stage and gate event journals. An attempt row is not deleted either.
-  `CREATE TRIGGER lane_pilot_attempt_transition_no_update BEFORE UPDATE ON lane_pilot_attempt_transition BEGIN SELECT RAISE(ABORT,'attempt transitions are append-only'); END`,
-  `CREATE TRIGGER lane_pilot_attempt_transition_no_delete BEFORE DELETE ON lane_pilot_attempt_transition BEGIN SELECT RAISE(ABORT,'attempt transitions are append-only'); END`,
-  `CREATE TRIGGER lane_pilot_attempt_no_delete BEFORE DELETE ON lane_pilot_attempt BEGIN SELECT RAISE(ABORT,'attempts are append-only'); END`,
+  ...ATTEMPT_LEDGER_TRIGGERS,
 
   // Task drafts the PM proposes before the owner says «да» (SMA m_sw_chat_draft, m_sw_batch_draft): the contract(s)
   // wait in `proposed`; the one enqueue path records a result per contract (results_json), the draft is `created` once every contract is, `partial` while some failed.

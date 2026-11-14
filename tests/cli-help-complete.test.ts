@@ -14,3 +14,13 @@ it("the help of an unknown command names every registered command", async () => 
     expect(help, name).toMatch(new RegExp(`^bb lane-pilot ${name}(\\s|$)`, "m"));
   }
 });
+
+it("dispatch-bb names its --plan flag in the help, and refuses the flag without a text", async () => {
+  const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+  registerCli(createCore(bb, openDatabase(bb)), {} as Services, migrations);
+  const help = (await harness.behavior.runCli(["--help"])).stderr ?? "";
+  expect(help).toMatch(/^bb lane-pilot dispatch-bb <project-id> <pm-thread-id> .*\[--plan "<plan text>"\]$/m);
+  const refused = await harness.behavior.runCli(["dispatch-bb", "p", "t", "--plan"]);
+  expect(refused.exitCode).toBe(1);
+  expect(refused.stderr).toContain("--plan");
+});

@@ -11,6 +11,7 @@ import { DRAFT_KEEP_MS, MAX_DRAFT_CONTRACTS, createFromDraft, getDraft, proposeD
 import { createAttempt, createRun, createTask, migrations, openDatabase, saveProjectSetting, savePrototypeConfig, setAttemptWorkspace, setRunThread, saveReasoningTrace } from "../../src/rooms/plugin-db";
 import { getAttemptChange, landingOf } from "../../src/rooms/rollback";
 import { writeTaskOutcome } from "../../src/rooms/writer/server/attempt-reactions";
+import { snapshotDryRun } from "../../src/rooms/host-worker/host-handlers";
 import { workGraphRpc } from "../../src/rooms/work-graph/server/rpc";
 import { registerCli } from "../../src/rooms/tools/server/cli";
 import { createCore } from "../../src/rooms/core/server/core";
@@ -121,7 +122,7 @@ describe("parity d10-rest-2", () => {
     expect(explainCatalog(verbs, docs)).toEqual(["flow", "memory", "memory-eval"]);
   });
 
-  it("[sma:k_lib_curriculum + k_v_curriculum] seeded rows: every source is limited to the window and the row bound, the brief is at most ten lines, the weekly job is on by default (off opts out) and writes the kv key", async () => {
+  it("[sma:k_lib_curriculum] [sma:k_v_curriculum] seeded rows: every source is limited to the window and the row bound, the brief is at most ten lines, the weekly job is on by default (off opts out) and writes the kv key", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
     const now = Date.now();
@@ -438,7 +439,6 @@ describe("parity d10-rest-2", () => {
     setAttemptWorkspace(db, "att-o", { path: workspace, environmentId: null, decision: {} });
     const writes: Array<{ path: string; createParents: boolean; content: string }> = [];
     const files = {
-      listPaths: async ({ path }: { path: string }) => { if (!existsSync(path)) throw Object.assign(new Error("no such folder"), { code: "not_found" }); return { paths: [] }; },
       write: async (args: { path: string; content: string; createParents?: boolean }) => {
         writes.push({ path: args.path, createParents: Boolean(args.createParents), content: args.content });
         if (args.createParents) mkdirSync(join(args.path, ".."), { recursive: true });
@@ -446,7 +446,8 @@ describe("parity d10-rest-2", () => {
         return { ok: true };
       },
     };
-    const ctx = { bb: { sdk: { files } }, db, log: () => undefined };
+    const ctx = { bb: { sdk: { files } }, db, log: () => undefined,
+      host: { call: async (_method: string, input: unknown) => snapshotDryRun(input as never, {} as never) } };
     const event = (reason: string, status = "accepted") => ({ scope: "task", status, taskId: "t-out", attemptId: "att-o", reason, config: { hostId: "h" } }) as never;
     return { ctx: ctx as never, workspace, writes, event };
   }

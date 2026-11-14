@@ -80,6 +80,7 @@ export const COVERAGE: readonly CoverageEntry[] = [
   { kind: "room", ids: ["stability"], live: ["reload"], via: "a plugin reload while a writer works: the task still ends accepted", tests: ["tests/reconcile.test.ts"] },
   { kind: "room", ids: ["settings"], live: ["provider_limit"], via: "the scenario sets writer.model through the settings RPC and puts it back", tests: ["tests/owned-settings.test.ts"] },
   { kind: "room", ids: ["errands"], reason: "the «Errands» page is a read model over the errand runs of the workflow journal; the errand graph itself is covered by the schedule room", tests: ["tests/errands/errands-logic.test.ts", "tests/errands/errands-ui.test.tsx"] },
+  { kind: "room", ids: ["guard-tools"], tests: ["tests/sma/four-proofs-r13-a.test.ts"], reason: "checks of development time and of the ship gate (leak scan, internal ids in texts, explained unshown fields, permission parity): no drill task reaches them; the region scene sma_r13 runs them outside the default set" },
   { kind: "room", ids: ["validators"], tests: ["tests/validators.test.ts"], reason: "shared validators are exercised through the rooms that call them; no drill step calls them alone" },
   { kind: "room", ids: ["project-life"], live: ["parallel3"], via: "the project-life stage runs after each accepted drill task", tests: ["tests/stages/project-life.test.ts"] },
   { kind: "room", ids: ["acceptance"], tests: ["tests/plan-fact.test.ts", "tests/acceptance-card-ui.test.tsx"], reason: "the acceptance card is a screen read; no drill opens a screen" },
@@ -133,7 +134,6 @@ export const COVERAGE: readonly CoverageEntry[] = [
   { kind: "room", ids: ["coverage"], tests: ["tests/coverage.test.ts"], reason: "this registry; its test is its check" },
   { kind: "room", ids: ["brief"], tests: ["tests/brief-standard.test.ts", "tests/writer-brief-v2.test.ts"], reason: "the shared brief renderer and its per-role budgets: a leaf module checked by unit tests, no drill step spawns an agent" },
   { kind: "room", ids: ["passport"], tests: ["tests/passport/passport-core-and-lenses.test.ts", "tests/passport/passport-workflow-e2e.test.ts"], reason: "the Living Project Passport (8 canonical sections, 48 claims, verbatim founder quotes, contradictions, market rails and role lenses): verified on real SQLite and temporary checkouts by unit and workflow E2E tests" },
-  { kind: "room", ids: ["guard-tools"], tests: ["tests/helpers/guard-tools.ts", "tests/guard-tools.test.ts", "tests/sma/four-proofs-r13-a.test.ts"], reason: "the guard tools (leak scanner, internal ids, explained unshown fields) run in tests and before publishing, not on the hub" },
   { kind: "room", ids: ["specialist"], tests: ["tests/specialist/sp-store-and-gates.test.ts", "tests/specialist/sp-dispatch-and-pdas.test.ts"], reason: "the Specialist OS autonomous runtime (intents, locks, breakers, Wilson autonomy, verified scripts, ActionOrder dispatch and PDAS artifact sync): verified on real SQLite and workflow engine harnesses in unit and E2E tests" },
 
   // ── key mechanisms ───────────────────────────────────────────────────────────────────────────────────────────────────────────────

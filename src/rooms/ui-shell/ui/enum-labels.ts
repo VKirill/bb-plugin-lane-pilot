@@ -10,6 +10,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "adoc.008": { in_place: "enumWorkspaceInPlace", worktree: "enumWorkspaceWorktree", auto: "enumWorkspaceAuto" },
   "ui.language": { en: "english", ru: "russian" },
   "plan_critique.mode": { advisory: "enumCritiqueAdvisory", gate: "enumCritiqueGate" },
+  "plan_critique.revise_by": { pm: "enumReviseByPm", planner: "enumReviseByPlanner" },
   "code_critique.mode": { advisory: "enumCritiqueAdvisory", gate: "enumCritiqueGate" },
   "quality_mode": { quick: "enumQualityQuick", standard: "enumQualityStandard", full: "enumQualityFull" },
   "writer.best_of": { off: "enumBestOfOff", "3": "enumBestOf3" },

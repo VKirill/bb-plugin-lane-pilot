@@ -78,10 +78,11 @@ export async function cliInspect(d: CliRunDeps): Promise<PluginCliResult | undef
       mineMessages: (from, to) => collectOwnerMessages(sdkThreadsPort(bb as never), from, to).then((rows) => rows.map((row) => ({ id: row.id, at: row.at, text: row.text }))),
       // ponytail: a conservative judge — an explicit yes/no to a named change is a decision, anything else is
       // chatter (ceiling: decisions in other wording are missed; upgrade path: a System One judgment per message).
+      // A word ends where no letter follows: \b is ASCII-only and never matched a Russian word.
       mineJudge: async (message) => {
         const text = message.text.toLowerCase();
-        const approve = /(^|\s)(да|давай|согласен|одобряю|делай|выкатывай|сливай|ok|yes|approved?)\b/u.test(text) && !/не |not |don't|нет/u.test(text);
-        const refuse = /(^|\s)(нет|не надо|не делай|отмена|отказываюсь|no|don'?t|refuse|отклоняю)\b/u.test(text);
+        const approve = /(^|\s)(да|давай|согласен|одобряю|делай|выкатывай|сливай|ok|yes|approved?)(?![\p{L}\p{N}_])/u.test(text) && !/не |not |don't|нет/u.test(text);
+        const refuse = /(^|\s)(нет|не надо|не делай|отмена|отказываюсь|no|don'?t|refuse|отклоняю)(?![\p{L}\p{N}_])/u.test(text);
         if (!approve && !refuse) return null;
         return { decision: approve ? "approve" : "refuse", descriptor: { kind: "other", attrs: {} }, expected: "owner_only", why: `the owner ${approve ? "approved" : "refused"} a change in a message` };
       },
