@@ -151,6 +151,106 @@ def scenario_sma_r13(tmp):                       # tmp: a scratch folder
 - Hollow (§4а): `npx tsx scripts/sma-hollow.ts [--check]` writes the static facts (`hollow-facts.json`); `--hollow --live`
   adds the live signs 2 and 6. On map nodes hollow must reach 0; off-map findings go to the owner's list.
 
+## Proofs in a sibling repository
+
+A node whose proof anchor is `core:<path>` (the BB core, vk layer) or `telegram:<path>` (the owner's plugin
+bb-plugin-telegram-projects) needs the same four proofs. Its test and its mutated code live in that repository; its evidence line,
+attestation and trace live here. Worked examples: n560 `m_ce_recover` (core, `evidence/r06.ts`) and n971 `m_tg_split` (telegram,
+`evidence/r10.ts`).
+
+**Where a sibling is** (`src/rooms/sma-map/siblings.ts`, the one place every tool asks): `SMA_SIBLING_CORE` /
+`SMA_SIBLING_TELEGRAM` first (`off` or a missing path makes the sibling absent and never falls through), then the proofs worktree
+`~/.lane-pilot/worktrees/<repo>/sma-proofs`, then the shared checkouts (`~/.local/share/bb-source-vk`, `~/BB-service/bb-core/vk`,
+`~/BB-service/bb-plugin-telegram-projects`). The tools only read the shared checkouts. If a sibling resolves nowhere, every tool
+says «sibling repository <repo> is not on this machine» for the nodes that need it: the node is not mutated (never a pass), and
+the command still runs. On the hub there are no sources: the committed facts and attestations are what it uses.
+`npm run sma:sibling -- status` prints where each sibling resolves, its HEAD and the pins.
+
+**Setup (once per batch):**
+
+```sh
+npm run sma:sibling -- setup core --id <batch>       # ~/.lane-pilot/worktrees/bb-core/<batch> on sma/core-proofs-<batch>
+export SMA_SIBLING_CORE=$HOME/.lane-pilot/worktrees/bb-core/<batch>
+npm run sma:sibling -- setup telegram --id <batch>   # …/bb-plugin-telegram-projects/<batch> on sma/proofs-<batch>
+export SMA_SIBLING_TELEGRAM=$HOME/.lane-pilot/worktrees/bb-plugin-telegram-projects/<batch>
+```
+
+The new branch is cut from `sma/core-proofs` / `sma/proofs` when it exists (so the proofs already written are there), else from
+`vk/experimental` / the plugin's HEAD. Dependencies come offline from the machine's store. Core: `pnpm install --frozen-lockfile
+--offline` (every workspace package gets its own `node_modules`), `scripts/ensure-native-modules.mjs`, and a turbo build of
+`@get-bb/plugin-sdk` (plugins resolve the SDK through its dist; turbo's cache makes it instant). Telegram: `npm ci --offline`.
+Measured on OVH under load: a fresh core worktree is ready in **13 s** (install 12 s), a fresh telegram one in **2.3 s**; re-running
+setup on an existing worktree only installs (core 4 s, telegram 2 s). Without the id, setup makes or refreshes the shared proofs
+worktree `sma-proofs`.
+
+**The test** goes into the sibling and is committed there, on the worktree's branch. The index reads sibling tests from git at a
+commit, so an uncommitted test is invisible.
+- core: beside the code, in the package that owns it, picked up by that package's `vitest.config.ts` (for example
+  `plugins/provider-retry/src/retry-policy.sma.test.ts`). It must pass with `pnpm exec vitest run <file>` from that package.
+- telegram: `test/<name>.test.ts`, node:test (`import { test } from "node:test"`, `node:assert/strict`). It must pass with
+  `npx tsx --test test/<name>.test.ts` from the root.
+- The title carries `[sma:<card id>]` and the test checks the card's result, as for a local node. Follow the sibling's own rules:
+  bb-core `AGENTS.md`/`VK_PATCHES.md` (the vk layer records its changes; a test-only commit adds no patch entry).
+
+**The evidence line** uses the prefixed path, nothing else changes:
+`n560: { mutation: flip("core:plugins/provider-retry/src/retry-policy.ts", "if (!isUnavailableFailure(failure))", "if (isUnavailableFailure(failure))") }`.
+A spec may not point at a sibling test file. With the sibling present, `lintMutation` checks that the text occurs exactly once
+there; without it, only the static checks run.
+
+**Index and run:**
+
+```sh
+node scripts/sma-contracts.mjs                       # picks up core:/telegram: tests at the sibling's HEAD
+npm run sma:mutate -- --node n560                    # mutates in $SMA_SIBLING_CORE, runs the sibling's runner there
+```
+
+The runner (`scripts/sma-mutate.mjs`, commands and report readers in `src/rooms/sma-map/mutation-run.ts`) runs vitest from the
+package that holds the test for the core, and `tsx --test --test-name-pattern` with the JUnit reporter from the root for telegram.
+Both filter to the `[sma:<id>]` title. The verdicts are the same as for a local node (an assertion kills; a TypeError, import error
+or timeout is `crash`). Restoring is the same: finally, signals, exit, and a journal that the next run restores after `kill -9`.
+Each sibling checkout has its own lock. **It refuses to write anywhere but a linked worktree under
+`~/.lane-pilot/worktrees/<repo>/`**: the shared checkouts (the core is built and deployed from `~/BB-service/bb-core/vk`), a
+repository's main checkout, a path with `..` and a symbolic link out of the worktree are all refused (`refuseMutation`). One
+mutation run, measured on OVH: core **1.6 s** for the mutated vitest run, 4.7 s for the whole command; telegram **0.8 s** and 3.1 s.
+The attestation records the sibling and its commit (`sibling`, `siblingCommit`) and the content hashes of the mutated file and the
+test files, which carry their prefix. In a source checkout a sibling attestation is judged against that sibling's files:
+`--stale` lists it when either file changed, and if the sibling is absent the node is not mutated.
+
+**`--check` and the hub.** `contracts.ts` records the sibling tests with the pin they were read at (`SMA_SIBLING_TESTS_AT`), and
+`provenance.json` records the sibling change points with `siblingsAt`. Generating moves a pin to the sibling's HEAD only when HEAD
+contains the old pin. `--check` re-reads at the pin, so the result does not depend on the branch the checkout has out. If the
+sibling is absent or lacks the pinned commit, its recorded lines are kept and a note says so: the files stay valid on the hub, and
+the deploy gate on OVH, where both siblings exist, re-reads them.
+
+**Change point.** For a sibling node it is the newest commit touching the anchor's span in the sibling (git blame at the pin: the
+declared unit, the block a text anchor opens, else the file's last commit). The hub cannot date when it started running that
+commit. `bb plugin list --json` gives each plugin's version (telegram-projects 0.5.2, disabled, while the repository is at 0.12.0),
+and the core's version is the runtime folder (`bb-server-runtime-0.48.1-vk.6`). Neither carries an install time, and
+`lane_pilot_attempt.harness_version` is this plugin's version, not theirs. So the rule is: a trace older than the sibling commit
+never counts, and a newer one does. `--states` prints «closed with an unknown sibling change point: N», so these closes stay a
+visible number.
+
+**Trace.** The effects live in `bb.db` (core) or in the Telegram plugin's `data.db`, and this plugin reads neither (no
+cross-database SQL). The route is a `prove()` line in the region scene, `trace: drill("sma_rNN")`, that sees the behaviour through
+the `bb` CLI or a plugin RPC against the hub's sandbox project (`LP sandbox OVH (drill)`). When the hub is unreachable the scene
+does not call `prove()` for that node and lists it under `notProved` (the pattern of `sma_r15.py`: `not_proved[node] = "needs the
+hub: …"`, `proofs.verdict(name, notProved=not_proved)`). There is no second trace constructor (thread/event reads through the plugin
+host's SDK) yet: one needs a read that carries a time and a negative test, and was not built in this round. A telegram node can only be traced while `telegram-projects` is enabled on the hub
+at a version that has the change: `--gaps` says so. The two worked examples leave the trace open: n560 would need a turn cut off
+by a dropped stream, and n971 needs the plugin enabled.
+
+**`--gaps` / `--hollow`** list a sibling node like any other. Under it: the repository, the anchor and its size (or that the
+sibling is absent), the `[sma:]` tests already there, whether the hub must enable a plugin, and the next command. Region 10's proof links were written as
+body text while the Telegram plugin was on no machine; wherever it is checked out, `--check-proofs` calls them broken (a module
+anchor must name a declared unit). The batch that takes such a node points its entry at the unit that implements the card (n971:
+`telegram:chat.ts#splitText`) and removes it from the ratchet `TELEGRAM_TEXT_ANCHORS` in `tests/sma-map.test.ts`.
+
+**What is committed where.** The sibling commit is the test only, on `sma/core-proofs[-<batch>]` (bb-core, cut from
+`vk/experimental`) or `sma/proofs[-<batch>]` (telegram). Do not push, do not touch the shared checkout, do not deploy the core.
+Here: the evidence line, `attest/rNN.json`, and the regenerated `contracts.ts`/`provenance.json`. A batch branch of the sibling is
+merged into `sma/core-proofs` / `sma/proofs` before this repository's branch lands, so the pins stay reachable from the proofs
+worktree that the deploy gate reads.
+
 ## Regenerate before a deploy
 
 `npm run sma:facts` (hollow facts, provenance, contracts) and `npm run sma:facts:check` to verify; `npm run sma:mutate -- --stale`

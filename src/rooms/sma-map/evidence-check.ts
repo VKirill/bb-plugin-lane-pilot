@@ -3,7 +3,7 @@
 // its mutation spec lints, its trace sources are well formed and its reviews say why.
 import type { SmaEntry } from "./entries";
 import type { NodeEvidence, NeedValue, RegionEvidence } from "./evidence/types";
-import type { Attestation } from "./mutation";
+import type { Attestation, MutationRoots } from "./mutation";
 import { lintMutation } from "./mutation";
 import { knownSettingKey } from "./settings-registry";
 import type { TraceSource } from "./traces";
@@ -52,6 +52,8 @@ export type CheckInput = {
   attest?: Readonly<Record<string, Attestation>>;
   /** A source checkout: mutation specs must find their text exactly once. */
   root?: string;
+  /** The sibling checkouts present here (siblings.ts): a `core:`/`telegram:` spec is checked there, else statically only. */
+  siblings?: MutationRoots;
 };
 
 /** Every problem of the registry, one line each ([] when it is clean). */
@@ -81,7 +83,7 @@ export function evidenceProblems(input: CheckInput): string[] {
           if (!text(why)) problems.push(`${at}: notGatedBy ${key} says no reason`);
         }
       }
-      if (mutation) for (const problem of lintMutation(mutation, input.root)) problems.push(`${at}: mutation: ${problem}`);
+      if (mutation) for (const problem of lintMutation(mutation, input.root, input.siblings)) problems.push(`${at}: mutation: ${problem}`);
       for (const source of trace === undefined ? [] : Array.isArray(trace) ? trace : [trace as TraceSource]) {
         const bad = traceProblem(source);
         if (bad) problems.push(`${at}: trace: ${bad}`);

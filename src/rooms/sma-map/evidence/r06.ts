@@ -33,5 +33,8 @@ export default {
   n555: { mutation: distort(TOOLS, "?? 0) + 1;", "?? 0) + 2;"), trace: drill("sma_r06") },
   n556: { mutation: distort(TOOLS, 'states: ["accepted","blocked","canceled"], limit: 15', 'states: ["accepted","canceled"], limit: 15'), trace: drill("sma_r06") },
   n558: { mutation: distort("src/rooms/phase/logic/signatures.ts", "canonical({ contextSha, items })", "canonical({ items })"), trace: drill("sma_r06") },
+  // The worked example of a proof in the core (docs/sma-evidence.md «Proofs in a sibling repository»): the [sma:m_ce_recover] test is in
+  // bb-core on sma/core-proofs; its trace stays open (the hub would have to see a turn cut off by a dropped stream and retried).
+  n560: { mutation: flip("core:plugins/provider-retry/src/retry-policy.ts", "if (!isUnavailableFailure(failure))", "if (isUnavailableFailure(failure))") },
   n593: { trace: wfRun("lp.brainstorm") },
 } satisfies RegionEvidence;

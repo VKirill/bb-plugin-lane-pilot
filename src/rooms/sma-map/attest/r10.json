@@ -1,2 +1,3 @@
 {
+"n971": {"spec":"4f0863eb3a17","kind":"distorted-field","file":"6838c095549a","tests":{"telegram:test/sma-split.test.ts":"872a68667833"},"commit":"69c2469ff3c4+dirty","result":"killed","at":"2026-11-14T09:20:56.723Z","detail":"[sma:m_tg_split] a long answer goes out as the same words in as few messages as the limit allows, cut at line ends: AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:","sibling":"telegram","siblingCommit":"923e5db6f8df"}
 }

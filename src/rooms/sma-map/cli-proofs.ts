@@ -15,6 +15,8 @@ import { SMA_PROVENANCE, versionSeen } from "./provenance";
 import { defaultSettings, hubSettings, type HubSettings } from "./settings-registry";
 import { gapList, nodeStates, stateReport, type NodeState } from "./states";
 import { readDrills, type TraceContext } from "./traces";
+import { siblingAnchor, type SiblingAnchor } from "./sibling-gaps";
+import { absentSibling, SIBLING_NAMES, SIBLINGS } from "./siblings";
 
 type Result = { exitCode: number; stdout?: string; stderr?: string };
 type Db = { prepare(sql: string): { get(...args: unknown[]): unknown; all(...args: unknown[]): unknown[] } };
@@ -23,7 +25,7 @@ const flag = (argv: readonly string[], name: string) => { const at = argv.indexO
 export const PROOF_FLAGS = ["--states", "--gaps", "--hollow"] as const;
 export const wantsProofs = (argv: readonly string[]) => PROOF_FLAGS.some((name) => argv.includes(name));
 
-export type ProofRun = { rows: SmaRow[]; states: NodeState[]; findings: HollowFinding[]; facts: HollowFacts; factsFresh: boolean; hub: HubSettings | null; days: number; live: boolean; drills: number | null; drillDir: string; span?: DataSpan };
+export type ProofRun = { rows: SmaRow[]; states: NodeState[]; findings: HollowFinding[]; facts: HollowFacts; factsFresh: boolean; hub: HubSettings | null; days: number; live: boolean; drills: number | null; drillDir: string; span?: DataSpan; roots: ProofRoots };
 
 /** Everything the three reports need, computed once. */
 export function proofRun(argv: readonly string[], roots: ProofRoots, db: Db | null, cwd: string, now = Date.now(), pluginRoot?: string): ProofRun {
@@ -42,12 +44,13 @@ export function proofRun(argv: readonly string[], roots: ProofRoots, db: Db | nu
   const liveGroups = db ? new Set(readSmaLive(db, smaGroups(SMA_NODES as never, SMA_REGIONS), since).filter((row) => (row.n ?? 0) > 0).map((row) => row.key)) : null;
   const states = nodeStates({
     rows, root, settings: hub?.global ?? defaultSettings(), ...(hub ? { hub } : {}), settingReads: facts.settingReads, ...(db ? { seen: versionSeen(db) } : {}),
+    siblings: { ...(roots.core ? { core: roots.core } : {}), ...(roots.telegram ? { telegram: roots.telegram } : {}) },
     ...(traceCtx ? { traceCtx, since } : {}), ...(liveGroups ? { groupObserved: (row: SmaRow) => liveGroups.has(`${row.region} | ${row.group}`) } : {}),
   });
   const traces = new Map(states.filter((state) => state.observed !== null).map((state) => [state.id, { judged: true, n: state.observed ? 1 : 0 }] as const));
   const hollowLive = db ? readHollowLive(db, since, days) : undefined;
   const findings = hollowFindings({ rows, evidence: SMA_EVIDENCE, facts, settings: hub?.global ?? defaultSettings(), ...(live ? { traces } : {}), ...(hollowLive ? { live: hollowLive } : {}) });
-  return { rows, states, findings, facts, factsFresh, hub, days, live, drills: drills ? drills.length : null, drillDir, ...(hollowLive?.span ? { span: hollowLive.span } : {}) };
+  return { rows, states, findings, facts, factsFresh, hub, days, live, drills: drills ? drills.length : null, drillDir, ...(hollowLive?.span ? { span: hollowLive.span } : {}), roots };
 }
 
 /** Past this many lines an anchor is a dispatcher, not the unit the card describes: a mutation or a hollow sign there hits unrelated code. */
@@ -85,7 +88,12 @@ export function runProofCli(argv: readonly string[], roots: ProofRoots, db: Db |
   const states = region === null ? run.states : run.states.filter((state) => state.regionIndex === region);
   if (argv.includes("--gaps")) {
     const proofOf = new Map(run.rows.map((row) => [row.id, row.proof] as const));
-    const gaps = gapList(states).map((gap) => { const anchor = anchorInfo(proofOf.get(gap.id), roots.lanePilot); return anchor ? { ...gap, anchor } : gap; });
+    const gaps = gapList(states).map((gap) => {
+      const sibling = siblingAnchor(proofOf.get(gap.id), gap.smaId, roots);
+      if (sibling) return { ...gap, siblingAnchor: sibling };
+      const anchor = anchorInfo(proofOf.get(gap.id), roots.lanePilot);
+      return anchor ? { ...gap, anchor } : gap;
+    });
     if (json) return { exitCode: 0, stdout: JSON.stringify({ days: run.days, live: run.live, ...(region !== null ? { region } : {}), count: gaps.length, byRegion: byRegion(gaps), nodes: gaps }, null, 2) };
     return { exitCode: 0, stdout: renderGaps(gaps, run) };
   }
@@ -113,6 +121,7 @@ function settingsLine(run: ProofRun): string {
 }
 
 const n = (value: number | null) => (value === null ? "—" : String(value));
+const siblingPresence = (run: ProofRun) => SIBLING_NAMES.map((name) => (run.roots[name] ? `${SIBLINGS[name].repo} at ${run.roots[name]}` : absentSibling(name))).join("; ");
 
 function renderStates(report: ReturnType<typeof stateReport>, hollow: ReturnType<typeof hollowCounts>, run: ProofRun, links: ReturnType<typeof smaStateCounts>): string {
   const o = report.overall;
@@ -120,6 +129,7 @@ function renderStates(report: ReturnType<typeof stateReport>, hollow: ReturnType
     `SMA map — the four proofs per node (sma-parity-tz.md §4), ${run.live ? `live, last ${run.days} day(s)` : "no database: observed and outcome-verified need --live"}.`,
     `total ${o.total}, available ${o.available}, checked ${o.checked}, mutated ${o.mutated} (stale ${o.mutationStale}), reachable ${o.reachable} / unreachable ${o.unreachable} (undeclared gate ${o.undeclared}; ${o.seededReachable} reachable only through a mechanically seeded entry; ${o.blockedInSomeProject} blocked in an active project), observed ${n(o.observed)} (node-level), outcome-verified ${n(o.outcomeVerified)} (node-level), groupObserved ${n(o.groupObserved)} (group-level, not node evidence).`,
     `hollow ${hollow.total} (on the map ${hollow.onMap} / off the map ${hollow.offMap}; by sign ${Object.entries(hollow.bySign).map(([sign, count]) => `${sign}: ${count}`).join(", ")}), void unreviewed ${o.voidUnreviewed}, exceptions ${Object.entries(o.exceptions).map(([kind, count]) => `${kind} ${count}`).join(", ") || "none"}; closed (all four proofs or an exception) ${o.closed}.`,
+    `sibling repositories: ${o.sibling} node(s) prove in bb-core or the Telegram plugin (${siblingPresence(run)}); closed with an unknown sibling change point: ${o.closedSiblingUnknown} (the hub does not record since when it runs a core build or a plugin version).`,
     ...(run.span ? [`${spanLine(run.span, run.days)}.`] : []),
     `settings: ${settingsLine(run)}.`,
     `proof links (the weaker ladder): resolved ${links.proofResolved}, broken ${links.proofBroken}, unjudged ${links.proofUnjudged}; change points from provenance.json ${SMA_PROVENANCE.generatedFrom || "(not generated)"} (${SMA_PROVENANCE.version}); hollow facts from ${run.factsFresh ? "this checkout" : `hollow-facts.json ${run.facts.generatedFrom}`}${run.drills === null ? `; no drill receipts here (looked in ${run.drillDir})` : `; ${run.drills} drill receipt(s) in ${run.drillDir}`}.`,
@@ -137,13 +147,22 @@ function byRegion(gaps: ReadonlyArray<ReturnType<typeof gapList>[number]>) {
   }).filter((row) => row.nodes);
 }
 
-type GapRow = ReturnType<typeof gapList>[number] & { anchor?: AnchorInfo };
+type GapRow = ReturnType<typeof gapList>[number] & { anchor?: AnchorInfo; siblingAnchor?: SiblingAnchor };
 function renderGaps(gaps: readonly GapRow[], run: ProofRun): string {
   const lines = [`Gaps — per node which of the four proofs is missing (${gaps.length} node(s); ${run.live ? `live ${run.days} d` : "no database: every trace is missing"}).`, "", "region                              nodes  test mutation reach trace void?"];
   for (const row of byRegion(gaps)) lines.push(`${String(row.index).padStart(2)} ${row.region.slice(0, 32).padEnd(32)} ${String(row.nodes).padStart(5)} ${String(row.test).padStart(5)} ${String(row.mutation).padStart(8)} ${String(row.reach).padStart(5)} ${String(row.trace).padStart(5)} ${String(row.voidReview).padStart(5)}`);
   lines.push("");
-  for (const gap of gaps) lines.push(`${gap.id.padEnd(6)} ${gap.smaId} [${gap.status}] missing ${gap.missing.join(", ")}${gap.reachWhy ? ` — reach: ${gap.reachWhy}` : ""}${gap.undeclared ? ` — undeclared gate ${gap.undeclared.join(", ")}` : ""}${gap.anchor ? `\n        anchor ${gap.anchor.file}${gap.anchor.symbol ? `#${gap.anchor.symbol}` : ""} (${gap.anchor.lines} lines)${gap.anchor.flag ? ` WARNING: ${gap.anchor.flag}` : ""}` : ""}`);
+  for (const gap of gaps) lines.push(`${gap.id.padEnd(6)} ${gap.smaId} [${gap.status}] missing ${gap.missing.join(", ")}${gap.reachWhy ? ` — reach: ${gap.reachWhy}` : ""}${gap.undeclared ? ` — undeclared gate ${gap.undeclared.join(", ")}` : ""}${gap.anchor ? `\n        anchor ${gap.anchor.file}${gap.anchor.symbol ? `#${gap.anchor.symbol}` : ""} (${gap.anchor.lines} lines)${gap.anchor.flag ? ` WARNING: ${gap.anchor.flag}` : ""}` : ""}${gap.siblingAnchor ? siblingLines(gap.siblingAnchor, gap.mutationWhy) : ""}`);
   return lines.join("\n");
+}
+
+/** The lines under a sibling node in --gaps: where its code and tests are, and the next step. */
+function siblingLines(at: SiblingAnchor, mutationWhy: string | undefined): string {
+  const out = [`        in ${at.repo}: anchor ${at.file}${at.symbol ? `#${at.symbol}` : ""}${at.root ? ` (${at.lines} lines, read at ${at.root})` : ` — ${at.absent}`}${at.flag ? ` WARNING: ${at.flag}` : ""}`,
+    `        tests there: ${at.tests.length ? at.tests.join(" | ") : "none yet"}${mutationWhy ? `; mutation: ${mutationWhy}` : ""}`,
+    ...(at.hubPlugin ? [`        hub: the node runs only while the plugin ${at.hubPlugin} is enabled there (bb plugin list --json)`] : []),
+    `        next: ${at.next}`];
+  return `\n${out.join("\n")}`;
 }
 
 function renderHollow(findings: readonly HollowFinding[], run: ProofRun): string {

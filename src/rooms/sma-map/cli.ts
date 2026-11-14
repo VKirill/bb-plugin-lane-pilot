@@ -5,6 +5,7 @@ import { SMA_ENTRIES } from "./entries";
 import { relocateAnchor } from "./exports";
 import { brokenProof, isChecked, isDone, proofDrift, smaCheckedPercent, smaCounts, smaDonePercent, smaHoles, smaRows, smaStateCounts, unjudgedProof, type ProofRoots, type SmaRow } from "./model";
 import { SMA_LINKS, SMA_MAP_SHA, SMA_NODES, SMA_REGIONS } from "./graph";
+import { siblingRoots } from "./siblings";
 
 export const SMA_MAP_USAGE = "bb lane-pilot sma-map [--json] [--region <number|name>] [--status have|partial|missing|skip|upstream|void|deviation|deviation-data|unproven|unchecked] [--check-proofs] [--live [--days N]] [--states | --gaps | --hollow]   the SMA product map node by node: the card, what Lane Pilot has for it, the proof link and the contract tests; mapped is a link, checked is a test of the card's behaviour; --live says which groups left a trace in the window; --states counts the four proofs per node (checked, mutated, reachable, outcome-verified; sma-parity-tz.md §4), --gaps lists per node which proof is missing, --hollow lists the hollow findings (§4а); with --live they read the hub's settings and node-level traces";
 
@@ -14,15 +15,12 @@ import { runProofCli, wantsProofs } from "./cli-proofs";
 type Result = { exitCode: number; stdout?: string; stderr?: string };
 const flag = (argv: readonly string[], name: string) => { const at = argv.indexOf(name); return at >= 0 ? argv[at + 1] : undefined; };
 
-/** Where the sibling repositories usually are; a proof into a missing one is not judged. */
+/** Where the sibling repositories are (siblings.ts: an environment override, the proofs worktree, the default checkouts); a proof into a missing one is not judged. */
 export function defaultProofRoots(cwd: string): ProofRoots {
   // Beside the plugin on a Mac checkout, under ~/tools on the Linux hosts.
   const laneStack = [join(cwd, "..", "claude-lane-stack"), join(homedir(), "tools", "claude-lane-stack")].find((path) => existsSync(path)) ?? join(cwd, "..", "claude-lane-stack");
-  // The BB core sources (vk layer): the Mac/hub checkout first, else the sibling bb-core repository on the Linux hosts.
-  const core = [join(homedir(), ".local", "share", "bb-source-vk"), join(cwd, "..", "bb-core", "vk"), join(cwd, "..", "..", "..", "..", "bb-core", "vk")].find((path) => existsSync(path)) ?? join(homedir(), ".local", "share", "bb-source-vk");
-  const telegram = join(cwd, "..", "bb-plugin-telegram-projects");
   // Sources, not a built copy: the hub's install has no src/, and a proof cannot be judged there.
-  return { lanePilot: existsSync(join(cwd, "src/rooms/sma-map/entries.ts")) ? cwd : "", ...(existsSync(laneStack) ? { laneStack } : {}), ...(existsSync(core) ? { core } : {}), ...(existsSync(telegram) ? { telegram } : {}) };
+  return { lanePilot: existsSync(join(cwd, "src/rooms/sma-map/entries.ts")) ? cwd : "", ...(existsSync(laneStack) ? { laneStack } : {}), ...siblingRoots(cwd) };
 }
 
 export function renderSmaMap(all: readonly SmaRow[], listed: readonly SmaRow[] = []): string {
