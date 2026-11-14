@@ -14,6 +14,7 @@ import { chainRuntimeFor, humanOptions, humanOutput, registerChainExecutors } fr
 import { registerDispatchExecutors, taskUsage } from "../../src/rooms/writer/server";
 import { answerWorkflowQuestion } from "../../src/rooms/workflow/server/workflow-answer";
 import { reportEndToOwner } from "../../src/rooms/workflow/server/pm-notice";
+import { graphDependsOn, graphTaskId, graphTaskStem } from "../../src/rooms/workflow/server/workflow-task-contract";
 import type { ChainRuntime } from "../../src/rooms/contracts/server";
 import { registerPureActions } from "@lane-pilot/workflow-engine";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
@@ -810,6 +811,24 @@ describe("a code task of a chain", () => {
     expect(t.dispatched).toHaveLength(2);
     expect(t.dispatched[1]!.task).toEqual(dispatched);
     expect(t.dispatched[1]!.plan).toBe(contract.objective);
+  });
+
+  it("[sma:bf_waves] a graph task's depends_on carries the same prefix as its siblings' ids; a PM task of the run it builds on keeps its name (plan-split 1.6-ж)", async () => {
+    const t = await setup({});
+    dispose = t.dispose;
+    // A task «pm-auth» dispatched by the PM in this Lane Pilot run, before the graph.
+    createTask(t.db, { id: "pm-auth", runId: RUN, kind: "bb", contract: { id: "pm-auth" } });
+    createAttempt(t.db, { id: "pm-auth-attempt", runId: RUN, taskId: "pm-auth" });
+    const started = t.start(taskChain({ ...task(t.checkout), id: "c2", depends_on: ["c1", "pm-auth"] }));
+    expect((await started.done).status).toBe("waiting");
+    const dispatched = t.dispatched[0]!.task as Row;
+    const stem = String(dispatched.id).replace(/-c2$/, "");
+    expect(stem).toMatch(/^w[0-9a-f]{8}$/);
+    // Before: the plan's «c1» stayed bare, the writer looked for a task «c1», found none and blocked after two minutes.
+    expect(dispatched.depends_on).toEqual([`${stem}-c1`, "pm-auth"]);
+    // Siblings of one graph run share the prefix whatever step they run on.
+    expect(graphTaskId(graphTaskStem(started.runId), "c1")).toBe(`${stem}-c1`);
+    expect(graphDependsOn(stem.slice(1), ["c1", `${stem}-c0`], () => false)).toEqual([`${stem}-c1`, `${stem}-c0`]);
   });
 
   it("dispatches the task through the writer pipeline with the run's workspace and waits for the attempt; an accepted attempt gives the merge commit by its trailer", async () => {
