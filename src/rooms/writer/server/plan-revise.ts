@@ -17,13 +17,10 @@ import { bbServiceTier, findModelIn, listedServiceTier, resolveStageWriterSelect
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { contractEditions, getRun, saveTaskPlan, updateTaskContract } from "../../storage";
-import type { LanePilotDatabase } from "../../storage/database";
-import { PLANNER_METHOD } from "../../critique/role-method";
-import { taskBrief } from "../../critique/task-brief";
-import { roleSelection, sdkCriticCatalog } from "../../critique/critic-pair";
-import { ownerWordsOfRun } from "../../critique/server/owner-words";
-import { validateTaskV2 } from "../../tasks/task-v2";
+import { contractEditions, getRun, saveTaskPlan, updateTaskContract, type LanePilotDatabase } from "../../storage";
+import { PLANNER_METHOD, roleSelection, sdkCriticCatalog, taskBrief } from "../../critique";
+import { ownerWordsOfRun } from "../../critique/server";
+import { validateTaskV2 } from "../../tasks";
 import { fullAccessSpawn, graphStepMetadata, zcodeBusyPeek } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 

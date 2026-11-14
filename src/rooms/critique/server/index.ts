@@ -1,7 +1,7 @@
 // Public API of critique/server: what other rooms import. Everything else in this room is private.
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { candidatePatches, headSides, runCodeCritique, runPlanCritique, runPmRead, runSpecialistReview } from "./critique-runs";
-export { ownerLastWroteAt } from "./owner-words";
+export { ownerLastWroteAt, ownerWordsOfRun } from "./owner-words";
 export { SPECIALIST_ROLES, mountSpecialists, registerSpecialistActions } from "./specialists";
 export { SPECIALIST_GRAPH, pageReviewByAgent, rememberSpecialistThread } from "./specialist-graph";
 export { recordEmployeeLesson, recordRoleLine, roleLinesKey, snapshotLessonProblem, specialistMemorySlice } from "./employee-lessons";

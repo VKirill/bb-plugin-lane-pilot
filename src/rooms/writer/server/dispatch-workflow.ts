@@ -1,4 +1,4 @@
-import { wfLatestPipelineRunId, wfRunInputsJson } from "@lane-pilot/workflow-engine";
+import { wfLatestPipelineRunId, wfLiveRunHasStep, wfRunInputsJson } from "@lane-pilot/workflow-engine";
 import { contractEditions, countAttempts, getAttempt, getRunSettingsScopes, getTaskGitBase, listAttemptsForTask, listStageReceipts, loadProjectSettings, saveTaskGitBase, setRunState, transitionAttempt } from "../../storage";
 import type {StageHelperSettings} from "../../platform/server";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
@@ -417,7 +417,7 @@ export function dispatchRunOf(db: ServerCore["db"], runId: string, taskId: strin
 export function plannerLoopActive(db: ServerCore["db"], runId: string, taskId: string): boolean {
   const pipelineRunId = dispatchRunOf(db, runId, taskId);
   if (!pipelineRunId) return false;
-  return !!db.prepare("SELECT 1 FROM lane_pilot_wf_step s JOIN lane_pilot_wf_run r ON r.id=s.run_id WHERE s.run_id=? AND s.node_id='plan-revise' AND r.status IN ('running','waiting') LIMIT 1").get(pipelineRunId);
+  return wfLiveRunHasStep(db, pipelineRunId, "plan-revise");
 }
 
 export type DispatchRerun =

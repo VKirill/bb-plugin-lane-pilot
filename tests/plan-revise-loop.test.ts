@@ -232,9 +232,10 @@ describe("the planner revises a plan the critic returned", () => {
   }, 60_000);
 
   it("[sma:p2_issue_troubles] a structural finding in a field only the PM owns goes straight to the PM, without a planner round", async () => {
-    // depends_on is the PM's (so are owns_paths, acceptance, objective, never_touch, expected_outputs and risk); the contract lint already refuses an
-    // expected output outside owns_paths at dispatch, a depends_on loop is the plan critique's.
-    const run = await runScenario({ settings: planner, critic: [PASS], task: { depends_on: [task.id] } });
+    // acceptance is the PM's (so are owns_paths, objective, never_touch, expected_outputs, risk and depends_on). An unresolved REPLACE_ME in it is
+    // the plan critique's structural error (task_placeholder); the contract lint already refuses an expected output outside owns_paths and a
+    // depends_on that names the task itself or closes a loop, before the critique.
+    const run = await runScenario({ settings: planner, critic: [PASS], task: { acceptance: ["REPLACE_ME: the result the PM has not written yet"] } });
     expect(run.attempt).toMatchObject({ state: "blocked", reason: "structural_plan_critique_blocked" });
     expect(run.stages["plan-critique"]!.state).toBe("blocked");
     expect(run.editions.map((row) => row.reason)).toEqual(["created"]);

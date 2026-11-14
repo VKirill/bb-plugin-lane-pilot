@@ -76,14 +76,16 @@ describe("the tasks the scenes dispatch", () => {
 
   it("plan_revise_cap: the dispatch lint lets it through, the plan critique finds a structural error the planner may not fix", async () => {
     const { out } = py(`out = m.plan_revise_cap_task(ctx)`);
-    const { unownedExpectedOutputs } = await import("../src/rooms/tasks");
-    const { dependencyFindings } = await import("../src/rooms/critique/server/critique-runs/dependency-findings");
+    const { lintContract } = await import("../src/rooms/tasks/server/contract-lint");
+    const { findTaskPlaceholderPaths } = await import("../src/rooms/critique/critique-coverage");
     const { PLAN_FIXABLE_FINDINGS } = await import("../src/rooms/critique/server/critique-runs/plan-critique");
-    // Every expected output is owned (the lint's output_unowned would refuse the task before the plan critique runs).
-    expect(unownedExpectedOutputs(out as never)).toEqual([]);
-    const found = dependencyFindings(out as never, []);
-    expect(found).toEqual([expect.objectContaining({ code: "depends_self", severity: "error" })]);
-    expect(PLAN_FIXABLE_FINDINGS.has(found[0]!.code)).toBe(false);
+    // The dispatch lint lets it through (no output_unowned, no depends_self / depends_cycle): otherwise the plan critique never runs.
+    const lint = lintContract({ task: out as never, workspacePath: out.project_cwd, hostId: "host-1", sandboxUnsafe: [], openTasks: [], deadDependencies: [], kinds: null, runTasks: [] } as never);
+    expect(lint.errors).toEqual([]);
+    expect(out.depends_on).toEqual([]);
+    // The plan critique's structural error is in acceptance, a field the planner may not change.
+    expect(findTaskPlaceholderPaths(out)).toEqual(["acceptance[1]"]);
+    expect(PLAN_FIXABLE_FINDINGS.has("task_placeholder")).toBe(false);
   });
 
   it("plan_l: a medium-risk single task with exactly eight owns_paths", () => {

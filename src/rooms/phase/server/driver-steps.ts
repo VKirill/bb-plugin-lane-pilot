@@ -11,11 +11,12 @@ import { hostContract } from "../../contracts";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { sha256Hex, bestEffort } from "@lane-pilot/kit";
-import { acceptanceLines, alreadyMetVerdict, blindVerdict, brokenLink, candidateOn, canonical, discussionGate, executionGate, planGate, issuable, lessonsNeeded, nextAction, observationOutcome, piecesOfWave, phaseFolder, pieceSha, provenPieces, renderBook, stageTurn, waveCleared, waveLines, wavePackage, wavePieceLines, wavesOf, wordAsked, wordOf } from "../logic";
-import { buildsScreens, conclusionText, designPoints, specText, issuedContract, markRoadmap, milestoneOf, nextRoadmapRow, stateText, templateFill, threatClosureGaps, waveTable, piecePlan, uatText } from "../stages";
+import { acceptanceLines, alreadyMetVerdict, blindVerdict, brokenLink, candidateOn, canonical, executionGate, issuable, lessonsNeeded, nextAction, observationOutcome, piecesOfWave, phaseFolder, pieceSha, provenPieces, renderBook, waveLines, wavePackage, wavePieceLines, wavesOf, wordAsked, wordOf } from "../logic";
+import { buildsScreens, conclusionText, designPoints, issuedContract, markRoadmap, milestoneOf, nextRoadmapRow, stateText, templateFill, threatClosureGaps, waveTable, piecePlan, uatText } from "../stages";
 import { getPhase, listParts, notePoked, savePhase } from "../store";
 import { checkProofs, hostGit, phaseProofRecords, renderProofCurrency } from "./proof-currency";
 import { candidateBranch } from "./candidate";
+import { installWordSteps } from "./driver-word-steps";
 import { PhaseRefusal, STAGE_RU, type DriverBase } from "./driver-tools";
 import type { Docs } from "./driver-docs";
 import type { Methods } from "./driver-methods";
@@ -28,15 +29,11 @@ import { isNotFound, orMiss } from "@lane-pilot/kit";
  * moves it through its stages and reaches the other rooms only through `tools`.
  */
 export type StepsTools = DriverBase & Docs & Methods;
-
-/** A PM at work answers a stage question first (the writer's ASK_PM grace, writer/server/question-default.ts PM_ACTIVE_GRACE_MS). */
-export const MACHINE_ANSWER_GRACE_MS = 5 * 60_000;
-export const MACHINE_ANSWERER = "Lane Pilot (owner.words sensitive)";
-export const MACHINE_STAGE_ANSWER = "The owner is asked only about money, database migrations and production deploys, and this stage touches none of them: take the narrower reading — the one that keeps the existing behaviour, the context's locked decisions and the plan's scope — and name the choice in the stage's result. A later stage, the verifier or the owner at acceptance may revisit it.";
 export type Steps = ReturnType<typeof installSteps>;
 export function installSteps(tools: StepsTools) {
   const { ctx, services, db, bb, now, reactions } = tools;
   const { mustGet, book, move, facts, readFile, readText, writeDocs, writeStateBlock, writeGenerated, commitFiles, pauseHandoff, writeBook, pmCheckoutPath, candidates } = tools;
+  const { wordStep } = installWordSteps(tools);
 
   /** The candidate tree of a piece's base checkout, made on first need; null (and `off` with the reason, booked once) when it cannot be. */
   async function candidateTree(phase: Phase, candidate: PhaseCandidate, base: string): Promise<import("./candidate").CandidateTree | null | { wait: string }> {
@@ -290,41 +287,6 @@ export function installSteps(tools: StepsTools) {
     }
   }
 
-  /**
-   * owner.words=sensitive (default-path audit §5.4.4): a blocking question of a stage whose turn is outside money, data and production
-   * deploys does not wait for the owner. Like a writer's ASK_PM (0.1.556), a PM at work gets five minutes first; then Lane Pilot answers
-   * it by rule — the narrower reading, kept as a decision in the book — and the gate goes on. On `on`, `risky` and `off` nothing changes.
-   */
-  function machineAnswers(phase: Phase): Phase {
-    const turn = stageTurn(phase.stage);
-    if (phase.record.wordTurns?.mode !== "sensitive" || !turn || wordAsked(phase.record, turn)) return phase;
-    const due = (phase.record.questions ?? []).filter((question) => question.blocking && !question.answer && question.stage === phase.stage && now() - question.askedAt >= MACHINE_ANSWER_GRACE_MS);
-    if (!due.length) return phase;
-    const ids = new Set(due.map((question) => question.id));
-    const questions = (phase.record.questions ?? []).map((question) => ids.has(question.id) ? { ...question, answer: MACHINE_STAGE_ANSWER, answeredBy: MACHINE_ANSWERER, answeredAt: now() } : question);
-    for (const question of due) book(phase, "decisions", "answer", `${question.id}: ${MACHINE_ANSWERER} — ${MACHINE_STAGE_ANSWER}`);
-    savePhase(db, phase.id, { record: { ...phase.record, questions }, at: now() });
-    return mustGet(phase.id);
-  }
-
-  /**
-   * A turn that waited only for the owner's word and no longer asks for it (owner.words changed, or a record from before 0.1.560 whose one
-   * flag was recomputed): the step does what the method does when nothing is asked. A signed context goes to planning; an approved plan
-   * whose gate holds is admitted (its grill rule included). A drawing waits for its next report as it does after a design yes.
-   */
-  async function lifted(phase: Phase): Promise<Phase> {
-    const r = phase.record;
-    if (phase.stage === "discussion" && r.context && !wordAsked(r, "context") && discussionGate(r).ok) {
-      move(phase, "planning", r, "the context is signed and its turn asks no owner's word (owner.words: it touches no money, data or production deploy)");
-      if (r.docFiles === true) await bestEffort(ctx.log, "phase spec write", writeGenerated(mustGet(phase.id), `${phaseFolder(phase.id)}/SPEC.md`, specText(mustGet(phase.id)), `phase ${phase.id}: SPEC.md`), null);
-      return mustGet(phase.id);
-    }
-    if (phase.stage === "planning" && r.plan?.critique?.decision === "approve" && !r.plan.admittedSha && !wordAsked(r, "planning") && planGate(r).ok) {
-      try { return await tools.admitIfReady(phase); } catch (cause) { if (cause instanceof PhaseRefusal) return mustGet(phase.id); throw cause; }
-    }
-    return phase;
-  }
-
   /** One step of a phase. Reconciling after force: every tick reads the pieces' facts afresh, so a phase paused, stopped or edited by hand
    * continues from what the attempts and receipts say now, not from what it last believed. */
   async function drive(phase: Phase): Promise<Phase> {
@@ -338,10 +300,8 @@ export function installSteps(tools: StepsTools) {
       return mustGet(phase.id);
     }
     if (phase.state !== "active") return phase;
-    // Each turn's owner-word decision, made again from this step's evidence and the project's owner.words (a record from before 0.1.560
-    // carries only the flag decided at opening: this is where it is recomputed).
-    let current = await tools.freshTurns(phase, true);
-    current = await lifted(machineAnswers(current));
+    // Each turn's owner word decided again from this step's evidence (an old record's one flag is recomputed here); then the word steps.
+    let current = await wordStep(await tools.freshTurns(phase, true));
     if (current.stage === "execution") {
       current = await issue(current);
       await recheckStale(current);

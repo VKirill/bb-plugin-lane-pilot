@@ -38,3 +38,4 @@ export { CHECK_HISTORY_MIN_RUNS, p95 } from "./check-history";
 // The one reading of a check run (pass / product_fail / environment_error / not_run). Also here, not only in ./server: the integration gate (verification/server) imports tasks/server's barrel back through lint-task, a cycle.
 export { readCheckRun } from "./server/check-reading";
 export type { CheckReading, CheckRun, CheckVerdict } from "./server/check-reading";
+export { validateTaskV2 } from "./task-v2";

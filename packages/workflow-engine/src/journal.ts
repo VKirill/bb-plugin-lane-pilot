@@ -236,6 +236,11 @@ export function wfPipelineWriterStepKey(db: WfReadDb, runId: string): string | n
     .get(runId) as { step_key: string } | undefined)?.step_key ?? null;
 }
 
+/** A live (running or waiting) run has a step of this node (the planner loop: a plan-revise step of the task's pipeline run). */
+export function wfLiveRunHasStep(db: WfReadDb, runId: string, nodeId: string): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_step s JOIN lane_pilot_wf_run r ON r.id=s.run_id WHERE s.run_id=? AND s.node_id=? AND r.status IN ('running','waiting') LIMIT 1").get(runId, nodeId));
+}
+
 /** A run's stored inputs JSON. */
 export function wfRunInputsJson(db: WfReadDb, runId: string): string | null {
   return (db.prepare("SELECT inputs_json FROM lane_pilot_wf_run WHERE id=?").get(runId) as { inputs_json: string } | undefined)?.inputs_json ?? null;

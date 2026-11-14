@@ -4,7 +4,7 @@ import { createCore } from "../src/rooms/core/server/core";
 import { createPhaseDriver } from "./phase-driver";
 import { sha256Hex } from "@lane-pilot/kit";
 import { contextSignature, isPlanWordGap, nextAction, planGate, planSignature, type PhaseRecord, type PlanItem } from "../src/rooms/phase/logic";
-import { MACHINE_ANSWERER } from "../src/rooms/phase/server/driver-steps";
+import { MACHINE_ANSWERER } from "../src/rooms/phase/server/driver-word-steps";
 import { listParts, savePhase } from "../src/rooms/phase/store";
 import { createRun, openDatabase } from "../src/rooms/plugin-db";
 import { saveProjectSetting } from "../src/rooms/storage";

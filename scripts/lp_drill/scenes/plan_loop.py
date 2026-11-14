@@ -40,16 +40,15 @@ def plan_revise_task(ctx: "Context") -> dict:
 
 
 def plan_revise_cap_task(ctx: "Context") -> dict:
-    """A defect in a field only the PM may change: the task lists itself in depends_on. The plan critique finds it structurally (depends_self,
-    an error) before any model is asked, and the planner may not touch depends_on, so the task goes straight to the PM.
-    Not an expected output outside owns_paths, the audit's example: the dispatch lint refuses that contract (output_unowned) before the
-    plan critique ever runs, so the scene would test the lint. depends_on, like owns_paths, is a scope field of the PM's."""
+    """A defect in a field only the PM may change: an acceptance line still holds the template's REPLACE_ME. The plan critique finds it
+    structurally (task_placeholder, an error) before any model is asked, and the planner may not touch acceptance, so the task goes straight
+    to the PM. Not a self-dependency or an expected output outside owns_paths: the dispatch lint refuses both (depends_self, output_unowned)
+    before the plan critique ever runs, so the scene would test the lint."""
     first = f"notes/drill/plan-cap-{STAMP}/note.md"
-    spec = task(f"drill-{STAMP}-plan-cap", f"Drill {STAMP} plan cap: waits for itself", [first],
+    return task(f"drill-{STAMP}-plan-cap", f"Drill {STAMP} plan cap: an unwritten acceptance", [first],
                 f"Create the file {first} with exactly one line: `# note.md`. Nothing else.",
-                [f"{first} exists and its first line is `# note.md`."], ctx.cwd, verification=_check([first], ctx.cwd))
-    spec["depends_on"] = [spec["id"]]
-    return spec
+                [f"{first} exists and its first line is `# note.md`.", "REPLACE_ME: the second check the PM has not written yet."], ctx.cwd,
+                verification=_check([first], ctx.cwd))
 
 
 def plan_l_task(ctx: "Context") -> dict:
@@ -106,7 +105,7 @@ def cap_problems(row: dict, evidence: dict) -> list[str]:
     elif not (reason.startswith("structural_plan_critique_blocked") or reason.startswith("plan_critique")):
         problems.append(f"the block does not name the plan critique: {reason}")
     if revisions_of(evidence):
-        problems.append(f"a planner_revision edition exists although owns_paths is not the planner's to fix: {revisions_of(evidence)}")
+        problems.append(f"a planner_revision edition exists although acceptance is not the planner's to fix: {revisions_of(evidence)}")
     if any(step.get("node_id") == "plan-revise" for step in evidence.get("steps") or []):
         problems.append("the pipeline journal has a plan-revise step for a finding the planner may not fix")
     return problems
@@ -152,7 +151,7 @@ def scenario_plan_revise(ctx: "Context") -> dict:
 
 
 def scenario_plan_revise_cap(ctx: "Context") -> dict:
-    """A self-reference in depends_on cannot be fixed by the planner: the attempt is blocked at once for the PM (structural_plan_critique_blocked),
+    """An unwritten acceptance line (REPLACE_ME) cannot be fixed by the planner: the attempt is blocked at once for the PM (structural_plan_critique_blocked),
     with no planner_revision edition and no plan-revise step."""
     row, evidence, problems = run_loop_task(ctx, plan_revise_cap_task(ctx), PLAN_REVISE_CAP_SETTINGS, cap_problems)
     return verdict("plan_revise_cap", problems, tasks=[row] if row else [], editions=evidence.get("editions"), receipts=[r.get("state") for r in evidence.get("receipts") or []],
