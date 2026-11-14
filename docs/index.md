@@ -10,6 +10,7 @@ Built by Lane Pilot from page frontmatter.
 
 | Page | Type | Status | Updated |
 |---|---|---|---|
+| [Агенты Lane Pilot: кто есть кто](agents.md) | component | active | 2026-11-14 |
 | [Anamnesis and owner profile](anamnesis.md) | component | active | 2026-10-10 |
 | [Lane Pilot architecture](architecture.md) | architecture | active | 2026-11-14 |
 | [Maslov work-graphs vs Lane Pilot — gap audit](audits/maslov-graphs-vs-lane-pilot.md) | audit | draft | — |
