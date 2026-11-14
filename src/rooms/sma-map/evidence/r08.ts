@@ -12,6 +12,7 @@ export default {
 
   n674: { mutation: wrongTarget("src/rooms/contracts/index.ts", "  ...rpcWorkflowMap,", "  ...rpcWorkflowExport,"), trace: SCENE },
   n675: { mutation: flip("src/rooms/contracts/rpc-ops.ts", "halt_run: {\n    input: z.object({ runId: z.string().min(1) }).strict(),", "halt_run: {\n    input: z.object({ runId: z.string() }).strict(),"), trace: SCENE },
+  n676: { mutation: distort("core:packages/config/src/vk-owner-auth.ts", "export const VK_OWNER_PAIRING_MAX_ATTEMPTS = 5;", "export const VK_OWNER_PAIRING_MAX_ATTEMPTS = 6;") },
   n678: { mutation: flip("src/rooms/runs/server/task-reconcile.ts", "graceMs:startup ? 0 : PERIODIC_INTENT_GRACE_MS", "graceMs:startup ? PERIODIC_INTENT_GRACE_MS : 0"), trace: SCENE },
   n682: { mutation: flip("src/rooms/front/server/index.ts", "if (!MUTATING_RPC.test(name)) return;", "if (MUTATING_RPC.test(name)) return;"), trace: SCENE },
   n683: { mutation: flip("src/rooms/core/server/rpc-timing.ts", '${refused ? " refused" : failed ? " failed" : ""}', '${refused ? " failed" : failed ? " refused" : ""}'), trace: SCENE },

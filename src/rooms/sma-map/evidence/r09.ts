@@ -69,7 +69,7 @@ export default {
   n809: { reach: seedEntry("the owner presses the door in the window") },
   n810: { reach: seedEntry("the owner presses the door in the window") },
   n811: { reach: seedEntry("the owner presses the door in the window") },
-  n812: { reach: seedEntry("the owner presses the door in the window") },
+  n812: { mutation: distort("core:plugins/account-pool/src/operations.ts", "label: input.label ?? \"Claude API key\",", "label: \"Claude API key\","), reach: seedEntry("the owner presses the door in the window") },
   n813: { reach: seedEntry("the owner presses the door in the window") },
   n814: { reach: seedEntry("the owner presses the door in the window") },
   n815: { reach: seedEntry("the owner presses the door in the window") },
@@ -84,5 +84,9 @@ export default {
   n824: { reach: seedEntry("the owner presses the door in the window") },
   n825: { reach: seedEntry("the owner presses the door in the window") },
   n826: { reach: seedEntry("the owner presses the door in the window") },
+  n837: { mutation: flip("core:plugins/composer/src/AttachmentPreview.tsx", "attachment.sourceProjectId ?? attachmentProjectId,", "attachmentProjectId ?? attachment.sourceProjectId,"), reach: entry("the owner opens an attached file or image of a conversation turn in the BB window") },
+  n896: { mutation: flip("core:plugins/account-pool/app.tsx", "(account) => account.provider === provider.id,", "(account) => account.provider !== provider.id,") },
+  n897: { mutation: distort("core:plugins/account-pool/app.tsx", "utilization: account.fiveHourUtilization,", "utilization: account.sevenDayUtilization,"), reach: entry("the owner opens the Account Pooler page in the BB settings") },
+  n898: { mutation: flip("core:plugins/account-pool/app.tsx", "onSelect={() => onChoose(\"import\")}", "onSelect={() => onChoose(\"login\")}"), reach: entry("the owner opens the Account Pooler page in the BB settings and presses Add account") },
   n957: { voidReview: voidIsHave("чат = тред PM: сообщение владельца превращается в задачу, PM ставит её сам (lane_pilot_dispatch_writer, только из треда PM); ответ «да» спрашивается там, где нужен") },
 } satisfies RegionEvidence;

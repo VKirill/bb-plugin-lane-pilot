@@ -111,6 +111,7 @@ export default {
     reach: entry("a helper (non-person) Claude session is launched through the native launcher"),
     trace: drill("sma_r24"),
   },
+  n1677: { mutation: flip("core:plugins/provider-usage/usage-normalization.ts", "identify(result[index]!).scope.kind !== \"shared\"", "identify(result[index]!).scope.kind === \"shared\""), reach: entry("two machines of one subscription each report their usage windows to the usage window of BB") },
   n1678: {
     mutation: flip("src/rooms/usage/statusline-segment.ts", "now - Date.parse(at!) > 2 * 3_600_000", "now - Date.parse(at!) > 6 * 3_600_000"),
     trace: drill("sma_r24"),
