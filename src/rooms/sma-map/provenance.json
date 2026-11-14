@@ -1,4 +1,4 @@
-{"generatedFrom":"84b9e95eb4e5","version":"0.1.566","deploys":590,"lastDeployed":"0.1.566","nodes":{
+{"generatedFrom":"877c33eda199","version":"0.1.566","deploys":590,"lastDeployed":"0.1.566","nodes":{
 "n0":["4c837f9bab82",1794632205000,"0.1.563",1794633565000,"symbol","cb4d08d8681e"],
 "n1":["468a5d8d8bd8",1794398756000,"0.1.526",1794402574000,"file","4c43341323eb"],
 "n2":["4c837f9bab82",1794632205000,"0.1.563",1794633565000,"symbol","ef1e085ae621"],
@@ -1696,7 +1696,7 @@
 "n968":["telegram","45b8bfdeacd0",1789242286000,"text","1192ff434e61"],
 "n969":["telegram","26f318d1e04e",1792806392000,"text","9655890a634e"],
 "n970":["telegram","26f318d1e04e",1792806392000,"text","625208962b80"],
-"n971":["telegram","45b8bfdeacd0",1789242286000,"text","3677dc3b0450"],
+"n971":["telegram","45b8bfdeacd0",1789242286000,"symbol","2ae0849f3f84"],
 "n972":["telegram","26f318d1e04e",1792806392000,"text","ea14b30d53f0"],
 "n973":["telegram","26f318d1e04e",1792806392000,"symbol","8a1fb55961d1"],
 "n974":["telegram","347480a2695c",1789252077000,"text","1205dda07f18"],
