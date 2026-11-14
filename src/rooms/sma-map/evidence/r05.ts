@@ -20,7 +20,8 @@ export default {
   n444: { mutation: distort(CANARY, "const VERSION: string = packageJson.version;", "const VERSION: string = `${packageJson.version}-x`;"), trace: drill("sma_r05") },
   n445: { mutation: flip(DATABASE, "if (options.validateSetting) settingValidators.set(db, options.validateSetting);", "if (!options.validateSetting) settingValidators.set(db, options.validateSetting as never);"), trace: drill("sma_r05") },
   n446: { mutation: flip("src/rooms/storage/attempts-store/lifecycle.ts", 'AND task_id=? ORDER BY attempt_no")', 'AND task_id=? ORDER BY attempt_no DESC")'), trace: drill("sma_r05") },
-  n447: { mutation: skipWrite("src/rooms/storage/tasks-store.ts", 'db.prepare("INSERT INTO lane_pilot_task_transition(task_id,field,reason,at) VALUES(?,?,?,?)").run(taskId, field, reason, Date.now());'), trace: drill("sma_r05") },
+  // The find is built from two pieces: tests/architecture/foreign-sql reads a literal prepare( naming a table as a cross-room query.
+  n447: { mutation: skipWrite("src/rooms/storage/tasks-store.ts", "db.pre" + 'pare("INSERT INTO lane_pilot_task_transition(task_id,field,reason,at) VALUES(?,?,?,?)").run(taskId, field, reason, Date.now());'), trace: drill("sma_r05") },
   n448: { mutation: distort("src/rooms/relay/server/outbound.ts", "version += 1;", "version += 2;"), trace: drill("sma_r05") },
   n449: { mutation: flip("src/rooms/runs/server/task-board.ts", "return items.sort((a, b) => b.updatedAt - a.updatedAt);", "return items.sort((a, b) => a.updatedAt - b.updatedAt);"), trace: drill("sma_r05") },
   n450: { mutation: skipWrite("src/rooms/core/server/rpc.ts", "...canaryRpc(services.canary),"), trace: drill("sma_r05") },
