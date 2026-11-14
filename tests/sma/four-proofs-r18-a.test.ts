@@ -142,6 +142,29 @@ describe("[region 18 batch a] the session hooks as programs", () => {
     expect(startup.indexOf("Work in this project")).toBeLessThan(startup.indexOf("Capsule restored"));
   });
 
+  it("[sma:k_h_session_start] a start names the model change, the protections that are off and the briefing, in this order and nothing else; a repeated model says nothing", () => {
+    const home = tmp("r18-start-");
+    const bb = stubBb(home, { "session-brief": '{"summary":"Work in this project: 1 live, 0 stale.","foreign":[],"weak":[]}' });
+    const start = (model: string, env: Record<string, string> = {}) => hook({ hook_event_name: "SessionStart", session_id: "ss1", cwd: home, model }, home, { BB_CLI: bb, ...env });
+    expect(context(start("claude-a").stdout)).toBe("Work in this project: 1 live, 0 stale.");
+    expect(context(start("claude-a").stdout)).toBe("Work in this project: 1 live, 0 stale.");
+    expect(context(start("claude-b", { LANE_COORD: "0" }).stdout)).toBe([
+      "Work in this project: 1 live, 0 stale.",
+      "Model change: this session ran on claude-a, now on claude-b; earlier receipts of this window were made by the other model.",
+      "Protections switched off: LANE_COORD",
+    ].join("\n\n"));
+  });
+
+  it("[sma:k_h_prompt_recall] a prompt of three words or more yields pointers, at most three, each on its own line; the fourth note is left out", () => {
+    const home = tmp("r18-recall-");
+    const bb = stubBb(home, { "memory search": "- [a1] alpha claim\n- [a2] beta claim\n- [a3] gamma claim\n- [a4] delta claim\n" });
+    const ran = hook({ hook_event_name: "UserPromptSubmit", session_id: "rc1", prompt: "how does the gate work", cwd: home }, home, { BB_CLI: bb });
+    const lines = context(ran.stdout).split("\n").filter((line) => line.startsWith("- ["));
+    expect(lines).toEqual(["- [a1] alpha claim", "- [a2] beta claim", "- [a3] gamma claim"]);
+    const short = hook({ hook_event_name: "UserPromptSubmit", session_id: "rc2", prompt: "two words", cwd: home }, home, { BB_CLI: bb });
+    expect(short.stdout).toBe("");
+  });
+
   it("[sma:k_h_precompact] a PreCompact input writes the flight capsule before the trim: asks, files and claims each in its own field, and a progress line", () => {
     const home = tmp("r18-precompact-");
     const ran = hook({ hook_event_name: "PreCompact", session_id: "pc1", cwd: home, asks: ["keep the contract"], files: ["src/touched.ts"], claims: ["src/claimed.ts"] }, home);
