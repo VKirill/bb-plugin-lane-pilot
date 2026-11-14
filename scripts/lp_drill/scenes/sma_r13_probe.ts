@@ -4,8 +4,15 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { z } from "zod";
+import { openDatabase } from "../../../src/rooms/plugin-db";
 import { rpcContract } from "../../../src/rooms/contracts";
+import { createAttempt } from "../../../src/rooms/storage/attempts-store";
+import { failedTasksAllProjects } from "../../../src/rooms/storage/attempts-store/project-reads";
+import { transitionAttempt } from "../../../src/rooms/storage/attempts-store/transition";
+import { createRun } from "../../../src/rooms/storage/runs-store";
+import { createTask } from "../../../src/rooms/storage/tasks-store";
 import { terminalParity, type ParityLayerSet } from "../../../src/rooms/native-agent/terminal-parity";
 import { UNSHOWN_FIELDS, houseWordHits, internalIds, leakFindings, leaks, parityGaps, unreadFields } from "../../../tests/helpers/guard-tools";
 
@@ -23,7 +30,30 @@ const layers = (over: Partial<ParityLayerSet> = {}): ParityLayerSet => ({ hooks:
 const unreadReal = unreadFields(rpcContract as never, uiSources, UNSHOWN_FIELDS);
 const unreadSynthetic = unreadFields({ zeta: { output: z.object({ a: z.string(), b: z.number(), c: z.boolean() }) } } as never, [{ path: "x.tsx", text: "const v = row.a; const { b } = row;" }], {});
 
+// n1046: the failure-journal sweep on a scratch database: the latest attempt of each failed task, across projects, newest first.
+function failedSweep() {
+  const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+  const db = openDatabase(bb);
+  const task = (runId: string, projectId: string, taskId: string) => { createRun(db, runId, projectId); createTask(db, { id: taskId, runId, kind: "bb", contract: {} as never }); };
+  task("r1", "projA", "t_fail_twice"); task("r2", "projB", "t_blocked"); task("r3", "projA", "t_fixed"); task("r4", "projA", "t_running");
+  const attempt = (id: string, runId: string, taskId: string, ...moves: Array<[string, Record<string, unknown>?]>) => {
+    createAttempt(db, { id, runId, taskId });
+    transitionAttempt(db, id, "spawn_requested");
+    for (const [state, extra] of moves) transitionAttempt(db, id, state as never, extra as never);
+  };
+  attempt("a1", "r1", "t_fail_twice", ["running", { threadId: "tw1" }], ["provider_error", { reason: "boom" }]);
+  attempt("a2", "r1", "t_fail_twice", ["blocked", { reason: "still broken" }]);
+  attempt("a3", "r2", "t_blocked", ["blocked", { reason: "nope" }]);
+  attempt("a4", "r3", "t_fixed", ["blocked", { reason: "was broken" }]);
+  attempt("a5", "r3", "t_fixed", ["running", { threadId: "tw5" }], ["accepted"]);
+  attempt("a6", "r4", "t_running", ["running", { threadId: "tw6" }]);
+  const rows = failedTasksAllProjects(db, 0);
+  const newest = Math.max(...rows.map((row) => row.failedAt));
+  return { attempts: rows.map((row) => `${row.attemptId}:${row.projectId}:${row.state}:${row.reason}`), newestFirst: rows.every((row, i) => i === 0 || rows[i - 1]!.failedAt >= row.failedAt), afterNewest: failedTasksAllProjects(db, newest + 1).length };
+}
+
 process.stdout.write(JSON.stringify({
+  failedSweep: failedSweep(),
   leakPlanted: leaks(`ok\n${secret}\nok`).map((hit) => hit.line),
   leakClean: leaks("ok\nno secret here\n"),
   leakRepo: leakFindings(ROOT),

@@ -414,12 +414,15 @@ export function sessionStartText(input: {
   protections?: string[];
   memoryLines?: number;
   capsule?: Capsule | null;
+  /** The session start is a compaction (SMA k_hss_restore): the capsule goes first into the context. */
+  capsuleFirst?: boolean;
   changed?: string[];
   account?: string;
   /** Commits the code map is behind HEAD (SMA k_wp_drift); 0 or undefined says nothing. */
   codeMapBehind?: number;
 }): string | null {
   const parts: string[] = [];
+  if (input.capsule && input.capsuleFirst) parts.push(capsuleRestored(input.capsule));
   if (input.summary) parts.push(input.summary);
   if (input.lastModel && input.model && input.lastModel !== input.model) {
     parts.push(`Model change: this session ran on ${input.lastModel}, now on ${input.model}; earlier receipts of this window were made by the other model.`);
@@ -430,7 +433,7 @@ export function sessionStartText(input: {
   if (budget) parts.push(budget);
   if (input.codeMapBehind) parts.push(`Code map is ${input.codeMapBehind} commits behind HEAD: reindex before relying on it`);
   if (input.changed?.length) parts.push(`What changed since last time:\n${input.changed.slice(0, 30).join("\n")}`);
-  if (input.capsule) parts.push(capsuleRestored(input.capsule));
+  if (input.capsule && !input.capsuleFirst) parts.push(capsuleRestored(input.capsule));
   return parts.length ? parts.join("\n\n") : null;
 }
 
