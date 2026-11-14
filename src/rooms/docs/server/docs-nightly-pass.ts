@@ -73,7 +73,7 @@ force?:boolean;projectId?:string;path?:string;base?:string;catchUp?:boolean;sign
             continue;
           }
           // docs.gitnexus_refresh=on: the night's pass also keeps the project's GitNexus code index warm — a checkout
-          // without one or behind HEAD gets one `gitnexus analyze` on its own machine. Only where the project's
+          // without one or behind HEAD gets one `gitnexus analyze --index-only` on its own machine (the flag keeps GitNexus from rewriting AGENTS.md, CLAUDE.md and skill copies). Only where the project's
           // writer role may use gitnexus tools at all; unset: nothing runs.
           if(switchOn({"docs.gitnexus_refresh":configuredSetting(settings,"docs.gitnexus_refresh")},"docs.gitnexus_refresh")){
             const helperCtx=parseHelperContextSettings(settings);
