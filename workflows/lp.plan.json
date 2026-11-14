@@ -68,7 +68,7 @@
   },
   "entry": "research",
   "budget": {
-    "max_minutes": 45
+    "max_minutes": 90
   },
   "nodes": [
     {
