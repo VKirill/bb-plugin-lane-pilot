@@ -505,7 +505,7 @@ export function stepPacket(ctx: StepContext<ChainRuntime>, node: Extract<GraphNo
   if (ctx.input.via.handoff) inputs.push({ name: "previous_handoff", value: ctx.input.via.handoff });
   const goalName = GOAL_INPUTS.find((name) => typeof values[name] === "string" && String(values[name]).trim());
   const kinds = Object.fromEntries((node.consumes ?? []).flatMap((spec) => (spec.as ? [[spec.as, `${spec.kind}/${spec.version}`] as const] : [])));
-  return planPacket({ step: { id: node.id, role: ctx.render(node.role), mode: ctx.mode }, ...(goalName ? { goal: String(values[goalName]), goalInput: goalName } : {}), inputs, produces: node.produces, gates: node.gates, kinds, chatId: ctx.runtime?.pmThreadId ?? "chat", runId: ctx.runId, byReference });
+  return planPacket({ step: { id: node.id, role: ctx.render(node.role), mode: ctx.mode }, ...(goalName ? { goal: String(values[goalName]), goalInput: goalName } : {}), inputs, produces: node.produces, gates: node.gates, kinds, chatId: ctx.runtime?.pmThreadId ?? "", runId: ctx.runId, byReference });
 }
 
 /** The data a node hands its helper: the mapped edge fields and the node's own `with`, and the item of its branch. */

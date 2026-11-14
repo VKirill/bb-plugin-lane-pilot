@@ -1,8 +1,10 @@
+import { sha256Hex } from "@lane-pilot/kit";
 import type { Field } from "@lane-pilot/workflow-engine";
 import type { ServerCore } from "../../contracts/server";
 import { listOpenOwnerItems } from "../../owner-waiting";
 import { getPassport, renderBrandcoreProjection, renderCharterDefaults } from "../../passport";
 import { listActiveLocks } from "./sp-locks-intents";
+import { noteRunFileRead, resolveLatestPointer } from "../../storage";
 import { loadQuestionBank } from "./sp-questions";
 import {
   acquireTick,
@@ -145,9 +147,19 @@ export async function loadSpecialistMemory(input: {
   const poolsHistoryRaw =
     (await readCheckoutFileText(ctx, checkout, ".agents/marketing/tg-ads/pools-history.json")) ??
     (await readCheckoutFileText(ctx, checkout, `.agents/${domain}/pools-history.json`));
-  const ppcBridgeRaw =
-    (await readCheckoutFileText(ctx, checkout, ".agents/seo/ppc-bridge-latest.json")) ??
-    (await readCheckoutFileText(ctx, checkout, ".agents/marketing/reports/mkt-paid-search-audit-bridge.json"));
+  // The bridge is a daily «latest» file: each run of its graph replaces it. The run manifest names the run that wrote the current one (kind
+  // latest-pointer); a file that no longer matches that record (edited by hand) is read all the same, but named as nobody's.
+  let ppcBridgeRaw: string | null = null;
+  let ppcBridgeRunId = "";
+  for (const bridgePath of [".agents/seo/ppc-bridge-latest.json", ".agents/marketing/reports/mkt-paid-search-audit-bridge.json"]) {
+    ppcBridgeRaw = await readCheckoutFileText(ctx, checkout, bridgePath);
+    if (ppcBridgeRaw === null) continue;
+    const pointer = resolveLatestPointer(db, projectId, bridgePath);
+    const seen = sha256Hex(ppcBridgeRaw);
+    if (pointer) noteRunFileRead(db, { runId: pointer.runId, repoPath: bridgePath, kind: "latest-pointer", reader: "sp.load_memory", sha256: seen });
+    ppcBridgeRunId = pointer && pointer.sha256 === seen ? pointer.runId : "";
+    break;
+  }
 
   const openAssumptions = listOpenOwnerItems(db, { projectId, source: "specialist" }).map((item) => ({
     key: item.key,
@@ -186,6 +198,7 @@ export async function loadSpecialistMemory(input: {
     duplicate_of_refuted: duplicateOfRefuted,
     shared_negatives_json: sharedNegativesRaw ? JSON.stringify(parseJsonSafe(sharedNegativesRaw, [])) : "[]",
     ppc_bridge_json: ppcBridgeRaw ? JSON.stringify(parseJsonSafe(ppcBridgeRaw, {})) : "{}",
+    ppc_bridge_run_id: ppcBridgeRunId,
     brandcore_json: hasPassport ? JSON.stringify(brandcorePayload) : "{}",
     pools_history_json: poolsHistoryRaw ? JSON.stringify(parseJsonSafe(poolsHistoryRaw, [])) : "[]",
     telemetry_map_json: telemetryMapRaw ? JSON.stringify(parseJsonSafe(telemetryMapRaw, {})) : "{}",

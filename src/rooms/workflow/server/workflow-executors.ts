@@ -1,4 +1,4 @@
-import { getRunSettingsScopes, listProjectArtifacts, loadProjectSettings, planningHomeInputs } from "../../storage";
+import { getRunSettingsScopes, loadProjectSettings, planningHomeInputs } from "../../storage";
 import { resolvePlanningHome } from "../../contracts";
 import { switchOn } from "@lane-pilot/models";
 import type { GraphNode, NodeExecutor, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
@@ -15,6 +15,7 @@ import { registerHumanForm } from "./workflow-human-form";
 import { registerDeliverableAction, registerDeliverableNode } from "./workflow-deliverable";
 import { registerLpTask } from "./workflow-lp-task";
 import { registerCheckoutActions } from "./workflow-checkout-actions";
+import { noteRunFiles } from "./workflow-run-home";
 import { registerProjectActions } from "./workflow-project-actions";
 import { registerTaskBookActions } from "./workflow-task-book";
 import { registerDelegatedActions } from "./workflow-delegated-actions";
@@ -96,11 +97,10 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
             const joinId = candidate.id.endsWith(":child") ? candidate.id.slice(0, -6) : candidate.id;
             return c.resolve(candidate.id) !== undefined || c.resolve(joinId) !== undefined;
           });
-          const hasPdas =
-            !producedUpstream &&
-            Boolean(rt.projectId && listProjectArtifacts(db, rt.projectId, { kind: spec.kind }).length > 0);
-          if (!producedUpstream && !hasPdas) {
-            throw new Error(`consumes_missing: ${node.id} needs ${spec.kind}/${spec.version}, which no upstream step or project artifact provided`);
+          // Only what a step of THIS run produced counts. The old fallback took any artifact of that kind in the whole project (another run's, another
+          // task's); a consumer that wants an artifact from elsewhere names it: `from` an earlier node, or `$inputs` for what the caller passed in.
+          if (!producedUpstream) {
+            throw new Error(`consumes_missing: ${node.id} needs ${spec.kind}/${spec.version}, which no upstream step of this run produced; name its source with \`from\` (an earlier node, or $inputs)`);
           }
         }
       }
@@ -111,6 +111,8 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
         try {
           const checkout = await pmCheckout(rt);
           for (const file of plan.files) await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: checkout.path, path: `${checkout.path}/${file.path}`, content: file.text, contentEncoding: "utf8", createParents: true });
+          // The spill stays where the PM chat reads it (.bb/chats/<pm>/artifacts/wf-<run>/); the run's manifest says which step it is the input of.
+          await noteRunFiles(ctx, rt, c, checkout, plan.files.map((file) => ({ repoPath: file.path, content: file.text, kind: "step-input" as const, readers: [node.id] })));
         } catch (cause) {
           byReference = false;
           bb.log.warn(`Lane Pilot could not write the input files of ${node.id} (${cause instanceof Error ? cause.message : String(cause)}); the packet shows them cut`);
@@ -159,6 +161,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     action,
     engine,
     planHome,
+    noteRunFiles: (c, rt, checkout, files) => noteRunFiles(ctx, rt, c, checkout, files),
     resolveServices: () => ({
       ...(services.schedules ? { schedules: services.schedules } : {}),
       ...(services.backlog ? { backlog: services.backlog } : {}),

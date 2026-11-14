@@ -1,6 +1,6 @@
 import { noteEngineWrite, gateRunVerdict } from "../../verification/server";
 import { parseIntegrationGateSettings } from "./workflow-chain-runtime";
-import { getRun, getRunSettingsScopes, latestGateRun, listOpenAttempts, listOpenWorktrees, listTaskIdsForRun, listAttemptsForTask, loadProjectSettings, fullGateVerdict, saveProjectSetting } from "../../storage";
+import { getRun, getRunSettingsScopes, latestGateRun, listOpenAttempts, listOpenWorktrees, listTaskIdsForRun, listAttemptsForTask, loadProjectSettings, fullGateVerdict, saveProjectSetting, writeCasCheckoutFile } from "../../storage";
 import { getPhase, listPhases } from "../../phase";
 import { profilePairProblem, unsafeReason } from "../../anamnesis";
 import { bestEffort, sha256Hex } from "@lane-pilot/kit";
@@ -25,6 +25,12 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
   flagOf: FlagOf;
 }): void {
   const { bb, db } = ctx;
+  // A file these actions rewrite on purpose (the milestone index, the living retro): read, then a hash-checked write that REPLACES. A bare
+  // `expectedSha256: null` is create-only: over an existing file BB answers `conflict` and writes nothing, without throwing (the 2nd milestone did nothing).
+  const replaceFile = async (hostId: string, rootPath: string, relPath: string, content: string): Promise<void> => {
+    const written = await writeCasCheckoutFile(bb.sdk.files as never, { hostId, rootPath, relPath, content });
+    if (!written.ok) throw new Error(`${relPath}: the write was rejected (${written.outcome})`);
+  };
   const { action, planHome, flagOf } = deps;
 
   // The one profile writer (SMA k_pl_infra): the start's preview hands the profile object over and it lands in the project's
@@ -166,7 +172,7 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
       const read = async (rel: string) => (await bestEffort(ctx.log, "milestone archive read", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: root, command: `cat ${quote(rel)} 2>/dev/null || true`, timeoutSec: 15, timeoutMs: 20_000 }), null))?.stdout ?? "";
       const write = async (rel: string, content: string) => {
         if (root === checkout.path) noteEngineWrite(checkout.path, rel);
-        await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: root, path: `${root}/${rel}`, content, contentEncoding: "utf8", createParents: true, expectedSha256: null });
+        await replaceFile(checkout.hostId, root, rel, content);
       };
       // The closing milestone is named by its goal. new-milestone names none: the previous milestone is the roadmap's own heading when it has one, else the date.
       const params = rec(rec(c.node).params);
@@ -215,7 +221,7 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
       });
       for (const { id, title, lens } of byId.values()) if (!seen.has(id)) lines.push(`- ${id}${lens ? ` [${lens}]` : ""}${title ? ` ${title}` : ""} (last seen ${milestone})`);
       noteEngineWrite(checkout.path, path);
-      await bb.sdk.files.write({ hostId: checkout.hostId, rootPath: checkout.path, path: `${checkout.path}/${path}`, content: `${lines.join("\n").replace(/\n{3,}/g, "\n\n")}\n`, contentEncoding: "utf8", createParents: true, expectedSha256: null });
+      await replaceFile(checkout.hostId, checkout.path, path, `${lines.join("\n").replace(/\n{3,}/g, "\n\n")}\n`);
       return { updated: byId.size, total: lines.filter((row) => /- INS-[A-Za-z0-9]{6,}/.test(row)).length, path };
     } catch (cause) {
       ctx.log(`living retro not written, the close goes on: ${cause instanceof Error ? cause.message : String(cause)}`);

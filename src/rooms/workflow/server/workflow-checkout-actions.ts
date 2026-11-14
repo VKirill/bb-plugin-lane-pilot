@@ -12,6 +12,7 @@ import { PROFILE_KEYS } from "../../anamnesis";
 import { hasPassportRecord } from "../../passport";
 import { bestEffort, sha256Hex } from "@lane-pilot/kit";
 import { list, rec, str, pmCheckout, quote, PRUNE } from "./workflow-chain-runtime";
+import { noteRunFiles } from "./workflow-run-home";
 import type { Row } from "./workflow-chain-runtime";
 import type { GraphNode, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { runOnHost } from "@lane-pilot/host-calls";
@@ -46,6 +47,8 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
     // A planning file (.agents/phases|planning|todos|plans, not a task's own folder) goes to the planning home when the project set one (SMA d_project_planning); unset, the checkout.
     const home = isPlanningPath(isFolder ? folderPrefix : rel) ? await planHome(rt.projectId, checkout) : null;
     const writtenCheckoutPaths: Array<{ path: string; content: string; sha256: string }> = [];
+    // Every file this node wrote, for the run's manifest (.agents/runs/<run>/manifest.json): the checkout's and the planning home's alike.
+    const writtenForRun: Array<{ repoPath: string; content: string; kind: "output"; root: "checkout" | "planning-home" }> = [];
     let writtenFileCount = 0;
     const write = async (path: string, content: string) => {
       const cleanPath = path.replace(/^\/+/, "");
@@ -63,6 +66,7 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
           throw new Error(`fs.write: CAS write rejected for "${cleanPath}" (${homeRes.outcome})`);
         }
         writtenFileCount += 1;
+        writtenForRun.push({ repoPath: cleanPath, content, kind: "output", root: "planning-home" });
         return;
       }
       // Noted before the write lands, so a helper's status read right after it already sees it as the engine's.
@@ -78,6 +82,7 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
       }
       writtenFileCount += 1;
       writtenCheckoutPaths.push({ path: cleanPath, content, sha256: casRes.sha256 });
+      writtenForRun.push({ repoPath: cleanPath, content, kind: "output", root: "checkout" });
     };
     const asText = (value: unknown) => (typeof value === "string" ? value : JSON.stringify(value, null, 2));
     const resolveTargetPath = (entryName: string): string => {
@@ -180,6 +185,9 @@ export function registerCheckoutActions(engine: WorkflowEngine, ctx: ServerCore,
         }
       }
     }
+    // Declared readers: the nodes this one's edges lead to (the real reads are recorded by the readers as `read_by`).
+    const successors = [...new Set(c.workflow.edges.filter((edge) => edge.from === c.nodeId).map((edge) => edge.to))];
+    await noteRunFiles(ctx, rt, c, checkout, writtenForRun.map((file) => ({ ...file, readers: successors })));
     const out: Row = {};
     for (const field of c.node.out) {
       if (field.name === "folder") out.folder = isFolder ? folderPrefix : rel.slice(0, rel.lastIndexOf("/") + 1) || "./";
