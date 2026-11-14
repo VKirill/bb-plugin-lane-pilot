@@ -1,6 +1,5 @@
 {
   "id": "lp.clarify",
-  "startedBy": "pm",
   "name": {
     "en": "Clarification by a model",
     "ru": "Уточнение моделью"
@@ -23,7 +22,7 @@
     }
   },
   "outputs": {
-    "questions": "string[]"
+    "questions": "Question[]"
   },
   "budget": {
     "max_minutes": 30
@@ -33,7 +32,6 @@
       "id": "analyst",
       "type": "agent",
       "role": "analyst",
-      "uses": "lp.clarify",
       "title": {
         "en": "Read the task tree and propose clarifications",
         "ru": "Прочитать дерево задач и предложить уточнения"

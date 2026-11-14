@@ -9,7 +9,7 @@ key="$(git rev-parse 'HEAD^{tree}')-$(node -v)"
 if [ -z "$(git status --porcelain --untracked-files=no)" ] && [ -f "$receipts/$key" ]; then
   echo "test-full: this code already passed the full suite ($(head -1 "$receipts/$key"))"; exit 0
 fi
-log="$(mktemp -t lp-test-full)"
+log="$(mktemp "${TMPDIR:-/tmp}/lp-test-full.XXXXXX")"
 trap 'rm -f "$log"' EXIT
 if NO_COLOR=1 npx vitest run "$@" 2>&1 | tee "$log"; [ "${PIPESTATUS[0]}" -eq 0 ]; then
   if [ $# -eq 0 ] && [ -z "$(git status --porcelain --untracked-files=no)" ]; then

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../../src/rooms/plugin-db";
 import { councilDecisionText, councilEndedText, sendCouncilNotice } from "../../src/rooms/council/server/pm-notice";
-import { maybeNotifyWorkflowRun, notifyWorkflowIfEnded, workflowEndedText } from "../../src/rooms/workflow/server/pm-notice";
+import { maybeNotifyWorkflowRun, notifyWorkflowIfEnded } from "../../src/rooms/workflow/server/pm-notice";
 import { SCHEDULE_RUN_KEY_PREFIX } from "../../src/rooms/contracts";
 import type { RunRow } from "../../src/rooms/plugin-db";
 import { engineOn, ok, wf } from "../workflow/engine-helpers";
@@ -72,32 +72,17 @@ describe("council PM notices", () => {
 });
 
 describe("workflow PM notices", () => {
-  it("names the run, workflow, status, reason and the status tool", () => {
-    // The notice of an errand run points at the errand's own wait tool, not at the workflow status.
-    expect(workflowEndedText({ workflowRunId: "wfrun_2", workflowId: "errand", status: "succeeded", reason: null })).toContain("lane_pilot_wait_errand with this workflowRunId");
-    const text = workflowEndedText({ workflowRunId: "wfrun_1", workflowId: "demo", status: "succeeded", reason: null });
-    expect(text).toContain("Workflow run wfrun_1 of demo is succeeded.");
-    expect(text).toContain("lane_pilot_workflow_status");
-  });
-
-  it("sends a succeeded notice to the PM chat", async () => {
+  it("sends nothing to the PM chat for a chat-started run's end: the status card and tool route carry it", async () => {
     const { bb, sends } = noticeBb();
-    expect(await maybeNotifyWorkflowRun({ bb, log: () => undefined, run: runRow(), pmThreadId, startedBySchedule: false })).toBe(true);
-    expect(sends[0]).toMatchObject({ threadId: pmThreadId, mode: "queue-if-active" });
-    expect(sends[0]!.text).toContain("wfrun_1");
-    expect(sends[0]!.text).toContain("succeeded");
-  });
-
-  it("sends a blocked notice with unmet goal ids", async () => {
-    const { bb, sends } = noticeBb();
-    await maybeNotifyWorkflowRun({
-      bb, log: () => undefined, pmThreadId, startedBySchedule: false,
-      run: runRow({ status: "blocked", reason: "goal_audit: not met: g2" }),
-      unmetGoalIds: ["g2"],
-    });
-    expect(sends[0]!.text).toContain("blocked");
-    expect(sends[0]!.text).toContain("Reason: goal_audit: not met: g2");
-    expect(sends[0]!.text).toContain("Unmet goals: g2");
+    for (const status of ["succeeded", "failed", "blocked", "canceled"] as const) {
+      const told = await maybeNotifyWorkflowRun({
+        bb, log: () => undefined, pmThreadId, startedBySchedule: false,
+        run: runRow({ id: `wfrun_${status}`, status, reason: status === "blocked" ? "goal_audit: not met: g2" : "boom" }),
+        unmetGoalIds: status === "blocked" ? ["g2"] : undefined,
+      });
+      expect(told).toBe(false);
+    }
+    expect(sends).toEqual([]);
   });
 
   it("hands the PM the report a scheduled run was for, to show the owner as it is; nothing for a scheduled run without one", async () => {
@@ -122,12 +107,16 @@ describe("workflow PM notices", () => {
     expect(sends).toEqual([]);
   });
 
-  it("delivers a workflow notice once per terminal state", async () => {
+  it("delivers a scheduled run's report once per terminal state", async () => {
     const { bb, sends } = noticeBb();
-    const input = { bb, log: () => undefined, run: runRow(), pmThreadId, startedBySchedule: false };
+    const input = {
+      bb, log: () => undefined, pmThreadId, startedBySchedule: true,
+      run: runRow({ id: "wfrun_r", output_json: JSON.stringify({ report_md: "weekly digest" }) }),
+    };
     expect(await maybeNotifyWorkflowRun(input)).toBe(true);
     expect(await maybeNotifyWorkflowRun(input)).toBe(false);
     expect(sends).toHaveLength(1);
+    expect(sends[0]!.text).toContain("weekly digest");
   });
 
   it("looks up the PM thread from the linked Lane Pilot run and skips a schedule key", async () => {
@@ -140,13 +129,19 @@ describe("workflow PM notices", () => {
     const row = db.prepare("SELECT * FROM lane_pilot_wf_run WHERE id=?").get(linked.runId) as RunRow;
     const sends: string[] = [];
     harness.sdk.stub("threads.send", async (args: unknown) => { sends.push((args as { input: Array<{ text: string }> }).input[0]!.text); });
-    expect(await notifyWorkflowIfEnded({ bb, db, log: () => undefined, run: row })).toBe(true);
-    expect(sends[0]).toContain(linked.runId);
+    // The engine's terminal event reaches the notify boundary, but a chat-started run's end sends the PM nothing.
     expect(await notifyWorkflowIfEnded({ bb, db, log: () => undefined, run: row })).toBe(false);
-    db.prepare("UPDATE lane_pilot_wf_run SET idem_key=? WHERE id=?").run(`${SCHEDULE_RUN_KEY_PREFIX}job`, linked.runId);
+    expect(sends).toEqual([]);
+    for (const status of ["canceled", "blocked", "failed"] as const) {
+      db.prepare("UPDATE lane_pilot_wf_run SET status=?, reason=? WHERE id=?").run(status, "test end", linked.runId);
+      const ended = db.prepare("SELECT * FROM lane_pilot_wf_run WHERE id=?").get(linked.runId) as RunRow;
+      expect(await notifyWorkflowIfEnded({ bb, db, log: () => undefined, run: ended, unmetGoalIds: status === "blocked" ? ["g1"] : undefined })).toBe(false);
+    }
+    expect(sends).toEqual([]);
+    db.prepare("UPDATE lane_pilot_wf_run SET status='succeeded', idem_key=? WHERE id=?").run(`${SCHEDULE_RUN_KEY_PREFIX}job`, linked.runId);
     const scheduled = db.prepare("SELECT * FROM lane_pilot_wf_run WHERE id=?").get(linked.runId) as RunRow;
     expect(await notifyWorkflowIfEnded({ bb, db, log: () => undefined, run: { ...scheduled, status: "failed", reason: "boom" } })).toBe(false);
-    expect(sends).toHaveLength(1);
+    expect(sends).toEqual([]);
     await harness.lifecycle.dispose();
   });
 });

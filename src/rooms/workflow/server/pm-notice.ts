@@ -32,24 +32,6 @@ export function workflowNoticeKey(workflowRunId: string, status: string): string
   return `pm-notice:workflow:${workflowRunId}:${status}`;
 }
 
-export function workflowEndedText(input: {
-  workflowRunId: string;
-  workflowId: string;
-  status: string;
-  reason: string | null;
-  unmetGoalIds?: string[];
-}): string {
-  const lines = [`Workflow run ${input.workflowRunId} of ${input.workflowId} is ${input.status}.`];
-  if (input.reason) lines.push(`Reason: ${input.reason}`);
-  if (input.unmetGoalIds?.length) lines.push(`Unmet goals: ${input.unmetGoalIds.join(", ")}`);
-  lines.push(input.workflowId === "errand"
-    ? "Next: call lane_pilot_wait_errand with this workflowRunId for the report."
-    : input.workflowId === "council"
-      ? "Next: call lane_pilot_council, action status (with runId) for the feed and the reason."
-      : "Next: call lane_pilot_workflow_status with this workflowRunId for details.");
-  return lines.join("\n");
-}
-
 /** The text a scheduled run was for: its first non-empty output field named like a report (`report_md`, `summary`, `digest`…). */
 export function deliverable(outputJson: string | null): string | null {
   let output: Record<string, unknown>;
@@ -65,7 +47,7 @@ const PM_WAITS_FOR = new Set(["browser-step", "lp.browser-qa"]);
 const isNoticeStatus =(status: string): status is WorkflowNoticeStatus =>
   (WORKFLOW_NOTICE_STATUSES as readonly string[]).includes(status);
 
-/** Send one PM message for a terminal or blocked run, or skip (schedule, no chat, already sent, not a PM workflow). */
+/** Send the deliverable report of a schedule-started run to the PM chat, or skip (not scheduled, no report, no chat, already sent, not a PM workflow). */
 export async function maybeNotifyWorkflowRun(input: {
   bb: WorkflowNoticeSend;
   log: (message: string) => void;
@@ -84,22 +66,19 @@ export async function maybeNotifyWorkflowRun(input: {
   if (run.idem_key?.startsWith("phase:")) return false;
   // The browser tools wait for their graph and answer with its result: a notice would wake the PM a second time.
   if (PM_WAITS_FOR.has(run.workflow_id)) return false;
-  // A council that decided has told the PM itself (its `decide` step names the page and the next tasks); one that failed or was stopped is told here.
+  // A council tells the PM itself through its own notice (the decision page and next tasks, or the end without one); this path never speaks for it.
   if (run.workflow_id === "council" && run.status === "succeeded") return false;
   if (!input.pmThreadId) return false;
-  // A scheduled run is not watched live, but what it was scheduled for (a report, a digest) is the owner's: the PM shows it. Its
-  // failures are the schedule board's to tell (the live weekly report reached no one, 2026-10-25).
-  const delivered = input.startedBySchedule ? (run.status === "succeeded" ? deliverable(run.output_json ?? null) : null) : undefined;
-  if (input.startedBySchedule && !delivered) return false;
+  // A run a chat started learns its end from the run's status card and tool route, and its data through the
+  // graph's own handoff; the generic «is succeeded, call lane_pilot_workflow_status» line only woke the PM
+  // for nothing (owner 0.1.573). What a schedule was for — its report — is still delivered below.
+  if (!input.startedBySchedule) return false;
+  const delivered = run.status === "succeeded" ? deliverable(run.output_json ?? null) : null;
+  if (!delivered) return false;
   const key = workflowNoticeKey(run.id, run.status);
   if (await input.bb.storage.kv.get(key)) return false;
   await bestEffort(input.log, "workflow notice record", input.bb.storage.kv.set(key, Date.now() as never), undefined);
-  const text = delivered
-    ? `Lane Pilot: the scheduled run ${run.id} of ${run.workflow_id} finished. Show the owner this result in this chat as it is (no summary, nothing to act on; its helper's own completion may follow: it is the same result, say nothing about it):\n\n${delivered}`
-    : workflowEndedText({
-      workflowRunId: run.id, workflowId: run.workflow_id, status: run.status, reason: run.reason,
-      unmetGoalIds: run.status === "blocked" ? input.unmetGoalIds : undefined,
-    });
+  const text = `Lane Pilot: the scheduled run ${run.id} of ${run.workflow_id} finished. Show the owner this result in this chat as it is (no summary, nothing to act on; its helper's own completion may follow: it is the same result, say nothing about it):\n\n${delivered}`;
   try {
     await input.bb.sdk.threads.send({
       threadId: input.pmThreadId, mode: "queue-if-active",
@@ -119,8 +98,8 @@ const END_RU: Record<string, string> = { failed: "завершился с оши
 const OWN_REPORT_WORKFLOWS = new Set(["agent-routine"]);
 
 /**
- * The end of a run that has no PM chat to tell: one line on the owner's list instead, with a push when it went wrong. The same cases as the
- * PM notice: a scheduled run reports only the result it was scheduled for (its failures are the schedule board's), any other run reports its end.
+ * The end of a run that has no PM chat to tell: one line on the owner's list instead, with a push when it went wrong. A scheduled run reports
+ * only the result it was scheduled for (its failures are the schedule board's); any other unlinked run reports its end.
  */
 export function reportEndToOwner(db: LanePilotDatabase, run: RunRow, scheduled: boolean, unmetGoalIds?: string[]): boolean {
   if (!isNoticeStatus(run.status) || run.parent_run_id || !run.project_id || run.link_run_id) return false;
