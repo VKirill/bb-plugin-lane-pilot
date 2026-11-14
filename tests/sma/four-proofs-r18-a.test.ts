@@ -5,6 +5,9 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { searchMemoryRecords, storeMemoryRecordsKeepingOverflow } from "../../packages/memory-core/src";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import { stripClaudeLaneSettings } from "../../src/rooms/native-install/claude-lane-leftovers";
 import { usageSegment } from "../../src/rooms/usage/statusline-segment";
 import { pmRulesPromptBlock } from "../../src/rooms/learning/pm-rules";
@@ -140,6 +143,20 @@ describe("[region 18 batch a] the session hooks as programs", () => {
     expect(startup.startsWith("Work in this project: 2 live, 1 stale.")).toBe(true);
     expect(startup).toContain("Capsule restored after compaction:");
     expect(startup.indexOf("Work in this project")).toBeLessThan(startup.indexOf("Capsule restored"));
+  });
+
+  it("[sma:k_hpr_heal] a stored note is in the word index and the trigram index in the same call, and is found by its words before any vector exists", () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    storeMemoryRecordsKeepingOverflow(db as never, {
+      projectId: "P", audience: "subagent", sourceSha256: "a".repeat(64),
+      entries: [{ kind: "note", content: "The zorblax reconciler prunes stale lease rows hourly", concepts: ["janitor"] }],
+      coreBudget: 3072, noteBudget: 24000, indexBudget: 65536,
+    });
+    const count = (table: string) => (db.prepare(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n;
+    expect(count("lane_pilot_memory_fts")).toBe(1);
+    expect(count("lane_pilot_memory_trgm")).toBe(1);
+    expect(searchMemoryRecords(db as never, "P", "zorblax", 5, "auto").map((row) => row.content)).toEqual(["The zorblax reconciler prunes stale lease rows hourly"]);
   });
 
   it("[sma:k_h_session_start] a start names the model change, the protections that are off and the briefing, in this order and nothing else; a repeated model says nothing", () => {
