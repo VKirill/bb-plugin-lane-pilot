@@ -742,6 +742,7 @@ describe("stage → native writer → receipt", () => {
     const cycle=await dispatch({...task,id:"loop-a",depends_on:["loop-b"]});
     expect(cycle.raw).toMatchObject({state:"validation_failed",replan:true});
     expect(String(cycle.raw.reason)).toContain("loop-a → loop-b → loop-a");
+    expect(cycle.raw.findings).toEqual(expect.arrayContaining([expect.objectContaining({code:"depends_cycle"})]));
     expect(db.prepare("SELECT COUNT(*) n FROM lane_pilot_attempt WHERE task_id='loop-a'").get()).toEqual({n:0});
     const binary=await dispatch({...task,id:"binary-output",expected_outputs:["note.txt","note.woff2"],owns_paths:["note.txt","note.woff2"]});
     expect(binary.raw.reason).not.toBe("structural_plan_critique_blocked");
