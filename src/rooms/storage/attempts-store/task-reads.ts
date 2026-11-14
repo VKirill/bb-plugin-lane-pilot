@@ -339,3 +339,14 @@ export function stickyWorktreeAttemptRows(db: LanePilotDatabase): Array<{ path: 
     path: string; base: string | null; hostId: string | null; state: string; updatedAt: number; area: number; superseded: number }>;
 }
 
+
+/**
+ * The worktrees of attempts touched since `since`, with their run's machine, environment and close, and how many later attempts of the
+ * same task the run made (the daily worktree pass decides «abandoned» and «BB environment» from these rows).
+ */
+export function recentAttemptWorkspaces(db: LanePilotDatabase, since: number): Array<{ path: string; env: string | null; state: string; updatedAt: number; host: string; runEnv: string | null; runClosed: number | null; later: number }> {
+  return db.prepare(`SELECT a.workspace_path AS path, a.environment_id AS env, a.state, a.updated_at AS updatedAt, r.writer_host_id AS host, r.writer_environment_id AS runEnv, r.closed_at AS runClosed,
+      (SELECT COUNT(*) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id AND b.created_at>a.created_at) AS later
+    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+    WHERE a.workspace_path IS NOT NULL AND r.writer_host_id IS NOT NULL AND a.updated_at>=?`).all(since) as Array<{ path: string; env: string | null; state: string; updatedAt: number; host: string; runEnv: string | null; runClosed: number | null; later: number }>;
+}

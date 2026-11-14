@@ -1,10 +1,10 @@
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { hostContract } from "../../contracts";
 import { ENVIRONMENT_REASON } from "../../contracts/failure-class";
 import { readCheckRun } from "../../tasks/server";
-import { sweepLaneWorktrees } from "../../verification";
+import { laneWorktreeRoot as laneRoot, laneWorktreeTargetFor, sweepLaneWorktrees, sweepWorktreeClasses } from "../../verification";
 import { createWorktree, integrateWorktree, mergeInfo, prepareWorktree, removeLaneWorktree, revertCommitsInWorktree, syncWorktree, snapshotWorktree, worktreeState, type ReplayCheck, type ReplayCheckOutcome } from "../../verification";
 import { attributeGateOnHost, bisectGateOnHost, runGateOnHost } from "../../verification";
 import { cachedReplayVerdicts, recordReplayVerdict, replayKey } from "../../verification";
@@ -140,19 +140,30 @@ export const gitSyncWorktree: ExperimentalHostRpcHandlers<typeof hostContract>["
  * own storage that is not one of its environments (HTTP 409 «Workspace path is inside bb-managed storage»), which
  * is where the plugin's data dir is: every SelfyStudio writer on OVH failed to spawn that way on 2026-10-02.
  */
-export const laneWorktreeRoot = () => join(homedir(), ".lane-pilot", "worktrees");
+export const laneWorktreeRoot = () => laneRoot();
 
+/** The worktree standard (docs/worktrees.md): `<root>/<repository>/<id>`; until 0.1.561 it was `<root>/<id>/<repository>`, which every sweep still reads. */
 export const gitCreateWorktree: ExperimentalHostRpcHandlers<typeof hostContract>["gitCreateWorktree"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
   ...await createWorktree({basePath:input.basePath,name:input.name,...(input.commit?{commit:input.commit}:{}),
     ...(input.taskId?{taskId:input.taskId}:{}),
-    targetPath:join(laneWorktreeRoot(),input.name,basename(input.basePath))}),
+    targetPath:await laneWorktreeTargetFor(laneWorktreeRoot(),input.basePath,input.name)}),
 });
 
-export const worktreeJanitor: ExperimentalHostRpcHandlers<typeof hostContract>["worktreeJanitor"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId,
-  ...await sweepLaneWorktrees({root:laneWorktreeRoot(),protectedPaths:new Set(input.protectedPaths),graceMs:input.graceMs??2*3_600_000}),
-});
+/**
+ * The hourly sweep of Lane Pilot's root; with `deep`, the daily pass over every class in the project repositories after it
+ * (docs/worktrees.md). A dry run reads and decides only, so the hourly part (which removes) is left out of it.
+ */
+export const worktreeJanitor: ExperimentalHostRpcHandlers<typeof hostContract>["worktreeJanitor"] = async (input) => {
+  const protectedPaths=new Set(input.protectedPaths);
+  const hourly=input.deep?.dryRun
+    ?{removed:[],freedBytes:0,kept:[],tmpRemoved:[],tmpFreedBytes:0,errors:[]}
+    :await sweepLaneWorktrees({root:laneWorktreeRoot(),protectedPaths,graceMs:input.graceMs??2*3_600_000});
+  const deep=input.deep?await sweepWorktreeClasses({laneRoot:laneWorktreeRoot(),folders:input.deep.folders,bbEnvPaths:input.deep.bbEnvPaths??[],protectedPaths,
+    abandonedPaths:new Set(input.deep.abandonedPaths??[]),registryPaths:input.deep.registryPaths??[],maxAgeMs:input.deep.maxAgeMs,youngMs:input.deep.youngMs,dryRun:input.deep.dryRun===true,...(input.deep.now?{now:input.deep.now}:{})}):undefined;
+  return {hostId:process.env.BB_HOST_ID??input.requestedHostId,...hourly,
+    ...(deep?{deep:{...deep,removed:deep.removed.slice(0,2000),kept:deep.kept.slice(0,5000),branchesKept:deep.branchesKept.slice(0,2000),registryGone:deep.registryGone.slice(0,5000),errors:deep.errors.slice(0,500)}}:{})};
+};
 
 export const gitRevertPaths: ExperimentalHostRpcHandlers<typeof hostContract>["gitRevertPaths"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId, ...await revertPaths({projectCwd:input.projectCwd,paths:input.paths}),

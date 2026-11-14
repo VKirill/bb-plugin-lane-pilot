@@ -1,9 +1,26 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { mkdir, mkdtemp, readFile, rm, rmdir } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { bestEffort, spawnAsync } from "@lane-pilot/kit";
-import { prepareWorktree } from "./git-integrate";
+import { laneWorktreeRoot, prepareWorktree, repoFolderName } from "./git-integrate";
 import { extractFailingFiles } from "./gate-output";
+
+/**
+ * The gate's scratch worktree: `<root>/<repository>/gate-<sha8>-<random>` beside the writers' worktrees (docs/worktrees.md), not a tmp
+ * folder (until 0.1.561 `lp-gate-bisect-*` / `lp-gate-base-*` under the system tmp, which the janitor still sweeps by prefix). The
+ * folder is the worktree itself: git takes an empty folder.
+ */
+async function gateScratch(basePath:string, sha:string|null):Promise<string> {
+  const top=await spawnAsync("git",["rev-parse","--show-toplevel"],{cwd:basePath,timeout:30_000});
+  const parent=join(laneWorktreeRoot(),repoFolderName(top.status===0&&top.stdout.trim()?top.stdout.trim():basePath));
+  await mkdir(parent,{recursive:true});
+  return await mkdtemp(join(parent,`gate-${(sha??"head").slice(0,8)}-`));
+}
+
+/** After the scratch worktree went: its folder, and the repository's folder when it is empty now. */
+async function dropGateScratch(dir:string):Promise<void> {
+  await bestEffort(console.warn, `gate scratch ${dir}`, rm(dir,{recursive:true,force:true}), undefined);
+  await rmdir(dirname(dir)).catch(() => undefined);
+}
 
 /**
  * The integration gate's work on the machine that holds the project: the gate command, the commit it ran on, and the
@@ -34,8 +51,8 @@ export async function runGateOnHost(input:{basePath:string;command:string;timeou
  * moved off its branch while writers merge into it. The worktree gets the base's dependencies like a writer's.
  */
 export async function bisectGateOnHost(input:{basePath:string;command:string;goodSha:string;badSha:string;timeoutSec:number}):Promise<{status:"found"|"none"|"failed";commit:string|null;reason:string|null}> {
-  const dir=await mkdtemp(join(tmpdir(),"lp-gate-bisect-"));
-  const scratch=join(dir,"wt");
+  const dir=await gateScratch(input.basePath,input.badSha);
+  const scratch=dir;
   const git=(args:string[],cwd=scratch,timeout=60_000)=>spawnAsync("git",args,{cwd,timeout,maxBuffer:16*1024*1024});
   try {
     const added=await git(["worktree","add","--detach",scratch,input.badSha],input.basePath);
@@ -50,7 +67,7 @@ export async function bisectGateOnHost(input:{basePath:string;command:string;goo
     await bestEffort(console.warn, `gate bisect reset ${scratch}`, git(["bisect","reset"]), undefined);
     await bestEffort(console.warn, `gate bisect worktree remove ${scratch}`, git(["worktree","remove","--force",scratch],input.basePath), undefined);
     await bestEffort(console.warn, `gate bisect worktree prune ${input.basePath}`, git(["worktree","prune"],input.basePath), undefined);
-    await bestEffort(console.warn, `gate bisect scratch ${dir}`, rm(dir,{recursive:true,force:true}), undefined);
+    await dropGateScratch(dir);
   }
 }
 
@@ -119,8 +136,8 @@ export async function attributeGateOnHost(input: {
   const eligible = failing.map((entry, index) => ({ ...entry, index })).filter((entry) => entry.path && TEST_FILE.test(entry.path));
   if (!input.baseSha || !eligible.length) return { commits, failing, baseline: { status: "skipped", reason: input.baseSha ? "no failing test file could be placed" : "no base commit" } };
 
-  const dir = await mkdtemp(join(tmpdir(), "lp-gate-base-"));
-  const scratch = join(dir, "wt");
+  const dir = await gateScratch(input.basePath, input.baseSha);
+  const scratch = dir;
   const deadline = Date.now() + input.timeoutSec * 1000;
   try {
     const added = await git(["worktree", "add", "--detach", scratch, input.baseSha]);
@@ -154,6 +171,6 @@ export async function attributeGateOnHost(input: {
   } finally {
     await bestEffort(console.warn, `gate base worktree remove ${scratch}`, git(["worktree", "remove", "--force", scratch]), undefined);
     await bestEffort(console.warn, `gate base worktree prune ${input.basePath}`, git(["worktree", "prune"]), undefined);
-    await bestEffort(console.warn, `gate base scratch ${dir}`, rm(dir, { recursive: true, force: true }), undefined);
+    await dropGateScratch(dir);
   }
 }

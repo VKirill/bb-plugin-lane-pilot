@@ -16,8 +16,7 @@ import { gluedCheckCommand } from "../../contracts/check-commands";
 import type { CatalogEntry, SecretCheck } from "../../secrets/server";
 import { safeRelative, validateOwnershipContract } from "../../contracts/ownership";
 import { CHECK_HISTORY_MIN_RUNS, p95 } from "../check-history";
-import { cycleText, findCycle } from "../dep-graph";
-import { dependsOnTask } from "../depends";
+import { dependsLoopFindings } from "./depends-lint";
 
 /** One problem in a task contract, with the concrete fix; `data` rides along in the answer to the PM. */
 export type LintFinding = { code:string; message:string; data?:Record<string, unknown> };
@@ -571,18 +570,7 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
     }
   }
 
-  // A dependency cycle is a plan error before dispatch (owner's rule, ТЗ 4д; SMA p2_waves): a task that names itself, or closes a loop
-  // through the open tasks of its run, would wait forever — nothing is queued. A redispatch counts as its name (`P1` names `P1.2`).
-  if (dependsOnTask(task.depends_on, task.id)) {
-    errors.push({ code:"depends_self", message:`depends_on names the task itself (${task.id}), so it would wait for itself forever; remove it from depends_on` });
-  } else if (input.runTasks && task.depends_on.length) {
-    const cycle = findCycle([{ id:task.id, depends_on:task.depends_on }, ...input.runTasks], (dep, id) => dependsOnTask([dep], id));
-    if (cycle?.includes(task.id)) {
-      const from = cycle.indexOf(task.id);
-      const path = [...cycle.slice(from, -1), ...cycle.slice(0, from), task.id];
-      errors.push({ code:"depends_cycle", data:{ replan:true }, message:`depends_on closes a cycle with the open tasks of this run (${cycleText(path)}), so none of them could start; drop the depends_on that is not a real output dependency` });
-    }
-  }
+  errors.push(...dependsLoopFindings(task, input.runTasks));
 
   // depends_on a task that already ended blocked or canceled: the PM replans before this one is queued.
   for (const dead of input.deadDependencies) {

@@ -26,6 +26,8 @@ export type GitIntegration = {
   /** With «merged»: main's HEAD before the merge (the merge commit's first parent), and what the merge changed there, deletions included. */
   base?:string|null;
   changed?:ChangedFile[];
+  /** With removeWorktree and «merged»/«up-to-date»: the worktree and its lane/ or bb/ branch were removed by the same call that merged them. */
+  worktreeRemoved?:boolean;
 };
 
 /** One file a change touched: A added, M modified, D deleted, T type changed. */

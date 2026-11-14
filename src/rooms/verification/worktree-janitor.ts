@@ -2,7 +2,7 @@ import { lstat, readdir, readFile, realpath, rename, rm, rmdir, stat } from "nod
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { bestEffort, isFsAbsent, lstatOrNull, orMiss, readTextOrNull, spawnAsync } from "@lane-pilot/kit";
-import { git, orphanedWorktree } from "./git-integrate";
+import { git, mergedAnywhere, orphanedWorktree } from "./git-integrate";
 
 /** One worktree the sweep left: it holds work nobody else has (edits or commits on no other ref), or it is too young. */
 export type JanitorKept = { path: string; reason: string; ageMs: number; bytes: number };
@@ -48,7 +48,10 @@ async function lastTouched(top: string): Promise<number> {
 async function uniqueCommits(top: string): Promise<boolean> {
   const refs = await git(top, ["for-each-ref", "--contains", "HEAD", "--format=%(refname)", "refs/heads", "refs/remotes"]);
   if (!refs.ok) return true;
-  return !refs.stdout.split("\n").some((ref) => ref && !ref.startsWith("refs/heads/lane/") && ref !== "refs/remotes/lane/");
+  if (refs.stdout.split("\n").some((ref) => ref && !ref.startsWith("refs/heads/lane/") && ref !== "refs/remotes/lane/")) return false;
+  // A squash or rebase merge leaves main without these commits but with their change: `git cherry` and the squash probe see it
+  // (until 0.1.561 such copies read as unique and stayed for good, audit 2026-11-14).
+  return !(await mergedAnywhere(top, "HEAD"));
 }
 
 /** Tracked-file edits only: a dead worktree's node_modules or dist writes are untracked noise, not work. */

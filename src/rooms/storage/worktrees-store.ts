@@ -28,10 +28,27 @@ export function listOpenWorktrees(db: LanePilotDatabase): WorktreeRow[] {
   return db.prepare("SELECT id,host,path,branch,owner_kind,owner_id,created_at,released_at FROM lane_pilot_worktree WHERE released_at IS NULL").all() as WorktreeRow[];
 }
 
-/** One hourly janitor sweep's receipt row per host (the morning list reads these). */
-export function recordJanitorSweep(db: LanePilotDatabase, row: { at: number; host: string; removed: number; freedBytes: number; tmpRemoved: number; tmpFreedBytes: number; keptJson: string }): void {
-  db.prepare("INSERT INTO lane_pilot_janitor(at,host,removed,freed_bytes,tmp_removed,tmp_freed_bytes,kept_json) VALUES (?,?,?,?,?,?,?)")
-    .run(row.at, row.host, row.removed, row.freedBytes, row.tmpRemoved, row.tmpFreedBytes, row.keptJson);
+/**
+ * One janitor pass's receipt row per host (the morning list reads these). `pass` is hourly or daily (docs/worktrees.md); the daily row
+ * carries how many copies stayed for commits merged nowhere and the pass's report by class (`report_json`: removed, kept by reason, pruned,
+ * registry rows closed, branches kept). Columns added in 0.1.561 are additive: an older row reads as an hourly pass.
+ */
+export function recordJanitorSweep(db: LanePilotDatabase, row: { at: number; host: string; removed: number; freedBytes: number; tmpRemoved: number; tmpFreedBytes: number; keptJson: string;
+  pass?: "hourly" | "daily"; keptUnmerged?: number; reportJson?: string | null }): void {
+  db.prepare("INSERT INTO lane_pilot_janitor(at,host,removed,freed_bytes,tmp_removed,tmp_freed_bytes,kept_json,pass,kept_unmerged,report_json) VALUES (?,?,?,?,?,?,?,?,?,?)")
+    .run(row.at, row.host, row.removed, row.freedBytes, row.tmpRemoved, row.tmpFreedBytes, row.keptJson, row.pass ?? "hourly", row.keptUnmerged ?? 0, row.reportJson ?? null);
+}
+
+/** The kept list of a host's newest row of a pass: an hourly pass that removed nothing and keeps the same list writes no new row. */
+export function lastJanitorKept(db: LanePilotDatabase, host: string, pass: "hourly" | "daily"): string | null {
+  const row = db.prepare("SELECT kept_json FROM lane_pilot_janitor WHERE host=? AND pass=? ORDER BY at DESC, id DESC LIMIT 1").get(host, pass) as { kept_json: string } | undefined;
+  return row?.kept_json ?? null;
+}
+
+/** Closes the open registry rows of a removed worktree: the row's path is the worktree or a folder inside it (a nested workspace). */
+export function releaseWorktreesUnder(db: LanePilotDatabase, host: string, top: string, at = Date.now()): number {
+  return db.prepare("UPDATE lane_pilot_worktree SET released_at=? WHERE host=? AND released_at IS NULL AND (path=? OR substr(path,1,?)=?)")
+    .run(at, host, top, top.length + 1, `${top}/`).changes;
 }
 
 /** Mark one registry row released (the reconcile removed the copy on the host). */

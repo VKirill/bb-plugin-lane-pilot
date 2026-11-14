@@ -7,6 +7,7 @@ import { recoverStaleGitLock } from "./locks";
 import { orphanedWorktree, removeEmptyWorktreeParent, retireCollidingWorktrees, retireOrphanedWorktree, worktreeTop } from "./worktree-hygiene";
 import { linkWorktreeDependencies } from "./worktree-dependencies";
 import { applyOwnsBarrier } from "./owns-barrier";
+import { deleteBranchIfMerged, laneWorktreeTarget } from "./worktree-layout";
 
 /** Where a Lane chat folder sits in its git checkout: at the repo root, or nested inside a larger repo. */
 export async function workspaceGitLayout(workspacePath:string):Promise<
@@ -23,6 +24,15 @@ export async function workspaceGitLayout(workspacePath:string):Promise<
   if(prefix.startsWith("..")) return {ok:false,reason:"workspace is outside its git checkout"};
   const nested=prefix!==""&&prefix!==".";
   return {ok:true,repoTop,nested,prefix:nested?prefix:""};
+}
+
+/**
+ * The folder a new worktree of the checkout at `basePath` gets: `<root>/<repository>/<name>` (docs/worktrees.md). The repository is
+ * the git top the worktree forks, so a chat folder nested in a larger repository is filed under that repository's name.
+ */
+export async function laneWorktreeTargetFor(root:string, basePath:string, name:string):Promise<string> {
+  const layout=await workspaceGitLayout(basePath);
+  return laneWorktreeTarget(root,layout.ok?layout.repoTop:basePath,name);
 }
 
 /** The folder of the worktree that has `branch` checked out, from `git worktree list --porcelain`; null when none has. */
@@ -126,11 +136,15 @@ export async function prepareWorktree(input:{basePath:string;worktreePath:string
   return locked===undefined?out:{...out,locked};
 }
 /**
- * Removes Lane Pilot's own worktree and its lane/ branch; other worktrees are left alone. With `releaseDir` the work is
- * returned first (SMA rule 9: stop = the writer is gone AND its work is back): the uncommitted edits and the commits no
+ * Removes Lane Pilot's own worktree and, when its work is merged, its branch; other worktrees are left alone. With `releaseDir` the
+ * work is returned first (SMA rule 9: stop = the writer is gone AND its work is back): the uncommitted edits and the commits no
  * other branch has are saved by `snapshotWorktree`, and a snapshot that fails keeps the worktree.
+ * The branch goes only when its work is in main (ancestry, patch or squash, `deleteBranchIfMerged`): a cancelled task with commits
+ * merged nowhere keeps `lane/<attempt>` (until 0.1.561 it was `branch -D`, saved only as a patch), and `branchKept` names it.
  */
-export async function removeLaneWorktree(input:{basePath:string;worktreePath:string;releaseDir?:string}):Promise<{removed:boolean;saved?:{status:"clean"|"saved"|"missing"|"failed";path:string|null;dirty:number;ahead:number;reason:string|null}}> {
+export async function removeLaneWorktree(input:{basePath:string;worktreePath:string;releaseDir?:string}):Promise<{removed:boolean;saved?:{status:"clean"|"saved"|"missing"|"failed";path:string|null;dirty:number;ahead:number;reason:string|null};
+  /** The branch that stayed because some of its commits are merged nowhere. */
+  branchKept?:{branch:string;ahead:number;reason:string}}> {
   // A git command here would reach another worktree's index: the folder is retired, never snapshotted.
   const orphan=await orphanedWorktree(input.worktreePath);
   if(orphan) return {removed:await retireOrphanedWorktree(orphan)};
@@ -147,9 +161,19 @@ export async function removeLaneWorktree(input:{basePath:string;worktreePath:str
   await recoverStaleGitLock(input.basePath);
   const top=await worktreeTop(input.worktreePath);
   const removed=(await git(input.basePath,["worktree","remove","--force",top])).ok;
-  // The branch phase/<id> stays as the record of the package; a lane/ branch goes with its tree.
-  if(removed) { if(!phase) await git(input.basePath,["branch","-D",branch]); await removeEmptyWorktreeParent(top); }
-  return {removed,...(saved?{saved}:{})};
+  // The branch phase/<id> stays as the record of the package; a lane/ branch goes with its tree once its work is in main.
+  let branchKept:{branch:string;ahead:number;reason:string}|undefined;
+  if(removed) {
+    if(!phase) {
+      const dropped=await deleteBranchIfMerged(input.basePath,branch);
+      if(!dropped.deleted&&dropped.reason) {
+        branchKept={branch,ahead:dropped.ahead,reason:dropped.reason};
+        console.warn(`lane-pilot: kept branch ${branch} after removing its worktree ${top}: ${dropped.reason}`);
+      }
+    }
+    await removeEmptyWorktreeParent(top);
+  }
+  return {removed,...(saved?{saved}:{}),...(branchKept?{branchKept}:{})};
 }
 
 /**

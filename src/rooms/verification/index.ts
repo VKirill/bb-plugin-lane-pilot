@@ -3,8 +3,12 @@
 export { gateTriagePrompt, parseGateTriageResult } from "./gate-triage";
 export { sweepLaneWorktrees, JANITOR_TMP_PREFIXES } from "./worktree-janitor";
 export type { JanitorKept, JanitorReceipt } from "./worktree-janitor";
+export { REPORTED_KEEP_REASONS, SWEEP_CLASSES, findSweepRepos, sweepWorktreeClasses } from "./worktree-sweep";
+export type { KeepReason, SweepClass, SweepKept, SweepReceipt, SweepRemoved } from "./worktree-sweep";
 export { appendExcludeCommand, createWorktree, ensureExcludeLinesCommand, EXCLUDE_NOT_GIT, integrateWorktree, persistTaskFolder, prepareWorktree, removeLaneWorktree, revertPaths, snapshotWorktree, syncWorktree, taskFolderRel, withBaseLock } from "./git-integrate";
 export type { ReplayCheck, ReplayCheckOutcome } from "./git-integrate";
+export { aheadOf, deleteBranchIfMerged, laneWorktreeRoot, laneWorktreeTarget, laneWorktreeTargetFor, mergedAnywhere, mergedInto, mergeTargets, repoFolderName } from "./git-integrate";
+export type { MergedHow } from "./git-integrate";
 export { gitOwnershipChangedPaths, resolveGitOwnershipBase, undoCheckWrites } from "./git-ownership";
 export { attributeGateOnHost, bisectGateOnHost, runGateOnHost } from "./integration-gate-host";
 export { darwinAvailableBytes, readMachineFacts } from "./machine-reading";

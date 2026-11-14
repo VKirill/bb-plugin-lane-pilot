@@ -117,12 +117,22 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
     // The writer's work stays committed in its worktree; the next try merges it.
     return {status:"busy",commit:sha,conflicts:[],reason:error.message,holder:error.holder};
   }
-  // Lane Pilot's own worktree is done once its work is in main. A conflict keeps it: uncommitted edits in main block
-  // the merge without anything to redo, and the committed work there is merged as soon as main is clean.
-  if(input.removeWorktree&&(result.status==="merged"||result.status==="up-to-date")) {
+  // The attempt's worktree is done once its work is in main: the same call that merged it removes it and its branch (SMA ta_cleanup,
+  // docs/worktrees.md). That is Lane Pilot's lane/<attempt> and, since 0.1.561, the BB-managed bb/<…> worktree of an attempt that ran in
+  // a BB environment too (BB retires an environment whose folder is gone without complaint). A conflict keeps it: uncommitted edits in
+  // main block the merge without anything to redo, and the committed work there is merged as soon as main is clean. The branch goes by
+  // -D: this merge is what put its work into main, even where the bookkeeping settle made the merged commit differ from its tip.
+  // Only those two kinds of branch: a worktree on any other branch (a chat's own environment an attempt reused) is never the merge's to remove.
+  if(input.removeWorktree&&(result.status==="merged"||result.status==="up-to-date")&&!(branch.startsWith("lane/")||branch.startsWith("bb/"))) result.worktreeRemoved=false;
+  else if(input.removeWorktree&&(result.status==="merged"||result.status==="up-to-date")) {
     const top=await worktreeTop(input.worktreePath);
-    if((await git(input.basePath,["worktree","remove","--force",top])).ok) await removeEmptyWorktreeParent(top);
-    if(branch.startsWith("lane/")) await git(input.basePath,["branch","-D",branch]);
+    const gone=(await git(input.basePath,["worktree","remove","--force",top])).ok;
+    if(gone) {
+      await removeEmptyWorktreeParent(top);
+      await git(input.basePath,["branch","-D",branch]);
+      await git(input.basePath,["config","--local","--unset",`branch.${branch}.laneTask`]);
+    }
+    result.worktreeRemoved=gone;
   }
   return result;
 }

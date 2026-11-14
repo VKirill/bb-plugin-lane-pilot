@@ -15,6 +15,7 @@ export type { PmTurnWatch } from "./pm-turn-watch";
 export { hideServiceProjects, mountServiceProjects } from "./service-projects";
 export { createReconcile } from "./reconcile";
 export { BREAKERS_KEY, DRILL_KEY, createStability } from "./stability"
-export { mountWorktreeJanitor, protectedWorktreePaths, runWorktreeJanitor } from "./worktree-janitor";
+export { CLEANUP_ITEM_PREFIX, WORKTREE_YOUNG_MS, dailyPassInputs, mountWorktreeJanitor, protectedWorktreePaths, registerWorktreeCleanupActions, runDailyWorktreePass, runHourlyWorktreePass, runWorktreeJanitor, worktreeMaxAgeMs } from "./worktree-janitor";
+export type { CleanupPassOutcome } from "./worktree-janitor";
 export { reconcileScanOpen } from "../reconcile";
 export { clearDrainSnapshot, readDrainSnapshot, type DrainSnapshot } from "./deploy-drain";

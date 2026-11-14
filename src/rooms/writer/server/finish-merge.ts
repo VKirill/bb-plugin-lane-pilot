@@ -71,9 +71,12 @@ export async function mergeAcceptedAttempt(deps: FinishMergeDeps): Promise<Recor
         const integrate = () => (checksMoved(mergePool), host.call("gitIntegrate", {
           requestedHostId:input.config.hostId, basePath, worktreePath:bound.workspace_path!,
           message:attemptMergeMessage(input.task, input.attemptId),
-          // Only Lane Pilot's own worktree (no BB environment) is removed; a BB managed one belongs to BB. An area task
-          // keeps it for the area's next task (the attempt-worktree sweep removes it after the sticky window).
-          removeWorktree:bound.environment_id === null && !(input.task.area && areaHasLiveWork(db, input)),
+          // The merge removes the worktree and its branch at once (SMA ta_cleanup, docs/worktrees.md), also when the attempt ran in a BB
+          // environment: the default lane-pilot-worktree provider's folder is Lane Pilot's own, and BB retires an environment whose folder is
+          // gone (its threads are archived by the finished-attempt sweep). Until 0.1.561 only attempts without an environment were cleaned
+          // here, so the default path left every accepted worktree to the hourly janitor. An area task keeps it for the area's next task
+          // (the attempt-worktree sweep removes it after the sticky window).
+          removeWorktree:!(input.task.area && areaHasLiveWork(db, input)),
           bookkeeping:bookkeepingSetting(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId))),
           ownsPaths:input.task.owns_paths.slice(0, 200),
           // When main moved and the attempt is replayed on it, the host runs these checks in the worktree before the merge.

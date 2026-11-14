@@ -1,7 +1,7 @@
 import { runOnHost } from "@lane-pilot/host-calls";
 import { bestEffort } from "@lane-pilot/kit";
 import { acceptedChangeProofRows } from "../../rollback/server";
-import { dependsOnTask } from "../../tasks/depends";
+import { dependsOnTask } from "../../tasks";
 import type { ServerCore } from "../../contracts/server";
 
 export type DependencyMerge = { dep: string; taskId: string; commit: string };
