@@ -7,8 +7,10 @@ import type { MemoryCandidate } from "../../packages/memory-core/src";
 import { cockpitRpc } from "../../src/rooms/cockpit/server";
 import { DESIGN_JOURNAL_KEY } from "../../src/rooms/design-eval/journal";
 import { creatorBrief } from "../../src/rooms/forge/logic";
-import { openDatabase } from "../../src/rooms/plugin-db";
-import { createRun } from "../../src/rooms/storage";
+import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../../src/rooms/plugin-db";
+import { createFront } from "../../src/rooms/front/server/index";
+import { COCKPIT_READS, startScreen, unusedReads } from "../../src/rooms/cockpit/ui/registry";
+import { rpcContract } from "../../src/rooms/contracts";
 import { observe } from "./r09-world-e";
 
 const line = (projectId: string, phaseId: string, over: Record<string, unknown>) => ({ at: 1, projectId, phaseId, designer: "designer", reviewer: "critic", drawingSha: phaseId, firstPass: true, critique: { scores: { a: 3, b: 3, c: 3, d: 3 }, verdict: "pass", notes: "" }, codeScore: null, ownerWord: null, ...over });
@@ -74,5 +76,71 @@ describe("region 9 · the memory index rebuild", () => {
     const again = await cockpit.cockpit_memory!({ runId: "run1", action: "index" });
     expect(again.output).toBe("Перестроено записей: 2");
     observe("n894", { checked, said: said.output, foundAfter: found().includes(lost!), again: again.output });
+  });
+});
+
+describe("region 9 · the machines of the household", () => {
+  const host = () => { const made = createFakePluginHost({ pluginId: "lane-pilot" } as never); return { bb: made.bb, harness: made.harness, db: openDatabase(made.bb) }; };
+  const front = (db: never, bb: never) => createFront({ db, bb, log: () => undefined, isDisposed: () => false } as never).front;
+  const answering = { windows: { five_hour: { utilization: 42 } } };
+
+  it("[sma:m_sw_machines] each machine of the household is one line — what it runs on, the projects it worked on today, and what it did today (accepted, blocked, running) — and work older than a day is not counted", async () => {
+    const { bb, harness, db } = host();
+    harness.sdk.stub("hosts.list", async () => [{ id: "h1", name: "Mac mini", status: "connected" }, { id: "h2", name: "Big", status: "connected" }]);
+    bb.hosts.experimental_client = (() => ({ call: async () => answering })) as never;
+    createRun(db, "r1", "pa", "bb", "/ws", "none", undefined as never, "h1");
+    createRun(db, "r2", "pb", "bb", "/ws", "none", undefined as never, "h1");
+    createRun(db, "r3", "pc", "bb", "/ws", "none", undefined as never, "h1");
+    const attempt = (id: string, run: string, state: "accepted" | "blocked") => { createTask(db, { id: `t_${id}`, runId: run, kind: "bb", contract: {} }); createAttempt(db, { id, runId: run, taskId: `t_${id}` }); transitionAttempt(db, id, state, state === "blocked" ? { reason: "x" } : {}); };
+    attempt("a1", "r1", "accepted"); attempt("a2", "r2", "blocked"); attempt("a3", "r3", "accepted");
+    db.prepare("UPDATE lane_pilot_attempt SET updated_at=? WHERE id=?").run(Date.now() - 3 * 86_400_000, "a3");
+    const api = front(db as never, bb as never);
+    await api.pollPeers();
+    const rows = await api.peers();
+    const lines = Object.fromEntries(rows.map((row) => [row.hostId, row.line]));
+    expect(lines.h1).toBe("Mac mini: на связи · окна: five_hour 42% · проекты: pa, pb · сегодня: принято 1, стоит 1, идёт 0");
+    expect(lines.h2).toBe("Big: на связи · окна: five_hour 42% · проекты: — · сегодня: принято 0, стоит 0, идёт 0");
+    observe("n900", { lines });
+  });
+
+  it("[sma:m_sw_machine_row] a machine row says its name and state; one that stopped answering says how long ago it was last seen; a machine that left BB's list is let go at the next poll, and an empty list drops nothing", async () => {
+    const { bb, harness, db } = host();
+    let hosts: Array<{ id: string; name: string; status: string }> = [{ id: "h1", name: "Mac mini", status: "connected" }, { id: "h2", name: "Big", status: "connected" }];
+    harness.sdk.stub("hosts.list", async () => hosts);
+    bb.hosts.experimental_client = (() => ({ call: async () => answering })) as never;
+    const api = front(db as never, bb as never);
+    await api.pollPeers(Date.now() - 10 * 60_000);
+    hosts = [{ id: "h1", name: "Mac mini", status: "connected" }, { id: "h2", name: "Big", status: "offline" }];
+    await api.pollPeers();
+    const line = (rows: Array<{ hostId: string; line: string }>, id: string) => rows.find((row) => row.hostId === id)?.line;
+    const stopped = await api.peers();
+    expect(line(stopped, "h1")).toContain("Mac mini: на связи");
+    expect(line(stopped, "h2")).toContain("Big: не отвечает (last seen 10 min ago)");
+    hosts = [{ id: "h1", name: "Mac mini", status: "connected" }];
+    const letGo = (await api.pollPeers()).map((row) => row.hostId);
+    hosts = [];
+    const emptyList = (await api.pollPeers()).map((row) => row.hostId);
+    expect(letGo).toEqual(["h1"]);
+    expect(emptyList).toEqual(["h1"]);
+    observe("n901", { h1: line(stopped, "h1")!.split(" · ")[0], h2: line(stopped, "h2")!.split(" · ")[0], letGo, emptyList });
+  });
+});
+
+describe("region 9 · the window's registry", () => {
+  it("[sma:m_sw_unused_reads] the reads of the contract that no screen calls are those the registry does not list as used (only read names count, a write never does), and the system screen lists them", () => {
+    const names = ["get_screen", "list_projects", "phase_get", "get_role_models", "cockpit_workers", "money_status", "save_setting", "cockpit_windows", "task_word"];
+    const unused = unusedReads(names, COCKPIT_READS);
+    expect(unused).toEqual(["get_role_models"]);
+    expect(unusedReads(names, [])).toEqual(["get_screen", "list_projects", "phase_get", "get_role_models", "cockpit_workers", "money_status"]);
+    const real = unusedReads(Object.keys(rpcContract), COCKPIT_READS);
+    expect(real.every((name) => /^(get_|list_|cockpit_|peers_list|door_audience|actions_recent|phase_|owner_waiting|money_status|first_run_get|helpers_list|coord_status)/.test(name) && !(COCKPIT_READS as readonly string[]).includes(name))).toBe(true);
+    expect(real.length).toBeGreaterThan(0);
+    observe("n904", { unused, none: unusedReads(names, []), realAreReads: true, realCount: real.length > 0 });
+  });
+
+  it("[sma:m_sw_first_run] the window opens on the first-run interview for a project never set up, but only when no screen is named: a real path is never overridden, and a set-up project opens its home", () => {
+    const answers = { empty: startScreen("", { needed: true }), slash: startScreen("/", { needed: true }), real: startScreen("money", { needed: true }), done: startScreen("", { needed: false }), realDone: startScreen("/money", { needed: false }) };
+    expect(answers).toEqual({ empty: "firstrun", slash: "firstrun", real: "money", done: "home", realDone: "money" });
+    observe("n911", answers);
   });
 });

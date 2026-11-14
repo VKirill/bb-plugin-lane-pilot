@@ -16,7 +16,8 @@ from lp_drill.env import ROOT
 from lp_drill.prove import Proofs
 
 TEST_FILES_E = ["tests/sma/four-proofs-r09-e.test.ts", "tests/sma/four-proofs-r09-e.test.tsx", "tests/sma/four-proofs-r09-e2.test.tsx"]
-NODES_E = ["n882", "n883", "n884", "n885", "n886", "n887", "n888", "n889", "n890", "n891", "n892", "n893", "n894", "n895", "n899"]
+NODES_E = ["n882", "n883", "n884", "n885", "n886", "n887", "n888", "n889", "n890", "n891", "n892", "n893", "n894", "n895", "n899",
+           "n900", "n901", "n904", "n905", "n906", "n907", "n908", "n909", "n910", "n911", "n912", "n913", "n914", "n915", "n916"]
 
 
 def _checks(v: dict) -> dict[str, tuple[bool, str]]:
@@ -70,6 +71,45 @@ def _checks(v: dict) -> dict[str, tuple[bool, str]]:
     a = get("n899")
     out["n899"] = ("Claude Code and Codex: everything." in a.get("whole", "") and "Grok (Cursor) and OpenCode: everything except CLI plugins; Cursor's own skills cannot be turned off; project instructions cannot be turned off." in a.get("whole", ""),
                    f"access panel says {a.get('whole')!r}")
+    a = get("n900")
+    out["n900"] = (a.get("lines") == {"h1": "Mac mini: на связи · окна: five_hour 42% · проекты: pa, pb · сегодня: принято 1, стоит 1, идёт 0", "h2": "Big: на связи · окна: five_hour 42% · проекты: — · сегодня: принято 0, стоит 0, идёт 0"},
+                   f"household lines {a.get('lines')} (a three-day-old accepted work of a third project is not counted)")
+    a = get("n901")
+    out["n901"] = (a.get("h1") == "Mac mini: на связи" and a.get("h2") == "Big: не отвечает (last seen 10 min ago)" and a.get("letGo") == ["h1"] and a.get("emptyList") == ["h1"],
+                   f"rows {a.get('h1')!r} / {a.get('h2')!r}; after a machine left BB's list {a.get('letGo')}; after an empty list {a.get('emptyList')}")
+    a = get("n904")
+    out["n904"] = (a.get("unused") == ["get_role_models"] and a.get("none") == ["get_screen", "list_projects", "phase_get", "get_role_models", "cockpit_workers", "money_status"] and a.get("realCount") is True,
+                   f"reads no screen calls {a.get('unused')}; with nothing used {a.get('none')}")
+    a = get("n905")
+    out["n905"] = ("https://hub.example · WireGuard (no public bb connect)" in a.get("door", "") and a.get("joinAndLetGo") == [True, True] and a.get("called") == ["actions_recent", "cockpit_seen_list", "door_audience", "peers_list"],
+                   f"door panel {a.get('door')!r}; calls {a.get('called')}")
+    a = get("n906")
+    out["n906"] = (a.get("tiles") == a.get("expected") and "System" in a.get("tiles", []) and a.get("tiles", [""])[0] == "Phases" and len(a.get("tiles", [])) == 13
+                   and a.get("opened") == {"method": "toPluginPanel", "path": "lane-pilot-cockpit", "options": {"subPath": "money"}}, f"home tiles {a.get('tiles')}; a tile opened {a.get('opened')}")
+    a = get("n907")
+    out["n907"] = (a.get("withoutRun") is False and a.get("steps") == ["1 · Found", "2 · Take as drafts", "3 · Drafts"], f"panel without a run {a.get('withoutRun')}; steps with a run {a.get('steps')}")
+    a = get("n908")
+    out["n908"] = (a.get("rows") == ["yard claudeA yard agent.", "ranger codex.codex/agents/ranger.toml"] and a.get("asked") == [{"runId": "run_1"}] and a.get("emptySays") == "Nothing yet.", f"found helpers {a.get('rows')}")
+    a = get("n909")
+    out["n909"] = (a.get("offAtStart") is True and a.get("sent") == [{"runId": "run_1", "names": ["yard", "ranger"]}], f"take button off at start {a.get('offAtStart')}; sent {a.get('sent')}")
+    a = get("n910")
+    out["n910"] = (a.get("before") == ["yard: appliedCheck and enable", "ranger: kept: a draft with this name existsCheck and enable", "scout: conflict"]
+                   and a.get("after") == ["yard: awaits your «да»", "ranger: kept: a draft with this name existsCheck and enable", "scout: conflict"], f"drafts before {a.get('before')}; after enabling the first {a.get('after')}")
+    a = get("n911")
+    out["n911"] = (a == {"empty": "firstrun", "slash": "firstrun", "real": "money", "done": "home", "realDone": "money"}, f"start screen {a}")
+    a = get("n912")
+    out["n912"] = (a.get("asked") == "2/4 · Which writer?" and a.get("next") == "3/4 · How strict?" and a.get("onWithWords") is True, f"asked {a.get('asked')!r} then {a.get('next')!r}")
+    a = get("n913")
+    out["n913"] = (a.get("ready") == "Ready✓ goal: a shop✓ writer: codex / gpt-6-luna" and a.get("empty") == "Ready", f"ready column {a.get('ready')!r}; before any answer {a.get('empty')!r}")
+    a = get("n914")
+    out["n914"] = (a.get("a") == ["Risk: high", "Base: 01234567 · lp/t1", "Cost: $0.500"] and a.get("b") == ["", "Base: not recorded (folder without git)", "Cost: $12.50"] and a.get("c", ["", "", ""])[2] == "Cost: $3.00, 1 of 2 attempts measured"
+                   and a.get("fallback") == "Save the form○the form saves", f"frame chips {a.get('a')} / {a.get('b')} / {a.get('c')}; fallback {a.get('fallback')!r}")
+    a = get("n915")
+    out["n915"] = (a.get("head") == "Make the cart its own phaseShop" and a.get("why") == "Why this is for you: The lead proposes a direction." and a.get("buttons") == ["Yes", "No"] and a.get("todo") == "What to do: bb lane-pilot migrate · bb lane-pilot verify",
+                   f"card {a.get('head')!r}, {a.get('why')!r}, buttons {a.get('buttons')}, commands {a.get('todo')!r}")
+    a = get("n916")
+    out["n916"] = (a.get("reads") == [{"runId": "run", "relativePath": "src/a.ts", "offset": 0}, {"runId": "run", "relativePath": "npm test", "offset": 0}] and a.get("starHasButton") is False and a.get("shown") == "export const a = 1; …",
+                   f"file reads {a.get('reads')}; a pattern has a button {a.get('starHasButton')}; text shown {a.get('shown')!r}")
     return out
 
 
