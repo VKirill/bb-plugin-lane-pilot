@@ -542,7 +542,7 @@ export default {
   },
   n317: { mutation: flip("src/rooms/runs/server/task-reconcile.ts", ".filter((row) => !services.activeWriterTasks.has(", ".filter((row) => services.activeWriterTasks.has("), trace: drill("sma_r01"), voidReview:voidIsHave("состояние «заявлена» = попытка spawn_requested/running с живым циклом в activeWriterTasks; без живого цикла её забирает периодический проход (аренда = живой цикл)") },
   n318: {
-    mutation: flip("src/rooms/tasks/words.ts", 'if (!latest) return "owner_word: owner.words is on', 'if (latest) return "owner_word: owner.words is on'),
+    mutation: distort("src/rooms/tasks/words.ts", "the task is verified and waits for the owner's word to land on main", "the task is verified and needs no word to land on main"),
     trace: drill("sma_r01"),
   },
   n319: {
