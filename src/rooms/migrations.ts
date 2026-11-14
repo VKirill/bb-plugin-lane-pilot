@@ -650,4 +650,45 @@ export const migrations = [
   `DELETE FROM lane_pilot_project_settings WHERE key IN ('import.routing_profile','import.night_shift','import.completed')`,
   // The memory judge's call as a receipt (model, candidates, chosen ids, latency, tokens, fallback reason; no note text). Append only.
   `ALTER TABLE lane_pilot_memory_receipt ADD COLUMN judge_json TEXT`,
+  // One home per task (docs/task-folder.md): the row says a task keeps all its files under <base>/.agents/tasks/<id>/; a task without one
+  // was dispatched before the switch and finishes on the old layout. Additive only.
+  `CREATE TABLE IF NOT EXISTS lane_pilot_task_home (
+    task_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    base_path TEXT NOT NULL,
+    host_id TEXT NOT NULL,
+    phase_id TEXT,
+    layout TEXT NOT NULL DEFAULT 'home',
+    created_at INTEGER NOT NULL
+  )`,
+  // The task manifest's source of truth (lp.task-manifest/1): one row per file of a task home; manifest.json is rendered from these rows.
+  `CREATE TABLE IF NOT EXISTS lane_pilot_task_file (
+    task_id TEXT NOT NULL,
+    path TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    attempt_id TEXT,
+    round INTEGER,
+    sha256 TEXT NOT NULL,
+    bytes INTEGER NOT NULL,
+    producer_json TEXT NOT NULL,
+    plugin_version TEXT NOT NULL,
+    readers_json TEXT NOT NULL DEFAULT '[]',
+    supersedes TEXT,
+    superseded_by TEXT,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (task_id, path)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_lp_task_file_kind ON lane_pilot_task_file(task_id, kind, superseded_by)`,
+  // Who read which task file (the manifest's read_by) and every read of an old-layout file (the legacy counter). Append only.
+  `CREATE TABLE IF NOT EXISTS lane_pilot_task_file_read (
+    task_id TEXT NOT NULL,
+    path TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    reader TEXT NOT NULL,
+    sha256 TEXT,
+    legacy INTEGER NOT NULL DEFAULT 0,
+    at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_lp_task_file_read_task ON lane_pilot_task_file_read(task_id, legacy)`,
 ];
