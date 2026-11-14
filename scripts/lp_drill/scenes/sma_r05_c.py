@@ -8,6 +8,7 @@ tests/sma/four-proofs-r05-c.test.ts. n527 (the outage receipt) is traced by the 
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 
 from lp_drill.env import ROOT
@@ -80,7 +81,7 @@ def prove_c(proofs, tmp) -> None:
     waits = seq.stdout.split()
     proofs.prove("n520", waits == ["30", "60", "120", "120"], f"waits after 0, 1, 2, 3 lifts on record: {waits}")
     # n521 A repeated lift kills a port holder: default on.
-    dflt = subprocess.run(["bash", "-c", f"source <(sed '/^case /,$d' {ROOT / 'scripts/hub-watchdog.sh'}); echo \"$KILL_HOLDER\""], capture_output=True, text=True, cwd=ROOT, env={"PATH": "/usr/bin:/bin", "LP_WATCH_STATE": str(tmp)}).stdout.strip()
+    dflt = subprocess.run(["bash", "-c", f"source <(sed '/^case /,$d' {ROOT / 'scripts/hub-watchdog.sh'}); echo \"$KILL_HOLDER\""], capture_output=True, text=True, cwd=ROOT, env={**{k: v for k, v in os.environ.items() if k != "LP_WATCH_KILL_HOLDER"}, "LP_WATCH_STATE": str(tmp)}).stdout.strip()
     proofs.prove("n521", dflt == "1", f"holder kill default on a repeated lift: {dflt}")
     # n522 Out of tries — to the person.
     p("n522", "m_w_abandoned", lambda d: d["outOfTries"] == ["1 lifts without an answer: Job failed. See journalctl"] and d["said"] == [NOT_LIFTED] and d["longSleeps"] == 1 and d["marker"] is True, lambda d: f"record {d['outOfTries']}; said {d['said']}; 600 s sleeps {d['longSleeps']}")
