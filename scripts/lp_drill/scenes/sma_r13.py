@@ -13,12 +13,14 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 from lp_drill.env import ROOT
 from lp_drill.prove import Proofs
 
-NODES = ["n1036", "n1037", "n1038", "n1039", "n1040", "n1041", "n1042", "n1043"]
+NODES = ["n1036", "n1037", "n1038", "n1039", "n1040", "n1041", "n1042", "n1043", "n1046", "n1047"]
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r13_probe.ts"
 
 
@@ -31,6 +33,33 @@ def _gate_leak_lines(tree: Path) -> list[str]:
     """The publish gate (`lp-ship.ts publishable --strict`) pointed at another tree: the `leak scan:` lines it prints."""
     env = {**os.environ, "LP_SHIP_LEAK_ROOT": str(tree)}
     return [line for line in _out(["npx", "tsx", "scripts/lp-ship.ts", "publishable", "--strict"], env).splitlines() if line.startswith("leak scan:")]
+
+
+def _crash_census(tmp: Path) -> tuple[bool, str]:
+    """The real `_db_census` of the outage drill on a scratch SQLite file: a writer killed mid-loop, a census before and after, a damaged file."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from lp_drill.scenes.hub_outage import _db_census
+    script, env = str(ROOT / "scripts/hub-watchdog.sh"), {"PATH": os.environ.get("PATH", ""), "HOME": str(tmp)}
+    db = tmp / "stand.db"
+    subprocess.run(["sqlite3", str(db), "pragma journal_mode=WAL; create table beats(n integer);"], check=True, capture_output=True)
+    empty = _db_census(script, env, db)
+    writer = subprocess.Popen(["bash", "-c", f"for i in $(seq 1 200000); do sqlite3 '{db}' 'insert into beats values (1);' 2>/dev/null; done"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    before = {"rows": 0, "ready": False}
+    for _ in range(60):
+        time.sleep(0.2)
+        before = _db_census(script, env, db)
+        if before["rows"] > 10:
+            break
+    writer.kill()
+    writer.wait()
+    time.sleep(0.3)
+    after = _db_census(script, env, db)
+    own = int(subprocess.run(["sqlite3", "-readonly", str(db), "select count(*) from beats;"], capture_output=True, text=True).stdout.strip())
+    broken = tmp / "broken.db"
+    broken.write_text("this is not a sqlite file, only text that is long enough to fill a header page " * 80)
+    bad = _db_census(script, env, broken)
+    ok = empty == {"rows": 0, "ready": True} and before["rows"] > 10 and before["ready"] and after["ready"] and after["rows"] >= before["rows"] and after["rows"] == own and not bad["ready"]
+    return ok, f"census before the kill {before}, after SIGKILL {after} (sqlite itself reads {own}), a damaged file {bad}"
 
 
 def scenario_sma_r13(tmp: Path) -> dict:
@@ -72,4 +101,11 @@ def scenario_sma_r13(tmp: Path) -> dict:
     proofs.prove("n1042", ok, f"memory line {differ[1]!r}; a layer with one side missing: same={missing['same']}")
     # n1043 Permission rules parity: the tool only the worker has and the one only the person has are both named, once.
     proofs.prove("n1043", seen["gaps"] == {"onlySession": ["Bash"], "onlyTerminal": ["Grep"]}, f"gaps {json.dumps(seen['gaps'])}")
+
+    # n1046 Sweep the failure journal: one line per failed task, its LATEST attempt, across projects, newest first; accepted and live ones left out.
+    sweep = seen["failedSweep"]
+    ok = sorted(sweep["attempts"]) == ["a2:projA:blocked:still broken", "a3:projB:blocked:nope"] and sweep["newestFirst"] and sweep["afterNewest"] == 0
+    proofs.prove("n1046", ok, f"failure journal lines {sweep['attempts']}, newest first {sweep['newestFirst']}, after the newest failure {sweep['afterNewest']}")
+    # n1047 Crash drill: a writer process is killed with SIGKILL mid-work; the census did not shrink and the readiness check still calls the file ready.
+    proofs.prove("n1047", *_crash_census(tmp))
     return proofs.verdict("sma_r13", checked=len(NODES))
