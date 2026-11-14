@@ -67,3 +67,4 @@ export { listNearMissReceipts } from "./stages-store";
 export { PROTECTIONS, DISARM_TERM_MS, disarmKey, isArmed, readDisarm, noteProtectionDisarm, renewDisarm, storedProtectionValue, endDisarm, disarmedProjects, staleDisarms, failedStageReceiptsSince, type Disarm } from "./protections-store";
 export { setAttemptBarrier, listUnmovedLiveAttempts, liveAttemptsOfRun, hostActivityToday, projectLiveAttempts, projectIdForWorkspacePath, settingsScopesForWorkspacePath } from "./attempts-store";
 export { listEvidence, recordEvidence, type EvidenceCheck, type EvidenceRecord } from "./evidence-store";
+export { writeReplacing, type ReplacingWrite } from "./write-replacing";

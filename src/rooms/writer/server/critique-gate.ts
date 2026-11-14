@@ -22,6 +22,7 @@ import { recordedWriterSkills } from "./skill-pick";
 import { sendServiceMessage } from "../../relay/server";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { bestEffort, isNotFound, orMiss, stringAt } from "@lane-pilot/kit";
+import { writeReplacing } from "../../storage";
 import { acceptanceArtifactDir } from "../../tasks";
 import { resolve } from "node:path";
 
@@ -119,9 +120,9 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
         // A task with a home (docs/task-folder.md): the input and the critic's verdict of this round in the attempt's folder there, in the base.
         if (await recordCritiqueRound({ bb, db, log:ctx.log }, { taskId:input.taskId, runId:input.runId, attemptId:input.attemptId, round:g.repairRound,
           barrierInput:body, verdict:receipt ? { state:receipt.state, result:receipt.result ?? null, inputSha256:receipt.inputSha256 ?? null } : { state } })) return;
-        await bestEffort(ctx.log, "barrier input archive", Promise.resolve().then(() => bb.sdk.files.write({ hostId:input.config.hostId, rootPath:workspace,
+        await bestEffort(ctx.log, "barrier input archive", writeReplacing(bb.sdk.files, { hostId:input.config.hostId, rootPath:workspace,
           path:`${acceptanceArtifactDir(workspace, input.runId, input.taskId)}/attempts/${input.attemptId}/barrier-input.json`,
-          content:JSON.stringify(body, null, 2), contentEncoding:"utf8", createParents:true, expectedSha256:null })), undefined);
+          content:JSON.stringify(body, null, 2), createParents:true }), undefined);
       };
       for (;;) {
         const evidence = await captureEvidence();

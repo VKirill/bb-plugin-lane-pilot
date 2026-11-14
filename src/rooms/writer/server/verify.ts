@@ -10,6 +10,7 @@ import { recordCheckDuration, recordSecretIssuance, getAttempt, getRun, getReaso
 import { checkTimeoutSec, orderChecksForFailFast } from "../check-timing";
 import { parseReadFirstHints } from "../../tasks/read-first";
 import {cleanCheckOutput, outputHashes, outputText, pollPause} from "@lane-pilot/kit";
+import { writeReplacing } from "../../storage";
 import { bestEffort, fileAllowedByOwns, fileBlockedByNeverTouch, isNotFound, orMiss, redactKnown, redactSecrets, stringAt } from "@lane-pilot/kit";
 import { SecretsNotReadyError, allowedSecretNames, secretProblem } from "../../secrets/server";
 import type { VerifyResult } from "../../tasks";
@@ -345,18 +346,18 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       ["acceptance.json", `${JSON.stringify(acceptance, null, 2)}\n`],
       ["lane-pilot-receipt.json", `${JSON.stringify(internalReceipt, null, 2)}\n`],
     ] as const) {
-      await bb.sdk.files.write({
+      await writeReplacing(bb.sdk.files, {
         hostId:input.config.hostId, rootPath:input.task.project_cwd,
-        path:`${artifactDir}/${name}`, content, contentEncoding:"utf8", createParents:true, expectedSha256:null,
+        path:`${artifactDir}/${name}`, content, createParents:true,
       });
       // A worktree attempt's receipts would die with the copy: the same files also land under the run's base
       // checkout, which is already git-excluded bookkeeping, so the merge is unchanged (sma wi_receipts).
       const basePath = acceptanceReceiptBase(db, input.runId, input.taskId, input.task.project_cwd);
       if (basePath) {
-        await bestEffort(ctx.log, "acceptance receipt copy to base", Promise.resolve().then(() => bb.sdk.files.write({
+        await bestEffort(ctx.log, "acceptance receipt copy to base", writeReplacing(bb.sdk.files, {
           hostId:input.config.hostId, rootPath:basePath,
-          path:`${acceptanceArtifactDir(basePath, input.runId, input.taskId)}/${name}`, content, contentEncoding:"utf8", createParents:true, expectedSha256:null,
-        })), undefined);
+          path:`${acceptanceArtifactDir(basePath, input.runId, input.taskId)}/${name}`, content, createParents:true,
+        }), undefined);
       }
     }
     const stored = {
@@ -602,9 +603,9 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     } else if (failedVerify) {
       const slug = failedVerify.command.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "check";
       checkLogPath = `.agents/plans/items/${input.taskId}/logs/${slug}.log`;
-      const saved = await bestEffort(ctx.log, "verification check log write", bb.sdk.files.write({ hostId:input.config.hostId, rootPath:input.task.project_cwd, path:`${input.task.project_cwd}/${checkLogPath}`,
+      const saved = await bestEffort(ctx.log, "verification check log write", writeReplacing(bb.sdk.files, { hostId:input.config.hostId, rootPath:input.task.project_cwd, path:`${input.task.project_cwd}/${checkLogPath}`,
         content:`$ ${failedVerify.command}\nexit ${failedVerify.exitCode}\n\n${cleanCheckOutput(failedVerify.stdout)}\n${cleanCheckOutput(failedVerify.stderr)}`.trim() + "\n",
-        contentEncoding:"utf8", createParents:true, expectedSha256:null }), null);
+        createParents:true }), null);
       if (!saved) checkLogPath = undefined;
     }
     // Same attribution as the run-scope gate: Lane Pilot's own receipt from a pass a reload cut off (.agents/runs/…)

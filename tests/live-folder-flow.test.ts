@@ -7,6 +7,8 @@ import plugin from "../server";
 import { runCommandOnHost } from "../src/rooms/writer/cli-run";
 import { snapshotDryRun } from "../src/rooms/host-worker/host-handlers";
 import type { TaskV2 } from "../src/rooms/contracts";
+import { coreFileWrite, mapStore } from "./helpers/core-files";
+import { appendTaskQaHome, recordCheckFiles } from "../src/rooms/writer/server/task-home";
 import {
   createRun, createTask, getAttempt, legacyReadCount, listAttemptsForTask, listStageReceipts, loadProjectSettings, openDatabase, renderTaskManifest, saveProjectSetting, savePrototypeConfig, setRunThread,
 } from "../src/rooms/plugin-db";
@@ -98,7 +100,7 @@ async function setup(writerEdits: (folder: string) => string, feedback: (folder:
       // A file the plugin wrote reads back as written (the task home); any other file is a fixture.
       read: async (args) => ({ content: writes.get((args as { path: string }).path) ?? "fixture\n" }),
       listPaths: async () => ({ paths: [] }) as never,
-      write: async (args) => { writes.set((args as { path: string }).path, (args as { content: string }).content); return { ok: true } as never; },
+      write: coreFileWrite(mapStore(writes)) as never,
     } },
     experimental_callHostRpc: async (call) => {
       hostCalls.push(call.method);
@@ -132,7 +134,7 @@ async function setup(writerEdits: (folder: string) => string, feedback: (folder:
     }
     throw new Error("the task never finished");
   };
-  return { db, harness, folder, home, task, dispatch, finished, hostCalls, commands, writes, threadSpawns, feedbackSeen, extraItems };
+  return { bb, db, harness, folder, home, task, dispatch, finished, hostCalls, commands, writes, threadSpawns, feedbackSeen, extraItems };
 }
 
 beforeEach(() => { process.env.LANE_PILOT_DISPATCH_ANSWER_MS = "5000"; });
@@ -208,6 +210,31 @@ describe("a plain folder without git, end to end", () => {
     expect(env.writes.get(join(env.folder, ".agents/tasks/live-task/PLAN.md"))).toBe("Make hello.txt say hello\n");
     expect(env.writes.has(join(env.folder, ".agents/tasks/live-task/manifest.json"))).toBe(true);
     expect([...env.writes.keys()].filter((path) => path.includes("/.agents/plans/items/") || path.includes("/artifacts/live-task/"))).toEqual([]);
+    await env.harness.lifecycle.dispose();
+  });
+
+  // 0.1.567: the task home wrote with expectedSha256: null, which the bb core answers with `conflict` (nothing written, nothing thrown) for a file that
+  // exists, so manifest.json stayed at its first render and a second QA note was lost. The database render and a fake that overwrites hid it; this reads the FILE.
+  it("[sma:k_pl_quick] lists every kind in the manifest.json FILE after acceptance, and a QA note appended twice keeps both entries", async () => {
+    const env = await setup((folder) => {
+      write(folder, "hello.txt", "hello\n");
+      return "Changed hello.txt\nLESSON: a live folder needs no worktree";
+    });
+    await env.dispatch();
+    const done = await env.finished();
+    expect(done.state).toBe("accepted");
+    const manifestPath = join(env.folder, ".agents/tasks/live-task/manifest.json");
+    const kindsOnDisk = () => new Set(((JSON.parse(env.writes.get(manifestPath) ?? '{"files":[]}') as { files: Array<{ kind: string }> }).files).map((row) => row.kind));
+    for (let i = 0; i < 200 && !kindsOnDisk().has("lesson"); i++) await new Promise((resolve) => setTimeout(resolve, 25));
+    // The task has no check of its own; one more recorded round (a red check and its log) goes through the same writer and must reach the file too.
+    await recordCheckFiles({ bb: env.bb, db: env.db }, { taskId: "live-task", runId, attemptId: done.id, cleanOutput: (text) => text, verifies: [{ command: "npm test", exitCode: 1, stdout: "1 failed" }] });
+    for (const kind of ["contract", "plan", "brief", "writer-report", "checks", "check-log", "acceptance", "receipt", "outcome"]) expect([...kindsOnDisk()], kind).toContain(kind);
+    expect(await appendTaskQaHome({ bb: env.bb, db: env.db } as never, { taskId: "live-task", question: "first question?" })).toBe(true);
+    expect(await appendTaskQaHome({ bb: env.bb, db: env.db } as never, { taskId: "live-task", question: "second question?", answer: "yes" })).toBe(true);
+    const qa = [...env.writes].find(([path]) => path.endsWith("/QA.md"));
+    expect(qa?.[1]).toContain("first question?");
+    expect(qa?.[1]).toContain("second question?");
+    expect(kindsOnDisk().has("qa")).toBe(true);
     await env.harness.lifecycle.dispose();
   });
 

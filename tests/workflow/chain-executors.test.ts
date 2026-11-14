@@ -1,3 +1,4 @@
+import { coreFileWrite, diskStore } from "../helpers/core-files";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -95,11 +96,7 @@ async function setup(script: Script, options: { pmEvents?: () => Row[]; firstTur
       files: {
         write: async (args: unknown) => {
           if (options.failWrites) throw new Error("disk full");
-          const input = args as { path: string; content: string };
-          mkdirSync(dirname(input.path), { recursive: true });
-          writeFileSync(input.path, input.content);
-          writes.push({ path: input.path, content: input.content });
-          return { ok: true } as never;
+          return coreFileWrite(diskStore(), (path, content) => { writes.push({ path, content }); })(args) as never;
         },
       },
     },

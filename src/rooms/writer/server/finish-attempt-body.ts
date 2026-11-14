@@ -9,6 +9,7 @@ import { runPlanFactStage } from "./plan-fact";
 import { headSides } from "../../critique/server";
 import { recordGateEvaluation } from "../../runs/server";
 import {bestEffort, outputText, sha256Hex, stringAt} from "@lane-pilot/kit";
+import { writeReplacing } from "../../storage";
 import { wasAnsweredByDefault } from "./question-default";
 import { noteTaskQa } from "./reopen-attempt";
 import { keepWriterNotes, recordTaskHomeFile, recordWriterReport, writerNotePath } from "./task-home";
@@ -308,9 +309,9 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
           // A task with a home keeps its journal in the attempt's folder there (docs/task-folder.md), not in the run's shared artifacts.
           if (homed) await bestEffort(ctx.log, "progress journal record", recordTaskHomeFile(ctx, { taskId:input.taskId, kind:"progress", name:`attempts/${input.attemptId}/PROGRESS.md`, content:journal,
             attemptId:input.attemptId, producer:{ node:"finish", graph:"lp-task-pipeline", stage_id:"writer-agent", run_id:input.runId, attempt_id:input.attemptId }, readers:["lessons"] }), null);
-          else if (journalWorkspace) await bestEffort(ctx.log, "progress journal write", Promise.resolve().then(() => bb.sdk.files.write({ hostId:input.config.hostId, rootPath:journalWorkspace,
+          else if (journalWorkspace) await bestEffort(ctx.log, "progress journal write", writeReplacing(bb.sdk.files, { hostId:input.config.hostId, rootPath:journalWorkspace,
             path:`${acceptanceArtifactDir(journalWorkspace, input.runId, input.taskId)}/PROGRESS.md`,
-            content:journal, contentEncoding:"utf8", createParents:true, expectedSha256:null })), undefined);
+            content:journal, createParents:true }), undefined);
         }
       }
       if (markerWarnings.length) candidate.warnings = [...(candidate.warnings ?? []), ...markerWarnings];

@@ -55,6 +55,7 @@ import { planWithOutsideReads, planWithRepoScope, rerootTask, rerootToRepoRoot }
 import { appendExcludeCommand, persistTaskFolder } from "../../verification";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { isNotFound, orMiss } from "@lane-pilot/kit";
+import { writeReplacing } from "../../storage";
 import { dispatchRunOf, plannerLoopActive, rerunDispatchStages } from "./dispatch-workflow";
 import { PM_STOPPED_PLANNER_LOOP } from "./plan-revise";
 import { noteTaskQa, awaitsWriterAnswer, contractFixRecord, contractFixTurnPrompt, createAttemptReopen, writerQuestion } from "./reopen-attempt";
@@ -109,15 +110,7 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
         },
         exists: async (rel) => (await orMiss(Promise.resolve().then(() => bb.sdk.files.read({ hostId, rootPath: workspacePath, path: `${workspacePath}/${rel}` })), null, isNotFound)) !== null,
         writeFile: async (rel, content) => {
-          await bb.sdk.files.write({
-            hostId,
-            rootPath: workspacePath,
-            path: `${workspacePath}/${rel}`,
-            content,
-            contentEncoding: "utf8",
-            createParents: true,
-            expectedSha256: null,
-          });
+          await writeReplacing(bb.sdk.files, { hostId, rootPath: workspacePath, path: `${workspacePath}/${rel}`, content, createParents: true });
         },
       });
     } catch (cause) {

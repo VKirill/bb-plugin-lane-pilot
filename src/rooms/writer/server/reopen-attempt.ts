@@ -4,6 +4,7 @@ import { countAttempts, getAttempt, getRun, getTaskPlan, transitionAttempt } fro
 import { taskFolderRel } from "../../verification";
 import { closeWriterStages, reopenWriterStages } from "../../runs/server";
 import { stringAt, isNotFound, orMiss } from "@lane-pilot/kit";
+import { writeReplacing } from "../../storage";
 import { ASK_PM_MARKER } from "./writer-task";
 import type { ServerCore } from "../../contracts/server";
 
@@ -88,8 +89,7 @@ export async function appendTaskQa(bb: ServerCore["bb"], input: { hostId: string
     const answerLine = input.answer === undefined ? "A: open — the writer is parked here" : `A (PM): ${input.answer.trim().slice(0, 4000)}`;
     const entry = `## ${new Date().toISOString()}\nQ (writer): ${input.question}\n${answerLine}\n`;
     const content = prior ? `${prior.trimEnd()}\n\n${entry}\n` : `# Q&A — ${input.taskId}\n\n${entry}\n`;
-    await bb.sdk.files.write({ hostId: input.hostId, rootPath: input.workspacePath, path,
-      content, contentEncoding: "utf8", createParents: true, expectedSha256: null });
+    await writeReplacing(bb.sdk.files, { hostId: input.hostId, rootPath: input.workspacePath, path, content, createParents: true });
   } catch (cause) {
     bb.log.warn(`Lane Pilot could not record the Q&A of ${input.taskId}: ${cause instanceof Error ? cause.message : String(cause)}`);
   }

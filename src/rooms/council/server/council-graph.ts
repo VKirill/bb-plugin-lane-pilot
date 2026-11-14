@@ -23,6 +23,7 @@ import type { ChainRuntime } from "../../contracts/server";
 import { withUsage } from "../../usage/server";
 import { fullAccessSpawn, graphStepMetadata, findThreadsByMetadata, keyedSpawnSupported, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import {outputText, stringAt} from "@lane-pilot/kit";
+import { writeReplacing } from "../../storage";
 import { configuredSetting } from "../../contracts/server";
 
 import type { ServerCore } from "../../contracts/server";
@@ -460,7 +461,7 @@ export function mountCouncilGraph(ctx: ServerCore, services: Services, council: 
       const feed = listCouncilMessages(db, councilId);
       const written = await c.effect<boolean>("page", "council.page", async () => {
         try {
-          await bb.sdk.files.write({ hostId: place.hostId, rootPath: place.workspace, path: `${place.workspace}/${path}`, content: decisionMarkdown({ ...session, state: "done" }, decision, feed), contentEncoding: "utf8", createParents: true, expectedSha256: null });
+          await writeReplacing(bb.sdk.files, { hostId: place.hostId, rootPath: place.workspace, path: `${place.workspace}/${path}`, content: decisionMarkdown({ ...session, state: "done" }, decision, feed), createParents: true });
           return true;
         } catch (cause) {
           ctx.log(`Lane Pilot council ${councilId}: decision page not written: ${cause instanceof Error ? cause.message : String(cause)}`);

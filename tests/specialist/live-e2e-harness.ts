@@ -1,3 +1,4 @@
+import { coreFileWrite, diskStore } from "../helpers/core-files";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -164,13 +165,7 @@ export async function setupLiveSpecialistEnv(
           const content = readFileSync(input.path, "utf8");
           return { content, contentEncoding: "utf8", sha256: "", sizeBytes: Buffer.byteLength(content) } as never;
         },
-        write: async (args: unknown) => {
-          const input = args as { path: string; content: string };
-          mkdirSync(dirname(input.path), { recursive: true });
-          writeFileSync(input.path, input.content, "utf8");
-          writes.push({ path: input.path, content: input.content });
-          return { ok: true } as never;
-        },
+        write: coreFileWrite(diskStore(), (path, content) => { writes.push({ path, content }); }) as never,
       },
     },
   });
