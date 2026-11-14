@@ -139,7 +139,7 @@
         "en": "Stack, tests, memory preview",
         "ru": "Стек, тесты, память"
       },
-      "prompt": "Stack and tests: languages, frameworks, the test command and whether it is green. Memory preview: lane_pilot_memory context (what the hub corpus already knows), the memory graph of notes by area. Infra profile: hosts, start, deploy, logs into lane-plan profile --set (the one profile writer). {{tree.profile_note}}",
+      "prompt": "Stack and tests: languages, frameworks, the test command and whether it is green. Memory preview: report what the <project_memory> block of this brief holds (the hub corpus's confirmed notes of this project; no block means the corpus holds nothing yet); write nothing to memory. Infra profile: hosts, start, deploy, logs into lane-plan profile --set (the one profile writer). {{tree.profile_note}}",
       "out": {
         "stack": "any",
         "memory": "any",

@@ -103,7 +103,7 @@ const commitFile = (t: Awaited<ReturnType<typeof setup>>, path: string, body: st
 /** The prompts of project-start on main, word for word: a start that sets nothing new gets exactly these. */
 const MAIN_START = {
   value_map: "Value map builder, before asking anything: from README, the passport (project-onboard), the site and the code — who the product is for, the job they hire it for, what they get, how we would know it works. Write .agents/planning/VALUE-MAP.md.",
-  preview: "Stack and tests: languages, frameworks, the test command and whether it is green. Memory preview: lane_pilot_memory context (what the hub corpus already knows), the memory graph of notes by area. Infra profile: hosts, start, deploy, logs into lane-plan profile --set (the one profile writer).",
+  preview: "Stack and tests: languages, frameworks, the test command and whether it is green. Memory preview: report what the <project_memory> block of this brief holds (the hub corpus's confirmed notes of this project; no block means the corpus holds nothing yet); write nothing to memory. Infra profile: hosts, start, deploy, logs into lane-plan profile --set (the one profile writer).",
   recap: "Working style and risk from the owner's anamnesis. Recap in five lines, three next steps, and the roadmap skeleton (lane-plan template fill ROADMAP, STATE; phases with lane-plan phase add).",
 };
 const startStubs = { value_map: { value_map: "v" }, preview: { stack: {}, memory: {} }, recap: { next_steps: ["a", "b", "c"] } };
