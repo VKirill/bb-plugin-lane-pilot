@@ -25,8 +25,8 @@ The night loop writes a journal (`lane_pilot_wall_*` tables) of failure classes,
 
 Lane Pilot has no Telegram sender of its own. Two shell scripts in `scripts/` run on the hub, are installed by hand next to `~/.config/lp-metrics/tg.env`, and post through the Telegram Bot API:
 
-- `lp-metrics-daily.sh` runs as a BB automation at 09:00 Europe/Madrid. It reads the hub database read-only and sends a Russian-language daily report for real projects on the current version (stability headline, failure origins, sandbox and old-version lines, usage coverage, deferrals), then appends `lp-morning.sql`, `lp-wall-morning.sql`, graph coverage and outage lines when those files are installed. `DRY_RUN=1` prints it. `lp-metrics.sh [days]` prints the same metrics on the command line.
-- `lp-owner-push.sh` runs every 30 minutes. It asks the RPC `owner_waiting_digest`, sends the text, then calls `owner_waiting_ack`. Only items that wake the owner are pushed, one message per waiting, nothing in quiet hours (`owner_push.quiet` `23:00-08:00`, `owner_push.timezone` `Europe/Madrid`, `owner_push.enabled` `true`), at most six items named.
+- The daily report is the plugin schedule `daily-report` (src/rooms/reports; it was `lp-metrics-daily.sh` as a BB automation): the first hourly tick from 09:00 in the owner's time zone (`owner_push.timezone`, Europe/Madrid), once a day. It reads the hub database read-only and sends a Russian-language daily report for real projects on the current version (stability headline, failure origins, sandbox and old-version lines, usage coverage, deferrals), then appends `lp-morning.sql`, `lp-wall-morning.sql`, graph coverage and outage lines when those files are installed. `DRY_RUN=1` prints it. `lp-metrics.sh [days]` prints the same metrics on the command line.
+- The plugin schedule `owner-push` (every 30 minutes; it was `lp-owner-push.sh` in the hub crontab) sends the digest to Telegram. Bot, chat and topic are Env Catalog records `TG_AIVECH_BOT`, `TG_OWNER_CHAT_ID`, `LANE_PILOT_TG_TOPIC`; `bb lane-pilot waiting config dry_run=on` composes and logs the text without sending or acknowledging. It It asks the RPC `owner_waiting_digest`, sends the text, then calls `owner_waiting_ack`. Only items that wake the owner are pushed, one message per waiting, nothing in quiet hours (`owner_push.quiet` `23:00-08:00`, `owner_push.timezone` `Europe/Madrid`, `owner_push.enabled` `true`), at most six items named.
 
 ## Waiting for the owner
 
@@ -55,7 +55,7 @@ Lane Pilot schedules workflows, errands, named agent routines and host scripts i
 
 | Signal | Where |
 |---|---|
-| Daily Telegram report | Hub script `lp-metrics-daily.sh` (09:00 Europe/Madrid) |
+| Daily Telegram report | Plugin schedule `daily-report` (09:00 Europe/Madrid) |
 | What waits for the owner | Screen "Waiting for you", `waiting`, Telegram push |
 | Morning list and wall lines | `policy morning`, `wall morning`, appended to the daily report |
 | Per-attempt cost and stages | `metrics`, task page, acceptance card |

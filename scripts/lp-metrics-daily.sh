@@ -1,4 +1,5 @@
 #!/bin/bash
+# DEPRECATED: both Telegram jobs are plugin schedules now (src/rooms/reports, Env Catalog for the bot); this script stays only as a manual fallback. Do not run it from cron or an automation next to the plugin: it would send twice.
 # Daily Lane Pilot stability metrics → Telegram topic BB-сервис. Runs on the hub (automation auto_-fzjydlvnow, 09:00 Europe/Madrid), read-only on the hub DB.
 # Install: copy this file to ~/.config/lp-metrics/daily.sh, scripts/lp-metrics-views.sql to ~/.config/lp-metrics/views.sql , scripts/lp-morning.sql to ~/.config/lp-metrics/morning.sql and scripts/lp-wall-morning.sql to ~/.config/lp-metrics/wall-morning.sql and scripts/lp-graph-coverage.sql to ~/.config/lp-metrics/graph-coverage.sql on the hub.
 # Real projects on the current version and newer only (SINCE_VERSION=X.Y.Z, default: the newest attempt's version on the hub, never below 0.1.193);
