@@ -18,8 +18,10 @@ from pathlib import Path
 
 from lp_drill.env import ROOT
 from lp_drill.prove import Proofs
+from lp_drill.scenes.sma_r05_b import NODES_B, prove_b
 
 NODES = [f"n{n}" for n in (440, 441, 442, 443, 444, 445, 446, 447, 448, 449, 450, 451, 452, 453, 454, 455, 456, 457, 459, 460, 461, 462, 463, 465, 466, 467, 468, 471)]
+NODES = NODES + NODES_B
 CONFIG = "scripts/lp_drill/scenes/sma_r05.vitest.config.ts"
 
 
@@ -114,4 +116,5 @@ def scenario_sma_r05(tmp: Path) -> dict:
     prove("n468", "pool", lambda d: d["enabled"] == 2 and d["blocked"] == ["codex/gpt|proj|writer_provider_unavailable:breaker_open"], lambda d: f"blocked {d['blocked']}")
     # n471 Orderly stop: the stop writes its name, and the next start's gap carries it.
     prove("n471", "boot", lambda d: d["reason"] == "the plugin was reloaded (a deploy or a settings change)" and d["next"] == [d["reason"]], lambda d: f"stop reason «{d['reason']}», next start's gap {d['next']}", "stop")
+    prove_b(proofs, tmp)
     return proofs.verdict("sma_r05", checked=len(NODES))
