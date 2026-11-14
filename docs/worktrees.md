@@ -18,6 +18,10 @@ sources:
   - src/rooms/writer/server/finish-merge.ts
   - workflows/lp.worktree-cleanup.json
   - tests/worktree-standard.test.ts
+  - tests/worktree-schedule-e2e.test.ts
+  - src/rooms/schedule/server/schedule-executors.ts
+  - src/rooms/workflow/server/workflow-triggers.ts
+  - src/rooms/workflow/server/pm-notice.ts
 ---
 
 # Worktrees
@@ -69,8 +73,22 @@ stays and the answer names it (`branchKept`); the hub logs it and the daily pass
 Two Lane Pilot schedules on the schedule board, in «every project» (project `*`), made once at start by `ensureSystemSchedules`
 (`schedule/server/system-schedules.ts`); a schedule the owner deleted is not made again (pause it, or set `cleanup.worktrees=off`).
 Both run the graph `lp.worktree-cleanup` (`workflows/lp.worktree-cleanup.json`), whose one step is `lp.worktree_cleanup`
-(`registerWorktreeCleanupActions` in `stability/server/worktree-janitor.ts`). «Запустить сейчас» on the board runs a pass by hand;
-`dry_run: true` decides and reports without removing anything.
+(`registerWorktreeCleanupActions` in `stability/server/worktree-janitor.ts`). «Запустить сейчас» on the board (`bb lane-pilot schedule
+run-now <id>`) runs a pass by hand.
+
+**Who may start the graph.** `lp.worktree-cleanup` is a starter graph (`startedBy: "worktree-cleanup"`): never offered to the PM or the
+router, refused by `lane_pilot_run_workflow` and by `bb lane-pilot workflow-trigger`. The one exception is its own system schedule: the
+schedule executor reads the row's `created_by` (`system:worktree-cleanup-hourly|daily`, written by the server at insert, kept by every
+update, so no chat can claim it), finds its `starter` in `SYSTEM_SCHEDULES` (`systemStarterOf`) and passes it to `workflowTriggers.start`,
+which lets a starter graph through only when its `startedBy` equals that starter. The run is detached: no PM chat, no run link. A schedule
+the owner or a chat makes naming the same graph fails `start_failed` (0.1.562 shipped without this exception: both schedules ended
+`start_failed` and no pass ran). The graph is an upkeep graph for the end-of-run notice (`UPKEEP_WORKFLOWS` in `workflow/server/pm-notice.ts`):
+a successful pass messages no one (its output's `report` would otherwise be delivered as an owner line every hour); the daily pass posts its
+own line below, and a failed run is the schedule board's line.
+
+**By hand, with a report.** `bb lane-pilot worktree-cleanup` runs the hourly sweep, `--daily` the daily pass, `--dry-run` the daily pass
+deciding only (nothing removed, no janitor row, no owner line; a dry run is always the daily pass's, it covers Lane Pilot's root too),
+`--json` the graph's output shape. It calls the same `runWorktreeCleanupPass` as the graph's step; the schedules are not touched.
 
 | Schedule | Cron | What it does |
 |---|---|---|
@@ -78,8 +96,11 @@ Both run the graph `lp.worktree-cleanup` (`workflows/lp.worktree-cleanup.json`),
 | «Уборка worktree: ежедневно» | `40 4 * * *` (owner's zone) | `runDailyWorktreePass`: everything below, on every connected machine |
 
 The hub reaches each machine the way the hourly janitor always did: one host call `worktreeJanitor` per connected host, now with a
-`deep` part (`sweepWorktreeClasses`, `src/rooms/verification/worktree-sweep.ts`). A machine whose plugin is older answers without
-`deep`; the pass names it in its errors.
+`deep` part (`sweepWorktreeClasses`, `src/rooms/verification/worktree-sweep.ts`). A machine whose plugin is older checks the input
+against its own strict contract and refuses the unknown `deep` key: the call fails there, nothing is removed on it, and the pass's errors
+say «this machine's Lane Pilot host is older and has no daily pass (update the plugin there)»; when every machine is older the run ends
+`error` and the board shows it. Its hourly sweep keeps running (that call has the old shape). A dry run sends an endless `graceMs`, so
+even a host that ignored `deep.dryRun` would remove no worktree.
 
 **What the hub sends.** The project folders on that machine (BB's project sources and the run folders of the last 90 days); the BB
 environment worktrees of Lane Pilot attempts outside the root; the worktrees of abandoned tasks; the paths live work holds (open
@@ -131,13 +152,17 @@ git -C <copy> status --porcelain
 ```
 
 On the hub: `SELECT host, pass, removed, freed_bytes, kept_unmerged, report_json FROM lane_pilot_janitor ORDER BY at DESC LIMIT 10` and
-`SELECT host, path, owner_kind, owner_id FROM lane_pilot_worktree WHERE released_at IS NULL`. On the board, the daily schedule's run with
-`dry_run: true` prints what a pass would delete without deleting it.
+`SELECT host, path, owner_kind, owner_id FROM lane_pilot_worktree WHERE released_at IS NULL`. `bb lane-pilot worktree-cleanup --dry-run`
+prints what a daily pass would delete without deleting it (no need to edit the system schedule's inputs).
 
 ## Tests and drill
 
 `tests/worktree-standard.test.ts` holds every rule above on real temp repositories (the new and the old layout, the merge of a
 BB-environment attempt, cancel with unmerged commits, each class of the daily pass, prune, the hub pass with its janitor row, registry
-rows and owner line, the system schedules). `tests/worktree-janitor.test.ts` holds the hourly sweep. The drill scene `parallel3`
-(`scripts/lp_drill/scenes/writers.py`, `worktree_leftovers`) asserts after three accepted tasks that no worktree entry, `lane/<attempt>`
-branch, folder or open registry row of theirs is left.
+rows and owner line, the system schedules). `tests/worktree-schedule-e2e.test.ts` runs both schedules the way the hub does: rows made by
+`ensureSystemSchedules` through the real schedule service, fired by the real scheduler (cron tick and run-now), started by the real
+executor and `workflowTriggers.start` on the real library (`loadStore("*")`), run by the real engine, judged by the real end-of-run notice;
+only the host call is a stub, checked against the current or an older strict contract. `tests/worktree-janitor.test.ts` holds the hourly
+sweep. The drill scene `parallel3` (`scripts/lp_drill/scenes/writers.py`) asserts after three accepted tasks that no worktree entry,
+`lane/<attempt>` branch, folder or open registry row of theirs is left (`worktree_leftovers`), and that both cleanup system schedules are
+on the board and their last finished run did not fail (`cleanup_schedule_problems`).

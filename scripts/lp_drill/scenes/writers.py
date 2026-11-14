@@ -62,6 +62,33 @@ def worktree_registry(attempts: list[str]) -> dict[str, list[dict]]:
     return out
 
 
+CLEANUP_SCHEDULES = ("system:worktree-cleanup-hourly", "system:worktree-cleanup-daily")
+
+
+def cleanup_schedule_problems(rows: list[dict]) -> list[str]:
+    """The janitor runs as two system schedules (docs/worktrees.md): each must exist and its last finished run must not have failed.
+    0.1.562 shipped with both ending `start_failed` (a starter graph refused by the trigger) and the merge-time checks above stayed green.
+    `rows`: one per system schedule (created_by, name, state) with its last finished run (status, reason, error), nulls if it never ran."""
+    problems = []
+    by = {row.get("created_by"): row for row in rows}
+    for key in CLEANUP_SCHEDULES:
+        row = by.get(key)
+        if not row:
+            problems.append(f"the system schedule {key} is not on the board")
+            continue
+        if row.get("status") == "failed":
+            problems.append(f"«{row.get('name')}» last run failed ({row.get('reason') or 'no reason'}): {(row.get('error') or '')[:200]}")
+    return problems
+
+
+def cleanup_schedule_rows() -> list[dict]:
+    quoted = ",".join("'" + key + "'" for key in CLEANUP_SCHEDULES)
+    return hubsql(f"""select s.created_by, s.name, s.state, r.status, r.reason, r.error from lane_pilot_schedule s
+      left join lane_pilot_schedule_run r on r.id = (select id from lane_pilot_schedule_run where schedule_id = s.id and finished_at is not null
+        and status <> 'skipped' order by finished_at desc limit 1)
+      where s.created_by in ({quoted});""")
+
+
 def scenario_parallel3(ctx: Context) -> dict:
     specs = tasks_parallel3(ctx.cwd)
     with ThreadPoolExecutor(3) as pool:
@@ -89,7 +116,11 @@ def scenario_parallel3(ctx: Context) -> dict:
     registry = worktree_registry([t["attempt"] for t in tasks])
     leftovers = [p for t in tasks for p in worktree_leftovers(ctx.cwd, t, registry.get(t["attempt"] or "", []))]
     problems += leftovers
-    return verdict("parallel3", problems, tasks=tasks, checks={"allAccepted": accepted, "eachInOwnWorktree": own, "filesInSandbox": merged, "checksRan": all(ran.values()), "worktreesGone": accepted and not leftovers},
+    # What the merge leaves is the janitor's: its two schedules must actually start and finish (they did not in 0.1.562).
+    cleanup = cleanup_schedule_problems(cleanup_schedule_rows())
+    problems += cleanup
+    return verdict("parallel3", problems, tasks=tasks, checks={"allAccepted": accepted, "eachInOwnWorktree": own, "filesInSandbox": merged, "checksRan": all(ran.values()), "worktreesGone": accepted and not leftovers,
+                   "cleanupSchedulesRun": not cleanup},
                    dispatch={s["id"]: ctx.dispatches.get(s["id"]) for s in specs})
 def flow_contract_stages() -> set[str]:
     """Stage ids a receipt of the task pipeline may carry: the graph's agent/subworkflow nodes plus the writer node's own stages."""

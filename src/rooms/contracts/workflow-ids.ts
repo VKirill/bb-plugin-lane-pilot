@@ -8,6 +8,8 @@ export const DOCS_NIGHT = "lp.docs-night";
 export const DOCS_MAINTENANCE = "lp.docs-maintenance";
 /** The graph of one self-repair (worktree, repair thread, verdict and merge), started by the self-repair watcher. */
 export const SELF_REPAIR = "lp.self-repair";
+/** The body of the two worktree-cleanup system schedules (docs/worktrees.md); the daily pass posts its own owner line, a failure is the board's. */
+export const WORKTREE_CLEANUP = "lp.worktree-cleanup";
 /** The graph of the router's model step (`lane_pilot_route` escalates a request System One cannot decide alone): one read-only helper thread, a real run of its own. */
 /** The outer chain of the chains spec: analyze, plan, build, check, close. */
 export const ANALYZE_PLAN_EXECUTE = "analyze-plan-execute";

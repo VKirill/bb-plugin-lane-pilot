@@ -156,4 +156,27 @@ print(json.dumps([
     expect(noRow).toEqual(["lpattempt_gone: no lane_pilot_worktree row for attempt lpattempt_gone"]);
     expect(failed).toEqual([]);
   });
+
+  it("[sma:m_boot_wt_sweep] parallel3: a worktree-cleanup system schedule whose last run failed start_failed, or that is missing, is red", () => {
+    const code = String.raw`
+import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location("drill", sys.argv[1]); d = importlib.util.module_from_spec(spec); spec.loader.exec_module(d)
+hourly = {"created_by": "system:worktree-cleanup-hourly", "name": "Уборка worktree: ежечасно", "state": "active"}
+daily = {"created_by": "system:worktree-cleanup-daily", "name": "Уборка worktree: ежедневно", "state": "active"}
+refused = {"status": "failed", "reason": "start_failed", "error": "could not start: not_runnable: \"lp.worktree-cleanup\" is not a workflow to start by hand."}
+print(json.dumps([
+  d.cleanup_schedule_problems([{**hourly, **refused}, {**daily, **refused}]),
+  d.cleanup_schedule_problems([{**hourly, "status": "succeeded"}, {**daily, "status": None}]),
+  d.cleanup_schedule_problems([{**hourly, "status": "succeeded"}]),
+]))
+`;
+    const run = spawnSync("python3", ["-I", "-c", code, fileURLToPath(new URL("../scripts/lp-drill.py", import.meta.url))], { encoding: "utf8", timeout: 30_000, env: { ...ownEnv, BB_CLI: "/nonexistent/bb" } });
+    expect(run.status, run.stderr).toBe(0);
+    const [refused, fine, missing] = JSON.parse(run.stdout.trim().split("\n").at(-1)!) as string[][];
+    expect(refused).toHaveLength(2);
+    expect(refused[0]).toContain("start_failed");
+    expect(refused[0]).toContain("not a workflow to start by hand");
+    expect(fine).toEqual([]);
+    expect(missing).toEqual(["the system schedule system:worktree-cleanup-daily is not on the board"]);
+  });
 });
