@@ -3,7 +3,7 @@
 // wfRun/wfStep trace were derived mechanically by scripts/sma-seed-evidence.ts (2026-11-14), not authored.
 // Batch a (n1144 … n1173, the design-phase and execute-phase cards): tests/sma/four-proofs-r16-a.test.ts, observations in tests/sma/r16-world.ts, scene
 // scripts/lp_drill/scenes/sma_r16.py (a later batch appends its nodes to NODES there and its observations to r16-world.ts).
-import { distort, drill, entry, flip, part, seedEntry, voidIsHave, voidStays, wfRun, wfStep, wrongTarget, type RegionEvidence } from "./types";
+import { distort, drill, entry, flip, part, seedEntry, skipWrite, voidIsHave, voidStays, wfRun, wfStep, wrongTarget, type RegionEvidence } from "./types";
 
 const DESIGN = "src/rooms/phase/logic/design.ts";
 const WAVES = "src/rooms/phase/logic/waves.ts";
@@ -196,18 +196,24 @@ export default {
   n1346: { reach: seedEntry("the owner runs the command"), trace: wfRun("new-milestone") },
   n1347: { reach: seedEntry("the owner runs the command"), voidReview: voidIsHave("карта кода пишется графом analyze-code (разбор области и документ карты) и ночным lp.docs-night со страницами docs/") },
   n1348: { reach: seedEntry("the owner runs the command"), trace: wfRun("analyze-code") },
-  n1349: { reach: seedEntry("the owner runs the command"), trace: wfStep("plan-import", "grill") },
-  n1350: { reach: seedEntry("the owner runs the command"), voidReview: voidIsHave("внешние планы и спеки вводятся графом plan-import (сверка с кодом и решениями, нарезка в задачи), документы репозитория исполнители читают на месте через read_first") },
+  n1349: { mutation: flip("workflows/plan-import.json", '"when": "check.ok == true"', '"when": "check.ok != true"'), reach: seedEntry("the owner runs the command"), trace: [wfStep("plan-import", "grill"), drill("sma_r16")] },
+  n1350: { mutation: distort("workflows/plan-import.json", '"plan": "{{$inputs.plan}}"', '"plan": "{{$inputs.goal}}"'), reach: seedEntry("the owner runs the command"), trace: drill("sma_r16"), voidReview: voidIsHave("внешние планы и спеки вводятся графом plan-import (сверка с кодом и решениями, нарезка в задачи), документы репозитория исполнители читают на месте через read_first") },
   n1351: { mutation: distort("core:packages/db/src/data/environments.ts", "status: input.status ?? \"provisioning\",", "status: input.status ?? \"ready\","), reach: seedEntry("the owner runs the command") },
   n1352: { mutation: flip("core:packages/db/src/data/environments.ts", "filters.projectId === undefined", "filters.projectId !== undefined"), reach: seedEntry("the owner runs the command") },
-  n1353: { reach: seedEntry("the owner runs the command") },
-  n1354: { trace: wfStep("project-start", "tree") },
-  n1355: { trace: wfStep("project-start", "probe") },
-  n1361: { reach: seedEntry("the owner runs the command"), trace: wfRun("project-start") },
+  n1353: { mutation: skipWrite("src/rooms/verification/git-integrate/worktree-lifecycle.ts", "await removeEmptyWorktreeParent(top);"), reach: seedEntry("the owner runs the command"), trace: drill("sma_r16") },
+  n1354: { mutation: distort("src/rooms/workflow/server/workflow-checkout-actions.ts", "sources ${counts.sources}, tests ${counts.tests}", "sources ${counts.tests}, tests ${counts.sources}"), trace: [wfStep("project-start", "tree"), drill("sma_r16")] },
+  n1355: { mutation: flip("workflows/project-start.json", `"skip_when": "tree.enabled != 'on' || probe.has_profile"`, `"skip_when": "tree.enabled != 'on' || !probe.has_profile"`), trace: [wfStep("project-start", "probe"), drill("sma_r16")] },
+  n1356: { mutation: flip("workflows/project-start.json", '"skip_when": "probe.has_roadmap"', '"skip_when": "!probe.has_roadmap"'), trace: drill("sma_r16") },
+  n1357: { mutation: distort("workflows/project-start.json", '"profile": "{{preview.profile}}"', '"profile": "{{preview.stack}}"'), trace: drill("sma_r16") },
+  n1358: { mutation: distort("workflows/project-start.json", "deploy, logs, style; the next step", "deploy, style; the next step"), trace: drill("sma_r16") },
+  n1359: { mutation: wrongTarget("src/rooms/workflow/server/workflow-project-actions.ts", "style: str(prof.style) });", "style: str(prof.stack) });"), trace: drill("sma_r16") },
+  n1360: { mutation: distort("workflows/project-start.json", "{{tree.recap_note}}", "{{tree.profile_note}}"), trace: drill("sma_r16") },
+  n1361: { mutation: distort("src/rooms/workflow/server/workflow-checkout-actions.ts", 'docs: files.filter((file) => file.endsWith(".md")).length,', 'docs: files.filter((file) => file.endsWith(".mdx")).length,'), reach: seedEntry("the owner runs the command"), trace: [wfRun("project-start"), drill("sma_r16")] },
   n1362: { reach: seedEntry("the owner runs the command"), trace: wfRun("project-start") },
-  n1363: { reach: seedEntry("the owner runs the command") },
-  n1366: { voidReview: voidIsHave("единый вход к настройкам проекта — settings-store (loadProjectSettings), комната настроек пишет через одну дверь") },
-  n1367: { trace: wfStep("project-start", "profile_write") },
+  n1363: { mutation: flip("src/rooms/tools/server/cli-project.ts", 'const problem = value === "" && (PROFILE_KEYS', 'const problem = value !== "" && (PROFILE_KEYS'), reach: seedEntry("the owner runs the command"), trace: drill("sma_r16") },
+  n1364: { mutation: flip("workflows/project-start.json", '"skip_when": "probe.has_value_map"', '"skip_when": "!probe.has_value_map"'), trace: drill("sma_r16") },
+  n1366: { mutation: flip("src/rooms/storage/settings-store.ts", "...(projectId === GLOBAL_SETTINGS_PROJECT_ID ? [] : [[GLOBAL_SETTINGS_PROJECT_ID", "...(projectId !== GLOBAL_SETTINGS_PROJECT_ID ? [] : [[GLOBAL_SETTINGS_PROJECT_ID"), trace: drill("sma_r16"), voidReview: voidIsHave("единый вход к настройкам проекта — settings-store (loadProjectSettings), комната настроек пишет через одну дверь") },
+  n1367: { mutation: wrongTarget("src/rooms/workflow/server/workflow-project-actions.ts", "saveProjectSetting(db, rt.projectId, `profile.${key}`, String(value));", "saveProjectSetting(db, rt.projectId, `profile.${key}_`, String(value));"), trace: [wfStep("project-start", "profile_write"), drill("sma_r16")] },
   n1778: { reach: seedEntry("the owner runs the command") },
   n1779: { reach: seedEntry("the owner runs the command") },
   n1780: { reach: seedEntry("the owner runs the command") },
