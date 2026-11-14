@@ -2,14 +2,16 @@
 // One line per node, sorted by node number; a batch agent edits only its nodes' lines. The lines below are the
 // framework's worked examples (2026-11-14): each mutation was killed by a real `npm run sma:mutate` run
 // (attest/r01.json) and each trace was run on the hub snapshot of the same day.
-import { distort, drill, entry, flip, gate, isSet, outside, receipt, type RegionEvidence, rows, settingRow, transition, via, voidIsHave, wrongTarget } from "./types";
+import { distort, drill, entry, flip, gate, isSet, outside, receipt, type RegionEvidence, rows, transition, via, voidIsHave, wrongTarget } from "./types";
 
 import evidenceD from "./r01-d";
+import evidenceE from "./r01-e";
 
 const TASK_HOME = "src/rooms/writer/server/task-home.ts";
 
 export default {
   ...evidenceD,
+  ...evidenceE,
   n158: {
     mutation: distort("src/rooms/storage/attempts-store/lifecycle.ts", '"queued", used + 1, now, now, HARNESS_VERSION);', '"queued", used + 2, now, now, HARNESS_VERSION);'),
     trace: rows("lane_pilot_attempt", "created_at"),
@@ -423,14 +425,6 @@ export default {
     mutation: flip("packages/workflow-engine/src/verdict.ts", "if (status === \"rework\" && high + critical === 0) status = \"pass\";", "if (status === \"rework\" && high + critical !== 0) status = \"pass\";"),
     trace: receipt("code-critique", "pass"),
   },
-  // The accepted attempt's receipts are written once into the task home in the base, so they outlive the worktree's removal (T13).
-  n294: { mutation: wrongTarget(TASK_HOME, 'kind: "acceptance", name: "acceptance.json",', 'kind: "acceptance", name: `attempts/${input.attemptId}/acceptance.json`,'), trace: drill("task_home") },
-  n300: { reach: entry("a PM or the owner enqueues a task contract") },
-  n306: {
-    mutation: distort("src/rooms/tasks/rails.ts", "held)/.test(code)) return \"dependency\";", "held)/.test(code)) return \"conflict\";"),
-    trace: transition({ to: "blocked", reason: "depends_on" }),
-  },
-  n317: { voidReview: voidIsHave("состояние «заявлена» = попытка spawn_requested/running с живым циклом в activeWriterTasks; без живого цикла её забирает периодический проход (аренда = живой цикл)") },
   n329: {
     mutation: flip("src/rooms/tasks/rails.ts", "|| a.queuedAt - b.queuedAt);", "|| b.queuedAt - a.queuedAt);"),
     trace: transition({ from: "queued", to: "spawn_requested" }),
