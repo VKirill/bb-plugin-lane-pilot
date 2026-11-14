@@ -12,7 +12,7 @@ import { failureFingerprint, repeatedFailureReason } from "../../src/rooms/contr
 import { MAIN_ATTEMPT_LIMIT, isLegalMove, nextAttemptState, retryAction } from "../../src/rooms/contracts/state-machine";
 import { criticAcrossFamilies, type CriticCatalog } from "../../src/rooms/critique/critic-pair";
 import { codeCritiqueResultSchema } from "../../src/rooms/critique/code-critique";
-import { landingWordGap } from "../../src/rooms/tasks/words";
+import { landingWordGap, recordTaskWord } from "../../src/rooms/tasks/words";
 import { claudeGuardLauncherScript, HELPER_DISALLOWED_TOOLS, WRITER_DISALLOWED_TOOLS } from "../../src/rooms/native-agent/claude-guard-launch";
 import { barrierInputBody } from "../../src/rooms/writer/server/barrier-input";
 import { recordGateEvaluation, recordStage } from "../../src/rooms/runs/server/stage-records";
@@ -431,4 +431,73 @@ export async function observePrepared() {
   writeFileSync(join(sub, "other.ts"), "not mine\n");
   const stray = await validateIn(sub, "d-stray", before, { "owned.ts": "two\n", "other.ts": "not mine\n" }, "changed owned.ts and other.ts");
   return { idle, done, stray };
+}
+
+/**
+ * n260: a hand-in that weakened a reference test (one that existed before the attempt) is held when the owner's word is asked on the task: the
+ * attempt ends «blocked» with test_edit_hold, the held edit (path + content hash) is kept for the person, nothing is merged. Where nobody is
+ * waiting for a word the writer gets the finding back (validation_failed, test_fit). An edit the person allowed for that very content passes.
+ */
+export async function observeTestEditHold() {
+  const { createWriterFinish } = await import("../../src/rooms/writer/server/finish");
+  const { createCore } = await import("../../src/rooms/core/server/core");
+  const { stageHelperSettings } = await import("../../src/rooms/settings/server/stage-settings");
+  const { saveProjectSetting, setRunThread } = await import("../../src/rooms/plugin-db");
+  const { allowTestEditsOf, testEditHoldOf } = await import("../../src/rooms/tasks");
+  const before = "it(\"works\", () => {\n  expect(sum([1, 2])).toBe(3);\n});\n";
+  const after = "it(\"works\", () => {\n  expect(sum([1, 2])).toBeTruthy();\n});\n";
+  const run = async (words: "on" | "off", allowAfter?: string) => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const answer = JSON.stringify({ status: "pass", summary: "the change reads fine", evidence: "read tests/sum.test.ts and its diff", findings: [] });
+    harness.sdk.stub("providers.list", async () => ["claude-code", "codex"].map((id) => ({ id, available: true, capabilities: { supportsServiceTier: false }, serviceTiers: [] })));
+    harness.sdk.stub("providers.models", async () => ({ models: CRITIC_MODELS.map((id) => ({ id, model: id, supportedReasoningEfforts: EFFORTS })) }));
+    harness.sdk.stub("threads.get", async () => ({ id: "thr_pm", projectId: "P", parentThreadId: "thr_root", sourceThreadId: "thr_root", lifecycleOwnerThreadId: "thr_root", status: "idle" }));
+    harness.sdk.stub("threads.spawn", async () => ({ id: "crit1" }));
+    harness.sdk.stub("threads.events.list", async ({ threadId }: { threadId: string }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }]);
+    harness.sdk.stub("threads.output", async () => ({ output: answer, text: "done" }));
+    harness.sdk.stub("threads.stop", async () => undefined);
+    harness.sdk.stub("threads.send", async () => ({}));
+    harness.sdk.stub("files.read", async () => ({ content: after, contentEncoding: "utf8" }));
+    harness.sdk.stub("plugins.callRpc", async ({ method }: { method: string }) => method === "files"
+      ? { outcome: "available", files: [{ path: "tests/sum.test.ts", revision: "r1" }], initialPatches: [{ path: "tests/sum.test.ts", patch: "@@\n+x\n", truncated: false }] }
+      : { outcome: "available", patches: { "tests/sum.test.ts": { outcome: "available", patch: { path: "tests/sum.test.ts", patch: "@@\n+x\n", truncated: false } } } });
+    harness.sdk.stub("environments.list", async () => [{ id: "env-1" }]);
+    const hostCalls: string[] = [];
+    bb.hosts.experimental_client = (() => ({ call: async (method: string, input: { projectCwd?: string; relativePath?: string }) => {
+      hostCalls.push(`${method}:${input.projectCwd ?? ""}:${input.relativePath ?? ""}`);
+      if (method === "readBoundedFile") return { content: input.projectCwd === "/wt" ? after : before };
+      return {};
+    } })) as never;
+    const task = { ...taskOf("t1"), project_cwd: "/repo", risk: "low", owns_paths: ["src/**", "tests/**"], expected_outputs: ["tests/sum.test.ts"], verify: "none", verification: [] } as never;
+    createRun(db, "r", "P", "bb", "/repo");
+    setRunThread(db, "r", "thr_pm");
+    createTask(db, { id: "t1", runId: "r", kind: "bb", contract: task });
+    createAttempt(db, { id: "a1", runId: "r", taskId: "t1" });
+    transitionAttempt(db, "a1", "spawn_requested");
+    transitionAttempt(db, "a1", "running", { threadId: "writer-1" });
+    db.prepare("UPDATE lane_pilot_attempt SET workspace_path='/wt', environment_id='env_wt' WHERE id='a1'").run();
+    saveProjectSetting(db, "P", "owner.words", words);
+    saveProjectSetting(db, "P", "code_critique.enabled", true);
+    saveProjectSetting(db, "P", "code_critique.mode", "gate");
+    const config = { projectId: "P", hostId: "h1", pmWorkspacePath: "/repo", writerWorkspacePath: "/repo", pmProviderId: "claude-code", pmModel: "claude-opus-5-5", writerProviderId: "claude-code", writerModel: "claude-opus-5-5" } as never;
+    const ctx = createCore(bb, db);
+    // The owner has already said no to landing: whatever passes the test check ends there at once instead of waiting six hours for his word.
+    await recordTaskWord(bb.storage.kv as never, "r", "t1", "no", "not now");
+    if (allowAfter) await allowTestEditsOf(bb.storage.kv as never, "a1", [{ path: "tests/sum.test.ts", afterSha256: sha256Hex(allowAfter) }]);
+    const finish = createWriterFinish(ctx as never, {
+      stageHelperSettings, activeWriterTasks: new Set<string>(), providerBreaker: { record: () => undefined },
+      validateWriterResult: async () => ({ status: "accepted", output: "done", produced: ["tests/sum.test.ts"], verification: [] }),
+      persistWriterAcceptance: async () => ({ state: "passed" }),
+      workspaceDirt: async () => ({ ok: true, snapshots: [] }),
+      runBudgetFor: () => ({ snapshot: () => ({ limits: {} }) }),
+      taskWords: { ask: () => undefined },
+    } as never);
+    const result = await finish.finishWriterAttempt({ projectId: "P", config, task, runId: "r", taskId: "t1", attemptId: "a1", pmThreadId: "thr_pm", writerThreadId: "writer-1", dirtBefore: [] } as never);
+    const attempt = getAttempt(db, "a1")!;
+    const held = await testEditHoldOf(bb.storage.kv as never, "a1");
+    await harness.lifecycle.dispose();
+    return { status: result.status, reason: result.reason as string | undefined, state: attempt.state, held, barrierWriterStatus: attempt.barrier?.reason ?? null, hostCalls };
+  };
+  return { afterSha: sha256Hex(after), asked: await run("on"), notAsked: await run("off"), allowed: await run("on", after), otherEdit: await run("on", `${after}// more\n`) };
 }

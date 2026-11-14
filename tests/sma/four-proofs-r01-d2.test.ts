@@ -1,7 +1,7 @@
 // Region 1 · Task graph, batch d (file 2): the critic's session and what the barrier makes of it, the prepared candidate, the repeated dispatch,
 // and the phase's acceptance (prepared, lines, package). Real code on scratch databases and repositories; no model, no hub write.
 import { describe, expect, it, vi } from "vitest";
-import { observeCritic, observeNeedsDecision, observePrepared } from "./r01-world-d";
+import { observeCritic, observeNeedsDecision, observePrepared, observeTestEditHold } from "./r01-world-d";
 import { observeClosed, observeIdempotent, observeLines, observePreparedPhase, observeView } from "./r01-world-d2";
 
 vi.setConfig({ testTimeout: 120_000 });
@@ -32,6 +32,25 @@ describe("the critic's session", () => {
     expect(seen.attempt.barrier).toMatchObject({ gate: "accept", status: "rejected", verdict: { status: "block", summary: "the query is built from the request body | the query is built from the request body" } });
     expect(seen.attempt.barrier?.tree).toMatch(/^[0-9a-f]{64}$/);
     expect(seen.receipt.state).toBe("blocked");
+  });
+});
+
+describe("the held hand-in", () => {
+  it("[sma:av_test_edit_hold] a hand-in that weakened a reference test is held for the person where his word is asked, until that very edit is allowed; the same file edited again is held anew", async () => {
+    const seen = await observeTestEditHold();
+    expect(seen.asked.status).toBe("blocked");
+    expect(seen.asked.state).toBe("blocked");
+    expect(seen.asked.reason).toMatch(/^test_edit_hold: tests\/sum\.test\.ts \(weakened reference tests wait for the owner's allow of that exact edit/);
+    expect(seen.asked.held).toEqual([{ path: "tests/sum.test.ts", afterSha256: seen.afterSha }]);
+    // Where nobody waits for a word the writer gets the finding back instead of a hold.
+    expect(seen.notAsked.state).toBe("validation_failed");
+    expect(seen.notAsked.reason).toMatch(/^test_fit: tests\/sum\.test\.ts: a strict assertion became a truthiness check/);
+    expect(seen.notAsked.held).toEqual([]);
+    // The allowed edit passes this check (the attempt goes on to the owner's word, here already «no»); an edit of other content does not.
+    expect(seen.allowed.reason).toBe("owner_word: the owner said no to this task — not now");
+    expect(seen.allowed.held).toEqual([]);
+    expect(seen.otherEdit.reason).toMatch(/^test_edit_hold: /);
+    expect(seen.otherEdit.held).toEqual([{ path: "tests/sum.test.ts", afterSha256: seen.afterSha }]);
   });
 });
 
