@@ -297,7 +297,7 @@ describe("the planning home is one resolver for every reader and writer of .agen
     const moved = await send(set, prompt);
     expect(moved).toContain(`${home}/.agents/phases/*/BOOK.md`);
     // The writer's task folders are not part of the home: that path keeps its text.
-    expect(moved).toContain(".agents/plans/items/*/PLAN.md");
+    expect(moved).toContain(".agents/tasks/<task-id>/");
     expect(moved).not.toContain(JSON.stringify(prompt).slice(1, -1));
     // pr-branch names these folders as paths to leave out of a cherry-pick: never rewritten.
     const branch = rig({ home });

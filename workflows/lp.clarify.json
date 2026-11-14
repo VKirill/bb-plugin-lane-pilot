@@ -6,8 +6,8 @@
     "ru": "Уточнение моделью"
   },
   "description": {
-    "en": "Before work starts, one analyst reads the goal and the project's task tree (.agents/plans/items/*/PLAN.md, .agents/phases/*/BOOK.md) and proposes at most 10 clarification questions, each naming the task or piece it concerns. The graph writes nothing — no write action, no task node; the PM folds the answers into the contract's clarify field.",
-    "ru": "До начала работы один аналитик читает цель и дерево задач проекта (.agents/plans/items/*/PLAN.md, .agents/phases/*/BOOK.md) и предлагает до 10 уточняющих вопросов, каждый — про свою задачу или кусок. Граф ничего не пишет: ни записи, ни узла задачи; ответы PM вкладывает в поле clarify контракта."
+    "en": "Before work starts, one analyst reads the goal and the project's task tree (.agents/tasks/<task-id>/manifest.json and the plan file it lists, .agents/phases/*/BOOK.md) and proposes at most 10 clarification questions, each naming the task or piece it concerns. The graph writes nothing — no write action, no task node; the PM folds the answers into the contract's clarify field.",
+    "ru": "До начала работы один аналитик читает цель и дерево задач проекта (.agents/tasks/<task-id>/manifest.json and the plan file it lists, .agents/phases/*/BOOK.md) и предлагает до 10 уточняющих вопросов, каждый — про свою задачу или кусок. Граф ничего не пишет: ни записи, ни узла задачи; ответы PM вкладывает в поле clarify контракта."
   },
   "status": "published",
   "tags": [
@@ -38,7 +38,7 @@
         "en": "Read the task tree and propose clarifications",
         "ru": "Прочитать дерево задач и предложить уточнения"
       },
-      "prompt": "Read the owner's goal below and the project's existing task tree in files: `.agents/plans/items/*/PLAN.md` and `.agents/phases/*/BOOK.md`. You only read; you write nothing. Propose at most 10 clarification questions the owner should answer before work starts; each question names the task or piece it concerns. Return JSON only: {\"questions\": [{\"task\": \"<id or piece>\", \"question\": \"<what to clarify>\"}]}.\n\nGoal: {{$inputs.goal}}",
+      "prompt": "Read the owner's goal below and the project's existing task tree in files: a task's folder `.agents/tasks/<task-id>/` (open its `manifest.json` and read the file it lists as the plan; take the task ids from the goal or from the phase books, never glob or list `.agents/tasks/`; a task with no folder there keeps its plan at `.agents/plans/items/<task-id>/PLAN.md`) and the phase books `.agents/phases/*/BOOK.md`. You only read; you write nothing. Propose at most 10 clarification questions the owner should answer before work starts; each question names the task or piece it concerns. Return JSON only: {\"questions\": [{\"task\": \"<id or piece>\", \"question\": \"<what to clarify>\"}]}.\n\nGoal: {{$inputs.goal}}",
       "out": {
         "questions": "Question[]"
       },

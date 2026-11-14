@@ -98,7 +98,7 @@ describe("region 23 · rules and references: who is handed them, and what the co
   it("[sma:k_d_ref_planner] the planner's brief carries its rules and its method, a lint error sends the plan back with the errors as gaps, and a clean plan goes on to the critic", async () => {
     const planner = await spawnOf("lp.plan", "plan");
     expect(planner.request.role).toBe("planner");
-    expect(planner.request.prompt).toContain("owns_paths must not overlap inside a wave");
+    expect(planner.request.prompt).toContain("two tasks that own the same path must be linked by depends_on");
     expect(planner.request.prompt).toContain(PLANNER_METHOD.join("\n"));
     const tasks = ["a", "b", "c"].map((id) => ({ id, objective: id }));
     const errors = ["t1 and t2 run in the same wave (neither depends on the other) but both own src"];
