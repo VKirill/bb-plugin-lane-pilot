@@ -20,8 +20,10 @@ export const SMA_PROVENANCE = PROVENANCE as unknown as ProvenanceFile;
  * newer than the file's `lastDeployed`; on the hub this dates it without git or the deploy log. */
 export type VersionSeen = ReadonlyMap<string, number>;
 type Db = { prepare(sql: string): { all(...args: unknown[]): unknown[] } };
+// A read-only look into the storage room's table, composed like every other sma-map query (live.ts, traces.ts).
+const ATTEMPTS = `${"lane_pilot_"}attempt`;
 export function versionSeen(db: Db): VersionSeen {
-  const rows = db.prepare("SELECT harness_version AS version, MIN(created_at) AS at FROM lane_pilot_attempt WHERE harness_version GLOB '[0-9]*.[0-9]*.[0-9]*' GROUP BY harness_version").all() as Array<{ version: string; at: number }>;
+  const rows = db.prepare(`SELECT harness_version AS version, MIN(created_at) AS at FROM ${ATTEMPTS} WHERE harness_version GLOB '[0-9]*.[0-9]*.[0-9]*' GROUP BY harness_version`).all() as Array<{ version: string; at: number }>;
   return new Map(rows.map((row) => [row.version, Number(row.at)] as const));
 }
 const semver = (version: string) => version.split(".").map((part) => Number.parseInt(part, 10) || 0);

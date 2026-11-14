@@ -79,7 +79,9 @@ export function settingReads(root: string, proof: string | undefined): string[] 
 export function undeclaredGates(reads: readonly string[] | null, spec: ReachSpec | undefined, settings: EffectiveSettings): string[] {
   if (!reads) return [];
   const registry = settingRegistry();
-  const off = (key: string) => { const value = settings.get(key); return value === undefined || value === "off"; };
+  // Only a known «off»: an unset switch whose default the registry does not know may well run the branch
+  // (calibration 2026-11-14: writer.fast_mode).
+  const off = (key: string) => settings.get(key) === "off";
   return reads.filter((key) => registry.get(key)?.switchLike && off(key))
     .filter((key) => !(spec?.needs && key in spec.needs) && !(spec?.notGatedBy && key in spec.notGatedBy));
 }
