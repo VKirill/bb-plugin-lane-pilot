@@ -4,14 +4,15 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { acceptanceLines, nextAction, type Phase, type PhaseRecord } from "../../src/rooms/phase";
 import { appendPart, getPhase, insertPhase, savePhase } from "../../src/rooms/phase/store";
 import { installSteps } from "../../src/rooms/phase/server/driver-steps";
-import { createAttempt, createRun, createTask, listAttemptsForTask, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../../src/rooms/plugin-db";
+import { openDatabase } from "../../src/rooms/plugin-db";
+import { createAttempt, createRun, createTask, listAttemptsForTask, saveProjectSetting, savePrototypeConfig, setRunThread } from "../../src/rooms/storage";
 import { recordStage } from "../../src/rooms/runs/server/stage-records";
 import { buildAcceptanceCard } from "../../src/rooms/acceptance/card";
 import { postOwnerItem } from "../../src/rooms/owner-waiting";
 import { taskWordItemPrefix, type TaskV2 } from "../../src/rooms/contracts";
 import { createCore } from "../../src/rooms/core/server/core";
 import { createPhaseDriver } from "../phase-driver";
-import plugin, { type Services } from "../../server";
+import type { Services } from "../../server";
 import { taskOf } from "./r01-world-d";
 
 /** n281: the same dispatch delivered again is recognised as that task, not run as a new one. */
@@ -48,6 +49,7 @@ export async function observeIdempotent() {
   saveProjectSetting(db, projectId, "memory.enabled", false);
   createRun(db, runId, projectId, "bb", config.writerWorkspacePath);
   setRunThread(db, runId, pmThreadId);
+  const { default: plugin } = await import("../../server");
   await plugin(bb);
   const dispatch = async (next: Partial<TaskV2> = {}, plan = "Plan for the idempotent dispatch") => JSON.parse(String(await harness.behavior.callAgentTool(
     "lane_pilot_dispatch_writer", { confirm: true, objective: "Dispatch check", plan, task: { ...task, ...next } }, { threadId: pmThreadId, projectId },

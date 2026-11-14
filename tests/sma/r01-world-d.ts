@@ -16,8 +16,10 @@ import { landingWordGap, recordTaskWord } from "../../src/rooms/tasks/words";
 import { claudeGuardLauncherScript, HELPER_DISALLOWED_TOOLS, WRITER_DISALLOWED_TOOLS } from "../../src/rooms/native-agent/claude-guard-launch";
 import { barrierInputBody } from "../../src/rooms/writer/server/barrier-input";
 import { recordGateEvaluation, recordStage } from "../../src/rooms/runs/server/stage-records";
-import { createAttempt, createRun, createTask, getAttempt, listStageReceipts, openDatabase, transitionAttempt } from "../../src/rooms/plugin-db";
-import { createWorktree, integrateWorktree } from "../../src/rooms/verification/git-integrate";
+import { openDatabase } from "../../src/rooms/plugin-db";
+import { createAttempt, createRun, createTask, getAttempt, listStageReceipts, transitionAttempt } from "../../src/rooms/storage";
+import { createWorktree } from "../../src/rooms/verification/git-integrate/worktree-lifecycle";
+import { integrateWorktree } from "../../src/rooms/verification/git-integrate/merge";
 import { runSandboxedCommandOnHost } from "../../src/rooms/verification/sandbox";
 import { sha256Hex } from "@lane-pilot/kit";
 import { WORKSPACE_DIRT_SCRIPT } from "../../src/rooms/verification/workspace-dirt";
@@ -69,7 +71,7 @@ export async function observeCriticRoute() {
 /** n259 and n272: the same failure on another id is the same failure; a different fault, a question and a budget stop are not. */
 export function observeRepeat() {
   const same = { state: "validation_failed", reason: "verification failed (npm test): boom in thr_aaa" };
-  const again = { state: "validation_failed", reason: "verification failed (npm test): boom in thr_bbb at /tmp/x/12" };
+  const again = { state: "validation_failed", reason: "verification failed (npm test): boom in thr_bbb" };
   const other = { state: "validation_failed", reason: "verification failed (npm test): other fault" };
   return {
     fpA: failureFingerprint(same.reason),
@@ -284,7 +286,7 @@ export const criticAnswer = (decision: "approve" | "changes_requested") => JSON.
 export async function criticSession(answer: string) {
   const { runCodeCritique } = await import("../../src/rooms/critique/server/critique-runs");
   const { stageHelperSettings } = await import("../../src/rooms/settings/server/stage-settings");
-  const { saveProjectSetting, setRunThread } = await import("../../src/rooms/plugin-db");
+  const { saveProjectSetting, setRunThread } = await import("../../src/rooms/storage");
   const spawns: Array<Record<string, unknown>> = [];
   const atSpawn: Array<{ state: string; inputSha256: string } | null> = [];
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
@@ -342,7 +344,7 @@ export async function observeNeedsDecision() {
   const { createWriterFinish } = await import("../../src/rooms/writer/server/finish");
   const { createCore } = await import("../../src/rooms/core/server/core");
   const { stageHelperSettings } = await import("../../src/rooms/settings/server/stage-settings");
-  const { saveProjectSetting, setRunThread } = await import("../../src/rooms/plugin-db");
+  const { saveProjectSetting, setRunThread } = await import("../../src/rooms/storage");
   const spawns: Array<Record<string, unknown>> = [];
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
   const db = openDatabase(bb);
@@ -395,7 +397,7 @@ const dirtOf = (sub: string): Dirt[] => JSON.parse(execFileSync("python3", ["-c"
 async function validateIn(sub: string, taskId: string, dirtBefore: Dirt[], contents: Record<string, string | null>, answer: string) {
   const { createWriterVerify } = await import("../../src/rooms/writer/server/verify");
   const { buildRunPolicy } = await import("../../src/rooms/tasks/run-policy");
-  const { setAttemptWorkspace } = await import("../../src/rooms/plugin-db");
+  const { setAttemptWorkspace } = await import("../../src/rooms/storage");
   const dirtAfter = dirtOf(sub);
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot", sdk: {
     threads: { output: async () => ({ text: answer }) },
@@ -442,7 +444,7 @@ export async function observeTestEditHold() {
   const { createWriterFinish } = await import("../../src/rooms/writer/server/finish");
   const { createCore } = await import("../../src/rooms/core/server/core");
   const { stageHelperSettings } = await import("../../src/rooms/settings/server/stage-settings");
-  const { saveProjectSetting, setRunThread } = await import("../../src/rooms/plugin-db");
+  const { saveProjectSetting, setRunThread } = await import("../../src/rooms/storage");
   const { allowTestEditsOf, testEditHoldOf } = await import("../../src/rooms/tasks");
   const before = "it(\"works\", () => {\n  expect(sum([1, 2])).toBe(3);\n});\n";
   const after = "it(\"works\", () => {\n  expect(sum([1, 2])).toBeTruthy();\n});\n";
