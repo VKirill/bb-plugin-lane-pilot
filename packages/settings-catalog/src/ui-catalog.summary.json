@@ -1,6 +1,6 @@
 {
-  "rows": 529,
-  "editable": 267,
+  "rows": 530,
+  "editable": 268,
   "readonly": 110,
   "gap": 0,
   "excluded": 152,
@@ -38,6 +38,7 @@
     "browser_qa.provider",
     "browser_qa.reasoning_effort",
     "checkers.diff_hidden_limit",
+    "codex.lean_roles",
     "docs.agent",
     "docs.enabled",
     "docs.hour",

@@ -8,6 +8,7 @@ export const SETTING_WRITER_CAPACITY_WAIT_MAX_MIN = "writer.capacity_wait_max_mi
 export const SETTING_EVENTS_WEBHOOK_URL = "events.webhook_url";
 export const SETTING_WORKER_STRICT_USER = "worker.strict_user";
 export const SETTING_WORKER_USER = "worker.user";
+export const SETTING_CODEX_LEAN_ROLES = "codex.lean_roles";
 export const SETTING_INSTALL_LAST_RECEIPT = "install.lastReceipt";
 export const SETTING_EPISODES_PROCESS_KEY = "episodes.process_key";
 export const SETTING_BACKLOG_SCAN_MINUTES = "backlog.scan_minutes";

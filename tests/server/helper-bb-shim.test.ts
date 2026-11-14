@@ -131,7 +131,11 @@ describe("which providers get the wrappers", () => {
 
   it("a Claude Code thread Lane Pilot started gets the lane marker alone, no PATH shim; the PM and the owner's chats get nothing", async () => {
     const marker = (role: string | null) => createRoleMarkerEnv({ bb: { sdk: { threads: { getPluginMetadata: async () => (role ? { role } : {}) } } } } as never);
-    expect(await marker("code-critic")({ threadId: "thr_2", hostId: "mini" })).toEqual([expect.objectContaining({ name: "LANE_PILOT_ROLE", value: "code-critic" })]);
+    const critic = await marker("code-critic")({ threadId: "thr_2", hostId: "mini" });
+    expect(critic.map((entry) => entry.name)).toEqual(["LANE_PILOT_ROLE", "CLAUDE_CODE_DISABLE_CRON", "CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS", "CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS"]);
+    expect(critic[0]).toMatchObject({ value: "code-critic" });
+    // The roles that may commit keep Claude Code's commit protocol text.
+    expect((await marker("writer")({ threadId: "thr_2", hostId: "mini" })).map((entry) => entry.name)).not.toContain("CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS");
     expect(await marker("pm")({ threadId: "thr_3", hostId: "mini" })).toEqual([]);
     expect(await marker(null)({ threadId: "thr_4", hostId: "mini" })).toEqual([]);
   });

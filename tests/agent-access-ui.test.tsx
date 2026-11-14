@@ -140,7 +140,7 @@ describe("Agent access tab", () => {
       await openAccessTab(slot);
       await accessReady(slot);
       for (const role of HELPER_ROLES) expect(slot.getByTestId(`access-role-${role.replace(/[:-]/g, "_")}`)).toBeTruthy();
-      expect(slot.getByTestId("access-summary-writer").textContent).toBe("2 skills · 2 MCP");
+      expect(slot.getByTestId("access-summary-writer").textContent).toBe("2 skills · 1 MCP");
       expect(slot.getByTestId("access-summary-code_critic").textContent).toBe("1 MCP");
       expect(slot.getByTestId("access-summary-browser_qa").textContent).toBe("1 skill · 1 BB plugin");
       // A role nobody changed has no badge in its row; the origin shows in the drawer.
@@ -184,7 +184,7 @@ describe("Agent access tab", () => {
       fireEvent.click(option);
       await waitFor(() => expect(saves).toHaveLength(2));
       expect(saves[1]).toEqual({ projectId, key: "helper.access.writer", expectedVersion: 1, value: { skills: { mode: "allow", names: ["lp-writer", "karpathy-guidelines", "ru-text"] } } });
-      await waitFor(() => expect(slot.getByTestId("access-summary-writer").textContent).toBe("3 skills · 2 MCP"));
+      await waitFor(() => expect(slot.getByTestId("access-summary-writer").textContent).toBe("3 skills · 1 MCP"));
       expect(slot.getByTestId("access-writer-skills-effective").textContent).toBe("lp-writer, karpathy-guidelines, ru-text · project");
       // The always-on BB plugins stay as locked chips and cannot be removed.
       await choose(slot, "access-writer-bbPlugins-mode", en.accessModeAllow);
@@ -211,9 +211,9 @@ describe("Agent access tab", () => {
     const { slot, harness, saves } = await mount();
     try {
       await openAccessTab(slot);
-      await openRole(slot, "docs_maintainer");
-      await choose(slot, "access-docs_maintainer-mcpServers-mode", en.accessModeAllow);
-      const editor = await slot.findByTestId("access-docs_maintainer-mcpServers-editor");
+      await openRole(slot, "code_critic");
+      await choose(slot, "access-code_critic-mcpServers-mode", en.accessModeAllow);
+      const editor = await slot.findByTestId("access-code_critic-mcpServers-editor");
       const input = within(editor).getByLabelText(en.accessAddTypeName);
       fireEvent.change(input, { target: { value: "context7" } });
       fireEvent.keyDown(input, { key: "Enter" });

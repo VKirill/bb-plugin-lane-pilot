@@ -17,7 +17,7 @@ LANE_PILOT_HELPER_ROLES = {
     "critic", "plan-critic", "code-critic", "specialist-reviewer",
     "night-reviewer", "docs", "docs-maintainer", "onboarder",
     "memory-maintainer", "project-life", "gate-triage", "council-seat",
-    "rules-analyzer",
+    "rules-analyzer", "auditor", "debugger", "episode-analyst", "wall-hunter",
     "design-lead", "copy-lead", "seo-specialist", "tavily",
 }
 

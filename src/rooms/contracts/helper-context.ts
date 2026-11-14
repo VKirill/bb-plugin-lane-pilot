@@ -89,7 +89,9 @@ export type HelperRole =
   | "specialist:lead";
 
 type RoleProfile = { bbPlugins: string[]; skills: string[]; mcpServers: string[] };
-const CODER: RoleProfile = { bbPlugins: [], skills: ["lp-writer", "karpathy-guidelines"], mcpServers: ["gitnexus", "metamcp"] };
+// The writer keeps gitnexus (the project rule: impact before editing a shared symbol) and drops metamcp: 0 calls in 1038 writer runs on the hub
+// (launch-footprint audit 2026-11-14); the writer brief names context7 only for a role that carries metamcp (writer-knowledge.ts), so it follows.
+const CODER: RoleProfile = { bbPlugins: [], skills: ["lp-writer", "karpathy-guidelines"], mcpServers: ["gitnexus"] };
 const READER: RoleProfile = { bbPlugins: [], skills: [], mcpServers: ["gitnexus"] };
 // One answer, no MCP servers: the plan critic and the task scout (pm-reader) read the checkout with the provider's own file tools.
 // Measured on the hub: they made no code-graph call in 419 of 419 runs, yet the gitnexus schemas cost ~8k tokens a turn.
@@ -111,11 +113,13 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   // It judges check counters from its message (NO_TOOLS_LINE); 0 of 12 threads called the code graph in the week to 2026-11-10.
   "gate-triage": ONE_SHOT,
   "pm-reader": ONE_SHOT,
-  "docs-maintainer": { bbPlugins: [], skills: ["lp-docs", "docs-methodology"], mcpServers: ["gitnexus"] },
-  "onboarder": { bbPlugins: [], skills: ["project-life"], mcpServers: ["gitnexus"] },
+  // 10 graph calls in 1968 docs runs, in 5 of 27 threads; the nightly pass refreshes the index itself (docs.gitnexus_refresh) and the brief never asks for the graph.
+  "docs-maintainer": { bbPlugins: [], skills: ["lp-docs", "docs-methodology"], mcpServers: [] },
+  "onboarder": { bbPlugins: [], skills: ["project-life"], mcpServers: [] },
   // It returns one JSON array and runs no tools; the memory skills told it to call CLIs (instructions audit 2026-10-03).
   "memory-maintainer": { bbPlugins: [], skills: [], mcpServers: [] },
-  "project-life": { bbPlugins: [], skills: ["project-life"], mcpServers: ["gitnexus"] },
+  // 1 graph call in 75 runs (launch-footprint audit 2026-11-14).
+  "project-life": { bbPlugins: [], skills: ["project-life"], mcpServers: [] },
   "browser-qa": { bbPlugins: ["browser-automation"], skills: ["browser-automation"], mcpServers: [] },
   // A PM's errand outside the code: a console, a mailbox, a recording. The browser on the browser machine, the fast
   // owner's signed-in Chrome and the apps on the Mac mini through agent-desktop (computer-use; the accessibility tree), the headless browser through the browser-automation plugin, and Env Catalog for the accounts it needs; no code skills.
@@ -130,7 +134,8 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "analyst": ONE_SHOT,
   "planner": ONE_SHOT,
   "auditor": ONE_SHOT,
-  "debugger": READER,
+  // The one thin role that does call the code graph (29 of 99 calls): it names the skill that tells it how.
+  "debugger": { bbPlugins: [], skills: ["gitnexus-debugging"], mcpServers: ["gitnexus"] },
   "council-seat": { bbPlugins: [], skills: [], mcpServers: [] },
   "rules-analyzer": { bbPlugins: [], skills: [], mcpServers: [] },
   // Both read masked text in a hidden analyzer thread and answer in JSON: no plugin, skill or MCP access.
@@ -171,6 +176,10 @@ export const SKILL_ALIASES: Readonly<Record<string, string>> = {
   "writer-practices": "lp-writer",
   "docs-maintain": "lp-docs",
   "resume-project": "project-resume",
+  // The three lane stubs moved into the lane-pilot skill; a saved setting that names one keeps working once the stubs are deleted.
+  "lane-contract": "lane-pilot",
+  "lane-pilot-ops": "lane-pilot",
+  "lane-pilot-workflows": "lane-pilot",
 };
 export const canonicalSkillName = (name: string): string => SKILL_ALIASES[name] ?? name;
 
