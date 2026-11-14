@@ -8,7 +8,7 @@ Called from sma_core.py (`not_proved.update(prove_last(proofs, tmp))`); its rece
   carry the reason; when none is, the node is not proved (making a plugin fail to start is a change of the hub).
 - n1499 «Skills .claude/skills/sma-*» is proved on Lane Pilot's own half: sma_core_last_probe.ts loads the plugin of the commit under drill on a fake host
   and reads the route tool's visible registry (no model, no hub write).
-- n469 «Window entry link» is not proved by any scene: the entry is BB's own (BB_VK_OWNER_AUTH owner login, off on the hub), see NOT_PROVED_LAST.
+- n469 «Window entry link» (core vk-owner-auth registerVkOwnerRoutes, apps/cli owner login) is not proved here: owner login is off on the hub, see NOT_PROVED_LAST.
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from lp_drill.prove import Proofs
 NODES_LAST = ["n470", "n1499", "n1514"]
 PROBE_LAST = ROOT / "scripts/lp_drill/scenes/sma_core_last_probe.ts"
 NOT_PROVED_LAST = {
-    "n469": "BB's own entry: the window link is BB's owner login (bb owner login prints a one-time ticket link, the core trades it for a cookie), opt-in with BB_VK_OWNER_AUTH and off on the hub (`bb owner status`: login off, no key paired); no line of Lane Pilot's",
+    "n469": "owner login is off on the hub (BB_VK_OWNER_AUTH unset; `bb owner status`: login off, no key paired): the link and its ticket trade cannot be seen there",
 }
 
 

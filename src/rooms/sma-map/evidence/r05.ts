@@ -3,7 +3,7 @@
 // wfRun/wfStep trace were derived mechanically by scripts/sma-seed-evidence.ts (2026-11-14), not authored.
 // Batch a (n440–n471): one mutation per node; the trace of each is its own prove() line in scripts/lp_drill/scenes/sma_r05.py (no row is written to the
 // hub database by these nodes). The cards describe the old daemon process; each node is proved by the part of Lane Pilot that serves it now.
-// n469 (the window link) is core-resident with no line of ours; n470 (the start failure text) is proved and mutated in bb-core (batch core-last).
+// n469 (the window link) and n470 (the start failure text) are proved and mutated in bb-core (batch core-last).
 import { distort, drill, entry, flip, rows, skipWrite, type RegionEvidence, seedEntry, voidIsHave, voidStays } from "./types";
 
 const SERVER = "server.ts";
@@ -42,6 +42,7 @@ export default {
   n466: { mutation: flip("src/rooms/runs/conveyor.ts", "return state.on ? null :", "return !state.on ? null :"), trace: drill("sma_r05") },
   n467: { mutation: flip(CANARY, "readiness && ready ? pool.blocked.length === 0 : pool.works", "readiness && ready ? pool.blocked.length >= 0 : pool.works"), trace: drill("sma_r05") },
   n468: { mutation: distort(CANARY, "{ key, projectIds: [], reason: held.hold.reason }", "{ key, projectIds: [], reason: key }"), trace: drill("sma_r05") },
+  n469: { mutation: distort("core:apps/server/src/services/plugins/vk-owner-auth.ts", '!claimNonce(`ticket:${parsed.keyId}`, parsed.nonce, now)', '!claimNonce(`ticket:${parsed.keyId}:${Math.random()}`, parsed.nonce, now)'), reach: entry("the owner runs bb owner login --print on the hub"), trace: drill("sma_core") },
   n470: { mutation: distort("core:apps/server/src/services/plugins/plugin-runtime.ts", 'setStatus(row.id, "error", message);', 'setStatus(row.id, "error", "plugin failed to load");'), trace: drill("sma_core"), voidReview: voidIsHave("сбой старта плагина ядро BB переводит в runtime status error с текстом причины (виден в BB); сетевой БД и строки подключения нет, SQLite открывает BB; готовность базы проверяет сторож (db_ready)") },
   n471: { mutation: distort(OUTAGE, 'reason: "the plugin was reloaded (a deploy or a settings change)"', 'reason: "the plugin was restarted"'), reach: entry("BB reloads or stops the plugin: a deploy, a settings change, the machine shutting down"), trace: drill("sma_r05") },
   n472: { mutation: distort("src/rooms/platform/server/schedules.ts", "return await Promise.race([work, aborted]);", "return await work;"), reach: entry("BB aborts an isolated schedule run: its time limit, a reload or a stop of the plugin"), trace: drill("sma_r05") },
