@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.559
+
+- **The writer gets the project's core conventions again (`judgeWriterMemory`).** Once the memory judge ran for real (agy/codex routes instead of the dead router9), it cut core records as off-topic, and the writer brief and the repair prompt lost the core layer: the nightly drill's `memory_paths` went red on 0.1.555 with «MISSING core», and `bb lane-pilot memory-probe` reproduced it on 0.1.558. Core records now pass the judge like notes that name a task path. Measured by `memory_paths` in the next drill; `tests/memory-judge.test.ts` checks that core reaches the writer whatever the judge picks.
+- **GitNexus refreshes the index only (`gitnexus analyze --index-only`).** The nightly refresh no longer rewrites a 3.6 KB GitNexus section into AGENTS.md and CLAUDE.md nor installs skill copies that duplicate the BB skills canon; repos carry a short pointer instead. `tests/sma/parity-g7-rest-b.test.ts` checks the command.
+- **Onboarding writes AGENTS.md as the source and CLAUDE.md as `@AGENTS.md`.** Before, it wrote a CLAUDE.md pointing to PROJECT.md and no AGENTS.md, so Codex and the other CLIs saw no instructions. `tests/sma/parity-d10-rest-1.test.ts` checks both files.
+
 ## 0.1.558
 
 - **Codex helpers start from a lean home, chosen per role (`codex.lean_roles`).** The env switch `LANE_PILOT_CODEX_LEAN_HOME` was off on the hub, so every Codex helper loaded the owner's 10 KB AGENTS.md, 4 plugins, 10 subagent roles and web search. Now, with no setting, docs-maintainer, plan-critic, code-critic, specialist-reviewer, pm-reader, gate-triage, memory-maintainer and project-life start from the lean home (features off, no agents, no web search, no AGENTS.md); `all`, `off` or a role list change it, and `LANE_PILOT_CODEX_LEAN_HOME=off` still turns it off. A `codex exec` first request measured 18 328 input tokens from the owner's home and 7 550 from the lean one. Parallel sessions sharing a lean home write its config atomically (`tests/codex-lean-roles.test.ts`, 12 parallel preparations).
