@@ -128,3 +128,20 @@ export function latestTaskAttempt(db: LanePilotDatabase, projectId: string, task
   const row = rows.find((candidate) => member(candidate.task_id));
   return row ? { state:row.state, updated_at:row.updated_at, reason:row.reason } : null;
 }
+
+/**
+ * latestTaskAttempt inside one run: a depends_on name resolves among the tasks of the dependent's own run (owner's rule, ТЗ 4д.1),
+ * so an accepted «T1» of an older run of the project no longer satisfies a new plan's «T1» (lp.plan ids are almost always T1…T8).
+ */
+export function latestRunTaskAttempt(db: LanePilotDatabase, runId: string, taskId: string): { state:string; updated_at:number; reason:string|null } | null {
+  const base = taskRedispatchBase(taskId);
+  const rows = db.prepare(`SELECT task_id, state, updated_at, reason FROM lane_pilot_attempt
+    WHERE run_id=? AND (task_id=? OR task_id LIKE ? ESCAPE '\\')
+    ORDER BY created_at DESC, attempt_no DESC`).all(runId, taskId, `${base.replace(/[\\%_]/g, "\\$&")}.%`) as Array<{ task_id:string; state:string; updated_at:number; reason:string|null }>;
+  const member = (id:string) => id === taskId || (id.startsWith(`${base}.`) && /^(\.\d+)+$/.test(id.slice(base.length)));
+  const row = rows.find((candidate) => member(candidate.task_id));
+  return row ? { state:row.state, updated_at:row.updated_at, reason:row.reason } : null;
+}
+
+/** The state of a task's latest attempt (or of its redispatches) inside one run. */
+export const latestRunTaskAttemptState = (db: LanePilotDatabase, runId: string, taskId: string): string | null => latestRunTaskAttempt(db, runId, taskId)?.state ?? null;

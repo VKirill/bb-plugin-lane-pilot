@@ -1,5 +1,6 @@
 import { noteEngineWrite } from "../../verification/server";
-import { getRun, getRunWriterHost } from "../../storage";
+import { getRun, getRunWriterHost, listRunTaskRows } from "../../storage";
+import { cycleText, dependsOnTask, planGraph } from "../../tasks";
 import { bestEffort, sha256Hex } from "@lane-pilot/kit";
 import { list, rec, str, pmCheckout, quote, needLanePilot } from "./workflow-chain-runtime";
 import type { Row } from "./workflow-chain-runtime";
@@ -43,18 +44,30 @@ export function registerTaskBookActions(engine: WorkflowEngine, ctx: ServerCore,
         for (const error of lint?.errors ?? []) errors.push(`${valid.task.id}: ${error.message}`);
       }
     }
-    // Tasks of one wave run together: their owned paths must not meet.
+    // The waves are laid out from depends_on by code (SMA bf_waves): the planner's own `waves` are replaced, not trusted — a wave it
+    // wrote later than its links allow would hold a task back for nothing, an earlier one would start it before its dependency.
+    const graph = planGraph(parsed);
+    // A plan whose waves cannot be computed is not issued (SMA p2_waves): a cycle goes back to the planner before any dispatch.
+    if (graph.cycle) errors.push(`the tasks depend on each other in a cycle (${cycleText(graph.cycle)}): no wave can be computed; drop the depends_on that is not a real output dependency`);
+    // A dependency resolves inside the run: a task of this plan, or one already dispatched in this run.
+    const runTasks = listRunTaskRows(db, rt.runId).map((row) => row.id);
+    for (const [id, dep] of graph.unknown) {
+      if (!runTasks.some((task) => dependsOnTask([dep], task))) errors.push(`${id}: depends_on ${dep} names no task of this plan or run`);
+    }
+    // Tasks of one computed wave run together: their owned paths must not meet — a task that must follow another names it in depends_on.
     const own = (task: TaskV2) => task.owns_paths.map((path) => path.replace(/\/?\*+.*$/, "").replace(/\/$/, ""));
-    for (const wave of waves) {
+    for (const wave of graph.waves) {
       const members = parsed.filter((task) => wave.includes(task.id));
       for (const [i, a] of members.entries()) for (const b of members.slice(i + 1)) {
         const clash = own(a).find((x) => own(b).some((y) => x === y || x.startsWith(`${y}/`) || y.startsWith(`${x}/`)));
-        if (clash !== undefined) errors.push(`${a.id} and ${b.id} run in the same wave but both own ${clash || "the repository root"}`);
+        if (clash !== undefined) errors.push(`${a.id} and ${b.id} run in the same wave (neither depends on the other) but both own ${clash || "the repository root"}: add a depends_on between them or split the paths`);
       }
     }
+    const written = JSON.stringify(waves.filter((wave) => wave.length));
+    if (graph.waves.length && waves.length && written !== JSON.stringify(graph.waves)) rt.ctx.log(`lp.lint_contract: the planner's waves ${written.slice(0, 300)} were replaced by the waves of depends_on ${JSON.stringify(graph.waves).slice(0, 300)}`);
     // An empty plan is right when the planner checked that the repository already does what the goal asks (already_met).
     if (!tasks.length && c.resolve("plan.already_met") !== true) errors.push("the plan has no tasks");
-    return { ok: errors.length === 0, errors };
+    return { ok: errors.length === 0, errors, waves: graph.waves };
   });
 
   // The quick path's row in STATE.md (SMA k_wq_state): the task joins the «Quick Tasks Completed» table of

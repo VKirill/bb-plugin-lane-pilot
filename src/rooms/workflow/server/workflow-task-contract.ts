@@ -1,6 +1,7 @@
 import type { Row } from "./workflow-chain-runtime";
 import { str } from "./workflow-chain-runtime";
 import type { Field, GraphNode } from "@lane-pilot/workflow-engine";
+import { sha256Hex } from "@lane-pilot/kit";
 
 // ---------------------------------------------------------------- code tasks of a chain
 
@@ -12,6 +13,24 @@ export const safeId = (text: string) => text.replace(/[^A-Za-z0-9._-]+/g, "-").r
 export function shortPathCriticDefault(workflowId: string, mode: string): "medium" | undefined {
   return workflowId === "issue-quick" && mode === "standard" ? "medium" : undefined;
 }
+
+/**
+ * The prefix of a graph's code tasks: one per graph run, so sibling tasks of a plan know each other's names (owner's rule, ТЗ 4д.1).
+ * It was per step (`runId|stepKey`), and every branch of a fan-out had its own: a dependent looked for «T7», found no such task and
+ * blocked after two minutes, or found another run's «T7» (audit plan-split 1.6-ж). A revisit of the same id becomes `<id>.2`.
+ */
+export const graphTaskStem = (workflowRunId: string): string => sha256Hex(`${workflowRunId}|tasks`).slice(0, 8);
+export const graphTaskId = (stem: string, id: string): string => `w${stem}-${safeId(id)}`;
+/**
+ * depends_on rewritten with the same prefix as the ids: a name becomes its sibling's graph id, unless that sibling does not exist yet
+ * while a task of exactly that name was already dispatched in the Lane Pilot run (a PM task the graph builds on) — then it stays.
+ */
+export const graphDependsOn = (stem: string, dependsOn: unknown, dispatched: (id: string) => boolean): string[] =>
+  asList(dependsOn).map(String).filter(Boolean).map((dep) => {
+    if (/^w[0-9a-f]{8}-/.test(dep)) return dep;
+    const sibling = graphTaskId(stem, dep);
+    return dispatched(sibling) || !dispatched(dep) ? sibling : dep;
+  });
 
 export const withTaskStandard = (contract: Row, key: string): Row => ({ ...withContractDefaults(contract),
   display_title: str(contract.display_title).trim() || str(contract.title).slice(0, 60), kind: str(contract.kind) || "feature", area: str(contract.area).trim() || `workflow:${safeId(key)}` });

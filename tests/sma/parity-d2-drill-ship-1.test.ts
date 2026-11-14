@@ -56,7 +56,7 @@ describe("defaults: an install that sets nothing new runs the drill exactly as m
 
   it("the new scenes run only by name or under --series", () => {
     const out = drillPy(`print(json.dumps({"extra": m.EXTRA, "inAll": [n for n in m.EXTRA if n in m.ALL], "inQuick": [n for n in m.EXTRA if n in m.QUICK]}))`) as { extra: string[]; inAll: string[]; inQuick: string[] };
-    expect(out.extra).toEqual(["skills_screen", "revert"]);
+    expect(out.extra).toEqual(["skills_screen", "revert", "plan_split"]);
     expect(out.inAll).toEqual([]);
     expect(out.inQuick).toEqual([]);
     expect(spawnSync("python3", ["-I", drill, "--scenario", "revert", "--dry-run"], { encoding: "utf8" }).stdout).toContain("scenario revert:");

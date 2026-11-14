@@ -11,7 +11,7 @@ import { hostContract } from "../../contracts";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { sha256Hex, bestEffort } from "@lane-pilot/kit";
-import { acceptanceLines, alreadyMetVerdict, blindVerdict, brokenLink, candidateOn, canonical, executionGate, issuable, lessonsNeeded, nextAction, observationOutcome, piecesOfWave, phaseFolder, pieceSha, provenPieces, renderBook, waveCleared, waveLines, wavePackage, wavePieceLines, wavesOf, wordOf } from "../logic";
+import { acceptanceLines, alreadyMetVerdict, blindVerdict, brokenLink, candidateOn, canonical, executionGate, issuable, lessonsNeeded, nextAction, observationOutcome, piecesOfWave, phaseFolder, pieceSha, provenPieces, renderBook, waveLines, wavePackage, wavePieceLines, wavesOf, wordOf } from "../logic";
 import { buildsScreens, conclusionText, designPoints, issuedContract, markRoadmap, milestoneOf, nextRoadmapRow, stateText, templateFill, threatClosureGaps, waveTable, piecePlan, uatText } from "../stages";
 import { getPhase, listParts, notePoked, savePhase } from "../store";
 import { checkProofs, hostGit, phaseProofRecords, renderProofCurrency } from "./proof-currency";
@@ -200,7 +200,8 @@ export function installSteps(tools: StepsTools) {
         return phase;
       }
     }
-    const next = issuable(items, execution.issued, facts(phase), (wave) => waveCleared(phase.record, wave), execution.issuedSha);
+    // Each piece goes once its own dependencies are accepted (SMA p4_deps); a finished wave's review and lines hold the phase's exit, not the next piece.
+    const next = issuable(items, execution.issued, facts(phase), execution.issuedSha);
     // Batch issue capacity and a free seat in the house: at most issueCap pieces a pass, none while the run already has that many at work.
     const atWork = phase.runId ? listOpenAttempts(db).filter((row) => row.run_id === phase.runId).length : 0;
     // Path with or without subagents: off, the pieces go one at a time, inline.

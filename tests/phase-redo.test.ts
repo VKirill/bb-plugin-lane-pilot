@@ -9,9 +9,9 @@ describe("a piece whose contract changed is issued again", () => {
   it("only the changed piece goes again; an unchanged one keeps its work", () => {
     const a = piece("a"), b = piece("b");
     const prints = { a: pieceSha(a), b: pieceSha(b) };
-    expect(issuable([a, b], { a: "a", b: "b" }, accepted(["a", "b"]), () => true, prints)).toEqual([]);
+    expect(issuable([a, b], { a: "a", b: "b" }, accepted(["a", "b"]), prints)).toEqual([]);
     const a2 = piece("a", { verification: [{ command: "npm test" }] });
-    expect(issuable([a2, b], { a: "a", b: "b" }, accepted(["a", "b"]), () => true, prints).map((item) => item.id)).toEqual(["a"]);
+    expect(issuable([a2, b], { a: "a", b: "b" }, accepted(["a", "b"]), prints).map((item) => item.id)).toEqual(["a"]);
   });
   it("a piece issued before the prints existed is not issued again", () => {
     expect(issuable([piece("a")], { a: "a" }, accepted(["a"]))).toEqual([]);

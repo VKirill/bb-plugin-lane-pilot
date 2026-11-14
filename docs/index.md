@@ -66,6 +66,7 @@ Built by Lane Pilot from page frontmatter.
 | [Phases](phases.md) | component | active | 2026-10-30 |
 | [Pilot, then fan-out](pilot.md) | component | active | 2026-10-23 |
 | [Plan against fact and the acceptance card](plan-fact.md) | component | active | 2026-10-29 |
+| [Plan split: depends_on, computed waves, start from main](plan-split.md) | component | active | 2026-11-14 |
 | [Relay between threads](relay.md) | component | active | 2026-10-30 |
 | [docs/research-adoption.md](research-adoption.md) | — | — | — |
 | [Who works a role — the role table and model pools](role-models.md) | component | active | 2026-10-29 |

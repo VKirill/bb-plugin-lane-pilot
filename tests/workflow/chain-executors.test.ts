@@ -14,6 +14,7 @@ import { chainRuntimeFor, humanOptions, humanOutput, registerChainExecutors } fr
 import { registerDispatchExecutors, taskUsage } from "../../src/rooms/writer/server";
 import { answerWorkflowQuestion } from "../../src/rooms/workflow/server/workflow-answer";
 import { reportEndToOwner } from "../../src/rooms/workflow/server/pm-notice";
+import { graphDependsOn, graphTaskId, graphTaskStem } from "../../src/rooms/workflow/server/workflow-task-contract";
 import type { ChainRuntime } from "../../src/rooms/contracts/server";
 import { registerPureActions } from "@lane-pilot/workflow-engine";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
@@ -711,7 +712,32 @@ describe("files, diffs and the plugin's own state", () => {
     const errors = (summary.output!.errors as string[]).join(" | ");
     expect(errors).toContain("task #3 (broken)");
     expect(errors).not.toMatch(/display_title|kind_missing|area_missing/);
-    expect(errors).toContain("t1 and t2 run in the same wave but both own src");
+    expect(errors).toContain("t1 and t2 run in the same wave (neither depends on the other) but both own src");
+  });
+
+  it("[sma:bf_waves] [sma:p2_waves] lp.lint_contract lays the waves out from depends_on, replaces the planner's, and sends a cycle or a dangling link back", async () => {
+    const t = await setup({});
+    dispose = t.dispose;
+    const base = { schema_version: 2, risk: "low", lane: "writer", read_first: ["README.md"], interfaces: ["x"], invariants: ["y"], out_of_scope: ["z"], expected_outputs: ["a.txt"], never_touch: [".git/**"], objective: "o", acceptance: ["a"], verify: "tests", verification: [{ command: "true", cwd: t.checkout, timeout_sec: 30 }] };
+    const task = (id: string, dependsOn: string[]) => ({ ...base, id, title: id, owns_paths: [`notes/${id}.md`], depends_on: dependsOn });
+    const lint = async (tasks: unknown[], waves: string[][]) => {
+      const workflow = chain({
+        outputs: [{ name: "ok", type: "boolean", required: false }, { name: "errors", type: "array", required: false }, { name: "waves", type: "array", required: false }],
+        nodes: [{ id: "plan", type: "action", action: "make_plan", output: [{ name: "tasks", type: "array" }, { name: "waves", type: "array" }] }, { id: "lint", type: "action", action: "lp.lint_contract", reads: ["plan.tasks"], out: { ok: "bool", errors: "string[]", waves: "string[][]" } }, { id: "done", type: "action", action: "emit", map: { ok: "lint.ok", errors: "lint.errors", waves: "lint.waves" } }],
+        edges: [{ from: "start", to: "plan" }, { from: "plan", to: "lint" }, { from: "lint", to: "done" }],
+      });
+      t.engine.register("make_plan", { reentrant: true, run: async () => ({ output: { tasks, waves } }) });
+      return (await t.start(workflow).done).output as { ok: boolean; errors: string[]; waves: string[][] };
+    };
+    // A diamond with an independent task, the planner's waves written wrong: the code's waves win.
+    const diamond = await lint([task("a", []), task("b", ["a"]), task("c", ["a"]), task("d", ["b", "c"]), task("e", [])], [["a"], ["b"], ["c", "d"], ["e"]]);
+    expect(diamond).toMatchObject({ ok: true, errors: [], waves: [["a", "e"], ["b", "c"], ["d"]] });
+    const cycle = await lint([task("a", ["c"]), task("b", ["a"]), task("c", ["b"])], [["a", "b", "c"]]);
+    expect(cycle.ok).toBe(false);
+    expect(cycle.errors.join(" | ")).toContain("the tasks depend on each other in a cycle (a → c → b → a)");
+    const dangling = await lint([task("a", ["ghost"])], [["a"]]);
+    expect(dangling.ok).toBe(false);
+    expect(dangling.errors.join(" | ")).toContain("a: depends_on ghost names no task of this plan or run");
   });
 
   it("lp.lint_contract takes an empty plan only when the planner says the goal is already met", async () => {
@@ -785,6 +811,24 @@ describe("a code task of a chain", () => {
     expect(t.dispatched).toHaveLength(2);
     expect(t.dispatched[1]!.task).toEqual(dispatched);
     expect(t.dispatched[1]!.plan).toBe(contract.objective);
+  });
+
+  it("[sma:bf_waves] a graph task's depends_on carries the same prefix as its siblings' ids; a PM task of the run it builds on keeps its name (plan-split 1.6-ж)", async () => {
+    const t = await setup({});
+    dispose = t.dispose;
+    // A task «pm-auth» dispatched by the PM in this Lane Pilot run, before the graph.
+    createTask(t.db, { id: "pm-auth", runId: RUN, kind: "bb", contract: { id: "pm-auth" } });
+    createAttempt(t.db, { id: "pm-auth-attempt", runId: RUN, taskId: "pm-auth" });
+    const started = t.start(taskChain({ ...task(t.checkout), id: "c2", depends_on: ["c1", "pm-auth"] }));
+    expect((await started.done).status).toBe("waiting");
+    const dispatched = t.dispatched[0]!.task as Row;
+    const stem = String(dispatched.id).replace(/-c2$/, "");
+    expect(stem).toMatch(/^w[0-9a-f]{8}$/);
+    // Before: the plan's «c1» stayed bare, the writer looked for a task «c1», found none and blocked after two minutes.
+    expect(dispatched.depends_on).toEqual([`${stem}-c1`, "pm-auth"]);
+    // Siblings of one graph run share the prefix whatever step they run on.
+    expect(graphTaskId(graphTaskStem(started.runId), "c1")).toBe(`${stem}-c1`);
+    expect(graphDependsOn(stem.slice(1), ["c1", `${stem}-c0`], () => false)).toEqual([`${stem}-c1`, `${stem}-c0`]);
   });
 
   it("dispatches the task through the writer pipeline with the run's workspace and waits for the attempt; an accepted attempt gives the merge commit by its trailer", async () => {

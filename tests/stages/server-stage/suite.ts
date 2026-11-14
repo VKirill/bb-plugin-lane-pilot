@@ -724,21 +724,26 @@ describe("stage → native writer → receipt", () => {
       .toMatchObject({state:"blocked",reason:"structural_plan_critique_blocked",result:{structuralFindings:[expect.objectContaining({code:"task_placeholder",path:`tasks/${placeholderTask.id}/objective`,severity:"error"})]}});
     await harness.lifecycle.dispose();
   });
-  it("blocks a dispatch whose depends_on names itself or closes a loop with an open task, and only warns on a binary output",async()=>{
+  // [sma:p2_waves] a cycle is a plan error before dispatch: the contract lint refuses it and no attempt is made (it was the plan critic's
+  // finding on a task already queued, plan-split 1.6-в).
+  it("refuses before any attempt a dispatch whose depends_on names itself or closes a loop with an open task, and only warns on a binary output",async()=>{
     const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Model approved","findings":[]}');
     const dispatch=async(candidate:TaskV2)=>{
       const raw=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write the fixture",task:candidate},{threadId:pmThreadId,projectId})));
       return {raw,findings:(listStageReceipts(db,"stage-run",raw.taskId).find((row)=>row.stageId==="plan-critique")?.result as {structuralFindings?:Array<{code:string;severity:string}>}|undefined)?.structuralFindings??[]};
     };
     const self=await dispatch({...task,id:"loop-self",depends_on:["loop-self"]});
-    expect(self.raw).toMatchObject({state:"blocked",reason:"structural_plan_critique_blocked"});
-    expect(self.findings).toEqual([expect.objectContaining({code:"depends_self",severity:"error"})]);
+    expect(self.raw).toMatchObject({state:"validation_failed"});
+    expect(String(self.raw.reason)).toContain("depends_on names the task itself (loop-self)");
+    expect(db.prepare("SELECT COUNT(*) n FROM lane_pilot_attempt WHERE task_id='loop-self'").get()).toEqual({n:0});
     const open={...task,id:"loop-b",depends_on:["loop-a"]};
     createTask(db,{id:open.id,runId:"stage-run",kind:"bb",contract:open});
     createAttempt(db,{id:"loop-b-attempt",runId:"stage-run",taskId:open.id});
     const cycle=await dispatch({...task,id:"loop-a",depends_on:["loop-b"]});
-    expect(cycle.raw).toMatchObject({state:"blocked",reason:"structural_plan_critique_blocked"});
-    expect(cycle.findings).toEqual(expect.arrayContaining([expect.objectContaining({code:"depends_cycle",severity:"error"})]));
+    expect(cycle.raw).toMatchObject({state:"validation_failed",replan:true});
+    expect(String(cycle.raw.reason)).toContain("loop-a → loop-b → loop-a");
+    expect(cycle.raw.findings).toEqual(expect.arrayContaining([expect.objectContaining({code:"depends_cycle"})]));
+    expect(db.prepare("SELECT COUNT(*) n FROM lane_pilot_attempt WHERE task_id='loop-a'").get()).toEqual({n:0});
     const binary=await dispatch({...task,id:"binary-output",expected_outputs:["note.txt","note.woff2"],owns_paths:["note.txt","note.woff2"]});
     expect(binary.raw.reason).not.toBe("structural_plan_critique_blocked");
     expect(binary.findings).toEqual(expect.arrayContaining([expect.objectContaining({code:"output_binary",severity:"warning"})]));

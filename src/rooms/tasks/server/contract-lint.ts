@@ -16,6 +16,8 @@ import { gluedCheckCommand } from "../../contracts/check-commands";
 import type { CatalogEntry, SecretCheck } from "../../secrets/server";
 import { safeRelative, validateOwnershipContract } from "../../contracts/ownership";
 import { CHECK_HISTORY_MIN_RUNS, p95 } from "../check-history";
+import { cycleText, findCycle } from "../dep-graph";
+import { dependsOnTask } from "../depends";
 
 /** One problem in a task contract, with the concrete fix; `data` rides along in the answer to the PM. */
 export type LintFinding = { code:string; message:string; data?:Record<string, unknown> };
@@ -47,6 +49,8 @@ export type LintInput = {
   confirmedDrawings?:ReadonlyArray<{ paths:readonly string[]; sha256:string; /** A file of it no longer matches the hash the design stage confirmed. */ changed?:boolean }>;
   /** Other open tasks of the project. */
   openTasks:readonly LintOpenTask[];
+  /** The other open tasks of this task's run with their depends_on (absent: not asked, the cycle rule stays silent). */
+  runTasks?:ReadonlyArray<{ id:string; depends_on:readonly string[] }>;
   /** depends_on names whose latest task ended blocked or canceled and that nothing restarts or vouches for. */
   deadDependencies:readonly { id:string; state:"blocked" | "canceled" }[];
   /** Env Catalog's answer for the secrets the checks declare (J2); absent when none is declared. */
@@ -567,7 +571,20 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
     }
   }
 
-  // depends_on a task that already ended blocked or canceled: the PM replans before this one is queued (a loop or a self reference is the plan critique's).
+  // A dependency cycle is a plan error before dispatch (owner's rule, ТЗ 4д; SMA p2_waves): a task that names itself, or closes a loop
+  // through the open tasks of its run, would wait forever — nothing is queued. A redispatch counts as its name (`P1` names `P1.2`).
+  if (dependsOnTask(task.depends_on, task.id)) {
+    errors.push({ code:"depends_self", message:`depends_on names the task itself (${task.id}), so it would wait for itself forever; remove it from depends_on` });
+  } else if (input.runTasks && task.depends_on.length) {
+    const cycle = findCycle([{ id:task.id, depends_on:task.depends_on }, ...input.runTasks], (dep, id) => dependsOnTask([dep], id));
+    if (cycle?.includes(task.id)) {
+      const from = cycle.indexOf(task.id);
+      const path = [...cycle.slice(from, -1), ...cycle.slice(0, from), task.id];
+      errors.push({ code:"depends_cycle", data:{ replan:true }, message:`depends_on closes a cycle with the open tasks of this run (${cycleText(path)}), so none of them could start; drop the depends_on that is not a real output dependency` });
+    }
+  }
+
+  // depends_on a task that already ended blocked or canceled: the PM replans before this one is queued.
   for (const dead of input.deadDependencies) {
     errors.push({ code:"depends_dead", data:{ replan:true }, message:dead.state === "blocked"
       ? `replan: depends_on ${dead.id} ended blocked, so this task would never start; send ${dead.id} again (fixed) first and then this task, which waits for it, or drop ${dead.id} from depends_on if the task does not need its files`

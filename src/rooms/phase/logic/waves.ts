@@ -1,28 +1,29 @@
 import { sha256Hex } from "@lane-pilot/kit";
 import { NO_CODE_KINDS } from "../../tasks";
 import { buildsScreens } from "../stages";
-import { gate, type GateResult } from "./gates";
+import { gate, pieceDeps, type GateResult } from "./gates";
 import type { PhaseRecord, PlanItem, WaveRecord } from "./record";
 import { canonical } from "./signatures";
 
 export type TaskFact = { taskId: string; attemptId?: string | null; state: string | null; planFact: "passed" | "failed" | "skipped" | null; verification: "passed" | "failed" | "skipped" | null; codeCritique: "passed" | "blocked" | "skipped" | "failed" | null; browserQa?: "passed" | "failed" | "skipped" | null; qaPlanned?: boolean };
 
-/** The pieces that may be issued now: wave by wave, the next wave only once every piece of the earlier waves is accepted. */
 /** What a piece's work is: its contract and its promise. A changed one after a return to planning is new work. */
 export const pieceSha = (item: PlanItem) => sha256Hex(canonical({ task: item.task, promise: item.promise }));
 
-export function issuable(items: readonly PlanItem[], issued: Readonly<Record<string, string>>, facts: ReadonlyMap<string, TaskFact>, cleared: (wave: number) => boolean = () => true,
+/**
+ * The pieces that may be issued now (SMA p4_deps; owner's rule ТЗ 4д.3 and 4д.5): a piece is issued once every piece it depends on
+ * is accepted — its own dependencies, not the whole earlier wave. A broken piece holds the pieces that depend on it and nobody else;
+ * the wave stays the piece's address (budget, stop, board, review), never a barrier. Earliest wave first, plan order inside it.
+ * A dependency the plan does not hold is never ready here (the plan gate refuses such a plan).
+ */
+export function issuable(items: readonly PlanItem[], issued: Readonly<Record<string, string>>, facts: ReadonlyMap<string, TaskFact>,
   issuedSha: Readonly<Record<string, string>> = {}): PlanItem[] {
-  for (const wave of wavesOf(items)) {
-    const pieces = piecesOfWave(items, wave);
+  const accepted = (id: string) => facts.get(id)?.state === "accepted";
+  return wavesOf(items).flatMap((wave) => piecesOfWave(items, wave))
     // The head changed (SMA: the train runs again on a new head from the stage that changed, skipping the stages that did not):
     // a piece whose contract changed since it was issued is issued again; an unchanged one keeps its work.
-    const waiting = pieces.filter((item) => !issued[item.id] || (issuedSha[item.id] !== undefined && issuedSha[item.id] !== pieceSha(item)));
-    if (waiting.length) return waiting;
-    if (!pieces.every((item) => facts.get(item.id)?.state === "accepted")) return [];
-    if (!cleared(wave)) return [];
-  }
-  return [];
+    .filter((item) => !issued[item.id] || (issuedSha[item.id] !== undefined && issuedSha[item.id] !== pieceSha(item)))
+    .filter((item) => pieceDeps(item).every((dep) => dep !== item.id && items.some((other) => other.id === dep) && accepted(dep)));
 }
 
 /** The pieces of one wave. */

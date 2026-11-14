@@ -14,6 +14,8 @@ export type { VerifyResult } from "./validate-output";
 export { checkoutOwnsOverlap, commonTaskFolder, isTaskBase, leavesSection, ownsFromOuterBase, parseRepoRoot, parseRepoTop, planWithOutsideReads, planWithRepoScope, repoRootCommand, repoTopCommand, rerootTask, rerootToRepoRoot, taskInRunScope } from "./task-base";
 export { TRUSTED_TOOLING_PATTERNS, applyTrustedTooling, trustedToolingFor, trustedToolingHint, trustedToolingHits, verificationScriptPaths } from "./trusted-tooling";
 export { dependsOnTask } from "./depends";
+export { cycleText, findCycle, planGraph, readyNow } from "./dep-graph";
+export type { DepNode, PlanGraph, Readiness, ReadyState } from "./dep-graph";
 export { INVARIANT_ITEM, INVARIANT_WORDS } from "./plan-fact";
 export { NO_CODE_KINDS, PLAN_FACT_BRIEF_LINE, PLAN_FACT_RULES, blindPlanFact, diffHunksCommand, existsCommand, existsFromCommandOutput, hunksFromCommandOutput, parsePlanFact, planFactOutcome, untouchedCitations } from "./plan-fact";
 export type { EvidenceCheck, ItemVerdict, PlanFactCheck, PlanFactFacts, PlanFactTable } from "./plan-fact";

@@ -1,6 +1,6 @@
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
-import { checkoutBase, getRun, getRunSettingsScopes, getTask, taskBasePath, latestTaskAttemptState, listCheckDurations, listCheckTimeouts, listOpenAttempts, listRunTaskRows, loadProjectSettings } from "../../storage";
+import { checkoutBase, getRun, getRunSettingsScopes, getTask, taskBasePath, latestRunTaskAttemptState, listCheckDurations, listCheckTimeouts, listOpenAttempts, listRunTaskRows, loadProjectSettings } from "../../storage";
 import { taskFamily } from "@lane-pilot/contracts";
 import { checkoutOwnsOverlap } from "../task-base";
 import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../contracts/quality-mode"
@@ -65,6 +65,13 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
     }
     const base = checkoutBase(getRun(db, runId)?.writer_workspace_path ?? null, task.project_cwd, task.repo_scope === true);
     const openTasks:LintOpenTask[] = [];
+    // The open tasks of this run with their depends_on: the names a new depends_on resolves among, where a cycle would close.
+    const runTasks:Array<{ id:string; depends_on:string[] }> = [];
+    for (const row of listOpenAttempts(db)) {
+      if (row.run_id !== runId || row.task_id === task.id || runTasks.some((open) => open.id === row.task_id)) continue;
+      const parsed = taskV2Schema.safeParse(getTask(db, row.task_id)?.contract);
+      if (parsed.success) runTasks.push({ id:row.task_id, depends_on:parsed.data.depends_on });
+    }
     for (const row of listOpenAttempts(db)) {
       if (row.project_id !== projectId || row.task_id === task.id || openTasks.some((open) => open.id === row.task_id)) continue;
       const parsed = taskV2Schema.safeParse(getTask(db, row.task_id)?.contract);
@@ -75,7 +82,7 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
     const parked = task.depends_on.length ? await services.stability.loadParked() : [];
     const deadDependencies:Array<{ id:string; state:"blocked" | "canceled" }> = [];
     for (const dep of new Set(task.depends_on)) {
-      const state = latestTaskAttemptState(db, projectId, dep);
+      const state = latestRunTaskAttemptState(db, runId, dep);
       if (state !== "blocked" && state !== "canceled") continue;
       // Parked for a machinery fault, vouched for by the PM, or restarted under another member of its family: not dead.
       if (parked.some((row) => row.projectId === projectId && taskFamily(row.taskId) === taskFamily(dep))) continue;
@@ -127,6 +134,6 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
         confirmedDrawings.push({ paths: drawing.paths, sha256: drawing.sha256, changed });
       }
     }
-    return lintContract({ task, workspacePath, hostId, kinds, listings, sandboxUnsafe, gate, openTasks, deadDependencies, programs, ownerWords, qualityMode, checkHistory, birth, redoneBirth, confirmedDrawings,...(secrets ? { secrets } : {}) });
+    return lintContract({ task, workspacePath, hostId, kinds, listings, sandboxUnsafe, gate, openTasks, runTasks, deadDependencies, programs, ownerWords, qualityMode, checkHistory, birth, redoneBirth, confirmedDrawings,...(secrets ? { secrets } : {}) });
   };
 }

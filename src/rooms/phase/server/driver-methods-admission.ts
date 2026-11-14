@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { latestRunForPmThread } from "../../storage";
 import { ownerWordsOn } from "../../tasks";
 import { sha256Hex, bestEffort } from "@lane-pilot/kit";
-import { RISK_KINDS, checkerIndependence, contextSignature, designDecision, discussionGate, phaseFolder, planGate, planGate as planGateOf, planSignature } from "../logic";
+import { RISK_KINDS, checkerIndependence, contextSignature, designDecision, discussionGate, phaseFolder, planGate, planGate as planGateOf, planSignature, withComputedWaves } from "../logic";
 import { planText, specText } from "../stages";
 import { insertPhase, listPhases, savePhase } from "../store";
 import { PhaseRefusal } from "./driver-tools";
@@ -13,7 +13,7 @@ import type { ContextDoc, Phase, PhaseRecord, PlanItem, RiskKey } from "../logic
 type Reported = { phaseId: string; by?: string };
 export type OpenInput = { projectId: string; pmThreadId: string; title: string; goal: string; legacy?: boolean; roadmapRow?: string; rails?: boolean };
 export type ContextInput = Reported & { docs: string[]; risks?: Partial<Record<RiskKey, string>>; requirements?: string[]; decisions?: string[]; appetite?: string; noGos?: string[] };
-export type PlanInput = Reported & { items: PlanItem[]; design?: boolean; alreadyMet?: string; fromRun?: string; objective?: string; premortem?: string[] };
+export type PlanInput = Reported & { items: Array<Omit<PlanItem, "wave"> & { wave?: number }>; design?: boolean; alreadyMet?: string; fromRun?: string; objective?: string; premortem?: string[] };
 export type PlanCheckInput = Reported & { decision: "approve" | "changes_requested"; by: string; summary?: string; wfRunId?: string };
 
 /** Opening a phase and admitting its plan: open, the signed context, the plan and its check, and the gate that admits it. */
@@ -121,7 +121,9 @@ export function installAdmissionMethods(tools: MethodsTools) {
     if (phase.stage === "closed" || phase.state === "closed") throw new PhaseRefusal(`phase ${phase.id} is closed: open a new phase for new work`);
     if (phase.stage !== "planning") throw new PhaseRefusal(`phase ${phase.id} is at ${phase.stage}: a plan is submitted at planning (return the phase there first)`);
     if (!phase.record.context) throw new PhaseRefusal("the phase has no signed context");
-    const items = input.items.map((item) => ({ ...item, task: { ...item.task, id: item.id } }));
+    // The waves are laid out from the pieces' depends_on (SMA bf_waves): a piece submitted without one gets its computed wave; a
+    // cycle leaves its pieces without a wave, and the plan gate refuses the plan (SMA p2_waves).
+    const items: PlanItem[] = withComputedWaves(input.items.map((item) => ({ ...item, task: { ...item.task, id: item.id } })));
     const contextSha = phase.record.context.sha;
     // `alreadyMet`: the planner found the repository already doing what the goal asks, a plan with no pieces that the plan gate admits as such.
     const record: PhaseRecord = { ...phase.record, plan: { items, contextSha, sha: planSignature(items, contextSha), rounds: phase.record.plan?.rounds ?? 0, submittedAt: now(),

@@ -439,6 +439,21 @@ describe("contract lint rules", () => {
       expect(errors[1]!.message).toMatch(/^replan: depends_on P2 ended canceled/);
       expect(lintReply("run", errors)).toMatchObject({ state:"validation_failed", replan:true });
     });
+
+    // plan-split 1.6-в: a cycle on the direct path was the critic's finding after the task was queued; now nothing is queued.
+    it("[sma:p2_waves] refuses a depends_on that names the task itself or closes a cycle through the open tasks of its run", () => {
+      const kinds = { "src/a.ts":"file" as const };
+      expect(codes(lint({ id:"A", depends_on:["A"] }, {}, kinds))).toEqual(["depends_self"]);
+      expect(codes(lint({ id:"A.2", depends_on:["A"] }, {}, kinds))).toEqual(["depends_self"]);
+      const runTasks = [{ id:"B", depends_on:["C"] }, { id:"C", depends_on:["A"] }];
+      const cycle = lint({ id:"A", depends_on:["B"] }, { runTasks }, kinds).errors;
+      expect(codes({ errors:cycle, warnings:[] })).toEqual(["depends_cycle"]);
+      expect(cycle[0]!.message).toContain("A → B → C → A");
+      expect(lintReply("run", cycle)).toMatchObject({ state:"validation_failed", replan:true });
+      // A chain without a loop, and a redispatch that breaks the old loop's name, pass.
+      expect(codes(lint({ id:"A", depends_on:["B"] }, { runTasks:[{ id:"B", depends_on:["C"] }, { id:"C", depends_on:[] }] }, kinds))).toEqual([]);
+      expect(codes(lint({ id:"A", depends_on:["B"] }, {}, kinds))).toEqual([]);
+    });
   });
 
   it("answers every problem in one message", () => {

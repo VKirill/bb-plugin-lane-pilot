@@ -2,8 +2,13 @@ import { PLAN_ROUNDS_MAX, ambiguityScore, coverageGaps, openQuestions, threatGap
 import { RISK_KINDS, type PhaseRecord, type PhaseStage, type PlanItem } from "./record";
 import { contextSignature, planSignature } from "./signatures";
 import { wordOf } from "./words";
+import { cycleText, planGraph } from "../../tasks";
 
 // ---------------------------------------------------------------- gates
+
+/** The pieces of the plan a piece names in depends_on. */
+export const pieceDeps = (item: Pick<PlanItem, "task">): string[] =>
+  Array.isArray(item.task.depends_on) ? (item.task.depends_on as unknown[]).filter((dep): dep is string => typeof dep === "string" && dep.length > 0) : [];
 
 export type GateResult = { ok: true } | { ok: false; why: string[] };
 export const gate = (why: string[]): GateResult => (why.length ? { ok: false, why } : { ok: true });
@@ -26,19 +31,35 @@ export function discussionGate(record: PhaseRecord): GateResult {
   return gate(why);
 }
 
-/** The waves come out of depends_on: a piece depends only on pieces of the plan and of an earlier wave, and nothing loops. */
+/**
+ * The waves come out of depends_on (SMA bf_waves, p2_waves): the dependency graph of the pieces is laid out by code, and a plan whose
+ * waves cannot be computed — a cycle, a link to a piece the plan does not hold, a piece with no wave — is not admitted. A piece's
+ * wave is its address: it must be later than the waves of the pieces it depends on.
+ */
 export function waveProblems(items: readonly PlanItem[]): string[] {
   const byId = new Map(items.map((item) => [item.id, item]));
+  const graph = planGraph(items.map((item) => ({ id: item.id, depends_on: pieceDeps(item) })));
   const why: string[] = [];
+  if (graph.cycle) why.push(`the pieces depend on each other in a cycle (${cycleText(graph.cycle)}): no wave can be computed for them — drop the link that is not a real output dependency`);
   for (const item of items) {
-    const deps = Array.isArray(item.task.depends_on) ? (item.task.depends_on as unknown[]).filter((dep): dep is string => typeof dep === "string") : [];
-    for (const dep of deps) {
+    if (!Number.isInteger(item.wave) || item.wave < 1) why.push(`${item.id} has no wave: a piece's wave is computed from its depends_on, submit it without one`);
+    for (const dep of pieceDeps(item)) {
       const other = byId.get(dep);
       if (!other) why.push(`${item.id} depends on ${dep}, which is not in the plan`);
-      else if (other.wave >= item.wave) why.push(`${item.id} (wave ${item.wave}) depends on ${dep} of wave ${other.wave}: a dependency belongs to an earlier wave`);
+      else if (dep !== item.id && other.wave >= item.wave) why.push(`${item.id} (wave ${item.wave}) depends on ${dep} of wave ${other.wave}: a dependency belongs to an earlier wave`);
     }
   }
   return why;
+}
+
+/**
+ * The plan's pieces with the waves laid out from their depends_on (SMA bf_waves): a piece without a wave gets 1 + the highest wave of
+ * the pieces it depends on; a wave already given stays (an address the PM or a replan chose, checked by waveProblems). Pieces on a
+ * cycle get none (wave 0), so the plan gate refuses the plan instead of slipping them into wave 1.
+ */
+export function withComputedWaves<T extends { id: string; wave?: number; task: Record<string, unknown> }>(items: readonly T[]): Array<T & { wave: number }> {
+  const computed = planGraph(items.map((item) => ({ id: item.id, depends_on: pieceDeps(item) }))).waveOf;
+  return items.map((item) => ({ ...item, wave: Number.isInteger(item.wave) && item.wave! >= 1 ? item.wave! : computed[item.id] ?? 0 }));
 }
 
 /** Will each piece become a work: a task with an id equal to the piece, owned paths, and a check that can run. */

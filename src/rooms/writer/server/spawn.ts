@@ -32,6 +32,8 @@ import type { SpawnInput, SpawnResult } from "./spawn-types";
 import { createSpawnWorktree } from "./spawn-worktree";
 import { buildWriterLaunch } from "./spawn-brief";
 import { spawnWriterAttemptWatched, startSteps } from "./spawn-watchdog";
+import { checkDependencyBase } from "./start-dependency-base";
+import { storedDependsOn } from "./start-wait-dependencies";
 
 export { isProjectRootCheckout, shouldMergeAttemptWorktree, worktreeCreateError } from "./spawn-probe";
 export { START_STALL_MS } from "./spawn-watchdog";
@@ -207,6 +209,14 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       const providerEnvironment = boundWorkspace.providerEnvironment;
       dirtBefore = boundWorkspace.dirtBefore;
       setAttemptDirtBefore(db,input.attemptId,dirtBefore);
+      // The owner's rule (ТЗ 4д.3): the worktree holds every accepted dependency's merge. One that does not is refused before any writer
+      // turn, as the machine's fault (attempt_worktree_: free, retried), never started on a base without the code it builds on.
+      if(!live) {
+        const proof = await checkDependencyBase({ db, host }, { runId:input.runId, hostId:input.config.hostId, workspacePath, dependsOn:storedDependsOn(db, input.taskId, input.task.depends_on) }, (line) => bb.log.warn(line));
+        if (proof === null) bb.log.warn(`Lane Pilot writer ${input.attemptId}: the dependencies' merges in its worktree could not be proven (git did not answer); it starts unproven`);
+        else if (proof.missing.length) throw new WriterSelectionError(`attempt_worktree_base_missing_dependency: the worktree (HEAD ${proof.head.slice(0, 12)}) lacks the merge of ${proof.missing.map((merge) => `${merge.taskId} ${merge.commit.slice(0, 12)}`).join(", ")}`);
+        else if (proof.checked.length) bb.log.info(`Lane Pilot writer ${input.attemptId}: worktree HEAD ${proof.head.slice(0, 12)} holds the merges of ${proof.checked.map((merge) => `${merge.taskId} ${merge.commit.slice(0, 12)}`).join(", ")}`);
+      }
       const attemptTask=retargetTask(input.task,workspacePath);
       if(live) {
         // The owned files are copied aside before the writer touches them; a rejected attempt is rolled back from them. They are

@@ -35,10 +35,16 @@ describe("what the machine makes of a workflow's output", () => {
     expect(doc.questions).toEqual(["Which tag syntax?"]);
     expect(doc.content).toMatch(/## Decisions[\s\S]*D1[\s\S]*## Risks[\s\S]*## Open questions/);
   });
-  it("turns lp.plan's tasks and waves into pieces with a promise", () => {
-    const items = planItems(phaseAt("planning"), { tasks: [{ id: "store", title: "Store", acceptance: ["writes are atomic"] }, { id: "cli", title: "CLI", acceptance: ["add works"] }], waves: [["store"], ["cli"]] });
-    expect(items.map((item) => [item.id, item.wave])).toEqual([["store", 1], ["cli", 2]]);
+  it("[sma:bf_waves] turns lp.plan's tasks into pieces with a promise and waves laid out from their depends_on, not the planner's waves", () => {
+    // The planner wrote the waves backwards and put an independent task late (wfrun_edafda61): the links decide.
+    const items = planItems(phaseAt("planning"), { tasks: [{ id: "store", title: "Store", acceptance: ["writes are atomic"] }, { id: "cli", title: "CLI", acceptance: ["add works"], depends_on: ["store"] },
+      { id: "landing", title: "Landing", acceptance: ["page"] }], waves: [["cli"], ["store"], ["landing"]] });
+    expect(items.map((item) => [item.id, item.wave])).toEqual([["store", 1], ["cli", 2], ["landing", 1]]);
     expect(items[0]!.promise.then).toBe("writes are atomic");
+  });
+  it("[sma:p2_waves] a plan whose tasks depend on each other in a cycle is refused, not turned into pieces of wave 1", () => {
+    expect(() => planItems(phaseAt("planning"), { tasks: [{ id: "a", depends_on: ["b"] }, { id: "b", depends_on: ["a"] }, { id: "c" }], waves: [["a", "b", "c"]] }))
+      .toThrow(/waves cannot be computed.*cycle \(a → b → a\)/);
   });
 });
 
@@ -365,7 +371,8 @@ describe("a replan merges into the pieces that were", () => {
     await auto.step(phase);
     runs.set("wfrun_1", { status: "succeeded", output: { status: "ok", tasks: [{ id: "b", title: "b again", covers: ["D2"] }, { id: "c", title: "c", covers: ["D3"] }], waves: [["b"], ["c"]] } });
     await auto.step(phase);
-    expect(planned.map((item) => [item.id, item.wave, item.covers])).toEqual([["a", 1, ["D1"]], ["b", 2, ["D2"]], ["c", 3, ["D3"]]]);
+    // b and c depend on nothing: both are computed into wave 1 of the new pieces, which come after the old waves (an address, not a barrier).
+    expect(planned.map((item) => [item.id, item.wave, item.covers])).toEqual([["a", 1, ["D1"]], ["b", 2, ["D2"]], ["c", 2, ["D3"]]]);
     expect(planned[1]!.task.covers).toBeUndefined();
   });
 });
