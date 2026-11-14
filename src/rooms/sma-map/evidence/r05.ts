@@ -76,7 +76,7 @@ export default {
   n502: { mutation: flip("src/rooms/owner-waiting/push.ts", 'more: 0 });\n  if (!config.enabled) return none("disabled");', 'more: 0 });\n  if (config.enabled) return none("disabled");'), trace: drill("sma_r05") },
   // Batch c (n503–n528): the owner's call, the estimate report and the hub watchdog; the trace of each is its own prove() line in scripts/lp_drill/scenes/sma_r05_c.py.
   n503: { mutation: distort("src/rooms/owner-waiting/items.ts", 'if (/wall|blocked|stuck|needs_human|stall/.test(kind)) return "blocked";', 'if (/wall|blocked|stuck|needs_human|stall/.test(kind)) return "term";'), reach: entry("the reports room asks the owner's digest every 30 minutes, and the owner's screen lists the waiting rows"), trace: drill("sma_r05") },
-  n504: { mutation: distort("src/rooms/owner-waiting/push.ts", "const shown = fresh.slice(0, DIGEST_LINES);", "const shown = fresh.slice(0, DIGEST_LINES - 1);"), trace: drill("sma_r05") },
+  n504: { mutation: distort("src/rooms/owner-waiting/push.ts", "const shown = fresh.slice(0, DIGEST_LINES);", "const shown = fresh.slice(0, DIGEST_LINES - 3);"), trace: drill("sma_r05") },
   n505: { mutation: skipWrite("src/rooms/owner-waiting/push.ts", "added += db.pre" + 'pare("INSERT OR IGNORE INTO lane_pilot_owner_push(key,pushed_at) VALUES (?,?)").run(key, now).changes;'), trace: drill("sma_r05") },
   n506: { mutation: distort("src/rooms/owner-waiting/push.ts", 'VALUES (?,?)").run(key, now).changes;', 'VALUES (?,?)").run(key, 0).changes;'), trace: drill("sma_r05") },
   n507: { mutation: flip("src/rooms/owner-waiting/items.ts", `closed_by=? WHERE key=? AND state='open'")`, `closed_by=? WHERE key=? AND state='closed'")`), trace: drill("sma_r05") },
