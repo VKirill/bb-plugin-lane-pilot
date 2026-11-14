@@ -289,16 +289,27 @@ describe("judging a search", () => {
   });
 
   it("the writer's brief asks the judge; notes outside its choice are left out", async () => {
-    const { db } = plant(8, "core");
+    const { db } = plant(8, "note");
     rememberQueryVector("queue facts pipeline", axis(0));
     let chosenId = "";
     setMemoryJudge(async ({ candidates: shown }) => { chosenId = shown[2]!.id; return { chosen: [shown[2]!], receipt: { model: "m", candidates: shown.map((r) => r.id), chosen: [chosenId], latencyMs: 5, tokensIn: 1, tokensOut: 1 } }; });
     const input = { projectId: "P", query: "queue facts pipeline", task: { owns_paths: [], read_first: [] }, searchEngine: "auto" as const, personalBot: "", ruleMemoryIds: new Set<string>() };
     const allowed = await judgeWriterMemory(db, input, memory);
     expect([...allowed!]).toEqual([chosenId]);
-    expect(mixWriterMemory(db, { ...input, allowedIds: allowed }).ids).toEqual([chosenId]);
-    expect(mixWriterMemory(db, input).ids.length).toBeGreaterThan(1);
     expect(memoryJudgeStats(db, 0).bySurface).toEqual({ writer: 1 });
+  });
+
+  it("core conventions reach the writer whatever the judge picks (drill memory_paths, 2026-11-14)", async () => {
+    const { db, ids } = plant(4, "core");
+    rememberQueryVector("queue facts pipeline", axis(0));
+    setMemoryJudge(async ({ candidates: shown }) => ({ chosen: [], receipt: { model: "m", candidates: shown.map((r) => r.id), chosen: [], latencyMs: 5, tokensIn: 1, tokensOut: 1 } }));
+    const input = { projectId: "P", query: "queue facts pipeline", task: { owns_paths: [], read_first: [] }, searchEngine: "auto" as const, personalBot: "", ruleMemoryIds: new Set<string>() };
+    // Every candidate is core, so nothing is left to judge: no allow-list, and the mix keeps the core conventions.
+    const allowed = await judgeWriterMemory(db, input, memory);
+    for (const id of ids) expect(allowed === null || allowed.has(id)).toBe(true);
+    const mixed = mixWriterMemory(db, { ...input, allowedIds: allowed }).ids;
+    expect(mixed.length).toBeGreaterThan(0);
+    expect(mixed.every((id) => ids.includes(id))).toBe(true);
   });
 });
 

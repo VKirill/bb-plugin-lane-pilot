@@ -75,7 +75,9 @@ function taggedCandidates(db: LanePilotDatabase, input: WriterMixInput): { notes
 export async function judgeWriterMemory(db: LanePilotDatabase, input: WriterMixInput, memory: MemorySettings): Promise<ReadonlySet<string> | null> {
   const found = writerCandidates(db, input);
   const anchors = pathAnchors(input.task);
-  const named = found.filter((record) => anchors.some((anchor) => record.content.includes(anchor)));
+  // Core conventions hold for every task of the project: the judge never drops them (once it ran for real, it cut them as off-topic and
+  // the writer brief lost its core layer — drill memory_paths red on 0.1.555, 2026-11-14).
+  const named = found.filter((record) => record.kind === "core" || anchors.some((anchor) => record.content.includes(anchor)));
   const rest = found.filter((record) => !named.includes(record) && (record.similarity === undefined || record.similarity >= DENSE_PREFILTER));
   const judged = await judgeFound(db, { projectId: input.projectId, query: input.query, found: rest, memory, surface: "writer" });
   return judged.judged ? new Set([...named, ...judged.records].map((record) => record.id)) : null;
