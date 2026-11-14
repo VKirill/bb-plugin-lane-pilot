@@ -10,6 +10,9 @@
 - **A drill proves a map node only by its own line (`prove(node, ok, detail)` in the scene's receipt).** A scene can no longer cover a node it did not check itself. Region scenes `sma_rNN` are discovered by file name (`--scenario sma_rNN`, `--suite sma`), and receipts are read from the plugin folder, so the hub judges them too. Checked by `tests/sma-traces.test.ts` and `tests/lp-drill-script.test.ts`.
 - **Regions 13 (Guard tools) and 24 (Safety nets) of the SMA map have their evidence: 37 of 39 nodes carry a behaviour test, a killed mutation and a reachability record.** Checked by `npm run sma:mutate -- --region 13` and `--region 24` (attestations in `src/rooms/sma-map/attest/r13.json`, `r24.json`).
 - **`bb lane-pilot evidence <project>` without `--op` and `integrity --renew` without `--why` no longer read the project id as the missing flag's value.** Checked by `tests/sma/four-proofs-r24-a.test.ts`.
+## Unreleased
+
+- **OUTCOME.md skips a removed attempt worktree.** The terminal task reaction used a successful `files.listPaths` response as proof that the task folder existed, but BB returns an empty listing for a missing path too. It now checks the directory kind with the read-only host snapshot, preserving writes into existing empty task folders without recreating removed worktrees. Reproduced from the accepted `fixture-readme` attempt of 2026-11-14; covered by `tests/task-outcome-removed-worktree.test.ts` and the OUTCOME.md cases in `tests/sma/parity-d10-rest-2.test.ts`.
 
 ## 0.1.563
 
