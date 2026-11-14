@@ -51,7 +51,7 @@ export function ForgeScreen({ rpc, projectId, runId }: { rpc: Rpc; projectId: st
           {/* A taken draft waits for the person's approval and is then switched on: the press hands the two-step enable to the PM. */}
           {drafts ? <ul className="space-y-1 text-sm">{drafts.map((row) => (
             <li key={row.name} className="flex items-center gap-2">{row.name}: {row.status}
-              {/written|kept/.test(row.status) ? <Button size="sm" variant="outline" disabled={enabling === row.name}
+              {/applied|kept/.test(row.status) ? <Button size="sm" variant="outline" disabled={enabling === row.name}
                 onClick={() => { setEnabling(row.name); void rpc.call("cockpit_forge_enable", { projectId, kind: "role", name: row.name }).then(() => setDrafts(drafts.map((item) => item.name === row.name ? { ...item, status: t("ckDraftWaitsYes") } : item)), () => setEnabling(null)); }}>{t("ckDraftEnable")}</Button> : null}
             </li>))}</ul> : <p className="text-xs text-muted-foreground">{t("ckEmpty")}</p>}
         </Panel>
