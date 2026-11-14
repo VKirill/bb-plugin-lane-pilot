@@ -78,7 +78,7 @@ describe("the phase candidate", () => {
     expect(listParts(w.db, id).map((part) => part.kind)).toContain("candidate");
   });
 
-  it("verifies the candidate's own tree and lands it on main only after every acceptance line holds [sma:p6_merge]", async () => {
+  it("verifies the candidate's own tree and lands it on main only after every acceptance line holds [sma:p6_merge] [sma:p6_landed]", async () => {
     const w = world();
     const id = await admitted(w);
     await w.phases.drive(w.phases.list({ live: true })[0]!);
