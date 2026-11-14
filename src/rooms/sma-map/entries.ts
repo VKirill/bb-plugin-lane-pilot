@@ -982,7 +982,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n968: ["have", "тот же мозг, что и окно", "telegram:chat.ts#this.d.sdk.threads.send({"],
   n969: ["have", "разговор не подключён", "telegram:server.ts#Conversation not connected"],
   n970: ["have", "знак «печатает»", "telegram:chat.ts#sendChatAction"],
-  n971: ["have", "длинный ответ частями", "telegram:chat.ts#splitText(o.text)"],
+  n971: ["have", "длинный ответ частями", "telegram:chat.ts#splitText"],
   n972: ["have", "черновик ждёт «да»", "telegram:chat.ts#A draft waits for «yes»"],
   n973: ["have", "клиент Bot API", "telegram:adapters.ts#export function telegram("],
   n974: ["have", "токен бота вырезан: диагностика без токена", "telegram:test/settings.test.ts#never token"],

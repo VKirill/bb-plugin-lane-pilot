@@ -240,7 +240,10 @@ at a version that has the change: `--gaps` says so. The two worked examples leav
 by a dropped stream, and n971 needs the plugin enabled.
 
 **`--gaps` / `--hollow`** list a sibling node like any other. Under it: the repository, the anchor and its size (or that the
-sibling is absent), the `[sma:]` tests already there, whether the hub must enable a plugin, and the next command.
+sibling is absent), the `[sma:]` tests already there, whether the hub must enable a plugin, and the next command. Region 10's proof links were written as
+body text while the Telegram plugin was on no machine; wherever it is checked out, `--check-proofs` calls them broken (a module
+anchor must name a declared unit). The batch that takes such a node points its entry at the unit that implements the card (n971:
+`telegram:chat.ts#splitText`) and removes it from the ratchet `TELEGRAM_TEXT_ANCHORS` in `tests/sma-map.test.ts`.
 
 **What is committed where.** The sibling commit is the test only, on `sma/core-proofs[-<batch>]` (bb-core, cut from
 `vk/experimental`) or `sma/proofs[-<batch>]` (telegram). Do not push, do not touch the shared checkout, do not deploy the core.
