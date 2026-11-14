@@ -101,9 +101,22 @@ export function writerRulesLines(rulesText: string): string[] {
   return rulesText ? ["Project rules for writers; each comes from a failure that kept repeating here, and some are still on trial. The task contract and owns_paths win over a rule; if you set one aside, say which and why:", rulesText] : [];
 }
 
-export type TaskFolderBrief = { path:string; files:string[] };
+/** `home`: the task's own home (docs/task-folder.md), its files listed from the manifest; absent for a task on the old layout. */
+export type TaskFolderBrief = { path:string; files:string[]; home?:{ plan:string|null; checkLog:string|null; attemptFolder:string|null } };
 
 export function taskFolderLines(folder?:TaskFolderBrief|null, contractAbove=false):string[] {
+  if (folder?.home) {
+    const path = folder.path.endsWith("/") ? folder.path : `${folder.path}/`;
+    const files = folder.files.filter((name) => name.length > 0 && !name.split(/[\\/]/).includes("..") && !name.startsWith("/"));
+    return [
+      `Your task's own home holds this task's files and nothing of another task; ${contractAbove ? "the contract in your brief above" : "the contract below"} stays the source of truth for owns_paths and checks:`,
+      path,
+      ...files.map((name) => `- ${name}`),
+      ...(folder.home.plan ? [`Read the plan first: ${folder.home.plan}`] : []),
+      ...(folder.home.checkLog ? [`The last failed check's full log: ${folder.home.checkLog}`] : []),
+      ...(folder.home.attemptFolder ? [`Notes of this attempt (QUESTIONS.md for a question to the PM, CHECKPOINT.md before you stop) go in ${folder.home.attemptFolder}; Lane Pilot keeps them in the task's record. Read no other task's folder and no shared .agents/plans/ file: what the PM planned is in this home.`] : []),
+    ];
+  }
   const files = folder?.files.filter((name) => name.length > 0 && !name.includes("/") && !name.includes("\\") && name !== ".." && name !== ".") ?? [];
   if (!files.length) return [];
   const path = folder!.path.endsWith("/") ? folder!.path : `${folder!.path}/`;

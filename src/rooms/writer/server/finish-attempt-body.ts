@@ -1,6 +1,6 @@
 import { breakerKey } from "@lane-pilot/resilience";
 import { writerLeftWorktree } from "./left-worktree";
-import { countAttempts, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings, noteAttemptStream, priorAttemptStates, transitionAttempt, taskBasePath, failureFieldsOf } from "../../storage";
+import { hasTaskHome, countAttempts, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings, noteAttemptStream, priorAttemptStates, transitionAttempt, taskBasePath, failureFieldsOf } from "../../storage";
 import {providerLimitNotice} from "@lane-pilot/models";
 import { actionableFindings, parseCodeCritiqueSettings, repairLedgerFromResult } from "../../critique";
 import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode, withReferenceTestCritic } from "../../contracts/quality-mode";
@@ -10,7 +10,8 @@ import { headSides } from "../../critique/server";
 import { recordGateEvaluation } from "../../runs/server";
 import {bestEffort, outputText, sha256Hex, stringAt} from "@lane-pilot/kit";
 import { wasAnsweredByDefault } from "./question-default";
-import { appendTaskQa } from "./reopen-attempt";
+import { noteTaskQa } from "./reopen-attempt";
+import { keepWriterNotes, recordTaskHomeFile, recordWriterReport, writerNotePath } from "./task-home";
 import {needsHumanQuestion, providerStreamError, WRITER_STREAM_ERROR} from "./writer-task";
 import { conventionGateHits, type ConventionGate } from "../../session-hooks";
 import { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, TEST_PATH, acceptanceArtifactDir, acceptanceProofGap, landingWordGap, landingWordAsked, ownerWordsMode, sensitiveHits, taskStepEvidence, questionsFromFile, checkScriptEdits, recordTaskApproach, recordTaskQuestions, referenceTestEdits, shapeFlags, taskWordKey, TEST_EDIT_HOLD_ITEM, testEditAllowance, testEditHoldKey, testFitFindings, testOwnedImports, writerMarkers } from "../../tasks";
@@ -92,6 +93,9 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
       // A dossier note is never a reason to fail the finish: a database or parse error is logged and the finish goes on.
       try { noteAttemptStream(db, input.attemptId, answer); }
       catch (cause) { ctx.log(`writer ${input.taskId}: stream note not kept: ${cause instanceof Error ? cause.message : String(cause)}`); }
+      // The writer's real report (its thread's output) is the attempt's report.md in the task home (docs/task-folder.md): plan-fact, the
+      // critic and the acceptance read it there by the manifest. A later attempt's report supersedes this one.
+      if (answer.trim()) await recordWriterReport(ctx, input, answer);
       // The provider's own limit notice instead of a report: the task never ran, so another model takes it, uncharged.
       const limit = providerLimitNotice(answer);
       if (limit) {
@@ -113,9 +117,10 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
         // reload sees what the writer waits for; a CHECKPOINT.md the writer left is kept with it (sma m_q_exec_ckpt).
         const parkedWorkspace = getAttempt(db, input.attemptId)?.workspace_path ?? input.config.writerWorkspacePath;
         if (parkedWorkspace) {
-          await appendTaskQa(bb, { hostId:input.config.hostId, workspacePath:parkedWorkspace, taskId:input.taskId, question });
+          await noteTaskQa(ctx, { hostId:input.config.hostId, workspacePath:parkedWorkspace, taskId:input.taskId, attemptId:input.attemptId, question });
           const checkpoint = await host.call("readBoundedFile", { requestedHostId:input.config.hostId, projectCwd:parkedWorkspace,
-            relativePath:`.agents/plans/items/${input.taskId}/CHECKPOINT.md`, offset:0, maxLines:200 }, { hostId:input.config.hostId, timeoutMs:10_000 }).then((file) => file.content, () => null);
+            relativePath:writerNotePath(db, input.taskId, input.attemptId, "CHECKPOINT.md"), offset:0, maxLines:200 }, { hostId:input.config.hostId, timeoutMs:10_000 }).then((file) => file.content, () => null);
+          await keepWriterNotes(ctx, input, { "CHECKPOINT.md":checkpoint });
           if (checkpoint) await bestEffort(ctx.log, "writer questions record", recordTaskQuestions(bb.storage.kv, input.runId, input.taskId,
             { questions:[{ kind:"open", question }], checkpoint:checkpoint.slice(0, 2000), at:Date.now() }), undefined);
         }
@@ -209,8 +214,10 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
       { const stopped = stoppedMeanwhile("the code critique", writerThreadId); if (stopped) return stopped; }
       // The plan against the fact: code checks the writer's evidence per acceptance item against the diff, never its prose. It records
       // its stage whatever the outcome; only plan_fact.mode=gate sends an item with no evidence that holds back to the writer.
+      // A repair round changed the candidate's answer: the report file follows it, so plan-fact reads what is judged.
+      if (candidate.output?.trim() && candidate.output !== answer) await recordWriterReport(ctx, input, candidate.output);
       const planFact = await runPlanFactStage(ctx, { projectId:input.projectId, runId:input.runId, taskId:input.taskId, attempt:countAttempts(db,input.runId,input.taskId),
-        hostId:input.config.hostId, task:input.task, answers:[candidate.output, answer], produced:candidate.produced ?? [], verification:candidate.verification ?? [] })
+        hostId:input.config.hostId, task:input.task, answers:[candidate.output, answer], attemptId:input.attemptId, produced:candidate.produced ?? [], verification:candidate.verification ?? [] })
         .catch((cause:unknown) => { ctx.log(`plan-fact: ${input.taskId} could not be checked: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
       if (planFact?.refusal) {
         recordGateEvaluation(db,{attemptId:input.attemptId,projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
@@ -293,13 +300,17 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
       // a worktree is removed with the attempt, and the journal went with it (0 journals for 66 accepted tasks, 2026-11-11).
       {
         const journalWorkspace = getRun(db, input.runId)?.writer_workspace_path ?? input.task.project_cwd;
-        if (journalWorkspace) {
+        const homed = hasTaskHome(db, input.taskId);
+        if (journalWorkspace || homed) {
           const journalEvents = await bestEffort(ctx.log, "progress journal events", Promise.resolve().then(() => listThreadEventsRaw(bb, { threadId: input.writerThreadId, order: "asc", limit: "500" } as never)), null);
-          await bestEffort(ctx.log, "progress journal write", Promise.resolve().then(() => bb.sdk.files.write({ hostId:input.config.hostId, rootPath:journalWorkspace,
+          const journal = progressJournal({ attemptId: input.attemptId, taskId: input.taskId, produced: candidate.produced ?? [], events: (journalEvents as { events?: Array<Record<string, unknown>> } | null)?.events ?? [],
+            truncated: ((journalEvents as { events?: Array<Record<string, unknown>> } | null)?.events ?? []).length >= 500 });
+          // A task with a home keeps its journal in the attempt's folder there (docs/task-folder.md), not in the run's shared artifacts.
+          if (homed) await bestEffort(ctx.log, "progress journal record", recordTaskHomeFile(ctx, { taskId:input.taskId, kind:"progress", name:`attempts/${input.attemptId}/PROGRESS.md`, content:journal,
+            attemptId:input.attemptId, producer:{ node:"finish", graph:"lp-task-pipeline", stage_id:"writer-agent", run_id:input.runId, attempt_id:input.attemptId }, readers:["lessons"] }), null);
+          else if (journalWorkspace) await bestEffort(ctx.log, "progress journal write", Promise.resolve().then(() => bb.sdk.files.write({ hostId:input.config.hostId, rootPath:journalWorkspace,
             path:`${acceptanceArtifactDir(journalWorkspace, input.runId, input.taskId)}/PROGRESS.md`,
-            content:progressJournal({ attemptId: input.attemptId, taskId: input.taskId, produced: candidate.produced ?? [], events: (journalEvents as { events?: Array<Record<string, unknown>> } | null)?.events ?? [],
-              truncated: ((journalEvents as { events?: Array<Record<string, unknown>> } | null)?.events ?? []).length >= 500 }),
-            contentEncoding:"utf8", createParents:true, expectedSha256:null })), undefined);
+            content:journal, contentEncoding:"utf8", createParents:true, expectedSha256:null })), undefined);
         }
       }
       if (markerWarnings.length) candidate.warnings = [...(candidate.warnings ?? []), ...markerWarnings];
@@ -307,10 +318,12 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
       await bestEffort(ctx.log, "writer approach record", recordTaskApproach(bb.storage.kv, input.runId, input.taskId, { approach:markers.approach, lesson:markers.lesson, noLessonReason:markers.noLessonReason, referenceTestEdits:testEdits, at:Date.now() }), undefined);
       // Stage questions from files and the execution checkpoint: the task folder's QUESTIONS.md and CHECKPOINT.md, read from the attempt's copy.
       const attemptRow = fitAttempt;
-      const folderOf = (name:string) => `.agents/plans/items/${input.taskId}/${name}`;
-      const readTaskFile = async (name:string) => attemptRow?.workspace_path ? await host.call("readBoundedFile", { requestedHostId:input.config.hostId, projectCwd:attemptRow.workspace_path, relativePath:folderOf(name), offset:0, maxLines:200 }, { hostId:input.config.hostId, timeoutMs:10_000 }).then((file) => file.content, () => null) : null;
+      const folderOf = (name:"QUESTIONS.md"|"CHECKPOINT.md") => writerNotePath(db, input.taskId, input.attemptId, name);
+      const readTaskFile = async (name:"QUESTIONS.md"|"CHECKPOINT.md") => attemptRow?.workspace_path ? await host.call("readBoundedFile", { requestedHostId:input.config.hostId, projectCwd:attemptRow.workspace_path, relativePath:folderOf(name), offset:0, maxLines:200 }, { hostId:input.config.hostId, timeoutMs:10_000 }).then((file) => file.content, () => null) : null;
       const questionsText = await readTaskFile("QUESTIONS.md");
       const checkpoint = await readTaskFile("CHECKPOINT.md");
+      // The writer's notes come back into the task's record by plugin code: the worktree they were written in goes at the merge.
+      await keepWriterNotes(ctx, input, { "QUESTIONS.md":questionsText, "CHECKPOINT.md":checkpoint });
       const fileQuestions = questionsText ? questionsFromFile(questionsText) : [];
       if (fileQuestions.length || checkpoint) {
         await bestEffort(ctx.log, "writer questions record", recordTaskQuestions(bb.storage.kv, input.runId, input.taskId, { questions:fileQuestions, checkpoint:checkpoint?.slice(0, 2000) ?? null, at:Date.now() }), undefined);

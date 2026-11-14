@@ -2123,16 +2123,19 @@ def _session_dir_name(p: dict) -> str:
 
 
 def _task_note_file(folder: Path, name: str) -> Path | None:
-    """The task folder's note file Lane Pilot wrote at spawn (.agents/plans/items/<task>/<name>): the session's own task when the launcher names it
-    (LANE_TASK_FILE, its basename is the task id), else the one written last. A named task with no such file gives none, never another task's."""
-    items = folder / ".agents" / "plans" / "items"
+    """The session's own task note Lane Pilot placed at spawn: in LANE_TASK_DIR (the task's home .agents/tasks/<task>/, set by the spawn), else in
+    .agents/plans/items/<task>/ of the task LANE_TASK_FILE names (a task on the old layout). With neither named, none: never «the newest» of
+    several tasks' folders (docs/task-folder.md). A named task with no such file gives none, never another task's."""
+    task_dir = os.environ.get("LANE_TASK_DIR") or ""
     task = re.sub(r"\.ya?ml$", "", Path(os.environ.get("LANE_TASK_FILE") or "").name)
     try:
-        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", task):
-            one = items / task / name
+        if task_dir:
+            one = Path(task_dir) / name
             return one if one.is_file() else None
-        found = [candidate for candidate in items.glob(f"*/{name}") if candidate.is_file()]
-        return max(found, key=lambda candidate: candidate.stat().st_mtime) if found else None
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", task):
+            one = folder / ".agents" / "plans" / "items" / task / name
+            return one if one.is_file() else None
+        return None
     except OSError:
         return None
 

@@ -124,19 +124,14 @@ async function ensureInfoExclude(checkoutPath:string, extraLines:string[]):Promi
   await appendFile(exclude,`${current&&!current.endsWith("\n")?"\n":""}${missing.join("\n")}\n`);
 }
 
-async function copyTaskItems(basePath:string, worktreePath:string):Promise<void> {
-  const src=join(basePath,".agents","plans","items");
-  if(!(await statOrNull(src))?.isDirectory()) return;
-  const dest=join(worktreePath,".agents","plans","items");
-  const srcReal=await orMiss(realpath(src),src,isFsAbsent);
-  const destReal=await orMiss(realpath(dest),dest,isFsAbsent);
-  if(srcReal===destReal) return;
-  await mkdir(join(dest,".."),{recursive:true});
-  // A file the repository tracks (a project-life commit added it) already sits in the worktree as committed: the base's
-  // uncommitted edits of it are that stage's, and copied over it they went into the attempt's commit and blocked its merge.
-  const tracked=new Set((await git(worktreePath,["ls-files","-z","--",".agents/plans/items"])).stdout.split("\0").filter(Boolean));
-  await cp(src,dest,{recursive:true,dereference:false,errorOnExist:false,force:true,
-    filter:(_from,to)=>!tracked.has(relative(worktreePath,to).replace(/\\/g,"/"))});
+/**
+ * A worktree gets no shared task folder (docs/task-folder.md, SMA n397/n405): the whole `.agents/plans/items/` of the base used to be copied
+ * into every worktree, so each writer and critic saw every other task's plan, QA and logs, and the guard picked «the newest» of them. The
+ * plugin now places the task's OWN home from its manifest when it briefs the writer (spawn-brief.ts, placeTaskHome); here only the exclude
+ * line of the task homes is made sure of, so that home never reads as the writer's change.
+ */
+async function copyTaskItems(_basePath:string, worktreePath:string):Promise<void> {
+  await ensureInfoExclude(worktreePath, ["**/.agents/tasks/"]);
 }
 export async function linkWorktreeDependencies(input:{basePath:string;worktreePath:string}):Promise<{linked:string[]}> {
   await ensureInfoExclude(input.worktreePath, [TASK_FOLDER_EXCLUDE]);

@@ -218,7 +218,8 @@ describe("reflexes and file notes reach the task folder", () => {
     const dir = tmp("sma-reflex-prod-");
     mkdirSync(join(dir, ".agents/plans/items/task-g1"), { recursive: true });
     writeFileSync(join(dir, ".agents/plans/items/task-g1/REFLEXES.md"), reflexes!);
-    const out = guard(bashPayload("npx prisma migrate dev", dir), { LANE_PILOT_ROLE: "writer", HOME: tmp("sma-reflex-prod-home-") });
+    // A task on the old layout is named by LANE_TASK_FILE: the guard no longer guesses the newest folder (k_hs_context, docs/task-folder.md).
+    const out = guard(bashPayload("npx prisma migrate dev", dir), { LANE_PILOT_ROLE: "writer", HOME: tmp("sma-reflex-prod-home-"), LANE_TASK_FILE: "/x/tasks/task-g1.yml" });
     expect(out.stdout).toContain("run it on a copy first");
     await w.harness.lifecycle.dispose();
   });
@@ -298,7 +299,8 @@ describe("the file notes in the guard", () => {
     expect(texts("lib/other.ts")).not.toContain("[file-note]");
   });
 
-  it("[sma:k_hs_context] with several task folders the session's own task is read (LANE_TASK_FILE), else the one written last, never the first in name order", () => {
+  // docs/task-folder.md changed this card's old «else the one written last»: with no task named the guard reads no task's notes (mtime removed).
+  it("[sma:k_hs_context] with several task folders only the session's own task is read (LANE_TASK_FILE on the old layout), never the newest or the first in name order", () => {
     const dir = tmp("sma-card-task-");
     const item = (id: string, note: string, age: number) => {
       mkdirSync(join(dir, ".agents/plans/items", id), { recursive: true });
@@ -310,11 +312,37 @@ describe("the file notes in the guard", () => {
     item("a-first", "note of the first task", 500);
     item("z-last", "note of the newest task", 5);
     const home = tmp("sma-card-task-home-");
-    expect(edit("src/a.ts", dir, home).stdout).toContain("note of the newest task");
+    expect(edit("src/a.ts", dir, home).stdout).not.toContain("[file-note]");
     expect(edit("src/a.ts", dir, tmp("sma-card-task-home2-"), { LANE_TASK_FILE: "/x/tasks/a-first.yml" }).stdout).toContain("note of the first task");
     // A named task with no card of its own shows nobody else's.
     expect(edit("src/a.ts", dir, tmp("sma-card-task-home3-"), { LANE_TASK_FILE: "/x/tasks/unknown-task.yml" }).stdout).not.toContain("[file-note]");
   });
+
+  // T7 worktree → guard. Mutation that breaks it: the hook choosing by mtime again, or the spawn naming a neighbour's home.
+  it("[sma:wi_grant] T7: the guard reads FILECARDS.md only in LANE_TASK_DIR, even when another task's home holds a newer one", () => {
+    const dir = tmp("sma-card-home-");
+    const homeOf = (id: string, note: string, age: number) => {
+      mkdirSync(join(dir, ".agents/tasks", id), { recursive: true });
+      const file = join(dir, ".agents/tasks", id, "FILECARDS.md");
+      writeFileSync(file, `- src/a.ts -> ${note}\n`);
+      const at = new Date(Date.now() - age * 1000);
+      utimesSync(file, at, at);
+      return join(dir, ".agents/tasks", id);
+    };
+    const own = homeOf("own-task", "note of my own task", 500);
+    homeOf("neighbour", "note of the neighbour task", 1);
+    expect(edit("src/a.ts", dir, tmp("sma-card-home-h1-"), { LANE_TASK_DIR: own }).stdout).toContain("note of my own task");
+    expect(edit("src/a.ts", dir, tmp("sma-card-home-h2-"), { LANE_TASK_DIR: own }).stdout).not.toContain("neighbour");
+    // LANE_TASK_DIR wins over an old-layout LANE_TASK_FILE: a task stays on one layout.
+    item2(dir);
+    expect(edit("src/a.ts", dir, tmp("sma-card-home-h3-"), { LANE_TASK_DIR: own, LANE_TASK_FILE: "/x/tasks/legacy.yml" }).stdout).toContain("note of my own task");
+    // A named home without a card shows nobody else's.
+    expect(edit("src/a.ts", dir, tmp("sma-card-home-h4-"), { LANE_TASK_DIR: join(dir, ".agents/tasks/empty") }).stdout).not.toContain("[file-note]");
+  });
+  const item2 = (dir: string) => {
+    mkdirSync(join(dir, ".agents/plans/items/legacy"), { recursive: true });
+    writeFileSync(join(dir, ".agents/plans/items/legacy/FILECARDS.md"), "- src/a.ts -> note of the old folder\n");
+  };
 });
 
 describe("the session's own state folder", () => {
