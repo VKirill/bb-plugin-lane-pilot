@@ -106,7 +106,7 @@ Pick in this order:
 3. `kv()` and `outside()` are **notes and never close a node** (KV has no timestamp to compare with the change point; `outside`
    is not judged). A node whose effect lives in KV or in a file on a machine closes through a `prove()` line in its region scene.
 
-### The region scene `scripts/lp_drill/scenes/sma_rNN.py`
+### The region scene `sma_rNN.py` in scripts/lp_drill/scenes
 
 A file named `sma_rNN.py` (NN = two-digit region) is found by its name: no shared list is edited, and it is not part of `--quick`
 or the default run. `scripts/lp_drill/scenes/sma_r13.py` (+ `sma_r13_probe.ts`) is the worked example: eight pure-check nodes.
