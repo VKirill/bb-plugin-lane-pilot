@@ -105,4 +105,23 @@ describe("change points: a trace counts only on a version that has the node's la
     const points = changePoints(["c"], [], () => undefined, "", file, seen);
     expect(points.get("c")).toMatchObject({ state: "shipped", version: "0.1.11", deployedAt: 4000 });
   });
+
+  it("a version the hub knows only from a start record (a workflow run of an upkeep graph, a memory probe) dates the change point; a version nobody recorded stays unshipped", () => {
+    const handle = db();
+    handle.prepare("PRAGMA foreign_keys = OFF").run();
+    handle.prepare("INSERT INTO lane_pilot_wf_run (id, workflow_id, workflow_version, workflow_sha256, definition_json, status, created_at, updated_at, harness_version) VALUES ('w1','lp.upkeep',1,'x','{}','succeeded',6000,6000,'0.1.13'), ('w2','lp.upkeep',1,'x','{}','succeeded',6500,6500,'0.1.13')").run();
+    handle.prepare("INSERT INTO lane_pilot_memory_probe (at, project_id, token, path, found, latency_ms, lp_version) VALUES (5500, 'p', 't', 'x', 1, 1, '0.1.13')").run();
+    const seen = versionSeen(handle);
+    expect(seen.get("0.1.13")).toBe(5500);          // the earliest of the sources
+    expect(seen.has("0.1.14")).toBe(false);
+    const older: ProvenanceFile = { generatedFrom: "x", version: "0.1.12", deploys: 1, lastDeployed: "0.1.12", nodes: { c: ["c3", 3, null, null, "file", "h"], d: ["c4", 4, null, null, "file", "h"] } };
+    const shipped = changePoints(["c"], [], () => undefined, "", older, seen).get("c")!;
+    expect(shipped).toMatchObject({ state: "shipped", version: "0.1.13", deployedAt: 5500 });
+    expect(traceAfter(shipped, 5400)).toBe(false);   // a receipt made before the version first ran
+    expect(traceAfter(shipped, 5600)).toBe(true);    // one made after it
+    // nothing recorded a version newer than the file: the change stays unshipped and no trace counts
+    const none = changePoints(["d"], [], () => undefined, "", { ...older, lastDeployed: "0.1.13" }, seen).get("d")!;
+    expect(none).toMatchObject({ state: "unshipped" });
+    expect(traceAfter(none, 9e12)).toBe(false);
+  });
 });

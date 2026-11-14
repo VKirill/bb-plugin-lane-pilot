@@ -18,6 +18,12 @@ export const MEMORY_EVAL_USAGE = "bb lane-pilot memory-eval [--sizes 30,300,3000
 
 type Result = { exitCode: number; stdout?: string; stderr?: string };
 
+/** The command that repeats a report (SMA k_lib_baseline): every flag that decides its numbers, the defaults written out; `--source` names the extract that keeps the data still. */
+export function reproduceCommand(run: { source?: string; mode?: "shelf" | "floor"; sizes: readonly number[]; seed: number; scope: string; noFloor?: boolean }): string {
+  const flags = [...(run.source ? ["--source", run.source] : []), ...(run.mode ? [`--${run.mode}`] : []), "--sizes", run.sizes.join(","), "--seed", String(run.seed), "--scope", run.scope, ...(run.noFloor ? ["--no-floor"] : [])];
+  return `bb lane-pilot memory-eval ${flags.join(" ")}`;
+}
+
 /**
  * `memory-eval`: reads the live database (or an extract) and prints the report. `--export` writes the extract file and stops, so the
  * run can happen anywhere without the hub's database. The live database is only read.
@@ -115,16 +121,17 @@ export async function runMemoryEvalCommand(live: Pick<Database.Database, "prepar
     let opened: Database.Database | null = null;
     if (flags.source) { opened = new Database(flags.source, { readonly: true }); source = opened; }
     if (!source) throw new Error(`no data: pass --source <extract.db> (made by --export)\n${MEMORY_EVAL_USAGE}`);
+    const again = (mode?: "shelf" | "floor") => reproduceCommand({ ...(flags.source ? { source: flags.source } : {}), ...(mode ? { mode } : {}), sizes, seed, scope, ...(flags["no-floor"] ? { noFloor: true } : {}) });
     try {
       if (flags.shelf) {
         const results = await runShelfReplay(loadEvalData(source), migrations, { projects: new Set([SANDBOX_PROJECT_ID]), task: isDrillTask });
-        return { exitCode: 0, stdout: flags.json ? JSON.stringify(results, null, 2) : formatShelf(results) };
+        return { exitCode: 0, stdout: flags.json ? JSON.stringify(results, null, 2) : `${formatShelf(results)}\nreproduce: ${again("shelf")}` };
       }
       if (flags.floor) {
         const tuned = await tuneFloor(loadEvalData(source), { sizes, seed, scope, skipProjects: new Set([SANDBOX_PROJECT_ID]), skipTask: isDrillTask, migrations });
-        return { exitCode: 0, stdout: formatFloorTuning(tuned) };
+        return { exitCode: 0, stdout: `${formatFloorTuning(tuned)}\nreproduce: ${again("floor")}` };
       }
-      const report = await runMemoryEval(loadEvalData(source), { sizes, seed, scope, ...(flags["no-floor"] ? { floor: null } : {}), skipProjects: new Set([SANDBOX_PROJECT_ID]), skipTask: isDrillTask, migrations });
+      const report = { ...await runMemoryEval(loadEvalData(source), { sizes, seed, scope, ...(flags["no-floor"] ? { floor: null } : {}), skipProjects: new Set([SANDBOX_PROJECT_ID]), skipTask: isDrillTask, migrations }), command: again() };
       const northStar = flags["north-star"] && extras.northStar ? extras.northStar() : null;
       if (flags.json) return { exitCode: 0, stdout: JSON.stringify(northStar ? { report, northStar } : report, null, 2) };
       const star = northStar ? `\ncost per verified result (tokens per accepted task):\n${(northStar as Array<{ projectId: string; tokens: number; accepted: number; tokensPerAccepted: number | null }>).map((row) => `- ${row.projectId}: ${row.tokensPerAccepted ?? "—"} tokensPerAccepted (${row.accepted} accepted, ${row.tokens} tokens)`).join("\n")}` : "";

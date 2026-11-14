@@ -97,13 +97,13 @@ export async function runCurriculumWeekly(db: Db, kv: { set(key: string, value: 
   return brief.split("\n").filter(Boolean).length;
 }
 
-/** Lesson candidates from another repository's history: commits whose subject says it fixed something, with the files they touched. */
+/** Lesson candidates from another repository's history: commits whose subject says it fixed something, with the files they touched. A word starts where no letter precedes it (`\b` is ASCII-only: «исправ» and «чин» never matched with it). */
 export function excavate(gitLog: string): Array<{ commit: string; subject: string; files: string[] }> {
   const out: Array<{ commit: string; subject: string; files: string[] }> = [];
   for (const block of gitLog.split("\n\u0001").map((chunk) => chunk.replace(/^\u0001/, "")).filter(Boolean)) {
     const [head, ...files] = block.split("\n").filter(Boolean);
     const [commit, subject] = (head ?? "").split("\u0002");
-    if (commit && subject && /\b(fix|bug|regress|revert|hotfix|crash|broke|repair|исправ|чин)/i.test(subject)) out.push({ commit: commit.slice(0, 12), subject: subject.slice(0, 200), files: files.slice(0, 10) });
+    if (commit && subject && /(?<![\p{L}\p{N}_])(fix|bug|regress|revert|hotfix|crash|broke|repair|исправ|чин)/iu.test(subject)) out.push({ commit: commit.slice(0, 12), subject: subject.slice(0, 200), files: files.slice(0, 10) });
   }
   return out.slice(0, 100);
 }

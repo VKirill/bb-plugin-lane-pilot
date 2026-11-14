@@ -3,6 +3,7 @@ import type { CliRunDeps } from "./cli-deps";
 import { attemptRecord, manifest, passport, preship, prPassport, receiptChain, subagentReceipts, verifyChain } from "./receipts";
 import { CODE_CRITIC_DEFAULTS, THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, isCodeCriticDefault, isNotFound, join, listThreadEventsRaw, maskCredentials, orMiss, stringAt, taskV2Schema, waitThreadIdle } from "./cli-imports";
 import type { CodeCriticDefault } from "./cli-imports";
+import { DISPATCH_BB_USAGE } from "./cli-commands";
 function requireCriticCodeDefault(value: string): CodeCriticDefault {
   if (!isCodeCriticDefault(value)) throw new Error(`critic.code.default_for_risk must be one of ${CODE_CRITIC_DEFAULTS.join(", ")}`);
   return value;
@@ -56,15 +57,22 @@ export async function cliHost(d: CliRunDeps): Promise<PluginCliResult | undefine
   if (command === "resume") {
     return { exitCode:0, stdout:JSON.stringify(await services.resumeOrphans(args[0]), null, 2) };
   }
-  if (command === "dispatch-bb" && args.length >= 2) {
-    const task = args[2] ? taskV2Schema.parse(JSON.parse(args[2])) : undefined;
-    return { exitCode:0, stdout:JSON.stringify(await services.dispatchWriter({
-      projectId:args[0]!,
-      threadId:args[1]!,
-      task,
-      baseRef:args[3]||undefined,
-      ...(args[4] ? { criticCodeDefault:requireCriticCodeDefault(args[4]) } : {}),
-    }), null, 2) };
+  if (command === "dispatch-bb") {
+    // --plan <text>: the plan apart from the contract, as lane_pilot_dispatch_writer takes it; without it the objective is the plan (as before).
+    const planAt = args.indexOf("--plan");
+    if (planAt >= 0 && !args[planAt + 1]?.trim()) return { exitCode:1, stderr:`usage: ${DISPATCH_BB_USAGE}` };
+    const positional = args.filter((_, index) => planAt < 0 || (index !== planAt && index !== planAt + 1));
+    if (positional.length >= 2) {
+      const task = positional[2] ? taskV2Schema.parse(JSON.parse(positional[2])) : undefined;
+      return { exitCode:0, stdout:JSON.stringify(await services.dispatchWriter({
+        projectId:positional[0]!,
+        threadId:positional[1]!,
+        task,
+        ...(planAt >= 0 ? { plan:args[planAt + 1]! } : {}),
+        baseRef:positional[3]||undefined,
+        ...(positional[4] ? { criticCodeDefault:requireCriticCodeDefault(positional[4]) } : {}),
+      }), null, 2) };
+    }
   }
   if (command === "docs-nightly") {
     // The owner's assignment (SMA k_ag_docwriter): masked and bounded, it enters the docs prompt as data, never as instructions.

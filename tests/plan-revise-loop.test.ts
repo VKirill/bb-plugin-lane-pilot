@@ -42,6 +42,8 @@ type Scenario = {
   finish?: boolean;
   /** The PM updates the task while the planner works on round 1. */
   pmUpdatesDuringRound?: boolean;
+  /** Dispatch by `bb lane-pilot dispatch-bb` (the drill's door) instead of the PM tool; `plan` is its --plan, absent: no flag. */
+  cli?: { plan?: string };
 };
 
 async function runScenario(scenario: Scenario) {
@@ -148,8 +150,11 @@ async function runScenario(scenario: Scenario) {
   createRun(db, runId, projectId, "bb", config.writerWorkspacePath, "none");
   setRunThread(db, runId, pmThreadId);
   await plugin(bb);
-  const reply = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
-    { confirm: true, objective: "Проверка цикла планировщика", plan: PLAN, task: { ...task, ...scenario.task } }, { threadId: pmThreadId, projectId }))) as Record<string, unknown>;
+  const dispatched = { ...task, ...scenario.task };
+  const reply = JSON.parse(scenario.cli
+    ? String((await harness.behavior.runCli(["dispatch-bb", projectId, pmThreadId, JSON.stringify(dispatched), ...(scenario.cli.plan !== undefined ? ["--plan", scenario.cli.plan] : [])])).stdout)
+    : String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
+      { confirm: true, objective: "Проверка цикла планировщика", plan: PLAN, task: dispatched }, { threadId: pmThreadId, projectId }))) as Record<string, unknown>;
   // The loop goes on after the dispatch answers: wait for the pipeline run to stop.
   const pipelineOpen = () => db.prepare("SELECT 1 FROM lane_pilot_wf_run WHERE workflow_id='lp-task-pipeline' AND status='running'").get();
   for (let i = 0; i < 300 && (pipelineOpen() || getAttempt(db, String(reply.attemptId ?? ""))?.reason?.startsWith("dispatch_stages_pending")); i++) await new Promise((resolve) => setTimeout(resolve, 30));
@@ -207,6 +212,23 @@ describe("the planner revises a plan the critic returned", () => {
     expect(toPm(run)).toEqual([]);
   }, 60_000);
 
+  it("an info note does not hold the plan: a pass with an info finding goes to the writer, a return with only an info finding is answered by the planner; the PM gets nothing", async () => {
+    const note = { file: "note.txt", line: 1, severity: "info", evidence: "PLAN: create note.txt", finding: "the note could end with a trailing newline" };
+    const passed = await runScenario({ settings: planner, critic: [JSON.stringify({ status: "pass", summary: "the plan holds", evidence: "read the plan", findings: [note] })] });
+    expect(passed.stages["plan-critique"]!.state).toBe("passed");
+    expect(passed.plannerRounds).toBe(0);
+    expect(passed.editions.map((row) => row.reason)).toEqual(["created"]);
+    expect(toPm(passed)).toEqual([]);
+    const returned = await runScenario({ settings: planner, critic: [JSON.stringify({ status: "rework", summary: "one note", evidence: "read the plan", findings: [note] }), PASS] });
+    expect(returned.plannerRounds).toBe(1);
+    expect(returned.editions.map((row) => row.reason)).toEqual(["created", "planner_revision:1/3"]);
+    expect(returned.stages["plan-critique"]!.state).toBe("passed");
+    expect(returned.everBlocked).toBe(false);
+    expect(toPm(returned)).toEqual([]);
+    // The planner is told a note is answered in the plan, never by sending it to the PM.
+    expect(returned.spawned.find((row) => row.role === "planner")!.prompt).toContain("A finding of severity info is a note");
+  }, 60_000);
+
   it("[sma:k_wp_revision] [sma:k_d_ref_gates] after the planner's last round the task goes to the PM with the findings of every round", async () => {
     const run = await runScenario({ settings: planner, critic: [rework(1), rework(2), rework(3), rework(4)],
       planner: [revision("plan v2: write note.txt"), revision("plan v3: write note.txt and test it"), revision("plan v4: write note.txt, test it, read it back")] });
@@ -241,6 +263,18 @@ describe("the planner revises a plan the critic returned", () => {
     expect(run.editions.map((row) => row.reason)).toEqual(["created"]);
     expect(run.spawned.some((row) => row.role === "planner")).toBe(false);
     expect(run.steps.some((row) => row.node_id === "plan-revise")).toBe(false);
+  }, 60_000);
+
+  it("dispatch-bb --plan: the plan text is the task's plan and the critic's input, apart from the objective; without the flag the objective is the plan", async () => {
+    const own = "Step 1: write note.txt with the reviewed output. Step 2: run the check.";
+    const flagged = await runScenario({ settings: planner, critic: [PASS], cli: { plan: own } });
+    expect(flagged.plan).toBe(own);
+    const critic = flagged.spawned.find((row) => row.stageId === "plan-critique")!;
+    expect(critic.prompt).toContain(own);
+    expect(flagged.stages["plan-critique"]!.state).toBe("passed");
+    const bare = await runScenario({ settings: planner, critic: [PASS], cli: {} });
+    expect(bare.plan).toBe(task.objective);
+    expect(bare.spawned.find((row) => row.stageId === "plan-critique")!.prompt).not.toContain(own);
   }, 60_000);
 
   it("plan_critique.revise_by pm (the default) keeps today's path: the return blocks for the PM at once", async () => {
