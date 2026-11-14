@@ -618,4 +618,20 @@ describe("the codebase map's pages", () => {
       expect(readFileSync(at(".agents/planning/PROJECT.md"), "utf8")).toBe(project);
     } finally { STRICT_WRITES.on = false; }
   });
+  it("[sma:k_d_ref_infra] the start's profile write keeps the eight infra keys as the project's profile.* settings, skips a secret-named key, a secret-looking value, an unknown key and an over-long value by key name, and the rest still lands", async () => {
+    const r = rig();
+    const engine = new WorkflowEngine({ db: r.db, harnessVersion: "test", runtimeFor: chainRuntimeFor(r.ctx, r.services), resolveWorkflow: () => null });
+    registerPureActions(engine); registerReducers(engine);
+    registerChainExecutors(engine, r.ctx, r.services, createWorkflowAgents());
+    const profile = { stack: "ts, vitest", test_command: "npm test", style: "x".repeat(1001), api_key: "plain-value", deploy: "token=abcdef1234567890abcdef1234567890", hobby: "chess" };
+    const done = (await engine.start({ workflow: actionWorkflow("lp.profile_write", { params: { profile } }, { refused: "string[]", set: "string[]", reasons: "string[]" }), inputs: {}, runtime: r.rt, link: { projectId: PROJECT, runId: RUN } }).done).output as Row;
+    expect(done.set).toEqual(["stack", "test_command"]);
+    expect(done.refused).toEqual(["style", "api_key", "deploy", "hobby"]);
+    expect((done.reasons as string[]).join("\n")).not.toContain("plain-value");
+    expect((done.reasons as string[]).join("\n")).not.toContain("abcdef1234567890");
+    const settings = loadProjectSettings(r.db, PROJECT);
+    expect(settings["profile.stack"]).toBe("ts, vitest");
+    expect(settings["profile.test_command"]).toBe("npm test");
+    for (const key of ["profile.style", "profile.api_key", "profile.deploy", "profile.hobby"]) expect(settings[key]).toBeUndefined();
+  });
 });

@@ -146,6 +146,7 @@ export const GUARD_INVENTORY: GuardRow[] = [
   { id: "execution-without-agent", matcher: "a writer calls a subagent whose kind is not in the documentary list", text: "a writer does its task itself; only read-and-report agents may help", switch: "role writer" },
   { id: "subagent-foreground", matcher: "run_in_background is set on a subagent call", text: "a lane session's subagent runs in the foreground", switch: "none: a background subagent is always refused" },
   { id: "subagent-cap", matcher: "the session's spawned subagents reach the cap", text: "finish with what you have or do it yourself", switch: "LANE_SUBAGENT_CAP" },
+  { id: "spend-cap", matcher: "a usage window the owner capped (usage.skip_percent) is at or past its cap when a subagent is called", text: "no subagent until the window resets; finish with what you have", switch: "usage.skip_percent (0 turns it off)" },
   { id: "hard_rules", matcher: "an owner hard rule matches the tool and its subject", text: "deny with the rule's own message", switch: "stream hard_rules" },
   { id: "git_airbag", matcher: "a destructive git command runs on a dirty tree", text: "advice: the safety ref written and how to restore", switch: "stream git_airbag" },
   { id: "dependency_store", matcher: "an edit tool touches a lockfile or node_modules", text: "advice: dependencies change through the package manager", switch: "stream dependency_store" },
