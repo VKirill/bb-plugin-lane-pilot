@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
@@ -29,13 +29,17 @@ describe("sma-map --states / --gaps / --hollow (sma-parity-tz.md §4)", () => {
   });
 
   it("--gaps lists per node which of the four proofs is missing, machine-readable and cut by region", () => {
-    const json = JSON.parse(runSmaMapCli(["--gaps", "--json", "--region", "1"]).stdout!);
-    expect(json.nodes.length).toBeGreaterThan(100);
-    expect(json.nodes.every((node: { region: number }) => node.region === 1)).toBe(true);
-    const n169 = json.nodes.find((node: { id: string }) => node.id === "n169");
-    expect(n169.missing).toEqual(["reach", "trace"]);
-    expect(n169.reachWhy).toMatch(/run\.max_tokens/);
-    expect(json.nodes.find((node: { id: string }) => node.id === "n329").missing).toEqual(["trace"]);
+    // An empty drills dir: live receipts under .agents/runs/drills would add trace proofs and shrink the known gaps.
+    const noDrills = mkdtempSync(join(tmpdir(), "sma-drills-none-"));
+    try {
+      const json = JSON.parse(runSmaMapCli(["--gaps", "--json", "--region", "1", "--drills", noDrills]).stdout!);
+      expect(json.nodes.length).toBeGreaterThan(100);
+      expect(json.nodes.every((node: { region: number }) => node.region === 1)).toBe(true);
+      const n169 = json.nodes.find((node: { id: string }) => node.id === "n169");
+      expect(n169.missing).toEqual(["reach", "trace"]);
+      expect(n169.reachWhy).toMatch(/run\.max_tokens/);
+      expect(json.nodes.find((node: { id: string }) => node.id === "n329").missing).toEqual(["trace"]);
+    } finally { rmSync(noDrills, { recursive: true, force: true }); }
     expect(runSmaMapCli(["--gaps", "--region", "99"]).exitCode).toBe(2);
   });
 

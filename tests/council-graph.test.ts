@@ -310,7 +310,7 @@ describe("the council graph", () => {
     expect(await w.view.rpc("get_council", { councilId: "cncl_legacy" })).toMatchObject({ state: "failed", reason: expect.stringContaining("plugin reload") });
   });
 
-  it("an unusable agenda fails the council with the reason in the feed, and the PM is told by the run's end notice", async () => {
+  it("an unusable agenda fails the council with the reason in the feed, and the PM gets no service notice", async () => {
     const w = world({ answer: () => "no agenda here" });
     await boot(w);
     const started = await w.view.call("lane_pilot_council_start", { runId, question: QUESTION, roles: ["product", "skeptic"], maxRounds: 2, mode: "rounds" });
@@ -319,7 +319,8 @@ describe("the council graph", () => {
     expect(view.reason).toContain("no JSON object");
     expect(feedOf(view).at(-1)).toMatchObject({ seatId: "moderator", kind: "status", text: expect.stringContaining("Failed: ") });
     expect(wfRuns(w.view.db)).toEqual([expect.objectContaining({ status: "failed" })]);
-    await until(() => w.state.sends.some((text) => text.includes("council") && text.includes("failed")), "the end notice");
-    expect(w.state.sends.find((text) => text.includes("failed"))).toContain("lane_pilot_council, action status");
+    // A failed run sends the PM no generic end notice (0.1.573): the failure stays in the feed and lane_pilot_council status.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(w.state.sends.filter((text) => text.includes("Workflow run") || text.includes("lane_pilot_council, action status"))).toEqual([]);
   });
 });

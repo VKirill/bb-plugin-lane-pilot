@@ -40,8 +40,9 @@ it("keeps the bundled copy byte-identical to the overlay", () => {
   }
 });
 
-it("tells the PM that graph runs and councils report their end to the chat by themselves", () => {
-  expect(LANE_PILOT_PM_SESSION).toContain("Graph runs and councils report their end to this chat");
+it("tells the PM that a council's decision comes to the chat and a run's status lives in the status tool", () => {
+  expect(LANE_PILOT_PM_SESSION).toContain("Council decisions come here");
+  expect(LANE_PILOT_PM_SESSION).toContain("lane_pilot_workflow_status");
   expect(LANE_PILOT_PM_SESSION).toContain("End the turn after starting");
 });
 

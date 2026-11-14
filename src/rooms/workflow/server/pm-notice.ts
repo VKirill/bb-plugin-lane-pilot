@@ -66,7 +66,7 @@ export async function maybeNotifyWorkflowRun(input: {
   if (run.idem_key?.startsWith("phase:")) return false;
   // The browser tools wait for their graph and answer with its result: a notice would wake the PM a second time.
   if (PM_WAITS_FOR.has(run.workflow_id)) return false;
-  // A council tells the PM itself through its own notice (the decision page and next tasks, or the end without one); this path never speaks for it.
+  // A council that decided has already told the PM through the council's own notice (the decision page and next tasks); a failed run creates no service message here.
   if (run.workflow_id === "council" && run.status === "succeeded") return false;
   if (!input.pmThreadId) return false;
   // A run a chat started learns its end from the run's status card and tool route, and its data through the
