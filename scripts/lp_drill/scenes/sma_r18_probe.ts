@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { createAttempt, createRun, createTask, openDatabase, saveProjectSetting, transitionAttempt } from "../../../src/rooms/plugin-db";
+import { openDatabase } from "../../../src/rooms/plugin-db";
+import { createAttempt, createRun, createTask, saveProjectSetting, transitionAttempt } from "../../../src/rooms/storage";
 import { createStability } from "../../../src/rooms/stability/server/stability";
 import { createTaskReconcile } from "../../../src/rooms/runs/server/task-reconcile";
 import { listOpenWorktrees, listUnmovedLiveAttempts, registerWorktree } from "../../../src/rooms/storage";
@@ -196,7 +197,7 @@ async function main() {
 
   // n1416: after a model change the old hit rate is not shown: calibrate counts only the current model's tasks.
   {
-    const score = { filesMae: 1, firstTryHit: 1 } as never;
+    const score = { files: { forecast: 2, fact: 2, error: 0 }, firstTry: { forecast: true, fact: true, hit: true }, tokensRatio: null, minutesRatio: null, lines: null, dependencies: null, paths: null } as never;
     const rows = [...Array.from({ length: 5 }, () => ({ area: "ui", score, model: "codex/a" })), { area: "ui", score, model: "codex/b" }];
     out.n1416 = { forB: (calibrate(rows, "codex/b").overall as { tasks: number } | null)?.tasks ?? null, forA: (calibrate(rows, "codex/a").overall as { tasks: number } | null)?.tasks ?? null };
   }
