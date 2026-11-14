@@ -15,16 +15,24 @@ export type OwnChange = readonly [commit: string, committedAt: number, version: 
 export type ProvenanceFile = { generatedFrom: string; version: string; deploys: number; lastDeployed?: string; nodes: Readonly<Record<string, OwnChange>> };
 export const SMA_PROVENANCE = PROVENANCE as unknown as ProvenanceFile;
 
-/** The first time the hub ran each plugin version: every attempt row stamps the version that started it
- * (lane_pilot_attempt.harness_version). A change made after provenance.json was generated ships in the first version
- * newer than the file's `lastDeployed`; on the hub this dates it without git or the deploy log. */
+/** The first time the hub ran each plugin version, from the earliest of every record that stamps the running version with a time,
+ * so a fresh deploy is dated without waiting for a task: an attempt (lane_pilot_attempt.harness_version), a workflow run, which the
+ * upkeep graphs start all day (lane_pilot_wf_run.harness_version), and a memory probe (lane_pilot_memory_probe.lp_version).
+ * A version none of them has seen is absent, and an absent version never makes a trace count (traceAfter).
+ * A change made after provenance.json was generated ships in the first version newer than the file's `lastDeployed`. */
 export type VersionSeen = ReadonlyMap<string, number>;
 type Db = { prepare(sql: string): { all(...args: unknown[]): unknown[] } };
-// A read-only look into the storage room's table, composed like every other sma-map query (live.ts, traces.ts).
-const ATTEMPTS = `${"lane_pilot_"}attempt`;
+// Read-only looks into the storage room's tables, composed like every other sma-map query (live.ts, traces.ts).
+const P = "lane_pilot_";
+const VERSION_SOURCES: ReadonlyArray<readonly [table: string, version: string, at: string]> = [["attempt", "harness_version", "created_at"], ["wf_run", "harness_version", "created_at"], ["memory_probe", "lp_version", "at"]];
 export function versionSeen(db: Db): VersionSeen {
-  const rows = db.prepare(`SELECT harness_version AS version, MIN(created_at) AS at FROM ${ATTEMPTS} WHERE harness_version GLOB '[0-9]*.[0-9]*.[0-9]*' GROUP BY harness_version`).all() as Array<{ version: string; at: number }>;
-  return new Map(rows.map((row) => [row.version, Number(row.at)] as const));
+  const seen = new Map<string, number>();
+  for (const [table, version, at] of VERSION_SOURCES) {
+    let rows: Array<{ version: string; at: number }>;
+    try { rows = db.prepare(`SELECT ${version} AS version, MIN(${at}) AS at FROM ${P}${table} WHERE ${version} GLOB '[0-9]*.[0-9]*.[0-9]*' GROUP BY ${version}`).all() as typeof rows; } catch { continue; }
+    for (const row of rows) { const time = Number(row.at); if (Number.isFinite(time) && time < (seen.get(row.version) ?? Infinity)) seen.set(row.version, time); }
+  }
+  return seen;
 }
 const semver = (version: string) => version.split(".").map((part) => Number.parseInt(part, 10) || 0);
 export function newerVersion(a: string, b: string): boolean {

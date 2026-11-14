@@ -27,8 +27,27 @@ export type HollowLive = {
   graphRuns: ReadonlyMap<string, number>;
   nodeSteps: ReadonlyMap<string, number>;
   edgeSteps: ReadonlyMap<string, number>;
+  /** `graph|source` → runs that left the graph by an edge out of `source` (an `exit` event of a step of `source`; `graph|start` for an entry straight to the end). */
+  exits?: ReadonlyMap<string, number>;
+  /** `graph|node` → runs whose entry step (no parent) is `node`, in any state (a skipped entry step still came from its start edge). */
+  entries?: ReadonlyMap<string, number>;
+  /** `graph|source` → branch results that arrived at a join from a step of `source` (a failed branch is not an edge walk). */
+  joinArrivals?: ReadonlyMap<string, number>;
+  /** What the data really covers (all runs in the journal, not the window): the span a reader must not mistake for an idle graph. */
+  span?: DataSpan;
   verdicts: ReadonlyArray<{ type: "stage" | "gate"; id: string; runs: number; refusals: number }>;
 };
+
+export type DataSpan = { first: number | null; last: number | null; runs: number; days: number };
+
+/** «data covers 2026-10-30 … 2026-11-14 (15 day(s), 5725 run(s))», and the shortfall against the requested window when there is one. */
+export function spanLine(span: DataSpan | undefined, requestedDays: number): string {
+  if (!span) return "";
+  if (span.first === null || span.last === null) return "the journal holds no workflow run";
+  const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  const short = span.days < requestedDays ? ` — a young database: «did not fire in ${requestedDays} days» only means ${span.days}` : "";
+  return `data covers ${day(span.first)} … ${day(span.last)} (${span.days} day(s), ${span.runs} workflow run(s)) of the ${requestedDays} requested${short}`;
+}
 
 export type HollowContext = {
   rows: readonly SmaRow[];
@@ -114,11 +133,27 @@ export function hollowFindings(ctx: HollowContext): HollowFinding[] {
         const ids = index.onNode(graph.id, node);
         out.push({ subject: { type: "workflow-node", path: `${graph.id}.${node}` }, sign: 2, what: `the node did not run in ${live.days} day(s) (the graph ran ${runs} time(s)) and no chain test walks it`, ...on(ids), ...(ids.length ? {} : { guess: guessGraph }), live: true });
       }
+      const joins = new Set(graph.nodes.filter(([, type]) => type === "join").map(([node]) => node));
       for (const [from, to, when] of graph.edges) {
         if ((live.edgeSteps.get(`${graph.id}|${from}|${to}|${when ?? ""}`) ?? 0) > 0 || covered.has(`${from}>${to}`)) continue;
         const ids = index.onNode(graph.id, from);
         const emergency = EMERGENCY.test(when ?? "");
-        out.push({ subject: { type: "workflow-edge", path: `${graph.id}: ${from} → ${to}${when ? ` [${when}]` : ""}` }, sign: 2, what: `the edge was not taken in ${live.days} day(s) (the graph ran ${runs} time(s)) and no chain test walks it${emergency ? " — an emergency path (retry, abort, timeout, failure) with no drill or chain test" : ""}`, ...on(ids), ...(ids.length ? {} : { guess: emergency ? "unfinished function" : guessGraph }), live: true });
+        const subject = { type: "workflow-edge" as const, path: `${graph.id}: ${from} → ${to}${when ? ` [${when}]` : ""}` };
+        // An edge into the end or into a join starts no step, so the journal records its walk elsewhere: an `exit` event of the
+        // source's step, a join arrival from the source's step. Neither names the edge, so an edge that shares its source and its kind of target
+        // with another is told apart only when the source never left that way at all.
+        const kind = from === "start" ? "start" : to === "end" ? "end" : joins.has(to) ? "join" : null;
+        const walked = kind === null ? 0
+          : kind === "start" ? (live.entries?.get(`${graph.id}|${to}`) ?? 0)
+          : ((kind === "end" ? live.exits : live.joinArrivals)?.get(`${graph.id}|${from}`) ?? 0);
+        if (walked > 0) {
+          const siblings = graph.edges.filter(([other, target]) => other === from && (kind === "start" ? target === to : kind === "end" ? target === "end" : joins.has(target)));
+          if (siblings.length === 1) continue;
+          const way = kind === "start" ? `from the start to ${to}` : kind === "end" ? `from ${from} to the end` : `from ${from} into a join`;
+          out.push({ subject, sign: 2, what: `the journal cannot tell which of the ${siblings.length} edges ${way} took the ${walked} ${kind === "end" ? "exit(s)" : kind === "start" ? "entry(ies)" : "arrival(s)"} in ${live.days} day(s): such an edge records no condition of its own; at least one of them was walked, and no chain test walks this one`, ...on(ids), ...(ids.length ? {} : { guess: guessGraph }), live: true });
+          continue;
+        }
+        out.push({ subject, sign: 2, what: `the edge was not taken in ${live.days} day(s) (the graph ran ${runs} time(s)) and no chain test walks it${emergency ? " — an emergency path (retry, abort, timeout, failure) with no drill or chain test" : ""}`, ...on(ids), ...(ids.length ? {} : { guess: emergency ? "unfinished function" : guessGraph }), live: true });
       }
     }
     for (const verdict of live.verdicts) {
@@ -160,15 +195,30 @@ export function readHollowLive(db: Db, since: number, days: number): HollowLive 
     const edge = definitions.get(row.sha)![row.edge];
     if (!edge) continue;
     const when = edge.when === undefined || edge.when === null || edge.when === "" ? "" : typeof edge.when === "string" ? edge.when : whenObject(edge.when);
-    const key = `${row.g}|${edge.from}|${edge.to}|${when}`;
+    // The definitions name the entry and the exit `$start` / `$end`; the workflow files (and the facts) `start` / `end`.
+    const key = `${row.g}|${edge.from.replace(/^\$/, "")}|${edge.to.replace(/^\$/, "")}|${when}`;
     edgeSteps.set(key, (edgeSteps.get(key) ?? 0) + row.n);
   }
+  // An edge out of the start makes the run's entry step (no parent); its row, in any state, is the walk of that edge.
+  const entries = new Map<string, number>();
+  for (const row of db.prepare(`SELECT r.workflow_id AS g, st.node_id AS node, COUNT(*) AS n FROM ${P}wf_step st JOIN ${P}wf_run r ON r.id = st.run_id WHERE st.parent_key IS NULL AND r.created_at >= ${s} GROUP BY 1, 2`).all() as Array<{ g: string; node: string; n: number }>) entries.set(`${row.g}|${row.node}`, row.n);
+  // An exit leaves the graph from a step: the `exit` event carries that step (`node#visit[@scope]`); none means entry straight to the end.
+  const exits = new Map<string, number>();
+  for (const row of db.prepare(`SELECT r.workflow_id AS g, e.step_key AS step, COUNT(*) AS n FROM ${P}wf_event e JOIN ${P}wf_run r ON r.id = e.run_id WHERE e.kind = 'exit' AND e.at >= ${s} GROUP BY 1, 2`).all() as Array<{ g: string; step: string | null; n: number }>) {
+    const key = `${row.g}|${row.step === null ? "start" : row.step.split("#")[0]}`;
+    exits.set(key, (exits.get(key) ?? 0) + row.n);
+  }
+  // A branch result arrives at its join from a step; a failed branch arrives too (the join tolerates it) but walked no edge.
+  const joinArrivals = new Map<string, number>();
+  for (const row of db.prepare(`SELECT r.workflow_id AS g, st.node_id AS src, COUNT(*) AS n FROM ${P}wf_arrival a JOIN ${P}wf_run r ON r.id = a.run_id JOIN ${P}wf_step st ON st.run_id = a.run_id AND st.step_key = a.from_step WHERE a.at >= ${s} AND a.data_json NOT LIKE '%"$failed"%' GROUP BY 1, 2`).all() as Array<{ g: string; src: string; n: number }>) joinArrivals.set(`${row.g}|${row.src}`, row.n);
+  const seen = db.prepare(`SELECT MIN(created_at) AS first, MAX(created_at) AS last, COUNT(*) AS n FROM ${P}wf_run`).all() as Array<{ first: number | null; last: number | null; n: number }>;
+  const span: DataSpan = { first: seen[0]?.first ?? null, last: seen[0]?.last ?? null, runs: Number(seen[0]?.n ?? 0), days: seen[0]?.first == null ? 0 : Math.max(1, Math.round(((seen[0].last ?? seen[0].first) - seen[0].first) / 86_400_000)) };
   const terminal = "('passed','failed','blocked','rework','block','rejected','accepted','pass')";
   const stages = db.prepare(`SELECT stage_id AS id, SUM(state IN ${terminal}) AS runs, SUM(state IN ${REFUSALS}) AS refusals FROM ${P}stage_event WHERE occurred_at >= ${s} GROUP BY stage_id`).all() as Array<{ id: string; runs: number; refusals: number }>;
   const receipts = new Map((db.prepare(`SELECT stage_id AS id, SUM(COALESCE(json_extract(result_json, '$.status'), json_extract(result_json, '$.verdict'), state) IN ${REFUSALS}) AS refusals FROM ${P}stage_receipt WHERE updated_at >= ${s} GROUP BY stage_id`).all() as Array<{ id: string; refusals: number }>).map((row) => [row.id, row.refusals] as const));
   const gates = db.prepare(`SELECT gate AS id, SUM(status IN ('passed','failed','rejected')) AS runs, SUM(status IN ('failed','rejected')) AS refusals FROM ${P}gate_event WHERE occurred_at >= ${s} GROUP BY gate`).all() as Array<{ id: string; runs: number; refusals: number }>;
   return {
-    days, graphRuns, nodeSteps, edgeSteps,
+    days, graphRuns, nodeSteps, edgeSteps, entries, exits, joinArrivals, span,
     verdicts: [...stages.map((row) => ({ type: "stage" as const, id: row.id, runs: Number(row.runs ?? 0), refusals: Number(row.refusals ?? 0) + Number(receipts.get(row.id) ?? 0) })), ...gates.map((row) => ({ type: "gate" as const, id: row.id, runs: Number(row.runs ?? 0), refusals: Number(row.refusals ?? 0) }))],
   };
 }

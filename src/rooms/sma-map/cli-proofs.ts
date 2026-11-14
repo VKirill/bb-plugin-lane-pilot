@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { SMA_EVIDENCE } from "./evidence";
 import { SMA_NODES, SMA_REGIONS } from "./graph";
 import { collectHollowFacts, SMA_HOLLOW_FACTS, type HollowFacts } from "./hollow-facts";
-import { hollowCounts, hollowFindings, readHollowLive, type HollowFinding } from "./hollow";
+import { hollowCounts, hollowFindings, readHollowLive, spanLine, type DataSpan, type HollowFinding } from "./hollow";
 import { readSmaLive, smaGroups } from "./live";
 import { anchorName, resolveSpan } from "./symbols";
 import { smaRows, smaStateCounts, type ProofRoots, type SmaRow } from "./model";
@@ -23,7 +23,7 @@ const flag = (argv: readonly string[], name: string) => { const at = argv.indexO
 export const PROOF_FLAGS = ["--states", "--gaps", "--hollow"] as const;
 export const wantsProofs = (argv: readonly string[]) => PROOF_FLAGS.some((name) => argv.includes(name));
 
-export type ProofRun = { rows: SmaRow[]; states: NodeState[]; findings: HollowFinding[]; facts: HollowFacts; factsFresh: boolean; hub: HubSettings | null; days: number; live: boolean; drills: number | null; drillDir: string };
+export type ProofRun = { rows: SmaRow[]; states: NodeState[]; findings: HollowFinding[]; facts: HollowFacts; factsFresh: boolean; hub: HubSettings | null; days: number; live: boolean; drills: number | null; drillDir: string; span?: DataSpan };
 
 /** Everything the three reports need, computed once. */
 export function proofRun(argv: readonly string[], roots: ProofRoots, db: Db | null, cwd: string, now = Date.now(), pluginRoot?: string): ProofRun {
@@ -45,8 +45,9 @@ export function proofRun(argv: readonly string[], roots: ProofRoots, db: Db | nu
     ...(traceCtx ? { traceCtx, since } : {}), ...(liveGroups ? { groupObserved: (row: SmaRow) => liveGroups.has(`${row.region} | ${row.group}`) } : {}),
   });
   const traces = new Map(states.filter((state) => state.observed !== null).map((state) => [state.id, { judged: true, n: state.observed ? 1 : 0 }] as const));
-  const findings = hollowFindings({ rows, evidence: SMA_EVIDENCE, facts, settings: hub?.global ?? defaultSettings(), ...(live ? { traces } : {}), ...(db ? { live: readHollowLive(db, since, days) } : {}) });
-  return { rows, states, findings, facts, factsFresh, hub, days, live, drills: drills ? drills.length : null, drillDir };
+  const hollowLive = db ? readHollowLive(db, since, days) : undefined;
+  const findings = hollowFindings({ rows, evidence: SMA_EVIDENCE, facts, settings: hub?.global ?? defaultSettings(), ...(live ? { traces } : {}), ...(hollowLive ? { live: hollowLive } : {}) });
+  return { rows, states, findings, facts, factsFresh, hub, days, live, drills: drills ? drills.length : null, drillDir, ...(hollowLive?.span ? { span: hollowLive.span } : {}) };
 }
 
 /** Past this many lines an anchor is a dispatcher, not the unit the card describes: a mutation or a hollow sign there hits unrelated code. */
@@ -90,7 +91,7 @@ export function runProofCli(argv: readonly string[], roots: ProofRoots, db: Db |
   }
   if (argv.includes("--hollow")) {
     const findings = region === null ? run.findings : run.findings.filter((finding) => finding.mapNodes.some((id) => states.some((state) => state.id === id)));
-    if (json) return { exitCode: 0, stdout: JSON.stringify({ days: run.days, live: run.live, factsFrom: run.factsFresh ? "checkout" : `hollow-facts.json ${run.facts.generatedFrom}`, counts: hollowCounts(findings), findings }, null, 2) };
+    if (json) return { exitCode: 0, stdout: JSON.stringify({ days: run.days, live: run.live, ...(run.span ? { span: run.span } : {}), factsFrom: run.factsFresh ? "checkout" : `hollow-facts.json ${run.facts.generatedFrom}`, counts: hollowCounts(findings), findings }, null, 2) };
     return { exitCode: 0, stdout: renderHollow(findings, run) };
   }
   const report = stateReport(states, run.live);
@@ -98,7 +99,7 @@ export function runProofCli(argv: readonly string[], roots: ProofRoots, db: Db |
   const proofLinks = smaStateCounts(run.rows, roots);
   if (json) {
     return { exitCode: 0, stdout: JSON.stringify({
-      days: run.days, live: run.live, settings: settingsLine(run), provenance: { generatedFrom: SMA_PROVENANCE.generatedFrom, version: SMA_PROVENANCE.version },
+      days: run.days, live: run.live, ...(run.span ? { span: run.span } : {}), settings: settingsLine(run), provenance: { generatedFrom: SMA_PROVENANCE.generatedFrom, version: SMA_PROVENANCE.version },
       states: { ...report.overall, hollow: hollow.total, hollowOnMap: hollow.onMap, hollowOffMap: hollow.offMap, hollowBySign: hollow.bySign, proofResolved: proofLinks.proofResolved, proofBroken: proofLinks.proofBroken, proofUnjudged: proofLinks.proofUnjudged },
       regions: report.regions,
     }, null, 2) };
@@ -119,6 +120,7 @@ function renderStates(report: ReturnType<typeof stateReport>, hollow: ReturnType
     `SMA map — the four proofs per node (sma-parity-tz.md §4), ${run.live ? `live, last ${run.days} day(s)` : "no database: observed and outcome-verified need --live"}.`,
     `total ${o.total}, available ${o.available}, checked ${o.checked}, mutated ${o.mutated} (stale ${o.mutationStale}), reachable ${o.reachable} / unreachable ${o.unreachable} (undeclared gate ${o.undeclared}; ${o.seededReachable} reachable only through a mechanically seeded entry; ${o.blockedInSomeProject} blocked in an active project), observed ${n(o.observed)} (node-level), outcome-verified ${n(o.outcomeVerified)} (node-level), groupObserved ${n(o.groupObserved)} (group-level, not node evidence).`,
     `hollow ${hollow.total} (on the map ${hollow.onMap} / off the map ${hollow.offMap}; by sign ${Object.entries(hollow.bySign).map(([sign, count]) => `${sign}: ${count}`).join(", ")}), void unreviewed ${o.voidUnreviewed}, exceptions ${Object.entries(o.exceptions).map(([kind, count]) => `${kind} ${count}`).join(", ") || "none"}; closed (all four proofs or an exception) ${o.closed}.`,
+    ...(run.span ? [`${spanLine(run.span, run.days)}.`] : []),
     `settings: ${settingsLine(run)}.`,
     `proof links (the weaker ladder): resolved ${links.proofResolved}, broken ${links.proofBroken}, unjudged ${links.proofUnjudged}; change points from provenance.json ${SMA_PROVENANCE.generatedFrom || "(not generated)"} (${SMA_PROVENANCE.version}); hollow facts from ${run.factsFresh ? "this checkout" : `hollow-facts.json ${run.facts.generatedFrom}`}${run.drills === null ? `; no drill receipts here (looked in ${run.drillDir})` : `; ${run.drills} drill receipt(s) in ${run.drillDir}`}.`,
     "", "region                              total checked mutated reach  observed verified closed void?",
@@ -146,7 +148,7 @@ function renderGaps(gaps: readonly GapRow[], run: ProofRun): string {
 
 function renderHollow(findings: readonly HollowFinding[], run: ProofRun): string {
   const c = hollowCounts(findings);
-  const lines = [`Hollow — ${c.total} finding(s): on the map ${c.onMap} (${c.mapNodes} node(s)), off the map ${c.offMap}; by sign ${Object.entries(c.bySign).map(([sign, count]) => `${sign}: ${count}`).join(", ")}${run.live ? `; live ${run.days} d` : "; signs 2 and 6 need --live"}.`, ""];
+  const lines = [...(run.span ? [`${spanLine(run.span, run.days)}.`] : []), `Hollow — ${c.total} finding(s): on the map ${c.onMap} (${c.mapNodes} node(s)), off the map ${c.offMap}; by sign ${Object.entries(c.bySign).map(([sign, count]) => `${sign}: ${count}`).join(", ")}${run.live ? `; live ${run.days} d` : "; signs 2 and 6 need --live"}.`, ""];
   for (const finding of findings) lines.push(`[${finding.sign}] ${finding.onMap ? `map ${finding.mapNodes.slice(0, 4).join(",")}${finding.mapNodes.length > 4 ? ",…" : ""}` : `off-map (${finding.guess ?? "?"})`} ${finding.subject.type} ${finding.subject.path}: ${finding.what}`);
   return lines.join("\n");
 }

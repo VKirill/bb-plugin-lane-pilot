@@ -141,8 +141,13 @@ def scenario_sma_r13(tmp):                       # tmp: a scratch folder
 - Change point: the newest commit touching the node's proof anchor (symbol span by git blame, else the file) or the
   anchor of a direct control predecessor (one hop), mapped to the first deployed version containing it
   (`~/.lane-pilot/deploys.log`). `npx tsx scripts/sma-provenance.ts [--check]` writes `provenance.json`; on the hub a
-  change made after the file was generated is dated by the first newer version an attempt ran
-  (`lane_pilot_attempt.harness_version`).
+  change made after the file was generated is dated by the first newer version the hub ran: the earliest time any record stamps
+  it (`lane_pilot_attempt.harness_version`, `lane_pilot_wf_run.harness_version` of the upkeep graphs, `lane_pilot_memory_probe.lp_version`),
+  so a fresh deploy counts without waiting for a task. A version no record shows stays `unshipped` and no trace counts for it.
+- Sign 2 on a workflow edge: an edge out of start is walked when its target has an entry step (any state); an edge into the end when a
+  step of its source has an `exit` event; an edge into a join when a branch result arrived from its source. These records carry no
+  condition, so two edges of one source and one kind are told apart only when none was walked: otherwise the finding says it cannot tell.
+  `--hollow` and `--states` print the span the data covers next to the requested days: a young database is not an idle graph.
 - Hollow (§4а): `npx tsx scripts/sma-hollow.ts [--check]` writes the static facts (`hollow-facts.json`); `--hollow --live`
   adds the live signs 2 and 6. On map nodes hollow must reach 0; off-map findings go to the owner's list.
 
