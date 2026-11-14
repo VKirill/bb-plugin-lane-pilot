@@ -17,6 +17,8 @@ import { runSim } from "../workflow/chain-harness";
 import { quickRow } from "../../src/rooms/phase/stages";
 import { debugSessionDoc, debugSessionSlug, quickStateEdit } from "../../src/rooms/workflow/server/workflow-executors";
 import { AUTO_REPLANS, autoDue, autoInputs, contextDoc, createAutoStages } from "../../src/rooms/phase/server/auto-stages";
+import { installWiring } from "../../src/rooms/phase/server/driver-wiring";
+import { anamnesisFor } from "../../src/rooms/anamnesis";
 import { docsMaintenancePrompt, nightlyDocsPrompt } from "../../src/rooms/docs/docs";
 import type { Phase } from "../../src/rooms/phase/logic";
 
@@ -68,7 +70,7 @@ function host() {
     workflow: parseWorkflow({ schemaVersion: 1, id: "d3-under-test", name: "d3", description: { en: "d3", ru: "d3" }, inputs, outputs: Object.keys(map).map((name) => ({ name, type: "json", required: false })),
       nodes: [...nodes, { id: "done", type: "action", action: "emit", map }], edges: [{ from: "start", to: String(nodes[0]!.id) }, ...nodes.slice(1).map((n, i) => ({ from: String(nodes[i]!.id), to: String(n.id) })), { from: String(nodes.at(-1)!.id), to: "done" }] }) as never,
     inputs: given, runtime: rt, link: { projectId: PROJECT, runId: RUN } }).done;
-  return { checkout, writes, run, dispose: () => harness.lifecycle.dispose() };
+  return { checkout, writes, run, ctx, dispose: () => harness.lifecycle.dispose() };
 }
 let dispose: (() => Promise<void> | void) | null = null;
 afterEach(async () => { await dispose?.(); dispose = null; });
@@ -350,6 +352,36 @@ describe("parity d3 workflows a", () => {
     const on = autoInputs(phase({ ownerWords: true, grayAreas: true }, "discussion"), { kind: "analyze" }, undefined, null, "card") as Record<string, unknown>;
     expect(on.ask_owner).toBe(true);
     expect(on.owner_card).toBe("card");
+  });
+
+  it("[sma:k_wdi_advisor] phase wiring passes the real anamnesis owner card into lp.analyze", async () => {
+    const h = host();
+    dispose = h.dispose;
+    await anamnesisFor(h.ctx).hub.ask({ op: "add", record: { kind: "skill", key: "Release", title: "Release owner", statement: "Reviews production releases." }, reason: "test" });
+    const started: Array<Record<string, unknown>> = [];
+    let current = { ...phase({ train: true, grayAreas: true, wordTurns: { mode: "on", at: 1, context: { asks: true, classes: [], evidence: [] } } }, "discussion"), pmThreadId: PM, projectId: PROJECT, runId: RUN } as Phase;
+    const services = {
+      stability: { loadParked: async () => [] },
+      workflowEngine: {
+        resolveWorkflow: () => ({ id: "lp.analyze" }),
+        start: (input: Record<string, unknown>) => { started.push(input); return { runId: "wf-owner-card", done: Promise.resolve() }; },
+        get: () => null,
+      },
+      architect: {}, workflowLibrary: {}, workflowCatalog: {},
+    } as never;
+    const wiring = installWiring({
+      ctx: h.ctx, services, db: h.ctx.db, bb: h.ctx.bb, now: () => 1, reactions: { journalDrawing: async () => undefined },
+      exhaust: async () => undefined, context: async () => current, plan: async () => current, planCheck: async () => current,
+      question: () => current, waveReview: async () => current, goalAudit: async () => current, lessons: async () => current,
+      drawing: async () => current, returnTo: () => current, mustGet: () => current, savePhase: (_id: string, input: { record: unknown }) => { current = { ...current, record: input.record as Phase["record"] }; },
+      book: () => undefined, writeDocs: async () => ({ written: [] }), readText: async () => null, planningHome: async () => null,
+      proofCurrency: async () => null,
+    } as never);
+    await wiring.auto.step(current);
+    expect(started).toHaveLength(1);
+    const inputs = started[0]!.inputs as Record<string, unknown>;
+    expect(inputs.ask_owner).toBe(true);
+    expect(String(inputs.owner_card)).toContain("Release owner");
   });
 
   it("[sma:k_ag_projres] stack, features and pitfalls are researched before the roadmap", () => {

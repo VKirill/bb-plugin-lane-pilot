@@ -31,9 +31,10 @@ export function coverageRows(entries: readonly CoverageEntry[] = COVERAGE): Cove
     kind: entry.kind, id, status: statusOf(entry), live: entry.live ?? [], tests: entry.tests ?? [], note: entry.live?.length ? entry.via ?? "" : entry.reason ?? "",
   })));
   for (const path of MEMORY_PATHS) {
+    const tests = ["tests/memory-paths.test.ts", ...(path.behavioralTests ?? [])];
     rows.push(path.status === "probed"
-      ? { kind: "memory_path", id: path.id, status: "live", live: ["memory_paths"], tests: ["tests/memory-paths.test.ts"], note: `the probe asks this path what its agent would receive${path.live ? `; the drill also checks the real ${path.live}` : ""}` }
-      : { kind: "memory_path", id: path.id, status: "none", live: [], tests: ["tests/memory-paths.test.ts"], note: path.reason ?? "exempt from the probe" });
+      ? { kind: "memory_path", id: path.id, status: "live", live: ["memory_paths"], tests, note: `the probe asks this path what its agent would receive${path.live ? `; the drill also checks the real ${path.live}` : ""}` }
+      : { kind: "memory_path", id: path.id, status: path.behavioralTests?.length ? "tests" : "none", live: [], tests, note: path.reason ?? "exempt from the probe" });
   }
   return rows;
 }

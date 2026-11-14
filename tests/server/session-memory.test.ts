@@ -45,6 +45,25 @@ describe("session memory on the hub", () => {
     expect((await rpc.session_memory_core({ projectId:"P" })).records.map((row) => row.content)).toEqual(["Proven fact writers accept.", "Old fact nobody uses."]);
   });
 
+  it("evaluates an import receipt through the actual memory_import_eval RPC", async () => {
+    const { db, rpc } = setup();
+    const stored = await rpc.session_memory_write({ projectId:"P", kind:"note", content:"Deploy staging safely after review.", concepts:["deploy"], source:"import-eval" });
+    expect(stored).toMatchObject({ stored:true, id:expect.any(String) });
+    db.prepare("UPDATE lane_pilot_memory SET trust='confirmed' WHERE id=?").run(stored.id);
+    const result = await rpc.memory_import_eval({ report: {
+      source: "bb-memory", projectId: "P", generatedAt: 1, dryRun: false,
+      counts: { added: 1, merged_with: 0, dropped: 0 }, byReason: {}, evictedIds: [], archivedIds: [], heldIds: [],
+      outcomes: [{ line: 1, source_id: "import-1", outcome: "added", id: stored.id!, concepts:["deploy"], content: "Deploy staging safely after review." }],
+    } });
+    expect(result).toMatchObject({ projectId: "P", source: "bb-memory", questions: 1, hits: 1, silentQuestions: 10 });
+    const missing = await rpc.memory_import_eval({ report: {
+      source: "bb-memory", projectId: "P", generatedAt: 1, dryRun: false,
+      counts: { added: 1, merged_with: 0, dropped: 0 }, byReason: {}, evictedIds: [], archivedIds: [], heldIds: [],
+      outcomes: [{ line: 2, source_id: "missing", outcome: "added", id: "missing-id", concepts:["deploy"], content: "Deploy staging safely after review." }],
+    } });
+    expect(missing).toMatchObject({ questions: 1, hits: 0 });
+  });
+
   it("a lesson becomes a rule on trial; the same lesson again is a repeat, not a new rule", async () => {
     const { rpc, db } = setup();
     const first = await rpc.session_lesson({ projectId:"P", rule:"Run npm ci in a writer worktree, never npm install, the lockfile stays untouched", evidence:"owner corrected 2026-10-03" });

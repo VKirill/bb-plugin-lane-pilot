@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MEMORY_PATHS, MEMORY_PRIMITIVES, type MemoryPrimitive } from "../src/rooms/memory/memory-paths";
@@ -52,6 +52,7 @@ describe("memory path registry", () => {
       if (entry.status === "exempt") expect(entry.reason?.length, entry.id).toBeGreaterThan(20);
       else expect(entry.carries.length, entry.id).toBeGreaterThan(0);
       expect(entry.alwaysOn.every((kind) => entry.carries.includes(kind)), `${entry.id}: alwaysOn is a subset of carries`).toBe(entry.status === "probed" || entry.alwaysOn.length === 0);
+      for (const file of entry.behavioralTests ?? []) expect(existsSync(join(ROOT, file)), `${entry.id}: behavioral test ${file} does not exist`).toBe(true);
     }
   });
 

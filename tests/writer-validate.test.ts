@@ -420,6 +420,9 @@ describe("BB writer validation on the server path", () => {
       { confirm: true, objective: "Проверка диспетча", plan:"Plan for the rules test", task:{ ...task, id:`rules-task-${jev}`, verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     )));
+    expect(dispatched.pathRules).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id:"rule-pm", rule:"Write owns_paths with every sibling test." }),
+    ]));
     await harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId:"run-rules", timeoutSec:2 }, { threadId:pmThreadId, projectId });
     for (const rule of expected) expect(spawnedPrompt).toContain(rule);
     expect(spawnedPrompt).not.toContain("Other client rule.");

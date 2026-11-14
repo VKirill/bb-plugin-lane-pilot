@@ -4,6 +4,8 @@ import { decideReplay, type ArmVerdict } from "../src/rooms/pm-replay/decide";
 import { importScenarios, parseHarvested } from "../src/rooms/pm-replay/harvest";
 import { insertResult, insertScenario, latestVerdicts, listScenarios, replayStats, linkScenariosToRule, retireScenario } from "../src/rooms/pm-replay/store";
 import { migrations, openDatabase } from "../src/rooms/plugin-db";
+import { armPrompt } from "../src/rooms/pm-replay/surface";
+import { upsertLessonProposal } from "@lane-pilot/run-insights";
 
 const NOW = Date.now();
 
@@ -55,6 +57,21 @@ describe("pm-replay decideReplay (staged A/B)", () => {
   it("waits for the rest of the active set before adopting", () => {
     const d = decideReplay({ incidentIds: ["s1"], base: new Map(), candidate: new Map([["s1", verdict("PASS")]]), activeIds: active });
     expect(d.action).toBe("wait");
+  });
+
+  it("grades base and candidate arms with their actual PM rule prompts", () => {
+    const db = freshDb();
+    const baseRule = "Always inspect the deployment checklist.";
+    const proposal = upsertLessonProposal(db, "p1", { rule: baseRule, evidence: "owner correction", audience: "pm", always: true });
+    db.prepare("INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at) VALUES(?,?,?,?,?,?,?,?,?)")
+      .run("mem-pm", "p1", "", "core", "subagent", baseRule, "[\"rule\"]", "test", 1);
+    db.prepare("UPDATE lane_pilot_rule_proposal SET state='accepted', memory_id=?, decided_at=? WHERE id=?").run("mem-pm", 1, proposal.id);
+    const base = armPrompt(db, "p1");
+    const candidate = armPrompt(db, "p1", [{ rule: "Prefer the canary environment." }]);
+    expect(base).toContain(baseRule);
+    expect(base).not.toContain("Prefer the canary environment.");
+    expect(candidate).toContain(baseRule);
+    expect(candidate).toContain("Prefer the canary environment.");
   });
 });
 

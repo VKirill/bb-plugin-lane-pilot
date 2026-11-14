@@ -59,10 +59,10 @@ function holdDeps() {
 }
 
 function world() {
-  const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+  const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
   const db = openDatabase(bb);
   createRun(db, "run", "proj", "bb");
-  return { bb, db };
+  return { bb, db, harness };
 }
 
 describe("parity d8-2: providers and money", () => {
@@ -534,7 +534,7 @@ describe("review fix 7: capability docs", () => {
 
 describe("review fix 8 and 9: parity report and stats", () => {
   it("[sma:m_tl_terminal_parity] the permissions line says «not compared», never «same», and a real difference in another layer is named", () => {
-    const { db } = world();
+    const { bb, db, harness } = world();
     createTask(db, { id: "t1", runId: "run", kind: "bb", contract: { id: "t1" } });
     createAttempt(db, { id: "a1", runId: "run", taskId: "t1" });
     saveReasoningTrace(db, {
@@ -554,6 +554,14 @@ describe("review fix 8 and 9: parity report and stats", () => {
     expect(skills.same).toBe(false);
     expect(skills.detail).toContain("skill-b");
     expect(lines.find((line) => line.layer === "model")?.same).toBe(true);
+
+    registerCli(createCore(bb, db), {} as never, migrations);
+    return harness.behavior.runCli(["parity", "a1", "--json"]).then((out) => {
+      expect(out.exitCode).toBe(0);
+      expect(JSON.parse(String(out.stdout))).toMatchObject({ attemptId: "a1", lines: expect.arrayContaining([
+        expect.objectContaining({ layer: "skills", same: false }),
+      ]) });
+    });
   });
 
   it("bb lane-pilot stats --days with a missing or bad value is a usage error, a number or nothing runs the report", async () => {
