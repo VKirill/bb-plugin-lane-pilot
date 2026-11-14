@@ -63,6 +63,6 @@ def prove_tail_traces(proofs: Proofs, tmp: Path) -> None:
     if d:
         path = d.get("path", [])
         archive = d.get("archiveStep") or {}
-        proofs.prove("n1621", "snapshot" in path and "archive" in path and (archive.get("kept") is True or d.get("roadmap") is True)
-                     and isinstance(archive.get("files", []), list),
+        proofs.prove("n1621", d.get("status") == "succeeded" and "snapshot" in path and "archive" in path
+                     and archive.get("kept") is False and archive.get("files") == ["ROADMAP.md", "REQUIREMENTS.md"],
                      f"milestone-close path {path}; archive output {archive}")

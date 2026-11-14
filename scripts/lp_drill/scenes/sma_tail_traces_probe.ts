@@ -21,6 +21,7 @@ import { registerDispatchExecutors, taskUsage } from "../../../src/rooms/writer/
 import type { ChainRuntime } from "../../../src/rooms/contracts/server";
 import type { PrototypeConfig, TaskV2 } from "../../../src/rooms/contracts";
 import type { Services } from "../../../server";
+import { runCommand } from "../../../src/rooms/host-worker/host-handlers";
 
 const PROJECT = "tail-project";
 const WORKSPACE = "/tmp/lane-pilot-tail-traces";
@@ -45,10 +46,11 @@ async function observeMemoryMaintenance() {
   const childOutput = JSON.stringify([{ kind: "core", content: "Durable deployment convention uses managed workspaces", concepts: ["deployment", "workspace"] }, { kind: "note", content: "A claim about v9.9.9 the accepted result never made", concepts: ["version"] }]);
   host.harness.sdk.stub("threads.getPluginMetadata", async ({ threadId }: { threadId: string }) => threadId === "tail-pm" ? { role: "pm", lanePilotRunId: "tail-run" } : { role: "memory-maintainer" });
   host.harness.sdk.stub("threads.spawn", async () => ({ id: "tail-memory-child" }));
-  host.harness.sdk.stub("providers.list", async () => [{ id: "critic", models: [{ id: "tail-model" }] }]);
-  host.harness.sdk.stub("providers.models", async () => ({ models: [{ id: "tail-model" }] }));
-  host.harness.sdk.stub("threads.get", async ({ threadId }: { threadId: string }) => ({ id: threadId, status: "idle" }));
-  host.harness.sdk.stub("threads.events.list", async () => [{ type: "turn/started", seq: 1 }, { type: "turn/completed", seq: 2, data: { status: "completed" } }]);
+  host.harness.sdk.stub("hosts.list", async () => [{ id: "tail-host", status: "connected", name: "tail" }]);
+  host.harness.sdk.stub("providers.list", async () => [{ id: "critic", available: true, displayName: "Critic", capabilities: {}, serviceTiers: [] }]);
+  host.harness.sdk.stub("providers.models", async () => ({ models: [{ id: "tail-model", model: "tail-model", supportedReasoningEfforts: [{ reasoningEffort: "high" }], defaultReasoningEffort: "high", isDefault: true }] }));
+  host.harness.sdk.stub("threads.get", async ({ threadId }: { threadId: string }) => ({ id: threadId, status: "idle", projectId: PROJECT, sourceThreadId: "tail-pm", lifecycleOwnerThreadId: "tail-pm", environmentId: "tail-env" }));
+  host.harness.sdk.stub("threads.events.list", async ({ threadId }: { threadId: string }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }]);
   host.harness.sdk.stub("threads.output", async () => ({ output: childOutput }));
   const db = openDatabase(host.bb), config: PrototypeConfig = { projectId: PROJECT, hostId: "tail-host", pmWorkspacePath: WORKSPACE, writerWorkspacePath: WORKSPACE, pmProviderId: "codex", pmModel: "tail-pm", writerProviderId: "critic", writerModel: "tail-model" };
   savePrototypeConfig(db, config); createRun(db, "tail-run", PROJECT, "bb", WORKSPACE); setRunThread(db, "tail-run", "tail-pm");
@@ -60,8 +62,8 @@ async function observeMemoryMaintenance() {
   const result = await createMemoryStage(ctx, services as never).runMemoryMaintenance({ threadId: "tail-pm", projectId: PROJECT, runId: "tail-run", taskId: task.id, timeoutSec: 5 });
   const receipt = listStageReceipts(db, "tail-run", task.id).find((row) => row.stageId === "memory-maintenance"), body = (receipt?.result ?? result) as { stored?: number; recordIds?: string[]; unsupportedDropped?: number; sourceSha256?: string };
   const row = body.recordIds?.[0] ? db.prepare("SELECT id, kind, status, origin_task_id AS task FROM lane_pilot_memory WHERE id=?").get(body.recordIds[0]) : null;
-  await host.harness.lifecycle.dispose();
-  return { state: receipt?.state ?? result.state, reason: receipt?.reason ?? result.reason, stored: body.stored, unsupportedDropped: body.unsupportedDropped, recordIds: body.recordIds, row, sourceSha256: body.sourceSha256, fts: body.recordIds?.map((id) => (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_memory_fts WHERE id=?").get(id) as { n: number }).n) };
+  const observed = { state: receipt?.state ?? result.state, reason: receipt?.reason ?? result.reason, stored: body.stored, unsupportedDropped: body.unsupportedDropped, recordIds: body.recordIds, row, sourceSha256: body.sourceSha256, fts: body.recordIds?.map((id) => (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_memory_fts WHERE id=?").get(id) as { n: number }).n) };
+  await host.harness.lifecycle.dispose(); return observed;
 }
 
 function observeMemoryMiss() {
@@ -88,16 +90,16 @@ const closeStub = (): Workflow => parseWorkflow({ schemaVersion: 1, id: "lp.clos
 async function observeMilestoneClose() {
   const checkout = mkdtempSync(join(tmpdir(), "lp-tail-milestone-")), roadmap = join(checkout, ".agents/planning/ROADMAP.md"), requirements = join(checkout, ".agents/planning/REQUIREMENTS.md");
   mkdirSync(dirname(roadmap), { recursive: true }); writeFileSync(roadmap, "# Roadmap: v1\n- [x] 1 one\n"); writeFileSync(requirements, "- REQ-1 export\n");
-  const files = new Map<string, string>([[roadmap, readFileSync(roadmap, "utf8")], [requirements, readFileSync(requirements, "utf8")]]), host = createFakePluginHost({ pluginId: "lane-pilot" });
-  host.harness.sdk.stub("threads.getPluginMetadata", async ({ threadId }: { threadId: string }) => threadId === "tail-pm" ? { role: "pm", lanePilotRunId: "tail-run" } : { role: "agent" }); host.harness.sdk.stub("threads.get", async ({ threadId }: { threadId: string }) => ({ id: threadId, status: "idle" })); host.harness.sdk.stub("threads.events.list", async () => [{ type: "turn/started", seq: 1 }, { type: "turn/completed", seq: 2, data: { status: "completed" } }]);
+  const files = new Map<string, string>([[roadmap, readFileSync(roadmap, "utf8")], [requirements, readFileSync(requirements, "utf8")]]), host = createFakePluginHost({ pluginId: "lane-pilot", experimental_callHostRpc: (async (call: { method: string; input: Row }) => { if (call.method === "runCommand") return runCommand(call.input as never, undefined as never); throw new Error(`unexpected host method ${call.method}`); }) as never });
+  host.harness.sdk.stub("threads.getPluginMetadata", async ({ threadId }: { threadId: string }) => threadId === "tail-pm" ? { role: "pm", lanePilotRunId: "tail-run" } : { role: "agent" }); host.harness.sdk.stub("threads.get", async ({ threadId }: { threadId: string }) => threadId === "tail-pm" ? { id: threadId, status: "idle", environmentId: "tail-env" } : ({ id: threadId, status: "idle" })); host.harness.sdk.stub("environments.get", async () => ({ id: "tail-env", status: "ready", hostId: "tail-host", path: checkout })); host.harness.sdk.stub("threads.events.list", async () => [{ type: "turn/started", seq: 1 }, { type: "turn/completed", seq: 2, data: { status: "completed" } }]);
   host.harness.sdk.stub("files.read", async ({ path }: { path: string }) => files.has(path) ? { content: files.get(path) } : null); host.harness.sdk.stub("files.write", async ({ path, content }: { path: string; content: string }) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); files.set(path, content); return { ok: true }; });
   const db = openDatabase(host.bb); createRun(db, "tail-run", "tail-project", "bb", checkout); setRunThread(db, "tail-run", "tail-pm"); saveProjectSetting(db, "tail-project", "milestone.archive", "on"); saveProjectSetting(db, "tail-project", "retro.living", "on"); saveProjectSetting(db, "tail-project", "milestone.summary", "off");
   const ctx = createCore(host.bb, db), services = { dispatchWriter: async () => ({ runId: "tail-run", taskId: "tail-task", state: "queued" }), stability: { loadParked: async () => [] }, taskUsage } as unknown as Services;
   const engine = new WorkflowEngine({ db, harnessVersion: "tail", runtimeFor: chainRuntimeFor(ctx, services), resolveWorkflow: (id) => id === "lp.close" ? closeStub() : id === "milestone-summary" ? workflow("milestone-summary.json") : null }); registerPureActions(engine); registerReducers(engine); registerChainExecutors(engine, ctx, services, createWorkflowAgents()); registerDispatchExecutors(engine, ctx.bb);
   engine.register("agent", { reentrant: true, run: async ({ nodeId }: { nodeId: string }) => ({ output: nodeId === "retro" ? { handoff: "retro done", insights: [{ id: "INS-aaa11111", title: "one", lens: "technical" }], retro_path: "retro/r.md", metrics: {} } : { handoff: "summary done", summary_path: ".agents/planning/MILESTONE-SUMMARY.md", open_items: [] } }) } as never); engine.register("builtin:jev", { reentrant: true, run: async () => ({ output: { decision: "none", value: {}, unsure_findings: [], settled: 0, escalated: false, handoff: "jev" } }) } as never); engine.register("builtin:human", { reentrant: true, run: async () => ({ output: { answer: "close anyway", answer_kind: "close_anyway" } }) } as never);
   const rt: ChainRuntime = { ctx, services, pmThreadId: "tail-pm", projectId: "tail-project", runId: "tail-run" }, started = engine.start({ workflow: workflow("milestone-close.json"), inputs: { run_id: "tail-run", goal: "Stats export", goals: [] }, runtime: rt, link: { projectId: "tail-project", runId: "tail-run" } }), result = await started.done;
-  const snap = engine.snapshot(result.runId), path = (snap?.steps ?? []).filter((step) => step.state === "succeeded").map((step) => step.node_id).filter((id) => !/:(fan|child)$/.test(id)), archiveStep = snap?.steps.find((step) => step.node_id === "archive" && step.state === "succeeded");
-  await host.harness.lifecycle.dispose(); return { status: result.status, path, output: result.output, steps: (snap?.steps ?? []).map((step) => ({ node: step.node_id, state: step.state, receipt: step.receipt_json })), archiveStep: archiveStep ? JSON.parse(archiveStep.output_json ?? "{}") : null, roadmap: path.includes("snapshot") && files.has(join(checkout, ".agents/planning/milestones")) };
+  const snap = engine.snapshot(result.runId), path = (snap?.steps ?? []).filter((step) => step.state === "succeeded").map((step) => step.node_id).filter((id) => !/:(fan|child)$/.test(id)), snapshotStep = snap?.steps.find((step) => step.node_id === "snapshot" && step.state === "succeeded");
+  await host.harness.lifecycle.dispose(); return { status: result.status, path, output: result.output, steps: (snap?.steps ?? []).map((step) => ({ node: step.node_id, state: step.state, receipt: step.receipt_json })), archiveStep: snapshotStep ? JSON.parse(snapshotStep.output_json ?? "{}") : null, roadmap: path.includes("snapshot") && files.has(join(checkout, ".agents/planning/milestones")) };
 }
 
 async function section<T>(run: () => T | Promise<T>): Promise<T | { error: string }> { try { return await run(); } catch (cause) { return { error: cause instanceof Error ? cause.message : String(cause) }; } }
