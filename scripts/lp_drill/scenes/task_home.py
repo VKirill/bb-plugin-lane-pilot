@@ -7,7 +7,8 @@ import subprocess
 from pathlib import Path
 
 from lp_drill.env import STAMP
-from lp_drill.report import sandbox_sound, summarize, verdict
+from lp_drill.prove import Proofs
+from lp_drill.report import sandbox_sound, summarize
 from lp_drill.tasks import note_task
 
 MANIFEST_SCHEMA = "lp.task-manifest/1"
@@ -89,6 +90,52 @@ def neighbour_problems(cwd: str, rows: list[dict], task_ids: list[str]) -> list[
     return problems
 
 
+def read_manifest(cwd: str, task_id: str) -> dict:
+    """The task's manifest.json as written in the base checkout; {} when it is missing or unreadable."""
+    try:
+        return json.loads((Path(cwd) / ".agents" / "tasks" / task_id / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+# The attempt-scoped kinds: they live under attempts/<attempt-id>/ of the home (SMA n233 «One folder per attempt»).
+ATTEMPT_KINDS = ("writer-report", "checks", "barrier-input", "code-critique")
+
+
+def node_proofs(cwd: str, task_ids: list[str], rows: list[dict], leaks: list[str], rel_plan: str) -> list[tuple[str, bool, str]]:
+    """The map nodes this scene checks by its own observation (docs/sma-evidence.md), one (node, ok, detail) each, folded over both tasks.
+    n67 (phase reference) and n132 (ambiguity refused) are not exercised here: the scene runs no phase and resolves no ambiguous name."""
+    homes = {task_id: Path(cwd) / ".agents" / "tasks" / task_id for task_id in task_ids}
+    manifests = {task_id: read_manifest(cwd, task_id) for task_id in task_ids}
+    files = {task_id: [row for row in manifests[task_id].get("files") or [] if isinstance(row, dict)] for task_id in task_ids}
+
+    def on_disk(task_id: str, kind: str) -> list[str]:
+        return [str(row.get("path")) for row in files[task_id] if row.get("kind") == kind and row.get("path") and (homes[task_id] / str(row["path"])).is_file()]
+
+    stray = [f"{t}:{row.get('path')}" for t in task_ids for row in files[t]
+             if row.get("kind") in ATTEMPT_KINDS and not str(row.get("path") or "").startswith(f"attempts/{row.get('attempt_id')}/")]
+    attempt_kinds = all(on_disk(t, kind) for t in task_ids for kind in ATTEMPT_KINDS)
+    sources = {t: "".join((homes[t] / p).read_text(encoding="utf-8") for p in on_disk(t, "plan-source")) for t in task_ids}
+    worktrees = [row["workspace_path"] for row in rows if row.get("task_id") in task_ids and row.get("workspace_path") and row.get("workspace_path") != cwd]
+    left = [w for w in worktrees if Path(w).is_dir()]
+    neighbours = neighbour_problems(cwd, rows, task_ids)
+    unsigned = [f"{t}:{row.get('path')}" for t in task_ids for row in files[t] if not row.get("sha256") or not (row.get("produced_by") or {}).get("node")]
+    return [
+        ("n233", attempt_kinds and not stray, f"attempt kinds on disk for both tasks: {attempt_kinds}; outside attempts/<id>/: {stray}"),
+        ("n236", all(f"source_path: {rel_plan}" in sources[t] and "sha256" in sources[t] for t in task_ids),
+         f"context/plan-source.md names {rel_plan} with its sha256 in {[t for t in task_ids if rel_plan in sources[t]]}"),
+        ("n294", bool(worktrees) and not left and all(on_disk(t, "acceptance") and on_disk(t, "receipt") for t in task_ids),
+         f"worktrees still on disk {left} of {len(worktrees)}; acceptance and receipt in each home: {[bool(on_disk(t, 'acceptance') and on_disk(t, 'receipt')) for t in task_ids]}"),
+        ("n397", not neighbours and all(on_disk(t, "brief") and on_disk(t, "writer-report") for t in task_ids),
+         f"brief and writer report in each home: {[bool(on_disk(t, 'brief') and on_disk(t, 'writer-report')) for t in task_ids]}; neighbour problems {neighbours}"),
+        ("n405", not leaks, f"new files in shared folders for these tasks: {leaks}"),
+        ("n1616", all(on_disk(t, "plan") and on_disk(t, "outcome") for t in task_ids),
+         f"plan and outcome in each home: {[(t, on_disk(t, 'plan'), on_disk(t, 'outcome')) for t in task_ids]}"),
+        ("n1691", all(manifests[t].get("schema") == MANIFEST_SCHEMA and files[t] for t in task_ids) and not unsigned,
+         f"{sum(len(f) for f in files.values())} manifest rows; rows without sha256 or producer: {unsigned}"),
+    ]
+
+
 def shared_plan(cwd: str) -> tuple[str, str]:
     """The PM's shared plan the drill puts in `.agents/plans/` before the snapshot: the task's plan names it, so its dispatch snapshots it."""
     rel = f".agents/plans/drill-{STAMP}-shared.md"
@@ -123,10 +170,14 @@ def scenario_task_home(ctx: "Context") -> dict:
             if row["state"] != "accepted":
                 problems.append(f"{row['task']} was not accepted: {row['states']} {row['reason']}")
         after = snapshot(ctx.cwd)
-        problems += [f"a new file in a shared folder: {path}" for path in shared_leaks(before, after, ids, ctx.run_id)]
+        leaks = shared_leaks(before, after, ids, ctx.run_id)
+        problems += [f"a new file in a shared folder: {path}" for path in leaks]
         for task_id in ids:
             problems += manifest_problems(ctx.cwd, task_id)
         problems += neighbour_problems(ctx.cwd, rows, ids)
-        return verdict("task_home", problems + sandbox_sound(ctx.cwd), tasks=tasks)
+        proofs = Proofs()
+        for node, ok, detail in node_proofs(ctx.cwd, ids, rows, leaks, rel_plan):
+            proofs.prove(node, ok, detail)
+        return proofs.verdict("task_home", problems + sandbox_sound(ctx.cwd), tasks=tasks)
     finally:
         plan_path.unlink(missing_ok=True)

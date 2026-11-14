@@ -90,6 +90,38 @@ print(json.dumps({"before": sorted(before), "leaks": m.shared_leaks(before, afte
     expect(out).toEqual(["the worktree of t1 holds the home of t2"]);
   });
 
+  // Framework 2 (docs/sma-evidence.md): the scene proves a map node only by its own prove() line. A complete home proves the seven nodes it
+  // observes; each producer mutation turns its node's ok false: an attempt file outside attempts/<id>/ (n233), no plan-source (n236), the
+  // worktree left on disk (n294), no brief (n397), a shared-folder leak (n405), no OUTCOME (n1616), a row without sha256 (n1691).
+  it("[sma:k_v_manifest] proves n233, n236, n294, n397, n405, n1616, n1691 on a complete home and refuses each when its producer is mutated", () => {
+    const attempt = new Set(["writer-report", "checks", "barrier-input", "code-critique"]);
+    const sound = (rows: Array<Record<string, unknown>>) => rows.map((row) => ({ ...row, sha256: "s", produced_by: { node: "n" },
+      ...(attempt.has(String(row.kind)) ? { attempt_id: "a1", path: `attempts/a1/${row.kind}.md` } : {}) }));
+    const build = (patch: (rows: Array<Record<string, unknown>>) => Array<Record<string, unknown>> = (rows) => rows) => {
+      const cwd = home("t1", (rows) => patch(sound(rows)));
+      spawnSync("git", ["init", "-q", cwd]);
+      writeFileSync(join(cwd, ".agents/tasks/t1/plan-source.md"), "---\nsources:\n  - source_path: .agents/plans/shared.md\n    sha256: abc\n---\n");
+      return cwd;
+    };
+    const proofs = (cwd: string, opts: { worktree?: string; leaks?: string[] } = {}) => {
+      const rows = [{ task_id: "t1", workspace_path: opts.worktree ?? "/gone/wt-t1" }];
+      const { out, stderr } = py(`print(json.dumps({n: ok for n, ok, _ in m.node_proofs(${JSON.stringify(cwd)}, ["t1"], ${JSON.stringify(rows)}, ${JSON.stringify(opts.leaks ?? [])}, ".agents/plans/shared.md")}))`);
+      expect(stderr).toBe("");
+      return out as Record<string, boolean>;
+    };
+    const all = { n233: true, n236: true, n294: true, n397: true, n405: true, n1616: true, n1691: true };
+    expect(proofs(build())).toEqual(all);
+    expect(proofs(build((rows) => rows.map((row) => row.kind === "checks" ? { ...row, path: "checks.md" } : row)))).toEqual({ ...all, n233: false });
+    const noSource = build();
+    writeFileSync(join(noSource, ".agents/tasks/t1/plan-source.md"), "plan text only\n");
+    expect(proofs(noSource)).toEqual({ ...all, n236: false });
+    expect(proofs(build(), { worktree: mkdtempSync(join(tmpdir(), "lp-drill-left-")) })).toEqual({ ...all, n294: false });
+    expect(proofs(build((rows) => rows.filter((row) => row.kind !== "brief")))).toEqual({ ...all, n397: false });
+    expect(proofs(build(), { leaks: [".agents/plans/items/t1/PLAN.md"] })).toEqual({ ...all, n405: false });
+    expect(proofs(build((rows) => rows.filter((row) => row.kind !== "outcome")))).toEqual({ ...all, n1616: false });
+    expect(proofs(build((rows) => rows.map((row) => row.kind === "lesson" ? { ...row, sha256: "" } : row)))).toEqual({ ...all, n1691: false });
+  });
+
   it("runs by name or in the series task suite, and dispatches two valid task-v2 documents whose plan names a shared .agents/plans file, so their homes snapshot it", () => {
     const { out } = py(`print(json.dumps({"specs": m.task_home_specs("/srv/sandbox"), "plan": m.shared_plan("/srv/sandbox")[0], "all": "task_home" in m.ALL, "extra": "task_home" in m.EXTRA, "series": "task_home" in m.SUITES["task"], "quick": "task_home" in m.QUICK}))`);
     const result = out as { specs: unknown[]; plan: string; all: boolean; extra: boolean; series: boolean; quick: boolean };
