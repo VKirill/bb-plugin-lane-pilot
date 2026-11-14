@@ -69,6 +69,10 @@ process.on("uncaughtException", (error) => { release(); process.stderr.write(`${
 
 // ---- running tests ----
 const CRASH = /^(?:TypeError|ReferenceError|SyntaxError|RangeError: Maximum call stack)|Cannot find module|Failed to load|Transform failed|failed to resolve import|Test timed out|is not a function|is not defined/m;
+// A matcher refusing the received value (`.toMatch() expects to receive a string, but got object`) is the assertion
+// judging the result, not the code under test crashing.
+const MATCHER_REFUSAL = /^TypeError: \.?(?:to|not\.to)\w*\(\) expects/;
+const isCrash = (line) => !MATCHER_REFUSAL.test(line) && CRASH.test(line);
 
 let child = null; // the running vitest: a signal stops it before the file is restored
 /** Runs `files` filtered by `pattern` (vitest -t) and classifies: passed (n), failed by assertion, crashed. Async, so
@@ -98,7 +102,7 @@ async function runTests(files, pattern, config) {
       ran++;
       if (test.status === "passed") { passed++; continue; }
       const message = (test.failureMessages ?? []).join("\n");
-      (CRASH.test(message.split("\n")[0]) ? crash : assertion).push(`${test.fullName ?? test.title}: ${message.split("\n")[0].slice(0, 300)}`);
+      (isCrash(message.split("\n")[0]) ? crash : assertion).push(`${test.fullName ?? test.title}: ${message.split("\n")[0].slice(0, 300)}`);
     }
   }
   return { ran, passed, assertion, crash };
