@@ -100,7 +100,8 @@ export function generate(deploysPath: string): string {
   }
   nodes.sort(([a], [b]) => Number(a.slice(1)) - Number(b.slice(1)));
   const version = (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version: string }).version;
-  return `{"generatedFrom":${JSON.stringify(head.slice(0, 12))},"version":${JSON.stringify(version)},"deploys":${deploys.length},"nodes":{\n${nodes.map(([id, rec]) => `${JSON.stringify(id)}:${JSON.stringify(rec)}`).join(",\n")}\n}}\n`;
+  const lastDeployed = deploys.at(-1)?.version ?? "";
+  return `{"generatedFrom":${JSON.stringify(head.slice(0, 12))},"version":${JSON.stringify(version)},"deploys":${deploys.length},"lastDeployed":${JSON.stringify(lastDeployed)},"nodes":{\n${nodes.map(([id, rec]) => `${JSON.stringify(id)}:${JSON.stringify(rec)}`).join(",\n")}\n}}\n`;
 }
 
 if (process.argv[1]?.endsWith("sma-provenance.ts")) {

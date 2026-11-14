@@ -10,7 +10,7 @@ import { collectHollowFacts, SMA_HOLLOW_FACTS, type HollowFacts } from "./hollow
 import { hollowCounts, hollowFindings, readHollowLive, type HollowFinding } from "./hollow";
 import { readSmaLive, smaGroups } from "./live";
 import { smaRows, smaStateCounts, type ProofRoots, type SmaRow } from "./model";
-import { SMA_PROVENANCE } from "./provenance";
+import { SMA_PROVENANCE, versionSeen } from "./provenance";
 import { defaultSettings, hubSettings, type HubSettings } from "./settings-registry";
 import { gapList, nodeStates, stateReport, type NodeState } from "./states";
 import { readDrills, type TraceContext } from "./traces";
@@ -39,7 +39,7 @@ export function proofRun(argv: readonly string[], roots: ProofRoots, db: Db | nu
   const traceCtx: TraceContext | undefined = db || drills ? { ...(db ? { db } : {}), drills } : undefined;
   const liveGroups = db ? new Set(readSmaLive(db, smaGroups(SMA_NODES as never, SMA_REGIONS), since).filter((row) => (row.n ?? 0) > 0).map((row) => row.key)) : null;
   const states = nodeStates({
-    rows, root, settings: hub?.global ?? defaultSettings(), ...(hub ? { hub } : {}), settingReads: facts.settingReads,
+    rows, root, settings: hub?.global ?? defaultSettings(), ...(hub ? { hub } : {}), settingReads: facts.settingReads, ...(db ? { seen: versionSeen(db) } : {}),
     ...(traceCtx ? { traceCtx, since } : {}), ...(liveGroups ? { groupObserved: (row: SmaRow) => liveGroups.has(`${row.region} | ${row.group}`) } : {}),
   });
   const traces = new Map(states.filter((state) => state.observed !== null).map((state) => [state.id, { judged: true, n: state.observed ? 1 : 0 }] as const));
@@ -77,7 +77,7 @@ export function runProofCli(argv: readonly string[], roots: ProofRoots, db: Db |
   if (json) {
     return { exitCode: 0, stdout: JSON.stringify({
       days: run.days, live: run.live, settings: settingsLine(run), provenance: { generatedFrom: SMA_PROVENANCE.generatedFrom, version: SMA_PROVENANCE.version },
-      states: { ...report.overall, hollow: hollow.total, hollowOnMap: hollow.onMap, hollowOffMap: hollow.offMap, hollowBySign: hollow.bySign, ...proofLinks, total: report.overall.total, checked: report.overall.checked },
+      states: { ...report.overall, hollow: hollow.total, hollowOnMap: hollow.onMap, hollowOffMap: hollow.offMap, hollowBySign: hollow.bySign, proofResolved: proofLinks.proofResolved, proofBroken: proofLinks.proofBroken, proofUnjudged: proofLinks.proofUnjudged },
       regions: report.regions,
     }, null, 2) };
   }
@@ -95,7 +95,7 @@ function renderStates(report: ReturnType<typeof stateReport>, hollow: ReturnType
   const o = report.overall;
   const lines = [
     `SMA map — the four proofs per node (sma-parity-tz.md §4), ${run.live ? `live, last ${run.days} day(s)` : "no database: observed and outcome-verified need --live"}.`,
-    `total ${o.total}, available ${o.available}, checked ${o.checked}, mutated ${o.mutated} (stale ${o.mutationStale}), reachable ${o.reachable} / unreachable ${o.unreachable} (undeclared gate ${o.undeclared}; ${o.seededReachable} reachable through a seeded entry; ${o.blockedInSomeProject} blocked in an active project), observed ${n(o.observed)} (node-level), outcome-verified ${n(o.outcomeVerified)} (node-level), groupObserved ${n(o.groupObserved)} (group-level, not node evidence).`,
+    `total ${o.total}, available ${o.available}, checked ${o.checked}, mutated ${o.mutated} (stale ${o.mutationStale}), reachable ${o.reachable} / unreachable ${o.unreachable} (undeclared gate ${o.undeclared}; ${o.seededReachable} reachable only through a mechanically seeded entry; ${o.blockedInSomeProject} blocked in an active project), observed ${n(o.observed)} (node-level), outcome-verified ${n(o.outcomeVerified)} (node-level), groupObserved ${n(o.groupObserved)} (group-level, not node evidence).`,
     `hollow ${hollow.total} (on the map ${hollow.onMap} / off the map ${hollow.offMap}; by sign ${Object.entries(hollow.bySign).map(([sign, count]) => `${sign}: ${count}`).join(", ")}), void unreviewed ${o.voidUnreviewed}, exceptions ${Object.entries(o.exceptions).map(([kind, count]) => `${kind} ${count}`).join(", ") || "none"}; closed (all four proofs or an exception) ${o.closed}.`,
     `settings: ${settingsLine(run)}.`,
     `proof links (the weaker ladder): resolved ${links.proofResolved}, broken ${links.proofBroken}, unjudged ${links.proofUnjudged}; change points from provenance.json ${SMA_PROVENANCE.generatedFrom || "(not generated)"} (${SMA_PROVENANCE.version}); hollow facts from ${run.factsFresh ? "this checkout" : `hollow-facts.json ${run.facts.generatedFrom}`}${run.drills === null ? "; no drill receipts here" : `; ${run.drills} drill receipt(s)`}.`,

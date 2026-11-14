@@ -12,8 +12,30 @@ import { anchorName, resolveSpan, workflowNodeSpan } from "./symbols";
 
 /** [commit (12), commit time ms, first version that shipped it or null, its deploy time ms or null, symbol|file, anchor hash (12)]. */
 export type OwnChange = readonly [commit: string, committedAt: number, version: string | null, deployedAt: number | null, level: "symbol" | "file", anchorHash: string];
-export type ProvenanceFile = { generatedFrom: string; version: string; deploys: number; nodes: Readonly<Record<string, OwnChange>> };
+export type ProvenanceFile = { generatedFrom: string; version: string; deploys: number; lastDeployed?: string; nodes: Readonly<Record<string, OwnChange>> };
 export const SMA_PROVENANCE = PROVENANCE as unknown as ProvenanceFile;
+
+/** The first time the hub ran each plugin version: every attempt row stamps the version that started it
+ * (lane_pilot_attempt.harness_version). A change made after provenance.json was generated ships in the first version
+ * newer than the file's `lastDeployed`; on the hub this dates it without git or the deploy log. */
+export type VersionSeen = ReadonlyMap<string, number>;
+type Db = { prepare(sql: string): { all(...args: unknown[]): unknown[] } };
+export function versionSeen(db: Db): VersionSeen {
+  const rows = db.prepare("SELECT harness_version AS version, MIN(created_at) AS at FROM lane_pilot_attempt WHERE harness_version GLOB '[0-9]*.[0-9]*.[0-9]*' GROUP BY harness_version").all() as Array<{ version: string; at: number }>;
+  return new Map(rows.map((row) => [row.version, Number(row.at)] as const));
+}
+const semver = (version: string) => version.split(".").map((part) => Number.parseInt(part, 10) || 0);
+export function newerVersion(a: string, b: string): boolean {
+  const [x, y] = [semver(a), semver(b)];
+  for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0);
+  return false;
+}
+/** The first version newer than `after` the hub ran, with its first-seen time. */
+export function firstSeenAfter(seen: VersionSeen, after: string): { version: string; at: number } | null {
+  let best: { version: string; at: number } | null = null;
+  for (const [version, at] of seen) if (newerVersion(version, after) && (!best || at < best.at)) best = { version, at };
+  return best;
+}
 
 export type ChangePoint =
   | { state: "shipped"; version: string; deployedAt: number; commit: string; from: string }
@@ -47,8 +69,10 @@ export const localProof = (proof: string | undefined): proof is string => !!proo
 type Link = readonly [from: string, to: string, kind: string, label: string];
 
 /** Change points for every node: own change, else predecessors'; `root` (a source checkout) enables the stale check. */
-export function changePoints(ids: readonly string[], links: readonly Link[], proofOf: (id: string) => string | undefined, root: string, file: ProvenanceFile = SMA_PROVENANCE): Map<string, ChangePoint> {
+export function changePoints(ids: readonly string[], links: readonly Link[], proofOf: (id: string) => string | undefined, root: string, file: ProvenanceFile = SMA_PROVENANCE, seen?: VersionSeen): Map<string, ChangePoint> {
   const own = new Map<string, ChangePoint>();
+  // Unshipped when the file was generated: shipped in the first version after the last deploy, if the hub ran one.
+  const next = seen && file.lastDeployed ? firstSeenAfter(seen, file.lastDeployed) : null;
   for (const id of ids) {
     const rec = file.nodes[id];
     const proof = proofOf(id);
@@ -57,7 +81,9 @@ export function changePoints(ids: readonly string[], links: readonly Link[], pro
       const now = anchorText(root, proof);
       if (now && hash12(now.text) !== rec[5]) { own.set(id, { state: "stale", from: id }); continue; }
     }
-    own.set(id, rec[2] && rec[3] ? { state: "shipped", version: rec[2], deployedAt: rec[3], commit: rec[0], from: id } : { state: "unshipped", commit: rec[0], from: id });
+    own.set(id, rec[2] && rec[3] ? { state: "shipped", version: rec[2], deployedAt: rec[3], commit: rec[0], from: id }
+      : next ? { state: "shipped", version: next.version, deployedAt: next.at, commit: rec[0], from: id }
+      : { state: "unshipped", commit: rec[0], from: id });
   }
   const preds = new Map<string, string[]>();
   for (const [from, to, kind] of links) if (CONTROL_LINKS.has(kind)) preds.set(to, [...(preds.get(to) ?? []), from]);

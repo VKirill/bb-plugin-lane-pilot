@@ -14,7 +14,7 @@ import { SMA_LINKS, SMA_NODES, SMA_REGIONS } from "./graph";
 import { SMA_HOLLOW_FACTS } from "./hollow-facts";
 import { SMA_ATTEST, mutationState, type Attestation } from "./mutation";
 import type { SmaRow } from "./model";
-import { changePoints, traceAfter, type ChangePoint } from "./provenance";
+import { changePoints, traceAfter, type ChangePoint, type VersionSeen } from "./provenance";
 import { evaluateReach, undeclaredGates } from "./reach";
 import type { EffectiveSettings, HubSettings } from "./settings-registry";
 import { readTraces, traceLabel, type TraceContext, type TraceSource } from "./traces";
@@ -51,6 +51,8 @@ export type StatesInput = {
   attest?: Readonly<Record<string, Attestation>>;
   /** Setting keys each node's function reads (hollow-facts): fresh in a checkout, the shipped file on the hub. */
   settingReads?: Readonly<Record<string, string[]>>;
+  /** On the hub: when each plugin version first ran (provenance.ts versionSeen) — dates changes newer than the file. */
+  seen?: VersionSeen;
 };
 
 export function nodeStates(input: StatesInput): NodeState[] {
@@ -61,7 +63,9 @@ export function nodeStates(input: StatesInput): NodeState[] {
   const global = evaluateReach(SMA_NODES, SMA_LINKS, reachOf, input.settings);
   const perProject = (input.hub?.projects ?? []).filter((project) => project.overrides > 0).map((project) => ({ projectId: project.projectId, reach: evaluateReach(SMA_NODES, SMA_LINKS, reachOf, project.settings) }));
   const proofs = new Map(input.rows.map((row) => [row.id, row.proof] as const));
-  const points = changePoints(input.rows.map((row) => row.id), SMA_LINKS, (id) => proofs.get(id), input.root);
+  const points = changePoints(input.rows.map((row) => row.id), SMA_LINKS, (id) => proofs.get(id), input.root, undefined, input.seen);
+  // Reachability without the mechanically seeded entries: how much of `reachable` rests on them.
+  const unseeded = evaluateReach(SMA_NODES, SMA_LINKS, (id) => { const spec = reachOf(id); return spec?.seeded ? undefined : spec; }, input.settings);
   const regionIndex = new Map(SMA_NODES.map(([id, region]) => [id, region] as const));
   const reading = input.traceCtx && input.since !== undefined;
   return input.rows.map((row) => {
@@ -84,7 +88,7 @@ export function nodeStates(input: StatesInput): NodeState[] {
       id: row.id, smaId: row.smaId, region: row.region, regionIndex: regionIndex.get(row.id) ?? -1, status: row.status, label: row.label,
       exception, voidUnreviewed: row.status === "void" && !ev?.voidReview,
       checked, mutated: mutation.mutated, mutationStale: mutation.stale, mutationWhy: mutation.why,
-      reachable: reach.reachable, reachWhy: reach.why, seededEntry: !!ev?.reach?.seeded,
+      reachable: reach.reachable, reachWhy: reach.why, seededEntry: reach.reachable && !unseeded.get(row.id)!.reachable,
       blockedIn: reach.reachable ? perProject.filter((project) => !project.reach.get(row.id)!.reachable).map((project) => project.projectId) : [],
       undeclared: row.status === "have" || row.status === "partial" ? undeclaredGates(settingReads[row.id] ?? null, ev?.reach, input.settings) : [],
       observed, traceLast: traces?.last ?? null, traces: sources.map(traceLabel),
