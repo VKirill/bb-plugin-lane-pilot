@@ -147,7 +147,19 @@
         "waves": "{{plan_fix.waves}}"
       },
       "guards": {
-        "maxVisits": 2
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "build_fix2",
+      "type": "subworkflow",
+      "workflow": "lp.build",
+      "with": {
+        "tasks": "{{plan_fix2.tasks}}",
+        "waves": "{{plan_fix2.waves}}"
+      },
+      "guards": {
+        "maxVisits": 1
       }
     },
     {
@@ -301,6 +313,17 @@
       "pass": "artifact"
     },
     {
+      "from": "build_fix2",
+      "to": "re_review",
+      "pass": "artifact",
+      "when": "build_fix2.merged_commits.length > 0"
+    },
+    {
+      "from": "build_fix2",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
       "from": "re_review",
       "to": "done",
       "pass": "artifact",
@@ -320,7 +343,7 @@
     },
     {
       "from": "plan_fix2",
-      "to": "build_fix",
+      "to": "build_fix2",
       "pass": "artifact",
       "when": "plan_fix2.status in ['ok','low_confidence']"
     },
