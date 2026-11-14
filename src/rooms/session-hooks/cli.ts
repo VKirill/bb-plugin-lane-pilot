@@ -268,6 +268,7 @@ function handle(payload: Payload): void {
       lastModel: readText(join(dir, "model.txt")),
       memoryLines,
       capsule,
+      capsuleFirst: payload.source === "compact",
       changed,
       codeMapBehind,
     });
