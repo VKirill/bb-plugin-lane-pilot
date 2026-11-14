@@ -117,8 +117,15 @@ as its `parent`, with the phase's manifest path given as a reference.
 the `supersedes` chain, never "newest by time". Two current rows of one kind are ambiguous, and the resolver returns null
 instead of guessing (SMA n132). `readTaskFile` also reads the file, records the read in `read_by`, and flags `drift` when
 the content no longer matches the hash in the row. Main-path readers today: pm-read and plan-critique read `PLAN.md`;
-plan-fact and lessons read `report.md`; lessons read `acceptance.json`. A stage whose manifest has no `PLAN.md` stops. It
+plan-fact and lessons read `report.md`; lessons read `acceptance.json`; code-critique reads `context/plan-source.md` when
+the plan named shared `.agents/plans/*` files. A stage whose manifest has no `PLAN.md` stops. It
 does not fall back to an in-memory plan.
+
+The code critic resolves a shared plan reference the same way: its prompt names the snapshot's repository path
+(`.agents/tasks/<task-id>/context/plan-source.md`), and the snapshot's content hash is part of the stage input, so a
+rewritten snapshot re-runs the critique. A homed task whose plan names shared files the snapshot does not cover — or
+whose snapshot cannot be read — is a named `code_critique_plan_source_*` block before any critic spawns; the shared
+`.agents/plans/` path itself is never read (0.1.570 live drill `task_home`).
 
 A failed write of the home at dispatch (contract, `PLAN.md`, plan-source) **stops the dispatch**: the task gets no
 attempt. The same holds if the home can't be placed into the worktree at spawn. Later best-effort records (QA, progress)

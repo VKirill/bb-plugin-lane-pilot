@@ -6,7 +6,7 @@ import type { FinishInput, Services } from "./finish-types";
 import { countAttempts, getAttempt, getReasoningTrace, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../storage";
 import { actionableFindings, advisoryFeedback, buildCandidateEvidence, codeCritiqueSource, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "../../critique";
 import type { WriterIdentity } from "../../critique";
-import { candidatePatches, runCodeCritique } from "../../critique/server";
+import { candidatePatches, codeCritiqueTaskContext, runCodeCritique } from "../../critique/server";
 import type { FrozenCritiquePolicy } from "../../critique";
 import { failureFieldsOf } from "../../storage";
 import { critiqueRepeatSkip, patchChangedLines } from "../../contracts";
@@ -106,6 +106,8 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
         if (text) g.criticNotes = text;
       };
   if (!liveCritiquePolicy.enabled) return null;
+      // The same task-home context runCodeCritique resolves for its stage input, so the repair bookkeeping receipts hash identically.
+      const taskContext = await codeCritiqueTaskContext(bb, db, input.taskId);
       // What the barrier judged, kept with the attempt: the patches, the promise, the contract and the previous
       // verdict, plus the inputSha256 the stage receipt carries (sma av_inputs). Written in the attempt's
       // workspace (the same writer as persistPlan); a failed write never fails the finish.
@@ -176,7 +178,7 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
           recordStage(db, {
             runId:input.runId, taskId:input.taskId, stageId:"code-critique",
             state:"blocked",
-            input:codeCritiqueSource({ evidence, task:input.task, agent:g.frozenPolicy?.agent ?? "code-critic" }),
+            input:codeCritiqueSource({ evidence, task:input.task, agent:g.frozenPolicy?.agent ?? "code-critic", context:taskContext.context }),
             result:{ ...ledger, spawnAttempted:true, repairObserved:true, repairThreadId:ledger.repairThreadId, repairRound:ledger.repairRound },
             reason:"critique_changes_requested",
           });
@@ -210,7 +212,7 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
             recordStage(db, {
               runId:input.runId, taskId:input.taskId, stageId:"code-critique",
               state:"skipped",
-              input:codeCritiqueSource({ evidence, task:input.task, agent:g.frozenPolicy?.agent ?? "code-critic" }),
+              input:codeCritiqueSource({ evidence, task:input.task, agent:g.frozenPolicy?.agent ?? "code-critic", context:taskContext.context }),
               result:{ skipped:"repeat", priorTaskId:skip.priorTaskId, changedLines:patchChangedLines(patchMap) },
               reason:`repeat:${skip.priorTaskId}`,
             });
@@ -292,7 +294,7 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
         }
         let repairThreadId = action === "wait" ? spawnLedger?.repairThreadId : undefined;
         let repairSentAt = action === "wait" ? spawnLedger?.repairSentAt : undefined;
-        const critiqueInput = codeCritiqueSource({ evidence, task:input.task, agent:critiqueSettings.agent });
+        const critiqueInput = codeCritiqueSource({ evidence, task:input.task, agent:critiqueSettings.agent, context:taskContext.context });
         const ledgerBase = {
           ...parsed,
           artifactRevisionSha256:evidence.artifactRevisionSha256,

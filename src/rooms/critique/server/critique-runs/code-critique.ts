@@ -1,4 +1,4 @@
-import { claimStageSpawn, getRun, listStageReceipts, openDatabase } from "../../../storage";
+import { claimStageSpawn, getRun, listStageReceipts, openDatabase, planSourcePaths, readTaskFile, resolveTaskFile, taskHomeOf, writeReplacing, type TaskFileIo } from "../../../storage";
 import { criticAcrossFamilies, criticOffSpent, criticPairCandidates, effortAfterMove, latestWriterPair, pairApartFromWriter, pickCriticByAccuracy, roleSelection, sdkCriticCatalog, usable } from "../../critic-pair";
 import { criticStats } from "../../critic-stats";
 import { bbServiceTier, findModelIn, listedServiceTier, modelFamily, resolveStageWriterSelection, writerExecutionSelection, writerServiceTier } from "@lane-pilot/models";
@@ -8,7 +8,7 @@ import { reconcileCritic } from "../../../stability";
 import { MAX_FILE_EXCERPT_BYTES } from "../../code-critique";
 import { codeCritiquePrompt, codeCritiqueSource, codeCritiqueStops, criticPersonas, critiqueFromStageResult, critiquePolicyFromResult, freezeCritiquePolicy, parseCodeCritique, parseCodeCritiqueSettings, persistLedgerFields, settingsFromFrozenPolicy, unionCriticFails } from "../../code-critique";
 import { criticLevel, pathsWidenedOf } from "../../critic-level";
-import type { CandidateEvidence, FrozenCritiquePolicy } from "../../code-critique";
+import type { CandidateEvidence, CritiqueTaskContext, FrozenCritiquePolicy } from "../../code-critique";
 import { sha256 } from "../../../tasks";
 import { candidateCitations } from "../../citations";
 import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode, withReferenceTestCritic } from "../../../contracts/quality-mode";
@@ -18,7 +18,7 @@ import type { StageHelperSettings } from "../../../platform/server";
 import { reviewerMemoryFor } from "../../../memory/server";
 import { CRITIC_OUTCOME_UNKNOWN, criticReconcilePort, helperChildPlacement, recordStage, requireHelperSpawn, requiredPolicyField } from "../../../runs/server";
 import { fullAccessSpawn } from "../../../platform/server";
-import { bestEffort, stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
+import { bestEffort, sha256Hex, stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { limitProbe, logLimitMove } from "./limit-probe";
@@ -27,6 +27,43 @@ import { readCodeCritique } from "./read-answer";
 import { attemptEnvironment } from "./attempt-diffs";
 import { verifySeriousFindings } from "./verify-findings";
 import type { VerifierOutcome } from "./verify-findings";
+
+/**
+ * The task home's plan-source snapshot for the code critic, resolved through the manifest like every other stage (docs/task-folder.md).
+ * The shared `.agents/plans/*` files the plan names are not in the attempt checkout: the critic gets the snapshot's repo path and its
+ * content hash goes into the stage input, so a rewritten snapshot re-runs the critique. A task on the old layout gets no context and its
+ * input is unchanged. A homed task whose plan names shared files the snapshot does not cover — or whose snapshot cannot be read — is a
+ * named block, never a silent pass on the shared path that is not there.
+ */
+export async function codeCritiqueTaskContext(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, taskId: string): Promise<{ context?: CritiqueTaskContext; blockReason?: string }> {
+  const home = taskHomeOf(db, taskId);
+  if (!home) return {};
+  const io: TaskFileIo = {
+    read: async (absPath) => {
+      const file = await orMiss(Promise.resolve().then(() => bb.sdk.files.read({ hostId: home.host_id, rootPath: home.base_path, path: absPath })), null, isNotFound);
+      const content = file && typeof file === "object" ? (file as { content?: unknown }).content : null;
+      return typeof content === "string" ? content : null;
+    },
+    write: async (absPath, content) => {
+      await writeReplacing(bb.sdk.files, { hostId: home.host_id, rootPath: home.base_path, path: absPath, content, createParents: true });
+    },
+  };
+  const plan = resolveTaskFile(db, taskId, "plan");
+  const planRead = plan ? await readTaskFile(db, io, { taskId, kind: "plan", reader: "code-critique" }) : null;
+  if (plan && !planRead) return { blockReason: `code_critique_plan_unreadable:${plan.repoPath}` };
+  const refs = planRead ? planSourcePaths(planRead.text, home.base_path) : [];
+  const snapshot = resolveTaskFile(db, taskId, "plan-source");
+  if (!snapshot) {
+    return refs.length ? { blockReason: `code_critique_plan_source_missing:${refs.join(",")}` } : {};
+  }
+  const source = await readTaskFile(db, io, { taskId, kind: "plan-source", reader: "code-critique" });
+  if (!source) return { blockReason: `code_critique_plan_source_unreadable:${snapshot.repoPath}` };
+  const head = source.text.split("\n## ")[0] ?? "";
+  const covered = new Set([...head.matchAll(/source_path: (.+)/g)].map((match) => match[1]!.trim()));
+  const missing = refs.filter((ref) => !covered.has(ref));
+  if (missing.length) return { blockReason: `code_critique_plan_source_missing:${missing.join(",")}` };
+  return { context: { planSource: { path: source.repoPath, sha256: source.sha256 ?? sha256Hex(source.text) } } };
+}
 
 export async function runCodeCritique(input:{
   bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;stageHelperSettings:StageHelperSettings;taskId:string;
@@ -59,7 +96,8 @@ export async function runCodeCritique(input:{
     const reason = cause instanceof Error ? cause.message : String(cause);
     return { allowed:false, reason:`code_critique_policy_invalid:${reason}`, review:"not_required" };
   }
-  const source = codeCritiqueSource({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes });
+  const taskHome = await codeCritiqueTaskContext(input.bb, input.db, input.taskId);
+  const source = codeCritiqueSource({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes, context:taskHome.context });
   const hashFields = {
     artifactRevisionSha256: input.evidence.artifactRevisionSha256,
     evidenceSha256: input.evidence.evidenceSha256,
@@ -219,6 +257,11 @@ export async function runCodeCritique(input:{
     recordStage(input.db, { ...base, state:"skipped", reason, result:{ ...ledgerCarry, ...hashFields, criticLevel:level, policy } });
     return { allowed:true, reason, review:"not_required", settings:parsed, policy };
   }
+  // A homed task whose manifest-listed plan-source snapshot is missing or unreadable fails closed before any critic spawn.
+  if (taskHome.blockReason) {
+    recordStage(input.db, { ...base, state:"blocked", reason:taskHome.blockReason, result:{ ...ledgerCarry, ...hashFields, policy } });
+    return { allowed:false, reason:taskHome.blockReason, review:"not_required", settings:parsed, policy };
+  }
   const snapshot = {
     ...ledgerCarry,
     // The carried repair ledger's spawnAttempted is about the repair writer of the previous round;
@@ -322,7 +365,7 @@ export async function runCodeCritique(input:{
             ...placement,
             ...requiredPolicyField(input.bb, helperPolicy, providerId, "code-critic"),
             ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
-            prompt:codeCritiquePrompt({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes, memoryText:reviewerMemoryFor(input.db, input.projectId, input.runId, input.task), persona, ...(level.tier === "strict" ? { focus:level.reason } : {}) }),
+            prompt:codeCritiquePrompt({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes, memoryText:reviewerMemoryFor(input.db, input.projectId, input.runId, input.task), persona, context:taskHome.context, ...(level.tier === "strict" ? { focus:level.reason } : {}) }),
             environment:attemptEnvironment(input.db, input.runId, input.taskId, input.task.project_cwd)
               ?? { type:"host", hostId:input.config.hostId, workspace:{ type:"unmanaged", path:input.task.project_cwd } },
             pluginMetadata:{ role:"code-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,

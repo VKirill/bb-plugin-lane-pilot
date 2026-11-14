@@ -1,3 +1,4 @@
+import { isAbsolute, relative, resolve } from "node:path";
 import { sha256Hex } from "@lane-pilot/kit";
 import packageJson from "../../../package.json";
 import type { LanePilotDatabase } from "./database";
@@ -363,6 +364,29 @@ export function latestTaskAttemptId(db: LanePilotDatabase, taskId: string): stri
 export function openTaskAttemptWorkspace(db: LanePilotDatabase, taskId: string): string | null {
   return (db.prepare("SELECT workspace_path FROM lane_pilot_attempt WHERE task_id=? AND state IN ('running','blocked','queued') AND workspace_path IS NOT NULL ORDER BY created_at DESC, rowid DESC LIMIT 1")
     .get(taskId) as { workspace_path: string } | undefined)?.workspace_path ?? null;
+}
+
+const SHARED_PLAN = /(?<![\w/.~-])(\.agents\/plans\/[^\s`'"()<>\]\[,;]+)/g;
+
+/**
+ * The shared plan files a PM plan points at: the whole plan when it is one path line, and every `.agents/plans/<x>` it mentions (also
+ * the old-layout `.agents/plans/items/` logs a Lane Pilot repair plan names). Repository-relative, inside `basePath`, in order of first mention.
+ */
+export function planSourcePaths(plan: string, basePath: string): string[] {
+  const found: string[] = [];
+  const add = (raw: string) => {
+    const cleaned = raw.trim().replace(/[.:]+$/, "");
+    if (!cleaned) return;
+    const root = resolve(basePath);
+    const full = isAbsolute(cleaned) ? resolve(cleaned) : resolve(root, cleaned);
+    const inside = relative(root, full).split("\\").join("/");
+    if (!inside || inside.startsWith("..") || isAbsolute(inside) || inside.startsWith(".agents/tasks/")) return;
+    if (!found.includes(inside)) found.push(inside);
+  };
+  const one = plan.trim();
+  if (one && !/[\r\n]/.test(one) && one.length <= 1000 && /\.(md|markdown|txt|json|ya?ml)$/i.test(one) && !/\s/.test(one)) add(one);
+  for (const match of plan.matchAll(SHARED_PLAN)) add(match[1]!);
+  return found;
 }
 
 /** The task's current contract edition number (1 before any lane_pilot_update_task). */

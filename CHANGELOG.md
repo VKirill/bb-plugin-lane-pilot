@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.571
+
+- **The code critic reads the task home's plan-source snapshot instead of the shared `.agents/plans/` path.** On 0.1.570 the live `task_home` drill failed both tasks: dispatch had already snapshotted the shared plan into `.agents/tasks/<id>/context/plan-source.md`, but the critic's prompt carried only the task contract, so it tried to open the shared file that the attempt worktree does not have and ended `code_critique_failed:helper_blocked`. `runCodeCritique` now resolves the snapshot through the manifest like every other stage (`codeCritiqueTaskContext`), gives both critic personas its repository path, and folds the snapshot's content hash into the stage input so a rewritten snapshot re-runs the critique. A homed task whose plan names shared files the snapshot does not cover, or whose snapshot cannot be read, is a named `code_critique_plan_source_*` block before any critic spawns; a task on the old layout is byte-identical to before. `plan-source` gains `code-critique` as a declared reader. `planSourcePaths` moved to `src/rooms/storage/task-manifest.ts` so the critique room resolves it without a cross-room import. Checked by `tests/code-critique-task-home.test.ts` (written, run by the parent's verification pass).
+
 ## 0.1.570
 
 - **The hub can build and load SMA facts without development dependencies.** The chain-test compiler is loaded only when scanning a source checkout; deployed reports use the generated facts. Checked by `tests/sma-runtime-bundle.test.ts`, which bundles and imports the facts with TypeScript unavailable, and by the existing chain-coverage tests.
