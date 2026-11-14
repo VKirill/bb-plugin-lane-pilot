@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.564
+
+- **Both worktree-cleanup schedules start their graph again.** On 0.1.562 and 0.1.563 every run of «Уборка worktree: ежечасно» and «ежедневно» ended `start_failed` («not a workflow to start by hand»), so no cleanup pass ran on any machine. A system schedule now names its starter and may start the one starter graph that carries it; the name is read from the row's `created_by`, which the server writes once. Every other caller is still refused. Checked by `tests/worktree-schedule-e2e.test.ts` (the real schedule service, scheduler, executor, trigger, engine and cleanup step; 5 of its 7 tests fail on the 0.1.563 code) and by the drill scene `parallel3`, which goes red when a cleanup schedule is missing or its last finished run failed.
+- **A cleanup pass that went well tells nobody.** The graph's `report` field would have been posted to the owner's list on every scheduled run, 24 lines a day from the hourly one; the daily pass still posts its one line about copies a person must look at. Checked by `tests/worktree-schedule-e2e.test.ts` (no owner line after a successful hourly pass).
+- **`bb lane-pilot worktree-cleanup [--daily] [--dry-run] [--json]` runs the same pass by hand and prints its report.** `--dry-run` is always the daily pass deciding only: nothing is removed, no janitor row, no owner line. Checked by `tests/worktree-schedule-e2e.test.ts` (dry run removes nothing, also for `pass: hourly`).
+- **A machine on a plugin build without the daily pass is named in the report, and nothing is removed on it.** Checked by `tests/worktree-schedule-e2e.test.ts` (the old strict host contract).
+- **A drill proves a map node only by its own line (`prove(node, ok, detail)` in the scene's receipt).** A scene can no longer cover a node it did not check itself. Region scenes `sma_rNN` are discovered by file name (`--scenario sma_rNN`, `--suite sma`), and receipts are read from the plugin folder, so the hub judges them too. Checked by `tests/sma-traces.test.ts` and `tests/lp-drill-script.test.ts`.
+- **Regions 13 (Guard tools) and 24 (Safety nets) of the SMA map have their evidence: 37 of 39 nodes carry a behaviour test, a killed mutation and a reachability record.** Checked by `npm run sma:mutate -- --region 13` and `--region 24` (attestations in `src/rooms/sma-map/attest/r13.json`, `r24.json`).
+- **`bb lane-pilot evidence <project>` without `--op` and `integrity --renew` without `--why` no longer read the project id as the missing flag's value.** Checked by `tests/sma/four-proofs-r24-a.test.ts`.
+
 ## 0.1.563
 
 - **When the plan critic returns a plan, the planner can fix it instead of the PM (`plan_critique.revise_by=planner`, default `pm`; `src/rooms/writer/server/plan-revise.ts`, node `plan-revise` of `lp-task-pipeline`).** The planner revises in its own session, up to `plan_critique.max_rounds` (3); a fresh critic judges every revision, each revision is a contract edition `planner_revision:<n>/<max>`. Hub data behind it: of 84 critic returns in 15 days the PM fixed 46 in place, re-sent 30 as a new task and dropped 8. Checked by `tests/plan-revise-loop.test.ts` and the drill scene `plan_revise`.
