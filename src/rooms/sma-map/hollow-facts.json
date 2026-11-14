@@ -1,4 +1,4 @@
-{"generatedFrom":"d62596d094ee",
+{"generatedFrom":"f9c61a4a1a79",
 "graphs":[
 {"id":"3d-asset","file":"workflows/3d-asset.json","status":"published","nodes":[["concept","agent"],["model","agent"],["verify","agent"],["export","agent"],["offer_roblox","action"],["done_roblox","action"],["done","action"],["partial","action"],["blocked","action"],["goal_check","action"]],"edges":[["concept","model","concept.ok"],["concept","blocked",null],["model","verify","model.ok"],["model","blocked",null],["verify","model","verify.status == 'rework' && visits('verify') < 2"],["verify","export","verify.status == 'pass'"],["verify","partial",null],["export","goal_check","export.ok"],["export","blocked",null],["goal_check","offer_roblox","goal_check.ok != false && $inputs.target_engine == 'roblox'"],["offer_roblox","done_roblox",null],["goal_check","done","goal_check.ok != false"],["goal_check","partial",null]]},
 {"id":"about-site","file":"workflows/about-site.json","status":"tested","nodes":[["facts","action"],["write","agent"],["check","action"],["deliver","action"],["done","action"],["nothing_public","action"],["blocked","action"],["goal_check","action"]],"edges":[["start","facts",null],["facts","nothing_public","facts.empty"],["facts","write",null],["write","check",null],["check","write","!check.ok && visits('write') < 2"],["check","deliver","check.ok"],["check","blocked",null],["deliver","goal_check",null],["goal_check","done","goal_check.ok != false"],["goal_check","blocked",null]]},
@@ -1186,7 +1186,7 @@
 "n1114":"src/rooms/migrations.ts#migrations",
 "n1115":"src/rooms/native-agent/native-claude-host.ts#MERGE_SETTINGS_PY",
 "n1116":"src/rooms/migrations.ts#migrations",
-"n1118":"src/rooms/migrations.ts#migrations",
+"n1118":"src/rooms/migrations.ts#ATTEMPT_LEDGER_TRIGGERS",
 "n1119":"src/rooms/storage/attempts-store/transition.ts#TRANSITION_KEY",
 "n1120":"src/rooms/storage/attempts-store/inspect.ts#inspectAttempt",
 "n1121":"packages/kit/src/hash.ts#markOutputChanges",
@@ -1196,7 +1196,7 @@
 "n1125":"src/rooms/storage/attempts-store/transition.ts#transitionAttempt",
 "n1127":"src/rooms/platform/server/realtime.ts#createRealtime",
 "n1128":"src/rooms/phase/server/driver-methods-control.ts#stopWave",
-"n1133":"tests/release-stories-worker.test.ts#EVENTS",
+"n1133":"src/rooms/contracts/state-machine.ts#resolveTransition",
 "n1136":"src/rooms/coverage/registry.ts#COVERAGE",
 "n1137":"src/rooms/coverage/model.ts#coverageRows",
 "n1138":"src/rooms/coverage/model.ts#untermedGaps",
