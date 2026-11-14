@@ -901,7 +901,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n887: ["have", "статистика дизайнера", "src/rooms/cockpit/ui/screens-day.tsx#WorkersScreen"],
   n888: ["have", "карточка оценки дизайна", "src/rooms/cockpit/server.ts#cockpit_designer"],
   n889: ["have", "скиллы", "src/rooms/pages/tab-team.tsx#SkillsBlock"],
-  n890: ["have", "назначить скилл", "src/rooms/pages/tab-team.tsx#TeamTab"],
+  n890: ["have", "назначить скилл", "src/rooms/settings/ui/agent-access.tsx#RoleAccessBody"],
   n891: ["have", "записать скилл", "src/rooms/forge/logic.ts#creatorBrief"],
   n892: ["have", "черновики памяти", "src/rooms/self-repair/ui/rule-proposals.tsx#RuleProposals"],
   n893: ["have", "линт корпуса", "src/rooms/memory/ui/memory-records.tsx#MemoryRecords"],
