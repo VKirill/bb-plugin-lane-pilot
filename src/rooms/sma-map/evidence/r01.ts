@@ -188,7 +188,7 @@ export default {
     trace: drill("sma_r01"),
   },
   n232: {
-    mutation: flip("src/rooms/runs/conveyor.ts", "return stored?.at ? { on: false,", "return !stored?.at ? { on: false,"),
+    mutation: distort("src/rooms/runs/conveyor.ts", "reason: stored.reason ?? null } : { on: true", "reason: null } : { on: true"),
     trace: drill("sma_r01"),
   },
   // One folder per attempt in the task home: barrier-input, checks, report under attempts/<attempt-id>/ (docs/task-folder.md, T9, T11).

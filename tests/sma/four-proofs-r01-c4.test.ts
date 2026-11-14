@@ -49,7 +49,7 @@ describe("the running session", () => {
     saveReasoningTrace(db, { planSha256: "p", sourceLength: 1, jevStatus: "ok", jevDecision: null, requestedReasoningLevel: "m", effectiveReasoningLevel: "m", fallbackReason: null,
       providerId: "p", model: "wm", runId: "run1", attemptId: "a1", threadId: "thr_w" } as never);
     const secret = `ghp_${"a1B2".repeat(9)}`;
-    const text = `${"x".repeat(ATTEMPT_STREAM_EXCERPT_CHARS - 10)} token ${secret} and more words after it`;
+    const text = `${"x".repeat(ATTEMPT_STREAM_EXCERPT_CHARS - 20)} token ${secret} and more words after it`;
     noteAttemptStream(db, "a1", text);
     const stream = (getReasoningTrace(db, "a1") as { stream?: { sha256: string; chars: number; excerpt: string } }).stream!;
     expect(stream.chars).toBe(text.length);
