@@ -35,7 +35,7 @@ export default {
   n357: { mutation: flip(DESIGN, 'if (said?.decision !== "yes" ||', 'if (said?.decision === "yes" ||'), trace: part({ kind: "word_design" }) },
   n358: { mutation: flip("src/rooms/tasks/rails.ts", "if (input.appetite !== null && input.appetite > free) return", "if (input.appetite !== null && input.appetite < free) return"), trace: drill("sma_r02") },
   n359: { mutation: flip(WAVES, ".filter((item) => !issued[item.id] || (issuedSha[item.id]", ".filter((item) => !!issued[item.id] || (issuedSha[item.id]"), trace: part({ kind: "issued" }) },
-  n360: { mutation: skipWrite(STORE, "JSON.stringify(record), patch.runId === undefined", "JSON.stringify(current.record), patch.runId === undefined"), trace: part({ kind: "issued" }) },
+  n360: { mutation: wrongTarget(STORE, "JSON.stringify(record), patch.runId === undefined", "JSON.stringify(current.record), patch.runId === undefined"), trace: part({ kind: "issued" }) },
   n361: { mutation: wrongTarget(STEPS, "execution.issued[item.id] = taskId;\n        if (issuedTask.dropped)", "execution.issued[item.id] = taskIdForIssue;\n        if (issuedTask.dropped)"), reach: entry("the phase driver's pass at the execution stage issues the pieces whose dependencies are accepted"), trace: part({ kind: "issued" }) },
   n362: { mutation: flip(WAVES, "items.some((other) => other.id === dep) && accepted(dep)", "items.some((other) => other.id === dep) && !accepted(dep)"), trace: drill("sma_r02") },
   n363: { mutation: flip(PILOT, ".sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))[0];\n  return pilot &&", ".sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id))[0];\n  return pilot &&"), trace: drill("sma_r02") },
