@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { runSim } from "./chain-harness";
 import type { SimResult } from "./chain-harness";
+import { pathOf } from "./chain-helpers";
 
 /** The fragments (`lp.*`, `ins.post`): called by the chains as subworkflows, each run here on stubs. */
-const pathOf = (result: SimResult) => result.path.join(" ");
 const out = (result: SimResult) => result.summary.output;
 
 describe("lp.analyze", () => {

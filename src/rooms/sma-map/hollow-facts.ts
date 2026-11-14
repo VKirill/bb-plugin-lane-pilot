@@ -63,8 +63,13 @@ export function collectHollowFacts(root: string, proofs: Readonly<Record<string,
       const pass = passThrough(node, graph);
       if (pass) workflowDefects.push({ graph: graph.id, node: node.id, sign: 1, what: pass });
       const skipped = skippedByDefault(node, graph);
-      // A default-off feature flag (a boolean input or one a project setting drives) — not a choice among modes.
-      if (skipped && [...(node.skipWhen ?? "").matchAll(/\$inputs\.(\w+)/g)].some((m) => { const spec = graph.inputs[m[1]!] as { type?: string; note?: string } | undefined; return spec?.type === "bool" || spec?.type === "boolean" || /setting/i.test(spec?.note ?? ""); })) {
+      // A default-off feature flag driven by a project setting — not an ordinary per-run bool input or a choice among modes.
+      if (skipped && [...(node.skipWhen ?? "").matchAll(/\$inputs\.(\w+)/g)].some((m) => {
+        const spec = graph.inputs[m[1]!] as { type?: string; note?: string; setting?: unknown; settings?: unknown } | undefined;
+        const settingMetadata = spec?.setting === true || spec?.settings === true || typeof spec?.setting === "string" || typeof spec?.settings === "string";
+        const settingNote = /\b(?:project\s+)?setting\b/i.test(spec?.note ?? "");
+        return (spec?.type === "bool" || spec?.type === "boolean") && (settingMetadata || settingNote);
+      })) {
         workflowDefects.push({ graph: graph.id, node: node.id, sign: 4, what: skipped });
       }
     }

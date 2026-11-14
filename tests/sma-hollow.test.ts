@@ -8,6 +8,7 @@ import { collectHollowFacts, SMA_HOLLOW_FACTS, type HollowFacts } from "../src/r
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../src/rooms/plugin-db";
 import { hollowCounts, hollowFindings, readHollowLive, spanLine, type HollowLive } from "../src/rooms/sma-map/hollow";
+import { chainCoverage, loadWorkflows, skippedByDefault } from "../src/rooms/sma-map/workflow-graphs";
 import type { SmaRow } from "../src/rooms/sma-map/model";
 import { defaultSettings, settingRegistry } from "../src/rooms/sma-map/settings-registry";
 import { constantReturn } from "../src/rooms/sma-map/symbols";
@@ -22,12 +23,16 @@ function fixtureRoot(): string {
   mkdirSync(join(root, "src/rooms/fx"), { recursive: true });
   writeFileSync(join(root, "workflows/fx-bad.json"), JSON.stringify({
     id: "fx-bad", status: "draft",
-    inputs: { shadow: { type: "bool", default: false, note: "a second opinion" } },
+    inputs: {
+      shadow: { type: "bool", default: false, note: "a second opinion" },
+      setting_gate: { type: "bool", default: false, note: "project setting phase.fixture_gate = on" },
+    },
     nodes: [
       { id: "start", type: "action", action: "emit", map: { brief: "$inputs.brief", files: "$inputs.files" } },
       { id: "think", type: "agent", prompt: "TODO write the prompt" },
       { id: "judge", type: "agent", prompt: "Judge the change against its contract and return a status with the evidence.", out: { status: "pass|rework" } },
       { id: "extra", type: "agent", prompt: "Give a second opinion on {{judge.status}} with the reasons.", skip_when: "!$inputs.shadow" },
+      { id: "setting-extra", type: "agent", prompt: "Read the setting-backed fixture gate and report its result.", skip_when: "!$inputs.setting_gate" },
       { id: "done", type: "action", action: "write_receipt" },
     ],
     edges: [{ from: "start", to: "think" }, { from: "think", to: "judge" }, { from: "judge", to: "done", when: "judge.status == 'block'" }, { from: "judge", to: "extra", when: "judge.status == 'rework'" }, { from: "extra", to: "done" }],
@@ -41,7 +46,7 @@ function fixtureRoot(): string {
     ],
     edges: [{ from: "plan", to: "write", when: "plan.verdict == 'go'" }, { from: "plan", to: "stop", when: "plan.verdict == 'stop'" }],
   }, null, 2));
-  writeFileSync(join(root, "tests/workflow/chains-fx.test.ts"), `it("walks", async () => { const r = await runSim("fx-good", {}); expect(pathOf(r)).toBe("plan write"); expect(pathOf(r2)).toBe("plan stop"); });\n`);
+  writeFileSync(join(root, "tests/workflow/chains-fx.test.ts"), `import { expect } from "vitest"; import { pathOf } from "./chain-helpers"; import { runSim } from "./chain-harness"; it("walks", async () => { const r = await runSim("fx-good", {}); const r2 = await runSim("fx-good", {}); expect(pathOf(r)).toBe("plan write"); expect(pathOf(r2)).toBe("plan stop"); });\n`);
   writeFileSync(join(root, "src/rooms/fx/a.ts"), [
     "export function alwaysYes(input: string): boolean {", "  return true;", "}",
     "export function real(input: string): boolean {", "  return input.trim().length > 3;", "}",
@@ -61,12 +66,65 @@ describe("the hollow detector (sma-parity-tz.md §4а)", () => {
     expect(bad).toContainEqual(expect.objectContaining({ node: "start", sign: 1, what: expect.stringContaining("only copies its input") }));
     expect(bad).toContainEqual(expect.objectContaining({ node: "think", sign: 1, what: expect.stringContaining("a stub prompt") }));
     expect(bad).toContainEqual(expect.objectContaining({ edge: ["judge", "done", "judge.status == 'block'"], sign: 1, what: expect.stringContaining("can never be true") }));
-    expect(bad).toContainEqual(expect.objectContaining({ node: "extra", sign: 4, what: expect.stringContaining("skipped by default") }));
+    expect(bad.some((defect) => defect.node === "extra" && defect.sign === 4)).toBe(false);
+    expect(bad).toContainEqual(expect.objectContaining({ node: "setting-extra", sign: 4, what: expect.stringContaining("skipped by default") }));
   });
 
   it("does not flag the healthy graph — a terminal emit is the output, a reachable enum branch is fine", () => {
     expect(facts.workflowDefects.filter((defect) => defect.graph === "fx-good")).toEqual([]);
     expect(facts.coverage["fx-good"]).toEqual(expect.arrayContaining(["plan", "write", "stop", "plan>write", "plan>stop"]));
+  });
+
+  it("ties coverage to the asserted runSim and literal path", () => {
+    const root = mkdtempSync(join(tmpdir(), "sma-chain-"));
+    mkdirSync(join(root, "tests/workflow"), { recursive: true });
+    writeFileSync(join(root, "tests/workflow/chains-nested.test.ts"), [
+      `import { expect } from "vitest";`,
+      `import { pathOf } from "./chain-helpers";`,
+      `import { runSim } from "./chain-harness";`,
+      `it("nested", async () => {`,
+      `  const actual = await runSim("nested", {});`,
+      `  expect(pathOf(actual)).toEqual(["a", "b"]);`,
+      `  expect(pathOf(await runSim("nested-direct", {}))).toEqual(["c", "d"]);`,
+      `  const expected = ["ignored", "dynamic"];`,
+      `  expect(pathOf(await runSim("dynamic", {}))).toEqual(expected);`,
+      `  const noise = await runSim("noise", {});`,
+      `  expect(pathOf(unrelated)).toBe("not a run");`,
+      `  foo(pathOf(actual)).toBe("fake");`,
+      `  { const actual = await unrelated(); expect(pathOf(actual)).toBe("fake"); }`,
+      `  { const runSim = async () => ({ fake: true }); const shadowed = await runSim("shadowed", {}); expect(pathOf(shadowed)).toBe("fake"); }`,
+      `  let mutable = await runSim("mutable", {}); mutable = unrelated(); expect(pathOf(mutable)).toBe("fake");`,
+      `  const checkParameter = (actual: unknown) => expect(pathOf(actual)).toBe("fake"); checkParameter(actual);`,
+      `  { const pathOf = () => "fake"; expect(pathOf(actual)).toBe("fake"); }`,
+      `  const localRunSim = async (id: string) => ({ id }); expect(pathOf(await localRunSim("local", {}))).toBe("fake");`,
+      `});`,
+    ].join("\n"));
+    writeFileSync(join(root, "tests/workflow/chains-local.test.ts"), [
+      `const runSim = async (id: string) => ({ id });`,
+      `it("local binding is not a harness run", async () => { const r = await runSim("local", {}); expect(pathOf(r)).toBe("fake"); });`,
+    ].join("\n"));
+    expect(chainCoverage(join(root, "tests"))).toEqual({
+      nested: ["a", "a>b", "b"],
+      "nested-direct": ["c", "c>d", "d"],
+    });
+  });
+
+  it("only treats setting-backed boolean inputs as default-off gates", () => {
+    const graphs = loadWorkflows(join(process.cwd(), "workflows"));
+    const ordinary = ["issue-quick", "ship"].flatMap((id) => {
+      const graph = graphs.find((item) => item.id === id)!;
+      return graph.nodes.filter((node) => node.skipWhen).map((node) => skippedByDefault(node, graph));
+    });
+    expect(ordinary.filter((what): what is string => Boolean(what))).toEqual([
+      expect.stringContaining("!$inputs.discuss"),
+      expect.stringContaining("!$inputs.review"),
+    ]);
+    expect(ordinary.filter(Boolean)).toHaveLength(2);
+    const drawing = graphs.find((item) => item.id === "lp.draw")!;
+    const material = drawing.nodes.find((node) => node.skipWhen === "!$inputs.material")!;
+    expect(skippedByDefault(material, drawing)).toContain("project setting");
+    const projectFacts = collectHollowFacts(process.cwd(), {});
+    expect(projectFacts.workflowDefects.some((defect) => defect.sign === 4 && ((defect.graph === "issue-quick" && defect.node === "discuss") || (defect.graph === "ship" && defect.node === "review")))).toBe(false);
   });
 
   it("catches a function that returns a constant whatever it is given, and not one that works (sign 3)", () => {
