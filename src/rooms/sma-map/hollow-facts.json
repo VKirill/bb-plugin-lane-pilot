@@ -1,4 +1,4 @@
-{"generatedFrom":"6e0d6ca13e0f",
+{"generatedFrom":"24154dc196ea",
 "graphs":[
 {"id":"3d-asset","file":"workflows/3d-asset.json","status":"published","nodes":[["concept","agent"],["model","agent"],["verify","agent"],["export","agent"],["offer_roblox","action"],["done_roblox","action"],["done","action"],["partial","action"],["blocked","action"],["goal_check","action"]],"edges":[["concept","model","concept.ok"],["concept","blocked",null],["model","verify","model.ok"],["model","blocked",null],["verify","model","verify.status == 'rework' && visits('verify') < 2"],["verify","export","verify.status == 'pass'"],["verify","partial",null],["export","goal_check","export.ok"],["export","blocked",null],["goal_check","offer_roblox","goal_check.ok != false && $inputs.target_engine == 'roblox'"],["offer_roblox","done_roblox",null],["goal_check","done","goal_check.ok != false"],["goal_check","partial",null]]},
 {"id":"about-site","file":"workflows/about-site.json","status":"tested","nodes":[["facts","action"],["write","agent"],["check","action"],["deliver","action"],["done","action"],["nothing_public","action"],["blocked","action"],["goal_check","action"]],"edges":[["start","facts",null],["facts","nothing_public","facts.empty"],["facts","write",null],["write","check",null],["check","write","!check.ok && visits('write') < 2"],["check","deliver","check.ok"],["check","blocked",null],["deliver","goal_check",null],["goal_check","done","goal_check.ok != false"],["goal_check","blocked",null]]},
@@ -1519,7 +1519,6 @@
 "n1657":"src/rooms/tasks/gate-report.ts#buildGateReport",
 "n1658":"src/rooms/storage/evidence-store.ts#listEvidence",
 "n1659":"src/rooms/policy/protections.ts#integrityReport",
-"n1661":"src/rooms/money/logic.ts#spendBook",
 "n1663":"src/rooms/money/logic.ts#PRICE_LIST",
 "n1664":"src/rooms/learning/breaker.ts#noteBreakerRound",
 "n1665":"src/rooms/session-hooks/logic.ts#stallFailed",
