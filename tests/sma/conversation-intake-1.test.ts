@@ -21,7 +21,7 @@ import { buildBubblewrapArgs, prepareGuardPaths, releaseGuardPaths } from "../..
 const piece = (id: string): PlanItem => ({ id, title: id, wave: 1, promise: { given: "g", when: "w", then: "t" }, task: { id } });
 
 describe("conversation gates", () => {
-  it("[sma:m_ce_consent] «да» alone is consent; «да, но …» is refused and enqueues nothing", async () => {
+  it("[sma:m_ce_consent] [sma:k_d_ref_discuss] «да» alone is consent; «да, но …» is refused and enqueues nothing", async () => {
     expect(isWholeConsent("  да! ")).toBe(true);
     expect(isWholeConsent("yes")).toBe(true);
     expect(isWholeConsent("да, но поменяй кнопку")).toBe(false);

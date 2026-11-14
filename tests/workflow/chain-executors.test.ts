@@ -697,7 +697,7 @@ describe("files, diffs and the plugin's own state", () => {
     expect(summary).toMatchObject({ status: "succeeded", output: { files: ["src/a.ts"], level: "quick" } });
   });
 
-  it("lp.lint_contract refuses tasks that are not task-v2 and tasks of one wave that own the same path", async () => {
+  it("[sma:k_d_ref_planner] lp.lint_contract refuses tasks that are not task-v2 and tasks of one wave that own the same path", async () => {
     const t = await setup({});
     dispose = t.dispose;
     const base = { schema_version: 2, risk: "low", lane: "writer", read_first: ["README.md"], interfaces: ["x"], invariants: ["y"], out_of_scope: ["z"], expected_outputs: ["a.txt"], never_touch: [".git/**"], depends_on: [], objective: "o", acceptance: ["a"], verify: "tests", verification: [{ command: "true", cwd: t.checkout, timeout_sec: 30 }] };

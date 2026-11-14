@@ -88,7 +88,7 @@ describe("the phase candidate on a real repository", () => {
   });
 
   // SMA audit of C-03: main could move between the candidate taking it in and the merge; the merge then was not the verified tree.
-  it("a landing refuses when main moved after the candidate took it in", async () => {
+  it("[sma:k_d_exec_steps] a landing refuses when main moved after the candidate took it in", async () => {
     expect(sh(base, candidateCommand("ph_t3")).status).toBe(0);
     const tree = candidatePath(base, "ph_t3");
     await commit(tree, "hud.ts", "export const hud = 1;\n");
@@ -104,7 +104,7 @@ describe("the phase candidate on a real repository", () => {
   });
 
   // SMA audit R-03: a commit made on the candidate after its head was read and synced landed on main unreviewed.
-  it("a landing refuses a candidate that got a commit after it was verified", async () => {
+  it("[sma:k_d_exec_steps] a landing refuses a candidate that got a commit after it was verified", async () => {
     expect(sh(base, candidateCommand("ph_race")).status).toBe(0);
     const tree = candidatePath(base, "ph_race");
     await commit(tree, "verified.txt", "approved bytes\n");
