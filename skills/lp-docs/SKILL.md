@@ -24,12 +24,13 @@ docs-maintain-all --if-hour
 
 ## Markers (project is Lane Stack)
 
-- `CLAUDE.md` contains `Claude Lane Stack`, or
+- `AGENTS.md` (or a legacy `CLAUDE.md`) contains `Claude Lane Stack`, or
 - `.agents/routing.profile.yaml`, or
 - `.agents/runs/` exists
 
 ## Rules
 
+- Root agent instructions live in `AGENTS.md`; `CLAUDE.md` is only the `@AGENTS.md` pointer. A night-docs block or any doc edit to project instructions goes into `AGENTS.md`, never into the pointer.
 - First enable: `docs-init-chain` = project-onboard then wiki. Wiki runner refuses a thin passport.
 - Night: yesterday git ∩ owns + leftover stubs. Empty → no LLM.
 - Archive (`wiki/`, `TODO/`, `.agents/`, legacy `docs/plans/`) is never written. Decision drafts in `.agents/decisions/` are published into `docs/decisions.md`.
