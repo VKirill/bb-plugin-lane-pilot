@@ -154,7 +154,7 @@
         "en": "Save the file",
         "ru": "Сохранить файл"
       },
-      "path": ".lane-pilot/anamnesis/year-review-{{date}}/",
+      "path": ".lane-pilot/anamnesis/year-review-{{date}}-{{run_id}}/",
       "files": [
         "year-review.md"
       ],

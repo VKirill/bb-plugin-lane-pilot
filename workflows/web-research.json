@@ -257,7 +257,7 @@
       "id": "deliver",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/research/research-{{date}}-{{slug}}.md",
+      "path": ".agents/research/research-{{date}}-{{slug}}-{{run_id}}.md",
       "contents": {
         "content": "{{report.report_md}}"
       },

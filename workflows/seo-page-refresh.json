@@ -317,7 +317,7 @@
       "id": "package",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/seo/page-refresh/{{date}}/",
+      "path": ".agents/seo/page-refresh/{{date}}-{{run_id}}/",
       "files": [
         "diagnosis.md",
         "fix-package.md",

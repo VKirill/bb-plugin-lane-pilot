@@ -401,7 +401,7 @@
       "id": "package",
       "type": "action",
       "action": "fs.write",
-      "path": ".agents/seo/structure-audit/{{date}}/",
+      "path": ".agents/seo/structure-audit/{{date}}-{{run_id}}/",
       "files": [
         "decision-registry.csv",
         "cluster-map.md",

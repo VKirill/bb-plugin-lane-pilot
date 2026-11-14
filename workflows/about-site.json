@@ -148,7 +148,7 @@
         "en": "Save the file",
         "ru": "Сохранить файл"
       },
-      "path": ".lane-pilot/anamnesis/about-site-{{date}}/",
+      "path": ".lane-pilot/anamnesis/about-site-{{date}}-{{run_id}}/",
       "files": [
         "index.html"
       ],

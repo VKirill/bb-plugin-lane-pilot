@@ -485,7 +485,7 @@
       "id": "deliver",
       "type": "action",
       "action": "fs.write",
-      "path": "reels/{{date}}-{{slug}}/delivery/",
+      "path": "reels/{{date}}-{{slug}}-{{run_id}}/delivery/",
       "out": {
         "folder": "string"
       }

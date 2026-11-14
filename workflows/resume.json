@@ -148,7 +148,7 @@
         "en": "Save the file",
         "ru": "Сохранить файл"
       },
-      "path": ".lane-pilot/anamnesis/resume-{{date}}/",
+      "path": ".lane-pilot/anamnesis/resume-{{date}}-{{run_id}}/",
       "files": [
         "resume.md"
       ],

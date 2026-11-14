@@ -323,7 +323,7 @@
       "id": "archive",
       "type": "action",
       "action": "fs.write",
-      "path": ".lane-pilot/digests/{{date}}-{{slug}}/",
+      "path": ".lane-pilot/digests/{{date}}-{{slug}}-{{run_id}}/",
       "files": [
         "items.json",
         "summary.md"
