@@ -3,7 +3,7 @@
 // The values come from tests/sma/r05-world-c.ts, which the drill scene sma_r05_c.py reads too. The watchdog's loop runs against stand-in curl, systemctl and sleep (no waiting in real time).
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanupWatchdog } from "../helpers/hub-watchdog";
-import { observeC } from "./r05-world-c";
+import { observeC, observeC2 } from "./r05-world-c";
 
 afterEach(cleanupWatchdog);
 
@@ -94,5 +94,78 @@ describe("daemon life c: the watchdog decides from the door and the process reco
       defaults: "3 8", sevenTimeouts: false, eightTimeouts: true, sevenThenAnswer: false, eightRefused: true,
       threeRefusedAfterAnswer: true, beforeTheThird: false, threeRefusedNeverAnswered: false, fourSetting: false, fourSettingFifth: true,
     });
+  });
+});
+
+describe("daemon life c: the outage, the lift and what is said", () => {
+  it("[sma:m_w_declared] an outage is declared with the fall time of the first silence (the declared knocks back), not the moment of the decision; the first silence is recorded before the declaration", () => {
+    expect(observeC2.m_w_declared()).toEqual({
+      order: ["start", "first_silence", "outage", "message_sent"], gapIsThreeKnocks: true, silence: "first knock without an answer (timeout)", outage: "timeout: no answer for 45s from pid 4242 (active)",
+    });
+  });
+
+  it("[sma:m_w_kill] a live process behind a silent door is killed by its record first and only then restarted: the kill command comes before the restart command", () => {
+    expect(observeC2.m_w_kill()).toEqual({ rows: ["try 1, killing pid 4242"], manager: ["--user kill -s SIGKILL bb-server", "--user restart bb-server"] });
+  });
+
+  it("[sma:m_w_lift] the lift is the one command the restart verb uses, issued once after the kill", () => {
+    expect(observeC2.m_w_lift()).toEqual({ command: "systemctl --user restart bb-server", issued: ["--user restart bb-server"] });
+  });
+
+  it("[sma:m_w_pending] the outcome of a lift is the door's: an answer in the wait records no failure; a silent door records «without an outcome» with the wait and then the failure with the manager's result", () => {
+    expect(observeC2.m_w_pending()).toEqual({
+      answered: [["lift", "try 1, killing pid 4242"]],
+      silent: [["lift", "try 1, killing pid 4242"], ["lift_without_outcome", "try 1, waited 30s"], ["out_of_tries", "1 lifts without an answer: failure"]],
+    });
+  });
+
+  it("[sma:m_w_abandoned] out of tries the watchdog records it with the reason, says it to the person once, leaves a mark for the outage and sleeps 600 s instead of looping", () => {
+    expect(observeC2.m_w_abandoned()).toEqual({
+      outOfTries: ["1 lifts without an answer: Job failed. See journalctl"],
+      said: ["Хаб BB не поднялся после 1 попыток. Причина: Job failed. See journalctl Нужен человек: ssh ubuntu@10.8.0.1, journalctl -u bb-server -n 100."], longSleeps: 1, marker: true,
+    });
+  });
+
+  it("[sma:m_out_marker] the record of one outage holds the first silence, the declaration, the lift and its failure in order, each with its time; the first silence is the knocks before the declaration", () => {
+    expect(observeC2.m_out_marker()).toEqual({
+      rows: [
+        ["start", "watchdog up; the first look waits 0s"], ["first_silence", "first knock without an answer (timeout)"], ["outage", "timeout: no answer for 30s from pid 4242 (active)"],
+        ["lift", "try 1, killing pid 4242"], ["lift_without_outcome", "try 1, waited 30s"], ["out_of_tries", "1 lifts without an answer: Job failed. See journalctl"],
+      ],
+      gap: true, ordered: true,
+    });
+  });
+
+  it("[sma:m_out_fall_msg] the first message says how long the hub has been silent, the kind of silence and the process that hangs, and that the lift starts", () => {
+    expect(observeC2.m_out_fall_msg()).toEqual(["Хаб BB упал: сервер не отвечает 30 с (timeout, процесс 4242 висит). Поднимаю."]);
+  });
+
+  it("[sma:m_out_lift_failed] the second message goes once, after the tries are spent, with the reason from the lift's own output and where to look", () => {
+    expect(observeC2.m_out_lift_failed()).toEqual({
+      said: ["Хаб BB не поднялся после 1 попыток. Причина: Job failed. See journalctl Нужен человек: ssh ubuntu@10.8.0.1, journalctl -u bb-server -n 100."], fellSaid: 1, events: 1,
+    });
+  });
+
+  it("[sma:m_out_announce] the risen hub is announced only after the door answers, with the minutes it was silent; while it is silent nothing of the sort is said, and a door that never fell is never announced", () => {
+    expect(observeC2.m_out_announce()).toEqual({
+      risen: ["Хаб BB упал: сервер не отвечает 30 с (timeout, процесс 4242 висит). Поднимаю.", "Хаб BB поднялся: не отвечал около 1 мин."], whileSilent: [], healthy: [],
+    });
+  });
+
+  it("[sma:m_out_receipt] the outage is closed with a receipt row carrying every time: the last beat, the start of this run, the minutes, the cause (the stop's own words) and when it was noticed", async () => {
+    const seen = await observeC2.m_out_receipt();
+    expect(seen.rows).toEqual([{ id: 1, fromAt: seen.expectFrom, toAt: seen.expectTo, minutes: 30, cause: "the plugin was reloaded (a deploy or a settings change)", noticedAt: seen.expectTo }]);
+  });
+
+  it("[sma:m_out_notify] with no bot file, no token or no chat nothing is sent and the log names the reason; a refused send names the curl code; a good send is recorded with its text", () => {
+    const seen = observeC2.m_out_notify();
+    const dir = seen.noEnvPath.replace(/\/no-telegram$/, "");
+    expect(seen.out.map((row) => ({ ...row, detail: row.detail.replace(dir, "<dir>") }))).toEqual([
+      { case: "no file", event: "message_not_sent", detail: "no tg.env at <dir>/no-telegram", sends: 0 },
+      { case: "no token", event: "message_not_sent", detail: "TG_TOKEN empty in <dir>/tg.env", sends: 0 },
+      { case: "no chat", event: "message_not_sent", detail: "TG_CHAT empty in <dir>/tg.env", sends: 0 },
+      { case: "refused", event: "message_not_sent", detail: "telegram refused (curl 22)", sends: 1 },
+      { case: "sent", event: "message_sent", detail: "hello", sends: 2 },
+    ]);
   });
 });

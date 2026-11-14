@@ -12,6 +12,9 @@ import { closeOwnerItem, collectOwnerWaiting, postOwnerItem, type OwnerItemSweep
 import { CALL_REASONS, callReason } from "../../src/rooms/owner-waiting/items";
 import { calibrate, calibrationLine, scoreForecast, type Forecast, type ForecastFact } from "../../src/rooms/forecast/logic";
 import { openDatabase } from "../../src/rooms/plugin-db";
+import { BEAT_KEY } from "../../src/rooms/outage/logic";
+import { STOP_KEY, recordStartGap } from "../../src/rooms/outage/server/outage";
+import { listOutages } from "../../src/rooms/outage/store";
 import { SLEEP_STUB, SYSTEMCTL_STUB, functions, pushScript, run as watchdog, script, stub, tmp } from "../helpers/hub-watchdog";
 
 const HOUR = 3_600_000;
@@ -199,6 +202,103 @@ export const observeC = {
       threeRefusedAfterAnswer: declared("200 7", 4), beforeTheThird: declared("200 7", 3), threeRefusedNeverAnswered: declared("7", 4),
       fourSetting: declared("200 7", 4, { LP_WATCH_REFUSED_AFTER: "4" }), fourSettingFifth: declared("200 7", 5, { LP_WATCH_REFUSED_AFTER: "4" }),
     };
+  },
+};
+
+/** An outage the lift cannot end: knocks time out, the restart fails with a reason, the watchdog lifts once per outage and gives up; it records the failure, says it once and sleeps 600 s. */
+const failedLift = () => drive({ seq: "28", sleeps: 9, env: { LP_WATCH_SUSPECT_AFTER: "2", LP_WATCH_MAX_LIFTS: "1", RESTART_ERR: "Job failed. See journalctl", RESTART_RC: "1" } });
+const texts = (lines: string[]) => lines.map((line) => line.slice(line.indexOf("text=") + 5));
+const shown = (d: ReturnType<typeof drive>) => d.rows.map((row) => [row.event, row.detail]);
+
+export const observeC2 = {
+  /** n516: the fall time is the first silence (declared knocks times the knock interval back), not the moment of the decision. */
+  m_w_declared() {
+    const d = drive({ seq: "28", sleeps: 10, env: { LP_WATCH_SUSPECT_AFTER: "3", LP_WATCH_MAX_LIFTS: "1" } });
+    const silence = d.rows.find((row) => row.event === "first_silence")!, outage = d.rows.find((row) => row.event === "outage")!;
+    const gap = outage.at - silence.at;
+    return { order: d.events.slice(0, 4), gapIsThreeKnocks: gap >= 45 && gap <= 46, silence: silence.detail, outage: outage.detail };
+  },
+
+  /** n517: the hung process is killed first (by the manager, by its record), then the lift starts: the kill is issued before the restart. */
+  m_w_kill() {
+    const d = drive({ seq: "28", sleeps: 5, env: { LP_WATCH_SUSPECT_AFTER: "2", LP_WATCH_MAX_LIFTS: "1" } });
+    return { rows: d.rows.filter((row) => row.event === "lift").map((row) => row.detail), manager: d.sys.filter((line) => /kill|restart/.test(line)) };
+  },
+
+  /** n518: the lift is the one command the restart verb uses (lift_cmd), issued once after the kill. */
+  m_w_lift() {
+    const d = drive({ seq: "28", sleeps: 5, env: { LP_WATCH_SUSPECT_AFTER: "2", LP_WATCH_MAX_LIFTS: "1" } });
+    return { command: functions("lift_cmd", { ...tmp().env, LP_WATCH_USER: "1" }).trim(), issued: d.sys.filter((line) => /restart/.test(line)) };
+  },
+
+  /** n519: the outcome is the door's: a lift whose door answers in the wait records nothing more; a lift whose door stays silent records «without an outcome» with the wait, never a success. */
+  m_w_pending() {
+    const env = { LP_WATCH_SUSPECT_AFTER: "2", LP_WATCH_MAX_LIFTS: "1" };
+    const answered = drive({ seq: "28 28 28 200", sleeps: 6, env }), silent = drive({ seq: "28", sleeps: 9, env });
+    const tail = (d: ReturnType<typeof drive>) => shown(d).filter(([event]) => event === "lift" || event === "lift_without_outcome" || event === "out_of_tries");
+    return { answered: tail(answered), silent: tail(silent) };
+  },
+
+  /** n522: out of tries the watchdog says it to the person and sleeps 600 s instead of looping. */
+  m_w_abandoned() {
+    const d = failedLift();
+    return { outOfTries: d.rows.filter((row) => row.event === "out_of_tries").map((row) => row.detail), said: texts(d.tg).filter((text) => text.includes("не поднялся")), longSleeps: d.sleeps.filter((x) => x === "600").length, marker: d.file("hub-watchdog.out-tries-said") === "" };
+  },
+  /** n523: the record of one outage: first silence, declaration, lifts and their outcome, with times that never run backwards and the first silence the knocks before the declaration. */
+  m_out_marker() {
+    const d = failedLift();
+    const silence = d.rows.find((row) => row.event === "first_silence")!, outage = d.rows.find((row) => row.event === "outage")!;
+    return { rows: shown(d).filter(([event]) => !event!.startsWith("message")), gap: outage.at - silence.at >= 30 && outage.at - silence.at <= 31, ordered: d.rows.every((row, i) => i === 0 || row.at >= d.rows[i - 1]!.at - 31) };
+  },
+  /** n524: the message «it fell»: how long it has been silent, the kind of silence and the process that hangs. */
+  m_out_fall_msg() {
+    return texts(failedLift().tg).slice(0, 1);
+  },
+  /** n525: the second message, once per outage, carries the reason from the lift's own output. */
+  m_out_lift_failed() {
+    const d = failedLift();
+    return { said: texts(d.tg).filter((text) => text.includes("не поднялся")), fellSaid: texts(d.tg).filter((text) => text.includes("упал")).length, events: d.events.filter((event) => event === "out_of_tries").length };
+  },
+
+  /** n526: the risen watchdog speaks only after the door answers: while silent only «fell» is said, after the answer «risen» with the minutes; a door that never fell is never announced. */
+  m_out_announce() {
+    const env = { LP_WATCH_SUSPECT_AFTER: "2", LP_WATCH_MAX_LIFTS: "1" };
+    const risen = drive({ seq: "28 28 28 200", sleeps: 7, mainAfter: "5151", env }), silent = drive({ seq: "28", sleeps: 9, env }), healthy = drive({ seq: "200", sleeps: 3, env });
+    return { risen: texts(risen.tg), whileSilent: texts(silent.tg).filter((text) => text.startsWith("Хаб BB поднялся")), healthy: healthy.tg };
+  },
+
+  /** n527: the outage is closed with a receipt row carrying every time: the last beat, the start, the minutes, the cause and when it was noticed. */
+  async m_out_receipt() {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const now = Date.UTC(2026, 9, 22, 9, 0, 0), MIN = 60_000;
+    await bb.storage.kv.set(BEAT_KEY, now - 30 * MIN);
+    await bb.storage.kv.set(STOP_KEY, { reason: "the plugin was reloaded (a deploy or a settings change)", at: now - 29 * MIN });
+    await recordStartGap({ bb, db, log: () => undefined } as never, now);
+    return { rows: listOutages(db, 0), expectFrom: now - 30 * MIN, expectTo: now };
+  },
+
+  /** n528: the Telegram message goes only when a bot and a chat are paired; otherwise nothing is sent and the log names the reason; a refused send names the curl code; a good send is recorded with its text. */
+  m_out_notify() {
+    const { dir, env } = tmp();
+    stub(dir, "curl", SEQ_CURL);
+    const base = { ...env, CURL_STATE: join(dir, "n"), TG_LOG: join(dir, "tg.log"), CURL_SEQ: "200" };
+    const rows = () => (existsSync(join(dir, "outages.jsonl")) ? readFileSync(join(dir, "outages.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as { event: string; detail: string }) : []);
+    const sends = () => (existsSync(join(dir, "tg.log")) ? readFileSync(join(dir, "tg.log"), "utf8").split("\n").filter(Boolean).length : 0);
+    const out: Array<{ case: string; event: string; detail: string; sends: number }> = [];
+    const attempt = (name: string, extra: Record<string, string>) => {
+      const before = rows().length;
+      functions('say "hello" || true', { ...base, ...extra });
+      const row = rows().slice(before)[0]!;
+      out.push({ case: name, event: row.event, detail: row.detail, sends: sends() });
+    };
+    const tgEnv = join(dir, "tg.env");
+    attempt("no file", {});
+    writeFileSync(tgEnv, "TG_CHAT=1\n"); attempt("no token", { LP_WATCH_TG_ENV: tgEnv });
+    writeFileSync(tgEnv, "TG_TOKEN=t\n"); attempt("no chat", { LP_WATCH_TG_ENV: tgEnv });
+    writeFileSync(tgEnv, "TG_TOKEN=t\nTG_CHAT=1\n"); attempt("refused", { LP_WATCH_TG_ENV: tgEnv, TG_RC: "22" });
+    attempt("sent", { LP_WATCH_TG_ENV: tgEnv });
+    return { out, noEnvPath: join(dir, "no-telegram") };
   },
 };
 

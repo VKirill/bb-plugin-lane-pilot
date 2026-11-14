@@ -4,7 +4,7 @@
 // Batch a (n440–n471): one mutation per node; the trace of each is its own prove() line in scripts/lp_drill/scenes/sma_r05.py (no row is written to the
 // hub database by these nodes). The cards describe the old daemon process; each node is proved by the part of Lane Pilot that serves it now.
 // n469 (the window link) and n470 (the start failure text) are core-resident: their proof anchors are in bb-core, there is nothing here to mutate.
-import { distort, drill, entry, flip, skipWrite, type RegionEvidence, seedEntry, voidIsHave, voidStays } from "./types";
+import { distort, drill, entry, flip, rows, skipWrite, type RegionEvidence, seedEntry, voidIsHave, voidStays } from "./types";
 
 const SERVER = "server.ts";
 const OUTAGE = "src/rooms/outage/server/outage.ts";
@@ -88,4 +88,17 @@ export default {
   n513: { mutation: distort("scripts/hub-watchdog.sh", 'elif [ -z "$pid" ] || [ "$pid" = "0" ]; then', 'elif [ -z "$pid" ] || [ "$pid" = "-1" ]; then'), trace: drill("sma_r05") },
   n514: { mutation: flip("scripts/hub-watchdog.sh", 'if [ "$state" = "activating" ] || [ "$state" = "reloading" ]; then', 'if [ "$state" != "activating" ] || [ "$state" = "reloading" ]; then'), trace: drill("sma_r05") },
   n515: { mutation: distort("scripts/hub-watchdog.sh", 'REFUSED_AFTER="${LP_WATCH_REFUSED_AFTER:-3}"', 'REFUSED_AFTER="${LP_WATCH_REFUSED_AFTER:-4}"'), trace: drill("sma_r05") },
+  n516: { mutation: distort("scripts/hub-watchdog.sh", "down_since=$(( $(date +%s) - count * KNOCK_SEC ))", "down_since=$(( $(date +%s) - KNOCK_SEC ))"), trace: drill("sma_r05") },
+  n517: { mutation: flip("scripts/hub-watchdog.sh", '[ -n "$pid" ] && [ "$pid" != "0" ] && service_kill', '[ -z "$pid" ] && [ "$pid" != "0" ] && service_kill'), trace: drill("sma_r05") },
+  n518: { mutation: distort("scripts/hub-watchdog.sh", 'else echo "$SYSTEMCTL --user restart $SERVICE"; fi', 'else echo "$SYSTEMCTL --user start $SERVICE"; fi'), trace: drill("sma_r05") },
+  n519: { mutation: flip("scripts/hub-watchdog.sh", "sleep 5; waited=$((waited + 5)); door_answers && return 0; done", "sleep 5; waited=$((waited + 5)); door_answers || return 0; done"), trace: drill("sma_r05") },
+  n520: { mutation: distort("scripts/hub-watchdog.sh", "print(min(30 * 2 ** count, 120), last)", "print(min(30 * 3 ** count, 120), last)"), trace: drill("sma_r05") },
+  n521: { mutation: distort("scripts/hub-watchdog.sh", 'KILL_HOLDER="${LP_WATCH_KILL_HOLDER:-1}"', 'KILL_HOLDER="${LP_WATCH_KILL_HOLDER:-0}"'), trace: drill("sma_r05") },
+  n522: { mutation: distort("scripts/hub-watchdog.sh", 'record "out_of_tries" "$MAX_LIFTS lifts without an answer${reason:+: $reason}"', 'record "out_of_tries" "$MAX_LIFTS lifts without an answer"'), trace: drill("sma_r05") },
+  n523: { mutation: distort("scripts/hub-watchdog.sh", 'record "lift" "try $try, killing pid ${pid:-none}"', 'record "lift" "try $try"'), trace: drill("sma_r05") },
+  n524: { mutation: distort("scripts/hub-watchdog.sh", "сервер не отвечает $((count * KNOCK_SEC)) с (", "сервер не отвечает $count с ("), trace: drill("sma_r05") },
+  n525: { mutation: flip("scripts/hub-watchdog.sh", 'if [ ! -f "$STATE_DIR/hub-watchdog.out-tries-said" ]; then', 'if [ -f "$STATE_DIR/hub-watchdog.out-tries-said" ]; then'), trace: drill("sma_r05") },
+  n526: { mutation: flip("scripts/hub-watchdog.sh", 'if [ "$down_since" -gt 0 ]; then', 'if [ "$down_since" -ge 0 ]; then'), trace: drill("sma_r05") },
+  n527: { mutation: distort("src/rooms/outage/store.ts", ".run(outage.fromAt, outage.toAt, outage.minutes, cause, now);", ".run(outage.fromAt, outage.toAt, outage.minutes, cause, outage.fromAt);"), trace: rows("lane_pilot_outage", "noticed_at") },
+  n528: { mutation: distort("scripts/hub-watchdog.sh", 'reason="TG_TOKEN empty in $TG_ENV"', 'reason="TG_TOKEN missing"'), trace: drill("sma_r05") },
 } satisfies RegionEvidence;
