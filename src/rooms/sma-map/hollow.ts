@@ -15,6 +15,7 @@ import type { NodeEvidence } from "./evidence/types";
 import type { HollowFacts } from "./hollow-facts";
 import type { SmaRow } from "./model";
 import { failedNeeds, undeclaredGates } from "./reach";
+import { SIBLINGS, siblingOf } from "./siblings";
 import type { EffectiveSettings } from "./settings-registry";
 import type { TraceSource } from "./traces";
 
@@ -96,7 +97,9 @@ export function hollowFindings(ctx: HollowContext): HollowFinding[] {
   for (const row of ctx.rows) {
     const subject = { type: "map-node" as const, path: `${row.id} ${row.smaId}` };
     const evidence = ctx.evidence[row.id];
-    if (row.status === "have" && row.contracts.length === 0) out.push({ subject, sign: 5, what: `status have, but no behaviour test names [sma:${row.smaId}]${row.proof ? ` — the proof is a link to ${row.proof}` : ""}`, ...on([row.id]) });
+    // A proof in a sibling repository is not «nothing to do here»: the test goes into that repository (docs/sma-evidence.md «Proofs in a sibling repository»).
+    const sibling = siblingOf(row.proof);
+    if (row.status === "have" && row.contracts.length === 0) out.push({ subject, sign: 5, what: `status have, but no behaviour test names [sma:${row.smaId}]${row.proof ? ` — the proof is a link to ${row.proof}` : ""}${sibling ? `; the test goes into ${SIBLINGS[sibling].repo} on ${SIBLINGS[sibling].proofBranch} (npm run sma:sibling -- setup ${sibling})` : ""}`, ...on([row.id]) });
     if (row.status === "have" || row.status === "partial") {
       const gates = undeclaredGates(ctx.facts.settingReads[row.id] ?? null, evidence?.reach, ctx.settings);
       if (gates.length) out.push({ subject, sign: 4, what: `undeclared gate: its function reads ${gates.map((key) => `${key} (${ctx.settings.get(key) ?? "unset"})`).join(", ")}, off by default, and reach.needs does not declare it`, ...on([row.id]) });

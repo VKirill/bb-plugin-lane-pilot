@@ -13,7 +13,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { SMA_ENTRIES } from "../src/rooms/sma-map/entries";
 import { SMA_NODES } from "../src/rooms/sma-map/graph";
-import { anchorText, hash12, localProof, type OwnChange } from "../src/rooms/sma-map/provenance";
+import { anchorText, hash12, localProof, siblingAnchorSpan, type OwnChange, type ProvenanceFile, type SiblingChange } from "../src/rooms/sma-map/provenance";
+import { blameAt, hasCommit, headOf, isAncestor, kindAt, lastCommitAt, showAt } from "../src/rooms/sma-map/sibling-git";
+import { resolveSibling, SIBLING_NAMES, SIBLINGS, siblingOf, splitSiblingPath, type SiblingName } from "../src/rooms/sma-map/siblings";
 
 const root = join(import.meta.dirname, "..");
 const target = join(root, "src/rooms/sma-map/provenance.json");
@@ -79,7 +81,7 @@ function lastFileCommit(file: string): { commit: string; time: number } | null {
   return fileCache.get(file)!;
 }
 
-export function generate(deploysPath: string): string {
+export function generate(deploysPath: string, check = false): string {
   const deploys = readDeploys(deploysPath);
   const shipped = firstDeploys(deploys);
   const head = git("rev-parse", "HEAD").trim();
@@ -107,11 +109,58 @@ export function generate(deploysPath: string): string {
   nodes.sort(([a], [b]) => Number(a.slice(1)) - Number(b.slice(1)));
   const version = (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { version: string }).version;
   const lastDeployed = deploys.at(-1)?.version ?? "";
-  return `{"generatedFrom":${JSON.stringify(head.slice(0, 12))},"version":${JSON.stringify(version)},"deploys":${deploys.length},"lastDeployed":${JSON.stringify(lastDeployed)},"nodes":{\n${nodes.map(([id, rec]) => `${JSON.stringify(id)}:${JSON.stringify(rec)}`).join(",\n")}\n}}\n`;
+  const { at, records } = siblingChanges(check);
+  const siblings = Object.entries(records).sort(([a], [b]) => Number(a.slice(1)) - Number(b.slice(1)));
+  return `{"generatedFrom":${JSON.stringify(head.slice(0, 12))},"version":${JSON.stringify(version)},"deploys":${deploys.length},"lastDeployed":${JSON.stringify(lastDeployed)},"nodes":{\n${nodes.map(([id, rec]) => `${JSON.stringify(id)}:${JSON.stringify(rec)}`).join(",\n")}\n},"siblingsAt":${JSON.stringify(at)},"siblings":{\n${siblings.map(([id, rec]) => `${JSON.stringify(id)}:${JSON.stringify(rec)}`).join(",\n")}\n}}\n`;
+}
+
+/**
+ * Change points of nodes whose proof anchor is in a sibling repository (siblings.ts): the newest commit touching the anchor's
+ * span, read from git at a pinned commit per sibling (`siblingsAt`). Generating moves the pin to the sibling's HEAD only when
+ * HEAD contains it; --check re-reads at the pin; a sibling absent here (or without the pinned commit) keeps its recorded
+ * records, so the file stays valid on the hub and is re-checked where the siblings are (the deploy gate on OVH).
+ */
+function siblingChanges(check: boolean): { at: Partial<Record<SiblingName, string>>; records: Record<string, SiblingChange> } {
+  const recordedFile = existsSync(target) ? JSON.parse(readFileSync(target, "utf8")) as ProvenanceFile : null;
+  const at: Partial<Record<SiblingName, string>> = {};
+  const records: Record<string, SiblingChange> = {};
+  for (const name of SIBLING_NAMES) {
+    const ids = SMA_NODES.map(([id]) => id).filter((id) => siblingOf(SMA_ENTRIES[id]?.[2]) === name);
+    const pinned = recordedFile?.siblingsAt?.[name];
+    const keep = (why: string) => {
+      process.stderr.write(`note: ${why}: kept the recorded change points of ${SIBLINGS[name].repo}${pinned ? ` at ${pinned}` : ""}\n`);
+      if (pinned) at[name] = pinned;
+      for (const id of ids) { const rec = recordedFile?.siblings?.[id]; if (rec) records[id] = rec; }
+    };
+    const where = resolveSibling(name, root);
+    if (where.root === null) { keep(where.why); continue; }
+    if (pinned && !hasCommit(where.root, pinned)) { keep(`${where.root} has no commit ${pinned}`); continue; }
+    const head = headOf(where.root);
+    const pin = check || !head || (pinned && !isAncestor(where.root, pinned, head)) ? pinned : head;
+    if (!pin) continue;
+    at[name] = pin;
+    for (const id of ids) {
+      const [anchorPath, symbol] = splitSiblingPath(SMA_ENTRIES[id]![2]!).path.split("#", 2) as [string, string | undefined];
+      const path = anchorPath.replace(/:\d+$/, "").replace(/\/$/, "");
+      const kind = kindAt(where.root, pin, path);
+      if (!kind) continue;
+      // A folder anchor (a component folder of the app): its last commit; no span to blame.
+      const text = kind === "blob" ? showAt(where.root, pin, path)! : "";
+      const span = kind === "blob" ? siblingAnchorSpan(text, symbol) : { level: "file" as const, start: 0, end: 0, text: `${path}/` };
+      let change: { commit: string; time: number } | null = null;
+      if (span.level !== "file") {
+        const lines = blameAt(where.root, pin, path) ?? [];
+        for (let line = span.start; line <= span.end; line++) { const hit = lines[line]; if (hit && (!change || hit.time > change.time)) change = hit; }
+      }
+      change ??= lastCommitAt(where.root, pin, path);
+      if (change) records[id] = [name, change.commit.slice(0, 12), change.time, span.level, hash12(span.text)];
+    }
+  }
+  return { at, records };
 }
 
 if (process.argv[1]?.endsWith("sma-provenance.ts")) {
-  const out = generate(flag("--deploys") ?? join(homedir(), ".lane-pilot", "deploys.log"));
+  const out = generate(flag("--deploys") ?? join(homedir(), ".lane-pilot", "deploys.log"), process.argv.includes("--check"));
   // The header names the commit it was generated on; staleness is about the nodes, so --check compares those.
   const body = (text: string) => text.slice(text.indexOf("\"nodes\""));
   if (process.argv.includes("--check")) {

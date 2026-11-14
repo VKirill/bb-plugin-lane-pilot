@@ -12,7 +12,8 @@ import { SMA_EVIDENCE } from "./evidence";
 import type { NodeEvidence } from "./evidence/types";
 import { SMA_LINKS, SMA_NODES, SMA_REGIONS } from "./graph";
 import { SMA_HOLLOW_FACTS } from "./hollow-facts";
-import { SMA_ATTEST, mutationState, type Attestation } from "./mutation";
+import { SMA_ATTEST, mutationState, type Attestation, type MutationRoots } from "./mutation";
+import { siblingOf, type SiblingName } from "./siblings";
 import type { SmaRow } from "./model";
 import { changePoints, traceAfter, type ChangePoint, type VersionSeen } from "./provenance";
 import { evaluateReach, undeclaredGates } from "./reach";
@@ -32,10 +33,16 @@ export type NodeState = {
   outcomeVerified: boolean | null;
   groupObserved: boolean | null;
   missing: Proof[];
+  /** The sibling repository the node's proof anchor lives in (siblings.ts), or null for this one. */
+  sibling: SiblingName | null;
 };
 
 const traceList = (evidence: NodeEvidence | undefined): TraceSource[] => (evidence?.trace === undefined ? [] : Array.isArray(evidence.trace) ? [...evidence.trace] : [evidence.trace as TraceSource]);
-const testFiles = (smaId: string) => [...new Set((SMA_CONTRACT_TESTS[smaId] ?? []).map((line) => line.split(" › ")[0]!))].sort();
+/** The card's contract test files in the repository the mutation lives in (a sibling's carry its prefix): those are what the runner ran. */
+export const testFiles = (smaId: string, mutatedFile?: string) => {
+  const repo = siblingOf(mutatedFile);
+  return [...new Set((SMA_CONTRACT_TESTS[smaId] ?? []).map((line) => line.split(" › ")[0]!).filter((file) => siblingOf(file) === repo))].sort();
+};
 
 export type StatesInput = {
   rows: readonly SmaRow[];
@@ -53,6 +60,9 @@ export type StatesInput = {
   settingReads?: Readonly<Record<string, string[]>>;
   /** On the hub: when each plugin version first ran (provenance.ts versionSeen) — dates changes newer than the file. */
   seen?: VersionSeen;
+  /** The sibling checkouts present here (siblings.ts): a `core:`/`telegram:` attestation is re-judged there; in a source
+   * checkout without that sibling the node is not mutated (absent, never a pass). */
+  siblings?: MutationRoots;
 };
 
 export function nodeStates(input: StatesInput): NodeState[] {
@@ -73,7 +83,7 @@ export function nodeStates(input: StatesInput): NodeState[] {
     const exception = row.status === "upstream" || row.status === "deviation" || row.status === "deviation-data" ? row.status
       : row.status === "void" && ev?.voidReview?.verdict === "void" ? "void-reviewed" : null;
     const checked = row.contracts.length > 0;
-    const mutation = mutationState(ev?.mutation, attest[row.id], input.root, testFiles(row.smaId));
+    const mutation = mutationState(ev?.mutation, attest[row.id], input.root, testFiles(row.smaId, ev?.mutation?.file), input.siblings ?? {});
     const reach = global.get(row.id)!;
     const sources = traceList(ev);
     const traces = reading && sources.length ? readTraces(input.traceCtx!, sources, input.since!, row.id) : null;
@@ -92,7 +102,7 @@ export function nodeStates(input: StatesInput): NodeState[] {
       blockedIn: reach.reachable ? perProject.filter((project) => !project.reach.get(row.id)!.reachable).map((project) => project.projectId) : [],
       undeclared: row.status === "have" || row.status === "partial" ? undeclaredGates(settingReads[row.id] ?? null, ev?.reach, input.settings) : [],
       observed, traceLast: traces?.last ?? null, traces: sources.map(traceLabel),
-      changePoint: point, outcomeVerified, groupObserved: input.groupObserved?.(row) ?? null, missing,
+      changePoint: point, outcomeVerified, groupObserved: input.groupObserved?.(row) ?? null, missing, sibling: siblingOf(row.proof),
     };
   });
 }
@@ -104,11 +114,14 @@ export type StateTally = {
   observed: number | null; outcomeVerified: number | null; groupObserved: number | null;
   voidUnreviewed: number; exceptions: Record<string, number>;
   closed: number;
+  /** Nodes whose proof lives in a sibling repository, and those of them closed on all four proofs while their change point is
+   * a sibling commit the hub cannot date (provenance.ts traceAfter): visible, never folded silently into `closed`'s meaning. */
+  sibling: number; closedSiblingUnknown: number;
 };
 
 export function tallyStates(states: readonly NodeState[], live: boolean): StateTally {
   const t: StateTally = { total: states.length, available: 0, checked: 0, mutated: 0, mutationStale: 0, reachable: 0, unreachable: 0, undeclared: 0, seededReachable: 0, blockedInSomeProject: 0,
-    observed: live ? 0 : null, outcomeVerified: live ? 0 : null, groupObserved: states.some((state) => state.groupObserved !== null) ? 0 : null, voidUnreviewed: 0, exceptions: {}, closed: 0 };
+    observed: live ? 0 : null, outcomeVerified: live ? 0 : null, groupObserved: states.some((state) => state.groupObserved !== null) ? 0 : null, voidUnreviewed: 0, exceptions: {}, closed: 0, sibling: 0, closedSiblingUnknown: 0 };
   for (const state of states) {
     if (state.status === "have" || state.status === "partial") t.available++;
     if (state.checked) t.checked++;
@@ -124,6 +137,8 @@ export function tallyStates(states: readonly NodeState[], live: boolean): StateT
     if (state.voidUnreviewed) t.voidUnreviewed++;
     if (state.exception) t.exceptions[state.exception] = (t.exceptions[state.exception] ?? 0) + 1;
     if (state.exception || !state.missing.length) t.closed++;
+    if (state.sibling) t.sibling++;
+    if (!state.exception && !state.missing.length && state.changePoint.state === "sibling") t.closedSiblingUnknown++;
   }
   return t;
 }
@@ -143,6 +158,9 @@ export function gapList(states: readonly NodeState[]) {
     ...(state.undeclared.length ? { undeclared: state.undeclared } : {}),
     ...(state.blockedIn.length ? { blockedIn: state.blockedIn } : {}),
     ...(state.mutated ? {} : { mutationWhy: state.mutationWhy }),
-    ...(state.changePoint.state === "shipped" ? { changedIn: state.changePoint.version } : { changePoint: state.changePoint.state }),
+    ...(state.changePoint.state === "shipped" ? { changedIn: state.changePoint.version }
+      : state.changePoint.state === "sibling" ? { changePoint: `sibling ${state.changePoint.sibling} ${state.changePoint.commit} (${new Date(state.changePoint.committedAt).toISOString().slice(0, 10)}; the hub cannot date its deploy)` }
+      : { changePoint: state.changePoint.state }),
+    ...(state.sibling ? { sibling: state.sibling } : {}),
   }));
 }

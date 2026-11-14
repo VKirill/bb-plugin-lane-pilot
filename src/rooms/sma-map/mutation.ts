@@ -36,11 +36,16 @@ import a26 from "./attest/r26.json";
 import a27 from "./attest/r27.json";
 import a28 from "./attest/r28.json";
 import { MUTATION_KINDS, type MutationSpec } from "./evidence/types";
+import { absentSibling, SIBLINGS, splitSiblingPath, type SiblingName } from "./siblings";
 
 export type MutationResult = "killed" | "survived" | "crash" | "baseline-red" | "no-tests" | "error";
 /** What the runner recorded for one node. `file`/`tests` are sha256 (12) of the file's and the test files' content
- * before the mutation; `spec` is specHash of the spec it ran. */
-export type Attestation = { spec: string; kind: string; file: string; tests: Readonly<Record<string, string>>; commit: string; result: MutationResult; at: string; detail?: string };
+ * before the mutation; `spec` is specHash of the spec it ran. A spec into a sibling repository (`core:`/`telegram:`) also
+ * records the sibling and its commit (`siblingCommit`, 12 characters, `+dirty` when it had uncommitted changes); its test
+ * keys carry the sibling's prefix. `commit` is always this checkout's. */
+export type Attestation = { spec: string; kind: string; file: string; tests: Readonly<Record<string, string>>; commit: string; result: MutationResult; at: string; detail?: string; sibling?: SiblingName; siblingCommit?: string };
+/** The sibling checkouts present on this machine (siblings.ts), by name. */
+export type MutationRoots = Partial<Record<SiblingName, string>>;
 
 export const SMA_ATTEST_BY_REGION = [a00, a01, a02, a03, a04, a05, a06, a07, a08, a09, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28] as unknown as ReadonlyArray<Readonly<Record<string, Attestation>>>;
 export const SMA_ATTEST: Readonly<Record<string, Attestation>> = Object.assign({}, ...SMA_ATTEST_BY_REGION);
@@ -55,10 +60,12 @@ const occurrences = (text: string, find: string) => { let n = 0; for (let at = t
 /** Why a spec cannot be run as a shape-preserving mutation: [] when it is fine. Static: the replacement may not be or
  * introduce null/undefined/throw/an empty return/a deleted body; `skipped-write` may drop one statement (empty or a
  * comment); with `root`, `find` must occur exactly once in the file. */
-export function lintMutation(spec: MutationSpec, root?: string): string[] {
+export function lintMutation(spec: MutationSpec, root?: string, siblings?: MutationRoots): string[] {
   const problems: string[] = [];
+  const { sibling, path } = splitSiblingPath(spec.file ?? "");
   if (!MUTATION_KINDS.includes(spec.kind)) problems.push(`kind «${spec.kind}» is not one of ${MUTATION_KINDS.join(", ")}`);
-  if (!spec.file || /^\/|\.\.(?:\/|$)/.test(spec.file) || /^tests\/|\.test\.tsx?$/.test(spec.file)) problems.push(`file «${spec.file}» must be a source file of this repository, not a test`);
+  const isTest = /^tests\/|\.test\.tsx?$/.test(path) || (!!sibling && /(?:^|\/)(?:tests?|__tests__)\//.test(path));
+  if (!path || /^\/|\.\.(?:\/|$)/.test(path) || isTest) problems.push(`file «${spec.file}» must be a source file of ${sibling ? `the sibling ${SIBLINGS[sibling].repo}` : "this repository"}, not a test`);
   if (!spec.find.trim()) problems.push("find is empty");
   if (spec.find === spec.replace) problems.push("replace equals find");
   const added = (word: RegExp) => word.test(spec.replace) && !word.test(spec.find);
@@ -74,9 +81,11 @@ export function lintMutation(spec: MutationSpec, root?: string): string[] {
   }
   if (/\{[\s\S]{40,}\}/.test(spec.find) && /^\s*\{\s*\}\s*$/.test(blank)) problems.push("replace deletes the whole body");
   if (spec.find.split("\n").length >= 4 && blank.length < spec.find.trim().length * 0.25) problems.push("replace drops most of the code it finds — mutate one branch, field, write or target");
-  if (root) {
+  // A sibling's spec is judged where that sibling is (siblings.ts); elsewhere only the static checks above run.
+  const base = sibling ? siblings?.[sibling] : root;
+  if (base) {
     let text: string | null = null;
-    try { text = readFileSync(join(root, spec.file), "utf8"); } catch { problems.push(`no file ${spec.file}`); }
+    try { text = readFileSync(join(base, path), "utf8"); } catch { problems.push(`no file ${spec.file}`); }
     if (text !== null) { const n = occurrences(text, spec.find); if (n !== 1) problems.push(`find occurs ${n} times in ${spec.file} (must be exactly once)`); }
   }
   return problems;
@@ -87,16 +96,21 @@ export type MutationState = { mutated: boolean; stale: boolean | null; result: M
 /** Whether a node counts as mutated: a kill attestation of its current spec whose `find` still applies (judged with
  * `root`, a source checkout; on the hub the attestation's spec hash is all there is). `stale`: the file or a test file
  * changed since the attestation (null when not judged). */
-export function mutationState(spec: MutationSpec | undefined, attestation: Attestation | undefined, root: string, testFiles: readonly string[] = []): MutationState {
+export function mutationState(spec: MutationSpec | undefined, attestation: Attestation | undefined, root: string, testFiles: readonly string[] = [], siblings: MutationRoots = {}): MutationState {
   if (!spec) return { mutated: false, stale: null, result: null, why: "no mutation spec" };
   if (!attestation) return { mutated: false, stale: null, result: null, why: "no attestation: run npm run sma:mutate -- --node <id>" };
   if (attestation.spec !== specHash(spec)) return { mutated: false, stale: true, result: attestation.result, why: "the spec changed since the attestation" };
   if (attestation.result !== "killed") return { mutated: false, stale: null, result: attestation.result, why: `the mutation was not killed: ${attestation.result}${attestation.detail ? ` — ${attestation.detail}` : ""}` };
   if (!root) return { mutated: true, stale: null, result: "killed", why: "killed (not re-judged: no sources here)" };
+  // In a source checkout a sibling's attestation is re-judged against that sibling; where it is absent the node is not closed.
+  const { sibling, path } = splitSiblingPath(spec.file);
+  const base = sibling ? siblings[sibling] : root;
+  if (!base) return { mutated: false, stale: null, result: "killed", why: `${absentSibling(sibling!)}: the kill at ${attestation.siblingCommit ?? "?"} is not re-judged here (point ${SIBLINGS[sibling!].env} at a checkout of it)` };
+  const read = (where: string) => { const at = splitSiblingPath(where); const from = at.sibling ? siblings[at.sibling] : root; if (!from) throw new Error(`${where}: absent`); return readFileSync(join(from, at.path), "utf8"); };
   let text: string;
-  try { text = readFileSync(join(root, spec.file), "utf8"); } catch { return { mutated: false, stale: true, result: "killed", why: `no file ${spec.file}` }; }
+  try { text = readFileSync(join(base, path), "utf8"); } catch { return { mutated: false, stale: true, result: "killed", why: `no file ${spec.file}` }; }
   if (occurrences(text, spec.find) !== 1) return { mutated: false, stale: true, result: "killed", why: "find no longer applies exactly once" };
   const changedFile = contentHash(text) !== attestation.file;
-  const changedTests = testFiles.filter((file) => { try { return contentHash(readFileSync(join(root, file), "utf8")) !== attestation.tests[file]; } catch { return true; } });
+  const changedTests = testFiles.filter((file) => { try { return contentHash(read(file)) !== attestation.tests[file]; } catch { return true; } });
   return { mutated: true, stale: changedFile || changedTests.length > 0, result: "killed", why: changedFile || changedTests.length ? `killed, stale: ${[changedFile ? spec.file : "", ...changedTests].filter(Boolean).join(", ")} changed since` : "killed" };
 }

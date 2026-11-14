@@ -93,6 +93,7 @@
     "check:deps": "npx --yes dependency-cruiser@16 --config .dependency-cruiser.cjs --output-type err server.ts host.ts app.tsx src packages",
     "test:layout": "node tests/layout/run.mjs",
     "sma:mutate": "node scripts/sma-mutate.mjs",
+    "sma:sibling": "npx tsx scripts/sma-sibling.ts",
     "sma:facts": "npx tsx scripts/sma-hollow.ts && npx tsx scripts/sma-provenance.ts && node scripts/sma-contracts.mjs",
     "sma:facts:check": "npx tsx scripts/sma-hollow.ts --check && npx tsx scripts/sma-provenance.ts --check && node scripts/sma-contracts.mjs --check",
     "check": "npm test && npm run typecheck && npm run build && npm run test:layout",

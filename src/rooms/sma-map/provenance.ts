@@ -8,11 +8,15 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import PROVENANCE from "./provenance.json";
 import { CONTROL_LINKS } from "./reach";
-import { anchorName, resolveSpan, workflowNodeSpan } from "./symbols";
+import type { SiblingName } from "./siblings";
+import { anchorName, matchClose, resolveSpan, symbolSpan, workflowNodeSpan } from "./symbols";
 
 /** [commit (12), commit time ms, first version that shipped it or null, its deploy time ms or null, symbol|file, anchor hash (12)]. */
 export type OwnChange = readonly [commit: string, committedAt: number, version: string | null, deployedAt: number | null, level: "symbol" | "file", anchorHash: string];
-export type ProvenanceFile = { generatedFrom: string; version: string; deploys: number; lastDeployed?: string; nodes: Readonly<Record<string, OwnChange>> };
+/** A node whose proof anchor lives in a sibling repository (siblings.ts): [sibling, commit (12), commit time ms, symbol|text|file, anchor hash (12)],
+ * read at the pinned commit `siblingsAt[sibling]`. No deploy is known for it: see `traceAfter`. */
+export type SiblingChange = readonly [sibling: SiblingName, commit: string, committedAt: number, level: "symbol" | "text" | "file", anchorHash: string];
+export type ProvenanceFile = { generatedFrom: string; version: string; deploys: number; lastDeployed?: string; nodes: Readonly<Record<string, OwnChange>>; siblingsAt?: Readonly<Partial<Record<SiblingName, string>>>; siblings?: Readonly<Record<string, SiblingChange>> };
 export const SMA_PROVENANCE = PROVENANCE as unknown as ProvenanceFile;
 
 /** The first time the hub ran each plugin version, from the earliest of every record that stamps the running version with a time,
@@ -47,10 +51,13 @@ export function firstSeenAfter(seen: VersionSeen, after: string): { version: str
   return best;
 }
 
+/** `sibling`: the anchor lives in a sibling repository; its last change is known (commit and time), the hub version that
+ * shipped it is not (the hub records no core build or plugin install times: docs/sma-evidence.md «Proofs in a sibling repository»). */
 export type ChangePoint =
   | { state: "shipped"; version: string; deployedAt: number; commit: string; from: string }
   | { state: "unshipped"; commit: string; from: string }
   | { state: "stale"; from: string }
+  | { state: "sibling"; sibling: SiblingName; commit: string; committedAt: number; from: string }
   | { state: "unknown" };
 
 /** The text a node's change point is hashed over: the anchor's span (symbol level) or the whole file. */
@@ -86,6 +93,8 @@ export function changePoints(ids: readonly string[], links: readonly Link[], pro
   for (const id of ids) {
     const rec = file.nodes[id];
     const proof = proofOf(id);
+    const sib = file.siblings?.[id];
+    if (!rec && sib) { own.set(id, { state: "sibling", sibling: sib[0], commit: sib[1], committedAt: sib[2], from: id }); continue; }
     if (!rec) { own.set(id, { state: "unknown" }); continue; }
     if (root && localProof(proof)) {
       const now = anchorText(root, proof);
@@ -97,7 +106,7 @@ export function changePoints(ids: readonly string[], links: readonly Link[], pro
   }
   const preds = new Map<string, string[]>();
   for (const [from, to, kind] of links) if (CONTROL_LINKS.has(kind)) preds.set(to, [...(preds.get(to) ?? []), from]);
-  const rank = (point: ChangePoint) => (point.state === "shipped" ? point.deployedAt : point.state === "unknown" ? -1 : Infinity);
+  const rank = (point: ChangePoint) => (point.state === "shipped" ? point.deployedAt : point.state === "sibling" ? point.committedAt : point.state === "unknown" ? -1 : Infinity);
   const out = new Map<string, ChangePoint>();
   for (const id of ids) {
     let best = own.get(id)!;
@@ -111,9 +120,31 @@ export function changePoints(ids: readonly string[], links: readonly Link[], pro
 }
 
 /** Whether a trace at `last` (ms) is newer than the change point: on a version that has the node's last change. An
- * unknown change point (no local proof, no record) does not hold a trace back; unshipped and stale do. */
+ * unknown change point (no local proof, no record) does not hold a trace back; unshipped and stale do. A sibling change
+ * point holds back every trace older than the change's commit (no build can have had it then); a newer one counts, and
+ * `--states` lists the node as closed with an unknown sibling change point (the hub cannot say since when it runs it). */
 export function traceAfter(point: ChangePoint, last: number | null): boolean {
   if (last === null) return false;
   if (point.state === "unknown") return true;
+  if (point.state === "sibling") return last >= point.committedAt;
   return point.state === "shipped" && last >= point.deployedAt;
+}
+
+/** The span a sibling proof's anchor names in `text` (the file at the pinned commit): a declared unit, else the line the
+ * anchor text is on (through the block it opens, when it opens one), else the whole file. Lines are 1-based. */
+export function siblingAnchorSpan(text: string, symbol: string | undefined): { level: "symbol" | "text" | "file"; start: number; end: number; text: string } {
+  const lines = text.split("\n");
+  const whole = { level: "file" as const, start: 1, end: lines.length, text };
+  if (!symbol) return whole;
+  const name = anchorName(symbol);
+  const span = name ? symbolSpan(text, name) : null;
+  if (span) return { level: "symbol", start: span.start, end: span.end, text: span.text };
+  const at = text.indexOf(symbol);
+  if (at < 0) return whole;
+  const lineStart = text.lastIndexOf("\n", at) + 1;
+  const lineEnd = text.indexOf("\n", at) < 0 ? text.length : text.indexOf("\n", at);
+  const open = text.slice(at, lineEnd).trimEnd().endsWith("{") ? text.lastIndexOf("{", lineEnd) : -1;
+  const end = open >= at ? matchClose(text, open) + 1 : lineEnd;
+  const lineOf = (index: number) => text.slice(0, index).split("\n").length;
+  return { level: "text", start: lineOf(lineStart), end: lineOf(Math.max(lineStart, end - 1)), text: text.slice(lineStart, end) };
 }
