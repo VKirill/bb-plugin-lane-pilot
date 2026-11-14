@@ -116,6 +116,21 @@ describe("plan_split contracts", () => {
     expect(out[0]).toContain("a.run_id='run_1'");
     expect(() => py(`m.plan_split_sql(m.PLAN_SPLIT_SQL, run="x'; drop table y; --")`)).toThrow();
   });
+
+  it("the evidence query excludes refused block transitions", () => {
+    expect(py(`
+import sqlite3
+db = sqlite3.connect(":memory:"); db.row_factory = sqlite3.Row
+db.executescript("""
+CREATE TABLE lane_pilot_attempt (id, run_id, task_id, state, reason);
+CREATE TABLE lane_pilot_attempt_transition (attempt_id, to_state, at, refused);
+CREATE TABLE lane_pilot_attempt_change (attempt_id, base_sha, merge_commit, changed_json);
+INSERT INTO lane_pilot_attempt VALUES ('valid','run_1','valid','running',NULL), ('refused','run_1','refused','running',NULL);
+INSERT INTO lane_pilot_attempt_transition VALUES ('valid','blocked',3,1), ('valid','blocked',4,0), ('refused','blocked',2,1);
+""")
+print(json.dumps({r["task_id"]: r["blocked"] for r in db.execute(m.PLAN_SPLIT_SQL, {"run": "run_1"})}))
+`)).toEqual({ valid: 4, refused: null });
+  });
 });
 
 describe("plan_split_problems", () => {
@@ -165,6 +180,13 @@ describe("plan_split_problems", () => {
 
   it("c accepted the first time fails: the red check was not red", () => {
     expect(judge(withRow(green(), "c", { state: "accepted", accepted: 4 })).some((p) => p.startsWith("c_first_not_blocked: "))).toBe(true);
+  });
+
+  it("a PM follow-up does not erase c's recorded block before the corrected task started", () => {
+    expect(judge(withRow(green(), "c", { state: "running", blocked: 4 }))).toEqual([]);
+    for (const patch of [{ state: "running" }, { state: "running", blocked: 7 }, { state: "accepted", accepted: 5, blocked: 4 }]) {
+      expect(judge(withRow(green(), "c", patch)).some((p) => p.startsWith("c_first_not_blocked: "))).toBe(true);
+    }
   });
 
   it("two tasks changing the same path, and a merge_conflict reason, fail", () => {

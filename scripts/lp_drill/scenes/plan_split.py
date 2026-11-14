@@ -17,6 +17,7 @@ from lp_drill.tasks import task
 PLAN_SPLIT_SQL = """SELECT a.task_id, a.id AS attempt_id, a.state, a.reason,
   (SELECT min(at) FROM lane_pilot_attempt_transition t WHERE t.attempt_id=a.id AND t.to_state='spawn_requested') AS started,
   (SELECT min(at) FROM lane_pilot_attempt_transition t WHERE t.attempt_id=a.id AND t.to_state='accepted') AS accepted,
+  (SELECT min(at) FROM lane_pilot_attempt_transition t WHERE t.attempt_id=a.id AND t.to_state='blocked' AND t.refused=0) AS blocked,
   c.base_sha, c.merge_commit, c.changed_json
 FROM lane_pilot_attempt a LEFT JOIN lane_pilot_attempt_change c ON c.attempt_id=a.id
 WHERE a.run_id=:run ORDER BY started;"""
@@ -143,7 +144,10 @@ def plan_split_problems(rows: list[dict], ids: dict[str, str], is_ancestor: Call
         need("started", name, started(name))
     if any(r.get("state") == "accepted" for r in by_task.get(ids["c"], [])):
         problems.append(f"c_first_not_blocked: {ids['c']} was accepted although its check is red on purpose")
-    elif by_task.get(ids["c"]) and not any(r.get("state") == "blocked" for r in by_task[ids["c"]]):
+    # A PM follow-up can resume the same attempt after c.2 was dispatched; the transition records the block we observed.
+    elif by_task.get(ids["c"]) and not any(r.get("state") == "blocked" or (
+        _ts(r.get("blocked")) is not None and started("c2") is not None and _ts(r["blocked"]) < started("c2")
+    ) for r in by_task[ids["c"]]):
         problems.append(f"c_first_not_blocked: {ids['c']} did not end blocked: {[r.get('state') for r in by_task[ids['c']]]}")
 
     a_acc, b_acc, c2_acc, d_acc = accepted("a"), accepted("b"), accepted("c2"), accepted("d")
