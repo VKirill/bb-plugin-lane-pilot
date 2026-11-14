@@ -480,7 +480,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n466: ["have", "сказано вслух: конвейер выключен", "src/rooms/runs/conveyor.ts#conveyorStartLine"],
   n467: ["have", "зелёный только когда пул работает", "src/rooms/stability/server/canary.ts#createCanary"],
   n468: ["have", "не зелёный: писатели заблокированы", "src/rooms/stability/server/canary.ts#poolReadiness"],
-  n469: ["have", "окно и вход принадлежат BB: консоль BB подписывает одноразовый билет, браузер меняет его на cookie, своей ссылки у нас нет", "core:apps/server/src/services/plugins/vk-owner-auth.ts#mintVkOwnerSessionCookie"],
+  n469: ["have", "окно и вход принадлежат BB: консоль BB подписывает одноразовый билет, браузер меняет его на cookie, своей ссылки у нас нет", "core:apps/server/src/services/plugins/vk-owner-auth.ts#registerVkOwnerRoutes"],
   n470: ["have", "сбой старта плагина ядро BB переводит в runtime status error с текстом причины (виден в BB); сетевой БД и строки подключения нет, SQLite открывает BB; готовность базы проверяет сторож (db_ready)", "core:apps/server/src/services/plugins/plugin-runtime.ts#loadOne"],
   n471: ["have", "упорядоченная остановка: слив выката", "src/rooms/outage/server/outage.ts#mountOutage"],
   n472: ["have", "стоп не ждёт прохода", "src/rooms/platform/server/schedules.ts#abortable"],
