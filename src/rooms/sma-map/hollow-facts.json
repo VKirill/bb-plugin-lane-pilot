@@ -1,4 +1,4 @@
-{"generatedFrom":"d2cac899a9db",
+{"generatedFrom":"4d1fcf8a33a9",
 "graphs":[
 {"id":"3d-asset","file":"workflows/3d-asset.json","status":"published","nodes":[["concept","agent"],["model","agent"],["verify","agent"],["export","agent"],["offer_roblox","action"],["done_roblox","action"],["done","action"],["partial","action"],["blocked","action"],["goal_check","action"]],"edges":[["concept","model","concept.ok"],["concept","blocked",null],["model","verify","model.ok"],["model","blocked",null],["verify","model","verify.status == 'rework' && visits('verify') < 2"],["verify","export","verify.status == 'pass'"],["verify","partial",null],["export","goal_check","export.ok"],["export","blocked",null],["goal_check","offer_roblox","goal_check.ok != false && $inputs.target_engine == 'roblox'"],["offer_roblox","done_roblox",null],["goal_check","done","goal_check.ok != false"],["goal_check","partial",null]]},
 {"id":"about-site","file":"workflows/about-site.json","status":"tested","nodes":[["facts","action"],["write","agent"],["check","action"],["deliver","action"],["done","action"],["nothing_public","action"],["blocked","action"],["goal_check","action"]],"edges":[["start","facts",null],["facts","nothing_public","facts.empty"],["facts","write",null],["write","check",null],["check","write","!check.ok && visits('write') < 2"],["check","deliver","check.ok"],["check","blocked",null],["deliver","goal_check",null],["goal_check","done","goal_check.ok != false"],["goal_check","blocked",null]]},
@@ -275,8 +275,7 @@
 "n1616":["task.outcome_file"],
 "n1654":["hook.prompt_recall","hook.subagent_pack"],
 "n1695":["ship.full_gate"],
-"n1710":["curriculum.weekly"],
-"n1715":["bench.noise_auto"]
+"n1710":["curriculum.weekly"]
 },
 "anchors":{
 "n0":"src/rooms/phase/server/driver-methods-admission.ts#open",
@@ -1569,7 +1568,7 @@
 "n1712":"src/rooms/policy/mine.ts#mineDecisions",
 "n1713":"src/rooms/policy/exam.ts#runExam",
 "n1714":"src/rooms/bench/service.ts#arena",
-"n1715":"src/rooms/bench/service.ts#run",
+"n1715":"src/rooms/bench/cli.ts#runBenchCli",
 "n1716":"src/rooms/memory-eval/server/command.ts#runMemoryEvalCommand",
 "n1717":"src/rooms/memory-eval/server/command.ts#runMemoryEvalCommand",
 "n1718":"src/rooms/tools/server/self-improve.ts#excavate",
@@ -1581,7 +1580,7 @@
 "n1724":"src/rooms/policy/exam.ts#runLiveExam",
 "n1725":"src/rooms/bench/compare.ts#arenaTable",
 "n1726":"src/rooms/bench/baseline.ts#baselineMetrics",
-"n1727":"src/rooms/memory-eval/server/shelf.ts#ShelfConfig",
+"n1727":"src/rooms/memory-eval/server/command.ts#reproduceCommand",
 "n1728":"src/rooms/memory-eval/server/memory-eval.ts#runMemoryEval",
 "n1729":"src/rooms/tools/server/self-improve.ts#costPerVerified",
 "n1730":"src/rooms/tools/server/self-improve.ts#EXCAVATE_LOG_ARGS",
