@@ -121,7 +121,7 @@ export default {
   n1302: { reach: seedEntry("the owner runs the command") },
   n1303: { reach: seedEntry("the owner runs the command") },
   n1304: { reach: seedEntry("the owner runs the command") },
-  n1305: { mutation: flip("core:apps/host-daemon/src/injected-skills.ts", "const sortedSources = [...args.injectedSkillSources].sort((left, right) =>\n    compareStringsByCodePoint(left.name, right.name),", "const sortedSources = [...args.injectedSkillSources].sort((left, right) =>\n    compareStringsByCodePoint(right.name, left.name),"), reach: seedEntry("the owner runs the command") },
+  n1305: { mutation: flip("core:apps/host-daemon/src/injected-skills.ts", "return compareStringsByCodePoint(left.source.name, right.source.name);", "return compareStringsByCodePoint(right.source.name, left.source.name);"), reach: seedEntry("the owner runs the command") },
   n1306: { reach: seedEntry("the owner runs the command"), trace: wfStep("profile-user", "consent") },
   n1307: { reach: seedEntry("the owner runs the command") },
   n1308: { reach: seedEntry("the owner runs the command"), trace: wfRun("grill-plan") },
