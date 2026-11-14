@@ -15,12 +15,14 @@ import subprocess
 
 from lp_drill.env import ROOT
 from lp_drill.prove import Proofs
+from lp_drill.scenes.sma_r16_b import NODES_B, prove_b
 
 NODES = [
     # batch a: the design-phase and execute-phase cards
     "n1144", "n1145", "n1146", "n1147", "n1148", "n1149", "n1150", "n1151", "n1152", "n1153", "n1154", "n1155", "n1156", "n1157", "n1158", "n1159", "n1160",
     "n1161", "n1162", "n1163", "n1164", "n1165", "n1166", "n1167", "n1168", "n1169", "n1170", "n1171", "n1172", "n1173",
 ]
+NODES = NODES + NODES_B
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r16_probe.ts"
 AWAITS = "the drawing awaits the owner's word for this drawing"
 NO_CONTRACT = "the drawing has no contract: add UI-SPEC.md with the checkable points (screens, states, breakpoints) to the drawing's paths"
@@ -107,4 +109,5 @@ def scenario_sma_r16(tmp) -> dict:
     proofs.prove("n1172", (d.get("on") or "").startswith("Motion (the animator's law): motion rows: animate transform and opacity only") and d.get("onPlain") is None and d.get("off") is None, f"inline law {str(d.get('on'))[:90]}; plain {d.get('onPlain')}; off {d.get('off')}")
     d = seen("k_we_crossai")
     proofs.prove("n1173", d.get("named", {}).get("providerId") == "codex" and d["named"].get("model") == "gpt-x" and d.get("request", {}).get("selection") == {"providerId": "codex", "model": "gpt-x"} and d.get("stops") == ["thr_w"], f"reassign {d}")
+    prove_b(proofs, tmp)
     return proofs.verdict("sma_r16", checked=len(NODES))

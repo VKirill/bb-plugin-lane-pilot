@@ -11,7 +11,8 @@ import type { Services } from "../server";
 
 describe("bb lane-pilot setting: the switches with no row in the settings window", () => {
   it("every listed key is read by the code and has no row in the window's catalog", () => {
-    const window = readFileSync("packages/settings-catalog/src/keys.ts", "utf8") + readFileSync("src/rooms/ui-shell/ui/setting-copy.ts", "utf8");
+    // keys.ts also names keys that have no row (worker.strict_user): its `export const X = "key"` lines are not rows.
+    const window = readFileSync("packages/settings-catalog/src/keys.ts", "utf8").split("\n").filter((line) => !line.startsWith("export const ")).join("\n") + readFileSync("src/rooms/ui-shell/ui/setting-copy.ts", "utf8");
     for (const key of Object.keys(UNLISTED_SWITCHES)) {
       const readers = execFileSync("git", ["grep", "-lF", `"${key}"`, "--", "src", "packages", ":!src/rooms/settings/switches.ts", ":!src/rooms/sma-map"], { encoding: "utf8" }).trim();
       expect(readers, `${key} is read nowhere`).not.toBe("");

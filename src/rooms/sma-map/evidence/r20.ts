@@ -3,13 +3,14 @@
 // wfRun/wfStep trace were derived mechanically by scripts/sma-seed-evidence.ts (2026-11-14), not authored.
 // Where a node is a window (a lease and its claims live in the plugin's kv, git copies in temporary folders) it writes no row to the hub database:
 // its trace is its own prove() line in scripts/lp_drill/scenes/sma_r20.py, two actors on one scratch state. Nodes that do write a row trace through it.
-import { distort, drill, flip, rows, skipWrite, wrongTarget, type RegionEvidence, seedEntry, voidIsHave, voidStays } from "./types";
+import { distort, drill, entry, flip, rows, skipWrite, wrongTarget, type RegionEvidence, seedEntry, voidIsHave, voidStays } from "./types";
 
 const WINDOW = "src/rooms/verification/server/window.ts";
 const GUESTS = "src/rooms/verification/server/checkout-guests.ts";
 const MERGE = "src/rooms/verification/git-integrate/merge.ts";
 const LIFE = "src/rooms/verification/git-integrate/worktree-lifecycle.ts";
 const OUT = "src/rooms/relay/server/outbound.ts";
+const ATOMIC = "src/rooms/platform/atomic-text.ts";
 const SCENE = drill("sma_r20");
 
 export default {
@@ -45,6 +46,15 @@ export default {
   n1546: { mutation: flip("src/rooms/storage/stages-store.ts", 'WHERE run_id=? AND task_id=? ORDER BY id")\n    .all(runId, taskId) as Array<{ stage_id: string; state: string; occurred_at: number }>;', 'WHERE run_id=? AND task_id=? ORDER BY id DESC")\n    .all(runId, taskId) as Array<{ stage_id: string; state: string; occurred_at: number }>;'), trace: rows("lane_pilot_stage_event", "occurred_at", "state = 'passed'") },
   n1547: { mutation: distort("src/rooms/session-hooks/logic.ts", "asks: input.asks.slice(-5).map", "asks: input.asks.slice(0, 5).map"), trace: SCENE },
   n1548: { mutation: distort(OUT, "String(value).slice(0, 200)", "String(value).slice(0, 201)"), trace: SCENE, voidReview: voidIsHave("полезная нагрузка наружу собирается только по явному списку ключей: taskEventBody берёт девять полей EVENT_FIELDS, лишнее отбрасывает и обрезает значения") },
+  n1549: { mutation: distort(OUT, "projectId, at: input.at ?? Date.now() });", "projectId, at: Date.now() });"), trace: SCENE },
   n1550: { voidReview: voidIsHave("строка запроса не становится учётными данными, кроме одного обмена: одноразовый код сопряжения BB меняется на сессионный cookie владельца, окна Lane Pilot открываются внутри неё") },
-  n1558: { voidReview: voidIsHave("след окна (основа, изменённые файлы, исход) пишется одной записью при отпуске заявки — это и есть попытки окна человека") },
+  n1551: { mutation: distort("src/rooms/cockpit/server.ts", "    partial: failed,", "    partial: [] as string[],"), trace: SCENE },
+  n1552: { mutation: flip("scripts/test-changed.mjs", "named.test(texts.get(test)));", "!named.test(texts.get(test)));"), trace: SCENE },
+  n1553: { mutation: distort("src/rooms/critique/code-critique.ts", "sha256Hex(text).slice(0, 6)", "sha256Hex(text).slice(0, 5)"), trace: SCENE },
+  n1554: { mutation: flip(ATOMIC, "if (attempt >= tries || !code", "if (attempt > tries || !code"), reach: entry("a page, a text or a machine job is written to disk through atomicText"), trace: SCENE },
+  n1555: { mutation: distort(GUESTS, "previous?.providerId ? { providerId: previous.providerId } : {}", "previous?.providerId ? { providerId: opts.providerId } : {}"), trace: SCENE },
+  n1556: { mutation: distort(WINDOW, '(input.description ?? "").slice(0, 300)', '(input.description ?? "").slice(0, 301)'), trace: SCENE },
+  n1557: { mutation: flip("src/rooms/storage/stages-store.ts", 'FROM lane_pilot_gate_event WHERE run_id=? AND task_id=? ORDER BY id")', 'FROM lane_pilot_gate_event WHERE run_id=? AND task_id=? ORDER BY id DESC")'), trace: rows("lane_pilot_gate_event", "occurred_at", "status IN ('passed', 'rejected')") },
+  n1558: { mutation: distort(WINDOW, '{ name: "base", ok: true, detail: found.claim.base ?? "unknown" }', '{ name: "base", ok: true, detail: found.claim.base ?? "none" }'), trace: SCENE, voidReview: voidIsHave("след окна (основа, изменённые файлы, исход) пишется одной записью при отпуске заявки — это и есть попытки окна человека") },
+  n1559: { mutation: distort("src/rooms/session-hooks/logic.ts", "files: input.files.slice(0, 30),", "files: input.files.slice(0, 31),"), trace: SCENE },
 } satisfies RegionEvidence;

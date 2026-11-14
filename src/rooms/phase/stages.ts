@@ -80,7 +80,7 @@ export function coverageGaps(record: PhaseRecord): string[] {
 /** Threat model gate: a security risk other than «none» needs a SECURITY.md among the signed context documents. */
 export function threatGap(record: PhaseRecord): string | null {
   const risk = record.context?.risks?.security?.trim().toLowerCase() ?? "";
-  if (!risk || /^(none|нет|no)\b/.test(risk)) return null;
+  if (!risk || /^(none|нет|no)(?![\p{L}\p{N}_])/u.test(risk)) return null;
   return (record.context?.docs ?? []).some((doc) => /SECURITY\.md$/i.test(doc.path)) ? null
     : `the security risk «${record.context!.risks!.security}» needs a threat model: write the phase's SECURITY.md (lane-plan template fill SECURITY --phase …) and sign it with the context`;
 }
@@ -380,6 +380,21 @@ export function conclusionText(phase: Pick<Phase, "id" | "title" | "goal" | "rec
     `- acceptance: ${(phase.record.acceptance?.lines ?? []).map((line) => `${line.ok ? "✓" : "✗"} ${line.id}`).join(", ") || "—"}`, "",
     "## Returns", "", ...(returns.length ? returns.map((text) => `- ${text}`) : ["- none"]), "",
     "## Lessons", "", phase.record.lessons?.analysis ?? phase.record.lessons?.why ?? "—", ""].join("\n");
+}
+
+/** REVIEW.md of a phase (SMA k_pl_review, k_wr_commit): one `## Wave N — passed|failed` section per wave with the status, the counts, the reviewer and
+ *  one line per finding; a later pass over the same wave replaces that wave's section and keeps the others. `before` is the file as it is (null: none yet). */
+export function reviewDoc(phaseId: string, before: string | null, wave: number, passed: boolean, output: Record<string, unknown>, by: string, text: (value: unknown, max: number) => string): string {
+  const findings = Array.isArray(output.findings) ? (output.findings as unknown[]).map((finding) => {
+    const row = finding as { file?: unknown; line?: unknown; path?: unknown; severity?: unknown; title?: unknown; text?: unknown; message?: unknown };
+    const where = row?.file ?? row?.path ? `${row.file ?? row.path}${row.line ? `:${row.line}` : ""} ` : "";
+    return `- ${where}${text(row?.title ?? row?.text ?? row?.message ?? finding, 300)}`;
+  }) : [];
+  const section = [`## Wave ${wave} — ${passed ? "passed" : "failed"}`, "",
+    `status ${text(output.status, 40) || "?"}; critical ${text(output.critical_count, 6) || "0"}, high ${text(output.high_count, 6) || "0"}; reviewer ${by}`, "",
+    ...(findings.length ? findings : ["- no findings"]), ""].join("\n");
+  const stripped = (before ?? `# Review — phase ${phaseId}\n`).replace(new RegExp(`\\n*## Wave ${wave} — [\\s\\S]*?(?=\\n## Wave \\d+ — |$)`), "");
+  return `${stripped.trimEnd()}\n\n${section}`;
 }
 
 const QUICK_TABLE = "## Quick Tasks Completed";

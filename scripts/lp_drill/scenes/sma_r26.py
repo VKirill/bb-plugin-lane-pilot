@@ -52,9 +52,9 @@ def scenario_sma_r26(tmp) -> dict:
     # n1712 Mining: the Russian «да, выкатывай» is drafted, the weather question is not, mining twice never doubles, only an accept joins the exam.
     ok = mine["first"] == {"mined": 1, "skipped": 1, "total": 1} and mine["second"]["mined"] == 0 and mine["drafts"] == [["да, выкатывай", "approve", "owner_only"]] and (mine["before"], mine["after"]) == (0, 1)
     proofs.prove("n1712", ok, f"{mine}")
-    # n1714 / n1725 Arena: only the arms without a stored run are run; the table ranks by cost per verified result, cheapest verified first.
+    # n1714 / n1725 Arena: only the arms without a stored run are run; the table ranks by cost per verified result, cheapest verified first; an arm with nothing verified is last with no cost.
     arena = s["arena"]
-    ok = arena["ran"] == ["dear", "cheap", "failing"] and arena["ranks"] == [["stored", 2, 4], ["dear", 3, 9], ["cheap", 1, 0.5]]
+    ok = arena["ran"] == ["dear", "cheap", "failing"] and arena["ranks"] == [["stored", 2, 4], ["dear", 3, 9], ["cheap", 1, 0.5], ["failing", 4, None]]
     proofs.prove("n1714", arena["ran"] == ["dear", "cheap", "failing"], f"ran {arena['ran']}")
     proofs.prove("n1725", ok, f"ranks {arena['ranks']}")
     # n1715 / n1726 The model-free bench: false-done, phantom writes and git loss recoverability of the accepted attempts.

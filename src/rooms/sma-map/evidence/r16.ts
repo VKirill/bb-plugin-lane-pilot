@@ -10,6 +10,11 @@ const WAVES = "src/rooms/phase/logic/waves.ts";
 const STAGES = "src/rooms/phase/stages.ts";
 const NEXT = "src/rooms/phase/logic/next-action.ts";
 const DRAW = "workflows/lp.draw.json";
+// Batch b (n1174 … n1204, the execute-phase tail, the todo/note/seed commands, verify-work, lessons, graduation): tests/sma/four-proofs-r16-b.test.ts, observations in
+// tests/sma/r16-world-b.ts, scene scripts/lp_drill/scenes/sma_r16_b.py (called from sma_r16.py).
+const DRIVER_STEPS = "src/rooms/phase/server/driver-steps.ts";
+const JOURNAL = "src/rooms/phase/server/driver-journal.ts";
+const BACKLOG = "src/rooms/backlog/logic.ts";
 
 export default {
   n1144: { mutation: flip(DESIGN, 'if (said?.decision !== "yes" || (signed !== undefined && signed !== drawing?.sha256))', 'if (said?.decision !== "yes" || (signed !== undefined && signed === drawing?.sha256))'), reach: seedEntry("the owner runs the command"), trace: drill("sma_r16") },
@@ -42,20 +47,37 @@ export default {
   n1171: { mutation: distort(STAGES, "(animat\\p{L}*|motion|transition|", "(animat\\p{L}*|motion|"), trace: drill("sma_r16") },
   n1172: { mutation: flip(STAGES, "notes && motionRows([item]).length ? ", "!notes && motionRows([item]).length ? "), trace: drill("sma_r16") },
   n1173: { mutation: wrongTarget("src/rooms/writer/server/reassign.ts", "providerId: text(input.providerId) ?? current.providerId,", "providerId: current.providerId ?? text(input.providerId),"), trace: drill("sma_r16") },
-  n1184: { reach: seedEntry("the owner runs the command"), trace: wfStep("todo-add", "write") },
-  n1185: { reach: seedEntry("the owner runs the command"), trace: wfStep("note-add", "write") },
-  n1186: { reach: seedEntry("the owner runs the command"), voidReview: voidIsHave("идея на потом — todo в .agents/todos со статусом, приоритетом и depends_on (условие возврата); сканер бэклога предлагает готовые") },
-  n1187: { reach: seedEntry("the owner runs the command") },
-  n1188: { reach: seedEntry("the owner runs the command") },
-  n1189: { reach: seedEntry("the owner runs the command"), voidReview: voidIsHave("список идей с фильтром по статусу — глагол backlog (доска issuable/needsEstimate/decompose/blocked) и .agents/todos/INDEX.md, только чтение") },
-  n1190: { reach: seedEntry("the owner runs the command"), voidReview: voidIsHave("постоянный контекст между сессиями: треды BB сохраняются и возобновляются, долгие факты — память проекта на хабе, подмешиваемая в каждую сессию") },
+  n1174: { mutation: distort(DRIVER_STEPS, "phase.record.issueCap ?? 8", "8 ?? phase.record.issueCap"), trace: drill("sma_r16") },
+  n1175: { mutation: distort(DRIVER_STEPS, "phase.record.subagents === false ? 1 :", "phase.record.subagents === false ? 2 :"), trace: drill("sma_r16") },
+  n1176: { mutation: flip(WAVES, "return { id, ok: failing.length === 0, detail:", "return { id, ok: failing.length !== 0, detail:"), trace: drill("sma_r16") },
+  n1177: { mutation: flip("src/rooms/critique/code-critique.ts", '  if (mode === "gate") return true;', '  if (mode !== "gate") return true;'), trace: drill("sma_r16") },
+  n1178: { mutation: distort(DRIVER_STEPS, 'force: true, mode: "full", basePaths', 'force: true, mode: "cheap", basePaths'), trace: drill("sma_r16") },
+  n1179: { mutation: flip("src/rooms/phase/logic/acceptance.ts", "const staleLive = !!(live?.head && verifiedHead && live.head !== verifiedHead);", "const staleLive = !!(live?.head && verifiedHead && live.head === verifiedHead);"), trace: drill("sma_r16") },
+  n1180: { mutation: flip("src/rooms/phase/server/auto-stages.ts", "!r.verification.live && r.liveCheck === true", "!r.verification.live && r.liveCheck !== true"), trace: drill("sma_r16") },
+  n1181: { mutation: flip(STAGES, "found && found[2] === row ? line.replace", "found && found[2] !== row ? line.replace"), trace: drill("sma_r16") },
+  n1182: { mutation: flip(JOURNAL, 'const error = decision === "yes" ? writeLesson(phase, draft.text) : null;', 'const error = decision === "no" ? writeLesson(phase, draft.text) : null;'), trace: drill("sma_r16") },
+  n1183: { mutation: flip(STAGES, '!(parked && found[2]!.startsWith("999."))', '!(!parked && found[2]!.startsWith("999."))'), trace: drill("sma_r16") },
+  n1184: { mutation: distort("workflows/todo-add.json", "status: ready\\npriority", "status: draft\\npriority"), reach: seedEntry("the owner runs the command"), trace: [wfStep("todo-add", "write"), drill("sma_r16")] },
+  n1185: { mutation: distort("workflows/note-add.json", `"confirmation": "'note saved'"`, `"confirmation": "'note kept'"`), reach: seedEntry("the owner runs the command"), trace: [wfStep("note-add", "write"), drill("sma_r16")] },
+  n1186: { mutation: distort(BACKLOG, 'dependsOn: list("depends_on"), created', "dependsOn: [], created"), reach: seedEntry("the owner runs the command"), trace: drill("sma_r16"), voidReview: voidIsHave("идея на потом — todo в .agents/todos со статусом, приоритетом и depends_on (условие возврата); сканер бэклога предлагает готовые") },
+  n1187: { mutation: distort(STAGES, "const n = `999.${max + 1}`;", "const n = `999.${max + 2}`;"), reach: seedEntry("the owner runs the command"), trace: drill("sma_r16") },
+  n1188: { mutation: flip(BACKLOG, "(PRIORITY[a.priority] ?? 1) - (PRIORITY[b.priority] ?? 1)", "(PRIORITY[b.priority] ?? 1) - (PRIORITY[a.priority] ?? 1)"), reach: seedEntry("the owner runs the command"), trace: drill("sma_r16") },
+  n1189: { mutation: flip(BACKLOG, 'const ready = items.filter((item) => item.status === "ready").sort(order);', 'const ready = items.filter((item) => item.status !== "ready").sort(order);'), reach: seedEntry("the owner runs the command"), trace: drill("sma_r16"), voidReview: voidIsHave("список идей с фильтром по статусу — глагол backlog (доска issuable/needsEstimate/decompose/blocked) и .agents/todos/INDEX.md, только чтение") },
+  n1190: { mutation: flip("src/rooms/memory/server/session-memory.ts", "if (!best || base.length > best.length) best", "if (!best || base.length < best.length) best"), reach: seedEntry("the owner runs the command"), trace: drill("sma_r16"), voidReview: voidIsHave("постоянный контекст между сессиями: треды BB сохраняются и возобновляются, долгие факты — память проекта на хабе, подмешиваемая в каждую сессию") },
   n1191: { reach: seedEntry("the owner runs the command") },
-  n1192: { reach: seedEntry("the owner runs the command") },
-  n1193: { reach: seedEntry("the owner runs the command") },
-  n1194: { reach: seedEntry("the owner runs the command"), trace: wfStep("debug", "diagnose") },
-  n1195: { reach: seedEntry("the owner runs the command") },
-  n1196: { reach: seedEntry("the owner runs the command") },
-  n1197: { reach: seedEntry("the owner runs the command") },
+  n1192: { mutation: distort(STAGES, "${line?.n ?? index + 1}. ${item.id}: given", "${line?.n ?? index + 2}. ${item.id}: given"), reach: seedEntry("the owner runs the command"), trace: drill("sma_r16") },
+  n1193: { mutation: flip("src/rooms/phase/logic/verdict.ts", 'const state = problems.length ? "failed" : waiting ? "pending" : "passed";', 'const state = problems.length ? "failed" : waiting ? "passed" : "pending";'), reach: seedEntry("the owner runs the command"), trace: drill("sma_r16") },
+  n1194: { mutation: distort("workflows/debug.json", '"max_fan_out": 6', '"max_fan_out": 7'), reach: seedEntry("the owner runs the command"), trace: [wfStep("debug", "diagnose"), drill("sma_r16")] },
+  n1195: { mutation: distort(DRIVER_STEPS, 'stage: "closed", last_phase: phase.id', 'stage: "open", last_phase: phase.id'), reach: seedEntry("the owner runs the command"), trace: drill("sma_r16") },
+  n1196: { mutation: flip("src/rooms/rule-forms/promotion.ts", 'if (rule.occurrences >= PROMOTE_MIN_OCCURRENCES) return "recurred";', 'if (rule.occurrences > PROMOTE_MIN_OCCURRENCES) return "recurred";'), reach: seedEntry("the owner runs the command"), trace: drill("sma_r16") },
+  n1197: { mutation: flip("src/rooms/phase/server/driver-methods-design.ts", 'if (phase.stage !== "lessons") throw', 'if (phase.stage === "lessons") throw'), reach: seedEntry("the owner runs the command"), trace: drill("sma_r16") },
+  n1198: { mutation: flip("src/rooms/phase/logic/observation.ts", "return reasons.length ? { needed: true,", "return !reasons.length ? { needed: true,"), trace: drill("sma_r16") },
+  n1199: { mutation: flip(JOURNAL, "if (!author || author === receipt.threadId)", "if (!author || author !== receipt.threadId)"), trace: drill("sma_r16") },
+  n1200: { mutation: distort(JOURNAL, 'origin: "phase-lessons",', 'origin: "phase-lesson",'), trace: drill("sma_r16") },
+  n1201: { mutation: distort(STAGES, '"a goal audit by the author of the work"', '"a goal audit by the author of the plan"'), trace: drill("sma_r16") },
+  n1202: { mutation: flip(STAGES, 'phase.record.design?.drawing?.paths.filter((path) => /UI-SPEC\\.md$/i.test(path))', 'phase.record.design?.drawing?.paths.filter((path) => !/UI-SPEC\\.md$/i.test(path))'), trace: drill("sma_r16") },
+  n1203: { mutation: flip(STAGES, 'open: rows.filter((row) => row[1] === " ")', 'open: rows.filter((row) => row[1] !== " ")'), trace: drill("sma_r16") },
+  n1204: { mutation: flip(STAGES, 'owns.some((path) => typeof path === "string" && UI_FILE.test(path))', 'owns.some((path) => typeof path === "string" && !UI_FILE.test(path))'), trace: drill("sma_r16") },
   n1206: { trace: wfRun("test-gen") },
   n1210: { trace: wfRun("debug") },
   n1211: { trace: wfRun("review-fix") },

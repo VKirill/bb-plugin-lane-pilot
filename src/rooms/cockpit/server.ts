@@ -38,6 +38,29 @@ const FAULTS = "lp.cockpit.faults";
 const DRAWING_OK = "lp.cockpit.drawing-ok";
 const DAY_MS = 86_400_000;
 
+/** The day's KPI strip and feed of the Today screen: the cross-source digest (SMA k_lib_digest). Each source answers alone; a failing one empties its list and names itself in `partial`. */
+export async function cockpitToday(ctx: Pick<ServerCore, "db" | "log">, services: Pick<Services, "front">, projectId: string) {
+  const { db } = ctx;
+  const since = Date.now() - DAY_MS;
+  // Cross-source digest (SMA k_lib_digest): each source answers alone; a failing one empties its list and names itself in `partial`.
+  const failed: string[] = [];
+  const source = async <T>(name: string, read: () => T | Promise<T>, empty: T): Promise<T> => { try { return await read(); } catch (cause) { failed.push(name); ctx.log(`Lane Pilot cockpit_today: source ${name} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return empty; } };
+  const rows = await source("attempts", () => listAttemptRowsForProject(db, { projectId, updatedSince: since, limit: 300 }), [] as ReturnType<typeof listAttemptRowsForProject>);
+  const tokens = await source("tokens", () => tokenDailyTotal(db, projectId, new Date().toISOString().slice(0, 10)), 0);
+  const parts = await source("phases", () => listPhasePartsSince(db, projectId, since), [] as ReturnType<typeof listPhasePartsSince>);
+  const actions = (await source("actions", () => services.front.actions(200), [] as unknown[])).filter((row) => (row as { at: number }).at >= since);
+  return {
+    partial: failed,
+    kpi: { accepted: rows.filter((row) => row.state === "accepted").length, blocked: rows.filter((row) => row.state === "blocked").length, running: rows.filter((row) => row.state === "running").length, tokens, actions: actions.length },
+    feed: [...rows.map((row) => {
+      // An accepted row opens its acceptance card on press (SMA done_unfold): it carries its run and its title for that.
+      const title = row.state === "accepted" ? (JSON.parse(getTaskContractJson(db, row.taskId, row.runId) ?? "{}") as { display_title?: string }).display_title ?? null : null;
+      return { at: row.at, kind: `task_${row.state}`, runId: row.runId, taskId: row.taskId, title, text: `${row.taskId}${row.reason ? ` — ${row.reason.slice(0, 160)}` : ""}` };
+    }),
+      ...parts.map((part) => ({ at: part.at as number, kind: `phase_${part.kind}`, text: `${part.phaseId}: ${String(part.text).slice(0, 200)}` }))].sort((a, b) => b.at - a.at).slice(0, 150),
+  };
+}
+
 /**
  * The reads and the few actions of the window's cockpit (src/rooms/cockpit/ui): Today, workers and lanes, the memory corpus on the machine,
  * the forge order a person places, the designer's training, the subscription windows, how long a screen was looked at, a fault a person
@@ -57,26 +80,7 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
 
   return {
     /** Today: the day's KPI strip and its feed (accepted, blocked, phase parts, actions). */
-    cockpit_today: async ({ projectId }: { projectId: string }) => {
-      const since = Date.now() - DAY_MS;
-      // Cross-source digest (SMA k_lib_digest): each source answers alone; a failing one empties its list and names itself in `partial`.
-      const failed: string[] = [];
-      const source = async <T>(name: string, read: () => T | Promise<T>, empty: T): Promise<T> => { try { return await read(); } catch (cause) { failed.push(name); ctx.log(`Lane Pilot cockpit_today: source ${name} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return empty; } };
-      const rows = await source("attempts", () => listAttemptRowsForProject(db, { projectId, updatedSince: since, limit: 300 }), [] as ReturnType<typeof listAttemptRowsForProject>);
-      const tokens = await source("tokens", () => tokenDailyTotal(db, projectId, new Date().toISOString().slice(0, 10)), 0);
-      const parts = await source("phases", () => listPhasePartsSince(db, projectId, since), [] as ReturnType<typeof listPhasePartsSince>);
-      const actions = (await source("actions", () => services.front.actions(200), [] as unknown[])).filter((row) => (row as { at: number }).at >= since);
-      return {
-        partial: failed,
-        kpi: { accepted: rows.filter((row) => row.state === "accepted").length, blocked: rows.filter((row) => row.state === "blocked").length, running: rows.filter((row) => row.state === "running").length, tokens, actions: actions.length },
-        feed: [...rows.map((row) => {
-          // An accepted row opens its acceptance card on press (SMA done_unfold): it carries its run and its title for that.
-          const title = row.state === "accepted" ? (JSON.parse(getTaskContractJson(db, row.taskId, row.runId) ?? "{}") as { display_title?: string }).display_title ?? null : null;
-          return { at: row.at, kind: `task_${row.state}`, runId: row.runId, taskId: row.taskId, title, text: `${row.taskId}${row.reason ? ` — ${row.reason.slice(0, 160)}` : ""}` };
-        }),
-          ...parts.map((part) => ({ at: part.at as number, kind: `phase_${part.kind}`, text: `${part.phaseId}: ${String(part.text).slice(0, 200)}` }))].sort((a, b) => b.at - a.at).slice(0, 150),
-      };
-    },
+    cockpit_today: ({ projectId }: { projectId: string }) => cockpitToday(ctx, services, projectId),
     /** The park policy as written (SMA m_sw_rules): every protection with its hazard and current value, plus the hold/breaker
      * switches of the run policy — drawn read-only on the Rules screen; edits stay in the settings tabs. */
     cockpit_rules: async ({ projectId }: { projectId: string }) => {

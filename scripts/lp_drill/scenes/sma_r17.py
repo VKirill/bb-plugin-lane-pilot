@@ -14,7 +14,7 @@ import subprocess
 from lp_drill.env import ROOT
 from lp_drill.prove import Proofs
 
-NODES = [f"n{n}" for n in range(1368, 1400) if n not in (1388, 1390)]
+NODES = [f"n{n}" for n in range(1368, 1402) if n not in (1388, 1390)]
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r17_probe.ts"
 
 
@@ -128,4 +128,15 @@ def scenario_sma_r17(tmp) -> dict:
     # n1399 A writer does the task itself: the pre-task hook refuses a general-purpose subagent and lets the documentary ones through.
     h = s["hook"]
     proofs.prove("n1399", "[execution-without-agent]" in h["refused"]["deny"] and h["refused"]["spawned"] == 0 and h["documentary"] == [None, None, None], f"refused {h['refused']['deny'][:40]!r}, documentary {h['documentary']}")
+    # n1400 Subagent in the foreground only: a background call is refused with the foreground reason and not counted; the foreground call passes and is counted.
+    fg = s["foreground"]
+    refused = [fg["pmBackground"], fg["writerBackground"]]
+    ok = all((r["deny"] or "").startswith("[subagent-foreground]") and r["spawned"] == 2 for r in refused) and fg["pmForeground"] == {"deny": None, "spawned": 3} and fg["writerForeground"] == {"deny": None, "spawned": 3}
+    proofs.prove("n1400", ok, f"background: {[r['deny'][:21] for r in refused if r['deny']]}, count kept {[r['spawned'] for r in refused]}; foreground: {fg['pmForeground']}")
+    # n1401 Role model and skills: each role is given its own skills and its own row of the model table; an owner's list and a pin win.
+    rs = s["resolve"]
+    want = {"writer": ["lp-writer", "karpathy-guidelines"], "docs-maintainer": ["lp-docs", "docs-methodology"], "browser-qa": ["browser-automation"], "plan-critic": []}
+    ok = (all(rs["skills"][role] == {"names": names, "source": "role"} for role, names in want.items()) and rs["owner"] == {"names": ["only-this"], "source": "owner"}
+          and all(m["got"] == m["row"] for m in rs["models"].values()) and rs["models"]["writer"]["got"] != rs["models"]["plan-critic"]["got"] and rs["pinned"] == ["gpt-x", "pinned"])
+    proofs.prove("n1401", ok, f"skills {{role: names}} {dict((k, v['names']) for k, v in rs['skills'].items())}, owner list {rs['owner']['names']}, models {dict((k, m['got'][1]) for k, m in rs['models'].items())}, pin {rs['pinned']}")
     return proofs.verdict("sma_r17", checked=len(NODES))

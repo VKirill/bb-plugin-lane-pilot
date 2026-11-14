@@ -39,6 +39,19 @@ for l in ${quoted}; do
 done`;
 }
 
+/** REFLEXES.md of a task: only the «WHEN <trigger> → <act>» lines, so the guard can fire them at the act (SMA k_lib_reflex); null with none.
+ * One text for the task home and the old folder. */
+export function reflexesFileText(lines:string[]):string|null {
+  const kept = lines.filter((line) => /WHEN\s+.+?\s*(?:→|->)\s*.+/.test(line));
+  return kept.length ? `# Reflexes\n\n${kept.join("\n")}\n` : null;
+}
+
+/** FILECARDS.md of a task (SMA k_hs_context): the line enters the model's context, so it is masked here, whoever built it, and clipped; null with none. */
+export function filecardsFileText(lines:string[]):string|null {
+  const kept = lines.map((line)=>maskCredentials(line.slice(0,260)).text).filter(Boolean).slice(0,40);
+  return kept.length ? `# File notes\n\n${kept.join("\n")}\n` : null;
+}
+
 export async function persistTaskFolder(input:{
   taskId:string; plan?:string;
   /** Terminal outcome of the task (SMA k_pl_quick): written to OUTCOME.md beside PLAN.md. */
@@ -66,14 +79,12 @@ export async function persistTaskFolder(input:{
     await input.writeFile(`${folder}/PLAN.md`, plan);
   }
   if (input.outcome !== undefined) await input.writeFile(`${folder}/OUTCOME.md`, input.outcome.endsWith("\n") ? input.outcome : `${input.outcome}\n`);
-  // Burn lessons with a WHEN <trigger> → <act> line go here so the guard can fire them at the act (SMA k_lib_reflex).
-  const reflexes = (input.reflexes ?? []).filter((line) => /WHEN\s+.+?\s*(?:→|->)\s*.+/.test(line));
+  const reflexes = reflexesFileText(input.reflexes ?? []);
   // A retired rule must not keep firing from a stale file: with no lines left, a file that is there is rewritten with none.
-  if (reflexes.length) await input.writeFile(`${folder}/REFLEXES.md`, `# Reflexes\n\n${reflexes.join("\n")}\n`);
+  if (reflexes) await input.writeFile(`${folder}/REFLEXES.md`, reflexes);
   else if (input.reflexes !== undefined && await input.exists?.(`${folder}/REFLEXES.md`).catch(() => false)) await input.writeFile(`${folder}/REFLEXES.md`, "# Reflexes\n");
-  // The line enters the model's context: masked here too, whoever built it, and clipped.
-  const filecards=(input.filecards??[]).map((line)=>maskCredentials(line.slice(0,260)).text).filter(Boolean).slice(0,40);
-  if (filecards.length) await input.writeFile(`${folder}/FILECARDS.md`, `# File notes\n\n${filecards.join("\n")}\n`);
+  const filecards = filecardsFileText(input.filecards ?? []);
+  if (filecards) await input.writeFile(`${folder}/FILECARDS.md`, filecards);
   else if (input.filecards !== undefined && await input.exists?.(`${folder}/FILECARDS.md`).catch(() => false)) await input.writeFile(`${folder}/FILECARDS.md`, "# File notes\n");
   return { folder };
 }

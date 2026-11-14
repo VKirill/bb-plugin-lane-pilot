@@ -11,7 +11,7 @@ import { openDatabase } from "../../src/rooms/plugin-db";
 import { logRuleEvent, ruleTier, ruleTierState } from "../../packages/run-insights/src";
 import { conventionGateHits, injectPack, stallFingerprint } from "../../src/rooms/session-hooks/logic";
 import { workFingerprint } from "../../src/rooms/verification/server";
-import { persistTaskFolder } from "../../src/rooms/verification/git-integrate";
+import { persistTaskFolder, reflexesFileText } from "../../src/rooms/verification/git-integrate";
 import { reflexLinesOf } from "../../src/rooms/writer/server/writer-knowledge";
 
 const HOOK = join(__dirname, "../../src/rooms/session-hooks/cli.ts");
@@ -450,14 +450,18 @@ g._run_streams({"session_id": "s-perf"}, "Bash", "ls", "")
     const written: Record<string, string> = {};
     await persistTaskFolder({ taskId: "task-r", reflexes: reflexLinesOf(rules), writeFile: async (rel, content) => { written[rel] = content; } });
     expect(written[".agents/plans/items/task-r/REFLEXES.md"]).toBe("# Reflexes\n\n- WHEN prisma migrate -> run it on a copy first\n");
-    mkdirSync(join(repo, ".agents/plans/items/task-r"), { recursive: true });
-    writeFileSync(join(repo, ".agents/plans/items/task-r/REFLEXES.md"), written[".agents/plans/items/task-r/REFLEXES.md"]!);
+    // The spawn names the writer's own task home (LANE_TASK_DIR); the guard reads the note only there, never «the newest» folder.
+    const taskDir = join(repo, ".agents/tasks/task-r");
+    mkdirSync(taskDir, { recursive: true });
+    writeFileSync(join(taskDir, "REFLEXES.md"), reflexesFileText(reflexLinesOf(rules))!);
+    expect(reflexesFileText(reflexLinesOf(rules))).toBe(written[".agents/plans/items/task-r/REFLEXES.md"]);
+    expect(guardContext(guard(bash("npx prisma migrate dev", repo), tmp("r18b-reflex-unnamed-")).stdout)).toBe("");
     const home = tmp("r18b-reflex-home-");
-    const migrate = () => guardContext(guard(bash("npx prisma migrate dev", repo), home).stdout);
+    const migrate = () => guardContext(guard(bash("npx prisma migrate dev", repo), home, { LANE_TASK_DIR: taskDir }).stdout);
     expect(migrate()).toBe("[reflex] run it on a copy first");
     expect(migrate()).toBe("[reflex] run it on a copy first");
     expect(migrate()).toBe("");
-    expect(guardContext(guard(bash("npx prisma generate", repo, { session_id: "g9" }), home).stdout)).toBe("");
+    expect(guardContext(guard(bash("npx prisma generate", repo, { session_id: "g9" }), home, { LANE_TASK_DIR: taskDir }).stdout)).toBe("");
     expect(guardContext(guard(bash("write tests first", repo, { session_id: "g9" }), home).stdout)).toBe("");
   });
 
@@ -528,10 +532,11 @@ describe("[region 18 batch b] the rest of the around-the-call nodes", () => {
     expect(card).toContain("# File notes\n\nsrc/a.ts -> generated file, edit the template\n");
     expect(card).not.toContain("abcdefghijklmnopqrstuvwxyz0123456789");
     const repo = tmp("r18b-context-");
-    mkdirSync(join(repo, ".agents/plans/items/task-c"), { recursive: true });
-    writeFileSync(join(repo, ".agents/plans/items/task-c/FILECARDS.md"), card);
+    const taskDir = join(repo, ".agents/tasks/task-c");
+    mkdirSync(taskDir, { recursive: true });
+    writeFileSync(join(taskDir, "FILECARDS.md"), card);
     const home = tmp("r18b-context-home-");
-    const note = (file: string) => guardContext(guard(edit(file, repo, "cx1"), home).stdout);
+    const note = (file: string) => guardContext(guard(edit(file, repo, "cx1"), home, { LANE_TASK_DIR: taskDir }).stdout);
     expect(note("src/a.ts")).toBe("[file-note] generated file, edit the template");
     expect(note("src/a.ts")).toBe("[file-note] generated file, edit the template");
     expect(note("src/a.ts")).toBe("");

@@ -14,9 +14,11 @@ import http.server
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import tempfile
 import threading
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -24,7 +26,8 @@ from lp_drill.env import ROOT
 from lp_drill.prove import Proofs
 
 NODES = ["n994", "n995", "n996", "n997", "n998", "n999", "n1000", "n1001", "n1002", "n1003", "n1005", "n1006", "n1008", "n1009", "n1010", "n1011", "n1012",
-         "n1013", "n1014", "n1015", "n1016", "n1017", "n1018", "n1019", "n1020", "n1021", "n1022", "n1023", "n1024"]
+         "n1013", "n1014", "n1015", "n1016", "n1017", "n1018", "n1019", "n1020", "n1021", "n1022", "n1023", "n1024",
+         "n1027", "n1028", "n1029", "n1030", "n1031", "n1032", "n1033", "n1034", "n1035"]
 SCRIPT = ROOT / "scripts" / "hub-watchdog.sh"
 GUIDE = ROOT / "docs" / "watchdog.md"
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r12_probe.ts"
@@ -231,6 +234,59 @@ def _units(tmp: Path) -> dict:
     return {"system": system, "user": user, "mac": mac, "capped": capped, "self": str(SCRIPT.resolve()), "state": str(state), "left": sorted(p.name for p in state.iterdir() if p.name != "bin")}
 
 
+def _batch_b(tmp: Path) -> dict:
+    """The watchdog's verbs, units, lock, lift limit and no-administrator install, run for real on scratch state with stub tools (n1027 … n1035)."""
+    out: dict = {}
+    state, bindir, env = _sandbox(tmp, "batchb")
+    env = {**env, "LP_WATCH_DRY": "1", "LP_WATCH_DOOR": "http://127.0.0.1:1/no"}
+    out["status"] = _watch(["status"], env)
+    out["unknown"] = _watch(["nope"], env)
+    out["unit_user"] = _watch(["print-unit", "user"], env)[1]
+    out["unit_system"] = _watch(["print-unit", "system"], env)[1]
+    out["unit_nocap"] = _watch(["print-unit", "user"], {**env, "LP_WATCH_RESTART_CAP": "0"})[1]
+    out["unit_mac"] = _watch(["print-unit", "mac"], env)[1]
+    out["left"] = sorted(p.name for p in state.iterdir() if p.name not in ("bin", "outages.jsonl"))
+    # n1029 a second watchdog finds the lock and leaves
+    holder = subprocess.Popen(["flock", "-n", str(state / "hub-watchdog.lock"), "/bin/sleep", "20"])
+    try:
+        for _ in range(50):
+            if (state / "hub-watchdog.lock").exists():
+                break
+            time.sleep(0.1)
+        out["lock"] = _watch(["run"], env)
+    finally:
+        holder.kill()
+        holder.wait()
+    # n1030 five lifts inside the window refuse the next one
+    lifts = _functions('for n in 1 2 3 4 5; do record lift "seed $n"; done\nlift || true\necho ---\ncat "$LOG"', {**env, "LP_WATCH_MAX_LIFTS_IN_WINDOW": "5"})
+    out["lifts"] = {"refused": "lift_refused" in lifts, "lift_rows": lifts.count('"event":"lift"')}
+    # n1031 / n1032 no administrator rights: the user unit, then, with no user systemd, the crontab line
+    home = tmp / "home-b"
+    home.mkdir()
+    _stub(bindir, "sudo", "exit 1")
+    _stub(bindir, "systemctl", 'case "$*" in *show-environment*) exit "${USERCTL_RC:-0}" ;; esac\n' + SYSTEMCTL_STUB)
+    _stub(bindir, "crontab", 'case "$1" in\n  -l) cat "$CRON_IN" ;;\n  -) cat > "$CRON_OUT" ;;\nesac')
+    (home / "cron-in").write_text("0 3 * * * /usr/bin/backup\n@reboot /bin/bash /old/place/hub-watchdog.sh run\n")
+    inst_env = {**env, "HOME": str(home), "SYS_LOG": str(home / "sys.log"), "MAINPID_FILE": str(home / "m"), "STATE_FILE": str(home / "st"), "LP_WATCH_SYSTEMCTL": str(bindir / "systemctl"),
+                "CRON_IN": str(home / "cron-in"), "CRON_OUT": str(home / "cron-out")}
+    user = _watch(["install"], {**inst_env, "LP_WATCH_RESTART_CAP": "5"})[1]
+    unit_file = home / ".config/systemd/user/lp-hub-watchdog.service"
+    out["install_user"] = {"out": user, "file": unit_file.read_text() if unit_file.exists() else ""}
+    if unit_file.exists():
+        unit_file.unlink()
+    cron = _watch(["install"], {**inst_env, "USERCTL_RC": "1"})[1]
+    out["install_cron"] = {"out": cron, "lines": (home / "cron-out").read_text().splitlines() if (home / "cron-out").exists() else [], "unit_written": unit_file.exists()}
+    # n1035 the Mac install
+    mac_home = tmp / "home-mac"
+    (mac_home / "Library/LaunchAgents").mkdir(parents=True)
+    _stub(bindir, "launchctl", 'echo "$*" >> "$LCTL_LOG"; exit 0')
+    mac = _watch(["install"], {**env, "HOME": str(mac_home), "LP_WATCH_PLATFORM": "darwin", "LCTL_LOG": str(mac_home / "lctl.log")})[1]
+    plist = mac_home / "Library/LaunchAgents/pro.vechkasov.lp-hub-watchdog.plist"
+    out["install_mac"] = {"out": mac, "plist": plist.read_text() if plist.exists() else "", "calls": (mac_home / "lctl.log").read_text().splitlines()[:2] if (mac_home / "lctl.log").exists() else [], "path": str(plist)}
+    out["self"] = str(SCRIPT.resolve())
+    return out
+
+
 def _logs(tmp: Path) -> dict:
     """Rotation and the daily count on a log whose line is of yesterday (n1013, n1018)."""
     state, _, env = _sandbox(tmp, "logs")
@@ -381,6 +437,40 @@ def scenario_sma_r12(tmp: Path) -> dict:
     mac = guide[guide.index("## macOS"):guide.index("## Windows")]
     label = "pro.vechkasov.lp-hub-watchdog"
     proofs.prove("n1017", f"~/Library/LaunchAgents/{label}.plist" in mac and f"<key>Label</key><string>{label}</string>" in units["mac"] and "RunAtLoad" in mac and "KeepAlive" in mac, "the guide names the agent file whose label print-unit mac prints")
+
+    # Batch b: the verbs, the units, the lock, the lift limit and the no-administrator install, on scratch state.
+    b = _batch_b(tmp)
+    rc_status, out_status = b["status"]
+    rc_unknown, out_unknown = b["unknown"]
+    proofs.prove("n1027", rc_status == 1 and "the door does not answer" in out_status and rc_unknown == 2 and "run|status|stop|restart|lift|install" in out_unknown, f"status with a silent door exit {rc_status}, unknown verb exit {rc_unknown}")
+    ok = ("StartLimitIntervalSec=3600" in b["unit_user"] and "StartLimitBurst=5" in b["unit_user"] and "StartLimitIntervalSec=3600" in b["unit_system"] and "StartLimit" not in b["unit_nocap"])
+    proofs.prove("n1028", ok, "units cap a fallen watchdog at 5 restarts an hour; the cap is absent when set to 0")
+    rc_lock, out_lock = b["lock"]
+    proofs.prove("n1029", rc_lock == 0 and "another watchdog runs" in out_lock, f"second watchdog with the lock held: exit {rc_lock}, '{out_lock.strip()[:60]}'")
+    proofs.prove("n1030", b["lifts"] == {"refused": True, "lift_rows": 5}, f"after 5 lifts in the window the next is {b['lifts']}")
+    iu = b["install_user"]
+    order = iu["out"].find("no administrator rights (sudo -n refused)") != -1 and iu["out"].find("no administrator rights (sudo -n refused)") < iu["out"].find("installed: user unit")
+    proofs.prove("n1031", order and "StartLimitBurst=5" in iu["file"] and "WantedBy=default.target" in iu["file"], f"refusal said before the fallback {order}, user unit written with the cap")
+    ic = b["install_cron"]
+    want = [f"0 3 * * * /usr/bin/backup"]
+    ok = ic["lines"][:1] == want and len(ic["lines"]) == 2 and ic["lines"][1].startswith(f"@reboot /bin/bash {b['self']} run >> ") and "/old/place" not in "".join(ic["lines"]) and not ic["unit_written"]
+    proofs.prove("n1032", ok, f"crontab after install {ic['lines']}")
+    text = GUIDE.read_text()
+    windows_part = text[text.index("## Windows"):]
+    linux_part = text[text.index("## Linux"):text.index("## macOS")]
+    task = re.search(r"/TR \"bash -lc '([^']+)'\"", windows_part)
+    verb = re.search(r"ExecStart=/bin/bash \S+ (\w+)", iu["file"])
+    no_admin_lines = [line for line in windows_part.splitlines() if "Без прав администратора" in line]
+    ok = (no_admin_lines == ["Без прав администратора — ярлык в `shell:startup` с той же командой."] and "~/.config/systemd/user/lp-hub-watchdog.service" in linux_part and task is not None and verb is not None
+          and task.group(1).endswith(f"hub-watchdog.sh {verb.group(1)}") and not re.search(r"AppData|C:\\|%APPDATA%", windows_part) and "installed: user unit lp-hub-watchdog.service" in iu["out"])
+    proofs.prove("n1033", ok, f"guide line {no_admin_lines}, Windows command ends with the verb the unit runs ({verb.group(1) if verb else None})")
+    ok = "Environment=LP_WATCH_FIRST_SEC=120" in b["unit_system"] and "<key>LP_WATCH_FIRST_SEC</key><string>120</string>" in b["unit_mac"] and "ThrottleInterval" in b["unit_mac"] and b["left"] == []
+    proofs.prove("n1034", ok, f"units carry the two-minute first look and the cap; files left behind by print-unit {b['left']}")
+    im = b["install_mac"]
+    domain = im["calls"][0].split(" ")[1] if im["calls"] else ""
+    ok = ("<key>RunAtLoad</key><true/>" in im["plist"] and "<key>KeepAlive</key><true/>" in im["plist"] and "[Unit]" not in im["plist"]
+          and im["calls"] == [f"bootout {domain} {im['path']}", f"bootstrap {domain} {im['path']}"] and "installed: LaunchAgent pro.vechkasov.lp-hub-watchdog" in im["out"])
+    proofs.prove("n1035", ok, f"agent file written with run-at-load and keep-alive, launchctl calls {im['calls']}")
 
     # n1019 Day rotation drill: the watchdog scene passes only when the old log rotated to its day.
     rotation = _rotation_drill(tmp)

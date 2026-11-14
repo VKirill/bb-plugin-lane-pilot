@@ -15,7 +15,7 @@ import { migrations } from "../../../src/rooms/migrations";
 import { NATIVE_HOOK_SOURCES } from "../../../src/rooms/contracts/server";
 import { BUILTIN_SOURCES } from "../../../src/rooms/workflow/builtin";
 import { removeClaudeLaneLeftovers, stripClaudeLaneSettings } from "../../../src/rooms/native-install/claude-lane-leftovers";
-import { applyInstalledGuard, ownedPmGuardPath } from "../../../src/rooms/native-install/guard-apply";
+import { applyInstalledGuard, isOwnedPmGuardApplied, ownedPmGuardPath } from "../../../src/rooms/native-install/guard-apply";
 import { experimental_vkLifecycle } from "../../../src/rooms/native-install/native-install-lifecycle";
 import { nativeInstallOperation } from "../../../src/rooms/native-install/native-install-host";
 import { hashBytes, planJson, safeTarget, transitionOwned, type NativeInstallManifest } from "../../../src/rooms/native-install/native-install-owned";
@@ -24,7 +24,7 @@ import { sessionOverrideAgentsJson } from "../../../src/rooms/native-agent/nativ
 import { compileMainAgentProfile } from "../../../src/rooms/native-agent/agent-profile";
 import { employeeRoleLines, recordRoleLine, withRoleLines } from "../../../src/rooms/native-agent/employee-lessons";
 import { excludeBookkeeping } from "../../../src/rooms/verification/server/bookkeeping-exclude";
-import { pmResumeInstructions } from "../../../src/rooms/learning/pm-rules";
+import { pmResumeInstructions, pmRulesPromptBlock } from "../../../src/rooms/learning/pm-rules";
 import { openDatabase } from "../../../src/rooms/plugin-db";
 import { createRun, loadProjectSettings, savePrototypeConfig, setRunThread } from "../../../src/rooms/storage";
 import { runWorkflowTool } from "../../../src/rooms/workflow/server/workflow-tools";
@@ -374,6 +374,129 @@ async function main() {
     try { await rpc.stack_install({ projectId: "p-done", confirmExternalOps: true }); } catch (e) { error = (e as Error).message; }
     const afterFail = JSON.parse(String(loadProjectSettings(db, "p-done")["install.lastReceipt"])) as { status: string };
     out.n1495 = { blocked: blocked.status, storedBlocked, ok: ok.status, native: ok.native.status, saved: [saved.status, saved.native.status], error, afterFail: afterFail.status };
+  }
+  // ---- batch b (n1498 … n1516) ----
+  const bTree = (dir: string) => tree(dir);
+  const bRule = (db: ReturnType<typeof openDatabase>, project: string, id: string, text: string, decidedAt: number, audience: string) => {
+    db.prepare("INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at) VALUES(?,?,?,?,?,?,?,?,?)").run(`mem-${id}`, project, "", "core", "subagent", text, "[\"rule\"]", "s", 1);
+    db.prepare("INSERT INTO lane_pilot_rule_proposal (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at,audience) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(`r-${id}`, project, `s-${id}`, text, "owner", "accepted", 1, 1, "[]", `mem-${id}`, 1, 1, 1, decidedAt, audience);
+  };
+
+  // n1498 roles ride in --agents; n1500 the session settings are a copy: nothing is written into the project.
+  {
+    const project = tmp("r19b-project-");
+    put(join(project, ".claude/agents/mine.md"), "my own role\n");
+    put(join(project, ".claude/settings.json"), JSON.stringify({ model: "claude-person", env: { KEEP_ME: "1" }, hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "echo person" }] }] } }));
+    put(join(project, ".claude/settings.local.json"), JSON.stringify({ model: "claude-local" }));
+    const before = bTree(project);
+    const dest = tmp("r19b-session-");
+    const compiled = compileMainAgentProfile("dev-orchestrator");
+    const json = JSON.parse(sessionOverrideAgentsJson({ agentId: "dev-orchestrator", edited: false, compiled })!) as Record<string, { description: string; prompt: string }>;
+    const result = await materializeNativeHookSession({ cwd: project, destDir: dest });
+    const merged = JSON.parse(read(result.settingsPath)) as { model: string; env: unknown; hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>> };
+    const pre = merged.hooks.PreToolUse!.flatMap((g) => g.hooks.map((h) => h.command));
+    out.n1498 = { keys: Object.keys(json), description: json[Object.keys(json)[0]!]!.description === compiled.description, prompt: json[Object.keys(json)[0]!]!.prompt === compiled.prompt, projectSame: same(bTree(project), before), agents: readdirSync(join(project, ".claude/agents")) };
+    out.n1500 = { inSession: result.settingsPath === join(dest, "settings.json"), projectSame: same(bTree(project), before), model: merged.model, env: merged.env, person: pre.some((c) => c.endsWith("-- echo person")), guards: pre.filter((c) => c.includes("guard_shell.py")).length };
+  }
+
+  // n1501 the state is rows in the plugin database, not a folder in the project.
+  {
+    const project = tmp("r19b-state-");
+    put(join(project, "README.md"), "the project\n");
+    const before = bTree(project);
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    createRun(db, "lprun-b1", "proj-b", "cli");
+    out.n1501 = { runs: db.prepare("SELECT id, project_id, state FROM lane_pilot_run").all(), secondHandle: (bb.storage.database().prepare("SELECT COUNT(*) AS n FROM lane_pilot_run").get() as { n: number }).n, fk: db.pragma("foreign_keys", { simple: true }), projectSame: same(bTree(project), before), noSmaFolder: !existsSync(join(project, ".sma")) };
+  }
+
+  // n1502 / n1505 the rules go into the prompt; a CLAUDE.md with torn markers is left alone.
+  {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const cwd = tmp("r19b-rules-");
+    put(join(cwd, "CLAUDE.md"), "person line\n<!-- lane-pilot:rules:start -->\n# lane-pilot:managed:start\ntorn, no end marker\n");
+    const before = bTree(cwd);
+    const empty = pmRulesPromptBlock(db, "proj-b", [], 1600);
+    bRule(db, "proj-b", "old", "Never plan past the signed context, whatever the owner's hurry says", 1, "pm");
+    bRule(db, "proj-b", "new", "Quote the contract wording when you ask the owner a question", 2, "pm");
+    const block = pmRulesPromptBlock(db, "proj-b", [], 1600);
+    out.n1502 = { empty, lines: block.split("\n").slice(3), marker: block.includes("lane-pilot:managed") || block.includes("<!--"), claudeMdSame: same(bTree(cwd), before) };
+    bRule(db, "proj-e", "a", "Keep every diff under two hundred lines", 3, "both");
+    bRule(db, "proj-e", "b", "Ask before touching the lock file", 2, "both");
+    const resume = pmResumeInstructions(db, "proj-e", []) ?? "";
+    out.n1505 = { lines: resume.split("\n").slice(1), torn: resume.includes("torn, no end marker"), claudeMdSame: same(bTree(cwd), before) };
+  }
+
+  // n1504 the memory scaffold: the table with its kind and audience rules, an empty full-text index.
+  {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const count = (table: string) => (db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
+    const empty = [count("lane_pilot_memory"), count("lane_pilot_memory_fts")];
+    const insert = (id: string, kind: string, audience: string) => { try { db.prepare("INSERT INTO lane_pilot_memory(id,project_id,kind,audience,content,concepts_json,source_sha256,created_at) VALUES(?,?,?,?,?,?,?,?)").run(id, "p", kind, audience, "text", "[]", "s", 1); return "ok"; } catch (e) { return /CHECK/.test((e as Error).message) ? "refused" : (e as Error).message; } };
+    out.n1504 = { empty, inserts: [insert("a", "core", "owner"), insert("b", "note", "subagent"), insert("c", "scribble", "owner"), insert("d", "note", "stranger")], after: count("lane_pilot_memory") };
+  }
+
+  // n1508 / n1509 the install door: no yes, nothing runs; a yes runs the install on the project's machine.
+  {
+    const calls: Array<{ method: string; action: unknown; requested: unknown }> = [];
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot", experimental_callHostRpc: ((call: { method: string; input: { action?: string; requestedHostId?: string } }) => { calls.push({ method: call.method, action: call.input.action, requested: call.input.requestedHostId }); return { status: "enabled", sourceSha: null, ownedFiles: 0, preservedFiles: 0 }; }) as never });
+    (bb.server as unknown as { experimental_vkPluginLifecycle?: boolean }).experimental_vkPluginLifecycle = true;
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, { projectId: "p-up", hostId: "host-up", pmWorkspacePath: "/tmp/pm", writerWorkspacePath: "/tmp/writer", pmProviderId: "claude-code", pmModel: "claude-test", writerProviderId: "codex", writerModel: "codex-test" });
+    const rpc = stackRpc(createCore(bb, db) as never);
+    const blocked = await rpc.stack_install({ projectId: "p-up", confirmExternalOps: false }) as { status: string; reason: string };
+    const callsBlocked = calls.length, stored = loadProjectSettings(db, "p-up")["install.lastReceipt"] ?? null;
+    const ok = await rpc.stack_install({ projectId: "p-up", confirmExternalOps: true }) as { status: string; native: { status: string } };
+    out.n1508 = { blocked: blocked.status, reason: blocked.reason, callsBlocked, stored, ok: ok.status };
+    const home = join(tmp("r19b-apply-"), "home");
+    mkdirSync(home, { recursive: true });
+    const managed = join(home, "..", "managed");
+    const first = await nativeInstallOperation({ root: managed, home, action: "install" });
+    const afterFirst = tree(join(home, ".agents/lane-pilot"));
+    const second = await nativeInstallOperation({ root: managed, home, action: "install" });
+    out.n1509 = { calls, hosts: await bb.storage.kv.list("native-install:host:"), first: first.status, second: second.status, guardIsBundle: sha(ownedPmGuardPath(home)) === sha(GUARD), repeatSame: same(tree(join(home, ".agents/lane-pilot")), afterFirst) };
+  }
+
+  // n1515 an update over the owner's files changes none of them, an edited guard stays as the owner left it.
+  {
+    const home = join(tmp("r19b-keep-"), "home");
+    mkdirSync(home, { recursive: true });
+    const managed = join(home, "..", "managed");
+    const person: Record<string, string> = { ".agents/memory/MEMORY.md": "person notes\n", ".agents/skills/shared/SKILL.md": "canon\n", ".agents/state/keep": "state\n", ".claude/settings.json": "{\n  // mine\n  \"theme\": \"owner\"\n}\n", ".agents/bin/mytool": "#!/bin/sh\necho mine\n" };
+    for (const [name, text] of Object.entries(person)) put(join(home, name), text);
+    await nativeInstallOperation({ root: managed, home, action: "install" });
+    const guard = ownedPmGuardPath(home);
+    const placed = sha(guard) === sha(GUARD);
+    const edited = `${read(guard)}# the owner's local patch\n`;
+    writeFileSync(guard, edited);
+    const status = (await nativeInstallOperation({ root: managed, home, action: "install" })).status;
+    out.n1515 = { placed, status, personSame: Object.entries(person).every(([name, text]) => read(join(home, name)) === text), guardKept: read(guard) === edited };
+  }
+
+  // n1516 the check of the reapplied guard: applied only for the bundled file and exactly one hook entry; the owner's lines survive.
+  {
+    const home = join(tmp("r19b-verify-"), "home");
+    const workspace = join(home, "pm");
+    const settingsPath = join(workspace, ".claude/settings.json");
+    put(settingsPath, `{\n  // owner note\n  "theme": "mine",\n  "hooks": {\n    "PreToolUse": [\n      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bash /usr/local/bin/guardian-code.sh" }] }\n    ]\n  }\n}\n`);
+    const check = () => isOwnedPmGuardApplied({ homeDir: home, guardSourcePath: GUARD, pmWorkspacePath: workspace });
+    const guardPath = ownedPmGuardPath(home);
+    const owner = () => read(settingsPath).includes("// owner note") && read(settingsPath).includes("bash /usr/local/bin/guardian-code.sh");
+    const steps: boolean[] = [await check()];
+    await applyInstalledGuard({ homeDir: home, guardSourcePath: GUARD, pmWorkspacePath: workspace });
+    steps.push(await check());
+    const once = read(settingsPath);
+    writeFileSync(settingsPath, once.replace(`python3 '${guardPath}'`, `python3 '${guardPath}'" }, { "type": "command", "command": "python3 '${guardPath}'`));
+    steps.push(await check());
+    await applyInstalledGuard({ homeDir: home, guardSourcePath: GUARD, pmWorkspacePath: workspace });
+    steps.push(await check());
+    const repaired = read(settingsPath).split(guardPath).length - 1;
+    const ownerKept = owner();
+    writeFileSync(guardPath, "# changed\n");
+    steps.push(await check());
+    out.n1516 = { steps, repaired, ownerKept };
   }
   return out;
 }
