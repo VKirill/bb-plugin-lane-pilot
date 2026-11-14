@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.570
+
+- **The hub can build and load SMA facts without development dependencies.** The chain-test compiler is loaded only when scanning a source checkout; deployed reports use the generated facts. Checked by `tests/sma-runtime-bundle.test.ts`, which bundles and imports the facts with TypeScript unavailable, and by the existing chain-coverage tests.
+
 ## 0.1.569
 
 - **SMA workflow coverage follows the tested execution path.** The collector resolves the real harness imports and result bindings, so nested calls count while shadowed or unrelated calls do not. Per-run options are distinguished from disabled project settings. New chain cases cover the missing command and emergency branches; model-free drill probes verify phase, attempt, memory and task-folder results and reject incomplete probe output. Checked by `tests/sma-hollow.test.ts`, `tests/workflow/chains-parity-main.test.ts`, `tests/workflow/chains-parity-command.test.ts` and the `sma_r00`, `sma_r01`, `sma_r02`, `sma_tails` scenes.

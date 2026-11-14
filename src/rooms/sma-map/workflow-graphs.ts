@@ -1,11 +1,12 @@
 // The workflow graphs (workflows/*.json) as hollow.ts judges them: their nodes and edges, a branch condition that can
 // never be true, an action that only copies its input, an agent node with no prompt or a stub one, a node its graph's
 // default inputs skip, and which nodes and edges a chain test (tests/workflow/chains-*.test.ts, `pathOf(r)).toBe("a b
-// c")`) walks. Regex and JSON only — the shipped plugin has no workflows folder, so hollow-static.json carries the
+// c")`) walks. The compiler is loaded only for source analysis; hollow-facts.json carries the
 // structure to the hub.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import ts from "typescript";
+import { createRequire } from "node:module";
+import type * as TS from "typescript";
 import { matchClose } from "./symbols";
 
 type Json = Record<string, unknown>;
@@ -141,22 +142,24 @@ export function skippedByDefault(node: WfNode, graph: WfGraph): string | null {
 }
 
 // ---- chain-test coverage ----
+// Source-only analysis: the hub consumes the generated facts and has no dev dependencies.
+let ts: typeof TS;
 type RunSim = { graph: string };
-type RunBinding = { declaration: ts.VariableDeclaration; run: RunSim | null; kind: "const" | "let" | "var" };
-type ChainSymbols = { checker: ts.TypeChecker };
+type RunBinding = { declaration: TS.VariableDeclaration; run: RunSim | null; kind: "const" | "let" | "var" };
+type ChainSymbols = { checker: TS.TypeChecker };
 
-const unwrapTs = (node: ts.Expression): ts.Expression => {
+const unwrapTs = (node: TS.Expression): TS.Expression => {
   let current = node;
   while (ts.isParenthesizedExpression(current)) current = current.expression;
   return current;
 };
 
-const callName = (node: ts.Expression): string | null => {
+const callName = (node: TS.Expression): string | null => {
   if (ts.isIdentifier(node)) return node.text;
   return null;
 };
 
-function importedBinding(node: ts.Identifier, expected: string, moduleSuffix: string, symbols: ChainSymbols): boolean {
+function importedBinding(node: TS.Identifier, expected: string, moduleSuffix: string, symbols: ChainSymbols): boolean {
   const symbol = symbols.checker.getSymbolAtLocation(node);
   return Boolean(symbol?.declarations?.some((declaration) => {
     if (!ts.isImportSpecifier(declaration)) return false;
@@ -169,7 +172,7 @@ function importedBinding(node: ts.Identifier, expected: string, moduleSuffix: st
   }));
 }
 
-function runSimOf(node: ts.Expression, symbols: ChainSymbols): RunSim | null {
+function runSimOf(node: TS.Expression, symbols: ChainSymbols): RunSim | null {
   const expression = unwrapTs(node);
   if (ts.isAwaitExpression(expression)) return runSimOf(expression.expression, symbols);
   if (!ts.isCallExpression(expression) || !ts.isIdentifier(expression.expression) || !importedBinding(expression.expression, "runSim", "chain-harness", symbols)) return null;
@@ -177,14 +180,14 @@ function runSimOf(node: ts.Expression, symbols: ChainSymbols): RunSim | null {
   return graph && (ts.isStringLiteral(graph) || ts.isNoSubstitutionTemplateLiteral(graph)) ? { graph: graph.text } : null;
 }
 
-function pathLiteral(node: ts.Expression): string[] | null {
+function pathLiteral(node: TS.Expression): string[] | null {
   const expression = unwrapTs(node);
   if (ts.isStringLiteral(expression) || ts.isNoSubstitutionTemplateLiteral(expression)) return expression.text.split(/\s+/).filter(Boolean);
   if (!ts.isArrayLiteralExpression(expression) || expression.elements.some((element) => !ts.isStringLiteral(element) && !ts.isNoSubstitutionTemplateLiteral(element))) return null;
-  return expression.elements.map((element) => (element as ts.StringLiteral).text);
+  return expression.elements.map((element) => (element as TS.StringLiteral).text);
 }
 
-function assertionPath(pathCall: ts.CallExpression, symbols: ChainSymbols): { path: string[] } | null {
+function assertionPath(pathCall: TS.CallExpression, symbols: ChainSymbols): { path: string[] } | null {
   const expectCall = pathCall.parent;
   if (!ts.isCallExpression(expectCall) || expectCall.arguments.length < 1 || expectCall.arguments[0] !== pathCall
     || !ts.isIdentifier(expectCall.expression) || !importedBinding(expectCall.expression, "expect", "vitest", symbols)) return null;
@@ -197,9 +200,9 @@ function assertionPath(pathCall: ts.CallExpression, symbols: ChainSymbols): { pa
   return path ? { path } : null;
 }
 
-function chainEvent(source: ts.SourceFile, symbols: ChainSymbols): Array<{ graph: string; path: string[] }> {
+function chainEvent(source: TS.SourceFile, symbols: ChainSymbols): Array<{ graph: string; path: string[] }> {
   const bindings: RunBinding[] = [];
-  const visit = (node: ts.Node) => {
+  const visit = (node: TS.Node) => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
       const list = node.parent;
       const kind = ts.isVariableDeclarationList(list) && (list.flags & ts.NodeFlags.Const) ? "const" : ts.isVariableDeclarationList(list) && (list.flags & ts.NodeFlags.Let) ? "let" : "var";
@@ -210,7 +213,7 @@ function chainEvent(source: ts.SourceFile, symbols: ChainSymbols): Array<{ graph
   visit(source);
 
   const events: Array<{ graph: string; path: string[] }> = [];
-  const findRun = (pathCall: ts.CallExpression): RunSim | null => {
+  const findRun = (pathCall: TS.CallExpression): RunSim | null => {
     const direct = runSimOf(pathCall.arguments[0]!, symbols);
     if (direct) return direct;
     const argument = unwrapTs(pathCall.arguments[0]!);
@@ -219,7 +222,7 @@ function chainEvent(source: ts.SourceFile, symbols: ChainSymbols): Array<{ graph
     const binding = bindings.find((candidate) => candidate.declaration === declaration);
     return binding?.kind === "const" ? binding.run : null;
   };
-  const walk = (node: ts.Node) => {
+  const walk = (node: TS.Node) => {
     if (ts.isCallExpression(node) && callName(node.expression) === "pathOf") {
       const match = assertionPath(node, symbols);
       const run = match ? findRun(node) : null;
@@ -238,6 +241,7 @@ export function chainCoverage(testsDir: string): Record<string, string[]> {
   const out = new Map<string, Set<string>>();
   const dir = join(testsDir, "workflow");
   if (!existsSync(dir)) return {};
+  ts ??= createRequire(import.meta.url)("typescript") as typeof TS;
   for (const name of readdirSync(dir)) {
     if (!/\.test\.ts$/.test(name)) continue;
     const fileName = join(dir, name);
