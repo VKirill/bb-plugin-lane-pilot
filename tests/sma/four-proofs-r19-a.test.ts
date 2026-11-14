@@ -60,7 +60,7 @@ function tree(dir: string, base = dir): Record<string, string> {
 const without = (all: Record<string, string>, prefix: string) => Object.fromEntries(Object.entries(all).filter(([name]) => !name.startsWith(prefix)));
 type Settings = { theme?: string; hooks?: Record<string, Array<{ matcher?: string; hooks: Array<{ command: string }> }>>; statusLine?: unknown };
 
-/** A home the old Claude Lane installer left behind next to the person's own files. */
+/** A home the earlier lane-stack installer left behind next to the person's own files. */
 function laneHome(home: string) {
   const person = {
     settings: `{\n  // the person's own note\n  "theme": "owner",\n  "hooks": {\n    "PreToolUse": [\n      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bash /usr/local/bin/guardian-code.sh" }, { "type": "command", "command": "python3 ${home}/.agents/hooks/guard_shell.py" }] }\n    ],\n    "Stop": [\n      { "hooks": [{ "type": "command", "command": "python3 ${home}/.agents/hooks/sma_hooks.py" }] },\n      { "hooks": [{ "type": "command", "command": "node /opt/gitnexus/hook.js" }] }\n    ]\n  }\n}\n`,
@@ -84,7 +84,7 @@ function laneHome(home: string) {
   return person;
 }
 
-describe("removal of the old Claude Lane leftovers", () => {
+describe("removal of the earlier lane-stack leftovers", () => {
   it("[sma:k_rm_cmd] one apply cuts the lane hooks out of settings and codex config, moves the lane files aside and leaves every line of the person's own", async () => {
     const { home } = temp("lp-r19-cmd-");
     const person = laneHome(home);
