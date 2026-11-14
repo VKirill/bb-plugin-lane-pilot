@@ -20,5 +20,5 @@
     "resolveJsonModule": true,
     "skipLibCheck": false
   },
-  "include": ["server.ts", "host.ts", "app.tsx", "src", "tests", "packages"]
+  "include": ["server.ts", "host.ts", "app.tsx", "src", "tests", "packages", "scripts/lp_drill/scenes"]
 }

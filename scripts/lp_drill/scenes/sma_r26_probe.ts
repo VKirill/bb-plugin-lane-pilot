@@ -151,7 +151,7 @@ async function world(sdk?: Record<string, unknown>) {
   const put = (arm: string, costUsd: number, accepted: boolean) => {
     const run = startRunRow(db, { setId: "s1", arm, repeat: 1, config: {}, budgetTokens: null, budgetHours: null });
     finishRunRow(db, run.id, "done", null);
-    saveResult(db, { runId: run.id, taskId: "t1", position: 0, state: accepted ? "accepted" : "rejected", accepted, benchTaskId: null, lpRunId: null, attempts: 1, stagesPassed: 2, stagesFailed: 0, tokens: 10, costUsd, costState: "measured", seconds: 5, reason: null, recordedAt: 1 });
+    saveResult(db, { runId: run.id, taskId: "t1", position: 0, state: accepted ? "accepted" : "not_accepted", accepted, benchTaskId: null, lpRunId: null, attempts: 1, stagesPassed: 2, stagesFailed: 0, tokens: 10, costUsd, costState: "measured", seconds: 5, reason: null, recordedAt: 1 });
   };
   put("stored", 4, true);
   const ran: string[] = [];

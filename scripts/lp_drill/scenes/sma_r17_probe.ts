@@ -115,7 +115,7 @@ const analyze = await runSim("lp.analyze", { input: { goal: "g" }, stubs: { gath
 s.analyze = { stack: outOf(analyze).stack, features: outOf(analyze).features };
 const row = (item: unknown, data?: Record<string, unknown>, branch = 0) => ({ branch, item, ok: data !== undefined, ...(data ? { data } : { error: "x", blocked: false }) });
 const rowsList = [row("q1", { subquestion: "q1", sources: [{ url: "u1" }, { url: "u2" }] }, 0), row("q2", { subquestion: "q2", sources: [{ url: "u1" }] }, 1), row("q3", { subquestion: "q3", sources: [] }, 2)];
-s.reducer = (REDUCERS["reduce.web-research.search"] as (input: unknown) => unknown)({ rows: rowsList, results: rowsList.map((entry) => entry.data), failed: [], items: rowsList.map((entry) => entry.item) });
+s.reducer = (REDUCERS["reduce.web-research.search"] as (input: unknown) => unknown)({ rows: rowsList, results: rowsList.map((entry) => (entry as { data?: unknown }).data), failed: [], items: rowsList.map((entry) => entry.item) });
 const roadStubs = { roadmap: { sessions: [{ id: "s1", intent: "login" }], mode: "single", session_count: 1, requirement_map: { R1: ["s1"] } }, sessions: { done_ids: ["s1"], blocked_ids: [], done_count: 1, blocked_count: 0 }, close: { status: "closed", report_path: "reports/close.md" } };
 const badRoad = await runSim("roadmap-driven", { input: { goal: "g", requirements: "R1" }, stubs: { ...roadStubs, validate: { ok: false, errors: ["R1 maps to no session"], cycles: [] } } });
 const goodRoad = await runSim("roadmap-driven", { input: { goal: "g", requirements: "R1" }, stubs: { ...roadStubs, validate: { ok: true, errors: [], cycles: [] } }, humans: { approve: { answer: "approve", answer_kind: "approve" } } });
