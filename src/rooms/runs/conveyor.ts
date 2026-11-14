@@ -15,6 +15,11 @@ export async function conveyorState(kv: Kv): Promise<ConveyorState> {
   return stored?.at ? { on: false, since: new Date(stored.at).toISOString(), reason: stored.reason ?? null } : { on: true, since: null, reason: null };
 }
 
+/** The one line the start says while the conveyor is off, with the way out of it (SMA m_say_pipeline); null while it is on. */
+export function conveyorStartLine(state: ConveyorState): string | null {
+  return state.on ? null : `Lane Pilot: the conveyor is OFF since ${state.since}${state.reason ? ` (${state.reason})` : ""}: no new work is issued. Turn it on with: bb lane-pilot conveyor on`;
+}
+
 export async function setConveyor(kv: Kv, on: boolean, reason?: string): Promise<ConveyorState> {
   if (on) await kv.set(CONVEYOR_KEY, null);
   else if ((await conveyorState(kv)).on) await kv.set(CONVEYOR_KEY, { at: Date.now(), reason: reason?.trim().slice(0, 300) || null });

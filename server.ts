@@ -4,6 +4,7 @@ import { PROVIDER_CAPABILITIES, writerFallbackChain, writerFallbacks } from "@la
 import { migrations as lanePilotMigrations } from "./src/rooms/migrations";
 import { coupledSettingKeys, validateSettingChanges, validateSettingValue, validateSettingsObject } from "./src/rooms/settings";
 import { createTaskReconcile } from "./src/rooms/runs/server";
+import { conveyorStartLine, conveyorState } from "./src/rooms/runs";
 import { createActivation } from "./src/rooms/native-agent/server";
 import { placeEmployeeOn, compileEffectiveMainAgent, detectCompiledMainAgentCapability, pendingSwitch } from "./src/rooms/native-agent";
 import { storeNativeSelection } from "./src/rooms/native-agent/server/native-profile";
@@ -645,6 +646,8 @@ export default async function plugin(bb: BbPluginApi) {
         await step("restore of the breakers", () => services.stability.restoreBreakers());
         // A version's first start is its deploy time: the canary counts the attempts from here.
         await step("canary start", () => services.canary.noteStart());
+        // SMA m_say_pipeline: a conveyor left off is said once at the start, with the way out; the work waiting behind it is no surprise.
+        await step("conveyor start line", async () => { const line = conveyorStartLine(await conveyorState(bb.storage.kv as never)); if (line) bb.log.warn(line); });
         await taskReconcile.reconcileTasks({ phase: "startup", step, afterResume: async () => {
           if (!skipScans) await step("run sweep", sweepRuns);
           if (!skipScans) await step("worktree sweep", sweepEnvironments);
