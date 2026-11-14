@@ -11,6 +11,9 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { adapterVersions, dueProbes } from "../../src/rooms/capability/logic";
 import { WORKER_ENVELOPE } from "../../src/rooms/tasks/rails";
 import { existsSync } from "node:fs";
+import { failureClass } from "../../src/rooms/contracts/failure-class";
+import { CORE_PROVIDER_GROUPS } from "../../src/rooms/contracts/helper-context";
+import { creatorBrief } from "../../src/rooms/forge/logic";
 import { spawnSync } from "node:child_process";
 import { userInfo } from "node:os";
 import { workerReachable } from "../../src/rooms/verification/worker-user";
@@ -241,5 +244,24 @@ describe("the worker user probe", () => {
     expect(await workerReachable("lp-sma-no-such-user")).toBe(false);
     const sudoWorks = spawnSync("/usr/bin/sudo", ["-n", "-u", me, "/usr/bin/true"]).status === 0;
     if (sudoWorks) expect(await workerReachable(me)).toBe(true); // a machine without passwordless sudo cannot show the reachable side
+  });
+});
+
+describe("the roles' edges", () => {
+  it("[sma:wr_forge] the creator brief carries the whole list of grants it must never give", () => {
+    expect(creatorBrief("skill", "cell-sum", "skip empty cells")).toContain("Never grant: permission bypass, every tool, an unrestricted or destructive shell, secrets, the guard or the hooks, a download piped into a shell.");
+  });
+
+  it("[sma:wr_vendors] the vendors the core advertises and the groups of access each one narrows: native plugins only for claude-code and codex", () => {
+    expect(CORE_PROVIDER_GROUPS["claude-code"]).toEqual(["bbPlugins", "skills", "mcpServers", "nativePlugins"]);
+    expect(CORE_PROVIDER_GROUPS.codex).toEqual(["bbPlugins", "skills", "mcpServers", "nativePlugins"]);
+    expect(CORE_PROVIDER_GROUPS.opencode2).toEqual(["bbPlugins", "skills", "mcpServers"]);
+  });
+
+  it("[sma:wr_windows] a saturated provider or a spent quota is a limit, not a task failure; an ordinary failure is a task failure", () => {
+    expect(failureClass("failed", "capacity_saturated: p")).toBe("limit");
+    expect(failureClass("failed", "writer_provider_limit: quota")).toBe("limit");
+    expect(failureClass("failed", "writer_provider_unavailable:breaker_open")).toBe("limit");
+    expect(failureClass("failed", "checks failed: npm test")).toBe("task");
   });
 });
