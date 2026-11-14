@@ -9,6 +9,7 @@ import type { ServerCore } from "../../contracts/server";
 
 import { saveFollowUp } from "./sticky";
 import { writerLeftWorktree } from "./left-worktree";
+import { appendTaskQaHome } from "./task-home";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { sendServiceMessage } from "../../relay/server";
 
@@ -62,6 +63,15 @@ export function contractFixRecord(changes: FieldChange[]): string {
  * Shared by lane_pilot_answer_writer and lane_pilot_update_task: a blocked attempt whose writer asked a question reopens
  * in its own writer thread and worktree, the turn goes in, the stages run again, and the Q&A is kept. No attempt is charged.
  */
+/**
+ * The Q&A note of a task: in the attempt folder of its home (and the running worktree's copy) for a task with a home, in the old task folder's
+ * QA.md for a task dispatched before the switch. Never both: one task stays on one layout (docs/task-folder.md).
+ */
+export async function noteTaskQa(ctx: Pick<ServerCore, "bb" | "db">, input: { hostId: string; workspacePath: string; taskId: string; attemptId?: string | null; question: string; answer?: string }): Promise<void> {
+  if (await appendTaskQaHome(ctx, { taskId: input.taskId, attemptId: input.attemptId ?? null, question: input.question, ...(input.answer !== undefined ? { answer: input.answer } : {}), mirrorRoot: input.workspacePath })) return;
+  await appendTaskQa(ctx.bb, input);
+}
+
 /**
  * Appends the question and the answer to the task folder's QA.md; a failed write never fails its caller. `answer`
  * absent marks the entry open — a writer parked on NEEDS_HUMAN leaves its question on disk for a person, the next
@@ -143,7 +153,7 @@ export function createAttemptReopen(ctx: ServerCore, services: Services) {
         terminal: "failed", attempt: countAttempts(db, runId, taskId), reason: attempt.reason, threadId });
       return { ok: false, hint: `the turn could not be delivered to the writer thread (${cause instanceof Error ? cause.message : String(cause)}); the task stays blocked — redispatch it instead` };
     }
-    await appendTaskQa(bb, { hostId: config.hostId, workspacePath: input.workspacePath, taskId, question: writerQuestion(attempt.reason), answer: input.qaAnswer });
+    await noteTaskQa({ bb, db }, { hostId: config.hostId, workspacePath: input.workspacePath, taskId, attemptId: attempt.id, question: writerQuestion(attempt.reason), answer: input.qaAnswer });
     const workspace = acceptedTaskWorkspace(runId, taskId, input.workspacePath, input.contract, attempt.id);
     services.startWriterTask({
       projectId: input.projectId, runId, taskId, firstAttemptId: attempt.id,

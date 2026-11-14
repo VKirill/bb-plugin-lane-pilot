@@ -2,7 +2,9 @@
 // One line per node, sorted by node number; a batch agent edits only its nodes' lines. The lines below are the
 // framework's worked examples (2026-11-14): each mutation was killed by a real `npm run sma:mutate` run
 // (attest/r01.json) and each trace was run on the hub snapshot of the same day.
-import { distort, entry, flip, gate, isSet, outside, receipt, type RegionEvidence, rows, transition, via, voidIsHave, wrongTarget } from "./types";
+import { distort, drill, entry, flip, gate, isSet, outside, receipt, type RegionEvidence, rows, transition, via, voidIsHave, wrongTarget } from "./types";
+
+const TASK_HOME = "src/rooms/writer/server/task-home.ts";
 
 export default {
   n158: { voidReview: voidIsHave("регистрация попытки — строка lane_pilot_attempt (id-токен, номер растёт) плюс замороженный run_policy_json с потолками (maxTurns, пулы); виды действий задаёт контракт задачи") },
@@ -25,6 +27,10 @@ export default {
     trace: rows("lane_pilot_attempt", "updated_at", "failure_code IS NOT NULL"),
   },
   n230: { voidReview: voidIsHave("личный слой основателя зеркалится: запуск сливает хуки, защиту и запреты человека в копию настроек каждого помощника и писателя, нечитаемый хук снимается с причиной (docs/guide/hooks.md, правило 6)") },
+  // One folder per attempt in the task home: barrier-input, checks, report under attempts/<attempt-id>/ (docs/task-folder.md, T9, T11).
+  n233: { mutation: wrongTarget(TASK_HOME, 'name: `attempts/${input.attemptId}/barrier-input.json`', 'name: "barrier-input.json"'), reach: entry("a writer attempt of a task with a home runs its checks and code critique"), trace: drill("task_home") },
+  // The PM's plan reaches the writer as text: shared .agents/plans/* files it names are snapshotted into context/plan-source.md (T1).
+  n236: { mutation: flip(TASK_HOME, "if (sources.length) files.push(", "if (!sources.length) files.push("), reach: entry("a PM dispatches a task whose plan names shared .agents/plans files"), trace: drill("task_home") },
   n251: {
     mutation: wrongTarget("src/rooms/tasks/rails.ts", "return { approach: line(\"APPROACH\")", "return { approach: line(\"LESSON\")"),
     trace: outside("the markers are read off the writer's answer in finish-attempt-body; only their warnings reach the BB thread"),
@@ -41,6 +47,8 @@ export default {
     mutation: flip("packages/workflow-engine/src/verdict.ts", "if (status === \"rework\" && high + critical === 0) status = \"pass\";", "if (status === \"rework\" && high + critical !== 0) status = \"pass\";"),
     trace: receipt("code-critique", "pass"),
   },
+  // The accepted attempt's receipts are written once into the task home in the base, so they outlive the worktree's removal (T13).
+  n294: { mutation: wrongTarget(TASK_HOME, 'kind: "acceptance", name: "acceptance.json",', 'kind: "acceptance", name: `attempts/${input.attemptId}/acceptance.json`,'), trace: drill("task_home") },
   n300: { reach: entry("a PM or the owner enqueues a task contract") },
   n306: {
     mutation: distort("src/rooms/tasks/rails.ts", "held)/.test(code)) return \"dependency\";", "held)/.test(code)) return \"conflict\";"),

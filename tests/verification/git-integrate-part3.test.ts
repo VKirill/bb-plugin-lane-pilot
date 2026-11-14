@@ -172,7 +172,9 @@ it("saves a released worktree's uncommitted edits and unshared commits as a patc
   expect((await snapshotWorktree({ worktreePath: await worktree("clean"), name: "env_y", dir })).status).toBe("clean");
 });
 
-it("writes the task folder, excludes it once, copies it into both worktree paths, and does not commit it", async () => {
+// docs/task-folder.md: the worktree no longer gets the base's whole .agents/plans/items/ (every task's plans and logs); the plugin places the
+// task's own home from its manifest at the brief. Mutation that breaks it: copyTaskItems copying the shared folder again.
+it("[sma:wi_spool] writes the old task folder in the base, excludes it once, copies no shared task folder into either worktree path, and does not commit it", async () => {
   const { appendExcludeCommand, persistTaskFolder, prepareWorktree, createWorktree, TASK_FOLDER_EXCLUDE } = await import("../../src/rooms/verification/git-integrate");
   const { mkdir, readFile, writeFile } = await import("node:fs/promises");
   const { dirname } = await import("node:path");
@@ -196,10 +198,13 @@ it("writes the task folder, excludes it once, copies it into both worktree paths
   await prepareWorktree({ basePath: base, worktreePath: own });
   await prepareWorktree({ basePath: base, worktreePath: flat });
   await prepareWorktree({ basePath: base, worktreePath: own });
-  expect(await readFile(join(own, ".agents", "plans", "items", taskId, "PLAN.md"), "utf8")).toBe(plan);
-  expect(await readFile(join(flat, ".agents", "plans", "items", taskId, "PLAN.md"), "utf8")).toBe(plan);
+  const { existsSync } = await import("node:fs");
+  expect(existsSync(join(own, ".agents", "plans", "items"))).toBe(false);
+  expect(existsSync(join(flat, ".agents", "plans", "items"))).toBe(false);
   const exclude = await readFile(join(base, ".git", "info", "exclude"), "utf8");
   expect(exclude.split("\n").filter((line) => line === TASK_FOLDER_EXCLUDE)).toEqual([TASK_FOLDER_EXCLUDE]);
+  // The task homes are excluded too, once, so a home placed in the worktree never reads as the writer's change.
+  expect(exclude.split("\n").filter((line) => line === "**/.agents/tasks/")).toEqual(["**/.agents/tasks/"]);
   expect(git(base, "status", "--porcelain").trim()).toBe("");
   expect(git(own, "status", "--porcelain").trim()).toBe("");
   expect(git(flat, "status", "--porcelain").trim()).toBe("");

@@ -40,7 +40,9 @@ export async function retrySafetyStop(input: {
     // Lane Pilot's own check logs (`.agents/plans/items/<task>/logs/`, written by the verify pass an instant before the attempt's end,
     // verify.ts) are neither foreign work nor a rewritten receipt: read as evidence modified after the end, they refused the automatic
     // retry of a failed check (cab-unslop-library.2, 2026-10-31).
-    const touched = lines.filter((line) => line.startsWith("./") && !/^\.\/\.agents\/plans\/items\/[^/]+\/logs\//.test(line));
+    // The task home (`.agents/tasks/<task>/`, docs/task-folder.md) is written by Lane Pilot after the end too (report, logs, manifest); each
+    // file's hash is in its manifest row, so a rewrite shows as drift there, not here.
+    const touched = lines.filter((line) => line.startsWith("./") && !/^\.\/\.agents\/plans\/items\/[^/]+\/logs\//.test(line) && !/^\.\/\.agents\/tasks\//.test(line));
     if (commits.length) {
       return `retry_safety: ${workspace} has ${commits.length} commit(s) made after attempt ${attemptId} ended (${commits[0]}); ` +
         "the owner or another process worked there — inspect the worktree and dispatch again manually instead of an automatic retry";

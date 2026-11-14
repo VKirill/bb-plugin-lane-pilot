@@ -68,8 +68,20 @@ describe("Helper role guard checks", () => {
       tool_name: "Write",
       tool_input: { file_path: ".bb/chats/thr_test/notes/note.md", content: "notes" },
       cwd: process.cwd(),
-    });
+    }, { LANE_PILOT_CHATS: "thr_test,thr_pm" });
     expect(chatRes.status).toBe(0);
+  });
+
+  // Audit d8 (docs/task-folder.md): the description said «its own chat» while the code allowed any .bb/chats/. Mutation that breaks it: the
+  // prefix-only check again, or the env resolver putting another chat's id into LANE_PILOT_CHATS.
+  it("[sma:wi_grant] denies a helper writing another chat's .bb/chats/<id>/, and any chat folder when its own is not known", () => {
+    const write = (file: string, env: Record<string, string>) =>
+      invoke({ agent_type: "errand", tool_name: "Write", tool_input: { file_path: file, content: "x" }, cwd: process.cwd() }, env);
+    expect(write(".bb/chats/thr_pm/artifacts/r.md", { LANE_PILOT_CHATS: "thr_me,thr_pm" }).status).toBe(0);
+    expect(write(".bb/chats/thr_other/artifacts/r.md", { LANE_PILOT_CHATS: "thr_me,thr_pm" }).status).toBe(2);
+    expect(write(".bb/chats/thr_me_not/r.md", { LANE_PILOT_CHATS: "thr_me" }).status).toBe(2);
+    expect(write(".bb/chats/thr_me/r.md", { BB_THREAD_ID: "thr_me" }).status).toBe(0);
+    expect(write(".bb/chats/thr_me/r.md", {}).status).toBe(2);
   });
 
   it("specialist can write .agents/ files but not product files", () => {

@@ -9,7 +9,8 @@ import { trustedToolingHint } from "./trusted-tooling";
 
 export function isTaskFolderFile(path:string):boolean {
   const normalized = path.replace(/^\.\//, "").replaceAll("\\", "/");
-  return normalized === ".agents/plans/items" || normalized.startsWith(".agents/plans/items/");
+  // `.agents/tasks/<id>/`: the task home (docs/task-folder.md), Lane Pilot's bookkeeping like the old items folder, never the writer's output.
+  return normalized === ".agents/plans/items" || normalized.startsWith(".agents/plans/items/") || normalized === ".agents/tasks" || normalized.startsWith(".agents/tasks/");
 }
 
 export type OutputCheck =

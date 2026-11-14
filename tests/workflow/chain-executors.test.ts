@@ -471,8 +471,12 @@ describe("the agent step", () => {
     };
     const context = ".agents/phases/ph_abc123/CONTEXT.md", plans = ".agents/plans/ui3/plan-items.json";
     expect((await stage([context])).status).toBe("succeeded");
-    expect((await stage([context, plans], "planner")).status).toBe("succeeded");
-    // The analyst has no business in the plans folder; the critics of the plan and of the drawing edit neither the plans nor the drawing they judge.
+    expect((await stage([".agents/phases/ph_abc123/PLAN.md"], "planner")).status).toBe("succeeded");
+    // Neither author writes the shared plans folder (docs/task-folder.md, audit handoff-map §5.2 item 10): a phase's plan is in its own folder.
+    const planner = await stage([context, plans], "planner");
+    expect(planner.error).toContain("repo_edited");
+    expect(planner.error).toContain(plans);
+    // The critics of the plan and of the drawing edit neither the plans nor the drawing they judge.
     const analyst = await stage([context, plans]);
     expect(analyst.error).toContain("repo_edited");
     expect(analyst.error).toContain(plans);
@@ -488,7 +492,7 @@ describe("the agent step", () => {
     expect(source.error).not.toContain("CONTEXT.md");
     const other = await stage([".agents/phases/ph_other/CONTEXT.md"]);
     expect(other.error).toContain("repo_edited");
-    // A run that is not a phase stage keeps the old rule, plans folder included.
+    // A run that is not a phase stage keeps the old rule: no repository file at all.
     expect((await stage([plans], "planner", "wf-manual:proj:w:k")).error).toContain("repo_edited");
   });
 
@@ -1062,12 +1066,13 @@ describe("handoff by reference and the start packet (W0)", () => {
 });
 
 describe("a phase stage's helper is told the folders it writes", () => {
-  it("replaces «write nothing» with the folders of the author's own: the planner the phase folder and the plans folder, the analyst the phase folder", async () => {
+  it("replaces «write nothing» with the folders of the author's own: the planner and the analyst the phase folder, never the shared .agents/plans/ (docs/task-folder.md)", async () => {
     const { phaseWriteNote } = await import("../../src/rooms/workflow/server/workflow-agent");
     const { READ_ONLY_LINE } = await import("@lane-pilot/workflow-engine");
     const told = phaseWriteNote(`brief\n${READ_ONLY_LINE}\ncontract`, "ph_abc123", "planner");
     expect(told).not.toContain(READ_ONLY_LINE);
-    expect(told).toContain(".agents/phases/ph_abc123/ and .agents/plans/");
+    expect(told).toContain("only under .agents/phases/ph_abc123/;");
+    expect(told).not.toContain(".agents/plans/");
     expect(phaseWriteNote("no line here", "ph_abc123", "analyst")).toContain(".agents/phases/ph_abc123/");
     expect(phaseWriteNote("no line here", "ph_abc123", "analyst")).not.toContain(".agents/plans/");
   });

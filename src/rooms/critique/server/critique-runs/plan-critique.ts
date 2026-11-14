@@ -1,7 +1,7 @@
 import { unownedExpectedOutputs } from "../../../tasks";
 import { hostContract, taskV2Schema } from "../../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../../contracts";
-import { getRun, getTask, getTaskPlan, listLiveTasksForRun, listOpenAttempts, listStageReceipts, openDatabase } from "../../../storage";
+import { getRun, getTask, getTaskPlan, listLiveTasksForRun, listOpenAttempts, listStageReceipts, openDatabase, resolveTaskFile } from "../../../storage";
 import { criticPairCandidates, roleSelection, sdkCriticCatalog, usable } from "../../critic-pair";
 import { bbServiceTier, findModelIn, listedServiceTier, resolveStageWriterSelection, writerExecutionSelection, writerServiceTier } from "@lane-pilot/models";
 import { settingOff } from "@lane-pilot/models";
@@ -133,7 +133,11 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   // task still at work made 28 of the 41 plan critiques of the owner's prototype chat run on low-risk one-page fixes
   // (thr_zwif89vbnb, 2026-11-02). The batch is the live tasks that share this task's plan text.
   // ponytail: a plan edited between two dispatches of one batch splits the count; a batch id on dispatch would be exact.
-  const planTasks = runTasks.filter((task) => task.id === input.taskId || getTaskPlan(input.db, task.id) === input.plan);
+  // Tasks with a home (docs/task-folder.md) compare the PLAN.md hash their manifests recorded (a path-line plan is its file's text there).
+  const ownPlan = resolveTaskFile(input.db, input.taskId, "plan");
+  const planTasks = runTasks.filter((task) => task.id === input.taskId || (ownPlan && !ownPlan.legacy
+    ? resolveTaskFile(input.db, task.id, "plan")?.sha256 === ownPlan.sha256
+    : getTaskPlan(input.db, task.id) === input.plan));
   let policy:ReturnType<typeof shouldRunPlanCritique>;
   try {
     policy = shouldRunPlanCritique({

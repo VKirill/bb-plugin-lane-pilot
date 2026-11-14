@@ -8,7 +8,7 @@ import { runCommandOnHost } from "../src/rooms/writer/cli-run";
 import { snapshotDryRun } from "../src/rooms/host-worker/host-handlers";
 import type { TaskV2 } from "../src/rooms/contracts";
 import {
-  createRun, createTask, getAttempt, listAttemptsForTask, listStageReceipts, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread,
+  createRun, createTask, getAttempt, legacyReadCount, listAttemptsForTask, listStageReceipts, loadProjectSettings, openDatabase, renderTaskManifest, saveProjectSetting, savePrototypeConfig, setRunThread,
 } from "../src/rooms/plugin-db";
 
 const projectId = "project-live";
@@ -95,7 +95,8 @@ async function setup(writerEdits: (folder: string) => string, feedback: (folder:
       models: async () => ({ models: [{ id: "codex-test", model: "codex-test",
         supportedReasoningEfforts: ["medium", "high"].map((reasoningEffort) => ({ reasoningEffort, description: reasoningEffort })) }] as never }),
     }, files: {
-      read: async () => ({ content: "fixture\n" }),
+      // A file the plugin wrote reads back as written (the task home); any other file is a fixture.
+      read: async (args) => ({ content: writes.get((args as { path: string }).path) ?? "fixture\n" }),
       listPaths: async () => ({ paths: [] }) as never,
       write: async (args) => { writes.set((args as { path: string }).path, (args as { content: string }).content); return { ok: true } as never; },
     } },
@@ -164,13 +165,49 @@ describe("a plain folder without git, end to end", () => {
     expect(existsSync(join(env.folder, ".git"))).toBe(false);
     noGit(env);
     expect(env.threadSpawns.filter((row) => row.role === "writer")).toHaveLength(1);
-    // The receipt names the mode.
-    const receipt = [...env.writes].find(([path]) => path.endsWith("lane-pilot-receipt.json"));
+    // The receipt names the mode; it is written once into the task's home (docs/task-folder.md), not the run's shared artifacts.
+    const receipt = [...env.writes].find(([path]) => path.endsWith("/.agents/tasks/live-task/receipt.json"));
+    expect([...env.writes].some(([path]) => path.endsWith("lane-pilot-receipt.json"))).toBe(false);
     expect(receipt && JSON.parse(receipt[1])).toMatchObject({ status: "accepted", workspace: "live-folder", ownsPaths: ["hello.txt", "src/**"] });
     expect(loadProjectSettings(env.db, projectId)["writer.lastResult"]).toMatchObject({ workspace: "live-folder" });
     const writerStage = listStageReceipts(env.db, runId, "live-task").find((row) => row.stageId === "writer-agent")!;
     expect(writerStage.result).toMatchObject({ status: "accepted", workspace: { mode: "live-folder" } });
     expect((writerStage.result as { produced?: string[] }).produced?.slice().sort()).toEqual(["hello.txt", "src/new.ts"]);
+    await env.harness.lifecycle.dispose();
+  });
+
+  // The live path from the entry to the effect (the 0.1.562 lesson: every function unit-tested, the graph never started): the PM's dispatch tool,
+  // the real lp-task-pipeline executors, the writer, acceptance and the close. Mutations it fails under: dispatch not opening the home or
+  // recording PLAN.md under another kind; pm-read reading an in-memory string instead of the manifest; the receipts written to the run's
+  // artifacts; the close not reading the attempt's report and acceptance through the manifest.
+  it("[sma:k_pl_quick] walks dispatch → pipeline → accepted, and every main-path reader resolved its input through the task manifest", async () => {
+    const env = await setup((folder) => {
+      write(folder, "hello.txt", "hello\n");
+      return "Changed hello.txt\nLESSON: a live folder needs no worktree";
+    });
+    await env.dispatch();
+    const attempt = await env.finished();
+    expect(attempt.state).toBe("accepted");
+    type Manifest = { schema: string; files: Array<{ kind: string; path: string; read_by: Array<{ node: string }> }>; legacy: unknown[] };
+    let manifest = renderTaskManifest(env.db, "live-task") as Manifest | null;
+    // OUTCOME.md and lessons.md are written by the attempt-finished reaction, a moment after the attempt row turns accepted.
+    for (let i = 0; i < 200 && !manifest?.files.some((row) => row.kind === "lesson"); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      manifest = renderTaskManifest(env.db, "live-task") as Manifest | null;
+    }
+    expect(manifest?.schema).toBe("lp.task-manifest/1");
+    const kinds = new Set(manifest!.files.map((row) => row.kind));
+    for (const kind of ["contract", "plan", "brief", "writer-report", "acceptance", "receipt", "outcome", "lesson"]) expect([...kinds], kind).toContain(kind);
+    const readers = (kind: string) => manifest!.files.filter((row) => row.kind === kind).flatMap((row) => row.read_by.map((read) => read.node));
+    expect(readers("plan")).toContain("pm-read");
+    expect(readers("writer-report")).toContain("lessons");
+    expect(readers("acceptance")).toContain("lessons");
+    expect(manifest!.legacy).toEqual([]);
+    expect(legacyReadCount(env.db, { taskId: "live-task" })).toBe(0);
+    // The files are in the task's home under the run's folder, and PLAN.md holds the plan text the PM sent.
+    expect(env.writes.get(join(env.folder, ".agents/tasks/live-task/PLAN.md"))).toBe("Make hello.txt say hello\n");
+    expect(env.writes.has(join(env.folder, ".agents/tasks/live-task/manifest.json"))).toBe(true);
+    expect([...env.writes.keys()].filter((path) => path.includes("/.agents/plans/items/") || path.includes("/artifacts/live-task/"))).toEqual([]);
     await env.harness.lifecycle.dispose();
   });
 

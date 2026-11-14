@@ -29,6 +29,16 @@ TL;DR: This page records implementation-facing ADRs and links to the existing de
 
 **Consequences.** Git-backed acceptance validates the writer result and merges the bound attempt worktree; a no-Git attempt instead depends on snapshot and backup limits (`src/rooms/writer/server/finish.ts:284-296`, `:741-767`, `src/rooms/writer/live-folder.ts:16-32`). The scheduled `attempt-worktree-sweep` releases finished attempt environments and expired sticky lane worktrees, while the writer loop invokes live-folder rollback after failed attempts (`server.ts:189-198`, `src/rooms/writer/server/start.ts:756-759`).
 
+## ADR 2: One home per task, under the task's base checkout
+
+**Context.** One task's files were scattered over `.agents/plans/items/<id>/`, `.agents/runs/<run>/artifacts/<id>/`, the attempt worktree and the DB. Readers found them by listing folders or picking the newest file, and a project with a separate planning home could split a task between two roots (audit `handoff-map.md` §2, §4.2).
+
+**Decision.** Every file of a task goes into `.agents/tasks/<task-id>/` under the task's base checkout (`taskBasePath`, the same rule the old `items/` folder used). `.agents/tasks/` is not a planning path, so `isPlanningPath`/`planningText` never move it to the planning home, and a task's first root is kept (`openTaskHome` is idempotent). The DB tables `lane_pilot_task_home`/`lane_pilot_task_file`/`lane_pilot_task_file_read` are the source of truth; `manifest.json` is their rendering ([task-folder.md](task-folder.md)).
+
+**Status.** Accepted for the main task path (step 1); the other graphs follow in step 2.
+
+**Consequences.** Tasks dispatched before the switch finish on the old layout; the resolver reads their files by exact old name and counts each read.
+
 ## Existing decisions
 
 - [Lane Pilot database access](decisions/2026-10-08-lane-pilot-data-db-access.md)

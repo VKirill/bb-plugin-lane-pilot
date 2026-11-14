@@ -19,6 +19,7 @@ import {
   saveTaskPlan,
   updateTaskContract,
   contractEditions,
+  hasTaskHome,
 } from "../../storage";
 
 
@@ -56,8 +57,9 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import { isNotFound, orMiss } from "@lane-pilot/kit";
 import { dispatchRunOf, plannerLoopActive, rerunDispatchStages } from "./dispatch-workflow";
 import { PM_STOPPED_PLANNER_LOOP } from "./plan-revise";
-import { appendTaskQa, awaitsWriterAnswer, contractFixRecord, contractFixTurnPrompt, createAttemptReopen, writerQuestion } from "./reopen-attempt";
+import { noteTaskQa, awaitsWriterAnswer, contractFixRecord, contractFixTurnPrompt, createAttemptReopen, writerQuestion } from "./reopen-attempt";
 import { pendingWordPush } from "./writer-task";
+import { openAttemptWorktree, recordTaskEdition } from "./task-home";
 import { reflexLinesOf, taskFileCards } from "./writer-knowledge";
 import { writerDiffRules } from "../../learning";
 import type { FieldChange } from "./reopen-attempt";
@@ -86,6 +88,13 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
 
   /** Writes PLAN.md into the task folder; a failed write is logged and never fails the update. */
   async function persistPlan(hostId: string, workspacePath: string, taskId: string, plan: string, extra?: { projectId?: string; task?: TaskV2 }): Promise<void> {
+    // A task with a home (docs/task-folder.md): a new contract.v<N>.json and PLAN.md there, and again in its open worktree. No old folder.
+    if (hasTaskHome(db, taskId)) {
+      const task = extra?.task ?? (getTask(db, taskId)?.contract as TaskV2 | undefined);
+      if (task) await recordTaskEdition(ctx, { taskId, task, plan, mirrorRoot: openAttemptWorktree(db, taskId, workspacePath) })
+        .catch((cause: unknown) => bb.log.warn(`Lane Pilot could not record the new edition of ${taskId} in its home: ${cause instanceof Error ? cause.message : String(cause)}`));
+      return;
+    }
     try {
       await persistTaskFolder({
         taskId,
@@ -297,7 +306,7 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
       }
       if (!delivered) await pendingWordPush(bb.storage.kv as never, input.runId, input.taskId, text);
       const qaPath = getAttempt(db, wheeled.id)?.workspace_path ?? workspacePath;
-      await appendTaskQa(bb, { hostId: config.hostId, workspacePath: qaPath, taskId: input.taskId, question: `the PM's word (${when})`, answer: text });
+      await noteTaskQa(ctx, { hostId: config.hostId, workspacePath: qaPath, taskId: input.taskId, attemptId: wheeled.id, question: `the PM's word (${when})`, answer: text });
       log(`writer ${input.taskId}: the PM's word ${delivered ? `reached the running writer (${when})` : "is kept for the next attempt"}`);
       return { ok: true, runId: input.runId, taskId: input.taskId, attemptId: wheeled.id, state: "running", delivered, when,
         note: delivered ? "The word reached the writer's thread and is recorded in the task folder's QA.md."

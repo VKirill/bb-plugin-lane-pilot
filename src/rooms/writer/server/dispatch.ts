@@ -20,7 +20,8 @@ import { createTaskLinter, lintReply } from "../../tasks/server";
 import type { LintFinding } from "../../tasks/server";
 import { bestEffort, id, parseJsonOr, pollPause, stringAt, valueAt } from "@lane-pilot/kit";
 import { dispatchReply, dispatchRunKey, startDispatchRun, pipelineUnavailable } from "./dispatch-workflow";
-import { suggestTests, testHintLine } from "../../verification";
+import { appendExcludeCommand, suggestTests, testHintLine } from "../../verification";
+import { bbTaskFileIo, TASK_HOME_EXCLUDE, writeDispatchHome } from "./task-home";
 import { gateResolverFor, gateRunVerdict } from "../../verification/server"
 import { latestGateRunForTask } from "../../storage"
 import { parseIntegrationGateSettings } from "../../contracts/integration-gate";
@@ -338,6 +339,19 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       bb.log.warn(`Lane Pilot dispatch of ${taskId} refused: engine_unavailable: ${unavailable}`);
       const hint = `the task pipeline runs on the workflow engine and it cannot start now (${unavailable}); nothing was created. Send the task again in a minute; if it repeats, tell the owner.`;
       return { ok:false, error:{ code:"engine_unavailable", retryable:true, sideEffects:"none", hint }, hint };
+    }
+    // The task's one home (docs/task-folder.md): its contract, the plan TEXT and a snapshot of the shared plan files the plan names, under
+    // <task base>/.agents/tasks/<id>/. A failed write creates no task: the PM is told and sends it again.
+    try {
+      if (!await bestEffort(ctx.log, "task home live folder probe", services.isLiveFolder(runId, config.hostId, taskBase), false)) {
+        await bestEffort(ctx.log, "task home exclude line", runOnHost(host, { hostId:config.hostId, cwd:taskBase, command:appendExcludeCommand(TASK_HOME_EXCLUDE), timeoutSec:30, timeoutMs:30_000 }), null);
+      }
+      await writeDispatchHome(db, bbTaskFileIo(bb as never, config.hostId, taskBase), { taskId, projectId:args.projectId, runId, basePath:taskBase, hostId:config.hostId, task, plan:canonicalPlan });
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      bb.log.warn(`Lane Pilot dispatch of ${taskId} refused: task_home_write_failed: ${detail}`);
+      const hint = `the task's home .agents/tasks/${taskId}/ could not be written in ${taskBase} (${detail}); nothing was dispatched. Send the task again; if it repeats, tell the owner.`;
+      return { ok:false, error:{ code:"task_home_write_failed", retryable:true, sideEffects:"none", hint }, hint };
     }
     createTask(db, { id:taskId, runId, kind:"bb", contract:task, birth:args.birth ?? "pm" });
     await saveCriticCodeDefault(bb.storage.kv as never, taskId, args.criticCodeDefault);

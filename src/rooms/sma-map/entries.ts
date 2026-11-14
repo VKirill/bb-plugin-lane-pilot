@@ -305,7 +305,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n291: ["have", "слить проверенное дерево", "src/rooms/verification/git-integrate/merge.ts#integrateWorktree"],
   n292: ["have", "книга закрыта до «принято»: книга фазы пишется на каждом шаге", "src/rooms/phase/server/driver-docs.ts#writeBook"],
   n293: ["have", "путь наследия без барьера: verify none записывается", "packages/contracts/src/schemas.ts#taskV2Schema"],
-  n294: ["have", "копия идёт с одобрением: посадка после «да» владельца", "src/rooms/writer/server/finish-attempt-body.ts#finishWriterAttemptBody"],
+  n294: ["have", "копия убирается сразу после принятия: тот же вызов, что влил работу в main, удаляет worktree и её ветку; квитанции остаются в доме задачи", "src/rooms/verification/git-integrate/merge.ts#integrateWorktree"],
   n295: ["have", "урок уходит в корпус", "src/rooms/workflow/server/after-accept.ts#registerAfterAcceptExecutors"],
   n296: ["have", "рваная посадка восстановлена", "src/rooms/verification/server/merge-intent.ts#recoverMergeIntents"],
   n297: ["have", "другой кандидат той же работы: версия x.N", "packages/contracts/src/schemas.ts#taskFamily"],

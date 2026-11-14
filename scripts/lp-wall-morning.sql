@@ -241,7 +241,13 @@ with dark(name) as (
   union all
   select 'lane_pilot_task_draft' as name where (select count(*) from lane_pilot_task_draft where created_at >= (select since from lp_morning_30)) = 0
   union all
+  select 'lane_pilot_task_file' as name where (select count(*) from lane_pilot_task_file where created_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_task_file_read' as name where (select count(*) from lane_pilot_task_file_read where at >= (select since from lp_morning_30)) = 0
+  union all
   select 'lane_pilot_task_git_base' as name where (select count(*) from lane_pilot_task_git_base) = 0
+  union all
+  select 'lane_pilot_task_home' as name where (select count(*) from lane_pilot_task_home where created_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_task_plan' as name where (select count(*) from lane_pilot_task_plan) = 0
   union all

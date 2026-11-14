@@ -5,7 +5,7 @@ import plugin from "../server";
 import type { TaskV2 } from "../src/rooms/contracts";
 import { shouldRunPlanCritique } from "../src/rooms/critique/critique";
 import { parsePlanRevision, planReviseConfig } from "../src/rooms/writer/server/plan-revise";
-import { contractEditions, createRun, getAttempt, getTaskPlan, listStageReceipts, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../src/rooms/plugin-db";
+import { contractEditions, createRun, getAttempt, getTaskPlan, listStageReceipts, openDatabase, renderTaskManifest, saveProjectSetting, savePrototypeConfig, setRunThread } from "../src/rooms/plugin-db";
 
 /**
  * The planner <-> critic loop of the direct dispatch path (SMA n1269 «Up to three revision rounds», n1267, n1268, n22, n23, n25, n28): a plan the
@@ -51,6 +51,8 @@ async function runScenario(scenario: Scenario) {
   const meta = new Map<string, Record<string, unknown>>();
   const asked = new Map<string, number>();
   const sends: Array<{ threadId: string; text: string }> = [];
+  // The files the plugin wrote (the task home): they read back as written.
+  const written = new Map<string, string>();
   let critics = 0, nextWriter = 0, porcelain = 0, plannerRounds = 0;
   let updateReply: Promise<unknown> | null = null;
   const { bb, harness } = createFakeWorktreeHost({
@@ -125,8 +127,8 @@ async function runScenario(scenario: Scenario) {
       },
       files: {
         listPaths: async () => ({ truncated: false, paths: [{ kind: "file", name: "README.md", path: "README.md", positions: [], score: 1 }] }) as never,
-        read: async ({ path }) => path.endsWith("README.md") ? { content: "readme\n" } : path.endsWith(".txt") ? { content: "reviewed output\n", sha256: noteSha } : { content: null },
-        write: async () => ({ ok: true }) as never,
+        read: async ({ path }) => written.has(path) ? { content: written.get(path)! } : path.endsWith("README.md") ? { content: "readme\n" } : path.endsWith(".txt") ? { content: "reviewed output\n", sha256: noteSha } : { content: null },
+        write: async (args) => { const { path, content } = args as unknown as { path: string; content: string }; written.set(path, content); return { ok: true } as never; },
       },
     },
     experimental_callHostRpc: async (call) => {
@@ -178,6 +180,8 @@ async function runScenario(scenario: Scenario) {
     sends,
     steps: (db.prepare("SELECT node_id, state FROM lane_pilot_wf_step WHERE run_id IN (SELECT id FROM lane_pilot_wf_run WHERE workflow_id='lp-task-pipeline') ORDER BY rowid").all() as Array<{ node_id: string; state: string }>),
     pipelineOutput: JSON.parse(pipeline?.output_json ?? "null") as { reply?: Record<string, unknown> } | null,
+    manifest: renderTaskManifest(db, task.id) as { files: Array<{ kind: string; path: string; supersedes?: string; produced_by: { node: string }; read_by: Array<{ node: string; sha256: string | null }>; sha256: string }> } | null,
+    written,
     critiqueEvents: (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_stage_event WHERE task_id=? AND stage_id='plan-critique' AND state='running'").get(task.id) as { n: number }).n,
   };
   await harness.lifecycle.dispose();
@@ -210,6 +214,25 @@ describe("the planner revises a plan the critic returned", () => {
     expect((run.waited as { state: string }).state).toBe("accepted");
     expect(run.everBlocked).toBe(false);
     expect(toPm(run)).toEqual([]);
+  }, 60_000);
+
+  // The task home (docs/task-folder.md): the planner's revision is the home's new PLAN.md and contract edition, and the fresh critic of the next
+  // round reads that PLAN.md through the manifest. Mutation it fails under: the plan-revise executor not recording the revision in the home (the
+  // critic then reads the dispatch's PLAN.md, or stops), or the critic reading the in-memory plan instead of the manifest.
+  it("plan-revise → plan-critique: the revision is PLAN.md's next edition in the task home and the next critic reads it through the manifest", async () => {
+    const revised = "Write the fixture: create note.txt with the reviewed output and check it";
+    const run = await runScenario({ settings: planner, critic: [rework(1), PASS], finish: true });
+    const plans = run.manifest!.files.filter((row) => row.kind === "plan");
+    expect(plans.map((row) => row.produced_by.node)).toEqual(["dispatch", "plan-revise"]);
+    expect(run.manifest!.files.filter((row) => row.kind === "contract").map((row) => row.path)).toEqual(["contract.v1.json", "contract.v2.json"]);
+    const current = plans.at(-1)!;
+    expect(current).toMatchObject({ path: "PLAN.v2.md", supersedes: "PLAN.md" });
+    expect(run.written.get(`${config.writerWorkspacePath}/.agents/tasks/${task.id}/PLAN.v2.md`)).toBe(`${revised}\n`);
+    // The second critic's read is recorded on the revised PLAN.md, with the revised text's hash; the first critic read the dispatch's plan.
+    const reads = run.manifest!.files.flatMap((row) => row.read_by.filter((read) => read.node === "plan-critique").map((read) => read.sha256));
+    expect(reads).toEqual([createHash("sha256").update(`${PLAN}\n`).digest("hex"), current.sha256]);
+    expect(current.sha256).toBe(createHash("sha256").update(`${revised}\n`).digest("hex"));
+    expect((run.waited as { state: string }).state).toBe("accepted");
   }, 60_000);
 
   it("an info note does not hold the plan: a pass with an info finding goes to the writer, a return with only an info finding is answered by the planner; the PM gets nothing", async () => {

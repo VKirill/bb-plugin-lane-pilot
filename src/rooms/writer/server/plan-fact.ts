@@ -7,6 +7,8 @@ import type { TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
 import { deleteStageReceipt, getRunSettingsScopes, getStageReceiptResult, getTask, getTaskGitBase, loadProjectSettings, acceptedTaskIdsOfRun, stageReceiptAttemptState } from "../../storage";
 import { recordStage } from "../../runs/server";
+import { readTaskFile } from "../../storage";
+import { recordTaskHomeFile, taskHomeIo } from "./task-home";
 import { NO_CODE_KINDS, PLAN_FACT_RULES, blindPlanFact, diffHunksCommand, existsCommand, existsFromCommandOutput, hunksFromCommandOutput, parsePlanFact, planFactOutcome, sha256, untouchedCitations } from "../../tasks";
 import type { ItemVerdict, PlanFactCheck, PlanFactFacts, PlanFactTable } from "../../tasks";
 
@@ -62,9 +64,15 @@ function familyPaths(db: ServerCore["db"], runId: string, taskId: string): strin
 export async function runPlanFactStage(ctx: ServerCore, input: {
   projectId: string; runId: string; taskId: string; attempt: number; hostId: string; task: TaskV2;
   answers: readonly string[]; produced: readonly string[]; verification: ReadonlyArray<{ command: string; exitCode: number }>;
+  /** The attempt whose writer report (kind writer-report in the task home) the check reads first; the in-memory answers are its fallback for a task on the old layout. */
+  attemptId?: string;
 }): Promise<{ refusal: string | null; check: PlanFactCheck; state: "passed" | "failed" | "skipped" }> {
   const { db, host, bb } = ctx;
-  const table = tableFromAnswers(input.answers);
+  // A task with a home: the report is read from the attempt's report.md by the manifest (docs/task-folder.md), the one the critic and acceptance see.
+  const homeIo = input.attemptId ? taskHomeIo(ctx, input.taskId) : null;
+  const report = homeIo && input.attemptId ? await readTaskFile(db, homeIo, { taskId: input.taskId, kind: "writer-report", attemptId: input.attemptId, reader: "plan-fact" }).catch(() => null) : null;
+  const answers = report ? [report.text, ...input.answers.slice(1)] : input.answers;
+  const table = tableFromAnswers(answers);
   const gitBaseFamily = familyBase(db, input.runId, input.taskId);
   const produced = [...new Set([...input.produced, ...(gitBaseFamily ? familyPaths(db, input.runId, input.taskId) : [])])];
   let hunks: Pick<PlanFactFacts, "hunksKnown" | "changed"> = { hunksKnown: false, changed: {} };
@@ -119,9 +127,14 @@ export async function runPlanFactStage(ctx: ServerCore, input: {
   deleteStageReceipt(db, input.runId, input.taskId, "plan-fact");
   recordStage(db, {
     runId: input.runId, taskId: input.taskId, stageId: "plan-fact", state: outcome.state, attempt: input.attempt,
-    input: JSON.stringify({ answerSha256: sha256(input.answers[0] ?? ""), acceptance: input.task.acceptance, produced, base }),
+    input: JSON.stringify({ answerSha256: sha256(answers[0] ?? ""), acceptance: input.task.acceptance, produced, base, ...(report ? { report: report.repoPath } : {}) }),
     result: { ...check, ...(check.table === "ok" && "nearMisses" in check && check.nearMisses ? { near_misses: check.nearMisses } : {}), mode, base, rules: PLAN_FACT_RULES }, reason: outcome.reason,
   });
+  if (homeIo && input.attemptId) {
+    await bestEffort(ctx.log, "plan-fact record", recordTaskHomeFile(ctx, { taskId: input.taskId, kind: "plan-fact", name: `attempts/${input.attemptId}/plan-fact.json`, attemptId: input.attemptId,
+      content: `${JSON.stringify({ state: outcome.state, reason: outcome.reason ?? null, mode, base, report: report ? { path: report.path, sha256: report.sha256 } : null, check }, null, 2)}\n`,
+      producer: { node: "plan-fact", graph: "lp-task-pipeline", stage_id: "plan-fact", run_id: input.runId, attempt_id: input.attemptId }, readers: ["acceptance"] }), null);
+  }
   return { refusal: mode === "gate" && outcome.state === "failed" ? outcome.reason : null, check, state: outcome.state };
 }
 

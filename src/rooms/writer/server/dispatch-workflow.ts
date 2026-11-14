@@ -4,6 +4,8 @@ import type {StageHelperSettings} from "../../platform/server";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../contracts/quality-mode";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification";
+import { hasTaskHome, TASK_HOME_EXCLUDE } from "../../storage";
+import { recordPlanCritique, recordPlannerRevision, recordTaskHomeFile, stagePlanText } from "./task-home";
 import { pmReadBrief } from "../writer-brief";
 import type { NodeExecutor, RunSummary, StepContext, WorkflowEngine } from "../../workflow";
 import { provideLpTaskPipeline } from "../../workflow/server";
@@ -14,7 +16,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { ServerCore } from "../../contracts/server";
 
 import { runOnHost } from "@lane-pilot/host-calls";
-import { isNotFound, orMiss, parseJsonOr } from "@lane-pilot/kit";
+import { isNotFound, maskCredentials, orMiss, parseJsonOr } from "@lane-pilot/kit";
 import { withUsage } from "../../usage/server";
 import { taskUsage } from "./attempt-usage";
 import { reflexLinesOf, taskFileCards } from "./writer-knowledge";
@@ -132,7 +134,9 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
     }, ...extra });
 
   exec("lp.pm-read", async (r, ctx) => {
-    const pmRead = await runPmRead({ stageHelperSettings: r.services.stageHelperSettings, bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId, pmThreadId: r.threadId, config: r.runConfig, task: r.task, plan: r.plan, workflow: stepRef(ctx) });
+    // The plan comes from the task home's PLAN.md by the manifest (docs/task-folder.md), not from what the dispatch held in memory.
+    const plan = await stagePlanText(r.ctx, r.taskId, "pm-read", r.plan);
+    const pmRead = await runPmRead({ stageHelperSettings: r.services.stageHelperSettings, bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId, pmThreadId: r.threadId, config: r.runConfig, task: r.task, plan, workflow: stepRef(ctx) });
     return { state: pmRead.state, summary: pmRead.summary, ...(pmRead.reason !== undefined ? { reason: pmRead.reason } : {}), handoff: handoffOf("pm-read", pmRead.state, pmRead.reason) };
   }, {}, "pm-read");
 
@@ -144,8 +148,13 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
   exec("lp.plan-critique", async (r, ctx) => {
     // A canceled task starts no new helper: the block branch then answers with the ended attempt.
     if (endedReply(r)) return { allowed: false, revisable: false, reason: "attempt ended before its stages finished", handoff: handoffOf("plan-critique", "skipped", "attempt ended") };
+    // The critic of every round reads PLAN.md through the task's manifest (docs/task-folder.md): after a planner round that is the revised edition.
+    const plan = await stagePlanText(r.ctx, r.taskId, "plan-critique", r.plan);
     const critique = await runPlanCritique({ stageHelperSettings: r.services.stageHelperSettings, bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId,
-      config: r.runConfig, task: r.task, plan: r.plan, pmReadContext: text(ctx.input.with.pmReadContext) || undefined, workflow: stepRef(ctx) });
+      config: r.runConfig, task: r.task, plan, pmReadContext: text(ctx.input.with.pmReadContext) || undefined, workflow: stepRef(ctx) });
+    // The verdict as critique/plan.r<K>.json in the task home; a failed record never changes the verdict.
+    await recordPlanCritique(r.ctx, { taskId: r.taskId, runId: r.runId, allowed: critique.allowed, reason: critique.reason, wfStepKey: ctx.stepKey })
+      .catch((cause: unknown) => r.ctx.bb.log.warn(`Lane Pilot: the plan critique of ${r.taskId} was not recorded in its home: ${cause instanceof Error ? cause.message : String(cause)}`));
     // The planner revises a returned plan when the project says so (plan_critique.revise_by planner), the refusal is one a rewrite of the plan can
     // fix (a rework, or a structural finding in the plan itself), its rounds are not spent, and the PM has not taken the plan over.
     const settings = loadProjectSettings(r.ctx.db, r.projectId, getRunSettingsScopes(r.ctx.db, r.runId));
@@ -172,13 +181,18 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
     if (endedReply(r)) return { output: { revised: false, reason: "attempt ended before its stages finished", ...base, handoff: handoffOf("plan-revise", "skipped", "attempt ended") } };
     let outcome: Awaited<ReturnType<typeof runPlanRevise>>;
     try {
-      outcome = await runPlanRevise({ bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId, config: r.runConfig, task: r.task, plan: r.plan, settings,
+      outcome = await runPlanRevise({ bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId, config: r.runConfig, task: r.task, plan: await stagePlanText(r.ctx, r.taskId, "plan-revise", r.plan), settings,
         round, max: config.maxRounds, findings: roundsOf(loop), plannerThreadId, tried, signal: ctx.signal, workflow: stepRef(ctx) });
     } catch (cause) {
       const reason = `planner_failed:${cause instanceof Error ? cause.message : String(cause)}`;
       return { output: { revised: false, reason, ...base, handoff: handoffOf("plan-revise", "failed", reason) } };
     }
-    if (outcome.revised && outcome.plan && outcome.task) { r.plan = outcome.plan; r.task = outcome.task; }
+    if (outcome.revised && outcome.plan && outcome.task) {
+      r.plan = outcome.plan; r.task = outcome.task;
+      // The revision is the task home's new PLAN.md and contract edition (supersedes chain): the next critic reads it through the manifest.
+      const homeFailed = await recordPlannerRevision(r.ctx, { taskId: r.taskId, task: outcome.task, plan: outcome.plan });
+      if (homeFailed) outcome = { ...outcome, revised: false, reason: homeFailed };
+    }
     const output = { revised: outcome.revised, ...base, fromSha: outcome.fromSha, ...(outcome.planSha ? { planSha: outcome.planSha } : {}), ...(outcome.edition !== undefined ? { edition: outcome.edition } : {}),
       ...(outcome.reason ? { reason: outcome.reason } : {}), ...(outcome.plannerThreadId ? { plannerThreadId: outcome.plannerThreadId } : {}),
       handoff: handoffOf("plan-revise", outcome.revised ? `revised (edition ${outcome.edition})` : "not revised", outcome.reason) };
@@ -274,25 +288,38 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
   exec("lp.task-folder", async (r, ctx) => {
     const { bb, host } = r.ctx;
     const live = ctx.input.with.live === true;
+    const reflexes = reflexLinesOf(writerDiffRules(r.ctx.db as never, r.projectId));
+    const filecards = await taskFileCards(r.ctx.db as never, r.projectId, r.task).catch(() => undefined);
+    // The line goes into the repository's real info/exclude, resolved by git on the workspace's own host — never into a stray `.git` of a
+    // subfolder workspace (OVH 2026-10-06). A failed exclude skips only its line.
+    const exclude = live ? undefined : async (line: string) => {
+      const ran = await runOnHost(host, { hostId: r.config.hostId, cwd: r.workspacePath, command: appendExcludeCommand(line), timeoutSec: 30, timeoutMs: 30_000 });
+      if (ran.exitCode !== 0) throw new Error(ran.stderr.trim() || `git exited ${ran.exitCode}`);
+    };
+    // A task with a home (docs/task-folder.md) gets its guard notes there, through the manifest. A failed write stops the pipeline: a writer
+    // without its folder must not start (it used to be only logged, and the brief then had no plan at all).
+    if (hasTaskHome(r.ctx.db, r.taskId)) {
+      await exclude?.(TASK_HOME_EXCLUDE).catch((cause: unknown) => bb.log.warn(`Lane Pilot skipped the task-home exclude line: ${cause instanceof Error ? cause.message : String(cause)}`));
+      const producer = { node: "task-folder", graph: "lp-task-pipeline", stage_id: "task-folder", wf_step_key: ctx.stepKey };
+      const lines = reflexes.filter((line) => /WHEN\s+.+?\s*(?:→|->)\s*.+/.test(line));
+      if (lines.length) await recordTaskHomeFile(r.ctx, { taskId: r.taskId, kind: "reflexes", name: "REFLEXES.md", content: `# Reflexes\n\n${lines.join("\n")}\n`, producer, readers: ["guard"] });
+      const cards = (filecards ?? []).map((line) => maskCredentials(line.slice(0, 260)).text).filter(Boolean).slice(0, 40);
+      if (cards.length) await recordTaskHomeFile(r.ctx, { taskId: r.taskId, kind: "filecards", name: "FILECARDS.md", content: `# File notes\n\n${cards.join("\n")}\n`, producer, readers: ["guard"] });
+      return { ok: true };
+    }
+    // A task dispatched before the switch keeps its old folder to the end (no mixing inside one task); a failed write stops it too.
     try {
       await persistTaskFolder({
         taskId: r.taskId, plan: r.plan,
         // The project's accepted WHEN → act rules reach the writer's guard as REFLEXES.md (SMA k_hs_reflex).
-        reflexes: reflexLinesOf(writerDiffRules(r.ctx.db as never, r.projectId)),
-        filecards: await taskFileCards(r.ctx.db as never, r.projectId, r.task).catch(() => undefined),
-        // The line goes into the repository's real info/exclude, resolved by git on the workspace's own host —
-        // never into a stray `.git` of a subfolder workspace (OVH 2026-10-06). PLAN.md is written regardless.
-        exclude: live ? undefined : async (line) => {
-          const ran = await runOnHost(host, { hostId: r.config.hostId, cwd: r.workspacePath, command: appendExcludeCommand(line), timeoutSec: 30, timeoutMs: 30_000 });
-          if (ran.exitCode !== 0) throw new Error(ran.stderr.trim() || `git exited ${ran.exitCode}`);
-        },
+        reflexes, filecards, exclude,
         exists: async (rel) => (await orMiss(Promise.resolve().then(() => bb.sdk.files.read({ hostId: r.config.hostId, rootPath: r.workspacePath, path: `${r.workspacePath}/${rel}` })), null, isNotFound)) !== null,
         writeFile: async (rel, content) => {
           await bb.sdk.files.write({ hostId: r.config.hostId, rootPath: r.workspacePath, path: `${r.workspacePath}/${rel}`, content, contentEncoding: "utf8", createParents: true, expectedSha256: null });
         },
       });
     } catch (cause) {
-      bb.log.warn(`Lane Pilot could not persist task folder for ${r.taskId}: ${cause instanceof Error ? cause.message : String(cause)}`);
+      throw new Error(`Lane Pilot could not persist the task folder of ${r.taskId}: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
     return { ok: true };
   });

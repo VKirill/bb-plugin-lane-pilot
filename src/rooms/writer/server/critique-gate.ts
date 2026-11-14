@@ -1,4 +1,5 @@
 import { barrierInputBody } from "./barrier-input";
+import { recordCritiqueRound } from "./task-home";
 import type { ServerCore } from "../../contracts/server";
 import type { HelperPolicySnapshot } from "../../contracts";
 import type { FinishInput, Services } from "./finish-types";
@@ -115,6 +116,9 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
         const body = barrierInputBody({ state, inputSha256:receipt?.inputSha256 ?? null,
           diff:g.lastPatches ?? null, promise:input.task.promise ?? null, contract:input.task,
           priorVerdict:existingCritique?.result ?? null });
+        // A task with a home (docs/task-folder.md): the input and the critic's verdict of this round in the attempt's folder there, in the base.
+        if (await recordCritiqueRound({ bb, db, log:ctx.log }, { taskId:input.taskId, runId:input.runId, attemptId:input.attemptId, round:g.repairRound,
+          barrierInput:body, verdict:receipt ? { state:receipt.state, result:receipt.result ?? null, inputSha256:receipt.inputSha256 ?? null } : { state } })) return;
         await bestEffort(ctx.log, "barrier input archive", Promise.resolve().then(() => bb.sdk.files.write({ hostId:input.config.hostId, rootPath:workspace,
           path:`${acceptanceArtifactDir(workspace, input.runId, input.taskId)}/attempts/${input.attemptId}/barrier-input.json`,
           content:JSON.stringify(body, null, 2), contentEncoding:"utf8", createParents:true, expectedSha256:null })), undefined);

@@ -13,6 +13,8 @@ import { WriterSelectionError, helperChildPlacement, requireHelperSpawn, require
 import { pipelineWriterTag } from "./pipeline-tag";
 import { writerBriefInput, writerBriefSegments } from "./writer-task";
 import { listTaskFolder } from "./spawn-probe";
+import { placeTaskHomeIn, recordTaskHomeFile, taskHomeBrief } from "./task-home";
+import { taskHomeOf } from "../../storage";
 import type { writerKnowledge } from "./writer-knowledge";
 import type { createWriterSkillPick } from "./skill-pick";
 import type { createSkillMaterializer } from "./skill-materialize";
@@ -81,7 +83,13 @@ export async function buildWriterLaunch(deps:{
   const briefRulesText=brief.rules;
   const briefMemoryText=brief.memory;
   const writerAgent = boundedAgentName(settings["writer.agent"],"Lane Pilot writer");
-  const taskFolder = await listTaskFolder(bb, input.config.hostId, workspacePath, input.taskId);
+  // The worktree gets its own task's home and nothing else (docs/task-folder.md, SMA n397/n405): plugin code puts it there from the manifest.
+  // A task with a home whose files cannot be placed does not start; a task on the old layout gets its own old notes by exact name.
+  const home = taskHomeBrief(db, input.taskId, input.attemptId);
+  const homeRow = taskHomeOf(db, input.taskId);
+  if (home && homeRow) await placeTaskHomeIn({ bb, db }, { taskId:input.taskId, hostId:input.config.hostId, worktreePath:workspacePath, basePath:homeRow.base_path });
+  else if (!home) await bestEffort(bb.log, "writer legacy task folder place", placeTaskHomeIn({ bb, db }, { taskId:input.taskId, hostId:input.config.hostId, worktreePath:workspacePath, basePath:input.task.project_cwd }), []);
+  const taskFolder = home ? { path:home.path, files:home.files, home:{ plan:home.plan, checkLog:home.checkLog, attemptFolder:home.attemptFolder } } : await listTaskFolder(bb, input.config.hostId, workspacePath, input.taskId);
   const contextSegments = writerBriefSegments(attemptTask,briefMemoryText,executionPacket,input.emergency&&!input.continuation
     ? "fallback"  // the reason stays in the trace; the writer is only told it is the fallback
     : undefined,writerAgent,brief.pmRead,briefRulesText,input.previousAttempt ?? "",taskFolder,live,
@@ -96,6 +104,9 @@ export async function buildWriterLaunch(deps:{
   const notesAt = input.continuation ? 2 : 1;
   const briefSegments = returnNotes ? [...handoffSegments.slice(0, notesAt), {text:returnNotes,hidden:true}, ...handoffSegments.slice(notesAt)] : handoffSegments;
   const writerBrief = briefSegments.map(segment=>segment.text).join("\n\n");
+  // What the writer got, kept in the attempt's folder of the task home (kind brief).
+  if (home) await bestEffort(bb.log, "writer brief record", recordTaskHomeFile({ bb, db }, { taskId:input.taskId, kind:"brief", name:`attempts/${input.attemptId}/brief.md`, content:`${writerBrief}\n`,
+    attemptId:input.attemptId, producer:{ node:"writer-brief", graph:"lp-task-pipeline", stage_id:"writer-agent", run_id:input.runId, attempt_id:input.attemptId }, readers:["code-critique"] }), null);
   // The permission list the launch asks for (SMA m_tl_terminal_parity): recorded on the trace beside the brief, so
   // `bb lane-pilot parity` can compare it with a terminal's own. A provider that cannot carry a policy still gets the launch.
   const writerPolicyField = (() => { try { return requiredPolicyField(bb, helperSnapshot, writerProviderId, "writer", { skills: [...writerSkills.skills, ...harnessSkills] }); } catch { return {}; } })();
@@ -142,6 +153,8 @@ export async function buildWriterLaunch(deps:{
       lanePilotTaskId:input.taskId,
       attemptId:input.attemptId,
       parentPmThreadId:input.pmThreadId,
+      // The guard hook's task folder, named explicitly (env LANE_TASK_DIR through the provider env resolvers): it never picks «the newest» folder.
+      ...(home ? { laneTaskDir:`${workspacePath.replace(/\/+$/, "")}/.agents/tasks/${input.taskId}` } : {}),
       ...pipelineWriterTag(db, input.runId, input.taskId),
     },
   };

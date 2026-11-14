@@ -1,7 +1,7 @@
 import { acceptanceArtifactDir } from "../../tasks";
 import type { StageHelperSettings } from "../../platform/server";
 import { resolvePlanningHome, taskV2Schema } from "../../contracts";
-import { claimStageSpawn, getRun, getTask, listStageReceipts, planningHomeInputs } from "../../storage";
+import { claimStageSpawn, getRun, getTask, listStageReceipts, planningHomeInputs, taskHomeOf } from "../../storage";
 import { bbServiceTier, listedServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { changelogCommand, changelogLine, findOutOfScopeProjectLifeWrites, foldCoveredTaskIds, parseProjectLifeFinalMessage, parseProjectLifeSettings, projectLifePrompt, projectLifeServiceTier } from "../project-life";
 import { ProjectLifeChildSnapshot, childResultObject, projectLifeChildSnapshot, spawnRefused } from "../../runs/server";
@@ -208,11 +208,14 @@ export function createProjectLifeStage(ctx: ServerCore, services: Services) {
       });
       // plans and todos live in the planning home when the project set one (SMA d_project_planning); the prompt names it.
       const planningHome=await resolvePlanningHome({host:host as never,hostId:config.hostId,cwd:workspace.path,inputs:planningHomeInputs(db,args.projectId),log:bb.log});
-      const artifactDirs=coveredTaskIds.map((id)=>acceptanceArtifactDir(workspace.path,args.runId,id));
+      // A task with a home (docs/task-folder.md) keeps its reports there; one on the old layout in the run's artifacts. Each folder by its id, never a mask.
+      const homeOf=(id:string)=>taskHomeOf(db,id);
+      const artifactDirs=coveredTaskIds.map((id)=>{const home=homeOf(id);return home?`${home.base_path}/.agents/tasks/${id}`:acceptanceArtifactDir(workspace.path,args.runId,id);});
+      const taskFolders=coveredTaskIds.map((id)=>homeOf(id)?`.agents/tasks/${id}/`:`.agents/plans/items/${id}/`);
       spawnCalled=true;
       const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, projectLifeProviderId, "project-life"),
         ...writerExecutionSelection(projectLifeProviderId,projectLifeModel,projectLifeEffort,tier),
-        prompt:projectLifePrompt({workspace:workspace.path,runId:args.runId,artifactDirs,tasks:snapshot.tasks,nowIso:new Date().toISOString(),planningHome}),
+        prompt:projectLifePrompt({workspace:workspace.path,runId:args.runId,artifactDirs,taskFolders,tasks:snapshot.tasks,nowIso:new Date().toISOString(),planningHome}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"project-life-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,
           stageId:"project-life",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true,...graphStepMetadata(args.workflow)}});

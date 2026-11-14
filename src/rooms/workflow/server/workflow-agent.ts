@@ -124,12 +124,13 @@ export function phaseOfWorkflowRun(db: LanePilotDatabase, runId: string): string
 /**
  * The authors of a phase stage's documents and the folders each may write. A judge (the plan critic, the code critic, the auditor, a council
  * seat) writes none: it must not edit what it judges (Matvey Maslov: the candidate cannot change the judge, nor the judge the candidate).
- * The planner writes the phase's folder and the plans folder; the analyst only the phase's folder (its CONTEXT.md). The drawing is the
+ * The planner writes the phase's folder (its PLAN.md); the analyst the phase's folder too (its CONTEXT.md). The drawing is the
  * design-lead specialist's own rule, not this one.
  */
 const PHASE_AUTHORS: Partial<Record<HelperRole, "phase" | "plans">> = { analyst: "phase", planner: "plans" };
 export const isPhaseAuthor = (helper: HelperRole): boolean => helper in PHASE_AUTHORS;
-const phaseFolders = (phaseId: string, helper: HelperRole): string[] => PHASE_AUTHORS[helper] === "plans" ? [`${phaseFolder(phaseId)}/`, ".agents/plans/"] : PHASE_AUTHORS[helper] ? [`${phaseFolder(phaseId)}/`] : [];
+// The planner no longer writes the shared .agents/plans/ (docs/task-folder.md): a phase's plan lives in its own folder, and a task's in its home.
+const phaseFolders = (phaseId: string, helper: HelperRole): string[] => PHASE_AUTHORS[helper] ? [`${phaseFolder(phaseId)}/`] : [];
 
 /** Whether a stage helper of this phase may write the file: the folders of its own role, if it is an author. */
 export const phaseWritable = (phaseId: string, helper: HelperRole) => (file: string): boolean =>
