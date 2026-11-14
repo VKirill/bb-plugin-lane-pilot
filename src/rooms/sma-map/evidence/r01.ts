@@ -412,6 +412,46 @@ export default {
     reach: entry("a writer hands in work and its verification has ended"),
     trace: drill("sma_r01"),
   },
+  n256: {
+    mutation: distort("packages/contracts/src/schemas.ts", "  acceptance: z.array(z.string().min(1)).min(1),", "  acceptance: z.array(z.string().min(1)).min(0),"),
+    trace: drill("sma_r01"),
+  },
+  n257: {
+    mutation: distort("src/rooms/critique/critic-pair.ts", "return offered(peer.providerId, peer.model) ? { pair: peer, changed: true } : { pair: input.critic, changed: false };", "return offered(peer.providerId, peer.model) ? { pair: peer, changed: false } : { pair: input.critic, changed: false };"),
+    trace: drill("sma_r01"),
+  },
+  n258: {
+    mutation: distort("src/rooms/verification/git-integrate/merge.ts", "merged.base=before;", "merged.base=sha;"),
+    trace: drill("sma_r01"),
+  },
+  n259: {
+    mutation: flip("src/rooms/contracts/failure-class.ts", "if (failureFingerprint(previous.reason) !== failureFingerprint(current.reason)) return null;", "if (failureFingerprint(previous.reason) === failureFingerprint(current.reason)) return null;"),
+    trace: transition({ to: "blocked", reason: "repeated_failure" }),
+  },
+  n260: {
+    mutation: flip("src/rooms/writer/server/finish-attempt-body.ts", "if (heldHits.length && !holdForOwner) {", "if (heldHits.length && holdForOwner) {"),
+    trace: transition({ to: "blocked", reason: "test_edit_hold" }),
+  },
+  n261: {
+    mutation: distort("src/rooms/runs/server/stage-records.ts", "attempt:Math.min(input.attempt ?? 0, 2)", "attempt:Math.min(input.attempt ?? 0, 3)"),
+    trace: receipt("verification"),
+  },
+  n262: {
+    mutation: distort("src/rooms/verification/sandbox.ts", "maskedSsh,stdout:maskSecrets(child.stdout ?? \"\",secrets)", "maskedSsh,stdout:maskSecrets(child.stdout ?? \"\",secrets).slice(1)"),
+    trace: gate("verification", ["passed", "failed"]),
+  },
+  n263: {
+    mutation: distort("src/rooms/writer/server/barrier-input.ts", "priorVerdict: input.priorVerdict ?? null };", "priorVerdict: input.contract ?? null };"),
+    trace: drill("sma_r01"),
+  },
+  n264: {
+    mutation: distort("src/rooms/critique/server/critique-runs/attempt-diffs.ts", "return environmentId ? { type:\"reuse\", environmentId } : null;", "return environmentId ? { type:\"reuse\", environmentId:taskId } : null;"),
+    trace: receipt("code-critique", ["passed", "blocked"]),
+  },
+  n265: {
+    mutation: distort("packages/workflow-engine/src/verdict.ts", "  class: optionalText(80),", "  class: optionalText(4),"),
+    trace: drill("sma_r01"),
+  },
   n266: {
     mutation: flip("packages/workflow-engine/src/verdict.ts", "const blocks = hard >= 1 || high > 5;", "const blocks = hard > 1 || high > 5;"),
     trace: gate("accept", ["passed", "rejected"]),
@@ -419,6 +459,26 @@ export default {
   n267: {
     mutation: flip("packages/workflow-engine/src/verdict.ts", "if (status === \"rework\" && high + critical === 0) status = \"pass\";", "if (status === \"rework\" && high + critical !== 0) status = \"pass\";"),
     trace: receipt("code-critique", "pass"),
+  },
+  n268: {
+    mutation: distort("src/rooms/critique/code-critique.ts", "  impact: optionalNote(500),", "  impact: optionalNote(5),"),
+    trace: receipt("code-critique", "blocked"),
+  },
+  n269: {
+    mutation: distort("src/rooms/runs/server/stage-records.ts", "summary:input.verdict.summary.slice(0,600)", "summary:input.verdict.summary.slice(0,6)"),
+    trace: gate("accept", "rejected"),
+  },
+  n270: {
+    mutation: flip("src/rooms/critique/server/critique-runs/verdict-reasons.ts", "if (result.status !== \"block\") return rework;", "if (result.status === \"block\") return rework;"),
+    trace: transition({ to: "blocked", reason: "verdict_block:code-critique" }),
+  },
+  n271: {
+    mutation: distort("src/rooms/writer/server/verify.ts", "return { status:\"accepted\", output:outputText(output), produced:checkedPaths,", "return { status:\"accepted\", output:outputText(output), produced:checkedPaths.slice(1),"),
+    trace: gate("validate", "passed"),
+  },
+  n272: {
+    mutation: distort("src/rooms/contracts/failure-class.ts", "    .replace(/\\b(lp(attempt|run)|thr|env|term|host|proj|ask)_[a-z0-9]+/g, \"<id>\")", "    .replace(/\\b(lp(attempt|run)|env|term|host|proj|ask)_[a-z0-9]+/g, \"<id>\")"),
+    trace: drill("sma_r01"),
   },
   // The accepted attempt's receipts are written once into the task home in the base, so they outlive the worktree's removal (T13).
   n294: { mutation: wrongTarget(TASK_HOME, 'kind: "acceptance", name: "acceptance.json",', 'kind: "acceptance", name: `attempts/${input.attemptId}/acceptance.json`,'), trace: drill("task_home") },
