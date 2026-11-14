@@ -93,6 +93,78 @@ describe("region 0 · the lessons analysis", () => {
     expect(b.otherSection).toBe(false);
   });
 
+  it("[sma:pc_row] a phase is a row of its own, born active at the first stage and tied to the PM's run; it is no task row, so no writer can claim it", async () => {
+    const s = await observe.phaseRow();
+    expect(s.row).toMatchObject({ stage: "discussion", state: "active", runId: "run1", pm: "thr_pm", project: "projA", title: "Hud" });
+    expect([s.tasks, s.attempts, s.dispatched]).toEqual([0, 0, 0]);
+    expect(s.live).toEqual([true]);
+  });
+
+  it("[sma:pc_contract] a context written again with other files voids the owner's earlier yes and mints a new edition; the same files keep the word", async () => {
+    const s = await observe.resign();
+    expect(s.before.words).toBe(1);
+    expect(s.same).toMatchObject({ words: 1, sha: true });
+    expect(s.changed).toMatchObject({ words: 0, sha: false });
+    expect(s.same.edition).toBeGreaterThan(s.before.edition);
+    expect(s.changed.edition).toBeGreaterThan(s.same.edition);
+  });
+
+  it("[sma:pc_home] a phase's files live under .agents/phases/<id>: one folder per phase, and the book the driver writes goes there", async () => {
+    const s = await observe.home();
+    expect(s.folder).toBe(".agents/phases/ph_abc");
+    expect(s.other).toBe(".agents/phases/ph_other");
+    expect(s.paths.filter((path) => path.endsWith("BOOK.md"))).toEqual([".agents/phases/<id>/BOOK.md"]);
+  });
+
+  it("[sma:pc_live] a stage whose workflow run is running or waiting is not started again and keeps its run; a phase with no run on it starts one", async () => {
+    const s = await observe.stageLive();
+    for (const held of [s.running, s.waiting]) expect(held).toEqual({ stepped: true, started: [], booked: [], auto: "wf-live" });
+    expect(s.none).toEqual({ stepped: true, started: ["start"], booked: ["auto_started"], auto: "wf-new" });
+  });
+
+  it("[sma:pc_commands] the stage commands are one dictionary and the runner takes the command from it, not from the title the phase carries", async () => {
+    const s = await observe.stageCommands();
+    expect(s.dictionary).toEqual({ analyze: "lp.analyze", plan: "lp.plan", check: "lp.plan", draw: "lp.draw", review: "lp.review", close: "lp.close", lessons: "retrospective", live: "ui-audit", bounce: "plan-review-convergence", diagnose: "debug" });
+    expect(s.started).toEqual(["retrospective"]);
+  });
+
+  it("[sma:pc_no_auto] no action of the phase tool takes a flag that decides for the person: each refuses force, skip, auto and noGates as unknown keys", () => {
+    const s = observe.noFlags();
+    expect(s.actions).toBeGreaterThan(20);
+    expect(s.lax).toEqual([]);
+    expect(s.plain).toBe(true);
+    expect(s.withFlag).toBe(false);
+  });
+
+  it("[sma:pc_title] the stage title is «Phase <id> «<title>» — stage, what it awaits», in words: the phase's title, not its goal, and never a command line", () => {
+    const s = observe.stageTitle();
+    expect(s.discussion).toMatch(/^Phase ph_1 «Sums» — stage 1, discussion\. Goal: sums are righ/);
+    expect(s.planning).toMatch(/^Phase ph_1 «Sums» — stage 2, planning, on context/);
+    expect(s.lessons).toMatch(/^Phase ph_1 «Sums» — stage 7, lessons \(a return\)\./);
+    expect(s.paused).toBe("Phase ph_1 «Sums» is paused");
+    for (const line of [s.discussion, s.planning, s.lessons]) expect(line).not.toMatch(/^(lane_pilot|\/|lp\.)/);
+  });
+
+  it("[sma:pc_priority] a piece a phase issues goes before every backlog task, urgent included, unless its plan set a priority of its own; the backlog keeps its order", () => {
+    const s = observe.queue();
+    expect(s.ranks).toEqual([0, 1, 2, 3]);
+    expect(s.stage).toBe(4);
+    expect(s.urgent).toBe(3);
+    expect(s.noBirth).toBe(1);
+    expect(s.mixed).toEqual(["phase-piece", "urgent-pm", "normal-pm", "phase-low"]);
+    expect(s.twoPieces).toEqual(["a", "b"]);
+  });
+
+  it("[sma:pc_no_gates] every stage but the last names the gate that lets the phase out, each name is a gate of the phase logic, and the status says out loud why the first stages are not yet through", async () => {
+    const s = await observe.stageGates();
+    expect(s.map).toEqual({ discussion: "discussionGate", planning: "planGate", design: "designGate", execution: "executionGate", verification: "blindVerdict", acceptance: "acceptanceLines", lessons: "lessonsNeeded" });
+    expect(Object.values(s.named)).toEqual(Array(7).fill("function"));
+    expect(s.statusKeys).toEqual(["discussion", "plan", "design"]);
+    expect(s.discussion.ok).toBe(false);
+    expect(s.discussion.why).toHaveLength(4);
+    expect(s.discussion.why[0]).toMatch(/^no context documents/);
+  });
+
   it("[sma:p7_recover] an accepted analysis whose write did not land is finished by a later pass from the same text, without a new analysis: written once, the error cleared", async () => {
     const s = await observe.lessonRefused();
     expect(s.idleBefore).toBe(0);

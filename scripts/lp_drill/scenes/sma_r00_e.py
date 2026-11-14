@@ -73,3 +73,32 @@ def prove_e(proofs, tmp) -> None:
     proofs.prove("n128", rf.get("lessonsSection") == [first, "**staged** — the lesson waits as a draft for the owner's word «lesson»", "**memory_refused** — the memory door refused the lesson: memory door closed",
                                                      "**lesson_applied** — the owner applied the lesson draft: it is in memory"] and bk.get("heads", [None] * 8)[7] == "## 8. Lessons" and bk.get("chain") == "chain: intact (5 parts)"
                  and bk.get("otherSection") is False, f"lessons section {rf.get('lessonsSection')}")
+
+    # n130 a phase is a row of its own, active at the first stage, tied to the PM's run, no task row; n131 a context signed again with other files voids the yes.
+    pr = seen("phaseRow")
+    row = pr.get("row", {})
+    proofs.prove("n130", row.get("stage") == "discussion" and row.get("state") == "active" and row.get("runId") == "run1" and row.get("pm") == "thr_pm" and pr.get("tasks") == 0 and pr.get("attempts") == 0 and pr.get("dispatched") == 0,
+                 f"phase row {row.get('stage')}/{row.get('state')} on run {row.get('runId')}, task rows {pr.get('tasks')}")
+    rs = seen("resign")
+    proofs.prove("n131", rs.get("before", {}).get("words") == 1 and rs.get("same", {}).get("words") == 1 and rs.get("same", {}).get("sha") is True and rs.get("changed", {}).get("words") == 0 and rs.get("changed", {}).get("sha") is False
+                 and rs["same"]["edition"] > rs["before"]["edition"] and rs["changed"]["edition"] > rs["same"]["edition"], f"yes kept on the same files {rs.get('same')}, voided on other files {rs.get('changed')}")
+    # n133 the folder; n134 a running stage is not started twice; n135 the dictionary; n136 no flags; n137 the title; n138 the queue; n139 the gates.
+    hm = seen("home")
+    proofs.prove("n133", hm.get("folder") == ".agents/phases/ph_abc" and hm.get("other") == ".agents/phases/ph_other" and [p for p in hm.get("paths", []) if p.endswith("BOOK.md")] == [".agents/phases/<id>/BOOK.md"], f"folder {hm.get('folder')}, book at {hm.get('paths')}")
+    sl = seen("stageLive")
+    held = {"stepped": True, "started": [], "booked": [], "auto": "wf-live"}
+    proofs.prove("n134", sl.get("running") == held and sl.get("waiting") == held and sl.get("none") == {"stepped": True, "started": ["start"], "booked": ["auto_started"], "auto": "wf-new"}, f"running {sl.get('running')}, no run {sl.get('none')}")
+    sc = seen("stageCommands")
+    proofs.prove("n135", sc.get("dictionary") == {"analyze": "lp.analyze", "plan": "lp.plan", "check": "lp.plan", "draw": "lp.draw", "review": "lp.review", "close": "lp.close", "lessons": "retrospective", "live": "ui-audit",
+                                                 "bounce": "plan-review-convergence", "diagnose": "debug"} and sc.get("started") == ["retrospective"], f"dictionary {sc.get('dictionary')}, started under the title lp.close: {sc.get('started')}")
+    nf = seen("noFlags")
+    proofs.prove("n136", nf.get("actions", 0) > 20 and nf.get("lax") == [] and nf.get("plain") is True and nf.get("withFlag") is False, f"{nf.get('actions')} actions, accepting a flag: {nf.get('lax')}")
+    stt = seen("stageTitle")
+    proofs.prove("n137", str(stt.get("discussion", "")).startswith("Phase ph_1 «Sums» — stage 1, discussion. Goal: sums are righ") and str(stt.get("planning", "")).startswith("Phase ph_1 «Sums» — stage 2, planning, on context")
+                 and str(stt.get("lessons", "")).startswith("Phase ph_1 «Sums» — stage 7, lessons (a return).") and stt.get("paused") == "Phase ph_1 «Sums» is paused", f"titles {stt.get('discussion')!r} / {stt.get('paused')!r}")
+    q = seen("queue")
+    proofs.prove("n138", q.get("stage") == 4 and q.get("urgent") == 3 and q.get("mixed") == ["phase-piece", "urgent-pm", "normal-pm", "phase-low"] and q.get("twoPieces") == ["a", "b"], f"queue order {q.get('mixed')}, stage rank {q.get('stage')}")
+    g = seen("stageGates")
+    proofs.prove("n139", g.get("map") == {"discussion": "discussionGate", "planning": "planGate", "design": "designGate", "execution": "executionGate", "verification": "blindVerdict", "acceptance": "acceptanceLines", "lessons": "lessonsNeeded"}
+                 and list(g.get("named", {}).values()) == ["function"] * 7 and g.get("statusKeys") == ["discussion", "plan", "design"] and g.get("discussion", {}).get("ok") is False and len(g.get("discussion", {}).get("why", [])) == 4,
+                 f"gates {g.get('map')}, discussion gate said {len(g.get('discussion', {}).get('why', []))} reasons")

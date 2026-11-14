@@ -2,7 +2,10 @@
 // (the phase driver on a scratch database and a fake host, the auto stages with a fake engine, the real workflow engine on workflows/retrospective.json) and returns plain JSON.
 // tests/sma/four-proofs-r00-e.test.ts asserts on it and the scene scripts/lp_drill/scenes/sma_r00_e.py proves the nodes that write no hub row. No model, no hub write, nothing outside the machine.
 import { sha256Hex } from "@lane-pilot/kit";
-import { renderBook, type PhaseRecord } from "../../src/rooms/phase/logic";
+import * as logic from "../../src/rooms/phase/logic";
+import { nextAction, phaseFolder, renderBook, STAGE_GATES, type PhaseRecord } from "../../src/rooms/phase/logic";
+import { phaseToolParams } from "../../src/rooms/phase/server/tool";
+import { PRIORITIES, priorityRank, queueOrder, STAGE_PRIORITY_RANK } from "../../src/rooms/tasks";
 import { AUTO_WORKFLOWS, autoDue, createAutoStages } from "../../src/rooms/phase/server/auto-stages";
 import { listParts } from "../../src/rooms/phase/store";
 import { runSim } from "../workflow/chain-harness";
@@ -132,6 +135,104 @@ export const observe = {
       const heads = text.split("\n").filter((line) => line.startsWith("## "));
       return { heads, lines: section.split("\n").filter((line) => line.startsWith("- ")).map((line) => line.replace(/^- \S+ \S+ /, "")), chain: /chain: intact \((\d+) parts\)/.exec(text)?.[0] ?? null,
         otherSection: text.split("## 7. Acceptance")[1]!.split("## 8.")[0]!.includes("analysis") };
+    });
+  },
+
+  /** n130 · a phase is a row of its own, born active at the first stage and tied to the PM's run; it is no task row, so no writer can claim it. */
+  async phaseRow() {
+    return withDrv({}, async (f) => {
+      const row = f.db.prepare("SELECT stage, state, run_id AS runId, pm_thread_id AS pm, project_id AS project, title, edition FROM lane_pilot_phase WHERE id=?").get(f.id) as Record<string, unknown>;
+      const count = (table: string) => (f.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
+      return { row, tasks: count("lane_pilot_task"), attempts: count("lane_pilot_attempt"), live: f.phases.list({ pmThreadId: "thr_pm", live: true }).map((phase) => phase.id === f.id), dispatched: f.dispatched.length };
+    });
+  },
+
+  /** n131 · a context written again with other files voids the owner's earlier yes and mints a new edition; the same files keep the word and the edition. */
+  async resign() {
+    return withDrv({ words: true }, async (f) => {
+      const card = { phaseId: f.id, docs: ["docs/CONTEXT.md"], risks: { value: "v", usability: "u", feasibility: "f", viability: "x" }, appetite: "one day", noGos: ["none"], by: "pm" };
+      await f.phases.context(card);
+      const signed = f.get();
+      f.seed("discussion", { words: [{ turn: "context", decision: "yes", by: "owner", text: "да", at: 2, key: signed.record.context!.sha } as never] });
+      const edition = () => f.get().edition;
+      const before = { edition: edition(), words: f.get().record.words?.length ?? 0 };
+      await f.phases.context(card);
+      const same = { edition: edition(), words: f.get().record.words?.length ?? 0, sha: f.get().record.context!.sha === signed.record.context!.sha };
+      f.fileShas.set("docs/CONTEXT.md", "e".repeat(64));
+      await f.phases.context(card);
+      const changed = { edition: edition(), words: f.get().record.words?.length ?? 0, sha: f.get().record.context!.sha === signed.record.context!.sha };
+      return { before, same, changed };
+    });
+  },
+
+  /** n133 · the phase's files live under .agents/phases/<id>: one folder per phase, and what the driver writes for the phase goes there. */
+  async home() {
+    return withDrv({}, async (f) => {
+      await f.phases.context({ phaseId: f.id, docs: ["docs/CONTEXT.md"], risks: { value: "v", usability: "u", feasibility: "f", viability: "x" }, appetite: "one day", noGos: ["none"], by: "pm" });
+      await f.phases.tick();
+      return { folder: phaseFolder("ph_abc"), other: phaseFolder("ph_other"), id: f.id, written: f.writes.map((file) => file.path.startsWith(`${phaseFolder(f.id)}/`)), paths: f.writes.map((file) => file.path.replace(f.id, "<id>")) };
+    });
+  },
+
+  /** n134 · a stage whose workflow run is still running or waiting is not started again; a phase with no run on it starts one; a paused phase starts nothing. */
+  async stageLive() {
+    const run = async (status: string | null) => {
+      const at = pure({ lessons: { needed: true, why: "a return" }, ...(status ? { auto: { kind: "lessons", wfRunId: "wf-live", startedAt: 1 } } : {}) } as PhaseRecord, "lessons");
+      const started: string[] = [];
+      const booked: string[] = [];
+      let record = at.record;
+      const auto = createAutoStages({ log: () => undefined }, {
+        workflowEngine: { resolveWorkflow: (id: string) => ({ id }), start: () => { started.push("start"); return { runId: "wf-new", done: new Promise(() => undefined) }; }, get: () => (status ? { status } : undefined) } as never,
+      }, { api: {} as never, exhausted: async () => undefined, get: () => ({ ...at, record }), save: (_id: string, next: PhaseRecord) => { record = next; }, book: (_p: unknown, _s: string, kind: string) => { booked.push(kind); },
+        runtime: () => ({}), pmIdle: async () => true, now: () => 1 } as never);
+      const stepped = await auto.step(at);
+      return { stepped, started, booked, auto: record.auto?.wfRunId ?? null };
+    };
+    return { running: await run("running"), waiting: await run("waiting"), none: await run(null) };
+  },
+
+  /** n135 · the stage commands are one dictionary, and the runner takes the command from it, not from the title the phase carries. */
+  async stageCommands() {
+    const at = pure({ lessons: { needed: true, why: "x" } } as PhaseRecord, "lessons");
+    const started: string[] = [];
+    const auto = createAutoStages({ log: () => undefined }, { workflowEngine: { resolveWorkflow: (id: string) => ({ id }), start: (input: { workflow: { id: string } }) => { started.push(input.workflow.id); return { runId: "w", done: new Promise(() => undefined) }; }, get: () => undefined } as never },
+      { api: {} as never, get: () => at, save: () => undefined, book: () => undefined, runtime: () => ({}), pmIdle: async () => true, now: () => 1 } as never);
+    await auto.step({ ...at, title: "lp.close" });
+    return { dictionary: { ...AUTO_WORKFLOWS }, started };
+  },
+
+  /** n136 · no action of the phase tool takes a flag that decides for the person: each action refuses force, skip, auto and noGates as unknown keys; a plain pause passes. */
+  noFlags() {
+    const options = (phaseToolParams as unknown as { options: Array<{ shape: { action: { value: string } }; safeParse: (value: unknown) => { success: boolean; error?: { issues: Array<{ code: string; keys?: string[] }> } } }> }).options;
+    const lax: string[] = [];
+    for (const option of options) for (const flag of ["force", "skip", "auto", "noGates"]) {
+      const out = option.safeParse({ action: option.shape.action.value, [flag]: true });
+      if (!out.error?.issues.some((issue) => issue.code === "unrecognized_keys" && issue.keys?.includes(flag))) lax.push(`${option.shape.action.value}:${flag}`);
+    }
+    return { actions: options.length, lax, plain: phaseToolParams.safeParse({ action: "pause", phaseId: "ph_1" }).success, withFlag: phaseToolParams.safeParse({ action: "pause", phaseId: "ph_1", force: true }).success };
+  },
+
+  /** n137 · the stage title is «Phase <id> «<title>» — stage, what it awaits», in words, never the command line; the title is the phase's, not its goal. */
+  stageTitle() {
+    const record = { lessons: { needed: true, why: "a return" } } as PhaseRecord;
+    const text = (stage: Parameters<typeof pure>[1], r: PhaseRecord = {}) => nextAction({ ...pure(r, stage), title: "Sums", goal: "sums are right" }, new Map()).text.split("\n")[0]!.slice(0, 60);
+    return { discussion: text("discussion"), planning: text("planning"), lessons: text("lessons", record), paused: nextAction({ ...pure({}, "execution"), state: "paused" }, new Map()).text.split(";")[0] };
+  },
+
+  /** n138 · a piece a phase issues goes before every backlog task, urgent included, unless its plan set a priority of its own; the backlog keeps its order. */
+  queue() {
+    const order = (rows: Array<{ id: string; priority?: string; birth?: string; queuedAt: number }>) => queueOrder(rows).map((row) => row.id);
+    return { stage: STAGE_PRIORITY_RANK, urgent: priorityRank("urgent"), ranks: PRIORITIES.map((p) => priorityRank(p)),
+      mixed: order([{ id: "urgent-pm", priority: "urgent", birth: "pm", queuedAt: 1 }, { id: "phase-piece", birth: "phase", queuedAt: 5 }, { id: "phase-low", priority: "low", birth: "phase", queuedAt: 3 }, { id: "normal-pm", birth: "pm", queuedAt: 2 }]),
+      twoPieces: order([{ id: "b", birth: "phase", queuedAt: 9 }, { id: "a", birth: "phase", queuedAt: 4 }]), noBirth: priorityRank(undefined) };
+  },
+
+  /** n139 · every stage but the last names the gate that lets the phase out, and each name is a gate of the phase logic; the status reports the gates of the first stages with their reasons. */
+  async stageGates() {
+    return withDrv({}, async (f) => {
+      const gates = f.phases.status(f.id).gates;
+      const named = Object.fromEntries(Object.entries(STAGE_GATES).map(([stage, name]) => [stage, typeof (logic as Record<string, unknown>)[name]]));
+      return { map: { ...STAGE_GATES }, named, statusKeys: Object.keys(gates), discussion: { ok: gates.discussion.ok, why: gates.discussion.ok ? [] : gates.discussion.why }, plan: { ok: gates.plan.ok }, design: { ok: gates.design.ok } };
     });
   },
 };
