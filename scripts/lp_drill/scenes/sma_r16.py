@@ -18,6 +18,7 @@ from lp_drill.prove import Proofs
 from lp_drill.scenes.sma_r16_b import NODES_B, prove_b
 from lp_drill.scenes.sma_r16_c import NODES_C, prove_c
 from lp_drill.scenes.sma_r16_d import NODES_D, prove_d
+from lp_drill.scenes.sma_r16_f import NODES_F, prove_f
 
 NODES = [
     # batch a: the design-phase and execute-phase cards
@@ -27,6 +28,7 @@ NODES = [
 NODES = NODES + NODES_B
 NODES = NODES + NODES_C
 NODES = NODES + NODES_D
+NODES = NODES + NODES_F
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r16_probe.ts"
 AWAITS = "the drawing awaits the owner's word for this drawing"
 NO_CONTRACT = "the drawing has no contract: add UI-SPEC.md with the checkable points (screens, states, breakpoints) to the drawing's paths"
@@ -116,4 +118,5 @@ def scenario_sma_r16(tmp) -> dict:
     prove_b(proofs, tmp)
     prove_c(proofs, tmp)
     prove_d(proofs, tmp)
+    prove_f(proofs, tmp)
     return proofs.verdict("sma_r16", checked=len(NODES))
