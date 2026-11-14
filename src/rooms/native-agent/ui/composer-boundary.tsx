@@ -8,11 +8,18 @@ import { t } from "@lane-pilot/i18n";
  * owner.words setting makes true — every task waits for the owner's word (on), only high-risk ones do (risky), only money,
  * database changes and production deploys do (sensitive, the default), or nothing waits (off: no line). Other threads — writers, helpers, ordinary chats — show nothing.
  */
+export type BoundaryLine = "composerBoundary" | "composerBoundaryRisky" | "composerBoundarySensitive";
+/** The line a thread shows under its input: PM chats only, by the project's owner.words (anything but on, risky and off reads as sensitive, the default). */
+export function boundaryLineOf(role: unknown, ownerWords: unknown): BoundaryLine | null {
+  if (role !== "pm") return null;
+  return ownerWords === "on" ? "composerBoundary" : ownerWords === "off" ? null : ownerWords === "risky" ? "composerBoundaryRisky" : "composerBoundarySensitive";
+}
+
 export function ComposerBoundary() {
   const rpc = useRpc<typeof rpcContract>();
   const view = useComposer();
   const threadId = view.scope.kind === "thread" ? view.scope.threadId : null;
-  const [line, setLine] = useState<"composerBoundary" | "composerBoundaryRisky" | "composerBoundarySensitive" | null>(null);
+  const [line, setLine] = useState<BoundaryLine | null>(null);
 
   useEffect(() => {
     setLine(null);
@@ -20,7 +27,7 @@ export function ComposerBoundary() {
     let current = true;
     void rpc.call("native_thread", { threadId }).then((row) => {
       const thread = row as { role?: unknown; ownerWords?: unknown } | null;
-      if (current && thread?.role === "pm") setLine(thread.ownerWords === "on" ? "composerBoundary" : thread.ownerWords === "off" ? null : thread.ownerWords === "risky" ? "composerBoundaryRisky" : "composerBoundarySensitive");
+      if (current) setLine(boundaryLineOf(thread?.role, thread?.ownerWords));
     }).catch(() => undefined);
     return () => { current = false; };
   }, [rpc, threadId]);
