@@ -209,7 +209,8 @@
       ],
       "out": {
         "ok": "bool",
-        "errors": "string[]"
+        "errors": "string[]",
+        "waves": "string[][]"
       },
       "guards": {
         "maxVisits": 4
@@ -266,7 +267,7 @@
       "map": {
         "status": "ok",
         "tasks": "plan.tasks",
-        "waves": "plan.waves",
+        "waves": "lint.waves",
         "objective": "plan.objective",
         "has_ui": "plan.has_ui",
         "task_count": "plan.task_count",
@@ -285,7 +286,7 @@
       "map": {
         "status": "low_confidence",
         "tasks": "plan.tasks",
-        "waves": "plan.waves",
+        "waves": "lint.waves",
         "objective": "plan.objective",
         "has_ui": "plan.has_ui",
         "task_count": "plan.task_count",

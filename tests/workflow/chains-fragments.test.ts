@@ -38,8 +38,8 @@ describe("lp.analyze", () => {
 
 describe("lp.plan", () => {
   const task = (id: string) => ({ id, objective: id });
-  it("quick: one task, linted, no plan critique", async () => {
-    const r = await runSim("lp.plan", { input: { goal: "g" }, mode: "quick", stubs: { plan: { tasks: [task("t1")], task_count: 1, waves: [["t1"]] } } });
+  it("quick: one task, linted, no plan critique; the plan's waves are the lint's, laid out from depends_on, not the planner's [sma:bf_waves]", async () => {
+    const r = await runSim("lp.plan", { input: { goal: "g" }, mode: "quick", stubs: { plan: { tasks: [task("t1")], task_count: 1, waves: [["t1"], ["ghost"]] }, lint: { ok: true, errors: [], waves: [["t1"]] } } });
     expect(pathOf(r)).toBe("research patterns strategy plan lint ok");
     expect(out(r)).toMatchObject({ status: "ok", task_count: 1, waves: [["t1"]] });
   });
