@@ -1,4 +1,4 @@
-{"generatedFrom":"938871e11a89",
+{"generatedFrom":"56afdddbb410",
 "graphs":[
 {"id":"3d-asset","file":"workflows/3d-asset.json","status":"published","nodes":[["concept","agent"],["model","agent"],["verify","agent"],["export","agent"],["offer_roblox","action"],["done_roblox","action"],["done","action"],["partial","action"],["blocked","action"],["goal_check","action"]],"edges":[["concept","model","concept.ok"],["concept","blocked",null],["model","verify","model.ok"],["model","blocked",null],["verify","model","verify.status == 'rework' && visits('verify') < 2"],["verify","export","verify.status == 'pass'"],["verify","partial",null],["export","goal_check","export.ok"],["export","blocked",null],["goal_check","offer_roblox","goal_check.ok != false && $inputs.target_engine == 'roblox'"],["offer_roblox","done_roblox",null],["goal_check","done","goal_check.ok != false"],["goal_check","partial",null]]},
 {"id":"about-site","file":"workflows/about-site.json","status":"tested","nodes":[["facts","action"],["write","agent"],["check","action"],["deliver","action"],["done","action"],["nothing_public","action"],["blocked","action"],["goal_check","action"]],"edges":[["start","facts",null],["facts","nothing_public","facts.empty"],["facts","write",null],["write","check",null],["check","write","!check.ok && visits('write') < 2"],["check","deliver","check.ok"],["check","blocked",null],["deliver","goal_check",null],["goal_check","done","goal_check.ok != false"],["goal_check","blocked",null]]},
@@ -868,7 +868,7 @@
 "n656":"src/rooms/design-eval/logic.ts#compareDesigns",
 "n657":"src/rooms/design-eval/logic.ts#MEASURE_SCRIPT",
 "n658":"src/rooms/writer/server/spawn-brief.ts#launchArgs",
-"n659":"src/rooms/writer/argv-builder.ts#buildCliInvocation",
+"n659":"src/rooms/native-agent/claude-guard-launch.ts#claudeGuardLauncherScript",
 "n660":"src/rooms/writer/argv-builder.ts#buildCliInvocation",
 "n661":"src/rooms/writer/argv-builder.ts#CliInvocation",
 "n662":"src/rooms/platform/server/tool-result.ts#fenceOutside",
@@ -877,6 +877,7 @@
 "n665":"src/rooms/writer/server/start-writer-holds.ts#parkForWriter",
 "n666":"src/rooms/contracts/failure-class.ts#SESSION_MAX_TURNS",
 "n667":"src/rooms/usage/server/provider-usage.ts#usageHold",
+"n668":"src/rooms/stability/server/rate-limit-watch.ts#mountRateLimitWatch",
 "n669":"src/rooms/usage/server/provider-usage.ts#usageHold",
 "n670":"src/rooms/host-worker/handlers/machine.ts#readUsageWindows",
 "n671":"src/rooms/usage/server/provider-usage.ts#boardWindows",
