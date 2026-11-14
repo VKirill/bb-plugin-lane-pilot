@@ -78,7 +78,7 @@ export default {
   n1089: { reach: seedEntry("the owner runs the command") },
   n1090: { mutation: flip(LINT, 'return issue !== null && /credential/.test(issue); })', 'return issue === null && /credential/.test(issue); })'), reach: seedEntry("the owner runs the command"), trace: drill("sma_r14") },
   n1091: { reach: seedEntry("the owner runs the command") },
-  n1092: { mutation: wrongTarget(STORE, '(index === last ? { ...entry, kind: "note" as const } : entry)', '(index === 0 ? { ...entry, kind: "note" as const } : entry)'), reach: seedEntry("the owner runs the command"), trace: drill("sma_r14") },
+  n1092: { mutation: wrongTarget(STORE, 'if (entries[index]!.kind === "core") last = index;', 'if (entries[index]!.kind === "core" && last < 0) last = index;'), reach: seedEntry("the owner runs the command"), trace: drill("sma_r14") },
   n1093: { mutation: flip("src/rooms/memory-tiers/server/history.ts", "if (hits >= floor) scored.push", "if (hits < floor) scored.push"), reach: seedEntry("the owner runs the command"), trace: drill("sma_r14") },
   n1094: { mutation: flip(CONTEXT, "if(estimateTokens(render())>budget){lines.delete(item.record.id);over.push(item.record);continue;}", "if(estimateTokens(render())<budget){lines.delete(item.record.id);over.push(item.record);continue;}"), reach: seedEntry("the owner runs the command"), trace: drill("sma_r14") },
   n1095: { mutation: distort("src/rooms/file-cards/cli.ts", "`${card.path} | ${card.lines} lines", "`${card.path.toUpperCase()} | ${card.lines} lines"), reach: seedEntry("the owner runs the command"), trace: drill("sma_r14") },
