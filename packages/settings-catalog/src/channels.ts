@@ -169,7 +169,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"lead.project", channel:"OWN", reason:"Native Lane Pilot lead: the project its chat and tick runs live in" },
   { key:"lead.projects", channel:"OWN", reason:"Native Lane Pilot lead: the projects a tick reads and proposes for" },
   { key:"lead.priority", channel:"OWN", reason:"Native Lane Pilot lead: the owner's order of projects; the brief ranks them so and unlisted follow" },
-  { key:"owner.words", channel:"OWN", reason:"Native Lane Pilot landing: whose word a verified task waits for (on every task, risky = risk high or critical, off none)" },
+  { key:"owner.words", channel:"OWN", reason:"Native Lane Pilot landing: whose word a verified task waits for (on every task, risky = risk high or critical, sensitive = money, database or production deploy only, off none)" },
   { key:"phase.rails", channel:"OWN", reason:"Native Lane Pilot phases: with rails on, graphs, councils and schedules of a phase start only from its own stage" },
   { key:"episodes.collect", channel:"OWN", reason:"Native Lane Pilot errand episodes: on writes lane_pilot_errand_episode when an errand run ends and marks a routed run pending at start" },
   { key:SETTING_EPISODES_PROCESS_KEY, channel:"OWN", reason:"Native Lane Pilot errand process-key choice: shadow keeps Jev's pick in the receipt only, active lets a confident pick set process_key once the gold-set F1 gate passes" },

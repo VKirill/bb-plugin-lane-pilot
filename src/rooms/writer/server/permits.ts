@@ -3,7 +3,8 @@ import { bestEffort } from "@lane-pilot/kit";
 import { registerObservedTool, scheduleIsolated } from "../../platform/server";
 import { ToolError, type ServerCore } from "../../contracts/server";
 import { hostContract } from "../../contracts";
-import { getAttempt, getRun, getRunWriterHost, listOpenAttempts } from "../../storage";
+import { getAttempt, getRun, getRunSettingsScopes, getRunWriterHost, listOpenAttempts, loadProjectSettings } from "../../storage";
+import { ownerWordsMode, sensitiveHits } from "../../tasks";
 import { recordEvidence } from "../../storage";
 
 /**
@@ -11,10 +12,18 @@ import { recordEvidence } from "../../storage";
  * the call, Ticket decision form). A writer whose command the guard would refuse (deleting for good, DROP/TRUNCATE) files a ticket on its
  * machine instead of only being refused; every minute Lane Pilot reads the tickets of the machines with writers at work and hands each,
  * once, to the PM of that writer's run. The PM answers with lane_pilot_permit — the ticket decision form: allow or deny with why. A grant is
- * used once by exactly that command; the writer is told in its thread. With owner.words on, the PM asks the owner before it answers.
+ * used once by exactly that command; the writer is told in its thread. The owner is asked before the PM answers when owner.words says so: always on `on` and `risky`, never on `off`, and on `sensitive` (the default) only when the command itself is money, a database migration or a destructive data operation, or a production deploy (tasks/sensitive.ts).
  */
 const SENT = "lp.permits.sent";
 const ROUTES = "lp.permits.routes";
+
+/** The sentence of a permit notice that says whether the owner is asked (owner.words): on `on` and `risky` always, on `sensitive` only for money, data or a production deploy. */
+export function permitOwnerRule(mode: ReturnType<typeof ownerWordsMode>, command: string): string {
+  if (mode === "on" || mode === "risky") return "with owner.words on, ask the owner first.";
+  if (mode === "off") return "the owner's word is not asked (owner.words is off): decide it yourself.";
+  const hits = sensitiveHits({ commands: [command] });
+  return hits.length ? `this command is ${hits.map((hit) => hit.cls).join("+")} (owner.words is sensitive): ask the owner first.` : "it is not money, a database migration or destructive data operation, or a production deploy, so the owner is not asked (owner.words is sensitive): decide it yourself.";
+}
 
 type Ticket = { session: string; ticket: string; category: string; command: string; cwd: string; at: number };
 
@@ -79,7 +88,7 @@ export function mountPermits(ctx: ServerCore): void {
         if (!attempt || !run?.pm_thread_id) continue;
         try {
           await bb.sdk.threads.send({ threadId: run.pm_thread_id, mode: "queue-if-active", input: [{ type: "text", mentions: [], text:
-            `[Lane Pilot permit] The writer of ${attempt.task_id} asks permission (${ticket.category}): \`${ticket.command.slice(0, 600)}\`. Decide with lane_pilot_permit {hostId:"${hostId}", session:"${ticket.session}", ticket:"${ticket.ticket}", decision:"allow"|"deny", why}. Allow only what the task needs; with owner.words on, ask the owner first.` }] } as never);
+            `[Lane Pilot permit] The writer of ${attempt.task_id} asks permission (${ticket.category}): \`${ticket.command.slice(0, 600)}\`. Decide with lane_pilot_permit {hostId:"${hostId}", session:"${ticket.session}", ticket:"${ticket.ticket}", decision:"allow"|"deny", why}. Allow only what the task needs; ${permitOwnerRule(ownerWordsMode(loadProjectSettings(db, run.project_id, getRunSettingsScopes(db, run.id))), ticket.command)}` }] } as never);
         } catch {
           continue;
         }

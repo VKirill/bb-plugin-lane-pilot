@@ -12,7 +12,7 @@ import type { CodeCriticDefault } from "../../contracts/task-enums";
 import { saveCriticCodeDefault } from "./critic-override";
 import { wfLivePipelineRun, wfRunInputsByKey } from "@lane-pilot/workflow-engine";
 import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, getTaskRow, hasFailedStageReceipt, listAttemptsForTask, listAttemptsUpdatedSince, listOpenAttempts, listRunsWithAttempts, listRunTaskRows, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, taskBasePath, transitionAttempt } from "../../storage";
-import { birthGates, commonTaskFolder, isMainfixTask, isTaskBase, landingWordAsked, leavesSection, ownerSaidNo, ownerWordsMode, parseRepoRoot, parseRepoTop, planWithOutsideReads, planWithRepoScope, repoRootCommand, repoTopCommand, rerootTask, rerootToRepoRoot, sha256 , spendReserve, type BirthKind } from "../../tasks";
+import { birthGates, commonTaskFolder, isMainfixTask, isTaskBase, landingWordAsked, leavesSection, ownerSaidNo, ownerWordsMode, parseRepoRoot, parseRepoTop, planWithOutsideReads, planWithRepoScope, repoRootCommand, repoTopCommand, rerootTask, rerootToRepoRoot, sha256 , spendReserve, taskStepEvidence, type BirthKind } from "../../tasks";
 import { liveFolderLockNote, nextStep } from "../../contracts/failure-class"
 import { taskFamily } from "@lane-pilot/contracts";
 import { validateTaskV2 } from "../../tasks/task-v2";
@@ -287,7 +287,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     // Work already decided (SMA cg_claim_refusal): the owner said no to this family — the row is closed before a writer,
     // a critic or a check of it is paid for. A new yes (lane_pilot_queue word) opens it again.
     if (args.task && !isMainfixTask(args.task.id)) {
-      const saidNo = landingWordAsked(loadProjectSettings(db, args.projectId, getRunSettingsScopes(db, runId)), task.risk)
+      const saidNo = landingWordAsked(loadProjectSettings(db, args.projectId, getRunSettingsScopes(db, runId)), task.risk, taskStepEvidence(task))
         ? await ownerSaidNo(bb.storage.kv as never, runId, taskFamily(args.task.id)) : null;
       if (saidNo !== null) {
         const hint = `the owner said no to ${taskFamily(args.task.id)}: ${saidNo}. Record a new yes with lane_pilot_queue {action:"word", taskId:"${args.task.id}", decision:"yes", text} before sending the work again`;

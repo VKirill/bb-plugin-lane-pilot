@@ -14,8 +14,8 @@ export const PROTECTIONS: Record<string, { armed: unknown; alsoArmed?: readonly 
   "plan_critique.mode": { armed: "gate", warning: "advisory", hazard: "an unchecked plan reaches the writer" },
   "plan_fact.mode": { armed: "gate", warning: "record", hazard: "the writer's evidence is not checked against the diff" },
   "code_critique.mode": { armed: "gate", warning: "advisory", hazard: "an unchecked diff is accepted and merged" },
-  // risky is the owner's own default (only a high-risk landing waits for him): it is armed too; only off is a disarm.
-  "owner.words": { armed: "on", alsoArmed: ["risky"], warning: "risky", hazard: "risky acts run without the owner's word" },
+  // risky and sensitive (the default: money, data, production deploy) are the owner's own levels: armed too; only off is a disarm.
+  "owner.words": { armed: "on", alsoArmed: ["risky", "sensitive"], warning: "sensitive", hazard: "money, data and production acts run without the owner's word" },
 };
 
 export const isArmed = (protection: { armed: unknown; alsoArmed?: readonly unknown[] }, value: unknown) => value === protection.armed || (protection.alsoArmed ?? []).includes(value);

@@ -13,7 +13,7 @@ import { wasAnsweredByDefault } from "./question-default";
 import { appendTaskQa } from "./reopen-attempt";
 import {needsHumanQuestion, providerStreamError, WRITER_STREAM_ERROR} from "./writer-task";
 import { conventionGateHits, type ConventionGate } from "../../session-hooks";
-import { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, TEST_PATH, acceptanceArtifactDir, acceptanceProofGap, landingWordGap, landingWordAsked, ownerWordsMode, questionsFromFile, checkScriptEdits, recordTaskApproach, recordTaskQuestions, referenceTestEdits, shapeFlags, taskWordKey, TEST_EDIT_HOLD_ITEM, testEditAllowance, testEditHoldKey, testFitFindings, testOwnedImports, writerMarkers } from "../../tasks";
+import { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, TEST_PATH, acceptanceArtifactDir, acceptanceProofGap, landingWordGap, landingWordAsked, ownerWordsMode, sensitiveHits, taskStepEvidence, questionsFromFile, checkScriptEdits, recordTaskApproach, recordTaskQuestions, referenceTestEdits, shapeFlags, taskWordKey, TEST_EDIT_HOLD_ITEM, testEditAllowance, testEditHoldKey, testFitFindings, testOwnedImports, writerMarkers } from "../../tasks";
 import type { TaskWord } from "../../tasks";
 import type { StageId } from "../../tasks";
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
@@ -35,6 +35,9 @@ import { runCodeCritiqueGate } from "./critique-gate";
 import { mergeAcceptedAttempt } from "./finish-merge";
 import { watchWriterRun } from "./watch-writer";
 
+
+/** The owner-facing name of each class the landing word is asked for on owner.words=sensitive. */
+const SENSITIVE_RU = { money: "деньги", data: "базу данных (миграции, схему или удаление данных)", deploy: "выкат в боевую среду" } as const;
 
 export async function finishWriterAttemptBody(ctx: ServerCore, services: Services, verification: ReturnType<typeof mountVerificationAttemptFinished>, input: FinishInput, facts: Pick<AttemptFinished, "writerStopped">): Promise<Record<string,unknown>> {
   const { bb, db, getThreadBounded, host } = ctx;
@@ -247,7 +250,7 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
       const afterShaOf = (path:string) => sha256Hex(fitFiles.find((file) => file.path === path)?.after ?? "missing");
       const allowance = fitHits.length ? await testEditAllowance(bb.storage.kv as never, input.attemptId) : [];
       const heldHits = fitHits.filter((hit) => !allowance.some((row) => row.path === hit.path && row.afterSha256 === afterShaOf(hit.path)));
-      const holdForOwner = heldHits.length > 0 && landingWordAsked(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)), input.task.risk);
+      const holdForOwner = heldHits.length > 0 && landingWordAsked(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)), input.task.risk, taskStepEvidence(input.task, candidate.produced));
       if (heldHits.length && !holdForOwner) {
         // The refusal names the door: a removal that is the task's purpose goes into the contract's test_removals, and the PM dispatches again.
         const reason = `test_fit: ${heldHits.slice(0, 5).map((hit) => `${hit.path}: ${hit.evidence}`).join("; ")} (if removing these tests is the task, name the files in the contract's test_removals)`.slice(0, 500);
@@ -347,7 +350,7 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
       }
       // The owner's word before landing (SMA: Approving, Authorized by a person): with owner.words on, a verified task waits here,
       // in place and with its worktree, for the owner's yes the PM records (lane_pilot_queue word); a no or six silent hours block it.
-      // On owner.words=risky (the default) only a task of risk high waits; a low or medium one lands by itself.
+      // On owner.words=risky only a task of risk high waits; on sensitive (the default) only a task in the money / data / production-deploy classes (tasks/sensitive.ts).
       // What of the work's shape a person must see: top-level folders the base did not have, and test files the base
       // did not have that import none of the task's own files. Reads are bounded; a failure flags nothing.
       const attemptShapeFlags = async ():Promise<string[]> => {
@@ -368,10 +371,11 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
       };
       const wordSettings = loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId));
       // Shape of the work (SMA ag_shape): a new top-level folder or a test that only tests itself is named to the person
-      // in the landing word. Only on owner.words=on, where every landing waits for him anyway: on the default (risky) a
+      // in the landing word. Only on owner.words=on, where every landing waits for him anyway: on risky and sensitive a
       // new test that imports through an alias, or any Python or Go test, would hold an ordinary task for six hours.
       const shape = ownerWordsMode(wordSettings) === "on" ? await attemptShapeFlags() : [];
-      const ownerWords = landingWordAsked(wordSettings, input.task.risk) || shape.length > 0;
+      const sensitive = ownerWordsMode(wordSettings) === "sensitive" ? sensitiveHits(taskStepEvidence(input.task, candidate.produced)) : [];
+      const ownerWords = landingWordAsked(wordSettings, input.task.risk, taskStepEvidence(input.task, candidate.produced)) || shape.length > 0;
       const wordsOf = async () => ((await bb.storage.kv.get(TASK_WORDS_KEY)) as Record<string, TaskWord[]> | null)?.[taskWordKey(input.runId, taskFamily(input.taskId))];
       { const stopped = stoppedMeanwhile("the plan-fact check", writerThreadId); if (stopped) return stopped; }
       let wordGap = landingWordGap(ownerWords, await wordsOf(), input.attemptId);
@@ -384,13 +388,13 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
           const wordInput = (decision:"yes"|"no") => ({ runId:input.runId, taskId:input.taskId, decision, text: decision === "yes" ? "Да, сливайте" : "Нет, не сливать" });
           postOwnerItem(db as never, { key:`${taskWordItemPrefix(input.runId, taskFamily(input.taskId))}${input.attemptId}`, source:"writer", kind:"task_word", projectId:input.projectId, wake:false,
             what:`Задача проверена и ждёт вашего слова перед слиянием: ${input.task.title}`,
-            why:`Риск задачи ${input.task.risk}: по вашему правилу такая работа не сливается без вашего «да».${shape.length ? ` Форма работы: ${shape.join(", ")}.` : ""} Без ответа за ${Math.round(OWNER_WORD_WAIT_MS / 3_600_000)} часов она остановится, и её можно будет отправить снова.`,
+            why:`${sensitive.length ? `Задача затрагивает ${sensitive.map((hit) => SENSITIVE_RU[hit.cls]).join(", ")} (${sensitive[0]!.evidence.slice(0, 120)})` : `Риск задачи ${input.task.risk}`}: по вашему правилу такая работа не сливается без вашего «да».${shape.length ? ` Форма работы: ${shape.join(", ")}.` : ""} Без ответа за ${Math.round(OWNER_WORD_WAIT_MS / 3_600_000)} часов она остановится, и её можно будет отправить снова.`,
             evidence:[{ kind:"attempt", ref:input.attemptId }, { kind:"task", ref:input.taskId }],
             actions:[{ id:"yes", label:"Да, сливать", cli:rpcLine("task_word", wordInput("yes")), rpc:{ method:"task_word", input:wordInput("yes") } },
               { id:"no", label:"Нет", cli:rpcLine("task_word", wordInput("no")), rpc:{ method:"task_word", input:wordInput("no") } }] });
         } catch { /* the list is a mirror; the wait itself goes on */ }
         void bestEffort(ctx.log, "writer owner word notice", sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:writerThreadId,
-          text:`Lane Pilot: task ${input.taskId} passed its checks and waits for the owner's word before it lands on main (owner.words asks it for this task: risk ${input.task.risk}). Ask him with lane_pilot_ask_owner, then record his answer with lane_pilot_queue {action:"word", taskId:"${input.taskId}", decision:"yes"|"no", text}. It waits up to 6 hours; no need to resend it.` }), undefined);
+          text:`Lane Pilot: task ${input.taskId} passed its checks and waits for the owner's word before it lands on main (owner.words asks it for this task: ${sensitive.length ? `${sensitive.map((hit) => hit.cls).join("+")} — ${sensitive[0]!.evidence}` : `risk ${input.task.risk}`}). Ask him with lane_pilot_ask_owner, then record his answer with lane_pilot_queue {action:"word", taskId:"${input.taskId}", decision:"yes"|"no", text}. It waits up to 6 hours; no need to resend it.` }), undefined);
         // Up to six hours of waiting held a writer seat of the pool for nothing (Gemini F-008.2): the seat goes back now; `admitted` and the
         // live key stay, they protect the task's files until the word lands or the wait ends.
         input.releaseSlot?.();

@@ -64,7 +64,7 @@ The full generated list with defaults is [docs/enabled-settings.md](../enabled-s
 | `night_review.enabled` / `.auto_merge` / `.max_fix_tasks` | `false` / `off` / `5` | The bounded post-acceptance night reviewer. |
 | `pm_read.enabled` / `.min_lines` | `false` / `350` | A scout reads the task's `read_first` files itself and reports to the plan critic and the writer; below `min_lines` of `read_first` it does not run. |
 | `plan_fact.mode` | `record` | `gate` sends a task back when an acceptance item has no evidence. |
-| `owner.words` | `on` (no catalog row) | A verified task waits up to 6 hours for the owner's yes before it lands on main; the PM asks with `lane_pilot_ask_owner` and records the answer with `lane_pilot_queue` action `word`. `off` lands tasks without the wait. |
+| `owner.words` | `sensitive` | Whose word a verified task waits for (up to 6 hours) before it lands on main; the PM asks with `lane_pilot_ask_owner` and records the answer with `lane_pilot_queue` action `word`. `sensitive` (default): only money, database migrations and destructive data operations, and a deploy to production, whatever the task's risk; `on`: every task; `risky`: risk high or critical; `off`: none. A phase's turns, a forge workflow and a permit ask by the same rule. |
 | `baseline.already_built`, `baseline.time_cap_sec`, `checks.require_red_on_base` | `notify`, `300`, `medium` | The baseline before a writer starts. |
 | `regress.nightly`, `.last_n`, `.last_days` | `true`, `30`, `14` | The night re-check of accepted tasks. |
 | `integration.gate_command`, `.gate_when`, `.gate_every` | auto-detected, `queue_drained`, `5` | The whole-suite check after a batch merged. |

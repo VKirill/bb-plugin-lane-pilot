@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 563505bf422a4629 -->
+<!-- enabled-settings:structure 3c2fadfe24bbbcd3 -->
 
 # Enabled settings (generated)
 
@@ -163,7 +163,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `ops.pool_size` | `configured_default(LANE_SESSION_POOL_SIZE,5,max=10)` | — | run policy reads this: writers at once |
 | `ops.provider_pool` | — | — | writer pools: a cap on simultaneous writers per provider, as provider=limit pairs |
 | `ops.verify_pool_size` | `configured_default(LANE_VERIFY_POOL_SIZE,2,max=10)` | — | run policy reads this: verification pool |
-| `owner.words` | `risky` | — | landing: whose word a verified task waits for (on every task, risky = risk high or critical, off none) |
+| `owner.words` | `sensitive` | — | landing: whose word a verified task waits for (on every task, risky = risk high or critical, sensitive = money, database or production deploy only, off none) |
 | `owner_push.enabled` | `true` | — | owner push: the Telegram message about what waits for the owner |
 | `owner_push.quiet` | `23:00-08:00` | — | owner push: quiet hours window, HH:MM-HH:MM |
 | `owner_push.timezone` | `Europe/Madrid` | — | owner push: time zone of the quiet hours |
