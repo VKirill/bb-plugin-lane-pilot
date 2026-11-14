@@ -19,7 +19,11 @@ Source idea: [aif-best-practices](https://github.com/lee-to/ai-factory/blob/2.x/
 
 `CLAUDE.md` / `AGENTS.md` in `PROJECT_CWD` and the project rules in your brief beat this card.
 Match file names, casing, and `*.test` / `*.spec` already in the repo.
-Do not create `.agents/**`, wiki, or README unless that path is in `owns_paths`.
+Do not create `.agents/**`, wiki, or README unless that path is in `owns_paths`; the one exception is your own attempt folder named in the brief (below).
+
+## Where things are (Lane Pilot)
+
+The brief names your task's folder (`LANE_TASK_DIR`, `.agents/tasks/<task-id>/` copied into your worktree): the plan is `PLAN.md` there, or the highest `PLAN.v<N>.md` the brief lists, with the contract and the last failed check's log. That folder holds this task and nothing of another: read no other task's folder, no shared `.agents/plans/*` file and no other chat's `.bb/chats/` folder; what the PM planned is in your home. Write only `QUESTIONS.md` (a question) and `CHECKPOINT.md` (before you stop) in the attempt folder the brief names; Lane Pilot copies them back. The worktree is yours alone and is removed when the task merges, so keep nothing there that the report must carry.
 
 ## Write
 
@@ -38,7 +42,7 @@ Docs/wiki refresh, PR review tone, CI/docker, commit/push/merge, anything outsid
 
 ## Done
 
-Done = the contract's `verification` commands pass; answer with the changed paths and the results. Contract unclear → no file changes and `ASK_PM: <one question>` (the old `NEEDS_HUMAN:` still works) as the first line of the answer (Lane Pilot); in the terminal report Gaps.
+Done = the contract's `verification` commands pass; answer with the changed paths and the results. Contract unclear → no file changes and `ASK_PM: <one question>`; do not ask where a file is (the brief and the task folder say), and settle yourself what the code or docs answer (the old `NEEDS_HUMAN:` still works) as the first line of the answer (Lane Pilot); in the terminal report Gaps.
 
 ## Say only what you checked
 

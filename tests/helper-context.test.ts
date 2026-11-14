@@ -297,4 +297,12 @@ describe("renamed skills (docs/skill-standard.md, step 4)", () => {
     const selected = parseHelperContextSettings({ "helper.context_mode": "selected", "helper.skills": "docs-maintain,tavily" });
     expect(selected.ok && selected.settings.skills).toEqual(["lp-docs", "tavily"]);
   });
+
+  it("resolves every removed stub name, also in the skills an owner-defined specialist brings", async () => {
+    const { canonicalSkillName, roleProfilePolicy } = await import("../src/rooms/contracts/helper-context");
+    for (const stub of ["lane-contract", "lane-pilot-ops", "lane-pilot-workflows"]) expect(canonicalSkillName(stub)).toBe("lane-pilot");
+    const policy = roleProfilePolicy("specialist:design-lead", {}, { skills: ["lane-contract", "writer-practices"] });
+    expect(policy.skills?.names).toEqual(expect.arrayContaining(["lane-pilot", "lp-writer"]));
+    expect(policy.skills?.names).not.toContain("lane-contract");
+  });
 });

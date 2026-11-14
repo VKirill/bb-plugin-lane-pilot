@@ -169,8 +169,8 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
 
 /**
  * Skills renamed by the skill standard (docs/skill-standard.md, step 4). An owner setting saved with the old name (`helper.skills`,
- * `helper.access.<role>`) is read as the new one for one release, so a role does not start without its skill; the old names stay as stubs.
- * Remove the rows with the stubs (step 6).
+ * `helper.access.<role>`) or an owner-defined specialist's own skills (`extra.skills`) is read as the new one, so a role does not start
+ * without its skill. The stub skills are gone from skills/ and from the hub: these rows are the only place the old names still resolve.
  */
 export const SKILL_ALIASES: Readonly<Record<string, string>> = {
   "writer-practices": "lp-writer",
@@ -267,7 +267,7 @@ export function roleProfilePolicy(role: HelperRole, access: RoleAccess = {}, ext
   const policy: VkSessionPolicy = { claudeAiSync: false, required: true };
   for (const group of ACCESS_GROUPS) {
     const { names } = effectiveGroup(role, group, access);
-    const added = group === "bbPlugins" ? extra.bbPlugins : group === "skills" ? extra.skills : group === "mcpServers" ? extra.mcpServers : undefined;
+    const added = group === "bbPlugins" ? extra.bbPlugins : group === "skills" ? extra.skills?.map(canonicalSkillName) : group === "mcpServers" ? extra.mcpServers : undefined;
     if (names) policy[group] = { mode: "allow", names: added?.length ? [...new Set([...names, ...added])] : names };
   }
   if (!effectiveSwitch("userInstructions", access, role).include) policy.userInstructions = false;

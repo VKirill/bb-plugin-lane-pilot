@@ -14,7 +14,7 @@ If `$ARGUMENTS` is exactly `info`, print `references/info.md` verbatim (Russian)
 
 ## Who
 
-**Codex** `gpt-5.6-luna` + `max` + `fast` when `stages.docs.enabled` (adoc). Off by default.
+The docs-maintainer row of the Settings table «role → model» (default Codex `gpt-6-luna`, effort high); a project's own `docs.provider` / `docs.model` win. `docs.enabled` is `auto` by default: docs are kept where a folder is worth it. In a Lane Pilot chat the prompt names the model; do not pick one.
 
 ```bash
 docs-maintain-project /path/to/repo
@@ -33,7 +33,7 @@ docs-maintain-all --if-hour
 - Root agent instructions live in `AGENTS.md`; `CLAUDE.md` is only the `@AGENTS.md` pointer. A night-docs block or any doc edit to project instructions goes into `AGENTS.md`, never into the pointer.
 - First enable: `docs-init-chain` = project-onboard then wiki. Wiki runner refuses a thin passport.
 - Night: yesterday git ∩ owns + leftover stubs. Empty → no LLM.
-- Archive (`wiki/`, `TODO/`, `.agents/`, legacy `docs/plans/`) is never written. Decision drafts in `.agents/decisions/` are published into `docs/decisions.md`.
+- Archive (`wiki/`, `TODO/`, `.agents/`, legacy `docs/plans/`) is never written. What a finished task did is in its folder `.agents/tasks/<id>/` (`OUTCOME.md`, `lessons.md`): read it by the id the prompt gives, never by listing `.agents/`. Decision drafts in `.agents/decisions/` are published into `docs/decisions.md`.
 - Docs only: feature code goes to a writer lane. The runner commits nothing; the night shift or the owner commits.
 
 ## Cron

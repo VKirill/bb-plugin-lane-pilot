@@ -59,7 +59,7 @@ export const ANALYST_METHOD: readonly string[] = [
 export const PLANNER_METHOD: readonly string[] = [
   "Method: write task contracts a writer can execute without asking. One task is one feature or one module boundary of about 15 to 60 minutes, not one file; a user-visible feature is one end-to-end task.",
   "Every task has: objective, read_first (the files the change touches and the files whose pattern it must follow), owns_paths (the only files it may write), never_touch, acceptance lines that a command, a grep or a file read can decide, and verification commands with the exact exit code or string that decides them. No subjective words (properly, clean, robust, as expected).",
-  "Tasks that can run together own disjoint paths; a task that needs another's result names it in depends_on. Group them in waves. A task you cannot make checkable is a question for the owner, not a vague task.",
+  "Tasks that can run together own disjoint paths; a task that needs another's result names it in depends_on, and depends_on is the only ordering: write no waves, code computes them from the links and refuses a cycle. A task you cannot make checkable is a question for the owner, not a vague task.",
   "Plan from the analysis you were given: locked decisions bind the plan, free ones are yours, deferred ones stay out. Say what you left out and why.",
 ];
 

@@ -2,7 +2,7 @@
 
 Contents: orchestrator rules · authoring checklist · writer rules · schema-v2 fields · verification tiers · owns, dirt and caches.
 
-> **Inside a Lane Pilot chat** (`LANE_PILOT_AGENT_TYPE` set / tools `lane_pilot_*` present) the contract is the task-v2 JSON in the `plan` of `lane_pilot_dispatch_writer`, and its schema is strict: exactly `schema_version`, `id`, `title`, `risk`, `lane`, `project_cwd`, `read_first`, `interfaces`, `invariants`, `out_of_scope`, `expected_outputs`, `owns_paths`, `never_touch`, `depends_on`, `objective`, `acceptance`, `verify`, `verification[{command, cwd, timeout_sec?}]` (`timeout_sec` up to 7200). Any other field (`context_selectors`, `impact_*`, `skills`) makes Lane Pilot reject the whole contract: put line windows in `objective` or `interfaces` as `path:start-end`. The writer RUNS `verification` and Lane Pilot re-runs it at acceptance, so every task needs real verification commands. Lane Pilot owns run state; `run-init`, `run-validate --phase`, `lane-ctl`, `run-supervisor`, the L0 rule «writer does not run tests» and `lane = adoc main_write` below are the terminal Lane Stack harness.
+> **Inside a Lane Pilot chat** (`LANE_PILOT_AGENT_TYPE` set / tools `lane_pilot_*` present) the contract is the task-v2 JSON in the `plan` of `lane_pilot_dispatch_writer`, and its schema is strict: exactly `schema_version`, `id`, `title`, `risk`, `lane`, `project_cwd`, `read_first`, `interfaces`, `invariants`, `out_of_scope`, `expected_outputs`, `owns_paths`, `never_touch`, `depends_on`, `objective`, `acceptance`, `verify`, `verification[{command, cwd, timeout_sec?}]` (`timeout_sec` up to 7200). Any other field (`context_selectors`, `impact_*`, `skills`) makes Lane Pilot reject the whole contract: put line windows in `objective` or `interfaces` as `path:start-end`. The `plan` is the plan as text (a path is replaced by that file's text); Lane Pilot keeps it in the task's folder `.agents/tasks/<id>/PLAN.md`, so `read_first` names source files only: a path into another task's folder, into the shared `.agents/plans/*` or into another chat's `.bb/chats/` is refused. `depends_on` names tasks of this run and is the only ordering (a cycle or a self-dependency is refused at dispatch; the task starts once its dependencies are accepted and merged). The writer's own notes (`QUESTIONS.md`, `CHECKPOINT.md`) go to its attempt folder in that home; Lane Pilot keeps them. The writer RUNS `verification` and Lane Pilot re-runs it at acceptance, so every task needs real verification commands. Lane Pilot owns run state; `run-init`, `run-validate --phase`, `lane-ctl`, `run-supervisor`, the L0 rule «writer does not run tests» and `lane = adoc main_write` below are the terminal Lane Stack harness.
 
 
 ## Orchestrator must
@@ -13,7 +13,7 @@ Contents: orchestrator rules · authoring checklist · writer rules · schema-v2
 4. One `run-supervisor` per run; `lane-supervisor` only for typed one-shots.  
 5. Parallel only with **disjoint** owns_paths.  
 6. Controller: owns → L1 verify → accept **progressively**.  
-7. Task YAML immutable after first start.  
+7. Task YAML immutable after first start (in a Lane Pilot chat a queued or blocked task is corrected in place with `lane_pilot_update_task`: a new contract edition, a new `PLAN.v<N>.md`).  
 8. Pre-merge validate → merge main (PM only).  
 9. Writers via durable controller (kimi/…); Codex write = recovery only.  
 10. Separate provider vs verification pools.  
@@ -27,7 +27,7 @@ Contents: orchestrator rules · authoring checklist · writer rules · schema-v2
 ### Decomposition
 
 - [ ] Each task id has **one** product outcome  
-- [ ] `depends_on` is a real compile/data edge, not narrative order  
+- [ ] `depends_on` is a real compile/data edge, not narrative order, and the only ordering: do not encode order in wave numbers or plan text  
 - [ ] Large delete vs new algorithm are **separate** tasks  
 - [ ] Parallel tasks have disjoint owns  
 
