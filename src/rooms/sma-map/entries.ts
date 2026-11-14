@@ -1012,7 +1012,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n998: ["have", "учение скиллов", "scripts/lp_drill/scenes/skills.py#scenario_skills_screen"],
   n999: ["have", "учение аварии", "scripts/lp_drill/scenes/hub_outage.py#scenario_outage_live"],
   n1000: ["have", "проверка живого контура", "scripts/lp_drill/scenes/writers.py#def scenario_parallel3("],
-  n1001: ["have", "учение подъёма", "scripts/lp_drill/scenes/hub_outage.py#_watchdog_live"],
+  n1001: ["have", "учение подъёма", "scripts/hub-watchdog.sh#lift() {"],
   n1002: ["have", "права на папку для воркера", "src/rooms/verification/worker-user.ts#grantRunFolders"],
   n1003: ["have", "список выданных прав", "src/rooms/verification/worker-user.ts#grantRunFolders"],
   n1004: ["void", "нет предмета: процесса-бегуна со спулом и Windows-кода нет ни в host-worker, ни в native-install, ни в scripts; потоки исполнителей запускает BB"],
