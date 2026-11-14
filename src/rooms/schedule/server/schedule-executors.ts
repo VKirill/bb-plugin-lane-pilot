@@ -9,6 +9,7 @@ import type { ScheduleKind, ScheduleTask } from "../model";
 import type { ServerCore } from "../../contracts/server";
 import { errandModelForRun } from "./schedule-default";
 import { allowedSecretNames, secretFixLines, secretProblem } from "../../secrets/server";
+import { systemStarterOf } from "./system-schedules";
 
 import type { ErrandsApi } from "../../contracts";
 import type { WorkflowEngineApi, WorkflowTriggersApi } from "../../platform/server";
@@ -36,7 +37,10 @@ export function createScheduleExecutors(ctx: ServerCore, services: Services): Re
     async start({ schedule, task, run }: ExecutorInput) {
       if (task.kind !== "workflow") return wrongKind(task, "workflow");
       // Source «manual»: the checks of a start by hand (published, inputs whole, requirements, a PM chat), without asking for a schedule trigger in the workflow's file.
-      const result = await services.workflowTriggers.start({ projectId: schedule.project_id, workflowId: task.workflowId, inputs: task.inputs, source: "manual", key: run.run_key, liveTrial: task.liveTrial, origin: "schedule" });
+      // A Lane Pilot system schedule (system-schedules.ts) starts its own starter graph, detached: no PM chat, no run link, no chat told.
+      const starter = systemStarterOf(schedule.created_by);
+      const result = await services.workflowTriggers.start({ projectId: schedule.project_id, workflowId: task.workflowId, inputs: task.inputs, source: "manual", key: run.run_key, liveTrial: task.liveTrial, origin: "schedule",
+        ...(starter ? { starter, detached: true } : {}) });
       if (!result.ok) throw new Error(`${result.reason}: ${result.message}`);
       return { refKind: "workflow_run", refId: result.runId };
     },

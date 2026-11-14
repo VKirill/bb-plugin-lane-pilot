@@ -296,6 +296,10 @@ export const WORKTREE_YOUNG_MS = 24 * 3_600_000;
 /** The owner's line of the daily pass: one per distinct kept list (`worktree-cleanup:<hash>`), never one per pass. */
 export const CLEANUP_ITEM_PREFIX = "worktree-cleanup:";
 
+/** A host that refused the daily pass's input: an older build whose contract has no `deep` (zod's strict-object refusal, or BB's input check). */
+const OLDER_HOST = /unrecognized key|invalid[_ ]input|input validation/i;
+const NO_DAILY_PASS = "this machine's Lane Pilot host is older and has no daily pass (update the plugin there)";
+
 type DeepReceipt = NonNullable<Awaited<ReturnType<typeof import("../../verification").sweepWorktreeClasses>>>;
 type HostAnswer = JanitorOutcome & { deep?: DeepReceipt };
 
@@ -311,7 +315,9 @@ export async function dailyPassInputs(ctx: Pick<ServerCore, "bb" | "db">, now = 
   const { bb, db } = ctx;
   const add = (map: Map<string, Set<string>>, host: string, path: string) => { if (host && path?.startsWith("/")) map.set(host, (map.get(host) ?? new Set()).add(path)); };
   const folders = new Map<string, Set<string>>(), bbEnvPaths = new Map<string, Set<string>>(), abandoned = new Map<string, Set<string>>();
-  const projects = await (bb.sdk as unknown as { projects?: { list(query: unknown): Promise<Array<{ sources?: Array<{ hostId?: string; path?: string }> }>> } }).projects?.list({ includePersonal: true }).catch(() => []) ?? [];
+  // A list that throws before it returns a promise is the same unknown as one that rejects: the run folders below still give the folders.
+  const sdkProjects = (bb.sdk as unknown as { projects?: { list(query: unknown): Promise<Array<{ sources?: Array<{ hostId?: string; path?: string }> }>> } }).projects;
+  const projects = await Promise.resolve().then(() => sdkProjects?.list({ includePersonal: true }) ?? []).catch(() => []);
   for (const project of projects) for (const source of project.sources ?? []) add(folders, source.hostId ?? "", source.path ?? "");
   const runs = recentRunWorkspaces(db, now - 90 * 86_400_000);
   const runFolders = new Set<string>();
@@ -364,13 +370,26 @@ export async function runDailyWorktreePass(ctx: Pick<ServerCore, "bb" | "db" | "
   for (const machine of hosts) {
     if (ctx.isDisposed()) break;
     const out = await ctx.host.call("worktreeJanitor", {
-      requestedHostId: machine.id, protectedPaths, graceMs: worktreeGraceMs(db),
+      // A dry run gives the hourly part an endless grace too: a host that ignored `deep.dryRun` would still remove no worktree.
+      requestedHostId: machine.id, protectedPaths, graceMs: dryRun ? Number.MAX_SAFE_INTEGER : worktreeGraceMs(db),
       deep: { folders: [...inputs.folders.get(machine.id) ?? []], bbEnvPaths: [...inputs.bbEnvPaths.get(machine.id) ?? []], abandonedPaths: [...inputs.abandoned.get(machine.id) ?? []],
         registryPaths: inputs.registry.get(machine.id) ?? [], maxAgeMs, youngMs: WORKTREE_YOUNG_MS, now: Math.round(now), ...(dryRun ? { dryRun: true } : {}) },
-    }, { hostId: machine.id, timeoutMs: 30 * 60_000 }).catch((cause: unknown) => { errors.push(`${machine.name ?? machine.id}: ${cause instanceof Error ? cause.message : String(cause)}`); return null; }) as HostAnswer | null;
+    }, { hostId: machine.id, timeoutMs: 30 * 60_000 }).catch((cause: unknown) => {
+      // A machine on a build before 0.1.562 checks its input against its own strict contract and refuses the unknown `deep` key: the whole call
+      // fails there and nothing is removed (its hourly sweep keeps running on the old shape). Say what to do instead of the raw validation text.
+      const text = cause instanceof Error ? cause.message : String(cause);
+      errors.push(`${machine.name ?? machine.id}: ${OLDER_HOST.test(text) ? `${NO_DAILY_PASS}; nothing was removed on it (${text.slice(0, 160)})` : text}`);
+      return null;
+    }) as HostAnswer | null;
     if (!out) continue;
     const deep = out.deep;
-    if (!deep) { errors.push(`${machine.name ?? machine.id}: this machine's Lane Pilot host has no daily pass yet (update the plugin there)`); continue; }
+    if (!deep) {
+      // A host that took the call but ignored `deep` ran its hourly sweep only: its removals are real, their registry rows close.
+      if (!dryRun) for (const path of out.removed ?? []) closed += releaseWorktreesUnder(db, machine.id, path, now);
+      removed += out.removed?.length ?? 0;
+      errors.push(`${machine.name ?? machine.id}: ${NO_DAILY_PASS}; only its hourly sweep ran`);
+      continue;
+    }
     if (!dryRun) {
       for (const row of deep.removed) closed += releaseWorktreesUnder(db, machine.id, row.path, now);
       for (const path of out.removed ?? []) closed += releaseWorktreesUnder(db, machine.id, path, now);
@@ -423,20 +442,47 @@ function postCleanupItem(db: ServerCore["db"], attention: Array<{ host: string; 
 }
 
 /**
- * The code step of the graph lp.worktree-cleanup (the body of the two system schedules): `pass` hourly or daily, `dry_run` reads only.
- * A pass that throws ends `error` with the reason, so the board shows a failed run and its pause-after-N rule applies.
+ * One cleanup pass, as the graph's step and `bb lane-pilot worktree-cleanup` run it. A dry run is always the daily pass's: it decides for every
+ * class, Lane Pilot's root included, and removes nothing (the hourly sweep has no dry mode, so `hourly` + dry run must not reach it).
+ * A pass that throws ends `error` with the reason.
+ */
+export async function runWorktreeCleanupPass(ctx: Pick<ServerCore, "bb" | "db" | "log" | "isDisposed" | "host">, sweeps: AttemptSweeps, input: { pass: "hourly" | "daily"; dryRun?: boolean }, now = Date.now()): Promise<CleanupPassOutcome & { pass: "hourly" | "daily"; dryRun: boolean }> {
+  const dryRun = input.dryRun === true;
+  const pass = dryRun ? "daily" : input.pass;
+  try {
+    const out = pass === "daily" ? await runDailyWorktreePass(ctx, now, { dryRun }) : await runHourlyWorktreePass(ctx, sweeps, now);
+    return { ...out, pass, dryRun };
+  } catch (cause) {
+    return { status: "error", removed: 0, freedBytes: 0, kept: 0, report: `the ${pass} pass stopped: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 2000), pass, dryRun };
+  }
+}
+
+/**
+ * The code step of the graph lp.worktree-cleanup (the body of the two system schedules): `pass` hourly or daily, `dry_run` reads only. An `error`
+ * status fails the scheduled run (live_success), so the board shows it and its pause-after-N rule applies.
  */
 export function registerWorktreeCleanupActions(engine: WorkflowEngine, ctx: Pick<ServerCore, "bb" | "db" | "log" | "isDisposed" | "host">, sweeps: AttemptSweeps): void {
   engine.register<ChainRuntime>("lp.worktree_cleanup", {
     reentrant: true,
     run: async (c) => {
-      const pass = String(c.resolve("$inputs.pass") ?? "hourly") === "daily" ? "daily" : "hourly";
-      try {
-        const out = pass === "daily" ? await runDailyWorktreePass(ctx, Date.now(), { dryRun: c.resolve("$inputs.dry_run") === true }) : await runHourlyWorktreePass(ctx, sweeps, Date.now());
-        return { output: { status: out.status, removed: out.removed, freed_bytes: Math.round(out.freedBytes), kept: out.kept, report: out.report.slice(0, 16_000) } };
-      } catch (cause) {
-        return { output: { status: "error", removed: 0, freed_bytes: 0, kept: 0, report: `the ${pass} pass stopped: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 2000) } };
-      }
+      const out = await runWorktreeCleanupPass(ctx, sweeps, { pass: String(c.resolve("$inputs.pass") ?? "hourly") === "daily" ? "daily" : "hourly", dryRun: c.resolve("$inputs.dry_run") === true });
+      return { output: { status: out.status, removed: out.removed, freed_bytes: Math.round(out.freedBytes), kept: out.kept, report: out.report.slice(0, 16_000) } };
     },
   });
+}
+
+export const WORKTREE_CLEANUP_USAGE = "bb lane-pilot worktree-cleanup [--daily] [--dry-run] [--json]";
+
+/**
+ * `bb lane-pilot worktree-cleanup`: the pass the system schedules run, by hand, with its report printed. Without flags the hourly sweep; `--daily`
+ * the daily pass; `--dry-run` the daily pass deciding only (nothing removed, no janitor row, no owner line). Exit 1 when the pass ended `error`.
+ */
+export async function runWorktreeCleanupCli(ctx: Pick<ServerCore, "bb" | "db" | "log" | "isDisposed" | "host">, sweeps: AttemptSweeps, args: string[]): Promise<{ exitCode: number; stdout?: string; stderr?: string }> {
+  const unknown = args.filter((arg) => !["--daily", "--dry-run", "--json"].includes(arg));
+  if (unknown.length) return { exitCode: 2, stderr: `unknown argument ${unknown[0]}\nusage: ${WORKTREE_CLEANUP_USAGE}` };
+  const out = await runWorktreeCleanupPass(ctx, sweeps, { pass: args.includes("--daily") ? "daily" : "hourly", dryRun: args.includes("--dry-run") });
+  const stdout = args.includes("--json")
+    ? JSON.stringify({ pass: out.pass, dry_run: out.dryRun, status: out.status, removed: out.removed, freed_bytes: Math.round(out.freedBytes), kept: out.kept, report: out.report }, null, 2)
+    : `${out.pass}${out.dryRun ? " (dry run)" : ""}: ${out.status}\n${out.report}`;
+  return { exitCode: out.status === "error" ? 1 : 0, stdout };
 }
