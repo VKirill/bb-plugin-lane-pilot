@@ -360,6 +360,7 @@ describe("the per-machine install", () => {
     expect(loadProjectSettings(db, "p-done")["install.lastReceipt"]).toBeUndefined();
     const ok = await harness.behavior.callRpc("stack_install", { projectId: "p-done", confirmExternalOps: true }) as { status: string; native: { status: string } };
     expect(ok).toMatchObject({ action: "install", status: "ok", native: { status: "enabled" } });
+    expect(typeof loadProjectSettings(db, "p-done")["install.lastReceipt"]).toBe("string");
     const saved = JSON.parse(String(loadProjectSettings(db, "p-done")["install.lastReceipt"])) as { action: string; status: string; native: { status: string } };
     expect(saved).toMatchObject({ action: "install", status: "ok", native: { status: "enabled" } });
     expect(calls.filter((call) => call.method === "nativeInstall").map((call) => call.action)).toContain("install");
