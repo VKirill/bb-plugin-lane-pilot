@@ -82,9 +82,10 @@ export const WRITER_SETUP_LINES = [
 
 /** The writer's one tools line, built for the access it actually has: no pointers at tools the policy denies. */
 export function writerToolLine(context: WriterBriefContext = {}): string {
-  const gitnexus = (context.gitnexusTools ?? false) && (context.gitnexusIndex ?? false);
+  // The worktree is not indexed (.gitnexus is gitignored): without the repo name a call finds nothing, so no name, no line (hub threads 2026-11: 3 of 1038 writer calls).
+  const repo = (context.gitnexusTools ?? false) && (context.gitnexusIndex ?? false) ? context.gitnexusRepo : undefined;
   const parts: string[] = [];
-  if (gitnexus) parts.push("This project has a GitNexus index: find code with it first — `query` for a concept, `context` for a symbol's callers and callees, `impact` before changing a shared function; use grep for literals and when the index has no answer");
+  if (repo) parts.push(`GitNexus indexes the main checkout as repo "${repo}" (your worktree is not indexed: pass repo: "${repo}" on every call). Before you change an exported function or type, run \`impact\` on it (direction upstream) and keep its callers working; \`context\` lists a symbol's callers and callees, \`query\` finds code by concept; use grep for literals and for files you have just changed`);
   else parts.push("Find code with grep, the file tree and reads");
   if (context.metamcpTools ?? false) parts.push("for a library's API use the context7 docs (through metamcp) before guessing");
   return `${parts.join("; ")}. If you lack a tool, read the code yourself; that is no reason to stop.`;

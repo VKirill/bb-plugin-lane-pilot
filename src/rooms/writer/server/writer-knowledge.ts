@@ -97,6 +97,10 @@ export async function similarWorksLines(deps:KnowledgeDeps, input:KnowledgeInput
   return kept.length?["Similar works already done in this project:",...kept].join("\n"):"";
 }
 
+/** The registry name GitNexus gave this checkout (~/.gitnexus/registry.json: a "name" line right above its "path" line). */
+export const GITNEXUS_REPO_PROBE = `f="$HOME/.gitnexus/registry.json"; if [ -f "$f" ]; then for p in "$(pwd)" "$(pwd -P)"; do n=$(grep -B1 "\\"path\\": \\"$p\\"" "$f" | sed -n 's/.*"name": "\\([^"]*\\)".*/\\1/p' | head -1); if [ -n "$n" ]; then echo "REPO=$n"; break; fi; done; fi`;
+export const gitnexusRepoOf = (probe: string | null | undefined): string | undefined => /^REPO=([\w.@-]+)\s*$/m.exec(probe ?? "")?.[1];
+
 export async function writerKnowledge(deps:KnowledgeDeps, input:KnowledgeInput) {
   const memoryOn=input.memorySettings.enabled&&input.memorySettings.inject;
   const taskMemoryQuery=`${input.task.title}\n${input.task.objective}\n${input.task.acceptance.join(" ")}`;
@@ -109,8 +113,9 @@ export async function writerKnowledge(deps:KnowledgeDeps, input:KnowledgeInput) 
     const mcpGroup=mode==="roles"?effectiveGroup("writer","mcpServers",access):{names:null};
     const gitnexusTools=mcpGroup.names===null||mcpGroup.names.includes("gitnexus");
     const memoryRoot=taskBasePath(deps.db,input.runId,input.task.id)??input.task.project_cwd;
-    const gitnexusIndex=gitnexusTools&&codeFactsState((await bestEffort(deps.log, "writer gitnexus index probe", runOnHost(deps.host,{hostId:input.hostId,cwd:memoryRoot,command:CODE_FACTS_PROBE,timeoutSec:10}), null))?.stdout).state!=="none";
-    return {broadSkills:mode!=="roles"||skillsGroup.names===null,gitnexusTools,metamcpTools:mcpGroup.names===null||mcpGroup.names.includes("metamcp"),gitnexusIndex};
+    const probe=gitnexusTools?(await bestEffort(deps.log, "writer gitnexus index probe", runOnHost(deps.host,{hostId:input.hostId,cwd:memoryRoot,command:`${CODE_FACTS_PROBE}; ${GITNEXUS_REPO_PROBE}`,timeoutSec:10}), null))?.stdout:null;
+    const gitnexusIndex=gitnexusTools&&codeFactsState(probe).state!=="none";
+    return {broadSkills:mode!=="roles"||skillsGroup.names===null,gitnexusTools,metamcpTools:mcpGroup.names===null||mcpGroup.names.includes("metamcp"),gitnexusIndex,gitnexusRepo:gitnexusRepoOf(probe)};
   })();
   const { allRules, rules, rulesText }=await writerRules(deps,input);
   const ruleMemoryIds=new Set(allRules.map((rule)=>rule.memoryId));

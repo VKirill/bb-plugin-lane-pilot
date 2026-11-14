@@ -190,5 +190,7 @@ export type WriterBriefContext = {
   metamcpTools?: boolean;
   /** The workspace has a `.gitnexus/` index, checked on the workspace's own host. */
   gitnexusIndex?: boolean;
+  /** The GitNexus registry name of the main checkout: the writer's worktree has no index of its own, so every call names the repo. */
+  gitnexusRepo?: string;
 };
 

@@ -1,3 +1,4 @@
+import { gitnexusRepoOf } from "../src/rooms/writer/server/writer-knowledge";
 import { describe, expect, it } from "vitest";
 import { mkdtempSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -121,10 +122,14 @@ describe("role MCP server configurations", () => {
 
 describe("prompt hints for gitnexus and metamcp", () => {
   it("the writer's tool line names gitnexus and context7 only when the role has them and the index exists", () => {
-    const full = writerToolLine({ gitnexusTools: true, gitnexusIndex: true, metamcpTools: true });
-    expect(full).toContain("GitNexus index");
-    expect(full).toContain("`query` for a concept");
+    const full = writerToolLine({ gitnexusTools: true, gitnexusIndex: true, gitnexusRepo: "shop", metamcpTools: true });
+    expect(full).toContain('pass repo: "shop" on every call');
+    expect(full).toContain("run `impact` on it");
     expect(full).toContain("context7");
+    // The worktree is not indexed: without the registry name a GitNexus call finds nothing, so the line is not given.
+    expect(writerToolLine({ gitnexusTools: true, gitnexusIndex: true })).not.toContain("GitNexus");
+    expect(gitnexusRepoOf("HEAD=abc\nREPO=bb-plugin-lane-pilot\n")).toBe("bb-plugin-lane-pilot");
+    expect(gitnexusRepoOf("NONE\n")).toBeUndefined();
     // Tools the role does not load are not pointed at; a missing index drops the gitnexus part alone.
     const noIndex = writerToolLine({ gitnexusTools: true, metamcpTools: true });
     expect(noIndex).not.toContain("GitNexus");

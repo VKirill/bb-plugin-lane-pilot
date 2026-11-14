@@ -55,7 +55,7 @@ describe("writer brief v2", () => {
     expect(brief).not.toContain("gitnexus tools");
     const broad = writerPrompt(task, "", "", undefined, "Lane Pilot writer", "", "", "", null, false, { broadSkills: true });
     expect(broad).toContain("bb tools skills-tree");
-    const withIndex = writerPrompt(task, "", "", undefined, "Lane Pilot writer", "", "", "", null, false, { gitnexusTools: true, gitnexusIndex: true, metamcpTools: true });
+    const withIndex = writerPrompt(task, "", "", undefined, "Lane Pilot writer", "", "", "", null, false, { gitnexusTools: true, gitnexusIndex: true, gitnexusRepo: "shop", metamcpTools: true });
     expect(withIndex).toContain("GitNexus");
     expect(withIndex).toContain("context7");
   });
