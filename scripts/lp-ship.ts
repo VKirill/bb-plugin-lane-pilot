@@ -28,7 +28,8 @@ import { smaDonePercent, smaRows, brokenProof, defaultProofRoots } from "../src/
 import { leakFindings } from "../tests/helpers/guard-tools";
 import { batchItemIsFullLane, batchReceiptGaps, pickBatch, parseTodoMeta, FULL_LANE_PATHS, type TodoMeta } from "../src/rooms/backlog/logic";
 
-const ROOT = join(import.meta.dirname, "..");
+// LP_SHIP_ROOT points every verb at another tree (the four-proofs tests and the region scene sma_r27 judge a fixture tree, never the checkout they run in).
+const ROOT = process.env.LP_SHIP_ROOT || join(import.meta.dirname, "..");
 // The built tree the gate judges. A test points it at an empty folder so the checkout's own leftover build never decides its result.
 const DIST = process.env.LP_SHIP_DIST || join(ROOT, "dist");
 const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
@@ -191,7 +192,8 @@ function publishable(args: string[] = []): number {
 
 function predictLint(): number {
   const text = read("CHANGELOG.md");
-  const promise = /\b(faster|fewer|less|no longer|never again|быстрее|меньше|больше не|реже)\b/i;
+  // \b is ASCII-only in JavaScript: the Russian promises never matched with it, so the edges are letter lookarounds.
+  const promise = /(?<![\p{L}\p{N}_])(faster|fewer|less|no longer|never again|быстрее|меньше|больше не|реже)(?![\p{L}\p{N}_])/iu;
   const measured = /(\d+\s?(ms|s|%|x|раз|мин)|measured|замер|метрик|drill|учени|bench|test)/i;
   // Only the newest entry is the release being shipped: its findings fail; the same promise in an older entry is a printed warning.
   const entries = text.split(/\n(?=## )/).filter((part) => part.trimStart().startsWith("## ")).map((part) => ({ version: /^## ([^\n]+)/.exec(part.trim())?.[1]?.trim() ?? "?", part }));
@@ -317,8 +319,9 @@ function windowSources(): string[] {
       const dir = stack.pop()!;
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         const path = join(dir, entry.name);
-        if (entry.isDirectory()) { if (entry.name === "ui" || path.startsWith(join(ROOT, "packages/ui-kit"))) stack.push(path); }
-        else if (/\.(tsx?|css)$/.test(entry.name)) files.push(path);
+        // Every folder under src/rooms is walked (the windows live in src/rooms/<room>/ui and in loose .tsx files of a room): a window source is any .tsx/.css, or any .ts inside a ui folder.
+        if (entry.isDirectory()) { if (entry.name !== "node_modules") stack.push(path); }
+        else if (/\.(tsx|css)$/.test(entry.name) || (/\.ts$/.test(entry.name) && (path.includes("/ui/") || path.startsWith(join(ROOT, "packages/ui-kit"))))) files.push(path);
       }
     }
   }
