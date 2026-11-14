@@ -13,7 +13,7 @@ import { integrateWorktree, removeLaneWorktree } from "../src/rooms/verification
 import { deleteBranchIfMerged, laneWorktreeTarget, mergedAnywhere, repoFolderName } from "../src/rooms/verification/git-integrate/worktree-layout";
 import { sweepLaneWorktrees } from "../src/rooms/verification/worktree-janitor";
 import { gitCreateWorktree, gitRemoveWorktree, worktreeJanitor } from "../src/rooms/host-worker/host-handlers";
-import { CLEANUP_ITEM_PREFIX, dailyPassInputs, runDailyWorktreePass } from "../src/rooms/stability/server/worktree-janitor";
+import { CLEANUP_ITEM_PREFIX, dailyPassInputs, runDailyWorktreePass } from "../src/rooms/stability/server/worktree-daily-pass";
 import { registerWorktree } from "../src/rooms/storage";
 import { SYSTEM_SCHEDULES, ensureSystemSchedules } from "../src/rooms/schedule/server/system-schedules";
 import { normalizeSchedule } from "../src/rooms/schedule/model";
@@ -236,7 +236,7 @@ describe("the daily cleanup pass on one machine", () => {
     expect(dry.pruned).toBe(0);
   });
 
-  it("[sma:dt_wt_sweep] a Claude Code subagent copy in .claude/worktrees and a BB-environment copy are swept by the same rules; other worktrees are not touched", async () => {
+  it("[sma:dt_wt_sweep] a Claude Code subagent copy in .claude/worktrees is swept by the same rules; a BB environment is left to BB; other worktrees are not touched", async () => {
     const { dir, base, laneRoot, add, commit, sweep } = await project();
     const agent = add(join(base, ".claude", "worktrees", "agent-1"), "worktree-agent-1");
     git(base, "merge", "-q", "--squash", "worktree-agent-1"); // nothing to squash: the branch is main's tip
@@ -247,13 +247,19 @@ describe("the daily cleanup pass on one machine", () => {
     commit(env, "env.txt");
     git(base, "merge", "-q", "--no-ff", "-m", "env9", "bb/lpattempt_env9");
     const release = add(join(dir, "release-copy"), "release/1.0");
-    // The BB environment is reached only through the path the hub names: no project folder is given.
+    // A BB environment the hub names without BB's id (an older hub) is BB's to remove: kept, folder and branch stay.
     const out = await sweep({ folders: [base], bbEnvPaths: [env] });
     const removed = Object.fromEntries(out.removed.map((row) => [row.path, row.cls]));
-    expect(removed).toEqual({ [agent]: "claude", [dot]: "dot-worktrees", [env]: "bb-env" });
-    expect(out.kept).toEqual([expect.objectContaining({ path: agentDirty, cls: "claude", reason: "unmerged" })]);
-    expect(branches(base, "worktree-agent-1") + branches(base, "feature-x") + branches(base, "bb/lpattempt_env9")).toBe("");
+    expect(removed).toEqual({ [agent]: "claude", [dot]: "dot-worktrees" });
+    expect(out.kept).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: agentDirty, cls: "claude", reason: "unmerged" }),
+      expect.objectContaining({ path: env, cls: "bb-env", reason: "no-environment-id" }),
+    ]));
+    expect(out.kept).toHaveLength(2);
+    expect(branches(base, "worktree-agent-1") + branches(base, "feature-x")).toBe("");
+    expect(existsSync(env)).toBe(true);
     expect(existsSync(release)).toBe(true);
+    expect(out.decisions.find((row) => row.path === release)).toMatchObject({ cls: "outside", decision: "skip", reason: "outside" });
     expect(existsSync(join(laneRoot))).toBe(true);
   });
 
