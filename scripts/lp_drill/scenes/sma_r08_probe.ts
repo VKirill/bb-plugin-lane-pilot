@@ -77,8 +77,8 @@ const message = (cause: unknown) => (cause instanceof Error ? cause.message : St
     fine: async () => ({ ok: true }),
   }, (line) => logged.push(line), () => (clock += 40));
   const errors: string[] = [];
-  for (const name of ["broken", "refused"] as const) { try { await handlers[name](undefined as never); } catch (cause) { errors.push(message(cause)); } }
-  out.threw = { logged, errors, fine: await handlers.fine(undefined as never) };
+  for (const name of ["broken", "refused"] as const) { try { await handlers[name](); } catch (cause) { errors.push(message(cause)); } }
+  out.threw = { logged, errors, fine: await handlers.fine() };
 }
 
 // ---- n684 / n685 the window ships with the plugin ----
