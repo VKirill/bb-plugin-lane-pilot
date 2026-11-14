@@ -1,9 +1,8 @@
 import { switchOn, switchWord } from "@lane-pilot/models";
 import { randomUUID } from "node:crypto";
 import { latestRunForPmThread } from "../../storage";
-import { ownerWordsOn } from "../../tasks";
 import { sha256Hex, bestEffort } from "@lane-pilot/kit";
-import { RISK_KINDS, checkerIndependence, contextSignature, designDecision, discussionGate, phaseFolder, planGate, planGate as planGateOf, planSignature } from "../logic";
+import { RISK_KINDS, anyTurnAsks, checkerIndependence, contextSignature, designDecision, discussionGate, isPlanWordGap, phaseFolder, planGate, planGate as planGateOf, planSignature, withComputedWaves, wordAsked, wordTurnsOf } from "../logic";
 import { planText, specText } from "../stages";
 import { insertPhase, listPhases, savePhase } from "../store";
 import { PhaseRefusal } from "./driver-tools";
@@ -13,13 +12,13 @@ import type { ContextDoc, Phase, PhaseRecord, PlanItem, RiskKey } from "../logic
 type Reported = { phaseId: string; by?: string };
 export type OpenInput = { projectId: string; pmThreadId: string; title: string; goal: string; legacy?: boolean; roadmapRow?: string; rails?: boolean };
 export type ContextInput = Reported & { docs: string[]; risks?: Partial<Record<RiskKey, string>>; requirements?: string[]; decisions?: string[]; appetite?: string; noGos?: string[] };
-export type PlanInput = Reported & { items: PlanItem[]; design?: boolean; alreadyMet?: string; fromRun?: string; objective?: string; premortem?: string[] };
+export type PlanInput = Reported & { items: Array<Omit<PlanItem, "wave"> & { wave?: number }>; design?: boolean; alreadyMet?: string; fromRun?: string; objective?: string; premortem?: string[] };
 export type PlanCheckInput = Reported & { decision: "approve" | "changes_requested"; by: string; summary?: string; wfRunId?: string };
 
 /** Opening a phase and admitting its plan: open, the signed context, the plan and its check, and the gate that admits it. */
 export function installAdmissionMethods(tools: MethodsTools) {
   const { ctx, services, db, now } = tools;
-  const { mustGet, book, move, readFile, writeGenerated } = tools;
+  const { mustGet, book, move, readFile, writeGenerated, freshTurns, freshTurnsSync } = tools;
 
   async function open(input: { projectId: string; pmThreadId: string; title: string; goal: string; legacy?: boolean; roadmapRow?: string; rails?: boolean }): Promise<Phase> {
     // A roadmap row is one address (SMA pc_folder): a live phase already on it is named, never shadowed by a second.
@@ -31,16 +30,18 @@ export function installAdmissionMethods(tools: MethodsTools) {
     const runId = latestRunForPmThread(db, input.pmThreadId)?.id ?? null;
     insertPhase(db, { id, projectId: input.projectId, pmThreadId: input.pmThreadId, runId, title: input.title.slice(0, 200), goal: input.goal.slice(0, 4000), at: now() });
     const settings = await ctx.effectiveProjectSettings(input.projectId).then((result) => result.values as Record<string, unknown>, () => ({} as Record<string, unknown>));
-    const ownerWords = ownerWordsOn(settings, { text: [input.title, input.goal] });
+    // Each turn decides its own word from its own evidence (logic/words-policy.ts); at opening only the context's is known: the title and goal.
+    const wordTurns = wordTurnsOf({ title: input.title, goal: input.goal, record: {} }, settings, now());
+    const ownerWords = anyTurnAsks({ wordTurns });
     const waveReview = String(settings["phase.wave_review"] ?? "on") !== "off";
     const capSetting = Number(settings["phase.issue_cap"] ?? 8);
     const issueCap = Number.isInteger(capSetting) && capSetting >= 1 && capSetting <= 50 ? capSetting : 8;
     const qaHost = String(settings["browser_qa.host_id"] ?? "").trim();
     let phase = mustGet(id);
-    book(phase, "goal", "opened", `phase opened: ${input.title}${ownerWords ? " (the owner's word is asked at the turns: owner.words on)" : ""}`);
+    book(phase, "goal", "opened", `phase opened: ${input.title}${wordTurns.mode === "on" || wordTurns.mode === "risky" ? ` (the owner's word is asked at the turns: owner.words ${wordTurns.mode})` : wordTurns.mode === "sensitive" ? ` (owner.words sensitive: the owner's word is asked only at a turn in money, data or a production deploy${wordTurns.context?.asks ? `; the context is: ${wordTurns.context.classes.join(", ")}` : ""})` : ""}`);
     if (switchOn(settings, "browser_qa.enabled") && !qaHost)
       book(phase, "verification", "live_check", "live interface check not run: no browser machine named: bb lane-pilot setting browser_qa.host_id=<host>");
-    const record: PhaseRecord = { ownerWords, waveReview, issueCap, scope: { revisions: 0, withdrawn: [] },
+    const record: PhaseRecord = { ownerWords, wordTurns, waveReview, issueCap, scope: { revisions: 0, withdrawn: [] },
       autonomous: String(settings["phase.autonomous"] ?? "off") === "on", subagents: String(settings["phase.subagents"] ?? "on") !== "off",
       planBounce: switchOn(settings, "phase.plan_bounce"),
       // The switches below are copied once, here, and each is read from the record as `=== true` (an absent field is off): a phase opened
@@ -78,7 +79,7 @@ export function installAdmissionMethods(tools: MethodsTools) {
   }
 
   async function context(input: ContextInput): Promise<Phase> {
-    const phase = mustGet(input.phaseId);
+    const phase = await freshTurns(mustGet(input.phaseId));
     if (phase.stage !== "discussion") throw new PhaseRefusal(`phase ${phase.id} is at ${phase.stage}: return it to discussion first to change its context`);
     const docs: ContextDoc[] = [];
     for (const path of [...new Set(input.docs)].slice(0, 20)) {
@@ -104,7 +105,7 @@ export function installAdmissionMethods(tools: MethodsTools) {
     if (!check.ok) { savePhase(db, phase.id, { record, at: now() }); throw new PhaseRefusal("the discussion is not complete", check.why); }
     book(phase, "discussion", "signed", `context signed ${record.context!.sha.slice(0, 12)}: ${docs.map((doc) => `${doc.path} (${doc.bytes} B)`).join(", ")}; appetite — ${record.context!.appetite ?? "—"}; no-gos — ${noGos.join("; ") || "—"}; risks — ${[...RISK_KINDS, "security" as const].filter((kind) => risks[kind]).map((kind) => `${kind}: ${risks[kind]}`).join("; ")}`);
     // Context signature (SMA p1_confirm): the author is a person. With owner.words on the machine's signature waits for his word «context».
-    if (record.ownerWords) {
+    if (wordAsked(record, "context")) {
       savePhase(db, phase.id, { record, at: now() });
       book(phase, "discussion", "awaits_signature", "the context is complete and awaits the owner's signature (his word «context»)");
       return mustGet(phase.id);
@@ -121,7 +122,9 @@ export function installAdmissionMethods(tools: MethodsTools) {
     if (phase.stage === "closed" || phase.state === "closed") throw new PhaseRefusal(`phase ${phase.id} is closed: open a new phase for new work`);
     if (phase.stage !== "planning") throw new PhaseRefusal(`phase ${phase.id} is at ${phase.stage}: a plan is submitted at planning (return the phase there first)`);
     if (!phase.record.context) throw new PhaseRefusal("the phase has no signed context");
-    const items = input.items.map((item) => ({ ...item, task: { ...item.task, id: item.id } }));
+    // The waves are laid out from the pieces' depends_on (SMA bf_waves): a piece submitted without one gets its computed wave; a
+    // cycle leaves its pieces without a wave, and the plan gate refuses the plan (SMA p2_waves).
+    const items: PlanItem[] = withComputedWaves(input.items.map((item) => ({ ...item, task: { ...item.task, id: item.id } })));
     const contextSha = phase.record.context.sha;
     // `alreadyMet`: the planner found the repository already doing what the goal asks, a plan with no pieces that the plan gate admits as such.
     const record: PhaseRecord = { ...phase.record, plan: { items, contextSha, sha: planSignature(items, contextSha), rounds: phase.record.plan?.rounds ?? 0, submittedAt: now(),
@@ -134,11 +137,12 @@ export function installAdmissionMethods(tools: MethodsTools) {
     savePhase(db, phase.id, { record, at: now() });
     if (input.alreadyMet) book(phase, "plan", "already_met", `the planner found the goal already met, no pieces to build: ${input.alreadyMet.slice(0, 1000)}`);
     else book(phase, "plan", "submitted", `plan ${record.plan!.sha.slice(0, 12)}: ${items.length} piece(s) in ${new Set(items.map((item) => item.wave)).size} wave(s) — ${items.map((item) => `${item.id} (w${item.wave}): ${item.promise.then}`).join("; ")}`);
-    return mustGet(phase.id);
+    // The new plan is this turn's evidence: its pieces decide whether planning, issue and each wave ask for the owner's word.
+    return freshTurnsSync(mustGet(phase.id));
   }
 
   async function planCheck(input: PlanCheckInput): Promise<Phase> {
-    const phase = mustGet(input.phaseId);
+    const phase = await freshTurns(mustGet(input.phaseId));
     if (phase.stage !== "planning" || !phase.record.plan) throw new PhaseRefusal("no plan at planning to check");
     // Context files unchanged: the documents the plan stands on are read again; an edit after the signature sends the phase back.
     for (const doc of phase.record.context?.docs ?? []) {
@@ -159,7 +163,7 @@ export function installAdmissionMethods(tools: MethodsTools) {
     savePhase(db, phase.id, { record, at: now() });
     const check = planGate(record);
     if (!check.ok) {
-      const waitsForWord = record.ownerWords && check.why.length === 1 && check.why[0]!.includes("owner's word");
+      const waitsForWord = wordAsked(record, "planning") && check.why.length === 1 && isPlanWordGap(check.why[0]!);
       if (waitsForWord) return mustGet(phase.id);
       throw new PhaseRefusal("the plan is not admitted", check.why);
     }
@@ -173,7 +177,17 @@ export function installAdmissionMethods(tools: MethodsTools) {
     // SMA k_v_grill: a plan grilled with open challenges waits — the owner's word on this plan, or a plan that answers
     // them, lifts it (phase.grill_gate=off switches the hold off). A plan never grilled passes as before.
     const grill = tools.grillBlock(phase);
-    if (grill) {
+    // owner.words=sensitive and a plan outside money, data and production deploys (default-path audit §5.4.3): the grill's open challenges
+    // do not wait for the owner. The machine plans once more with them as the gaps (lp.plan in gaps mode); a plan still grilled open after
+    // that is admitted with the challenges in the book.
+    if (grill && record.wordTurns?.mode === "sensitive" && !wordAsked(record, "planning")) {
+      if (!record.grillReplan) {
+        book(phase, "plan", "grill_replan", `grill ${grill.runId} left open challenges: ${grill.open.join("; ")} — owner.words sensitive and the plan touches no money, data or production deploy: the machine plans once more with them as the gaps instead of waiting for the owner`);
+        savePhase(db, phase.id, { record: { ...record, grillReplan: { planSha: record.plan.sha, at: now() }, replan: { gaps: `the grill of plan ${record.plan.sha.slice(0, 12)} left open challenges; answer each in the plan: ${grill.open.join("; ")}`, count: record.replan?.count ?? 0 } }, at: now() });
+        return mustGet(phase.id);
+      }
+      book(phase, "plan", "grill_passed", `grill ${grill.runId} still has open challenges after the machine's replan: ${grill.open.join("; ")} — owner.words sensitive and the plan touches no money, data or production deploy: admitted over them, they stay here for the verifier and the lessons`);
+    } else if (grill) {
       book(phase, "plan", "grill_blocked", `grill ${grill.runId} left open challenges: ${grill.open.join("; ")} — admission waits: the owner's word on this plan (a planning yes) lifts it, or a plan that answers them (phase.grill_gate=off switches the hold off)`);
       // The caller hears it too, not only the book: the reason and the two ways out.
       throw new PhaseRefusal(`the plan is not admitted: the grill ${grill.runId} of this plan ended open`, [

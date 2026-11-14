@@ -59,10 +59,10 @@ describe("the SMA map registry", () => {
 });
 
 describe("the split evidence states (X-2)", () => {
-  it("--states counts available / reachable / checked; --live adds observed and outcome-verified", () => {
+  it("--states counts the four proofs (tests/sma-states.test.ts); --live adds observed and outcome-verified", () => {
     const result = runSmaMapCli(["--states"]);
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toMatch(/States \(X-2\): available \d+, reachable \d+ \(\d+ broken, \d+ unjudged\), checked by a contract test \d+; observed and outcome-verified need --live\./);
+    expect(result.stdout).toMatch(/proof links \(the weaker ladder\): resolved \d+, broken \d+, unjudged \d+/);
     const json = JSON.parse(runSmaMapCli(["--states", "--json"]).stdout!);
     expect(json.states).toMatchObject({ total: 1798 });
     expect(json.states.checked).toBeGreaterThan(0);
@@ -75,7 +75,7 @@ describe("the split evidence states (X-2)", () => {
     const built = runSmaMapCli(["--check-proofs", "--states"], mkdtempSync(`${tmpdir()}/lp-built-`));
     expect(built.exitCode).toBe(0);
     expect(built.stdout).not.toMatch(/Broken proofs/);
-    expect(built.stdout).toMatch(/reachable 0 \(0 broken, 1\d{3} unjudged\)/);
+    expect(built.stdout).toMatch(/resolved 0 \(0 broken, 1\d{3} unjudged\)/);
     expect(built.stdout).toMatch(/Proofs not judged: 1\d{3} point .*this one included/);
     const here = runSmaMapCli(["--check-proofs", "--states"]);
     const unjudged = Number(/Proofs not judged: (\d+)/.exec(here.stdout ?? "")?.[1] ?? 0);

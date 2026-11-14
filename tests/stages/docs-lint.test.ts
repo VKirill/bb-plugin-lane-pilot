@@ -44,6 +44,19 @@ it("refreshes pages whose sources changed and indexes every page", () => {
   expect(buildDocsIndex(pages)).toContain("| [Checks](features/checks.md) | component | active | 2026-09-26 |");
 });
 
+it("keeps the index row of a page the listing skipped as oversized", () => {
+  const pages = [{ path: "docs/features/checks.md", content: page({}, good) }];
+  const before = "| Page | Type | Status | Updated |\n|---|---|---|---|\n| [Агенты: кто есть кто](agents.md) | component | active | 2026-11-14 |\n| [Gone](gone.md) | component | active | 2026-01-01 |\n";
+  const index = buildDocsIndex(pages, "docs", [], { paths: ["docs/agents.md", "docs/zeta.md", "apps/api/docs/big.md"], index: before });
+  const rows = index.split("\n").filter((line) => line.startsWith("| ["));
+  // The unread page keeps its own row, sorted by path with the read ones; an unread page the index never had gets a bare row.
+  expect(rows).toEqual([
+    "| [Агенты: кто есть кто](agents.md) | component | active | 2026-11-14 |",
+    "| [Checks](features/checks.md) | component | active | 2026-09-26 |",
+    "| [docs/zeta.md](zeta.md) | — | — | — |",
+  ]);
+});
+
 it("commits only the docs paths it is given", async () => {
   const root = await mkdtemp(join(tmpdir(), "lane-docs-commit-"));
   const git = (...args: string[]) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" });

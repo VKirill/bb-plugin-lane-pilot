@@ -422,18 +422,23 @@ export function pagesToRefresh(pages:DocPage[], changed:string[]):string[] {
  * <docsDir>/index.md, built from the frontmatter of every other page in that folder; the model never writes it.
  * The root index of a monorepo also links each workspace's own docs index.
  */
-export function buildDocsIndex(pages:DocPage[], docsDir = "docs", workspaces:Array<{ name:string; docsDir:string }> = []):string {
+export function buildDocsIndex(pages:DocPage[], docsDir = "docs", workspaces:Array<{ name:string; docsDir:string }> = [], unread:{ paths:string[]; index?:string } = { paths:[] }):string {
   const rows = pages
     .filter((page) => page.path.startsWith(`${docsDir}/`) && isDocsContent(page.path))
-    .map((page) => ({ path:page.path, data:parseFrontmatter(page.content)?.data ?? {} }))
-    .sort((a, b) => a.path.localeCompare(b.path));
+    .map((page) => ({ path:page.path, data:parseFrontmatter(page.content)?.data ?? {} }));
+  // A page over the size limit is not in `pages` (the listing skips it): it keeps the row the index already has, so an
+  // unread page does not drop out of the index (docs/agents.md, 51 KB, lost its row on 2026-11-14).
+  const had = new Map<string, string>((unread.index ?? "").split("\n").flatMap((line) => { const rel = /^\| \[.*?\]\(([^)]+)\) \|/.exec(line)?.[1]; return rel ? [[`${docsDir}/${rel}`, line] as const] : []; }));
+  const kept = unread.paths.filter((path) => path.startsWith(`${docsDir}/`) && isDocsContent(path) && !rows.some((row) => row.path === path));
   const lines = ["---", "title: Documentation index", "type: index", "status: active", "---", "", "# Documentation index", "",
     "Built by Lane Pilot from page frontmatter.", "", "| Page | Type | Status | Updated |", "|---|---|---|---|"];
-  for (const row of rows) {
+  const table = rows.map((row) => {
     const title = typeof row.data.title === "string" ? row.data.title : row.path;
     const cell = (key:string) => typeof row.data[key] === "string" ? row.data[key] as string : "—";
-    lines.push(`| [${title.replace(/\|/g, "\\|")}](${row.path.slice(docsDir.length + 1)}) | ${cell("type")} | ${cell("status")} | ${cell("updated")} |`);
-  }
+    return { path:row.path, line:`| [${title.replace(/\|/g, "\\|")}](${row.path.slice(docsDir.length + 1)}) | ${cell("type")} | ${cell("status")} | ${cell("updated")} |` };
+  });
+  for (const path of kept) table.push({ path, line:had.get(path) ?? `| [${path}](${path.slice(docsDir.length + 1)}) | — | — | — |` });
+  for (const row of table.sort((a, b) => a.path.localeCompare(b.path))) lines.push(row.line);
   if (workspaces.length) {
     lines.push("", "## Workspace docs", "", "| Workspace | Docs |", "|---|---|");
     for (const workspace of workspaces) lines.push(`| ${workspace.name} | [${workspace.docsDir}/](${relativeLink(`${docsDir}/index.md`, `${workspace.docsDir}/index.md`)}) |`);

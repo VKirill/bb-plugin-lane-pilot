@@ -201,14 +201,28 @@ export async function appendTaskQaHome(ctx: Pick<ServerCore, "bb" | "db">, input
  * A changed task (lane_pilot_update_task): the new contract edition as `contract.v<N>.json` and the new `PLAN.md`, recorded in the home and
  * written again into the open worktree of its attempt, so the running writer reads the same words the PM sent. False for a task on the old layout.
  */
-export async function recordTaskEdition(ctx: Pick<ServerCore, "bb" | "db">, input: { taskId: string; task: TaskV2; plan: string; mirrorRoot?: string | null }): Promise<boolean> {
+export async function recordTaskEdition(ctx: Pick<ServerCore, "bb" | "db">, input: { taskId: string; task: TaskV2; plan: string; mirrorRoot?: string | null; producer?: TaskFileProducer }): Promise<boolean> {
   if (!hasTaskHome(ctx.db, input.taskId)) return false;
   const edition = taskContractEditionNumber(ctx.db, input.taskId);
-  const producer: TaskFileProducer = { node: "update-task", graph: "lp-task-pipeline", stage_id: "dispatch" };
+  const producer: TaskFileProducer = input.producer ?? { node: "update-task", graph: "lp-task-pipeline", stage_id: "dispatch" };
   const mirrorRoot = input.mirrorRoot ?? null;
   await recordTaskHomeFile(ctx, { taskId: input.taskId, kind: "contract", name: `contract.v${edition}.json`, content: `${JSON.stringify(input.task, null, 2)}\n`, producer, readers: ["pm-read", "plan-critique", "writer"], mirrorRoot });
   await recordTaskHomeFile(ctx, { taskId: input.taskId, kind: "plan", name: "PLAN.md", content: input.plan.endsWith("\n") ? input.plan : `${input.plan}\n`, producer, readers: ["pm-read", "plan-critique", "writer"], mirrorRoot });
   return true;
+}
+
+/**
+ * A planner round's revised plan in the task home: `contract.v<N>.json` of the edition `planner_revision:<n>/<max>` just stored and the new
+ * `PLAN.md`, superseding the last, so the next round's critic reads it through the manifest. Null when recorded (or the task is on the old
+ * layout); the reason when the home could not be written, which stops the revision instead of letting the critic judge the old plan.
+ */
+export async function recordPlannerRevision(ctx: Pick<ServerCore, "bb" | "db">, input: { taskId: string; task: TaskV2; plan: string }): Promise<string | null> {
+  try {
+    await recordTaskEdition(ctx, { ...input, producer: { node: "plan-revise", graph: "lp-task-pipeline", stage_id: "plan-critique" } });
+    return null;
+  } catch (cause) {
+    return `task_home_write_failed:${cause instanceof Error ? cause.message : String(cause)}`;
+  }
 }
 
 /** The worktree of the task's open attempt (running, blocked or queued), or null. */

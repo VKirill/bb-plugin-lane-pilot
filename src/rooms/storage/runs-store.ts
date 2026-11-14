@@ -428,3 +428,9 @@ export function listRunWorkspacePaths(db: LanePilotDatabase, projectId: string, 
   return (db.prepare("SELECT writer_workspace_path AS p FROM lane_pilot_run WHERE project_id=? AND writer_workspace_path IS NOT NULL GROUP BY writer_workspace_path ORDER BY MAX(updated_at) DESC LIMIT ?")
     .all(projectId, limit) as Array<{ p: string }>).map((row) => row.p);
 }
+
+/** The base checkouts of runs touched since `since`, with their machine and environment (the daily worktree pass's project folders). */
+export function recentRunWorkspaces(db: LanePilotDatabase, since: number): Array<{ id: string; host: string; path: string; env: string | null }> {
+  return db.prepare("SELECT id, writer_host_id AS host, writer_workspace_path AS path, writer_environment_id AS env FROM lane_pilot_run WHERE writer_host_id IS NOT NULL AND writer_workspace_path IS NOT NULL AND updated_at>=?")
+    .all(since) as Array<{ id: string; host: string; path: string; env: string | null }>;
+}

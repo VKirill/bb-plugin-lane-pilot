@@ -2,14 +2,24 @@
 title: Workflow Run Journal Data
 type: data-model
 created: 2026-10-10
-updated: 2026-11-08
+updated: 2026-11-14
 status: active
-confidence: medium
+confidence: high
 tags: [workflow-engine, data-model, journal]
 sources:
   - packages/workflow-engine/src/journal.ts
   - packages/workflow-engine/src/business-outcome.ts
   - packages/workflow-engine/src/engine.ts
+  - packages/workflow-engine/src/engine-start.ts
+  - packages/workflow-engine/src/engine-drive.ts
+  - packages/workflow-engine/src/engine-step.ts
+  - packages/workflow-engine/src/engine-resume.ts
+  - packages/workflow-engine/src/engine-rerun.ts
+  - packages/workflow-engine/src/engine-branches.ts
+  - packages/workflow-engine/src/engine-builtins.ts
+  - packages/workflow-engine/src/engine-goals.ts
+  - packages/workflow-engine/src/engine-goal-audit.ts
+  - packages/workflow-engine/src/run-status.ts
   - packages/workflow-engine/src/ops-store.ts
   - packages/workflow-engine/src/run-stats.ts
   - packages/workflow-engine/src/router.ts
@@ -42,14 +52,14 @@ Purpose: One execution instance, its immutable workflow snapshot, linkage to par
 | `workflow_id`, `workflow_version`, `workflow_sha256`, `definition_json` | Workflow identity and definition snapshot used by the run. |
 | `project_id`, `link_run_id`, `link_task_id`, `link_attempt_id` | Optional host-side project/task/run attribution. |
 | `parent_run_id`, `parent_step_key`, `depth` | Parent workflow/step and nested-run depth; depth defaults to 0. |
-| `status` | `running`, `waiting`, `succeeded`, `failed`, `blocked`, `interrupted`, `canceled`, or `not_verified`. `not_verified` marks a closed run that is not a verified success: a user workflow that closed with no goals, or whose goal audit could not be made (`packages/workflow-engine/src/journal.ts:107-110`). |
+| `status` | `running`, `waiting`, `succeeded`, `failed`, `blocked`, `interrupted`, `canceled`, or `not_verified`. `not_verified` marks a closed run that is not a verified success: a user workflow that closed with no goals, or whose goal audit could not be made (`packages/workflow-engine/src/journal.ts:108-110`). |
 | `reason`, `mode` | Optional terminal/wait reason and quality mode. |
 | `inputs_json`, `output_json` | JSON workflow input and nullable output. |
 | `harness_version` | Host build stamp recorded for the run. |
-| `steps_used`, `tokens_used` | Step count and accumulated token usage; both default to 0 (`packages/workflow-engine/src/journal.ts:31-32`). Starting a step increments `steps_used` (`packages/workflow-engine/src/engine.ts:905`). Failed attempt usage is charged after success or final failure (`packages/workflow-engine/src/engine.ts:965-976`). A failed step error contributes usage when its `tokens` value is numeric; failed child runs contribute their accumulated usage to the parent (`packages/workflow-engine/src/engine.ts:1338-1353`). |
+| `steps_used`, `tokens_used` | Step count and accumulated token usage; both default to 0 (`packages/workflow-engine/src/journal.ts:31-32`). Starting a step increments `steps_used` (`packages/workflow-engine/src/engine-step.ts:178`). Failed attempt usage is charged after success or final failure (`packages/workflow-engine/src/engine-step.ts:238-254`). A failed step error contributes usage when its `tokens` value is numeric; failed child runs contribute their accumulated usage to the parent (`packages/workflow-engine/src/engine-builtins.ts:93-113`). |
 
-For vote nodes, `failedSpend` accumulates rejected executor usage; if fewer than half answer, the failed spend is attached to the majority error (`packages/workflow-engine/src/engine.ts:1003-1010`).
-| `cost_micro_usd` | Accumulated run cost in millionths of a US dollar, default 0; failed attempts, failed votes, and failed child runs also contribute their cost (`packages/workflow-engine/src/journal.ts:33`, `packages/workflow-engine/src/engine.ts:965-976`, `packages/workflow-engine/src/engine.ts:1338-1353`). |
+For vote nodes, `failedSpend` accumulates rejected executor usage; if fewer than half answer, the failed spend is attached to the majority error (`packages/workflow-engine/src/engine-step.ts:280-287`).
+| `cost_micro_usd` | Accumulated run cost in millionths of a US dollar, default 0; failed attempts, failed votes, and failed child runs also contribute their cost (`packages/workflow-engine/src/journal.ts:33`, `packages/workflow-engine/src/engine-step.ts:238-254`, `packages/workflow-engine/src/engine-builtins.ts:93-113`). |
 | `wait_ms` | Accumulated wait duration in milliseconds, default 0. |
 | `owner_id`, `lease_until` | Current engine owner and lease expiry timestamp in milliseconds. |
 | `created_at`, `updated_at` | Millisecond timestamps supplied by the engine clock. |
@@ -59,26 +69,26 @@ Status lifecycle:
 
 | From | To | Function | When |
 |---|---|---|---|
-| New | `running` | `WorkflowEngine.start` (`packages/workflow-engine/src/engine.ts:310-321`) | A new run row is created. |
-| `running` | `waiting` | Driver (`packages/workflow-engine/src/engine.ts:408`) | At least one step waits for external work. |
-| `running` or `waiting` | `succeeded` | `closeAfterAudit` (`packages/workflow-engine/src/engine.ts:450-452`, called at `packages/workflow-engine/src/engine.ts:410`) | Workflow reaches its exit and goal audit permits closure. |
-| `running` or `waiting` | `not_verified` | `closeAfterAudit` (`packages/workflow-engine/src/engine.ts:453-456`) | A `goal_audit: required` workflow closed with no goals, or the audit could not be made (`packages/workflow-engine/src/engine.ts:461-463`, `packages/workflow-engine/src/engine.ts:488-493`). |
-| `running` or `waiting` | `failed` | Driver/failure handler (`packages/workflow-engine/src/engine.ts:411`, `packages/workflow-engine/src/engine.ts:641-646`) | No step remains before the exit, or a step fails. |
-| `running` or `waiting` | `blocked` | Goal audit or budget check (`packages/workflow-engine/src/engine.ts:475`, `packages/workflow-engine/src/engine.ts:500`, `packages/workflow-engine/src/engine.ts:852-861`) | Goals remain unmet or a run limit is reached. |
-| `running` | `interrupted` | Reload handler (`packages/workflow-engine/src/engine.ts:1400-1416`) | Reload policy or changed executor compatibility interrupts active work. |
-| `waiting` | `running` | Poll settlement (`packages/workflow-engine/src/engine.ts:1500-1502`) | A waiting step settles and driving resumes. |
-| `blocked` | `running` | Goal amendment/resume (`packages/workflow-engine/src/engine.ts:498-504`) | The blocked reason is a goal audit and the resume condition is met. |
-| `running` or `waiting` | `canceled` | `cancel` (`packages/workflow-engine/src/engine.ts:1506-1510`) | Caller cancels an active run; the cancel recurses into the run's child runs (`packages/workflow-engine/src/engine.ts:1508-1510`). |
+| New | `running` | `WorkflowEngine.start` (`packages/workflow-engine/src/engine-start.ts:64-75`) | A new run row is created. |
+| `running` | `waiting` | Driver (`packages/workflow-engine/src/engine-drive.ts:103`) | At least one step waits for external work. |
+| `running` or `waiting` | `succeeded` | `closeAfterAudit` (`packages/workflow-engine/src/engine-goal-audit.ts:40,59,87`, called at `packages/workflow-engine/src/engine-drive.ts:105`) | Workflow reaches its exit and goal audit permits closure. |
+| `running` or `waiting` | `not_verified` | `closeAfterAudit` (`packages/workflow-engine/src/engine-goal-audit.ts:41-51`) | A `goal_audit: required` workflow closed with no goals, or the audit could not be made (`packages/workflow-engine/src/engine-goal-audit.ts:51`, `packages/workflow-engine/src/engine-goal-audit.ts:78-80`). |
+| `running` or `waiting` | `failed` | Driver/failure handler (`packages/workflow-engine/src/engine-drive.ts:106`, `packages/workflow-engine/src/engine-branches.ts:34-39`, `packages/workflow-engine/src/run-status.ts:23-28`) | No step remains before the exit, or a step fails. |
+| `running` or `waiting` | `blocked` | Goal audit or budget check (`packages/workflow-engine/src/engine-goal-audit.ts:63`, `packages/workflow-engine/src/engine-goal-audit.ts:88`, `packages/workflow-engine/src/engine-step.ts:125-134,339-351`) | Goals remain unmet or a run limit is reached. |
+| `running` | `interrupted` | Reload handler (`packages/workflow-engine/src/engine-resume.ts:21-40,56-73`) | Reload policy or changed executor compatibility interrupts active work. |
+| `waiting` | `running` | Poll settlement (`packages/workflow-engine/src/engine-resume.ts:145`) | A waiting step settles and driving resumes. |
+| `blocked` | `running` | Goal amendment/resume (`packages/workflow-engine/src/engine-goals.ts:28-34`) | The blocked reason is a goal audit and the resume condition is met. |
+| `running` or `waiting` | `canceled` | `cancel` (`packages/workflow-engine/src/engine-resume.ts:150-158`) | Caller cancels an active run; the cancel recurses into the run's child runs (`packages/workflow-engine/src/engine-resume.ts:155`). |
 
 `setRunStatus` applies each transition conditionally against the expected source state; `succeeded`, `failed`, `blocked`, `interrupted`, `canceled`, and `not_verified` are listed as terminal statuses (`packages/workflow-engine/src/journal.ts:108-110`, `packages/workflow-engine/src/journal.ts:182-188`).
 
 Invariants: `id` is primary key; `idem_key` is unique when present; child runs are unique by `(parent_run_id,parent_step_key)`; `status` is constrained to the listed values. The original CREATE constrains the first seven values (`packages/workflow-engine/src/journal.ts:11-42`); a later rebuild migration re-creates the table with `not_verified` added to the CHECK and the same three indexes (`packages/workflow-engine/src/ops-store.ts:45-84`).
 
-Writers/readers: `WorkflowEngine` creates and updates runs. The workflow library and `createStatusResolver` read runs to list execution state and determine live success (`packages/workflow-engine/src/engine.ts:192-221`, `packages/workflow-engine/src/ops-store.ts:94-113`); `journal.ts` also exposes room-facing query helpers (such as `wfRunRow`, `wfRunStatus`, `wfRecentRuns`, `wfBoardRuns`) for direct lookup across rooms (`packages/workflow-engine/src/journal.ts:198-290`). No general run-retention job is defined in this workspace; reroute cleanup deletes the `dropped` child/step/arrival/effect records (`packages/workflow-engine/src/engine.ts:1565-1571`), while `lane_pilot_wf_event` rows cannot be updated or deleted (`packages/workflow-engine/src/journal.ts:102-104`).
+Writers/readers: `WorkflowEngine` creates and updates runs. The workflow library and `createStatusResolver` read runs to list execution state and determine live success (`packages/workflow-engine/src/engine.ts:39-68`, `packages/workflow-engine/src/ops-store.ts:94-114`); `journal.ts` also exposes room-facing query helpers (such as `wfRunRow`, `wfRunStatus`, `wfRecentRuns`, `wfBoardRuns`, `wfFinishedRuns`) for direct lookup across rooms (`packages/workflow-engine/src/journal.ts:198-341`). No general run-retention job is defined in this workspace; reroute cleanup deletes the `dropped` child/step/arrival/effect records (`packages/workflow-engine/src/engine-rerun.ts:53-71`), while `lane_pilot_wf_event` rows cannot be updated or deleted (`packages/workflow-engine/src/journal.ts:102-104`).
 
 ### Business outcome of a finished run
 
-Engine status `succeeded` only means the graph finished. One shared reading classifies a succeeded run's `output_json` into a business outcome (`packages/workflow-engine/src/business-outcome.ts:24-39`); the same reading serves the router's run statistics, live proof, and the scheduler.
+Engine status `succeeded` only means the graph finished. One shared reading classifies a succeeded run's `output_json` into a business outcome (`packages/workflow-engine/src/business-outcome.ts:24-41`); the same reading serves the router's run statistics, live proof, and the scheduler.
 
 | Kind | Output that produces it | Cited at |
 |---|---|---|
@@ -92,7 +102,7 @@ The status field read is the definition's `live_success.output`, defaulting to `
 
 `OutcomeTally` groups rows: `running`/`waiting` count as `active`; a terminal run whose status is `failed`, `blocked`, `interrupted`, or `not_verified` counts as `engineBad`; every `succeeded` run counts as `executed`, and its finish kind adds one `workDone`, `refused`, or `escalated` (`packages/workflow-engine/src/business-outcome.ts:55-75`). `workDoneRate` is work done over executed plus engine failures; a refusal, an escalation, or an unfinished run does not raise it, and it is null before any settled run exists (`packages/workflow-engine/src/business-outcome.ts:77-81`).
 
-Readers: `runRecords` builds the router's per-workflow record from this tally — its `succeeded` count is completed work, and a correct refusal counts as not completed (`packages/workflow-engine/src/run-stats.ts:6-32`, `packages/workflow-engine/src/router.ts:493`); `liveSuccess` in the workflow library accepts only a live run whose output finished the job (see [draft and operations data](drafts-operations.md), `packages/workflow-engine/src/ops-store.ts:97-114`).
+Readers: `runRecords` builds the router's per-workflow record from this tally — its `succeeded` count is completed work, and a correct refusal counts as not completed (`packages/workflow-engine/src/run-stats.ts:6-32`, `packages/workflow-engine/src/router.ts:507`); `liveSuccess` in the workflow library accepts only a live run whose output finished the job (see [draft and operations data](drafts-operations.md), `packages/workflow-engine/src/ops-store.ts:97-114`).
 
 ### `lane_pilot_wf_step`
 
@@ -122,7 +132,7 @@ Status lifecycle:
 
 Invariants: `(run_id,step_key)` is primary key; `(run_id,origin)` is unique; `state` is constrained to the transition vocabulary (`packages/workflow-engine/src/journal.ts:43-69`). `moveStep` returns false and appends `refused` when the requested step is missing or outside the expected source states; `setRunStatus` returns false without an event when the run is missing or outside the expected statuses ([journal behavior](../features/engine-journal-actions.md), `packages/workflow-engine/src/journal.ts:177-188`).
 
-Writers/readers: Engine driver writes steps; run summaries, status screens, and reroute logic read them (`packages/workflow-engine/src/engine.ts:190-217`, `packages/workflow-engine/src/journal.ts:151-154`). The package defines no general step-retention job; reroute cleanup removes selected step rows (`packages/workflow-engine/src/engine.ts:1566`).
+Writers/readers: Engine driver writes steps; run summaries, status screens, and reroute logic read them (`packages/workflow-engine/src/engine-drive.ts:73-114`, `packages/workflow-engine/src/run-status.ts:6-21`, `packages/workflow-engine/src/journal.ts:151-154`). The package defines no general step-retention job; reroute cleanup removes selected step rows (`packages/workflow-engine/src/engine-rerun.ts:60`).
 
 ### `lane_pilot_wf_arrival`
 
@@ -135,7 +145,7 @@ Purpose: Persist one branch’s data arriving at a join, keyed by run, group, an
 | `data_json` | Serialized branch output. |
 | `at` | Arrival timestamp in milliseconds. |
 
-Invariants: one arrival per `(run_id,group_key,branch)`; the table has no status field (`packages/workflow-engine/src/journal.ts:70-78`). The engine writes and reads arrivals while joining parallel branches; reroute cleanup removes arrivals associated with affected steps/groups (`packages/workflow-engine/src/engine.ts:1570`). No retention job is declared.
+Invariants: one arrival per `(run_id,group_key,branch)`; the table has no status field (`packages/workflow-engine/src/journal.ts:70-78`). The engine writes and reads arrivals while joining parallel branches; reroute cleanup removes arrivals associated with affected steps/groups (`packages/workflow-engine/src/engine-rerun.ts:61`). No retention job is declared.
 
 ### `lane_pilot_wf_effect`
 
@@ -150,9 +160,9 @@ Purpose: Track a named external side effect per run step so retries can reconcil
 | `intent_json`, `result_json` | Nullable request intent and result snapshots. |
 | `created_at`, `updated_at` | Millisecond timestamps. |
 
-Status lifecycle: the effect API records intent before invoking the external function, stores its result or failure, and checks existing intent through the supplied reconciliation callback after restart (`packages/workflow-engine/src/engine.ts:779-809`, `packages/workflow-engine/src/journal.ts:79-91`).
+Status lifecycle: the effect API records intent before invoking the external function, stores its result or failure, and checks existing intent through the supplied reconciliation callback after restart (`packages/workflow-engine/src/engine-step.ts:48-80`, `packages/workflow-engine/src/journal.ts:79-91`).
 
-Invariants: `(run_id,step_key,effect_key)` is unique and `state` is constrained (`packages/workflow-engine/src/journal.ts:79-91`). Engine effect handling writes/reads it; reroute cleanup removes effects of affected steps (`packages/workflow-engine/src/engine.ts:1571`). No retention job is declared.
+Invariants: `(run_id,step_key,effect_key)` is unique and `state` is constrained (`packages/workflow-engine/src/journal.ts:79-91`). Engine effect handling writes/reads it; reroute cleanup removes effects of affected steps (`packages/workflow-engine/src/engine-rerun.ts:62`). No retention job is declared.
 
 ### `lane_pilot_wf_event`
 
@@ -162,7 +172,7 @@ Purpose: Append-only timeline of run and step changes (`packages/workflow-engine
 |---|---|
 | `seq` | Autoincrementing event order. |
 | `run_id`, `step_key` | Run and optional step association. |
-| `kind`, `from_state`, `to_state` | Event type and optional transition endpoints. `budget_overrun` marks a run that passes through its built-in `emit` or a node skipped without spending after a budget is exceeded (`packages/workflow-engine/src/engine.ts:852-861`); `child_usage_charged` records that a failed child's usage was added to its parent and prevents a second charge after reload (`packages/workflow-engine/src/engine.ts:1348-1353`); `goal_audit` records each verdict on the run's goals — `pass`, `gaps`, `not_verified` — with the goal hash and the output hash, so a verdict is bound to the exact output it judged (`packages/workflow-engine/src/engine.ts:454`, `packages/workflow-engine/src/engine.ts:470-498`). |
+| `kind`, `from_state`, `to_state` | Event type and optional transition endpoints. `budget_overrun` marks a run that passes through its built-in `emit` or a node skipped without spending after a budget is exceeded (`packages/workflow-engine/src/engine-step.ts:131-134`); `child_usage_charged` records that a failed child's usage was added to its parent and prevents a second charge after reload (`packages/workflow-engine/src/engine-builtins.ts:105-110`); `goal_audit` records each verdict on the run's goals — `pass`, `gaps`, `not_verified` — with the goal hash and the output hash, so a verdict is bound to the exact output it judged (`packages/workflow-engine/src/engine-goal-audit.ts:42`, `packages/workflow-engine/src/engine-goal-audit.ts:58,62,86`). |
 | `detail` | Optional serialized reason/detail. |
 | `at` | Event timestamp in milliseconds. |
 

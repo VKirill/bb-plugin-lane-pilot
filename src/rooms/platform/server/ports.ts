@@ -173,6 +173,8 @@ export interface WorkflowTriggersApi {
       key?: string | undefined; liveTrial?: boolean | undefined; origin?: "schedule" | undefined;
       /** A run that is nobody's business but the project's (the lead's tick): no PM chat, no run link, hidden helpers. */
       detached?: boolean | undefined;
+      /** The starter of a Lane Pilot system schedule: it may start the starter graph whose `startedBy` is this name (the schedule executor only). */
+      starter?: string | undefined;
     }): Promise<WorkflowTriggerResult>;
     sync(projectId: string): Promise<{ created: number; updated: number; removed: number; failed: string[]; complete: boolean }>;
     pmOf(projectId: string): Promise<{ pmThreadId: string; runId: string } | null>;

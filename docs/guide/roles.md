@@ -6,9 +6,16 @@ status: active
 created: 2026-11-06
 confidence: medium
 tags: [guide, roles]
-updated: 2026-11-10
+updated: 2026-11-14
 sources:
   - packages/models/src/role-models.ts
+  - src/rooms/platform/server/launch-tuning.ts
+  - src/rooms/platform/server/pm-spawn.ts
+  - src/rooms/tasks/execution-packet.ts
+  - packages/workflow-engine/src/model-json.ts
+  - src/rooms/brief/index.ts
+  - src/rooms/critique/pm-read.ts
+  - packages/workflow-engine/src/agent-output.ts
 ---
 
 # Roles, agents and models
@@ -41,7 +48,7 @@ The full contract, task and result, is [The hand-off standard](handoff.md); this
 A helper is an agent in the project checkout with its own tools. Its brief says what the work is for, where to start, what it may not change and what to return; it does not do the helper's reading for it.
 
 - **Pointers, not contents.** A file the helper can open is named by path (`renderExecutionPacket`, `src/rooms/tasks/execution-packet.ts:92-99`), never pasted. Pasted source is cut by a budget, and the helper then reasons about the part that fit.
-- **Read-only instead of «no tools».** A helper that must not change the checkout is told so (`REVIEW_READ_ONLY_LINE`, `packages/workflow-engine/src/model-json.ts:48`) and reads freely. «Open no files» is only for a judge whose whole material is in the message and exists nowhere else (gate triage: counts from the hub).
+- **Read-only instead of «no tools».** A helper that must not change the checkout is told so (`REVIEW_READ_ONLY_LINE`, `packages/workflow-engine/src/model-json.ts:48`) and reads freely; for read-and-reply roles (`plan-critic`, `specialist-reviewer`, `pm-reader`, `gate-triage`), `withLaunchTuning` also attaches `experimental_vkLaunchTuning` at spawn (`acp-cursor` and `devin` use `ask` mode, `acp-antigravity` uses `plan` with `--sandbox`, and `claude-code` disables `CLAUDE_EDITOR_TOOLS`, which also covers `code-critic` while keeping `Bash`; disabled via `LANE_PILOT_LAUNCH_TUNING=off`, `src/rooms/platform/server/launch-tuning.ts:17-58`, `src/rooms/platform/server/pm-spawn.ts:189`). «Open no files» is only for a judge whose whole material is in the message and exists nowhere else (gate triage: counts from the hub).
 - **Data the helper cannot reach rides in the message**, tagged and marked as data: hub records, the PM's plan, the owner's words, the previous step's handoff.
 - **One stated result.** The brief ends with the answer format the next step reads (`renderBrief`, `src/rooms/brief/index.ts:120-147`).
 

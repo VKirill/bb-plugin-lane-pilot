@@ -1,0 +1,5 @@
+[
+  { "id": "fx-strong", "file": "tests/fixtures/sma-mutate/subject.ts", "find": "if (score >= 7)", "replace": "if (score < 7)", "kind": "flipped-branch", "tests": ["tests/fixtures/sma-mutate/strong.fixture.ts"], "pattern": "\\[fx\\]", "config": "tests/fixtures/sma-mutate/vitest.config.ts" },
+  { "id": "fx-hollow", "file": "tests/fixtures/sma-mutate/subject.ts", "find": "if (score >= 7)", "replace": "if (score < 7)", "kind": "flipped-branch", "tests": ["tests/fixtures/sma-mutate/hollow.fixture.ts"], "pattern": "\\[fx\\]", "config": "tests/fixtures/sma-mutate/vitest.config.ts" },
+  { "id": "fx-crash", "file": "tests/fixtures/sma-mutate/subject.ts", "find": "return { status: \"pass\", score, target };", "replace": "return { status: \"pass\", score, target: (target as unknown as { a: { b: string } }).a.b };", "kind": "distorted-field", "tests": ["tests/fixtures/sma-mutate/strong.fixture.ts"], "pattern": "\\[fx\\]", "config": "tests/fixtures/sma-mutate/vitest.config.ts" }
+]

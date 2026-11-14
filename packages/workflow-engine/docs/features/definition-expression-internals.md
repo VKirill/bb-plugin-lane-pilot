@@ -2,7 +2,7 @@
 title: Workflow Definition and Expression Internals
 type: component
 created: 2026-10-27
-updated: 2026-11-07
+updated: 2026-11-14
 status: active
 confidence: medium
 tags: [workflow-engine, expressions, validation, schema]
@@ -55,7 +55,7 @@ Primary parsing branches on token kind and value:
 |---|---|---|
 | Number or quoted string | Literal `lit` with numeric or decoded string value (`packages/workflow-engine/src/expr.ts:80-83`). | Tokenization failures throw `ExprSyntaxError` with the source offset (`packages/workflow-engine/src/expr.ts:34-54`). |
 | `(` expression `)` | Parses the full `or` expression, then requires `)` (`packages/workflow-engine/src/expr.ts:84`). | Missing closing delimiter throws at the current token offset (`packages/workflow-engine/src/expr.ts:78`, `packages/workflow-engine/src/expr.ts:84`). |
-| `[items]` | Builds a list AST. Unqualified bare words other than `true`, `false`, `null`, and `visits` become string literals; other entries parse as expressions (`packages/workflow-engine/src/expr.ts:85-96`). | Missing `]` or malformed item syntax throws `ExprSyntaxError` (`packages/workflow-engine/src/expr.ts:87-95`). |
+| `[items]` | Builds a list AST. Unqualified bare words other than `true`, `false`, `null`, and `visits` become string literals; other entries parse as expressions (`packages/workflow-engine/src/expr.ts:85-96`). | Missing `]` or malformed item syntax throws `ExprSyntaxError` (`packages/workflow-engine/src/expr.ts:78-95`). |
 | `true`, `false`, `null` | Boolean or null literal (`packages/workflow-engine/src/expr.ts:97-100`). | No special failure. |
 | `visits(id)` | Visit-count AST; the argument must be an identifier or quoted string (`packages/workflow-engine/src/expr.ts:101-107`). | Wrong argument kind or missing `)` throws `ExprSyntaxError` with offset (`packages/workflow-engine/src/expr.ts:103-106`). |
 | Other identifier | Reference AST classified by `refOf` and `itemScope` (`packages/workflow-engine/src/expr.ts:108-109`). | Any other primary token, including end of input, throws `ExprSyntaxError` as unexpected (`packages/workflow-engine/src/expr.ts:110`). |
@@ -137,9 +137,9 @@ Valid JSON-looking input becomes a literal. Invalid JSON-looking input falls thr
 
 | Schema | Accepted branches and bounds | Failure behavior |
 |---|---|---|
-| `conditionSchema` / `whenSchema` | A strict `{field, op, value?}` leaf with a 1–120 character field and an operator from `CONDITION_OPS`; strict recursive `all` or `any` with 1–20 children; or strict recursive `not`. `whenSchema` also accepts a nonempty expression string up to 600 characters (`packages/workflow-engine/src/schema.ts:41-58`). | Zod rejects missing/extra keys, empty groups, more than 20 children, unsupported operators, and empty/overlong strings. Leaf `value` is optional and unrestricted at this structural layer (`packages/workflow-engine/src/schema.ts:51-58`). |
-| `nodeSchema` | The `type` discriminator selects nine strict shapes (`packages/workflow-engine/src/schema.ts:194-228`). Agent supplies role/prompt/session settings; legacy model fields are accepted but ignored in favor of role-based selection; lp-task supplies contract and owned-path/stage settings; action supplies action/params/map; decision optionally names `reads_node`; human requires question and offers timeout options; parallel defines iteration/concurrency/child/join settings; join names its parallel and policy; subworkflow names an ID/version/input map; note carries text only (`packages/workflow-engine/src/schema.ts:101`, `packages/workflow-engine/src/schema.ts:194-228`). A parallel child has no authoring ID and is restricted to agent, lp-task, action, or subworkflow (`packages/workflow-engine/src/schema.ts:178-185`). | A missing/unknown discriminator or a field rejected by the selected strict schema fails parsing; graph-level relationships are checked later by `validateWorkflow` (`packages/workflow-engine/src/schema.ts:178-228`, `packages/workflow-engine/src/validate.ts:70-129`). |
-| `consumesSchema` | Strict artifact declaration: lowercase artifact kind, integer version 1–99, `required` default true, optional `from` of 1–48 characters, and optional field-name `as` (`packages/workflow-engine/src/schema.ts:68-77`). | Zod rejects malformed shape and extra keys. It does not establish that the artifact is registered or that `from` produces it; graph checks add those errors (`packages/workflow-engine/src/validate.ts:307-333`). |
+| `conditionSchema` / `whenSchema` | A strict `{field, op, value?}` leaf with a 1–120 character field and an operator from `CONDITION_OPS`; strict recursive `all` or `any` with 1–20 children; or strict recursive `not`. `whenSchema` also accepts a nonempty expression string up to 600 characters (`packages/workflow-engine/src/schema.ts:51-58`). | Zod rejects missing/extra keys, empty groups, more than 20 children, unsupported operators, and empty/overlong strings. Leaf `value` is optional and unrestricted at this structural layer (`packages/workflow-engine/src/schema.ts:51-58`). |
+| `nodeSchema` | The `type` discriminator selects nine strict shapes (`packages/workflow-engine/src/schema.ts:196-230`). Agent supplies role/prompt/session settings; legacy model fields are accepted but ignored in favor of role-based selection; lp-task supplies contract and owned-path/stage settings; action supplies action/params/map; decision optionally names `reads_node`; human requires question and offers timeout options; parallel defines iteration/concurrency/child/join settings; join names its parallel and policy; subworkflow names an ID/version/input map; note carries text only (`packages/workflow-engine/src/schema.ts:88-121`, `packages/workflow-engine/src/schema.ts:196-230`). A parallel child has no authoring ID and is restricted to agent, lp-task, action, or subworkflow (`packages/workflow-engine/src/schema.ts:181-186`). | A missing/unknown discriminator or a field rejected by the selected strict schema fails parsing (`packages/workflow-engine/src/schema.ts:181-230`). Graph-level relationships are checked later by `validateWorkflow` (`packages/workflow-engine/src/validate.ts:67-130`). |
+| `consumesSchema` | Strict artifact declaration: lowercase artifact kind, integer version 1–99, `required` default true, optional `from` of 1–48 characters, and optional field-name `as` (`packages/workflow-engine/src/schema.ts:77-83`). | Zod rejects malformed shape and extra keys. It does not establish that the artifact is registered or that `from` produces it; graph checks add those errors (`packages/workflow-engine/src/validate.ts:347-385`). |
 
 ### `conditionSchema`
 
@@ -153,7 +153,7 @@ How `conditionSchema` works (`packages/workflow-engine/src/schema.ts:51-57`):
 - **Conditions and modes**: Strict object constraints reject unrecognized properties at each level (`packages/workflow-engine/src/schema.ts:52-56`).
 - **Outcomes and failures**: Successful validation yields a typed `Condition` AST. Zod throws validation errors for empty fields, unknown operators, or invalid child counts (`packages/workflow-engine/src/schema.ts:51-57`). `whenSchema` additionally accepts a non-empty expression string up to 600 characters (`packages/workflow-engine/src/schema.ts:58`).
 
-`consumesSchema` parses a strict object in this order: required `kind` matching the artifact-name pattern; required integer `version` from 1 to 99; optional `required`, defaulting to true; optional nonempty `from` up to 48 characters; and optional field-name `as`. Zod rejects invalid values and unknown keys; registry existence, source production, and execution order are separate `validateWorkflow` checks (`packages/workflow-engine/src/schema.ts:68-77`, `packages/workflow-engine/src/validate.ts:320`).
+`consumesSchema` parses a strict object in this order: required `kind` matching the artifact-name pattern; required integer `version` from 1 to 99; optional `required`, defaulting to true; optional nonempty `from` up to 48 characters; and optional field-name `as`, so Zod rejects invalid values and unknown keys (`packages/workflow-engine/src/schema.ts:77-83`). Registry existence, source production, and execution order are separate `validateWorkflow` checks (`packages/workflow-engine/src/validate.ts:347-385`).
 
 ### Workflow validation: `validateWorkflow`
 
@@ -168,22 +168,22 @@ How `validateWorkflow` works (`packages/workflow-engine/src/validate.ts:67-126`)
 - **Conditions and modes**: Evaluates authoring-level syntax, schedule triggers, emit nodes, and parallel constructs (`packages/workflow-engine/src/validate.ts:80-122`).
 - **Outcomes and failures**: Accumulates `WorkflowProblem` entries with error or warning level without throwing (`packages/workflow-engine/src/validate.ts:68-71`).
 
-Following these authoring checks, the validator lowers shorthand and checks endpoints, sentinels, entry and exit counts, reachability, branch shape, and conditional-route fallback (`packages/workflow-engine/src/validate.ts:124-168`). It parses expressions/templates and verifies reference scope/order/types, checks bounded cycles, values supplied by skipped nodes, and artifact producer/consumer/gate contracts (`packages/workflow-engine/src/validate.ts:170-346`). Finally it checks executor availability when configured, specialist existence (`packages/workflow-engine/src/validate.ts:395-397`), prompt coverage (`packages/workflow-engine/src/validate.ts:402-404`), and subworkflow recursion/depth (`packages/workflow-engine/src/validate.ts:488-493`).
+Following these authoring checks, the validator lowers shorthand and checks endpoints, sentinels, entry and exit counts, reachability, branch shape, and conditional-route fallback (`packages/workflow-engine/src/validate.ts:124-168`). It parses expressions/templates and verifies reference scope/order/types, warns with `ref_may_not_run` when an agent prompt reads `{{node.field}}` along a `$start` path that can bypass `node`, checks bounded cycles, values supplied by skipped nodes, and artifact producer/consumer/gate contracts (`packages/workflow-engine/src/validate.ts:170-385`). Finally it checks executor availability when configured, warns on `model_ignored`, checks specialist existence (`packages/workflow-engine/src/validate.ts:402-404`), checks prompt coverage (`packages/workflow-engine/src/validate.ts:409`), rejects bare `$ref` values in `subworkflow.with` (`packages/workflow-engine/src/validate.ts:480-498`), validates `lp.propose_workflow` actions (`packages/workflow-engine/src/validate.ts:513-536`), and checks subworkflow recursion/depth (`packages/workflow-engine/src/validate.ts:539-543`).
 
 ### `loadWorkflow`
 
-1. If `source` is a string, parse it as JSONC with trailing commas enabled. Syntax errors return `{ok:false}` with `syntax` problems containing parse-code and offset; non-string input skips this stage (`packages/workflow-engine/src/validate.ts:499-505`).
-2. Pass the resulting value to `parseWorkflowObject`. Schema failure returns `{ok:false}` with each Zod issue converted to a `schema` problem and a dotted path (`packages/workflow-engine/src/validate.ts:506-509`).
-3. Run `validateWorkflow` on the normalized definition. If any problem is level `error`, return all problems as `{ok:false}`; otherwise return `{ok:true, workflow, warnings}`, including an empty warnings list when there are no warnings (`packages/workflow-engine/src/validate.ts:510-512`).
-4. `parseWorkflow` is the throwing wrapper: it returns the workflow for an `ok` result or throws `WorkflowError` with the problem list (`packages/workflow-engine/src/validate.ts:514-519`).
+1. If `source` is a string, parse it as JSONC with trailing commas enabled. Syntax errors return `{ok:false}` with `syntax` problems containing parse-code and offset; non-string input skips this stage (`packages/workflow-engine/src/validate.ts:550-556`).
+2. Pass the resulting value to `parseWorkflowObject`. Schema failure returns `{ok:false}` with each Zod issue converted to a `schema` problem and a dotted path (`packages/workflow-engine/src/validate.ts:557-560`).
+3. Run `validateWorkflow` on the normalized definition. If any problem is level `error`, return all problems as `{ok:false}`; otherwise return `{ok:true, workflow, warnings}`, including an empty warnings list when there are no warnings (`packages/workflow-engine/src/validate.ts:561-563`).
+4. `parseWorkflow` is the throwing wrapper: it returns the workflow for an `ok` result or throws `WorkflowError` with the problem list (`packages/workflow-engine/src/validate.ts:566-570`).
 
 | Source and check result | `loadWorkflow` result | `parseWorkflow` result |
 |---|---|---|
-| Object or valid JSONC parsed by `parseJsonc`; no validation errors | `ok: true`, workflow plus warnings | Returns workflow (`packages/workflow-engine/src/validate.ts:503`). |
-| JSONC syntax error | `ok: false`, `syntax` problems | Throws `WorkflowError` (`packages/workflow-engine/src/validate.ts:501-505`, `packages/workflow-engine/src/validate.ts:515-519`). |
-| Structural schema error | `ok: false`, `schema` problems | Throws `WorkflowError` (`packages/workflow-engine/src/validate.ts:506-509`, `packages/workflow-engine/src/validate.ts:515-519`). |
-| Validation errors only or mixed with warnings | `ok: false`, all validation problems | Throws `WorkflowError` (`packages/workflow-engine/src/validate.ts:514`, `packages/workflow-engine/src/validate.ts:515-519`). |
-| Warning-only validation | `ok: true`, warnings retained | Returns workflow; warnings are not thrown (`packages/workflow-engine/src/validate.ts:510-512`). |
+| Object or valid JSONC parsed by `parseJsonc`; no validation errors | `ok: true`, workflow plus warnings | Returns workflow (`packages/workflow-engine/src/validate.ts:550-563`). |
+| JSONC syntax error | `ok: false`, `syntax` problems | Throws `WorkflowError` (`packages/workflow-engine/src/validate.ts:550-570`). |
+| Structural schema error | `ok: false`, `schema` problems | Throws `WorkflowError` (`packages/workflow-engine/src/validate.ts:557-570`). |
+| Validation errors only or mixed with warnings | `ok: false`, all validation problems | Throws `WorkflowError` (`packages/workflow-engine/src/validate.ts:561-570`). |
+| Warning-only validation | `ok: true`, warnings retained | Returns workflow; warnings are not thrown (`packages/workflow-engine/src/validate.ts:561-570`). |
 
 ### Merged sources: `loadWorkflowStore`
 

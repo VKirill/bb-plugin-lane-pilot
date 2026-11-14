@@ -295,8 +295,10 @@ state:"skipped";row:Record<string,unknown>}|{state:"ok";verified:Verified;thread
       const d=unit.docsDir, flow=unit.flow, writable=unitWritable(unit);
       const {checked,warnings,reverted}=verified;
       const report=(state:string,extra:Record<string,unknown>={}):Record<string,unknown>=>({projectId:record.projectId,path:record.basePath??place.path,docsDir:label,state,...extra});
+      let unread:string[]=[];
       const allPages=async()=>{
         const listed=await host.call("listDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,roots:record.roots,skipOversized:true},{hostId:place.hostId,timeoutMs:120_000});
+        unread=listed.oversized??[];
         return listed.pages as Array<{path:string;sha256:string;content:string}>;
       };
       let commit:string|null=null, merged:string|null=null;
@@ -322,7 +324,7 @@ state:"skipped";row:Record<string,unknown>}|{state:"ok";verified:Verified;thread
               const original=fresh.find((row)=>row.path===page.path)!;
               return original.content===page.content?[]:[{path:page.path,expectedSha256:original.sha256,content:page.content}];
             }),
-            ...(flow?[]:[{path:index,expectedSha256:current?.sha256??null,content:buildDocsIndex(built,d,linked)}]),
+            ...(flow?[]:[{path:index,expectedSha256:current?.sha256??null,content:buildDocsIndex(built,d,linked,{paths:unread,index:current?.content})}]),
           ].filter((edit)=>edit.path!==index||current?.content!==edit.content);
           if(!edits.length) break;
           const applied=await host.call("writeDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,

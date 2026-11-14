@@ -6,9 +6,10 @@ import { relocateAnchor } from "./exports";
 import { brokenProof, isChecked, isDone, proofDrift, smaCheckedPercent, smaCounts, smaDonePercent, smaHoles, smaRows, smaStateCounts, unjudgedProof, type ProofRoots, type SmaRow } from "./model";
 import { SMA_LINKS, SMA_MAP_SHA, SMA_NODES, SMA_REGIONS } from "./graph";
 
-export const SMA_MAP_USAGE = "bb lane-pilot sma-map [--json] [--region <number|name>] [--status have|partial|missing|skip|upstream|void|unproven|unchecked] [--check-proofs] [--live [--days N]] [--states]   the SMA product map node by node: the card, what Lane Pilot has for it, the proof link and the contract tests; mapped is a link, checked is a test of the card's behaviour; --live says which groups left a trace in the window; --states splits the evidence (available / reachable / checked / observed / outcome-verified)";
+export const SMA_MAP_USAGE = "bb lane-pilot sma-map [--json] [--region <number|name>] [--status have|partial|missing|skip|upstream|void|deviation|deviation-data|unproven|unchecked] [--check-proofs] [--live [--days N]] [--states | --gaps | --hollow]   the SMA product map node by node: the card, what Lane Pilot has for it, the proof link and the contract tests; mapped is a link, checked is a test of the card's behaviour; --live says which groups left a trace in the window; --states counts the four proofs per node (checked, mutated, reachable, outcome-verified; sma-parity-tz.md §4), --gaps lists per node which proof is missing, --hollow lists the hollow findings (§4а); with --live they read the hub's settings and node-level traces";
 
 import { readSmaLive, renderSmaLive, smaGroups } from "./live";
+import { runProofCli, wantsProofs } from "./cli-proofs";
 
 type Result = { exitCode: number; stdout?: string; stderr?: string };
 const flag = (argv: readonly string[], name: string) => { const at = argv.indexOf(name); return at >= 0 ? argv[at + 1] : undefined; };
@@ -17,7 +18,8 @@ const flag = (argv: readonly string[], name: string) => { const at = argv.indexO
 export function defaultProofRoots(cwd: string): ProofRoots {
   // Beside the plugin on a Mac checkout, under ~/tools on the Linux hosts.
   const laneStack = [join(cwd, "..", "claude-lane-stack"), join(homedir(), "tools", "claude-lane-stack")].find((path) => existsSync(path)) ?? join(cwd, "..", "claude-lane-stack");
-  const core = join(homedir(), ".local", "share", "bb-source-vk");
+  // The BB core sources (vk layer): the Mac/hub checkout first, else the sibling bb-core repository on the Linux hosts.
+  const core = [join(homedir(), ".local", "share", "bb-source-vk"), join(cwd, "..", "bb-core", "vk"), join(cwd, "..", "..", "..", "..", "bb-core", "vk")].find((path) => existsSync(path)) ?? join(homedir(), ".local", "share", "bb-source-vk");
   const telegram = join(cwd, "..", "bb-plugin-telegram-projects");
   // Sources, not a built copy: the hub's install has no src/, and a proof cannot be judged there.
   return { lanePilot: existsSync(join(cwd, "src/rooms/sma-map/entries.ts")) ? cwd : "", ...(existsSync(laneStack) ? { laneStack } : {}), ...(existsSync(core) ? { core } : {}), ...(existsSync(telegram) ? { telegram } : {}) };
@@ -69,6 +71,8 @@ export function runSmaMapCli(argv: string[], cwd: string = process.cwd()): Resul
     if (unfixable.length) lines.push("", `still broken (${unfixable.length}) — anchor deleted or ambiguous:`, ...unfixable.map((p) => `  ${p}`));
     return { exitCode: unfixable.length ? 1 : 0, stdout: `Fixed ${fixed.length} proof path(s).\n${lines.join("\n")}` };
   }
+  // The four proofs (sma-parity-tz.md §4): without a database the registry defaults decide reachability.
+  if (wantsProofs(argv) && !argv.includes("--check-proofs")) return runProofCli(argv, defaultProofRoots(cwd), null, cwd);
   const all = smaRows();
   const regionArg = flag(argv, "--region"), status = flag(argv, "--status");
   const region = regionArg === undefined ? undefined : /^\d+$/.test(regionArg) ? SMA_REGIONS[Number(regionArg)] : SMA_REGIONS.find((name) => name.toLowerCase().includes(regionArg.toLowerCase()));
@@ -83,7 +87,7 @@ export function runSmaMapCli(argv: string[], cwd: string = process.cwd()): Resul
   const states = argv.includes("--states") ? smaStateCounts(all, roots) : null;
   if (argv.includes("--json")) return { exitCode: holes.length || broken.length ? 1 : 0, stdout: JSON.stringify({ sha: SMA_MAP_SHA, mapped: smaDonePercent(all), checked: smaCheckedPercent(all), counts: smaCounts(all), ...(states ? { states } : {}), rows, holes, broken, unjudged, notMapped: all.filter((row) => !isDone(row)).length }, null, 2) };
   const out = [renderSmaMap(all, region || status ? rows : [])];
-  if (states) out.push("", `States (X-2): available ${states.available}, reachable ${states.reachable} (${states.unreachable} broken, ${states.unjudged} unjudged), checked by a contract test ${states.checked}; observed and outcome-verified need --live.`);
+  if (states) out.push("", `Proof links (X-2): available ${states.available}, resolved ${states.proofResolved} (${states.proofBroken} broken, ${states.proofUnjudged} unjudged), checked by a contract test ${states.checked}; the four proofs: sma-map --states without --check-proofs.`);
   if (holes.length) out.push("", `Registry holes (${holes.length}):`, ...holes.map((hole) => `  ${hole}`));
   if (broken.length) out.push("", `Broken proofs (${broken.length}):`, ...broken.map((line) => `  ${line}`));
   if (drifted.length) out.push("", `Drifted proofs (${drifted.length}) — they resolve, but no longer where the entry points:`, ...drifted.map((line) => `  ${line}`));
@@ -92,18 +96,12 @@ export function runSmaMapCli(argv: string[], cwd: string = process.cwd()): Resul
 }
 
 /** `bb lane-pilot sma-map --live [--days N] [--json]`: which groups of the map left a trace in the plugin's database in the window. */
-export function runSmaLiveCli(db: Parameters<typeof readSmaLive>[0], argv: string[], now = Date.now()): Result {
+export function runSmaLiveCli(db: Parameters<typeof readSmaLive>[0], argv: string[], now = Date.now(), cwd: string = process.cwd(), pluginRoot?: string): Result {
+  // --states / --gaps / --hollow with --live: the hub's settings, node-level traces and the live hollow signs. The
+  // group-level trace below stays a separate, weaker signal (groupObserved), never node evidence.
+  if (wantsProofs(argv)) return runProofCli(argv, defaultProofRoots(cwd), db as never, cwd, now, pluginRoot);
   const days = Math.max(1, Math.min(365, Number(flag(argv, "--days") ?? 7) || 7));
   const rows = readSmaLive(db, smaGroups(SMA_NODES as never, SMA_REGIONS), now - days * 86_400_000);
-  // X-2: the live trace joins the evidence ladder — a node is `observed` when its group worked in the window,
-  // `outcome-verified` when a contract test holds the behaviour AND the group ran.
-  const states = argv.includes("--states")
-    ? (() => {
-        const liveGroups = new Set(rows.filter((row) => (row.n ?? 0) > 0).map((row) => row.key));
-        return smaStateCounts(smaRows(), defaultProofRoots(process.cwd()), (row) => liveGroups.has(`${row.region} | ${row.group}`));
-      })()
-    : null;
-  if (argv.includes("--json")) return { exitCode: 0, stdout: JSON.stringify({ days, rows, ...(states ? { states } : {}) }, null, 2) };
-  const text = renderSmaLive(rows, days, now);
-  return { exitCode: 0, stdout: states ? `${text}\n\nStates (X-2): available ${states.available}, reachable ${states.reachable} (${states.unreachable} broken, ${states.unjudged} unjudged), checked ${states.checked}, observed ${states.observed}, outcome-verified ${states.outcomeVerified}.` : text };
+  if (argv.includes("--json")) return { exitCode: 0, stdout: JSON.stringify({ days, rows }, null, 2) };
+  return { exitCode: 0, stdout: renderSmaLive(rows, days, now) };
 }

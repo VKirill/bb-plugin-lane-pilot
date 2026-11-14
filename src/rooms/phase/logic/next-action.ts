@@ -5,6 +5,7 @@ import { designGate, phaseFolder } from "./design";
 import { discussionGate, planGate } from "./gates";
 import { RISK_KINDS, type Phase, type PhaseStage, type WordTurn } from "./record";
 import { wordOf } from "./words";
+import { wordAsked, wordReason } from "./words-policy";
 import type { TaskFact } from "./waves";
 
 // ---------------------------------------------------------------- the driver's next action
@@ -31,25 +32,25 @@ function nextActionRaw(phase: Phase, facts: ReadonlyMap<string, TaskFact>): Next
   const questions = (r.questions ?? []).filter((question) => !question.answer && question.stage === phase.stage);
   if (questions.length) return { key: key(`questions:${questions.map((question) => question.id).join(",")}`), stage: phase.stage, waitsForPm: true,
     text: `${head} — open question(s) at ${phase.stage}: ${questions.map((question) => `${question.id}${question.blocking ? " (blocking)" : ""}: ${question.text}`).join("; ")}. Answer with ${tool("answer", `, phaseId:"${id}", questionId, answer`)}; ask the owner first (lane_pilot_ask_owner) if only he knows.` };
-  const turn: WordTurn | null = !r.ownerWords ? null : phase.stage === "discussion" && r.context && discussionGate(r).ok && wordOf(r, "context")?.decision !== "yes" ? "context"
-    : phase.stage === "planning" && r.plan?.critique?.decision === "approve" && wordOf(r, "planning")?.decision !== "yes" ? "planning"
-    : phase.stage === "design" && r.design?.drawing?.reviewer && wordOf(r, "design")?.decision !== "yes" ? "design"
-    : phase.stage === "acceptance" && r.uat && wordOf(r, "uat")?.decision !== "yes" ? "uat"
-    : phase.stage === "acceptance" && (r.acceptance?.lines ?? []).filter((line) => !line.ok).every((line) => line.id === "result_useful" || line.id === "limits_acknowledged")
+  const turn: WordTurn | null = phase.stage === "discussion" && wordAsked(r, "context") && r.context && discussionGate(r).ok && wordOf(r, "context")?.decision !== "yes" ? "context"
+    : phase.stage === "planning" && wordAsked(r, "planning") && r.plan?.critique?.decision === "approve" && wordOf(r, "planning")?.decision !== "yes" ? "planning"
+    : phase.stage === "design" && wordAsked(r, "design") && r.design?.drawing?.reviewer && wordOf(r, "design")?.decision !== "yes" ? "design"
+    : phase.stage === "acceptance" && wordAsked(r, "uat") && r.uat && wordOf(r, "uat")?.decision !== "yes" ? "uat"
+    : phase.stage === "acceptance" && wordAsked(r, "acceptance") && (r.acceptance?.lines ?? []).filter((line) => !line.ok).every((line) => line.id === "result_useful" || line.id === "limits_acknowledged")
       && (wordOf(r, "acceptance")?.decision !== "yes" || wordOf(r, "acceptance")?.key !== acceptanceKey(r)) ? "acceptance" : null;
   if (turn === "acceptance") return { key: key(`word:acceptance:${acceptanceKey(r)}`), stage: phase.stage, waitsForPm: true,
-    text: `${head} is prepared and awaits the owner's keyed decision on package ${acceptanceKey(r)} (owner.words is on): two decisions — is the result clear and useful, and are the remaining limits and the recovery acknowledged. He decides in the phase card, or ask him with lane_pilot_ask_owner and record it with ${tool("word", `, phaseId:"${id}", turn:"acceptance", decision:"yes"|"no", useful:true|false, limits:true|false, text`)}.` };
+    text: `${head} is prepared and awaits the owner's keyed decision on package ${acceptanceKey(r)} (${wordReason(r, "acceptance")}): two decisions — is the result clear and useful, and are the remaining limits and the recovery acknowledged. He decides in the phase card, or ask him with lane_pilot_ask_owner and record it with ${tool("word", `, phaseId:"${id}", turn:"acceptance", decision:"yes"|"no", useful:true|false, limits:true|false, text`)}.` };
   // The key names what the word is for: a context signed again (or a plan submitted again) after a word is a new step for the PM. With
   // one key per turn the PM was never told (magicseo replay 2026-10-31: re-signed at 08:08, both sides waited on each other).
   const version = turn === "context" ? r.context?.sha : turn === "planning" ? r.plan?.sha : undefined;
   if (turn) return { key: key(`word:${turn}${version ? `:v${version.slice(0, 12)}` : ""}`), stage: phase.stage, waitsForPm: true,
-    text: `${head} awaits the owner's word at ${turn} (owner.words is on). He gives it in the phase card, or ask him with lane_pilot_ask_owner and record it with ${tool("word", `, phaseId:"${id}", turn:"${turn}", decision:"yes"|"no", text${turn === "planning" && r.plan ? `, key:"${r.plan.sha}"` : ""}`)}.` };
+    text: `${head} awaits the owner's word at ${turn} (${wordReason(r, turn)}). He gives it in the phase card, or ask him with lane_pilot_ask_owner and record it with ${tool("word", `, phaseId:"${id}", turn:"${turn}", decision:"yes"|"no", text${turn === "planning" && r.plan ? `, key:"${r.plan.sha}"` : ""}`)}.` };
   if (phase.state === "paused" || phase.state === "pause_requested") return { key: key("paused"), stage: phase.stage, text: `${head} is paused; ${tool("resume", `, phaseId:"${id}"`)} moves it on.`, waitsForPm: false };
   switch (phase.stage) {
     case "discussion": {
       const check = discussionGate(r);
       return { key: key(r.context?.sha ?? "none"), stage: phase.stage, waitsForPm: true,
-        text: `${head} — stage 1, discussion. Goal: ${phase.goal}\nWrite the discussion to files in the project (problem, appetite, solution, rabbit holes, no-gos, decisions locked/free/deferred, FAQ, ADR — workflow lp.brainstorm or lp.analyze writes them), name the four risks (${RISK_KINDS.join(", ")}; a security risk beside them when there is one), then ${tool("context", `, phaseId:"${id}", docs:["<path>", ...], risks:{value, usability, feasibility, viability, security?}, appetite, noGos:[...]`)}: Lane Pilot reads and signs them${r.ownerWords ? ", and the owner signs the context with his word" : ""}; pass requirements:[ids] and decisions:[locked ids] when the phase has them — the plan must cover each.\nRead first: ${stageInit(phase).join(", ")}. ${rubricLine("discussion")}${check.ok ? "" : `\nOpen: ${check.why.join("; ")}`}` };
+        text: `${head} — stage 1, discussion. Goal: ${phase.goal}\nWrite the discussion to files in the project (problem, appetite, solution, rabbit holes, no-gos, decisions locked/free/deferred, FAQ, ADR — workflow lp.brainstorm or lp.analyze writes them), name the four risks (${RISK_KINDS.join(", ")}; a security risk beside them when there is one), then ${tool("context", `, phaseId:"${id}", docs:["<path>", ...], risks:{value, usability, feasibility, viability, security?}, appetite, noGos:[...]`)}: Lane Pilot reads and signs them${wordAsked(r, "context") ? ", and the owner signs the context with his word" : ""}; pass requirements:[ids] and decisions:[locked ids] when the phase has them — the plan must cover each.\nRead first: ${stageInit(phase).join(", ")}. ${rubricLine("discussion")}${check.ok ? "" : `\nOpen: ${check.why.join("; ")}`}` };
     }
     case "planning": {
       const check = planGate(r);
@@ -75,27 +76,27 @@ function nextActionRaw(phase: Phase, facts: ReadonlyMap<string, TaskFact>): Next
       const errors = Object.entries(r.execution?.issueErrors ?? {});
       if (errors.length) return { key: key(`issue_error:${errors.map(([piece]) => piece).join(",")}`), stage: phase.stage, waitsForPm: true,
         text: `${head} — stage 4, execution: Lane Pilot could not issue ${errors.map(([piece, why]) => `${piece} (${why})`).join("; ")}. Decide each: ${tool("decide", `, phaseId:"${id}", piece:"${errors[0]![0]}", choice:"skip"|"retry"|"cancel", note`)} — skip drops it, retry issues the SAME contract again, cancel stops the phase. A contract that must change (a lint refusal) is not fixed by retry or by correct: ${tool("return", `, phaseId:"${id}", to:"planning", note`)} and submit the plan again.` };
-      if (r.ownerWords && !wordOf(r, "issue")) return { key: key("word:issue"), stage: phase.stage, waitsForPm: true,
-        text: `${head} — stage 4, execution awaits the owner's word «issue» (owner.words is on). Ask him, then ${tool("word", `, phaseId:"${id}", turn:"issue", decision:"yes"|"no", text`)}.` };
+      if (wordAsked(r, "issue") && !wordOf(r, "issue")) return { key: key("word:issue"), stage: phase.stage, waitsForPm: true,
+        text: `${head} — stage 4, execution awaits the owner's word «issue» (${wordReason(r, "issue")}). Ask him, then ${tool("word", `, phaseId:"${id}", turn:"issue", decision:"yes"|"no", text`)}.` };
       // A wave that is in with a failing line stops the next wave: said to the PM, not left as «Lane Pilot issues the next wave».
       const red = Object.entries(r.execution?.waves ?? {}).find(([wave, done]) => !done.lines.every((line) => line.ok)
         && !items.some((item) => item.wave === Number(wave) && issued[item.id] && facts.get(item.id)?.state !== "accepted"));
       if (red) return { key: key(`wave_red:${red[0]}:${red[1].packageSha}`), stage: phase.stage, waitsForPm: true,
-        text: `${head} — stage 4, execution: wave ${red[0]} is in, but ${red[1].lines.filter((line) => !line.ok).map((line) => `${line.id} (${line.detail})`).join("; ")}; the next wave waits. A failing promise needs new work: return the phase to planning (${tool("return", `, phaseId:"${id}", to:"planning", note`)}) and change the failing piece (it is issued again) or add one.` };
+        text: `${head} — stage 4, execution: wave ${red[0]} is in, but ${red[1].lines.filter((line) => !line.ok).map((line) => `${line.id} (${line.detail})`).join("; ")}; the pieces that depend on its pieces wait. A failing promise needs new work: return the phase to planning (${tool("return", `, phaseId:"${id}", to:"planning", note`)}) and change the failing piece (it is issued again) or add one.` };
       // A wave whose review by another model failed holds the phase at execution: said, with the review's words.
       const rejected = Object.entries(r.execution?.waves ?? {}).find(([, wave]) => wave.review?.state === "failed");
       if (rejected) return { key: key(`wave_review_failed:${rejected[0]}:${rejected[1].packageSha}`), stage: phase.stage, waitsForPm: true,
         text: `${head} — stage 4, execution: the review of wave ${rejected[0]} by another model failed (${(rejected[1].review?.summary ?? "").slice(0, 600)}). Return the phase to planning (${tool("return", `, phaseId:"${id}", to:"planning", note`)}) and change the pieces it names (they are issued again), or add one.` };
       const unreviewed = Object.entries(r.execution?.waves ?? {}).find(([, wave]) => wave.lines.every((line) => line.ok) && r.waveReview && !wave.review);
       if (unreviewed) return { key: key(`wave_review:${unreviewed[0]}`), stage: phase.stage, waitsForPm: true,
-        text: `${head} — wave ${unreviewed[0]} is in (package ${unreviewed[1].packageSha.slice(0, 12)}). Have another model verify it (workflow lp.review on the wave's diff, a reviewer model other than the writers'), then ${tool("wave_review", `, phaseId:"${id}", wave:${unreviewed[0]}, state:"passed"|"failed", by, summary`)}; the next wave waits for it.` };
-      const unworded = Object.keys(r.execution?.waves ?? {}).find((wave) => r.ownerWords && !(r.words ?? []).some((word) => word.turn === "wave" && word.wave === Number(wave) && word.decision === "yes"));
+        text: `${head} — wave ${unreviewed[0]} is in (package ${unreviewed[1].packageSha.slice(0, 12)}). Have another model verify it (workflow lp.review on the wave's diff, a reviewer model other than the writers'), then ${tool("wave_review", `, phaseId:"${id}", wave:${unreviewed[0]}, state:"passed"|"failed", by, summary`)}; the phase leaves execution only after it.` };
+      const unworded = Object.keys(r.execution?.waves ?? {}).find((wave) => wordAsked(r, "wave", Number(wave)) && !(r.words ?? []).some((word) => word.turn === "wave" && word.wave === Number(wave) && word.decision === "yes"));
       if (unworded) return { key: key(`word:wave:${unworded}`), stage: phase.stage, waitsForPm: true,
-        text: `${head} — wave ${unworded} awaits the owner's word (owner.words is on). Ask him, then ${tool("word", `, phaseId:"${id}", turn:"wave", wave:${unworded}, decision:"yes"|"no", text`)}.` };
+        text: `${head} — wave ${unworded} awaits the owner's word (${wordReason(r, "wave", Number(unworded))}). Ask him, then ${tool("word", `, phaseId:"${id}", turn:"wave", wave:${unworded}, decision:"yes"|"no", text`)}.` };
       if (r.execution?.unchanged) return { key: key(`unchanged:${r.execution.unchanged.inputSha}`), stage: phase.stage, waitsForPm: true,
         text: `${head} — stage 4, execution: every piece is accepted, but nothing changed since the verification failed (${r.execution.unchanged.detail}). Return the phase to planning (${tool("return", `, phaseId:"${id}", to:"planning", note`)}) and change the failing piece's contract or add a piece; a changed piece is issued again.` };
       return { key: key(`running:${Object.keys(issued).length}:${open.length}`), stage: phase.stage, waitsForPm: false,
-        text: `${head} — stage 4, execution: ${Object.keys(issued).length} of ${items.length} pieces issued, ${open.length} at work. Lane Pilot issues the next wave itself once this one is accepted.` };
+        text: `${head} — stage 4, execution: ${Object.keys(issued).length} of ${items.length} pieces issued, ${open.length} at work. Lane Pilot issues each further piece itself once the pieces it depends on are accepted.` };
     }
     case "verification": {
       const verdict = r.verification?.verdict;
@@ -117,7 +118,7 @@ function nextActionRaw(phase: Phase, facts: ReadonlyMap<string, TaskFact>): Next
     }
     case "lessons":
       return { key: key(r.lessons?.analysis ? "written" : "analysis"), stage: phase.stage, waitsForPm: !r.lessons?.analysis,
-        text: `${head} — stage 7, lessons (${r.lessons?.why ?? ""}). Run the retrospective (workflow retrospective) on the phase book and report it with ${tool("lessons", `, phaseId:"${id}", analysis, reviewRun`)}: reviewRun is that run; Lane Pilot reads from its journal that its «stage» step, a session other than the author's, was handed exactly this analysis.${r.ownerWords ? " The lesson then waits as a draft for the owner's word «lesson»." : ""}` };
+        text: `${head} — stage 7, lessons (${r.lessons?.why ?? ""}). Run the retrospective (workflow retrospective) on the phase book and report it with ${tool("lessons", `, phaseId:"${id}", analysis, reviewRun`)}: reviewRun is that run; Lane Pilot reads from its journal that its «stage» step, a session other than the author's, was handed exactly this analysis.${wordAsked(r, "lesson") ? " The lesson then waits as a draft for the owner's word «lesson»." : ""}` };
     case "closed":
       return { key: key("closed"), stage: phase.stage, waitsForPm: false, text: `${head} is closed.` };
   }

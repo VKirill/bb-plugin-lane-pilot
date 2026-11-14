@@ -1,4 +1,5 @@
-import { getRun, getRunWriterHost, getTask, listAttemptsForTask, listRunAttemptStates, listStageReceipts, listTaskIdsForRun, planningHomeInputs } from "../../storage";
+import { getRun, getRunSettingsScopes, getRunWriterHost, getTask, listAttemptsForTask, listRunAttemptStates, listStageReceipts, listTaskIdsForRun, loadProjectSettings, planningHomeInputs } from "../../storage";
+import { mergedAttemptChanges } from "../../rollback/server";
 import { taskFamily } from "@lane-pilot/contracts";
 import { confirmedPlanningHome, hostContract, isPlanningPath, resolvePlanningHome } from "../../contracts";
 import { runOnHost } from "@lane-pilot/host-calls";
@@ -7,8 +8,8 @@ import { appendPart, getPhase, listParts, savePhase as savePhaseRow } from "../s
 import { createCandidates } from "./candidate";
 import { PhaseRefusal, STAGE_RU, type DriverBase } from "./driver-tools";
 import type { Phase, PhaseRecord, PhaseStage, TaskFact } from "../logic";
-import { sha256Hex, isNotFound, orMiss, bestEffort } from "@lane-pilot/kit";
-import { nextAction, phaseFolder, renderBook } from "../logic";
+import { sha256Hex, isNotFound, orMiss, bestEffort, parseJsonOr } from "@lane-pilot/kit";
+import { WORD_TURNS, nextAction, phaseFolder, refreshedWordTurns, renderBook, wordAsked } from "../logic";
 import { sameStateIgnoringTime, stateBlockText } from "../stages";
 
 /**
@@ -20,7 +21,7 @@ import { sameStateIgnoringTime, stateBlockText } from "../stages";
 export const GENERATED = "<!-- lp:generated -->";
 export type Docs = ReturnType<typeof installDocs>;
 export function installDocs(base: DriverBase) {
-  const { services, db, bb, now } = base;
+  const { ctx, services, db, bb, now } = base;
 
   function mustGet(id: string) {
     const phase = getPhase(db, id);
@@ -347,5 +348,55 @@ export function installDocs(base: DriverBase) {
     return hostId ? createCandidates(bb.hosts.experimental_client({ contract: hostContract }) as never, hostId, bb.log) : null;
   }
 
-  return { mustGet, savePhase, book, move, facts, planningHome, knownHome, readFile, readText, readDoc, writeStateBlock, writeGenerated, writeDocs, commitFiles, pauseHandoff, writeBook, redoId, pmCheckoutPath, candidates, drawingSha, markState, stateDone };
+  /** The files each issued piece's merged work changed (its task family's merged attempts in the phase's run), by piece id. */
+  function changedByPiece(phase: Phase): Map<string, string[]> {
+    const issued = phase.record.execution?.issued ?? {};
+    const out = new Map<string, string[]>();
+    if (!phase.runId || !Object.keys(issued).length) return out;
+    const rows = mergedAttemptChanges(db as never, phase.runId);
+    for (const [pieceId, taskId] of Object.entries(issued)) {
+      const family = taskFamily(taskId);
+      const paths = new Set<string>();
+      for (const row of rows) {
+        if (taskFamily(row.task_id) !== family) continue;
+        for (const entry of parseJsonOr(row.changed_json, []) as Array<{ path?: unknown }>) if (typeof entry?.path === "string") paths.add(entry.path);
+      }
+      if (paths.size) out.set(pieceId, [...paths]);
+    }
+    return out;
+  }
+
+  /** The turns that wait for the owner's word, in one line for the book. */
+  const askingTurns = (record: PhaseRecord): string => {
+    const waves = Object.keys(record.wordTurns?.waves ?? {}).filter((wave) => wordAsked(record, "wave", Number(wave))).map((wave) => `wave ${wave}`);
+    return [...WORD_TURNS.filter((turn) => turn !== "wave" && wordAsked(record, turn)), ...waves].join(", ") || "none";
+  };
+
+  /**
+   * The phase with each turn's owner-word decision made now, from the project's owner.words and that turn's own evidence
+   * (logic/words-policy.ts; default-path audit §5.4). Saved only when a decision changed; the book says when the turns that ask
+   * change, so a phase from before that asked at every turn shows why it stopped asking. `landed`: weigh the files the merged
+   * pieces changed for the UAT and acceptance turns (the step reads them; the methods keep what the step found). `settings`:
+   * a sync caller passes them (plan() keeps the mode the last step read); otherwise the project's effective settings are read.
+   */
+  function turnsOf(phase: Phase, settings: Readonly<Record<string, unknown>>, landed: boolean): Phase {
+    const next = refreshedWordTurns(phase, settings, now(), landed ? changedByPiece(phase) : undefined);
+    if (!next) return phase;
+    savePhaseRow(db, phase.id, { record: next, at: now() });
+    const before = askingTurns(phase.record), after = askingTurns(next);
+    if (before !== after) book(phase, "decisions", "word_turns", `owner.words ${next.wordTurns!.mode}: the owner's word is asked at ${after} (was ${before}); each turn is decided from its own evidence — money, data or a production deploy on sensitive`);
+    return mustGet(phase.id);
+  }
+  async function freshTurns(phase: Phase, landed = false): Promise<Phase> {
+    const scopes = phase.runId ? getRunSettingsScopes(db, phase.runId) : [];
+    const settings = await ctx.effectiveProjectSettings(phase.projectId, scopes).then((result) => result.values as Record<string, unknown>, () => loadProjectSettings(db, phase.projectId, scopes));
+    return turnsOf(mustGet(phase.id), settings, landed);
+  }
+  /** plan() is synchronous: it weighs the new plan under the mode the last step read (a record never stepped keeps its flag until it is). */
+  function freshTurnsSync(phase: Phase): Phase {
+    const mode = phase.record.wordTurns?.mode;
+    return mode ? turnsOf(phase, { "owner.words": mode }, false) : phase;
+  }
+
+  return { mustGet, savePhase, book, move, facts, freshTurns, freshTurnsSync, planningHome, knownHome, readFile, readText, readDoc, writeStateBlock, writeGenerated, writeDocs, commitFiles, pauseHandoff, writeBook, redoId, pmCheckoutPath, candidates, drawingSha, markState, stateDone };
 }

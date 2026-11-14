@@ -1,11 +1,11 @@
-import { wfLatestPipelineRunId, wfRunInputsJson } from "@lane-pilot/workflow-engine";
-import { countAttempts, getAttempt, getRunSettingsScopes, getTaskGitBase, listAttemptsForTask, listStageReceipts, loadProjectSettings, saveTaskGitBase, setRunState, transitionAttempt } from "../../storage";
+import { wfLatestPipelineRunId, wfLiveRunHasStep, wfRunInputsJson } from "@lane-pilot/workflow-engine";
+import { contractEditions, countAttempts, getAttempt, getRunSettingsScopes, getTaskGitBase, listAttemptsForTask, listStageReceipts, loadProjectSettings, saveTaskGitBase, setRunState, transitionAttempt } from "../../storage";
 import type {StageHelperSettings} from "../../platform/server";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../contracts/quality-mode";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification";
 import { hasTaskHome, TASK_HOME_EXCLUDE } from "../../storage";
-import { recordPlanCritique, recordTaskHomeFile, stagePlanText } from "./task-home";
+import { recordPlanCritique, recordPlannerRevision, recordTaskHomeFile, stagePlanText } from "./task-home";
 import { pmReadBrief } from "../writer-brief";
 import type { NodeExecutor, RunSummary, StepContext, WorkflowEngine } from "../../workflow";
 import { provideLpTaskPipeline } from "../../workflow/server";
@@ -26,6 +26,8 @@ import type { BaselineApi } from "../../baseline/server/baseline";
 import type { WriterSpawnApi } from "./spawn";
 import type { WriterStartApi } from "./start";
 import {LP_TASK_PIPELINE} from "../../contracts";
+import { PM_STOPPED_PLANNER_LOOP, planReviseConfig, runPlanRevise } from "./plan-revise";
+import type { RoundFindings } from "./plan-revise";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -102,6 +104,17 @@ function blockedReply(r: DispatchRuntime, reason: string | undefined): Record<st
 /** The agent-typed nodes also hand over a line saying what was done: the engine requires a handoff from every agent. */
 const handoffOf = (stage: string, state: string, reason?: string) => `${stage} ${state}${reason ? `: ${reason}` : ""}`;
 
+/** What the planner loop of this pipeline run did so far (SMA n1269): the outputs of its finished plan-critique and plan-revise steps, in order. */
+export type PlannerLoopState = { critiques: Array<{ allowed?: boolean; reason?: string; findings?: unknown[]; round?: number }>; revises: Array<{ revised?: boolean; reason?: string; plannerThreadId?: string; fromSha?: string; planSha?: string; edition?: number }> };
+export function plannerLoopState(engine: Pick<WorkflowEngine, "snapshot"> | undefined, pipelineRunId: string): PlannerLoopState {
+  const steps = (engine?.snapshot?.(pipelineRunId)?.steps ?? []).filter((step) => step.scope === "" && step.state === "succeeded");
+  const outputs = (node: string) => steps.filter((step) => step.node_id === node).map((step) => parseJsonOr(step.output_json ?? "null", null) as Record<string, unknown> | null).filter((row): row is Record<string, unknown> => !!row);
+  return { critiques: outputs("plan-critique") as PlannerLoopState["critiques"], revises: outputs("plan-revise") as PlannerLoopState["revises"] };
+}
+/** The findings of every critic round of the loop, the latest last. */
+const roundsOf = (loop: PlannerLoopState): RoundFindings[] => loop.critiques.filter((row) => row.allowed === false)
+  .map((row, index) => ({ round: index + 1, ...(row.reason ? { reason: row.reason } : {}), findings: Array.isArray(row.findings) ? row.findings : [] }));
+
 /** The graph step a stage function runs for: its helper threads carry these ids in their metadata. */
 const stepRef = (ctx: StepContext<DispatchRuntime>) => ({ runId: ctx.runId, stepKey: ctx.stepKey, nodeId: ctx.nodeId });
 
@@ -134,26 +147,86 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
 
   exec("lp.plan-critique", async (r, ctx) => {
     // A canceled task starts no new helper: the block branch then answers with the ended attempt.
-    if (endedReply(r)) return { allowed: false, reason: "attempt ended before its stages finished", handoff: handoffOf("plan-critique", "skipped", "attempt ended") };
+    if (endedReply(r)) return { allowed: false, revisable: false, reason: "attempt ended before its stages finished", handoff: handoffOf("plan-critique", "skipped", "attempt ended") };
+    // The critic of every round reads PLAN.md through the task's manifest (docs/task-folder.md): after a planner round that is the revised edition.
     const plan = await stagePlanText(r.ctx, r.taskId, "plan-critique", r.plan);
     const critique = await runPlanCritique({ stageHelperSettings: r.services.stageHelperSettings, bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId,
       config: r.runConfig, task: r.task, plan, pmReadContext: text(ctx.input.with.pmReadContext) || undefined, workflow: stepRef(ctx) });
-    // The verdict as critique/plan.r<K>.json in the task home (docs/task-folder.md); a failed record never changes the verdict.
+    // The verdict as critique/plan.r<K>.json in the task home; a failed record never changes the verdict.
     await recordPlanCritique(r.ctx, { taskId: r.taskId, runId: r.runId, allowed: critique.allowed, reason: critique.reason, wfStepKey: ctx.stepKey })
       .catch((cause: unknown) => r.ctx.bb.log.warn(`Lane Pilot: the plan critique of ${r.taskId} was not recorded in its home: ${cause instanceof Error ? cause.message : String(cause)}`));
-    return { allowed: critique.allowed, ...(critique.reason !== undefined ? { reason: critique.reason } : {}), handoff: handoffOf("plan-critique", critique.allowed ? "allowed" : "blocked", critique.reason) };
+    // The planner revises a returned plan when the project says so (plan_critique.revise_by planner), the refusal is one a rewrite of the plan can
+    // fix (a rework, or a structural finding in the plan itself), its rounds are not spent, and the PM has not taken the plan over.
+    const settings = loadProjectSettings(r.ctx.db, r.projectId, getRunSettingsScopes(r.ctx.db, r.runId));
+    const loop = plannerLoopState(engine, ctx.runId);
+    const config = planReviseConfig(settings);
+    const revisions = loop.revises.filter((row) => row.revised === true).length;
+    const pmTookOver = contractEditions(r.ctx.db, r.taskId).some((row) => row.reason === PM_STOPPED_PLANNER_LOOP);
+    const revisable = !critique.allowed && critique.revisable === true && config.by === "planner" && revisions < config.maxRounds && !pmTookOver && !endedReply(r);
+    return { allowed: critique.allowed, revisable, round: loop.critiques.length + 1, findings: critique.findings ?? [], ...(critique.reason !== undefined ? { reason: critique.reason } : {}),
+      handoff: handoffOf("plan-critique", critique.allowed ? "allowed" : revisable ? "returned to the planner" : "blocked", critique.reason) };
   }, {}, "plan-critique");
+
+  // One planner round (SMA n1269, n1267, n22): the planner rewrites the plan the critic returned, in its own session from the second round on; the
+  // revision is a new contract edition and the critic judges it again in a fresh session. What the planner cannot fix goes to the PM.
+  engine.register<DispatchRuntime>("lp.plan-revise", { run: async (ctx) => {
+    const r = need(ctx);
+    const loop = plannerLoopState(engine, ctx.runId);
+    const settings = loadProjectSettings(r.ctx.db, r.projectId, getRunSettingsScopes(r.ctx.db, r.runId));
+    const config = planReviseConfig(settings);
+    const round = loop.revises.filter((row) => row.revised === true).length + 1;
+    const tried = new Set(loop.revises.flatMap((row) => [row.fromSha, row.planSha]).filter((sha): sha is string => typeof sha === "string"));
+    const plannerThreadId = [...loop.revises].reverse().find((row) => typeof row.plannerThreadId === "string")?.plannerThreadId ?? null;
+    const base = { round, max: config.maxRounds };
+    if (endedReply(r)) return { output: { revised: false, reason: "attempt ended before its stages finished", ...base, handoff: handoffOf("plan-revise", "skipped", "attempt ended") } };
+    let outcome: Awaited<ReturnType<typeof runPlanRevise>>;
+    try {
+      outcome = await runPlanRevise({ bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId, config: r.runConfig, task: r.task, plan: await stagePlanText(r.ctx, r.taskId, "plan-revise", r.plan), settings,
+        round, max: config.maxRounds, findings: roundsOf(loop), plannerThreadId, tried, signal: ctx.signal, workflow: stepRef(ctx) });
+    } catch (cause) {
+      const reason = `planner_failed:${cause instanceof Error ? cause.message : String(cause)}`;
+      return { output: { revised: false, reason, ...base, handoff: handoffOf("plan-revise", "failed", reason) } };
+    }
+    if (outcome.revised && outcome.plan && outcome.task) {
+      r.plan = outcome.plan; r.task = outcome.task;
+      // The revision is the task home's new PLAN.md and contract edition (supersedes chain): the next critic reads it through the manifest.
+      const homeFailed = await recordPlannerRevision(r.ctx, { taskId: r.taskId, task: outcome.task, plan: outcome.plan });
+      if (homeFailed) outcome = { ...outcome, revised: false, reason: homeFailed };
+    }
+    const output = { revised: outcome.revised, ...base, fromSha: outcome.fromSha, ...(outcome.planSha ? { planSha: outcome.planSha } : {}), ...(outcome.edition !== undefined ? { edition: outcome.edition } : {}),
+      ...(outcome.reason ? { reason: outcome.reason } : {}), ...(outcome.plannerThreadId ? { plannerThreadId: outcome.plannerThreadId } : {}),
+      handoff: handoffOf("plan-revise", outcome.revised ? `revised (edition ${outcome.edition})` : "not revised", outcome.reason) };
+    return { output, ...(outcome.plannerThreadId ? await withUsage(r.ctx.bb, outcome.plannerThreadId) : {}) };
+  } });
 
   exec("lp.block-plan-critique", async (r, ctx) => {
     const ended = endedReply(r);
     if (ended) return { reply: ended };
-    const reason = text(ctx.input.with.reason);
     const { db } = r.ctx;
+    // After the planner loop ran, the PM gets the findings of every round and why the loop ended (SMA n1269: the rounds are spent, then the PM).
+    const loop = plannerLoopState(engine, ctx.runId);
+    const revisions = loop.revises.filter((row) => row.revised === true).length;
+    const config = planReviseConfig(loadProjectSettings(db, r.projectId, getRunSettingsScopes(db, r.runId)));
+    const lastRevise = loop.revises.at(-1);
+    const stopped = lastRevise && lastRevise.revised !== true ? lastRevise.reason ?? "planner_not_revised" : revisions >= config.maxRounds && revisions > 0 ? "rounds_exhausted" : null;
+    // From plan-revise the edge carries the planner's reason; the critic's own reason is that of the last critique.
+    const critiqueReason = (loop.revises.length ? loop.critiques.at(-1)?.reason : undefined) ?? text(ctx.input.with.reason);
+    const reason = loop.revises.length && stopped
+      ? `${stopped === "rounds_exhausted" ? `planner_rounds_exhausted:${revisions}/${config.maxRounds}` : `planner_stopped:${stopped.split(":")[0]}`}: ${critiqueReason ?? "plan-critique did not allow dispatch"}`
+      : critiqueReason;
     skipOpenStage(r, "specialist-review", "plan-critique did not allow dispatch");
     skipWriterStages(r, "upstream plan-critique stage did not pass");
     transitionAttempt(db, r.attemptId, "blocked", { reason: reason ?? "plan-critique did not allow dispatch" });
     setRunState(db, r.runId, "blocked");
-    return { reply: blockedReply(r, reason) };
+    const plannerLoop = loop.revises.length ? {
+      revisions, maxRounds: config.maxRounds, stopped,
+      rounds: roundsOf(loop),
+      note: stopped === "rounds_exhausted"
+        ? `The planner used its ${revisions} revision round${revisions === 1 ? "" : "s"} and the critic still returns the plan: the findings of every round are in rounds. Fix the plan or the contract in place with lane_pilot_update_task.`
+        : stopped ? `The planner stopped (${stopped}): the findings of every round are in rounds. Fix the plan or the contract in place with lane_pilot_update_task.`
+        : "The critic's last verdict is not one the planner may fix by rewriting the plan: the findings of every round are in rounds. Fix the plan or the contract in place with lane_pilot_update_task.",
+    } : undefined;
+    return { reply: { ...blockedReply(r, reason), ...(plannerLoop ? { plannerLoop } : {}) } };
   });
 
   exec("lp.specialist-review", async (r, ctx) => {
@@ -362,6 +435,16 @@ export function dispatchReply(summary: RunSummary): Record<string, unknown> | nu
 /** The newest pipeline run of a task (`lp-task-pipeline`, linked to the Lane Pilot run and the task), or null. */
 export function dispatchRunOf(db: ServerCore["db"], runId: string, taskId: string): string | null {
   return wfLatestPipelineRunId(db, runId, taskId);
+}
+
+/**
+ * The task's pipeline run is inside the planner loop now: a plan-revise step exists and the run has not ended. A PM update is taken then (it stops
+ * the loop: lane_pilot_update_task records PM_STOPPED_PLANNER_LOOP), while an update during the first pm-read and critique is refused as before.
+ */
+export function plannerLoopActive(db: ServerCore["db"], runId: string, taskId: string): boolean {
+  const pipelineRunId = dispatchRunOf(db, runId, taskId);
+  if (!pipelineRunId) return false;
+  return wfLiveRunHasStep(db, pipelineRunId, "plan-revise");
 }
 
 export type DispatchRerun =

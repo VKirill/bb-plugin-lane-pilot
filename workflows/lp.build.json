@@ -36,7 +36,7 @@
       "id": "run_tasks",
       "type": "parallel",
       "for_each": "$inputs.tasks",
-      "order": "depends_on",
+      "order": "depends_on", "on_child_fail": "block_dependents",
       "title": {
         "en": "Run tasks",
         "ru": "Выполнить задачи"

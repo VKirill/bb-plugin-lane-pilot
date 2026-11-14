@@ -90,7 +90,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase): ServerCore {
     try {
       const opt = (options ?? {}) as { hostId?: string };
       const inp = (input ?? {}) as { name?: string; taskId?: string; worktreePath?: string; removeWorktree?: boolean };
-      const out = (result ?? {}) as { status?: string; path?: string | null; branch?: string | null; removed?: boolean };
+      const out = (result ?? {}) as { status?: string; path?: string | null; branch?: string | null; removed?: boolean; worktreeRemoved?: boolean; branchKept?: { branch: string; ahead: number; reason: string } };
       if (method === "gitCreateWorktree" && out.status === "ready" && out.path && typeof opt.hostId === "string") {
         // The caller declares the owner in `worktreeOwner`; a creation that declares none is registered as unknown.
         const owner = declaredWorktreeOwner(declared) ?? ({ kind: "unknown", id: null } satisfies WorktreeOwner);
@@ -99,8 +99,11 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase): ServerCore {
       }
       if (!opt.hostId || !inp.worktreePath) return;
       const gone = (method === "gitRemoveWorktree" && out.removed === true)
-        || (method === "gitIntegrate" && inp.removeWorktree === true && (out.status === "merged" || out.status === "up-to-date"));
+        // A host that says whether the merge removed the worktree is believed; an older one is read from the request, as before.
+        || (method === "gitIntegrate" && inp.removeWorktree === true && (out.status === "merged" || out.status === "up-to-date") && out.worktreeRemoved !== false);
       if (gone) releaseWorktree(db, opt.hostId, inp.worktreePath);
+      // A cancelled or dropped worktree whose branch has commits merged nowhere: the folder went, the branch stays (docs/worktrees.md); the daily pass reports it too.
+      if (method === "gitRemoveWorktree" && out.branchKept) bb.log.info(`Lane Pilot: kept branch ${out.branchKept.branch} on ${opt.hostId} after removing ${inp.worktreePath}: ${out.branchKept.reason}`);
     } catch { /* the registry never breaks a host call */ }
   };
 

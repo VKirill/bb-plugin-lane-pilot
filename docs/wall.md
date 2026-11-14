@@ -2,7 +2,7 @@
 title: The wall journal and the night loop
 type: component
 created: 2026-10-22
-updated: 2026-10-22
+updated: 2026-11-14
 status: active
 confidence: medium
 tags: [night, wall, journal, self-repair, loop-guard, rerun, sma]
@@ -22,6 +22,8 @@ sources:
   - src/rooms/wall/morning.ts
   - src/rooms/wall/store.ts
   - src/rooms/wall/service.ts
+  - src/rooms/wall/service/night.ts
+  - src/rooms/wall/service/repairs.ts
   - src/rooms/wall/server/wall.ts
   - src/rooms/self-repair/server/hooks.ts
   - src/rooms/self-repair/server/self-repair.ts
@@ -30,6 +32,8 @@ sources:
   - scripts/wall-retro.ts
   - tests/wall/service.test.ts
   - src/rooms/policy/exam.ts
+  - src/rooms/reports/server/daily.ts
+  - src/rooms/reports/server/index.ts
 ---
 
 > [!important] Since 2026-10-22 the owner takes no part in the loop
@@ -45,6 +49,13 @@ then the backlog.
 Sources: Maslov #31448 («чинит не случай, а класс … гоняешь, пока условно не будет 3/10, 5/100, 6/500»; 1-3 recommendations a cycle, each with
 its proof, a limit of rounds and budget) and the dialogue of 2026-10-22 («3 ходки … меняется перспектива … беклог»; «меняет голову и гонит на
 новой голове начиная со 2, пропускает 4-5»); atlas delta D0-1, D0-2 (as far as the re-run needs it), D1-1.
+
+## How it works
+
+1. **Journal and class selection**: `runNight` checks `wall.enabled`, collects failures from the last 24 hours via `collectEntries` and `writeEntries`, refreshes class totals (`refreshClasses`), and picks repair candidates with `selectClasses` using `maxClassesPerNight`, `nightTokenCap`, and `roundsPerNight` (`src/rooms/wall/service/night.ts:31-51`).
+2. **Escalation ladder**: Active classes advance through `ladderStep` across initial repair walks, a multi-angle `hunt`, a post-hunt repair walk, and escalation to the backlog (`src/rooms/wall/service/night.ts:63-65`, `src/rooms/wall/service.ts:112-117`).
+3. **Merge gate and acceptance**: When a repair finishes as `fixed`, `mergeGate` evaluates the branch's changed files (`gateRepair`), merging `night_decides` changes or provisional judge/graph repairs that pass bench and revertibility proofs, while releasing rejected branches as patches (`src/rooms/wall/service/repairs.ts:22-43`, `src/rooms/wall/acceptance.ts:171-191`).
+4. **Modes, states, and failures**: `dryRun` isolates journal updates inside a SQLite `SAVEPOINT` and rolls them back without model calls (`src/rooms/wall/service/night.ts:53-57`); `gateRepair` branches across `night_decides`, judge/graph provisional `merge`, and `reject`, leaving rejected work unmerged as a patch instead of waiting for the owner (`src/rooms/wall/acceptance.ts:171-191`, `src/rooms/wall/service/repairs.ts:22-43`).
 
 ## The journal and the classes
 
@@ -94,7 +105,7 @@ When the thread ends with the verdict `fixed`, the watcher asks the loop before 
 change descriptor `{kind: lp_fault_repair, files, attrs: {bench_subset_passed, auto_revertible}}` and `authorize` (the night policy) answers
 (`src/rooms/wall/acceptance.ts:153-165`). `night_decides` merges; a change of the judge or the graph merges only provisionally when its proofs hold
 (bench subset runnable, revert in working order, no existing test changed); anything else is rejected and the branch is released as a patch
-(`src/rooms/wall/service.ts:489-513`) — no repair waits for the owner. The exam (`runLiveExam`) is a measurement of the policy, not a gate: it does
+(`src/rooms/wall/service/repairs.ts:22-43`, `src/rooms/wall/acceptance.ts:171-191`) — no repair waits for the owner. The exam (`runLiveExam`) is a measurement of the policy, not a gate: it does
 not degrade `night_decides` (`src/rooms/policy/exam.ts:170-177`, `docs/night-policy.md`). The bench proof is claimed only when a runnable bench set
 exists, and it is enforced after the deploy, not before it (see below).
 
@@ -145,9 +156,7 @@ a resumed writer, the way stability restarts a parked task); a real project, or 
 `bb lane-pilot wall status|night [--dry-run]|advance|show|close|rerun|config|morning`; RPC `wall_status`, `wall_show`, `wall_night`, `wall_config`.
 `--dry-run` works inside a savepoint that is rolled back and calls no model.
 
-The morning summary has three more lines (`composeWallMorning`, `scripts/lp-wall-morning.sql`, appended by `lp-metrics-daily.sh` when
-`~/.config/lp-metrics/wall-morning.sql` is installed on the hub): the classes and the spend; the repairs (merged, accepted, held by the policy,
-rolled back); the guard (hunts, backlog, re-runs).
+The morning summary has three more lines (`composeWallMorning`, `scripts/lp-wall-morning.sql`, appended by `daily-report` when `buildDailyReport` finds `scripts/lp-wall-morning.sql` in the plugin directory, `src/rooms/reports/server/index.ts:43-56`, `src/rooms/reports/server/daily.ts:53-55`, `:99-104`): the classes and the spend; the repairs (merged, accepted, held by the policy, rolled back); the guard (hunts, backlog, re-runs).
 
 ## Known limits
 

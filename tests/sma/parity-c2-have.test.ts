@@ -339,7 +339,7 @@ describe("reference cards carried by behaviour (c2)", () => {
     expect(writerToolLine({ metamcpTools: true })).toContain("context7");
   });
 
-  it("[sma:k_d_ref_exec] piecePlan lists the checks red before the files, and the execution rubric blocks an early next wave", () => {
+  it("[sma:k_d_ref_exec] piecePlan lists the checks red before the files, and the execution rubric blocks a piece issued before its dependencies", () => {
     const phase = { id: "ph_p", title: "T", record: {} } as unknown as Phase;
     const item = { id: "p1", title: "t", wave: 1, covers: [], promise: { given: "g", when: "w", then: "t" },
       task: { verification: [{ command: "npm test" }], owns_paths: ["a/**"] } } as never;
@@ -348,7 +348,7 @@ describe("reference cards carried by behaviour (c2)", () => {
     const filesAt = plan.indexOf("Write the files");
     expect(checksAt).toBeGreaterThan(-1);
     expect(filesAt).toBeGreaterThan(checksAt);
-    expect(STAGE_RUBRICS.execution.antipatterns).toContain("issuing the next wave before this one is accepted");
+    expect(STAGE_RUBRICS.execution.antipatterns).toContain("issuing a piece before the pieces it depends on are accepted");
     // The worked example of the executor rules rides with the plan only where phase.piece_notes is on (SMA k_ag_animator briefs).
     const brief = piecePlan({ ...phase, record: { pieceNotes: true } } as Phase, item);
     expect(brief).toContain("Example of the executor rules");

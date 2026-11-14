@@ -650,6 +650,10 @@ export const migrations = [
   `DELETE FROM lane_pilot_project_settings WHERE key IN ('import.routing_profile','import.night_shift','import.completed')`,
   // The memory judge's call as a receipt (model, candidates, chosen ids, latency, tokens, fallback reason; no note text). Append only.
   `ALTER TABLE lane_pilot_memory_receipt ADD COLUMN judge_json TEXT`,
+  // The worktree janitor's receipt by pass (docs/worktrees.md): hourly or daily, the copies kept for commits merged nowhere, the pass's report by class. Additive.
+  `ALTER TABLE lane_pilot_janitor ADD COLUMN pass TEXT NOT NULL DEFAULT 'hourly'`,
+  `ALTER TABLE lane_pilot_janitor ADD COLUMN kept_unmerged INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE lane_pilot_janitor ADD COLUMN report_json TEXT`,
   // One home per task (docs/task-folder.md): the row says a task keeps all its files under <base>/.agents/tasks/<id>/; a task without one
   // was dispatched before the switch and finishes on the old layout. Additive only.
   `CREATE TABLE IF NOT EXISTS lane_pilot_task_home (

@@ -11,11 +11,12 @@ import { hostContract } from "../../contracts";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { sha256Hex, bestEffort } from "@lane-pilot/kit";
-import { acceptanceLines, alreadyMetVerdict, blindVerdict, brokenLink, candidateOn, canonical, executionGate, issuable, lessonsNeeded, nextAction, observationOutcome, piecesOfWave, phaseFolder, pieceSha, provenPieces, renderBook, waveCleared, waveLines, wavePackage, wavePieceLines, wavesOf, wordOf } from "../logic";
+import { acceptanceLines, alreadyMetVerdict, blindVerdict, brokenLink, candidateOn, canonical, executionGate, issuable, lessonsNeeded, nextAction, observationOutcome, piecesOfWave, phaseFolder, pieceSha, provenPieces, renderBook, waveLines, wavePackage, wavePieceLines, wavesOf, wordAsked, wordOf } from "../logic";
 import { buildsScreens, conclusionText, designPoints, issuedContract, markRoadmap, milestoneOf, nextRoadmapRow, stateText, templateFill, threatClosureGaps, waveTable, piecePlan, uatText } from "../stages";
 import { getPhase, listParts, notePoked, savePhase } from "../store";
 import { checkProofs, hostGit, phaseProofRecords, renderProofCurrency } from "./proof-currency";
 import { candidateBranch } from "./candidate";
+import { installWordSteps } from "./driver-word-steps";
 import { PhaseRefusal, STAGE_RU, type DriverBase } from "./driver-tools";
 import type { Docs } from "./driver-docs";
 import type { Methods } from "./driver-methods";
@@ -32,6 +33,7 @@ export type Steps = ReturnType<typeof installSteps>;
 export function installSteps(tools: StepsTools) {
   const { ctx, services, db, bb, now, reactions } = tools;
   const { mustGet, book, move, facts, readFile, readText, writeDocs, writeStateBlock, writeGenerated, commitFiles, pauseHandoff, writeBook, pmCheckoutPath, candidates } = tools;
+  const { wordStep } = installWordSteps(tools);
 
   /** The candidate tree of a piece's base checkout, made on first need; null (and `off` with the reason, booked once) when it cannot be. */
   async function candidateTree(phase: Phase, candidate: PhaseCandidate, base: string): Promise<import("./candidate").CandidateTree | null | { wait: string }> {
@@ -152,8 +154,8 @@ export function installSteps(tools: StepsTools) {
     }
     if (phase.record.plan?.sha !== phase.record.plan?.admittedSha) throw new PhaseRefusal("the plan changed since it was checked: return the phase to planning");
     let runId = phase.runId;
-    // Awaits the word «issue»: with owner.words on nothing is issued before the owner says so.
-    if (phase.record.ownerWords) {
+    // Awaits the word «issue» when this turn asks (owner.words; on sensitive only a plan in money, data or a production deploy).
+    if (wordAsked(phase.record, "issue")) {
       const issueYes = wordOf(phase.record, "issue");
       if (issueYes?.decision !== "yes") return phase;
       // The yes signs the plan and the drawing the owner saw (sma as_launchable): re-read now, a change asks anew.
@@ -200,7 +202,8 @@ export function installSteps(tools: StepsTools) {
         return phase;
       }
     }
-    const next = issuable(items, execution.issued, facts(phase), (wave) => waveCleared(phase.record, wave), execution.issuedSha);
+    // Each piece goes once its own dependencies are accepted (SMA p4_deps); a finished wave's review and lines hold the phase's exit, not the next piece.
+    const next = issuable(items, execution.issued, facts(phase), execution.issuedSha);
     // Batch issue capacity and a free seat in the house: at most issueCap pieces a pass, none while the run already has that many at work.
     const atWork = phase.runId ? listOpenAttempts(db).filter((row) => row.run_id === phase.runId).length : 0;
     // Path with or without subagents: off, the pieces go one at a time, inline.
@@ -297,7 +300,8 @@ export function installSteps(tools: StepsTools) {
       return mustGet(phase.id);
     }
     if (phase.state !== "active") return phase;
-    let current = phase;
+    // Each turn's owner word decided again from this step's evidence (an old record's one flag is recomputed here); then the word steps.
+    let current = await wordStep(await tools.freshTurns(phase, true));
     if (current.stage === "execution") {
       current = await issue(current);
       await recheckStale(current);
@@ -430,7 +434,7 @@ export function installSteps(tools: StepsTools) {
     // The UAT session opens only once the candidate's heads are frozen (SMA p5_uat_stage): the owner tests the verified package.
     // Its lines live in the record, numbered from 1 (SMA p5_uat_line); the document lands on main only after the phase itself
     // is in main (SMA p5_record_after) — before that the answers are the record's, not a file's.
-    if (current.stage === "acceptance" && current.record.ownerWords && !current.record.uat && (!candidateOn(current.record) || !!current.record.candidate?.verified)) {
+    if (current.stage === "acceptance" && wordAsked(current.record, "uat") && !current.record.uat && (!candidateOn(current.record) || !!current.record.candidate?.verified)) {
       const path = `${phaseFolder(current.id)}/UAT.md`;
       const lines = (current.record.plan?.items ?? []).map((item, index) => ({ n: index + 1, pieceId: item.id, state: "open" as const }));
       const record: PhaseRecord = { ...current.record, uat: { path, sha256: "", at: now(), lines } };

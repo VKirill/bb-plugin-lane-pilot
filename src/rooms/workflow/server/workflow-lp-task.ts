@@ -1,5 +1,5 @@
-import { getAttempt, getRun, getRunWriterHost, getTaskPlan, listAttemptsForTask } from "../../storage";
-import { bestEffort, sha256Hex } from "@lane-pilot/kit";
+import { getAttempt, getRun, getRunWriterHost, getTaskPlan, latestRunTaskAttemptState, listAttemptsForTask } from "../../storage";
+import { bestEffort } from "@lane-pilot/kit";
 import { rec, str } from "./workflow-chain-runtime";
 import type { Row } from "./workflow-chain-runtime";
 import { lpTaskPipeline, need, needLanePilot, quote } from "./workflow-chain-runtime";
@@ -10,7 +10,7 @@ import { validateTaskV2 } from "../../tasks/task-v2";
 import { agentPrompt, outputContract, resolveTaskQualityMode } from "@lane-pilot/workflow-engine";
 import type { GraphNode, NodeExecutor, PollResult, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { runOnHost } from "@lane-pilot/host-calls";
-import { TERMINAL_ATTEMPT, safeId, shortPathCriticDefault, withTaskStandard, taskContractFields } from "./workflow-task-contract";
+import { TERMINAL_ATTEMPT, graphDependsOn, graphTaskId, graphTaskStem, shortPathCriticDefault, withTaskStandard, taskContractFields } from "./workflow-task-contract";
 import type { HelperUsage, LpTaskNode } from "./workflow-task-contract";
 import { leadHanded } from "./workflow-human-form";
 import type { WorkflowAgents } from "./workflow-agent";
@@ -38,10 +38,12 @@ export function registerLpTask(engine: WorkflowEngine, ctx: ServerCore, services
       const { contract, usage: planned } = await contractOf(c, rt, node);
       const run = getRun(db, rt.runId);
       if (!run?.writer_workspace_path) throw new Error("the run has no workspace to build in");
-      const stem = sha256Hex(`${c.runId}|${c.stepKey}`).slice(0, 8);
+      const stem = graphTaskStem(c.runId);
       const picked = resolveTaskQualityMode({ contract: contract.quality_mode, node: node.quality_mode, asked: c.mode, workflow: c.workflow.quality_mode ?? null });
       if (!picked.ok) return { output: failedTask("blocked", picked.detail) };
-      const task = { ...withTaskStandard(contract, node.id), id: `w${stem}-${safeId(str(contract.id) || node.id)}`, project_cwd: run.writer_workspace_path, quality_mode: picked.mode };
+      const standard = withTaskStandard(contract, node.id);
+      const task = { ...standard, id: graphTaskId(stem, str(contract.id) || node.id), depends_on: graphDependsOn(stem, standard.depends_on, (id) => latestRunTaskAttemptState(db, rt.runId, id) !== null),
+        project_cwd: run.writer_workspace_path, quality_mode: picked.mode };
       const valid = validateTaskV2(task);
       if (!valid.ok) return { output: failedTask("failed", `task-v2 invalid: ${valid.errors.join("; ")}`) };
       const hostId = getRunWriterHost(db, rt.runId) ?? "";

@@ -8,7 +8,8 @@ export type { CriticEditRow, CriticEditStore, CriticEditTrialOutcome } from "./c
 export { critiquePrompt, parseCritique } from "./critique";
 export { scanCritiqueCoverage } from "./critique-coverage"
 export { resolveRetryEffort } from "./retry-effort";
-export { FAILURE_TRIAGE_METHOD, SCIENTIFIC_DEBUG_METHOD, roleMethod } from "./role-method"
+export { FAILURE_TRIAGE_METHOD, PLANNER_METHOD, SCIENTIFIC_DEBUG_METHOD, roleMethod } from "./role-method"
 export { taskBrief } from "./task-brief";
 export type { TaskBriefField } from "./task-brief";
 export { markPathsWidened, pathsWidenedOf } from "./critic-level";
+export { roleSelection, sdkCriticCatalog } from "./critic-pair";

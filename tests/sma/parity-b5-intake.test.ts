@@ -24,6 +24,8 @@ function planningPhase(db: ReturnType<typeof openDatabase>, extra: Partial<Phase
     plan: { items, contextSha: context.sha, sha: planSignature(items, context.sha), submittedAt: Date.now(), ...extra,
       critique: { decision: "approve", by: "plan-critic", independence: { ok: true, why: "checker after planner" } } } };
   savePhase(db, "ph_1", { stage: "planning", record, at: 2_000 });
+  // owner.words on is the project's setting: each turn reads it since 0.1.560.
+  saveProjectSetting(db, "proj", "owner.words", "on");
 }
 
 describe("parity b5 intake", () => {

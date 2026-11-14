@@ -8,3 +8,4 @@ export * from "./git-integrate/worktree-dependencies";
 export * from "./git-integrate/owns-barrier";
 export * from "./git-integrate/merge";
 export * from "./git-integrate/worktree-lifecycle";
+export * from "./git-integrate/worktree-layout";

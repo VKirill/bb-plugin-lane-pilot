@@ -55,7 +55,8 @@ import { planWithOutsideReads, planWithRepoScope, rerootTask, rerootToRepoRoot }
 import { appendExcludeCommand, persistTaskFolder } from "../../verification";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { isNotFound, orMiss } from "@lane-pilot/kit";
-import { dispatchRunOf, rerunDispatchStages } from "./dispatch-workflow";
+import { dispatchRunOf, plannerLoopActive, rerunDispatchStages } from "./dispatch-workflow";
+import { PM_STOPPED_PLANNER_LOOP } from "./plan-revise";
 import { noteTaskQa, awaitsWriterAnswer, contractFixRecord, contractFixTurnPrompt, createAttemptReopen, writerQuestion } from "./reopen-attempt";
 import { pendingWordPush } from "./writer-task";
 import { openAttemptWorktree, recordTaskEdition } from "./task-home";
@@ -70,7 +71,7 @@ const STAGES_WAIT_MS = 240_000;
 const IN_PLACE_FIELDS: readonly string[] = ["verification", "acceptance", "expected_outputs", "owns_paths", "never_touch", "plan", "display_title", "kind"];
 
 /** Reasons of a block that happened before any writer: the plan critique (structural, model verdict or its own fault) and the contract validation. */
-const PRE_WRITER_GATE_REASON = /^(?:structural_plan_critique|plan_critique|verdict_block:plan-critique|validation_failed)/;
+const PRE_WRITER_GATE_REASON = /^(?:structural_plan_critique|plan_critique|verdict_block:plan-critique|validation_failed|planner_rounds_exhausted|planner_stopped)/;
 
 /** The top-level fields whose values differ between two contracts. */
 function changedFields(before: TaskV2, after: TaskV2): FieldChange[] {
@@ -177,7 +178,9 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
     }
 
     const attempt = getAttempt(db, latestAttempt.id);
-    if (attempt?.reason === DISPATCH_STAGES_PENDING) {
+    // Inside the planner loop the PM may take the plan over (SMA n1269 ends at the PM): the update stops the loop, the critique runs on the PM's plan.
+    const inPlannerLoop = attempt?.reason === DISPATCH_STAGES_PENDING && plannerLoopActive(db, input.runId, input.taskId);
+    if (attempt?.reason === DISPATCH_STAGES_PENDING && !inPlannerLoop) {
       return {
         ok: false,
         error: { code: "dispatch_in_progress", retryable: true, sideEffects: "none", hint: "The task's pm-read and plan critique are still running; update it once they finish." },
@@ -432,9 +435,9 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
       return { ok: false, error: { code: "pipeline_run_missing", retryable: false, sideEffects: "none", hint: `${input.taskId} has no pipeline run to go again; cancel the task and dispatch it again.` } };
     }
 
-    // Save updated contract and plan in database
-    updateTaskContract(db, input.taskId, valid.task);
+    // Save updated contract and plan in database; an update inside the planner loop says so in its edition, and the planner revises no more.
     saveTaskPlan(db, input.taskId, canonicalPlan);
+    updateTaskContract(db, input.taskId, valid.task, inPlannerLoop ? PM_STOPPED_PLANNER_LOOP : null);
 
     // Persist PLAN.md to task folder
     await persistPlan(config.hostId, taskBase, input.taskId, canonicalPlan, { projectId: input.projectId, task: valid.task });

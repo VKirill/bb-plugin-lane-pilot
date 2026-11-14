@@ -18,7 +18,7 @@ import { mountNativeWiring } from "./src/rooms/core/server/native-wiring";
 import { createProbes } from "./src/rooms/stability/server";
 import { createMemoryProbe } from "./src/rooms/memory-probe/server";
 import { createMemoryConflicts } from "./src/rooms/memory/server";
-import { createReconcile } from "./src/rooms/stability/server";
+import { createReconcile, registerWorktreeCleanupActions } from "./src/rooms/stability/server";
 import { createStability } from "./src/rooms/stability/server";
 import { adoptWaitingRules } from "./src/rooms/self-repair/server";
 import { createRuleScan } from "./src/rooms/self-repair/server";
@@ -94,7 +94,7 @@ import { stageHelperSettings } from "./src/rooms/settings/server";
 import { createWorkflowEngine } from "./src/rooms/workflow/server";
 import { architectStarter, createWorkflowLibrary } from "./src/rooms/workflow/server";
 import { createWorkflowTriggersService } from "./src/rooms/workflow/server";
-import { createScheduleService, registerAgentRoutineActions, scheduleAgentApi } from "./src/rooms/schedule/server";
+import { createScheduleService, ensureSystemSchedules, registerAgentRoutineActions, scheduleAgentApi } from "./src/rooms/schedule/server";
 import { registerSpecialistActions } from "./src/rooms/critique/server";
 import { knownOwnerLocale, relayFor } from "./src/rooms/relay/server";
 import { mountLearning, pendingOwnerLearningItems } from "./src/rooms/learning";
@@ -451,6 +451,10 @@ export default async function plugin(bb: BbPluginApi) {
   registerDispatchExecutors(services.workflowEngine, ctx.bb);
   // The two code steps of `agent-routine`, the graph a schedule of kind agent runs (registered here: the schedule room imports the workflow room, not the other way).
   registerAgentRoutineActions(services.workflowEngine, ctx, services);
+  // The worktree cleanup is two Lane Pilot schedules on the board (graph lp.worktree-cleanup, docs/worktrees.md): its step, then the rows made once.
+  registerWorktreeCleanupActions(services.workflowEngine, ctx, { cleanupStickyLaneWorktrees, cleanupFinishedAttemptEnvironments });
+  void ensureSystemSchedules({ list: () => services.schedules.store.list(), save: (raw, by) => services.schedules.save(raw, by), kv: bb.storage.kv, log: ctx.log })
+    .catch((cause: unknown) => ctx.log(`Lane Pilot system schedules not made: ${cause instanceof Error ? cause.message : String(cause)}`));
   // The brief step of `specialist`, the graph behind lane_pilot_specialist.
   registerSpecialistActions(services.workflowEngine, ctx);
   // The nightly docs of a unit (lp.docs-night) and the docs upkeep of an accepted task (lp.docs-maintenance) run on the engine; the schedules start them.

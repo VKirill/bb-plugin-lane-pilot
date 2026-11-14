@@ -2,9 +2,9 @@
 title: Workflow Store Loading and Validation
 type: component
 created: 2026-10-24
-updated: 2026-11-07
+updated: 2026-11-14
 status: active
-confidence: high
+confidence: low
 tags: [workflow-engine, workflow-store, validation]
 sources:
   - packages/workflow-engine/src/store.ts
@@ -31,18 +31,18 @@ TL;DR: The store reads built-ins and workflow files, filters parse and local val
 
 ### `validateWorkflow` checks
 
-`loadWorkflow` takes an unknown value or JSONC string and never throws for definition errors. A string is parsed with trailing commas enabled; JSONC errors return `ok: false` with `syntax` problems. It then normalizes and schema-parses the value; schema errors return `ok: false` with `schema` problems. The validator accumulates diagnostics; any error returns `ok: false` with all problems, while warning-only results return `{ ok: true, workflow, warnings }` (`packages/workflow-engine/src/validate.ts:496-512`).
+`loadWorkflow` takes an unknown value or JSONC string and never throws for definition errors. A string is parsed with trailing commas enabled; JSONC errors return `ok: false` with `syntax` problems. It then normalizes and schema-parses the value; schema errors return `ok: false` with `schema` problems. The validator accumulates diagnostics; any error returns `ok: false` with all problems, while warning-only results return `{ ok: true, workflow, warnings }` (`packages/workflow-engine/src/validate.ts:550-563`).
 
 | Order | Checks and branches | Reported outcome |
 |---|---|---|
 | Authoring form | Reserved/duplicate node IDs, missing or conflicting entry declarations, duplicate input/output/node fields, schedule cron/timezone, emit map requirements, output status values, emit outgoing edges, and parallel child/join/for_each combinations (`packages/workflow-engine/src/validate.ts:81-122`). | Structural inconsistencies add errors; invalid schedule details add warnings. |
 | Lowered graph | Lower shorthand, index runnable nodes, validate edge endpoints and note edges, require exactly one unconditional start edge and an exit edge (`packages/workflow-engine/src/validate.ts:124-141`). | Unknown endpoints, illegal sentinel edges, missing/multiple/conditional entries, or missing exits add errors. |
 | Routing shape | For each runnable node, check outgoing edges. Parallel edges cannot be conditional; `for_each` parallel nodes need one outgoing edge; ordinary nodes cannot have multiple unconditional edges. | Dead ends and invalid branch shape add errors; conditional routes without `no_fallback` add a warning (`packages/workflow-engine/src/validate.ts:189-200`). |
-| Expressions and references | Parse edge conditions, mappings, templates, value specs, `skip_when`, `reads`, and mode tables. Then check reference scope, node order, field paths and expression types (`packages/workflow-engine/src/validate.ts:170-256`, `packages/workflow-engine/src/validate.ts:258-279`). | Syntax problems become `bad_expr`; reference/type issues become structured error codes; invalid `by_mode` keys or missing mode/default entries add errors. |
-| Cycles and skips | Inspect strongly connected components; require `maxVisits` or an in-loop `visits()` bound. For nodes that can skip, verify declared readers are supplied by `skip_out` (`packages/workflow-engine/src/validate.ts:314-337`). | Unbounded cycles or missing skip values add errors. |
-| Step contracts | Check artifact registry entries, produced fields, `each` list shape, consumed source and producer ordering, and gate expression references (`packages/workflow-engine/src/validate.ts:307-346`). | Contract inconsistencies add errors; missing `produces` on agent/lp-task nodes adds a warning. |
-| Node-specific rules | Check executor availability when configured, presets, agent settings and outputs, human timeout defaults, decision source/order/field compatibility, and parallel list/filter/child rules (`packages/workflow-engine/src/validate.ts:351-453`). | Invalid configuration adds errors; unknown presets/models, ignored agent environment settings, and empty prompts add warnings. A supplied specialist lookup rejects unknown literal `specialist:<id>` roles (`packages/workflow-engine/src/validate.ts:395-397`); produced-artifact enum values missing from both the prompt and generated output contract produce a warning (`packages/workflow-engine/src/validate.ts:402-404`, `packages/workflow-engine/src/prompt-coverage.ts:21-31`). |
-| Subworkflow closure | When a resolver is supplied, calculate nested depth and detect recursive calls (`packages/workflow-engine/src/validate.ts:488-492`). | Recursive calls or depth beyond the lower of workflow and schema limits add errors. |
+| Expressions and references | Parse edge conditions, mappings, templates, value specs, `skip_when`, `reads`, and mode tables. Then check reference scope, node order, field paths, prompt node reachability (`ref_may_not_run`), and expression types (`packages/workflow-engine/src/validate.ts:170-256`, `packages/workflow-engine/src/validate.ts:258-309`). | Syntax problems become `bad_expr`; reference/type issues become structured error codes; paths from `$start` that can skip a prompt-referenced node add `ref_may_not_run` warnings; invalid `by_mode` keys or missing mode/default entries add errors. |
+| Cycles and skips | Inspect strongly connected components; require `maxVisits` or an in-loop `visits()` bound. For nodes that can skip, verify declared readers are supplied by `skip_out` (`packages/workflow-engine/src/validate.ts:320-344`). | Unbounded cycles or missing skip values add errors. |
+| Step contracts | Check artifact registry entries, produced fields, `each` list shape, consumed source and producer ordering, and gate expression references (`packages/workflow-engine/src/validate.ts:347-385`). | Contract inconsistencies add errors; missing `produces` on agent/lp-task nodes adds a warning. |
+| Node-specific rules | Check executor availability when configured, presets, agent settings and outputs, human timeout defaults, decision source/order/field compatibility, parallel list/filter/child rules, bare `$ref` values in `subworkflow.with`, and `lp.propose_workflow` actions (`packages/workflow-engine/src/validate.ts:397-536`). | Invalid configuration, bare `$ref` `subworkflow.with` entries (`subworkflow_input`), and unresolved literal `lp.propose_workflow` workflow IDs (`propose_workflow_missing`) add errors; unknown presets/models, ignored agent environment settings, missing `lp.propose_workflow` inputs (`propose_workflow_input`), and empty prompts add warnings. A supplied specialist lookup rejects unknown literal `specialist:<id>` roles (`packages/workflow-engine/src/validate.ts:402-404`); produced-artifact enum values missing from both the prompt and generated output contract produce a warning (`packages/workflow-engine/src/validate.ts:409`, `packages/workflow-engine/src/prompt-coverage.ts:21-31`). |
+| Subworkflow closure | When a resolver is supplied, calculate nested depth and detect recursive calls (`packages/workflow-engine/src/validate.ts:539-543`). | Recursive calls or depth beyond the lower of workflow and schema limits add errors. |
 
 ## Modes and outcomes
 
@@ -52,12 +52,12 @@ TL;DR: The store reads built-ins and workflow files, filters parse and local val
 | Global/project directory absent | No directory is listed (`packages/workflow-engine/src/store.ts:61-62`). | That origin contributes no file definitions. |
 | Default source sees missing directory | `nodeFileSource.list` catches `ENOENT` (`packages/workflow-engine/src/store.ts:16-20`). | Empty path list, without a problem. |
 | Listing or reading fails | Store catches each exception (`packages/workflow-engine/src/store.ts:63-68`). | Adds an origin/source `read` problem and continues with other entries. |
-| Parse/schema/local validation fails | `loadWorkflow` returns `ok: false` (`packages/workflow-engine/src/validate.ts:499-512`). | Adds its problems and excludes the entry before precedence is applied (`packages/workflow-engine/src/store.ts:74-77`). |
+| Parse/schema/local validation fails | `loadWorkflow` returns `ok: false` (`packages/workflow-engine/src/validate.ts:550-563`). | Adds its problems and excludes the entry before precedence is applied (`packages/workflow-engine/src/store.ts:74-77`). |
 | Duplicate workflow ID | Successful entries are sorted and assigned into `first` by ID (`packages/workflow-engine/src/store.ts:72`, `packages/workflow-engine/src/store.ts:79`). | Highest origin rank wins; later item wins for equal rank. |
 | Selected definition fails merged validation | The resolver is available during pass 2 (`packages/workflow-engine/src/store.ts:81-89`). | Records errors and excludes the ID; no lower-ranked fallback is attempted. |
 | Optional status override | Called only after selected definition passes validation (`packages/workflow-engine/src/store.ts:90-94`). | Different status replaces the returned workflow status and appends override notes. |
 
-`loadWorkflow` returns either `{ ok: false, problems }` or `{ ok: true, workflow, warnings }`; syntax, schema, and validation errors are represented as problems, while warnings preserve a successful load (`packages/workflow-engine/src/validate.ts:499-512`).
+`loadWorkflow` returns either `{ ok: false, problems }` or `{ ok: true, workflow, warnings }`; syntax, schema, and validation errors are represented as problems, while warnings preserve a successful load (`packages/workflow-engine/src/validate.ts:550-563`).
 
 ## Business rules
 

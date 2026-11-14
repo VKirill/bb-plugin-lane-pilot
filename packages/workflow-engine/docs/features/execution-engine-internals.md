@@ -2,12 +2,15 @@
 title: Workflow Execution Engine Internals
 type: component
 created: 2026-10-28
-updated: 2026-11-11
+updated: 2026-11-14
 status: active
-confidence: high
+confidence: medium
 tags: [workflow-engine, execution, journal, reducers]
 sources:
   - packages/workflow-engine/src/engine.ts
+  - packages/workflow-engine/src/compiled.ts
+  - packages/workflow-engine/src/engine-builtins.ts
+  - packages/workflow-engine/src/engine-step.ts
   - packages/workflow-engine/src/journal.ts
   - packages/workflow-engine/src/reducers.ts
   - packages/workflow-engine/src/actions.ts
@@ -19,13 +22,13 @@ TL;DR: Engine setup, code-only actions and reducers, and journal writes define t
 
 ## Purpose
 
-This page records the branch behavior of `WorkflowEngine` preparation (`packages/workflow-engine/src/engine.ts:204-277`), `pureActionExecutor` (`packages/workflow-engine/src/actions.ts:194-202`), registered reducers with `registerReducers` (`packages/workflow-engine/src/reducers.ts:152-160`), `createJournal` (`packages/workflow-engine/src/journal.ts:151-191`), and the `workflowMigrations` SQL array (`packages/workflow-engine/src/journal.ts:10-105`). Run execution and public configuration are covered by [Workflow Execution Engine](execution-engine.md).
+This page records the branch behavior of `WorkflowEngine` preparation (`packages/workflow-engine/src/engine.ts:39-93`, `packages/workflow-engine/src/compiled.ts:14-26`, `packages/workflow-engine/src/engine-builtins.ts:20-91`), `pureActionExecutor` (`packages/workflow-engine/src/actions.ts:194-202`), registered reducers with `registerReducers` (`packages/workflow-engine/src/reducers.ts:152-160`), `createJournal` (`packages/workflow-engine/src/journal.ts:151-191`), and the `workflowMigrations` SQL array (`packages/workflow-engine/src/journal.ts:10-105`). Run execution and public configuration are covered by [Workflow Execution Engine](execution-engine.md).
 
 ## How it works
 
-1. `WorkflowEngine` chooses its clock, creates the journal, picks an instance ID and lease duration, and registers built-ins (`packages/workflow-engine/src/engine.ts:204-228`). `register` then adds or replaces executor-map entries; `hasExecutor` queries that map (`packages/workflow-engine/src/engine.ts:230-231`).
-2. `compile` indexes executable nodes, groups outgoing edges, parses non-start edge conditions and `skip_when`, and maps joins by parallel ID. `compiled` caches the compiled form by run ID (`packages/workflow-engine/src/engine.ts:245-263`).
-3. `preflight` combines workflow validation errors — under an optional resolver argument that defaults to the engine's — with missing executor-key/registration problems. It skips note nodes and returns the list without starting a run (`packages/workflow-engine/src/engine.ts:267-277`).
+1. `WorkflowEngine` chooses its clock, creates the journal, picks an instance ID and lease duration, and registers built-ins (`packages/workflow-engine/src/engine.ts:40-63`, `packages/workflow-engine/src/engine-builtins.ts:20-91`). `register` then adds or replaces executor-map entries; `hasExecutor` queries that map (`packages/workflow-engine/src/engine.ts:65-66`).
+2. `compile` indexes executable nodes, groups outgoing edges, parses non-start edge conditions and `skip_when`, and maps joins by parallel ID (`packages/workflow-engine/src/compiled.ts:14-26`). `compiled` caches the compiled form by run ID (`packages/workflow-engine/src/engine.ts:76-80`).
+3. `preflight` combines workflow validation errors — under an optional resolver argument that defaults to the engine's — with missing executor-key/registration problems. It skips note nodes and returns the list without starting a run (`packages/workflow-engine/src/engine.ts:83-93`).
 4. `pureActionExecutor` looks up the action, chooses its declared read references (or the fixed `verdict.aggregate` list), invokes code with the node/params/context, and returns the action output plus optional detail (`packages/workflow-engine/src/actions.ts:194-202`).
 5. `registerReducers` installs executors that receive `results`, `failed`, `rows`, and `items`, defaulting missing values to empty arrays, then calls the reducer registered for that key (`packages/workflow-engine/src/reducers.ts:152-160`).
 6. Journal methods read rows, append events, and conditionally change step/run state. `moveStep` enforces its transition table and expected source state before returning success (`packages/workflow-engine/src/journal.ts:151-188`).
@@ -44,7 +47,7 @@ How `REDUCERS` works (`packages/workflow-engine/src/reducers.ts:33-150`):
   - Review pairing (`reduce.lp.review.dims`, `reduce.lp.review.confirm`): sorts findings by severity rank (`critical` to `info`), counts critical and high issues, and drops findings only when a branch succeeded with `confirmed === false` (`packages/workflow-engine/src/reducers.ts:88-94`, `packages/workflow-engine/src/reducers.ts:95-103`).
   - Aggregation (`reduce.web-research.search`, `reduce.x-to-telegram-digest.score`): deduplicates sources by URL and filters scores where `keep !== false`, collecting unique topics (`packages/workflow-engine/src/reducers.ts:131-135`, `packages/workflow-engine/src/reducers.ts:137-149`).
 
-- **Outcomes and failures**: Each reducer returns a plain record that becomes the join step's `output` (`packages/workflow-engine/src/reducers.ts:153-159`). Missing input collections default to empty lists or records without throwing. A reducer error or malformed row structure that throws an unhandled exception rejects the executor call and enters the engine's `maxAttempts` retry path (`packages/workflow-engine/src/reducers.ts:152-160`, `packages/workflow-engine/src/engine.ts:923-950`). The per-key outputs are tabulated in [Workflow Execution Runtime Internals](execution-runtime-internals.md).
+- **Outcomes and failures**: Each reducer returns a plain record that becomes the join step's `output` (`packages/workflow-engine/src/reducers.ts:153-159`). Missing input collections default to empty lists or records without throwing. A reducer error or malformed row structure that throws an unhandled exception rejects the executor call and enters the engine's `maxAttempts` retry path (`packages/workflow-engine/src/reducers.ts:152-160`, `packages/workflow-engine/src/engine-step.ts:192-247`). The per-key outputs are tabulated in [Workflow Execution Runtime Internals](execution-runtime-internals.md).
 
 ### `workflowMigrations`
 
@@ -57,20 +60,20 @@ How `REDUCERS` works (`packages/workflow-engine/src/reducers.ts:33-150`):
 5. `lane_pilot_wf_effect` with a CHECK on its four-state `state` and `UNIQUE(run_id,step_key,effect_key)` (`packages/workflow-engine/src/journal.ts:79-91`).
 6. `lane_pilot_wf_event` with an autoincrementing `seq`, a `(run_id,seq)` index, and two triggers that `RAISE(ABORT)` on any UPDATE or DELETE, which is what makes the timeline append-only (`packages/workflow-engine/src/journal.ts:92-104`).
 
-Outcomes and failures: the statements are plain `CREATE TABLE`/`INDEX`/`TRIGGER` without `IF NOT EXISTS`, so the list is applied once per database and applying it again fails on the existing table (`packages/workflow-engine/src/journal.ts:11`, `packages/workflow-engine/src/journal.ts:43`). From then on the CHECKs and unique indexes reject invalid status/state values and duplicate keys at write time; a statement that fails midway leaves the earlier ones applied, and recovery is the host's decision.
+Outcomes and failures: the statements are plain `CREATE TABLE`/`INDEX`/`TRIGGER` without `IF NOT EXISTS`, so the list is applied once per database and applying it again fails on the existing table (`packages/workflow-engine/src/journal.ts:10-105`). From then on the CHECKs and unique indexes reject invalid status/state values and duplicate keys at write time; a statement that fails midway leaves the earlier ones applied, and recovery is the host's decision.
 
 ## Modes and outcomes
 
 | Operation | Branch | Result or failure |
 |---|---|---|
-| Preflight | Note node | Skipped by executor checks and omitted from the executable-node map (`packages/workflow-engine/src/engine.ts:246-247`, `packages/workflow-engine/src/engine.ts:271-272`). |
-| Preflight | Runnable node has no executor key or key is unregistered | Adds a node problem and returns it with validation errors (`packages/workflow-engine/src/engine.ts:267-277`). |
-| Compilation | Edge is from `$start` | No condition AST is compiled for that edge; other edges with `when` are converted with `toExpr` (`packages/workflow-engine/src/engine.ts:249-253`). |
+| Preflight | Note node | Skipped by executor checks and omitted from the executable-node map (`packages/workflow-engine/src/compiled.ts:14-18`, `packages/workflow-engine/src/engine.ts:87`). |
+| Preflight | Runnable node has no executor key or key is unregistered | Adds a node problem and returns it with validation errors (`packages/workflow-engine/src/engine.ts:83-93`). |
+| Compilation | Edge is from `$start` | No condition AST is compiled for that edge; other edges with `when` are converted with `toExpr` (`packages/workflow-engine/src/compiled.ts:19-23`). |
 | Pure action | `verdict.aggregate` | Uses the fixed `AGGREGATE_READS` list instead of `node.reads` (`packages/workflow-engine/src/actions.ts:190`, `packages/workflow-engine/src/actions.ts:198`). |
 | Pure action | Other registered key | Uses `node.reads` or an empty list; out-of-range indexed reads return `undefined` (`packages/workflow-engine/src/actions.ts:198-200`). |
-| Pure action | Unknown key or action throws | The map lookup has no fallback; action call failure propagates to the engine attempt path (`packages/workflow-engine/src/actions.ts:194-202`, `packages/workflow-engine/src/engine.ts:923-950`). |
+| Pure action | Unknown key or action throws | The map lookup has no fallback; action call failure propagates to the engine attempt path (`packages/workflow-engine/src/actions.ts:194-202`, `packages/workflow-engine/src/engine-step.ts:192-247`). |
 | Reducer | Missing wrapper collection | `results`, `failed`, `rows`, or `items` defaults to `[]` (`packages/workflow-engine/src/reducers.ts:152-160`). |
-| Reducer | Present malformed collection or thrown reducer error | No shape check or catch is applied; the executor rejects and the engine handles an attempt failure (`packages/workflow-engine/src/reducers.ts:152-160`, `packages/workflow-engine/src/engine.ts:923-950`). |
+| Reducer | Present malformed collection or thrown reducer error | No shape check or catch is applied; the executor rejects and the engine handles an attempt failure (`packages/workflow-engine/src/reducers.ts:152-160`, `packages/workflow-engine/src/engine-step.ts:192-247`). |
 | Journal event | Event insert succeeds | Listener is called after insert; listener exceptions are swallowed (`packages/workflow-engine/src/journal.ts:156-161`). |
 | Journal step transition | Allowed transition and expected current state | Updates the step, emits a `step` event, returns `true` (`packages/workflow-engine/src/journal.ts:163-180`). |
 | Journal step transition | Illegal transition or stale/missing current state | Illegal transition throws; conditional update with no row emits `refused` and returns `false` (`packages/workflow-engine/src/journal.ts:163-180`). |
@@ -78,7 +81,7 @@ Outcomes and failures: the statements are plain `CREATE TABLE`/`INDEX`/`TRIGGER`
 
 ## Business rules
 
-- Compilation excludes `note` nodes, while preflight also skips them when checking executor registration (`packages/workflow-engine/src/engine.ts:246-247`, `packages/workflow-engine/src/engine.ts:271-272`).
+- Compilation excludes `note` nodes, while preflight also skips them when checking executor registration (`packages/workflow-engine/src/compiled.ts:15-17`, `packages/workflow-engine/src/engine.ts:87`).
 - `pureActionExecutor` marks actions reentrant; its fixed map contains `items.dedupe`, `dag.validate`, `digest.check`, `citations.check`, `verdict.aggregate`, `lp.path_class`, and `lp.propose_workflow` (`packages/workflow-engine/src/actions.ts:185-188`, `packages/workflow-engine/src/actions.ts:194-202`). `verdict.aggregate` reads the fixed `prepass.findings` reference in addition to dimension findings, dropped IDs, unchecked dimensions, and unmet criteria (`packages/workflow-engine/src/actions.ts:189-199`).
 - Reducers are deterministic functions. `done` preserves branch order and supplies `{}` for missing data; `lost` selects non-ok rows. Per-key reducer outputs and their result-field conditions are listed in [Execution Engine reducer details](execution-engine.md#registerreducers) (`packages/workflow-engine/src/reducers.ts:19-28`, `packages/workflow-engine/src/reducers.ts:33-150`).
 - Journal step writes are compare-and-set updates: callers supply allowed source states, and a competing writer cannot overwrite a state that no longer matches (`packages/workflow-engine/src/journal.ts:163-180`).
@@ -88,14 +91,14 @@ Outcomes and failures: the statements are plain `CREATE TABLE`/`INDEX`/`TRIGGER`
 
 | Export | Purpose |
 |---|---|
-| `WorkflowEngine.register`, `hasExecutor`, `preflight` | Register executors, query registration, and collect validation/executor problems (`packages/workflow-engine/src/engine.ts:230-233`, `packages/workflow-engine/src/engine.ts:267-277`). |
+| `WorkflowEngine.register`, `hasExecutor`, `preflight` | Register executors, query registration, and collect validation/executor problems (`packages/workflow-engine/src/engine.ts:65-68`, `packages/workflow-engine/src/engine.ts:83-93`). |
 | `pureActionExecutor`, `PURE_ACTION_KEYS`, `registerPureActions` | Create and register deterministic action executors (`packages/workflow-engine/src/actions.ts:192-207`). |
 | `REDUCERS`, `registerReducers` | Map join reducer keys to functions and install them on an engine (`packages/workflow-engine/src/reducers.ts:33-136`). |
 | `workflowMigrations`, `createJournal`, `STEP_TRANSITIONS` | Export SQL statements, journal methods, and allowed step transitions (`packages/workflow-engine/src/journal.ts:10-12`, `packages/workflow-engine/src/journal.ts:116-122`, `packages/workflow-engine/src/journal.ts:151-191`). |
 
 ## Gotchas
 
-- `preflight` can return multiple problems; it does not mutate run state or start execution (`packages/workflow-engine/src/engine.ts:267-277`).
+- `preflight` can return multiple problems; it does not mutate run state or start execution (`packages/workflow-engine/src/engine.ts:83-93`).
 - A journal event notification callback is best-effort after the database insert; callback failure does not roll back the event (`packages/workflow-engine/src/journal.ts:156-161`).
 - `workflowMigrations` is data only. The host owns database migration execution (`packages/workflow-engine/src/journal.ts:10-105`).
 

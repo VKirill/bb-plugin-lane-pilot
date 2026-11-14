@@ -2,8 +2,14 @@ import { PLAN_ROUNDS_MAX, ambiguityScore, coverageGaps, openQuestions, threatGap
 import { RISK_KINDS, type PhaseRecord, type PhaseStage, type PlanItem } from "./record";
 import { contextSignature, planSignature } from "./signatures";
 import { wordOf } from "./words";
+import { cycleText, planGraph } from "../../tasks";
+import { wordAsked, wordReason } from "./words-policy";
 
 // ---------------------------------------------------------------- gates
+
+/** The pieces of the plan a piece names in depends_on. */
+export const pieceDeps = (item: Pick<PlanItem, "task">): string[] =>
+  Array.isArray(item.task.depends_on) ? (item.task.depends_on as unknown[]).filter((dep): dep is string => typeof dep === "string" && dep.length > 0) : [];
 
 export type GateResult = { ok: true } | { ok: false; why: string[] };
 export const gate = (why: string[]): GateResult => (why.length ? { ok: false, why } : { ok: true });
@@ -26,19 +32,35 @@ export function discussionGate(record: PhaseRecord): GateResult {
   return gate(why);
 }
 
-/** The waves come out of depends_on: a piece depends only on pieces of the plan and of an earlier wave, and nothing loops. */
+/**
+ * The waves come out of depends_on (SMA bf_waves, p2_waves): the dependency graph of the pieces is laid out by code, and a plan whose
+ * waves cannot be computed — a cycle, a link to a piece the plan does not hold, a piece with no wave — is not admitted. A piece's
+ * wave is its address: it must be later than the waves of the pieces it depends on.
+ */
 export function waveProblems(items: readonly PlanItem[]): string[] {
   const byId = new Map(items.map((item) => [item.id, item]));
+  const graph = planGraph(items.map((item) => ({ id: item.id, depends_on: pieceDeps(item) })));
   const why: string[] = [];
+  if (graph.cycle) why.push(`the pieces depend on each other in a cycle (${cycleText(graph.cycle)}): no wave can be computed for them — drop the link that is not a real output dependency`);
   for (const item of items) {
-    const deps = Array.isArray(item.task.depends_on) ? (item.task.depends_on as unknown[]).filter((dep): dep is string => typeof dep === "string") : [];
-    for (const dep of deps) {
+    if (!Number.isInteger(item.wave) || item.wave < 1) why.push(`${item.id} has no wave: a piece's wave is computed from its depends_on, submit it without one`);
+    for (const dep of pieceDeps(item)) {
       const other = byId.get(dep);
       if (!other) why.push(`${item.id} depends on ${dep}, which is not in the plan`);
-      else if (other.wave >= item.wave) why.push(`${item.id} (wave ${item.wave}) depends on ${dep} of wave ${other.wave}: a dependency belongs to an earlier wave`);
+      else if (dep !== item.id && other.wave >= item.wave) why.push(`${item.id} (wave ${item.wave}) depends on ${dep} of wave ${other.wave}: a dependency belongs to an earlier wave`);
     }
   }
   return why;
+}
+
+/**
+ * The plan's pieces with the waves laid out from their depends_on (SMA bf_waves): a piece without a wave gets 1 + the highest wave of
+ * the pieces it depends on; a wave already given stays (an address the PM or a replan chose, checked by waveProblems). Pieces on a
+ * cycle get none (wave 0), so the plan gate refuses the plan instead of slipping them into wave 1.
+ */
+export function withComputedWaves<T extends { id: string; wave?: number; task: Record<string, unknown> }>(items: readonly T[]): Array<T & { wave: number }> {
+  const computed = planGraph(items.map((item) => ({ id: item.id, depends_on: pieceDeps(item) }))).waveOf;
+  return items.map((item) => ({ ...item, wave: Number.isInteger(item.wave) && item.wave! >= 1 ? item.wave! : computed[item.id] ?? 0 }));
 }
 
 /** Will each piece become a work: a task with an id equal to the piece, owned paths, and a check that can run. */
@@ -71,8 +93,13 @@ export function acceptanceCommands(line: string): string[] {
   return [...found];
 }
 
-/** The plan gate's last refusal when the project asks for the owner's word: it is the owner's to give, not a gap of the plan the machine could plan away. */
-export const PLAN_WORD_GAP = "the plan awaits the owner's word (owner.words is on)";
+/**
+ * The plan gate's last refusal when this plan's turn asks for the owner's word: it is the owner's to give, not a gap of the plan the machine
+ * could plan away. The reason follows after a colon and names the class (default-path audit §5.4.6): «the plan awaits the owner's word: it
+ * touches a database migration or data change (a: path:migrations/0001.sql)», or the mode on `on` / `risky`.
+ */
+export const PLAN_WORD_GAP = "the plan awaits the owner's word";
+export const isPlanWordGap = (reason: string): boolean => reason.startsWith(PLAN_WORD_GAP);
 export const INDEPENDENCE_GAP = "the plan check is not proven independent";
 
 /** Planning → admission: every piece becomes a work, waves are computable, the plan was built on the signed context, and an independent checker approved it. */
@@ -105,7 +132,7 @@ export function planGate(record: PhaseRecord): GateResult {
   // Only where the phase was opened with phase.ambiguity_gate on; every other record's plan gate is the one it always was.
   const ambiguity = record.ambiguityGate === true ? ambiguityScore(record) : 0;
   if (ambiguity > 0.5) why.push(`the context's ambiguity is ${ambiguity} (above 0.5): answer the open questions before planning`);
-  if (record.ownerWords && wordOf(record, "planning")?.decision !== "yes") why.push(PLAN_WORD_GAP);
+  if (wordAsked(record, "planning") && wordOf(record, "planning")?.decision !== "yes") why.push(`${PLAN_WORD_GAP}: ${wordReason(record, "planning")}`);
   return gate(why);
 }
 

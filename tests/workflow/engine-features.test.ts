@@ -203,6 +203,22 @@ describe("order depends_on and on_child_fail", () => {
     expect(Object.values(stepStates(db, summary.runId)).filter((state) => state === "canceled")).toHaveLength(2);
   });
 
+  it("on_child_fail block_dependents: a code task that is not accepted blocks its dependents; they are never dispatched", async () => {
+    const dispatched: string[] = [];
+    const task = ok((ctx: StepContext) => { const id = String((ctx.input.item as Row).id); dispatched.push(id); return { state: id === "a" ? "blocked" : "accepted", label: id }; });
+    const child = { type: "lp-task", contract: "{{item}}", out: { state: "string", label: "string" } };
+    const items = [{ id: "a" }, { id: "b", depends_on: ["a"] }, { id: "c", depends_on: ["b"] }, { id: "d" }];
+    const { db, started } = run(fan({ order: "depends_on", on_child_fail: "block_dependents" }, {}, child), { "lp-task": task }, items);
+    const summary = await started.done;
+    expect(summary.status).toBe("succeeded");
+    expect(dispatched.sort()).toEqual(["a", "d"]);
+    const join = rows<{ input_json: string }>(db, "SELECT input_json FROM lane_pilot_wf_step WHERE run_id=? AND node_id='fan'", summary.runId)[0]!;
+    expect(JSON.parse(join.input_json).with.failed).toEqual([
+      { branch: 1, item: { id: "b", depends_on: ["a"] }, error: "upstream_blocked:a", blocked: true },
+      { branch: 2, item: { id: "c", depends_on: ["b"] }, error: "upstream_blocked:b", blocked: true },
+    ]);
+  });
+
   it("without on_child_fail a failed item still fails an `all` join", async () => {
     const { started } = run(fan({ order: "depends_on" }), { work: work(["a"]) }, [{ id: "a" }, { id: "b", depends_on: ["a"] }]);
     expect(await started.done).toMatchObject({ status: "failed", error: "boom a" });

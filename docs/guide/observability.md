@@ -6,9 +6,13 @@ status: active
 created: 2026-11-06
 confidence: medium
 tags: [guide, observability]
-updated: 2026-11-06
+updated: 2026-11-14
 sources:
   - src/rooms/owner-waiting/server/index.ts
+  - src/rooms/reports/server/index.ts
+  - src/rooms/reports/server/daily.ts
+  - src/rooms/reports/server/owner-push.ts
+  - src/rooms/reports/server/telegram.ts
   - src/rooms/schedule/server/index.ts
   - src/rooms/wall/server/index.ts
 ---
@@ -23,10 +27,10 @@ The night loop writes a journal (`lane_pilot_wall_*` tables) of failure classes,
 
 ## Daily report and the owner push (Telegram)
 
-Lane Pilot has no Telegram sender of its own. Two shell scripts in `scripts/` run on the hub, are installed by hand next to `~/.config/lp-metrics/tg.env`, and post through the Telegram Bot API:
+`mountReports` registers the plugin's two Telegram schedules (`owner-push` and `daily-report`) using Env Catalog secrets `TG_AIVECH_BOT`, `TG_OWNER_CHAT_ID`, and `LANE_PILOT_TG_TOPIC` (`src/rooms/reports/server/index.ts:33-57`, `src/rooms/reports/server/telegram.ts:8-36`). The older hub shell scripts (`scripts/lp-metrics-daily.sh`, `scripts/lp-owner-push.sh`) remain in `scripts/` only as retired fallbacks.
 
-- The daily report is the plugin schedule `daily-report` (src/rooms/reports; it was `lp-metrics-daily.sh` as a BB automation): the first hourly tick from 09:00 in the owner's time zone (`owner_push.timezone`, Europe/Madrid), once a day. It reads the hub database read-only and sends a Russian-language daily report for real projects on the current version (stability headline, failure origins, sandbox and old-version lines, usage coverage, deferrals), then appends `lp-morning.sql`, `lp-wall-morning.sql`, graph coverage and outage lines when those files are installed. `DRY_RUN=1` prints it. `lp-metrics.sh [days]` prints the same metrics on the command line.
-- The plugin schedule `owner-push` (every 30 minutes; it was `lp-owner-push.sh` in the hub crontab) sends the digest to Telegram. Bot, chat and topic are Env Catalog records `TG_AIVECH_BOT`, `TG_OWNER_CHAT_ID`, `LANE_PILOT_TG_TOPIC`; `bb lane-pilot waiting config dry_run=on` composes and logs the text without sending or acknowledging. It It asks the RPC `owner_waiting_digest`, sends the text, then calls `owner_waiting_ack`. Only items that wake the owner are pushed, one message per waiting, nothing in quiet hours (`owner_push.quiet` `23:00-08:00`, `owner_push.timezone` `Europe/Madrid`, `owner_push.enabled` `true`), at most six items named.
+- The daily report runs via the plugin schedule `daily-report` (`src/rooms/reports/server/index.ts:43-56`): the first hourly tick from 09:00 in the owner's time zone (`owner_push.timezone`, Europe/Madrid), once a day. `buildDailyReport` reads the hub database read-only and sends a Russian-language daily report for real projects on the current version (stability headline, failure origins, sandbox and old-version lines, usage coverage, deferrals), then appends `scripts/lp-morning.sql`, `scripts/lp-wall-morning.sql`, `scripts/lp-graph-coverage.sql` from the plugin directory and outage rows when present (`src/rooms/reports/server/daily.ts:51-108`). `bb lane-pilot waiting config dry_run=on` logs the text once a day under `daily_dry_day` without sending (`src/rooms/reports/server/index.ts:18`, `:35`, `:47-52`); `lp-metrics.sh [days]` prints the same metrics on the command line.
+- The plugin schedule `owner-push` runs every 30 minutes (`src/rooms/reports/server/index.ts:37-41`); `runOwnerPush` queries `owner_waiting_digest`, sends the text, and then calls `owner_waiting_ack` (`src/rooms/reports/server/owner-push.ts:12-31`). Bot, chat and topic are Env Catalog records `TG_AIVECH_BOT`, `TG_OWNER_CHAT_ID`, `LANE_PILOT_TG_TOPIC`; `bb lane-pilot waiting config dry_run=on` composes and logs the text without sending or acknowledging. Only items that wake the owner are pushed, one message per waiting, nothing in quiet hours (`owner_push.quiet` `23:00-08:00`, `owner_push.timezone` `Europe/Madrid`, `owner_push.enabled` `true`), at most six items named.
 
 ## Waiting for the owner
 

@@ -26,6 +26,69 @@ def verification_ran(ctx: "Context", task_ids: list[str]) -> dict[str, bool]:
     return found
 
 
+def worktree_leftovers(cwd: str, task: dict, registry: list[dict]) -> list[str]:
+    """After a task was accepted and merged nothing of its worktree is left (docs/worktrees.md, SMA ta_cleanup): no entry in
+    `git worktree list`, no branch lane/<attempt>, no folder, and every lane_pilot_worktree row of the attempt released.
+    `registry` holds the attempt's rows (owner_id = attempt id) with path and released_at."""
+    path, attempt, name = task.get("workspace"), task.get("attempt"), task.get("task")
+    if task.get("state") != "accepted" or not path or not attempt:
+        return []
+    problems = []
+    tops = [line[len("worktree "):] for line in git(cwd, "worktree", "list", "--porcelain").splitlines() if line.startswith("worktree ")]
+    held = [top for top in tops[1:] if path == top or path.startswith(top.rstrip("/") + "/")]
+    if held:
+        problems.append(f"{name}: git worktree list still has {held[0]}")
+    if git(cwd, "branch", "--list", f"lane/{attempt}"):
+        problems.append(f"{name}: branch lane/{attempt} is still there after the merge")
+    if Path(path).exists():
+        problems.append(f"{name}: the folder {path} is still on disk after the merge")
+    if not registry:
+        problems.append(f"{name}: no lane_pilot_worktree row for attempt {attempt}")
+    for row in registry:
+        if not row.get("released_at"):
+            problems.append(f"{name}: lane_pilot_worktree row of {row.get('path')} is not released")
+    return problems
+
+
+def worktree_registry(attempts: list[str]) -> dict[str, list[dict]]:
+    """attempt id -> its lane_pilot_worktree rows."""
+    known = [a for a in attempts if a]
+    out: dict[str, list[dict]] = {a: [] for a in known}
+    if not known:
+        return out
+    quoted = ",".join("'" + a.replace("'", "''") + "'" for a in known)
+    for row in hubsql(f"select owner_id, path, released_at from lane_pilot_worktree where owner_kind='attempt' and owner_id in ({quoted});"):
+        out.setdefault(row["owner_id"], []).append(row)
+    return out
+
+
+CLEANUP_SCHEDULES = ("system:worktree-cleanup-hourly", "system:worktree-cleanup-daily")
+
+
+def cleanup_schedule_problems(rows: list[dict]) -> list[str]:
+    """The janitor runs as two system schedules (docs/worktrees.md): each must exist and its last finished run must not have failed.
+    0.1.562 shipped with both ending `start_failed` (a starter graph refused by the trigger) and the merge-time checks above stayed green.
+    `rows`: one per system schedule (created_by, name, state) with its last finished run (status, reason, error), nulls if it never ran."""
+    problems = []
+    by = {row.get("created_by"): row for row in rows}
+    for key in CLEANUP_SCHEDULES:
+        row = by.get(key)
+        if not row:
+            problems.append(f"the system schedule {key} is not on the board")
+            continue
+        if row.get("status") == "failed":
+            problems.append(f"«{row.get('name')}» last run failed ({row.get('reason') or 'no reason'}): {(row.get('error') or '')[:200]}")
+    return problems
+
+
+def cleanup_schedule_rows() -> list[dict]:
+    quoted = ",".join("'" + key + "'" for key in CLEANUP_SCHEDULES)
+    return hubsql(f"""select s.created_by, s.name, s.state, r.status, r.reason, r.error from lane_pilot_schedule s
+      left join lane_pilot_schedule_run r on r.id = (select id from lane_pilot_schedule_run where schedule_id = s.id and finished_at is not null
+        and status <> 'skipped' order by finished_at desc limit 1)
+      where s.created_by in ({quoted});""")
+
+
 def scenario_parallel3(ctx: Context) -> dict:
     specs = tasks_parallel3(ctx.cwd)
     with ThreadPoolExecutor(3) as pool:
@@ -49,7 +112,15 @@ def scenario_parallel3(ctx: Context) -> dict:
     if accepted and not all(ran.values()):
         problems.append(f"the verification stage did not run the task's check with exit 0: {', '.join(t for t, ok in ran.items() if not ok)}")
     problems += provider_problems(tasks)
-    return verdict("parallel3", problems, tasks=tasks, checks={"allAccepted": accepted, "eachInOwnWorktree": own, "filesInSandbox": merged, "checksRan": all(ran.values())},
+    # The merge removed what it merged: worktree, branch, folder, registry row (0.1.561; before it the default path left them to the janitor).
+    registry = worktree_registry([t["attempt"] for t in tasks])
+    leftovers = [p for t in tasks for p in worktree_leftovers(ctx.cwd, t, registry.get(t["attempt"] or "", []))]
+    problems += leftovers
+    # What the merge leaves is the janitor's: its two schedules must actually start and finish (they did not in 0.1.562).
+    cleanup = cleanup_schedule_problems(cleanup_schedule_rows())
+    problems += cleanup
+    return verdict("parallel3", problems, tasks=tasks, checks={"allAccepted": accepted, "eachInOwnWorktree": own, "filesInSandbox": merged, "checksRan": all(ran.values()), "worktreesGone": accepted and not leftovers,
+                   "cleanupSchedulesRun": not cleanup},
                    dispatch={s["id"]: ctx.dispatches.get(s["id"]) for s in specs})
 def flow_contract_stages() -> set[str]:
     """Stage ids a receipt of the task pipeline may carry: the graph's agent/subworkflow nodes plus the writer node's own stages."""

@@ -5,8 +5,9 @@ import { planningText } from "../../contracts";
 import { threatGap } from "../stages";
 import { bestEffort, parseJsonOr, sha256Hex } from "@lane-pilot/kit";
 import { CRITIQUE_AXES, type DesignJournalLine } from "@lane-pilot/contracts";
-import { PLAN_WORD_GAP, INDEPENDENCE_GAP, openQuestions, phaseFolder, planGate, type Phase, type PhaseRecord, type PlanItem, type RiskKey, candidateOn } from "../logic";
+import { isPlanWordGap, wordAsked, INDEPENDENCE_GAP, openQuestions, phaseFolder, planGate, type Phase, type PhaseRecord, type PlanItem, type RiskKey, candidateOn } from "../logic";
 import { buildsScreens } from "../stages";
+import { cycleText, planGraph } from "../../tasks";
 import packageJson from "../../../../package.json";
 
 import type { WorkflowEngineApi } from "../../platform/server";
@@ -42,7 +43,7 @@ export type AutoRecord = { kind: AutoKind; wfRunId: string; startedAt: number; w
 /** The plan gate's reasons the machine can plan away: all of them but the wait for the owner's word. */
 function planGaps(record: PhaseRecord): string[] {
   const gate = planGate(record);
-  return gate.ok ? [] : gate.why.filter((reason) => reason !== PLAN_WORD_GAP);
+  return gate.ok ? [] : gate.why.filter((reason) => !isPlanWordGap(reason));
 }
 
 /** What the phase needs the machine to do now, or null when nothing is due (or the tries are spent: see `replansSpent` and `fail`). */
@@ -137,7 +138,7 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number },
       return { goal: said.length ? `${phase.goal}\n\nThe owner said no to the last context: ${said.join(" / ")}` : phase.goal, depth: "standard",
         // An existing CONTEXT.md rides the analysis (SMA k_wdi_existing): its decisions are kept, not overwritten.
         ...(contextExisting?.trim() ? { context_existing: contextExisting.slice(0, 8000) } : {}),
-        ...(r.ownerWords === true && r.grayAreas === true ? { ask_owner: true, owner_card: ownerCard ?? "" } : {}) };
+        ...(wordAsked(r, "context") && r.grayAreas === true ? { ask_owner: true, owner_card: ownerCard ?? "" } : {}) };
     }
     // The diagnosis of a failed verdict: parallel debuggers over the verdict's gaps (SMA k_c_diagnose), the session file names the verdict's input.
     case "diagnose": {
@@ -155,7 +156,7 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number },
       return { goal: phase.goal, median_task: medianTask ?? "", skip_research: r.research !== "on", patterns: r.patternMap === "on", validation: r.validation === "on",
         findings: { context: contextText, decisions: r.context?.decisions ?? [], requirements: r.context?.requirements ?? [], ...answered, ...(current ? { current_pieces: current } : {}) },
         ...(gaps.length ? { mode: "gaps", gaps } : {}),
-        extra_rules: [...answerRule, "every command an acceptance line names is one of the task's verification commands", "each task's id is the piece id; depends_on only on tasks of earlier waves",
+        extra_rules: [...answerRule, "every command an acceptance line names is one of the task's verification commands", "each task's id is the piece id; depends_on names the tasks whose output it needs (the waves are computed from depends_on by code; a cycle is refused)",
           "each task lists in a top-level field `covers` the ids of the requirements and locked decisions (findings.requirements, findings.decisions) it carries out; together the tasks cover every id",
           ...(current && r.replan?.gaps ? ["the plan after a failed verification: return every piece of findings.current_pieces the gaps do not name exactly as it is (same id, same contract); change only the failing pieces' contracts or add new pieces for what is missing",
             // A changed contract issues the piece again: its writer redid accepted work and the proof check failed on what it no longer touched (live ph_26f65b142d).
@@ -273,12 +274,17 @@ export function contextDoc(phase: Phase, output: Record<string, unknown>): { con
   return { content, risks: risksText, decisions: ids, questions, security, appetite, noGos: noGos.length ? noGos : ["none"] };
 }
 
-/** Plan pieces from lp.plan: each task-v2 contract with its wave and a promise drawn from the contract. */
+/**
+ * Plan pieces from lp.plan: each task-v2 contract with a promise drawn from the contract and its wave laid out by code from the
+ * tasks' depends_on (SMA bf_waves) — the planner's own `waves` are not read, so a wave it wrote later or earlier than its links
+ * allow cannot hold a piece back or slip it ahead. A plan whose waves cannot be computed (a cycle) is refused, not issued (SMA p2_waves).
+ */
 export function planItems(phase: Phase, output: Record<string, unknown>): PlanItem[] {
-  const tasks = Array.isArray(output.tasks) ? output.tasks as Array<Record<string, unknown>> : [];
-  const waves = Array.isArray(output.waves) ? output.waves as unknown[][] : [];
-  const waveOf = (id: string) => { const index = waves.findIndex((wave) => Array.isArray(wave) && wave.map(String).includes(id)); return index >= 0 ? index + 1 : 1; };
-  return tasks.filter((task) => typeof task.id === "string").map((task) => {
+  const tasks = (Array.isArray(output.tasks) ? output.tasks as Array<Record<string, unknown>> : []).filter((task) => typeof task.id === "string");
+  const graph = planGraph(tasks.map((task) => ({ id: String(task.id), depends_on: Array.isArray(task.depends_on) ? (task.depends_on as unknown[]).map(String) : [] })));
+  if (graph.cycle) throw new Error(`lp.plan returned a plan whose waves cannot be computed: its tasks depend on each other in a cycle (${cycleText(graph.cycle)})`);
+  const waveOf = (id: string) => graph.waveOf[id] ?? 0;
+  return tasks.map((task) => {
     const acceptance = Array.isArray(task.acceptance) ? (task.acceptance as unknown[]).map(String) : [];
     const { covers, ...contract } = task;
     const ids = Array.isArray(covers) ? (covers as unknown[]).map(String).filter(Boolean).slice(0, 40) : [];
@@ -651,12 +657,13 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
     try {
       // The goal audit is told from git which recorded proofs are stale, so it does not work currency out by hand; a failed lookup only leaves the facts out.
       const currency = due.kind === "close" && deps.proofCurrency ? await bestEffort(ctx.log, "phase proof currency", deps.proofCurrency(phase), null) : null;
-      // The plan runs in full mode: lp.plan's critic otherwise skips a plan below three tasks, and SMA checks every plan (p2_checker).
+      // The plan and the check of a PM's plan run in full mode: lp.plan's critic otherwise skips a plan below three tasks, and SMA checks every plan
+      // (p2_checker). A check in standard mode gave a one-piece PM plan no critic, no plan_verdict, and so a false «changes requested» (6 check runs on the hub, 2026-11-14).
       // An existing CONTEXT.md is handed to the analysis so its decisions are kept (SMA k_wdi_existing); unreadable is no blocker.
       const contextExisting = due.kind === "analyze" && deps.readText ? await deps.readText(phase, `${phaseFolder(phase.id)}/CONTEXT.md`).catch(() => null) : null;
-      const ownerCard = due.kind === "analyze" && phase.record.ownerWords === true && phase.record.grayAreas === true && deps.ownerCard ? await bestEffort(ctx.log, "owner card for the analysis", deps.ownerCard(phase), "") : undefined;
+      const ownerCard = due.kind === "analyze" && wordAsked(phase.record, "context") && phase.record.grayAreas === true && deps.ownerCard ? await bestEffort(ctx.log, "owner card for the analysis", deps.ownerCard(phase), "") : undefined;
       const started = services.workflowEngine.start({ workflow, inputs: { ...autoInputs(phase, due, deps.medianTask?.(phase) ?? undefined, contextExisting, ownerCard ?? undefined, deps.planningHome ? await deps.planningHome(phase) : null), ...(currency ? { proof_currency: currency } : {}) }, key: `phase:${phase.id}:${due.kind}:${phase.edition}:${deps.now()}`, runtime,
-        ...(due.kind === "plan" ? { mode: "full" as const } : {}),
+        ...(due.kind === "plan" || due.kind === "check" ? { mode: "full" as const } : {}),
         link: { projectId: phase.projectId, ...(phase.runId ? { runId: phase.runId } : {}) } });
       started.done.catch((cause: unknown) => ctx.log(`phase ${phase.id}: ${AUTO_WORKFLOWS[due.kind]} stopped: ${cause instanceof Error ? cause.message : String(cause)}`));
       deps.save(phase.id, { ...phase.record, auto: { kind: due.kind, wfRunId: started.runId, startedAt: deps.now(), ...(due.wave ? { wave: due.wave } : {}) } });

@@ -2,6 +2,8 @@ import type { PluginCliResult } from "@get-bb/plugin-sdk";
 import { OWNER_ITEM_SWEEPS, type CliRunDeps } from "./cli-deps";
 import { TASK_RECORD_USAGE, blindRecord, readsBlind, renderTaskRecord, taskRecord } from "./task-record";
 import { attemptRecord, manifest, passport, preship, prPassport, receiptChain, subagentReceipts, verifyChain } from "./receipts";
+import { runWorktreeCleanupCli } from "../../stability/server";
+import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees } from "../../runs/server";
 import { agentRegistry, answerWorkflowQuestion, breakerRowId, budgetSpentSweep, closeOwnerItem, conveyorState, designJournalLines, dirname, failedTasksAllProjects, getPhase, isNotFound, join, listNearMissReceipts, listTripped, orMiss, pluginRootFromModule, postOwnerItem, readinessWords, rearmBreaker, renderTimeline, retireAdoptedRule, runAgentsCli, runBacklogCli, runBaselineCli, runBenchCli, runCapabilityCli, runCheckersCli, runDeferralCli, runDesignPairCli, runForecastCli, runHypothesisCli, runLeadCli, runOutageCli, runPhaseCli, runReturnCli, runRulesCli, runRunGoalCli, runScheduleCli, runSmaLiveCli, runSmaMapCli, runWaitingCli, runWallCli, saveProjectSetting, setConveyor, spawnAsync, taskBaselineEntries, taskTimeline, tierReport, trainedConditions, trainingRatios, workerSecretReach } from "./cli-imports";
 /** `timeline <task-id> [--run <run-id>] [--json]`: without --run the first bare word is the task (it was skipped until 2026-11-02). */
 export function timelineArgs(args: string[]): { taskId: string | undefined; runId: string | undefined } {
@@ -65,7 +67,7 @@ export async function cliPipeline(d: CliRunDeps): Promise<PluginCliResult | unde
     }, command, args);
   }
   if (command === "sma-map") {
-    return args.includes("--live") ? runSmaLiveCli(db as never, args) : runSmaMapCli(args);
+    return args.includes("--live") ? runSmaLiveCli(db as never, args, Date.now(), process.cwd(), pluginRootFromModule(import.meta.url)) : runSmaMapCli(args);
   }
   if (command === "waiting") {
     return runWaitingCli(db, args, Date.now(), [...OWNER_ITEM_SWEEPS, budgetSpentSweep(services)], services.ownerLearningItems);
@@ -185,6 +187,10 @@ export async function cliPipeline(d: CliRunDeps): Promise<PluginCliResult | unde
   }
   if (command === "schedule") {
     return await runScheduleCli(services, args);
+  }
+  if (command === "worktree-cleanup") {
+    // The pass the two worktree-cleanup system schedules run, by hand; --dry-run decides only (docs/worktrees.md).
+    return await runWorktreeCleanupCli(ctx, { cleanupStickyLaneWorktrees, cleanupFinishedAttemptEnvironments }, args);
   }
   if (command === "agents") {
     return await runAgentsCli({ list: () => services.listedAgentProfiles(), registry: agentRegistry(ctx, services.scheduleAgents) }, args);

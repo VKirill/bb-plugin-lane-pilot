@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure a3065e9804060a38 -->
+<!-- enabled-settings:structure dffe44d9b6d64d13 -->
 
 # Enabled settings (generated)
 
@@ -59,6 +59,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `checks.fail_fast` | `on` | — | verification: order checks by expected fail cost and stop starting new checks after the first non-zero exit |
 | `checks.require_red_on_base` | `medium` | — | baseline gate: a task of medium risk or more whose every check is green on the base does not start |
 | `cleanup.worktree_grace_hours` | `2` | — | janitor: hours a worktree copy sits untouched before the sweep may remove it |
+| `cleanup.worktree_max_age_days` | `7` | — | janitor: days a merged or abandoned worktree copy sits untouched before the daily pass removes it with its branch |
 | `cleanup.worktrees` | `on` | — | janitor: the hourly sweep of finished worktree copies and Lane Pilot tmp folders on every connected machine |
 | `code_critique.agent` | `code-critic` | — | code-critique role label included in its prompt |
 | `code_critique.auto_fix` | `true` | — | returns actionable findings to the original writer for a bounded repair round |
@@ -171,6 +172,8 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `phase.rails` | `off` | — | phases: with rails on, graphs, councils and schedules of a phase start only from its own stage |
 | `plan_critique.agent` | `plan-critic` | — | plan-critique role label included in its prompt |
 | `plan_critique.enabled` | `true` | — | stage setting |
+| `plan_critique.max_rounds` | `3` | — | planner loop: how many planner revisions before the PM, 1-3 (src/rooms/writer/server/plan-revise.ts) |
+| `plan_critique.min_owns_paths` | `0` | — | critique threshold on the task's owns_paths count |
 | `plan_critique.min_score` | `7` | — | critique threshold applied to the task-risk score adapter |
 | `plan_critique.min_write_tasks` | `3` | — | critique threshold applied to the persisted run TaskV2 lane count |
 | `plan_critique.mode` | `gate` | — | stage setting |
@@ -178,6 +181,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `plan_critique.on_high_risk` | `true` | — | critique policy enables dispatch for high or critical task risk |
 | `plan_critique.provider` | — | — | stage plan-critique provider setting |
 | `plan_critique.reasoning_effort` | `medium` | — | stage plan-critique effort setting |
+| `plan_critique.revise_by` | `pm` | — | planner loop: pm (default) or planner revises a plan the critic returned (src/rooms/writer/server/plan-revise.ts) |
 | `plan_critique.service_tier` | `standard` | — | stage plan-critique tier setting |
 | `plan_fact.mode` | `record` | — | plan against fact: record shows the blind check of the writer's table, gate sends an acceptance item with no evidence back to the writer |
 | `pm_read.enabled` | `false` | — | PM-read stage enable switch |

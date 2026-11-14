@@ -151,12 +151,18 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
 
   async function start(input: { projectId: string; workflowId: string; inputs: Record<string, unknown>; source: TriggerSource; key?: string | undefined; liveTrial?: boolean | undefined; origin?: "schedule" | undefined;
     /** A run that is nobody's business but the project's (the lead's tick): no PM chat, no run link, hidden helpers in the project's folder even when a PM chat is open. */
-    detached?: boolean | undefined }): Promise<TriggerResult> {
+    detached?: boolean | undefined;
+    /** The starter a Lane Pilot system schedule names (schedule/server/system-schedules.ts): it may start the one starter graph whose `startedBy`
+     * is this name. Only the schedule executor passes it, read from the row's `created_by`, which no caller chooses. */
+    starter?: string | undefined }): Promise<TriggerResult> {
     const { store } = await deps.loadStore(input.projectId);
     const stored = store.get(input.workflowId);
     if (!stored) return refuse("unknown_workflow", `There is no workflow "${input.workflowId}".`);
     const { workflow } = stored;
-    if (isPipeline(workflow) || workflow.internal) return refuse("not_runnable", `"${workflow.id}" is not a workflow to start by hand.`);
+    // A starter graph is Lane Pilot's own: never the PM's, a chat's or a hand trigger's. Its own system schedule is the one exception (0.1.562 live:
+    // both worktree-cleanup schedules ended start_failed here, so no janitor pass ran at all).
+    const ownStarter = isPipeline(workflow) && input.starter !== undefined && workflow.startedBy === input.starter;
+    if ((isPipeline(workflow) && !ownStarter) || workflow.internal) return refuse("not_runnable", `"${workflow.id}" is not a workflow to start by hand.`);
     const trial = workflow.status === "tested" && input.liveTrial === true;
     if (workflow.status !== "published" && !trial) {
       return refuse("not_runnable", workflow.status === "tested"

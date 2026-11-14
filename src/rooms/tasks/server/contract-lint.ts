@@ -17,6 +17,7 @@ import { gluedCheckCommand } from "../../contracts/check-commands";
 import type { CatalogEntry, SecretCheck } from "../../secrets/server";
 import { safeRelative, validateOwnershipContract } from "../../contracts/ownership";
 import { CHECK_HISTORY_MIN_RUNS, p95 } from "../check-history";
+import { dependsLoopFindings } from "./depends-lint";
 
 /** One problem in a task contract, with the concrete fix; `data` rides along in the answer to the PM. */
 export type LintFinding = { code:string; message:string; data?:Record<string, unknown> };
@@ -48,6 +49,8 @@ export type LintInput = {
   confirmedDrawings?:ReadonlyArray<{ paths:readonly string[]; sha256:string; /** A file of it no longer matches the hash the design stage confirmed. */ changed?:boolean }>;
   /** Other open tasks of the project. */
   openTasks:readonly LintOpenTask[];
+  /** The other open tasks of this task's run with their depends_on (absent: not asked, the cycle rule stays silent). */
+  runTasks?:ReadonlyArray<{ id:string; depends_on:readonly string[] }>;
   /** depends_on names whose latest task ended blocked or canceled and that nothing restarts or vouches for. */
   deadDependencies:readonly { id:string; state:"blocked" | "canceled" }[];
   /** Env Catalog's answer for the secrets the checks declare (J2); absent when none is declared. */
@@ -571,7 +574,9 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
     }
   }
 
-  // depends_on a task that already ended blocked or canceled: the PM replans before this one is queued (a loop or a self reference is the plan critique's).
+  errors.push(...dependsLoopFindings(task, input.runTasks));
+
+  // depends_on a task that already ended blocked or canceled: the PM replans before this one is queued.
   for (const dead of input.deadDependencies) {
     errors.push({ code:"depends_dead", data:{ replan:true }, message:dead.state === "blocked"
       ? `replan: depends_on ${dead.id} ended blocked, so this task would never start; send ${dead.id} again (fixed) first and then this task, which waits for it, or drop ${dead.id} from depends_on if the task does not need its files`

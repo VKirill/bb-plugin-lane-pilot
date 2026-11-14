@@ -59,11 +59,13 @@ describe("batch graph", () => {
     expect(decision.why).not.toMatch(/card/);
   });
 
-  it("[sma:bi_held] [sma:bi_pieces] a later piece stays out while an earlier one is unissued, and an issued piece is not put back when it blocks", () => {
-    const items = [piece("a", 1), piece("b", 2)];
+  it("[sma:bi_held] [sma:bi_pieces] a piece stays out until the piece it depends on is accepted, and an issued piece is not put back when it blocks", () => {
+    const b = piece("b", 2);
+    const items = [piece("a", 1), { ...b, task: { ...b.task, depends_on: ["a"] } }];
     expect(issuable(items, {}, new Map()).map((item) => item.id)).toEqual(["a"]);
     const blocked = new Map([["a", fact("a", "blocked")]]);
-    expect(issuable(items, { a: "task-a" }, blocked, () => true, { a: pieceSha(items[0]!) })).toEqual([]);
+    expect(issuable(items, { a: "task-a" }, blocked, { a: pieceSha(items[0]!) })).toEqual([]);
+    expect(issuable(items, { a: "task-a" }, new Map([["a", fact("a")]]), { a: pieceSha(items[0]!) }).map((item) => item.id)).toEqual(["b"]);
   });
 
   it("[sma:bw_ready] [sma:bw_promise_due] the gate stays shut, naming the piece, until the last wave is accepted", () => {

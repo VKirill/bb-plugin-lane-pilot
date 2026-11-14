@@ -1,4 +1,4 @@
-import { taskBasePath, getTask, latestTaskAttemptState, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, taskHeldUntil } from "../../storage";
+import { taskBasePath, getTask, latestRunTaskAttemptState, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, taskHeldUntil } from "../../storage";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap } from "@lane-pilot/kit";
 import { isRunHalted, isRunPaused } from "../../runs/server";
@@ -70,7 +70,7 @@ export const waitForOverlappingTasks = async (deps: StartWriterTaskDeps, state: 
       // A queued task still waiting for its own depends_on works on nothing yet, so it holds no one: through a
       // chain (A waits on B's area, B depends on C, C on A) it was a deadlock of a whole run (BB-сервис 2026-10-05).
       if (row.state === "queued" && parsed.success && (parsed.data.depends_on ?? [])
-        .some((dep) => dep !== row.task_id && latestTaskAttemptState(db, row.project_id, dep) !== "accepted")) return false;
+        .some((dep) => dep !== row.task_id && latestRunTaskAttemptState(db, row.run_id, dep) !== "accepted")) return false;
       // A task of a repository inside this folder (or of the folder around this repository) is another checkout: it
       // waits only when the two own the same files, read from the outer folder.
       if (base && rowBase !== base) return Boolean(rowBase && parsed.success && checkoutOwnsOverlap(base, input.task.owns_paths, rowBase, parsed.data.owns_paths));

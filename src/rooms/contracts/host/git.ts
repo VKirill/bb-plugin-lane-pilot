@@ -22,7 +22,9 @@ export const gitHostMethods = {
     // `release`: return the work first (save the uncommitted edits and unmerged commits as a patch) and keep the worktree when that fails (additive; an older host ignores it).
     input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/"), release:z.boolean().optional() }).strict(),
     output: z.object({ hostId:z.string(), removed:z.boolean(),
-      saved:z.object({ status:z.enum(["clean","saved","missing","failed"]), path:z.string().nullable(), dirty:z.number().int(), ahead:z.number().int(), reason:z.string().nullable() }).strict().optional() }).strict(),
+      saved:z.object({ status:z.enum(["clean","saved","missing","failed"]), path:z.string().nullable(), dirty:z.number().int(), ahead:z.number().int(), reason:z.string().nullable() }).strict().optional(),
+      // The branch that stayed because some of its commits are merged nowhere (additive; an older host deleted it).
+      branchKept:z.object({ branch:z.string(), ahead:z.number().int(), reason:z.string() }).strict().optional() }).strict(),
   },
   gitWorktreeState: {
     input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/") }).strict(),
@@ -42,10 +44,23 @@ export const gitHostMethods = {
   worktreeJanitor: {
     // The hourly sweep over ~/.lane-pilot/worktrees: copies the hub no longer protects (no open attempt or pass), older than
     // grace, clean and fully merged go; a copy with edits or unique commits stays and is reported. Lane Pilot's own tmp prefixes too.
-    input: z.object({ requestedHostId: z.string().min(1), protectedPaths: z.array(z.string().startsWith("/")).max(20000), graceMs: z.number().int().min(0).optional() }).strict(),
+    input: z.object({ requestedHostId: z.string().min(1), protectedPaths: z.array(z.string().startsWith("/")).max(20000), graceMs: z.number().int().min(0).optional(),
+      // The daily pass (docs/worktrees.md): every swept class in the project repositories, with git worktree prune (additive; an older host ignores it and answers without `deep`).
+      deep: z.object({ folders: z.array(z.string().startsWith("/")).max(2000), bbEnvPaths: z.array(z.string().startsWith("/")).max(5000).optional(),
+        abandonedPaths: z.array(z.string().startsWith("/")).max(5000).optional(), registryPaths: z.array(z.string().startsWith("/")).max(5000).optional(),
+        maxAgeMs: z.number().int().min(0), youngMs: z.number().int().min(0), dryRun: z.boolean().optional(),
+        // The hub's clock for the ages (a pass replayed for a past or future moment; the machines' clocks agree within minutes).
+        now: z.number().int().positive().optional() }).strict().optional() }).strict(),
     output: z.object({ hostId: z.string(), removed: z.array(z.string()), freedBytes: z.number(),
       kept: z.array(z.object({ path: z.string(), reason: z.string(), ageMs: z.number(), bytes: z.number() }).strict()).max(500),
-      tmpRemoved: z.array(z.string()).max(2000), tmpFreedBytes: z.number(), errors: z.array(z.string()).max(200) }).strict(),
+      tmpRemoved: z.array(z.string()).max(2000), tmpFreedBytes: z.number(), errors: z.array(z.string()).max(200),
+      deep: z.object({
+        removed: z.array(z.object({ path: z.string(), cls: z.string(), bytes: z.number(), branch: z.string().nullable(), branchDeleted: z.boolean(), why: z.enum(["merged", "abandoned"]), how: z.string().nullable() }).strict()).max(2000),
+        freedBytes: z.number(),
+        kept: z.array(z.object({ path: z.string(), cls: z.string(), reason: z.string(), detail: z.string(), bytes: z.number(), ageMs: z.number(), branch: z.string().nullable() }).strict()).max(5000),
+        branchesKept: z.array(z.object({ repo: z.string(), branch: z.string(), ahead: z.number().int(), reason: z.string() }).strict()).max(2000),
+        pruned: z.number().int(), registryGone: z.array(z.string()).max(5000), repos: z.number().int(), errors: z.array(z.string()).max(500), dryRun: z.boolean(),
+      }).strict().optional() }).strict(),
   },
   gitSyncWorktree: {
     input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/"), keepConflicts:z.boolean().optional() }).strict(),
@@ -75,7 +90,9 @@ export const gitHostMethods = {
       failureCode:z.enum(["verification_failed","verification_timeout"]).optional(), checkName:z.string().optional(),
       rebuilt:z.array(z.object({ dir:z.string(), ok:z.boolean(), detail:z.string().nullable() }).strict()).optional(),
       // With «merged»: main before the merge and what the merge changed there, deletions included (additive; an older host omits them).
-      base:z.string().nullable().optional(), changed:z.array(changedFile).max(5000).optional() }).strict(),
+      base:z.string().nullable().optional(), changed:z.array(changedFile).max(5000).optional(),
+      // With removeWorktree: the attempt's worktree and its lane/ or bb/ branch went with the merge (additive; an older host omits it).
+      worktreeRemoved:z.boolean().optional() }).strict(),
   },
   gitRevertPaths: {
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), paths:z.array(z.string().min(1)).max(2000) }).strict(),

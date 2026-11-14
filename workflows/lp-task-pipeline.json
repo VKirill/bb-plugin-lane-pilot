@@ -4,8 +4,8 @@
   "startedBy": "lane_pilot_dispatch_writer",
   "name": "Task pipeline",
   "description": {
-    "en": "The Lane Pilot task pipeline: the PM read, the plan critique (by quality mode), the specialist risk review, the ownership base, then the code task in its own worktree with checks, code critique and merge.",
-    "ru": "Конвейер задачи Lane Pilot: чтение PM, критика плана (по режиму качества), проверка рисков специалистом, база владения, затем кодовая задача в своём worktree с проверками, критикой кода и слиянием."
+    "en": "The Lane Pilot task pipeline: the PM read, the plan critique (by quality mode) with the planner's revision rounds when the critic returns the plan, the specialist risk review, the ownership base, then the code task in its own worktree with checks, code critique and merge.",
+    "ru": "Конвейер задачи Lane Pilot: чтение PM, критика плана (по режиму качества) с кругами правки планировщиком, если критик вернул план, проверка рисков специалистом, база владения, затем кодовая задача в своём worktree с проверками, критикой кода и слиянием."
   },
   "examples": {
     "en": [
@@ -55,7 +55,7 @@
   "status": "published",
   "version": 2,
   "guards": {
-    "maxSteps": 20,
+    "maxSteps": 26,
     "maxFanOut": 1,
     "maxSubworkflowDepth": 3
   },
@@ -148,6 +148,79 @@
         {
           "name": "allowed",
           "type": "boolean"
+        },
+        {
+          "name": "revisable",
+          "type": "boolean",
+          "required": false,
+          "description": "The planner may revise the returned plan: plan_critique.revise_by planner, a refusal a plan rewrite can fix, rounds left, the PM has not taken the plan over."
+        },
+        {
+          "name": "round",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "findings",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "plan-revise",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "label": "Planner revises the plan",
+      "role": "planner",
+      "uses": "lp.plan-revise",
+      "maxVisits": 3,
+      "proof": {
+        "kind": "receipt",
+        "check": "a revision is a new lane_pilot_task_contract_edition with reason planner_revision:<n>/<max> and the revised plan; objective, acceptance, owns_paths, never_touch, expected_outputs, depends_on and risk are the stored ones; a plan the critic already judged is refused (revised false)"
+      },
+      "output": [
+        {
+          "name": "revised",
+          "type": "boolean"
+        },
+        {
+          "name": "round",
+          "type": "number"
+        },
+        {
+          "name": "max",
+          "type": "number"
+        },
+        {
+          "name": "edition",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "fromSha",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "planSha",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "plannerThreadId",
+          "type": "string",
+          "required": false
         },
         {
           "name": "reason",
@@ -548,6 +621,21 @@
     },
     {
       "from": "plan-critique",
+      "to": "plan-revise",
+      "label": "returned, the planner revises (SMA n1269)",
+      "pass": "same-session",
+      "when": {
+        "field": "revisable",
+        "op": "eq",
+        "value": true
+      },
+      "with": {
+        "reason": "plan-critique.reason",
+        "findings": "plan-critique.findings"
+      }
+    },
+    {
+      "from": "plan-critique",
       "to": "block-plan-critique",
       "label": "not allowed",
       "when": {
@@ -556,13 +644,35 @@
         "value": false
       },
       "with": {
-        "reason": "plan-critique.reason"
+        "reason": "plan-critique.reason",
+        "findings": "plan-critique.findings"
       }
     },
     {
       "from": "plan-critique",
       "to": "specialist-review",
       "label": "allowed"
+    },
+    {
+      "from": "plan-revise",
+      "to": "plan-critique",
+      "label": "revised: a fresh critic judges it",
+      "when": {
+        "field": "revised",
+        "op": "eq",
+        "value": true
+      },
+      "with": {
+        "pmReadContext": "pm-read.summary"
+      }
+    },
+    {
+      "from": "plan-revise",
+      "to": "block-plan-critique",
+      "label": "not revised: to the PM with the findings of every round",
+      "with": {
+        "reason": "plan-revise.reason"
+      }
     },
     {
       "from": "specialist-review",

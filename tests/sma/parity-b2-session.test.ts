@@ -1,4 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { saveProjectSetting } from "../../src/rooms/storage";
 import { describe, expect, it, vi } from "vitest";
 import { createCore } from "../../src/rooms/core/server/core";
 import { claudeGuardLauncherScript, HELPER_DISALLOWED_TOOLS, WRITER_MAX_TURNS } from "../../src/rooms/native-agent/claude-guard-launch";
@@ -89,6 +90,8 @@ describe("parity b2-session", () => {
     bag.dispatchWriter = async () => { dispatched.push("x"); return { ok: true, taskId: "t1" }; };
     bag.runBudgets = { get: () => undefined };
     const { phases } = createPhaseDriver(ctx, services);
+    // The owner's design and issue words are asked: the project has owner.words on (each turn reads it since 0.1.560).
+    saveProjectSetting(db, "proj1", "owner.words", "on");
     const phase = await phases.open({ projectId: "proj1", pmThreadId: "thr_pm", title: "Draw", goal: "g" });
     const drawingPath = `.agents/phases/${phase.id}/design/UI-SPEC.md`;
     const drawingSha = sha256Hex(`${drawingPath}:${shas.get(drawingPath) ?? sha256Hex(`${drawingPath}:v1`)}`);

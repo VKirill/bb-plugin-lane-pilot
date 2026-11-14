@@ -6,11 +6,12 @@ status: active
 created: 2026-11-06
 confidence: medium
 tags: [guide, flow]
-updated: 2026-11-10
+updated: 2026-11-14
 sources:
   - src/rooms/writer/server/start.ts
-  - src/rooms/runs/state-machine.ts
+  - src/rooms/contracts/state-machine.ts
   - src/rooms/critique/server/index.ts
+  - src/rooms/writer/server/skill-pick.ts
 ---
 
 # How a piece of work flows
@@ -104,7 +105,7 @@ If a run has `run_gate=pre-merge`, dispatch blocks the run with a `run-gate` rec
 | Role to model table | Every agent step names a role; `role_model.<role>` names its model and optional pool (least loaded provider first). The writer is not a row of the table. See `docs/role-models.md`. | `role_model.<role>` |
 | The writer | No model picks it per task: the writer is the project's `writer.provider` / `writer.model` / `writer.reasoning_effort` (global when the project sets none). The effort is clamped to what the live catalog lists. | `writer.provider`, `writer.model`, `writer.reasoning_effort` |
 | Held provider | A provider whose usage window is spent (see `usage.skip_percent`) or a ZCode that cannot work now is skipped on the fallback chain. | `usage.skip_percent` 90 |
-| Skills | By rule, no model: the skills the PM names in the contract `skills` (max 8, only those the BB list has), the skills named like the project folder, and the browser skill for a task checked on a page. A failed skill list leaves the role skills. | contract `skills` |
+| Skills | By rule, no model: the skills the PM names in the contract `skills` (max 8, only those the BB list has), the skills named like the project folder, `modern-web-guidance` when `taskTouchesWeb` matches web paths (`src/rooms/writer/server/skill-pick.ts:51-59`, `:109`), and the browser skill for a task checked on a page. A failed skill list leaves the role skills. | contract `skills` |
 | Pinned pair | The task's provider and model stay for its life across restarts and redispatch. The pin moves only on a provider failure or a failure-class intervention, with the reason recorded. | `writer.pair_pin` on |
 | Fallback chain | After the project writer come `writer.fallback1..3.*` (defaults: GLM 5.3 Flash, Gemini 3.8 Flash high, slot 3 off), then the PM model. A provider, limit or catalog fault walks the chain. | `writer.fallback_on_provider_failure` after_retry (or `immediate`) |
 | Capacity wait | When every offered writer provider is over its window, the attempt ends blocked as `capacity_saturated:<reset>` instead of failing. | `writer.capacity_wait` on |
@@ -190,7 +191,7 @@ Shipping is a PM duty, not a graph stage (`docs/ship.md`). When every task of th
 
 ## Sources
 
-Where this page's claims start in the code: `src/rooms/writer/server/start.ts:46-66`, `src/rooms/runs/state-machine.ts:1-21`, `src/rooms/critique/server/index.ts:1-7`. The deep pages linked above cite the rest.
+Where this page's claims start in the code: `src/rooms/writer/server/start.ts:46-66`, `src/rooms/contracts/state-machine.ts:1-20`, `src/rooms/critique/server/index.ts:1-7`. The deep pages linked above cite the rest.
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by

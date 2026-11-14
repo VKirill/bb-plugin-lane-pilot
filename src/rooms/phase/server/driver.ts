@@ -2,7 +2,7 @@ import { scheduleIsolated } from "../../platform/server";
 import { bindPhaseDesigns } from "../../tasks/server";
 import { type ServerCore } from "../../contracts/server";
 import { listPhases, listParts, resolvePhaseRef } from "../store";
-import { acceptanceKey, observationDue, candidateOn, designGate, discussionGate, nextAction, openQuestions, phaseFolder, planGate, planSignature, renderBook, withdrawProblem, wordOf, type Phase } from "../logic";
+import { acceptanceKey, anyTurnAsks, observationDue, candidateOn, designGate, discussionGate, nextAction, openQuestions, phaseFolder, planGate, planSignature, renderBook, withdrawProblem, wordOf, type Phase } from "../logic";
 import { getRun, getRunWriterHost, runClosedBy } from "../../storage";
 import { hostContract } from "../../contracts";
 import { runOnHost } from "@lane-pilot/host-calls";
@@ -136,7 +136,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services, reactions
     // The pieces the card may offer «Убрать» for: exactly those a withdraw would accept now (never the last piece: that closes the phase).
     const items = phase.record.plan?.items ?? [];
     const withdrawable = items.length > 1 ? items.filter((item) => withdrawProblem(phase, [item.id]) === null).map((item) => item.id) : [];
-    return { phase, withdrawable, next: nextAction(phase, docs.facts(phase), docs.knownHome(phase)), gates: { discussion: discussionGate(phase.record), plan: planGate(phase.record), design: designGate(phase.record) }, book: renderBook(phase, parts), bookHead: parts.at(-1)?.hash ?? null, openQuestions: openQuestions(phase.record, phase.stage), ownerWord: { asked: !!phase.record.ownerWords, context: wordOf(phase.record, "context") ?? null, planning: wordOf(phase.record, "planning") ?? null, design: wordOf(phase.record, "design") ?? null, acceptance: wordOf(phase.record, "acceptance") ?? null, acceptanceKey: acceptanceKey(phase.record), planKey: phase.record.plan?.sha ?? null, designKey: phase.record.design?.drawing?.sha256 ?? null }, facts: Object.fromEntries(docs.facts(phase)) };
+    return { phase, withdrawable, next: nextAction(phase, docs.facts(phase), docs.knownHome(phase)), gates: { discussion: discussionGate(phase.record), plan: planGate(phase.record), design: designGate(phase.record) }, book: renderBook(phase, parts), bookHead: parts.at(-1)?.hash ?? null, openQuestions: openQuestions(phase.record, phase.stage), ownerWord: { asked: anyTurnAsks(phase.record), turns: phase.record.wordTurns ?? null, context: wordOf(phase.record, "context") ?? null, planning: wordOf(phase.record, "planning") ?? null, design: wordOf(phase.record, "design") ?? null, acceptance: wordOf(phase.record, "acceptance") ?? null, acceptanceKey: acceptanceKey(phase.record), planKey: phase.record.plan?.sha ?? null, designKey: phase.record.design?.drawing?.sha256 ?? null }, facts: Object.fromEntries(docs.facts(phase)) };
   }
 
   /**

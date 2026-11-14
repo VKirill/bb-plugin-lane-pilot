@@ -21,6 +21,10 @@ def dry_run(names: list[str], series: bool = False) -> None:
     # of old ones (--series for no_code_exit, LP_DRILL_LIVE_PRESS=1 for live_word).
     documents["revert"] = [note_task(f"drill-{STAMP}-revert-a", f"notes/drill/{STAMP}-revert.md", f"Drill {STAMP} revert a", cwd), note_task(f"drill-{STAMP}-revert-b", f"notes/drill/{STAMP}-revert.md", f"Drill {STAMP} revert b", cwd)]
     expects["revert"] = {"scenario": "in EXTRA (by name or --series)", "judge": "revert_judged"}
+    if "plan_split" in names:  # imported here: the scene module imports the hub helpers, a default dry run stays main's
+        from lp_drill.scenes.plan_split import PLAN_SPLIT_SQL, plan_split_cycle_tasks, plan_split_tasks
+        documents["plan_split"] = [*plan_split_tasks(cwd).values(), *plan_split_cycle_tasks(cwd).values()]
+        expects["plan_split"] = {"scenario": "in EXTRA (by name or --series task)", "judge": "plan_split_problems", "sql": PLAN_SPLIT_SQL}
     documents["task_home"] = task_home_specs(cwd)
     expects["task_home"] = {"judge": "manifest_problems + shared_leaks + neighbour_problems", "home": ".agents/tasks/<id>/manifest.json"}
     if series:
