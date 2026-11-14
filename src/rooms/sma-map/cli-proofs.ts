@@ -2,13 +2,14 @@
 // batches are cut from, and the hollow findings. Without a database (a source checkout) reachability runs on the
 // registry defaults and traces are not read; `--live` on the hub reads the global and project settings, node-level
 // traces and the live hollow signs. A source checkout recomputes the static facts; the hub reads hollow-facts.json.
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { SMA_EVIDENCE } from "./evidence";
 import { SMA_NODES, SMA_REGIONS } from "./graph";
 import { collectHollowFacts, SMA_HOLLOW_FACTS, type HollowFacts } from "./hollow-facts";
 import { hollowCounts, hollowFindings, readHollowLive, type HollowFinding } from "./hollow";
 import { readSmaLive, smaGroups } from "./live";
+import { anchorName, resolveSpan } from "./symbols";
 import { smaRows, smaStateCounts, type ProofRoots, type SmaRow } from "./model";
 import { SMA_PROVENANCE, versionSeen } from "./provenance";
 import { defaultSettings, hubSettings, type HubSettings } from "./settings-registry";
@@ -22,10 +23,10 @@ const flag = (argv: readonly string[], name: string) => { const at = argv.indexO
 export const PROOF_FLAGS = ["--states", "--gaps", "--hollow"] as const;
 export const wantsProofs = (argv: readonly string[]) => PROOF_FLAGS.some((name) => argv.includes(name));
 
-export type ProofRun = { rows: SmaRow[]; states: NodeState[]; findings: HollowFinding[]; facts: HollowFacts; factsFresh: boolean; hub: HubSettings | null; days: number; live: boolean; drills: number | null };
+export type ProofRun = { rows: SmaRow[]; states: NodeState[]; findings: HollowFinding[]; facts: HollowFacts; factsFresh: boolean; hub: HubSettings | null; days: number; live: boolean; drills: number | null; drillDir: string };
 
 /** Everything the three reports need, computed once. */
-export function proofRun(argv: readonly string[], roots: ProofRoots, db: Db | null, cwd: string, now = Date.now()): ProofRun {
+export function proofRun(argv: readonly string[], roots: ProofRoots, db: Db | null, cwd: string, now = Date.now(), pluginRoot?: string): ProofRun {
   const days = Math.max(1, Math.min(365, Number(flag(argv, "--days") ?? 30) || 30));
   const since = now - days * 86_400_000;
   const rows = smaRows();
@@ -33,7 +34,8 @@ export function proofRun(argv: readonly string[], roots: ProofRoots, db: Db | nu
   const factsFresh = !!root && existsSync(join(root, "workflows"));
   const facts = factsFresh ? collectHollowFacts(root, Object.fromEntries(rows.map((row) => [row.id, row.proof]))) : SMA_HOLLOW_FACTS;
   const hub = db ? hubSettings(db, since) : null;
-  const drillDir = flag(argv, "--drills") ?? process.env.LP_DRILLS_DIR ?? join(cwd, ".agents/runs/drills");
+  // The receipts live in THE PLUGIN's folder, not where the command was typed: on the hub `bb lane-pilot` runs from any directory.
+  const drillDir = flag(argv, "--drills") ?? process.env.LP_DRILLS_DIR ?? join(pluginRoot ?? cwd, ".agents/runs/drills");
   const drills = readDrills(drillDir);
   const live = !!db;
   const traceCtx: TraceContext | undefined = db || drills ? { ...(db ? { db } : {}), drills } : undefined;
@@ -44,7 +46,26 @@ export function proofRun(argv: readonly string[], roots: ProofRoots, db: Db | nu
   });
   const traces = new Map(states.filter((state) => state.observed !== null).map((state) => [state.id, { judged: true, n: state.observed ? 1 : 0 }] as const));
   const findings = hollowFindings({ rows, evidence: SMA_EVIDENCE, facts, settings: hub?.global ?? defaultSettings(), ...(live ? { traces } : {}), ...(db ? { live: readHollowLive(db, since, days) } : {}) });
-  return { rows, states, findings, facts, factsFresh, hub, days, live, drills: drills ? drills.length : null };
+  return { rows, states, findings, facts, factsFresh, hub, days, live, drills: drills ? drills.length : null, drillDir };
+}
+
+/** Past this many lines an anchor is a dispatcher, not the unit the card describes: a mutation or a hollow sign there hits unrelated code. */
+export const DISPATCHER_LINES = 150;
+export type AnchorInfo = { file: string; symbol?: string; lines: number; flag?: string };
+/** Where a node's proof anchor really lands (the span behind re-exports) and what is wrong with it; null for a proof into another repository or no sources. */
+export function anchorInfo(proof: string | undefined, root: string): AnchorInfo | null {
+  if (!proof || !root || /^(lane-stack|core|telegram):/.test(proof)) return null;
+  const [where, symbol] = proof.split("#", 2) as [string, string | undefined];
+  const path = where.replace(/:\d+$/, "");
+  const full = join(root, path);
+  if (!existsSync(full)) return { file: path, ...(symbol ? { symbol } : {}), lines: 0, flag: "the anchor file does not exist" };
+  const name = symbol ? anchorName(symbol) : null;
+  const span = name ? resolveSpan(root, path, name) : null;
+  const file = span?.file ?? path;
+  const lines = span ? span.text.split("\n").length : readFileSync(full, "utf8").split("\n").length;
+  const flag = /^tests\//.test(file) ? "anchor under tests/: a mutation cannot live there, move the code to src/ (docs/sma-evidence.md)"
+    : span && lines > DISPATCHER_LINES ? `anchor is ${lines} lines: a dispatcher, not the unit the card describes; re-point it` : undefined;
+  return { file, ...(name ? { symbol: name } : {}), lines, ...(flag ? { flag } : {}) };
 }
 
 const regionFilter = (argv: readonly string[]): number | null => {
@@ -55,14 +76,15 @@ const regionFilter = (argv: readonly string[]): number | null => {
   return at >= 0 ? at : -1;
 };
 
-export function runProofCli(argv: readonly string[], roots: ProofRoots, db: Db | null, cwd: string, now = Date.now()): Result {
+export function runProofCli(argv: readonly string[], roots: ProofRoots, db: Db | null, cwd: string, now = Date.now(), pluginRoot?: string): Result {
   const region = regionFilter(argv);
   if (region === -1 || (region !== null && !SMA_REGIONS[region])) return { exitCode: 2, stderr: `no region ${flag(argv, "--region")}; regions: ${SMA_REGIONS.map((name, index) => `${index} ${name}`).join("; ")}` };
-  const run = proofRun(argv, roots, db, cwd, now);
+  const run = proofRun(argv, roots, db, cwd, now, pluginRoot);
   const json = argv.includes("--json");
   const states = region === null ? run.states : run.states.filter((state) => state.regionIndex === region);
   if (argv.includes("--gaps")) {
-    const gaps = gapList(states);
+    const proofOf = new Map(run.rows.map((row) => [row.id, row.proof] as const));
+    const gaps = gapList(states).map((gap) => { const anchor = anchorInfo(proofOf.get(gap.id), roots.lanePilot); return anchor ? { ...gap, anchor } : gap; });
     if (json) return { exitCode: 0, stdout: JSON.stringify({ days: run.days, live: run.live, ...(region !== null ? { region } : {}), count: gaps.length, byRegion: byRegion(gaps), nodes: gaps }, null, 2) };
     return { exitCode: 0, stdout: renderGaps(gaps, run) };
   }
@@ -98,14 +120,14 @@ function renderStates(report: ReturnType<typeof stateReport>, hollow: ReturnType
     `total ${o.total}, available ${o.available}, checked ${o.checked}, mutated ${o.mutated} (stale ${o.mutationStale}), reachable ${o.reachable} / unreachable ${o.unreachable} (undeclared gate ${o.undeclared}; ${o.seededReachable} reachable only through a mechanically seeded entry; ${o.blockedInSomeProject} blocked in an active project), observed ${n(o.observed)} (node-level), outcome-verified ${n(o.outcomeVerified)} (node-level), groupObserved ${n(o.groupObserved)} (group-level, not node evidence).`,
     `hollow ${hollow.total} (on the map ${hollow.onMap} / off the map ${hollow.offMap}; by sign ${Object.entries(hollow.bySign).map(([sign, count]) => `${sign}: ${count}`).join(", ")}), void unreviewed ${o.voidUnreviewed}, exceptions ${Object.entries(o.exceptions).map(([kind, count]) => `${kind} ${count}`).join(", ") || "none"}; closed (all four proofs or an exception) ${o.closed}.`,
     `settings: ${settingsLine(run)}.`,
-    `proof links (the weaker ladder): resolved ${links.proofResolved}, broken ${links.proofBroken}, unjudged ${links.proofUnjudged}; change points from provenance.json ${SMA_PROVENANCE.generatedFrom || "(not generated)"} (${SMA_PROVENANCE.version}); hollow facts from ${run.factsFresh ? "this checkout" : `hollow-facts.json ${run.facts.generatedFrom}`}${run.drills === null ? "; no drill receipts here" : `; ${run.drills} drill receipt(s)`}.`,
+    `proof links (the weaker ladder): resolved ${links.proofResolved}, broken ${links.proofBroken}, unjudged ${links.proofUnjudged}; change points from provenance.json ${SMA_PROVENANCE.generatedFrom || "(not generated)"} (${SMA_PROVENANCE.version}); hollow facts from ${run.factsFresh ? "this checkout" : `hollow-facts.json ${run.facts.generatedFrom}`}${run.drills === null ? `; no drill receipts here (looked in ${run.drillDir})` : `; ${run.drills} drill receipt(s) in ${run.drillDir}`}.`,
     "", "region                              total checked mutated reach  observed verified closed void?",
   ];
   for (const r of report.regions) lines.push(`${String(r.index).padStart(2)} ${r.region.slice(0, 32).padEnd(32)} ${String(r.total).padStart(5)} ${String(r.checked).padStart(7)} ${String(r.mutated).padStart(7)} ${String(r.reachable).padStart(5)} ${n(r.observed).padStart(9)} ${n(r.outcomeVerified).padStart(8)} ${String(r.closed).padStart(6)} ${String(r.voidUnreviewed).padStart(5)}`);
   return lines.join("\n");
 }
 
-function byRegion(gaps: ReturnType<typeof gapList>) {
+function byRegion(gaps: ReadonlyArray<ReturnType<typeof gapList>[number]>) {
   return SMA_REGIONS.map((region, index) => {
     const part = gaps.filter((gap) => gap.region === index);
     const count = (proof: string) => part.filter((gap) => gap.missing.includes(proof as never)).length;
@@ -113,11 +135,12 @@ function byRegion(gaps: ReturnType<typeof gapList>) {
   }).filter((row) => row.nodes);
 }
 
-function renderGaps(gaps: ReturnType<typeof gapList>, run: ProofRun): string {
+type GapRow = ReturnType<typeof gapList>[number] & { anchor?: AnchorInfo };
+function renderGaps(gaps: readonly GapRow[], run: ProofRun): string {
   const lines = [`Gaps — per node which of the four proofs is missing (${gaps.length} node(s); ${run.live ? `live ${run.days} d` : "no database: every trace is missing"}).`, "", "region                              nodes  test mutation reach trace void?"];
   for (const row of byRegion(gaps)) lines.push(`${String(row.index).padStart(2)} ${row.region.slice(0, 32).padEnd(32)} ${String(row.nodes).padStart(5)} ${String(row.test).padStart(5)} ${String(row.mutation).padStart(8)} ${String(row.reach).padStart(5)} ${String(row.trace).padStart(5)} ${String(row.voidReview).padStart(5)}`);
   lines.push("");
-  for (const gap of gaps) lines.push(`${gap.id.padEnd(6)} ${gap.smaId} [${gap.status}] missing ${gap.missing.join(", ")}${gap.reachWhy ? ` — reach: ${gap.reachWhy}` : ""}${gap.undeclared ? ` — undeclared gate ${gap.undeclared.join(", ")}` : ""}`);
+  for (const gap of gaps) lines.push(`${gap.id.padEnd(6)} ${gap.smaId} [${gap.status}] missing ${gap.missing.join(", ")}${gap.reachWhy ? ` — reach: ${gap.reachWhy}` : ""}${gap.undeclared ? ` — undeclared gate ${gap.undeclared.join(", ")}` : ""}${gap.anchor ? `\n        anchor ${gap.anchor.file}${gap.anchor.symbol ? `#${gap.anchor.symbol}` : ""} (${gap.anchor.lines} lines)${gap.anchor.flag ? ` WARNING: ${gap.anchor.flag}` : ""}` : ""}`);
   return lines.join("\n");
 }
 

@@ -51,7 +51,8 @@ export const rows = (table: string, clock: string, where?: string): TraceSource 
 export const kv = (key: string): TraceSource => ({ kind: "kv", key });
 /** An RPC / door call (BB rpc timing log): judged only where an RPC log reader is given. */
 export const rpc = (method: string): TraceSource => ({ kind: "rpc", method });
-/** A drill scene that passed (.agents/runs/drills/*.json, scenario `scene` with result pass). */
+/** A drill scene that passed AND whose receipt entry lists THIS node in `proved` with ok true (.agents/runs/drills/*.json).
+ * The node id is the evidence registry key; a scene that passed without proving the node does not count (a scene-level claim is hollow). */
 export const drill = (scene: string): TraceSource => ({ kind: "drill", scene });
 /** Not judged here and never counted: the trace lives elsewhere (`where` says where). */
 export const outside = (where: string): TraceSource => ({ kind: "outside", where });
@@ -86,8 +87,9 @@ export type TraceReading = { n: number; last: number | null; judged: boolean; er
 
 type Db = { prepare(sql: string): { get(...args: unknown[]): unknown } };
 
-/** A drill receipt as lp-drill writes it: when it finished and which scenes passed. */
-export type DrillReceipt = { finishedAt: number; commit: string | null; passed: readonly string[] };
+/** A drill receipt as lp-drill writes it: when it finished, which scenes passed, and which node each passed scene proved
+ * (`proved` entries of the scene with ok true: the scene itself asserted the node's expected result and wrote it down). */
+export type DrillReceipt = { finishedAt: number; commit: string | null; passed: readonly string[]; proved: ReadonlyArray<{ scene: string; node: string }> };
 
 /** The drill receipts in `dir` (lp-drill.py's .agents/runs/drills/*.json); [] when the folder is not on this machine. */
 export function readDrills(dir: string | undefined): DrillReceipt[] | null {
@@ -96,9 +98,13 @@ export function readDrills(dir: string | undefined): DrillReceipt[] | null {
   for (const name of readdirSync(dir)) {
     if (!name.endsWith(".json")) continue;
     try {
-      const receipt = JSON.parse(readFileSync(join(dir, name), "utf8")) as { finishedAt?: number; commit?: string; scenarios?: Array<{ name?: string; result?: string }> };
+      const receipt = JSON.parse(readFileSync(join(dir, name), "utf8")) as { finishedAt?: number; commit?: string; scenarios?: Array<{ name?: string; result?: string; proved?: Array<{ node?: string; ok?: boolean }> }> };
       if (typeof receipt.finishedAt !== "number") continue;
-      out.push({ finishedAt: receipt.finishedAt, commit: receipt.commit ?? null, passed: (receipt.scenarios ?? []).filter((scene) => scene.result === "pass" && scene.name).map((scene) => scene.name!) });
+      const passedScenes = (receipt.scenarios ?? []).filter((scene) => scene.result === "pass" && scene.name);
+      out.push({
+        finishedAt: receipt.finishedAt, commit: receipt.commit ?? null, passed: passedScenes.map((scene) => scene.name!),
+        proved: passedScenes.flatMap((scene) => (Array.isArray(scene.proved) ? scene.proved : []).filter((item) => item?.ok === true && typeof item.node === "string").map((item) => ({ scene: scene.name!, node: item.node! }))),
+      });
     } catch { /* a receipt being written */ }
   }
   return out;
@@ -106,12 +112,12 @@ export function readDrills(dir: string | undefined): DrillReceipt[] | null {
 
 export type TraceContext = { db?: Db; drills?: DrillReceipt[] | null; kv?: (key: string) => { n: number; last: number | null } | null; rpc?: (method: string) => { n: number; last: number | null } | null };
 
-/** Reads one source over the window that starts at `since` (ms). */
-export function readTrace(ctx: TraceContext, source: TraceSource, since: number): TraceReading {
+/** Reads one source over the window that starts at `since` (ms). `node` is the map node the source belongs to: a drill source counts only receipts that prove that node. */
+export function readTrace(ctx: TraceContext, source: TraceSource, since: number, node?: string): TraceReading {
   if (source.kind === "outside") return { n: 0, last: null, judged: false };
   if (source.kind === "drill") {
     if (!ctx.drills) return { n: 0, last: null, judged: false };
-    const hits = ctx.drills.filter((receipt) => receipt.finishedAt >= since && receipt.passed.includes(source.scene));
+    const hits = ctx.drills.filter((receipt) => receipt.finishedAt >= since && node !== undefined && receipt.proved.some((item) => item.scene === source.scene && item.node === node));
     return { n: hits.length, last: hits.length ? Math.max(...hits.map((hit) => hit.finishedAt)) : null, judged: true };
   }
   if (source.kind === "kv" || source.kind === "rpc") {
@@ -129,8 +135,8 @@ export function readTrace(ctx: TraceContext, source: TraceSource, since: number)
 }
 
 /** A node's sources together: fired = the sum, newest = the newest; judged when any source could be answered. */
-export function readTraces(ctx: TraceContext, sources: readonly TraceSource[], since: number): TraceReading & { readings: TraceReading[] } {
-  const readings = sources.map((source) => readTrace(ctx, source, since));
+export function readTraces(ctx: TraceContext, sources: readonly TraceSource[], since: number, node?: string): TraceReading & { readings: TraceReading[] } {
+  const readings = sources.map((source) => readTrace(ctx, source, since, node));
   const judged = readings.filter((reading) => reading.judged);
   const lasts = judged.map((reading) => reading.last).filter((last): last is number => typeof last === "number");
   const error = readings.find((reading) => reading.error)?.error;

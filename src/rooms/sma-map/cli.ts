@@ -96,10 +96,10 @@ export function runSmaMapCli(argv: string[], cwd: string = process.cwd()): Resul
 }
 
 /** `bb lane-pilot sma-map --live [--days N] [--json]`: which groups of the map left a trace in the plugin's database in the window. */
-export function runSmaLiveCli(db: Parameters<typeof readSmaLive>[0], argv: string[], now = Date.now(), cwd: string = process.cwd()): Result {
+export function runSmaLiveCli(db: Parameters<typeof readSmaLive>[0], argv: string[], now = Date.now(), cwd: string = process.cwd(), pluginRoot?: string): Result {
   // --states / --gaps / --hollow with --live: the hub's settings, node-level traces and the live hollow signs. The
   // group-level trace below stays a separate, weaker signal (groupObserved), never node evidence.
-  if (wantsProofs(argv)) return runProofCli(argv, defaultProofRoots(cwd), db as never, cwd, now);
+  if (wantsProofs(argv)) return runProofCli(argv, defaultProofRoots(cwd), db as never, cwd, now, pluginRoot);
   const days = Math.max(1, Math.min(365, Number(flag(argv, "--days") ?? 7) || 7));
   const rows = readSmaLive(db, smaGroups(SMA_NODES as never, SMA_REGIONS), now - days * 86_400_000);
   if (argv.includes("--json")) return { exitCode: 0, stdout: JSON.stringify({ days, rows }, null, 2) };

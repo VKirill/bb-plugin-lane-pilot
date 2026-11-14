@@ -65,7 +65,7 @@ export async function cliPipeline(d: CliRunDeps): Promise<PluginCliResult | unde
     }, command, args);
   }
   if (command === "sma-map") {
-    return args.includes("--live") ? runSmaLiveCli(db as never, args) : runSmaMapCli(args);
+    return args.includes("--live") ? runSmaLiveCli(db as never, args, Date.now(), process.cwd(), pluginRootFromModule(import.meta.url)) : runSmaMapCli(args);
   }
   if (command === "waiting") {
     return runWaitingCli(db, args, Date.now(), [...OWNER_ITEM_SWEEPS, budgetSpentSweep(services)], services.ownerLearningItems);

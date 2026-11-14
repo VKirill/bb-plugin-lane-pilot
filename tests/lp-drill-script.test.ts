@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { taskV2Schema } from "../src/rooms/contracts";
@@ -155,5 +156,77 @@ print(json.dumps([
     expect(gone).toEqual([]);
     expect(noRow).toEqual(["lpattempt_gone: no lane_pilot_worktree row for attempt lpattempt_gone"]);
     expect(failed).toEqual([]);
+  });
+});
+
+describe("region scenes sma_rNN (docs/sma-evidence.md)", () => {
+  const door = fileURLToPath(new URL("../scripts/lp-drill.py", import.meta.url));
+  const scenes = fileURLToPath(new URL("../scripts/lp_drill/scenes/", import.meta.url));
+  const quiet = { ...ownEnv, BB_CLI: "/nonexistent/bb" };
+
+  it("a file scenes/sma_rNN.py is found by its name: --scenario and --suite sma run it, --quick, the default list and ALL stay as they were", () => {
+    const file = `${scenes}sma_r98.py`;
+    writeFileSync(file, 'from lp_drill.prove import Proofs\nNODES = ["n1"]\ndef scenario_sma_r98(tmp):\n    p = Proofs()\n    p.prove("n1", True, "seen 1")\n    return p.verdict("sma_r98")\n');
+    try {
+      const one = spawnSync("bash", [script, "--scenario", "sma_r98", "--dry-run"], { encoding: "utf8", timeout: 30_000, env: quiet });
+      expect(one.status).toBe(0);
+      expect(one.stdout).toContain("scenarios: sma_r98");
+      expect(one.stdout).toContain('"proves": ["n1"]');
+      const suite = spawnSync("bash", [script, "--suite", "sma", "--dry-run"], { encoding: "utf8", timeout: 30_000, env: quiet });
+      expect(suite.status).toBe(0);
+      expect(suite.stdout).toContain("scenarios: sma_r13, sma_r98");
+      const quick = spawnSync("bash", [script, "--quick", "--dry-run"], { encoding: "utf8", timeout: 30_000, env: { ...quiet, LP_DRILL_SELECT: "0" } });
+      expect(quick.stdout).not.toContain("sma_r");
+      expect(spawnSync("bash", [script, "--dry-run"], { encoding: "utf8", timeout: 30_000, env: quiet }).stdout).not.toContain("sma_r");
+      const code = `import importlib.util, json, sys\nspec = importlib.util.spec_from_file_location("drill", sys.argv[1]); d = importlib.util.module_from_spec(spec); spec.loader.exec_module(d)\nprint(json.dumps({"sma": sorted(d.SMA_SCENES), "all": [n for n in d.ALL + d.EXTRA + d.BY_NAME if n.startswith("sma")], "scout": d.scout()["unlisted"]}))`;
+      const seen = JSON.parse(spawnSync("python3", ["-I", "-c", code, door], { encoding: "utf8", env: quiet }).stdout.trim().split("\n").at(-1)!);
+      expect(seen).toEqual({ sma: ["sma_r13", "sma_r98"], all: [], scout: [] });
+    } finally { rmSync(file, { force: true }); }
+  });
+
+  it("prove(): a false ok fails the scene with a problem line naming the node; a scene that proved nothing fails; the entry lists what was proved", () => {
+    const code = `import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location("drill", sys.argv[1]); d = importlib.util.module_from_spec(spec); spec.loader.exec_module(d)
+good = d.Proofs(); good.prove("n1036", True, "leak scan returned []")
+bad = d.Proofs(); bad.prove("n1036", True, "fine"); bad.prove("n1037", False, "ids refused in []")
+none = d.Proofs()
+errors = []
+for call in (lambda: good.prove("1036", True, "x"), lambda: good.prove("n1036", True, "again")):
+    try: call()
+    except ValueError as cause: errors.append(str(cause))
+print(json.dumps({"good": good.verdict("s"), "bad": bad.verdict("s"), "none": none.verdict("s"), "errors": errors, "judged": d.judge_scenario(good.verdict("s"))["verdict"]}))`;
+    const run = spawnSync("python3", ["-I", "-c", code, door], { encoding: "utf8", timeout: 30_000, env: quiet });
+    expect(run.status, run.stderr).toBe(0);
+    const out = JSON.parse(run.stdout.trim().split("\n").at(-1)!);
+    expect(out.good).toMatchObject({ result: "pass", problems: [], proved: [{ node: "n1036", ok: true, detail: "leak scan returned []" }] });
+    expect(out.bad.result).toBe("fail");
+    expect(out.bad.problems).toEqual(["n1037: not proved, ids refused in []"]);
+    expect(out.bad.proved).toHaveLength(2);
+    expect(out.none).toMatchObject({ result: "fail", problems: [expect.stringContaining("proved no node")] });
+    expect(out.errors).toEqual([expect.stringContaining("not a map node id"), expect.stringContaining("proved twice")]);
+    expect(out.judged).toBe("pass");
+  });
+
+  it("the receipt is delivered to the hub over ssh; a failure is a problem line, and `off` is the only way not to try", () => {
+    const code = `import importlib.util, json, os, sys, tempfile
+from pathlib import Path
+spec = importlib.util.spec_from_file_location("drill", sys.argv[1]); d = importlib.util.module_from_spec(spec); spec.loader.exec_module(d)
+f = Path(tempfile.mkdtemp()) / "2026-11-14-sma1.json"; f.write_text('{"a": 1}')
+calls = []
+def ok(args, stdin=None, timeout=0): calls.append([args, stdin]); return 0, "", ""
+def fail(args, stdin=None, timeout=0): return 255, "", "ssh: connect refused"
+res = {"ok": d.deliver_receipt(f, ok), "fail": d.deliver_receipt(f, fail), "call": calls[0]}
+os.environ["LP_DRILL_HUB_RECEIPTS"] = "off"; res["off"] = d.deliver_receipt(f, fail)
+print(json.dumps(res))`;
+    const env = Object.fromEntries(Object.entries({ ...quiet }).filter(([name]) => name !== "LP_DRILL_HUB_RECEIPTS"));
+    const run = spawnSync("python3", ["-I", "-c", code, door], { encoding: "utf8", timeout: 30_000, env });
+    expect(run.status, run.stderr).toBe(0);
+    const out = JSON.parse(run.stdout.trim().split("\n").at(-1)!);
+    expect(out.ok).toBeNull();
+    expect(out.fail).toMatch(/2026-11-14-sma1\.json was not delivered to the hub.*connect refused/);
+    expect(out.off).toBeNull();
+    expect(out.call[0].at(-1)).toContain("bb-plugin-lane-pilot/.agents/runs/drills");
+    expect(out.call[0].at(-1)).toContain("2026-11-14-sma1.json");
+    expect(out.call[1]).toBe('{"a": 1}');
   });
 });

@@ -45,19 +45,32 @@ describe("node-level traces run on the real schema (sma-parity-tz.md §4, proof 
     expect(readTrace({ db: handle }, gate("validate"), 1000)).toMatchObject({ n: 0, last: null, judged: true });
   });
 
-  it("outside, KV and RPC are not judged without a reader; a drill counts only a passed scene in the window", () => {
+  it("outside, KV and RPC are not judged without a reader", () => {
     expect(readTrace({ db: db() }, outside("the BB thread"), 0)).toMatchObject({ judged: false });
     expect(readTrace({}, kv("x"), 0).judged).toBe(false);
     expect(readTrace({ rpc: () => ({ n: 3, last: 7 }) }, rpc("lane-pilot.x"), 0)).toMatchObject({ judged: true, n: 3, last: 7 });
     expect(traceSql(outside("x"))).toBeNull();
+  });
+
+  it("a drill counts for node N only when N's passed scene lists N with ok true in the window (a scene-level pass proves nothing)", () => {
     const dir = mkdtempSync(join(tmpdir(), "sma-drills-"));
-    writeFileSync(join(dir, "a.json"), JSON.stringify({ finishedAt: 5000, commit: "abc", scenarios: [{ name: "writer-accepts", result: "pass" }, { name: "rework", result: "fail" }] }));
-    writeFileSync(join(dir, "b.json"), JSON.stringify({ finishedAt: 100, scenarios: [{ name: "writer-accepts", result: "pass" }] }));
+    const proved = (node: string, ok: boolean) => ({ node, ok, detail: "leak scan returned []" });
+    writeFileSync(join(dir, "a.json"), JSON.stringify({ finishedAt: 5000, commit: "abc", scenarios: [
+      { name: "writer-accepts", result: "pass" },                                                      // passed, proves nobody
+      { name: "sma_r13", result: "pass", proved: [proved("n1036", true), proved("n1037", false)] },    // n1036 yes, n1037 no
+      { name: "sma_r14", result: "fail", proved: [proved("n1040", true)] },                            // the scene failed: nothing counts
+    ] }));
+    writeFileSync(join(dir, "b.json"), JSON.stringify({ finishedAt: 100, scenarios: [{ name: "sma_r13", result: "pass", proved: [proved("n1036", true)] }] }));
     const drills = readDrills(dir);
-    expect(readTrace({ drills }, drill("writer-accepts"), 1000)).toMatchObject({ judged: true, n: 1, last: 5000 });
-    expect(readTrace({ drills }, drill("rework"), 0)).toMatchObject({ judged: true, n: 0 });
+    expect(readTrace({ drills }, drill("writer-accepts"), 0, "n1036")).toMatchObject({ judged: true, n: 0 });
+    expect(readTrace({ drills }, drill("sma_r13"), 1000, "n1036")).toMatchObject({ judged: true, n: 1, last: 5000 });
+    expect(readTrace({ drills }, drill("sma_r13"), 0, "n1036")).toMatchObject({ n: 2 });
+    expect(readTrace({ drills }, drill("sma_r13"), 0, "n1037")).toMatchObject({ judged: true, n: 0 });
+    expect(readTrace({ drills }, drill("sma_r13"), 0, "n1038")).toMatchObject({ n: 0 });
+    expect(readTrace({ drills }, drill("sma_r13"), 0)).toMatchObject({ n: 0 });
+    expect(readTrace({ drills }, drill("sma_r14"), 0, "n1040")).toMatchObject({ n: 0 });
     expect(readDrills(join(dir, "absent"))).toBeNull();
-    expect(readTraces({ drills }, [outside("x"), drill("writer-accepts")], 0)).toMatchObject({ judged: true, n: 2, last: 5000 });
+    expect(readTraces({ drills }, [outside("x"), drill("sma_r13")], 1000, "n1036")).toMatchObject({ judged: true, n: 1, last: 5000 });
   });
 });
 

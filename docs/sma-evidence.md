@@ -52,6 +52,35 @@ n266: {
    choose a mutation that keeps the result's type and shape), `baseline-red`, `no-tests`.
 6. Commit the region file and its attestation together.
 
+`sma:mutate` regenerates the contract index (`contracts.ts`, `node scripts/sma-contracts.mjs`) before it picks tests, so a
+new `[sma:<id>]` test is run; a failure to regenerate stops the run. A `survived` result prints the titles of the tests that ran
+and still passed: read them. A test that never touches the mutated line (a wrong anchor) or a symmetric fixture (one acked
+and one real item: `acked` → `!acked` changes nothing) is what survives; make the fixture asymmetric.
+Mutation runs that spawn processes are slow (region 13 took 12 minutes): run `npm run sma:mutate -- --region N` in the
+background, and use `--node` while authoring.
+
+## Before you choose a mutation
+
+- **The anchor is checked, then the mutation.** `bb lane-pilot sma-map --gaps --region N` (or `runSmaMapCli`) prints per node
+  the resolved anchor: file, symbol, line count, and a WARNING for an anchor under `tests/` or over 150 lines (a dispatcher).
+  `npx tsx scripts/sma-anchor-check.ts --region N` lists nodes whose anchor file no test of the node imports (directly or one
+  hop): a hint, not a gate. Compare the anchor in `entries.ts` with what the card's test really exercises; a wrong anchor is
+  fixed in `entries.ts`, never mutated. After changing an anchor run `--hollow` for the node again (a big dispatcher pulls
+  unrelated `ponytail:` comments in as hollow sign 3).
+- **A mutation cannot live under `tests/`** (`lintMutation` refuses it). When the card's behaviour is implemented in
+  `tests/helpers/*`, the fix is a pure move to `src/` leaving a one-line re-export shim behind (allowed even past the
+  40-line working-code limit). Other regions' nodes anchored at the moved file get their anchor path updated in the same
+  commit: an anchor follows a move.
+- **Commit moved and new files BEFORE `npm run sma:facts`**: `scripts/sma-provenance.ts` reads HEAD (blame, change points) and
+  says so when a file is not in HEAD or the tree has uncommitted paths.
+- **A `check`/`gate`/`step` node with «no entry and no control predecessor» needs an authored `entry(...)`**, naming the
+  normal input that starts it:
+
+```ts
+n1041: { mutation: flip(GUARDS, "if (!read) unread.push(`${method}.${field}`);", "if (read) unread.push(`${method}.${field}`);"),
+         reach: entry("the test suite runs") },
+```
+
 ## Constructors (`evidence/types.ts`)
 
 - mutation: `flip` (branch turned), `distort` (one field of a successful result wrong), `skipWrite` (one write
@@ -60,10 +89,48 @@ n266: {
   fold), a list of words, `not(words)`, `isSet()`. `notGatedBy: { key: "why" }` dismisses a setting the function reads
   that does not gate the node (silences an `undeclared gate`). `seedEntry` is reserved for the mechanical seed.
 - trace: `gate`, `stage`, `receipt`, `transition({from,to,reason})`, `taskField`, `wfRun`, `wfStep`, `part`, `schedule`,
-  `settingRow`, `rows(table, clock, where)` (last resort, `lane_pilot_*` only), `kv`, `rpc`, `drill("<scene>")`
-  (a passed scene in `.agents/runs/drills/*.json`), `outside("<where>")` (not judged, never counts). Several sources: an array.
+  `settingRow`, `rows(table, clock, where)` (last resort, `lane_pilot_*` only), `rpc`, `drill("<scene>")`
+  (see «Trace choice»), `kv`, `outside("<where>")` (notes: never counted). Several sources: an array.
 - reviews: `hollowAttested: attested(commit, "tests/x.test.ts › title")` (waives hollow sign 6),
   `voidReview: voidStays("why")` or `voidIsHave("where it is served")` (then also change entries.ts).
+
+## Trace choice (a node-level trace)
+
+Pick in this order:
+
+1. **A hub database source** if the node writes a row (`gate`, `stage`, `receipt`, `transition`, `wfRun`, …).
+2. **Otherwise a `prove()` line in the region's drill scene**, `trace: drill("sma_rNN")`. This is the route for checks that run in
+   the test suite or the publish gate and write no row. It counts only for the node the scene itself proved: the receipt entry of
+   the passed scene must list `{node:"n1036", ok:true, detail:"…"}`. A scene that merely passed proves nothing for anyone, and a
+   `prove(..., False, ...)` fails the scene with a problem line naming the node.
+3. `kv()` and `outside()` are **notes and never close a node** (KV has no timestamp to compare with the change point; `outside`
+   is not judged). A node whose effect lives in KV or in a file on a machine closes through a `prove()` line in its region scene.
+
+### The region scene `scripts/lp_drill/scenes/sma_rNN.py`
+
+A file named `sma_rNN.py` (NN = two-digit region) is found by its name: no shared list is edited, and it is not part of `--quick`
+or the default run. `scripts/lp_drill/scenes/sma_r13.py` (+ `sma_r13_probe.ts`) is the worked example: eight pure-check nodes.
+
+```python
+NODES = ["n1036", "n1037"]                      # what the scene proves
+def scenario_sma_r13(tmp):                       # tmp: a scratch folder
+    proofs = Proofs()                            # from lp_drill.prove import Proofs
+    proofs.prove("n1036", result == expected, f"leak scan returned {result}")   # write the observed value, not «ok»
+    return proofs.verdict("sma_r13")
+```
+
+- Add a node: append it to `NODES`, run its real check, `proofs.prove(node, ok, detail)` with the result the card expects, put
+  `trace: drill("sma_rNN")` on its line in `evidence/rNN.ts`. A node is proved once per scene. Keep the file self-contained
+  (import what you use from `lp_drill.*`; do not share names with another region's scene).
+- Run: `scripts/lp-drill.sh --scenario sma_r13` (one), `scripts/lp-drill.sh --suite sma` (all that exist), add `--dry-run` to
+  list what a scene proves without running it. Region scenes need no sandbox, hub write or lock, so agents run them in parallel;
+  each run writes its own receipt.
+- **Prefer deterministic, model-free paths**: a CLI call, an RPC, a database read, a refused dispatch, the real check of the
+  checked-out commit. A model turn only when the node itself is a model step.
+- The receipt is judged where the owner measures: after a run the drill copies it to the hub's plugin folder
+  (`~/Documents/BB-сервис/plugins/bb-plugin-lane-pilot/.agents/runs/drills/`, over the ssh channel `hubsql` uses;
+  `LP_DRILL_HUB_RECEIPTS=<abs path>|off`). A failed delivery is a problem line in the receipt and the log, not a silent skip.
+  `bb lane-pilot sma-map --states --live` reads the receipts from the plugin's own root, whatever the current directory.
 
 ## Reachability, change points, hollow
 
