@@ -19,6 +19,8 @@
 - **Regions 11 (The forge) and 28 (Design training and evaluation) of the SMA map have their evidence for all 22 nodes**, with the region scenes `sma_r11` and `sma_r28`. Checked by `npm run sma:mutate -- --region 11` and `--region 28` (attestations in `attest/r11.json`, `attest/r28.json`).
 - **Region 14 (Memory), batch a, has its evidence for 29 nodes**, 19 of them proved by the region scene `sma_r14` on scratch databases and 10 by rows the hub already writes. Open: n1060 (its tests sit in a stage harness the contract scan does not read). Checked by `npm run sma:mutate -- --region 14` (attestations in `attest/r14.json`).
 - **A second mutation runner no longer restores the file of a live run.** `scripts/sma-mutate.mjs` recovered from the journal before it took the lock, so a second start in the same checkout put the original file back under the running test, which the live run would then report as `survived`. The lock is taken first. Checked by `tests/sma-mutate-lock.test.ts`.
+- **The guard inventory lists the spend-cap deny.** `pretaskDecision` refuses a subagent start with `[spend-cap]`, but `GUARD_INVENTORY` had no row for that tag, so the inventory a PM reads was one guard short. Checked by `tests/sma/four-proofs-r23-a.test.ts` (every real deny path is run and each tag has an inventory row).
+- **Regions 21 (sma-tools: project queries) and 23 (Templates, references, contexts) of the SMA map have their evidence: 26 and 22 nodes**, with the region scenes `sma_r21` and `sma_r23`; region 21 needed no source change. Checked by `npm run sma:mutate -- --region 21` and `--region 23` (attestations in `attest/r21.json`, `attest/r23.json`).
 
 ## 0.1.565
 
