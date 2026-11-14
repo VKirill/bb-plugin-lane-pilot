@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.555
+
+- **A section chat's task may change files elsewhere in the same git repository (`placeTask` in dispatch.ts, `rerootToRepoRoot`).** When owns_paths leave the section folder but stay under the repo root the host reports (`git rev-parse --show-toplevel`, accepted only as an ancestor of the section), the task's home moves to the repo root: paths are rewritten from the root, verification keeps the section folder as cwd, the root's protected paths come back, and the server sets `repo_scope` (a PM-sent value is dropped). The dispatch answer and the writer's plan name the files outside the section. Such a task gets the strong plan critic (never skipped by the threshold) and a strict code critic (`repo_scope`); tasks of different sections owning the same file still run one after another (`checkoutOwnsOverlap`). A path outside the repo is refused as before. Before, a section task's edit of `../sdk` was invisible to the ownership check (`workspace-dirt.ts`, `git-ownership.ts` dropped `../` paths). `tests/section-repo-scope-flow.test.ts` runs 4 cases on real git and host handlers; `tests/section-repo-scope.test.ts` 10 unit cases.
+
 ## 0.1.554
 
 - **The plan critic gets the plan's text, not its path (`critique-runs/plan-text.ts`).** When the plan is one path to a file in the project, the host reads it and inlines up to 8 KB (then a cut marker and the path); `plan_sha256` goes to the receipt and into the input hash, so an edited plan file is never judged by a stale critique. Seen on the hub in thread thr_xj4t3p2vzn, whose plan was only a path; `tests/stages/critic-plan-inline.test.ts` covers inline, cut, prose, paths outside the project and a missing file.
