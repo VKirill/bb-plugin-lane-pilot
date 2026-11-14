@@ -53,7 +53,7 @@ describe("parity wave G7 rest B", () => {
     expect(codeFactsState(`HEAD=${head}\nLAST=${head}\nBEHIND=0\n`)).toEqual({ state: "fresh" });
     expect(CODE_FACTS_PROBE).toContain(".gitnexus");
     expect(CODE_FACTS_PROBE).toContain("meta.json");
-    expect(CODE_FACTS_REFRESH).toBe("gitnexus analyze");
+    expect(CODE_FACTS_REFRESH).toBe("gitnexus analyze --index-only");
   });
 
   it("[sma:k_t_intel] the host probe feeds the state reader, and the analyze command runs once for --refresh", async () => {
@@ -67,7 +67,7 @@ describe("parity wave G7 rest B", () => {
     // The refresh path of the CLI: same runOnHost transport, the analyze command exactly once.
     const { runOnHost } = await import("@lane-pilot/host-calls");
     await runOnHost(host as never, { hostId: "h1", cwd: "/p", command: CODE_FACTS_REFRESH, timeoutSec: 60 });
-    expect(commands).toEqual([CODE_FACTS_PROBE, "gitnexus analyze"]);
+    expect(commands).toEqual([CODE_FACTS_PROBE, "gitnexus analyze --index-only"]);
   });
 
   it("[sma:m_sp_tjournal] two owner messages in one thread on one day give one journal row, and rows over 90 days are dropped", () => {
@@ -338,10 +338,10 @@ describe("parity wave G7 rest B", () => {
     const t = cli({ thr_pm: { projectId: "P1", role: "pm" }, thr_w: { projectId: "P1", role: "writer" } });
     const owner = await t.run(["intel", "P2", "--refresh"]);
     expect(owner.exitCode).toBe(0);
-    expect(t.commands).toContain("gitnexus analyze");
+    expect(t.commands).toContain("gitnexus analyze --index-only");
     t.commands.length = 0;
     expect((await t.run(["intel", "P1", "--refresh"], "thr_pm")).exitCode).toBe(0);
-    expect(t.commands).toContain("gitnexus analyze");
+    expect(t.commands).toContain("gitnexus analyze --index-only");
     t.commands.length = 0;
     const other = await t.run(["intel", "P2", "--refresh"], "thr_pm");
     expect(other.exitCode).toBe(1);
@@ -355,7 +355,7 @@ describe("parity wave G7 rest B", () => {
     const state = await t.run(["intel", "P1"], "thr_w");
     expect(state.exitCode).toBe(0);
     expect(state.stdout).toContain('"state": "none"');
-    expect(t.commands).not.toContain("gitnexus analyze");
+    expect(t.commands).not.toContain("gitnexus analyze --index-only");
   });
 
   it("[sma:m_sp_tjournal] bb lane-pilot owner-presence prints the bare array as before; --journal prints the journal rows", async () => {
