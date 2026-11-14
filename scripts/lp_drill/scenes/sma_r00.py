@@ -6,13 +6,16 @@ three single lines here — its import, its NODES and its call. Run: scripts/lp-
 from __future__ import annotations
 
 from lp_drill.prove import Proofs
+from lp_drill.scenes.sma_r00_a import NODES_A, prove_a
 from lp_drill.scenes.sma_r00_b import NODES_B, prove_b
 
 NODES = []
+NODES += NODES_A
 NODES += NODES_B
 
 
 def scenario_sma_r00(tmp) -> dict:
     proofs = Proofs()
+    prove_a(proofs, tmp)
     prove_b(proofs, tmp)
     return proofs.verdict("sma_r00", checked=len(NODES))
