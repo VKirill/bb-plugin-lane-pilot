@@ -1,3 +1,4 @@
+import { readdirSync, readFileSync } from "node:fs";
 import { defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
 import LongestFirstSequencer from "./tests/sequencer";
@@ -42,6 +43,18 @@ const nodeTests = ["tests/**/*.test.ts", "src/rooms/**/tests/**/*.test.ts", "pac
 const uiAlone = ["tests/schedule-detail-ui.test.tsx", "tests/harness-ui.test.tsx", "tests/composer-activation.test.tsx", "tests/workflow-models-ui.test.tsx", "tests/ui-settings-integration/part*.test.tsx", "tests/improvement/improvement-ui.test.tsx", "tests/role-models-ui.test.tsx"];
 const uiTests = ["tests/**/*.test.tsx", "src/rooms/**/tests/**/*.test.tsx"];
 
+// Every workspace package resolves to THIS tree. In a worktree node_modules is the main checkout's, so an import by package name
+// would run the main checkout's code: a change or a mutation of packages/* made in a worktree went unseen by its own tests (2026-11-14).
+const packagesDir = fileURLToPath(new URL("./packages/", import.meta.url));
+const workspaceAliases = readdirSync(packagesDir).flatMap((dir) => {
+  let manifest: { name?: string; exports?: Record<string, unknown> };
+  try { manifest = JSON.parse(readFileSync(`${packagesDir}${dir}/package.json`, "utf8")); } catch { return []; }
+  return Object.entries(manifest.exports ?? {}).flatMap(([sub, target]) => typeof target !== "string" || !manifest.name ? [] : [{
+    find: new RegExp(`^${`${manifest.name}${sub.slice(1)}`.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}$`),
+    replacement: `${packagesDir}${dir}/${target.replace(/^\.\//, "")}`,
+  }]);
+});
+
 export default defineConfig({
   test: {
     // 30 s: a deploy shares the machine with the night's writers (load 20 on 16 cores, 2026-11-11), and tests that take 2-5 s alone
@@ -63,14 +76,6 @@ export default defineConfig({
     ],
   },
   resolve: {
-    alias: {
-      "@": fileURLToPath(new URL(".", import.meta.url)),
-      // node_modules is a symlink to the main checkout in worktrees; pin i18n to this tree so tests see this branch's strings.
-      "@lane-pilot/i18n": fileURLToPath(new URL("./packages/i18n/src/index.ts", import.meta.url)),
-      "@lane-pilot/council": fileURLToPath(new URL("./packages/council/src/index.ts", import.meta.url)),
-      "@lane-pilot/memory-core": fileURLToPath(new URL("./packages/memory-core/src/index.ts", import.meta.url)),
-      "@lane-pilot/workflow-engine/ui": fileURLToPath(new URL("./packages/workflow-engine/src/ui.ts", import.meta.url)),
-      "@lane-pilot/workflow-engine": fileURLToPath(new URL("./packages/workflow-engine/src/index.ts", import.meta.url)),
-    },
+    alias: [{ find: "@", replacement: fileURLToPath(new URL(".", import.meta.url)) }, ...workspaceAliases],
   },
 });
