@@ -1,6 +1,11 @@
 // Region 14 · Memory, batch b (n1078 … n1107): behaviour tests of the four proofs. Each test writes to a scratch database and reads back what is
 // stored and what a later reader gets. Memory lives only on the hub (rows of lane_pilot_memory and its indexes): a card that keeps memory in a
 // project file (MEMORY.md, a CLAUDE.md block, .sma/…) is proven on the hub path that serves its purpose, never by a file in a project tree.
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { runCatalogCli } from "../../src/rooms/file-cards/cli";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import {
@@ -261,6 +266,21 @@ Shared checkouts see each other's half-done edits.
     expect(writerMemoryPicks(notes, task).map((item) => item.id)).toEqual(["n1", "n2", "n3"]);
     expect(writerMemoryPicks(notes.filter((item) => item.id === "core1" || item.id === "n4"), task).map((item) => item.id)).toEqual(["n4", "core1"]);
     expect(writerMemoryPicks([notes[6]!], { owns_paths: ["lib/other.ts"], read_first: [] }).map((item) => item.id)).toEqual(["core1"]);
+  });
+});
+
+describe("the catalog verb (region 14, batch b)", () => {
+  it("[sma:k_v_catalog] each card line starts with the file's own path, its line count and language, in path order, and an untracked file has none", () => {
+    const repo = mkdtempSync(join(tmpdir(), "r14b-repo-"));
+    try {
+      execFileSync("git", ["init", "-q"], { cwd: repo });
+      for (const name of ["b.ts", "a.ts", "c.md"]) writeFileSync(join(repo, name), `// ${name}\n`);
+      execFileSync("git", ["add", "a.ts", "b.ts", "c.md"], { cwd: repo });
+      writeFileSync(join(repo, "loose.ts"), "// loose\n");
+      const out = runCatalogCli([], repo);
+      expect(out.exitCode).toBe(0);
+      expect(out.stdout!.trim().split("\n").map((line) => line.split(" | ").slice(0, 2).join(" | "))).toEqual(["a.ts | 1 lines", "b.ts | 1 lines", "c.md | 1 lines"]);
+    } finally { rmSync(repo, { recursive: true, force: true }); }
   });
 });
 
