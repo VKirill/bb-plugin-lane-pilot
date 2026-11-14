@@ -1,4 +1,4 @@
-{"generatedFrom":"e5c8a3dcf7d9",
+{"generatedFrom":"2f26034b9b4e",
 "graphs":[
 {"id":"3d-asset","file":"workflows/3d-asset.json","status":"published","nodes":[["concept","agent"],["model","agent"],["verify","agent"],["export","agent"],["offer_roblox","action"],["done_roblox","action"],["done","action"],["partial","action"],["blocked","action"],["goal_check","action"]],"edges":[["concept","model","concept.ok"],["concept","blocked",null],["model","verify","model.ok"],["model","blocked",null],["verify","model","verify.status == 'rework' && visits('verify') < 2"],["verify","export","verify.status == 'pass'"],["verify","partial",null],["export","goal_check","export.ok"],["export","blocked",null],["goal_check","offer_roblox","goal_check.ok != false && $inputs.target_engine == 'roblox'"],["offer_roblox","done_roblox",null],["goal_check","done","goal_check.ok != false"],["goal_check","partial",null]]},
 {"id":"about-site","file":"workflows/about-site.json","status":"tested","nodes":[["facts","action"],["write","agent"],["check","action"],["deliver","action"],["done","action"],["nothing_public","action"],["blocked","action"],["goal_check","action"]],"edges":[["start","facts",null],["facts","nothing_public","facts.empty"],["facts","write",null],["write","check",null],["check","write","!check.ok && visits('write') < 2"],["check","deliver","check.ok"],["check","blocked",null],["deliver","goal_check",null],["goal_check","done","goal_check.ok != false"],["goal_check","blocked",null]]},
@@ -1286,6 +1286,7 @@
 "n1221":"src/rooms/workflow/server/workflow-planning-files.ts#debugSessionDoc",
 "n1225":"src/rooms/reports/server/daily.ts#buildDailyReport",
 "n1226":"src/rooms/tools/server/project-stats.ts#projectStats",
+"n1230":"src/rooms/contracts/native-agent-static.ts#EMPLOYEES",
 "n1234":"packages/workflow-engine/src/router.ts#routeIntent",
 "n1235":"src/rooms/phase/server/driver-steps.ts#finishClosed",
 "n1236":"src/rooms/phase/server/driver-steps.ts#poke",
@@ -1338,6 +1339,7 @@
 "n1326":"src/rooms/phase/server/driver-docs.ts#writeDocs",
 "n1327":"src/rooms/phase/server/driver-methods-admission.ts#context",
 "n1353":"src/rooms/verification/git-integrate/worktree-lifecycle.ts#removeLaneWorktree",
+"n1362":"src/rooms/memory/server/session-memory.ts#confirmedWordHits",
 "n1363":"src/rooms/tools/server/cli-project.ts#cliProject",
 "n1366":"src/rooms/storage/settings-store.ts#loadProjectSettings",
 "n1372":"src/rooms/writer/server/writer-task.ts#writerBriefSegments",
