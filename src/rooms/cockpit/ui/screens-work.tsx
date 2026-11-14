@@ -279,7 +279,8 @@ export function proposeTaskWords(phrase: string): TaskProposal {
     const soThat = /[,;.]\s*(?:чтобы|so that)\s+(.+)$/i.exec(text);
     if (whenThen) { promise.push(`When ${clean(whenThen[1]!)}, then ${clean(whenThen[2]!)}`); text = text.slice(0, whenThen.index); }
     else if (soThat) { promise.push(`Then ${clean(soThat[1]!)}`); text = text.slice(0, soThat.index); }
-    clauses.push(...text.split(/[.;]/).map((clause) => clause.trim()).filter(Boolean));
+    // A dot inside a file name («export.ts») is not the end of a clause: only a dot or a semicolon followed by a space or the end is.
+    clauses.push(...text.split(/[.;](?=\s|$)/).map((clause) => clause.trim()).filter(Boolean));
   }
   const title = clean(clauses[0] ?? "");
   return {

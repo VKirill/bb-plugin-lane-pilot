@@ -201,11 +201,15 @@ function parseDiagnostics(raw: unknown): TokenUsageDiagnostics {
     return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
   };
   const lastError = Reflect.get(raw, "lastError");
+  // The mismatches the last sync saw (SMA m_cf_book_usage) are kept as stored: the stored diagnostics used to be read back without them, so the person never saw one.
+  const stored = Reflect.get(raw, "mismatches");
+  const mismatches = (Array.isArray(stored) ? stored : []).filter((row): row is TokenUsageMismatch => !!row && typeof row === "object" && typeof row.chosen === "string" && typeof row.actual === "string" && typeof row.tokens === "number");
   return {
     threadsSeen: n("threadsSeen"),
     threadsWithUsage: n("threadsWithUsage"),
     threadsFailed: n("threadsFailed"),
     lastError: typeof lastError === "string" && lastError.length > 0 ? lastError : null,
+    ...(mismatches.length ? { mismatches } : {}),
   };
 }
 
