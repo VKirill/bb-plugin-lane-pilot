@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import { getBaseline } from "../../src/rooms/baseline";
 import { closeOwnerItem, listOpenOwnerItemKeys } from "../../src/rooms/owner-waiting";
 import { createAttempt, createRun, createTask, getAttempt, openDatabase, transitionAttempt } from "../../src/rooms/plugin-db";
+import { onAttemptFinished, type AttemptFinished } from "../../src/rooms/writer/server/attempt-finished";
 import { createWriterFinish } from "../../src/rooms/writer/server/finish";
 import { world } from "../baseline/world";
 import { config, contract } from "./r01-world-a";
@@ -103,7 +104,7 @@ describe("[sma:ae_awaits] [sma:ag_parked] a writer's question parks the attempt 
       files: { read: async () => { throw Object.assign(new Error("file does not exist"), { code: "not_found" }); }, write: async (args: { path: string; content: string }) => { writes.push(args); } } } },
       db, getThreadBounded: async () => ({ status: "idle" }), host: { call: async () => ({}) }, isDisposed: () => false, log: () => undefined };
     const finish = createWriterFinish(ctx as never, { validateWriterResult: async () => ({ status: "accepted" }), workspaceDirt: async () => ({ ok: true, snapshots: [] }), runBudgetFor: () => ({ snapshot: () => ({ limits: {} }) }) } as never);
-    return { db, writes, run: () => finish.finishWriterAttempt({ projectId: "P", config, task, runId: "run", taskId: "t1", attemptId: "a1", pmThreadId: "pm", writerThreadId: "writer-1", dirtBefore: [] }) };
+    return { db, writes, ctx, run: () => finish.finishWriterAttempt({ projectId: "P", config, task, runId: "run", taskId: "t1", attemptId: "a1", pmThreadId: "pm", writerThreadId: "writer-1", dirtBefore: [] }) };
   }
 
   it("[sma:ae_awaits] [sma:ag_parked] an answer that is a question ends the attempt blocked with the question as its reason, skips the accept gate, and saves the question as a file with its answer open", async () => {
@@ -115,5 +116,16 @@ describe("[sma:ae_awaits] [sma:ag_parked] a writer's question parks the attempt 
     expect(qa?.content).toContain("Q (writer): which locale should the totals use?");
     expect(qa?.content).toContain("A: open — the writer is parked here");
     expect(listOpenOwnerItemKeys(w.db, {})).toEqual([]);
+  });
+
+  it("[sma:ae_complete] a finished attempt reaches the attempt-finished readers under its own task, with the answer's status, reason and the result record, while its row waits for a person", async () => {
+    const w = finishWorld("`NEEDS_HUMAN: which locale?`\nAPPROACH: ask first\nLESSON: the locale is not in the contract");
+    const heard: AttemptFinished[] = [];
+    onAttemptFinished(w.ctx as never, (event) => { heard.push(event); }, "probe");
+    const result = await w.run();
+    expect(heard).toHaveLength(1);
+    expect(heard[0]).toMatchObject({ scope: "attempt", runId: "run", taskId: "t1", attemptId: "a1", status: "blocked", reason: "needs_human: which locale?" });
+    expect(heard[0]!.result).toBe(result);
+    expect(getAttempt(w.db, "a1")).toMatchObject({ state: "blocked", reason: "needs_human: which locale?" });
   });
 });
