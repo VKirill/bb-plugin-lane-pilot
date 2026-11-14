@@ -767,6 +767,7 @@ export const SMA_CONTRACT_TESTS: Readonly<Record<string, readonly string[]>> = {
   k_v_mempreview: ["tests/sma/four-proofs-tails-last.test.ts › the memory preview of a project start is read from the hub's confirmed notes of that project and shown in the step's brief; another project's note and an unconfirmed guess stay out, and nothing is written"],
   k_v_merge: ["tests/sma/four-proofs-r20-a.test.ts › writers' finished copies are merged into main one after another, also when started together; a clash is refused with its files and main stays as it was"],
   k_v_metrics: ["tests/sma/four-proofs-r26-a.test.ts › `report` is one HTML page with the SMA map, the money and the cost per verified result of a project that has an accepted task","tests/sma/phase-gates-4.test.ts › writes the numbers into one page and escapes what a row contains"],
+  k_v_npmtest: ["tests/sma/four-proofs-r27-npmtest.test.ts › npm test runs every test file with no filter, and the README numbers check and the internal-trace scan are among them"],
   k_v_open: ["core:apps/server/test/sma/vk-owner-session.sma.test.ts › the login link works once: the second use of the same ticket is refused and sets no cookie"],
   k_v_passport: ["tests/sma/parity-b8-packages.test.ts › the passport shows the current model's badge and resets when the model changes"],
   k_v_predict: ["tests/sma/receipts-1.test.ts › a forecast is scored by arithmetic, with no model"],

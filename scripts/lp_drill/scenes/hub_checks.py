@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-from lp_drill.hub import bb, hubsql, setting_rpc, RPC_MISSING
+from lp_drill.hub import bb, bb_read, hubsql, setting_rpc, RPC_MISSING
 from lp_drill.report import verdict
 
 def scenario_lead_shadow(tmp: Path) -> dict:
@@ -30,7 +30,7 @@ def scenario_lead_shadow(tmp: Path) -> dict:
         if tiers.get(cls) != "owner_only":
             problems.append(f"class {cls} is {tiers.get(cls)}, the policy keeps it owner_only")
     for args in (("status",), ("rights",), ("exam",), ("road", "--tree", "--history"), ("ticks",)):
-        rc, out, err = bb("lane-pilot", "lead", *args)
+        rc, out, err = bb_read("lane-pilot", "lead", *args)
         if rc != 0:
             problems.append(f"bb lane-pilot lead {' '.join(args)} exited {rc}: {(err or out).strip()[:160]}")
     settings = state.get("settings") or {}
@@ -70,7 +70,7 @@ def scenario_episodes(tmp: Path) -> dict:
         problems.append(f"{counts['doneNoVerdict']} recent done episodes have no parsed verified outcome")
     if counts.get("stalePending") and not counts.get("enrichedRecently"):
         problems.append(f"{counts['stalePending']} episodes stayed pending for over 2 h: the sweep lp.episodes is not running")
-    rc, out, err = bb("lane-pilot", "errands", "diagnose", "--json")
+    rc, out, err = bb_read("lane-pilot", "errands", "diagnose", "--json")
     if rc != 0:
         problems.append(f"bb lane-pilot errands diagnose exited {rc}: {(err or out).strip()[:160]}")
     return verdict("episodes", problems, episodesDeployed=True, episodes=counts.get("n"), held=counts.get("held"), since=since)

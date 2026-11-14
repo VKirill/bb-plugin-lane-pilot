@@ -27,6 +27,21 @@ def bb(*args: str, timeout: int = 180) -> tuple[int, str, str]:
     return run([BB, *args], timeout=timeout)
 
 
+HUB_PAUSE = re.compile(r"did not respond|HTTP 50[234]")
+
+
+def bb_read(*args: str, timeout: int = 180, pause: float = 10) -> tuple[int, str, str]:
+    """A read-only bb command, asked again (twice at most) when it meets the hub in a pause: bb got no answer or HTTP 502-504.
+    Only for reads: a write that answered 502 may have landed. The drill after 0.1.568 went red on exactly this (2026-11-14: the
+    hub's loop stood for 5 s at a time while it served a thread of 58 000 events, and `lead rights` gave up after 12 s)."""
+    for attempt in range(3):
+        rc, out, err = bb(*args, timeout=timeout)
+        if rc == 0 or attempt == 2 or not HUB_PAUSE.search(err or out):
+            break
+        time.sleep(pause)
+    return rc, out, err
+
+
 def hubsql(sql: str) -> list[dict]:
     rc, out, err = run(["ssh", "-i", KEY, "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", HUB, f"sqlite3 -readonly -json '{HUB_DB}'"], stdin=sql, timeout=60)
     if rc != 0:
