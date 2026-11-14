@@ -20,6 +20,7 @@ from lp_drill.prove import Proofs
 from lp_drill.scenes.sma_r09_b import NODES_B, prove_b
 from lp_drill.scenes.sma_r09_c import NODES_C, prove_c
 from lp_drill.scenes.sma_r09_d import NODES_D, prove_d
+from lp_drill.scenes.sma_r09_g import NODES_G, prove_g
 
 # node -> card id, for the nodes proved by a test file of the commit (screens, and handlers whose result is a whole screen or an rpc answer).
 SCREENS = {
@@ -34,6 +35,7 @@ NODES = sorted([*SCREENS, *PROBED])
 NODES = sorted([*NODES, *NODES_B])
 NODES = sorted([*NODES, *NODES_C])
 NODES = sorted([*NODES, *NODES_D])
+NODES = sorted([*NODES, *NODES_G])
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r09_probe.ts"
 TEST_FILES = ["tests/sma/four-proofs-r09-a.test.ts", "tests/sma/four-proofs-r09-a.test.tsx", "tests/sma/four-proofs-r09-a2.test.tsx", "tests/sma/four-proofs-r09-a3.test.tsx",
               "tests/sma/parity-d10-rest-1.test.ts", "tests/sma/parity-d5-phase-1.test.ts"]
@@ -108,4 +110,5 @@ def scenario_sma_r09(tmp) -> dict:
     prove_b(proofs, tmp)
     prove_c(proofs, tmp)
     prove_d(proofs, tmp)
+    prove_g(proofs, tmp)
     return proofs.verdict("sma_r09", checked=len(NODES))

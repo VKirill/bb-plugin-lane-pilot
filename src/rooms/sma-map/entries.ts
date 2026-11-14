@@ -970,7 +970,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n956: ["have", "живой поток", "src/rooms/cockpit/ui/screens-day.tsx#TodayScreen"],
   n957: ["have", "чат = тред PM: сообщение владельца превращается в задачу, PM ставит её сам (lane_pilot_dispatch_writer, только из треда PM); ответ «да» спрашивается там, где нужен", "src/rooms/writer/server/dispatch.ts#dispatchWriter"],
   n958: ["have", "зона остановки конвейера", "src/rooms/runs/conveyor.ts#setConveyor"],
-  n959: ["have", "системная консоль", "src/rooms/cockpit/ui/screens-ops.tsx#SystemScreen"],
+  n959: ["have", "системная консоль", "src/rooms/phase/server/rpc.ts#phase_control"],
   n960: ["have", "мост Telegram", "telegram:server.ts#getUpdates"],
   n961: ["have", "нет бота — нет петли", "telegram:server.ts#botToken"],
   n962: ["have", "долгий опрос сообщений", "telegram:adapters.ts#telegram"],
