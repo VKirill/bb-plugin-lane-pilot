@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { rmSync, writeFileSync } from "node:fs";
+import { readdirSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { taskV2Schema } from "../src/rooms/contracts";
@@ -166,6 +166,8 @@ describe("region scenes sma_rNN (docs/sma-evidence.md)", () => {
 
   it("a file scenes/sma_rNN.py is found by its name: --scenario and --suite sma run it, --quick, the default list and ALL stay as they were", () => {
     const file = `${scenes}sma_r98.py`;
+    const real = readdirSync(scenes).filter((f) => /^sma_r\d+\.py$/.test(f)).map((f) => f.replace(/\.py$/, ""));
+    const names = [...real, "sma_r98"].sort();
     writeFileSync(file, 'from lp_drill.prove import Proofs\nNODES = ["n1"]\ndef scenario_sma_r98(tmp):\n    p = Proofs()\n    p.prove("n1", True, "seen 1")\n    return p.verdict("sma_r98")\n');
     try {
       const one = spawnSync("bash", [script, "--scenario", "sma_r98", "--dry-run"], { encoding: "utf8", timeout: 30_000, env: quiet });
@@ -174,13 +176,13 @@ describe("region scenes sma_rNN (docs/sma-evidence.md)", () => {
       expect(one.stdout).toContain('"proves": ["n1"]');
       const suite = spawnSync("bash", [script, "--suite", "sma", "--dry-run"], { encoding: "utf8", timeout: 30_000, env: quiet });
       expect(suite.status).toBe(0);
-      expect(suite.stdout).toContain("scenarios: sma_r13, sma_r98");
+      expect(suite.stdout).toContain(`scenarios: ${names.join(", ")}`);
       const quick = spawnSync("bash", [script, "--quick", "--dry-run"], { encoding: "utf8", timeout: 30_000, env: { ...quiet, LP_DRILL_SELECT: "0" } });
       expect(quick.stdout).not.toContain("sma_r");
       expect(spawnSync("bash", [script, "--dry-run"], { encoding: "utf8", timeout: 30_000, env: quiet }).stdout).not.toContain("sma_r");
       const code = `import importlib.util, json, sys\nspec = importlib.util.spec_from_file_location("drill", sys.argv[1]); d = importlib.util.module_from_spec(spec); spec.loader.exec_module(d)\nprint(json.dumps({"sma": sorted(d.SMA_SCENES), "all": [n for n in d.ALL + d.EXTRA + d.BY_NAME if n.startswith("sma")], "scout": d.scout()["unlisted"]}))`;
       const seen = JSON.parse(spawnSync("python3", ["-I", "-c", code, door], { encoding: "utf8", env: quiet }).stdout.trim().split("\n").at(-1)!);
-      expect(seen).toEqual({ sma: ["sma_r13", "sma_r98"], all: [], scout: [] });
+      expect(seen).toEqual({ sma: names, all: [], scout: [] });
     } finally { rmSync(file, { force: true }); }
   });
 
