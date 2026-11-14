@@ -74,7 +74,8 @@ describe("phase checks", () => {
     if (!gate.ok) expect(gate.why.join(" ")).toContain("signed context");
     const waiting = planGate(planned(items, { ownerWords: true }));
     expect(waiting.ok).toBe(false);
-    if (!waiting.ok) expect(waiting.why).toContain(PLAN_WORD_GAP);
+    // The wait names why it is asked (default-path audit §5.4.6): here the old record's flag, set when the phase opened.
+    if (!waiting.ok) expect(waiting.why).toContain(`${PLAN_WORD_GAP}: owner.words was on when the phase opened`);
   });
 
   it("[sma:p3_review] [sma:p3_readiness] [sma:pc_roles_judge] holds a drawing until a different role has reviewed it", () => {

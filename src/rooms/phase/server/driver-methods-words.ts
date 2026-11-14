@@ -1,7 +1,7 @@
 import { phaseWordItemKey } from "./word-item";
 import { isWholeConsent } from "../../tasks";
 import { bestEffort } from "@lane-pilot/kit";
-import { PHASE_STAGES, acceptanceKey, discussionGate, phaseFolder, wordKeyOf } from "../logic";
+import { PHASE_STAGES, acceptanceKey, discussionGate, phaseFolder, wordAsked, wordKeyOf } from "../logic";
 import { specText, uatState } from "../stages";
 import { savePhase } from "../store";
 import { PhaseRefusal } from "./driver-tools";
@@ -41,7 +41,7 @@ export function installWordMethods(tools: MethodsTools, deps: { returnTo: (input
   }
   /** The owner's word at a turn (owner.words on). «no» sends the phase back: from planning or design to planning, from acceptance to execution. */
   async function word(input: WordInput): Promise<Phase> {
-    const phase = mustGet(input.phaseId);
+    const phase = await tools.freshTurns(mustGet(input.phaseId));
     // Keyed decision on the phase (SMA p6_decide): two decisions under the key of the shown package.
     if (input.turn === "acceptance" && input.decision === "yes" && !(input.useful === true && input.limits === true))
       throw new PhaseRefusal("the acceptance is two decisions: the result is clear and useful (useful:true) and the remaining limits and recovery are acknowledged (limits:true); a «no» to either is decision no with the words why");
@@ -50,7 +50,7 @@ export function installWordMethods(tools: MethodsTools, deps: { returnTo: (input
     // The design yes signs the drawing it was shown (SMA tb_design_gate_confirmed): without the drawing's hash, or over
     // an older edition, it is refused — a redrawn drawing needs a new yes.
     const drawingSha = phase.record.design?.drawing?.sha256 ?? null;
-    if (input.turn === "design" && input.decision === "yes" && phase.record.ownerWords && input.key !== drawingSha)
+    if (input.turn === "design" && input.decision === "yes" && wordAsked(phase.record, "design") && input.key !== drawingSha)
       throw new PhaseRefusal(`the design yes names the hash of the drawing the owner was shown (status ownerWord.designKey, now ${drawingSha ?? "none"})`);
     const shownKey = acceptanceKey(phase.record);
     if (input.turn === "acceptance" && input.decision === "yes" && !input.key) throw new PhaseRefusal(`the acceptance yes names the key of the package the owner was shown (status ownerWord.acceptanceKey, now ${shownKey})`);
@@ -59,7 +59,7 @@ export function installWordMethods(tools: MethodsTools, deps: { returnTo: (input
     // that key (the PM takes it from status ownerWord.planKey); a yes without one is for the plan in the record now and is
     // stored with its key, so the owner's button keeps working. A project that sets phase.proposal_ttl_hours also refuses
     // a yes on a proposal older than that; unset there is no term — the owner often answers a day later.
-    if (input.turn === "planning" && input.decision === "yes" && phase.record.ownerWords && phase.record.plan) {
+    if (input.turn === "planning" && input.decision === "yes" && wordAsked(phase.record, "planning") && phase.record.plan) {
       const plan = phase.record.plan;
       const settings = await ctx.effectiveProjectSettings(phase.projectId).then((result) => result.values as Record<string, unknown>, () => ({} as Record<string, unknown>));
       const ttlHours = Number(settings["phase.proposal_ttl_hours"] ?? NaN);

@@ -45,15 +45,17 @@ export function contractEditions(db: LanePilotDatabase, taskId: string): Array<{
     Array<{ edition: number; sha256: string; reason: string | null; at: number }>;
 }
 
+/** `reason` names who wrote the edition when it is not the PM's plain update (`planner_revision:<n>/<max>`, `pm_update:planner_loop_stopped`). */
 export function updateTaskContract(
   db: LanePilotDatabase,
   taskId: string,
   contract: unknown,
+  reason: string | null = null,
 ): boolean {
-  return taskFrame(db, taskId, "contract_json", null, () => {
+  return taskFrame(db, taskId, "contract_json", reason, () => {
     const result = db.prepare("UPDATE lane_pilot_task SET contract_json=? WHERE id=?")
       .run(JSON.stringify(contract), taskId);
-    if (result.changes > 0) recordContractEdition(db, taskId, contract, getTaskPlan(db, taskId), null);
+    if (result.changes > 0) recordContractEdition(db, taskId, contract, getTaskPlan(db, taskId), reason);
     return result.changes > 0;
   });
 }

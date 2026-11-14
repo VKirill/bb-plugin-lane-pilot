@@ -35,7 +35,7 @@ describe("the agent's own outcome", () => {
         if ((outputFields(workflow, node) as Array<{ name: string }>).some((field) => field.name === "outcome" && engineOwnsOutcome(node))) engine += 1; else own += 1;
       }
     }
-    expect({ own, engine }).toEqual({ own: 25, engine: 284 });
+    expect({ own, engine }).toEqual({ own: 25, engine: 285 }); // lp-task-pipeline plan-revise: +1
   });
 
   it("done, partial and no outcome at all (an executor that builds its output in code) leave the step succeeded", async () => {

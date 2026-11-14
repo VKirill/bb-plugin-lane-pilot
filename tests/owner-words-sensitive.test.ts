@@ -142,3 +142,39 @@ describe("the older modes work as before", () => {
     expect(level("src/ui/card.ts").tier).not.toBe("strict");
   });
 });
+
+// Default-path audit 2026-11-14 §5.4: a phase's turns read their own evidence (src/rooms/phase/logic/words-policy.ts), not one flag from the goal.
+describe("owner.words sensitive: a phase's turns", () => {
+  const piece = (id: string, wave: number, over: Partial<Task> = {}) => ({ id, title: id, wave, promise: { given: "g", when: "w", then: "t" }, task: { id, ...task(over) } as never });
+  const phase = (goal: string, items: ReturnType<typeof piece>[], drawing?: string[]) => ({ title: "Phase", goal,
+    record: { plan: { items, sha: "s", contextSha: "c" }, ...(drawing ? { design: { decision: "needed" as const, why: "screens", drawing: { paths: drawing, sha256: "d", designer: "x", feasible: true } } } : {}) } });
+
+  it("each piece is weighed on its own: a docs piece about payments next to a UI piece asks nothing; a migration piece asks for its wave alone", async () => {
+    const { wordTurnsOf } = await import("../src/rooms/phase/logic");
+    const quiet = wordTurnsOf(phase("redo the totals card", [piece("doc", 1, { kind: "docs", title: "Payments guide", objective: "explain the payment flow", owns_paths: ["docs/payments.md"] }), piece("ui", 1)]), SENSITIVE, 1);
+    expect(quiet.planning).toEqual({ asks: false, classes: [], evidence: [] });
+    const loud = wordTurnsOf(phase("redo the totals card", [piece("ui", 1), piece("schema", 2, { owns_paths: ["db/migrations/0002_totals.sql"] })]), SENSITIVE, 1);
+    expect(loud.planning).toMatchObject({ asks: true, classes: ["data"], evidence: ["schema: path:db/migrations/0002_totals.sql"] });
+    expect(loud.waves).toMatchObject({ "1": { asks: false }, "2": { asks: true, classes: ["data"] } });
+    // The context is the goal's: a neutral goal does not ask even though the plan does.
+    expect(loud.context?.asks).toBe(false);
+  });
+
+  it("the landing turns weigh the files the pieces' merged work changed, the design turn the drawing's paths", async () => {
+    const { wordTurnsOf } = await import("../src/rooms/phase/logic");
+    const p = phase("redo the totals card", [piece("ui", 1, { owns_paths: ["src/"] })], [".agents/phases/ph_1/design/card.html"]);
+    expect(wordTurnsOf(p, SENSITIVE, 1).acceptance?.asks).toBe(false);
+    expect(wordTurnsOf(p, SENSITIVE, 1, new Map([["ui", ["src/billing/charge.ts"]]])).acceptance).toMatchObject({ asks: true, classes: ["money"] });
+    expect(wordTurnsOf(p, SENSITIVE, 1).design?.asks).toBe(false);
+  });
+
+  it("on and risky ask at every turn, off at none, whatever the evidence", async () => {
+    const { wordTurnsOf } = await import("../src/rooms/phase/logic");
+    const p = phase("redo the totals card", [piece("ui", 1)]);
+    for (const [words, asks] of [["on", true], ["risky", true], ["off", false]] as const) {
+      const turns = wordTurnsOf(p, { "owner.words": words }, 1);
+      for (const turn of ["context", "planning", "design", "issue", "acceptance", "uat", "lesson"] as const) expect(turns[turn]?.asks, `${words} ${turn}`).toBe(asks);
+      expect(turns.waves?.["1"]?.asks, words).toBe(asks);
+    }
+  });
+});

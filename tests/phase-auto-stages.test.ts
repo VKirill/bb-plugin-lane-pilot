@@ -154,6 +154,19 @@ describe("the machine's pass", () => {
     await w.auto.step(w.get());
     expect(w.calls).toContain("planCheck changes_requested wfrun_1");
   });
+  // 2026-11-14 audit (default-path §3.2): the check of a PM's one-piece plan ran in standard mode, the critic skipped it, no plan_verdict came back and
+  // the phase recorded «changes requested» for a plan nobody had criticised.
+  it("checks a PM's one-piece plan in full mode, so its critic runs and its pass approves the plan [sma:p2_checker]", async () => {
+    const piece = { id: "a", title: "a", wave: 1, promise: { given: "g", when: "w", then: "t" }, task: { id: "a" } };
+    const submitted = phaseAt("planning", { context: { docs: [], sha: "c", signedAt: 1 }, plan: { items: [piece], sha: "s", contextSha: "c" } } as never);
+    const w = world({ status: "ok", tasks: [{ id: "a" }], waves: [["a"]], task_count: 1, plan_verdict: "pass" }, "succeeded", submitted);
+    await w.auto.step(w.get());
+    expect(w.calls).toContain("start lp.plan mode full");
+    w.finish();
+    await w.auto.step(w.get());
+    expect(w.calls).toContain("planCheck approve wfrun_1");
+    expect(w.calls).not.toContain("planCheck changes_requested wfrun_1");
+  });
   // Review 2026-10-26 §1: lp.plan answers «already met» with no tasks; apply() threw on the empty list and the phase demanded work again.
   it("an empty plan with already_met is booked and reported through the gates, not failed", async () => {
     const planning = phaseAt("planning", { context: { docs: [], sha: "c", signedAt: 1 } });

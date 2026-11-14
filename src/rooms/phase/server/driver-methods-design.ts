@@ -1,7 +1,7 @@
 import { phaseWordItemKey } from "./word-item";
 import type { DrawingCritique } from "@lane-pilot/contracts";
 import { bestEffort } from "@lane-pilot/kit";
-import { designGate, phaseFolder } from "../logic";
+import { designGate, phaseFolder, refreshedWordTurns, wordAsked } from "../logic";
 import { archiveDrawing } from "../stages";
 import { savePhase } from "../store";
 import { PhaseRefusal } from "./driver-tools";
@@ -21,7 +21,7 @@ export function installDesignMethods(tools: MethodsTools, deps: { returnTo: (inp
   const { returnTo } = deps;
 
   async function drawing(input: DrawingInput): Promise<Phase> {
-    const phase = mustGet(input.phaseId);
+    const phase = await tools.freshTurns(mustGet(input.phaseId));
     if (phase.stage !== "design") throw new PhaseRefusal(`phase ${phase.id} is at ${phase.stage}, not design`);
     const folder = `${phaseFolder(phase.id)}/design/`;
     const outside = input.paths.filter((path) => !path.startsWith(folder) || path.includes(".."));
@@ -33,6 +33,9 @@ export function installDesignMethods(tools: MethodsTools, deps: { returnTo: (inp
     const record: PhaseRecord = { ...phase.record, design: { ...(phase.record.design ?? { decision: "needed", why: "" }), drawing: drawn, archived } };
     // SMA pc_contract: a redrawn drawing (another sha) voids the owner's earlier design yes.
     if (drawn.sha256 !== phase.record.design?.drawing?.sha256 && record.words) record.words = record.words.filter((word) => word.turn !== "design");
+    // The drawing's paths are the design turn's evidence: weighed now, under the mode just read, before its gate.
+    const weighed = record.wordTurns ? refreshedWordTurns({ ...phase, record }, { "owner.words": record.wordTurns.mode }, now()) : null;
+    if (weighed) Object.assign(record, { wordTurns: weighed.wordTurns, ownerWords: weighed.ownerWords });
     if (input.critique) {
       const why = reactions.critiqueProblems(input.critique);
       if (why.length) throw new PhaseRefusal("the drawing critique form is not filled", why);
@@ -58,7 +61,7 @@ export function installDesignMethods(tools: MethodsTools, deps: { returnTo: (inp
     const check = designGate(record, specText);
     if (!check.ok) {
       savePhase(db, phase.id, { record, at: now() });
-      if (record.ownerWords && check.why.length === 1 && check.why[0]!.includes("owner's word")) return mustGet(phase.id);
+      if (wordAsked(record, "design") && check.why.length === 1 && check.why[0]!.includes("owner's word")) return mustGet(phase.id);
       throw new PhaseRefusal("the drawing is not confirmed", check.why);
     }
     record.design = { ...record.design!, confirmedAt: now() };
@@ -105,9 +108,9 @@ export function installDesignMethods(tools: MethodsTools, deps: { returnTo: (inp
     if ("why" in read) throw new PhaseRefusal("the lessons are not proven read by their reviewer", [read.why]);
     const text = `Phase «${phase.title}» lessons: ${analysis}`.slice(0, 2000);
     const record: PhaseRecord = { ...phase.record, lessons: { ...(phase.record.lessons ?? { needed: true, why: "" }), analysis, author: read.author, reviewer: read.reviewer, reviewedHash: read.inputSha, reviewRun: input.reviewRun, at: now(),
-      ...(phase.record.ownerWords ? { draft: { text, stagedAt: now(), state: "staged" as const } } : {}) } };
+      ...(wordAsked(phase.record, "lesson") ? { draft: { text, stagedAt: now(), state: "staged" as const } } : {}) } };
     book(phase, "lessons", "analysis", `${analysis} (by ${read.author}, read by ${read.reviewer} in ${input.reviewRun}, input ${read.inputSha.slice(0, 12)})`);
-    if (phase.record.ownerWords) {
+    if (wordAsked(phase.record, "lesson")) {
       // Lesson is a draft (SMA p7_staged): it waits for the person's word in drafts; the phase does not wait for it.
       book(phase, "lessons", "staged", "the lesson waits as a draft for the owner's word «lesson»");
       reactions.postOwnerItem({ key: phaseWordItemKey(phase.id, "lesson"), source: "phase", kind: "word", projectId: phase.projectId,

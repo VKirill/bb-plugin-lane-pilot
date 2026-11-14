@@ -42,3 +42,20 @@ describe("an approved plan that waits only for the owner's word", () => {
     expect(JSON.stringify(inputs.gaps)).toContain("signed context");
   });
 });
+
+// Default-path audit 2026-11-14 §5.4: the wait is decided per turn (record.wordTurns). On sensitive a plan outside money, data and production
+// deploys does not wait at all; a plan in one waits, names its class, and is still not planned again for the word.
+describe("an approved plan on owner.words sensitive", () => {
+  const turns = (asks: boolean) => ({ mode: "sensitive" as const, at: 1, planning: { asks, classes: asks ? ["data" as const] : [], evidence: asks ? ["a: path:migrations/0001.sql"] : [] } });
+
+  it("[sma:p2_row_awaits] outside the three classes is admitted by its gate with no word, even with the old flag still on", () => {
+    expect(planGate(approved(true, { wordTurns: turns(false) }).record)).toEqual({ ok: true });
+  });
+
+  it("[sma:p2_row_awaits] in a class waits for the word alone, says which class, and is not planned again for it", () => {
+    const phase = approved(false, { wordTurns: turns(true) });
+    const gate = planGate(phase.record);
+    expect(gate.ok ? [] : gate.why).toEqual(["the plan awaits the owner's word: it touches a database migration or data change (a: path:migrations/0001.sql)"]);
+    expect(autoDue(phase)).toBeNull();
+  });
+});

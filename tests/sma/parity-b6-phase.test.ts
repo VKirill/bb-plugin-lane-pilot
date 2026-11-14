@@ -1,4 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { saveProjectSetting } from "../../src/rooms/storage";
 import { describe, expect, it } from "vitest";
 import { createCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../server";
@@ -59,6 +60,8 @@ function driver() {
 }
 
 async function opened(d: ReturnType<typeof driver>, record: PhaseRecord, stage: Phase["stage"], state: Phase["state"] = "active") {
+  // ownerWords: true is a phase of a project with owner.words on: since 0.1.560 each turn reads the project's setting.
+  if (record.ownerWords === true) saveProjectSetting(d.db, "projA", "owner.words", "on");
   const phase = await d.phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Hud", goal: "hud" });
   savePhase(d.db, phase.id, { stage, state, runId: "run1", record: { ...phase.record, ...record }, at: 2 });
   return phase.id;

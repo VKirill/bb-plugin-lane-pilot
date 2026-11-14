@@ -41,7 +41,9 @@ function methodsTools(db: ReturnType<typeof openDatabase>, record: PhaseRecord, 
     mustGet, book, move, facts: () => new Map(), readFile: async () => ({ sha256: "s", sizeBytes: 1 }), readText: async () => null,
     writeDocs: async () => ({ written: [], commit: null, shas: {} }), journalSteps: () => [], checkerRunBinding: () => null,
     reviewerRead: () => ({ why: "no" }), writeLesson: () => undefined, settleLesson: () => undefined, writeBook: async () => undefined,
-    pmCheckoutPath: async () => null, candidates: () => null, redoId: (id: string) => `${id}.2` };
+    pmCheckoutPath: async () => null, candidates: () => null, redoId: (id: string) => `${id}.2`,
+    // The turns are not recomputed here: the record's own flag (owner.words on when it opened) answers.
+    freshTurns: async (p: Phase) => getPhase(db, p.id)!, freshTurnsSync: (p: Phase) => p };
   return installMethods(tools as never);
 }
 

@@ -4,6 +4,7 @@ import { buildsScreens } from "../stages";
 import { gate, pieceDeps, type GateResult } from "./gates";
 import type { PhaseRecord, PlanItem, WaveRecord } from "./record";
 import { canonical } from "./signatures";
+import { wordAsked } from "./words-policy";
 
 export type TaskFact = { taskId: string; attemptId?: string | null; state: string | null; planFact: "passed" | "failed" | "skipped" | null; verification: "passed" | "failed" | "skipped" | null; codeCritique: "passed" | "blocked" | "skipped" | "failed" | null; browserQa?: "passed" | "failed" | "skipped" | null; qaPlanned?: boolean };
 
@@ -78,7 +79,7 @@ export function waveCleared(record: PhaseRecord, wave: number): boolean {
   const done = record.execution?.waves?.[String(wave)];
   if (!done || !done.lines.every((line) => line.ok)) return false;
   if (record.waveReview && done.review?.state !== "passed") return false;
-  if (record.ownerWords && ![...(record.words ?? [])].reverse().find((word) => word.turn === "wave" && word.wave === wave && word.decision === "yes")) return false;
+  if (wordAsked(record, "wave", wave) && ![...(record.words ?? [])].reverse().find((word) => word.turn === "wave" && word.wave === wave && word.decision === "yes")) return false;
   return true;
 }
 

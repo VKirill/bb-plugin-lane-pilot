@@ -48,9 +48,14 @@ describe("defaults: an install that sets nothing new runs the drill exactly as m
   it("ALL and QUICK are main's lists, and --quick and a plain --dry-run list what main lists", () => {
     const main = mainDrill();
     const lists = (path: string) => { const code = `import importlib.util, json\nspec = importlib.util.spec_from_file_location("d", ${JSON.stringify(path)})\nm = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\nprint(json.dumps([m.ALL, m.QUICK]))`; return spawnSync("python3", ["-I", "-c", code], { encoding: "utf8" }).stdout.trim(); };
-    expect(lists(drill)).toBe(lists(main));
+    // The planner-loop batch (0.1.561) adds four full-drill scenes (not --quick) after main's ALL; each sets its own project settings for its run
+    // and puts them back. Once merged, main lists them itself and both sides read the same.
+    const added = ["plan_revise", "plan_revise_cap", "plan_l", "phase_words_sensitive"];
+    const [mainAll, mainQuick] = JSON.parse(lists(main)) as [string[], string[]];
+    expect(JSON.parse(lists(drill))).toEqual([[...mainAll, ...added.filter((name) => !mainAll.includes(name))], mainQuick]);
+    const withoutAdded = (text: string) => added.reduce((out, name) => out.replace(new RegExp(`, ${name}(?=,|\\n|$)`, "gm"), ""), text);
     expect(dry(drill, "--quick")).toBe(dry(main, "--quick"));
-    expect(dry(drill)).toBe(dry(main));
+    expect(withoutAdded(dry(drill))).toBe(withoutAdded(dry(main)));
     expect(dry(drill, "--scenario", "live_word,no_code_exit")).toBe(dry(main, "--scenario", "live_word,no_code_exit"));
   });
 

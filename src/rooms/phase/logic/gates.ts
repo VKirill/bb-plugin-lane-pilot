@@ -3,6 +3,7 @@ import { RISK_KINDS, type PhaseRecord, type PhaseStage, type PlanItem } from "./
 import { contextSignature, planSignature } from "./signatures";
 import { wordOf } from "./words";
 import { cycleText, planGraph } from "../../tasks";
+import { wordAsked, wordReason } from "./words-policy";
 
 // ---------------------------------------------------------------- gates
 
@@ -92,8 +93,13 @@ export function acceptanceCommands(line: string): string[] {
   return [...found];
 }
 
-/** The plan gate's last refusal when the project asks for the owner's word: it is the owner's to give, not a gap of the plan the machine could plan away. */
-export const PLAN_WORD_GAP = "the plan awaits the owner's word (owner.words is on)";
+/**
+ * The plan gate's last refusal when this plan's turn asks for the owner's word: it is the owner's to give, not a gap of the plan the machine
+ * could plan away. The reason follows after a colon and names the class (default-path audit §5.4.6): «the plan awaits the owner's word: it
+ * touches a database migration or data change (a: path:migrations/0001.sql)», or the mode on `on` / `risky`.
+ */
+export const PLAN_WORD_GAP = "the plan awaits the owner's word";
+export const isPlanWordGap = (reason: string): boolean => reason.startsWith(PLAN_WORD_GAP);
 export const INDEPENDENCE_GAP = "the plan check is not proven independent";
 
 /** Planning → admission: every piece becomes a work, waves are computable, the plan was built on the signed context, and an independent checker approved it. */
@@ -126,7 +132,7 @@ export function planGate(record: PhaseRecord): GateResult {
   // Only where the phase was opened with phase.ambiguity_gate on; every other record's plan gate is the one it always was.
   const ambiguity = record.ambiguityGate === true ? ambiguityScore(record) : 0;
   if (ambiguity > 0.5) why.push(`the context's ambiguity is ${ambiguity} (above 0.5): answer the open questions before planning`);
-  if (record.ownerWords && wordOf(record, "planning")?.decision !== "yes") why.push(PLAN_WORD_GAP);
+  if (wordAsked(record, "planning") && wordOf(record, "planning")?.decision !== "yes") why.push(`${PLAN_WORD_GAP}: ${wordReason(record, "planning")}`);
   return gate(why);
 }
 

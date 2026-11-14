@@ -231,7 +231,9 @@ print(json.dumps({"all": m.ALL, "quick": m.QUICK, "byName": m.BY_NAME, "row": ro
     const out = JSON.parse(probe.stdout.trim().split("\n").pop()!);
     const main = execFileSync("git", ["show", "main:scripts/lp-drill.py"], { encoding: "utf8" });
     const mainList = (name: string) => JSON.parse(main.match(new RegExp(`^${name} = (\\[.*\\])$`, "m"))![1]);
-    expect(out.all).toEqual(mainList("ALL"));
+    // The planner-loop batch (0.1.561) adds four full-drill scenes after main's; once merged, main lists them itself.
+    const added = ["plan_revise", "plan_revise_cap", "plan_l", "phase_words_sensitive"];
+    expect(out.all).toEqual([...mainList("ALL"), ...added.filter((name) => !mainList("ALL").includes(name))]);
     expect(out.quick).toEqual(mainList("QUICK"));
     expect(out.byName).toEqual(["outage_live"]);
     expect(out.unlisted).toEqual([]);
