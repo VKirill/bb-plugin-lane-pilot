@@ -20,7 +20,7 @@ async function repo() {
   return { base, worktree };
 }
 
-it("brings a merged writer's worktree up to main, including other writers' work", async () => {
+it("[sma:k_v_syncbranch] [sma:k_lib_branchsync] brings a merged writer's worktree up to main, including other writers' work", async () => {
   const { base, worktree } = await repo();
   const a = worktree("a"), b = worktree("b");
   await writeFile(join(a, "page.vue"), "hero from a\nhow\nfaq\n");
@@ -43,7 +43,7 @@ it("merges main into a worktree that has its own commit", async () => {
   expect(await readFile(join(a, "theirs.ts"), "utf8")).toBe("2\n");
 });
 
-it("undoes a conflicting sync and names the files, leaving the worktree as it was", async () => {
+it("[sma:k_v_syncbranch] [sma:k_lib_branchsync] undoes a conflicting sync and names the files, leaving the worktree as it was", async () => {
   const { base, worktree } = await repo();
   const a = worktree("a");
   await writeFile(join(a, "page.vue"), "hero A\nhow\nfaq\n"); git(a, "add", "-A"); git(a, "commit", "-qm", "a");
@@ -56,7 +56,7 @@ it("undoes a conflicting sync and names the files, leaving the worktree as it wa
   expect(git(a, "status", "--porcelain")).toBe("");
 });
 
-it("refuses a worktree with uncommitted edits", async () => {
+it("[sma:k_v_syncbranch] [sma:k_lib_branchsync] refuses a worktree with uncommitted edits", async () => {
   const { base, worktree } = await repo();
   const a = worktree("a");
   await writeFile(join(a, "page.vue"), "half done\n");

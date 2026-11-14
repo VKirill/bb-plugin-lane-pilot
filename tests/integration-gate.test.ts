@@ -269,7 +269,7 @@ describe("IntegrationGateRunner with mock core & services", () => {
     expect(res.passed).toBe(true);
   });
 
-  it("runs on queue_drained trigger and records the gate verdict as a gate event, not over the task's verification receipt", async () => {
+  it("[sma:k_lib_mergesmoke] runs on queue_drained trigger and records the gate verdict as a gate event, not over the task's verification receipt", async () => {
     db.prepare(`INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES ('task-1', 'run-1', 'bb', '{}', 0)`).run();
     saveProjectSetting(db, "proj-1", "integration.gate_command", 'node -e "process.exit(0)"');
 
@@ -494,7 +494,7 @@ describe("IntegrationGateRunner with mock core & services", () => {
     const scopeB = () => ({ projectId: "proj-2", hostId: "host-1", basePath: dirB });
     const merged = (taskId: string, produced: string[]) => ({ taskId, commitSha: `sha-${taskId}`, threadId: `thr-${taskId}`, attemptId: `att-${taskId}`, produced });
 
-    it("a green gate of project B does not clear project A's pending merges", async () => {
+    it("[sma:k_lib_mergesmoke] a green gate of project B does not clear project A's pending merges", async () => {
       const runner = new IntegrationGateRunner(mockCore, mockServices);
       seedTask("a1");
       runner.noteMergedTask(merged("a1", ["tests/a.test.ts"]), scopeA());
@@ -524,7 +524,7 @@ describe("IntegrationGateRunner with mock core & services", () => {
       expect((await runner.maybeRunGate({ runId: "run-2", projectId: "proj-2", pmThreadId: "pm-2", basePath: dirB, configHostId: "host-1", trigger: "merge" })).ran).toBe(true);
     });
 
-    it("[Astra F-007 residual] a drain parked while another scope's gate was in flight runs when that gate finishes, with no new merge", async () => {
+    it("[sma:k_lib_mergesmoke] [Astra F-007 residual] a drain parked while another scope's gate was in flight runs when that gate finishes, with no new merge", async () => {
       const gateCalls: string[] = [];
       let releaseA!: () => void;
       const gateA = new Promise<void>((resolve) => { releaseA = resolve; });
