@@ -42,7 +42,7 @@ export default {
   n709: { mutation: flip("core:apps/server/src/services/machine-auth.ts", "verified.metadata.hostId !== hostId", "verified.metadata.hostId === hostId") },
   n710: { voidReview: voidStays("нет адреса, приходящего от пира: хосты приходят из регистрации BB, единственный внешний адрес events.webhook_url задаёт владелец (только https), SSRF-входа нет") },
   n711: { mutation: distort("core:apps/server/src/internal/hosts.ts", "name: payload.hostName,", "name: payload.hostId,") },
-  n712: { mutation: distort("core:apps/server/src/routes/hosts.ts", "const sessionId = deps.hub.getDaemonSessionIdForHost(hostId);", "const sessionId = deps.hub.getDaemonSessionIdForHost(hostId) && null;") },
+  n712: { mutation: flip("core:apps/server/src/routes/hosts.ts", "if (sessionId) {", "if (!sessionId) {") },
   n714: { voidReview: voidIsHave("назначение «на пира можно передать только разрешённые действия» выполняет закрытый контракт хоста: фиксированный список методов, слова ворот в него не входят (n688)") },
   n723: { mutation: distort("core:packages/db/src/data/projects.ts", "name: input.name,", "name: input.name.toLowerCase(),") },
   n724: { mutation: distort("core:packages/db/src/data/projects.ts", ".set({ ...input, updatedAt: now })", ".set({ ...input, id: `${id}_x`, updatedAt: now })") },
