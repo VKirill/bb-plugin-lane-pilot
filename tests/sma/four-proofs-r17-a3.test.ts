@@ -104,7 +104,7 @@ describe("region 17 · audit and research graphs", () => {
   it("[sma:k_ag_synth] the parallel researchers' sources are merged without duplicates and a question that found none is named, and the report is delivered where the run says", async () => {
     const rows = (...items: Array<{ item: unknown; data?: Record<string, unknown> }>) => {
       const all = items.map((entry, branch) => ({ branch, item: entry.item, ok: entry.data !== undefined, ...(entry.data ? { data: entry.data } : { error: "x", blocked: false }) }));
-      return { rows: all, results: all.filter((row) => row.ok).map((row) => row.data!), failed: [], items: all.map((row) => row.item) } as never;
+      return { rows: all, results: all.filter((row) => row.ok).map((row) => (row as { data: Record<string, unknown> }).data), failed: [], items: all.map((row) => row.item) } as never;
     };
     const merged = REDUCERS["reduce.web-research.search"]!(rows(
       { item: "q1", data: { subquestion: "q1", sources: [{ url: "u1" }, { url: "u2" }] } },
@@ -120,7 +120,7 @@ describe("region 17 · audit and research graphs", () => {
       deliver: { report_path: ".agents/research/research-1.md" }, goal_check: { ok: true, verdict: "pass" },
     } });
     expect(out(r)).toMatchObject({ status: "done", report_md: "Short answer [1]", unverified: ["the date"], report_path: ".agents/research/research-1.md", citation_ok: true });
-    expect(out(r).sources).toEqual([{ url: "https://x.test/a", title: "A" }]);
+    expect(out(r)!.sources).toEqual([{ url: "https://x.test/a", title: "A" }]);
   });
 
   it("[sma:k_ag_roadmapper] a roadmap the validator refuses is cut again by the same planner up to three times and then blocks, and an approved one runs its sessions", async () => {
