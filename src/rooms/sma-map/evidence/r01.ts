@@ -2,11 +2,10 @@
 // One line per node, sorted by node number; a batch agent edits only its nodes' lines. The lines below are the
 // framework's worked examples (2026-11-14): each mutation was killed by a real `npm run sma:mutate` run
 // (attest/r01.json) and each trace was run on the hub snapshot of the same day.
-import { distort, drill, entry, flip, gate, isSet, outside, receipt, type RegionEvidence, rows, transition, via, voidIsHave, wrongTarget } from "./types";
+import { distort, drill, entry, flip, gate, isSet, not, outside, part, receipt, type RegionEvidence, rows, transition, via, voidIsHave, wrongTarget } from "./types";
 
 import evidenceD from "./r01-d";
 import evidenceE from "./r01-e";
-import { distort, drill, entry, flip, gate, isSet, not, outside, part, receipt, type RegionEvidence, rows, settingRow, transition, via, voidIsHave, wrongTarget } from "./types";
 
 const TASK_HOME = "src/rooms/writer/server/task-home.ts";
 
