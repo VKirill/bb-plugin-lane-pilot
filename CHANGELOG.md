@@ -21,6 +21,7 @@
 - **A second mutation runner no longer restores the file of a live run.** `scripts/sma-mutate.mjs` recovered from the journal before it took the lock, so a second start in the same checkout put the original file back under the running test, which the live run would then report as `survived`. The lock is taken first. Checked by `tests/sma-mutate-lock.test.ts`.
 - **The guard inventory lists the spend-cap deny.** `pretaskDecision` refuses a subagent start with `[spend-cap]`, but `GUARD_INVENTORY` had no row for that tag, so the inventory a PM reads was one guard short. Checked by `tests/sma/four-proofs-r23-a.test.ts` (every real deny path is run and each tag has an inventory row).
 - **Regions 21 (sma-tools: project queries) and 23 (Templates, references, contexts) of the SMA map have their evidence: 26 and 22 nodes**, with the region scenes `sma_r21` and `sma_r23`; region 21 needed no source change. Checked by `npm run sma:mutate -- --region 21` and `--region 23` (attestations in `attest/r21.json`, `attest/r23.json`).
+- **Region 20 (Terminal coordination), batch a, has its evidence for 28 nodes**, with the region scene `sma_r20` (fake plugin host, temporary git repositories); six of them are proved by rows the hub writes (worktrees, landed changes, gate runs, stage events). n1533 lives in bb-core; n1521 and n1522 stay `void`; no source change was needed. Checked by `npm run sma:mutate -- --region 20` (attestations in `attest/r20.json`).
 
 ## 0.1.565
 
