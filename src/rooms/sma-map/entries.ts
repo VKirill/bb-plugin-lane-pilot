@@ -1286,7 +1286,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n1272: ["have", "ворота покрытия решений", "src/rooms/phase/stages.ts#coverageGaps"],
   n1273: ["have", "отметки в STATE и дорожной карте", "src/rooms/phase/server/driver-steps.ts#finishClosed"],
   n1274: ["have", "коммит планов", "src/rooms/phase/stages.ts#planText"],
-  n1275: ["have", "автопереход к исполнению", "src/rooms/phase/server/driver-methods-control.ts#setState"],
+  n1275: ["have", "автопереход к исполнению", "src/rooms/phase/server/driver-methods-admission.ts#admitIfReady"],
   n1276: ["have", "/sma-code-review", "workflows/code-review.json#\"entry\""],
   n1277: ["have", "code-review-fix", "workflows/review-fix.json#\"entry\""],
   n1278: ["have", "/sma-secure-phase", "workflows/secure-phase.json#\"audit\""],
