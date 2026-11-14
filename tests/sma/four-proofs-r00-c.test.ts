@@ -113,8 +113,8 @@ describe("the execution of the phase (n66 … n75)", () => {
 
   it("[sma:p4_cmd] the execution command tells the PM what runs, what is blocked and what could not be issued, each with its own key", async () => {
     const s = await seen("executionText");
-    expect(s.running).toEqual({ key: "execution:running:1:1", waitsForPm: false,
-      text: "Phase ph_1 «Sums» — stage 4, execution: 1 of 2 pieces issued, 1 at work. Lane Pilot issues each further piece itself once the pieces it depends on are accepted." });
+    expect(s.running).toEqual({ key: "execution:running:2:1", waitsForPm: false,
+      text: "Phase ph_1 «Sums» — stage 4, execution: 2 of 3 pieces issued, 1 at work. Lane Pilot issues each further piece itself once the pieces it depends on are accepted." });
     expect(s.blocked.key).toBe("execution:blocked:a");
     expect(s.blocked.waitsForPm).toBe(true);
     expect(s.blocked.text).toBe("Phase ph_1 «Sums» — stage 4, execution: a is blocked. Decide each: lane_pilot_phase {action:\"decide\", phaseId:\"ph_1\", piece:\"a\", choice:\"skip\"|\"retry\"|\"cancel\", note} — skip drops it, retry issues it again, cancel stops the phase.");

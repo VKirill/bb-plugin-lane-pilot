@@ -231,11 +231,11 @@ export const observe = {
 
   /** n69 · the execution command the PM reads: what runs, what is blocked, what could not be issued, each with its own key and who waits. */
   executionText() {
-    const items = [piece("a", 1), piece("b", 1)];
+    const items = [piece("a", 1), piece("b", 1), piece("c", 1)];
     const phase = (record: PhaseRecord) => pure({ ...admitted(items), ...record });
     const say = (record: PhaseRecord, rows: Array<[string, Partial<TaskFact>]>) => { const action = nextAction(phase(record), facts(rows)); return { key: action.key, waitsForPm: action.waitsForPm, text: action.text }; };
     return {
-      running: say({ execution: { issued: { a: "a" }, startedAt: 1 } }, [["a", { state: "running" }]]),
+      running: say({ execution: { issued: { a: "a", b: "b" }, startedAt: 1 } }, [["a", { state: "accepted" }], ["b", { state: "running" }]]),
       blocked: say({ execution: { issued: { a: "a" }, startedAt: 1 } }, [["a", { state: "blocked" }]]),
       issueError: say({ execution: { issued: {}, startedAt: 1, issueErrors: { b: "dispatch refused" } } }, []),
     };

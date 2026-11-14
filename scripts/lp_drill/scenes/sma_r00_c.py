@@ -81,8 +81,8 @@ def prove_c(proofs, tmp) -> None:
                  f"running {ew.get('running')}, all in {ew.get('allIn')}")
     # n69 Phase execute command: what runs, what is blocked, what could not be issued.
     et = seen("executionText")
-    proofs.prove("n69", et.get("running", {}).get("key") == "execution:running:1:1" and et.get("running", {}).get("waitsForPm") is False
-                 and "1 of 2 pieces issued, 1 at work." in et.get("running", {}).get("text", "") and et.get("blocked", {}).get("key") == "execution:blocked:a" and et.get("blocked", {}).get("waitsForPm") is True
+    proofs.prove("n69", et.get("running", {}).get("key") == "execution:running:2:1" and et.get("running", {}).get("waitsForPm") is False
+                 and "2 of 3 pieces issued, 1 at work." in et.get("running", {}).get("text", "") and et.get("blocked", {}).get("key") == "execution:blocked:a" and et.get("blocked", {}).get("waitsForPm") is True
                  and et.get("issueError", {}).get("key") == "execution:issue_error:b", f"running {et.get('running', {}).get('key')}, blocked {et.get('blocked', {}).get('key')}")
     # n71 Executed? — by facts: the latest attempt of the task family and the receipts of its stages.
     c = seen("calc")
