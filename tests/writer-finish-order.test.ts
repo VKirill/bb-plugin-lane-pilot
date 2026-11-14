@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
-import { createAttempt, createRun, createTask, getAttempt, getRun, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
+import { createAttempt, createRun, createTask, getAttempt, getRun, openDatabase, saveProjectSetting, transitionAttempt } from "../src/rooms/plugin-db";
 import { createWriterFinish } from "../src/rooms/writer/server/finish";
 import { createWriterStart } from "../src/rooms/writer/server/start";
 
@@ -81,6 +81,9 @@ describe("owner-word wait: a plugin-store read failure surfaces", () => {
     createAttempt(db, { id:"a-t1", runId:"run", taskId:"t1" });
     transitionAttempt(db, "a-t1", "spawn_requested");
     transitionAttempt(db, "a-t1", "running", { threadId:"writer-t1" });
+    // This test is about the owner-word check, not the critic: with committed evidence now complete the gate would
+    // otherwise spawn a critic this fixture cannot serve. The project setting is the standard off switch.
+    saveProjectSetting(db, "P", "code_critique.enabled", false);
     const ctx = {
       state:{ disposed:false }, db, isDisposed:() => false, log:() => undefined,
       getThreadBounded:async () => ({ status:"idle" }), host:{ call:async () => ({}) },
