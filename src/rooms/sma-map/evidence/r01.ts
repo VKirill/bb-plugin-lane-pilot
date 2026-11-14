@@ -51,6 +51,8 @@ export default {
   },
   n167: {
     mutation: distort("src/rooms/baseline/server/baseline.ts", '{ status: row.ok ? "green" : "red", exitCode: row.exitCode,', '{ status: row.ok ? "red" : "green", exitCode: row.exitCode,'),
+    reach: entry("a task with promised checks is started"),
+    // The checks run in the start flow of a task that promised checks: the entry is the dispatch of such a task (its predecessor, the permit n161, waits for run.max_tokens).
     trace: rows("lane_pilot_baseline", "at", "state = 'ran'"),
   },
   n168: {
@@ -81,7 +83,7 @@ export default {
   },
   n174: {
     mutation: distort("src/rooms/writer/server/writer-task.ts", '.replace(/\\s+/g, " ").trim().slice(0, 600);', '.replace(/\\s+/g, " ").trim().slice(0, 6);'),
-    trace: rows("lane_pilot_attempt", "updated_at", "state = 'blocked' AND reason LIKE 'needs_human%'"),
+    trace: [rows("lane_pilot_attempt", "updated_at", "state = 'blocked' AND reason LIKE 'needs_human%'"), drill("sma_r01")],
   },
   n175: {
     mutation: flip("src/rooms/contracts/failure-class.ts", "if (cls !== \"task\" && cls !== \"contract\") return null;", "if (cls !== \"task\" || cls !== \"contract\") return null;"),
@@ -106,11 +108,11 @@ export default {
   },
   n180: {
     mutation: flip("src/rooms/writer/server/attempt-reactions.ts", "if (!accepted && !FAILED_LESSON_STATES.has(event.status)) return;", "if (!accepted && FAILED_LESSON_STATES.has(event.status)) return;"),
-    trace: rows("lane_pilot_rule_proposal", "first_seen_at", "author LIKE 'writer%'"),
+    trace: rows("lane_pilot_rule_proposal", "updated_at", "signature LIKE 'lesson::%' AND examples_json LIKE '%failed attempt %'"),
   },
   n181: {
     mutation: distort("src/rooms/verification/git-integrate/merge.ts", 'if(merged.ok) return {status:"merged",commit:(await git(basePath,["rev-parse","HEAD"])).stdout.trim()||null', 'if(merged.ok) return {status:"merged",commit:(await git(basePath,["rev-parse","HEAD~1"])).stdout.trim()||null'),
-    trace: rows("lane_pilot_attempt_change", "updated_at", "outcome = 'merged'"),
+    trace: [rows("lane_pilot_attempt_change", "updated_at", "outcome = 'merged'"), drill("sma_r01")],
   },
   n182: {
     mutation: flip("src/rooms/writer/server/writer-task.ts", 'if (text.startsWith("diff --git") || text.startsWith("--- ")) return text;', 'if (text.startsWith("diff --git") && text.startsWith("--- ")) return text;'),
@@ -118,7 +120,7 @@ export default {
   },
   n183: {
     mutation: flip("src/rooms/baseline/server/baseline.ts", "if (allGreen && closesWhenAlreadyGreen(settings.requireRed, input.task)) {", "if (!allGreen && closesWhenAlreadyGreen(settings.requireRed, input.task)) {"),
-    trace: rows("lane_pilot_baseline", "at", "summary LIKE 'already done:%'"),
+    trace: rows("lane_pilot_baseline", "at", "action = 'notified'"),
   },
   n184: {
     mutation: distort("src/rooms/contracts/failure-class.ts", 'if (!CHECK_FAILED.test(text) && NON_WORK.test(text)) return sure("provider");', 'if (!CHECK_FAILED.test(text) && NON_WORK.test(text)) return sure("task");'),
@@ -138,7 +140,7 @@ export default {
   },
   n188: {
     mutation: flip("src/rooms/writer/server/finish-attempt-body.ts", "if (parkedWorkspace) {", "if (!parkedWorkspace) {"),
-    trace: gate("accept", "skipped"),
+    trace: [gate("accept", "skipped"), drill("sma_r01")],
   },
   n189: {
     mutation: flip("src/rooms/docs/docs.ts", "if (edit.expectedSha256 !== expectedSha256) throw", "if (edit.expectedSha256 === expectedSha256) throw"),

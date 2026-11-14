@@ -11,7 +11,7 @@ import { createAttempt, createRun, createTask, getAttempt, openDatabase, transit
 import { onAttemptFinished, type AttemptFinished } from "../../src/rooms/writer/server/attempt-finished";
 import { createWriterFinish } from "../../src/rooms/writer/server/finish";
 import { world } from "../baseline/world";
-import { config, contract } from "./r01-world-a";
+import { config, contract, observe } from "./r01-world-a";
 
 vi.setConfig({ testTimeout: 180_000 });
 const sentText = (w: Awaited<ReturnType<typeof world>>, index = 0) => (w.send.mock.calls[index] as unknown as [{ input: Array<{ text: string }> }])[0].input[0]!.text;
@@ -44,7 +44,9 @@ describe("[sma:ac_baseline_red] only a person decides to proceed on a red baseli
     // Asked again with no word: still stopped. His yes: the same task starts.
     expect((await w.services.baseline.preflight(input)).stop).toMatch(/red_outside_task/);
     closeOwnerItem(w.db as never, "baseline-red:run1:t1", "owner:yes");
-    expect((await w.services.baseline.preflight(input)).stop).toBeNull();
+    const afterYes = (await w.services.baseline.preflight(input)).stop;
+    observe("n168", { stop: stopped.stop, afterYes });
+    expect(afterYes).toBeNull();
     await w.dispose();
   });
 });
@@ -84,7 +86,9 @@ describe("[sma:ac_channel] the permit channel on the worker's machine", () => {
         .toEqual([["0011223344556677", "sql", "DROP TABLE x", "/w"], ["a1b2c3d4e5f60718", "delete", "rm -rf build", "/w"]]);
       // The PM's answer takes one ticket out of the list; the other stays.
       expect((await answerPermit({ requestedHostId: "h", session: "sess1", ticket: "a1b2c3d4e5f60718", decision: "allow", why: "build output" } as never, {} as never)).written).toBe(true);
-      expect((await listPermitTickets({ requestedHostId: "h" } as never, {} as never)).tickets.map((ticket) => ticket.ticket)).toEqual(["0011223344556677"]);
+      const left = (await listPermitTickets({ requestedHostId: "h" } as never, {} as never)).tickets.map((ticket) => ticket.ticket);
+      observe("n170", { listed: listed.tickets.map((ticket) => [ticket.ticket, ticket.category, ticket.command, ticket.cwd]).sort(), afterAnswer: left });
+      expect(left).toEqual(["0011223344556677"]);
     } finally { process.env.HOME = before; }
   });
 });
@@ -109,12 +113,15 @@ describe("[sma:ae_awaits] [sma:ag_parked] a writer's question parks the attempt 
 
   it("[sma:ae_awaits] [sma:ag_parked] an answer that is a question ends the attempt blocked with the question as its reason, skips the accept gate, and saves the question as a file with its answer open", async () => {
     const w = finishWorld("`NEEDS_HUMAN: which locale should the totals use?`");
-    expect(await w.run()).toMatchObject({ status: "blocked", reason: "needs_human: which locale should the totals use?" });
+    const result = await w.run();
+    expect(result).toMatchObject({ status: "blocked", reason: "needs_human: which locale should the totals use?" });
     expect(getAttempt(w.db, "a1")).toMatchObject({ state: "blocked", reason: "needs_human: which locale should the totals use?" });
     expect(w.db.prepare("SELECT status FROM lane_pilot_gate_event WHERE task_id='t1' AND gate='accept'").all()).toEqual([{ status: "skipped" }]);
     const qa = w.writes.find((write) => write.path.endsWith("QA.md"));
     expect(qa?.content).toContain("Q (writer): which locale should the totals use?");
     expect(qa?.content).toContain("A: open — the writer is parked here");
+    observe("n174", { status: result.status, attemptState: getAttempt(w.db, "a1")?.state, reason: getAttempt(w.db, "a1")?.reason });
+    observe("n188", { acceptGate: w.db.prepare("SELECT status FROM lane_pilot_gate_event WHERE task_id='t1' AND gate='accept'").all(), file: qa?.path.split("/").pop(), question: qa?.content.includes("Q (writer): which locale should the totals use?"), answerOpen: qa?.content.includes("A: open — the writer is parked here") });
     expect(listOpenOwnerItemKeys(w.db, {})).toEqual([]);
   });
 

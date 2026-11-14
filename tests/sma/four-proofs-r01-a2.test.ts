@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { watchWriterRun } from "../../src/rooms/writer/server/watch-writer";
 import { listOpenOwnerItemKeys } from "../../src/rooms/owner-waiting";
 import { createAttempt, getAttempt, transitionAttempt } from "../../src/rooms/plugin-db";
-import { open, seedAttempt, startWorld } from "./r01-world-a";
+import { observe, open, seedAttempt, startWorld } from "./r01-world-a";
 
 describe("[sma:ac_budget_q] the stage budget question", () => {
   it("[sma:ac_budget_q] at four fifths of the task's appetite minutes the PM is asked once whether to extend them; before that nothing is said", async () => {
@@ -20,10 +20,12 @@ describe("[sma:ac_budget_q] the stage budget question", () => {
       const run = watchWriterRun({ ctx: ctx as never, services: { runBudgetFor: () => budget } as never, facts: {}, providerFailed: () => null, holdProviderLimit: () => undefined,
         input: { projectId: "projA", runId: "run1", taskId: "t1", attemptId: "t1-a1", writerThreadId: "thr_w", pmThreadId: "thr_pm", task: { appetite: { minutes: 10 } } } as never });
       await vi.advanceTimersByTimeAsync(7 * 60_000);
+      const askedBefore = sends.length;
       expect(sends).toEqual([]);
       await vi.advanceTimersByTimeAsync(1.5 * 60_000);
       await vi.advanceTimersByTimeAsync(60_000);
       expect(sends).toHaveLength(1);
+      observe("n165", { askedAt7min: askedBefore, askedAt9min: sends.length, to: sends[0]!.threadId, text: sends[0]!.input[0]!.text });
       expect(sends[0]!.threadId).toBe("thr_pm");
       expect(sends[0]!.input[0]!.text).toContain("Task t1 has spent 80% of its appetite (8/10 min)");
       expect(sends[0]!.input[0]!.text).toContain("lane_pilot_update_task");
@@ -46,6 +48,7 @@ describe("[sma:ac_pocket] the run's remainder ran out", () => {
     const rows = w.attempts();
     expect(rows.at(-1)).toMatchObject({ state: "blocked", reason: "run_budget_exceeded:tokens" });
     const item = w.db.prepare("SELECT what, actions_json FROM lane_pilot_owner_item WHERE key='run-budget:run1'").get() as { what: string; actions_json: string };
+    observe("n166", { spawned: w.spawned, lastState: rows.at(-1)!.state, lastReason: rows.at(-1)!.reason, what: item.what, actions: JSON.parse(item.actions_json).map((action: { id: string }) => action.id) });
     expect(item.what).toBe("Лимит прогона исчерпан: токены, потрачено 11 при лимите 10");
     expect(JSON.parse(item.actions_json).map((action: { id: string }) => action.id)).toEqual(["raise", "finish"]);
     await w.harness.lifecycle.dispose();
@@ -93,6 +96,7 @@ describe("[sma:ae_parked] a failure that is not the task's waits for a person", 
     const w = startWorld({ finishes: [{ status: "validation_failed", reason }, { status: "accepted" }] });
     w.start();
     await vi.waitFor(() => expect(w.attempts().at(-1)?.state).toBe("blocked"), { timeout: 20_000 });
+    observe("n178", { attempts: w.attempts().map((row) => [row.attempt_no, row.state, row.reason]), spawned: w.spawned, reason });
     expect(w.attempts().map((row) => [row.attempt_no, row.state, row.reason])).toEqual([[1, "blocked", reason]]);
     expect(w.spawned).toEqual(["T1-a1"]);
     await w.harness.lifecycle.dispose();

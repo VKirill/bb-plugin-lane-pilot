@@ -1,4 +1,6 @@
 // Shared helpers of the region 1 batch a four-proofs tests (tests/sma/four-proofs-r01-a*.test.ts). Batch b has its own world file.
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import type { PrototypeConfig, TaskV2 } from "../../src/rooms/contracts";
 import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../../src/rooms/plugin-db";
@@ -98,4 +100,12 @@ export function startWorld(options: { finishes?: FakeFinish[]; budget?: Record<s
   const attempts = (taskId = "T1") => db.prepare("SELECT id,state,reason,attempt_no FROM lane_pilot_attempt WHERE task_id=? ORDER BY attempt_no").all(taskId) as Array<{ id: string; state: string; reason: string | null; attempt_no: number }>;
   const writerStage = (taskId = "T1") => listStageReceipts(db, "run1", taskId).find((row) => row.stageId === "writer-agent");
   return { bb, harness, db, ctx, sends, spawned, start, attempts, writerStage, state: (id = "T1-a1") => getAttempt(db, id)?.state };
+}
+
+/** What a node's behaviour test saw, for the region scene (scenes/sma_r01_a.py): written as <dir>/<node>.json when SMA_R01A_OBSERVED names a folder, else nothing. */
+export function observe(node: string, value: unknown): void {
+  const dir = process.env.SMA_R01A_OBSERVED;
+  if (!dir) return;
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${node}.json`), JSON.stringify(value));
 }

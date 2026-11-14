@@ -10,7 +10,7 @@ import { createWriterReassign, reassignedReason, takeReassignRequest } from "../
 import { writerPatchFromOutput } from "../../src/rooms/writer/server/writer-task";
 import { integrateWorktree } from "../../src/rooms/verification/git-integrate";
 import { git, repo } from "../verification/git-integrate-helpers";
-import { contract } from "./r01-world-a";
+import { contract, observe } from "./r01-world-a";
 
 vi.setConfig({ testTimeout: 120_000 });
 
@@ -30,6 +30,7 @@ describe("[sma:ae_bring_back] the work comes back from the worker's copy into ma
     expect(clash.commit).toBeNull();
     expect(git(base, "rev-parse", "HEAD").trim()).toBe(merged.commit);
     expect(git(base, "status", "--porcelain").trim()).toBe("");
+    observe("n181", { firstStatus: merged.status, namesHead: merged.commit === git(base, "rev-parse", "HEAD").trim(), mainLib: await readFile(join(base, "lib.ts"), "utf8"), second: "up-to-date", clash: clash.status, clashCommit: clash.commit, mainClean: git(base, "status", "--porcelain").trim() });
   });
 });
 
@@ -42,6 +43,7 @@ describe("[sma:ag_host_commit] the machine commits the worker's uncommitted edit
     expect(git(a, "status", "--porcelain").trim()).not.toBe("");
     const merged = await integrateWorktree({ basePath: base, worktreePath: a, message: "t1: the task title\n\nLane-Pilot-Attempt: a1" });
     expect(merged.status).toBe("merged");
+    observe("n186", { status: merged.status, leftUncommitted: git(a, "status", "--porcelain").trim(), message: git(a, "log", "-1", "--format=%B").trim(), files: git(a, "show", "--name-only", "--format=", "HEAD").trim().split("\n").sort() });
     expect(git(a, "status", "--porcelain").trim()).toBe("");
     expect(git(a, "log", "-1", "--format=%B").trim()).toBe("t1: the task title\n\nLane-Pilot-Attempt: a1");
     expect(git(a, "show", "--name-only", "--format=", "HEAD").trim().split("\n").sort()).toEqual(["fresh.ts", "server.ts"]);
