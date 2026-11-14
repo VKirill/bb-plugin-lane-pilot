@@ -306,6 +306,13 @@ describe("the planner revises a plan the critic returned", () => {
     expect(JSON.stringify(blockedReply(run).plannerLoop)).toContain("acceptance must name beta.md");
   }, 60_000);
 
+  it("a planner that takes the honest exit of the hand-off standard sends the task to the PM with what it lacked", async () => {
+    const run = await runScenario({ settings: planner, critic: [rework(1), PASS], planner: ['The checkout has no alpha.md. {"outcome": "blocked", "blocker": {"needs": "the file alpha.md", "from": "the PM"}, "handoff": "nothing"}'] });
+    expect(run.attempt!.state).toBe("blocked");
+    expect(run.attempt!.reason).toMatch(/^planner_stopped:planner_helper_blocked/);
+    expect(JSON.stringify(blockedReply(run).plannerLoop)).toContain("needs the file alpha.md from the PM");
+  });
+
   it("the PM's lane_pilot_update_task during the loop stops it: the planner's revision is not stored and later returns go to the PM", async () => {
     const run = await runScenario({ settings: planner, critic: [rework(1), rework(2), PASS], pmUpdatesDuringRound: true });
     // The PM's edition says it stopped the loop; no planner edition was written over it.

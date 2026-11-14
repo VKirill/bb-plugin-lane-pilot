@@ -11,7 +11,7 @@
  * a new set of task-v2 contracts from a goal and its critic is a generic agent node, while this loop revises one stored task in place and its
  * critic is the pipeline's own plan-critique stage (structural findings, stage receipts, owner words).
  */
-import { extractModelJson } from "@lane-pilot/workflow-engine";
+import { ANSWER_FORM_LINE, extractModelJson, helperExit } from "@lane-pilot/workflow-engine";
 import { sha256Hex, stringAt } from "@lane-pilot/kit";
 import { bbServiceTier, findModelIn, listedServiceTier, resolveStageWriterSelection, writerExecutionSelection, writerServiceTier } from "@lane-pilot/models";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -65,7 +65,8 @@ export const planFingerprint = (plan: string, task: Pick<TaskV2, "read_first" | 
 
 export type RoundFindings = { round: number; reason?: string; findings: unknown[] };
 
-const ANSWER = "Answer with one JSON object and nothing else: {\"edition_read\": <the contract edition number you read>, \"plan\": \"<the whole revised plan text>\", \"read_first\": [optional, the whole list], \"verification\": [optional, the whole list of {\"command\", \"cwd\", \"timeout_sec\"}], \"changes\": \"<one line per finding: what you changed>\"}. When a finding can only be fixed by changing objective, acceptance, owns_paths, never_touch, expected_outputs, depends_on or risk, do not rewrite around it: answer {\"edition_read\": <n>, \"needs_pm\": \"<which finding, which field, what the PM should change>\"}.";
+/** The form line of the hand-off standard (docs/guide/handoff.md): reasoning first, the object last, the honest exit offered before the form. */
+const ANSWER = ANSWER_FORM_LINE + " {\"edition_read\": <the contract edition number you read>, \"plan\": \"<the whole revised plan text>\", \"read_first\": [optional, the whole list], \"verification\": [optional, the whole list of {\"command\", \"cwd\", \"timeout_sec\"}], \"changes\": \"<one line per finding: what you changed>\"}. When a finding can only be fixed by changing objective, acceptance, owns_paths, never_touch, expected_outputs, depends_on or risk, do not rewrite around it: answer {\"edition_read\": <n>, \"needs_pm\": \"<which finding, which field, what the PM should change>\"}.";
 
 /** The planner's first brief: its method, the task as the PM wrote it, the plan the critic returned and the critic's findings. */
 export function planRevisePrompt(input: { task: TaskV2; plan: string; edition: number; round: number; max: number; findings: readonly RoundFindings[]; ownerWords?: readonly string[] }): string {
@@ -150,6 +151,9 @@ export async function runPlanRevise(input: {
     return { revised: false, reason: `planner_failed:${cause instanceof Error ? cause.message : String(cause)}`, plannerThreadId: threadId, fromSha };
   }
   const raw = (await bb.sdk.threads.output({ threadId })).output;
+  // The honest exit of the standard: a planner that could not do the task at all (a named path missing, the checkout unreadable) hands it to the PM.
+  const exit = helperExit(typeof raw === "string" ? raw : "");
+  if (exit) return { revised: false, reason: `planner_${exit}`, plannerThreadId: threadId, fromSha };
   let revision: PlanRevision;
   try { revision = parsePlanRevision(typeof raw === "string" ? raw : ""); }
   catch (cause) { return { revised: false, reason: `planner_answer_unreadable:${cause instanceof Error ? cause.message : String(cause)}`, plannerThreadId: threadId, fromSha }; }
