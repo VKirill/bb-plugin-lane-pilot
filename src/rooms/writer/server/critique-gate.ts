@@ -3,7 +3,7 @@ import { recordCritiqueRound } from "./task-home";
 import type { ServerCore } from "../../contracts/server";
 import type { HelperPolicySnapshot } from "../../contracts";
 import type { FinishInput, Services } from "./finish-types";
-import { countAttempts, getAttempt, getReasoningTrace, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../storage";
+import { countAttempts, getAttempt, getReasoningTrace, getTaskGitBase, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../storage";
 import { actionableFindings, advisoryFeedback, buildCandidateEvidence, codeCritiqueSource, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "../../critique";
 import type { WriterIdentity } from "../../critique";
 import { candidatePatches, codeCritiqueTaskContext, runCodeCritique } from "../../critique/server";
@@ -90,6 +90,10 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
           return [path, typeof content === "string" ? sha256Hex(content) : null];
         }));
         g.lastPatches = await candidatePatches(bb, db, { runId:input.runId, taskId:input.taskId, hostId:input.config.hostId, cwd:input.task.project_cwd, paths:g.candidate.produced ?? [] });
+        // The same frozen base candidatePatches diffs against: committed work has no `git diff HEAD`, so the
+        // critic's own re-read in pointer mode needs it (absent base → legacy HEAD advice).
+        const gitBase = getTaskGitBase(db as never, input.taskId);
+        const diffBase = gitBase?.compare_committed ? gitBase.base_sha ?? undefined : undefined;
         return buildCandidateEvidence({
           produced:g.candidate.produced ?? [],
           hashes,
@@ -105,6 +109,7 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
           neverTouch:input.task.never_touch,
           dirtOk:dirt.ok,
           dirtReason:dirt.ok ? undefined : dirt.reason,
+          diffBase,
           workspace:input.task.project_cwd,
           referenceTestEdits:yardstick,
         });

@@ -86,6 +86,8 @@ export type CandidateEvidence = {
   truncateReason?: string;
   /** Root the produced paths resolve against — the workspace the critic itself runs in and can `git diff` and read. */
   workspace?: string;
+  /** Frozen base commit the produced diffs are measured against; committed work has no HEAD diff, so the critic's own `git diff` uses this instead of HEAD. */
+  diffBase?: string;
   /** Absolute paths of produced files the packet could not carry; the critic reads them itself (W33). */
   unreadPaths?: string[];
   /** Absolute paths of produced files whose read threw (EACCES, a host 500): unknown, never a silent pass. */
@@ -216,6 +218,10 @@ export const MAX_VERIFICATION_IO_BYTES = 4_000;
 /** Of a long command output the critic sees the head and the tail (errors come last); the cut is said, it does not block. */
 const VERIFICATION_IO_HEAD_BYTES = 1_000;
 export const NEW_FILE_DIFF = "new file: the whole file is in content";
+/** A unified diff git produced — not the `new <hash>`/`hash a -> b` no-patch fallbacks and not the new-file marker. */
+const realPatch = (diff: string) => !diff.startsWith("new ") && !diff.startsWith("hash ");
+/** A git diff that creates the file (`new file mode`, `--- /dev/null`). */
+const gitNewFile = (diff: string) => /^(?:new file mode|--- \/dev\/null)/m.test(diff);
 const plainOutput = (text: string) => stripAnsi(text).replace(/\r\n/g, "\n").split("\n").map((line) => line.slice(line.lastIndexOf("\r") + 1)).join("\n").replace(/\n{3,}/g, "\n\n");
 
 export function buildCandidateEvidence(input: {
@@ -231,6 +237,8 @@ export function buildCandidateEvidence(input: {
   neverTouch: string[];
   dirtOk: boolean;
   dirtReason?: string;
+  /** Frozen base commit for the critic's own `git diff` when the change is committed (see CandidateEvidence.diffBase). */
+  diffBase?: string;
   /** Root that relative produced paths resolve against, for the unreadPaths the critic reads itself. */
   workspace?: string;
   referenceTestEdits?: string[];
@@ -260,7 +268,7 @@ export function buildCandidateEvidence(input: {
     const current = input.hashes[path] ?? null;
     const baseline = baselineHashes[path] ?? null;
     // A new small file's patch is the whole file again with `+` in front: the content carries it, the diff only says it is new.
-    const newWhole = small && typeof patch === "string" && /^(?:new file mode|--- \/dev\/null)/m.test(patch);
+    const newWhole = small && typeof patch === "string" && gitNewFile(patch);
     const diff = newWhole ? NEW_FILE_DIFF : typeof patch === "string"
       ? patch
       : baseline && current && baseline !== current ? `hash ${baseline} -> ${current}\n${content}` : `new ${current ?? "unknown"}\n${content}`;
@@ -271,7 +279,7 @@ export function buildCandidateEvidence(input: {
   }
   // A file the attempt created is no reference test: in a folder without a worktree the «before» is read from the folder the writer just
   // wrote into, and a new test was shown to the critic as one that «existed before this task» (photoalive 2026-11-10).
-  const created = new Set(files.filter((file) => file.diff === NEW_FILE_DIFF || /^(?:new file mode|--- \/dev\/null)/m.test(file.diff)).map((file) => file.path));
+  const created = new Set(files.filter((file) => file.diff === NEW_FILE_DIFF || gitNewFile(file.diff)).map((file) => file.path));
   const reference = (input.referenceTestEdits ?? []).filter((path) => !created.has(path));
   const verification: CritiqueVerifyPacket[] = input.verification.map((row) => {
     // Lane Pilot ran these commands itself and holds their exit codes; a long output (a lint with 247 warnings) is cut to its head
@@ -338,6 +346,7 @@ export function buildCandidateEvidence(input: {
     ownsPaths: artifactBody.ownsPaths,
     neverTouch: artifactBody.neverTouch,
     ...(input.workspace ? { workspace: input.workspace } : {}),
+    ...(input.diffBase ? { diffBase: input.diffBase } : {}),
     truncated,
     ...(truncated ? { truncateReason: reasons.join(";") } : {}),
     ...(unreadPaths.length ? { unreadPaths } : {}),
@@ -451,7 +460,11 @@ export function codeCritiquePrompt(input: {
   const fileLines: string[] = [];
   const inlineBodies: string[] = [];
   for (const file of packets) {
-    const status = file.diff === NEW_FILE_DIFF || file.baselineSha256 === null ? "new" : "changed";
+    // A real git diff says new-vs-changed itself: a committed file has no baseline hash, so baselineSha256
+    // cannot be the verdict. The `new <hash>`/`hash a -> b` no-patch fallbacks keep the old baseline rule.
+    const status = realPatch(file.diff)
+      ? (gitNewFile(file.diff) ? "new" : "changed")
+      : (file.diff === NEW_FILE_DIFF || file.baselineSha256 === null ? "new" : "changed");
     const { added, removed } = diffCounts(file);
     const hash = file.sha256 ? `  sha256:${file.sha256.slice(0, 12)}` : "";
     if (isDataFile(file.path)) {
@@ -460,19 +473,25 @@ export function codeCritiquePrompt(input: {
       continue;
     }
     if (inline) {
-      inlineBodies.push(status === "new"
+      // A new small file's patch repeats its whole content with `+`: content carries it once. An empty content
+      // (a large file shown as its diff) still needs the diff — dropping it left a blank <file> (0.1.572).
+      inlineBodies.push(status === "new" && file.content
         ? `<file path="${file.path}" status="new">\n${file.content}\n</file>`
-        : `<file path="${file.path}" status="changed">\n<diff>\n${file.diff}\n</diff>${file.content ? `\n<content>\n${file.content}\n</content>` : ""}\n</file>`);
+        : `<file path="${file.path}" status="${status}">\n<diff>\n${file.diff}\n</diff>${file.content ? `\n<content>\n${file.content}\n</content>` : ""}\n</file>`);
       continue;
     }
     fileLines.push(`${file.path}  ${status}  +${added} −${removed}${hash}`);
   }
+  // Committed work has no diff against HEAD: the frozen task base replaces it, and a real patch is what
+  // `git diff` can show — the no-patch fallbacks keep the old baseline rule for their paths.
+  const diffBase = evidence.diffBase ?? "HEAD";
+  const diffPaths = packets.filter((file) => file.diff !== NEW_FILE_DIFF && (realPatch(file.diff) || file.baselineSha256 !== null)).map((file) => file.path).join(" ") || "<paths>";
   const readItself = [
     "Read the change yourself in the workspace you are running in:",
     workspace ? `- \`git -C ${workspace} status --short\`` : "- `git status --short`",
     workspace
-      ? `- \`git -C ${workspace} diff HEAD -- ${packets.filter((file) => file.diff !== NEW_FILE_DIFF && file.baselineSha256 !== null).map((file) => file.path).join(" ") || "<paths>"}\` for changed files; read new files whole.`
-      : "- `git diff HEAD -- <paths>` for changed files; read new files whole.",
+      ? `- \`git -C ${workspace} diff ${diffBase} -- ${diffPaths}\` for changed files; read new files whole.`
+      : `- \`git diff ${diffBase} -- <paths>\` for changed files; read new files whole.`,
     "If that diff is empty the change was committed: `git log -p` on those paths shows it.",
     ...(evidence.unreadPaths?.length ? [`Files the evidence could not carry — read them at these absolute paths before you judge:\n${evidence.unreadPaths.join("\n")}`] : []),
   ].join("\n");

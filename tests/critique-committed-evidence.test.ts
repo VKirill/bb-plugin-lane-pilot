@@ -16,8 +16,12 @@ const CRITIC_MODELS = ["claude-opus-5-5", "gpt-6.1-sol", "test-model"];
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"].map((reasoningEffort) => ({ reasoningEffort }));
 const BASE_SHA = "a".repeat(40);
 const PRODUCED = "drills/out.md";
-const CONTENT = "# drill\ncommitted body\n";
+// Over MAX_FILE_EXCERPT_BYTES (8 KiB): a committed large file reaches the critic as its diff with empty content.
+const CONTENT = `# drill\n${"committed body line\n".repeat(500)}TAIL-MARKER-committed-tail\n`;
+const SMALL_CONTENT = "# drill\ncommitted body\n";
 const PATCH = "@@ -1,2 +1,2 @@\n # drill\n-old committed line\n+committed body\n";
+const PATCH_BIG = `@@ -1 +1 @@\n${"-old committed line\n+new committed line\n".repeat(400)}`;
+const PATCH_NEW = "diff --git a/drills/out.md b/drills/out.md\nnew file mode 100644\n--- /dev/null\n+++ b/drills/out.md\n@@ -0,0 +1 @@\n+# drill\n";
 
 const config: PrototypeConfig = {
   projectId:"P", hostId:"h", pmWorkspacePath:"/repo", writerWorkspacePath:"/repo",
@@ -34,6 +38,8 @@ function world(opts: {
   dirtOk?: boolean;
   read?: (path:string) => Promise<{ content:string | null }>;
   gitBase?: boolean;
+  patch?: string;
+  content?: string;
 }) {
   const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
   const db = openDatabase(bb);
@@ -48,7 +54,7 @@ function world(opts: {
   }
   saveProjectSetting(db, "P", "code_critique.enabled", true);
   saveProjectSetting(db, "P", "code_critique.mode", "gate");
-  const files = new Map<string, string>([[`/repo/${PRODUCED}`, CONTENT]]);
+  const files = new Map<string, string>([[`/repo/${PRODUCED}`, opts.content ?? CONTENT]]);
   const spawns: Array<Record<string, unknown>> = [];
   const rpcTargets: unknown[] = [];
   const sdk = {
@@ -74,7 +80,7 @@ function world(opts: {
     plugins:{ callRpc:async ({ method, input }: { method:string; input?: { target?: unknown } }) => {
       rpcTargets.push(input?.target);
       return method === "files"
-        ? { outcome:"available", files:[{ path:PRODUCED, revision:"r1" }], initialPatches:[{ path:PRODUCED, patch:PATCH, truncated:false }] }
+        ? { outcome:"available", files:[{ path:PRODUCED, revision:"r1" }], initialPatches:[{ path:PRODUCED, patch:opts.patch ?? PATCH, truncated:false }] }
         : { outcome:"available", patches:{} };
     } },
     environments:{ list:async () => [{ id:"env-1" }] },
@@ -106,7 +112,7 @@ const critiqueReceipt = (db: ReturnType<typeof openDatabase>) =>
   listStageReceipts(db, "run", "t1").find((row) => row.stageId === "code-critique");
 
 describe("code critique evidence covers committed produced files", () => {
-  it("a committed clean produced file gets its content hash and the frozen-base diff, and the critic passes", async () => {
+  it("a committed large modified file keeps its exact diff in the prompt — no baseline hash does not make it new", async () => {
     const w = world({ snapshots:[], gitBase:true });
     const result = await w.run();
     expect(result).toMatchObject({ state:"passed" });
@@ -115,8 +121,31 @@ describe("code critique evidence covers committed produced files", () => {
     // The diff came from the frozen task base, not the uncommitted target and not a moved main.
     expect(w.rpcTargets).toContainEqual({ type:"all", mergeBaseBranch:BASE_SHA });
     const prompt = String(w.spawns[0]!.prompt);
+    expect(prompt).toContain('status="changed"');
     expect(prompt).toContain("-old committed line");
-    expect(prompt).toContain(CONTENT.trim());
+    // Over the excerpt bound the file travels as its diff only: the body is not inlined.
+    expect(prompt).not.toContain("TAIL-MARKER-committed-tail");
+  });
+
+  it("a committed change too big for the inline packet points the critic at the frozen base, not HEAD", async () => {
+    const w = world({ snapshots:[], gitBase:true, patch:PATCH_BIG });
+    const result = await w.run();
+    expect(result).toMatchObject({ state:"passed" });
+    expect(w.spawns).toHaveLength(1);
+    const prompt = String(w.spawns[0]!.prompt);
+    expect(prompt).toContain(`diff ${BASE_SHA} -- drills/out.md`);
+    expect(prompt).not.toContain("diff HEAD");
+  });
+
+  it("a committed new file stays new: its content is shown once and no diff is invented", async () => {
+    const w = world({ snapshots:[], gitBase:true, patch:PATCH_NEW, content:SMALL_CONTENT });
+    const result = await w.run();
+    expect(result).toMatchObject({ state:"passed" });
+    expect(w.spawns).toHaveLength(1);
+    const prompt = String(w.spawns[0]!.prompt);
+    expect(prompt).toContain(`<file path="${PRODUCED}" status="new">`);
+    expect(prompt).toContain("committed body");
+    expect(prompt).not.toContain("<diff>");
   });
 
   it("without a recorded committed base the uncommitted target stays", async () => {
