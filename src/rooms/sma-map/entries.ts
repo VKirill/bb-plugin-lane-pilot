@@ -1749,7 +1749,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n1735: ["have", "sma ship-lane", "scripts/lp-ship.ts#lane"],
   n1736: ["have", "sma batch: средняя полоса партии", "scripts/lp-ship.ts#batch"],
   n1737: ["have", "sma explain", "src/rooms/tools/server/explain.ts#explainWord"],
-  n1738: ["void", "нет предмета: npm test — это vitest run, значка тестов в README нет, проверять нечего; сканер следов идёт внутри набора (n1038), значки делает lp-ship badge из квитанции (n1742)"],
+  n1738: ["have", "npm test — набор целиком без фильтра; сверка чисел README с кодом (tests/atlas.test.ts) и сканер следов (tests/guard-tools.test.ts) — файлы этого набора, отдельного значка тестов в README нет", "package.json#\"test\": \"vitest run\""],
   n1739: ["have", "ворота публикации", "scripts/lp-ship.ts#gate"],
   n1740: ["have", "ui-drive: живой прогон окна", "scripts/lp-ui-drive.mjs"],
   n1741: ["have", "ui-stage: сцена окна", "scripts/lib/ui-scene.mjs#serveTree"],

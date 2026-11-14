@@ -7,7 +7,7 @@ through a real browser against a local page. It prints {node: {ok, detail}}; thi
 
 Never a real deploy or publish: the gate runs on a fixture tree with a stand-in `bb plugin build`, never on this checkout. The checkout itself is
 only read: its `predict-lint` and `doc-audit` exits and the last line of ~/.lane-pilot/deploys.log are noted in the scene's details.
-Run: scripts/lp-drill.sh --scenario sma_r27. Nodes n1738 (npm test: badge check — no behaviour) and n1748 (bb-core's window build) are not here.
+Run: scripts/lp-drill.sh --scenario sma_r27. Node n1748 (bb-core's window build) is not here.
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from pathlib import Path
 from lp_drill.env import ROOT
 from lp_drill.prove import Proofs
 
-NODES = ["n1733", "n1734", "n1735", "n1736", "n1737", "n1739", "n1740", "n1741", "n1742", "n1743", "n1744", "n1745", "n1746", "n1747",
+NODES = ["n1733", "n1734", "n1735", "n1736", "n1737", "n1738", "n1739", "n1740", "n1741", "n1742", "n1743", "n1744", "n1745", "n1746", "n1747",
          "n1749", "n1751", "n1752", "n1753", "n1754", "n1755"]
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r27_probe.ts"
 
@@ -31,6 +31,9 @@ def scenario_sma_r27(tmp: Path) -> dict:
     except (ValueError, IndexError):
         return proofs.verdict("sma_r27", [f"the probe printed no result (exit {done.returncode}): {(done.stderr or done.stdout).strip()[-300:]}"])
     nodes = seen["nodes"]
+    # n1738: `npm test` itself, narrowed to the two checks the card names (the README numbers and the leak scan), on this checkout.
+    npm = subprocess.run(["npm", "test", "--silent", "--", "tests/atlas.test.ts", "tests/guard-tools.test.ts"], cwd=ROOT, capture_output=True, text=True, timeout=900)
+    nodes["n1738"] = {"ok": npm.returncode == 0 and "Test Files  2 passed" in npm.stdout, "detail": f"npm test on the two checks: exit {npm.returncode}, {next((line.strip() for line in npm.stdout.splitlines() if 'Test Files' in line), 'no summary line')[:120]}"}
     for node in NODES:
         row = nodes.get(node)
         if row is None:

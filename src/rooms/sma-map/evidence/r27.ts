@@ -3,8 +3,8 @@
 // wfRun/wfStep trace were derived mechanically by scripts/sma-seed-evidence.ts (2026-11-14), not authored.
 // The ship verbs run in the release ritual (the owner at a terminal, `npm run gate` before a publish, the drill): they write no row to the hub
 // database, so their trace is the region scene sma_r27, which runs the real verbs against fixture trees and the checked-out commit.
-// n1738 (npm test: badge check) and n1748 (window distribution, bb-core) carry no evidence: see the batch report.
-import { distort, drill, entry, flip, rows, type RegionEvidence, voidStays } from "./types";
+// n1748 (window distribution, bb-core) carries no evidence here: see the batch report.
+import { distort, drill, entry, flip, rows, type RegionEvidence } from "./types";
 
 const SHIP = "scripts/lp-ship.ts";
 const EXPLAIN = "src/rooms/tools/server/explain.ts";
@@ -18,7 +18,7 @@ export default {
   n1735: { mutation: flip(SHIP, 'const chosen = !code.length ? "docs" : full.length ? "full" : "batch";', 'const chosen = !code.length ? "docs" : full.length ? "batch" : "full";'), reach: entry("the owner asks lp-ship lane which lane a change ships through"), trace: SCENE },
   n1736: { mutation: flip(SHIP, "if (chosen.length < 2) {", "if (chosen.length <= 2) {"), reach: entry("the owner runs lp-ship batch on the backlog"), trace: SCENE },
   n1737: { mutation: flip(EXPLAIN, "docs.find((doc) => doc.topic === word) ??", "docs.find((doc) => doc.topic !== word) ??"), reach: entry("a person or the PM runs bb lane-pilot explain <word>"), trace: SCENE },
-  n1738: { reach: entry("the owner runs npm test"), voidReview: voidStays("npm test is vitest run and README.md carries no test badge, so a badge check would check nothing; the leak scan runs inside the suite (n1038), badges are made from a receipt by lp-ship badge (n1742)") },
+  n1738: { mutation: distort("package.json", '"test": "vitest run",', '"test": "vitest run tests/sma",'), reach: entry("the owner or a deploy runs npm test"), trace: SCENE },
   n1739: { mutation: flip(SHIP, "if (rc !== 0) { console.log(`gate: ${name} failed`); return rc; }", "if (rc === 0) { console.log(`gate: ${name} failed`); return rc; }"), reach: entry("the owner publishes the package: npm's prepublishOnly runs the gate"), trace: SCENE },
   n1740: { mutation: flip(DRIVE, "ok = text.includes(check.text);", "ok = !text.includes(check.text);"), reach: entry("the owner or an agent runs lp-ui-drive on a scene against a live window"), trace: SCENE },
   n1741: { mutation: distort(STAGE, 'src=\\"/app.js\\"', 'src=\\"/main.js\\"'), reach: entry("the owner or an agent stages a tree's built window with lp-ui-drive --stage"), trace: SCENE },
