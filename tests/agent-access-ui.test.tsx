@@ -165,7 +165,7 @@ describe("Agent access tab", () => {
     } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
   });
 
-  it("saves «Only selected» plus an added skill with the role key and version, then resets by dropping the row", async () => {
+  it("[sma:d_skill_assign] saves «Only selected» plus an added skill with the role key and version, then resets by dropping the row", async () => {
     const { slot, harness, saves, resets } = await mount();
     try {
       await openAccessTab(slot);
@@ -207,7 +207,7 @@ describe("Agent access tab", () => {
     } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
   }, 45_000); // jsdom clicks through two menus; under a full parallel run it took 16 s and timed out
 
-  it("takes free-text names for MCP servers and removes a chip", async () => {
+  it("[sma:d_mcp_toggle] takes free-text names for MCP servers and removes a chip", async () => {
     const { slot, harness, saves } = await mount();
     try {
       await openAccessTab(slot);
