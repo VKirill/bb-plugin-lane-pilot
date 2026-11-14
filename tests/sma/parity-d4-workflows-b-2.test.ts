@@ -232,7 +232,7 @@ describe("parity d4 workflows b-2", () => {
     // The fresh start seeds the instruction forms (SMA k_d_tpl_instructions) and nothing else, each write create-only:
     // a null hash, which BB answers with a conflict over a file that already exists.
     const seeded = t.writes as Array<{ path: string; expectedSha256?: string | null }>;
-    expect(seeded.map((w) => w.path.slice(t.checkout.length + 1)).sort()).toEqual([".agents/planning/PROJECT.md", ".github/copilot-instructions.md", "CLAUDE.md"]);
+    expect(seeded.map((w) => w.path.slice(t.checkout.length + 1)).sort()).toEqual([".agents/planning/PROJECT.md", ".github/copilot-instructions.md", "AGENTS.md", "CLAUDE.md"]);
     expect(seeded.every((w) => w.expectedSha256 === null)).toBe(true);
   });
 
