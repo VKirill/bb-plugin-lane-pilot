@@ -4,8 +4,11 @@
 // in the sibling repositories, and the test checks that it exists.
 // `upstream`: the SMA card itself says the node is declared but not wired there (SMA_CARDS unsure); a 1-in-1 copy holds the same
 // state and builds nothing for it. A proof link is navigation, not a check of behaviour: that is a contract test (contracts.ts).
-/** void: the card guards something Lane Pilot does not have (its own daemon, a Postgres, a Windows wrapper) — nothing to build. */
-export type SmaStatus = "have" | "partial" | "missing" | "skip" | "upstream" | "void";
+/** void: the card guards something Lane Pilot does not have (its own daemon, a Postgres, a Windows wrapper) — nothing to build;
+ * it is not an exception from the four proofs until a review is recorded (evidence `voidReview`).
+ * deviation: the owner's decision (sma-parity-tz.md §3) overrides the card — `ours` is the one-line reason.
+ * deviation-data: built by the card, measured worse by result on ≥ 30 tasks — `ours` is the one-line reason (≤ 2 % of the map). */
+export type SmaStatus = "have" | "partial" | "missing" | "skip" | "upstream" | "void" | "deviation" | "deviation-data";
 export type SmaEntry = readonly [status: SmaStatus, ours: string, proof?: string];
 export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n0: ["have", "водитель открывает фазу и будит PM на обсуждение", "src/rooms/phase/server/driver-methods-admission.ts#open"],
