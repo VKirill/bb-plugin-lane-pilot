@@ -147,7 +147,7 @@ export function symbolSpan(text: string, name: string): SymbolSpan | null {
 }
 
 /** A module path an import names, as a file under `root`: relative paths (with .ts/.tsx/index.ts) and @lane-pilot packages. */
-function resolveModule(root: string, fromFile: string, spec: string): string | null {
+export function resolveModule(root: string, fromFile: string, spec: string): string | null {
   const base = spec.startsWith(".") ? join(dirname(join(root, fromFile)), spec)
     : spec.startsWith("@lane-pilot/") ? join(root, "packages", spec.slice("@lane-pilot/".length), "src", "index") : null;
   if (!base) return null;

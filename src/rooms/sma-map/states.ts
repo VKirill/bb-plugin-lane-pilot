@@ -76,7 +76,7 @@ export function nodeStates(input: StatesInput): NodeState[] {
     const mutation = mutationState(ev?.mutation, attest[row.id], input.root, testFiles(row.smaId));
     const reach = global.get(row.id)!;
     const sources = traceList(ev);
-    const traces = reading && sources.length ? readTraces(input.traceCtx!, sources, input.since!) : null;
+    const traces = reading && sources.length ? readTraces(input.traceCtx!, sources, input.since!, row.id) : null;
     const observed = traces ? (traces.judged ? traces.n > 0 : null) : null;
     const point = points.get(row.id)!;
     const outcomeVerified = reading ? checked && mutation.mutated && !!traces?.judged && traceAfter(point, traces.last) : null;

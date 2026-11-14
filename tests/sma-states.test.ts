@@ -1,6 +1,10 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { runSmaLiveCli, runSmaMapCli } from "../src/rooms/sma-map";
+import { anchorInfo } from "../src/rooms/sma-map/cli-proofs";
 import { openDatabase } from "../src/rooms/plugin-db";
 import { smaRows } from "../src/rooms/sma-map/model";
 import { defaultSettings } from "../src/rooms/sma-map/settings-registry";
@@ -51,6 +55,31 @@ describe("sma-map --states / --gaps / --hollow (sma-parity-tz.md §4)", () => {
     const hollow = JSON.parse(runSmaLiveCli(db, ["--live", "--hollow", "--json"]).stdout!);
     expect(hollow.live).toBe(true);
     expect(hollow.findings.some((finding: { sign: number }) => finding.sign === 2)).toBe(true);
+  });
+
+  it("drill receipts are read from the plugin's own root, not from the directory the command was typed in", () => {
+    const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb) as never;
+    const plugin = mkdtempSync(join(tmpdir(), "sma-plugin-")), elsewhere = mkdtempSync(join(tmpdir(), "sma-cwd-"));
+    mkdirSync(join(plugin, ".agents/runs/drills"), { recursive: true });
+    writeFileSync(join(plugin, ".agents/runs/drills/a.json"), JSON.stringify({ finishedAt: Date.now(), scenarios: [] }));
+    const from = (root?: string) => runSmaLiveCli(db, ["--live", "--states"], Date.now(), elsewhere, root).stdout!;
+    expect(from()).toContain("no drill receipts here");
+    expect(from(plugin)).toContain(`1 drill receipt(s) in ${join(plugin, ".agents/runs/drills")}`);
+  });
+
+  it("--gaps shows each anchor's resolved file and size and flags one under tests/ or the size of a dispatcher", () => {
+    const root = mkdtempSync(join(tmpdir(), "sma-anchor-"));
+    for (const dir of ["tests", "src"]) mkdirSync(join(root, dir));
+    writeFileSync(join(root, "tests/helper.ts"), "export function small() {\n  return 1;\n}\n");
+    writeFileSync(join(root, "src/small.ts"), "export function small() {\n  return 1;\n}\n");
+    writeFileSync(join(root, "src/big.ts"), `export function dispatch(x: number) {\n${"  if (x) x += 1;\n".repeat(200)}  return x;\n}\n`);
+    expect(anchorInfo("tests/helper.ts#small", root)).toMatchObject({ file: "tests/helper.ts", symbol: "small", lines: 3, flag: expect.stringContaining("under tests/") });
+    expect(anchorInfo("src/small.ts#small", root)).toEqual({ file: "src/small.ts", symbol: "small", lines: 3 });
+    expect(anchorInfo("src/big.ts#dispatch", root)).toMatchObject({ lines: 203, flag: expect.stringContaining("dispatcher") });
+    expect(anchorInfo("src/gone.ts#x", root)).toMatchObject({ flag: "the anchor file does not exist" });
+    expect(anchorInfo("core:x.ts#y", root)).toBeNull();
+    const gaps = JSON.parse(runSmaMapCli(["--gaps", "--json", "--region", "13"]).stdout!);
+    expect(gaps.nodes.some((node: { anchor?: { lines: number } }) => node.anchor && node.anchor.lines > 0)).toBe(true);
   });
 
   it("an exception closes a node without the four proofs; an unreviewed void is listed with voidReview missing", () => {

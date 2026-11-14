@@ -95,17 +95,19 @@ async function runTests(files, pattern, config) {
   rmSync(out, { force: true });
   const assertion = [], crash = [];
   let ran = 0, passed = 0;
+  const titles = [];
   for (const file of report.testResults ?? []) {
     const tests = (file.assertionResults ?? []).filter((test) => test.status === "passed" || test.status === "failed");
     if (file.status === "failed" && !tests.some((test) => test.status === "failed") && file.message) crash.push(`${relative(root, file.name)}: ${file.message.split("\n")[0]}`);
     for (const test of tests) {
       ran++;
+      titles.push(test.fullName ?? test.title);
       if (test.status === "passed") { passed++; continue; }
       const message = (test.failureMessages ?? []).join("\n");
       (isCrash(message.split("\n")[0]) ? crash : assertion).push(`${test.fullName ?? test.title}: ${message.split("\n")[0].slice(0, 300)}`);
     }
   }
-  return { ran, passed, assertion, crash };
+  return { ran, passed, assertion, crash, titles };
 }
 
 const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -135,7 +137,8 @@ async function mutateOne(job, baselines) {
   if (after.ran === 0 && after.crash.length) return { result: "crash", detail: after.crash.slice(0, 2).join(" | ") };
   if (after.assertion.length) return { result: "killed", detail: after.assertion[0] };
   if (after.crash.length) return { result: "crash", detail: after.crash.slice(0, 2).join(" | ") };
-  return { result: "survived", detail: `${after.passed} of ${after.ran} test(s) still pass with the mutation` };
+  // The titles say WHICH tests ran: a survivor that ran only the old test (a new one not indexed), or one whose fixture is symmetric, shows here.
+  return { result: "survived", detail: `${after.passed} of ${after.ran} test(s) still pass with the mutation`, ran: after.titles };
 }
 
 // ---- fixture mode: specs from a JSON file, nothing attested ----
@@ -156,6 +159,11 @@ if (fixture) {
 // ---- map mode ----
 const { SMA_EVIDENCE } = await import("../src/rooms/sma-map/evidence/index.ts");
 const { SMA_NODES, SMA_CARDS } = await import("../src/rooms/sma-map/graph.ts");
+// The contract index is read from contracts.ts: a test titled [sma:<id>] written since the last `node scripts/sma-contracts.mjs` is invisible to it
+// (a «survived» that only means «the new test never ran»). Regenerate it first; a failure to do so stops the run.
+const indexRun = spawnSync("node", [join(here, "sma-contracts.mjs")], { cwd: root, encoding: "utf8" });
+if (indexRun.status !== 0) { process.stderr.write(`could not regenerate the contract index: ${(indexRun.stderr || indexRun.stdout).trim()}\n`); process.exit(2); }
+say(`contract index regenerated: ${indexRun.stdout.trim()}`);
 const { SMA_CONTRACT_TESTS } = await import("../src/rooms/sma-map/contracts.ts");
 const { SMA_ATTEST, lintMutation, mutationState, specHash, contentHash } = await import("../src/rooms/sma-map/mutation.ts");
 
@@ -197,6 +205,7 @@ for (const id of selected) {
   const outcome = await mutateOne({ id, spec, files, pattern: escapeRe(`[sma:${smaId}]`) }, baselines);
   tally[outcome.result] = (tally[outcome.result] ?? 0) + 1;
   say(`${id.padEnd(7)} ${outcome.result.padEnd(12)} ${spec.kind} ${spec.file}${outcome.detail ? ` — ${outcome.detail.slice(0, 240)}` : ""}`);
+  if (outcome.result === "survived") say(`        tests that ran and still passed: ${outcome.ran.map((title) => `«${title}»`).join(" | ")}`);
   attest(id, {
     spec: specHash(spec), kind: spec.kind, file: contentHash(readFileSync(join(root, spec.file), "utf8")),
     tests: Object.fromEntries(files.map((file) => [file, contentHash(readFileSync(join(root, file), "utf8"))])),

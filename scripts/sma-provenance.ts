@@ -55,7 +55,11 @@ function blame(file: string): Array<{ commit: string; time: number }> {
   const lines: Array<{ commit: string; time: number }> = [];
   const times = new Map<string, number>();
   let current = "";
-  for (const line of git("blame", "--porcelain", "HEAD", "--", file).split("\n")) {
+  let blamed: string;
+  try { blamed = git("blame", "--porcelain", "HEAD", "--", file); } catch (cause) {
+    throw new Error(`${file} is not in HEAD (${cause instanceof Error ? cause.message.split("\n")[0] : cause}): this script reads COMMITTED history. Commit moved and new files first, then run npm run sma:facts.`);
+  }
+  for (const line of blamed.split("\n")) {
     const head = /^([0-9a-f]{40}) \d+ (\d+)/.exec(line);
     if (head) { current = head[1]!; lines[Number(head[2])] = { commit: current, time: times.get(current) ?? 0 }; continue; }
     const time = /^committer-time (\d+)/.exec(line);
@@ -79,6 +83,8 @@ export function generate(deploysPath: string): string {
   const deploys = readDeploys(deploysPath);
   const shipped = firstDeploys(deploys);
   const head = git("rev-parse", "HEAD").trim();
+  const uncommitted = git("status", "--porcelain", "--untracked-files=all", "--", "src", "tests", "scripts", "packages").split("\n").filter((line) => line && !/src\/rooms\/sma-map\/(provenance|hollow-facts|contracts)/.test(line));
+  if (uncommitted.length) process.stderr.write(`warning: ${uncommitted.length} uncommitted path(s) (e.g. ${uncommitted[0]!.trim()}): change points are read from HEAD, so commit moved and new files BEFORE npm run sma:facts.\n`);
   const nodes: Array<[string, OwnChange]> = [];
   for (const [id] of SMA_NODES) {
     const proof = SMA_ENTRIES[id]?.[2];
