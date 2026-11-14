@@ -169,7 +169,7 @@ describe("reflexes and file notes reach the task folder", () => {
     objective: "Objective", acceptance: ["done"], verify: "tests", verification: [{ command: "npm test", cwd: "/ws" }],
   };
 
-  async function world() {
+  async function world(opts: { failWrite?: (path: string) => boolean } = {}) {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
     createRun(db, runId, projectId, "bb", "/ws", "none", { schemaVersion: 1, pools: { provider: 5, verification: 2 } }, "host-1");
@@ -184,7 +184,7 @@ describe("reflexes and file notes reach the task folder", () => {
       hosts: { experimental_client: () => ({ call: async () => ({ status: "ready", entries: [] }) }) },
       sdk: {
         files: {
-          write: async (input: { path: string; content: string }) => { writes.push(input.path); written.set(input.path, input.content); },
+          write: async (input: { path: string; content: string }) => { if (opts.failWrite?.(input.path)) throw new Error("EACCES: disk refused"); writes.push(input.path); written.set(input.path, input.content); },
           read: async (input: { path: string }) => (written.has(input.path) ? { content: written.get(input.path) } : null),
         },
         threads: { send: async () => {} },
@@ -206,6 +206,18 @@ describe("reflexes and file notes reach the task folder", () => {
   }
 
   afterEach(() => { rules.list = []; });
+
+  // docs/task-folder.md: a task-folder write that fails stops the pipeline (it used to be only logged, and the writer then started without its
+  // plan). Mutation that breaks it: the lp.task-folder executor catching the error and returning ok again.
+  it("[sma:wi_spool] a failed task-folder write stops the task's pipeline instead of being logged", async () => {
+    rules.list = ["WHEN prisma migrate -> run it on a copy first"];
+    const w = await world({ failWrite: (path) => path.includes("/.agents/plans/items/") });
+    const done = await w.run.done;
+    expect(done.status).toBe("failed");
+    expect(JSON.stringify(done)).toContain("could not persist the task folder of task-g1");
+    expect(w.writes.some((path) => path.includes("/.agents/plans/items/"))).toBe(false);
+    await w.harness.lifecycle.dispose();
+  });
 
   it("[sma:k_hs_reflex] [sma:k_lib_reflex] a dispatched task's folder gets REFLEXES.md from the accepted WHEN -> act rules (plain rules stay out), and the guard fires the matching act", async () => {
     rules.list = ["WHEN prisma migrate -> run it on a copy first", "always write tests first"];
