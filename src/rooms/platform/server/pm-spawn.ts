@@ -11,14 +11,11 @@ import { noteZcodeThread, reserveZcodeSlot } from "./zcode-slot";
 import { withLaunchTuning } from "./launch-tuning";
 
 /**
- * The PM agents the bundled guard (lane-pilot-pm, plus the older orchestrator names) reads the rules of: it keys
- * on the agent_type of the session, so a PM started with no such agent has no guard and a write it tries goes through.
+ * The PM waits for real work: the owner writes the task, or a phase the owner/PM already opened carries its goal.
+ * Activation itself assigns nothing — no fixture task, no write probes, no writer dispatch (0.1.573: the old
+ * non-native prompt made every CLI/programmatic activation demo a fixture task into the project repo first).
  */
-const GUARDED_PM_AGENTS = new Set(["dev-orchestrator", "frontend-orchestrator", "marketing-orchestrator", "lane-pilot-pm"]);
-
-export const pmHasGuard = (mainAgent: unknown): boolean => typeof mainAgent === "string" && GUARDED_PM_AGENTS.has(mainAgent);
-
-export function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspace = false, native = false, guarded = false): string {
+export function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspace = false, native = false): string {
   if (native) {
     return [
       "You are the Lane Pilot PM in the selected role.",
@@ -30,11 +27,8 @@ export function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspac
     "You are the Lane Pilot PM. Do not write production code yourself.",
     managedWorkspace
       ? `Run id: ${runId}. This run is bound to the current BB-managed worktree; use the current workspace and do not target the base checkout at ${config.writerWorkspacePath}.`
-      : `Run id: ${runId}. The production fixture is ${config.writerWorkspacePath}.`,
-    "First use Bash only for read probes: `pwd`, `ls -la`, and `cat fixture/README.md` if available.",
-    ...(guarded ? ["Then demonstrate the guard by attempting a production write with Write or Bash redirection; report the denial."] : []),
-    "Delegate the safe fixture task with `lane_pilot_dispatch_writer`; it returns a runId and attemptId immediately, before the writer completes.",
-    "Call `lane_pilot_wait_writer` with that runId (timeoutSec at most 240). If state is still running, call it again with the same runId. Return the final receipt to the user verbatim. Do not attempt to activate another PM.",
+      : `Run id: ${runId}. The project workspace is ${config.writerWorkspacePath}.`,
+    "Wait for the task: the owner writes it, or an already-open phase carries its goal. Do not invent tasks, write code, run probes, or dispatch a writer until asked. Do not attempt to activate another PM.",
   ].join("\n");
 }
 

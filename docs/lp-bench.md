@@ -130,7 +130,7 @@ model or another edit; three numbers: how many stages passed, what it cost, how 
    names (`forBenchAttempt`, `src/rooms/harness/server/harness.ts:220`, called from `forAttempt`, `src/rooms/harness/server/harness.ts:195`), never the live alternation.
 4. The contract is the stored one with three deterministic touch-ups, the same on every arm: `display_title` and `kind` filled in when the old contract lacks them (today's
    lint refuses it otherwise), and the `read_first` files that are not in the base commit (untracked in the live checkout) dropped (`existingFiles`, `src/rooms/bench/runner.ts:99`). The PM that
-   `activate` opens is stopped at once: its prompt tells it to delegate a fixture task of its own.
+   `activate` opens is stopped at once as a precaution: since 0.1.573 its prompt only waits for real work and assigns no fixture task.
 5. Per task: stages passed, cost, seconds and whether the attempt was accepted, from `lp_attempt_metrics` (`aggregateAttempts`, `src/rooms/bench/runner.ts:83`). Cost
    keeps `cost_state`: a provider that reports no usage is `not_measured`, never 0. The plugin writes a thread's token row minutes after the attempt, so the
    cost is read after a usage sync (`syncTokenUsage`), not before.

@@ -103,7 +103,7 @@ export function benchPipeline(ctx: Pick<ServerCore, "bb" | "db" | "host" | "canc
         await closeRun(project.projectId, left.run_id);
       }
       const activated = await services.activate(project.projectId, sourceId, "bb");
-      // The PM prompt tells the PM to delegate a fixture task of its own; a bench run takes its tasks only from the bench, so the PM is stopped at once.
+      // A bench run takes its tasks only from the bench, so the PM is parked at once; since 0.1.573 activation no longer assigns it a fixture task, the stop is isolation, not a workaround.
       await bestEffort(ctx.log, "bench pm metadata", bb.sdk.threads.updatePluginMetadata({ threadId: activated.threadId, set: { role: "bench-pm", lanePilotBench: true } } as never).then(() => undefined), undefined);
       await bb.sdk.threads.stop({ threadId: activated.threadId });
       return { pmThreadId: activated.threadId, runId: activated.runId };

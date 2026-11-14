@@ -103,9 +103,9 @@ describe("rails by default", () => {
     say(goal, "creq_real_owner");
     expect(await intake.take(PM)).toMatchObject({ kind: "heavy", phaseId: "ph_1" });
   });
-  it.each([[false, false, false], [false, false, true], [true, false, true], [false, true, true]])(
-    "leaves the PM activation instruction alone (managed=%s, native=%s, guarded=%s)", async (managed, native, guarded) => {
-      const text = pmPrompt("lprun_bootstrap", { writerWorkspacePath: "/home/ubuntu/lp-drill-sandbox" } as PrototypeConfig, managed, native, guarded);
+  it.each([[false, false], [true, false], [false, true], [true, true]])(
+    "leaves the PM activation instruction alone (managed=%s, native=%s)", async (managed, native) => {
+      const text = pmPrompt("lprun_bootstrap", { writerWorkspacePath: "/home/ubuntu/lp-drill-sandbox" } as PrototypeConfig, managed, native);
       const { intake, opened } = world({ request: { source: "spawn", requestId: "creq_bootstrap", initiator: "user", input: [{ type: "text", text }] } });
       expect(await intake.take(PM)).toBeNull();
       expect(opened).toHaveLength(0);

@@ -12,7 +12,7 @@ import { writerExecutionSelection } from "@lane-pilot/models";
 import { buildRunPolicy } from "../../tasks";
 import { parseWorkspaceMode, resolveManagedWorkspace, usesManagedWorktree } from "../../verification";
 import { excludeBookkeeping } from "../../verification/server";
-import { fullAccessSpawn, pmHasGuard, pmPrompt } from "../../platform/server";
+import { fullAccessSpawn, pmPrompt } from "../../platform/server";
 import { requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import {id, stringAt, valueAt, orMiss, isNotFound, bestEffort} from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
@@ -144,7 +144,7 @@ export function createActivation(ctx: ServerCore, services: Services) {
           ? writerExecutionSelection(spawnProviderId, spawnModel, native.reasoningLevel, spawnTier)
           : { providerId: spawnProviderId, model: spawnModel, serviceTier: spawnTier, executionInputSources:{ providerId:"explicit" as const, model:"explicit" as const, serviceTier:"explicit" as const } }),
         // The owner's confirmed, non-sensitive facts (anamnesis A5), within 1800 characters; nothing when there are none or the store is out of reach.
-        prompt: pmPrompt(runId, config, !native && managedWorkspace, Boolean(native), pmHasGuard(settings["main.agent"])) + await ownerCardBlock(anamnesisFor(ctx).hub)
+        prompt: pmPrompt(runId, config, !native && managedWorkspace, Boolean(native)) + await ownerCardBlock(anamnesisFor(ctx).hub)
           + (() => { const pp = projectPassportBlock(db, { projectId, role: "pm", maxChars: 1600 }); return pp ? `\n\n${pp}` : ""; })()
           // The rules the owner's corrections produced for the PM, within a token budget (src/learning/pm-rules.ts).
           + pmRulesPromptBlock(db, projectId, getRunSettingsScopes(db, runId), ruleBudget("pm"), `pm:${runId}`),

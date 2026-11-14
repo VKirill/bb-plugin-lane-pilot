@@ -164,7 +164,7 @@ const pipeline: PipelinePort = {
     const activated = await bb("lane-pilot", "activate", project.projectId, source);
     const pm = field(activated.stdout, "threadId"), runId = field(activated.stdout, "runId");
     if (activated.exitCode !== 0 || !pm || !runId) throw new Error(`activate failed: ${(activated.stderr || activated.stdout).slice(0, 300)}`);
-    // The PM prompt tells the PM to delegate a fixture task of its own; a bench run takes its tasks only from the bench, so the PM is stopped at once.
+    // A bench run takes its tasks only from the bench, so the PM is parked at once; since 0.1.573 activation no longer assigns it a fixture task, the stop is isolation, not a workaround.
     await bb("thread", "stop", pm);
     log(`PM ${pm} (stopped), run ${runId} in ${project.name}`);
     return { pmThreadId: pm, runId };
