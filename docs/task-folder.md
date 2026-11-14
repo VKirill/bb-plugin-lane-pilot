@@ -81,7 +81,9 @@ The source of truth is three additive tables: `lane_pilot_task_home` (one row pe
 phase), `lane_pilot_task_file` (one row per file: path in the home, kind, attempt, round, sha256, bytes, producer, plugin
 version, declared readers, supersedes / superseded_by) and `lane_pilot_task_file_read` (every read: reader, sha256,
 legacy flag). `recordTaskFile` is the only writer. It writes the file, then its row, then `manifest.json` again. Writes
-of one task's manifest are serialized.
+of one task's manifest are serialized. Every one of these writes replaces the file and a write the bb core does not apply
+throws: in the core `expectedSha256: null` means "the file must not exist" and answers `conflict` (HTTP 200, nothing
+written) for a file that exists, so the task home writes through `writeReplacing` (no `expectedSha256` key). Until 0.1.567 it passed `null`, and `manifest.json` stayed at its first render.
 
 ```json
 {
