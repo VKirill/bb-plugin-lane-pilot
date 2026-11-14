@@ -381,9 +381,13 @@ def main() -> int:
     # A deploy stops the previous deploy's drill with SIGTERM: without this the `finally` below never ran, the lock stayed and the
     # next drill ended «red» with exit 2 (0.1.514, 2026-11-10). A lock whose process is gone (SIGKILL, OOM) is taken over.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
-    if not take_lock(lock):
-        print(f"another drill is running ({lock})", file=sys.stderr)
-        return 2
+    # A drill already running (the nightly one at 03:30 met the 0.1.555 deploy drill, 2026-11-14) is waited for, not reported red.
+    deadline = time.time() + float(os.environ.get("LP_DRILL_LOCK_WAIT_SEC", "2700"))
+    while not take_lock(lock):
+        if time.time() >= deadline:
+            print(f"another drill is running ({lock})", file=sys.stderr)
+            return 2
+        time.sleep(15)
     start = time.time()
     tmp = Path(tempfile.mkdtemp(prefix="lp-drill-"))
     receipt = receipt_dir / f"{DATE}.json"
