@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 563505bf422a4629 -->
+<!-- enabled-settings:structure a19b3f04422c531e -->
 
 # Enabled settings (generated)
 
@@ -69,6 +69,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `code_critique.provider` | `inherit writer selection` | — | independent code-critique reviewer provider |
 | `code_critique.reasoning_effort` | `medium` | — | independent code-critique reviewer effort |
 | `code_critique.service_tier` | `standard` | — | independent code-critique reviewer tier |
+| `codex.lean_roles` | `default` | — | Codex sessions: which roles start in a shared trimmed CODEX_HOME (default: docs and the one-shot judges), read in src/rooms/native-agent/server/helper-bb-shim.ts |
 | `council.audience.model` | — | — | council seat setting |
 | `council.audience.provider` | — | — | council seat setting |
 | `council.audience.reasoning_effort` | `high` | — | council seat setting |

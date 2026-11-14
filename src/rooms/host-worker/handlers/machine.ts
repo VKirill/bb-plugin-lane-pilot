@@ -155,22 +155,33 @@ export function disableCodexMemories(toml: string): string {
  * that refreshes in one place). The config is trimmed to the role's profile (CODEX_LEAN_*, contracts/codex-lean.ts); `profile` defaults to the writer's.
  */
 export const prepareWorkerHome: ExperimentalHostRpcHandlers<typeof hostContract>["prepareWorkerHome"] = async (input) => {
-  const { mkdir: mk, copyFile, symlink: link, access: can } = await import("node:fs/promises");
+  const { mkdir: mk, symlink: link, access: can, writeFile, rename: mv } = await import("node:fs/promises");
   const { homedir: home } = await import("node:os");
   const { join: at } = await import("node:path");
   const source = process.env.CODEX_HOME?.trim() || at(home(), ".codex");
   const codexHome = at(home(), ".lane-pilot", "codex-homes", input.key);
   await mk(codexHome, { recursive: true });
   const seeded: string[] = [];
+  const has = (path: string) => can(path).then(() => true, () => false);
   // The owner's AGENTS.md stays out: a worker's role policy leaves the user's personal instructions out (effectiveSwitch), and the file is ~2k tokens a request.
-  for (const name of ["config.toml"]) {
-    if (await can(at(source, name)).then(() => true, () => false) && !await can(at(codexHome, name)).then(() => true, () => false)) { await copyFile(at(source, name), at(codexHome, name)); seeded.push(name); }
-  }
   // One memory place (the hub DB): the task's config turns Codex's own memory store off, whatever the owner's file says.
-  const { writeFile } = await import("node:fs/promises");
+  // A home shared by parallel sessions (lean-<profile>) is prepared by many calls at once: the text written is a pure function of the home's own
+  // config (or the owner's, for a new home), and goes in through a temp file and a rename, only when it differs, so no session ever reads a half-written file
+  // and a trust entry Codex added to the home's config stays.
   const cfg = at(codexHome, "config.toml");
-  await writeFile(cfg, leanCodexConfig(disableCodexMemories(await readFile(cfg, "utf8").catch(() => "")), input.profile ?? "code"), "utf8");
-  if (await can(at(source, "auth.json")).then(() => true, () => false) && !await can(at(codexHome, "auth.json")).then(() => true, () => false)) { await link(at(source, "auth.json"), at(codexHome, "auth.json")); seeded.push("auth.json"); }
+  const present = await readFile(cfg, "utf8").then((text) => text, () => null);
+  const base = present ?? await readFile(at(source, "config.toml"), "utf8").catch(() => "");
+  const want = leanCodexConfig(disableCodexMemories(base), input.profile ?? "code");
+  if (present === null) seeded.push("config.toml");
+  if (want !== present) {
+    const temp = `${cfg}.${randomUUID().slice(0, 8)}.tmp`;
+    await writeFile(temp, want, "utf8");
+    await mv(temp, cfg);
+  }
+  if (await has(at(source, "auth.json")) && !await has(at(codexHome, "auth.json"))) {
+    // Two sessions may both find it missing: the second link attempt finds it there, which is what both wanted.
+    await link(at(source, "auth.json"), at(codexHome, "auth.json")).then(() => { seeded.push("auth.json"); }, (cause: NodeJS.ErrnoException) => { if (cause.code !== "EEXIST") throw cause; });
+  }
   return { codexHome, seeded };
 };
 

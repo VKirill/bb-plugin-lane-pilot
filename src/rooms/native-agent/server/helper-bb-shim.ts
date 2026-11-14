@@ -1,8 +1,8 @@
-import { SETTING_WORKER_STRICT_USER } from "@lane-pilot/settings-catalog";
+import { GLOBAL_SETTINGS_PROJECT_ID, SETTING_CODEX_LEAN_ROLES, SETTING_WORKER_STRICT_USER } from "@lane-pilot/settings-catalog";
 import { getRun, loadProjectSettings, workerHomeKey } from "../../storage";
 import type { ExperimentalPluginProviderEnvEntry } from "@get-bb/plugin-sdk";
 import { PROVIDER_CAPABILITIES } from "@lane-pilot/models";
-import { codexLeanProfile } from "../../contracts";
+import { codexLeanEnabled, codexLeanProfile } from "../../contracts";
 import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 
@@ -85,13 +85,27 @@ export function createBbShimEnv(ctx: Pick<ServerCore, "bb" | "host"> & { db?: Se
     const shim = await prepare(context.hostId);
     const codex = PROVIDER_CAPABILITIES[providerId ?? ""]?.requiresWorkerHome === true;
     const strict = codex && role === "writer" ? await workerHome(metadata, context.hostId) : null;
-    // Opt-in (LANE_PILOT_CODEX_LEAN_HOME=on): every other Codex helper, and a writer without strict_user, starts in a shared trimmed home of its profile.
-    const lean = !strict && codex && process.env.LANE_PILOT_CODEX_LEAN_HOME === "on" ? await leanHome(role, context.hostId) : null;
+    // Per role (setting codex.lean_roles, default: docs and the one-shot judges; env LANE_PILOT_CODEX_LEAN_HOME=off is the escape hatch):
+    // the role starts in a shared trimmed home of its profile instead of the owner's own ~/.codex.
+    const lean = !strict && codex && codexLeanEnabled(role, leanRolesSetting(metadata), process.env.LANE_PILOT_CODEX_LEAN_HOME) ? await leanHome(role, context.hostId) : null;
     const home = strict ?? lean;
     const extra = home ? [{ name: "CODEX_HOME", value: home, reason: strict ? "Lane Pilot strict worker: a fresh codex home for this task (worker.strict_user on)" : "Lane Pilot: a trimmed codex home for this role (no app, browser, plugin or subagent tools)" }] : [];
     if (!shim) return [mark, ...extra];
     return [mark, { name: "PATH", value: shim.path, reason: `Lane Pilot: ${role} thread runs bb, ssh, scp and sftp through the guard wrappers in ${shim.dir}`.slice(0, 500) }, ...extra];
   };
+
+  /** `codex.lean_roles` for the thread's project (its own row, else the hub's); unset without a database. */
+  function leanRolesSetting(metadata: unknown): unknown {
+    if (!ctx.db) return undefined;
+    try {
+      const runId = stringAt(metadata, "lanePilotRunId");
+      const projectId = (runId ? getRun(ctx.db, runId)?.project_id : null) ?? GLOBAL_SETTINGS_PROJECT_ID;
+      return loadProjectSettings(ctx.db as never, projectId)[SETTING_CODEX_LEAN_ROLES];
+    } catch (cause) {
+      bb.log.warn(`Lane Pilot: ${SETTING_CODEX_LEAN_ROLES} unreadable (${reasonOf(cause)}); the default role list applies`);
+      return undefined;
+    }
+  }
 
   /** The task's own codex home when the run's project has worker.strict_user on; null otherwise or when the host cannot make it. */
   async function workerHome(metadata: unknown, hostId: string): Promise<string | null> {
@@ -129,8 +143,22 @@ export function createRoleMarkerEnv(ctx: Pick<ServerCore, "bb">) {
     try { metadata = context.experimental_vkPluginMetadata !== undefined ? context.experimental_vkPluginMetadata : await within(CALL_MS, "getPluginMetadata", Promise.resolve(bb.sdk.threads.getPluginMetadata({ threadId: context.threadId }))); } catch { return []; }
     const role = stringAt(metadata, "role");
     if (!role || role === "pm") return [];
-    return [{ name: "LANE_PILOT_ROLE", value: role, reason: `Lane Pilot: ${role} thread; lane plugins and hooks on the machine act only where this is set`.slice(0, 500) }];
+    return [{ name: "LANE_PILOT_ROLE", value: role, reason: `Lane Pilot: ${role} thread; lane plugins and hooks on the machine act only where this is set`.slice(0, 500) }, ...claudeTrimEnv(role)];
   };
+}
+
+/**
+ * Claude Code switches that take weight off a helper session's start, set as env because BB's core owns the CLI flags (checked on Claude Code 2.1.325:
+ * one haiku turn in an empty folder, `claude -p` with the same MCP config, total input tokens 21,876 alone, about -150 with cron off, -330 with the Explore/Plan agents off, -460 with the git text off,
+ * 20,933 with those three and auto memory (no effect of its own) together; a switch the binary does not know is ignored, so an older install is not refused). Cron tools and the
+ * Explore/Plan subagent tools are not for a helper; the git commit/PR protocol text stays only for the roles that may commit. Auto memory needs no
+ * switch: the core's session policy (`required`) already turns it off (vk-session-policy.ts).
+ */
+export function claudeTrimEnv(role: string): ExperimentalPluginProviderEnvEntry[] {
+  const reason = "Lane Pilot: a helper session starts without this Claude Code surface (token trim)";
+  const names = ["CLAUDE_CODE_DISABLE_CRON", "CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS"];
+  if (!["writer", "code-repair", "night-fixer"].includes(role)) names.push("CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS");
+  return names.map((name) => ({ name, value: "1", reason }));
 }
 
 /**

@@ -10,25 +10,24 @@ import { pmReadPrompt } from "../src/rooms/critique/pm-read";
 
 describe("role MCP server configurations", () => {
   it("assigns expected MCP servers across all helper roles", () => {
-    // 1. writer, code-repair, night-fixer have gitnexus and metamcp
-    expect(ROLE_PROFILES["writer"].mcpServers).toEqual(["gitnexus", "metamcp"]);
-    expect(ROLE_PROFILES["code-repair"].mcpServers).toEqual(["gitnexus", "metamcp"]);
-    expect(ROLE_PROFILES["night-fixer"].mcpServers).toEqual(["gitnexus", "metamcp"]);
+    // 1. writer, code-repair, night-fixer keep gitnexus (impact before editing) and carry no metamcp (0 calls in 1038 writer runs)
+    expect(ROLE_PROFILES["writer"].mcpServers).toEqual(["gitnexus"]);
+    expect(ROLE_PROFILES["code-repair"].mcpServers).toEqual(["gitnexus"]);
+    expect(ROLE_PROFILES["night-fixer"].mcpServers).toEqual(["gitnexus"]);
 
     // 2. code roles get gitnexus
     const gitnexusRoles: HelperRole[] = [
       "code-critic",
       "specialist-reviewer",
-      "docs-maintainer",
-      "onboarder",
-      "project-life",
+      "debugger",
     ];
     for (const role of gitnexusRoles) {
       expect(ROLE_PROFILES[role].mcpServers, `Role ${role} should have gitnexus`).toEqual(["gitnexus"]);
     }
 
     // Roles that did not call the code graph in a measured week carry no MCP server (hub, the week to 2026-11-10).
-    for (const role of ["gate-triage", "analyst", "planner", "auditor", "plan-critic", "pm-reader"] as HelperRole[]) {
+    // docs-maintainer: 10 calls in 1968 runs; onboarder and project-life: 1 in 75 (audit 2026-11-14).
+    for (const role of ["gate-triage", "analyst", "planner", "auditor", "plan-critic", "pm-reader", "docs-maintainer", "onboarder", "project-life"] as HelperRole[]) {
       expect(ROLE_PROFILES[role].mcpServers, `Role ${role} carries no MCP server`).toEqual([]);
     }
 

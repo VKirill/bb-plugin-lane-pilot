@@ -140,7 +140,7 @@ export const NATIVE_HOOK_SOURCES: Record<string, string> = {
     "    \"critic\", \"plan-critic\", \"code-critic\", \"specialist-reviewer\",",
     "    \"night-reviewer\", \"docs\", \"docs-maintainer\", \"onboarder\",",
     "    \"memory-maintainer\", \"project-life\", \"gate-triage\", \"council-seat\",",
-    "    \"rules-analyzer\",",
+    "    \"rules-analyzer\", \"analyst\", \"planner\", \"auditor\", \"debugger\", \"episode-analyst\", \"wall-hunter\",",
     "    \"design-lead\", \"copy-lead\", \"seo-specialist\", \"tavily\",",
     "}",
     "",

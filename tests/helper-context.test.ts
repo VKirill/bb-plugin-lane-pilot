@@ -222,19 +222,19 @@ describe("role profiles", () => {
   const bind = (role: HelperRole, providerId: string, adv = advertised) =>
     bindRole({ capability: "required", advertised: adv, snapshot, providerId, role });
 
-  it("gives a writer two coding skills, gitnexus, metamcp, and mandatory plugins and MCP", () => {
+  it("gives a writer two coding skills, gitnexus (no metamcp), and mandatory plugins and MCP", () => {
     const policy = (bind("writer", "codex") as unknown as { experimental_vkRequiredSessionPolicy: { policy: Record<string, { names: string[] }> } }).experimental_vkRequiredSessionPolicy.policy;
     expect(policy.skills.names).toEqual(["lp-writer", "karpathy-guidelines"]);
     expect(policy.bbPlugins.names).toEqual(["environment-project-checkout", "project-folders"]);
-    expect(policy.mcpServers.names).toEqual(["bb-bridge", "gitnexus", "metamcp"]);
+    expect(policy.mcpServers.names).toEqual(["bb-bridge", "gitnexus"]);
     expect(policy.nativePlugins.names).toEqual([]);
   });
 
-  it("gives the docs maintainer docs skills, gitnexus, and the browser check the browser plugin", () => {
+  it("gives the docs maintainer docs skills, no code graph, and the browser check the browser plugin", () => {
     const docs = (bind("docs-maintainer", "claude-code") as unknown as { experimental_vkRequiredSessionPolicy: { policy: Record<string, { names: string[] }> } }).experimental_vkRequiredSessionPolicy.policy;
     expect(docs.bbPlugins.names).toEqual(["environment-project-checkout", "project-folders"]);
     expect(docs.skills.names).toContain("lp-docs");
-    expect(docs.mcpServers.names).toEqual(["bb-bridge", "gitnexus"]);
+    expect(docs.mcpServers.names).toEqual(["bb-bridge"]);
     const qa = (bind("browser-qa", "claude-code") as unknown as { experimental_vkRequiredSessionPolicy: { policy: Record<string, { names: string[] }> } }).experimental_vkRequiredSessionPolicy.policy;
     expect(qa.bbPlugins.names).toContain("browser-automation");
   });

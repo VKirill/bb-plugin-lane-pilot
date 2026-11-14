@@ -15,6 +15,7 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "memory.salience_min": { label: "settingMemorySalienceMin", help: "settingMemorySalienceMinHelp", unit: "fieldUnitScore" },
   "memory.pack_mode": { label: "settingMemoryPackMode", help: "settingMemoryPackModeHelp" },
   "memory.query_floor": { label: "settingMemoryQueryFloor", help: "settingMemoryQueryFloorHelp" },
+  "codex.lean_roles": { label: "settingCodexLeanRoles", help: "settingCodexLeanRolesHelp" },
   "memory.scope": { label: "settingMemoryScope", help: "settingMemoryScopeHelp" },
   "memory.single_claim": { label: "settingMemorySingleClaim", help: "settingMemorySingleClaimHelp" },
   "memory.tag_notes": { label: "settingMemoryTagNotes", help: "settingMemoryTagNotesHelp" },
