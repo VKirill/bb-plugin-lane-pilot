@@ -50,8 +50,8 @@ function lock() {
   if (alive) { process.stderr.write(`another sma-mutate (pid ${pid}) runs in this checkout\n`); process.exit(2); }
   writeFileSync(lockPath, String(process.pid));
 }
+lock(); // first: a journal belongs to whoever holds the lock, and a live run's journal is not an interrupted one
 recover();
-lock();
 
 let pending = null; // { path, original }
 function restore() {
