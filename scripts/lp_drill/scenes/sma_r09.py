@@ -18,6 +18,7 @@ import subprocess
 from lp_drill.env import ROOT
 from lp_drill.prove import Proofs
 from lp_drill.scenes.sma_r09_b import NODES_B, prove_b
+from lp_drill.scenes.sma_r09_c import NODES_C, prove_c
 
 # node -> card id, for the nodes proved by a test file of the commit (screens, and handlers whose result is a whole screen or an rpc answer).
 SCREENS = {
@@ -30,6 +31,7 @@ PROBED = {"n759": "d_batch_decide", "n764": "d_pipeline", "n769": "d_mem_index",
           "n776": "d_state", "n778": "d_task", "n784": "d_artifact"}
 NODES = sorted([*SCREENS, *PROBED])
 NODES = sorted([*NODES, *NODES_B])
+NODES = sorted([*NODES, *NODES_C])
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r09_probe.ts"
 TEST_FILES = ["tests/sma/four-proofs-r09-a.test.ts", "tests/sma/four-proofs-r09-a.test.tsx", "tests/sma/four-proofs-r09-a2.test.tsx", "tests/sma/four-proofs-r09-a3.test.tsx",
               "tests/sma/parity-d10-rest-1.test.ts", "tests/sma/parity-d5-phase-1.test.ts"]
@@ -102,4 +104,5 @@ def scenario_sma_r09(tmp) -> dict:
         detail = f"{len(mine)} case(s) tagged [sma:{card}] rendered or called for real in jsdom/node by the tests of this commit: {[case['status'] for case in mine]}" if mine else (error or f"no test tagged [sma:{card}] ran")
         proofs.prove(node, ok, detail)
     prove_b(proofs, tmp)
+    prove_c(proofs, tmp)
     return proofs.verdict("sma_r09", checked=len(NODES))

@@ -127,7 +127,7 @@ describe("the table «role -> model» on the Team tab", () => {
     slot.lifecycle.unmount();
   });
 
-  it("saves any provider's model the window answers as role_model.<role> with its provider, at the place shown, with its version", async () => {
+  it("[sma:d_agent_model] saves any provider's model the window answers as role_model.<role> with its provider, at the place shown, with its version", async () => {
     installPickerTestDriver();
     const { rpc, calls } = tableRpc(view({ debugger: { version: 4 } }));
     const slot = await mountPage(rpc);
