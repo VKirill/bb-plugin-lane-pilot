@@ -77,10 +77,11 @@ describe("region 20 batch b: what leaves, what is shown, how a window is remembe
     const ctx = { db, log: (line: string) => logs.push(line) } as never;
     const front = { actions: async () => [{ at: now - 10 }, { at: now - 20 }, { at: now - 3 * 86_400_000 }] } as Pick<Services, "front">["front"];
     const out = await cockpitToday(ctx, { front }, "p");
+    const feed = out.feed as Array<{ kind: string; taskId?: string; title?: string | null; text: string }>;
     expect(out.partial).toEqual([]);
     expect(out.kpi).toEqual({ accepted: 2, blocked: 1, running: 1, tokens: 1234, actions: 2 });
-    expect(out.feed.map((row) => [row.kind, row.taskId, row.title ?? null])).toEqual([["task_accepted", "t1", "title t1"], ["task_accepted", "t2", "title t2"], ["task_blocked", "t3", null], ["task_running", "t4", null]]);
-    expect(out.feed.find((row) => row.taskId === "t3")!.text).toBe("t3 — needs the owner");
+    expect(feed.map((row) => [row.kind, row.taskId, row.title ?? null])).toEqual([["task_accepted", "t1", "title t1"], ["task_accepted", "t2", "title t2"], ["task_blocked", "t3", null], ["task_running", "t4", null]]);
+    expect(feed.find((row) => row.taskId === "t3")!.text).toBe("t3 — needs the owner");
     // The setting protection.rearm belongs to the Rules screen: the digest is the same with it on.
     saveProjectSetting(db, "p", "protection.rearm", "on");
     expect(await cockpitToday(ctx, { front }, "p")).toEqual(out);
