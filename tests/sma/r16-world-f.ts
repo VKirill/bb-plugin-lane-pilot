@@ -239,8 +239,8 @@ export const observeF = {
   /** n1303: the power knobs sit under «Advanced»: their rows are in the page either way and hidden until it is shown; the plan bounce is one such switch. */
   k_c_settingsadv() {
     const knob = createElement("span", null, "knob");
-    const shown = renderToStaticMarkup(createElement(AdvancedRows, { show: true, testId: "adv" }, knob));
-    const hidden = renderToStaticMarkup(createElement(AdvancedRows, { show: false, testId: "adv" }, knob));
+    const shown = renderToStaticMarkup(createElement(AdvancedRows, { show: true, testId: "adv", children: knob }));
+    const hidden = renderToStaticMarkup(createElement(AdvancedRows, { show: false, testId: "adv", children: knob }));
     const hiddenAttr = (html: string) => /<div[^>]*\shidden=""/.test(html);
     return { shown: { hidden: hiddenAttr(shown), keepsRow: shown.includes("<span>knob</span>"), testId: shown.includes('data-testid="adv"') },
       hidden: { hidden: hiddenAttr(hidden), keepsRow: hidden.includes("<span>knob</span>"), testId: hidden.includes('data-testid="adv"') },
