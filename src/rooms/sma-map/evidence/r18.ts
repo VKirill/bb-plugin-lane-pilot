@@ -3,7 +3,7 @@
 // wfRun/wfStep trace were derived mechanically by scripts/sma-seed-evidence.ts (2026-11-14), not authored.
 // The hooks are programs a Claude Code session runs, and they write no row to the hub database: a node's trace is its own prove()
 // line in the region scene scripts/lp_drill/scenes/sma_r18.py, which runs the real hook program (src/rooms/session-hooks/cli.ts) on real hook inputs.
-import { distort, drill, entry, flip, type RegionEvidence, seedEntry, skipWrite, voidIsHave, voidStays, wrongTarget } from "./types";
+import { distort, drill, entry, flip, type RegionEvidence, seedEntry, voidIsHave, voidStays, wrongTarget } from "./types";
 
 const LOGIC = "src/rooms/session-hooks/logic.ts";
 const CLI = "src/rooms/session-hooks/cli.ts";
@@ -31,7 +31,7 @@ export default {
   n1422: { mutation: flip(LOGIC, 'lines > 170 ? " — near the limit: merge or trim entries" : ""', 'lines > 190 ? " — near the limit: merge or trim entries" : ""'), trace: drill("sma_r18") },
   n1423: { mutation: flip(LOGIC, "if (input.capsule && input.capsuleFirst) parts.push(capsuleRestored(input.capsule));", "if (input.capsule && !input.capsuleFirst) parts.push(capsuleRestored(input.capsule));"), trace: drill("sma_r18") },
   n1424: { mutation: flip(LOGIC, "if (!text && !extra) return null;", "if (!text || !extra) return null;"), trace: drill("sma_r18") },
-  n1425: { mutation: skipWrite("packages/memory-core/src/store.ts", 'db.prepare("INSERT INTO lane_pilot_memory_fts(id,project_id,content,concepts) VALUES(?,?,?,?)").run(id, projectId, content, concepts.join(" "));'), trace: drill("sma_r18") },
+  n1425: { mutation: flip("packages/memory-core/src/store.ts", "concepts.join(\" \"));\n  if (trigramReady(db)) db", "concepts.join(\" \"));\n  if (!trigramReady(db)) db"), trace: drill("sma_r18") },
   n1426: { mutation: wrongTarget(CLI, '"--query", query]', '"--query", promptText]'), trace: drill("sma_r18") },
   n1427: { mutation: flip(LOGIC, "hit.id && !given.has(String(hit.id))", "hit.id && given.has(String(hit.id))"), trace: drill("sma_r18") },
   n1428: { mutation: distort(LOGIC, '.replace(/\\s+/g, " ").slice(0, 120);', '.replace(/\\s+/g, " ").slice(0, 0);'), trace: drill("sma_r18") },
