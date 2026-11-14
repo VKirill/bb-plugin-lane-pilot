@@ -1809,7 +1809,8 @@ describe("stage → native writer → receipt", () => {
     expect(stageReceipt(stopped.db,task.id,"plan-critique")).toMatchObject({state:"blocked",result:{status:"block"}});
     await stopped.harness.lifecycle.dispose();
     const rework=JSON.stringify({status:"rework",summary:"Criterion is subjective",findings:[{file:"TASK",line:1,severity:"high",evidence:"acceptance: the note looks correct",finding:"not checkable"}],evidence:"read the contract"});
-    const sent=await setup(rework);
+    // The PM path (plan_critique.revise_by pm; the default since 0.1.567 is the planner loop, covered in tests/plan-revise-loop.test.ts).
+    const sent=await setup(rework,undefined,{"plan_critique.revise_by":"pm"});
     const back=JSON.parse(String(await sent.harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write the note",task},{threadId:pmThreadId,projectId})));
     expect(back).toMatchObject({state:"blocked",reason:"plan_critique_blocked"});
     expect(stageReceipt(sent.db,task.id,"plan-critique")).toMatchObject({state:"blocked",reason:"critique_changes_requested",result:{status:"rework"}});

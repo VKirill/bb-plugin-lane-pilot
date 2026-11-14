@@ -42,7 +42,7 @@ export function shouldRunPlanCritique(input: {
   minScore?: unknown;
   minWriteTasks?: unknown;
   onHighRisk?: unknown;
-  /** The task's owns_paths count and the threshold `plan_critique.min_owns_paths` (0 or unset: off). A large task gets the critic whatever its risk (SMA n1268). */
+  /** The task's owns_paths count and the threshold `plan_critique.min_owns_paths` (unset: 8; 0: off). A large task gets the critic whatever its risk (SMA n1268). */
   ownsPaths?: number;
   minOwnsPaths?: unknown;
 }): CritiquePolicyDecision {
@@ -53,7 +53,7 @@ export function shouldRunPlanCritique(input: {
   const minScore = policyInteger(input.minScore, 7, 0, "plan_critique.min_score");
   const minWriteTasks = policyInteger(input.minWriteTasks, 3, 1, "plan_critique.min_write_tasks");
   const onHighRisk = policyBoolean(input.onHighRisk, true, "plan_critique.on_high_risk");
-  const minOwnsPaths = policyInteger(input.minOwnsPaths, 0, 0, "plan_critique.min_owns_paths");
+  const minOwnsPaths = policyInteger(input.minOwnsPaths, 8, 0, "plan_critique.min_owns_paths");
   const writeTaskCount = input.tasks.filter((task) => !REVIEW_LANES.has(task.lane?.trim().toLowerCase() || "write")).length;
 
   if (score >= minScore) return { run:true, reason:`score ${score}>=${minScore}`, score, writeTaskCount };

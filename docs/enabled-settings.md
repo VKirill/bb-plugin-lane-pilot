@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure dffe44d9b6d64d13 -->
+<!-- enabled-settings:structure cb3ac0714e256ba2 -->
 
 # Enabled settings (generated)
 
@@ -173,7 +173,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `plan_critique.agent` | `plan-critic` | — | plan-critique role label included in its prompt |
 | `plan_critique.enabled` | `true` | — | stage setting |
 | `plan_critique.max_rounds` | `3` | — | planner loop: how many planner revisions before the PM, 1-3 (src/rooms/writer/server/plan-revise.ts) |
-| `plan_critique.min_owns_paths` | `0` | — | critique threshold on the task's owns_paths count |
+| `plan_critique.min_owns_paths` | `8` | — | critique threshold on the task's owns_paths count |
 | `plan_critique.min_score` | `7` | — | critique threshold applied to the task-risk score adapter |
 | `plan_critique.min_write_tasks` | `3` | — | critique threshold applied to the persisted run TaskV2 lane count |
 | `plan_critique.mode` | `gate` | — | stage setting |
@@ -181,7 +181,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `plan_critique.on_high_risk` | `true` | — | critique policy enables dispatch for high or critical task risk |
 | `plan_critique.provider` | — | — | stage plan-critique provider setting |
 | `plan_critique.reasoning_effort` | `medium` | — | stage plan-critique effort setting |
-| `plan_critique.revise_by` | `pm` | — | planner loop: pm (default) or planner revises a plan the critic returned (src/rooms/writer/server/plan-revise.ts) |
+| `plan_critique.revise_by` | `planner` | — | planner loop: planner (default) or pm revises a plan the critic returned (src/rooms/writer/server/plan-revise.ts) |
 | `plan_critique.service_tier` | `standard` | — | stage plan-critique tier setting |
 | `plan_fact.mode` | `record` | — | plan against fact: record shows the blind check of the writer's table, gate sends an acceptance item with no evidence back to the writer |
 | `pm_read.enabled` | `false` | — | PM-read stage enable switch |
