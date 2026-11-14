@@ -62,7 +62,7 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
         if (Array.isArray(answer?.entries)) listings = new Map(answer.entries.map((entry) => [entry.path, entry.names]));
       } catch { listings = null; }
     }
-    const base = checkoutBase(getRun(db, runId)?.writer_workspace_path ?? null, task.project_cwd);
+    const base = checkoutBase(getRun(db, runId)?.writer_workspace_path ?? null, task.project_cwd, task.repo_scope === true);
     const openTasks:LintOpenTask[] = [];
     for (const row of listOpenAttempts(db)) {
       if (row.project_id !== projectId || row.task_id === task.id || openTasks.some((open) => open.id === row.task_id)) continue;

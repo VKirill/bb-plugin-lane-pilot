@@ -1,4 +1,4 @@
-import { isAbsolute, relative, resolve } from "node:path";
+import { isAbsolute, posix, relative, resolve } from "node:path";
 import { ownsPathsOverlap } from "@lane-pilot/kit";
 import type { TaskV2 } from "../contracts";
 import { isOutputPath } from "./validate-output";
@@ -147,4 +147,93 @@ export function checkoutOwnsOverlap(baseA: string | null, ownsA: readonly string
   if (!baseA || !baseB || resolve(baseA) === resolve(baseB)) return ownsPathsOverlap([...ownsA], [...ownsB]);
   const pair = ownsFromOuterBase(baseA, ownsA, baseB, ownsB);
   return Boolean(pair && ownsPathsOverlap(pair[0], pair[1]));
+}
+
+/** Whether a stored contract belongs to the run: its checkout is the run's folder or inside it, or (repo_scope) the repository root above it. */
+export function taskInRunScope(runFolder: string, task: Pick<TaskV2, "project_cwd" | "repo_scope">): boolean {
+  return isTaskBase(runFolder, task.project_cwd)
+    || (task.repo_scope === true && resolve(task.project_cwd) !== resolve(runFolder) && isTaskBase(task.project_cwd, runFolder));
+}
+
+/**
+ * Asked on the run folder's own host: the top of the repository above it and the folder's real path. Section chats of one
+ * monorepo run in a subfolder; the task of such a chat may change files elsewhere in the same repository (never in another one).
+ */
+export function repoRootCommand(runFolder: string): string {
+  return `cd ${quote(runFolder)} && git rev-parse --show-toplevel && pwd -P`;
+}
+
+/**
+ * The repository root as a path from the run folder as it is written there (`..`, `../..`) and the folder's place in the
+ * repository (`aiphoto_bot`); null when the folder is the root itself, has no repository, or the answer is not an ancestor.
+ */
+export function parseRepoRoot(ran: { exitCode: number; stdout: string } | null): { up: string; prefix: string } | null {
+  if (!ran || ran.exitCode !== 0) return null;
+  const [top, runReal] = ran.stdout.trim().split("\n").map((line) => line.trim());
+  if (!top || !runReal) return null;
+  const prefix = relative(top, runReal).split("\\").join("/");
+  if (!prefix || prefix.startsWith("..") || isAbsolute(prefix)) return null;
+  return { up: relative(runReal, top).split("\\").join("/"), prefix };
+}
+
+/** A path of the section as a path of the repository root; null when it leaves the repository (or is no relative path). */
+function rootRelative(path: string, prefix: string): string | null {
+  if (path.startsWith("/") || path.includes("\\") || /^[A-Za-z]:/.test(path)) return null;
+  const joined = posix.normalize(`${prefix}/${path.replace(/^\.\//, "")}`);
+  if (joined === ".." || joined.startsWith("../") || joined === ".") return null;
+  return path.endsWith("/") && !joined.endsWith("/") ? `${joined}/` : joined;
+}
+
+/** Whether a section-relative path pattern climbs out of the section (`../sdk/x.ts`). */
+export function leavesSection(path: string): boolean {
+  const normalized = posix.normalize(path.replace(/^\.\//, ""));
+  return normalized === ".." || normalized.startsWith("../");
+}
+
+/**
+ * The task moved up to the root of the repository holding its section: every path relative to the section becomes a path
+ * relative to the root (`../sdk/x.ts` -> `sdk/x.ts`, `src/a.ts` -> `aiphoto_bot/src/a.ts`), so ownership, dirt, the diff, test_fit
+ * and the merge all see the files they must, and nothing there reads a `..`. The checks keep their absolute folders (the
+ * section's). `outside` names the owned paths and outputs outside the section. Null when a path leaves the repository or a
+ * check runs outside it: that task stays as written and the contract lint refuses it as before.
+ */
+export function rerootToRepoRoot(task: TaskV2, root: string, prefix: string): { task: TaskV2; outside: string[] } | null {
+  const map = (paths: readonly string[]): string[] | null => {
+    const out: string[] = [];
+    for (const path of paths) { const rooted = rootRelative(path, prefix); if (rooted === null) return null; out.push(rooted); }
+    return out;
+  };
+  const owns = map(task.owns_paths);
+  const never = map(task.never_touch);
+  const reads = map(task.read_first);
+  const removals = map(task.test_removals ?? []);
+  const drawing = map(task.drawing ?? []);
+  if (!owns || !never || !reads || !removals || !drawing) return null;
+  const outputs: string[] = [];
+  const outputPaths: string[] = [];
+  for (const output of task.expected_outputs) {
+    if (!isOutputPath(output)) { outputs.push(output); continue; }
+    const rooted = rootRelative(output, prefix);
+    if (rooted === null) return null;
+    outputs.push(rooted);
+    outputPaths.push(rooted);
+  }
+  const files = task.files ? task.files.map((file) => ({ ...file, path: rootRelative(file.path, prefix) })) : undefined;
+  if (files?.some((file) => file.path === null)) return null;
+  for (const check of task.verification) if (!isTaskBase(root, resolve(task.project_cwd, check.cwd))) return null;
+  const outside = [...new Set([...owns, ...outputPaths].filter((path) => path !== prefix && !path.startsWith(`${prefix}/`)))];
+  const { test_removals: _a, drawing: _b, files: _c, ...rest } = task;
+  return {
+    task: applyTrustedTooling({
+      ...rest, project_cwd: resolve(root), repo_scope: true, owns_paths: owns, never_touch: never, read_first: reads, expected_outputs: outputs,
+      ...(task.test_removals ? { test_removals: removals } : {}), ...(task.drawing ? { drawing } : {}), ...(files ? { files: files as NonNullable<TaskV2["files"]> } : {}),
+      verification: task.verification.map((check) => ({ ...check, cwd: resolve(task.project_cwd, check.cwd) })),
+    }),
+    outside,
+  };
+}
+
+/** The plan with what the writer needs to know about its place: the root, the section, what lies outside it. */
+export function planWithRepoScope(plan: string, root: string, prefix: string, outside: readonly string[]): string {
+  return `${plan}\n\nWhere you work: this task was started from the section ${prefix}/ of the repository ${root}, and it also changes files outside that section, so your folder is the repository root and every path of the contract is relative to it (the section is ${prefix}/). Its checks run in the section's folder as written. Outside the section you may change only: ${outside.join(", ")}. Other sections and bots of the repository stay as they are.\n`;
 }

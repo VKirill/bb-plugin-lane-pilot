@@ -50,7 +50,7 @@ import type { ServerCore } from "../../contracts/server";
 import { validateTaskV2 } from "../../tasks/task-v2";
 import { TEST_EDIT_HOLD_ITEM, allowTestEditsOf, applyTrustedTooling, testEditHoldOf } from "../../tasks";
 import { closeOwnerItemsByPrefix } from "../../owner-waiting";
-import { planWithOutsideReads, rerootTask } from "../../tasks";
+import { planWithOutsideReads, planWithRepoScope, rerootTask, rerootToRepoRoot } from "../../tasks";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { isNotFound, orMiss } from "@lane-pilot/kit";
@@ -323,17 +323,22 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
     // The task keeps the checkout it was dispatched into: the run's folder, or the git repository inside it the task moved
     // into. The PM may send the contract as it wrote it (paths from the run's folder); it moves the same way again.
     const taskBase = oldContract.project_cwd;
-    if (resolve(valid.task.project_cwd) === resolve(taskBase)) valid.task.project_cwd = taskBase;
+    // repo_scope is dispatch's alone: an update keeps it on a task that has it and never gives it to one that has not.
+    const scoped = oldContract.repo_scope === true;
+    delete valid.task.repo_scope;
+    if (resolve(valid.task.project_cwd) === resolve(taskBase)) { valid.task.project_cwd = taskBase; if (scoped) valid.task.repo_scope = true; }
     else {
-      const moved = resolve(valid.task.project_cwd) === resolve(workspacePath) && resolve(taskBase) !== resolve(workspacePath)
-        ? rerootTask({ ...valid.task, project_cwd: workspacePath }, relative(workspacePath, taskBase).split("\\").join("/")) : null;
+      const fromRun = resolve(valid.task.project_cwd) === resolve(workspacePath) && resolve(taskBase) !== resolve(workspacePath);
+      const section = scoped ? relative(taskBase, workspacePath).split("\\").join("/") : "";
+      const up = scoped && fromRun ? rerootToRepoRoot({ ...valid.task, project_cwd: workspacePath }, taskBase, section) : null;
+      const moved = up ? { task: up.task, outsideReads: [] as string[] } : fromRun && !scoped ? rerootTask({ ...valid.task, project_cwd: workspacePath }, relative(workspacePath, taskBase).split("\\").join("/")) : null;
       if (!moved) {
         const hint = resolve(taskBase) === resolve(workspacePath) ? `task.project_cwd must equal the configured writerWorkspacePath (${workspacePath})`
           : `task.project_cwd must equal ${taskBase}, the repository this task works in, or ${workspacePath} with every owned path, expected output and check inside that repository`;
         return { ok: false, error: { code: "validation_failed", retryable: false, sideEffects: "none", hint } };
       }
       valid.task = moved.task;
-      canonicalPlan = planWithOutsideReads(canonicalPlan, moved.outsideReads);
+      canonicalPlan = up ? planWithRepoScope(canonicalPlan, taskBase, section, up.outside) : planWithOutsideReads(canonicalPlan, moved.outsideReads);
     }
     const taskConfig = { ...runConfig, writerWorkspacePath: taskBase };
 

@@ -7,6 +7,7 @@ import { bbServiceTier, findModelIn, listedServiceTier, resolveStageWriterSelect
 import { settingOff } from "@lane-pilot/models";
 import { sha256 } from "../../../tasks";
 import { critiquePrompt, parseCritique, shouldRunPlanCritique } from "../../critique";
+import { planCriticTier } from "../../critic-level";
 import { ownerWordsOfRun } from "../owner-words";
 import { binaryOutputs, dropIntendedGaps, dropNoisyGaps, findTaskPlaceholderPaths } from "../../critique-coverage";
 import type { CoverageCallers, CoverageFinding } from "../../critique-coverage";
@@ -42,9 +43,9 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
     return { allowed:true };
   }
   const legacy=resolveStageWriterSelection({settings,config:input.config,stageProviderKey:"plan_critique.provider",stageModelKey:"plan_critique.model"});
-  // The strong critic judges high and critical risk and quality_mode full; every other task goes to the light row (hub, 30 days to 2026-11-14:
+  // The strong critic judges high and critical risk, quality_mode full and a task that changes files outside its section (repo_scope); every other task goes to the light row (hub, 30 days to 2026-11-14:
   // serious defects in 10 of 13 returns at high/critical risk, 4 of 25 below it). The tier is kept in the receipt (critic_tier).
-  const criticTier:"strong"|"light"=input.task.risk==="high"||input.task.risk==="critical"||qualityMode==="full"?"strong":"light";
+  const criticTier=planCriticTier(input.task,qualityMode).tier;
   const selection=await roleSelection({zcodeBusy:zcodeBusyPeek(input.bb),catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:criticTier==="strong"?"plan-critic":"plan-critic-light",fallback:{providerId:legacy.providerId,model:legacy.model},spent:await limitProbe(input.bb,input.config.hostId,settings)});
   logLimitMove(input.bb,`plan critic for ${input.taskId}`,selection.issues);
   let providerId=selection.providerId;
@@ -128,7 +129,8 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
     recordStage(input.db,{...base,state:"failed",reason,result:{error:reason,policy:"task-risk-v1"}});
     return {allowed:false,reason:`plan_critique_policy_invalid:${reason}`};
   }
-  if (!policy.run) {
+  // A task that also changes a shared part of the repository (an SDK the other bots use) is never below the threshold.
+  if (!policy.run && input.task.repo_scope !== true) {
     recordStage(input.db,{...base,state:"skipped",reason:"below_critique_threshold",result:{
       policy:"task-risk-v1",score:policy.score,writeTaskCount:policy.writeTaskCount,decision:policy.reason,
       taskRisk:input.task.risk,structuralCoverage:{status:coverageStatus,pathCount:coveragePathCount},structuralFindings,
@@ -194,7 +196,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
         // the path, so only file, line and quoted evidence are required (settleVerdict). A host-side path check if invented paths show up.
         const critique = await readAnswer(input.bb, threadId, raw, parseCritique, "status, summary, findings and evidence");
         const blocked = critique.decision === "changes_requested" && mode === "gate";
-        const result = { ...critique, mode, critic_tier:criticTier, ...(planFile?{plan_sha256:planFile.sha256}:{}), ...(qualityMode !== "standard" ? { qualityMode } : {}), structuralCoverage:{status:coverageStatus,pathCount:coveragePathCount}, structuralFindings, rawOutput:raw.slice(0, 12_000) };
+        const result = { ...critique, mode, critic_tier:criticTier, ...(planCriticTier(input.task,qualityMode).reason==="repo_scope"?{critic_tier_reason:"repo_scope"}:{}), ...(planFile?{plan_sha256:planFile.sha256}:{}), ...(qualityMode !== "standard" ? { qualityMode } : {}), structuralCoverage:{status:coverageStatus,pathCount:coveragePathCount}, structuralFindings, rawOutput:raw.slice(0, 12_000) };
         const why = verdictReasons(critique, "plan-critique");
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
           threadId, result, reason:blocked ? why.receipt : undefined });

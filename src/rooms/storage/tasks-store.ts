@@ -71,14 +71,23 @@ export function getTask(db: LanePilotDatabase, taskId: string): {
  * dispatch moved into a git repository of a run folder without git), else the run's folder.
  */
 export function taskBasePath(db: LanePilotDatabase, runId: string, taskId: string): string | null {
-  return checkoutBase(getRun(db, runId)?.writer_workspace_path ?? null, (getTask(db, taskId)?.contract as { project_cwd?: unknown } | undefined)?.project_cwd);
+  const contract = getTask(db, taskId)?.contract as { project_cwd?: unknown; repo_scope?: unknown } | undefined;
+  return checkoutBase(getRun(db, runId)?.writer_workspace_path ?? null, contract?.project_cwd, contract?.repo_scope === true);
 }
 
-/** taskBasePath of a contract not saved yet: its project_cwd inside the run's folder, else the run's folder. */
-export function checkoutBase(runPath: string | null, cwd: unknown): string | null {
+/**
+ * taskBasePath of a contract not saved yet: its project_cwd inside the run's folder, else the run's folder. A task flagged
+ * `repo_scope` (a section's task that also changes files elsewhere in the same git repository) is the one exception: its
+ * project_cwd is the repository root above the run's folder. Dispatch sets the flag after asking git on the host; here the
+ * root must still be an ancestor of the run's folder, so a forged contract cannot point the checkout anywhere else.
+ */
+export function checkoutBase(runPath: string | null, cwd: unknown, repoScope = false): string | null {
   if (!runPath || typeof cwd !== "string") return runPath;
   const rel = relative(resolve(runPath), resolve(cwd));
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel)) ? cwd : runPath;
+  if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return cwd;
+  if (!repoScope) return runPath;
+  const down = relative(resolve(cwd), resolve(runPath));
+  return down !== "" && !down.startsWith("..") && !isAbsolute(down) ? cwd : runPath;
 }
 
 export function saveTaskGitBase(db:LanePilotDatabase,taskId:string,base:{baseRef:string|null;baseSha:string|null;initialHeadSha:string;branch:string;compareCommitted:boolean}):boolean {

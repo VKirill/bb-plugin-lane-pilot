@@ -11,7 +11,7 @@ export { taskStem } from "./task-stem";
 export { mapVerificationCwd, retargetTask } from "./verification-cwd";
 export { classifyWriterOutput, isMainfixTask, isOutputFolder, isOutputPath, unownedExpectedOutputs } from "./validate-output";
 export type { VerifyResult } from "./validate-output";
-export { checkoutOwnsOverlap, commonTaskFolder, isTaskBase, ownsFromOuterBase, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask } from "./task-base";
+export { checkoutOwnsOverlap, commonTaskFolder, isTaskBase, leavesSection, ownsFromOuterBase, parseRepoRoot, parseRepoTop, planWithOutsideReads, planWithRepoScope, repoRootCommand, repoTopCommand, rerootTask, rerootToRepoRoot, taskInRunScope } from "./task-base";
 export { TRUSTED_TOOLING_PATTERNS, applyTrustedTooling, trustedToolingFor, trustedToolingHint, trustedToolingHits, verificationScriptPaths } from "./trusted-tooling";
 export { dependsOnTask } from "./depends";
 export { INVARIANT_ITEM, INVARIANT_WORDS } from "./plan-fact";
