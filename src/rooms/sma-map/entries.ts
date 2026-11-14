@@ -940,7 +940,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n926: ["have", "палитра команд", "src/rooms/cockpit/ui/registry.ts#searchCockpit"],
   n927: ["have", "хаб недоступен", "src/rooms/cockpit/ui/cockpit-page.tsx#CockpitPage"],
   n928: ["have", "связь с дверью потеряна", "src/rooms/cockpit/ui/cockpit-page.tsx#CockpitPage"],
-  n929: ["have", "открыть панель задачи", "src/rooms/runs/server/rpc/runs.ts#runsRpc"],
+  n929: ["have", "открыть панель задачи", "src/rooms/runs/ui/task-board.tsx#TaskPage"],
   n930: ["have", "открыть экран по событию", "src/rooms/cockpit/ui/registry.ts#screenFor"],
   n931: ["have", "одна открытая задача", "src/rooms/cockpit/ui/screens-work.tsx#PhasesScreen"],
   n932: ["have", "заглушка «экран строится»", "src/rooms/cockpit/ui/cockpit-page.tsx#ScreenBody"],
