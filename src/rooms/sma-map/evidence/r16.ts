@@ -1,15 +1,47 @@
 // Region 16 · Slash commands and workflows — per-node evidence of the four proofs (docs/sma-evidence.md).
 // One line per node, sorted by node number; a batch agent edits only its nodes' lines. Lines with seedEntry or a lone
 // wfRun/wfStep trace were derived mechanically by scripts/sma-seed-evidence.ts (2026-11-14), not authored.
-import { type RegionEvidence, seedEntry, voidIsHave, voidStays, wfRun, wfStep } from "./types";
+// Batch a (n1144 … n1173, the design-phase and execute-phase cards): tests/sma/four-proofs-r16-a.test.ts, observations in tests/sma/r16-world.ts, scene
+// scripts/lp_drill/scenes/sma_r16.py (a later batch appends its nodes to NODES there and its observations to r16-world.ts).
+import { distort, drill, flip, part, seedEntry, voidIsHave, voidStays, wfRun, wfStep, wrongTarget, type RegionEvidence } from "./types";
+
+const DESIGN = "src/rooms/phase/logic/design.ts";
+const WAVES = "src/rooms/phase/logic/waves.ts";
+const STAGES = "src/rooms/phase/stages.ts";
+const NEXT = "src/rooms/phase/logic/next-action.ts";
+const DRAW = "workflows/lp.draw.json";
 
 export default {
-  n1144: { reach: seedEntry("the owner runs the command") },
-  n1145: { reach: seedEntry("the owner runs the command") },
-  n1146: { reach: seedEntry("the owner runs the command"), trace: wfRun("lp.build") },
-  n1147: { reach: seedEntry("the owner runs the command") },
-  n1156: { voidReview: voidIsHave("макет проверяется живым прогоном в браузере со снимками: lp.browser-qa (вердикт по случаю и ширине) и шаг qa в impeccable-build на 375 и 1280") },
-  n1157: { trace: wfStep("lp.draw", "material") },
+  n1144: { mutation: flip(DESIGN, 'if (said?.decision !== "yes" || (signed !== undefined && signed !== drawing?.sha256))', 'if (said?.decision !== "yes" || (signed !== undefined && signed === drawing?.sha256))'), reach: seedEntry("the owner runs the command"), trace: drill("sma_r16") },
+  n1145: { mutation: flip(WAVES, "&& accepted(dep)));", "&& !accepted(dep)));"), reach: seedEntry("the owner runs the command"), trace: [part({ section: "execution", kind: "issued" }), drill("sma_r16")] },
+  n1146: { mutation: flip("workflows/lp.build.json", '"when": "run_tasks.accepted_count == 0"', '"when": "run_tasks.accepted_count != 0"'), reach: seedEntry("the owner runs the command"), trace: [wfRun("lp.build"), drill("sma_r16")] },
+  n1147: { mutation: distort("src/rooms/writer/server/writer-task.ts", 'const failed = checks.find((check) => typeof check.exitCode === "number" && check.exitCode !== 0);', 'const failed = checks.find((check) => typeof check.exitCode === "number" && check.exitCode === 0);'), reach: seedEntry("the owner runs the command"), trace: drill("sma_r16") },
+  n1148: { mutation: distort(STAGES, '"the designer reviewing his own drawing"', '"the designer reviewing a drawing"'), trace: drill("sma_r16") },
+  n1149: { mutation: distort(STAGES, 'case "design": return [...docs, `${folder}/SPEC.md`, `${folder}/PLAN.md`, "DESIGN.md"];', 'case "design": return [...docs, `${folder}/SPEC.md`, "DESIGN.md"];'), trace: drill("sma_r16") },
+  n1150: { mutation: flip(STAGES, 'return system && screens ? "mixed" : system ? "system" : "screens";', 'return system && screens ? "mixed" : system ? "screens" : "system";'), trace: drill("sma_r16") },
+  n1151: { mutation: flip(STAGES, "prev && prev.sha256 !== next.sha256", "prev && prev.sha256 === next.sha256"), trace: [part({ section: "design", kind: "archived" }), drill("sma_r16")] },
+  n1152: { mutation: wrongTarget("src/rooms/phase/server/driver-methods-design.ts", 'move(phase, "execution", { ...record, design: { ...record.design!, drawing: drawn } }, "the drawing is feasible and reviewed by a separate role");', 'move(phase, "verification", { ...record, design: { ...record.design!, drawing: drawn } }, "the drawing is feasible and reviewed by a separate role");'), trace: [part({ section: "design", kind: "drawing" }), drill("sma_r16")] },
+  n1153: { mutation: distort(STAGES, "variants as <screen>--<variant>.html", "variants as <screen>-<variant>.html"), trace: drill("sma_r16") },
+  n1154: { mutation: flip(STAGES, ".filter((section) => ![...headings].some((heading) => SECTION_HEADING[section]?.test(heading)));", ".filter((section) => [...headings].some((heading) => SECTION_HEADING[section]?.test(heading)));"), trace: drill("sma_r16") },
+  n1155: { mutation: flip(DESIGN, "else if (drawing.reviewer === drawing.designer)", "else if (drawing.reviewer !== drawing.designer)"), trace: drill("sma_r16") },
+  n1156: { mutation: distort("workflows/lp.browser-qa.json", '"default": "375,768,1280"', '"default": "375,768"'), trace: [wfStep("lp.browser-qa", "qa"), drill("sma_r16")], voidReview: voidIsHave("макет проверяется живым прогоном в браузере со снимками: lp.browser-qa (вердикт по случаю и ширине) и шаг qa в impeccable-build на 375 и 1280") },
+  n1157: { mutation: flip(DRAW, '"skip_when": "!$inputs.material"', '"skip_when": "$inputs.material"'), trace: drill("sma_r16") },
+  n1158: { mutation: flip(NEXT, "text: !r.design?.drawing ? ", "text: r.design?.drawing ? "), trace: [wfStep("lp.draw", "draw"), drill("sma_r16")] },
+  n1159: { mutation: flip(DRAW, `"when": "check.verdict == 'rework'"`, `"when": "check.verdict != 'rework'"`), trace: [wfStep("lp.draw", "check"), drill("sma_r16")] },
+  n1160: { mutation: distort("src/rooms/phase/server/driver-docs.ts", "for (const path of paths.slice(0, 40)) {", "for (const path of paths.slice(0, 1)) {"), trace: drill("sma_r16") },
+  n1161: { mutation: flip(NEXT, '&& r.design?.drawing?.reviewer && wordOf(r, "design")?.decision !== "yes" ? "design"', '&& r.design?.drawing?.reviewer && wordOf(r, "design")?.decision === "yes" ? "design"'), trace: drill("sma_r16") },
+  n1162: { mutation: flip(DESIGN, "if (drawing.feasible === false) why.push(", "if (drawing.feasible === true) why.push("), trace: drill("sma_r16") },
+  n1163: { mutation: distort(STAGES, `"accepting on a model's word alone"`, `"accepting on a model's say-so"`), trace: drill("sma_r16") },
+  n1164: { mutation: distort(STAGES, 'case "execution": return [...(phase.record.design?.drawing?.paths ?? []), `${folder}/PLAN.md`];', 'case "execution": return [...(phase.record.design?.drawing?.paths ?? []), `${folder}/SPEC.md`];'), trace: drill("sma_r16") },
+  n1165: { mutation: flip(WAVES, ".filter((item) => !issued[item.id] ||", ".filter((item) => issued[item.id] ||"), trace: [part({ section: "decisions", kind: "resume" }), drill("sma_r16")] },
+  n1166: { mutation: flip("src/rooms/owner-presence/logic.ts", "if (!mark || now - mark.at > windowMs) return null;", "if (!mark || now - mark.at < windowMs) return null;"), trace: drill("sma_r16") },
+  n1167: { mutation: flip("src/rooms/phase/server/driver-steps.ts", 'const name = phase.record.branch === "phase" ? `phase/${phase.id}` : `milestone/${slug}`;', 'const name = phase.record.branch !== "phase" ? `phase/${phase.id}` : `milestone/${slug}`;'), trace: [part({ section: "decisions", kind: "branch" }), drill("sma_r16")] },
+  n1168: { mutation: flip(WAVES, "[...new Set(items.map((item) => item.wave))].sort((a, b) => a - b);", "[...new Set(items.map((item) => item.wave))].sort((a, b) => b - a);"), trace: drill("sma_r16") },
+  n1169: { mutation: distort(STAGES, '${issued[item.id] ?? "—"}', "${item.id}"), trace: [part({ section: "execution", kind: "wave_table" }), drill("sma_r16")] },
+  n1170: { mutation: flip(STAGES, "if (!record.design.drawing.paths.some((path) => /(UI-SPEC|DESIGN)\\.md$/i.test(path)))", "if (record.design.drawing.paths.some((path) => /(UI-SPEC|DESIGN)\\.md$/i.test(path)))"), trace: drill("sma_r16") },
+  n1171: { mutation: distort(STAGES, "(animat\\p{L}*|motion|transition|", "(animat\\p{L}*|motion|"), trace: drill("sma_r16") },
+  n1172: { mutation: flip(STAGES, "notes && motionRows([item]).length ? ", "!notes && motionRows([item]).length ? "), trace: drill("sma_r16") },
+  n1173: { mutation: wrongTarget("src/rooms/writer/server/reassign.ts", "providerId: text(input.providerId) ?? current.providerId,", "providerId: current.providerId ?? text(input.providerId),"), trace: drill("sma_r16") },
   n1184: { reach: seedEntry("the owner runs the command"), trace: wfStep("todo-add", "write") },
   n1185: { reach: seedEntry("the owner runs the command"), trace: wfStep("note-add", "write") },
   n1186: { reach: seedEntry("the owner runs the command"), voidReview: voidIsHave("идея на потом — todo в .agents/todos со статусом, приоритетом и depends_on (условие возврата); сканер бэклога предлагает готовые") },
