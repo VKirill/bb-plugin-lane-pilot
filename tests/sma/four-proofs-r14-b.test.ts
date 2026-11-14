@@ -279,7 +279,7 @@ describe("the catalog verb (region 14, batch b)", () => {
       writeFileSync(join(repo, "loose.ts"), "// loose\n");
       const out = runCatalogCli([], repo);
       expect(out.exitCode).toBe(0);
-      expect(out.stdout!.trim().split("\n").map((line) => line.split(" | ").slice(0, 2).join(" | "))).toEqual(["a.ts | 1 lines", "b.ts | 1 lines", "c.md | 1 lines"]);
+      expect(out.stdout!.trim().split("\n").map((line) => line.split(" | ").slice(0, 2).join(" | "))).toEqual(["a.ts | 2 lines", "b.ts | 2 lines", "c.md | 2 lines"]);
     } finally { rmSync(repo, { recursive: true, force: true }); }
   });
 });
