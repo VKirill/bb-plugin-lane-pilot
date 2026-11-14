@@ -111,8 +111,13 @@ describe("script jobs on the host", () => {
     expect(b).toBe(a);
     await until(a);
     expect(await startHostJob(request("run:1"), options)).toBe(a);
-    expect(await startHostJob(request("run:2"), options)).not.toBe(a);
-    expect(await startHostJob(request(), options)).not.toBe(a);
+    // Every started job is awaited to its end: afterAll removes the jobs root, and a live job's heartbeat would race the rmdir.
+    const otherKey = await startHostJob(request("run:2"), options);
+    const noKey = await startHostJob(request(), options);
+    expect(otherKey).not.toBe(a);
+    expect(noKey).not.toBe(a);
+    await until(otherKey);
+    await until(noKey);
   });
 
   it("does not keep the secret values of the input on disk once the job has read them", async () => {
@@ -130,5 +135,6 @@ describe("script jobs on the host", () => {
     await rm(join(dir, "jobs", first), { recursive: true, force: true });
     const second = await startHostJob(request("run:4"), options);
     expect(second).not.toBe(first);
+    await until(second);
   });
 });
