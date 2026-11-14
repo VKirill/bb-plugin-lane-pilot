@@ -482,11 +482,73 @@ export default {
     reach: entry("a PM or the owner enqueues a task whose contract carries a promise"),
     trace: drill("sma_r01"),
   },
+  n303: {
+    mutation: flip("src/rooms/tasks/rails.ts", 'if (questions.length) errors.push({ code: "clarify_open"', 'if (!questions.length) errors.push({ code: "clarify_open"'),
+    trace: drill("sma_r01"),
+  },
+  n304: {
+    mutation: flip("src/rooms/tasks/rails.ts", '.filter((answer) => answer.by !== "owner");', '.filter((answer) => answer.by === "owner");'),
+    trace: drill("sma_r01"),
+  },
+  n305: {
+    mutation: flip("src/rooms/tasks/rails.ts", "task.clarify?.questions?.filter((question) => question.trim()) ?? [];", "task.clarify?.questions?.filter((question) => !question.trim()) ?? [];"),
+    trace: drill("sma_r01"),
+  },
   n306: {
     mutation: distort("src/rooms/tasks/rails.ts", "held)/.test(code)) return \"dependency\";", "held)/.test(code)) return \"conflict\";"),
     trace: transition({ to: "blocked", reason: "depends_on" }),
   },
-  n317: { voidReview: voidIsHave("состояние «заявлена» = попытка spawn_requested/running с живым циклом в activeWriterTasks; без живого цикла её забирает периодический проход (аренда = живой цикл)") },
+  n307: {
+    mutation: flip("src/rooms/tasks/server/contract-lint.ts", "input.programs?.get(program) === false) {", "input.programs?.get(program) === true) {"),
+    trace: drill("sma_r01"),
+  },
+  n308: {
+    mutation: flip("src/rooms/tasks/rails.ts", '&& !(task.drawing?.length)) warnings.push({ code: "drawing_needed"', '&& (task.drawing?.length)) warnings.push({ code: "drawing_needed"'),
+    reach: entry("a PM or the owner enqueues a standalone task whose owned files are screens"),
+    trace: drill("sma_r01"),
+  },
+  n309: {
+    mutation: flip("src/rooms/phase/logic/design.ts", 'return ui.length ? { decision: "needed",', 'return !ui.length ? { decision: "needed",'),
+    trace: drill("sma_r01"),
+  },
+  n310: {
+    mutation: flip("src/rooms/phase/logic/design.ts", "signed !== undefined && signed !== drawing?.sha256", "signed !== undefined && signed === drawing?.sha256"),
+    trace: drill("sma_r01"),
+  },
+  n311: {
+    mutation: flip("src/rooms/phase/logic/design.ts", 'if (design.decision === "not_needed") return { ok: true };', 'if (design.decision !== "not_needed") return { ok: true };'),
+    trace: drill("sma_r01"),
+  },
+  n312: {
+    mutation: flip("src/rooms/writer/server/update-task.ts", "if (attempt && FINISHED_ATTEMPT_STATES.includes(attempt.state)) {", "if (attempt && !FINISHED_ATTEMPT_STATES.includes(attempt.state)) {"),
+    trace: drill("sma_r01"),
+  },
+  n313: {
+    mutation: flip("src/rooms/writer/server/update-task.ts", "if (!rerun.ok) {", "if (rerun.ok) {"),
+    trace: drill("sma_r01"),
+  },
+  n314: {
+    mutation: distort("src/rooms/tasks/server/queue-tool.ts", "Date.parse(input.until) : HOLD_FOREVER;", "Date.parse(input.until) : Date.now();"),
+    trace: drill("sma_r01"),
+  },
+  n315: {
+    mutation: distort("src/rooms/contracts/state-machine.ts", '{ from:null, event:"form_task", to:"queued" },', '{ from:null, event:"form_task", to:"spawn_requested" },'),
+    trace: drill("sma_r01"),
+  },
+  n316: {
+    mutation: flip("src/rooms/runs/server/task-board.ts", "held: (taskHeldUntil(db, row.task_id) ?? 0) > now, gates: null, wave: null,", "held: (taskHeldUntil(db, row.task_id) ?? 0) <= now, gates: null, wave: null,"),
+    reach: entry("the PM holds a queued task with lane_pilot_queue hold, or the owner holds it from the cockpit"),
+    trace: drill("sma_r01"),
+  },
+  n317: { mutation: flip("src/rooms/runs/server/task-reconcile.ts", ".filter((row) => !services.activeWriterTasks.has(", ".filter((row) => services.activeWriterTasks.has("), trace: drill("sma_r01"), voidReview:voidIsHave("состояние «заявлена» = попытка spawn_requested/running с живым циклом в activeWriterTasks; без живого цикла её забирает периодический проход (аренда = живой цикл)") },
+  n318: {
+    mutation: flip("src/rooms/tasks/words.ts", 'if (!latest) return "owner_word: owner.words is on', 'if (latest) return "owner_word: owner.words is on'),
+    trace: drill("sma_r01"),
+  },
+  n319: {
+    mutation: distort("src/rooms/contracts/state-machine.ts", '{ from:"running", event:"checks_passed", to:"accepted" },', '{ from:"running", event:"checks_passed", to:"canceled" },'),
+    trace: drill("sma_r01"),
+  },
   n329: {
     mutation: flip("src/rooms/tasks/rails.ts", "|| a.queuedAt - b.queuedAt);", "|| b.queuedAt - a.queuedAt);"),
     trace: transition({ from: "queued", to: "spawn_requested" }),
