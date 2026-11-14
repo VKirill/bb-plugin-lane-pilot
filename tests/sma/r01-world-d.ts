@@ -440,14 +440,15 @@ export async function observePrepared() {
  * attempt ends «blocked» with test_edit_hold, the held edit (path + content hash) is kept for the person, nothing is merged. Where nobody is
  * waiting for a word the writer gets the finding back (validation_failed, test_fit). An edit the person allowed for that very content passes.
  */
-export async function observeTestEditHold() {
+export async function observeTestEditHold(paddingLines = 0, readFault?: "changed" | "stalled" | "failed", inPlace = false) {
   const { createWriterFinish } = await import("../../src/rooms/writer/server/finish");
   const { createCore } = await import("../../src/rooms/core/server/core");
   const { stageHelperSettings } = await import("../../src/rooms/settings/server/stage-settings");
   const { saveProjectSetting, setRunThread } = await import("../../src/rooms/storage");
   const { allowTestEditsOf, testEditHoldOf } = await import("../../src/rooms/tasks");
-  const before = "it(\"works\", () => {\n  expect(sum([1, 2])).toBe(3);\n});\n";
-  const after = "it(\"works\", () => {\n  expect(sum([1, 2])).toBeTruthy();\n});\n";
+  const padding = "// preceding test content\n".repeat(paddingLines);
+  const before = padding + "it(\"works\", () => {\n  expect(sum([1, 2])).toBe(3);\n});\n";
+  const after = padding + "it(\"works\", () => {\n  expect(sum([1, 2])).toBeTruthy();\n});\n";
   const run = async (words: "on" | "off", allowAfter?: string) => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
@@ -461,14 +462,23 @@ export async function observeTestEditHold() {
     harness.sdk.stub("threads.stop", async () => undefined);
     harness.sdk.stub("threads.send", async () => ({}));
     harness.sdk.stub("files.read", async () => ({ content: after, contentEncoding: "utf8" }));
-    harness.sdk.stub("plugins.callRpc", async ({ method }: { method: string }) => method === "files"
-      ? { outcome: "available", files: [{ path: "tests/sum.test.ts", revision: "r1" }], initialPatches: [{ path: "tests/sum.test.ts", patch: "@@\n+x\n", truncated: false }] }
+    harness.sdk.stub("plugins.callRpc", async ({ method }: { method: string }) => method === "fileSide"
+      ? { outcome: "available", file: { path: "tests/sum.test.ts", content: before, contentEncoding: "utf8", sizeBytes: Buffer.byteLength(before) } }
+      : method === "files"
+      ? { outcome: "available", files: [{ path: "tests/sum.test.ts", revision: "r1", changeKind: "modified" }], initialPatches: [{ path: "tests/sum.test.ts", patch: "@@\n+x\n", truncated: false }] }
       : { outcome: "available", patches: { "tests/sum.test.ts": { outcome: "available", patch: { path: "tests/sum.test.ts", patch: "@@\n+x\n", truncated: false } } } });
     harness.sdk.stub("environments.list", async () => [{ id: "env-1" }]);
     const hostCalls: string[] = [];
-    bb.hosts.experimental_client = (() => ({ call: async (method: string, input: { projectCwd?: string; relativePath?: string }) => {
+    bb.hosts.experimental_client = (() => ({ call: async (method: string, input: { projectCwd?: string; relativePath?: string; offset?: number; maxLines?: number }) => {
       hostCalls.push(`${method}:${input.projectCwd ?? ""}:${input.relativePath ?? ""}`);
-      if (method === "readBoundedFile") return { content: input.projectCwd === "/wt" ? after : before };
+      if (method === "readBoundedFile") {
+        const content = (inPlace || input.projectCwd === "/wt") ? after : before;
+        const lines = content.split("\n"), offset = input.offset ?? 0;
+        const end = Math.min(lines.length, offset + (input.maxLines ?? 400));
+        if (offset && readFault === "failed") throw new Error("next page unavailable");
+        return { content: lines.slice(offset, end).join("\n"), lineEnd: readFault === "stalled" ? offset : end,
+          truncated: end < lines.length, sha256: sha256Hex(offset && readFault === "changed" ? `${content}changed` : content) };
+      }
       return {};
     } })) as never;
     const task = { ...taskOf("t1"), project_cwd: "/repo", risk: "low", owns_paths: ["src/**", "tests/**"], expected_outputs: ["tests/sum.test.ts"], verify: "none", verification: [] } as never;
@@ -478,7 +488,7 @@ export async function observeTestEditHold() {
     createAttempt(db, { id: "a1", runId: "r", taskId: "t1" });
     transitionAttempt(db, "a1", "spawn_requested");
     transitionAttempt(db, "a1", "running", { threadId: "writer-1" });
-    db.prepare("UPDATE lane_pilot_attempt SET workspace_path='/wt', environment_id='env_wt' WHERE id='a1'").run();
+    db.prepare("UPDATE lane_pilot_attempt SET workspace_path=?, environment_id='env_wt' WHERE id='a1'").run(inPlace ? "/repo" : "/wt");
     saveProjectSetting(db, "P", "owner.words", words);
     saveProjectSetting(db, "P", "code_critique.enabled", true);
     saveProjectSetting(db, "P", "code_critique.mode", "gate");
@@ -495,11 +505,12 @@ export async function observeTestEditHold() {
       runBudgetFor: () => ({ snapshot: () => ({ limits: {} }) }),
       taskWords: { ask: () => undefined },
     } as never);
-    const result = await finish.finishWriterAttempt({ projectId: "P", config, task, runId: "r", taskId: "t1", attemptId: "a1", pmThreadId: "thr_pm", writerThreadId: "writer-1", dirtBefore: [] } as never);
-    const attempt = getAttempt(db, "a1")!;
-    const held = await testEditHoldOf(bb.storage.kv as never, "a1");
-    await harness.lifecycle.dispose();
-    return { status: result.status, reason: result.reason as string | undefined, state: attempt.state, held, barrierWriterStatus: attempt.barrier?.reason ?? null, hostCalls };
+    try {
+      const result = await finish.finishWriterAttempt({ projectId: "P", config, task, runId: "r", taskId: "t1", attemptId: "a1", pmThreadId: "thr_pm", writerThreadId: "writer-1", dirtBefore: [] } as never);
+      const attempt = getAttempt(db, "a1")!;
+      const held = await testEditHoldOf(bb.storage.kv as never, "a1");
+      return { status: result.status, reason: result.reason as string | undefined, state: attempt.state, held, barrierWriterStatus: attempt.barrier?.reason ?? null, hostCalls };
+    } finally { await harness.lifecycle.dispose(); }
   };
   return { afterSha: sha256Hex(after), asked: await run("on"), notAsked: await run("off"), allowed: await run("on", after), otherEdit: await run("on", `${after}// more\n`) };
 }

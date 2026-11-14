@@ -8,7 +8,7 @@ import { loadCriticCodeDefault } from "./critic-override";
 import { runPlanFactStage } from "./plan-fact";
 import { headSides } from "../../critique/server";
 import { recordGateEvaluation } from "../../runs/server";
-import {bestEffort, outputText, sha256Hex, stringAt} from "@lane-pilot/kit";
+import {bestEffort, BOUNDED_READ_MAX_FILE_BYTES, outputText, sha256Hex, stringAt} from "@lane-pilot/kit";
 import { writeReplacing } from "../../storage";
 import { wasAnsweredByDefault } from "./question-default";
 import { noteTaskQa } from "./reopen-attempt";
@@ -161,10 +161,26 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
       // Tests that existed on the base and that the writer changed: read once here, so the critic is switched on for them, and below for test_fit.
       const fitAttempt = getAttempt(db, input.attemptId);
       const basePathForTests = taskBasePath(db, input.runId, input.taskId);
-      // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer.
-      const readFit = (cwd:string | null | undefined, path:string) => cwd
-        ? host.call("readBoundedFile", { requestedHostId:input.config.hostId, projectCwd:cwd, relativePath:path, offset:0, maxLines:400 }, { hostId:input.config.hostId, timeoutMs:10_000 }).then((file) => file.content, () => null)
-        : Promise.resolve(null);
+      const readFit = async (cwd:string | null | undefined, path:string):Promise<string|null> => {
+        if (!cwd) return null;
+        const parts:string[] = [];
+        let offset = 0, bytes = 0, sha:string|undefined;
+        for (;;) {
+          const file = await host.call("readBoundedFile", { requestedHostId:input.config.hostId, projectCwd:cwd, relativePath:path, offset, maxLines:2000 }, { hostId:input.config.hostId, timeoutMs:10_000 })
+            .catch((cause) => { if (offset === 0) return null; throw cause; });
+          if (!file) return null;
+          // Never approve a partial file or stitch together two editions of a test.
+          if (parts.length && sha !== file.sha256) throw new Error(`test_fit_read: ${path} changed during the read`);
+          bytes += Buffer.byteLength(file.content, "utf8") + (parts.length ? 1 : 0);
+          if (bytes > BOUNDED_READ_MAX_FILE_BYTES) throw new Error(`test_fit_read: ${path} exceeds 8 MiB`);
+          parts.push(file.content);
+          if (file.lineEnd > 100000) throw new Error(`test_fit_read: ${path} could not be read completely`);
+          if (!file.truncated) return parts.join("\n");
+          if (!Number.isInteger(file.lineEnd) || file.lineEnd <= offset) throw new Error(`test_fit_read: ${path} could not be read completely`);
+          offset = file.lineEnd;
+          sha = file.sha256;
+        }
+      };
       const editedTests = referenceTestEdits((candidate.produced ?? []).map((path) => ({ path, status:"M" }))).slice(0, 20);
       const editedScripts = checkScriptEdits(candidate.produced ?? [], input.task.verification.map((row) => row.command)).slice(0, 10);
       const fitConfigs = (candidate.produced ?? []).filter((path) => /(^|\/)package\.json$|\.(?:sh|ya?ml)$/.test(path)).slice(0, 10);
@@ -176,8 +192,10 @@ export async function finishWriterAttemptBody(ctx: ServerCore, services: Service
         : new Map<string, string | null>();
       const readBefore = (path:string) => {
         const head = atHead.get(path);
-        // Cut like readFit cuts the «after», or every assertion past its line 400 would read as removed.
-        return head === undefined ? readFit(basePathForTests, path) : Promise.resolve(head === null ? null : head.split("\n").slice(0, 400).join("\n"));
+        if (head !== undefined && head !== null && (Buffer.byteLength(head, "utf8") > BOUNDED_READ_MAX_FILE_BYTES || head.split("\n").length > 100000)) {
+          throw new Error(`test_fit_read: ${path} HEAD exceeds the complete-read limit`);
+        }
+        return head === undefined ? readFit(basePathForTests, path) : Promise.resolve(head);
       };
       const referenceBefore = new Map<string, string>();
       for (const path of editedTests) {
