@@ -22,7 +22,7 @@ export default {
   n1371: { mutation: distort("workflows/ai-integration-phase.json", "\"out\": {\n        \"eval_plan\": \"string\"\n      },", "\"out\": {\n        \"eval_plan\": \"number\"\n      },"), trace: [wfStep("ai-integration-phase", "spec"), drill("sma_r17")] },
   n1372: { mutation: distort(STAGES, "}): ${item.promise.then}`", "}): ${item.promise.when}`"), trace: [part({ section: "lessons", kind: "concluded" }), drill("sma_r17")] },
   n1373: { mutation: flip(STAGES, "notes && motionRows([item]).length ?", "notes && !motionRows([item]).length ?"), trace: drill("sma_r17") },
-  n1374: { mutation: wrongTarget("workflows/review-fix.json", "\"gaps\": \"{{first_review.findings}}\"", "\"gaps\": \"{{re_review.findings}}\""), trace: [wfRun("review-fix"), drill("sma_r17")] },
+  n1374: { mutation: wrongTarget("workflows/review-fix.json", "\"tasks\": \"{{plan_fix2.tasks}}\"", "\"tasks\": \"{{plan_fix.tasks}}\""), trace: [wfRun("review-fix"), drill("sma_r17")] },
   n1375: { mutation: wrongTarget("src/rooms/critique/role-method.ts", "case \"debugger\": return SCIENTIFIC_DEBUG_METHOD;", "case \"debugger\": return FAILURE_TRIAGE_METHOD;"), trace: [wfStep("debug", "investigate"), drill("sma_r17")] },
   n1376: { mutation: flip("workflows/debug.json", "visits('investigate') < 3", "visits('investigate') < 2"), trace: [wfStep("debug", "verify_cause"), drill("sma_r17")] },
   n1377: { mutation: flip("src/rooms/phase/logic/verdict.ts", "if (fact?.planFact === \"failed\") problems.push(", "if (fact?.planFact !== \"failed\") problems.push("), trace: [part({ section: "verification", kind: "blind_verdict" }), drill("sma_r17")] },
