@@ -5,7 +5,9 @@ import { describe, expect, it } from "vitest";
 import { renderFacts } from "../scripts/sma-hollow";
 import { stage } from "../src/rooms/sma-map/evidence/types";
 import { collectHollowFacts, SMA_HOLLOW_FACTS, type HollowFacts } from "../src/rooms/sma-map/hollow-facts";
-import { hollowCounts, hollowFindings, type HollowLive } from "../src/rooms/sma-map/hollow";
+import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { openDatabase } from "../src/rooms/plugin-db";
+import { hollowCounts, hollowFindings, readHollowLive, spanLine, type HollowLive } from "../src/rooms/sma-map/hollow";
 import type { SmaRow } from "../src/rooms/sma-map/model";
 import { defaultSettings, settingRegistry } from "../src/rooms/sma-map/settings-registry";
 import { constantReturn } from "../src/rooms/sma-map/symbols";
@@ -117,6 +119,55 @@ describe("the hollow detector (sma-parity-tz.md §4а)", () => {
     const attested = hollowFindings({ rows: [row("n9", "have", ["t › e"])], evidence: { n9: { trace: stage("verification"), hollowAttested: { commit: "abc1234", test: "tests/x.test.ts › refuses" } } }, facts, settings: defaultSettings(), live });
     expect(attested.some((finding) => finding.sign === 6)).toBe(false);
     expect(hollowCounts(findings).bySign["2"]).toBeGreaterThan(0);
+  });
+
+  it("live: an edge out of the start, into the end or into a join is walked by what the journal records for it, not by a step of its target", () => {
+    const graph = { id: "fx-edges", file: "workflows/fx-edges.json", status: "published",
+      nodes: [["a", "agent"], ["b", "action"], ["fork", "parallel"], ["leaf", "action"], ["j", "join"], ["z", "action"]] as Array<[string, string]>,
+      edges: [["start", "a", null], ["a", "b", "a.ok == true"], ["b", "end", null], ["a", "fork", "a.ok == false"], ["fork", "leaf", null], ["leaf", "j", null], ["j", "z", null], ["z", "end", "z.x == 1"], ["z", "end", "z.x == 2"]] as Array<[string, string, string | null]> };
+    const withGraph: HollowFacts = { ...facts, graphs: [graph], coverage: {}, workflowDefects: [] };
+    const base: HollowLive = { days: 30, graphRuns: new Map([["fx-edges", 9]]), nodeSteps: new Map(["a", "b", "fork", "leaf", "j", "z"].map((node) => [`fx-edges|${node}`, 9] as const)), edgeSteps: new Map([["fx-edges|a|b|a.ok == true", 9], ["fx-edges|fork|leaf|", 9], ["fx-edges|j|z|", 9], ["fx-edges|a|fork|a.ok == false", 9]]), verdicts: [] };
+    const edges = (live: HollowLive) => hollowFindings({ rows: [], evidence: {}, facts: withGraph, settings: defaultSettings(), live }).filter((finding) => finding.sign === 2 && finding.subject.type === "workflow-edge");
+    // The journal says nothing about the entry, the exits and the join: they are reported (the old behaviour, nothing to go on).
+    expect(edges(base).map((finding) => finding.subject.path)).toEqual(expect.arrayContaining(["fx-edges: start → a", "fx-edges: b → end", "fx-edges: leaf → j"]));
+    // With the entry step of `a`, an exit from a step of `b`, a branch arrival from `leaf`: the three edges are walked and not reported.
+    const walked: HollowLive = { ...base, entries: new Map([["fx-edges|a", 9]]), exits: new Map([["fx-edges|b", 4]]), joinArrivals: new Map([["fx-edges|leaf", 9]]) };
+    expect(edges(walked).map((finding) => finding.subject.path).filter((path) => /start → a|b → end|leaf → j/.test(path))).toEqual([]);
+    // An exit never recorded for `b` keeps its edge reported, and a source with two edges to the end that left 5 times cannot be told apart: said so, not called never-fired.
+    const partial = edges({ ...walked, exits: new Map([["fx-edges|z", 5]]) });
+    expect(partial.map((finding) => finding.subject.path)).toContain("fx-edges: b → end");
+    const ambiguous = partial.filter((finding) => finding.subject.path.startsWith("fx-edges: z → end"));
+    expect(ambiguous).toHaveLength(2);
+    expect(ambiguous.every((finding) => finding.what.includes("cannot tell which of the 2 edges") && !finding.what.includes("was not taken"))).toBe(true);
+    // Two edges that left no exit at all are both truly never fired.
+    expect(edges({ ...walked, exits: new Map([["fx-edges|b", 4]]) }).filter((finding) => finding.subject.path.startsWith("fx-edges: z → end")).every((finding) => finding.what.includes("was not taken"))).toBe(true);
+    // A start edge the definitions call `$start` is matched by readHollowLive's normalised key (edge_index rows), covered on a database in the traces test of the hub.
+  });
+
+  it("readHollowLive reads the entry, exit and join records and the span from the journal", () => {
+    const handle = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb) as never as { prepare(sql: string): { run(...args: unknown[]): unknown; all(...args: unknown[]): unknown[] } };
+    handle.prepare("PRAGMA foreign_keys = OFF").run();
+    const definition = JSON.stringify({ edges: [{ from: "$start", to: "a" }, { from: "a", to: "$end" }] });
+    handle.prepare("INSERT INTO lane_pilot_wf_run (id, workflow_id, workflow_version, workflow_sha256, definition_json, status, created_at, updated_at, harness_version) VALUES ('r1','fx',1,'sha',?, 'succeeded', 1000, 1000, '0.1.1'), ('r2','fx',1,'sha',?, 'succeeded', 86401000, 86401000, '0.1.1')").run(definition, definition);
+    handle.prepare("INSERT INTO lane_pilot_wf_step (run_id, step_key, origin, node_id, visit, edge_index, state, started_at, updated_at) VALUES ('r1','a#1','o1','a',1,0,'succeeded',1000,1000), ('r2','a#1','o2','a',1,0,'skipped',null,1)").run();
+    handle.prepare("INSERT INTO lane_pilot_wf_event (run_id, step_key, kind, at) VALUES ('r1','a#1','exit',1500), ('r2',null,'exit',1500)").run();
+    handle.prepare("INSERT INTO lane_pilot_wf_step (run_id, step_key, origin, node_id, visit, scope, state, updated_at) VALUES ('r1','leaf#1~0','o3','leaf',1,'p~0','succeeded',1)").run();
+    handle.prepare("INSERT INTO lane_pilot_wf_arrival (run_id, group_key, branch, from_step, data_json, at) VALUES ('r1','p#1',0,'leaf#1~0','{}',1600), ('r1','p#1',1,'leaf#1~0','{\"$failed\":\"boom\"}',1700)").run();
+    const live = readHollowLive(handle, 0, 30);
+    expect(live.edgeSteps.get("fx|start|a|")).toBe(1);        // `$start` / `$end` of the definitions are the facts' `start` / `end`
+    expect(live.edgeSteps.get("fx|a|end|")).toBeUndefined();   // an edge into the end starts no step
+    expect(live.entries?.get("fx|a")).toBe(2);                 // the entry step in any state, skipped too
+    expect([...live.exits!]).toEqual(expect.arrayContaining([["fx|a", 1], ["fx|start", 1]]));
+    expect(live.joinArrivals?.get("fx|leaf")).toBe(1);         // the failed branch walked no edge
+    expect(live.span).toEqual({ first: 1000, last: 86401000, runs: 2, days: 1 });
+  });
+
+  it("the span the data covers is printed next to the requested days", () => {
+    const young = { first: Date.UTC(2026, 9, 30), last: Date.UTC(2026, 10, 14), runs: 5725, days: 15 };
+    expect(spanLine(young, 30)).toBe("data covers 2026-10-30 … 2026-11-14 (15 day(s), 5725 workflow run(s)) of the 30 requested — a young database: «did not fire in 30 days» only means 15");
+    expect(spanLine({ ...young, days: 40 }, 30)).not.toContain("young database");
+    expect(spanLine({ first: null, last: null, runs: 0, days: 0 }, 30)).toBe("the journal holds no workflow run");
+    expect(spanLine(undefined, 30)).toBe("");
   });
 
   it("the shipped facts file has the shape the hub reads, one fact per line", () => {
