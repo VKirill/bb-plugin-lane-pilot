@@ -17,7 +17,9 @@ NODES = ["n1050", "n1052", "n1053", "n1054", "n1057", "n1058", "n1062", "n1063",
          "n1074", "n1075", "n1076",
          # batch b
          "n1078", "n1080", "n1081", "n1082", "n1083", "n1084", "n1085", "n1086", "n1087", "n1088", "n1090", "n1092", "n1093", "n1094", "n1095", "n1097", "n1098",
-         "n1099", "n1100", "n1101", "n1102", "n1103", "n1104", "n1105"]
+         "n1099", "n1100", "n1101", "n1102", "n1103", "n1104", "n1105",
+         # batch c
+         "n1089", "n1091", "n1108", "n1109", "n1110", "n1111", "n1112", "n1113", "n1114", "n1115", "n1116", "n1117"]
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r14_probe.ts"
 
 
@@ -150,4 +152,47 @@ def scenario_sma_r14(tmp: Path) -> dict:
     # n1105 Claude Code's own notes: read through the shared door, a credential line is dropped with reason secret.
     am = b["automem"]
     proofs.prove("n1105", am["outcomes"] == {"proj/fact": "added:", "sec": "dropped:secret"} and am["rows"] == 1, f"outcomes {am['outcomes']}, rows stored {am['rows']}")
+
+    # Batch c: memory lives only on the hub; the cards that name a project file are proven on the hub path (docs in tests/sma/four-proofs-r14-c.test.ts).
+    c = seen["c"]
+    bl = c["block"]
+    # n1089 The session's corpus block: built from the hub's core records, newest first, notes out, the PM none, no project file touched.
+    proofs.prove("n1089", bl["freshFirst"].find("A fresh convention") >= 0 and not bl["hasNote"] and bl["pm"] is None and bl["projectUntouched"] and bl["sameViaRpc"],
+                 f"first fact after a write «{bl['freshFirst']}», note in the block {bl['hasNote']}, PM block {bl['pm']}, project folder untouched {bl['projectUntouched']}")
+    # n1091 Twins merge at the write: the older wording is superseded by the newer one, a one-tag neighbour and a different fact stay.
+    tw = c["consolidate"]
+    proofs.prove("n1091", tw["olderStatus"] == "superseded" and tw["olderBy"] and tw["oneSharedTagStays"] == "active" and tw["differentStays"] == "active" and tw["activeAfter"] == 3,
+                 f"older {tw['olderStatus']}, replaced by the newer {tw['olderBy']}, one shared tag {tw['oneSharedTagStays']}, different fact {tw['differentStays']}")
+    # n1108 A file card from bytes and git only.
+    cd = c["card"]
+    proofs.prove("n1108", cd["twice"] and cd["first"]["lines"] == 6 and cd["first"]["language"] == "typescript" and cd["first"]["lastCommit"] == "abc1234" and cd["secret"] == "secret" and cd["binary"] == "binary" and cd["masked"],
+                 f"card {cd['first']}, secret file {cd['secret']}, binary {cd['binary']}, token masked {cd['masked']}")
+    # n1109 The same query and corpus give the same pack, whatever the order records come in.
+    pk = c["pack"]
+    proofs.prove("n1109", pk["identical"] and pk["sameWhenShuffled"] and pk["order"] == ["a-keep", "b-keep", "c-keep"] and not pk["unrelated"], f"pack {pk['order']}, same when shuffled {pk['sameWhenShuffled']}")
+    # n1110 History of the hub: ten by default, newest first, masked.
+    hi = c["history"]
+    proofs.prove("n1110", hi["defaultCount"] == 10 and hi["wideCount"] == 12 and hi["masked"] and hi["newestFirst"] and hi["none"] == 0, f"default {hi['defaultCount']}, wide {hi['wideCount']}, masked {hi['masked']}")
+    # n1111 One list of secret shapes for every record.
+    sh = c["secrets"]
+    proofs.prove("n1111", "credential" in sh["keyed"] and "credential" in sh["env"] and "credential" in sh["jwt"] and sh["prose"] is None and sh["importOutcomes"] == {"token": "dropped:secret", "prose": "added:"},
+                 f"keyed «{sh['keyed']}», prose names a variable: {sh['prose']}, import {sh['importOutcomes']}")
+    # n1112 One mask for foreign text outward.
+    mk = c["mask"]
+    proofs.prove("n1112", mk["hit"] == {"text": "deploy with *** now", "masked": True} and mk["custom"]["text"] == "key [hidden]" and not mk["plain"]["masked"] and not mk["leaked"], f"masked {mk['hit']}, custom word {mk['custom']}")
+    # n1113 The block is built from records and not by hand: the rule only when no fact fits, facts newest first.
+    proofs.prove("n1113", bl["bullets"] > 0 and bl["ruleAfter"] and bl["regeneratedHasFresh"], f"bullets {bl['bullets']}, rule at the end {bl['ruleAfter']}, a new fact is in the next block {bl['regeneratedHasFresh']}")
+    # n1114 The word index is a derived virtual table on the hub.
+    lx = c["lexindex"]
+    proofs.prove("n1114", lx["virtual"] and lx["drifted"] == {"missing": 1, "orphaned": 1, "orphanIsDeleted": True} and lx["check"] == {"active": 1, "added": 1, "stale": 1} and lx["after"]["missing"] == 0 and lx["after"]["orphaned"] == 0,
+                 f"virtual {lx['virtual']}, drift {lx['drifted']}, check {lx['check']}, after the rebuild {lx['after']}")
+    # n1115 No notes bypass the pipeline: auto-memory off for every role.
+    am_ = c["autoMemory"]
+    proofs.prove("n1115", am_["writer"] is False and am_["errand"] is False and am_["pm"] is False, f"autoMemoryEnabled writer {am_['writer']}, errand {am_['errand']}, PM {am_['pm']}")
+    # n1116 The ledger of loads: use_count and last_used_at.
+    us = c["usage"]
+    proofs.prove("n1116", us["a"] == {"c": 2, "at": 2000} and us["b"] == {"c": 0, "at": None} and us["other"] == {"c": 0, "at": None}, f"given twice {us['a']}, never given {us['b']}, other project {us['other']}")
+    # n1117 The catalog is outside the tree; the guard prints a card once per session.
+    gc = c["guardCard"]
+    proofs.prove("n1117", gc["first"] and not gc["again"] and gc["otherSession"] and not gc["uncarded"] and gc["treeHasNoCatalog"] and gc["catalogOutsideTree"], f"first print {gc['first']}, again {gc['again']}, other session {gc['otherSession']}, no card {gc['uncarded']}")
     return proofs.verdict("sma_r14", checked=len(NODES))

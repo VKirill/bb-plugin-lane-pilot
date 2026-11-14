@@ -3,7 +3,7 @@ import { noOptionalPlugins } from "./optional-plugin-stubs";
 import { afterEach, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, latestTaskAttemptState, listStageReceipts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
-import { SESSION_MAX_MS, SESSION_MAX_TURNS, failureClass } from "../src/rooms/contracts/failure-class";
+import { SESSION_MAX_MS, failureClass } from "../src/rooms/contracts/failure-class";
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../server";
 import { recordStage } from "../src/rooms/runs/server/stage-records";
@@ -126,17 +126,17 @@ it("sends a failed check back to the same writer thread as a feedback turn, with
   await env.harness.lifecycle.dispose();
 });
 
-it(`stops at ${SESSION_MAX_TURNS} turns with the last reason and starts no other writer`, async () => {
+it("[sma:m_ss_turn_cap] stops at five turns (the ceiling is a literal here, so a changed default is seen) with the last reason and starts no other writer", async () => {
   const env = setup();
   const { all, spawned } = services(env.db, Array.from({ length:8 }, (_, index) => ({ diff:`d${index}` })));
   start(env, all);
   await vi.waitFor(() => expect(writerStage(env.db).state).toBe("failed"));
   expect(spawned).toHaveLength(1);
-  expect(env.sends).toHaveLength(SESSION_MAX_TURNS - 1);
+  expect(env.sends).toHaveLength(4);
   const last = getAttempt(env.db, `T1-a1`);
   expect(last?.thread_id).toBe("thr_w");
   const reason = writerStage(env.db).reason ?? "";
-  expect(reason).toBe(`turn limit ${SESSION_MAX_TURNS} reached: verification failed (npm test): boom`);
+  expect(reason).toBe("turn limit 5 reached: verification failed (npm test): boom");
   expect(countChargedAttempts(env.db, "run1", "T1")).toBe(1);
   await env.harness.lifecycle.dispose();
 });
