@@ -27,7 +27,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | core | — | 12 | 1030 | drill: parallel3 |
 | council | — | 17 | 6854 | tests (4) |
 | coverage | COVERAGE, COVERAGE_USAGE, CoverageEntry, CoverageRow, CoverageStatus, CoverageSummary, DrillReceipt, NODE_KINDS, NodeKind, REQUIRED_MECHANISMS, checkReceipt, codeNodes, coverageRows, holes, renderCoverage, runCoverageCli, summarize, transitionId, untermedGaps | 4 | 338 | tests (1) |
-| critique | CRITIC_EDIT_TRIAL_KEY, CriticEditRow, CriticEditStore, CriticEditTrialOutcome, FAILURE_TRIAGE_METHOD, FrozenCritiquePolicy, MAX_FILE_EXCERPT_BYTES, PLANNER_METHOD, SCIENTIFIC_DEBUG_METHOD, TaskBriefField, WriterIdentity, actionableFindings, advisoryFeedback, buildCandidateEvidence, codeCritiquePrompt, codeCritiqueSource, codeCritiqueStops, codeRepairPrompt, criticEditGate, criticEditTrialOn, criticEditTrialSettle, criticEditWasRejected, criticPromptOf, criticPromptProposal, criticPromptRollback, criticStats, critiqueFromStageResult, critiquePrompt, findingsHash, markPathsWidened, nextRepairAction, parseCodeCritique, parseCodeCritiqueSettings, parseCritique, parseWriterRepairReply, pathsWidenedOf, repairLedgerFromResult, resolveRetryEffort, roleMethod, roleSelection, sameUnresolvedFindings, sameWriterIdentity, scanCritiqueCoverage, sdkCriticCatalog, settingsFromFrozenPolicy, shouldRequestRepair, taskBrief | 34 | 4139 | tests (2) |
+| critique | CRITIC_EDIT_TRIAL_KEY, CriticEditRow, CriticEditStore, CriticEditTrialOutcome, FAILURE_TRIAGE_METHOD, FrozenCritiquePolicy, MAX_FILE_EXCERPT_BYTES, PLANNER_METHOD, SCIENTIFIC_DEBUG_METHOD, TaskBriefField, WriterIdentity, actionableFindings, advisoryFeedback, buildCandidateEvidence, codeCritiquePrompt, codeCritiqueSource, codeCritiqueStops, codeRepairPrompt, criticEditGate, criticEditTrialOn, criticEditTrialSettle, criticEditWasRejected, criticPromptOf, criticPromptProposal, criticPromptRollback, criticStats, critiqueFromStageResult, critiquePrompt, findingsHash, markPathsWidened, nextRepairAction, parseCodeCritique, parseCodeCritiqueSettings, parseCritique, parseWriterRepairReply, pathsWidenedOf, repairLedgerFromResult, resolveRetryEffort, roleMethod, roleSelection, sameUnresolvedFindings, sameWriterIdentity, scanCritiqueCoverage, sdkCriticCatalog, settingsFromFrozenPolicy, shouldRequestRepair, taskBrief | 35 | 4146 | tests (2) |
 | deferral | deferralKindMigrations, deferralMigrations, wallDeferralKindMigrations | 11 | 767 | drill: deferrals |
 | design-eval | CRITIQUE_AXES, Criterion, CritiqueAxis, DESIGN_CRITIQUE_CASES_KEY, DESIGN_EVENTS_KEY, DESIGN_JOURNAL_KEY, DESIGN_SUITE_VERSION, DesignCase, DesignJournalLine, DrawingCritique, MEASURE_SCRIPT, Measurement, PairUrlOptions, RUBRIC, ReadDesignCase, appendDesignCritiqueCase, appendDesignJournalLine, appendDesignPair, compareDesigns, critiqueProblems, designJournalKey, designJournalLines, designPairOf, designScore, mergeFrames, noteDesignJournalWord, pairBasis, pairOrder, pairUrlRefusal, readDesignCase, readinessWords, roleLine, scoreMeasurement, trainedConditions, trainingRatios, writeDesignCase | 9 | 542 | tests (1) |
 | docs | Anchor, CITATION_SOURCE, DOCS_DEFAULT_SELECTION, Frontmatter, buildDocsAnchors, buildDocsFlows, commitDocs, docsLineCounts, docsWorthinessFacts, expandCitationLists, gitDocsScope, mergeFrontmatter, parseDocsSettings, parseFrontmatter, setFrontmatter | 29 | 3462 | tests (4) |
@@ -490,7 +490,6 @@ First-party install capabilities from `src/rooms/native-install/feature-registry
 | src/rooms/sma-map/contracts.ts | 1739 |
 | src/rooms/contracts/session-hook-source.ts | 1410 |
 | src/rooms/council/ui/council-office.tsx | 942 |
-| src/rooms/critique/code-critique.ts | 809 |
 | packages/memory-core/src/store.ts | 799 |
 | src/rooms/native-install/coexistence.ts | 795 |
 | src/rooms/council/ui/office-layout.ts | 783 |
@@ -507,3 +506,4 @@ First-party install capabilities from `src/rooms/native-install/feature-registry
 | src/rooms/council/ui/office-props-a.ts | 683 |
 | src/rooms/writer/server/dispatch.ts | 683 |
 | src/rooms/lead/server/tick.ts | 681 |
+| src/rooms/phase/server/auto-stages.ts | 670 |
