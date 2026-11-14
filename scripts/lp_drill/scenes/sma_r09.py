@@ -23,6 +23,7 @@ from lp_drill.scenes.sma_r09_d import NODES_D, prove_d
 from lp_drill.scenes.sma_r09_f import NODES_F, prove_f
 from lp_drill.scenes.sma_r09_core import NODES_CORE, NOT_PROVED_CORE, prove_core
 from lp_drill.scenes.sma_r09_e import NODES_E, prove_e
+from lp_drill.scenes.sma_r09_g import NODES_G, prove_g
 
 # node -> card id, for the nodes proved by a test file of the commit (screens, and handlers whose result is a whole screen or an rpc answer).
 SCREENS = {
@@ -40,6 +41,7 @@ NODES = sorted([*NODES, *NODES_D])
 NODES = sorted([*NODES, *NODES_F])
 NODES = sorted([*NODES, *NODES_CORE])
 NODES = sorted([*NODES, *NODES_E])
+NODES = sorted([*NODES, *NODES_G])
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r09_probe.ts"
 TEST_FILES = ["tests/sma/four-proofs-r09-a.test.ts", "tests/sma/four-proofs-r09-a.test.tsx", "tests/sma/four-proofs-r09-a2.test.tsx", "tests/sma/four-proofs-r09-a3.test.tsx",
               "tests/sma/parity-d10-rest-1.test.ts", "tests/sma/parity-d5-phase-1.test.ts"]
@@ -116,6 +118,7 @@ def scenario_sma_r09(tmp) -> dict:
     prove_d(proofs, tmp)
     prove_f(proofs, tmp)
     prove_e(proofs, tmp)
+    prove_g(proofs, tmp)
     return proofs.verdict("sma_r09", checked=len(NODES))
     prove_core(proofs, tmp)
     return proofs.verdict("sma_r09", checked=len(NODES), notProved=NOT_PROVED_CORE)
