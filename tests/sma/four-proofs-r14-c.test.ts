@@ -7,7 +7,7 @@ import { observe } from "./r14-world-c";
 const REFUSAL = "memory content appears to contain a credential; no memory was saved";
 
 describe("memory on the hub: the session block, twins, the pack, history, secrets (region 14, batch c)", () => {
-  it("[sma:k_v_mem_block] the corpus block of a session is built from the hub's core records, newest first, within a budget, with the rule where to search and write; notes stay out, a Lane Pilot PM gets none, a new fact is in the next block, no project file is touched", async () => {
+  it("[sma:k_v_emit] [sma:k_lib_emit] the corpus block of a session is built from the hub's core records, newest first, within a budget, with the rule where to search and write; notes stay out, a Lane Pilot PM gets none, a new fact is in the next block, no project file is touched", async () => {
     const seen = await observe.block();
     expect(seen.head).toBe("Память проекта — факты:");
     expect(seen.bullets).toBeLessThan(10);
@@ -21,7 +21,7 @@ describe("memory on the hub: the session block, twins, the pack, history, secret
     expect(seen.projectUntouched).toBe(true);
   });
 
-  it("[sma:k_st_twins] twins merge at the write: the older wording is superseded by the newer one; one shared tag or a different fact stays; nothing waits as a proposal", () => {
+  it("[sma:k_v_consolidate] twins merge at the write: the older wording is superseded by the newer one; one shared tag or a different fact stays; nothing waits as a proposal", () => {
     const seen = observe.consolidate();
     expect(seen.olderStatus).toBe("superseded");
     expect(seen.olderBy).toBe(true);
@@ -31,7 +31,7 @@ describe("memory on the hub: the session block, twins, the pack, history, secret
     expect(seen.activeAfter).toBe(3);
   });
 
-  it("[sma:k_st_pack] one query and one corpus give one pack, in the same order whatever the order the records came in; unrelated notes stay out", () => {
+  it("[sma:k_lib_contextpack] one query and one corpus give one pack, in the same order whatever the order the records came in; unrelated notes stay out", () => {
     const seen = observe.pack();
     expect(seen.identical).toBe(true);
     expect(seen.sameWhenShuffled).toBe(true);
@@ -39,7 +39,7 @@ describe("memory on the hub: the session block, twins, the pack, history, secret
     expect(seen.unrelated).toBe(false);
   });
 
-  it("[sma:k_st_history] history is the hub's past tasks and notes: ten hits by default, more when asked, newest first, a secret masked, an unknown word finds nothing", () => {
+  it("[sma:k_lib_history] history is the hub's past tasks and notes: ten hits by default, more when asked, newest first, a secret masked, an unknown word finds nothing", () => {
     const seen = observe.history();
     expect(seen.defaultCount).toBe(10);
     expect(seen.wideCount).toBe(12);
@@ -49,7 +49,7 @@ describe("memory on the hub: the session block, twins, the pack, history, secret
     expect(seen.none).toBe(0);
   });
 
-  it("[sma:k_st_secret_shapes] one list of secret shapes guards every record: a keyed password, an env key and a token are refused, an instruction override is refused with its own words, prose naming a variable stores; the import drops the token line only", () => {
+  it("[sma:k_lib_secretshapes] one list of secret shapes guards every record: a keyed password, an env key and a token are refused, an instruction override is refused with its own words, prose naming a variable stores; the import drops the token line only", () => {
     const seen = observe.secretShapes();
     for (const shape of [seen.keyed, seen.env, seen.jwt]) expect(shape).toBe(REFUSAL);
     expect(seen.override).toMatch(/instruction override/);
@@ -59,7 +59,7 @@ describe("memory on the hub: the session block, twins, the pack, history, secret
     expect(seen.importRows).toBe(1);
   });
 
-  it("[sma:k_st_mask] a stored secret never shows: the mask replaces a token with *** (or the given word), reports that it did, and leaves clean text alone", () => {
+  it("[sma:k_lib_secretsmask] a stored secret never shows: the mask replaces a token with *** (or the given word), reports that it did, and leaves clean text alone", () => {
     const seen = observe.mask();
     expect(seen.hit).toEqual({ text: "deploy with *** now", masked: true });
     expect(seen.plain).toEqual({ text: "nothing secret here", masked: false });
@@ -67,7 +67,7 @@ describe("memory on the hub: the session block, twins, the pack, history, secret
     expect(seen.leaked).toBe(false);
   });
 
-  it("[sma:k_st_card] a file card is a pure function of the bytes and git facts: language, lines, first comment line, exports, last commit; changed bytes change the hash; a secret or binary file keeps name and size only; a token is masked", () => {
+  it("[sma:k_lib_catalog] a file card is a pure function of the bytes and git facts: language, lines, first comment line, exports, last commit; changed bytes change the hash; a secret or binary file keeps name and size only; a token is masked", () => {
     const seen = observe.card();
     expect(seen.twice).toBe(true);
     expect(seen.first).toEqual({ lines: 6, language: "typescript", headLine: "Billing ledger helpers.", exports: ["LEDGER", "roundHalf"], lastCommit: "abc1234" });
@@ -95,7 +95,7 @@ describe("memory on the hub: the session block, twins, the pack, history, secret
     expect(seen.other).toEqual({ c: 0, at: null });
   });
 
-  it("[sma:k_v_automem] no notes bypass the write pipeline: the launcher of a writer, an errand and a PM starts Claude with auto-memory off, whatever the caller passed, and keeps the other settings", () => {
+  it("[sma:k_st_automem] no notes bypass the write pipeline: the launcher of a writer, an errand and a PM starts Claude with auto-memory off, whatever the caller passed, and keeps the other settings", () => {
     const seen = observe.autoMemory();
     expect(seen.writer).toBe(false);
     expect(seen.errand).toBe(false);
@@ -103,7 +103,7 @@ describe("memory on the hub: the session block, twins, the pack, history, secret
     expect(seen.otherKept).toBe(false);
   });
 
-  it("[sma:k_v_guard_card] the catalog lives outside the project tree; the guard prints a file's card once per session before the file is changed, and nothing for a file with no card", () => {
+  it("[sma:k_st_catalog] the catalog lives outside the project tree; the guard prints a file's card once per session before the file is changed, and nothing for a file with no card", () => {
     const seen = observe.guardCard();
     expect(seen.first).toBe(true);
     expect(seen.again).toBe(false);
