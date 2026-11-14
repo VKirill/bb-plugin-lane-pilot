@@ -3,10 +3,12 @@
 // wfRun/wfStep trace were derived mechanically by scripts/sma-seed-evidence.ts (2026-11-14), not authored.
 // The hooks are programs a Claude Code session runs, and they write no row to the hub database: a node's trace is its own prove()
 // line in the region scene scripts/lp_drill/scenes/sma_r18.py, which runs the real hook program (src/rooms/session-hooks/cli.ts) on real hook inputs.
-import { distort, drill, entry, flip, type RegionEvidence, seedEntry, voidIsHave, voidStays, wrongTarget } from "./types";
+import { distort, drill, entry, flip, type RegionEvidence, seedEntry, skipWrite, voidIsHave, voidStays, wrongTarget } from "./types";
 
 const LOGIC = "src/rooms/session-hooks/logic.ts";
 const CLI = "src/rooms/session-hooks/cli.ts";
+const PY = "lane-stack/hooks/guard_shell.py";
+const NATIVE = "src/rooms/native-agent/native-session-hooks.ts";
 const FIRES = "a Claude Code session of a Lane Pilot role fires the hook event";
 
 export default {
@@ -38,14 +40,37 @@ export default {
   n1429: { mutation: distort(LOGIC, "const lessons = (input.lessons ?? []).filter(Boolean).map((lesson) => lesson.slice(0, 200)).slice(0, 5);", "const lessons = (input.lessons ?? []).filter(Boolean).map((lesson) => lesson.slice(0, 200)).slice(0, 0);"), reach: entry(FIRES), trace: drill("sma_r18") },
   n1430: { mutation: wrongTarget(LOGIC, "files: input.files.slice(0, 30),", "files: input.claims.slice(0, 30),"), reach: entry(FIRES), trace: drill("sma_r18") },
   n1431: { mutation: flip(LOGIC, "!changed.has(path) && !input.exists(path)", "!changed.has(path) && input.exists(path)"), reach: entry(FIRES), trace: drill("sma_r18") },
-  n1432: { reach: seedEntry("a Claude Code session event fires the hook") },
-  n1433: { voidReview: voidIsHave("PreToolUse Task/Agent проверяет снимок окон подписки (поток spend) в том же процессе до сборки пакета; сверх порога, заданного человеком, порождение отклоняется") },
-  n1434: { voidReview: voidIsHave("пакет субагента собирается из правил, заявок и уроков (subagent-pack); упавший глагол пакета оставляет прежний пакет репозитория и заявок, отказ updatedInput падает в additionalContext с записью деградации") },
-  n1442: { reach: seedEntry("a Claude Code session event fires the hook") },
-  n1443: { reach: seedEntry("a Claude Code session event fires the hook") },
-  n1444: { reach: seedEntry("a Claude Code session event fires the hook") },
+  n1432: { mutation: distort(NATIVE, "\"UserPromptSubmit\", \"PreCompact\", \"SubagentStop\"", "\"UserPromptSubmit\", \"PreCompactX\", \"SubagentStop\""), reach: seedEntry("a Claude Code session event fires the hook"), trace: drill("sma_r18") },
+  n1433: { mutation: flip(LOGIC, "usage?.skipSetByHuman === true &&", "usage?.skipSetByHuman !== true &&"), trace: drill("sma_r18"), voidReview: voidIsHave("PreToolUse Task/Agent проверяет снимок окон подписки (поток spend) в том же процессе до сборки пакета; сверх порога, заданного человеком, порождение отклоняется") },
+  n1434: { mutation: distort(LOGIC, ".map((rule) => rule.slice(0, 200)).slice(0, 8);", ".map((rule) => rule.slice(0, 200)).slice(0, 2);"), trace: drill("sma_r18"), voidReview: voidIsHave("пакет субагента собирается из правил, заявок и уроков (subagent-pack); упавший глагол пакета оставляет прежний пакет репозитория и заявок, отказ updatedInput падает в additionalContext с записью деградации") },
+  n1435: { mutation: distort(LOGIC, "ranked: keepRules.length + keepLessons.length + keepClaims.length }", "ranked: keepRules.length + keepLessons.length }"), trace: drill("sma_r18") },
+  n1436: { mutation: flip(LOGIC, "if (acceptUpdatedInput) return { updatedInput: { prompt } };", "if (!acceptUpdatedInput) return { updatedInput: { prompt } };"), trace: drill("sma_r18") },
+  n1437: { mutation: flip(LOGIC, "if (!claimablePath(token, rootHas)) continue;", "if (claimablePath(token, rootHas)) continue;"), trace: drill("sma_r18") },
+  n1438: { mutation: flip(LOGIC, "if (probe.dirty) return \"dirty\";", "if (!probe.dirty) return \"dirty\";"), trace: drill("sma_r18") },
+  n1439: { mutation: wrongTarget(LOGIC, "receipt: { claimed: input.claimed.slice(0, 40), missing: missing.slice(0, 20) },", "receipt: { claimed: input.changed.slice(0, 40), missing: missing.slice(0, 20) },"), trace: drill("sma_r18") },
+  n1440: { mutation: flip(LOGIC, ".filter((text) => DECISION_WORD.test(", ".filter((text) => !DECISION_WORD.test("), trace: drill("sma_r18") },
+  n1441: { mutation: distort(LOGIC, "commands: (input.commands ?? []).slice(-30) }", "commands: (input.commands ?? []).slice(-1) }"), trace: drill("sma_r18") },
+  n1442: { mutation: distort(PY, "    (\"deps\", _stream_deps, True, True),\n    (\"git_airbag\", _stream_airbag, True, False),", "    (\"git_airbag\", _stream_airbag, True, False),\n    (\"deps\", _stream_deps, True, True),"), reach: seedEntry("a Claude Code session event fires the hook"), trace: drill("sma_r18") },
+  n1443: { mutation: flip(LOGIC, "if (typeof code === \"number\" && code !== 0) return true;", "if (typeof code === \"number\" && code === 0) return true;"), reach: seedEntry("a Claude Code session event fires the hook"), trace: drill("sma_r18") },
+  n1444: { mutation: flip(PY, "if any(a == \"--hard\" or a.startswith(\"--hard=\") for a in args):", "if not any(a == \"--hard\" or a.startswith(\"--hard=\") for a in args):"), reach: seedEntry("a Claude Code session event fires the hook"), trace: drill("sma_r18") },
   n1445: { reach: seedEntry("a Claude Code session event fires the hook"), voidReview: voidStays("обёртки совместимости для старых имён команд не нужны: хуки пишутся заново на каждую сессию из сборки, старых установок с этими именами не бывает") },
-  n1451: { voidReview: voidIsHave("ступень каждого правила (note/warning/soft-deny…) хранится и двигается по доказательствам (ruleTier, ruleLadderStep) — это и есть оверлей ступеней, без отдельного файла") },
-  n1457: { voidReview: voidIsHave("чужие касания видны: старт сессии получает заявки других окон (session-brief foreign), отпечаток работы окна сверяется с задачами и заявками, пересечение owns_paths заставляет ждать") },
+  n1446: { mutation: wrongTarget(CLI, "const dir = join(SESSIONS_ROOT(), stateName(session));", "const dir = join(SESSIONS_ROOT(), \"session\");"), trace: drill("sma_r18") },
+  n1447: { mutation: flip(PY, "            if required:\n                raise", "            if not required:\n                raise"), trace: drill("sma_r18") },
+  n1448: { mutation: flip(PY, "if not required and time.monotonic() - begun > budget:", "if not required and time.monotonic() - begun < budget:"), reach: entry("an edit or shell tool call of a lane session passes the guard (every call, no switch)"), trace: drill("sma_r18") },
+  n1449: { mutation: flip(PY, "            if can_deny:\n                deny = sdeny", "            if not can_deny:\n                deny = sdeny"), trace: drill("sma_r18") },
+  n1450: { mutation: distort(PY, "        started = time.monotonic()\n        try:\n            sdeny, sadvice = run(p, name, cmd, path)", "        started = begun\n        try:\n            sdeny, sadvice = run(p, name, cmd, path)"), trace: drill("sma_r18") },
+  n1451: { mutation: flip("packages/run-insights/src/rule-ladder.ts", "ORDER BY at DESC, id DESC LIMIT 1", "ORDER BY at ASC, id DESC LIMIT 1"), reach: entry("the nightly rule scan and the rule-forms verb read each rule's tier"), trace: drill("sma_r18"), voidReview: voidIsHave("ступень каждого правила (note/warning/soft-deny…) хранится и двигается по доказательствам (ruleTier, ruleLadderStep) — это и есть оверлей ступеней, без отдельного файла") },
+  n1452: { mutation: flip(PY, "if now - row[\"at\"] > _CLAIMS_WINDOW_MS or", "if now - row[\"at\"] < _CLAIMS_WINDOW_MS or"), trace: drill("sma_r18") },
+  n1453: { mutation: flip("src/rooms/writer/server/writer-knowledge.ts", "rule.startsWith(\"-\") ? rule : `- ${rule}`", "!rule.startsWith(\"-\") ? rule : `- ${rule}`"), trace: drill("sma_r18") },
+  n1454: { mutation: flip(LOGIC, "(gate.mode === \"block\" ? blocks : warnings)", "(gate.mode !== \"block\" ? blocks : warnings)"), trace: drill("sma_r18") },
+  n1455: { mutation: skipWrite(PY, "run(\"update-ref\", ref, sha)", "pass"), trace: drill("sma_r18") },
+  n1456: { mutation: flip(PY, "if removes_link and os.path.islink(literal):", "if not removes_link and os.path.islink(literal):"), trace: drill("sma_r18") },
+  n1457: { mutation: distort("src/rooms/verification/server/window.ts", "[...status].slice(0, 50)", "[...status].slice(0, 5)"), trace: drill("sma_r18"), voidReview: voidIsHave("чужие касания видны: старт сессии получает заявки других окон (session-brief foreign), отпечаток работы окна сверяется с задачами и заявками, пересечение owns_paths заставляет ждать") },
+  n1458: { mutation: distort("src/rooms/storage/attempts-store/project-reads.ts", "('spawn_requested','spawn_unknown','running','cancel_requested') AND updated_at < ?`)", "('spawn_requested','spawn_unknown','cancel_requested') AND updated_at < ?`)"), trace: drill("sma_r18") },
+  n1459: { mutation: distort("src/rooms/verification/git-integrate/task-folder.ts", "maskCredentials(line.slice(0,260)).text", "line.slice(0,260)"), trace: drill("sma_r18") },
+  n1460: { mutation: flip(PY, "    if mark in marks:\n        return None, None", "    if mark not in marks:\n        return None, None"), trace: drill("sma_r18") },
+  n1461: { mutation: distort(LOGIC, "current.recent = [...current.recent, fingerprint].slice(-8);", "current.recent = [...current.recent, fingerprint].slice(-7);"), trace: drill("sma_r18") },
+  n1462: { mutation: flip(LOGIC, "if (!hint && current.readRun >= 8)", "if (!hint && current.readRun >= 9)"), trace: drill("sma_r18") },
+  n1463: { mutation: flip(LOGIC, "if (current.nudged.includes(key)) return \"\";", "if (!current.nudged.includes(key)) return \"\";"), trace: drill("sma_r18") },
   n1787: { reach: seedEntry("a Claude Code session event fires the hook") },
 } satisfies RegionEvidence;

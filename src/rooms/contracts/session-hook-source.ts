@@ -1253,6 +1253,7 @@ export const SESSION_HOOK_SOURCE = [
     "      }",
     "      if (decision.prompt) {",
     "        const packed = injectPack(decision.prompt, true);",
+    "        if (packed.updatedInput) packed.updatedInput = { ...input, prompt: decision.prompt };",
     "        emit(hookOutput(event, null, packed));",
     "      }",
     "      return;",

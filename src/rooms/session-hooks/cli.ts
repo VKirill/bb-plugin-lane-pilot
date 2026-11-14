@@ -344,6 +344,8 @@ function handle(payload: Payload): void {
       }
       if (decision.prompt) {
         const packed = injectPack(decision.prompt, true);
+        // updatedInput replaces the tool's whole input: the call's other fields (subagent_type, description, model) ride along.
+        if (packed.updatedInput) packed.updatedInput = { ...input, prompt: decision.prompt };
         emit(hookOutput(event, null, packed));
       }
       return;
