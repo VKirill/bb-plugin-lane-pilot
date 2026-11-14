@@ -19,9 +19,9 @@ import { checkDependencyBase } from "../src/rooms/writer/server/start-dependency
 // The base checkout is a real git repository: an accepted task commits its file into main (the merge), a started task gets a worktree
 // cut from main's HEAD at that moment, and the start proves every dependency's merge is an ancestor of it.
 const config = (workspace: string): PrototypeConfig => ({ projectId: "proj1", hostId: "h1", pmWorkspacePath: workspace, writerWorkspacePath: workspace, pmProviderId: "p", pmModel: "pm", writerProviderId: "p", writerModel: "wm" });
-const contract = (workspace: string, id: string, dependsOn: string[] = []): TaskV2 => ({
+const contract = (workspace: string, id: string, dependsOn: string[] = [], owns = `notes/${id}/`): TaskV2 => ({
   schema_version: 2, id, title: `Task ${id}`, risk: "low", lane: "writer", project_cwd: workspace, read_first: [], interfaces: [], invariants: [],
-  out_of_scope: [], expected_outputs: [`${id}.md`], owns_paths: [`notes/${id}/`], never_touch: [], depends_on: dependsOn,
+  out_of_scope: [], expected_outputs: [`${id}.md`], owns_paths: [owns], never_touch: [], depends_on: dependsOn,
   objective: `Make ${id}`, acceptance: ["done"], verify: "tests", verification: [{ command: "true", cwd: workspace }],
 });
 
@@ -96,8 +96,8 @@ function world() {
     },
   } as unknown as Services;
   Object.assign(svc, createWriterStart(ctx, svc));
-  const dispatch = (id: string, dependsOn: string[] = []) => {
-    const task = contract(repo, id, dependsOn);
+  const dispatch = (id: string, dependsOn: string[] = [], owns?: string) => {
+    const task = contract(repo, id, dependsOn, owns);
     createTask(db, { id, runId: "run1", kind: "bb", contract: task });
     saveTaskPlan(db, id, `Plan for ${id}`);
     for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) recordStage(db, { runId: "run1", taskId: id, stageId, state: "pending", input: `Plan for ${id}` });
@@ -130,6 +130,19 @@ describe("[sma:bf_waves] [sma:p4_deps] a split plan on the real start path", () 
     expect(w.waiting("p-a")).not.toContain("waiting for");
     expect(w.waiting("p-b")).not.toContain("waiting for");
   });
+
+  it("[sma:cg_file_hold] two tasks with no link but the same owned files do not run together: the second starts after the first ends", async () => {
+    const w = world();
+    w.dispatch("o-a", [], "notes/shared/");
+    w.dispatch("o-b", [], "notes/shared/");
+    await vi.waitFor(() => expect(w.started()).toEqual(["o-a"]));
+    await w.settle();
+    expect(w.started()).toEqual(["o-a"]);
+    expect(w.waiting("o-b")).toContain("waiting for o-a");
+    await w.end("o-a", "accepted");
+    // The overlap wait polls every 10 s (not scaled by LANE_PILOT_POLL_SCALE).
+    await vi.waitFor(() => expect(w.started()).toEqual(["o-a", "o-b"]), { timeout: 15_000 });
+  }, 25_000);
 
   it("sequence: b starts only after a is accepted, from a main that holds a's merge", async () => {
     const w = world();
