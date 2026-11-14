@@ -199,6 +199,14 @@
   "text",
   "the command of the project's own suite; the landing sweep runs it on the merged head in its throwaway worktree and a red one becomes an owner item (unset: the project has none, it is never guessed)"
  ],
+ "worker.strict_user": [
+  "on|off",
+  "on: this project's checks run as a separate OS user (worker.user, lp-worker when none is named) through sudo -n -u, and each task gets a fresh codex home (unset: off, checks run as the owner)"
+ ],
+ "worker.user": [
+  "text",
+  "the OS user a strict worker's checks run as (unset: lp-worker); read only where worker.strict_user is on"
+ ],
  "curriculum.weekly": [
   "on|off",
   "every Monday the hub clusters the week's misses into a ten-line brief (bb lane-pilot curriculum --brief)"
