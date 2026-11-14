@@ -15,7 +15,7 @@ from pathlib import Path
 from lp_drill.env import ROOT
 from lp_drill.prove import Proofs
 
-NODES_A = ["n161", "n162", "n165", "n166", "n168", "n170", "n174", "n176", "n178", "n181", "n184", "n186", "n187", "n188", "n189"]
+NODES_A = ["n161", "n162", "n165", "n166", "n168", "n170", "n174", "n176", "n178", "n181", "n182", "n184", "n186", "n187", "n188", "n189"]
 PROBE_A = ROOT / "scripts/lp_drill/scenes/sma_r01_a_probe.ts"
 OBSERVING_TESTS = ["tests/sma/four-proofs-r01-a2.test.ts", "tests/sma/four-proofs-r01-a3.test.ts", "tests/sma/four-proofs-r01-a4.test.ts"]
 SEEN_REASON = "merge failed: your local changes would be overwritten by merge in src/a.ts"
@@ -72,6 +72,8 @@ def prove_a(proofs: Proofs, tmp: Path) -> None:
     check("n178", o, lambda v: v["attempts"] == [[1, "blocked", SEEN_REASON]] and v["spawned"] == ["T1-a1"])
     # n181 Bring back: the copy's change lands in main as one commit the result names, a clash leaves main as it was.
     check("n181", o, lambda v: v["firstStatus"] == "merged" and v["namesHead"] is True and v["mainLib"] == "export const x = 1;\n" and v["clash"] == "conflict" and v["clashCommit"] is None and v["mainClean"] == "")
+    # n182 Answered: a prose answer is a one-file patch holding every line of it, a real diff is kept as written, an empty answer is no record.
+    check("n182", s, lambda v: v["prose"] == "--- /dev/null\n+++ b/writer-output.txt\n@@ -0,0 +1,2 @@\n+It is the tax file.\n+See src/tax.ts.\n" and v["diffKept"] is True and v["empty"] is None)
     # n184 Infrastructure stops: a vendor abort, a context overflow, a background tail and the turn ceiling are the provider's and free; a red check is the task's.
     check("n184", s, lambda v: all(v[k] == {"cls": "provider", "confident": True} for k in ("vendorAbort", "contextOverflow", "backgroundTail", "turnCeiling")) and v["free"]["provider"] is True and v["taskRed"] == "task")
     # n186 Host commit: the machine commits the worker's uncommitted edit and new file under the task's message, nothing is left uncommitted, then it merges.

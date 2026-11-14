@@ -11,6 +11,7 @@ import { createRun } from "../../../src/rooms/storage/runs-store";
 import { createTask } from "../../../src/rooms/storage/tasks-store";
 import type { TaskV2 } from "../../../src/rooms/contracts";
 import { spendReserve } from "../../../src/rooms/tasks";
+import { writerPatchFromOutput } from "../../../src/rooms/writer/server/writer-task";
 import { writerPermit } from "../../../src/rooms/writer/server/start-admission";
 
 const contract = (id: string, patch: Partial<TaskV2> = {}): TaskV2 => ({
@@ -43,6 +44,11 @@ async function main() {
   // n176: the pause after a repeated failure of the same class.
   out.n176 = { merge: [1, 2, 3].map((streak) => failureClassCooldownMs("merge", {}, streak)), infra: [1, 2, 3].map((streak) => failureClassCooldownMs("infra", {}, streak)), capped: failureClassCooldownMs("merge", { "writer.cooldown_max_ms": 90_000 }, 3),
     provider: failureClassCooldownMs("provider", {}, 5) };
+  // n182: an answer without code becomes a one-file record; a real diff stays; an empty answer is no record.
+  {
+    const diff = "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-1\n+2";
+    out.n182 = { prose: writerPatchFromOutput("It is the tax file.\nSee src/tax.ts."), diffKept: writerPatchFromOutput(`  ${diff}\n`) === diff, empty: writerPatchFromOutput("  \n ") };
+  }
   // n184: the four infrastructure stops of the card are free of the task's retries.
   out.n184 = { vendorAbort: classifyFailure("provider_error", "the provider aborted the stream"), contextOverflow: classifyFailure("validation_failed", "prompt is too long: 210000 tokens"), backgroundTail: classifyFailure("empty_output", "writer_background_tail: npm run dev"),
     turnCeiling: classifyFailure("blocked", "error_max_turns"), free: { provider: FREE_CLASSES.has("provider"), infra: FREE_CLASSES.has("infra") }, taskRed: failureClass("validation_failed", "verification failed (npm test): boom") };

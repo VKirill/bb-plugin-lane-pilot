@@ -116,7 +116,7 @@ export default {
   },
   n182: {
     mutation: flip("src/rooms/writer/server/writer-task.ts", 'if (text.startsWith("diff --git") || text.startsWith("--- ")) return text;', 'if (text.startsWith("diff --git") && text.startsWith("--- ")) return text;'),
-    trace: settingRow("writer.lastPatch"),
+    trace: drill("sma_r01"),
   },
   n183: {
     mutation: flip("src/rooms/baseline/server/baseline.ts", "if (allGreen && closesWhenAlreadyGreen(settings.requireRed, input.task)) {", "if (!allGreen && closesWhenAlreadyGreen(settings.requireRed, input.task)) {"),
