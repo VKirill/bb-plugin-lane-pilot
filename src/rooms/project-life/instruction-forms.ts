@@ -1,15 +1,16 @@
 /**
  * Agent instruction templates (SMA k_d_tpl_instructions): the ready-made forms a project gets for its agent-instruction
  * files. `PROJECT.md` stays the canon every agent reads — the forms are pointers to it, plus a «Developer preferences»
- * section the owner fills once and every instruction file defers to.
+ * section the owner fills once and every instruction file defers to. AGENTS.md is the instruction file that holds the
+ * pointer text; CLAUDE.md is only the `@AGENTS.md` import (Claude Code reads CLAUDE.md, not AGENTS.md).
  */
 export type InstructionProject = { name: string; test?: string; language?: string; style?: string; forbidden?: readonly string[] };
-export type InstructionForms = { claudeMd: string; copilotInstructions: string; preferences: string };
+export type InstructionForms = { agentsMd: string; claudeMd: string; copilotInstructions: string; preferences: string };
 
 const POINTER = ".agents/planning/PROJECT.md is the entry to this project: what it is, how to run and test it, and where the living docs/ map leads. Read it first; this file only tells your tool where the canon is.";
 
 export function instructionForms(project: InstructionProject): InstructionForms {
-  const claudeMd = [
+  const agentsMd = [
     `# ${project.name}`,
     "",
     POINTER,
@@ -17,6 +18,7 @@ export function instructionForms(project: InstructionProject): InstructionForms 
     "The «Developer preferences» section of PROJECT.md names the language, the test command, the style and what an agent must not do.",
     "",
   ].join("\n");
+  const claudeMd = "@AGENTS.md\n";
   const copilotInstructions = [
     `# ${project.name} — Copilot instructions`,
     "",
@@ -36,5 +38,5 @@ export function instructionForms(project: InstructionProject): InstructionForms 
     `- Forbidden: ${project.forbidden?.length ? project.forbidden.join("; ") : "no force-push, no commits of secrets, no edits outside the task's files"}`,
     "",
   ].join("\n");
-  return { claudeMd, copilotInstructions, preferences };
+  return { agentsMd, claudeMd, copilotInstructions, preferences };
 }

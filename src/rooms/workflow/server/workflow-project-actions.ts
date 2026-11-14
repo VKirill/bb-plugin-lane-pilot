@@ -49,10 +49,10 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
     return { refused, set, reasons: problems.map(([key, problem]) => `${key.slice(0, 40)}: ${problem}`) };
   });
 
-  // The agent-instruction forms go with the start's profile write (SMA k_d_tpl_instructions): CLAUDE.md and the Copilot
-  // instructions are pointers to PROJECT.md, and the «Developer preferences» section is appended to it (or a minimal
+  // The agent-instruction forms go with the start's profile write (SMA k_d_tpl_instructions): AGENTS.md and the Copilot
+  // instructions are pointers to PROJECT.md (CLAUDE.md is only the `@AGENTS.md` import), and the «Developer preferences» section is appended to it (or a minimal
   // PROJECT.md seeded when it is not there yet). Every write is create-only or hash-checked: BB answers `conflict` to
-  // a null-hash write over an existing file, so a person's CLAUDE.md is never replaced. (writePhaseBook cannot do this:
+  // a null-hash write over an existing file, so a person's AGENTS.md or CLAUDE.md is never replaced. (writePhaseBook cannot do this:
   // it takes phase and planning marks only.)
   async function writeInstructionForms(rt: ChainRuntime, profile: unknown): Promise<void> {
     const checkout = await bestEffort(ctx.log, "instruction forms checkout", pmCheckout(rt), null);
@@ -67,7 +67,7 @@ export function registerProjectActions(engine: WorkflowEngine, ctx: ServerCore, 
     const write = (rootPath: string, path: string, content: string, expectedSha256: string | null) =>
       bestEffort(ctx.log, `instruction forms ${path}`, bb.sdk.files.write({ hostId: checkout.hostId, rootPath, path: `${rootPath}/${path}`, content, contentEncoding: "utf8", createParents: true, expectedSha256 }), null);
     const writePointers = async () => {
-      for (const [path, content] of [["CLAUDE.md", forms.claudeMd], [".github/copilot-instructions.md", forms.copilotInstructions]] as const) {
+      for (const [path, content] of [["AGENTS.md", forms.agentsMd], ["CLAUDE.md", forms.claudeMd], [".github/copilot-instructions.md", forms.copilotInstructions]] as const) {
         noteEngineWrite(checkout.path, path);
         await write(checkout.path, path, content, null);
       }
