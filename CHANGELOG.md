@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.554
+
+- **The plan critic gets the plan's text, not its path (`critique-runs/plan-text.ts`).** When the plan is one path to a file in the project, the host reads it and inlines up to 8 KB (then a cut marker and the path); `plan_sha256` goes to the receipt and into the input hash, so an edited plan file is never judged by a stale critique. Seen on the hub in thread thr_xj4t3p2vzn, whose plan was only a path; `tests/stages/critic-plan-inline.test.ts` covers inline, cut, prose, paths outside the project and a missing file.
+- **«Callers of what the plan changes» instead of ownership noise (`critique-coverage.ts`).** The `gitnexus impact` the coverage scan already ran now gives up to 5 `file:symbol` callers per changed symbol, marked when no task owns them; `owns_gap` and `caller_unowned` lines for those files stay in the receipt and leave the prompt. No new gitnexus calls. Covered by `tests/stages/critic-plan-inline.test.ts`.
+- **A second model checks strict code critiques (`critique-runs/verify-findings.ts`).** When the critic level is strict and the critic reports critical or high findings, one read-only call to a model of another family confirms or refutes each (at most 10); a refuted one drops to medium and the verdict is recomputed; the receipt carries `verifier {model, confirmed, refuted, unsure}`; a missing peer, failure or timeout leaves the critic's verdict as it was. Measured need: CriticGPT and Macroscope report hallucinated findings as the critic's main cost; `tests/critique/code-verifier.test.ts` (5 cases) checks confirm, refute, unsure, failure and the cap.
+
 ## 0.1.553
 
 - **The plan critic is tiered by risk (`src/rooms/critique/server/critique-runs/plan-critique.ts`, role `plan-critic-light`).** Risk high/critical or quality_mode full keeps `plan-critic` (hub: Gemini 4 Carbon); every other plan goes to «Быстрый критик плана» (default Antigravity Gemini 4 Hydrogen medium, fallback GPT-6.1 Terra). The receipt carries `critic_tier: strong|light`. Hub, 30 days to 2026-11-14, 38 plan returns labelled by hand: high risk 10 of 13 serious, medium 3 of 14, low 1 of 11.
