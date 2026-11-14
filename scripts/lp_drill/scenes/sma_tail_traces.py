@@ -14,6 +14,10 @@ PROBE = ROOT / "scripts/lp_drill/scenes/sma_tail_traces_probe.ts"
 
 def prove_tail_traces(proofs: Proofs, tmp: Path) -> None:
     done = subprocess.run(["npx", "--yes", "vite-node", str(PROBE)], cwd=ROOT, capture_output=True, text=True, timeout=900)
+    if done.returncode != 0:
+        for node in NODES:
+            proofs.prove(node, False, f"tail-traces probe exited {done.returncode}: {(done.stderr or done.stdout).strip()[-300:]}")
+        return
     try:
         seen = json.loads(done.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):
@@ -23,7 +27,7 @@ def prove_tail_traces(proofs: Proofs, tmp: Path) -> None:
 
     def get(node: str) -> dict:
         value = seen.get(node)
-        if isinstance(value, dict) and "error" not in value:
+        if isinstance(value, dict) and value and "error" not in value:
             return value
         proofs.prove(node, False, f"tail-traces step failed: {value.get('error') if isinstance(value, dict) else value}")
         return {}
