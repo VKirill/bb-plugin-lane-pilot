@@ -146,11 +146,122 @@ export default {
     mutation: flip("src/rooms/writer/server/sticky.ts", "return sameThread && sessionTurns(failed) >= cap ?", "return sameThread && sessionTurns(failed) > cap ?"),
     trace: rows("lane_pilot_attempt", "updated_at", "reason LIKE '%turn limit%'"),
   },
-  n230: { voidReview: voidIsHave("личный слой основателя зеркалится: запуск сливает хуки, защиту и запреты человека в копию настроек каждого помощника и писателя, нечитаемый хук снимается с причиной (docs/guide/hooks.md, правило 6)") },
+  n222: {
+    mutation: distort("src/rooms/verification/git-integrate/worktree-lifecycle.ts", "let added=await git(repoRoot,[\"worktree\",\"add\",\"-q\",\"-b\",branch,input.targetPath,input.commit??\"HEAD\"]);", "let added=await git(repoRoot,[\"worktree\",\"add\",\"-q\",\"-b\",branch,input.targetPath,\"HEAD\"]);"),
+    trace: drill("sma_r01"),
+  },
+  n223: {
+    mutation: flip("src/rooms/writer/server/start-failure-route.ts", "if (state.last.reason.startsWith(\"attempt_worktree_\")) {", "if (!state.last.reason.startsWith(\"attempt_worktree_\")) {"),
+    trace: drill("sma_r01"),
+  },
+  n224: {
+    mutation: flip("src/rooms/verification/routing.ts", "if (classified.kind === \"failed\") throw new Error(", "if (classified.kind !== \"failed\") throw new Error("),
+    trace: drill("sma_r01"),
+  },
+  n225: {
+    mutation: distort("src/rooms/phase/server/candidate.ts", "export const candidateBranch = (phaseId: string) => `phase/${phaseId}`;", "export const candidateBranch = (phaseId: string) => `phase-${phaseId}`;"),
+    trace: drill("sma_r01"),
+  },
+  n226: {
+    mutation: flip("src/rooms/writer/server/writer-task.ts", "...(task.drawing?.length ? [", "...(!task.drawing?.length ? ["),
+    trace: drill("sma_r01"),
+  },
+  n227: {
+    mutation: distort("src/rooms/rollback/server/rollback.ts", "{ baseSha });", "{ baseSha: baseSha.slice(0, 39) });"),
+    trace: rows("lane_pilot_attempt_change", "updated_at", "base_sha IS NOT NULL"),
+  },
+  n228: {
+    mutation: distort("src/rooms/storage/attempts-store/lifecycle.ts", "state IN ('queued','spawn_requested') AND workspace_path IS NULL", "state IN ('queued','spawn_requested','running') AND workspace_path IS NULL"),
+    trace: rows("lane_pilot_attempt", "updated_at", "workspace_path IS NOT NULL"),
+  },
+  n229: {
+    mutation: flip("src/rooms/baseline/store.ts", "WHERE run_id=? AND task_id=? ORDER BY id DESC LIMIT 1", "WHERE run_id=? AND task_id=? ORDER BY id ASC LIMIT 1"),
+    trace: rows("lane_pilot_baseline", "at", "state = 'ran'"),
+  },
+  n230: {
+    voidReview: voidIsHave("личный слой основателя зеркалится: запуск сливает хуки, защиту и запреты человека в копию настроек каждого помощника и писателя, нечитаемый хук снимается с причиной (docs/guide/hooks.md, правило 6)"),
+    mutation: flip("src/rooms/native-agent/native-claude-host.ts", "\"            if rule not in mine: mine.append(rule)\",", "\"            if rule in mine: mine.append(rule)\","),
+    trace: drill("sma_r01"),
+  },
+  n231: {
+    mutation: distort("src/rooms/contracts/helper-context.ts", "return [...new Set([...mandatory, ...names])];", "return [...new Set([...names])];"),
+    trace: drill("sma_r01"),
+  },
+  n232: {
+    mutation: flip("src/rooms/runs/conveyor.ts", "return stored?.at ? { on: false,", "return !stored?.at ? { on: false,"),
+    trace: drill("sma_r01"),
+  },
   // One folder per attempt in the task home: barrier-input, checks, report under attempts/<attempt-id>/ (docs/task-folder.md, T9, T11).
   n233: { mutation: wrongTarget(TASK_HOME, 'name: `attempts/${input.attemptId}/barrier-input.json`', 'name: "barrier-input.json"'), reach: entry("a writer attempt of a task with a home runs its checks and code critique"), trace: drill("task_home") },
+  n234: {
+    mutation: flip("src/rooms/writer/server/skill-pick.ts", "const skills = taskNeedsBrowser(input.task) && !named.includes(\"browser-automation\") ? [...named, \"browser-automation\"] : named;", "const skills = !taskNeedsBrowser(input.task) && !named.includes(\"browser-automation\") ? [...named, \"browser-automation\"] : named;"),
+    reach: entry("a writer attempt of a task checked on a page (qa_url) starts"),
+    trace: drill("sma_r01"),
+  },
+  n235: {
+    mutation: distort("src/rooms/writer/server/writer-knowledge.ts", "episodes(deps.db,input.projectId,query,5,{state:\"accepted\"", "episodes(deps.db,input.projectId,query,6,{state:\"accepted\""),
+    reach: entry("a writer attempt starts and its brief is built with project memory"),
+    trace: drill("sma_r01"),
+  },
   // The PM's plan reaches the writer as text: shared .agents/plans/* files it names are snapshotted into context/plan-source.md (T1).
   n236: { mutation: flip(TASK_HOME, "if (sources.length) files.push(", "if (!sources.length) files.push("), reach: entry("a PM dispatches a task whose plan names shared .agents/plans files"), trace: drill("task_home") },
+  n237: {
+    mutation: distort("src/rooms/native-agent/claude-guard-launch.ts", "`--max-turns ${Math.floor(input.maxTurns)}`", "`--max-turns ${Math.floor(input.maxTurns) + 1}`"),
+    trace: drill("sma_r01"),
+  },
+  n238: {
+    mutation: distort("src/rooms/phase/logic/next-action.ts", "Do not start a designer;", "Start a designer;"),
+    trace: drill("sma_r01"),
+  },
+  n239: {
+    mutation: distort("src/rooms/phase/logic/next-action.ts", "feasible:true|false, contradiction?, reviewer", "feasible:true, contradiction?, reviewer"),
+    trace: drill("sma_r01"),
+  },
+  n240: {
+    mutation: flip("src/rooms/writer/server/writer-task.ts", "context.broadSkills ? SKILL_CATALOG_BLOCK : skillPickedLine(context),", "!context.broadSkills ? SKILL_CATALOG_BLOCK : skillPickedLine(context),"),
+    trace: drill("sma_r01"),
+  },
+  n241: {
+    mutation: flip("src/rooms/phase/server/driver-steps.ts", "if (currentSha !== drawing.sha256) filesChanged = true;", "if (currentSha === drawing.sha256) filesChanged = true;"),
+    trace: drill("sma_r01"),
+  },
+  n242: {
+    mutation: wrongTarget("src/rooms/writer/server/spawn.ts", "transitionAttempt(db, input.attemptId, \"running\", { threadId:writerThreadId });", "transitionAttempt(db, input.attemptId, \"running\", { threadId:`${writerThreadId}x` });"),
+    trace: rows("lane_pilot_attempt", "updated_at", "thread_id IS NOT NULL AND workspace_path IS NOT NULL"),
+  },
+  n243: {
+    mutation: distort("src/rooms/storage/attempts-store/reasoning.ts", "const excerpt = maskCredentials(text).text.slice(0, ATTEMPT_STREAM_EXCERPT_CHARS);", "const excerpt = text.slice(0, ATTEMPT_STREAM_EXCERPT_CHARS);"),
+    reach: entry("a writer session ends and its stream text is kept on the attempt"),
+    trace: drill("sma_r01"),
+  },
+  n244: {
+    mutation: flip("src/rooms/writer/server/update-task.ts", "mode: when === \"now\" ? \"steer-if-active\" : \"queue-if-active\"", "mode: when !== \"now\" ? \"steer-if-active\" : \"queue-if-active\""),
+    trace: drill("sma_r01"),
+  },
+  n245: {
+    mutation: distort("src/rooms/writer/server/reopen-attempt.ts", "dirtBefore: attempt.dirt_before, turnSent: true,", "dirtBefore: attempt.dirt_before, turnSent: false,"),
+    trace: drill("sma_r01"),
+  },
+  n246: {
+    mutation: wrongTarget("src/rooms/writer/server/writer-task.ts", "await kv.delete(key).catch(() => undefined);", "await kv.delete(`${key}:x`).catch(() => undefined);"),
+    trace: drill("sma_r01"),
+  },
+  n247: {
+    mutation: flip("lane-stack/hooks/guard_shell.py", "if verdict.get(\"decision\") == \"allow\" and not verdict.get(\"used\") and same_dir and current:", "if verdict.get(\"decision\") == \"allow\" and verdict.get(\"used\") and same_dir and current:"),
+    trace: drill("sma_r01"),
+  },
+  n248: {
+    mutation: wrongTarget("src/rooms/runs/server/cancel.ts", "await bb.sdk.threads.stop({ threadId: attempt.thread_id });", "await bb.sdk.threads.stop({ threadId: attempt.id });"),
+    trace: rows("lane_pilot_attempt", "updated_at", "state = 'canceled' AND thread_id IS NOT NULL"),
+  },
+  n249: {
+    mutation: flip("src/rooms/writer/server/writer-task.ts", "const marker = MARKERS.find((candidate) => first.toUpperCase().startsWith(candidate));", "const marker = MARKERS.find((candidate) => first.startsWith(candidate));"),
+    trace: rows("lane_pilot_attempt", "updated_at", "reason LIKE 'needs_human:%'"),
+  },
+  n250: {
+    mutation: flip("src/rooms/verification/git-ownership.ts", ".filter((path)=>!keep.has(path)&&(", ".filter((path)=>keep.has(path)&&("),
+    trace: drill("sma_r01"),
+  },
   n251: {
     mutation: wrongTarget("src/rooms/tasks/rails.ts", "return { approach: line(\"APPROACH\")", "return { approach: line(\"LESSON\")"),
     trace: outside("the markers are read off the writer's answer in finish-attempt-body; only their warnings reach the BB thread"),
@@ -158,6 +269,20 @@ export default {
   n252: {
     mutation: distort("src/rooms/tasks/rails.ts", "|| \"no reason given\" : null;", "|| \"none\" : null;"),
     trace: outside("a lesson is filed as a writer proposal from the answer text; the plugin database keeps no per-answer marker row"),
+  },
+  n253: {
+    mutation: distort("src/rooms/usage/server/token-usage.ts", "INSERT OR IGNORE INTO lane_pilot_token_cursor", "INSERT OR REPLACE INTO lane_pilot_token_cursor"),
+    trace: rows("lane_pilot_token_cursor", "updated_at", "thread_id <> ''"),
+  },
+  n254: {
+    mutation: flip("src/rooms/writer/server/writer-silence.ts", "return repeatedCallOf(events) ? \"spinning\" : \"progressing\";", "return repeatedCallOf(events) ? \"progressing\" : \"spinning\";"),
+    reach: entry("a writer attempt is running and the silence sweep reads the frames of its thread"),
+    trace: drill("sma_r01"),
+  },
+  n255: {
+    mutation: flip("packages/contracts/src/stage-proof.ts", "if (stages.some((stage) => !isAdvisoryProof(STAGE_PROOF[stage]))) return null;", "if (stages.some((stage) => isAdvisoryProof(STAGE_PROOF[stage]))) return null;"),
+    reach: entry("a writer hands in work and its verification has ended"),
+    trace: drill("sma_r01"),
   },
   n266: {
     mutation: flip("packages/workflow-engine/src/verdict.ts", "const blocks = hard >= 1 || high > 5;", "const blocks = hard > 1 || high > 5;"),
