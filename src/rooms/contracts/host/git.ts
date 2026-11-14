@@ -48,6 +48,10 @@ export const gitHostMethods = {
       // The daily pass (docs/worktrees.md): every swept class in the project repositories, with git worktree prune (additive; an older host ignores it and answers without `deep`).
       deep: z.object({ folders: z.array(z.string().startsWith("/")).max(2000), bbEnvPaths: z.array(z.string().startsWith("/")).max(5000).optional(),
         abandonedPaths: z.array(z.string().startsWith("/")).max(5000).optional(), registryPaths: z.array(z.string().startsWith("/")).max(5000).optional(),
+        // 0.1.565: the BB environments of this machine (BB removes a managed one; a live thread's is kept) and the bounded home search.
+        bbEnvs: z.array(z.object({ path: z.string().startsWith("/"), environmentId: z.string().nullable(), managed: z.boolean(), live: z.boolean() }).strict()).max(5000).optional(),
+        search: z.object({ roots: z.array(z.string().startsWith("/")).max(20).optional(), maxDepth: z.number().int().min(0).max(8),
+          maxRepos: z.number().int().min(1).max(5000).optional(), budgetMs: z.number().int().min(1000).max(900_000).optional() }).strict().optional(),
         maxAgeMs: z.number().int().min(0), youngMs: z.number().int().min(0), dryRun: z.boolean().optional(),
         // The hub's clock for the ages (a pass replayed for a past or future moment; the machines' clocks agree within minutes).
         now: z.number().int().positive().optional() }).strict().optional() }).strict(),
@@ -60,6 +64,11 @@ export const gitHostMethods = {
         kept: z.array(z.object({ path: z.string(), cls: z.string(), reason: z.string(), detail: z.string(), bytes: z.number(), ageMs: z.number(), branch: z.string().nullable() }).strict()).max(5000),
         branchesKept: z.array(z.object({ repo: z.string(), branch: z.string(), ahead: z.number().int(), reason: z.string() }).strict()).max(2000),
         pruned: z.number().int(), registryGone: z.array(z.string()).max(5000), repos: z.number().int(), errors: z.array(z.string()).max(500), dryRun: z.boolean(),
+        // 0.1.565 (absent from an older host): every linked worktree looked at with its decision, and what the home search did.
+        decisions: z.array(z.object({ path: z.string(), repo: z.string(), cls: z.string(), decision: z.enum(["remove", "keep", "skip"]), reason: z.string(), detail: z.string(),
+          merged: z.string().nullable(), ageMs: z.number().nullable(), dirty: z.number().int().nullable(), unmerged: z.number().int().nullable(), bytes: z.number(), branch: z.string().nullable(),
+          via: z.enum(["git", "bb"]).optional(), environmentId: z.string().nullable().optional() }).strict()).max(10000).optional(),
+        search: z.object({ roots: z.array(z.string()), maxDepth: z.number().int(), repos: z.number().int(), dirs: z.number().int(), ms: z.number(), truncated: z.boolean() }).strict().optional(),
       }).strict().optional() }).strict(),
   },
   gitSyncWorktree: {

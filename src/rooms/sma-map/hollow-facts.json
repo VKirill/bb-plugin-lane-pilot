@@ -1,4 +1,4 @@
-{"generatedFrom":"619ed0777a28",
+{"generatedFrom":"b62bb02b05ce",
 "graphs":[
 {"id":"3d-asset","file":"workflows/3d-asset.json","status":"published","nodes":[["concept","agent"],["model","agent"],["verify","agent"],["export","agent"],["offer_roblox","action"],["done_roblox","action"],["done","action"],["partial","action"],["blocked","action"],["goal_check","action"]],"edges":[["concept","model","concept.ok"],["concept","blocked",null],["model","verify","model.ok"],["model","blocked",null],["verify","model","verify.status == 'rework' && visits('verify') < 2"],["verify","export","verify.status == 'pass'"],["verify","partial",null],["export","goal_check","export.ok"],["export","blocked",null],["goal_check","offer_roblox","goal_check.ok != false && $inputs.target_engine == 'roblox'"],["offer_roblox","done_roblox",null],["goal_check","done","goal_check.ok != false"],["goal_check","partial",null]]},
 {"id":"about-site","file":"workflows/about-site.json","status":"tested","nodes":[["facts","action"],["write","agent"],["check","action"],["deliver","action"],["done","action"],["nothing_public","action"],["blocked","action"],["goal_check","action"]],"edges":[["start","facts",null],["facts","nothing_public","facts.empty"],["facts","write",null],["write","check",null],["check","write","!check.ok && visits('write') < 2"],["check","deliver","check.ok"],["check","blocked",null],["deliver","goal_check",null],["goal_check","done","goal_check.ok != false"],["goal_check","blocked",null]]},
@@ -676,7 +676,7 @@
 "n418":"src/rooms/writer/server/writer-silence.ts#sweepWriterSilence",
 "n419":"src/rooms/stability/server/reconcile.ts#reconcileAttemptThread",
 "n420":"src/rooms/storage/attempts-store/project-reads.ts#failedTasksAllProjects",
-"n421":"src/rooms/stability/server/worktree-janitor.ts#runDailyWorktreePass",
+"n421":"src/rooms/stability/server/worktree-daily-pass.ts#runDailyWorktreePass",
 "n422":"src/rooms/backlog/server/scanner.ts#scan",
 "n423":"src/rooms/phase/server/driver-steps.ts#poke",
 "n424":"src/rooms/contracts/failure-class.ts#PARKED_CLASSES",
@@ -1624,17 +1624,17 @@
 "n1775":"src/rooms/cockpit/ui/screens-work.tsx#PhaseCard"
 },
 "anchorDefects":{
-"n165":["src/rooms/writer/server/finish-attempt-body.ts:163 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer."],
-"n241":["src/rooms/writer/server/finish-attempt-body.ts:163 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer."],
-"n255":["src/rooms/writer/server/finish-attempt-body.ts:163 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer."],
-"n260":["src/rooms/writer/server/finish-attempt-body.ts:163 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer."],
-"n289":["src/rooms/writer/server/finish-attempt-body.ts:163 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer."],
-"n294":["src/rooms/writer/server/finish-attempt-body.ts:163 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer."],
-"n324":["src/rooms/writer/server/finish-attempt-body.ts:163 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer."],
-"n588":["src/rooms/writer/server/finish-attempt-body.ts:163 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer."],
-"n1177":["src/rooms/writer/server/finish-attempt-body.ts:163 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer."],
+"n165":["src/rooms/writer/server/finish-attempt-body.ts:158 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer."],
+"n241":["src/rooms/writer/server/finish-attempt-body.ts:158 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer."],
+"n255":["src/rooms/writer/server/finish-attempt-body.ts:158 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer."],
+"n260":["src/rooms/writer/server/finish-attempt-body.ts:158 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer."],
+"n289":["src/rooms/writer/server/finish-attempt-body.ts:158 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer."],
+"n294":["src/rooms/writer/server/finish-attempt-body.ts:158 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer."],
+"n324":["src/rooms/writer/server/finish-attempt-body.ts:158 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer."],
+"n588":["src/rooms/writer/server/finish-attempt-body.ts:158 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer."],
+"n1177":["src/rooms/writer/server/finish-attempt-body.ts:158 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer."],
 "n1486":["src/rooms/contracts/native-hook-sources.ts:434 \"# ponytail: an unknown global that takes a separate word is skipped as a flag, so that word can be read as the subcommand.\","],
-"n1702":["src/rooms/writer/server/finish-attempt-body.ts:163 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer."]
+"n1702":["src/rooms/writer/server/finish-attempt-body.ts:158 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer."]
 },
 "functionDefects":[
 {"path":"packages/memory-core/src/lint.ts#lintMemory","what":"packages/memory-core/src/lint.ts:121 * ponytail: same-subject pairs are found by an O(n²) scan of note pairs sharing a concept; the corpus is ~1k rows.","kind":"marker"},
@@ -1649,7 +1649,7 @@
 {"path":"src/rooms/core/server/owner-turn.ts#ownerTurnGate","what":"src/rooms/core/server/owner-turn.ts:39 return null; // ponytail: fail open; a hub that cannot show the turn must not stop the owner's own work","kind":"marker"},
 {"path":"src/rooms/critique/server/critique-runs/attempt-diffs.ts#candidatePatches","what":"src/rooms/critique/server/critique-runs/attempt-diffs.ts:56 * ponytail: HEAD, not the folder as the attempt found it. Dirt left by an earlier attempt of the task is compared as this one's change.","kind":"marker"},
 {"path":"src/rooms/critique/server/critique-runs/plan-critique.ts#runPlanCritique","what":"src/rooms/critique/server/critique-runs/plan-critique.ts:135 // ponytail: a plan edited between two dispatches of one batch splits the count; a batch id on dispatch would be exact.","kind":"marker"},
-{"path":"src/rooms/critique/server/critique-runs/plan-critique.ts#runPlanCritique","what":"src/rooms/critique/server/critique-runs/plan-critique.ts:220 // ponytail: the critic reads the checkout itself, so a file it cites may be one it opened; the hub cannot see the host's files to check","kind":"marker"},
+{"path":"src/rooms/critique/server/critique-runs/plan-critique.ts#runPlanCritique","what":"src/rooms/critique/server/critique-runs/plan-critique.ts:216 // ponytail: the critic reads the checkout itself, so a file it cites may be one it opened; the hub cannot see the host's files to check","kind":"marker"},
 {"path":"src/rooms/errands/episode-enrich.ts#offeredSkillNames","what":"src/rooms/errands/episode-enrich.ts:117 // ponytail: 16 offered skills is already a pathological run; the cap keeps summary_json inside its 2 KB budget —","kind":"marker"},
 {"path":"src/rooms/forecast/logic.ts#dependenciesAddedInDiff","what":"src/rooms/forecast/logic.ts:69 // ponytail: a package.json entry counts as a dependency only when its value reads as a version spec","kind":"marker"},
 {"path":"src/rooms/forge/skill-lint.ts#lintSkillFiles","what":"src/rooms/forge/skill-lint.ts:78 // ponytail: a '#' inside a string truncates the line for this check; a missed swallow is a warning, not a gate.","kind":"marker"},
@@ -1666,6 +1666,6 @@
 {"path":"src/rooms/tools/server/tools.ts#registerTools","what":"src/rooms/tools/server/tools.ts:449 // ponytail: specialists.ts is owned by the critics branch. Push until that file lists the new ids.","kind":"marker"},
 {"path":"src/rooms/wall/config.ts#parseWallConfig","what":"src/rooms/wall/config.ts:79 // ponytail: «changed» means different from WALL_DEFAULTS; a stored value equal to the default reads as unset, which runs the same model unt","kind":"marker"},
 {"path":"src/rooms/workflow/server/workflow-library.ts#createWorkflowLibrary","what":"src/rooms/workflow/server/workflow-library.ts:79 // ponytail: the same full scan as runRecords. Ceiling: a workflow with a very long history. Upgrade: a stored outcome column.","kind":"marker"},
-{"path":"src/rooms/writer/server/finish-attempt-body.ts#finishWriterAttemptBody","what":"src/rooms/writer/server/finish-attempt-body.ts:163 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer.","kind":"marker"},
+{"path":"src/rooms/writer/server/finish-attempt-body.ts#finishWriterAttemptBody","what":"src/rooms/writer/server/finish-attempt-body.ts:158 // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer.","kind":"marker"},
 {"path":"src/rooms/writer/server/retry-safety.ts#retrySafetyStop","what":"src/rooms/writer/server/retry-safety.ts:28 // was refused (feed-gen text-gen-openrouter.2, 2026-11-10). ponytail: 2 s of grace also covers the host's clock against the hub's;","kind":"marker"}
 ]}

@@ -18,7 +18,7 @@ import { createWorkflowLibrary } from "../src/rooms/workflow/server/workflow-lib
 import { createWorkflowPreflight } from "../src/rooms/workflow/server/workflow-preflight";
 import { createWorkflowTriggers } from "../src/rooms/workflow/server/workflow-triggers";
 import { notifyWorkflowIfEnded } from "../src/rooms/workflow/server/pm-notice";
-import { CLEANUP_ITEM_PREFIX, registerWorktreeCleanupActions, runWorktreeCleanupCli } from "../src/rooms/stability/server/worktree-janitor";
+import { CLEANUP_ITEM_PREFIX, registerWorktreeCleanupActions, runWorktreeCleanupCli } from "../src/rooms/stability/server/worktree-daily-pass";
 import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees } from "../src/rooms/runs/server";
 
 vi.setConfig({ testTimeout: 120_000 });
@@ -27,10 +27,14 @@ afterEach(() => { vi.useRealTimers(); });
 /** The worktreeJanitor input of a machine on a build before 0.1.562 (git show 0a6fa63f:src/rooms/contracts/host/git.ts): strict, no `deep`. */
 const OLD_JANITOR_INPUT = z.object({ requestedHostId: z.string().min(1), protectedPaths: z.array(z.string().startsWith("/")).max(20000), graceMs: z.number().int().min(0).optional() }).strict();
 
-const emptyDeep = (over: Record<string, unknown> = {}) => ({ removed: [], freedBytes: 0, kept: [], branchesKept: [], pruned: 0, registryGone: [], repos: 1, errors: [], dryRun: false, ...over });
+/** A machine on 0.1.562–0.1.564: the daily pass's `deep` without the keys of 0.1.565 (`bbEnvs`, `search`), still strict. */
+const CURRENT_DEEP = (hostContract.worktreeJanitor.input.shape.deep as unknown as { unwrap(): z.ZodObject<z.ZodRawShape> }).unwrap();
+const JANITOR_INPUT_0564 = hostContract.worktreeJanitor.input.extend({ deep: CURRENT_DEEP.omit({ bbEnvs: true, search: true } as never).strict().optional() }).strict();
+
+const emptyDeep =(over: Record<string, unknown> = {}) => ({ removed: [], freedBytes: 0, kept: [], branchesKept: [], pruned: 0, registryGone: [], repos: 1, errors: [], dryRun: false, ...over });
 
 /** A hub with one connected machine. `machine` answers worktreeJanitor after its input passed the given contract (the current one by default). */
-function hub(options: { oldHost?: boolean; deep?: Record<string, unknown> } = {}) {
+function hub(options: { oldHost?: boolean; host0564?: boolean; deep?: Record<string, unknown> } = {}) {
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
   harness.sdk.stub("hosts.list", async () => [{ id: "h1", name: "Machine", status: "connected" }]);
   harness.sdk.stub("projects.list", async () => [{ id: "proj_a", sources: [{ hostId: "h1", path: "/w/app" }] }]);
@@ -41,7 +45,7 @@ function hub(options: { oldHost?: boolean; deep?: Record<string, unknown> } = {}
   const call = async (method: string, input: Record<string, unknown>) => {
     calls.push({ method, input });
     if (method !== "worktreeJanitor") throw new Error(`no ${method} in this test`);
-    const schema = options.oldHost ? OLD_JANITOR_INPUT : hostContract.worktreeJanitor.input;
+    const schema = options.oldHost ? OLD_JANITOR_INPUT : options.host0564 ? JANITOR_INPUT_0564 : hostContract.worktreeJanitor.input;
     const parsed = schema.safeParse(input);
     if (!parsed.success) throw new Error(parsed.error.issues.map((issue) => issue.message).join("; "));
     const hourly = { hostId: "h1", removed: [], freedBytes: 0, kept: [], tmpRemoved: [], tmpFreedBytes: 0, errors: [] };
@@ -175,13 +179,39 @@ describe("the other live edges of the batch", () => {
     const out = w.output(run.ref_id!);
     expect(out.status).toBe("error");
     expect(out.report).toContain("is older and has no daily pass (update the plugin there); nothing was removed on it");
+    expect(out.report).not.toContain("ran the old daily pass");
     expect(w.db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_janitor").get()).toEqual({ n: 0 });
+    // Asked twice (the 0.1.565 shape, then the old daily pass), refused both times: no third call.
+    expect(w.calls.filter((item) => item.method === "worktreeJanitor" && item.input.deep).map((item) => "search" in (item.input.deep as object))).toEqual([true, false]);
     // The failure is the board's line, once; the hourly row keeps working on that machine (its input is the old shape).
     await new Promise((wake) => setTimeout(wake, 50));
     expect(w.ownerItems().map((item) => item.kind)).toEqual(["schedule_failed"]);
     const hourly = w.byKey("hourly");
     w.schedules.runNow(hourly.id, "press");
     expect((await w.settled(hourly.id)).status).toBe("succeeded");
+  });
+
+  it("a machine on 0.1.562–0.1.564 refuses the new keys once, then runs the old daily pass, and its line says why", async () => {
+    const w = hub({ host0564: true, deep: { removed: [{ path: "/w/app/lpattempt_m1", cls: "lane", bytes: 2048, branch: "lane/lpattempt_m1", branchDeleted: true, why: "merged", how: "squash" }] } });
+    await w.ensure();
+    const daily = w.byKey("daily");
+    w.schedules.runNow(daily.id, "press");
+    const run = await w.settled(daily.id);
+    expect(run.status).toBe("succeeded");
+    const out = w.output(run.ref_id!);
+    expect(out.status).toBe("ok");
+    expect(out.report).toContain("Machine: ran the old daily pass (no home search, no BB-environment decisions): its Lane Pilot build is older (update the plugin there)");
+    expect(out.report).not.toContain("nothing was removed on it");
+    const deeps = w.calls.filter((item) => item.method === "worktreeJanitor" && item.input.deep).map((item) => item.input.deep as Record<string, unknown>);
+    expect(deeps).toHaveLength(2);
+    expect(deeps[0]).toHaveProperty("search");
+    expect(deeps[1]).not.toHaveProperty("search");
+    expect(deeps[1]).not.toHaveProperty("bbEnvs");
+    // The old pass gets no BB environment paths: a BB environment goes only through BB.
+    expect(deeps[1]!.bbEnvPaths).toEqual([]);
+    const row = w.db.prepare("SELECT removed, report_json FROM lane_pilot_janitor WHERE pass='daily'").get() as { removed: number; report_json: string };
+    expect(row.removed).toBe(1);
+    expect(JSON.parse(row.report_json).oldPass).toBe(true);
   });
 
   it("a schedule the owner deleted is not made again at the next start; the other keeps running", async () => {

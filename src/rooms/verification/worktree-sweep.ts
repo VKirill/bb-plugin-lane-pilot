@@ -20,13 +20,27 @@ import { deleteBranchIfMerged, git, mergedAnywhere, mergeTargets, aheadOf, type 
  */
 export const SWEEP_CLASSES = ["lane", "claude", "dot-worktrees", "lp-phases", "bb-env"] as const;
 export type SweepClass = (typeof SWEEP_CLASSES)[number];
-export type KeepReason = "protected" | "young" | "recent" | "locked" | "dirty" | "unmerged" | "error";
-/** The reasons a person has to act on; the others (protected, young, recent) are only counted. */
+export type KeepReason = "protected" | "live-thread" | "young" | "recent" | "locked" | "dirty" | "unmerged" | "no-environment-id" | "error";
+/** The reasons a person has to act on; the others (protected, live thread, young, recent) are only counted. */
 export const REPORTED_KEEP_REASONS: readonly KeepReason[] = ["locked", "dirty", "unmerged", "error"];
+/** Why a linked worktree is only listed: outside the classes Lane Pilot owns the rule for, or a BB environment folder BB itself no longer lists. */
+export type SkipReason = "outside" | "bb-env-unlisted";
+export type DecisionReason = "merged" | "abandoned" | KeepReason | SkipReason;
+
+/**
+ * One line per linked worktree the pass looked at: what it decided and why. `remove` with `via: "bb"` is a BB environment: the machine never
+ * removes it, the hub asks BB to (`environments.delete`). `skip` is never removed whatever its state; it carries the facts a person decides on.
+ */
+export type SweepDecision = {
+  path: string; repo: string; cls: SweepClass | "outside"; decision: "remove" | "keep" | "skip"; reason: DecisionReason; detail: string;
+  merged: MergedHow | "contained" | null; ageMs: number | null; dirty: number | null; unmerged: number | null; bytes: number; branch: string | null;
+  via?: "git" | "bb"; environmentId?: string | null;
+};
 
 export type SweepRemoved = { path: string; cls: SweepClass; bytes: number; branch: string | null; branchDeleted: boolean; why: "merged" | "abandoned"; how: MergedHow | "contained" | null };
 export type SweepKept = { path: string; cls: SweepClass; reason: KeepReason; detail: string; bytes: number; ageMs: number; branch: string | null };
 export type SweepReceipt = {
+  /** Removed by this machine (git). BB environments the hub is to remove are in `decisions` only (`via: "bb"`). */
   removed: SweepRemoved[];
   freedBytes: number;
   kept: SweepKept[];
@@ -39,14 +53,25 @@ export type SweepReceipt = {
   repos: number;
   errors: string[];
   dryRun: boolean;
+  /** Every linked worktree looked at, with its decision. */
+  decisions: SweepDecision[];
+  /** The bounded search for repositories under the home folder: where, how deep, what it found, how long it took. */
+  search?: { roots: string[]; maxDepth: number; repos: number; dirs: number; ms: number; truncated: boolean };
 };
+
+/** A BB environment on this machine as the hub knows it: its folder, its id, whether BB's own provider made it, whether a thread still lives in it. */
+export type BbEnvironment = { path: string; environmentId: string | null; managed: boolean; live: boolean };
 
 export type SweepInput = {
   laneRoot: string;
   /** Project folders on this machine: a repository top, or a folder holding repositories (two levels down are looked at). */
   folders: readonly string[];
-  /** BB environment worktrees of Lane Pilot attempts on this machine (their repositories are found through them). */
+  /** BB environment worktrees of Lane Pilot attempts (before 0.1.565; read as managed environments without an id). */
   bbEnvPaths?: readonly string[];
+  /** The BB environments of this machine (0.1.565): a managed one with no live thread is class `bb-env`; a live one is kept wherever it is. */
+  bbEnvs?: readonly BbEnvironment[];
+  /** A bounded search for repositories (docs/worktrees.md): from each root, `maxDepth` levels, skipping dot folders, dependencies and caches. */
+  search?: { roots: readonly string[]; maxDepth: number; maxRepos?: number; budgetMs?: number };
   protectedPaths: ReadonlySet<string>;
   /** Worktrees of cancelled or abandoned tasks: removed when clean, their branch kept unless merged. */
   abandonedPaths?: ReadonlySet<string>;
@@ -63,6 +88,38 @@ export type SweepInput = {
 
 const MAX_REPOS = 500;
 const SKIP_DIRS = new Set(["node_modules", "dist", "build", "vendor", "target", "__pycache__"]);
+/** What the home search never enters, besides every dot folder (`.git`, `.cache`, `.npm`, `.claude`…) and symbolic links. */
+const SEARCH_SKIP = new Set([...SKIP_DIRS, "Library", "snap", "go", "venv", "env", "coverage", "out", "tmp", "cache", "Caches", "Downloads", "Pictures", "Movies", "Music"]);
+export const SEARCH_DEFAULTS = { maxDepth: 5, maxRepos: 2000, budgetMs: 180_000 } as const;
+
+/**
+ * The bounded search for repositories (docs/worktrees.md): from each root down `maxDepth` levels, a folder with a `.git` folder is a repository
+ * (its subfolders are still looked at, nested repositories exist); a folder with a `.git` file is a linked worktree and is not entered (its
+ * repository lists it); dot folders, symbolic links, dependencies and caches are never entered. Stops at `maxRepos` or after `budgetMs`.
+ */
+export async function searchRepos(roots: readonly string[], options: { maxDepth: number; maxRepos?: number; budgetMs?: number }): Promise<{ repos: string[]; dirs: number; ms: number; truncated: boolean }> {
+  const started = Date.now();
+  const maxRepos = options.maxRepos ?? SEARCH_DEFAULTS.maxRepos, budget = options.budgetMs ?? SEARCH_DEFAULTS.budgetMs;
+  const repos = new Set<string>();
+  let dirs = 0, truncated = false;
+  const visit = async (dir: string, depth: number): Promise<void> => {
+    if (truncated) return;
+    if (repos.size >= maxRepos || Date.now() - started > budget) { truncated = true; return; }
+    dirs += 1;
+    const children = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    const marker = children.find((child) => child.name === ".git");
+    if (marker?.isFile()) return;
+    // A `.git` folder without HEAD is no repository (OVH's home has one holding only a tool's id file).
+    if (marker?.isDirectory() && existsSync(join(dir, ".git", "HEAD"))) repos.add(dir);
+    if (depth >= options.maxDepth) return;
+    for (const child of children) {
+      if (!child.isDirectory() || child.name.startsWith(".") || SEARCH_SKIP.has(child.name)) continue;
+      await visit(join(dir, child.name), depth + 1);
+    }
+  };
+  for (const root of roots) await visit(root, 0);
+  return { repos: [...repos].sort(), dirs, ms: Date.now() - started, truncated };
+}
 
 async function real(path: string): Promise<string> {
   return await orMiss(realpath(path), resolve(path), isFsAbsent);
@@ -73,7 +130,7 @@ async function dirBytes(path: string): Promise<number> {
   return du.status === 0 ? (Number.parseInt(du.stdout.trim().split(/\s/u)[0] ?? "", 10) || 0) * 1024 : 0;
 }
 
-const isRepoTop = async (path: string): Promise<boolean> => Boolean((await lstatOrNull(join(path, ".git")))?.isDirectory());
+const isRepoTop = async (path: string): Promise<boolean> => Boolean((await lstatOrNull(join(path, ".git")))?.isDirectory()) && existsSync(join(path, ".git", "HEAD"));
 
 /** The repository a worktree folder belongs to (the parent of its common git dir), or null when it is no worktree. */
 async function repoOfWorktree(path: string): Promise<string | null> {
@@ -134,14 +191,18 @@ function parseWorktreeList(porcelain: string): Entry[] {
 
 const within = (path: string, folder: string) => path === folder || path.startsWith(`${folder}${sep}`);
 
-function classOf(top: string, laneRoot: string, bbEnvs: readonly string[]): SweepClass | null {
-  if (bbEnvs.some((env) => within(env, top) || within(top, env))) return "bb-env";
+/** The class of a linked worktree, by where it is; a managed BB environment (BB's or Lane Pilot's provider made it) wherever it is. */
+function classOf(top: string, laneRoot: string, managedEnvs: readonly string[]): SweepClass | null {
+  if (managedEnvs.some((env) => env === top)) return "bb-env";
   if (within(top, laneRoot)) return "lane";
   if (top.includes(`${sep}.git${sep}lp-phases${sep}`)) return "lp-phases";
   if (top.includes(`${sep}.claude${sep}worktrees${sep}`)) return "claude";
   if (top.includes(`${sep}.worktrees${sep}`)) return "dot-worktrees";
   return null;
 }
+
+/** The folder BB's git-worktree provider keeps its environments in (`<dataDir>/worktrees/<thread>-N/<repo>`, bb-core environment-git-worktree). */
+const BB_ENV_FOLDER = `${sep}environment-git-worktree${sep}host-data${sep}worktrees${sep}`;
 
 /** The newest moment the folder or its branch moved: the folder and its top entries, the worktree's own HEAD log, the branch's log. Never the index (a `git status` rewrites it). */
 async function touchedAt(top: string, repo: string, branch: string | null): Promise<number> {
@@ -183,14 +244,25 @@ export async function sweepWorktreeClasses(input: SweepInput): Promise<SweepRece
   const now = input.now ?? Date.now();
   const dry = input.dryRun === true;
   const alive = input.alive ?? defaultAlive;
-  const receipt: SweepReceipt = { removed: [], freedBytes: 0, kept: [], branchesKept: [], pruned: 0, registryGone: [], repos: 0, errors: [], dryRun: dry };
+  const receipt: SweepReceipt = { removed: [], freedBytes: 0, kept: [], branchesKept: [], pruned: 0, registryGone: [], repos: 0, errors: [], dryRun: dry, decisions: [] };
   const laneRoot = await real(input.laneRoot);
-  const bbEnvs = await Promise.all((input.bbEnvPaths ?? []).map(real));
+  const envs: Array<BbEnvironment & { real: string }> = await Promise.all([
+    ...(input.bbEnvs ?? []),
+    ...(input.bbEnvPaths ?? []).map((path) => ({ path, environmentId: null, managed: true, live: false })),
+  ].map(async (env) => ({ ...env, real: await real(env.path) })));
+  const managedEnvs = envs.filter((env) => env.managed).map((env) => env.real);
   const protectedReal = await Promise.all([...input.protectedPaths].map(real));
   const abandonedReal = await Promise.all([...(input.abandonedPaths ?? [])].map(real));
   const touches = (top: string, list: readonly string[]) => list.some((path) => within(path, top) || within(top, path));
 
-  const repos = await findSweepRepos(input.folders, [...await laneRootWorktrees(input.laneRoot), ...(input.bbEnvPaths ?? [])]);
+  let searched: string[] = [];
+  if (input.search) {
+    const found = await searchRepos(input.search.roots, input.search);
+    searched = found.repos;
+    receipt.search = { roots: [...input.search.roots], maxDepth: input.search.maxDepth, repos: found.repos.length, dirs: found.dirs, ms: found.ms, truncated: found.truncated };
+  }
+  const known = await findSweepRepos(input.folders, [...await laneRootWorktrees(input.laneRoot), ...envs.map((env) => env.path)]);
+  const repos = [...new Set([...known, ...await Promise.all(searched.map(real))])].sort();
   receipt.repos = repos.length;
   for (const repo of repos) {
     try {
@@ -203,60 +275,92 @@ export async function sweepWorktreeClasses(input: SweepInput): Promise<SweepRece
         receipt.pruned += prunable;
       }
       let targets: string[] | null = null;
+      const targetsOf = async () => (targets ??= await mergeTargets(repo));
       for (const entry of entries.slice(1)) {
         if (entry.prunable || !existsSync(entry.path)) continue;
         const top = await real(entry.path);
-        const cls = classOf(top, laneRoot, bbEnvs);
-        if (!cls) continue;
-        const keep = (reason: KeepReason, detail: string, ageMs: number, bytes = 0) => { receipt.kept.push({ path: top, cls, reason, detail, bytes, ageMs, branch: entry.branch }); };
+        const cls = classOf(top, laneRoot, managedEnvs);
+        const env = envs.find((item) => item.real === top) ?? null;
+        const base = { path: top, repo, branch: entry.branch, merged: null, ageMs: null, dirty: null, unmerged: null, bytes: 0 } as const;
         try {
-          if (touches(top, protectedReal)) { keep("protected", "an open attempt or a live pass holds it", 0); continue; }
+          // A thread that is not archived still works in it (or in a folder inside it): kept, whatever its class.
+          const liveEnv = envs.find((item) => item.live && within(item.real, top));
+          if (!cls) {
+            // Outside the classes Lane Pilot owns the rule for: only listed, with what a person decides on. A detached deploy copy can be merged and in use.
+            const facts = await worktreeFacts(repo, top, entry, now, await targetsOf());
+            const unlisted = top.includes(BB_ENV_FOLDER);
+            receipt.decisions.push({ ...base, ...facts, cls: "outside", decision: "skip", reason: unlisted ? "bb-env-unlisted" : "outside",
+              detail: `${unlisted ? "a BB environment folder BB no longer lists" : "outside the managed classes"}${liveEnv ? "; a live thread works in it" : ""}: ${describe(facts)}` });
+            continue;
+          }
+          const keep = (reason: KeepReason, detail: string, facts: Partial<SweepDecision> & { ageMs: number }) => {
+            const bytes = facts.bytes ?? 0;
+            receipt.kept.push({ path: top, cls, reason, detail, bytes, ageMs: facts.ageMs, branch: entry.branch });
+            receipt.decisions.push({ ...base, ...facts, bytes, cls, decision: "keep", reason, detail, ...(cls === "bb-env" ? { environmentId: env?.environmentId ?? null } : {}) });
+          };
+          if (touches(top, protectedReal)) { keep("protected", "an open attempt or a live pass holds it", { ageMs: 0 }); continue; }
+          if (liveEnv) {
+            // Kept whatever its state; its facts are read (read-only) so the owner sees what archiving the thread would let go.
+            const facts = await worktreeFacts(repo, top, entry, now, await targetsOf());
+            keep("live-thread", `a thread that is not archived works in it (${liveEnv.environmentId ?? "environment"}): ${describe(facts)}`, { ...facts, ageMs: facts.ageMs ?? 0 });
+            continue;
+          }
           const ageMs = Math.max(0, now - await touchedAt(top, repo, entry.branch));
-          if (ageMs < input.youngMs) { keep("young", "the folder or its branch moved within the last day", ageMs); continue; }
+          if (ageMs < input.youngMs) { keep("young", "the folder or its branch moved within the last day", { ageMs }); continue; }
           let staleLock = false;
           if (entry.locked !== null) {
             const pid = Number(entry.locked.match(/\bpid[ =:]*(\d+)/iu)?.[1] ?? 0);
-            if (!pid || alive(pid)) { keep("locked", entry.locked || "locked without a reason", ageMs, await dirBytes(top)); continue; }
+            if (!pid || alive(pid)) { keep("locked", entry.locked || "locked without a reason", { ageMs, bytes: await dirBytes(top) }); continue; }
             staleLock = true;
           }
           const dirty = await uncommitted(top);
-          if (dirty === null) { keep("error", "git status failed", ageMs); continue; }
-          if (dirty > 0) { keep("dirty", `${dirty} uncommitted change(s)`, ageMs, await dirBytes(top)); continue; }
-          targets ??= await mergeTargets(repo);
+          if (dirty === null) { keep("error", "git status failed", { ageMs }); continue; }
+          if (dirty > 0) { keep("dirty", `${dirty} uncommitted change(s)`, { ageMs, dirty, bytes: await dirBytes(top) }); continue; }
+          const list = await targetsOf();
           const ref = entry.branch ?? entry.head;
-          if (!ref) { keep("error", "no HEAD", ageMs); continue; }
-          let how: MergedHow | "contained" | null = (await mergedAnywhere(repo, ref, targets))?.how ?? null;
-          // A detached copy (a gate's scratch, a review checkout) holds no work of its own when any branch or remote has its commit.
-          if (!how && !entry.branch) {
-            const holders = await git(repo, ["for-each-ref", "--contains", ref, "--format=%(refname)", "refs/heads", "refs/remotes"]);
-            if (holders.ok && holders.stdout.trim()) how = "contained";
-          }
+          if (!ref) { keep("error", "no HEAD", { ageMs, dirty }); continue; }
+          const how = await mergedHow(repo, ref, entry.branch, list);
           const abandoned = touches(top, abandonedReal);
-          if (!how && !abandoned) { keep("unmerged", `${await aheadOf(repo, ref, targets)} commit(s) merged into none of ${targets.join(", ") || "(no main branch)"}`, ageMs, await dirBytes(top)); continue; }
-          if (how && !abandoned && ageMs < input.maxAgeMs) { keep("recent", `merged (${how}), untouched for less than ${Math.round(input.maxAgeMs / 86_400_000)} day(s)`, ageMs); continue; }
+          if (!how && !abandoned) {
+            const ahead = await aheadOf(repo, ref, list);
+            keep("unmerged", `${ahead} commit(s) merged into none of ${list.join(", ") || "(no main branch)"}`, { ageMs, dirty, unmerged: ahead, bytes: await dirBytes(top) });
+            continue;
+          }
+          if (how && !abandoned && ageMs < input.maxAgeMs) { keep("recent", `merged (${how}), untouched for ${days(ageMs)} of ${days(input.maxAgeMs)}`, { ageMs, dirty, merged: how }); continue; }
           const bytes = await dirBytes(top);
+          if (cls === "bb-env") {
+            // BB's environment: BB removes it (environments.delete, which refuses while a thread is live), never this machine behind its back.
+            if (!env?.environmentId) { keep("no-environment-id", "a BB environment the hub sent without its id: BB removes its environments", { ageMs, dirty, merged: how, bytes }); continue; }
+            if (!how) { keep("unmerged", `abandoned, ${await aheadOf(repo, ref, list)} commit(s) merged nowhere: a BB environment goes only when merged`, { ageMs, dirty, merged: how, bytes }); continue; }
+            receipt.decisions.push({ ...base, cls, decision: "remove", reason: "merged", detail: `merged (${how}), clean, untouched for ${days(ageMs)}: BB removes the environment`, merged: how, ageMs, dirty, unmerged: 0, bytes, via: "bb", environmentId: env.environmentId });
+            continue;
+          }
           if (!dry) {
             if (staleLock) await git(repo, ["worktree", "unlock", top]);
             let gone = (await git(repo, ["worktree", "remove", "--force", top])).ok;
             if (!gone) gone = (await git(repo, ["worktree", "remove", "--force", "--force", top])).ok;
-            if (!gone) { keep("error", "git worktree remove failed", ageMs, bytes); continue; }
+            if (!gone) { keep("error", "git worktree remove failed", { ageMs, dirty, merged: how, bytes }); continue; }
             // The folder that held it under Lane Pilot's root (`<repo>/` now, `<id>/` before 0.1.561) goes when nothing else is in it.
             if (cls === "lane") await rmdir(dirname(top)).catch(() => undefined);
           }
-          let branchDeleted = false;
+          let branchDeleted = false, ahead = 0;
           if (entry.branch) {
             if (how) {
-              branchDeleted = dry ? !targets.includes(entry.branch) : (await deleteBranchIfMerged(repo, entry.branch, targets)).deleted;
+              branchDeleted = dry ? !list.includes(entry.branch) : (await deleteBranchIfMerged(repo, entry.branch, list)).deleted;
             } else {
-              const ahead = await aheadOf(repo, entry.branch, targets);
+              ahead = await aheadOf(repo, entry.branch, list);
               receipt.branchesKept.push({ repo, branch: entry.branch, ahead, reason: `abandoned task: ${ahead} commit(s) merged nowhere, the branch stays` });
             }
           }
           receipt.removed.push({ path: top, cls, bytes, branch: entry.branch, branchDeleted, why: how ? "merged" : "abandoned", how });
+          receipt.decisions.push({ ...base, cls, decision: "remove", reason: how ? "merged" : "abandoned", merged: how, ageMs, dirty, unmerged: ahead, bytes, via: "git",
+            detail: how ? `merged (${how}), clean, untouched for ${days(ageMs)}${entry.branch ? (branchDeleted ? "; its branch goes" : "; its branch stays") : ""}`
+              : `abandoned task, clean${entry.branch ? `; branch ${entry.branch} stays (${ahead} commit(s) merged nowhere)` : ""}` });
           receipt.freedBytes += bytes;
         } catch (cause) {
           const message = cause instanceof Error ? cause.message : String(cause);
           receipt.errors.push(`${top}: ${message.slice(0, 200)}`);
+          receipt.decisions.push({ ...base, cls: cls ?? "outside", decision: cls ? "keep" : "skip", reason: "error", detail: message.slice(0, 200) });
         }
       }
     } catch (cause) {
@@ -266,3 +370,26 @@ export async function sweepWorktreeClasses(input: SweepInput): Promise<SweepRece
   for (const path of input.registryPaths ?? []) if (!existsSync(path)) receipt.registryGone.push(path);
   return receipt;
 }
+
+const days = (ms: number) => `${Math.floor(ms / 86_400_000)} day(s)`;
+
+/** Merged into a target (ancestry, patch, squash); for a detached copy also «contained»: some branch or remote holds its commit. */
+async function mergedHow(repo: string, ref: string, branch: string | null, targets: readonly string[]): Promise<MergedHow | "contained" | null> {
+  const how = (await mergedAnywhere(repo, ref, targets))?.how ?? null;
+  if (how || branch) return how;
+  const holders = await git(repo, ["for-each-ref", "--contains", ref, "--format=%(refname)", "refs/heads", "refs/remotes"]);
+  return holders.ok && holders.stdout.trim() ? "contained" : null;
+}
+
+/** What a person reads about a copy outside the managed classes: merged or not, how many commits merged nowhere, age, uncommitted changes, size. */
+async function worktreeFacts(repo: string, top: string, entry: Entry, now: number, targets: readonly string[]): Promise<Pick<SweepDecision, "merged" | "ageMs" | "dirty" | "unmerged" | "bytes">> {
+  const ref = entry.branch ?? entry.head;
+  const merged = ref ? await mergedHow(repo, ref, entry.branch, targets) : null;
+  return {
+    merged, ageMs: Math.max(0, now - await touchedAt(top, repo, entry.branch)), dirty: await uncommitted(top),
+    unmerged: ref && !merged ? await aheadOf(repo, ref, targets) : 0, bytes: await dirBytes(top),
+  };
+}
+
+const describe = (facts: Pick<SweepDecision, "merged" | "ageMs" | "dirty" | "unmerged">) =>
+  `${facts.merged ? `merged (${facts.merged})` : `not merged (${facts.unmerged ?? "?"} commit(s))`}, ${facts.ageMs === null ? "age unknown" : `untouched for ${days(facts.ageMs)}`}, ${facts.dirty ?? "?"} uncommitted change(s)`;
