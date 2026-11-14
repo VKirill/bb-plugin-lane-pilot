@@ -184,6 +184,7 @@ const commands:Array<{ name:string; summary:string; usage:string }> = [
       { name:"session-brief", summary:"The checkout's coordination brief for a starting session: live and stale windows, a merge in flight, other windows' claims and weakly calibrated areas", usage:"bb lane-pilot session-brief --cwd <path> [--json]" },
       { name:"subagent-pack", summary:"The rules and confirmed lessons a Task subagent is born with (a project switches it on with hook.subagent_pack)", usage:"bb lane-pilot subagent-pack \"<prompt>\" [--cwd <path>] [--project <id>]" },
       { name:"skill-lint", summary:"Lint a local skill folder against the skill standard (SKILL.md, references/, scripts/): errors and warnings, exit 1 on errors", usage:"bb lane-pilot skill-lint <dir>" },
+      { name:"forge-lint", summary:"Lint one forge draft file (skill, role or workflow) with the draft rules the Creator's task is verified by: one error line per finding, exit 1 on any", usage:"bb lane-pilot forge-lint <skill|role|workflow> <name> <file>" },
       { name:"errands", summary:"Errands: backfill episode rows for past runs (repeated processes first)", usage:EPISODES_USAGE },
   ];
   // The help is the hand list above plus every registered command it does not name: regress, regressions, regress-close and

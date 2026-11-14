@@ -75,8 +75,8 @@ export function mountForge(ctx: ServerCore, services: Services): void {
           task: { schema_version: 2, id, title: `Forge ${input.kind} ${input.name}`, display_title: `Черновик: ${input.name}`.slice(0, 60), kind: "docs", area: `forge:${input.name}`,
             risk: "low", lane: "default", project_cwd: run.cwd, read_first: [], interfaces: [], invariants: ["no forbidden grant"], out_of_scope: ["any file outside the draft folder"],
             expected_outputs: [file], owns_paths: [`${draftFolder(input.kind, input.name)}/`], never_touch: [".claude/", ".lane-pilot/"], depends_on: [],
-            objective: creatorBrief(input.kind, input.name, input.brief, input.body), acceptance: [`${file} passes lane-forge-lint`], verify: "smoke",
-            verification: [{ command: `lane-forge-lint ${input.kind} ${input.name} ${file}`, cwd: run.cwd, timeout_sec: 60 }] } as never,
+            objective: creatorBrief(input.kind, input.name, input.brief, input.body), acceptance: [`${file} passes bb lane-pilot forge-lint`], verify: "smoke",
+            verification: [{ command: `bb lane-pilot forge-lint ${input.kind} ${input.name} ${file}`, cwd: run.cwd, timeout_sec: 60 }] } as never,
           plan: `The forge: the Creator writes one ${input.kind} draft.`, objective: input.brief });
         return JSON.stringify({ ...reply, draft: file, next: "when the task is accepted: lane_pilot_forge lint" });
       }

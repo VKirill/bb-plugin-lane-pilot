@@ -114,7 +114,8 @@ export const PLAN_ROUNDS_MAX = 3;
 
 const SYSTEM_PATH = /(tokens?|theme|design-system|palette|typography)\b|DESIGN\.md$/i;
 const SCREEN_PATH = /\.(tsx|jsx|vue|svelte|html)$|(^|\/)(pages|screens|views|routes)\//i;
-const MOTION = /\b(animat\w*|motion|transition|анимац\w*|переход\w*|движени\w*)\b/i;
+// Unicode letters, not \b/\w: those are ASCII-only, so the Russian words never matched and a Russian motion row got no animator law.
+const MOTION = /(?<![\p{L}\p{N}_])(animat\p{L}*|motion|transition|анимац\p{L}*|переход\p{L}*|движени\p{L}*)(?![\p{L}\p{N}_])/iu;
 
 /** Design mode (SMA: Mode: screens, system, mixed): what the drawing covers, from the paths the pieces own. */
 export function designMode(items: readonly PlanItem[]): "screens" | "system" | "mixed" {
