@@ -1,5 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import packageJson from "../../package.json";
 import { createAttempt, createRun, openDatabase } from "../../src/rooms/plugin-db";
 import { CANARY_MAX_ATTEMPTS, REASON_SCAN_CHARS, canaryAlertText, canaryReport, createCanary, rollbackCommand } from "../../src/rooms/stability/server/canary";
@@ -25,6 +25,8 @@ function setup() {
   const kv = new Map<string, unknown>();
   const projectRows: Array<{ id: string; name: string }> = [];
   const listFails = { on: false };
+  const listProjects = vi.fn(async () => { if (listFails.on) throw new Error("BB is busy"); return projectRows; });
+  const warn = vi.fn();
   /** A finished attempt of another project's run (the run is made on first use). */
   const attemptIn = (projectId: string, state: string, reason: string | null = null, taskId?: string) => {
     const runId = `run-${projectId}`;
@@ -36,10 +38,10 @@ function setup() {
   const ctx = { bb: { storage: { kv: { get: async (key: string) => kv.get(key) ?? null, set: async (key: string, value: unknown) => { kv.set(key, value); } } },
     sdk: {
       threads: { send: async (args: { threadId: string; input: Array<{ text: string }> }) => { sent.push({ threadId: args.threadId, text: args.input[0]!.text }); return {}; } },
-      projects: { list: async (query: { archived?: boolean }) => { if (listFails.on) throw new Error("BB is busy"); return query.archived ? [] : projectRows; } },
+      projects: { list: listProjects },
     },
-    log: { warn: () => undefined, info: () => undefined } }, db, isDisposed: () => false, log: () => undefined } as never;
-  return { db, harness, attempt, attemptIn, projectRows, listFails, sent, canary: createCanary(ctx), kv };
+    log: { warn, info: () => undefined } }, db, isDisposed: () => false, log: () => undefined } as never;
+  return { db, harness, attempt, attemptIn, projectRows, listFails, listProjects, warn, sent, canary: createCanary(ctx), kv };
 }
 
 const own = "internal_error: Cannot read properties of undefined";
@@ -69,6 +71,17 @@ describe("canaryReport on reasons from the hub", () => {
 });
 
 describe("the sandbox and the drills are not in the canary (audit 2026-10-08 round 4, P1-12)", () => {
+  it("uses the complete project list once: the SDK drops archived, so a second fetch only adds a failure (hub 2026-11-14)", async () => {
+    const { attemptIn, projectRows, listProjects, warn, canary } = setup();
+    projectRows.push({ id: "proj_named_sb", name: "LP sandbox x" });
+    attemptIn("proj_named_sb", "blocked", own);
+    // The live incident reached the second list call after the first had succeeded.
+    listProjects.mockResolvedValueOnce(projectRows).mockRejectedValueOnce(new TypeError("fetch failed"));
+    expect(await canary.status()).toMatchObject({ faults: 0, tripped: false });
+    expect(warn).not.toHaveBeenCalled();
+    expect(listProjects).toHaveBeenCalledExactlyOnceWith({ includePersonal: true });
+  });
+
   it("leaves out the drill's sandbox project, projects named LP sandbox / LP native / LP bench and drill-* tasks", async () => {
     const { attempt, attemptIn, projectRows, canary } = setup();
     projectRows.push({ id: "proj_named_sb", name: "LP sandbox 2026-10-08" }, { id: "proj_named_native", name: "LP native ab12" }, { id: "proj_named_bench", name: "LP bench SelfyStudio" }, { id: "proj_real", name: "SelfyStudio" });
