@@ -111,7 +111,7 @@ export function baselineRedGuard(db: LanePilotDatabase, runId: string, taskId: s
 
 /** Advice on the queue the new task joins: the open tasks of its checkout it waits for, and the fix when three or more own one path. */
 export function batchAdviceFor(db: LanePilotDatabase, projectId: string, runId: string, task: TaskV2): string[] {
-  const base = checkoutBase(getRun(db, runId)?.writer_workspace_path ?? null, task.project_cwd);
+  const base = checkoutBase(getRun(db, runId)?.writer_workspace_path ?? null, task.project_cwd, task.repo_scope === true);
   const open: OpenShape[] = [];
   for (const row of listOpenAttempts(db)) {
     if (row.project_id !== projectId || row.task_id === task.id || open.some((other) => other.id === row.task_id)) continue;

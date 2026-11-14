@@ -17,7 +17,7 @@ import type { CancelCode, WorktreeOwner } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { createNativeInstaller } from "../../native-install";
 import type { WriterBindingResolution } from "../../native-agent";
-import { isTaskBase, parseRunPolicy, retargetTask } from "../../tasks";
+import { parseRunPolicy, retargetTask, taskInRunScope } from "../../tasks";
 import type { AttemptState } from "../../contracts/state-machine";
 import { cancelRejection } from "../../runs/server";
 import { recordStage } from "../../runs/server";
@@ -194,7 +194,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase): ServerCore {
   function acceptedTaskWorkspace(runId:string, taskId:string, runWorkspacePath:string, contractTask:TaskV2, attemptId?:string):{
     task:TaskV2; path:string; environmentId:string|null;
   } {
-    if (!isTaskBase(runWorkspacePath, contractTask.project_cwd)) throw new Error("task contract no longer matches the immutable run workspace");
+    if (!taskInRunScope(runWorkspacePath, contractTask)) throw new Error("task contract no longer matches the immutable run workspace");
     // The task's own checkout: the run's folder, or the repository inside it the task was moved into at dispatch.
     const basePath = contractTask.project_cwd;
     const selected=attemptId?getAttempt(db,attemptId):null;

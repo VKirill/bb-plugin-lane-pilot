@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
  * Jev screen `critique.screen`, which settled 13 of 401 runs and was wrong on 2 of the 6 labelled ones.
  *
  * - `strict`: the critic runs in gate mode (its rework stops acceptance). A change to a sensitive path (auth, secrets, money, migrations,
- *   permissions, deploy), risk high or critical, a writer that edited a test which existed before the task, or no check at all on a change that is more than docs and tests.
+ *   permissions, deploy), risk high or critical, a task that also changes files outside its section in the same repository (`repo_scope`), a writer that edited a test which existed before the task, or no check at all on a change that is more than docs and tests.
  * - `skip`: no critic, the receipt names why. When a check failed (`check_failed`: the attempt goes back to the writer, so a critic would
  *   only repeat the failure; this holds for a pinned task too, but not over a strict reason above), or when every check passed and the
  *   change is docs, tests or lock files only, a chore, refactor or docs task of up to 8 files, or a non-feature change of up to 3 files.
@@ -31,10 +31,13 @@ export function criticLevel(input: {
   paths: readonly string[];
   checks: readonly { exitCode: number }[];
   referenceTestEdits?: readonly string[];
+  /** The task of a section chat that also changes files outside the section (repo_scope): a shared SDK breaks the other bots, so the critic gates it. */
+  repoScope?: boolean;
   /** quality_mode full, or `code_critique.enabled` set by the project: the critic is never skipped. */
   pinned?: boolean;
 }): CriticLevel {
   if (input.referenceTestEdits?.length) return { tier: "strict", reason: "reference_tests_edited" };
+  if (input.repoScope) return { tier: "strict", reason: "repo_scope" };
   if (input.risk === "high" || input.risk === "critical") return { tier: "strict", reason: `risk_${input.risk}` };
   const sensitive = input.paths.find((path) => SENSITIVE.test(path));
   if (sensitive) return { tier: "strict", reason: `sensitive_path:${sensitive}` };
@@ -50,4 +53,11 @@ export function criticLevel(input: {
     : null;
   if (!skip) return { tier: "normal", reason: "default" };
   return sampledSkip(input.taskId) ? { tier: "normal", reason: `skip_sampled:${skip}` } : { tier: "skip", reason: skip };
+}
+
+/** The plan critic's tier: the strong one for high and critical risk, quality_mode full and a task that also changes files outside its section (`repo_scope`). */
+export function planCriticTier(task: { risk: string; repo_scope?: boolean }, qualityMode: string): { tier: "strong" | "light"; reason: string | null } {
+  if (task.repo_scope === true) return { tier: "strong", reason: "repo_scope" };
+  if (task.risk === "high" || task.risk === "critical") return { tier: "strong", reason: `risk_${task.risk}` };
+  return qualityMode === "full" ? { tier: "strong", reason: "quality_full" } : { tier: "light", reason: null };
 }

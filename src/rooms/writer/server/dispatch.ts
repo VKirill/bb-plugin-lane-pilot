@@ -12,7 +12,7 @@ import type { CodeCriticDefault } from "../../contracts/task-enums";
 import { saveCriticCodeDefault } from "./critic-override";
 import { wfLivePipelineRun, wfRunInputsByKey } from "@lane-pilot/workflow-engine";
 import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, getTaskRow, hasFailedStageReceipt, listAttemptsForTask, listAttemptsUpdatedSince, listOpenAttempts, listRunsWithAttempts, listRunTaskRows, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, taskBasePath, transitionAttempt } from "../../storage";
-import { birthGates, commonTaskFolder, isMainfixTask, isTaskBase, landingWordAsked, ownerSaidNo, ownerWordsMode, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask, sha256 , spendReserve, type BirthKind } from "../../tasks";
+import { birthGates, commonTaskFolder, isMainfixTask, isTaskBase, landingWordAsked, leavesSection, ownerSaidNo, ownerWordsMode, parseRepoRoot, parseRepoTop, planWithOutsideReads, planWithRepoScope, repoRootCommand, repoTopCommand, rerootTask, rerootToRepoRoot, sha256 , spendReserve, type BirthKind } from "../../tasks";
 import { liveFolderLockNote, nextStep } from "../../contracts/failure-class"
 import { taskFamily } from "@lane-pilot/contracts";
 import { validateTaskV2 } from "../../tasks/task-v2";
@@ -178,7 +178,23 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
    * folder without git (BB-сервис holds 41 plugin repositories), the repository every path of the task lies in: the task
    * moves into it (paths relative to it) and gets a worktree, a git diff and a merge there instead of the live folder.
    */
-  async function placeTask(runId:string, hostId:string, runFolder:string, task:TaskV2, plan:string):Promise<{ task:TaskV2; plan:string; movedInto?:string } | { rejected:string }> {
+  async function placeTask(runId:string, hostId:string, runFolder:string, rawTask:TaskV2, plan:string):Promise<{ task:TaskV2; plan:string; movedInto?:string; repoScope?:{ root:string; section:string; outside:string[] } } | { rejected:string }> {
+    // repo_scope is earned here, from the host's answer, never taken from the PM's contract.
+    const { repo_scope: _sent, ...task } = rawTask;
+    // A section's task that also changes files elsewhere in the same repository (an SDK next to the bots) works at the repository's root.
+    const namesRoot = resolve(task.project_cwd) !== resolve(runFolder) && isTaskBase(task.project_cwd, runFolder);
+    if (resolve(task.project_cwd) === resolve(runFolder) ? task.owns_paths.some(leavesSection) : namesRoot) {
+      const found = parseRepoRoot(await bestEffort(ctx.log, "writer repo root probe", runOnHost(host, { hostId, cwd:runFolder, command:repoRootCommand(runFolder), timeoutSec:20, timeoutMs:25_000 }), null));
+      const root = found ? resolve(runFolder, found.up) : null;
+      if (found && root && (!namesRoot || resolve(task.project_cwd) === root)) {
+        // The PM that names the root itself already wrote root-relative paths: they stay, and the section is only where the chat is.
+        const moved = namesRoot ? { task:{ ...task, repo_scope:true }, outside:[] as string[] } : rerootToRepoRoot(task, root, found.prefix);
+        if (moved) {
+          ctx.log(`Lane Pilot: task ${task.id} of the section ${found.prefix} also changes files outside it, so it works at the repository root ${root}`);
+          return { task:moved.task, plan:planWithRepoScope(plan, root, found.prefix, moved.outside), repoScope:{ root, section:found.prefix, outside:moved.outside } };
+        }
+      }
+    }
     const repoOf = async (folder:string) => parseRepoTop(await bestEffort(ctx.log, "writer repo top probe", runOnHost(host, { hostId, cwd:runFolder, command:repoTopCommand(folder, runFolder), timeoutSec:20, timeoutMs:25_000 }), null));
     if (resolve(task.project_cwd) !== resolve(runFolder)) {
       const named = relative(resolve(runFolder), resolve(task.project_cwd)).split("\\").join("/");
@@ -240,6 +256,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     const taskConfig = { ...runConfig, writerWorkspacePath:taskBase };
     const movedNote = placed.movedInto ? `mode repository: every path of this task is inside the git repository ${placed.movedInto}, so the task works there: its paths are now relative to ${taskBase}, the writer gets its own worktree of that repository, and accepted work is merged into its main as a commit (not the live folder).` : null;
     // The PM sending the same task again (its call ended «terminated» while the stages went on) gets the task it already has.
+    const scopeNote = placed.repoScope ? `repo_scope: this task of the section ${placed.repoScope.section}/ also changes files outside it${placed.repoScope.outside.length ? ` (${placed.repoScope.outside.join(", ")})` : ""}, in the same repository, so it works at the repository root ${placed.repoScope.root}: its paths are now relative to the root, checks still run in the section's folder, and plan critique and code critic are strict for it. Tell the owner which files outside the section it touches.` : null;
     const duplicate = args.task ? findLiveDuplicate(runId, args.task.id, task, canonicalPlan) : null;
     if (duplicate) return duplicate;
     const contentDuplicate = args.task ? findContentDuplicate(runId, args.task.id, task, canonicalPlan) : null;
@@ -365,7 +382,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       let started: ReturnType<typeof startDispatchRun>;
       try {
         started = startDispatchRun(services.workflowEngine, { ctx, services, threadId:args.threadId, projectId:args.projectId, baseRef:args.baseRef, runId, taskId, attemptId,
-          config, runConfig:taskConfig, workspacePath:taskBase, task, plan:canonicalPlan, lintWarnings:[...lint.warnings.map((warning) => warning.message), ...(movedNote ? [movedNote] : [])] });
+          config, runConfig:taskConfig, workspacePath:taskBase, task, plan:canonicalPlan, lintWarnings:[...lint.warnings.map((warning) => warning.message), ...(movedNote ? [movedNote] : []), ...(scopeNote ? [scopeNote] : [])] });
       } catch (cause) {
         // The engine took the dispatch after the early check and then refused it: the attempt ends blocked, which is a wall entry like any failed attempt.
         throw new Error(`engine_unavailable: ${cause instanceof Error ? cause.message : String(cause)}`);

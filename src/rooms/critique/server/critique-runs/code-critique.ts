@@ -46,7 +46,7 @@ export async function runCodeCritique(input:{
   // The critic's level by rule (critic-level.ts): strict runs it in gate mode, skip leaves a named receipt, normal is the settings above.
   // A project that turned the critic off itself keeps that; quality_mode full or a project that turned it on never skips.
   const level = criticLevel({ taskId:input.taskId, kind:input.task.kind, risk:input.task.risk, paths:input.evidence.files.map((file) => file.path),
-    checks:input.evidence.verification, referenceTestEdits:input.evidence.referenceTestEdits,
+    checks:input.evidence.verification, referenceTestEdits:input.evidence.referenceTestEdits, repoScope:input.task.repo_scope === true,
     pinned:qualityMode === "full" || projectSettings["code_critique.enabled"] === true });
   const settings = level.tier === "strict" && projectSettings["code_critique.enabled"] !== false
     ? { ...riskSettings, "code_critique.enabled":true, "code_critique.mode":"gate" } : riskSettings;
