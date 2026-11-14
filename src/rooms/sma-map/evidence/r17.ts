@@ -1,7 +1,7 @@
 // Region 17 · Agent roles (subagents) — per-node evidence of the four proofs (docs/sma-evidence.md).
 // One line per node, sorted by node number; a batch agent edits only its nodes' lines. Lines with seedEntry or a lone
 // wfRun/wfStep trace were derived mechanically by scripts/sma-seed-evidence.ts (2026-11-14), not authored.
-import { type RegionEvidence, wfRun, wfStep } from "./types";
+import { type RegionEvidence, voidIsHave, voidStays, wfRun, wfStep } from "./types";
 
 export default {
   n1369: { trace: wfStep("ai-integration-phase", "research") },
@@ -11,6 +11,8 @@ export default {
   n1380: { trace: wfStep("security-audit", "threat_model") },
   n1381: { trace: wfStep("ui-audit", "review_doc") },
   n1383: { trace: wfStep("eval-review", "review") },
+  n1386: { voidReview: voidIsHave("утверждения документации сверяются с живым кодом без модели: lintCitationClaims читает процитированные строки, отсутствующий идентификатор — находка; шаг lp.docs_verify в ночном графе (текущий ours-текст устарел)") },
+  n1388: { voidReview: voidStays("слитой копии документов не делается (plan-import режет план в задачи, исполнители читают документы на месте), поэтому слияния по приоритету и файла конфликтов нет") },
   n1392: { trace: wfStep("lp.plan", "plan") },
   n1393: { trace: wfRun("grill-plan") },
   n1395: { trace: wfStep("lp.analyze", "gather") },

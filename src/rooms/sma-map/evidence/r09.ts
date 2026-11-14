@@ -1,7 +1,7 @@
 // Region 9 · Person and window — per-node evidence of the four proofs (docs/sma-evidence.md).
 // One line per node, sorted by node number; a batch agent edits only its nodes' lines. Lines with seedEntry or a lone
 // wfRun/wfStep trace were derived mechanically by scripts/sma-seed-evidence.ts (2026-11-14), not authored.
-import { seedEntry, type RegionEvidence } from "./types";
+import { type RegionEvidence, seedEntry, voidIsHave } from "./types";
 
 export default {
   n755: { reach: seedEntry("the owner presses the door in the window") },
@@ -76,4 +76,5 @@ export default {
   n824: { reach: seedEntry("the owner presses the door in the window") },
   n825: { reach: seedEntry("the owner presses the door in the window") },
   n826: { reach: seedEntry("the owner presses the door in the window") },
+  n957: { voidReview: voidIsHave("чат = тред PM: сообщение владельца превращается в задачу, PM ставит её сам (lane_pilot_dispatch_writer, только из треда PM); ответ «да» спрашивается там, где нужен") },
 } satisfies RegionEvidence;
