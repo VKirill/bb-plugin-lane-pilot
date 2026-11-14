@@ -26,8 +26,27 @@ import { verdictReasons } from "./verdict-reasons";
 import { dependencyFindings } from "./dependency-findings";
 import { readAnswer } from "./read-answer";
 
+/**
+ * Structural findings the planner may fix by rewriting the plan text, its read_first or its verification commands (plan-revise). Every
+ * other structural error (an expected output outside owns_paths, an ownership gap, a placeholder in the contract, a depends_on cycle) is in a
+ * field the PM owns (objective, acceptance, owns_paths, never_touch, risk, depends_on), so only the PM can fix it.
+ */
+export const PLAN_FIXABLE_FINDINGS:ReadonlySet<string>=new Set(["plan_path_unowned","plan_missing","verify_missing","verify_heavy","verify_filter_ignored"]);
+
+/** What a plan critique tells the next step: `revisable` says a planner could fix the refusal by rewriting the plan (SMA n1269), `findings` are its findings in short. */
+export type PlanCritiqueOutcome = {allowed:boolean;reason?:string;critique?:unknown;revisable?:boolean;findings?:PlanCritiqueFinding[]};
+export type PlanCritiqueFinding = {severity:string;finding:string;file?:string;line?:number;code?:string};
+
+/** The findings of a critique result in short: the model's own, then the structural errors. */
+export function planCritiqueFindings(result:unknown):PlanCritiqueFinding[] {
+  const row=result as {findings?:Array<{severity?:string;finding?:string;file?:string;line?:number}>;structuralFindings?:CoverageFinding[]}|null|undefined;
+  const model=(row?.findings??[]).map((finding)=>({severity:String(finding.severity??"info"),finding:String(finding.finding??"").slice(0,600),...(finding.file?{file:finding.file}:{}),...(typeof finding.line==="number"?{line:finding.line}:{})}));
+  const structural=(row?.structuralFindings??[]).filter((finding)=>finding.severity==="error").map((finding)=>({severity:"error",finding:finding.finding.slice(0,600),file:finding.path,code:finding.code}));
+  return [...model,...structural].slice(0,30);
+}
+
 export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;stageHelperSettings:StageHelperSettings;taskId:string;config:PrototypeConfig;task:TaskV2;plan:string;pmReadContext?:string;workflow?:{runId:string;stepKey:string;nodeId:string}})
-  : Promise<{allowed:boolean;reason?:string;critique?:unknown}> {
+  : Promise<PlanCritiqueOutcome> {
   const projectSettings = await input.stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
   // quality_mode (task, else project, else standard) decides whether this task goes through the plan critique at all.
   const qualityMode = resolveQualityMode(input.task,projectSettings[QUALITY_MODE_SETTING]);
@@ -93,13 +112,13 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   const structuralBlock=mode==="gate"&&structuralFindings.some((finding)=>finding.severity==="error");
   if (kept?.state === "passed" && kept.inputSha256 === sha256(source)) {
     // A structural error blocks under a gate whatever was kept: the same input without the receipt blocks too (SMA audit R-06).
-    if (structuralBlock) return { allowed:false, reason:"structural_plan_critique_blocked", critique:{ structuralFindings } };
+    if (structuralBlock) return { allowed:false, reason:"structural_plan_critique_blocked", critique:{ structuralFindings }, revisable:structuralRevisable(structuralFindings), findings:planCritiqueFindings({ structuralFindings }) };
     // An advisory «changes requested» is kept as passed; read under a gate it blocks as a fresh one would (SMA audit N-06). The
     // receipt stays: passed cannot turn back, and the same input blocks the same way until the task changes.
     const keptResult = kept.result as { decision?: string } | null;
     if (mode === "gate" && keptResult?.decision === "changes_requested") {
       const why = verdictReasons(keptResult as never, "plan-critique");
-      return { allowed:false, reason:why.returned, critique:kept.result };
+      return { allowed:false, reason:why.returned, critique:kept.result, revisable:(keptResult as { status?: string }).status !== "block", findings:planCritiqueFindings(kept.result) };
     }
     return { allowed:true, critique:kept.result };
   }
@@ -108,7 +127,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   if(structuralBlock) {
     recordStage(input.db,{...base,state:"blocked",reason:"structural_plan_critique_blocked",result:{decision:"changes_requested",mode,
       structuralCoverage:{status:coverageStatus,pathCount:coveragePathCount},structuralFindings}});
-    return {allowed:false,reason:"structural_plan_critique_blocked",critique:{structuralFindings}};
+    return {allowed:false,reason:"structural_plan_critique_blocked",critique:{structuralFindings},revisable:structuralRevisable(structuralFindings),findings:planCritiqueFindings({structuralFindings})};
   }
   // «Three write tasks» means a plan of three tasks, not a chat's history: a PM chat is one run for days, and counting every
   // task still at work made 28 of the 41 plan critiques of the owner's prototype chat run on low-risk one-page fixes
@@ -123,6 +142,8 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
       minScore:settings["plan_critique.min_score"],
       minWriteTasks:settings["plan_critique.min_write_tasks"],
       onHighRisk:settings["plan_critique.on_high_risk"],
+      ownsPaths:input.task.owns_paths.length,
+      minOwnsPaths:settings["plan_critique.min_owns_paths"],
     });
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);
@@ -200,7 +221,8 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
         const why = verdictReasons(critique, "plan-critique");
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
           threadId, result, reason:blocked ? why.receipt : undefined });
-        return blocked ? { allowed:false, reason:why.returned, critique:result } : { allowed:true, critique:result };
+        // A rework is the planner's to fix (plan_critique.revise_by planner); a block is the owner's decision, never a rewrite.
+        return blocked ? { allowed:false, reason:why.returned, critique:result, revisable:critique.status !== "block", findings:planCritiqueFindings(result) } : { allowed:true, critique:result };
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause);
         if (threadId) {
@@ -235,4 +257,10 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
       result:{ error:reason } });
     return { allowed:false, reason:`plan_critique_failed:${reason}` };
   }
+}
+
+/** A structural refusal the planner can fix: every error finding is one of PLAN_FIXABLE_FINDINGS. */
+function structuralRevisable(findings:readonly CoverageFinding[]):boolean {
+  const errors=findings.filter((finding)=>finding.severity==="error");
+  return errors.length>0&&errors.every((finding)=>PLAN_FIXABLE_FINDINGS.has(finding.code));
 }

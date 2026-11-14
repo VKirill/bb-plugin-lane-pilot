@@ -1,4 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { saveProjectSetting } from "../../src/rooms/storage";
 import { describe, expect, it, vi } from "vitest";
 import { createCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../server";
@@ -67,6 +68,8 @@ describe("daemon tick", () => {
 
   it("[sma:dt_call_waiting] a turn that needs the owner's word is a row, not only a PM message", async () => {
     const { phases, db, sent } = driver();
+    // The planning word is asked: the project has owner.words on (each turn reads it since 0.1.560).
+    saveProjectSetting(db, "projA", "owner.words", "on");
     const phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Sums", goal: "sums" });
     savePhase(db, phase.id, { stage: "planning", record: { ...phase.record, ownerWords: true,
       plan: { items: [], sha: "s", contextSha: "c", critique: { decision: "approve", by: "critic" } } } as never, at: 2 });

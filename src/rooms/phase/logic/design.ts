@@ -2,6 +2,7 @@ import { designMode, motionRows, openQuestions, uiContractGap } from "../stages"
 import { gate, type GateResult } from "./gates";
 import { DRAWING_SECTIONS, DRAWING_SYSTEM_SECTIONS, type Phase, type PhaseRecord, type PlanItem } from "./record";
 import { wordOf } from "./words";
+import { wordAsked, wordReason } from "./words-policy";
 
 const UI_PATH = /\.(tsx|jsx|vue|svelte|css|scss|html)$|(^|\/)(ui|components|pages|screens|views)\//i;
 
@@ -55,13 +56,13 @@ export function designGate(record: PhaseRecord, specText?: string | null): GateR
   if (contract) why.push(contract);
   why.push(...openQuestions(record, "design").map((question) => `open question ${question.id}: ${question.text}`));
   // Drawing confirmed (SMA tb_design_gate_confirmed): the person's yes counts only for the drawing hash it names; a redraw asks again.
-  if (record.ownerWords) {
+  if (wordAsked(record, "design")) {
     const said = wordOf(record, "design");
     // The word carries the hash under `key` (the door's own stamp) or `sha` (the version stamp of pc_contract): either
     // one that differs from the drawing now voids the yes. A yes recorded before words were stamped carries neither
     // and keeps counting — a phase in flight is not asked twice for what its owner already confirmed.
     const signed = said?.key ?? said?.sha;
-    if (said?.decision !== "yes" || (signed !== undefined && signed !== drawing?.sha256)) why.push("the drawing awaits the owner's word for this drawing (owner.words is on)");
+    if (said?.decision !== "yes" || (signed !== undefined && signed !== drawing?.sha256)) why.push(`the drawing awaits the owner's word for this drawing: ${wordReason(record, "design")}`);
   }
   return gate(why);
 }

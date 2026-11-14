@@ -4,6 +4,7 @@ import { candidateOn, type AcceptanceLine, type AcceptanceLineId, type Phase, ty
 import { canonical } from "./signatures";
 import { pieceLines, type PieceLineId, type TaskFact } from "./waves";
 import { wordOf } from "./words";
+import { wordAsked } from "./words-policy";
 
 /** The key of the package a person decides on (SMA p6_decide): the plan, the verdict's input and the tree it saw. A new verdict or tree is a new key. */
 export const acceptanceKey = (record: PhaseRecord) => sha256Hex(canonical({ plan: record.plan?.sha ?? null, verdict: record.verification?.verdict?.inputSha ?? null, tree: record.verification?.verdict?.mainSha ?? null,
@@ -43,9 +44,9 @@ export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFac
   // The person's two decisions count only under the key of the package now shown (a word on an older candidate is not this one's).
   const latest = wordOf(phase.record, "acceptance");
   const word = latest && latest.key === acceptanceKey(phase.record) ? latest : undefined;
-  const asked = !!phase.record.ownerWords;
+  const asked = wordAsked(phase.record, "acceptance");
   const decided = (pick: "useful" | "limits") => !asked || (word?.decision === "yes" && word[pick] === true);
-  const wordDetail = (what: string) => !asked ? "the project does not ask for the owner's word (owner.words off)"
+  const wordDetail = (what: string) => !asked ? "this phase's acceptance does not ask for the owner's word (owner.words: not in money, data or production deploy, or off)"
     : word ? `${word.by}: ${word.decision}${word.decision === "yes" ? ` — ${what}` : ""} — ${word.text}` : latest ? `the owner's word was given on another package (${latest.key ?? "no key"}): it is asked again` : "awaits the owner's keyed decision";
   return [
     line("contract_current", !!phase.record.plan?.admittedSha && phase.record.plan.admittedSha === phase.record.plan.sha, phase.record.plan?.admittedSha === phase.record.plan?.sha ? "the plan is the admitted one" : "the plan changed after its admission"),

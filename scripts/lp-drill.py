@@ -95,6 +95,9 @@ import lp_drill.scenes.hub_checks
 import lp_drill.scenes.checkers
 import lp_drill.scenes.revert
 import lp_drill.scenes.phase
+import lp_drill.scoped_settings
+import lp_drill.scenes.plan_loop
+import lp_drill.scenes.phase_words
 import lp_drill.scenes.providers
 import lp_drill.scenes.writers
 import lp_drill.scenes.nogit
@@ -102,7 +105,7 @@ import lp_drill.scenes.plan_split
 import lp_drill.scenes.hub_outage
 import lp_drill.lock
 
-for _mod in (lp_drill.env, lp_drill.hub, lp_drill.report, lp_drill.tasks, lp_drill.context, lp_drill.select, lp_drill.series, lp_drill.preview, lp_drill.scenes.memory, lp_drill.scenes.owner, lp_drill.scenes.skills, lp_drill.scenes.guard, lp_drill.scenes.deferrals, lp_drill.scenes.hub_checks, lp_drill.scenes.checkers, lp_drill.scenes.revert, lp_drill.scenes.phase, lp_drill.scenes.providers, lp_drill.scenes.writers, lp_drill.scenes.nogit, lp_drill.scenes.plan_split, lp_drill.scenes.hub_outage, lp_drill.lock,):
+for _mod in (lp_drill.env, lp_drill.hub, lp_drill.report, lp_drill.tasks, lp_drill.context, lp_drill.select, lp_drill.series, lp_drill.preview, lp_drill.scenes.memory, lp_drill.scenes.owner, lp_drill.scenes.skills, lp_drill.scenes.guard, lp_drill.scenes.deferrals, lp_drill.scenes.hub_checks, lp_drill.scenes.checkers, lp_drill.scenes.revert, lp_drill.scenes.phase, lp_drill.scoped_settings, lp_drill.scenes.plan_loop, lp_drill.scenes.phase_words, lp_drill.scenes.providers, lp_drill.scenes.writers, lp_drill.scenes.nogit, lp_drill.scenes.plan_split, lp_drill.scenes.hub_outage, lp_drill.lock,):
     for _name in dir(_mod):
         if not _name.startswith("__"):
             _value = getattr(_mod, _name)
@@ -137,7 +140,7 @@ del _mod, _name, _value
 for _tmp in ("_mname", "_member", "_wrap", "_fn"):
     globals().pop(_tmp, None)
 del _tmp
-ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "phase", "phase_route", "reload", "nogit", "nogit_repo", "flow_contract", "lead_shadow", "episodes", "memory_thread"]
+ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "phase", "phase_route", "reload", "nogit", "nogit_repo", "flow_contract", "lead_shadow", "episodes", "memory_thread", "plan_revise", "plan_revise_cap", "plan_l", "phase_words_sensitive"]
 # Scenes that run only by name (--scenario) or under --series: the deploy drill (--quick) and a plain run never reach them.
 EXTRA = ["skills_screen", "revert", "plan_split"]
 QUICK = ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3", "lead_shadow", "episodes"]
@@ -145,9 +148,9 @@ QUICK = ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_provider
 # metrics. A `vitest:` entry runs its story file as the suite's scene; `metrics` holds no scenario — series_metrics
 # judges the archive last, after every other suite.
 SUITES = {
-    "task": ["parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit", "nogit_repo", "revert", "plan_split"],
+    "task": ["parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit", "nogit_repo", "revert", "plan_split", "plan_revise", "plan_revise_cap", "plan_l"],
     "batch": ["helper_providers", "flow_contract", "live_word"],
-    "phase": ["phase", "phase_route", "no_code_exit"],
+    "phase": ["phase", "phase_route", "no_code_exit", "phase_words_sensitive"],
     "release": ["guard_hash", "deferrals", "checkers", "watchdog"],
     "window": ["vitest:tests/release-stories-window.test.tsx"],
     "worker": ["vitest:tests/release-stories-worker.test.ts"],

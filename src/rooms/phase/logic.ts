@@ -11,6 +11,7 @@ export * from "./logic/observation";
 export * from "./logic/signatures";
 export * from "./logic/gates";
 export * from "./logic/words";
+export * from "./logic/words-policy";
 export * from "./logic/design";
 export * from "./logic/waves";
 export * from "./logic/verdict";

@@ -105,8 +105,11 @@ export type PhaseRecord = {
   context?: { docs: ContextDoc[]; sha: string; signedAt: number; risks?: Partial<Record<RiskKey, string>>; legacy?: boolean; /** REQUIREMENTS ids this phase delivers. */ requirements?: string[]; /** Locked decision ids of CONTEXT.md. */ decisions?: string[];
     /** How much the phase may take, decided before the solution (SMA p1_appetite), and what it will not do (no-gos). */ appetite?: string; noGos?: string[] };
   questions?: StageQuestion[];
-  /** The project asked for the owner's word at the turns (owner.words = on when the phase opened). */
+  /** Does any turn of the phase ask for the owner's word: the one flag a record from before 0.1.560 has (decided once, from the goal, at opening);
+   * since then the summary of `wordTurns`. Gates read `wordAsked(record, turn)`, never this. */
   ownerWords?: boolean;
+  /** Each turn's decision whether it waits for the owner's word, from that turn's own evidence (logic/words-policy.ts); recomputed every step. */
+  wordTurns?: import("./words-policy").WordTurns;
   /** The project set phase.diagnose = on when the phase opened: a failed verdict gets a parallel diagnosis before the replan. Absent = off. */
   diagnose?: boolean;
   /** The project set phase.gray_areas = on when the phase opened (and owner.words is on): the analysis asks the owner which gray areas to settle and
@@ -114,6 +117,9 @@ export type PhaseRecord = {
   grayAreas?: boolean;
   /** The project set phase.grill_gate = off when the phase opened: a grill that ended `open` does not hold admission. Absent = on. */
   grillGate?: boolean;
+  /** owner.words=sensitive, a plan outside the three classes: the machine planned once more over the grill's open challenges instead of
+   * waiting for the owner (driver-methods-admission.ts admitIfReady); once per phase, a plan still grilled open after it is admitted. */
+  grillReplan?: { planSha: string; at: number };
   words?: OwnerWord[];
   /** Goal revisions and withdrawn pieces, each one a decision in the book. */
   scope?: { revisions: number; withdrawn: string[] };
