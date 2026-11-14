@@ -10,7 +10,7 @@ does not happen; the owner is asked only where the row says so. A tool that refu
    `lane_pilot_facts` for a question about the past, limits or a failure; `lane_pilot_workflow_status` (runId) for a graph.
 2. A tool you cannot place: `lane_pilot_tool_search` (words). Families take an `action`; their text lists the arguments.
 3. Your shell may run `bb lane-pilot …` (read commands and the settle commands below). Full list: `bb lane-pilot --help`.
-   One task's whole history in time order: `bb lane-pilot timeline <task-id>`.
+   One task's whole history in time order: `bb lane-pilot timeline <task-id>`. Worktrees left on a machine: `bb lane-pilot worktree-cleanup --dry-run` (decides, removes nothing).
 
 ## 1. A task waits (it is «at work» but nothing happens)
 
@@ -23,7 +23,7 @@ does not happen; the owner is asked only where the row says so. A tool that refu
 | `waiting_writer:` (any other hold) | Every writer is held | Nothing: the task resumes by itself when one frees up |
 | `waiting_writer:…core_unsupported`, `writer_provider_unavailable` | No writer in the chain can run on this core: it does not pass by itself | `lane_pilot_reassign_task` (taskId, model) works only on a **running** task (a stuck writer); a queued task waits for a free writer — then tell the owner in one line which provider to enable for the project |
 | waits on a `depends_on` task that is blocked | Dependents wait up to 6 hours | Fix and send the blocked one again; they start once it is accepted. If you verified by hand that its result is already there: `lane_pilot_update_task` on **the blocked task** (taskId, satisfied: true) frees its dependents. Overlapping owns_paths: nothing, it starts when the other task ends |
-| waits for the owner's word (`owner_word`, a task verified but not merged) | owner.words: a task in money, database migration / destructive data, or a production deploy (by default; risk alone does not ask) lands on main only after his yes | Ask him once with `lane_pilot_ask_owner`; write his answer with `lane_pilot_queue {action:"word", taskId, decision, text}`, then send the task again — the same writer thread merges |
+| waits for the owner's word (`owner_word`, a task verified but not merged) | owner.words: a task in money, database migration / destructive data, or a production deploy (by default; risk alone does not ask) lands on main only after his yes (the phase graph pauses the same way on `sensitive`: only these three classes ask, every other pause is decided without him) | Ask him once with `lane_pilot_ask_owner`; write his answer with `lane_pilot_queue {action:"word", taskId, decision, text}`, then send the task again — the same writer thread merges |
 | nothing moves anywhere | The conveyor may be off | `bb lane-pilot conveyor status`; it is the owner's switch: tell him it is off and why, do not turn it on yourself |
 | merge held by another chat (`blockedBy`) | Uncommitted edits or a holder in the same checkout | `lane_pilot_relay {action:"ask"}` to the holder, end the turn |
 | `waiting: the run is paused` | Someone paused it | `bb lane-pilot resume <run-id>` when the reason is gone |

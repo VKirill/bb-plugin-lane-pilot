@@ -20,6 +20,8 @@ thinks and records; the domain skills say what it knows. Each rule reads «when 
 | You doubt the plan | Write the strongest reason it fails and the observation that would show it | — |
 | Course or book material enters memory | Atoms: formula, threshold, procedure, anti-pattern, with source span; quotes ≤ 25 words | Never paste paragraphs |
 
+The `owner.words` setting (`sensitive` by default: money, database migration, production deploy) says when a code task or a phase waits for the owner. It does not lift a specialist's `needs_owner_go`: that gate below stays as written.
+
 ## Procedure in a shift
 
 1. Load charter, locks and memory (`sp.load_memory`); stop on a missing charter or a missing MCP server.
