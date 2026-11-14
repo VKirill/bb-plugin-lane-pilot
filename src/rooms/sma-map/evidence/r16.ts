@@ -199,7 +199,7 @@ export default {
   n1349: { reach: seedEntry("the owner runs the command"), trace: wfStep("plan-import", "grill") },
   n1350: { reach: seedEntry("the owner runs the command"), voidReview: voidIsHave("внешние планы и спеки вводятся графом plan-import (сверка с кодом и решениями, нарезка в задачи), документы репозитория исполнители читают на месте через read_first") },
   n1351: { mutation: distort("core:packages/db/src/data/environments.ts", "status: input.status ?? \"provisioning\",", "status: input.status ?? \"ready\","), reach: seedEntry("the owner runs the command") },
-  n1352: { mutation: flip("core:packages/db/src/data/environments.ts", "filters.projectId === undefined", "filters.projectId !== undefined"), reach: seedEntry("the owner runs the command") },
+  n1352: { mutation: flip("core:packages/db/src/data/environments.ts", "filters.projectId === undefined", "filters.projectId !== undefined"), reach: seedEntry("the owner runs the command"), trace: drill("sma_core") },
   n1353: { reach: seedEntry("the owner runs the command") },
   n1354: { trace: wfStep("project-start", "tree") },
   n1355: { trace: wfStep("project-start", "probe") },

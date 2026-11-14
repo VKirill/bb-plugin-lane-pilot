@@ -12,8 +12,8 @@ const LIVE = "src/rooms/runs/server/thread-live.ts";
 
 export default {
   n530: { mutation: flip(INTAKE, "MACHINE_TEXT.some((pattern) => pattern.test(text))", "!MACHINE_TEXT.some((pattern) => pattern.test(text))"), trace: drill("sma_r06") },
-  n531: { mutation: flip("core:packages/server-contract/src/api/threads.ts", "ids.length <= THREAD_LIST_MAX_IDS &&", "ids.length < THREAD_LIST_MAX_IDS &&") },
-  n532: { mutation: flip("core:packages/server-contract/src/api/threads.ts", "value.title !== undefined ||", "value.title === undefined ||") },
+  n531: { mutation: flip("core:packages/server-contract/src/api/threads.ts", "ids.length <= THREAD_LIST_MAX_IDS &&", "ids.length < THREAD_LIST_MAX_IDS &&"), trace: drill("sma_core") },
+  n532: { mutation: flip("core:packages/server-contract/src/api/threads.ts", "value.title !== undefined ||", "value.title === undefined ||"), trace: drill("sma_core") },
   n533: { mutation: flip("core:packages/domain/src/thread-lifecycle.ts", "  stopping: {\n    \"stop.settled\": \"idle\",", "  stopping: {\n    \"stop.settled\": \"error\",") },
   n534: { mutation: distort(RAILS, 'return "browser";', 'return "full";'), trace: drill("sma_r06") },
   n535: { mutation: distort(RAILS, 'return "full";', 'return "quick";'), trace: drill("sma_r06"), voidReview: voidIsHave("три рецепта проверки quick/full/browser выбираются по всему запросу, ни один байт запроса не становится командой (текущий ours-текст устарел)") },
@@ -21,7 +21,7 @@ export default {
   n537: { mutation: distort("src/rooms/verification/sandbox.ts", 'args.push("--ro-bind",guardPath,guardPath)', 'args.push("--bind",guardPath,guardPath)'), trace: drill("sma_r06") },
   n538: { mutation: flip(TOOLS, "const fails = rootsChanged && input.throwaway === true;", "const fails = rootsChanged && input.throwaway !== true;"), reach: entry("the owner asks in the chat to run the project's tests (a «проверь …» request, lane_pilot_check run)"), trace: drill("sma_r06") },
   n539: { mutation: flip(TOOLS, "receipt.stoppedCommand = stopped ? current : null;", "receipt.stoppedCommand = stopped ? null : current;"), trace: drill("sma_r06") },
-  n540: { mutation: distort("core:packages/server-contract/src/api/threads.ts", "const sendMessageRequestFieldsSchema = z.object({", "const sendMessageRequestFieldsSchema = z.looseObject({") },
+  n540: { mutation: distort("core:packages/server-contract/src/api/threads.ts", "const sendMessageRequestFieldsSchema = z.object({", "const sendMessageRequestFieldsSchema = z.looseObject({"), trace: drill("sma_core") },
   n541: { mutation: distort("src/rooms/core/server/lifecycle-events.ts", 'extra.onQueued!("message.dispatched", valueAt(payload, "entry"))', 'extra.onQueued!("message.cancelled", valueAt(payload, "entry"))'), reach: entry("the owner sends a message in a BB chat (BB dispatches it from the thread's queue)"), trace: drill("sma_r06") },
   n542: { mutation: flip(INTAKE, 'clean.endsWith("?")', 'clean.endsWith("!")'), trace: drill("sma_r06") },
   n543: { mutation: flip(LIVE, 'item.kind === "task" && (!focus ||', 'item.kind !== "task" && (!focus ||'), trace: drill("sma_r06") },
