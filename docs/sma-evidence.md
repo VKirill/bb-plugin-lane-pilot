@@ -177,7 +177,7 @@ export SMA_SIBLING_TELEGRAM=$HOME/.lane-pilot/worktrees/bb-plugin-telegram-proje
 
 The new branch is cut from `sma/core-proofs` / `sma/proofs` when it exists (so the proofs already written are there), else from
 `vk/experimental` / the plugin's HEAD. Dependencies come offline from the machine's store. Core: `pnpm install --frozen-lockfile
---offline` (every workspace package gets its own `node_modules`), `scripts/ensure-native-modules.mjs`, and a turbo build of
+--offline` (every workspace package gets its own `node_modules`), the core's own native-modules script (`ensure-native-modules.mjs` under its `scripts` folder), and a turbo build of
 `@get-bb/plugin-sdk` (plugins resolve the SDK through its dist; turbo's cache makes it instant). Telegram: `npm ci --offline`.
 Measured on OVH under load: a fresh core worktree is ready in **13 s** (install 12 s), a fresh telegram one in **2.3 s**; re-running
 setup on an existing worktree only installs (core 4 s, telegram 2 s). Without the id, setup makes or refreshes the shared proofs
