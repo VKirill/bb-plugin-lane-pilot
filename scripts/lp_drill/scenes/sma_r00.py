@@ -10,12 +10,14 @@ from lp_drill.scenes.sma_r00_a import NODES_A, prove_a
 from lp_drill.scenes.sma_r00_b import NODES_B, prove_b
 from lp_drill.scenes.sma_r00_c import NODES_C, prove_c
 from lp_drill.scenes.sma_r00_d import NODES_D, prove_d
+from lp_drill.scenes.sma_r00_e import NODES_E, prove_e
 
 NODES = []
 NODES += NODES_A
 NODES += NODES_B
 NODES += NODES_C
 NODES += NODES_D
+NODES += NODES_E
 
 
 def scenario_sma_r00(tmp) -> dict:
@@ -24,4 +26,5 @@ def scenario_sma_r00(tmp) -> dict:
     prove_b(proofs, tmp)
     prove_c(proofs, tmp)
     prove_d(proofs, tmp)
+    prove_e(proofs, tmp)
     return proofs.verdict("sma_r00", checked=len(NODES))
