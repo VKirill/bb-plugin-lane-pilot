@@ -95,7 +95,7 @@ export default {
     trace: transition({ from: "queued", to: "queued", reason: "waiting_writer:" }),
   },
   n209: {
-    mutation: flip("src/rooms/storage/attempts-store/lifecycle.ts", "AND state IN ('queued','spawn_requested')`)\n    .run(holderThreadId", "AND state IN ('queued','spawn_requested','running')`)\n    .run(holderThreadId"),
+    mutation: flip("src/rooms/storage/attempts-store/lifecycle.ts", "WHERE id=? AND holder_thread_id IS NULL AND thread_id IS NULL", "WHERE id=? AND thread_id IS NULL"),
     trace: drill("sma_r01"),
   },
   n210: {
