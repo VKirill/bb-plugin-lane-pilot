@@ -61,7 +61,7 @@ describe("a writer's question nobody answers", () => {
     expect(getAttempt(w.db, "a1")?.state).toBe("running");
     expect(w.sends).toHaveLength(1);
     expect(w.sends[0]!.threadId).toBe("thr_w");
-    expect(w.sends[0]!.input[0]!.text).toContain("do not widen anything");
+    expect(w.sends[0]!.input[0]!.text).toContain("take the narrower reading");
     expect(w.sends[0]!.input[0]!.text).toContain(SAFE_DEFAULT_ANSWER.split("\n")[2]!);
     expect(w.startWriterTask).toHaveBeenCalledTimes(1);
     expect(countChargedAttempts(w.db, "run1", "T1")).toBe(1);

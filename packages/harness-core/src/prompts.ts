@@ -50,7 +50,7 @@ Prefer, in order:
   2. a repeated concrete failure: the same error or omission in several attempts, each named.
   3. a risk visible in a trajectory but not yet realised.
 Do not fix what the attempts already got right, and do not restate what the fixed brief already says clearly
-(owns_paths, never_touch, NEEDS_HUMAN, the sandbox rules): duplicated instruction dilutes the rest.`;
+(owns_paths, never_touch, ASK_PM, the sandbox rules): duplicated instruction dilutes the rest.`;
 
 export function surfaceBlock(surface: SurfaceSpec = LANE_PILOT_SURFACE): string {
   const graphRow = surface.graphFiles
@@ -96,7 +96,7 @@ that motivated it. The notes are read by a person, not applied by a machine.`;
 const INV = `# YOUR DIMENSION: INVARIANT, how the writer works, independent of the subject
 
 You own procedure, tool use and completion: reading order, when to run which check, how to recover from a failed
-command, when to stop with NEEDS_HUMAN, what to verify before answering. Match each failure to the cheapest
+command, when to stop with ASK_PM, what to verify before answering. Match each failure to the cheapest
 component: a repeated hand-rolled verification becomes a CHECK; a procedure for a recurring situation becomes a
 SKILL; a step the writer demonstrably skips when told becomes a HOOK; a short rule that holds for every task of the
 area may go into always-on.md. Do not add knowledge of the subject matter, the framework or the codebase; the other

@@ -21,6 +21,18 @@ const SENSITIVE = /(^|[/._-])(auth|oauth|login|secret|secrets|password|credentia
 const DOCS_OR_TESTS = /\.(md|mdx|rst)$|(^|\/)docs\/|(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|Cargo\.lock|poetry\.lock|uv\.lock)$/i;
 const SMALL_KINDS = new Set(["chore", "refactor", "docs"]);
 
+/** The files a task's paths were widened by, kept per task so the code critic reads them at the end (question-rules.ts writes them). */
+export const pathsWidenedKey = (runId: string, taskId: string) => `lp.paths-widened:${runId}:${taskId}`;
+type WidenedKv = { get(key: string): Promise<unknown>; set(key: string, value: never): Promise<unknown> };
+export async function pathsWidenedOf(kv: WidenedKv, runId: string, taskId: string): Promise<string[]> {
+  const value = await kv.get(pathsWidenedKey(runId, taskId)).catch(() => null);
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+export async function markPathsWidened(kv: WidenedKv, runId: string, taskId: string, files: readonly string[]): Promise<void> {
+  const known = await pathsWidenedOf(kv, runId, taskId);
+  await kv.set(pathsWidenedKey(runId, taskId), [...new Set([...known, ...files])] as never);
+}
+
 /** One skip in ten by the task id: the same task always lands the same way, so a retry does not flip the decision. */
 export const sampledSkip = (taskId: string): boolean => createHash("sha256").update(taskId).digest()[0]! < 26;
 
@@ -33,11 +45,14 @@ export function criticLevel(input: {
   referenceTestEdits?: readonly string[];
   /** The task of a section chat that also changes files outside the section (repo_scope): a shared SDK breaks the other bots, so the critic gates it. */
   repoScope?: boolean;
+  /** Files Lane Pilot added to this task's owns_paths on its writer's question (question-rules.ts): such a task is always looked at hard. */
+  pathsWidened?: readonly string[];
   /** quality_mode full, or `code_critique.enabled` set by the project: the critic is never skipped. */
   pinned?: boolean;
 }): CriticLevel {
   if (input.referenceTestEdits?.length) return { tier: "strict", reason: "reference_tests_edited" };
   if (input.repoScope) return { tier: "strict", reason: "repo_scope" };
+  if (input.pathsWidened?.length) return { tier: "strict", reason: "paths_widened" };
   if (input.risk === "high" || input.risk === "critical") return { tier: "strict", reason: `risk_${input.risk}` };
   const sensitive = input.paths.find((path) => SENSITIVE.test(path));
   if (sensitive) return { tier: "strict", reason: `sensitive_path:${sensitive}` };

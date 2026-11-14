@@ -46,7 +46,7 @@ Tools are registered in the rooms and exposed to agents through the `bb-bridge` 
 | Tool | Purpose |
 |---|---|
 | `lane_pilot_read` | Read a bounded slice of a file in the run's writer workspace. |
-| `lane_pilot_dispatch_writer`, `lane_pilot_wait_writer`, `lane_pilot_answer_writer` | Start a task-v2 contract, wait up to 240 s for the receipt, answer a writer's `NEEDS_HUMAN` question. |
+| `lane_pilot_dispatch_writer`, `lane_pilot_wait_writer`, `lane_pilot_answer_writer` | Start a task-v2 contract, wait up to 240 s for the receipt, answer a writer's `ASK_PM` question. |
 | `lane_pilot_update_task`, `lane_pilot_cancel_task`, `lane_pilot_reassign_task` | Change a queued or blocked task in place, cancel unwanted tasks, move a running task to a fresh writer thread. |
 | `lane_pilot_workspace_status`, `lane_pilot_run_health` | Status and diff of the managed workspace; breaker state and run budget. |
 | `lane_pilot_ask_owner` | Ask the owner as a form in the chat (with a push). |

@@ -483,7 +483,7 @@ describe("lane_pilot_update_task", () => {
       const turn = sent[0]!.input[0]!.text;
       expect(turn).toContain(`Your question was: ${question}`);
       expect(turn).toMatch(/- verification: \[\{"command":"npm test".*→ \[\{"command":"npx vitest run tests\/fitness\/"/);
-      expect(turn).toContain("NEEDS_HUMAN:");
+      expect(turn).toContain("ASK_PM:");
 
       // The question and the PM's fix are kept in the task folder's Q&A.
       const qa = writes.find((write) => write.path.endsWith("/QA.md"));

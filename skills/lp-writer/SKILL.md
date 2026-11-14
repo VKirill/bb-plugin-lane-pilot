@@ -38,7 +38,7 @@ Docs/wiki refresh, PR review tone, CI/docker, commit/push/merge, anything outsid
 
 ## Done
 
-Done = the contract's `verification` commands pass; answer with the changed paths and the results. Contract unclear → no file changes and `NEEDS_HUMAN: <one question>` as the first line of the answer (Lane Pilot); in the terminal report Gaps.
+Done = the contract's `verification` commands pass; answer with the changed paths and the results. Contract unclear → no file changes and `ASK_PM: <one question>` (the old `NEEDS_HUMAN:` still works) as the first line of the answer (Lane Pilot); in the terminal report Gaps.
 
 ## Say only what you checked
 

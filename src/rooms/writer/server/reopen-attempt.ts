@@ -4,7 +4,7 @@ import { countAttempts, getAttempt, getRun, getTaskPlan, transitionAttempt } fro
 import { taskFolderRel } from "../../verification";
 import { closeWriterStages, reopenWriterStages } from "../../runs/server";
 import { stringAt, isNotFound, orMiss } from "@lane-pilot/kit";
-import { NEEDS_HUMAN_MARKER } from "./writer-task";
+import { ASK_PM_MARKER } from "./writer-task";
 import type { ServerCore } from "../../contracts/server";
 
 import { saveFollowUp } from "./sticky";
@@ -48,7 +48,7 @@ export function contractFixTurnPrompt(input: { question: string; changes: FieldC
     `The PM fixed your task's contract in place; the attempt continues in this thread and worktree, and no attempt was spent. Your question was: ${input.question}`,
     `Changed fields, old → new. The new value applies from now on, and validation uses it:\n${changeLines(input.changes)}`,
     "The setup rules from your first brief still hold: only owns_paths (the new one, if it changed), no commits or merges, no npm install.",
-    `If the task cannot be done as written, change no files and answer with the first line \`${NEEDS_HUMAN_MARKER} <one question>\`.`,
+    `If the task cannot be done as written, change no files and answer with the first line \`${ASK_PM_MARKER} <one question>\`.`,
     "Run the verification commands, then answer with the changed paths and result.",
   ].join("\n\n");
 }

@@ -7,7 +7,7 @@ import type { PrototypeConfig, TaskV2 } from "../../../contracts";
 import { reconcileCritic } from "../../../stability";
 import { MAX_FILE_EXCERPT_BYTES } from "../../code-critique";
 import { codeCritiquePrompt, codeCritiqueSource, codeCritiqueStops, criticPersonas, critiqueFromStageResult, critiquePolicyFromResult, freezeCritiquePolicy, parseCodeCritique, parseCodeCritiqueSettings, persistLedgerFields, settingsFromFrozenPolicy, unionCriticFails } from "../../code-critique";
-import { criticLevel } from "../../critic-level";
+import { criticLevel, pathsWidenedOf } from "../../critic-level";
 import type { CandidateEvidence, FrozenCritiquePolicy } from "../../code-critique";
 import { sha256 } from "../../../tasks";
 import { candidateCitations } from "../../citations";
@@ -47,6 +47,7 @@ export async function runCodeCritique(input:{
   // A project that turned the critic off itself keeps that; quality_mode full or a project that turned it on never skips.
   const level = criticLevel({ taskId:input.taskId, kind:input.task.kind, risk:input.task.risk, paths:input.evidence.files.map((file) => file.path),
     checks:input.evidence.verification, referenceTestEdits:input.evidence.referenceTestEdits, repoScope:input.task.repo_scope === true,
+    pathsWidened:await pathsWidenedOf(input.bb.storage.kv as never, input.runId, input.taskId),
     pinned:qualityMode === "full" || projectSettings["code_critique.enabled"] === true });
   const settings = level.tier === "strict" && projectSettings["code_critique.enabled"] !== false
     ? { ...riskSettings, "code_critique.enabled":true, "code_critique.mode":"gate" } : riskSettings;

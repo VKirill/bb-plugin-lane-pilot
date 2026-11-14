@@ -98,7 +98,7 @@ export function writerMarkers(report: string): WriterMarkers {
 }
 
 /** The marker lines the writer's brief asks for. */
-export const MARKER_BRIEF_LINE = "End with `APPROACH:` and `LESSON:` lines; open questions go to QUESTIONS.md.";
+export const MARKER_BRIEF_LINE = "End with `APPROACH:` and `LESSON:` lines; a question goes as the first line of the answer with `ASK_PM:`, nowhere else.";
 
 /** Stage questions from files (SMA): the lines of the task folder's QUESTIONS.md, each with its kind. */
 export function questionsFromFile(text: string): Array<{ question: string; kind: string }> {

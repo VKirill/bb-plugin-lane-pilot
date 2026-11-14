@@ -161,7 +161,7 @@ describe("writer brief", () => {
     }, owns);
     const bullet = brief.split("\n").find((line) => line.includes("outside owns_paths →"));
     expect(bullet).toContain("the failure points at ui/passport.tsx, outside owns_paths → do not edit it");
-    expect(bullet).toContain("`NEEDS_HUMAN: npm run typecheck fails in ui/passport.tsx, outside owns_paths and not caused by this task`");
+    expect(bullet).toContain("`ASK_PM: npm run typecheck fails in ui/passport.tsx, outside owns_paths and not caused by this task`");
     // Lane Pilot suite-green-pm-helpers: the PM's filter `tests/server` also ran tests/server-reconcile.test.ts,
     // red on main; vitest names it on its FAIL line and in the stack frame, far above the tail.
     const vitest = [
@@ -218,7 +218,7 @@ describe("writer brief", () => {
     expect(brief).not.toMatch(/drop (it|them)/);
     expect(brief).toContain("undo only your own edits there");
     expect(brief).toContain("do not git checkout/restore the file or make it match git HEAD");
-    expect(brief).toContain("`NEEDS_HUMAN: the task needs package.json, src/ui-catalog.ts changed (<why>); add them to owns_paths`");
+    expect(brief).toContain("`ASK_PM: the task needs package.json, src/ui-catalog.ts changed (<why>); add them to owns_paths`");
   });
 
   it("names one bullet per problem when the reason lists several", () => {
@@ -278,7 +278,7 @@ describe("writer brief", () => {
   it("brief includes sandbox NEEDS_HUMAN instruction and done definition", () => {
     const brief = writerPrompt(task);
     expect(brief).not.toContain("verification itself");
-    expect(brief).toContain("NEEDS_HUMAN: check <command> cannot run in the sandbox: <error>");
+    expect(brief).toContain("ASK_PM: check <command> cannot run in the sandbox: <error>");
     // One statement of who runs the checks (instructions audit 2, 2026-10-08): the old pair said Lane Pilot runs them and the writer must make them exit 0.
     expect(brief).toContain("Done when your change is complete and each verification command would exit 0; Lane Pilot runs them in a sandbox and returns a failure to you in this thread.");
     expect(brief).not.toContain("Done when every verification command exits 0");
@@ -290,8 +290,8 @@ describe("the NEEDS_HUMAN marker", () => {
   it("is asked for only as the first line, which is the only place the parser reads", () => {
     const brief = writerPrompt(task);
     expect(brief).not.toMatch(/end with `NEEDS_HUMAN/);
-    expect(brief).toContain("answer with the first line `NEEDS_HUMAN: <one question>`");
-    expect(brief).toContain("`NEEDS_HUMAN: needs secret <NAME>`");
+    expect(brief).toContain("answer with the first line `ASK_PM: <one question>`");
+    expect(brief).toContain("`ASK_PM: needs secret <NAME>`");
     expect(needsHumanQuestion("NEEDS_HUMAN: which port?\nnothing changed")).toBe("which port?");
     expect(needsHumanQuestion("Checked it.\nNEEDS_HUMAN: which port?")).toBeNull();
     // SelfyStudio fix-en-routes-empty-group (2026-10-12): the writer copied the brief's backticks around the marker.

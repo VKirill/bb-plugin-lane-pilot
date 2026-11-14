@@ -7,7 +7,7 @@ describe("a check the sandbox could not run", () => {
       verification: [{ command: "cd game && scripts/check.sh", exitCode: 127, stdout: "", stderr: "scripts/check.sh: line 51: stylua: command not found" }] };
     const brief = previousAttemptBrief(last, { owns_paths: ["game/src/**"] });
     expect(brief).toMatch(/could not find a program the check calls: that is the check environment, not your code/);
-    expect(brief).toMatch(/NEEDS_HUMAN: cd game && scripts\/check.sh cannot find <program>/);
+    expect(brief).toMatch(/ASK_PM: cd game && scripts\/check.sh cannot find <program>/);
   });
 
   it("says nothing of the kind for an ordinary failing check", () => {

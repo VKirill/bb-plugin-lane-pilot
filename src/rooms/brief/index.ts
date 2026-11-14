@@ -66,7 +66,7 @@ export type BriefSectionInput = {
   boundaries?: string;
   /** <acceptance> body: acceptance items and verification commands. */
   acceptance?: string;
-  /** <output> body: the answer format, stated once (NEEDS_HUMAN included). */
+  /** <output> body: the answer format, stated once (ASK_PM included). */
   output?: string;
   /** Extra tagged sections, rendered after <output> in the given order. */
   extraSections?: ReadonlyArray<{ tag: string; text: string }>;
