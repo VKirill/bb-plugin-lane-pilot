@@ -1,18 +1,13 @@
-import { createHash } from "node:crypto";
 import { switchOn } from "@lane-pilot/models";
-import type { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { GLOBAL_SETTINGS_PROJECT_ID, SETTING_WORKER_STRICT_USER } from "@lane-pilot/settings-catalog";
-import { attemptWorkspacePaths, recentAttemptWorkspaces, recentRunWorkspaces, finalTaskIdsSince, lastJanitorKept, listOpenWorktrees, loadProjectSettings, recordJanitorSweep, registerWorktree, releaseWorktree, releaseWorktreeById, releaseWorktreesUnder, writerBaseForWorkspace } from "../../storage";
+import { attemptWorkspacePaths, finalTaskIdsSince, lastJanitorKept, listOpenWorktrees, loadProjectSettings, recordJanitorSweep, registerWorktree, releaseWorktreeById, releaseWorktreesUnder, writerBaseForWorkspace } from "../../storage";
 import { STICKY_WINDOW_MS, listQaHosts } from "../../platform/server";
-import type { ChainRuntime } from "../../contracts/server";
-import { REPORTED_KEEP_REASONS } from "../../verification";
-import { closeOwnerItem, closeOwnerItemsByPrefix, hasOpenOwnerItem, listOpenOwnerItemKeys, postOwnerItem, rpcLine } from "../../owner-waiting";
+import type { SweepDecision } from "../../verification";
 import { configuredSetting } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 import { OPEN_ATTEMPT_STATES, RETRY_ELIGIBLE, isOpenAttemptState } from "../../contracts/state-machine";
 import { DOCS_WORKTREE_PREFIX, docsWorktreeKey, REGRESS_MARKER_TTL_MS, REGRESS_WORKTREE_PREFIX, regressWorktreeKey, regressWorktreePath, SELF_REPAIR_STATE_KEY, selfRepairWorktrees } from "../../contracts";
 import { bestEffort } from "@lane-pilot/kit";
-import { listPhases } from "../../phase";
 import { recordEvidence } from "../../storage";
 import { disarmedProjects, rearmExpiredDisarms, reportStaleDisarms } from "../../policy";
 
@@ -28,7 +23,7 @@ export const REARM_SINCE_KEY = "lp.protection.rearm-since";
  * the protected paths because the decision needs its DB; the machine does the deleting.
  */
 
-type JanitorOutcome = {
+export type JanitorOutcome = {
   removed?: string[]; freedBytes?: number;
   kept?: Array<{ path: string; reason: string; ageMs: number; bytes: number }>;
   tmpRemoved?: string[]; tmpFreedBytes?: number; errors?: string[];
@@ -44,7 +39,7 @@ export const JANITOR_OPEN_STATES: readonly string[] = OPEN_ATTEMPT_STATES;
 export const JANITOR_REOPENABLE_STATES: readonly string[] = [...RETRY_ELIGIBLE, "blocked"];
 
 /** cleanup.worktree_grace_hours in milliseconds (default 2 h). */
-function worktreeGraceMs(db: ServerCore["db"]): number {
+export function worktreeGraceMs(db: ServerCore["db"]): number {
   const raw = configuredSetting(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID), "cleanup.worktree_grace_hours");
   return Math.max(0, (typeof raw === "number" ? raw : Number(raw) || 2) * 3_600_000);
 }
@@ -270,10 +265,18 @@ export function mountWorktreeJanitor(ctx: ServerCore, _sweeps?: AttemptSweeps): 
   bb.onDispose(() => clearTimeout(boot));
 }
 
+/** One decision of the daily pass as the hub reports it: the machine's decision, with the machine and (for a BB environment) BB's own answer. */
+export type HubDecision = SweepDecision & { host: string };
 /** What one pass of the graph lp.worktree-cleanup reports: its status, the counts and one line for the board's run output. */
-export type CleanupPassOutcome = { status: "ok" | "off" | "error"; removed: number; freedBytes: number; kept: number; report: string };
+export type CleanupPassOutcome = {
+  status: "ok" | "off" | "error"; removed: number; freedBytes: number; kept: number; report: string;
+  /** The daily pass: every linked worktree looked at on every machine, with its decision and reason. */
+  decisions?: HubDecision[];
+  /** The daily pass: the bounded home search on each machine (roots, depth, repositories, folders read, time). */
+  search?: Array<{ host: string; roots: string[]; maxDepth: number; repos: number; dirs: number; ms: number; truncated: boolean }>;
+};
 
-const gb = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(1)} ГБ`;
+export const gb = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(1)} ГБ`;
 
 /** The hourly pass: the registry's dead rows first, then Lane Pilot's root on every connected machine. */
 export async function runHourlyWorktreePass(ctx: Pick<ServerCore, "bb" | "db" | "log" | "isDisposed" | "host">, sweeps: AttemptSweeps, now = Date.now(), signal?: AbortSignal): Promise<CleanupPassOutcome> {
@@ -285,204 +288,3 @@ export async function runHourlyWorktreePass(ctx: Pick<ServerCore, "bb" | "db" | 
     report: `Удалено ${outcome.removed + reconciled} worktree, освобождено ${gb(outcome.freedBytes)}; оставлено ${outcome.kept}` };
 }
 
-/** cleanup.worktree_max_age_days in milliseconds (default 7 days, at least one). */
-export function worktreeMaxAgeMs(db: ServerCore["db"]): number {
-  const raw = configuredSetting(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID), "cleanup.worktree_max_age_days");
-  const days = typeof raw === "number" ? raw : Number(raw);
-  return Math.max(1, Number.isFinite(days) && days > 0 ? days : 7) * 86_400_000;
-}
-/** A worktree whose folder or branch moved within this window is never swept: another agent may be working in it right now. */
-export const WORKTREE_YOUNG_MS = 24 * 3_600_000;
-/** The owner's line of the daily pass: one per distinct kept list (`worktree-cleanup:<hash>`), never one per pass. */
-export const CLEANUP_ITEM_PREFIX = "worktree-cleanup:";
-
-/** A host that refused the daily pass's input: an older build whose contract has no `deep` (zod's strict-object refusal, or BB's input check). */
-const OLDER_HOST = /unrecognized key|invalid[_ ]input|input validation/i;
-const NO_DAILY_PASS = "this machine's Lane Pilot host is older and has no daily pass (update the plugin there)";
-
-type DeepReceipt = NonNullable<Awaited<ReturnType<typeof import("../../verification").sweepWorktreeClasses>>>;
-type HostAnswer = JanitorOutcome & { deep?: DeepReceipt };
-
-/**
- * What the hub knows about each machine for the daily pass: the project folders (BB's project sources, Lane Pilot's run folders), the BB
- * environment worktrees of Lane Pilot attempts, the worktrees of abandoned tasks, the registry's open rows. «Abandoned» is a path every
- * attempt of which has ended without being accepted — cancelled, or failed and followed by a later attempt of the task, or left in a run
- * that is closed — and was last touched more than a day ago.
- */
-export async function dailyPassInputs(ctx: Pick<ServerCore, "bb" | "db">, now = Date.now()): Promise<{
-  folders: Map<string, Set<string>>; bbEnvPaths: Map<string, Set<string>>; abandoned: Map<string, Set<string>>; registry: Map<string, string[]>; candidates: string[];
-}> {
-  const { bb, db } = ctx;
-  const add = (map: Map<string, Set<string>>, host: string, path: string) => { if (host && path?.startsWith("/")) map.set(host, (map.get(host) ?? new Set()).add(path)); };
-  const folders = new Map<string, Set<string>>(), bbEnvPaths = new Map<string, Set<string>>(), abandoned = new Map<string, Set<string>>();
-  // A list that throws before it returns a promise is the same unknown as one that rejects: the run folders below still give the folders.
-  const sdkProjects = (bb.sdk as unknown as { projects?: { list(query: unknown): Promise<Array<{ sources?: Array<{ hostId?: string; path?: string }> }>> } }).projects;
-  const projects = await Promise.resolve().then(() => sdkProjects?.list({ includePersonal: true }) ?? []).catch(() => []);
-  for (const project of projects) for (const source of project.sources ?? []) add(folders, source.hostId ?? "", source.path ?? "");
-  const runs = recentRunWorkspaces(db, now - 90 * 86_400_000);
-  const runFolders = new Set<string>();
-  for (const run of runs) { add(folders, run.host, run.path); runFolders.add(`${run.host}\0${run.path}`); }
-  const attempts = recentAttemptWorkspaces(db, now - 90 * 86_400_000);
-  const byPath = new Map<string, typeof attempts>();
-  for (const row of attempts) {
-    const key = `${row.host}\0${row.path}`;
-    byPath.set(key, [...(byPath.get(key) ?? []), row]);
-    // A BB environment of an attempt: not Lane Pilot's own root (that class is `lane`), never a run's own folder or environment.
-    if (row.env && row.env !== row.runEnv && !row.path.includes("/.lane-pilot/worktrees/") && !runFolders.has(key)) add(bbEnvPaths, row.host, row.path);
-  }
-  for (const [key, rows] of byPath) {
-    if (runFolders.has(key)) continue;
-    const ended = rows.every((row) => !isOpenAttemptState(row.state) && row.state !== "accepted");
-    const given = rows.some((row) => row.state === "canceled" || row.runClosed !== null || row.later > 0);
-    if (ended && given && Math.max(...rows.map((row) => row.updatedAt)) < now - WORKTREE_YOUNG_MS) add(abandoned, rows[0]!.host, rows[0]!.path);
-  }
-  const registry = new Map<string, string[]>();
-  for (const row of listOpenWorktrees(db)) if (row.created_at < now - 3_600_000) registry.set(row.host, [...(registry.get(row.host) ?? []), row.path]);
-  // The trees of a phase still in work: the phase driver made them (no registry row), the daily pass leaves them.
-  const candidates: string[] = [];
-  for (const phase of listPhases(db, { live: true, limit: 1000 })) {
-    for (const tree of Object.values(phase.record.candidate?.trees ?? {}) as Array<{ path?: string }>) if (tree.path) candidates.push(tree.path);
-  }
-  return { folders, bbEnvPaths, abandoned, registry, candidates };
-}
-
-/**
- * The daily pass on every connected machine (docs/worktrees.md, SMA dt_wt_sweep): the hourly sweep plus every class in the project
- * repositories, `git worktree prune`, the registry rows whose folder is gone closed. One janitor row per machine (pass daily, with
- * kept_unmerged and the report by class) and one owner line for what a person has to look at — the copies kept for unmerged commits,
- * uncommitted changes or a live lock — posted once per distinct list, never once per pass.
- */
-export async function runDailyWorktreePass(ctx: Pick<ServerCore, "bb" | "db" | "log" | "isDisposed" | "host">, now = Date.now(), options: { dryRun?: boolean } = {}): Promise<CleanupPassOutcome> {
-  const { bb, db } = ctx;
-  const settings = loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID);
-  if (configuredSetting(settings, "cleanup.worktrees") === "off") return { status: "off", removed: 0, freedBytes: 0, kept: 0, report: "cleanup.worktrees=off" };
-  const dryRun = options.dryRun === true;
-  await ensureLegacyWorktreesAdopted(ctx);
-  if (!dryRun) await bestEffort(ctx.log, "worktree registry reconcile", reconcileWorktreeRegistry(ctx, now), 0);
-  const inputs = await dailyPassInputs(ctx, now);
-  const protectedPaths = [...await protectedWorktreePaths(ctx, now), ...inputs.candidates];
-  const maxAgeMs = worktreeMaxAgeMs(db);
-  const hosts = (await listQaHosts(bb)).filter((row) => row.connected);
-  let removed = 0, freedBytes = 0, kept = 0, keptUnmergedAll = 0, pruned = 0, closed = 0;
-  const attention: Array<{ host: string; path: string; reason: string; detail: string; bytes: number }> = [];
-  const branchesKept: string[] = [];
-  const errors: string[] = [];
-  for (const machine of hosts) {
-    if (ctx.isDisposed()) break;
-    const out = await ctx.host.call("worktreeJanitor", {
-      // A dry run gives the hourly part an endless grace too: a host that ignored `deep.dryRun` would still remove no worktree.
-      requestedHostId: machine.id, protectedPaths, graceMs: dryRun ? Number.MAX_SAFE_INTEGER : worktreeGraceMs(db),
-      deep: { folders: [...inputs.folders.get(machine.id) ?? []], bbEnvPaths: [...inputs.bbEnvPaths.get(machine.id) ?? []], abandonedPaths: [...inputs.abandoned.get(machine.id) ?? []],
-        registryPaths: inputs.registry.get(machine.id) ?? [], maxAgeMs, youngMs: WORKTREE_YOUNG_MS, now: Math.round(now), ...(dryRun ? { dryRun: true } : {}) },
-    }, { hostId: machine.id, timeoutMs: 30 * 60_000 }).catch((cause: unknown) => {
-      // A machine on a build before 0.1.562 checks its input against its own strict contract and refuses the unknown `deep` key: the whole call
-      // fails there and nothing is removed (its hourly sweep keeps running on the old shape). Say what to do instead of the raw validation text.
-      const text = cause instanceof Error ? cause.message : String(cause);
-      errors.push(`${machine.name ?? machine.id}: ${OLDER_HOST.test(text) ? `${NO_DAILY_PASS}; nothing was removed on it (${text.slice(0, 160)})` : text}`);
-      return null;
-    }) as HostAnswer | null;
-    if (!out) continue;
-    const deep = out.deep;
-    if (!deep) {
-      // A host that took the call but ignored `deep` ran its hourly sweep only: its removals are real, their registry rows close.
-      if (!dryRun) for (const path of out.removed ?? []) closed += releaseWorktreesUnder(db, machine.id, path, now);
-      removed += out.removed?.length ?? 0;
-      errors.push(`${machine.name ?? machine.id}: ${NO_DAILY_PASS}; only its hourly sweep ran`);
-      continue;
-    }
-    if (!dryRun) {
-      for (const row of deep.removed) closed += releaseWorktreesUnder(db, machine.id, row.path, now);
-      for (const path of out.removed ?? []) closed += releaseWorktreesUnder(db, machine.id, path, now);
-      for (const path of deep.registryGone) { const before = closed; closed += releaseWorktreesUnder(db, machine.id, path, now); if (closed === before) releaseWorktree(db, machine.id, path, now); }
-    }
-    const reported = deep.kept.filter((row) => (REPORTED_KEEP_REASONS as readonly string[]).includes(row.reason));
-    const keptUnmerged = deep.kept.filter((row) => row.reason === "unmerged").length;
-    const byClass: Record<string, { removed: number; freedBytes: number; kept: Record<string, number> }> = {};
-    for (const row of deep.removed) { const entry = byClass[row.cls] ??= { removed: 0, freedBytes: 0, kept: {} }; entry.removed += 1; entry.freedBytes += row.bytes; }
-    for (const row of deep.kept) { const entry = byClass[row.cls] ??= { removed: 0, freedBytes: 0, kept: {} }; entry.kept[row.reason] = (entry.kept[row.reason] ?? 0) + 1; }
-    const hostRemoved = deep.removed.length + (out.removed?.length ?? 0);
-    const hostFreed = deep.freedBytes + (out.freedBytes ?? 0) + (out.tmpFreedBytes ?? 0);
-    removed += hostRemoved; freedBytes += hostFreed; kept += reported.length + (out.kept?.length ?? 0); keptUnmergedAll += keptUnmerged; pruned += deep.pruned;
-    for (const row of reported) attention.push({ host: machine.name ?? machine.id, path: row.path, reason: row.reason, detail: row.detail, bytes: row.bytes });
-    for (const row of deep.branchesKept) branchesKept.push(`${machine.name ?? machine.id}: ${row.branch} (${row.repo}) — ${row.reason}`);
-    for (const error of [...deep.errors, ...(out.errors ?? [])]) errors.push(`${machine.name ?? machine.id}: ${error}`);
-    if (!dryRun) recordJanitorSweep(db, {
-      at: now, host: machine.id, pass: "daily", removed: hostRemoved, freedBytes: Math.round(deep.freedBytes + (out.freedBytes ?? 0)), tmpRemoved: out.tmpRemoved?.length ?? 0, tmpFreedBytes: Math.round(out.tmpFreedBytes ?? 0),
-      keptJson: JSON.stringify(reported.slice(0, 50).map((row) => `${row.path} (${row.reason}: ${row.detail})`)), keptUnmerged,
-      reportJson: JSON.stringify({ classes: byClass, pruned: deep.pruned, registryClosed: deep.registryGone.length, repos: deep.repos, branchesKept: deep.branchesKept.slice(0, 50),
-        removed: deep.removed.slice(0, 100).map((row) => ({ path: row.path, cls: row.cls, bytes: row.bytes, branch: row.branch, branchDeleted: row.branchDeleted, why: row.why, how: row.how })), errors: deep.errors.slice(0, 20) }),
-    });
-  }
-  const reasonWord: Record<string, string> = { unmerged: "невлитые коммиты", dirty: "незакоммиченные правки", locked: "заблокирована живым процессом", error: "не прочиталась" };
-  const counts = Object.entries(attention.reduce<Record<string, number>>((acc, row) => ({ ...acc, [row.reason]: (acc[row.reason] ?? 0) + 1 }), {})).map(([reason, count]) => `${reasonWord[reason] ?? reason} ${count}`).join(", ");
-  const report = `${dryRun ? "Пробный проход (ничего не удалено): было бы удалено" : "Удалено"} ${removed} worktree, освобождено ${gb(freedBytes)}; prune ${pruned}, закрыто строк реестра ${closed}; оставлено на проверку ${attention.length}${counts ? ` (${counts})` : ""}${branchesKept.length ? `; ветки с невлитыми коммитами оставлены: ${branchesKept.length}` : ""}${errors.length ? `; ошибки: ${errors.length}` : ""}`;
-  if (!dryRun) postCleanupItem(db, attention, report, branchesKept, now);
-  if (errors.length) ctx.log(`Lane Pilot daily worktree pass: ${errors.slice(0, 5).join("; ")}`);
-  return { status: hosts.length && errors.length >= hosts.length && !removed ? "error" : "ok", removed, freedBytes, kept, report: [report, ...attention.slice(0, 20).map((row) => `- ${row.host}: ${row.path} — ${reasonWord[row.reason] ?? row.reason}: ${row.detail}`), ...branchesKept.slice(0, 10).map((line) => `- ${line}`), ...errors.slice(0, 10).map((line) => `- ошибка: ${line}`)].join("\n") };
-}
-
-/**
- * One owner line for the copies a person has to look at, keyed by the list itself: the same list tomorrow is the same open line (nothing
- * new on his screen), a changed list closes the old line and opens a new one, an empty list closes it. A line the owner closed himself
- * stays closed while the list is the same (postOwnerItem keeps his answer).
- */
-function postCleanupItem(db: ServerCore["db"], attention: Array<{ host: string; path: string; reason: string; detail: string; bytes: number }>, report: string, branchesKept: string[], now: number): void {
-  try {
-    const lines = attention.map((row) => `${row.host}\t${row.path}\t${row.reason}`).sort();
-    if (!lines.length) { closeOwnerItemsByPrefix(db, CLEANUP_ITEM_PREFIX, "janitor:worktree-cleanup", now); return; }
-    const key = `${CLEANUP_ITEM_PREFIX}${createHash("sha1").update(lines.join("\n")).digest("hex").slice(0, 16)}`;
-    if (hasOpenOwnerItem(db, { key })) return;
-    for (const open of listOpenOwnerItemKeys(db, { source: "janitor", kind: "worktree_cleanup" }).filter((item) => item.startsWith(CLEANUP_ITEM_PREFIX) && item !== key)) closeOwnerItem(db, open, "janitor:worktree-cleanup", now);
-    const read = { id: "read", label: "Прочитано", cli: rpcLine("owner_waiting_close", { key }), rpc: { method: "owner_waiting_close", input: { key } } };
-    postOwnerItem(db, { key, source: "janitor", kind: "worktree_cleanup", projectId: null, wake: false, actions: [read],
-      what: `Уборка worktree: ${attention.length} копий оставлены, их нужно разобрать вручную`,
-      why: [report, ...attention.slice(0, 8).map((row) => `${row.host}: ${row.path} — ${row.detail}`), ...branchesKept.slice(0, 4)].join("\n"),
-      evidence: [{ kind: "text", ref: "lane_pilot_janitor", label: "строки ежедневного прохода" }] }, now);
-  } catch { /* the janitor rows and the run output have it */ }
-}
-
-/**
- * One cleanup pass, as the graph's step and `bb lane-pilot worktree-cleanup` run it. A dry run is always the daily pass's: it decides for every
- * class, Lane Pilot's root included, and removes nothing (the hourly sweep has no dry mode, so `hourly` + dry run must not reach it).
- * A pass that throws ends `error` with the reason.
- */
-export async function runWorktreeCleanupPass(ctx: Pick<ServerCore, "bb" | "db" | "log" | "isDisposed" | "host">, sweeps: AttemptSweeps, input: { pass: "hourly" | "daily"; dryRun?: boolean }, now = Date.now()): Promise<CleanupPassOutcome & { pass: "hourly" | "daily"; dryRun: boolean }> {
-  const dryRun = input.dryRun === true;
-  const pass = dryRun ? "daily" : input.pass;
-  try {
-    const out = pass === "daily" ? await runDailyWorktreePass(ctx, now, { dryRun }) : await runHourlyWorktreePass(ctx, sweeps, now);
-    return { ...out, pass, dryRun };
-  } catch (cause) {
-    return { status: "error", removed: 0, freedBytes: 0, kept: 0, report: `the ${pass} pass stopped: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 2000), pass, dryRun };
-  }
-}
-
-/**
- * The code step of the graph lp.worktree-cleanup (the body of the two system schedules): `pass` hourly or daily, `dry_run` reads only. An `error`
- * status fails the scheduled run (live_success), so the board shows it and its pause-after-N rule applies.
- */
-export function registerWorktreeCleanupActions(engine: WorkflowEngine, ctx: Pick<ServerCore, "bb" | "db" | "log" | "isDisposed" | "host">, sweeps: AttemptSweeps): void {
-  engine.register<ChainRuntime>("lp.worktree_cleanup", {
-    reentrant: true,
-    run: async (c) => {
-      const out = await runWorktreeCleanupPass(ctx, sweeps, { pass: String(c.resolve("$inputs.pass") ?? "hourly") === "daily" ? "daily" : "hourly", dryRun: c.resolve("$inputs.dry_run") === true });
-      return { output: { status: out.status, removed: out.removed, freed_bytes: Math.round(out.freedBytes), kept: out.kept, report: out.report.slice(0, 16_000) } };
-    },
-  });
-}
-
-export const WORKTREE_CLEANUP_USAGE = "bb lane-pilot worktree-cleanup [--daily] [--dry-run] [--json]";
-
-/**
- * `bb lane-pilot worktree-cleanup`: the pass the system schedules run, by hand, with its report printed. Without flags the hourly sweep; `--daily`
- * the daily pass; `--dry-run` the daily pass deciding only (nothing removed, no janitor row, no owner line). Exit 1 when the pass ended `error`.
- */
-export async function runWorktreeCleanupCli(ctx: Pick<ServerCore, "bb" | "db" | "log" | "isDisposed" | "host">, sweeps: AttemptSweeps, args: string[]): Promise<{ exitCode: number; stdout?: string; stderr?: string }> {
-  const unknown = args.filter((arg) => !["--daily", "--dry-run", "--json"].includes(arg));
-  if (unknown.length) return { exitCode: 2, stderr: `unknown argument ${unknown[0]}\nusage: ${WORKTREE_CLEANUP_USAGE}` };
-  const out = await runWorktreeCleanupPass(ctx, sweeps, { pass: args.includes("--daily") ? "daily" : "hourly", dryRun: args.includes("--dry-run") });
-  const stdout = args.includes("--json")
-    ? JSON.stringify({ pass: out.pass, dry_run: out.dryRun, status: out.status, removed: out.removed, freed_bytes: Math.round(out.freedBytes), kept: out.kept, report: out.report }, null, 2)
-    : `${out.pass}${out.dryRun ? " (dry run)" : ""}: ${out.status}\n${out.report}`;
-  return { exitCode: out.status === "error" ? 1 : 0, stdout };
-}

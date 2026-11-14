@@ -18,7 +18,7 @@ import { createWorkflowLibrary } from "../src/rooms/workflow/server/workflow-lib
 import { createWorkflowPreflight } from "../src/rooms/workflow/server/workflow-preflight";
 import { createWorkflowTriggers } from "../src/rooms/workflow/server/workflow-triggers";
 import { notifyWorkflowIfEnded } from "../src/rooms/workflow/server/pm-notice";
-import { CLEANUP_ITEM_PREFIX, registerWorktreeCleanupActions, runWorktreeCleanupCli } from "../src/rooms/stability/server/worktree-janitor";
+import { CLEANUP_ITEM_PREFIX, registerWorktreeCleanupActions, runWorktreeCleanupCli } from "../src/rooms/stability/server/worktree-daily-pass";
 import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees } from "../src/rooms/runs/server";
 
 vi.setConfig({ testTimeout: 120_000 });

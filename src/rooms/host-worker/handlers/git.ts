@@ -159,10 +159,14 @@ export const worktreeJanitor: ExperimentalHostRpcHandlers<typeof hostContract>["
   const hourly=input.deep?.dryRun
     ?{removed:[],freedBytes:0,kept:[],tmpRemoved:[],tmpFreedBytes:0,errors:[]}
     :await sweepLaneWorktrees({root:laneWorktreeRoot(),protectedPaths,graceMs:input.graceMs??2*3_600_000});
-  const deep=input.deep?await sweepWorktreeClasses({laneRoot:laneWorktreeRoot(),folders:input.deep.folders,bbEnvPaths:input.deep.bbEnvPaths??[],protectedPaths,
+  const search=input.deep?.search;
+  const deep=input.deep?await sweepWorktreeClasses({laneRoot:laneWorktreeRoot(),folders:input.deep.folders,bbEnvPaths:input.deep.bbEnvPaths??[],bbEnvs:input.deep.bbEnvs??[],protectedPaths,
+    // The bounded search starts at this machine's home unless the hub names the roots (docs/worktrees.md).
+    ...(search?{search:{roots:search.roots?.length?search.roots:[homedir()],maxDepth:search.maxDepth,...(search.maxRepos?{maxRepos:search.maxRepos}:{}),...(search.budgetMs?{budgetMs:search.budgetMs}:{})}}:{}),
     abandonedPaths:new Set(input.deep.abandonedPaths??[]),registryPaths:input.deep.registryPaths??[],maxAgeMs:input.deep.maxAgeMs,youngMs:input.deep.youngMs,dryRun:input.deep.dryRun===true,...(input.deep.now?{now:input.deep.now}:{})}):undefined;
   return {hostId:process.env.BB_HOST_ID??input.requestedHostId,...hourly,
-    ...(deep?{deep:{...deep,removed:deep.removed.slice(0,2000),kept:deep.kept.slice(0,5000),branchesKept:deep.branchesKept.slice(0,2000),registryGone:deep.registryGone.slice(0,5000),errors:deep.errors.slice(0,500)}}:{})};
+    ...(deep?{deep:{...deep,removed:deep.removed.slice(0,2000),kept:deep.kept.slice(0,5000),branchesKept:deep.branchesKept.slice(0,2000),registryGone:deep.registryGone.slice(0,5000),errors:deep.errors.slice(0,500),
+      decisions:deep.decisions.slice(0,10000)}}:{})};
 };
 
 export const gitRevertPaths: ExperimentalHostRpcHandlers<typeof hostContract>["gitRevertPaths"] = async (input) => ({
