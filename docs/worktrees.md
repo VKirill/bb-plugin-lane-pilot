@@ -105,9 +105,11 @@ deciding only (nothing removed, no janitor row, no owner line; a dry run is alwa
 
 The hub reaches each machine the way the hourly janitor always did: one host call `worktreeJanitor` per connected host, now with a
 `deep` part (`sweepWorktreeClasses`, `src/rooms/verification/worktree-sweep.ts`). A machine whose plugin is older checks the input
-against its own strict contract and refuses the unknown `deep` key: the call fails there, nothing is removed on it, and the pass's errors
-say «this machine's Lane Pilot host is older and has no daily pass (update the plugin there)»; when every machine is older the run ends
-`error` and the board shows it. Its hourly sweep keeps running (that call has the old shape). A dry run sends an endless `graceMs`, so
+against its own strict contract. One on 0.1.562–0.1.564 refuses the keys of 0.1.565 (`bbEnvs`, `search`): it is asked once more for the
+daily pass it knows, without them and with no BB environment paths, and the report says «ran the old daily pass (no home search, no
+BB-environment decisions): its Lane Pilot build is older» (`oldPass: true` in its janitor row). One before 0.1.562 refuses `deep` itself,
+the retry too: nothing is removed on it, and the pass's errors say «this machine's Lane Pilot host is older and has no daily pass
+(update the plugin there)»; when every machine is like that the run ends `error` and the board shows it. Its hourly sweep keeps running (that call has the old shape). A dry run sends an endless `graceMs`, so
 even a host that ignored `deep.dryRun` would remove no worktree.
 
 **What the hub sends.** The project folders on that machine (BB's project sources and the run folders of the last 90 days); the BB
@@ -154,7 +156,10 @@ merged nowhere), its age, its uncommitted changes and its size, and one owner li
 **BB environments: BB removes them.** A managed environment with no live thread (every thread in it archived or deleted), merged,
 clean and older than the limit is a `remove` decision `via: "bb"`: the machine does not touch it, the hub calls
 `bb.sdk.environments.delete({ environmentId })` and BB's provider runs `git worktree remove` (BB itself refuses while a live thread is
-in it; that answer keeps the copy with reason `error`). An environment of a thread that is not archived is kept (`live-thread`) with
+in it; that answer keeps the copy with reason `error`). BB tears down in the background, so the pass re-reads each environment it asked
+for (`environments.get`, up to 5 s): one BB reports destroyed (or torn down, or no longer known) is `outcome: "removed"` and counted;
+any other is `outcome: "asked"` («попросили BB удалить», with BB's state), counted neither as removed nor in the freed space, its
+registry row left open; the next pass sees whether its folder is gone. An environment of a thread that is not archived is kept (`live-thread`) with
 its facts, so the owner sees what archiving the thread would free. A BB environment named without BB's id (an older hub) is kept
 (`no-environment-id`); a folder under BB's environment root that BB no longer lists is only listed (`bb-env-unlisted`). No folder is
 ever removed behind BB's back.

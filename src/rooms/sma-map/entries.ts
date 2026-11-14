@@ -432,7 +432,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n418: ["have", "проход живости: канарейка и тишина писателя", "src/rooms/writer/server/writer-silence.ts#sweepWriterSilence"],
   n419: ["have", "после перезапуска попытки сверяет reconcile: running/spawn_* попытка без треда сверяется с BB (shouldReconcileAttemptThread → reconcileAttemptThread), очередь и журнал — одна SQLite, расхождения нет", "src/rooms/stability/server/reconcile.ts#reconcileAttemptThread"],
   n420: ["have", "единый журнал отказов", "src/rooms/storage/attempts-store/project-reads.ts#failedTasksAllProjects"],
-  n421: ["have", "ежедневная уборка копий", "src/rooms/stability/server/worktree-janitor.ts#runDailyWorktreePass"],
+  n421: ["have", "ежедневная уборка копий", "src/rooms/stability/server/worktree-daily-pass.ts#runDailyWorktreePass"],
   n422: ["have", "приём из беклога", "src/rooms/backlog/server/scanner.ts#scan"],
   n423: ["have", "сигнал старения", "src/rooms/phase/server/driver-steps.ts#poke"],
   n424: ["have", "повторить то, что повторяется само: перезапуск припаркованных", "src/rooms/contracts/failure-class.ts#PARKED_CLASSES"],

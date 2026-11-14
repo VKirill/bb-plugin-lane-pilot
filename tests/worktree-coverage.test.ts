@@ -183,7 +183,7 @@ describe("BB environments", () => {
 
 describe("the daily pass from the hub", () => {
   /** A hub with one machine on the real host handlers ($HOME = the fixture, so the home search runs there) and BB's environments stubbed. */
-  async function hub(dir: string, envs: Array<{ id: string; path: string }>, refuse = new Set<string>()) {
+  async function hub(dir: string, envs: Array<{ id: string; path: string }>, refuse = new Set<string>(), afterDelete: "running" | "destroyed" = "running") {
     vi.stubEnv("HOME", dir);
     const fake = createFakePluginHost({ pluginId: "lane-pilot" }).bb;
     const db = openDatabase(fake);
@@ -194,6 +194,10 @@ describe("the daily pass from the hub", () => {
       environments: {
         list: async () => envs.map((env) => ({ id: env.id, hostId: "h1", path: env.path, managed: true, isWorktree: true, status: "ready" })),
         delete: async ({ environmentId }: { environmentId: string }) => { if (refuse.has(environmentId)) throw new Error("Environment still has live threads"); deleted.push(environmentId); return { ok: true }; },
+        // BB's teardown runs in the background: «running» keeps the folder (nothing here removes it), «destroyed» is BB saying it is done.
+        get: async ({ environmentId }: { environmentId: string }) => afterDelete === "destroyed" && deleted.includes(environmentId)
+          ? { status: "destroyed", lifecycle: { phase: "destroyed", teardown: { status: "removed" } } }
+          : { status: "ready", lifecycle: { phase: "teardown", teardown: { status: "running", attempt: 1 } } },
       },
       // Only threads that are not archived come back (BB's own filter): none here.
       threads: { list: async (query: unknown) => { threadQueries.push(query); return []; } },
@@ -231,16 +235,43 @@ describe("the daily pass from the hub", () => {
     expect(json.dry_run).toBe(true);
     expect(json.decisions.map((row) => row.path)).toEqual(expect.arrayContaining([env, night, release]));
 
-    const real = await runDailyWorktreePass(ctx, now);
+    const real = await runDailyWorktreePass(ctx, now, { teardownWaitMs: 300 });
     expect(real.status).toBe("ok");
     expect(deleted).toEqual(["env_a"]);
     expect(existsSync(night)).toBe(false);
     expect(existsSync(env)).toBe(true); // BB's provider removes it; this pass never touched the folder
+    // BB took the delete but has not torn the environment down: «asked», not «removed», and neither counted nor freed.
+    expect(real.decisions?.find((row) => row.path === env)).toMatchObject({ decision: "remove", via: "bb", outcome: "asked" });
+    expect(real.report).toContain(`попросили BB удалить: Machine: ${env}`);
+    expect(real.report).toContain("asked BB to remove the environment (BB: ready, teardown running); the next pass sees whether its folder is gone");
+    expect(real.report).not.toContain(`удалено: Machine: ${env}`);
+    expect(real.removed).toBe(1);
+    const nightBytes = dry.decisions!.find((row) => row.path === night)!.bytes;
+    expect(real.freedBytes).toBe(nightBytes);
+    const janitorRow = JSON.parse((db.prepare("SELECT report_json FROM lane_pilot_janitor WHERE pass='daily'").get() as { report_json: string }).report_json);
+    expect(janitorRow.classes["bb-env"]?.removed ?? 0).toBe(0);
+    expect(janitorRow.decisions.find((row: { path: string }) => row.path === env).outcome).toBe("asked");
     expect(existsSync(release)).toBe(true);
     const outsideItems = () => db.prepare("SELECT key, state FROM lane_pilot_owner_item WHERE key LIKE ?").all(`${OUTSIDE_ITEM_PREFIX}%`) as Array<{ key: string; state: string }>;
     expect(outsideItems().filter((row) => row.state === "open")).toHaveLength(1);
-    await runDailyWorktreePass(ctx, now + DAY);
+    await runDailyWorktreePass(ctx, now + DAY, { teardownWaitMs: 0 });
     expect(outsideItems()).toHaveLength(1);
+  });
+
+  it("[sma:dt_wt_sweep] an environment BB reports destroyed after the delete is counted as removed, with its space", async () => {
+    const { dir, base, add, commit } = await fixture();
+    const env = add(base, join(dir, ".bb-machines", "m", "plugins", "environment-git-worktree", "host-data", "worktrees", "thr_d-1", "app"), "bb/thr_d");
+    commit(env, "env.txt");
+    git(base, "merge", "-q", "--no-ff", "-m", "env", "bb/thr_d");
+    const { ctx, deleted } = await hub(dir, [{ id: "env_d", path: env }], new Set(), "destroyed");
+    const out = await runDailyWorktreePass(ctx, Date.now() + 8 * DAY, { teardownWaitMs: 300 });
+    expect(deleted).toEqual(["env_d"]);
+    const row = out.decisions?.find((item) => item.path === env);
+    expect(row).toMatchObject({ decision: "remove", outcome: "removed" });
+    expect(row!.detail).toContain("BB removed the environment");
+    expect(out.report).toContain(`удалено: Machine: ${env}`);
+    expect(out.removed).toBe(1);
+    expect(out.freedBytes).toBe(row!.bytes);
   });
 
   it("[sma:dt_wt_sweep] an environment BB refuses to remove is kept with BB's answer", async () => {

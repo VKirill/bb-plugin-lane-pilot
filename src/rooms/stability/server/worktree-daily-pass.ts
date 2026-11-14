@@ -125,7 +125,7 @@ export async function bbEnvironmentsByHost(bb: ServerCore["bb"]): Promise<{ byHo
  * kept_unmerged and the report by class) and one owner line for what a person has to look at — the copies kept for unmerged commits,
  * uncommitted changes or a live lock — posted once per distinct list, never once per pass.
  */
-export async function runDailyWorktreePass(ctx: Pick<ServerCore, "bb" | "db" | "log" | "isDisposed" | "host">, now = Date.now(), options: { dryRun?: boolean } = {}): Promise<CleanupPassOutcome> {
+export async function runDailyWorktreePass(ctx: Pick<ServerCore, "bb" | "db" | "log" | "isDisposed" | "host">, now = Date.now(), options: { dryRun?: boolean; teardownWaitMs?: number } = {}): Promise<CleanupPassOutcome> {
   const { bb, db } = ctx;
   const settings = loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID);
   if (configuredSetting(settings, "cleanup.worktrees") === "off") return { status: "off", removed: 0, freedBytes: 0, kept: 0, report: "cleanup.worktrees=off" };
@@ -144,22 +144,35 @@ export async function runDailyWorktreePass(ctx: Pick<ServerCore, "bb" | "db" | "
   const searches: NonNullable<CleanupPassOutcome["search"]> = [];
   const branchesKept: string[] = [];
   const errors: string[] = environments.error ? [environments.error] : [];
+  const notes: string[] = [];
   for (const machine of hosts) {
     if (ctx.isDisposed()) break;
-    const out = await ctx.host.call("worktreeJanitor", {
+    const name = machine.name ?? machine.id;
+    const legacyDeep = { folders: [...inputs.folders.get(machine.id) ?? []], bbEnvPaths: [...inputs.bbEnvPaths.get(machine.id) ?? []], abandonedPaths: [...inputs.abandoned.get(machine.id) ?? []],
+      registryPaths: inputs.registry.get(machine.id) ?? [], maxAgeMs, youngMs: WORKTREE_YOUNG_MS, now: Math.round(now), ...(dryRun ? { dryRun: true } : {}) };
+    const call = (deep: Record<string, unknown>) => ctx.host.call("worktreeJanitor", {
       // A dry run gives the hourly part an endless grace too: a host that ignored `deep.dryRun` would still remove no worktree.
-      requestedHostId: machine.id, protectedPaths, graceMs: dryRun ? Number.MAX_SAFE_INTEGER : worktreeGraceMs(db),
-      deep: { folders: [...inputs.folders.get(machine.id) ?? []], bbEnvPaths: [...inputs.bbEnvPaths.get(machine.id) ?? []], abandonedPaths: [...inputs.abandoned.get(machine.id) ?? []],
-        bbEnvs: environments.byHost.get(machine.id) ?? [], search: WORKTREE_SEARCH,
-        registryPaths: inputs.registry.get(machine.id) ?? [], maxAgeMs, youngMs: WORKTREE_YOUNG_MS, now: Math.round(now), ...(dryRun ? { dryRun: true } : {}) },
-    }, { hostId: machine.id, timeoutMs: 30 * 60_000 }).catch((cause: unknown) => {
-      // A machine on a build before 0.1.562 checks its input against its own strict contract and refuses the unknown `deep` key: the whole call
-      // fails there and nothing is removed (its hourly sweep keeps running on the old shape). Say what to do instead of the raw validation text.
-      const text = cause instanceof Error ? cause.message : String(cause);
-      errors.push(`${machine.name ?? machine.id}: ${OLDER_HOST.test(text) ? `${NO_DAILY_PASS}; nothing was removed on it (${text.slice(0, 160)})` : text}`);
-      return null;
-    }) as HostAnswer | null;
-    if (!out) continue;
+      requestedHostId: machine.id, protectedPaths, graceMs: dryRun ? Number.MAX_SAFE_INTEGER : worktreeGraceMs(db), deep,
+    } as never, { hostId: machine.id, timeoutMs: 30 * 60_000 }) as Promise<HostAnswer>;
+    const textOf = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
+    let out: HostAnswer;
+    try {
+      out = await call({ ...legacyDeep, bbEnvs: environments.byHost.get(machine.id) ?? [], search: WORKTREE_SEARCH });
+    } catch (cause) {
+      const text = textOf(cause);
+      if (!OLDER_HOST.test(text)) { errors.push(`${name}: ${text}`); continue; }
+      // A machine on 0.1.562–0.1.564 checks its input against its own strict contract and refuses the keys of 0.1.565 (`bbEnvs`, `search`):
+      // it is asked once more for the daily pass it knows, without them and without the BB environment paths (no BB environment is removed
+      // except by BB). A machine before 0.1.562 refuses `deep` itself: nothing is removed there, its hourly sweep keeps running.
+      try {
+        out = await call({ ...legacyDeep, bbEnvPaths: [] });
+        notes.push(`${name}: ran the old daily pass (no home search, no BB-environment decisions): its Lane Pilot build is older (update the plugin there)`);
+      } catch (again) {
+        const second = textOf(again);
+        errors.push(`${name}: ${OLDER_HOST.test(second) ? `${NO_DAILY_PASS}; nothing was removed on it (${second.slice(0, 160)})` : second}`);
+        continue;
+      }
+    }
     const deep = out.deep;
     if (!deep) {
       // A host that took the call but ignored `deep` ran its hourly sweep only: its removals are real, their registry rows close.
@@ -173,6 +186,8 @@ export async function runDailyWorktreePass(ctx: Pick<ServerCore, "bb" | "db" | "
     // A BB environment the machine found merged, clean and old: BB removes it (its provider runs `git worktree remove`), never this pass by
     // hand. BB refuses while a thread that is not archived is in it; then it is kept with BB's answer.
     let envFreed = 0;
+    const firstDecision = decisions.length;
+    const asked: typeof deep.decisions = [];
     for (const row of deep.decisions ?? []) {
       if (row.decision === "remove" && row.via === "bb" && row.environmentId) {
         if (!dryRun) {
@@ -185,12 +200,29 @@ export async function runDailyWorktreePass(ctx: Pick<ServerCore, "bb" | "db" | "
             decisions.push({ ...row, decision: "keep", reason: "error", detail, host } as HubDecision);
             continue;
           }
+          // BB tears an environment down in the background: counted only once BB says it is gone (below).
+          asked!.push(row);
+          continue;
         }
         envFreed += row.bytes;
         deep.removed.push({ path: row.path, cls: "bb-env", bytes: row.bytes, branch: row.branch, branchDeleted: false, why: "merged", how: row.merged });
       }
       if (row.decision === "skip") outside.push({ host, path: row.path, reason: row.reason, detail: row.detail, bytes: row.bytes });
       decisions.push({ ...row, host } as HubDecision);
+    }
+    if (asked?.length) {
+      const states = await awaitTeardown(bb, asked.map((row) => row.environmentId!), options.teardownWaitMs ?? TEARDOWN_WAIT_MS);
+      for (const row of asked) {
+        const state = states.get(row.environmentId!) ?? "unread";
+        if (state === "gone") {
+          envFreed += row.bytes;
+          deep.removed.push({ path: row.path, cls: "bb-env", bytes: row.bytes, branch: row.branch, branchDeleted: false, why: "merged", how: row.merged });
+          decisions.push({ ...row, host, outcome: "removed", detail: row.detail.replace(/: BB removes the environment$/u, ": BB removed the environment") } as HubDecision);
+        } else {
+          decisions.push({ ...row, host, outcome: "asked",
+            detail: row.detail.replace(/: BB removes the environment$/u, `: asked BB to remove the environment (BB: ${state}); the next pass sees whether its folder is gone`) } as HubDecision);
+        }
+      }
     }
     deep.freedBytes += envFreed;
     if (!dryRun) {
@@ -215,7 +247,8 @@ export async function runDailyWorktreePass(ctx: Pick<ServerCore, "bb" | "db" | "
       keptJson: JSON.stringify(reported.slice(0, 50).map((row) => `${row.path} (${row.reason}: ${row.detail})`)), keptUnmerged,
       reportJson: JSON.stringify({ classes: byClass, pruned: deep.pruned, registryClosed: deep.registryGone.length, repos: deep.repos, branchesKept: deep.branchesKept.slice(0, 50),
         removed: deep.removed.slice(0, 100).map((row) => ({ path: row.path, cls: row.cls, bytes: row.bytes, branch: row.branch, branchDeleted: row.branchDeleted, why: row.why, how: row.how })), errors: deep.errors.slice(0, 20),
-        search: deep.search ?? null, decisions: (deep.decisions ?? []).slice(0, 1000).map((row) => ({ path: row.path, cls: row.cls, decision: row.decision, reason: row.reason, detail: row.detail })) }),
+        search: deep.search ?? null, oldPass: notes.some((line) => line.startsWith(`${name}: `)),
+        decisions: decisions.slice(firstDecision, firstDecision + 1000).map((row) => ({ path: row.path, cls: row.cls, decision: row.decision, reason: row.reason, detail: row.detail, ...(row.outcome ? { outcome: row.outcome } : {}) })) }),
     });
   }
   const reasonWord: Record<string, string> = { unmerged: "невлитые коммиты", dirty: "незакоммиченные правки", locked: "заблокирована живым процессом", error: "не прочиталась" };
@@ -232,11 +265,38 @@ export async function runDailyWorktreePass(ctx: Pick<ServerCore, "bb" | "db" | "
   const machineErrors = errors.length - (environments.error ? 1 : 0);
   return { status: hosts.length && machineErrors >= hosts.length && !removed ? "error" : "ok", removed, freedBytes, kept, decisions, search: searches,
     report: [report,
-      ...removals.slice(0, 30).map((row) => `- ${dryRun ? "удалилось бы" : "удалено"}: ${row.host}: ${row.path} — ${row.detail}`),
+      ...notes.map((line) => `- ${line}`),
+      ...removals.slice(0, 30).map((row) => `- ${dryRun ? "удалилось бы" : row.outcome === "asked" ? "попросили BB удалить" : "удалено"}: ${row.host}: ${row.path} — ${row.detail}`),
       ...(removals.length > 30 ? [`- … и ещё ${removals.length - 30} (полный список: --json, decisions)`] : []),
       ...attention.slice(0, 20).map((row) => `- ${row.host}: ${row.path} — ${reasonWord[row.reason] ?? row.reason}: ${row.detail}`),
       ...outside.slice(0, 10).map((row) => `- вне классов: ${row.host}: ${row.path} — ${row.detail}`),
       ...branchesKept.slice(0, 10).map((line) => `- ${line}`), ...errors.slice(0, 10).map((line) => `- ошибка: ${line}`)].join("\n") };
+}
+
+/** How long a real pass re-reads the environments it asked BB to remove before it reports them as «asked», not removed. */
+export const TEARDOWN_WAIT_MS = 5_000;
+
+/**
+ * BB removes an environment in the background (`environments.delete` only asks its provider). Re-read each one through `environments.get`
+ * until `waitMs` is spent: «gone» when BB says it is destroyed, its teardown removed, or it is no longer known; else BB's state as read.
+ */
+async function awaitTeardown(bb: ServerCore["bb"], ids: string[], waitMs: number): Promise<Map<string, string>> {
+  const sdk = bb.sdk as unknown as { environments?: { get?(args: { environmentId: string }): Promise<{ status?: string; lifecycle?: { phase?: string; teardown?: { status?: string; message?: string } | null } }> } };
+  const states = new Map<string, string>();
+  const deadline = Date.now() + Math.max(0, waitMs);
+  for (;;) {
+    for (const id of ids) {
+      if (states.get(id) === "gone") continue;
+      if (!sdk.environments?.get) { states.set(id, "unread: this BB offers no environments.get"); continue; }
+      const read = await Promise.resolve().then(() => sdk.environments!.get!({ environmentId: id })).then(
+        (env) => env.status === "destroyed" || env.lifecycle?.teardown?.status === "removed" ? "gone"
+          : `${env.status ?? "?"}${env.lifecycle?.teardown ? `, teardown ${env.lifecycle.teardown.status}${env.lifecycle.teardown.message ? `: ${env.lifecycle.teardown.message.slice(0, 120)}` : ""}` : ""}`,
+        (cause: unknown) => /not[ _]found|404/iu.test(cause instanceof Error ? cause.message : String(cause)) ? "gone" : `unread: ${String(cause instanceof Error ? cause.message : cause).slice(0, 120)}`);
+      states.set(id, read);
+    }
+    if (ids.every((id) => states.get(id) === "gone") || Date.now() >= deadline) return states;
+    await new Promise((wake) => setTimeout(wake, Math.min(500, Math.max(0, deadline - Date.now()))));
+  }
 }
 
 /** The owner's line for linked worktrees outside the managed classes: listed, never removed; one line per distinct list (`worktree-outside:<hash>`). */

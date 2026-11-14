@@ -266,7 +266,11 @@ export function mountWorktreeJanitor(ctx: ServerCore, _sweeps?: AttemptSweeps): 
 }
 
 /** One decision of the daily pass as the hub reports it: the machine's decision, with the machine and (for a BB environment) BB's own answer. */
-export type HubDecision = SweepDecision & { host: string };
+export type HubDecision = SweepDecision & {
+  host: string;
+  /** A real pass's BB environment: `asked` once BB took the delete (it tears down in the background), `removed` once BB says it is gone. */
+  outcome?: "asked" | "removed";
+};
 /** What one pass of the graph lp.worktree-cleanup reports: its status, the counts and one line for the board's run output. */
 export type CleanupPassOutcome = {
   status: "ok" | "off" | "error"; removed: number; freedBytes: number; kept: number; report: string;
