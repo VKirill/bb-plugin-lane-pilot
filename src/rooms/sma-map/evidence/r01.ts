@@ -480,6 +480,70 @@ export default {
     mutation: distort("src/rooms/contracts/failure-class.ts", "    .replace(/\\b(lp(attempt|run)|thr|env|term|host|proj|ask)_[a-z0-9]+/g, \"<id>\")", "    .replace(/\\b(lp(attempt|run)|env|term|host|proj|ask)_[a-z0-9]+/g, \"<id>\")"),
     trace: drill("sma_r01"),
   },
+  n273: {
+    mutation: distort("src/rooms/contracts/state-machine.ts", "{ from:null, event:\"form_task\", to:\"queued\" },", "{ from:null, event:\"form_task\", to:\"spawn_requested\" },"),
+    trace: rows("lane_pilot_attempt", "created_at"),
+  },
+  n274: {
+    mutation: distort("src/rooms/contracts/state-machine.ts", "{ from:\"queued\", event:\"spawn_called\", to:\"spawn_requested\" },", "{ from:\"queued\", event:\"spawn_called\", to:\"spawn_unknown\" },"),
+    trace: transition({ from: "queued", to: "spawn_requested" }),
+  },
+  n275: {
+    mutation: distort("src/rooms/contracts/state-machine.ts", "{ from:\"spawn_requested\", event:\"spawn_ok\", to:\"running\" },", "{ from:\"spawn_requested\", event:\"spawn_ok\", to:\"queued\" },"),
+    trace: transition({ from: "spawn_requested", to: "running" }),
+  },
+  n276: {
+    mutation: distort("src/rooms/contracts/state-machine.ts", "{ from:\"running\", event:\"checks_passed\", to:\"accepted\" },", "{ from:\"running\", event:\"checks_passed\", to:\"blocked\" },"),
+    trace: transition({ from: "running", to: "accepted" }),
+  },
+  n277: {
+    mutation: distort("src/rooms/contracts/state-machine.ts", "{ from:\"validation_failed\", event:\"retry_exhausted\", to:\"blocked\" },", "{ from:\"validation_failed\", event:\"retry_exhausted\", to:\"queued\" },"),
+    trace: transition({ from: "running", to: ["provider_error", "validation_failed", "empty_output"] }),
+  },
+  n278: {
+    mutation: distort("src/rooms/contracts/state-machine.ts", "{ from:\"cancel_requested\", event:\"cancel_observed\", to:\"canceled\" },", "{ from:\"cancel_requested\", event:\"cancel_observed\", to:\"blocked\" },"),
+    trace: transition({ from: "cancel_requested", to: "canceled" }),
+  },
+  n279: {
+    mutation: distort("packages/contracts/src/stage-proof.ts", "\"acceptance_without_code_proof: no stage passed\"", "\"acceptance_without_code_proof: no stage ran\""),
+    reach: entry("a writer hands in work and its verification has ended"),
+    trace: drill("sma_r01"),
+  },
+  n280: {
+    mutation: distort("src/rooms/native-agent/claude-guard-launch.ts", "\"Bash(git push:*),", "\"Bash(git pull:*),"),
+    reach: entry("a writer attempt is launched"),
+    trace: drill("sma_r01"),
+  },
+  n281: {
+    mutation: distort("src/rooms/runs/constants.ts", "DISPATCH_IDEMPOTENT_WINDOW_MS = 30 * 60_000;", "DISPATCH_IDEMPOTENT_WINDOW_MS = 1;"),
+    trace: drill("sma_r01"),
+  },
+  n282: {
+    mutation: flip("src/rooms/phase/logic/next-action.ts", ".every((line) => line.id === \"result_useful\"", ".some((line) => line.id === \"result_useful\""),
+    trace: drill("sma_r01"),
+  },
+  n283: {
+    mutation: flip("src/rooms/tasks/words.ts", "if (latest.decision === \"no\")", "if (latest.decision === \"yes\")"),
+    trace: drill("sma_r01"),
+  },
+  n284: {
+    mutation: distort("src/rooms/contracts/state-machine.ts", "to:\"accepted\" as const, why:\"the merge landed", "to:\"blocked\" as const, why:\"the merge landed"),
+    trace: drill("sma_r01"),
+  },
+  n285: {
+    mutation: flip("src/rooms/phase/server/driver-steps.ts", "file.sha256 === sha, () => false", "file.sha256 !== sha, () => false"),
+    trace: drill("sma_r01"),
+  },
+  n286: {
+    mutation: flip("src/rooms/phase/logic/acceptance.ts", "=> !asked || (word?.decision", "=> asked || (word?.decision"),
+    reach: entry("a phase reaches acceptance and the driver reads its lines"),
+    trace: drill("sma_r01"),
+  },
+  n287: {
+    mutation: distort("src/rooms/acceptance/card.ts", "isAdvisoryProof(proof) ? \"advisory\" as const : \"code\" as const", "isAdvisoryProof(proof) ? \"code\" as const : \"advisory\" as const"),
+    reach: entry("the owner opens a task's acceptance card or a phase's package"),
+    trace: drill("sma_r01"),
+  },
   // The accepted attempt's receipts are written once into the task home in the base, so they outlive the worktree's removal (T13).
   n294: { mutation: wrongTarget(TASK_HOME, 'kind: "acceptance", name: "acceptance.json",', 'kind: "acceptance", name: `attempts/${input.attemptId}/acceptance.json`,'), trace: drill("task_home") },
   n300: { reach: entry("a PM or the owner enqueues a task contract") },
