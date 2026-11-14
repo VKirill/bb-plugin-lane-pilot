@@ -12,7 +12,7 @@ const LINT = "packages/memory-core/src/lint.ts";
 const TIERS = "src/rooms/memory-tiers/server/tiers.ts";
 const REACTIONS = "src/rooms/writer/server/attempt-reactions.ts";
 const AUTONOMY = "src/rooms/learning/autonomy.ts";
-// The scanner of tests/architecture/foreign-sql counts `.prepare(` in any string; the finds below are split so a mutation spec is not read as a query.
+// The foreign-SQL ratchet scan reads query-call text inside any string, so the finds below build that call from two pieces.
 const PREP = "db.pre" + "pare(";
 
 export default {
