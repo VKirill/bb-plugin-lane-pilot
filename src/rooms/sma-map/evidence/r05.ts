@@ -74,4 +74,18 @@ export default {
   n500: { mutation: distort("src/rooms/relay/server/outbound.ts", '["event", "projectId", "runId", "taskId", "title", "kind", "state", "attempt", "at"]', '["event", "projectId", "runId", "taskId", "kind", "title", "state", "attempt", "at"]'), trace: drill("sma_r05") },
   n501: { mutation: flip("src/rooms/relay/server/outbound.ts", "if (!/^https:\\/\\/[^\\s]+$/.test(url)) return;\n    sent.add(", "if (/^https:\\/\\/[^\\s]+$/.test(url)) return;\n    sent.add("), trace: drill("sma_r05") },
   n502: { mutation: flip("src/rooms/owner-waiting/push.ts", 'more: 0 });\n  if (!config.enabled) return none("disabled");', 'more: 0 });\n  if (config.enabled) return none("disabled");'), trace: drill("sma_r05") },
+  // Batch c (n503–n528): the owner's call, the estimate report and the hub watchdog; the trace of each is its own prove() line in scripts/lp_drill/scenes/sma_r05_c.py.
+  n503: { mutation: distort("src/rooms/owner-waiting/items.ts", 'if (/wall|blocked|stuck|needs_human|stall/.test(kind)) return "blocked";', 'if (/wall|blocked|stuck|needs_human|stall/.test(kind)) return "term";'), reach: entry("the reports room asks the owner's digest every 30 minutes, and the owner's screen lists the waiting rows"), trace: drill("sma_r05") },
+  n504: { mutation: distort("src/rooms/owner-waiting/push.ts", "const shown = fresh.slice(0, DIGEST_LINES);", "const shown = fresh.slice(0, DIGEST_LINES - 1);"), trace: drill("sma_r05") },
+  n505: { mutation: skipWrite("src/rooms/owner-waiting/push.ts", "added += db.pre" + 'pare("INSERT OR IGNORE INTO lane_pilot_owner_push(key,pushed_at) VALUES (?,?)").run(key, now).changes;'), trace: drill("sma_r05") },
+  n506: { mutation: distort("src/rooms/owner-waiting/push.ts", 'VALUES (?,?)").run(key, now).changes;', 'VALUES (?,?)").run(key, 0).changes;'), trace: drill("sma_r05") },
+  n507: { mutation: flip("src/rooms/owner-waiting/items.ts", `closed_by=? WHERE key=? AND state='open'")`, `closed_by=? WHERE key=? AND state='closed'")`), trace: drill("sma_r05") },
+  n508: { mutation: distort("scripts/lp-owner-push.sh", 'RETRY_SEC="${LP_PUSH_RETRY_SEC:-300}"', 'RETRY_SEC="${LP_PUSH_RETRY_SEC:-30}"'), trace: drill("sma_r05") },
+  n509: { mutation: flip("src/rooms/forecast/logic.ts", "rows.filter((row) => row.model === model)", "rows.filter((row) => row.model !== model)"), trace: drill("sma_r05") },
+  n510: { mutation: distort("scripts/hub-watchdog.sh", 'KNOCK_SEC="${LP_WATCH_KNOCK_SEC:-15}"', 'KNOCK_SEC="${LP_WATCH_KNOCK_SEC:-16}"'), trace: drill("sma_r05") },
+  n511: { mutation: distort("scripts/hub-watchdog.sh", "      silent=0; refused_run=0\n      # the board request is a second reading", "      refused_run=0\n      # the board request is a second reading"), trace: drill("sma_r05") },
+  n512: { mutation: flip("scripts/hub-watchdog.sh", 'if [ -n "$silent_pid" ] && [ "$(main_pid)" = "$silent_pid" ]; then', 'if [ -n "$silent_pid" ] && [ "$(main_pid)" != "$silent_pid" ]; then'), trace: drill("sma_r05") },
+  n513: { mutation: distort("scripts/hub-watchdog.sh", 'elif [ -z "$pid" ] || [ "$pid" = "0" ]; then', 'elif [ -z "$pid" ] || [ "$pid" = "-1" ]; then'), trace: drill("sma_r05") },
+  n514: { mutation: flip("scripts/hub-watchdog.sh", 'if [ "$state" = "activating" ] || [ "$state" = "reloading" ]; then', 'if [ "$state" != "activating" ] || [ "$state" = "reloading" ]; then'), trace: drill("sma_r05") },
+  n515: { mutation: distort("scripts/hub-watchdog.sh", 'REFUSED_AFTER="${LP_WATCH_REFUSED_AFTER:-3}"', 'REFUSED_AFTER="${LP_WATCH_REFUSED_AFTER:-4}"'), trace: drill("sma_r05") },
 } satisfies RegionEvidence;
