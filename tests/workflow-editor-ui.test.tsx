@@ -76,6 +76,8 @@ async function open(extra: Record<string, unknown> = {}, options: { editing?: bo
   w.emit.current = (payload) => slot.behavior.emitRealtime(`lp:${projectId}`, payload);
   if (options.editing ?? true) await slot.findByTestId("wf-edit-toolbar");
   await waitFor(() => expect(slot.getByTestId("workflow-graph").getAttribute("data-layout")).toBe("ready"));
+  // XYFlow paints the edge captions after the layout itself is ready.
+  await waitFor(() => expect(edgeLabel(slot.getByTestId("workflow-graph"), "'blocked'")).toBeTruthy());
   return { ...w, slot };
 }
 
