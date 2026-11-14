@@ -21,7 +21,7 @@ import { pipelineWriterStep, pipelineWriterTag } from "./pipeline-tag";
 import { recordedWriterSkills } from "./skill-pick";
 import { sendServiceMessage } from "../../relay/server";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
-import { bestEffort, isNotFound, orMiss, stringAt } from "@lane-pilot/kit";
+import { bestEffort, isNotFound, orMiss, sha256Hex, stringAt } from "@lane-pilot/kit";
 import { writeReplacing } from "../../storage";
 import { acceptanceArtifactDir } from "../../tasks";
 import { resolve } from "node:path";
@@ -63,7 +63,6 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
       const captureEvidence = async () => {
         const dirt = await services.workspaceDirt(input.config, input.task.project_cwd, input.runId);
         const byPath = new Map((dirt.ok ? dirt.snapshots : []).map((row) => [row.path, row.sha256 || null]));
-        const hashes = Object.fromEntries((g.candidate.produced ?? []).map((path) => [path, byPath.get(path) ?? null]));
         const files:Array<{ path:string; content:string|null|undefined }> = [];
         for (const path of g.candidate.produced ?? []) {
           let content: string | null | undefined;
@@ -80,6 +79,16 @@ export async function runCodeCritiqueGate(deps: CritiqueGateDeps, g: CritiqueGat
           }
           files.push({ path, content });
         }
+        // A produced file the writer committed leaves no git-status dirt: a path absent from a successful snapshot
+        // takes the sha256 of the bytes just read — the same bytes buildCandidateEvidence compares. A snapshot row
+        // (hash or explicit null), a failed snapshot and an unreadable file all stay unknown.
+        const contentByPath = new Map(files.map((row) => [row.path, row.content]));
+        const hashes = Object.fromEntries((g.candidate.produced ?? []).map((path) => {
+          if (byPath.has(path)) return [path, byPath.get(path) ?? null];
+          if (!dirt.ok) return [path, null];
+          const content = contentByPath.get(path);
+          return [path, typeof content === "string" ? sha256Hex(content) : null];
+        }));
         g.lastPatches = await candidatePatches(bb, db, { runId:input.runId, taskId:input.taskId, hostId:input.config.hostId, cwd:input.task.project_cwd, paths:g.candidate.produced ?? [] });
         return buildCandidateEvidence({
           produced:g.candidate.produced ?? [],

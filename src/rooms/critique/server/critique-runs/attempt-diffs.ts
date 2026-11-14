@@ -1,4 +1,4 @@
-import { latestAttemptEnvironmentId, openDatabase } from "../../../storage";
+import { getTaskGitBase, latestAttemptEnvironmentId, openDatabase } from "../../../storage";
 import { GIT_PLUGIN_ID, gitCallRpc, gitFileSideReplySchema, gitFilesReplySchema, gitPatchKey, gitPatchesReplySchema } from "../../../platform/server";
 import type { PluginCallRpc } from "../../../platform/server";
 
@@ -12,9 +12,11 @@ export function attemptEnvironment(db:ReturnType<typeof openDatabase>, runId:str
 }
 
 /**
- * The change of each produced file as BB's own unified diff (the Git plugin's `files` + keyed `patches`, uncommitted) in the
- * attempt's environment, else in the BB environment at the task folder. A path BB cut or could not diff is left out: the packet
- * then shows its file. On an old BB without `plugins.callRpc` the retired `environments.diffPatch` is the fallback.
+ * The change of each produced file as BB's own unified diff (the Git plugin's `files` + keyed `patches`) in the
+ * attempt's environment, else in the BB environment at the task folder. With a recorded committed task base the
+ * diff is that frozen base against the worktree — committed work included; otherwise it is the uncommitted
+ * target. A path BB cut or could not diff is left out: the packet then shows its file. On an old BB without
+ * `plugins.callRpc` the retired `environments.diffPatch` is the fallback (uncommitted only).
  */
 export async function candidatePatches(bb:{ sdk:{ environments:{ list:(args:{ hostId:string; path:string }) => Promise<Array<{ id:string }>>; diffPatch?:(args:{ environmentId:string; paths:string[]; target:{ type:"uncommitted" } }) => Promise<unknown> }; plugins?:{ callRpc?:PluginCallRpc } } },
   db:ReturnType<typeof openDatabase>, input:{ runId:string; taskId:string; hostId:string; cwd:string; paths:string[] }):Promise<Record<string,string>> {
@@ -25,8 +27,13 @@ export async function candidatePatches(bb:{ sdk:{ environments:{ list:(args:{ ho
     if (!environmentId) return {};
     const wanted = new Set(input.paths);
     const callRpc = gitCallRpc(bb);
+    // A writer that commits its produced files leaves nothing uncommitted: the change is then the frozen task
+    // base against the worktree, one range — the same base the owns-paths gate compares. Without a recorded
+    // committed base the uncommitted diff stays the answer.
+    const gitBase = getTaskGitBase(db as never, input.taskId);
+    const committedBase = gitBase?.compare_committed ? gitBase.base_sha : null;
     if (callRpc) {
-      const target = { type:"uncommitted" } as const;
+      const target = committedBase ? { type:"all", mergeBaseBranch:committedBase } : { type:"uncommitted" } as const;
       const listing = gitFilesReplySchema.parse(await callRpc({ pluginId:GIT_PLUGIN_ID, method:"files", input:{ environmentId, target, ignoreWhitespace:false }, outputSchema:gitFilesReplySchema }));
       if (listing.outcome !== "available") return {};
       const byPath = new Map(listing.initialPatches.map((row) => [row.path, row]));
@@ -39,6 +46,9 @@ export async function candidatePatches(bb:{ sdk:{ environments:{ list:(args:{ ho
       }
       return Object.fromEntries([...byPath.values()].filter((row) => wanted.has(row.path) && !row.truncated && row.patch).map((row) => [row.path, row.patch]));
     }
+    // The retired environments.diffPatch only knows the uncommitted target; a committed change keeps the
+    // whole-file fallback rather than a guessed range.
+    if (committedBase) return {};
     const result = await bb.sdk.environments.diffPatch?.({ environmentId, paths:input.paths, target:{ type:"uncommitted" } }) as { outcome?:string; patches?:Array<{ path:string; patch:string; truncated:boolean }> } | undefined;
     if (result?.outcome !== "available") return {};
     return Object.fromEntries((result.patches ?? []).filter((row) => wanted.has(row.path) && !row.truncated && row.patch).map((row) => [row.path, row.patch]));
