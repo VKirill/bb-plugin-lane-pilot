@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { resolveSibling } from "../../../src/rooms/sma-map/siblings";
 
 const found = resolveSibling("telegram");
-if (!found.root) {
+if (found.root === null) {
   process.stdout.write(`${JSON.stringify({ absent: found.why })}\n`);
   process.exit(0);
 }
@@ -66,8 +66,8 @@ out.link = await world(async (tg) => {
   const shown = JSON.stringify([saved, prefsAfter, offer, status]);
   const stored = { code: host.store.get("pair:code"), at: typeof host.store.get("pair:codeAt") };
   const mintClock = {
-    nine: (await withClock(9.5 * 60_000, () => host.rpc("pairing"))).code,
-    ten: (await withClock(10 * 60_000 + 2000, () => host.rpc("pairing"))).code,
+    nine: ((await withClock(9.5 * 60_000, () => host.rpc("pairing"))) as { code: string }).code,
+    ten: ((await withClock(10 * 60_000 + 2000, () => host.rpc("pairing"))) as { code: string }).code,
   };
   host.store.put("owner:id", OWNER);
   const linked = await host.rpc("status");
@@ -145,7 +145,7 @@ out.route = await world(async (tg) => {
   const chat = brain.harness.behavior.runService("telegram-chat");
   tg.script.push([update(1, 55, "/start " + brainCode), update(2, 55, "собери мне сайт"), update(3, 66, "я чужой")]);
   await runUntilDrained(brain, tg);
-  const row = () => brain.store.get<{ state: string; input: { ownerId: number; chatId: number } }>("chat:in:2");
+  const row = () => brain.store.get("chat:in:2") as { state: string; input: { ownerId: number; chatId: number } } | undefined;
   const reached = await waitFor(() => row()?.state === "done" && tg.sent().length === 3);
   chat.controller.abort();
   await chat.done;
