@@ -23,6 +23,7 @@ export const UNLISTED_SWITCHES: Readonly<Record<string, readonly [scope: SwitchS
   "phase.piece_notes": ["project", "on|off", "a piece's plan carries its predictions, risk and motion lines"],
   "phase.threat_closure": ["project", "on|off", "a passed blind verdict fails while a threat row has no file:line mitigation in the code"],
   "phase.branch": ["project", "none|phase|milestone", "a closed phase leaves a branch: phase/<id>, or milestone/<slug> of its roadmap section"],
+  "phase.autonomous": ["project", "on|off", "on: when a phase closes, the next open row of the roadmap is opened as the next phase at once (unset: off, the PM is told which row is next)"],
   // graphs
   "ship.full_gate": ["project", "on|off", "ship stops while the full check is red or older than six hours"],
   "review.prepass": ["project", "strict|off", "strict: a suspicious line found by the review's scan without a model sends the work back; unset, the scan only leaves notes"],
