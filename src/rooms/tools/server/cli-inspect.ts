@@ -17,7 +17,7 @@ export async function cliInspect(d: CliRunDeps): Promise<PluginCliResult | undef
   if (command === "evidence") {
     const [projectId] = args.filter((a) => !a.startsWith("--"));
     if (!projectId) return { exitCode:1, stderr:"usage: bb lane-pilot evidence <project-id> [--op permit|revert|janitor] [--days N]" };
-    const op = args[args.indexOf("--op") + 1], days = args.includes("--days") ? Number(args[args.indexOf("--days") + 1]) : undefined;
+    const op = args.includes("--op") ? args[args.indexOf("--op") + 1] : undefined, days = args.includes("--days") ? Number(args[args.indexOf("--days") + 1]) : undefined;
     const rows = await listEvidence(bb.storage.kv as never, projectId, { op, days });
     return { exitCode:0, stdout:rows.map((row) => `${new Date(row.at).toISOString()} ${row.op} ${row.target}\n  why: ${row.why}\n  checks: ${row.checks.map((c) => `${c.ok ? "ok" : "FAIL"} ${c.name}${c.detail ? ` — ${c.detail}` : ""}`).join("; ")}\n  by: ${row.by}`).join("\n") || "no evidence records" };
   }
@@ -33,7 +33,7 @@ export async function cliInspect(d: CliRunDeps): Promise<PluginCliResult | undef
       return { exitCode:0, stdout:JSON.stringify({ ok:true, key, value:protection.armed }) };
     }
     if (args.includes("--renew")) {
-      const key = args[args.indexOf("--renew") + 1]!, days = Number(args[args.indexOf("--days") + 1] ?? 7), why = args[args.indexOf("--why") + 1] ?? "";
+      const key = args[args.indexOf("--renew") + 1]!, days = args.includes("--days") ? Number(args[args.indexOf("--days") + 1]) : 7, why = args.includes("--why") ? args[args.indexOf("--why") + 1] ?? "" : "";
       const result = renewDisarm(db, pid, key, days, why);
       return "error" in result ? { exitCode:1, stderr:result.error } : { exitCode:0, stdout:JSON.stringify(result.record, null, 2) };
     }
