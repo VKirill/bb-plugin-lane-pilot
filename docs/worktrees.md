@@ -96,7 +96,7 @@ own line below, and a failed run is the schedule board's line.
 
 **By hand, with a report.** `bb lane-pilot worktree-cleanup` runs the hourly sweep, `--daily` the daily pass, `--dry-run` the daily pass
 deciding only (nothing removed, no janitor row, no owner line; a dry run is always the daily pass's, it covers Lane Pilot's root too),
-`--json` the graph's output shape. It calls the same `runWorktreeCleanupPass` as the graph's step; the schedules are not touched.
+`--json` the graph's output shape, including complete `hourlyRemoved` and `hourlyTmpRemoved` lists. Hourly/deep overlap is counted once. It calls the same `runWorktreeCleanupPass` as the graph's step; the schedules are not touched.
 
 | Schedule | Cron | What it does |
 |---|---|---|
@@ -105,12 +105,11 @@ deciding only (nothing removed, no janitor row, no owner line; a dry run is alwa
 
 The hub reaches each machine the way the hourly janitor always did: one host call `worktreeJanitor` per connected host, now with a
 `deep` part (`sweepWorktreeClasses`, `src/rooms/verification/worktree-sweep.ts`). A machine whose plugin is older checks the input
-against its own strict contract. One on 0.1.562–0.1.564 refuses the keys of 0.1.565 (`bbEnvs`, `search`): it is asked once more for the
+against its own strict contract. One on 0.1.562–0.1.564 refuses newer keys (`bbEnvs`, `search`, `hourlyGraceMs`): it is asked once more for the
 daily pass it knows, without them and with no BB environment paths, and the report says «ran the old daily pass (no home search, no
 BB-environment decisions): its Lane Pilot build is older» (`oldPass: true` in its janitor row). One before 0.1.562 refuses `deep` itself,
 the retry too: nothing is removed on it, and the pass's errors say «this machine's Lane Pilot host is older and has no daily pass
-(update the plugin there)»; when every machine is like that the run ends `error` and the board shows it. Its hourly sweep keeps running (that call has the old shape). A dry run sends an endless `graceMs`, so
-even a host that ignored `deep.dryRun` would remove no worktree.
+(update the plugin there)»; when every machine is like that the run ends `error` and the board shows it. Its hourly sweep keeps running (that call has the old shape). A dry run keeps the top-level `graceMs` endless. Current hosts read the normal hourly grace from `deep.hourlyGraceMs` and preview both passes without deleting anything; older strict hosts reject unsupported keys before invoking a handler. The compatibility retry removes the new keys and retains `deep.dryRun`.
 
 **What the hub sends.** The project folders on that machine (BB's project sources and the run folders of the last 90 days); the BB
 environment worktrees of Lane Pilot attempts outside the root; every BB environment of that machine with a folder (`bbEnvironmentsByHost`:

@@ -45,7 +45,7 @@ export const gitHostMethods = {
     // The hourly sweep over ~/.lane-pilot/worktrees: copies the hub no longer protects (no open attempt or pass), older than
     // grace, clean and fully merged go; a copy with edits or unique commits stays and is reported. Lane Pilot's own tmp prefixes too.
     input: z.object({ requestedHostId: z.string().min(1), protectedPaths: z.array(z.string().startsWith("/")).max(20000), graceMs: z.number().int().min(0).optional(),
-      // The daily pass (docs/worktrees.md): every swept class in the project repositories, with git worktree prune (additive; an older host ignores it and answers without `deep`).
+      // The daily pass (docs/worktrees.md): every swept class in the project repositories, with git worktree prune (an older strict host refuses unknown fields before invoking the handler).
       deep: z.object({ folders: z.array(z.string().startsWith("/")).max(2000), bbEnvPaths: z.array(z.string().startsWith("/")).max(5000).optional(),
         abandonedPaths: z.array(z.string().startsWith("/")).max(5000).optional(), registryPaths: z.array(z.string().startsWith("/")).max(5000).optional(),
         // 0.1.565: the BB environments of this machine (BB removes a managed one; a live thread's is kept) and the bounded home search.
