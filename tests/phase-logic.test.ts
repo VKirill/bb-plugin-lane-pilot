@@ -67,10 +67,12 @@ describe("phase gates", () => {
 describe("execution and verification", () => {
   const items = [piece("a", 1), piece("b", 1), piece("c", 2, { depends_on: ["a"] })];
 
-  it("issues wave by wave: the next wave only after every piece of the earlier one is accepted", () => {
+  it("issues a piece once the pieces it depends on are accepted, not once its whole earlier wave is (SMA p4_deps; n365 is a deviation)", () => {
     expect(issuable(items, {}, new Map()).map((item) => item.id)).toEqual(["a", "b"]);
-    expect(issuable(items, { a: "a", b: "b" }, facts([["a", {}], ["b", { state: "running" }]]))).toEqual([]);
-    expect(issuable(items, { a: "a", b: "b" }, facts([["a", {}], ["b", {}]])).map((item) => item.id)).toEqual(["c"]);
+    // c depends on a only: b still at work does not hold it.
+    expect(issuable(items, { a: "a", b: "b" }, facts([["a", { state: "running" }], ["b", { state: "running" }]]))).toEqual([]);
+    expect(issuable(items, { a: "a", b: "b" }, facts([["a", {}], ["b", { state: "running" }]])).map((item) => item.id)).toEqual(["c"]);
+    expect(issuable(items, { a: "a", b: "b" }, facts([["a", {}], ["b", { state: "blocked" }]])).map((item) => item.id)).toEqual(["c"]);
   });
 
   it("leaves execution only when every piece is issued and accepted", () => {

@@ -93,27 +93,29 @@ describe("batch gates", () => {
     const b = piece("b", 1);
     const first = issuable([a, b], {}, new Map());
     expect(first.map((item) => item.id)).toEqual(["a", "b"]);
-    const again = issuable([a, b], { a: "task-a", b: "task-b" }, new Map([["a", fact("a", { state: "running" })], ["b", fact("b", { state: "queued" })]]), () => true, { a: pieceSha(a), b: pieceSha(b) });
+    const again = issuable([a, b], { a: "task-a", b: "task-b" }, new Map([["a", fact("a", { state: "running" })], ["b", fact("b", { state: "queued" })]]), { a: pieceSha(a), b: pieceSha(b) });
     expect(again).toEqual([]);
     const changed = piece("a", 1, { acceptance: ["the cell stays empty"] });
     expect(pieceSha(changed)).not.toBe(pieceSha(a));
-    expect(issuable([changed, b], { a: "task-a", b: "task-b" }, new Map([["a", fact("a")], ["b", fact("b")]]), () => true, { a: pieceSha(a), b: pieceSha(b) }).map((item) => item.id)).toEqual(["a"]);
+    expect(issuable([changed, b], { a: "task-a", b: "task-b" }, new Map([["a", fact("a")], ["b", fact("b")]]), { a: pieceSha(a), b: pieceSha(b) }).map((item) => item.id)).toEqual(["a"]);
   });
 
-  it("[sma:bi_eligible] [sma:bw_accept] the next wave waits until this wave's lines hold and the owner accepts it", () => {
-    const items = [piece("a", 1), piece("c", 2)];
-    const accepted = new Map([["a", fact("a")]]);
-    const record: PhaseRecord = { ownerWords: true, execution: { issued: { a: "task-a" }, waves: { "1": { packageSha: "pkg", lines: linesOk(), at: 1 } } } };
+  it("[sma:bw_accept] a wave clears only when its lines hold and the owner accepts it — and an uncleared wave holds only the pieces that depend on it", () => {
+    // SMA n365 (bi_eligible, «the next wave waits for this one's acceptance») is a deviation: the owner's rule (ТЗ 4д.5) starts a piece
+    // when its own dependencies are accepted. The wave's clearance still holds the phase's exit (executionGate, the wave review).
+    const items = [piece("a", 1), piece("c", 2), piece("d", 2, { depends_on: ["a"] }), piece("e", 2, { depends_on: ["b"] }), piece("b", 1)];
+    const accepted = new Map([["a", fact("a")], ["b", fact("b", { state: "blocked" })]]);
+    const record: PhaseRecord = { ownerWords: true, execution: { issued: { a: "task-a", b: "task-b" }, waves: { "1": { packageSha: "pkg", lines: linesOk(), at: 1 } } } };
     expect(waveCleared(record, 1)).toBe(false);
-    expect(issuable(items, { a: "task-a" }, accepted, (wave) => waveCleared(record, wave))).toEqual([]);
+    // c depends on nothing and d on the accepted a: both go; e waits for the blocked b.
+    expect(issuable(items, { a: "task-a", b: "task-b" }, accepted).map((item) => item.id)).toEqual(["c", "d"]);
     record.words = [{ turn: "wave", wave: 1, decision: "no", by: "owner", text: "hold", at: 2 }];
     expect(waveCleared(record, 1)).toBe(false);
     record.words = [{ turn: "wave", wave: 1, decision: "yes", by: "owner", text: "take the wave", at: 3 }];
     expect(waveCleared(record, 1)).toBe(true);
-    expect(issuable(items, { a: "task-a" }, accepted, (wave) => waveCleared(record, wave)).map((item) => item.id)).toEqual(["c"]);
     record.execution!.waves!["1"]!.lines = linesOk(false);
     expect(waveCleared(record, 1)).toBe(false);
-    expect(issuable(items, { a: "task-a" }, accepted, (wave) => waveCleared(record, wave))).toEqual([]);
+    expect(issuable(items, { a: "task-a", b: "task-b" }, accepted).map((item) => item.id)).toEqual(["c", "d"]);
   });
 
   it("[sma:bi_pilot] [sma:bi_fanout] the earliest of three siblings is the only one that starts; the rest name it and wait", () => {

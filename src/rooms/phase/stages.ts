@@ -29,7 +29,7 @@ export const STAGE_RUBRICS: Readonly<Record<Exclude<PhaseStage, "closed">, { ord
   },
   execution: {
     order: ["initialize: the base commit, the drawing and contract for the writers", "issue wave by wave, the wave table into the book", "each piece through its gates (lint, base, writer, ownership, checks, plan→fact, critic)", "review each finished wave by another model", "the regression pass of earlier phases after each merge"],
-    antipatterns: ["issuing the next wave before this one is accepted", "a writer editing the drawing it follows", "accepting on a model's word alone"],
+    antipatterns: ["issuing a piece before the pieces it depends on are accepted", "a writer editing the drawing it follows", "accepting on a model's word alone"],
   },
   verification: {
     order: ["initialize: the promises, the drawing contract points, the acceptance checks", "run every piece's checks together on main (the blind verdict)", "the live interface check where screens changed", "audit the goal against the phase goal and the drawing", "diagnose gaps, plan the gap closure, check it, revise"],

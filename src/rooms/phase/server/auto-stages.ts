@@ -7,6 +7,7 @@ import { bestEffort, parseJsonOr, sha256Hex } from "@lane-pilot/kit";
 import { CRITIQUE_AXES, type DesignJournalLine } from "@lane-pilot/contracts";
 import { PLAN_WORD_GAP, INDEPENDENCE_GAP, openQuestions, phaseFolder, planGate, type Phase, type PhaseRecord, type PlanItem, type RiskKey, candidateOn } from "../logic";
 import { buildsScreens } from "../stages";
+import { cycleText, planGraph } from "../../tasks";
 import packageJson from "../../../../package.json";
 
 import type { WorkflowEngineApi } from "../../platform/server";
@@ -155,7 +156,7 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number },
       return { goal: phase.goal, median_task: medianTask ?? "", skip_research: r.research !== "on", patterns: r.patternMap === "on", validation: r.validation === "on",
         findings: { context: contextText, decisions: r.context?.decisions ?? [], requirements: r.context?.requirements ?? [], ...answered, ...(current ? { current_pieces: current } : {}) },
         ...(gaps.length ? { mode: "gaps", gaps } : {}),
-        extra_rules: [...answerRule, "every command an acceptance line names is one of the task's verification commands", "each task's id is the piece id; depends_on only on tasks of earlier waves",
+        extra_rules: [...answerRule, "every command an acceptance line names is one of the task's verification commands", "each task's id is the piece id; depends_on names the tasks whose output it needs (the waves are computed from depends_on by code; a cycle is refused)",
           "each task lists in a top-level field `covers` the ids of the requirements and locked decisions (findings.requirements, findings.decisions) it carries out; together the tasks cover every id",
           ...(current && r.replan?.gaps ? ["the plan after a failed verification: return every piece of findings.current_pieces the gaps do not name exactly as it is (same id, same contract); change only the failing pieces' contracts or add new pieces for what is missing",
             // A changed contract issues the piece again: its writer redid accepted work and the proof check failed on what it no longer touched (live ph_26f65b142d).
@@ -273,12 +274,17 @@ export function contextDoc(phase: Phase, output: Record<string, unknown>): { con
   return { content, risks: risksText, decisions: ids, questions, security, appetite, noGos: noGos.length ? noGos : ["none"] };
 }
 
-/** Plan pieces from lp.plan: each task-v2 contract with its wave and a promise drawn from the contract. */
+/**
+ * Plan pieces from lp.plan: each task-v2 contract with a promise drawn from the contract and its wave laid out by code from the
+ * tasks' depends_on (SMA bf_waves) — the planner's own `waves` are not read, so a wave it wrote later or earlier than its links
+ * allow cannot hold a piece back or slip it ahead. A plan whose waves cannot be computed (a cycle) is refused, not issued (SMA p2_waves).
+ */
 export function planItems(phase: Phase, output: Record<string, unknown>): PlanItem[] {
-  const tasks = Array.isArray(output.tasks) ? output.tasks as Array<Record<string, unknown>> : [];
-  const waves = Array.isArray(output.waves) ? output.waves as unknown[][] : [];
-  const waveOf = (id: string) => { const index = waves.findIndex((wave) => Array.isArray(wave) && wave.map(String).includes(id)); return index >= 0 ? index + 1 : 1; };
-  return tasks.filter((task) => typeof task.id === "string").map((task) => {
+  const tasks = (Array.isArray(output.tasks) ? output.tasks as Array<Record<string, unknown>> : []).filter((task) => typeof task.id === "string");
+  const graph = planGraph(tasks.map((task) => ({ id: String(task.id), depends_on: Array.isArray(task.depends_on) ? (task.depends_on as unknown[]).map(String) : [] })));
+  if (graph.cycle) throw new Error(`lp.plan returned a plan whose waves cannot be computed: its tasks depend on each other in a cycle (${cycleText(graph.cycle)})`);
+  const waveOf = (id: string) => graph.waveOf[id] ?? 0;
+  return tasks.map((task) => {
     const acceptance = Array.isArray(task.acceptance) ? (task.acceptance as unknown[]).map(String) : [];
     const { covers, ...contract } = task;
     const ids = Array.isArray(covers) ? (covers as unknown[]).map(String).filter(Boolean).slice(0, 40) : [];

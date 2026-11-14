@@ -81,21 +81,21 @@ function nextActionRaw(phase: Phase, facts: ReadonlyMap<string, TaskFact>): Next
       const red = Object.entries(r.execution?.waves ?? {}).find(([wave, done]) => !done.lines.every((line) => line.ok)
         && !items.some((item) => item.wave === Number(wave) && issued[item.id] && facts.get(item.id)?.state !== "accepted"));
       if (red) return { key: key(`wave_red:${red[0]}:${red[1].packageSha}`), stage: phase.stage, waitsForPm: true,
-        text: `${head} — stage 4, execution: wave ${red[0]} is in, but ${red[1].lines.filter((line) => !line.ok).map((line) => `${line.id} (${line.detail})`).join("; ")}; the next wave waits. A failing promise needs new work: return the phase to planning (${tool("return", `, phaseId:"${id}", to:"planning", note`)}) and change the failing piece (it is issued again) or add one.` };
+        text: `${head} — stage 4, execution: wave ${red[0]} is in, but ${red[1].lines.filter((line) => !line.ok).map((line) => `${line.id} (${line.detail})`).join("; ")}; the pieces that depend on its pieces wait. A failing promise needs new work: return the phase to planning (${tool("return", `, phaseId:"${id}", to:"planning", note`)}) and change the failing piece (it is issued again) or add one.` };
       // A wave whose review by another model failed holds the phase at execution: said, with the review's words.
       const rejected = Object.entries(r.execution?.waves ?? {}).find(([, wave]) => wave.review?.state === "failed");
       if (rejected) return { key: key(`wave_review_failed:${rejected[0]}:${rejected[1].packageSha}`), stage: phase.stage, waitsForPm: true,
         text: `${head} — stage 4, execution: the review of wave ${rejected[0]} by another model failed (${(rejected[1].review?.summary ?? "").slice(0, 600)}). Return the phase to planning (${tool("return", `, phaseId:"${id}", to:"planning", note`)}) and change the pieces it names (they are issued again), or add one.` };
       const unreviewed = Object.entries(r.execution?.waves ?? {}).find(([, wave]) => wave.lines.every((line) => line.ok) && r.waveReview && !wave.review);
       if (unreviewed) return { key: key(`wave_review:${unreviewed[0]}`), stage: phase.stage, waitsForPm: true,
-        text: `${head} — wave ${unreviewed[0]} is in (package ${unreviewed[1].packageSha.slice(0, 12)}). Have another model verify it (workflow lp.review on the wave's diff, a reviewer model other than the writers'), then ${tool("wave_review", `, phaseId:"${id}", wave:${unreviewed[0]}, state:"passed"|"failed", by, summary`)}; the next wave waits for it.` };
+        text: `${head} — wave ${unreviewed[0]} is in (package ${unreviewed[1].packageSha.slice(0, 12)}). Have another model verify it (workflow lp.review on the wave's diff, a reviewer model other than the writers'), then ${tool("wave_review", `, phaseId:"${id}", wave:${unreviewed[0]}, state:"passed"|"failed", by, summary`)}; the phase leaves execution only after it.` };
       const unworded = Object.keys(r.execution?.waves ?? {}).find((wave) => r.ownerWords && !(r.words ?? []).some((word) => word.turn === "wave" && word.wave === Number(wave) && word.decision === "yes"));
       if (unworded) return { key: key(`word:wave:${unworded}`), stage: phase.stage, waitsForPm: true,
         text: `${head} — wave ${unworded} awaits the owner's word (owner.words is on). Ask him, then ${tool("word", `, phaseId:"${id}", turn:"wave", wave:${unworded}, decision:"yes"|"no", text`)}.` };
       if (r.execution?.unchanged) return { key: key(`unchanged:${r.execution.unchanged.inputSha}`), stage: phase.stage, waitsForPm: true,
         text: `${head} — stage 4, execution: every piece is accepted, but nothing changed since the verification failed (${r.execution.unchanged.detail}). Return the phase to planning (${tool("return", `, phaseId:"${id}", to:"planning", note`)}) and change the failing piece's contract or add a piece; a changed piece is issued again.` };
       return { key: key(`running:${Object.keys(issued).length}:${open.length}`), stage: phase.stage, waitsForPm: false,
-        text: `${head} — stage 4, execution: ${Object.keys(issued).length} of ${items.length} pieces issued, ${open.length} at work. Lane Pilot issues the next wave itself once this one is accepted.` };
+        text: `${head} — stage 4, execution: ${Object.keys(issued).length} of ${items.length} pieces issued, ${open.length} at work. Lane Pilot issues each further piece itself once the pieces it depends on are accepted.` };
     }
     case "verification": {
       const verdict = r.verification?.verdict;

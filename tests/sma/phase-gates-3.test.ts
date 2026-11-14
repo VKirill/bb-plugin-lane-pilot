@@ -41,12 +41,15 @@ describe("phase gates", () => {
     expect(action.waitsForPm).toBe(true);
   });
 
-  it("[sma:p4_wave_addr] issues the earliest wave first, whatever order the pieces were written", () => {
-    const items = [piece("later", 2, ["src/b.ts"]), piece("now", 0, ["src/a.ts"])];
-    expect(wavesOf(items)).toEqual([0, 2]);
-    expect(issuable(items, {}, new Map()).map((item) => item.id)).toEqual(["now"]);
-    const held = issuable(items, { now: "task-now" }, new Map([["now", fact("task-now", { state: "running" })]]));
+  it("[sma:p4_wave_addr] lists the pieces it issues by their wave address, earliest first, whatever order the pieces were written", () => {
+    const after = piece("after", 3, ["src/c.ts"]);
+    const items = [piece("later", 2, ["src/b.ts"]), piece("now", 0, ["src/a.ts"]), { ...after, task: { ...after.task, depends_on: ["now"] } }];
+    expect(wavesOf(items)).toEqual([0, 2, 3]);
+    // The wave is an address, not a barrier: «later» depends on nothing and goes with «now»; «after» waits for «now».
+    expect(issuable(items, {}, new Map()).map((item) => item.id)).toEqual(["now", "later"]);
+    const held = issuable(items, { now: "task-now", later: "task-later" }, new Map([["now", fact("task-now", { state: "running" })]]));
     expect(held).toEqual([]);
+    expect(issuable(items, { now: "task-now", later: "task-later" }, new Map([["now", fact("task-now")]])).map((item) => item.id)).toEqual(["after"]);
   });
 
   it("[sma:p5_blind_frozen] freezes the verdict on the facts, so the clock does not make a new one", () => {

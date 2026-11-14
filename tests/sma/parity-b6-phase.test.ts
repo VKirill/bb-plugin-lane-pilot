@@ -5,7 +5,7 @@ import type { Services } from "../../server";
 import { createPhaseDriver } from "../phase-driver";
 import {
   acceptanceKey, blindVerdict, designGate, issuable, nextAction, pieceLines, pieceSha, planGate, planSignature, staleAfterReturn,
-  waveLines, type Phase, type PhaseRecord, type PlanItem, type TaskFact,
+  waveCleared, waveLines, type Phase, type PhaseRecord, type PlanItem, type TaskFact,
 } from "../../src/rooms/phase/logic";
 import { getPhase, insertPhase, listParts, savePhase } from "../../src/rooms/phase/store";
 import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
@@ -297,8 +297,12 @@ describe("phase parity b6", () => {
     expect(per[0]!.map((line) => line.id)).toEqual(["contract_current", "landed", "promises_proved", "checks_passed", "independent_check", "qa_read"]);
     // A piece held to a line the wave passed before cannot slip through: b fails qa_read, so the wave fails it.
     expect(wave.every((line) => line.ok)).toBe(false);
-    // issuable still waits for the wave to clear.
+    // The failing line keeps the wave uncleared, but it holds only the pieces that depend on its pieces (owner's rule, ТЗ 4д.5;
+    // SMA n365 «the next wave waits» is a deviation): c depends on nothing and goes, d depends on the blocked b and waits.
     const record: PhaseRecord = { execution: { issued: { a: "t1", b: "t2" }, waves: { "1": { packageSha: "p", lines: wave, at: 1 } } } };
-    expect(issuable([...items, item("c", { wave: 2 })], { a: "t1", b: "t2" }, facts, (w) => wave.every((line) => line.ok) ? true : false)).toEqual([]);
+    expect(waveCleared(record, 1)).toBe(false);
+    const d = item("d", { wave: 2 });
+    const later = [...items, item("c", { wave: 2 }), { ...d, task: { ...d.task, depends_on: ["b"] } }];
+    expect(issuable(later, { a: "t1", b: "t2" }, new Map([["a", facts.get("a")!], ["b", { ...facts.get("b")!, state: "blocked" }]])).map((row) => row.id)).toEqual(["c"]);
   });
 });
