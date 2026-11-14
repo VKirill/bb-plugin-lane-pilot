@@ -119,6 +119,5 @@ def scenario_sma_r09(tmp) -> dict:
     prove_f(proofs, tmp)
     prove_e(proofs, tmp)
     prove_g(proofs, tmp)
-    return proofs.verdict("sma_r09", checked=len(NODES))
     prove_core(proofs, tmp)
     return proofs.verdict("sma_r09", checked=len(NODES), notProved=NOT_PROVED_CORE)
