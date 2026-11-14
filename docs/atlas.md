@@ -74,7 +74,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | self-repair | — | 25 | 3180 | tests (4) |
 | session-hooks | ConventionGate, GUARD_INVENTORY, GuardRow, SNAPSHOT_MAX_AGE_MS, STREAMS, SpendWindow, StreamName, buildCapsule, capsuleRestored, conventionGateHits, guardInventoryGaps, sessionSummaryLine, spentWindows, windowAppliesTo | 3 | 1201 | tests (1) |
 | settings | SettingValidationError, SwitchScope, UNLISTED_SWITCHES, argvValidationMap, coupledSettingKeys, switchValue, validateSettingChanges, validateSettingValue, validateSettingsObject, validationErrorText | 13 | 1909 | drill: provider_limit |
-| sma-map | LiveRow, LiveSource, ProofRoots, SMA_CARDS, SMA_CONTRACT_TESTS, SMA_ENTRIES, SMA_LINKS, SMA_LIVE, SMA_MAP_SHA, SMA_MAP_USAGE, SMA_NODES, SMA_REGIONS, SmaCard, SmaCounts, SmaEntry, SmaEvidence, SmaKind, SmaLinkKind, SmaNode, SmaRow, SmaStateCounts, SmaStatus, brokenProof, darkTableNames, defaultProofRoots, fixProofsInFile, isChecked, isDone, proofDrift, proofRelocation, readSmaLive, renderSmaLive, renderSmaMap, runSmaLiveCli, runSmaMapCli, smaCheckedPercent, smaCounts, smaDonePercent, smaEvidence, smaGroups, smaHoles, smaRows, smaStateCounts, unjudgedProof | 53 | 13186 | tests (1) |
+| sma-map | LiveRow, LiveSource, ProofRoots, SMA_CARDS, SMA_CONTRACT_TESTS, SMA_ENTRIES, SMA_LINKS, SMA_LIVE, SMA_MAP_SHA, SMA_MAP_USAGE, SMA_NODES, SMA_REGIONS, SmaCard, SmaCounts, SmaEntry, SmaEvidence, SmaKind, SmaLinkKind, SmaNode, SmaRow, SmaStateCounts, SmaStatus, brokenProof, darkTableNames, defaultProofRoots, fixProofsInFile, isChecked, isDone, proofDrift, proofRelocation, readSmaLive, renderSmaLive, renderSmaMap, runSmaLiveCli, runSmaMapCli, smaCheckedPercent, smaCounts, smaDonePercent, smaEvidence, smaGroups, smaHoles, smaRows, smaStateCounts, unjudgedProof | 53 | 13260 | tests (1) |
 | specialist | ActionOrder, ActionOrderKind, AutonomyClass, BankQuestion, CfBatch, CfGateResult, CfOrganicChannel, CfWave, CostEstimate, DbOrderKind, IntervalForecast, QuestionBankFile, REASON_CODES, ReasonCode, SP_ACTION_KEYS, SpActionKey, ToolTier, actionOrderKindSchema, actionOrderSchema, canonicalJson, cfBatchSchema, cfInformationGainSchema, cfOrganicChannelSchema, cfOrganicItemSchema, cfSeoItemSchema, cfWaveSchema, checkRuSeasonality, classifyToolTier, computeIdemKey, computeSemanticKey, dbOrderKindOf, estimateActionOrderCost, evaluateAutonomyGate, execPluginPythonAsync, execPluginPythonSync, hasPluginScript, intervalForecastSchema, loadMergedQuestions, loadQuestionBank, loadRuCalendar, loadSpPolicy, loadToolTiers, mergeShadowQuestions, normalizeOrdersInput, resolvePluginRoot, spMigrations, validateCfBatchPreFlight, wilsonLowerBound | 22 | 5926 | tests (2) |
 | stability | DrillCheck, ReconcileCursor, parseOpenCodeToolTelemetry, reconcile, reconcileCritic, reconcileCursor, runStabilityDrill | 18 | 2559 | drill: reload |
 | stage-return | StageReturnRecord, finishReturn, getReturn, insertReturn, listReturns, renderReturnNotes, stageReturnMigrations | 10 | 510 | tests (4) |
@@ -488,7 +488,7 @@ First-party install capabilities from `src/rooms/native-install/feature-registry
 | packages/i18n/src/i18n-fields.ts | 2121 |
 | src/rooms/sma-map/entries.ts | 1814 |
 | src/rooms/contracts/session-hook-source.ts | 1410 |
-| src/rooms/sma-map/contracts.ts | 1080 |
+| src/rooms/sma-map/contracts.ts | 1120 |
 | src/rooms/council/ui/council-office.tsx | 942 |
 | packages/memory-core/src/store.ts | 798 |
 | src/rooms/native-install/coexistence.ts | 795 |
