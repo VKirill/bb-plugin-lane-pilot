@@ -579,7 +579,7 @@ describe("parity d5-phase-2", () => {
     expect(broken.texts.get(path)).toBe("x");
   });
 
-  it("[sma:k_pl_state] a stage move keeps a hand-written STATE.md byte for byte outside the command's block (own ## Decisions with ### sub-headings, CRLF, no final newline), and a timestamp-only difference writes and commits nothing", async () => {
+  it("[sma:k_pl_state] [sma:k_lib_statesection] a stage move keeps a hand-written STATE.md byte for byte outside the command's block (own ## Decisions with ### sub-headings, CRLF, no final newline), and a timestamp-only difference writes and commits nothing", async () => {
     const d = driver({ settings: { "phase.doc_files": "on" } });
     d.texts.set(STATE, HAND);
     const first = await d.phases.open({ projectId: "projA", pmThreadId: "t", title: "Sum", goal: "sums", legacy: true });
@@ -654,7 +654,7 @@ describe("parity d5-phase-2", () => {
     expect(writing.texts.get(STATE)).toBe(HAND);
   });
 
-  it("[sma:k_t_state] `phase state` adds one line to the command's block of a hand-written STATE.md and never drops a person's text; every flag is one line, --set is key=value", async () => {
+  it("[sma:k_t_state] [sma:k_v_state] `phase state` adds one line to the command's block of a hand-written STATE.md and never drops a person's text; every flag is one line, --set is key=value", async () => {
     const d = driver({ projects: { th_other: "projB", th_mine: "projA" } });
     d.texts.set(STATE, HAND);
     const id = openLegacy(d);

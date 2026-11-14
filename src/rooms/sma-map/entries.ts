@@ -1529,7 +1529,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n1515: ["have", "снятие Claude Lane не трогает память, скиллы и чужие настройки", "src/rooms/native-install/claude-lane-leftovers.ts#UNTOUCHED"],
   n1516: ["have", "проверка переналоженных правок: строки владельца переживают установку стража", "src/rooms/native-install/guard-apply.ts#applyInstalledGuard"],
   n1517: ["have", "bb lane-pilot window status показывает чаты, заявки, пути открытых задач, пересечения и отпечатки работы; из чата — только свой проект", "src/rooms/verification/server/window.ts#runWindowCli"],
-  n1518: ["have", "аренда окна продлевается сама: каждое сообщение владельца в папке проекта продлевает аренду чата на 6 ч, заявка — повторной заявкой; window status перечисляет живые", "src/rooms/verification/server/window.ts#listLiveWindows"],
+  n1518: ["have", "аренда окна продлевается сама: каждое сообщение владельца в папке проекта продлевает аренду чата на 6 ч, заявка — повторной заявкой; window status перечисляет живые", "src/rooms/verification/server/checkout-guests.ts#noteCheckoutGuest"],
   n1519: ["have", "bb lane-pilot window claim записывает заявку с HEAD как основой и печатает пересечения; имя, занятое другим живым чатом, — отказ", "src/rooms/verification/server/window.ts#runWindowCli"],
   n1520: ["have", "bb lane-pilot window release снимает только свою заявку, печатает оставшиеся правки и оставляет запись", "src/rooms/verification/server/window.ts#runWindowCli"],
   n1521: ["void", "нет предмета: нумерованных файлов нет: миграции — упорядоченный массив под хешем в замковом образце, версия — одно поле, сверяемое с последней меткой; столкновение видно в git"],
