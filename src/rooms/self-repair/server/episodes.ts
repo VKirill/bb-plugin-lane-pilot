@@ -18,6 +18,8 @@ export const LOG_TAIL_BYTES = 1_000_000;
  */
 const LOG_FAILURE = /\bfailed\b|stale API handle|is retired|unhandled|uncaught/i;
 const LOG_NOT_OURS = /^self-repair|writer attempt \S+ failed|writer spawn for \S+ failed|Host is not connected|Timed out waiting for command result|native-trace|reasoning trace|waits for|browser check \S+ adopted after a reload|ended early, starting one more session/i;
+/** A delivered reload notice is status; fault words in its quoted question are evidence from the earlier incident. */
+const OWNER_QUESTION_RECOVERED = /^owner question «[\s\S]*» lost to a reload; \S+ told$/;
 
 /**
  * An ownership rejection of files the writer put outside its task: every named file is neither owned by the contract nor
@@ -124,7 +126,7 @@ export function logIncidents(text: string, since: number): Incident[] {
     try { row = JSON.parse(line) as typeof row; } catch { continue; }
     if (typeof row.ts !== "number" || row.ts <= since || typeof row.message !== "string") continue;
     // A successful episode summary is status; other failure text in the same line still counts.
-    if (!LOG_FAILURE.test(row.message.replace(/^episodes: \d+ enriched, \d+ skipped, 0 failed, 0 held of \d+ picked\b/i, "")) || LOG_NOT_OURS.test(row.message)) continue;
+    if (!LOG_FAILURE.test(row.message.replace(/^episodes: \d+ enriched, \d+ skipped, 0 failed, 0 held of \d+ picked\b/i, "")) || LOG_NOT_OURS.test(row.message) || OWNER_QUESTION_RECOVERED.test(row.message)) continue;
     const projectId = /\bproj_[a-z0-9]+/i.exec(row.message)?.[0] ?? "-";
     out.push({ signature: reasonSignature("log", row.message), kind: "log", projectId, runId: "-", taskId: "-",
       attemptId: `log:${row.ts}`, pmThreadId: null, writerThreadId: null, reason: row.message, at: row.ts });
