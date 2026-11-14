@@ -142,6 +142,8 @@ export default {
   },
   n189: {
     mutation: flip("src/rooms/docs/docs.ts", "if (edit.expectedSha256 !== expectedSha256) throw", "if (edit.expectedSha256 === expectedSha256) throw"),
+    trace: drill("sma_r01"),
+  },
   n190: {
     mutation: distort("src/rooms/tasks/plan-fact.ts", 'new Set(["docs", "research", "check"])', 'new Set(["docs", "check"])'),
     trace: receipt("plan-fact", "skipped"),
