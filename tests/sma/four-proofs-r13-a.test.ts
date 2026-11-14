@@ -1,6 +1,7 @@
 // Region 13 · Guard tools — the behaviour proofs of the map nodes n1036–n1047 (docs/sma-evidence.md). Each test checks the
 // result a card names (the strings reported, the lines written, the receipts saved), not that a function was called.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -263,24 +264,36 @@ describe("guard tools: failure journal and crash census (n1046, n1047)", () => {
     expect(failedTasksAllProjects(db, newest).every((row) => row.failedAt >= newest)).toBe(true);
   });
 
-  it("[sma:m_tl_crash] a writer killed mid-work leaves a census that did not shrink and a database the readiness check calls ready; a damaged file is not ready", () => {
+  it("[sma:m_tl_crash] a writer killed mid-work leaves a census that did not shrink and a database the readiness check calls ready; a damaged file is not ready", async () => {
     const dir = mkdtempSync(join(tmpdir(), "lp-r13-crash-"));
     const py = (code: string) => spawnSync("python3", ["-I", "-c", `import sys; sys.path.insert(0, ${JSON.stringify(join(ROOT, "scripts"))})\n${code}`], { encoding: "utf8", cwd: ROOT });
     const census = (db: string) => {
       const out = py(`import json, pathlib\nfrom lp_drill.scenes.hub_outage import _db_census\nprint(json.dumps(_db_census(${JSON.stringify(join(ROOT, "scripts/hub-watchdog.sh"))}, ${JSON.stringify({ PATH: process.env.PATH, HOME: dir })}, pathlib.Path(${JSON.stringify(db)}))))`);
       return JSON.parse(out.stdout.trim().split("\n").pop()!) as { rows: number; ready: boolean };
     };
+    // SIGKILL the child and await its close; the close listener is attached at spawn so a fast exit or a spawn
+    // failure can never be missed, and the same promise serves the kill on the happy path and the reap in finally.
+    let writer: ReturnType<typeof spawn> | undefined;
+    let writerClosed: Promise<unknown> | undefined;
+    const killAndReap = async () => {
+      if (!writer || !writerClosed) return;
+      writer.kill("SIGKILL");
+      await writerClosed;
+    };
     try {
       const db = join(dir, "stand.db");
       execFileSync("sqlite3", [db, "pragma journal_mode=WAL; create table beats(n integer);"]);
       expect(census(db)).toEqual({ rows: 0, ready: true });
-      const writer = spawn("bash", ["-c", `for i in $(seq 1 200000); do sqlite3 ${JSON.stringify(db)} 'insert into beats values (1);' 2>/dev/null; done`], { stdio: "ignore" });
+      // one long-lived writer committing rows itself: no per-row shell/sqlite grandchildren to outlive it
+      writer = spawn("python3", ["-I", "-c", "import sqlite3, sys\nc = sqlite3.connect(sys.argv[1], isolation_level=None)\nc.execute(\"pragma busy_timeout=5000\")\nfor _ in range(10000000):\n    c.execute(\"insert into beats values (1)\")", db], { stdio: "ignore" });
+      writerClosed = once(writer, "close").catch(() => undefined);
+      // db-ready's quick_check can answer not-ready while the writer's commits race it — a transient busy read, not
+      // damage — so the barrier waits for rows AND ready before the crash.
       let before = { rows: 0, ready: false };
-      for (let i = 0; i < 60 && before.rows <= 10; i++) { execFileSync("sleep", ["0.2"]); before = census(db); }
+      for (let i = 0; i < 60 && (before.rows <= 10 || !before.ready); i++) { await new Promise((wake) => setTimeout(wake, 200)); before = census(db); }
       expect(before.rows).toBeGreaterThan(10);
       expect(before.ready).toBe(true);
-      writer.kill("SIGKILL");
-      execFileSync("sleep", ["0.3"]);
+      await killAndReap();
       const after = census(db);
       expect(after.ready).toBe(true);
       expect(after.rows).toBeGreaterThanOrEqual(before.rows);
@@ -290,6 +303,10 @@ describe("guard tools: failure journal and crash census (n1046, n1047)", () => {
       const broken = join(dir, "broken.db");
       writeFileSync(broken, "this is not a sqlite file, only text that is long enough to fill a header page ".repeat(80));
       expect(census(broken).ready).toBe(false);
-    } finally { rmSync(dir, { recursive: true, force: true }); }
+    } finally {
+      // the writer is this test's own child: kill and reap it on every exit, pid only — never the process group
+      await killAndReap();
+      rmSync(dir, { recursive: true, force: true });
+    }
   }, 120_000);
 });
