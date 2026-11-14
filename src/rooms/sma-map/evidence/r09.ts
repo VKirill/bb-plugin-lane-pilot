@@ -143,7 +143,7 @@ export default {
   n938: { mutation: flip(SW, 'view.drawingOk.stale ? fill("ckDrawingStale"', '!view.drawingOk.stale ? fill("ckDrawingStale"'), reach: entry("the owner opens a task with a drawing in the window's task screen"), trace: SCENE },
   n939: { mutation: flip("src/rooms/work-graph/ui/stage-steps.tsx", 'block.cell.state === "skipped" && block.cell.rounds === 0', 'block.cell.state === "skipped" && block.cell.rounds !== 0'), trace: SCENE },
   n940: { mutation: flip("src/rooms/runs/ui/thread-live.tsx", 'done.filter((item) => item.phase === "accepted").length', 'done.filter((item) => item.phase !== "accepted").length'), trace: SCENE },
-  n941: { mutation: flip(TB, "{card.attempts.length > 1 ? (", "{card.attempts.length > 2 ? ("), trace: SCENE },
+  n941: { mutation: distort(TB, "#{attempt.no}</span>", "#{attempt.no + 1}</span>"), trace: SCENE },
   n942: { mutation: flip("src/rooms/work-graph/logic.ts", "month.monthUsd >= month.cap * 0.9", "month.monthUsd > month.cap * 0.9"), reach: entry("the owner opens the page of a task that is at work and reads its work breakdown"), trace: SCENE },
   n943: { mutation: flip(AC, 'const text = window.prompt(t("accWordWhyPrompt"))?.trim(); if (text) void', 'const text = window.prompt(t("accWordWhyPrompt"))?.trim(); if (!text) void'), reach: entry("a task waits for the owner's word and he opens its acceptance card"), trace: SCENE },
   n945: { mutation: distort(SW, "` · ${view.approach.lesson}`", "` · ${view.approach.approach}`"), trace: SCENE },
