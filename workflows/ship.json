@@ -130,7 +130,7 @@
         "en": "Push and open the PR",
         "ru": "Пуш и PR"
       },
-      "prompt": "Push the phase branch (git push -u origin HEAD), write the PR body from the phase's SUMMARY.md and BOOK.md (what, why, how it was verified, receipts), open it with gh pr create and record the shipment in .agents/deploys.log.",
+      "prompt": "Push the phase branch (git push -u origin HEAD), write the PR body from the phase's SUMMARY.md and BOOK.md (what, why, how it was verified, receipts) into a temp file made with mktemp outside every repository, open it with gh pr create --body-file <that file> and delete the file, then record the shipment in .agents/deploys.log and set the phase's status and last activity in .agents/planning/STATE.md.",
       "out": {
         "pr_url": "string"
       },
