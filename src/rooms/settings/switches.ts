@@ -68,6 +68,8 @@ export const UNLISTED_SWITCHES: Readonly<Record<string, readonly [scope: SwitchS
   "verification.ssh_keys": ["project", "on|off", "on: this project's checks can read ~/.ssh (the owner's ssh keys), so a check that clones or fetches over ssh works, and a check can also push with them; unset or off: ~/.ssh is masked inside checks, with the other credential stores (publication closed)"],
   "verification.copy": ["project", "on|off", "a check called from a chat runs in a throwaway copy (a git worktree of the workspace head) instead of the live checkout; a workspace with uncommitted changes is checked where it stands and the measure says so; off: the chat check always runs in the live checkout. A writer's checks run in the attempt's own worktree and the landing sweep in its own, whatever this says (unset: on)"],
   "verification.project_suite": ["project", "text", "the command of the project's own suite; the landing sweep runs it on the merged head in its throwaway worktree and a red one becomes an owner item (unset: the project has none, it is never guessed)"],
+  "worker.strict_user": ["project", "on|off", "on: this project's checks run as a separate OS user (worker.user, lp-worker when none is named) through sudo -n -u, and each task gets a fresh codex home (unset: off, checks run as the owner)"],
+  "worker.user": ["project", "text", "the OS user a strict worker's checks run as (unset: lp-worker); read only where worker.strict_user is on"],
   // hub-wide jobs
   "curriculum.weekly": ["global", "on|off", "every Monday the hub clusters the week's misses into a ten-line brief (bb lane-pilot curriculum --brief)"],
   "task.outcome_file": ["global", "on|off", "a finished task leaves OUTCOME.md beside its PLAN.md where the task folder still exists"],

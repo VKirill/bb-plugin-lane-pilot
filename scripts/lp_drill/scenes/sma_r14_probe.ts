@@ -4,13 +4,26 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import {
   deleteMemoryRecord, eraseLeftovers, hideRecord, lintMemory, listMemory, memoryClaimIssue, memoryIndexStatus, parseMemoryCandidates, parseMemorySettings,
-  reviewMemory, storeMemoryRecords,
+  reviewMemory, storeMemoryRecords, explainMemory, listRemindedMisses, memoryContext, memoryStem, parseLaneMemoryFile, rebuildMemoryIndexes, recordMemoryMiss,
+  searchMemoryRecords, storeMemoryRecordsKeepingOverflow, type MemoryRecord,
 } from "../../../packages/memory-core/src";
 import { memoryContentIssue } from "../../../packages/memory-core/src/candidates";
 import { proposeShorter } from "../../../packages/memory-core/src/compress";
 import { createAutonomy } from "../../../src/rooms/learning/autonomy";
 import { getItem, insertItem } from "../../../src/rooms/learning/store";
 import { runMemoryImport } from "../../../src/rooms/memory/server/import";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createCore } from "../../../src/rooms/core/server/core";
+import { runCatalogCli } from "../../../src/rooms/file-cards/cli";
+import { planCorpus } from "../../../src/rooms/memory-eval/server/corpus";
+import { loadEvalData } from "../../../src/rooms/memory-eval/server/source";
+import { createMemoryConflicts } from "../../../src/rooms/memory/server/memory-conflicts";
+import { sessionMemoryRpc } from "../../../src/rooms/memory/server/session-memory";
+import { migrations } from "../../../src/rooms/plugin-db";
+import { registerCli } from "../../../src/rooms/tools/server/cli";
 import { coldMatches, episodes } from "../../../src/rooms/memory-tiers/server";
 import { openDatabase } from "../../../src/rooms/plugin-db";
 import { createAttempt, createRun, createTask, transitionAttempt } from "../../../src/rooms/storage";
@@ -140,5 +153,137 @@ function importAndDrafts() {
     drafts: [draftTarget([], "a.md"), draftTarget(["a.md"], "a.md"), draftTarget(["a.md", "a-2.md"], "a.md")] };
 }
 
-const result = { ...door(), compare: compare(), indexLifecycle: indexAndLifecycle(), loader: loader(), lint: lintAndReview(), tiers: tiers(), erase: eraseAndEconomy(), learning: await learning(), imports: importAndDrafts() };
+/** The real `bb lane-pilot memory …` CLI on a scratch database, as the owner at a terminal (no thread). */
+function cliOn(db: Db, host: ReturnType<typeof createFakePluginHost>) {
+  const memoryConflicts = createMemoryConflicts({ db, deferrals: () => ({ close: () => {} }) });
+  registerCli(createCore(host.bb, db as never), { memoryConflicts } as never, migrations);
+  return (argv: string[]) => host.harness.behavior.runCli(argv, {});
+}
+const record = (id: string, content: string): MemoryRecord => ({ id, projectId: "p", personalBot: "", kind: "note", content, concepts: ["memory"], sourceSha256: "a".repeat(64), createdAt: 1 });
+
+async function batchB() {
+  const host = createFakePluginHost({ pluginId: "lane-pilot" });
+  const db = openDatabase(host.bb);
+  const run = cliOn(db, host);
+  const rpc = sessionMemoryRpc({ db, bb: host.bb, log: () => {}, isDisposed: () => false } as never, { insights: {}, docsPlaces: async () => [], memoryConflicts: { detect: () => {}, sweepMoot: () => {} }, wallThreadReader: {} } as never);
+  const out: Record<string, unknown> = {};
+
+  // Gold set and miss: the verb stores a reminded miss tied to its note; the corpus plan turns it into a positive question.
+  const [held] = put(db, [note("The refund queue drains at noon on weekdays.", ["refund", "queue"])]).insertedIds;
+  const refused = await run(["memory", "miss", "when does it drain?", "--note", "nope", "--project", "P"]);
+  const miss = await run(["memory", "miss", "when does the refund queue drain?", "--note", held!, "--project", "P"]);
+  recordMemoryMiss(db, "P", "nobody has an answer", Date.now());
+  const plan = planCorpus({ data: loadEvalData(db as never), size: 30, seed: 1, skipProjects: new Set(), skipTask: () => false });
+  const gold = plan.questions.filter((question) => question.kind === "positive");
+  out.gold = { refusedExit: refused.exitCode, missExit: miss.exitCode, listed: listRemindedMisses(db).map((row) => `${row.query}|${row.noteId === held}`), gold: gold.map((item) => `${item.id}|${item.query}|${item.gold[0] === held}`) };
+
+  // Index: a lost entry shows in the status and the rebuild puts it back; the token stats weigh core and notes.
+  const [a, b] = put(db, [note("Alpha fact about the billing ledger.", ["billing"]), note("Beta fact about the refund queue.", ["refund"])], { projectId: "I" }).insertedIds;
+  db.prepare("DELETE FROM lane_pilot_memory_fts WHERE id=?").run(a!);
+  const status = JSON.parse((await run(["memory", "index", "--check", "--project", "I"])).stdout ?? "{}") as { missingIds?: string[]; active?: number };
+  const statusPlain = JSON.parse((await run(["memory", "index", "--project", "I"])).stdout ?? "{}") as { missingIds?: string[] };
+  const rebuilt = await run(["memory", "index", "--rebuild", "--project", "I"]);
+  out.index = { missing: statusPlain.missingIds, a, rebuilt: (rebuilt.stdout ?? "").trim(), after: memoryIndexStatus(db, "I").missingIds, b: b === undefined ? 0 : 1, direct: rebuildMemoryIndexes(db, "I") };
+  put(db, [{ kind: "core", content: "x".repeat(400), concepts: ["convention"] }, note("y".repeat(800)), note("z".repeat(800))], { projectId: "S" });
+  const stats = JSON.parse((await run(["memory", "stats", "--project", "S", "--json"])).stdout ?? "{}") as { coreTokens?: number; noteTokens?: number };
+  out.stats = { core: stats.coreTokens, notes: stats.noteTokens };
+
+  // Forget: archive and revoke leave their reasons, erase needs --yes and then nothing remains.
+  const [x1, x2, x3] = put(db, ["Gamma", "Delta", "Epsilon"].map((word) => note(`${word} is a distinct fact about the shipping labels.`, [word.toLowerCase()])), { projectId: "F" }).insertedIds;
+  const reason = (id: string) => db.prepare("SELECT status, expired_reason AS reason FROM lane_pilot_memory WHERE id=?").get(id) as { status: string; reason: string | null } | undefined;
+  await run(["memory", "forget", x1!, "--archive", "--project", "F"]);
+  await run(["memory", "forget", x2!, "--revoke", "--project", "F"]);
+  const noYes = await run(["memory", "forget", x3!, "--erase", "--project", "F"]);
+  const erased = await run(["memory", "forget", x3!, "--erase", "--yes", "--project", "F"]);
+  out.forget = { archive: reason(x1!), revoke: reason(x2!), noYesExit: noYes.exitCode, erasedExit: erased.exitCode, gone: reason(x3!) === undefined, leftovers: eraseLeftovers(db, "F", x3!) };
+
+  // Load by tags: the core, then the notes carrying the tag.
+  put(db, [{ kind: "core", content: "Always write terse commit messages.", concepts: ["convention"] }, note("The billing ledger rounds half to even.", ["billing"]), note("The kitchen sink is a fixture.", ["kitchen"])], { projectId: "L" });
+  const loaded = (await run(["memory", "load", "--tags", "billing", "--project", "L"])).stdout ?? "";
+  out.load = { core: loaded.includes("Always write terse commit messages."), tagged: loaded.includes("billing ledger rounds half to even"), other: loaded.includes("kitchen sink") };
+
+  // Lint: one deterministic checker names a planted credential as an error.
+  db.prepare("INSERT INTO lane_pilot_memory(id,project_id,kind,audience,content,concepts_json,source_sha256,created_at,trust,origin) VALUES('leak9','K','note','subagent','api_key: abcdefghijklmnop','[]','x',0,'confirmed','maintainer')").run();
+  const lint = await run(["memory", "lint", "--project", "K", "--json"]);
+  out.lint = { exit: lint.exitCode, secret: (JSON.parse(lint.stdout ?? "[]") as Array<{ check: string; tier: string; recordId?: string }>).filter((item) => item.check === "secret").map((item) => `${item.tier}:${item.recordId}`) };
+
+  // Compress: the list changes no row; apply replaces exactly the named note.
+  const repeated = (word: string) => Array(30).fill(`The ${word} rule of the ledger holds for every invoice.`).join("\n\n");
+  const [c1, c2] = put(db, [note(repeated("first")), note(repeated("second"))], { projectId: "C" }).insertedIds;
+  const listed = await run(["memory-compress", "--project", "C"]);
+  const superseded = () => n(db, "lane_pilot_memory", "project_id='C' AND status='superseded'");
+  const afterList = superseded();
+  const applied = await run(["memory-compress", "--apply", c1!, "--project", "C"]);
+  out.compress = { listedBoth: (listed.stdout ?? "").includes(c1!.slice(0, 12)) && (listed.stdout ?? "").includes(c2!.slice(0, 12)), afterList, appliedExit: applied.exitCode, first: reason(c1!)?.status, second: reason(c2!)?.status };
+
+  // History: a lesson of the project is found and a planted token is masked.
+  const secret = `ghp_${"9f8e7d".repeat(4)}`;
+  insertItem(db as never, { id: "hist1", obsId: "obs2", projectId: "H", threadId: "thr1", kind: "fact", text: `billingledger rule, key ${secret}`, audience: null, reach: "project", dueAt: null, state: "accepted", target: null, evidence: "obs2",
+    duplicateOf: null, confirmations: 0, note: null, createdAt: 2, decidedAt: null, announcedAt: null } as never);
+  const hist = (await run(["memory", "history", "billingledger", "--project", "H"])).stdout ?? "";
+  out.history = { lessons: hist.includes("lessons"), masked: !hist.includes(secret), none: ((await run(["memory", "history", "kubernetesingress", "--project", "H"])).stdout ?? "").trim() };
+
+  // Migrate: a dry run through the RPC previews per line and the store stays as it was.
+  const jsonl = [JSON.stringify({ source_id: "s1", content: "The billing worker clears its queue every night at three." }), JSON.stringify({ source_id: "s2", content: "" })].join("\n");
+  const before = n(db, "lane_pilot_memory", "project_id='M'");
+  const dry = await rpc.memory_import({ source: "bb-memory", projectId: "M", jsonl, dryRun: true }) as unknown as { outcomes: Array<{ outcome: string }> };
+  out.migrate = { outcomes: dry.outcomes.map((row) => row.outcome), unchanged: n(db, "lane_pilot_memory", "project_id='M'") === before };
+  // Claude Code's notes are read through the same door: a credential line is dropped with reason secret, a plain fact is added.
+  const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U";
+  const auto = runMemoryImport({ db, projectId: "A", source: "claude-files", settings: parseMemorySettings({}), jsonl: [
+    JSON.stringify({ source_id: "proj/fact", content: "The staging host reboots at four every night." }), JSON.stringify({ source_id: "sec", content: `The deploy token is ${jwt} and must stay secret.` })].join("\n") });
+  out.automem = { outcomes: Object.fromEntries(auto.outcomes.map((row) => [row.source_id, `${row.outcome}:${row.reason ?? ""}`])), rows: n(db, "lane_pilot_memory", "project_id='A'") };
+
+  // Context pack and the reasons: what fits, a head line for what does not, nothing for an unrelated note.
+  const records = [record("keep", "deploy staging checklist for the hub"), record("long", "deploy staging checklist extra words ".repeat(40)), record("away", "borscht recipe with beets")];
+  const pack = memoryContext(records, "deploy staging checklist", 60);
+  const why = explainMemory(records, "deploy staging checklist", 30);
+  out.context = { kept: pack.records.map((item) => item.id), heads: pack.heads.map((item) => item.id), borscht: pack.text.includes("borscht"), fits: pack.estimatedTokens <= 60 };
+  out.explain = { keep: why.find((line) => line.startsWith("deliver keep")) ?? "", cut: why.find((line) => line.startsWith("reject long")) ?? "", away: why.find((line) => line.startsWith("reject away")) ?? "" };
+
+  // Trim: the last core that does not fit becomes a note; nothing is deleted.
+  const trimDb = fresh();
+  const stored = storeMemoryRecordsKeepingOverflow(trimDb, { projectId: "P", sourceSha256: "a".repeat(64), audience: "subagent", coreBudget: 50, noteBudget: 5_000, indexBudget: 9_999, nearDuplicates: false,
+    entries: [{ kind: "core", content: "Always write terse commit messages.", concepts: ["convention"] }, { kind: "core", content: "x".repeat(400), concepts: ["convention"] }] });
+  out.trim = { demoted: stored.demoted, kinds: stored.entries.map((entry) => entry.kind), rows: n(trimDb, "lane_pilot_memory") };
+
+  // The catalog verb: one line per git-tracked file in a scratch repository, none for an untracked one.
+  const repo = mkdtempSync(join(tmpdir(), "lp-r14-repo-"));
+  try {
+    execFileSync("git", ["init", "-q"], { cwd: repo });
+    for (const name of ["a.ts", "b.ts", "c.md"]) writeFileSync(join(repo, name), `// ${name}\n`);
+    execFileSync("git", ["add", "a.ts", "b.ts", "c.md"], { cwd: repo });
+    writeFileSync(join(repo, "untracked.ts"), "// loose\n");
+    const listed = runCatalogCli([], repo);
+    out.catalog = { exit: listed.exitCode, lines: (listed.stdout ?? "").trim().split("\n").length, first: (listed.stdout ?? "").split("\n")[0]!.split(" | ")[0], untracked: (listed.stdout ?? "").includes("untracked") };
+  } finally { rmSync(repo, { recursive: true, force: true }); }
+
+  // Header parser, schema, core of a session, word search, word forms, recall, fusion.
+  const file = parseLaneMemoryFile("---\nid: worktree-routing\nclaim: Parallel writers use a worktree each\nsensitivity: sensitive\nretrieval:\n  areas: [procedures, \"lanes\"]\n---\n\nShared checkouts see each other's edits.\n");
+  out.frontmatter = { id: file?.id, status: file?.status, areas: file?.areas, sensitivity: file?.sensitivity, none: parseLaneMemoryFile("no front matter") };
+  const parsed = parseMemoryCandidates([{ kind: "note", content: "The queue drains at noon.", concepts: ["Queue"], valid_until: "2026-12-31" }], parseMemorySettings({}));
+  let kindRefusal = ""; try { parseMemoryCandidates([{ kind: "rule", content: "x".repeat(30), concepts: [] }], parseMemorySettings({})); } catch (cause) { kindRefusal = (cause as Error).message; }
+  out.schema = { until: parsed[0]!.validUntil === Date.parse("2026-12-31"), concepts: parsed[0]!.concepts, kindRefusal };
+  const coreDb = fresh();
+  put(coreDb, [{ kind: "core", content: "Always write terse commit messages.", concepts: ["convention"] }, note("The kitchen display refreshes every ten seconds.", ["kitchen"])]);
+  put(coreDb, [{ kind: "core", content: "Another project's convention.", concepts: ["convention"] }], { projectId: "Q" });
+  const coreRpc = sessionMemoryRpc({ db: coreDb, bb: host.bb, log: () => {}, isDisposed: () => false } as never, { memoryConflicts: { detect: () => {} } } as never);
+  out.core = (await coreRpc.session_memory_core({ projectId: "P" })).records.map((item) => item.content);
+  const searchDb = fresh();
+  put(searchDb, [note("The invoice rounding rule keeps half to even.", ["billing"]), note("Nightly archive of invoices goes to cold storage.", ["archive"]), note("The kitchen display refreshes every ten seconds.", ["kitchen"])]);
+  out.search = { whole: searchMemoryRecords(searchDb, "P", "invoice", 5, "auto").map((row) => row.content.slice(0, 11)), forms: searchMemoryRecords(searchDb, "P", "invoices", 5, "auto").map((row) => row.content.slice(0, 11)), none: searchMemoryRecords(searchDb, "P", "kubernetes ingress", 5, "auto").length };
+  out.forms = { stems: ["ошибки", "ошибка", "ошибок"].map(memoryStem), long: memoryStem("calculation"), short: memoryStem("cat") };
+  const recallDb = fresh();
+  put(recallDb, [note("The nightly export writes reports to the archive bucket.", ["export", "archive"])]);
+  const recallRpc = sessionMemoryRpc({ db: recallDb, bb: host.bb, log: () => {}, isDisposed: () => false } as never, { memoryConflicts: { detect: () => {} } } as never);
+  const found = await recallRpc.session_memory_search({ projectId: "P", query: "nightly export archive bucket" });
+  const none = await recallRpc.session_memory_search({ projectId: "P", query: "kubernetes ingress controller" });
+  out.recall = { found: found.records.map((item) => item.content.slice(0, 18)), none: none.records.length, nothingRelevant: none.nothingRelevant === true };
+  const fuseDb = fresh();
+  put(fuseDb, [note("invoice invoice invoice invoice ledger", ["a"]), note("A long sentence about the weekly report where one invoice is mentioned once among many other unrelated words", ["b"]), note("invoices pile up in the archive folder", ["c"])]);
+  out.fusion = searchMemoryRecords(fuseDb, "P", "invoice", 5, "auto").map((row) => row.content.split(" ")[0]);
+  return out;
+}
+
+const result = { ...door(), compare: compare(), indexLifecycle: indexAndLifecycle(), loader: loader(), lint: lintAndReview(), tiers: tiers(), erase: eraseAndEconomy(), learning: await learning(), imports: importAndDrafts(), b: await batchB() };
 process.stdout.write(`${JSON.stringify(result)}\n`); // the probe's one result line

@@ -12,7 +12,10 @@ import { registerCli } from "../../../src/rooms/tools/server/cli";
 import { migrations, openDatabase } from "../../../src/rooms/plugin-db";
 import { createAttempt, createRun, createTask, listEvidence, saveProjectSetting, savePrototypeConfig } from "../../../src/rooms/storage";
 import { claimScope, listClaims, listLiveWindows, noteCheckoutGuest, projectCheckoutPaths, releaseClaim, windowCollisions, workFingerprint } from "../../../src/rooms/verification/server";
-import { buildCapsule } from "../../../src/rooms/session-hooks/logic";
+import { buildCapsule, capsuleRestored } from "../../../src/rooms/session-hooks/logic";
+import { cockpitToday } from "../../../src/rooms/cockpit/server";
+import { findingId } from "../../../src/rooms/critique/code-critique";
+import { renameRetry } from "../../../src/rooms/platform/atomic-text";
 import { createRelay, type RelayItem } from "../../../src/rooms/relay/server/relay";
 import { EVENT_FIELDS, postEvent, taskEventBody } from "../../../src/rooms/relay/server/outbound";
 import { collectHandoffBrief } from "../../../src/rooms/writer/server/writer-handoff";
@@ -233,6 +236,83 @@ const run = async (w: ReturnType<typeof world>, ...args: string[]) => w.harness.
   const text2 = "text" in second ? second.text : "";
   const outside = (t: string) => t.slice(0, t.indexOf(STATE_BLOCK_START)) + t.slice(t.indexOf(STATE_BLOCK_END) + STATE_BLOCK_END.length);
   s.state = { keepsHand: text.startsWith(HAND), outsideSame: outside(text2).startsWith(HAND), blockHasWal: stateBlockSections(text2).Decisions ?? [], stage: stateBlockSections(text2).Position ?? [], parsed: parseState(text2).sections.Decisions ?? [], personalHeading: text.includes("## Decisions (Lane Pilot)"), broken: "refused" in stateBlockText(`# Mine\n${STATE_BLOCK_START}\nno end`, {}, { Position: ["x"] }) };
+}
+
+// ---- batch b: n1549 n1551 n1552 n1553 n1554 n1555 n1556 n1558 n1559 ----
+{
+  // n1549: a webhook post carries the caller's time and the project of the call; the pulse and the waiting event are told apart by `event`
+  const w = world();
+  const sent: Array<Record<string, unknown>> = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = (async (_url: string, init: RequestInit) => { sent.push(JSON.parse(String(init.body))); return new Response("ok"); }) as never;
+  try {
+    saveProjectSetting(w.db, "P", "events.webhook_url", "https://hooks.example/lp");
+    await postEvent(w.db, "P", { event: "owner.waiting", state: "waiting", at: 123, projectId: "EVIL" });
+    await postEvent(w.db, "P", { event: "pulse" });
+  } finally { globalThis.fetch = real; }
+  s.notify = { events: sent.map((b) => b.event), projects: sent.map((b) => b.projectId), at0: sent[0]?.at, at1Recent: typeof sent[1]?.at === "number" && Date.now() - (sent[1].at as number) < 60_000, keys: Object.keys(sent[0] ?? {}) };
+  // n1551: the Today digest counts each source; one that fails is named and the others stay; protection.rearm does not change it
+  const d = world();
+  createRun(d.db, "r1", "p");
+  const now = Date.now();
+  for (const [id, state] of [["t1", "accepted"], ["t2", "accepted"], ["t3", "blocked"]] as const) {
+    createTask(d.db, { id, runId: "r1", kind: "bb", contract: { display_title: `title ${id}` } as never });
+    createAttempt(d.db, { id: `a_${id}`, runId: "r1", taskId: id });
+    d.db.prepare("UPDATE lane_pilot_attempt SET state=?, updated_at=? WHERE id=?").run(state, now - 1000, `a_${id}`);
+  }
+  const logs: string[] = [];
+  const okFront = { actions: async () => [{ at: now - 10 }, { at: now - 3 * 86_400_000 }] } as never;
+  const all = await cockpitToday({ db: d.db, log: (l: string) => logs.push(l) } as never, { front: okFront }, "p");
+  saveProjectSetting(d.db, "p", "protection.rearm", "on");
+  const rearmOn = await cockpitToday({ db: d.db, log: () => undefined } as never, { front: okFront }, "p");
+  const down = await cockpitToday({ db: d.db, log: (l: string) => logs.push(l) } as never, { front: { actions: async () => { throw new Error("front down"); } } as never }, "p");
+  s.digest = { kpi: all.kpi, partial: all.partial, rearmSame: JSON.stringify(rearmOn) === JSON.stringify(all), downPartial: down.partial, downKpi: down.kpi, downFeed: down.feed.length, logged: logs.at(-1) };
+  // n1552: a file imported by 18 tests selects only the tests that name what changed
+  const repo = mkdtempSync(join(tmpdir(), "sma-r20-wide-"));
+  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: repo });
+  for (const dir of ["src", "tests", "scripts"]) mkdirSync(join(repo, dir), { recursive: true });
+  cpSync(join(process.cwd(), "scripts", "test-changed.mjs"), join(repo, "scripts", "test-changed.mjs"));
+  writeFileSync(join(repo, "src", "hub.ts"), "export function alphaOne() { return 1 }\nexport function betaTwo() {\n  return 2\n}\n");
+  for (let i = 0; i < 18; i++) writeFileSync(join(repo, "tests", `t${i}.test.ts`), `import { alphaOne } from "../src/hub";\nconsole.log(alphaOne()${i < 2 ? ", betaTwo" : ""});\n`);
+  git(repo, "add", "-A"); git(repo, "commit", "-qm", "base");
+  writeFileSync(join(repo, "src", "hub.ts"), "export function alphaOne() { return 1 }\nexport function betaTwo() {\n  return 3\n}\n");
+  s.wide = execFileSync("node", ["scripts/test-changed.mjs", "--list"], { cwd: repo, encoding: "utf8" }).split("\n").filter((l) => l.endsWith(".test.ts")).sort();
+  rmSync(repo, { recursive: true, force: true });
+  // n1553: a finding's machine name
+  const fid = (over: Record<string, unknown>) => findingId({ file: "src/a.ts", evidence: "e", severity: "high", ...over } as never);
+  s.translit = { given: fid({ id: "F-7", criterion: "x" }), english: fid({ criterion: "Missing Null Check!" }), russian: [fid({ criterion: "нет проверки пустого ввода" }), fid({ criterion: "нет проверки границ" })], hash: createHash("sha256").update("нет проверки пустого ввода").digest("hex").slice(0, 6), noFile: fid({ file: "", criterion: "Slow Path" }) };
+  // n1554: a locked rename is retried five times, a missing file once, and a lock that lets go in time is written through
+  let locked = 0; let missing = 0; let flaky = 0;
+  const outcome = async (fn: () => Promise<void>) => fn().then(() => "ok", (e: Error) => e.message);
+  const lockedResult = await outcome(() => renameRetry("a", "b", async () => { locked++; throw Object.assign(new Error("denied"), { code: "EBUSY" }); }));
+  const missingResult = await outcome(() => renameRetry("a", "b", async () => { missing++; throw Object.assign(new Error("gone"), { code: "ENOENT" }); }));
+  const flakyResult = await outcome(() => renameRetry("a", "b", async () => { flaky++; if (flaky <= 2) throw Object.assign(new Error("av scan"), { code: "EPERM" }); }));
+  s.atomic = { locked: [locked, lockedResult], missing: [missing, missingResult], flaky: [flaky, flakyResult] };
+  // n1555 + n1556: the lease entry keeps provider, label and claims across messages; the claim keeps its record and dies with the lease
+  const l = world();
+  await noteCheckoutGuest(l.bb, l.db, "thr_a", PATH, { providerId: "claude-code", label: "mine" });
+  await claimScope(l.kv as never, { path: PATH, threadId: "thr_a", name: "ui", globs: ["src/**"], description: "d".repeat(400), base: "deadbeef", now: Date.now() });
+  const KEY2 = "checkout-guests:/repo/plugin";
+  const held = (await l.kv.get(KEY2)) as Array<{ threadId: string; at: number }>;
+  await l.kv.set(KEY2, held.map((row) => ({ ...row, at: row.at - 10 * 60_000 })) as never);
+  await noteCheckoutGuest(l.bb, l.db, "thr_a", PATH);
+  const entryNow = ((await l.kv.get(KEY2)) as Array<Record<string, any>>)[0]!;
+  s.lease = { provider: entryNow.providerId, label: entryNow.label, claims: (entryNow.claims ?? []).map((c: { name: string; globs: string[]; description: string; base: string | null; threadId: string }) => [c.name, c.globs.join(","), c.description.length, c.base, c.threadId]), refreshed: Date.now() - entryNow.at < 60_000 };
+  const expired = await listClaims(l.kv as never, PATH, Date.now() + 7 * hour);
+  await claimScope(l.kv as never, { path: PATH, threadId: "thr_a", name: "fresh", globs: ["x/**"], now: Date.now() + 7 * hour });
+  s.lease.afterExpiry = [expired.length, (await listClaims(l.kv as never, PATH, Date.now() + 7 * hour + 1000)).map((c) => c.name)];
+  // n1558: a release leaves one record with base, files and outcome; `unknown` and `none` when the claim had none
+  const r = world(async (_m, input) => (input.command?.startsWith("git diff") ? { exitCode: 0, stdout: "src/a.ts\nsrc/b.ts\n", stderr: "" } : { exitCode: 0, stdout: "", stderr: "" }));
+  await claimScope(r.kv as never, { path: PATH, threadId: "thr_a", name: "ui", globs: ["src/**"], base: "ba5e123" });
+  await claimScope(r.kv as never, { path: PATH, threadId: "thr_b", name: "bare", globs: ["docs/**"] });
+  await run(r, "window", "release", "P", "thr_a", "ui");
+  await run(r, "window", "release", "P", "thr_b", "bare", "--outcome", "handed_off");
+  s.trail = (await listEvidence(r.kv as never, "P", { op: "window" })).map((e) => `${e.target}:${e.by}:${e.checks.map((c) => `${c.name}=${c.detail}`).join("|")}`).sort();
+  // n1559: the capsule keeps 30 files and 30 claims, the restore text carries the capsule after compaction
+  const files = Array.from({ length: 40 }, (_, i) => `src/f${i}.ts`);
+  const cap = buildCapsule({ asks: ["a"], files, claims: files.map((f) => `claim ${f}`), trigger: "precompact" });
+  const restored = capsuleRestored({ ...cap, task: "port the parser" });
+  s.flight = { files: cap.files.length, last: cap.files.at(-1), claims: cap.claims.length, restoredHead: restored.split("\n")[0], task: restored.includes("Task: port the parser"), capped: restored.length <= "Capsule restored after compaction:\n".length + 3000 + 40 };
 }
 
 console.log(JSON.stringify(s)); // guardian: allow (a probe prints its observations as one JSON line)

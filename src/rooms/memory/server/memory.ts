@@ -40,6 +40,22 @@ interface Services {
 }
 
 
+/**
+ * The ids of the records this task's maintainer batch put into the corpus (SMA m_applied): each entry the write door kept, found by the id the door gives it, and counted
+ * only when it carries this task's acceptance sha — a same-content row another source stored first is not this task's. A record the door kept but the table lacks is an error.
+ */
+function appliedRecordIds(records:{records:Array<{id:string;sourceSha256:string}>;entries:Array<{kind:"core"|"note";content:string}>},input:{projectId:string;personalBot:string;audience:string;scope:readonly string[];acceptanceSha256:string}):string[] {
+  const byId=new Map(records.records.map((row)=>[row.id,row]));
+  const recordIds:string[]=[];
+  for(const entry of records.entries){
+    const id=memoryRecordId(input.projectId,entry.kind,entry.content,input.personalBot,input.audience,input.scope);
+    const row=byId.get(id);
+    if(!row) throw new Error("memory_record_ids_missing_after_store");
+    if(row.sourceSha256===input.acceptanceSha256) recordIds.push(id);
+  }
+  return recordIds;
+}
+
 export function createMemoryStage(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, workspaceExecutionEnvironment } = ctx;
   wireMemoryAttemptEffects(db);
@@ -185,14 +201,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
         entries:kept,coreBudget:snapshot.settings.coreBudget,noteBudget:snapshot.settings.noteBudget,indexBudget:snapshot.settings.indexBudget,scope,readFile,originTaskId:args.taskId});
       // Notes that now disagree with an active one are held, both, until a person settles it (memory-conflicts.ts); a failure here never loses the write.
       try { services.memoryConflicts.sweepMoot(args.projectId); services.memoryConflicts.detect(args.projectId,new Set(records.insertedIds)); } catch(cause) { bb.log.warn(`Lane Pilot memory conflicts after ${args.taskId} failed: ${cause instanceof Error?cause.message:String(cause)}`); }
-      const byId=new Map(records.records.map((row)=>[row.id,row]));
-      const recordIds:string[]=[];
-      for(const entry of records.entries){
-        const id=memoryRecordId(args.projectId,entry.kind,entry.content,snapshot.settings.personalBot,snapshot.settings.audience,scope);
-        const row=byId.get(id);
-        if(!row) throw new Error("memory_record_ids_missing_after_store");
-        if(row.sourceSha256===snapshot.acceptanceSha256) recordIds.push(id);
-      }
+      const recordIds=appliedRecordIds(records,{projectId:args.projectId,personalBot:snapshot.settings.personalBot,audience:snapshot.settings.audience,scope,acceptanceSha256:snapshot.acceptanceSha256});
       // The batch these facts fed is now durable memory: stamp them so the next accepted task's stage does not re-summarize them.
       if(snapshot.factTaskIds?.length) markAcceptedFactsSummarized(db,args.runId,snapshot.factTaskIds);
       const result={stored:recordIds.length,recordIds,unsupportedDropped,salienceDropped,listDropped,...(records.demoted?{coreDemotedToNotes:records.demoted}:{}),evictedIds:records.evictedIds,supersededIds:records.supersededIds,sourceSha256:snapshot.acceptanceSha256,audience:snapshot.settings.audience,personalBot:snapshot.settings.personalBot,factsSummarized:snapshot.factTaskIds?.length??0,

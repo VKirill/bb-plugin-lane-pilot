@@ -47,10 +47,22 @@ export default {
   n1495: { mutation: skipWrite("src/rooms/native-install/server/rpc/stack.ts", 'const receipt = { schemaVersion: 1, action: "install", status: "ok", native: result };\n      saveProjectSetting(db, projectId, SETTING_INSTALL_LAST_RECEIPT, JSON.stringify(receipt));', 'const receipt = { schemaVersion: 1, action: "install", status: "ok", native: result };'), trace: drill("sma_r19"), voidReview: voidIsHave("итог установки BB показывает в экране плагина по каждой задаче; по машинам наша установка сообщает статус или ошибку") },
   n1496: { mutation: skipWrite(LEFT, "if (await present(checkout)) paths.push(checkout);"), trace: drill("sma_r19") },
   n1497: { mutation: distort(HOOKS, "await writeFile(temp, NATIVE_HOOK_SOURCES[name], { mode: 0o644 });", 'await writeFile(temp, NATIVE_HOOK_SOURCES["guard_shell.py"], { mode: 0o644 });'), trace: drill("sma_r19") },
-  n1501: { voidReview: voidIsHave("состояние времени выполнения (фазы, задачи, попытки, квитанции, заявки) лежит в базе плагина data.db на хабе, а не в папке проекта") },
+  n1498: { mutation: distort("src/rooms/native-agent/native-agent-definition.ts", "description: input.compiled.description,", "description: input.compiled.prompt,"), trace: drill("sma_r19") },
+  // n1499, n1506, n1507 and n1510 - n1514 are core-resident (bb-core owns the skill roots, the update check, the version report, the git range, the registry and the local source): no mutation here.
+  n1500: { mutation: wrongTarget(HOOKS, 'const settingsPath = join(input.destDir, "settings.json");', 'const settingsPath = join(cwd ? join(cwd, ".claude") : input.destDir, "settings.json");'), trace: drill("sma_r19") },
+  // n1501 stays have: the state lives in the plugin's data.db (the migrate call makes the tables), never in the project folder.
+  n1501: { mutation: skipWrite("src/rooms/storage/database.ts", "bb.storage.migrate(db, [...options.migrations]);"), trace: drill("sma_r19"), voidReview: voidIsHave("состояние времени выполнения (фазы, задачи, попытки, квитанции, заявки) лежит в базе плагина data.db на хабе, а не в папке проекта") },
+  n1502: { mutation: distort("src/rooms/learning/pm-rules.ts", "lines.push(`- ${rule.rule}`);", "lines.push(`- ${rule.rule.slice(0, 12)}`);"), trace: drill("sma_r19") },
   n1503: { voidReview: voidStays("statusLine плагин не устанавливает (см. n1491), единственная правка — чистильщик старой строки (n1411); второй реализации для согласования нет") },
+  n1504: { mutation: distort("src/rooms/migrations.ts", "kind TEXT NOT NULL CHECK(kind IN ('core','note')),", "kind TEXT NOT NULL CHECK(kind IN ('core','notes')),"), trace: drill("sma_r19") },
+  n1505: { mutation: distort("src/rooms/learning/pm-rules.ts", "return pmRulesBlock(chosen, budget).text.trim() || null;", "return pmRulesBlock(chosen.slice(0, 1), budget).text.trim() || null;"), trace: drill("sma_r19") },
   n1506: { reach: seedEntry("the owner runs the command") },
+  n1508: { mutation: flip("src/rooms/native-install/server/rpc/stack.ts", 'if (!confirmExternalOps) return { schemaVersion:1, action:"install"', 'if (confirmExternalOps) return { schemaVersion:1, action:"install"'), trace: drill("sma_r19") },
+  n1509: { mutation: wrongTarget("src/rooms/native-install/server/rpc/stack.ts", "const result = await nativeInstaller.install(config.hostId);", "const result = await nativeInstaller.install(`${config.hostId}-x`);"), trace: drill("sma_r19") },
+  n1510: { reach: entry("BB checks an installed plugin that came from a git source for newer tags (the periodic update check); no switch of ours") },
   n1511: { reach: seedEntry("the owner runs the command") },
+  n1515: { mutation: flip(BOOT, "if (!await exists(dest)) {", "if (await exists(dest)) {"), reach: entry("BB updates the plugin or the owner presses install: the per-machine installer re-runs over a home that already has the owner's files"), trace: drill("sma_r19") },
+  n1516: { mutation: flip(GUARD, "existingGuardHits(parsed, commandFor(guardPath)).length === 1;", "existingGuardHits(parsed, commandFor(guardPath)).length >= 1;"), trace: drill("sma_r19") },
   n1788: { reach: seedEntry("the owner runs the command") },
   n1789: { reach: seedEntry("the owner runs the command") },
 } satisfies RegionEvidence;

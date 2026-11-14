@@ -104,7 +104,7 @@ const piece = (id: string, wave: number, over: Record<string, unknown> = {}) => 
   const n = await next(seedPhase(w, { id: "ph_n", stage: "verification" }));
   out.verification = { failed: { waits: f.waitsForPm, head: f.text.slice(0, 80), returns: f.text.includes('to:"planning"') }, passed: { waits: p.waitsForPm, head: p.text.slice(0, 120) }, none: n };
   // plan gate
-  const bad = { ...piece("p1", 1), task: { id: "other", verification: [], acceptance: [] } };
+  const bad = { ...(piece("p1", 1) as object), task: { id: "other", verification: [], acceptance: [] } };
   const gid = seedPhase(w, { id: "ph_g", stage: "planning", record: { plan: { items: [bad, piece("p2", 1)], contextSha: "ctx", sha: "x", objective: "o", premortem: ["a", "b", "c"] } } as never });
   const gates = (JSON.parse((await w.cli("show", gid)).stdout!) as { gates: { plan: { ok: boolean; why: string[] } } }).gates.plan;
   out.verify = { ok: gates.ok, p1: gates.why.filter((line) => line.startsWith("p1:")), p2: gates.why.filter((line) => line.startsWith("p2:")), sound: pieceProblems(piece("p2", 1)) };

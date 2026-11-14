@@ -5,7 +5,7 @@ export { sweepLaneWorktrees, JANITOR_TMP_PREFIXES } from "./worktree-janitor";
 export type { JanitorKept, JanitorReceipt } from "./worktree-janitor";
 export { REPORTED_KEEP_REASONS, SEARCH_DEFAULTS, SWEEP_CLASSES, findSweepRepos, searchRepos, sweepWorktreeClasses } from "./worktree-sweep";
 export type { BbEnvironment, KeepReason, SweepClass, SweepDecision, SweepKept, SweepReceipt, SweepRemoved } from "./worktree-sweep";
-export { appendExcludeCommand, createWorktree, ensureExcludeLinesCommand, EXCLUDE_NOT_GIT, integrateWorktree, persistTaskFolder, prepareWorktree, removeLaneWorktree, revertPaths, snapshotWorktree, syncWorktree, taskFolderRel, withBaseLock } from "./git-integrate";
+export { appendExcludeCommand, createWorktree, ensureExcludeLinesCommand, EXCLUDE_NOT_GIT, filecardsFileText, integrateWorktree, persistTaskFolder, reflexesFileText, prepareWorktree, removeLaneWorktree, revertPaths, snapshotWorktree, syncWorktree, taskFolderRel, withBaseLock } from "./git-integrate";
 export type { ReplayCheck, ReplayCheckOutcome } from "./git-integrate";
 export { aheadOf, deleteBranchIfMerged, laneWorktreeRoot, laneWorktreeTarget, laneWorktreeTargetFor, mergedAnywhere, mergedInto, mergeTargets, repoFolderName } from "./git-integrate";
 export type { MergedHow } from "./git-integrate";
