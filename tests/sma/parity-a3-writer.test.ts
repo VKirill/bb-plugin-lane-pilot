@@ -222,7 +222,7 @@ describe("owner items and the worker's papers", () => {
     expect(brief).toContain(BROWSER_BRIEF_LINE);
     expect(brief).toContain("APPROACH:");
     expect(brief).toContain("LESSON:");
-    expect(brief).toContain("NEEDS_HUMAN");
+    expect(brief).toContain("ASK_PM");
     expect(writerPrompt(plain)).not.toContain(BROWSER_BRIEF_LINE);
     // The pick adds browser-automation even when Jev names nothing.
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });

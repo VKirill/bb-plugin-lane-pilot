@@ -14,7 +14,7 @@ import type { Consult, PilotDecision } from "../src/rooms/writer/server/second-p
 
 const WORKSPACE = "/ws";
 const T0 = 1_800_000_000_000;
-const CONTRACT_Q = "needs_human: May I add tests/x.test.ts to owns_paths? Its assertion pins the old count.";
+const CONTRACT_Q = "needs_human: The expected_outputs pin the old count of b/c.txt; may I adjust them to the acceptance?";
 const PRODUCT_Q = "needs_human: Should a pending payment be cancelled when the customer switches the payment method?";
 
 const task: TaskV2 = {
@@ -23,12 +23,12 @@ const task: TaskV2 = {
   verification:[{ command:"npm test", cwd:WORKSPACE }, { command:"npm run lint", cwd:WORKSPACE }],
 };
 
-function world(options: { reason?: string; decision?: PilotDecision | null | Error; pmUpdatedAt?: number; settings?: Record<string, string> } = {}) {
+function world(options: { reason?: string; decision?: PilotDecision | null | Error; pmUpdatedAt?: number; pmStatus?: string; settings?: Record<string, string> } = {}) {
   const reason = options.reason ?? CONTRACT_Q;
   const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot" });
   const sends: Array<{ threadId: string; input: Array<{ text: string }> }> = [];
   harness.sdk.stub("threads.get", async (args:{ threadId:string }) => args.threadId === "thr_w" ? { id:args.threadId, status:"idle" }
-    : args.threadId === "thr_pm" ? { id:args.threadId, status:"idle", updatedAt:options.pmUpdatedAt ?? 0 } : null);
+    : args.threadId === "thr_pm" ? { id:args.threadId, status:options.pmStatus ?? "idle", updatedAt:options.pmUpdatedAt ?? 0 } : null);
   harness.sdk.stub("threads.send", async (args:unknown) => { sends.push(args as never); return undefined; });
   harness.sdk.stub("threads.events.list", async () => []);
   harness.sdk.stub("files.read", async () => { throw new Error("file does not exist"); });
@@ -54,10 +54,10 @@ function world(options: { reason?: string; decision?: PilotDecision | null | Err
 describe("the second pilot on a writer's unanswered question", () => {
   it("answer: the answer goes in through the PM's door, the same writer goes on, no attempt is spent, one stage_return row", async () => {
     const w = world({ decision:{ outcome:"answer", answer:"Keep owns_paths as written; the pinned count is updated by task T2, so leave tests/x.test.ts alone and report the unmet item.", grounds:"the plan assigns the test file to T2" } });
-    expect(await w.timeout.sweepWriterQuestions(T0 + WRITER_QUESTION_WAIT_MS - 1)).toEqual([]);
-    expect(await w.timeout.sweepWriterQuestions(T0 + WRITER_QUESTION_WAIT_MS)).toEqual([{ taskId:"T1", action:"pilot_answer" }]);
+    // At once: the pilot does not wait for the two hours any more.
+    expect(await w.timeout.sweepWriterQuestions(T0 + 1)).toEqual([{ taskId:"T1", action:"pilot_answer" }]);
     expect(w.consult).toHaveBeenCalledTimes(1);
-    expect(w.consult.mock.calls[0]![0]).toMatchObject({ taskId:"T1", attemptId:"a1", plan:"Plan for T1", question:"May I add tests/x.test.ts to owns_paths? Its assertion pins the old count." });
+    expect(w.consult.mock.calls[0]![0]).toMatchObject({ taskId:"T1", attemptId:"a1", plan:"Plan for T1", question:"The expected_outputs pin the old count of b/c.txt; may I adjust them to the acceptance?" });
     expect(getAttempt(w.db, "a1")?.state).toBe("running");
     expect(w.sends).toHaveLength(1);
     expect(w.sends[0]!.threadId).toBe("thr_w");
@@ -164,15 +164,18 @@ describe("the second pilot on a writer's unanswered question", () => {
     }
   });
 
-  it("waits writer.question_wait_min, read live: 30 acts at half an hour, the default is two hours", async () => {
-    const quick = world({ settings:{ "writer.question_wait_min":"30" }, decision:{ outcome:"answer", answer:"go on", grounds:"g" } });
-    expect(await quick.timeout.sweepWriterQuestions(T0 + 29 * 60_000)).toEqual([]);
-    expect(await quick.timeout.sweepWriterQuestions(T0 + 30 * 60_000)).toEqual([{ taskId:"T1", action:"pilot_answer" }]);
-    const slow = world({ decision:{ outcome:"answer", answer:"go on", grounds:"g" } });
+  it("acts at once, gives a PM that works in its thread five minutes, and keeps writer.question_wait_min as the upper bound", async () => {
+    const idle = world({ decision:{ outcome:"answer", answer:"go on", grounds:"g" } });
+    expect(await idle.timeout.sweepWriterQuestions(T0)).toEqual([{ taskId:"T1", action:"pilot_answer" }]);
+    const busy = world({ pmStatus:"running", decision:{ outcome:"answer", answer:"go on", grounds:"g" } });
+    expect(await busy.timeout.sweepWriterQuestions(T0 + 4 * 60_000)).toEqual([]);
+    expect(busy.consult).not.toHaveBeenCalled();
+    expect(await busy.timeout.sweepWriterQuestions(T0 + 5 * 60_000)).toEqual([{ taskId:"T1", action:"pilot_answer" }]);
+    // A shorter setting shortens the grace too.
+    const quick = world({ pmStatus:"running", settings:{ "writer.question_wait_min":"3" }, decision:{ outcome:"answer", answer:"go on", grounds:"g" } });
+    expect(await quick.timeout.sweepWriterQuestions(T0 + 2 * 60_000)).toEqual([]);
+    expect(await quick.timeout.sweepWriterQuestions(T0 + 3 * 60_000)).toEqual([{ taskId:"T1", action:"pilot_answer" }]);
     expect(WRITER_QUESTION_WAIT_MS).toBe(120 * 60_000);
-    expect(await slow.timeout.sweepWriterQuestions(T0 + 119 * 60_000)).toEqual([]);
-    saveProjectSetting(slow.db, "proj1", "writer.question_wait_min", "60");
-    expect(await slow.timeout.sweepWriterQuestions(T0 + 119 * 60_000)).toEqual([{ taskId:"T1", action:"pilot_answer" }]);
   });
 });
 

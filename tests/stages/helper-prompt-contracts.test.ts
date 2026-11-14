@@ -257,8 +257,8 @@ describe("writer brief", () => {
 
   it("states both costs of NEEDS_HUMAN", () => {
     const brief = writerPrompt(task);
-    expect(brief).toContain("NEEDS_HUMAN: <one question>");
-    expect(brief).toContain("A stop costs the owner a round trip");
+    expect(brief).toContain("ASK_PM: <one question>");
+    expect(brief).toContain("A stop still costs a round trip");
     expect(brief).toContain("a wrong guess would put wrong work into main");
     expect(brief).toContain("name the decision in your answer");
   });

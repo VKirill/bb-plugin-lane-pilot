@@ -26,7 +26,7 @@ interface Services {
 }
 
 /**
- * The second pilot (W34, REL-03/REL-07): a writer's question to a human that nobody answered within `writer.question_wait_min` goes to a
+ * The second pilot (W34, REL-03/REL-07): a writer's question that no rule settled goes at once (a PM working in the thread gets five minutes first; `writer.question_wait_min` is the upper bound) to a
  * read-only helper (the plan critic's role model) with the question, the contract, the plan and the project's
  * memory. It decides one of three things, and the decision is a row of lane_pilot_stage_return (by `second-pilot`, to `writer`):
  *   answer — the contract, code or docs settle the question: the answer goes in through the PM's own door (answerWriter) and the same
@@ -81,9 +81,9 @@ export function pilotPrompt(input: PilotCase): string {
     input.memory ? `\nProject memory:\n${input.memory}` : "",
     "",
     "Choose exactly one outcome:",
-    "- \"answer\": the contract, the plan, the code or the memory settle the question. Write the answer the writer needs to go on, concrete and short. You may not widen owns_paths, never_touch or the checks: an answer that needs a wider contract is not an answer.",
+    "- \"answer\": the contract, the plan, the code or the memory settle the question. Write the answer the writer needs to go on, concrete and short. You do not change owns_paths, never_touch or the checks yourself: a named file outside owns_paths is added by the rules before you reach this question (up to five files, never never_touch or another live task's), so if it reached you it was refused; say what to do inside the contract.",
     "- \"narrow\": a human is needed for part of the task, but the rest is doable inside the contract as written. Give the narrowed objective, the acceptance items that remain, what moves to out_of_scope (the part that needs the human), optionally owns_paths to keep (a subset) and keep_checks (indexes into verification to keep; omit to keep all).",
-    "- \"owner\": only the owner can say (what the product should do, wording, which behaviour is live, money, a contradiction in the ask). Give the question compressed to one or two sentences the owner can answer with one line.",
+    "- \"owner\": only the owner can say (what the product should do, which behaviour is live, a secret or access, money, an irreversible act, a contradiction in the ask; wording and design are the PM's, not the owner's). Give the question compressed to one or two sentences the owner can answer with one line.",
     "Always give grounds: one or two sentences naming what in the material decided it.",
     "",
     "Shape: {\"outcome\":\"answer\"|\"narrow\"|\"owner\",\"grounds\":\"…\",\"answer\":\"…\",\"objective\":\"…\",\"acceptance\":[\"…\"],\"out_of_scope\":[\"…\"],\"owns_paths\":[\"…\"],\"keep_checks\":[0],\"question\":\"…\"}",
@@ -118,7 +118,7 @@ export function narrowedTask(original: TaskV2, decision: Extract<PilotDecision, 
     ...original,
     id:`${original.id}.n`,
     title:`${original.title} (narrowed)`,
-    objective:`${decision.objective}\n\nNarrowed from ${original.id} by the second pilot: its writer asked «${question.slice(0, 300)}» and nobody answered. Do not widen owns_paths or the checks; what needs a human is out of scope.`,
+    objective:`${decision.objective}\n\nNarrowed from ${original.id} by the second pilot: its writer asked «${question.slice(0, 300)}» and nobody answered. owns_paths and the checks stay as in this contract; what needs a human is out of scope.`,
     acceptance:decision.acceptance,
     out_of_scope:[...original.out_of_scope, ...decision.out_of_scope],
     owns_paths:owns.length ? owns : original.owns_paths,
@@ -192,7 +192,7 @@ export function createSecondPilot(ctx: ServerCore, services: Services, consult: 
     if (decision.outcome === "answer") {
       // finish.ts ends a second question after this one the way it ends one after the safe default.
       await markAnsweredByDefault(bb.storage.kv as never, row.run_id, row.task_id, now, bb.log);
-      const answered = await doors.answerWriter(`The second pilot answers in the PM's place (nobody answered in time; grounds: ${grounds}).\n\n${decision.answer}\n\nThe contract stays as written: do not widen owns_paths or the checks. This is an answer, not a new question: do not start your report with NEEDS_HUMAN.`);
+      const answered = await doors.answerWriter(`The second pilot answers in the PM's place (nobody answered in time; grounds: ${grounds}).\n\n${decision.answer}\n\nThe contract stays as written (any path Lane Pilot added is named in your turn above); the checks do not change. This is an answer, not a new question: do not start your report with ASK_PM.`);
       if (answered) return done("answer", true, grounds);
       await doors.end("the second pilot answered but the writer's thread cannot take it");
       return done("answer", false, "the writer's thread cannot take the answer");

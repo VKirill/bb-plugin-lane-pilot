@@ -330,7 +330,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
   const { answerWriter } = createWriterAnswer(ctx, services);
   registerObservedTool(bb.agents, {
     name:"lane_pilot_answer_writer",
-    description:"Answer a writer's NEEDS_HUMAN question: the same attempt continues in the same writer thread without spending one.",
+    description:"Answer a writer's ASK_PM (or old NEEDS_HUMAN) question: the same attempt continues in the same writer thread without spending one.",
     instructions:"Use only from the matching Lane Pilot PM thread, and only when the task's latest attempt is blocked with needs_human. The answer is delivered into the writer's own thread and its normal wait → validate → accept cycle follows: poll lane_pilot_wait_writer with the same runId. Any other case returns not_answerable — redispatch the task instead. It never changes the contract: lane_pilot_update_task does that under the same id.",
     parameters:z.object({ taskId:z.string().min(1), answer:z.string().min(1).max(8000) }).strict(),
     execute: async (params, context) => {
@@ -351,7 +351,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
     name:"lane_pilot_ask_owner",
     description:"Ask the owner a question as a form in this chat (the owner's phone gets a push). The answer comes back into this chat as a message.",
     instructions:[
-      "Use instead of writing the question in your reply when only the owner can decide — the ask-the-owner list of your session's «When to act», or a writer's needs_human question you cannot settle from the code or docs. Put the whole question in one call: only one form can be open in a chat.",
+      "Use instead of writing the question in your reply when only the owner can decide — the ask-the-owner list of your session's «When to act», or a writer's question that is a product decision, secret, money or irreversible act. Put the whole question in one call: only one form can be open in a chat.",
       "`question`: one self-contained sentence the owner can answer from the phone (it is the push text); `detail` carries the context. `options`: up to 6 short answers the owner can tap; without them the owner types a reply.",
       "After the call, end your turn or continue other work: the answer arrives as a message («the owner answered …»). Then act on it, for a writer's question with lane_pilot_answer_writer.",
       "If the result says owner_question_unavailable, ask in your reply text instead.",

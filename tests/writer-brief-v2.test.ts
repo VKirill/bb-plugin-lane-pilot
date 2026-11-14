@@ -64,9 +64,9 @@ describe("writer brief v2", () => {
     const brief = writerPrompt(task);
     const output = brief.slice(brief.indexOf("<output>"), brief.indexOf("</output>"));
     expect(output).toContain("Done when your change is complete");
-    expect(output).toContain("answer with the first line `NEEDS_HUMAN: <one question>`");
-    expect(output).toContain("NEEDS_HUMAN: needs secret <NAME>");
-    expect(output).toContain("NEEDS_HUMAN: check <command> cannot run in the sandbox");
+    expect(output).toContain("answer with the first line `ASK_PM: <one question>`");
+    expect(output).toContain("ASK_PM: needs secret <NAME>");
+    expect(output).toContain("ASK_PM: check <command> cannot run in the sandbox");
     // the NEEDS_HUMAN instruction lives only there now
     expect(brief.slice(brief.indexOf("</output>")).split("answer with the first line").length).toBe(1);
   });

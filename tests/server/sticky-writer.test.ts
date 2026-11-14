@@ -231,6 +231,6 @@ describe("continuing a writer thread", () => {
     const text = stickyTurnPrompt({ kind: "merge", task: task("t"), conflicts: ["page.vue", "faq.vue"] });
     expect(text).toContain("conflicts in: page.vue, faq.vue");
     expect(text).toContain("never drop main's changes");
-    expect(text).toContain("NEEDS_HUMAN");
+    expect(text).toContain("ASK_PM");
   });
 });

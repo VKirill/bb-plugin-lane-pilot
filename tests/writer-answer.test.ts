@@ -86,14 +86,14 @@ function blockedQuestionAttempt(db:ReturnType<typeof openDatabase>) {
 it("registers like the other PM tools and the overlay tells the PM to answer, not redispatch", () => {
   expect(NATIVE_LP_BRIDGE_TOOLS).toContain("lane_pilot_answer_writer");
   expect(NATIVE_LP_BRIDGE_PM_TOOLS).toContain("lane_pilot_answer_writer");
-  expect(LANE_PILOT_PM_SESSION).toMatch(/## Receipts[\s\S]*needs_human: <question>: answer it with `lane_pilot_answer_writer`[\s\S]*Redispatch only when the contract itself must change/);
+  expect(LANE_PILOT_PM_SESSION).toMatch(/## Receipts[\s\S]*needs_human: <question>[\s\S]*answer what is still open with `lane_pilot_answer_writer`[\s\S]*product decision/);
 });
 
 it("the answer turn carries the answer, the standing rules and the NEEDS_HUMAN escape hatch", () => {
   const turn = answerTurnPrompt("Use package X");
   expect(turn).toContain("The PM answered your question: Use package X. Continue the task in this worktree; the contract is unchanged.");
   expect(turn).toContain("only owns_paths, no commits or merges, no npm install");
-  expect(turn).toContain("NEEDS_HUMAN:");
+  expect(turn).toContain("ASK_PM:");
   expect(turn).toContain("Run the verification commands");
 });
 

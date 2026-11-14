@@ -22,7 +22,11 @@ export function writerPatchFromOutput(output: string): string | null {
   return `--- /dev/null\n+++ b/writer-output.txt\n@@ -0,0 +1,${lines.length} @@\n${body}\n`;
 }
 
+/** The marker the writer is told to use: the question goes to the PM, and the machine answers what it can (question-rules.ts). */
+export const ASK_PM_MARKER = "ASK_PM:";
+/** The old marker, still read from old prompts, skills and memory; never written into a brief. */
 export const NEEDS_HUMAN_MARKER = "NEEDS_HUMAN:";
+const MARKERS = [ASK_PM_MARKER, NEEDS_HUMAN_MARKER];
 
 /** The writer's question when it stopped instead of guessing; null when it answered normally. */
 export function needsHumanQuestion(output: string): string | null {
@@ -32,10 +36,11 @@ export function needsHumanQuestion(output: string): string | null {
   const line = output.trimStart().split("\n", 1)[0] ?? "";
   const wrapper = /^(?:[`*_>]+\s*)*/.exec(line)?.[0] ?? "";
   const first = line.slice(wrapper.length);
-  if (!first.toUpperCase().startsWith(NEEDS_HUMAN_MARKER)) return null;
+  const marker = MARKERS.find((candidate) => first.toUpperCase().startsWith(candidate));
+  if (!marker) return null;
   // Only the wrapper's own closing marks go: a question may end in a code span of its own («may I edit `a.ts`»).
   const marks = wrapper.replace(/[\s>]/g, "");
-  const body = first.slice(NEEDS_HUMAN_MARKER.length).replace(/^[*_]+/, "");
+  const body = first.slice(marker.length).replace(/^[*_]+/, "");
   const question = (marks ? body.replace(new RegExp(`[${marks}]+\\s*$`), "") : body).replace(/\s+/g, " ").trim().slice(0, 600);
   return question || "the writer stopped without a question";
 }
@@ -183,11 +188,11 @@ export function previousAttemptBrief(last:Record<string, unknown> | null | undef
     const outside = task && failed ? failingCheckFiles(cleanCheckOutput(`${failed.stderr ?? ""}\n${failed.stdout ?? ""}`)).filter((file) => !fileAllowedByOwns(file, task.owns_paths)) : [];
     // Exit 127 is a program the check calls that Lane Pilot's sandbox could not find: the writer's own shell has it, so «run it
     // yourself» passed there, and Vampirism Fire's writers spent ten attempts rewriting check.sh outside their task (2026-10-23).
-    if (failed && (failed.exitCode === 127 || /command not found/i.test(tail))) bullets.push(`exit 127 / «command not found» means the sandbox Lane Pilot runs checks in could not find a program the check calls: that is the check environment, not your code → do not rewrite the check script and do not install tools; if your change did not remove the program, change nothing more and answer \`${NEEDS_HUMAN_MARKER} ${commands} cannot find <program> in Lane Pilot's check sandbox\``);
-    if (outside.length) bullets.push(`the failure points at ${outside.join(", ")}, outside owns_paths → do not edit ${outside.length > 1 ? "them" : "it"}. If your change broke ${outside.length > 1 ? "them" : "it"}, fix it in your owned files; if ${outside.length > 1 ? "they fail" : "it fails"} without your change (main is red from another task, or the check also runs files of other tasks), change nothing more and answer \`${NEEDS_HUMAN_MARKER} ${commands} fails in ${outside.join(", ")}, outside owns_paths and not caused by this task\``);
+    if (failed && (failed.exitCode === 127 || /command not found/i.test(tail))) bullets.push(`exit 127 / «command not found» means the sandbox Lane Pilot runs checks in could not find a program the check calls: that is the check environment, not your code → do not rewrite the check script and do not install tools; if your change did not remove the program, change nothing more and answer \`${ASK_PM_MARKER} ${commands} cannot find <program> in Lane Pilot's check sandbox\``);
+    if (outside.length) bullets.push(`the failure points at ${outside.join(", ")}, outside owns_paths → do not edit ${outside.length > 1 ? "them" : "it"}. If your change broke ${outside.length > 1 ? "them" : "it"}, fix it in your owned files; if ${outside.length > 1 ? "they fail" : "it fails"} without your change (main is red from another task, or the check also runs files of other tasks), change nothing more and answer \`${ASK_PM_MARKER} ${commands} fails in ${outside.join(", ")}, outside owns_paths and not caused by this task\``);
   }
   const missing = /missing expected_outputs: (.+)/.exec(reason)?.[1];
-  if (missing) bullets.push(`the contract expects ${missing} and your changes do not include them → if the task needs them, change them inside owns_paths; if your fix is complete without them, change nothing more and answer \`NEEDS_HUMAN: ${missing} are not needed because <reason>\``);
+  if (missing) bullets.push(`the contract expects ${missing} and your changes do not include them → if the task needs them, change them inside owns_paths; if your fix is complete without them, change nothing more and answer \`ASK_PM: ${missing} are not needed because <reason>\``);
   // The run-scope gate's reason names files outside owns_paths as well as never_touch ones; it read as «never_touch
   // files → drop it», and the update-queued-task.2 writer (Lane Pilot, 2026-10-06) reset src/ui-catalog.ts to git
   // HEAD. That wiped another session's uncommitted edit in the shared checkout and still failed, because the file is
@@ -208,10 +213,10 @@ export function previousAttemptBrief(last:Record<string, unknown> | null | undef
     if (clean.length) bullets.push(liveFolder
       ? `${clean.join(", ")} did not exist before your attempt → delete ${clean.length > 1 ? "any of them" : "it"} you created`
       : `${clean.join(", ")} had no uncommitted changes before your attempt → delete ${clean.length > 1 ? "any of them" : "it"} you created, and restore any you changed with \`git checkout -- <file>\``);
-    bullets.push(`if the task cannot be done without changing ${files.length > 1 ? "them" : "it"}, undo your edits there and answer \`${NEEDS_HUMAN_MARKER} the task needs ${files.join(", ")} changed (<why>); add ${files.length > 1 ? "them" : "it"} to owns_paths\``);
+    bullets.push(`if the task cannot be done without changing ${files.length > 1 ? "them" : "it"}, undo your edits there and answer \`${ASK_PM_MARKER} the task needs ${files.join(", ")} changed (<why>); add ${files.length > 1 ? "them" : "it"} to owns_paths\``);
   }
   const unproven = /plan_fact_unproven: acceptance items? ([\d, ]+)/.exec(reason)?.[1]?.trim();
-  if (unproven) bullets.push(`acceptance item ${unproven} had no evidence that holds in the diff → finish that item, then give it a plan-fact row whose evidence is a file you changed with the lines (path:first-last) or a verification command (cmd:<command>); if an item cannot be done, say so with status not_done and answer \`${NEEDS_HUMAN_MARKER} <why>\``);
+  if (unproven) bullets.push(`acceptance item ${unproven} had no evidence that holds in the diff → finish that item, then give it a plan-fact row whose evidence is a file you changed with the lines (path:first-last) or a verification command (cmd:<command>); if an item cannot be done, say so with status not_done and answer \`${ASK_PM_MARKER} <why>\``);
   if (isWriterStreamError(reason)) {
     bullets.push("the model provider cut your turn off before you finished; nothing was checked → continue the task from where you stopped (your edits are still here), then answer with the changed paths");
   }
@@ -257,11 +262,11 @@ export function taskNeedsBrowser(task: { qa_url?: unknown }): boolean {
   return typeof task.qa_url === "string" && !!task.qa_url.trim();
 }
 
-/** The NEEDS_HUMAN contract, stated once: the marker, when to stop, and the three named cases. */
+/** The ASK_PM contract, stated once: the marker, when to stop, and the three named cases. */
 const OUTPUT_CONTRACT = [
   `Done when your change is complete and each verification command would exit 0; Lane Pilot runs them in a sandbox and returns a failure to you in this thread. Answer with the changed paths.`,
-  `If the task cannot be done as written (the contract contradicts itself or the code, or something it needs is missing), change no files and answer with the first line \`${NEEDS_HUMAN_MARKER} <one question>\`; the PM answers in this thread and you continue. A stop costs the owner a round trip; use it only when a wrong guess would put wrong work into main (a missing secret, access or package, named; a product decision; a contract the code contradicts). Settle anything the code or docs answer yourself and name the decision in your answer.`,
-  `The same first line for the named stops: \`${NEEDS_HUMAN_MARKER} needs secret <NAME>\` when the task needs a secret the contract does not declare; \`${NEEDS_HUMAN_MARKER} check <command> cannot run in the sandbox: <error>\` when a check fails because of the sandbox, not your code; \`${NEEDS_HUMAN_MARKER} <output> is not needed because <reason>\` when a check cannot run here or an expected output is not needed.`,
+  `If the task cannot be done as written (the contract contradicts itself or the code, or something it needs is missing), change no files and answer with the first line \`${ASK_PM_MARKER} <one question>\`; Lane Pilot answers within minutes (a file you name outside owns_paths is added when the limits allow) and you continue here; the owner is asked only for a secret, money, an irreversible act or a product decision. A stop still costs a round trip, so use it only when a wrong guess would put wrong work into main (a missing secret, access or package, named; a product decision; a contract the code contradicts). Settle anything the code or docs answer yourself and name the decision in your answer.`,
+  `The same first line for the named stops: \`${ASK_PM_MARKER} needs secret <NAME>\` when the task needs a secret the contract does not declare; \`${ASK_PM_MARKER} check <command> cannot run in the sandbox: <error>\` when a check fails because of the sandbox, not your code; \`${ASK_PM_MARKER} <output> is not needed because <reason>\` when a check cannot run here or an expected output is not needed.`,
 ].join("\n");
 
 /**
@@ -390,7 +395,7 @@ export function writerBriefSegments(task: TaskV2, memoryText="", executionPacket
       ...(memoryText ? [{ tag: "project_memory", title: "Project knowledge about these paths, written by earlier tasks; verify against current files", text: memoryText }] : []),
       ...(rulesText ? [{ tag: "rules", title: "Project rules for writers; each comes from a failure that kept repeating here, and some are still on trial. The task contract and owns_paths win over a rule; if you set one aside, say which and why", text: rulesText }] : []),
     ],
-    restate: `Task ${task.id}: ${task.title} — change only owns_paths, run the verification commands, answer with the changed paths or NEEDS_HUMAN.`,
+    restate: `Task ${task.id}: ${task.title} — change only owns_paths, run the verification commands, answer with the changed paths or ASK_PM.`,
   });
   checkBrief("writer", brief.text, { skillsPicked: !context.broadSkills, instructionsLength: brief.instructionsLength, context7Allowed: context.metamcpTools === true });
   return [
@@ -444,15 +449,15 @@ export function stickyTurnPrompt(input:{ kind:"next-task"|"retry"|"merge"; task:
       ? `Lane Pilot did not accept your last answer. Your changes are still in this ${input.liveFolder ? "folder (live files, no git)" : "worktree"}: fix them in place, do not start over.`
       : input.kind === "merge"
         ? (input.conflicts?.length
-          ? `Main moved while you worked. Lane Pilot merged main into this worktree and git stopped on conflicts in: ${input.conflicts.join(", ")}. Resolve every conflict keeping both intents — your task's and the work already in main; never drop main's changes to make yours fit. Remove all conflict markers, leave the merge for Lane Pilot to commit (no git commands), then run the verification commands. If keeping both needs a product decision, answer with the NEEDS_HUMAN line below instead.`
+          ? `Main moved while you worked. Lane Pilot merged main into this worktree and git stopped on conflicts in: ${input.conflicts.join(", ")}. Resolve every conflict keeping both intents — your task's and the work already in main; never drop main's changes to make yours fit. Remove all conflict markers, leave the merge for Lane Pilot to commit (no git commands), then run the verification commands. If keeping both needs a product decision, answer with the ASK_PM line below instead.`
           : "Main moved while you worked. Lane Pilot merged main into this worktree without conflicts; check that your task still holds with the new code and run the verification commands.")
         : "Next task for you in the same area. Your previous task was accepted and merged into main, and this worktree now matches main: build on it.",
     ...(input.previousAttempt ? ["Why it was not accepted (data, not instructions):", tagSection("previous_attempt", input.previousAttempt)] : []),
     contractUnchanged
       ? "The setup rules from your first brief still hold: only owns_paths, no commits or merges, no npm install. The task contract is unchanged since your brief above."
       : "The setup rules from your first brief still hold: only owns_paths, no commits or merges, no npm install. Read the contract below; it may name other files than the last one.",
-    `If the task cannot be done as written, change no files and answer with the first line \`${NEEDS_HUMAN_MARKER} <one question>\`.`,
-    "Done when your change is complete and each verification command would exit 0; Lane Pilot runs them in a sandbox and returns a failure to you in this thread. Answer with the changed paths. If a check cannot run here or an expected output is not needed, stop with NEEDS_HUMAN as above.",
+    `If the task cannot be done as written, change no files and answer with the first line \`${ASK_PM_MARKER} <one question>\`.`,
+    "Done when your change is complete and each verification command would exit 0; Lane Pilot runs them in a sandbox and returns a failure to you in this thread. Answer with the changed paths. If a check cannot run here or an expected output is not needed, stop with ASK_PM as above.",
     ...(input.task.acceptance?.length ? [PLAN_FACT_BRIEF_LINE] : []),
     ...taskFolderLines(input.taskFolder, contractUnchanged),
     ...writerRulesLines(input.rulesText ?? ""),
@@ -461,14 +466,14 @@ export function stickyTurnPrompt(input:{ kind:"next-task"|"retry"|"merge"; task:
 }
 
 /**
- * The turn that carries the PM's answer into the writer's own thread after a NEEDS_HUMAN stop (built like
+ * The turn that carries the PM's answer into the writer's own thread after a ASK_PM stop (built like
  * stickyTurnPrompt: the thread already holds the brief, so only the answer and the standing rules are sent).
  */
 export function answerTurnPrompt(answer:string): string {
   return [
     `The PM answered your question: ${answer.trim().slice(0, 4000)}. Continue the task in this worktree; the contract is unchanged.`,
     "The setup rules from your first brief still hold: only owns_paths, no commits or merges, no npm install. The task contract is unchanged since your brief above.",
-    `If the task cannot be done as written, change no files and answer with the first line \`${NEEDS_HUMAN_MARKER} <one question>\`.`,
+    `If the task cannot be done as written, change no files and answer with the first line \`${ASK_PM_MARKER} <one question>\`.`,
     "Run the verification commands, then answer with the changed paths and result.",
   ].join("\n\n");
 }

@@ -59,7 +59,7 @@ Plain-text reasoning first, then one JSON object as the last thing in the final 
 
 - **Graph step.** The engine adds `outcome` and `blocker` to every agent node (`outputFields`, `lower.ts`). `blocked` or `failed` stops the run with `agent_blocked:<node>` or `agent_failed:<node>` and the agent's reason; a blocked step is not retried, since another attempt cannot bring what it lacks. A node that declares `outcome` itself, or an enum with `blocked` in it, keeps routing on its own field and the engine stays out (`engineOwnsOutcome`).
 - **Pipeline stage** (scout, plan critic, specialist, code critic, night review, gate triage). The prompt offers the exit in one shared sentence (`ANSWER_FORM_LINE`); `helperExit` reads it and the stage fails with `helper_blocked:needs … from …`.
-- **Writer.** `NEEDS_HUMAN:` is the same exit in the writer's older spelling: `blocked`, from the owner. An errand's `ERRAND: blocked` likewise.
+- **Writer.** `ASK_PM:` (older spelling `NEEDS_HUMAN:`) is the writer asking the PM: Lane Pilot answers it by rule or by the second pilot; only a product decision, secret, money or an irreversible act reaches the owner. An errand's `ERRAND: blocked` likewise.
 
 ## Reading an answer
 

@@ -1,0 +1,270 @@
+[
+ {
+  "reason": "needs_human: check bash /Users/<user>/Documents/BB-сервис/plugins/bb-plugin-zcode/.agents/checks/zcode-cli-pretty-json.sh cannot run in the sandbox: mktemp: mkdtemp failed on /var/folders/.../T/tmp.rJrcNiPmBZ: Operation not permitted",
+  "label": "sandbox"
+ },
+ {
+  "reason": "needs_human: test_fit rejects any edit to `assert.deepEqual(model.options.map((o) => o.name), [\"GLM-5.3-Flash\", \"GLM-5.3-Flash · Free\"…])`, but acceptance item 2 requires those same lists to include `GLM-5.3-Flash · Paid` and `GLM-5.3 · Paid`. Should those two assertions be left unchanged (paid models keep the unsuffixed names), or should test_fit allow updating the expected names?",
+  "label": "required_test_change"
+ },
+ {
+  "reason": "needs_human: check `npx tsc --noEmit -p tsconfig.json` cannot pass in the sandbox: 3 pre-existing type errors in files merged by earlier tasks that are read-only here (`-r--r--r--`) and outside T3.3 owns_paths — tests/magicseo/client.test.ts:301 (TS7022), lib/automation/executor.ts:46 (TS2322), lib/automation/planner.ts:75 (TS2353). The fix is three one-line, type-only edits I am not allowed to make; exact patches are in `.bb/chats/thr_fvcn4w7di7/notes/QUESTIONS.md`.",
+  "label": "outside_paths"
+ },
+ {
+  "reason": "needs_human: After main's replay, 0.7.9/0.7.10 are `c3ce1dc`/`9bb5a05` so `git merge-base --is-ancestor 1d15879 HEAD` fails; may I merge `1d15879` (that creates a commit), or should the ancestor check use `9bb5a05`?",
+  "label": "other"
+ },
+ {
+  "reason": "needs_human: notes/drill-ok.md are not needed because `main` already contains it with the exact line `drill ok` (from drill-note.16), so the worktree is identical to `main` and no diff is possible. Should this task close as a no-op, or do you want a different change?",
+  "label": "already_done"
+ },
+ {
+  "reason": "needs_human: check `git diff` (Lane Pilot validation step, spawned via /bin/bash in the writer workspace) cannot run in the sandbox: `spawn /bin/bash ENOENT` — twice in a row, identical, with nothing recorded (the harness never reached my code or checks). `/bin/bash` exists and works on this host from my side, the diff is intact, and both contract checks exit 0 — the failure is in the acceptance environment, not in the change. No code edit can fix a missing bash in your validation sandbox; please re-run acceptance or repair the harness env.",
+  "label": "sandbox"
+ },
+ {
+  "reason": "needs_human: the task needs tests/web-panel.test.ts changed (its \"package.json is version 0.10.1\" pin fails once package.json is 0.10.2, which the contract requires; the PM's whole-suite run stays red); add it to owns_paths",
+  "label": "outside_paths"
+ },
+ {
+  "reason": "needs_human: test_fit блокирует то, что требует контракт: удаление `gc-proto-occasion.spec.ts`, строк `expect(source).toContain('minmax(11.25rem…')` и дубля how-it-works. Снять gate test_fit для этой cleanup-задачи или изменить контракт, чтобы эти `expect` остались?",
+  "label": "required_test_change"
+ },
+ {
+  "reason": "needs_human: test_fit требует оставить `expect(page).toContain('ToolsUtilitiesHubView')`, `expect(blocks).toContain('window.__siteBlocksInit = initSiteBlocks')` и `expect(source).toContain('toolPageNotFound')`, а контракт/python — убрать source-grep (`readFileSync`, `toContain('useToolsHubFetch')`). Снять test_fit для этой задачи или разрешить оставить эти три строки без `readFileSync`?",
+  "label": "required_test_change"
+ },
+ {
+  "reason": "needs_human: the `rustore` build profile that the contract and PLAN.md describe as uncommitted edits in `mobile/eas.json` is not in this worktree. Should I add it with the contract's values (channel `rustore`, environment `production`, android.buildType `apk`, env.APP_VARIANT `rustore`), or will you carry over the real profile from the main checkout?",
+  "label": "other"
+ },
+ {
+  "reason": "needs_human: npx vitest run tests/server/auto-sync-toggle.spec.ts tests/server/ecosystem-config.spec.ts tests/server/query-cache.spec.ts tests/server/mem-log.spec.ts fails in tsconfig.json, outside owns_paths and not caused by this task",
+  "label": "outside_paths"
+ },
+ {
+  "reason": "needs_human: npx vitest run tests/server/identity.spec.ts tests/server/identity-recompute-paging.spec.ts tests/server/tracker-identity.spec.ts tests/server/users-list-order-identity.spec.ts fails in tsconfig.json, outside owns_paths and not caused by this task",
+  "label": "outside_paths"
+ },
+ {
+  "reason": "needs_human: npx tsc --noEmit fails in src/components/cipher-tools/dice.tsx, src/components/cipher-tools/morse.tsx, src/components/cipher-tools/shared.tsx, src/components/cipher-tools/tap.tsx, src/screens/newsreel.tsx, outside owns_paths and not caused by this task",
+  "label": "outside_paths"
+ },
+ {
+  "reason": "needs_human: `npx tsc --noEmit` fails in `src/components/cipher-tools/dice.tsx`, `src/components/cipher-tools/morse.tsx`, `src/components/cipher-tools/shared.tsx`, `src/components/cipher-tools/tap.tsx`, `src/screens/newsreel.tsx` — all outside owns_paths and not caused by this task. I verified with `git stash` that the base commit 4a2521d produces the identical 5 errors with none of my changes applied: those files use CSS-animation style props (`transitionProperty`, `animationName`) that RN 0.88's generated types don't declare (only `experimental_backgroundImage`/`experimental_backgroundSize` etc. exist). ",
+  "label": "outside_paths"
+ },
+ {
+  "reason": "needs_human: npx tsc --noEmit fails in src/components/cipher-tools/dice.tsx, src/components/cipher-tools/morse.tsx, src/components/cipher-tools/shared.tsx, src/components/cipher-tools/tap.tsx, src/screens/newsreel.tsx, outside owns_paths and not caused by this task",
+  "label": "outside_paths"
+ },
+ {
+  "reason": "needs_human: check `npx vitest run tests/server/pm2-config.spec.ts` cannot run in the sandbox: the worktree has no generated `.nuxt/` folder, so vitest fails with `Cannot find module './.nuxt/tsconfig.json'`. Please run it in `/home/ubuntu/sites/treba` (or generate `.nuxt` in the worktree) to confirm the acceptance gate.",
+  "label": "sandbox"
+ },
+ {
+  "reason": "needs_human: none. Task done; the note is written and verified.",
+  "label": "already_done"
+ },
+ {
+  "reason": "needs_human: The contract asks to change strict-assert expected values in `tests/account-slots-sync.test.mjs` while touching no code, but `test_fit` (`src/rooms/tasks/test-fit.ts:53`) flags any strict-assert expected change when no non-test file changed — and owns_paths/never_touch forbid the non-test change that would set `codeChanged`; can you amend the contract to exempt these three test files from `test_fit` (the `test_removals` named in the rejection), or attach the version-test update to a task that also changes product code?",
+  "label": "required_test_change"
+ },
+ {
+  "reason": "needs_human: tests/ui-panel.test.mjs still asserts version 0.3.9 and is not in owns_paths — add it so the assertion can move to 0.3.10?",
+  "label": "outside_paths"
+ },
+ {
+  "reason": "needs_human: contract needs `test_removals` — acceptance item 1 (byte-exact match to `6a00c19f38`) forces the two flagged test files to their upstream content, which necessarily rewrites the flagged assertions; please add `test_removals: [\"apps/site/app/composables/api/__tests__/blog-authors-legal-en.test.ts\", \"scripts/__tests__/release-services.test.mjs\"]` to the contract.",
+  "label": "required_test_change"
+ },
+ {
+  "reason": "needs_human: main оставил vendor SOURCE_HASH 9508e5dc, а product sources уже d5596555; sync перепишет never_touch `vendor/scene-compile.mjs`. Прогнать `npm run sync` в photo-pipeline на main и повторить replay?",
+  "label": "other"
+ },
+ {
+  "reason": "needs_human: `data/schedule.log` меняется почасовым `schedule_tick` вне owns_paths; исходных байт до попытки нет, ещё одна правка лога только увеличит diff. Игнорируйте этот файл в dirt-check или поставьте тик на паузу.",
+  "label": "other"
+ },
+ {
+  "reason": "needs_human: check `sh /tmp/dq-public/clean.sh` cannot run in the sandbox: grep matches `./.git` (`gitdir: /Users/<user>/...`); `--exclude-dir=.git` does not skip a worktree `.git` file — add `--exclude=.git` to the check",
+  "label": "broken_check"
+ },
+ {
+  "reason": "needs_human: notes/drill-ok.txt are not needed as a new change because the file already exists in main with exactly `drill ok` (commit 0ee4ec5, drill-note.39), so rewriting it would produce no diff. Should this task be closed as already satisfied, or should it create a different file (name and content)?",
+  "label": "already_done"
+ },
+ {
+  "reason": "needs_human: Lane Pilot требует, чтобы `notes/drill-ok.txt` попал в diff, но файл уже в main с нужным содержимым, и без изменения содержимого diff будет пустым. Принять пустой diff как выполненное или разрешить правку (например, убрать перевод строки в конце файла)?",
+  "label": "already_done"
+ },
+ {
+  "reason": "needs_human: The version pin in `tests/account-relogin.test.mjs` cannot be removed without either deleting the test or changing its expected values, and the gate rejects both. Which should it be: (a) add `tests/account-relogin.test.mjs` to the contract's `test_removals` and delete the `version is 0.3.17` test, as PLAN.md says, or (b) accept changing the two expected values from `\"0.3.17\"` to values read from `package.json` and `package-lock.json`, which is what I tried twice?",
+  "label": "required_test_change"
+ },
+ {
+  "reason": "needs_human: npx vitest run no-raw-fetch.test.ts ss-photo-vendor-fresh.test.ts fails in ss-photo-vendor-fresh.test.ts, outside owns_paths and not caused by this task",
+  "label": "outside_paths"
+ },
+ {
+  "reason": "needs_human: test_fit запрещает менять expected в shoot-og-osennyaya.test.ts, а исходный assert требует subtitle «Кленовая». Добавить файл в test_removals или снять эту проверку?",
+  "label": "required_test_change"
+ },
+ {
+  "reason": "needs_human: test_fit сравнивает этот merge с локальной main и видит 222 старых expect в 68 тестах как «удалённые» (origin сам сменил значения: `toHaveLength(9)`→`8`, s291 `readonly`→`excluded`, Grok+devin и т.д.); вернуть старые строки сломает тесты на коде origin, оставить origin — снова test_fit. Снять test_fit с этой интеграционной задачи или судить diff против origin/main?",
+  "label": "required_test_change"
+ },
+ {
+  "reason": "needs_human: Чтобы прошёл `npx vitest run tests/server/sessions.test.ts`, в `tests/server/sessions.test.ts` (сейчас `never_touch` и вне `owns_paths`) нужно добавить в ожидаемый массив `postInstructions` строку с tool guidance — иначе acceptance п.4 и п.6 противоречат друг другу для writer. Добавить эту правку в main или включить файл в `owns_paths`?",
+  "label": "outside_paths"
+ },
+ {
+  "reason": "needs_human: check sh -c 'npm ci --no-audit --no-fund >/dev/null && npx vitest run tests/shared/platform-catalog.test.ts' cannot run in the sandbox: exit 127",
+  "label": "sandbox"
+ },
+ {
+  "reason": "needs_human: Acceptance requires Layer B/C `className=\"mp-layer-text\"` instead of `mp-meta`, but verification runs `tests/app/profile-portrait-copy.test.ts` which asserts `class=\"mp-meta\"` and that file is in never_touch — should I keep `mp-meta` (fails acceptance), switch classes (fails that check), or is the copy test meant to be updated outside this task?",
+  "label": "other"
+ },
+ {
+  "reason": "needs_human: check `bash -c 'set -e; export PATH=$HOME/.rokit/bin:$PATH; mkdir -p .cache; [ -f .cache/globalTypes.d.luau ] || curl -sSfL https://raw.githubusercontent.com/JohnnyMorganz/luau-lsp/main/scripts/globalTypes.d.luau -o .cache/globalTypes.d.luau; for p in match lobby dungeon; do rojo sourcemap $p.project.json -o .cache/$p.sourcemap.json; luau-lsp analyze --defs=.cache/globalTypes.d.luau --sourcemap=.cache/$p.sourcemap.json src/server/common/ArmorModels.luau src/server/common/Arsenal.luau src/server/common/CostumeVisibility.luau src/shared/Rules/ArmorVisual.luau src/shared/Config/ArmorData.luau src",
+  "label": "sandbox"
+ },
+ {
+  "reason": "needs_human: `game/Packages` and `game/ServerPackages` on the main checkout are circular symlinks (`Packages -> …/game/Packages`), so `[ -e Packages ]` is false and `ln -s` exits with `File exists`. That is gitignored Wally output, not in owns_paths; restoring it needs a real `Packages/` / `ServerPackages/` (or `wally install`) on the main game folder. Armor-1 source already matches main and the lune/python/stylua/selene checks pass here.",
+  "label": "sandbox"
+ },
+ {
+  "reason": "needs_human: the task needs bb-plugin-dzen-factory/tests/production-reschedule.test.ts changed (owns_paths `tests/production-reschedule.test.ts` only matches a workspace-root `tests/` path, but `npx vitest run tests/production-reschedule.test.ts` must run with cwd=bb-plugin-dzen-factory where vitest, tsc and tests/production-queue.test.ts live); add `bb-plugin-dzen-factory/tests/production-reschedule.test.ts` to owns_paths",
+  "label": "outside_paths"
+ },
+ {
+  "reason": "needs_human: verification command 3 cannot exit 0 as written — its Python requires the literal `MapContent\\\"><uri>rbxassetid` (no whitespace) inside each SurfaceAppearance block, but Rojo 7.7.1 always serializes `<Content>` multi-line, so the `m` filter is always empty and `assert m` fails with `(0, 0)`. Can the check be relaxed to `MapContent\\\">\\\\s*<uri>rbxassetid` (and likewise for `TexturePackContent`)? The built place itself is correct: 65/65 SurfaceAppearances with maps carry `TexturePackContent`, 0 missing.",
+  "label": "broken_check"
+ },
+ {
+  "reason": "needs_human: check `python3 -I -c \"import json;plan=json.load(open('.bb/chats/thr_i4gi4juuyc/artifacts/audio/audio-plan.json'));…\"` cannot run in the sandbox: FileNotFoundError `.bb/chats/thr_i4gi4juuyc/artifacts/audio/audio-plan.json` (gitignored, never_touch, not in owns_paths; also xcrun_db Operation not permitted)",
+  "label": "sandbox"
+ },
+ {
+  "reason": "needs_human: the last check (`luau-lsp` on lobby + `stylua --check src tests` + `selene src tests`) fails on files outside owns_paths — `init.server.luau` unknown require, stylua diffs in `ArenaTheme.luau`/`StaffTool.luau`/`tests/staff_skins_spec.luau`, selene shadowing in other specs. Should those stay out of this check, or is owns_paths meant to include them?",
+  "label": "outside_paths"
+ },
+ {
+  "reason": "needs_human: `luau-lsp analyze` for the lobby place still exits 1 on `src/server/lobby/{Teleport,Party,MemoryQueue}.luau` (`ReservedServerAccessCode` missing on `TeleportOptions` in current globalTypes). Those files are outside owns_paths — should the lobby analyze skip `src/server/lobby`, or is that a types-defs issue to ignore?",
+  "label": "outside_paths"
+ },
+ {
+  "reason": "needs_human: verification command 3 cannot exit 0 — it fails on pre-existing issues in files outside owns_paths that exist on HEAD: `luau-lsp analyze` on the lobby sourcemap reports 4 TypeErrors (`TeleportOptions.ReservedServerAccessCode` is absent from the `globalTypes.d.luau` the check downloads; errors are in `src/server/lobby/{MemoryQueue,Party,Teleport}.luau`, untouched), and `stylua --check src tests` flags `src/server/match/ArenaTheme.luau:450` and `tests/staff_skins_spec.luau`. With `set -e` the script aborts at the lobby analyze; even past it, stylua fails. All owned work is complete and verified ",
+  "label": "outside_paths"
+ },
+ {
+  "reason": "needs_human: check python3 -I -c \"…anim.py rbxmx…\" cannot run in the sandbox: ModuleNotFoundError: No module named 'numpy' (sys.executable is Xcode Python 3.9; anim.py is outside owns_paths)",
+  "label": "sandbox"
+ },
+ {
+  "reason": "needs_human: tests/production-reschedule.test.ts:37 asserts `rescheduleTarget(uncertain+articleId, confirmedUnpublished=true)` returns null, but the new contract requires that exact call to return a slot — test_fit rejected my update of that assertion as an unapproved test removal and the contract declares no test_removals; may I update that assertion (the file is in owns_paths), or must it stay?",
+  "label": "required_test_change"
+ },
+ {
+  "reason": "needs_human: `tests/captcha-checkbox.test.ts` pins `package.json` to `0.1.113`, but this task still requires `0.1.114`; that test is outside owns_paths and captcha is out of scope — which constraint should yield?",
+  "label": "outside_paths"
+ },
+ {
+  "reason": "needs_human: the fit gate rejected removing the line `expect(pkg.version).toBe('0.1.113')`, but the contract requires that line to go (the file must contain no `toBe('0.1.113')`). Is the replacement with `toMatch` allowed as is, given `test_removals` already names this file, or does the contract need to name the assertion itself?",
+  "label": "required_test_change"
+ },
+ {
+  "reason": "needs_human: the contract work is complete and all verification commands pass, but `data/bot.db-wal` and `data/bot.db-shm` changed during the attempt — they are written live by the production bot (dockerized `node dist/main.js`, `DB_PATH=/app/data/bot.db`, this folder's `data/` bind-mounted into the container; the WAL grew ~120 KB while I worked). No command I ran touched them — every test used `:memory:` or tmp DBs, and `tsc` executes nothing — and they cannot be \"undone\" without truncating a live production database. Can Lane Pilot exclude `data/**` volatile files from the writer diff (or pause the bot d",
+  "label": "other"
+ },
+ {
+  "reason": "needs_human: the owns_paths validator must exclude `data/**` — `bot.db-wal`/`bot.db-shm` are rewritten continuously by the live bot (WAL is now 2.6 MB, doubled during this task, mtime seconds old), so no writer attempt can ever show them unchanged; please exclude the runtime DB files from the changed-paths check or pause the bot during writer attempts.",
+  "label": "other"
+ },
+ {
+  "reason": "needs_human: the `data/**` changes the validator flagged are not mine — at 14:08 today the live deployment moved `data/` to `/var/lib/photoalive`, created the `data -> /var/lib/photoalive` symlink, and restarted `photoalive-bot-1`/`photoalive-web-1` (both \"Up 9 minutes\", mounting this path). My first edit was 14:13; none of my commands create symlinks or touch `data/`. Deleting the symlink would make the next container restart bind-mount an empty `data/` dir — the live bot would boot with an empty DB. The task itself is complete and all checks pass; the contract's never_touch/snapshot just can't tolerate a",
+  "label": "other"
+ },
+ {
+  "reason": "needs_human: the only diff outside owns_paths is the `data` symlink you created at 14:08 — mid-attempt, after Lane Pilot's before-snapshot — so the validator will keep failing on `data/**` no matter what I change in owns_paths. My work is committed (`2d3320c`) and all checks are green; can you re-baseline the attempt snapshot or accept it manually?",
+  "label": "other"
+ },
+ {
+  "reason": "needs_human: can Lane Pilot re-baseline this attempt's snapshot or exclude the PM-owned `data -> /var/lib/photoalive` symlink from the diff — every attempt will keep failing on never_touch `data/**`, and the live `bot.db-wal` writes mean even a fresh baseline may flag it again?",
+  "label": "other"
+ },
+ {
+  "reason": "needs_human: The contract requires `refund.html` not to link `/styles.css`, but the `test_fit` gate rejects removing `expect(refund).toContain('href=\"/styles.css\"');` from `app/tests/web-legal-pages.test.ts`. Both can't hold, so may the PM add `app/tests/web-legal-pages.test.ts` to the contract's `test_removals`?",
+  "label": "required_test_change"
+ },
+ {
+  "reason": "needs_human: The `test_fit` gate still refuses the exact edit the PM prescribed. Its message, word for word: \"test_fit: app/tests/web-legal-pages.test.ts: removed «expect(refund).toContain('href=\"/styles.css\"');» (if removing these tests is the task, name the files in the contract's test_removals)\". Can the PM redispatch this task with `app/tests/web-legal-pages.test.ts` listed in `test_removals`, or tell me another way to change that assertion?",
+  "label": "required_test_change"
+ },
+ {
+  "reason": "needs_human: DESIGN.md, app/web/public/site.css, app/web/public/privacy.html, app/web/public/404.html, app/tests/web-legal-pages.test.ts are not needed because they were already finished in the live tree before this attempt started (left by the earlier attempt, as PLAN.md describes). Both verification commands already exit 0 on them, so any edit would be churn.",
+  "label": "already_done"
+ },
+ {
+  "reason": "needs_human: check `git cat-file -e HEAD:drills/phase-20261111-083957-1.md && git cat-file -e HEAD:drills/phase-20261111-083957-2.md` cannot run in the sandbox: `fatal: detected dubious ownership in repository` (git safe.directory is not set for the worktree inside the sandbox), so the sandbox's git config needs `safe.directory` for this path.",
+  "label": "sandbox"
+ },
+ {
+  "reason": "needs_human: The V3 check requires both files in `HEAD`, but this task forbids committing. Should Lane Pilot commit them after staging?",
+  "label": "other"
+ },
+ {
+  "reason": "needs_human: The instructions say not to commit, but the V3 check requires both files in `HEAD` and the boundary requires one commit. Should I make that commit?",
+  "label": "other"
+ },
+ {
+  "reason": "needs_human: test_fit blocks the contract-required update of `app/tests/analytics-sources.test.ts` — the `/sources` changes remove the `\"none\"` reply case (null sources now group as `direct`), so the existing strict assertion `expect(messages[0]!.payload.text).toBe(\"Sources (all time)\\nnone\")` must change, which the checker counts as weakening a reference test unless the file is listed in the contract's `test_removals` or the owner allows the edit: should the contract's `test_removals` gain `app/tests/analytics-sources.test.ts`?",
+  "label": "required_test_change"
+ },
+ {
+  "reason": "needs_human: notes/drill-note.md needs no change — it already exists at HEAD and on `main` with exactly the required bytes (`drill ok\\n`, verified via `xxd`: `64 72 69 6c 6c 20 6f 6b 0a`), and the contract's only check `grep -qx 'drill ok' notes/drill-note.md` exits 0. Every edit that would put the path into the diff must alter the required end-state: removing the trailing newline or adding a mode change deviates from \"content is exactly the line: drill ok\", and identical content produces an empty diff (this is why the previous attempt was rejected).",
+  "label": "already_done"
+ },
+ {
+  "reason": "needs_human: `vitest.config.ts` has `include: ['tests/**/*.test.ts']`, so the contract's verify command `node_modules/.bin/vitest run scripts/legacy/extract.test.ts` exits 1 with \"No test files found\" (verified empirically with a probe file) — may I add `'scripts/**/*.test.ts'` to `include` in `vitest.config.ts` (outside owns_paths), or should the test location / verify command change?",
+  "label": "broken_check"
+ },
+ {
+  "reason": "needs_human: test_fit blocks the contract-required catalog.test.ts update — CARD_LANGS must become 10 ids, so the pre-existing assertion `expect([...CARD_LANGS]).toEqual([\"en\",\"es\",\"de\"])` has to change, but test_fit flags any changed expected value in an existing test unless the contract declares `test_removals` or a package.json/.sh/.yaml file also changes (src changes don't count). Please add `test_removals: [\"apps/cards-bot/test/catalog.test.ts\"]` to the contract — or advise another sanctioned path — and resend.",
+  "label": "required_test_change"
+ },
+ {
+  "reason": "needs_human: The contract contradicts itself — `test/generate.test.ts:127` (outside owns_paths, can't edit) asserts `buildImagePrompt` output contains \"empty band across the top\", while the acceptance requires launch-polish.test.ts to prove every mode's prompt contains no word \"band\" (which that phrase contains); should `test/generate.test.ts` be added to owns_paths or test_removals so its stale \"empty band\" assertion can be updated?",
+  "label": "outside_paths"
+ },
+ {
+  "reason": "needs_human: the contract requires replacing the stale fal-fallback test in tests/muse-images.test.ts (acceptance item 2), but the accept gate's test_fit deterministically rejects that edit — the removed assertion `expect(result.covers[0].model).toBe('muse-image · fal.ai · Owner')` shares a checker skeleton with the unchanged success-test assertion on `result.covers[0].model`, so any version of the file hits `expected_changed`/`assertion_removed`/`assertion_weakened` (verified by running the real testFitFindings logic from bb-plugin-lane-pilot src/rooms/tasks/test-fit.ts against the base and current file);",
+  "label": "required_test_change"
+ },
+ {
+  "reason": "needs_human: the contract's `test_removals: [\"bb-plugin-dzen-factory/tests/muse-images.test.ts\"]` can never match the repo-relative `tests/muse-images.test.ts` that `test_fit` compares — may the task be cancelled and redispatched (v3) with `test_removals: [\"tests/muse-images.test.ts\"]`? I verified against the gate source (`owns-paths.ts:51-63`, `test-fit.ts:43-49`) and by simulating `testFitFindings` on the real before/after: the contract pattern produces exactly the reported `expected_changed` hit, the corrected pattern produces zero. `test_removals` is also absent from `IN_PLACE_FIELDS` (`update-task.ts:",
+  "label": "required_test_change"
+ },
+ {
+  "reason": "needs_human: The contract's acceptance requires changing two existing test assertions — `apps/cards-bot/test/start-video.test.ts` (`expect(payload.caption).toContain(localeValue(\"menu-title\"))` contradicts \"caption contains no menu-title text\") and `apps/cards-bot/test/screens.test.ts` (exact keyboard `[\"n:new\",\"n:bal\",\"n:help\"]` contradicts the new `n:lang` button) — but `test_fit` rejects any edit to those lines unless the files are named in the contract's `test_removals`, which is empty. Should the contract add both files to `test_removals`?",
+  "label": "required_test_change"
+ },
+ {
+  "reason": "needs_human: acceptance item 4 requires a one-line \"interval or product rule, not a cap\" comment on `MAX_VOICE_SECONDS` and `MAX_DETAILS_CHARS`, which are declared at `apps/cards-bot/src/flow.ts:147-148` — a file outside `owns_paths` (only `apps/cards-bot/src/main.ts` is owned under `apps/cards-bot`). May I add those two comment lines to `flow.ts`?",
+  "label": "outside_paths"
+ },
+ {
+  "reason": "needs_human: test_fit blocks the required move — please add the relocated test files to the contract's `test_removals` (e.g. `greeting_cards/apps/**`, `greeting_cards/packages/**`) and redispatch; the finished, verified layout is already in this worktree.",
+  "label": "required_test_change"
+ },
+ {
+  "reason": "needs_human: expected_outputs `package.json`, `package-lock.json`, `tsconfig.base.json` are bare filenames — Lane Pilot's validator resolves each to the first produced path ending in that name, which is a required-deleted old path (`greeting_cards/apps/cards-bot/package.json`, `greeting_cards/package-lock.json`, `greeting_cards/tsconfig.base.json`) whose content reads null, so `missing expected_outputs` fires deterministically even with all checks green — should the contract qualify these outputs or should the validator prefer existing/exact matches?",
+  "label": "broken_check"
+ },
+ {
+  "reason": "needs_human: the contract's verification checks are mutually destructive when Lane Pilot runs them concurrently — check 1's `npm ci` wipes `node_modules` while check 2's `npm test` needs `vitest`; I reproduced it locally and no `owns_paths` change can serialize the runner.",
+  "label": "broken_check"
+ }
+]
