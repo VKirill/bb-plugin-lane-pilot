@@ -10,13 +10,8 @@ const roots = { lanePilot: process.cwd() };
 // machine; in a module an anchor must name a declared unit, so they are broken wherever the plugin is checked out
 // (siblings.ts). Fixing one = pointing its entry at the declared unit that implements the card, and deleting it here.
 const TELEGRAM_TEXT_ANCHORS = new Set([
-  "telegram:server.ts#pairing: async () => {", "telegram:server.ts#getUpdates", "telegram:server.ts#if (!cfg.enabled", "telegram:server.ts#timeout: 25,",
-  "telegram:server.ts#Backoff after a failure", "telegram:ingress.ts#A stranger chat gets one sentence", "telegram:ingress.ts#/^\\/start",
-  "telegram:server.ts#store.put(\"owner:id\", route.userId);", "telegram:ingress.ts#Not text: a sticker", "telegram:chat.ts#this.d.sdk.threads.send({",
-  "telegram:server.ts#Conversation not connected", "telegram:chat.ts#sendChatAction", "telegram:chat.ts#A draft waits for «yes»",
-  "telegram:test/settings.test.ts#never token", "telegram:server.ts#The pairing code: 8 characters", "telegram:server.ts#https://t.me/${username}?start=${code}",
-  "telegram:server.ts#Off, awaiting code, linked", "telegram:server.ts#settings.onChange(() => {", "telegram:server.ts#store.put(\"pair:code\", code);",
-  "telegram:server.ts#unpair: async () => {",
+  // n960, n969, n979: their code is in the anonymous `start` of a background service registered inline in `plugin`; no narrower unit is declared.
+  "telegram:server.ts#getUpdates", "telegram:server.ts#Conversation not connected", "telegram:server.ts#settings.onChange(() => {",
 ]);
 
 describe("the SMA map registry", () => {
