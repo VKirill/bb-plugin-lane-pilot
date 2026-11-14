@@ -69,7 +69,7 @@ export default {
   n495: { mutation: distort("scripts/hub-watchdog.sh", 'elif have_sudo; then echo "sudo -n $SYSTEMCTL restart $SERVICE"; else', 'elif have_sudo; then echo "sudo -n $SYSTEMCTL reload $SERVICE"; else'), trace: drill("sma_r05") },
   n496: { mutation: distort("scripts/hub-watchdog.sh", "if door_answers && foreign_door_refusal; then return 2; fi", "if door_answers && foreign_door_refusal; then return 1; fi"), trace: drill("sma_r05") },
   n497: { mutation: flip("src/rooms/phase/server/driver-steps.ts", "now() - lastAging > 86_400_000", "now() - lastAging < 86_400_000"), trace: drill("sma_r05") },
-  n498: { mutation: distort("src/rooms/phase/server/driver-steps.ts", 'part.kind === "wave_table" && part.text.startsWith(`wave ${wave}:`)', 'part.kind === "wave_tables" && part.text.startsWith(`wave ${wave}:`)'), trace: drill("sma_r05") },
+  n498: { mutation: flip("src/rooms/phase/server/driver-steps.ts", "if (!next.some((item) => item.wave === wave && execution.issued[item.id])) continue;", "if (!next.some((item) => item.wave !== wave && execution.issued[item.id])) continue;"), trace: drill("sma_r05") },
   n499: { mutation: skipWrite("src/rooms/relay/server/outbound.ts", "sent.add(`${attemptId}:${attempt.state}`);"), trace: drill("sma_r05") },
   n500: { mutation: distort("src/rooms/relay/server/outbound.ts", '["event", "projectId", "runId", "taskId", "title", "kind", "state", "attempt", "at"]', '["event", "projectId", "runId", "taskId", "kind", "title", "state", "attempt", "at"]'), trace: drill("sma_r05") },
   n501: { mutation: flip("src/rooms/relay/server/outbound.ts", "if (!/^https:\\/\\/[^\\s]+$/.test(url)) return;\n    sent.add(", "if (/^https:\\/\\/[^\\s]+$/.test(url)) return;\n    sent.add("), trace: drill("sma_r05") },
