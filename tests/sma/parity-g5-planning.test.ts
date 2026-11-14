@@ -595,7 +595,7 @@ describe("the codebase map's pages", () => {
     const full = docsCompletenessGaps([page("overview"), page("architecture"), page("gotchas"), page("conventions"), page("testing")], { tables: [], core: [] });
     expect(full.missingPages).toEqual([]);
   });
-  it("[sma:k_d_tpl_instructions] the start's profile write creates CLAUDE.md and the Copilot instructions as pointers to PROJECT.md, seeds a minimal canon on a fresh start and appends the preferences once; a person's CLAUDE.md is never replaced", async () => {
+  it("[sma:k_d_tpl_instructions] [sma:k_pl_project] the start's profile write creates CLAUDE.md and the Copilot instructions as pointers to PROJECT.md, seeds a minimal canon on a fresh start and appends the preferences once; a person's CLAUDE.md is never replaced", async () => {
     STRICT_WRITES.on = true;
     try {
       const r = rig();
