@@ -28,4 +28,30 @@ describe("a drill's read meets the hub in a pause", () => {
     expect(ask(["bb did not respond", "bb did not respond", "bb did not respond", "ok"])).toMatchObject({ rc: 1, calls: 3 });
     expect(ask(["unknown command lead", "ok"])).toEqual({ rc: 1, err: "unknown command lead", calls: 1 });
   });
+
+  it("retries the lead_state read after a hub pause, but never repeats an ambiguous write", () => {
+    const code = `import sys, json
+sys.path.insert(0, sys.argv[1])
+import lp_drill.hub as h
+h.time.sleep = lambda _: None
+results = {}
+for method in ('lead_state', 'phase_get', 'save_setting', 'workflow_run'):
+    calls = []
+    def run(*args, **kwargs):
+        calls.append(args)
+        return (1, '', 'HTTP 502') if len(calls) == 1 else (0, '{"result":{"ok":true}}', '')
+    h.run = run
+    try:
+        result = h.setting_rpc(method, {})
+    except RuntimeError:
+        result = 'failed'
+    results[method] = {'calls': len(calls), 'result': result}
+print(json.dumps(results))`;
+    const run = spawnSync("python3", ["-I", "-c", code, scripts], { encoding: "utf8", timeout: 30_000 });
+    expect(run.status, run.stderr).toBe(0);
+    expect(JSON.parse(run.stdout)).toEqual({
+      lead_state: { calls: 2, result: { ok: true } }, phase_get: { calls: 2, result: { ok: true } },
+      save_setting: { calls: 1, result: "failed" }, workflow_run: { calls: 1, result: "failed" },
+    });
+  });
 });

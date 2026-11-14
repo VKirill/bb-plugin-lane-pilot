@@ -9,7 +9,7 @@ user-invocable: false
 
 Default: run. Info card only if `$ARGUMENTS` is exactly `info`.
 
-> **Inside a Lane Pilot chat** (`LANE_PILOT_AGENT_TYPE` set / tools `lane_pilot_*` present) cold start is not the CLI: read `.agents/PROGRESS.md`, `.agents/plans/ROADMAP.md` and the open counts in `.agents/todos/INDEX.md`, then take the run state from the Lane Pilot tools (`lane_pilot_workspace_status`, `lane_pilot_gate_report`) and prior decisions from hub memory (`lane-memory search`, `lane_pilot_memory` `action: "context"`). A closed task's result is in its folder: `.agents/tasks/<id>/OUTCOME.md` (open it by the task id, do not list `.agents/tasks/`). Answer in Russian: Now / Blocked / Next. Day policy there: writer → plan and code critique → acceptance → merge, all by Lane Pilot. HANDOFF/BOARD, `next_act` and `resume-project` below are the terminal harness.
+> **Inside a Lane Pilot chat** (`LANE_PILOT_AGENT_TYPE` set / tools `lane_pilot_*` present) cold start is not the CLI: read `.agents/PROGRESS.md`, `.agents/plans/ROADMAP.md` and the open counts in `.agents/todos/INDEX.md`, then take the run state from the Lane Pilot tools (`lane_pilot_workspace_status`, `lane_pilot_gate_report`) and prior decisions from hub memory (`bb lane-pilot memory search "<question>"`, `lane_pilot_memory` `action: "context"`). A closed task's result is in its folder: `.agents/tasks/<id>/OUTCOME.md` (open it by the task id, do not list `.agents/tasks/`). Answer in Russian: Now / Blocked / Next. Day policy there: writer → plan and code critique → acceptance → merge, all by Lane Pilot. HANDOFF/BOARD, `next_act` and `resume-project` below are the terminal harness.
 
 ## Procedure (terminal)
 
@@ -38,7 +38,7 @@ This regenerates `.agents/HANDOFF.json` + `HANDOFF.md` and prints them first.
 
 ## Optional
 
-- `lane-memory search` for prior decisions (hub memory)
+- `bb lane-pilot memory search "<question>"` for prior decisions (hub memory)
 - `night-audit` if user asks overnight review
 - `handoff-write .` alone to refresh without full resume
 

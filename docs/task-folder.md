@@ -163,7 +163,7 @@ sqlite3 <lane-pilot.db> "select count(*) from lane_pilot_task_file_read where le
 ```
 
 The drill scene `task_home` (`python3 scripts/lp-drill.py --scenario task_home`, also in the `--series` suite `task`) runs
-two note tasks through the main path. It passes only if each home's manifest lists every expected kind, the files are
+two note tasks with `quality_mode: "full"` through the main path, including both critics even when ordinary sandbox tasks skip them. It passes only if each home's manifest lists every expected kind, the files are
 there after the worktrees went, and nothing new appeared in `.agents/plans/`, `.agents/planning/`,
 `.agents/runs/<run>/artifacts/` or `.bb/chats/` for those tasks.
 
@@ -228,6 +228,6 @@ an agent reads (it needs hooks in every provider; only plugin code reads go thro
 no batch id; the draft id of a proposed batch is the real one and would have to travel through `dispatchWriter` and the task home).
 
 The drill scene `run_home` (`python3 scripts/lp-drill.py --scenario run_home`, also in the `--series` suite `task`) starts `note-add`
-twice through `bb lane-pilot workflow-trigger`, and passes only if each run's manifest lists its file in a folder keyed by that run, the
+twice through the `workflow_run` RPC with `source: "manual"` (the CLI `workflow-trigger` is for scheduled graphs), and passes only if each run's manifest lists its file in a folder keyed by that run, the
 files are on disk, the two runs share no path, and a `find` of `.agents/plans`, `.agents/planning`, `.agents/todos`, `.agents/runs`
 and `.bb/chats` before and after shows nothing new but the two manifests, the files they list and the documented spill.

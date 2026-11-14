@@ -76,7 +76,7 @@ def setting_rpc(method: str, payload: dict) -> dict:
         # lost on one phase_get); it is asked again. A write is not: it may have landed.
         for attempt in range(3):
             rc, out, err = run([BB, "plugin", "rpc", "call", "lane-pilot", method, "--input-file", handle.name, "--json"], timeout=60)
-            if rc == 0 or attempt == 2 or not (re.search(r"HTTP 50[234]", err or out) and re.search(r"_(get|list|status|view)$", method)):
+            if rc == 0 or attempt == 2 or not (HUB_PAUSE.search(err or out) and (method == "lead_state" or re.search(r"_(get|list|status|view)$", method))):
                 break
             time.sleep(10)
     finally:

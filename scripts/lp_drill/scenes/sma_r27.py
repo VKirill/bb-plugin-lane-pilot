@@ -31,9 +31,11 @@ def scenario_sma_r27(tmp: Path) -> dict:
     except (ValueError, IndexError):
         return proofs.verdict("sma_r27", [f"the probe printed no result (exit {done.returncode}): {(done.stderr or done.stdout).strip()[-300:]}"])
     nodes = seen["nodes"]
-    # n1738: `npm test` itself, narrowed to the two checks the card names (the README numbers and the leak scan), on this checkout.
-    npm = subprocess.run(["npm", "test", "--silent", "--", "tests/atlas.test.ts", "tests/guard-tools.test.ts"], cwd=ROOT, capture_output=True, text=True, timeout=900)
-    nodes["n1738"] = {"ok": npm.returncode == 0 and "Test Files  2 passed" in npm.stdout, "detail": f"npm test on the two checks: exit {npm.returncode}, {next((line.strip() for line in npm.stdout.splitlines() if 'Test Files' in line), 'no summary line')[:120]}"}
+    # n1738: the whole suite, including the README numbers and leak scan; a filtered run cannot prove this card.
+    npm = subprocess.run(["npm", "test", "--silent"], cwd=ROOT, capture_output=True, text=True, timeout=1500)
+    if npm.returncode:
+        print(npm.stdout, npm.stderr, flush=True)
+    nodes["n1738"] = {"ok": npm.returncode == 0 and "Test Files" in npm.stdout, "detail": f"npm test (no file filter): exit {npm.returncode}, {next((line.strip() for line in npm.stdout.splitlines() if 'Test Files' in line), 'no summary line')[:120]}"}
     for node in NODES:
         row = nodes.get(node)
         if row is None:

@@ -2,7 +2,7 @@
 (docs/task-folder.md «The run folder»; audit handoff-map §5.3, the step 2 proof). Sibling of task_home.
 
 The graph is the built-in `note-add` (no model, one `fs.write` into `.agents/todos/notes/{{date}}-{{run_id}}/`), started twice on the same day
-through `bb lane-pilot workflow-trigger`. After both ended: each run's `.agents/runs/<run-id>/manifest.json` (lp.run-manifest/1) lists every file
+through the manual `workflow_run` RPC. After both ended: each run's `.agents/runs/<run-id>/manifest.json` (lp.run-manifest/1) lists every file
 its node wrote, each listed file is on disk, the two runs wrote different folders, and a `find` of the shared folders before and after shows no
 new file except the two manifests, the files they list and the documented PM-chat spill (`.bb/chats/<pm>/artifacts/wf-<run>/`)."""
 from __future__ import annotations
@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from lp_drill.env import POLL_SEC, STAMP
-from lp_drill.hub import bb, hubsql, log
+from lp_drill.hub import hubsql, log, setting_rpc
 from lp_drill.prove import Proofs
 from lp_drill.report import sandbox_sound
 
@@ -99,13 +99,16 @@ def run_home_inputs(letter: str) -> dict:
     return {"text": f"Drill {STAMP} run home {letter}: the note of one run."}
 
 
-def wait_run_home_runs(keys_text: str, timeout_min: int = 10) -> list[dict]:
-    """The note-add runs of this drill (found by their text) once every one ended; the last rows seen on timeout."""
+def wait_run_home_runs(run_ids: list[str], timeout_min: int = 10) -> list[dict]:
+    """The accepted note-add runs of this drill once every one ended; the last rows seen on timeout."""
+    if not run_ids:
+        return []
     rows: list[dict] = []
     deadline = time.time() + timeout_min * 60
+    quoted_ids = ",".join("'" + run_id.replace("'", "''") + "'" for run_id in run_ids)
     while time.time() < deadline:
-        rows = hubsql(f"select id, status from lane_pilot_wf_run where workflow_id='{RUN_GRAPH}' and inputs_json like '%{keys_text}%' order by created_at;")
-        if len(rows) >= 2 and all(row.get("status") in RUN_ENDED for row in rows):
+        rows = hubsql(f"select id, status from lane_pilot_wf_run where id in ({quoted_ids}) order by created_at;")
+        if len(rows) >= len(run_ids) and all(row.get("status") in RUN_ENDED for row in rows):
             return rows
         time.sleep(POLL_SEC)
     return rows
@@ -114,13 +117,25 @@ def wait_run_home_runs(keys_text: str, timeout_min: int = 10) -> list[dict]:
 def scenario_run_home(ctx: "Context") -> dict:
     """Two runs of note-add on one day (n233 as the graph-run analogue: one folder per run, every artifact in it)."""
     problems: list[str] = []
+    accepted_ids: list[str] = []
     before = run_snapshot(ctx.cwd)
     for letter in "ab":
-        rc, out, err = bb("lane-pilot", "workflow-trigger", ctx.project, RUN_GRAPH, json.dumps(run_home_inputs(letter)), f"drill-{STAMP}-run-home-{letter}")
-        if rc != 0:
-            problems.append(f"workflow-trigger of {RUN_GRAPH} ({letter}) failed: {(out + err).strip()[:200]}")
-            log(f"workflow-trigger {letter}: {(out + err).strip()[:200]}")
-    runs = wait_run_home_runs(f"Drill {STAMP} run home")
+        try:
+            result = setting_rpc("workflow_run", {"id": RUN_GRAPH, "projectId": ctx.project, "inputs": run_home_inputs(letter), "source": "manual"})
+        except Exception as cause:
+            problems.append(f"workflow_run of {RUN_GRAPH} ({letter}) failed: {str(cause)[:200]}")
+            log(f"workflow_run {letter}: {str(cause)[:200]}")
+            continue
+        run_id = result.get("runId") if result.get("ok") else None
+        if isinstance(run_id, str) and run_id:
+            accepted_ids.append(run_id)
+        else:
+            reason = result.get("reason") or result.get("message") or "no run accepted"
+            if result.get("message") and result.get("message") != reason:
+                reason = f"{reason}: {result['message']}"
+            problems.append(f"workflow_run of {RUN_GRAPH} ({letter}) refused: {str(reason)[:200]}")
+            log(f"workflow_run {letter}: {str(reason)[:200]}")
+    runs = wait_run_home_runs(accepted_ids)
     run_ids = [str(row["id"]) for row in runs]
     if len(run_ids) != 2:
         problems.append(f"expected two {RUN_GRAPH} runs of this drill, found {len(run_ids)}")

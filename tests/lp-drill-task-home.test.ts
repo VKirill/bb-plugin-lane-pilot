@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { taskV2Schema } from "../src/rooms/contracts";
+import { applyQualityMode, resolveQualityMode } from "../src/rooms/contracts/quality-mode";
 import { TASK_FILE_KINDS } from "../src/rooms/storage";
 
 // The drill scene task_home (audit handoff-map §5.6; docs/task-folder.md): its judges, run on fake checkouts. The live run needs the hub.
@@ -132,6 +133,10 @@ print(json.dumps({"before": sorted(before), "leaks": m.shared_leaks(before, afte
     const specs = result.specs.map((spec) => taskV2Schema.parse(spec));
     expect(specs).toHaveLength(2);
     expect(new Set(specs.map((spec) => spec.id)).size).toBe(2);
-    for (const spec of specs) expect(spec.objective).toContain(result.plan);
+    for (const spec of specs) {
+      expect(spec.objective).toContain(result.plan);
+      expect(applyQualityMode({ "plan_critique.enabled": false, "code_critique.enabled": false }, resolveQualityMode(spec, "standard")))
+        .toMatchObject({ "plan_critique.enabled": true, "code_critique.enabled": true });
+    }
   });
 });

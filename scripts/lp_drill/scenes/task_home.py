@@ -183,6 +183,7 @@ def task_home_specs(cwd: str) -> list[dict]:
     rel_plan, _ = shared_plan(cwd)
     specs = [note_task(f"drill-{STAMP}-home-{letter}", f"notes/drill/{STAMP}-home-{letter}.md", f"Drill {STAMP} home {letter}", cwd) for letter in "ab"]
     for spec in specs:
+        spec["quality_mode"] = "full"  # This scene needs both critics even when the sandbox disables them for ordinary drills.
         spec["objective"] = f"Follow the shared plan {rel_plan}. {spec['objective']}"
     return specs
 
