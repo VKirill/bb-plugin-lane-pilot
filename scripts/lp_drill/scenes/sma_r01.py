@@ -10,6 +10,7 @@ from lp_drill.scenes.sma_r01_b import NODES_B, prove_b
 from lp_drill.scenes.sma_r01_c import NODES_C, prove_c
 from lp_drill.scenes.sma_r01_d import NODES_D, prove_d
 from lp_drill.scenes.sma_r01_e import NODES_E, prove_e
+from lp_drill.scenes.sma_r01_f import NODES_F, prove_f
 
 NODES = []
 NODES += NODES_A
@@ -17,6 +18,7 @@ NODES += NODES_B
 NODES += NODES_C
 NODES += NODES_D
 NODES += NODES_E
+NODES += NODES_F
 
 
 def scenario_sma_r01(tmp: Path) -> dict:
@@ -26,4 +28,5 @@ def scenario_sma_r01(tmp: Path) -> dict:
     prove_c(proofs, tmp)
     prove_d(proofs, tmp)
     prove_e(proofs, tmp)
+    prove_f(proofs, tmp)
     return proofs.verdict("sma_r01", checked=len(NODES))

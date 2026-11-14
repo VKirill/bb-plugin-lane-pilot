@@ -6,6 +6,7 @@ import { distort, drill, entry, flip, gate, isSet, outside, receipt, type Region
 
 import evidenceD from "./r01-d";
 import evidenceE from "./r01-e";
+import { distort, drill, entry, flip, gate, isSet, not, outside, part, receipt, type RegionEvidence, rows, settingRow, transition, via, voidIsHave, wrongTarget } from "./types";
 
 const TASK_HOME = "src/rooms/writer/server/task-home.ts";
 
@@ -425,8 +426,41 @@ export default {
     mutation: flip("packages/workflow-engine/src/verdict.ts", "if (status === \"rework\" && high + critical === 0) status = \"pass\";", "if (status === \"rework\" && high + critical !== 0) status = \"pass\";"),
     trace: receipt("code-critique", "pass"),
   },
+  // The accepted attempt's receipts are written once into the task home in the base, so they outlive the worktree's removal (T13).
+  n294: { mutation: wrongTarget(TASK_HOME, 'kind: "acceptance", name: "acceptance.json",', 'kind: "acceptance", name: `attempts/${input.attemptId}/acceptance.json`,'), trace: drill("task_home") },
+  n300: { reach: entry("a PM or the owner enqueues a task contract") },
+  n306: {
+    mutation: distort("src/rooms/tasks/rails.ts", "held)/.test(code)) return \"dependency\";", "held)/.test(code)) return \"conflict\";"),
+    trace: transition({ to: "blocked", reason: "depends_on" }),
+  },
+  n317: { voidReview: voidIsHave("состояние «заявлена» = попытка spawn_requested/running с живым циклом в activeWriterTasks; без живого цикла её забирает периодический проход (аренда = живой цикл)") },
+  n320: { mutation: distort("src/rooms/contracts/state-machine.ts", 'state !== "accepted" && state !== "canceled");', 'state !== "accepted" && state !== "blocked");'), trace: transition({ to: "validation_failed" }), },
+  n321: { mutation: distort("src/rooms/storage/cancel-code.ts", "COALESCE(cancel_code, ?)", "COALESCE(?, cancel_code)"), trace: transition({ to: "canceled" }), },
+  n322: { mutation: distort("src/rooms/storage/tasks-store.ts", ".run(words, taskId).changes > 0);", ".run(words.toUpperCase(), taskId).changes > 0);"), trace: drill("sma_r01"), },
+  n323: { mutation: distort("src/rooms/owner-waiting/items.ts", 'prefix === "approved" || prefix === "returned" || prefix === "stopped" ? prefix : "closed";', 'prefix === "approved" || prefix === "returned" ? prefix : "closed";'), trace: rows("lane_pilot_owner_item", "closed_at", "kind='task_word'"), },
+  n324: { mutation: flip("src/rooms/lead/server/surfaces.ts", "decided.key === `${taskWordItemPrefix(runId, family)}${waitingAttemptId}`) return", "decided.key !== `${taskWordItemPrefix(runId, family)}${waitingAttemptId}`) return"), trace: rows("lane_pilot_owner_item", "closed_at", "kind='task_word' AND state='closed'"), },
+  n325: { mutation: flip("src/rooms/stage-return/server/stage-return.ts", "if (!queued) return fail(", "if (queued) return fail("), trace: rows("lane_pilot_stage_return", "at", "state='restarted'"), },
+  n326: { mutation: distort("src/rooms/tasks/rails.ts", 'if (kind === "docs") return "docs";', 'if (kind === "docs") return "write";'), trace: drill("sma_r01"), },
+  n327: { mutation: distort("src/rooms/phase/server/driver-methods-control.ts", 'input.state === "resume" ? "active"', 'input.state === "resume" ? "paused"'), trace: part({ kind: ["pause", "resume"] }), },
+  n328: { mutation: flip("src/rooms/tasks/rails.ts", "now - row.updatedAt >= graceMs);", "now - row.updatedAt > graceMs);"), trace: drill("sma_r01"), },
   n329: {
     mutation: flip("src/rooms/tasks/rails.ts", "|| a.queuedAt - b.queuedAt);", "|| b.queuedAt - a.queuedAt);"),
     trace: transition({ from: "queued", to: "spawn_requested" }),
   },
+  n330: { mutation: flip("src/rooms/writer/server/dispatch.ts", "if (!row || Date.now() - row.created_at > DISPATCH_IDEMPOTENT_WINDOW_MS) return null;", "if (!row || Date.now() - row.created_at < DISPATCH_IDEMPOTENT_WINDOW_MS) return null;"), reach: entry("a PM sends the same task contract and plan again while the first is open"), trace: outside("a repeated dispatch answers deduplicated and writes no row of its own; a live scene needs the workflow engine that runs the first dispatch's stages"), },
+  n331: { mutation: distort("src/rooms/storage/attempts-store/lifecycle.ts", '"queued", used + 1, now, now, HARNESS_VERSION);', '"queued", used + 2, now, now, HARNESS_VERSION);'), reach: entry("a PM dispatches a task, or sends it again after an attempt ended"), trace: rows("lane_pilot_attempt", "created_at", "attempt_no > 1"), },
+  n332: { mutation: flip("src/rooms/storage/attempts-store/transition.ts", "isLegalMove(before.state, state) ? 1 : 0;", "isLegalMove(before.state, state) ? 0 : 1;"), trace: rows("lane_pilot_attempt_transition", "at", "refused=1"), },
+  n333: { mutation: flip("src/rooms/writer/server/pilot/logic.ts", "if (!own || own.dependsOn.length) return null;", "if (!own || !own.dependsOn.length) return null;"), reach: entry("a PM dispatches a third sibling task of one area and kind in one run"), trace: drill("sma_r01"), },
+  n334: { mutation: flip("src/rooms/runs/server/runs-pause.ts", "return await isRunPaused(kv, runId) || !(await conveyorState(kv as never)).on;", "return !await isRunPaused(kv, runId) || !(await conveyorState(kv as never)).on;"), reach: entry("the owner or a PM pauses a run"), trace: drill("sma_r01"), },
+  n335: { mutation: flip("src/rooms/tasks/server/contract-lint.ts", "&& !task.depends_on.includes(open.id)) {", "&& task.depends_on.includes(open.id)) {"), reach: entry("a PM dispatches a task whose owns_paths overlap an open task of the run"), trace: drill("sma_r01"), },
+  n336: { mutation: distort("src/rooms/tasks/words.ts", 'return latest?.decision === "no" ? latest.text : null;', 'return latest?.decision === "yes" ? latest.text : null;'), reach: entry("a PM sends again a task of a family the owner said no to", { "owner.words": not("off") }), trace: drill("sma_r01"), },
+  n337: { mutation: distort("src/rooms/phase/logic/next-action.ts", '?.sha256 ?? "none"}:${r.design?.drawing?.feasible', '?.sha256 ?? "nil"}:${r.design?.drawing?.feasible'), trace: drill("sma_r01"), },
+  n338: { mutation: flip("src/rooms/phase/logic/design.ts", "if (drawing.feasible === false) why.push(", "if (drawing.feasible === true) why.push("), trace: drill("sma_r01"), },
+  n339: { mutation: distort("src/rooms/phase/logic/next-action.ts", "key(`running:${Object.keys(issued).length}:${open.length}`)", "key(`running:${items.length}:${open.length}`)"), trace: drill("sma_r01"), },
+  n340: { mutation: flip("src/rooms/phase/logic/next-action.ts", 'key: key("running"), stage: phase.stage, waitsForPm: false,', 'key: key("running"), stage: phase.stage, waitsForPm: true,'), trace: drill("sma_r01"), },
+  n341: { mutation: distort("src/rooms/tasks/server/queue-tool.ts", "input.until ? Date.parse(input.until) : HOLD_FOREVER;", "input.until ? Date.parse(input.until) : HOLD_FOREVER + 1;"), reach: entry("a PM holds queued tasks while it replans"), trace: drill("sma_r01"), },
+  n342: { mutation: flip("src/rooms/phase/logic/next-action.ts", ".filter((question) => !question.answer && question.stage === phase.stage);", ".filter((question) => question.answer && question.stage === phase.stage);"), reach: entry("a phase reaches design with a blocking question still open"), trace: drill("sma_r01"), },
+  n343: { mutation: distort("src/rooms/phase/server/driver-methods-words.ts", "text: input.text.slice(0, 2000), by: input.by", "text: input.text.slice(0, 4), by: input.by"), trace: drill("sma_r01"), },
+  n344: { mutation: distort("workflows/lp.draw.json", '"id": "draw",\n      "type": "agent",\n      "role": "specialist:design-lead",', '"id": "draw",\n      "type": "agent",\n      "role": "specialist:ui-review",'), reach: entry("a phase reaches design and its drawing is asked for"), trace: drill("sma_r01"), },
+  n1772: { mutation: distort("src/rooms/contracts/state-machine.ts", '...(["cancel_requested", "blocked", "provider_error", "timeout", "empty_output", "validation_failed"] as const).map((from) =>', '...(["cancel_requested", "blocked", "timeout", "empty_output", "validation_failed"] as const).map((from) =>'), trace: transition({ to: "accepted" }), },
 } satisfies RegionEvidence;
