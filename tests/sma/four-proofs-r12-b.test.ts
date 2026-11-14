@@ -10,6 +10,24 @@ afterEach(cleanupWatchdog);
 const guide = () => readFileSync(join(process.cwd(), "docs/watchdog.md"), "utf8");
 
 describe("supervisor startup entries", () => {
+  it("[sma:m_sp_install_watch] with sudo refused the install prints the refusal line whole, then installs a user unit; with sudo allowed it installs the system service and prints no refusal", () => {
+    const { dir, env } = tmp();
+    const sys = stub(dir, "systemctl", SYSTEMCTL_STUB);
+    stub(dir, "tee", "cat > /dev/null");
+    const common = { ...env, HOME: dir, SYS_LOG: join(dir, "sys.log"), MAINPID_FILE: join(dir, "m"), STATE_FILE: join(dir, "state"), LP_WATCH_SYSTEMCTL: sys };
+    stub(dir, "sudo", "exit 1");
+    const refused = run(["install"], common).stdout.split("\n");
+    expect(refused).toEqual([
+      "no administrator rights (sudo -n refused): installing a user service instead",
+      expect.stringContaining("installed: user unit lp-hub-watchdog.service"),
+      "",
+    ]);
+    stub(dir, "sudo", `[ "$1" = "-n" ] && shift; [ "$1" = "true" ] && exit 0; exec "$@"`);
+    const allowed = run(["install"], common).stdout;
+    expect(allowed).toContain("installed: lp-hub-watchdog.service");
+    expect(allowed).not.toContain("no administrator rights");
+  });
+
   it("[sma:m_sp_try_task] with no user systemd the install writes one @reboot crontab line that runs the loop, replaces the watchdog's old line and keeps the person's other lines", () => {
     const { dir, env } = tmp();
     stub(dir, "sudo", "exit 1");
