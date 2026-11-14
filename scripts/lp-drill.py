@@ -38,8 +38,8 @@ Scenarios (each writes its verdict into the receipt, .agents/runs/drills/<date>.
                  holder thread, own worktree). A silent fallback to the old path fails it: a broken provider must not ship
   plan_split     the plan split rule on six tasks in one run (a; b, c after a; d after b and c; e alone; f after d), c red on purpose and sent
                  again as c.2, and a dependency cycle refused with depends_cycle: dependents start after their dependencies are accepted and
-                 merged, from a worktree cut from that main; independents do not wait for a failure. Full set only, not --quick;
-                 run it with `scripts/lp-drill.sh --scenario plan_split`
+                 merged, from a worktree cut from that main; independents do not wait for a failure. By name or under --series
+                 (task suite), never in --quick: `scripts/lp-drill.sh --scenario plan_split`
   nogit          a project whose folder is not a git repo (live-folder mode): accepted, file in the folder, no .git created
   nogit_repo     a task over one git repository inside that folder (repo-a): it moves into the repository, works in its own
                  worktree and is merged into its main as a commit; the folder still has no .git
@@ -137,9 +137,9 @@ del _mod, _name, _value
 for _tmp in ("_mname", "_member", "_wrap", "_fn"):
     globals().pop(_tmp, None)
 del _tmp
-ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "phase", "phase_route", "reload", "nogit", "nogit_repo", "flow_contract", "plan_split", "lead_shadow", "episodes", "memory_thread"]
+ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "phase", "phase_route", "reload", "nogit", "nogit_repo", "flow_contract", "lead_shadow", "episodes", "memory_thread"]
 # Scenes that run only by name (--scenario) or under --series: the deploy drill (--quick) and a plain run never reach them.
-EXTRA = ["skills_screen", "revert"]
+EXTRA = ["skills_screen", "revert", "plan_split"]
 QUICK = ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3", "lead_shadow", "episodes"]
 # The release series as named suites (SMA rl_suites): task, batch, phase, release, window, worker, lockstep, wiring,
 # metrics. A `vitest:` entry runs its story file as the suite's scene; `metrics` holds no scenario — series_metrics

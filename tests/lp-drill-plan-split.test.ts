@@ -184,9 +184,14 @@ describe("plan_split_problems", () => {
 });
 
 describe("plan_split registration", () => {
-  it("is in the full set and the task suite, not in --quick, and the scout finds no gaps", () => {
-    const out = py<{ all: string[]; quick: string[]; task: string[]; scout: object; has: boolean; doc: string }>(`print(json.dumps({"all": m.ALL, "quick": m.QUICK, "task": m.SUITES["task"], "scout": m.scout(), "has": callable(m.scenario_plan_split), "doc": m.scenario_plan_split.__doc__}))`);
-    expect(out.all).toContain("plan_split");
+  // ALL stays main's list (tests/sma/parity-d2-drill-ship-1: the deploy and full drills list what main lists); a new scene runs by
+  // name or under --series, like revert.
+  it("runs by name and in the task suite, not in --quick, and the scout finds no gaps", () => {
+    const out = py<{ all: string[]; extra: string[]; quick: string[]; task: string[]; scout: object; has: boolean; doc: string }>(`print(json.dumps({"all": m.ALL, "extra": m.EXTRA, "quick": m.QUICK, "task": m.SUITES["task"], "scout": m.scout(), "has": callable(m.scenario_plan_split), "doc": m.scenario_plan_split.__doc__}))`);
+    expect(out.extra).toContain("plan_split");
+    expect(out.all).not.toContain("plan_split");
+    const named = spawnSync("python3", ["-I", drill, "--scenario", "plan_split", "--dry-run"], { encoding: "utf8", timeout: 60_000, env: { ...ownEnv, LP_DRILL_SELECT: "0", BB_CLI: "/nonexistent/bb" } });
+    expect(named.stdout).toContain("scenario plan_split:");
     expect(out.quick).not.toContain("plan_split");
     expect(out.task).toContain("plan_split");
     expect(out.scout).toMatchObject({ unlisted: [], undefined: [], ungrouped: [], regrouped: [], unknown: [] });

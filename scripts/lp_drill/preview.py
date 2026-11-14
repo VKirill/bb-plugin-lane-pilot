@@ -20,6 +20,10 @@ def dry_run(names: list[str], series: bool = False) -> None:
     # of old ones (--series for no_code_exit, LP_DRILL_LIVE_PRESS=1 for live_word).
     documents["revert"] = [note_task(f"drill-{STAMP}-revert-a", f"notes/drill/{STAMP}-revert.md", f"Drill {STAMP} revert a", cwd), note_task(f"drill-{STAMP}-revert-b", f"notes/drill/{STAMP}-revert.md", f"Drill {STAMP} revert b", cwd)]
     expects["revert"] = {"scenario": "in EXTRA (by name or --series)", "judge": "revert_judged"}
+    if "plan_split" in names:  # imported here: the scene module imports the hub helpers, a default dry run stays main's
+        from lp_drill.scenes.plan_split import PLAN_SPLIT_SQL, plan_split_cycle_tasks, plan_split_tasks
+        documents["plan_split"] = [*plan_split_tasks(cwd).values(), *plan_split_cycle_tasks(cwd).values()]
+        expects["plan_split"] = {"scenario": "in EXTRA (by name or --series task)", "judge": "plan_split_problems", "sql": PLAN_SPLIT_SQL}
     if series:
         documents["no_code_exit"] = tasks_no_code_exit(cwd, True)
         expects["no_code_exit"] = {f"drill-answer-{STAMP}": "accepted_first_attempt", f"drill-human-{STAMP}": "held_with_question", f"drill-noedit-{STAMP}": "not_accepted"}
