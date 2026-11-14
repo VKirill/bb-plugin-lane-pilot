@@ -7,5 +7,5 @@ export { DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING, EXTERNAL_OPS, E
 export { isKnownReason, unknownReasons } from "./unknown-codes";
 export { renderTimeline, taskTimeline } from "./timeline";
 export type { TaskTimeline, TimelineEntry } from "./timeline";
-export { CONVEYOR_KEY, conveyorState, setConveyor } from "./conveyor";
+export { CONVEYOR_KEY, conveyorStartLine, conveyorState, setConveyor } from "./conveyor";
 export type { ConveyorState } from "./conveyor";
