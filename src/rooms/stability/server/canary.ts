@@ -153,11 +153,11 @@ export function createCanary(ctx: ServerCore, breaker?: () => { snapshot(now?: n
   /** The ids of the projects named «LP sandbox …» / «LP native …» / «LP bench …»; a minute's memory, and none when BB cannot list projects. */
   async function sandboxProjects(now: number): Promise<ReadonlySet<string>> {
     if (sandboxCache && now - sandboxCache.at < 60_000) return sandboxCache.ids;
-    const projects = (bb.sdk as unknown as { projects?: { list: (query: unknown) => Promise<Array<{ id: string; name?: string }>> } }).projects;
+    const projects = bb.sdk.projects;
     let ids = new Set<string>(sandboxCache?.ids);
     try {
       if (projects) {
-        const rows = [...await projects.list({ includePersonal: true }), ...await bestEffort(bb.log, "canary archived project list", projects.list({ includePersonal: true, archived: true }), [])];
+        const rows = await projects.list({ includePersonal: true });
         ids = new Set(rows.filter((row) => isSandboxProjectName(row.name)).map((row) => row.id));
       }
     } catch { /* keep the last answer: a project list that fails must not put the sandbox back into the canary */ }
