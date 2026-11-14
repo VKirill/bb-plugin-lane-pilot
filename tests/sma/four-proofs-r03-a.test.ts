@@ -8,7 +8,11 @@ import { listReceipts } from "../../src/rooms/capability";
 import { saveReceipt } from "../../src/rooms/capability/store";
 import { openDatabase } from "../../src/rooms/plugin-db";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { adapterVersions, dueProbes } from "../../src/rooms/capability/logic";
+import { WORKER_ENVELOPE } from "../../src/rooms/tasks/rails";
+import { existsSync } from "node:fs";
 import {
+  guardOnce, permitDecision, permitChannel,
   acceptedReceipts, capabilitySweep, checksAsWorker, confinedRun, criticEnvironments, folderGrants, pmActivation, roleModels, workerUserScript, writerLaunch,
 } from "./r03-world-a";
 
@@ -171,5 +175,58 @@ describe("the worker roles", () => {
     expect(seen.ownerPickNoEffort).toMatchObject({ providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", effort: "medium", source: "table" });
     expect(seen.ownerPickWithEffort).toMatchObject({ model: "claude-sonnet-5-5", effort: "xhigh", source: "table" });
     expect(seen.workerAlias).toBe("claude-opus-5-5");
+  });
+});
+
+describe("worker gates: values, not only shapes", () => {
+  it("[sma:wb_envelope] each dimension of the envelope names the file that enforces it, and that file exists", () => {
+    const named = Object.entries(WORKER_ENVELOPE).map(([key, text]) => [key, [...text.matchAll(/\((?:[^()]*? )?((?:src|lane-stack|packages)\/[A-Za-z0-9_./-]+)/g)].map((m) => m[1]!)] as const);
+    for (const [key, paths] of named) for (const path of paths) expect(existsSync(join(ROOT, path)) || existsSync(join(ROOT, path.replace(/\/$/, ""))), `${key}: ${path}`).toBe(true);
+    expect(WORKER_ENVELOPE.files).toContain("(src/rooms/verification/git-ownership.ts)");
+  });
+
+  it("[sma:wb_danger] the guard names the category of a writer's danger: forced clean, hard reset; a plain clean dry-run names none; the PM gets no ticket", () => {
+    expect(guardOnce("git clean -fd", "writer", "writer").tickets.map((row) => row.category)).toEqual(["worker_clean_force"]);
+    expect(guardOnce("git reset --hard", "writer", "writer").tickets.map((row) => row.category)).toEqual(["worker_reset_hard"]);
+    expect(guardOnce("git clean -n", "writer", "writer").tickets).toEqual([]);
+    expect(guardOnce("git clean -fd", "lane-pilot-pm", "pm").tickets).toEqual([]);
+  });
+
+  it("[sma:wb_ticket] a fresh ticket is listed and answerable, a stale one is neither", async () => {
+    const seen = await permitChannel();
+    expect(seen.listed).toEqual(["ffffffffffffffff"]);
+    expect(seen.freshAnswer).toMatchObject({ written: true });
+    expect(seen.freshAnswerFile).toBe(true);
+    expect(seen.staleAnswer).toMatchObject({ written: false, expired: true });
+    expect(seen.staleAnswerFile).toBe(false);
+  });
+
+  it("[sma:wb_decision] the host is told the decision that was given, allow or deny, for that ticket and session", async () => {
+    const seen = await permitDecision();
+    expect(seen.map((row) => row.hostGot)).toEqual([
+      { decision: "allow", ticket: "a1b2c3d4e5f60718", session: "sess-b" },
+      { decision: "deny", ticket: "a1b2c3d4e5f60718", session: "sess-b" },
+    ]);
+    expect(seen.map((row) => row.returned)).toEqual([
+      { ticket: "a1b2c3d4e5f60718", decision: "allow", written: true },
+      { ticket: "a1b2c3d4e5f60718", decision: "deny", written: true },
+    ]);
+    expect(seen.map((row) => row.sentMode)).toEqual(["queue-if-active", "queue-if-active"]);
+  });
+
+  it("[sma:wc_status] a probe that answered is supported, one that failed is not_supported", async () => {
+    const seen = await capabilitySweep();
+    const state = (name: string) => seen.receipts.find((row) => row.capability === name)!.state;
+    expect([state("pause"), state("gate"), state("accounting")]).toEqual(["supported", "supported", "not_supported"]);
+  });
+
+  it("[sma:wc_probe] a provider without an installed version is not probed; one with no receipt is", () => {
+    expect(dueProbes(new Map([["codex", "m"]]), new Map([["codex", null]]), [])).toEqual([]);
+    expect(dueProbes(new Map([["codex", "m"]]), new Map([["codex", "1"]]), []).length).toBeGreaterThan(0);
+  });
+
+  it("[sma:wc_applicable] the installed version of a provider is its adapter plugin's, by plugin id; none for a provider with no plugin or a missing one", () => {
+    const versions = adapterVersions([{ id: "codex", pluginId: "provider-codex" }, { id: "acp", pluginId: null }, { id: "ghost", pluginId: "gone" }], [{ id: "provider-codex", version: "0.1.0" }, { id: "codex", version: "9.9.9" }]);
+    expect([...versions.entries()]).toEqual([["codex", "0.1.0"], ["acp", null], ["ghost", null]]);
   });
 });

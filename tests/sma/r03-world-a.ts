@@ -145,7 +145,7 @@ export async function permitChannel(): Promise<{ listed: string[]; staleAnswer: 
 }
 
 /** n387: the PM answers a ticket with lane_pilot_permit: what the host is told and what the writer's thread is told (queued, after its turn). */
-export async function permitDecision(): Promise<Array<{ decision: string; sentMode: string | undefined; sentTo: string | undefined; text: string | undefined; hostGot: unknown }>> {
+export async function permitDecision(): Promise<Array<{ decision: string; sentMode: string | undefined; sentTo: string | undefined; text: string | undefined; hostGot: unknown; returned: unknown }>> {
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
   const db = openDatabase(bb);
   const sends: Array<{ threadId: string; mode?: string; text?: string }> = [];
@@ -172,12 +172,12 @@ export async function permitDecision(): Promise<Array<{ decision: string; sentMo
   db.prepare("UPDATE lane_pilot_run SET writer_host_id=?, pm_thread_id=? WHERE id=?").run("host", "pm-b", "run-b");
   db.prepare("UPDATE lane_pilot_attempt SET workspace_path=? WHERE id=?").run("/fixture/b", "b");
   mountPermits({ bb: facade, db, isDisposed: () => false } as never);
-  const out: Array<{ decision: string; sentMode: string | undefined; sentTo: string | undefined; text: string | undefined; hostGot: unknown }> = [];
+  const out: Array<{ decision: string; sentMode: string | undefined; sentTo: string | undefined; text: string | undefined; hostGot: unknown; returned: unknown }> = [];
   try {
     for (const decision of ["allow", "deny"] as const) {
       sends.length = 0; answers.length = 0;
-      await answerTool!.execute({ hostId: "host", session: "sess-b", ticket: "a1b2c3d4e5f60718", decision, why: "the task owns this file" }, {});
-      out.push({ decision, sentMode: sends[0]?.mode, sentTo: sends[0]?.threadId, text: sends[0]?.text, hostGot: { decision: answers[0]?.decision, ticket: answers[0]?.ticket, session: answers[0]?.session } });
+      const returned = JSON.parse(String(await answerTool!.execute({ hostId: "host", session: "sess-b", ticket: "a1b2c3d4e5f60718", decision, why: "the task owns this file" }, {})));
+      out.push({ decision, returned, sentMode: sends[0]?.mode, sentTo: sends[0]?.threadId, text: sends[0]?.text, hostGot: { decision: answers[0]?.decision, ticket: answers[0]?.ticket, session: answers[0]?.session } });
     }
   } finally { await harness.lifecycle.dispose(); }
   return out;

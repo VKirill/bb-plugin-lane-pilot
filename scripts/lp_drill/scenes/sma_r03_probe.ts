@@ -11,6 +11,7 @@ import { resolveSandboxBackend } from "../../../src/rooms/verification/sandbox";
 import { runCodeCritique } from "../../../src/rooms/critique/server/critique-runs";
 import { stageHelperSettings } from "../../../src/rooms/settings/server/stage-settings";
 import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, setRunThread } from "../../../src/rooms/plugin-db";
+import { LIMIT } from "../../../src/rooms/contracts/failure-class";
 import { creatorBrief } from "../../../src/rooms/forge/logic";
 import { CORE_PROVIDER_GROUPS } from "../../../src/rooms/contracts/helper-context";
 import {
@@ -85,6 +86,7 @@ const observe: Record<string, () => unknown> = {
   n411: () => creatorBrief("skill", "cell-sum", "skip empty cells"),
   n412: () => CORE_PROVIDER_GROUPS,
   n413: () => roleModels(),
+  n414: () => ({ capacity: LIMIT.test("capacity_saturated:p"), quota: LIMIT.test("writer_provider_limit:p"), breaker: LIMIT.test("writer_provider_unavailable:breaker_open"), plain: LIMIT.test("verification_failed") }),
 };
 
 async function main() {
