@@ -69,7 +69,7 @@ describe("settings (n1302 … n1304)", () => {
     const seen = observeF.k_c_settingsint();
     expect(seen.tavily).toEqual({ bbPlugins: ["env-catalog"], skills: ["env-catalog", "tavily"], mcpServers: [] });
     expect(seen.reviewer).toEqual({ before: false, granted: true, source: "owner" });
-    expect(seen.designer).toEqual(["env-catalog", "project-design", "modern-web-guidance"]);
+    expect(seen.designer).toEqual(["env-catalog", "project-design", "modern-web-guidance", "page-prototype"]);
   });
 });
 

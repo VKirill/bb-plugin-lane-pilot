@@ -425,6 +425,12 @@ export default {
     mutation: flip("packages/workflow-engine/src/verdict.ts", "if (status === \"rework\" && high + critical === 0) status = \"pass\";", "if (status === \"rework\" && high + critical !== 0) status = \"pass\";"),
     trace: receipt("code-critique", "pass"),
   },
+  // The accepted attempt's receipts are written once into the task home in the base, so they outlive the worktree's removal (T13).
+  n294: { mutation: wrongTarget(TASK_HOME, 'kind: "acceptance", name: "acceptance.json",', 'kind: "acceptance", name: `attempts/${input.attemptId}/acceptance.json`,'), trace: drill("task_home") },
+  n306: {
+    mutation: distort("src/rooms/tasks/rails.ts", "held)/.test(code)) return \"dependency\";", "held)/.test(code)) return \"conflict\";"),
+    trace: transition({ to: "blocked", reason: "depends_on" }),
+  },
   n320: { mutation: distort("src/rooms/contracts/state-machine.ts", 'state !== "accepted" && state !== "canceled");', 'state !== "accepted" && state !== "blocked");'), trace: transition({ to: "validation_failed" }), },
   n321: { mutation: distort("src/rooms/storage/cancel-code.ts", "COALESCE(cancel_code, ?)", "COALESCE(?, cancel_code)"), trace: transition({ to: "canceled" }), },
   n322: { mutation: distort("src/rooms/storage/tasks-store.ts", ".run(words, taskId).changes > 0);", ".run(words.toUpperCase(), taskId).changes > 0);"), trace: drill("sma_r01"), },

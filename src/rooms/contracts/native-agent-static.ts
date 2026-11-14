@@ -123,7 +123,8 @@ export const EMPLOYEES: Record<string, EmployeeManifest> = {
     machineAffinity: "any",
     deliverables: [".agents/design/"],
     validator: RESULT_EXISTS,
-    coreSkills: ["project-design", "modern-web-guidance"],
+    // page-prototype: the gray clickable sketch of the prototype mode (/sma-sketch) is always at hand, not looked up.
+    coreSkills: ["project-design", "modern-web-guidance", "page-prototype"],
     skillSections: ["Дизайн/UI/UX и дизайн-системы"],
   },
   "copy-lead": {
