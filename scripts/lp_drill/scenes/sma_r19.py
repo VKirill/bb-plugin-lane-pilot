@@ -21,10 +21,12 @@ from pathlib import Path
 
 from lp_drill.env import ROOT
 from lp_drill.prove import Proofs
+from lp_drill.scenes.sma_r19_core_b import NODES_CORE_B, prove_core_b
 
 NODES = ["n1464", "n1465", "n1466", "n1467", "n1468", "n1469", "n1470", "n1471", "n1472", "n1473", "n1474", "n1476", "n1477", "n1478", "n1479", "n1480", "n1481",
          "n1482", "n1483", "n1486", "n1487", "n1488", "n1489", "n1490", "n1492", "n1493", "n1494", "n1495", "n1496", "n1497",
          "n1498", "n1500", "n1501", "n1502", "n1504", "n1505", "n1508", "n1509", "n1515", "n1516"]
+NODES = NODES + NODES_CORE_B
 PROBE = ROOT / "scripts/lp_drill/scenes/sma_r19_probe.ts"
 EXCLUDE = "# my own\nbuild/\n**/.agents/runs/\n**/.agents/reports/\n**/.bb/chats/\n**/notes/lock/\n**/.zcode/\n"
 
@@ -153,4 +155,5 @@ def scenario_sma_r19(tmp: Path) -> dict:
     # n1516 Check of reapplied patches: applied only for the bundled file and exactly one hook entry; owner lines survive.
     r = s["n1516"]
     proofs.prove("n1516", r["steps"] == [False, True, False, True, False] and r["repaired"] == 1 and r["ownerKept"], f"guard check {r}")
+    prove_core_b(proofs, tmp)
     return proofs.verdict("sma_r19", checked=len(NODES))

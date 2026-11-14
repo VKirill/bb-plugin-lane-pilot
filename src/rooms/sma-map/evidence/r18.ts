@@ -25,6 +25,7 @@ export default {
   n1412: { mutation: distort("core:plugins/provider-claude-code/src/usage-source.ts", "accountKey: metadata.accountKey,", "accountKey: \"wrong-account-key\","), trace: drill("sma_core") },
   n1413: { mutation: flip(LOGIC, "input.lastModel !== input.model", "input.lastModel === input.model"), reach: entry(FIRES), trace: drill("sma_r18") },
   n1414: { mutation: distort(LOGIC, "!given.has(String(hit.id))).slice(0, 3);", "!given.has(String(hit.id))).slice(0, 1);"), reach: entry(FIRES), trace: drill("sma_r18") },
+  n1415: { mutation: distort("core:apps/server/src/services/threads/title-generation.ts", "return clampToWidth(text, MAX_TITLE_FALLBACK_WIDTH);", "return clampToWidth(text, MAX_TITLE_FALLBACK_WIDTH - 1);") },
   n1416: { mutation: flip("src/rooms/forecast/logic.ts", "rows.filter((row) => row.model === model)", "rows.filter((row) => row.model !== model)"), trace: drill("sma_r18") },
   n1417: { mutation: flip(LOGIC, 'if (input.merge) parts.push("a merge into main is running");', 'if (!input.merge) parts.push("a merge into main is running");'), trace: drill("sma_r18") },
   n1418: { mutation: wrongTarget("src/rooms/learning/pm-rules.ts", "const block = pmRulesBlock(pmRulesOf(db, projectId, chain), budgetTokens);", "const block = pmRulesBlock(pmRulesOf(db, projectId, []), budgetTokens);"), trace: drill("sma_r18") },
