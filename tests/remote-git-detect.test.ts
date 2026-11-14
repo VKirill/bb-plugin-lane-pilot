@@ -240,7 +240,8 @@ describe("the plugin server never touches a project path itself", () => {
   // tools/server/explain.ts reads the plugin's own docs/guide (the root is found from the module's own URL), never a project path.
   // memory/server/move-section-backup.ts writes the plugin's own backup folder (~/.bb/plugins/lane-pilot/backups), never a project path.
   // design-eval/server/pair-cli.ts only asks whether the plugin's own measuring script exists before it starts a browser.
-  const ALLOWED_FS = new Set(["self-repair.ts", "world-assets.ts", "identity.ts", "explain.ts", "pair-cli.ts", "move-section-backup.ts"]);
+  // reports/server/daily.ts reads the plugin's own scripts/*.sql (the root is found from the module's own URL), never a project path.
+  const ALLOWED_FS = new Set(["daily.ts", "self-repair.ts", "world-assets.ts", "identity.ts", "explain.ts", "pair-cli.ts", "move-section-backup.ts"]);
   const strip = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
   it("has no child_process, spawn-async or node:fs import under the server folder of any room", () => {

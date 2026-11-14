@@ -4,8 +4,8 @@ import { callReason, collectOwnerWaiting, type LearningItemsReader, type OwnerIt
 export { CALL_REASONS, callReason, type CallReason } from "./items";
 
 /**
- * The Telegram side of «waiting for the owner». Lane Pilot has no Telegram sender of its own: the hub's script (scripts/lp-owner-push.sh)
- * asks `digest`, sends the text it returns with the same bot as the daily report, and then tells `ack` which keys went out. The decisions
+ * The Telegram side of «waiting for the owner». The reports room (src/rooms/reports) asks `digest` every 30 minutes, sends the text it
+ * returns through the Telegram sender (Env Catalog), and then tells `ack` which keys went out (scripts/lp-owner-push.sh did it before). The decisions
  * live here, in code, and are tested:
  *  - only `wake` items push (an overdue deferral, a memory conflict, whatever the night loop posts with wake); the rest wait on the screen
  *    and in the daily report;
@@ -16,9 +16,9 @@ export { CALL_REASONS, callReason, type CallReason } from "./items";
 type Db = Pick<Database.Database, "prepare" | "transaction">;
 
 /** `bell` is the browser bell (SMA m_ws_notify): on unless the owner stored `off`. It skips what the Telegram digest already announced. */
-export type PushConfig = { enabled: boolean; quiet: string; timezone: string; bell?: boolean };
+export type PushConfig = { enabled: boolean; quiet: string; timezone: string; bell?: boolean; dryRun?: boolean };
 export const DEFAULT_PUSH_CONFIG: PushConfig = { enabled: true, quiet: "23:00-08:00", timezone: "Europe/Madrid" };
-export const PUSH_CONFIG_KEYS = ["enabled", "quiet", "timezone", "bell"] as const;
+export const PUSH_CONFIG_KEYS = ["enabled", "quiet", "timezone", "bell", "dry_run"] as const;
 /** At most this many items are named in one message; the rest are counted. */
 export const DIGEST_LINES = 6;
 
@@ -39,7 +39,7 @@ export function loadPushConfig(db: Db): PushConfig {
   // A global row (`owner_push.*`, written by the screen and by this command) wins over the old table, which stays as the fallback.
   const own = hubFields(db, "owner_push") as Partial<PushConfig>;
   // The bell has no global row: it lives in this room's own table; unset is on, only a stored «off» silences it.
-  return { enabled: own.enabled ?? old.enabled, quiet: own.quiet ?? old.quiet, timezone: own.timezone ?? old.timezone, bell: stored.bell !== "off" };
+  return { enabled: own.enabled ?? old.enabled, quiet: own.quiet ?? old.quiet, timezone: own.timezone ?? old.timezone, bell: stored.bell !== "off", ...(stored.dry_run === "on" ? { dryRun: true } : {}) };
 }
 
 /** `enabled` on|off, `quiet` HH:MM-HH:MM ("" turns quiet hours off as 00:00-00:00), `timezone` an IANA name. A wrong value is refused with what is accepted. */
@@ -47,11 +47,12 @@ export function savePushConfig(db: Db, patch: Record<string, string | undefined>
   const fields: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue;
-    if ((key === "enabled" || key === "bell") && value !== "on" && value !== "off") throw new Error(`${key} is on or off`);
+    if ((key === "enabled" || key === "bell" || key === "dry_run") && value !== "on" && value !== "off") throw new Error(`${key} is on or off`);
     if (key === "quiet" && !QUIET.test(value)) throw new Error("quiet is HH:MM-HH:MM in the time zone (23:00-08:00; 00:00-00:00 means no quiet hours)");
     if (key === "timezone" && !validTimezone(value)) throw new Error(`unknown time zone «${value}» (an IANA name such as Europe/Madrid)`);
     if (!(PUSH_CONFIG_KEYS as readonly string[]).includes(key)) throw new Error(`unknown setting «${key}» (${PUSH_CONFIG_KEYS.join(", ")})`);
-    if (key === "bell") { db.prepare("INSERT INTO lane_pilot_owner_config(key,value,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at").run("bell", value, now); continue; }
+    // Own-table keys: the bell, and dry_run (the Telegram reports of the reports room are composed and logged, never sent or acknowledged).
+    if (key === "bell" || key === "dry_run") { db.prepare("INSERT INTO lane_pilot_owner_config(key,value,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at").run(key, value, now); continue; }
     fields[key] = key === "enabled" ? value === "on" : value;
   }
   writeHubFields(db, "owner_push", fields, now);
@@ -151,4 +152,12 @@ export function planBellNotice(db: Db, now: number = Date.now(), sweeps: readonl
     .filter((item) => item.wake && item.tier === "now" && !announced.has(`${BELL_PREFIX}${item.key}`) && !announced.has(item.key));
   if (!fresh.length) return none("nothing_new");
   return { send: true, reason: null, title: `Lane Pilot: ждёт решения — ${fresh.length}`, text: `${fresh.length} — на экране «Ждут владельца».`, keys: fresh.map((item) => `${BELL_PREFIX}${item.key}`) };
+}
+
+/** One key of the room's own key/value table (the reports room keeps «the daily report went out on this day» here). */
+export function readOwnerConfigKey(db: Db, key: string): string | null {
+  return (db.prepare("SELECT value FROM lane_pilot_owner_config WHERE key=?").get(key) as { value: string } | undefined)?.value ?? null;
+}
+export function writeOwnerConfigKey(db: Db, key: string, value: string, now: number = Date.now()): void {
+  db.prepare("INSERT INTO lane_pilot_owner_config(key,value,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at").run(key, value, now);
 }

@@ -1,4 +1,5 @@
 #!/bin/bash
+# DEPRECATED: both Telegram jobs are plugin schedules now (src/rooms/reports, Env Catalog for the bot); this script stays only as a manual fallback. Do not run it from cron or an automation next to the plugin: it would send twice.
 # «Ждут владельца» → Telegram topic BB-сервис: a short message when NEW owner-only items appear (SMA D0-3). Runs on the hub every 30 minutes
 # (a BB automation, like lp-metrics-daily.sh). The decisions are the plugin's, in code (src/rooms/owner-waiting/push.ts): only items that wake the
 # owner, one message per item, silence in quiet hours (setting, default 23:00-08:00 Europe/Madrid), items held in quiet hours go out together

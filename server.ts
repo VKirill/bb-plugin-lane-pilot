@@ -43,7 +43,9 @@ import { createPhaseDriver, mountPhaseDriver, mountPhaseIntake, registerPhaseToo
 import { createPhaseReactions } from "./src/rooms/core/server";
 import { selfRepairDeps } from "./src/rooms/self-repair/server";
 import { registerConversationTools, registerQueueTool } from "./src/rooms/tasks/server";
-import { mountOutbound } from "./src/rooms/relay/server";
+import { mountOutbound, postEvent } from "./src/rooms/relay/server";
+import { mountReports } from "./src/rooms/reports/server";
+import { ownerWaitingRpc } from "./src/rooms/owner-waiting/server";
 import { createMoney } from "./src/rooms/money";
 import { mountPermits } from "./src/rooms/writer/server";
 import { mountForge } from "./src/rooms/forge";
@@ -511,6 +513,9 @@ export default async function plugin(bb: BbPluginApi) {
   mountFront(ctx, services.front);
   // The bell «awaits a decision»: one browser notification for the wake items not yet announced (SMA m_ws_notify).
   mountOwnerBell(ctx, ownerItemSweeps(services), services.ownerLearningItems);
+  // The owner's Telegram topic (it was two hub scripts): «Ждут владельца» every 30 minutes, the daily report at 09:00. Bot, chat and topic come from Env Catalog.
+  const waiting = ownerWaitingRpc(ctx.db, ownerItemSweeps(services), services.ownerLearningItems, ctx.log, postEvent);
+  mountReports(ctx, { digest: () => waiting.owner_waiting_digest(), ack: (keys) => waiting.owner_waiting_ack({ keys }), coreFile: process.env.LANE_PILOT_CORE_DB ?? `${process.env.HOME ?? "/root"}/.bb/bb.db` });
   // bench is another field of this bag: each mount below reads it at call time through the thunk.
   // Every Sunday 02:00 UTC the newest bench set runs as this week's arm and is compared with last week's (bench.weekly).
   mountBenchWeekly(ctx, () => services.bench);
