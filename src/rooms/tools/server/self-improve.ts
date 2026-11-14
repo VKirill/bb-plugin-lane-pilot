@@ -116,7 +116,7 @@ export function approvalSuggestions(items: ReadonlyArray<{ descriptor?: { kind?:
     const key = `${item.descriptor?.kind ?? "?"}→${item.expected ?? "?"}`;
     by.set(key, (by.get(key) ?? 0) + 1);
   }
-  return [...by.entries()].filter(([, n]) => n > 3).map(([key, n]) => ({ pattern: key, times: n, suggestion: `the owner decided ${key} ${n} times: let the night policy decide it the same way` }));
+  return [...by.entries()].filter(([, n]) => n >= 3).map(([key, n]) => ({ pattern: key, times: n, suggestion: `the owner decided ${key} ${n} times: let the night policy decide it the same way` }));
 }
 
 /** Cost per verified result: tokens of a project's writers per accepted task, by kind, over the last days. */
